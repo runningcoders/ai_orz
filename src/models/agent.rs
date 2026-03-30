@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::pkg::constants::AgentPoStatus;
+use serde::{Deserialize, Serialize};
 
 /// AgentPo 持久化对象
 ///
@@ -23,13 +23,13 @@ pub struct AgentPo {
     pub id: String,
     pub name: String,
     pub role: String,
-    pub capabilities: String,        // JSON string
-    pub soul: String,                // 长文本
-    pub status: AgentPoStatus,       // 软删除状态
+    pub capabilities: String,  // JSON string
+    pub soul: String,          // 长文本
+    pub status: AgentPoStatus, // 软删除状态
     pub created_by: String,
     pub modified_by: String,
-    pub created_at: i64,            // 数据库自动设置
-    pub updated_at: i64,            // 数据库自动设置
+    pub created_at: i64, // 数据库自动设置
+    pub updated_at: i64, // 数据库自动设置
 }
 
 impl AgentPo {
@@ -49,8 +49,8 @@ impl AgentPo {
             status: AgentPoStatus::Normal,
             created_by: created_by.clone(),
             modified_by: created_by,
-            created_at: 0,  // 数据库自动设置
-            updated_at: 0,  // 数据库自动设置
+            created_at: 0, // 数据库自动设置
+            updated_at: 0, // 数据库自动设置
         }
     }
 

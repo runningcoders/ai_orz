@@ -10,17 +10,20 @@ pub struct DatabaseConfig {
 
 impl DatabaseConfig {
     pub fn from_toml(table: &toml::Table) -> Result<Self, String> {
-        let db = table.get("database")
+        let db = table
+            .get("database")
             .ok_or("missing [database] section")?
             .as_table()
             .ok_or("[database] must be a table")?;
 
         Ok(Self {
-            db_type: db.get("type")
+            db_type: db
+                .get("type")
                 .and_then(|v| v.as_str())
                 .unwrap_or("sqlite")
                 .to_string(),
-            path: db.get("path")
+            path: db
+                .get("path")
                 .and_then(|v| v.as_str())
                 .unwrap_or("data/ai_orz.db")
                 .to_string(),
@@ -43,8 +46,8 @@ impl Database {
         }
 
         // 创建连接
-        let conn = Connection::open(&config.path)
-            .map_err(|e| format!("open database failed: {}", e))?;
+        let conn =
+            Connection::open(&config.path).map_err(|e| format!("open database failed: {}", e))?;
 
         // 初始化表结构
         init_tables(&conn)?;
@@ -111,10 +114,11 @@ fn init_tables(conn: &Connection) -> Result<(), String> {
 
 /// 从 toml 配置文件加载并初始化数据库
 pub fn init_from_config(config_path: &str) -> Result<Database, String> {
-    let content = std::fs::read_to_string(config_path)
-        .map_err(|e| format!("read config failed: {}", e))?;
+    let content =
+        std::fs::read_to_string(config_path).map_err(|e| format!("read config failed: {}", e))?;
 
-    let config: toml::Table = content.parse()
+    let config: toml::Table = content
+        .parse()
         .map_err(|e| format!("parse toml failed: {}", e))?;
 
     let db_config = DatabaseConfig::from_toml(&config)?;

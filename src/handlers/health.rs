@@ -1,5 +1,5 @@
-use axum::Json;
 use crate::error::ApiResponse;
+use axum::Json;
 
 pub async fn health() -> Json<ApiResponse<HealthData>> {
     Json(ApiResponse::success(HealthData {

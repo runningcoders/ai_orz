@@ -1,3 +1,3 @@
 pub mod sqlite;
 
-pub use sqlite::{Database, DatabaseConfig, init_from_config};
+pub use sqlite::{init_from_config, Database, DatabaseConfig};

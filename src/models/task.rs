@@ -21,10 +21,13 @@ impl Task {
             .unwrap()
             .as_secs() as i64;
         Self {
-            id: format!("{:x}", std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()),
+            id: format!(
+                "{:x}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ),
             title,
             description,
             org_id,

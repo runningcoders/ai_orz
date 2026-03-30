@@ -51,10 +51,10 @@ impl Default for AgentPoStatus {
 pub mod http_header {
     /// 请求追踪 ID（用于日志串联）
     pub const LOG_ID: &str = "X-Log-Id";
-    
+
     /// 当前用户 ID
     pub const USER_ID: &str = "X-User-Id";
-    
+
     /// 当前用户名
     pub const USERNAME: &str = "X-Username";
 }
@@ -108,20 +108,18 @@ impl RequestContext {
     }
 
     /// 生成新的 log_id
-    /// 
+    ///
     /// 格式：年月日时分秒毫秒3位随机数，直接拼接无分隔符
     /// 示例：20260331011345000123
     pub fn generate_log_id() -> String {
         use std::time::{SystemTime, UNIX_EPOCH};
-        
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap();
-        
+
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+
         let secs = now.as_secs();
         let millis = now.subsec_millis();
         let random = rand_simple() % 1000; // 3位随机数
-        
+
         // 格式：YYYYMMDDHHmmssSSSXXX（年月日时分秒毫秒3位随机）
         // 2026 03 31 01 13 45 000 123 -> 20260331011345000123
         format!("{}{:03}{:03}", format_timestamp(secs), millis, random)
@@ -146,17 +144,17 @@ fn format_timestamp(secs: u64) -> String {
     let hours = remaining / 3600;
     let minutes = (remaining % 3600) / 60;
     let seconds = remaining % 60;
-    
+
     // 简化：直接用纳秒构造
     // 更准确的方式是使用 chrono，但为了减少依赖，我们手动计算
     // 从 1970-01-01 开始计算
     let total_days = days as i64;
-    
+
     // 基准日期 1970-01-01
     let mut year = 1970;
     let mut month = 1;
     let mut day = 1;
-    
+
     // 加上天数
     let mut d = total_days;
     while d >= 365 {
@@ -168,13 +166,13 @@ fn format_timestamp(secs: u64) -> String {
             break;
         }
     }
-    
+
     let days_in_months = if is_leap_year(year) {
         [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
     } else {
         [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
     };
-    
+
     for i in 0..12 {
         if d < days_in_months[i] {
             month = i + 1;
@@ -183,8 +181,11 @@ fn format_timestamp(secs: u64) -> String {
         }
         d -= days_in_months[i];
     }
-    
-    format!("{}{:02}{:02}{:02}{:02}{:02}", year, month, day, hours, minutes, seconds)
+
+    format!(
+        "{}{:02}{:02}{:02}{:02}{:02}",
+        year, month, day, hours, minutes, seconds
+    )
 }
 
 fn is_leap_year(year: i64) -> bool {

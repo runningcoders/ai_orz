@@ -1,5 +1,5 @@
-use axum::{routing::get, Router};
 use crate::handlers::health;
+use axum::{routing::get, Router};
 
 pub fn create_router() -> Router {
     Router::new()

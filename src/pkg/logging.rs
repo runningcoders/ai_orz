@@ -11,8 +11,7 @@ pub fn init() {
         .with_file(true)
         .with_line_number(true);
 
-    let filter_layer = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter_layer = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     tracing_subscriber::registry()
         .with(filter_layer)
@@ -64,17 +63,14 @@ pub fn debug(ctx: RequestContext, operation: &str, msg: &str) {
 #[cfg(test)]
 mod tests {
     use crate::pkg::RequestContext;
-    use crate::pkg::{info, warn, error, debug};
+    use crate::pkg::{debug, error, info, warn};
 
     fn new_ctx() -> RequestContext {
         RequestContext::new(None, None)
     }
 
     fn new_ctx_with_user() -> RequestContext {
-        RequestContext::new(
-            Some("test_user".to_string()),
-            Some("test_name".to_string()),
-        )
+        RequestContext::new(Some("test_user".to_string()), Some("test_name".to_string()))
     }
 
     #[test]
@@ -110,7 +106,10 @@ mod tests {
         let ctx = new_ctx();
         let log_id = &ctx.log_id;
         assert_eq!(log_id.len(), 20, "log_id 长度应为20位");
-        assert!(log_id.chars().all(|c| c.is_ascii_digit()), "log_id 应为纯数字");
+        assert!(
+            log_id.chars().all(|c| c.is_ascii_digit()),
+            "log_id 应为纯数字"
+        );
     }
 
     #[test]
@@ -123,7 +122,7 @@ mod tests {
     #[test]
     fn test_log_id_from_header() {
         use axum::http::HeaderValue;
-        
+
         let mut headers = axum::http::HeaderMap::new();
         headers.insert(
             axum::http::header::HeaderName::from_static("x-log-id"),
@@ -137,9 +136,9 @@ mod tests {
             axum::http::header::HeaderName::from_static("x-username"),
             HeaderValue::from_static("zhang_san"),
         );
-        
+
         let ctx = RequestContext::from_headers(&headers);
-        
+
         assert_eq!(ctx.log_id, "20260331013000000123");
         assert_eq!(ctx.uid(), "user_001");
         assert_eq!(ctx.uname(), "zhang_san");
@@ -149,7 +148,7 @@ mod tests {
     fn test_log_id_auto_generate_when_missing() {
         let headers = axum::http::HeaderMap::new();
         let ctx = RequestContext::from_headers(&headers);
-        
+
         assert!(!ctx.log_id.is_empty());
         assert_eq!(ctx.log_id.len(), 20);
     }
@@ -157,11 +156,11 @@ mod tests {
     #[test]
     fn test_multiple_logs_same_context() {
         let ctx = new_ctx_with_user();
-        
+
         info(ctx.clone(), "step1", "第一步操作");
         info(ctx.clone(), "step2", "第二步操作");
         info(ctx.clone(), "step3", "第三步操作完成");
-        
+
         assert_eq!(ctx.log_id.len(), 20);
     }
 
@@ -169,7 +168,7 @@ mod tests {
     fn test_context_uid_helper() {
         let ctx_with_user = new_ctx_with_user();
         assert_eq!(ctx_with_user.uid(), "test_user");
-        
+
         let ctx_without_user = new_ctx();
         assert_eq!(ctx_without_user.uid(), "");
     }
@@ -178,7 +177,7 @@ mod tests {
     fn test_context_uname_helper() {
         let ctx_with_name = new_ctx_with_user();
         assert_eq!(ctx_with_name.uname(), "test_name");
-        
+
         let ctx_without_name = new_ctx();
         assert_eq!(ctx_without_name.uname(), "");
     }
@@ -187,7 +186,7 @@ mod tests {
     fn test_context_clone() {
         let ctx1 = new_ctx_with_user();
         let ctx2 = ctx1.clone();
-        
+
         assert_eq!(ctx1.log_id, ctx2.log_id);
         assert_eq!(ctx1.uid(), ctx2.uid());
         assert_eq!(ctx1.uname(), ctx2.uname());
@@ -210,7 +209,11 @@ mod tests {
     #[test]
     fn test_special_characters_in_message() {
         let ctx = new_ctx();
-        info(ctx.clone(), "test", r#"特殊字符: @#$%^&*()_+-=[]{}|;':",./<>?"#);
+        info(
+            ctx.clone(),
+            "test",
+            r#"特殊字符: @#$%^&*()_+-=[]{}|;':",./<>?"#,
+        );
         info(ctx.clone(), "test", r#"JSON: {"key": "value"}"#);
     }
 

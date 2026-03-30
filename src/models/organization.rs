@@ -20,11 +20,11 @@ pub struct OrganizationPo {
     pub id: String,
     pub name: String,
     pub description: String,
-    pub status: i32,          // 0=已删除, 1=正常
+    pub status: i32, // 0=已删除, 1=正常
     pub created_by: String,
     pub modified_by: String,
-    pub created_at: i64,     // 数据库自动设置
-    pub updated_at: i64,     // 数据库自动设置
+    pub created_at: i64, // 数据库自动设置
+    pub updated_at: i64, // 数据库自动设置
 }
 
 impl OrganizationPo {
@@ -36,8 +36,8 @@ impl OrganizationPo {
             status: 1,
             created_by: created_by.clone(),
             modified_by: created_by,
-            created_at: 0,  // 数据库自动设置
-            updated_at: 0,  // 数据库自动设置
+            created_at: 0, // 数据库自动设置
+            updated_at: 0, // 数据库自动设置
         }
     }
 }

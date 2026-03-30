@@ -10,16 +10,22 @@ use std::sync::{Arc, OnceLock};
 static ORG_DAO: OnceLock<Arc<dyn OrganizationDaoTrait>> = OnceLock::new();
 
 /// 获取 OrganizationDao 单例
-pub fn dao() -> Arc<dyn OrganizationDaoTrait> { ORG_DAO.get().cloned().unwrap() }
+pub fn dao() -> Arc<dyn OrganizationDaoTrait> {
+    ORG_DAO.get().cloned().unwrap()
+}
 
 /// 初始化单例
-pub fn init() { let _ = ORG_DAO.set(Arc::new(OrganizationDaoImpl::new())); }
+pub fn init() {
+    let _ = ORG_DAO.set(Arc::new(OrganizationDaoImpl::new()));
+}
 
 // ==================== 实现 ====================
 struct OrganizationDaoImpl;
 
 impl OrganizationDaoImpl {
-    fn new() -> Self { Self }
+    fn new() -> Self {
+        Self
+    }
 }
 
 impl OrganizationDaoTrait for OrganizationDaoImpl {
@@ -35,7 +41,16 @@ impl OrganizationDaoTrait for OrganizationDaoImpl {
     fn find_by_id(&self, conn: &Connection, id: &str) -> Result<Option<OrganizationPo>, AppError> {
         let mut stmt = conn.prepare("SELECT id, name, description, status, created_by, modified_by, created_at, updated_at FROM organizations WHERE id = ?1 AND status != 0").map_err(|e| AppError::Internal(e.to_string()))?;
         match stmt.query_row([id], |row| {
-            Ok(OrganizationPo { id: row.get(0)?, name: row.get(1)?, description: row.get(2)?, status: row.get(3)?, created_by: row.get(4)?, modified_by: row.get(5)?, created_at: row.get(6)?, updated_at: row.get(7)? })
+            Ok(OrganizationPo {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                status: row.get(3)?,
+                created_by: row.get(4)?,
+                modified_by: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
         }) {
             Ok(o) => Ok(Some(o)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
@@ -45,9 +60,22 @@ impl OrganizationDaoTrait for OrganizationDaoImpl {
 
     fn find_all(&self, conn: &Connection) -> Result<Vec<OrganizationPo>, AppError> {
         let mut stmt = conn.prepare("SELECT id, name, description, status, created_by, modified_by, created_at, updated_at FROM organizations WHERE status != 0 ORDER BY id DESC").map_err(|e| AppError::Internal(e.to_string()))?;
-        let orgs = stmt.query_map([], |row| {
-            Ok(OrganizationPo { id: row.get(0)?, name: row.get(1)?, description: row.get(2)?, status: row.get(3)?, created_by: row.get(4)?, modified_by: row.get(5)?, created_at: row.get(6)?, updated_at: row.get(7)? })
-        }).map_err(|e| AppError::Internal(e.to_string()))?.collect::<Result<Vec<_>, _>>().map_err(|e| AppError::Internal(e.to_string()))?;
+        let orgs = stmt
+            .query_map([], |row| {
+                Ok(OrganizationPo {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    status: row.get(3)?,
+                    created_by: row.get(4)?,
+                    modified_by: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                })
+            })
+            .map_err(|e| AppError::Internal(e.to_string()))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(orgs)
     }
 
