@@ -1,3 +1,3 @@
-pub mod agent;
-pub mod organization;
-pub mod task;
+pub mod agent_domain;
+pub mod org_domain;
+pub mod task_domain;
