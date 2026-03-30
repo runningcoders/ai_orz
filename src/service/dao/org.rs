@@ -98,7 +98,7 @@ use std::sync::OnceLock;
 
 static ORG_DAO: OnceLock<Arc<dyn OrganizationDaoTrait>> = OnceLock::new();
 
-pub fn org_dao() -> Arc<dyn OrganizationDaoTrait> {
+pub fn dao() -> Arc<dyn OrganizationDaoTrait> {
     ORG_DAO.get().unwrap().clone()
 }
 

@@ -63,8 +63,8 @@ impl AgentDaoTrait for AgentDaoImpl {
 use std::sync::OnceLock;
 static AGENT_DAO: OnceLock<Arc<dyn AgentDaoTrait>> = OnceLock::new();
 
-pub fn agent_dao() -> Arc<dyn AgentDaoTrait> { AGENT_DAO.get().cloned().unwrap() }
-pub(super) fn init() { let _ = AGENT_DAO.set(Arc::new(AgentDaoImpl::new())); }
+pub fn dao() -> Arc<dyn AgentDaoTrait> { AGENT_DAO.get().cloned().unwrap() }
+pub fn init() { let _ = AGENT_DAO.set(Arc::new(AgentDaoImpl::new())); }
 
 fn current_timestamp() -> i64 { std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64 }
 
@@ -85,7 +85,7 @@ mod tests {
     fn test_insert_and_find_by_id() {
         init();
         let db = new_test_db();
-        let dao = agent_dao();
+        let dao = dao();
         let agent = AgentPo::new("TestAgent".to_string(), "worker".to_string(), vec!["coding".to_string()], "A helpful agent".to_string(), "admin".to_string());
         dao.insert(&db, &agent).unwrap();
         let found = dao.find_by_id(&db, &agent.id).unwrap().unwrap();
@@ -97,7 +97,7 @@ mod tests {
     fn test_find_all() {
         init();
         let db = new_test_db();
-        let dao = agent_dao();
+        let dao = dao();
         for i in 0..3 {
             let agent = AgentPo::new(format!("Agent{}", i), "worker".to_string(), vec![], "".to_string(), "admin".to_string());
             dao.insert(&db, &agent).unwrap();
@@ -110,7 +110,7 @@ mod tests {
     fn test_update() {
         init();
         let db = new_test_db();
-        let dao = agent_dao();
+        let dao = dao();
         let agent = AgentPo::new("Original".to_string(), "worker".to_string(), vec![], "".to_string(), "admin".to_string());
         dao.insert(&db, &agent).unwrap();
         let mut updated = agent.clone();
@@ -125,7 +125,7 @@ mod tests {
     fn test_soft_delete() {
         init();
         let db = new_test_db();
-        let dao = agent_dao();
+        let dao = dao();
         let agent = AgentPo::new("ToDelete".to_string(), "worker".to_string(), vec![], "".to_string(), "admin".to_string());
         dao.insert(&db, &agent).unwrap();
         dao.delete(&db, &agent.id, "admin").unwrap();
@@ -136,7 +136,7 @@ mod tests {
     fn test_find_all_excludes_deleted() {
         init();
         let db = new_test_db();
-        let dao = agent_dao();
+        let dao = dao();
         let agent1 = AgentPo::new("Normal".to_string(), "w".to_string(), vec![], "".to_string(), "admin".to_string());
         let agent2 = AgentPo::new("Deleted".to_string(), "w".to_string(), vec![], "".to_string(), "admin".to_string());
         dao.insert(&db, &agent1).unwrap();
@@ -151,7 +151,7 @@ mod tests {
     fn test_delete_twice_is_idempotent() {
         init();
         let db = new_test_db();
-        let dao = agent_dao();
+        let dao = dao();
         let agent = AgentPo::new("Test".to_string(), "w".to_string(), vec![], "".to_string(), "admin".to_string());
         dao.insert(&db, &agent).unwrap();
         dao.delete(&db, &agent.id, "admin").unwrap();
@@ -163,7 +163,7 @@ mod tests {
     fn test_find_not_exists() {
         init();
         let db = new_test_db();
-        let dao = agent_dao();
+        let dao = dao();
         let found = dao.find_by_id(&db, "not-exists").unwrap();
         assert!(found.is_none());
     }
