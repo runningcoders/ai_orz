@@ -55,6 +55,8 @@ impl Database {
 
 /// 初始化表结构
 fn init_tables(conn: &Connection) -> Result<(), String> {
+    // 建表语句定义在各 Po 实体的注释中，此处集中执行
+    // @see AgentPo
     conn.execute_batch(
         r#"
         CREATE TABLE IF NOT EXISTS agents (

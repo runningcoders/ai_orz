@@ -1,17 +1,33 @@
 use serde::{Deserialize, Serialize};
 use crate::pkg::constants::AgentPoStatus;
 
-/// Agent 持久化对象
+/// AgentPo 持久化对象
+///
+/// # SQLite 表结构
+/// ```sql
+/// CREATE TABLE IF NOT EXISTS agents (
+///     id TEXT PRIMARY KEY,
+///     name TEXT NOT NULL,
+///     role TEXT NOT NULL DEFAULT '',
+///     capabilities TEXT NOT NULL DEFAULT '[]',  -- JSON string
+///     soul TEXT NOT NULL DEFAULT '',            -- 长文本
+///     status INTEGER NOT NULL DEFAULT 1,        -- 0=已删除, 1=正常
+///     created_by TEXT NOT NULL DEFAULT '',
+///     modified_by TEXT NOT NULL DEFAULT '',
+///     created_at INTEGER NOT NULL,
+///     updated_at INTEGER NOT NULL
+/// );
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentPo {
     pub id: String,
     pub name: String,
     pub role: String,
-    pub capabilities: String,        // 长文本，JSON 字符串存储
-    pub soul: String,                // 长文本，Agent 灵魂/性格描述
+    pub capabilities: String,        // JSON string, 存储 Vec<String>
+    pub soul: String,                // 长文本，Agent 性格描述
     pub status: AgentPoStatus,       // 软删除状态
-    pub created_by: String,           // 创建者
-    pub modified_by: String,          // 修改者
+    pub created_by: String,          // 创建者
+    pub modified_by: String,         // 修改者
     pub created_at: i64,
     pub updated_at: i64,
 }
