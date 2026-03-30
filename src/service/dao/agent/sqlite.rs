@@ -3,7 +3,7 @@
 use crate::error::AppError;
 use crate::models::agent::AgentPo;
 use crate::pkg::constants::AgentPoStatus;
-use crate::service::dao::agent::AgentDaoTrait;
+use crate::service::dao::agent::dao::AgentDaoTrait;
 use rusqlite::Connection;
 use std::sync::Arc;
 

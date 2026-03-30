@@ -2,7 +2,7 @@
 
 use crate::error::AppError;
 use crate::models::organization::OrganizationPo;
-use crate::service::dao::org::OrganizationDaoTrait;
+use crate::service::dao::org::dao::OrganizationDaoTrait;
 use rusqlite::Connection;
 use std::sync::Arc;
 
