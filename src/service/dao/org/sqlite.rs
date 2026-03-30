@@ -2,18 +2,27 @@
 
 use crate::error::AppError;
 use crate::models::organization::OrganizationPo;
-use crate::service::dao::org::dao::OrganizationDaoTrait;
+use crate::service::dao::org::OrganizationDaoTrait;
 use rusqlite::Connection;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
-/// OrganizationDao SQLite 实现
-struct OrganizationDaoSqlite;
+// ==================== 单例 ====================
+static ORG_DAO: OnceLock<Arc<dyn OrganizationDaoTrait>> = OnceLock::new();
 
-impl OrganizationDaoSqlite {
+/// 获取 OrganizationDao 单例
+pub fn dao() -> Arc<dyn OrganizationDaoTrait> { ORG_DAO.get().cloned().unwrap() }
+
+/// 初始化单例
+pub fn init() { let _ = ORG_DAO.set(Arc::new(OrganizationDaoImpl::new())); }
+
+// ==================== 实现 ====================
+struct OrganizationDaoImpl;
+
+impl OrganizationDaoImpl {
     fn new() -> Self { Self }
 }
 
-impl OrganizationDaoTrait for OrganizationDaoSqlite {
+impl OrganizationDaoTrait for OrganizationDaoImpl {
     fn insert(&self, conn: &Connection, org: &OrganizationPo) -> Result<(), AppError> {
         conn.execute(
             "INSERT INTO organizations (id, name, description, status, created_by, modified_by, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -54,10 +63,5 @@ impl OrganizationDaoTrait for OrganizationDaoSqlite {
     }
 }
 
-use std::sync::OnceLock;
-static ORG_DAO: OnceLock<Arc<dyn OrganizationDaoTrait>> = OnceLock::new();
-
-pub fn dao() -> Arc<dyn OrganizationDaoTrait> { ORG_DAO.get().cloned().unwrap() }
-pub fn init() { let _ = ORG_DAO.set(Arc::new(OrganizationDaoSqlite::new())); }
-
+// ==================== 辅助函数 ====================
 fn current_timestamp() -> i64 { std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64 }

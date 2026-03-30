@@ -3,18 +3,27 @@
 use crate::error::AppError;
 use crate::models::agent::AgentPo;
 use crate::pkg::constants::AgentPoStatus;
-use crate::service::dao::agent::dao::AgentDaoTrait;
+use crate::service::dao::agent::AgentDaoTrait;
 use rusqlite::Connection;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
-/// AgentDao SQLite 实现
-struct AgentDaoSqlite;
+// ==================== 单例 ====================
+static AGENT_DAO: OnceLock<Arc<dyn AgentDaoTrait>> = OnceLock::new();
 
-impl AgentDaoSqlite {
+/// 获取 AgentDao 单例
+pub fn dao() -> Arc<dyn AgentDaoTrait> { AGENT_DAO.get().cloned().unwrap() }
+
+/// 初始化单例
+pub fn init() { let _ = AGENT_DAO.set(Arc::new(AgentDaoImpl::new())); }
+
+// ==================== 实现 ====================
+struct AgentDaoImpl;
+
+impl AgentDaoImpl {
     fn new() -> Self { Self }
 }
 
-impl AgentDaoTrait for AgentDaoSqlite {
+impl AgentDaoTrait for AgentDaoImpl {
     fn insert(&self, conn: &Connection, agent: &AgentPo) -> Result<(), AppError> {
         conn.execute(
             "INSERT INTO agents (id, name, role, capabilities, soul, status, created_by, modified_by, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
@@ -55,13 +64,7 @@ impl AgentDaoTrait for AgentDaoSqlite {
     }
 }
 
-// ==================== 单例 ====================
-use std::sync::OnceLock;
-static AGENT_DAO: OnceLock<Arc<dyn AgentDaoTrait>> = OnceLock::new();
-
-pub fn dao() -> Arc<dyn AgentDaoTrait> { AGENT_DAO.get().cloned().unwrap() }
-pub fn init() { let _ = AGENT_DAO.set(Arc::new(AgentDaoSqlite::new())); }
-
+// ==================== 辅助函数 ====================
 fn current_timestamp() -> i64 { std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64 }
 
 // ==================== 单元测试 ====================
