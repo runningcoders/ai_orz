@@ -99,7 +99,7 @@ impl RequestContext {
     }
 
     /// 生成新的上下文（带自动生成的 log_id）
-    pub fn generate_new(user_id: Option<String>, username: Option<String>) -> Self {
+    pub fn new(user_id: Option<String>, username: Option<String>) -> Self {
         Self {
             log_id: Self::generate_log_id(),
             user_id,
@@ -227,7 +227,7 @@ mod tests {
 
     #[test]
     fn test_request_context() {
-        let ctx = RequestContext::generate_new(Some("user1".to_string()), Some("test".to_string()));
+        let ctx = RequestContext::new(Some("user1".to_string()), Some("test".to_string()));
         assert!(!ctx.log_id.is_empty());
         assert_eq!(ctx.uid(), "user1");
     }
