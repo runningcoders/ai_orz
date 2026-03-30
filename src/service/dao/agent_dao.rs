@@ -45,7 +45,7 @@ impl AgentDaoTrait for AgentDao {
 
     fn find_by_id(&self, conn: &Connection, id: &str) -> Result<Option<AgentPo>, AppError> {
         let mut stmt = conn
-            .prepare("SELECT id, name, role, capabilities, soul, status, created_by, modified_by, created_at, updated_at FROM agents WHERE id = ?1 AND status = 1")
+            .prepare("SELECT id, name, role, capabilities, soul, status, created_by, modified_by, created_at, updated_at FROM agents WHERE id = ?1 AND status != 0")
             .map_err(|e| AppError::Internal(e.to_string()))?;
 
         let result = stmt.query_row([id], |row| {
@@ -72,7 +72,7 @@ impl AgentDaoTrait for AgentDao {
 
     fn find_all(&self, conn: &Connection) -> Result<Vec<AgentPo>, AppError> {
         let mut stmt = conn
-            .prepare("SELECT id, name, role, capabilities, soul, status, created_by, modified_by, created_at, updated_at FROM agents WHERE status = 1 ORDER BY created_at DESC")
+            .prepare("SELECT id, name, role, capabilities, soul, status, created_by, modified_by, created_at, updated_at FROM agents WHERE status != 0 ORDER BY created_at DESC")
             .map_err(|e| AppError::Internal(e.to_string()))?;
 
         let agents = stmt
@@ -117,7 +117,7 @@ impl AgentDaoTrait for AgentDao {
     fn delete(&self, conn: &Connection, id: &str, deleted_by: &str) -> Result<(), AppError> {
         // 软删除：更新 status 为 0，并记录删除者
         conn.execute(
-            "UPDATE agents SET status = 0, modified_by = ?1, updated_at = ?2 WHERE id = ?3",
+            "UPDATE agents SET status = 0, modified_by = ?1, updated_at = ?2 WHERE id = ?3 AND status != 0",
             rusqlite::params![deleted_by, current_timestamp(), id],
         )
         .map_err(|e| AppError::Internal(e.to_string()))?;
