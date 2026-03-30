@@ -72,7 +72,7 @@ impl AgentDaoTrait for AgentDao {
 
     fn find_all(&self, conn: &Connection) -> Result<Vec<AgentPo>, AppError> {
         let mut stmt = conn
-            .prepare("SELECT id, name, role, capabilities, soul, status, created_by, modified_by, created_at, updated_at FROM agents WHERE status != 0 ORDER BY created_at DESC")
+            .prepare("SELECT id, name, role, capabilities, soul, status, created_by, modified_by, created_at, updated_at FROM agents WHERE status != 0 ORDER BY id DESC")
             .map_err(|e| AppError::Internal(e.to_string()))?;
 
         let agents = stmt
