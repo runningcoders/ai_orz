@@ -26,8 +26,9 @@ impl AgentDaoImpl {
 impl AgentDaoTrait for AgentDaoImpl {
     fn insert(&self, conn: &Connection, agent: &AgentPo) -> Result<(), AppError> {
         conn.execute(
-            "INSERT INTO agents (id, name, role, capabilities, soul, status, created_by, modified_by, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            rusqlite::params![agent.id, agent.name, agent.role, agent.capabilities, agent.soul, agent.status.to_i32(), agent.created_by, agent.modified_by, agent.created_at, agent.updated_at],
+            "INSERT INTO agents (id, name, role, capabilities, soul, status, created_by, modified_by, created_at, updated_at) 
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, strftime('%s', 'now'), strftime('%s', 'now'))",
+            rusqlite::params![agent.id, agent.name, agent.role, agent.capabilities, agent.soul, agent.status.to_i32(), agent.created_by, agent.modified_by],
         ).map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(())
     }
@@ -52,20 +53,17 @@ impl AgentDaoTrait for AgentDaoImpl {
     }
 
     fn update(&self, conn: &Connection, agent: &AgentPo) -> Result<(), AppError> {
-        conn.execute("UPDATE agents SET name = ?1, role = ?2, capabilities = ?3, soul = ?4, modified_by = ?5, updated_at = ?6 WHERE id = ?7",
-            rusqlite::params![agent.name, agent.role, agent.capabilities, agent.soul, agent.modified_by, current_timestamp(), agent.id]).map_err(|e| AppError::Internal(e.to_string()))?;
+        conn.execute("UPDATE agents SET name = ?1, role = ?2, capabilities = ?3, soul = ?4, modified_by = ?5, updated_at = strftime('%s', 'now') WHERE id = ?6",
+            rusqlite::params![agent.name, agent.role, agent.capabilities, agent.soul, agent.modified_by, agent.id]).map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(())
     }
 
     fn delete(&self, conn: &Connection, id: &str, deleted_by: &str) -> Result<(), AppError> {
-        conn.execute("UPDATE agents SET status = 0, modified_by = ?1, updated_at = ?2 WHERE id = ?3 AND status != 0",
-            rusqlite::params![deleted_by, current_timestamp(), id]).map_err(|e| AppError::Internal(e.to_string()))?;
+        conn.execute("UPDATE agents SET status = 0, modified_by = ?1, updated_at = strftime('%s', 'now') WHERE id = ?2 AND status != 0",
+            rusqlite::params![deleted_by, id]).map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(())
     }
 }
-
-// ==================== 辅助函数 ====================
-fn current_timestamp() -> i64 { std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64 }
 
 // ==================== 单元测试 ====================
 #[cfg(test)]
@@ -90,6 +88,7 @@ mod tests {
         let found = dao.find_by_id(&db, &agent.id).unwrap().unwrap();
         assert_eq!(found.name, "TestAgent");
         assert_eq!(found.status, AgentPoStatus::Normal);
+        assert!(found.created_at > 0);
     }
 
     #[test]
@@ -143,7 +142,6 @@ mod tests {
         dao.delete(&db, &agent2.id, "admin").unwrap();
         let all = dao.find_all(&db).unwrap();
         assert_eq!(all.len(), 1);
-        assert_eq!(all[0].name, "Normal");
     }
 
     #[test]

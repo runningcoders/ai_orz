@@ -25,8 +25,9 @@ impl OrganizationDaoImpl {
 impl OrganizationDaoTrait for OrganizationDaoImpl {
     fn insert(&self, conn: &Connection, org: &OrganizationPo) -> Result<(), AppError> {
         conn.execute(
-            "INSERT INTO organizations (id, name, description, status, created_by, modified_by, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            rusqlite::params![org.id, org.name, org.description, org.status, org.created_by, org.modified_by, org.created_at, org.updated_at],
+            "INSERT INTO organizations (id, name, description, status, created_by, modified_by, created_at, updated_at) 
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, strftime('%s', 'now'), strftime('%s', 'now'))",
+            rusqlite::params![org.id, org.name, org.description, org.status, org.created_by, org.modified_by],
         ).map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(())
     }
@@ -51,17 +52,14 @@ impl OrganizationDaoTrait for OrganizationDaoImpl {
     }
 
     fn update(&self, conn: &Connection, org: &OrganizationPo) -> Result<(), AppError> {
-        conn.execute("UPDATE organizations SET name = ?1, description = ?2, modified_by = ?3, updated_at = ?4 WHERE id = ?5",
-            rusqlite::params![org.name, org.description, org.modified_by, current_timestamp(), org.id]).map_err(|e| AppError::Internal(e.to_string()))?;
+        conn.execute("UPDATE organizations SET name = ?1, description = ?2, modified_by = ?3, updated_at = strftime('%s', 'now') WHERE id = ?4",
+            rusqlite::params![org.name, org.description, org.modified_by, org.id]).map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(())
     }
 
     fn delete(&self, conn: &Connection, id: &str, deleted_by: &str) -> Result<(), AppError> {
-        conn.execute("UPDATE organizations SET status = 0, modified_by = ?1, updated_at = ?2 WHERE id = ?3 AND status != 0",
-            rusqlite::params![deleted_by, current_timestamp(), id]).map_err(|e| AppError::Internal(e.to_string()))?;
+        conn.execute("UPDATE organizations SET status = 0, modified_by = ?1, updated_at = strftime('%s', 'now') WHERE id = ?2 AND status != 0",
+            rusqlite::params![deleted_by, id]).map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(())
     }
 }
-
-// ==================== 辅助函数 ====================
-fn current_timestamp() -> i64 { std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64 }

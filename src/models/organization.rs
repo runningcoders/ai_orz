@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 ///     status INTEGER NOT NULL DEFAULT 1,        -- 0=已删除, 1=正常
 ///     created_by TEXT NOT NULL DEFAULT '',
 ///     modified_by TEXT NOT NULL DEFAULT '',
-///     created_at INTEGER NOT NULL,
-///     updated_at INTEGER NOT NULL
+///     created_at INTEGER NOT NULL,              -- 数据库自动设置 CURRENT_TIMESTAMP
+///     updated_at INTEGER NOT NULL              -- 数据库自动设置 CURRENT_TIMESTAMP
 /// );
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,13 +23,12 @@ pub struct OrganizationPo {
     pub status: i32,          // 0=已删除, 1=正常
     pub created_by: String,
     pub modified_by: String,
-    pub created_at: i64,
-    pub updated_at: i64,
+    pub created_at: i64,     // 数据库自动设置
+    pub updated_at: i64,     // 数据库自动设置
 }
 
 impl OrganizationPo {
     pub fn new(name: String, description: String, created_by: String) -> Self {
-        let now = current_timestamp();
         Self {
             id: generate_id(),
             name,
@@ -37,17 +36,10 @@ impl OrganizationPo {
             status: 1,
             created_by: created_by.clone(),
             modified_by: created_by,
-            created_at: now,
-            updated_at: now,
+            created_at: 0,  // 数据库自动设置
+            updated_at: 0,  // 数据库自动设置
         }
     }
-}
-
-fn current_timestamp() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64
 }
 
 fn generate_id() -> String {
