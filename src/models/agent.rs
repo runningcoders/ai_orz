@@ -25,7 +25,7 @@ pub struct AgentPo {
     pub role: String,
     pub capabilities: String,        // JSON string, 存储 Vec<String>
     pub soul: String,                // 长文本，Agent 性格描述
-    pub status: AgentPoStatus,       // 软删除状态
+    pub status: AgentPoStatus,      // 软删除状态
     pub created_by: String,          // 创建者
     pub modified_by: String,         // 修改者
     pub created_at: i64,
@@ -75,7 +75,36 @@ fn current_timestamp() -> i64 {
         .as_secs() as i64
 }
 
+/// 生成唯一 ID（时间戳 + 随机数，24位十六进制）
 fn generate_id() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    format!("{:x}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos())
+    
+    // 时间戳部分（16位十六进制）
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    
+    // 随机部分（8位十六进制）
+    let random = rand_u32();
+    
+    format!("{:016x}{:08x}", timestamp, random)
+}
+
+/// 生成随机 u32
+fn rand_u32() -> u32 {
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hash, Hasher};
+    use std::time::{SystemTime, UNIX_EPOCH};
+    
+    let state = RandomState::new();
+    let mut hasher = state.build_hasher();
+    SystemTime::now().hash(&mut hasher);
+    std::process::id().hash(&mut hasher);
+    
+    let time2 = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos() as u32;
+    time2.wrapping_add(hasher.finish() as u32)
 }
