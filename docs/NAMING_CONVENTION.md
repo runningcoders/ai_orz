@@ -146,15 +146,15 @@ let conn = &db.conn;
 
 ```rust
 // ✅ snake_case.rs
-agent.rs           // Agent 相关
-agent_sqlite.rs    // Agent SQLite 实现
-org_dao.rs         // Organization DAO
-request_context.rs // 请求上下文
+// 文件名与内部类型对应（文件名全小写 + 下划线）
+agent.rs              // 对应 mod agent
+agent_sqlite.rs      // 对应 AgentDao 等
+request_context.rs   // 对应 RequestContext
 
-// ❌ 错误
-agentDao.rs
-RequestContext.rs
-AgentDao.rs
+// ❌ 错误（直接拼接）
+agentdao.rs
+userid.rs
+createagent.rs
 ```
 
 ### 5.2 模块目录
@@ -180,10 +180,6 @@ service/
 struct AgentPo { ... }
 struct RequestContext { ... }
 enum AgentPoStatus { ... }
-
-// ❌ 错误
-struct agent_po { ... }
-struct request_context { ... }
 ```
 
 ### 6.2 Trait
@@ -216,7 +212,7 @@ pub mod http_header {
 | `newAgent()`, `createAgent()` | `new_agent()`, `create_agent()` |
 | `getUserById()` | `get_user_by_id()` |
 | `agentDAO`, `OrgDAO` | `agent_dao`, `org_dao` |
-| `RequestContext`, `agentPo` | `RequestContext`（PascalCase 正确）, `AgentPo` |
+| `agentPo`, `requestContext` | `AgentPo`, `request_context`（文件） |
 | `maxSize`, `logId` | `max_size`, `log_id` |
 | `ctxWithUser` | `ctx_with_user` |
 
