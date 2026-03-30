@@ -134,8 +134,8 @@ use std::sync::OnceLock;
 
 static AGENT_DAO: OnceLock<Arc<dyn AgentDaoTrait>> = OnceLock::new();
 
-/// 获取 AgentDao 单例（线程安全）
-pub fn get_agent_dao() -> Arc<dyn AgentDaoTrait> {
+/// 获取 AgentDao 单例
+pub fn agent_dao() -> Arc<dyn AgentDaoTrait> {
     AGENT_DAO.get().cloned().unwrap()
 }
 
@@ -187,7 +187,7 @@ mod tests {
     fn test_insert_and_find_by_id() {
         init_dao_for_test();
         let db = new_test_db();
-        let dao = get_agent_dao();
+        let dao = agent_dao();
 
         let agent = AgentPo::new(
             "TestAgent".to_string(),
@@ -208,7 +208,7 @@ mod tests {
     fn test_find_all() {
         init_dao_for_test();
         let db = new_test_db();
-        let dao = get_agent_dao();
+        let dao = agent_dao();
 
         for i in 0..3 {
             let agent = AgentPo::new(
@@ -229,7 +229,7 @@ mod tests {
     fn test_update() {
         init_dao_for_test();
         let db = new_test_db();
-        let dao = get_agent_dao();
+        let dao = agent_dao();
 
         let agent = AgentPo::new(
             "Original".to_string(),
@@ -253,7 +253,7 @@ mod tests {
     fn test_soft_delete() {
         init_dao_for_test();
         let db = new_test_db();
-        let dao = get_agent_dao();
+        let dao = agent_dao();
 
         let agent = AgentPo::new(
             "ToDelete".to_string(),
@@ -272,7 +272,7 @@ mod tests {
     fn test_find_all_excludes_deleted() {
         init_dao_for_test();
         let db = new_test_db();
-        let dao = get_agent_dao();
+        let dao = agent_dao();
 
         let agent1 = AgentPo::new("Normal".to_string(), "w".to_string(), vec![], "".to_string(), "admin".to_string());
         let agent2 = AgentPo::new("Deleted".to_string(), "w".to_string(), vec![], "".to_string(), "admin".to_string());
@@ -289,7 +289,7 @@ mod tests {
     fn test_delete_twice_is_idempotent() {
         init_dao_for_test();
         let db = new_test_db();
-        let dao = get_agent_dao();
+        let dao = agent_dao();
 
         let agent = AgentPo::new("Test".to_string(), "w".to_string(), vec![], "".to_string(), "admin".to_string());
         dao.insert(&db, &agent).unwrap();
@@ -304,7 +304,7 @@ mod tests {
     fn test_find_not_exists() {
         init_dao_for_test();
         let db = new_test_db();
-        let dao = get_agent_dao();
+        let dao = agent_dao();
 
         let found = dao.find_by_id(&db, "not-exists").unwrap();
         assert!(found.is_none());
