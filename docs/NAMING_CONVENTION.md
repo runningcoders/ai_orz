@@ -254,7 +254,65 @@ fn uname(&self) -> String     // 获取用户名
 fn log_id(&self) -> &str      // 获取日志 ID
 ```
 
-## 10. 本项目检查清单
+## 10. Context 传递规范 ⭐
+
+### 10.1 核心原则
+
+**service 层所有对外暴露的方法，都必须传递 RequestContext 参数，保证链路完整性。**
+
+### 10.2 规则
+
+1. **所有接口方法第一个参数必须是 `ctx: RequestContext`**
+2. **删除 `deleted_by` 等用户相关参数**，从 `ctx.uid()` 获取
+3. **只在必要时传递 Context**，内部私有方法可省略
+4. **只读操作也传递 Context**，便于日志记录
+
+### 10.3 示例
+
+```rust
+// ✅ 正确：接口包含 ctx
+pub trait AgentDaoTrait: Send + Sync {
+    fn insert(&self, ctx: RequestContext, conn: &Connection, agent: &AgentPo) -> Result<(), AppError>;
+    fn find_by_id(&self, ctx: RequestContext, conn: &Connection, id: &str) -> Result<Option<AgentPo>, AppError>;
+    fn update(&self, ctx: RequestContext, conn: &Connection, agent: &AgentPo) -> Result<(), AppError>;
+    fn delete(&self, ctx: RequestContext, conn: &Connection, id: &str) -> Result<(), AppError>;
+}
+
+// ✅ 正确：从 context 获取用户信息
+fn delete(&self, ctx: RequestContext, conn: &Connection, id: &str) -> Result<(), AppError> {
+    // deleted_by 从 ctx 获取，不再作为参数
+    conn.execute("UPDATE ... SET modified_by = ?1 ...", rusqlite::params![ctx.uid()])
+}
+
+// ❌ 错误：用户信息作为单独参数
+fn delete(&self, conn: &Connection, id: &str, deleted_by: &str) -> Result<(), AppError>
+```
+
+### 10.4 Context 获取用户信息
+
+```rust
+ctx.uid()      // 获取用户 ID，未登录返回 ""
+ctx.uname()    // 获取用户名，未登录返回 ""
+ctx.log_id     // 获取日志 ID
+```
+
+### 10.5 调用链路
+
+```
+HTTP Request
+    ↓
+Handler（从 header 提取 ctx）
+    ↓
+Domain（传递 ctx）
+    ↓
+DAL（传递 ctx）
+    ↓
+DAO（传递 ctx，可记录日志）
+    ↓
+Database
+```
+
+## 11. 本项目检查清单
 
 - [ ] 变量名使用 snake_case
 - [ ] 函数名使用 snake_case
@@ -264,3 +322,4 @@ fn log_id(&self) -> &str      // 获取日志 ID
 - [ ] 避免直接拼接两个单词（用下划线）
 - [ ] 布尔变量用 is_/has_/can_ 前缀
 - [ ] 只读方法返回值而非 &T（除非需要引用）
+- [ ] service 层方法必须传递 RequestContext

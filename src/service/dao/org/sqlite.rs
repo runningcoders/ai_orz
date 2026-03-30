@@ -2,11 +2,13 @@
 
 use crate::error::AppError;
 use crate::models::organization::OrganizationPo;
+use crate::pkg::RequestContext;
 use crate::service::dao::org::OrganizationDaoTrait;
 use rusqlite::Connection;
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例 ====================
+
 static ORG_DAO: OnceLock<Arc<dyn OrganizationDaoTrait>> = OnceLock::new();
 
 /// 获取 OrganizationDao 单例
@@ -20,6 +22,7 @@ pub fn init() {
 }
 
 // ==================== 实现 ====================
+
 struct OrganizationDaoImpl;
 
 impl OrganizationDaoImpl {
@@ -29,17 +32,41 @@ impl OrganizationDaoImpl {
 }
 
 impl OrganizationDaoTrait for OrganizationDaoImpl {
-    fn insert(&self, conn: &Connection, org: &OrganizationPo) -> Result<(), AppError> {
+    fn insert(
+        &self,
+        ctx: RequestContext,
+        conn: &Connection,
+        org: &OrganizationPo,
+    ) -> Result<(), AppError> {
         conn.execute(
             "INSERT INTO organizations (id, name, description, status, created_by, modified_by, created_at, updated_at) 
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, strftime('%s', 'now'), strftime('%s', 'now'))",
-            rusqlite::params![org.id, org.name, org.description, org.status, org.created_by, org.modified_by],
-        ).map_err(|e| AppError::Internal(e.to_string()))?;
+            rusqlite::params![
+                org.id,
+                org.name,
+                org.description,
+                org.status,
+                ctx.uid(),
+                ctx.uid(),
+            ],
+        )
+        .map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(())
     }
 
-    fn find_by_id(&self, conn: &Connection, id: &str) -> Result<Option<OrganizationPo>, AppError> {
-        let mut stmt = conn.prepare("SELECT id, name, description, status, created_by, modified_by, created_at, updated_at FROM organizations WHERE id = ?1 AND status != 0").map_err(|e| AppError::Internal(e.to_string()))?;
+    fn find_by_id(
+        &self,
+        _ctx: RequestContext,
+        conn: &Connection,
+        id: &str,
+    ) -> Result<Option<OrganizationPo>, AppError> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, name, description, status, created_by, modified_by, created_at, updated_at 
+                 FROM organizations WHERE id = ?1 AND status != 0",
+            )
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+
         match stmt.query_row([id], |row| {
             Ok(OrganizationPo {
                 id: row.get(0)?,
@@ -58,8 +85,18 @@ impl OrganizationDaoTrait for OrganizationDaoImpl {
         }
     }
 
-    fn find_all(&self, conn: &Connection) -> Result<Vec<OrganizationPo>, AppError> {
-        let mut stmt = conn.prepare("SELECT id, name, description, status, created_by, modified_by, created_at, updated_at FROM organizations WHERE status != 0 ORDER BY id DESC").map_err(|e| AppError::Internal(e.to_string()))?;
+    fn find_all(
+        &self,
+        _ctx: RequestContext,
+        conn: &Connection,
+    ) -> Result<Vec<OrganizationPo>, AppError> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, name, description, status, created_by, modified_by, created_at, updated_at 
+                 FROM organizations WHERE status != 0 ORDER BY id DESC",
+            )
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+
         let orgs = stmt
             .query_map([], |row| {
                 Ok(OrganizationPo {
@@ -76,18 +113,35 @@ impl OrganizationDaoTrait for OrganizationDaoImpl {
             .map_err(|e| AppError::Internal(e.to_string()))?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| AppError::Internal(e.to_string()))?;
+
         Ok(orgs)
     }
 
-    fn update(&self, conn: &Connection, org: &OrganizationPo) -> Result<(), AppError> {
-        conn.execute("UPDATE organizations SET name = ?1, description = ?2, modified_by = ?3, updated_at = strftime('%s', 'now') WHERE id = ?4",
-            rusqlite::params![org.name, org.description, org.modified_by, org.id]).map_err(|e| AppError::Internal(e.to_string()))?;
+    fn update(
+        &self,
+        ctx: RequestContext,
+        conn: &Connection,
+        org: &OrganizationPo,
+    ) -> Result<(), AppError> {
+        conn.execute(
+            "UPDATE organizations SET name = ?1, description = ?2, modified_by = ?3, updated_at = strftime('%s', 'now') WHERE id = ?4",
+            rusqlite::params![
+                org.name,
+                org.description,
+                ctx.uid(),
+                org.id,
+            ],
+        )
+        .map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(())
     }
 
-    fn delete(&self, conn: &Connection, id: &str, deleted_by: &str) -> Result<(), AppError> {
-        conn.execute("UPDATE organizations SET status = 0, modified_by = ?1, updated_at = strftime('%s', 'now') WHERE id = ?2 AND status != 0",
-            rusqlite::params![deleted_by, id]).map_err(|e| AppError::Internal(e.to_string()))?;
+    fn delete(&self, ctx: RequestContext, conn: &Connection, id: &str) -> Result<(), AppError> {
+        conn.execute(
+            "UPDATE organizations SET status = 0, modified_by = ?1, updated_at = strftime('%s', 'now') WHERE id = ?2 AND status != 0",
+            rusqlite::params![ctx.uid(), id],
+        )
+        .map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(())
     }
 }

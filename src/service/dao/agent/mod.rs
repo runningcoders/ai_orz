@@ -2,15 +2,31 @@
 
 use crate::error::AppError;
 use crate::models::agent::AgentPo;
+use crate::pkg::RequestContext;
 use rusqlite::Connection;
 
 /// Agent DAO 接口
 pub trait AgentDaoTrait: Send + Sync {
-    fn insert(&self, conn: &Connection, agent: &AgentPo) -> Result<(), AppError>;
-    fn find_by_id(&self, conn: &Connection, id: &str) -> Result<Option<AgentPo>, AppError>;
-    fn find_all(&self, conn: &Connection) -> Result<Vec<AgentPo>, AppError>;
-    fn update(&self, conn: &Connection, agent: &AgentPo) -> Result<(), AppError>;
-    fn delete(&self, conn: &Connection, id: &str, deleted_by: &str) -> Result<(), AppError>;
+    fn insert(
+        &self,
+        ctx: RequestContext,
+        conn: &Connection,
+        agent: &AgentPo,
+    ) -> Result<(), AppError>;
+    fn find_by_id(
+        &self,
+        ctx: RequestContext,
+        conn: &Connection,
+        id: &str,
+    ) -> Result<Option<AgentPo>, AppError>;
+    fn find_all(&self, ctx: RequestContext, conn: &Connection) -> Result<Vec<AgentPo>, AppError>;
+    fn update(
+        &self,
+        ctx: RequestContext,
+        conn: &Connection,
+        agent: &AgentPo,
+    ) -> Result<(), AppError>;
+    fn delete(&self, ctx: RequestContext, conn: &Connection, id: &str) -> Result<(), AppError>;
 }
 
 pub mod sqlite;

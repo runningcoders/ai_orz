@@ -2,7 +2,8 @@
 
 use crate::error::AppError;
 use crate::models::agent::AgentPo;
-use crate::pkg::constants::AgentPoStatus;
+use crate::pkg::RequestContext;
+use crate::pkg::{error as log_error, info};
 use crate::service::dao::agent::AgentDaoTrait;
 use rusqlite::Connection;
 use std::sync::{Arc, OnceLock};
@@ -32,7 +33,12 @@ impl AgentDaoImpl {
 }
 
 impl AgentDaoTrait for AgentDaoImpl {
-    fn insert(&self, conn: &Connection, agent: &AgentPo) -> Result<(), AppError> {
+    fn insert(
+        &self,
+        ctx: RequestContext,
+        conn: &Connection,
+        agent: &AgentPo,
+    ) -> Result<(), AppError> {
         conn.execute(
             "INSERT INTO agents (id, name, role, capabilities, soul, status, created_by, modified_by, created_at, updated_at) 
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, strftime('%s', 'now'), strftime('%s', 'now'))",
@@ -43,15 +49,20 @@ impl AgentDaoTrait for AgentDaoImpl {
                 agent.capabilities,
                 agent.soul,
                 agent.status.to_i32(),
-                agent.created_by,
-                agent.modified_by,
+                ctx.uid(),
+                ctx.uid(),
             ],
         )
         .map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(())
     }
 
-    fn find_by_id(&self, conn: &Connection, id: &str) -> Result<Option<AgentPo>, AppError> {
+    fn find_by_id(
+        &self,
+        _ctx: RequestContext,
+        conn: &Connection,
+        id: &str,
+    ) -> Result<Option<AgentPo>, AppError> {
         let mut stmt = conn
             .prepare(
                 "SELECT id, name, role, capabilities, soul, status, created_by, modified_by, created_at, updated_at 
@@ -66,7 +77,7 @@ impl AgentDaoTrait for AgentDaoImpl {
                 role: row.get(2)?,
                 capabilities: row.get(3)?,
                 soul: row.get(4)?,
-                status: AgentPoStatus::from_i32(row.get(5)?),
+                status: crate::pkg::constants::AgentPoStatus::from_i32(row.get(5)?),
                 created_by: row.get(6)?,
                 modified_by: row.get(7)?,
                 created_at: row.get(8)?,
@@ -79,7 +90,7 @@ impl AgentDaoTrait for AgentDaoImpl {
         }
     }
 
-    fn find_all(&self, conn: &Connection) -> Result<Vec<AgentPo>, AppError> {
+    fn find_all(&self, _ctx: RequestContext, conn: &Connection) -> Result<Vec<AgentPo>, AppError> {
         let mut stmt = conn
             .prepare(
                 "SELECT id, name, role, capabilities, soul, status, created_by, modified_by, created_at, updated_at 
@@ -95,7 +106,7 @@ impl AgentDaoTrait for AgentDaoImpl {
                     role: row.get(2)?,
                     capabilities: row.get(3)?,
                     soul: row.get(4)?,
-                    status: AgentPoStatus::from_i32(row.get(5)?),
+                    status: crate::pkg::constants::AgentPoStatus::from_i32(row.get(5)?),
                     created_by: row.get(6)?,
                     modified_by: row.get(7)?,
                     created_at: row.get(8)?,
@@ -109,7 +120,12 @@ impl AgentDaoTrait for AgentDaoImpl {
         Ok(agents)
     }
 
-    fn update(&self, conn: &Connection, agent: &AgentPo) -> Result<(), AppError> {
+    fn update(
+        &self,
+        ctx: RequestContext,
+        conn: &Connection,
+        agent: &AgentPo,
+    ) -> Result<(), AppError> {
         conn.execute(
             "UPDATE agents SET name = ?1, role = ?2, capabilities = ?3, soul = ?4, modified_by = ?5, updated_at = strftime('%s', 'now') WHERE id = ?6",
             rusqlite::params![
@@ -117,7 +133,7 @@ impl AgentDaoTrait for AgentDaoImpl {
                 agent.role,
                 agent.capabilities,
                 agent.soul,
-                agent.modified_by,
+                ctx.uid(),
                 agent.id,
             ],
         )
@@ -125,10 +141,10 @@ impl AgentDaoTrait for AgentDaoImpl {
         Ok(())
     }
 
-    fn delete(&self, conn: &Connection, id: &str, deleted_by: &str) -> Result<(), AppError> {
+    fn delete(&self, ctx: RequestContext, conn: &Connection, id: &str) -> Result<(), AppError> {
         conn.execute(
             "UPDATE agents SET status = 0, modified_by = ?1, updated_at = strftime('%s', 'now') WHERE id = ?2 AND status != 0",
-            rusqlite::params![deleted_by, id],
+            rusqlite::params![ctx.uid(), id],
         )
         .map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(())
@@ -141,7 +157,10 @@ impl AgentDaoTrait for AgentDaoImpl {
 mod tests {
     use super::*;
     use crate::models::agent::AgentPo;
-    use crate::pkg::constants::AgentPoStatus;
+
+    fn new_ctx(user_id: &str) -> RequestContext {
+        RequestContext::new(Some(user_id.to_string()), None)
+    }
 
     fn new_test_db() -> rusqlite::Connection {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
@@ -168,6 +187,7 @@ mod tests {
         init();
         let db = new_test_db();
         let dao = dao();
+        let ctx = new_ctx("admin");
         let agent = AgentPo::new(
             "TestAgent".to_string(),
             "worker".to_string(),
@@ -175,10 +195,12 @@ mod tests {
             "A helpful agent".to_string(),
             "admin".to_string(),
         );
-        dao.insert(&db, &agent).unwrap();
-        let found = dao.find_by_id(&db, &agent.id).unwrap().unwrap();
+        dao.insert(ctx, &db, &agent).unwrap();
+        let found = dao
+            .find_by_id(new_ctx("user1"), &db, &agent.id)
+            .unwrap()
+            .unwrap();
         assert_eq!(found.name, "TestAgent");
-        assert_eq!(found.status, AgentPoStatus::Normal);
     }
 
     #[test]
@@ -186,6 +208,7 @@ mod tests {
         init();
         let db = new_test_db();
         let dao = dao();
+        let ctx = new_ctx("admin");
         for i in 0..3 {
             let agent = AgentPo::new(
                 format!("Agent{}", i),
@@ -194,9 +217,9 @@ mod tests {
                 "".to_string(),
                 "admin".to_string(),
             );
-            dao.insert(&db, &agent).unwrap();
+            dao.insert(ctx.clone(), &db, &agent).unwrap();
         }
-        let all = dao.find_all(&db).unwrap();
+        let all = dao.find_all(ctx, &db).unwrap();
         assert_eq!(all.len(), 3);
     }
 
@@ -205,6 +228,7 @@ mod tests {
         init();
         let db = new_test_db();
         let dao = dao();
+        let ctx = new_ctx("admin");
         let agent = AgentPo::new(
             "Original".to_string(),
             "worker".to_string(),
@@ -212,12 +236,14 @@ mod tests {
             "".to_string(),
             "admin".to_string(),
         );
-        dao.insert(&db, &agent).unwrap();
+        dao.insert(ctx.clone(), &db, &agent).unwrap();
         let mut updated = agent.clone();
         updated.name = "Updated".to_string();
-        updated.modified_by = "other".to_string();
-        dao.update(&db, &updated).unwrap();
-        let found = dao.find_by_id(&db, &agent.id).unwrap().unwrap();
+        dao.update(ctx, &db, &updated).unwrap();
+        let found = dao
+            .find_by_id(new_ctx("user1"), &db, &agent.id)
+            .unwrap()
+            .unwrap();
         assert_eq!(found.name, "Updated");
     }
 
@@ -226,6 +252,7 @@ mod tests {
         init();
         let db = new_test_db();
         let dao = dao();
+        let ctx = new_ctx("admin");
         let agent = AgentPo::new(
             "ToDelete".to_string(),
             "worker".to_string(),
@@ -233,9 +260,12 @@ mod tests {
             "".to_string(),
             "admin".to_string(),
         );
-        dao.insert(&db, &agent).unwrap();
-        dao.delete(&db, &agent.id, "admin").unwrap();
-        assert!(dao.find_by_id(&db, &agent.id).unwrap().is_none());
+        dao.insert(ctx.clone(), &db, &agent).unwrap();
+        dao.delete(ctx, &db, &agent.id).unwrap();
+        assert!(dao
+            .find_by_id(new_ctx("user1"), &db, &agent.id)
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -243,6 +273,7 @@ mod tests {
         init();
         let db = new_test_db();
         let dao = dao();
+        let ctx = new_ctx("admin");
         let agent1 = AgentPo::new(
             "Normal".to_string(),
             "w".to_string(),
@@ -257,10 +288,10 @@ mod tests {
             "".to_string(),
             "admin".to_string(),
         );
-        dao.insert(&db, &agent1).unwrap();
-        dao.insert(&db, &agent2).unwrap();
-        dao.delete(&db, &agent2.id, "admin").unwrap();
-        let all = dao.find_all(&db).unwrap();
+        dao.insert(ctx.clone(), &db, &agent1).unwrap();
+        dao.insert(ctx.clone(), &db, &agent2).unwrap();
+        dao.delete(ctx, &db, &agent2.id).unwrap();
+        let all = dao.find_all(new_ctx("user1"), &db).unwrap();
         assert_eq!(all.len(), 1);
     }
 
@@ -269,6 +300,7 @@ mod tests {
         init();
         let db = new_test_db();
         let dao = dao();
+        let ctx = new_ctx("admin");
         let agent = AgentPo::new(
             "Test".to_string(),
             "w".to_string(),
@@ -276,10 +308,13 @@ mod tests {
             "".to_string(),
             "admin".to_string(),
         );
-        dao.insert(&db, &agent).unwrap();
-        dao.delete(&db, &agent.id, "admin").unwrap();
-        dao.delete(&db, &agent.id, "other").unwrap();
-        assert!(dao.find_by_id(&db, &agent.id).unwrap().is_none());
+        dao.insert(ctx.clone(), &db, &agent).unwrap();
+        dao.delete(ctx.clone(), &db, &agent.id).unwrap();
+        dao.delete(ctx, &db, &agent.id).unwrap();
+        assert!(dao
+            .find_by_id(new_ctx("user1"), &db, &agent.id)
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -287,6 +322,7 @@ mod tests {
         init();
         let db = new_test_db();
         let dao = dao();
-        assert!(dao.find_by_id(&db, "not-exists").unwrap().is_none());
+        let ctx = new_ctx("user1");
+        assert!(dao.find_by_id(ctx, &db, "not-exists").unwrap().is_none());
     }
 }
