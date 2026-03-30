@@ -109,24 +109,90 @@ ai_orz/
 
 ## 5. 各层职责
 
-| 层 | 位置 | 职责 | 与其他层关系 |
+| 层 | 位置 | 职责 | 调用关系 |
 |---|---|---|---|
 | **Handler** | `handlers/` | 接收请求，返回响应 | 调用 domain |
-| **Domain** | `service/domain/` | 核心业务逻辑、领域规则 | 调用 dal |
-| **DAL** | `service/dal/` | 具体业务（如组合多个 dao） | 调用 dao |
-| **DAO** | `service/dao/` | 数据库 CRUD，操作 models | 读写 models |
-| **Model** | `models/` | 实体定义，数据库映射 | 被 dao 使用 |
+| **Domain** | `service/domain/` | 抽象业务逻辑、领域规则、调度 dal | 调用 dal |
+| **DAL** | `service/dal/` | 具体业务逻辑，组合 dao/远程接口 | 调用 dao |
+| **DAO** | `service/dao/` | 数据增删查改，操作 models | 被 dal 调用 |
+| **Model** | `models/` | 实体定义，被各层广泛使用 | 被 dao 使用 |
 | **PKG** | `pkg/` | 存储驱动、工具函数 | 被 dao/handler 引用 |
 
 ---
 
-## 6. models 层说明 ★
+## 6. Service 三层详解 ★
 
-`models/` 是项目的**实体模型层**，定义与数据库表对应的结构体：
+### Domain 层（领域层）
+- **职责**：核心业务逻辑、领域规则、调度 dal 组织业务
+- **特点**：
+  - 最接近业务本质
+  - 不直接操作数据库
+  - 编排 dal 完成业务
+  - 可被多个 handler 复用
+
+```rust
+// domain 层示例
+pub struct AgentDomain;
+
+impl AgentDomain {
+    pub async fn create(cmd: CreateAgentCmd) -> Result<Agent> {
+        // 校验业务规则
+        // 调用 dal 执行具体业务
+        AgentDal::create(cmd).await
+    }
+}
+```
+
+### DAL 层（具体业务层）
+- **职责**：具体业务逻辑，组合 dao/外部服务
+- **特点**：
+  - 面向特定业务场景
+  - 可组合多个 dao
+  - 可调用外部 API
+  - 事务边界
+
+```rust
+// dal 层示例
+pub struct AgentDal;
+
+impl AgentDal {
+    pub async fn create(cmd: CreateAgentCmd) -> Result<Agent> {
+        // 调用 dao 持久化
+        AgentDao::insert(&agent)?;
+        // 发送通知等
+        Ok(agent)
+    }
+}
+```
+
+### DAO 层（数据层）
+- **职责**：数据增删查改，与 models 映射
+- **特点**：
+  - 最底层的数据访问
+  - 只做数据操作，不含业务逻辑
+  - 操作 models 与数据库转换
+
+```rust
+// dao 层示例
+pub struct AgentDao;
+
+impl AgentDao {
+    pub fn insert(conn: &Connection, agent: &Agent) -> Result<()> { ... }
+    pub fn find_by_id(conn: &Connection, id: &str) -> Result<Option<Agent>> { ... }
+    pub fn update(conn: &Connection, agent: &Agent) -> Result<()> { ... }
+    pub fn delete(conn: &Connection, id: &str) -> Result<()> { ... }
+}
+```
+
+---
+
+## 7. Models 层说明 ★
+
+`models/` 是项目的**实体模型层**，被 service 三层广泛使用：
 
 ```rust
 // models/agent.rs
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Agent {
     pub id: String,
     pub name: String,
@@ -139,27 +205,10 @@ pub struct Agent {
 ```
 
 **特点：**
-- 被 `dao/` 层直接使用
+- 被 domain/dal/dao 各层使用
 - 实现数据库与实体对象的转换
-- 不包含业务逻辑，只做数据表示
-
----
-
-## 7. DAO 层说明
-
-`dao/` 负责数据库的增删查改，直接操作 models：
-
-```rust
-// service/dao/agent_dao.rs
-pub struct AgentDao;
-
-impl AgentDao {
-    pub fn insert(conn: &Connection, agent: &Agent) -> Result<()> { ... }
-    pub fn find_by_id(conn: &Connection, id: &str) -> Result<Option<Agent>> { ... }
-    pub fn update(conn: &Connection, agent: &Agent) -> Result<()> { ... }
-    pub fn delete(conn: &Connection, id: &str) -> Result<()> { ... }
-}
-```
+- 不包含业务逻辑
+- 可序列化/反序列化
 
 ---
 
@@ -204,9 +253,31 @@ DELETE /api/v1/agents/{id}     # 删除
 
 ---
 
-## 10. 下一步
+## 10. API 设计规范
 
-- [ ] 创建 `models/` 目录，定义实体
-- [ ] 重命名 `service/domain/*.rs` → `service/domain/*_domain.rs`
+### 路由命名
+```
+GET    /api/v1/agents          # 列表
+POST   /api/v1/agents          # 创建
+GET    /api/v1/agents/{id}     # 详情
+PUT    /api/v1/agents/{id}     # 更新
+DELETE /api/v1/agents/{id}     # 删除
+```
+
+### 统一响应格式
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {}
+}
+```
+
+---
+
+## 11. 下一步
+
+- [x] 创建 `models/` 目录，定义实体 ✅
+- [x] 重命名 `service/domain/*.rs` → `service/domain/*_domain.rs` ✅
 - [ ] 配置 SQLite（pkg/storage/）
 - [ ] 实现 Agent DAO + CRUD API
