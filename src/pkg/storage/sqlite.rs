@@ -62,7 +62,10 @@ fn init_tables(conn: &Connection) -> Result<(), String> {
             name TEXT NOT NULL,
             role TEXT NOT NULL DEFAULT '',
             capabilities TEXT NOT NULL DEFAULT '[]',
-            status TEXT NOT NULL DEFAULT 'idle',
+            soul TEXT NOT NULL DEFAULT '',
+            status INTEGER NOT NULL DEFAULT 1,
+            created_by TEXT NOT NULL DEFAULT '',
+            modified_by TEXT NOT NULL DEFAULT '',
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         );
@@ -71,6 +74,9 @@ fn init_tables(conn: &Connection) -> Result<(), String> {
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             description TEXT NOT NULL DEFAULT '',
+            status INTEGER NOT NULL DEFAULT 1,
+            created_by TEXT NOT NULL DEFAULT '',
+            modified_by TEXT NOT NULL DEFAULT '',
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         );
@@ -83,6 +89,8 @@ fn init_tables(conn: &Connection) -> Result<(), String> {
             assigned_to TEXT,
             status TEXT NOT NULL DEFAULT 'pending',
             priority INTEGER NOT NULL DEFAULT 0,
+            created_by TEXT NOT NULL DEFAULT '',
+            modified_by TEXT NOT NULL DEFAULT '',
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         );
