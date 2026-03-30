@@ -1,0 +1,9 @@
+# ai_orz 配置文件
+
+[database]
+type = "sqlite"
+path = "data/ai_orz.db"
+
+[server]
+host = "0.0.0.0"
+port = 3000
