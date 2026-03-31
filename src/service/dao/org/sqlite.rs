@@ -2,9 +2,9 @@
 
 use crate::error::AppError;
 use crate::models::organization::OrganizationPo;
+use crate::pkg::storage;
 use crate::pkg::RequestContext;
 use crate::service::dao::org::OrganizationDaoTrait;
-use rusqlite::Connection;
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例 ====================
@@ -32,22 +32,22 @@ impl OrganizationDaoImpl {
 }
 
 impl OrganizationDaoTrait for OrganizationDaoImpl {
-    fn insert(
-        &self,
-        ctx: RequestContext,
-        conn: &Connection,
-        org: &OrganizationPo,
-    ) -> Result<(), AppError> {
+    fn insert(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<(), AppError> {
+        let conn = storage::get().conn();
+        let now = current_timestamp();
+
         conn.execute(
             "INSERT INTO organizations (id, name, description, status, created_by, modified_by, created_at, updated_at) 
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, strftime('%s', 'now'), strftime('%s', 'now'))",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             rusqlite::params![
                 org.id,
                 org.name,
                 org.description,
                 org.status,
-                ctx.uid(),
-                ctx.uid(),
+                ctx.uid(),  // 创建者
+                ctx.uid(),  // 修改者
+                now,
+                now,
             ],
         )
         .map_err(|e| AppError::Internal(e.to_string()))?;
@@ -57,9 +57,10 @@ impl OrganizationDaoTrait for OrganizationDaoImpl {
     fn find_by_id(
         &self,
         _ctx: RequestContext,
-        conn: &Connection,
         id: &str,
     ) -> Result<Option<OrganizationPo>, AppError> {
+        let conn = storage::get().conn();
+
         let mut stmt = conn
             .prepare(
                 "SELECT id, name, description, status, created_by, modified_by, created_at, updated_at 
@@ -85,11 +86,9 @@ impl OrganizationDaoTrait for OrganizationDaoImpl {
         }
     }
 
-    fn find_all(
-        &self,
-        _ctx: RequestContext,
-        conn: &Connection,
-    ) -> Result<Vec<OrganizationPo>, AppError> {
+    fn find_all(&self, _ctx: RequestContext) -> Result<Vec<OrganizationPo>, AppError> {
+        let conn = storage::get().conn();
+
         let mut stmt = conn
             .prepare(
                 "SELECT id, name, description, status, created_by, modified_by, created_at, updated_at 
@@ -117,18 +116,16 @@ impl OrganizationDaoTrait for OrganizationDaoImpl {
         Ok(orgs)
     }
 
-    fn update(
-        &self,
-        ctx: RequestContext,
-        conn: &Connection,
-        org: &OrganizationPo,
-    ) -> Result<(), AppError> {
+    fn update(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<(), AppError> {
+        let conn = storage::get().conn();
+
         conn.execute(
-            "UPDATE organizations SET name = ?1, description = ?2, modified_by = ?3, updated_at = strftime('%s', 'now') WHERE id = ?4",
+            "UPDATE organizations SET name = ?1, description = ?2, modified_by = ?3, updated_at = ?4 WHERE id = ?5",
             rusqlite::params![
                 org.name,
                 org.description,
-                ctx.uid(),
+                ctx.uid(),           // 修改者
+                current_timestamp(),
                 org.id,
             ],
         )
@@ -136,12 +133,22 @@ impl OrganizationDaoTrait for OrganizationDaoImpl {
         Ok(())
     }
 
-    fn delete(&self, ctx: RequestContext, conn: &Connection, id: &str) -> Result<(), AppError> {
+    fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
+        let conn = storage::get().conn();
+
         conn.execute(
-            "UPDATE organizations SET status = 0, modified_by = ?1, updated_at = strftime('%s', 'now') WHERE id = ?2 AND status != 0",
-            rusqlite::params![ctx.uid(), id],
+            "UPDATE organizations SET status = 0, modified_by = ?1, updated_at = ?2 WHERE id = ?3 AND status != 0",
+            rusqlite::params![ctx.uid(), current_timestamp(), id],
         )
         .map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(())
     }
+}
+
+fn current_timestamp() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
 }

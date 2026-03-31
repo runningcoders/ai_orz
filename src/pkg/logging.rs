@@ -38,7 +38,7 @@ pub fn info(ctx: RequestContext, operation: &str, msg: &str) {
 }
 
 /// 带上下文记录 error 日志（值传递，只读）
-pub fn error(ctx: RequestContext, operation: &str, msg: &str) {
+pub fn log_error(ctx: RequestContext, operation: &str, msg: &str) {
     let span = create_span(operation, &ctx);
     let _guard = span.enter();
     tracing::error!(msg)
@@ -63,7 +63,7 @@ pub fn debug(ctx: RequestContext, operation: &str, msg: &str) {
 #[cfg(test)]
 mod tests {
     use crate::pkg::RequestContext;
-    use crate::pkg::{debug, error, info, warn};
+    use crate::pkg::{debug, log_error, info, warn};
 
     fn new_ctx() -> RequestContext {
         RequestContext::new(None, None)
@@ -85,7 +85,7 @@ mod tests {
 
     #[test]
     fn test_error_log() {
-        error(new_ctx(), "test_error", "这是一条 error 日志");
+        log_error(new_ctx(), "test_error", "这是一条 error 日志");
     }
 
     #[test]
@@ -202,7 +202,7 @@ mod tests {
     fn test_chinese_message() {
         let ctx = new_ctx();
         info(ctx.clone(), "test", "这是一条中文测试日志消息");
-        error(ctx.clone(), "test", "错误信息：数据库连接失败");
+        log_error(ctx.clone(), "test", "错误信息：数据库连接失败");
         warn(ctx.clone(), "test", "警告：内存使用率超过 80%");
     }
 

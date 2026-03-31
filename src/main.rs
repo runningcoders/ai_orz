@@ -7,14 +7,19 @@ mod service;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt::init();
+    // 初始化日志
+    pkg::logging::init();
 
-    let _db = pkg::storage::init_from_config("ai_orz.toml")?;
-    tracing::info!("Database initialized: data/ai_orz.db");
+    // 初始化存储（从配置文件读取数据库路径）
+    let db_path = "data/ai_orz.db";
+    pkg::storage::init(db_path)?;
+    tracing::info!("Storage initialized: {}", db_path);
 
+    // 初始化 service 层
     service::init();
     tracing::info!("Service layer initialized");
 
+    // 启动服务器
     let app = router::create_router();
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
     tracing::info!("Server listening on 0.0.0.0:3000");

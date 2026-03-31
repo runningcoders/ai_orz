@@ -1,3 +1,5 @@
+//! Agent 实体
+
 use crate::pkg::constants::AgentPoStatus;
 use serde::{Deserialize, Serialize};
 
@@ -14,8 +16,8 @@ use serde::{Deserialize, Serialize};
 ///     status INTEGER NOT NULL DEFAULT 1,        -- 0=已删除, 1=正常
 ///     created_by TEXT NOT NULL DEFAULT '',
 ///     modified_by TEXT NOT NULL DEFAULT '',
-///     created_at INTEGER NOT NULL,              -- 数据库自动设置 CURRENT_TIMESTAMP
-///     updated_at INTEGER NOT NULL              -- 数据库自动设置 CURRENT_TIMESTAMP
+///     created_at INTEGER NOT NULL,
+///     updated_at INTEGER NOT NULL
 /// );
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,10 +28,10 @@ pub struct AgentPo {
     pub capabilities: String,  // JSON string
     pub soul: String,          // 长文本
     pub status: AgentPoStatus, // 软删除状态
-    pub created_by: String,
-    pub modified_by: String,
-    pub created_at: i64, // 数据库自动设置
-    pub updated_at: i64, // 数据库自动设置
+    pub created_by: String,    // 创建者
+    pub modified_by: String,   // 修改者
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 impl AgentPo {
@@ -38,7 +40,7 @@ impl AgentPo {
         role: String,
         capabilities: Vec<String>,
         soul: String,
-        created_by: String,
+        creator: String,
     ) -> Self {
         Self {
             id: generate_id(),
@@ -47,10 +49,10 @@ impl AgentPo {
             capabilities: serde_json::to_string(&capabilities).unwrap_or_else(|_| "[]".to_string()),
             soul,
             status: AgentPoStatus::Normal,
-            created_by: created_by.clone(),
-            modified_by: created_by,
-            created_at: 0, // 数据库自动设置
-            updated_at: 0, // 数据库自动设置
+            created_by: creator.clone(),
+            modified_by: creator,
+            created_at: 0,
+            updated_at: 0,
         }
     }
 

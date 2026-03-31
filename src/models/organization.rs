@@ -1,3 +1,5 @@
+//! Organization 实体
+
 use serde::{Deserialize, Serialize};
 
 /// OrganizationPo 持久化对象
@@ -11,8 +13,8 @@ use serde::{Deserialize, Serialize};
 ///     status INTEGER NOT NULL DEFAULT 1,        -- 0=已删除, 1=正常
 ///     created_by TEXT NOT NULL DEFAULT '',
 ///     modified_by TEXT NOT NULL DEFAULT '',
-///     created_at INTEGER NOT NULL,              -- 数据库自动设置 CURRENT_TIMESTAMP
-///     updated_at INTEGER NOT NULL              -- 数据库自动设置 CURRENT_TIMESTAMP
+///     created_at INTEGER NOT NULL,
+///     updated_at INTEGER NOT NULL
 /// );
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,24 +22,24 @@ pub struct OrganizationPo {
     pub id: String,
     pub name: String,
     pub description: String,
-    pub status: i32, // 0=已删除, 1=正常
-    pub created_by: String,
-    pub modified_by: String,
-    pub created_at: i64, // 数据库自动设置
-    pub updated_at: i64, // 数据库自动设置
+    pub status: i32,         // 0=已删除, 1=正常
+    pub created_by: String,  // 创建者
+    pub modified_by: String, // 修改者
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 impl OrganizationPo {
-    pub fn new(name: String, description: String, created_by: String) -> Self {
+    pub fn new(name: String, description: String, creator: String) -> Self {
         Self {
             id: generate_id(),
             name,
             description,
             status: 1,
-            created_by: created_by.clone(),
-            modified_by: created_by,
-            created_at: 0, // 数据库自动设置
-            updated_at: 0, // 数据库自动设置
+            created_by: creator.clone(),
+            modified_by: creator,
+            created_at: 0,
+            updated_at: 0,
         }
     }
 }
