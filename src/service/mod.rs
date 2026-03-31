@@ -4,12 +4,6 @@ pub mod domain;
 
 // 初始化所有 service 层组件（由 main 调用）
 pub fn init() {
-    // 初始化 DAO 层
+    // 初始化 DAO 层，它会自动初始化 DAL，DAL 会自动初始化 Domain
     dao::init_all();
-
-    // 初始化 DAL 层（依赖 DAO）
-    dal::init_agent_dal(dao::agent_dao());
-
-    // 初始化 Domain 层（依赖 DAL）
-    domain::init_agent_domain(dal::agent_dal());
 }
