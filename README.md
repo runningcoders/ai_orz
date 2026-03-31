@@ -60,6 +60,13 @@ src/
    - `created_by`/`modified_by` 从 `ctx.uid()` 获取
    - 保证链路完整性，便于日志追踪
 
+5. **分层初始化**
+   - `dao::init_all()` 初始化所有 DAO
+   - `dal::init_all()` 初始化所有 DAL（依赖已初始化的 DAO）
+   - `domain::init_all()` 初始化所有 Domain（依赖已初始化的 DAL）
+   - `service::init()` 按顺序调用三层初始化
+   - 每层只负责自己的实例，结构清晰，易于扩展
+
 ## 快速开始
 
 ```bash
