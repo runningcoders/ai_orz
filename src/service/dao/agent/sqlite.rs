@@ -9,7 +9,7 @@ use std::sync::{Arc, OnceLock};
 
 // ==================== 单例 ====================
 
-static AGENT_DAO: OnceLock<Arc<dyn AgentDaoTrait>> = OnceLock::new();
+pub static AGENT_DAO: OnceLock<Arc<dyn AgentDaoTrait>> = OnceLock::new();
 
 /// 获取 AgentDao 单例
 pub fn dao() -> Arc<dyn AgentDaoTrait> {
@@ -23,10 +23,10 @@ pub fn init() {
 
 // ==================== 实现 ====================
 
-struct AgentDaoImpl;
+pub struct AgentDaoImpl;
 
 impl AgentDaoImpl {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self
     }
 }
