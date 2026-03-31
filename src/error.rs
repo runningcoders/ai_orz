@@ -3,25 +3,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use serde::Serialize;
-
-/// 统一 API 响应格式
-#[derive(Debug, Serialize)]
-pub struct ApiResponse<T: Serialize> {
-    pub code: i32,
-    pub message: String,
-    pub data: Option<T>,
-}
-
-impl<T: Serialize> ApiResponse<T> {
-    pub fn success(data: T) -> Self {
-        Self {
-            code: 0,
-            message: "success".to_string(),
-            data: Some(data),
-        }
-    }
-}
+use serde_json;
 
 /// 统一错误类型
 #[derive(Debug)]
@@ -43,6 +25,7 @@ impl IntoResponse for AppError {
         let body = Json(serde_json::json!({
             "code": code,
             "message": message,
+            "data": null
         }));
 
         (status, body).into_response()
