@@ -5,14 +5,17 @@ use serde::{Deserialize, Serialize};
 /// OrganizationPo 持久化对象
 ///
 /// # SQLite 表结构
+///
+/// 建表语句定义在 `crate::pkg::sql::CREATE_TABLE_ORGANIZATIONS`
+///
 /// ```sql
 /// CREATE TABLE IF NOT EXISTS organizations (
 ///     id TEXT PRIMARY KEY,
 ///     name TEXT NOT NULL,
 ///     description TEXT NOT NULL DEFAULT '',
 ///     status INTEGER NOT NULL DEFAULT 1,        -- 0=已删除, 1=正常
-///     created_by TEXT NOT NULL DEFAULT '',
-///     modified_by TEXT NOT NULL DEFAULT '',
+///     created_by TEXT NOT NULL DEFAULT '',      -- 创建者
+///     modified_by TEXT NOT NULL DEFAULT '',     -- 修改者
 ///     created_at INTEGER NOT NULL,
 ///     updated_at INTEGER NOT NULL
 /// );

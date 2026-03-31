@@ -2,12 +2,8 @@
 
 use rusqlite::Connection;
 use std::sync::Mutex;
-use std::cell::RefCell;
 
-/// 线程本地数据库连接
-thread_local! {
-    static TEST_CONN: RefCell<Option<Connection>> = RefCell::new(None);
-}
+pub mod sql;
 
 /// 数据库连接管理
 pub struct Storage {
@@ -17,8 +13,7 @@ pub struct Storage {
 impl Storage {
     /// 创建存储实例
     pub fn new(db_path: &str) -> Result<Self, String> {
-        let conn = Connection::open(db_path)
-            .map_err(|e| format!("打开数据库失败: {}", e))?;
+        let conn = Connection::open(db_path).map_err(|e| format!("打开数据库失败: {}", e))?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -41,7 +36,9 @@ pub fn init(db_path: &str) -> Result<(), String> {
 
 /// 获取存储实例
 pub fn get() -> &'static Storage {
-    STORAGE.get().expect("存储未初始化，请先调用 storage::init()")
+    STORAGE
+        .get()
+        .expect("存储未初始化，请先调用 storage::init()")
 }
 
 /// 测试用：获取内存数据库连接

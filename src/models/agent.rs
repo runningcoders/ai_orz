@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 /// AgentPo 持久化对象
 ///
 /// # SQLite 表结构
+///
+/// 建表语句定义在 `crate::pkg::sql::CREATE_TABLE_AGENTS`
+///
 /// ```sql
 /// CREATE TABLE IF NOT EXISTS agents (
 ///     id TEXT PRIMARY KEY,
@@ -14,8 +17,8 @@ use serde::{Deserialize, Serialize};
 ///     capabilities TEXT NOT NULL DEFAULT '[]',  -- JSON string
 ///     soul TEXT NOT NULL DEFAULT '',            -- 长文本
 ///     status INTEGER NOT NULL DEFAULT 1,        -- 0=已删除, 1=正常
-///     created_by TEXT NOT NULL DEFAULT '',
-///     modified_by TEXT NOT NULL DEFAULT '',
+///     created_by TEXT NOT NULL DEFAULT '',      -- 创建者
+///     modified_by TEXT NOT NULL DEFAULT '',     -- 修改者
 ///     created_at INTEGER NOT NULL,
 ///     updated_at INTEGER NOT NULL
 /// );

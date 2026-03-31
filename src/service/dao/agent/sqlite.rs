@@ -2,8 +2,8 @@
 
 use crate::error::AppError;
 use crate::models::agent::AgentPo;
-use crate::pkg::RequestContext;
 use crate::pkg::storage;
+use crate::pkg::RequestContext;
 use crate::service::dao::agent::AgentDaoTrait;
 use std::sync::{Arc, OnceLock};
 
@@ -170,21 +170,8 @@ mod tests {
 
     fn setup_test_db() -> rusqlite::Connection {
         let conn = storage::test_conn();
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS agents (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                role TEXT NOT NULL DEFAULT '',
-                capabilities TEXT NOT NULL DEFAULT '[]',
-                soul TEXT NOT NULL DEFAULT '',
-                status INTEGER NOT NULL DEFAULT 1,
-                created_by TEXT NOT NULL DEFAULT '',
-                modified_by TEXT NOT NULL DEFAULT '',
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL
-            );",
-        )
-        .unwrap();
+        conn.execute_batch(crate::pkg::sql::CREATE_TABLE_AGENTS)
+            .unwrap();
         conn
     }
 
@@ -320,8 +307,20 @@ mod tests {
     #[test]
     fn test_find_all_excludes_deleted() {
         let conn = setup_test_db();
-        let agent1 = AgentPo::new("Normal".to_string(), "w".to_string(), vec![], "".to_string(), "admin".to_string());
-        let agent2 = AgentPo::new("Deleted".to_string(), "w".to_string(), vec![], "".to_string(), "admin".to_string());
+        let agent1 = AgentPo::new(
+            "Normal".to_string(),
+            "w".to_string(),
+            vec![],
+            "".to_string(),
+            "admin".to_string(),
+        );
+        let agent2 = AgentPo::new(
+            "Deleted".to_string(),
+            "w".to_string(),
+            vec![],
+            "".to_string(),
+            "admin".to_string(),
+        );
         insert_agent(&conn, &agent1, "admin");
         insert_agent(&conn, &agent2, "admin");
         let now = current_timestamp();
@@ -340,7 +339,13 @@ mod tests {
     #[test]
     fn test_delete_twice_is_idempotent() {
         let conn = setup_test_db();
-        let agent = AgentPo::new("Test".to_string(), "w".to_string(), vec![], "".to_string(), "admin".to_string());
+        let agent = AgentPo::new(
+            "Test".to_string(),
+            "w".to_string(),
+            vec![],
+            "".to_string(),
+            "admin".to_string(),
+        );
         insert_agent(&conn, &agent, "admin");
         let now = current_timestamp();
         conn.execute(

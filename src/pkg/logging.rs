@@ -63,7 +63,7 @@ pub fn debug(ctx: RequestContext, operation: &str, msg: &str) {
 #[cfg(test)]
 mod tests {
     use crate::pkg::RequestContext;
-    use crate::pkg::{debug, log_error, info, warn};
+    use crate::pkg::{debug, info, log_error, warn};
 
     fn new_ctx() -> RequestContext {
         RequestContext::new(None, None)
