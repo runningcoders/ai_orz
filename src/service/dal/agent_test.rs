@@ -3,23 +3,22 @@
 use super::*;
 use crate::models::agent::{Agent, AgentPo};
 use crate::pkg::storage;
-use crate::service::dao::agent::sqlite;
+use crate::service::dao::agent;
 
 fn new_ctx(user_id: &str) -> crate::pkg::RequestContext {
     crate::pkg::RequestContext::new(Some(user_id.to_string()), None)
 }
 
 fn setup_test_dal() -> Arc<dyn AgentDalTrait> {
-    // 使用 dao 测试中的基础设施，直接创建实际的 SQLite DAO 实例
+    // 初始化内存数据库并创建表
     let conn = storage::test_conn();
     conn.execute_batch(crate::pkg::sql::SQLITE_CREATE_TABLE_AGENTS)
         .unwrap();
 
-    // 创建实际的 DAO 单例（测试用）
-    let dao = Arc::new(sqlite::AgentDaoImpl);
-    let _ = crate::service::dao::agent::AGENT_DAO.set(dao);
+    // 使用 DAO 的初始化方法，不需要直接操作静态变量
+    agent::init();
 
-    Arc::new(AgentDal::new(crate::service::dao::agent::dao()))
+    Arc::new(AgentDal::new(agent::dao()))
 }
 
 #[test]
