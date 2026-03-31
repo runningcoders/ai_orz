@@ -5,8 +5,9 @@
 //! 这一层的方法更凝练，行为的核心是调度逻辑
 
 use crate::error::AppError;
+use crate::models::agent::Agent;
 use crate::pkg::RequestContext;
-use crate::service::dal::agent::{Agent, AgentDalTrait};
+use crate::service::dal::agent::AgentDalTrait;
 use std::sync::Arc;
 
 /// Agent Domain 业务逻辑

@@ -1,9 +1,9 @@
 //! Agent Handler
 
 use crate::error::AppError;
-use crate::models::agent::AgentPo;
+use crate::handlers::ApiResponse;
+use crate::models::agent::{Agent, AgentPo};
 use crate::pkg::RequestContext;
-use crate::service::dal::agent::Agent;
 use crate::service::domain::agent::domain;
 use axum::{
     extract::{Json, Path},
@@ -11,7 +11,7 @@ use axum::{
 };
 
 pub mod dto;
-pub use dto::{AgentResponse, ApiResponse, CreateAgentRequest, UpdateAgentRequest};
+pub use dto::{AgentResponse, CreateAgentRequest, UpdateAgentRequest};
 
 /// 创建 Agent
 ///
@@ -89,8 +89,7 @@ pub async fn update_agent(
         agent.po.role = role;
     }
     if let Some(capabilities) = req.capabilities {
-        agent.po.capabilities =
-            serde_json::to_string(&capabilities).unwrap_or_else(|_| "[]".to_string());
+        agent.po.capabilities = serde_json::to_string(&capabilities).unwrap_or_else(|_| "[]".to_string());
     }
     if let Some(soul) = req.soul {
         agent.po.soul = soul;
@@ -98,15 +97,15 @@ pub async fn update_agent(
 
     domain().update(ctx, &agent)?;
 
-    Ok(Json(ApiResponse::success(AgentResponse::from_agent(
-        &agent,
-    ))))
+    Ok(Json(ApiResponse::success(AgentResponse::from_agent(&agent))))
 }
 
 /// 删除 Agent
 ///
 /// DELETE /agents/:id
-pub async fn delete_agent(Path(id): Path<String>) -> Result<Json<ApiResponse<()>>, AppError> {
+pub async fn delete_agent(
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<()>>, AppError> {
     let ctx = RequestContext::new(Some("admin".to_string()), None);
 
     let agent = domain()

@@ -1,8 +1,9 @@
 //! Agent Domain 单元测试
 
 use super::*;
-use crate::models::agent::AgentPo;
+use crate::models::agent::{Agent, AgentPo};
 use crate::pkg::storage;
+use crate::service::dal::agent::AgentDalTrait;
 
 fn new_ctx(user_id: &str) -> RequestContext {
     RequestContext::new(Some(user_id.to_string()), None)

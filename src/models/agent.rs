@@ -3,6 +3,42 @@
 use crate::pkg::constants::AgentPoStatus;
 use serde::{Deserialize, Serialize};
 
+/// Agent 业务对象（DAL 层）
+///
+/// 组合 AgentPo 和其他相关信息，作为业务层的核心对象
+/// 后续可扩展：执行环境、权限、配置等字段
+#[derive(Debug, Clone)]
+pub struct Agent {
+    /// 底层持久化对象
+    pub po: AgentPo,
+    // 后续扩展字段：
+    // pub execution_env: ExecutionEnv,
+    // pub permissions: Vec<Permission>,
+    // pub config: AgentConfig,
+}
+
+impl Agent {
+    /// 从 Po 创建 Agent
+    pub fn from_po(po: AgentPo) -> Self {
+        Self { po }
+    }
+
+    /// 转换为 Po
+    pub fn into_po(self) -> AgentPo {
+        self.po
+    }
+
+    /// 获取 Agent ID
+    pub fn id(&self) -> &str {
+        &self.po.id
+    }
+
+    /// 获取 Agent 名称
+    pub fn name(&self) -> &str {
+        &self.po.name
+    }
+}
+
 /// AgentPo 持久化对象
 ///
 /// # SQLite 表结构

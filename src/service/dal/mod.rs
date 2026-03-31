@@ -5,4 +5,4 @@
 
 pub mod agent;
 
-pub use agent::{dal as agent_dal, init as init_agent_dal, Agent, AgentDal, AgentDalTrait};
+pub use agent::{dal as agent_dal, init as init_agent_dal, AgentDal, AgentDalTrait};

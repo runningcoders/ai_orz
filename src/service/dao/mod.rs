@@ -1,6 +1,5 @@
 pub mod agent;
 pub mod org;
-pub mod task_dao;
 
 pub use agent::dao as agent_dao;
 pub use org::dao as org_dao;
