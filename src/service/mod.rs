@@ -9,4 +9,7 @@ pub fn init() {
 
     // 初始化 DAL 层（依赖 DAO）
     dal::init_agent_dal(dao::agent_dao());
+
+    // 初始化 Domain 层（依赖 DAL）
+    domain::init_agent_domain(dal::agent_dal());
 }

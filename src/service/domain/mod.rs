@@ -1,3 +1,8 @@
-pub mod agent_domain;
-pub mod org_domain;
-pub mod task_domain;
+//! Domain 层（业务逻辑层）
+//!
+//! Domain 层是抽象业务层，关注通用行为逻辑
+//! 组合多个 DAL 完成业务逻辑，不关心具体的实现细节
+
+pub mod agent;
+
+pub use agent::{domain as agent_domain, init as init_agent_domain, AgentDomain};
