@@ -1,12 +1,11 @@
-//! AgentDao SQLite 单元测试
+//! Agent DAO SQLite 单元测试
 
 use super::*;
 use crate::models::agent::AgentPo;
 use crate::pkg::storage;
-use crate::pkg::RequestContext;
 
-fn new_ctx(user_id: &str) -> RequestContext {
-    RequestContext::new(Some(user_id.to_string()), None)
+fn new_ctx(user_id: &str) -> crate::pkg::RequestContext {
+    crate::pkg::RequestContext::new(Some(user_id.to_string()), None)
 }
 
 fn insert_agent(conn: &rusqlite::Connection, agent: &AgentPo, creator: &str) {
@@ -63,15 +62,21 @@ fn test_insert_and_find_by_id() {
     let conn = storage::test_conn();
     conn.execute_batch(crate::pkg::sql::SQLITE_CREATE_TABLE_AGENTS)
         .unwrap();
-    let agent = AgentPo::new(
+
+    let dao = AgentDaoImpl;
+    let ctx = new_ctx("admin");
+
+    let agent_po = AgentPo::new(
         "TestAgent".to_string(),
         "worker".to_string(),
         vec!["coding".to_string()],
         "A helpful agent".to_string(),
         "admin".to_string(),
     );
-    insert_agent(&conn, &agent, "admin");
-    let found = find_agent(&conn, &agent.id).unwrap();
+
+    dao.insert(ctx, &agent_po).unwrap();
+    let found = find_agent(&conn, &agent_po.id).unwrap();
+
     assert_eq!(found.name, "TestAgent");
     assert_eq!(found.created_by, "admin");
 }
@@ -81,16 +86,20 @@ fn test_find_all() {
     let conn = storage::test_conn();
     conn.execute_batch(crate::pkg::sql::SQLITE_CREATE_TABLE_AGENTS)
         .unwrap();
+    let dao = AgentDaoImpl;
+    let ctx = new_ctx("admin");
+
     for i in 0..3 {
-        let agent = AgentPo::new(
+        let agent_po = AgentPo::new(
             format!("Agent{}", i),
             "worker".to_string(),
             vec![],
             "".to_string(),
             "admin".to_string(),
         );
-        insert_agent(&conn, &agent, "admin");
+        insert_agent(&conn, &agent_po, "admin");
     }
+
     let mut stmt = conn
         .prepare("SELECT COUNT(*) FROM agents WHERE status != 0")
         .unwrap();
@@ -103,21 +112,21 @@ fn test_update() {
     let conn = storage::test_conn();
     conn.execute_batch(crate::pkg::sql::SQLITE_CREATE_TABLE_AGENTS)
         .unwrap();
-    let agent = AgentPo::new(
+    let dao = AgentDaoImpl;
+    let agent_po = AgentPo::new(
         "Original".to_string(),
         "worker".to_string(),
         vec![],
         "".to_string(),
         "admin".to_string(),
     );
-    insert_agent(&conn, &agent, "admin");
-    let now = current_timestamp();
-    conn.execute(
-        "UPDATE agents SET name = ?1, modified_by = ?2, updated_at = ?3 WHERE id = ?4",
-        rusqlite::params!["Updated", "editor", now, agent.id],
-    )
-    .unwrap();
-    let found = find_agent(&conn, &agent.id).unwrap();
+    insert_agent(&conn, &agent_po, "admin");
+
+    let mut updated = agent_po.clone();
+    updated.name = "Updated".to_string();
+    dao.update(new_ctx("editor"), &updated).unwrap();
+
+    let found = find_agent(&conn, &updated.id).unwrap();
     assert_eq!(found.name, "Updated");
     assert_eq!(found.modified_by, "editor");
 }
@@ -127,21 +136,18 @@ fn test_soft_delete() {
     let conn = storage::test_conn();
     conn.execute_batch(crate::pkg::sql::SQLITE_CREATE_TABLE_AGENTS)
         .unwrap();
-    let agent = AgentPo::new(
+    let dao = AgentDaoImpl;
+    let agent_po = AgentPo::new(
         "ToDelete".to_string(),
         "worker".to_string(),
         vec![],
         "".to_string(),
         "admin".to_string(),
     );
-    insert_agent(&conn, &agent, "admin");
-    let now = current_timestamp();
-    conn.execute(
-        "UPDATE agents SET status = 0, modified_by = ?1, updated_at = ?2 WHERE id = ?3",
-        rusqlite::params!["admin", now, agent.id],
-    )
-    .unwrap();
-    assert!(find_agent(&conn, &agent.id).is_none());
+    insert_agent(&conn, &agent_po, "admin");
+
+    dao.delete(new_ctx("admin"), &agent_po).unwrap();
+    assert!(find_agent(&conn, &agent_po.id).is_none());
 }
 
 #[test]
@@ -149,16 +155,27 @@ fn test_find_all_excludes_deleted() {
     let conn = storage::test_conn();
     conn.execute_batch(crate::pkg::sql::SQLITE_CREATE_TABLE_AGENTS)
         .unwrap();
-    let agent1 = AgentPo::new("Normal".to_string(), "w".to_string(), vec![], "".to_string(), "admin".to_string());
-    let agent2 = AgentPo::new("Deleted".to_string(), "w".to_string(), vec![], "".to_string(), "admin".to_string());
+    let dao = AgentDaoImpl;
+
+    let agent1 = AgentPo::new(
+        "Normal".to_string(),
+        "w".to_string(),
+        vec![],
+        "".to_string(),
+        "admin".to_string(),
+    );
+    let agent2 = AgentPo::new(
+        "Deleted".to_string(),
+        "w".to_string(),
+        vec![],
+        "".to_string(),
+        "admin".to_string(),
+    );
+
     insert_agent(&conn, &agent1, "admin");
     insert_agent(&conn, &agent2, "admin");
-    let now = current_timestamp();
-    conn.execute(
-        "UPDATE agents SET status = 0, modified_by = ?1, updated_at = ?2 WHERE id = ?3",
-        rusqlite::params!["admin", now, agent2.id],
-    )
-    .unwrap();
+    dao.delete(new_ctx("admin"), &agent2).unwrap();
+
     let mut stmt = conn
         .prepare("SELECT COUNT(*) FROM agents WHERE status != 0")
         .unwrap();
@@ -171,7 +188,15 @@ fn test_delete_twice_is_idempotent() {
     let conn = storage::test_conn();
     conn.execute_batch(crate::pkg::sql::SQLITE_CREATE_TABLE_AGENTS)
         .unwrap();
-    let agent = AgentPo::new("Test".to_string(), "w".to_string(), vec![], "".to_string(), "admin".to_string());
+    let dao = AgentDaoImpl;
+
+    let agent = AgentPo::new(
+        "Test".to_string(),
+        "w".to_string(),
+        vec![],
+        "".to_string(),
+        "admin".to_string(),
+    );
     insert_agent(&conn, &agent, "admin");
     let now = current_timestamp();
     conn.execute(
@@ -192,5 +217,14 @@ fn test_find_not_exists() {
     let conn = storage::test_conn();
     conn.execute_batch(crate::pkg::sql::SQLITE_CREATE_TABLE_AGENTS)
         .unwrap();
+
     assert!(find_agent(&conn, "not-exists").is_none());
+}
+
+fn current_timestamp() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
 }
