@@ -137,12 +137,12 @@ impl AgentDaoTrait for AgentDaoImpl {
         Ok(())
     }
 
-    fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
+    fn delete(&self, ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError> {
         let conn = storage::get().conn();
 
         conn.execute(
             "UPDATE agents SET status = 0, modified_by = ?1, updated_at = ?2 WHERE id = ?3 AND status != 0",
-            rusqlite::params![ctx.uid(), current_timestamp(), id],
+            rusqlite::params![ctx.uid(), current_timestamp(), agent.id],
         )
         .map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(())

@@ -57,7 +57,7 @@ pub trait AgentDalTrait: Send + Sync {
     fn update(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
 
     /// 删除 Agent
-    fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+    fn delete(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
 }
 
 /// Agent DAL 实现
@@ -93,8 +93,8 @@ impl AgentDalTrait for AgentDal {
         self.agent_dao.update(ctx, &agent.po)
     }
 
-    fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
-        self.agent_dao.delete(ctx, id)
+    fn delete(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError> {
+        self.agent_dao.delete(ctx, &agent.po)
     }
 }
 
@@ -241,11 +241,11 @@ mod tests {
                 Ok(())
             }
 
-            fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
+            fn delete(&self, ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError> {
                 let conn = self.conn.lock().unwrap();
                 conn.execute(
                     "UPDATE agents SET status = 0, modified_by = ?1, updated_at = ?2 WHERE id = ?3 AND status != 0",
-                    rusqlite::params![ctx.uid(), current_timestamp(), id],
+                    rusqlite::params![ctx.uid(), current_timestamp(), agent.id],
                 )
                 .map_err(|e| AppError::Internal(e.to_string()))?;
                 Ok(())
@@ -350,7 +350,7 @@ mod tests {
         let agent = Agent::from_po(agent_po);
         dal.create(ctx.clone(), &agent).unwrap();
 
-        dal.delete(ctx.clone(), &agent.id()).unwrap();
+        dal.delete(ctx.clone(), &agent).unwrap();
         assert!(dal.find_by_id(ctx, &agent.id()).unwrap().is_none());
     }
 
@@ -380,7 +380,7 @@ mod tests {
 
         dal.create(ctx.clone(), &agent1).unwrap();
         dal.create(ctx.clone(), &agent2).unwrap();
-        dal.delete(ctx.clone(), &agent2.id()).unwrap();
+        dal.delete(ctx.clone(), &agent2).unwrap();
 
         let all = dal.find_all(ctx).unwrap();
         assert_eq!(all.len(), 1);

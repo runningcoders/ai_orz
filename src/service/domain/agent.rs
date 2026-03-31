@@ -51,8 +51,8 @@ impl AgentDomain {
     /// 删除 Agent
     ///
     /// 基础操作：软删除 Agent（标记为已删除）
-    pub fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
-        self.agent_dal.delete(ctx, id)
+    pub fn delete(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError> {
+        self.agent_dal.delete(ctx, agent)
     }
 }
 
@@ -201,11 +201,11 @@ mod tests {
                 Ok(())
             }
 
-            fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
+            fn delete(&self, ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError> {
                 let conn = self.conn.lock().unwrap();
                 conn.execute(
                     "UPDATE agents SET status = 0, modified_by = ?1, updated_at = ?2 WHERE id = ?3 AND status != 0",
-                    rusqlite::params![ctx.uid(), current_timestamp(), id],
+                    rusqlite::params![ctx.uid(), current_timestamp(), agent.id],
                 )
                 .map_err(|e| AppError::Internal(e.to_string()))?;
                 Ok(())
@@ -327,7 +327,7 @@ mod tests {
         let agent = Agent::from_po(agent_po);
         domain.create(ctx.clone(), &agent).unwrap();
 
-        domain.delete(ctx.clone(), &agent.id()).unwrap();
+        domain.delete(ctx.clone(), &agent).unwrap();
         assert!(domain.get(ctx, &agent.id()).unwrap().is_none());
     }
 }

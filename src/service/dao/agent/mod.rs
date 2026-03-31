@@ -10,7 +10,7 @@ pub trait AgentDaoTrait: Send + Sync {
     fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<AgentPo>, AppError>;
     fn find_all(&self, ctx: RequestContext) -> Result<Vec<AgentPo>, AppError>;
     fn update(&self, ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError>;
-    fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+    fn delete(&self, ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError>;
 }
 
 pub mod sqlite;
