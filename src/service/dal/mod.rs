@@ -10,9 +10,7 @@ pub mod agent;
 
 pub use agent::{dal as agent_dal, AgentDal, AgentDalTrait};
 
-/// 初始化 Agent DAL 并自动初始化 Domain
-pub fn init_agent_dal(agent_dao: Arc<dyn AgentDaoTrait>) {
-    agent::init(agent_dao);
-    // 初始化 Domain 层（依赖 DAL）
-    super::domain::init_agent_domain(agent::dal());
+/// 初始化所有 DAL 实例
+pub fn init_all() {
+    agent::init(crate::service::dao::agent_dao());
 }

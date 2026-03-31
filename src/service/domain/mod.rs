@@ -6,3 +6,8 @@
 pub mod agent;
 
 pub use agent::{domain as agent_domain, init as init_agent_domain, AgentDomain};
+
+/// 初始化所有 Domain 实例
+pub fn init_all() {
+    agent::init(crate::service::dal::agent_dal());
+}
