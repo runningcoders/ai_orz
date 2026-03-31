@@ -6,6 +6,22 @@ use crate::pkg::RequestContext;
 use crate::service::dao::agent::AgentDaoTrait;
 use std::sync::{Arc, OnceLock};
 
+// ==================== 单例管理 ====================
+
+static AGENT_DAL: OnceLock<Arc<dyn AgentDalTrait>> = OnceLock::new();
+
+/// 获取 Agent DAL 单例
+pub fn dal() -> Arc<dyn AgentDalTrait> {
+    AGENT_DAL.get().cloned().unwrap()
+}
+
+/// 初始化 Agent DAL
+pub fn init(agent_dao: Arc<dyn AgentDaoTrait>) {
+    let _ = AGENT_DAL.set(Arc::new(AgentDal::new(agent_dao)));
+}
+
+// ==================== DAL 实现 ====================
+
 /// Agent DAL 接口
 pub trait AgentDalTrait: Send + Sync {
     /// 创建 Agent
@@ -50,7 +66,7 @@ impl AgentDalTrait for AgentDal {
     fn find_all(&self, ctx: RequestContext) -> Result<Vec<Agent>, AppError> {
         self.agent_dao
             .find_all(ctx)
-            .map(|agents| agents.into_iter().map(Agent::from_po).collect())
+            .map(|agents: Vec<_>| agents.into_iter().map(Agent::from_po).collect())
     }
 
     fn update(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError> {
@@ -60,18 +76,4 @@ impl AgentDalTrait for AgentDal {
     fn delete(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError> {
         self.agent_dao.delete(ctx, &agent.po)
     }
-}
-
-// ==================== 单例管理 ====================
-
-static AGENT_DAL: OnceLock<Arc<dyn AgentDalTrait>> = OnceLock::new();
-
-/// 获取 Agent DAL 单例
-pub fn dal() -> Arc<dyn AgentDalTrait> {
-    AGENT_DAL.get().cloned().unwrap()
-}
-
-/// 初始化 Agent DAL
-pub fn init(agent_dao: Arc<dyn AgentDaoTrait>) {
-    let _ = AGENT_DAL.set(Arc::new(AgentDal::new(agent_dao)));
 }
