@@ -23,35 +23,35 @@ impl AgentDomain {
     /// 创建 Agent
     ///
     /// 基础操作：将 Agent 持久化到存储
-    pub fn create_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError> {
+    pub fn create(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError> {
         self.agent_dal.create(ctx, agent)
     }
 
     /// 获取 Agent
     ///
     /// 基础操作：根据 ID 查询 Agent
-    pub fn get_agent(&self, ctx: RequestContext, id: &str) -> Result<Option<Agent>, AppError> {
+    pub fn get(&self, ctx: RequestContext, id: &str) -> Result<Option<Agent>, AppError> {
         self.agent_dal.find_by_id(ctx, id)
     }
 
     /// 列出所有 Agent
     ///
     /// 基础操作：查询所有有效的 Agent
-    pub fn list_agents(&self, ctx: RequestContext) -> Result<Vec<Agent>, AppError> {
+    pub fn list(&self, ctx: RequestContext) -> Result<Vec<Agent>, AppError> {
         self.agent_dal.find_all(ctx)
     }
 
     /// 更新 Agent
     ///
     /// 基础操作：更新 Agent 信息
-    pub fn update_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError> {
+    pub fn update(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError> {
         self.agent_dal.update(ctx, agent)
     }
 
     /// 删除 Agent
     ///
     /// 基础操作：软删除 Agent（标记为已删除）
-    pub fn delete_agent(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
+    pub fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
         self.agent_dal.delete(ctx, id)
     }
 }
@@ -242,7 +242,7 @@ mod tests {
         );
         let agent = Agent::from_po(agent_po);
 
-        domain.create_agent(ctx, &agent).unwrap();
+        domain.create(ctx, &agent).unwrap();
     }
 
     #[test]
@@ -259,9 +259,9 @@ mod tests {
             "admin".to_string(),
         );
         let agent = Agent::from_po(agent_po.clone());
-        domain.create_agent(ctx.clone(), &agent).unwrap();
+        domain.create(ctx.clone(), &agent).unwrap();
 
-        let found = domain.get_agent(ctx, &agent_po.id).unwrap().unwrap();
+        let found = domain.get(ctx, &agent_po.id).unwrap().unwrap();
         assert_eq!(found.name(), "TestAgent");
     }
 
@@ -280,10 +280,10 @@ mod tests {
                 "admin".to_string(),
             );
             let agent = Agent::from_po(agent_po);
-            domain.create_agent(ctx.clone(), &agent).unwrap();
+            domain.create(ctx.clone(), &agent).unwrap();
         }
 
-        let agents = domain.list_agents(ctx).unwrap();
+        let agents = domain.list(ctx).unwrap();
         assert_eq!(agents.len(), 3);
     }
 
@@ -301,13 +301,13 @@ mod tests {
             "admin".to_string(),
         );
         let agent = Agent::from_po(agent_po);
-        domain.create_agent(ctx.clone(), &agent).unwrap();
+        domain.create(ctx.clone(), &agent).unwrap();
 
         let mut updated = agent.clone();
         updated.po.name = "Updated".to_string();
-        domain.update_agent(new_ctx("editor"), &updated).unwrap();
+        domain.update(new_ctx("editor"), &updated).unwrap();
 
-        let found = domain.get_agent(ctx, &agent.id()).unwrap().unwrap();
+        let found = domain.get(ctx, &agent.id()).unwrap().unwrap();
         assert_eq!(found.name(), "Updated");
     }
 
@@ -325,9 +325,9 @@ mod tests {
             "admin".to_string(),
         );
         let agent = Agent::from_po(agent_po);
-        domain.create_agent(ctx.clone(), &agent).unwrap();
+        domain.create(ctx.clone(), &agent).unwrap();
 
-        domain.delete_agent(ctx.clone(), &agent.id()).unwrap();
-        assert!(domain.get_agent(ctx, &agent.id()).unwrap().is_none());
+        domain.delete(ctx.clone(), &agent.id()).unwrap();
+        assert!(domain.get(ctx, &agent.id()).unwrap().is_none());
     }
 }
