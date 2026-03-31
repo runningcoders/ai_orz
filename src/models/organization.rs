@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// # SQLite 表结构
 ///
-/// 建表语句定义在 `crate::pkg::sql::CREATE_TABLE_ORGANIZATIONS`
+/// SQLite 建表语句定义在 `crate::pkg::sql::SQLITE_CREATE_TABLE_ORGANIZATIONS`
 ///
 /// ```sql
 /// CREATE TABLE IF NOT EXISTS organizations (

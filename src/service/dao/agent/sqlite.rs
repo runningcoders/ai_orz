@@ -170,7 +170,7 @@ mod tests {
 
     fn setup_test_db() -> rusqlite::Connection {
         let conn = storage::test_conn();
-        conn.execute_batch(crate::pkg::sql::CREATE_TABLE_AGENTS)
+        conn.execute_batch(crate::pkg::sql::SQLITE_CREATE_TABLE_AGENTS)
             .unwrap();
         conn
     }

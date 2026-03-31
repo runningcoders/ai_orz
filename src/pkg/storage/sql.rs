@@ -1,7 +1,7 @@
-//! SQL 常量定义
+//! SQLite SQL 常量定义
 
-/// Agent 表建表语句
-pub const CREATE_TABLE_AGENTS: &str = r#"
+/// SQLite: Agent 表建表语句
+pub const SQLITE_CREATE_TABLE_AGENTS: &str = r#"
 CREATE TABLE IF NOT EXISTS agents (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -16,8 +16,8 @@ CREATE TABLE IF NOT EXISTS agents (
 )
 "#;
 
-/// Organization 表建表语句
-pub const CREATE_TABLE_ORGANIZATIONS: &str = r#"
+/// SQLite: Organization 表建表语句
+pub const SQLITE_CREATE_TABLE_ORGANIZATIONS: &str = r#"
 CREATE TABLE IF NOT EXISTS organizations (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -30,8 +30,8 @@ CREATE TABLE IF NOT EXISTS organizations (
 )
 "#;
 
-/// Task 表建表语句
-pub const CREATE_TABLE_TASKS: &str = r#"
+/// SQLite: Task 表建表语句
+pub const SQLITE_CREATE_TABLE_TASKS: &str = r#"
 CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
