@@ -11,6 +11,18 @@
 ### Agent（智能体）
 - **定义**：独立的执行单元，可以接收任务、执行操作、与其他 Agent 通信
 
+### Model Provider（模型提供商）
+- **定义**：独立实体，保存 LLM 模型配置（提供商类型、模型名称、API Key、自定义地址）
+- **关系**：一个 Model Provider 可以被多个 Agent 复用
+
+### Brain（大脑）
+- **定义**：顶层实体，包装 Cortex 思考模块
+- **关系**：由 BrainDao 根据 Model Provider 创建
+
+### Cortex 🧠（大脑皮层）
+- **定义**：具体的思考推理接口
+- **关系**：不同 LLM 提供商实现不同的 Cortex
+
 ### Organization（组织）
 - **定义**：Agent 的集合，管理成员和任务分配
 
@@ -27,23 +39,23 @@
 **全栈 Rust 单仓库项目**
 
 ```
- ┌───────────────────────────────────────────────────────────────────┐
+ ┌───────────────────────────────────────────────────────────────────────────┐
  │                        浏览器 / 客户端                                │
- └───────────────────────────────────────────────────────────────────┘
+ └───────────────────────────────────────────────────────────────────────────┘
                               ↓ HTTP
- ┌───────────────────────────────────────────────────────────────────┐
+ ┌───────────────────────────────────────────────────────────────────────────┐
  │                 Axum 后端 (Rust)                                   │
  │  - REST API                                                      │
  │  - 静态文件服务 (dist 目录)                                       │
  │  - SQLite 存储                                                   │
- └───────────────────────────────────────────────────────────────────┘
+ └───────────────────────────────────────────────────────────────────────────┘
                               ↓
- ┌───────────────────────────────────────────────────────────────────┐
- │                 Dioxus 前端 (WebAssembly)                          │
+ ┌───────────────────────────────────────────────────────────────────────────┐
+ │                    Dioxus 前端 (WebAssembly)                          │
  │  - 组件化开发                                                    │
- │  - 响应式状态管理                                                │
- │  - 浏览器运行                                                    │
- └───────────────────────────────────────────────────────────────────┘
+ │  - 响应式状态管理                                              │
+ │  - 浏览器运行                                                      │
+ └───────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -57,59 +69,79 @@ ai_orz/
 │   ├── router.rs                   # 路由配置
 │   ├── error.rs                    # 统一错误处理
 │   │
-│   ├── handlers/                   # HTTP 层
+│   ├── handlers/                 # HTTP 层
 │   │   ├── mod.rs
-│   │   ├── agent.rs                # Agent 接口（Req/Resp 结构体）
-│   │   ├── organization.rs         # Organization 接口
-│   │   ├── task.rs                 # Task 接口
-│   │   └── health.rs               # 健康检查
+│   │   ├── agent.rs              # Agent 接口
+│   │   ├── model_provider.rs     # 模型提供商接口
+│   │   ├── organization.rs       # 组织接口
+│   │   ├── task.rs              # 任务接口
+│   │   └── health.rs           # 健康检查
 │   │
-│   ├── models/                     # 实体模型层 ★
+│   ├── models/                 # 实体模型层 ★
 │   │   ├── mod.rs
-│   │   ├── agent.rs                # Agent 实体
-│   │   ├── organization.rs         # Organization 实体
-│   │   ├── task.rs                 # Task 实体
-│   │   └── message.rs              # Message 实体
+│   │   ├── brain.rs             # 🧠 Brain 实体 + Cortex trait
+│   │   ├── agent.rs             # Agent 实体
+│   │   ├── model_provider.rs   # 模型提供商实体
+│   │   ├── organization.rs     # 组织实体
+│   │   ├── task.rs             # 任务实体
+│   │   └── message.rs          # 消息实体
 │   │
-│   ├── service/                    # 业务逻辑层
+│   ├── service/                # 业务逻辑层
 │   │   ├── mod.rs
-│   │   ├── domain/                 # 领域层：领域行为、领域规则
+│   │   ├── domain/             # 领域层：领域行为、领域规则
 │   │   │   ├── mod.rs
 │   │   │   ├── agent_domain.rs     # Agent 领域逻辑
 │   │   │   ├── org_domain.rs       # Organization 领域逻辑
 │   │   │   └── task_domain.rs      # Task 领域逻辑
-│   │   ├── dal/                    # 具体业务层：组合 dao，完成特定业务
+│   │   ├── dal/                 # 具体业务层：组合 dao，完成特定业务
 │   │   │   ├── mod.rs
-│   │   │   ├── agent_dal.rs        # Agent 业务
-│   │   │   ├── org_dal.rs          # Organization 业务
-│   │   │   └── task_dal.rs         # Task 业务
-│   │   └── dao/                    # 数据层：持久化，与 models 交互
+│   │   │   ├── agent_dal.rs     # Agent 业务
+│   │   │   ├── org_dal.rs       # Organization 业务
+│   │   │   └── task_dal.rs      # Task 业务
+│   │   └── dao/                 # 数据层：持久化，与 models 交互
 │   │       ├── mod.rs
-│   │       ├── agent_dao.rs        # Agent 数据操作
-│   │       ├── org_dao.rs          # Organization 数据操作
-│   │       └── task_dao.rs         # Task 数据操作
+│   │       ├── brain/             🧠 Brain DAO - 大脑工厂
+│   │       │   ├── mod.rs         # BrainDao trait + OnceLock 单例
+│   │       │   ├── rig.rs         # Rig 框架实现 (RigBrainDao)
+│   │       │   ├── rig/          # 具体 Cortex 实现
+│   │       │   │   ├── openai.rs
+│   │       │   │   ├── openai_compatible.rs
+│   │       │   │   └── ollama.rs
+│   │       │   └── rig_test.rs     # 单元测试
+│   │       ├── agent/             # Agent 存储 DAO
+│   │       │   ├── mod.rs
+│   │       │   └── sqlite.rs
+│   │       ├── model_provider/   # 模型提供商存储 DAO
+│   │       │   ├── mod.rs
+│   │       │   └── sqlite.rs
+│   │       └── org/             # Organization 存储 DAO
+│   │           ├── mod.rs
+│   │           └── sqlite.rs
 │   │
-│   └── pkg/                        # 公共包
+│   └── pkg/                    # 公共包
 │       ├── mod.rs
-│       ├── storage/                # 存储层（SQLite）
-│       │   ├── mod.rs
-│       │   └── sqlite.rs
-│       ├── external/               # 外部 API
+│       ├── constants/            # 常量（状态枚举）
 │       │   └── mod.rs
-│       └── constants/              # 常量
-│           └── mod.rs
-│
+│       ├── storage/              # 存储层（SQLite）
+│       │   ├── mod.rs             # 全局连接管理
+│       │   └── sql.rs            # SQL 建表语句常量
+│       ├── external/             # 外部 API
+│       │   └── mod.rs
+│       └── logging.rs             # 日志（带 Context）
 ├── frontend/                      # 前端源码 (Dioxus 0.7 WebAssembly)
 │   ├── src/
-│   │   └── main.rs                # 入口 + 页面组件
-│   ├── Cargo.toml
-│   └── index.html                 # HTML 入口
-│
+│   │   ├── main.rs               # 入口 + 页面组件
+│   │   ├── api/                 # API 调用模块
+│   │   │   └── health.rs         # 健康检查 API
+│   │   └── components/         # UI 组件
+│   │       ├── navbar.rs        # 顶部导航栏
+│   │       ├── reception.rs     # 前台接待欢迎页
+│   │       └── agent_management.rs # Agent 管理页
 ├── dist/                          # 生产构建输出（前端静态文件）
 ├── docs/                          # 文档
 ├── build-full.sh                   # 全量构建脚本
 ├── start-dev.sh                   # 开发启动脚本
-└── Cargo.toml                     # 工作空间配置
+└── README.md
 ```
 
 ---
@@ -119,57 +151,68 @@ ai_orz/
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │   handlers/   HTTP 层                                        │
-│   接收 Req → 调用 domain → 返回 Resp                         │
+│   接收 Req → 调用 domain → 返回 Resp                             │
 ├─────────────────────────────────────────────────────────────┤
-│   service/domain/   领域层                                   │
-│   核心业务逻辑、领域规则                                      │
+│   service/domain/   领域层                                       │
+│   核心业务逻辑、领域规则、调度 dal                                 │
 ├─────────────────────────────────────────────────────────────┤
-│   service/dal/   具体业务层                                   │
-│   组合 dao/远程服务，完成特定业务                              │
+│   service/dal/   具体业务层                                       │
+│   组合 dao/远程接口，完成特定业务                                  │
 ├─────────────────────────────────────────────────────────────┤
-│   service/dao/   数据层                                      │
-│   与 models 交互，完成数据库持久化                             │
+│   service/dao/   数据层                                        │
+│   数据增删查改，操作 models，与数据库交互                            │
 ├─────────────────────────────────────────────────────────────┤
 │   models/   实体模型层 ★                                      │
-│   数据库实体定义，dao 用这些对象与数据库映射                     │
+│   数据库实体定义，dao 用这些对象和数据库映射                     │
 ├─────────────────────────────────────────────────────────────┤
-│   pkg/   公共包                                              │
-│   storage / external / constants                             │
+│   pkg/   公共包                                                  │
+│   storage / external / constants                                 │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 后端分层架构
+## LLM 调用架构 🧠
 
-### 分层
+### 核心概念
 
-| 层 | 位置 | 职责 | 调用关系 |
-|---|------|------|------|
-| **Handler** | `src/handlers/` | 接收请求，返回响应 | 调用 domain |
-| **Domain** | `src/service/domain/` | 抽象业务逻辑、领域规则、调度 dal | 调用 dal |
-| **DAL** | `src/service/dal/` | 具体业务逻辑，组合 dao/远程接口 | 调用 dao |
-| **DAO** | `src/service/dao/` | 数据增删查改，操作 models | 被 dal 调用 |
-| **Model** | `src/models/` | 实体定义，被各层广泛使用 | 被 dao 使用 |
-| **PKG** | `src/pkg/` | 存储驱动、工具函数 | 被 dao/handler 引用 |
+| 概念 | 位置 | 职责 |
+|------|------|------|
+| **ModelProvider** | `models/model_provider.rs` | 独立实体，保存模型配置 |
+| **Brain** | `models/brain.rs` | 顶层实体，包装 `Cortex` |
+| **Cortex** 🧠 | `models/brain.rs` trait | 思考推理接口，不同提供商实现不同 |
+| **BrainDao** | `service/dao/brain/` | 工厂 DAO，统一创建 `Brain` + 执行 `prompt` |
 
-### 设计原则
-
-1. **清晰分层** - 每层只负责自己的职责，不越界
-2. **依赖方向** - Handler → Domain → DAL → DAO → Storage，单向依赖
-3. **Context 传递** - 所有公共方法第一个参数是 `RequestContext`，保存用户信息和日志上下文
-4. **命名一致** - 遵循 [NAMING_CONVENTION.md](./NAMING_CONVENTION.md)
-
-### 初始化流程
+### LLM 调用流程
 
 ```rust
-// 按顺序初始化，保证依赖正确
-dao::init_all();      // 初始化所有 DAO
-dal::init_all();      // 依赖 DAO
-domain::init_all();    // 依赖 DAL
+// 业务层调用方式
+use service::dao::{brain_dao, model_provider_dao};
+
+// 1. 查询模型配置（从数据库）
+let provider = model_provider_dao.find_by_id(ctx, "id")?;
+
+// 2. 创建 Brain
+let brain = brain_dao.create_brain(&provider)?;
+
+// 3. 执行推理
+let result = brain_dao.prompt(&brain, "你好").await?;
 ```
 
-## 各层职责详解 ★
+### 支持的模型提供商
+
+| 提供商 | 实现文件 | 支持 |
+|--------|------|------|
+| OpenAI 官方 | `service/dao/brain/rig/openai.rs` | ✅ |
+| DeepSeek | `service/dao/brain/rig/openai_compatible.rs` | ✅ |
+| 阿里云通义千问 | `service/dao/brain/rig/openai_compatible.rs` | ✅ |
+| 字节跳动豆包 | `service/dao/brain/rig/openai_compatible.rs` | ✅ |
+| Ollama 本地 | `service/dao/brain/rig/ollama.rs` | ✅ |
+| 自定义 OpenAI 兼容 | `service/dao/brain/rig/openai_compatible.rs` | ✅ |
+
+---
+
+## 分层架构详解 ★
 
 ### Domain 层（领域层）
 - **职责**：核心业务逻辑、领域规则、调度 dal 组织业务
@@ -177,7 +220,6 @@ domain::init_all();    // 依赖 DAL
   - 最接近业务本质
   - 不直接操作数据库
   - 编排 dal 完成业务
-  - 可被多个 handler 复用
 
 ```rust
 // domain 层示例
@@ -198,7 +240,6 @@ impl AgentDomain {
   - 面向特定业务场景
   - 可组合多个 dao
   - 可调用外部 API
-  - 事务边界
 
 ```rust
 // dal 层示例
@@ -221,21 +262,20 @@ impl AgentDal {
   - 只做数据操作，不含业务逻辑
   - 操作 models 与数据库转换
 
+**所有 DAO 都遵循单例模式**：
 ```rust
-// dao 层示例
-pub struct AgentDao;
+static INSTANCE: OnceLock<Arc<dyn XyzDao + Send + Sync>> = OnceLock::new();
 
-impl AgentDao {
-    pub fn insert(conn: &Connection, agent: &Agent) -> Result<()> { ... }
-    pub fn find_by_id(conn: &Connection, id: &str) -> Result<Option<Agent>> { ... }
-    pub fn update(conn: &Connection, agent: &Agent) -> Result<()> { ... }
-    pub fn delete(conn: &Connection, id: &str) -> Result<()> { ... }
+pub fn dao() -> Arc<dyn XyzDao + Send + Sync> {
+    INSTANCE.get().cloned().unwrap()
+}
+
+pub fn init() {
+    let _ = INSTANCE.set(Arc::new(XyzDaoImpl::new()));
 }
 ```
 
----
-
-## Models 层说明 ★
+### Models 层说明 ★
 
 `models/` 是项目的**实体模型层**，被 service 三层广泛使用：
 
@@ -246,14 +286,15 @@ pub struct Agent {
     pub id: String,
     pub name: String,
     pub role: String,
+    pub model_provider_id: String,  ← ✨ 现在只保存 ID
     pub capabilities: Vec<String>,
-    pub status: String,
+    pub status: i32,
     pub created_at: i64,
     pub updated_at: i64,
 }
 ```
 
-**特点：**
+**特点**：
 - 被 domain/dal/dao 各层使用
 - 实现数据库与实体对象的转换
 - 不包含业务逻辑
@@ -266,9 +307,9 @@ pub struct Agent {
 Handler 的核心逻辑固定为三步：
 
 ```rust
-// 1. 接收输入 Req
+// 1. 解析输入请求
 // 2. 调用 service domain 方法
-// 3. 将结果转换为 Resp 返回
+// 3. 封装结果返回统一响应
 
 async fn create_agent(
     Json(req): Json<CreateAgentReq>,
@@ -284,11 +325,11 @@ async fn create_agent(
 
 ### 路由命名
 ```
-GET    /api/v1/agents          # 列表
-POST   /api/v1/agents          # 创建
-GET    /api/v1/agents/{id}     # 详情
-PUT    /api/v1/agents/{id}     # 更新
-DELETE /api/v1/agents/{id}     # 删除
+GET    /api/v1/agents          列表
+POST   /api/v1/agents          创建
+GET    /api/v1/agents/{id}     详情
+PUT    /api/v1/agents/{id}     更新
+DELETE /api/v1/agents/{id}     删除
 ```
 
 ### 统一响应格式
@@ -304,22 +345,31 @@ DELETE /api/v1/agents/{id}     # 删除
 
 ### 技术栈
 
-- **框架**: Dioxus 0.7 (Web)
-- **编译目标**: `wasm32-unknown-unknown`
-- **构建工具**: dioxus-cli (`dx`)
-- **开发模式**: `dx serve` 热重载
-- **生产构建**: `dx build --release` 输出优化 WASM
+- **框架**：Dioxus 0.7 (Web)
+- **编译目标**：`wasm32-unknown-unknown`
+- **构建工具**：dioxus-cli (`dx`)
+- **开发模式**：`dx serve` 热重载
+- **生产构建**：`dx build --release` 输出优化 WASM
 
 ### 项目结构
 
 ```
-frontend/
-├── src/
-│   └── main.rs         # 入口组件，当前包含健康检查页面
-├── Cargo.toml         # 依赖配置
-├── index.html         # HTML 入口模板
-└── target/           # 编译输出
+frontend/src/
+├── main.rs              # 入口组件，当前包含导航 + 页面路由
+├── api/                 # API 调用模块
+│   └── health.rs         # 健康检查 API
+└── components/         # UI 组件
+    ├── navbar.rs        # 顶部导航栏
+    ├── reception.rs     # 前台接待欢迎页
+    └── agent_management.rs # Agent 管理页
 ```
+
+前端已经实现：
+- ✅ 顶部导航栏（前台接待 + 人力资源下拉 → 员工管理 / Agent 管理）
+- ✅ 前台接待欢迎页
+- ✅ Agent 管理列表 + 创建弹窗
+
+---
 
 ## 配置管理
 
@@ -337,7 +387,7 @@ export DATABASE_URL=./data/ai_orz.db
 
 ### 默认值
 
-不设置环境变量时使用合理的默认值，方便开发：
+不设置环境变量时使用合理默认值，方便开发：
 
 | 环境变量 | 默认值 |
 |----------|--------|
@@ -354,6 +404,8 @@ export DATABASE_URL=./data/ai_orz.db
 - `GET /api/*` → 后端 API
 - `GET /health` → 健康检查
 
+---
+
 ## 构建流程
 
 ### 开发构建
@@ -361,7 +413,7 @@ export DATABASE_URL=./data/ai_orz.db
 ```bash
 ./start-dev.sh
 # 1. 启动后端 cargo run
-# 2. 启动前端 dx serve (热重载)
+# 2. 启动前端 dx serve 热重载
 ```
 
 ### 生产构建
@@ -380,14 +432,14 @@ export DATABASE_URL=./data/ai_orz.db
 1. **全栈 Rust** - 前后端同一种语言，减少上下文切换
 2. **内存安全** - Rust 内存安全，无 GC，适合长期运行的服务
 3. **单二进制部署** - 编译一个二进制文件就能运行，包含前端
-4. **WASM 前端** - 一次类型，前端后端共享类型定义（未来可扩展）
+4. **WASM 前端** - 一次编译，到处运行，类型安全
 5. **热重载开发** - dx serve 支持热重载，开发体验好
 
 ### 为什么选 Axum?
 
 - 官方维护，活跃开发
 - 异步清晰，API 友好
-- 生态完善，支持 static file service
+- 生态完善，支持静态文件服务
 
 ### 为什么选 SQLite?
 
@@ -395,18 +447,20 @@ export DATABASE_URL=./data/ai_orz.db
 - 适合中小型项目，部署简单
 - 足够稳定，性能满足需求
 
+---
+
 ## 扩展性
 
-- 新增实体 → 按分层依次添加
-- 新增页面 → 前端直接添加组件
-- 更换存储 → 只需要换 DAO 实现
-- 前后端分离部署 → 前端独立部署，后端只提供 API
+- **新增实体** → 按分层依次添加即可
+- **新增页面** → 前端直接添加组件
+- **更换存储** → 只需要换 DAO 实现
+- **前后端分离部署** → 前端独立部署，后端只提供 API
 
 ## 下一步
 
-- [x] 创建 `models/` 目录，定义实体 ✅
-- [x] 重命名 `service/domain/*.rs` → `service/domain/*_domain.rs` ✅
-- [x] 搭建 Dioxus 前端 ✅
-- [ ] 配置 SQLite（pkg/storage/）
-- [ ] 实现 Agent DAO + CRUD API
+- [x] 创建 models 层，定义实体 ✅
+- [x] 完成 DAO 分层，实现 LLM 调用架构 ✅
+- [ ] 实现 Agent CRUD API
+- [ ] 实现 Model Provider CRUD API
+- [ ] 前端对接 Agent 管理 API
 
