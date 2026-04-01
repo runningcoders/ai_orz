@@ -14,5 +14,6 @@ pub trait ModelProviderDaoTrait: Send + Sync {
 }
 
 pub mod sqlite;
+
 pub use sqlite::dao;
 pub use sqlite::init;

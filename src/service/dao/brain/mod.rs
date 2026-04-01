@@ -3,7 +3,22 @@
 //! 根据 Model Provider 创建 Brain 实体，提供统一推理接口
 
 use anyhow::{Result, anyhow};
+use std::sync::{Arc, OnceLock};
 use crate::models::{self, brain::*, model_provider::ModelProviderPo};
+
+// ==================== 单例 ====================
+
+static BRAIN_DAO: OnceLock<Arc<dyn BrainDao + Send + Sync>> = OnceLock::new();
+
+/// 获取 BrainDAO 单例
+pub fn dao() -> Arc<dyn BrainDao + Send + Sync> {
+    BRAIN_DAO.get().cloned().unwrap()
+}
+
+/// 初始化单例
+pub fn init() {
+    let _ = BRAIN_DAO.set(Arc::new(RigBrainDao::new()));
+}
 
 /// Brain DAO 工厂 trait
 #[async_trait::async_trait]
@@ -35,28 +50,28 @@ impl BrainDao for RigBrainDao {
         
         let agent: Box<dyn RigAgent + Send + Sync> = match provider.provider_type {
             ProviderType::OpenAi => Box::new(
-                super::openai_agent::OpenAiRigAgent::new(api_key, model, base_url)?
+                super::rig::OpenAiRigAgent::new(api_key, model, base_url)?
             ),
             ProviderType::DeepSeek => Box::new(
-                super::openai_compatible::OpenAiCompatibleAgent::new(
+                super::rig::OpenAiCompatibleAgent::new(
                     api_key, model, "https://api.deepseek.com".to_string(), base_url
                 )?
             ),
             ProviderType::Qwen => Box::new(
-                super::openai_compatible::OpenAiCompatibleAgent::new(
+                super::rig::OpenAiCompatibleAgent::new(
                     api_key, model, "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string(), base_url
                 )?
             ),
             ProviderType::Doubao => Box::new(
-                super::openai_compatible::OpenAiCompatibleAgent::new(
+                super::rig::OpenAiCompatibleAgent::new(
                     api_key, model, "https://ark.cn-beijing.volces.com/api".to_string(), base_url
                 )?
             ),
             ProviderType::Ollama => Box::new(
-                super::ollama_agent::OllamaRigAgent::new(api_key, model, base_url)?
+                super::rig::OllamaRigAgent::new(api_key, model, base_url)?
             ),
             ProviderType::OpenAiCompatible => Box::new(
-                super::openai_compatible::OpenAiCompatibleAgent::new(
+                super::rig::OpenAiCompatibleAgent::new(
                     api_key, model, "".to_string(), base_url
                 )?
             ),
@@ -70,13 +85,7 @@ impl BrainDao for RigBrainDao {
     }
 }
 
-mod openai_agent;
-mod openai_compatible;
-mod ollama_agent;
-
-pub use openai_agent::OpenAiRigAgent;
-pub use openai_compatible::OpenAiCompatibleAgent;
-pub use ollama_agent::OllamaRigAgent;
+mod rig;
 
 #[cfg(test)]
 mod tests;

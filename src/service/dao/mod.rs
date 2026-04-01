@@ -4,13 +4,14 @@ pub mod model_provider;
 pub mod org;
 
 pub use agent::dao as agent_dao;
-pub use brain::{BrainDao, RigBrainDao};
+pub use brain::{dao as brain_dao, BrainDao, RigBrainDao};
 pub use crate::models::brain::{Brain, RigAgent};
 pub use model_provider::dao as model_provider_dao;
 pub use org::dao as org_dao;
 
 pub fn init_all() {
     agent::init();
+    brain::init();
     model_provider::init();
     org::init();
 }
