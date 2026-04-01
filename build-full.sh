@@ -4,23 +4,20 @@
 
 set -e
 
-echo "🔨 Building ai_orz full-stack..."
-echo ""
-
 # 加载 rustup 环境
 source "$HOME/.cargo/env"
 
+echo "🔨 Building ai_orz full-stack..."
+echo ""
+
 # 编译前端
-echo "🎨 Building frontend..."
+echo "🎨 Building frontend with dioxus-cli..."
 cd "$(dirname "$0")/frontend"
-cargo build --target wasm32-unknown-unknown --release
-mkdir -p pkg
-wasm-bindgen target/wasm32-unknown-unknown/release/frontend.wasm --out-dir pkg --target web
+dx build --release
 
 # 复制前端输出到项目根目录 dist
 mkdir -p ../dist
-cp index.html ../dist/
-cp -r ./pkg/* ../dist/
+cp -r ./dist/* ../dist/
 
 echo ""
 echo "🏗️  Building backend..."
