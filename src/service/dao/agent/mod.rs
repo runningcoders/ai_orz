@@ -3,6 +3,7 @@
 use crate::error::AppError;
 use crate::models::agent::AgentPo;
 use crate::pkg::RequestContext;
+use anyhow::Result;
 
 /// Agent DAO 接口
 pub trait AgentDaoTrait: Send + Sync {
@@ -13,6 +14,9 @@ pub trait AgentDaoTrait: Send + Sync {
     fn delete(&self, ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError>;
 }
 
+pub mod brain;
 pub mod sqlite;
+
+pub use brain::{Brain, RigAgent};
 pub use sqlite::dao;
 pub use sqlite::init;

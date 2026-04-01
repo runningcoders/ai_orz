@@ -37,6 +37,11 @@ impl Agent {
     pub fn name(&self) -> &str {
         &self.po.name
     }
+
+    /// 获取模型提供商 ID
+    pub fn model_provider_id(&self) -> &str {
+        &self.po.model_provider_id
+    }
 }
 
 /// AgentPo 持久化对象
@@ -52,6 +57,7 @@ impl Agent {
 ///     role TEXT NOT NULL DEFAULT '',
 ///     capabilities TEXT NOT NULL DEFAULT '[]',  -- JSON string
 ///     soul TEXT NOT NULL DEFAULT '',            -- 长文本
+///     model_provider_id TEXT NOT NULL,          -- 关联模型提供商 ID
 ///     status INTEGER NOT NULL DEFAULT 1,        -- 0=已删除, 1=正常
 ///     created_by TEXT NOT NULL DEFAULT '',      -- 创建者
 ///     modified_by TEXT NOT NULL DEFAULT '',     -- 修改者
@@ -66,6 +72,7 @@ pub struct AgentPo {
     pub role: String,
     pub capabilities: String,  // JSON string
     pub soul: String,          // 长文本
+    pub model_provider_id: String, // 关联模型提供商 ID
     pub status: AgentPoStatus, // 软删除状态
     pub created_by: String,    // 创建者
     pub modified_by: String,   // 修改者
@@ -79,6 +86,7 @@ impl AgentPo {
         role: String,
         capabilities: Vec<String>,
         soul: String,
+        model_provider_id: String,
         creator: String,
     ) -> Self {
         Self {
@@ -87,11 +95,12 @@ impl AgentPo {
             role,
             capabilities: serde_json::to_string(&capabilities).unwrap_or_else(|_| "[]".to_string()),
             soul,
+            model_provider_id,
             status: AgentPoStatus::Normal,
             created_by: creator.clone(),
             modified_by: creator,
-            created_at: 0,
-            updated_at: 0,
+            created_at: current_timestamp(),
+            updated_at: current_timestamp(),
         }
     }
 
@@ -123,4 +132,12 @@ fn rand_u32() -> u32 {
         .unwrap()
         .as_nanos() as u32;
     time2.wrapping_add(hasher.finish() as u32)
+}
+
+fn current_timestamp() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
 }
