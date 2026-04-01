@@ -31,7 +31,21 @@ pub fn Navbar() -> Element {
                         }}
                     ",
                     href: "#",
-                    "Agent 管理"
+                    "前台接待"
+                }
+                a {
+                    style: "
+                        color: #ecf0f1;
+                        text-decoration: none;
+                        padding: 0.5rem 1rem;
+                        border-radius: 4px;
+                        transition: background-color 0.2s;
+                        &:hover {{
+                            background-color: rgba(255,255,255,0.1);
+                        }}
+                    ",
+                    href: "#",
+                    "人力资源"
                 }
             }
 
