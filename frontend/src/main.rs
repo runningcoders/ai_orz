@@ -128,11 +128,12 @@ fn App() -> Element {
 }
 
 async fn fetch_health() -> Result<String, String> {
-    // 后端默认运行在 3000 端口
-    let url = "http://localhost:3000/health";
+    // 从环境变量读取后端 API 地址，默认 http://localhost:3000
+    let backend_url = option_env!("BACKEND_API_URL").unwrap_or("http://localhost:3000");
+    let url = format!("{}/health", backend_url);
 
     let client = reqwest::Client::new();
-    let response = client.get(url)
+    let response = client.get(&url)
         .send()
         .await
         .map_err(|e| e.to_string())?;

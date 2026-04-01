@@ -5,11 +5,11 @@ use axum::{
 };
 use tower_http::services::ServeDir;
 
-pub fn create_router() -> Router {
+pub fn create_router(frontend_dist_dir: &str) -> Router {
     Router::new()
         .nest("/api/v1", api_routes())
         .route("/health", get(handlers::health::health))
-        .nest_service("/", ServeDir::new("dist"))
+        .nest_service("/", ServeDir::new(frontend_dist_dir))
 }
 
 fn api_routes() -> Router {
