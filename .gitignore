@@ -29,6 +29,7 @@ target
 # Dioxus frontend build output
 /frontend/dist
 /frontend/target
+/frontend/pkg
 
 # Full-stack build output
 /dist
