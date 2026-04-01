@@ -4,14 +4,11 @@
 
 set -e
 
+# 加载 rustup 环境
+source "$HOME/.cargo/env"
+
 echo "🚀 Starting ai_orz full-stack development server..."
 echo ""
-
-# 检查 dioxus-cli 是否安装
-if ! command -v dx &> /dev/null; then
-    echo "⚠️  dioxus-cli not found. Installing..."
-    cargo install dioxus-cli
-fi
 
 # 启动后端
 echo "📦 Starting backend server on http://localhost:3000"
@@ -22,25 +19,41 @@ BACKEND_PID=$!
 # 等待后端启动
 sleep 2
 
-# 启动前端
-echo "🎨 Starting frontend dev server on http://localhost:8080"
-cd frontend
-dx serve &
-FRONTEND_PID=$!
+# 检查 dioxus-cli 是否可用
+if command -v dx &> /dev/null; then
+    echo "🎨 Starting frontend dev server on http://localhost:8080"
+    cd frontend
+    dx serve &
+    FRONTEND_PID=$!
 
-echo ""
-echo "✅ Both servers started!"
-echo "📍 Backend API: http://localhost:3000"
-echo "📍 Frontend UI: http://localhost:8080"
-echo ""
-echo "Press Ctrl+C to stop both servers"
+    echo ""
+    echo "✅ Both servers started!"
+    echo "📍 Backend API: http://localhost:3000"
+    echo "📍 Frontend UI: http://localhost:8080"
+    echo ""
+    echo "Press Ctrl+C to stop both servers"
 
-# 等待任意进程退出
-wait $BACKEND_PID $FRONTEND_PID
+    # 等待任意进程退出
+    wait $BACKEND_PID $FRONTEND_PID
 
-# 清理
-kill $BACKEND_PID 2>/dev/null || true
-kill $FRONTEND_PID 2>/dev/null || true
+    # 清理
+    kill $BACKEND_PID 2>/dev/null || true
+    kill $FRONTEND_PID 2>/dev/null || true
+else
+    echo "⚠️  dioxus-cli not installed (due to macOS version compatibility issue)."
+    echo "   Backend started. You can open frontend/index.html in your browser manually."
+    echo ""
+    echo "📍 Backend API: http://localhost:3000"
+    echo "📍 Frontend: file://$(pwd)/frontend/index.html"
+    echo ""
+    echo "Press Ctrl+C to stop backend"
+
+    # 等待后端退出
+    wait $BACKEND_PID
+
+    # 清理
+    kill $BACKEND_PID 2>/dev/null || true
+fi
 
 echo ""
 echo "👋 Servers stopped"
