@@ -13,7 +13,7 @@ impl Default for HealthStatus {
         Self {
             checked: false,
             healthy: false,
-            message: "未检查".to_string(),
+            message: "未连接".to_string(),
         }
     }
 }
@@ -25,25 +25,23 @@ pub fn HealthCheck() -> Element {
     rsx! {
         div {
             style: "
-                background: #f8f9fa;
-                border-radius: 8px;
-                padding: 2rem;
-                margin-bottom: 2rem;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
             ",
-
-            h2 { style: "margin-top: 0; color: #333; font-size: 1.2rem;", "后端健康检查" }
-
             button {
                 style: "
-                    background: #007bff;
-                    color: white;
-                    border: none;
-                    padding: 0.75rem 1.5rem;
+                    background: transparent;
+                    color: #ecf0f1;
+                    border: 1px solid #ecf0f1;
+                    padding: 0.4rem 0.8rem;
                     border-radius: 4px;
                     cursor: pointer;
-                    font-size: 1rem;
-                    margin: 1rem 0;
+                    font-size: 0.875rem;
+                    transition: all 0.2s;
+                    &:hover {{
+                        background-color: rgba(255, 255, 255, 0.1);
+                    }}
                 ",
                 onclick: move |_| async move {
                     let mut status = health_status.write();
@@ -58,42 +56,34 @@ pub fn HealthCheck() -> Element {
                         }
                         Err(e) => {
                             status.healthy = false;
-                            status.message = format!("检查失败: {}", e);
+                            status.message = format!("失败: {}", e);
                         }
                     }
                 },
-                "检查健康状态"
+                "检查"
             }
 
-            div {
-                style: "margin-top: 1rem;",
-                if health_status().checked {
-                    if health_status().healthy {
+            {
+                let status = health_status.read();
+                match *status {
+                    HealthStatus { checked: false, .. } => rsx! {
                         div {
-                            style: "
-                                background: #d4edda;
-                                color: #155724;
-                                padding: 1rem;
-                                border-radius: 4px;
-                            ",
-                            "✅ " { health_status().message }
+                            style: "color: #f39c12; font-size: 0.875rem;",
+                            "? 未检查"
                         }
-                    } else {
+                    },
+                    HealthStatus { checked: true, healthy: true, .. } => rsx! {
                         div {
-                            style: "
-                                background: #f8d7da;
-                                color: #721c24;
-                                padding: 1rem;
-                                border-radius: 4px;
-                            ",
-                            "❌ " { health_status().message }
+                            style: "color: #2ecc71; font-size: 0.875rem;",
+                            "✅ OK"
                         }
-                    }
-                } else {
-                    div {
-                        style: "color: #6c757d; padding: 1rem 0;",
-                        "点击上方按钮检查后端连接状态"
-                    }
+                    },
+                    HealthStatus { checked: true, healthy: false, ref message, .. } => rsx! {
+                        div {
+                            style: "color: #e74c3c; font-size: 0.875rem;",
+                            "❌ " {message.clone()}
+                        }
+                    },
                 }
             }
         }
