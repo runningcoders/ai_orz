@@ -1,8 +1,7 @@
 //! Brain DAO 测试
 
 use super::*;
-use crate::models::{model_provider::{ModelProviderPo, ProviderType}};
-use crate::service::dao::brain::{RigBrainDao, BrainDao};
+use crate::models::{self, model_provider::{ModelProviderPo, ProviderType}};
 
 #[test]
 fn test_create_openai_brain() {
@@ -21,7 +20,7 @@ fn test_create_openai_brain() {
         updated_at: 0,
     };
 
-    let dao = RigBrainDao::new();
+    let dao = rig::RigBrainDao::new();
     let result = dao.create_brain(&provider);
     
     // 应该能成功创建，API key 不正确只会在运行时失败，创建本身不会失败
@@ -45,7 +44,7 @@ fn test_create_deepseek_brain() {
         updated_at: 0,
     };
 
-    let dao = RigBrainDao::new();
+    let dao = rig::RigBrainDao::new();
     let result = dao.create_brain(&provider);
     
     assert!(result.is_ok());
@@ -68,7 +67,7 @@ fn test_create_qwen_brain() {
         updated_at: 0,
     };
 
-    let dao = RigBrainDao::new();
+    let dao = rig::RigBrainDao::new();
     let result = dao.create_brain(&provider);
     
     assert!(result.is_ok());
@@ -91,7 +90,7 @@ fn test_create_doubao_brain() {
         updated_at: 0,
     };
 
-    let dao = RigBrainDao::new();
+    let dao = rig::RigBrainDao::new();
     let result = dao.create_brain(&provider);
     
     assert!(result.is_ok());
@@ -114,7 +113,7 @@ fn test_create_ollama_brain() {
         updated_at: 0,
     };
 
-    let dao = RigBrainDao::new();
+    let dao = rig::RigBrainDao::new();
     let result = dao.create_brain(&provider);
     
     assert!(result.is_ok());
@@ -137,7 +136,7 @@ fn test_create_openai_compatible_custom_base_url() {
         updated_at: 0,
     };
 
-    let dao = RigBrainDao::new();
+    let dao = rig::RigBrainDao::new();
     let result = dao.create_brain(&provider);
     
     assert!(result.is_ok());
