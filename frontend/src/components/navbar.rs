@@ -96,7 +96,7 @@ pub fn Navbar(on_navigate: EventHandler<Page>) -> Element {
                                     }}
                                 ",
                                 onclick: move |_| {
-                                    // TODO: 员工管理页面
+                                    on_navigate.call(Page::EmployeeManagement);
                                     hr_menu_open.set(false);
                                 },
                                 "员工管理"
