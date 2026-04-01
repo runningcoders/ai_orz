@@ -17,7 +17,7 @@ dx build --release
 
 # 复制前端输出到项目根目录 dist
 mkdir -p ../dist
-cp -r ./dist/* ../dist/
+cp -r target/dx/frontend/release/web/public/* ../dist/
 
 echo ""
 echo "🏗️  Building backend..."
