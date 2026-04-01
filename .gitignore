@@ -24,4 +24,11 @@ target
 # Added by cargo
 
 /target
-data/
+/data/
+
+# Dioxus frontend build output
+/frontend/dist
+/frontend/target
+
+# Full-stack build output
+/dist
