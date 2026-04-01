@@ -3,11 +3,13 @@ use axum::{
     routing::{delete, get, post, put},
     Router,
 };
+use tower_http::services::ServeDir;
 
 pub fn create_router() -> Router {
     Router::new()
         .nest("/api/v1", api_routes())
         .route("/health", get(handlers::health::health))
+        .nest_service("/", ServeDir::new("dist"))
 }
 
 fn api_routes() -> Router {
