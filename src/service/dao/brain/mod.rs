@@ -2,7 +2,7 @@
 //!
 //! 根据 Model Provider 创建 Brain 实体，提供统一推理接口
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use std::sync::{Arc, OnceLock};
 use crate::models::{self, brain::*, model_provider::ModelProviderPo};
 
@@ -31,6 +31,7 @@ pub trait BrainDao: Send + Sync {
 }
 
 mod rig;
+
 pub use rig::{RigBrainDao};
 
 #[cfg(test)]

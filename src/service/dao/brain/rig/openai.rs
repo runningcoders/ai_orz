@@ -1,16 +1,16 @@
-//! OpenAI 原生 Rig Agent 实现
+//! OpenAI 原生 Cortex 实现
 
 use async_trait::async_trait;
 use anyhow::{Result, anyhow};
 use rig::prelude::*;
-use crate::models::brain::{self, RigAgent};
+use crate::models::brain::{self, Cortex};
 
-/// OpenAI 原生 Rig Agent
-pub struct OpenAiRigAgent {
+/// OpenAI 原生 Cortex
+pub struct OpenAiCortex {
     agent: rig::agent::Agent<rig::providers::openai::Client, ()>,
 }
 
-impl OpenAiRigAgent {
+impl OpenAiCortex {
     pub fn new(api_key: String, model: String, base_url: Option<String>) -> Result<Self> {
         let client = if let Some(base_url) = base_url {
             rig::providers::openai::Client::new(api_key).with_base_url(base_url)
@@ -26,7 +26,7 @@ impl OpenAiRigAgent {
 }
 
 #[async_trait]
-impl RigAgent for OpenAiRigAgent {
+impl Cortex for OpenAiCortex {
     async fn prompt(&self, prompt: &str) -> Result<String> {
         let response = self.agent.prompt(prompt).await
             .map_err(|e| anyhow!("OpenAI prompt failed: {}", e))?;

@@ -1,18 +1,18 @@
-//! Ollama 本地 Agent 实现
+//! Ollama 本地 Cortex 实现
 //!
 //! 本地运行大模型，不需要云端 API
 
 use async_trait::async_trait;
 use anyhow::{Result, anyhow};
 use rig::prelude::*;
-use crate::models::brain::{self, RigAgent};
+use crate::models::brain::{self, Cortex};
 
-/// Ollama 本地 Rig Agent
-pub struct OllamaRigAgent {
+/// Ollama 本地 Cortex
+pub struct OllamaCortex {
     agent: rig::agent::Agent<rig::providers::ollama::Client, ()>,
 }
 
-impl OllamaRigAgent {
+impl OllamaCortex {
     pub fn new(api_key: String, model: String, base_url: Option<String>) -> Result<Self> {
         let client = if let Some(base_url) = base_url {
             rig::providers::ollama::Client::new(base_url)
@@ -30,7 +30,7 @@ impl OllamaRigAgent {
 }
 
 #[async_trait]
-impl RigAgent for OllamaRigAgent {
+impl Cortex for OllamaCortex {
     async fn prompt(&self, prompt: &str) -> Result<String> {
         let response = self.agent.prompt(prompt).await
             .map_err(|e| anyhow!("Ollama prompt failed: {}", e))?;
