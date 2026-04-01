@@ -1,7 +1,8 @@
 use dioxus::prelude::*;
+use crate::Page;
 
 #[component]
-pub fn Navbar() -> Element {
+pub fn Navbar(on_navigate: EventHandler<Page>) -> Element {
     let mut hr_menu_open = use_signal(|| false);
 
     rsx! {
@@ -30,11 +31,15 @@ pub fn Navbar() -> Element {
                         padding: 0.5rem 1rem;
                         border-radius: 4px;
                         transition: background-color 0.2s;
+                        cursor: pointer;
                         &:hover {{
                             background-color: rgba(255,255,255,0.1);
                         }}
                     ",
-                    href: "#",
+                    onclick: move |_| {
+                        on_navigate.call(Page::Reception);
+                        hr_menu_open.set(false);
+                    },
                     "前台接待"
                 }
 
@@ -85,11 +90,15 @@ pub fn Navbar() -> Element {
                                     color: #333;
                                     text-decoration: none;
                                     transition: background-color 0.2s;
+                                    cursor: pointer;
                                     &:hover {{
                                         background-color: #f5f5f5;
                                     }}
                                 ",
-                                href: "#",
+                                onclick: move |_| {
+                                    // TODO: 员工管理页面
+                                    hr_menu_open.set(false);
+                                },
                                 "员工管理"
                             }
                             a {
@@ -99,11 +108,15 @@ pub fn Navbar() -> Element {
                                     color: #333;
                                     text-decoration: none;
                                     transition: background-color 0.2s;
+                                    cursor: pointer;
                                     &:hover {{
                                         background-color: #f5f5f5;
                                     }}
                                 ",
-                                href: "#",
+                                onclick: move |_| {
+                                    on_navigate.call(Page::AgentManagement);
+                                    hr_menu_open.set(false);
+                                },
                                 "Agent 管理"
                             }
                         }

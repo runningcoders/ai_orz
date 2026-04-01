@@ -2,7 +2,13 @@ mod components;
 mod api;
 
 use dioxus::prelude::*;
-use components::{Navbar, Reception};
+use components::{Navbar, Reception, AgentManagement};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Page {
+    Reception,
+    AgentManagement,
+}
 
 fn main() {
     launch(App);
@@ -10,6 +16,8 @@ fn main() {
 
 #[component]
 fn App() -> Element {
+    let mut current_page = use_signal(|| Page::Reception);
+
     rsx! {
         document::Title { "AI Orz - AI 代理执行框架" }
         div {
@@ -18,15 +26,20 @@ fn App() -> Element {
                 background-color: #f5f5f5;
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             ",
-            // 顶部导航栏
-            Navbar {}
+            // 顶部导航栏 - 需要传递页面切换回调
+            Navbar {
+                on_navigate: move |page| current_page.set(page)
+            }
 
-            // 主内容区 - 默认前台接待页面
+            // 主内容区 - 根据当前页面渲染
             main {
                 style: "
                     padding: 2rem 1rem;
                 ",
-                Reception {}
+                match current_page() {
+                    Page::Reception => rsx! { Reception {} },
+                    Page::AgentManagement => rsx! { AgentManagement {} },
+                }
             }
         }
     }
