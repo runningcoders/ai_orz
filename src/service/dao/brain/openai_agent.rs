@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use anyhow::{Result, anyhow};
 use rig::prelude::*;
 use rig::providers::openai::{Client};
-use super::*;
+use crate::models::brain::{self, RigAgent};
 
 /// OpenAI 原生 Rig Agent
 pub struct OpenAiRigAgent {

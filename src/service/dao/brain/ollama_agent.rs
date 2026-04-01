@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use anyhow::{Result, anyhow};
 use rig::prelude::*;
 use rig::providers::ollama::{Client};
-use super::*;
+use crate::models::brain::{self, RigAgent};
 
 /// Ollama 本地 Rig Agent
 pub struct OllamaRigAgent {

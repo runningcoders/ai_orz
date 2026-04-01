@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use anyhow::{Result, anyhow};
 use rig::prelude::*;
 use rig::providers::openai::{Client};
-use super::*;
+use crate::models::brain::{self, RigAgent};
 
 /// OpenAI 兼容格式的 Rig Agent
 pub struct OpenAiCompatibleAgent {
