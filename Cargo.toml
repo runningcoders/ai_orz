@@ -1,3 +1,10 @@
+[workspace]
+members = [
+    ".",
+    "frontend",
+]
+resolver = "2"
+
 [package]
 name = "ai_orz"
 version = "0.1.0"
