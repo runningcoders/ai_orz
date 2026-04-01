@@ -2,12 +2,11 @@ mod components;
 mod api;
 
 use dioxus::prelude::*;
-use components::{Navbar, Reception, AgentManagement, EmployeeManagement};
+use components::{Navbar, Reception, AgentManagement};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Page {
     Reception,
-    EmployeeManagement,
     AgentManagement,
 }
 
@@ -39,7 +38,6 @@ fn App() -> Element {
                 ",
                 match current_page() {
                     Page::Reception => rsx! { Reception {} },
-                    Page::EmployeeManagement => rsx! { EmployeeManagement {} },
                     Page::AgentManagement => rsx! { AgentManagement {} },
                 }
             }

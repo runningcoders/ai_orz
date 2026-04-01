@@ -2906,7 +2906,9 @@ version = "0.1.0"
 dependencies = [
  "dioxus",
  "dioxus-cli",
+ "js-sys",
  "reqwest",
+ "web-sys",
 ]
 
 [[package]]
