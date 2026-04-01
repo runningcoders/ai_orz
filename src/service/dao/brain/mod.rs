@@ -3,14 +3,16 @@
 //! 根据 Model Provider 创建 Brain 实体，提供统一推理接口
 
 use anyhow::{Result, anyhow};
-use crate::models::{self, model_provider::ModelProviderPo};
-use crate::models::brain::{Brain, RigAgent};
+use crate::models::{self, brain::*, model_provider::ModelProviderPo};
 
 /// Brain DAO 工厂 trait
 #[async_trait::async_trait]
 pub trait BrainDao: Send + Sync {
     /// 根据 Model Provider 创建 Brain
     fn create_brain(&self, provider: &ModelProviderPo) -> Result<Brain>;
+    
+    /// 统一调用：运行 prompt，获取回答
+    async fn prompt(&self, brain: &Brain, prompt: &str) -> Result<String>;
 }
 
 /// 默认 Brain DAO 工厂实现
@@ -61,6 +63,10 @@ impl BrainDao for RigBrainDao {
         };
         
         Ok(Brain::new(agent))
+    }
+
+    async fn prompt(&self, brain: &Brain, prompt: &str) -> Result<String> {
+        brain.agent.prompt(prompt).await
     }
 }
 
