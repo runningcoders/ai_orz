@@ -1,18 +1,18 @@
 //! Brain - 大脑工厂
 //!
-//! 根据 Agent 配置创建对应的 rig Agent，处理与外部 LLM 提供商的通信
+//! 根据 Model Provider 创建对应的 rig Agent，处理与外部 LLM 提供商的通信
 
 use async_trait::async_trait;
 use anyhow::{Result, anyhow};
 use rig::prelude::*;
-use crate::models::{agent::Agent, model_provider::ModelProviderPo};
+use crate::models::model_provider::ModelProviderPo;
 
 /// 大脑封装了 rig Agent，负责与外部 LLM 提供商通信
 pub struct Brain {
     agent: Box<dyn RigAgent + Send + Sync>,
 }
 
-/// 统一的 Rig Agent  trait
+/// 统一的 Rig Agent trait
 #[async_trait]
 pub trait RigAgent {
     /// 运行 prompt，获取回答
