@@ -1,5 +1,4 @@
 use dioxus::prelude::*;
-use js_sys::Math;
 
 #[derive(Clone, Debug)]
 pub struct Agent {
@@ -7,7 +6,6 @@ pub struct Agent {
     name: String,
     description: String,
     status: AgentStatus,
-    created_at: i64,
 }
 
 #[derive(Clone, Debug)]
@@ -35,16 +33,6 @@ impl AgentStatus {
     }
 }
 
-fn generate_id() -> String {
-    // 简单生成随机 id
-    let now = Math::random() * 1000000000.0;
-    format!("{}{}", now as u64, (Math::random() * 10000.0) as u32)
-}
-
-fn current_timestamp() -> i64 {
-    (Math::random() * 1000000000.0) as i64
-}
-
 #[component]
 pub fn AgentManagement() -> Element {
     let mut agents = use_signal(Vec::<Agent>::new);
@@ -58,25 +46,22 @@ pub fn AgentManagement() -> Element {
         // 模拟从后端加载 Agent 列表
         let sample_agents = vec![
             Agent {
-                id: generate_id(),
+                id: "1".to_string(),
                 name: "代码助手".to_string(),
                 description: "帮你写代码和调试".to_string(),
                 status: AgentStatus::Running,
-                created_at: current_timestamp() - 86400,
             },
             Agent {
-                id: generate_id(),
+                id: "2".to_string(),
                 name: "文案创作".to_string(),
                 description: "文章、文案、广告创作".to_string(),
                 status: AgentStatus::Running,
-                created_at: current_timestamp() - 172800,
             },
             Agent {
-                id: generate_id(),
+                id: "3".to_string(),
                 name: "数据分析".to_string(),
                 description: "数据统计和可视化分析".to_string(),
                 status: AgentStatus::Stopped,
-                created_at: current_timestamp() - 259200,
             },
         ];
 
@@ -385,15 +370,14 @@ pub fn AgentManagement() -> Element {
                                     cursor: pointer;
                                 ",
                                 onclick: move |_| {
-                                    // TODO: 调用后端 API 创建 Agent
+                                    // TODO: 调用后端 API 创建 Agent，后端自动生成 id
                                     if !new_agent_name().is_empty() {
                                         let mut agents = agents.write();
                                         agents.push(Agent {
-                                            id: generate_id(),
+                                            id: String::new(), // 后端会分配正式 id
                                             name: new_agent_name(),
                                             description: new_agent_desc(),
                                             status: AgentStatus::Stopped,
-                                            created_at: current_timestamp(),
                                         });
                                         show_add_modal.set(false);
                                         new_agent_name.set(String::new());
