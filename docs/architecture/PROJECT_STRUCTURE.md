@@ -26,9 +26,8 @@
 
 ```
 ai_orz/
-├── src/
+├── src/                          # 后端源码
 │   ├── main.rs                     # 应用入口
-│   ├── lib.rs                      # 库入口
 │   ├── router.rs                   # 路由配置
 │   ├── error.rs                    # 统一错误处理
 │   │
@@ -74,9 +73,17 @@ ai_orz/
 │       └── constants/              # 常量
 │           └── mod.rs
 │
-├── tests/
-├── docs/
-└── Cargo.toml
+├── frontend/                      # 前端源码 (Dioxus 0.7 WebAssembly)
+│   ├── src/
+│   │   └── main.rs                # 入口 + 页面组件
+│   ├── Cargo.toml
+│   └── index.html                 # HTML 入口
+│
+├── dist/                          # 生产构建输出（前端静态文件）
+├── docs/                          # 文档
+├── build-full.sh                   # 全量构建脚本
+├── start-dev.sh                   # 开发启动脚本
+└── Cargo.toml                     # 工作空间配置
 ```
 
 ---
