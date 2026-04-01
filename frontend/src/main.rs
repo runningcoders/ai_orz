@@ -128,8 +128,8 @@ fn App() -> Element {
 }
 
 async fn fetch_health() -> Result<String, String> {
-    // 后端默认运行在 8080 端口
-    let url = "http://localhost:8080/api/health";
+    // 后端默认运行在 3000 端口
+    let url = "http://localhost:3000/health";
 
     let client = reqwest::Client::new();
     let response = client.get(url)
