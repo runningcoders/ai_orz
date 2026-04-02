@@ -1,6 +1,6 @@
 //! 模型提供商实体
 
-use crate::pkg::constants::{ModelProviderStatus, ProviderType};
+use crate::pkg::constants::{ModelProviderPoStatus, ProviderType};
 use serde::{Deserialize, Serialize};
 
 /// 模型提供商持久化对象
@@ -32,7 +32,7 @@ pub struct ModelProviderPo {
     pub api_key: String,
     pub base_url: Option<String>,
     pub description: String,
-    pub status: ModelProviderStatus,
+    pub status: ModelProviderPoStatus,
     pub created_by: String,
     pub modified_by: String,
     pub created_at: i64,
@@ -99,7 +99,7 @@ impl ModelProviderPo {
             api_key,
             base_url,
             description,
-            status: ModelProviderStatus::Normal,
+            status: ModelProviderPoStatus::Normal,
             created_by: creator.clone(),
             modified_by: creator,
             created_at: current_timestamp(),

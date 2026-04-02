@@ -45,14 +45,14 @@ impl Default for AgentPoStatus {
     }
 }
 
-/// ModelProvider 状态枚举（用于软删除）
+/// ModelProviderPo 状态枚举（用于软删除）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ModelProviderStatus {
+pub enum ModelProviderPoStatus {
     Deleted = 0,
     Normal = 1,
 }
 
-impl ModelProviderStatus {
+impl ModelProviderPoStatus {
     pub fn from_i32(v: i32) -> Self {
         match v {
             0 => Self::Deleted,
@@ -65,7 +65,7 @@ impl ModelProviderStatus {
     }
 }
 
-impl serde::Serialize for ModelProviderStatus {
+impl serde::Serialize for ModelProviderPoStatus {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -74,7 +74,7 @@ impl serde::Serialize for ModelProviderStatus {
     }
 }
 
-impl<'de> serde::Deserialize<'de> for ModelProviderStatus {
+impl<'de> serde::Deserialize<'de> for ModelProviderPoStatus {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -84,7 +84,7 @@ impl<'de> serde::Deserialize<'de> for ModelProviderStatus {
     }
 }
 
-impl Default for ModelProviderStatus {
+impl Default for ModelProviderPoStatus {
     fn default() -> Self {
         Self::Normal
     }
