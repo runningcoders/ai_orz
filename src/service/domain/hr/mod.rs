@@ -4,7 +4,7 @@
 //! - Agent - AI 智能体
 //! - Employee - 人类员工
 
-mod agent;
+pub mod agent;
 
 use crate::error::AppError;
 use crate::models::agent::Agent;

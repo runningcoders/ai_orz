@@ -4,7 +4,7 @@ use crate::error::AppError;
 use crate::models::agent::Agent;
 use crate::pkg::RequestContext;
 use crate::service::dal::agent::AgentDalTrait;
-use crate::service::domain::hr::{AgentManage, HrDomain};
+use crate::service::domain::hr::{HrDomain, AgentManage};
 use std::sync::Arc;
 
 /// HR Domain 实现
