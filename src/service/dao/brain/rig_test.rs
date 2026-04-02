@@ -1,10 +1,11 @@
 //! Brain DAO 测试
 
 use super::*;
-use crate::models::{self, model_provider::{ModelProviderPo, ProviderType}};
+use crate::models::{self, model_provider::ModelProviderPo};
+use crate::pkg::constants::provider_type::ProviderType;
 
-#[test]
-fn test_create_openai_brain() {
+#[tokio::test]
+async fn test_create_openai_brain() {
     let provider = ModelProviderPo {
         id: "test-id".to_string(),
         name: "OpenAI GPT-4o".to_string(),
@@ -27,8 +28,8 @@ fn test_create_openai_brain() {
     assert!(result.is_ok());
 }
 
-#[test]
-fn test_create_deepseek_brain() {
+#[tokio::test]
+async fn test_create_deepseek_brain() {
     let provider = ModelProviderPo {
         id: "test-id".to_string(),
         name: "DeepSeek".to_string(),
@@ -50,8 +51,8 @@ fn test_create_deepseek_brain() {
     assert!(result.is_ok());
 }
 
-#[test]
-fn test_create_qwen_brain() {
+#[tokio::test]
+async fn test_create_qwen_brain() {
     let provider = ModelProviderPo {
         id: "test-id".to_string(),
         name: "Qwen".to_string(),
@@ -73,8 +74,8 @@ fn test_create_qwen_brain() {
     assert!(result.is_ok());
 }
 
-#[test]
-fn test_create_doubao_brain() {
+#[tokio::test]
+async fn test_create_doubao_brain() {
     let provider = ModelProviderPo {
         id: "test-id".to_string(),
         name: "Doubao".to_string(),
@@ -96,8 +97,8 @@ fn test_create_doubao_brain() {
     assert!(result.is_ok());
 }
 
-#[test]
-fn test_create_ollama_brain() {
+#[tokio::test]
+async fn test_create_ollama_brain() {
     let provider = ModelProviderPo {
         id: "test-id".to_string(),
         name: "Ollama Llama3".to_string(),
@@ -119,8 +120,8 @@ fn test_create_ollama_brain() {
     assert!(result.is_ok());
 }
 
-#[test]
-fn test_create_openai_compatible_custom_base_url() {
+#[tokio::test]
+async fn test_create_openai_compatible_custom_base_url() {
     let provider = ModelProviderPo {
         id: "test-id".to_string(),
         name: "Custom OpenAI Compatible".to_string(),
