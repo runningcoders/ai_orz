@@ -44,7 +44,7 @@ impl HrDomainImpl {
 }
 
 impl HrDomain for HrDomainImpl {
-    fn agent_manage(&self) -> &dyn AgentManage {
+    fn agent_manage(&self) -> &dyn crate::service::domain::hr::AgentManage {
         self
     }
 }
@@ -64,17 +64,17 @@ pub trait HrDomain: Send + Sync {
 /// 定义 Agent 相关的业务接口
 pub trait AgentManage: Send + Sync {
     /// 创建 Agent
-    fn create(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
+    fn create_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
 
     /// 获取 Agent
-    fn get(&self, ctx: RequestContext, id: &str) -> Result<Option<Agent>, AppError>;
+    fn get_agent(&self, ctx: RequestContext, id: &str) -> Result<Option<Agent>, AppError>;
 
     /// 列出所有 Agent
-    fn list(&self, ctx: RequestContext) -> Result<Vec<Agent>, AppError>;
+    fn list_agents(&self, ctx: RequestContext) -> Result<Vec<Agent>, AppError>;
 
     /// 更新 Agent
-    fn update(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
+    fn update_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
 
     /// 删除 Agent
-    fn delete(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
+    fn delete_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
 }

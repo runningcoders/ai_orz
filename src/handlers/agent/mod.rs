@@ -46,7 +46,7 @@ pub async fn create_agent(
     );
     let agent = Agent::from_po(agent_po);
 
-    domain().agent_manage().create(ctx, &agent)?;
+    domain().agent_manage().create_agent(ctx, &agent)?;
 
     Ok((
         StatusCode::CREATED,
@@ -65,7 +65,7 @@ pub async fn get_agent(
 
     let agent = domain()
         .agent_manage()
-        .get(ctx, &id)?
+        .get_agent(ctx, &id)?
         .ok_or_else(|| AppError::NotFound(format!("Agent {} not found", id)))?;
 
     Ok(Json(ApiResponse::success(AgentResponse::from_agent(
@@ -79,7 +79,7 @@ pub async fn get_agent(
 pub async fn list_agents(headers: HeaderMap) -> Result<Json<ApiResponse<Vec<AgentResponse>>>, AppError> {
     let ctx = extract_ctx(&headers);
 
-    let agents = domain().agent_manage().list(ctx)?;
+    let agents = domain().agent_manage().list_agents(ctx)?;
     let responses: Vec<AgentResponse> = agents.iter().map(AgentResponse::from_agent).collect();
 
     Ok(Json(ApiResponse::success(responses)))
@@ -97,7 +97,7 @@ pub async fn update_agent(
 
     let mut agent = domain()
         .agent_manage()
-        .get(ctx.clone(), &id)?
+        .get_agent(ctx.clone(), &id)?
         .ok_or_else(|| AppError::NotFound(format!("Agent {} not found", id)))?;
 
     // 更新字段
@@ -116,7 +116,7 @@ pub async fn update_agent(
     // 更新 modified_by 为当前用户
     agent.po.modified_by = ctx.uid();
 
-    domain().agent_manage().update(ctx, &agent)?;
+    domain().agent_manage().update_agent(ctx, &agent)?;
 
     Ok(Json(ApiResponse::success(AgentResponse::from_agent(&agent))))
 }
@@ -132,10 +132,10 @@ pub async fn delete_agent(
 
     let agent = domain()
         .agent_manage()
-        .get(ctx.clone(), &id)?
+        .get_agent(ctx.clone(), &id)?
         .ok_or_else(|| AppError::NotFound(format!("Agent {} not found", id)))?;
 
-    domain().agent_manage().delete(ctx, &agent)?;
+    domain().agent_manage().delete_agent(ctx, &agent)?;
 
     Ok(Json(ApiResponse::<()>::ok()))
 }
