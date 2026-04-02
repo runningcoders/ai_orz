@@ -20,6 +20,5 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rusqlite = { version = "0.31", features = ["bundled"] }
 toml = "0.8"
 tower-http = { version = "0.5", features = ["fs"] }
-rig-core = { version = "0.9.1", features = ["full"] }
-rig = { version = "0.9.1", features = ["openai", "ollama", "tokio"] }
+rig-core = { version = "0.33.0", features = ["openai", "ollama", "tokio"] }
 async-trait = "0.1"
