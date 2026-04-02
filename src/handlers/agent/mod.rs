@@ -4,7 +4,7 @@ use crate::error::AppError;
 use crate::handlers::ApiResponse;
 use crate::models::agent::{Agent, AgentPo};
 use crate::pkg::RequestContext;
-use crate::service::domain::hr::agent::domain;
+use crate::service::domain::hr::domain;
 use axum::{
     extract::{Json, Path},
     http::{self, HeaderMap},
@@ -46,7 +46,7 @@ pub async fn create_agent(
     );
     let agent = Agent::from_po(agent_po);
 
-    domain().create(ctx, &agent)?;
+    domain().agent_manage().create(ctx, &agent)?;
 
     Ok((
         StatusCode::CREATED,
@@ -64,6 +64,7 @@ pub async fn get_agent(
     let ctx = extract_ctx(&headers);
 
     let agent = domain()
+        .agent_manage()
         .get(ctx, &id)?
         .ok_or_else(|| AppError::NotFound(format!("Agent {} not found", id)))?;
 
@@ -78,7 +79,7 @@ pub async fn get_agent(
 pub async fn list_agents(headers: HeaderMap) -> Result<Json<ApiResponse<Vec<AgentResponse>>>, AppError> {
     let ctx = extract_ctx(&headers);
 
-    let agents = domain().list(ctx)?;
+    let agents = domain().agent_manage().list(ctx)?;
     let responses: Vec<AgentResponse> = agents.iter().map(AgentResponse::from_agent).collect();
 
     Ok(Json(ApiResponse::success(responses)))
@@ -95,6 +96,7 @@ pub async fn update_agent(
     let ctx = extract_ctx(&headers);
 
     let mut agent = domain()
+        .agent_manage()
         .get(ctx.clone(), &id)?
         .ok_or_else(|| AppError::NotFound(format!("Agent {} not found", id)))?;
 
@@ -114,7 +116,7 @@ pub async fn update_agent(
     // 更新 modified_by 为当前用户
     agent.po.modified_by = ctx.uid();
 
-    domain().update(ctx, &agent)?;
+    domain().agent_manage().update(ctx, &agent)?;
 
     Ok(Json(ApiResponse::success(AgentResponse::from_agent(&agent))))
 }
@@ -129,10 +131,11 @@ pub async fn delete_agent(
     let ctx = extract_ctx(&headers);
 
     let agent = domain()
+        .agent_manage()
         .get(ctx.clone(), &id)?
         .ok_or_else(|| AppError::NotFound(format!("Agent {} not found", id)))?;
 
-    domain().delete(ctx, &agent)?;
+    domain().agent_manage().delete(ctx, &agent)?;
 
     Ok(Json(ApiResponse::<()>::ok()))
 }
