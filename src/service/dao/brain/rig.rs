@@ -2,7 +2,9 @@
 
 use async_trait::async_trait;
 use anyhow::{Result, anyhow};
-use crate::models::{self, brain::*, model_provider::ModelProviderPo};
+use crate::models::{self, brain::*};
+use crate::models::model_provider::ModelProviderPo;
+use crate::pkg::constants::ProviderType;
 
 /// 默认 Brain DAO 工厂实现
 pub struct RigBrainDao;
@@ -16,7 +18,6 @@ impl RigBrainDao {
 #[async_trait]
 impl super::BrainDao for RigBrainDao {
     fn create_brain(&self, provider: &ModelProviderPo) -> Result<Brain> {
-        use crate::models::model_provider::ProviderType;
         
         let api_key = provider.api_key.clone();
         let model = provider.model_name.clone();
