@@ -14,6 +14,12 @@ pub fn create_router(frontend_dist_dir: &str) -> Router {
 
 fn api_routes() -> Router {
     Router::new()
+        // HR (Human Resources) routes
+        .nest("/hr", hr_routes())
+}
+
+fn hr_routes() -> Router {
+    Router::new()
         .route("/agents", post(handlers::create_agent))
         .route("/agents", get(handlers::list_agents))
         .route("/agents/:id", get(handlers::get_agent))
