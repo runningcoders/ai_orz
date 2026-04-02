@@ -4,9 +4,9 @@
 
 use async_trait::async_trait;
 use anyhow::{Result, anyhow};
+use rig::prelude::*;
 use rig_core::agent::Agent;
-use rig_core::prelude::*;
-use rig_provider_ollama::Client;
+use rig::providers::ollama::Client;
 use crate::models::brain::{self, Cortex};
 
 /// Ollama 本地 Cortex

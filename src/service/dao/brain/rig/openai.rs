@@ -2,9 +2,9 @@
 
 use async_trait::async_trait;
 use anyhow::{Result, anyhow};
+use rig::prelude::*;
 use rig_core::agent::Agent;
-use rig_core::prelude::*;
-use rig_provider_openai::Client;
+use rig::providers::openai::Client;
 use crate::models::brain::{self, Cortex};
 
 /// OpenAI 原生 Cortex
