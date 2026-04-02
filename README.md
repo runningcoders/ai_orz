@@ -4,7 +4,7 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 
 ## 技术栈
 
-- **后端**: Rust + Axum + SQLite + [rig-rs](https://github.com/rig-rs/rig) (LLM 调用框架)
+- **后端**: Rust + Axum + SQLite + [rig-core](https://docs.rs/rig-core/latest/rig/) (LLM 调用框架)
 - **前端**: Dioxus 0.7 (WebAssembly)
 - **构建**: dioxus-cli + cargo workspace
 
