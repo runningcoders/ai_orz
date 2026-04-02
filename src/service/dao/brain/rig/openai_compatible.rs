@@ -4,18 +4,18 @@
 
 use async_trait::async_trait;
 use anyhow::{Result, anyhow};
-use rig::prelude::*;
+use rig_core::prelude::*;
 use crate::models::brain::{self, Cortex};
 
 /// OpenAI 兼容格式的 Cortex
 pub struct OpenAiCompatibleCortex {
-    agent: rig::agent::Agent<rig::providers::openai::Client, ()>,
+    agent: rig_core::agent::Agent<rig_core::providers::openai::Client, ()>,
 }
 
 impl OpenAiCompatibleCortex {
     pub fn new(api_key: String, model: String, default_base_url: String, custom_base_url: Option<String>) -> Result<Self> {
         let base_url = custom_base_url.unwrap_or(default_base_url);
-        let client = rig::providers::openai::Client::new(api_key).with_base_url(base_url);
+        let client = rig_core::providers::openai::Client::new(api_key).with_base_url(base_url);
         
         let agent = client.agent(model).build();
         

@@ -2,20 +2,20 @@
 
 use async_trait::async_trait;
 use anyhow::{Result, anyhow};
-use rig::prelude::*;
+use rig_core::prelude::*;
 use crate::models::brain::{self, Cortex};
 
 /// OpenAI 原生 Cortex
 pub struct OpenAiCortex {
-    agent: rig::agent::Agent<rig::providers::openai::Client, ()>,
+    agent: rig_core::agent::Agent<rig_core::providers::openai::Client, ()>,
 }
 
 impl OpenAiCortex {
     pub fn new(api_key: String, model: String, base_url: Option<String>) -> Result<Self> {
         let client = if let Some(base_url) = base_url {
-            rig::providers::openai::Client::new(api_key).with_base_url(base_url)
+            rig_core::providers::openai::Client::new(api_key).with_base_url(base_url)
         } else {
-            rig::providers::openai::Client::new(api_key)
+            rig_core::providers::openai::Client::new(api_key)
         };
         
         // 使用指定模型创建 Agent

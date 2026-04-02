@@ -4,20 +4,20 @@
 
 use async_trait::async_trait;
 use anyhow::{Result, anyhow};
-use rig::prelude::*;
+use rig_core::prelude::*;
 use crate::models::brain::{self, Cortex};
 
 /// Ollama 本地 Cortex
 pub struct OllamaCortex {
-    agent: rig::agent::Agent<rig::providers::ollama::Client, ()>,
+    agent: rig_core::agent::Agent<rig_core::providers::ollama::Client, ()>,
 }
 
 impl OllamaCortex {
     pub fn new(api_key: String, model: String, base_url: Option<String>) -> Result<Self> {
         let client = if let Some(base_url) = base_url {
-            rig::providers::ollama::Client::new(base_url)
+            rig_core::providers::ollama::Client::new(base_url)
         } else {
-            rig::providers::ollama::Client::default()
+            rig_core::providers::ollama::Client::default()
         };
         
         // Ollama 不需要 api key，但接口需要，所以忽略
