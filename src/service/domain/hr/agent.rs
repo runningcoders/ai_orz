@@ -1,31 +1,11 @@
-//! Agent 管理领域逻辑实现
+//! Agent 管理具体方法实现
 
 use crate::error::AppError;
 use crate::models::agent::Agent;
 use crate::pkg::RequestContext;
 use crate::service::dal::agent::AgentDalTrait;
-use crate::service::domain::hr::{HrDomain, AgentManage};
+use crate::service::domain::hr::{AgentManage, HrDomainImpl};
 use std::sync::Arc;
-
-/// HR Domain 实现
-///
-/// 聚合所有人力资源子功能实现
-pub struct HrDomainImpl {
-    agent_dal: Arc<dyn AgentDalTrait>,
-}
-
-impl HrDomainImpl {
-    /// 创建 Domain 实例
-    pub fn new(agent_dal: Arc<dyn AgentDalTrait>) -> Self {
-        Self { agent_dal }
-    }
-}
-
-impl HrDomain for HrDomainImpl {
-    fn agent_manage(&self) -> &dyn AgentManage {
-        self
-    }
-}
 
 impl AgentManage for HrDomainImpl {
     /// 创建 Agent

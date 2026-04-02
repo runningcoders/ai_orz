@@ -9,6 +9,7 @@ pub mod agent;
 use crate::error::AppError;
 use crate::models::agent::Agent;
 use crate::pkg::RequestContext;
+use crate::service::dal::agent::AgentDalTrait;
 use std::sync::{Arc, OnceLock};
 
 // ====================  traits 定义 ====================
@@ -41,6 +42,28 @@ pub trait AgentManage: Send + Sync {
     fn delete(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
 }
 
+// ==================== 实现 ====================
+
+/// HR Domain 实现
+///
+/// 聚合所有人力资源子功能实现
+pub struct HrDomainImpl {
+    agent_dal: Arc<dyn AgentDalTrait>,
+}
+
+impl HrDomainImpl {
+    /// 创建 Domain 实例
+    pub fn new(agent_dal: Arc<dyn AgentDalTrait>) -> Self {
+        Self { agent_dal }
+    }
+}
+
+impl HrDomain for HrDomainImpl {
+    fn agent_manage(&self) -> &dyn AgentManage {
+        self
+    }
+}
+
 // ==================== 单例 ====================
 
 static HR_DOMAIN: OnceLock<Arc<dyn HrDomain>> = OnceLock::new();
@@ -52,6 +75,6 @@ pub fn domain() -> Arc<dyn HrDomain> {
 
 /// 初始化 HR Domain
 pub fn init(agent_dal: Arc<dyn crate::service::dal::agent::AgentDalTrait>) {
-    let hr_domain = agent::HrDomainImpl::new(agent_dal);
+    let hr_domain = HrDomainImpl::new(agent_dal);
     let _ = HR_DOMAIN.set(Arc::new(hr_domain));
 }
