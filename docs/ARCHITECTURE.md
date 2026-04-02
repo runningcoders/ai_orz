@@ -406,25 +406,6 @@ export DATABASE_URL=./data/ai_orz.db
 
 ---
 
-## 构建流程
-
-### 开发构建
-
-```bash
-./start-dev.sh
-# 1. 启动后端 cargo run
-# 2. 启动前端 dx serve 热重载
-```
-
-### 生产构建
-
-```bash
-./build-full.sh
-# 1. dx build --release 编译前端
-# 2. 复制产物到 dist/
-# 3. cargo build --release 编译后端
-```
-
 ## 技术选型理由
 
 ### 为什么选 Rust + Dioxus?
@@ -455,12 +436,4 @@ export DATABASE_URL=./data/ai_orz.db
 - **新增页面** → 前端直接添加组件
 - **更换存储** → 只需要换 DAO 实现
 - **前后端分离部署** → 前端独立部署，后端只提供 API
-
-## 下一步
-
-- [x] 创建 models 层，定义实体 ✅
-- [x] 完成 DAO 分层，实现 LLM 调用架构 ✅
-- [ ] 实现 Agent CRUD API
-- [ ] 实现 Model Provider CRUD API
-- [ ] 前端对接 Agent 管理 API
 
