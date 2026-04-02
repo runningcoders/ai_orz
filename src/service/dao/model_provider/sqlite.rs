@@ -1,9 +1,9 @@
 //! ModelProviderDao SQLite 实现
 
 use crate::error::AppError;
-use crate::models::model_provider::{ModelProviderPo, ProviderType};
+use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::storage;
-use crate::pkg::{RequestContext, constants::ModelProviderPoStatus};
+use crate::pkg::{RequestContext, constants::{ModelProviderPoStatus, ProviderType}};
 use crate::service::dao::model_provider::ModelProviderDaoTrait;
 use std::sync::{Arc, OnceLock};
 
@@ -84,7 +84,7 @@ impl ModelProviderDaoTrait for ModelProviderDaoImpl {
                 api_key: row.get(4)?,
                 base_url: row.get(5)?,
                 description: row.get(6)?,
-                status: ModelProviderStatus::from(row.get::<_, i32>(7)),
+                status: ModelProviderPoStatus::from_i32(row.get::<_, i32>(7)?),
                 created_by: row.get(8)?,
                 modified_by: row.get(9)?,
                 created_at: row.get(10)?,
@@ -110,7 +110,7 @@ impl ModelProviderDaoTrait for ModelProviderDaoImpl {
         let providers = stmt
             .query_map([], |row| {
                 let provider_type_str: String = row.get(2)?;
-                let provider_type: ProviderType = serde_json::from_str(&provider_type)
+                let provider_type: ProviderType = serde_json::from_str(&provider_type_str)
                     .unwrap_or_default();
 
                 Ok(ModelProviderPo {
@@ -121,7 +121,7 @@ impl ModelProviderDaoTrait for ModelProviderDaoImpl {
                     api_key: row.get(4)?,
                     base_url: row.get(5)?,
                     description: row.get(6)?,
-                    status: ModelProviderPoStatus::from_i32(row.get::<_, i32>(7)),
+                    status: ModelProviderPoStatus::from_i32(row.get::<_, i32>(7)?),
                     created_by: row.get(8)?,
                     modified_by: row.get(9)?,
                     created_at: row.get(10)?,

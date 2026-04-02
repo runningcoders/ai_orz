@@ -4,21 +4,28 @@ use async_trait::async_trait;
 use anyhow::{Result, anyhow};
 use rig::prelude::*;
 use rig::agent::Agent;
-use rig::providers::openai::Client;
+use rig::completion::Prompt;
+use rig::providers::openai;
+use rig::providers::openai::responses_api::ResponsesCompletionModel;
 use crate::models::brain::{self, Cortex};
 
 /// OpenAI 原生 Cortex
 pub struct OpenAiCortex {
-    agent: Agent<Client, ()>,
+    agent: Agent<ResponsesCompletionModel>,
 }
 
 impl OpenAiCortex {
     pub fn new(api_key: String, model: String, base_url: Option<String>) -> Result<Self> {
-        let client = if let Some(base_url) = base_url {
-            Client::new(api_key).with_base_url(base_url)
+        let builder = openai::Client::builder().api_key(api_key);
+        
+        let builder = if let Some(base_url) = base_url {
+            builder.base_url(base_url)
         } else {
-            Client::new(api_key)
+            builder
         };
+        
+        let client = builder.build()
+            .map_err(|e| anyhow!("Failed to build OpenAI client: {}", e))?;
         
         // 使用指定模型创建 Agent
         let agent = client.agent(model).build();
@@ -30,10 +37,8 @@ impl OpenAiCortex {
 #[async_trait]
 impl Cortex for OpenAiCortex {
     async fn prompt(&self, prompt: &str) -> Result<String> {
-        let response = self.agent.prompt(prompt).await
-            .map_err(|e| anyhow!("OpenAI prompt failed: {}", e))?;
-        
-        Ok(response)
+        let response: Result<String, _> = self.agent.prompt(prompt).await;
+        response.map_err(|e| anyhow!("OpenAI prompt failed: {}", e))
     }
     
     fn support_tools(&self) -> bool {

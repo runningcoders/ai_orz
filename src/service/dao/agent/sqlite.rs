@@ -37,14 +37,15 @@ impl AgentDaoTrait for AgentDaoImpl {
         let now = current_timestamp();
 
         conn.execute(
-            "INSERT INTO agents (id, name, role, capabilities, soul, status, created_by, modified_by, created_at, updated_at) 
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO agents (id, name, role, capabilities, soul, model_provider_id, status, created_by, modified_by, created_at, updated_at) 
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             rusqlite::params![
                 agent.id,
                 agent.name,
                 agent.role,
                 agent.capabilities,
                 agent.soul,
+                agent.model_provider_id,
                 agent.status.to_i32(),
                 ctx.uid(),
                 ctx.uid(),
@@ -61,7 +62,7 @@ impl AgentDaoTrait for AgentDaoImpl {
 
         let mut stmt = conn
             .prepare(
-                "SELECT id, name, role, capabilities, soul, status, created_by, modified_by, created_at, updated_at 
+                "SELECT id, name, role, capabilities, soul, model_provider_id, status, created_by, modified_by, created_at, updated_at 
                  FROM agents WHERE id = ?1 AND status != 0",
             )
             .map_err(|e| AppError::Internal(e.to_string()))?;
@@ -73,11 +74,12 @@ impl AgentDaoTrait for AgentDaoImpl {
                 role: row.get(2)?,
                 capabilities: row.get(3)?,
                 soul: row.get(4)?,
-                status: crate::pkg::constants::AgentPoStatus::from_i32(row.get(5)?),
-                created_by: row.get(6)?,
-                modified_by: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
+                model_provider_id: row.get(5)?,
+                status: crate::pkg::constants::AgentPoStatus::from_i32(row.get(6)?),
+                created_by: row.get(7)?,
+                modified_by: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
             })
         }) {
             Ok(a) => Ok(Some(a)),
@@ -91,7 +93,7 @@ impl AgentDaoTrait for AgentDaoImpl {
 
         let mut stmt = conn
             .prepare(
-                "SELECT id, name, role, capabilities, soul, status, created_by, modified_by, created_at, updated_at 
+                "SELECT id, name, role, capabilities, soul, model_provider_id, status, created_by, modified_by, created_at, updated_at 
                  FROM agents WHERE status != 0 ORDER BY id DESC",
             )
             .map_err(|e| AppError::Internal(e.to_string()))?;
@@ -104,11 +106,12 @@ impl AgentDaoTrait for AgentDaoImpl {
                     role: row.get(2)?,
                     capabilities: row.get(3)?,
                     soul: row.get(4)?,
-                    status: crate::pkg::constants::AgentPoStatus::from_i32(row.get(5)?),
-                    created_by: row.get(6)?,
-                    modified_by: row.get(7)?,
-                    created_at: row.get(8)?,
-                    updated_at: row.get(9)?,
+                    model_provider_id: row.get(5)?,
+                    status: crate::pkg::constants::AgentPoStatus::from_i32(row.get(6)?),
+                    created_by: row.get(7)?,
+                    modified_by: row.get(8)?,
+                    created_at: row.get(9)?,
+                    updated_at: row.get(10)?,
                 })
             })
             .map_err(|e| AppError::Internal(e.to_string()))?
@@ -122,12 +125,13 @@ impl AgentDaoTrait for AgentDaoImpl {
         let conn = storage::get().conn();
 
         conn.execute(
-            "UPDATE agents SET name = ?1, role = ?2, capabilities = ?3, soul = ?4, modified_by = ?5, updated_at = ?6 WHERE id = ?7",
+            "UPDATE agents SET name = ?1, role = ?2, capabilities = ?3, soul = ?4, model_provider_id = ?5, modified_by = ?6, updated_at = ?7 WHERE id = ?8",
             rusqlite::params![
                 agent.name,
                 agent.role,
                 agent.capabilities,
                 agent.soul,
+                agent.model_provider_id,
                 ctx.uid(),
                 current_timestamp(),
                 agent.id,

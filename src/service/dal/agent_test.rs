@@ -31,6 +31,7 @@ fn test_create_and_find_by_id() {
         "worker".to_string(),
         vec!["coding".to_string()],
         "A helpful agent".to_string(),
+        "provider-id-1".to_string(),
         "admin".to_string(),
     );
     let agent = Agent::from_po(agent_po);
@@ -53,6 +54,7 @@ fn test_find_all() {
             "worker".to_string(),
             vec![],
             "".to_string(),
+            format!("provider-{}", i),
             "admin".to_string(),
         );
         let agent = Agent::from_po(agent_po);
@@ -73,6 +75,7 @@ fn test_update() {
         "worker".to_string(),
         vec![],
         "".to_string(),
+        "provider-id-1".to_string(),
         "admin".to_string(),
     );
     let agent = Agent::from_po(agent_po);
@@ -97,6 +100,7 @@ fn test_delete() {
         "worker".to_string(),
         vec![],
         "".to_string(),
+        "provider-id-1".to_string(),
         "admin".to_string(),
     );
     let agent = Agent::from_po(agent_po);
@@ -111,8 +115,8 @@ fn test_find_all_excludes_deleted() {
     let dal = setup_test_dal();
     let ctx = new_ctx("admin");
 
-    let agent1_po = AgentPo::new("Normal".to_string(), "w".to_string(), vec![], "".to_string(), "admin".to_string());
-    let agent2_po = AgentPo::new("Deleted".to_string(), "w".to_string(), vec![], "".to_string(), "admin".to_string());
+    let agent1_po = AgentPo::new("Normal".to_string(), "w".to_string(), vec![], "".to_string(), "provider-id-1".to_string(), "admin".to_string());
+    let agent2_po = AgentPo::new("Deleted".to_string(), "w".to_string(), vec![], "".to_string(), "provider-id-2".to_string(), "admin".to_string());
 
     let agent1 = Agent::from_po(agent1_po);
     let agent2 = Agent::from_po(agent2_po);

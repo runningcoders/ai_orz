@@ -11,14 +11,15 @@ fn new_ctx(user_id: &str) -> crate::pkg::RequestContext {
 fn insert_agent(conn: &rusqlite::Connection, agent: &AgentPo, creator: &str) {
     let now = current_timestamp();
     conn.execute(
-        "INSERT INTO agents (id, name, role, capabilities, soul, status, created_by, modified_by, created_at, updated_at) 
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        "INSERT INTO agents (id, name, role, capabilities, soul, model_provider_id, status, created_by, modified_by, created_at, updated_at) 
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         rusqlite::params![
             agent.id,
             agent.name,
             agent.role,
             agent.capabilities,
             agent.soul,
+            agent.model_provider_id,
             agent.status.to_i32(),
             creator,
             creator,
@@ -32,7 +33,7 @@ fn insert_agent(conn: &rusqlite::Connection, agent: &AgentPo, creator: &str) {
 fn find_agent(conn: &rusqlite::Connection, id: &str) -> Option<AgentPo> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, name, role, capabilities, soul, status, created_by, modified_by, created_at, updated_at 
+            "SELECT id, name, role, capabilities, soul, model_provider_id, status, created_by, modified_by, created_at, updated_at 
              FROM agents WHERE id = ?1 AND status != 0",
         )
         .unwrap();
@@ -44,11 +45,12 @@ fn find_agent(conn: &rusqlite::Connection, id: &str) -> Option<AgentPo> {
             role: row.get(2)?,
             capabilities: row.get(3)?,
             soul: row.get(4)?,
-            status: crate::pkg::constants::AgentPoStatus::from_i32(row.get(5)?),
-            created_by: row.get(6)?,
-            modified_by: row.get(7)?,
-            created_at: row.get(8)?,
-            updated_at: row.get(9)?,
+            model_provider_id: row.get(5)?,
+            status: crate::pkg::constants::AgentPoStatus::from_i32(row.get(6)?),
+            created_by: row.get(7)?,
+            modified_by: row.get(8)?,
+            created_at: row.get(9)?,
+            updated_at: row.get(10)?,
         })
     }) {
         Ok(a) => Some(a),
@@ -71,6 +73,7 @@ fn test_insert_and_find_by_id() {
         "worker".to_string(),
         vec!["coding".to_string()],
         "A helpful agent".to_string(),
+        "provider-id-1".to_string(),
         "admin".to_string(),
     );
 
@@ -95,6 +98,7 @@ fn test_find_all() {
             "worker".to_string(),
             vec![],
             "".to_string(),
+            format!("provider-{}", i),
             "admin".to_string(),
         );
         insert_agent(&conn, &agent_po, "admin");
@@ -118,6 +122,7 @@ fn test_update() {
         "worker".to_string(),
         vec![],
         "".to_string(),
+        "provider-id-1".to_string(),
         "admin".to_string(),
     );
     insert_agent(&conn, &agent_po, "admin");
@@ -142,6 +147,7 @@ fn test_soft_delete() {
         "worker".to_string(),
         vec![],
         "".to_string(),
+        "provider-id-1".to_string(),
         "admin".to_string(),
     );
     insert_agent(&conn, &agent_po, "admin");
@@ -162,6 +168,7 @@ fn test_find_all_excludes_deleted() {
         "w".to_string(),
         vec![],
         "".to_string(),
+        "provider-id-1".to_string(),
         "admin".to_string(),
     );
     let agent2 = AgentPo::new(
@@ -169,6 +176,7 @@ fn test_find_all_excludes_deleted() {
         "w".to_string(),
         vec![],
         "".to_string(),
+        "provider-id-2".to_string(),
         "admin".to_string(),
     );
 
@@ -195,6 +203,7 @@ fn test_delete_twice_is_idempotent() {
         "w".to_string(),
         vec![],
         "".to_string(),
+        "provider-id-1".to_string(),
         "admin".to_string(),
     );
     insert_agent(&conn, &agent, "admin");

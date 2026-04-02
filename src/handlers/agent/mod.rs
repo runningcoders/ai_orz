@@ -41,6 +41,7 @@ pub async fn create_agent(
         req.role,
         req.capabilities,
         req.soul,
+        req.model_provider_id,
         ctx.uid().to_string(),
     );
     let agent = Agent::from_po(agent_po);

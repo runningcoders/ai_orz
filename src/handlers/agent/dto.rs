@@ -12,6 +12,7 @@ pub struct CreateAgentRequest {
     pub role: String,
     pub capabilities: Vec<String>,
     pub soul: String,
+    pub model_provider_id: String,
 }
 
 /// 更新 Agent 请求
