@@ -12,7 +12,38 @@ use crate::pkg::RequestContext;
 use crate::service::dal::agent::AgentDalTrait;
 use std::sync::{Arc, OnceLock};
 
-// ====================  traits 定义 ====================
+// ==================== 单例 ====================
+
+static HR_DOMAIN: OnceLock<Arc<dyn HrDomain>> = OnceLock::new();
+
+/// 获取 HR Domain 单例
+pub fn domain() -> Arc<dyn HrDomain> {
+    HR_DOMAIN.get().cloned().unwrap()
+}
+
+/// 初始化 HR Domain
+pub fn init(agent_dal: Arc<dyn crate::service::dal::agent::AgentDalTrait>) {
+    let hr_domain = HrDomainImpl::new(agent_dal);
+    let _ = HR_DOMAIN.set(Arc::new(hr_domain));
+}
+
+// ==================== 实现 ====================
+
+/// HR Domain 实现
+///
+/// 聚合所有人力资源子功能实现
+pub struct HrDomainImpl {
+    agent_dal: Arc<dyn AgentDalTrait>,
+}
+
+impl HrDomainImpl {
+    /// 创建 Domain 实例
+    pub fn new(agent_dal: Arc<dyn AgentDalTrait>) -> Self {
+        Self { agent_dal }
+    }
+}
+
+// ==================== traits 定义 ====================
 
 /// HR Domain 总 trait
 ///
@@ -40,41 +71,4 @@ pub trait AgentManage: Send + Sync {
 
     /// 删除 Agent
     fn delete(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
-}
-
-// ==================== 实现 ====================
-
-/// HR Domain 实现
-///
-/// 聚合所有人力资源子功能实现
-pub struct HrDomainImpl {
-    agent_dal: Arc<dyn AgentDalTrait>,
-}
-
-impl HrDomainImpl {
-    /// 创建 Domain 实例
-    pub fn new(agent_dal: Arc<dyn AgentDalTrait>) -> Self {
-        Self { agent_dal }
-    }
-}
-
-impl HrDomain for HrDomainImpl {
-    fn agent_manage(&self) -> &dyn AgentManage {
-        self
-    }
-}
-
-// ==================== 单例 ====================
-
-static HR_DOMAIN: OnceLock<Arc<dyn HrDomain>> = OnceLock::new();
-
-/// 获取 HR Domain 单例
-pub fn domain() -> Arc<dyn HrDomain> {
-    HR_DOMAIN.get().cloned().unwrap()
-}
-
-/// 初始化 HR Domain
-pub fn init(agent_dal: Arc<dyn crate::service::dal::agent::AgentDalTrait>) {
-    let hr_domain = HrDomainImpl::new(agent_dal);
-    let _ = HR_DOMAIN.set(Arc::new(hr_domain));
 }

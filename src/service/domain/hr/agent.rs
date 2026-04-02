@@ -4,8 +4,14 @@ use crate::error::AppError;
 use crate::models::agent::Agent;
 use crate::pkg::RequestContext;
 use crate::service::dal::agent::AgentDalTrait;
-use crate::service::domain::hr::{AgentManage, HrDomainImpl};
+use crate::service::domain::hr::{HrDomain, HrDomainImpl, AgentManage};
 use std::sync::Arc;
+
+impl HrDomain for HrDomainImpl {
+    fn agent_manage(&self) -> &dyn AgentManage {
+        self
+    }
+}
 
 impl AgentManage for HrDomainImpl {
     /// 创建 Agent
