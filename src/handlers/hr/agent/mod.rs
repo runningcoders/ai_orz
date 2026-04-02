@@ -1,9 +1,8 @@
-//! Agent Handler
+//! Agent 管理 HTTP 接口
 
 use crate::error::AppError;
-use crate::handlers::ApiResponse;
+use crate::handlers::{ApiResponse, extract_ctx};
 use crate::models::agent::{Agent, AgentPo};
-use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use axum::{
     extract::{Json, Path},
@@ -12,20 +11,7 @@ use axum::{
 };
 
 pub mod dto;
-pub use dto::{AgentResponse, CreateAgentRequest, UpdateAgentRequest};
-
-/// 从 HeaderMap 提取 RequestContext
-fn extract_ctx(headers: &HeaderMap) -> RequestContext {
-    let user_id = headers
-        .get("X-User-Id")
-        .and_then(|v: &http::HeaderValue| v.to_str().ok())
-        .map(|s: &str| s.to_string());
-    let user_name = headers
-        .get("X-User-Name")
-        .and_then(|v: &http::HeaderValue| v.to_str().ok())
-        .map(|s: &str| s.to_string());
-    RequestContext::new(user_id, user_name)
-}
+pub use self::dto::{AgentResponse, CreateAgentRequest, UpdateAgentRequest};
 
 /// 创建 Agent
 ///

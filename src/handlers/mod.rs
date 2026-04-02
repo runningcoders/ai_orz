@@ -1,12 +1,28 @@
 //! HTTP Handler 层
 
+use crate::pkg::RequestContext;
+use axum::http;
+use axum::http::HeaderMap;
 use serde::Serialize;
 
-pub mod agent;
 pub mod health;
+pub mod hr;
 pub mod organization;
 
-pub use agent::{create_agent, delete_agent, get_agent, list_agents, update_agent};
+pub use hr::agent::{create_agent, delete_agent, get_agent, list_agents, update_agent};
+
+/// 从 HeaderMap 提取 RequestContext
+pub fn extract_ctx(headers: &HeaderMap) -> RequestContext {
+    let user_id = headers
+        .get("X-User-Id")
+        .and_then(|v: &http::HeaderValue| v.to_str().ok())
+        .map(|s: &str| s.to_string());
+    let user_name = headers
+        .get("X-User-Name")
+        .and_then(|v: &http::HeaderValue| v.to_str().ok())
+        .map(|s: &str| s.to_string());
+    RequestContext::new(user_id, user_name)
+}
 
 /// 通用 API 响应包装
 #[derive(Debug, Serialize)]
