@@ -160,12 +160,12 @@ impl ModelProviderDaoTrait for ModelProviderDaoImpl {
         Ok(())
     }
 
-    fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
+    fn delete(&self, ctx: RequestContext, provider: &ModelProviderPo) -> Result<(), AppError> {
         let conn = storage::get().conn();
 
         conn.execute(
             "UPDATE model_providers SET status = 0, modified_by = ?1, updated_at = ?2 WHERE id = ?3 AND status != 0",
-            rusqlite::params![ctx.uid(), current_timestamp(), id],
+            rusqlite::params![ctx.uid(), current_timestamp(), provider.id],
         )
         .map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(())

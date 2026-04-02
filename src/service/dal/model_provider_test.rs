@@ -118,7 +118,7 @@ fn test_delete() {
     );
     dal.create(ctx.clone(), &provider).unwrap();
 
-    dal.delete(ctx.clone(), &provider.po.id).unwrap();
+    dal.delete(ctx.clone(), &provider).unwrap();
     assert!(dal.find_by_id(ctx, &provider.po.id).unwrap().is_none());
 }
 

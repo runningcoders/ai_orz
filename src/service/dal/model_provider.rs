@@ -37,7 +37,7 @@ pub trait ModelProviderDalTrait: Send + Sync {
     fn update(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError>;
 
     /// 删除 Model Provider
-    fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+    fn delete(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError>;
 }
 
 /// Model Provider DAL 实现
@@ -73,7 +73,7 @@ impl ModelProviderDalTrait for ModelProviderDal {
         self.model_provider_dao.update(ctx, &provider.po)
     }
 
-    fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
-        self.model_provider_dao.delete(ctx, id)
+    fn delete(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError> {
+        self.model_provider_dao.delete(ctx, &provider.po)
     }
 }

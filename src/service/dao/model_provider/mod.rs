@@ -10,7 +10,7 @@ pub trait ModelProviderDaoTrait: Send + Sync {
     fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<ModelProviderPo>, AppError>;
     fn find_all(&self, ctx: RequestContext) -> Result<Vec<ModelProviderPo>, AppError>;
     fn update(&self, ctx: RequestContext, provider: &ModelProviderPo) -> Result<(), AppError>;
-    fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+    fn delete(&self, ctx: RequestContext, provider: &ModelProviderPo) -> Result<(), AppError>;
 }
 
 pub mod sqlite;
