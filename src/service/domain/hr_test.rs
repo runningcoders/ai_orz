@@ -1,4 +1,4 @@
-//! Agent Domain 单元测试
+//! HR Domain 单元测试
 
 use super::*;
 use crate::models::agent::{Agent, AgentPo};
@@ -8,21 +8,22 @@ fn new_ctx(user_id: &str) -> crate::pkg::RequestContext {
     crate::pkg::RequestContext::new(Some(user_id.to_string()), None)
 }
 
-fn setup_test_domain() -> Arc<AgentDomain> {
+fn setup_test_domain() -> Arc<HrDomain> {
     // 使用 dal 测试中的基础设施，dal 已经复用 dao 的基础设施
     let dal = crate::service::dal::agent_test::setup_test_dal();
-    Arc::new(AgentDomain::new(dal))
+    Arc::new(HrDomain::new(dal))
 }
 
-#[test]
-fn test_create_agent() {
-    let domain = setup_test_domain();
+#[tokio::test]
+async fn test_create_agent() {
+    let domain = setupTestDomain();
     let ctx = new_ctx("admin");
 
     let agent_po = AgentPo::new(
         "TestAgent".to_string(),
         "worker".to_string(),
         vec!["coding".to_string()],
+        "model_provider_id".to_string(),
         "A helpful agent".to_string(),
         "admin".to_string(),
     );
@@ -31,15 +32,16 @@ fn test_create_agent() {
     domain.create(ctx, &agent).unwrap();
 }
 
-#[test]
-fn test_get_agent() {
-    let domain = setup_test_domain();
+#[tokio::test]
+async fn test_get_agent() {
+    let domain = setupTestDomain();
     let ctx = new_ctx("admin");
 
     let agent_po = AgentPo::new(
         "TestAgent".to_string(),
         "worker".to_string(),
         vec!["coding".to_string()],
+        "model_provider_id".to_string(),
         "A helpful agent".to_string(),
         "admin".to_string(),
     );
@@ -50,9 +52,9 @@ fn test_get_agent() {
     assert_eq!(found.name(), "TestAgent");
 }
 
-#[test]
-fn test_list_agents() {
-    let domain = setup_test_domain();
+#[tokio::test]
+async fn test_list_agents() {
+    let domain = setupTestDomain();
     let ctx = new_ctx("admin");
 
     for i in 0..3 {
@@ -60,6 +62,7 @@ fn test_list_agents() {
             format!("Agent{}", i),
             "worker".to_string(),
             vec![],
+            "model_provider_id".to_string(),
             "".to_string(),
             "admin".to_string(),
         );
@@ -71,15 +74,16 @@ fn test_list_agents() {
     assert_eq!(agents.len(), 3);
 }
 
-#[test]
-fn test_update_agent() {
-    let domain = setup_test_domain();
+#[tokio::test]
+async fn test_update_agent() {
+    let domain = setupTestDomain();
     let ctx = new_ctx("admin");
 
     let agent_po = AgentPo::new(
         "Original".to_string(),
         "worker".to_string(),
         vec![],
+        "model_provider_id".to_string(),
         "".to_string(),
         "admin".to_string(),
     );
@@ -94,15 +98,16 @@ fn test_update_agent() {
     assert_eq!(found.name(), "Updated");
 }
 
-#[test]
-fn test_delete_agent() {
-    let domain = setup_test_domain();
+#[tokio::test]
+async fn test_delete_agent() {
+    let domain = setupTestDomain();
     let ctx = new_ctx("admin");
 
     let agent_po = AgentPo::new(
         "ToDelete".to_string(),
         "worker".to_string(),
         vec![],
+        "model_provider_id".to_string(),
         "".to_string(),
         "admin".to_string(),
     );

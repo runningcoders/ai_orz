@@ -4,7 +4,7 @@ use crate::error::AppError;
 use crate::handlers::ApiResponse;
 use crate::models::agent::{Agent, AgentPo};
 use crate::pkg::RequestContext;
-use crate::service::domain::agent::domain;
+use crate::service::domain::hr::domain;
 use axum::{
     extract::{Json, Path},
     http::{self, HeaderMap},

@@ -1,8 +1,8 @@
-//! Agent Domain 模块
+//! HR (Human Resources) Domain 模块
 //!
-//! Domain 层是抽象业务层，关注 Agent 的通用行为逻辑
-//! 组合多个 DAL 完成业务逻辑，不关心具体的 Agent 类型
-//! 这一层的方法更凝练，行为的核心是调度逻辑
+//! Domain 层是抽象业务逻辑，关注人力资源（Agent + 员工）的通用行为逻辑
+//! 组合多个 DAL 完成业务逻辑，不关心具体的实现细节
+//! 人力资源模块管理所有智能体(Agent)和员工(Employee)
 
 use crate::error::AppError;
 use crate::models::agent::Agent;
@@ -12,26 +12,30 @@ use std::sync::{Arc, OnceLock};
 
 // ==================== 单例管理 ====================
 
-static AGENT_DOMAIN: OnceLock<Arc<AgentDomain>> = OnceLock::new();
+static HR_DOMAIN: OnceLock<Arc<HrDomain>> = OnceLock::new();
 
-/// 获取 Agent Domain 单例
-pub fn domain() -> Arc<AgentDomain> {
-    AGENT_DOMAIN.get().cloned().unwrap()
+/// 获取 HR Domain 单例
+pub fn domain() -> Arc<HrDomain> {
+    HR_DOMAIN.get().cloned().unwrap()
 }
 
-/// 初始化 Agent Domain
+/// 初始化 HR Domain
 pub fn init(agent_dal: Arc<dyn AgentDalTrait>) {
-    let _ = AGENT_DOMAIN.set(Arc::new(AgentDomain::new(agent_dal)));
+    let _ = HR_DOMAIN.set(Arc::new(HrDomain::new(agent_dal)));
 }
 
 // ==================== Domain 实现 ====================
 
-/// Agent Domain 业务逻辑
-pub struct AgentDomain {
+/// HR Domain 业务逻辑
+///
+/// 人力资源模块管理：
+/// - 智能体(Agent) - AI 智能体
+/// - 员工(Employee) - 人类员工
+pub struct HrDomain {
     agent_dal: Arc<dyn AgentDalTrait>,
 }
 
-impl AgentDomain {
+impl HrDomain {
     /// 创建 Domain 实例
     pub fn new(agent_dal: Arc<dyn AgentDalTrait>) -> Self {
         Self { agent_dal }
