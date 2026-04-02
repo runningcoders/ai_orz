@@ -121,7 +121,7 @@ impl ModelProviderDaoTrait for ModelProviderDaoImpl {
                     api_key: row.get(4)?,
                     base_url: row.get(5)?,
                     description: row.get(6)?,
-                    status: ModelProviderStatus::from(row.get::<_, i32>(7)),
+                    status: ModelProviderStatus::from_i32(row.get::<_, i32>(7)),
                     created_by: row.get(8)?,
                     modified_by: row.get(9)?,
                     created_at: row.get(10)?,

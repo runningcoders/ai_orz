@@ -62,6 +62,48 @@ pub struct ModelProviderPo {
     pub updated_at: i64,
 }
 
+/// 模型提供商业务对象
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelProvider {
+    pub po: ModelProviderPo,
+}
+
+impl ModelProvider {
+    /// 创建新的 ModelProvider
+    pub fn new(
+        name: String,
+        provider_type: ProviderType,
+        model_name: String,
+        api_key: String,
+        base_url: Option<String>,
+        description: String,
+        creator: String,
+    ) -> Self {
+        Self {
+            po: ModelProviderPo::new(
+                name,
+                provider_type,
+                model_name,
+                api_key,
+                base_url,
+                description,
+                creator,
+            ),
+        }
+    }
+
+    /// 从 PO 创建业务对象
+    pub fn from_po(po: ModelProviderPo) -> Self {
+        Self { po }
+    }
+
+    /// 更新时间戳
+    pub fn touch(&mut self, modifier: &str) {
+        self.po.modified_by = modifier.to_string();
+        self.po.updated_at = current_timestamp();
+    }
+}
+
 impl ModelProviderPo {
     pub fn new(
         name: String,
@@ -80,7 +122,7 @@ impl ModelProviderPo {
             api_key,
             base_url,
             description,
-            status: AgentPoStatus::Normal,
+            status: ModelProviderStatus::Normal,
             created_by: creator.clone(),
             modified_by: creator,
             created_at: current_timestamp(),
