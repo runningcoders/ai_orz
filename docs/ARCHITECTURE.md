@@ -32,6 +32,11 @@
 ### Message（消息）
 - **定义**：Agent 间的通信单元
 
+### HR (Human Resources)
+- **定义**：人力资源领域模块，统一管理所有「人」相关资源
+  - **Agent** - AI 智能体
+  - **Employee** - 人类员工（预留未来扩展）
+
 ---
 
 ## 整体架构
@@ -60,93 +65,89 @@
 
 ---
 
-## 目录结构
+## 目录结构（后端）
 
 ```
-ai_orz/
-├── src/                          # 后端源码
-│   ├── main.rs                     # 应用入口
-│   ├── router.rs                   # 路由配置
-│   ├── error.rs                    # 统一错误处理
-│   │
-│   ├── handlers/                 # HTTP 层
+ai_orz/src/
+├── main.rs                     # 应用入口
+├── router.rs                   # 路由配置
+├── error.rs                    # 统一错误处理
+│
+├── handlers/                 # HTTP 层
+│   ├── mod.rs                 # 导出 + 通用 ApiResponse + 公共 extract_ctx 方法
+│   ├── health.rs             # 健康检查
+│   ├── organization.rs       # 组织接口
+│   ├── hr.rs                 # HR (Human Resources) 模块入口
+│   └── hr/                  # HR 模块子功能
+│       └── agent/            # Agent 管理
+│           ├── mod.rs         # Agent HTTP 接口实现
+│           └── dto.rs         # 请求/响应 DTO
+│
+├── models/                 # 实体模型层 ★
+│   ├── mod.rs
+│   ├── brain.rs             # 🧠 Brain 实体 + Cortex trait
+│   ├── agent.rs             # Agent 实体
+│   ├── model_provider.rs   # 模型提供商实体
+│   ├── organization.rs     # 组织实体
+│   ├── task.rs             # 任务实体
+│   └── message.rs          # 消息实体
+│
+├── service/                # 业务逻辑层
+│   ├── mod.rs
+│   ├── domain/             # 领域层：领域行为、领域规则
 │   │   ├── mod.rs
-│   │   ├── agent.rs              # Agent 接口
-│   │   ├── model_provider.rs     # 模型提供商接口
-│   │   ├── organization.rs       # 组织接口
-│   │   ├── task.rs              # 任务接口
-│   │   └── health.rs           # 健康检查
+│   │   └── hr/             # HR (Human Resources) 领域 ✨ 新架构
+│   │       ├── mod.rs       # 单例管理 + 结构体定义 + trait 总定义 ✨
+│   │       │   - static HR_DOMAIN: OnceLock<...> 单例放在最上部
+│   │       │   - pub struct HrDomainImpl 结构体定义
+│   │       │   - pub trait HrDomain 总 trait 定义
+│   │       │   - pub trait AgentManage Agent 管理 trait 定义
+│   │       └── agent.rs     # AgentManage trait 具体实现 ✨
 │   │
-│   ├── models/                 # 实体模型层 ★
+│   ├── dal/                 # 具体业务层：组合 dao，完成特定业务
 │   │   ├── mod.rs
-│   │   ├── brain.rs             # 🧠 Brain 实体 + Cortex trait
-│   │   ├── agent.rs             # Agent 实体
-│   │   ├── model_provider.rs   # 模型提供商实体
-│   │   ├── organization.rs     # 组织实体
-│   │   ├── task.rs             # 任务实体
-│   │   └── message.rs          # 消息实体
+│   │   ├── agent.rs         # Agent 业务
+│   │   ├── model_provider.rs # 模型提供商业务
+│   │   └── org.rs           # Organization 业务
 │   │
-│   ├── service/                # 业务逻辑层
-│   │   ├── mod.rs
-│   │   ├── domain/             # 领域层：领域行为、领域规则
-│   │   │   ├── mod.rs
-│   │   │   ├── agent_domain.rs     # Agent 领域逻辑
-│   │   │   ├── org_domain.rs       # Organization 领域逻辑
-│   │   │   └── task_domain.rs      # Task 领域逻辑
-│   │   ├── dal/                 # 具体业务层：组合 dao，完成特定业务
-│   │   │   ├── mod.rs
-│   │   │   ├── agent_dal.rs     # Agent 业务
-│   │   │   ├── org_dal.rs       # Organization 业务
-│   │   │   └── task_dal.rs      # Task 业务
-│   │   └── dao/                 # 数据层：持久化，与 models 交互
-│   │       ├── mod.rs
-│   │       ├── brain/             🧠 Brain DAO - 大脑工厂
-│   │       │   ├── mod.rs         # BrainDao trait + OnceLock 单例
-│   │       │   ├── rig.rs         # Rig 框架实现 (RigBrainDao)
-│   │       │   ├── rig/          # 具体 Cortex 实现
-│   │       │   │   ├── openai.rs
-│   │       │   │   ├── openai_compatible.rs
-│   │       │   │   └── ollama.rs
-│   │       │   └── rig_test.rs     # 单元测试
-│   │       ├── agent/             # Agent 存储 DAO
-│   │       │   ├── mod.rs
-│   │       │   └── sqlite.rs
-│   │       ├── model_provider/   # 模型提供商存储 DAO
-│   │       │   ├── mod.rs
-│   │       │   └── sqlite.rs
-│   │       └── org/             # Organization 存储 DAO
-│   │           ├── mod.rs
-│   │           └── sqlite.rs
-│   │
-│   └── pkg/                    # 公共包
+│   └── dao/                 # 数据层：持久化，与 models 交互
 │       ├── mod.rs
-│       ├── constants/            # 常量（状态枚举）
-│       │   └── mod.rs
-│       ├── storage/              # 存储层（SQLite）
-│       │   ├── mod.rs             # 全局连接管理
-│       │   └── sql.rs            # SQL 建表语句常量
-│       ├── external/             # 外部 API
-│       │   └── mod.rs
-│       └── logging.rs             # 日志（带 Context）
-├── frontend/                      # 前端源码 (Dioxus 0.7 WebAssembly)
-│   ├── src/
-│   │   ├── main.rs               # 入口 + 页面组件
-│   │   ├── api/                 # API 调用模块
-│   │   │   └── health.rs         # 健康检查 API
-│   │   └── components/         # UI 组件
-│   │       ├── navbar.rs        # 顶部导航栏
-│   │       ├── reception.rs     # 前台接待欢迎页
-│   │       └── agent_management.rs # Agent 管理页
-├── dist/                          # 生产构建输出（前端静态文件）
-├── docs/                          # 文档
-├── build-full.sh                   # 全量构建脚本
-├── start-dev.sh                   # 开发启动脚本
-└── README.md
+│       ├── brain/             🧠 Brain DAO - 大脑工厂
+│       │   ├── mod.rs         # BrainDao trait + OnceLock 单例
+│       │   ├── rig.rs         # Rig 框架实现 (RigBrainDao)
+│       │   ├── rig/          # 具体 Cortex 实现
+│       │   │   ├── openai.rs
+│       │   │   ├── openai_compatible.rs
+│       │   │   └── ollama.rs
+│       │   └── rig_test.rs     # 单元测试
+│       ├── agent/             # Agent 存储 DAO
+│       │   ├── mod.rs         # 接口定义
+│       │   └── sqlite.rs     # SQLite 实现
+│       ├── model_provider/   # 模型提供商存储 DAO
+│       │   ├── mod.rs         # 接口定义
+│       │   └── sqlite.rs     # SQLite 实现
+│       └── org/             # Organization 存储 DAO
+│           ├── mod.rs         # 接口定义
+│           └── sqlite.rs     # SQLite 实现
+│
+└── pkg/                    # 公共包
+    ├── mod.rs
+    ├── constants/            # 常量（状态枚举）
+    │   ├── mod.rs
+    │   ├── status.rs         # 状态枚举（命名格式：实体名+Po+Status → ModelProviderPoStatus）
+    │   ├── provider_type.rs  # ProviderType 枚举
+    │   └── request_context.rs # RequestContext 定义
+    ├── storage/              # 存储层（SQLite）
+    │   ├── mod.rs             # 全局连接管理
+    │   └── sql.rs            # SQL 建表语句常量
+    └── logging.rs             # 日志（带 Context）
 ```
 
 ---
 
-## 分层关系
+## 设计原则：模块划分与封装
+
+### 1. 分层清晰，严格不跨层调用
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -169,6 +170,178 @@ ai_orz/
 │   storage / external / constants                                 │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+**严格规则**：不允许跨层级调用，只能逐层依赖
+
+### 2. Domain 领域层设计： trait 分层架构 ✨
+
+经过讨论和实践，我们得到了更合理的模块划分设计：
+
+**核心思想：高内聚低耦合，易于扩展**
+
+```
+service/domain/hr/
+├── mod.rs          # 👉 这里放：
+│   1. 单例管理（static OnceLock + 初始化方法）放在最**上部**
+│   2. pub struct HrDomainImpl 结构体定义
+│   3. pub trait HrDomain 总 trait 定义（声明所有子功能入口）
+│   4. pub trait AgentManage Agent 管理 trait 定义
+│   5. impl HrDomain for HrDomainImpl 总实现放在这里
+└── agent.rs       # 👉 这里放：
+    - impl AgentManage for HrDomainImpl Agent 管理具体方法实现
+```
+
+**未来添加员工管理只需要：**
+
+```
+service/domain/hr/
+├── mod.rs          # 添加 pub trait EmployeeManage 定义
+├── employee.rs     # 添加 impl EmployeeManage for HrDomainImpl 实现
+```
+
+不需要修改其他文件，完全符合**开放封闭原则**，易于扩展 ✅
+
+### 3. 方法命名规范
+
+子功能 trait 中的方法必须**完整命名**，一眼就能知道操作的是什么对象：
+
+| 不推荐 | 推荐 |
+|--------|------|
+| `create` | `create_agent` ✅ |
+| `get` | `get_agent` ✅ |
+| `list` | `list_agents` ✅ |
+| `update` | `update_agent` ✅ |
+| `delete` | `delete_agent` ✅ |
+
+因为同一个 `HrDomainImpl` 会实现多个子 trait（AgentManage + EmployeeManage），完整命名避免混淆，可读性更好 ✅
+
+### 4. DAO 层规范：OnceLock 单例模式
+
+所有 DAO 都遵循统一单例模式：
+
+```rust
+static INSTANCE: OnceLock<Arc<dyn XyzDao + Send + Sync>> = OnceLock::new();
+
+pub fn dao() -> Arc<dyn XyzDao + Send + Sync> {
+    INSTANCE.get().cloned().unwrap()
+}
+
+pub fn init() {
+    let _ = INSTANCE.set(Arc::new(XyzDaoImpl::new()));
+}
+```
+
+**特点：**
+- 不持有数据库连接，从全局存储模块获取
+- OnceLock 保证线程安全，惰性初始化
+- 对外只暴露 trait，隐藏具体实现
+- 方便替换实现，易于测试
+
+### 5. 枚举命名规范
+
+所有状态枚举都放在 `pkg::constants::status`，命名格式：**实体名 + Po + Status**
+
+| 错误 | 正确 ✅ |
+|------|--------|
+| `ModelProviderStatus` | `ModelProviderPoStatus` |
+
+清晰归属，便于查找 ✅
+
+### 6. Handler 层设计：对齐 domain 结构
+
+Handler 结构与 domain 结构完全对齐，便于查找：
+
+```
+handlers/
+├── hr.rs         # HR 模块入口
+└── hr/
+    └── agent/    # Agent 管理（对应 domain/hr/agent.rs）
+        ├── mod.rs
+        └── dto.rs
+```
+
+路由路径也完全对齐：
+
+| 层级 | 路径 |
+|------|------|
+| Domain | `service/domain/hr/agent.rs` |
+| Handler | `handlers/hr/agent/mod.rs` |
+| Router | `/api/v1/hr/agents` |
+
+完全一致，结构清晰 ✅
+
+### 7. 公共方法抽取
+
+公共工具方法抽取到上层复用：
+- `extract_ctx` 从 HeaderMap 提取 RequestContext → 放在 `handlers/mod.rs`，所有 handler 复用 ✅
+
+避免重复代码，保持干净 ✅
+
+---
+
+## 分层架构详解
+
+### Domain 层（领域层）
+- **职责**：核心业务逻辑、领域规则、调度 dal 组织业务
+- **特点**：
+  - 最接近业务本质
+  - 不直接操作数据库
+  - 编排 dal 完成业务
+
+### DAL 层（具体业务层）
+- **职责**：具体业务逻辑，组合 dao/外部服务
+- **特点**：
+  - 面向特定业务场景
+  - 可组合多个 dao
+  - 可调用外部 API
+
+```rust
+// dal 层示例
+pub struct AgentDal {
+    agent_dao: Arc<dyn AgentDaoTrait>,
+}
+
+impl AgentDal {
+    pub fn create(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError> {
+        // 调用 dao 持久化
+        agent_dao.insert(ctx, agent.po())?;
+        Ok(())
+    }
+}
+```
+
+### DAO 层（数据层）
+- **职责**：数据增删查改，与 models 映射
+- **特点**：
+  - 最底层的数据访问
+  - 只做数据操作，不含业务逻辑
+  - 操作 models 与数据库转换
+  - delete 方法统一接收完整 PO 对象，接口风格一致
+
+### Models 层说明
+
+`models/` 是项目的**实体模型层**，被 service 三层广泛使用：
+
+```rust
+// models/agent.rs
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Agent {
+    pub id: String,
+    pub name: String,
+    pub role: String,
+    pub model_provider_id: String,
+    pub capabilities: Vec<String>,
+    pub status: i32,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+```
+
+**特点**：
+- 被 domain/dal/dao 各层使用
+- 实现数据库与实体对象的转换
+- 不包含业务逻辑
+- 可序列化/反序列化
 
 ---
 
@@ -212,96 +385,6 @@ let result = brain_dao.prompt(&brain, "你好").await?;
 
 ---
 
-## 分层架构详解 ★
-
-### Domain 层（领域层）
-- **职责**：核心业务逻辑、领域规则、调度 dal 组织业务
-- **特点**：
-  - 最接近业务本质
-  - 不直接操作数据库
-  - 编排 dal 完成业务
-
-```rust
-// domain 层示例
-pub struct AgentDomain;
-
-impl AgentDomain {
-    pub async fn create(cmd: CreateAgentCmd) -> Result<Agent> {
-        // 校验业务规则
-        // 调用 dal 执行具体业务
-        AgentDal::create(cmd).await
-    }
-}
-```
-
-### DAL 层（具体业务层）
-- **职责**：具体业务逻辑，组合 dao/外部服务
-- **特点**：
-  - 面向特定业务场景
-  - 可组合多个 dao
-  - 可调用外部 API
-
-```rust
-// dal 层示例
-pub struct AgentDal;
-
-impl AgentDal {
-    pub async fn create(cmd: CreateAgentCmd) -> Result<Agent> {
-        // 调用 dao 持久化
-        AgentDao::insert(&agent)?;
-        // 发送通知等
-        Ok(agent)
-    }
-}
-```
-
-### DAO 层（数据层）
-- **职责**：数据增删查改，与 models 映射
-- **特点**：
-  - 最底层的数据访问
-  - 只做数据操作，不含业务逻辑
-  - 操作 models 与数据库转换
-
-**所有 DAO 都遵循单例模式**：
-```rust
-static INSTANCE: OnceLock<Arc<dyn XyzDao + Send + Sync>> = OnceLock::new();
-
-pub fn dao() -> Arc<dyn XyzDao + Send + Sync> {
-    INSTANCE.get().cloned().unwrap()
-}
-
-pub fn init() {
-    let _ = INSTANCE.set(Arc::new(XyzDaoImpl::new()));
-}
-```
-
-### Models 层说明 ★
-
-`models/` 是项目的**实体模型层**，被 service 三层广泛使用：
-
-```rust
-// models/agent.rs
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Agent {
-    pub id: String,
-    pub name: String,
-    pub role: String,
-    pub model_provider_id: String,  ← ✨ 现在只保存 ID
-    pub capabilities: Vec<String>,
-    pub status: i32,
-    pub created_at: i64,
-    pub updated_at: i64,
-}
-```
-
-**特点**：
-- 被 domain/dal/dao 各层使用
-- 实现数据库与实体对象的转换
-- 不包含业务逻辑
-- 可序列化/反序列化
-
----
-
 ## Handler 层规范
 
 Handler 的核心逻辑固定为三步：
@@ -312,10 +395,16 @@ Handler 的核心逻辑固定为三步：
 // 3. 封装结果返回统一响应
 
 async fn create_agent(
+    headers: HeaderMap,
     Json(req): Json<CreateAgentReq>,
-) -> Result<Json<ApiResponse<AgentResp>>, AppError> {
-    let agent = AgentDomain::create(req.into()).await?;
-    Ok(Json(ApiResponse::success(agent.into())))
+) -> Result<(StatusCode, Json<ApiResponse<AgentResp>>), AppError> {
+    let ctx = extract_ctx(&headers);
+    let agent_po = AgentPo::new(...);
+    let agent = Agent::from_po(agent_po);
+
+    domain().agent_manage().create_agent(ctx, &agent)?;
+
+    Ok((StatusCode::CREATED, Json(ApiResponse::success(...))))
 }
 ```
 
@@ -323,16 +412,20 @@ async fn create_agent(
 
 ## API 设计规范
 
-### 路由命名
+### 路由命名（对齐 HR 模块）
+
+现在所有 Agent 相关路由都在 HR 分组下：
+
 ```
-GET    /api/v1/agents          列表
-POST   /api/v1/agents          创建
-GET    /api/v1/agents/{id}     详情
-PUT    /api/v1/agents/{id}     更新
-DELETE /api/v1/agents/{id}     删除
+POST   /api/v1/hr/agents          创建
+GET    /api/v1/hr/agents          列表
+GET    /api/v1/hr/agents/{id}     详情
+PUT    /api/v1/hr/agents/{id}     更新
+DELETE /api/v1/hr/agents/{id}     删除
 ```
 
 ### 统一响应格式
+
 ```json
 {
   "code": 0,
@@ -340,6 +433,8 @@ DELETE /api/v1/agents/{id}     删除
   "data": {}
 }
 ```
+
+---
 
 ## 前端架构
 
@@ -367,7 +462,7 @@ frontend/src/
 前端已经实现：
 - ✅ 顶部导航栏（前台接待 + 人力资源下拉 → 员工管理 / Agent 管理）
 - ✅ 前台接待欢迎页
-- ✅ Agent 管理列表 + 创建弹窗
+- ✅ Agent 管理列表 + 创建弹窗（目前使用示例数据模拟，后续对接真实 API）
 
 ---
 
@@ -436,4 +531,3 @@ export DATABASE_URL=./data/ai_orz.db
 - **新增页面** → 前端直接添加组件
 - **更换存储** → 只需要换 DAO 实现
 - **前后端分离部署** → 前端独立部署，后端只提供 API
-

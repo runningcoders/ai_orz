@@ -15,49 +15,11 @@ ai_orz/
 ├── src/                # 后端源码
 ├── frontend/            # Dioxus 前端源码
 ├── dist/               # 编译好的前端静态文件（生产构建输出）
+├── docs/               # 详细文档
+│   └── ARCHITECTURE.md # 完整架构说明
 ├── build-full.sh        # 全量构建脚本（后端 + 前端）
 ├── start-dev.sh         # 一键启动开发环境（后端 + dx serve 热重载）
 └── README.md
-```
-
-## 架构（后端）
-
-```
-src/
-├── models/              # 实体定义
-│   ├── brain.rs         # 🧠 Brain 实体 + Cortex 思考接口
-│   ├── agent.rs         # Agent 实体
-│   ├── model_provider.rs # 模型提供商实体
-│   ├── organization.rs  # 组织实体
-│   └── task.rs          # 任务实体
-├── pkg/                # 工具和基础设施
-│   ├── constants/      # 常量定义（状态枚举）
-│   ├── logging.rs       # 日志模块（带 Context）
-│   └── storage/        # 存储管理
-│       ├── mod.rs       # 全局连接管理
-│       └── sql.rs      # SQL 常量定义（SQLITE_CREATE_TABLE_*）
-├── service/
-│   └── dao/            # DAO 层（数据访问操作）
-│       ├── brain/       # 🧠 Brain DAO - 大脑工厂
-│       │   ├── mod.rs     # BrainDao trait + OnceLock 单例
-│       │   ├── rig.rs    # Rig 框架实现 (RigBrainDao)
-│       │   ├── rig/     # 具体 Cortex 实现
-│       │   │   ├── openai.rs
-│       │   │   ├── openai_compatible.rs
-│       │   │   └── ollama.rs
-│       │   └── rig_test.rs # 单元测试
-│       ├── agent/       # Agent 存储 DAO
-│       │   ├── mod.rs   # 接口定义
-│       │   └── sqlite.rs # SQLite 实现
-│       ├── model_provider/ # 模型提供商存储 DAO
-│       │   ├── mod.rs   # 接口定义
-│       │   └── sqlite.rs # SQLite 实现
-│       └── org/         # 组织存储 DAO
-│           ├── mod.rs   # 接口定义
-│           └── sqlite.rs # SQLite 实现
-└── handlers/          # HTTP 接口
-    ├── mod.rs           # 导出 + 通用 ApiResponse
-    └── health.rs       # 健康检查
 ```
 
 ## 核心概念
@@ -68,6 +30,7 @@ src/
 | **Brain** | 顶层实体，包装 `Cortex`，由 `BrainDao` 根据 `ModelProvider` 创建 |
 | **Cortex** 🧠 | 思考推理接口，不同提供商实现不同 |
 | **BrainDao** | 工厂 DAO，统一创建 `Brain` 和执行 `prompt` |
+| **HR (Human Resources)** | 人力资源领域模块，统一管理 AI 智能体和人类员工 |
 
 ## LLM 调用流程
 
@@ -98,39 +61,13 @@ let result = brain_dao.prompt(&brain, "你好").await?;
 
 ## 设计原则
 
-1. **分层清晰**
-   - DAO：只负责底层操作，不关心业务
-   - DAL：组合 DAO，构建业务对象，不关心业务逻辑
-   - Domain：实现业务逻辑，不关心 HTTP 和存储
-   - Handler：只负责 HTTP 接口处理，不关心业务
+1. **严格分层** → `handlers → domain → dal → dao → models`，不允许跨层级调用
+2. **高内聚低耦合** → 领域模块拆分清晰，trait 定义在 mod.rs，实现在子文件
+3. **统一编码规范** → 所有 DAO 使用 `OnceLock<Arc<dyn Trait>>` 单例模式
+4. **完整命名** → 子功能 trait 方法完整命名：`create_agent` 而不是 `create`
+5. **HR 统一管理** → AI 智能体和人类员工统一归在 HR 领域模块
 
-2. **优雅命名 🧠**
-   - **Brain** → 整个智能体大脑
-   - **Cortex** → 大脑皮层，负责具体思考推理
-   > "brain 里用来思考的部分就是大脑皮层"
-
-3. **编码规范**
-   - 文件：`snake_case.rs`
-   - 函数/变量：`snake_case`
-   - 类型/结构体：`PascalCase`
-   - 常量：`SQLITE_CREATE_TABLE_AGENTS`（全大写+下划线）
-
-4. **测试分离**
-   - 核心逻辑：`xxx.rs`
-   - 单元测试：`xxx_test.rs`
-   - 保持核心文件干净
-
-5. **Context 传递**
-   - 所有公共方法第一个参数都是 `ctx: RequestContext`
-   - `created_by`/`modified_by` 从 `ctx.uid()` 获取
-   - 保证链路完整性，便于日志追踪
-
-6. **分层初始化**
-   - `dao::init_all()` 初始化所有 DAO
-   - `dal::init_all()` 初始化所有 DAL（依赖已初始化的 DAO）
-   - `domain::init_all()` 初始化所有 Domain（依赖已初始化的 DAL）
-   - `service::init()` 按顺序调用三层初始化
-   - 每层只负责自己的实例，结构清晰，易于扩展
+更多详细架构说明请查看 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)
 
 ## 配置
 
@@ -175,16 +112,11 @@ let result = brain_dao.prompt(&brain, "你好").await?;
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/v1/agents` | 创建 Agent |
-| GET | `/api/v1/agents` | 列出所有 Agent |
-| GET | `/api/v1/agents/:id` | 获取单个 Agent |
-| PUT | `/api/v1/agents/:id` | 更新 Agent |
-| DELETE | `/api/v1/agents/:id` | 删除 Agent |
-| POST | `/api/v1/model-providers` | 创建模型提供商 |
-| GET | `/api/v1/model-providers` | 列出所有模型提供商 |
-| GET | `/api/v1/model-providers/:id` | 获取单个模型提供商 |
-| PUT | `/api/v1/model-providers/:id` | 更新模型提供商 |
-| DELETE | `/api/v1/model-providers/:id` | 删除模型提供商 |
+| POST | `/api/v1/hr/agents` | 创建 Agent |
+| GET | `/api/v1/hr/agents` | 列出所有 Agent |
+| GET | `/api/v1/hr/agents/:id` | 获取单个 Agent |
+| PUT | `/api/v1/hr/agents/:id` | 更新 Agent |
+| DELETE | `/api/v1/hr/agents/:id` | 删除 Agent |
 | GET | `/health` | 健康检查 |
 
 ## 前端架构
@@ -203,7 +135,7 @@ frontend/src/
 前端已经实现：
 - ✅ 顶部导航栏（前台接待 + 人力资源下拉菜单 → 员工管理 / Agent 管理）
 - ✅ 前台接待欢迎页
-- ✅ Agent 管理列表 + 创建弹窗
+- ✅ Agent 管理列表 + 创建弹窗（目前使用示例数据模拟）
 
 ## 前端开发
 
