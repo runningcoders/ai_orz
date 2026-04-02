@@ -43,6 +43,12 @@ impl HrDomainImpl {
     }
 }
 
+impl HrDomain for HrDomainImpl {
+    fn agent_manage(&self) -> &dyn AgentManage {
+        self
+    }
+}
+
 // ==================== traits 定义 ====================
 
 /// HR Domain 总 trait
