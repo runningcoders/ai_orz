@@ -20,9 +20,9 @@ fn api_routes() -> Router {
 
 fn hr_routes() -> Router {
     Router::new()
-        .route("/agents", post(handlers::create_agent))
-        .route("/agents", get(handlers::list_agents))
-        .route("/agents/:id", get(handlers::get_agent))
-        .route("/agents/:id", put(handlers::update_agent))
-        .route("/agents/:id", delete(handlers::delete_agent))
+        .route("/agents", post(handlers::hr::agent::create_agent))
+        .route("/agents", get(handlers::hr::agent::list_agents))
+        .route("/agents/:id", get(handlers::hr::agent::get_agent))
+        .route("/agents/:id", put(handlers::hr::agent::update_agent))
+        .route("/agents/:id", delete(handlers::hr::agent::delete_agent))
 }

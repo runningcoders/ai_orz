@@ -1,127 +1,14 @@
 //! Agent 管理 HTTP 接口
+//! 按方法粒度拆分，每个方法单独一个文件
 
-use crate::error::AppError;
-use crate::handlers::{ApiResponse, extract_ctx};
-use crate::models::agent::{Agent, AgentPo};
-use crate::service::domain::hr::domain;
-use axum::{
-    extract::{Json, Path},
-    http::{self, HeaderMap},
-    http::StatusCode,
-};
+pub mod create_agent;
+pub mod delete_agent;
+pub mod get_agent;
+pub mod list_agents;
+pub mod update_agent;
 
-pub mod dto;
-pub use self::dto::{AgentResponse, CreateAgentRequest, UpdateAgentRequest};
-
-/// 创建 Agent
-///
-/// POST /agents
-pub async fn create_agent(
-    headers: HeaderMap,
-    Json(req): Json<CreateAgentRequest>,
-) -> Result<(StatusCode, Json<ApiResponse<AgentResponse>>), AppError> {
-    let ctx = extract_ctx(&headers);
-
-    let agent_po = AgentPo::new(
-        req.name,
-        req.role,
-        req.capabilities,
-        req.soul,
-        req.model_provider_id,
-        ctx.uid().to_string(),
-    );
-    let agent = Agent::from_po(agent_po);
-
-    domain().agent_manage().create_agent(ctx, &agent)?;
-
-    Ok((
-        StatusCode::CREATED,
-        Json(ApiResponse::success(AgentResponse::from_agent(&agent))),
-    ))
-}
-
-/// 获取 Agent
-///
-/// GET /agents/:id
-pub async fn get_agent(
-    headers: HeaderMap,
-    Path(id): Path<String>,
-) -> Result<Json<ApiResponse<AgentResponse>>, AppError> {
-    let ctx = extract_ctx(&headers);
-
-    let agent = domain()
-        .agent_manage()
-        .get_agent(ctx, &id)?
-        .ok_or_else(|| AppError::NotFound(format!("Agent {} not found", id)))?;
-
-    Ok(Json(ApiResponse::success(AgentResponse::from_agent(
-        &agent,
-    ))))
-}
-
-/// 列出所有 Agent
-///
-/// GET /agents
-pub async fn list_agents(headers: HeaderMap) -> Result<Json<ApiResponse<Vec<AgentResponse>>>, AppError> {
-    let ctx = extract_ctx(&headers);
-
-    let agents = domain().agent_manage().list_agents(ctx)?;
-    let responses: Vec<AgentResponse> = agents.iter().map(AgentResponse::from_agent).collect();
-
-    Ok(Json(ApiResponse::success(responses)))
-}
-
-/// 更新 Agent
-///
-/// PUT /agents/:id
-pub async fn update_agent(
-    headers: HeaderMap,
-    Path(id): Path<String>,
-    Json(req): Json<UpdateAgentRequest>,
-) -> Result<Json<ApiResponse<AgentResponse>>, AppError> {
-    let ctx = extract_ctx(&headers);
-
-    let mut agent = domain()
-        .agent_manage()
-        .get_agent(ctx.clone(), &id)?
-        .ok_or_else(|| AppError::NotFound(format!("Agent {} not found", id)))?;
-
-    // 更新字段
-    if let Some(name) = req.name {
-        agent.po.name = name;
-    }
-    if let Some(role) = req.role {
-        agent.po.role = role;
-    }
-    if let Some(capabilities) = req.capabilities {
-        agent.po.capabilities = serde_json::to_string(&capabilities).unwrap_or_else(|_| "[]".to_string());
-    }
-    if let Some(soul) = req.soul {
-        agent.po.soul = soul;
-    }
-    // 更新 modified_by 为当前用户
-    agent.po.modified_by = ctx.uid();
-
-    domain().agent_manage().update_agent(ctx, &agent)?;
-
-    Ok(Json(ApiResponse::success(AgentResponse::from_agent(&agent))))
-}
-
-/// 删除 Agent
-///
-/// DELETE /agents/:id
-pub async fn delete_agent(
-    headers: HeaderMap,
-    Path(id): Path<String>,
-) -> Result<Json<ApiResponse<()>>, AppError> {
-    let ctx = extract_ctx(&headers);
-
-    let agent = domain()
-        .agent_manage()
-        .get_agent(ctx.clone(), &id)?
-        .ok_or_else(|| AppError::NotFound(format!("Agent {} not found", id)))?;
-
-    domain().agent_manage().delete_agent(ctx, &agent)?;
-
-    Ok(Json(ApiResponse::<()>::ok()))
-}
+pub use create_agent::{create_agent, CreateAgentRequest, CreateAgentResponse};
+pub use delete_agent::delete_agent;
+pub use get_agent::{get_agent, GetAgentResponse};
+pub use list_agents::{list_agents, AgentListItem};
+pub use update_agent::{update_agent, UpdateAgentRequest, UpdateAgentResponse};
