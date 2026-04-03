@@ -33,3 +33,5 @@ target
 
 # Full-stack build output
 /dist
+/.idea
+
