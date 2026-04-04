@@ -7,5 +7,6 @@ edition = "2024"
 dioxus = { version = "0.7", features = ["web", "router"] }
 dioxus-cli = { version = "0.7", optional = true }
 reqwest = { version = "0.13", features = ["json"] }
+serde = { version = "1.0", features = ["derive"] }
 js-sys = "0.3"
 web-sys = { version = "0.3", features = ["Window", "Performance"] }

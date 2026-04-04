@@ -1,12 +1,8 @@
 use dioxus::prelude::*;
-
-#[derive(Clone, Debug)]
-pub struct Agent {
-    id: String,
-    name: String,
-    description: String,
-    status: AgentStatus,
-}
+use crate::api::agent::{
+    list_agents, create_agent, delete_agent,
+    AgentListItem, CreateAgentRequest,
+};
 
 #[derive(Clone, Debug)]
 pub enum AgentStatus {
@@ -35,41 +31,66 @@ impl AgentStatus {
 
 #[component]
 pub fn AgentManagement() -> Element {
-    let mut agents = use_signal(Vec::<Agent>::new);
+    let mut agents = use_signal(Vec::<AgentListItem>::new);
     let mut loading = use_signal(|| true);
+    let mut error = use_signal(|| None::<String>);
     let mut show_add_modal = use_signal(|| false);
     let mut new_agent_name = use_signal(String::new);
-    let mut new_agent_desc = use_signal(String::new);
+    let mut new_agent_role = use_signal(String::new);
+    let mut new_agent_model_provider = use_signal(String::new);
 
-    // 模拟加载数据 - 后面会替换成真实 API 调用
+    // 加载 Agent 列表
+    let mut load_agents = move || {
+        loading.set(true);
+        error.set(None);
+
+        spawn(async move {
+            match list_agents().await {
+                Ok(list) => agents.set(list),
+                Err(e) => error.set(Some(e)),
+            }
+            loading.set(false);
+        });
+    };
+
+    // 初始加载
     use_effect(move || {
-        // 模拟从后端加载 Agent 列表
-        let sample_agents = vec![
-            Agent {
-                id: "1".to_string(),
-                name: "代码助手".to_string(),
-                description: "帮你写代码和调试".to_string(),
-                status: AgentStatus::Running,
-            },
-            Agent {
-                id: "2".to_string(),
-                name: "文案创作".to_string(),
-                description: "文章、文案、广告创作".to_string(),
-                status: AgentStatus::Running,
-            },
-            Agent {
-                id: "3".to_string(),
-                name: "数据分析".to_string(),
-                description: "数据统计和可视化分析".to_string(),
-                status: AgentStatus::Stopped,
-            },
-        ];
-
-        agents.set(sample_agents);
-        loading.set(false);
+        load_agents();
     });
 
-    let agents_cloned = agents.read().clone();
+    // 创建 Agent
+    let handle_create = move |_| {
+        let name = new_agent_name.read().clone();
+        let role = new_agent_role.read().clone();
+        let model_provider_id = new_agent_model_provider.read().clone();
+
+        if name.is_empty() || model_provider_id.is_empty() {
+            return;
+        }
+
+        spawn(async move {
+            let req = CreateAgentRequest {
+                name,
+                role: if role.is_empty() { None } else { Some(role) },
+                capabilities: None,
+                soul: None,
+                model_provider_id,
+            };
+
+            match create_agent(req).await {
+                Ok(_) => {
+                    show_add_modal.set(false);
+                    new_agent_name.set(String::new());
+                    new_agent_role.set(String::new());
+                    new_agent_model_provider.set(String::new());
+                    load_agents();
+                }
+                Err(e) => error.set(Some(format!("创建失败: {}", e))),
+            }
+        });
+    };
+
+    let agents_read = agents.read().clone();
 
     rsx! {
         div {
@@ -81,6 +102,21 @@ pub fn AgentManagement() -> Element {
                 padding: 2rem;
                 box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
             ",
+
+            // 错误提示
+            if let Some(err) = error.read().as_ref() {
+                div {
+                    style: "
+                        background: #fee;
+                        border: 1px solid #fcc;
+                        color: #c33;
+                        padding: 1rem;
+                        border-radius: 6px;
+                        margin-bottom: 1rem;
+                    ",
+                    "{err}"
+                }
+            }
 
             // 标题 + 添加按钮
             div {
@@ -119,7 +155,7 @@ pub fn AgentManagement() -> Element {
                     style: "text-align: center; padding: 3rem; color: #666;",
                     "加载中..."
                 }
-            } else if agents_cloned.is_empty() {
+            } else if agents_read.is_empty() {
                 div {
                     style: "
                         text-align: center;
@@ -155,7 +191,7 @@ pub fn AgentManagement() -> Element {
                                     border-bottom: 2px solid #dee2e6;
                                     color: #333;
                                 ",
-                                "状态"
+                                "角色"
                             }
                             th {
                                 style: "
@@ -165,7 +201,7 @@ pub fn AgentManagement() -> Element {
                                     border-bottom: 2px solid #dee2e6;
                                     color: #333;
                                 ",
-                                "描述"
+                                "模型提供商"
                             }
                             th {
                                 style: "
@@ -181,63 +217,44 @@ pub fn AgentManagement() -> Element {
                     }
                     tbody {
                         {
-                            agents_cloned.iter().map(|agent| rsx! {
-                                tr {
-                                    key: "{agent.id}",
-                                    td {
-                                        style: "
-                                            padding: 1rem 0.75rem;
-                                            border-bottom: 1px solid #dee2e6;
-                                            font-weight: 500;
-                                            color: #2c3e50;
-                                        ",
-                                        "{agent.name}"
-                                    }
-                                    td {
-                                        style: "
-                                            padding: 1rem 0.75rem;
-                                            border-bottom: 1px solid #dee2e6;
-                                        ",
-                                        span {
+                            agents_read.iter().map(|agent| {
+                                let id = agent.id.clone();
+                                rsx! {
+                                    tr {
+                                        key: "{id}",
+                                        td {
                                             style: "
-                                                display: inline-block;
-                                                padding: 0.25rem 0.75rem;
-                                                border-radius: 12px;
-                                                color: white;
-                                                font-size: 0.8rem;
-                                                background-color: {agent.status.color()};
+                                                padding: 1rem 0.75rem;
+                                                border-bottom: 1px solid #dee2e6;
+                                                font-weight: 500;
+                                                color: #2c3e50;
                                             ",
-                                            "{agent.status.to_str()}"
+                                            "{agent.name}"
                                         }
-                                    }
-                                    td {
-                                        style: "
-                                            padding: 1rem 0.75rem;
-                                            border-bottom: 1px solid #dee2e6;
-                                            color: #666;
-                                        ",
-                                        "{agent.description}"
-                                    }
-                                    td {
-                                        style: "
-                                            padding: 1rem 0.75rem;
-                                            border-bottom: 1px solid #dee2e6;
-                                            text-align: center;
-                                        ",
-                                        div {
-                                            style: "display: flex; gap: 0.5rem; justify-content: center;",
-                                            button {
-                                                style: "
-                                                    background: #3498db;
-                                                    color: white;
-                                                    border: none;
-                                                    padding: 0.4rem 0.8rem;
-                                                    border-radius: 4px;
-                                                    cursor: pointer;
-                                                    font-size: 0.85rem;
-                                                ",
-                                                "编辑"
-                                            }
+                                        td {
+                                            style: "
+                                                padding: 1rem 0.75rem;
+                                                border-bottom: 1px solid #dee2e6;
+                                                color: #666;
+                                            ",
+                                            {agent.role.clone().unwrap_or_else(|| "-".to_string())}
+                                        }
+                                        td {
+                                            style: "
+                                                padding: 1rem 0.75rem;
+                                                border-bottom: 1px solid #dee2e6;
+                                                color: #666;
+                                                font-family: monospace;
+                                                font-size: 0.85rem;
+                                            ",
+                                            "{agent.model_provider_id}"
+                                        }
+                                        td {
+                                            style: "
+                                                padding: 1rem 0.75rem;
+                                                border-bottom: 1px solid #dee2e6;
+                                                text-align: center;
+                                            ",
                                             button {
                                                 style: "
                                                     background: #e74c3c;
@@ -248,6 +265,16 @@ pub fn AgentManagement() -> Element {
                                                     cursor: pointer;
                                                     font-size: 0.85rem;
                                                 ",
+                                                onclick: move |_| {
+                                                    let id_cloned = id.clone();
+                                                    spawn(async move {
+                                                        if let Err(e) = delete_agent(&id_cloned).await {
+                                                            error.set(Some(format!("删除失败: {}", e)));
+                                                        } else {
+                                                            load_agents();
+                                                        }
+                                                    });
+                                                },
                                                 "删除"
                                             }
                                         }
@@ -274,7 +301,12 @@ pub fn AgentManagement() -> Element {
                         justify-content: center;
                         z-index: 200;
                     ",
-                    onclick: move |_| show_add_modal.set(false),
+                    onclick: move |_| {
+                        show_add_modal.set(false);
+                        new_agent_name.set(String::new());
+                        new_agent_role.set(String::new());
+                        new_agent_model_provider.set(String::new());
+                    },
                     div {
                         style: "
                             background: white;
@@ -289,7 +321,7 @@ pub fn AgentManagement() -> Element {
                             "创建新 Agent"
                         }
                         div {
-                            style: "margin-bottom: 1.5rem;",
+                            style: "margin-bottom: 1rem;",
                             label {
                                 style: "
                                     display: block;
@@ -297,7 +329,7 @@ pub fn AgentManagement() -> Element {
                                     color: #333;
                                     font-weight: 500;
                                 ",
-                                "Agent 名称"
+                                "Agent 名称 *"
                             }
                             input {
                                 style: "
@@ -313,6 +345,30 @@ pub fn AgentManagement() -> Element {
                             }
                         }
                         div {
+                            style: "margin-bottom: 1rem;",
+                            label {
+                                style: "
+                                    display: block;
+                                    margin-bottom: 0.5rem;
+                                    color: #333;
+                                    font-weight: 500;
+                                ",
+                                "角色描述"
+                            }
+                            input {
+                                style: "
+                                    width: 100%;
+                                    padding: 0.75rem;
+                                    border: 1px solid #ddd;
+                                    border-radius: 6px;
+                                    font-size: 1rem;
+                                ",
+                                value: "{new_agent_role}",
+                                oninput: move |e| new_agent_role.set(e.value()),
+                                placeholder: "描述这个 Agent 的角色，比如'代码助手'"
+                            }
+                        }
+                        div {
                             style: "margin-bottom: 2rem;",
                             label {
                                 style: "
@@ -321,21 +377,19 @@ pub fn AgentManagement() -> Element {
                                     color: #333;
                                     font-weight: 500;
                                 ",
-                                "Agent 描述"
+                                "模型提供商 ID *"
                             }
-                            textarea {
+                            input {
                                 style: "
                                     width: 100%;
-                                    min-height: 100px;
                                     padding: 0.75rem;
                                     border: 1px solid #ddd;
                                     border-radius: 6px;
                                     font-size: 1rem;
-                                    resize: vertical;
                                 ",
-                                value: "{new_agent_desc}",
-                                oninput: move |e| new_agent_desc.set(e.value()),
-                                placeholder: "描述一下这个 Agent 的功能"
+                                value: "{new_agent_model_provider}",
+                                oninput: move |e| new_agent_model_provider.set(e.value()),
+                                placeholder: "请输入已配置的模型提供商 ID"
                             }
                         }
                         div {
@@ -356,7 +410,8 @@ pub fn AgentManagement() -> Element {
                                 onclick: move |_| {
                                     show_add_modal.set(false);
                                     new_agent_name.set(String::new());
-                                    new_agent_desc.set(String::new());
+                                    new_agent_role.set(String::new());
+                                    new_agent_model_provider.set(String::new());
                                 },
                                 "取消"
                             }
@@ -369,21 +424,7 @@ pub fn AgentManagement() -> Element {
                                     border-radius: 6px;
                                     cursor: pointer;
                                 ",
-                                onclick: move |_| {
-                                    // TODO: 调用后端 API 创建 Agent，后端自动生成 id
-                                    if !new_agent_name().is_empty() {
-                                        let mut agents = agents.write();
-                                        agents.push(Agent {
-                                            id: String::new(), // 后端会分配正式 id
-                                            name: new_agent_name(),
-                                            description: new_agent_desc(),
-                                            status: AgentStatus::Stopped,
-                                        });
-                                        show_add_modal.set(false);
-                                        new_agent_name.set(String::new());
-                                        new_agent_desc.set(String::new());
-                                    }
-                                },
+                                onclick: handle_create,
                                 "创建"
                             }
                         }
