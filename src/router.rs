@@ -9,7 +9,7 @@ pub fn create_router(frontend_dist_dir: &str) -> Router {
     Router::new()
         .nest("/api/v1", api_routes())
         .route("/health", get(handlers::health::health))
-        .nest_service("/", ServeDir::new(frontend_dist_dir))
+        .fallback_service(ServeDir::new(frontend_dist_dir))
 }
 
 fn api_routes() -> Router {
@@ -22,7 +22,7 @@ fn hr_routes() -> Router {
     Router::new()
         .route("/agents", post(handlers::hr::agent::create_agent))
         .route("/agents", get(handlers::hr::agent::list_agents))
-        .route("/agents/:id", get(handlers::hr::agent::get_agent))
-        .route("/agents/:id", put(handlers::hr::agent::update_agent))
-        .route("/agents/:id", delete(handlers::hr::agent::delete_agent))
+        .route("/agents/{id}", get(handlers::hr::agent::get_agent))
+        .route("/agents/{id}", put(handlers::hr::agent::update_agent))
+        .route("/agents/{id}", delete(handlers::hr::agent::delete_agent))
 }
