@@ -4,6 +4,7 @@ use axum::{
     Json,
 };
 use serde_json;
+use std::fmt;
 
 /// 统一错误类型
 #[derive(Debug)]
@@ -12,6 +13,33 @@ pub enum AppError {
     NotFound(String),
     BadRequest(String),
     Internal(String),
+}
+
+impl fmt::Display for AppError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AppError::NotFound(msg) => write!(f, "Not found: {}", msg),
+            AppError::BadRequest(msg) => write!(f, "Bad request: {}", msg),
+            AppError::Internal(msg) => write!(f, "Internal error: {}", msg),
+        }
+    }
+}
+
+impl From<anyhow::Error> for AppError {
+    fn from(err: anyhow::Error) -> Self {
+        AppError::Internal(err.to_string())
+    }
+}
+
+impl AppError {
+    /// 获取错误码
+    pub fn code(&self) -> i32 {
+        match self {
+            AppError::NotFound(_) => 404,
+            AppError::BadRequest(_) => 400,
+            AppError::Internal(_) => 500,
+        }
+    }
 }
 
 impl IntoResponse for AppError {

@@ -170,3 +170,33 @@ pub async fn delete_model_provider(id: &str) -> Result<(), String> {
 
     Ok(())
 }
+
+/// 测试 Model Provider 连通性响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TestModelProviderConnectionResponse {
+    pub success: bool,
+    pub message: String,
+    pub result: Option<String>,
+}
+
+/// 测试 Model Provider 连通性
+pub async fn test_model_provider_connection(id: &str) -> Result<TestModelProviderConnectionResponse, String> {
+    let url = format!("{}/api/v1/finance/model-providers/{id}/test", backend_url());
+    let client = reqwest::Client::new();
+
+    let response = match client.post(&url).send().await {
+        Ok(res) => res,
+        Err(e) => return Err(e.to_string()),
+    };
+
+    let api_resp: ApiResponse<TestModelProviderConnectionResponse> = match response.json().await {
+        Ok(json) => json,
+        Err(e) => return Err(e.to_string()),
+    };
+
+    if !api_resp.is_success() {
+        return Err(api_resp.message);
+    }
+
+    api_resp.data.ok_or("响应为空".to_string())
+}

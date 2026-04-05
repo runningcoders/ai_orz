@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use crate::api::model_provider::{
-    list_model_providers, create_model_provider, delete_model_provider,
-    ModelProviderListItem, CreateModelProviderRequest, ProviderType,
+    list_model_providers, create_model_provider, delete_model_provider, test_model_provider_connection,
+    ModelProviderListItem, CreateModelProviderRequest, ProviderType, TestModelProviderConnectionResponse,
 };
 
 #[component]
@@ -65,15 +65,28 @@ pub fn ModelProviderManagement() -> Element {
             };
 
             match create_model_provider(req).await {
-                Ok(_) => {
-                    show_add_modal.set(false);
-                    new_name.set(String::new());
-                    new_model_name.set(String::new());
-                    new_api_key.set(String::new());
-                    new_base_url.set(String::new());
-                    new_description.set(String::new());
-                    selected_provider_type.set(ProviderType::OpenAI);
-                    load_providers();
+                Ok(resp) => {
+                    // 创建成功 → 自动调用测试接口
+                    match test_model_provider_connection(&resp.id).await {
+                        Ok(test_resp) => {
+                            show_add_modal.set(false);
+                            new_name.set(String::new());
+                            new_model_name.set(String::new());
+                            new_api_key.set(String::new());
+                            new_base_url.set(String::new());
+                            new_description.set(String::new());
+                            selected_provider_type.set(ProviderType::OpenAI);
+                            load_providers();
+
+                            // 如果测试失败，显示错误信息
+                            if !test_resp.success {
+                                error.set(Some(format!("创建成功，但连通性测试失败: {}", test_resp.message)));
+                            }
+                        }
+                        Err(e) => {
+                            error.set(Some(format!("连通性测试失败: {}", e)));
+                        }
+                    }
                 }
                 Err(e) => {
                     error.set(Some(format!("创建失败: {}", e)));

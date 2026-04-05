@@ -31,9 +31,11 @@ fn hr_routes() -> Router {
 
 fn finance_routes() -> Router {
     Router::new()
-        .route("/model-providers", post(handlers::create_model_provider))
-        .route("/model-providers", get(handlers::list_model_providers))
-        .route("/model-providers/{id}", get(handlers::get_model_provider))
-        .route("/model-providers/{id}", put(handlers::update_model_provider))
-        .route("/model-providers/{id}", delete(handlers::delete_model_provider))
+        .route("/model-providers", post(handlers::finance::model_provider::create_model_provider))
+        .route("/model-providers", get(handlers::finance::model_provider::list_model_providers))
+        .route("/model-providers/{id}", get(handlers::finance::model_provider::get_model_provider))
+        .route("/model-providers/{id}", put(handlers::finance::model_provider::update_model_provider))
+        .route("/model-providers/{id}/test", post(handlers::finance::model_provider::test_model_provider_connection))
+        .route("/model-providers/{id}/call", post(handlers::finance::model_provider::call_model))
+        .route("/model-providers/{id}", delete(handlers::finance::model_provider::delete_model_provider))
 }

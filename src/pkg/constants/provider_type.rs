@@ -3,10 +3,10 @@
 use serde::{Deserialize, Serialize};
 
 /// 模型提供商类型
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ProviderType {
     /// OpenAI 官方
-    OpenAi,
+    OpenAI,
     /// DeepSeek
     DeepSeek,
     /// 阿里云通义千问
@@ -16,11 +16,11 @@ pub enum ProviderType {
     /// 本地 Ollama
     Ollama,
     /// 其他 OpenAI 兼容接口
-    OpenAiCompatible,
+    OpenAICompatible,
 }
 
 impl Default for ProviderType {
     fn default() -> Self {
-        Self::OpenAi
+        Self::OpenAI
     }
 }

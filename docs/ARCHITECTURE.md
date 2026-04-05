@@ -247,26 +247,53 @@ pub fn init() {
 
 清晰归属，便于查找 ✅
 
-### 6. Handler 层设计：对齐 domain 结构
+### 6. Handler 层设计：业务分组 + 方法粒度拆分 ✨
 
-Handler 结构与 domain 结构完全对齐，便于查找：
+经过讨论和实践，我们得到了更清晰的 Handler 架构设计：
 
+**设计原则：**
+1. **先按业务分组** → 对应 `domain` 分组（`hr` / `finance`）
+2. **组内按方法粒度拆分** → **每个方法一个单独文件**，文件包含：
+   - 完整的**输入 DTO** 定义
+   - 完整的**输出 DTO** 定义
+   - 完整的**业务 handler** 实现
+
+**目录结构示例（Agent 管理）：**
 ```
-handlers/
-├── hr.rs         # HR 模块入口
-└── hr/
-    └── agent/    # Agent 管理（对应 domain/hr/agent.rs）
-        ├── mod.rs
-        └── dto.rs
+handlers/hr/agent/
+├── mod.rs               # 仅导出，不包含实现（~10 行）
+├── create_agent.rs      # CreateAgentRequest + CreateAgentResponse + create_agent 实现
+├── get_agent.rs         # GetAgentResponse + get_agent 实现
+├── list_agents.rs       # AgentListItem + list_agents 实现
+├── update_agent.rs      # UpdateAgentRequest + UpdateAgentResponse + update_agent 实现
+└── delete_agent.rs      # delete_agent 实现
 ```
 
-路由路径也完全对齐：
+**模型提供商管理（finance domain）结构完全对齐：**
+```
+handlers/finance/model_provider/
+├── mod.rs                       # 仅导出
+├── create_model_provider.rs      # DTO + handler
+├── get_model_provider.rs         # DTO + handler
+├── list_model_providers.rs       # DTO + handler
+├── update_model_provider.rs      # DTO + handler
+└── delete_model_provider.rs      # handler
+```
+
+**优点：**
+- ✅ 每个文件短小单一职责，不超过 100 行，阅读清晰
+- ✅ 找到代码更容易，增删改某一个方法只需要改一个文件
+- ✅ 输入输出定义和实现在一起，不用翻多个文件
+- ✅ 结构与 domain 完全对齐，便于查找
+- ✅ 符合单一职责原则，高内聚低耦合
+
+路由路径也完全对齐 domain：
 
 | 层级 | 路径 |
 |------|------|
-| Domain | `service/domain/hr/agent.rs` |
-| Handler | `handlers/hr/agent/mod.rs` |
-| Router | `/api/v1/hr/agents` |
+| Domain | `service/domain/finance/model_provider.rs` |
+| Handler | `handlers/finance/model_provider/` 按方法拆分 |
+| Router | `/api/v1/finance/model-providers` |
 
 完全一致，结构清晰 ✅
 

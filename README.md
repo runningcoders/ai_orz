@@ -110,13 +110,30 @@ let result = brain_dao.prompt(&brain, "你好").await?;
 
 ## API 接口
 
+### HR (人力资源) - Agent 管理
+
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/api/v1/hr/agents` | 创建 Agent |
 | GET | `/api/v1/hr/agents` | 列出所有 Agent |
-| GET | `/api/v1/hr/agents/:id` | 获取单个 Agent |
-| PUT | `/api/v1/hr/agents/:id` | 更新 Agent |
-| DELETE | `/api/v1/hr/agents/:id` | 删除 Agent |
+| GET | `/api/v1/hr/agents/{id}` | 获取单个 Agent |
+| PUT | `/api/v1/hr/agents/{id}` | 更新 Agent |
+| DELETE | `/api/v1/hr/agents/{id}` | 删除 Agent |
+
+### Finance (财务管理) - Model Provider 管理
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/v1/finance/model-providers` | 创建模型提供商 |
+| GET | `/api/v1/finance/model-providers` | 列出所有模型提供商 |
+| GET | `/api/v1/finance/model-providers/{id}` | 获取单个模型 |
+| PUT | `/api/v1/finance/model-providers/{id}` | 更新模型 |
+| DELETE | `/api/v1/finance/model-providers/{id}` | 删除模型 |
+
+### 健康检查
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
 | GET | `/health` | 健康检查 |
 
 ## 前端架构
@@ -125,17 +142,24 @@ let result = brain_dao.prompt(&brain, "你好").await?;
 frontend/src/
 ├── main.rs              # 入口，App 组件
 ├── api/                # API 调用模块
-│   └── health.rs       # 健康检查 API
+│   ├── health.rs       # 健康检查 API
+│   ├── agent.rs        # Agent 管理 API
+│   └── model_provider.rs # Model Provider 管理 API
 └── components/         # UI 组件
     ├── navbar.rs        # 顶部导航栏
     ├── reception.rs     # 前台接待欢迎页
-    └── agent_management.rs # Agent 管理页
+    ├── agent_management.rs # Agent 管理页
+    └── model_provider_management.rs # Model Provider 管理页
 ```
 
 前端已经实现：
-- ✅ 顶部导航栏（前台接待 + 人力资源下拉菜单 → 员工管理 / Agent 管理）
+- ✅ 顶部导航栏
+  - 前台接待
+  - 人力资源 → 员工管理 / Agent 管理
+  - **财务管理 → 模型管理** 👈 新增
 - ✅ 前台接待欢迎页
-- ✅ Agent 管理列表 + 创建弹窗（目前使用示例数据模拟）
+- ✅ Agent 管理列表 + 创建弹窗 + 删除功能
+- ✅ **Model Provider 管理列表 + 创建弹窗 + 删除功能** 👈 新增
 
 ## 前端开发
 

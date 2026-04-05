@@ -24,7 +24,7 @@ impl super::BrainDao for RigBrainDao {
         let base_url = provider.base_url.clone();
         
         let cortex: Box<dyn Cortex + Send + Sync> = match provider.provider_type {
-            ProviderType::OpenAi => Box::new(
+            ProviderType::OpenAI => Box::new(
                 self::openai::OpenAiCortex::new(api_key, model, base_url)?
             ),
             ProviderType::DeepSeek => Box::new(
@@ -45,7 +45,7 @@ impl super::BrainDao for RigBrainDao {
             ProviderType::Ollama => Box::new(
                 self::ollama::OllamaCortex::new(api_key, model, base_url)?
             ),
-            ProviderType::OpenAiCompatible => Box::new(
+            ProviderType::OpenAICompatible => Box::new(
                 self::openai_compatible::OpenAiCompatibleCortex::new(
                     api_key, model, "".to_string(), base_url
                 )?

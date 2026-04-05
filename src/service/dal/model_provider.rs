@@ -1,8 +1,9 @@
 //! Model Provider DAL 模块
 
 use crate::error::AppError;
-use crate::models::model_provider::ModelProvider;
+use crate::models::model_provider::{ModelProvider, ModelProviderPo};
 use crate::pkg::RequestContext;
+use crate::service::dao::brain::BrainDao;
 use crate::service::dao::model_provider::ModelProviderDaoTrait;
 use std::sync::{Arc, OnceLock};
 
@@ -16,8 +17,11 @@ pub fn dal() -> Arc<dyn ModelProviderDalTrait> {
 }
 
 /// 初始化 Model Provider DAL
-pub fn init(dao: Arc<dyn ModelProviderDaoTrait>) {
-    let _ = MODEL_PROVIDER_DAL.set(Arc::new(ModelProviderDal::new(dao)));
+pub fn init(
+    model_provider_dao: Arc<dyn ModelProviderDaoTrait>,
+    brain_dao: Arc<dyn BrainDao + Send + Sync>,
+) {
+    let _ = MODEL_PROVIDER_DAL.set(Arc::new(ModelProviderDal::new(model_provider_dao, brain_dao)));
 }
 
 // ==================== DAL 实现 ====================
@@ -38,17 +42,24 @@ pub trait ModelProviderDalTrait: Send + Sync {
 
     /// 删除 Model Provider
     fn delete(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError>;
+
+    /// 唤醒模型：创建临时 Brain 并执行一次测试调用，验证连通性
+    fn wake_brain(&self, provider: &ModelProviderPo, prompt: &str) -> Result<String, AppError>;
 }
 
 /// Model Provider DAL 实现
 pub struct ModelProviderDal {
     model_provider_dao: Arc<dyn ModelProviderDaoTrait>,
+    brain_dao: Arc<dyn BrainDao + Send + Sync>,
 }
 
 impl ModelProviderDal {
     /// 创建 DAL 实例
-    pub fn new(model_provider_dao: Arc<dyn ModelProviderDaoTrait>) -> Self {
-        Self { model_provider_dao }
+    pub fn new(
+        model_provider_dao: Arc<dyn ModelProviderDaoTrait>,
+        brain_dao: Arc<dyn BrainDao + Send + Sync>,
+    ) -> Self {
+        Self { model_provider_dao, brain_dao }
     }
 }
 
@@ -75,5 +86,16 @@ impl ModelProviderDalTrait for ModelProviderDal {
 
     fn delete(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError> {
         self.model_provider_dao.delete(ctx, &provider.po)
+    }
+
+    fn wake_brain(&self, provider: &ModelProviderPo, prompt: &str) -> Result<String, AppError> {
+        let brain = self.brain_dao.create_brain(provider)?;
+        
+        // 使用 tokio runtime 阻塞执行异步调用
+        let result = tokio::runtime::Handle::current().block_on(async {
+            self.brain_dao.prompt(&brain, prompt).await
+        })?;
+
+        Ok(result)
     }
 }
