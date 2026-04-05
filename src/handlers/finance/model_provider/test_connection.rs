@@ -32,12 +32,29 @@ pub async fn test_model_provider_connection(
 ) -> Result<Json<ApiResponse<TestModelProviderConnectionResponse>>, AppError> {
     let ctx = extract_ctx(&headers);
 
-    match domain().model_provider_manage().test_model_provider_connection(ctx, &id) {
-        Ok(result) => Ok(Json(ApiResponse::success(TestModelProviderConnectionResponse {
-            success: true,
-            message: "连通性测试成功".to_string(),
-            result: Some(result),
-        }))),
+    // 使用默认 prompt "Hello!" 测试连通性
+    match domain().model_provider_manage().wake_brain(ctx, &id, "Hello!") {
+        Ok(result) => {
+            // 如果结果为空也算测试失败
+            if result.trim().is_empty() {
+                let resp = TestModelProviderConnectionResponse {
+                    success: false,
+                    message: "模型返回空响应，连通性测试不通过".to_string(),
+                    result: None,
+                };
+                Ok(Json(ApiResponse {
+                    code: 400,
+                    message: "模型返回空响应".to_string(),
+                    data: Some(resp),
+                }))
+            } else {
+                Ok(Json(ApiResponse::success(TestModelProviderConnectionResponse {
+                    success: true,
+                    message: "连通性测试成功".to_string(),
+                    result: Some(result),
+                })))
+            }
+        }
         Err(e) => {
             let resp = TestModelProviderConnectionResponse {
                 success: false,

@@ -9,7 +9,7 @@ async fn test_create_openai_brain() {
     let provider = ModelProviderPo {
         id: "test-id".to_string(),
         name: "OpenAI GPT-4o".to_string(),
-        provider_type: ProviderType::OpenAi,
+        provider_type: ProviderType::OpenAI,
         model_name: "gpt-4o".to_string(),
         api_key: "test-key".to_string(),
         base_url: None,
@@ -125,7 +125,7 @@ async fn test_create_openai_compatible_custom_base_url() {
     let provider = ModelProviderPo {
         id: "test-id".to_string(),
         name: "Custom OpenAI Compatible".to_string(),
-        provider_type: ProviderType::OpenAiCompatible,
+        provider_type: ProviderType::OpenAICompatible,
         model_name: "custom-model".to_string(),
         api_key: "test-key".to_string(),
         base_url: Some("https://custom.api.com/v1".to_string()),
