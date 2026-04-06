@@ -42,12 +42,6 @@ impl FinanceDomainImpl {
     }
 }
 
-impl FinanceDomain for FinanceDomainImpl {
-    fn model_provider_manage(&self) -> &dyn ModelProviderManage {
-        self
-    }
-}
-
 // ==================== traits 定义 ====================
 
 /// Finance Domain 总 trait
@@ -86,35 +80,8 @@ pub trait ModelProviderManage: Send + Sync {
     fn wake_cortex(&self, ctx: RequestContext, id: &str, prompt: &str) -> Result<String, AppError>;
 }
 
-impl ModelProviderManage for FinanceDomainImpl {
-    fn create_model_provider(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError> {
-        self.model_provider_dal.create(ctx, provider)
-    }
-
-    fn get_model_provider(&self, ctx: RequestContext, id: &str) -> Result<Option<ModelProvider>, AppError> {
-        self.model_provider_dal.find_by_id(ctx, id)
-    }
-
-    fn list_model_providers(&self, ctx: RequestContext) -> Result<Vec<ModelProvider>, AppError> {
-        self.model_provider_dal.find_all(ctx)
-    }
-
-    fn update_model_provider(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError> {
-        self.model_provider_dal.update(ctx, provider)
-    }
-
-    fn delete_model_provider(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError> {
-        self.model_provider_dal.delete(ctx, provider)
-    }
-
-    fn wake_cortex(&self, ctx: RequestContext, id: &str, prompt: &str) -> Result<String, AppError> {
-        // 1. 查询 Model Provider
-        let provider = self.model_provider_dal.find_by_id(ctx, id)?
-            .ok_or_else(|| AppError::NotFound(format!("ModelProvider {} not found", id)))?;
-
-        // 2. 调用 DAL 唤醒 cortex 执行调用
-        let result = self.model_provider_dal.wake_cortex(&provider.po, prompt)?;
-
-        Ok(result)
+impl FinanceDomain for FinanceDomainImpl {
+    fn model_provider_manage(&self) -> &dyn ModelProviderManage {
+        self
     }
 }
