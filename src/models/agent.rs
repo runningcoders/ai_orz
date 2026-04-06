@@ -72,7 +72,7 @@ impl Agent {
 
     /// 获取 Brain 内部的 Cortex 引用
     pub fn cortex(&self) -> Option<&(dyn CortexTrait + Send + Sync)> {
-        self.brain.as_ref().and_then(|b| b.cortex())
+        self.brain.as_ref().map(|b| b.cortex())
     }
 }
 
