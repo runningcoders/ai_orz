@@ -13,7 +13,7 @@ pub use model_provider::{dal as model_provider_dal, ModelProviderDal, ModelProvi
 
 /// 初始化所有 DAL 实例
 pub fn init_all() {
-    let brain_dao = crate::service::dao::brain::dao();
+    let cortex_dao = crate::service::dao::cortex::dao();
     agent::init(crate::service::dao::agent_dao());
-    model_provider::init(crate::service::dao::model_provider_dao(), brain_dao);
+    model_provider::init(crate::service::dao::model_provider_dao(), cortex_dao);
 }

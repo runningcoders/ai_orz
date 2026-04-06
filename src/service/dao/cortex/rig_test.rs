@@ -1,11 +1,11 @@
-//! Brain DAO 测试
+//! Cortex DAO 测试
 
 use super::*;
 use crate::models::{self, model_provider::ModelProviderPo};
 use crate::pkg::constants::provider_type::ProviderType;
 
 #[tokio::test]
-async fn test_create_openai_brain() {
+async fn test_create_openai_cortex() {
     let provider = ModelProviderPo {
         id: "test-id".to_string(),
         name: "OpenAI GPT-4o".to_string(),
@@ -21,15 +21,15 @@ async fn test_create_openai_brain() {
         updated_at: 0,
     };
 
-    let dao = rig::RigBrainDao::new();
-    let result = dao.create_brain(&provider);
+    let dao = rig::RigCortexDao::new();
+    let result = dao.create_cortex(&provider);
     
     // 应该能成功创建，API key 不正确只会在运行时失败，创建本身不会失败
     assert!(result.is_ok());
 }
 
 #[tokio::test]
-async fn test_create_deepseek_brain() {
+async fn test_create_deepseek_cortex() {
     let provider = ModelProviderPo {
         id: "test-id".to_string(),
         name: "DeepSeek".to_string(),
@@ -45,14 +45,14 @@ async fn test_create_deepseek_brain() {
         updated_at: 0,
     };
 
-    let dao = rig::RigBrainDao::new();
-    let result = dao.create_brain(&provider);
+    let dao = rig::RigCortexDao::new();
+    let result = dao.create_cortex(&provider);
     
     assert!(result.is_ok());
 }
 
 #[tokio::test]
-async fn test_create_qwen_brain() {
+async fn test_create_qwen_cortex() {
     let provider = ModelProviderPo {
         id: "test-id".to_string(),
         name: "Qwen".to_string(),
@@ -68,14 +68,14 @@ async fn test_create_qwen_brain() {
         updated_at: 0,
     };
 
-    let dao = rig::RigBrainDao::new();
-    let result = dao.create_brain(&provider);
+    let dao = rig::RigCortexDao::new();
+    let result = dao.create_cortex(&provider);
     
     assert!(result.is_ok());
 }
 
 #[tokio::test]
-async fn test_create_doubao_brain() {
+async fn test_create_doubao_cortex() {
     let provider = ModelProviderPo {
         id: "test-id".to_string(),
         name: "Doubao".to_string(),
@@ -91,14 +91,14 @@ async fn test_create_doubao_brain() {
         updated_at: 0,
     };
 
-    let dao = rig::RigBrainDao::new();
-    let result = dao.create_brain(&provider);
+    let dao = rig::RigCortexDao::new();
+    let result = dao.create_cortex(&provider);
     
     assert!(result.is_ok());
 }
 
 #[tokio::test]
-async fn test_create_ollama_brain() {
+async fn test_create_ollama_cortex() {
     let provider = ModelProviderPo {
         id: "test-id".to_string(),
         name: "Ollama Llama3".to_string(),
@@ -114,8 +114,8 @@ async fn test_create_ollama_brain() {
         updated_at: 0,
     };
 
-    let dao = rig::RigBrainDao::new();
-    let result = dao.create_brain(&provider);
+    let dao = rig::RigCortexDao::new();
+    let result = dao.create_cortex(&provider);
     
     assert!(result.is_ok());
 }
@@ -137,8 +137,8 @@ async fn test_create_openai_compatible_custom_base_url() {
         updated_at: 0,
     };
 
-    let dao = rig::RigBrainDao::new();
-    let result = dao.create_brain(&provider);
+    let dao = rig::RigCortexDao::new();
+    let result = dao.create_cortex(&provider);
     
     assert!(result.is_ok());
 }

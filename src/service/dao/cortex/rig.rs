@@ -1,4 +1,4 @@
-//! Rig 具体实现 - 默认 BrainDao 实现
+//! Rig 具体实现 - 默认 CortexDao 实现
 
 use async_trait::async_trait;
 use anyhow::{Result, anyhow};
@@ -6,23 +6,22 @@ use crate::models::{self, brain::*};
 use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::constants::ProviderType;
 
-/// 默认 Brain DAO 工厂实现
-pub struct RigBrainDao;
+/// 默认 Cortex DAO 工厂实现
+pub struct RigCortexDao;
 
-impl RigBrainDao {
+impl RigCortexDao {
     pub fn new() -> Self {
         Self
     }
 }
 
 #[async_trait]
-impl super::BrainDao for RigBrainDao {
-    fn create_brain(&self, provider: &ModelProviderPo) -> Result<Brain> {
-        
+impl super::CortexDao for RigCortexDao {
+    fn create_cortex(&self, provider: &ModelProviderPo) -> Result<Box<dyn Cortex + Send + Sync>> {
         let api_key = provider.api_key.clone();
         let model = provider.model_name.clone();
         let base_url = provider.base_url.clone();
-        
+
         let cortex: Box<dyn Cortex + Send + Sync> = match provider.provider_type {
             ProviderType::OpenAI => Box::new(
                 self::openai::OpenAiCortex::new(api_key, model, base_url)?
@@ -51,12 +50,8 @@ impl super::BrainDao for RigBrainDao {
                 )?
             ),
         };
-        
-        Ok(Brain::new(cortex))
-    }
 
-    async fn prompt(&self, brain: &Brain, prompt: &str) -> Result<String> {
-        brain.cortex.prompt(prompt).await
+        Ok(cortex)
     }
 }
 

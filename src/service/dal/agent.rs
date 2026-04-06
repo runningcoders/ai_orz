@@ -2,10 +2,10 @@
 
 use crate::error::AppError;
 use crate::models::agent::Agent;
+use crate::models::brain::Brain;
 use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
 use crate::service::dao::agent::AgentDaoTrait;
-use crate::service::dao::brain::dao as brain_dao;
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例管理 ====================
@@ -43,11 +43,12 @@ pub trait AgentDalTrait: Send + Sync {
 
     /// 唤醒 Brain
     ///
-    /// 如果传入 Some(model_provider) → 更新 Agent po 中的 model_provider_id，然后唤醒 brain
-    /// 如果传入 None → 使用 Agent po 中已存储的 model_provider_id 查询 ModelProvider，然后唤醒 brain
+    /// 如果传入 Some(model_provider) → 更新 Agent po 中的 model_provider_id
+    /// 直接使用传入的 brain 赋值给 Agent，不负责创建 brain
     ///
     /// 唤醒完成后将 brain 写入 Agent 的 brain 字段
-    fn wake_brain(&self, ctx: RequestContext, agent: &mut Agent, model_provider: Option<&ModelProvider>) -> Result<(), AppError>;
+    /// 如果更新了 model_provider_id，自动更新数据库
+    fn wake_brain(&self, ctx: RequestContext, agent: &mut Agent, model_provider: Option<&ModelProvider>, brain: Brain) -> Result<(), AppError>;
 }
 
 /// Agent DAL 实现
@@ -87,33 +88,16 @@ impl AgentDalTrait for AgentDal {
         self.agent_dao.delete(ctx, &agent.po)
     }
 
-    fn wake_brain(&self, ctx: RequestContext, agent: &mut Agent, model_provider: Option<&ModelProvider>) -> Result<(), AppError> {
+    fn wake_brain(&self, ctx: RequestContext, agent: &mut Agent, model_provider: Option<&ModelProvider>, brain: Brain) -> Result<(), AppError> {
         // 1. 如果传入了 ModelProvider，更新 model_provider_id
         if let Some(mp) = model_provider {
             agent.po.model_provider_id = mp.po.id.clone();
         }
 
-        // 2. 获取 ModelProvider（如果没传入，用 agent.po.model_provider_id 查询）
-        let mp = match model_provider {
-            Some(mp) => mp.clone(),
-            None => {
-                let Some(mp) = crate::service::dal::model_provider_dal().find_by_id(ctx.clone(), &agent.po.model_provider_id)? else {
-                    return Err(AppError::NotFound(format!(
-                        "ModelProvider {} not found for Agent {}",
-                        agent.po.model_provider_id, agent.id()
-                    )));
-                };
-                mp
-            }
-        };
-
-        // 3. 通过 BrainDao 创建 brain
-        let brain = brain_dao().create_brain(&mp.po)?;
-
-        // 4. 写入 agent brain 字段
+        // 2. 直接使用传入的 brain 赋值给 Agent
         agent.set_brain(brain);
 
-        // 5. 如果我们更新了 model_provider_id，需要更新数据库
+        // 3. 如果我们更新了 model_provider_id，需要更新数据库
         if model_provider.is_some() {
             self.update(ctx, agent)?;
         }
