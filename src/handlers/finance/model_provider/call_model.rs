@@ -32,7 +32,7 @@ pub async fn call_model(
 ) -> Result<Json<ApiResponse<CallModelResponse>>, AppError> {
     let ctx = extract_ctx(&headers);
 
-    let result = domain().model_provider_manage().wake_brain(ctx, &id, &req.prompt)?;
+    let result = domain().model_provider_manage().wake_cortex(ctx, &id, &req.prompt)?;
 
     Ok(Json(ApiResponse::success(CallModelResponse {
         result,

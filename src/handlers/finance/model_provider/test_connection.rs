@@ -33,7 +33,7 @@ pub async fn test_model_provider_connection(
     let ctx = extract_ctx(&headers);
 
     // 使用默认 prompt "Hello!" 测试连通性
-    match domain().model_provider_manage().wake_brain(ctx, &id, "Hello!") {
+    match domain().model_provider_manage().wake_cortex(ctx, &id, "Hello!") {
         Ok(result) => {
             // 如果结果为空也算测试失败
             if result.trim().is_empty() {

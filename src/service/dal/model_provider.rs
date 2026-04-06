@@ -44,16 +44,10 @@ pub trait ModelProviderDalTrait: Send + Sync {
     /// 删除 Model Provider
     fn delete(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError>;
 
-    /// 创建 Cortex
+    /// 唤醒 Cortex：创建 Cortex 并执行一次测试调用，验证连通性
     ///
-    /// 根据 Model Provider 配置创建 Cortex 实例
-    /// 不再组装 Brain，直接返回 Cortex 给上层组装
-    fn create_cortex(&self, provider: &ModelProviderPo) -> Result<Box<dyn Cortex + Send + Sync>, AppError>;
-
-    /// 唤醒模型：创建 Cortex 并执行一次测试调用，验证连通性
-    ///
-    /// 仍然保留这个方法用于连通性测试，它会创建 cortex 然后执行 prompt
-    fn wake_brain(&self, provider: &ModelProviderPo, prompt: &str) -> Result<String, AppError>;
+    /// 根据 Model Provider 配置创建 Cortex，然后执行 prompt 返回结果
+    fn wake_cortex(&self, provider: &ModelProviderPo, prompt: &str) -> Result<String, AppError>;
 }
 
 /// Model Provider DAL 实现
@@ -97,12 +91,7 @@ impl ModelProviderDalTrait for ModelProviderDal {
         self.model_provider_dao.delete(ctx, &provider.po)
     }
 
-    fn create_cortex(&self, provider: &ModelProviderPo) -> Result<Box<dyn Cortex + Send + Sync>, AppError> {
-        let cortex = self.cortex_dao.create_cortex(provider)?;
-        Ok(cortex)
-    }
-
-    fn wake_brain(&self, provider: &ModelProviderPo, prompt: &str) -> Result<String, AppError> {
+    fn wake_cortex(&self, provider: &ModelProviderPo, prompt: &str) -> Result<String, AppError> {
         let cortex = self.cortex_dao.create_cortex(provider)?;
 
         // 使用 tokio runtime 阻塞执行异步调用

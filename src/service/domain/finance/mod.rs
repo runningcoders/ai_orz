@@ -77,13 +77,13 @@ pub trait ModelProviderManage: Send + Sync {
     /// 删除 Model Provider
     fn delete_model_provider(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError>;
 
-    /// 唤醒 Model Provider 创建临时 Brain 并执行调用
-    /// 
+    /// 唤醒 Cortex：创建临时 Cortex 并执行调用
+    ///
     /// 用于测试连通性或直接调用模型
     /// - provider_id: 模型 ID
     /// - prompt: 调用提示词
     /// - 返回: 模型输出结果
-    fn wake_brain(&self, ctx: RequestContext, id: &str, prompt: &str) -> Result<String, AppError>;
+    fn wake_cortex(&self, ctx: RequestContext, id: &str, prompt: &str) -> Result<String, AppError>;
 }
 
 impl ModelProviderManage for FinanceDomainImpl {
@@ -107,13 +107,13 @@ impl ModelProviderManage for FinanceDomainImpl {
         self.model_provider_dal.delete(ctx, provider)
     }
 
-    fn wake_brain(&self, ctx: RequestContext, id: &str, prompt: &str) -> Result<String, AppError> {
+    fn wake_cortex(&self, ctx: RequestContext, id: &str, prompt: &str) -> Result<String, AppError> {
         // 1. 查询 Model Provider
         let provider = self.model_provider_dal.find_by_id(ctx, id)?
             .ok_or_else(|| AppError::NotFound(format!("ModelProvider {} not found", id)))?;
 
-        // 2. 调用 DAL 唤醒 brain 执行调用
-        let result = self.model_provider_dal.wake_brain(&provider.po, prompt)?;
+        // 2. 调用 DAL 唤醒 cortex 执行调用
+        let result = self.model_provider_dal.wake_cortex(&provider.po, prompt)?;
 
         Ok(result)
     }
