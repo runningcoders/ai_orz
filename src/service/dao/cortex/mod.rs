@@ -1,6 +1,7 @@
 //! Cortex DAO - 大脑皮层工厂
 //!
-//! 根据 Model Provider 创建 Cortex 实体，提供统一推理接口
+//! 根据 Model Provider 创建 CortexTrait 实例，提供统一推理接口
+//! 包含 create_cortex_trait 和 prompt（执行 prompt 获取回答）
 
 use anyhow::{Result};
 use crate::models::{self, brain::*, model_provider::ModelProvider};
@@ -21,10 +22,17 @@ pub fn init() {
 }
 
 /// Cortex DAO 工厂 trait
+///
+/// CortexDao 负责创建 CortexTrait 和执行 prompt，所有调用收敛到 DAO
 #[async_trait::async_trait]
 pub trait CortexDao: Send + Sync {
-    /// 根据 Model Provider 创建 Cortex 实体
-    fn create_cortex(&self, provider: &ModelProvider) -> Result<Cortex>;
+    /// 根据 Model Provider 创建 CortexTrait 实例
+    fn create_cortex_trait(&self, provider: &ModelProvider) -> Result<Box<dyn CortexTrait + Send + Sync>>;
+
+    /// 执行 prompt：使用已创建的 CortexTrait 推理获取回答
+    ///
+    /// 使用 tokio runtime 阻塞执行异步调用
+    fn prompt(&self, cortex: &dyn CortexTrait, prompt: &str) -> Result<String>;
 }
 
 mod rig;

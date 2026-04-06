@@ -24,7 +24,7 @@ async fn test_create_openai_cortex() {
     let provider = ModelProvider::from_po(provider_po);
 
     let dao = rig::RigCortexDao::new();
-    let result = dao.create_cortex(&provider);
+    let result = dao.create_cortex_trait(&provider);
     
     // 应该能成功创建，API key 不正确只会在运行时失败，创建本身不会失败
     assert!(result.is_ok());
@@ -50,7 +50,7 @@ async fn test_create_deepseek_cortex() {
     let provider = ModelProvider::from_po(provider_po);
 
     let dao = rig::RigCortexDao::new();
-    let result = dao.create_cortex(&provider);
+    let result = dao.create_cortex_trait(&provider);
     
     assert!(result.is_ok());
 }
@@ -75,7 +75,7 @@ async fn test_create_qwen_cortex() {
     let provider = ModelProvider::from_po(provider_po);
 
     let dao = rig::RigCortexDao::new();
-    let result = dao.create_cortex(&provider);
+    let result = dao.create_cortex_trait(&provider);
     
     assert!(result.is_ok());
 }
@@ -100,7 +100,7 @@ async fn test_create_doubao_cortex() {
     let provider = ModelProvider::from_po(provider_po);
 
     let dao = rig::RigCortexDao::new();
-    let result = dao.create_cortex(&provider);
+    let result = dao.create_cortex_trait(&provider);
     
     assert!(result.is_ok());
 }
@@ -125,7 +125,7 @@ async fn test_create_ollama_cortex() {
     let provider = ModelProvider::from_po(provider_po);
 
     let dao = rig::RigCortexDao::new();
-    let result = dao.create_cortex(&provider);
+    let result = dao.create_cortex_trait(&provider);
     
     assert!(result.is_ok());
 }
@@ -150,7 +150,7 @@ async fn test_create_openai_compatible_custom_base_url() {
     let provider = ModelProvider::from_po(provider_po);
 
     let dao = rig::RigCortexDao::new();
-    let result = dao.create_cortex(&provider);
+    let result = dao.create_cortex_trait(&provider);
     
     assert!(result.is_ok());
 }

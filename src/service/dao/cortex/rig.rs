@@ -5,6 +5,7 @@ use anyhow::{Result, anyhow};
 use crate::models::{self, brain::*};
 use crate::models::model_provider::ModelProvider;
 use crate::pkg::constants::ProviderType;
+use tokio::runtime::Handle;
 
 /// 默认 Cortex DAO 工厂实现
 pub struct RigCortexDao;
@@ -17,7 +18,7 @@ impl RigCortexDao {
 
 #[async_trait]
 impl super::CortexDao for RigCortexDao {
-    fn create_cortex(&self, provider: &ModelProvider) -> Result<Cortex> {
+    fn create_cortex_trait(&self, provider: &ModelProvider) -> Result<Box<dyn CortexTrait + Send + Sync>> {
         let api_key = provider.po.api_key.clone();
         let model = provider.po.model_name.clone();
         let base_url = provider.po.base_url.clone();
@@ -51,7 +52,15 @@ impl super::CortexDao for RigCortexDao {
             ),
         };
 
-        Ok(Cortex::new(provider.clone(), cortex))
+        Ok(cortex)
+    }
+
+    fn prompt(&self, cortex: &dyn CortexTrait, prompt: &str) -> Result<String> {
+        let result = Handle::current().block_on(async {
+            cortex.prompt(prompt).await
+        })?;
+
+        Ok(result)
     }
 }
 
