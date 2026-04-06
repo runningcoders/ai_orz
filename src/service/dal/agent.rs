@@ -110,10 +110,10 @@ impl AgentDalTrait for AgentDal {
         // 3. 通过 BrainDao 创建 brain
         let brain = brain_dao().create_brain(&mp.po)?;
 
-        // 4. 写入 agent brain 字段（提取 cortex）
-        agent.set_brain(brain.cortex);
+        // 4. 写入 agent brain 字段
+        agent.set_brain(brain);
 
-        // 5. 如果更新了 model_provider_id，需要更新数据库
+        // 5. 如果我们更新了 model_provider_id，需要更新数据库
         if model_provider.is_some() {
             self.update(ctx, agent)?;
         }

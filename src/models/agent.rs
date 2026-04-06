@@ -1,6 +1,6 @@
 //! Agent 实体
 
-use crate::models::brain::{Cortex};
+use crate::models::brain::{Brain, Cortex};
 use crate::pkg::constants::AgentPoStatus;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -15,7 +15,7 @@ pub struct Agent {
     /// 装配好的 Brain（推理执行实体）
     ///
     /// 如果为 None，表示还没有装配，需要调用 AgentDal::wake_brain 装配
-    pub brain: Option<Box<dyn Cortex + Send + Sync>>,
+    pub brain: Option<Brain>,
     // 后续扩展字段：
     // pub execution_env: ExecutionEnv,
     // pub permissions: Vec<Permission>,
@@ -26,7 +26,7 @@ impl fmt::Debug for Agent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Agent")
             .field("po", &self.po)
-            .field("brain", &"[Box<dyn Cortex + Send + Sync>]")
+            .field("brain", &"[Brain]")
             .finish()
     }
 }
@@ -61,13 +61,18 @@ impl Agent {
     }
 
     /// 设置装配好的 Brain
-    pub fn set_brain(&mut self, brain: Box<dyn Cortex + Send + Sync>) {
+    pub fn set_brain(&mut self, brain: Brain) {
         self.brain = Some(brain);
     }
 
     /// 获取 Brain 引用
-    pub fn brain(&self) -> Option<&(dyn Cortex + Send + Sync)> {
-        self.brain.as_deref()
+    pub fn brain(&self) -> Option<&Brain> {
+        self.brain.as_ref()
+    }
+
+    /// 获取 Brain 内部的 Cortex 引用
+    pub fn cortex(&self) -> Option<&(dyn Cortex + Send + Sync)> {
+        self.brain.as_ref().map(|b| b.cortex.as_ref())
     }
 }
 
