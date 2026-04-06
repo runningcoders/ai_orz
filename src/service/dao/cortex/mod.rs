@@ -5,6 +5,7 @@
 
 use anyhow::{Result};
 use crate::models::{self, brain::*, model_provider::ModelProvider};
+use crate::pkg::RequestContext;
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例 ====================
@@ -23,16 +24,16 @@ pub fn init() {
 
 /// Cortex DAO 工厂 trait
 ///
-/// CortexDao 负责创建 CortexTrait 和执行 prompt，所有调用收敛到 DAO
+/// CortexDao 负责创建 CortexTrait 和执行 prompt，所有方法都传递 ctx
 #[async_trait::async_trait]
 pub trait CortexDao: Send + Sync {
     /// 根据 Model Provider 创建 CortexTrait 实例
-    fn create_cortex_trait(&self, provider: &ModelProvider) -> Result<Box<dyn CortexTrait + Send + Sync>>;
+    fn create_cortex_trait(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<Box<dyn CortexTrait + Send + Sync>>;
 
     /// 执行 prompt：使用已创建的 CortexTrait 推理获取回答
     ///
     /// 使用 tokio runtime 阻塞执行异步调用
-    fn prompt(&self, cortex: &dyn CortexTrait, prompt: &str) -> Result<String>;
+    fn prompt(&self, ctx: RequestContext, cortex: &dyn CortexTrait, prompt: &str) -> Result<String>;
 }
 
 mod rig;

@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use anyhow::{Result, anyhow};
 use crate::models::{self, brain::*};
 use crate::models::model_provider::ModelProvider;
-use crate::pkg::constants::ProviderType;
+use crate::pkg::{constants::ProviderType, RequestContext};
 use tokio::runtime::Handle;
 
 /// 默认 Cortex DAO 工厂实现
@@ -18,7 +18,7 @@ impl RigCortexDao {
 
 #[async_trait]
 impl super::CortexDao for RigCortexDao {
-    fn create_cortex_trait(&self, provider: &ModelProvider) -> Result<Box<dyn CortexTrait + Send + Sync>> {
+    fn create_cortex_trait(&self, _ctx: RequestContext, provider: &ModelProvider) -> Result<Box<dyn CortexTrait + Send + Sync>> {
         let api_key = provider.po.api_key.clone();
         let model = provider.po.model_name.clone();
         let base_url = provider.po.base_url.clone();
@@ -55,7 +55,7 @@ impl super::CortexDao for RigCortexDao {
         Ok(cortex)
     }
 
-    fn prompt(&self, cortex: &dyn CortexTrait, prompt: &str) -> Result<String> {
+    fn prompt(&self, _ctx: RequestContext, cortex: &dyn CortexTrait, prompt: &str) -> Result<String> {
         let result = Handle::current().block_on(async {
             cortex.prompt(prompt).await
         })?;

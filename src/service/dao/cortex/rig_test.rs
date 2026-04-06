@@ -3,9 +3,12 @@
 use super::*;
 use crate::models::{self, model_provider::{ModelProvider, ModelProviderPo}};
 use crate::pkg::constants::provider_type::ProviderType;
+use crate::pkg::RequestContext;
 
 #[tokio::test]
 async fn test_create_openai_cortex() {
+    let ctx = RequestContext::new(Some("test-user".to_string()), None);
+
     let provider_po = ModelProviderPo {
         id: "test-id".to_string(),
         name: "OpenAI GPT-4o".to_string(),
@@ -24,7 +27,7 @@ async fn test_create_openai_cortex() {
     let provider = ModelProvider::from_po(provider_po);
 
     let dao = rig::RigCortexDao::new();
-    let result = dao.create_cortex_trait(&provider);
+    let result = dao.create_cortex_trait(ctx, &provider);
     
     // 应该能成功创建，API key 不正确只会在运行时失败，创建本身不会失败
     assert!(result.is_ok());
@@ -32,6 +35,8 @@ async fn test_create_openai_cortex() {
 
 #[tokio::test]
 async fn test_create_deepseek_cortex() {
+    let ctx = RequestContext::new(Some("test-user".to_string()), None);
+
     let provider_po = ModelProviderPo {
         id: "test-id".to_string(),
         name: "DeepSeek".to_string(),
@@ -50,13 +55,15 @@ async fn test_create_deepseek_cortex() {
     let provider = ModelProvider::from_po(provider_po);
 
     let dao = rig::RigCortexDao::new();
-    let result = dao.create_cortex_trait(&provider);
+    let result = dao.create_cortex_trait(ctx, &provider);
     
     assert!(result.is_ok());
 }
 
 #[tokio::test]
 async fn test_create_qwen_cortex() {
+    let ctx = RequestContext::new(Some("test-user".to_string()), None);
+
     let provider_po = ModelProviderPo {
         id: "test-id".to_string(),
         name: "Qwen".to_string(),
@@ -75,13 +82,15 @@ async fn test_create_qwen_cortex() {
     let provider = ModelProvider::from_po(provider_po);
 
     let dao = rig::RigCortexDao::new();
-    let result = dao.create_cortex_trait(&provider);
+    let result = dao.create_cortex_trait(ctx, &provider);
     
     assert!(result.is_ok());
 }
 
 #[tokio::test]
 async fn test_create_doubao_cortex() {
+    let ctx = RequestContext::new(Some("test-user".to_string()), None);
+
     let provider_po = ModelProviderPo {
         id: "test-id".to_string(),
         name: "Doubao".to_string(),
@@ -100,13 +109,15 @@ async fn test_create_doubao_cortex() {
     let provider = ModelProvider::from_po(provider_po);
 
     let dao = rig::RigCortexDao::new();
-    let result = dao.create_cortex_trait(&provider);
+    let result = dao.create_cortex_trait(ctx, &provider);
     
     assert!(result.is_ok());
 }
 
 #[tokio::test]
 async fn test_create_ollama_cortex() {
+    let ctx = RequestContext::new(Some("test-user".to_string()), None);
+
     let provider_po = ModelProviderPo {
         id: "test-id".to_string(),
         name: "Ollama Llama3".to_string(),
@@ -125,13 +136,15 @@ async fn test_create_ollama_cortex() {
     let provider = ModelProvider::from_po(provider_po);
 
     let dao = rig::RigCortexDao::new();
-    let result = dao.create_cortex_trait(&provider);
+    let result = dao.create_cortex_trait(ctx, &provider);
     
     assert!(result.is_ok());
 }
 
 #[tokio::test]
 async fn test_create_openai_compatible_custom_base_url() {
+    let ctx = RequestContext::new(Some("test-user".to_string()), None);
+
     let provider_po = ModelProviderPo {
         id: "test-id".to_string(),
         name: "Custom OpenAI Compatible".to_string(),
@@ -150,7 +163,7 @@ async fn test_create_openai_compatible_custom_base_url() {
     let provider = ModelProvider::from_po(provider_po);
 
     let dao = rig::RigCortexDao::new();
-    let result = dao.create_cortex_trait(&provider);
+    let result = dao.create_cortex_trait(ctx, &provider);
     
     assert!(result.is_ok());
 }

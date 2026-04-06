@@ -34,11 +34,11 @@ impl ModelProviderManage for FinanceDomainImpl {
 
     fn wake_cortex(&self, ctx: RequestContext, id: &str, prompt: &str) -> Result<String, AppError> {
         // 1. 查询 Model Provider
-        let provider = self.model_provider_dal.find_by_id(ctx, id)?
+        let provider = self.model_provider_dal.find_by_id(ctx.clone(), id)?
             .ok_or_else(|| AppError::NotFound(format!("ModelProvider {} not found", id)))?;
 
         // 2. 调用 Cortex DAL 唤醒 cortex 执行调用
-        let result = cortex_dal().wake_cortex(&provider, prompt)?;
+        let result = cortex_dal().wake_cortex(ctx, &provider, prompt)?;
 
         Ok(result)
     }

@@ -6,6 +6,7 @@
 use anyhow::{Result};
 use crate::models::brain::{Cortex, CortexTrait};
 use crate::models::model_provider::ModelProvider;
+use crate::pkg::RequestContext;
 use crate::service::dao::cortex::{dao as cortex_dao, CortexDao};
 use std::sync::{Arc, OnceLock};
 
@@ -30,17 +31,17 @@ pub trait CortexDal: Send + Sync {
     /// 创建完整 Cortex 实体
     /// 
     /// 调用 CortexDao 创建 CortexTrait，然后组装成完整的 Cortex 实体（包含 ModelProvider + CortexTrait）
-    fn create_cortex(&self, provider: &ModelProvider) -> Result<Cortex>;
+    fn create_cortex(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<Cortex>;
 
-    /// 唤醒 Cortex：创建 Cortex 并执行 prompt 获取回答
+    /// 唤醒 Cortex：创建 Cortex 并执行一次 prompt 获取回答，验证连通性
     ///
     /// 使用 tokio runtime 阻塞执行异步调用
-    fn wake_cortex(&self, provider: &ModelProvider, prompt: &str) -> Result<String>;
+    fn wake_cortex(&self, ctx: RequestContext, provider: &ModelProvider, prompt: &str) -> Result<String>;
 
     /// 对已创建的 Cortex 执行 prompt 获取回答
     ///
     /// 使用 tokio runtime 阻塞执行异步调用
-    fn prompt_existing_cortex(&self, cortex: &dyn CortexTrait, prompt: &str) -> Result<String>;
+    fn prompt_existing_cortex(&self, ctx: RequestContext, cortex: &dyn CortexTrait, prompt: &str) -> Result<String>;
 }
 
 /// Cortex DAL 实现
@@ -56,17 +57,17 @@ impl CortexDalImpl {
 }
 
 impl CortexDal for CortexDalImpl {
-    fn create_cortex(&self, provider: &ModelProvider) -> Result<Cortex> {
-        let cortex_trait = self.cortex_dao.create_cortex_trait(provider)?;
+    fn create_cortex(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<Cortex> {
+        let cortex_trait = self.cortex_dao.create_cortex_trait(ctx, provider)?;
         Ok(Cortex::new(provider.clone(), cortex_trait))
     }
 
-    fn wake_cortex(&self, provider: &ModelProvider, prompt: &str) -> Result<String> {
-        let cortex = self.create_cortex(provider)?;
-        self.prompt_existing_cortex(cortex.cortex(), prompt)
+    fn wake_cortex(&self, ctx: RequestContext, provider: &ModelProvider, prompt: &str) -> Result<String> {
+        let cortex = self.create_cortex(ctx.clone(), provider)?;
+        self.prompt_existing_cortex(ctx, cortex.cortex(), prompt)
     }
 
-    fn prompt_existing_cortex(&self, cortex: &dyn CortexTrait, prompt: &str) -> Result<String> {
-        self.cortex_dao.prompt(cortex, prompt)
+    fn prompt_existing_cortex(&self, ctx: RequestContext, cortex: &dyn CortexTrait, prompt: &str) -> Result<String> {
+        self.cortex_dao.prompt(ctx, cortex, prompt)
     }
 }
