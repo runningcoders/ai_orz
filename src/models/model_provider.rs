@@ -1,7 +1,9 @@
 //! 模型提供商实体
 
+use crate::models::brain::Cortex;
 use crate::pkg::constants::{ModelProviderPoStatus, ProviderType};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// 模型提供商持久化对象
 ///
@@ -40,9 +42,23 @@ pub struct ModelProviderPo {
 }
 
 /// 模型提供商业务对象
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// 包含持久化对象和装配好的 Cortex 实例
 pub struct ModelProvider {
     pub po: ModelProviderPo,
+    /// 装配好的 Cortex（推理执行实体）
+    ///
+    /// 如果为 None，表示还没有装配，需要调用 DAL 方法装配
+    pub cortex: Option<Box<dyn Cortex + Send + Sync>>,
+}
+
+impl fmt::Debug for ModelProvider {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ModelProvider")
+            .field("po", &self.po)
+            .field("cortex", &"[Box<dyn Cortex + Send + Sync>]")
+            .finish()
+    }
 }
 
 impl ModelProvider {
@@ -66,12 +82,26 @@ impl ModelProvider {
                 description,
                 creator,
             ),
+            cortex: None,
         }
     }
 
     /// 从 PO 创建业务对象
     pub fn from_po(po: ModelProviderPo) -> Self {
-        Self { po }
+        Self {
+            po,
+            cortex: None,
+        }
+    }
+
+    /// 设置装配好的 Cortex
+    pub fn set_cortex(&mut self, cortex: Box<dyn Cortex + Send + Sync>) {
+        self.cortex = Some(cortex);
+    }
+
+    /// 获取 Cortex 引用
+    pub fn cortex(&self) -> Option<&(dyn Cortex + Send + Sync)> {
+        self.cortex.as_deref()
     }
 
     /// 更新时间戳
