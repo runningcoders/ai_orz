@@ -2,7 +2,7 @@
 //!
 //! Brain 持有 ModelProvider 和 Cortex，是完整的思考执行实体
 
-use crate::models::model_provider::ModelProviderPo;
+use crate::models::model_provider::ModelProvider;
 use async_trait::async_trait;
 use anyhow::Result;
 
@@ -21,15 +21,15 @@ pub trait Cortex: Send + Sync {
 /// 由上层根据 ModelProvider 配置创建
 /// Brain 直接持有 ModelProvider 和 Cortex，方便后续统计和扩展
 pub struct Brain {
-    /// 关联的模型提供商配置
-    pub model_provider: ModelProviderPo,
+    /// 关联的模型提供商（业务对象，可能已装配 cortex）
+    pub model_provider: ModelProvider,
     /// 思考推理执行 cortex
     pub(crate) cortex: Box<dyn Cortex + Send + Sync>,
 }
 
 impl Brain {
     /// 创建新 Brain
-    pub fn new(model_provider: ModelProviderPo, cortex: Box<dyn Cortex + Send + Sync>) -> Self {
+    pub fn new(model_provider: ModelProvider, cortex: Box<dyn Cortex + Send + Sync>) -> Self {
         Self {
             model_provider,
             cortex,
