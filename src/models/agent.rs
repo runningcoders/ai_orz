@@ -1,26 +1,43 @@
 //! Agent 实体
 
+use crate::models::brain::{Cortex};
 use crate::pkg::constants::AgentPoStatus;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// Agent 业务对象（DAL 层）
 ///
 /// 组合 AgentPo 和其他相关信息，作为业务层的核心对象
 /// 后续可扩展：执行环境、权限、配置等字段
-#[derive(Debug, Clone)]
 pub struct Agent {
     /// 底层持久化对象
     pub po: AgentPo,
+    /// 装配好的 Brain（推理执行实体）
+    ///
+    /// 如果为 None，表示还没有装配，需要调用 AgentDal::wake_brain 装配
+    pub brain: Option<Box<dyn Cortex + Send + Sync>>,
     // 后续扩展字段：
     // pub execution_env: ExecutionEnv,
     // pub permissions: Vec<Permission>,
     // pub config: AgentConfig,
 }
 
+impl fmt::Debug for Agent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Agent")
+            .field("po", &self.po)
+            .field("brain", &"[Box<dyn Cortex + Send + Sync>]")
+            .finish()
+    }
+}
+
 impl Agent {
     /// 从 Po 创建 Agent
     pub fn from_po(po: AgentPo) -> Self {
-        Self { po }
+        Self {
+            po,
+            brain: None,
+        }
     }
 
     /// 转换为 Po
@@ -41,6 +58,16 @@ impl Agent {
     /// 获取模型提供商 ID
     pub fn model_provider_id(&self) -> &str {
         &self.po.model_provider_id
+    }
+
+    /// 设置装配好的 Brain
+    pub fn set_brain(&mut self, brain: Box<dyn Cortex + Send + Sync>) {
+        self.brain = Some(brain);
+    }
+
+    /// 获取 Brain 引用
+    pub fn brain(&self) -> Option<&(dyn Cortex + Send + Sync)> {
+        self.brain.as_deref()
     }
 }
 
@@ -70,7 +97,7 @@ pub struct AgentPo {
     pub id: String,
     pub name: String,
     pub role: String,
-    pub capabilities: String,  // JSON string
+    pub capabilities: String, // JSON string
     pub soul: String,          // 长文本
     pub model_provider_id: String, // 关联模型提供商 ID
     pub status: AgentPoStatus, // 软删除状态
