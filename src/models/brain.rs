@@ -6,9 +6,9 @@ use crate::models::model_provider::ModelProvider;
 use async_trait::async_trait;
 use anyhow::Result;
 
-/// 统一的 Cortex trait - 大脑皮层，负责思考推理
+/// 统一的 CortexTrait - 大脑皮层，负责思考推理
 #[async_trait]
-pub trait Cortex: Send + Sync {
+pub trait CortexTrait: Send + Sync {
     /// 运行 prompt，获取回答
     async fn prompt(&self, prompt: &str) -> Result<String>;
 
@@ -32,7 +32,7 @@ impl Brain {
     }
 
     /// 获取 Cortex 引用
-    pub fn cortex(&self) -> Option<&(dyn Cortex + Send + Sync)> {
+    pub fn cortex(&self) -> Option<&(dyn CortexTrait + Send + Sync)> {
         self.model_provider.cortex()
     }
 }

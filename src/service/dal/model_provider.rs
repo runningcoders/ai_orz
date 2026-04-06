@@ -1,7 +1,7 @@
 //! Model Provider DAL 模块
 
 use crate::error::AppError;
-use crate::models::brain::Cortex;
+use crate::models::brain::CortexTrait;
 use crate::models::model_provider::{ModelProvider, ModelProviderPo};
 use crate::pkg::RequestContext;
 use crate::service::dao::cortex::CortexDao;

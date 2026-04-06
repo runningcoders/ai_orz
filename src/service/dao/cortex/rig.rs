@@ -17,12 +17,12 @@ impl RigCortexDao {
 
 #[async_trait]
 impl super::CortexDao for RigCortexDao {
-    fn create_cortex(&self, provider: &ModelProviderPo) -> Result<Box<dyn Cortex + Send + Sync>> {
+    fn create_cortex(&self, provider: &ModelProviderPo) -> Result<Box<dyn CortexTrait + Send + Sync>> {
         let api_key = provider.api_key.clone();
         let model = provider.model_name.clone();
         let base_url = provider.base_url.clone();
 
-        let cortex: Box<dyn Cortex + Send + Sync> = match provider.provider_type {
+        let cortex: Box<dyn CortexTrait + Send + Sync> = match provider.provider_type {
             ProviderType::OpenAI => Box::new(
                 self::openai::OpenAiCortex::new(api_key, model, base_url)?
             ),

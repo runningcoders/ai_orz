@@ -24,7 +24,7 @@ pub fn init() {
 #[async_trait::async_trait]
 pub trait CortexDao: Send + Sync {
     /// 根据 Model Provider 创建 Cortex
-    fn create_cortex(&self, provider: &ModelProviderPo) -> Result<Box<dyn Cortex + Send + Sync>>;
+    fn create_cortex(&self, provider: &ModelProviderPo) -> Result<Box<dyn CortexTrait + Send + Sync>>;
 }
 
 mod rig;

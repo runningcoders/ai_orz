@@ -1,6 +1,6 @@
 //! 模型提供商实体
 
-use crate::models::brain::Cortex;
+use crate::models::brain::CortexTrait;
 use crate::pkg::constants::{ModelProviderPoStatus, ProviderType};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -49,14 +49,14 @@ pub struct ModelProvider {
     /// 装配好的 Cortex（推理执行实体）
     ///
     /// 如果为 None，表示还没有装配，需要调用 DAL 方法装配
-    pub cortex: Option<Box<dyn Cortex + Send + Sync>>,
+    pub cortex: Option<Box<dyn CortexTrait + Send + Sync>>,
 }
 
 impl fmt::Debug for ModelProvider {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ModelProvider")
             .field("po", &self.po)
-            .field("cortex", &"[Box<dyn Cortex + Send + Sync>]")
+            .field("cortex", &"[Box<dyn CortexTrait + Send + Sync>]")
             .finish()
     }
 }
@@ -88,19 +88,16 @@ impl ModelProvider {
 
     /// 从 PO 创建业务对象
     pub fn from_po(po: ModelProviderPo) -> Self {
-        Self {
-            po,
-            cortex: None,
-        }
+        Self { po, cortex: None }
     }
 
     /// 设置装配好的 Cortex
-    pub fn set_cortex(&mut self, cortex: Box<dyn Cortex + Send + Sync>) {
+    pub fn set_cortex(&mut self, cortex: Box<dyn CortexTrait + Send + Sync>) {
         self.cortex = Some(cortex);
     }
 
     /// 获取 Cortex 引用
-    pub fn cortex(&self) -> Option<&(dyn Cortex + Send + Sync)> {
+    pub fn cortex(&self) -> Option<&(dyn CortexTrait + Send + Sync)> {
         self.cortex.as_deref()
     }
 
