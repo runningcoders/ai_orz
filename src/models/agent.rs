@@ -1,6 +1,6 @@
 //! Agent 实体
 
-use crate::models::brain::{Brain, CortexTrait};
+use crate::models::brain::{Brain, Cortex, CortexTrait};
 use crate::pkg::constants::AgentPoStatus;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -71,8 +71,13 @@ impl Agent {
     }
 
     /// 获取 Brain 内部的 Cortex 引用
-    pub fn cortex(&self) -> Option<&(dyn CortexTrait + Send + Sync)> {
+    pub fn cortex(&self) -> Option<&Cortex> {
         self.brain.as_ref().map(|b| b.cortex())
+    }
+
+    /// 获取 Cortex 内部的 CortexTrait 引用
+    pub fn cortex_trait(&self) -> Option<&(dyn CortexTrait + Send + Sync)> {
+        self.brain.as_ref().map(|b| b.cortex_trait())
     }
 }
 
