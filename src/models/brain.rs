@@ -1,7 +1,8 @@
 //! Brain 实体 - 封装 cortex 思考模块
 //!
-//! 只保存 cortex 实例，实际调用通过 BrainDao 完成
+//! Brain 持有 ModelProvider 和 Cortex，是完整的思考执行实体
 
+use crate::models::model_provider::ModelProviderPo;
 use async_trait::async_trait;
 use anyhow::Result;
 
@@ -10,22 +11,28 @@ use anyhow::Result;
 pub trait Cortex: Send + Sync {
     /// 运行 prompt，获取回答
     async fn prompt(&self, prompt: &str) -> Result<String>;
-    
+
     /// 是否支持工具调用
     fn support_tools(&self) -> bool;
 }
 
-/// Brain 封装了 cortex 思考模块
+/// Brain 封装了完整的思考执行环境
 ///
-/// 由 BrainDao 根据 ModelProvider 配置创建
-/// 实际推理调用通过 BrainDao 完成
+/// 由上层根据 ModelProvider 配置创建
+/// Brain 直接持有 ModelProvider 和 Cortex，方便后续统计和扩展
 pub struct Brain {
+    /// 关联的模型提供商配置
+    pub model_provider: ModelProviderPo,
+    /// 思考推理执行 cortex
     pub(crate) cortex: Box<dyn Cortex + Send + Sync>,
 }
 
 impl Brain {
     /// 创建新 Brain
-    pub fn new(cortex: Box<dyn Cortex + Send + Sync>) -> Self {
-        Self { cortex }
+    pub fn new(model_provider: ModelProviderPo, cortex: Box<dyn Cortex + Send + Sync>) -> Self {
+        Self {
+            model_provider,
+            cortex,
+        }
     }
 }
