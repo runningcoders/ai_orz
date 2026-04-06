@@ -1,12 +1,12 @@
 //! Cortex DAO 测试
 
 use super::*;
-use crate::models::{self, model_provider::ModelProviderPo};
+use crate::models::{self, model_provider::{ModelProvider, ModelProviderPo}};
 use crate::pkg::constants::provider_type::ProviderType;
 
 #[tokio::test]
 async fn test_create_openai_cortex() {
-    let provider = ModelProviderPo {
+    let provider_po = ModelProviderPo {
         id: "test-id".to_string(),
         name: "OpenAI GPT-4o".to_string(),
         provider_type: ProviderType::OpenAI,
@@ -21,6 +21,8 @@ async fn test_create_openai_cortex() {
         updated_at: 0,
     };
 
+    let provider = ModelProvider::from_po(provider_po);
+
     let dao = rig::RigCortexDao::new();
     let result = dao.create_cortex(&provider);
     
@@ -30,7 +32,7 @@ async fn test_create_openai_cortex() {
 
 #[tokio::test]
 async fn test_create_deepseek_cortex() {
-    let provider = ModelProviderPo {
+    let provider_po = ModelProviderPo {
         id: "test-id".to_string(),
         name: "DeepSeek".to_string(),
         provider_type: ProviderType::DeepSeek,
@@ -45,6 +47,8 @@ async fn test_create_deepseek_cortex() {
         updated_at: 0,
     };
 
+    let provider = ModelProvider::from_po(provider_po);
+
     let dao = rig::RigCortexDao::new();
     let result = dao.create_cortex(&provider);
     
@@ -53,7 +57,7 @@ async fn test_create_deepseek_cortex() {
 
 #[tokio::test]
 async fn test_create_qwen_cortex() {
-    let provider = ModelProviderPo {
+    let provider_po = ModelProviderPo {
         id: "test-id".to_string(),
         name: "Qwen".to_string(),
         provider_type: ProviderType::Qwen,
@@ -68,6 +72,8 @@ async fn test_create_qwen_cortex() {
         updated_at: 0,
     };
 
+    let provider = ModelProvider::from_po(provider_po);
+
     let dao = rig::RigCortexDao::new();
     let result = dao.create_cortex(&provider);
     
@@ -76,7 +82,7 @@ async fn test_create_qwen_cortex() {
 
 #[tokio::test]
 async fn test_create_doubao_cortex() {
-    let provider = ModelProviderPo {
+    let provider_po = ModelProviderPo {
         id: "test-id".to_string(),
         name: "Doubao".to_string(),
         provider_type: ProviderType::Doubao,
@@ -91,6 +97,8 @@ async fn test_create_doubao_cortex() {
         updated_at: 0,
     };
 
+    let provider = ModelProvider::from_po(provider_po);
+
     let dao = rig::RigCortexDao::new();
     let result = dao.create_cortex(&provider);
     
@@ -99,7 +107,7 @@ async fn test_create_doubao_cortex() {
 
 #[tokio::test]
 async fn test_create_ollama_cortex() {
-    let provider = ModelProviderPo {
+    let provider_po = ModelProviderPo {
         id: "test-id".to_string(),
         name: "Ollama Llama3".to_string(),
         provider_type: ProviderType::Ollama,
@@ -114,6 +122,8 @@ async fn test_create_ollama_cortex() {
         updated_at: 0,
     };
 
+    let provider = ModelProvider::from_po(provider_po);
+
     let dao = rig::RigCortexDao::new();
     let result = dao.create_cortex(&provider);
     
@@ -122,7 +132,7 @@ async fn test_create_ollama_cortex() {
 
 #[tokio::test]
 async fn test_create_openai_compatible_custom_base_url() {
-    let provider = ModelProviderPo {
+    let provider_po = ModelProviderPo {
         id: "test-id".to_string(),
         name: "Custom OpenAI Compatible".to_string(),
         provider_type: ProviderType::OpenAICompatible,
@@ -136,6 +146,8 @@ async fn test_create_openai_compatible_custom_base_url() {
         created_at: 0,
         updated_at: 0,
     };
+
+    let provider = ModelProvider::from_po(provider_po);
 
     let dao = rig::RigCortexDao::new();
     let result = dao.create_cortex(&provider);

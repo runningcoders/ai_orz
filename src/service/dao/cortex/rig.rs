@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use anyhow::{Result, anyhow};
 use crate::models::{self, brain::*};
-use crate::models::model_provider::ModelProviderPo;
+use crate::models::model_provider::ModelProvider;
 use crate::pkg::constants::ProviderType;
 
 /// 默认 Cortex DAO 工厂实现
@@ -17,12 +17,12 @@ impl RigCortexDao {
 
 #[async_trait]
 impl super::CortexDao for RigCortexDao {
-    fn create_cortex(&self, provider: &ModelProviderPo) -> Result<Box<dyn CortexTrait + Send + Sync>> {
-        let api_key = provider.api_key.clone();
-        let model = provider.model_name.clone();
-        let base_url = provider.base_url.clone();
+    fn create_cortex(&self, provider: &ModelProvider) -> Result<Cortex> {
+        let api_key = provider.po.api_key.clone();
+        let model = provider.po.model_name.clone();
+        let base_url = provider.po.base_url.clone();
 
-        let cortex: Box<dyn CortexTrait + Send + Sync> = match provider.provider_type {
+        let cortex: Box<dyn CortexTrait + Send + Sync> = match provider.po.provider_type {
             ProviderType::OpenAI => Box::new(
                 self::openai::OpenAiCortex::new(api_key, model, base_url)?
             ),
@@ -51,7 +51,7 @@ impl super::CortexDao for RigCortexDao {
             ),
         };
 
-        Ok(cortex)
+        Ok(Cortex::new(provider.clone(), cortex))
     }
 }
 

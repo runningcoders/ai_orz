@@ -43,6 +43,7 @@ pub struct ModelProviderPo {
 /// 模型提供商业务对象
 ///
 /// 只包含持久化配置，不包含 Cortex，Cortex 由 Brain 持有
+#[derive(Clone)]
 pub struct ModelProvider {
     pub po: ModelProviderPo,
 }

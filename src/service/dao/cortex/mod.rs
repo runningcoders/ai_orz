@@ -2,9 +2,9 @@
 //!
 //! 根据 Model Provider 创建 Cortex 实体，提供统一推理接口
 
-use anyhow::{Result, anyhow};
+use anyhow::{Result};
+use crate::models::{self, brain::*, model_provider::ModelProvider};
 use std::sync::{Arc, OnceLock};
-use crate::models::{self, brain::*, model_provider::ModelProviderPo};
 
 // ==================== 单例 ====================
 
@@ -23,8 +23,8 @@ pub fn init() {
 /// Cortex DAO 工厂 trait
 #[async_trait::async_trait]
 pub trait CortexDao: Send + Sync {
-    /// 根据 Model Provider 创建 Cortex
-    fn create_cortex(&self, provider: &ModelProviderPo) -> Result<Box<dyn CortexTrait + Send + Sync>>;
+    /// 根据 Model Provider 创建 Cortex 实体
+    fn create_cortex(&self, provider: &ModelProvider) -> Result<Cortex>;
 }
 
 mod rig;

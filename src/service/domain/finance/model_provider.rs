@@ -6,6 +6,7 @@
 use crate::error::AppError;
 use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
+use crate::service::dal::cortex::dal as cortex_dal;
 use crate::service::dal::model_provider::ModelProviderDalTrait;
 use crate::service::domain::finance::{FinanceDomainImpl, ModelProviderManage};
 use std::sync::Arc;
@@ -36,8 +37,8 @@ impl ModelProviderManage for FinanceDomainImpl {
         let provider = self.model_provider_dal.find_by_id(ctx, id)?
             .ok_or_else(|| AppError::NotFound(format!("ModelProvider {} not found", id)))?;
 
-        // 2. 调用 DAL 唤醒 cortex 执行调用
-        let result = self.model_provider_dal.wake_cortex(&provider.po, prompt)?;
+        // 2. 调用 Cortex DAL 唤醒 cortex 执行调用
+        let result = cortex_dal().wake_cortex(&provider, prompt)?;
 
         Ok(result)
     }
