@@ -15,8 +15,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub struct UpdateAgentRequest {
     /// Agent 名称
     pub name: Option<String>,
-    /// Agent 角色定位
-    pub role: Option<String>,
+    /// Agent 描述
+    pub description: Option<String>,
     /// 能力列表 JSON
     pub capabilities: Option<Vec<String>>,
     /// Agent 灵魂提示词
@@ -28,7 +28,7 @@ pub struct UpdateAgentRequest {
 pub struct UpdateAgentResponse {
     pub id: String,
     pub name: String,
-    pub role: Option<String>,
+    pub description: Option<String>,
     pub capabilities: Option<Vec<String>>,
     pub soul: Option<String>,
     pub model_provider_id: String,
@@ -61,8 +61,8 @@ pub async fn update_agent(
     if let Some(name) = req.name {
         agent.po.name = name;
     }
-    if let Some(role) = req.role {
-        agent.po.role = role;
+    if let Some(description) = req.description {
+        agent.po.description = description;
     }
     if let Some(capabilities) = req.capabilities {
         agent.po.capabilities = serde_json::to_string(&capabilities).unwrap_or_else(|_| "[]".to_string());
@@ -81,7 +81,7 @@ pub async fn update_agent(
     Ok(Json(ApiResponse::success(UpdateAgentResponse {
         id: agent.id().to_string(),
         name: agent.name().to_string(),
-        role: if agent.po.role.is_empty() { None } else { Some(agent.po.role.clone()) },
+        description: if agent.po.description.is_empty() { None } else { Some(agent.po.description.clone()) },
         capabilities: if capabilities.is_empty() { None } else { Some(capabilities) },
         soul: if agent.po.soul.is_empty() { None } else { Some(agent.po.soul.clone()) },
         model_provider_id: agent.po.model_provider_id.clone(),

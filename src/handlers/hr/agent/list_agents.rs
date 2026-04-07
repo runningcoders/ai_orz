@@ -14,7 +14,7 @@ use serde::{Serialize};
 pub struct AgentListItem {
     pub id: String,
     pub name: String,
-    pub role: Option<String>,
+    pub description: Option<String>,
     pub model_provider_id: String,
     pub created_at: i64,
 }
@@ -30,7 +30,7 @@ pub async fn list_agents(headers: HeaderMap) -> Result<Json<ApiResponse<Vec<Agen
         .map(|agent| AgentListItem {
             id: agent.id().to_string(),
             name: agent.name().to_string(),
-            role: if agent.po.role.is_empty() { None } else { Some(agent.po.role.clone()) },
+            description: if agent.po.description.is_empty() { None } else { Some(agent.po.description.clone()) },
             model_provider_id: agent.po.model_provider_id.clone(),
             created_at: agent.po.created_at,
         })

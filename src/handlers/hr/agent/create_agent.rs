@@ -16,8 +16,8 @@ use serde::{Deserialize, Serialize};
 pub struct CreateAgentRequest {
     /// Agent 名称
     pub name: String,
-    /// Agent 角色定位
-    pub role: Option<String>,
+    /// Agent 描述
+    pub description: Option<String>,
     /// 能力列表 JSON
     pub capabilities: Option<Vec<String>>,
     /// Agent 灵魂提示词
@@ -31,7 +31,7 @@ pub struct CreateAgentRequest {
 pub struct CreateAgentResponse {
     pub id: String,
     pub name: String,
-    pub role: Option<String>,
+    pub description: Option<String>,
     pub created_at: i64,
 }
 
@@ -45,7 +45,7 @@ pub async fn create_agent(
 
     let agent_po = AgentPo::new(
         req.name.clone(),
-        req.role.unwrap_or_default(),
+        req.description.unwrap_or_default(),
         req.capabilities.unwrap_or_default(),
         req.soul.unwrap_or_default(),
         req.model_provider_id.clone(),
@@ -60,7 +60,7 @@ pub async fn create_agent(
         Json(ApiResponse::success(CreateAgentResponse {
             id: agent.id().to_string(),
             name: agent.name().to_string(),
-            role: if agent.po.role.is_empty() { None } else { Some(agent.po.role.clone()) },
+            description: if agent.po.description.is_empty() { None } else { Some(agent.po.description.clone()) },
             created_at: agent.po.created_at,
         })),
     ))

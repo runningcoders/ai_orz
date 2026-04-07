@@ -15,7 +15,7 @@ use serde::{Serialize};
 pub struct GetAgentResponse {
     pub id: String,
     pub name: String,
-    pub role: Option<String>,
+    pub description: Option<String>,
     pub capabilities: Option<Vec<String>>,
     pub soul: Option<String>,
     pub model_provider_id: String,
@@ -41,7 +41,7 @@ pub async fn get_agent(
     Ok(Json(ApiResponse::success(GetAgentResponse {
         id: agent.id().to_string(),
         name: agent.name().to_string(),
-        role: if agent.po.role.is_empty() { None } else { Some(agent.po.role.clone()) },
+        description: if agent.po.description.is_empty() { None } else { Some(agent.po.description.clone()) },
         capabilities: if capabilities.is_empty() { None } else { Some(capabilities) },
         soul: if agent.po.soul.is_empty() { None } else { Some(agent.po.soul.clone()) },
         model_provider_id: agent.po.model_provider_id.clone(),

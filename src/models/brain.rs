@@ -1,10 +1,10 @@
 //! Brain 实体和 Cortex 实体
 //!
 //! 最终结构：
-//! - Brain 直接持有 Cortex 实体 + AgentMemory 记忆系统
+//! - Brain 直接持有 Cortex 实体 + Memory 记忆系统
 //! - Cortex 实体持有 ModelProvider 和 CortexTrait（推理执行）
 //! - ModelProvider 只保存配置信息
-//! - AgentMemory 持有核心记忆 + 工作记忆
+//! - Memory 持有核心记忆 + 工作记忆
 
 use crate::models::memory::{self, MemoryTrace};
 use crate::models::model_provider::ModelProvider;
@@ -53,32 +53,37 @@ impl Cortex {
 pub struct CoreMemory {
     /// Agent 灵魂/性格/角色设定
     pub soul: String,
+    /// Agent 能力列表 JSON
+    pub capabilities: String,
 }
 
 impl CoreMemory {
     /// 从 AgentPo 创建 CoreMemory
-    pub fn from_po(soul: String) -> Self {
-        Self { soul }
+    pub fn from_po(soul: String, capabilities: String) -> Self {
+        Self {
+            soul,
+            capabilities,
+        }
     }
 }
 
 /// Agent 记忆系统
 ///
 /// 记忆分层：
-/// - core: 核心认知（soul）→ 每次全部拼入
+/// - core: 核心认知（soul + capabilities）→ 每次全部拼入
 /// - working: 当前会话工作记忆 → 每次全部拼入
-pub struct AgentMemory {
+pub struct Memory {
     /// 核心认知
     pub core: CoreMemory,
     /// 当前会话工作记忆（原始对话）
     pub working: Vec<memory::MemoryTrace>,
 }
 
-impl AgentMemory {
-    /// 创建新的 AgentMemory
-    pub fn new(soul: String) -> Self {
+impl Memory {
+    /// 创建新的 Memory
+    pub fn new(soul: String, capabilities: String) -> Self {
         Self {
-            core: CoreMemory::from_po(soul),
+            core: CoreMemory::from_po(soul, capabilities),
             working: Vec::new(),
         }
     }
@@ -96,17 +101,17 @@ impl AgentMemory {
 
 /// Brain 封装了完整的思考执行环境
 ///
-/// Brain 直接持有 Cortex 实体 + AgentMemory 记忆系统
+/// Brain 直接持有 Cortex 实体 + Memory 记忆系统
 pub struct Brain {
     /// Cortex 实体（包含模型配置 + 推理执行）
     pub cortex: Cortex,
     /// Agent 记忆系统
-    pub memory: AgentMemory,
+    pub memory: Memory,
 }
 
 impl Brain {
     /// 创建新 Brain
-    pub fn new(cortex: Cortex, memory: AgentMemory) -> Self {
+    pub fn new(cortex: Cortex, memory: Memory) -> Self {
         Self {
             cortex,
             memory,

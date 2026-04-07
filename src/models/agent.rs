@@ -34,10 +34,7 @@ impl fmt::Debug for Agent {
 impl Agent {
     /// 从 Po 创建 Agent
     pub fn from_po(po: AgentPo) -> Self {
-        Self {
-            po,
-            brain: None,
-        }
+        Self { po, brain: None }
     }
 
     /// 转换为 Po
@@ -75,7 +72,7 @@ impl Agent {
         self.brain.as_ref().map(|b| b.cortex())
     }
 
-    /// 获取 Cortex 内部的 CortexTrait 引用
+    /// 获取 Brain 内部的 CortexTrait 引用
     pub fn cortex_trait(&self) -> Option<&(dyn CortexTrait + Send + Sync)> {
         self.brain.as_ref().map(|b| b.cortex_trait())
     }
@@ -88,9 +85,9 @@ impl Agent {
 pub struct AgentPo {
     pub id: String,
     pub name: String,
-    pub role: String,
+    pub description: String,
     pub capabilities: String, // JSON string
-    pub soul: String,          // 长文本
+    pub soul: String,          // 长文本：角色/性格/灵魂设定
     pub model_provider_id: String, // 关联模型提供商 ID
     pub status: AgentPoStatus, // 软删除状态
     pub created_by: String,    // 创建者
@@ -102,7 +99,7 @@ pub struct AgentPo {
 impl AgentPo {
     pub fn new(
         name: String,
-        role: String,
+        description: String,
         capabilities: Vec<String>,
         soul: String,
         model_provider_id: String,
@@ -111,7 +108,7 @@ impl AgentPo {
         Self {
             id: generate_id(),
             name,
-            role,
+            description,
             capabilities: serde_json::to_string(&capabilities).unwrap_or_else(|_| "[]".to_string()),
             soul,
             model_provider_id,
