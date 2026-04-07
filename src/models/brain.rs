@@ -1,10 +1,12 @@
 //! Brain 实体和 Cortex 实体
 //!
 //! 最终结构：
-//! - Brain 直接持有 Cortex 实体
+//! - Brain 直接持有 Cortex 实体 + AgentMemory 记忆系统
 //! - Cortex 实体持有 ModelProvider 和 CortexTrait（推理执行）
 //! - ModelProvider 只保存配置信息
+//! - AgentMemory 持有核心记忆 + 工作记忆
 
+use crate::models::memory::{self, MemoryTrace};
 use crate::models::model_provider::ModelProvider;
 use async_trait::async_trait;
 use anyhow::Result;
@@ -44,18 +46,71 @@ impl Cortex {
     }
 }
 
+/// Agent 核心记忆
+///
+/// 核心认知，来自 AgentPo，每次调用全部拼入 prompt
+#[derive(Debug, Clone)]
+pub struct CoreMemory {
+    /// Agent 灵魂/性格/角色设定
+    pub soul: String,
+}
+
+impl CoreMemory {
+    /// 从 AgentPo 创建 CoreMemory
+    pub fn from_po(soul: String) -> Self {
+        Self { soul }
+    }
+}
+
+/// Agent 记忆系统
+///
+/// 记忆分层：
+/// - core: 核心认知（soul）→ 每次全部拼入
+/// - working: 当前会话工作记忆 → 每次全部拼入
+pub struct AgentMemory {
+    /// 核心认知
+    pub core: CoreMemory,
+    /// 当前会话工作记忆（原始对话）
+    pub working: Vec<memory::MemoryTrace>,
+}
+
+impl AgentMemory {
+    /// 创建新的 AgentMemory
+    pub fn new(soul: String) -> Self {
+        Self {
+            core: CoreMemory::from_po(soul),
+            working: Vec::new(),
+        }
+    }
+
+    /// 添加新的记忆到工作记忆
+    pub fn add_working(&mut self, trace: memory::MemoryTrace) {
+        self.working.push(trace);
+    }
+
+    /// 清空工作记忆（会话结束）
+    pub fn clear_working(&mut self) {
+        self.working.clear();
+    }
+}
+
 /// Brain 封装了完整的思考执行环境
 ///
-/// Brain 直接持有 Cortex 实体
+/// Brain 直接持有 Cortex 实体 + AgentMemory 记忆系统
 pub struct Brain {
     /// Cortex 实体（包含模型配置 + 推理执行）
     pub cortex: Cortex,
+    /// Agent 记忆系统
+    pub memory: AgentMemory,
 }
 
 impl Brain {
     /// 创建新 Brain
-    pub fn new(cortex: Cortex) -> Self {
-        Self { cortex }
+    pub fn new(cortex: Cortex, memory: AgentMemory) -> Self {
+        Self {
+            cortex,
+            memory,
+        }
     }
 
     /// 获取 Cortex 引用
