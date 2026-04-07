@@ -1,8 +1,8 @@
 //! Brain DAL 模块
 //!
-//! 职责：从已创建的 Cortex 创建完整的 Brain 实体
-//! Cortex 由上层创建并传入，BrainDal 只负责组合空的 Memory 和创建 Brain
-//! Memory 后续由 AgentDal 装配导入，BrainDal 只负责创建骨架
+//! 职责：从已创建的 Cortex 和已创建的 Memory 创建完整的 Brain 实体
+//! Cortex 和 Memory 都由上层创建并传入，BrainDal 只负责组合
+//! 完全解耦，遵循单一职责和同级不调用规范
 
 use crate::error::AppError;
 use crate::models::brain::{Brain, Cortex, Memory};
@@ -27,17 +27,16 @@ pub fn init() {
 
 /// Brain DAL 接口
 pub trait BrainDalTrait: Send + Sync {
-    /// 唤醒 Brain：从已创建的 Cortex 创建完整的 Brain
+    /// 唤醒 Brain：从已创建的 Cortex 和已创建的 Memory 创建完整的 Brain
     ///
-    /// - Cortex 已经由上层创建好，我们只需要组合空的 Memory
-    /// - 记忆后续由 AgentDal 装配导入
-    /// - 返回完整的 Brain 骨架实例
+    /// - Cortex 已经由上层创建好
+    /// - Memory 已经由上层创建好
+    /// - BrainDal 只负责组合成完整的 Brain 实例
     fn wake_brain(
         &self,
         _ctx: RequestContext,
         cortex: Cortex,
-        soul: String,
-        capabilities: String,
+        memory: Memory,
     ) -> Result<Brain, AppError>;
 }
 
@@ -64,15 +63,10 @@ impl BrainDalTrait for BrainDal {
         &self,
         _ctx: RequestContext,
         cortex: Cortex,
-        soul: String,
-        capabilities: String,
+        memory: Memory,
     ) -> Result<Brain, AppError> {
-        // 1. 创建空的 Memory（从 soul 和 capabilities 初始化 core）
-        let memory = Memory::new(soul, capabilities);
-
-        // 2. 创建完整的 Brain 骨架
+        // 只负责组合，Cortex 和 Memory 都由上层创建
         let brain = Brain::new(cortex, memory);
-
         Ok(brain)
     }
 }
