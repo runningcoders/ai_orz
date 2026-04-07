@@ -6,24 +6,7 @@ use std::fmt;
 
 /// 模型提供商持久化对象
 ///
-/// # SQLite 表结构
-///
-/// ```sql
-/// CREATE TABLE IF NOT EXISTS model_providers (
-///     id TEXT PRIMARY KEY,
-///     name TEXT NOT NULL,
-///     provider_type TEXT NOT NULL,
-///     model_name TEXT NOT NULL,
-///     api_key TEXT NOT NULL,
-///     base_url TEXT,
-///     description TEXT,
-///     status INTEGER NOT NULL DEFAULT 1,
-///     created_by TEXT NOT NULL DEFAULT '',
-///     modified_by TEXT NOT NULL DEFAULT '',
-///     created_at INTEGER NOT NULL,
-///     updated_at INTEGER NOT NULL
-/// );
-/// ```
+/// 对应 SQL 建表语句：[`crate::pkg::storage::sql::SQLITE_CREATE_TABLE_MODEL_PROVIDERS`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelProviderPo {
     pub id: String,

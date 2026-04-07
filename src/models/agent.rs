@@ -83,25 +83,7 @@ impl Agent {
 
 /// AgentPo 持久化对象
 ///
-/// # SQLite 表结构
-///
-/// SQLite 建表语句定义在 `crate::pkg::sql::SQLITE_CREATE_TABLE_AGENTS`
-///
-/// ```sql
-/// CREATE TABLE IF NOT EXISTS agents (
-///     id TEXT PRIMARY KEY,
-///     name TEXT NOT NULL,
-///     role TEXT NOT NULL DEFAULT '',
-///     capabilities TEXT NOT NULL DEFAULT '[]',  -- JSON string
-///     soul TEXT NOT NULL DEFAULT '',            -- 长文本
-///     model_provider_id TEXT NOT NULL,          -- 关联模型提供商 ID
-///     status INTEGER NOT NULL DEFAULT 1,        -- 0=已删除, 1=正常
-///     created_by TEXT NOT NULL DEFAULT '',      -- 创建者
-///     modified_by TEXT NOT NULL DEFAULT '',     -- 修改者
-///     created_at INTEGER NOT NULL,
-///     updated_at INTEGER NOT NULL
-/// );
-/// ```
+/// 对应 SQL 建表语句：[`crate::pkg::storage::sql::SQLITE_CREATE_TABLE_AGENTS`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentPo {
     pub id: String,
