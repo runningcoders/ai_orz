@@ -14,6 +14,23 @@ impl Storage {
     /// 创建存储实例
     pub fn new(db_path: &str) -> Result<Self, String> {
         let conn = Connection::open(db_path).map_err(|e| format!("打开数据库失败: {}", e))?;
+
+        // 创建所有表
+        let tables = [
+            sql::SQLITE_CREATE_TABLE_AGENTS,
+            sql::SQLITE_CREATE_TABLE_MODEL_PROVIDERS,
+            sql::SQLITE_CREATE_TABLE_ORGANIZATIONS,
+            sql::SQLITE_CREATE_TABLE_TASKS,
+            sql::SQLITE_CREATE_TABLE_SHORT_TERM_MEMORY_INDEX,
+            sql::SQLITE_CREATE_TABLE_LONG_TERM_KNOWLEDGE_NODE,
+            sql::SQLITE_CREATE_TABLE_KNOWLEDGE_REFERENCE,
+        ];
+
+        for table_sql in tables {
+            conn.execute(table_sql, ())
+                .map_err(|e| format!("创建表失败: {}", e))?;
+        }
+
         Ok(Self {
             conn: Mutex::new(conn),
         })
