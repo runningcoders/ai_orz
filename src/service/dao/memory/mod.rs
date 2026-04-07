@@ -246,4 +246,4 @@ pub trait MemoryDaoTrait: Send + Sync {
 pub mod sqlite;
 
 #[cfg(test)]
-mod sqlite_test;
+pub mod sqlite_test;

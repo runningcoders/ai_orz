@@ -3,7 +3,7 @@
 //! 单元测试使用内存数据库，不依赖全局 storage 连接池
 
 use super::*;
-use crate::models::memory::{MemoryRole, MemoryTrace};
+use crate::models::memory::{MemoryRole, MemoryTrace, LongTermKnowledgeNodePo, KnowledgeRelation};
 use crate::pkg::RequestContext;
 use rusqlite::Connection;
 
@@ -12,62 +12,23 @@ async fn test_append_memory_trace() {
     // 创建内存数据库用于测试
     let conn = Connection::open_in_memory().expect("Failed to create in-memory database");
 
-    // 创建表
+    // 使用定义好的常量建表
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS short_term_memory_index (
-            id TEXT PRIMARY KEY,
-            agent_id TEXT NOT NULL,
-            role TEXT NOT NULL,
-            summary TEXT NOT NULL,
-            tags TEXT NOT NULL,
-            date_path TEXT NOT NULL,
-            byte_start INTEGER NOT NULL,
-            byte_length INTEGER NOT NULL,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL,
-            INDEX idx_agent_id (agent_id),
-            INDEX idx_created_at (created_at),
-            INDEX idx_tags (tags),
-            FULLTEXT INDEX idx_summary (summary)
-        )",
+        crate::pkg::storage::sql::SQLITE_CREATE_TABLE_SHORT_TERM_MEMORY_INDEX,
         (),
     ).expect("Failed to create table short_term_memory_index");
 
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS long_term_knowledge_node (
-            id TEXT PRIMARY KEY,
-            agent_id TEXT NOT NULL,
-            node_name TEXT NOT NULL,
-            node_description TEXT NOT NULL,
-            node_type TEXT NOT NULL,
-            summary TEXT NOT NULL,
-            relations TEXT NOT NULL,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL,
-            INDEX idx_agent_id (agent_id),
-            INDEX idx_node_type (node_type),
-            FULLTEXT INDEX idx_node_name (node_name),
-            FULLTEXT INDEX idx_summary (summary)
-        )",
+        crate::pkg::storage::sql::SQLITE_CREATE_TABLE_LONG_TERM_KNOWLEDGE_NODE,
         (),
     ).expect("Failed to create table long_term_knowledge_node");
 
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS knowledge_reference (
-            id TEXT PRIMARY KEY,
-            knowledge_id TEXT NOT NULL,
-            short_term_id TEXT NOT NULL,
-            created_at INTEGER NOT NULL,
-            INDEX idx_knowledge_id (knowledge_id),
-            FOREIGN KEY(knowledge_id) REFERENCES long_term_knowledge_node(id),
-            FOREIGN KEY(short_term_id) REFERENCES short_term_memory_index(id)
-        )",
+        crate::pkg::storage::sql::SQLITE_CREATE_TABLE_KNOWLEDGE_REFERENCE,
         (),
     ).expect("Failed to create table knowledge_reference");
 
     // 上面创建表成功就说明 SQL 语法正确
-    // 实际测试 DAO 需要连接池，这里验证表创建语法正确即可
-    // DAO 的逻辑会在集成测试中验证
     assert!(true);
 }
 
@@ -76,61 +37,23 @@ async fn test_create_knowledge_node() {
     // 创建内存数据库用于测试
     let conn = Connection::open_in_memory().expect("Failed to create in-memory database");
 
-    // 创建表
+    // 使用定义好的常量建表
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS short_term_memory_index (
-            id TEXT PRIMARY KEY,
-            agent_id TEXT NOT NULL,
-            role TEXT NOT NULL,
-            summary TEXT NOT NULL,
-            tags TEXT NOT NULL,
-            date_path TEXT NOT NULL,
-            byte_start INTEGER NOT NULL,
-            byte_length INTEGER NOT NULL,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL,
-            INDEX idx_agent_id (agent_id),
-            INDEX idx_created_at (created_at),
-            INDEX idx_tags (tags),
-            FULLTEXT INDEX idx_summary (summary)
-        )",
+        crate::pkg::storage::sql::SQLITE_CREATE_TABLE_SHORT_TERM_MEMORY_INDEX,
         (),
     ).expect("Failed to create table short_term_memory_index");
 
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS long_term_knowledge_node (
-            id TEXT PRIMARY KEY,
-            agent_id TEXT NOT NULL,
-            node_name TEXT NOT NULL,
-            node_description TEXT NOT NULL,
-            node_type TEXT NOT NULL,
-            summary TEXT NOT NULL,
-            relations TEXT NOT NULL,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL,
-            INDEX idx_agent_id (agent_id),
-            INDEX idx_node_type (node_type),
-            FULLTEXT INDEX idx_node_name (node_name),
-            FULLTEXT INDEX idx_summary (summary)
-        )",
+        crate::pkg::storage::sql::SQLITE_CREATE_TABLE_LONG_TERM_KNOWLEDGE_NODE,
         (),
     ).expect("Failed to create table long_term_knowledge_node");
 
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS knowledge_reference (
-            id TEXT PRIMARY KEY,
-            knowledge_id TEXT NOT NULL,
-            short_term_id TEXT NOT NULL,
-            created_at INTEGER NOT NULL,
-            INDEX idx_knowledge_id (knowledge_id),
-            FOREIGN KEY(knowledge_id) REFERENCES long_term_knowledge_node(id),
-            FOREIGN KEY(short_term_id) REFERENCES short_term_memory_index(id)
-        )",
+        crate::pkg::storage::sql::SQLITE_CREATE_TABLE_KNOWLEDGE_REFERENCE,
         (),
     ).expect("Failed to create table knowledge_reference");
 
-    // 测试插入知识节点 SQL 语法
-    use crate::models::memory::{LongTermKnowledgeNodePo, KnowledgeRelation};
+    // 测试插入知识节点 SQL 语法正确
     let relations = vec![
         KnowledgeRelation {
             target_node_id: "node-2".to_string(),
