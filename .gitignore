@@ -35,6 +35,3 @@ target
 /dist
 /.idea
 
-# tests directory - may contain sensitive test data
-tests/
-
