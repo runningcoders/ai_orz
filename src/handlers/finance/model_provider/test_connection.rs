@@ -32,8 +32,12 @@ pub async fn test_model_provider_connection(
 ) -> Result<Json<ApiResponse<TestModelProviderConnectionResponse>>, AppError> {
     let ctx = extract_ctx(&headers);
 
-    // 使用默认 prompt "Hello!" 测试连通性
-    match domain().model_provider_manage().wake_cortex(ctx, &id, "Hello!") {
+    // 1. 先查询 Model Provider
+    let provider = domain().model_provider_manage().get_model_provider(ctx.clone(), &id)?
+        .ok_or_else(|| AppError::NotFound(format!("ModelProvider {} not found", id)))?;
+
+    // 2. 使用默认 prompt "Hello!" 测试连通性
+    match domain().model_provider_manage().wake_cortex(ctx, &provider, "Hello!") {
         Ok(result) => {
             // 如果结果为空也算测试失败
             if result.trim().is_empty() {

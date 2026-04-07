@@ -43,12 +43,12 @@ pub trait AgentDalTrait: Send + Sync {
 
     /// 唤醒 Brain
     ///
-    /// 如果传入 Some(model_provider) → 更新 Agent po 中的 model_provider_id
     /// 直接使用传入的 brain 赋值给 Agent，不负责创建 brain
+    /// Brain 已经持有 ModelProvider，可以从中获取 model_provider_id 更新到 Agent po
     ///
     /// 唤醒完成后将 brain 写入 Agent 的 brain 字段
-    /// 如果更新了 model_provider_id，自动更新数据库
-    fn wake_brain(&self, ctx: RequestContext, agent: &mut Agent, model_provider: Option<&ModelProvider>, brain: Brain) -> Result<(), AppError>;
+    /// 如果 model_provider_id 发生变化，自动更新数据库
+    fn wake_brain(&self, ctx: RequestContext, agent: &mut Agent, brain: Brain) -> Result<(), AppError>;
 }
 
 /// Agent DAL 实现
@@ -88,17 +88,22 @@ impl AgentDalTrait for AgentDal {
         self.agent_dao.delete(ctx, &agent.po)
     }
 
-    fn wake_brain(&self, ctx: RequestContext, agent: &mut Agent, model_provider: Option<&ModelProvider>, brain: Brain) -> Result<(), AppError> {
-        // 1. 如果传入了 ModelProvider，更新 model_provider_id
-        if let Some(mp) = model_provider {
-            agent.po.model_provider_id = mp.po.id.clone();
+    fn wake_brain(&self, ctx: RequestContext, agent: &mut Agent, brain: Brain) -> Result<(), AppError> {
+        // 1. 从 Brain 中获取 Cortex，Cortex 持有 ModelProvider，从中获取 model_provider_id
+        let model_provider_id = brain.cortex.model_provider.po.id.clone();
+
+        // 2. 如果 model_provider_id 发生变化，更新 Agent po 中的 model_provider_id
+        let need_update = agent.po.model_provider_id != model_provider_id;
+
+        if need_update {
+            agent.po.model_provider_id = model_provider_id;
         }
 
-        // 2. 直接使用传入的 brain 赋值给 Agent
+        // 3. 直接使用传入的 brain 赋值给 Agent
         agent.set_brain(brain);
 
-        // 3. 如果我们更新了 model_provider_id，需要更新数据库
-        if model_provider.is_some() {
+        // 4. 如果我们更新了 model_provider_id，需要更新数据库
+        if need_update {
             self.update(ctx, agent)?;
         }
 

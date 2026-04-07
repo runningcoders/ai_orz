@@ -32,7 +32,12 @@ pub async fn call_model(
 ) -> Result<Json<ApiResponse<CallModelResponse>>, AppError> {
     let ctx = extract_ctx(&headers);
 
-    let result = domain().model_provider_manage().wake_cortex(ctx, &id, &req.prompt)?;
+    // 1. 先查询 Model Provider
+    let provider = domain().model_provider_manage().get_model_provider(ctx.clone(), &id)?
+        .ok_or_else(|| AppError::NotFound(format!("ModelProvider {} not found", id)))?;
+
+    // 2. 调用模型生成结果
+    let result = domain().model_provider_manage().wake_cortex(ctx, &provider, &req.prompt)?;
 
     Ok(Json(ApiResponse::success(CallModelResponse {
         result,

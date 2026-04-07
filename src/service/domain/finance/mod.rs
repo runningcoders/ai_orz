@@ -71,13 +71,13 @@ pub trait ModelProviderManage: Send + Sync {
     /// 删除 Model Provider
     fn delete_model_provider(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError>;
 
-    /// 唤醒 Cortex：创建临时 Cortex 并执行调用
+    /// 唤醒 Cortex：创建临时 Cortex 并执行调用（直接传入 ModelProvider）
     ///
-    /// 用于测试连通性或直接调用模型
-    /// - provider_id: 模型 ID
+    /// 上层已经查询好 ModelProvider，直接传递进来
+    /// - provider: 模型提供商
     /// - prompt: 调用提示词
     /// - 返回: 模型输出结果
-    fn wake_cortex(&self, ctx: RequestContext, id: &str, prompt: &str) -> Result<String, AppError>;
+    fn wake_cortex(&self, ctx: RequestContext, provider: &ModelProvider, prompt: &str) -> Result<String, AppError>;
 }
 
 impl FinanceDomain for FinanceDomainImpl {
