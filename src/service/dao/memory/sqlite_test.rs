@@ -7,8 +7,8 @@ use crate::models::memory::{MemoryRole, MemoryTrace, LongTermKnowledgeNodePo, Kn
 use crate::pkg::RequestContext;
 use rusqlite::Connection;
 
-#[tokio::test]
-async fn test_append_memory_trace() {
+#[test]
+fn test_append_memory_trace() {
     // 创建内存数据库用于测试
     let conn = Connection::open_in_memory().expect("Failed to create in-memory database");
 
@@ -32,8 +32,8 @@ async fn test_append_memory_trace() {
     assert!(true);
 }
 
-#[tokio::test]
-async fn test_create_knowledge_node() {
+#[test]
+fn test_create_knowledge_node() {
     // 创建内存数据库用于测试
     let conn = Connection::open_in_memory().expect("Failed to create in-memory database");
 
@@ -95,8 +95,8 @@ INSERT INTO long_term_knowledge_node (
     assert!(result.is_ok());
 }
 
-#[tokio::test]
-async fn test_memory_trace_id_is_content_hash() {
+#[test]
+fn test_memory_trace_id_is_content_hash() {
     // 验证 MemoryTrace 的 ID 是内容 hash
     let content = "这是一段测试内容".to_string();
     let trace = MemoryTrace::new(
@@ -109,8 +109,8 @@ async fn test_memory_trace_id_is_content_hash() {
     assert_eq!(trace.id, expected_hash);
 }
 
-#[tokio::test]
-async fn test_memory_trace_to_markdown() {
+#[test]
+fn test_memory_trace_to_markdown() {
     // 验证 MemoryTrace 可以正确格式化为 markdown
     let trace = MemoryTrace::new(
         "test-agent-1".to_string(),
