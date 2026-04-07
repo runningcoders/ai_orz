@@ -6,16 +6,19 @@
 use std::sync::Arc;
 
 pub mod agent;
+pub mod brain;
 pub mod cortex;
 pub mod model_provider;
 
 pub use agent::{dal as agent_dal, AgentDal, AgentDalTrait};
+pub use brain::{dal as brain_dal, BrainDal, BrainDalTrait};
 pub use cortex::{dal as cortex_dal, CortexDal};
 pub use model_provider::{dal as model_provider_dal, ModelProviderDal, ModelProviderDalTrait};
 
 /// 初始化所有 DAL 实例
 pub fn init_all() {
     agent::init(crate::service::dao::agent_dao());
+    brain::init();
     cortex::init(crate::service::dao::cortex::dao());
     model_provider::init(crate::service::dao::model_provider_dao());
 }
