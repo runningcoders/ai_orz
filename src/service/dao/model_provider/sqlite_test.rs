@@ -5,7 +5,7 @@
 use super::*;
 use crate::models::{self, model_provider::{ModelProvider, ModelProviderPo}};
 use crate::pkg::constants::provider_type::ProviderType;
-use crate::service::dao::model_provider::sqlite;
+use crate::pkg::storage::sql;
 use rusqlite::Connection;
 
 #[tokio::test]
@@ -13,24 +13,11 @@ async fn test_insert_and_find_model_provider() {
     // 创建内存数据库用于测试
     let conn = Connection::open_in_memory().expect("Failed to create in-memory database");
 
-    // 创建表
+    // 使用定义好的常量建表
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS model_providers (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            provider_type TEXT NOT NULL,
-            model_name TEXT NOT NULL,
-            api_key TEXT NOT NULL,
-            base_url TEXT,
-            description TEXT,
-            status INTEGER NOT NULL DEFAULT 1,
-            created_by TEXT NOT NULL DEFAULT '',
-            modified_by TEXT NOT NULL DEFAULT '',
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
-        )",
+        sql::SQLITE_CREATE_TABLE_MODEL_PROVIDERS,
         (),
-    ).expect("Failed to create table");
+    ).expect("Failed to create table model_providers");
 
     // dao 使用我们创建的连接测试，这里直接测试创建和查询逻辑
     let provider_po = ModelProviderPo {
@@ -77,24 +64,11 @@ async fn test_find_by_id_model_provider() {
     // 创建内存数据库用于测试
     let conn = Connection::open_in_memory().expect("Failed to create in-memory database");
 
-    // 创建表
+    // 使用定义好的常量建表
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS model_providers (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            provider_type TEXT NOT NULL,
-            model_name TEXT NOT NULL,
-            api_key TEXT NOT NULL,
-            base_url TEXT,
-            description TEXT,
-            status INTEGER NOT NULL DEFAULT 1,
-            created_by TEXT NOT NULL DEFAULT '',
-            modified_by TEXT NOT NULL DEFAULT '',
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
-        )",
+        sql::SQLITE_CREATE_TABLE_MODEL_PROVIDERS,
         (),
-    ).expect("Failed to create table");
+    ).expect("Failed to create table model_providers");
 
     // 查询不存在的 ID 应该返回 Ok(None)
     let mut stmt = conn
@@ -125,24 +99,11 @@ async fn test_find_all_model_provider() {
     // 创建内存数据库用于测试
     let conn = Connection::open_in_memory().expect("Failed to create in-memory database");
 
-    // 创建表
+    // 使用定义好的常量建表
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS model_providers (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            provider_type TEXT NOT NULL,
-            model_name TEXT NOT NULL,
-            api_key TEXT NOT NULL,
-            base_url TEXT,
-            description TEXT,
-            status INTEGER NOT NULL DEFAULT 1,
-            created_by TEXT NOT NULL DEFAULT '',
-            modified_by TEXT NOT NULL DEFAULT '',
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
-        )",
+        sql::SQLITE_CREATE_TABLE_MODEL_PROVIDERS,
         (),
-    ).expect("Failed to create table");
+    ).expect("Failed to create table model_providers");
 
     // 查询空表应该返回空 Vec，不报错
     let mut stmt = conn
