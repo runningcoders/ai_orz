@@ -126,13 +126,31 @@ CREATE TABLE IF NOT EXISTS long_term_knowledge_node (
     node_description TEXT NOT NULL,
     node_type TEXT NOT NULL,
     summary TEXT NOT NULL,
-    relations TEXT NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     INDEX idx_agent_id (agent_id),
     INDEX idx_node_type (node_type),
     FULLTEXT INDEX idx_node_name (node_name),
     FULLTEXT INDEX idx_summary (summary)
+)
+"#;
+
+/// SQLite: 知识节点关系表建表语句
+///
+/// 对应实体: [crate::models::memory::KnowledgeNodeRelationPo]
+/// 专门存储知识节点之间的关系，独立表方便查询和维护
+pub const SQLITE_CREATE_TABLE_KNOWLEDGE_NODE_RELATION: &str = r#"
+CREATE TABLE IF NOT EXISTS knowledge_node_relation (
+    id TEXT PRIMARY KEY,
+    source_node_id TEXT NOT NULL,
+    target_node_id TEXT NOT NULL,
+    relation_type TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    INDEX idx_source_node_id (source_node_id),
+    INDEX idx_target_node_id (target_node_id),
+    FOREIGN KEY(source_node_id) REFERENCES long_term_knowledge_node(id),
+    FOREIGN KEY(target_node_id) REFERENCES long_term_knowledge_node(id)
 )
 "#;
 

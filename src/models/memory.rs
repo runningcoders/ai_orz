@@ -168,21 +168,29 @@ pub struct LongTermKnowledgeNodePo {
     pub node_type: String,
     /// 综合总结
     pub summary: String,
-    /// 关系列表：[{target_node_id, relation_type}]
-    pub relations: Vec<KnowledgeRelation>,
     /// 创建时间戳
     pub created_at: i64,
     /// 更新时间戳
     pub updated_at: i64,
 }
 
-/// 知识关系
+/// 知识节点关系 PO
+///
+/// 专门存储知识节点之间的关系，独立表方便查询和维护
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KnowledgeRelation {
+pub struct KnowledgeNodeRelationPo {
+    /// 唯一 ID
+    pub id: String,
+    /// 源节点 ID
+    pub source_node_id: String,
     /// 目标节点 ID
     pub target_node_id: String,
     /// 关系类型：related / contains / depends / ...
     pub relation_type: String,
+    /// 创建时间戳
+    pub created_at: i64,
+    /// 更新时间戳
+    pub updated_at: i64,
 }
 
 /// 知识节点引用原始短期索引
