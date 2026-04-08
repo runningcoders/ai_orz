@@ -12,7 +12,12 @@ pub mod organization;
 
 pub use hr::agent::{create_agent, delete_agent, get_agent, list_agents, update_agent};
 pub use finance::model_provider::{
-    create_model_provider, delete_model_provider, get_model_provider, list_model_providers, update_model_provider};
+    create_model_provider, delete_model_provider, get_model_provider, list_model_providers, update_model_provider,
+};
+pub use organization::{
+    create_user, delete_organization, delete_user, get_organization, get_user_by_username, initialize_system,
+    list_organizations, list_users_by_organization, update_organization, update_user,
+};
 
 /// 从 HeaderMap 提取 RequestContext
 pub fn extract_ctx(headers: &HeaderMap) -> RequestContext {

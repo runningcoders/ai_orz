@@ -4,7 +4,7 @@
 //! - Organization - 组织信息管理
 //! - User - 用户信息管理
 
-pub mod organization;
+pub mod org;
 pub mod user;
 
 use crate::error::AppError;
@@ -44,29 +44,15 @@ impl OrganizationDomainImpl {
     }
 }
 
-impl OrganizationDomain for OrganizationDomainImpl {
-    /// 组织管理能力
-    fn organization_manage(&self) -> &dyn OrganizationManage {
-        self
-    }
-
-    /// 用户管理能力
-    fn user_manage(&self) -> &dyn UserManage {
-        self
-    }
-}
-
-// ==================== traits 定义 ====================
-
 /// Organization Domain 总 trait
 ///
 /// 聚合组织管理模块所有子功能 trait
 pub trait OrganizationDomain: Send + Sync {
     /// 组织管理能力
-    fn organization_manage(&self) -> &dyn OrganizationManage;
+    fn organization_manage(&self) -> &dyn org::OrganizationManage;
 
     /// 用户管理能力
-    fn user_manage(&self) -> &dyn UserManage;
+    fn user_manage(&self) -> &dyn user::UserManage;
 }
 
 /// 组织管理 trait
