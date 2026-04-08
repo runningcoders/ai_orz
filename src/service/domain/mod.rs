@@ -5,12 +5,15 @@
 
 pub mod hr;
 pub mod finance;
+pub mod organization;
 
 pub use hr::{domain as hr_domain, init as init_hr_domain, HrDomain};
 pub use finance::{domain as finance_domain, init as init_finance_domain, FinanceDomain};
+pub use organization::{domain as organization_domain, OrganizationDomain};
 
 /// 初始化所有 Domain 实例
 pub fn init_all() {
     hr::init(crate::service::dal::agent_dal());
     finance::init(crate::service::dal::model_provider_dal());
+    organization::init(crate::service::dal::organization_dal());
 }
