@@ -10,7 +10,7 @@ pub mod brain;
 pub mod model_provider;
 
 pub use agent::{dal as agent_dal, AgentDal, AgentDalTrait};
-pub use brain::{dal as brain_dal, BrainDal, BrainDalTrait};
+pub use self::brain::{dal as brain_dal, BrainDal, BrainDalTrait};
 pub use model_provider::{dal as model_provider_dal, ModelProviderDal, ModelProviderDalTrait};
 
 /// 初始化所有 DAL 实例
