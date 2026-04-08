@@ -26,3 +26,4 @@ anyhow = "1.0"
 chrono = { version = "0.4", features = ["serde", "std"] }
 sha256 = "1.1"
 rand = "0.8"
+tracing-appender = "0.2.4"

@@ -129,6 +129,96 @@ INSERT INTO short_term_memory_index (
         })
     }
 
+    fn batch_append_memory_traces(
+        &self,
+        _ctx: RequestContext,
+        traces: &[(MemoryTrace, String, Vec<String>)],
+    ) -> Result<Vec<ShortTermMemoryIndexPo>, AppError> {
+        if traces.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // 1. 确保第一个 trace 的 Agent 目录存在
+        if let Some((first_trace, _, _)) = traces.first() {
+            let agent_dir = self.agent_dir(&first_trace.agent_id);
+            std::fs::create_dir_all(&agent_dir)?;
+        }
+
+        let conn = storage::get().conn();
+        let tx = conn.transaction()?;
+
+        let mut result = Vec::with_capacity(traces.len());
+        let now = chrono::Utc::now().timestamp();
+
+        for (trace, summary, tags) in traces {
+            // 获取今日文件路径
+            let file_path = self.today_path(&trace.agent_id);
+            let date_path = format!(
+                "long_term_memory/{}/{}.md",
+                trace.agent_id,
+                chrono::Local::now().format("%Y-%m-%d")
+            );
+
+            // 追加写入文件
+            let mut file = match OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&file_path)
+            {
+                Ok(file) => file,
+                Err(e) => return Err(AppError::Io(e)),
+            };
+
+            // 获取当前文件大小（就是我们要写入的起始偏移）
+            let byte_start = file.seek(SeekFrom::End(0))?;
+            let content_md = trace.to_markdown();
+            let byte_length = content_md.len() as u64;
+
+            // 写入 markdown
+            write(&mut file, content_md)?;
+
+            let tags_json = serde_json::to_string(tags)?;
+            let role_str = trace.role.to_string();
+
+            tx.execute(
+                r#"
+INSERT INTO short_term_memory_index (
+    id, agent_id, role, summary, tags, date_path, byte_start, byte_length, created_at, updated_at
+) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+"#,
+                params![
+                    trace.id,
+                    trace.agent_id,
+                    role_str,
+                    summary,
+                    tags_json,
+                    date_path,
+                    byte_start,
+                    byte_length,
+                    trace.created_at,
+                    now,
+                ],
+            )?;
+
+            // 保存结果
+            result.push(ShortTermMemoryIndexPo {
+                id: trace.id.clone(),
+                agent_id: trace.agent_id.clone(),
+                role: role_str,
+                summary: summary.clone(),
+                tags: tags.clone(),
+                date_path: date_path,
+                byte_start: byte_start,
+                byte_length: byte_length,
+                created_at: trace.created_at,
+                updated_at: now,
+            });
+        }
+
+        tx.commit()?;
+        Ok(result)
+    }
+
     fn get_short_term_index(
         &self,
         _ctx: RequestContext,
