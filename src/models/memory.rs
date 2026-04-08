@@ -123,14 +123,16 @@ Created: {}
 
 /// 短期记忆索引 PO
 ///
-/// 每条对话生成一个摘要索引，存储在 SQLite
+/// 每条短期记忆聚合了多条相关记忆细节，存储在 SQLite
 /// 原始内容存储在每日文件中
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShortTermMemoryIndexPo {
-    /// 唯一 ID = MemoryTrace.id
+    /// 唯一 ID = 多个原始记忆细节 id 拼接后二次 hash
     pub id: String,
     /// 所属 Agent
     pub agent_id: String,
+    /// 聚合了哪些原始记忆细节的 id 列表
+    pub trace_ids: Vec<String>,
     /// 角色
     pub role: String,
     /// 归纳摘要（用于全文检索）
