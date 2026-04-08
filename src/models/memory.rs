@@ -174,6 +174,92 @@ pub struct LongTermKnowledgeNodePo {
     pub updated_at: i64,
 }
 
+/// 知识节点关系类型枚举
+///
+/// 预定义常见的知识图谱关系类型
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum KnowledgeRelationType {
+    /// 相关关系：两个节点内容相关
+    Related,
+    /// 包含关系：源节点包含目标节点（父 → 子）
+    Contains,
+    /// 被包含关系：源节点被目标节点包含（子 → 父）
+    ContainedBy,
+    /// 依赖关系：源节点依赖目标节点
+    Depends,
+    /// 被依赖关系：目标节点依赖源节点
+    DependedBy,
+    /// 前置关系：源节点是目标节点的前置知识
+    Prerequisite,
+    /// 后续关系：源节点是目标节点的后续知识
+    Followup,
+    /// 相似关系：两个节点内容相似
+    Similar,
+    /// 相反关系：两个节点内容相反/矛盾
+    Opposite,
+    /// 因果关系：源节点导致目标节点
+    Causes,
+    /// 被因果关系：源节点由目标节点导致
+    CausedBy,
+    /// 实例关系：源节点是目标节点的一个实例
+    InstanceOf,
+    /// 分类关系：源节点分类到目标节点
+    CategoryOf,
+    /// 属性关系：源节点是目标节点的一个属性
+    AttributeOf,
+    /// 值关系：源节点是目标节点属性的值
+    ValueOf,
+    /// 自定义关系（留扩展）
+    Custom,
+}
+
+impl ToString for KnowledgeRelationType {
+    fn to_string(&self) -> String {
+        match self {
+            KnowledgeRelationType::Related => "related".to_string(),
+            KnowledgeRelationType::Contains => "contains".to_string(),
+            KnowledgeRelationType::ContainedBy => "contained_by".to_string(),
+            KnowledgeRelationType::Depends => "depends".to_string(),
+            KnowledgeRelationType::DependedBy => "depended_by".to_string(),
+            KnowledgeRelationType::Prerequisite => "prerequisite".to_string(),
+            KnowledgeRelationType::Followup => "followup".to_string(),
+            KnowledgeRelationType::Similar => "similar".to_string(),
+            KnowledgeRelationType::Opposite => "opposite".to_string(),
+            KnowledgeRelationType::Causes => "causes".to_string(),
+            KnowledgeRelationType::CausedBy => "caused_by".to_string(),
+            KnowledgeRelationType::InstanceOf => "instance_of".to_string(),
+            KnowledgeRelationType::CategoryOf => "category_of".to_string(),
+            KnowledgeRelationType::AttributeOf => "attribute_of".to_string(),
+            KnowledgeRelationType::ValueOf => "value_of".to_string(),
+            KnowledgeRelationType::Custom => "custom".to_string(),
+        }
+    }
+}
+
+impl From<String> for KnowledgeRelationType {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "related" => KnowledgeRelationType::Related,
+            "contains" => KnowledgeRelationType::Contains,
+            "contained_by" => KnowledgeRelationType::ContainedBy,
+            "depends" => KnowledgeRelationType::Depends,
+            "depended_by" => KnowledgeRelationType::DependedBy,
+            "prerequisite" => KnowledgeRelationType::Prerequisite,
+            "followup" => KnowledgeRelationType::Followup,
+            "similar" => KnowledgeRelationType::Similar,
+            "opposite" => KnowledgeRelationType::Opposite,
+            "causes" => KnowledgeRelationType::Causes,
+            "caused_by" => KnowledgeRelationType::CausedBy,
+            "instance_of" => KnowledgeRelationType::InstanceOf,
+            "category_of" => KnowledgeRelationType::CategoryOf,
+            "attribute_of" => KnowledgeRelationType::AttributeOf,
+            "value_of" => KnowledgeRelationType::ValueOf,
+            "custom" => KnowledgeRelationType::Custom,
+            _ => KnowledgeRelationType::Custom, // 默认自定义
+        }
+    }
+}
+
 /// 知识节点关系 PO
 ///
 /// 专门存储知识节点之间的关系，独立表方便查询和维护
@@ -185,8 +271,8 @@ pub struct KnowledgeNodeRelationPo {
     pub source_node_id: String,
     /// 目标节点 ID
     pub target_node_id: String,
-    /// 关系类型：related / contains / depends / ...
-    pub relation_type: String,
+    /// 关系类型枚举
+    pub relation_type: KnowledgeRelationType,
     /// 创建时间戳
     pub created_at: i64,
     /// 更新时间戳
