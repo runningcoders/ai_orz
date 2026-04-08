@@ -1,22 +1,161 @@
-//! Organization domain 领域模块
+//! Organization (组织管理) Domain 模块
 //!
-//! 组织管理领域：包含组织设置管理和用户管理
+//! 组织管理模块，管理：
+//! - Organization - 组织信息管理
+//! - User - 用户信息管理
 
-pub mod domain;
 pub mod organization;
 pub mod user;
 
-use std::sync::Arc;
-
+use crate::error::AppError;
+use crate::models::organization::OrganizationPo;
+use crate::pkg::RequestContext;
 use crate::service::dal;
+use std::sync::{Arc, OnceLock};
 
-pub use domain::{OrganizationDomain, OrganizationDomainImpl};
-pub use organization::*;
-pub use user::*;
+// ==================== 单例 ====================
 
-/// 初始化 Organization domain
-pub fn init(
+static ORGANIZATION_DOMAIN: OnceLock<Arc<dyn OrganizationDomain>> = OnceLock::new();
+
+/// 获取 Organization Domain 单例
+pub fn domain() -> Arc<dyn OrganizationDomain> {
+    ORGANIZATION_DOMAIN.get().cloned().unwrap()
+}
+
+/// 初始化 Organization Domain
+pub fn init(dal: Arc<dyn dal::organization::OrganizationDalTrait + Send + Sync>) {
+    let domain = OrganizationDomainImpl::new(dal);
+    let _ = ORGANIZATION_DOMAIN.set(Arc::new(domain));
+}
+
+// ==================== 实现 ====================
+
+/// Organization Domain 实现
+///
+/// 聚合所有组织管理子功能实现
+pub struct OrganizationDomainImpl {
     dal: Arc<dyn dal::organization::OrganizationDalTrait + Send + Sync>,
-) -> Arc<dyn OrganizationDomain + Send + Sync> {
-    Arc::new(OrganizationDomainImpl::new(dal))
+}
+
+impl OrganizationDomainImpl {
+    /// 创建 Domain 实例
+    pub fn new(dal: Arc<dyn dal::organization::OrganizationDalTrait + Send + Sync>) -> Self {
+        Self { dal }
+    }
+}
+
+impl OrganizationDomain for OrganizationDomainImpl {
+    /// 组织管理能力
+    fn organization_manage(&self) -> &dyn OrganizationManage {
+        self
+    }
+
+    /// 用户管理能力
+    fn user_manage(&self) -> &dyn UserManage {
+        self
+    }
+}
+
+// ==================== traits 定义 ====================
+
+/// Organization Domain 总 trait
+///
+/// 聚合组织管理模块所有子功能 trait
+pub trait OrganizationDomain: Send + Sync {
+    /// 组织管理能力
+    fn organization_manage(&self) -> &dyn OrganizationManage;
+
+    /// 用户管理能力
+    fn user_manage(&self) -> &dyn UserManage;
+}
+
+/// 组织管理 trait
+///
+/// 定义组织相关的业务接口
+pub trait OrganizationManage: Send + Sync {
+    /// 检查系统是否已经初始化
+    fn check_initialized(&self, ctx: RequestContext) -> Result<bool, AppError>;
+
+    /// 初始化系统：创建第一个组织和第一个超级管理员用户
+    ///
+    /// 返回: (organization_id, user_id)
+    fn initialize_system(
+        &self,
+        ctx: RequestContext,
+        organization_name: String,
+        description: Option<String>,
+        username: String,
+        password_hash: String,
+        display_name: Option<String>,
+        email: Option<String>,
+    ) -> Result<(String, String), AppError>;
+
+    /// 获取组织信息
+    fn get_by_id(&self, ctx: RequestContext, org_id: &str) -> Result<Option<OrganizationPo>, AppError>;
+
+    /// 获取所有组织列表
+    fn list_all(&self, ctx: RequestContext) -> Result<Vec<OrganizationPo>, AppError>;
+
+    /// 更新组织信息
+    fn update(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<(), AppError>;
+
+    /// 删除组织（软删除）
+    fn delete(&self, ctx: RequestContext, org_id: &str) -> Result<(), AppError>;
+
+    /// 统计组织总数
+    fn count_organizations(&self, ctx: RequestContext) -> Result<u64, AppError>;
+}
+
+/// 用户管理 trait
+///
+/// 定义用户相关的业务接口
+pub trait UserManage: Send + Sync {
+    /// 根据用户名查询用户（用于登录）
+    fn find_by_username(
+        &self,
+        ctx: RequestContext,
+        username: &str,
+    ) -> Result<Option<crate::models::user::UserPo>, AppError>;
+
+    /// 根据组织 ID 查询所有用户
+    fn find_by_organization_id(
+        &self,
+        ctx: RequestContext,
+        org_id: &str,
+    ) -> Result<Vec<crate::models::user::UserPo>, AppError>;
+
+    /// 创建新用户
+    fn create_user(
+        &self,
+        ctx: RequestContext,
+        user: crate::models::user::UserPo,
+    ) -> Result<(), AppError>;
+
+    /// 更新用户信息
+    fn update_user(
+        &self,
+        ctx: RequestContext,
+        user: &crate::models::user::UserPo,
+    ) -> Result<(), AppError>;
+
+    /// 删除用户（软删除）
+    fn delete_user(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+    ) -> Result<(), AppError>;
+
+    /// 检查用户名是否已存在
+    fn exists_by_username(
+        &self,
+        ctx: RequestContext,
+        username: &str,
+    ) -> Result<bool, AppError>;
+
+    /// 统计组织下用户总数
+    fn count_by_organization_id(
+        &self,
+        ctx: RequestContext,
+        org_id: &str,
+    ) -> Result<u64, AppError>;
 }
