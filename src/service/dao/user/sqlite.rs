@@ -2,6 +2,7 @@
 
 use crate::error::AppError;
 use crate::models::user::UserPo;
+use crate::pkg::constants::utils;
 use crate::pkg::storage;
 use crate::pkg::RequestContext;
 use crate::service::dao::user::UserDaoTrait;
@@ -34,7 +35,6 @@ impl UserDaoImpl {
 impl UserDaoTrait for UserDaoImpl {
     fn insert(&self, _ctx: RequestContext, user: &UserPo) -> Result<(), AppError> {
         let conn = storage::get().conn();
-        let _now = current_timestamp();
 
         conn.execute(
             "INSERT INTO users (id, organization_id, username, display_name, email, password_hash, role, status, created_by, modified_by, created_at, updated_at) 
@@ -169,7 +169,7 @@ impl UserDaoTrait for UserDaoImpl {
                 user.password_hash,
                 user.role,
                 ctx.uid(),
-                current_timestamp(),
+                utils::current_timestamp(),
                 user.id,
             ],
         )
@@ -182,7 +182,7 @@ impl UserDaoTrait for UserDaoImpl {
 
         conn.execute(
             "UPDATE users SET status = 0, modified_by = ?1, updated_at = ?2 WHERE id = ?3 AND status != 0",
-            rusqlite::params![ctx.uid(), current_timestamp(), id],
+            rusqlite::params![ctx.uid(), utils::current_timestamp(), id],
         )
             .map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(())
@@ -215,12 +215,4 @@ impl UserDaoTrait for UserDaoImpl {
 
         Ok(count as u64)
     }
-}
-
-fn current_timestamp() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64
 }

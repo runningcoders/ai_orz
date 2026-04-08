@@ -2,7 +2,7 @@
 //!
 //! 对应 SQL 建表语句：[`crate::pkg::storage::sql::SQLITE_CREATE_TABLE_USERS`]
 
-use crate::pkg::constants::UserRole;
+use crate::pkg::constants::{utils, UserRole};
 use serde::{Deserialize, Serialize};
 
 /// UserPo 持久化对象
@@ -46,7 +46,7 @@ impl UserPo {
         role: UserRole,
         created_by: String,
     ) -> Self {
-        let now = current_timestamp();
+        let now = utils::current_timestamp();
         Self {
             id,
             organization_id,
@@ -67,12 +67,4 @@ impl UserPo {
     pub fn user_role(&self) -> Option<UserRole> {
         UserRole::from_str(&self.role)
     }
-}
-
-fn current_timestamp() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64
 }

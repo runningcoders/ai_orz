@@ -71,6 +71,7 @@ dependencies = [
  "async-trait",
  "axum",
  "chrono",
+ "rand 0.8.5",
  "rig-core",
  "rusqlite",
  "serde",

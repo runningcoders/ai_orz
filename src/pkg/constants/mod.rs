@@ -6,15 +6,18 @@
 //! - user_role: 用户角色枚举
 //! - http_header: HTTP 请求头常量
 //! - request_context: 请求上下文定义
+//! - utils: 公共工具函数
 
 pub mod http_header;
 pub mod provider_type;
 pub mod request_context;
 pub mod status;
 pub mod user_role;
+pub mod utils;
 
 pub use http_header::*;
 pub use provider_type::*;
 pub use request_context::*;
 pub use status::*;
 pub use user_role::*;
+pub use utils::*;

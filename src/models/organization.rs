@@ -2,6 +2,7 @@
 //!
 //! 对应 SQL 建表语句：[`crate::pkg::storage::sql::SQLITE_CREATE_TABLE_ORGANIZATIONS`]
 
+use crate::pkg::constants::utils;
 use serde::{Deserialize, Serialize};
 
 /// OrganizationPo 持久化对象
@@ -33,7 +34,7 @@ impl OrganizationPo {
         description: String,
         created_by: String,
     ) -> Self {
-        let now = current_timestamp();
+        let now = utils::current_timestamp();
         Self {
             id,
             name,
@@ -45,12 +46,4 @@ impl OrganizationPo {
             updated_at: now,
         }
     }
-}
-
-fn current_timestamp() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64
 }
