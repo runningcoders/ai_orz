@@ -30,7 +30,7 @@ pub async fn delete_organization(
     Path(org_id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let ctx = extract_ctx(&headers);
-    let domain = organization::domain::domain();
+    let domain = organization::domain();
     domain.organization_manage().delete(ctx, &org_id)?;
 
     Ok((StatusCode::OK, Json(ApiResponse::success(DeleteOrganizationResponse {})).into_response()))

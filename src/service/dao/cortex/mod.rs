@@ -4,7 +4,7 @@
 //! 包含 create_cortex_trait 和 prompt（执行 prompt 获取回答）
 
 use anyhow::{Result};
-use crate::models::{self, brain::*, model_provider::ModelProvider};
+use crate::models::{brain::*, model_provider::ModelProvider};
 use crate::pkg::RequestContext;
 use std::sync::{Arc, OnceLock};
 

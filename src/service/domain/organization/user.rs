@@ -6,7 +6,6 @@ use crate::error::AppError;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 use crate::service::dao;
-use std::sync::Arc;
 
 impl super::UserManage for super::OrganizationDomainImpl {
     /// 根据用户名查询用户（用于登录）

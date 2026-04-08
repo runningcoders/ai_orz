@@ -9,10 +9,10 @@ pub mod update_model_provider;
 pub mod test_connection;
 pub mod call_model;
 
-pub use create_model_provider::{create_model_provider, CreateModelProviderRequest, CreateModelProviderResponse};
+pub use create_model_provider::create_model_provider;
 pub use delete_model_provider::delete_model_provider;
-pub use get_model_provider::{get_model_provider, GetModelProviderResponse};
-pub use list_model_providers::{list_model_providers, ModelProviderListItem};
-pub use update_model_provider::{update_model_provider, UpdateModelProviderRequest, UpdateModelProviderResponse};
-pub use test_connection::{test_model_provider_connection, TestModelProviderConnectionRequest, TestModelProviderConnectionResponse};
-pub use call_model::{call_model, CallModelRequest, CallModelResponse};
+pub use get_model_provider::get_model_provider;
+pub use list_model_providers::list_model_providers;
+pub use update_model_provider::update_model_provider;
+pub use test_connection::test_model_provider_connection;
+pub use call_model::call_model;

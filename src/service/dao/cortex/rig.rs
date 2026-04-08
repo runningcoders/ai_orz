@@ -1,8 +1,8 @@
 //! Rig 具体实现 - 默认 CortexDao 实现
 
 use async_trait::async_trait;
-use anyhow::{Result, anyhow};
-use crate::models::{self, brain::*};
+use anyhow::Result;
+use crate::models::brain::*;
 use crate::models::model_provider::ModelProvider;
 use crate::pkg::{constants::ProviderType, RequestContext};
 use tokio::runtime::Handle;

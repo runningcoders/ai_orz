@@ -3,7 +3,6 @@
 use crate::error::AppError;
 use crate::models::agent::Agent;
 use crate::models::brain::Brain;
-use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
 use crate::service::dao::agent::AgentDaoTrait;
 use std::sync::{Arc, OnceLock};

@@ -32,13 +32,13 @@ pub async fn get_organization(
     Path(org_id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let ctx = extract_ctx(&headers);
-    let domain = organization::domain::domain();
+    let domain = organization::domain();
     let org = domain.organization_manage().get_by_id(ctx, &org_id)?;
 
     match org {
         Some(org) => Ok((StatusCode::OK, Json(ApiResponse::success(GetOrganizationResponse {
             organization: org,
         }))).into_response()),
-        None => Ok((StatusCode::NOT_FOUND, Json(ApiResponse::error(404, "组织不存在".to_string(), ))).into_response()),
+        None => Ok((StatusCode::NOT_FOUND, Json(ApiResponse::<GetOrganizationResponse>::error(404, "组织不存在".to_string(), ))).into_response()),
     }
 }

@@ -6,6 +6,3 @@
 pub mod model_provider;
 
 // handler 函数导出供路由使用
-pub use self::model_provider::{
-    create_model_provider, delete_model_provider, get_model_provider, list_model_providers, update_model_provider,
-};

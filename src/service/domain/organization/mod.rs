@@ -44,15 +44,29 @@ impl OrganizationDomainImpl {
     }
 }
 
+impl OrganizationDomain for OrganizationDomainImpl {
+    /// 组织管理能力
+    fn organization_manage(&self) -> &dyn OrganizationManage {
+        self
+    }
+
+    /// 用户管理能力
+    fn user_manage(&self) -> &dyn UserManage {
+        self
+    }
+}
+
+// ==================== traits 定义 ====================
+
 /// Organization Domain 总 trait
 ///
 /// 聚合组织管理模块所有子功能 trait
 pub trait OrganizationDomain: Send + Sync {
     /// 组织管理能力
-    fn organization_manage(&self) -> &dyn org::OrganizationManage;
+    fn organization_manage(&self) -> &dyn OrganizationManage;
 
     /// 用户管理能力
-    fn user_manage(&self) -> &dyn user::UserManage;
+    fn user_manage(&self) -> &dyn UserManage;
 }
 
 /// 组织管理 trait

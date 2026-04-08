@@ -43,7 +43,7 @@ pub async fn create_user(
     req: Json<CreateUserRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let ctx = extract_ctx(&headers);
-    let domain = organization::domain::domain();
+    let domain = organization::domain();
 
     // 生成随机用户 ID
     let user_id = generate_id();

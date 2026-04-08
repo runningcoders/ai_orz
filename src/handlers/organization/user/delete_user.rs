@@ -6,6 +6,7 @@ use axum::{
     extract::Path,
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
+    Json,
 };
 use serde::{Deserialize, Serialize};
 use crate::service::domain::organization;
@@ -29,7 +30,7 @@ pub async fn delete_user(
     Path(user_id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let ctx = extract_ctx(&headers);
-    let domain = organization::domain::domain();
+    let domain = organization::domain();
     domain.user_manage().delete_user(ctx, &user_id)?;
 
     Ok((StatusCode::OK, Json(ApiResponse::success(DeleteUserResponse {})).into_response()))

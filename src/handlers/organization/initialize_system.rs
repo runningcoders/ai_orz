@@ -8,7 +8,6 @@ use axum::{
     extract::{Json},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    Json,
 };
 use serde::{Deserialize, Serialize};
 use crate::service::domain::organization;
@@ -45,7 +44,7 @@ pub async fn initialize_system(
     req: Json<InitializeSystemRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let ctx = extract_ctx(&headers);
-    let domain = organization::domain::domain();
+    let domain = organization::domain();
     let (org_id, user_id) = domain.organization_manage().initialize_system(
         ctx,
         req.organization_name.clone(),

@@ -9,9 +9,8 @@ pub mod hr;
 pub mod finance;
 pub mod organization;
 
-pub use hr::{domain as hr_domain, init as init_hr_domain, HrDomain};
-pub use finance::{domain as finance_domain, init as init_finance_domain, FinanceDomain};
-pub use organization::{domain as organization_domain, OrganizationDomain};
+pub use hr::init as init_hr_domain;
+pub use finance::init as init_finance_domain;
 
 /// 初始化所有 Domain
 pub fn init_all() {

@@ -1,7 +1,7 @@
 //! Model Provider DAL 模块
 
 use crate::error::AppError;
-use crate::models::model_provider::{ModelProvider, ModelProviderPo};
+use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
 use crate::service::dao::model_provider::ModelProviderDaoTrait;
 use std::sync::{Arc, OnceLock};

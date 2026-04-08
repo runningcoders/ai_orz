@@ -6,7 +6,7 @@
 //! - ModelProvider 只保存配置信息
 //! - Memory 持有核心记忆 + 工作记忆
 
-use crate::models::memory::{self, MemoryTrace};
+use crate::models::memory::{self};
 use crate::models::model_provider::ModelProvider;
 use async_trait::async_trait;
 use anyhow::Result;

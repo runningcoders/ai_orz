@@ -5,7 +5,6 @@ use crate::models::agent::Agent;
 use crate::pkg::RequestContext;
 use crate::service::dal::agent::AgentDalTrait;
 use crate::service::domain::hr::{AgentManage, HrDomainImpl};
-use std::sync::Arc;
 
 impl AgentManage for HrDomainImpl {
     /// 创建 Agent

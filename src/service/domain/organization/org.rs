@@ -5,8 +5,6 @@
 use crate::error::AppError;
 use crate::models::organization::OrganizationPo;
 use crate::pkg::RequestContext;
-use crate::service::dal;
-use std::sync::Arc;
 
 impl super::OrganizationManage for super::OrganizationDomainImpl {
     /// 检查系统是否已经初始化

@@ -9,7 +9,7 @@ use rig::agent::Agent;
 use rig::completion::Prompt;
 use rig::providers::openai;
 use rig::providers::openai::responses_api::ResponsesCompletionModel;
-use crate::models::brain::{self, CortexTrait};
+use crate::models::brain::CortexTrait;
 
 /// OpenAI 兼容模式 Cortex
 pub struct OpenAiCompatibleCortex {

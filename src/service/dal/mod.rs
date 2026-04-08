@@ -3,17 +3,15 @@
 //! DAL 层是业务逻辑层，不关心具体的存储细节
 //! 它组合多个 DAO 完成业务逻辑，使用业务对象而非 Po
 
-use std::sync::Arc;
 
 pub mod agent;
 pub mod brain;
 pub mod model_provider;
 pub mod organization;
 
-pub use agent::{dal as agent_dal, AgentDal, AgentDalTrait};
-pub use self::brain::{dal as brain_dal, BrainDal, BrainDalTrait};
-pub use model_provider::{dal as model_provider_dal, ModelProviderDal, ModelProviderDalTrait};
-pub use organization::{dal as organization_dal, OrganizationDal, OrganizationDalTrait};
+pub use agent::dal as agent_dal;
+pub use model_provider::dal as model_provider_dal;
+pub use organization::dal as organization_dal;
 
 /// 初始化所有 DAL 实例
 pub fn init_all() {

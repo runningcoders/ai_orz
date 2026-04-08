@@ -6,7 +6,6 @@ use axum::{
     extract::{Json},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    Json,
 };
 use serde::{Deserialize, Serialize};
 use crate::service::domain::organization;
@@ -31,7 +30,7 @@ pub async fn update_organization(
     req: Json<UpdateOrganizationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let ctx = extract_ctx(&headers);
-    let domain = organization::domain::domain();
+    let domain = organization::domain();
     domain.organization_manage().update(ctx, &req.organization)?;
 
     Ok((StatusCode::OK, Json(ApiResponse::success(UpdateOrganizationResponse {})).into_response()))

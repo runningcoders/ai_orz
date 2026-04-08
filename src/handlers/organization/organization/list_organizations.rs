@@ -7,7 +7,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use crate::service::domain::organization;
 use crate::models::organization::OrganizationPo;
 
@@ -23,10 +23,10 @@ pub async fn list_organizations(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let ctx = extract_ctx(&headers);
-    let domain = organization::domain::domain();
-    let organizations = domain.organization_manage().list_all(ctx)?;
+    let domain = organization::domain();
+    let orgs = domain.organization_manage().list_all(ctx)?;
 
     Ok((StatusCode::OK, Json(ApiResponse::success(ListOrganizationsResponse {
-        organizations,
+        organizations: orgs,
     }))).into_response())
 }

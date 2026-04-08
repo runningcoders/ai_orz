@@ -9,7 +9,6 @@ use crate::pkg::RequestContext;
 use crate::service::dal::brain::dal as brain_dal;
 use crate::service::dal::model_provider::ModelProviderDalTrait;
 use crate::service::domain::finance::{FinanceDomainImpl, ModelProviderManage};
-use std::sync::Arc;
 
 impl ModelProviderManage for FinanceDomainImpl {
     fn create_model_provider(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError> {
