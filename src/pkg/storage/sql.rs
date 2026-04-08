@@ -99,6 +99,7 @@ pub const SQLITE_CREATE_TABLE_SHORT_TERM_MEMORY_INDEX: &str = r#"
 CREATE TABLE IF NOT EXISTS short_term_memory_index (
     id TEXT PRIMARY KEY,
     agent_id TEXT NOT NULL,
+    trace_ids TEXT NOT NULL,
     role TEXT NOT NULL,
     summary TEXT NOT NULL,
     tags TEXT NOT NULL,
