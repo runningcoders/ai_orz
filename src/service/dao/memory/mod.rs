@@ -7,7 +7,7 @@
 //! - 原始记忆不可修改不可删除，只能追加，符合设计原则
 
 use crate::error::AppError;
-use crate::models::memory::{MemoryTrace, ShortTermMemoryIndexPo, LongTermKnowledgeNodePo, KnowledgeReferencePo};
+use crate::models::memory::{MemoryTrace, ShortTermMemoryIndexPo, LongTermKnowledgeNodePo, KnowledgeReferencePo, KnowledgeNodeRelationPo, KnowledgeRelationType};
 use crate::pkg::RequestContext;
 use std::sync::{Arc, OnceLock};
 
@@ -239,6 +239,116 @@ pub trait MemoryDaoTrait: Send + Sync {
         ctx: RequestContext,
         knowledge_id: &str,
     ) -> Result<Vec<KnowledgeReferencePo>, AppError>;
+
+    // ========== 知识节点关系相关 ==========
+
+    /// 添加知识节点关系
+    ///
+    /// # 参数
+    /// - ctx: 请求上下文
+    /// - relation: 关系
+    /// # 返回
+    /// - 成功返回 Ok(())
+    fn add_knowledge_relation(
+        &self,
+        ctx: RequestContext,
+        relation: &KnowledgeNodeRelationPo,
+    ) -> Result<(), AppError>;
+
+    /// 批量添加知识节点关系
+    ///
+    /// # 参数
+    /// - ctx: 请求上下文
+    /// - relations: 关系列表
+    /// # 返回
+    /// - 成功返回 Ok(())
+    fn batch_add_knowledge_relations(
+        &self,
+        ctx: RequestContext,
+        relations: &[KnowledgeNodeRelationPo],
+    ) -> Result<(), AppError>;
+
+    /// 获取节点的所有出边关系（从该节点出发）
+    ///
+    /// # 参数
+    /// - ctx: 请求上下文
+    /// - source_id: 源节点 ID
+    /// # 返回
+    /// - 关系列表
+    fn list_outgoing_relations(
+        &self,
+        ctx: RequestContext,
+        source_id: &str,
+    ) -> Result<Vec<KnowledgeNodeRelationPo>, AppError>;
+
+    /// 获取节点的所有入边关系（指向该节点）
+    ///
+    /// # 参数
+    /// - ctx: 请求上下文
+    /// - target_id: 目标节点 ID
+    /// # 返回
+    /// - 关系列表
+    fn list_incoming_relations(
+        &self,
+        ctx: RequestContext,
+        target_id: &str,
+    ) -> Result<Vec<KnowledgeNodeRelationPo>, AppError>;
+
+    /// 获取节点的所有关系（出入边都包含）
+    ///
+    /// # 参数
+    /// - ctx: 请求上下文
+    /// - node_id: 节点 ID
+    /// # 返回
+    /// - 关系列表
+    fn list_all_relations_for_node(
+        &self,
+        ctx: RequestContext,
+        node_id: &str,
+    ) -> Result<Vec<KnowledgeNodeRelationPo>, AppError>;
+
+    /// 删除指定关系
+    ///
+    /// # 参数
+    /// - ctx: 请求上下文
+    /// - relation_id: 关系 ID
+    /// # 返回
+    /// - 成功返回 Ok(())
+    fn delete_knowledge_relation(
+        &self,
+        ctx: RequestContext,
+        relation_id: &str,
+    ) -> Result<(), AppError>;
+
+    /// 删除节点的所有关系
+    ///
+    /// 当删除节点时调用，清理所有相关关系
+    ///
+    /// # 参数
+    /// - ctx: 请求上下文
+    /// - node_id: 节点 ID
+    /// # 返回
+    /// - 成功返回 Ok(())
+    fn delete_all_relations_for_node(
+        &self,
+        ctx: RequestContext,
+        node_id: &str,
+    ) -> Result<(), AppError>;
+
+    /// 查询指定类型的关系
+    ///
+    /// # 参数
+    /// - ctx: 请求上下文
+    /// - source_id: 源节点 ID
+    /// - relation_type: 关系类型
+    /// # 返回
+    /// - 关系列表
+    fn find_relations_by_type(
+        &self,
+        ctx: RequestContext,
+        source_id: &str,
+        relation_type: KnowledgeRelationType,
+    ) -> Result<Vec<KnowledgeNodeRelationPo>, AppError>;
 }
 
 // ==================== SQLite 实现 ====================
