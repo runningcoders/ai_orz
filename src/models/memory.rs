@@ -124,6 +124,7 @@ Created: {}
 /// 短期记忆索引 PO
 ///
 /// 每条短期记忆聚合了多条相关记忆细节，存储在 SQLite
+/// 原始记忆细节通过 knowledge_reference.short_term_id 反向关联
 /// 原始记忆细节位置信息存储在 knowledge_reference 表中
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShortTermMemoryIndexPo {
@@ -131,8 +132,6 @@ pub struct ShortTermMemoryIndexPo {
     pub id: String,
     /// 所属 Agent
     pub agent_id: String,
-    /// 聚合了哪些原始记忆细节的 id 列表
-    pub trace_ids: Vec<String>,
     /// 角色
     pub role: String,
     /// 归纳摘要（用于全文检索）

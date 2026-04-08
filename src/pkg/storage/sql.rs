@@ -95,12 +95,12 @@ CREATE TABLE IF NOT EXISTS tasks (
 /// SQLite: 短期记忆索引表建表语句
 ///
 /// 对应实体: [crate::models::memory::ShortTermMemoryIndexPo]
+/// 原始记忆细节通过 knowledge_reference.short_term_id 反向关联
 /// 原始记忆细节位置信息存储在 knowledge_reference 表中
 pub const SQLITE_CREATE_TABLE_SHORT_TERM_MEMORY_INDEX: &str = r#"
 CREATE TABLE IF NOT EXISTS short_term_memory_index (
     id TEXT PRIMARY KEY,
     agent_id TEXT NOT NULL,
-    trace_ids TEXT NOT NULL,
     role TEXT NOT NULL,
     summary TEXT NOT NULL,
     tags TEXT NOT NULL,
