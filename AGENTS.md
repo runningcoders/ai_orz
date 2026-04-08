@@ -117,7 +117,30 @@ fn wake_cortex(&self, provider: &ModelProvider, prompt: &str) -> Result<String, 
 
 ---
 
-## 五、经验总结
+## 五、开发工作流规范
+
+### 5.1 提交前标准流程
+
+**强制流程**：代码开发完成 → 编译通过 → 运行测试 → 运行 `cargo fix` → 再提交推送 ✅
+
+```bash
+# 标准工作流
+cargo check      # 先检查编译错误
+# ... 修复错误 ...
+cargo test       # 运行所有单元测试
+# ... 修复测试失败 ...
+cargo fix --allow-dirty  # 自动移除无用导入，修复可自动修复的警告
+git add .
+git commit
+git push
+```
+
+**为什么这么做**：
+- 自动移除无用导入，减少 `unused import` 警告
+- 自动修复一些简单的编译错误
+- 保持代码干净，提交历史整洁
+
+### 5.2 经验总结
 
 1. **设计对齐人类认知** → 架构更容易理解，也更容易演进
 2. **渐进式实现** → 先做基础架构，再慢慢完善功能
@@ -125,3 +148,4 @@ fn wake_cortex(&self, provider: &ModelProvider, prompt: &str) -> Result<String, 
 4. **常量集中管理** → SQL 建表语句统一放在 `pkg/storage/sql.rs`，避免重复
 5. **预留扩展** → 数据库层分离，方便以后支持其他数据库
 6. **原始细节人类可读** → 按天 markdown 存储，不需要工具直接就能看
+7. **cargo fix 养成习惯** → 提交前自动清理，代码更干净
