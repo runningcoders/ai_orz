@@ -6,7 +6,7 @@
 use crate::error::AppError;
 use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
-use crate::service::dal::cortex::dal as cortex_dal;
+use crate::service::dal::brain::dal as brain_dal;
 use crate::service::dal::model_provider::ModelProviderDalTrait;
 use crate::service::domain::finance::{FinanceDomainImpl, ModelProviderManage};
 use std::sync::Arc;
@@ -39,8 +39,8 @@ impl ModelProviderManage for FinanceDomainImpl {
     /// - prompt: 调用提示词
     /// - 返回: 模型输出结果
     fn wake_cortex(&self, ctx: RequestContext, provider: &ModelProvider, prompt: &str) -> Result<String, AppError> {
-        // 直接调用 Cortex DAL 唤醒 cortex 执行调用
-        let result = cortex_dal().wake_cortex(ctx, provider, prompt)?;
+        // 直接调用 Brain DAL 测试连接执行调用
+        let result = brain_dal().test_connection(ctx, provider, prompt)?;
         Ok(result)
     }
 }
