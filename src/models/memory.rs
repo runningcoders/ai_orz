@@ -124,7 +124,7 @@ Created: {}
 /// 短期记忆索引 PO
 ///
 /// 每条短期记忆聚合了多条相关记忆细节，存储在 SQLite
-/// 原始内容存储在每日文件中
+/// 原始记忆细节位置信息存储在 knowledge_reference 表中
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShortTermMemoryIndexPo {
     /// 唯一 ID = 多个原始记忆细节 id 拼接后二次 hash
@@ -139,12 +139,6 @@ pub struct ShortTermMemoryIndexPo {
     pub summary: String,
     /// 标签列表（用于过滤检索）
     pub tags: Vec<String>,
-    /// 日期文件相对路径：long_term_memory/{agent_id}/YYYY-MM-DD.md
-    pub date_path: String,
-    /// 在文件中的起始字节偏移
-    pub byte_start: u64,
-    /// 内容字节长度
-    pub byte_length: u64,
     /// 创建时间戳
     pub created_at: i64,
     /// 更新时间戳
@@ -279,17 +273,26 @@ pub struct KnowledgeNodeRelationPo {
     pub updated_at: i64,
 }
 
-/// 知识节点引用原始短期索引
+/// 知识引用原始记忆细节
 ///
-/// 记录知识节点引用了哪些原始短期记忆
+/// 记录知识节点引用了哪些原始记忆细节，同时存储原始细节位置信息
+/// 每条原始记忆细节单独一条引用记录，位置信息完整可追溯
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KnowledgeReferencePo {
     /// 唯一 ID
     pub id: String,
     /// 知识节点 ID
     pub knowledge_id: String,
-    /// 引用的短期索引 ID
+    /// 短期记忆索引 ID（这条原始细节属于哪个短期记忆索引）
     pub short_term_id: String,
+    /// 原始记忆细节 ID（MemoryTrace.id）
+    pub trace_id: String,
+    /// 日期文件相对路径：long_term_memory/{agent_id}/YYYY-MM-DD.md
+    pub date_path: String,
+    /// 在文件中的起始字节偏移
+    pub byte_start: u64,
+    /// 内容字节长度
+    pub byte_length: u64,
     /// 创建时间戳
     pub created_at: i64,
 }

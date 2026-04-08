@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 /// SQLite: 短期记忆索引表建表语句
 ///
 /// 对应实体: [crate::models::memory::ShortTermMemoryIndexPo]
+/// 原始记忆细节位置信息存储在 knowledge_reference 表中
 pub const SQLITE_CREATE_TABLE_SHORT_TERM_MEMORY_INDEX: &str = r#"
 CREATE TABLE IF NOT EXISTS short_term_memory_index (
     id TEXT PRIMARY KEY,
@@ -103,9 +104,6 @@ CREATE TABLE IF NOT EXISTS short_term_memory_index (
     role TEXT NOT NULL,
     summary TEXT NOT NULL,
     tags TEXT NOT NULL,
-    date_path TEXT NOT NULL,
-    byte_start INTEGER NOT NULL,
-    byte_length INTEGER NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     INDEX idx_agent_id (agent_id),
@@ -154,16 +152,23 @@ CREATE TABLE IF NOT EXISTS knowledge_node_relation (
 )
 "#;
 
-/// SQLite: 知识节点引用原始短期记忆表建表语句
+/// SQLite: 知识引用原始记忆细节表建表语句
 ///
 /// 对应实体: [crate::models::memory::KnowledgeReferencePo]
+/// 每条原始记忆细节单独一条引用记录，存储位置信息完整可追溯
 pub const SQLITE_CREATE_TABLE_KNOWLEDGE_REFERENCE: &str = r#"
 CREATE TABLE IF NOT EXISTS knowledge_reference (
     id TEXT PRIMARY KEY,
     knowledge_id TEXT NOT NULL,
     short_term_id TEXT NOT NULL,
+    trace_id TEXT NOT NULL,
+    date_path TEXT NOT NULL,
+    byte_start INTEGER NOT NULL,
+    byte_length INTEGER NOT NULL,
     created_at INTEGER NOT NULL,
     INDEX idx_knowledge_id (knowledge_id),
+    INDEX idx_short_term_id (short_term_id),
+    INDEX idx_trace_id (trace_id),
     FOREIGN KEY(knowledge_id) REFERENCES long_term_knowledge_node(id),
     FOREIGN KEY(short_term_id) REFERENCES short_term_memory_index(id)
 )
