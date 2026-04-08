@@ -8,7 +8,7 @@
 use crate::pkg::RequestContext;
 use std::path::Path;
 use tracing_subscriber::{
-    fmt::{self, MakeWriter},
+    fmt::{self},
     layer::SubscriberExt,
     util::SubscriberInitExt,
     EnvFilter,

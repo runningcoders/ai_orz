@@ -38,7 +38,6 @@ pub trait CortexDao: Send + Sync {
 
 mod rig;
 
-pub use rig::{RigCortexDao};
 
 #[cfg(test)]
 mod rig_test;
