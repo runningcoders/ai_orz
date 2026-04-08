@@ -56,6 +56,26 @@ CREATE TABLE IF NOT EXISTS organizations (
 )
 "#;
 
+/// SQLite: Users 表建表语句
+///
+/// 对应实体: [crate::models::user::UserPo]
+pub const SQLITE_CREATE_TABLE_USERS: &str = r#"
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL,
+    username TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL DEFAULT '',
+    email TEXT NOT NULL DEFAULT '',
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL,
+    status INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    INDEX idx_organization_id (organization_id),
+    INDEX idx_username (username)
+)
+"#;
+
 /// SQLite: Task 表建表语句
 ///
 /// 对应实体: [crate::models::task::Task]
