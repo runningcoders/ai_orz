@@ -3,11 +3,11 @@
 //! 默认配置在编译时嵌入二进制，首次运行自动解压生成配置文件，
 //! 用户可通过修改外部配置文件自定义程序行为。
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 /// 应用整体配置
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AppConfig {
     /// 基础数据存储路径
     /// 所有数据文件（SQLite数据库、日志、记忆文件等）都基于此路径
@@ -31,7 +31,7 @@ pub struct AppConfig {
 }
 
 /// 服务器配置
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ServerConfig {
     /// 监听地址
     #[serde(default = "default_listen_addr")]
@@ -39,7 +39,7 @@ pub struct ServerConfig {
 }
 
 /// 数据库配置
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DatabaseConfig {
     /// SQLite 数据库文件名（相对于 base_data_path）
     #[serde(default = "default_db_file_name")]
@@ -47,7 +47,7 @@ pub struct DatabaseConfig {
 }
 
 /// 前端配置
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct FrontendConfig {
     /// 静态文件目录
     #[serde(default = "default_dist_dir")]
@@ -55,7 +55,7 @@ pub struct FrontendConfig {
 }
 
 /// 日志配置
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct LoggingConfig {
     /// 是否启用文件日志
     #[serde(default = "default_enable_file_log")]

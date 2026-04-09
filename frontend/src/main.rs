@@ -1,6 +1,9 @@
 mod components;
 mod api;
 
+// Include compile-time generated configuration from build.rs
+include!(concat!(env!("OUT_DIR"), "/compiled_config.rs"));
+
 use dioxus::prelude::*;
 use components::{Navbar, Reception, AgentManagement, ModelProviderManagement, UserProfile, OrganizationInfo, UserManagement};
 
