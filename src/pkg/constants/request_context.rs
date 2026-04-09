@@ -51,6 +51,11 @@ impl RequestContext {
         }
     }
 
+    /// 设置 log_id（用于中间件处理时覆盖自动生成的 log_id）
+    pub fn set_log_id(&mut self, log_id: String) {
+        self.log_id = log_id;
+    }
+
     /// 生成新的 log_id
     ///
     /// 格式：年月日时分秒毫秒3位随机数，直接拼接无分隔符
