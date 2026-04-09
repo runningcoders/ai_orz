@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use common::constants::ProviderType;
 use common::api::{
-    ModelProviderListItem, CreateModelProviderRequest, TestModelProviderConnectionResponse,
+    ModelProviderListItem, CreateModelProviderRequest,
 };
 use crate::api::model_provider::{
     list_model_providers, create_model_provider, delete_model_provider, test_model_provider_connection,

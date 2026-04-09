@@ -7,7 +7,6 @@ include!(concat!(env!("OUT_DIR"), "/compiled_config.rs"));
 
 use dioxus::prelude::*;
 use components::{Navbar, Reception, AgentManagement, ModelProviderManagement, UserProfile, OrganizationInfo, UserManagement, SettingsPage};
-use crate::config::FrontendConfig;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Page {

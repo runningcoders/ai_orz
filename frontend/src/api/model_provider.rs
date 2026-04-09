@@ -2,10 +2,8 @@
 
 use common::api::{
     ModelProviderListItem,
-    GetModelProviderResponse,
     CreateModelProviderRequest,
     CreateModelProviderResponse,
-    UpdateModelProviderRequest,
     TestModelProviderConnectionResponse,
     EmptyResponse,
     ApiResponse,

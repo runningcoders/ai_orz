@@ -2,10 +2,8 @@
 
 use common::api::{
     AgentListItem,
-    GetAgentResponse,
     CreateAgentRequest,
     CreateAgentResponse,
-    UpdateAgentRequest,
     EmptyResponse,
     ApiResponse,
 };

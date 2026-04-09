@@ -3,7 +3,7 @@
 //! 默认配置在编译时嵌入二进制，首次运行自动解压生成配置文件，
 //! 用户可通过修改外部配置文件自定义程序行为。
 
-use common::config::AppConfig;
+use common::config::{AppConfig, DEFAULT_CONFIG_EMBEDDED, CONFIG_FILE_NAME};
 use std::fs;
 use std::path::Path;
 
@@ -13,8 +13,6 @@ use std::path::Path;
 /// 1. 如果当前目录存在 `ai_orz.toml`，直接读取解析
 /// 2. 如果不存在，从编译嵌入的默认配置写出到文件，然后读取
 pub fn load_config() -> Result<AppConfig, Box<dyn std::error::Error>> {
-    const DEFAULT_CONFIG_EMBEDDED: &str = include_str!("../config/ai_orz.toml");
-    const CONFIG_FILE_NAME: &str = "ai_orz.toml";
 
     let config_path = Path::new(CONFIG_FILE_NAME);
 

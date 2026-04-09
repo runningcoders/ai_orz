@@ -6,6 +6,12 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+/// 默认配置文件内容（编译时嵌入二进制）
+pub const DEFAULT_CONFIG_EMBEDDED: &str = include_str!("../config/ai_orz.toml");
+
+/// 默认配置文件名
+pub const CONFIG_FILE_NAME: &str = "ai_orz.toml";
+
 /// 应用整体配置
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AppConfig {
