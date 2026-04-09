@@ -2,7 +2,7 @@
 //!
 //! 对应 SQL 建表语句：[`crate::pkg::storage::sql::SQLITE_CREATE_TABLE_ORGANIZATIONS`]
 
-use common::constants::{utils, OrganizationStatus};
+use common::constants::{utils, OrganizationStatus, OrganizationScope};
 use serde::{Deserialize, Serialize};
 
 /// OrganizationPo 持久化对象
@@ -21,6 +21,8 @@ pub struct OrganizationPo {
     pub base_url: String,
     /// 状态枚举
     pub status: OrganizationStatus,
+    /// 组织范围枚举（区分本地/远程，用于多节点网络扩展）
+    pub scope: OrganizationScope,
     /// 创建人
     pub created_by: String,
     /// 修改人
@@ -47,6 +49,7 @@ impl OrganizationPo {
             description,
             base_url,
             status: OrganizationStatus::default(),
+            scope: OrganizationScope::default(),
             created_by: created_by.clone(),
             modified_by: created_by,
             created_at: now,

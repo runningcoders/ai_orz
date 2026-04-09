@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS organizations (
     description TEXT NOT NULL DEFAULT '',
     base_url TEXT NOT NULL DEFAULT '',
     status INTEGER NOT NULL DEFAULT 1,
+    scope INTEGER NOT NULL DEFAULT 0,
     created_by TEXT NOT NULL DEFAULT '',
     modified_by TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL,

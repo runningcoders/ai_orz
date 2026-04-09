@@ -191,3 +191,48 @@ impl Default for UserStatus {
         Self::Active
     }
 }
+
+/// Organization 范围枚举（区分本地/远程组织，用于多节点网络扩展）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum OrganizationScope {
+    /// 本地组织（运行在当前设备）
+    Local = 0,
+    /// 远程组织（其他网络节点）
+    Remote = 1,
+}
+
+impl OrganizationScope {
+    /// 从 i32 转换
+    pub fn from_i32(v: i32) -> Self {
+        match v {
+            0 => Self::Local,
+            _ => Self::Remote,
+        }
+    }
+
+    /// 转换为 i32
+    pub fn to_i32(&self) -> i32 {
+        *self as i32
+    }
+}
+
+#[cfg(feature = "rusqlite")]
+impl ToSql for OrganizationScope {
+    fn to_sql(&self) -> RusqliteResult<ToSqlOutput<'_>> {
+        Ok(ToSqlOutput::from(self.to_i32()))
+    }
+}
+
+#[cfg(feature = "rusqlite")]
+impl FromSql for OrganizationScope {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        let v = value.as_i64()?;
+        Ok(Self::from_i32(v as i32))
+    }
+}
+
+impl Default for OrganizationScope {
+    fn default() -> Self {
+        Self::Local
+    }
+}
