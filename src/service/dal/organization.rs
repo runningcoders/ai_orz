@@ -146,6 +146,7 @@ impl OrganizationDalTrait for OrganizationDal {
             org_id.clone(),
             organization_name,
             description.unwrap_or_default(),
+            String::new(), // base_url 默认为空，后续可在组织设置中修改
             ctx.uid().clone(),
         );
         self.organization_dao.insert(ctx.clone(), &org)?;

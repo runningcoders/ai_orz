@@ -14,6 +14,11 @@ pub struct OrganizationPo {
     pub name: String,
     /// 组织描述
     pub description: String,
+    /// 组织外网访问基础 URL
+    ///
+    /// 例如：`https://ai-orz.example.com/org/acme`
+    /// 用于前端生成访问链接
+    pub base_url: String,
     /// 状态：0 = 禁用，1 = 启用
     pub status: i32,
     /// 创建人
@@ -32,6 +37,7 @@ impl OrganizationPo {
         id: String,
         name: String,
         description: String,
+        base_url: String,
         created_by: String,
     ) -> Self {
         let now = utils::current_timestamp();
@@ -39,6 +45,7 @@ impl OrganizationPo {
             id,
             name,
             description,
+            base_url,
             status: 1,
             created_by: created_by.clone(),
             modified_by: created_by,

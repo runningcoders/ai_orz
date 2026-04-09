@@ -36,12 +36,13 @@ impl OrganizationDaoTrait for OrganizationDaoImpl {
         let conn = storage::get().conn();
 
         conn.execute(
-            "INSERT INTO organizations (id, name, description, status, created_by, modified_by, created_at, updated_at) 
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO organizations (id, name, description, base_url, status, created_by, modified_by, created_at, updated_at) 
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             rusqlite::params![
                 org.id,
                 org.name,
                 org.description,
+                org.base_url,
                 org.status,
                 org.created_by,
                 org.modified_by,
@@ -58,7 +59,7 @@ impl OrganizationDaoTrait for OrganizationDaoImpl {
 
         let mut stmt = conn
             .prepare(
-                "SELECT id, name, description, status, created_by, modified_by, created_at, updated_at 
+                "SELECT id, name, description, base_url, status, created_by, modified_by, created_at, updated_at 
                  FROM organizations WHERE id = ?1 AND status != 0",
             )
             .map_err(|e| AppError::Internal(e.to_string()))?;
@@ -68,11 +69,12 @@ impl OrganizationDaoTrait for OrganizationDaoImpl {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 description: row.get(2)?,
-                status: row.get(3)?,
-                created_by: row.get(4)?,
-                modified_by: row.get(5)?,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
+                base_url: row.get(3)?,
+                status: row.get(4)?,
+                created_by: row.get(5)?,
+                modified_by: row.get(6)?,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
             })
         }) {
             Ok(org) => Ok(Some(org)),
@@ -86,7 +88,7 @@ impl OrganizationDaoTrait for OrganizationDaoImpl {
 
         let mut stmt = conn
             .prepare(
-                "SELECT id, name, description, status, created_by, modified_by, created_at, updated_at 
+                "SELECT id, name, description, base_url, status, created_by, modified_by, created_at, updated_at 
                  FROM organizations WHERE status != 0 ORDER BY created_at DESC",
             )
             .map_err(|e| AppError::Internal(e.to_string()))?;
@@ -97,11 +99,12 @@ impl OrganizationDaoTrait for OrganizationDaoImpl {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     description: row.get(2)?,
-                    status: row.get(3)?,
-                    created_by: row.get(4)?,
-                    modified_by: row.get(5)?,
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7)?,
+                    base_url: row.get(3)?,
+                    status: row.get(4)?,
+                    created_by: row.get(5)?,
+                    modified_by: row.get(6)?,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
                 })
             })
             .map_err(|e| AppError::Internal(e.to_string()))?
@@ -115,10 +118,11 @@ impl OrganizationDaoTrait for OrganizationDaoImpl {
         let conn = storage::get().conn();
 
         conn.execute(
-            "UPDATE organizations SET name = ?1, description = ?2, modified_by = ?3, updated_at = ?4 WHERE id = ?5",
+            "UPDATE organizations SET name = ?1, description = ?2, base_url = ?3, modified_by = ?4, updated_at = ?5 WHERE id = ?6",
             rusqlite::params![
                 org.name,
                 org.description,
+                org.base_url,
                 ctx.uid(),
                 current_timestamp(),
                 org.id,
