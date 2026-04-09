@@ -8,5 +8,6 @@
 //! Common shared types for ai_orz backend and frontend
 
 pub mod api;
+pub mod config;
 pub mod constants;
 pub mod enums;

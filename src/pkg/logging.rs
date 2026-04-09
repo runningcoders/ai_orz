@@ -5,7 +5,7 @@
 //! - 文件输出：按日期自动滚动，持久化日志
 //! - 日志路径从应用配置读取，支持自定义数据目录
 
-use crate::config::AppConfig;
+use common::config::AppConfig;
 use common::constants::RequestContext;
 use tracing_subscriber::{
     fmt::{self},

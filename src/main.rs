@@ -7,7 +7,8 @@ mod pkg;
 mod router;
 mod service;
 
-use crate::config::{AppConfig, load_config};
+use common::config::AppConfig;
+use crate::config::load_config;
 
 fn get_env_or_default(env_key: &str, default: &str) -> String {
     std::env::var(env_key).unwrap_or(default.to_string())
