@@ -10,7 +10,7 @@ use std::path::Path;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Tell cargo to rerun build script only when config file changes
     println!("cargo:rerun-if-changed=../ai_orz.toml");
-    println!("cargo:rerun-if-changed=../config/ai_orz.toml");
+    println!("cargo:rerun-if-changed=../common/config/ai_orz.toml");
 
     // Load configuration from the project root
     let config_path = Path::new("../ai_orz.toml");
@@ -19,8 +19,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Use existing config if it exists
         fs::read_to_string(config_path)?
     } else {
-        // Fallback to default embedded config
-        let default_config = include_str!("../config/ai_orz.toml");
+        // Fallback to default embedded config from common
+        let default_config = include_str!("../common/config/ai_orz.toml");
         default_config.to_string()
     };
 
