@@ -82,6 +82,13 @@ pub async fn jwt_auth_middleware(
                 http_header::USERNAME, header_value);
         }
     }
+    // 将组织 ID 添加到请求头（覆盖请求头中原有的值，以 JWT 中的为准）
+    if !claims.organization_id.is_empty() {
+        if let Ok(header_value) = HeaderValue::from_str(&claims.organization_id) {
+            req.headers_mut().insert(
+                http_header::ORGANIZATION_ID, header_value);
+        }
+    }
 
     // 5. JWT 验证通过，继续处理请求
     Ok(next.run(req).await)

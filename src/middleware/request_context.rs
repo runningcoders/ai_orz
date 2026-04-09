@@ -33,6 +33,12 @@ pub async fn request_context_middleware(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
     
+    // 提取组织 ID（使用常量，后续 JWT 会覆盖）
+    let organization_id = headers
+        .get(http_header::ORGANIZATION_ID)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+    
     // 处理 LogId：请求中有就用请求的，没有就自动生成
     let log_id = match headers
         .get(http_header::LOG_ID)
@@ -45,6 +51,9 @@ pub async fn request_context_middleware(
     
     let mut ctx = RequestContext::new(user_id, user_name);
     ctx.set_log_id(log_id);
+    if let Some(org_id) = organization_id {
+        ctx.set_organization_id(org_id);
+    }
     request.extensions_mut().insert(ctx.clone());
     
     // 处理请求并获取响应

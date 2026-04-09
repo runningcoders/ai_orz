@@ -12,6 +12,8 @@ pub struct RequestContext {
     pub user_id: Option<String>,
     /// 当前用户名
     pub username: Option<String>,
+    /// 当前组织 ID
+    pub organization_id: Option<String>,
 }
 
 impl RequestContext {
@@ -35,10 +37,17 @@ impl RequestContext {
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string());
 
+        // 3. 从 header 获取组织 ID（后续 JWT 解析结果会覆盖）
+        let organization_id = headers
+            .get(http_header::ORGANIZATION_ID)
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
+
         Self {
             log_id,
             user_id,
             username,
+            organization_id,
         }
     }
 
@@ -48,12 +57,18 @@ impl RequestContext {
             log_id: Self::generate_log_id(),
             user_id,
             username,
+            organization_id: None,
         }
     }
 
     /// 设置 log_id（用于中间件处理时覆盖自动生成的 log_id）
     pub fn set_log_id(&mut self, log_id: String) {
         self.log_id = log_id;
+    }
+
+    /// 设置组织 ID（JWT 解析结果会覆盖 header 中的值，以 JWT 为准）
+    pub fn set_organization_id(&mut self, organization_id: String) {
+        self.organization_id = Some(organization_id);
     }
 
     /// 生成新的 log_id

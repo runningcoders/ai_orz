@@ -8,3 +8,6 @@ pub const USER_ID: &str = "X-User-Id";
 
 /// 当前用户名
 pub const USERNAME: &str = "X-Username";
+
+/// 当前组织 ID
+pub const ORGANIZATION_ID: &str = "X-Organization-Id";
