@@ -1,10 +1,9 @@
-use reqwest::Error;
+use crate::config::current_config;
 
 /// 调用后端健康检查接口
 pub async fn fetch_health() -> Result<String, String> {
-    // 从编译时环境变量读取后端 API 地址，默认 http://localhost:3000
-    let backend_url = option_env!("BACKEND_API_URL").unwrap_or("http://localhost:3000");
-    let url = format!("{}/health", backend_url);
+    let config = current_config();
+    let url = config.api_url("/health");
 
     let client = reqwest::Client::new();
     let response = match client.get(&url).send().await {

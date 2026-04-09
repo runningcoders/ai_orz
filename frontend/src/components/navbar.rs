@@ -335,11 +335,31 @@ pub fn Navbar(on_navigate: EventHandler<Page>) -> Element {
                                         }}
                                     ",
                                     onclick: move |_| {
-                                        // TODO: 打开用户管理页面
+                                        on_navigate.call(Page::UserManagement);
                                         user_menu_open.set(false);
                                     },
                                     "👥 用户管理"
                                 }
+                            }
+                            // 设置 - 所有用户可见
+                            div { style: "border-top: 1px solid #eee;" }
+                            a {
+                                style: "
+                                    display: block;
+                                    padding: 0.75rem 1rem;
+                                    color: #333;
+                                    text-decoration: none;
+                                    transition: background-color 0.2s;
+                                    cursor: pointer;
+                                    &:hover {{
+                                        background-color: #f5f5f5;
+                                    }}
+                                ",
+                                onclick: move |_| {
+                                    on_navigate.call(Page::SettingsPage);
+                                    user_menu_open.set(false);
+                                },
+                                "⚙️ 设置"
                             }
                         }
                     }

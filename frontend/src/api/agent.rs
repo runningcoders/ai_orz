@@ -9,16 +9,13 @@ use common::api::{
     EmptyResponse,
     ApiResponse,
 };
+use crate::config::current_config;
 use reqwest::Client;
-
-/// 获取后端 API 基础 URL
-fn backend_url() -> &'static str {
-    option_env!("BACKEND_API_URL").unwrap_or("http://localhost:3000")
-}
 
 /// 获取 Agent 列表
 pub async fn list_agents() -> Result<Vec<AgentListItem>, String> {
-    let url = format!("{}/api/v1/hr/agents", backend_url());
+    let config = current_config();
+    let url = config.api_url("/api/v1/hr/agents");
     let client = Client::new();
 
     let response = match client.get(&url).send().await {
@@ -44,7 +41,8 @@ pub async fn list_agents() -> Result<Vec<AgentListItem>, String> {
 
 /// 创建新 Agent
 pub async fn create_agent(req: CreateAgentRequest) -> Result<CreateAgentResponse, String> {
-    let url = format!("{}/api/v1/hr/agents", backend_url());
+    let config = current_config();
+    let url = config.api_url("/api/v1/hr/agents");
     let client = Client::new();
 
     let response = match client.post(&url).json(&req).send().await {
@@ -70,7 +68,8 @@ pub async fn create_agent(req: CreateAgentRequest) -> Result<CreateAgentResponse
 
 /// 删除 Agent
 pub async fn delete_agent(id: &str) -> Result<(), String> {
-    let url = format!("{}/api/v1/hr/agents/{}", backend_url(), id);
+    let config = current_config();
+    let url = config.api_url(&format!("/api/v1/hr/agents/{}", id));
     let client = Client::new();
 
     let response = match client.delete(&url).send().await {

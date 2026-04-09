@@ -22,16 +22,13 @@ use common::api::{
     EmptyResponse,
     ApiResponse,
 };
+use crate::config::current_config;
 use reqwest::Client;
-
-/// Get backend API base URL
-fn backend_url() -> &'static str {
-    option_env!("BACKEND_API_URL").unwrap_or("http://localhost:3000")
-}
 
 /// Check if system has been initialized
 pub async fn check_initialized() -> Result<bool, String> {
-    let url = format!("{}/api/v1/organization/initialize/check", backend_url());
+    let config = current_config();
+    let url = config.api_url("/api/v1/organization/initialize/check");
     let client = Client::new();
 
     let response = match client.get(&url).send().await {
@@ -57,7 +54,8 @@ pub async fn check_initialized() -> Result<bool, String> {
 
 /// List all organizations (for login page selection)
 pub async fn list_organizations() -> Result<Vec<OrganizationListItem>, String> {
-    let url = format!("{}/api/v1/organization/list", backend_url());
+    let config = current_config();
+    let url = config.api_url("/api/v1/organization/list");
     let client = Client::new();
 
     let response = match client.get(&url).send().await {
@@ -85,7 +83,8 @@ pub async fn list_organizations() -> Result<Vec<OrganizationListItem>, String> {
 pub async fn initialize_system(
     req: InitializeSystemRequest,
 ) -> Result<(), String> {
-    let url = format!("{}/api/v1/organization/initialize", backend_url());
+    let config = current_config();
+    let url = config.api_url("/api/v1/organization/initialize");
     let client = Client::new();
 
     let response = match client.post(&url).json(&req).send().await {
@@ -113,7 +112,8 @@ pub async fn initialize_system(
 pub async fn login(
     req: LoginRequest,
 ) -> Result<LoginResponse, String> {
-    let url = format!("{}/api/v1/organization/auth/login", backend_url());
+    let config = current_config();
+    let url = config.api_url("/api/v1/organization/auth/login");
     let client = Client::new();
 
     let response = match client.post(&url).json(&req).send().await {
@@ -139,7 +139,8 @@ pub async fn login(
 
 /// User logout
 pub async fn logout() -> Result<LogoutResponse, String> {
-    let url = format!("{}/api/v1/organization/auth/logout", backend_url());
+    let config = current_config();
+    let url = config.api_url("/api/v1/organization/auth/logout");
     let client = Client::new();
 
     let response = match client.post(&url).json(&LogoutRequest {}).send().await {
@@ -165,7 +166,8 @@ pub async fn logout() -> Result<LogoutResponse, String> {
 
 /// Get current logged-in user information
 pub async fn get_current_user_info() -> Result<UserInfoResponse, String> {
-    let url = format!("{}/api/v1/user/me", backend_url());
+    let config = current_config();
+    let url = config.api_url("/api/v1/user/me");
     let client = Client::new();
 
     let response = match client.get(&url).send().await {
@@ -193,7 +195,8 @@ pub async fn get_current_user_info() -> Result<UserInfoResponse, String> {
 pub async fn update_current_user_info(
     req: UpdateCurrentUserRequest,
 ) -> Result<(), String> {
-    let url = format!("{}/api/v1/user/me", backend_url());
+    let config = current_config();
+    let url = config.api_url("/api/v1/user/me");
     let client = Client::new();
 
     let response = match client.put(&url).json(&req).send().await {
@@ -219,7 +222,8 @@ pub async fn update_current_user_info(
 
 /// Get current user's organization information
 pub async fn get_organization_info() -> Result<OrganizationInfoResponse, String> {
-    let url = format!("{}/api/v1/organization/me", backend_url());
+    let config = current_config();
+    let url = config.api_url("/api/v1/organization/me");
     let client = Client::new();
 
     let response = match client.get(&url).send().await {
@@ -247,7 +251,8 @@ pub async fn get_organization_info() -> Result<OrganizationInfoResponse, String>
 pub async fn update_organization_info(
     req: UpdateCurrentOrganizationRequest,
 ) -> Result<(), String> {
-    let url = format!("{}/api/v1/organization/me", backend_url());
+    let config = current_config();
+    let url = config.api_url("/api/v1/organization/me");
     let client = Client::new();
 
     let response = match client.put(&url).json(&req).send().await {
@@ -274,7 +279,8 @@ pub async fn update_organization_info(
 /// List all users in current organization
 pub async fn list_users_by_current_organization() -> Result<Vec<UserListItem>, String> {
     // organization_id is extracted from JWT by backend, no need to send from frontend
-    let url = format!("{}/api/v1/organization/user/me/list", backend_url());
+    let config = current_config();
+    let url = config.api_url("/api/v1/organization/user/me/list");
     let client = Client::new();
 
     let response = match client.get(&url).send().await {
@@ -302,7 +308,8 @@ pub async fn list_users_by_current_organization() -> Result<Vec<UserListItem>, S
 pub async fn create_user(
     req: CreateUserRequest,
 ) -> Result<(), String> {
-    let url = format!("{}/api/v1/organization/user/", backend_url());
+    let config = current_config();
+    let url = config.api_url("/api/v1/organization/user/");
     let client = Client::new();
 
     let response = match client.post(&url).json(&req).send().await {

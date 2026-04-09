@@ -10,16 +10,13 @@ use common::api::{
     EmptyResponse,
     ApiResponse,
 };
+use crate::config::current_config;
 use reqwest::Client;
-
-/// 获取后端 API 基础 URL
-fn backend_url() -> &'static str {
-    option_env!("BACKEND_API_URL").unwrap_or("http://localhost:3000")
-}
 
 /// 获取 Model Provider 列表
 pub async fn list_model_providers() -> Result<Vec<ModelProviderListItem>, String> {
-    let url = format!("{}/api/v1/finance/model-providers", backend_url());
+    let config = current_config();
+    let url = config.api_url("/api/v1/finance/model-providers");
     let client = Client::new();
 
     let response = match client.get(&url).send().await {
@@ -45,7 +42,8 @@ pub async fn list_model_providers() -> Result<Vec<ModelProviderListItem>, String
 
 /// 创建新 Model Provider
 pub async fn create_model_provider(req: CreateModelProviderRequest) -> Result<CreateModelProviderResponse, String> {
-    let url = format!("{}/api/v1/finance/model-providers", backend_url());
+    let config = current_config();
+    let url = config.api_url("/api/v1/finance/model-providers");
     let client = Client::new();
 
     let response = match client.post(&url).json(&req).send().await {
@@ -71,7 +69,8 @@ pub async fn create_model_provider(req: CreateModelProviderRequest) -> Result<Cr
 
 /// 删除 Model Provider
 pub async fn delete_model_provider(id: &str) -> Result<(), String> {
-    let url = format!("{}/api/v1/finance/model-providers/{id}", backend_url());
+    let config = current_config();
+    let url = config.api_url(&format!("/api/v1/finance/model-providers/{id}"));
     let client = Client::new();
 
     let response = match client.delete(&url).send().await {
@@ -97,7 +96,8 @@ pub async fn delete_model_provider(id: &str) -> Result<(), String> {
 
 /// 测试 Model Provider 连通性
 pub async fn test_model_provider_connection(id: &str) -> Result<TestModelProviderConnectionResponse, String> {
-    let url = format!("{}/api/v1/finance/model-providers/{id}/test", backend_url());
+    let config = current_config();
+    let url = config.api_url(&format!("/api/v1/finance/model-providers/{id}/test"));
     let client = Client::new();
 
     let response = match client.post(&url).send().await {

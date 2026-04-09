@@ -1,11 +1,13 @@
 mod components;
 mod api;
+mod config;
 
 // Include compile-time generated configuration from build.rs
 include!(concat!(env!("OUT_DIR"), "/compiled_config.rs"));
 
 use dioxus::prelude::*;
-use components::{Navbar, Reception, AgentManagement, ModelProviderManagement, UserProfile, OrganizationInfo, UserManagement};
+use components::{Navbar, Reception, AgentManagement, ModelProviderManagement, UserProfile, OrganizationInfo, UserManagement, SettingsPage};
+use crate::config::FrontendConfig;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Page {
@@ -15,6 +17,7 @@ pub enum Page {
     UserProfile,
     OrganizationInfo,
     UserManagement,
+    SettingsPage,
 }
 
 fn main() {
@@ -50,6 +53,7 @@ fn App() -> Element {
                     Page::UserProfile => rsx! { UserProfile {} },
                     Page::OrganizationInfo => rsx! { OrganizationInfo {} },
                     Page::UserManagement => rsx! { UserManagement {} },
+                    Page::SettingsPage => rsx! { SettingsPage {} },
                 }
             }
         }
