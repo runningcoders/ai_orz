@@ -41,8 +41,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     pkg::jwt::init_jwt(&jwt_secret, jwt_expiry_hours);
     tracing::info!("JWT initialized, expiry: {} hours", jwt_expiry_hours);
 
-    // 前端静态文件目录默认还是 dist，不放到 data 下
-    let dist_dir = get_env_or_default("FRONTEND_DIST_DIR", "dist");
+    // 前端静态文件目录从配置读取，环境变量可覆盖
+    let dist_dir = get_env_or_default("FRONTEND_DIST_DIR", &config.frontend.dist_dir);
 
     // 服务器监听地址从配置读取
     let server_addr = &config.server.listen_addr;

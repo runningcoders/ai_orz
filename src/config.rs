@@ -18,6 +18,10 @@ pub struct AppConfig {
     #[serde(default)]
     pub server: ServerConfig,
 
+    /// 前端配置
+    #[serde(default)]
+    pub frontend: FrontendConfig,
+
     /// 日志配置
     #[serde(default)]
     pub logging: LoggingConfig,
@@ -31,6 +35,14 @@ pub struct ServerConfig {
     pub listen_addr: String,
 }
 
+/// 前端配置
+#[derive(Debug, Clone, Deserialize)]
+pub struct FrontendConfig {
+    /// 静态文件目录
+    #[serde(default = "default_dist_dir")]
+    pub dist_dir: String,
+}
+
 /// 日志配置
 #[derive(Debug, Clone, Deserialize)]
 pub struct LoggingConfig {
@@ -42,10 +54,22 @@ pub struct LoggingConfig {
     pub log_subdir: String,
 }
 
+fn default_dist_dir() -> String {
+    "dist".to_string()
+}
+
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
             listen_addr: default_listen_addr(),
+        }
+    }
+}
+
+impl Default for FrontendConfig {
+    fn default() -> Self {
+        Self {
+            dist_dir: default_dist_dir(),
         }
     }
 }
