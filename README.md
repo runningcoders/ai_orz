@@ -13,14 +13,20 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 
 ```
 ai_orz/
-├── common/             # 公共共享类型（前后端共用 DTO、枚举、常量）
-│   ├── src/
-│   │   ├── api/       # API 请求响应 DTO 按功能分组
-│   │   ├── constants/ # 公共常量、基础类型（ApiResponse、状态枚举等）
-│   │   └── enums/     # 公共枚举
-│   └── Cargo.toml
+├── common/             # 公共共享类型（前后端共用 DTO、枚举、配置、常量）
+│   ├── config/         # 默认配置模板 ai_orz.toml
+│   └── src/
+│       ├── api/        # API 请求响应 DTO 按功能分组
+│       ├── config.rs   # 应用配置结构体定义 + 默认常量（前后端共用）
+│       ├── constants/  # 公共常量、基础类型（ApiResponse、状态枚举等）
+│       └── enums/      # 公共枚举
 ├── src/                # 后端源码
+│   └── config.rs       # 配置加载逻辑（类型从 common 导入）
 ├── frontend/            # Dioxus 前端源码
+│   ├── build.rs        # 构建脚本：编译时读取配置嵌入前端
+│   └── src/
+│       ├── config.rs   # 前端运行时配置管理（支持 localStorage 读写）
+│       └── components/settings_page.rs # 设置页面（用户可修改配置）
 ├── dist/               # 编译好的前端静态文件（生产构建输出）
 ├── docs/               # 详细文档
 │   ├── ARCHITECTURE.md # 完整架构说明（最新）
@@ -96,13 +102,60 @@ let result = domain().model_provider_manage().wake_cortex(ctx, &provider, prompt
 
 ## 配置
 
-项目配置通过环境变量读取：
+项目使用 **TOML 配置文件** 管理配置，默认配置嵌入在二进制中：
 
-| 环境变量 | 默认值 | 说明 |
-|----------|--------|------|
-| `SERVER_HOST` | `0.0.0.0` | 服务监听地址 |
-| `SERVER_PORT` | `3000` | 服务监听端口 |
-| `DATABASE_URL` | `data/ai_orz.db` | SQLite 数据库路径 |
+### 配置机制
+
+1. 首次运行时，如果项目根目录不存在 `ai_orz.toml`，程序会自动从嵌入的默认配置生成一份
+2. 你可以修改 `ai_orz.toml` 自定义配置
+3. 前端在编译时会自动读取配置文件，将默认配置嵌入前端产物
+4. **前端运行时可修改配置**：在浏览器设置页面修改 API 地址，修改保存到浏览器 `localStorage`，刷新页面生效，无需重新编译
+
+### 配置文件格式
+
+```toml
+# 基础数据存储路径
+# 所有数据文件（SQLite数据库、日志、记忆文件等）都会存储在此目录下
+base_data_path = "data"
+
+# 服务器配置
+[server]
+# 监听地址
+listen_addr = "0.0.0.0:3000"
+
+# 数据库配置
+[database]
+# SQLite 数据库文件名（相对于 base_data_path）
+db_file_name = "ai_orz.db"
+
+# 前端配置
+[frontend]
+# 静态文件目录
+dist_dir = "dist"
+
+# 日志配置
+[logging]
+# 是否启用文件日志
+enable_file_log = true
+# 日志文件目录（相对于 base_data_path）
+log_subdir = "logs"
+
+# JWT配置
+[jwt]
+# JWT签名密钥（生产环境务必修改！也可以通过环境变量 JWT_SECRET 设置）
+# secret = "your-secret-key-here"
+# JWT默认过期时间（小时），默认 7 天（168小时），也可以通过环境变量 JWT_EXPIRY_HOURS 设置
+# default_expiry_hours = 168
+```
+
+### 环境变量覆盖
+
+环境变量会覆盖配置文件中的对应值：
+
+| 环境变量 | 对应配置项 | 说明 |
+|----------|------------|------|
+| `JWT_SECRET` | `jwt.secret` | JWT 签名密钥 |
+| `JWT_EXPIRY_HOURS` | `jwt.default_expiry_hours` | JWT 过期时间（小时） |
 
 ## 快速开始
 
@@ -188,7 +241,7 @@ frontend/src/
   - 前台接待
   - 人力资源 → Agent 管理
   - **财务管理 → 模型管理**
-  - 用户下拉菜单（个人信息 + 组织信息 + 用户管理 - 仅管理员可见）
+  - 用户下拉菜单（个人信息 + 组织信息 + ⚙️ 设置 + 用户管理 - 仅管理员可见）
 - ✅ 前台接待/登录流程
   - 系统自动检测初始化状态，未初始化显示初始化表单
   - 初始化创建根组织和超级管理员
@@ -196,6 +249,10 @@ frontend/src/
   - JWT + HttpOnly Cookie 认证
 - ✅ 个人信息页（所有登录用户可访问）：查看修改个人信息
 - ✅ 组织信息页（仅管理员可访问）：查看修改组织信息
+- ✅ ⚙️ 设置页（所有登录用户可访问）：**运行时修改前端配置**
+  - 可修改后端 API 地址，保存到浏览器 localStorage
+  - 支持一键重置为编译时默认配置
+  - 修改后刷新页面生效，**无需重新编译前端**
 - ✅ 用户管理页（仅管理员可访问）：查看当前组织所有用户列表 + 创建用户
 - ✅ Agent 管理列表 + 创建弹窗 + 删除功能
 - ✅ **Model Provider 管理列表 + 创建弹窗 + 删除功能 + 创建后自动测试连通性**
@@ -223,7 +280,7 @@ frontend/src/
 cargo test
 ```
 
-当前状态：**31 个测试全部通过 ✅**
+当前状态：**35 个测试全部通过 ✅**
 
 ## License
 
