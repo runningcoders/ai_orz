@@ -3,3 +3,4 @@
 pub mod health;
 pub mod agent;
 pub mod model_provider;
+pub mod organization;

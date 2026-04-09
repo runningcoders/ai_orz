@@ -4,7 +4,9 @@
 //! - 系统初始化接口
 //! - organization (组织管理)
 //! - user (用户管理)
+//! - auth (登录/登出)
 
+pub mod auth;
 pub mod initialize_system;
 pub mod organization;
 pub mod user;

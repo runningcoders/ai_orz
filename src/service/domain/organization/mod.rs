@@ -158,4 +158,14 @@ pub trait UserManage: Send + Sync {
         ctx: RequestContext,
         org_id: &str,
     ) -> Result<u64, AppError>;
+
+    /// 验证用户名密码（用于登录）
+    /// 返回用户信息，如果验证成功
+    fn verify_password(
+        &self,
+        ctx: RequestContext,
+        org_id: &str,
+        username: &str,
+        password_hash: &str,
+    ) -> Result<crate::models::user::UserPo, AppError>;
 }

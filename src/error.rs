@@ -31,6 +31,12 @@ impl From<anyhow::Error> for AppError {
     }
 }
 
+impl From<jsonwebtoken::errors::Error> for AppError {
+    fn from(err: jsonwebtoken::errors::Error) -> Self {
+        AppError::BadRequest(format!("JWT token 无效: {}", err))
+    }
+}
+
 impl AppError {
     /// 获取错误码
     pub fn code(&self) -> i32 {

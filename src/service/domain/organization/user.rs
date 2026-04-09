@@ -70,4 +70,38 @@ impl super::UserManage for super::OrganizationDomainImpl {
     ) -> Result<u64, AppError> {
         dao::user::dao().count_by_organization_id(ctx, org_id)
     }
+
+    /// 验证用户名密码（用于登录）
+    fn verify_password(
+        &self,
+        _ctx: RequestContext,
+        org_id: &str,
+        username: &str,
+        password_hash: &str,
+    ) -> Result<UserPo, AppError> {
+        // 先查找用户
+        let user = match dao::user::dao().find_by_username(_ctx, username)? {
+            Some(u) => u,
+            None => {
+                return Err(AppError::BadRequest("用户名或密码错误".to_string()));
+            }
+        };
+
+        // 检查用户所属组织是否匹配
+        if user.organization_id != org_id {
+            return Err(AppError::BadRequest("用户名或密码错误".to_string()));
+        }
+
+        // 验证密码哈希
+        if user.password_hash != password_hash {
+            return Err(AppError::BadRequest("用户名或密码错误".to_string()));
+        }
+
+        // 用户状态检查：status == 1 表示启用
+        if user.status != 1 {
+            return Err(AppError::BadRequest("用户已被禁用".to_string()));
+        }
+
+        Ok(user)
+    }
 }

@@ -1,5 +1,6 @@
 mod error;
 mod handlers;
+mod middleware;
 mod models;
 mod pkg;
 mod router;
@@ -12,6 +13,13 @@ struct Config {
     server: ServerConfig,
     database: DatabaseConfig,
     frontend: FrontendConfig,
+    jwt: Option<JwtConfig>,
+}
+
+#[derive(Deserialize)]
+struct JwtConfig {
+    secret: Option<String>,
+    default_expiry_hours: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -59,6 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 frontend: FrontendConfig {
                     dist_dir: "dist".to_string(),
                 },
+                jwt: None,
             }
         }
     };
@@ -80,6 +89,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 初始化 service 层
     service::init();
     tracing::info!("Service layer initialized");
+
+    // 初始化 JWT
+    let jwt_secret = config.jwt.as_ref()
+        .and_then(|j| j.secret.as_ref())
+        .map(|s| s.clone())
+        .unwrap_or_else(|| {
+            // 如果配置文件没有提供，尝试从环境变量获取，还是没有就用默认
+            std::env::var("JWT_SECRET").unwrap_or_else(|_| "ai-orz-default-jwt-secret-change-me-in-production".to_string())
+        });
+    let jwt_expiry_hours = config.jwt.as_ref()
+        .and_then(|j| j.default_expiry_hours)
+        .unwrap_or(24 * 7); // 默认 7 天过期
+    pkg::jwt::init_jwt(&jwt_secret, jwt_expiry_hours);
+    tracing::info!("JWT initialized, expiry: {} hours", jwt_expiry_hours);
 
     // 启动服务器
     let app = router::create_router(&dist_dir);

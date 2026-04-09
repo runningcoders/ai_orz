@@ -38,6 +38,17 @@ pub struct InitializeSystemResponse {
     pub user_id: String,
 }
 
+/// 检查系统是否已经初始化
+pub async fn check_initialized(
+    headers: HeaderMap,
+) -> Result<(StatusCode, Json<ApiResponse<bool>>), AppError> {
+    let ctx = extract_ctx(&headers);
+    let domain = organization::domain();
+    let initialized = domain.organization_manage().check_initialized(ctx)?;
+
+    Ok((StatusCode::OK, Json(ApiResponse::success(initialized))))
+}
+
 /// 初始化系统
 pub async fn initialize_system(
     headers: HeaderMap,
