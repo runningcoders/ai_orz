@@ -1,6 +1,12 @@
 #!/bin/bash
 # ai_orz - 全量编译脚本
 # 编译后端 + 编译前端，输出到 dist 目录
+#
+# 配置读取流程：
+#   1. 根目录 ai_orz.toml 存储完整配置（后端+前端共用）
+#   2. 前端编译时（本步骤）由 frontend/build.rs 自动读取该配置
+#   3. 配置被序列化为 JSON 嵌入到前端编译产物中
+#   4. 前端运行时直接使用嵌入式配置，无需 API 请求
 
 set -e
 
@@ -15,6 +21,7 @@ echo "🎨 Building frontend with dioxus-cli..."
 cd "$(dirname "$0")/frontend"
 
 # 从环境变量读取后端 API 地址，默认 http://localhost:3000
+# 注：BACKEND_API_URL 是 dioxus 开发调试用，生产配置由 ai_orz.toml 控制
 export BACKEND_API_URL=${BACKEND_API_URL:-http://localhost:3000}
 
 dx build --release
