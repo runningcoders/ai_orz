@@ -1,7 +1,7 @@
 //! Agent 实体
 
 use crate::models::brain::{Brain, Cortex, CortexTrait};
-use crate::pkg::constants::AgentPoStatus;
+use common::constants::AgentPoStatus;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 

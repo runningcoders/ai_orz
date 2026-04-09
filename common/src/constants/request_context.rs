@@ -1,7 +1,8 @@
 //! 请求上下文（贯穿整个请求生命周期）
 
 use serde::{Deserialize, Serialize};
-use crate::pkg::constants::http_header;
+use crate::constants::http_header;
+use axum::http;
 
 /// 请求上下文
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,29 +19,29 @@ pub struct RequestContext {
 
 impl RequestContext {
     /// 从 header 中提取上下文
-    pub fn from_headers(headers: &axum::http::HeaderMap) -> Self {
+    pub fn from_headers(headers: &http::HeaderMap) -> Self {
         // 1. 优先从 header 获取 log_id
         let log_id = headers
             .get(http_header::LOG_ID)
-            .and_then(|v| v.to_str().ok())
+            .and_then(|v: &http::HeaderValue| v.to_str().ok())
             .map(|s| s.to_string())
             .unwrap_or_else(|| Self::generate_log_id());
 
         // 2. 从 header 获取用户信息
         let user_id = headers
             .get(http_header::USER_ID)
-            .and_then(|v| v.to_str().ok())
+            .and_then(|v: &http::HeaderValue| v.to_str().ok())
             .map(|s| s.to_string());
 
         let username = headers
             .get(http_header::USERNAME)
-            .and_then(|v| v.to_str().ok())
+            .and_then(|v: &http::HeaderValue| v.to_str().ok())
             .map(|s| s.to_string());
 
         // 3. 从 header 获取组织 ID（后续 JWT 解析结果会覆盖）
         let organization_id = headers
             .get(http_header::ORGANIZATION_ID)
-            .and_then(|v| v.to_str().ok())
+            .and_then(|v: &http::HeaderValue| v.to_str().ok())
             .map(|s| s.to_string());
 
         Self {

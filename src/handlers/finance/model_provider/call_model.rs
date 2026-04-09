@@ -1,8 +1,8 @@
 //! 调用 Model Provider 生成文本
 
+use common::constants::RequestContext;
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
-use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use axum::{
     extract::{Extension, Path},

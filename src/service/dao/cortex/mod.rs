@@ -5,7 +5,7 @@
 
 use anyhow::{Result};
 use crate::models::{brain::*, model_provider::ModelProvider};
-use crate::pkg::RequestContext;
+use common::constants::RequestContext;
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例 ====================

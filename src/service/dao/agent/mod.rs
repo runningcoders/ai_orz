@@ -2,7 +2,7 @@
 
 use crate::error::AppError;
 use crate::models::agent::AgentPo;
-use crate::pkg::RequestContext;
+use common::constants::RequestContext;
 
 /// Agent DAO 接口
 pub trait AgentDaoTrait: Send + Sync {

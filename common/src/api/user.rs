@@ -1,7 +1,6 @@
 //! User-related API request/response DTOs - shared between backend and frontend
 
 use serde::{Deserialize, Serialize};
-use crate::enums::UserRole;
 
 /// Current user information response
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -2,7 +2,8 @@
 
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
-use crate::pkg::{RequestContext, jwt};
+use crate::pkg::jwt;
+use common::constants::RequestContext;
 use crate::middleware::jwt_auth::JWT_COOKIE_NAME;
 use crate::service::domain::organization::domain;
 use axum::{

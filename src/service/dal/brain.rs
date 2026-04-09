@@ -8,7 +8,7 @@ use anyhow::Result;
 use crate::error::AppError;
 use crate::models::brain::{Brain, Cortex, CortexTrait, Memory};
 use crate::models::model_provider::ModelProvider;
-use crate::pkg::RequestContext;
+use common::constants::RequestContext;
 use crate::service::dao::cortex::{CortexDao};
 use std::sync::{Arc, OnceLock};
 

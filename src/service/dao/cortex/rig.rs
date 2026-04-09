@@ -2,9 +2,9 @@
 
 use async_trait::async_trait;
 use anyhow::Result;
+use common::constants::{ProviderType, RequestContext};
 use crate::models::brain::*;
 use crate::models::model_provider::ModelProvider;
-use crate::pkg::{constants::ProviderType, RequestContext};
 use tokio::runtime::Handle;
 
 /// 默认 Cortex DAO 工厂实现

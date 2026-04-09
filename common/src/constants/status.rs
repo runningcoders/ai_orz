@@ -3,11 +3,16 @@
 /// AgentPo 状态枚举（用于软删除）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentPoStatus {
+    /// 已删除（软删除）
     Deleted = 0,
+    /// 正常可用
     Normal = 1,
 }
 
 impl AgentPoStatus {
+    /// 从 i32 转换为状态枚举
+    ///
+    /// 0 表示 Deleted，其他值都表示 Normal
     pub fn from_i32(v: i32) -> Self {
         match v {
             0 => Self::Deleted,
@@ -15,6 +20,7 @@ impl AgentPoStatus {
         }
     }
 
+    /// 将状态转换为 i32 存储
     pub fn to_i32(&self) -> i32 {
         *self as i32
     }
@@ -48,11 +54,16 @@ impl Default for AgentPoStatus {
 /// ModelProviderPo 状态枚举（用于软删除）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelProviderPoStatus {
+    /// 已删除（软删除）
     Deleted = 0,
+    /// 正常可用
     Normal = 1,
 }
 
 impl ModelProviderPoStatus {
+    /// 从 i32 转换为状态枚举
+    ///
+    /// 0 表示 Deleted，其他值都表示 Normal
     pub fn from_i32(v: i32) -> Self {
         match v {
             0 => Self::Deleted,
@@ -60,6 +71,7 @@ impl ModelProviderPoStatus {
         }
     }
 
+    /// 将状态转换为 i32 存储
     pub fn to_i32(&self) -> i32 {
         *self as i32
     }

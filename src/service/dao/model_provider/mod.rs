@@ -2,7 +2,7 @@
 
 use crate::error::AppError;
 use crate::models::model_provider::ModelProviderPo;
-use crate::pkg::RequestContext;
+use common::constants::RequestContext;
 
 /// ModelProvider DAO 接口
 pub trait ModelProviderDaoTrait: Send + Sync {

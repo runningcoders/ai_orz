@@ -10,7 +10,7 @@ use axum::{
     response::{Response, Redirect, IntoResponse},
 };
 use crate::pkg::{jwt};
-use crate::pkg::constants::http_header;
+use common::constants::http_header;
 use crate::error::AppError;
 
 /// JWT cookie 名称

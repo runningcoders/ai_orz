@@ -3,7 +3,7 @@
 //! 对应 SQL 建表语句：[`crate::pkg::storage::sql::SQLITE_CREATE_TABLE_USERS`]
 
 use common::enums::UserRole;
-use crate::pkg::constants::utils;
+use common::constants::utils;
 use serde::{Deserialize, Serialize};
 
 /// UserPo 持久化对象

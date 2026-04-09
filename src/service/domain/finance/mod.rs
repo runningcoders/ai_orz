@@ -7,7 +7,7 @@ pub mod model_provider;
 
 use crate::error::AppError;
 use crate::models::model_provider::ModelProvider;
-use crate::pkg::RequestContext;
+use common::constants::RequestContext;
 use crate::service::dal::model_provider::ModelProviderDalTrait;
 use std::sync::{Arc, OnceLock};
 

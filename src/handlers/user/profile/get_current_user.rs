@@ -3,10 +3,10 @@
 use axum::{extract::{Extension, Json}, http::StatusCode};
 use common::api::{GetCurrentUserResponse, UserInfoResponse};
 use common::enums::UserRole;
+use common::constants::RequestContext;
 use crate::{
     error::AppError,
     handlers::ApiResponse,
-    pkg::constants::request_context::RequestContext,
     service::dao,
 };
 

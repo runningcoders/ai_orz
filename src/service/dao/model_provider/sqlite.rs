@@ -3,7 +3,7 @@
 use crate::error::AppError;
 use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::storage;
-use crate::pkg::{RequestContext, constants::{ModelProviderPoStatus, ProviderType}};
+use common::constants::{RequestContext, ModelProviderPoStatus, ProviderType};
 use crate::service::dao::model_provider::ModelProviderDaoTrait;
 use std::sync::{Arc, OnceLock};
 

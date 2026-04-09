@@ -1,39 +1,20 @@
-//! Shared constants used by both backend and frontend
+//! 常量定义模块
+//!
+//! 分类存放不同用途的常量和类型：
+//! - status: 各种实体的状态枚举（软删除等）
+//! - provider_type: 模型提供商类型枚举
+//! - http_header: HTTP 请求头常量
+//! - request_context: 请求上下文定义
+//! - utils: 公共工具函数
+//!
+//! Note: UserRole is now in `common::enums::UserRole` shared with frontend
 
-use serde::{Deserialize, Serialize};
+pub mod http_header;
+pub mod provider_type;
+pub mod request_context;
+pub mod status;
+pub mod utils;
 
-/// API response wrapper (generic)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApiResponse<T> {
-    /// Status code (0 = success, non-zero = error)
-    pub code: i32,
-    /// Response message
-    pub message: String,
-    /// Response data (None if error)
-    pub data: Option<T>,
-}
-
-impl<T> ApiResponse<T> {
-    /// Create a success response with data
-    pub fn success(data: T) -> Self {
-        Self {
-            code: 0,
-            message: "success".to_string(),
-            data: Some(data),
-        }
-    }
-
-    /// Create an error response
-    pub fn error(code: i32, message: String) -> Self {
-        Self {
-            code,
-            message,
-            data: None,
-        }
-    }
-
-    /// Check if response is successful
-    pub fn is_success(&self) -> bool {
-        self.code == 0
-    }
-}
+pub use provider_type::*;
+pub use request_context::*;
+pub use status::*;

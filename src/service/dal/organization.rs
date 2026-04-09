@@ -7,7 +7,7 @@ use common::enums::UserRole;
 use crate::error::AppError;
 use crate::models::organization::OrganizationPo;
 use crate::models::user::UserPo;
-use crate::pkg::RequestContext;
+use common::constants::RequestContext;
 use crate::service::dao::organization::{dao as organization_dao, OrganizationDaoTrait};
 use crate::service::dao::user::{dao as user_dao, UserDaoTrait};
 use rand::Rng;

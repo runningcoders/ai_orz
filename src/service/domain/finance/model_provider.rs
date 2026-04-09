@@ -5,7 +5,7 @@
 
 use crate::error::AppError;
 use crate::models::model_provider::ModelProvider;
-use crate::pkg::RequestContext;
+use common::constants::RequestContext;
 use crate::service::dal::brain::dal as brain_dal;
 use crate::service::dal::model_provider::ModelProviderDalTrait;
 use crate::service::domain::finance::{FinanceDomainImpl, ModelProviderManage};

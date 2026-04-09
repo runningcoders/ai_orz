@@ -1,6 +1,6 @@
 //! 模型提供商实体
 
-use crate::pkg::constants::{ModelProviderPoStatus, ProviderType};
+use common::constants::{ModelProviderPoStatus, ProviderType};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 

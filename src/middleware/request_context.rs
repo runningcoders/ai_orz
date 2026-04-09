@@ -3,8 +3,8 @@
 //! 自动从请求头提取 X-User-Id 和 X-User-Name，创建 RequestContext 并通过 Extension 注入
 //! 处理 LogId：如果请求头有则使用，否则自动生成，最终写回响应头
 
-use crate::pkg::{RequestContext};
-use crate::pkg::constants::http_header;
+use common::constants::RequestContext;
+use common::constants::http_header;
 use axum::{
     http::{HeaderMap, HeaderValue, Request},
     middleware::Next,

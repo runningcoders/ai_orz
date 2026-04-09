@@ -2,10 +2,10 @@
 
 use axum::{extract::{Extension, Json}, http::StatusCode};
 use common::api::{EmptyResponse, UpdateCurrentUserRequest};
+use common::constants::{RequestContext, utils};
 use crate::{
     error::AppError,
     handlers::ApiResponse,
-    pkg::constants::{request_context::RequestContext, utils},
     service::dao,
     service::domain::organization,
 };
