@@ -6,11 +6,45 @@
 
 ---
 
+## 项目整体架构：三级 cargo workspace
+
+```
+ai_orz/
+├── **common** 🎯 独立公共 crate
+│   ├── src/api/              # 所有前后端共用 API DTO（按功能分组）
+│   ├── src/constants/        # 公共常量、基础类型（ApiResponse、状态枚举等）
+│   └── src/enums/            # 公共枚举（UserRole 等）
+│
+├── **src** 后端服务
+│   ├── models/               # 持久化实体 PO
+│   ├── handlers/             # HTTP 接口层（按业务域/功能分组，每个方法一个文件）
+│   ├── service/
+│   │   ├── dao/              # 数据访问层 DAO（单一数据源操作）
+│   │   ├── dal/              # 业务数据访问层 DAL（组合 DAO 提供业务级数据操作）
+│   │   └── domain/           # 领域层（核心业务逻辑）
+│   ├── middleware/           # Axum 中间件（JWT认证、RequestContext注入）
+│   └── pkg/                  # 公共工具包
+│
+└── **frontend** 前端 Dioxus 应用
+    ├── src/
+    │   ├── api/              # API 客户端（调用后端接口，所有 DTO 从 common 导入）
+    │   └── components/        # UI 组件（每个页面一个组件）
+    └── ...
+```
+
+**common crate 设计原则：**
+- ✅ 所有前后端共用的 request/response DTO 都放在 `common/src/api/`，消除重复定义
+- ✅ 所有公共枚举都放在 common，保证前后端类型一致
+- ✅ PO 实体保持在后端 `models/`，不移动到 common（只需要前端看到 DTO）
+- ✅ 后端数据库枚举字段直接使用 common 中的枚举类型，实现编译期类型安全
+
+---
+
 ## 核心概念
 
 ### 1. Agent（智能体）
 - **定义**：独立的执行单元，可以接收任务、执行操作、与其他 Agent 通信
-- **关系**：直接持有装配好的 Brain，每个 Agent 有自己独立的记忆
+- **关系**：直接持有装配好的 Brain，每个 Agent 属于一个组织，有角色字段
 
 ### 2. Brain（大脑）
 - **定义**：聚合根，包含思考 + 记忆
@@ -42,7 +76,31 @@ pub struct CoreMemory {
 - **关系**：一个 ModelProvider 对应一个 Cortex
 
 ### 5. ModelProvider（模型提供商）
-- **定义**：保存 LLM 模型配置信息，可以被多个 Agent 复用
+- **定义**：保存 LLM 模型配置信息，可以被多个 Agent 复用，属于一个组织
+
+### 6. Organization（组织）
+- **定义**：顶级租户，包含多个用户、多个 Agent、多个 ModelProvider
+- **角色体系**：SuperAdmin → Admin → Member，支持权限控制
+
+### 7. User（用户）
+- **定义**：登录用户，属于一个组织，有角色和状态
+
+---
+
+## 组织用户权限体系
+
+```
+Organization (组织)
+  └─► User (用户，通过 organization_id 关联)
+       ├─► SuperAdmin (超级管理员 - 系统初始化时创建)
+       ├─► Admin (管理员)
+       └─► Member (普通成员)
+```
+
+**认证方案：** JWT + HttpOnly Cookie，适配单实例部署场景
+- 公共路由：健康检查、初始化、登录、登出、获取组织列表 → 无需认证
+- 保护路由：所有业务接口 → 需要 JWT 认证
+- RequestContext 自动注入当前登录用户信息和组织 ID
 
 ---
 
@@ -130,6 +188,27 @@ Agent (po + brain: Option<Brain>)
 
 ---
 
+## 类型安全设计
+
+### 枚举类型安全
+
+项目中所有存储为整数的枚举字段，现在都直接使用 Rust 枚举类型存储：
+
+| PO 实体 | 枚举字段 | 枚举类型 | 说明 |
+|---------|----------|----------|------|
+| `AgentPo` | `status` | `AgentPoStatus` | 已完成 |
+| `ModelProviderPo` | `status` | `ModelProviderPoStatus` | 已完成 |
+| `ModelProviderPo` | `provider_type` | `ProviderType` | 已完成 |
+| `OrganizationPo` | `status` | `OrganizationStatus` | 已完成 |
+| `UserPo` | `role` | `UserRole` (common) | 已完成 |
+| `UserPo` | `status` | `UserStatus` | 已完成 |
+
+**实现方式：**
+- `common` 中定义枚举，为枚举实现 `rusqlite::ToSql` 和 `rusqlite::FromSql` trait
+- 存储到 SQLite 自动转换为 `i32`，读取自动转换为枚举
+- 编译期类型检查，避免 magic number 错误
+- serde 序列化保持整数输出，API 契约不变
+
 ## 数据库设计
 
 所有建表语句都统一放在 `src/pkg/storage/sql.rs` 作为常量，每个常量注释对应到实体：
@@ -139,10 +218,12 @@ Agent (po + brain: Option<Brain>)
 | `agents` | `AgentPo` |
 | `model_providers` | `ModelProviderPo` |
 | `organizations` | `OrganizationPo` |
+| `users` | `UserPo` |
 | `tasks` | `Task` |
 | `short_term_memory_index` | `ShortTermMemoryIndexPo` |
 | `long_term_knowledge_node` | `LongTermKnowledgeNodePo` |
 | `knowledge_reference` | `KnowledgeReferencePo` |
+| `knowledge_node_relation` | `KnowledgeNodeRelationPo` |
 
 ---
 
@@ -151,4 +232,4 @@ Agent (po + brain: Option<Brain>)
 - 每个 DAO 模块对应一个单元测试文件
 - 单元测试使用内存数据库，不依赖全局连接池
 - 所有建表使用定义好的常量，不重复写 SQL
-- 当前项目总测试数：**33 个** → **全部通过** ✅
+- 当前项目总测试数：**35 个** → **全部通过** ✅

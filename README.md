@@ -6,17 +6,26 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 
 - **后端**: Rust + Axum + SQLite + [rig-core](https://docs.rs/rig-core/latest/rig/) (LLM 调用框架)
 - **前端**: Dioxus 0.7 (WebAssembly)
+- **common**: 独立 crate，存放前后端共享的 DTO、枚举、常量（API 契约统一）
 - **构建**: dioxus-cli + cargo workspace
 
 ## 项目结构
 
 ```
 ai_orz/
+├── common/             # 公共共享类型（前后端共用 DTO、枚举、常量）
+│   ├── src/
+│   │   ├── api/       # API 请求响应 DTO 按功能分组
+│   │   ├── constants/ # 公共常量、基础类型（ApiResponse、状态枚举等）
+│   │   └── enums/     # 公共枚举
+│   └── Cargo.toml
 ├── src/                # 后端源码
 ├── frontend/            # Dioxus 前端源码
 ├── dist/               # 编译好的前端静态文件（生产构建输出）
 ├── docs/               # 详细文档
-│   └── ARCHITECTURE.md # 完整架构说明（最新）
+│   ├── ARCHITECTURE.md # 完整架构说明（最新）
+│   ├── MEMORY_DESIGN.md # 记忆系统详细设计
+│   └── AGENTS.md       # Agent 开发规范与最佳实践
 ├── build-full.sh        # 全量构建脚本（后端 + 前端）
 ├── start-dev.sh         # 一键启动开发环境（后端 + dx serve 热重载）
 └── README.md
@@ -56,7 +65,9 @@ Agent (po + brain: Option<Brain>)
 4. **统一编码规范** → 所有 DAO 使用 `OnceLock<Arc<dyn Trait>>` 单例模式
 5. **完整命名** → 子功能 trait 方法完整命名：`create_agent` 而不是 `create`
 6. **Handler 拆分** → 业务分组 + 方法粒度拆分，每个方法一个单独文件 ✅
-7. **单元测试** → 每个业务模块都应该有单元测试，当前 31/31 全部通过 ✅
+7. **API 契约统一** → 所有前后端共用 DTO 提取到独立 `common` crate，保证类型一致 ✅
+8. **类型安全枚举** → 数据库存储的枚举字段全部使用原生枚举类型，编译期检查 ✅
+9. **单元测试** → 每个业务模块都应该有单元测试，当前 35/35 全部通过 ✅
 
 ## LLM 调用流程（最新版）
 
@@ -156,26 +167,38 @@ let result = domain().model_provider_manage().wake_cortex(ctx, &provider, prompt
 
 ```
 frontend/src/
-├── main.rs              # 入口，App 组件
-├── api/                # API 调用模块
-│   ├── health.rs       # 健康检查 API
-│   ├── agent.rs        # Agent 管理 API
-│   └── model_provider.rs # Model Provider 管理 API
-└── components/         # UI 组件
-    ├── navbar.rs        # 顶部导航栏
-    ├── reception.rs     # 前台接待欢迎页
+├── main.rs              # 入口，App 组件，定义所有页面路由
+├── api/                 # API 调用模块（所有 DTO 从 common 导入）
+│   ├── health.rs        # 健康检查 API
+│   ├── agent.rs         # Agent 管理 API
+│   ├── model_provider.rs # Model Provider 管理 API
+│   └── organization.rs  # 组织/用户/登录相关 API
+└── components/          # UI 组件（每个页面对应一个组件）
+    ├── navbar.rs         # 顶部导航栏（含权限控制下拉菜单）
+    ├── reception.rs      # 前台接待欢迎页（系统初始化 + 登录）
     ├── agent_management.rs # Agent 管理页
-    └── model_provider_management.rs # Model Provider 管理页
+    ├── model_provider_management.rs # Model Provider 管理页
+    ├── user_profile.rs   # 个人信息页（所有登录用户可访问）
+    ├── organization_info.rs # 组织信息页（仅管理员可访问）
+    └── user_management.rs # 用户管理页（仅管理员可访问）
 ```
 
 前端已经实现：
-- ✅ 顶部导航栏
+- ✅ 顶部导航栏（权限控制）
   - 前台接待
   - 人力资源 → Agent 管理
-  - **财务管理 → 模型管理** 👈 新增
-- ✅ 前台接待欢迎页
+  - **财务管理 → 模型管理**
+  - 用户下拉菜单（个人信息 + 组织信息 + 用户管理 - 仅管理员可见）
+- ✅ 前台接待/登录流程
+  - 系统自动检测初始化状态，未初始化显示初始化表单
+  - 初始化创建根组织和超级管理员
+  - 组织选择下拉 + 用户名密码登录
+  - JWT + HttpOnly Cookie 认证
+- ✅ 个人信息页（所有登录用户可访问）：查看修改个人信息
+- ✅ 组织信息页（仅管理员可访问）：查看修改组织信息
+- ✅ 用户管理页（仅管理员可访问）：查看当前组织所有用户列表 + 创建用户
 - ✅ Agent 管理列表 + 创建弹窗 + 删除功能
-- ✅ **Model Provider 管理列表 + 创建弹窗 + 删除功能 + 创建后自动测试连通性** 👈 新增
+- ✅ **Model Provider 管理列表 + 创建弹窗 + 删除功能 + 创建后自动测试连通性**
 
 ## 前端开发
 
