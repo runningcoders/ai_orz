@@ -35,6 +35,8 @@ fn public_routes() -> Router {
         .route("/organization/auth/logout", post(auth::logout::logout))
         // Get organization basic info - public query (no login required)
         .route("/organization/{org_id}", get(organization::get_organization::get_organization))
+        // List all organizations - public query (for login page selection, no login required)
+        .route("/organization/list", get(organization::list_organizations::list_organizations))
 }
 
 /// Protected routes - require valid JWT authentication
@@ -57,7 +59,6 @@ fn organization_protected_routes() -> Router {
     use crate::handlers::organization::user;
 
     Router::new()
-        .route("/list", get(organization::list_organizations::list_organizations))
         .route("/update", put(organization::update_organization::update_organization))
         .route("/{org_id}", delete(organization::delete_organization::delete_organization))
         .nest("/user", Router::new()
