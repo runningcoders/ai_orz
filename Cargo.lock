@@ -71,6 +71,7 @@ dependencies = [
  "async-trait",
  "axum",
  "chrono",
+ "common",
  "cookie",
  "jsonwebtoken",
  "rand 0.8.5",
@@ -1086,6 +1087,13 @@ checksum = "ba5a308b75df32fe02788e748662718f03fde005016435c444eea572398219fd"
 dependencies = [
  "bytes",
  "memchr",
+]
+
+[[package]]
+name = "common"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -2993,6 +3001,7 @@ dependencies = [
 name = "frontend"
 version = "0.1.0"
 dependencies = [
+ "common",
  "dioxus",
  "dioxus-cli",
  "js-sys",

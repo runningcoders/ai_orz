@@ -1,5 +1,6 @@
+use common::api::{UserInfoResponse, UpdateCurrentUserRequest};
 use dioxus::prelude::*;
-use crate::api::organization::{get_current_user_info, update_current_user_info, UserInfo, UpdateUserRequest};
+use crate::api::organization::{get_current_user_info, update_current_user_info};
 
 #[component]
 pub fn UserProfile() -> Element {
@@ -7,7 +8,7 @@ pub fn UserProfile() -> Element {
     let mut saving = use_signal(|| false);
     let mut error = use_signal(|| String::new());
     let mut success = use_signal(|| String::new());
-    let mut user_info = use_signal(|| Option::<UserInfo>::None);
+    let mut user_info = use_signal(|| Option::<UserInfoResponse>::None);
 
     // 编辑状态
     let mut editing_display_name = use_signal(|| String::new());
@@ -40,7 +41,7 @@ pub fn UserProfile() -> Element {
                 error.set(String::new());
                 success.set(String::new());
 
-                let req = UpdateUserRequest {
+                let req = UpdateCurrentUserRequest {
                     display_name: if editing_display_name() != info.display_name.unwrap_or_default() {
                         Some(editing_display_name())
                     } else {

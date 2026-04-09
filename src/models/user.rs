@@ -2,7 +2,8 @@
 //!
 //! 对应 SQL 建表语句：[`crate::pkg::storage::sql::SQLITE_CREATE_TABLE_USERS`]
 
-use crate::pkg::constants::{utils, UserRole};
+use common::enums::UserRole;
+use crate::pkg::constants::utils;
 use serde::{Deserialize, Serialize};
 
 /// UserPo 持久化对象
@@ -20,7 +21,7 @@ pub struct UserPo {
     pub email: String,
     /// 密码哈希（bcrypt）
     pub password_hash: String,
-    /// 用户角色
+    /// 用户角色（存储为字符串名称）
     pub role: String,
     /// 状态：0 = 禁用，1 = 启用
     pub status: i32,
@@ -54,7 +55,7 @@ impl UserPo {
             display_name,
             email,
             password_hash,
-            role: role.to_str().to_string(),
+            role: role.display_name().to_string(),
             status: 1,
             created_by: created_by.clone(),
             modified_by: created_by,
@@ -65,6 +66,11 @@ impl UserPo {
 
     /// 获取用户角色
     pub fn user_role(&self) -> Option<UserRole> {
-        UserRole::from_str(&self.role)
+        match self.role.as_str() {
+            "超级管理员" => Some(UserRole::SuperAdmin),
+            "管理员" => Some(UserRole::Admin),
+            "成员" => Some(UserRole::Member),
+            _ => None,
+        }
     }
 }

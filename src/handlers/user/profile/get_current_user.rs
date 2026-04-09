@@ -1,42 +1,14 @@
 //! 获取当前认证用户信息接口
 
 use axum::{extract::{Extension, Json}, http::StatusCode};
+use common::api::{GetCurrentUserResponse, UserInfoResponse};
+use common::enums::UserRole;
 use crate::{
     error::AppError,
     handlers::ApiResponse,
-    models::user::UserPo,
-    pkg::constants::{request_context::RequestContext, UserRole},
+    pkg::constants::request_context::RequestContext,
     service::dao,
 };
-use serde::{Deserialize, Serialize};
-
-/// 当前用户信息响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UserInfoResponse {
-    /// 用户 ID
-    pub user_id: String,
-    /// 用户名
-    pub username: String,
-    /// 显示名称
-    pub display_name: Option<String>,
-    /// 邮箱
-    pub email: Option<String>,
-    /// 所属组织 ID
-    pub organization_id: String,
-    /// 角色编号
-    pub role: i32,
-    /// 角色名称
-    pub role_name: String,
-    /// 用户状态
-    pub status: i32,
-}
-
-/// 获取当前用户信息响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetCurrentUserResponse {
-    /// 用户信息数据
-    pub data: UserInfoResponse,
-}
 
 /// Get current authenticated user information
 /// 从 RequestContext 中获取已认证用户信息并返回

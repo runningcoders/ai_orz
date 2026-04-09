@@ -1,5 +1,8 @@
 //! 创建新用户接口
 
+use common::api::CreateUserRequest;
+use common::enums::UserRole;
+use serde::Serialize;
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
 use crate::pkg::constants::request_context::RequestContext;
@@ -9,26 +12,8 @@ use axum::{
     response::IntoResponse,
 };
 use rand::Rng;
-use serde::{Deserialize, Serialize};
-use crate::pkg::constants::UserRole;
 use crate::service::domain::organization;
 use crate::models::user::UserPo;
-
-/// 创建新用户请求（在当前组织下创建）
-/// organization_id 从 RequestContext 获取，不需要前端传递
-#[derive(Debug, Deserialize)]
-pub struct CreateUserRequest {
-    /// 用户名
-    pub username: String,
-    /// 密码哈希
-    pub password_hash: String,
-    /// 显示名称
-    pub display_name: Option<String>,
-    /// 邮箱
-    pub email: Option<String>,
-    /// 用户角色编号（1=Member, 2=Admin, 3=SuperAdmin）
-    pub role: i32,
-}
 
 /// 创建新用户响应
 #[derive(Debug, Serialize)]
@@ -56,7 +41,7 @@ pub async fn create_user(
     // 转换角色
     let role = match req.role {
         2 => UserRole::Admin,
-        3 => UserRole::SuperAdmin,
+        1 => UserRole::SuperAdmin,
         _ => UserRole::Member,
     };
 

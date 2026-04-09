@@ -1,38 +1,13 @@
 //! 获取当前登录用户所在组织信息接口
 
 use axum::{extract::{Extension, Json}, http::StatusCode};
+use common::api::{GetCurrentOrganizationResponse, OrganizationInfoResponse};
 use crate::{
     error::AppError,
     handlers::ApiResponse,
-    models::organization::OrganizationPo,
     pkg::constants::request_context::RequestContext,
     service::domain::organization,
 };
-use serde::{Deserialize, Serialize};
-
-/// 当前组织信息响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OrganizationInfoResponse {
-    /// 组织 ID
-    pub id: String,
-    /// 组织名称
-    pub name: String,
-    /// 组织描述
-    pub description: String,
-    /// 外部访问地址
-    pub base_url: String,
-    /// 组织状态
-    pub status: i32,
-    /// 创建时间戳
-    pub created_at: i64,
-}
-
-/// 获取当前组织信息响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetCurrentOrganizationResponse {
-    /// 组织信息数据
-    pub data: OrganizationInfoResponse,
-}
 
 /// Get current authenticated user's organization information
 /// 从 RequestContext 获取 organization_id，查询组织信息返回
@@ -51,10 +26,10 @@ pub async fn get_current_organization(
 
     // 转换为响应格式
     let info = OrganizationInfoResponse {
-        id: org.id.clone(),
+        organization_id: org.id.clone(),
         name: org.name.clone(),
-        description: org.description.clone(),
-        base_url: org.base_url.clone(),
+        description: if org.description.is_empty() { None } else { Some(org.description.clone()) },
+        base_url: if org.base_url.is_empty() { None } else { Some(org.base_url.clone()) },
         status: org.status,
         created_at: org.created_at,
     };

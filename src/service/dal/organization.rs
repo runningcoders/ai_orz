@@ -3,10 +3,10 @@
 //! 职责：组合 OrganizationDao + UserDao，完成组织初始化和基础管理
 //! 因为用户必须属于组织，所以初始化需要同时创建组织和超级管理员用户，放在一个 DAL 里更合理
 
+use common::enums::UserRole;
 use crate::error::AppError;
 use crate::models::organization::OrganizationPo;
 use crate::models::user::UserPo;
-use crate::pkg::constants::UserRole;
 use crate::pkg::RequestContext;
 use crate::service::dao::organization::{dao as organization_dao, OrganizationDaoTrait};
 use crate::service::dao::user::{dao as user_dao, UserDaoTrait};

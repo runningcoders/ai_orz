@@ -1,5 +1,6 @@
+use common::api::{OrganizationInfoResponse, UpdateOrganizationRequest};
 use dioxus::prelude::*;
-use crate::api::organization::{get_organization_info, update_organization_info, OrganizationInfo as OrganizationInfoDto, UpdateOrganizationRequest};
+use crate::api::organization::{get_organization_info, update_organization_info};
 
 #[component]
 pub fn OrganizationInfo() -> Element {
@@ -7,7 +8,7 @@ pub fn OrganizationInfo() -> Element {
     let mut saving = use_signal(|| false);
     let mut error = use_signal(|| String::new());
     let mut success = use_signal(|| String::new());
-    let mut org_info = use_signal(|| Option::<OrganizationInfoDto>::None);
+    let mut org_info = use_signal(|| Option::<OrganizationInfoResponse>::None);
 
     // 编辑状态
     let mut editing_name = use_signal(|| String::new());
@@ -20,8 +21,8 @@ pub fn OrganizationInfo() -> Element {
             match get_organization_info().await {
                 Ok(info) => {
                     editing_name.set(info.name.clone());
-                    editing_description.set(info.description.clone());
-                    editing_base_url.set(info.base_url.clone());
+                    editing_description.set(info.description.clone().unwrap_or_default());
+                    editing_base_url.set(info.base_url.clone().unwrap_or_default());
                     org_info.set(Some(info));
                     error.set(String::new());
                 }
@@ -47,12 +48,12 @@ pub fn OrganizationInfo() -> Element {
                     } else {
                         None
                     },
-                    description: if editing_description() != info.description {
+                    description: if editing_description() != info.description.unwrap_or_default() {
                         Some(editing_description())
                     } else {
                         None
                     },
-                    base_url: if editing_base_url() != info.base_url {
+                    base_url: if editing_base_url() != info.base_url.unwrap_or_default() {
                         Some(editing_base_url())
                     } else {
                         None
@@ -66,8 +67,8 @@ pub fn OrganizationInfo() -> Element {
                         match get_organization_info().await {
                             Ok(new_info) => {
                                 editing_name.set(new_info.name.clone());
-                                editing_description.set(new_info.description.clone());
-                                editing_base_url.set(new_info.base_url.clone());
+                                editing_description.set(new_info.description.clone().unwrap_or_default());
+                                editing_base_url.set(new_info.base_url.clone().unwrap_or_default());
                                 org_info.set(Some(new_info));
                             }
                             Err(_) => {}
@@ -157,7 +158,7 @@ pub fn OrganizationInfo() -> Element {
                         }
                         input {
                             r#type: "text",
-                            value: "{info.id}",
+                            value: "{info.organization_id}",
                             disabled: true,
                             style: "
                                 width: 100%;

@@ -1,6 +1,7 @@
 //! 更新当前认证用户信息接口
 
 use axum::{extract::{Extension, Json}, http::StatusCode};
+use common::api::{EmptyResponse, UpdateCurrentUserRequest};
 use crate::{
     error::AppError,
     handlers::ApiResponse,
@@ -8,27 +9,6 @@ use crate::{
     service::dao,
     service::domain::organization,
 };
-use serde::{Deserialize, Serialize};
-
-/// 更新当前用户信息请求
-#[derive(Debug, Clone, Deserialize)]
-pub struct UpdateCurrentUserRequest {
-    /// 新的显示名称（None 表示不修改）
-    pub display_name: Option<String>,
-    /// 新的邮箱（None 表示不修改）
-    pub email: Option<String>,
-    /// 新的密码哈希（None 表示不修改）
-    pub password_hash: Option<String>,
-}
-
-/// 空响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EmptyResponse {
-    /// 响应码
-    pub code: i32,
-    /// 响应消息
-    pub message: String,
-}
 
 /// Update current authenticated user information
 /// 允许用户更新自己的可修改信息：显示名称、邮箱、密码

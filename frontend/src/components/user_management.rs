@@ -1,6 +1,7 @@
+use common::api::{CreateUserRequest, UserListItem};
 use dioxus::prelude::*;
 use tracing::info;
-use crate::api::organization::{list_users_by_current_organization, create_user, UserListItem, CreateUserRequest};
+use crate::api::organization::{list_users_by_current_organization, create_user};
 
 #[component]
 pub fn UserManagement() -> Element {

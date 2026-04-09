@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
+use common::api::{InitializeSystemRequest, LoginRequest, OrganizationListItem};
 use crate::api::organization::{
     check_initialized, list_organizations, initialize_system, login,
-    InitializeSystemRequest, OrganizationInfo, LoginRequest,
 };
 
 #[component]
@@ -9,7 +9,7 @@ pub fn Reception() -> Element {
     // 状态：加载中、已初始化（有组织）、未初始化（需要初始化）
     let mut loading = use_signal(|| true);
     let mut initialized = use_signal(|| false);
-    let mut organizations = use_signal(Vec::<OrganizationInfo>::new);
+    let mut organizations = use_signal(Vec::<OrganizationListItem>::new);
     let mut error = use_signal(|| String::new());
 
     // 登录表单状态
@@ -69,10 +69,10 @@ pub fn Reception() -> Element {
             let req = InitializeSystemRequest {
                 organization_name: org_name(),
                 description: if org_description().is_empty() { None } else { Some(org_description()) },
-                username: init_username(),
-                password_hash: init_password(), // 前端应该已经是 bcrypt hash 了
-                display_name: if display_name().is_empty() { None } else { Some(display_name()) },
-                email: if email().is_empty() { None } else { Some(email()) },
+                admin_username: init_username(),
+                admin_password_hash: init_password(), // 前端应该已经是 bcrypt hash 了
+                admin_display_name: if display_name().is_empty() { None } else { Some(display_name()) },
+                admin_email: if email().is_empty() { None } else { Some(email()) },
             };
 
             match initialize_system(req).await {
@@ -208,7 +208,7 @@ pub fn Reception() -> Element {
                         ",
                         for org in organizations() {
                             {
-                                let is_selected = selected_org_id() == org.id;
+                                let is_selected = selected_org_id() == org.organization_id;
                                 let bg = if is_selected { "#e3f2fd" } else { "white" };
                                 let border = if is_selected { "#3498db" } else { "transparent" };
                                 let check_mark = if is_selected { "✓ " } else { "" };
@@ -226,7 +226,7 @@ pub fn Reception() -> Element {
                                                 border-color: #90caf9;
                                             }}
                                         ",
-                                        onclick: move |_| selected_org_id.set(org.id.clone()),
+                                        onclick: move |_| selected_org_id.set(org.organization_id.clone()),
                                         div {
                                             style: "
                                                 font-size: 1.1rem;
@@ -236,14 +236,14 @@ pub fn Reception() -> Element {
                                             ",
                                             "{check_mark}{org.name}"
                                         }
-                                        if !org.description.is_empty() {
+                                        if !org.description.is_none() {
                                             p {
                                                 style: "
                                                     color: #666;
                                                     font-size: 0.9rem;
                                                     margin: 0;
                                                 ",
-                                                "{org.description}"
+                                                "{org.description.clone().unwrap_or_default()}"
                                             }
                                         }
                                     }
