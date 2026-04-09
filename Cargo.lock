@@ -2998,6 +2998,7 @@ dependencies = [
  "js-sys",
  "reqwest 0.13.2",
  "serde",
+ "tracing",
  "web-sys",
 ]
 

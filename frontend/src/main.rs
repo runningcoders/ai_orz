@@ -2,13 +2,16 @@ mod components;
 mod api;
 
 use dioxus::prelude::*;
-use components::{Navbar, Reception, AgentManagement, ModelProviderManagement};
+use components::{Navbar, Reception, AgentManagement, ModelProviderManagement, UserProfile, OrganizationInfo, UserManagement};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Page {
     Reception,
     AgentManagement,
     ModelProviderManagement,
+    UserProfile,
+    OrganizationInfo,
+    UserManagement,
 }
 
 fn main() {
@@ -41,6 +44,9 @@ fn App() -> Element {
                     Page::Reception => rsx! { Reception {} },
                     Page::AgentManagement => rsx! { AgentManagement {} },
                     Page::ModelProviderManagement => rsx! { ModelProviderManagement {} },
+                    Page::UserProfile => rsx! { UserProfile {} },
+                    Page::OrganizationInfo => rsx! { OrganizationInfo {} },
+                    Page::UserManagement => rsx! { UserManagement {} },
                 }
             }
         }

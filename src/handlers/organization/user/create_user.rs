@@ -2,7 +2,7 @@
 
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
-use crate::pkg::RequestContext;
+use crate::pkg::constants::request_context::RequestContext;
 use axum::{
     extract::{Extension, Json},
     http::StatusCode,
@@ -14,11 +14,10 @@ use crate::pkg::constants::UserRole;
 use crate::service::domain::organization;
 use crate::models::user::UserPo;
 
-/// 创建新用户请求
+/// 创建新用户请求（在当前组织下创建）
+/// organization_id 从 RequestContext 获取，不需要前端传递
 #[derive(Debug, Deserialize)]
 pub struct CreateUserRequest {
-    /// 组织 ID
-    pub organization_id: String,
     /// 用户名
     pub username: String,
     /// 密码哈希
@@ -27,8 +26,8 @@ pub struct CreateUserRequest {
     pub display_name: Option<String>,
     /// 邮箱
     pub email: Option<String>,
-    /// 用户角色
-    pub role: String,
+    /// 用户角色编号（1=Member, 2=Admin, 3=SuperAdmin）
+    pub role: i32,
 }
 
 /// 创建新用户响应
@@ -39,26 +38,38 @@ pub struct CreateUserResponse {
 }
 
 /// 创建新用户
+/// 在当前登录用户所在组织下创建新用户，organization_id 从 RequestContext 获取
 pub async fn create_user(
     Extension(ctx): Extension<RequestContext>,
-    req: Json<CreateUserRequest>,
+    Json(req): Json<CreateUserRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    // 从 RequestContext 获取当前组织 ID
+    let organization_id = ctx.organization_id.clone().ok_or_else(|| {
+        AppError::BadRequest("未找到组织信息".to_string())
+    })?;
+
     let domain = organization::domain();
 
     // 生成随机用户 ID
     let user_id = generate_id();
 
+    // 转换角色
+    let role = match req.role {
+        2 => UserRole::Admin,
+        3 => UserRole::SuperAdmin,
+        _ => UserRole::Member,
+    };
+
     // 创建 UserPo
-    let role = UserRole::from_str(&req.role).unwrap_or(UserRole::Member);
     let user = UserPo::new(
         user_id.clone(),
-        req.organization_id.clone(),
+        organization_id.clone(),
         req.username.clone(),
         req.display_name.clone().unwrap_or_default(),
         req.email.clone().unwrap_or_default(),
         req.password_hash.clone(),
         role,
-        ctx.uid().clone(),
+        ctx.user_id.clone().unwrap_or_default(),
     );
 
     domain.user_manage().create_user(ctx, user)?;

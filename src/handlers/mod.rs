@@ -9,6 +9,7 @@ pub mod health;
 pub mod hr;
 pub mod finance;
 pub mod organization;
+pub mod user;
 
 
 /// 从 HeaderMap 提取 RequestContext

@@ -49,20 +49,34 @@ fn protected_routes() -> Router {
         .nest("/finance", finance_routes())
         // Organization (组织管理) routes (protected)
         .nest("/organization", organization_protected_routes())
+        // Current user routes - for user profile
+        .nest("/user", user_routes())
         // Add JWT authentication middleware to all protected routes
         .layer(axum::middleware::from_fn(jwt_auth_middleware))
+}
+
+fn user_routes() -> Router {
+    use crate::handlers::user::profile;
+    Router::new()
+        .route("/me", get(profile::get_current_user::get_current_user))
+        .route("/me", put(profile::update_current_user::update_current_user))
 }
 
 fn organization_protected_routes() -> Router {
     // Each handler is in its own file in the subdirectory
     use crate::handlers::organization::organization;
+    use crate::handlers::organization::organization_me;
     use crate::handlers::organization::user;
 
     Router::new()
+        // Get/update current user's organization info
+        .route("/me", get(organization_me::get_current_organization::get_current_organization))
+        .route("/me", put(organization_me::update_current_organization::update_current_organization))
         .route("/update", put(organization::update_organization::update_organization))
         .route("/{org_id}", delete(organization::delete_organization::delete_organization))
         .nest("/user", Router::new()
             .route("/", post(user::create_user::create_user))
+            .route("/me/list", get(user::list_users_by_current_organization::list_users_by_current_organization))
             .route("/{username}", get(user::get_user_by_username::get_user_by_username))
             .route("/{org_id}/list", get(user::list_users_by_organization::list_users_by_organization))
             .route("/update", put(user::update_user::update_user))

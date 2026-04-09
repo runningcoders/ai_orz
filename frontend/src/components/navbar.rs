@@ -294,7 +294,7 @@ pub fn Navbar(on_navigate: EventHandler<Page>) -> Element {
                                     }}
                                 ",
                                 onclick: move |_| {
-                                    // TODO: 打开个人信息弹窗/页面
+                                    on_navigate.call(Page::UserProfile);
                                     user_menu_open.set(false);
                                 },
                                 "👤 个人信息"
@@ -314,7 +314,7 @@ pub fn Navbar(on_navigate: EventHandler<Page>) -> Element {
                                         }}
                                     ",
                                     onclick: move |_| {
-                                        // TODO: 打开组织信息页面
+                                        on_navigate.call(Page::OrganizationInfo);
                                         user_menu_open.set(false);
                                     },
                                     "🏢 组织信息"
