@@ -6,6 +6,7 @@ use axum::http::HeaderMap;
 use serde::Serialize;
 
 pub mod health;
+pub mod public;
 pub mod hr;
 pub mod finance;
 pub mod organization;
