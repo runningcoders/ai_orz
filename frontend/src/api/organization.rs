@@ -31,6 +31,22 @@ pub struct OrganizationInfo {
     pub status: i32,
 }
 
+/// 登录请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoginRequest {
+    pub organization_id: String,
+    pub username: String,
+    pub password_hash: String,
+}
+
+/// 登录响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoginResponse {
+    pub user_id: String,
+    pub organization_id: String,
+    pub username: String,
+}
+
 /// API 统一响应格式
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ApiResponse<T> {
@@ -123,6 +139,34 @@ pub async fn initialize_system(
     }
 
     let api_resp: ApiResponse<InitializeSystemResponse> = match response.json().await {
+        Ok(json) => json,
+        Err(e) => return Err(e.to_string()),
+    };
+
+    if !api_resp.is_success() {
+        return Err(api_resp.message);
+    }
+
+    api_resp.data.ok_or("响应为空".to_string())
+}
+
+/// 用户登录
+pub async fn login(
+    req: LoginRequest,
+) -> Result<LoginResponse, String> {
+    let url = format!("{}/api/v1/organization/auth/login", backend_url());
+    let client = Client::new();
+
+    let response = match client.post(&url).json(&req).send().await {
+        Ok(res) => res,
+        Err(e) => return Err(e.to_string()),
+    };
+
+    if !response.status().is_success() {
+        return Err(format!("HTTP 错误: {}", response.status()));
+    }
+
+    let api_resp: ApiResponse<LoginResponse> = match response.json().await {
         Ok(json) => json,
         Err(e) => return Err(e.to_string()),
     };

@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use crate::api::organization::{
-    check_initialized, list_organizations, initialize_system,
-    InitializeSystemRequest, OrganizationInfo,
+    check_initialized, list_organizations, initialize_system, login,
+    InitializeSystemRequest, OrganizationInfo, LoginRequest,
 };
 
 #[component]
@@ -12,14 +12,20 @@ pub fn Reception() -> Element {
     let mut organizations = use_signal(Vec::<OrganizationInfo>::new);
     let mut error = use_signal(|| String::new());
 
+    // 登录表单状态
+    let mut selected_org_id = use_signal(|| String::new());
+    let mut login_username = use_signal(|| String::new());
+    let mut login_password = use_signal(|| String::new());
+    let mut login_submitting = use_signal(|| false);
+
     // 初始化表单状态
     let mut org_name = use_signal(|| String::new());
     let mut org_description = use_signal(|| String::new());
-    let mut username = use_signal(|| String::new());
-    let mut password = use_signal(|| String::new());
+    let mut init_username = use_signal(|| String::new());
+    let mut init_password = use_signal(|| String::new());
     let mut display_name = use_signal(|| String::new());
     let mut email = use_signal(|| String::new());
-    let mut submitting = use_signal(|| false);
+    let mut init_submitting = use_signal(|| false);
 
     // 页面加载时检查初始化状态
     use_effect(move || {
@@ -50,21 +56,21 @@ pub fn Reception() -> Element {
     });
 
     // 处理初始化提交
-    let on_submit = move |_| {
+    let on_submit_init = move |_| {
         spawn(async move {
-            if org_name().is_empty() || username().is_empty() || password().is_empty() {
+            if org_name().is_empty() || init_username().is_empty() || init_password().is_empty() {
                 error.set("组织名称、用户名、密码不能为空".to_string());
                 return;
             }
 
-            submitting.set(true);
+            init_submitting.set(true);
             error.set(String::new());
 
             let req = InitializeSystemRequest {
                 organization_name: org_name(),
                 description: if org_description().is_empty() { None } else { Some(org_description()) },
-                username: username(),
-                password_hash: password(), // 前端应该已经是 bcrypt hash 了
+                username: init_username(),
+                password_hash: init_password(), // 前端应该已经是 bcrypt hash 了
                 display_name: if display_name().is_empty() { None } else { Some(display_name()) },
                 email: if email().is_empty() { None } else { Some(email()) },
             };
@@ -76,7 +82,42 @@ pub fn Reception() -> Element {
                 }
                 Err(e) => {
                     error.set(e);
-                    submitting.set(false);
+                    init_submitting.set(false);
+                }
+            }
+        });
+    };
+
+    // 处理登录提交
+    let on_submit_login = move |_| {
+        spawn(async move {
+            if selected_org_id().is_empty() {
+                error.set("请先选择一个组织".to_string());
+                return;
+            }
+            if login_username().is_empty() || login_password().is_empty() {
+                error.set("用户名和密码不能为空".to_string());
+                return;
+            }
+
+            login_submitting.set(true);
+            error.set(String::new());
+
+            let req = LoginRequest {
+                organization_id: selected_org_id(),
+                username: login_username(),
+                password_hash: login_password(),
+            };
+
+            match login(req).await {
+                Ok(_resp) => {
+                    // 登录成功，跳转到系统主页
+                    web_sys::window().unwrap().location().set_href("/").unwrap();
+                    web_sys::window().unwrap().location().reload().unwrap();
+                }
+                Err(e) => {
+                    error.set(e);
+                    login_submitting.set(false);
                 }
             }
         });
@@ -142,10 +183,10 @@ pub fn Reception() -> Element {
                         color: #c33;
                         text-align: left;
                     ",
-                    "错误: {error()}"
+                    "错误: {error}"
                 }
             } else if initialized() {
-                // 已初始化：显示组织信息和登录按钮
+                // 已初始化：显示组织选择 + 登录表单
                 div {
                     style: "text-align: left;",
                     h3 {
@@ -154,79 +195,164 @@ pub fn Reception() -> Element {
                             margin-bottom: 1.5rem;
                             font-size: 1.3rem;
                         ",
-                        "📢 系统已就绪"
+                        "🔐 请选择组织并登录"
                     }
 
+                    // 组织选择列表
                     div {
                         style: "
                             background: #f8f9fa;
                             border-radius: 8px;
-                            padding: 1.5rem;
-                            margin-bottom: 2rem;
+                            padding: 1rem;
+                            margin-bottom: 1.5rem;
                         ",
                         for org in organizations() {
-                            div {
-                                style: "margin-bottom: 1rem;",
-                                div {
-                                    style: "
-                                        font-size: 1.2rem;
-                                        font-weight: 600;
-                                        color: #2c3e50;
-                                        margin-bottom: 0.5rem;
-                                    ",
-                                    "{org.name}"
-                                }
-                                if !org.description.is_empty() {
-                                    p {
+                            {
+                                let is_selected = selected_org_id() == org.id;
+                                let bg = if is_selected { "#e3f2fd" } else { "white" };
+                                let border = if is_selected { "#3498db" } else { "transparent" };
+                                let check_mark = if is_selected { "✓ " } else { "" };
+                                rsx! {
+                                    div {
                                         style: "
-                                            color: #666;
-                                            font-size: 0.95rem;
+                                            padding: 0.8rem;
+                                            border-radius: 6px;
                                             margin-bottom: 0.5rem;
-                                        ",
-                                        "{org.description}"
-                                    }
-                                }
-                                if !org.base_url.is_empty() {
-                                    a {
-                                        href: "{org.base_url}",
-                                        target: "_blank",
-                                        style: "
-                                            color: #3498db;
-                                            font-size: 0.9rem;
-                                            text-decoration: none;
+                                            cursor: pointer;
+                                            border: 2px solid {border};
+                                            background: {bg};
+                                            transition: all 0.2s;
                                             &:hover {{
-                                                text-decoration: underline;
+                                                border-color: #90caf9;
                                             }}
                                         ",
-                                        "{org.base_url}"
+                                        onclick: move |_| selected_org_id.set(org.id.clone()),
+                                        div {
+                                            style: "
+                                                font-size: 1.1rem;
+                                                font-weight: 600;
+                                                color: #2c3e50;
+                                                margin-bottom: 0.25rem;
+                                            ",
+                                            "{check_mark}{org.name}"
+                                        }
+                                        if !org.description.is_empty() {
+                                            p {
+                                                style: "
+                                                    color: #666;
+                                                    font-size: 0.9rem;
+                                                    margin: 0;
+                                                ",
+                                                "{org.description}"
+                                            }
+                                        }
                                     }
                                 }
-                            }
-                            if organizations().len() > 1 {
-                                hr { style: "margin: 1rem 0; border: none; border-top: 1px solid #ddd;" }
                             }
                         }
                     }
 
-                    div {
-                        style: "
-                            text-align: center;
-                        ",
-                        button {
-                            style: "
-                                background: #3498db;
-                                color: white;
-                                border: none;
-                                padding: 0.9rem 2rem;
-                                border-radius: 6px;
-                                cursor: pointer;
-                                font-size: 1.1rem;
-                                transition: background-color 0.2s;
-                                &:hover {{
-                                    background-color: #2980b9;
-                                }}
-                            ",
-                            "进入系统"
+                    // 登录表单
+                    form {
+                        onsubmit: on_submit_login,
+
+                        // 用户名
+                        div {
+                            style: "margin-bottom: 1.5rem;",
+                            label {
+                                style: "
+                                    display: block;
+                                    color: #2c3e50;
+                                    font-weight: 500;
+                                    margin-bottom: 0.5rem;
+                                ",
+                                "用户名 *"
+                            }
+                            input {
+                                r#type: "text",
+                                required: true,
+                                value: "{login_username}",
+                                oninput: move |e| login_username.set(e.value()),
+                                style: "
+                                    width: 100%;
+                                    padding: 0.75rem;
+                                    border: 1px solid #ddd;
+                                    border-radius: 6px;
+                                    font-size: 1rem;
+                                    box-sizing: border-box;
+                                    &:focus {{
+                                        outline: none;
+                                        border-color: #3498db;
+                                        box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+                                    }}
+                                ",
+                                placeholder: "请输入用户名",
+                            }
+                        }
+
+                        // 密码
+                        div {
+                            style: "margin-bottom: 2rem;",
+                            label {
+                                style: "
+                                    display: block;
+                                    color: #2c3e50;
+                                    font-weight: 500;
+                                    margin-bottom: 0.5rem;
+                                ",
+                                "密码 *（bcrypt 哈希后）"
+                            }
+                            input {
+                                r#type: "password",
+                                required: true,
+                                value: "{login_password}",
+                                oninput: move |e| login_password.set(e.value()),
+                                style: "
+                                    width: 100%;
+                                    padding: 0.75rem;
+                                    border: 1px solid #ddd;
+                                    border-radius: 6px;
+                                    font-size: 1rem;
+                                    box-sizing: border-box;
+                                    &:focus {{
+                                        outline: none;
+                                        border-color: #3498db;
+                                        box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+                                    }}
+                                ",
+                                placeholder: "请输入密码哈希",
+                            }
+                        }
+
+                        // 登录按钮
+                        div {
+                            style: "text-align: center;",
+                            button {
+                                r#type: "submit",
+                                disabled: "{login_submitting}",
+                                style: "
+                                    background: #3498db;
+                                    color: white;
+                                    border: none;
+                                    padding: 1rem 2.5rem;
+                                    border-radius: 6px;
+                                    cursor: pointer;
+                                    font-size: 1.1rem;
+                                    transition: background-color 0.2s;
+                                    &:hover:not(:disabled) {{
+                                        background-color: #2980b9;
+                                    }}
+                                    &:disabled {{
+                                        background: #ccc;
+                                        cursor: not-allowed;
+                                    }}
+                                ",
+                                if login_submitting() {
+                                    "登录中..."
+                                } else {
+                                    "登录"
+                                }
+                            }
                         }
                     }
                 }
@@ -252,7 +378,7 @@ pub fn Reception() -> Element {
                     }
 
                     form {
-                        onsubmit: on_submit,
+                        onsubmit: on_submit_init,
 
                         // 组织名称
                         div {
@@ -269,7 +395,7 @@ pub fn Reception() -> Element {
                             input {
                                 r#type: "text",
                                 required: true,
-                                value: "{org_name()}",
+                                value: "{org_name}",
                                 oninput: move |e| org_name.set(e.value()),
                                 style: "
                                     width: 100%;
@@ -301,7 +427,7 @@ pub fn Reception() -> Element {
                                 "组织描述"
                             }
                             textarea {
-                                value: "{org_description()}",
+                                value: "{org_description}",
                                 oninput: move |e| org_description.set(e.value()),
                                 style: "
                                     width: 100%;
@@ -336,8 +462,8 @@ pub fn Reception() -> Element {
                             input {
                                 r#type: "text",
                                 required: true,
-                                value: "{username()}",
-                                oninput: move |e| username.set(e.value()),
+                                value: "{init_username}",
+                                oninput: move |e| init_username.set(e.value()),
                                 style: "
                                     width: 100%;
                                     padding: 0.75rem;
@@ -370,8 +496,8 @@ pub fn Reception() -> Element {
                             input {
                                 r#type: "password",
                                 required: true,
-                                value: "{password()}",
-                                oninput: move |e| password.set(e.value()),
+                                value: "{init_password}",
+                                oninput: move |e| init_password.set(e.value()),
                                 style: "
                                     width: 100%;
                                     padding: 0.75rem;
@@ -403,7 +529,7 @@ pub fn Reception() -> Element {
                             }
                             input {
                                 r#type: "text",
-                                value: "{display_name()}",
+                                value: "{display_name}",
                                 oninput: move |e| display_name.set(e.value()),
                                 style: "
                                     width: 100%;
@@ -436,7 +562,7 @@ pub fn Reception() -> Element {
                             }
                             input {
                                 r#type: "email",
-                                value: "{email()}",
+                                value: "{email}",
                                 oninput: move |e| email.set(e.value()),
                                 style: "
                                     width: 100%;
@@ -460,7 +586,7 @@ pub fn Reception() -> Element {
                             style: "text-align: center;",
                             button {
                                 r#type: "submit",
-                                disabled: submitting(),
+                                disabled: "{init_submitting}",
                                 style: "
                                     background: #27ae60;
                                     color: white;
@@ -478,7 +604,7 @@ pub fn Reception() -> Element {
                                         cursor: not-allowed;
                                     }}
                                 ",
-                                if submitting() {
+                                if init_submitting() {
                                     "初始化中..."
                                 } else {
                                     "完成初始化"
