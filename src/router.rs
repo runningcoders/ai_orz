@@ -25,11 +25,8 @@ fn public_routes() -> Router {
     use crate::handlers::organization::auth;
     use crate::handlers::organization::initialize_system;
     use crate::handlers::organization::organization;
-    use crate::handlers::public::config;
 
     Router::new()
-        // Get public configuration for frontend (API base URL etc.)
-        .route("/config/public", get(config::get_public_config))
         // System initialization (only when no organizations exist)
         .route("/organization/initialize/check", get(initialize_system::check_initialized))
         .route("/organization/initialize", post(initialize_system::initialize_system))

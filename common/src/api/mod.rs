@@ -18,27 +18,6 @@ impl<T> ApiResponse<T> {
     pub fn is_success(&self) -> bool {
         self.code == 0
     }
-
-    /// Create a successful API response with data
-    pub fn success(data: T) -> Self
-    where
-        T: Clone + Serialize + Deserialize<'static>,
-    {
-        Self {
-            code: 0,
-            message: "success".to_string(),
-            data: Some(data),
-        }
-    }
-
-    /// Create an error API response with message
-    pub fn error(code: i32, message: String) -> Self {
-        Self {
-            code,
-            message,
-            data: None,
-        }
-    }
 }
 
 /// Empty response for operations that don't return data
@@ -47,7 +26,6 @@ pub struct EmptyResponse {}
 
 pub mod agent;
 pub mod auth;
-pub mod config;
 pub mod organization;
 pub mod model_provider;
 pub mod user;
@@ -55,7 +33,6 @@ pub mod user;
 // Re-exports for convenient import
 pub use agent::*;
 pub use auth::*;
-pub use config::*;
 pub use organization::*;
 pub use model_provider::*;
 pub use user::*;

@@ -1,8 +1,13 @@
-use ai_orz::config::{AppConfig, load_config};
-use ai_orz::pkg;
-use ai_orz::router;
-use ai_orz::service;
-use ai_orz::APP_CONFIG;
+mod config;
+mod error;
+mod handlers;
+mod middleware;
+mod models;
+mod pkg;
+mod router;
+mod service;
+
+use crate::config::{AppConfig, load_config};
 
 fn get_env_or_default(env_key: &str, default: &str) -> String {
     std::env::var(env_key).unwrap_or(default.to_string())
@@ -12,9 +17,6 @@ fn get_env_or_default(env_key: &str, default: &str) -> String {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 加载配置（默认配置嵌入在二进制中，不存在就自动生成）
     let config: AppConfig = load_config()?;
-    // Store config in global static for access from handlers
-    APP_CONFIG.set(config.clone()).expect("APP_CONFIG already set");
-    tracing::info!("Configuration loaded and stored globally");
 
     // 初始化日志（使用配置中的路径）
     pkg::logging::init(&config);
