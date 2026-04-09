@@ -51,7 +51,9 @@ pub async fn update_user(
         user.role = role_enum;
     }
     if let Some(status) = req.status {
-        user.status = status;
+        // 从 i32 转换为 UserStatus 枚举
+        use common::constants::UserStatus;
+        user.status = UserStatus::from_i32(status);
     }
     if let Some(password_hash) = req.password_hash {
         user.password_hash = password_hash;
@@ -68,6 +70,6 @@ pub async fn update_user(
         display_name: if user.display_name.is_empty() { None } else { Some(user.display_name.clone()) },
         email: if user.email.is_empty() { None } else { Some(user.email.clone()) },
         role: user.user_role().map(|r| r as i32).unwrap_or(0),
-        status: user.status,
+        status: user.status.to_i32(),
     })).into_response()))
 }

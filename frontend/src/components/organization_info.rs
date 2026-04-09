@@ -1,4 +1,4 @@
-use common::api::{OrganizationInfoResponse, UpdateOrganizationRequest};
+use common::api::{OrganizationInfoResponse, UpdateCurrentOrganizationRequest};
 use dioxus::prelude::*;
 use crate::api::organization::{get_organization_info, update_organization_info};
 
@@ -42,7 +42,7 @@ pub fn OrganizationInfo() -> Element {
                 error.set(String::new());
                 success.set(String::new());
 
-                let req = UpdateOrganizationRequest {
+                let req = UpdateCurrentOrganizationRequest {
                     name: if editing_name() != info.name {
                         Some(editing_name())
                     } else {

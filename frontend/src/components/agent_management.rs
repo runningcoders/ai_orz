@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
+use common::api::{AgentListItem, CreateAgentRequest};
 use crate::api::agent::{
     list_agents, create_agent, delete_agent,
-    AgentListItem, CreateAgentRequest,
 };
 
 #[derive(Clone, Debug)]
@@ -72,6 +72,7 @@ pub fn AgentManagement() -> Element {
             let req = CreateAgentRequest {
                 name,
                 role: if role.is_empty() { None } else { Some(role) },
+                description: None,
                 capabilities: None,
                 soul: None,
                 model_provider_id,

@@ -97,8 +97,8 @@ impl super::UserManage for super::OrganizationDomainImpl {
             return Err(AppError::BadRequest("用户名或密码错误".to_string()));
         }
 
-        // 用户状态检查：status == 1 表示启用
-        if user.status != 1 {
+        // 用户状态检查：Active 表示启用
+        if user.status != common::constants::UserStatus::Active {
             return Err(AppError::BadRequest("用户已被禁用".to_string()));
         }
 

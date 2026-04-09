@@ -27,7 +27,7 @@ pub async fn get_organization(
             name: org.name.clone(),
             description: if org.description.is_empty() { None } else { Some(org.description.clone()) },
             base_url: if org.base_url.is_empty() { None } else { Some(org.base_url.clone()) },
-            status: org.status,
+            status: org.status.to_i32(),
             created_at: org.created_at,
         }))).into_response()),
         None => Ok((StatusCode::NOT_FOUND, Json(ApiResponse::<OrganizationInfoResponse>::error(404, "组织不存在".to_string(), ))).into_response()),

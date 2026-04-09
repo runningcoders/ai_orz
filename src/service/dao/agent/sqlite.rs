@@ -37,11 +37,12 @@ impl AgentDaoTrait for AgentDaoImpl {
         let now = current_timestamp();
 
         conn.execute(
-            "INSERT INTO agents (id, name, description, capabilities, soul, model_provider_id, status, created_by, modified_by, created_at, updated_at) 
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            "INSERT INTO agents (id, name, role, description, capabilities, soul, model_provider_id, status, created_by, modified_by, created_at, updated_at) 
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             rusqlite::params![
                 agent.id,
                 agent.name,
+                agent.role,
                 agent.description,
                 agent.capabilities,
                 agent.soul,
@@ -62,7 +63,7 @@ impl AgentDaoTrait for AgentDaoImpl {
 
         let mut stmt = conn
             .prepare(
-                "SELECT id, name, description, capabilities, soul, model_provider_id, status, created_by, modified_by, created_at, updated_at 
+                "SELECT id, name, role, description, capabilities, soul, model_provider_id, status, created_by, modified_by, created_at, updated_at 
                  FROM agents WHERE id = ?1 AND status != 0",
             )
             .map_err(|e| AppError::Internal(e.to_string()))?;
@@ -71,15 +72,16 @@ impl AgentDaoTrait for AgentDaoImpl {
             Ok(AgentPo {
                 id: row.get(0)?,
                 name: row.get(1)?,
-                description: row.get(2)?,
-                capabilities: row.get(3)?,
-                soul: row.get(4)?,
-                model_provider_id: row.get(5)?,
-                status: common::constants::AgentPoStatus::from_i32(row.get(6)?),
-                created_by: row.get(7)?,
-                modified_by: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
+                role: row.get(2)?,
+                description: row.get(3)?,
+                capabilities: row.get(4)?,
+                soul: row.get(5)?,
+                model_provider_id: row.get(6)?,
+                status: common::constants::AgentPoStatus::from_i32(row.get(7)?),
+                created_by: row.get(8)?,
+                modified_by: row.get(9)?,
+                created_at: row.get(10)?,
+                updated_at: row.get(11)?,
             })
         }) {
             Ok(a) => Ok(Some(a)),
@@ -93,7 +95,7 @@ impl AgentDaoTrait for AgentDaoImpl {
 
         let mut stmt = conn
             .prepare(
-                "SELECT id, name, description, capabilities, soul, model_provider_id, status, created_by, modified_by, created_at, updated_at 
+                "SELECT id, name, role, description, capabilities, soul, model_provider_id, status, created_by, modified_by, created_at, updated_at 
                  FROM agents WHERE status != 0 ORDER BY id DESC",
             )
             .map_err(|e| AppError::Internal(e.to_string()))?;
@@ -103,15 +105,16 @@ impl AgentDaoTrait for AgentDaoImpl {
                 Ok(AgentPo {
                     id: row.get(0)?,
                     name: row.get(1)?,
-                    description: row.get(2)?,
-                    capabilities: row.get(3)?,
-                    soul: row.get(4)?,
-                    model_provider_id: row.get(5)?,
-                    status: common::constants::AgentPoStatus::from_i32(row.get(6)?),
-                    created_by: row.get(7)?,
-                    modified_by: row.get(8)?,
-                    created_at: row.get(9)?,
-                    updated_at: row.get(10)?,
+                    role: row.get(2)?,
+                    description: row.get(3)?,
+                    capabilities: row.get(4)?,
+                    soul: row.get(5)?,
+                    model_provider_id: row.get(6)?,
+                    status: common::constants::AgentPoStatus::from_i32(row.get(7)?),
+                    created_by: row.get(8)?,
+                    modified_by: row.get(9)?,
+                    created_at: row.get(10)?,
+                    updated_at: row.get(11)?,
                 })
             })
             .map_err(|e| AppError::Internal(e.to_string()))?
@@ -125,9 +128,10 @@ impl AgentDaoTrait for AgentDaoImpl {
         let conn = storage::get().conn();
 
         conn.execute(
-            "UPDATE agents SET name = ?1, description = ?2, capabilities = ?3, soul = ?4, model_provider_id = ?5, modified_by = ?6, updated_at = ?7 WHERE id = ?8",
+            "UPDATE agents SET name = ?1, role = ?2, description = ?3, capabilities = ?4, soul = ?5, model_provider_id = ?6, modified_by = ?7, updated_at = ?8 WHERE id = ?9",
             rusqlite::params![
                 agent.name,
+                agent.role,
                 agent.description,
                 agent.capabilities,
                 agent.soul,

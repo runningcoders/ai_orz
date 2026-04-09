@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 pub struct CreateAgentRequest {
     /// Agent 名称
     pub name: String,
+    /// Agent 角色描述
+    pub role: Option<String>,
     /// Agent 描述
     pub description: Option<String>,
     /// 能力列表 JSON
@@ -37,6 +39,8 @@ pub struct AgentListItem {
     pub id: String,
     /// Agent 名称
     pub name: String,
+    /// Agent 角色描述
+    pub role: Option<String>,
     /// Agent 描述
     pub description: Option<String>,
     /// 关联的模型提供商 ID

@@ -3,7 +3,7 @@
 //! 对应 SQL 建表语句：[`crate::pkg::storage::sql::SQLITE_CREATE_TABLE_USERS`]
 
 use common::enums::UserRole;
-use common::constants::utils;
+use common::constants::{utils, UserStatus};
 use serde::{Deserialize, Serialize};
 
 /// UserPo 持久化对象
@@ -23,8 +23,8 @@ pub struct UserPo {
     pub password_hash: String,
     /// 用户角色
     pub role: UserRole,
-    /// 状态：0 = 禁用，1 = 启用
-    pub status: i32,
+    /// 用户状态枚举
+    pub status: UserStatus,
     /// 创建人
     pub created_by: String,
     /// 修改人
@@ -56,7 +56,7 @@ impl UserPo {
             email,
             password_hash,
             role,
-            status: 1,
+            status: UserStatus::default(),
             created_by: created_by.clone(),
             modified_by: created_by,
             created_at: now,

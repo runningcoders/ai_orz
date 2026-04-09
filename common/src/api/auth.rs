@@ -24,6 +24,10 @@ pub struct LoginResponse {
     pub organization_id: String,
 }
 
+/// 登出请求
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct LogoutRequest {}
+
 /// 登出响应
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogoutResponse {

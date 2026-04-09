@@ -41,7 +41,7 @@ pub async fn get_current_user(
         organization_id: user.organization_id.clone(),
         role: role.map(|r| r as i32).unwrap_or(0),
         role_name,
-        status: user.status,
+        status: user.status.to_i32(),
     };
 
     Ok((

@@ -103,3 +103,16 @@ pub struct DeleteOrganizationResponse {
     /// 是否删除成功
     pub success: bool,
 }
+
+/// 更新组织信息请求（管理员更新任意组织）
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct UpdateOrganizationRequest {
+    /// 新组织名称（None 表示不修改）
+    pub name: Option<String>,
+    /// 新组织描述（None 表示不修改）
+    pub description: Option<String>,
+    /// 新外部访问 Base URL（None 表示不修改）
+    pub base_url: Option<String>,
+    /// 新组织状态（None 表示不修改）
+    pub status: Option<i32>,
+}

@@ -22,6 +22,7 @@ pub async fn list_agents(
         .map(|agent| AgentListItem {
             id: agent.id().to_string(),
             name: agent.name().to_string(),
+            role: if agent.po.role.is_empty() { None } else { Some(agent.po.role.clone()) },
             description: if agent.po.description.is_empty() { None } else { Some(agent.po.description.clone()) },
             model_provider_id: agent.po.model_provider_id.clone(),
             created_at: agent.po.created_at,

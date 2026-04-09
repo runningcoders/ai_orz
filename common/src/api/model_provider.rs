@@ -149,3 +149,14 @@ pub struct DeleteModelProviderResponse {
     /// 是否删除成功
     pub success: bool,
 }
+
+/// 测试 Model Provider 连通性响应（别名兼容前端命名）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TestModelProviderConnectionResponse {
+    /// 测试是否成功
+    pub success: bool,
+    /// 测试结果信息
+    pub message: String,
+    /// 模型响应结果（成功时）
+    pub result: Option<String>,
+}

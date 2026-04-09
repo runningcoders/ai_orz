@@ -32,7 +32,7 @@ pub async fn list_users_by_current_organization(
         email: if user.email.is_empty() { None } else { Some(user.email.clone()) },
         role: user.user_role().map(|r| r as i32).unwrap_or(0),
         role_name: user.user_role().map(|r| r.display_name().to_string()).unwrap_or_default(),
-        status: user.status,
+        status: user.status.to_i32(),
         created_at: user.created_at,
     }).collect();
 

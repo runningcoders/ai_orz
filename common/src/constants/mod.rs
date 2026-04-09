@@ -8,6 +8,7 @@
 //! - utils: 公共工具函数
 //!
 //! Note: UserRole is now in `common::enums::UserRole` shared with frontend
+//! Note: ApiResponse is now in `common::api::ApiResponse` shared with backend/frontend
 
 pub mod http_header;
 pub mod provider_type;

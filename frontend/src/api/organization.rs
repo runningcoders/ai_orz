@@ -16,12 +16,12 @@ use common::api::{
     OrganizationInfoResponse,
     OrganizationListItem,
     UpdateCurrentUserRequest,
-    UpdateOrganizationRequest,
+    UpdateCurrentOrganizationRequest,
     UserInfoResponse,
     UserListItem,
     EmptyResponse,
+    ApiResponse,
 };
-use common::constants::ApiResponse;
 use reqwest::Client;
 
 /// Get backend API base URL
@@ -78,7 +78,7 @@ pub async fn list_organizations() -> Result<Vec<OrganizationListItem>, String> {
         return Err(api_resp.message);
     }
 
-    Ok(api_resp.data.unwrap_or_else(|| ListOrganizationsResponse { data: Vec::new() }).data)
+    Ok(api_resp.data.unwrap_or_else(|| ListOrganizationsResponse { data: Vec::new(), total: 0 }).data)
 }
 
 /// Initialize system (create first organization and super admin)
@@ -245,7 +245,7 @@ pub async fn get_organization_info() -> Result<OrganizationInfoResponse, String>
 
 /// Update current user's organization information
 pub async fn update_organization_info(
-    req: UpdateOrganizationRequest,
+    req: UpdateCurrentOrganizationRequest,
 ) -> Result<(), String> {
     let url = format!("{}/api/v1/organization/me", backend_url());
     let client = Client::new();

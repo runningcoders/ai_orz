@@ -85,6 +85,7 @@ impl Agent {
 pub struct AgentPo {
     pub id: String,
     pub name: String,
+    pub role: String,         // Agent 角色描述
     pub description: String,
     pub capabilities: String, // JSON string
     pub soul: String,          // 长文本：角色/性格/灵魂设定
@@ -99,6 +100,7 @@ pub struct AgentPo {
 impl AgentPo {
     pub fn new(
         name: String,
+        role: Option<String>,
         description: String,
         capabilities: Vec<String>,
         soul: String,
@@ -108,6 +110,7 @@ impl AgentPo {
         Self {
             id: generate_id(),
             name,
+            role: role.unwrap_or_default(),
             description,
             capabilities: serde_json::to_string(&capabilities).unwrap_or_else(|_| "[]".to_string()),
             soul,

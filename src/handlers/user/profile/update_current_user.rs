@@ -53,9 +53,6 @@ pub async fn update_current_user(
 
     Ok((
         StatusCode::OK,
-        Json(ApiResponse::success(EmptyResponse {
-            code: 0,
-            message: "更新成功".to_string(),
-        })),
+        Json(ApiResponse::success(EmptyResponse {})),
     ))
 }
