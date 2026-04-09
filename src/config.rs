@@ -14,6 +14,10 @@ pub struct AppConfig {
     /// 所有数据文件（SQLite数据库、日志、记忆文件等）都基于此路径
     pub base_data_path: String,
 
+    /// 数据库配置
+    #[serde(default)]
+    pub database: DatabaseConfig,
+
     /// 服务器配置
     #[serde(default)]
     pub server: ServerConfig,
@@ -35,6 +39,14 @@ pub struct ServerConfig {
     pub listen_addr: String,
 }
 
+/// 数据库配置
+#[derive(Debug, Clone, Deserialize)]
+pub struct DatabaseConfig {
+    /// SQLite 数据库文件名（相对于 base_data_path）
+    #[serde(default = "default_db_file_name")]
+    pub db_file_name: String,
+}
+
 /// 前端配置
 #[derive(Debug, Clone, Deserialize)]
 pub struct FrontendConfig {
@@ -54,8 +66,20 @@ pub struct LoggingConfig {
     pub log_subdir: String,
 }
 
+fn default_db_file_name() -> String {
+    "ai_orz.db".to_string()
+}
+
 fn default_dist_dir() -> String {
     "dist".to_string()
+}
+
+impl Default for DatabaseConfig {
+    fn default() -> Self {
+        Self {
+            db_file_name: default_db_file_name(),
+        }
+    }
 }
 
 impl Default for ServerConfig {
@@ -103,7 +127,7 @@ impl AppConfig {
 
     /// 获取数据库文件路径
     pub fn db_path(&self) -> PathBuf {
-        Path::new(&self.base_data_path).join("ai_orz.db")
+        Path::new(&self.base_data_path).join(&self.database.db_file_name)
     }
 }
 

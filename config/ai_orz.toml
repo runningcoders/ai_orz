@@ -14,6 +14,11 @@ base_data_path = "data"
 # 监听地址
 listen_addr = "0.0.0.0:3000"
 
+# 数据库配置
+[database]
+# SQLite 数据库文件名（相对于 base_data_path）
+db_file_name = "ai_orz.db"
+
 # 前端配置
 [frontend]
 # 静态文件目录
