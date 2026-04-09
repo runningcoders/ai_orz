@@ -21,8 +21,8 @@ pub struct UserPo {
     pub email: String,
     /// 密码哈希（bcrypt）
     pub password_hash: String,
-    /// 用户角色（存储为字符串名称）
-    pub role: String,
+    /// 用户角色
+    pub role: UserRole,
     /// 状态：0 = 禁用，1 = 启用
     pub status: i32,
     /// 创建人
@@ -55,7 +55,7 @@ impl UserPo {
             display_name,
             email,
             password_hash,
-            role: role.display_name().to_string(),
+            role,
             status: 1,
             created_by: created_by.clone(),
             modified_by: created_by,
@@ -64,13 +64,8 @@ impl UserPo {
         }
     }
 
-    /// 获取用户角色
+    /// 获取用户角色（直接返回，不再需要转换）
     pub fn user_role(&self) -> Option<UserRole> {
-        match self.role.as_str() {
-            "超级管理员" => Some(UserRole::SuperAdmin),
-            "管理员" => Some(UserRole::Admin),
-            "成员" => Some(UserRole::Member),
-            _ => None,
-        }
+        Some(self.role)
     }
 }

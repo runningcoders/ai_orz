@@ -1,5 +1,6 @@
 //! 创建 Model Provider
 
+use common::api::{CreateModelProviderRequest, CreateModelProviderResponse};
 use common::constants::{RequestContext, ProviderType};
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
@@ -9,35 +10,6 @@ use axum::{
     extract::{Extension, Json},
     http::StatusCode,
 };
-use serde::{Deserialize, Serialize};
-
-/// 创建 Model Provider 请求
-#[derive(Debug, Deserialize)]
-pub struct CreateModelProviderRequest {
-    /// Provider 名称
-    pub name: String,
-    /// Provider 类型
-    pub provider_type: ProviderType,
-    /// 模型名称
-    pub model_name: String,
-    /// API Key
-    pub api_key: String,
-    /// 自定义 Base URL
-    pub base_url: Option<String>,
-    /// 描述
-    pub description: Option<String>,
-}
-
-/// 创建 Model Provider 响应
-#[derive(Debug, Serialize)]
-pub struct CreateModelProviderResponse {
-    pub id: String,
-    pub name: String,
-    pub provider_type: ProviderType,
-    pub model_name: String,
-    pub description: Option<String>,
-    pub created_at: i64,
-}
 
 /// 创建 Model Provider
 /// POST /model-providers

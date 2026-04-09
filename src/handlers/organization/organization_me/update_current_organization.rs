@@ -1,7 +1,7 @@
 //! 更新当前登录用户所在组织信息接口
 
 use axum::{extract::{Extension, Json}, http::StatusCode};
-use common::api::{EmptyResponse, UpdateOrganizationRequest};
+use common::api::{EmptyResponse, UpdateCurrentOrganizationRequest};
 use common::constants::{RequestContext, utils};
 use crate::{
     error::AppError,
@@ -13,7 +13,7 @@ use crate::{
 /// 允许管理员更新当前用户所在组织的可修改信息
 pub async fn update_current_organization(
     Extension(ctx): Extension<RequestContext>,
-    Json(req): Json<UpdateOrganizationRequest>,
+    Json(req): Json<UpdateCurrentOrganizationRequest>,
 ) -> Result<(StatusCode, Json<ApiResponse<EmptyResponse>>), AppError> {
     // 从 RequestContext 获取当前组织 ID
     let org_id = ctx.organization_id.clone().ok_or_else(|| {

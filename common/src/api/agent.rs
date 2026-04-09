@@ -2,88 +2,105 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Agent information for list display
+/// 创建 Agent 请求
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CreateAgentRequest {
+    /// Agent 名称
+    pub name: String,
+    /// Agent 描述
+    pub description: Option<String>,
+    /// 能力列表 JSON
+    pub capabilities: Option<Vec<String>>,
+    /// Agent 灵魂提示词
+    pub soul: Option<String>,
+    /// 关联的模型提供商 ID
+    pub model_provider_id: String,
+}
+
+/// 创建 Agent 响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateAgentResponse {
+    /// Agent ID
+    pub id: String,
+    /// Agent 名称
+    pub name: String,
+    /// Agent 描述
+    pub description: Option<String>,
+    /// 创建时间戳
+    pub created_at: i64,
+}
+
+/// Agent 列表项响应
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentListItem {
     /// Agent ID
     pub id: String,
-    /// Agent name
+    /// Agent 名称
     pub name: String,
-    /// Agent description
-    pub description: String,
-    /// Model provider ID (which model this agent uses
+    /// Agent 描述
+    pub description: Option<String>,
+    /// 关联的模型提供商 ID
     pub model_provider_id: String,
-    /// Model provider name (for display)
-    pub model_provider_name: String,
-    /// Whether this agent is enabled
-    pub enabled: bool,
-    /// Creation timestamp
+    /// 创建时间戳
     pub created_at: i64,
 }
 
-/// List agents response
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ListAgentsResponse {
-    /// List of agents
-    pub data: Vec<AgentListItem>,
-    /// Total count
-    pub total: u64,
-}
-
-/// Get agent detail response
+/// 获取 Agent 响应
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetAgentResponse {
-    /// Agent detail data
-    pub data: AgentDetail,
-}
-
-/// Detailed agent information
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentDetail {
     /// Agent ID
     pub id: String,
-    /// Agent name
+    /// Agent 名称
     pub name: String,
-    /// Agent description
-    pub description: String,
-    /// System prompt (soul/personality)
-    pub system_prompt: String,
-    /// Model provider ID
+    /// Agent 描述
+    pub description: Option<String>,
+    /// 能力列表
+    pub capabilities: Option<Vec<String>>,
+    /// 灵魂提示词
+    pub soul: Option<String>,
+    /// 关联的模型提供商 ID
     pub model_provider_id: String,
-    /// Agent enabled flag
-    pub enabled: bool,
-    /// Creation timestamp
+    /// 创建时间戳
     pub created_at: i64,
-    /// Update timestamp
+    /// 更新时间戳
     pub updated_at: i64,
 }
 
-/// Create agent request
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct CreateAgentRequest {
-    /// Agent name
-    pub name: String,
-    /// Agent description
-    pub description: String,
-    /// System prompt (personality instructions)
-    pub system_prompt: String,
-    /// Model provider ID
-    pub model_provider_id: String,
-    /// Whether enabled
-    pub enabled: bool,
-}
-
-/// Update agent request
+/// 更新 Agent 请求
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct UpdateAgentRequest {
-    /// New name (None = no change)
+    /// Agent 名称
     pub name: Option<String>,
-    /// New description (None = no change)
+    /// Agent 描述
     pub description: Option<String>,
-    /// New system prompt (None = no change)
-    pub system_prompt: Option<String>,
-    /// New model provider ID (None = no change)
-    pub model_provider_id: Option<String>,
-    /// New enabled flag (None = no change)
-    pub enabled: Option<bool>,
+    /// 能力列表
+    pub capabilities: Option<Vec<String>>,
+    /// Agent 灵魂提示词
+    pub soul: Option<String>,
+}
+
+/// 更新 Agent 响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateAgentResponse {
+    /// Agent ID
+    pub id: String,
+    /// Agent 名称
+    pub name: String,
+    /// Agent 描述
+    pub description: Option<String>,
+    /// 能力列表
+    pub capabilities: Option<Vec<String>>,
+    /// 灵魂提示词
+    pub soul: Option<String>,
+    /// 关联的模型提供商 ID
+    pub model_provider_id: String,
+    /// 更新时间戳
+    pub updated_at: i64,
+}
+
+/// 删除 Agent 响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteAgentResponse {
+    /// 是否删除成功
+    pub success: bool,
 }

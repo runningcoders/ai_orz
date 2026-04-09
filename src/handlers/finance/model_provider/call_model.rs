@@ -1,5 +1,6 @@
 //! 调用 Model Provider 生成文本
 
+use common::api::{CallModelRequest, CallModelResponse};
 use common::constants::RequestContext;
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
@@ -8,20 +9,6 @@ use axum::{
     extract::{Extension, Path},
     Json,
 };
-use serde::{Deserialize, Serialize};
-
-/// 调用模型请求
-#[derive(Debug, Deserialize)]
-pub struct CallModelRequest {
-    /// 调用提示词
-    pub prompt: String,
-}
-
-/// 调用模型响应
-#[derive(Debug, Serialize)]
-pub struct CallModelResponse {
-    pub result: String,
-}
 
 /// 调用模型
 /// POST /model-providers/{id}/call

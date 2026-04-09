@@ -1,5 +1,6 @@
 //! 更新 Agent
 
+use common::api::{UpdateAgentRequest, UpdateAgentResponse};
 use common::constants::RequestContext;
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
@@ -7,33 +8,7 @@ use crate::service::domain::hr::domain;
 use axum::{
     extract::{Extension, Path, Json},
 };
-use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
-
-/// 更新 Agent 请求
-#[derive(Debug, Deserialize)]
-pub struct UpdateAgentRequest {
-    /// Agent 名称
-    pub name: Option<String>,
-    /// Agent 描述
-    pub description: Option<String>,
-    /// 能力列表 JSON
-    pub capabilities: Option<Vec<String>>,
-    /// Agent 灵魂提示词
-    pub soul: Option<String>,
-}
-
-/// 更新 Agent 响应
-#[derive(Debug, Serialize)]
-pub struct UpdateAgentResponse {
-    pub id: String,
-    pub name: String,
-    pub description: Option<String>,
-    pub capabilities: Option<Vec<String>>,
-    pub soul: Option<String>,
-    pub model_provider_id: String,
-    pub updated_at: i64,
-}
 
 /// 更新时间戳
 fn current_timestamp() -> i64 {
@@ -44,7 +19,7 @@ fn current_timestamp() -> i64 {
 }
 
 /// 更新 Agent
-/// PUT /agents/:id
+/// PUT /agents/{id}
 pub async fn update_agent(
     Extension(ctx): Extension<RequestContext>,
     Path(id): Path<String>,

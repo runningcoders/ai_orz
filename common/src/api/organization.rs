@@ -2,110 +2,104 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Organization basic information response
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OrganizationInfoResponse {
-    /// Organization ID
-    pub organization_id: String,
-    /// Organization name
-    pub name: String,
-    /// Organization description (optional)
-    pub description: Option<String>,
-    /// Base URL for external access (optional)
-    pub base_url: Option<String>,
-    /// Organization status (1: active, 0: inactive)
-    pub status: i32,
-    /// Creation timestamp
-    pub created_at: i64,
-}
-
-/// Get current organization information response
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetCurrentOrganizationResponse {
-    /// Organization information data
-    pub data: OrganizationInfoResponse,
-}
-
-/// Update current organization information request
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct UpdateOrganizationRequest {
-    /// New organization name (None means no change)
-    pub name: Option<String>,
-    /// New organization description (None means no change)
-    pub description: Option<String>,
-    /// New base URL (None means no change)
-    pub base_url: Option<String>,
-}
-
-/// System initialization request - create first organization and super admin
+/// 系统初始化请求 - 创建第一个组织和超级管理员
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct InitializeSystemRequest {
-    /// Organization name
+    /// 组织名称
     pub organization_name: String,
-    /// Admin username
+    /// 超级管理员用户名
     pub admin_username: String,
-    /// Admin password (hashed on frontend)
+    /// 超级管理员密码（前端已哈希）
     pub admin_password_hash: String,
-    /// Organization description (optional)
+    /// 组织描述（可选）
     pub description: Option<String>,
-    /// Admin display name (optional)
+    /// 超级管理员显示名称（可选）
     pub admin_display_name: Option<String>,
-    /// Admin email (optional)
+    /// 超级管理员邮箱（可选）
     pub admin_email: Option<String>,
 }
 
-/// Check initialization status response
+/// 系统初始化响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InitializeSystemResponse {
+    /// 组织 ID
+    pub organization_id: String,
+    /// 超级管理员用户 ID
+    pub user_id: String,
+}
+
+/// 检查初始化状态响应
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckInitializedResponse {
-    /// Whether system has been initialized (has at least one organization)
+    /// 系统是否已初始化（至少有一个组织）
     pub initialized: bool,
 }
 
-/// List all organizations response (for login page selection)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ListOrganizationsResponse {
-    /// List of organizations
-    pub data: Vec<OrganizationListItem>,
-}
-
-/// Single organization item in list (for login selection)
+/// 组织列表项（用于登录页选择）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrganizationListItem {
-    /// Organization ID
+    /// 组织 ID
     pub organization_id: String,
-    /// Organization name
+    /// 组织名称
     pub name: String,
-    /// Organization description (optional)
+    /// 组织描述（可选）
     pub description: Option<String>,
 }
 
-/// Login request
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct LoginRequest {
-    /// Organization ID to login to
+/// 列出所有组织响应（登录页选择用）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListOrganizationsResponse {
+    /// 组织列表
+    pub data: Vec<OrganizationListItem>,
+    /// 总数
+    pub total: u64,
+}
+
+/// 组织基础信息响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrganizationInfoResponse {
+    /// 组织 ID
     pub organization_id: String,
-    /// Username
-    pub username: String,
-    /// Password hash (computed on frontend)
-    pub password_hash: String,
+    /// 组织名称
+    pub name: String,
+    /// 组织描述（可选）
+    pub description: Option<String>,
+    /// 外部访问 Base URL（可选）
+    pub base_url: Option<String>,
+    /// 组织状态（1: 活跃, 0: 非活跃）
+    pub status: i32,
+    /// 创建时间戳
+    pub created_at: i64,
 }
 
-/// Login response
+/// 获取当前组织信息响应
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LoginResponse {
-    /// Login success flag
-    pub success: bool,
-    /// Message if login failed
-    pub message: Option<String>,
+pub struct GetCurrentOrganizationResponse {
+    /// 组织信息数据
+    pub data: OrganizationInfoResponse,
 }
 
-/// Logout request
+/// 更新当前组织信息请求
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct LogoutRequest {}
+pub struct UpdateCurrentOrganizationRequest {
+    /// 新组织名称（None 表示不修改）
+    pub name: Option<String>,
+    /// 新组织描述（None 表示不修改）
+    pub description: Option<String>,
+    /// 新外部访问 Base URL（None 表示不修改）
+    pub base_url: Option<String>,
+}
 
-/// Logout response
+/// 更新当前组织信息响应
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LogoutResponse {
-    /// Logout success flag
+pub struct UpdateCurrentOrganizationResponse {
+    /// 更新后的组织信息
+    pub data: OrganizationInfoResponse,
+}
+
+/// 删除组织响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteOrganizationResponse {
+    /// 是否删除成功
     pub success: bool,
 }

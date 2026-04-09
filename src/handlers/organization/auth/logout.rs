@@ -1,22 +1,16 @@
 //! 用户登出
 
+use common::api::LogoutResponse;
 use crate::error::AppError;
 use crate::handlers::{ApiResponse};
 use crate::middleware::jwt_auth::JWT_COOKIE_NAME;
 use axum::{
-    extract::Json,
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
+    Json,
 };
 use cookie::{Cookie, SameSite};
 use cookie::time;
-use serde::Serialize;
-
-/// 登出响应
-#[derive(Debug, Serialize)]
-pub struct LogoutResponse {
-    pub success: bool,
-}
 
 /// 用户登出
 /// POST /organization/auth/logout

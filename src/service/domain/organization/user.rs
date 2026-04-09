@@ -104,4 +104,13 @@ impl super::UserManage for super::OrganizationDomainImpl {
 
         Ok(user)
     }
+
+    /// 根据用户 ID 获取用户信息
+    fn get_user_by_id(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+    ) -> Result<Option<UserPo>, AppError> {
+        dao::user::dao().find_by_id(ctx, user_id)
+    }
 }

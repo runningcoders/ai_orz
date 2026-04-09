@@ -168,4 +168,11 @@ pub trait UserManage: Send + Sync {
         username: &str,
         password_hash: &str,
     ) -> Result<crate::models::user::UserPo, AppError>;
+
+    /// 根据用户 ID 获取用户信息
+    fn get_user_by_id(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+    ) -> Result<Option<crate::models::user::UserPo>, AppError>;
 }

@@ -1,5 +1,6 @@
 //! 删除组织接口
 
+use common::api::DeleteOrganizationResponse;
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
 use common::constants::RequestContext;
@@ -9,21 +10,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde::{Deserialize, Serialize};
 use crate::service::domain::organization;
-
-/// 删除组织请求
-#[derive(Debug, Deserialize)]
-pub struct DeleteOrganizationRequest {
-    /// 组织 ID
-    pub org_id: String,
-}
-
-/// 删除组织响应
-/// 空响应
-#[derive(Debug, Serialize)]
-pub struct DeleteOrganizationResponse {
-}
 
 /// 删除组织
 pub async fn delete_organization(
@@ -33,5 +20,7 @@ pub async fn delete_organization(
     let domain = organization::domain();
     domain.organization_manage().delete(ctx, &org_id)?;
 
-    Ok((StatusCode::OK, Json(ApiResponse::success(DeleteOrganizationResponse {})).into_response()))
+    Ok((StatusCode::OK, Json(ApiResponse::success(DeleteOrganizationResponse {
+        success: true,
+    })).into_response()))
 }

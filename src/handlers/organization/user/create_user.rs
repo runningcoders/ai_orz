@@ -1,11 +1,10 @@
 //! 创建新用户接口
 
-use common::api::CreateUserRequest;
+use common::api::{CreateUserRequest, CreateUserResponse};
 use common::enums::UserRole;
-use serde::Serialize;
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
-use common::constants::request_context::RequestContext;
+use common::constants::RequestContext;
 use axum::{
     extract::{Extension, Json},
     http::StatusCode,
@@ -14,13 +13,6 @@ use axum::{
 use rand::Rng;
 use crate::service::domain::organization;
 use crate::models::user::UserPo;
-
-/// 创建新用户响应
-#[derive(Debug, Serialize)]
-pub struct CreateUserResponse {
-    /// 用户 ID
-    pub user_id: String,
-}
 
 /// 创建新用户
 /// 在当前登录用户所在组织下创建新用户，organization_id 从 RequestContext 获取
@@ -61,6 +53,10 @@ pub async fn create_user(
 
     Ok((StatusCode::OK, Json(ApiResponse::success(CreateUserResponse {
         user_id,
+        username: req.username,
+        display_name: req.display_name,
+        email: req.email,
+        role: req.role,
     }))).into_response())
 }
 

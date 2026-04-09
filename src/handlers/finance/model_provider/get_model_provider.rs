@@ -1,27 +1,14 @@
 //! 获取单个 Model Provider
 
+use common::api::GetModelProviderResponse;
+use common::constants::{RequestContext, ProviderType};
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
-use common::constants::{RequestContext, ProviderType};
 use crate::service::domain::finance::domain;
 use axum::{
     extract::{Extension, Path},
     Json,
 };
-use serde::{Serialize};
-
-/// 获取 Model Provider 响应
-#[derive(Debug, Serialize)]
-pub struct GetModelProviderResponse {
-    pub id: String,
-    pub name: String,
-    provider_type: ProviderType,
-    pub model_name: String,
-    pub base_url: Option<String>,
-    pub description: Option<String>,
-    pub created_at: i64,
-    pub updated_at: i64,
-}
 
 /// 获取 Model Provider
 /// GET /model-providers/{id}

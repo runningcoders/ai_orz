@@ -1,5 +1,6 @@
 //! 用户登录
 
+use common::api::{LoginRequest, LoginResponse};
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
 use crate::pkg::jwt;
@@ -13,29 +14,6 @@ use axum::{
 };
 use cookie::{Cookie, SameSite};
 use cookie::time;
-use serde::{Deserialize, Serialize};
-
-/// 登录请求
-#[derive(Debug, Deserialize)]
-pub struct LoginRequest {
-    /// 用户名
-    pub username: String,
-    /// 密码哈希（前端已经 bcrypt 哈希）
-    pub password_hash: String,
-    /// 组织 ID
-    pub organization_id: String,
-}
-
-/// 登录响应
-#[derive(Debug, Serialize)]
-pub struct LoginResponse {
-    /// 用户 ID
-    pub user_id: String,
-    /// 用户名
-    pub username: String,
-    /// 组织 ID
-    pub organization_id: String,
-}
 
 /// 用户登录
 /// POST /organization/auth/login

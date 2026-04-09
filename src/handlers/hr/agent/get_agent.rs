@@ -1,5 +1,6 @@
 //! 获取单个 Agent
 
+use common::api::GetAgentResponse;
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
 use common::constants::RequestContext;
@@ -8,23 +9,9 @@ use axum::{
     extract::{Extension, Path},
     Json,
 };
-use serde::{Serialize};
-
-/// 获取 Agent 响应
-#[derive(Debug, Serialize)]
-pub struct GetAgentResponse {
-    pub id: String,
-    pub name: String,
-    pub description: Option<String>,
-    pub capabilities: Option<Vec<String>>,
-    pub soul: Option<String>,
-    pub model_provider_id: String,
-    pub created_at: i64,
-    pub updated_at: i64,
-}
 
 /// 获取 Agent
-/// GET /agents/:id
+/// GET /agents/{id}
 pub async fn get_agent(
     Extension(ctx): Extension<RequestContext>,
     Path(id): Path<String>,

@@ -1,175 +1,151 @@
 //! Model Provider related API request/response DTOs - shared between backend and frontend
 
+use crate::constants::ProviderType;
 use serde::{Deserialize, Serialize};
 
-/// Provider type enumeration
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ProviderType {
-    /// OpenAI compatible API (OpenAI itself, Azure, custom, etc.)
-    OpenAI = 1,
-    /// DeepSeek API
-    DeepSeek = 2,
-    /// Tongyi Qianwen (Alibaba Cloud)
-    TongyiQianwen = 3,
-    /// Doubao (ByteDance)
-    Doubao = 4,
-    /// Ollama (local)
-    Ollama = 5,
-    /// Claude (Anthropic)
-    Claude = 6,
-    /// Gemini (Google)
-    Gemini = 7,
+/// 创建 Model Provider 请求
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CreateModelProviderRequest {
+    /// Provider 名称
+    pub name: String,
+    /// Provider 类型
+    pub provider_type: ProviderType,
+    /// 模型名称
+    pub model_name: String,
+    /// API Key
+    pub api_key: String,
+    /// 自定义 Base URL
+    pub base_url: Option<String>,
+    /// 描述
+    pub description: Option<String>,
 }
 
-impl ProviderType {
-    /// Convert from i32
-    pub fn from_i32(value: i32) -> Option<Self> {
-        match value {
-            1 => Some(Self::OpenAI),
-            2 => Some(Self::DeepSeek),
-            3 => Some(Self::TongyiQianwen),
-            4 => Some(Self::Doubao),
-            5 => Some(Self::Ollama),
-            6 => Some(Self::Claude),
-            7 => Some(Self::Gemini),
-            _ => None,
-        }
-    }
-
-    /// Get display name
-    pub fn display_name(self) -> &'static str {
-        match self {
-            Self::OpenAI => "OpenAI",
-            Self::DeepSeek => "DeepSeek",
-            Self::TongyiQianwen => "通义千问",
-            Self::Doubao => "豆包",
-            Self::Ollama => "Ollama",
-            Self::Claude => "Claude",
-            Self::Gemini => "Gemini",
-        }
-    }
+/// 创建 Model Provider 响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateModelProviderResponse {
+    /// Provider ID
+    pub id: String,
+    /// Provider 名称
+    pub name: String,
+    /// Provider 类型
+    pub provider_type: ProviderType,
+    /// 模型名称
+    pub model_name: String,
+    /// 描述
+    pub description: Option<String>,
+    /// 创建时间戳
+    pub created_at: i64,
 }
 
-/// Model provider list item
+/// Model Provider 列表项响应
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelProviderListItem {
     /// Provider ID
     pub id: String,
-    /// Provider name
+    /// Provider 名称
     pub name: String,
-    /// Provider type
-    pub provider_type: i32,
-    /// Provider type name for display
-    pub provider_type_name: String,
-    /// Base URL for API
-    pub base_url: String,
-    /// Whether this provider is enabled
-    pub enabled: bool,
-    /// Creation timestamp
+    /// Provider 类型
+    pub provider_type: ProviderType,
+    /// 模型名称
+    pub model_name: String,
+    /// 描述
+    pub description: Option<String>,
+    /// 创建时间戳
     pub created_at: i64,
 }
 
-/// List model providers response
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ListModelProvidersResponse {
-    /// List of providers
-    pub data: Vec<ModelProviderListItem>,
-    /// Total count
-    pub total: u64,
-}
-
-/// Get model provider detail response
+/// 获取 Model Provider 响应
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetModelProviderResponse {
-    /// Provider detail data
-    pub data: ModelProviderDetail,
-}
-
-/// Detailed model provider information
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModelProviderDetail {
     /// Provider ID
     pub id: String,
-    /// Provider name
+    /// Provider 名称
     pub name: String,
-    /// Provider type
-    pub provider_type: i32,
-    /// Base URL for API
-    pub base_url: String,
-    /// API key (masked for security, only shows first few chars)
-    pub api_key_masked: String,
-    /// Default model name to use
-    pub default_model: String,
-    /// Whether this provider is enabled
-    pub enabled: bool,
-    /// Creation timestamp
+    /// Provider 类型
+    pub provider_type: ProviderType,
+    /// 模型名称
+    pub model_name: String,
+    /// 自定义 Base URL
+    pub base_url: Option<String>,
+    /// 描述
+    pub description: Option<String>,
+    /// 创建时间戳
     pub created_at: i64,
-    /// Update timestamp
+    /// 更新时间戳
     pub updated_at: i64,
 }
 
-/// Create model provider request
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct CreateModelProviderRequest {
-    /// Provider name
-    pub name: String,
-    /// Provider type (as integer)
-    pub provider_type: i32,
-    /// Base URL for API
-    pub base_url: String,
-    /// API key
-    pub api_key: String,
-    /// Default model name
-    pub default_model: String,
-    /// Whether enabled
-    pub enabled: bool,
-}
-
-/// Update model provider request
+/// 更新 Model Provider 请求
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct UpdateModelProviderRequest {
-    /// New name (None = no change)
+    /// Provider 名称
     pub name: Option<String>,
-    /// New provider type (None = no change)
-    pub provider_type: Option<i32>,
-    /// New base URL (None = no change)
-    pub base_url: Option<String>,
-    /// New API key (None = no change, empty doesn't clear)
+    /// Provider 类型
+    pub provider_type: Option<ProviderType>,
+    /// 模型名称
+    pub model_name: Option<String>,
+    /// API Key
     pub api_key: Option<String>,
-    /// New default model (None = no change)
-    pub default_model: Option<String>,
-    /// New enabled flag (None = no change)
-    pub enabled: Option<bool>,
+    /// 自定义 Base URL
+    pub base_url: Option<String>,
+    /// 描述
+    pub description: Option<String>,
 }
 
-/// Test connection request
+/// 更新 Model Provider 响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateModelProviderResponse {
+    /// Provider ID
+    pub id: String,
+    /// Provider 名称
+    pub name: String,
+    /// Provider 类型
+    pub provider_type: ProviderType,
+    /// 模型名称
+    pub model_name: String,
+    /// 自定义 Base URL
+    pub base_url: Option<String>,
+    /// 描述
+    pub description: Option<String>,
+    /// 更新时间戳
+    pub updated_at: i64,
+}
+
+/// 测试连接请求
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TestConnectionRequest {
-    /// Optional test prompt (uses default if not provided)
+    /// 可选的测试提示词
     pub prompt: Option<String>,
 }
 
-/// Test connection response
+/// 测试连接响应
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestConnectionResponse {
-    /// Test success flag
+    /// 测试是否成功
     pub success: bool,
-    /// Response from model (if successful)
+    /// 模型响应（成功时）
     pub response: Option<String>,
-    /// Error message (if failed)
+    /// 错误信息（失败时）
     pub error: Option<String>,
 }
 
-/// Generic model call request
+/// 调用模型请求
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct GenericCallRequest {
-    /// Prompt text to send
+pub struct CallModelRequest {
+    /// 调用提示词
     pub prompt: String,
 }
 
-/// Generic model call response
+/// 调用模型响应
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GenericCallResponse {
-    /// Completion text from model
-    pub completion: String,
+pub struct CallModelResponse {
+    /// 生成结果
+    pub result: String,
+}
+
+/// 删除 Model Provider 响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteModelProviderResponse {
+    /// 是否删除成功
+    pub success: bool,
 }

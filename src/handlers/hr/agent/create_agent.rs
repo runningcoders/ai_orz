@@ -1,5 +1,6 @@
 //! 创建 Agent
 
+use common::api::{CreateAgentRequest, CreateAgentResponse};
 use common::constants::RequestContext;
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
@@ -9,31 +10,6 @@ use axum::{
     extract::{Extension, Json},
     http::StatusCode,
 };
-use serde::{Deserialize, Serialize};
-
-/// 创建 Agent 请求
-#[derive(Debug, Deserialize)]
-pub struct CreateAgentRequest {
-    /// Agent 名称
-    pub name: String,
-    /// Agent 描述
-    pub description: Option<String>,
-    /// 能力列表 JSON
-    pub capabilities: Option<Vec<String>>,
-    /// Agent 灵魂提示词
-    pub soul: Option<String>,
-    /// 关联的模型提供商 ID
-    pub model_provider_id: String,
-}
-
-/// 创建 Agent 响应
-#[derive(Debug, Serialize)]
-pub struct CreateAgentResponse {
-    pub id: String,
-    pub name: String,
-    pub description: Option<String>,
-    pub created_at: i64,
-}
 
 /// 创建 Agent
 /// POST /agents

@@ -1,5 +1,6 @@
 //! 列出所有 Agent
 
+use common::api::AgentListItem;
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
 use common::constants::RequestContext;
@@ -8,17 +9,6 @@ use axum::{
     extract::Extension,
     Json,
 };
-use serde::{Serialize};
-
-/// Agent 列表项响应
-#[derive(Debug, Serialize)]
-pub struct AgentListItem {
-    pub id: String,
-    pub name: String,
-    pub description: Option<String>,
-    pub model_provider_id: String,
-    pub created_at: i64,
-}
 
 /// 列出所有 Agent
 /// GET /agents

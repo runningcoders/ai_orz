@@ -1,25 +1,14 @@
 //! 列出所有 Model Provider
 
+use common::api::ModelProviderListItem;
+use common::constants::{RequestContext, ProviderType};
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
-use common::constants::{RequestContext, ProviderType};
 use crate::service::domain::finance::domain;
 use axum::{
     extract::Extension,
     Json,
 };
-use serde::{Serialize};
-
-/// Model Provider 列表项响应
-#[derive(Debug, Serialize)]
-pub struct ModelProviderListItem {
-    pub id: String,
-    pub name: String,
-    pub provider_type: ProviderType,
-    pub model_name: String,
-    pub description: Option<String>,
-    pub created_at: i64,
-}
 
 /// 列出所有 Model Provider
 /// GET /model-providers
