@@ -1,6 +1,5 @@
 //! ai_orz - AI 代理执行框架
 
-pub mod dto;
 pub mod error;
 pub mod handlers;
 pub mod middleware;
