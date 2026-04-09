@@ -11,7 +11,6 @@ use axum::{
     Json,
 };
 use crate::service::domain::organization;
-use crate::models::organization::OrganizationPo;
 
 /// 获取组织信息
 pub async fn get_organization(

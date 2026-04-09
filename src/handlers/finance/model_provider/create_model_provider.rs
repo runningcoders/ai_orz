@@ -1,7 +1,7 @@
 //! 创建 Model Provider
 
 use common::api::{CreateModelProviderRequest, CreateModelProviderResponse};
-use common::constants::{RequestContext, ProviderType};
+use common::constants::RequestContext;
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
 use crate::models::model_provider::{ModelProvider, ModelProviderPo};

@@ -1,7 +1,7 @@
 //! 列出所有 Model Provider
 
 use common::api::ModelProviderListItem;
-use common::constants::{RequestContext, ProviderType};
+use common::constants::RequestContext;
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
 use crate::service::domain::finance::domain;

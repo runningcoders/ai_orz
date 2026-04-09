@@ -1,7 +1,7 @@
 //! 获取单个 Model Provider
 
 use common::api::GetModelProviderResponse;
-use common::constants::{RequestContext, ProviderType};
+use common::constants::RequestContext;
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
 use crate::service::domain::finance::domain;

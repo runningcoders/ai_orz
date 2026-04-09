@@ -10,7 +10,6 @@ use axum::{
     response::IntoResponse,
 };
 use crate::service::domain::organization;
-use crate::models::user::UserPo;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// 获取当前时间戳
@@ -62,7 +61,7 @@ pub async fn update_user(
     
     domain.user_manage().update_user(ctx, &user)?;
     
-    let role_name = user.user_role().map(|r: common::enums::UserRole| r.display_name().to_string()).unwrap_or_default();
+    let _role_name = user.user_role().map(|r: common::enums::UserRole| r.display_name().to_string()).unwrap_or_default();
     
     Ok((StatusCode::OK, Json(ApiResponse::success(UpdateUserResponse {
         user_id: user.id.clone(),
