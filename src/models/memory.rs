@@ -60,6 +60,12 @@ pub struct MemoryTrace {
     pub id: String,
     /// 所属 Agent ID
     pub agent_id: String,
+    /// 请求日志 ID（来源溯源）
+    pub log_id: String,
+    /// 创建者用户 ID（来源溯源）
+    pub user_id: String,
+    /// 所属组织 ID（来源溯源）
+    pub organization_id: String,
     /// 角色
     pub role: MemoryRole,
     /// 原始内容（完整细节）
@@ -74,12 +80,22 @@ impl MemoryTrace {
     /// 创建新的 MemoryTrace
     ///
     /// 自动生成内容 hash 作为 ID
-    pub fn new(agent_id: String, role: MemoryRole, content: String) -> Self {
+    pub fn new(
+        agent_id: String,
+        log_id: String,
+        user_id: String,
+        organization_id: String,
+        role: MemoryRole,
+        content: String,
+    ) -> Self {
         let content_hash = sha256::digest(content.as_bytes());
         let now = chrono::Utc::now().timestamp();
         Self {
             id: content_hash,
             agent_id,
+            log_id,
+            user_id,
+            organization_id,
             role,
             content,
             created_at: now,
