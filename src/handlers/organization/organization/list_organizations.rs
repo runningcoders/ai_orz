@@ -1,9 +1,11 @@
 //! 获取组织列表接口
 
 use crate::error::AppError;
-use crate::handlers::{ApiResponse, extract_ctx};
+use crate::handlers::ApiResponse;
+use crate::pkg::RequestContext;
 use axum::{
-    http::{HeaderMap, StatusCode},
+    extract::Extension,
+    http::StatusCode,
     response::IntoResponse,
     Json,
 };
@@ -20,9 +22,8 @@ pub struct ListOrganizationsResponse {
 
 /// 获取组织列表
 pub async fn list_organizations(
-    headers: HeaderMap,
+    Extension(ctx): Extension<RequestContext>,
 ) -> Result<impl IntoResponse, AppError> {
-    let ctx = extract_ctx(&headers);
     let domain = organization::domain();
     let orgs = domain.organization_manage().list_all(ctx)?;
 

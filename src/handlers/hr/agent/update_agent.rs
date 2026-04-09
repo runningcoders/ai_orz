@@ -1,11 +1,11 @@
 //! 更新 Agent
 
 use crate::error::AppError;
-use crate::handlers::{ApiResponse, extract_ctx};
+use crate::handlers::ApiResponse;
+use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use axum::{
-    extract::{Path, Json},
-    http::HeaderMap,
+    extract::{Extension, Path, Json},
 };
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -46,11 +46,10 @@ fn current_timestamp() -> i64 {
 /// 更新 Agent
 /// PUT /agents/:id
 pub async fn update_agent(
-    headers: HeaderMap,
+    Extension(ctx): Extension<RequestContext>,
     Path(id): Path<String>,
     Json(req): Json<UpdateAgentRequest>,
 ) -> Result<Json<ApiResponse<UpdateAgentResponse>>, AppError> {
-    let ctx = extract_ctx(&headers);
 
     let mut agent = domain()
         .agent_manage()

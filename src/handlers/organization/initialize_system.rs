@@ -3,10 +3,11 @@
 //! 当系统还没有初始化时，调用这个接口创建第一个组织和超级管理员
 
 use crate::error::AppError;
-use crate::handlers::{ApiResponse, extract_ctx};
+use crate::handlers::ApiResponse;
+use crate::pkg::RequestContext;
 use axum::{
-    extract::{Json},
-    http::{HeaderMap, StatusCode},
+    extract::{Extension, Json},
+    http::StatusCode,
     response::IntoResponse,
 };
 use serde::{Deserialize, Serialize};
@@ -40,9 +41,8 @@ pub struct InitializeSystemResponse {
 
 /// 检查系统是否已经初始化
 pub async fn check_initialized(
-    headers: HeaderMap,
+    Extension(ctx): Extension<RequestContext>,
 ) -> Result<(StatusCode, Json<ApiResponse<bool>>), AppError> {
-    let ctx = extract_ctx(&headers);
     let domain = organization::domain();
     let initialized = domain.organization_manage().check_initialized(ctx)?;
 
@@ -51,10 +51,9 @@ pub async fn check_initialized(
 
 /// 初始化系统
 pub async fn initialize_system(
-    headers: HeaderMap,
+    Extension(ctx): Extension<RequestContext>,
     req: Json<InitializeSystemRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let ctx = extract_ctx(&headers);
     let domain = organization::domain();
     let (org_id, user_id) = domain.organization_manage().initialize_system(
         ctx,

@@ -1,10 +1,11 @@
 //! 删除用户接口
 
 use crate::error::AppError;
-use crate::handlers::{ApiResponse, extract_ctx};
+use crate::handlers::ApiResponse;
+use crate::pkg::RequestContext;
 use axum::{
-    extract::Path,
-    http::{HeaderMap, StatusCode},
+    extract::{Extension, Path},
+    http::StatusCode,
     response::IntoResponse,
     Json,
 };
@@ -26,10 +27,9 @@ pub struct DeleteUserResponse {
 
 /// 删除用户
 pub async fn delete_user(
-    headers: HeaderMap,
+    Extension(ctx): Extension<RequestContext>,
     Path(user_id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
-    let ctx = extract_ctx(&headers);
     let domain = organization::domain();
     domain.user_manage().delete_user(ctx, &user_id)?;
 

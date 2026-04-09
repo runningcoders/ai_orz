@@ -1,12 +1,11 @@
 //! 更新 Model Provider
 
 use crate::error::AppError;
-use crate::handlers::{ApiResponse, extract_ctx};
-use crate::pkg::constants::ProviderType;
+use crate::handlers::ApiResponse;
+use crate::pkg::{RequestContext, constants::ProviderType};
 use crate::service::domain::finance::domain;
 use axum::{
-    extract::{Path, Json},
-    http::HeaderMap,
+    extract::{Extension, Path, Json},
 };
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -51,11 +50,10 @@ fn current_timestamp() -> i64 {
 /// 更新 Model Provider
 /// PUT /model-providers/{id}
 pub async fn update_model_provider(
-    headers: HeaderMap,
+    Extension(ctx): Extension<RequestContext>,
     Path(id): Path<String>,
     Json(req): Json<UpdateModelProviderRequest>,
 ) -> Result<Json<ApiResponse<UpdateModelProviderResponse>>, AppError> {
-    let ctx = extract_ctx(&headers);
 
     let mut provider = domain()
         .model_provider_manage()

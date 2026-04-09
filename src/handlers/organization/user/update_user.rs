@@ -1,10 +1,11 @@
 //! 更新用户信息接口
 
 use crate::error::AppError;
-use crate::handlers::{ApiResponse, extract_ctx};
+use crate::handlers::ApiResponse;
+use crate::pkg::RequestContext;
 use axum::{
-    extract::{Json},
-    http::{HeaderMap, StatusCode},
+    extract::{Extension, Json},
+    http::StatusCode,
     response::IntoResponse,
 };
 use serde::{Deserialize, Serialize};
@@ -26,10 +27,9 @@ pub struct UpdateUserResponse {
 
 /// 更新用户信息
 pub async fn update_user(
-    headers: HeaderMap,
+    Extension(ctx): Extension<RequestContext>,
     req: Json<UpdateUserRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let ctx = extract_ctx(&headers);
     let domain = organization::domain();
     domain.user_manage().update_user(ctx, &req.user)?;
 

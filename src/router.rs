@@ -8,39 +8,56 @@ use tower_http::services::ServeDir;
 
 pub fn create_router(frontend_dist_dir: &str) -> Router {
     Router::new()
-        .nest("/api/v1", api_routes())
+        // Public routes - no JWT authentication required
+        .nest("/api/v1", public_routes())
+        // Protected routes - require valid JWT token
+        .nest("/api/v1", protected_routes())
         .route("/health", get(handlers::health::health))
         // RequestContext 提取必须在 JWT 认证之前运行
         // JWT 认证会验证 token 后更新 RequestContext 中的用户信息
         .layer(axum::middleware::from_fn(request_context_middleware))
-        .layer(axum::middleware::from_fn(jwt_auth_middleware))
         .fallback_service(ServeDir::new(frontend_dist_dir))
 }
 
-fn api_routes() -> Router {
+/// Public routes - do NOT require JWT authentication
+/// These are for initialization, login, etc.
+fn public_routes() -> Router {
+    use crate::handlers::organization::auth;
+    use crate::handlers::organization::initialize_system;
+    use crate::handlers::organization::organization;
+
+    Router::new()
+        // System initialization (only when no organizations exist)
+        .route("/organization/initialize/check", get(initialize_system::check_initialized))
+        .route("/organization/initialize", post(initialize_system::initialize_system))
+        // Login/logout - login issues new JWT token
+        .route("/organization/auth/login", post(auth::login::login))
+        .route("/organization/auth/logout", post(auth::logout::logout))
+        // Get organization basic info - public query (no login required)
+        .route("/organization/{org_id}", get(organization::get_organization::get_organization))
+}
+
+/// Protected routes - require valid JWT authentication
+/// All requests without valid token will be redirected to / (login page)
+fn protected_routes() -> Router {
     Router::new()
         // HR (Human Resources) routes
         .nest("/hr", hr_routes())
         // Finance (模型管理) routes
         .nest("/finance", finance_routes())
-        // Organization (组织管理) routes - contains login/logout
-        .nest("/organization", organization_routes())
+        // Organization (组织管理) routes (protected)
+        .nest("/organization", organization_protected_routes())
+        // Add JWT authentication middleware to all protected routes
+        .layer(axum::middleware::from_fn(jwt_auth_middleware))
 }
 
-fn organization_routes() -> Router {
+fn organization_protected_routes() -> Router {
     // Each handler is in its own file in the subdirectory
-    use crate::handlers::organization::auth;
-    use crate::handlers::organization::initialize_system;
     use crate::handlers::organization::organization;
     use crate::handlers::organization::user;
 
     Router::new()
-        .route("/initialize/check", get(initialize_system::check_initialized))
-        .route("/initialize", post(initialize_system::initialize_system))
-        .route("/auth/login", post(auth::login::login))
-        .route("/auth/logout", post(auth::logout::logout))
         .route("/list", get(organization::list_organizations::list_organizations))
-        .route("/{org_id}", get(organization::get_organization::get_organization))
         .route("/update", put(organization::update_organization::update_organization))
         .route("/{org_id}", delete(organization::delete_organization::delete_organization))
         .nest("/user", Router::new()

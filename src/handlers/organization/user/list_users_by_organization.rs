@@ -1,10 +1,11 @@
 //! 根据组织 ID 查询用户列表接口
 
 use crate::error::AppError;
-use crate::handlers::{ApiResponse, extract_ctx};
+use crate::handlers::ApiResponse;
+use crate::pkg::RequestContext;
 use axum::{
-    extract::Path,
-    http::{HeaderMap, StatusCode},
+    extract::{Extension, Path},
+    http::StatusCode,
     response::IntoResponse,
     Json,
 };
@@ -21,10 +22,9 @@ pub struct ListUsersByOrganizationResponse {
 
 /// 根据组织 ID 查询用户列表
 pub async fn list_users_by_organization(
-    headers: HeaderMap,
+    Extension(ctx): Extension<RequestContext>,
     Path(org_id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
-    let ctx = extract_ctx(&headers);
     let domain = organization::domain();
     let users = domain.user_manage().find_by_organization_id(ctx, &org_id)?;
 

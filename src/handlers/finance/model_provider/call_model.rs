@@ -1,11 +1,11 @@
 //! 调用 Model Provider 生成文本
 
 use crate::error::AppError;
-use crate::handlers::{ApiResponse, extract_ctx};
+use crate::handlers::ApiResponse;
+use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use axum::{
-    extract::Path,
-    http::HeaderMap,
+    extract::{Extension, Path},
     Json,
 };
 use serde::{Deserialize, Serialize};
@@ -26,11 +26,10 @@ pub struct CallModelResponse {
 /// 调用模型
 /// POST /model-providers/{id}/call
 pub async fn call_model(
-    headers: HeaderMap,
+    Extension(ctx): Extension<RequestContext>,
     Path(id): Path<String>,
     Json(req): Json<CallModelRequest>,
 ) -> Result<Json<ApiResponse<CallModelResponse>>, AppError> {
-    let ctx = extract_ctx(&headers);
 
     // 1. 先查询 Model Provider
     let provider = domain().model_provider_manage().get_model_provider(ctx.clone(), &id)?

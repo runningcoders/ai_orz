@@ -1,12 +1,11 @@
 //! 获取单个 Model Provider
 
 use crate::error::AppError;
-use crate::handlers::{ApiResponse, extract_ctx};
-use crate::pkg::constants::ProviderType;
+use crate::handlers::ApiResponse;
+use crate::pkg::{RequestContext, constants::ProviderType};
 use crate::service::domain::finance::domain;
 use axum::{
-    extract::Path,
-    http::HeaderMap,
+    extract::{Extension, Path},
     Json,
 };
 use serde::{Serialize};
@@ -16,7 +15,7 @@ use serde::{Serialize};
 pub struct GetModelProviderResponse {
     pub id: String,
     pub name: String,
-    pub provider_type: ProviderType,
+    provider_type: ProviderType,
     pub model_name: String,
     pub base_url: Option<String>,
     pub description: Option<String>,
@@ -27,10 +26,9 @@ pub struct GetModelProviderResponse {
 /// 获取 Model Provider
 /// GET /model-providers/{id}
 pub async fn get_model_provider(
-    headers: HeaderMap,
+    Extension(ctx): Extension<RequestContext>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<GetModelProviderResponse>>, AppError> {
-    let ctx = extract_ctx(&headers);
 
     let provider = domain()
         .model_provider_manage()

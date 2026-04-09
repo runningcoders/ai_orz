@@ -1,12 +1,12 @@
 //! 创建 Agent
 
 use crate::error::AppError;
-use crate::handlers::{ApiResponse, extract_ctx};
+use crate::handlers::ApiResponse;
+use crate::pkg::RequestContext;
 use crate::models::agent::{Agent, AgentPo};
 use crate::service::domain::hr::domain;
 use axum::{
-    extract::{Json},
-    http::HeaderMap,
+    extract::{Extension, Json},
     http::StatusCode,
 };
 use serde::{Deserialize, Serialize};
@@ -38,10 +38,9 @@ pub struct CreateAgentResponse {
 /// 创建 Agent
 /// POST /agents
 pub async fn create_agent(
-    headers: HeaderMap,
+    Extension(ctx): Extension<RequestContext>,
     Json(req): Json<CreateAgentRequest>,
 ) -> Result<(StatusCode, Json<ApiResponse<CreateAgentResponse>>), AppError> {
-    let ctx = extract_ctx(&headers);
 
     let agent_po = AgentPo::new(
         req.name.clone(),

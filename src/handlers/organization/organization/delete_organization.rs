@@ -1,10 +1,11 @@
 //! 删除组织接口
 
 use crate::error::AppError;
-use crate::handlers::{ApiResponse, extract_ctx};
+use crate::handlers::ApiResponse;
+use crate::pkg::RequestContext;
 use axum::{
-    extract::Path,
-    http::{HeaderMap, StatusCode},
+    extract::{Extension, Path},
+    http::StatusCode,
     response::IntoResponse,
     Json,
 };
@@ -26,10 +27,9 @@ pub struct DeleteOrganizationResponse {
 
 /// 删除组织
 pub async fn delete_organization(
-    headers: HeaderMap,
+    Extension(ctx): Extension<RequestContext>,
     Path(org_id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
-    let ctx = extract_ctx(&headers);
     let domain = organization::domain();
     domain.organization_manage().delete(ctx, &org_id)?;
 

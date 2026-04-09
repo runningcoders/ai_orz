@@ -1,13 +1,13 @@
 //! 用户登录
 
 use crate::error::AppError;
-use crate::handlers::{ApiResponse, extract_ctx};
+use crate::handlers::ApiResponse;
+use crate::pkg::{RequestContext, jwt};
 use crate::middleware::jwt_auth::JWT_COOKIE_NAME;
-use crate::pkg::jwt::{self};
 use crate::service::domain::organization::domain;
 use axum::{
-    extract::Json,
-    http::{HeaderMap, StatusCode},
+    extract::{Extension, Json},
+    http::StatusCode,
     response::IntoResponse,
 };
 use cookie::{Cookie, SameSite};
@@ -39,10 +39,9 @@ pub struct LoginResponse {
 /// 用户登录
 /// POST /organization/auth/login
 pub async fn login(
-    headers: HeaderMap,
+    Extension(ctx): Extension<RequestContext>,
     Json(req): Json<LoginRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let ctx = extract_ctx(&headers);
     let domain = domain();
 
     // 验证用户名密码

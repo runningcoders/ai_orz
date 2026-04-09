@@ -1,11 +1,11 @@
 //! 测试 Model Provider 连通性
 
 use crate::error::AppError;
-use crate::handlers::{ApiResponse, extract_ctx};
+use crate::handlers::ApiResponse;
+use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use axum::{
-    extract::Path,
-    http::HeaderMap,
+    extract::{Extension, Path},
     Json,
 };
 use serde::{Deserialize, Serialize};
@@ -27,10 +27,9 @@ pub struct TestModelProviderConnectionResponse {
 /// 测试 Model Provider 连通性
 /// POST /model-providers/{id}/test
 pub async fn test_model_provider_connection(
-    headers: HeaderMap,
+    Extension(ctx): Extension<RequestContext>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<TestModelProviderConnectionResponse>>, AppError> {
-    let ctx = extract_ctx(&headers);
 
     // 1. 先查询 Model Provider
     let provider = domain().model_provider_manage().get_model_provider(ctx.clone(), &id)?

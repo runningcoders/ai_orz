@@ -1,10 +1,11 @@
 //! 更新组织信息接口
 
 use crate::error::AppError;
-use crate::handlers::{ApiResponse, extract_ctx};
+use crate::handlers::ApiResponse;
+use crate::pkg::RequestContext;
 use axum::{
-    extract::{Json},
-    http::{HeaderMap, StatusCode},
+    extract::{Extension, Json},
+    http::StatusCode,
     response::IntoResponse,
 };
 use serde::{Deserialize, Serialize};
@@ -26,10 +27,9 @@ pub struct UpdateOrganizationResponse {
 
 /// 更新组织信息
 pub async fn update_organization(
-    headers: HeaderMap,
+    Extension(ctx): Extension<RequestContext>,
     req: Json<UpdateOrganizationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let ctx = extract_ctx(&headers);
     let domain = organization::domain();
     domain.organization_manage().update(ctx, &req.organization)?;
 

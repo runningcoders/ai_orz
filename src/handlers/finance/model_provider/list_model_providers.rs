@@ -1,11 +1,11 @@
 //! 列出所有 Model Provider
 
 use crate::error::AppError;
-use crate::handlers::{ApiResponse, extract_ctx};
-use crate::pkg::constants::ProviderType;
+use crate::handlers::ApiResponse;
+use crate::pkg::{RequestContext, constants::ProviderType};
 use crate::service::domain::finance::domain;
 use axum::{
-    http::HeaderMap,
+    extract::Extension,
     Json,
 };
 use serde::{Serialize};
@@ -23,8 +23,9 @@ pub struct ModelProviderListItem {
 
 /// 列出所有 Model Provider
 /// GET /model-providers
-pub async fn list_model_providers(headers: HeaderMap) -> Result<Json<ApiResponse<Vec<ModelProviderListItem>>>, AppError> {
-    let ctx = extract_ctx(&headers);
+pub async fn list_model_providers(
+    Extension(ctx): Extension<RequestContext>
+) -> Result<Json<ApiResponse<Vec<ModelProviderListItem>>>, AppError> {
 
     let providers = domain().model_provider_manage().list_model_providers(ctx)?;
     let responses: Vec<ModelProviderListItem> = providers

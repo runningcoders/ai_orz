@@ -1,10 +1,11 @@
 //! 列出所有 Agent
 
 use crate::error::AppError;
-use crate::handlers::{ApiResponse, extract_ctx};
+use crate::handlers::ApiResponse;
+use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use axum::{
-    http::HeaderMap,
+    extract::Extension,
     Json,
 };
 use serde::{Serialize};
@@ -21,8 +22,9 @@ pub struct AgentListItem {
 
 /// 列出所有 Agent
 /// GET /agents
-pub async fn list_agents(headers: HeaderMap) -> Result<Json<ApiResponse<Vec<AgentListItem>>>, AppError> {
-    let ctx = extract_ctx(&headers);
+pub async fn list_agents(
+    Extension(ctx): Extension<RequestContext>
+) -> Result<Json<ApiResponse<Vec<AgentListItem>>>, AppError> {
 
     let agents = domain().agent_manage().list_agents(ctx)?;
     let responses: Vec<AgentListItem> = agents

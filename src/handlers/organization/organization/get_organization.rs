@@ -1,10 +1,11 @@
 //! 获取组织信息接口
 
 use crate::error::AppError;
-use crate::handlers::{ApiResponse, extract_ctx};
+use crate::handlers::ApiResponse;
+use crate::pkg::RequestContext;
 use axum::{
-    extract::Path,
-    http::{HeaderMap, StatusCode},
+    extract::{Extension, Path},
+    http::StatusCode,
     response::IntoResponse,
     Json,
 };
@@ -28,10 +29,9 @@ pub struct GetOrganizationResponse {
 
 /// 获取组织信息
 pub async fn get_organization(
-    headers: HeaderMap,
+    Extension(ctx): Extension<RequestContext>,
     Path(org_id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
-    let ctx = extract_ctx(&headers);
     let domain = organization::domain();
     let org = domain.organization_manage().get_by_id(ctx, &org_id)?;
 

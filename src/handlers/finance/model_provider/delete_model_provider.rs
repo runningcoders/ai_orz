@@ -1,21 +1,20 @@
 //! 删除 Model Provider
 
 use crate::error::AppError;
-use crate::handlers::{ApiResponse, extract_ctx};
+use crate::handlers::ApiResponse;
+use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use axum::{
-    extract::Path,
-    http::HeaderMap,
+    extract::{Extension, Path},
     Json,
 };
 
 /// 删除 Model Provider
 /// DELETE /model-providers/{id}
 pub async fn delete_model_provider(
-    headers: HeaderMap,
+    Extension(ctx): Extension<RequestContext>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<()>>, AppError> {
-    let ctx = extract_ctx(&headers);
 
     let provider = domain()
         .model_provider_manage()

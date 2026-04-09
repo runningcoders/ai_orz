@@ -1,13 +1,12 @@
 //! 创建 Model Provider
 
 use crate::error::AppError;
-use crate::handlers::{ApiResponse, extract_ctx};
+use crate::handlers::ApiResponse;
+use crate::pkg::{RequestContext, constants::ProviderType};
 use crate::models::model_provider::{ModelProvider, ModelProviderPo};
-use crate::pkg::constants::ProviderType;
 use crate::service::domain::finance::domain;
 use axum::{
-    extract::Json,
-    http::HeaderMap,
+    extract::{Extension, Json},
     http::StatusCode,
 };
 use serde::{Deserialize, Serialize};
@@ -43,10 +42,9 @@ pub struct CreateModelProviderResponse {
 /// 创建 Model Provider
 /// POST /model-providers
 pub async fn create_model_provider(
-    headers: HeaderMap,
+    Extension(ctx): Extension<RequestContext>,
     Json(req): Json<CreateModelProviderRequest>,
 ) -> Result<(StatusCode, Json<ApiResponse<CreateModelProviderResponse>>), AppError> {
-    let ctx = extract_ctx(&headers);
 
     let provider_po = ModelProviderPo::new(
         req.name.clone(),
