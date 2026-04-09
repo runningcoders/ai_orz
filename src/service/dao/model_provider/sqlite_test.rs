@@ -2,7 +2,6 @@
 //!
 //! 单元测试使用内存数据库，不依赖全局 storage 连接池
 
-use super::*;
 use crate::models::model_provider::{ModelProviderPo};
 use common::constants::ProviderType;
 use crate::pkg::storage::sql;
