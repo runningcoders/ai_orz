@@ -2,6 +2,12 @@
 
 AI 代理执行框架 - Full-stack Rust + Dioxus
 
+![GitHub last commit](https://img.shields.io/github/last-commit/runningcoders/ai_orz)
+![GitHub license](https://img.shields.io/github/license/runningcoders/ai_orz)
+![Rust](https://img.shields.io/badge/Rust-1.85+-000000?logo=rust)
+![Tests](https://img.shields.io/badge/tests-35%20%E2%9C%94-brightgreen)
+[![GitHub stars](https://img.shields.io/github/stars/runningcoders/ai_orz?style=social)](https://github.com/runningcoders/ai_orz)
+
 ## 技术栈
 
 - **后端**: Rust + Axum + SQLite + [rig-core](https://docs.rs/rig-core/latest/rig/) (LLM 调用框架)
