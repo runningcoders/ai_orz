@@ -1,5 +1,5 @@
 use crate::handlers;
-use crate::middleware::jwt_auth_middleware;
+use crate::middleware::{jwt_auth_middleware, request_context_middleware};
 use axum::{
     routing::{delete, get, post, put},
     Router,
@@ -10,6 +10,9 @@ pub fn create_router(frontend_dist_dir: &str) -> Router {
     Router::new()
         .nest("/api/v1", api_routes())
         .route("/health", get(handlers::health::health))
+        // RequestContext 提取必须在 JWT 认证之前运行
+        // JWT 认证会验证 token 后更新 RequestContext 中的用户信息
+        .layer(axum::middleware::from_fn(request_context_middleware))
         .layer(axum::middleware::from_fn(jwt_auth_middleware))
         .fallback_service(ServeDir::new(frontend_dist_dir))
 }

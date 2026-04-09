@@ -73,7 +73,6 @@ dependencies = [
  "chrono",
  "cookie",
  "jsonwebtoken",
- "once_cell",
  "rand 0.8.5",
  "rig-core",
  "rusqlite",
