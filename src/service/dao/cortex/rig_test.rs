@@ -1,9 +1,9 @@
 //! Cortex DAO 测试
 
 use super::*;
-use crate::models::{self, model_provider::{ModelProvider, ModelProviderPo}};
-use crate::pkg::constants::provider_type::ProviderType;
-use crate::pkg::RequestContext;
+use crate::models::model_provider::{ModelProvider, ModelProviderPo};
+use common::constants::RequestContext;
+use common::constants::ProviderType;
 
 #[tokio::test]
 async fn test_create_openai_cortex() {
