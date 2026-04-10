@@ -10,6 +10,7 @@ use rig::providers::openai::responses_api::ResponsesCompletionModel;
 use crate::models::brain::CortexTrait;
 
 /// Ollama 本地 Cortex
+#[derive(Clone)]
 pub struct OllamaCortex {
     agent: Agent<ResponsesCompletionModel>,
 }

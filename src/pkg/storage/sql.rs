@@ -8,6 +8,7 @@ pub const SQLITE_CREATE_TABLE_AGENTS: &str = r#"
 CREATE TABLE IF NOT EXISTS agents (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT '',
     description TEXT NOT NULL DEFAULT '',
     soul TEXT NOT NULL DEFAULT '',
     capability TEXT NOT NULL DEFAULT '',

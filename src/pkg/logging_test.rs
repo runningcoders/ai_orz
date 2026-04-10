@@ -1,7 +1,7 @@
 //! 日志模块单元测试
 
-use crate::pkg::RequestContext;
-use crate::pkg::{debug, info, log_error, warn};
+use common::constants::RequestContext;
+use crate::pkg::logging::{debug, info, log_error, warn};
 
 fn new_ctx() -> RequestContext {
     RequestContext::new(None, None)
@@ -45,7 +45,7 @@ fn test_log_id_format() {
     let log_id = &ctx.log_id;
     assert_eq!(log_id.len(), 20, "log_id 长度应为20位");
     assert!(
-        log_id.chars().all(|c| c.is_ascii_digit()),
+        log_id.chars().all(|c: char| c.is_ascii_digit()),
         "log_id 应为纯数字"
     );
 }

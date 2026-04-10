@@ -9,6 +9,9 @@ pub mod hr;
 pub mod finance;
 pub mod organization;
 
+// Tests are located in subdirectories: finance/model_provider_test.rs and hr/agent_test.rs
+// No need to declare them here because mod rs already declared in subdirectories
+
 pub use hr::init as init_hr_domain;
 pub use finance::init as init_finance_domain;
 

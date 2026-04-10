@@ -10,6 +10,7 @@ use rig::providers::openai::responses_api::ResponsesCompletionModel;
 use crate::models::brain::CortexTrait;
 
 /// OpenAI 原生 Cortex
+#[derive(Clone)]
 pub struct OpenAiCortex {
     agent: Agent<ResponsesCompletionModel>,
 }

@@ -1,78 +1,35 @@
 //! Agent DAO SQLite 单元测试
 
-use super::*;
 use crate::models::agent::AgentPo;
 use crate::pkg::storage;
 use crate::pkg::storage::sql;
 use common::constants::RequestContext;
-use common::enums::AgentStatus;
+use crate::service::dao::agent::{AgentDaoTrait, sqlite::AgentDaoImpl};
+use uuid::Uuid;
 
 fn new_ctx(user_id: &str) -> RequestContext {
     RequestContext::new(Some(user_id.to_string()), None)
 }
 
-fn insert_agent(conn: &rusqlite::Connection, agent: &AgentPo, creator: &str) {
-    let now = current_timestamp();
-    conn.execute(
-        "INSERT INTO agents (id, name, description, soul, capability, model_provider_id, status, created_by, modified_by, created_at, updated_at) 
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-        rusqlite::params![
-            agent.id,
-            agent.name,
-            agent.description,
-            agent.soul,
-            agent.capabilities, // capabilities (struct) → capability (DB)
-            agent.model_provider_id,
-            agent.status.to_i32(),
-            creator,
-            creator,
-            now,
-            now,
-        ],
-    )
-    .unwrap();
-}
-
-fn find_agent(conn: &rusqlite::Connection, id: &str) -> Option<AgentPo> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, name, description, soul, capability, model_provider_id, status, created_by, modified_by, created_at, updated_at 
-             FROM agents WHERE id = ?1 AND status != 0",
-        )
-        .unwrap();
-
-    match stmt.query_row([id], |row| {
-        Ok(AgentPo {
-            id: row.get(0)?,
-            name: row.get(1)?,
-            role: "".to_string(), // role is not in SQL table, keep default empty
-            description: row.get(2)?,
-            capabilities: row.get::<_, String>(4)?, // capability (DB) → capabilities (struct)
-            soul: row.get(3)?,
-            model_provider_id: row.get(5)?,
-            status: AgentStatus::from_i32(row.get(6)?),
-            created_by: row.get(7)?,
-            modified_by: row.get(8)?,
-            created_at: row.get(9)?,
-            updated_at: row.get(10)?,
-        })
-    }) {
-        Ok(a) => Some(a),
-        Err(rusqlite::Error::QueryReturnedNoRows) => None,
-        Err(_) => None,
-    }
-}
-
+/// 测试所有 Agent DAO 功能
+///
+/// 由于 storage 使用全局 OnceLock 只能初始化一次，
+/// 所以所有测试放在一个函数中顺序执行。
 #[test]
-fn test_insert_and_find_by_id() {
-    let conn = storage::test_conn();
-    conn.execute_batch(sql::SQLITE_CREATE_TABLE_AGENTS)
-        .unwrap();
+fn test_all_agent_dao_functions() {
+    // 使用随机文件名，避免冲突
+    let random_name = format!("/tmp/ai_orz_test_agent_{}.db", Uuid::now_v7());
+    let _ = std::fs::remove_file(&random_name);
+    let _ = storage::init(&random_name);
 
-    sqlite::init();
-    let dao = sqlite::dao();
-    let ctx = new_ctx("admin");
+    // 创建表和索引
+    let _ = storage::get().conn().execute(sql::SQLITE_CREATE_TABLE_AGENTS, ());
+    // 主键自动创建索引，不需要额外创建
 
+    let ctx = RequestContext::new(Some("admin".to_string()), None);
+    let agent_dao = AgentDaoImpl::new();
+
+    // ========== 测试 1: 插入并查询
     let agent_po = AgentPo::new(
         "TestAgent".to_string(),
         Some("worker".to_string()),
@@ -82,25 +39,22 @@ fn test_insert_and_find_by_id() {
         "provider-id-1".to_string(),
         "admin".to_string(),
     );
+    let result = agent_dao.insert(ctx.clone(), &agent_po);
+    assert!(result.is_ok());
 
-    dao.insert(ctx, &agent_po).unwrap();
-    let found = find_agent(&conn, &agent_po.id).unwrap();
+    // 验证插入成功（使用 DAO 接口查询，不是直接 SQL）
+    let found = agent_dao.find_by_id(ctx.clone(), &agent_po.id);
+    assert!(found.is_ok());
+    let found_agent = found.unwrap();
+    assert!(found_agent.is_some());
+    let found_agent = found_agent.unwrap();
+    assert_eq!(found_agent.name, "TestAgent");
+    assert_eq!(found_agent.created_by, "admin");
 
-    assert_eq!(found.name, "TestAgent");
-    assert_eq!(found.created_by, "admin");
-}
-
-#[test]
-fn test_find_all() {
-    let conn = storage::test_conn();
-    conn.execute_batch(sql::SQLITE_CREATE_TABLE_AGENTS)
-        .unwrap();
-    sqlite::init();
-    let dao = sqlite::dao();
-    let ctx = new_ctx("admin");
-
-    for i in 0..3 {
-        let agent_po = AgentPo::new(
+    // ========== 测试 2: 查询全部
+    // 插入另外两个 Agent（全部通过 DAO 接口插入）
+    for i in 0..2 {
+        let agent_po2 = AgentPo::new(
             format!("Agent{}", i),
             Some("worker".to_string()),
             "".to_string(),
@@ -109,143 +63,37 @@ fn test_find_all() {
             format!("provider-{}", i),
             "admin".to_string(),
         );
-        insert_agent(&conn, &agent_po, "admin");
+        let _ = agent_dao.insert(ctx.clone(), &agent_po2);
     }
 
-    let result = dao.find_all(ctx).unwrap();
-    assert_eq!(result.len(), 3);
-}
+    let all = agent_dao.find_all(ctx.clone()).unwrap();
+    assert_eq!(all.len(), 3);
 
-#[test]
-fn test_update() {
-    let conn = storage::test_conn();
-    conn.execute_batch(sql::SQLITE_CREATE_TABLE_AGENTS)
-        .unwrap();
-    sqlite::init();
-    let dao = sqlite::dao();
-    let agent_po = AgentPo::new(
-        "Original".to_string(),
-        Some("worker".to_string()),
-        "".to_string(),
-        vec![],
-        "".to_string(),
-        "provider-id-1".to_string(),
-        "admin".to_string(),
-    );
-    insert_agent(&conn, &agent_po, "admin");
+    // ========== 测试 3: 更新
+    let mut updated = found_agent;
+    updated.name = "UpdatedAgent".to_string();
+    updated.modified_by = "editor".to_string();
+    let result = agent_dao.update(new_ctx("editor"), &updated);
+    assert!(result.is_ok());
 
-    let mut updated = agent_po.clone();
-    updated.name = "Updated".to_string();
-    dao.update(new_ctx("editor"), &updated).unwrap();
+    let found_after_update = agent_dao.find_by_id(ctx.clone(), &updated.id).unwrap().unwrap();
+    assert_eq!(found_after_update.name, "UpdatedAgent");
+    assert_eq!(found_after_update.modified_by, "editor");
 
-    let found = find_agent(&conn, &updated.id).unwrap();
-    assert_eq!(found.name, "Updated");
-    assert_eq!(found.modified_by, "editor");
-}
+    // ========== 测试 4: 软删除
+    assert!(agent_dao.delete(new_ctx("admin"), &updated).is_ok());
+    let found_after_delete = agent_dao.find_by_id(ctx.clone(), &updated.id).unwrap();
+    assert!(found_after_delete.is_none());
 
-#[test]
-fn test_soft_delete() {
-    let conn = storage::test_conn();
-    conn.execute_batch(sql::SQLITE_CREATE_TABLE_AGENTS)
-        .unwrap();
-    sqlite::init();
-    let dao = sqlite::dao();
-    let agent_po = AgentPo::new(
-        "ToDelete".to_string(),
-        Some("worker".to_string()),
-        "".to_string(),
-        vec![],
-        "".to_string(),
-        "provider-id-1".to_string(),
-        "admin".to_string(),
-    );
-    insert_agent(&conn, &agent_po, "admin");
+    // ========== 测试 5: find_all 排除已删除
+    // 现有两个未删除，一个已删除
+    let result = agent_dao.find_all(ctx.clone()).unwrap();
+    assert_eq!(result.len(), 2);
+    let names: Vec<String> = result.iter().map(|a| a.name.clone()).collect();
+    assert!(names.contains(&"Agent0".to_string()));
+    assert!(names.contains(&"Agent1".to_string()));
 
-    dao.delete(new_ctx("admin"), &agent_po).unwrap();
-    assert!(find_agent(&conn, &agent_po.id).is_none());
-}
-
-#[test]
-fn test_find_all_excludes_deleted() {
-    let conn = storage::test_conn();
-    conn.execute_batch(sql::SQLITE_CREATE_TABLE_AGENTS)
-        .unwrap();
-    sqlite::init();
-    let dao = sqlite::dao();
-
-    let agent1 = AgentPo::new(
-        "Normal".to_string(),
-        Some("w".to_string()),
-        "".to_string(),
-        vec![],
-        "".to_string(),
-        "provider-id-1".to_string(),
-        "admin".to_string(),
-    );
-    let agent2 = AgentPo::new(
-        "Deleted".to_string(),
-        Some("w".to_string()),
-        "".to_string(),
-        vec![],
-        "".to_string(),
-        "provider-id-2".to_string(),
-        "admin".to_string(),
-    );
-
-    insert_agent(&conn, &agent1, "admin");
-    insert_agent(&conn, &agent2, "admin");
-    dao.delete(new_ctx("admin"), &agent2).unwrap();
-
-    let result = dao.find_all(new_ctx("admin")).unwrap();
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].name, "Normal");
-}
-
-#[test]
-fn test_delete_twice_is_idempotent() {
-    let conn = storage::test_conn();
-    conn.execute_batch(sql::SQLITE_CREATE_TABLE_AGENTS)
-        .unwrap();
-    sqlite::init();
-    let dao = sqlite::dao();
-
-    let agent = AgentPo::new(
-        "Test".to_string(),
-        Some("w".to_string()),
-        "".to_string(),
-        vec![],
-        "".to_string(),
-        "provider-id-1".to_string(),
-        "admin".to_string(),
-    );
-    insert_agent(&conn, &agent, "admin");
-    let now = current_timestamp();
-    conn.execute(
-        "UPDATE agents SET status = 0, modified_by = ?1, updated_at = ?2 WHERE id = ?3 AND status != 0",
-        rusqlite::params!["admin", now, agent.id],
-    )
-    .unwrap();
-    conn.execute(
-        "UPDATE agents SET status = 0, modified_by = ?1, updated_at = ?2 WHERE id = ?3 AND status != 0",
-        rusqlite::params!["admin", now, agent.id],
-    )
-    .unwrap();
-    assert!(find_agent(&conn, &agent.id).is_none());
-}
-
-#[test]
-fn test_find_not_exists() {
-    let conn = storage::test_conn();
-    conn.execute_batch(sql::SQLITE_CREATE_TABLE_AGENTS)
-        .unwrap();
-
-    assert!(find_agent(&conn, "not-exists").is_none());
-}
-
-fn current_timestamp() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64
+    // ========== 测试 6: 查询不存在
+    let found_none = agent_dao.find_by_id(ctx.clone(), "not-exist-id").unwrap();
+    assert!(found_none.is_none());
 }

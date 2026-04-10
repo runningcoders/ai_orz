@@ -9,6 +9,7 @@ use std::fmt;
 ///
 /// 组合 AgentPo 和其他相关信息，作为业务层的核心对象
 /// 后续可扩展：执行环境、权限、配置等字段
+#[derive(Clone)]
 pub struct Agent {
     /// 底层持久化对象
     pub po: AgentPo,

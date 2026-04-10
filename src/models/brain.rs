@@ -10,10 +10,11 @@ use crate::models::memory::{self};
 use crate::models::model_provider::ModelProvider;
 use async_trait::async_trait;
 use anyhow::Result;
+use dyn_clone::DynClone;
 
 /// 统一的 CortexTrait - 大脑皮层 trait，定义推理接口
 #[async_trait]
-pub trait CortexTrait: Send + Sync {
+pub trait CortexTrait: Send + Sync + DynClone {
     /// 运行 prompt，获取回答
     async fn prompt(&self, prompt: &str) -> Result<String>;
 
@@ -21,9 +22,13 @@ pub trait CortexTrait: Send + Sync {
     fn support_tools(&self) -> bool;
 }
 
+dyn_clone::clone_trait_object!(CortexTrait);
+
 /// Cortex 实体 - 持有 ModelProvider 和具体的推理实现
 ///
 /// Cortex = 模型配置 + 推理执行
+#[derive(Clone)]
+
 pub struct Cortex {
     /// 关联的模型提供商（业务对象，包含配置信息）
     pub model_provider: ModelProvider,
@@ -72,6 +77,8 @@ impl CoreMemory {
 /// 记忆分层：
 /// - core: 核心认知（soul + capabilities）→ 每次全部拼入
 /// - working: 当前会话工作记忆 → 每次全部拼入
+#[derive(Clone)]
+
 pub struct Memory {
     /// 核心认知
     pub core: CoreMemory,
@@ -102,6 +109,7 @@ impl Memory {
 /// Brain 封装了完整的思考执行环境
 ///
 /// Brain 直接持有 Cortex 实体 + Memory 记忆系统
+#[derive(Clone)]
 pub struct Brain {
     /// Cortex 实体（包含模型配置 + 推理执行）
     pub cortex: Cortex,

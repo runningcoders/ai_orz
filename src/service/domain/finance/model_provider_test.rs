@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests {
     use crate::models::model_provider::{ModelProvider, ModelProviderPo};
-    use crate::pkg::constants::ProviderType;
+    use common::enums::ProviderType;
 
     #[test]
     fn test_create_model_provider_po() {
@@ -53,7 +53,7 @@ mod tests {
         // 测试带有自定义 Base URL 的创建
         let po = ModelProviderPo::new(
             "自定义OpenAI".to_string(),
-            ProviderType::OpenAICompatible,
+            ProviderType::Custom,
             "gpt-4".to_string(),
             "sk-custom".to_string(),
             Some("https://my-proxy.example.com/v1".to_string()),
@@ -71,7 +71,7 @@ mod tests {
         // 测试所有 ProviderType 都能正常构造
         let types = vec![
             ProviderType::OpenAI,
-            ProviderType::OpenAICompatible,
+            ProviderType::Custom,
             ProviderType::DeepSeek,
             ProviderType::Doubao,
             ProviderType::Qwen,

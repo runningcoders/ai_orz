@@ -12,6 +12,7 @@ use rig::providers::openai::responses_api::ResponsesCompletionModel;
 use crate::models::brain::CortexTrait;
 
 /// OpenAI 兼容模式 Cortex
+#[derive(Clone)]
 pub struct OpenAiCompatibleCortex {
     agent: Agent<ResponsesCompletionModel>,
 }

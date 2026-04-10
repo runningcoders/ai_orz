@@ -46,6 +46,11 @@ impl AppError {
             AppError::Internal(_) => 500,
         }
     }
+
+    /// 判断是否是 NotFound 错误
+    pub fn is_not_found(&self) -> bool {
+        matches!(self, AppError::NotFound(_))
+    }
 }
 
 impl IntoResponse for AppError {

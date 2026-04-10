@@ -5,6 +5,9 @@
 
 pub mod model_provider;
 
+#[cfg(test)]
+mod model_provider_test;
+
 use crate::error::AppError;
 use crate::models::model_provider::ModelProvider;
 use common::constants::RequestContext;

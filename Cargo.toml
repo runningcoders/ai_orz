@@ -31,4 +31,5 @@ tracing-appender = "0.2.4"
 jsonwebtoken = "9.3"
 cookie = "0.18"
 uuid = { version = "1.23.0", features = ["v7"] }
+dyn-clone = "1.0.14"
 common = { path = "./common", features = ["rusqlite"] }

@@ -9,6 +9,13 @@ pub mod brain;
 pub mod model_provider;
 pub mod organization;
 
+#[cfg(test)]
+pub(crate) mod agent_test;
+#[cfg(test)]
+pub(crate) mod brain_test;
+#[cfg(test)]
+pub(crate) mod model_provider_test;
+
 pub use agent::dal as agent_dal;
 pub use model_provider::dal as model_provider_dal;
 pub use organization::dal as organization_dal;

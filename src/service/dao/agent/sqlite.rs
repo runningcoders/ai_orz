@@ -24,10 +24,10 @@ pub fn init() {
 
 // ==================== 实现 ====================
 
-struct AgentDaoImpl;
+pub struct AgentDaoImpl;
 
 impl AgentDaoImpl {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self
     }
 }
@@ -38,7 +38,7 @@ impl AgentDaoTrait for AgentDaoImpl {
         let now = current_timestamp();
 
         conn.execute(
-            "INSERT INTO agents (id, name, role, description, capabilities, soul, model_provider_id, status, created_by, modified_by, created_at, updated_at) 
+            "INSERT INTO agents (id, name, role, description, capability, soul, model_provider_id, status, created_by, modified_by, created_at, updated_at) 
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             rusqlite::params![
                 agent.id,
@@ -64,7 +64,7 @@ impl AgentDaoTrait for AgentDaoImpl {
 
         let mut stmt = conn
             .prepare(
-                "SELECT id, name, role, description, capabilities, soul, model_provider_id, status, created_by, modified_by, created_at, updated_at 
+                "SELECT id, name, role, description, capability, soul, model_provider_id, status, created_by, modified_by, created_at, updated_at 
                  FROM agents WHERE id = ?1 AND status != 0",
             )
             .map_err(|e| AppError::Internal(e.to_string()))?;
@@ -96,7 +96,7 @@ impl AgentDaoTrait for AgentDaoImpl {
 
         let mut stmt = conn
             .prepare(
-                "SELECT id, name, role, description, capabilities, soul, model_provider_id, status, created_by, modified_by, created_at, updated_at 
+                "SELECT id, name, role, description, capability, soul, model_provider_id, status, created_by, modified_by, created_at, updated_at 
                  FROM agents WHERE status != 0 ORDER BY id DESC",
             )
             .map_err(|e| AppError::Internal(e.to_string()))?;
@@ -129,7 +129,7 @@ impl AgentDaoTrait for AgentDaoImpl {
         let conn = storage::get().conn();
 
         conn.execute(
-            "UPDATE agents SET name = ?1, role = ?2, description = ?3, capabilities = ?4, soul = ?5, model_provider_id = ?6, modified_by = ?7, updated_at = ?8 WHERE id = ?9",
+            "UPDATE agents SET name = ?1, role = ?2, description = ?3, capability = ?4, soul = ?5, model_provider_id = ?6, modified_by = ?7, updated_at = ?8 WHERE id = ?9",
             rusqlite::params![
                 agent.name,
                 agent.role,

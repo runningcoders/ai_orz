@@ -73,6 +73,7 @@ dependencies = [
  "chrono",
  "common",
  "cookie",
+ "dyn-clone",
  "jsonwebtoken",
  "rand 0.8.5",
  "rig-core",

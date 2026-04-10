@@ -6,6 +6,9 @@
 
 pub mod agent;
 
+#[cfg(test)]
+mod agent_test;
+
 use crate::error::AppError;
 use crate::models::agent::Agent;
 use common::constants::RequestContext;
