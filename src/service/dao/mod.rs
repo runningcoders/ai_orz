@@ -6,9 +6,6 @@ pub mod model_provider;
 pub mod organization;
 pub mod user;
 
-#[cfg(test)]
-mod sqlite_all_tests;
-
 pub use agent::dao as agent_dao;
 pub use model_provider::dao as model_provider_dao;
 

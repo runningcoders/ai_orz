@@ -1,11 +1,9 @@
 //! User DAO SQLite 单元测试
 
-use crate::models::organization::OrganizationPo;
 use crate::models::user::UserPo;
 use crate::pkg::storage;
 use common::enums::UserRole;
 use common::constants::{RequestContext, UserStatus};
-use crate::service::dao::organization::{OrganizationDaoTrait, sqlite::OrganizationDaoImpl};
 use crate::service::dao::user::{UserDaoTrait, sqlite::UserDaoImpl};
 use uuid::Uuid;
 
@@ -21,39 +19,16 @@ fn test_all_user_dao_functions() {
     let _ = storage::init(&random_name);
 
     // 创建表和索引
-    let _ = storage::get().conn().execute(storage::sql::SQLITE_CREATE_TABLE_ORGANIZATIONS, ());
-    let _ = storage::get().conn().execute(storage::sql::SQLITE_CREATE_INDEX_ORGANIZATIONS_ID, ());
     let _ = storage::get().conn().execute(storage::sql::SQLITE_CREATE_TABLE_USERS, ());
     let _ = storage::get().conn().execute(storage::sql::SQLITE_CREATE_INDEX_USERS_ID, ());
     let _ = storage::get().conn().execute(storage::sql::SQLITE_CREATE_INDEX_USERS_ORGANIZATION_ID, ());
     let _ = storage::get().conn().execute(storage::sql::SQLITE_CREATE_INDEX_USERS_USERNAME, ());
 
     let ctx = RequestContext::new(Some("test-user".to_string()), None);
-    let org_dao = OrganizationDaoImpl::new();
     let user_dao = UserDaoImpl::new();
 
-    // 先插入两个测试组织（给用户用）
+    // 伪造随机 organization_id，不需要真实插入组织（无外键约束）
     let org_id1 = Uuid::now_v7().to_string();
-    let test_org_1 = OrganizationPo::new(
-        org_id1.clone(),
-        "测试组织 1".to_string(),
-        "".to_string(),
-        "".to_string(),
-        "test-user-1".to_string(),
-    );
-    let result = org_dao.insert(ctx.clone(), &test_org_1);
-    assert!(result.is_ok());
-
-    let org_id2 = Uuid::now_v7().to_string();
-    let test_org_2 = OrganizationPo::new(
-        org_id2.clone(),
-        "测试组织 2".to_string(),
-        "".to_string(),
-        "".to_string(),
-        "test-user-1".to_string(),
-    );
-    let result = org_dao.insert(ctx.clone(), &test_org_2);
-    assert!(result.is_ok());
 
     // 测试 1: 插入用户并查询
     let user_id1 = Uuid::now_v7().to_string();
@@ -105,28 +80,9 @@ fn test_all_user_dao_functions() {
     assert!(found.is_some());
     assert_eq!(found.unwrap().id, user_id_login);
 
-    // 创建两个组织用于计数测试
+    // 创建两个伪造组织 id 用于计数测试
     let count_org_id1 = Uuid::now_v7().to_string();
-    let test_org_1_count = OrganizationPo::new(
-        count_org_id1.clone(),
-        "Org 1".to_string(),
-        "".to_string(),
-        "".to_string(),
-        "test-user-1".to_string(),
-    );
-    let result = org_dao.insert(ctx.clone(), &test_org_1_count);
-    assert!(result.is_ok());
-
     let count_org_id2 = Uuid::now_v7().to_string();
-    let test_org_2_count = OrganizationPo::new(
-        count_org_id2.clone(),
-        "Org 2".to_string(),
-        "".to_string(),
-        "".to_string(),
-        "test-user-1".to_string(),
-    );
-    let result = org_dao.insert(ctx.clone(), &test_org_2_count);
-    assert!(result.is_ok());
 
     // 测试 3: 根据组织 ID 查询所有用户
     let user_id_count1 = Uuid::now_v7().to_string();
