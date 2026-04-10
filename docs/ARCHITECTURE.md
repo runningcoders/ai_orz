@@ -85,6 +85,10 @@ pub struct CoreMemory {
 ### 7. User（用户）
 - **定义**：登录用户，属于一个组织，有角色和状态
 
+### 8. EventQueue（事件总线）
+- **定义**：轻量级内存事件队列，支持优先级排序和顺序保证
+- **设计文档**：详见 [docs/event_design.md](./event_design.md)
+
 ---
 
 ## 组织用户权限体系
@@ -137,6 +141,22 @@ data/
 - ✅ 原始细节人类可读 → 直接打开就能看今天所有对话
 - ✅ append-only 写入 → 不覆盖历史，天然版本控制
 - ✅ 迁移简单 → 整个 data 目录打包就带走
+
+---
+
+## 事件总线架构
+
+详见独立设计文档：[docs/event_design.md](./event_design.md)
+
+### 核心设计要点
+
+| 设计点 | 实现方案 |
+|--------|----------|
+| 持久化 | 所有事件先存入 SQLite `messages` 表，总线只存 `message_id` 元数据 |
+| 崩溃恢复 | 服务启动自动从数据库恢复所有 pending 事件 |
+| 优先级排序 | 按 `priority DESC, created_at ASC` 排序，高优先级先出队 |
+| 顺序保证 | 相同 `order_key` 保证顺序处理，不同 `order_key` 可以并行 |
+| 并发模型 | Tokio 任务调度，相同 key 顺序锁保证顺序 |
 
 ---
 
@@ -196,8 +216,8 @@ Agent (po + brain: Option<Brain>)
 
 | PO 实体 | 枚举字段 | 枚举类型 | 说明 |
 |---------|----------|----------|------|
-| `AgentPo` | `status` | `AgentPoStatus` | 已完成 |
-| `ModelProviderPo` | `status` | `ModelProviderPoStatus` | 已完成 |
+| `AgentPo` | `status` | `AgentStatus` | 已完成 |
+| `ModelProviderPo` | `status` | `ModelProviderStatus` | 已完成 |
 | `ModelProviderPo` | `provider_type` | `ProviderType` | 已完成 |
 | `OrganizationPo` | `status` | `OrganizationStatus` | 已完成 |
 | `UserPo` | `role` | `UserRole` (common) | 已完成 |
@@ -219,6 +239,7 @@ Agent (po + brain: Option<Brain>)
 | `model_providers` | `ModelProviderPo` |
 | `organizations` | `OrganizationPo` |
 | `users` | `UserPo` |
+| `messages` | `MessagePo` (事件总线消息) |
 | `tasks` | `Task` |
 | `short_term_memory_index` | `ShortTermMemoryIndexPo` |
 | `long_term_knowledge_node` | `LongTermKnowledgeNodePo` |
@@ -229,7 +250,16 @@ Agent (po + brain: Option<Brain>)
 
 ## 单元测试规范
 
-- 每个 DAO 模块对应一个单元测试文件
-- 单元测试使用内存数据库，不依赖全局连接池
+- 每个 DAO/DAL/Domain 模块对应一个单元测试文件
+- 每个单元测试独立，使用随机临时 SQLite 文件，互不干扰
+- 每个测试在执行前重新初始化 storage，保证干净环境
 - 所有建表使用定义好的常量，不重复写 SQL
-- 当前项目总测试数：**35 个** → **全部通过** ✅
+- 当前项目总测试数：**66 个** → **全部通过** ✅
+
+### 测试设计要点
+
+| 问题 | 解决方案 |
+|------|----------|
+| OnceLock 只能初始化一次 | 每个测试重新初始化 storage，使用随机数据库文件名 → 完全独立 |
+| 一个测试 panic 影响其他 | 每个测试独立运行，互不干扰 → 失败只影响自己 |
+| 代码可读性 | 每个测试短小精悍，独立清晰 → 好维护 |

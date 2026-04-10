@@ -5,7 +5,7 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 ![GitHub last commit](https://img.shields.io/github/last-commit/runningcoders/ai_orz)
 ![GitHub license](https://img.shields.io/github/license/runningcoders/ai_orz)
 ![Rust](https://img.shields.io/badge/Rust-1.85+-000000?logo=rust)
-![Tests](https://img.shields.io/badge/tests-35%20%E2%9C%94-brightgreen)
+![Tests](https://img.shields.io/badge/tests-66%20%E2%9C%94-brightgreen)
 [![GitHub stars](https://img.shields.io/github/stars/runningcoders/ai_orz?style=social)](https://github.com/runningcoders/ai_orz)
 
 ## 技术栈
@@ -27,7 +27,14 @@ ai_orz/
 │       ├── constants/  # 公共常量、基础类型（ApiResponse、状态枚举等）
 │       └── enums/      # 公共枚举
 ├── src/                # 后端源码
-│   └── config.rs       # 配置加载逻辑（类型从 common 导入）
+│   ├── handlers/       # HTTP 接口层（按业务域分组，每个方法一个文件）
+│   ├── service/
+│   │   ├── dao/        # 数据访问层 DAO（单一数据源操作）
+│   │   ├── dal/        # 业务数据访问层 DAL（组合 DAO 提供业务级数据操作）
+│   │   └── domain/     # 领域层（核心业务逻辑）
+│   ├── middleware/     # Axum 中间件（JWT认证、RequestContext注入）
+│   ├── models/         # 持久化实体 PO
+│   └── pkg/           # 公共工具包
 ├── frontend/            # Dioxus 前端源码
 │   ├── build.rs        # 构建脚本：编译时读取配置嵌入前端
 │   └── src/
@@ -36,7 +43,7 @@ ai_orz/
 ├── dist/               # 编译好的前端静态文件（生产构建输出）
 ├── docs/               # 详细文档
 │   ├── ARCHITECTURE.md # 完整架构说明（最新）
-│   ├── MEMORY_DESIGN.md # 记忆系统详细设计
+│   ├── event_design.md  # 事件总线设计文档
 │   └── AGENTS.md       # Agent 开发规范与最佳实践
 ├── build-full.sh        # 全量构建脚本（后端 + 前端）
 ├── start-dev.sh         # 一键启动开发环境（后端 + dx serve 热重载）
@@ -56,6 +63,7 @@ ai_orz/
 | **CortexDal** | DAL 层 | DAL 业务层，组装完整 `Cortex` 实体 |
 | **HR (Human Resources)** | 领域层 | 人力资源领域，统一管理 AI 智能体和人类员工 |
 | **Finance (财务管理)** | 领域层 | 财务管理领域，统一管理 LLM 模型提供商（付费资源） |
+| **EventQueue** | 基础设施 | 轻量级内存事件总线，支持优先级排序和顺序保证 |
 
 ## 最终实体层次关系 🎯
 
@@ -79,7 +87,7 @@ Agent (po + brain: Option<Brain>)
 6. **Handler 拆分** → 业务分组 + 方法粒度拆分，每个方法一个单独文件 ✅
 7. **API 契约统一** → 所有前后端共用 DTO 提取到独立 `common` crate，保证类型一致 ✅
 8. **类型安全枚举** → 数据库存储的枚举字段全部使用原生枚举类型，编译期检查 ✅
-9. **单元测试** → 每个业务模块都应该有单元测试，当前 35/35 全部通过 ✅
+9. **单元测试** → 每个业务模块都应该有单元测试，当前 66/66 全部通过 ✅
 
 ## LLM 调用流程（最新版）
 
@@ -92,7 +100,7 @@ let provider = domain().model_provider_manage().get_model_provider(ctx, id)?
     .ok_or_else(|| AppError::NotFound(...))?;
 
 // 2. 调用 domain 直接唤醒执行
-let result = domain().model_provider_manage().wake_cortex(ctx, &provider, prompt)?;
+let result = domain().model_provider_manage().wake_cortex(ctx, &provider, prompt).await?;
 ```
 
 ## 支持的模型提供商
@@ -216,6 +224,20 @@ log_subdir = "logs"
 | POST | `/api/v1/finance/model-providers/{id}/test` | 测试连通性 |
 | POST | `/api/v1/finance/model-providers/{id}/call` | 调用模型生成文本 |
 
+### 组织用户权限
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/v1/organization/initialize/check` | 检查系统是否已初始化 |
+| POST | `/api/v1/organization/initialize` | 执行系统初始化（创建根组织 + 超级管理员） |
+| POST | `/api/v1/auth/login` | 用户登录 |
+| POST | `/api/v1/auth/logout` | 用户登出 |
+| GET | `/api/v1/auth/me` | 获取当前登录用户信息 |
+| PUT | `/api/v1/users/me` | 更新当前用户个人信息 |
+| GET | `/api/v1/organization/me` | 获取当前组织信息 |
+| PUT | `/api/v1/organization/me` | 更新当前组织信息 |
+| GET | `/api/v1/organization/users` | 获取当前组织所有用户列表（仅管理员） |
+
 ### 健康检查
 
 | 方法 | 路径 | 说明 |
@@ -239,7 +261,8 @@ frontend/src/
     ├── model_provider_management.rs # Model Provider 管理页
     ├── user_profile.rs   # 个人信息页（所有登录用户可访问）
     ├── organization_info.rs # 组织信息页（仅管理员可访问）
-    └── user_management.rs # 用户管理页（仅管理员可访问）
+    ├── user_management.rs # 用户管理页（仅管理员可访问）
+    └── settings.rs       # 设置页（所有登录用户可访问）
 ```
 
 前端已经实现：
@@ -286,8 +309,15 @@ frontend/src/
 cargo test
 ```
 
-当前状态：**35 个测试全部通过 ✅**
+当前状态：**66 个测试全部通过 ✅**
+
+### 单元测试设计
+
+- 每个测试独立使用随机 SQLite 数据库文件名
+- 每个测试执行前重新初始化全局 storage OnceLock
+- 测试之间互不干扰，一个失败不影响其他
+- 所有 DAO/DAL/Domain 都覆盖单元测试
 
 ## License
 
-MIT
+[Apache License 2.0](LICENSE)

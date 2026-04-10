@@ -43,4 +43,4 @@ pub trait MessageDaoTrait: Send + Sync {
     fn list_by_status(&self, ctx: RequestContext, status: Vec<MessageStatus>, limit: Option<usize>) -> Result<Vec<MessagePo>, AppError>;
 }
 
-pub use sqlite::init;
+pub use sqlite::{dao, init};
