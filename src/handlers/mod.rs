@@ -2,7 +2,6 @@
 
 use common::constants::RequestContext;
 use axum::http;
-use axum::http::HeaderMap;
 use serde::Serialize;
 
 pub mod health;
@@ -10,20 +9,6 @@ pub mod hr;
 pub mod finance;
 pub mod organization;
 pub mod user;
-
-
-/// 从 HeaderMap 提取 RequestContext
-pub fn extract_ctx(headers: &HeaderMap) -> RequestContext {
-    let user_id = headers
-        .get("X-User-Id")
-        .and_then(|v: &http::HeaderValue| v.to_str().ok())
-        .map(|s: &str| s.to_string());
-    let user_name = headers
-        .get("X-User-Name")
-        .and_then(|v: &http::HeaderValue| v.to_str().ok())
-        .map(|s: &str| s.to_string());
-    RequestContext::new(user_id, user_name)
-}
 
 /// 通用 API 响应包装
 #[derive(Debug, Serialize)]
