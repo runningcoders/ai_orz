@@ -1,6 +1,8 @@
 //! User DAO 接口和实现
 
 pub mod sqlite;
+#[cfg(test)]
+mod sqlite_test;
 
 use crate::error::AppError;
 use crate::models::user::UserPo;

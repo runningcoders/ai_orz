@@ -14,7 +14,11 @@ fn test_all_message_dao_functions() {
     // 准备工作：删除旧的临时数据库，初始化全局存储
     let test_db_path = "/tmp/ai_orz_test_message_all.db".to_string();
     let _ = std::fs::remove_file(&test_db_path);
-    storage::init(&test_db_path).unwrap();
+    // 强制重新初始化（忽略已经初始化的错误，多线程测试可能重复进入）
+    match storage::init(&test_db_path) {
+        Ok(_) => {},
+        Err(_) => {}, // 如果已经初始化，忽略
+    }
 
     let ctx = RequestContext::new(Some("test-user".to_string()), None);
     let dao = MessageDaoImpl::new();

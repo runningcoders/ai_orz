@@ -76,6 +76,16 @@ CREATE TABLE IF NOT EXISTS users (
 )
 "#;
 
+/// SQLite: Organizations 表索引
+pub const SQLITE_CREATE_INDEX_ORGANIZATIONS_ID: &str = r#"
+CREATE INDEX IF NOT EXISTS idx_organizations_id ON organizations(id)
+"#;
+
+/// SQLite: Users 表索引
+pub const SQLITE_CREATE_INDEX_USERS_ID: &str = r#"
+CREATE INDEX IF NOT EXISTS idx_users_id ON users(id)
+"#;
+
 /// SQLite: Users 表索引
 pub const SQLITE_CREATE_INDEX_USERS_ORGANIZATION_ID: &str = r#"
 CREATE INDEX IF NOT EXISTS idx_users_organization_id ON users(organization_id)

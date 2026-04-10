@@ -59,6 +59,10 @@ impl Message {
 
 /// Message 实现 Event trait，可以放入事件总线
 impl Event for Message {
+    fn clone_box(&self) -> Box<dyn Event> {
+        Box::new(self.clone())
+    }
+
     fn id(&self) -> &str {
         self.id()
     }

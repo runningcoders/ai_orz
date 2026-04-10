@@ -35,8 +35,9 @@ pub struct EventRef {
 impl Ord for EventRef {
     fn cmp(&self, other: &Self) -> Ordering {
         // BinaryHeap 是最大堆，所以优先级高的在前，同优先级创建时间早的在前
+        // 对于创建时间：越早的 created_at 数值越小，我们需要让它排在前面 → 所以反转比较结果
         self.priority.cmp(&other.priority)
-            .then_with(|| other.created_at.cmp(&self.created_at).reverse())
+            .then_with(|| self.created_at.cmp(&other.created_at).reverse())
     }
 }
 
@@ -50,7 +51,10 @@ impl PartialOrd for EventRef {
 ///
 /// 所有可放入事件总线的事件都需要实现此 trait
 /// 需要 Clone 支持，因为 dequeue 返回克隆事件，原事件保留在队列直到 ack
-pub trait Event: Send + Sync + Clone {
+pub trait Event: Send + Sync + std::fmt::Debug + 'static {
+    /// 克隆事件对象（dyn 对象需要这个方法）
+    fn clone_box(&self) -> Box<dyn Event>;
+
     /// 事件唯一 ID
     fn id(&self) -> &str;
 
@@ -78,5 +82,12 @@ pub trait Event: Send + Sync + Clone {
             priority: self.priority(),
             created_at: self.created_at(),
         }
+    }
+}
+
+// 为 Clone 实现 clone_box
+impl Clone for Box<dyn Event> {
+    fn clone(&self) -> Self {
+        self.clone_box()
     }
 }

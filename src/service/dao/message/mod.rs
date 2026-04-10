@@ -2,7 +2,7 @@
 
 pub mod sqlite;
 #[cfg(test)]
-mod message_test;
+mod sqlite_test;
 
 use crate::error::AppError;
 use crate::models::message::MessagePo;
