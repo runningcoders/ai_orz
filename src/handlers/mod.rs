@@ -1,7 +1,5 @@
 //! HTTP Handler 层
 
-use common::constants::RequestContext;
-use axum::http;
 use serde::Serialize;
 
 pub mod health;

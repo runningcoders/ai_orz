@@ -44,9 +44,7 @@ pub trait EventQueueDaoTrait: Send + Sync + std::fmt::Debug {
 }
 
 mod in_memory;
-pub use self::in_memory::dao;
 pub use self::in_memory::init;
-pub use self::in_memory::InMemoryEventQueue;
 
 #[cfg(test)]
 mod in_memory_test;

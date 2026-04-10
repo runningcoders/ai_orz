@@ -102,7 +102,7 @@ impl EventQueueDaoTrait for InMemoryEventQueue {
         let _guard = self.lock.lock().map_err(|e| AppError::Internal(e.to_string()))?;
 
         let events = unsafe { &mut *self.events.get() };
-        let queues = unsafe { &mut *self.queues.get() };
+        let _queues = unsafe { &mut *self.queues.get() };
         let global_heap = unsafe { &mut *self.global_heap.get() };
         let in_progress = unsafe { &mut *self.in_progress.get() };
 
@@ -141,7 +141,7 @@ impl EventQueueDaoTrait for InMemoryEventQueue {
         let in_progress = unsafe { &mut *self.in_progress.get() };
 
         // 从处理中移除
-        let Some((event_ref, order_key)) = in_progress.remove(event_id) else {
+        let Some((_event_ref, order_key)) = in_progress.remove(event_id) else {
             drop(_guard);
             return Ok(()); // 已经处理过了
         };
