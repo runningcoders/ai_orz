@@ -17,6 +17,23 @@ use crate::models::event::{Event, EventRef};
 use crate::service::dao::event_queue::EventQueueDaoTrait;
 use common::constants::RequestContext;
 
+// ==================== 单例 ====================
+
+static EVENT_QUEUE_DAO: OnceLock<Arc<dyn EventQueueDaoTrait>> = OnceLock::new();
+
+/// 获取全局事件队列 DAO 实例
+pub fn dao() -> Arc<dyn EventQueueDaoTrait> {
+    EVENT_QUEUE_DAO.get().unwrap().clone()
+}
+
+/// 初始化全局事件队列 DAO
+pub fn init() {
+    let dao: Arc<dyn EventQueueDaoTrait> = Arc::new(InMemoryEventQueue::new());
+    EVENT_QUEUE_DAO.set(dao).expect("event_queue DAO already initialized");
+}
+
+// ==================== 实现 ====================
+
 /// 内存事件队列实现
 ///
 /// 结构设计：
@@ -66,7 +83,7 @@ impl EventQueueDaoTrait for InMemoryEventQueue {
         let global_heap = unsafe { &mut *self.global_heap.get() };
 
         let event_id = event.id().to_string();
-        let order_key = event.order_key().to_string();
+        let order_key = event.order_key().map(|s| s.to_string()).unwrap_or_default();
         let event_ref = event.to_event_ref();
 
         // 存储事件本体
@@ -223,17 +240,4 @@ impl EventQueueDaoTrait for InMemoryEventQueue {
         // 内存版本不需要从持久化恢复，恢复由上层调用者结合数据库完成
         Ok(0)
     }
-}
-
-static EVENT_QUEUE_DAO: OnceLock<Arc<dyn EventQueueDaoTrait>> = OnceLock::new();
-
-/// 获取全局事件队列 DAO 实例
-pub fn dao() -> Arc<dyn EventQueueDaoTrait> {
-    EVENT_QUEUE_DAO.get().unwrap().clone()
-}
-
-/// 初始化全局事件队列 DAO
-pub fn init() {
-    let dao: Arc<dyn EventQueueDaoTrait> = Arc::new(InMemoryEventQueue::new());
-    EVENT_QUEUE_DAO.set(dao).expect("event_queue DAO already initialized");
 }
