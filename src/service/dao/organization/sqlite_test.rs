@@ -2,7 +2,8 @@
 
 use crate::models::organization::OrganizationPo;
 use crate::pkg::storage;
-use common::constants::{RequestContext, OrganizationStatus, OrganizationScope};
+use common::constants::RequestContext;
+use common::enums::{OrganizationStatus, OrganizationScope};
 use crate::service::dao::organization::{OrganizationDaoTrait, sqlite::OrganizationDaoImpl};
 use uuid::Uuid;
 

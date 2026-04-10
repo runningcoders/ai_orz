@@ -2,7 +2,8 @@
 //!
 //! 对应 SQL 建表语句：[`crate::pkg::storage::sql::SQLITE_CREATE_TABLE_ORGANIZATIONS`]
 
-use common::constants::{utils, OrganizationStatus, OrganizationScope};
+use common::constants::utils;
+use common::enums::{OrganizationStatus, OrganizationScope};
 use serde::{Deserialize, Serialize};
 
 /// OrganizationPo 持久化对象

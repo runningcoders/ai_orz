@@ -6,7 +6,8 @@
 //! - Text 消息：content 直接存储文本内容，meta_json 为空
 //! - Image/File/Audio/Video 附件：content 存储文件相对路径，meta_json 存储元数据（文件名、大小、MIME类型等）
 
-use common::constants::{utils, MessageRole, MessageStatus, MessageType};
+use common::constants::utils;
+use common::enums::{MessageRole, MessageStatus, MessageType};
 use crate::models::event::{Event, EventType};
 use serde::{Deserialize, Serialize};
 

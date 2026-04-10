@@ -1,7 +1,7 @@
 //! Agent 实体
 
 use crate::models::brain::{Brain, Cortex, CortexTrait};
-use common::constants::AgentPoStatus;
+use common::enums::AgentStatus;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -90,7 +90,7 @@ pub struct AgentPo {
     pub capabilities: String, // JSON string
     pub soul: String,          // 长文本：角色/性格/灵魂设定
     pub model_provider_id: String, // 关联模型提供商 ID
-    pub status: AgentPoStatus, // 软删除状态
+    pub status: AgentStatus, // 软删除状态
     pub created_by: String,    // 创建者
     pub modified_by: String,   // 修改者
     pub created_at: i64,
@@ -115,7 +115,7 @@ impl AgentPo {
             capabilities: serde_json::to_string(&capabilities).unwrap_or_else(|_| "[]".to_string()),
             soul,
             model_provider_id,
-            status: AgentPoStatus::Normal,
+            status: AgentStatus::Normal,
             created_by: creator.clone(),
             modified_by: creator,
             created_at: current_timestamp(),

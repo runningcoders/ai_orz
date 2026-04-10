@@ -3,7 +3,8 @@
 use crate::error::AppError;
 use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::storage;
-use common::constants::{RequestContext, ModelProviderPoStatus, ProviderType};
+use common::enums::{ModelProviderStatus, ProviderType};
+use common::constants::RequestContext;
 use crate::service::dao::model_provider::ModelProviderDaoTrait;
 use std::sync::{Arc, OnceLock};
 
@@ -84,7 +85,7 @@ impl ModelProviderDaoTrait for ModelProviderDaoImpl {
                 api_key: row.get(4)?,
                 base_url: row.get(5)?,
                 description: row.get(6)?,
-                status: ModelProviderPoStatus::from_i32(row.get::<_, i32>(7)?),
+                status: ModelProviderStatus::from_i32(row.get::<_, i32>(7)?),
                 created_by: row.get(8)?,
                 modified_by: row.get(9)?,
                 created_at: row.get(10)?,
@@ -121,7 +122,7 @@ impl ModelProviderDaoTrait for ModelProviderDaoImpl {
                     api_key: row.get(4)?,
                     base_url: row.get(5)?,
                     description: row.get(6)?,
-                    status: ModelProviderPoStatus::from_i32(row.get::<_, i32>(7)?),
+                    status: ModelProviderStatus::from_i32(row.get::<_, i32>(7)?),
                     created_by: row.get(8)?,
                     modified_by: row.get(9)?,
                     created_at: row.get(10)?,

@@ -51,7 +51,7 @@ pub async fn update_user(
     }
     if let Some(status) = req.status {
         // 从 i32 转换为 UserStatus 枚举
-        use common::constants::UserStatus;
+        use common::enums::UserStatus;
         user.status = UserStatus::from_i32(status);
     }
     if let Some(password_hash) = req.password_hash {

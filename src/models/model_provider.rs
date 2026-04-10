@@ -1,6 +1,6 @@
 //! 模型提供商实体
 
-use common::constants::{ModelProviderPoStatus, ProviderType};
+use common::enums::{ModelProviderStatus, ProviderType};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -16,7 +16,7 @@ pub struct ModelProviderPo {
     pub api_key: String,
     pub base_url: Option<String>,
     pub description: String,
-    pub status: ModelProviderPoStatus,
+    pub status: ModelProviderStatus,
     pub created_by: String,
     pub modified_by: String,
     pub created_at: i64,
@@ -93,7 +93,7 @@ impl ModelProviderPo {
             api_key,
             base_url,
             description,
-            status: ModelProviderPoStatus::Normal,
+            status: ModelProviderStatus::Normal,
             created_by: creator.clone(),
             modified_by: creator,
             created_at: current_timestamp(),

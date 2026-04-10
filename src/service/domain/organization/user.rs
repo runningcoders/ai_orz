@@ -98,7 +98,7 @@ impl super::UserManage for super::OrganizationDomainImpl {
         }
 
         // 用户状态检查：Active 表示启用
-        if user.status != common::constants::UserStatus::Active {
+        if user.status != common::enums::UserStatus::Active {
             return Err(AppError::BadRequest("用户已被禁用".to_string()));
         }
 

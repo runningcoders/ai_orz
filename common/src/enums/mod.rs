@@ -1,4 +1,13 @@
 //! Shared enumerations used by both backend and frontend
 
-pub mod user_role;
-pub use user_role::UserRole;
+pub mod agent;
+pub mod organization;
+pub mod user;
+pub mod message;
+pub mod provider;
+
+pub use agent::{AgentStatus, ModelProviderStatus};
+pub use organization::{OrganizationStatus, OrganizationScope};
+pub use user::{UserRole, UserStatus};
+pub use message::{MessageRole, MessageType, MessageStatus};
+pub use provider::ProviderType;

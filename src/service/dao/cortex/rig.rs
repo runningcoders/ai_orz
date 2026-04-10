@@ -2,7 +2,8 @@
 
 use async_trait::async_trait;
 use anyhow::Result;
-use common::constants::{ProviderType, RequestContext};
+use common::constants::RequestContext;
+use common::enums::ProviderType;
 use crate::models::brain::*;
 use crate::models::model_provider::ModelProvider;
 use tokio::runtime::Handle;
@@ -60,7 +61,7 @@ impl super::CortexDao for RigCortexDao {
             ProviderType::Ollama => Box::new(
                 self::ollama::OllamaCortex::new(api_key, model, base_url)?
             ),
-            ProviderType::OpenAICompatible => Box::new(
+            ProviderType::Custom => Box::new(
                 self::openai_compatible::OpenAiCompatibleCortex::new(
                     api_key, model, "".to_string(), base_url
                 )?

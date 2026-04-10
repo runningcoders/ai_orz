@@ -3,6 +3,7 @@
 use crate::error::AppError;
 use crate::models::agent::AgentPo;
 use crate::pkg::storage;
+use common::enums::AgentStatus;
 use common::constants::RequestContext;
 use crate::service::dao::agent::AgentDaoTrait;
 use std::sync::{Arc, OnceLock};
@@ -77,7 +78,7 @@ impl AgentDaoTrait for AgentDaoImpl {
                 capabilities: row.get(4)?,
                 soul: row.get(5)?,
                 model_provider_id: row.get(6)?,
-                status: common::constants::AgentPoStatus::from_i32(row.get(7)?),
+                status: AgentStatus::from_i32(row.get(7)?),
                 created_by: row.get(8)?,
                 modified_by: row.get(9)?,
                 created_at: row.get(10)?,
@@ -110,7 +111,7 @@ impl AgentDaoTrait for AgentDaoImpl {
                     capabilities: row.get(4)?,
                     soul: row.get(5)?,
                     model_provider_id: row.get(6)?,
-                    status: common::constants::AgentPoStatus::from_i32(row.get(7)?),
+                    status: AgentStatus::from_i32(row.get(7)?),
                     created_by: row.get(8)?,
                     modified_by: row.get(9)?,
                     created_at: row.get(10)?,
