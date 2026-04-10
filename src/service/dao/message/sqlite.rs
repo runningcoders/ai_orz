@@ -3,7 +3,8 @@
 use crate::error::AppError;
 use crate::models::message::MessagePo;
 use crate::pkg::storage;
-use common::constants::{MessageStatus, RequestContext};
+use common::enums::MessageStatus;
+use common::constants::RequestContext;
 use crate::service::dao::message::MessageDaoTrait;
 use std::sync::{Arc, OnceLock};
 
@@ -240,7 +241,7 @@ impl MessageDaoTrait for MessageDaoImpl {
     fn list_by_status(&self, _ctx: RequestContext, status: Vec<MessageStatus>, limit: Option<usize>) -> Result<Vec<MessagePo>, AppError> {
         let conn = storage::get().conn();
 
-        let status_in: Vec<i32> = status.iter().map(|s| s.to_i32()).collect();
+        let status_in: Vec<i32> = status.iter().map(|s: &MessageStatus| s.to_i32()).collect();
         let placeholders: Vec<String> = status_in.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
         let placeholders_str = placeholders.join(", ");
 

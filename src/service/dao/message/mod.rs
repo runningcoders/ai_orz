@@ -4,7 +4,8 @@ pub mod sqlite;
 
 use crate::error::AppError;
 use crate::models::message::MessagePo;
-use common::constants::{MessageStatus, RequestContext};
+use common::enums::MessageStatus;
+use common::constants::RequestContext;
 
 // ==================== 接口 ====================
 
