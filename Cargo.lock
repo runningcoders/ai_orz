@@ -74,6 +74,7 @@ dependencies = [
  "common",
  "cookie",
  "dyn-clone",
+ "futures-util",
  "jsonwebtoken",
  "rand 0.8.5",
  "rig-core",

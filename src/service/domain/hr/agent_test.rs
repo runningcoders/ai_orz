@@ -4,6 +4,7 @@ use crate::models::agent::{Agent, AgentPo};
 use common::constants::RequestContext;
 use super::{HrDomain, HrDomainImpl};
 use std::sync::Arc;
+use uuid::Uuid;
 
 fn new_ctx(user_id: &str) -> RequestContext {
     RequestContext::new(Some(user_id.to_string()), None)
@@ -15,16 +16,11 @@ fn setup_test_domain() -> Arc<dyn HrDomain> {
     Arc::new(HrDomainImpl::new(dal))
 }
 
-/// 测试所有 HR Domain Agent 管理功能
-/// 
-/// 由于 storage 使用全局 OnceLock 只能初始化一次，
-/// 所以所有测试放在一个函数中顺序执行。
 #[test]
-fn test_all_hr_domain_agent_functions() {
+fn test_create_and_find_by_id() {
     let domain = setup_test_domain();
     let ctx = new_ctx("admin");
 
-    // ========== 测试 1: 创建 Agent
     let agent_po = AgentPo::new(
         "TestAgent".to_string(),
         Some("worker".to_string()),
@@ -38,12 +34,16 @@ fn test_all_hr_domain_agent_functions() {
 
     domain.agent_manage().create_agent(ctx.clone(), &agent).unwrap();
 
-    // ========== 测试 2: 获取 Agent
-    let found = domain.agent_manage().get_agent(ctx.clone(), &agent.id()).unwrap().unwrap();
+    let found = domain.agent_manage().get_agent(ctx, &agent.id()).unwrap().unwrap();
     assert_eq!(found.name(), "TestAgent");
+}
 
-    // ========== 测试 3: 列表 Agent
-    for i in 0..2 {
+#[test]
+fn test_list_agents() {
+    let domain = setup_test_domain();
+    let ctx = new_ctx("admin");
+
+    for i in 0..3 {
         let agent_po = AgentPo::new(
             format!("Agent{}", i),
             Some("worker".to_string()),
@@ -57,18 +57,52 @@ fn test_all_hr_domain_agent_functions() {
         domain.agent_manage().create_agent(ctx.clone(), &agent).unwrap();
     }
 
-    let agents = domain.agent_manage().list_agents(ctx.clone()).unwrap();
+    let agents = domain.agent_manage().list_agents(ctx).unwrap();
     assert_eq!(agents.len(), 3);
+}
 
-    // ========== 测试 4: 更新 Agent
+#[test]
+fn test_update_agent() {
+    let domain = setup_test_domain();
+    let ctx = new_ctx("admin");
+
+    let agent_po = AgentPo::new(
+        "Original".to_string(),
+        Some("worker".to_string()),
+        "".to_string(),
+        vec![],
+        "".to_string(),
+        "provider-id-1".to_string(),
+        "admin".to_string(),
+    );
+    let agent = Agent::from_po(agent_po);
+    domain.agent_manage().create_agent(ctx.clone(), &agent).unwrap();
+
     let mut updated = agent.clone();
     updated.po.name = "Updated".to_string();
     domain.agent_manage().update_agent(new_ctx("editor"), &updated).unwrap();
 
-    let found = domain.agent_manage().get_agent(ctx.clone(), &updated.id()).unwrap().unwrap();
+    let found = domain.agent_manage().get_agent(ctx, &updated.id()).unwrap().unwrap();
     assert_eq!(found.name(), "Updated");
+}
 
-    // ========== 测试 5: 删除 Agent
-    domain.agent_manage().delete_agent(ctx.clone(), &updated).unwrap();
-    assert!(domain.agent_manage().get_agent(ctx.clone(), &updated.id()).unwrap().is_none());
+#[test]
+fn test_delete_agent() {
+    let domain = setup_test_domain();
+    let ctx = new_ctx("admin");
+
+    let agent_po = AgentPo::new(
+        "ToDelete".to_string(),
+        Some("worker".to_string()),
+        "".to_string(),
+        vec![],
+        "".to_string(),
+        "provider-id-1".to_string(),
+        "admin".to_string(),
+    );
+    let agent = Agent::from_po(agent_po);
+    domain.agent_manage().create_agent(ctx.clone(), &agent).unwrap();
+
+    domain.agent_manage().delete_agent(ctx.clone(), &agent).unwrap();
+    assert!(domain.agent_manage().get_agent(ctx, &agent.id()).unwrap().is_none());
 }

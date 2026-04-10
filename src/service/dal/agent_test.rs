@@ -26,16 +26,11 @@ pub fn setup_test_dal() -> Arc<dyn AgentDalTrait> {
     Arc::new(AgentDal::new(crate::service::dao::agent::dao()))
 }
 
-/// 测试所有 Agent DAL 功能
-/// 
-/// 由于 storage 使用全局 OnceLock 只能初始化一次，
-/// 所以所有测试放在一个函数中顺序执行。
 #[test]
-fn test_all_agent_dal_functions() {
+fn test_create_and_find_by_id() {
     let dal = setup_test_dal();
     let ctx = new_ctx("admin");
 
-    // ========== 测试 1: 插入并查询
     let agent_po = AgentPo::new(
         "TestAgent".to_string(),
         Some("worker".to_string()),
@@ -48,14 +43,18 @@ fn test_all_agent_dal_functions() {
     let agent = Agent::from_po(agent_po);
 
     dal.create(ctx.clone(), &agent).unwrap();
-    let found = dal.find_by_id(ctx.clone(), &agent.id()).unwrap().unwrap();
+    let found = dal.find_by_id(ctx, &agent.id()).unwrap().unwrap();
 
     assert_eq!(found.name(), "TestAgent");
     assert_eq!(found.po.created_by, "admin");
+}
 
-    // ========== 测试 2: 查询全部
-    // 插入另外两个 Agent（全部通过 DAL 接口插入）
-    for i in 0..2 {
+#[test]
+fn test_find_all() {
+    let dal = setup_test_dal();
+    let ctx = new_ctx("admin");
+
+    for i in 0..3 {
         let agent_po = AgentPo::new(
             format!("Agent{}", i),
             Some("worker".to_string()),
@@ -69,32 +68,83 @@ fn test_all_agent_dal_functions() {
         dal.create(ctx.clone(), &agent).unwrap();
     }
 
-    let all = dal.find_all(ctx.clone()).unwrap();
+    let all = dal.find_all(ctx).unwrap();
     assert_eq!(all.len(), 3);
+}
 
-    // ========== 测试 3: 更新
-    let mut updated = found.clone();
-    updated.po.name = "UpdatedAgent".to_string();
+#[test]
+fn test_update() {
+    let dal = setup_test_dal();
+    let ctx = new_ctx("admin");
+
+    let agent_po = AgentPo::new(
+        "Original".to_string(),
+        Some("worker".to_string()),
+        "".to_string(),
+        vec![],
+        "".to_string(),
+        "provider-id-1".to_string(),
+        "admin".to_string(),
+    );
+    let agent = Agent::from_po(agent_po);
+    dal.create(ctx.clone(), &agent).unwrap();
+
+    let mut updated = agent.clone();
+    updated.po.name = "Updated".to_string();
     dal.update(new_ctx("editor"), &updated).unwrap();
 
-    let found_after_update = dal.find_by_id(ctx.clone(), &updated.id()).unwrap().unwrap();
-    assert_eq!(found_after_update.name(), "UpdatedAgent");
-    assert_eq!(found_after_update.po.modified_by, "editor");
+    let found = dal.find_by_id(ctx, &updated.id()).unwrap().unwrap();
+    assert_eq!(found.name(), "Updated");
+    assert_eq!(found.po.modified_by, "editor");
+}
 
-    // ========== 测试 4: 软删除
-    assert!(dal.delete(new_ctx("admin"), &updated).is_ok());
-    let found_after_delete = dal.find_by_id(ctx.clone(), &updated.id()).unwrap();
-    assert!(found_after_delete.is_none());
+#[test]
+fn test_delete() {
+    let dal = setup_test_dal();
+    let ctx = new_ctx("admin");
 
-    // ========== 测试 5: find_all 排除已删除
-    // 现有两个未删除，一个已删除
-    let result = dal.find_all(ctx.clone()).unwrap();
-    assert_eq!(result.len(), 2);
-    let names: Vec<String> = result.iter().map(|a| a.name().to_string()).collect();
-    assert!(names.contains(&"Agent0".to_string()));
-    assert!(names.contains(&"Agent1".to_string()));
+    let agent_po = AgentPo::new(
+        "ToDelete".to_string(),
+        Some("worker".to_string()),
+        "".to_string(),
+        vec![],
+        "".to_string(),
+        "provider-id-1".to_string(),
+        "admin".to_string(),
+    );
+    let agent = Agent::from_po(agent_po);
+    dal.create(ctx.clone(), &agent).unwrap();
 
-    // ========== 测试 6: 查询不存在
-    let found_none = dal.find_by_id(ctx.clone(), "not-exist-id").unwrap();
-    assert!(found_none.is_none());
+    dal.delete(ctx.clone(), &agent).unwrap();
+    assert!(dal.find_by_id(ctx, &agent.id()).unwrap().is_none());
+}
+
+#[test]
+fn test_find_all_excludes_deleted() {
+    let dal = setup_test_dal();
+    let ctx = new_ctx("admin");
+
+    let agent1_po = AgentPo::new("Normal".to_string(), Some("w".to_string()), "".to_string(), vec![], "".to_string(), "provider-id-1".to_string(), "admin".to_string());
+    let agent2_po = AgentPo::new("Deleted".to_string(), Some("w".to_string()), "".to_string(), vec![], "".to_string(), "provider-id-2".to_string(), "admin".to_string());
+
+    let agent1 = Agent::from_po(agent1_po);
+    let agent2 = Agent::from_po(agent2_po);
+
+    dal.create(ctx.clone(), &agent1).unwrap();
+    dal.create(ctx.clone(), &agent2).unwrap();
+    dal.delete(ctx.clone(), &agent2).unwrap();
+
+    let all = dal.find_all(ctx).unwrap();
+    assert_eq!(all.len(), 1);
+    let names: Vec<String> = all.iter().map(|a| a.name().to_string()).collect();
+    assert!(names.contains(&"Normal".to_string()));
+    assert!(!names.contains(&"Deleted".to_string()));
+}
+
+#[test]
+fn test_find_not_exists() {
+    let dal = setup_test_dal();
+    let ctx = new_ctx("user1");
+
+    assert!(dal.find_by_id(ctx, "not-exists").unwrap().is_none());
 }

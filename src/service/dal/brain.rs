@@ -11,6 +11,8 @@ use crate::models::model_provider::ModelProvider;
 use common::constants::RequestContext;
 use crate::service::dao::cortex::{CortexDao};
 use std::sync::{Arc, OnceLock};
+use async_trait::async_trait;
+use futures_util::TryFutureExt;
 
 // ==================== 单例管理 ====================
 
@@ -29,6 +31,7 @@ pub fn init(cortex_dao: Arc<dyn CortexDao + Send + Sync>) {
 // ==================== DAL 接口 ====================
 
 /// Brain DAL 接口
+#[async_trait]
 pub trait BrainDalTrait: Send + Sync {
     /// 从 ModelProvider 和 Memory 创建完整的 Brain
     ///
@@ -45,7 +48,7 @@ pub trait BrainDalTrait: Send + Sync {
     /// 创建 Cortex 并测试连通性，执行一次 prompt 获取回答
     ///
     /// 用于测试模型提供商连接是否正常
-    fn test_connection(
+    async fn test_connection(
         &self,
         ctx: RequestContext,
         provider: &ModelProvider,
@@ -54,8 +57,8 @@ pub trait BrainDalTrait: Send + Sync {
 
     /// 对已存在的 Cortex 执行 prompt 获取回答
     ///
-    /// 使用 tokio runtime 阻塞执行异步调用
-    fn prompt_existing_cortex(
+    /// 直接转发给 cortex_dao 异步执行
+    async fn prompt_existing_cortex(
         &self,
         ctx: RequestContext,
         cortex: &dyn CortexTrait,
@@ -72,20 +75,23 @@ pub struct BrainDal {
 
 impl BrainDal {
     /// 创建 DAL 实例
-    pub fn new(cortex_dao: Arc<dyn CortexDao + Send + Sync>) -> Self {
+    pub fn new(
+        cortex_dao: Arc<dyn CortexDao + Send + Sync>,
+    ) -> Self {
         Self { cortex_dao }
     }
 }
 
+#[async_trait]
 impl BrainDalTrait for BrainDal {
     fn wake_brain(
         &self,
-        ctx: RequestContext,
+        _ctx: RequestContext,
         provider: &ModelProvider,
         memory: Memory,
     ) -> Result<Brain, AppError> {
         // 1. 创建 CortexTrait
-        let cortex_trait = self.cortex_dao.create_cortex_trait(ctx, provider)
+        let cortex_trait = self.cortex_dao.create_cortex_trait(_ctx, provider)
             .map_err(|e| AppError::Internal(e.to_string()))?;
 
         // 2. 创建 Cortex 实体
@@ -97,7 +103,7 @@ impl BrainDalTrait for BrainDal {
         Ok(brain)
     }
 
-    fn test_connection(
+    async fn test_connection(
         &self,
         ctx: RequestContext,
         provider: &ModelProvider,
@@ -108,16 +114,16 @@ impl BrainDalTrait for BrainDal {
             .map_err(|e| AppError::Internal(e.to_string()))?;
 
         // 2. 执行 prompt 获取回答
-        self.prompt_existing_cortex(ctx, &*cortex_trait, prompt)
+        self.prompt_existing_cortex(ctx, &*cortex_trait, prompt).await
     }
 
-    fn prompt_existing_cortex(
+    async fn prompt_existing_cortex(
         &self,
         ctx: RequestContext,
         cortex: &dyn CortexTrait,
         prompt: &str,
     ) -> Result<String, AppError> {
-        self.cortex_dao.prompt(ctx, cortex, prompt)
+        self.cortex_dao.prompt(ctx, cortex, prompt).await
             .map_err(|e| AppError::Internal(e.to_string()))
     }
 }

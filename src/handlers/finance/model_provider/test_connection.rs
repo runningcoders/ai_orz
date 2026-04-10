@@ -25,7 +25,7 @@ pub async fn test_model_provider_connection(
     // 2. 使用 prompt 测试连通性，默认用 "Hello!"
     let prompt = req.prompt.clone().unwrap_or_else(|| "Hello!".to_string());
 
-    match domain().model_provider_manage().wake_cortex(ctx, &provider, &prompt) {
+    match domain().model_provider_manage().wake_cortex(ctx, &provider, &prompt).await {
         Ok(result) => {
             // 如果结果为空也算测试失败
             if result.trim().is_empty() {

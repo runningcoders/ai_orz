@@ -1,39 +1,40 @@
-//! Rig 具体实现 - 默认 CortexDao 实现
+//! Rig 驱动的 Cortex 实现
 
-use async_trait::async_trait;
-use anyhow::Result;
+use anyhow::{Context, Result};
+use crate::models::{brain::*, model_provider::ModelProvider};
 use common::constants::RequestContext;
 use common::enums::ProviderType;
-use crate::models::brain::*;
-use crate::models::model_provider::ModelProvider;
-use tokio::runtime::Handle;
-use std::sync::{Arc, OnceLock};
+use rig::client::*;
+use rig::completion::*;
+use std::sync::OnceLock;
 
-/// 默认 Cortex DAO 工厂实现
-pub struct RigCortexDao;
+// ==================== 公开 ====================
 
-// ==================== 单例 ====================
-
-static CORTEX_DAO: OnceLock<Arc<dyn super::CortexDao + Send + Sync>> = OnceLock::new();
-
-/// 获取 CortexDAO 单例
-pub fn dao() -> Arc<dyn super::CortexDao + Send + Sync> {
-    CORTEX_DAO.get().cloned().unwrap()
+/// Rig 驱动的 Cortex DAO 实现
+pub struct RigCortexDao {
 }
 
-/// 初始化单例
+static CORTEX_DAO: OnceLock<RigCortexDao> = OnceLock::new();
+
+/// 获取 Cortex DAO 单例
+pub fn dao() -> &'static RigCortexDao {
+    CORTEX_DAO.get().unwrap()
+}
+
+/// 初始化 Cortex DAO
 pub fn init() {
-    let _ = CORTEX_DAO.set(Arc::new(RigCortexDao::new()));
+    let _ = CORTEX_DAO.set(RigCortexDao::new());
 }
 
 impl RigCortexDao {
     pub fn new() -> Self {
-        Self
+        Self {
+        }
     }
 }
 
-#[async_trait]
-impl super::CortexDao for RigCortexDao {
+#[async_trait::async_trait]
+impl crate::service::dao::cortex::CortexDao for RigCortexDao {
     fn create_cortex_trait(&self, _ctx: RequestContext, provider: &ModelProvider) -> Result<Box<dyn CortexTrait + Send + Sync>> {
         let api_key = provider.po.api_key.clone();
         let model = provider.po.model_name.clone();
@@ -44,39 +45,27 @@ impl super::CortexDao for RigCortexDao {
                 self::openai::OpenAiCortex::new(api_key, model, base_url)?
             ),
             ProviderType::DeepSeek => Box::new(
-                self::openai_compatible::OpenAiCompatibleCortex::new(
-                    api_key, model, "https://api.deepseek.com".to_string(), base_url
-                )?
+                self::openai_compatible::OpenAiCompatibleCortex::new(api_key, model, "https://api.deepseek.com".to_string(), base_url)?
             ),
             ProviderType::Qwen => Box::new(
-                self::openai_compatible::OpenAiCompatibleCortex::new(
-                    api_key, model, "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string(), base_url
-                )?
+                self::openai_compatible::OpenAiCompatibleCortex::new(api_key, model, "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string(), base_url)?
             ),
             ProviderType::Doubao => Box::new(
-                self::openai_compatible::OpenAiCompatibleCortex::new(
-                    api_key, model, "https://ark.cn-beijing.volces.com/api".to_string(), base_url
-                )?
+                self::openai_compatible::OpenAiCompatibleCortex::new(api_key, model, "https://ark.cn-beijing.volces.com/api".to_string(), base_url)?
             ),
             ProviderType::Ollama => Box::new(
                 self::ollama::OllamaCortex::new(api_key, model, base_url)?
             ),
             ProviderType::Custom => Box::new(
-                self::openai_compatible::OpenAiCompatibleCortex::new(
-                    api_key, model, "".to_string(), base_url
-                )?
+                self::openai_compatible::OpenAiCompatibleCortex::new(api_key, model, "".to_string(), base_url)?
             ),
         };
 
         Ok(cortex)
     }
 
-    fn prompt(&self, _ctx: RequestContext, cortex: &dyn CortexTrait, prompt: &str) -> Result<String> {
-        let result = Handle::current().block_on(async {
-            cortex.prompt(prompt).await
-        })?;
-
-        Ok(result)
+    async fn prompt(&self, _ctx: RequestContext, cortex: &dyn CortexTrait, prompt: &str) -> Result<String> {
+        cortex.prompt(prompt).await
     }
 }
 

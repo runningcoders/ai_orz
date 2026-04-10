@@ -8,8 +8,11 @@ use crate::models::model_provider::ModelProvider;
 use common::constants::RequestContext;
 use crate::service::dal::brain::dal as brain_dal;
 use crate::service::dal::model_provider::ModelProviderDalTrait;
-use crate::service::domain::finance::{FinanceDomainImpl, ModelProviderManage};
+use super::{FinanceDomainImpl};
+use async_trait::async_trait;
+use super::ModelProviderManage;
 
+#[async_trait]
 impl ModelProviderManage for FinanceDomainImpl {
     fn create_model_provider(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError> {
         self.model_provider_dal.create(ctx, provider)
@@ -33,13 +36,12 @@ impl ModelProviderManage for FinanceDomainImpl {
 
     /// 唤醒 Cortex：创建临时 Cortex 并执行调用
     ///
-    /// 上层已经查询好 ModelProvider，直接传递进来
+    /// 上层已经查询好 Model Provider，直接传递进来
     /// - provider: 模型提供商
     /// - prompt: 调用提示词
     /// - 返回: 模型输出结果
-    fn wake_cortex(&self, ctx: RequestContext, provider: &ModelProvider, prompt: &str) -> Result<String, AppError> {
+    async fn wake_cortex(&self, ctx: RequestContext, provider: &ModelProvider, prompt: &str) -> Result<String, AppError> {
         // 直接调用 Brain DAL 测试连接执行调用
-        let result = brain_dal().test_connection(ctx, provider, prompt)?;
-        Ok(result)
+        brain_dal().test_connection(ctx, provider, prompt).await
     }
 }
