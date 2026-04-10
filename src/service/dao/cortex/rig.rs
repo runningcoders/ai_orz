@@ -6,9 +6,24 @@ use common::constants::{ProviderType, RequestContext};
 use crate::models::brain::*;
 use crate::models::model_provider::ModelProvider;
 use tokio::runtime::Handle;
+use std::sync::{Arc, OnceLock};
 
 /// 默认 Cortex DAO 工厂实现
 pub struct RigCortexDao;
+
+// ==================== 单例 ====================
+
+static CORTEX_DAO: OnceLock<Arc<dyn super::CortexDao + Send + Sync>> = OnceLock::new();
+
+/// 获取 CortexDAO 单例
+pub fn dao() -> Arc<dyn super::CortexDao + Send + Sync> {
+    CORTEX_DAO.get().cloned().unwrap()
+}
+
+/// 初始化单例
+pub fn init() {
+    let _ = CORTEX_DAO.set(Arc::new(RigCortexDao::new()));
+}
 
 impl RigCortexDao {
     pub fn new() -> Self {

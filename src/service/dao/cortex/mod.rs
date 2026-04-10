@@ -6,21 +6,6 @@
 use anyhow::{Result};
 use crate::models::{brain::*, model_provider::ModelProvider};
 use common::constants::RequestContext;
-use std::sync::{Arc, OnceLock};
-
-// ==================== 单例 ====================
-
-static CORTEX_DAO: OnceLock<Arc<dyn CortexDao + Send + Sync>> = OnceLock::new();
-
-/// 获取 CortexDAO 单例
-pub fn dao() -> Arc<dyn CortexDao + Send + Sync> {
-    CORTEX_DAO.get().cloned().unwrap()
-}
-
-/// 初始化单例
-pub fn init() {
-    let _ = CORTEX_DAO.set(Arc::new(rig::RigCortexDao::new()));
-}
 
 /// Cortex DAO 工厂 trait
 ///
@@ -38,6 +23,8 @@ pub trait CortexDao: Send + Sync {
 
 mod rig;
 
+pub use rig::dao;
+pub use rig::init;
 
 #[cfg(test)]
 mod rig_test;

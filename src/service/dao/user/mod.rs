@@ -1,28 +1,10 @@
 //! User DAO 接口和实现
 
 pub mod sqlite;
-#[cfg(test)]
-mod sqlite_test;
 
 use crate::error::AppError;
 use crate::models::user::UserPo;
 use common::constants::RequestContext;
-use std::sync::Arc;
-use std::sync::OnceLock;
-
-// ==================== 单例 ====================
-
-static USER_DAO: OnceLock<Arc<dyn UserDaoTrait + Send + Sync>> = OnceLock::new();
-
-/// 获取 User DAO 单例
-pub fn dao() -> Arc<dyn UserDaoTrait + Send + Sync> {
-    USER_DAO.get().cloned().unwrap()
-}
-
-/// 初始化 User DAO
-pub fn init() {
-    let _ = USER_DAO.set(Arc::new(self::sqlite::UserDaoImpl::new()));
-}
 
 // ==================== 接口 ====================
 
@@ -52,3 +34,9 @@ pub trait UserDaoTrait: Send + Sync {
     /// 统计组织下用户总数
     fn count_by_organization_id(&self, ctx: RequestContext, org_id: &str) -> Result<u64, AppError>;
 }
+
+pub use sqlite::dao;
+pub use sqlite::init;
+
+#[cfg(test)]
+mod sqlite_test;

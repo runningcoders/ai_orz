@@ -17,9 +17,24 @@ use std::fs::{OpenOptions, write};
 use std::io::Seek;
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 
 /// SQLite Memory DAO 实现
 pub struct SqliteMemoryDao;
+
+// ==================== 单例 ====================
+
+static MEMORY_DAO: OnceLock<Arc<dyn super::MemoryDaoTrait + Send + Sync>> = OnceLock::new();
+
+/// 获取 Memory DAO 单例
+pub fn dao() -> Arc<dyn super::MemoryDaoTrait + Send + Sync> {
+    MEMORY_DAO.get().cloned().unwrap()
+}
+
+/// 初始化 Memory DAO 单例
+pub fn init() {
+    let _ = MEMORY_DAO.set(Arc::new(SqliteMemoryDao::new()));
+}
 
 impl SqliteMemoryDao {
     /// 创建新的 DAO 实例

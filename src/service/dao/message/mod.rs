@@ -1,28 +1,10 @@
 //! Message DAO 接口定义和实现
 
 pub mod sqlite;
-#[cfg(test)]
-mod sqlite_test;
 
 use crate::error::AppError;
 use crate::models::message::MessagePo;
 use common::constants::{MessageStatus, RequestContext};
-use std::sync::Arc;
-use std::sync::OnceLock;
-
-// ==================== 单例 ====================
-
-static MESSAGE_DAO: OnceLock<Arc<dyn MessageDaoTrait + Send + Sync>> = OnceLock::new();
-
-/// 获取 Message DAO 单例
-pub fn dao() -> Arc<dyn MessageDaoTrait + Send + Sync> {
-    MESSAGE_DAO.get().cloned().unwrap()
-}
-
-/// 初始化 Message DAO
-pub fn init() {
-    let _ = MESSAGE_DAO.set(Arc::new(self::sqlite::MessageDaoImpl::new()));
-}
 
 // ==================== 接口 ====================
 
@@ -56,3 +38,9 @@ pub trait MessageDaoTrait: Send + Sync {
     /// 根据多个状态查询消息（用于启动恢复未处理消息）
     fn list_by_status(&self, ctx: RequestContext, status: Vec<MessageStatus>, limit: Option<usize>) -> Result<Vec<MessagePo>, AppError>;
 }
+
+pub use sqlite::dao;
+pub use sqlite::init;
+
+#[cfg(test)]
+mod sqlite_test;

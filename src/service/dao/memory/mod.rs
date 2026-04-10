@@ -9,21 +9,6 @@
 use crate::error::AppError;
 use crate::models::memory::{MemoryTrace, ShortTermMemoryIndexPo, LongTermKnowledgeNodePo, KnowledgeReferencePo, KnowledgeNodeRelationPo, KnowledgeRelationType};
 use crate::pkg::RequestContext;
-use std::sync::{Arc, OnceLock};
-
-// ==================== 单例管理 ====================
-
-static MEMORY_DAO: OnceLock<Arc<dyn MemoryDaoTrait + Send + Sync>> = OnceLock::new();
-
-/// 获取 Memory DAO 单例
-pub fn dao() -> Arc<dyn MemoryDaoTrait + Send + Sync> {
-    MEMORY_DAO.get().cloned().unwrap()
-}
-
-/// 初始化 Memory DAO
-pub fn init() {
-    let _ = MEMORY_DAO.set(Arc::new(sqlite::SqliteMemoryDao::new()));
-}
 
 // ==================== DAO 接口 ====================
 
@@ -265,7 +250,7 @@ pub trait MemoryDaoTrait: Send + Sync {
     fn batch_add_knowledge_relations(
         &self,
         ctx: RequestContext,
-        relations: &[KnowledgeNodeRelationPo],
+        relations: &[KnowledgeReferencePo],
     ) -> Result<(), AppError>;
 
     /// 获取节点的所有出边关系（从该节点出发）
@@ -354,6 +339,9 @@ pub trait MemoryDaoTrait: Send + Sync {
 // ==================== SQLite 实现 ====================
 
 pub mod sqlite;
+
+pub use sqlite::dao;
+pub use sqlite::init;
 
 #[cfg(test)]
 pub mod sqlite_test;
