@@ -6,7 +6,7 @@ use common::constants::RequestContext;
 use common::enums::ProviderType;
 use rig::client::*;
 use rig::completion::*;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 // ==================== 公开 ====================
 
@@ -14,16 +14,16 @@ use std::sync::OnceLock;
 pub struct RigCortexDao {
 }
 
-static CORTEX_DAO: OnceLock<RigCortexDao> = OnceLock::new();
+static CORTEX_DAO: OnceLock<Arc<RigCortexDao>> = OnceLock::new();
 
 /// 获取 Cortex DAO 单例
-pub fn dao() -> &'static RigCortexDao {
-    CORTEX_DAO.get().unwrap()
+pub fn dao() -> Arc<RigCortexDao> {
+    CORTEX_DAO.get().unwrap().clone()
 }
 
 /// 初始化 Cortex DAO
 pub fn init() {
-    let _ = CORTEX_DAO.set(RigCortexDao::new());
+    let _ = CORTEX_DAO.set(Arc::new(RigCortexDao::new()));
 }
 
 impl RigCortexDao {

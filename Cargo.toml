@@ -21,7 +21,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rusqlite = { version = "0.39", features = ["bundled"] }
 toml = "1"
 tower-http = { version = "0.6", features = ["fs"] }
-rig-core = { version = "0.33.0", features = ["all"] }
+rig-core = { version = "0.34.0", features = ["all"] }
 async-trait = "0.1"
 anyhow = "1.0"
 chrono = { version = "0.4", features = ["serde", "std"] }

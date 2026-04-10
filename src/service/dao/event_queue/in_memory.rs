@@ -83,7 +83,7 @@ impl EventQueueDaoTrait for InMemoryEventQueue {
         let global_heap = unsafe { &mut *self.global_heap.get() };
 
         let event_id = event.id().to_string();
-        let order_key = event.order_key().map(|s| s.to_string()).unwrap_or_default();
+        let order_key = event.order_key().to_string();
         let event_ref = event.to_event_ref();
 
         // 存储事件本体

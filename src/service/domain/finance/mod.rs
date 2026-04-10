@@ -10,6 +10,8 @@ pub use self::model_provider::*;
 mod model_provider_test;
 
 use std::sync::{Arc, OnceLock};
+use common::constants::RequestContext;
+use crate::models::model_provider::ModelProvider;
 
 // ==================== trait 定义 ====================
 
@@ -61,7 +63,7 @@ pub fn domain() -> Arc<dyn FinanceDomain> {
 
 /// 初始化 Finance Domain
 pub fn init(model_provider_dal: Arc<dyn crate::service::dal::model_provider::ModelProviderDalTrait>) {
-    let finance_domain = model_provider::FinanceDomainImpl::new(model_provider_dal);
+    let finance_domain = FinanceDomainImpl::new(model_provider_dal);
     let _ = FINANCE_DOMAIN.set(Arc::new(finance_domain));
 }
 
