@@ -15,5 +15,8 @@ pub trait AgentDaoTrait: Send + Sync {
 
 pub mod sqlite;
 
+#[cfg(test)]
+mod sqlite_test;
+
 pub use sqlite::dao;
 pub use sqlite::init;

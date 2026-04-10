@@ -2,7 +2,8 @@
 
 use crate::models::message::MessagePo;
 use crate::pkg::storage;
-use common::constants::{MessageRole, MessageType, RequestContext};
+use common::enums::{MessageRole, MessageType};
+use common::constants::RequestContext;
 use crate::service::dao::message::{MessageDaoTrait, sqlite::MessageDaoImpl};
 use uuid::Uuid;
 

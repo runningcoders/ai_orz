@@ -3,22 +3,25 @@
 use super::*;
 use crate::models::agent::AgentPo;
 use crate::pkg::storage;
+use crate::pkg::storage::sql;
+use common::constants::RequestContext;
+use common::enums::AgentStatus;
 
-fn new_ctx(user_id: &str) -> crate::pkg::RequestContext {
-    crate::pkg::RequestContext::new(Some(user_id.to_string()), None)
+fn new_ctx(user_id: &str) -> RequestContext {
+    RequestContext::new(Some(user_id.to_string()), None)
 }
 
 fn insert_agent(conn: &rusqlite::Connection, agent: &AgentPo, creator: &str) {
     let now = current_timestamp();
     conn.execute(
-        "INSERT INTO agents (id, name, role, capabilities, soul, model_provider_id, status, created_by, modified_by, created_at, updated_at) 
+        "INSERT INTO agents (id, name, description, soul, capability, model_provider_id, status, created_by, modified_by, created_at, updated_at) 
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         rusqlite::params![
             agent.id,
             agent.name,
-            agent.role,
-            agent.capabilities,
+            agent.description,
             agent.soul,
+            agent.capabilities, // capabilities (struct) → capability (DB)
             agent.model_provider_id,
             agent.status.to_i32(),
             creator,
@@ -33,7 +36,7 @@ fn insert_agent(conn: &rusqlite::Connection, agent: &AgentPo, creator: &str) {
 fn find_agent(conn: &rusqlite::Connection, id: &str) -> Option<AgentPo> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, name, role, capabilities, soul, model_provider_id, status, created_by, modified_by, created_at, updated_at 
+            "SELECT id, name, description, soul, capability, model_provider_id, status, created_by, modified_by, created_at, updated_at 
              FROM agents WHERE id = ?1 AND status != 0",
         )
         .unwrap();
@@ -42,11 +45,12 @@ fn find_agent(conn: &rusqlite::Connection, id: &str) -> Option<AgentPo> {
         Ok(AgentPo {
             id: row.get(0)?,
             name: row.get(1)?,
-            role: row.get(2)?,
-            capabilities: row.get(3)?,
-            soul: row.get(4)?,
+            role: "".to_string(), // role is not in SQL table, keep default empty
+            description: row.get(2)?,
+            capabilities: row.get::<_, String>(4)?, // capability (DB) → capabilities (struct)
+            soul: row.get(3)?,
             model_provider_id: row.get(5)?,
-            status: crate::pkg::constants::AgentPoStatus::from_i32(row.get(6)?),
+            status: AgentStatus::from_i32(row.get(6)?),
             created_by: row.get(7)?,
             modified_by: row.get(8)?,
             created_at: row.get(9)?,
@@ -62,17 +66,19 @@ fn find_agent(conn: &rusqlite::Connection, id: &str) -> Option<AgentPo> {
 #[test]
 fn test_insert_and_find_by_id() {
     let conn = storage::test_conn();
-    conn.execute_batch(crate::pkg::sql::SQLITE_CREATE_TABLE_AGENTS)
+    conn.execute_batch(sql::SQLITE_CREATE_TABLE_AGENTS)
         .unwrap();
 
-    let dao = AgentDaoImpl;
+    sqlite::init();
+    let dao = sqlite::dao();
     let ctx = new_ctx("admin");
 
     let agent_po = AgentPo::new(
         "TestAgent".to_string(),
-        "worker".to_string(),
-        vec!["coding".to_string()],
+        Some("worker".to_string()),
         "A helpful agent".to_string(),
+        vec!["coding".to_string()],
+        "A helpful agent that can code".to_string(),
         "provider-id-1".to_string(),
         "admin".to_string(),
     );
@@ -87,15 +93,17 @@ fn test_insert_and_find_by_id() {
 #[test]
 fn test_find_all() {
     let conn = storage::test_conn();
-    conn.execute_batch(crate::pkg::sql::SQLITE_CREATE_TABLE_AGENTS)
+    conn.execute_batch(sql::SQLITE_CREATE_TABLE_AGENTS)
         .unwrap();
-    let dao = AgentDaoImpl;
+    sqlite::init();
+    let dao = sqlite::dao();
     let ctx = new_ctx("admin");
 
     for i in 0..3 {
         let agent_po = AgentPo::new(
             format!("Agent{}", i),
-            "worker".to_string(),
+            Some("worker".to_string()),
+            "".to_string(),
             vec![],
             "".to_string(),
             format!("provider-{}", i),
@@ -104,22 +112,21 @@ fn test_find_all() {
         insert_agent(&conn, &agent_po, "admin");
     }
 
-    let mut stmt = conn
-        .prepare("SELECT COUNT(*) FROM agents WHERE status != 0")
-        .unwrap();
-    let count: i64 = stmt.query_row([], |row| row.get(0)).unwrap();
-    assert_eq!(count, 3);
+    let result = dao.find_all(ctx).unwrap();
+    assert_eq!(result.len(), 3);
 }
 
 #[test]
 fn test_update() {
     let conn = storage::test_conn();
-    conn.execute_batch(crate::pkg::sql::SQLITE_CREATE_TABLE_AGENTS)
+    conn.execute_batch(sql::SQLITE_CREATE_TABLE_AGENTS)
         .unwrap();
-    let dao = AgentDaoImpl;
+    sqlite::init();
+    let dao = sqlite::dao();
     let agent_po = AgentPo::new(
         "Original".to_string(),
-        "worker".to_string(),
+        Some("worker".to_string()),
+        "".to_string(),
         vec![],
         "".to_string(),
         "provider-id-1".to_string(),
@@ -139,12 +146,14 @@ fn test_update() {
 #[test]
 fn test_soft_delete() {
     let conn = storage::test_conn();
-    conn.execute_batch(crate::pkg::sql::SQLITE_CREATE_TABLE_AGENTS)
+    conn.execute_batch(sql::SQLITE_CREATE_TABLE_AGENTS)
         .unwrap();
-    let dao = AgentDaoImpl;
+    sqlite::init();
+    let dao = sqlite::dao();
     let agent_po = AgentPo::new(
         "ToDelete".to_string(),
-        "worker".to_string(),
+        Some("worker".to_string()),
+        "".to_string(),
         vec![],
         "".to_string(),
         "provider-id-1".to_string(),
@@ -159,13 +168,15 @@ fn test_soft_delete() {
 #[test]
 fn test_find_all_excludes_deleted() {
     let conn = storage::test_conn();
-    conn.execute_batch(crate::pkg::sql::SQLITE_CREATE_TABLE_AGENTS)
+    conn.execute_batch(sql::SQLITE_CREATE_TABLE_AGENTS)
         .unwrap();
-    let dao = AgentDaoImpl;
+    sqlite::init();
+    let dao = sqlite::dao();
 
     let agent1 = AgentPo::new(
         "Normal".to_string(),
-        "w".to_string(),
+        Some("w".to_string()),
+        "".to_string(),
         vec![],
         "".to_string(),
         "provider-id-1".to_string(),
@@ -173,7 +184,8 @@ fn test_find_all_excludes_deleted() {
     );
     let agent2 = AgentPo::new(
         "Deleted".to_string(),
-        "w".to_string(),
+        Some("w".to_string()),
+        "".to_string(),
         vec![],
         "".to_string(),
         "provider-id-2".to_string(),
@@ -184,23 +196,23 @@ fn test_find_all_excludes_deleted() {
     insert_agent(&conn, &agent2, "admin");
     dao.delete(new_ctx("admin"), &agent2).unwrap();
 
-    let mut stmt = conn
-        .prepare("SELECT COUNT(*) FROM agents WHERE status != 0")
-        .unwrap();
-    let count: i64 = stmt.query_row([], |row| row.get(0)).unwrap();
-    assert_eq!(count, 1);
+    let result = dao.find_all(new_ctx("admin")).unwrap();
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].name, "Normal");
 }
 
 #[test]
 fn test_delete_twice_is_idempotent() {
     let conn = storage::test_conn();
-    conn.execute_batch(crate::pkg::sql::SQLITE_CREATE_TABLE_AGENTS)
+    conn.execute_batch(sql::SQLITE_CREATE_TABLE_AGENTS)
         .unwrap();
-    let dao = AgentDaoImpl;
+    sqlite::init();
+    let dao = sqlite::dao();
 
     let agent = AgentPo::new(
         "Test".to_string(),
-        "w".to_string(),
+        Some("w".to_string()),
+        "".to_string(),
         vec![],
         "".to_string(),
         "provider-id-1".to_string(),
@@ -224,7 +236,7 @@ fn test_delete_twice_is_idempotent() {
 #[test]
 fn test_find_not_exists() {
     let conn = storage::test_conn();
-    conn.execute_batch(crate::pkg::sql::SQLITE_CREATE_TABLE_AGENTS)
+    conn.execute_batch(sql::SQLITE_CREATE_TABLE_AGENTS)
         .unwrap();
 
     assert!(find_agent(&conn, "not-exists").is_none());

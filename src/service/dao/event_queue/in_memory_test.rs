@@ -5,7 +5,8 @@
 use super::*;
 use crate::models::event::Event;
 use crate::models::message::Message;
-use common::constants::{MessageRole, MessageType, RequestContext};
+use common::enums::{MessageRole, MessageType};
+use common::constants::RequestContext;
 use crate::service::dao::event_queue::in_memory::InMemoryEventQueue;
 
 /// 测试空队列基本操作

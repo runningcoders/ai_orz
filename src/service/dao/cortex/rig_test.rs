@@ -2,8 +2,8 @@
 
 use super::*;
 use crate::models::model_provider::{ModelProvider, ModelProviderPo};
+use common::enums::ProviderType;
 use common::constants::RequestContext;
-use common::constants::ProviderType;
 
 #[tokio::test]
 async fn test_create_openai_cortex() {
@@ -148,7 +148,7 @@ async fn test_create_openai_compatible_custom_base_url() {
     let provider_po = ModelProviderPo {
         id: "test-id".to_string(),
         name: "Custom OpenAI Compatible".to_string(),
-        provider_type: ProviderType::OpenAICompatible,
+        provider_type: ProviderType::Custom,
         model_name: "custom-model".to_string(),
         api_key: "test-key".to_string(),
         base_url: Some("https://custom.api.com/v1".to_string()),

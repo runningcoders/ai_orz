@@ -2,6 +2,9 @@
 
 pub mod sqlite;
 
+#[cfg(test)]
+mod sqlite_test;
+
 use crate::error::AppError;
 use crate::models::message::MessagePo;
 use common::enums::MessageStatus;
@@ -41,6 +44,3 @@ pub trait MessageDaoTrait: Send + Sync {
 }
 
 pub use sqlite::init;
-
-#[cfg(test)]
-mod sqlite_test;
