@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod brain;
+pub mod event;
 pub mod memory;
 pub mod message;
 pub mod model_provider;

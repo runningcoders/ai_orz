@@ -34,6 +34,31 @@ pub struct AppConfig {
     /// 日志配置
     #[serde(default)]
     pub logging: LoggingConfig,
+
+    /// 产物存储配置（消息附件、Agent 生成的文件等都存在这里）
+    #[serde(default)]
+    pub artifact: ArtifactConfig,
+}
+
+/// 产物存储配置（消息附件、Agent 生成的文件等）
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ArtifactConfig {
+    /// 产物存储子目录（相对于 base_data_path）
+    /// 产物会按日期分层存储：YYYY/MM/DD/
+    #[serde(default = "default_artifact_subdir")]
+    pub artifact_subdir: String,
+}
+
+impl Default for ArtifactConfig {
+    fn default() -> Self {
+        Self {
+            artifact_subdir: default_artifact_subdir(),
+        }
+    }
+}
+
+fn default_artifact_subdir() -> String {
+    "artifact".to_string()
 }
 
 /// 服务器配置
@@ -133,5 +158,10 @@ impl AppConfig {
     /// 获取数据库文件路径
     pub fn db_path(&self) -> PathBuf {
         Path::new(&self.base_data_path).join(&self.database.db_file_name)
+    }
+
+    /// 获取产物存储根目录路径（消息附件、Agent 生成文件等）
+    pub fn artifact_dir(&self) -> PathBuf {
+        Path::new(&self.base_data_path).join(&self.artifact.artifact_subdir)
     }
 }
