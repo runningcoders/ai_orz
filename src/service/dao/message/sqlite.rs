@@ -5,8 +5,6 @@ use crate::models::message::MessagePo;
 use common::enums::{MessageRole, MessageType, MessageStatus};
 use crate::pkg::RequestContext;
 use crate::service::dao::message::MessageDaoTrait;
-use async_trait::async_trait;
-use sqlx::SqlitePool;
 use std::sync::{Arc, OnceLock};
 use chrono::Utc;
 // ==================== 单例管理 ====================

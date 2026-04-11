@@ -2,12 +2,9 @@
 
 use crate::error::AppError;
 use crate::models::organization::OrganizationPo;
-use crate::pkg::storage;
 use common::enums::{OrganizationStatus, OrganizationScope};
 use crate::pkg::RequestContext;
 use crate::service::dao::organization::OrganizationDaoTrait;
-use async_trait::async_trait;
-use sqlx::SqlitePool;
 use std::sync::{Arc, OnceLock};
 use chrono::Utc;
 // ==================== 单例管理 ====================

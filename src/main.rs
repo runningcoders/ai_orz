@@ -7,8 +7,6 @@ mod pkg;
 mod router;
 mod service;
 
-use crate::config::load_config;
-use common::config::AppConfig;
 use pkg::storage;
 
 fn get_env_or_default(env_key: &str, default: &str) -> String {
@@ -28,7 +26,7 @@ let config = config::get();
 
     // 获取数据库路径并初始化存储（sqlx 异步连接池）
     let db_path = config.db_path();
-   storage::init(&db_path.to_str().unwrap());
+   storage::init(&db_path.to_str().unwrap()).await;
     tracing::info!("Storage initialized: {:?}", db_path);
 
     // 初始化 service 层

@@ -1,8 +1,7 @@
 use crate::handlers;
 use crate::middleware::{jwt_auth_middleware, request_context_middleware};
 use axum::{
-    routing::{delete, get, post, put},
-    Extension, Router,
+    routing::{delete, get, post, put}, Router,
 };
 use tower_http::services::ServeDir;
 

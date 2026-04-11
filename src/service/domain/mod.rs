@@ -5,7 +5,6 @@
 //! - finance → 财务管理（模型提供商管理）
 //! - organization → 组织管理（组织和用户管理）
 
-use std::sync::Arc;
 
 pub mod hr;
 pub mod finance;
@@ -14,8 +13,6 @@ pub mod organization;
 // Tests are located in subdirectories: finance/model_provider_test.rs and hr/agent_test.rs
 // No need to declare them here because mod rs already declared in subdirectories
 
-pub use hr::init as init_hr_domain;
-pub use finance::init as init_finance_domain;
 
 /// 初始化所有 Domain
 pub fn init_all() {

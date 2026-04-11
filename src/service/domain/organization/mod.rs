@@ -10,7 +10,6 @@ pub mod user;
 use crate::error::AppError;
 use crate::models::organization::OrganizationPo;
 use crate::pkg::RequestContext;
-use crate::service::dal;
 use std::sync::{Arc, OnceLock};
 use async_trait::async_trait;
 use crate::service::dal::organization;

@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use common::constants::ProviderType;
+use common::enums::ProviderType;
 use common::api::{
     ModelProviderListItem, CreateModelProviderRequest,
 };
@@ -379,7 +379,7 @@ pub fn ModelProviderManagement() -> Element {
                                 onchange: move |e| {
                                     match e.value().as_str() {
                                         "OpenAI" => selected_provider_type.set(ProviderType::OpenAI),
-                                        "OpenAICompatible" => selected_provider_type.set(ProviderType::OpenAICompatible),
+                                        "OpenAICompatible" => selected_provider_type.set(ProviderType::Custom),
                                         "DeepSeek" => selected_provider_type.set(ProviderType::DeepSeek),
                                         "Doubao" => selected_provider_type.set(ProviderType::Doubao),
                                         "Qwen" => selected_provider_type.set(ProviderType::Qwen),
@@ -394,7 +394,7 @@ pub fn ModelProviderManagement() -> Element {
                                 }
                                 option {
                                     value: "OpenAICompatible",
-                                    selected: matches!(*selected_provider_type.read(), ProviderType::OpenAICompatible),
+                                    selected: matches!(*selected_provider_type.read(), ProviderType::Custom),
                                     "OpenAI 兼容"
                                 }
                                 option {

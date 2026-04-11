@@ -2,13 +2,9 @@
 
 use crate::error::AppError;
 use crate::models::user::UserPo;
-use common::constants::utils;
 use common::enums::{UserRole, UserStatus};
-use crate::pkg::storage;
 use crate::pkg::RequestContext;
 use crate::service::dao::user::UserDaoTrait;
-use async_trait::async_trait;
-use sqlx::SqlitePool;
 use std::sync::{Arc, OnceLock};
 use chrono::Utc;
 // ==================== 单例管理 ====================

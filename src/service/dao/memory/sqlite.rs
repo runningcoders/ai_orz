@@ -8,7 +8,6 @@
 
 use crate::error::AppError;
 use crate::models::memory::{MemoryTrace, ShortTermMemoryIndexPo, LongTermKnowledgeNodePo, KnowledgeReferencePo, KnowledgeNodeRelationPo, KnowledgeRelationType};
-use crate::pkg::storage;
 use crate::pkg::RequestContext;
 use crate::service::dao::memory::MemoryDaoTrait;
 use async_trait::async_trait;

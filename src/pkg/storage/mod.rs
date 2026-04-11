@@ -3,7 +3,7 @@
 //! 基于 sqlx 连接池管理，不再使用全局单例，支持依赖注入和测试隔离
 
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
-use crate::error::{AppError, Result};
+use crate::error::Result;
 
 /// 数据库连接池包装
 #[derive(Clone, Debug)]

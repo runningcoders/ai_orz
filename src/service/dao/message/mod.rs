@@ -2,10 +2,8 @@
 
 use crate::error::AppError;
 use crate::models::message::MessagePo;
-use sqlx::SqlitePool;
-use common::enums::{MessageRole, MessageType, MessageStatus};
+use common::enums::MessageStatus;
 use crate::pkg::RequestContext;
-use chrono::Utc;
 
 // ==================== 接口 ====================
 
@@ -47,7 +45,7 @@ pub trait MessageDaoTrait: Send + Sync {
 
 
 mod sqlite;
-pub use self::sqlite::{dao,init};
+pub use self::sqlite::init;
 
 #[cfg(test)]
 mod sqlite_test;

@@ -1,9 +1,7 @@
 //! 请求上下文（贯穿整个请求生命周期）
 
 use axum::http;
-use rig::pipeline::new;
 use common::constants::http_header;
-use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqlitePool;
 use crate::pkg::storage;
 

@@ -2,10 +2,7 @@
 
 use crate::error::AppError;
 use crate::models::model_provider::ModelProviderPo;
-use sqlx::SqlitePool;
-use common::enums::{ProviderType, ModelProviderStatus};
 use crate::pkg::RequestContext;
-use chrono::Utc;
 
 /// Model Provider DAO 接口
 #[async_trait::async_trait]

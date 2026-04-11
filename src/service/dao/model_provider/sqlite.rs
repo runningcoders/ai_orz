@@ -5,7 +5,6 @@ use crate::models::model_provider::ModelProviderPo;
 use common::enums::{ModelProviderStatus, ProviderType};
 use crate::pkg::RequestContext;
 use crate::service::dao::model_provider::ModelProviderDaoTrait;
-use async_trait::async_trait;
 use std::sync::{Arc, OnceLock};
 use chrono::Utc;
 // ==================== 单例 ====================

@@ -7,7 +7,6 @@ use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::user::UserDaoTrait;
 use async_trait::async_trait;
-use std::sync::Arc;
 
 #[async_trait]
 impl super::UserManage for super::OrganizationDomainImpl {

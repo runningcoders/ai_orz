@@ -2,10 +2,7 @@
 
 use crate::error::AppError;
 use crate::models::user::UserPo;
-use sqlx::SqlitePool;
-use common::enums::{UserRole, UserStatus};
 use crate::pkg::RequestContext;
-use chrono::Utc;
 
 // ==================== 接口 ====================
 

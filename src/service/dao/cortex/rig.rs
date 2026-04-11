@@ -1,6 +1,6 @@
 //! Rig 驱动的 Cortex 实现
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use crate::models::{brain::*, model_provider::ModelProvider};
 use crate::pkg::RequestContext;
 use common::enums::ProviderType;
