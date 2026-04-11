@@ -13,7 +13,8 @@ fn new_ctx(user_id: &str, pool: sqlx::SqlitePool) -> RequestContext {
 
 #[sqlx::test]
 async fn test_create_and_find_by_id(pool: sqlx::SqlitePool) {
-    // 初始化 dal 和 domain
+    // 初始化依赖：dao -> dal -> domain
+    crate::service::dao::agent::init();
     crate::service::dal::agent::init();
     let dal = crate::service::dal::agent::dal();
     let domain = Arc::new(HrDomainImpl::new(dal));
@@ -46,7 +47,8 @@ async fn test_create_and_find_by_id(pool: sqlx::SqlitePool) {
 
 #[sqlx::test]
 async fn test_list_agents(pool: sqlx::SqlitePool) {
-    // 初始化 dal 和 domain
+    // 初始化依赖：dao -> dal -> domain
+    crate::service::dao::agent::init();
     crate::service::dal::agent::init();
     let dal = crate::service::dal::agent::dal();
     let domain = Arc::new(HrDomainImpl::new(dal));
@@ -77,7 +79,8 @@ async fn test_list_agents(pool: sqlx::SqlitePool) {
 
 #[sqlx::test]
 async fn test_update_agent(pool: sqlx::SqlitePool) {
-    // 初始化 dal 和 domain
+    // 初始化依赖：dao -> dal -> domain
+    crate::service::dao::agent::init();
     crate::service::dal::agent::init();
     let dal = crate::service::dal::agent::dal();
     let domain = Arc::new(HrDomainImpl::new(dal));
@@ -117,7 +120,8 @@ async fn test_update_agent(pool: sqlx::SqlitePool) {
 
 #[sqlx::test]
 async fn test_delete_agent(pool: sqlx::SqlitePool) {
-    // 初始化 dal 和 domain
+    // 初始化依赖：dao -> dal -> domain
+    crate::service::dao::agent::init();
     crate::service::dal::agent::init();
     let dal = crate::service::dal::agent::dal();
     let domain = Arc::new(HrDomainImpl::new(dal));

@@ -1,6 +1,7 @@
 //! Agent DAL 单元测试
 
 use crate::service::dal::agent::{dal, init, AgentDal, AgentDalTrait};
+use crate::service::dao::agent::init as agent_dao_init;
 use crate::models::agent::{Agent, AgentPo};
 use crate::pkg::RequestContext;
 use std::sync::Arc;
@@ -9,6 +10,7 @@ use uuid::Uuid;
 
 #[sqlx::test]
 async fn test_create_and_find_by_id(pool:SqlitePool) {
+    agent_dao_init();
     init();
     let dal = dal();
     let ctx = RequestContext::new_simple("admin", pool);
@@ -33,6 +35,7 @@ async fn test_create_and_find_by_id(pool:SqlitePool) {
 
 #[sqlx::test]
 async fn test_find_all(pool:SqlitePool) {
+    agent_dao_init();
     init();
     let dal = dal();
     let ctx = RequestContext::new_simple("admin", pool);
@@ -57,6 +60,7 @@ async fn test_find_all(pool:SqlitePool) {
 
 #[sqlx::test]
 async fn test_update(pool:SqlitePool) {
+    agent_dao_init();
     init();
     let dal = dal();
     let ctx = RequestContext::new_simple("admin", pool.clone());
@@ -84,6 +88,7 @@ async fn test_update(pool:SqlitePool) {
 
 #[sqlx::test]
 async fn test_delete(pool:SqlitePool) {
+    agent_dao_init();
     init();
     let dal = dal();
     let ctx = RequestContext::new_simple("admin", pool);
@@ -107,6 +112,7 @@ async fn test_delete(pool:SqlitePool) {
 
 #[sqlx::test]
 async fn test_find_all_excludes_deleted(pool:SqlitePool) {
+    agent_dao_init();
     init();
     let dal = dal();
     let ctx = RequestContext::new_simple("admin", pool);
@@ -130,6 +136,7 @@ async fn test_find_all_excludes_deleted(pool:SqlitePool) {
 
 #[sqlx::test]
 async fn test_find_not_exists(pool:SqlitePool) {
+    agent_dao_init();
     init();
     let dal = dal();
     let ctx = RequestContext::new_simple("admin", pool);
