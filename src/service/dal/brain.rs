@@ -25,8 +25,6 @@ pub fn dal() -> Arc<dyn BrainDalTrait> {
 
 /// 初始化 Brain DAL
 pub fn init() {
-    // 先初始化 DAO，再初始化 DAL
-    crate::service::dao::cortex::init();
     let _ = BRAIN_DAL.set(Arc::new(BrainDal::new(
         cortex::dao(),
     )));

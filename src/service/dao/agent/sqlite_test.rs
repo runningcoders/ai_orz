@@ -47,7 +47,7 @@ async fn test_find_all(pool: SqlitePool) {
     let ctx = new_ctx("admin", pool);
     let agent_dao = dao();
 
-    // 插入另外两个 Agent（全部通过 DAO 接口插入）
+    // 插入两个 Agent（全部通过 DAO 接口插入）
     for i in 0..2 {
         let agent_po2 = AgentPo::new(
             format!("Agent{}", i),
@@ -62,7 +62,7 @@ async fn test_find_all(pool: SqlitePool) {
     }
 
     let all = agent_dao.find_all(ctx).await.unwrap();
-    assert_eq!(all.len(), 3); // 1 (from first test) + 2 = 3
+    assert_eq!(all.len(), 2); // 每个测试独立数据库，只有这里插入的2个
 }
 
 #[sqlx::test]

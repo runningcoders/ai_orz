@@ -24,9 +24,6 @@ pub fn dal() -> Arc<dyn OrganizationDalTrait + Send + Sync> {
 
 /// 初始化 Organization DAL
 pub fn init() {
-    // 先初始化 DAO，再初始化 DAL
-    crate::service::dao::organization::init();
-    crate::service::dao::user::init();
     let _ = ORGANIZATION_DAL.set(Arc::new(OrganizationDal::new(
         organization::dao(), 
         user::dao(),

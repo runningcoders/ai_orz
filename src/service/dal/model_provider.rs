@@ -17,8 +17,6 @@ pub fn dal() -> Arc<dyn ModelProviderDalTrait> {
 
 /// 初始化 Model Provider DAL
 pub fn init() {
-    // 先初始化 DAO，再初始化 DAL
-    crate::service::dao::model_provider::init();
     let _ = MODEL_PROVIDER_DAL.set(Arc::new(ModelProviderDal::new(
         model_provider::dao(),
     )));
