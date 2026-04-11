@@ -5,25 +5,23 @@ use crate::models::agent::{Agent, AgentPo};
 use crate::pkg::RequestContext;
 use std::sync::Arc;
 use uuid::Uuid;
+use sqlx::SqlitePool;
 
-fn new_ctx(user_id: &str) -> RequestContext {
-    RequestContext::new(Some(user_id.to_string()), None)
+fn new_ctx(user_id: &str, pool: sqlx::SqlitePool) -> RequestContext {
+    RequestContext::new_simple(user_id, pool)
 }
 
-fn setup_test_domain() -> Arc<dyn HrDomain> {
-    // 使用 dal 测试中的基础设施，dal 已经复用 dao 的基础设施
-    let dal = crate::service::dal::agent_test::setup_test_dal();
-    Arc::new(HrDomainImpl::new(dal))
-}
-
-#[test]
-fn test_create_and_find_by_id() {
-    let domain = setup_test_domain();
-    let ctx = new_ctx("admin");
+#[sqlx::test]
+async fn test_create_and_find_by_id(pool: sqlx::SqlitePool) {
+    // 初始化 dal 和 domain
+    crate::service::dal::agent::init();
+    let dal = crate::service::dal::agent::dal();
+    let domain = Arc::new(HrDomainImpl::new(dal));
+    let ctx = new_ctx("admin", pool);
 
     let agent_po = AgentPo::new(
         "TestAgent".to_string(),
-        Some("worker".to_string()),
+        "worker".to_string(),
         "A helpful agent".to_string(),
         vec!["coding".to_string()],
         "A helpful agent that can code".to_string(),
@@ -35,26 +33,30 @@ fn test_create_and_find_by_id() {
     domain
         .agent_manage()
         .create_agent(ctx.clone(), &agent)
+        .await
         .unwrap();
 
-    let found = domain
+    let found: Option<Agent> = domain
         .agent_manage()
         .get_agent(ctx, &agent.id())
-        .unwrap()
+        .await
         .unwrap();
-    assert_eq!(found.name(), "TestAgent");
+    assert_eq!(found.unwrap().name(), "TestAgent");
 }
 
-#[test]
-fn test_list_agents() {
-    let domain = setup_test_domain();
-    let ctx = new_ctx("admin");
+#[sqlx::test]
+async fn test_list_agents(pool: sqlx::SqlitePool) {
+    // 初始化 dal 和 domain
+    crate::service::dal::agent::init();
+    let dal = crate::service::dal::agent::dal();
+    let domain = Arc::new(HrDomainImpl::new(dal));
 
     for i in 0..3 {
+        let ctx = new_ctx("admin", pool.clone());
         let agent_po = AgentPo::new(
             format!("Agent{}", i),
-            Some("worker".to_string()),
-            None,
+            "worker".to_string(),
+            "".to_string(),
             vec![],
             "".to_string(),
             "provider-id-1".to_string(),
@@ -64,21 +66,26 @@ fn test_list_agents() {
         domain
             .agent_manage()
             .create_agent(ctx.clone(), &agent)
+            .await
             .unwrap();
     }
 
-    let agents = domain.agent_manage().list_agents(ctx).unwrap();
+    let ctx = new_ctx("admin", pool);
+    let agents: Vec<Agent> = domain.agent_manage().list_agents(ctx).await.unwrap();
     assert_eq!(agents.len(), 3);
 }
 
-#[test]
-fn test_update_agent() {
-    let domain = setup_test_domain();
-    let ctx = new_ctx("admin");
+#[sqlx::test]
+async fn test_update_agent(pool: sqlx::SqlitePool) {
+    // 初始化 dal 和 domain
+    crate::service::dal::agent::init();
+    let dal = crate::service::dal::agent::dal();
+    let domain = Arc::new(HrDomainImpl::new(dal));
+    let ctx = new_ctx("admin", pool.clone());
 
     let agent_po = AgentPo::new(
         "Original".to_string(),
-        Some("worker".to_string()),
+        "worker".to_string(),
         "".to_string(),
         vec![],
         "".to_string(),
@@ -89,31 +96,36 @@ fn test_update_agent() {
     domain
         .agent_manage()
         .create_agent(ctx.clone(), &agent)
+        .await
         .unwrap();
 
     let mut updated = agent.clone();
     updated.po.name = "Updated".to_string();
     domain
         .agent_manage()
-        .update_agent(new_ctx("editor"), &updated)
+        .update_agent(new_ctx("editor", pool), &updated)
+        .await
         .unwrap();
 
-    let found = domain
+    let found: Option<Agent> = domain
         .agent_manage()
         .get_agent(ctx, &updated.id())
-        .unwrap()
+        .await
         .unwrap();
-    assert_eq!(found.name(), "Updated");
+    assert_eq!(found.unwrap().name(), "Updated");
 }
 
-#[test]
-fn test_delete_agent() {
-    let domain = setup_test_domain();
-    let ctx = new_ctx("admin");
+#[sqlx::test]
+async fn test_delete_agent(pool: sqlx::SqlitePool) {
+    // 初始化 dal 和 domain
+    crate::service::dal::agent::init();
+    let dal = crate::service::dal::agent::dal();
+    let domain = Arc::new(HrDomainImpl::new(dal));
+    let ctx = new_ctx("admin", pool.clone());
 
     let agent_po = AgentPo::new(
         "ToDelete".to_string(),
-        Some("worker".to_string()),
+        "worker".to_string(),
         "".to_string(),
         vec![],
         "".to_string(),
@@ -124,15 +136,18 @@ fn test_delete_agent() {
     domain
         .agent_manage()
         .create_agent(ctx.clone(), &agent)
+        .await
         .unwrap();
 
     domain
         .agent_manage()
         .delete_agent(ctx.clone(), &agent)
+        .await
         .unwrap();
-    assert!(domain
+    let found: Option<Agent> = domain
         .agent_manage()
         .get_agent(ctx, &agent.id())
-        .unwrap()
-        .is_none());
+        .await
+        .unwrap();
+    assert!(found.is_none());
 }

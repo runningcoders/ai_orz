@@ -3,9 +3,10 @@
 use sqlx::Type;
 
 /// User role
+#[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[derive(Type)]
-#[sqlx(rename_all = "lowercase", type_name = "INTEGER")]
+#[sqlx(type_name = "INTEGER")]
 pub enum UserRole {
     /// Super admin (超级管理员)
     #[default]
@@ -35,7 +36,7 @@ impl UserRole {
 
     /// Convert to i32
     pub fn to_i32(&self) -> i32 {
-        (*self).into()
+        *self as i32
     }
 
     /// Get display name for UI
@@ -61,9 +62,10 @@ impl From<i64> for UserRole {
 }
 
 /// User status
+#[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[derive(Type)]
-#[sqlx(rename_all = "lowercase", type_name = "INTEGER")]
+#[sqlx(type_name = "INTEGER")]
 pub enum UserStatus {
     /// Active (正常使用)
     #[default]
@@ -90,7 +92,7 @@ impl UserStatus {
 
     /// Convert to i32
     pub fn to_i32(&self) -> i32 {
-        (*self).into()
+        *self as i32
     }
 }
 

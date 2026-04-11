@@ -4,10 +4,11 @@ use super::*;
 use crate::models::model_provider::{ModelProvider, ModelProviderPo};
 use common::enums::ProviderType;
 use crate::pkg::RequestContext;
+use sqlx::SqlitePool;
 
-#[tokio::test]
-async fn test_create_openai_cortex() {
-    let ctx = RequestContext::new(Some("test-user".to_string()), None);
+#[sqlx::test]
+async fn test_create_openai_cortex(pool: SqlitePool) {
+    let ctx = RequestContext::new_simple("test-user", pool);
 
     let provider_po = ModelProviderPo {
         id: "test-id".to_string(),
@@ -15,8 +16,8 @@ async fn test_create_openai_cortex() {
         provider_type: ProviderType::OpenAI,
         model_name: "gpt-4o".to_string(),
         api_key: "test-key".to_string(),
-        base_url: "".to_string(),
-        description: "OpenAI GPT-4o 模型".to_string(),
+        base_url: Some("".to_string()),
+        description: Some("OpenAI GPT-4o 模型".to_string()),
         status: Default::default(),
         created_by: "test".to_string(),
         modified_by: "test".to_string(),
@@ -33,9 +34,9 @@ async fn test_create_openai_cortex() {
     assert!(result.is_ok());
 }
 
-#[tokio::test]
-async fn test_create_deepseek_cortex() {
-    let ctx = RequestContext::new(Some("test-user".to_string()), None);
+#[sqlx::test]
+async fn test_create_deepseek_cortex(pool: SqlitePool) {
+    let ctx = RequestContext::new_simple("test-user", pool);
 
     let provider_po = ModelProviderPo {
         id: "test-id".to_string(),
@@ -44,7 +45,7 @@ async fn test_create_deepseek_cortex() {
         model_name: "deepseek-chat".to_string(),
         api_key: "test-key".to_string(),
         base_url: None,
-        description: "DeepSeek 对话模型".to_string(),
+        description: Some("DeepSeek 对话模型".to_string()),
         status: Default::default(),
         created_by: "test".to_string(),
         modified_by: "test".to_string(),
@@ -60,9 +61,9 @@ async fn test_create_deepseek_cortex() {
     assert!(result.is_ok());
 }
 
-#[tokio::test]
-async fn test_create_qwen_cortex() {
-    let ctx = RequestContext::new(Some("test-user".to_string()), None);
+#[sqlx::test]
+async fn test_create_qwen_cortex(pool: SqlitePool) {
+    let ctx = RequestContext::new_simple("test-user", pool);
 
     let provider_po = ModelProviderPo {
         id: "test-id".to_string(),
@@ -71,7 +72,7 @@ async fn test_create_qwen_cortex() {
         model_name: "qwen-turbo".to_string(),
         api_key: "test-key".to_string(),
         base_url: None,
-        description: "通义千问 turbo".to_string(),
+        description: Some("通义千问 turbo".to_string()),
         status: Default::default(),
         created_by: "test".to_string(),
         modified_by: "test".to_string(),
@@ -87,9 +88,9 @@ async fn test_create_qwen_cortex() {
     assert!(result.is_ok());
 }
 
-#[tokio::test]
-async fn test_create_doubao_cortex() {
-    let ctx = RequestContext::new(Some("test-user".to_string()), None);
+#[sqlx::test]
+async fn test_create_doubao_cortex(pool: SqlitePool) {
+    let ctx = RequestContext::new_simple("test-user", pool);
 
     let provider_po = ModelProviderPo {
         id: "test-id".to_string(),
@@ -98,7 +99,7 @@ async fn test_create_doubao_cortex() {
         model_name: "doubao-pro".to_string(),
         api_key: "test-key".to_string(),
         base_url: None,
-        description: "字节跳动豆包".to_string(),
+        description: Some("字节跳动豆包".to_string()),
         status: Default::default(),
         created_by: "test".to_string(),
         modified_by: "test".to_string(),
@@ -114,9 +115,9 @@ async fn test_create_doubao_cortex() {
     assert!(result.is_ok());
 }
 
-#[tokio::test]
-async fn test_create_ollama_cortex() {
-    let ctx = RequestContext::new(Some("test-user".to_string()), None);
+#[sqlx::test]
+async fn test_create_ollama_cortex(pool: SqlitePool) {
+    let ctx = RequestContext::new_simple("test-user", pool);
 
     let provider_po = ModelProviderPo {
         id: "test-id".to_string(),
@@ -125,7 +126,7 @@ async fn test_create_ollama_cortex() {
         model_name: "llama3".to_string(),
         api_key: "".to_string(),
         base_url: Some("http://localhost:11434/v1".to_string()),
-        description: "本地 Llama3".to_string(),
+        description: Some("本地 Llama3".to_string()),
         status: Default::default(),
         created_by: "test".to_string(),
         modified_by: "test".to_string(),
@@ -141,9 +142,9 @@ async fn test_create_ollama_cortex() {
     assert!(result.is_ok());
 }
 
-#[tokio::test]
-async fn test_create_openai_compatible_custom_base_url() {
-    let ctx = RequestContext::new(Some("test-user".to_string()), None);
+#[sqlx::test]
+async fn test_create_openai_compatible_custom_base_url(pool: SqlitePool) {
+    let ctx = RequestContext::new_simple("test-user", pool);
 
     let provider_po = ModelProviderPo {
         id: "test-id".to_string(),
@@ -152,7 +153,7 @@ async fn test_create_openai_compatible_custom_base_url() {
         model_name: "custom-model".to_string(),
         api_key: "test-key".to_string(),
         base_url: Some("https://custom.api.com/v1".to_string()),
-        description: "自定义兼容接口".to_string(),
+        description: Some("自定义兼容接口".to_string()),
         status: Default::default(),
         created_by: "test".to_string(),
         modified_by: "test".to_string(),

@@ -11,11 +11,11 @@ use sqlx::FromRow;
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct OrganizationPo {
     /// 组织 ID
-    pub id: Option<String>,
+    pub id: String,
     /// 组织名称
-    pub name: Option<String>,
+    pub name: String,
     /// 组织描述
-    pub description: Option<String>,
+    pub description: String,
     /// 组织外网访问基础 URL
     ///
     /// 例如：`https://ai-orz.example.com/org/acme`
@@ -26,9 +26,9 @@ pub struct OrganizationPo {
     /// 组织范围枚举（区分本地/远程，用于多节点网络扩展）
     pub scope: OrganizationScope,
     /// 创建人
-    pub created_by: Option<String>,
+    pub created_by: String,
     /// 修改人
-    pub modified_by: Option<String>,
+    pub modified_by: String,
     /// 创建时间戳（秒）
     pub created_at: i64,
     /// 更新时间戳（秒）
@@ -41,19 +41,19 @@ impl OrganizationPo {
         id: String,
         name: String,
         description: String,
-        base_url: String,
+        base_url: Option<String>,
         created_by: String,
     ) -> Self {
         let now = utils::current_timestamp();
         Self {
-            id: Some(id),
-            name: Some(name),
-            description: Some(description),
-            base_url: Some(base_url),
+            id,
+            name,
+            description,
+            base_url,
             status: OrganizationStatus::default(),
             scope: OrganizationScope::default(),
-            created_by: Some(created_by.clone()),
-            modified_by: Some(created_by),
+            created_by: created_by.clone(),
+            modified_by: created_by,
             created_at: now,
             updated_at: now,
         }

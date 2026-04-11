@@ -11,25 +11,25 @@ use sqlx::FromRow;
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct UserPo {
     /// 用户 ID
-    pub id: Option<String>,
+    pub id: String,
     /// 所属组织 ID
-    pub organization_id: Option<String>,
+    pub organization_id: String,
     /// 用户名（唯一登录名）
-    pub username: Option<String>,
+    pub username: String,
     /// 显示名称
-    pub display_name: Option<String>,
+    pub display_name: String,
     /// 邮箱
-    pub email: Option<String>,
+    pub email: String,
     /// 密码哈希（bcrypt）
-    pub password_hash: Option<String>,
+    pub password_hash: String,
     /// 用户角色
     pub role: UserRole,
     /// 用户状态枚举
     pub status: UserStatus,
     /// 创建人
-    pub created_by: Option<String>,
+    pub created_by: String,
     /// 修改人
-    pub modified_by: Option<String>,
+    pub modified_by: String,
     /// 创建时间戳（秒）
     pub created_at: i64,
     /// 更新时间戳（秒）
@@ -50,23 +50,23 @@ impl UserPo {
     ) -> Self {
         let now = utils::current_timestamp();
         Self {
-            id: Some(id),
-            organization_id: Some(organization_id),
-            username: Some(username),
-            display_name: Some(display_name),
-            email: Some(email),
-            password_hash: Some(password_hash),
+            id,
+            organization_id,
+            username,
+            display_name,
+            email,
+            password_hash,
             role,
             status: UserStatus::default(),
-            created_by: Some(created_by.clone()),
-            modified_by: Some(created_by),
+            created_by: created_by.clone(),
+            modified_by: created_by,
             created_at: now,
             updated_at: now,
         }
     }
 
     /// 获取用户角色（直接返回，不再需要转换）
-    pub fn user_role(&self) -> Option<UserRole> {
-        Some(self.role)
+    pub fn user_role(&self) -> UserRole {
+        self.role
     }
 }

@@ -34,22 +34,22 @@ pub async fn update_agent(
 
     // 更新字段
     if let Some(name) = req.name {
-        agent.po.name = Some(name);
+        agent.po.name = name;
     }
     if let Some(description) = req.description {
-        agent.po.description = Some(description);
+        agent.po.description = description;
     }
     if let Some(capabilities) = req.capabilities {
-        agent.po.capabilities = Some(serde_json::to_string(&capabilities).unwrap_or_else(|_| "[]".to_string()));
+        agent.po.capabilities = serde_json::to_string(&capabilities).unwrap_or_else(|_| "[]".to_string());
     }
     if let Some(soul) = req.soul {
-        agent.po.soul = Some(soul);
+        agent.po.soul = soul;
     }
     if let Some(model_provider_id) = req.model_provider_id {
-        agent.po.model_provider_id = Some(model_provider_id);
+        agent.po.model_provider_id = model_provider_id;
     }
     // 更新 modified_by 和 updated_at
-    agent.po.modified_by = Some(ctx.uid());
+    agent.po.modified_by = ctx.uid();
     agent.po.updated_at = current_timestamp();
 
     domain().agent_manage().update_agent(ctx, &agent).await?;
@@ -59,10 +59,10 @@ pub async fn update_agent(
     Ok(Json(ApiResponse::success(UpdateAgentResponse {
         id: agent.id().to_string(),
         name: agent.name().to_string(),
-        description: if agent.po.description.as_ref().map_or(true, |d| d.is_empty()) { None } else { agent.po.description.clone() },
+        description: if agent.po.description.is_empty() { None } else { Some(agent.po.description.clone()) },
         capabilities: if capabilities.is_empty() { None } else { Some(capabilities) },
-        soul: if agent.po.soul.as_ref().map_or(true, |s| s.is_empty()) { None } else { agent.po.soul.clone() },
-        model_provider_id: agent.po.model_provider_id.clone().expect("model_provider_id should not be None"),
+        soul: if agent.po.soul.is_empty() { None } else { Some(agent.po.soul.clone()) },
+        model_provider_id: agent.po.model_provider_id.clone(),
         updated_at: agent.po.updated_at,
     })))
 }

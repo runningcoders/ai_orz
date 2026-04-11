@@ -1,6 +1,5 @@
 //! Rig 驱动的 Cortex 实现
 
-use std::option;
 use anyhow::{Context, Result};
 use crate::models::{brain::*, model_provider::ModelProvider};
 use crate::pkg::RequestContext;
@@ -43,22 +42,22 @@ impl super::CortexDao for RigCortexDao {
 
         let cortex: Box<dyn CortexTrait + Send + Sync> = match provider.po.provider_type {
             ProviderType::OpenAI => Box::new(
-                self::openai::OpenAiCortex::new(api_key, model, Some(base_url))?
+                self::openai::OpenAiCortex::new(api_key, model, base_url)?
             ),
             ProviderType::DeepSeek => Box::new(
-                self::openai_compatible::OpenAiCompatibleCortex::new(api_key, model, "https://api.deepseek.com".to_string(),  Some(base_url))?
+                self::openai_compatible::OpenAiCompatibleCortex::new(api_key, model, "https://api.deepseek.com".to_string(),  base_url)?
             ),
             ProviderType::Qwen => Box::new(
-                self::openai_compatible::OpenAiCompatibleCortex::new(api_key, model, "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string(),  Some(base_url))?
+                self::openai_compatible::OpenAiCompatibleCortex::new(api_key, model, "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string(),  base_url)?
             ),
             ProviderType::Doubao => Box::new(
-                self::openai_compatible::OpenAiCompatibleCortex::new(api_key, model, "https://ark.cn-beijing.volces.com/api".to_string(),  Some(base_url))?
+                self::openai_compatible::OpenAiCompatibleCortex::new(api_key, model, "https://ark.cn-beijing.volces.com/api".to_string(),  base_url)?
             ),
             ProviderType::Ollama => Box::new(
-                self::ollama::OllamaCortex::new(api_key, model,  Some(base_url))?
+                self::ollama::OllamaCortex::new(api_key, model,  base_url)?
             ),
             ProviderType::Custom => Box::new(
-                self::openai_compatible::OpenAiCompatibleCortex::new(api_key, model, "".to_string(),  Some(base_url))?
+                self::openai_compatible::OpenAiCompatibleCortex::new(api_key, model, "".to_string(),  base_url)?
             ),
         };
 

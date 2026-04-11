@@ -26,12 +26,12 @@ pub async fn list_users_by_current_organization(
 
     // 转换为响应格式
     let data = users.into_iter().map(|user| UserListItem {
-        user_id: user.id.clone().expect("id should not be None"),
-        username: user.username.clone().expect("username should not be None"),
-        display_name: if user.display_name.as_ref().map_or(true, |s| s.is_empty()) { None } else { user.display_name.clone() },
-        email: if user.email.as_ref().map_or(true, |s| s.is_empty()) { None } else { user.email.clone() },
-        role: user.user_role().map(|r| r as i32).unwrap_or(0),
-        role_name: user.user_role().map(|r| r.display_name().to_string()).unwrap_or_default(),
+        user_id: user.id.clone(),
+        username: user.username.clone(),
+        display_name: if user.display_name.is_empty() { None } else { Some(user.display_name.clone()) },
+        email: if user.email.is_empty() { None } else { Some(user.email.clone()) },
+        role: user.user_role() as i32,
+        role_name: user.user_role().display_name().to_string(),
         status: user.status.to_i32(),
         created_at: user.created_at,
     }).collect();

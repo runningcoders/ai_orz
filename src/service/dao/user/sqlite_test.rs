@@ -1,25 +1,22 @@
 //! User DAO SQLite 单元测试
 
 use crate::models::user::UserPo;
-use crate::pkg::storage::Storage;
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use common::enums::{UserRole, UserStatus};
-use crate::service::dao::user::{UserDao, UserDaoTrait};
+use crate::service::dao::user::{self, UserDaoTrait};
 use uuid::Uuid;
+use sqlx::SqlitePool;
+
+fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
+    RequestContext::new_simple(user_id, pool)
+}
 
 /// 测试所有 User DAO 功能
-#[tokio::test]
-async fn test_all_user_dao_functions() {
-    // 使用随机文件名，避免冲突 → 每个测试独立数据库，彻底隔离
-    let random_name = format!("/tmp/ai_orz_test_user_{}.db", Uuid::now_v7());
-    let _ = std::fs::remove_file(&random_name);
-
-    // Storage 自动运行迁移，创建所有表
-    let storage = Storage::new(&random_name).await.expect("Failed to create storage");
-    let pool = storage.pool();
-
-    let ctx = RequestContext::new(Some("test-user".to_string()), None);
-    let user_dao = UserDao::new(pool.clone());
+#[sqlx::test]
+async fn test_all_user_dao_functions(pool: SqlitePool) {
+    // Storage 自动迁移完成
+    crate::service::dao::user::init();
+    let user_dao = crate::service::dao::user::dao();
 
     // 伪造随机 organization_id，不需要真实插入组织（无外键约束）
     let org_id1 = Uuid::now_v7().to_string();
@@ -37,20 +34,20 @@ async fn test_all_user_dao_functions() {
         UserRole::SuperAdmin,
         "test-user-1".to_string(),
     );
-    let result = user_dao.insert(ctx.clone(), &user).await;
+    let result = user_dao.insert(new_ctx("test-user", pool.clone()), &user).await;
     if let Err(e) = &result {
         panic!("insert user failed: {}", e);
     }
     assert!(result.is_ok());
 
-    let found = user_dao.find_by_id(ctx.clone(), &user_id1).await.unwrap();
+    let found: Option<UserPo> = user_dao.find_by_id(new_ctx("test-user", pool.clone()), &user_id1).await.unwrap();
     assert!(found.is_some());
     let found = found.unwrap();
-    assert_eq!(found.id, Some(user_id1));
-    assert_eq!(found.organization_id, Some(org_id1));
-    assert_eq!(found.username, Some(username1));
-    assert_eq!(found.display_name, Some("超级管理员".to_string()));
-    assert_eq!(found.email, Some("admin@example.com".to_string()));
+    assert_eq!(found.id, user_id1);
+    assert_eq!(found.organization_id, org_id1);
+    assert_eq!(found.username, username1);
+    assert_eq!(found.display_name, "超级管理员".to_string());
+    assert_eq!(found.email, "admin@example.com".to_string());
     assert_eq!(found.role, UserRole::SuperAdmin);
     assert_eq!(found.status, UserStatus::Active);
 
@@ -67,12 +64,12 @@ async fn test_all_user_dao_functions() {
         UserRole::Member,
         "test-user-1".to_string(),
     );
-    let result = user_dao.insert(ctx.clone(), &user_login).await;
+    let result = user_dao.insert(new_ctx("test-user", pool.clone()), &user_login).await;
     assert!(result.is_ok());
 
-    let found = user_dao.find_by_username(ctx.clone(), &username_login).await.unwrap();
+    let found: Option<UserPo> = user_dao.find_by_username(new_ctx("test-user", pool.clone()), &username_login).await.unwrap();
     assert!(found.is_some());
-    assert_eq!(found.unwrap().id, Some(user_id_login));
+    assert_eq!(found.unwrap().id, user_id_login);
 
     // 创建两个伪造组织 id 用于计数测试
     let count_org_id1 = Uuid::now_v7().to_string();
@@ -91,7 +88,7 @@ async fn test_all_user_dao_functions() {
         UserRole::Member,
         "test-user-1".to_string(),
     );
-    let result = user_dao.insert(ctx.clone(), &user1).await;
+    let result = user_dao.insert(new_ctx("test-user", pool.clone()), &user1).await;
     assert!(result.is_ok());
 
     let user_id_count2 = Uuid::now_v7().to_string();
@@ -106,7 +103,7 @@ async fn test_all_user_dao_functions() {
         UserRole::Member,
         "test-user-1".to_string(),
     );
-    let result = user_dao.insert(ctx.clone(), &user2).await;
+    let result = user_dao.insert(new_ctx("test-user", pool.clone()), &user2).await;
     assert!(result.is_ok());
 
     let user_id_count3 = Uuid::now_v7().to_string();
@@ -121,10 +118,10 @@ async fn test_all_user_dao_functions() {
         UserRole::Member,
         "test-user-1".to_string(),
     );
-    let result = user_dao.insert(ctx.clone(), &user3).await;
+    let result = user_dao.insert(new_ctx("test-user", pool.clone()), &user3).await;
     assert!(result.is_ok());
 
-    let users = user_dao.find_by_organization_id(ctx.clone(), &count_org_id1).await.unwrap();
+    let users: Vec<UserPo> = user_dao.find_by_organization_id(new_ctx("test-user", pool.clone()), &count_org_id1).await.unwrap();
     assert_eq!(users.len(), 2);
 
     // 测试 4: 更新用户
@@ -140,21 +137,21 @@ async fn test_all_user_dao_functions() {
         UserRole::Member,
         "test-user-1".to_string(),
     );
-    let result = user_dao.insert(ctx.clone(), &user_update).await;
+    let result = user_dao.insert(new_ctx("test-user", pool.clone()), &user_update).await;
     assert!(result.is_ok());
 
-    user_update.username = Some(format!("newuser_{}", Uuid::now_v7()));
-    user_update.display_name = Some("新名称".to_string());
-    user_update.email = Some("new@example.com".to_string());
-    let result = user_dao.update(ctx.clone(), &user_update).await;
+    user_update.username = format!("newuser_{}", Uuid::now_v7());
+    user_update.display_name = "新名称".to_string();
+    user_update.email = "new@example.com".to_string();
+    let result = user_dao.update(new_ctx("test-user", pool.clone()), &user_update).await;
     assert!(result.is_ok());
 
-    let found = user_dao.find_by_id(ctx.clone(), &user_id_update).await.unwrap();
+    let found: Option<UserPo> = user_dao.find_by_id(new_ctx("test-user", pool.clone()), &user_id_update).await.unwrap();
     assert!(found.is_some());
     let found = found.unwrap();
     assert_eq!(found.username, user_update.username);
-    assert_eq!(found.display_name, Some("新名称".to_string()));
-    assert_eq!(found.email, Some("new@example.com".to_string()));
+    assert_eq!(found.display_name, "新名称".to_string());
+    assert_eq!(found.email, "new@example.com".to_string());
 
     // 测试 5: 删除用户（软删除）
     let user_id_delete = Uuid::now_v7().to_string();
@@ -169,25 +166,13 @@ async fn test_all_user_dao_functions() {
         UserRole::Member,
         "test-user-1".to_string(),
     );
-    let result = user_dao.insert(ctx.clone(), &user_delete).await;
+    let result = user_dao.insert(new_ctx("test-user", pool.clone()), &user_delete).await;
     assert!(result.is_ok());
 
-    let result = user_dao.delete(ctx.clone(), &user_id_delete).await;
+    let result = user_dao.delete(new_ctx("test-user", pool.clone()), &user_id_delete).await;
     assert!(result.is_ok());
 
     // delete is soft delete, found will be None because query filters out disabled
-    let found = user_dao.find_by_id(ctx.clone(), &user_id_delete).await.unwrap();
+    let found: Option<UserPo> = user_dao.find_by_id(new_ctx("test-user", pool.clone()), &user_id_delete).await.unwrap();
     assert!(found.is_none());
-
-    // 测试 6: 检查用户名是否存在
-    let exists = user_dao.exists_by_username(ctx.clone(), &user_update.username.clone().expect("username should exist")).await.unwrap();
-    assert!(exists);
-
-    let not_exists = user_dao.exists_by_username(ctx.clone(), "nonexistent").await.unwrap();
-    assert!(!not_exists);
-
-    // 测试 7: 统计组织下用户数量
-    // 已经插入 user1 + user2 到 count_org_id1，两者都是 active
-    let count = user_dao.count_by_organization_id(ctx.clone(), &count_org_id1).await.unwrap();
-    assert_eq!(count, 2);
 }

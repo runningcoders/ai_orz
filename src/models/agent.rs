@@ -46,17 +46,17 @@ impl Agent {
 
     /// 获取 Agent ID
     pub fn id(&self) -> &str {
-        self.po.id.as_ref()
+        self.po.id.as_str()
     }
 
     /// 获取 Agent 名称
     pub fn name(&self) -> &str {
-        self.po.name.as_ref()
+        self.po.name.as_str()
     }
 
     /// 获取模型提供商 ID
     pub fn model_provider_id(&self) -> &str {
-        self.po.model_provider_id.as_ref()
+        self.po.model_provider_id.as_str()
     }
 
     /// 设置装配好的 Brain

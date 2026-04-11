@@ -1,25 +1,24 @@
 //! Message DAO SQLite 单元测试
 
 use crate::models::message::MessagePo;
-use crate::pkg::storage::Storage;
 use common::enums::{MessageRole, MessageType, MessageStatus};
 use crate::pkg::RequestContext;
-use crate::service::dao::message::{MessageDao, MessageDaoTrait};
+use crate::service::dao::message::{self, MessageDaoTrait};
 use uuid::Uuid;
+use sqlx::SqlitePool;
+
+fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
+    RequestContext::new_simple(user_id, pool)
+}
 
 /// 测试所有 Message DAO 功能
-#[tokio::test]
-async fn test_all_message_dao_functions() {
-    // 使用随机文件名，避免冲突 → 每个测试独立数据库，彻底隔离
-    let random_name = format!("/tmp/ai_orz_test_message_{}.db", Uuid::now_v7());
-    let _ = std::fs::remove_file(&random_name);
+#[sqlx::test]
+async fn test_all_message_dao_functions(pool: SqlitePool) {
+    // Storage 已经自动迁移，使用传入的 pool
+    crate::service::dao::message::init();
+    let message_dao = message::dao();
 
-    // Storage 自动运行迁移，创建所有表
-    let storage = Storage::new(&random_name).await.expect("Failed to create storage");
-    let pool = storage.pool();
-
-    let ctx = RequestContext::new(Some("test-user".to_string()), None);
-    let message_dao = MessageDao::new(pool.clone());
+    let ctx = new_ctx("test-user", pool);
 
     // 测试 1: 插入消息并查询
     let msg = MessagePo::new(
@@ -29,7 +28,6 @@ async fn test_all_message_dao_functions() {
         "".to_string(),
         MessageRole::User,
         MessageType::Text,
-        MessageStatus::Normal,
         "你好，这是一条测试消息".to_string(),
         "".to_string(),
         "test-user".to_string(),
@@ -40,14 +38,15 @@ async fn test_all_message_dao_functions() {
     let found = message_dao.find_by_id(ctx.clone(), msg.id.as_str()).await.unwrap();
     assert!(found.is_some());
     let found = found.unwrap();
-    assert_eq!(found.id, Some(msg.id));
-    assert_eq!(found.task_id, Some("task-001".to_string()));
-    assert_eq!(found.from_id, Some("user-001".to_string()));
-    assert_eq!(found.to_id, Some("".to_string()));
+    assert_eq!(found.id, msg.id);
+    assert_eq!(found.task_id, "task-001".to_string());
+    assert_eq!(found.from_id, "user-001".to_string());
+    assert_eq!(found.to_id, "".to_string());
     assert_eq!(found.role, MessageRole::User);
     assert_eq!(found.message_type, MessageType::Text);
-    assert_eq!(found.content, Some("你好，这是一条测试消息".to_string()));
-    assert_eq!(found.meta_json, Some("".to_string()));
+    assert_eq!(found.content, "你好，这是一条测试消息".to_string());
+    assert_eq!(found.meta_json, "".to_string());
+    assert_eq!(found.created_by, "test-user".to_string());
 
     // 测试 2: 按 task_id 列表查询
     let msg1 = MessagePo::new(
@@ -57,7 +56,6 @@ async fn test_all_message_dao_functions() {
         "".to_string(),
         MessageRole::User,
         MessageType::Text,
-        MessageStatus::Normal,
         "第一条消息".to_string(),
         "".to_string(),
         "test-user".to_string(),
@@ -69,7 +67,6 @@ async fn test_all_message_dao_functions() {
         "user-001".to_string(),
         MessageRole::Agent,
         MessageType::Text,
-        MessageStatus::Normal,
         "第二条消息".to_string(),
         "".to_string(),
         "test-user".to_string(),
@@ -81,7 +78,6 @@ async fn test_all_message_dao_functions() {
         "".to_string(),
         MessageRole::User,
         MessageType::Text,
-        MessageStatus::Normal,
         "另一个任务的消息".to_string(),
         "".to_string(),
         "test-user".to_string(),
@@ -96,9 +92,9 @@ async fn test_all_message_dao_functions() {
     let list = message_dao.list_by_task_id(ctx.clone(), "task-001", None).await.unwrap();
     assert_eq!(list.len(), 3);
     // 按 created_at 升序排列
-    assert_eq!(list[0].content.clone(), Some("你好，这是一条测试消息".to_string()));
-    assert_eq!(list[1].content.clone(), Some("第一条消息".to_string()));
-    assert_eq!(list[2].content.clone(), Some("第二条消息".to_string()));
+    assert_eq!(list[0].content, "你好，这是一条测试消息".to_string());
+    assert_eq!(list[1].content, "第一条消息".to_string());
+    assert_eq!(list[2].content, "第二条消息".to_string());
 
     // 测试 3: 分页查询
     let list = message_dao.list_by_task_id(ctx.clone(), "task-001", Some(2)).await.unwrap();
@@ -112,7 +108,7 @@ async fn test_all_message_dao_functions() {
     // 测试 5: 按 to_id 查询
     let list = message_dao.list_by_to_id(ctx.clone(), "user-001", None).await.unwrap();
     assert_eq!(list.len(), 1); // msg2
-    assert_eq!(list[0].content.clone(), Some("第二条消息".to_string()));
+    assert_eq!(list[0].content, "第二条消息".to_string());
 
     // 测试 6: 统计任务消息数量
     let count = message_dao.count_by_task_id(ctx.clone(), "task-001").await.unwrap();
@@ -130,7 +126,6 @@ async fn test_all_message_dao_functions() {
         "".to_string(),
         MessageRole::User,
         MessageType::Text,
-        MessageStatus::Normal,
         "要删除的消息".to_string(),
         "".to_string(),
         "test-user".to_string(),
@@ -165,7 +160,6 @@ async fn test_all_message_dao_functions() {
         "".to_string(),
         MessageRole::User,
         MessageType::Image,
-        MessageStatus::Normal,
         "20260410/abc123.png".to_string(),
         meta.clone(),
         "test-user".to_string(),
@@ -175,6 +169,6 @@ async fn test_all_message_dao_functions() {
     let found = message_dao.find_by_id(ctx.clone(), msg_image.id.as_str()).await.unwrap().unwrap();
 
     assert_eq!(found.message_type, MessageType::Image);
-    assert_eq!(found.content, Some("20260410/abc123.png".to_string()));
-    assert_eq!(found.meta_json, Some(meta));
+    assert_eq!(found.content, "20260410/abc123.png".to_string());
+    assert_eq!(found.meta_json, meta);
 }

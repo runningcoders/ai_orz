@@ -29,19 +29,18 @@ pub async fn get_current_user(
     // 转换为响应格式
     let role = user.user_role();
     let role_name = match role {
-        Some(UserRole::Member) => "成员",
-        Some(UserRole::Admin) => "管理员",
-        Some(UserRole::SuperAdmin) => "超级管理员",
-        None => "未知",
+        UserRole::Member => "成员",
+        UserRole::Admin => "管理员",
+        UserRole::SuperAdmin => "超级管理员",
     }.to_string();
 
     let info = UserInfoResponse {
-        user_id: user.id.clone().expect("id should not be None"),
-        username: user.username.clone().expect("username should not be None"),
-        display_name: if user.display_name.as_ref().map_or(true, |s| s.is_empty()) { None } else { user.display_name.clone() },
-        email: if user.email.as_ref().map_or(true, |s| s.is_empty()) { None } else { user.email.clone() },
-        organization_id: user.organization_id.clone().expect("organization_id should not be None"),
-        role: role.map(|r| r as i32).unwrap_or(0),
+        user_id: user.id.clone(),
+        username: user.username.clone(),
+        display_name: if user.display_name.is_empty() { None } else { Some(user.display_name.clone()) },
+        email: if user.email.is_empty() { None } else { Some(user.email.clone()) },
+        organization_id: user.organization_id.clone(),
+        role: role as i32,
         role_name,
         status: user.status.to_i32(),
     };

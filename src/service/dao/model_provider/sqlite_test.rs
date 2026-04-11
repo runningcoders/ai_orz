@@ -2,22 +2,22 @@
 //!
 //! 单元测试使用独立数据库，测试隔离性好
 
-use crate::models::model_provider::{ModelProviderPo};
-use crate::pkg::storage::Storage;
+use crate::models::model_provider::ModelProviderPo;
 use common::enums::{ProviderType, ModelProviderStatus};
-use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderDaoTrait};
+use crate::service::dao::model_provider::{self, ModelProviderDaoTrait};
 use crate::pkg::RequestContext;
+use uuid::Uuid;
+use sqlx::SqlitePool;
 
-#[tokio::test]
-async fn test_insert_and_find_model_provider() {
-    // 创建临时数据库用于测试，完全隔离
-    let db_path = "/tmp/ai_orz_test_model_provider_dao.db";
-    let _ = std::fs::remove_file(&db_path);
-    let storage = Storage::new(&db_path).await.expect("Failed to create storage");
-    let pool = storage.pool();
+fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
+    RequestContext::new_simple(user_id, pool)
+}
 
-    let ctx = RequestContext::new(Some("test".to_string()), None);
-    let dao = ModelProviderDao::new(pool.clone());
+#[sqlx::test]
+async fn test_insert_and_find_model_provider(pool: SqlitePool) {
+    // sqlx::test 自动创建空数据库并运行迁移
+    crate::service::dao::model_provider::init();
+    let dao = model_provider::dao();
 
     // 创建测试对象
     let provider_po = ModelProviderPo::new(
@@ -31,49 +31,39 @@ async fn test_insert_and_find_model_provider() {
     );
 
     // 测试插入
-    let result = dao.insert(ctx.clone(), &provider_po).await;
+    let result = dao.insert(new_ctx("test", pool.clone()), &provider_po).await;
     assert!(result.is_ok());
 
     // 测试查询
-    let found = dao.find_by_id(ctx.clone(), provider_po.id.as_ref().expect("id exists")).await.expect("Query failed");
+    let found = dao.find_by_id(new_ctx("test", pool), provider_po.id.as_str()).await.expect("Query failed");
     assert!(found.is_some());
     let found = found.unwrap();
-    assert_eq!(found.name, Some("OpenAI GPT-4o".to_string()));
+    assert_eq!(found.name, "OpenAI GPT-4o".to_string());
     assert_eq!(found.provider_type, ProviderType::OpenAI);
-    assert_eq!(found.model_name, Some("gpt-4o".to_string()));
-    assert_eq!(found.api_key, Some("test-key".to_string()));
+    assert_eq!(found.model_name, "gpt-4o".to_string());
+    assert_eq!(found.api_key, "test-key".to_string());
     assert_eq!(found.description, Some("OpenAI GPT-4o 模型".to_string()));
     assert_eq!(found.status, ModelProviderStatus::Normal);
 }
 
-#[tokio::test]
-async fn test_find_by_id_not_exists() {
-    // 创建临时数据库用于测试
-    let db_path = "/tmp/ai_orz_test_model_provider_not_exists.db";
-    let _ = std::fs::remove_file(&db_path);
-    let storage = Storage::new(&db_path).await.expect("Failed to create storage");
-    let pool = storage.pool();
-
-    let ctx = RequestContext::new(Some("test".to_string()), None);
-    let dao = ModelProviderDao::new(pool.clone());
+#[sqlx::test]
+async fn test_find_by_id_not_exists(pool: SqlitePool) {
+    // sqlx::test 自动创建空数据库并运行迁移
+    crate::service::dao::model_provider::init();
+    let dao = model_provider::dao();
 
     // 查询不存在的 ID 应该返回 Ok(None)
-    let found = dao.find_by_id(ctx.clone(), "not-exists-id").await.expect("Query failed");
+    let found = dao.find_by_id(new_ctx("test", pool), "not-exists-id").await.expect("Query failed");
     assert!(found.is_none());
 }
 
-#[tokio::test]
-async fn test_find_all_model_provider() {
-    // 创建临时数据库用于测试
-    let db_path = "/tmp/ai_orz_test_model_provider_find_all.db";
-    let _ = std::fs::remove_file(&db_path);
-    let storage = Storage::new(&db_path).await.expect("Failed to create storage");
-    let pool = storage.pool();
-
-    let ctx = RequestContext::new(Some("test".to_string()), None);
-    let dao = ModelProviderDao::new(pool.clone());
+#[sqlx::test]
+async fn test_find_all_model_provider(pool: SqlitePool) {
+    // sqlx::test 自动创建空数据库并运行迁移
+    crate::service::dao::model_provider::init();
+    let dao = model_provider::dao();
 
     // 查询空表应该返回空 Vec，不报错
-    let all = dao.find_all(ctx.clone()).await.expect("Query all failed");
+    let all = dao.find_all(new_ctx("test", pool)).await.expect("Query all failed");
     assert!(all.is_empty());
 }

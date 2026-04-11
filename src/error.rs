@@ -18,6 +18,7 @@ pub enum AppError {
     NotFound(String),
     BadRequest(String),
     Internal(String),
+    Io(std::io::Error),
 }
 
 impl fmt::Display for AppError {
@@ -26,6 +27,7 @@ impl fmt::Display for AppError {
             AppError::NotFound(msg) => write!(f, "Not found: {}", msg),
             AppError::BadRequest(msg) => write!(f, "Bad request: {}", msg),
             AppError::Internal(msg) => write!(f, "Internal error: {}", msg),
+            AppError::Io(err) => write!(f, "IO error: {}", err),
         }
     }
 }
@@ -56,6 +58,18 @@ impl From<MigrateError> for AppError {
     }
 }
 
+impl From<std::io::Error> for AppError {
+    fn from(err: std::io::Error) -> Self {
+        AppError::Io(err)
+    }
+}
+
+impl From<serde_json::Error> for AppError {
+    fn from(err: serde_json::Error) -> Self {
+        AppError::Internal(format!("JSON 序列化错误: {}", err))
+    }
+}
+
 impl AppError {
     /// 获取错误码
     pub fn code(&self) -> i32 {
@@ -63,6 +77,7 @@ impl AppError {
             AppError::NotFound(_) => 404,
             AppError::BadRequest(_) => 400,
             AppError::Internal(_) => 500,
+            AppError::Io(_) => 500,
         }
     }
 
@@ -78,6 +93,7 @@ impl IntoResponse for AppError {
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, 404, msg),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, 400, msg),
             AppError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, 500, msg),
+            AppError::Io(err) => (StatusCode::INTERNAL_SERVER_ERROR, 500, err.to_string()),
         };
 
         let body = Json(serde_json::json!({

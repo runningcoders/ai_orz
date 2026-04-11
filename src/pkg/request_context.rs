@@ -71,9 +71,13 @@ impl RequestContext {
     }
 
     pub fn new_simple(user_id: &str,  db_pool: SqlitePool) -> RequestContext {
-        let mut c = RequestContext::new(Some(user_id.to_string()),None);
-        c.db_pool = db_pool;
-        c
+        Self {
+            log_id: Self::generate_log_id(),
+            user_id: Some(user_id.to_string()),
+            username: None,
+            organization_id: None,
+            db_pool,
+        }
     }
 
     /// 设置 log_id（用于中间件处理时覆盖自动生成的 log_id）

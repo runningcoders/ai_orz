@@ -20,10 +20,10 @@ pub async fn create_agent(
 
     let agent_po = AgentPo::new(
         req.name.clone(),
-        req.role.clone(),
-        req.description.clone(),
+        req.role.clone().unwrap_or_default(),
+        req.description.clone().unwrap_or_default(),
         req.capabilities.clone().unwrap_or_default(),
-        req.soul.clone(),
+        req.soul.clone().unwrap_or_default(),
         req.model_provider_id.clone(),
         ctx.uid().to_string(),
     );
@@ -36,7 +36,7 @@ pub async fn create_agent(
         Json(ApiResponse::success(CreateAgentResponse {
             id: agent.id().to_string(),
             name: agent.name().to_string(),
-            description: if agent.po.description.as_ref().map_or(true, |d| d.is_empty()) { None } else { agent.po.description.clone() },
+            description: if agent.po.description.is_empty() { None } else { Some(agent.po.description.clone()) },
             created_at: agent.po.created_at,
         })),
     ))

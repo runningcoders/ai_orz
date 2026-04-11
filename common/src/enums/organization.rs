@@ -3,9 +3,10 @@
 use sqlx::Type;
 
 /// Organization status
+#[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[derive(Type)]
-#[sqlx(rename_all = "lowercase", type_name = "INTEGER")]
+#[sqlx(type_name = "INTEGER")]
 pub enum OrganizationStatus {
     /// Active (正常使用)
     #[default]
@@ -49,9 +50,10 @@ impl From<i64> for OrganizationStatus {
 }
 
 /// Organization scope
+#[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[derive(Type)]
-#[sqlx(rename_all = "lowercase", type_name = "INTEGER")]
+#[sqlx(type_name = "INTEGER")]
 pub enum OrganizationScope {
     /// Local (当前设备运行)
     #[default]

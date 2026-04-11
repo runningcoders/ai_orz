@@ -63,6 +63,8 @@ pub fn domain() -> Arc<dyn FinanceDomain> {
 
 /// 初始化 Finance Domain
 pub fn init() {
+    // 先初始化 DAL，DAL 会自动初始化 DAO
+    crate::service::dal::model_provider::init();
     let finance_domain = FinanceDomainImpl::new(
         model_provider_dal::dal()
     );

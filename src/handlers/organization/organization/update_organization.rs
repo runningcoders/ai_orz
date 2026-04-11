@@ -37,10 +37,10 @@ pub async fn update_organization(
     
     // 更新字段
     if let Some(name) = req.name {
-        org.name = Some(name);
+        org.name = name;
     }
     if let Some(description) = req.description {
-        org.description = Some(description);
+        org.description = description;
     }
     if let Some(base_url) = req.base_url {
         org.base_url = Some(base_url);

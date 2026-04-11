@@ -2,10 +2,10 @@
 
 use crate::error::AppError;
 use crate::models::model_provider::ModelProviderPo;
-use crate::pkg::storage;
 use common::enums::{ModelProviderStatus, ProviderType};
 use crate::pkg::RequestContext;
 use crate::service::dao::model_provider::ModelProviderDaoTrait;
+use async_trait::async_trait;
 use std::sync::{Arc, OnceLock};
 use chrono::Utc;
 // ==================== 单例 ====================
@@ -24,19 +24,20 @@ pub fn init() {
 
 // ==================== 实现 ====================
 
-struct ModelProviderDaoImpl;
+pub struct ModelProviderDaoImpl;
 
 impl ModelProviderDaoImpl {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self
     }
 }
 
 #[async_trait::async_trait]
 impl ModelProviderDaoTrait for ModelProviderDaoImpl {
-    async fn insert(&self, _ctx: RequestContext, provider: &ModelProviderPo) -> Result<(), AppError> {
+    async fn insert(&self, ctx: RequestContext, provider: &ModelProviderPo) -> Result<(), AppError> {
         let provider_type = provider.provider_type as i32;
         let status = provider.status as i32;
+        let pool = ctx.db_pool();
         sqlx::query!(
             "INSERT INTO model_providers (id, name, provider_type, model_name, api_key, base_url, description, status, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             provider.id,
@@ -52,13 +53,14 @@ impl ModelProviderDaoTrait for ModelProviderDaoImpl {
             provider.created_at,
             provider.updated_at
         )
-            .execute(&self.pool)
+            .execute(pool)
             .await?;
 
         Ok(())
     }
 
-    async fn find_by_id(&self, _ctx: RequestContext, id: &str) -> Result<Option<ModelProviderPo>, AppError> {
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<ModelProviderPo>, AppError> {
+        let pool = ctx.db_pool();
         let provider = sqlx::query_as!(
             ModelProviderPo,
             r#"
@@ -68,13 +70,14 @@ FROM model_providers WHERE id = ?
             "#,
             id
         )
-            .fetch_optional(&self.pool)
+            .fetch_optional(pool)
             .await?;
 
         Ok(provider)
     }
 
-    async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<ModelProviderPo>, AppError> {
+    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<ModelProviderPo>, AppError> {
+        let pool = ctx.db_pool();
         let providers = sqlx::query_as!(
             ModelProviderPo,
             r#"
@@ -83,17 +86,17 @@ SELECT id, name, provider_type as 'provider_type: ProviderType', model_name, api
 FROM model_providers WHERE status != 0
             "#
         )
-            .fetch_all(&self.pool)
+            .fetch_all(pool)
             .await?;
 
         Ok(providers)
     }
 
-    async fn update(&self, _ctx: RequestContext, provider: &ModelProviderPo) -> Result<(), AppError> {
+    async fn update(&self, ctx: RequestContext, provider: &ModelProviderPo) -> Result<(), AppError> {
         let current_timestamp = Utc::now().timestamp();
-        let _uid = _ctx.uid().to_string();
         let provider_type = provider.provider_type as i32;
         let status = provider.status as i32;
+        let pool = ctx.db_pool();
         sqlx::query!(
             r#"
 UPDATE model_providers
@@ -112,15 +115,16 @@ WHERE id = ?
             current_timestamp,
             provider.id
         )
-            .execute(&self.pool)
+            .execute(pool)
             .await?;
 
         Ok(())
     }
 
-    async fn delete(&self, _ctx: RequestContext, provider: &ModelProviderPo) -> Result<(), AppError> {
+    async fn delete(&self, ctx: RequestContext, provider: &ModelProviderPo) -> Result<(), AppError> {
         let current_timestamp = Utc::now().timestamp();
-        let uid = _ctx.uid().to_string();
+        let uid = ctx.uid().to_string();
+        let pool = ctx.db_pool();
         sqlx::query!(
             r#"
 UPDATE model_providers SET status = 0, modified_by = ?, updated_at = ? WHERE id = ?
@@ -129,7 +133,7 @@ UPDATE model_providers SET status = 0, modified_by = ?, updated_at = ? WHERE id 
             current_timestamp,
             provider.id
         )
-            .execute(&self.pool)
+            .execute(pool)
             .await?;
 
         Ok(())

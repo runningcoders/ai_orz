@@ -2,11 +2,15 @@
 
 use sqlx::SqlitePool;
 use crate::models::agent::AgentPo;
-use crate::pkg:: RequestContext;
+use crate::pkg::RequestContext;
 use common::enums::AgentStatus;
 use crate::service::dao::agent::AgentDaoTrait;
 use uuid::Uuid;
 use crate::service::dao::agent::sqlite::{dao, init};
+
+fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
+    RequestContext::new_simple(user_id, pool)
+}
 
 #[sqlx::test]
 async fn test_insert_and_find_by_id(pool: SqlitePool) {
@@ -18,10 +22,10 @@ async fn test_insert_and_find_by_id(pool: SqlitePool) {
     // ========== 测试: 插入并查询
     let agent_po = AgentPo::new(
         "TestAgent".to_string(),
-        ("worker".to_string()),
-       ( "A helpful agent".to_string()),
+        "worker".to_string(),
+        "A helpful agent".to_string(),
         vec!["coding".to_string()],
-        ("A helpful agent that can code".to_string()),
+        "A helpful agent that can code".to_string(),
         "provider-id-1".to_string(),
         "admin".to_string(),
     );
@@ -47,8 +51,8 @@ async fn test_find_all(pool: SqlitePool) {
     for i in 0..2 {
         let agent_po2 = AgentPo::new(
             format!("Agent{}", i),
-           "worker".to_string(),
-          "".to_string(),
+            "worker".to_string(),
+            "".to_string(),
             vec![],
             "".to_string(),
             format!("provider-{}", i),
@@ -65,14 +69,13 @@ async fn test_find_all(pool: SqlitePool) {
 async fn test_update(pool: SqlitePool) {
     init();
 
-    let mut ctx = new_ctx("admin", pool);
+    let ctx = new_ctx("admin", pool);
     let agent_dao = dao();
-
 
     let agent_po = AgentPo::new(
         "Original".to_string(),
         "worker".to_string(),
-       "".to_string(),
+        "".to_string(),
         vec![],
         "".to_string(),
         "provider-id-1".to_string(),
@@ -84,7 +87,6 @@ async fn test_update(pool: SqlitePool) {
     let mut updated = found;
     updated.name ="UpdatedAgent".to_string();
     updated.modified_by = "editor".to_string();
-    ctx.user_id = Some("editor".to_string());
     let result = agent_dao.update(ctx.clone(), &updated).await;
     assert!(result.is_ok());
     let found_after_update = agent_dao.find_by_id(ctx.clone(), &updated.id).await.unwrap().unwrap();
@@ -99,13 +101,12 @@ async fn test_soft_delete(pool: SqlitePool) {
     let ctx = new_ctx("admin", pool);
     let agent_dao = dao();
 
-
     let agent_po = AgentPo::new(
         "ToDelete".to_string(),
         "worker".to_string(),
-         "".to_string(),
+        "".to_string(),
         vec![],
-       "".to_string(),
+        "".to_string(),
         "provider-id-1".to_string(),
         "admin".to_string(),
     );
@@ -126,10 +127,10 @@ async fn test_find_all_excludes_deleted(pool: SqlitePool) {
     // 插入两个 Agent，删除一个
     let agent_po1 = AgentPo::new(
         "Normal".to_string(),
-       "worker".to_string(),
-           "".to_string(),
+        "worker".to_string(),
+        "".to_string(),
         vec![],
-       "".to_string(),
+        "".to_string(),
         "provider-id-1".to_string(),
         "admin".to_string(),
     );
@@ -160,7 +161,6 @@ async fn test_find_not_exists(pool: SqlitePool) {
 
     let ctx = new_ctx("admin", pool);
     let agent_dao = dao();
-
 
     let found_none = agent_dao.find_by_id(ctx, "not-exist-id").await.unwrap();
     assert!(found_none.is_none());

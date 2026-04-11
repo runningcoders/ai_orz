@@ -34,8 +34,8 @@ pub async fn login(
 
     // 签发 JWT
     let token = jwt::encode_jwt(
-        user.id.as_ref().expect("id should not be None"),
-        user.username.as_ref().expect("username should not be None"),
+        user.id.as_str(),
+        user.username.as_str(),
         &req.organization_id,
     )?;
 
@@ -60,8 +60,8 @@ pub async fn login(
         (
             StatusCode::OK,
             Json(ApiResponse::success(LoginResponse {
-                user_id: user.id.expect("id should not be None"),
-                username: user.username.expect("username should not be None"),
+                user_id: user.id.clone(),
+                username: user.username.clone(),
                 organization_id: req.organization_id,
             })),
         ),

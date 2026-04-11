@@ -23,9 +23,9 @@ pub async fn list_organizations(
     let items: Vec<OrganizationListItem> = orgs
         .into_iter()
         .map(|org: OrganizationPo| OrganizationListItem {
-            organization_id: org.id.clone().expect("id should not be None"),
-            name: org.name.clone().expect("name should not be None"),
-            description: if org.description.as_ref().map_or(true, |s| s.is_empty()) { None } else { org.description.clone() },
+            organization_id: org.id.clone(),
+            name: org.name.clone(),
+            description: if org.description.is_empty() { None } else { Some(org.description.clone()) },
         })
         .collect();
 

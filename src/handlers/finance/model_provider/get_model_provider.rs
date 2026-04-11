@@ -24,10 +24,10 @@ pub async fn get_model_provider(
         .ok_or_else(|| AppError::NotFound(format!("ModelProvider {} not found", id)))?;
 
     Ok(Json(ApiResponse::success(GetModelProviderResponse {
-        id: provider.po.id.clone().expect("id should not be None"),
-        name: provider.po.name.clone().expect("name should not be None"),
+        id: provider.po.id.clone(),
+        name: provider.po.name.clone(),
         provider_type: provider.po.provider_type.clone(),
-        model_name: provider.po.model_name.clone().expect("model_name should not be None"),
+        model_name: provider.po.model_name.clone(),
         base_url: provider.po.base_url.clone(),
         description: if provider.po.description.as_ref().map_or(true, |d| d.is_empty()) { None } else { provider.po.description.clone() },
         created_at: provider.po.created_at,

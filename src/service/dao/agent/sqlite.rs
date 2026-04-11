@@ -61,7 +61,7 @@ impl AgentDaoTrait for AgentDaoImpl {
             r#"
 SELECT id, name, role, description, soul, capabilities,
        model_provider_id, status as 'status: AgentStatus', created_by, modified_by, created_at, updated_at
-FROM agents WHERE id = ?
+FROM agents WHERE id = ? AND status <> 0
             "#,
             id
         )

@@ -34,6 +34,9 @@ pub trait MessageDaoTrait: Send + Sync {
     /// 统计指定任务的消息数量
     async fn count_by_task_id(&self, ctx: RequestContext, task_id: &str) -> Result<u64, AppError>;
 
+    /// 删除任务下所有消息（清空任务对话）
+    async fn delete_by_task_id(&self, ctx: RequestContext, task_id: &str) -> Result<(), AppError>;
+
     /// 更新消息处理状态
     async fn update_status(&self, ctx: RequestContext, id: &str, status: MessageStatus) -> Result<(), AppError>;
 

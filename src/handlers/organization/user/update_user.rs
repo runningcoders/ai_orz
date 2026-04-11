@@ -34,10 +34,10 @@ pub async fn update_user(
     
     // 更新字段
     if let Some(display_name) = req.display_name {
-        user.display_name = Some(display_name);
+        user.display_name = display_name;
     }
     if let Some(email) = req.email {
-        user.email = Some(email);
+        user.email = email;
     }
     if let Some(role) = req.role {
         // 从 i32 转换为 UserRole 枚举
@@ -56,20 +56,20 @@ pub async fn update_user(
         user.status = UserStatus::from_i32(status);
     }
     if let Some(password_hash) = req.password_hash {
-        user.password_hash = Some(password_hash);
+        user.password_hash = password_hash;
     }
     user.updated_at = current_timestamp();
     
     domain.user_manage().update_user(ctx, &user).await?;
     
-    let _role_name = user.user_role().map(|r: common::enums::UserRole| r.display_name().to_string()).unwrap_or_default();
+    let _role_name = user.user_role().display_name().to_string();
     
     Ok((StatusCode::OK, Json(ApiResponse::success(UpdateUserResponse {
-        user_id: user.id.clone().expect("id should not be None"),
-        username: user.username.clone().expect("username should not be None"),
-        display_name: if user.display_name.as_ref().map_or(true, |s| s.is_empty()) { None } else { user.display_name.clone() },
-        email: if user.email.as_ref().map_or(true, |s| s.is_empty()) { None } else { user.email.clone() },
-        role: user.user_role().map(|r| r as i32).unwrap_or(0),
+        user_id: user.id.clone(),
+        username: user.username.clone(),
+        display_name: if user.display_name.is_empty() { None } else { Some(user.display_name.clone()) },
+        email: if user.email.is_empty() { None } else { Some(user.email.clone()) },
+        role: user.user_role() as i32,
         status: user.status.to_i32(),
     })).into_response()))
 }

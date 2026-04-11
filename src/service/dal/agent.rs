@@ -19,6 +19,8 @@ pub fn dal() -> Arc<dyn AgentDalTrait> {
 
 /// 初始化 Agent DAL
 pub fn init() {
+    // 先初始化 DAO，再初始化 DAL
+    crate::service::dao::agent::init();
     let _ = AGENT_DAL.set(Arc::new(AgentDal::new(
         agent::dao(),
     )));

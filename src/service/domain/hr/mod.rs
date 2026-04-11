@@ -27,6 +27,8 @@ pub fn domain() -> Arc<dyn HrDomain> {
 
 /// 初始化 HR Domain
 pub fn init() {
+    // 先初始化 DAL，DAL 会自动初始化 DAO
+    crate::service::dal::agent::init();
     let hr_domain = HrDomainImpl::new(
         agent_dal::dal(),
     );

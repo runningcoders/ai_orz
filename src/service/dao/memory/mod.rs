@@ -9,12 +9,14 @@
 use crate::error::AppError;
 use crate::models::memory::{MemoryTrace, ShortTermMemoryIndexPo, LongTermKnowledgeNodePo, KnowledgeReferencePo, KnowledgeNodeRelationPo, KnowledgeRelationType};
 use crate::pkg::RequestContext;
+use async_trait::async_trait;
 
 // ==================== DAO 接口 ====================
 
 /// Memory DAO 接口
 ///
 /// 原始记忆不可修改不可删除，只能追加查询
+#[async_trait]
 pub trait MemoryDaoTrait: Send + Sync {
     /// 追加写入记忆追踪到每日文件，并插入短期索引
     ///
@@ -26,7 +28,7 @@ pub trait MemoryDaoTrait: Send + Sync {
     /// # 返回
     /// - 成功返回 Ok(())
     /// - 失败返回 Err
-    fn append_memory_trace(
+    async fn append_memory_trace(
         &self,
         ctx: RequestContext,
         trace: &MemoryTrace,
@@ -42,7 +44,7 @@ pub trait MemoryDaoTrait: Send + Sync {
     /// # 返回
     /// - 找到返回 Some(index)
     /// - 没找到返回 None
-    fn get_short_term_index(
+    async fn get_short_term_index(
         &self,
         ctx: RequestContext,
         id: &str,
@@ -56,7 +58,7 @@ pub trait MemoryDaoTrait: Send + Sync {
     /// - limit: 最大返回条数
     /// # 返回
     /// - 索引列表
-    fn list_short_term_by_agent(
+    async fn list_short_term_by_agent(
         &self,
         ctx: RequestContext,
         agent_id: &str,
@@ -72,7 +74,7 @@ pub trait MemoryDaoTrait: Send + Sync {
     /// - limit: 最大返回条数
     /// # 返回
     /// - 匹配的索引列表（按相关性排序）
-    fn search_short_term(
+    async fn search_short_term(
         &self,
         ctx: RequestContext,
         agent_id: &str,
@@ -90,6 +92,21 @@ pub trait MemoryDaoTrait: Send + Sync {
     /// - 完整内容字符串
     fn read_memory_content(&self, index: &ShortTermMemoryIndexPo) -> Result<String, AppError>;
 
+    /// 批量追加多个记忆追踪，并批量插入短期索引
+    ///
+    /// 用于批量聚合记忆，合并多个连续相关记忆追踪为一个短期索引
+    ///
+    /// # 参数
+    /// - ctx: 请求上下文
+    /// - traces: 记忆追踪列表，每个包含 trace + summary + tags
+    /// # 返回
+    /// - 短期索引列表
+    async fn batch_append_memory_traces(
+        &self,
+        ctx: RequestContext,
+        traces: &[(MemoryTrace, String, Vec<String>)],
+    ) -> Result<Vec<ShortTermMemoryIndexPo>, AppError>;
+
     // ========== 长期知识图谱相关 ==========
 
     /// 创建或更新知识节点（upsert）
@@ -101,7 +118,7 @@ pub trait MemoryDaoTrait: Send + Sync {
     /// - node: 知识节点
     /// # 返回
     /// - 成功返回 Ok(())
-    fn save_knowledge_node(
+    async fn save_knowledge_node(
         &self,
         ctx: RequestContext,
         node: &LongTermKnowledgeNodePo,
@@ -116,7 +133,7 @@ pub trait MemoryDaoTrait: Send + Sync {
     /// - nodes: 节点列表
     /// # 返回
     /// - 成功返回 Ok(())
-    fn batch_save_knowledge_nodes(
+    async fn batch_save_knowledge_nodes(
         &self,
         ctx: RequestContext,
         nodes: &[LongTermKnowledgeNodePo],
@@ -129,7 +146,7 @@ pub trait MemoryDaoTrait: Send + Sync {
     /// - id: 节点 ID
     /// # 返回
     /// - 找到返回 Some(node), 没找到返回 None
-    fn get_knowledge_node(
+    async fn get_knowledge_node(
         &self,
         ctx: RequestContext,
         id: &str,
@@ -144,7 +161,7 @@ pub trait MemoryDaoTrait: Send + Sync {
     /// - limit: 最大返回条数
     /// # 返回
     /// - 节点列表
-    fn list_knowledge_nodes_by_agent(
+    async fn list_knowledge_nodes_by_agent(
         &self,
         ctx: RequestContext,
         agent_id: &str,
@@ -161,7 +178,7 @@ pub trait MemoryDaoTrait: Send + Sync {
     /// - limit: 最大返回条数
     /// # 返回
     /// - 匹配的节点列表（按相关性排序）
-    fn search_knowledge_nodes(
+    async fn search_knowledge_nodes(
         &self,
         ctx: RequestContext,
         agent_id: &str,
@@ -178,7 +195,7 @@ pub trait MemoryDaoTrait: Send + Sync {
     /// - id: 节点 ID
     /// # 返回
     /// - 成功返回 Ok(())
-    fn delete_knowledge_node(
+    async fn delete_knowledge_node(
         &self,
         ctx: RequestContext,
         id: &str,
@@ -193,7 +210,7 @@ pub trait MemoryDaoTrait: Send + Sync {
     /// - reference: 引用
     /// # 返回
     /// - 成功返回 Ok(())
-    fn add_knowledge_reference(
+    async fn add_knowledge_reference(
         &self,
         ctx: RequestContext,
         reference: &KnowledgeReferencePo,
@@ -206,7 +223,7 @@ pub trait MemoryDaoTrait: Send + Sync {
     /// - references: 引用列表
     /// # 返回
     /// - 成功返回 Ok(())
-    fn batch_add_knowledge_references(
+    async fn batch_add_knowledge_references(
         &self,
         ctx: RequestContext,
         references: &[KnowledgeReferencePo],
@@ -219,7 +236,7 @@ pub trait MemoryDaoTrait: Send + Sync {
     /// - knowledge_id: 知识节点 ID
     /// # 返回
     /// - 引用列表
-    fn list_knowledge_references(
+    async fn list_knowledge_references(
         &self,
         ctx: RequestContext,
         knowledge_id: &str,
@@ -234,7 +251,7 @@ pub trait MemoryDaoTrait: Send + Sync {
     /// - relation: 关系
     /// # 返回
     /// - 成功返回 Ok(())
-    fn add_knowledge_relation(
+    async fn add_knowledge_relation(
         &self,
         ctx: RequestContext,
         relation: &KnowledgeNodeRelationPo,
@@ -247,10 +264,10 @@ pub trait MemoryDaoTrait: Send + Sync {
     /// - relations: 关系列表
     /// # 返回
     /// - 成功返回 Ok(())
-    fn batch_add_knowledge_relations(
+    async fn batch_add_knowledge_relations(
         &self,
         ctx: RequestContext,
-        relations: &[KnowledgeReferencePo],
+        relations: &[KnowledgeNodeRelationPo],
     ) -> Result<(), AppError>;
 
     /// 获取节点的所有出边关系（从该节点出发）
@@ -260,7 +277,7 @@ pub trait MemoryDaoTrait: Send + Sync {
     /// - source_id: 源节点 ID
     /// # 返回
     /// - 关系列表
-    fn list_outgoing_relations(
+    async fn list_outgoing_relations(
         &self,
         ctx: RequestContext,
         source_id: &str,
@@ -273,7 +290,7 @@ pub trait MemoryDaoTrait: Send + Sync {
     /// - target_id: 目标节点 ID
     /// # 返回
     /// - 关系列表
-    fn list_incoming_relations(
+    async fn list_incoming_relations(
         &self,
         ctx: RequestContext,
         target_id: &str,
@@ -286,7 +303,7 @@ pub trait MemoryDaoTrait: Send + Sync {
     /// - node_id: 节点 ID
     /// # 返回
     /// - 关系列表
-    fn list_all_relations_for_node(
+    async fn list_all_relations_for_node(
         &self,
         ctx: RequestContext,
         node_id: &str,
@@ -299,7 +316,7 @@ pub trait MemoryDaoTrait: Send + Sync {
     /// - relation_id: 关系 ID
     /// # 返回
     /// - 成功返回 Ok(())
-    fn delete_knowledge_relation(
+    async fn delete_knowledge_relation(
         &self,
         ctx: RequestContext,
         relation_id: &str,
@@ -314,7 +331,7 @@ pub trait MemoryDaoTrait: Send + Sync {
     /// - node_id: 节点 ID
     /// # 返回
     /// - 成功返回 Ok(())
-    fn delete_all_relations_for_node(
+    async fn delete_all_relations_for_node(
         &self,
         ctx: RequestContext,
         node_id: &str,
@@ -328,7 +345,7 @@ pub trait MemoryDaoTrait: Send + Sync {
     /// - relation_type: 关系类型
     /// # 返回
     /// - 关系列表
-    fn find_relations_by_type(
+    async fn find_relations_by_type(
         &self,
         ctx: RequestContext,
         source_id: &str,
@@ -338,8 +355,8 @@ pub trait MemoryDaoTrait: Send + Sync {
 
 // ==================== SQLite 实现 ====================
 
- mod sqlite;
-pub use self::sqlite::{dao,init};
+pub mod sqlite;
+pub use self::sqlite::{dao, init, SqliteMemoryDao};
 
 
 

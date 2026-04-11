@@ -3,9 +3,10 @@
 use sqlx::Type;
 
 /// Model provider type
+#[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[derive(Type)]
-#[sqlx(rename_all = "lowercase", type_name = "INTEGER")]
+#[sqlx(type_name = "INTEGER")]
 pub enum ProviderType {
     /// OpenAI compatible
     #[default]

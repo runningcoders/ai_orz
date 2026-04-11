@@ -34,19 +34,19 @@ pub async fn update_current_user(
     // 更新可修改字段：只允许修改显示名称、邮箱、密码哈希
     // 用户不能修改自己的角色、状态、组织ID等敏感信息
     if let Some(new_display_name) = req.display_name {
-        user.display_name = Some(new_display_name);
+        user.display_name = new_display_name;
     }
     if let Some(new_email) = req.email {
-        user.email = Some(new_email);
+        user.email = new_email;
     }
     if let Some(new_password_hash) = req.password_hash {
-        user.password_hash = Some(new_password_hash);
+        user.password_hash = new_password_hash;
     }
 
     // 更新修改时间和修改人
     user.updated_at = utils::current_timestamp();
     if let Some(modifier_id) = ctx.user_id.clone() {
-        user.modified_by = Some(modifier_id);
+        user.modified_by = modifier_id;
     }
 
     // 使用已有的 domain 方法更新用户信息，复用抽象层逻辑

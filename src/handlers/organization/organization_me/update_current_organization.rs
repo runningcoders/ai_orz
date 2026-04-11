@@ -29,10 +29,10 @@ pub async fn update_current_organization(
 
     // 更新可修改字段
     if let Some(new_name) = req.name {
-        org.name = Some(new_name);
+        org.name = new_name;
     }
     if let Some(new_description) = req.description {
-        org.description = Some(new_description);
+        org.description = new_description;
     }
     if let Some(new_base_url) = req.base_url {
         org.base_url = Some(new_base_url);
@@ -41,7 +41,7 @@ pub async fn update_current_organization(
     // 更新修改时间
     org.updated_at = utils::current_timestamp();
     if let Some(modifier_id) = ctx.user_id.clone() {
-        org.modified_by = Some(modifier_id);
+        org.modified_by = modifier_id;
     }
 
     // 保存更新

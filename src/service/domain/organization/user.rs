@@ -91,12 +91,12 @@ impl super::UserManage for super::OrganizationDomainImpl {
         };
 
         // 检查用户所属组织是否匹配
-        if user.organization_id.as_deref() != Some(org_id) {
+        if user.organization_id.as_str() != org_id {
             return Err(AppError::BadRequest("用户名或密码错误".to_string()));
         }
 
         // 验证密码哈希
-        if user.password_hash.as_deref() != Some(password_hash) {
+        if user.password_hash.as_str() != password_hash {
             return Err(AppError::BadRequest("用户名或密码错误".to_string()));
         }
 

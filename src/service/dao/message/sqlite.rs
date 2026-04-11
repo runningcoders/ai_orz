@@ -2,10 +2,11 @@
 
 use crate::error::AppError;
 use crate::models::message::MessagePo;
-use crate::pkg::storage;
-use common::enums::MessageStatus;
+use common::enums::{MessageRole, MessageType, MessageStatus};
 use crate::pkg::RequestContext;
 use crate::service::dao::message::MessageDaoTrait;
+use async_trait::async_trait;
+use sqlx::SqlitePool;
 use std::sync::{Arc, OnceLock};
 use chrono::Utc;
 // ==================== 单例管理 ====================
@@ -34,7 +35,7 @@ impl MessageDaoImpl {
 
 #[async_trait::async_trait]
 impl MessageDaoTrait for MessageDaoImpl {
-    async fn insert(&self, _ctx: RequestContext, message: &MessagePo) -> Result<(), AppError> {
+    async fn insert(&self, ctx: RequestContext, message: &MessagePo) -> Result<(), AppError> {
         let role = message.role as i32;
         let message_type = message.message_type as i32;
         let status = message.status as i32;
@@ -53,13 +54,13 @@ impl MessageDaoTrait for MessageDaoImpl {
             message.created_at,
             message.updated_at
         )
-            .execute(&self.pool)
+            .execute(&ctx.db_pool().clone())
             .await?;
 
         Ok(())
     }
 
-    async fn find_by_id(&self, _ctx: RequestContext, id: &str) -> Result<Option<MessagePo>, AppError> {
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<MessagePo>, AppError> {
         let message = sqlx::query_as!(
             MessagePo,
             r#"
@@ -68,13 +69,13 @@ FROM messages WHERE id = ?
             "#,
             id
         )
-            .fetch_optional(&self.pool)
+            .fetch_optional(&ctx.db_pool().clone())
             .await?;
 
         Ok(message)
     }
 
-    async fn list_by_task_id(&self, _ctx: RequestContext, task_id: &str, limit: Option<usize>) -> Result<Vec<MessagePo>, AppError> {
+    async fn list_by_task_id(&self, ctx: RequestContext, task_id: &str, limit: Option<usize>) -> Result<Vec<MessagePo>, AppError> {
         let sql = if let Some(limit) = limit {
             format!(
                 r#"
@@ -93,17 +94,17 @@ FROM messages WHERE task_id = ? ORDER BY created_at ASC
 
         let messages = sqlx::query_as::<_, MessagePo>(&sql)
             .bind(task_id)
-            .fetch_all(&self.pool)
+            .fetch_all(&ctx.db_pool().clone())
             .await?;
         Ok(messages)
     }
 
-    async fn list_by_from_id(&self, _ctx: RequestContext, from_id: &str, limit: Option<usize>) -> Result<Vec<MessagePo>, AppError> {
+    async fn list_by_from_id(&self, ctx: RequestContext, from_id: &str, limit: Option<usize>) -> Result<Vec<MessagePo>, AppError> {
         let sql = if let Some(limit) = limit {
             format!(
                 r#"
 SELECT id, task_id, from_id, to_id, role as 'role: MessageRole', message_type as 'message_type: MessageType', status as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
-FROM messages WHERE from_id = ? ORDER BY created_at DESC
+FROM messages WHERE from_id = ? ORDER BY created_at ASC
 LIMIT {}
                 "#,
                 limit
@@ -111,23 +112,23 @@ LIMIT {}
         } else {
             r#"
 SELECT id, task_id, from_id, to_id, role as 'role: MessageRole', message_type as 'message_type: MessageType', status as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
-FROM messages WHERE from_id = ? ORDER BY created_at DESC
+FROM messages WHERE from_id = ? ORDER BY created_at ASC
             "#.to_string()
         };
 
         let messages = sqlx::query_as::<_, MessagePo>(&sql)
             .bind(from_id)
-            .fetch_all(&self.pool)
+            .fetch_all(&ctx.db_pool().clone())
             .await?;
         Ok(messages)
     }
 
-    async fn list_by_to_id(&self, _ctx: RequestContext, to_id: &str, limit: Option<usize>) -> Result<Vec<MessagePo>, AppError> {
+    async fn list_by_to_id(&self, ctx: RequestContext, to_id: &str, limit: Option<usize>) -> Result<Vec<MessagePo>, AppError> {
         let sql = if let Some(limit) = limit {
             format!(
                 r#"
 SELECT id, task_id, from_id, to_id, role as 'role: MessageRole', message_type as 'message_type: MessageType', status as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
-FROM messages WHERE to_id = ? ORDER BY created_at DESC
+FROM messages WHERE to_id = ? ORDER BY created_at ASC
 LIMIT {}
                 "#,
                 limit
@@ -135,79 +136,94 @@ LIMIT {}
         } else {
             r#"
 SELECT id, task_id, from_id, to_id, role as 'role: MessageRole', message_type as 'message_type: MessageType', status as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
-FROM messages WHERE to_id = ? ORDER BY created_at DESC
+FROM messages WHERE to_id = ? ORDER BY created_at ASC
             "#.to_string()
         };
 
         let messages = sqlx::query_as::<_, MessagePo>(&sql)
             .bind(to_id)
-            .fetch_all(&self.pool)
+            .fetch_all(&ctx.db_pool().clone())
             .await?;
         Ok(messages)
     }
 
-    async fn delete(&self, _ctx: RequestContext, id: &str) -> Result<(), AppError> {
+    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
         sqlx::query!(
-            "DELETE FROM messages WHERE id = ?",
+            r#"DELETE FROM messages WHERE id = ?"#,
             id
         )
-            .execute(&self.pool)
+            .execute(&ctx.db_pool().clone())
             .await?;
 
         Ok(())
     }
 
-    async fn count_by_task_id(&self, _ctx: RequestContext, task_id: &str) -> Result<u64, AppError> {
+    async fn count_by_task_id(&self, ctx: RequestContext, task_id: &str) -> Result<u64, AppError> {
         let count = sqlx::query!(
-            "SELECT COUNT(*) as count FROM messages WHERE task_id = ?",
+            r#"SELECT COUNT(*) as count FROM messages WHERE task_id = ?"#,
             task_id
         )
-            .fetch_one(&self.pool)
+            .fetch_one(&ctx.db_pool().clone())
             .await?;
 
         Ok(count.count as u64)
     }
 
-    async fn update_status(&self, _ctx: RequestContext, id: &str, status: MessageStatus) -> Result<(), AppError> {
-        let now = Utc::now().timestamp();
-        let status_i32 = status as i32;
+    async fn delete_by_task_id(&self, ctx: RequestContext, task_id: &str) -> Result<(), AppError> {
         sqlx::query!(
-            r#"
-UPDATE messages SET status = ?, updated_at = ? WHERE id = ?
-            "#,
-            status_i32,
-            now,
-            id
+            r#"DELETE FROM messages WHERE task_id = ?"#,
+            task_id
         )
-            .execute(&self.pool)
+            .execute(&ctx.db_pool().clone())
             .await?;
 
         Ok(())
     }
 
-    async fn list_by_status(&self, _ctx: RequestContext, status: Vec<MessageStatus>, limit: Option<usize>) -> Result<Vec<MessagePo>, AppError> {
-        let status_in: Vec<i32> = status.iter().map(|s| *s as i32).collect();
+    async fn update_status(&self, ctx: RequestContext, id: &str, status: MessageStatus) -> Result<(), AppError> {
+        let current_timestamp = Utc::now().timestamp();
+        let uid = ctx.uid().to_string();
+        let status_i32 = status as i32;
+        sqlx::query!(
+            r#"
+UPDATE messages SET status = ?, updated_at = ?, modified_by = ? WHERE id = ?
+            "#,
+            status_i32,
+            current_timestamp,
+            uid,
+            id
+        )
+            .execute(&ctx.db_pool().clone())
+            .await?;
 
-        // sqlx 不直接支持 IN 绑定，我们手动构建 SQL
-        let mut sql = "SELECT id, task_id, from_id, to_id, role as 'role: MessageRole', message_type as 'message_type: MessageType', status as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at FROM messages WHERE status IN (".to_string();
-        for (i, _) in status_in.iter().enumerate() {
-            if i > 0 {
-                sql.push_str(", ");
-            }
-            sql.push_str("?");
-        }
-        sql.push_str(") ORDER BY created_at ASC");
+        Ok(())
+    }
 
-        if let Some(limit) = limit {
-            sql.push_str(&format!(" LIMIT {}", limit));
-        }
+    async fn list_by_status(&self, ctx: RequestContext, status: Vec<MessageStatus>, limit: Option<usize>) -> Result<Vec<MessagePo>, AppError> {
+        let status_list: Vec<i32> = status.iter().map(|s| *s as i32).collect();
+        let placeholders: Vec<String> = status_list.iter().enumerate().map(|(i, _)| format!("${}", i+1)).collect();
+        let placeholders_str = placeholders.join(", ");
+
+        let sql = format!(
+            r#"
+SELECT id, task_id, from_id, to_id, role as 'role: MessageRole', message_type as 'message_type: MessageType', status as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
+FROM messages WHERE status IN ({}) ORDER BY created_at ASC
+"#,
+            placeholders_str
+        );
+
+        let sql = if let Some(limit) = limit {
+            format!("{} LIMIT {}", sql, limit)
+        } else {
+            sql
+        };
 
         let mut query = sqlx::query_as::<_, MessagePo>(&sql);
-        for s in status_in {
-            query = query.bind(s);
+        for status in status_list {
+            query = query.bind(status);
         }
 
-        let messages = query.fetch_all(&self.pool).await?;
+        let messages = query.fetch_all(&ctx.db_pool().clone()).await?;
         Ok(messages)
     }
 }

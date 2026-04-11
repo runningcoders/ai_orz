@@ -34,10 +34,10 @@ pub async fn create_model_provider(
     Ok((
         StatusCode::CREATED,
         Json(ApiResponse::success(CreateModelProviderResponse {
-            id: provider.po.id.clone().expect("id should not be None"),
-            name: provider.po.name.clone().expect("name should not be None"),
+            id: provider.po.id.clone(),
+            name: provider.po.name.clone(),
             provider_type: provider.po.provider_type.clone(),
-            model_name: provider.po.model_name.clone().expect("model_name should not be None"),
+            model_name: provider.po.model_name.clone(),
             description: if provider.po.description.as_ref().map_or(true, |d| d.is_empty()) { None } else { provider.po.description.clone() },
             created_at: provider.po.created_at,
         })),

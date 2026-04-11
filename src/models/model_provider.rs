@@ -15,8 +15,8 @@ pub struct ModelProviderPo {
     pub provider_type: ProviderType,
     pub model_name: String,
     pub api_key: String,
-    pub base_url:String,
-    pub description: String,
+    pub base_url: Option<String>,
+    pub description: Option<String>,
     pub status: ModelProviderStatus,
     pub created_by: String,
     pub modified_by: String,
@@ -76,22 +76,22 @@ impl ModelProvider {
 
     /// 获取名称
     pub fn name(&self) -> &str {
-        self.po.name.as_ref().expect("name should not be None")
+        self.po.name.as_str()
     }
 
     /// 获取模型名称
     pub fn model_name(&self) -> &str {
-        self.po.model_name.as_ref().expect("model_name should not be None")
+        self.po.model_name.as_str()
     }
 
     /// 获取 API Key
     pub fn api_key(&self) -> &str {
-        self.po.api_key.as_ref().expect("api_key should not be None")
+        self.po.api_key.as_str()
     }
 
     /// 更新时间戳
     pub fn touch(&mut self, modifier: &str) {
-        self.po.modified_by = Some(modifier.to_string());
+        self.po.modified_by = modifier.to_string();
         self.po.updated_at = current_timestamp();
     }
 }
@@ -102,21 +102,21 @@ impl ModelProviderPo {
         provider_type: ProviderType,
         model_name: String,
         api_key: String,
-        base_url: String,
-        description: String,
+        base_url: Option<String>,
+        description: Option<String>,
         creator: String,
     ) -> Self {
         Self {
-            id: Some(generate_id()),
-            name: Some(name),
+            id: generate_id(),
+            name,
             provider_type,
-            model_name: Some(model_name),
-            api_key: Some(api_key),
+            model_name,
+            api_key,
             base_url,
             description,
             status: ModelProviderStatus::Normal,
-            created_by: Some(creator.clone()),
-            modified_by: Some(creator),
+            created_by: creator.clone(),
+            modified_by: creator,
             created_at: current_timestamp(),
             updated_at: current_timestamp(),
         }

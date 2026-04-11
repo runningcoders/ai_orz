@@ -4,26 +4,22 @@
 
 use crate::service::dal::brain::{BrainDal, BrainDalTrait};
 use crate::models::{brain::*, model_provider::*};
-use crate::service::dao::cortex::{CortexDao};
+use crate::service::dao::cortex;
 use common::enums::ProviderType;
 use crate::pkg::RequestContext;
-use crate::pkg::storage::Storage;
 use uuid::Uuid;
+use sqlx::SqlitePool;
 
 /// 测试 Brain DAL 创建 wake_brain 功能
-#[tokio::test]
-async fn test_wake_brain() {
-    // 使用随机文件名，避免冲突 → 每个测试独立数据库，彻底隔离
-    let random_name = format!("/tmp/ai_orz_test_brain_{}.db", Uuid::now_v7());
-    let _ = std::fs::remove_file(&random_name);
-    let storage = Storage::new(&random_name).await.expect("Failed to create storage");
-    let pool = storage.pool();
-
+#[sqlx::test]
+async fn test_wake_brain(pool: SqlitePool) {
+    // Storage 已经自动迁移，使用传入的 pool
     // 初始化 cortex dao 和 brain dal
-    let cortex_dao = CortexDao::new(pool);
+    cortex::init();
+    let cortex_dao = cortex::dao();
     let brain_dal = BrainDal::new(cortex_dao);
 
-    let ctx = RequestContext::new(Some("test-user".to_string()), None);
+    let ctx = RequestContext::new_simple("test-user", pool);
 
     // ========== 测试: wake_brain ==========
     let provider_po = ModelProviderPo::new(
@@ -51,19 +47,15 @@ async fn test_wake_brain() {
 }
 
 /// 测试 Brain DAL test_connection 功能
-#[tokio::test]
-async fn test_test_connection() {
-    // 使用随机文件名，避免冲突 → 每个测试独立数据库，彻底隔离
-    let random_name = format!("/tmp/ai_orz_test_brain_{}.db", Uuid::now_v7());
-    let _ = std::fs::remove_file(&random_name);
-    let storage = Storage::new(&random_name).await.expect("Failed to create storage");
-    let pool = storage.pool();
-
+#[sqlx::test]
+async fn test_test_connection(pool: SqlitePool) {
+    // Storage 已经自动迁移，使用传入的 pool
     // 初始化 cortex dao 和 brain dal
-    let cortex_dao = CortexDao::new(pool);
+    cortex::init();
+    let cortex_dao = cortex::dao();
     let brain_dal = BrainDal::new(cortex_dao);
 
-    let ctx = RequestContext::new(Some("test-user".to_string()), None);
+    let ctx = RequestContext::new_simple("test-user", pool);
 
     // ========== 测试: test_connection ==========
     let provider_po = ModelProviderPo::new(

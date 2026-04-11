@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS agents (
     modified_by TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
-);
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS model_providers (
     id TEXT NOT NULL PRIMARY KEY,
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS model_providers (
     modified_by TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
-);
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS organizations (
     id TEXT NOT NULL PRIMARY KEY,
@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS organizations (
     modified_by TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
-);
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS users (
     id TEXT NOT NULL PRIMARY KEY,
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS users (
     modified_by TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
-);
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS tasks (
     id TEXT NOT NULL PRIMARY KEY,
@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     modified_by TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
-);
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS short_term_memory_index (
     id TEXT NOT NULL PRIMARY KEY,
@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS short_term_memory_index (
     tags TEXT NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
-);
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS long_term_knowledge_node (
     id TEXT NOT NULL PRIMARY KEY,
@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS long_term_knowledge_node (
     summary TEXT NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
-);
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS knowledge_node_relation (
     id TEXT NOT NULL PRIMARY KEY,
@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS knowledge_node_relation (
     relation_type TEXT NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
-);
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS knowledge_reference (
     id TEXT NOT NULL PRIMARY KEY,
@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS knowledge_reference (
     byte_start INTEGER NOT NULL,
     byte_length INTEGER NOT NULL,
     created_at INTEGER NOT NULL
-);
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS messages (
     id TEXT NOT NULL PRIMARY KEY,
@@ -119,9 +119,10 @@ CREATE TABLE IF NOT EXISTS messages (
     content TEXT NOT NULL,
     meta_json TEXT NOT NULL DEFAULT '',
     created_by TEXT NOT NULL DEFAULT '',
+    modified_by TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
-);
+) STRICT;
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_organizations_id ON organizations(id);

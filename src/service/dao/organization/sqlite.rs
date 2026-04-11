@@ -3,8 +3,11 @@
 use crate::error::AppError;
 use crate::models::organization::OrganizationPo;
 use crate::pkg::storage;
+use common::enums::{OrganizationStatus, OrganizationScope};
 use crate::pkg::RequestContext;
 use crate::service::dao::organization::OrganizationDaoTrait;
+use async_trait::async_trait;
+use sqlx::SqlitePool;
 use std::sync::{Arc, OnceLock};
 use chrono::Utc;
 // ==================== 单例管理 ====================
@@ -33,7 +36,7 @@ impl OrganizationDaoImpl {
 
 #[async_trait::async_trait]
 impl OrganizationDaoTrait for OrganizationDaoImpl {
-    async fn insert(&self, _ctx: RequestContext, org: &OrganizationPo) -> Result<(), AppError> {
+    async fn insert(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<(), AppError> {
         let status = org.status as i32;
         let scope = org.scope as i32;
         sqlx::query!(
@@ -49,13 +52,13 @@ impl OrganizationDaoTrait for OrganizationDaoImpl {
             org.created_at,
             org.updated_at
         )
-            .execute(&self.pool)
+            .execute(ctx.db_pool())
             .await?;
 
         Ok(())
     }
 
-    async fn find_by_id(&self, _ctx: RequestContext, id: &str) -> Result<Option<OrganizationPo>, AppError> {
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<OrganizationPo>, AppError> {
         let org = sqlx::query_as!(
             OrganizationPo,
             r#"
@@ -64,13 +67,13 @@ FROM organizations WHERE id = ?
             "#,
             id
         )
-            .fetch_optional(&self.pool)
+            .fetch_optional(ctx.db_pool())
             .await?;
 
         Ok(org)
     }
 
-    async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<OrganizationPo>, AppError> {
+    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<OrganizationPo>, AppError> {
         let orgs = sqlx::query_as!(
             OrganizationPo,
             r#"
@@ -78,15 +81,15 @@ SELECT id, name, description, base_url, status as 'status: OrganizationStatus', 
 FROM organizations WHERE status != 0
             "#
         )
-            .fetch_all(&self.pool)
+            .fetch_all(ctx.db_pool())
             .await?;
 
         Ok(orgs)
     }
 
-    async fn update(&self, _ctx: RequestContext, org: &OrganizationPo) -> Result<(), AppError> {
+    async fn update(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<(), AppError> {
         let current_timestamp = Utc::now().timestamp();
-        let uid = _ctx.uid().to_string();
+        let uid = ctx.uid().to_string();
         let status = org.status as i32;
         let scope = org.scope as i32;
         sqlx::query!(
@@ -104,15 +107,15 @@ WHERE id = ?
             current_timestamp,
             org.id
         )
-            .execute(&self.pool)
+            .execute(ctx.db_pool())
             .await?;
 
         Ok(())
     }
 
-    async fn delete(&self, _ctx: RequestContext, id: &str) -> Result<(), AppError> {
+    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
         let current_timestamp = Utc::now().timestamp();
-        let uid = _ctx.uid().to_string();
+        let uid = ctx.uid().to_string();
         sqlx::query!(
             r#"
 UPDATE organizations SET status = 0, modified_by = ?, updated_at = ? WHERE id = ?
@@ -121,17 +124,17 @@ UPDATE organizations SET status = 0, modified_by = ?, updated_at = ? WHERE id = 
             current_timestamp,
             id
         )
-            .execute(&self.pool)
+            .execute(ctx.db_pool())
             .await?;
 
         Ok(())
     }
 
-    async fn count_all(&self, _ctx: RequestContext) -> Result<u64, AppError> {
+    async fn count_all(&self, ctx: RequestContext) -> Result<u64, AppError> {
         let count = sqlx::query!(
             r#"SELECT COUNT(*) as count FROM organizations WHERE status != 0"#
         )
-            .fetch_one(&self.pool)
+            .fetch_one(ctx.db_pool())
             .await?;
 
         Ok(count.count as u64)

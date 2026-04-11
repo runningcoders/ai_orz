@@ -8,6 +8,7 @@
 //! - KnowledgeReferencePo - 知识节点引用原始短期索引
 
 use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
 use std::collections::HashMap;
 
 /// 记忆条目角色
@@ -142,7 +143,7 @@ Created: {}
 /// 每条短期记忆聚合了多条相关记忆细节，存储在 SQLite
 /// 原始记忆细节通过 knowledge_reference.short_term_id 反向关联
 /// 原始记忆细节位置信息存储在 knowledge_reference 表中
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct ShortTermMemoryIndexPo {
     /// 唯一 ID = 多个原始记忆细节 id 拼接后二次 hash
     pub id: String,
@@ -153,7 +154,7 @@ pub struct ShortTermMemoryIndexPo {
     /// 归纳摘要（用于全文检索）
     pub summary: String,
     /// 标签列表（用于过滤检索）
-    pub tags: Vec<String>,
+    pub tags: String,
     /// 创建时间戳
     pub created_at: i64,
     /// 更新时间戳
@@ -163,7 +164,7 @@ pub struct ShortTermMemoryIndexPo {
 /// 长期知识图谱节点 PO
 ///
 /// 经过归纳总结得到的知识节点，存储在 SQLite
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct LongTermKnowledgeNodePo {
     /// 唯一 ID
     pub id: String,
@@ -272,7 +273,7 @@ impl From<String> for KnowledgeRelationType {
 /// 知识节点关系 PO
 ///
 /// 专门存储知识节点之间的关系，独立表方便查询和维护
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct KnowledgeNodeRelationPo {
     /// 唯一 ID
     pub id: String,
@@ -292,7 +293,7 @@ pub struct KnowledgeNodeRelationPo {
 ///
 /// 记录知识节点引用了哪些原始记忆细节，同时存储原始细节位置信息
 /// 每条原始记忆细节单独一条引用记录，位置信息完整可追溯
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct KnowledgeReferencePo {
     /// 唯一 ID
     pub id: String,
@@ -305,9 +306,9 @@ pub struct KnowledgeReferencePo {
     /// 日期文件相对路径：long_term_memory/{agent_id}/YYYY-MM-DD.md
     pub date_path: String,
     /// 在文件中的起始字节偏移
-    pub byte_start: u64,
+    pub byte_start: i64, // SQLite 不支持 u64 直接存储，用 i64 足够
     /// 内容字节长度
-    pub byte_length: u64,
+    pub byte_length: i64,
     /// 创建时间戳
     pub created_at: i64,
 }

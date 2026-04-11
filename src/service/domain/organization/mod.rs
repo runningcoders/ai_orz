@@ -26,6 +26,8 @@ pub fn domain() -> Arc<dyn OrganizationDomain> {
 
 /// 初始化 Organization Domain
 pub fn init() {
+    // 先初始化 DAL，DAL 会自动初始化 DAO
+    crate::service::dal::organization::init();
     let domain = OrganizationDomainImpl::new(
         organization:: dal(),
         user_dao::dao(),

@@ -4,9 +4,10 @@ use serde::{Serialize, Deserialize};
 use sqlx::Type;
 
 /// AgentPo status (for soft delete)
+#[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[derive(Type)]
-#[sqlx(rename_all = "lowercase", type_name = "INTEGER")]
+#[sqlx(type_name = "INTEGER")]
 pub enum AgentStatus {
     /// Deleted (soft deleted)
     Deleted = 0,
@@ -43,9 +44,10 @@ impl From<i64> for AgentStatus {
 }
 
 /// ModelProvider status (for soft delete)
+#[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[derive(Type)]
-#[sqlx(rename_all = "lowercase", type_name = "INTEGER")]
+#[sqlx(type_name = "INTEGER")]
 pub enum ModelProviderStatus {
     /// Deleted (soft deleted)
     Deleted = 0,
