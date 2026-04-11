@@ -5,7 +5,7 @@
 
 use anyhow::{Result};
 use crate::models::{brain::*, model_provider::ModelProvider};
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use async_trait::async_trait;
 
 /// Cortex DAO 工厂 trait

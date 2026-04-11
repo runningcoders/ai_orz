@@ -3,7 +3,7 @@
 use super::*;
 use crate::models::model_provider::{ModelProvider, ModelProviderPo};
 use common::enums::ProviderType;
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 
 #[tokio::test]
 async fn test_create_openai_cortex() {
@@ -15,7 +15,7 @@ async fn test_create_openai_cortex() {
         provider_type: ProviderType::OpenAI,
         model_name: "gpt-4o".to_string(),
         api_key: "test-key".to_string(),
-        base_url: None,
+        base_url: "".to_string(),
         description: "OpenAI GPT-4o 模型".to_string(),
         status: Default::default(),
         created_by: "test".to_string(),

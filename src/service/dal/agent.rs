@@ -3,10 +3,11 @@
 use crate::error::AppError;
 use crate::models::agent::Agent;
 use crate::models::brain::Brain;
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use crate::service::dao::agent::AgentDaoTrait;
 use std::sync::{Arc, OnceLock};
-
+use crate::service::dao;
+use crate::service::dao::agent;
 // ==================== 单例管理 ====================
 
 static AGENT_DAL: OnceLock<Arc<dyn AgentDalTrait>> = OnceLock::new();
@@ -17,28 +18,31 @@ pub fn dal() -> Arc<dyn AgentDalTrait> {
 }
 
 /// 初始化 Agent DAL
-pub fn init(agent_dao: Arc<dyn AgentDaoTrait>) {
-    let _ = AGENT_DAL.set(Arc::new(AgentDal::new(agent_dao)));
+pub fn init() {
+    let _ = AGENT_DAL.set(Arc::new(AgentDal::new(
+        agent::dao(),
+    )));
 }
 
-// ==================== DAL 实现 ====================
+// ==================== DAL 接口 ====================
 
 /// Agent DAL 接口
+#[async_trait::async_trait]
 pub trait AgentDalTrait: Send + Sync {
     /// 创建 Agent
-    fn create(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
+    async fn create(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
 
     /// 根据 ID 查询 Agent
-    fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Agent>, AppError>;
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Agent>, AppError>;
 
     /// 查询所有 Agent
-    fn find_all(&self, ctx: RequestContext) -> Result<Vec<Agent>, AppError>;
+    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<Agent>, AppError>;
 
     /// 更新 Agent
-    fn update(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
+    async fn update(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
 
     /// 删除 Agent
-    fn delete(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
+    async fn delete(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
 
     /// 唤醒 Brain
     ///
@@ -47,7 +51,7 @@ pub trait AgentDalTrait: Send + Sync {
     ///
     /// 唤醒完成后将 brain 写入 Agent 的 brain 字段
     /// 如果 model_provider_id 发生变化，自动更新数据库
-    fn wake_brain(&self, ctx: RequestContext, agent: &mut Agent, brain: Brain) -> Result<(), AppError>;
+    async fn wake_brain(&self, ctx: RequestContext, agent: &mut Agent, brain: Brain) -> Result<(), AppError>;
 }
 
 /// Agent DAL 实现
@@ -62,34 +66,33 @@ impl AgentDal {
     }
 }
 
+#[async_trait::async_trait]
 impl AgentDalTrait for AgentDal {
-    fn create(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError> {
-        self.agent_dao.insert(ctx, &agent.po)
+    async fn create(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError> {
+        self.agent_dao.insert(ctx, &agent.po).await
     }
 
-    fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Agent>, AppError> {
-        self.agent_dao
-            .find_by_id(ctx, id)
-            .map(|opt| opt.map(Agent::from_po))
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Agent>, AppError> {
+        let opt = self.agent_dao.find_by_id(ctx, id).await?;
+        Ok(opt.map(Agent::from_po))
     }
 
-    fn find_all(&self, ctx: RequestContext) -> Result<Vec<Agent>, AppError> {
-        self.agent_dao
-            .find_all(ctx)
-            .map(|agents: Vec<_>| agents.into_iter().map(Agent::from_po).collect())
+    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<Agent>, AppError> {
+        let agents = self.agent_dao.find_all(ctx).await?;
+        Ok(agents.into_iter().map(Agent::from_po).collect())
     }
 
-    fn update(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError> {
-        self.agent_dao.update(ctx, &agent.po)
+    async fn update(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError> {
+        self.agent_dao.update(ctx, &agent.po).await
     }
 
-    fn delete(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError> {
-        self.agent_dao.delete(ctx, &agent.po)
+    async fn delete(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError> {
+        self.agent_dao.delete(ctx, &agent.po).await
     }
 
-    fn wake_brain(&self, ctx: RequestContext, agent: &mut Agent, brain: Brain) -> Result<(), AppError> {
+    async fn wake_brain(&self, ctx: RequestContext, agent: &mut Agent, brain: Brain) -> Result<(), AppError> {
         // 1. 从 Brain 中获取 Cortex，Cortex 持有 ModelProvider，从中获取 model_provider_id
-        let model_provider_id = brain.cortex.model_provider.po.id.clone();
+        let model_provider_id = brain.cortex().model_provider.po.id.clone();
 
         // 2. 如果 model_provider_id 发生变化，更新 Agent po 中的 model_provider_id
         let need_update = agent.po.model_provider_id != model_provider_id;
@@ -103,7 +106,7 @@ impl AgentDalTrait for AgentDal {
 
         // 4. 如果我们更新了 model_provider_id，需要更新数据库
         if need_update {
-            self.update(ctx, agent)?;
+            self.update(ctx, agent).await?;
         }
 
         Ok(())

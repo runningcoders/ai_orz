@@ -3,7 +3,7 @@
 use common::api::DeleteOrganizationResponse;
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use axum::{
     extract::{Extension, Path},
     http::StatusCode,
@@ -18,7 +18,7 @@ pub async fn delete_organization(
     Path(org_id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let domain = organization::domain();
-    domain.organization_manage().delete(ctx, &org_id)?;
+    domain.organization_manage().delete(ctx, &org_id).await?;
 
     Ok((StatusCode::OK, Json(ApiResponse::success(DeleteOrganizationResponse {
         success: true,

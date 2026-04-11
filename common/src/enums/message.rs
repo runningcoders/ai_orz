@@ -1,9 +1,11 @@
 //! Message related enums
 
-use rusqlite::types::{FromSql, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
+use sqlx::Type;
 
 /// Message role (谁发送的消息)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Type)]
+#[sqlx(rename_all = "lowercase", type_name = "INTEGER")]
 pub enum MessageRole {
     /// User (用户发送)
     #[default]
@@ -43,20 +45,16 @@ impl From<MessageRole> for i32 {
     }
 }
 
-impl ToSql for MessageRole {
-    fn to_sql(&self) -> Result<ToSqlOutput<'_>, rusqlite::Error> {
-        Ok(ToSqlOutput::from(*self as i32))
-    }
-}
-
-impl FromSql for MessageRole {
-    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        i32::column_result(value).map(|v| v.into())
+impl From<i64> for MessageRole {
+    fn from(v: i64) -> Self {
+        (v as i32).into()
     }
 }
 
 /// Message type (消息类型)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Type)]
+#[sqlx(rename_all = "lowercase", type_name = "INTEGER")]
 pub enum MessageType {
     /// Text (纯文本)
     #[default]
@@ -102,20 +100,16 @@ impl From<MessageType> for i32 {
     }
 }
 
-impl ToSql for MessageType {
-    fn to_sql(&self) -> Result<ToSqlOutput<'_>, rusqlite::Error> {
-        Ok(ToSqlOutput::from(*self as i32))
-    }
-}
-
-impl FromSql for MessageType {
-    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        i32::column_result(value).map(|v| v.into())
+impl From<i64> for MessageType {
+    fn from(v: i64) -> Self {
+        (v as i32).into()
     }
 }
 
 /// Message status (处理状态，用于事件总线恢复)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Type)]
+#[sqlx(rename_all = "lowercase", type_name = "INTEGER")]
 pub enum MessageStatus {
     /// Pending (待处理)
     #[default]
@@ -158,14 +152,8 @@ impl From<MessageStatus> for i32 {
     }
 }
 
-impl ToSql for MessageStatus {
-    fn to_sql(&self) -> Result<ToSqlOutput<'_>, rusqlite::Error> {
-        Ok(ToSqlOutput::from(*self as i32))
-    }
-}
-
-impl FromSql for MessageStatus {
-    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        i32::column_result(value).map(|v| v.into())
+impl From<i64> for MessageStatus {
+    fn from(v: i64) -> Self {
+        (v as i32).into()
     }
 }

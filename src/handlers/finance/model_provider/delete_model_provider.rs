@@ -1,6 +1,6 @@
 //! 删除 Model Provider
 
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
 use crate::service::domain::finance::domain;
@@ -18,10 +18,11 @@ pub async fn delete_model_provider(
 
     let provider = domain()
         .model_provider_manage()
-        .get_model_provider(ctx.clone(), &id)?
+        .get_model_provider(ctx.clone(), &id)
+        .await?
         .ok_or_else(|| AppError::NotFound(format!("ModelProvider {} not found", id)))?;
 
-    domain().model_provider_manage().delete_model_provider(ctx, &provider)?;
+    domain().model_provider_manage().delete_model_provider(ctx, &provider).await?;
 
     Ok(Json(ApiResponse::<()>::ok()))
 }

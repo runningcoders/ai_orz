@@ -2,12 +2,11 @@
 
 use crate::error::AppError;
 use crate::models::agent::AgentPo;
-use crate::pkg::storage;
 use common::enums::AgentStatus;
-use common::constants::RequestContext;
 use crate::service::dao::agent::AgentDaoTrait;
 use std::sync::{Arc, OnceLock};
-
+use chrono::Utc;
+use crate::pkg::RequestContext;
 // ==================== 单例 ====================
 
 static AGENT_DAO: OnceLock<Arc<dyn AgentDaoTrait>> = OnceLock::new();
@@ -31,137 +30,105 @@ impl AgentDaoImpl {
         Self
     }
 }
-
+#[async_trait::async_trait]
 impl AgentDaoTrait for AgentDaoImpl {
-    fn insert(&self, _ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError> {
-        let conn = storage::get().conn();
-        let now = current_timestamp();
-
-        conn.execute(
-            "INSERT INTO agents (id, name, role, description, capability, soul, model_provider_id, status, created_by, modified_by, created_at, updated_at) 
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
-            rusqlite::params![
-                agent.id,
-                agent.name,
-                agent.role,
-                agent.description,
-                agent.capabilities,
-                agent.soul,
-                agent.model_provider_id,
-                agent.status.to_i32(),
-                agent.created_by,
-                agent.modified_by,
-                now,
-                now,
-            ],
+    async fn insert(&self, _ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError> {
+        let status = agent.status as i32;
+        sqlx::query!(
+            "INSERT INTO agents (id, name, role, description, soul, capabilities, model_provider_id, status, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            agent.id,
+            agent.name,
+            agent.role,
+            agent.description,
+            agent.soul,
+            agent.capabilities,
+            agent.model_provider_id,
+            status,
+            agent.created_by,
+            agent.modified_by,
+            agent.created_at,
+            agent.updated_at
         )
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+            .execute(_ctx.db_pool())
+            .await?;
+
         Ok(())
     }
 
-    fn find_by_id(&self, _ctx: RequestContext, id: &str) -> Result<Option<AgentPo>, AppError> {
-        let conn = storage::get().conn();
+    async fn find_by_id(&self, _ctx: RequestContext, id: &str) -> Result<Option<AgentPo>, AppError> {
+        let agent = sqlx::query_as!(
+            AgentPo,
+            r#"
+SELECT id, name, role, description, soul, capabilities,
+       model_provider_id, status as 'status: AgentStatus', created_by, modified_by, created_at, updated_at
+FROM agents WHERE id = ?
+            "#,
+            id
+        )
+            .fetch_optional(_ctx.db_pool())
+            .await?;
 
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, name, role, description, capability, soul, model_provider_id, status, created_by, modified_by, created_at, updated_at 
-                 FROM agents WHERE id = ?1 AND status != 0",
-            )
-            .map_err(|e| AppError::Internal(e.to_string()))?;
-
-        match stmt.query_row([id], |row| {
-            Ok(AgentPo {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                role: row.get(2)?,
-                description: row.get(3)?,
-                capabilities: row.get(4)?,
-                soul: row.get(5)?,
-                model_provider_id: row.get(6)?,
-                status: AgentStatus::from_i32(row.get(7)?),
-                created_by: row.get(8)?,
-                modified_by: row.get(9)?,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
-            })
-        }) {
-            Ok(a) => Ok(Some(a)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(AppError::Internal(e.to_string())),
-        }
+        Ok(agent)
     }
 
-    fn find_all(&self, _ctx: RequestContext) -> Result<Vec<AgentPo>, AppError> {
-        let conn = storage::get().conn();
-
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, name, role, description, capability, soul, model_provider_id, status, created_by, modified_by, created_at, updated_at 
-                 FROM agents WHERE status != 0 ORDER BY id DESC",
-            )
-            .map_err(|e| AppError::Internal(e.to_string()))?;
-
-        let agents = stmt
-            .query_map([], |row| {
-                Ok(AgentPo {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    role: row.get(2)?,
-                    description: row.get(3)?,
-                    capabilities: row.get(4)?,
-                    soul: row.get(5)?,
-                    model_provider_id: row.get(6)?,
-                    status: AgentStatus::from_i32(row.get(7)?),
-                    created_by: row.get(8)?,
-                    modified_by: row.get(9)?,
-                    created_at: row.get(10)?,
-                    updated_at: row.get(11)?,
-                })
-            })
-            .map_err(|e| AppError::Internal(e.to_string()))?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+    async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<AgentPo>, AppError> {
+        let agents = sqlx::query_as!(
+            AgentPo,
+            r#"
+SELECT id, name, role, description, soul, capabilities,
+       model_provider_id, status as 'status: AgentStatus', created_by, modified_by, created_at, updated_at
+FROM agents WHERE status != 0
+            "#
+        )
+            .fetch_all(_ctx.db_pool())
+            .await?;
 
         Ok(agents)
     }
 
-    fn update(&self, ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError> {
-        let conn = storage::get().conn();
-
-        conn.execute(
-            "UPDATE agents SET name = ?1, role = ?2, description = ?3, capability = ?4, soul = ?5, model_provider_id = ?6, modified_by = ?7, updated_at = ?8 WHERE id = ?9",
-            rusqlite::params![
-                agent.name,
-                agent.role,
-                agent.description,
-                agent.capabilities,
-                agent.soul,
-                agent.model_provider_id,
-                ctx.uid(),
-                current_timestamp(),
-                agent.id,
-            ],
+    async fn update(&self, _ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError> {
+        let current_timestamp = Utc::now().timestamp();
+        let status = agent.status as i32;
+        sqlx::query!(
+            r#"
+UPDATE agents
+SET name = ?, role = ?, description = ?, soul = ?, capabilities = ?,
+    model_provider_id = ?, status = ?, created_by = ?, modified_by = ?, created_at = ?, updated_at = ?
+WHERE id = ?
+            "#,
+            agent.name,
+            agent.role,
+            agent.description,
+            agent.soul,
+            agent.capabilities,
+            agent.model_provider_id,
+            status,
+            agent.created_by,
+            agent.modified_by,
+            agent.created_at,
+            current_timestamp,
+            agent.id
         )
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+            .execute(_ctx.db_pool())
+            .await?;
+
         Ok(())
     }
 
-    fn delete(&self, ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError> {
-        let conn = storage::get().conn();
-
-        conn.execute(
-            "UPDATE agents SET status = 0, modified_by = ?1, updated_at = ?2 WHERE id = ?3 AND status != 0",
-            rusqlite::params![ctx.uid(), current_timestamp(), agent.id],
+    async fn delete(&self, _ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError> {
+        let current_timestamp = Utc::now().timestamp();
+        let uid = _ctx.uid().to_string();
+        sqlx::query!(
+            r#"
+UPDATE agents SET status = 0, modified_by = ?, updated_at = ? WHERE id = ?
+            "#,
+            uid,
+            current_timestamp,
+            agent.id
         )
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+            .execute(_ctx.db_pool())
+            .await?;
+
         Ok(())
     }
-}
-
-fn current_timestamp() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64
 }

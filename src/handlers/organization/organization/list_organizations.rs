@@ -3,7 +3,7 @@
 use common::api::{ListOrganizationsResponse, OrganizationListItem};
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use axum::{
     extract::Extension,
     http::StatusCode,
@@ -18,14 +18,14 @@ pub async fn list_organizations(
     Extension(ctx): Extension<RequestContext>,
 ) -> Result<impl IntoResponse, AppError> {
     let domain = organization::domain();
-    let orgs = domain.organization_manage().list_all(ctx.clone())?;
+    let orgs = domain.organization_manage().list_all(ctx.clone()).await?;
     let total = orgs.len() as u64;
     let items: Vec<OrganizationListItem> = orgs
         .into_iter()
         .map(|org: OrganizationPo| OrganizationListItem {
-            organization_id: org.id.clone(),
-            name: org.name.clone(),
-            description: if org.description.is_empty() { None } else { Some(org.description.clone()) },
+            organization_id: org.id.clone().expect("id should not be None"),
+            name: org.name.clone().expect("name should not be None"),
+            description: if org.description.as_ref().map_or(true, |s| s.is_empty()) { None } else { org.description.clone() },
         })
         .collect();
 

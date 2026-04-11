@@ -3,7 +3,7 @@
 //! 通用事件队列 DAO 接口定义
 
 use crate::error::AppError;
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use crate::models::event::Event;
 
 /// 事件队列 DAO trait
@@ -44,7 +44,7 @@ pub trait EventQueueDaoTrait: Send + Sync + std::fmt::Debug {
 }
 
 mod in_memory;
-pub use self::in_memory::init;
+pub use self::in_memory::{dao,init};
 
 #[cfg(test)]
 mod in_memory_test;

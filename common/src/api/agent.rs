@@ -81,6 +81,8 @@ pub struct UpdateAgentRequest {
     pub capabilities: Option<Vec<String>>,
     /// Agent 灵魂提示词
     pub soul: Option<String>,
+    /// 关联的模型提供商 ID
+    pub model_provider_id: Option<String>,
 }
 
 /// 更新 Agent 响应

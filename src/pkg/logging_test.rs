@@ -1,6 +1,6 @@
 //! 日志模块单元测试
 
-use common::constants::RequestContext;
+use super::RequestContext;
 use crate::pkg::logging::{debug, info, log_error, warn};
 
 fn new_ctx() -> RequestContext {

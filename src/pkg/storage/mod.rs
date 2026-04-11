@@ -1,32 +1,47 @@
 //! SQLite 存储模块
+//! 
+//! 基于 sqlx 连接池管理，不再使用全局单例，支持依赖注入和测试隔离
 
-use rusqlite::Connection;
-use std::sync::Mutex;
+use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
+use crate::error::{AppError, Result};
 
-pub mod sql;
-pub mod sqlite;
-
-/// 数据库连接管理
+/// 数据库连接池包装
+#[derive(Clone, Debug)]
 pub struct Storage {
-    conn: Mutex<Connection>,
+    pool: SqlitePool,
 }
 
 impl Storage {
-    /// 创建存储实例
-    pub fn new(db_path: &str) -> Result<Self, String> {
-        let mut conn = Connection::open(db_path).map_err(|e| format!("打开数据库失败: {}", e))?;
+    /// 创建存储实例，初始化连接池，自动运行 migrations
+     async fn new(db_path: &str) -> Result<Self> {
+        // SQLite 连接 URL 需要是 sqlite://路径 格式
+        let connection_url = if db_path == ":memory:" {
+            "sqlite::memory:".to_string()
+        } else {
+            format!("sqlite://{}", db_path)
+        };
 
-        // SQLite 特定初始化：创建所有表
-        sqlite::init_db(&mut conn)?;
+        let pool = SqlitePoolOptions::new()
+            .max_connections(5) // SQLite 单文件写并发有限，不需要太多连接
+            .connect(&connection_url)
+            .await?;
+
+        // 运行所有 migrations，自动建表/升级
+        sqlx::migrate!("./migrations").run(&pool).await?;
 
         Ok(Self {
-            conn: Mutex::new(conn),
+            pool
         })
     }
 
-    /// 获取数据库连接
-    pub fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
-        self.conn.lock().unwrap()
+    /// 获取连接池引用
+    pub fn pool(&self) -> &SqlitePool {
+        &self.pool
+    }
+
+    /// 获取连接池的 owned clone（便宜，因为内部是 Arc）
+    pub fn pool_owned(&self) -> SqlitePool {
+        self.pool.clone()
     }
 }
 
@@ -34,9 +49,9 @@ impl Storage {
 static STORAGE: std::sync::OnceLock<Storage> = std::sync::OnceLock::new();
 
 /// 初始化存储
-pub fn init(db_path: &str) -> Result<(), String> {
-    let storage = Storage::new(db_path)?;
-    STORAGE.set(storage).map_err(|_| "存储已初始化".to_string())
+pub async fn init(db_path: &str) {
+    let storage = Storage::new(db_path).await.unwrap();
+    let _ = STORAGE.set(storage);
 }
 
 /// 获取存储实例
@@ -46,8 +61,3 @@ pub fn get() -> &'static Storage {
         .expect("存储未初始化，请先调用 storage::init()")
 }
 
-/// 测试用：获取内存数据库连接
-#[cfg(test)]
-pub fn test_conn() -> rusqlite::Connection {
-    Connection::open_in_memory().expect("创建内存数据库失败")
-}

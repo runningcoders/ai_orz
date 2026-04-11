@@ -7,12 +7,12 @@ use common::enums::UserRole;
 use crate::error::AppError;
 use crate::models::organization::OrganizationPo;
 use crate::models::user::UserPo;
-use common::constants::RequestContext;
-use crate::service::dao::organization::{dao as organization_dao, OrganizationDaoTrait};
-use crate::service::dao::user::{dao as user_dao, UserDaoTrait};
+use crate::pkg::RequestContext;
+use crate::service::dao::organization:: OrganizationDaoTrait;
+use crate::service::dao::user::{ UserDaoTrait};
 use rand::Rng;
 use std::sync::{Arc, OnceLock};
-
+use crate::service::dao::{organization, user};
 // ==================== 单例管理 ====================
 
 static ORGANIZATION_DAL: OnceLock<Arc<dyn OrganizationDalTrait + Send + Sync>> = OnceLock::new();
@@ -24,14 +24,16 @@ pub fn dal() -> Arc<dyn OrganizationDalTrait + Send + Sync> {
 
 /// 初始化 Organization DAL
 pub fn init() {
-    let org_dao = organization_dao();
-    let u_dao = user_dao();
-    let _ = ORGANIZATION_DAL.set(Arc::new(OrganizationDal::new(org_dao, u_dao)));
+    let _ = ORGANIZATION_DAL.set(Arc::new(OrganizationDal::new(
+        organization::dao(), 
+        user::dao(),
+    )));
 }
 
 // ==================== DAL 接口 ====================
 
 /// Organization DAL 接口
+#[async_trait::async_trait]
 pub trait OrganizationDalTrait: Send + Sync {
     /// 初始化系统：创建第一个组织和第一个超级管理员用户
     ///
@@ -41,8 +43,8 @@ pub trait OrganizationDalTrait: Send + Sync {
     /// - password_hash: 密码哈希（bcrypt）
     /// - display_name: 超级管理员显示名称
     /// - email: 超级管理员邮箱
-    /// - 返回: (organization_id, user_id)
-    fn initialize_system(
+    /// 返回: (organization_id, user_id)
+    async fn initialize_system(
         &self,
         ctx: RequestContext,
         organization_name: String,
@@ -56,37 +58,37 @@ pub trait OrganizationDalTrait: Send + Sync {
     /// 检查系统是否已经初始化
     ///
     /// 通过检查 organizations 表是否有记录判断
-    fn is_initialized(&self, ctx: RequestContext) -> Result<bool, AppError>;
+    async fn is_initialized(&self, ctx: RequestContext) -> Result<bool, AppError>;
 
     /// 根据 ID 获取组织
-    fn get_by_id(
+    async fn get_by_id(
         &self,
         ctx: RequestContext,
         org_id: &str,
     ) -> Result<Option<OrganizationPo>, AppError>;
 
     /// 获取所有组织
-    fn list_all(
+    async fn list_all(
         &self,
         ctx: RequestContext,
     ) -> Result<Vec<OrganizationPo>, AppError>;
 
     /// 更新组织信息
-    fn update(
+    async fn update(
         &self,
         ctx: RequestContext,
         org: &OrganizationPo,
     ) -> Result<(), AppError>;
 
     /// 删除组织（软删除）
-    fn delete(
+    async fn delete(
         &self,
         ctx: RequestContext,
         org_id: &str,
     ) -> Result<(), AppError>;
 
     /// 统计组织总数
-    fn count_organizations(
+    async fn count_organizations(
         &self,
         ctx: RequestContext,
     ) -> Result<u64, AppError>;
@@ -127,8 +129,9 @@ impl OrganizationDal {
     }
 }
 
+#[async_trait::async_trait]
 impl OrganizationDalTrait for OrganizationDal {
-    fn initialize_system(
+    async fn initialize_system(
         &self,
         ctx: RequestContext,
         organization_name: String,
@@ -149,7 +152,7 @@ impl OrganizationDalTrait for OrganizationDal {
             String::new(), // base_url 默认为空，后续可在组织设置中修改
             ctx.uid().clone(),
         );
-        self.organization_dao.insert(ctx.clone(), &org)?;
+        self.organization_dao.insert(ctx.clone(), &org).await?;
 
         // 3. 生成用户 ID
         let user_id = self.generate_id();
@@ -165,52 +168,52 @@ impl OrganizationDalTrait for OrganizationDal {
             UserRole::SuperAdmin,
             ctx.uid().clone(),
         );
-        self.user_dao.insert(ctx, &user)?;
+        self.user_dao.insert(ctx, &user).await?;
 
         // 5. 返回 ID
         Ok((org_id, user_id))
     }
 
-    fn is_initialized(&self, ctx: RequestContext) -> Result<bool, AppError> {
-        let count = self.organization_dao.count_all(ctx)?;
+    async fn is_initialized(&self, ctx: RequestContext) -> Result<bool, AppError> {
+        let count = self.organization_dao.count_all(ctx).await?;
         Ok(count > 0)
     }
 
-    fn get_by_id(
+    async fn get_by_id(
         &self,
         ctx: RequestContext,
         org_id: &str,
     ) -> Result<Option<OrganizationPo>, AppError> {
-        self.organization_dao.find_by_id(ctx, org_id)
+        self.organization_dao.find_by_id(ctx, org_id).await
     }
 
-    fn list_all(
+    async fn list_all(
         &self,
         ctx: RequestContext,
     ) -> Result<Vec<OrganizationPo>, AppError> {
-        self.organization_dao.find_all(ctx)
+        self.organization_dao.find_all(ctx).await
     }
 
-    fn update(
+    async fn update(
         &self,
         ctx: RequestContext,
         org: &OrganizationPo,
     ) -> Result<(), AppError> {
-        self.organization_dao.update(ctx, org)
+        self.organization_dao.update(ctx, org).await
     }
 
-    fn delete(
+    async fn delete(
         &self,
         ctx: RequestContext,
         org_id: &str,
     ) -> Result<(), AppError> {
-        self.organization_dao.delete(ctx, org_id)
+        self.organization_dao.delete(ctx, org_id).await
     }
 
-    fn count_organizations(
+    async fn count_organizations(
         &self,
         ctx: RequestContext,
     ) -> Result<u64, AppError> {
-        self.organization_dao.count_all(ctx)
+        self.organization_dao.count_all(ctx).await
     }
 }

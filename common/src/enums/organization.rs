@@ -1,9 +1,11 @@
 //! Organization related enums
 
-use rusqlite::types::{FromSql, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
+use sqlx::Type;
 
 /// Organization status
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Type)]
+#[sqlx(rename_all = "lowercase", type_name = "INTEGER")]
 pub enum OrganizationStatus {
     /// Active (正常使用)
     #[default]
@@ -40,20 +42,16 @@ impl From<OrganizationStatus> for i32 {
     }
 }
 
-impl ToSql for OrganizationStatus {
-    fn to_sql(&self) -> Result<ToSqlOutput<'_>, rusqlite::Error> {
-        Ok(ToSqlOutput::from(*self as i32))
-    }
-}
-
-impl FromSql for OrganizationStatus {
-    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        i32::column_result(value).map(|v| v.into())
+impl From<i64> for OrganizationStatus {
+    fn from(v: i64) -> Self {
+        (v as i32).into()
     }
 }
 
 /// Organization scope
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Type)]
+#[sqlx(rename_all = "lowercase", type_name = "INTEGER")]
 pub enum OrganizationScope {
     /// Local (当前设备运行)
     #[default]
@@ -90,14 +88,8 @@ impl From<OrganizationScope> for i32 {
     }
 }
 
-impl ToSql for OrganizationScope {
-    fn to_sql(&self) -> Result<ToSqlOutput<'_>, rusqlite::Error> {
-        Ok(ToSqlOutput::from(*self as i32))
-    }
-}
-
-impl FromSql for OrganizationScope {
-    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        i32::column_result(value).map(|v| v.into())
+impl From<i64> for OrganizationScope {
+    fn from(v: i64) -> Self {
+        (v as i32).into()
     }
 }

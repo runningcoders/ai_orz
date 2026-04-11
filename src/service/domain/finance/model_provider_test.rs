@@ -14,18 +14,18 @@ mod tests {
             "gpt-3.5-turbo".to_string(),
             "sk-test-12345".to_string(),
             None,
-            "测试用".to_string(),
+            Some("测试用".to_string()),
             "test-user-1".to_string(),
         );
 
-        assert_eq!(provider.name, "测试OpenAI");
+        assert_eq!(provider.name, Some("测试OpenAI".to_string()));
         assert!(matches!(provider.provider_type, ProviderType::OpenAI));
-        assert_eq!(provider.model_name, "gpt-3.5-turbo");
-        assert_eq!(provider.api_key, "sk-test-12345");
+        assert_eq!(provider.model_name, Some("gpt-3.5-turbo".to_string()));
+        assert_eq!(provider.api_key, Some("sk-test-12345".to_string()));
         assert_eq!(provider.base_url, None);
-        assert_eq!(provider.description, "测试用");
-        assert_eq!(provider.created_by, "test-user-1");
-        assert_eq!(provider.modified_by, "test-user-1");
+        assert_eq!(provider.description, Some("测试用".to_string()));
+        assert_eq!(provider.created_by, Some("test-user-1".to_string()));
+        assert_eq!(provider.modified_by, Some("test-user-1".to_string()));
         assert!(provider.created_at > 0);
         assert!(provider.updated_at > 0);
     }
@@ -39,12 +39,12 @@ mod tests {
             "deepseek-chat".to_string(),
             "sk-test-deepseek".to_string(),
             None,
-            "DeepSeek 官方API".to_string(),
+            Some("DeepSeek 官方API".to_string()),
             "test-user-1".to_string(),
         );
 
         let model = ModelProvider::from_po(po);
-        assert_eq!(model.po.name, "测试DeepSeek");
+        assert_eq!(model.po.name, Some("测试DeepSeek".to_string()));
         assert!(matches!(model.po.provider_type, ProviderType::DeepSeek));
     }
 
@@ -57,7 +57,7 @@ mod tests {
             "gpt-4".to_string(),
             "sk-custom".to_string(),
             Some("https://my-proxy.example.com/v1".to_string()),
-            "自定义代理".to_string(),
+            Some("自定义代理".to_string()),
             "test-user-1".to_string(),
         );
 
@@ -86,7 +86,7 @@ mod tests {
                 "model".to_string(),
                 "key".to_string(),
                 None,
-                "".to_string(),
+                Some("".to_string()),
                 "user".to_string(),
             );
         }

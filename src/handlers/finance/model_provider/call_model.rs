@@ -1,7 +1,7 @@
 //! 调用 Model Provider 生成文本
 
 use common::api::{CallModelRequest, CallModelResponse};
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
 use crate::service::domain::finance::domain;
@@ -19,7 +19,8 @@ pub async fn call_model(
 ) -> Result<Json<ApiResponse<CallModelResponse>>, AppError> {
 
     // 1. 先查询 Model Provider
-    let provider = domain().model_provider_manage().get_model_provider(ctx.clone(), &id)?
+    let provider = domain().model_provider_manage().get_model_provider(ctx.clone(), &id)
+        .await?
         .ok_or_else(|| AppError::NotFound(format!("ModelProvider {} not found", id)))?;
 
     // 2. 调用模型生成结果

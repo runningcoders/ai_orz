@@ -2,7 +2,7 @@
 
 use axum::{extract::{Extension, Json}, http::StatusCode};
 use common::api::{GetCurrentOrganizationResponse, OrganizationInfoResponse};
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use crate::{
     error::AppError,
     handlers::ApiResponse,
@@ -21,15 +21,16 @@ pub async fn get_current_organization(
 
     let domain = organization::domain();
     // 获取组织完整信息
-    let org = domain.organization_manage().get_by_id(ctx, &org_id)?
+    let org = domain.organization_manage().get_by_id(ctx, &org_id)
+        .await?
         .ok_or_else(|| AppError::NotFound("组织不存在".to_string()))?;
 
     // 转换为响应格式
     let info = OrganizationInfoResponse {
-        organization_id: org.id.clone(),
-        name: org.name.clone(),
-        description: if org.description.is_empty() { None } else { Some(org.description.clone()) },
-        base_url: if org.base_url.is_empty() { None } else { Some(org.base_url.clone()) },
+        organization_id: org.id.clone().expect("id should not be None"),
+        name: org.name.clone().expect("name should not be None"),
+        description: if org.description.as_ref().map_or(true, |s| s.is_empty()) { None } else { org.description.clone() },
+        base_url: if org.base_url.as_ref().map_or(true, |s| s.is_empty()) { None } else { org.base_url.clone() },
         status: org.status.to_i32(),
         created_at: org.created_at,
     };

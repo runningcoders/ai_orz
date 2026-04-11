@@ -5,30 +5,31 @@
 use common::constants::utils;
 use common::enums::{UserRole, UserStatus};
 use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
 
 /// UserPo 持久化对象
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct UserPo {
     /// 用户 ID
-    pub id: String,
+    pub id: Option<String>,
     /// 所属组织 ID
-    pub organization_id: String,
+    pub organization_id: Option<String>,
     /// 用户名（唯一登录名）
-    pub username: String,
+    pub username: Option<String>,
     /// 显示名称
-    pub display_name: String,
+    pub display_name: Option<String>,
     /// 邮箱
-    pub email: String,
+    pub email: Option<String>,
     /// 密码哈希（bcrypt）
-    pub password_hash: String,
+    pub password_hash: Option<String>,
     /// 用户角色
     pub role: UserRole,
     /// 用户状态枚举
     pub status: UserStatus,
     /// 创建人
-    pub created_by: String,
+    pub created_by: Option<String>,
     /// 修改人
-    pub modified_by: String,
+    pub modified_by: Option<String>,
     /// 创建时间戳（秒）
     pub created_at: i64,
     /// 更新时间戳（秒）
@@ -49,16 +50,16 @@ impl UserPo {
     ) -> Self {
         let now = utils::current_timestamp();
         Self {
-            id,
-            organization_id,
-            username,
-            display_name,
-            email,
-            password_hash,
+            id: Some(id),
+            organization_id: Some(organization_id),
+            username: Some(username),
+            display_name: Some(display_name),
+            email: Some(email),
+            password_hash: Some(password_hash),
             role,
             status: UserStatus::default(),
-            created_by: created_by.clone(),
-            modified_by: created_by,
+            created_by: Some(created_by.clone()),
+            modified_by: Some(created_by),
             created_at: now,
             updated_at: now,
         }

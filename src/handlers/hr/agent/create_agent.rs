@@ -1,7 +1,7 @@
 //! 创建 Agent
 
 use common::api::{CreateAgentRequest, CreateAgentResponse};
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
 use crate::models::agent::{Agent, AgentPo};
@@ -21,22 +21,22 @@ pub async fn create_agent(
     let agent_po = AgentPo::new(
         req.name.clone(),
         req.role.clone(),
-        req.description.unwrap_or_default(),
-        req.capabilities.unwrap_or_default(),
-        req.soul.unwrap_or_default(),
+        req.description.clone(),
+        req.capabilities.clone().unwrap_or_default(),
+        req.soul.clone(),
         req.model_provider_id.clone(),
         ctx.uid().to_string(),
     );
     let agent = Agent::from_po(agent_po);
 
-    domain().agent_manage().create_agent(ctx, &agent)?;
+    domain().agent_manage().create_agent(ctx, &agent).await?;
 
     Ok((
         StatusCode::CREATED,
         Json(ApiResponse::success(CreateAgentResponse {
             id: agent.id().to_string(),
             name: agent.name().to_string(),
-            description: if agent.po.description.is_empty() { None } else { Some(agent.po.description.clone()) },
+            description: if agent.po.description.as_ref().map_or(true, |d| d.is_empty()) { None } else { agent.po.description.clone() },
             created_at: agent.po.created_at,
         })),
     ))

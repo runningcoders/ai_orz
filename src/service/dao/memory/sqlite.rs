@@ -11,13 +11,13 @@ use crate::models::memory::{MemoryTrace, ShortTermMemoryIndexPo, LongTermKnowled
 use crate::pkg::storage;
 use crate::pkg::RequestContext;
 use crate::service::dao::memory::MemoryDaoTrait;
-use rusqlite::{params, OptionalExtension, Transaction};
 use serde_json;
 use std::fs::{OpenOptions, write};
 use std::io::Seek;
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
+use crate::config;
 
 /// SQLite Memory DAO 实现
 pub struct SqliteMemoryDao;
@@ -45,15 +45,14 @@ impl SqliteMemoryDao {
     /// 获取数据目录根路径
     fn data_root(&self) -> PathBuf {
         // 相对于数据库目录
-        let db_path = storage::get().db_path();
-        let db_dir = Path::new(db_path).parent().unwrap_or(Path::new("data"));
-        db_dir.join("long_term_memory")
+        let base_path = config::get().base_data_path.clone();
+      Path::new(base_path.as_str()).to_path_buf()
     }
 
     /// 获取 Agent 目录
     fn agent_dir(&self, agent_id: &str) -> PathBuf {
         let root = self.data_root();
-        root.join(agent_id)
+        root.join(agent_id).join("memory")
     }
 
     /// 获取今日日期文件路径

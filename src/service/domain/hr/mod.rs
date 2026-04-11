@@ -11,8 +11,9 @@ mod agent_test;
 
 use crate::error::AppError;
 use crate::models::agent::Agent;
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use crate::service::dal::agent::AgentDalTrait;
+use crate::service::dal::agent as agent_dal;
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例 ====================
@@ -25,8 +26,10 @@ pub fn domain() -> Arc<dyn HrDomain> {
 }
 
 /// 初始化 HR Domain
-pub fn init(agent_dal: Arc<dyn crate::service::dal::agent::AgentDalTrait>) {
-    let hr_domain = HrDomainImpl::new(agent_dal);
+pub fn init() {
+    let hr_domain = HrDomainImpl::new(
+        agent_dal::dal(),
+    );
     let _ = HR_DOMAIN.set(Arc::new(hr_domain));
 }
 
@@ -65,19 +68,20 @@ pub trait HrDomain: Send + Sync {
 /// Agent 管理 trait
 ///
 /// 定义 Agent 相关的业务接口
+#[async_trait::async_trait]
 pub trait AgentManage: Send + Sync {
     /// 创建 Agent
-    fn create_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
+    async fn create_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
 
     /// 获取 Agent
-    fn get_agent(&self, ctx: RequestContext, id: &str) -> Result<Option<Agent>, AppError>;
+    async fn get_agent(&self, ctx: RequestContext, id: &str) -> Result<Option<Agent>, AppError>;
 
     /// 列出所有 Agent
-    fn list_agents(&self, ctx: RequestContext) -> Result<Vec<Agent>, AppError>;
+    async fn list_agents(&self, ctx: RequestContext) -> Result<Vec<Agent>, AppError>;
 
     /// 更新 Agent
-    fn update_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
+    async fn update_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
 
     /// 删除 Agent
-    fn delete_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
+    async fn delete_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
 }

@@ -3,7 +3,7 @@
 use common::api::DeleteUserResponse;
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use axum::{
     extract::{Extension, Path},
     http::StatusCode,
@@ -18,7 +18,7 @@ pub async fn delete_user(
     Path(user_id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let domain = organization::domain();
-    domain.user_manage().delete_user(ctx, &user_id)?;
+    domain.user_manage().delete_user(ctx, &user_id).await?;
 
     Ok((StatusCode::OK, Json(ApiResponse::success(DeleteUserResponse {
         success: true,

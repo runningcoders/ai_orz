@@ -1,8 +1,8 @@
 //! HR Domain Agent 管理单元测试
 
-use crate::models::agent::{Agent, AgentPo};
-use common::constants::RequestContext;
 use super::{HrDomain, HrDomainImpl};
+use crate::models::agent::{Agent, AgentPo};
+use crate::pkg::RequestContext;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -32,9 +32,16 @@ fn test_create_and_find_by_id() {
     );
     let agent = Agent::from_po(agent_po);
 
-    domain.agent_manage().create_agent(ctx.clone(), &agent).unwrap();
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .unwrap();
 
-    let found = domain.agent_manage().get_agent(ctx, &agent.id()).unwrap().unwrap();
+    let found = domain
+        .agent_manage()
+        .get_agent(ctx, &agent.id())
+        .unwrap()
+        .unwrap();
     assert_eq!(found.name(), "TestAgent");
 }
 
@@ -47,14 +54,17 @@ fn test_list_agents() {
         let agent_po = AgentPo::new(
             format!("Agent{}", i),
             Some("worker".to_string()),
-            "".to_string(),
+            None,
             vec![],
             "".to_string(),
             "provider-id-1".to_string(),
             "admin".to_string(),
         );
         let agent = Agent::from_po(agent_po);
-        domain.agent_manage().create_agent(ctx.clone(), &agent).unwrap();
+        domain
+            .agent_manage()
+            .create_agent(ctx.clone(), &agent)
+            .unwrap();
     }
 
     let agents = domain.agent_manage().list_agents(ctx).unwrap();
@@ -76,13 +86,23 @@ fn test_update_agent() {
         "admin".to_string(),
     );
     let agent = Agent::from_po(agent_po);
-    domain.agent_manage().create_agent(ctx.clone(), &agent).unwrap();
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .unwrap();
 
     let mut updated = agent.clone();
     updated.po.name = "Updated".to_string();
-    domain.agent_manage().update_agent(new_ctx("editor"), &updated).unwrap();
+    domain
+        .agent_manage()
+        .update_agent(new_ctx("editor"), &updated)
+        .unwrap();
 
-    let found = domain.agent_manage().get_agent(ctx, &updated.id()).unwrap().unwrap();
+    let found = domain
+        .agent_manage()
+        .get_agent(ctx, &updated.id())
+        .unwrap()
+        .unwrap();
     assert_eq!(found.name(), "Updated");
 }
 
@@ -101,8 +121,18 @@ fn test_delete_agent() {
         "admin".to_string(),
     );
     let agent = Agent::from_po(agent_po);
-    domain.agent_manage().create_agent(ctx.clone(), &agent).unwrap();
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .unwrap();
 
-    domain.agent_manage().delete_agent(ctx.clone(), &agent).unwrap();
-    assert!(domain.agent_manage().get_agent(ctx, &agent.id()).unwrap().is_none());
+    domain
+        .agent_manage()
+        .delete_agent(ctx.clone(), &agent)
+        .unwrap();
+    assert!(domain
+        .agent_manage()
+        .get_agent(ctx, &agent.id())
+        .unwrap()
+        .is_none());
 }

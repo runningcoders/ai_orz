@@ -5,7 +5,7 @@
 
 use crate::error::AppError;
 use crate::models::model_provider::ModelProvider;
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use crate::service::dal::brain::dal as brain_dal;
 use crate::service::dal::model_provider::ModelProviderDalTrait;
 use super::{FinanceDomainImpl};
@@ -14,24 +14,24 @@ use super::ModelProviderManage;
 
 #[async_trait]
 impl ModelProviderManage for FinanceDomainImpl {
-    fn create_model_provider(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError> {
-        self.model_provider_dal.create(ctx, provider)
+    async fn create_model_provider(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError> {
+        self.model_provider_dal.create(ctx, provider).await
     }
 
-    fn get_model_provider(&self, ctx: RequestContext, id: &str) -> Result<Option<ModelProvider>, AppError> {
-        self.model_provider_dal.find_by_id(ctx, id)
+    async fn get_model_provider(&self, ctx: RequestContext, id: &str) -> Result<Option<ModelProvider>, AppError> {
+        self.model_provider_dal.find_by_id(ctx, id).await
     }
 
-    fn list_model_providers(&self, ctx: RequestContext) -> Result<Vec<ModelProvider>, AppError> {
-        self.model_provider_dal.find_all(ctx)
+    async fn list_model_providers(&self, ctx: RequestContext) -> Result<Vec<ModelProvider>, AppError> {
+        self.model_provider_dal.find_all(ctx).await
     }
 
-    fn update_model_provider(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError> {
-        self.model_provider_dal.update(ctx, provider)
+    async fn update_model_provider(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError> {
+        self.model_provider_dal.update(ctx, provider).await
     }
 
-    fn delete_model_provider(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError> {
-        self.model_provider_dal.delete(ctx, provider)
+    async fn delete_model_provider(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError> {
+        self.model_provider_dal.delete(ctx, provider).await
     }
 
     /// 唤醒 Cortex：创建临时 Cortex 并执行调用

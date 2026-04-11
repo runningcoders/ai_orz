@@ -4,7 +4,7 @@ use common::api::{LoginRequest, LoginResponse};
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
 use crate::pkg::jwt;
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use crate::middleware::jwt_auth::JWT_COOKIE_NAME;
 use crate::service::domain::organization::domain;
 use axum::{
@@ -29,12 +29,13 @@ pub async fn login(
         &req.organization_id,
         &req.username,
         &req.password_hash,
-    )?;
+    )
+    .await?;
 
     // 签发 JWT
     let token = jwt::encode_jwt(
-        &user.id,
-        &user.username,
+        user.id.as_ref().expect("id should not be None"),
+        user.username.as_ref().expect("username should not be None"),
         &req.organization_id,
     )?;
 
@@ -59,8 +60,8 @@ pub async fn login(
         (
             StatusCode::OK,
             Json(ApiResponse::success(LoginResponse {
-                user_id: user.id,
-                username: user.username,
+                user_id: user.id.expect("id should not be None"),
+                username: user.username.expect("username should not be None"),
                 organization_id: req.organization_id,
             })),
         ),

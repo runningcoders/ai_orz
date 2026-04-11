@@ -4,7 +4,7 @@ use common::api::{CreateUserRequest, CreateUserResponse};
 use common::enums::UserRole;
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use axum::{
     extract::{Extension, Json},
     http::StatusCode,
@@ -49,7 +49,7 @@ pub async fn create_user(
         ctx.user_id.clone().unwrap_or_default(),
     );
 
-    domain.user_manage().create_user(ctx, user)?;
+    domain.user_manage().create_user(ctx, user).await?;
 
     Ok((StatusCode::OK, Json(ApiResponse::success(CreateUserResponse {
         user_id,

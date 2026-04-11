@@ -1,11 +1,12 @@
 //! Agent related enums
 
 use serde::{Serialize, Deserialize};
-#[cfg(feature = "rusqlite")]
-use rusqlite::{types::{FromSql, FromSqlResult, ToSql, ToSqlOutput, ValueRef}, Result as RusqliteResult};
+use sqlx::Type;
 
 /// AgentPo status (for soft delete)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Type)]
+#[sqlx(rename_all = "lowercase", type_name = "INTEGER")]
 pub enum AgentStatus {
     /// Deleted (soft deleted)
     Deleted = 0,
@@ -29,23 +30,22 @@ impl AgentStatus {
     }
 }
 
-#[cfg(feature = "rusqlite")]
-impl ToSql for AgentStatus {
-    fn to_sql(&self) -> RusqliteResult<ToSqlOutput<'_>> {
-        Ok(ToSqlOutput::from(self.to_i32()))
+impl From<i32> for AgentStatus {
+    fn from(v: i32) -> Self {
+        v.into()
     }
 }
 
-#[cfg(feature = "rusqlite")]
-impl FromSql for AgentStatus {
-    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        let v = value.as_i64()?;
-        Ok(Self::from_i32(v as i32))
+impl From<i64> for AgentStatus {
+    fn from(v: i64) -> Self {
+        (v as i32).into()
     }
 }
 
 /// ModelProvider status (for soft delete)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Type)]
+#[sqlx(rename_all = "lowercase", type_name = "INTEGER")]
 pub enum ModelProviderStatus {
     /// Deleted (soft deleted)
     Deleted = 0,
@@ -69,17 +69,14 @@ impl ModelProviderStatus {
     }
 }
 
-#[cfg(feature = "rusqlite")]
-impl ToSql for ModelProviderStatus {
-    fn to_sql(&self) -> RusqliteResult<ToSqlOutput<'_>> {
-        Ok(ToSqlOutput::from(self.to_i32()))
+impl From<i32> for ModelProviderStatus {
+    fn from(v: i32) -> Self {
+        v.into()
     }
 }
 
-#[cfg(feature = "rusqlite")]
-impl FromSql for ModelProviderStatus {
-    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        let v = value.as_i64()?;
-        Ok(Self::from_i32(v as i32))
+impl From<i64> for ModelProviderStatus {
+    fn from(v: i64) -> Self {
+        (v as i32).into()
     }
 }

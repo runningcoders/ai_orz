@@ -1,7 +1,7 @@
 //! 测试 Model Provider 连通性
 
 use common::api::{TestConnectionRequest, TestConnectionResponse};
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
 use crate::service::domain::finance::domain;
@@ -19,7 +19,8 @@ pub async fn test_model_provider_connection(
 ) -> Result<Json<ApiResponse<TestConnectionResponse>>, AppError> {
 
     // 1. 先查询 Model Provider
-    let provider = domain().model_provider_manage().get_model_provider(ctx.clone(), &id)?
+    let provider = domain().model_provider_manage().get_model_provider(ctx.clone(), &id)
+        .await?
         .ok_or_else(|| AppError::NotFound(format!("ModelProvider {} not found", id)))?;
 
     // 2. 使用 prompt 测试连通性，默认用 "Hello!"

@@ -2,11 +2,12 @@
 
 use axum::{extract::{Extension, Json}, http::StatusCode};
 use common::api::{EmptyResponse, UpdateCurrentOrganizationRequest};
-use common::constants::{RequestContext, utils};
+use common::constants::utils;
 use crate::{
     error::AppError,
     handlers::ApiResponse,
     service::domain::organization,
+    pkg::RequestContext,
 };
 
 /// Update current authenticated user's organization information
@@ -22,28 +23,29 @@ pub async fn update_current_organization(
 
     let domain = organization::domain();
     // 获取当前组织信息
-    let mut org = domain.organization_manage().get_by_id(ctx.clone(), &org_id)?
+    let mut org = domain.organization_manage().get_by_id(ctx.clone(), &org_id)
+        .await?
         .ok_or_else(|| AppError::NotFound("组织不存在".to_string()))?;
 
     // 更新可修改字段
     if let Some(new_name) = req.name {
-        org.name = new_name;
+        org.name = Some(new_name);
     }
     if let Some(new_description) = req.description {
-        org.description = new_description;
+        org.description = Some(new_description);
     }
     if let Some(new_base_url) = req.base_url {
-        org.base_url = new_base_url;
+        org.base_url = Some(new_base_url);
     }
 
     // 更新修改时间
     org.updated_at = utils::current_timestamp();
     if let Some(modifier_id) = ctx.user_id.clone() {
-        org.modified_by = modifier_id;
+        org.modified_by = Some(modifier_id);
     }
 
     // 保存更新
-    domain.organization_manage().update(ctx, &org)?;
+    domain.organization_manage().update(ctx, &org).await?;
 
     Ok((
         StatusCode::OK,

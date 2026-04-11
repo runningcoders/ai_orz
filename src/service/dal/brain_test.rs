@@ -2,30 +2,28 @@
 //!
 //! 测试 Brain DAL 的 wake_brain 和 test_connection 功能
 
-use crate::service::dal::brain::{self, BrainDalTrait};
+use crate::service::dal::brain::{BrainDal, BrainDalTrait};
 use crate::models::{brain::*, model_provider::*};
+use crate::service::dao::cortex::{CortexDao};
 use common::enums::ProviderType;
-use common::constants::RequestContext;
-use crate::service::dao::cortex;
+use crate::pkg::RequestContext;
+use crate::pkg::storage::Storage;
 use uuid::Uuid;
-use crate::pkg::storage;
 
 /// 测试 Brain DAL 创建 wake_brain 功能
 #[tokio::test]
 async fn test_wake_brain() {
-    // 使用随机文件名，避免冲突
+    // 使用随机文件名，避免冲突 → 每个测试独立数据库，彻底隔离
     let random_name = format!("/tmp/ai_orz_test_brain_{}.db", Uuid::now_v7());
     let _ = std::fs::remove_file(&random_name);
-    let _ = storage::init(&random_name);
+    let storage = Storage::new(&random_name).await.expect("Failed to create storage");
+    let pool = storage.pool();
 
-    // 初始化 cortex dao
-    cortex::init();
-
-    // 初始化 brain dal
-    brain::init(cortex::dao());
+    // 初始化 cortex dao 和 brain dal
+    let cortex_dao = CortexDao::new(pool);
+    let brain_dal = BrainDal::new(cortex_dao);
 
     let ctx = RequestContext::new(Some("test-user".to_string()), None);
-    let brain_dal = brain::dal();
 
     // ========== 测试: wake_brain ==========
     let provider_po = ModelProviderPo::new(
@@ -34,7 +32,7 @@ async fn test_wake_brain() {
         "gpt-4o".to_string(),
         "test-key".to_string(),
         Some("https://api.openai.com/v1".to_string()),
-        "OpenAI GPT-4o Official".to_string(),
+        Some("OpenAI GPT-4o Official".to_string()),
         "test".to_string(),
     );
 
@@ -55,19 +53,17 @@ async fn test_wake_brain() {
 /// 测试 Brain DAL test_connection 功能
 #[tokio::test]
 async fn test_test_connection() {
-    // 使用随机文件名，避免冲突
+    // 使用随机文件名，避免冲突 → 每个测试独立数据库，彻底隔离
     let random_name = format!("/tmp/ai_orz_test_brain_{}.db", Uuid::now_v7());
     let _ = std::fs::remove_file(&random_name);
-    let _ = storage::init(&random_name);
+    let storage = Storage::new(&random_name).await.expect("Failed to create storage");
+    let pool = storage.pool();
 
-    // 初始化 cortex dao
-    cortex::init();
-
-    // 初始化 brain dal
-    brain::init(cortex::dao());
+    // 初始化 cortex dao 和 brain dal
+    let cortex_dao = CortexDao::new(pool);
+    let brain_dal = BrainDal::new(cortex_dao);
 
     let ctx = RequestContext::new(Some("test-user".to_string()), None);
-    let brain_dal = brain::dal();
 
     // ========== 测试: test_connection ==========
     let provider_po = ModelProviderPo::new(
@@ -76,7 +72,7 @@ async fn test_test_connection() {
         "gpt-4o".to_string(),
         "test-key".to_string(),
         Some("https://api.openai.com/v1".to_string()),
-        "OpenAI GPT-4o Official".to_string(),
+        Some("OpenAI GPT-4o Official".to_string()),
         "test".to_string(),
     );
 

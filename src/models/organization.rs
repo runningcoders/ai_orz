@@ -5,29 +5,30 @@
 use common::constants::utils;
 use common::enums::{OrganizationStatus, OrganizationScope};
 use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
 
 /// OrganizationPo 持久化对象
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct OrganizationPo {
     /// 组织 ID
-    pub id: String,
+    pub id: Option<String>,
     /// 组织名称
-    pub name: String,
+    pub name: Option<String>,
     /// 组织描述
-    pub description: String,
+    pub description: Option<String>,
     /// 组织外网访问基础 URL
     ///
     /// 例如：`https://ai-orz.example.com/org/acme`
     /// 用于前端生成访问链接
-    pub base_url: String,
+    pub base_url: Option<String>,
     /// 状态枚举
     pub status: OrganizationStatus,
     /// 组织范围枚举（区分本地/远程，用于多节点网络扩展）
     pub scope: OrganizationScope,
     /// 创建人
-    pub created_by: String,
+    pub created_by: Option<String>,
     /// 修改人
-    pub modified_by: String,
+    pub modified_by: Option<String>,
     /// 创建时间戳（秒）
     pub created_at: i64,
     /// 更新时间戳（秒）
@@ -45,14 +46,14 @@ impl OrganizationPo {
     ) -> Self {
         let now = utils::current_timestamp();
         Self {
-            id,
-            name,
-            description,
-            base_url,
+            id: Some(id),
+            name: Some(name),
+            description: Some(description),
+            base_url: Some(base_url),
             status: OrganizationStatus::default(),
             scope: OrganizationScope::default(),
-            created_by: created_by.clone(),
-            modified_by: created_by,
+            created_by: Some(created_by.clone()),
+            modified_by: Some(created_by),
             created_at: now,
             updated_at: now,
         }

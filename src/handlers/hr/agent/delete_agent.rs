@@ -1,6 +1,6 @@
 //! 删除 Agent
 
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
 use crate::service::domain::hr::domain;
@@ -18,10 +18,11 @@ pub async fn delete_agent(
 
     let agent = domain()
         .agent_manage()
-        .get_agent(ctx.clone(), &id)?
+        .get_agent(ctx.clone(), &id)
+        .await?
         .ok_or_else(|| AppError::NotFound(format!("Agent {} not found", id)))?;
 
-    domain().agent_manage().delete_agent(ctx, &agent)?;
+    domain().agent_manage().delete_agent(ctx, &agent).await?;
 
     Ok(Json(ApiResponse::<()>::ok()))
 }

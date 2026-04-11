@@ -3,11 +3,11 @@
 use axum::{extract::{Extension, Json}, http::StatusCode};
 use common::api::{GetCurrentUserResponse, UserInfoResponse};
 use common::enums::UserRole;
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use crate::{
     error::AppError,
     handlers::ApiResponse,
-    service::dao,
+    service::domain::organization,
 };
 
 /// Get current authenticated user information
@@ -20,8 +20,10 @@ pub async fn get_current_user(
         AppError::BadRequest("用户未登录".to_string())
     })?;
 
-    // 直接调用 DAO 获取用户完整信息
-    let user = dao::user::dao().find_by_id(ctx, &user_id)?
+    // 通过 organization domain 获取用户完整信息
+    let domain = organization::domain();
+    let user = domain.user_manage().get_user_by_id(ctx, &user_id)
+        .await?
         .ok_or_else(|| AppError::NotFound("用户不存在".to_string()))?;
 
     // 转换为响应格式
@@ -34,11 +36,11 @@ pub async fn get_current_user(
     }.to_string();
 
     let info = UserInfoResponse {
-        user_id: user.id.clone(),
-        username: user.username.clone(),
-        display_name: if user.display_name.is_empty() { None } else { Some(user.display_name.clone()) },
-        email: if user.email.is_empty() { None } else { Some(user.email.clone()) },
-        organization_id: user.organization_id.clone(),
+        user_id: user.id.clone().expect("id should not be None"),
+        username: user.username.clone().expect("username should not be None"),
+        display_name: if user.display_name.as_ref().map_or(true, |s| s.is_empty()) { None } else { user.display_name.clone() },
+        email: if user.email.as_ref().map_or(true, |s| s.is_empty()) { None } else { user.email.clone() },
+        organization_id: user.organization_id.clone().expect("organization_id should not be None"),
         role: role.map(|r| r as i32).unwrap_or(0),
         role_name,
         status: user.status.to_i32(),

@@ -3,6 +3,7 @@
 use crate::models::brain::{Brain, Cortex, CortexTrait};
 use common::enums::AgentStatus;
 use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
 use std::fmt;
 
 /// Agent 业务对象（DAL 层）
@@ -45,17 +46,17 @@ impl Agent {
 
     /// 获取 Agent ID
     pub fn id(&self) -> &str {
-        &self.po.id
+        self.po.id.as_ref()
     }
 
     /// 获取 Agent 名称
     pub fn name(&self) -> &str {
-        &self.po.name
+        self.po.name.as_ref()
     }
 
     /// 获取模型提供商 ID
     pub fn model_provider_id(&self) -> &str {
-        &self.po.model_provider_id
+        self.po.model_provider_id.as_ref()
     }
 
     /// 设置装配好的 Brain
@@ -82,7 +83,7 @@ impl Agent {
 /// AgentPo 持久化对象
 ///
 /// 对应 SQL 建表语句：[`crate::pkg::storage::sql::SQLITE_CREATE_TABLE_AGENTS`]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct AgentPo {
     pub id: String,
     pub name: String,
@@ -93,7 +94,7 @@ pub struct AgentPo {
     pub model_provider_id: String, // 关联模型提供商 ID
     pub status: AgentStatus, // 软删除状态
     pub created_by: String,    // 创建者
-    pub modified_by: String,   // 修改者
+    pub modified_by:String,   // 修改者
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -101,7 +102,7 @@ pub struct AgentPo {
 impl AgentPo {
     pub fn new(
         name: String,
-        role: Option<String>,
+        role:String,
         description: String,
         capabilities: Vec<String>,
         soul: String,
@@ -111,11 +112,11 @@ impl AgentPo {
         Self {
             id: generate_id(),
             name,
-            role: role.unwrap_or_default(),
+            role,
             description,
             capabilities: serde_json::to_string(&capabilities).unwrap_or_else(|_| "[]".to_string()),
             soul,
-            model_provider_id,
+            model_provider_id: model_provider_id,
             status: AgentStatus::Normal,
             created_by: creator.clone(),
             modified_by: creator,

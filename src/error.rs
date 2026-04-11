@@ -5,6 +5,11 @@ use axum::{
 };
 use serde_json;
 use std::fmt;
+use sqlx::Error as SqlxError;
+use sqlx::migrate::MigrateError;
+
+/// 统一 Result 类型
+pub type Result<T> = std::result::Result<T, AppError>;
 
 /// 统一错误类型
 #[derive(Debug)]
@@ -25,6 +30,8 @@ impl fmt::Display for AppError {
     }
 }
 
+impl std::error::Error for AppError {}
+
 impl From<anyhow::Error> for AppError {
     fn from(err: anyhow::Error) -> Self {
         AppError::Internal(err.to_string())
@@ -34,6 +41,18 @@ impl From<anyhow::Error> for AppError {
 impl From<jsonwebtoken::errors::Error> for AppError {
     fn from(err: jsonwebtoken::errors::Error) -> Self {
         AppError::BadRequest(format!("JWT token 无效: {}", err))
+    }
+}
+
+impl From<SqlxError> for AppError {
+    fn from(err: SqlxError) -> Self {
+        AppError::Internal(format!("数据库错误: {}", err))
+    }
+}
+
+impl From<MigrateError> for AppError {
+    fn from(err: MigrateError) -> Self {
+        AppError::Internal(format!("数据库迁移错误: {}", err))
     }
 }
 

@@ -10,6 +10,7 @@ use common::constants::utils;
 use common::enums::{MessageRole, MessageStatus, MessageType};
 use crate::models::event::{Event, EventType};
 use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
 
 /// Message 业务实体
 ///
@@ -33,12 +34,12 @@ impl Message {
 
     /// 获取消息 ID
     pub fn id(&self) -> &str {
-        &self.po.id
+        self.po.id.as_ref().expect("id should not be None")
     }
 
     /// 获取任务 ID
     pub fn task_id(&self) -> &str {
-        &self.po.task_id
+        self.po.task_id.as_ref().expect("task_id should not be None")
     }
 
     /// 创建新 Message
@@ -88,16 +89,16 @@ impl Event for Message {
 }
 
 /// MessagePo 持久化对象
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct MessagePo {
     /// 消息 ID
-    pub id: String,
+    pub id: Option<String>,
     /// 关联任务 ID（一个任务下有多条消息）
-    pub task_id: String,
+    pub task_id: Option<String>,
     /// 来源 Agent ID（如果是用户发送则为用户 ID）
-    pub from_id: String,
+    pub from_id: Option<String>,
     /// 目标 Agent ID（如果是发给用户则为用户 ID）
-    pub to_id: String,
+    pub to_id: Option<String>,
     /// 发送者角色
     pub role: MessageRole,
     /// 消息类型
@@ -107,13 +108,13 @@ pub struct MessagePo {
     /// 消息内容
     /// - Text: 存储完整文本
     /// - 附件: 存储文件相对路径（相对于附件存储根目录）
-    pub content: String,
+    pub content: Option<String>,
     /// 元数据 JSON
     /// - Text: 可为空
     /// - 附件: 存储原始文件名、文件大小、MIME 类型等元信息
-    pub meta_json: String,
+    pub meta_json: Option<String>,
     /// 创建人 ID
-    pub created_by: String,
+    pub created_by: Option<String>,
     /// 创建时间戳（秒）
     pub created_at: i64,
     /// 更新时间戳（秒）
@@ -135,16 +136,16 @@ impl MessagePo {
     ) -> Self {
         let now = utils::current_timestamp();
         Self {
-            id,
-            task_id,
-            from_id,
-            to_id,
+            id: Some(id),
+            task_id: Some(task_id),
+            from_id: Some(from_id),
+            to_id: Some(to_id),
             role,
             message_type,
             status: MessageStatus::default(),
-            content,
-            meta_json,
-            created_by,
+            content: Some(content),
+            meta_json: Some(meta_json),
+            created_by: Some(created_by),
             created_at: now,
             updated_at: now,
         }

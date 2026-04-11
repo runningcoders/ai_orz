@@ -1,9 +1,11 @@
 //! User related enums
 
-use rusqlite::types::{FromSql, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
+use sqlx::Type;
 
 /// User role
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Type)]
+#[sqlx(rename_all = "lowercase", type_name = "INTEGER")]
 pub enum UserRole {
     /// Super admin (超级管理员)
     #[default]
@@ -52,20 +54,16 @@ impl From<UserRole> for i32 {
     }
 }
 
-impl ToSql for UserRole {
-    fn to_sql(&self) -> Result<ToSqlOutput<'_>, rusqlite::Error> {
-        Ok(ToSqlOutput::from(*self as i32))
-    }
-}
-
-impl FromSql for UserRole {
-    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        i32::column_result(value).map(|v| v.into())
+impl From<i64> for UserRole {
+    fn from(v: i64) -> Self {
+        (v as i32).into()
     }
 }
 
 /// User status
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Type)]
+#[sqlx(rename_all = "lowercase", type_name = "INTEGER")]
 pub enum UserStatus {
     /// Active (正常使用)
     #[default]
@@ -102,14 +100,8 @@ impl From<UserStatus> for i32 {
     }
 }
 
-impl ToSql for UserStatus {
-    fn to_sql(&self) -> Result<ToSqlOutput<'_>, rusqlite::Error> {
-        Ok(ToSqlOutput::from(*self as i32))
-    }
-}
-
-impl FromSql for UserStatus {
-    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        i32::column_result(value).map(|v| v.into())
+impl From<i64> for UserStatus {
+    fn from(v: i64) -> Self {
+        (v as i32).into()
     }
 }

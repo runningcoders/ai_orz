@@ -3,35 +3,33 @@
 use crate::service::dal::model_provider::{ModelProviderDal, ModelProviderDalTrait};
 use crate::models::model_provider::{ModelProvider, ModelProviderPo};
 use common::enums::ProviderType;
-use crate::pkg::storage;
-use crate::pkg::storage::sql;
-use common::constants::RequestContext;
-use crate::service::dao::model_provider;
+use crate::pkg::storage::Storage;
+use crate::service::dao::model_provider::{ ModelProviderDaoTrait};
+use crate::pkg::RequestContext;
 use std::sync::Arc;
 use uuid::Uuid;
+
+async fn setup_test_dal() -> Arc<dyn ModelProviderDalTrait> {
+    // 使用随机文件名，避免冲突 → 每个测试独立数据库，彻底隔离
+    let random_name = format!("/tmp/ai_orz_test_mp_dal_{}.db", Uuid::now_v7());
+    let _ = std::fs::remove_file(&random_name);
+
+    // Storage 自动运行迁移，创建所有表
+    let storage = Storage::new(&random_name).await.expect("Failed to create storage");
+    let pool = storage.pool();
+
+    // 初始化 DAO 和 DAL
+    let dao = ModelProviderDao::new(pool);
+    Arc::new(ModelProviderDal::new(dao))
+}
 
 fn new_ctx(user_id: &str) -> RequestContext {
     RequestContext::new(Some(user_id.to_string()), None)
 }
 
-fn setup_test_dal() -> Arc<dyn ModelProviderDalTrait> {
-    // 使用随机文件名，避免冲突
-    let random_name = format!("/tmp/ai_orz_test_mp_dal_{}.db", Uuid::now_v7());
-    let _ = std::fs::remove_file(&random_name);
-    let _ = storage::init(&random_name);
-
-    // 创建表
-    let _ = storage::get().conn().execute(sql::SQLITE_CREATE_TABLE_MODEL_PROVIDERS, ());
-
-    // 初始化 DAO
-    model_provider::init();
-
-    Arc::new(ModelProviderDal::new(model_provider::dao()))
-}
-
-#[test]
-fn test_create_and_find_by_id() {
-    let dal = setup_test_dal();
+#[tokio::test]
+async fn test_create_and_find_by_id() {
+    let dal = setup_test_dal().await;
     let ctx = new_ctx("admin");
 
     let provider = ModelProvider::new(
@@ -44,18 +42,18 @@ fn test_create_and_find_by_id() {
         "admin".to_string(),
     );
 
-    dal.create(ctx.clone(), &provider).unwrap();
-    let found = dal.find_by_id(ctx, &provider.po.id).unwrap().unwrap();
+    dal.create(ctx.clone(), &provider).await.unwrap();
+    let found = dal.find_by_id(ctx, &provider.po.id.expect("po has id")).await.unwrap().unwrap();
 
-    assert_eq!(found.po.name, "OpenAI GPT-4o");
+    assert_eq!(found.po.name, Some("OpenAI GPT-4o".to_string()));
     assert_eq!(found.po.provider_type, ProviderType::OpenAI);
-    assert_eq!(found.po.model_name, "gpt-4o");
-    assert_eq!(found.po.created_by, "admin");
+    assert_eq!(found.po.model_name, Some("gpt-4o".to_string()));
+    assert_eq!(found.po.created_by, Some("admin".to_string()));
 }
 
-#[test]
-fn test_find_all() {
-    let dal = setup_test_dal();
+#[tokio::test]
+async fn test_find_all() {
+    let dal = setup_test_dal().await;
     let ctx = new_ctx("admin");
 
     let providers = vec![
@@ -74,16 +72,16 @@ fn test_find_all() {
             "".to_string(),
             "admin".to_string(),
         );
-        dal.create(ctx.clone(), &provider).unwrap();
+        dal.create(ctx.clone(), &provider).await.unwrap();
     }
 
-    let all = dal.find_all(ctx).unwrap();
+    let all = dal.find_all(ctx).await.unwrap();
     assert_eq!(all.len(), 3);
 }
 
-#[test]
-fn test_update() {
-    let dal = setup_test_dal();
+#[tokio::test]
+async fn test_update() {
+    let dal = setup_test_dal().await;
     let ctx = new_ctx("admin");
 
     let provider = ModelProvider::new(
@@ -95,24 +93,24 @@ fn test_update() {
         "desc".to_string(),
         "admin".to_string(),
     );
-    dal.create(ctx.clone(), &provider).unwrap();
+    dal.create(ctx.clone(), &provider).await.unwrap();
 
     let mut updated = provider.clone();
-    updated.po.name = "Updated".to_string();
-    updated.po.model_name = "gpt-4o".to_string();
+    updated.po.name = Some("Updated".to_string());
+    updated.po.model_name = Some("gpt-4o".to_string());
     updated.touch("editor");
 
-    dal.update(new_ctx("editor"), &updated).unwrap();
+    dal.update(new_ctx("editor"), &updated).await.unwrap();
 
-    let found = dal.find_by_id(ctx, &updated.po.id).unwrap().unwrap();
-    assert_eq!(found.po.name, "Updated");
-    assert_eq!(found.po.model_name, "gpt-4o");
-    assert_eq!(found.po.modified_by, "editor");
+    let found = dal.find_by_id(ctx, &updated.po.id.expect("po has id")).await.unwrap().unwrap();
+    assert_eq!(found.po.name, Some("Updated".to_string()));
+    assert_eq!(found.po.model_name, Some("gpt-4o".to_string()));
+    assert_eq!(found.po.modified_by, Some("editor".to_string()));
 }
 
-#[test]
-fn test_delete() {
-    let dal = setup_test_dal();
+#[tokio::test]
+async fn test_delete() {
+    let dal = setup_test_dal().await;
     let ctx = new_ctx("admin");
 
     let provider = ModelProvider::new(
@@ -124,23 +122,23 @@ fn test_delete() {
         "".to_string(),
         "admin".to_string(),
     );
-    dal.create(ctx.clone(), &provider).unwrap();
+    dal.create(ctx.clone(), &provider).await.unwrap();
 
-    dal.delete(ctx.clone(), &provider).unwrap();
-    assert!(dal.find_by_id(ctx, &provider.po.id).unwrap().is_none());
+    dal.delete(ctx.clone(), &provider).await.unwrap();
+    assert!(dal.find_by_id(ctx, &provider.po.id.expect("po has id")).await.unwrap().is_none());
 }
 
-#[test]
-fn test_find_not_exists() {
-    let dal = setup_test_dal();
+#[tokio::test]
+async fn test_find_not_exists() {
+    let dal = setup_test_dal().await;
     let ctx = new_ctx("user1");
 
-    assert!(dal.find_by_id(ctx, "not-exists").unwrap().is_none());
+    assert!(dal.find_by_id(ctx, "not-exists").await.unwrap().is_none());
 }
 
-#[test]
-fn test_create_with_custom_base_url() {
-    let dal = setup_test_dal();
+#[tokio::test]
+async fn test_create_with_custom_base_url() {
+    let dal = setup_test_dal().await;
     let ctx = new_ctx("admin");
 
     let provider = ModelProvider::new(
@@ -153,16 +151,16 @@ fn test_create_with_custom_base_url() {
         "admin".to_string(),
     );
 
-    dal.create(ctx.clone(), &provider).unwrap();
-    let found = dal.find_by_id(ctx, &provider.po.id).unwrap().unwrap();
+    dal.create(ctx.clone(), &provider).await.unwrap();
+    let found = dal.find_by_id(ctx, &provider.po.id.expect("po has id")).await.unwrap().unwrap();
 
-    assert_eq!(found.po.base_url, Some("https://custom.api.com/v1".to_string()));
+    assert_eq!(found.po.base_url, Some(Some("https://custom.api.com/v1".to_string())));
     assert_eq!(found.po.provider_type, ProviderType::Custom);
 }
 
-#[test]
-fn test_all_provider_types() {
-    let dal = setup_test_dal();
+#[tokio::test]
+async fn test_all_provider_types() {
+    let dal = setup_test_dal().await;
     let ctx = new_ctx("admin");
 
     let cases = vec![
@@ -184,9 +182,9 @@ fn test_all_provider_types() {
             "".to_string(),
             "admin".to_string(),
         );
-        dal.create(ctx.clone(), &provider).unwrap();
+        dal.create(ctx.clone(), &provider).await.unwrap();
     }
 
-    let all = dal.find_all(ctx).unwrap();
+    let all = dal.find_all(ctx).await.unwrap();
     assert_eq!(all.len(), 6);
 }

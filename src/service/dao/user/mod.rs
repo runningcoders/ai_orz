@@ -1,42 +1,46 @@
-//! User DAO 接口和实现
-
-pub mod sqlite;
+//! User DAO 模块
 
 use crate::error::AppError;
 use crate::models::user::UserPo;
-use common::constants::RequestContext;
+use sqlx::SqlitePool;
+use common::enums::{UserRole, UserStatus};
+use crate::pkg::RequestContext;
+use chrono::Utc;
 
 // ==================== 接口 ====================
 
-/// User DAO 接口
+/// User DAO trait
+#[async_trait::async_trait]
 pub trait UserDaoTrait: Send + Sync {
     /// 插入新用户
-    fn insert(&self, ctx: RequestContext, user: &UserPo) -> Result<(), AppError>;
+    async fn insert(&self, ctx: RequestContext, user: &UserPo) -> Result<(), AppError>;
 
     /// 根据 ID 查询用户
-    fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<UserPo>, AppError>;
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<UserPo>, AppError>;
 
     /// 根据用户名查询用户（用于登录）
-    fn find_by_username(&self, ctx: RequestContext, username: &str) -> Result<Option<UserPo>, AppError>;
+    async fn find_by_username(&self, ctx: RequestContext, username: &str) -> Result<Option<UserPo>, AppError>;
 
     /// 查询组织下所有用户
-    fn find_by_organization_id(&self, ctx: RequestContext, org_id: &str) -> Result<Vec<UserPo>, AppError>;
+    async fn find_by_organization_id(&self, ctx: RequestContext, org_id: &str) -> Result<Vec<UserPo>, AppError>;
 
     /// 更新用户
-    fn update(&self, ctx: RequestContext, user: &UserPo) -> Result<(), AppError>;
+    async fn update(&self, ctx: RequestContext, user: &UserPo) -> Result<(), AppError>;
 
     /// 删除用户（软删除）
-    fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
 
     /// 检查用户名是否已存在
-    fn exists_by_username(&self, ctx: RequestContext, username: &str) -> Result<bool, AppError>;
+    async fn exists_by_username(&self, ctx: RequestContext, username: &str) -> Result<bool, AppError>;
 
     /// 统计组织下用户总数
-    fn count_by_organization_id(&self, ctx: RequestContext, org_id: &str) -> Result<u64, AppError>;
+    async fn count_by_organization_id(&self, ctx: RequestContext, org_id: &str) -> Result<u64, AppError>;
 }
 
-pub use sqlite::dao;
-pub use sqlite::init;
+
+
+mod sqlite;
+pub use self::sqlite::{dao,init};
 
 #[cfg(test)]
 mod sqlite_test;

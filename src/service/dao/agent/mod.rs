@@ -2,21 +2,24 @@
 
 use crate::error::AppError;
 use crate::models::agent::AgentPo;
-use common::constants::RequestContext;
+use sqlx::SqlitePool;
+use common::enums::AgentStatus;
+use crate::pkg::RequestContext;
+use chrono::Utc;
 
 /// Agent DAO 接口
+#[async_trait::async_trait]
 pub trait AgentDaoTrait: Send + Sync {
-    fn insert(&self, ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError>;
-    fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<AgentPo>, AppError>;
-    fn find_all(&self, ctx: RequestContext) -> Result<Vec<AgentPo>, AppError>;
-    fn update(&self, ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError>;
-    fn delete(&self, ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError>;
+    async fn insert(&self, ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError>;
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<AgentPo>, AppError>;
+    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<AgentPo>, AppError>;
+    async fn update(&self, ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError>;
+    async fn delete(&self, ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError>;
 }
 
-pub mod sqlite;
+
+ mod sqlite;
+pub use self::sqlite::{dao, init};
 
 #[cfg(test)]
 mod sqlite_test;
-
-pub use sqlite::dao;
-pub use sqlite::init;

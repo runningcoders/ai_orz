@@ -2,7 +2,7 @@
 
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use axum::{
     extract::{Extension, Path},
     http::StatusCode,
@@ -26,7 +26,7 @@ pub async fn get_user_by_username(
     Path(username): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let domain = organization::domain();
-    let user = domain.user_manage().find_by_username(ctx, &username)?;
+    let user = domain.user_manage().find_by_username(ctx, &username).await?;
 
     Ok((StatusCode::OK, Json(ApiResponse::success(GetUserByUsernameResponse {
         user,

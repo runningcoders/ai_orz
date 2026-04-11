@@ -2,7 +2,7 @@
 
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use axum::{
     extract::{Extension, Path},
     http::StatusCode,
@@ -26,7 +26,7 @@ pub async fn list_users_by_organization(
     Path(org_id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let domain = organization::domain();
-    let users = domain.user_manage().find_by_organization_id(ctx, &org_id)?;
+    let users = domain.user_manage().find_by_organization_id(ctx, &org_id).await?;
 
     Ok((StatusCode::OK, Json(ApiResponse::success(ListUsersByOrganizationResponse {
         users,

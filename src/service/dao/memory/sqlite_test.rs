@@ -5,7 +5,6 @@
 use super::*;
 use crate::models::memory::{MemoryRole, MemoryTrace, LongTermKnowledgeNodePo, KnowledgeRelation};
 use crate::pkg::RequestContext;
-use rusqlite::Connection;
 
 #[test]
 fn test_append_memory_trace() {

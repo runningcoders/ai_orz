@@ -2,10 +2,10 @@
 
 use crate::error::AppError;
 use crate::models::model_provider::ModelProvider;
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use crate::service::dao::model_provider::ModelProviderDaoTrait;
 use std::sync::{Arc, OnceLock};
-
+use crate::service::dao::model_provider;
 // ==================== 单例管理 ====================
 
 static MODEL_PROVIDER_DAL: OnceLock<Arc<dyn ModelProviderDalTrait>> = OnceLock::new();
@@ -16,30 +16,31 @@ pub fn dal() -> Arc<dyn ModelProviderDalTrait> {
 }
 
 /// 初始化 Model Provider DAL
-pub fn init(
-    model_provider_dao: Arc<dyn ModelProviderDaoTrait>,
-) {
-    let _ = MODEL_PROVIDER_DAL.set(Arc::new(ModelProviderDal::new(model_provider_dao)));
+pub fn init() {
+    let _ = MODEL_PROVIDER_DAL.set(Arc::new(ModelProviderDal::new(
+        model_provider::dao(),
+    )));
 }
 
 // ==================== DAL 实现 ====================
 
 /// Model Provider DAL 接口
+#[async_trait::async_trait]
 pub trait ModelProviderDalTrait: Send + Sync {
     /// 创建 Model Provider
-    fn create(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError>;
+    async fn create(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError>;
 
     /// 根据 ID 查询 Model Provider
-    fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<ModelProvider>, AppError>;
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<ModelProvider>, AppError>;
 
     /// 查询所有 Model Provider
-    fn find_all(&self, ctx: RequestContext) -> Result<Vec<ModelProvider>, AppError>;
+    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<ModelProvider>, AppError>;
 
     /// 更新 Model Provider
-    fn update(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError>;
+    async fn update(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError>;
 
     /// 删除 Model Provider
-    fn delete(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError>;
+    async fn delete(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError>;
 }
 
 /// Model Provider DAL 实现
@@ -56,28 +57,27 @@ impl ModelProviderDal {
     }
 }
 
+#[async_trait::async_trait]
 impl ModelProviderDalTrait for ModelProviderDal {
-    fn create(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError> {
-        self.model_provider_dao.insert(ctx, &provider.po)
+    async fn create(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError> {
+        self.model_provider_dao.insert(ctx, &provider.po).await
     }
 
-    fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<ModelProvider>, AppError> {
-        self.model_provider_dao
-            .find_by_id(ctx, id)
-            .map(|opt| opt.map(ModelProvider::from_po))
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<ModelProvider>, AppError> {
+        let opt = self.model_provider_dao.find_by_id(ctx, id).await?;
+        Ok(opt.map(ModelProvider::from_po))
     }
 
-    fn find_all(&self, ctx: RequestContext) -> Result<Vec<ModelProvider>, AppError> {
-        self.model_provider_dao
-            .find_all(ctx)
-            .map(|providers: Vec<_>| providers.into_iter().map(ModelProvider::from_po).collect())
+    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<ModelProvider>, AppError> {
+        let providers = self.model_provider_dao.find_all(ctx).await?;
+        Ok(providers.into_iter().map(ModelProvider::from_po).collect())
     }
 
-    fn update(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError> {
-        self.model_provider_dao.update(ctx, &provider.po)
+    async fn update(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError> {
+        self.model_provider_dao.update(ctx, &provider.po).await
     }
 
-    fn delete(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError> {
-        self.model_provider_dao.delete(ctx, &provider.po)
+    async fn delete(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError> {
+        self.model_provider_dao.delete(ctx, &provider.po).await
     }
 }

@@ -3,10 +3,10 @@
 use crate::error::AppError;
 use crate::models::organization::OrganizationPo;
 use crate::pkg::storage;
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use crate::service::dao::organization::OrganizationDaoTrait;
 use std::sync::{Arc, OnceLock};
-
+use chrono::Utc;
 // ==================== 单例管理 ====================
 
 static ORGANIZATION_DAO: OnceLock<Arc<dyn OrganizationDaoTrait>> = OnceLock::new();
@@ -31,133 +31,110 @@ impl OrganizationDaoImpl {
     }
 }
 
+#[async_trait::async_trait]
 impl OrganizationDaoTrait for OrganizationDaoImpl {
-    fn insert(&self, _ctx: RequestContext, org: &OrganizationPo) -> Result<(), AppError> {
-        let conn = storage::get().conn();
-
-        conn.execute(
-            "INSERT INTO organizations (id, name, description, base_url, status, scope, created_by, modified_by, created_at, updated_at) 
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            rusqlite::params![
-                org.id,
-                org.name,
-                org.description,
-                org.base_url,
-                org.status,
-                org.scope,
-                org.created_by,
-                org.modified_by,
-                org.created_at,
-                org.updated_at,
-            ],
+    async fn insert(&self, _ctx: RequestContext, org: &OrganizationPo) -> Result<(), AppError> {
+        let status = org.status as i32;
+        let scope = org.scope as i32;
+        sqlx::query!(
+            "INSERT INTO organizations (id, name, description, base_url, status, scope, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            org.id,
+            org.name,
+            org.description,
+            org.base_url,
+            status,
+            scope,
+            org.created_by,
+            org.modified_by,
+            org.created_at,
+            org.updated_at
         )
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+            .execute(&self.pool)
+            .await?;
+
         Ok(())
     }
 
-    fn find_by_id(&self, _ctx: RequestContext, id: &str) -> Result<Option<OrganizationPo>, AppError> {
-        let conn = storage::get().conn();
+    async fn find_by_id(&self, _ctx: RequestContext, id: &str) -> Result<Option<OrganizationPo>, AppError> {
+        let org = sqlx::query_as!(
+            OrganizationPo,
+            r#"
+SELECT id, name, description, base_url, status as 'status: OrganizationStatus', scope as 'scope: OrganizationScope', created_by, modified_by, created_at, updated_at
+FROM organizations WHERE id = ?
+            "#,
+            id
+        )
+            .fetch_optional(&self.pool)
+            .await?;
 
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, name, description, base_url, status, scope, created_by, modified_by, created_at, updated_at 
-                 FROM organizations WHERE id = ?1 AND status != 0",
-            )
-            .map_err(|e| AppError::Internal(e.to_string()))?;
-
-        match stmt.query_row([id], |row| {
-            Ok(OrganizationPo {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                description: row.get(2)?,
-                base_url: row.get(3)?,
-                status: row.get(4)?,
-                scope: row.get(5)?,
-                created_by: row.get(6)?,
-                modified_by: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
-            })
-        }) {
-            Ok(org) => Ok(Some(org)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(AppError::Internal(e.to_string())),
-        }
+        Ok(org)
     }
 
-    fn find_all(&self, _ctx: RequestContext) -> Result<Vec<OrganizationPo>, AppError> {
-        let conn = storage::get().conn();
-
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, name, description, base_url, status, scope, created_by, modified_by, created_at, updated_at 
-                 FROM organizations WHERE status != 0 ORDER BY created_at DESC",
-            )
-            .map_err(|e| AppError::Internal(e.to_string()))?;
-
-        let orgs = stmt
-            .query_map([], |row| {
-                Ok(OrganizationPo {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    description: row.get(2)?,
-                    base_url: row.get(3)?,
-                    status: row.get(4)?,
-                    scope: row.get(5)?,
-                    created_by: row.get(6)?,
-                    modified_by: row.get(7)?,
-                    created_at: row.get(8)?,
-                    updated_at: row.get(9)?,
-                })
-            })
-            .map_err(|e| AppError::Internal(e.to_string()))?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+    async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<OrganizationPo>, AppError> {
+        let orgs = sqlx::query_as!(
+            OrganizationPo,
+            r#"
+SELECT id, name, description, base_url, status as 'status: OrganizationStatus', scope as 'scope: OrganizationScope', created_by, modified_by, created_at, updated_at
+FROM organizations WHERE status != 0
+            "#
+        )
+            .fetch_all(&self.pool)
+            .await?;
 
         Ok(orgs)
     }
 
-    fn update(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<(), AppError> {
-        let conn = storage::get().conn();
-
-        conn.execute(
-            "UPDATE organizations SET name = ?1, description = ?2, base_url = ?3, modified_by = ?4, updated_at = ?5 WHERE id = ?6",
-            rusqlite::params![
-                org.name,
-                org.description,
-                org.base_url,
-                ctx.uid(),
-                current_timestamp(),
-                org.id,
-            ],
+    async fn update(&self, _ctx: RequestContext, org: &OrganizationPo) -> Result<(), AppError> {
+        let current_timestamp = Utc::now().timestamp();
+        let uid = _ctx.uid().to_string();
+        let status = org.status as i32;
+        let scope = org.scope as i32;
+        sqlx::query!(
+            r#"
+UPDATE organizations
+SET name = ?, description = ?, base_url = ?, status = ?, scope = ?, modified_by = ?, updated_at = ?
+WHERE id = ?
+            "#,
+            org.name,
+            org.description,
+            org.base_url,
+            status,
+            scope,
+            uid,
+            current_timestamp,
+            org.id
         )
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+            .execute(&self.pool)
+            .await?;
+
         Ok(())
     }
 
-    fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
-        let conn = storage::get().conn();
-
-        conn.execute(
-            "UPDATE organizations SET status = 0, modified_by = ?1, updated_at = ?2 WHERE id = ?3 AND status != 0",
-            rusqlite::params![ctx.uid(), current_timestamp(), id],
+    async fn delete(&self, _ctx: RequestContext, id: &str) -> Result<(), AppError> {
+        let current_timestamp = Utc::now().timestamp();
+        let uid = _ctx.uid().to_string();
+        sqlx::query!(
+            r#"
+UPDATE organizations SET status = 0, modified_by = ?, updated_at = ? WHERE id = ?
+            "#,
+            uid,
+            current_timestamp,
+            id
         )
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+            .execute(&self.pool)
+            .await?;
+
         Ok(())
     }
 
-    fn count_all(&self, _ctx: RequestContext) -> Result<u64, AppError> {
-        let conn = storage::get().conn();
+    async fn count_all(&self, _ctx: RequestContext) -> Result<u64, AppError> {
+        let count = sqlx::query!(
+            r#"SELECT COUNT(*) as count FROM organizations WHERE status != 0"#
+        )
+            .fetch_one(&self.pool)
+            .await?;
 
-        let mut stmt = conn
-            .prepare("SELECT COUNT(*) FROM organizations WHERE status != 0")
-            .map_err(|e| AppError::Internal(e.to_string()))?;
-
-        let count: i64 = stmt
-            .query_row([], |row| row.get(0))
-            .map_err(|e| AppError::Internal(e.to_string()))?;
-
-        Ok(count as u64)
+        Ok(count.count as u64)
     }
 }
 

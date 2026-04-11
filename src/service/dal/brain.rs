@@ -8,12 +8,12 @@ use anyhow::Result;
 use crate::error::AppError;
 use crate::models::brain::{Brain, Cortex, CortexTrait, Memory};
 use crate::models::model_provider::ModelProvider;
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use crate::service::dao::cortex::{CortexDao};
 use std::sync::{Arc, OnceLock};
 use async_trait::async_trait;
 use futures_util::TryFutureExt;
-
+use crate::service::dao::cortex;
 // ==================== 单例管理 ====================
 
 static BRAIN_DAL: OnceLock<Arc<dyn BrainDalTrait>> = OnceLock::new();
@@ -24,8 +24,10 @@ pub fn dal() -> Arc<dyn BrainDalTrait> {
 }
 
 /// 初始化 Brain DAL
-pub fn init(cortex_dao: Arc<dyn CortexDao + Send + Sync>) {
-    let _ = BRAIN_DAL.set(Arc::new(BrainDal::new(cortex_dao)));
+pub fn init() {
+    let _ = BRAIN_DAL.set(Arc::new(BrainDal::new(
+        cortex::dao(),
+    )));
 }
 
 // ==================== DAL 接口 ====================

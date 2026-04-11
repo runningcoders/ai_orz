@@ -6,6 +6,22 @@
 use common::config::{AppConfig, DEFAULT_CONFIG_EMBEDDED, CONFIG_FILE_NAME};
 use std::fs;
 use std::path::Path;
+use std::sync::{Arc, OnceLock};
+// ==================== 单例管理 ====================
+
+static CONFIG: OnceLock<Arc<AppConfig>> = OnceLock::new();
+
+/// 获取 Agent DAL 单例
+pub fn get() -> Arc<AppConfig> {
+    CONFIG.get().cloned().unwrap()
+}
+
+/// 初始化 Agent DAL
+pub fn init()  -> Result<(), Box<dyn std::error::Error>> {
+    // 加载配置（默认配置嵌入在二进制中，不存在就自动生成）
+    let _ = CONFIG.set(Arc::new(load_config()?));
+    Ok(())
+}
 
 /// 加载应用配置
 ///

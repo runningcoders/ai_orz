@@ -4,14 +4,14 @@
 //! - ModelProvider - 大语言模型提供商
 
 pub mod model_provider;
-pub use self::model_provider::*;
 
 #[cfg(test)]
 mod model_provider_test;
 
 use std::sync::{Arc, OnceLock};
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use crate::models::model_provider::ModelProvider;
+use crate::service::dal::model_provider as model_provider_dal;
 
 // ==================== trait 定义 ====================
 
@@ -29,19 +29,19 @@ pub trait FinanceDomain: Send + Sync {
 #[async_trait::async_trait]
 pub trait ModelProviderManage: Send + Sync {
     /// 创建 Model Provider
-    fn create_model_provider(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), crate::error::AppError>;
+    async fn create_model_provider(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), crate::error::AppError>;
 
     /// 获取 Model Provider
-    fn get_model_provider(&self, ctx: RequestContext, id: &str) -> Result<Option<ModelProvider>, crate::error::AppError>;
+    async fn get_model_provider(&self, ctx: RequestContext, id: &str) -> Result<Option<ModelProvider>, crate::error::AppError>;
 
     /// 列出所有 Model Provider
-    fn list_model_providers(&self, ctx: RequestContext) -> Result<Vec<ModelProvider>, crate::error::AppError>;
+    async fn list_model_providers(&self, ctx: RequestContext) -> Result<Vec<ModelProvider>, crate::error::AppError>;
 
     /// 更新 Model Provider
-    fn update_model_provider(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), crate::error::AppError>;
+    async fn update_model_provider(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), crate::error::AppError>;
 
     /// 删除 Model Provider
-    fn delete_model_provider(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), crate::error::AppError>;
+    async fn delete_model_provider(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), crate::error::AppError>;
 
     /// 唤醒 Cortex：创建临时 Cortex 并执行调用
     ///
@@ -62,8 +62,10 @@ pub fn domain() -> Arc<dyn FinanceDomain> {
 }
 
 /// 初始化 Finance Domain
-pub fn init(model_provider_dal: Arc<dyn crate::service::dal::model_provider::ModelProviderDalTrait>) {
-    let finance_domain = FinanceDomainImpl::new(model_provider_dal);
+pub fn init() {
+    let finance_domain = FinanceDomainImpl::new(
+        model_provider_dal::dal()
+    );
     let _ = FINANCE_DOMAIN.set(Arc::new(finance_domain));
 }
 
@@ -73,12 +75,12 @@ pub fn init(model_provider_dal: Arc<dyn crate::service::dal::model_provider::Mod
 ///
 /// 聚合所有财务领域子功能实现
 pub struct FinanceDomainImpl {
-    model_provider_dal: Arc<dyn crate::service::dal::model_provider::ModelProviderDalTrait>,
+    model_provider_dal: Arc<dyn model_provider_dal::ModelProviderDalTrait>,
 }
 
 impl FinanceDomainImpl {
     /// 创建 Domain 实例
-    pub fn new(model_provider_dal: Arc<dyn crate::service::dal::model_provider::ModelProviderDalTrait>) -> Self {
+    pub fn new(model_provider_dal: Arc<dyn model_provider_dal::ModelProviderDalTrait>) -> Self {
         Self { model_provider_dal }
     }
 }

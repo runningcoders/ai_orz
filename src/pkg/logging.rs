@@ -6,7 +6,7 @@
 //! - 日志路径从应用配置读取，支持自定义数据目录
 
 use common::config::AppConfig;
-use common::constants::RequestContext;
+use super::RequestContext;
 use tracing_subscriber::{
     fmt::{self},
     layer::SubscriberExt,

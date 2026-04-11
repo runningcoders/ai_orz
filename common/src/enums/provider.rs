@@ -1,9 +1,11 @@
 //! Model provider related enums
 
-use rusqlite::types::{FromSql, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
+use sqlx::Type;
 
 /// Model provider type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Type)]
+#[sqlx(rename_all = "lowercase", type_name = "INTEGER")]
 pub enum ProviderType {
     /// OpenAI compatible
     #[default]
@@ -52,14 +54,8 @@ impl From<ProviderType> for i32 {
     }
 }
 
-impl ToSql for ProviderType {
-    fn to_sql(&self) -> Result<ToSqlOutput<'_>, rusqlite::Error> {
-        Ok(ToSqlOutput::from(*self as i32))
-    }
-}
-
-impl FromSql for ProviderType {
-    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        i32::column_result(value).map(|v| v.into())
+impl From<i64> for ProviderType {
+    fn from(v: i64) -> Self {
+        (v as i32).into()
     }
 }

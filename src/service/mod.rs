@@ -6,10 +6,10 @@ pub mod domain;
 pub fn init() {
     // 初始化 DAO 层
     dao::init_all();
-    
+
     // 初始化 DAL 层（依赖 DAO）
     dal::init_all();
-    
+
     // 初始化 Domain 层（依赖 DAL）
     domain::init_all();
 }

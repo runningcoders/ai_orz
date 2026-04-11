@@ -5,11 +5,9 @@ pub mod message;
 pub mod model_provider;
 pub mod organization;
 pub mod user;
+pub mod memory;
 
-pub use agent::dao as agent_dao;
-pub use model_provider::dao as model_provider_dao;
-
-pub fn init_all() {
+pub fn init_all(){
     agent::init();
     cortex::init();
     event_queue::init();
@@ -17,4 +15,5 @@ pub fn init_all() {
     model_provider::init();
     organization::init();
     user::init();
+    memory::init();
 }

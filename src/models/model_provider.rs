@@ -2,19 +2,20 @@
 
 use common::enums::{ModelProviderStatus, ProviderType};
 use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
 use std::fmt;
 
 /// 模型提供商持久化对象
 ///
 /// 对应 SQL 建表语句：[`crate::pkg::storage::sql::SQLITE_CREATE_TABLE_MODEL_PROVIDERS`]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct ModelProviderPo {
     pub id: String,
     pub name: String,
     pub provider_type: ProviderType,
     pub model_name: String,
     pub api_key: String,
-    pub base_url: Option<String>,
+    pub base_url:String,
     pub description: String,
     pub status: ModelProviderStatus,
     pub created_by: String,
@@ -47,7 +48,7 @@ impl ModelProvider {
         model_name: String,
         api_key: String,
         base_url: Option<String>,
-        description: String,
+        description: Option<String>,
         creator: String,
     ) -> Self {
         Self {
@@ -68,9 +69,29 @@ impl ModelProvider {
         Self { po }
     }
 
+    /// 获取 ID
+    pub fn id(&self) -> &str {
+        self.po.id.as_str()
+    }
+
+    /// 获取名称
+    pub fn name(&self) -> &str {
+        self.po.name.as_ref().expect("name should not be None")
+    }
+
+    /// 获取模型名称
+    pub fn model_name(&self) -> &str {
+        self.po.model_name.as_ref().expect("model_name should not be None")
+    }
+
+    /// 获取 API Key
+    pub fn api_key(&self) -> &str {
+        self.po.api_key.as_ref().expect("api_key should not be None")
+    }
+
     /// 更新时间戳
     pub fn touch(&mut self, modifier: &str) {
-        self.po.modified_by = modifier.to_string();
+        self.po.modified_by = Some(modifier.to_string());
         self.po.updated_at = current_timestamp();
     }
 }
@@ -81,21 +102,21 @@ impl ModelProviderPo {
         provider_type: ProviderType,
         model_name: String,
         api_key: String,
-        base_url: Option<String>,
+        base_url: String,
         description: String,
         creator: String,
     ) -> Self {
         Self {
-            id: generate_id(),
-            name,
+            id: Some(generate_id()),
+            name: Some(name),
             provider_type,
-            model_name,
-            api_key,
+            model_name: Some(model_name),
+            api_key: Some(api_key),
             base_url,
             description,
             status: ModelProviderStatus::Normal,
-            created_by: creator.clone(),
-            modified_by: creator,
+            created_by: Some(creator.clone()),
+            modified_by: Some(creator),
             created_at: current_timestamp(),
             updated_at: current_timestamp(),
         }

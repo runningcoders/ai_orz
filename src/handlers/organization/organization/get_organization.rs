@@ -3,7 +3,7 @@
 use common::api::OrganizationInfoResponse;
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use axum::{
     extract::{Extension, Path},
     http::StatusCode,
@@ -18,14 +18,14 @@ pub async fn get_organization(
     Path(org_id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let domain = organization::domain();
-    let org = domain.organization_manage().get_by_id(ctx, &org_id)?;
+    let org = domain.organization_manage().get_by_id(ctx, &org_id).await?;
 
     match org {
         Some(org) => Ok((StatusCode::OK, Json(ApiResponse::success(OrganizationInfoResponse {
-            organization_id: org.id.clone(),
-            name: org.name.clone(),
-            description: if org.description.is_empty() { None } else { Some(org.description.clone()) },
-            base_url: if org.base_url.is_empty() { None } else { Some(org.base_url.clone()) },
+            organization_id: org.id.clone().expect("id should not be None"),
+            name: org.name.clone().expect("name should not be None"),
+            description: if org.description.as_ref().map_or(true, |s| s.is_empty()) { None } else { org.description.clone() },
+            base_url: if org.base_url.as_ref().map_or(true, |s| s.is_empty()) { None } else { org.base_url.clone() },
             status: org.status.to_i32(),
             created_at: org.created_at,
         }))).into_response()),

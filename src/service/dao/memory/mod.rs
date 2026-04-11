@@ -338,10 +338,10 @@ pub trait MemoryDaoTrait: Send + Sync {
 
 // ==================== SQLite 实现 ====================
 
-pub mod sqlite;
+ mod sqlite;
+pub use self::sqlite::{dao,init};
 
-pub use sqlite::dao;
-pub use sqlite::init;
+
 
 #[cfg(test)]
-pub mod sqlite_test;
+ mod sqlite_test;

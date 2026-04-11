@@ -9,10 +9,12 @@ pub mod user;
 
 use crate::error::AppError;
 use crate::models::organization::OrganizationPo;
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use crate::service::dal;
 use std::sync::{Arc, OnceLock};
-
+use async_trait::async_trait;
+use crate::service::dal::organization;
+use crate::service::dao::user as user_dao;
 // ==================== 单例 ====================
 
 static ORGANIZATION_DOMAIN: OnceLock<Arc<dyn OrganizationDomain>> = OnceLock::new();
@@ -23,8 +25,11 @@ pub fn domain() -> Arc<dyn OrganizationDomain> {
 }
 
 /// 初始化 Organization Domain
-pub fn init(dal: Arc<dyn dal::organization::OrganizationDalTrait + Send + Sync>) {
-    let domain = OrganizationDomainImpl::new(dal);
+pub fn init() {
+    let domain = OrganizationDomainImpl::new(
+        organization:: dal(),
+        user_dao::dao(),
+    );
     let _ = ORGANIZATION_DOMAIN.set(Arc::new(domain));
 }
 
@@ -34,13 +39,17 @@ pub fn init(dal: Arc<dyn dal::organization::OrganizationDalTrait + Send + Sync>)
 ///
 /// 聚合所有组织管理子功能实现
 pub struct OrganizationDomainImpl {
-    dal: Arc<dyn dal::organization::OrganizationDalTrait + Send + Sync>,
+    dal: Arc<dyn organization::OrganizationDalTrait + Send + Sync>,
+    user_dao: Arc<dyn user_dao::UserDaoTrait + Send + Sync>,
 }
 
 impl OrganizationDomainImpl {
     /// 创建 Domain 实例
-    pub fn new(dal: Arc<dyn dal::organization::OrganizationDalTrait + Send + Sync>) -> Self {
-        Self { dal }
+    pub fn new(
+        dal: Arc<dyn organization::OrganizationDalTrait + Send + Sync>,
+        user_dao: Arc<dyn user_dao::UserDaoTrait + Send + Sync>,
+    ) -> Self {
+        Self { dal, user_dao }
     }
 }
 
@@ -72,14 +81,15 @@ pub trait OrganizationDomain: Send + Sync {
 /// 组织管理 trait
 ///
 /// 定义组织相关的业务接口
+#[async_trait]
 pub trait OrganizationManage: Send + Sync {
     /// 检查系统是否已经初始化
-    fn check_initialized(&self, ctx: RequestContext) -> Result<bool, AppError>;
+    async fn check_initialized(&self, ctx: RequestContext) -> Result<bool, AppError>;
 
     /// 初始化系统：创建第一个组织和第一个超级管理员用户
     ///
     /// 返回: (organization_id, user_id)
-    fn initialize_system(
+    async fn initialize_system(
         &self,
         ctx: RequestContext,
         organization_name: String,
@@ -91,69 +101,70 @@ pub trait OrganizationManage: Send + Sync {
     ) -> Result<(String, String), AppError>;
 
     /// 获取组织信息
-    fn get_by_id(&self, ctx: RequestContext, org_id: &str) -> Result<Option<OrganizationPo>, AppError>;
+    async fn get_by_id(&self, ctx: RequestContext, org_id: &str) -> Result<Option<OrganizationPo>, AppError>;
 
     /// 获取所有组织列表
-    fn list_all(&self, ctx: RequestContext) -> Result<Vec<OrganizationPo>, AppError>;
+    async fn list_all(&self, ctx: RequestContext) -> Result<Vec<OrganizationPo>, AppError>;
 
     /// 更新组织信息
-    fn update(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<(), AppError>;
+    async fn update(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<(), AppError>;
 
     /// 删除组织（软删除）
-    fn delete(&self, ctx: RequestContext, org_id: &str) -> Result<(), AppError>;
+    async fn delete(&self, ctx: RequestContext, org_id: &str) -> Result<(), AppError>;
 
     /// 统计组织总数
-    fn count_organizations(&self, ctx: RequestContext) -> Result<u64, AppError>;
+    async fn count_organizations(&self, ctx: RequestContext) -> Result<u64, AppError>;
 }
 
 /// 用户管理 trait
 ///
 /// 定义用户相关的业务接口
+#[async_trait]
 pub trait UserManage: Send + Sync {
     /// 根据用户名查询用户（用于登录）
-    fn find_by_username(
+    async fn find_by_username(
         &self,
         ctx: RequestContext,
         username: &str,
     ) -> Result<Option<crate::models::user::UserPo>, AppError>;
 
     /// 根据组织 ID 查询所有用户
-    fn find_by_organization_id(
+    async fn find_by_organization_id(
         &self,
         ctx: RequestContext,
         org_id: &str,
     ) -> Result<Vec<crate::models::user::UserPo>, AppError>;
 
     /// 创建新用户
-    fn create_user(
+    async fn create_user(
         &self,
         ctx: RequestContext,
         user: crate::models::user::UserPo,
     ) -> Result<(), AppError>;
 
     /// 更新用户信息
-    fn update_user(
+    async fn update_user(
         &self,
         ctx: RequestContext,
         user: &crate::models::user::UserPo,
     ) -> Result<(), AppError>;
 
     /// 删除用户（软删除）
-    fn delete_user(
+    async fn delete_user(
         &self,
         ctx: RequestContext,
         user_id: &str,
     ) -> Result<(), AppError>;
 
     /// 检查用户名是否已存在
-    fn exists_by_username(
+    async fn exists_by_username(
         &self,
         ctx: RequestContext,
         username: &str,
     ) -> Result<bool, AppError>;
 
     /// 统计组织下用户总数
-    fn count_by_organization_id(
+    async fn count_by_organization_id(
         &self,
         ctx: RequestContext,
         org_id: &str,
@@ -161,7 +172,7 @@ pub trait UserManage: Send + Sync {
 
     /// 验证用户名密码（用于登录）
     /// 返回用户信息，如果验证成功
-    fn verify_password(
+    async fn verify_password(
         &self,
         ctx: RequestContext,
         org_id: &str,
@@ -170,7 +181,7 @@ pub trait UserManage: Send + Sync {
     ) -> Result<crate::models::user::UserPo, AppError>;
 
     /// 根据用户 ID 获取用户信息
-    fn get_user_by_id(
+    async fn get_user_by_id(
         &self,
         ctx: RequestContext,
         user_id: &str,

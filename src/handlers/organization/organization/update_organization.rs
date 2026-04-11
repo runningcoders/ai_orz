@@ -3,7 +3,7 @@
 use common::api::UpdateCurrentOrganizationRequest;
 use crate::error::AppError;
 use crate::handlers::ApiResponse;
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 use axum::{
     extract::{Extension, Json},
     http::StatusCode,
@@ -31,22 +31,23 @@ pub async fn update_organization(
     let org_id = ctx.organization_id.clone()
         .ok_or_else(|| AppError::BadRequest("未找到组织信息".to_string()))?;
     
-    let mut org = domain.organization_manage().get_by_id(ctx.clone(), &org_id)?
+    let mut org = domain.organization_manage().get_by_id(ctx.clone(), &org_id)
+        .await?
         .ok_or_else(|| AppError::NotFound("组织不存在".to_string()))?;
     
     // 更新字段
     if let Some(name) = req.name {
-        org.name = name;
+        org.name = Some(name);
     }
     if let Some(description) = req.description {
-        org.description = description;
+        org.description = Some(description);
     }
     if let Some(base_url) = req.base_url {
-        org.base_url = base_url;
+        org.base_url = Some(base_url);
     }
     org.updated_at = current_timestamp();
     
-    domain.organization_manage().update(ctx, &org)?;
+    domain.organization_manage().update(ctx, &org).await?;
 
     Ok((StatusCode::OK, Json(ApiResponse::success(())).into_response()))
 }

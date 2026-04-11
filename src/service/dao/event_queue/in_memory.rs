@@ -15,7 +15,7 @@ use std::sync::Arc;
 use crate::error::AppError;
 use crate::models::event::{Event, EventRef};
 use crate::service::dao::event_queue::EventQueueDaoTrait;
-use common::constants::RequestContext;
+use crate::pkg::RequestContext;
 
 // ==================== 单例 ====================
 
