@@ -38,21 +38,27 @@ pub fn init() {
 ///
 /// 结构设计：
 /// - events: 所有未确认事件本体存储（待处理 + 处理中）
-/// - queues: 每个 order_key 的等待队列（存储 EventRef），同 order_key 保证顺序
+/// - queues: 每个 order_key 的等待堆（存储 EventRef），同 order_key 保证同一时间只处理一个，堆内按优先级排序
 /// - global_heap: 全局优先级堆，存储就绪可消费的 EventRef
-/// - in_progress: 当前处理中事件
+/// - in_progress: 当前正在处理的事件：event_id -> (event_ref, order_key)
+/// - has_waiting_in_global: 记录每个 order_key 是否已经有事件在全局堆等待
+///
+/// 核心保证：同一个 order_key 全局堆最多只能有一个事件等待，
+/// 这样就不会出现多个同 order_key 事件同时在堆里，保证同一时间只处理一个
 ///
 /// 使用 UnsafeCell 实现内部可变性，因为我们已经用 Mutex 保证了独占访问，所以是安全的
 #[derive(Debug, Default)]
 pub struct InMemoryEventQueue {
     /// 所有未确认事件本体（待处理 + 处理中）
     events: UnsafeCell<HashMap<String, Box<dyn Event>>>,
-    /// 每个 order_key 的等待队列
-    queues: UnsafeCell<HashMap<String, LinkedList<EventRef>>>,
+    /// 每个 order_key 的等待堆（堆内按优先级排序，保证总是取出最高优先级）
+    queues: UnsafeCell<HashMap<String, BinaryHeap<EventRef>>>,
     /// 全局优先级堆（就绪事件）
     global_heap: UnsafeCell<BinaryHeap<EventRef>>,
-    /// 当前处理中事件
+    /// 当前正在处理的事件：event_id -> (event_ref, order_key)
     in_progress: UnsafeCell<HashMap<String, (EventRef, String)>>, // (event_ref, order_key)
+    /// 每个 order_key 是否已经有事件在全局堆等待
+    has_waiting_in_global: UnsafeCell<HashMap<String, bool>>,
     /// 互斥锁保护并发访问
     lock: Mutex<()>,
 }
@@ -69,6 +75,7 @@ impl InMemoryEventQueue {
             queues: UnsafeCell::new(HashMap::new()),
             global_heap: UnsafeCell::new(BinaryHeap::new()),
             in_progress: UnsafeCell::new(HashMap::new()),
+            has_waiting_in_global: UnsafeCell::new(HashMap::new()),
             lock: Mutex::new(()),
         }
     }
@@ -81,6 +88,7 @@ impl EventQueueDaoTrait for InMemoryEventQueue {
         let events = unsafe { &mut *self.events.get() };
         let queues = unsafe { &mut *self.queues.get() };
         let global_heap = unsafe { &mut *self.global_heap.get() };
+        let has_waiting_in_global = unsafe { &mut *self.has_waiting_in_global.get() };
 
         let event_id = event.id().to_string();
         let order_key = event.order_key().to_string();
@@ -90,17 +98,21 @@ impl EventQueueDaoTrait for InMemoryEventQueue {
         events.insert(event_id.clone(), event);
 
         if order_key.is_empty() {
-            // 空 order_key，直接入堆，不需要队列
+            // 空 order_key，直接入全局堆，不需要分组，可并行消费
             global_heap.push(event_ref);
         } else {
-            // 非空 order_key，追加到对应队列
+            // 非空 order_key，入分组堆，分组堆内按优先级排序
             let queue = queues.entry(order_key.clone()).or_default();
             let was_empty = queue.is_empty();
-            queue.push_back(event_ref.clone());
+            queue.push(event_ref.clone());
 
-            // 如果追加前队列是空的，说明这是该分组第一个事件，插入堆
-            if was_empty {
-                global_heap.push(event_ref);
+            // 如果入队前队列是空，说明当前没有等待事件，并且当前还没有事件在全局堆
+            // 弹出最高优先级到全局堆，并标记已经有事件在全局堆
+            if was_empty && !has_waiting_in_global.get(&order_key).copied().unwrap_or(false) {
+                if let Some(top_ref) = queue.pop() {
+                    global_heap.push(top_ref);
+                    has_waiting_in_global.insert(order_key, true);
+                }
             }
         }
 
@@ -119,9 +131,9 @@ impl EventQueueDaoTrait for InMemoryEventQueue {
         let _guard = self.lock.lock().map_err(|e| AppError::Internal(e.to_string()))?;
 
         let events = unsafe { &mut *self.events.get() };
-        let _queues = unsafe { &mut *self.queues.get() };
         let global_heap = unsafe { &mut *self.global_heap.get() };
         let in_progress = unsafe { &mut *self.in_progress.get() };
+        let has_waiting_in_global = unsafe { &mut *self.has_waiting_in_global.get() };
 
         loop {
             let Some(event_ref) = global_heap.pop() else {
@@ -137,6 +149,11 @@ impl EventQueueDaoTrait for InMemoryEventQueue {
                 // 事件已经不存在（已经被 ack/nack），跳过这个 ref，继续找下一个
                 continue;
             };
+
+            // 从 waiting 标记中移除，因为已经出队到处理中了
+            if !order_key.is_empty() {
+                has_waiting_in_global.remove(order_key);
+            }
 
             // 克隆一份返回给调用者，原事件保留在 events 直到 ack
             let cloned_event = event.clone();
@@ -156,6 +173,7 @@ impl EventQueueDaoTrait for InMemoryEventQueue {
         let queues = unsafe { &mut *self.queues.get() };
         let global_heap = unsafe { &mut *self.global_heap.get() };
         let in_progress = unsafe { &mut *self.in_progress.get() };
+        let has_waiting_in_global = unsafe { &mut *self.has_waiting_in_global.get() };
 
         // 从处理中移除
         let Some((_event_ref, order_key)) = in_progress.remove(event_id) else {
@@ -167,31 +185,27 @@ impl EventQueueDaoTrait for InMemoryEventQueue {
         events.remove(event_id);
 
         if order_key.is_empty() {
-            // 空 order_key，没有队列需要处理
+            // 空 order_key，没有分组堆需要处理
             drop(_guard);
             return Ok(());
         }
 
-        // 非空 order_key，从队列头部移除这个已经处理完的事件
+        // 非空 order_key，如果分组堆还有元素，弹出最高优先级下一个事件到全局堆
         let Some(queue) = queues.get_mut(&order_key) else {
             drop(_guard);
             return Ok(());
         };
 
-        // 弹出头部（应该就是当前这个事件）
-        let Some(_front_ref) = queue.pop_front() else {
-            drop(_guard);
-            return Ok(());
-        };
-
-        // 如果弹出后队列还有元素，新头部入堆
-        if let Some(new_front) = queue.front() {
-            global_heap.push(new_front.clone());
+        // 如果还有元素，弹出最高优先级到全局堆，并标记已经有事件在全局堆
+        if let Some(next_ref) = queue.pop() {
+            global_heap.push(next_ref);
+            has_waiting_in_global.insert(order_key.clone(), true);
         }
 
-        // 如果队列空了，移除空队列条目
+        // 如果分组堆空了，移除空分组条目
         if queue.is_empty() {
             queues.remove(&order_key);
+            has_waiting_in_global.remove(&order_key);
         }
 
         drop(_guard);
@@ -203,16 +217,19 @@ impl EventQueueDaoTrait for InMemoryEventQueue {
 
         let global_heap = unsafe { &mut *self.global_heap.get() };
         let in_progress = unsafe { &mut *self.in_progress.get() };
+        let has_waiting_in_global = unsafe { &mut *self.has_waiting_in_global.get() };
 
         // 从处理中移除
-        let Some((event_ref, _order_key)) = in_progress.remove(event_id) else {
+        let Some((event_ref, order_key)) = in_progress.remove(event_id) else {
             drop(_guard);
             return Ok(());
         };
 
-        // 事件本体还在 events 中（dequeue 只出队处理中标记，不删除）
-        // 直接重新插入堆就可以了，等待下次消费
+        // nack 重新放入全局堆等待下次消费
         global_heap.push(event_ref);
+        if !order_key.is_empty() {
+            has_waiting_in_global.insert(order_key, true);
+        }
 
         drop(_guard);
         Ok(())

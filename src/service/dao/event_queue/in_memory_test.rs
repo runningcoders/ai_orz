@@ -8,11 +8,15 @@ use crate::models::message::Message;
 use common::enums::{MessageRole, MessageType};
 use crate::pkg::RequestContext;
 use crate::service::dao::event_queue::in_memory::InMemoryEventQueue;
+use sqlx::SqlitePool;
 
 /// 测试空队列基本操作
-#[test]
-fn test_event_queue_empty() {
-    let ctx = RequestContext::new(Some("test-user".to_string()), None);
+#[tokio::test]
+async fn test_event_queue_empty() {
+    // 创建一个空池用于测试（实际不使用）
+    // InMemoryEventQueue 不碰数据库，只是占位
+    let pool = sqlx::SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+    let ctx = RequestContext::new_simple("test-user", pool);
     let queue = InMemoryEventQueue::new();
 
     assert!(queue.is_empty());
@@ -26,9 +30,10 @@ fn test_event_queue_empty() {
 }
 
 /// 测试单个事件入队出队 ack
-#[test]
-fn test_single_event_enqueue_dequeue_ack() {
-    let ctx = RequestContext::new(Some("test-user".to_string()), None);
+#[tokio::test]
+async fn test_single_event_enqueue_dequeue_ack() {
+    let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+    let ctx = RequestContext::new_simple("test-user", pool);
     let queue = InMemoryEventQueue::new();
 
     // 创建一个测试消息
@@ -68,9 +73,10 @@ fn test_single_event_enqueue_dequeue_ack() {
 }
 
 /// 测试优先级排序 - 高优先级先出队
-#[test]
-fn test_priority_ordering() {
-    let ctx = RequestContext::new(Some("test-user".to_string()), None);
+#[tokio::test]
+async fn test_priority_ordering() {
+    let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+    let ctx = RequestContext::new_simple("test-user", pool);
     let queue = InMemoryEventQueue::new();
 
     // 创建三个不同优先级的事件，优先级低的先入队
@@ -151,9 +157,10 @@ fn test_priority_ordering() {
 }
 
 /// 测试同创建时间，优先级高先出队
-#[test]
-fn test_same_time_priority_ordering() {
-    let ctx = RequestContext::new(Some("test-user".to_string()), None);
+#[tokio::test]
+async fn test_same_time_priority_ordering() {
+    let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+    let ctx = RequestContext::new_simple("test-user", pool);
     let queue = InMemoryEventQueue::new();
 
     #[derive(Debug, Clone)]
@@ -208,9 +215,10 @@ fn test_same_time_priority_ordering() {
 }
 
 /// 测试同优先级，创建时间早的先出队
-#[test]
-fn test_same_priority_time_ordering() {
-    let ctx = RequestContext::new(Some("test-user".to_string()), None);
+#[tokio::test]
+async fn test_same_priority_time_ordering() {
+    let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+    let ctx = RequestContext::new_simple("test-user", pool);
     let queue = InMemoryEventQueue::new();
 
     #[derive(Debug, Clone)]
@@ -264,9 +272,10 @@ fn test_same_priority_time_ordering() {
 }
 
 /// 测试相同 order_key 保证顺序消费
-#[test]
-fn test_same_order_key_sequential() {
-    let ctx = RequestContext::new(Some("test-user".to_string()), None);
+#[tokio::test]
+async fn test_same_order_key_sequential() {
+    let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+    let ctx = RequestContext::new_simple("test-user", pool);
     let queue = InMemoryEventQueue::new();
 
     #[derive(Debug, Clone)]
@@ -328,9 +337,10 @@ fn test_same_order_key_sequential() {
 }
 
 /// 测试 nack 重试
-#[test]
-fn test_nack_retry() {
-    let ctx = RequestContext::new(Some("test-user".to_string()), None);
+#[tokio::test]
+async fn test_nack_retry() {
+    let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+    let ctx = RequestContext::new_simple("test-user", pool);
     let queue = InMemoryEventQueue::new();
 
     let msg = Message::new(
@@ -367,9 +377,10 @@ fn test_nack_retry() {
 }
 
 /// 测试批量入队
-#[test]
-fn test_batch_enqueue() {
-    let ctx = RequestContext::new(Some("test-user".to_string()), None);
+#[tokio::test]
+async fn test_batch_enqueue() {
+    let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+    let ctx = RequestContext::new_simple("test-user", pool);
     let queue = InMemoryEventQueue::new();
 
     let mut events: Vec<Box<dyn Event>> = Vec::new();
@@ -404,9 +415,10 @@ fn test_batch_enqueue() {
 }
 
 /// 测试混合不同 order_key 分组
-#[test]
-fn test_mixed_order_groups() {
-    let ctx = RequestContext::new(Some("test-user".to_string()), None);
+#[tokio::test]
+async fn test_mixed_order_groups() {
+    let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+    let ctx = RequestContext::new_simple("test-user", pool);
     let queue = InMemoryEventQueue::new();
 
     // task1: 3个事件，顺序消费
@@ -492,19 +504,4 @@ fn test_mixed_order_groups() {
     queue.ack(&ctx, "t1-3").unwrap();
 
     assert!(queue.is_empty());
-}
-
-/// 运行所有测试函数
-#[test]
-fn test_all_event_queue_functions() {
-    // 所有测试已经是独立函数，这里只是确保运行时没有 panic
-    test_event_queue_empty();
-    test_single_event_enqueue_dequeue_ack();
-    test_priority_ordering();
-    test_same_time_priority_ordering();
-    test_same_priority_time_ordering();
-    test_same_order_key_sequential();
-    test_nack_retry();
-    test_batch_enqueue();
-    test_mixed_order_groups();
 }
