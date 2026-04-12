@@ -3,6 +3,7 @@
 //! 基于 sqlx 连接池管理，不再使用全局单例，支持依赖注入和测试隔离
 
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
+use std::path::Path;
 use crate::error::Result;
 
 /// 数据库连接池包装
@@ -14,11 +15,12 @@ pub struct Storage {
 impl Storage {
     /// 创建存储实例，初始化连接池，自动运行 migrations
      async fn new(db_path: &str) -> Result<Self> {
-        // SQLite 连接 URL 需要是 sqlite://路径 格式
+        // SQLite 连接 URL 格式：sqlite:path 不需要双斜杠
+        // 双斜杠会导致相对路径解析错误，把当前目录当成域名解析了
         let connection_url = if db_path == ":memory:" {
             "sqlite::memory:".to_string()
         } else {
-            format!("sqlite://{}", db_path)
+            format!("sqlite:{}", db_path)
         };
 
         let pool = SqlitePoolOptions::new()

@@ -91,10 +91,10 @@ fn organization_protected_routes() -> Router {
         .nest("/user", Router::new()
             .route("/", post(user::create_user::create_user))
             .route("/me/list", get(user::list_users_by_current_organization::list_users_by_current_organization))
-            .route("/{username}", get(user::get_user_by_username::get_user_by_username))
             .route("/{org_id}/list", get(user::list_users_by_organization::list_users_by_organization))
             .route("/update", put(user::update_user::update_user))
-            .route("/{user_id}", delete(user::delete_user::delete_user))
+            .route("/username/{username}", get(user::get_user_by_username::get_user_by_username))
+            .route("/id/{user_id}", delete(user::delete_user::delete_user))
         )
 }
 
