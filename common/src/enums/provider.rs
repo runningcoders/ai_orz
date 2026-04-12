@@ -1,12 +1,14 @@
 //! Model provider related enums
 
+use serde::{Serialize, Deserialize};
+#[cfg(feature = "sqlx")]
 use sqlx::Type;
 
 /// Model provider type
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-#[derive(Type)]
-#[sqlx(type_name = "INTEGER")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(Type))]
+#[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
 pub enum ProviderType {
     /// OpenAI compatible
     #[default]

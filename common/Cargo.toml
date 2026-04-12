@@ -6,7 +6,5 @@ edition = "2024"
 # Common types shared between backend and frontend
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
-axum = { version = "0.8", default-features = false }
-http = "1.0"
-sqlx = { version = "0.8.6", features = ["sqlite", "macros"], default-features = false }
+sqlx = { version = "0.8.6", features = ["macros"], default-features = false, optional = true }
 

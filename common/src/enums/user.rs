@@ -1,12 +1,14 @@
 //! User related enums
 
+use serde::{Serialize, Deserialize};
+#[cfg(feature = "sqlx")]
 use sqlx::Type;
 
 /// User role
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-#[derive(Type)]
-#[sqlx(type_name = "INTEGER")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(Type))]
+#[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
 pub enum UserRole {
     /// Super admin (超级管理员)
     #[default]
@@ -63,9 +65,9 @@ impl From<i64> for UserRole {
 
 /// User status
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-#[derive(Type)]
-#[sqlx(type_name = "INTEGER")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(Type))]
+#[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
 pub enum UserStatus {
     /// Active (正常使用)
     #[default]

@@ -1,12 +1,14 @@
 //! Message related enums
 
+use serde::{Serialize, Deserialize};
+#[cfg(feature = "sqlx")]
 use sqlx::Type;
 
 /// Message role (谁发送的消息)
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-#[derive(Type)]
-#[sqlx(type_name = "INTEGER")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(Type))]
+#[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
 pub enum MessageRole {
     /// User (用户发送)
     #[default]
@@ -54,9 +56,9 @@ impl From<i64> for MessageRole {
 
 /// Message type (消息类型)
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-#[derive(Type)]
-#[sqlx(type_name = "INTEGER")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(Type))]
+#[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
 pub enum MessageType {
     /// Text (纯文本)
     #[default]
@@ -110,9 +112,9 @@ impl From<i64> for MessageType {
 
 /// Message status (处理状态，用于事件总线恢复)
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-#[derive(Type)]
-#[sqlx(type_name = "INTEGER")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(Type))]
+#[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
 pub enum MessageStatus {
     /// Pending (待处理)
     #[default]

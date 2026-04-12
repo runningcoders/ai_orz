@@ -1,13 +1,14 @@
 //! Agent related enums
 
 use serde::{Serialize, Deserialize};
+#[cfg(feature = "sqlx")]
 use sqlx::Type;
 
 /// AgentPo status (for soft delete)
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[derive(Type)]
-#[sqlx(type_name = "INTEGER")]
+#[cfg_attr(feature = "sqlx", derive(Type))]
+#[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
 pub enum AgentStatus {
     /// Deleted (soft deleted)
     Deleted = 0,
@@ -46,8 +47,8 @@ impl From<i64> for AgentStatus {
 /// ModelProvider status (for soft delete)
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[derive(Type)]
-#[sqlx(type_name = "INTEGER")]
+#[cfg_attr(feature = "sqlx", derive(Type))]
+#[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
 pub enum ModelProviderStatus {
     /// Deleted (soft deleted)
     Deleted = 0,
