@@ -25,6 +25,7 @@ target
 
 /target
 /data
+/.ai_orz
 
 # Dioxus frontend build output
 /frontend/dist

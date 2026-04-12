@@ -7,7 +7,7 @@
 
 # 基础数据存储路径
 # 所有数据文件（SQLite数据库、日志、记忆文件等）都会存储在此目录下
-base_data_path = "data"
+base_data_path = ".ai_orz"
 
 # 服务器配置
 [server]
