@@ -164,4 +164,14 @@ impl AppConfig {
     pub fn artifact_dir(&self) -> PathBuf {
         Path::new(&self.base_data_path).join(&self.artifact.artifact_subdir)
     }
+
+    /// 获取指定 Agent 的数据目录路径：base_data_path/agents/{agent_id}
+    pub fn agent_data_dir(&self, agent_id: &str) -> PathBuf {
+        Path::new(&self.base_data_path).join("agents").join(agent_id)
+    }
+
+    /// 获取指定 Agent 的记忆数据目录：base_data_path/agents/{agent_id}/memory
+    pub fn agent_memory_dir(&self, agent_id: &str) -> PathBuf {
+        self.agent_data_dir(agent_id).join("memory")
+    }
 }

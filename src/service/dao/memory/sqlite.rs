@@ -42,30 +42,57 @@ impl SqliteMemoryDao {
         Self
     }
 
-    /// 获取数据目录根路径
-    fn data_root(&self) -> PathBuf {
-        // 相对于数据库目录
-        let base_path = config::get().base_data_path.clone();
-      Path::new(base_path.as_str()).to_path_buf()
+    /// 获取 Agent 记忆目录完整路径（用于写入）
+    fn agent_memory_dir(&self, agent_id: &str) -> PathBuf {
+        config::get().agent_memory_dir(agent_id)
     }
 
-    /// 获取 Agent 目录
-    fn agent_dir(&self, agent_id: &str) -> PathBuf {
-        let root = self.data_root();
-        root.join(agent_id).join("memory")
-    }
-
-    /// 获取今日日期文件路径
+    /// 获取今日日期文件完整路径（用于写入）
     fn today_path(&self, agent_id: &str) -> PathBuf {
         let now = chrono::Local::now();
         let date_str = now.format("%Y-%m-%d").to_string();
-        let agent_dir = self.agent_dir(agent_id);
+        let agent_dir = self.agent_memory_dir(agent_id);
         agent_dir.join(format!("{}.md", date_str))
     }
 
     /// 获取连接池从上下文
     fn pool(&self, ctx: RequestContext) -> SqlitePool {
         ctx.db_pool().clone()
+    }
+
+    /// 获取今日日期文件相对路径（用于存储到数据库）
+    /// 格式: agents/{agent_id}/memory/{YYYY-MM-DD}.md
+    pub fn today_path_relative(&self, agent_id: &str) -> String {
+        let now = chrono::Local::now();
+        let date_str = now.format("%Y-%m-%d").to_string();
+        format!("agents/{}/memory/{}.md", agent_id, date_str)
+    }
+
+    /// 按知识引用读取原始记忆内容片段
+    /// 
+    /// 根据 date_path(相对路径) + byte_start + byte_length 读取指定范围内容
+    pub fn read_memory_reference(&self, reference: &KnowledgeReferencePo) -> Result<String, AppError> {
+        // 根据 date_path(相对路径) 拼接完整路径（相对于 base_data_path）
+        let config = config::get();
+        let base = Path::new(&config.base_data_path);
+        let full_path = base.join(&reference.date_path);
+        
+        // 读取整个文件内容
+        let content = std::fs::read_to_string(&full_path)?;
+        
+        // 按字节偏移和长度截取
+        let byte_start = reference.byte_start as usize;
+        let byte_length = reference.byte_length as usize;
+        
+        // 检查边界
+        if byte_start + byte_length > content.len() {
+            return Ok("".to_string());
+        }
+        
+        let slice = &content.as_bytes()[byte_start..byte_start + byte_length];
+        let result = String::from_utf8_lossy(slice).to_string();
+        
+        Ok(result)
     }
 }
 
@@ -79,7 +106,7 @@ impl MemoryDaoTrait for SqliteMemoryDao {
         tags: Vec<String>,
     ) -> Result<ShortTermMemoryIndexPo, AppError> {
         // 1. 确保 Agent 目录存在
-        let agent_dir = self.agent_dir(&trace.agent_id);
+        let agent_dir = self.agent_memory_dir(&trace.agent_id);
         std::fs::create_dir_all(&agent_dir)?;
 
         // 2. 获取今日文件路径
@@ -151,7 +178,7 @@ INSERT INTO short_term_memory_index (
 
         // 1. 确保第一个 trace 的 Agent 目录存在
         if let Some((first_trace, _, _)) = traces.first() {
-            let agent_dir = self.agent_dir(&first_trace.agent_id);
+            let agent_dir = self.agent_memory_dir(&first_trace.agent_id);
             std::fs::create_dir_all(&agent_dir)?;
         }
 
