@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE TABLE IF NOT EXISTS short_term_memory_index (
     id TEXT NOT NULL PRIMARY KEY,
     agent_id TEXT NOT NULL,
+    task_id TEXT,
     role TEXT NOT NULL,
     summary TEXT NOT NULL,
     tags TEXT NOT NULL,

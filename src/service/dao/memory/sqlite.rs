@@ -136,16 +136,18 @@ impl MemoryDaoTrait for SqliteMemoryDao {
         let role_str = trace.role.to_string();
         let now = chrono::Utc::now().timestamp();
         let created_at = trace.created_at;
+        let task_id = &trace.task_id;
 
         // id = 原始 trace id (单个 trace 就是它自己的 id)
         sqlx::query!(
             r#"
 INSERT INTO short_term_memory_index (
-    id, agent_id, role, summary, tags, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?)
+    id, agent_id, task_id, role, summary, tags, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 "#,
             trace.id,
             trace.agent_id,
+            task_id,
             role_str,
             summary,
             tags_json,
@@ -159,6 +161,7 @@ INSERT INTO short_term_memory_index (
         Ok(ShortTermMemoryIndexPo {
             id: trace.id.clone(),
             agent_id: trace.agent_id.clone(),
+            task_id: trace.task_id.clone(),
             role: role_str,
             summary,
             tags: tags_json,
@@ -221,15 +224,17 @@ INSERT INTO short_term_memory_index (
             let tags_json = serde_json::to_string(tags)?;
             let role_str = trace.role.to_string();
             let created_at = trace.created_at;
+            let task_id = &trace.task_id;
 
             sqlx::query!(
                 r#"
 INSERT INTO short_term_memory_index (
-    id, agent_id, role, summary, tags, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?)
+    id, agent_id, task_id, role, summary, tags, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 "#,
                 aggregated_id_cloned,
                 trace.agent_id,
+                task_id,
                 role_str,
                 summary,
                 tags_json,
@@ -243,6 +248,7 @@ INSERT INTO short_term_memory_index (
             result.push(ShortTermMemoryIndexPo {
                 id: aggregated_id.clone(),
                 agent_id: trace.agent_id.clone(),
+                task_id: trace.task_id.clone(),
                 role: role_str,
                 summary: summary.clone(),
                 tags: tags_json.clone(),
@@ -264,7 +270,7 @@ INSERT INTO short_term_memory_index (
         let index = sqlx::query_as!(
             ShortTermMemoryIndexPo,
             r#"
-SELECT id, agent_id, role, summary, tags, created_at, updated_at
+SELECT id, agent_id, task_id, role, summary, tags, created_at, updated_at
 FROM short_term_memory_index
 WHERE id = ?
 "#,
@@ -288,7 +294,7 @@ WHERE id = ?
         let indexes = sqlx::query_as!(
             ShortTermMemoryIndexPo,
             r#"
-SELECT id, agent_id, role, summary, tags, created_at, updated_at
+SELECT id, agent_id, task_id, role, summary, tags, created_at, updated_at
 FROM short_term_memory_index
 WHERE agent_id = ?
 ORDER BY created_at DESC
@@ -317,7 +323,7 @@ LIMIT ?
         let indexes = sqlx::query_as!(
             ShortTermMemoryIndexPo,
             r#"
-SELECT id, agent_id, role, summary, tags, created_at, updated_at
+SELECT id, agent_id, task_id, role, summary, tags, created_at, updated_at
 FROM short_term_memory_index
 WHERE agent_id = ? AND summary MATCH ?
 LIMIT ?

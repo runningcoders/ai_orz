@@ -41,6 +41,7 @@ ai_orz 的 Agent 记忆系统采用四层认知架构，对齐人类记忆机制
 CREATE TABLE IF NOT EXISTS short_term_memory_index (
     id TEXT PRIMARY KEY,           -- 聚合 ID: 多个原始细节 ID 拼接后二次 hash
     agent_id TEXT NOT NULL,        -- 所属 Agent
+    task_id TEXT,                  -- 所属任务 ID (可选，用于追溯到具体任务)
     role TEXT NOT NULL,            -- 记忆角色 (user/assistant/system)
     summary TEXT NOT NULL,         -- 聚合摘要
     tags TEXT NOT NULL,            -- 标签(JSON数组)

@@ -61,6 +61,8 @@ pub struct MemoryTrace {
     pub id: String,
     /// 所属 Agent ID
     pub agent_id: String,
+    /// 所属任务 ID（可选，用于追溯到具体任务）
+    pub task_id: Option<String>,
     /// 请求日志 ID（来源溯源）
     pub log_id: String,
     /// 创建者用户 ID（来源溯源）
@@ -88,12 +90,14 @@ impl MemoryTrace {
         organization_id: String,
         role: MemoryRole,
         content: String,
+        task_id: Option<String>,
     ) -> Self {
         let content_hash = sha256::digest(content.as_bytes());
         let now = chrono::Utc::now().timestamp();
         Self {
             id: content_hash,
             agent_id,
+            task_id,
             log_id,
             user_id,
             organization_id,
@@ -149,6 +153,8 @@ pub struct ShortTermMemoryIndexPo {
     pub id: String,
     /// 所属 Agent
     pub agent_id: String,
+    /// 所属任务 ID（可选，用于追溯到具体任务）
+    pub task_id: Option<String>,
     /// 角色
     pub role: String,
     /// 归纳摘要（用于全文检索）

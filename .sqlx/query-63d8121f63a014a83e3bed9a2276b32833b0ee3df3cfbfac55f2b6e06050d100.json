@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, agent_id, role, summary, tags, created_at, updated_at\nFROM short_term_memory_index\nWHERE id = ?\n",
+  "query": "\nSELECT id, agent_id, task_id, role, summary, tags, created_at, updated_at\nFROM short_term_memory_index\nWHERE agent_id = ?\nORDER BY created_at DESC\nLIMIT ?\n",
   "describe": {
     "columns": [
       {
@@ -14,37 +14,43 @@
         "type_info": "Text"
       },
       {
-        "name": "role",
+        "name": "task_id",
         "ordinal": 2,
         "type_info": "Text"
       },
       {
-        "name": "summary",
+        "name": "role",
         "ordinal": 3,
         "type_info": "Text"
       },
       {
-        "name": "tags",
+        "name": "summary",
         "ordinal": 4,
         "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "tags",
         "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 6,
         "type_info": "Integer"
       },
       {
         "name": "updated_at",
-        "ordinal": 6,
+        "ordinal": 7,
         "type_info": "Integer"
       }
     ],
     "parameters": {
-      "Right": 1
+      "Right": 2
     },
     "nullable": [
       false,
       false,
+      true,
       false,
       false,
       false,
@@ -52,5 +58,5 @@
       false
     ]
   },
-  "hash": "15a0f356058a34ace72beb13a218dc5b3d61372a46f9dfa853f9d2c72b621530"
+  "hash": "63d8121f63a014a83e3bed9a2276b32833b0ee3df3cfbfac55f2b6e06050d100"
 }
