@@ -199,7 +199,7 @@ UPDATE messages SET status = ?, updated_at = ?, modified_by = ? WHERE id = ?
 
     async fn list_by_status(&self, ctx: RequestContext, status: Vec<MessageStatus>, limit: Option<usize>) -> Result<Vec<MessagePo>, AppError> {
         let status_list: Vec<i32> = status.iter().map(|s| *s as i32).collect();
-        let placeholders: Vec<String> = status_list.iter().enumerate().map(|(i, _)| format!("${}", i+1)).collect();
+        let placeholders: Vec<String> = status_list.iter().map(|_| "?".to_string()).collect();
         let placeholders_str = placeholders.join(", ");
 
         let sql = format!(

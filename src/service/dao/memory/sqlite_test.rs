@@ -5,6 +5,7 @@
 use super::*;
 use crate::models::memory::{MemoryRole, MemoryTrace, LongTermKnowledgeNodePo, KnowledgeNodeRelationPo, KnowledgeReferencePo, KnowledgeRelationType};
 use crate::pkg::RequestContext;
+use crate::service::dao::memory::sqlite::SqliteMemoryDao;
 use sqlx::SqlitePool;
 
 #[sqlx::test]
