@@ -1,6 +1,6 @@
-//! RequestContext 模块单元测试
+//! RequestContext 公共方法单元测试
 
-use super::RequestContext;
+use crate::pkg::request_context::RequestContext;
 use tokio::runtime::Runtime;
 use sqlx::sqlite::SqlitePool;
 
@@ -11,6 +11,20 @@ fn create_test_pool() -> SqlitePool {
         crate::pkg::storage::init("sqlite::memory:").await;
         crate::pkg::storage::get().pool_owned()
     })
+}
+
+#[test]
+fn test_request_context() {
+    crate::config::init().unwrap();
+    // 创建一个内存数据库用于测试
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let pool = rt.block_on(async {
+        crate::pkg::storage::init("sqlite::memory:").await;
+        crate::pkg::storage::get().pool_owned()
+    });
+    let ctx = RequestContext::new_simple("user1", pool);
+    assert!(!ctx.log_id.is_empty());
+    assert_eq!(ctx.uid(), "user1");
 }
 
 #[test]

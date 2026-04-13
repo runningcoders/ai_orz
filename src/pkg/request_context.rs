@@ -210,18 +210,6 @@ mod tests {
         let ts = format_timestamp(1709258400); // 2024-03-31 12:00:00 UTC
         println!("Formatted: {}", ts);
     }
-
-    #[test]
-    fn test_request_context() {
-        crate::config::init().unwrap();
-        // 创建一个内存数据库用于测试
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let pool = rt.block_on(async {
-            crate::pkg::storage::init("sqlite::memory:").await;
-            crate::pkg::storage::get().pool_owned()
-        });
-        let ctx = RequestContext::new_simple("user1", pool);
-        assert!(!ctx.log_id.is_empty());
-        assert_eq!(ctx.uid(), "user1");
-    }
 }
+
+
