@@ -1,6 +1,6 @@
 //! RequestContext 公共方法单元测试
 
-use crate::pkg::request_context::RequestContext;
+use crate::pkg::request_context::{format_timestamp, RequestContext};
 use tokio::runtime::Runtime;
 use sqlx::sqlite::SqlitePool;
 
@@ -130,4 +130,18 @@ fn test_context_clone() {
     assert_eq!(ctx1.log_id, ctx2.log_id);
     assert_eq!(ctx1.uid(), ctx2.uid());
     assert_eq!(ctx1.uname(), ctx2.uname());
+}
+
+#[test]
+fn test_generate_log_id() {
+    let log_id = RequestContext::generate_log_id();
+    println!("Generated log_id: {}", log_id);
+    assert_eq!(log_id.len(), 20); // 14 + 3 + 3 = 20
+    assert!(log_id.chars().all(|c| c.is_ascii_digit())); // 纯数字
+}
+
+#[test]
+fn test_format_timestamp() {
+    let ts = format_timestamp(1709258400); // 2024-03-31 12:00:00 UTC
+    println!("Formatted: {}", ts);
 }

@@ -122,7 +122,7 @@ impl RequestContext {
 }
 
 /// 格式化时间戳为 YYYYMMDDHHmmss
-fn format_timestamp(secs: u64) -> String {
+pub fn format_timestamp(secs: u64) -> String {
     // 将 Unix 时间戳转换为格式化字符串
     let days = secs / 86400;
     let remaining = secs % 86400;
@@ -191,25 +191,6 @@ fn rand_simple() -> u32 {
         .unwrap()
         .as_nanos() as u32;
     time2.wrapping_add(hasher.finish() as u32)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_generate_log_id() {
-        let log_id = RequestContext::generate_log_id();
-        println!("Generated log_id: {}", log_id);
-        assert_eq!(log_id.len(), 20); // 14 + 3 + 3 = 20
-        assert!(log_id.chars().all(|c| c.is_ascii_digit())); // 纯数字
-    }
-
-    #[test]
-    fn test_format_timestamp() {
-        let ts = format_timestamp(1709258400); // 2024-03-31 12:00:00 UTC
-        println!("Formatted: {}", ts);
-    }
 }
 
 
