@@ -23,6 +23,7 @@ async fn test_append_memory_trace(pool: SqlitePool) {
         "test-org".to_string(),
         MemoryRole::User,
         "这是一段测试内容".to_string(),
+        None, // 测试不需要 task_id
     );
 
     let result = dao.append_memory_trace(
@@ -178,6 +179,7 @@ fn test_memory_trace_id_is_content_hash() {
         "org-1".to_string(),
         MemoryRole::User,
         content.clone(),
+        None,
     );
 
     let expected_hash = sha256::digest(content.as_bytes());
@@ -194,6 +196,7 @@ fn test_memory_trace_to_markdown() {
         "org-1".to_string(),
         MemoryRole::User,
         "你好，这是一个测试问题".to_string(),
+        None,
     );
 
     let markdown = trace.to_markdown();
