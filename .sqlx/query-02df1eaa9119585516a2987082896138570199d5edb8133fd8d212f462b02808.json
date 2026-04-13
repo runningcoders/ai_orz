@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nUPDATE users SET status = 0, modified_by = ?, updated_at = ? WHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "02df1eaa9119585516a2987082896138570199d5edb8133fd8d212f462b02808"
+}

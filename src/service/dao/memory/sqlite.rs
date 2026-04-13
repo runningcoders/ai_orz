@@ -320,7 +320,7 @@ LIMIT ?
         let pool = self.pool(ctx);
 
         // 先试试更新，如果不存在就插入
-        let result = sqlx::query!(
+        let result: sqlx::Result<sqlx::sqlite::SqliteQueryResult> = sqlx::query!(
             r#"
 UPDATE long_term_knowledge_node
 SET agent_id = ?,
@@ -340,7 +340,8 @@ WHERE id = ?
             node.id,
         )
         .execute(&pool)
-        .await?;
+        .await;
+        let result = result?;
         let rows_affected = result.rows_affected();
 
         if rows_affected == 0 {
@@ -376,7 +377,7 @@ INSERT INTO long_term_knowledge_node (
         let mut tx = pool.begin().await?;
 
         for node in nodes {
-            let result = sqlx::query!(
+            let result: sqlx::Result<sqlx::sqlite::SqliteQueryResult> = sqlx::query!(
                 r#"
 UPDATE long_term_knowledge_node
 SET agent_id = ?,
@@ -396,7 +397,8 @@ WHERE id = ?
                 node.id,
             )
             .execute(&mut *tx)
-            .await?;
+            .await;
+            let result = result?;
             let rows_affected = result.rows_affected();
 
             if rows_affected == 0 {

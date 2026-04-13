@@ -1,0 +1,86 @@
+{
+  "db_name": "SQLite",
+  "query": "\nSELECT id, name, provider_type as 'provider_type: ProviderType', model_name, api_key, base_url, description,\n       status as 'status: ModelProviderStatus', created_by, modified_by, created_at, updated_at\nFROM model_providers WHERE id = ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "provider_type: ProviderType",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "model_name",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "api_key",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "base_url",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "description",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "status: ModelProviderStatus",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "created_by",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "modified_by",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 10,
+        "type_info": "Integer"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 11,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "fa01b463e0c8f9070fb1429ef02a9b5e6535e4f758c379d6159d86250e3334d3"
+}

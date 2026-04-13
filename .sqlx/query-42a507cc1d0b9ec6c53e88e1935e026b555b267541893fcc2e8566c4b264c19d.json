@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO model_providers (id, name, provider_type, model_name, api_key, base_url, description, status, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 12
+    },
+    "nullable": []
+  },
+  "hash": "42a507cc1d0b9ec6c53e88e1935e026b555b267541893fcc2e8566c4b264c19d"
+}

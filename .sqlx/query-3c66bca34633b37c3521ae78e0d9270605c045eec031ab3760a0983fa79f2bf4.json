@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM knowledge_reference WHERE knowledge_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "3c66bca34633b37c3521ae78e0d9270605c045eec031ab3760a0983fa79f2bf4"
+}

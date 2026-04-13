@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "\nSELECT id, source_node_id, target_node_id, relation_type, created_at, updated_at\nFROM knowledge_node_relation\nWHERE source_node_id = ? AND relation_type = ?\nORDER BY created_at ASC\n",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "source_node_id",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "target_node_id",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "relation_type",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 5,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "2c283348a9f9106ca235fec2c8e6c3584e7997635da488ddf074f6628540a64d"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nUPDATE model_providers SET status = 0, modified_by = ?, updated_at = ? WHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "0ab84459a197ba216f74b33494424927d8d1d6f0486d9018ba008b6738945a9e"
+}
