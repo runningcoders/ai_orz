@@ -40,5 +40,5 @@ target
 /tests
 
 /memory
-/.sqlx
+# /.sqlx  # sqlx offline query cache needs to be committed
 /tmp
