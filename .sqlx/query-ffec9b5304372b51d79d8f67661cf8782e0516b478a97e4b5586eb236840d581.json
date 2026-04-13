@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, task_id, from_id, to_id, role as 'role: MessageRole', message_type as 'message_type: MessageType', status as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at\nFROM messages WHERE id = ?\n            ",
+  "query": "\nSELECT id, task_id, from_id, to_id, role as 'role: MessageRole', message_type as 'message_type: MessageType', status as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at\nFROM messages WHERE id = ? AND status != 0\n            ",
   "describe": {
     "columns": [
       {
@@ -82,5 +82,5 @@
       false
     ]
   },
-  "hash": "7eff9b4e399bb4abe3d68c261f9f005ca4d650a65320fa22baa5681a8b5085b4"
+  "hash": "ffec9b5304372b51d79d8f67661cf8782e0516b478a97e4b5586eb236840d581"
 }

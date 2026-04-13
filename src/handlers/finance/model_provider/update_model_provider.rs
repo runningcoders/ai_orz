@@ -62,7 +62,7 @@ pub async fn update_model_provider(
         name: provider.po.name.clone(),
         provider_type: provider.po.provider_type.clone(),
         model_name: provider.po.model_name.clone(),
-        base_url: provider.po.base_url.clone(),
+        base_url: if provider.po.base_url.as_ref().map_or(true, |d| d.is_empty()) { None } else { provider.po.base_url.clone() },
         description: if provider.po.description.as_ref().map_or(true, |d| d.is_empty()) { None } else { provider.po.description.clone() },
         updated_at: provider.po.updated_at,
     })))

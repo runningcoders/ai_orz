@@ -65,7 +65,7 @@ impl ModelProviderDaoTrait for ModelProviderDaoImpl {
             r#"
 SELECT id, name, provider_type as 'provider_type: ProviderType', model_name, api_key, base_url, description,
        status as 'status: ModelProviderStatus', created_by, modified_by, created_at, updated_at
-FROM model_providers WHERE id = ?
+FROM model_providers WHERE id = ? AND status != 0
             "#,
             id
         )

@@ -28,6 +28,9 @@ async fn test_all_organization_dao_functions(pool: SqlitePool) {
         "test-user".to_string(),
     );
     let result = org_dao.insert(new_ctx("test-user", pool.clone()), &org).await;
+    if let Err(e) = &result {
+        eprintln!("Insert error: {:?}", e);
+    }
     assert!(result.is_ok());
 
     let found: Option<OrganizationPo> = org_dao.find_by_id(new_ctx("test-user", pool.clone()), &id1).await.unwrap();
@@ -36,7 +39,7 @@ async fn test_all_organization_dao_functions(pool: SqlitePool) {
     assert_eq!(found.id, id1);
     assert_eq!(found.name, "我的组织".to_string());
     assert_eq!(found.description, "这是我的第一个组织".to_string());
-    assert_eq!(found.base_url, None);
+    assert_eq!(found.base_url, ""); // NOT NULL DEFAULT '' → 空字符串
     assert_eq!(found.status, OrganizationStatus::Active);
     assert_eq!(found.scope, OrganizationScope::default());
 
@@ -80,7 +83,7 @@ async fn test_all_organization_dao_functions(pool: SqlitePool) {
 
     org_update.name = "新名称".to_string();
     org_update.description = "新描述".to_string();
-    org_update.base_url = Some("https://new.example.com".to_string());
+    org_update.base_url = "https://new.example.com".to_string();
     let _result = org_dao.update(new_ctx("test-user", pool.clone()), &org_update).await;
     assert!(_result.is_ok());
 
@@ -89,7 +92,7 @@ async fn test_all_organization_dao_functions(pool: SqlitePool) {
     let found = found.unwrap();
     assert_eq!(found.name, "新名称".to_string());
     assert_eq!(found.description, "新描述".to_string());
-    assert_eq!(found.base_url, Some("https://new.example.com".to_string()));
+    assert_eq!(found.base_url, "https://new.example.com".to_string());
 
     // 第四步: 删除组织（软删除）
     let id4 = Uuid::now_v7().to_string();
@@ -108,10 +111,16 @@ async fn test_all_organization_dao_functions(pool: SqlitePool) {
     assert_eq!(count, 4);
 
     let result = org_dao.delete(new_ctx("test-user", pool.clone()), &id4).await;
+    if let Err(e) = &result {
+        eprintln!("Delete error: {:?}", e);
+    }
     assert!(result.is_ok());
 
     // delete is soft delete, found will be None because query filters out disabled
     let found: Option<OrganizationPo> = org_dao.find_by_id(new_ctx("test-user", pool.clone()), &id4).await.unwrap();
+    if let Some(f) = &found {
+        eprintln!("Found id={}, status={:?}", f.id, f.status);
+    }
     assert!(found.is_none());
 
     // 删除后 active 组织减少一个 → 总数 3

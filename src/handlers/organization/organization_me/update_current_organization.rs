@@ -35,7 +35,7 @@ pub async fn update_current_organization(
         org.description = new_description;
     }
     if let Some(new_base_url) = req.base_url {
-        org.base_url = Some(new_base_url);
+        org.base_url = new_base_url;
     }
 
     // 更新修改时间

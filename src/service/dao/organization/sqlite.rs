@@ -60,7 +60,7 @@ impl OrganizationDaoTrait for OrganizationDaoImpl {
             OrganizationPo,
             r#"
 SELECT id, name, description, base_url, status as 'status: OrganizationStatus', scope as 'scope: OrganizationScope', created_by, modified_by, created_at, updated_at
-FROM organizations WHERE id = ?
+FROM organizations WHERE id = ? AND status != 0
             "#,
             id
         )

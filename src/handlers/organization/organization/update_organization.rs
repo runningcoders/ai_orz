@@ -43,7 +43,7 @@ pub async fn update_organization(
         org.description = description;
     }
     if let Some(base_url) = req.base_url {
-        org.base_url = Some(base_url);
+        org.base_url = base_url;
     }
     org.updated_at = current_timestamp();
     

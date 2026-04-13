@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, name, provider_type as 'provider_type: ProviderType', model_name, api_key, base_url, description,\n       status as 'status: ModelProviderStatus', created_by, modified_by, created_at, updated_at\nFROM model_providers WHERE id = ?\n            ",
+  "query": "\nSELECT id, organization_id, username, display_name, email, password_hash,\n       role as 'role: UserRole', status as 'status: UserStatus', created_by, modified_by, created_at, updated_at\nFROM users WHERE id = ? AND status != 0\n            ",
   "describe": {
     "columns": [
       {
@@ -9,37 +9,37 @@
         "type_info": "Text"
       },
       {
-        "name": "name",
+        "name": "organization_id",
         "ordinal": 1,
         "type_info": "Text"
       },
       {
-        "name": "provider_type: ProviderType",
+        "name": "username",
         "ordinal": 2,
         "type_info": "Text"
       },
       {
-        "name": "model_name",
+        "name": "display_name",
         "ordinal": 3,
         "type_info": "Text"
       },
       {
-        "name": "api_key",
+        "name": "email",
         "ordinal": 4,
         "type_info": "Text"
       },
       {
-        "name": "base_url",
+        "name": "password_hash",
         "ordinal": 5,
         "type_info": "Text"
       },
       {
-        "name": "description",
+        "name": "role: UserRole",
         "ordinal": 6,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "status: ModelProviderStatus",
+        "name": "status: UserStatus",
         "ordinal": 7,
         "type_info": "Integer"
       },
@@ -73,8 +73,8 @@
       false,
       false,
       false,
-      true,
-      true,
+      false,
+      false,
       false,
       false,
       false,
@@ -82,5 +82,5 @@
       false
     ]
   },
-  "hash": "fa01b463e0c8f9070fb1429ef02a9b5e6535e4f758c379d6159d86250e3334d3"
+  "hash": "54751799c7eeacc4a51ff7785b146b2c50b7c7d6913175f789d2fc81bb460585"
 }

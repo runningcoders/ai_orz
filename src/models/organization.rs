@@ -20,7 +20,7 @@ pub struct OrganizationPo {
     ///
     /// 例如：`https://ai-orz.example.com/org/acme`
     /// 用于前端生成访问链接
-    pub base_url: Option<String>,
+    pub base_url: String,
     /// 状态枚举
     pub status: OrganizationStatus,
     /// 组织范围枚举（区分本地/远程，用于多节点网络扩展）
@@ -49,7 +49,7 @@ impl OrganizationPo {
             id,
             name,
             description,
-            base_url,
+            base_url: base_url.unwrap_or_default(),
             status: OrganizationStatus::default(),
             scope: OrganizationScope::default(),
             created_by: created_by.clone(),

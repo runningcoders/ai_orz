@@ -63,7 +63,7 @@ impl MessageDaoTrait for MessageDaoImpl {
             MessagePo,
             r#"
 SELECT id, task_id, from_id, to_id, role as 'role: MessageRole', message_type as 'message_type: MessageType', status as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
-FROM messages WHERE id = ?
+FROM messages WHERE id = ? AND status != 0
             "#,
             id
         )

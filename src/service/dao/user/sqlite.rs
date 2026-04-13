@@ -63,7 +63,7 @@ impl UserDaoTrait for UserDaoImpl {
             r#"
 SELECT id, organization_id, username, display_name, email, password_hash,
        role as 'role: UserRole', status as 'status: UserStatus', created_by, modified_by, created_at, updated_at
-FROM users WHERE id = ?
+FROM users WHERE id = ? AND status != 0
             "#,
             id
         )
@@ -79,7 +79,7 @@ FROM users WHERE id = ?
             r#"
 SELECT id, organization_id, username, display_name, email, password_hash,
        role as 'role: UserRole', status as 'status: UserStatus', created_by, modified_by, created_at, updated_at
-FROM users WHERE username = ?
+FROM users WHERE username = ? AND status != 0
             "#,
             username
         )

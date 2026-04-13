@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, name, description, base_url, status as 'status: OrganizationStatus', scope as 'scope: OrganizationScope', created_by, modified_by, created_at, updated_at\nFROM organizations WHERE id = ?\n            ",
+  "query": "\nSELECT id, organization_id, username, display_name, email, password_hash,\n       role as 'role: UserRole', status as 'status: UserStatus', created_by, modified_by, created_at, updated_at\nFROM users WHERE username = ? AND status != 0\n            ",
   "describe": {
     "columns": [
       {
@@ -9,48 +9,58 @@
         "type_info": "Text"
       },
       {
-        "name": "name",
+        "name": "organization_id",
         "ordinal": 1,
         "type_info": "Text"
       },
       {
-        "name": "description",
+        "name": "username",
         "ordinal": 2,
         "type_info": "Text"
       },
       {
-        "name": "base_url",
+        "name": "display_name",
         "ordinal": 3,
         "type_info": "Text"
       },
       {
-        "name": "status: OrganizationStatus",
+        "name": "email",
         "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "password_hash",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "role: UserRole",
+        "ordinal": 6,
         "type_info": "Integer"
       },
       {
-        "name": "scope: OrganizationScope",
-        "ordinal": 5,
+        "name": "status: UserStatus",
+        "ordinal": 7,
         "type_info": "Integer"
       },
       {
         "name": "created_by",
-        "ordinal": 6,
+        "ordinal": 8,
         "type_info": "Text"
       },
       {
         "name": "modified_by",
-        "ordinal": 7,
+        "ordinal": 9,
         "type_info": "Text"
       },
       {
         "name": "created_at",
-        "ordinal": 8,
+        "ordinal": 10,
         "type_info": "Integer"
       },
       {
         "name": "updated_at",
-        "ordinal": 9,
+        "ordinal": 11,
         "type_info": "Integer"
       }
     ],
@@ -67,8 +77,10 @@
       false,
       false,
       false,
+      false,
+      false,
       false
     ]
   },
-  "hash": "592d9795e1f40a60c4d806982c6ec38ef1b65d40ff87c9252de37cb3dfacd478"
+  "hash": "298470195db54b1cbc842489ab00b9e00b08570a14a7a2147b0bc85ba368c561"
 }
