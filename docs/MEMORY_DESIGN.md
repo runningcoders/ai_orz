@@ -177,13 +177,18 @@ ALTER TABLE agents ADD COLUMN capabilities TEXT;
 
 原始记忆细节以 Markdown 格式按日期存储在文件系统中：
 
+**完整路径（相对于 base_data_path）：**
 ```
-data/agent/{agent_id}/memory/
-└── long_term_memory/
-    └── {YYYY}/{MM}/{YYYY-MM-DD}.md
+agents/{agent_id}/memory/{YYYY-MM-DD}.md
 ```
 
-`knowledge_reference` 中存储的 `byte_start`/`byte_length` 可以快速定位到具体内容。
+**`knowledge_reference` 表中 `date_path` 存储格式：**
+```
+agents/{agent_id}/memory/{YYYY-MM-DD}.md
+```
+存储相对路径，读取时与配置的 `base_data_path` 拼接得到完整路径，避免重复拼接。
+
+按日期分层存储，每日一个文件，`knowledge_reference` 中存储的 `byte_start`/`byte_length` 可以快速定位到具体内容片段。
 
 ---
 
