@@ -10,6 +10,8 @@ use sqlx::SqlitePool;
 
 #[sqlx::test]
 async fn test_append_memory_trace(pool: SqlitePool) {
+    // 初始化配置
+    crate::config::init().unwrap();
     // 自动迁移已经由 sqlx::test 执行
     let dao = SqliteMemoryDao::new();
     let ctx = RequestContext::new_simple("test-user", pool);
@@ -38,6 +40,8 @@ async fn test_append_memory_trace(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_create_knowledge_node(pool: SqlitePool) {
+    // 初始化配置
+    crate::config::init().unwrap();
     // 自动迁移已经由 sqlx::test 执行
     let dao = SqliteMemoryDao::new();
     let ctx = RequestContext::new_simple("test-user", pool.clone());
@@ -71,6 +75,8 @@ async fn test_create_knowledge_node(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_add_knowledge_relation(pool: SqlitePool) {
+    // 初始化配置
+    crate::config::init().unwrap();
     let dao = SqliteMemoryDao::new();
     let ctx = RequestContext::new_simple("test-user", pool);
 
@@ -121,6 +127,8 @@ async fn test_add_knowledge_relation(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_add_knowledge_reference(pool: SqlitePool) {
+    // 初始化配置
+    crate::config::init().unwrap();
     let dao = SqliteMemoryDao::new();
     let ctx = RequestContext::new_simple("test-user", pool);
 

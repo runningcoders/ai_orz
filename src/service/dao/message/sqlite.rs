@@ -62,8 +62,8 @@ impl MessageDaoTrait for MessageDaoImpl {
         let message = sqlx::query_as!(
             MessagePo,
             r#"
-SELECT id, task_id, from_id, to_id, role as 'role: MessageRole', message_type as 'message_type: MessageType', status as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
-FROM messages WHERE id = ? AND status != 0
+SELECT id, task_id, from_id, to_id, "role" as 'role: MessageRole', "message_type" as 'message_type: MessageType', "status" as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
+FROM messages WHERE id = ?
             "#,
             id
         )
@@ -74,74 +74,92 @@ FROM messages WHERE id = ? AND status != 0
     }
 
     async fn list_by_task_id(&self, ctx: RequestContext, task_id: &str, limit: Option<usize>) -> Result<Vec<MessagePo>, AppError> {
-        let sql = if let Some(limit) = limit {
-            format!(
+        let messages = if let Some(limit) = limit {
+            let limit_i64 = limit as i64;
+            sqlx::query_as!(
+                MessagePo,
                 r#"
-SELECT id, task_id, from_id, to_id, role as 'role: MessageRole', message_type as 'message_type: MessageType', status as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
+SELECT id, task_id, from_id, to_id, "role" as 'role: MessageRole', "message_type" as 'message_type: MessageType', "status" as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
 FROM messages WHERE task_id = ? ORDER BY created_at ASC
-LIMIT {}
+LIMIT ?
                 "#,
-                limit
+                task_id,
+                limit_i64
             )
+                .fetch_all(&ctx.db_pool().clone())
+                .await?
         } else {
-            r#"
-SELECT id, task_id, from_id, to_id, role as 'role: MessageRole', message_type as 'message_type: MessageType', status as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
+            sqlx::query_as!(
+                MessagePo,
+                r#"
+SELECT id, task_id, from_id, to_id, "role" as 'role: MessageRole', "message_type" as 'message_type: MessageType', "status" as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
 FROM messages WHERE task_id = ? ORDER BY created_at ASC
-            "#.to_string()
+                "#,
+                task_id
+            )
+                .fetch_all(&ctx.db_pool().clone())
+                .await?
         };
-
-        let messages = sqlx::query_as::<_, MessagePo>(&sql)
-            .bind(task_id)
-            .fetch_all(&ctx.db_pool().clone())
-            .await?;
         Ok(messages)
     }
 
     async fn list_by_from_id(&self, ctx: RequestContext, from_id: &str, limit: Option<usize>) -> Result<Vec<MessagePo>, AppError> {
-        let sql = if let Some(limit) = limit {
-            format!(
+        let messages = if let Some(limit) = limit {
+            let limit_i64 = limit as i64;
+            sqlx::query_as!(
+                MessagePo,
                 r#"
-SELECT id, task_id, from_id, to_id, role as 'role: MessageRole', message_type as 'message_type: MessageType', status as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
+SELECT id, task_id, from_id, to_id, "role" as 'role: MessageRole', "message_type" as 'message_type: MessageType', "status" as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
 FROM messages WHERE from_id = ? ORDER BY created_at ASC
-LIMIT {}
+LIMIT ?
                 "#,
-                limit
+                from_id,
+                limit_i64
             )
+                .fetch_all(&ctx.db_pool().clone())
+                .await?
         } else {
-            r#"
-SELECT id, task_id, from_id, to_id, role as 'role: MessageRole', message_type as 'message_type: MessageType', status as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
+            sqlx::query_as!(
+                MessagePo,
+                r#"
+SELECT id, task_id, from_id, to_id, "role" as 'role: MessageRole', "message_type" as 'message_type: MessageType', "status" as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
 FROM messages WHERE from_id = ? ORDER BY created_at ASC
-            "#.to_string()
+                "#,
+                from_id
+            )
+                .fetch_all(&ctx.db_pool().clone())
+                .await?
         };
-
-        let messages = sqlx::query_as::<_, MessagePo>(&sql)
-            .bind(from_id)
-            .fetch_all(&ctx.db_pool().clone())
-            .await?;
         Ok(messages)
     }
 
     async fn list_by_to_id(&self, ctx: RequestContext, to_id: &str, limit: Option<usize>) -> Result<Vec<MessagePo>, AppError> {
-        let sql = if let Some(limit) = limit {
-            format!(
+        let messages = if let Some(limit) = limit {
+            let limit_i64 = limit as i64;
+            sqlx::query_as!(
+                MessagePo,
                 r#"
-SELECT id, task_id, from_id, to_id, role as 'role: MessageRole', message_type as 'message_type: MessageType', status as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
+SELECT id, task_id, from_id, to_id, "role" as 'role: MessageRole', "message_type" as 'message_type: MessageType', "status" as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
 FROM messages WHERE to_id = ? ORDER BY created_at ASC
-LIMIT {}
+LIMIT ?
                 "#,
-                limit
+                to_id,
+                limit_i64
             )
+                .fetch_all(&ctx.db_pool().clone())
+                .await?
         } else {
-            r#"
-SELECT id, task_id, from_id, to_id, role as 'role: MessageRole', message_type as 'message_type: MessageType', status as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
+            sqlx::query_as!(
+                MessagePo,
+                r#"
+SELECT id, task_id, from_id, to_id, "role" as 'role: MessageRole', "message_type" as 'message_type: MessageType', "status" as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
 FROM messages WHERE to_id = ? ORDER BY created_at ASC
-            "#.to_string()
+                "#,
+                to_id
+            )
+                .fetch_all(&ctx.db_pool().clone())
+                .await?
         };
-
-        let messages = sqlx::query_as::<_, MessagePo>(&sql)
-            .bind(to_id)
-            .fetch_all(&ctx.db_pool().clone())
-            .await?;
         Ok(messages)
     }
 
@@ -204,8 +222,8 @@ UPDATE messages SET status = ?, updated_at = ?, modified_by = ? WHERE id = ?
 
         let sql = format!(
             r#"
-SELECT id, task_id, from_id, to_id, role as 'role: MessageRole', message_type as 'message_type: MessageType', status as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
-FROM messages WHERE status IN ({}) ORDER BY created_at ASC
+SELECT id, task_id, from_id, to_id, "role" as ''role: MessageRole'', "message_type" as ''message_type: MessageType'', "status" as ''status: MessageStatus'', content, meta_json, created_by, created_at, updated_at
+FROM messages WHERE "status" IN ({}) ORDER BY created_at ASC
 "#,
             placeholders_str
         );

@@ -89,6 +89,7 @@ FROM agents WHERE status != 0
     async fn update(&self, _ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError> {
         let current_timestamp = Utc::now().timestamp();
         let status = agent.status as i32;
+        let uid = _ctx.uid();
         sqlx::query!(
             r#"
 UPDATE agents
@@ -104,7 +105,7 @@ WHERE id = ?
             agent.model_provider_id,
             status,
             agent.created_by,
-            agent.modified_by,
+            uid,
             agent.created_at,
             current_timestamp,
             agent.id

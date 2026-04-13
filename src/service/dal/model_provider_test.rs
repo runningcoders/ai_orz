@@ -11,6 +11,7 @@ use uuid::Uuid;
 #[sqlx::test]
 async fn test_create_and_find_by_id(pool: SqlitePool) {
     crate::service::dao::model_provider::init();
+    crate::service::dal::model_provider::init();
     let dal = crate::service::dal::model_provider::dal();
     let ctx = RequestContext::new_simple("admin", pool);
 
@@ -36,6 +37,7 @@ async fn test_create_and_find_by_id(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_find_all(pool: SqlitePool) {
     crate::service::dao::model_provider::init();
+    crate::service::dal::model_provider::init();
     let dal = crate::service::dal::model_provider::dal();
     let ctx = RequestContext::new_simple("admin", pool);
 
@@ -65,6 +67,7 @@ async fn test_find_all(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_update(pool: SqlitePool) {
     crate::service::dao::model_provider::init();
+    crate::service::dal::model_provider::init();
     let dal = crate::service::dal::model_provider::dal();
     let ctx = RequestContext::new_simple("admin", pool.clone());
 
@@ -95,6 +98,7 @@ async fn test_update(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_delete(pool: SqlitePool) {
     crate::service::dao::model_provider::init();
+    crate::service::dal::model_provider::init();
     let dal = crate::service::dal::model_provider::dal();
     let ctx = RequestContext::new_simple("admin", pool);
 
@@ -116,6 +120,7 @@ async fn test_delete(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_find_not_exists(pool: SqlitePool) {
     crate::service::dao::model_provider::init();
+    crate::service::dal::model_provider::init();
     let dal = crate::service::dal::model_provider::dal();
     let ctx = RequestContext::new_simple("user1", pool);
 
@@ -125,6 +130,7 @@ async fn test_find_not_exists(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_create_with_custom_base_url(pool: SqlitePool) {
     crate::service::dao::model_provider::init();
+    crate::service::dal::model_provider::init();
     let dal = crate::service::dal::model_provider::dal();
     let ctx = RequestContext::new_simple("admin", pool);
 
@@ -148,6 +154,7 @@ async fn test_create_with_custom_base_url(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_all_provider_types(pool: SqlitePool) {
     crate::service::dao::model_provider::init();
+    crate::service::dal::model_provider::init();
     let dal = crate::service::dal::model_provider::dal();
     let ctx = RequestContext::new_simple("admin", pool);
 

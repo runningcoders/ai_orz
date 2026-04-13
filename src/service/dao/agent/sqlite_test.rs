@@ -69,7 +69,8 @@ async fn test_find_all(pool: SqlitePool) {
 async fn test_update(pool: SqlitePool) {
     init();
 
-    let ctx = new_ctx("admin", pool);
+    let ctx_admin = new_ctx("admin", pool.clone());
+    let ctx_editor = new_ctx("editor", pool);
     let agent_dao = dao();
 
     let agent_po = AgentPo::new(
@@ -81,15 +82,14 @@ async fn test_update(pool: SqlitePool) {
         "provider-id-1".to_string(),
         "admin".to_string(),
     );
-    let _ = agent_dao.insert(ctx.clone(), &agent_po).await;
+    let _ = agent_dao.insert(ctx_admin.clone(), &agent_po).await;
 
-    let found = agent_dao.find_by_id(ctx.clone(), &agent_po.id.clone()).await.unwrap().unwrap();
+    let found = agent_dao.find_by_id(ctx_admin.clone(), &agent_po.id.clone()).await.unwrap().unwrap();
     let mut updated = found;
     updated.name ="UpdatedAgent".to_string();
-    updated.modified_by = "editor".to_string();
-    let result = agent_dao.update(ctx.clone(), &updated).await;
+    let result = agent_dao.update(ctx_editor.clone(), &updated).await;
     assert!(result.is_ok());
-    let found_after_update = agent_dao.find_by_id(ctx.clone(), &updated.id).await.unwrap().unwrap();
+    let found_after_update = agent_dao.find_by_id(ctx_admin.clone(), &updated.id).await.unwrap().unwrap();
     assert_eq!(found_after_update.name,"UpdatedAgent".to_string());
     assert_eq!(found_after_update.modified_by,"editor".to_string());
 }
