@@ -19,6 +19,8 @@ pub enum TaskStatus {
     InProgress = 2,
     /// Completed
     Completed = 3,
+    /// Archived (archived to history after summary)
+    Archived = 4,
 }
 
 impl TaskStatus {
@@ -28,7 +30,9 @@ impl TaskStatus {
             0 => Self::Cancelled,
             1 => Self::Pending,
             2 => Self::InProgress,
-            _ => Self::Completed,
+            3 => Self::Completed,
+            4 => Self::Archived,
+            _ => Self::default(),
         }
     }
 

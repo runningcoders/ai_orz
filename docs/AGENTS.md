@@ -151,6 +151,37 @@ common/src/enums/
 - **变量/函数**：snake_case 命名（`create_agent`、`find_by_id`）
 - **trait**：PascalCase + 后缀 `Trait`（`AgentDaoTrait`、`ModelProviderDalTrait`）
 
+### 12. SQLx + SQLite 开发规范
+
+完整规范详见 [sqlx_guide.md](./sqlx_guide.md)，核心要点：
+
+- **所有表必须启用 `STRICT` 模式**，保证 sqlx 可空性推断正确
+- **枚举使用 i32 映射**：添加 `#[repr(i32)]` + `#[derive(sqlx::Type)]` + `From<i64>` 实现
+- **仅枚举需要显式类型标注**：`status as "status: TaskStatus"`，普通字段不需要
+- **SQL 关键字必须转义**：`status`、`role` 等关键字用作列名时用 `"status"` 双引号转义
+- **软删除约定**：已删除 `status = 0`，所有查询默认添加 `AND "status" != 0` 过滤
+- **`.sqlx` 目录必须纳入版本控制**，保证离线编译正常
+- **测试使用 `#[sqlx::test]`**，每个测试独立内存数据库，彻底解决测试污染
+
+### 13. 可见性规范
+
+- 遵循最小可见性原则：不需要公开的就是 private
+- 只有 trait 定义和 `dao()`/`init()` 需要公开
+- 具体实现结构体本身保持 crate 可见性即可
+
+### 14. 依赖添加规范
+
+- 尽量使用 Rust 官方标准库，不需要就不加
+- 第三方依赖选择活跃维护的知名 crate
+- 所有依赖添加到 workspace 根 `Cargo.toml`
+- common crate 只添加公共需要的依赖
+
+### 15. 前端规范
+
+- 每个页面对应一个组件文件
+- 所有 API DTO 从 common 导入，不重复定义
+- 配置管理：全局保存，优先从 localStorage 读取，默认 fallback 到编译嵌入默认配置
+
 ### 12. 可见性规范
 
 - 遵循最小可见性原则：不需要公开的就是 private

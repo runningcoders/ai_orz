@@ -6,6 +6,7 @@ pub mod user;
 pub mod message;
 pub mod provider;
 pub mod task;
+pub mod project;
 
 pub use agent::{AgentStatus, ModelProviderStatus};
 pub use organization::{OrganizationStatus, OrganizationScope};
@@ -13,3 +14,4 @@ pub use user::{UserRole, UserStatus};
 pub use message::{MessageRole, MessageType, MessageStatus};
 pub use provider::ProviderType;
 pub use task::{TaskStatus, AssigneeType};
+pub use project::ProjectStatus;

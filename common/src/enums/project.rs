@@ -1,0 +1,61 @@
+//! Project status enum
+
+use serde::{Serialize, Deserialize};
+#[cfg(feature = "sqlx")]
+use sqlx::Type;
+
+/// Project status
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(Type))]
+#[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
+pub enum ProjectStatus {
+    /// Deleted (soft deleted, filtered out by default)
+    Deleted = 0,
+    /// Active (active and in progress)
+    #[default]
+    Active = 1,
+    /// InProgress (work is ongoing)
+    InProgress = 2,
+    /// Completed (work is done)
+    Completed = 3,
+    /// Archived (archived to history)
+    Archived = 4,
+}
+
+impl From<i32> for ProjectStatus {
+    fn from(v: i32) -> Self {
+        match v {
+            0 => ProjectStatus::Deleted,
+            1 => ProjectStatus::Active,
+            2 => ProjectStatus::InProgress,
+            3 => ProjectStatus::Completed,
+            4 => ProjectStatus::Archived,
+            _ => ProjectStatus::default(),
+        }
+    }
+}
+
+impl ProjectStatus {
+    /// Convert from i32
+    pub fn from_i32(v: i32) -> Self {
+        v.into()
+    }
+
+    /// Convert to i32
+    pub fn to_i32(&self) -> i32 {
+        (*self).into()
+    }
+}
+
+impl From<ProjectStatus> for i32 {
+    fn from(s: ProjectStatus) -> i32 {
+        s as i32
+    }
+}
+
+impl From<i64> for ProjectStatus {
+    fn from(v: i64) -> Self {
+        (v as i32).into()
+    }
+}

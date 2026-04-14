@@ -44,13 +44,12 @@ impl TaskDaoTrait for SqliteTaskDao {
         let pool = ctx.db_pool();
         let status_i32 = task.status as i32;
         let assignee_type_i32 = task.assignee_type as i32;
-        // 15 columns, 15 parameters: 15 = 15, 100% correct
         sqlx::query!(
             r#"INSERT INTO tasks(
-                id, title, description, "status", priority, tags, due_at, root_user_id,
+                id, title, description, "status", priority, tags, due_at, start_at, end_at, dependencies, root_user_id,
                 "assignee_type", assignee_id, project_id, created_by, modified_by, created_at, updated_at
             ) VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             )"#,
             task.id,
             task.title,
@@ -59,6 +58,9 @@ impl TaskDaoTrait for SqliteTaskDao {
             task.priority,
             task.tags,
             task.due_at,
+            task.start_at,
+            task.end_at,
+            task.dependencies,
             task.root_user_id,
             assignee_type_i32,
             task.assignee_id,
@@ -76,7 +78,7 @@ impl TaskDaoTrait for SqliteTaskDao {
         let task = sqlx::query_as!(
             TaskPo,
             r#"
-SELECT id, title, description, "status" as "status: TaskStatus", priority as "priority: i32", tags, due_at, root_user_id,
+SELECT id, title, description, "status" as "status: TaskStatus", priority as "priority: i32", tags, due_at, start_at, end_at, dependencies, root_user_id,
        "assignee_type" as "assignee_type: AssigneeType", assignee_id, project_id,
        created_by, modified_by, created_at, updated_at
 FROM tasks WHERE id = ? AND "status" != 0
@@ -99,7 +101,7 @@ FROM tasks WHERE id = ? AND "status" != 0
                 sqlx::query_as!(
                     TaskPo,
                     r#"
-SELECT id, title, description, "status" as "status: TaskStatus", priority as "priority: i32", tags, due_at, root_user_id,
+SELECT id, title, description, "status" as "status: TaskStatus", priority as "priority: i32", tags, due_at, start_at, end_at, dependencies, root_user_id,
        "assignee_type" as "assignee_type: AssigneeType", assignee_id, project_id,
        created_by, modified_by, created_at, updated_at
 FROM tasks WHERE "assignee_type" = ? AND assignee_id = ? AND "status" != 0
@@ -116,7 +118,7 @@ ORDER BY priority DESC, created_at DESC LIMIT ?
                 sqlx::query_as!(
                     TaskPo,
                     r#"
-SELECT id, title, description, "status" as "status: TaskStatus", priority as "priority: i32", tags, due_at, root_user_id,
+SELECT id, title, description, "status" as "status: TaskStatus", priority as "priority: i32", tags, due_at, start_at, end_at, dependencies, root_user_id,
        "assignee_type" as "assignee_type: AssigneeType", assignee_id, project_id,
        created_by, modified_by, created_at, updated_at
 FROM tasks WHERE assignee_id = ? AND "status" != 0
@@ -152,7 +154,7 @@ ORDER BY priority DESC, created_at DESC LIMIT ?
                 sqlx::query_as!(
                     TaskPo,
                     r#"
-SELECT id, title, description, "status" as 'status: TaskStatus', priority as 'priority: i32', tags, due_at, root_user_id,
+SELECT id, title, description, "status" as 'status: TaskStatus', priority as 'priority: i32', tags, due_at, start_at, end_at, dependencies, root_user_id,
        "assignee_type" as 'assignee_type: AssigneeType', assignee_id, project_id,
        created_by, modified_by, created_at, updated_at
 FROM tasks WHERE "status" != 0 AND assignee_id = ? AND "assignee_type" = ? AND (
@@ -178,7 +180,7 @@ ORDER BY priority DESC, created_at DESC LIMIT ?
                 sqlx::query_as!(
                     TaskPo,
                     r#"
-SELECT id, title, description, "status" as 'status: TaskStatus', priority as 'priority: i32', tags, due_at, root_user_id,
+SELECT id, title, description, "status" as 'status: TaskStatus', priority as 'priority: i32', tags, due_at, start_at, end_at, dependencies, root_user_id,
        "assignee_type" as 'assignee_type: AssigneeType', assignee_id, project_id,
        created_by, modified_by, created_at, updated_at
 FROM tasks WHERE "status" != 0 AND assignee_id = ? AND (
@@ -220,6 +222,9 @@ UPDATE tasks SET
     priority = ?,
     tags = ?,
     due_at = ?,
+    start_at = ?,
+    end_at = ?,
+    dependencies = ?,
     "assignee_type" = ?,
     assignee_id = ?,
     project_id = ?,
@@ -233,6 +238,9 @@ WHERE id = ?
             priority_i32,
             task.tags,
             task.due_at,
+            task.start_at,
+            task.end_at,
+            task.dependencies,
             assignee_type_i32,
             task.assignee_id,
             task.project_id,

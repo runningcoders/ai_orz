@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO tasks(\n                id, title, description, \"status\", priority, tags, due_at, start_at, end_at, dependencies, root_user_id,\n                \"assignee_type\", assignee_id, project_id, created_by, modified_by, created_at, updated_at\n            ) VALUES (\n                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?\n            )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 18
+    },
+    "nullable": []
+  },
+  "hash": "d2b212154b1854af0300cdf82ad117916d5dbb1bd9416d8a021a0cd6924bd786"
+}

@@ -5,5 +5,6 @@ pub mod memory;
 pub mod message;
 pub mod model_provider;
 pub mod organization;
+pub mod project;
 pub mod task;
 pub mod user;
