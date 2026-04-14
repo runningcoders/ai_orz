@@ -116,24 +116,27 @@ impl From<i64> for MessageType {
 #[cfg_attr(feature = "sqlx", derive(Type))]
 #[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
 pub enum MessageStatus {
+    /// Recalled (已撤回，逻辑删除，不再显示和处理)
+    Recalled = 0,
     /// Pending (待处理)
     #[default]
-    Pending = 0,
+    Pending = 1,
     /// Processing (处理中)
-    Processing = 1,
+    Processing = 2,
     /// Processed (处理完成)
-    Processed = 2,
+    Processed = 3,
     /// Failed (处理失败)
-    Failed = 3,
+    Failed = 4,
 }
 
 impl From<i32> for MessageStatus {
     fn from(v: i32) -> Self {
         match v {
-            0 => MessageStatus::Pending,
-            1 => MessageStatus::Processing,
-            2 => MessageStatus::Processed,
-            3 => MessageStatus::Failed,
+            0 => MessageStatus::Recalled,
+            1 => MessageStatus::Pending,
+            2 => MessageStatus::Processing,
+            3 => MessageStatus::Processed,
+            4 => MessageStatus::Failed,
             _ => MessageStatus::default(),
         }
     }

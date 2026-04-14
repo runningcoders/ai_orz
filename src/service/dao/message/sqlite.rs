@@ -63,7 +63,7 @@ impl MessageDaoTrait for MessageDaoImpl {
             MessagePo,
             r#"
 SELECT id, task_id, from_id, to_id, "role" as 'role: MessageRole', "message_type" as 'message_type: MessageType', "status" as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
-FROM messages WHERE id = ?
+FROM messages WHERE id = ? AND "status" != 0
             "#,
             id
         )
@@ -80,7 +80,7 @@ FROM messages WHERE id = ?
                 MessagePo,
                 r#"
 SELECT id, task_id, from_id, to_id, "role" as 'role: MessageRole', "message_type" as 'message_type: MessageType', "status" as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
-FROM messages WHERE task_id = ? ORDER BY created_at ASC
+FROM messages WHERE task_id = ? AND "status" != 0 ORDER BY created_at ASC
 LIMIT ?
                 "#,
                 task_id,
@@ -93,7 +93,7 @@ LIMIT ?
                 MessagePo,
                 r#"
 SELECT id, task_id, from_id, to_id, "role" as 'role: MessageRole', "message_type" as 'message_type: MessageType', "status" as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
-FROM messages WHERE task_id = ? ORDER BY created_at ASC
+FROM messages WHERE task_id = ? AND "status" != 0 ORDER BY created_at ASC
                 "#,
                 task_id
             )
@@ -110,7 +110,7 @@ FROM messages WHERE task_id = ? ORDER BY created_at ASC
                 MessagePo,
                 r#"
 SELECT id, task_id, from_id, to_id, "role" as 'role: MessageRole', "message_type" as 'message_type: MessageType', "status" as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
-FROM messages WHERE from_id = ? ORDER BY created_at ASC
+FROM messages WHERE from_id = ? AND "status" != 0 ORDER BY created_at ASC
 LIMIT ?
                 "#,
                 from_id,
@@ -123,7 +123,7 @@ LIMIT ?
                 MessagePo,
                 r#"
 SELECT id, task_id, from_id, to_id, "role" as 'role: MessageRole', "message_type" as 'message_type: MessageType', "status" as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
-FROM messages WHERE from_id = ? ORDER BY created_at ASC
+FROM messages WHERE from_id = ? AND "status" != 0 ORDER BY created_at ASC
                 "#,
                 from_id
             )
@@ -140,7 +140,7 @@ FROM messages WHERE from_id = ? ORDER BY created_at ASC
                 MessagePo,
                 r#"
 SELECT id, task_id, from_id, to_id, "role" as 'role: MessageRole', "message_type" as 'message_type: MessageType', "status" as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
-FROM messages WHERE to_id = ? ORDER BY created_at ASC
+FROM messages WHERE to_id = ? AND "status" != 0 ORDER BY created_at ASC
 LIMIT ?
                 "#,
                 to_id,
@@ -153,7 +153,7 @@ LIMIT ?
                 MessagePo,
                 r#"
 SELECT id, task_id, from_id, to_id, "role" as 'role: MessageRole', "message_type" as 'message_type: MessageType', "status" as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
-FROM messages WHERE to_id = ? ORDER BY created_at ASC
+FROM messages WHERE to_id = ? AND "status" != 0 ORDER BY created_at ASC
                 "#,
                 to_id
             )
@@ -164,8 +164,15 @@ FROM messages WHERE to_id = ? ORDER BY created_at ASC
     }
 
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
+        // 软删除：更新状态为 Recalled (0)，保留数据用于审计
+        let current_timestamp = Utc::now().timestamp();
+        let uid = ctx.uid().to_string();
         sqlx::query!(
-            r#"DELETE FROM messages WHERE id = ?"#,
+            r#"
+UPDATE messages SET "status" = 0, updated_at = ?, modified_by = ? WHERE id = ?
+            "#,
+            current_timestamp,
+            uid,
             id
         )
             .execute(&ctx.db_pool().clone())
@@ -176,7 +183,7 @@ FROM messages WHERE to_id = ? ORDER BY created_at ASC
 
     async fn count_by_task_id(&self, ctx: RequestContext, task_id: &str) -> Result<u64, AppError> {
         let count = sqlx::query!(
-            r#"SELECT COUNT(*) as count FROM messages WHERE task_id = ?"#,
+            r#"SELECT COUNT(*) as count FROM messages WHERE task_id = ? AND "status" != 0"#,
             task_id
         )
             .fetch_one(&ctx.db_pool().clone())
@@ -186,8 +193,15 @@ FROM messages WHERE to_id = ? ORDER BY created_at ASC
     }
 
     async fn delete_by_task_id(&self, ctx: RequestContext, task_id: &str) -> Result<(), AppError> {
+        // 软删除：批量更新任务下所有消息状态为 Recalled (0)，保留数据用于审计
+        let current_timestamp = Utc::now().timestamp();
+        let uid = ctx.uid().to_string();
         sqlx::query!(
-            r#"DELETE FROM messages WHERE task_id = ?"#,
+            r#"
+UPDATE messages SET "status" = 0, updated_at = ?, modified_by = ? WHERE task_id = ?
+            "#,
+            current_timestamp,
+            uid,
             task_id
         )
             .execute(&ctx.db_pool().clone())
@@ -202,7 +216,7 @@ FROM messages WHERE to_id = ? ORDER BY created_at ASC
         let status_i32 = status as i32;
         sqlx::query!(
             r#"
-UPDATE messages SET status = ?, updated_at = ?, modified_by = ? WHERE id = ?
+UPDATE messages SET "status" = ?, updated_at = ?, modified_by = ? WHERE id = ?
             "#,
             status_i32,
             current_timestamp,
@@ -216,30 +230,39 @@ UPDATE messages SET status = ?, updated_at = ?, modified_by = ? WHERE id = ?
     }
 
     async fn list_by_status(&self, ctx: RequestContext, status: Vec<MessageStatus>, limit: Option<usize>) -> Result<Vec<MessagePo>, AppError> {
-        let status_list: Vec<i32> = status.iter().map(|s| *s as i32).collect();
-        let placeholders: Vec<String> = status_list.iter().map(|_| "?".to_string()).collect();
-        let placeholders_str = placeholders.join(", ");
+        let pool = ctx.db_pool();
+        let limit = limit.unwrap_or(1000);
+        let limit_i64 = limit as i64;
 
-        let sql = format!(
+        // Convert Vec to fixed optional bindings (max 4 statuses, enough for all common use cases)
+        // Use OR to match ANY of the provided statuses: only non-null slots are checked
+        let s: Vec<i32> = status.iter().map(|x| (*x) as i32).collect();
+        let s1 = s.get(0).copied();
+        let s2 = s.get(1).copied();
+        let s3 = s.get(2).copied();
+        let s4 = s.get(3).copied();
+
+        let messages = sqlx::query_as!(
+            MessagePo,
             r#"
-SELECT id, task_id, from_id, to_id, "role" as ''role: MessageRole'', "message_type" as ''message_type: MessageType'', "status" as ''status: MessageStatus'', content, meta_json, created_by, created_at, updated_at
-FROM messages WHERE "status" IN ({}) ORDER BY created_at ASC
+SELECT id, task_id, from_id, to_id, "role" as 'role: MessageRole', "message_type" as 'message_type: MessageType', "status" as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at
+FROM messages WHERE "status" != 0 AND (
+    (? IS NOT NULL AND "status" = ?) OR
+    (? IS NOT NULL AND "status" = ?) OR
+    (? IS NOT NULL AND "status" = ?) OR
+    (? IS NOT NULL AND "status" = ?)
+)
+ORDER BY created_at ASC LIMIT ?
 "#,
-            placeholders_str
-        );
+            s1, s1,
+            s2, s2,
+            s3, s3,
+            s4, s4,
+            limit_i64
+        )
+            .fetch_all(pool)
+            .await?;
 
-        let sql = if let Some(limit) = limit {
-            format!("{} LIMIT {}", sql, limit)
-        } else {
-            sql
-        };
-
-        let mut query = sqlx::query_as::<_, MessagePo>(&sql);
-        for status in status_list {
-            query = query.bind(status);
-        }
-
-        let messages = query.fetch_all(&ctx.db_pool().clone()).await?;
         Ok(messages)
     }
 }

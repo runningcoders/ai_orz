@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nUPDATE messages SET \"status\" = 0, updated_at = ?, modified_by = ? WHERE task_id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "7b7d9dd3fac07b7df62c102e4bdd1beb380140443a23795462a0a662f0e1df56"
+}

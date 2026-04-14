@@ -58,9 +58,15 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE TABLE IF NOT EXISTS tasks (
     id TEXT NOT NULL PRIMARY KEY,
-    name TEXT NOT NULL,
+    title TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     status INTEGER NOT NULL DEFAULT 1,
+    priority INTEGER NOT NULL DEFAULT 0,
+    tags TEXT NOT NULL DEFAULT '[]',
+    due_at INTEGER,
+    assignee_type INTEGER NOT NULL DEFAULT 1,
+    assignee_id TEXT NOT NULL,
+    project_id TEXT,
     created_by TEXT NOT NULL DEFAULT '',
     modified_by TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL,

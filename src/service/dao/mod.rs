@@ -6,6 +6,7 @@ pub mod model_provider;
 pub mod organization;
 pub mod user;
 pub mod memory;
+pub mod task;
 
 pub fn init_all(){
     agent::init();
@@ -16,4 +17,5 @@ pub fn init_all(){
     organization::init();
     user::init();
     memory::init();
+    task::init();
 }

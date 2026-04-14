@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT COUNT(*) as count FROM messages WHERE task_id = ?",
+  "query": "SELECT COUNT(*) as count FROM messages WHERE task_id = ? AND \"status\" != 0",
   "describe": {
     "columns": [
       {
@@ -16,5 +16,5 @@
       false
     ]
   },
-  "hash": "a28c2e9cd84bc4d81b53675ec2e963708a561e00d303793fc2ce1e428762e71a"
+  "hash": "f77fd301d95497570dc0ea46029a42fd91110fdfb62456abb72e33cc0b485f8a"
 }
