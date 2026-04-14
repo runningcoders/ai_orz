@@ -5,7 +5,7 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 ![GitHub last commit](https://img.shields.io/github/last-commit/runningcoders/ai_orz)
 ![GitHub license](https://img.shields.io/github/license/runningcoders/ai_orz)
 ![Rust](https://img.shields.io/badge/Rust-1.85+-000000?logo=rust)
-![Tests](https://img.shields.io/badge/tests-66%20%E2%9C%94-brightgreen)
+![Tests](https://img.shields.io/badge/tests-96%20%E2%9C%94-brightgreen)
 [![GitHub stars](https://img.shields.io/github/stars/runningcoders/ai_orz?style=social)](https://github.com/runningcoders/ai_orz)
 
 ## 技术栈
@@ -87,7 +87,7 @@ Agent (po + brain: Option<Brain>)
 6. **Handler 拆分** → 业务分组 + 方法粒度拆分，每个方法一个单独文件 ✅
 7. **API 契约统一** → 所有前后端共用 DTO 提取到独立 `common` crate，保证类型一致 ✅
 8. **类型安全枚举** → 数据库存储的枚举字段全部使用原生枚举类型，编译期检查 ✅
-9. **单元测试** → 每个业务模块都应该有单元测试，当前 66/66 全部通过 ✅
+9. **单元测试** → 每个业务模块都应该有单元测试，当前 96/96 全部通过 ✅
 
 ## LLM 调用流程（最新版）
 
