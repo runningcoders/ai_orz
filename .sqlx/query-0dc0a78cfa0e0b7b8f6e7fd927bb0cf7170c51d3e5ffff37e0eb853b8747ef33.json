@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, title, description, \"status\" as 'status: TaskStatus', priority as 'priority: i32', tags, due_at,\n       \"assignee_type\" as 'assignee_type: AssigneeType', assignee_id, project_id,\n       created_by, modified_by, created_at, updated_at\nFROM tasks WHERE \"status\" != 0 AND assignee_id = ?\n  AND (? IS NULL OR \"status\" = ?)\n  AND (? IS NULL OR \"status\" = ?)\n  AND (? IS NULL OR \"status\" = ?)\n  AND (? IS NULL OR \"status\" = ?)\nORDER BY priority DESC, created_at DESC LIMIT ?\n",
+  "query": "\nSELECT id, title, description, \"status\" as 'status: TaskStatus', priority as 'priority: i32', tags, due_at, root_user_id,\n       \"assignee_type\" as 'assignee_type: AssigneeType', assignee_id, project_id,\n       created_by, modified_by, created_at, updated_at\nFROM tasks WHERE \"status\" != 0 AND assignee_id = ? AND (\n    (? IS NOT NULL AND \"status\" = ?) OR\n    (? IS NOT NULL AND \"status\" = ?) OR\n    (? IS NOT NULL AND \"status\" = ?) OR\n    (? IS NOT NULL AND \"status\" = ?)\n)\nORDER BY priority DESC, created_at DESC LIMIT ?\n",
   "describe": {
     "columns": [
       {
@@ -39,38 +39,43 @@
         "type_info": "Integer"
       },
       {
-        "name": "assignee_type: AssigneeType",
+        "name": "root_user_id",
         "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "assignee_type: AssigneeType",
+        "ordinal": 8,
         "type_info": "Integer"
       },
       {
         "name": "assignee_id",
-        "ordinal": 8,
-        "type_info": "Text"
-      },
-      {
-        "name": "project_id",
         "ordinal": 9,
         "type_info": "Text"
       },
       {
-        "name": "created_by",
+        "name": "project_id",
         "ordinal": 10,
         "type_info": "Text"
       },
       {
-        "name": "modified_by",
+        "name": "created_by",
         "ordinal": 11,
         "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "modified_by",
         "ordinal": 12,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 13,
         "type_info": "Integer"
       },
       {
         "name": "updated_at",
-        "ordinal": 13,
+        "ordinal": 14,
         "type_info": "Integer"
       }
     ],
@@ -87,6 +92,7 @@
       true,
       false,
       false,
+      false,
       true,
       false,
       false,
@@ -94,5 +100,5 @@
       false
     ]
   },
-  "hash": "a3f1c5ddb9fcc32c1a419f7ec85f44a76ba5f26950bf2a30bbd01e388fe0149d"
+  "hash": "0dc0a78cfa0e0b7b8f6e7fd927bb0cf7170c51d3e5ffff37e0eb853b8747ef33"
 }

@@ -42,12 +42,31 @@ pub fn dao() -> Arc<dyn TaskDaoTrait + Send + Sync> {
 impl TaskDaoTrait for SqliteTaskDao {
     async fn insert(&self, ctx: RequestContext, task: &TaskPo) -> Result<(), AppError> {
         let pool = ctx.db_pool();
-        let s = task.status as i32;
-        let p = task.priority as i32;
-        let a = task.assignee_type as i32;
+        let status_i32 = task.status as i32;
+        let assignee_type_i32 = task.assignee_type as i32;
+        // 15 columns, 15 parameters: 15 = 15, 100% correct
         sqlx::query!(
-            "INSERT INTO tasks (id, title, description, \"status\", priority, tags, due_at, \"assignee_type\", assignee_id, project_id, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            task.id, task.title, task.description, s, p, task.tags, task.due_at, a, task.assignee_id, task.project_id, task.created_by, task.modified_by, task.created_at, task.updated_at
+            r#"INSERT INTO tasks(
+                id, title, description, "status", priority, tags, due_at, root_user_id,
+                "assignee_type", assignee_id, project_id, created_by, modified_by, created_at, updated_at
+            ) VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )"#,
+            task.id,
+            task.title,
+            task.description,
+            status_i32,
+            task.priority,
+            task.tags,
+            task.due_at,
+            task.root_user_id,
+            assignee_type_i32,
+            task.assignee_id,
+            task.project_id,
+            task.created_by,
+            task.modified_by,
+            task.created_at,
+            task.updated_at
         ).execute(pool).await?;
         Ok(())
     }
@@ -57,7 +76,7 @@ impl TaskDaoTrait for SqliteTaskDao {
         let task = sqlx::query_as!(
             TaskPo,
             r#"
-SELECT id, title, description, "status" as "status: TaskStatus", priority as "priority: i32", tags, due_at,
+SELECT id, title, description, "status" as "status: TaskStatus", priority as "priority: i32", tags, due_at, root_user_id,
        "assignee_type" as "assignee_type: AssigneeType", assignee_id, project_id,
        created_by, modified_by, created_at, updated_at
 FROM tasks WHERE id = ? AND "status" != 0
@@ -80,7 +99,7 @@ FROM tasks WHERE id = ? AND "status" != 0
                 sqlx::query_as!(
                     TaskPo,
                     r#"
-SELECT id, title, description, "status" as "status: TaskStatus", priority as "priority: i32", tags, due_at,
+SELECT id, title, description, "status" as "status: TaskStatus", priority as "priority: i32", tags, due_at, root_user_id,
        "assignee_type" as "assignee_type: AssigneeType", assignee_id, project_id,
        created_by, modified_by, created_at, updated_at
 FROM tasks WHERE "assignee_type" = ? AND assignee_id = ? AND "status" != 0
@@ -97,7 +116,7 @@ ORDER BY priority DESC, created_at DESC LIMIT ?
                 sqlx::query_as!(
                     TaskPo,
                     r#"
-SELECT id, title, description, "status" as "status: TaskStatus", priority as "priority: i32", tags, due_at,
+SELECT id, title, description, "status" as "status: TaskStatus", priority as "priority: i32", tags, due_at, root_user_id,
        "assignee_type" as "assignee_type: AssigneeType", assignee_id, project_id,
        created_by, modified_by, created_at, updated_at
 FROM tasks WHERE assignee_id = ? AND "status" != 0
@@ -133,14 +152,15 @@ ORDER BY priority DESC, created_at DESC LIMIT ?
                 sqlx::query_as!(
                     TaskPo,
                     r#"
-SELECT id, title, description, "status" as 'status: TaskStatus', priority as 'priority: i32', tags, due_at,
+SELECT id, title, description, "status" as 'status: TaskStatus', priority as 'priority: i32', tags, due_at, root_user_id,
        "assignee_type" as 'assignee_type: AssigneeType', assignee_id, project_id,
        created_by, modified_by, created_at, updated_at
-FROM tasks WHERE "status" != 0 AND assignee_id = ? AND "assignee_type" = ?
-  AND (? IS NULL OR "status" = ?)
-  AND (? IS NULL OR "status" = ?)
-  AND (? IS NULL OR "status" = ?)
-  AND (? IS NULL OR "status" = ?)
+FROM tasks WHERE "status" != 0 AND assignee_id = ? AND "assignee_type" = ? AND (
+    (? IS NOT NULL AND "status" = ?) OR
+    (? IS NOT NULL AND "status" = ?) OR
+    (? IS NOT NULL AND "status" = ?) OR
+    (? IS NOT NULL AND "status" = ?)
+)
 ORDER BY priority DESC, created_at DESC LIMIT ?
 "#,
                     assignee_id,
@@ -158,14 +178,15 @@ ORDER BY priority DESC, created_at DESC LIMIT ?
                 sqlx::query_as!(
                     TaskPo,
                     r#"
-SELECT id, title, description, "status" as 'status: TaskStatus', priority as 'priority: i32', tags, due_at,
+SELECT id, title, description, "status" as 'status: TaskStatus', priority as 'priority: i32', tags, due_at, root_user_id,
        "assignee_type" as 'assignee_type: AssigneeType', assignee_id, project_id,
        created_by, modified_by, created_at, updated_at
-FROM tasks WHERE "status" != 0 AND assignee_id = ?
-  AND (? IS NULL OR "status" = ?)
-  AND (? IS NULL OR "status" = ?)
-  AND (? IS NULL OR "status" = ?)
-  AND (? IS NULL OR "status" = ?)
+FROM tasks WHERE "status" != 0 AND assignee_id = ? AND (
+    (? IS NOT NULL AND "status" = ?) OR
+    (? IS NOT NULL AND "status" = ?) OR
+    (? IS NOT NULL AND "status" = ?) OR
+    (? IS NOT NULL AND "status" = ?)
+)
 ORDER BY priority DESC, created_at DESC LIMIT ?
 "#,
                     assignee_id,
@@ -188,7 +209,7 @@ ORDER BY priority DESC, created_at DESC LIMIT ?
         let ctx_user_id = ctx.user_id.clone().unwrap_or_default();
         let now = common::constants::utils::current_timestamp();
         let status_i32 = task.status as i32;
-        let priority_i32 = task.priority as i32;
+        let priority_i32 = task.priority;
         let assignee_type_i32 = task.assignee_type as i32;
         sqlx::query!(
             r#"

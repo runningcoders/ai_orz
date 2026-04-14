@@ -24,13 +24,15 @@ pub struct TaskPo {
     pub tags: String,
     /// 截止时间戳（秒），可为空
     pub due_at: Option<i64>,
+    /// 根用户 ID：这个任务最终为哪个用户服务，所有派生任务继承此字段
+    pub root_user_id: String,
     /// 分配对象类型
     pub assignee_type: AssigneeType,
     /// 分配对象 ID
     pub assignee_id: String,
     /// 所属项目 ID，预留未来扩展，可为空
     pub project_id: Option<String>,
-    /// 创建者用户 ID
+    /// 创建者用户 ID（可能是 Agent 创建）
     pub created_by: String,
     /// 最后修改者用户 ID
     pub modified_by: String,
@@ -49,6 +51,7 @@ impl TaskPo {
         priority: i32,
         tags: Vec<String>,
         due_at: Option<i64>,
+        root_user_id: String,
         assignee_type: AssigneeType,
         assignee_id: String,
         project_id: Option<String>,
@@ -65,6 +68,7 @@ impl TaskPo {
             priority,
             tags: tags_json,
             due_at,
+            root_user_id,
             assignee_type,
             assignee_id,
             project_id,

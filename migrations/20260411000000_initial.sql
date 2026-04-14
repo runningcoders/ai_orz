@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     priority INTEGER NOT NULL DEFAULT 0,
     tags TEXT NOT NULL DEFAULT '[]',
     due_at INTEGER,
+    root_user_id TEXT NOT NULL,
     assignee_type INTEGER NOT NULL DEFAULT 1,
     assignee_id TEXT NOT NULL,
     project_id TEXT,

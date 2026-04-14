@@ -26,6 +26,7 @@ async fn test_insert_and_find_by_id(pool: SqlitePool) {
         5, // 高优先级
         vec!["rust".to_string(), "sqlx".to_string(), "migration".to_string()],
         None, // 无截止时间
+        "test-user".to_string(), // root_user_id
         AssigneeType::User,
         assignee_id.to_string(),
         None, // 无项目
@@ -46,6 +47,7 @@ async fn test_insert_and_find_by_id(pool: SqlitePool) {
     assert!(found.due_at.is_none());
     assert_eq!(found.assignee_type, AssigneeType::User);
     assert_eq!(found.assignee_id, assignee_id);
+    assert_eq!(found.root_user_id, "test-user");
     assert!(found.project_id.is_none());
 }
 
@@ -64,6 +66,7 @@ async fn test_update_task(pool: SqlitePool) {
         5,
         vec![],
         None,
+        "test-user".to_string(), // root_user_id
         AssigneeType::User,
         assignee_id.to_string(),
         None,
@@ -101,6 +104,7 @@ async fn test_update_task_status(pool: SqlitePool) {
         5,
         vec![],
         None,
+        "test-user".to_string(), // root_user_id
         AssigneeType::User,
         "user-123".to_string(),
         None,
@@ -133,6 +137,7 @@ async fn test_list_by_assignee(pool: SqlitePool) {
         3,
         vec![],
         None,
+        "test-user".to_string(), // root_user_id
         AssigneeType::User,
         assignee_id.to_string(),
         None,
@@ -148,6 +153,7 @@ async fn test_list_by_assignee(pool: SqlitePool) {
         5,
         vec![],
         None,
+        "test-user".to_string(), // root_user_id
         AssigneeType::User,
         assignee_id.to_string(),
         None,
@@ -167,6 +173,7 @@ async fn test_list_by_assignee(pool: SqlitePool) {
         8,
         vec![],
         None,
+        "test-user".to_string(), // root_user_id
         AssigneeType::User,
         assignee_id.to_string(),
         None,
@@ -198,6 +205,7 @@ async fn test_list_by_status(pool: SqlitePool) {
         5,
         vec![],
         None,
+        "test-user".to_string(), // root_user_id
         AssigneeType::User,
         assignee_id.to_string(),
         None,
@@ -212,6 +220,7 @@ async fn test_list_by_status(pool: SqlitePool) {
         5,
         vec![],
         None,
+        "test-user".to_string(), // root_user_id
         AssigneeType::User,
         assignee_id.to_string(),
         None,
@@ -227,6 +236,7 @@ async fn test_list_by_status(pool: SqlitePool) {
         5,
         vec![],
         None,
+        "test-user".to_string(), // root_user_id
         AssigneeType::User,
         assignee_id.to_string(),
         None,
@@ -263,6 +273,7 @@ async fn test_count_functions(pool: SqlitePool) {
             5,
             vec![],
             None,
+            "test-user".to_string(), // root_user_id
             AssigneeType::User,
             assignee_id.to_string(),
             None,
@@ -278,6 +289,7 @@ async fn test_count_functions(pool: SqlitePool) {
         5,
         vec![],
         None,
+        "test-user".to_string(), // root_user_id
         AssigneeType::User,
         assignee_id.to_string(),
         None,
@@ -315,6 +327,7 @@ async fn test_cancel_task(pool: SqlitePool) {
         5,
         vec![],
         None,
+        "test-user".to_string(), // root_user_id
         AssigneeType::User,
         assignee_id.to_string(),
         None,
@@ -330,6 +343,7 @@ async fn test_cancel_task(pool: SqlitePool) {
         5,
         vec![],
         None,
+        "test-user".to_string(), // root_user_id
         AssigneeType::User,
         assignee_id.to_string(),
         None,
@@ -345,7 +359,7 @@ async fn test_cancel_task(pool: SqlitePool) {
     let found_cancelled = task_dao.find_by_id(new_ctx("editor", pool.clone()), &task2_id).await.unwrap();
     assert!(found_cancelled.is_none());
 
-    // 验证总数减少为 2
+    // 验证总数减少为 1
     let total_count_after_cancel = task_dao.count_by_assignee(new_ctx("test-user", pool.clone()), assignee_id).await.unwrap();
     assert_eq!(total_count_after_cancel, 1);
 }
