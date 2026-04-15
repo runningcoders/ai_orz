@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, task_id, from_id, to_id, \"role\" as 'role: MessageRole', \"message_type\" as 'message_type: MessageType', \"status\" as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at\nFROM messages WHERE task_id = ? AND \"status\" != 0 ORDER BY created_at ASC\n                ",
+  "query": "\nSELECT id, task_id, from_id, to_id, \"role\" as \"role: MessageRole\", \"message_type\" as \"message_type: MessageType\", file_type as \"file_type: FileType\", \"status\" as \"status: MessageStatus\", content, file_meta as \"file_meta: Json<FileMeta>\", created_by, modified_by, created_at, updated_at\nFROM messages WHERE \"status\" != 0 AND (\n    (? IS NOT NULL AND \"status\" = ?) OR\n    (? IS NOT NULL AND \"status\" = ?) OR\n    (? IS NOT NULL AND \"status\" = ?) OR\n    (? IS NOT NULL AND \"status\" = ?)\n)\nORDER BY created_at ASC LIMIT ?\n",
   "describe": {
     "columns": [
       {
@@ -34,38 +34,48 @@
         "type_info": "Integer"
       },
       {
-        "name": "status: MessageStatus",
+        "name": "file_type: FileType",
         "ordinal": 6,
         "type_info": "Integer"
       },
       {
-        "name": "content",
+        "name": "status: MessageStatus",
         "ordinal": 7,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "meta_json",
+        "name": "content",
         "ordinal": 8,
         "type_info": "Text"
       },
       {
-        "name": "created_by",
+        "name": "file_meta: Json<FileMeta>",
         "ordinal": 9,
         "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "created_by",
         "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "modified_by",
+        "ordinal": 11,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 12,
         "type_info": "Integer"
       },
       {
         "name": "updated_at",
-        "ordinal": 11,
+        "ordinal": 13,
         "type_info": "Integer"
       }
     ],
     "parameters": {
-      "Right": 1
+      "Right": 9
     },
     "nullable": [
       false,
@@ -73,6 +83,8 @@
       false,
       false,
       false,
+      false,
+      true,
       false,
       false,
       false,
@@ -82,5 +94,5 @@
       false
     ]
   },
-  "hash": "6e1ce10c69685eb9b7879dd3247b0f45d75bda8342c30b0f7dda491a6ad4abbd"
+  "hash": "bcd6bace59a1b453e311c27c82553b5491dc49274edf01254c2012d55d9c1ccb"
 }

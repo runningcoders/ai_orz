@@ -4,8 +4,9 @@
 
 use super::*;
 use crate::models::event::Event;
+use crate::models::file::FileMeta;
 use crate::models::message::Message;
-use common::enums::{MessageRole, MessageType};
+use common::enums::{MessageRole, MessageType, FileType};
 use crate::pkg::RequestContext;
 use crate::service::dao::event_queue::in_memory::InMemoryEventQueue;
 use sqlx::SqlitePool;
@@ -37,6 +38,11 @@ async fn test_single_event_enqueue_dequeue_ack() {
     let queue = InMemoryEventQueue::new();
 
     // 创建一个测试消息
+    let empty_file_meta = FileMeta::new(
+        "".to_string(),
+        "".to_string(),
+        0,
+    );
     let msg = Message::new(
         uuid::Uuid::now_v7().to_string(),
         "task-001".to_string(),
@@ -45,7 +51,8 @@ async fn test_single_event_enqueue_dequeue_ack() {
         MessageRole::User,
         MessageType::Text,
         "测试消息".to_string(),
-        "".to_string(),
+        None,
+        empty_file_meta,
         "test-user".to_string(),
     );
 
@@ -343,6 +350,11 @@ async fn test_nack_retry() {
     let ctx = RequestContext::new_simple("test-user", pool);
     let queue = InMemoryEventQueue::new();
 
+    let empty_file_meta = FileMeta::new(
+        "".to_string(),
+        "".to_string(),
+        0,
+    );
     let msg = Message::new(
         uuid::Uuid::now_v7().to_string(),
         "task-001".to_string(),
@@ -351,7 +363,8 @@ async fn test_nack_retry() {
         MessageRole::User,
         MessageType::Text,
         "测试 nack".to_string(),
-        "".to_string(),
+        None,
+        empty_file_meta,
         "test-user".to_string(),
     );
 
@@ -384,6 +397,11 @@ async fn test_batch_enqueue() {
     let queue = InMemoryEventQueue::new();
 
     let mut events: Vec<Box<dyn Event>> = Vec::new();
+    let empty_file_meta = FileMeta::new(
+        "".to_string(),
+        "".to_string(),
+        0,
+    );
     for i in 0..5 {
         let msg = Message::new(
             uuid::Uuid::now_v7().to_string(),
@@ -393,7 +411,8 @@ async fn test_batch_enqueue() {
             MessageRole::User,
             MessageType::Text,
             format!("批量消息 {}", i),
-            "".to_string(),
+            None,
+            empty_file_meta.clone(),
             "test-user".to_string(),
         );
         events.push(Box::new(msg));

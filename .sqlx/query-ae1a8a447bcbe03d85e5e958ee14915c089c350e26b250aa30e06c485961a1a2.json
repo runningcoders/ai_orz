@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, task_id, from_id, to_id, \"role\" as 'role: MessageRole', \"message_type\" as 'message_type: MessageType', \"status\" as 'status: MessageStatus', content, meta_json, created_by, created_at, updated_at\nFROM messages WHERE to_id = ? AND \"status\" != 0 ORDER BY created_at ASC\nLIMIT ?\n                ",
+  "query": "\nSELECT id, task_id, from_id, to_id, \"role\" as \"role: MessageRole\", \"message_type\" as \"message_type: MessageType\", file_type as \"file_type: FileType\", \"status\" as \"status: MessageStatus\", content, file_meta as \"file_meta: Json<FileMeta>\", created_by, modified_by, created_at, updated_at\nFROM messages WHERE id = ? AND \"status\" != 0\n            ",
   "describe": {
     "columns": [
       {
@@ -34,38 +34,48 @@
         "type_info": "Integer"
       },
       {
-        "name": "status: MessageStatus",
+        "name": "file_type: FileType",
         "ordinal": 6,
         "type_info": "Integer"
       },
       {
-        "name": "content",
+        "name": "status: MessageStatus",
         "ordinal": 7,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "meta_json",
+        "name": "content",
         "ordinal": 8,
         "type_info": "Text"
       },
       {
-        "name": "created_by",
+        "name": "file_meta: Json<FileMeta>",
         "ordinal": 9,
         "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "created_by",
         "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "modified_by",
+        "ordinal": 11,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 12,
         "type_info": "Integer"
       },
       {
         "name": "updated_at",
-        "ordinal": 11,
+        "ordinal": 13,
         "type_info": "Integer"
       }
     ],
     "parameters": {
-      "Right": 2
+      "Right": 1
     },
     "nullable": [
       false,
@@ -73,6 +83,8 @@
       false,
       false,
       false,
+      false,
+      true,
       false,
       false,
       false,
@@ -82,5 +94,5 @@
       false
     ]
   },
-  "hash": "0db711f8b9ed6836cc3205de3589a6f2b692ea5635c0e36ee329091c32c57be7"
+  "hash": "ae1a8a447bcbe03d85e5e958ee14915c089c350e26b250aa30e06c485961a1a2"
 }

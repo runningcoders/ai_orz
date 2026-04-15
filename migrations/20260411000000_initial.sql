@@ -144,9 +144,24 @@ CREATE TABLE IF NOT EXISTS messages (
     to_id TEXT NOT NULL,
     role INTEGER NOT NULL DEFAULT 0,
     message_type INTEGER NOT NULL DEFAULT 0,
+    file_type INTEGER,
     status INTEGER NOT NULL DEFAULT 0,
     content TEXT NOT NULL,
-    meta_json TEXT NOT NULL DEFAULT '',
+    file_meta TEXT NOT NULL DEFAULT '{}',
+    created_by TEXT NOT NULL DEFAULT '',
+    modified_by TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS artifacts (
+    id TEXT NOT NULL PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    file_type INTEGER NOT NULL,
+    file_meta TEXT NOT NULL DEFAULT '{}',
+    status INTEGER NOT NULL DEFAULT 1,
     created_by TEXT NOT NULL DEFAULT '',
     modified_by TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL,

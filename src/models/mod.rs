@@ -1,10 +1,12 @@
 pub mod agent;
 pub mod brain;
 pub mod event;
+pub mod file;
 pub mod memory;
 pub mod message;
 pub mod model_provider;
 pub mod organization;
 pub mod project;
+pub mod artifact;
 pub mod task;
 pub mod user;

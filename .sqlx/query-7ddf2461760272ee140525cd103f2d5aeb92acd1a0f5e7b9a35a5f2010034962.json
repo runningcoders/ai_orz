@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nINSERT INTO artifacts (id, task_id, name, description, file_type, file_meta, status, created_by, modified_by, created_at, updated_at) VALUES (\n?,\n?,\n?,\n?,\n?,\n?,\n?,\n?,\n?,\n?,\n?\n)\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 11
+    },
+    "nullable": []
+  },
+  "hash": "7ddf2461760272ee140525cd103f2d5aeb92acd1a0f5e7b9a35a5f2010034962"
+}

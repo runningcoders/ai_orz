@@ -58,7 +58,7 @@ impl Default for ArtifactConfig {
 }
 
 fn default_artifact_subdir() -> String {
-    "artifact".to_string()
+    "attachments".to_string()
 }
 
 /// 服务器配置
@@ -160,9 +160,25 @@ impl AppConfig {
         Path::new(&self.base_data_path).join(&self.database.db_file_name)
     }
 
-    /// 获取产物存储根目录路径（消息附件、Agent 生成文件等）
-    pub fn artifact_dir(&self) -> PathBuf {
+    /// 获取产物/附件存储根目录路径（消息附件、Agent 生成文件等）
+    /// 产物和附件统一存这里，不分开存储
+    pub fn attachments_dir(&self) -> PathBuf {
         Path::new(&self.base_data_path).join(&self.artifact.artifact_subdir)
+    }
+
+    /// 获取附件完整路径，传入相对路径
+    pub fn attachment_path(&self, relative_path: &str) -> PathBuf {
+        self.attachments_dir().join(relative_path)
+    }
+
+    /// 获取产物存储根目录路径（别名，底层复用 attachments 存储）
+    pub fn artifacts_dir(&self) -> PathBuf {
+        self.attachments_dir()
+    }
+
+    /// 获取产物完整路径，传入相对路径（别名，底层复用 attachments 存储）
+    pub fn artifact_path(&self, relative_path: &str) -> PathBuf {
+        self.attachment_path(relative_path)
     }
 
     /// 获取指定 Agent 的数据目录路径：base_data_path/agents/{agent_id}
@@ -173,5 +189,13 @@ impl AppConfig {
     /// 获取指定 Agent 的记忆数据目录：base_data_path/agents/{agent_id}/memory
     pub fn agent_memory_dir(&self, agent_id: &str) -> PathBuf {
         self.agent_data_dir(agent_id).join("memory")
+    }
+
+    /// 生成按日期分层的相对路径：YYYYMMDD/{file_id}{ext}
+    /// 用于附件和产物存储，按天分一层子目录，同一天的文件放在一起
+    pub fn generate_date_relative_path(&self, file_id: &str, extension: &str) -> String {
+        let now = chrono::Utc::now();
+        let date = now.format("%Y%m%d");
+        format!("{}/{}{}", date, file_id, extension)
     }
 }

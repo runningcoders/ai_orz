@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod artifact;
 pub mod cortex;
 pub mod event_queue;
 pub mod message;
@@ -11,6 +12,7 @@ pub mod project;
 
 pub fn init_all(){
     agent::init();
+    artifact::init();
     cortex::init();
     event_queue::init();
     message::init();
