@@ -382,7 +382,7 @@ let user = user_dal().get_user_by_id(ctx, user_id)?;
 let user = domain().user_manage().get_user_by_id(ctx, user_id)?;
 ```
 
-**原则：** 只有当需要核心业务逻辑编排时才在 domain 新增方法，简单数据查询直接在 handler 调用 DAL。
+**原则：** 只有当需要核心业务逻辑编排时才在 domain 新增方法，简单数据查询直接在 handler 调用 DAL。如果 handler 经过参数转换后，可以通过组合已有的 domain 方法完成业务操作，就不需要新增 domain 方法，直接在 handler 中组合调用即可。**handler 只能通过 domain 层访问业务能力，禁止直接调用 DAO 或 DAL** — domain 是业务逻辑整体唯一出口。
 
 ---
 
