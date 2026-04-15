@@ -5,7 +5,7 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 ![GitHub last commit](https://img.shields.io/github/last-commit/runningcoders/ai_orz)
 ![GitHub license](https://img.shields.io/github/license/runningcoders/ai_orz)
 ![Rust](https://img.shields.io/badge/Rust-1.85+-000000?logo=rust)
-![Tests](https://img.shields.io/badge/tests-96%20%E2%9C%94-brightgreen)
+![Tests](https://img.shields.io/badge/tests-104%20%E2%9C%94-brightgreen)
 [![GitHub stars](https://img.shields.io/github/stars/runningcoders/ai_orz?style=social)](https://github.com/runningcoders/ai_orz)
 
 ## 技术栈
@@ -44,7 +44,10 @@ ai_orz/
 ├── docs/               # 详细文档
 │   ├── ARCHITECTURE.md # 完整架构说明（最新）
 │   ├── event_design.md  # 事件总线设计文档
-│   └── AGENTS.md       # Agent 开发规范与最佳实践
+│   ├── task_design.md  # 任务系统设计文档
+│   ├── project_design.md # 项目系统设计文档
+│   ├── attachment_storage.md # 产物与消息附件统一存储设计
+│   └── sqlx_guide.md   # SQLx 0.8 + SQLite 开发规范与避坑指南
 ├── build-full.sh        # 全量构建脚本（后端 + 前端）
 ├── start-dev.sh         # 一键启动开发环境（后端 + dx serve 热重载）
 └── README.md
@@ -309,7 +312,7 @@ frontend/src/
 cargo test
 ```
 
-当前状态：**66 个测试全部通过 ✅**
+当前状态：**104 个测试全部通过 ✅**
 
 ### 单元测试设计
 

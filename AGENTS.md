@@ -1,4 +1,4 @@
-# Agent 开发规范与最佳实践
+# AI Orz 开发规范与最佳实践
 
 本文总结了 AI_orz 项目中 Agent 开发过程中总结出的最佳实践和规范。
 
@@ -54,7 +54,19 @@ ai_orz/
 
 ## 二、代码分层规范
 
-### 2.1 实体定义
+### 2.1 分层职责规范（严格遵守）
+
+| 层级 | 职责 | 不做什么 |
+|------|------|------|
+| **models** | 定义 PO 持久化实体、业务实体 | 不要放业务逻辑 |
+| **service/dao** | 单一数据源操作，增删改查，不包含业务逻辑 | 不要放业务逻辑，只做单一数据源操作 |
+| **service/dal** | 组合多个 DAO，提供业务级数据操作能力 | 不要放核心业务规则 |
+| **service/domain** | 核心业务逻辑实现 | 只放业务规则，编排 DAL |
+| **handlers** | HTTP 接口接收请求，调用 domain，返回响应 | 不要放业务逻辑 |
+
+> **约定**：所有 service 层公共方法都必须带 `ctx: RequestContext` 参数，方便日志追踪和权限控制。现在已经架构升级为自动从请求提取注入 RequestContext，无需手动提取。
+
+### 2.2 实体定义
 
 所有持久化 PO 实体统一放在 `src/models/`：
 
@@ -65,46 +77,34 @@ ai_orz/
 - `organization.rs` - Organization 组织实体
 - `user.rs` - User 用户实体
 - `memory.rs` - 记忆系统所有实体
+- `task.rs` - 任务实体
+- `project.rs` - 项目实体
+- `message.rs` - 消息实体
+- `artifact.rs` - 产物实体
+- `file.rs` - 文件元数据公共结构体
 
-### 2.2 数据访问层（DAO）
+### 2.3 数据访问层（DAO）
 
 每个 DAO 模块统一放在 `service/dao/{domain}/`：
 
 ```
 service/dao/memory/
-├── mod.rs          # 定义 trait + 单例 + 导出
+├── mod.rs          # 定义 trait + 单例导出
 ├── sqlite.rs       # SQLite 特定实现
 └── sqlite_test.rs  # 单元测试
 ```
 
-### 2.3 SQL 建表语句规范
+**规范：**
+- trait 定义放在 `mod.rs`
+- 具体实现放在 `sqlite.rs`（当前只实现 SQLite）
+- 单例 `OnceLock` 放在实现文件 `sqlite.rs`，不是 `mod.rs`
+- `mod.rs` 只导出 `pub use sqlite::{dao, init};`
+- 单元测试文件名：`sqlite_test.rs`，和实现文件同名
 
-- 所有建表语句统一放在 `src/pkg/storage/sql.rs` 作为常量
-- 每个常量对应一个实体，注释标明对应实体
-- 单元测试也使用同一个常量，不重复写建表语句
-- 启动时自动创建所有表，在 `pkg/storage/sqlite.rs::init_db` 中统一初始化
+### 2.4 SQL 建表语句规范
 
-```rust
-// pkg/storage/sql.rs
-/// SQLite: 短期记忆索引表建表语句
-///
-/// 对应实体: [crate::models::memory::ShortTermMemoryIndexPo]
-pub const SQLITE_CREATE_TABLE_SHORT_TERM_MEMORY_INDEX: &str = r#"..."#;
-```
-
-### 2.4 数据库架构分层（可扩展设计）
-
-```
-pkg/storage/
-├── mod.rs      # 公共接口：全局 Storage 单例 + init
-├── sql.rs       # 所有建表 SQL 常量集中定义
-└── sqlite.rs    # SQLite 特定初始化，调用 sql 常量建表
-```
-
-**优点：**
-- 预留扩展其他数据库，以后添加 PostgreSQL 只需要添加 `pkg/storage/postgres.rs`
-- SQL 常量集中管理，不会重复
-- 公共接口保持不变，上层不需要改动
+- 所有建表语句统一放在 `migrations/` 目录，使用 sqlx migrate 管理
+- 不再使用 `src/pkg/storage/sql.rs` 常量方式，迁移文件更加清晰可追溯
 
 ---
 
@@ -116,7 +116,7 @@ pkg/storage/
 
 ✅ **正确做法：**
 ```rust
-// common 中定义枚举，实现 ToSql/FromSql
+// common 中定义枚举，实现 sqlx Type
 pub enum UserRole {
     SuperAdmin = 0,
     Admin = 1,
@@ -142,13 +142,14 @@ pub struct UserPo {
 }
 ```
 
-### 3.2 实现要求
+### 3.2 实现要求（sqlx 0.8 版本）
 
 - 在 common 中定义枚举
 - 为枚举实现 `serde::Serialize/Deserialize`（用于 API 序列化）
-- 为枚举实现 `rusqlite::ToSql` 和 `rusqlite::FromSql`（启用 common 的 `rusqlite` 可选特性）
-- 为枚举实现 `Default`（默认值为正常/启用状态）
-- 添加 `from_i32() -> Self` 和 `to_i32() -> i32` 方法方便转换
+- 为枚举实现 `#[derive(sqlx::Type)]`，添加 `#[repr(i32)]`
+- 实现 `From<i64>` 适配 sqlx 类型推断：`impl From<i64> for MyEnum { fn from(v: i64) -> Self { (v as i32).into() } }`
+- 前后端共享同一个枚举定义，保证 API 契约一致
+- 如果 common 枚举需要给前端 WASM 编译使用，所有 sqlx 相关代码需要添加 `#[cfg(feature = "sqlx")]` 条件编译
 
 ---
 
@@ -185,26 +186,22 @@ src/handlers/organization/
 
 ## 五、单元测试规范
 
-### 2.1 测试位置
+### 5.1 测试位置
 
 - 每个 DAO 模块下直接放置测试文件：`service/dao/xxx/sqlite_test.rs`
-- 测试使用内存数据库，不依赖全局连接池，独立可运行
+- 测试使用 `#[sqlx::test]`，每个测试自动创建独立内存数据库，不依赖全局连接池，独立可运行
 
-### 2.2 测试规范
+### 5.2 测试设计原则
 
-```rust
-// 错误：硬编码建表语句 ❌
-conn.execute("CREATE TABLE ...", ()).unwrap();
+- 每个测试函数独立，互不干扰，一个失败不影响其他
+- 使用随机临时 SQLite 文件或内存数据库，每次测试重新初始化
+- 测试直接使用具体实现类，不依赖全局单例（但可以初始化全局单例）
+- 所有测试都使用 DAO/DAL 接口方法测试，不直接拼接 SQL
 
-// 正确：使用定义好的常量 ✅
-conn.execute(crate::pkg::storage::sql::SQLITE_CREATE_TABLE_XXX, ()).unwrap();
-```
+### 5.3 当前测试统计
 
-### 5.1 当前测试统计
-
-- **总测试数**: 35 个
-- **通过率**: 100% (35/35)
-- **记忆系统新增测试**: 8 个
+- **总测试数**: 104 个
+- **通过率**: 100% (104/104) ✅
 
 ---
 
@@ -246,7 +243,52 @@ let ctx = RequestContext::from_parts(parts);
 
 ---
 
-## 七、已完成架构演进 ✅
+## 七、SQLx 0.8 + SQLite 开发规范
+
+完整规范详见 [docs/sqlx_guide.md](./docs/sqlx_guide.md)，核心要点：
+
+- **所有表必须启用 `STRICT` 模式**，保证 sqlx 可空性推断正确
+- **枚举使用 i32 映射**：添加 `#[repr(i32)]` + `#[derive(sqlx::Type)]` + `From<i64>` 实现
+- **仅枚举需要显式类型标注**：`status as "status: TaskStatus"`，普通字段不需要
+- **SQL 关键字必须转义**：`status`、`role` 等关键字用作列名时用 `"status"` 双引号转义
+- **软删除约定**：已删除 `status = 0`，所有查询默认添加 `AND "status" != 0` 过滤
+- **`.sqlx` 目录必须纳入版本控制**，保证离线编译正常
+- **测试使用 `#[sqlx::test]`**，每个测试独立内存数据库，彻底解决测试污染
+
+---
+
+## 八、记忆系统设计规范 ✅
+
+四层记忆架构，对齐人类认知：
+
+| 层级 | 职责 | 存储位置 | 是否随请求带入 prompt |
+|------|------|------|----------|
+| **Core Memory** | 核心认知：角色设定、能力清单 | AgentPo + 内存 | ✅ 每次都带 |
+| **Working Memory** | 当前会话工作记忆：正在进行的对话 | Brain 内存 | ✅ 每次都带 |
+| **Short-Term Memory** | 最近会话摘要索引 | SQLite 数据库 | 需要时检索相关摘要带入 |
+| **Long-Term Knowledge** | 长期沉淀知识图谱 | SQLite 知识节点 + 文件原始细节 | 需要时检索相关知识带入 |
+
+**沉淀机制：**
+- 短期记忆聚合多条原始细节为一条摘要
+- 每日"睡眠"阶段：短期记忆沉淀到长期知识图谱
+- 知识关系独立存表，支持灵活查询扩展
+
+---
+
+## 九、事件总线设计 ✅
+
+详见 [docs/event_design.md](./docs/event_design.md)
+
+**核心设计要点：**
+- ✅ 所有事件先持久化到 SQLite `messages` 表
+- ✅ 总线只存元数据 `message_id`，不存完整内容
+- ✅ 服务启动自动恢复所有 `pending` 事件
+- ✅ 优先级排序：`priority DESC, created_at ASC`
+- ✅ 顺序保证：相同 `order_key` 顺序消费，不同 `order_key` 并行消费
+
+---
+
+## 十、已完成架构演进 ✅
 
 ### 第一轮重构（2026-04-08）
 
@@ -265,11 +307,28 @@ let ctx = RequestContext::from_parts(parts);
 - [x] 新增前端页面：登录、个人信息、组织信息、用户管理
 - [x] 所有测试通过：35/35 ✅
 
+### 第三轮重构（2026-04-10 ~ 2026-04-11）
+
+- [x] **rusqlite → sqlx 0.8 迁移**：彻底删除 rusqlite，全链路切换到 sqlx 异步
+- [x] 解决测试污染问题：每个测试独立内存数据库，并行测试完全隔离
+- [x] 所有表开启 STRICT 模式，类型安全提升
+- [x] 修复依赖倒置问题，建立清晰分层初始化流程：`DAO → DAL → Domain`
+- [x] 解决前端 WASM 编译问题，条件编译分离 sqlx 依赖
+- [x] 所有测试通过：79/79 ✅
+
+### 第四轮开发（2026-04-12 ~ 2026-04-15）
+
+- [x] **任务系统数据层开发**：任务表、任务状态枚举、完整 DAO CRUD
+- [x] **项目系统数据层开发**：项目表、项目状态枚举、完整 DAO CRUD
+- [x] **产物与消息附件统一存储**：新增 `artifacts` 表，统一 `FileMeta` 设计，日期分层路径存储
+- [x] 更新 `messages` 表结构：新增 `file_type` + `modified_by`，统一文件元数据
+- [x] 所有测试通过：**104/104** ✅
+
 ---
 
-## 八、开发工作流规范
+## 十一、开发工作流规范
 
-### 8.1 提交前标准流程
+### 11.1 提交前标准流程
 
 **强制流程**：代码开发完成 → 编译通过 → 运行测试 → 运行 `cargo fix` → 再提交推送 ✅
 
@@ -290,12 +349,12 @@ git push
 - 自动修复一些简单的编译错误
 - 保持代码干净，提交历史整洁
 
-### 8.2 经验总结
+### 11.2 经验总结
 
 1. **设计对齐人类认知** → 架构更容易理解，也更容易演进
 2. **渐进式实现** → 先做基础架构，再慢慢完善功能
 3. **分层清晰** → 每个层职责单一，方便测试和替换
-4. **常量集中管理** → SQL 建表语句统一放在 `pkg/storage/sql.rs`，避免重复
+4. **常量集中管理** → SQL 建表语句统一放在迁移文件，可追溯
 5. **预留扩展** → 数据库层分离，方便以后支持其他数据库
 6. **原始细节人类可读** → 按天 markdown 存储，不需要工具直接就能看
 7. **API 契约统一** → common crate 共享 DTO，前后端类型一致
@@ -304,9 +363,9 @@ git push
 
 ---
 
-## 九、domain 层开发规范
+## 十二、domain 层开发规范
 
-### 9.1 尽量复用已有方法
+### 12.1 尽量复用已有方法
 
 尽量复用已有的 DAO/DAL 方法，不轻易在 domain 新增方法。简单的查询可以在 handler 直接调用 DAL 方法，不需要新增 domain 方法包装：
 
@@ -324,3 +383,61 @@ let user = domain().user_manage().get_user_by_id(ctx, user_id)?;
 ```
 
 **原则：** 只有当需要核心业务逻辑编排时才在 domain 新增方法，简单数据查询直接在 handler 调用 DAL。
+
+---
+
+## 十三、命名规范
+
+- **文件**：snake_case 命名（`create_user.rs`、`model_provider.rs`）
+- **结构体**：PascalCase 命名（`AgentPo`、`ModelProviderDal`）
+- **变量/函数**：snake_case 命名（`create_agent`、`find_by_id`）
+- **trait**：PascalCase + 后缀 `Trait`（`AgentDaoTrait`、`ModelProviderDalTrait`）
+
+---
+
+## 十四、可见性规范
+
+- 遵循最小可见性原则：不需要公开的就是 private
+- 只有 trait 定义和 `dao()`/`init()` 需要公开
+- 具体实现结构体本身保持 crate 可见性即可
+
+---
+
+## 十五、依赖添加规范
+
+- 尽量使用 Rust 官方标准库，不需要就不加
+- 第三方依赖选择活跃维护的知名 crate
+- 所有依赖添加到 workspace 根 `Cargo.toml`
+- common crate 只添加公共需要的依赖
+
+---
+
+## 十六、前端规范
+
+- 每个页面对应一个组件文件
+- 所有 API DTO 从 common 导入，不重复定义
+- 配置管理：全局保存，优先从 localStorage 读取，默认 fallback 到编译嵌入默认配置
+
+---
+
+## 最终架构流程图
+
+```
+HTTP Request
+    ↓
+Axum 路由
+    ↓
+RequestContext 中间件 ← JWT Cookie 解析
+    ↓
+Handler (handlers 层，每个方法一个文件)
+    ↓
+Domain (domain 层，核心业务逻辑)
+    ↓
+DAL (dal 层，业务数据访问组合)
+    ↓
+DAO (dao 层，单一数据源操作)
+    ↓
+SQLite 数据库
+```
+
+所有层级严格遵守依赖方向，不允许反向依赖 ✅
