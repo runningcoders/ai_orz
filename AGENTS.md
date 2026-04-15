@@ -365,24 +365,30 @@ git push
 
 ## 十二、domain 层开发规范
 
-### 12.1 尽量复用已有方法
+### 12.1 严格分层调用规则
 
-尽量复用已有的 DAO/DAL 方法，不轻易在 domain 新增方法。简单的查询可以在 handler 直接调用 DAL 方法，不需要新增 domain 方法包装：
+**严格单向分层调用，禁止跨层调用：**
 
-✅ **正确：**
-```rust
-// handler 直接复用已有 DAL 方法
-let user = user_dal().get_user_by_id(ctx, user_id)?;
+```
+Handler → Domain → DAL → DAO → DB
 ```
 
-❌ **避免：**
-```rust
-// 无意义包装，增加不必要层
-// domain 中定义 get_user_by_id，里面只调用 DAL 的同名方法
-let user = domain().user_manage().get_user_by_id(ctx, user_id)?;
-```
+| 层级 | 只能调用 | 禁止跨层直接调用 |
+|------|----------|------------------|
+| Handler | Domain | ❌ 禁止直接调用 DAL 或 DAO |
+| Domain | DAL | ❌ 禁止直接调用 DAO 或 DB |
+| DAL | DAO | ❌ 禁止直接调用 DB |
 
-**原则：** 只有当需要核心业务逻辑编排时才在 domain 新增方法，简单数据查询直接在 handler 调用 DAL。如果 handler 经过参数转换后，可以通过组合已有的 domain 方法完成业务操作，就不需要新增 domain 方法，直接在 handler 中组合调用即可。**handler 只能通过 domain 层访问业务能力，禁止直接调用 DAO 或 DAL** — domain 是业务逻辑整体唯一出口。
+### 12.2 复用原则
+
+**每一层只复用直接下一层提供的方法：**
+
+- **Domain 层应该尽量复用 DAL 层提供的方法**，不需要重复组合 DAO
+- **Handler 层应该尽量复用 Domain 层提供的方法**，禁止跳域调用 DAL/DAO
+- 如果现有 Domain 方法已经能满足需求，handler 直接复用组合即可，不需要新增 Domain 方法
+- 只有当需要新增核心业务逻辑编排时，才在 Domain 新增方法，该方法复用已有的 DAL 方法
+
+**核心思想：** domain 是业务逻辑唯一出口，handler 必须走 domain，不能跳级。
 
 ---
 
