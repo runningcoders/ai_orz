@@ -69,29 +69,29 @@ impl SqliteMemoryDao {
     }
 
     /// 按知识引用读取原始记忆内容片段
-    /// 
+    ///
     /// 根据 date_path(相对路径) + byte_start + byte_length 读取指定范围内容
     pub fn read_memory_reference(&self, reference: &KnowledgeReferencePo) -> Result<String, AppError> {
         // 根据 date_path(相对路径) 拼接完整路径（相对于 base_data_path）
         let config = config::get();
         let base = Path::new(&config.base_data_path);
         let full_path = base.join(&reference.date_path);
-        
+
         // 读取整个文件内容
         let content = std::fs::read_to_string(&full_path)?;
-        
+
         // 按字节偏移和长度截取
         let byte_start = reference.byte_start as usize;
         let byte_length = reference.byte_length as usize;
-        
+
         // 检查边界
         if byte_start + byte_length > content.len() {
             return Ok("".to_string());
         }
-        
+
         let slice = &content.as_bytes()[byte_start..byte_start + byte_length];
         let result = String::from_utf8_lossy(slice).to_string();
-        
+
         Ok(result)
     }
 }
@@ -136,14 +136,17 @@ impl MemoryDaoTrait for SqliteMemoryDao {
         let role_str = trace.role.to_string();
         let now = chrono::Utc::now().timestamp();
         let created_at = trace.created_at;
-        let task_id = &trace.task_id;
+        let task_id = trace.task_id.as_ref();
 
-        // id = 原始 trace id (单个 trace 就是它自己的 id)
+        use common::enums::MemoryStatus;
+        // ✅ COUNTING: 9 Rust parameters → 9 question marks
+        // task_id is Option<&String> → SQLx expands internally to 2 params for SQLite, but we still write 9 question marks
+        let status_i32 = MemoryStatus::Active as i32;
         sqlx::query!(
             r#"
 INSERT INTO short_term_memory_index (
-    id, agent_id, task_id, role, summary, tags, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    id, agent_id, task_id, role, summary, tags, status, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 "#,
             trace.id,
             trace.agent_id,
@@ -151,8 +154,9 @@ INSERT INTO short_term_memory_index (
             role_str,
             summary,
             tags_json,
+            status_i32,
             created_at,
-            now,
+            now
         )
         .execute(&pool)
         .await?;
@@ -165,9 +169,36 @@ INSERT INTO short_term_memory_index (
             role: role_str,
             summary,
             tags: tags_json,
+            status: MemoryStatus::Active,
             created_at,
             updated_at: now,
         })
+    }
+
+    async fn forget_short_term_index(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<(), AppError> {
+        use common::enums::MemoryStatus;
+        let pool = self.pool(ctx);
+        let now = chrono::Utc::now().timestamp();
+        let status_i32 = MemoryStatus::Forgotten as i32;
+        // 软删除：标记为已遗忘，保留数据可恢复
+        sqlx::query!(
+            r#"
+UPDATE short_term_memory_index
+SET status = ?, updated_at = ?
+WHERE id = ?
+"#,
+            status_i32,
+            now,
+            id
+        )
+        .execute(&pool)
+        .await?;
+
+        Ok(())
     }
 
     async fn batch_append_memory_traces(
@@ -221,25 +252,30 @@ INSERT INTO short_term_memory_index (
             // 写入 markdown
             file.write_all(content_md.as_bytes())?;
 
+            let aggregated_id_for_insert = aggregated_id_cloned.clone();
             let tags_json = serde_json::to_string(tags)?;
             let role_str = trace.role.to_string();
             let created_at = trace.created_at;
-            let task_id = &trace.task_id;
+            let task_id = trace.task_id.as_ref();
 
+            use common::enums::MemoryStatus;
+            // 9 Rust parameters → 9 question marks
+            let status_i32 = MemoryStatus::Active as i32;
             sqlx::query!(
                 r#"
 INSERT INTO short_term_memory_index (
-    id, agent_id, task_id, role, summary, tags, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    id, agent_id, task_id, role, summary, tags, status, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 "#,
-                aggregated_id_cloned,
+                aggregated_id_for_insert,
                 trace.agent_id,
                 task_id,
                 role_str,
                 summary,
                 tags_json,
+                status_i32,
                 created_at,
-                now,
+                now
             )
             .execute(&mut *tx)
             .await?;
@@ -252,6 +288,7 @@ INSERT INTO short_term_memory_index (
                 role: role_str,
                 summary: summary.clone(),
                 tags: tags_json.clone(),
+                status: MemoryStatus::Active,
                 created_at,
                 updated_at: now,
             });
@@ -266,13 +303,14 @@ INSERT INTO short_term_memory_index (
         ctx: RequestContext,
         id: &str,
     ) -> Result<Option<ShortTermMemoryIndexPo>, AppError> {
+        use common::enums::MemoryStatus;
         let pool = self.pool(ctx);
         let index = sqlx::query_as!(
             ShortTermMemoryIndexPo,
             r#"
-SELECT id, agent_id, task_id, role, summary, tags, created_at, updated_at
+SELECT id, agent_id, task_id, role, summary, tags, status AS "status: MemoryStatus", created_at, updated_at
 FROM short_term_memory_index
-WHERE id = ?
+WHERE id = ? AND status != 0
 "#,
             id
         )
@@ -288,15 +326,16 @@ WHERE id = ?
         agent_id: &str,
         limit: usize,
     ) -> Result<Vec<ShortTermMemoryIndexPo>, AppError> {
+        use common::enums::MemoryStatus;
         let pool = self.pool(ctx);
         let agent_id_owned = agent_id.to_string();
         let limit_i64 = limit as i64;
         let indexes = sqlx::query_as!(
             ShortTermMemoryIndexPo,
             r#"
-SELECT id, agent_id, task_id, role, summary, tags, created_at, updated_at
+SELECT id, agent_id, task_id, role, summary, tags, status AS "status: MemoryStatus", created_at, updated_at
 FROM short_term_memory_index
-WHERE agent_id = ?
+WHERE agent_id = ? AND status != 0
 ORDER BY created_at DESC
 LIMIT ?
 "#,
@@ -316,6 +355,7 @@ LIMIT ?
         query: &str,
         limit: usize,
     ) -> Result<Vec<ShortTermMemoryIndexPo>, AppError> {
+        use common::enums::MemoryStatus;
         let pool = self.pool(ctx);
         let agent_id_owned = agent_id.to_string();
         let query_owned = query.to_string();
@@ -323,9 +363,9 @@ LIMIT ?
         let indexes = sqlx::query_as!(
             ShortTermMemoryIndexPo,
             r#"
-SELECT id, agent_id, task_id, role, summary, tags, created_at, updated_at
+SELECT id, agent_id, task_id, role, summary, tags, status AS "status: MemoryStatus", created_at, updated_at
 FROM short_term_memory_index
-WHERE agent_id = ? AND summary MATCH ?
+WHERE agent_id = ? AND summary MATCH ? AND status != 0
 LIMIT ?
 "#,
             agent_id_owned,
@@ -353,6 +393,8 @@ LIMIT ?
         let pool = self.pool(ctx);
 
         // 先试试更新，如果不存在就插入
+        use common::enums::MemoryStatus;
+        let status_i32 = node.status as i32;
         let result: sqlx::Result<sqlx::sqlite::SqliteQueryResult> = sqlx::query!(
             r#"
 UPDATE long_term_knowledge_node
@@ -361,6 +403,7 @@ SET agent_id = ?,
     node_description = ?,
     node_type = ?,
     summary = ?,
+    status = ?,
     updated_at = ?
 WHERE id = ?
 "#,
@@ -369,6 +412,7 @@ WHERE id = ?
             node.node_description,
             node.node_type,
             node.summary,
+            status_i32,
             node.updated_at,
             node.id,
         )
@@ -379,11 +423,14 @@ WHERE id = ?
 
         if rows_affected == 0 {
             // 不存在，插入新节点
+            // 9 Rust parameters → 9 question marks (all non-Option)
+            use common::enums::MemoryStatus;
+            let status_i32 = node.status as i32;
             sqlx::query!(
                 r#"
 INSERT INTO long_term_knowledge_node (
-    id, agent_id, node_name, node_description, node_type, summary, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    id, agent_id, node_name, node_description, node_type, summary, status, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 "#,
                 node.id,
                 node.agent_id,
@@ -391,8 +438,9 @@ INSERT INTO long_term_knowledge_node (
                 node.node_description,
                 node.node_type,
                 node.summary,
+                status_i32,
                 node.created_at,
-                node.updated_at,
+                node.updated_at
             )
             .execute(&pool)
             .await?;
@@ -410,6 +458,8 @@ INSERT INTO long_term_knowledge_node (
         let mut tx = pool.begin().await?;
 
         for node in nodes {
+            use common::enums::MemoryStatus;
+            let status_i32 = node.status as i32;
             let result: sqlx::Result<sqlx::sqlite::SqliteQueryResult> = sqlx::query!(
                 r#"
 UPDATE long_term_knowledge_node
@@ -418,6 +468,7 @@ SET agent_id = ?,
     node_description = ?,
     node_type = ?,
     summary = ?,
+    status = ?,
     updated_at = ?
 WHERE id = ?
 "#,
@@ -426,6 +477,7 @@ WHERE id = ?
                 node.node_description,
                 node.node_type,
                 node.summary,
+                status_i32,
                 node.updated_at,
                 node.id,
             )
@@ -435,11 +487,15 @@ WHERE id = ?
             let rows_affected = result.rows_affected();
 
             if rows_affected == 0 {
+                // 不存在，插入新节点
+                // 9 Rust parameters → 9 question marks (all non-Option)
+                use common::enums::MemoryStatus;
+                let status_i32 = node.status as i32;
                 sqlx::query!(
                     r#"
 INSERT INTO long_term_knowledge_node (
-    id, agent_id, node_name, node_description, node_type, summary, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    id, agent_id, node_name, node_description, node_type, summary, status, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 "#,
                     node.id,
                     node.agent_id,
@@ -447,8 +503,9 @@ INSERT INTO long_term_knowledge_node (
                     node.node_description,
                     node.node_type,
                     node.summary,
+                    status_i32,
                     node.created_at,
-                    node.updated_at,
+                    node.updated_at
                 )
                 .execute(&mut *tx)
                 .await?;
@@ -464,13 +521,14 @@ INSERT INTO long_term_knowledge_node (
         ctx: RequestContext,
         id: &str,
     ) -> Result<Option<LongTermKnowledgeNodePo>, AppError> {
+        use common::enums::MemoryStatus;
         let pool = self.pool(ctx);
         let node = sqlx::query_as!(
             LongTermKnowledgeNodePo,
             r#"
-SELECT id, agent_id, node_name, node_description, node_type, summary, created_at, updated_at
+SELECT id, agent_id, node_name, node_description, node_type, summary, status AS "status: MemoryStatus", created_at, updated_at
 FROM long_term_knowledge_node
-WHERE id = ?
+WHERE id = ? AND status != 0
 "#,
             id
         )
@@ -487,6 +545,7 @@ WHERE id = ?
         node_type: Option<&str>,
         limit: usize,
     ) -> Result<Vec<LongTermKnowledgeNodePo>, AppError> {
+        use common::enums::MemoryStatus;
         let pool = self.pool(ctx);
         let agent_id_owned = agent_id.to_string();
         let limit_i64 = limit as i64;
@@ -495,9 +554,9 @@ WHERE id = ?
             sqlx::query_as!(
                 LongTermKnowledgeNodePo,
                 r#"
-SELECT id, agent_id, node_name, node_description, node_type, summary, created_at, updated_at
+SELECT id, agent_id, node_name, node_description, node_type, summary, status AS "status: MemoryStatus", created_at, updated_at
 FROM long_term_knowledge_node
-WHERE agent_id = ? AND node_type = ?
+WHERE agent_id = ? AND node_type = ? AND status != 0
 ORDER BY updated_at DESC
 LIMIT ?
 "#,
@@ -511,9 +570,9 @@ LIMIT ?
             sqlx::query_as!(
                 LongTermKnowledgeNodePo,
                 r#"
-SELECT id, agent_id, node_name, node_description, node_type, summary, created_at, updated_at
+SELECT id, agent_id, node_name, node_description, node_type, summary, status AS "status: MemoryStatus", created_at, updated_at
 FROM long_term_knowledge_node
-WHERE agent_id = ?
+WHERE agent_id = ? AND status != 0
 ORDER BY updated_at DESC
 LIMIT ?
 "#,
@@ -534,6 +593,7 @@ LIMIT ?
         query: &str,
         limit: usize,
     ) -> Result<Vec<LongTermKnowledgeNodePo>, AppError> {
+        use common::enums::MemoryStatus;
         let pool = self.pool(ctx);
         let agent_id_owned = agent_id.to_string();
         let query_owned = query.to_string();
@@ -542,9 +602,9 @@ LIMIT ?
         let nodes = sqlx::query_as!(
             LongTermKnowledgeNodePo,
             r#"
-SELECT id, agent_id, node_name, node_description, node_type, summary, created_at, updated_at
+SELECT id, agent_id, node_name, node_description, node_type, summary, status AS "status: MemoryStatus", created_at, updated_at
 FROM long_term_knowledge_node
-WHERE agent_id = ? AND (node_name MATCH ? OR summary MATCH ?)
+WHERE agent_id = ? AND (node_name MATCH ? OR summary MATCH ?) AND status != 0
 LIMIT ?
 "#,
             agent_id_owned,
@@ -563,26 +623,24 @@ LIMIT ?
         ctx: RequestContext,
         id: &str,
     ) -> Result<(), AppError> {
+        use common::enums::MemoryStatus;
         let pool = self.pool(ctx);
-        let mut tx = pool.begin().await?;
-
-        // 先删除相关引用
+        let now = chrono::Utc::now().timestamp();
+        let status_i32 = MemoryStatus::Forgotten as i32;
+        // 软删除：标记为已遗忘，保留数据可恢复
         sqlx::query!(
-            r#"DELETE FROM knowledge_reference WHERE knowledge_id = ?"#,
+            r#"
+UPDATE long_term_knowledge_node
+SET status = ?, updated_at = ?
+WHERE id = ?
+"#,
+            status_i32,
+            now,
             id
         )
-        .execute(&mut *tx)
+        .execute(&pool)
         .await?;
 
-        // 再删除节点
-        sqlx::query!(
-            r#"DELETE FROM long_term_knowledge_node WHERE id = ?"#,
-            id
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        tx.commit().await?;
         Ok(())
     }
 

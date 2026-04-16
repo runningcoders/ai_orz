@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, agent_id, node_name, node_description, node_type, summary, created_at, updated_at\nFROM long_term_knowledge_node\nWHERE agent_id = ?\nORDER BY updated_at DESC\nLIMIT ?\n",
+  "query": "\nSELECT id, agent_id, task_id, role, summary, tags, status AS \"status: MemoryStatus\", created_at, updated_at\nFROM short_term_memory_index\nWHERE agent_id = ? AND status != 0\nORDER BY created_at DESC\nLIMIT ?\n",
   "describe": {
     "columns": [
       {
@@ -14,33 +14,38 @@
         "type_info": "Text"
       },
       {
-        "name": "node_name",
+        "name": "task_id",
         "ordinal": 2,
         "type_info": "Text"
       },
       {
-        "name": "node_description",
+        "name": "role",
         "ordinal": 3,
         "type_info": "Text"
       },
       {
-        "name": "node_type",
+        "name": "summary",
         "ordinal": 4,
         "type_info": "Text"
       },
       {
-        "name": "summary",
+        "name": "tags",
         "ordinal": 5,
         "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "status: MemoryStatus",
         "ordinal": 6,
         "type_info": "Integer"
       },
       {
-        "name": "updated_at",
+        "name": "created_at",
         "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 8,
         "type_info": "Integer"
       }
     ],
@@ -50,6 +55,7 @@
     "nullable": [
       false,
       false,
+      true,
       false,
       false,
       false,
@@ -58,5 +64,5 @@
       false
     ]
   },
-  "hash": "8f932ae841dbabfddf678746b83c252d66311342b051d2607e15f41357235a15"
+  "hash": "c40137929ee402f9216f8d891e5364216deeb5dae6de1cd37352206c18654744"
 }

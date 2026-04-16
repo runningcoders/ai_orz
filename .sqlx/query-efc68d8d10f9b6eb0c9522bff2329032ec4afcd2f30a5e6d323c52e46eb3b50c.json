@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, agent_id, node_name, node_description, node_type, summary, created_at, updated_at\nFROM long_term_knowledge_node\nWHERE agent_id = ? AND node_type = ?\nORDER BY updated_at DESC\nLIMIT ?\n",
+  "query": "\nSELECT id, agent_id, node_name, node_description, node_type, summary, status AS \"status: MemoryStatus\", created_at, updated_at\nFROM long_term_knowledge_node\nWHERE agent_id = ? AND status != 0\nORDER BY updated_at DESC\nLIMIT ?\n",
   "describe": {
     "columns": [
       {
@@ -34,20 +34,26 @@
         "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "status: MemoryStatus",
         "ordinal": 6,
         "type_info": "Integer"
       },
       {
-        "name": "updated_at",
+        "name": "created_at",
         "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 8,
         "type_info": "Integer"
       }
     ],
     "parameters": {
-      "Right": 3
+      "Right": 2
     },
     "nullable": [
+      false,
       false,
       false,
       false,
@@ -58,5 +64,5 @@
       false
     ]
   },
-  "hash": "fed7aeef809e3cc23b623ab9798b8dba8fed050855fb79e4d39a5684e2f44d68"
+  "hash": "efc68d8d10f9b6eb0c9522bff2329032ec4afcd2f30a5e6d323c52e46eb3b50c"
 }

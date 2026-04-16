@@ -161,6 +161,8 @@ pub struct ShortTermMemoryIndexPo {
     pub summary: String,
     /// 标签列表（用于过滤检索）
     pub tags: String,
+    /// 记忆状态
+    pub status: common::enums::MemoryStatus,
     /// 创建时间戳
     pub created_at: i64,
     /// 更新时间戳
@@ -184,6 +186,8 @@ pub struct LongTermKnowledgeNodePo {
     pub node_type: String,
     /// 综合总结
     pub summary: String,
+    /// 记忆状态
+    pub status: common::enums::MemoryStatus,
     /// 创建时间戳
     pub created_at: i64,
     /// 更新时间戳

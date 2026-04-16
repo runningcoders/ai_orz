@@ -9,6 +9,7 @@ pub mod task;
 pub mod project;
 pub mod file;
 pub mod skill;
+pub mod memory;
 
 pub use agent::{AgentStatus, ModelProviderStatus};
 pub use organization::{OrganizationStatus, OrganizationScope};
@@ -19,3 +20,4 @@ pub use task::{TaskStatus, AssigneeType};
 pub use project::ProjectStatus;
 pub use file::FileType;
 pub use skill::SkillStatus;
+pub use memory::MemoryStatus;

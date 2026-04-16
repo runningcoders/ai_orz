@@ -92,6 +92,19 @@ pub trait MemoryDaoTrait: Send + Sync {
     /// - 完整内容字符串
     fn read_memory_content(&self, index: &ShortTermMemoryIndexPo) -> Result<String, AppError>;
 
+    /// 遗忘短期记忆索引（软删除，标记为已遗忘）
+    ///
+    /// # 参数
+    /// - ctx: 请求上下文
+    /// - id: 索引 ID
+    /// # 返回
+    /// - 成功返回 Ok(())
+    async fn forget_short_term_index(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<(), AppError>;
+
     /// 批量追加多个记忆追踪，并批量插入短期索引
     ///
     /// 用于批量聚合记忆，合并多个连续相关记忆追踪为一个短期索引

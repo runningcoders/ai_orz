@@ -6,6 +6,7 @@ use super::*;
 use crate::models::memory::{MemoryRole, MemoryTrace, LongTermKnowledgeNodePo, KnowledgeNodeRelationPo, KnowledgeReferencePo, KnowledgeRelationType};
 use crate::pkg::RequestContext;
 use crate::service::dao::memory::sqlite::SqliteMemoryDao;
+use common::enums::MemoryStatus;
 use sqlx::SqlitePool;
 
 #[sqlx::test]
@@ -55,6 +56,7 @@ async fn test_create_knowledge_node(pool: SqlitePool) {
         node_description: "Rust 的内存安全特性".to_string(),
         node_type: "concept".to_string(),
         summary: "Rust 通过所有权系统实现内存安全".to_string(),
+        status: MemoryStatus::Active,
         created_at: 0,
         updated_at: 0,
     };
@@ -89,6 +91,7 @@ async fn test_add_knowledge_relation(pool: SqlitePool) {
         node_description: "Rust 编程语言".to_string(),
         node_type: "language".to_string(),
         summary: "Rust 是一门系统编程语言".to_string(),
+        status: MemoryStatus::Active,
         created_at: 0,
         updated_at: 0,
     };
@@ -99,6 +102,7 @@ async fn test_add_knowledge_relation(pool: SqlitePool) {
         node_description: "内存安全特性".to_string(),
         node_type: "concept".to_string(),
         summary: "内存安全是 Rust 的核心特性".to_string(),
+        status: MemoryStatus::Active,
         created_at: 0,
         updated_at: 0,
     };
@@ -141,6 +145,7 @@ async fn test_add_knowledge_reference(pool: SqlitePool) {
         node_description: "测试描述".to_string(),
         node_type: "test".to_string(),
         summary: "测试摘要".to_string(),
+        status: MemoryStatus::Active,
         created_at: 0,
         updated_at: 0,
     };

@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS short_term_memory_index (
     role TEXT NOT NULL,
     summary TEXT NOT NULL,
     tags TEXT NOT NULL,
+    "status" INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 ) STRICT;
@@ -113,6 +114,7 @@ CREATE TABLE IF NOT EXISTS long_term_knowledge_node (
     node_description TEXT NOT NULL,
     node_type TEXT NOT NULL,
     summary TEXT NOT NULL,
+    "status" INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 ) STRICT;

@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, agent_id, task_id, role, summary, tags, created_at, updated_at\nFROM short_term_memory_index\nWHERE agent_id = ?\nORDER BY created_at DESC\nLIMIT ?\n",
+  "query": "\nSELECT id, agent_id, task_id, role, summary, tags, status AS \"status: MemoryStatus\", created_at, updated_at\nFROM short_term_memory_index\nWHERE agent_id = ? AND summary MATCH ? AND status != 0\nLIMIT ?\n",
   "describe": {
     "columns": [
       {
@@ -34,18 +34,23 @@
         "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "status: MemoryStatus",
         "ordinal": 6,
         "type_info": "Integer"
       },
       {
-        "name": "updated_at",
+        "name": "created_at",
         "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 8,
         "type_info": "Integer"
       }
     ],
     "parameters": {
-      "Right": 2
+      "Right": 3
     },
     "nullable": [
       false,
@@ -55,8 +60,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "63d8121f63a014a83e3bed9a2276b32833b0ee3df3cfbfac55f2b6e06050d100"
+  "hash": "e9c8f14eba1c63b3331848608199ba56cac09d7194ef1640294badb601ceda39"
 }
