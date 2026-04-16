@@ -9,6 +9,7 @@ pub mod user;
 pub mod memory;
 pub mod task;
 pub mod project;
+pub mod skill;
 
 pub fn init_all(){
     agent::init();
@@ -22,4 +23,5 @@ pub fn init_all(){
     memory::init();
     task::init();
     project::init();
+    skill::init();
 }

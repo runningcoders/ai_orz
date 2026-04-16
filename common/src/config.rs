@@ -198,4 +198,42 @@ impl AppConfig {
         let date = now.format("%Y%m%d");
         format!("{}/{}{}", date, file_id, extension)
     }
+
+    /// 获取所有技能的根目录
+    pub fn skills_root_dir(&self) -> PathBuf {
+        Path::new(&self.base_data_path).join("skills")
+    }
+
+    /// 获取待沉淀技能根目录
+    pub fn skills_pending_dir(&self) -> PathBuf {
+        self.skills_root_dir().join("pending")
+    }
+
+    /// 获取可用技能根目录
+    pub fn skills_available_dir(&self) -> PathBuf {
+        self.skills_root_dir().join("available")
+    }
+
+    /// 获取具体技能目录（根据状态）
+    pub fn skill_dir(&self, skill_id: &str, is_pending: bool) -> PathBuf {
+        if is_pending {
+            self.skills_pending_dir().join(skill_id)
+        } else {
+            self.skills_available_dir().join(skill_id)
+        }
+    }
+
+    /// 获取技能内容文件路径 skill.md
+    pub fn skill_content_path(&self, skill_id: &str, is_pending: bool) -> PathBuf {
+        self.skill_dir(skill_id, is_pending).join("skill.md")
+    }
+
+    /// 获取技能相对路径（相对于 base_data_path，用于存储到数据库）
+    pub fn skill_relative_path(&self, skill_id: &str, is_pending: bool) -> String {
+        if is_pending {
+            format!("skills/pending/{}", skill_id)
+        } else {
+            format!("skills/available/{}", skill_id)
+        }
+    }
 }

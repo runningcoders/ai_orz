@@ -187,3 +187,24 @@ CREATE INDEX IF NOT EXISTS idx_messages_task_id ON messages(task_id);
 CREATE INDEX IF NOT EXISTS idx_messages_from_id ON messages(from_id);
 CREATE INDEX IF NOT EXISTS idx_messages_to_id ON messages(to_id);
 CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
+
+CREATE TABLE IF NOT EXISTS skills (
+    id TEXT NOT NULL PRIMARY KEY,                    -- 技能ID: "name-slug--hash" (名称slug--哈希前6位)
+    name TEXT NOT NULL,                              -- 技能显示名称
+    description TEXT NOT NULL DEFAULT '',            -- 技能描述：什么时候用这个技能
+    tags TEXT NOT NULL DEFAULT '[]',                 -- JSON 数组：标签列表 ["产品", "PRD", "需求"]
+    category TEXT NOT NULL DEFAULT '',               -- 单一分类："文档写作" / "问题解决" / "代码开发" / "研究分析"
+    parent_skill_id TEXT NOT NULL DEFAULT '',        -- 父技能ID（继承来源，技能树演进）
+    author_id TEXT NOT NULL DEFAULT '',              -- 创建人用户ID
+    modifier_id TEXT NOT NULL DEFAULT '',            -- 最后修改人用户ID
+    status INTEGER NOT NULL DEFAULT 2,               -- 技能状态：0=已过期 1=可用 2=待沉淀（默认待沉淀）
+    created_at INTEGER NOT NULL,                     -- 创建时间戳（毫秒）
+    updated_at INTEGER NOT NULL,                     -- 更新时间戳（毫秒）
+    content_path TEXT NOT NULL                       -- 相对 base_data_path 的技能目录路径
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS idx_skills_status ON skills(status);
+CREATE INDEX IF NOT EXISTS idx_skills_category ON skills(category);
+CREATE INDEX IF NOT EXISTS idx_skills_parent ON skills(parent_skill_id);
+CREATE INDEX IF NOT EXISTS idx_skills_updated ON skills(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_skills_author ON skills(author_id);
