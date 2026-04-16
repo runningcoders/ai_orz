@@ -7,7 +7,6 @@ use crate::pkg::RequestContext;
 use common::enums::SkillStatus;
 use crate::service::dao::skill::SkillDaoTrait;
 use std::sync::{Arc, OnceLock};
-use sqlx::SqlitePool;
 
 static SKILL_DAO: OnceLock<Arc<dyn SkillDaoTrait>> = OnceLock::new();
 
@@ -18,19 +17,16 @@ pub fn dao() -> Arc<dyn SkillDaoTrait> {
 
 /// Initialize singleton
 pub fn init() {
-    let pool = crate::pkg::storage::get().pool_owned();
-    let dao = SqliteSkillDao { pool };
+    let dao = SqliteSkillDao;
     let _ = SKILL_DAO.set(Arc::new(dao));
 }
 
 #[derive(Debug, Clone)]
-pub struct SqliteSkillDao {
-    pool: SqlitePool,
-}
+pub struct SqliteSkillDao;
 
 #[async_trait]
 impl SkillDaoTrait for SqliteSkillDao {
-    async fn insert(&self, _ctx: RequestContext, skill: &SkillPo) -> Result<(), AppError> {
+    async fn insert(&self, ctx: RequestContext, skill: &SkillPo) -> Result<(), AppError> {
         let status_i32 = skill.status.to_i32();
         sqlx::query!(
             r#"
@@ -52,12 +48,12 @@ INSERT INTO skills (
             skill.updated_at,
             skill.content_path
         )
-        .execute(&self.pool)
+        .execute(ctx.db_pool())
         .await?;
         Ok(())
     }
 
-    async fn update(&self, _ctx: RequestContext, skill: &SkillPo) -> Result<(), AppError> {
+    async fn update(&self, ctx: RequestContext, skill: &SkillPo) -> Result<(), AppError> {
         let now = chrono::Utc::now().timestamp_millis();
         let status_i32 = skill.status.to_i32();
         sqlx::query!(
@@ -79,12 +75,12 @@ WHERE id = ?
             skill.content_path,
             skill.id
         )
-        .execute(&self.pool)
+        .execute(ctx.db_pool())
         .await?;
         Ok(())
     }
 
-    async fn find_by_id(&self, _ctx: RequestContext, id: &str) -> Result<Option<SkillPo>, AppError> {
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<SkillPo>, AppError> {
         let skill = sqlx::query_as!(
             SkillPo,
             r#"
@@ -95,14 +91,14 @@ FROM skills WHERE id = ?
             "#,
             id
         )
-        .fetch_optional(&self.pool)
+        .fetch_optional(ctx.db_pool())
         .await?;
         Ok(skill)
     }
 
     async fn list_by_status(
         &self,
-        _ctx: RequestContext,
+        ctx: RequestContext,
         status: SkillStatus,
     ) -> Result<Vec<SkillPo>, AppError> {
         let status_i32 = status.to_i32();
@@ -116,14 +112,14 @@ FROM skills WHERE status = ? ORDER BY updated_at DESC
             "#,
             status_i32
         )
-        .fetch_all(&self.pool)
+        .fetch_all(ctx.db_pool())
         .await?;
         Ok(skills)
     }
 
     async fn list_by_category(
         &self,
-        _ctx: RequestContext,
+        ctx: RequestContext,
         category: &str,
     ) -> Result<Vec<SkillPo>, AppError> {
         let skills = sqlx::query_as!(
@@ -136,14 +132,14 @@ FROM skills WHERE category = ? ORDER BY updated_at DESC
             "#,
             category
         )
-        .fetch_all(&self.pool)
+        .fetch_all(ctx.db_pool())
         .await?;
         Ok(skills)
     }
 
     async fn list_by_author(
         &self,
-        _ctx: RequestContext,
+        ctx: RequestContext,
         author_id: &str,
     ) -> Result<Vec<SkillPo>, AppError> {
         let skills = sqlx::query_as!(
@@ -156,12 +152,12 @@ FROM skills WHERE author_id = ? ORDER BY updated_at DESC
             "#,
             author_id
         )
-        .fetch_all(&self.pool)
+        .fetch_all(ctx.db_pool())
         .await?;
         Ok(skills)
     }
 
-    async fn search(&self, _ctx: RequestContext, keyword: &str) -> Result<Vec<SkillPo>, AppError> {
+    async fn search(&self, ctx: RequestContext, keyword: &str) -> Result<Vec<SkillPo>, AppError> {
         let pattern = format!("%{}%", keyword);
         let skills = sqlx::query_as!(
             SkillPo,
@@ -176,12 +172,12 @@ ORDER BY updated_at DESC
             pattern,
             pattern
         )
-        .fetch_all(&self.pool)
+        .fetch_all(ctx.db_pool())
         .await?;
         Ok(skills)
     }
 
-    async fn delete_by_id(&self, _ctx: RequestContext, id: &str) -> Result<(), AppError> {
+    async fn delete_by_id(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
         let now = chrono::Utc::now().timestamp_millis();
         sqlx::query!(
             r#"
@@ -190,7 +186,7 @@ UPDATE skills SET status = 0, updated_at = ? WHERE id = ?
             now,
             id
         )
-        .execute(&self.pool)
+        .execute(ctx.db_pool())
         .await?;
         Ok(())
     }
