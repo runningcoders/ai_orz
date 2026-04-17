@@ -2,7 +2,7 @@
 
 use anyhow::{anyhow, Result};
 use crate::models::tool::ToolPo;
-use super::builtin::DynTool;
+use super::DynTool;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

@@ -3,92 +3,95 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use uuid::Uuid;
+use async_trait::async_trait;
+use dyn_clone::DynClone;
+use dyn_clone::clone_trait_object;
 
 pub mod builtin;
 pub mod http;
 pub mod mcp;
 
-pub use builtin::{BuiltinTool, BuiltinErasedWrapper, DynTool, ErasedTool};
+pub use builtin::BuiltinTool;
 
-/// Global tool registry instance
+/// Object-safe, unified tool interface with JSON I/O.
+/// All tools from all protocols eventually get converted to this for calling.
+#[async_trait]
+pub trait ErasedTool: Send + Sync + DynClone {
+    /// Get tool name
+    fn name(&self) -> String;
+    /// Get OpenAI-style tool definition
+    async fn definition(&self, prompt: String) -> rig::completion::ToolDefinition;
+    /// Call tool with JSON arguments
+    async fn call(&self, args: serde_json::Value) -> Result<serde_json::Value, rig::tool::ToolError>;
+}
+
+clone_trait_object!(ErasedTool);
+
+/// Type alias for the dynamic tool we return from registry.
+pub type DynTool = Box<dyn ErasedTool>;
+
+/// Global tool registry instance.
 pub static GLOBAL_TOOL_REGISTRY: OnceLock<ToolRegistry> = OnceLock::new();
 
-/// Initialize global tool registry
+/// Initialize global tool registry.
 pub fn init() {
     GLOBAL_TOOL_REGISTRY.set(ToolRegistry::default()).ok();
 }
 
-/// Get global tool registry
+/// Get the global tool registry.
 pub fn get_registry() -> &'static ToolRegistry {
     GLOBAL_TOOL_REGISTRY.get().unwrap()
 }
 
-/// Global tool registry - each protocol has its own typed storage
+/// Global tool registry.
+/// Each protocol type has its own typed storage field for better type safety.
 #[derive(Clone, Default)]
 pub struct ToolRegistry {
-    /// Built-in tools (pre-compiled in code) - stored as their specific trait type
+    /// Built-in (pre-compiled) tools - stored as their own trait type `Box<dyn BuiltinTool>`
     builtins: Arc<Mutex<HashMap<Uuid, Box<dyn BuiltinTool>>>>,
-    /// HTTP remote tools - will have their own trait type when implemented
+    /// HTTP remote tools - placeholder for future implementation
     http: Arc<Mutex<HashMap<Uuid, ()>>>,
-    /// MCP protocol tools - will have their own trait type when implemented
+    /// MCP protocol tools - placeholder for future implementation
     mcp: Arc<Mutex<HashMap<Uuid, ()>>>,
 }
 
 impl ToolRegistry {
-    /// Register a built-in tool
+    /// Register a built-in tool.
     pub fn register_builtin(&self, tool: Box<dyn BuiltinTool>) {
         let id = tool.id();
-        let mut lock = self.builtins.lock().unwrap();
-        lock.insert(id, tool);
+        self.builtins.lock().unwrap().insert(id, tool);
     }
 
-    /// Register an HTTP tool (placeholder)
-    pub fn register_http(&self, _id: Uuid, _tool: ()) {
-        let mut lock = self.http.lock().unwrap();
-        lock.insert(_id, _tool);
-    }
-
-    /// Register an MCP tool (placeholder)
-    pub fn register_mcp(&self, _id: Uuid, _tool: ()) {
-        let mut lock = self.mcp.lock().unwrap();
-        lock.insert(_id, _tool);
-    }
-
-    /// Get a tool by ID - checks all registries, returns wrapped DynTool for unified use
+    /// Get a tool by ID from any registry.
+    /// Returns a type-erased DynTool for unified calling.
     pub fn get(&self, id: &Uuid) -> Option<DynTool> {
-        // Check builtins first
         let lock = self.builtins.lock().unwrap();
-        if let Some(builtin) = lock.get(id) {
-            // Wrap builtin to unified ErasedTool (DynTool)
-            let wrapper = Box::new(BuiltinErasedWrapper(builtin.clone()));
-            return Some(wrapper);
-        }
-        // TODO: HTTP and MCP when implemented
-        None
+        // BuiltinTool inherits ErasedTool, so we can just return it directly
+        lock.get(id).map(|tool| tool.clone() as DynTool)
     }
 
-    /// Unregister a tool from all registries
+    /// Unregister a tool by ID from all registries.
     pub fn unregister(&self, id: &Uuid) {
         self.builtins.lock().unwrap().remove(id);
         self.http.lock().unwrap().remove(id);
         self.mcp.lock().unwrap().remove(id);
     }
 
-    /// Clear all registries
+    /// Clear all registered tools.
     pub fn clear_all(&self) {
         self.builtins.lock().unwrap().clear();
         self.http.lock().unwrap().clear();
         self.mcp.lock().unwrap().clear();
     }
 
-    /// List all built-in tool IDs
+    /// List all registered built-in tool IDs.
     pub fn list_builtin_ids(&self) -> Vec<Uuid> {
         self.builtins.lock().unwrap().keys().cloned().collect()
     }
 
-    /// Get a cloned built-in tool directly (if needed for builtin-specific operations)
+    /// Get a built-in tool directly (if you need builtin-specific operations).
     pub fn get_builtin(&self, id: &Uuid) -> Option<Box<dyn BuiltinTool>> {
         let lock = self.builtins.lock().unwrap();
-        lock.get(id).map(|b| b.clone())
+        lock.get(id).cloned()
     }
 }

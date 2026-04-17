@@ -1,25 +1,22 @@
 //! Builtin tool provider
 
-use dyn_clone::DynClone;
 use async_trait::async_trait;
+use dyn_clone::DynClone;
 use dyn_clone::clone_trait_object;
 use uuid::Uuid;
+use rig::tool::Tool;
 
-/// Object-safe, dyn-compatible built-in tool trait - specifically for storing builtins in registry
+use super::ErasedTool;
+
+/// Concrete wrapper for a builtin Rig Tool.
 ///
-/// All built-in tools are pre-compiled, implement Rig's Tool and this trait for registry storage.
+/// Stores Rig Tool + metadata, implements ErasedTool directly for unified use.
 #[async_trait]
-pub trait BuiltinTool: Send + Sync + DynClone {
-    /// Unique tool ID (UUID as string)
+pub trait BuiltinTool: ErasedTool + Send + Sync + DynClone {
+    /// Unique tool ID (UUID string)
     fn tool_id(&self) -> &'static str;
-    /// Tool description
+    /// Tool description for registry/DB
     fn description(&self) -> &'static str;
-    /// Get tool name from Rig
-    fn name(&self) -> String;
-    /// Get tool definition from Rig
-    async fn definition(&self, prompt: String) -> rig::completion::ToolDefinition;
-    /// Call tool with JSON arguments (already erased to JSON I/O)
-    async fn call(&self, args: serde_json::Value) -> Result<serde_json::Value, rig::tool::ToolError>;
 
     /// Get parsed UUID
     fn id(&self) -> Uuid {
@@ -29,16 +26,15 @@ pub trait BuiltinTool: Send + Sync + DynClone {
 
 clone_trait_object!(BuiltinTool);
 
-/// Concrete wrapper for any Rig Tool + metadata that implements BuiltinTool
-///
-/// Users implement a Rig Tool, then wrap it with this to register.
-pub struct RigBuiltinTool<T> {
+/// Type-erased wrapper for any Rig Tool implementation that implements BuiltinTool + ErasedTool
+#[derive(Clone)]
+pub struct RigBuiltinWrapper<T> {
     inner: T,
     tool_id: &'static str,
     description: &'static str,
 }
 
-impl<T> RigBuiltinTool<T>
+impl<T> RigBuiltinWrapper<T>
 where
     T: rig::tool::Tool + Clone + Send + Sync + 'static,
     T::Args: for<'de> serde::Deserialize<'de>,
@@ -51,7 +47,7 @@ where
 }
 
 #[async_trait]
-impl<T> BuiltinTool for RigBuiltinTool<T>
+impl<T> BuiltinTool for RigBuiltinWrapper<T>
 where
     T: rig::tool::Tool + Clone + Send + Sync + 'static,
     T::Args: for<'de> serde::Deserialize<'de>,
@@ -65,7 +61,16 @@ where
     fn description(&self) -> &'static str {
         self.description
     }
+}
 
+#[async_trait]
+impl<T> ErasedTool for RigBuiltinWrapper<T>
+where
+    T: rig::tool::Tool + Clone + Send + Sync + 'static,
+    T::Args: for<'de> serde::Deserialize<'de>,
+    T::Output: serde::Serialize,
+    T::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
     fn name(&self) -> String {
         self.inner.name()
     }
@@ -75,63 +80,10 @@ where
     }
 
     async fn call(&self, args: serde_json::Value) -> Result<serde_json::Value, rig::tool::ToolError> {
-        let args = serde_json::from_value(args)?;
+        let args: T::Args = serde_json::from_value(args)?;
         let output = self.inner.call(args).await.map_err(|e| {
             rig::tool::ToolError::ToolCallError(e.into())
         })?;
         Ok(serde_json::to_value(output)?)
-    }
-}
-
-impl<T> Clone for RigBuiltinTool<T>
-where
-    T: rig::tool::Tool + Clone + Send + Sync + 'static,
-{
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-            tool_id: self.tool_id,
-            description: self.description,
-        }
-    }
-}
-
-/// Object-safe, dyn-compatible tool trait with JSON I/O (unified interface for all protocols)
-#[async_trait]
-pub trait ErasedTool: Send + Sync + DynClone {
-    /// Get tool name
-    fn name(&self) -> String;
-    /// Get tool definition
-    async fn definition(&self, prompt: String) -> rig::completion::ToolDefinition;
-    /// Call tool with JSON arguments
-    async fn call(&self, args: serde_json::Value) -> Result<serde_json::Value, rig::tool::ToolError>;
-}
-
-clone_trait_object!(ErasedTool);
-
-/// Type alias for dynamic tool trait object (returned by registry.get())
-pub type DynTool = Box<dyn ErasedTool>;
-
-/// Wrapper to convert BuiltinTool to unified ErasedTool
-pub struct BuiltinErasedWrapper(pub Box<dyn BuiltinTool>);
-
-#[async_trait]
-impl ErasedTool for BuiltinErasedWrapper {
-    fn name(&self) -> String {
-        self.0.name()
-    }
-
-    async fn definition(&self, prompt: String) -> rig::completion::ToolDefinition {
-        self.0.definition(prompt).await
-    }
-
-    async fn call(&self, args: serde_json::Value) -> Result<serde_json::Value, rig::tool::ToolError> {
-        self.0.call(args).await
-    }
-}
-
-impl Clone for BuiltinErasedWrapper {
-    fn clone(&self) -> Self {
-        Self(dyn_clone::clone_box(&*self.0))
     }
 }

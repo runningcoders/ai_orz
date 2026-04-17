@@ -10,8 +10,7 @@ use std::sync::OnceLock;
 pub mod providers;
 mod sqlite;
 
-use providers::{ToolRegistry, GLOBAL_TOOL_REGISTRY};
-use providers::builtin::DynTool;
+use providers::{ToolRegistry, GLOBAL_TOOL_REGISTRY, DynTool};
 
 pub use sqlite::{init, SqliteToolDao};
 
