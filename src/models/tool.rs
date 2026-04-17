@@ -3,6 +3,7 @@
 use common::enums::{ToolProtocol, ToolStatus};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use anyhow::Result;
 use uuid::Uuid;
 
 /// Tool 持久化对象
@@ -11,7 +12,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct ToolPo {
     /// 工具 ID
-    pub id: Uuid,
+    pub id: String,
     /// 工具名称（唯一）
     pub name: String,
     /// 工具描述
@@ -46,7 +47,7 @@ impl ToolPo {
     ) -> Self {
         let now = common::constants::utils::current_timestamp();
         Self {
-            id: Uuid::now_v7(),
+            id: Uuid::now_v7().to_string(),
             name,
             description,
             protocol,
@@ -58,6 +59,11 @@ impl ToolPo {
             created_by: creator.clone(),
             updated_by: creator,
         }
+    }
+
+    /// 获取 id 作为 Uuid
+    pub fn id_uuid(&self) -> Result<Uuid> {
+        Ok(Uuid::parse_str(&self.id)?)
     }
 
     /// 更新时间戳和修改者

@@ -4,11 +4,19 @@ use crate::models::tool::ToolPo;
 use crate::pkg::request_context::RequestContext;
 use anyhow::Result;
 use async_trait::async_trait;
+use std::boxed::Box;
 use uuid::Uuid;
 
 mod sqlite;
+#[cfg(test)]
+mod sqlite_test;
 
-pub use sqlite::{init, SqliteToolDao};
+pub use sqlite::{init, get, SqliteToolDao};
+
+/// Get the global tool DAO instance
+pub fn dao() -> &'static Box<dyn ToolDao> {
+    get()
+}
 
 /// Tool DAO trait
 #[async_trait]
