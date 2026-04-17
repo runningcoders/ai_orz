@@ -3,9 +3,9 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use uuid::Uuid;
-use async_trait::async_trait;
 use dyn_clone::DynClone;
 use dyn_clone::clone_trait_object;
+use rig::tool::ToolDyn;
 
 pub mod builtin;
 pub mod http;
@@ -13,22 +13,9 @@ pub mod mcp;
 
 pub use builtin::BuiltinTool;
 
-/// Object-safe, unified tool interface with JSON I/O.
-/// All tools from all protocols eventually get converted to this for calling.
-#[async_trait]
-pub trait ErasedTool: Send + Sync + DynClone {
-    /// Get tool name
-    fn name(&self) -> String;
-    /// Get OpenAI-style tool definition
-    async fn definition(&self, prompt: String) -> rig::completion::ToolDefinition;
-    /// Call tool with JSON arguments
-    async fn call(&self, args: serde_json::Value) -> Result<serde_json::Value, rig::tool::ToolError>;
-}
-
-clone_trait_object!(ErasedTool);
-
-/// Type alias for the dynamic tool we return from registry.
-pub type DynTool = Box<dyn ErasedTool>;
+/// Type alias for Rig's dynamic tool trait (already dyn-compatible).
+/// This is what Rig's toolset accepts directly.
+pub type DynTool = Box<dyn ToolDyn>;
 
 /// Global tool registry instance.
 pub static GLOBAL_TOOL_REGISTRY: OnceLock<ToolRegistry> = OnceLock::new();
@@ -48,6 +35,7 @@ pub fn get_registry() -> &'static ToolRegistry {
 #[derive(Clone, Default)]
 pub struct ToolRegistry {
     /// Built-in (pre-compiled) tools - stored as their own trait type `Box<dyn BuiltinTool>`
+    /// BuiltinTool inherits ToolDyn, so can be used directly where ToolDyn is needed.
     builtins: Arc<Mutex<HashMap<Uuid, Box<dyn BuiltinTool>>>>,
     /// HTTP remote tools - placeholder for future implementation
     http: Arc<Mutex<HashMap<Uuid, ()>>>,
@@ -63,11 +51,13 @@ impl ToolRegistry {
     }
 
     /// Get a tool by ID from any registry.
-    /// Returns a type-erased DynTool for unified calling.
+    /// Returns Rig's ToolDyn directly - can be added to Rig's ToolSet without any conversion.
     pub fn get(&self, id: &Uuid) -> Option<DynTool> {
         let lock = self.builtins.lock().unwrap();
-        // BuiltinTool inherits ErasedTool, so we can just return it directly
-        lock.get(id).map(|tool| tool.clone() as DynTool)
+        let tool = lock.get(id)?;
+        // BuiltinTool implements ToolDyn, just clone and return as DynTool
+        let cloned = dyn_clone::clone_box(&**tool);
+        Some(cloned)
     }
 
     /// Unregister a tool by ID from all registries.
