@@ -11,3 +11,4 @@ pub mod artifact;
 pub mod task;
 pub mod user;
 pub mod skill;
+pub mod tool;
