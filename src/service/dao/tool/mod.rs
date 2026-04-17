@@ -5,21 +5,10 @@ use crate::pkg::request_context::RequestContext;
 use anyhow::Result;
 use async_trait::async_trait;
 use uuid::Uuid;
-use std::sync::OnceLock;
 
 mod sqlite;
 
-use crate::pkg::tool_registry::{ToolRegistry, GLOBAL_TOOL_REGISTRY, DynTool};
-
 pub use sqlite::{init, SqliteToolDao};
-
-/// Global Tool DAO instance
-pub static TOOL_DAO: OnceLock<Box<dyn ToolDao>> = OnceLock::new();
-
-/// Get global Tool DAO
-pub fn get() -> &'static Box<dyn ToolDao> {
-    TOOL_DAO.get().unwrap()
-}
 
 /// Tool DAO trait
 #[async_trait]
@@ -58,16 +47,4 @@ pub trait ToolDao: Send + Sync {
 
     /// List all tools for an agent
     async fn list_tools_for_agent(&self, ctx: &RequestContext, agent_id: &str) -> Result<Vec<ToolPo>>;
-
-    // ========== Tool instance operations ==========
-
-    /// Get global tool registry
-    fn registry(&self) -> &ToolRegistry {
-        GLOBAL_TOOL_REGISTRY.get().unwrap()
-    }
-
-    /// Get tool instance by ID from registry
-    fn get_tool_instance(&self, id: Uuid) -> Option<DynTool> {
-        self.registry().get(&id)
-    }
 }

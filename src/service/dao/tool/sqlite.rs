@@ -4,13 +4,19 @@ use crate::models::tool::ToolPo;
 use crate::pkg::request_context::RequestContext;
 use anyhow::Result;
 use async_trait::async_trait;
-use common::enums::{ToolProtocol, ToolStatus};
-use common::constants::utils::current_timestamp;
 use sqlx::FromRow;
 use uuid::Uuid;
+use std::sync::OnceLock;
 
-use super::{ToolDao, TOOL_DAO};
-use crate::pkg::tool_registry;
+use super::ToolDao;
+
+/// Global Tool DAO instance
+static TOOL_DAO: OnceLock<Box<dyn ToolDao>> = OnceLock::new();
+
+/// Get global Tool DAO
+pub fn get() -> &'static Box<dyn ToolDao> {
+    TOOL_DAO.get().unwrap()
+}
 
 /// SQLite Tool DAO implementation
 #[derive(Clone, Default)]
@@ -24,8 +30,6 @@ impl SqliteToolDao {
 
 /// Initialize global Tool DAO
 pub fn init() {
-    // Initialize global tool registry
-    tool_registry::init();
     // Create DAO instance and set global
     let dao = SqliteToolDao::new();
     TOOL_DAO.set(Box::new(dao)).ok();
