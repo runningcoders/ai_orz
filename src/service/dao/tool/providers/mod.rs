@@ -1,9 +1,6 @@
-//! Global tool instance registry (all protocols)
+//! Global tool registry - separate storage by protocol
 
-use anyhow::{anyhow, Result};
-use common::enums::ToolProtocol;
-use crate::models::tool::ToolPo;
-use self::builtin::DynTool;
+use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use uuid::Uuid;
@@ -12,8 +9,9 @@ pub mod builtin;
 pub mod http;
 pub mod mcp;
 
-/// Global tool registry (key: tool_id)
-/// All tools (builtin/http/mcp) are registered here
+pub use builtin::DynTool;
+
+/// Global tool registry instance
 pub static GLOBAL_TOOL_REGISTRY: OnceLock<ToolRegistry> = OnceLock::new();
 
 /// Initialize global tool registry
@@ -26,34 +24,76 @@ pub fn get_registry() -> &'static ToolRegistry {
     GLOBAL_TOOL_REGISTRY.get().unwrap()
 }
 
-/// Global tool registry: holds all tool instances by id
+/// Global tool registry - separate storage by protocol
 #[derive(Clone, Default)]
 pub struct ToolRegistry {
-    registry: Arc<Mutex<HashMap<Uuid, DynTool>>>,
+    /// Built-in tools (pre-compiled in code)
+    builtins: Arc<Mutex<HashMap<Uuid, DynTool>>>,
+    /// HTTP remote tools
+    http: Arc<Mutex<HashMap<Uuid, DynTool>>>,
+    /// MCP protocol tools
+    mcp: Arc<Mutex<HashMap<Uuid, DynTool>>>,
 }
 
 impl ToolRegistry {
-    /// Register a tool instance
-    pub fn register(&self, id: Uuid, tool: DynTool) {
-        let mut lock = self.registry.lock().unwrap();
+    /// Register a built-in tool
+    pub fn register_builtin(&self, id: Uuid, tool: DynTool) {
+        let mut lock = self.builtins.lock().unwrap();
         lock.insert(id, tool);
     }
 
-    /// Get a tool instance by id
+    /// Register an HTTP tool
+    pub fn register_http(&self, id: Uuid, tool: DynTool) {
+        let mut lock = self.http.lock().unwrap();
+        lock.insert(id, tool);
+    }
+
+    /// Register an MCP tool
+    pub fn register_mcp(&self, id: Uuid, tool: DynTool) {
+        let mut lock = self.mcp.lock().unwrap();
+        lock.insert(id, tool);
+    }
+
+    /// Get a tool by ID - checks all registries
     pub fn get(&self, id: &Uuid) -> Option<DynTool> {
-        let lock = self.registry.lock().unwrap();
-        lock.get(id).cloned()
+        // Check builtins first
+        if let Some(tool) = self.builtins.lock().unwrap().get(id) {
+            return Some(tool.clone());
+        }
+        // Then HTTP
+        if let Some(tool) = self.http.lock().unwrap().get(id) {
+            return Some(tool.clone());
+        }
+        // Then MCP
+        self.mcp.lock().unwrap().get(id).cloned()
     }
 
-    /// Unregister a tool
+    /// Unregister a tool from all registries
     pub fn unregister(&self, id: &Uuid) {
-        let mut lock = self.registry.lock().unwrap();
-        lock.remove(id);
+        self.builtins.lock().unwrap().remove(id);
+        self.http.lock().unwrap().remove(id);
+        self.mcp.lock().unwrap().remove(id);
     }
 
-    /// Clear all registered tools
-    pub fn clear(&self) {
-        let mut lock = self.registry.lock().unwrap();
-        lock.clear();
+    /// Clear all registries
+    pub fn clear_all(&self) {
+        self.builtins.lock().unwrap().clear();
+        self.http.lock().unwrap().clear();
+        self.mcp.lock().unwrap().clear();
+    }
+
+    /// List all built-in tool IDs
+    pub fn list_builtin_ids(&self) -> Vec<Uuid> {
+        self.builtins.lock().unwrap().keys().cloned().collect()
+    }
+
+    /// List all HTTP tool IDs
+    pub fn list_http_ids(&self) -> Vec<Uuid> {
+        self.http.lock().unwrap().keys().cloned().collect()
+    }
+
+    /// List all MCP tool IDs
+    pub fn list_mcp_ids(&self) -> Vec<Uuid> {
+        self.mcp.lock().unwrap().keys().cloned().collect()
     }
 }
