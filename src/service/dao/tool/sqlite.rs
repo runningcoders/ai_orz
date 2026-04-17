@@ -12,8 +12,10 @@ use serde::{Deserialize, Serialize};
 
 use super::{ToolDao, TOOL_DAO};
 use crate::service::dao::tool::providers::{
-    init_global_cache,
-    builtin::{self, BuiltinTool, GLOBAL_BUILTIN_REGISTRY}
+    self,
+    init_global,
+    GLOBAL_BUILTIN_REGISTRY,
+    builtin::{self, BuiltinTool}
 };
 
 /// SQLite Tool DAO implementation
@@ -103,9 +105,8 @@ impl SqliteToolDao {
 
 /// Initialize global Tool DAO
 pub fn init() {
-    // Initialize global registries
-    init_global_cache();
-    builtin::init_registry();
+    // Initialize global registries (cache + builtin registry)
+    init_global();
     // Create DAO instance and set global
     let dao = SqliteToolDao::new();
     TOOL_DAO.set(Box::new(dao)).ok();

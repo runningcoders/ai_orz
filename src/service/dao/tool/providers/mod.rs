@@ -12,12 +12,41 @@ pub mod builtin;
 pub mod http;
 pub mod mcp;
 
-/// Global tool instance cache
+/// Global tool instance cache (key: tool_id)
 pub static GLOBAL_INSTANCE_CACHE: OnceLock<ToolInstanceCache> = OnceLock::new();
 
-/// Initialize global instance cache
-pub fn init_global_cache() {
+/// Global builtin tool registry (key: tool_name)
+pub static GLOBAL_BUILTIN_REGISTRY: OnceLock<BuiltinRegistry> = OnceLock::new();
+
+/// Initialize global instance cache and builtin registry
+pub fn init_global() {
     GLOBAL_INSTANCE_CACHE.set(ToolInstanceCache::default()).ok();
+    GLOBAL_BUILTIN_REGISTRY.set(BuiltinRegistry::new()).ok();
+}
+
+/// Builtin tool registry: holds all pre-registered builtin tool instances
+pub struct BuiltinRegistry {
+    registry: Arc<Mutex<HashMap<String, DynTool>>>,
+}
+
+impl BuiltinRegistry {
+    pub fn new() -> Self {
+        Self {
+            registry: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// Register a builtin tool instance
+    pub fn register_raw(&self, name: &str, tool: DynTool) {
+        let mut lock = self.registry.lock().unwrap();
+        lock.insert(name.to_string(), tool);
+    }
+
+    /// Get a registered builtin tool by name
+    pub fn get(&self, name: &str) -> Option<DynTool> {
+        let lock = self.registry.lock().unwrap();
+        lock.get(name).cloned()
+    }
 }
 
 /// Tool instance cache (key: tool_id)

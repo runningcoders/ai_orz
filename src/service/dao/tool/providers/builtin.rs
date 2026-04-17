@@ -2,10 +2,9 @@
 
 use anyhow::{anyhow, Result};
 use crate::models::tool::ToolPo;
+use crate::service::dao::tool::providers::GLOBAL_BUILTIN_REGISTRY;
 use serde_json::Value;
 use dyn_clone::DynClone;
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
 use rig::tool::Tool;
 use rig::completion::ToolDefinition;
 use async_trait::async_trait;
@@ -102,45 +101,6 @@ where
         Self {
             inner: self.inner.clone(),
         }
-    }
-}
-
-/// Global builtin tool registry (name -> tool instance)
-pub static GLOBAL_BUILTIN_REGISTRY: OnceLock<BuiltinRegistry> = OnceLock::new();
-
-/// Initialize global builtin registry
-pub fn init_registry() {
-    GLOBAL_BUILTIN_REGISTRY.set(BuiltinRegistry::default()).ok();
-}
-
-/// Builtin tool registry
-#[derive(Clone, Default)]
-pub struct BuiltinRegistry {
-    registry: Arc<Mutex<HashMap<String, DynTool>>>,
-}
-
-impl BuiltinRegistry {
-    /// Register a builtin tool (auto-wraps Rig Tool to ErasedTool)
-    pub fn register<T>(&self, tool: T)
-    where
-        T: BuiltinTool + Clone + Send + Sync + 'static,
-        T::Args: for<'de> serde::Deserialize<'de>,
-        T::Output: serde::Serialize,
-    {
-        let wrapped = RigToolWrapper::new(tool);
-        let erased: DynTool = Box::new(wrapped);
-        let name = erased.name();
-        self.registry.lock().unwrap().insert(name, erased);
-    }
-
-    /// Register an already-wrapped erased tool (used by DAO registration)
-    pub fn register_raw(&self, name: &str, tool: DynTool) {
-        self.registry.lock().unwrap().insert(name.to_string(), tool);
-    }
-
-    /// Get a builtin tool by name
-    pub fn get(&self, name: &str) -> Option<DynTool> {
-        self.registry.lock().unwrap().get(name).cloned()
     }
 }
 
