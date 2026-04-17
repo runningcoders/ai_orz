@@ -5,78 +5,92 @@ use async_trait::async_trait;
 use dyn_clone::clone_trait_object;
 use uuid::Uuid;
 
-/// Built-in tool trait - object-safe for registry storage
+/// Object-safe, dyn-compatible built-in tool trait - specifically for storing builtins in registry
 ///
-/// All built-in tools must implement this trait.
+/// All built-in tools are pre-compiled, implement Rig's Tool and this trait for registry storage.
 #[async_trait]
 pub trait BuiltinTool: Send + Sync + DynClone {
-    /// Unique tool ID
-    fn id(&self) -> Uuid;
-    /// Tool name (from Rig Tool)
-    fn name(&self) -> &'static str;
-    /// Human-readable description
+    /// Unique tool ID (UUID as string)
+    fn tool_id(&self) -> &'static str;
+    /// Tool description
     fn description(&self) -> &'static str;
-    /// Wrap into DynTool (unified erasured type) for general use
-    fn wrap(self: Box<Self>) -> DynTool;
+    /// Get tool name from Rig
+    fn name(&self) -> String;
+    /// Get tool definition from Rig
+    async fn definition(&self, prompt: String) -> rig::completion::ToolDefinition;
+    /// Call tool with JSON arguments (already erased to JSON I/O)
+    async fn call(&self, args: serde_json::Value) -> Result<serde_json::Value, rig::tool::ToolError>;
+
+    /// Get parsed UUID
+    fn id(&self) -> Uuid {
+        Uuid::parse_str(self.tool_id()).expect("Invalid tool ID UUID")
+    }
 }
 
 clone_trait_object!(BuiltinTool);
 
-/// Default implementation wrapping for any Rig Tool that implements BuiltinTool extension
-pub struct DefaultBuiltinTool<T> {
+/// Concrete wrapper for any Rig Tool + metadata that implements BuiltinTool
+///
+/// Users implement a Rig Tool, then wrap it with this to register.
+pub struct RigBuiltinTool<T> {
     inner: T,
-    id: Uuid,
-    name: &'static str,
+    tool_id: &'static str,
     description: &'static str,
 }
 
-impl<T> DefaultBuiltinTool<T>
+impl<T> RigBuiltinTool<T>
 where
     T: rig::tool::Tool + Clone + Send + Sync + 'static,
     T::Args: for<'de> serde::Deserialize<'de>,
     T::Output: serde::Serialize,
     T::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
 {
-    pub fn new(inner: T, tool_id: &'static str, name: &'static str, description: &'static str) -> Self {
-        let id = Uuid::parse_str(tool_id).expect("Invalid tool ID UUID");
-        Self { inner, id, name, description }
+    pub fn new(inner: T, tool_id: &'static str, description: &'static str) -> Self {
+        Self { inner, tool_id, description }
     }
 }
 
 #[async_trait]
-impl<T> BuiltinTool for DefaultBuiltinTool<T>
+impl<T> BuiltinTool for RigBuiltinTool<T>
 where
     T: rig::tool::Tool + Clone + Send + Sync + 'static,
     T::Args: for<'de> serde::Deserialize<'de>,
     T::Output: serde::Serialize,
     T::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
 {
-    fn id(&self) -> Uuid {
-        self.id
-    }
-
-    fn name(&self) -> &'static str {
-        self.name
+    fn tool_id(&self) -> &'static str {
+        self.tool_id
     }
 
     fn description(&self) -> &'static str {
         self.description
     }
 
-    fn wrap(self: Box<Self>) -> DynTool {
-        Box::new(RigToolWrapper::new(self.inner))
+    fn name(&self) -> String {
+        self.inner.name()
+    }
+
+    async fn definition(&self, prompt: String) -> rig::completion::ToolDefinition {
+        self.inner.definition(prompt).await
+    }
+
+    async fn call(&self, args: serde_json::Value) -> Result<serde_json::Value, rig::tool::ToolError> {
+        let args = serde_json::from_value(args)?;
+        let output = self.inner.call(args).await.map_err(|e| {
+            rig::tool::ToolError::ToolCallError(e.into())
+        })?;
+        Ok(serde_json::to_value(output)?)
     }
 }
 
-impl<T> Clone for DefaultBuiltinTool<T>
+impl<T> Clone for RigBuiltinTool<T>
 where
     T: rig::tool::Tool + Clone + Send + Sync + 'static,
 {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
-            id: self.id,
-            name: self.name,
+            tool_id: self.tool_id,
             description: self.description,
         }
     }
@@ -98,50 +112,26 @@ clone_trait_object!(ErasedTool);
 /// Type alias for dynamic tool trait object (returned by registry.get())
 pub type DynTool = Box<dyn ErasedTool>;
 
-/// Wrapper that converts an arbitrary Rig Tool to our ErasedTool
-pub struct RigToolWrapper<T> {
-    inner: T,
-}
-
-impl<T> RigToolWrapper<T> {
-    pub fn new(inner: T) -> Self {
-        Self { inner }
-    }
-}
+/// Wrapper to convert BuiltinTool to unified ErasedTool
+pub struct BuiltinErasedWrapper(pub Box<dyn BuiltinTool>);
 
 #[async_trait]
-impl<T> ErasedTool for RigToolWrapper<T>
-where
-    T: rig::tool::Tool + Clone + Send + Sync + 'static,
-    T::Args: for<'de> serde::Deserialize<'de>,
-    T::Output: serde::Serialize,
-    T::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
-{
+impl ErasedTool for BuiltinErasedWrapper {
     fn name(&self) -> String {
-        self.inner.name()
+        self.0.name()
     }
 
     async fn definition(&self, prompt: String) -> rig::completion::ToolDefinition {
-        self.inner.definition(prompt).await
+        self.0.definition(prompt).await
     }
 
     async fn call(&self, args: serde_json::Value) -> Result<serde_json::Value, rig::tool::ToolError> {
-        let args = serde_json::from_value(args)?;
-        let output = self.inner.call(args).await.map_err(|e| {
-            rig::tool::ToolError::ToolCallError(e.into())
-        })?;
-        let value = serde_json::to_value(output)?;
-        Ok(value)
+        self.0.call(args).await
     }
 }
 
-impl<T> Clone for RigToolWrapper<T>
-where
-    T: rig::tool::Tool + Clone + Send + Sync + 'static,
-{
+impl Clone for BuiltinErasedWrapper {
     fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-        }
+        Self(dyn_clone::clone_box(&*self.0))
     }
 }

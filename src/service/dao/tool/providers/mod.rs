@@ -8,7 +8,7 @@ pub mod builtin;
 pub mod http;
 pub mod mcp;
 
-pub use builtin::{BuiltinTool, DynTool, ErasedTool};
+pub use builtin::{BuiltinTool, BuiltinErasedWrapper, DynTool, ErasedTool};
 
 /// Global tool registry instance
 pub static GLOBAL_TOOL_REGISTRY: OnceLock<ToolRegistry> = OnceLock::new();
@@ -59,8 +59,9 @@ impl ToolRegistry {
         // Check builtins first
         let lock = self.builtins.lock().unwrap();
         if let Some(builtin) = lock.get(id) {
-            // Clone the boxed trait object and wrap into DynTool
-            return Some(builtin.clone().wrap());
+            // Wrap builtin to unified ErasedTool (DynTool)
+            let wrapper = Box::new(BuiltinErasedWrapper(builtin.clone()));
+            return Some(wrapper);
         }
         // TODO: HTTP and MCP when implemented
         None
