@@ -3,7 +3,6 @@
 use common::enums::SkillStatus;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-use uuid::Uuid;
 
 /// Skill 持久化对象
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]

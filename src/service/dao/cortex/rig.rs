@@ -38,7 +38,7 @@ impl super::CortexDao for RigCortexDao {
     fn create_cortex_trait(&self, _ctx: RequestContext, provider: &ModelProvider) -> Result<Box<dyn CortexTrait + Send + Sync>> {
         let api_key = provider.po.api_key.clone();
         let model = provider.po.model_name.clone();
-        let base_url = provider.po.base_url.clone();
+        let _base_url = provider.po.base_url.clone();
 
         let cortex: Box<dyn CortexTrait + Send + Sync> = match provider.po.provider_type {
             ProviderType::OpenAI => Box::new(

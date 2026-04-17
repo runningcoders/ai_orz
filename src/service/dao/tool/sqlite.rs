@@ -4,8 +4,6 @@ use crate::models::tool::ToolPo;
 use crate::pkg::request_context::RequestContext;
 use anyhow::Result;
 use async_trait::async_trait;
-use sqlx::FromRow;
-use uuid::Uuid;
 use std::sync::OnceLock;
 
 use super::ToolDao;
@@ -13,8 +11,8 @@ use super::ToolDao;
 /// Global Tool DAO instance
 static TOOL_DAO: OnceLock<Box<dyn ToolDao>> = OnceLock::new();
 
-/// Get global Tool DAO
-pub fn get() -> &'static Box<dyn ToolDao> {
+/// Get global Tool DAO (alias for get, consistent with other DAOs)
+pub fn dao() -> &'static Box<dyn ToolDao> {
     TOOL_DAO.get().unwrap()
 }
 

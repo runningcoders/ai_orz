@@ -4,7 +4,7 @@
 use async_trait::async_trait;
 use crate::pkg::RequestContext;
 use crate::models::artifact::ArtifactPo;
-use crate::error::{Result, AppError};
+use crate::error::Result;
 
 /// Artifact DAO trait
 #[async_trait]
@@ -29,4 +29,4 @@ pub trait ArtifactDaoTrait: Send + Sync + std::fmt::Debug {
 }
 
 mod sqlite;
-pub use self::sqlite::{dao, init};
+pub use self::sqlite::{init, dao};

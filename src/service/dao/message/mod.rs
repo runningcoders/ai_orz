@@ -1,6 +1,6 @@
 //! Message DAO 模块
 
-use crate::error::{Result, AppError};
+use crate::error::Result;
 use crate::models::message::MessagePo;
 use common::enums::MessageStatus;
 use crate::pkg::RequestContext;
@@ -45,7 +45,7 @@ pub trait MessageDaoTrait: Send + Sync {
 
 
 mod sqlite;
-pub use self::sqlite::{dao, init};
+pub use self::sqlite::{init, dao};
 
 #[cfg(test)]
 mod sqlite_test;

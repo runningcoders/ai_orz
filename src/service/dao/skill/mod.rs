@@ -36,7 +36,7 @@ pub trait SkillDaoTrait: Send + Sync {
     async fn delete_by_id(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
 }
 
-pub use sqlite::{dao, init};
+pub use sqlite::{init, dao};
 
 #[cfg(test)]
 mod sqlite_test;

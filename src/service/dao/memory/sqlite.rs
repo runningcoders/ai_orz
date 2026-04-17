@@ -393,7 +393,7 @@ LIMIT ?
         let pool = self.pool(ctx);
 
         // 先试试更新，如果不存在就插入
-        use common::enums::MemoryStatus;
+        
         let status_i32 = node.status as i32;
         let result: sqlx::Result<sqlx::sqlite::SqliteQueryResult> = sqlx::query!(
             r#"
@@ -424,7 +424,7 @@ WHERE id = ?
         if rows_affected == 0 {
             // 不存在，插入新节点
             // 9 Rust parameters → 9 question marks (all non-Option)
-            use common::enums::MemoryStatus;
+            
             let status_i32 = node.status as i32;
             sqlx::query!(
                 r#"
@@ -458,7 +458,7 @@ INSERT INTO long_term_knowledge_node (
         let mut tx = pool.begin().await?;
 
         for node in nodes {
-            use common::enums::MemoryStatus;
+            
             let status_i32 = node.status as i32;
             let result: sqlx::Result<sqlx::sqlite::SqliteQueryResult> = sqlx::query!(
                 r#"
@@ -489,7 +489,7 @@ WHERE id = ?
             if rows_affected == 0 {
                 // 不存在，插入新节点
                 // 9 Rust parameters → 9 question marks (all non-Option)
-                use common::enums::MemoryStatus;
+                
                 let status_i32 = node.status as i32;
                 sqlx::query!(
                     r#"

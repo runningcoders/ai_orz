@@ -1,6 +1,6 @@
 //! Message DAO SQLite 实现
 
-use crate::error::{Result, AppError};
+use crate::error::Result;
 use crate::models::message::MessagePo;
 use crate::models::file::FileMeta;
 use common::enums::{MessageRole, MessageType, MessageStatus, FileType};

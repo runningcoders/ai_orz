@@ -6,7 +6,7 @@
 //! - 空 order_key 支持并行消费
 //! - ack/nack 完整支持
 
-use std::collections::{HashMap, BinaryHeap, LinkedList};
+use std::collections::{HashMap, BinaryHeap};
 use std::cell::UnsafeCell;
 use std::sync::Mutex;
 use std::sync::OnceLock;

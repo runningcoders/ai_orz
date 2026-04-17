@@ -5,7 +5,7 @@
 
 use common::config::{AppConfig, DEFAULT_CONFIG_EMBEDDED, CONFIG_FILE_NAME};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, OnceLock};
 // ==================== 单例管理 ====================
 
