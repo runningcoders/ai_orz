@@ -2,7 +2,7 @@
 
 use anyhow::{anyhow, Result};
 use crate::models::tool::ToolPo;
-use super::DynTool;
+use rig::tool::ToolDyn;
 use serde::{Deserialize, Serialize};
 
 /// MCP tool configuration
@@ -15,7 +15,7 @@ pub struct McpConfig {
 }
 
 /// Build an MCP tool from ToolPo
-pub fn build(_po: &ToolPo) -> Result<DynTool> {
+pub fn build(_po: &ToolPo) -> Result<Box<dyn ToolDyn>> {
     // TODO: Implement MCP tool wrapper
     Err(anyhow!("MCP tool not implemented yet"))
 }

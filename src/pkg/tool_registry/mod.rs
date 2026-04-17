@@ -3,8 +3,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use uuid::Uuid;
-use dyn_clone::DynClone;
-use dyn_clone::clone_trait_object;
+use dyn_clone;
 use rig::tool::ToolDyn;
 
 pub mod builtin;
@@ -12,10 +11,6 @@ pub mod http;
 pub mod mcp;
 
 pub use builtin::BuiltinTool;
-
-/// Type alias for Rig's dynamic tool trait (already dyn-compatible).
-/// This is what Rig's toolset accepts directly.
-pub type DynTool = Box<dyn ToolDyn>;
 
 /// Global tool registry instance.
 pub static GLOBAL_TOOL_REGISTRY: OnceLock<ToolRegistry> = OnceLock::new();
@@ -52,10 +47,10 @@ impl ToolRegistry {
 
     /// Get a tool by ID from any registry.
     /// Returns Rig's ToolDyn directly - can be added to Rig's ToolSet without any conversion.
-    pub fn get(&self, id: &Uuid) -> Option<DynTool> {
+    pub fn get(&self, id: &Uuid) -> Option<Box<dyn ToolDyn>> {
         let lock = self.builtins.lock().unwrap();
         let tool = lock.get(id)?;
-        // BuiltinTool implements ToolDyn, just clone and return as DynTool
+        // BuiltinTool implements ToolDyn, just clone and return
         let cloned = dyn_clone::clone_box(&**tool);
         Some(cloned)
     }

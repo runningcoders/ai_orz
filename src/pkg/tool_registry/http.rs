@@ -2,7 +2,7 @@
 
 use anyhow::{anyhow, Result};
 use crate::models::tool::ToolPo;
-use super::DynTool;
+use rig::tool::ToolDyn;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -18,7 +18,7 @@ pub struct HttpConfig {
 }
 
 /// Build an HTTP tool from ToolPo
-pub fn build(_po: &ToolPo) -> Result<DynTool> {
+pub fn build(_po: &ToolPo) -> Result<Box<dyn ToolDyn>> {
     // TODO: Implement HTTP tool wrapper
     Err(anyhow!("HTTP tool not implemented yet"))
 }
