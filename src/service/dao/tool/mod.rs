@@ -4,6 +4,7 @@ use crate::models::tool::ToolPo;
 use crate::pkg::request_context::RequestContext;
 use anyhow::Result;
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use crate::service::dao::tool::providers::builtin::{self, BuiltinTool, DynTool};
 use uuid::Uuid;
 use std::sync::OnceLock;
