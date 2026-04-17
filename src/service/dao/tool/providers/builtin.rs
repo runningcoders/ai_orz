@@ -1,8 +1,6 @@
 //! Builtin tool provider
 
 use anyhow::{anyhow, Result};
-use crate::models::tool::ToolPo;
-use crate::service::dao::tool::providers::GLOBAL_BUILTIN_REGISTRY;
 use serde_json::Value;
 use dyn_clone::DynClone;
 use rig::tool::Tool;
@@ -51,7 +49,7 @@ pub trait ErasedTool: Send + Sync + DynClone {
 
 clone_trait_object!(ErasedTool);
 
-/// Type alias for dynamic tool trait object (what we cache)
+/// Type alias for dynamic tool trait object (what we cache in registry)
 pub type DynTool = Box<dyn ErasedTool>;
 
 /// Wrapper that converts an arbitrary Rig Tool to our ErasedTool
@@ -102,13 +100,4 @@ where
             inner: self.inner.clone(),
         }
     }
-}
-
-/// Build a builtin tool from ToolPo
-pub fn build(po: &ToolPo) -> Result<DynTool> {
-    let registry = GLOBAL_BUILTIN_REGISTRY.get()
-        .ok_or_else(|| anyhow!("Builtin registry not initialized"))?;
-
-    registry.get(&po.name)
-        .ok_or_else(|| anyhow!("Builtin tool '{}' not registered", po.name))
 }

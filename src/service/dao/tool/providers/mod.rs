@@ -1,4 +1,4 @@
-//! Tool instance cache and provider dispatcher
+//! Global tool instance registry (all protocols)
 
 use anyhow::{anyhow, Result};
 use common::enums::ToolProtocol;
@@ -12,79 +12,48 @@ pub mod builtin;
 pub mod http;
 pub mod mcp;
 
-/// Global tool instance cache (key: tool_id)
-pub static GLOBAL_INSTANCE_CACHE: OnceLock<ToolInstanceCache> = OnceLock::new();
+/// Global tool registry (key: tool_id)
+/// All tools (builtin/http/mcp) are registered here
+pub static GLOBAL_TOOL_REGISTRY: OnceLock<ToolRegistry> = OnceLock::new();
 
-/// Global builtin tool registry (key: tool_name)
-pub static GLOBAL_BUILTIN_REGISTRY: OnceLock<BuiltinRegistry> = OnceLock::new();
-
-/// Initialize global instance cache and builtin registry
-pub fn init_global() {
-    GLOBAL_INSTANCE_CACHE.set(ToolInstanceCache::default()).ok();
-    GLOBAL_BUILTIN_REGISTRY.set(BuiltinRegistry::new()).ok();
+/// Initialize global tool registry
+pub fn init() {
+    GLOBAL_TOOL_REGISTRY.set(ToolRegistry::default()).ok();
 }
 
-/// Builtin tool registry: holds all pre-registered builtin tool instances
-pub struct BuiltinRegistry {
-    registry: Arc<Mutex<HashMap<String, DynTool>>>,
+/// Get global tool registry
+pub fn get_registry() -> &'static ToolRegistry {
+    GLOBAL_TOOL_REGISTRY.get().unwrap()
 }
 
-impl BuiltinRegistry {
-    pub fn new() -> Self {
-        Self {
-            registry: Arc::new(Mutex::new(HashMap::new())),
-        }
-    }
-
-    /// Register a builtin tool instance
-    pub fn register_raw(&self, name: &str, tool: DynTool) {
-        let mut lock = self.registry.lock().unwrap();
-        lock.insert(name.to_string(), tool);
-    }
-
-    /// Get a registered builtin tool by name
-    pub fn get(&self, name: &str) -> Option<DynTool> {
-        let lock = self.registry.lock().unwrap();
-        lock.get(name).cloned()
-    }
-}
-
-/// Tool instance cache (key: tool_id)
+/// Global tool registry: holds all tool instances by id
 #[derive(Clone, Default)]
-pub struct ToolInstanceCache {
-    cache: Arc<Mutex<HashMap<Uuid, Option<DynTool>>>>,
+pub struct ToolRegistry {
+    registry: Arc<Mutex<HashMap<Uuid, DynTool>>>,
 }
 
-impl ToolInstanceCache {
-    /// Get or build a Rig Tool instance
-    pub fn get_or_build(&self, po: &ToolPo) -> Result<DynTool> {
-        let mut guard = self.cache.lock().unwrap();
-
-        if let Some(cached) = guard.get(&po.id) {
-            return Ok(cached.clone().unwrap());
-        }
-
-        let tool = self.build(po)?;
-        guard.insert(po.id, Some(tool.clone()));
-        Ok(tool)
+impl ToolRegistry {
+    /// Register a tool instance
+    pub fn register(&self, id: Uuid, tool: DynTool) {
+        let mut lock = self.registry.lock().unwrap();
+        lock.insert(id, tool);
     }
 
-    /// Build a new tool instance by protocol
-    fn build(&self, po: &ToolPo) -> Result<DynTool> {
-        match po.protocol {
-            ToolProtocol::Builtin => builtin::build(po),
-            ToolProtocol::Http => http::build(po),
-            ToolProtocol::Mcp => mcp::build(po),
-        }
+    /// Get a tool instance by id
+    pub fn get(&self, id: &Uuid) -> Option<DynTool> {
+        let lock = self.registry.lock().unwrap();
+        lock.get(id).cloned()
     }
 
-    /// Invalidate cache for a specific tool
-    pub fn invalidate(&self, id: Uuid) {
-        self.cache.lock().unwrap().remove(&id);
+    /// Unregister a tool
+    pub fn unregister(&self, id: &Uuid) {
+        let mut lock = self.registry.lock().unwrap();
+        lock.remove(id);
     }
 
-    /// Clear all cache
+    /// Clear all registered tools
     pub fn clear(&self) {
-        self.cache.lock().unwrap().clear();
+        let mut lock = self.registry.lock().unwrap();
+        lock.clear();
     }
 }

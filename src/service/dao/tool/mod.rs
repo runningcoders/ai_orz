@@ -4,15 +4,14 @@ use crate::models::tool::ToolPo;
 use crate::pkg::request_context::RequestContext;
 use anyhow::Result;
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
-use crate::service::dao::tool::providers::builtin::{self, BuiltinTool, DynTool};
 use uuid::Uuid;
 use std::sync::OnceLock;
 
 pub mod providers;
 mod sqlite;
 
-use providers::ToolInstanceCache;
+use providers::{ToolRegistry, GLOBAL_TOOL_REGISTRY};
+use providers::builtin::DynTool;
 
 pub use sqlite::{init, SqliteToolDao};
 
@@ -27,8 +26,6 @@ pub fn get() -> &'static Box<dyn ToolDao> {
 /// Tool DAO trait
 #[async_trait]
 pub trait ToolDao: Send + Sync {
-    // ========== Database operations ==========
-
     /// Create a new tool
     async fn create_tool(&self, ctx: &RequestContext, po: &ToolPo) -> Result<()>;
 
@@ -64,25 +61,15 @@ pub trait ToolDao: Send + Sync {
     /// List all tools for an agent
     async fn list_tools_for_agent(&self, ctx: &RequestContext, agent_id: &str) -> Result<Vec<ToolPo>>;
 
-    // ========== Instance cache operations (default implementation) ==========
+    // ========== Tool instance operations ==========
 
-    /// Get the global instance cache
-    fn instance_cache(&self) -> &ToolInstanceCache {
-        providers::GLOBAL_INSTANCE_CACHE.get().unwrap()
+    /// Get global tool registry
+    fn registry(&self) -> &ToolRegistry {
+        GLOBAL_TOOL_REGISTRY.get().unwrap()
     }
 
-    /// Build or get cached Rig Tool instance from ToolPo
-    fn build_rig_tool(&self, po: &ToolPo) -> Result<DynTool> {
-        self.instance_cache().get_or_build(po)
-    }
-
-    /// Invalidate cache for a tool
-    fn invalidate_cache(&self, id: Uuid) {
-        self.instance_cache().invalidate(id);
-    }
-
-    /// Clear all instance cache
-    fn clear_all_cache(&self) {
-        self.instance_cache().clear();
+    /// Get tool instance by ID from registry
+    fn get_tool_instance(&self, id: Uuid) -> Option<DynTool> {
+        self.registry().get(&id)
     }
 }

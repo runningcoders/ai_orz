@@ -2,21 +2,15 @@
 
 use crate::models::tool::ToolPo;
 use crate::pkg::request_context::RequestContext;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use common::enums::{ToolProtocol, ToolStatus};
 use common::constants::utils::current_timestamp;
 use sqlx::FromRow;
 use uuid::Uuid;
-use serde::{Deserialize, Serialize};
 
 use super::{ToolDao, TOOL_DAO};
-use crate::service::dao::tool::providers::{
-    self,
-    init_global,
-    GLOBAL_BUILTIN_REGISTRY,
-    builtin::{self, BuiltinTool}
-};
+use super::providers;
 
 /// SQLite Tool DAO implementation
 #[derive(Clone, Default)]
@@ -26,87 +20,12 @@ impl SqliteToolDao {
     pub fn new() -> Self {
         Self {}
     }
-
-    /// Register a built-in tool: sync metadata to DB and register to memory registry.
-    ///
-    /// The tool must implement `BuiltinTool` to provide constant TOOL_ID and DESCRIPTION.
-    pub async fn register_builtin_tool<T>(&self, ctx: &RequestContext, tool: T) -> Result<()>
-    where
-        T: BuiltinTool + Clone + Send + Sync + 'static,
-        T::Args: for<'de> Deserialize<'de>,
-        T::Output: Serialize,
-    {
-        let id = tool.tool_id();
-        let name = tool.tool_name().to_string();
-        let description = tool.tool_description().to_string();
-
-        // 1. Upsert metadata to DB
-        self.upsert_builtin_tool(ctx, id, &name, &description).await?;
-
-        // 2. Register to memory registry for runtime lookup
-        let registry = GLOBAL_BUILTIN_REGISTRY.get()
-            .ok_or_else(|| anyhow!("Builtin registry not initialized"))?;
-
-        let wrapped = builtin::RigToolWrapper::new(tool);
-        let erased: builtin::DynTool = Box::new(wrapped);
-        let name_str = erased.name();
-        registry.register_raw(&name_str, erased);
-
-        Ok(())
-    }
-
-    /// Upsert a built-in tool into database
-    async fn upsert_builtin_tool(&self, ctx: &RequestContext, id: Uuid, name: &str, description: &str) -> Result<()> {
-        let pool = ctx.db_pool();
-        let now = current_timestamp();
-
-        // Check if exists
-        let existing = self.get_by_id(ctx, id).await?;
-
-        match existing {
-            Some(_) => {
-                // Update - keep existing config and other fields, only update name and description
-                sqlx::query(
-                    r#"
-                    UPDATE tools SET
-                        name = ?, description = ?, updated_at = ?
-                    WHERE id = ?
-                    "#
-                )
-                .bind(name)
-                .bind(description)
-                .bind(now)
-                .bind(id.to_string())
-                .execute(pool)
-                .await?;
-            }
-            None => {
-                // Insert new - builtin tools have default config
-                let po = ToolPo {
-                    id,
-                    name: name.to_string(),
-                    description: description.to_string(),
-                    protocol: ToolProtocol::Builtin,
-                    config: serde_json::Value::Object(Default::default()), // empty config for builtin
-                    parameters_schema: Some(serde_json::Value::Object(Default::default())), // will be filled at runtime from definition
-                    status: ToolStatus::Enabled,
-                    created_at: now,
-                    updated_at: now,
-                    created_by: Some("system".to_string()),
-                    updated_by: Some("system".to_string()),
-                };
-                self.create_tool(ctx, &po).await?;
-            }
-        }
-
-        Ok(())
-    }
 }
 
 /// Initialize global Tool DAO
 pub fn init() {
-    // Initialize global registries (cache + builtin registry)
-    init_global();
+    // Initialize global tool registry
+    providers::init();
     // Create DAO instance and set global
     let dao = SqliteToolDao::new();
     TOOL_DAO.set(Box::new(dao)).ok();
