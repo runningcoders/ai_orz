@@ -91,7 +91,7 @@ impl ToolDao for SqliteToolDao {
         Ok(())
     }
 
-    async fn get_by_id(&self, ctx: &RequestContext, id: Uuid) -> Result<Option<ToolPo>> {
+    async fn get_by_id(&self, ctx: &RequestContext, id: String) -> Result<Option<ToolPo>> {
         let pool = ctx.db_pool();
 
         let row = sqlx::query_as::<_, ToolPo>(
@@ -99,7 +99,7 @@ impl ToolDao for SqliteToolDao {
             SELECT * FROM tools WHERE id = ?
             "#
         )
-        .bind(id.to_string())
+        .bind(id)
         .fetch_optional(pool)
         .await?;
 
@@ -139,7 +139,7 @@ impl ToolDao for SqliteToolDao {
         &self,
         ctx: &RequestContext,
         agent_id: &str,
-        tool_id: Uuid,
+        tool_id: &str,
         created_by: Option<String>,
     ) -> Result<()> {
         let pool = ctx.db_pool();
@@ -151,7 +151,7 @@ impl ToolDao for SqliteToolDao {
             "#
         )
         .bind(agent_id)
-        .bind(tool_id.to_string())
+        .bind(tool_id)
         .bind(created_by)
         .execute(pool)
         .await?;
@@ -163,7 +163,7 @@ impl ToolDao for SqliteToolDao {
         &self,
         ctx: &RequestContext,
         agent_id: &str,
-        tool_id: Uuid,
+        tool_id: &str,
     ) -> Result<()> {
         let pool = ctx.db_pool();
 
@@ -173,7 +173,7 @@ impl ToolDao for SqliteToolDao {
             "#
         )
         .bind(agent_id)
-        .bind(tool_id.to_string())
+        .bind(tool_id)
         .execute(pool)
         .await?;
 

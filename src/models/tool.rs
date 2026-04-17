@@ -3,7 +3,6 @@
 use common::enums::{ToolProtocol, ToolStatus};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-use anyhow::Result;
 use uuid::Uuid;
 
 /// Tool 持久化对象
@@ -36,8 +35,9 @@ pub struct ToolPo {
 }
 
 impl ToolPo {
-    /// 创建新 ToolPo
+    /// 创建新 ToolPo（如果 id 为空自动生成 Uuid v7）
     pub fn new(
+        id: String,
         name: String,
         description: String,
         protocol: ToolProtocol,
@@ -45,9 +45,14 @@ impl ToolPo {
         parameters_schema: Option<serde_json::Value>,
         creator: Option<String>,
     ) -> Self {
+        let id = if id.is_empty() {
+            Uuid::now_v7().to_string()
+        } else {
+            id
+        };
         let now = common::constants::utils::current_timestamp();
         Self {
-            id: Uuid::now_v7().to_string(),
+            id,
             name,
             description,
             protocol,
@@ -59,11 +64,6 @@ impl ToolPo {
             created_by: creator.clone(),
             updated_by: creator,
         }
-    }
-
-    /// 获取 id 作为 Uuid
-    pub fn id_uuid(&self) -> Result<Uuid> {
-        Ok(Uuid::parse_str(&self.id)?)
     }
 
     /// 更新时间戳和修改者

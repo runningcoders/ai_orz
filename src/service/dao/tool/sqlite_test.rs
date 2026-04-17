@@ -19,6 +19,7 @@ async fn test_create_and_get_by_id(pool: SqlitePool) -> Result<(), AppError> {
     let dao = tool::dao();
 
     let po = ToolPo::new(
+        Uuid::now_v7().to_string(),
         "Test Tool".to_string(),
         "A test tool for unit testing".to_string(),
         ToolProtocol::Builtin,
@@ -26,7 +27,7 @@ async fn test_create_and_get_by_id(pool: SqlitePool) -> Result<(), AppError> {
         None,
         Some("test-user".to_string()),
     );
-    let tool_id = Uuid::parse_str(&po.id).unwrap();
+    let tool_id = po.id.clone();
 
     let ctx = new_ctx("test-user", pool.clone());
     dao.create_tool(&ctx, &po).await?;
@@ -51,6 +52,7 @@ async fn test_update_tool(pool: SqlitePool) -> Result<(), AppError> {
     let dao = tool::dao();
 
     let mut po = ToolPo::new(
+        Uuid::now_v7().to_string(),
         "Test Update".to_string(),
         "Original description".to_string(),
         ToolProtocol::Builtin,
@@ -58,7 +60,7 @@ async fn test_update_tool(pool: SqlitePool) -> Result<(), AppError> {
         None,
         Some("test-user".to_string()),
     );
-    let tool_id = Uuid::parse_str(&po.id).unwrap();
+    let tool_id = po.id.clone();
 
     let ctx = new_ctx("test-user", pool.clone());
     dao.create_tool(&ctx, &po).await?;
@@ -88,6 +90,7 @@ async fn test_get_by_name(pool: SqlitePool) -> Result<(), AppError> {
     let dao = tool::dao();
 
     let po = ToolPo::new(
+        Uuid::now_v7().to_string(),
         "Get By Name Test".to_string(),
         "".to_string(),
         ToolProtocol::Builtin,
@@ -95,7 +98,7 @@ async fn test_get_by_name(pool: SqlitePool) -> Result<(), AppError> {
         None,
         Some("test-user".to_string()),
     );
-    let tool_id = Uuid::parse_str(&po.id).unwrap();
+    let tool_id = po.id.clone();
 
     let ctx = new_ctx("test-user", pool.clone());
     dao.create_tool(&ctx, &po).await?;
@@ -115,6 +118,7 @@ async fn test_list_enabled(pool: SqlitePool) -> Result<(), AppError> {
     let dao = tool::dao();
 
     let po1 = ToolPo::new(
+        Uuid::now_v7().to_string(),
         "Enabled Tool 1".to_string(),
         "".to_string(),
         ToolProtocol::Builtin,
@@ -122,9 +126,10 @@ async fn test_list_enabled(pool: SqlitePool) -> Result<(), AppError> {
         None,
         Some("test-user".to_string()),
     );
-    let id1 = Uuid::parse_str(&po1.id).unwrap();
+    let id1 = po1.id.clone();
 
     let mut po2 = ToolPo::new(
+        Uuid::now_v7().to_string(),
         "Disabled Tool".to_string(),
         "".to_string(),
         ToolProtocol::Builtin,
@@ -133,9 +138,10 @@ async fn test_list_enabled(pool: SqlitePool) -> Result<(), AppError> {
         Some("test-user".to_string()),
     );
     po2.status = ToolStatus::Disabled;
-    let id2 = Uuid::parse_str(&po2.id).unwrap();
+    let id2 = po2.id.clone();
 
     let po3 = ToolPo::new(
+        Uuid::now_v7().to_string(),
         "Enabled Tool 2".to_string(),
         "".to_string(),
         ToolProtocol::Builtin,
@@ -143,7 +149,7 @@ async fn test_list_enabled(pool: SqlitePool) -> Result<(), AppError> {
         None,
         Some("test-user".to_string()),
     );
-    let id3 = Uuid::parse_str(&po3.id).unwrap();
+    let id3 = po3.id.clone();
 
     let ctx = new_ctx("test-user", pool.clone());
     dao.create_tool(&ctx.clone(), &po1).await?;
@@ -153,9 +159,9 @@ async fn test_list_enabled(pool: SqlitePool) -> Result<(), AppError> {
     let ctx = new_ctx("test-user", pool);
     let enabled: Vec<ToolPo> = dao.list_enabled(&ctx).await?;
     assert_eq!(enabled.len(), 2);
-    assert!(enabled.iter().any(|t| Uuid::parse_str(&t.id).unwrap() == id1));
-    assert!(enabled.iter().any(|t| Uuid::parse_str(&t.id).unwrap() == id3));
-    assert!(!enabled.iter().any(|t| Uuid::parse_str(&t.id).unwrap() == id2));
+    assert!(enabled.iter().any(|t| t.id == id1));
+    assert!(enabled.iter().any(|t| t.id == id3));
+    assert!(!enabled.iter().any(|t| t.id == id2));
 
     Ok(())
 }
@@ -168,6 +174,7 @@ async fn test_add_and_list_for_agent(pool: SqlitePool) -> Result<(), AppError> {
 
     // 创建两个工具
     let tool1 = ToolPo::new(
+        Uuid::now_v7().to_string(),
         "Agent Tool 1".to_string(),
         "".to_string(),
         ToolProtocol::Builtin,
@@ -175,9 +182,10 @@ async fn test_add_and_list_for_agent(pool: SqlitePool) -> Result<(), AppError> {
         None,
         Some("test-user".to_string()),
     );
-    let tool1_id = Uuid::parse_str(&tool1.id).unwrap();
+    let tool1_id = tool1.id.clone();
 
     let tool2 = ToolPo::new(
+        Uuid::now_v7().to_string(),
         "Agent Tool 2".to_string(),
         "".to_string(),
         ToolProtocol::Builtin,
@@ -185,22 +193,22 @@ async fn test_add_and_list_for_agent(pool: SqlitePool) -> Result<(), AppError> {
         None,
         Some("test-user".to_string()),
     );
-    let tool2_id = Uuid::parse_str(&tool2.id).unwrap();
+    let tool2_id = tool2.id.clone();
 
     let agent_id = "test-agent-123";
 
     let ctx = new_ctx("test-user", pool.clone());
     dao.create_tool(&ctx.clone(), &tool1).await?;
     dao.create_tool(&ctx.clone(), &tool2).await?;
-    dao.add_tool_to_agent(&ctx.clone(), agent_id, tool1_id, Some("test-user".to_string())).await?;
-    dao.add_tool_to_agent(&ctx, agent_id, tool2_id, Some("test-user".to_string())).await?;
+    dao.add_tool_to_agent(&ctx.clone(), agent_id, &tool1_id, Some("test-user".to_string())).await?;
+    dao.add_tool_to_agent(&ctx, agent_id, &tool2_id, Some("test-user".to_string())).await?;
 
     // 列出 Agent 的工具
     let ctx = new_ctx("test-user", pool);
     let tools: Vec<ToolPo> = dao.list_tools_for_agent(&ctx, agent_id).await?;
     assert_eq!(tools.len(), 2);
-    assert!(tools.iter().any(|t| Uuid::parse_str(&t.id).unwrap() == tool1_id));
-    assert!(tools.iter().any(|t| Uuid::parse_str(&t.id).unwrap() == tool2_id));
+    assert!(tools.iter().any(|t| t.id == tool1_id));
+    assert!(tools.iter().any(|t| t.id == tool2_id));
 
     Ok(())
 }
@@ -212,6 +220,7 @@ async fn test_remove_from_agent(pool: SqlitePool) -> Result<(), AppError> {
     let dao = tool::dao();
 
     let tool1 = ToolPo::new(
+        Uuid::now_v7().to_string(),
         "To Remove Tool".to_string(),
         "".to_string(),
         ToolProtocol::Builtin,
@@ -219,13 +228,13 @@ async fn test_remove_from_agent(pool: SqlitePool) -> Result<(), AppError> {
         None,
         Some("test-user".to_string()),
     );
-    let tool1_id = Uuid::parse_str(&tool1.id).unwrap();
+    let tool1_id = tool1.id.clone();
 
     let agent_id = "test-agent-456";
 
     let ctx = new_ctx("test-user", pool.clone());
     dao.create_tool(&ctx.clone(), &tool1).await?;
-    dao.add_tool_to_agent(&ctx.clone(), agent_id, tool1_id, Some("test-user".to_string())).await?;
+    dao.add_tool_to_agent(&ctx.clone(), agent_id, &tool1_id, Some("test-user".to_string())).await?;
 
     // 确认添加成功
     let ctx = new_ctx("test-user", pool.clone());
@@ -234,7 +243,7 @@ async fn test_remove_from_agent(pool: SqlitePool) -> Result<(), AppError> {
 
     // 移除
     let ctx = new_ctx("test-user", pool.clone());
-    dao.remove_tool_from_agent(&ctx, agent_id, tool1_id).await?;
+    dao.remove_tool_from_agent(&ctx, agent_id, &tool1_id).await?;
 
     // 确认移除成功
     let ctx = new_ctx("test-user", pool);

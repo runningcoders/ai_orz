@@ -28,7 +28,7 @@ pub trait ToolDao: Send + Sync {
     async fn update_tool(&self, ctx: &RequestContext, po: &ToolPo) -> Result<()>;
 
     /// Get tool by ID
-    async fn get_by_id(&self, ctx: &RequestContext, id: Uuid) -> Result<Option<ToolPo>>;
+    async fn get_by_id(&self, ctx: &RequestContext, id: String) -> Result<Option<ToolPo>>;
 
     /// Get tool by name
     async fn get_by_name(&self, ctx: &RequestContext, name: &str) -> Result<Option<ToolPo>>;
@@ -41,7 +41,7 @@ pub trait ToolDao: Send + Sync {
         &self,
         ctx: &RequestContext,
         agent_id: &str,
-        tool_id: Uuid,
+        tool_id: &str,
         created_by: Option<String>,
     ) -> Result<()>;
 
@@ -50,7 +50,7 @@ pub trait ToolDao: Send + Sync {
         &self,
         ctx: &RequestContext,
         agent_id: &str,
-        tool_id: Uuid,
+        tool_id: &str,
     ) -> Result<()>;
 
     /// List all tools for an agent
