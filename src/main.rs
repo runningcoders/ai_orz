@@ -7,8 +7,6 @@ mod pkg;
 mod router;
 mod service;
 
-use pkg::storage;
-
 fn get_env_or_default(env_key: &str, default: &str) -> String {
     std::env::var(env_key).unwrap_or(default.to_string())
 }
@@ -16,31 +14,18 @@ fn get_env_or_default(env_key: &str, default: &str) -> String {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     config::init()?;
-let config = config::get();
-    // 初始化日志（使用配置中的路径）
-    pkg::logging::init(&config);
+    let config = config::get();
+    
+    // Initialize all pkg modules in one call
+    pkg::init_all(&config).await;
     tracing::info!(
-        "Logging initialized, base data path: {}",
+        "Logging & storage & JWT & tool registry initialized, base data path: {}",
         config.base_data_path
     );
-
-    // 获取数据库路径并初始化存储（sqlx 异步连接池）
-    let db_path = config.db_path();
-   storage::init(&db_path.to_str().unwrap()).await;
-    tracing::info!("Storage initialized: {:?}", db_path);
 
     // 初始化 service 层
     service::init();
     tracing::info!("Service layer initialized");
-
-    // 环境变量覆盖 JWT 配置（JWT 机密敏感信息建议通过环境变量配置更安全）
-    let jwt_secret = std::env::var("JWT_SECRET")
-        .unwrap_or_else(|_| "ai-orz-default-jwt-secret-change-me-in-production".to_string());
-    let jwt_expiry_hours: i64 = get_env_or_default("JWT_EXPIRY_HOURS", "168")
-        .parse()
-        .unwrap_or(168); // 默认 7 天过期（168 小时）
-    pkg::jwt::init_jwt(&jwt_secret, jwt_expiry_hours);
-    tracing::info!("JWT initialized, expiry: {} hours", jwt_expiry_hours);
 
     // 前端静态文件目录从配置读取，环境变量可覆盖
     let dist_dir = get_env_or_default("FRONTEND_DIST_DIR", &config.frontend.dist_dir);
