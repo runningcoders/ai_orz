@@ -7,10 +7,9 @@ use async_trait::async_trait;
 use uuid::Uuid;
 use std::sync::OnceLock;
 
-pub mod providers;
 mod sqlite;
 
-use providers::{ToolRegistry, GLOBAL_TOOL_REGISTRY, DynTool};
+use crate::pkg::tool_registry::{ToolRegistry, GLOBAL_TOOL_REGISTRY, DynTool};
 
 pub use sqlite::{init, SqliteToolDao};
 

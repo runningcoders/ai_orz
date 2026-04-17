@@ -10,7 +10,7 @@ use sqlx::FromRow;
 use uuid::Uuid;
 
 use super::{ToolDao, TOOL_DAO};
-use super::providers;
+use crate::pkg::tool_registry;
 
 /// SQLite Tool DAO implementation
 #[derive(Clone, Default)]
@@ -25,7 +25,7 @@ impl SqliteToolDao {
 /// Initialize global Tool DAO
 pub fn init() {
     // Initialize global tool registry
-    providers::init();
+    tool_registry::init();
     // Create DAO instance and set global
     let dao = SqliteToolDao::new();
     TOOL_DAO.set(Box::new(dao)).ok();

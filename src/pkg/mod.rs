@@ -3,6 +3,7 @@ pub mod logging;
 pub mod jwt;
 pub mod storage;
 pub mod request_context;
+pub mod tool_registry;
 
 pub use request_context::*;
 
