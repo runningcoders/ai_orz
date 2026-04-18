@@ -1,11 +1,9 @@
 //! Rig 驱动的 Cortex 实现
 
 use anyhow::Result;
-use crate::models::{brain::*, model_provider::ModelProvider};
+use crate::models::{brain::*, model_provider::ModelProvider, tool::Tool};
 use crate::pkg::RequestContext;
 use common::enums::ProviderType;
-use rig::client::*;
-use rig::completion::*;
 use std::sync::{Arc, OnceLock};
 
 // ==================== 公开 ====================
@@ -35,29 +33,29 @@ impl RigCortexDao {
 
 #[async_trait::async_trait]
 impl super::CortexDao for RigCortexDao {
-    fn create_cortex_trait(&self, _ctx: RequestContext, provider: &ModelProvider) -> Result<Box<dyn CortexTrait + Send + Sync>> {
+    fn create_cortex_trait(&self, _ctx: RequestContext, provider: &ModelProvider, tools: Vec<Tool>) -> Result<Box<dyn CortexTrait + Send + Sync>> {
         let api_key = provider.po.api_key.clone();
         let model = provider.po.model_name.clone();
         let _base_url = provider.po.base_url.clone();
 
         let cortex: Box<dyn CortexTrait + Send + Sync> = match provider.po.provider_type {
             ProviderType::OpenAI => Box::new(
-                self::openai::OpenAiCortex::new(api_key, model, provider.po.base_url.clone())?
+                self::openai::OpenAiCortex::new(api_key, model, provider.po.base_url.clone(), tools)?
             ),
             ProviderType::DeepSeek => Box::new(
-                self::openai_compatible::OpenAiCompatibleCortex::new(api_key, model, "https://api.deepseek.com".to_string(),  provider.po.base_url.clone())?
+                self::openai_compatible::OpenAiCompatibleCortex::new(api_key, model, "https://api.deepseek.com".to_string(),  provider.po.base_url.clone(), tools)?
             ),
             ProviderType::Qwen => Box::new(
-                self::openai_compatible::OpenAiCompatibleCortex::new(api_key, model, "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string(),  provider.po.base_url.clone())?
+                self::openai_compatible::OpenAiCompatibleCortex::new(api_key, model, "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string(),  provider.po.base_url.clone(), tools)?
             ),
             ProviderType::Doubao => Box::new(
-                self::openai_compatible::OpenAiCompatibleCortex::new(api_key, model, "https://ark.cn-beijing.volces.com/api".to_string(),  provider.po.base_url.clone())?
+                self::openai_compatible::OpenAiCompatibleCortex::new(api_key, model, "https://ark.cn-beijing.volces.com/api".to_string(),  provider.po.base_url.clone(), tools)?
             ),
             ProviderType::Ollama => Box::new(
-                self::ollama::OllamaCortex::new(api_key, model,  provider.po.base_url.clone())?
+                self::ollama::OllamaCortex::new(api_key, model,  provider.po.base_url.clone(), tools)?
             ),
             ProviderType::Custom => Box::new(
-                self::openai_compatible::OpenAiCompatibleCortex::new(api_key, model, provider.po.base_url.clone().unwrap_or_default(), None)?
+                self::openai_compatible::OpenAiCompatibleCortex::new(api_key, model, provider.po.base_url.clone().unwrap_or_default(), None, tools)?
             ),
         };
 

@@ -1,7 +1,8 @@
 //! SQLite implementation of ToolDao
 
-use crate::models::tool::ToolPo;
+use crate::models::tool::{Tool, ToolPo};
 use crate::pkg::request_context::RequestContext;
+use crate::pkg::tool_registry::GLOBAL_TOOL_REGISTRY;
 use anyhow::Result;
 use async_trait::async_trait;
 use std::sync::OnceLock;
@@ -104,6 +105,19 @@ impl ToolDao for SqliteToolDao {
         Ok(row)
     }
 
+    async fn get_tool_full(&self, ctx: &RequestContext, id: String) -> Result<Option<Tool>> {
+        let Some(po) = self.get_by_id(ctx, id).await? else {
+            return Ok(None);
+        };
+
+        // Get built tool from global registry
+        let Some(tool) = GLOBAL_TOOL_REGISTRY.get().unwrap().get(&po.id) else {
+            return Ok(None);
+        };
+
+        Ok(Some(Tool { po, tool }))
+    }
+
     async fn get_by_name(&self, ctx: &RequestContext, name: &str) -> Result<Option<ToolPo>> {
         let pool = ctx.db_pool();
 
@@ -131,6 +145,21 @@ impl ToolDao for SqliteToolDao {
         .await?;
 
         Ok(rows)
+    }
+
+    async fn list_tools_for_agent_full(&self, ctx: &RequestContext, agent_id: &str) -> Result<Vec<Tool>> {
+        let pos = self.list_tools_for_agent(ctx, agent_id).await?;
+
+        let mut tools = Vec::new();
+        let registry = GLOBAL_TOOL_REGISTRY.get().unwrap();
+        for po in pos {
+            if let Some(tool) = registry.get(&po.id) {
+                tools.push(Tool { po, tool });
+            }
+            // Skip if not found in registry (automatic filtering)
+        }
+
+        Ok(tools)
     }
 
     async fn add_tool_to_agent(

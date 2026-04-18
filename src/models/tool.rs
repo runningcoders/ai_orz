@@ -1,6 +1,7 @@
 //! Tool 持久化对象
 
 use common::enums::{ToolProtocol, ToolStatus};
+use rig::tool::ToolDyn;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
@@ -32,6 +33,34 @@ pub struct ToolPo {
     pub created_by: Option<String>,
     /// 更新者
     pub updated_by: Option<String>,
+}
+
+/// Tool 完整实体
+///
+/// 包含持久化元数据 + 实际可执行的 ToolDyn trait 对象
+pub struct Tool {
+    /// 持久化元数据
+    pub po: ToolPo,
+    /// 实际可执行工具（rig trait 对象）
+    pub tool: Box<dyn ToolDyn + Send + Sync>,
+}
+
+// Manual Debug implementation - skip the dyn ToolDyn field
+impl std::fmt::Debug for Tool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Tool")
+            .field("po", &self.po)
+            .field("tool", &format_args!("Box<dyn ToolDyn + Send + Sync>"))
+            .finish()
+    }
+}
+
+// Manual Clone implementation - Agent derives Clone, but dyn ToolDyn can't be cloned
+// In practice, Agent is wrapped in Arc when shared, so this unreachable is safe
+impl Clone for Tool {
+    fn clone(&self) -> Self {
+        unreachable!("Tool cannot be cloned due to dyn Trait object. Use Arc<Agent> for sharing.")
+    }
 }
 
 impl ToolPo {

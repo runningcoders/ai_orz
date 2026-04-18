@@ -8,6 +8,7 @@ use anyhow::Result;
 use crate::error::AppError;
 use crate::models::brain::{Brain, Cortex, CortexTrait, Memory};
 use crate::models::model_provider::ModelProvider;
+use crate::models::tool::Tool;
 use crate::pkg::RequestContext;
 use crate::service::dao::cortex::{CortexDao};
 use std::sync::{Arc, OnceLock};
@@ -35,16 +36,18 @@ pub fn init() {
 /// Brain DAL 接口
 #[async_trait]
 pub trait BrainDalTrait: Send + Sync {
-    /// 从 ModelProvider 和 Memory 创建完整的 Brain
+    /// 从 ModelProvider、Memory 和工具列表创建完整的 Brain
     ///
     /// - BrainDal 内部调用 CortexDao 创建 Cortex
     /// - Memory 已经由上层创建好
+    /// - tools: 绑定到该 Agent 的工具列表，从注册中心动态加载
     /// - 返回完整的 Brain 实例
     fn wake_brain(
         &self,
         ctx: RequestContext,
         provider: &ModelProvider,
         memory: Memory,
+        tools: Vec<Tool>,
     ) -> Result<Brain, AppError>;
 
     /// 创建 Cortex 并测试连通性，执行一次 prompt 获取回答
@@ -91,9 +94,10 @@ impl BrainDalTrait for BrainDal {
         _ctx: RequestContext,
         provider: &ModelProvider,
         memory: Memory,
+        tools: Vec<Tool>,
     ) -> Result<Brain, AppError> {
-        // 1. 创建 CortexTrait
-        let cortex_trait = self.cortex_dao.create_cortex_trait(_ctx, provider)
+        // 1. 创建 CortexTrait，传入工具列表
+        let cortex_trait = self.cortex_dao.create_cortex_trait(_ctx, provider, tools)
             .map_err(|e| AppError::Internal(e.to_string()))?;
 
         // 2. 创建 Cortex 实体
@@ -111,8 +115,8 @@ impl BrainDalTrait for BrainDal {
         provider: &ModelProvider,
         prompt: &str,
     ) -> Result<String, AppError> {
-        // 1. 创建 Cortex
-        let cortex_trait = self.cortex_dao.create_cortex_trait(ctx.clone(), provider)
+        // 1. 创建 Cortex，测试连接不需要工具
+        let cortex_trait = self.cortex_dao.create_cortex_trait(ctx.clone(), provider, Vec::new())
             .map_err(|e| AppError::Internal(e.to_string()))?;
 
         // 2. 执行 prompt 获取回答

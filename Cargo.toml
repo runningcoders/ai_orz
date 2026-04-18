@@ -21,7 +21,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 sqlx = { version = "0.8.6", features = ["sqlite", "runtime-tokio-native-tls", "macros", "migrate", "uuid", "chrono"] }
 toml = "1"
 tower-http = { version = "0.6", features = ["fs"] }
-rig-core = { version = "0.34.0", features = ["all"] }
+rig-core = { version = "0.35.0", features = ["all"] }
 async-trait = "0.1"
 anyhow = "1.0"
 chrono = { version = "0.4", features = ["serde", "std"] }

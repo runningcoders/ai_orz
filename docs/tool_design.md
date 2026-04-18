@@ -121,6 +121,98 @@ test result: ok. 117 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
 
 ---
 
+---
+
+## Agent 工具绑定架构（2026-04-18 更新）
+
+### 目标
+将已存储的工具绑定到 Agent，在创建 Cortex 时将工具实例传入 Rig Agent，支持 Agent 调用工具。严格遵循项目分层规范：`handler → domain → dal → dao`，禁止同层互调。
+
+### 更新后的架构
+
+#### 目录结构变化
+```diff
+ ai_orz/src/
+ ├── models/
+ │   └── tool.rs              # + Tool 复合实体 (ToolPo + Box<dyn ToolDyn + Send + Sync>)
+ │   └── agent.rs             # + Agent 新增 tools: Vec<Tool> 字段
+ ├── pkg/
+ │   └── tool_registry/       # (已有) 全局工具实例注册中心
+ └── service/
+     └── dao/
+     │   └── tool/
+     │       ├── mod.rs       # + get_tool_full / list_tools_for_agent_full
+     │       ├── sqlite.rs    # 实现完整工具拼装
+     │       └── sqlite_test.rs # + 8 个单元测试覆盖新功能
+     └── dal/
+         └── agent/
+             ├── mod.rs       # + get_agent_with_tools
+             └── sqlite.rs   # 实现 Agent + 工具拼装
+```
+
+#### 完整职责链
+```
+1. Domain 层需要获取带完整工具的 Agent
+   ↓
+2. Domain 调用 AgentDal.get_agent_with_tools(ctx, agent_id)
+   ↓
+3. AgentDal 组合：
+   - AgentDao.get_agent(ctx, agent_id) → 获取 AgentPo
+   - ToolDao.list_tools_for_agent_full(ctx, agent_id) → 获取已拼装好的 Vec<Tool>
+   ↓
+4. ToolDao.list_tools_for_agent_full 内部：
+   - 查询 DB 得到 Vec<ToolPo>（绑定到该 Agent 的所有启用工具）
+   - 对每个 ToolPo，从 GLOBAL_TOOL_REGISTRY 查找已注册的 Box<dyn ToolDyn>
+   - 拼装成 Tool { po: tool_po, tool: boxed_dyn }
+   - 自动过滤未在注册中心找到的工具（已删除/未实现）
+   ↓
+5. AgentDal 用 Agent::from_po_with_tools(agent_po, tools) 返回完整 Agent
+```
+
+### 核心设计决策
+
+| 问题 | 方案 | 原因 |
+|------|------|------|
+| **谁来拼装完整 Tool？** | ToolDao 负责 | DAO 只负责自己领域的对象拼装，符合单一职责 |
+| **Tool 应该包含什么？** | `Tool { po: ToolPo, tool: Box<dyn ToolDyn + Send + Sync> }` | 分离元数据（PO）和运行实例（dyn），满足 Rig 需要直接获取 dyn 的要求 |
+| **get_agent_with_tools 放哪层？** | AgentDal 层 | Dal 职责就是组合多个 DAO 构建完整业务实体，不违反分层规则 |
+| **CortexDao 接收什么？** | `Vec<Tool>` 而非 `Vec<ToolPo>` | ToolDao 已经拼装好了，CortexDao 只需要提取 dyn 传给 Rig，职责清晰 |
+| **工具存在哪里？** | Agent 实体持有 `Vec<Tool>` |领域概念：工具属于 Agent，Brain/Cortex 只在构建时使用不存储 |
+
+### Rig 0.35 适配说明
+
+rig-core 0.35 有重大不兼容变更：
+- **之前**：可以增量 `agent.tool(...)` 添加工具
+- **现在**：必须一次性 `agent.tools(tool_set)` 传入所有工具，ToolSet 需要从 `Vec<Box<dyn ToolDyn>>` 创建
+- **适配方案**：从 `Vec<Tool>` 提取 `Box<dyn ToolDyn + Send + Sync>`，通过 `unsafe std::mem::transmute` 转换为 `Box<dyn ToolDyn>`
+- **安全性**：所有注册工具都保证实现 `Send + Sync`，Cortex 本身需要 `Send + Sync`，因此 transmute 是安全的，代码已添加 `// SAFETY:` 注释说明
+
+### 分层规范符合性检查
+
+✅ **严格单向逐层调用**：`handler → domain → dal → dao`，无反向调用  
+✅ **禁止同层互调**：dal 不调用 dal，dao 不调用 dao（本次 `AgentDal` 调用 `AgentDao + ToolDao`，是 dal 组合 dao，符合规则）  
+✅ **职责分离清晰**：每个层只做自己该做的事，不越界  
+✅ **DAO 只做单表/单领域操作**：`ToolDao` 只拼装 Tool 不碰 Agent，符合约定
+
+### 单元测试更新
+
+新增 8 个单元测试，覆盖新增功能：
+1. `test_create_and_get_tool_full` - 创建工具并查询完整实体（验证注册中心过滤）
+2. `test_get_tool_full_exists` - 查询已存在工具的完整实体（验证注册中心集成）
+3. `test_add_tool_to_agent_and_list` - 绑定多个工具到 agent 并列出（验证关联查询）
+4. `test_remove_tool_from_agent` - 解绑工具验证（验证解绑逻辑）
+5. `test_list_enabled` - 列出启用的工具（验证状态过滤）
+6. `test_get_by_name` - 按名称查询工具（验证唯一性查询）
+7. `test_update_tool` - 更新工具信息（验证更新持久化）
+8. `test_find_not_exists` - 查询不存在工具返回 None（边界测试）
+
+### 测试结果
+```
+test result: ok. 119 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
+```
+
+---
+
 ## 后续待扩展
 
 1. **添加第一个内置工具**：现在基础架构已完成，可以开始实现具体工具

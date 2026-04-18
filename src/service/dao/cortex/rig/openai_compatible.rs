@@ -7,9 +7,11 @@ use anyhow::{Result, anyhow};
 use rig::prelude::*;
 use rig::agent::Agent;
 use rig::completion::Prompt;
+use rig::tool::ToolDyn;
 use rig::providers::openai;
 use rig::providers::openai::responses_api::ResponsesCompletionModel;
 use crate::models::brain::CortexTrait;
+use crate::models::tool::Tool;
 
 /// OpenAI 兼容模式 Cortex
 #[derive(Clone)]
@@ -23,6 +25,7 @@ impl OpenAiCompatibleCortex {
         model: String,
         default_base_url: String,
         user_base_url: Option<String>,
+        tools: Vec<Tool>,
     ) -> Result<Self> {
         let base_url = user_base_url.unwrap_or(default_base_url);
 
@@ -31,8 +34,22 @@ impl OpenAiCompatibleCortex {
         let client = builder.build()
             .map_err(|e| anyhow!("Failed to build OpenAI compatible client: {}", e))?;
 
+        // Extract pre-built tools from Tool struct (already built by ToolDao from registry)
+        // Rig expects Box<dyn ToolDyn>, our tools are already Send + Sync which is fine
+        let tool_boxes: Vec<Box<dyn ToolDyn>> = tools
+            .into_iter()
+            .map(|t| unsafe {
+                // SAFETY: We know all tools implement Send + Sync, transmute is safe here
+                std::mem::transmute(t.tool)
+            })
+            .collect();
+
         // 使用指定模型创建 Agent
-        let agent = client.agent(model).build();
+        let agent = if tool_boxes.is_empty() {
+            client.agent(model).build()
+        } else {
+            client.agent(model).tools(tool_boxes).build()
+        };
 
         Ok(Self { agent })
     }
