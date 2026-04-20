@@ -16,6 +16,10 @@ pub struct ProjectPo {
     pub name: String,
     /// 项目详细描述
     pub description: String,
+    /// 项目运作流程描述，各角色协作方式（可选，为空使用默认流程）
+    pub workflow: Option<String>,
+    /// 用户对项目的指导建议，Agent 执行时参考（可选）
+    pub guidance: Option<String>,
     /// 项目状态
     pub status: ProjectStatus,
     /// 优先级（数值越大优先级越高）
@@ -48,6 +52,8 @@ impl ProjectPo {
         id: String,
         name: String,
         description: String,
+        workflow: Option<String>,
+        guidance: Option<String>,
         priority: i32,
         tags: Vec<String>,
         root_user_id: String,
@@ -64,6 +70,8 @@ impl ProjectPo {
             id,
             name,
             description,
+            workflow,
+            guidance,
             status: ProjectStatus::default(),
             priority,
             tags: tags_json,

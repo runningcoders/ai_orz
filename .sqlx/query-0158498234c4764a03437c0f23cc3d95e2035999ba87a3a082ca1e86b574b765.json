@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, task_id, from_id, to_id, \"role\" as \"role: MessageRole\", \"message_type\" as \"message_type: MessageType\", file_type as \"file_type: FileType\", \"status\" as \"status: MessageStatus\", content, file_meta as \"file_meta: Json<FileMeta>\", created_by, modified_by, created_at, updated_at\nFROM messages WHERE task_id = ? AND \"status\" != 0 ORDER BY created_at ASC\n                ",
+  "query": "\nSELECT id, project_id, task_id, from_id, to_id, \"role\" as \"role: MessageRole\", \"message_type\" as \"message_type: MessageType\", file_type as \"file_type: FileType\", \"status\" as \"status: MessageStatus\", content, file_meta as \"file_meta: Json<FileMeta>\", created_by, modified_by, created_at, updated_at\nFROM messages WHERE task_id = ? AND \"status\" != 0 ORDER BY created_at ASC\nLIMIT ?\n                ",
   "describe": {
     "columns": [
       {
@@ -9,77 +9,83 @@
         "type_info": "Text"
       },
       {
-        "name": "task_id",
+        "name": "project_id",
         "ordinal": 1,
         "type_info": "Text"
       },
       {
-        "name": "from_id",
+        "name": "task_id",
         "ordinal": 2,
         "type_info": "Text"
       },
       {
-        "name": "to_id",
+        "name": "from_id",
         "ordinal": 3,
         "type_info": "Text"
       },
       {
-        "name": "role: MessageRole",
+        "name": "to_id",
         "ordinal": 4,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "message_type: MessageType",
+        "name": "role: MessageRole",
         "ordinal": 5,
         "type_info": "Integer"
       },
       {
-        "name": "file_type: FileType",
+        "name": "message_type: MessageType",
         "ordinal": 6,
         "type_info": "Integer"
       },
       {
-        "name": "status: MessageStatus",
+        "name": "file_type: FileType",
         "ordinal": 7,
         "type_info": "Integer"
       },
       {
-        "name": "content",
+        "name": "status: MessageStatus",
         "ordinal": 8,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "file_meta: Json<FileMeta>",
+        "name": "content",
         "ordinal": 9,
         "type_info": "Text"
       },
       {
-        "name": "created_by",
+        "name": "file_meta: Json<FileMeta>",
         "ordinal": 10,
         "type_info": "Text"
       },
       {
-        "name": "modified_by",
+        "name": "created_by",
         "ordinal": 11,
         "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "modified_by",
         "ordinal": 12,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 13,
         "type_info": "Integer"
       },
       {
         "name": "updated_at",
-        "ordinal": 13,
+        "ordinal": 14,
         "type_info": "Integer"
       }
     ],
     "parameters": {
-      "Right": 1
+      "Right": 2
     },
     "nullable": [
       false,
-      false,
+      true,
+      true,
       false,
       false,
       false,
@@ -94,5 +100,5 @@
       false
     ]
   },
-  "hash": "60462a7329f8bfd7c646e147611812e4963cbac8b500aea192d232233d66f0a8"
+  "hash": "0158498234c4764a03437c0f23cc3d95e2035999ba87a3a082ca1e86b574b765"
 }

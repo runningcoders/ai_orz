@@ -10,7 +10,7 @@ mod sqlite;
 #[cfg(test)]
 mod sqlite_test;
 
-pub use sqlite::{init, dao, SqliteToolDao};
+pub use sqlite::init;
 
 /// Tool DAO trait
 #[async_trait]

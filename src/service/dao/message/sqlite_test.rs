@@ -28,7 +28,8 @@ async fn test_insert_and_find_by_id(pool: SqlitePool) -> Result<()> {
 
     let msg = MessagePo::new(
         Uuid::now_v7().to_string(),
-        "task-001".to_string(),
+        None, // project_id (new parameter)
+        Some("task-001".to_string()),
         "user-001".to_string(),
         "".to_string(),
         MessageRole::User,
@@ -44,7 +45,8 @@ async fn test_insert_and_find_by_id(pool: SqlitePool) -> Result<()> {
     assert!(found.is_some());
     let found = found.unwrap();
     assert_eq!(found.id, msg.id);
-    assert_eq!(found.task_id, "task-001".to_string());
+    assert_eq!(found.task_id, Some("task-001".to_string()));
+    assert_eq!(found.task_id, Some("task-001".to_string()));
     assert_eq!(found.from_id, "user-001".to_string());
     assert_eq!(found.to_id, "".to_string());
     assert_eq!(found.role, MessageRole::User);
@@ -71,7 +73,8 @@ async fn test_list_by_task_id(pool: SqlitePool) -> Result<()> {
     // 插入第一条消息
     let msg0 = MessagePo::new(
         Uuid::now_v7().to_string(),
-        "task-001".to_string(),
+        None, // project_id (new parameter)
+        Some("task-001".to_string()),
         "user-001".to_string(),
         "".to_string(),
         MessageRole::User,
@@ -86,7 +89,8 @@ async fn test_list_by_task_id(pool: SqlitePool) -> Result<()> {
     // 插入更多消息
     let msg1 = MessagePo::new(
         Uuid::now_v7().to_string(),
-        "task-001".to_string(),
+        None, // project_id (new parameter)
+        Some("task-001".to_string()),
         "user-001".to_string(),
         "".to_string(),
         MessageRole::User,
@@ -98,7 +102,8 @@ async fn test_list_by_task_id(pool: SqlitePool) -> Result<()> {
     );
     let msg2 = MessagePo::new(
         Uuid::now_v7().to_string(),
-        "task-001".to_string(),
+        None, // project_id (new parameter)
+        Some("task-001".to_string()),
         "ai-agent-001".to_string(),
         "user-001".to_string(),
         MessageRole::Agent,
@@ -110,7 +115,8 @@ async fn test_list_by_task_id(pool: SqlitePool) -> Result<()> {
     );
     let msg3 = MessagePo::new(
         Uuid::now_v7().to_string(),
-        "task-002".to_string(), // 不同任务
+        None, // project_id (new parameter)
+        Some("task-002".to_string()), // 不同任务
         "user-002".to_string(),
         "".to_string(),
         MessageRole::User,
@@ -154,7 +160,8 @@ async fn test_list_by_task_id_with_limit(pool: SqlitePool) -> Result<()> {
     for i in 0..3 {
         let msg = MessagePo::new(
             Uuid::now_v7().to_string(),
-            "task-001".to_string(),
+            None, // project_id (new parameter)
+            Some("task-001".to_string()),
             "user-001".to_string(),
             "".to_string(),
             MessageRole::User,
@@ -189,7 +196,8 @@ async fn test_list_by_from_id(pool: SqlitePool) -> Result<()> {
 
     let msg1 = MessagePo::new(
         Uuid::now_v7().to_string(),
-        "task-001".to_string(),
+        None, // project_id (new parameter)
+        Some("task-001".to_string()),
         "user-001".to_string(),
         "".to_string(),
         MessageRole::User,
@@ -201,7 +209,8 @@ async fn test_list_by_from_id(pool: SqlitePool) -> Result<()> {
     );
     let msg2 = MessagePo::new(
         Uuid::now_v7().to_string(),
-        "task-001".to_string(),
+        None, // project_id (new parameter)
+        Some("task-001".to_string()),
         "ai-agent-001".to_string(),
         "user-001".to_string(),
         MessageRole::Agent,
@@ -213,7 +222,8 @@ async fn test_list_by_from_id(pool: SqlitePool) -> Result<()> {
     );
     let msg3 = MessagePo::new(
         Uuid::now_v7().to_string(),
-        "task-002".to_string(),
+        None, // project_id (new parameter)
+        Some("task-002".to_string()),
         "user-001".to_string(),
         "".to_string(),
         MessageRole::User,
@@ -248,7 +258,8 @@ async fn test_list_by_to_id(pool: SqlitePool) -> Result<()> {
 
     let msg1 = MessagePo::new(
         Uuid::now_v7().to_string(),
-        "task-001".to_string(),
+        None, // project_id (new parameter)
+        Some("task-001".to_string()),
         "user-001".to_string(),
         "".to_string(),
         MessageRole::User,
@@ -260,7 +271,8 @@ async fn test_list_by_to_id(pool: SqlitePool) -> Result<()> {
     );
     let msg2 = MessagePo::new(
         Uuid::now_v7().to_string(),
-        "task-001".to_string(),
+        None, // project_id (new parameter)
+        Some("task-001".to_string()),
         "ai-agent-001".to_string(),
         "user-001".to_string(),
         MessageRole::Agent,
@@ -297,7 +309,8 @@ async fn test_count_by_task_id(pool: SqlitePool) -> Result<()> {
     for _ in 0..3 {
         let msg = MessagePo::new(
             Uuid::now_v7().to_string(),
-            "task-001".to_string(),
+            None, // project_id (new parameter)
+            Some("task-001".to_string()),
             "user-001".to_string(),
             "".to_string(),
             MessageRole::User,
@@ -312,7 +325,8 @@ async fn test_count_by_task_id(pool: SqlitePool) -> Result<()> {
     // task-002: 1 条消息
     let msg = MessagePo::new(
         Uuid::now_v7().to_string(),
-        "task-002".to_string(),
+        None, // project_id (new parameter)
+        Some("task-002".to_string()),
         "user-001".to_string(),
         "".to_string(),
         MessageRole::User,
@@ -349,7 +363,8 @@ async fn test_delete_message(pool: SqlitePool) -> Result<()> {
 
     let msg_to_delete = MessagePo::new(
         Uuid::now_v7().to_string(),
-        "task-delete".to_string(),
+        None, // project_id (new parameter)
+        Some("task-delete".to_string()),
         "user-001".to_string(),
         "".to_string(),
         MessageRole::User,
@@ -393,7 +408,8 @@ async fn test_delete_by_task_id(pool: SqlitePool) -> Result<()> {
     for i in 0..3 {
         let msg = MessagePo::new(
             Uuid::now_v7().to_string(),
-            "task-001".to_string(),
+            None, // project_id (new parameter)
+            Some("task-001".to_string()),
             "user-001".to_string(),
             "".to_string(),
             MessageRole::User,
@@ -436,7 +452,8 @@ async fn test_update_status(pool: SqlitePool) -> Result<()> {
 
     let msg = MessagePo::new(
         Uuid::now_v7().to_string(),
-        "task-001".to_string(),
+        None, // project_id (new parameter)
+        Some("task-001".to_string()),
         "user-001".to_string(),
         "".to_string(),
         MessageRole::User,
@@ -474,7 +491,8 @@ async fn test_image_message_with_metadata(pool: SqlitePool) -> Result<()> {
 
     let msg_image = MessagePo::new(
         Uuid::now_v7().to_string(),
-        "task-001".to_string(),
+        None, // project_id (new parameter)
+        Some("task-001".to_string()),
         "user-001".to_string(),
         "".to_string(),
         MessageRole::User,
@@ -520,7 +538,8 @@ async fn test_list_by_status(pool: SqlitePool) -> Result<()> {
     ] {
         let msg = MessagePo::new(
             Uuid::now_v7().to_string(),
-            "task-001".to_string(),
+            None, // project_id (new parameter)
+            Some("task-001".to_string()),
             "user-001".to_string(),
             "".to_string(),
             MessageRole::User,

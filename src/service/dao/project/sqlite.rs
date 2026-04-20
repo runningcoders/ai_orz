@@ -40,8 +40,8 @@ impl ProjectDaoTrait for SqliteProjectDao {
         let pool = ctx.db_pool();
         let status_i32 = project.status as i32;
         sqlx::query!(
-            "INSERT INTO projects (id, name, description, \"status\", priority, tags, root_user_id, owner_agent_id, start_at, due_at, end_at, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            project.id, project.name, project.description, status_i32, project.priority, project.tags, project.root_user_id, project.owner_agent_id, project.start_at, project.due_at, project.end_at, project.created_by, project.modified_by, project.created_at, project.updated_at
+            "INSERT INTO projects (id, name, description, workflow, guidance, \"status\", priority, tags, root_user_id, owner_agent_id, start_at, due_at, end_at, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            project.id, project.name, project.description, project.workflow, project.guidance, status_i32, project.priority, project.tags, project.root_user_id, project.owner_agent_id, project.start_at, project.due_at, project.end_at, project.created_by, project.modified_by, project.created_at, project.updated_at
         )
         .execute(pool)
         .await?;
@@ -52,7 +52,7 @@ impl ProjectDaoTrait for SqliteProjectDao {
         let pool = ctx.db_pool();
         let project = sqlx::query_as!(
             ProjectPo,
-            "SELECT id, name, description, \"status\" as \"status: ProjectStatus\", priority as \"priority: i32\", tags, root_user_id, owner_agent_id, start_at, due_at, end_at, created_by, modified_by, created_at, updated_at FROM projects WHERE id = ? AND \"status\" != 0",
+            "SELECT id, name, description, workflow, guidance, \"status\" as \"status: ProjectStatus\", priority as \"priority: i32\", tags, root_user_id, owner_agent_id, start_at, due_at, end_at, created_by, modified_by, created_at, updated_at FROM projects WHERE id = ? AND \"status\" != 0",
             id
         )
         .fetch_optional(pool)
@@ -66,7 +66,7 @@ impl ProjectDaoTrait for SqliteProjectDao {
         let limit_i64 = limit as i64;
         let projects = sqlx::query_as!(
             ProjectPo,
-            "SELECT id, name, description, \"status\" as \"status: ProjectStatus\", priority as \"priority: i32\", tags, root_user_id, owner_agent_id, start_at, due_at, end_at, created_by, modified_by, created_at, updated_at FROM projects WHERE root_user_id = ? AND \"status\" != 0 ORDER BY priority DESC, created_at DESC LIMIT ?",
+            "SELECT id, name, description, workflow, guidance, \"status\" as \"status: ProjectStatus\", priority as \"priority: i32\", tags, root_user_id, owner_agent_id, start_at, due_at, end_at, created_by, modified_by, created_at, updated_at FROM projects WHERE root_user_id = ? AND \"status\" != 0 ORDER BY priority DESC, created_at DESC LIMIT ?",
             root_user_id, limit_i64
         )
         .fetch_all(pool)
@@ -86,7 +86,7 @@ impl ProjectDaoTrait for SqliteProjectDao {
 
         let projects = sqlx::query_as!(
             ProjectPo,
-            "SELECT id, name, description, \"status\" as \"status: ProjectStatus\", priority as \"priority: i32\", tags, root_user_id, owner_agent_id, start_at, due_at, end_at, created_by, modified_by, created_at, updated_at FROM projects WHERE root_user_id = ? AND \"status\" != 0 AND ((? IS NOT NULL AND \"status\" = ?) OR (? IS NOT NULL AND \"status\" = ?) OR (? IS NOT NULL AND \"status\" = ?) OR (? IS NOT NULL AND \"status\" = ?)) ORDER BY priority DESC, created_at DESC LIMIT ?",
+            "SELECT id, name, description, workflow, guidance, \"status\" as \"status: ProjectStatus\", priority as \"priority: i32\", tags, root_user_id, owner_agent_id, start_at, due_at, end_at, created_by, modified_by, created_at, updated_at FROM projects WHERE root_user_id = ? AND \"status\" != 0 AND ((? IS NOT NULL AND \"status\" = ?) OR (? IS NOT NULL AND \"status\" = ?) OR (? IS NOT NULL AND \"status\" = ?) OR (? IS NOT NULL AND \"status\" = ?)) ORDER BY priority DESC, created_at DESC LIMIT ?",
             root_user_id, s0, s0, s1, s1, s2, s2, s3, s3, limit_i64
         )
         .fetch_all(pool)
@@ -99,8 +99,8 @@ impl ProjectDaoTrait for SqliteProjectDao {
         let now = common::constants::utils::current_timestamp();
         let status_i32 = project.status as i32;
         sqlx::query!(
-            "UPDATE projects SET name = ?, description = ?, \"status\" = ?, priority = ?, tags = ?, root_user_id = ?, owner_agent_id = ?, start_at = ?, due_at = ?, end_at = ?, modified_by = ?, updated_at = ? WHERE id = ?",
-            project.name, project.description, status_i32, project.priority, project.tags, project.root_user_id, project.owner_agent_id, project.start_at, project.due_at, project.end_at, project.modified_by, now, project.id
+            "UPDATE projects SET name = ?, description = ?, workflow = ?, guidance = ?, \"status\" = ?, priority = ?, tags = ?, root_user_id = ?, owner_agent_id = ?, start_at = ?, due_at = ?, end_at = ?, modified_by = ?, updated_at = ? WHERE id = ?",
+            project.name, project.description, project.workflow, project.guidance, status_i32, project.priority, project.tags, project.root_user_id, project.owner_agent_id, project.start_at, project.due_at, project.end_at, project.modified_by, now, project.id
         )
         .execute(pool)
         .await?;

@@ -22,6 +22,8 @@ async fn test_insert_project(pool: SqlitePool) -> Result<(), AppError> {
         project_id.clone(),
         "Test Project".to_string(),
         "This is a test project".to_string(),
+        None, // workflow
+        None, // guidance
         0,
         vec!["test".to_string(), "demo".to_string()],
         "test-user".to_string(),
@@ -47,6 +49,8 @@ async fn test_find_by_id(pool: SqlitePool) -> Result<(), AppError> {
         project_id.clone(),
         "Find Test".to_string(),
         "Test find by id".to_string(),
+        None, // workflow
+        None, // guidance
         0,
         vec![],
         "test-user".to_string(),
@@ -82,6 +86,8 @@ async fn test_list_by_root_user(pool: SqlitePool) -> Result<(), AppError> {
             project_id,
             format!("Project {}", i),
             "".to_string(),
+            None, // workflow
+            None, // guidance
             i,
             vec![],
             "user1".to_string(),
@@ -99,6 +105,8 @@ async fn test_list_by_root_user(pool: SqlitePool) -> Result<(), AppError> {
         project_id,
         "User2 Project".to_string(),
         "".to_string(),
+        None, // workflow
+        None, // guidance
         0,
         vec![],
         "user2".to_string(),
@@ -136,6 +144,8 @@ async fn test_list_by_root_user_and_status(pool: SqlitePool) -> Result<(), AppEr
             project_id,
             "Status Test".to_string(),
             "".to_string(),
+            None, // workflow
+            None, // guidance
             0,
             vec![],
             "test-user".to_string(),
@@ -184,6 +194,8 @@ async fn test_update_project(pool: SqlitePool) -> Result<(), AppError> {
         project_id.clone(),
         "Original Name".to_string(),
         "Original Description".to_string(),
+        None, // workflow
+        None, // guidance
         0,
         vec![],
         "test-user".to_string(),
@@ -222,6 +234,8 @@ async fn test_update_status(pool: SqlitePool) -> Result<(), AppError> {
         project_id.clone(),
         "Status Update Test".to_string(),
         "".to_string(),
+        None, // workflow
+        None, // guidance
         0,
         vec![],
         "test-user".to_string(),
@@ -253,6 +267,8 @@ async fn test_count_functions(pool: SqlitePool) -> Result<(), AppError> {
             project_id,
             format!("Count {}", i),
             "".to_string(),
+            None, // workflow
+            None, // guidance
             0,
             vec![],
             "test-user".to_string(),
@@ -289,6 +305,8 @@ async fn test_deleted_not_found(pool: SqlitePool) -> Result<(), AppError> {
         project_id.clone(),
         "To Delete".to_string(),
         "".to_string(),
+        None, // workflow
+        None, // guidance
         0,
         vec![],
         "test-user".to_string(),

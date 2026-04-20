@@ -29,4 +29,4 @@ pub trait ArtifactDaoTrait: Send + Sync + std::fmt::Debug {
 }
 
 mod sqlite;
-pub use self::sqlite::{init, dao};
+pub use self::sqlite::init;

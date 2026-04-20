@@ -12,15 +12,17 @@ use sqlx::Type;
 pub enum ProjectStatus {
     /// Deleted (soft deleted, filtered out by default)
     Deleted = 0,
-    /// Active (active and in progress)
+    /// Active (active and available)
     #[default]
     Active = 1,
+    /// PendingReview (created by Agent, waiting for user review/approval)
+    PendingReview = 2,
     /// InProgress (work is ongoing)
-    InProgress = 2,
+    InProgress = 3,
     /// Completed (work is done)
-    Completed = 3,
+    Completed = 4,
     /// Archived (archived to history)
-    Archived = 4,
+    Archived = 5,
 }
 
 impl From<i32> for ProjectStatus {
@@ -28,9 +30,10 @@ impl From<i32> for ProjectStatus {
         match v {
             0 => ProjectStatus::Deleted,
             1 => ProjectStatus::Active,
-            2 => ProjectStatus::InProgress,
-            3 => ProjectStatus::Completed,
-            4 => ProjectStatus::Archived,
+            2 => ProjectStatus::PendingReview,
+            3 => ProjectStatus::InProgress,
+            4 => ProjectStatus::Completed,
+            5 => ProjectStatus::Archived,
             _ => ProjectStatus::default(),
         }
     }

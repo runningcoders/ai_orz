@@ -39,12 +39,36 @@ impl Message {
         self.po.id.as_str()
     }
 
-    /// 获取任务 ID
-    pub fn task_id(&self) -> &str {
-        self.po.task_id.as_str()
+    /// 获取项目 ID（如果有）
+    pub fn project_id(&self) -> Option<&str> {
+        self.po.project_id.as_deref()
     }
 
-    /// 创建新 Message
+    /// 获取任务 ID（如果有）
+    pub fn task_id(&self) -> Option<&str> {
+        self.po.task_id.as_deref()
+    }
+
+    /// 创建新 Message（完整参数，指定 project_id 和 task_id）
+    pub fn new_with_context(
+        id: String,
+        project_id: Option<String>,
+        task_id: Option<String>,
+        from_id: String,
+        to_id: String,
+        role: MessageRole,
+        message_type: MessageType,
+        content: String,
+        file_type: Option<FileType>,
+        file_meta: FileMeta,
+        created_by: String,
+    ) -> Self {
+        let po = MessagePo::new(id, project_id, task_id, from_id, to_id, role, message_type, content, file_type, file_meta, created_by);
+        Self::from_po(po)
+    }
+
+    /// 创建新 Message（兼容旧接口，向后兼容）
+    #[deprecated = "Use new_with_context instead to support project context"]
     pub fn new(
         id: String,
         task_id: String,
@@ -57,8 +81,7 @@ impl Message {
         file_meta: FileMeta,
         created_by: String,
     ) -> Self {
-        let po = MessagePo::new(id, task_id, from_id, to_id, role, message_type, content, file_type, file_meta, created_by);
-        Self::from_po(po)
+        Self::new_with_context(id, None, Some(task_id), from_id, to_id, role, message_type, content, file_type, file_meta, created_by)
     }
 }
 
@@ -78,7 +101,15 @@ impl Event for Message {
 
     fn order_key(&self) -> &str {
         // 默认按任务 ID 分组，同一个任务的消息保证顺序消费
-        self.task_id()
+        // 如果没有任务，则按项目 ID 分组
+        // 如果也没有项目，则按消息自己的 ID 分组（单条消息消费）
+        if let Some(task_id) = self.task_id() {
+            task_id
+        } else if let Some(project_id) = self.project_id() {
+            project_id
+        } else {
+            self.id()
+        }
     }
 
     fn priority(&self) -> u8 {
@@ -96,8 +127,10 @@ impl Event for Message {
 pub struct MessagePo {
     /// 消息 ID
     pub id: String,
-    /// 关联任务 ID（一个任务下有多条消息）
-    pub task_id: String,
+    /// 关联项目 ID（可为空，没有项目时为 None）
+    pub project_id: Option<String>,
+    /// 关联任务 ID（可为空，没有任务时为 None）
+    pub task_id: Option<String>,
     /// 来源 Agent ID（如果是用户发送则为用户 ID）
     pub from_id: String,
     /// 目标 Agent ID（如果是发给用户则为用户 ID）
@@ -132,7 +165,8 @@ impl MessagePo {
     /// 创建新的 MessagePo
     pub fn new(
         id: String,
-        task_id: String,
+        project_id: Option<String>,
+        task_id: Option<String>,
         from_id: String,
         to_id: String,
         role: MessageRole,
@@ -145,6 +179,7 @@ impl MessagePo {
         let now = utils::current_timestamp_ms();
         Self {
             id,
+            project_id,
             task_id,
             from_id,
             to_id,

@@ -12,15 +12,17 @@ use sqlx::Type;
 pub enum TaskStatus {
     /// Cancelled (can be considered deleted)
     Cancelled = 0,
-    /// Pending, not started yet
+    /// PendingReview (created by Agent, waiting for user review/approval)
+    PendingReview = 1,
+    /// Pending, not started yet (after approval)
     #[default]
-    Pending = 1,
+    Pending = 2,
     /// In progress
-    InProgress = 2,
+    InProgress = 3,
     /// Completed
-    Completed = 3,
+    Completed = 4,
     /// Archived (archived to history after summary)
-    Archived = 4,
+    Archived = 5,
 }
 
 impl TaskStatus {
@@ -28,10 +30,11 @@ impl TaskStatus {
     pub fn from_i32(v: i32) -> Self {
         match v {
             0 => Self::Cancelled,
-            1 => Self::Pending,
-            2 => Self::InProgress,
-            3 => Self::Completed,
-            4 => Self::Archived,
+            1 => Self::PendingReview,
+            2 => Self::Pending,
+            3 => Self::InProgress,
+            4 => Self::Completed,
+            5 => Self::Archived,
             _ => Self::default(),
         }
     }
