@@ -50,9 +50,9 @@ impl SqliteMemoryDao {
     /// 获取今日日期文件完整路径（用于写入）
     fn today_path(&self, agent_id: &str) -> PathBuf {
         let now = chrono::Local::now();
-        let date_str = now.format("%Y-%m-%d").to_string();
+        let date_str = now.format("%Y%m%d").to_string();
         let agent_dir = self.agent_memory_dir(agent_id);
-        agent_dir.join(format!("{}.md", date_str))
+        agent_dir.join(format!("{date_str}.jsonl"))
     }
 
     /// 获取连接池从上下文
@@ -60,39 +60,27 @@ impl SqliteMemoryDao {
         ctx.db_pool().clone()
     }
 
-    /// 获取今日日期文件相对路径（用于存储到数据库）
-    /// 格式: agents/{agent_id}/memory/{YYYY-MM-DD}.md
-    pub fn today_path_relative(&self, agent_id: &str) -> String {
+    /// 获取今日日期文件名（用于存储到数据库）
+    /// 格式: YYYYMMDD.jsonl（相对于 agent memory 目录）
+    pub fn today_filename(&self) -> String {
         let now = chrono::Local::now();
-        let date_str = now.format("%Y-%m-%d").to_string();
-        format!("agents/{}/memory/{}.md", agent_id, date_str)
+        now.format("%Y%m%d.jsonl").to_string()
     }
 
-    /// 按知识引用读取原始记忆内容片段
+    /// Read original memory content by knowledge reference
     ///
-    /// 根据 date_path(相对路径) + byte_start + byte_length 读取指定范围内容
+    /// Uses date_path (YYYYMMDD.jsonl) + line_number to read the exact JSON line
     pub fn read_memory_reference(&self, reference: &KnowledgeReferencePo) -> Result<String, AppError> {
-        // 根据 date_path(相对路径) 拼接完整路径（相对于 base_data_path）
-        let config = config::get();
-        let base = Path::new(&config.base_data_path);
-        let full_path = base.join(&reference.date_path);
-
-        // 读取整个文件内容
-        let content = std::fs::read_to_string(&full_path)?;
-
-        // 按字节偏移和长度截取
-        let byte_start = reference.byte_start as usize;
-        let byte_length = reference.byte_length as usize;
-
-        // 检查边界
-        if byte_start + byte_length > content.len() {
-            return Ok("".to_string());
-        }
-
-        let slice = &content.as_bytes()[byte_start..byte_start + byte_length];
-        let result = String::from_utf8_lossy(slice).to_string();
-
-        Ok(result)
+        // Full path: agent memory dir + date file name
+        let agent_id = reference.knowledge_id.split('/').next().unwrap_or(&reference.knowledge_id);
+        let agent_dir = self.agent_memory_dir(agent_id);
+        let writer = crate::pkg::daily_jsonl::DailyJsonlWriter::new(agent_dir);
+        // date_path is just YYYYMMDD.jsonl
+        let date = reference.date_path.replace(".jsonl", "");
+        let line = writer.read_line(&date, reference.line_number as usize)?;
+        // Parse as MemoryTrace and return formatted content for display
+        let trace: MemoryTrace = serde_json::from_str(&line)?;
+        Ok(trace.content)
     }
 }
 
@@ -105,32 +93,12 @@ impl MemoryDaoTrait for SqliteMemoryDao {
         summary: String,
         tags: Vec<String>,
     ) -> Result<ShortTermMemoryIndexPo, AppError> {
-        // 1. 确保 Agent 目录存在
+        // 1. Use DailyJsonlWriter to append to the daily JSONL file
         let agent_dir = self.agent_memory_dir(&trace.agent_id);
-        std::fs::create_dir_all(&agent_dir)?;
+        let writer = crate::pkg::daily_jsonl::DailyJsonlWriter::new(agent_dir);
+        let (_date_filename, _line_number) = writer.append(trace)?;
 
-        // 2. 获取今日文件路径
-        let file_path = self.today_path(&trace.agent_id);
-
-        // 3. 追加写入文件
-        let mut file = match OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&file_path)
-        {
-            Ok(file) => file,
-            Err(e) => return Err(AppError::Io(e)),
-        };
-
-        // 获取当前文件大小（就是我们要写入的起始偏移）
-        let content_md = trace.to_markdown();
-        let _byte_start = file.seek(SeekFrom::End(0))?;
-        let _byte_length = content_md.len() as u64;
-
-        // 写入 markdown
-        file.write_all(content_md.as_bytes())?;
-
-        // 4. 插入短期索引到 SQLite
+        // 2. Insert short-term index to SQLite
         let pool = self.pool(ctx);
         let tags_json = serde_json::to_string(&tags)?;
         let role_str = trace.role.to_string();
@@ -139,8 +107,6 @@ impl MemoryDaoTrait for SqliteMemoryDao {
         let task_id = trace.task_id.as_ref();
 
         use common::enums::MemoryStatus;
-        // ✅ COUNTING: 9 Rust parameters → 9 question marks
-        // task_id is Option<&String> → SQLx expands internally to 2 params for SQLite, but we still write 9 question marks
         let status_i32 = MemoryStatus::Active as i32;
         sqlx::query!(
             r#"
@@ -161,7 +127,7 @@ INSERT INTO short_term_memory_index (
         .execute(&pool)
         .await?;
 
-        // 5. 返回索引
+        // 3. Return index
         Ok(ShortTermMemoryIndexPo {
             id: trace.id.clone(),
             agent_id: trace.agent_id.clone(),
@@ -654,16 +620,15 @@ WHERE id = ?
         sqlx::query!(
             r#"
 INSERT INTO knowledge_reference (
-    id, knowledge_id, short_term_id, trace_id, date_path, byte_start, byte_length, created_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    id, knowledge_id, short_term_id, trace_id, date_path, line_number, created_at
+) VALUES (?, ?, ?, ?, ?, ?, ?)
 "#,
             reference.id,
             reference.knowledge_id,
             reference.short_term_id,
             reference.trace_id,
             reference.date_path,
-            reference.byte_start,
-            reference.byte_length,
+            reference.line_number,
             reference.created_at,
         )
         .execute(&pool)
@@ -684,16 +649,15 @@ INSERT INTO knowledge_reference (
             sqlx::query!(
                 r#"
 INSERT INTO knowledge_reference (
-    id, knowledge_id, short_term_id, trace_id, date_path, byte_start, byte_length, created_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    id, knowledge_id, short_term_id, trace_id, date_path, line_number, created_at
+) VALUES (?, ?, ?, ?, ?, ?, ?)
 "#,
                 reference.id,
                 reference.knowledge_id,
                 reference.short_term_id,
                 reference.trace_id,
                 reference.date_path,
-                reference.byte_start,
-                reference.byte_length,
+                reference.line_number,
                 reference.created_at,
             )
             .execute(&mut *tx)
@@ -713,7 +677,7 @@ INSERT INTO knowledge_reference (
         let references = sqlx::query_as!(
             KnowledgeReferencePo,
             r#"
-SELECT id, knowledge_id, short_term_id, trace_id, date_path, byte_start, byte_length, created_at
+SELECT id, knowledge_id, short_term_id, trace_id, date_path, line_number, created_at
 FROM knowledge_reference
 WHERE knowledge_id = ?
 ORDER BY created_at ASC

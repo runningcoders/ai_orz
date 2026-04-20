@@ -5,13 +5,15 @@
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "sqlx")]
-use sqlx;
+use sqlx::Type;
 
 /// File type enumeration for artifacts and message attachments.
 ///
 /// Classifies files into common categories for filtering and display.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(Type))]
+#[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
 pub enum FileType {
     /// Text document (Markdown, PDF, TXT, etc.)
     Document = 0,
@@ -48,23 +50,5 @@ impl FileType {
     /// Convert the file type to i32 for database storage.
     pub fn to_i32(&self) -> i32 {
         *self as i32
-    }
-}
-
-#[cfg(feature = "sqlx")]
-impl<'r> sqlx::Decode<'r, sqlx::Sqlite> for FileType
-where
-    i32: sqlx::Decode<'r, sqlx::Sqlite>,
-{
-    fn decode(value: <sqlx::Sqlite as sqlx::Database>::ValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
-        let v = <i32 as sqlx::Decode<'r, sqlx::Sqlite>>::decode(value)?;
-        Ok(Self::from(v))
-    }
-}
-
-#[cfg(feature = "sqlx")]
-impl sqlx::Type<sqlx::Sqlite> for FileType {
-    fn type_info() -> <sqlx::Sqlite as sqlx::Database>::TypeInfo {
-        <i32 as sqlx::Type<sqlx::Sqlite>>::type_info()
     }
 }

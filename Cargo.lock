@@ -47,6 +47,7 @@ dependencies = [
  "serde_json",
  "sha256",
  "sqlx",
+ "tempfile",
  "tokio",
  "toml 1.1.2+spec-1.1.0",
  "tower-http",

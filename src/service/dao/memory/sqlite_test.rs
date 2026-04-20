@@ -157,9 +157,8 @@ async fn test_add_knowledge_reference(pool: SqlitePool) {
         knowledge_id: "node-1".to_string(),
         short_term_id: "st-1".to_string(),
         trace_id: "trace-1".to_string(),
-        date_path: "2026-04-11.md".to_string(),
-        byte_start: 0,
-        byte_length: 100,
+        date_path: "20260411.jsonl".to_string(),
+        line_number: 0,
         created_at: 0,
     };
 

@@ -1,6 +1,6 @@
 //! Task 持久化对象
 //!
-//! 对应 SQL 建表语句：migrations/20260411000000_initial.sql
+//! 对应 SQL 建表语句：`migrations/20260420000000_initial.sql`
 
 use common::constants::utils;
 use common::enums::{TaskStatus, AssigneeType};

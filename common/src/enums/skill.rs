@@ -4,8 +4,9 @@ use serde::{Deserialize, Serialize};
 
 /// 技能状态
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
-#[sqlx(type_name = "INTEGER")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
+#[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
 pub enum SkillStatus {
     /// 已过期/已废弃，不再推荐使用，但保留历史记录
     Expired = 0,

@@ -45,7 +45,7 @@ pub trait MessageDaoTrait: Send + Sync {
 
 
 mod sqlite;
-pub use self::sqlite::init;
+pub use self::sqlite::{dao, init};
 
 #[cfg(test)]
 mod sqlite_test;

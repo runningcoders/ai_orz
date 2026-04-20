@@ -103,7 +103,7 @@ impl Agent {
 
 /// AgentPo 持久化对象
 ///
-/// 对应 SQL 建表语句：[`crate::pkg::storage::sql::SQLITE_CREATE_TABLE_AGENTS`]
+/// 对应 SQL 建表语句：`migrations/20260420000000_initial.sql`
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct AgentPo {
     pub id: String,

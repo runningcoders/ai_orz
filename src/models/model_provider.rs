@@ -7,7 +7,7 @@ use std::fmt;
 
 /// 模型提供商持久化对象
 ///
-/// 对应 SQL 建表语句：[`crate::pkg::storage::sql::SQLITE_CREATE_TABLE_MODEL_PROVIDERS`]
+/// 对应 SQL 建表语句：`migrations/20260420000000_initial.sql`
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct ModelProviderPo {
     pub id: String,

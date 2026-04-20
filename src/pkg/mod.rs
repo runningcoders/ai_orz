@@ -1,9 +1,11 @@
+pub mod daily_jsonl;
 pub mod external;
 pub mod logging;
 pub mod jwt;
 pub mod storage;
 pub mod request_context;
 pub mod tool_registry;
+pub mod tool_call_logging;
 
 use common::config::AppConfig;
 
@@ -41,3 +43,7 @@ fn get_env_or_default(env_key: &str, default: &str) -> String {
 mod logging_test;
 #[cfg(test)]
 mod request_context_test;
+#[cfg(test)]
+mod daily_jsonl_test;
+#[cfg(test)]
+mod tool_call_logging_test;

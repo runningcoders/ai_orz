@@ -313,12 +313,10 @@ pub struct KnowledgeReferencePo {
     pub short_term_id: String,
     /// 原始记忆细节 ID（MemoryTrace.id）
     pub trace_id: String,
-    /// 日期文件相对路径：long_term_memory/{agent_id}/YYYY-MM-DD.md
+    /// 日期文件名：YYYYMMDD.jsonl，存储在 agent 目录下
     pub date_path: String,
-    /// 在文件中的起始字节偏移
-    pub byte_start: i64, // SQLite 不支持 u64 直接存储，用 i64 足够
-    /// 内容字节长度
-    pub byte_length: i64,
+    /// 在 JSONL 文件中的行号（0-based）
+    pub line_number: i64, // SQLite 不支持 u64 直接存储，用 i64 足够
     /// 创建时间戳
     pub created_at: i64,
 }

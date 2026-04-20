@@ -50,10 +50,10 @@ impl ToolDao for SqliteToolDao {
         .bind(po.id.to_string())
         .bind(&po.name)
         .bind(&po.description)
-        .bind(po.protocol.to_string())
+        .bind(po.protocol as i32)
         .bind(&po.config)
         .bind(&po.parameters_schema)
-        .bind(po.status.to_string())
+        .bind(po.status as i32)
         .bind(po.created_at)
         .bind(po.updated_at)
         .bind(&po.created_by)
@@ -77,10 +77,10 @@ impl ToolDao for SqliteToolDao {
         )
         .bind(&po.name)
         .bind(&po.description)
-        .bind(po.protocol.to_string())
+        .bind(po.protocol as i32)
         .bind(&po.config)
         .bind(&po.parameters_schema)
-        .bind(po.status.to_string())
+        .bind(po.status as i32)
         .bind(po.updated_at)
         .bind(&po.updated_by)
         .bind(po.id.to_string())
@@ -138,7 +138,7 @@ impl ToolDao for SqliteToolDao {
 
         let rows = sqlx::query_as::<_, ToolPo>(
             r#"
-            SELECT * FROM tools WHERE status = 'enabled' ORDER BY created_at DESC
+            SELECT * FROM tools WHERE status = 1 ORDER BY created_at DESC
             "#
         )
         .fetch_all(pool)
@@ -151,13 +151,15 @@ impl ToolDao for SqliteToolDao {
         let pos = self.list_tools_for_agent(ctx, agent_id).await?;
 
         let mut tools = Vec::new();
-        let registry = GLOBAL_TOOL_REGISTRY.get().unwrap();
-        for po in pos {
-            if let Some(tool) = registry.get(&po.id) {
-                tools.push(Tool { po, tool });
+        if let Some(registry) = GLOBAL_TOOL_REGISTRY.get() {
+            for po in pos {
+                if let Some(tool) = registry.get(&po.id) {
+                    tools.push(Tool { po, tool });
+                }
+                // Skip if not found in registry (automatic filtering)
             }
-            // Skip if not found in registry (automatic filtering)
         }
+        // If registry not initialized, return empty list
 
         Ok(tools)
     }
@@ -214,7 +216,7 @@ impl ToolDao for SqliteToolDao {
             r#"
             SELECT t.* FROM tools t
             INNER JOIN agent_tools at ON t.id = at.tool_id
-            WHERE at.agent_id = ? AND t.status = 'enabled'
+            WHERE at.agent_id = ? AND t.status = 1
             ORDER BY t.created_at DESC
             "#
         )

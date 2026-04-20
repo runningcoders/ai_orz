@@ -6,6 +6,6 @@ edition = "2024"
 # Common types shared between backend and frontend
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
-chrono = { version = "0.4", default-features = false, features = ["serde", "std"] }
+chrono = { version = "0.4", default-features = false, features = ["serde", "std", "clock"] }
 sqlx = { version = "0.8.6", features = ["macros"], default-features = false, optional = true }
 

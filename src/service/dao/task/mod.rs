@@ -27,7 +27,7 @@ pub trait TaskDaoTrait: Send + Sync + std::fmt::Debug {
 }
 
 mod sqlite;
-pub use self::sqlite::init;
+pub use self::sqlite::{dao, init, get_dao};
 
 #[cfg(test)]
 mod sqlite_test;

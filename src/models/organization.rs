@@ -1,6 +1,6 @@
 //! Organization 持久化对象
 //!
-//! 对应 SQL 建表语句：[`crate::pkg::storage::sql::SQLITE_CREATE_TABLE_ORGANIZATIONS`]
+//! 对应 SQL 建表语句：`migrations/20260420000000_initial.sql`
 
 use common::constants::utils;
 use common::enums::{OrganizationStatus, OrganizationScope};

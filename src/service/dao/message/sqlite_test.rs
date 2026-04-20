@@ -41,7 +41,7 @@ async fn test_insert_and_find_by_id(pool: SqlitePool) -> Result<()> {
     );
     message_dao.insert(ctx.clone(), &msg).await?;
 
-    let found = message_dao.find_by_id(ctx.clone(), msg.id.as_str()).await?;
+    let found: Option<MessagePo> = message_dao.find_by_id(ctx.clone(), msg.id.as_str()).await?;
     assert!(found.is_some());
     let found = found.unwrap();
     assert_eq!(found.id, msg.id);

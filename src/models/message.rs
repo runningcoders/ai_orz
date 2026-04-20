@@ -1,6 +1,6 @@
 //! Message 实体
 //!
-//! 对应 SQL 建表语句：[`crate::pkg::storage::sql::SQLITE_CREATE_TABLE_MESSAGES`]
+//! 对应 SQL 建表语句：`migrations/20260420000000_initial.sql`
 //!
 //! 存储设计：
 //! - Text 消息：content 直接存储文本内容，file_meta 为默认值
