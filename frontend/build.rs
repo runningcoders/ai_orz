@@ -9,14 +9,16 @@ use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Tell cargo to rerun build script only when config file changes
-    println!("cargo:rerun-if-changed=../ai_orz.toml");
+    println!("cargo:rerun-if-changed=../.ai_orz/ai_orz.toml");
     println!("cargo:rerun-if-changed=../common/config/ai_orz.toml");
 
-    // Load configuration from the project root
-    let config_path = Path::new("../ai_orz.toml");
+    // Load configuration:
+    // 1. First try user config from .ai_orz/ data directory (if exists)
+    // 2. Fallback to default embedded config from common
+    let config_path = Path::new("../.ai_orz/ai_orz.toml");
 
     let config_content = if config_path.exists() {
-        // Use existing config if it exists
+        // Use user custom config if it exists
         fs::read_to_string(config_path)?
     } else {
         // Fallback to default embedded config from common
