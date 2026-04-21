@@ -95,6 +95,24 @@ impl ToolPo {
         }
     }
 
+    /// 创建 built-in 工具的默认 ToolPo
+    /// id == name for built-in tools since they are constants
+    pub fn new_builtin(
+        id: String,
+        name: String,
+        description: String,
+    ) -> Self {
+        Self::new(
+            id,
+            name,
+            description,
+            ToolProtocol::Builtin,
+            serde_json::Value::Null, // No extra config for built-in tools
+            None, // Parameters can be extracted from trait at runtime if needed
+            None, // System built-in, no specific creator
+        )
+    }
+
     /// 更新时间戳和修改者
     pub fn touch(&mut self, modifier: Option<String>) {
         self.updated_at = common::constants::utils::current_timestamp();

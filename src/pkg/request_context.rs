@@ -1,8 +1,10 @@
-//! 请求上下文（贯穿整个请求生命周期）
+/// 请求上下文（贯穿整个请求生命周期）
 
 use axum::http;
+use common::config::AppConfig;
 use common::constants::http_header;
 use sqlx::sqlite::SqlitePool;
+use std::sync::Arc;
 use crate::pkg::storage;
 
 /// 请求上下文
@@ -17,13 +19,22 @@ pub struct RequestContext {
     /// 当前组织 ID
     pub organization_id: Option<String>,
 
+    /// 当前 Agent ID（可选，Agent 执行时有值）
+    pub agent_id: Option<String>,
+    /// 当前 Task ID（可选，Task 执行时有值）
+    pub task_id: Option<String>,
+    /// 当前 Project ID（可选，Project 上下文时有值）
+    pub project_id: Option<String>,
+
     /// DB 相关信息
     db_pool: SqlitePool,
+    /// 应用配置全局引用
+    config: Arc<AppConfig>,
 }
 
 impl RequestContext {
     /// 从 header 中提取上下文
-    pub fn from_headers(headers: &http::HeaderMap) -> Self {
+    pub fn from_headers(headers: &http::HeaderMap, config: Arc<AppConfig>) -> Self {
         // 1. 优先从 header 获取 log_id
         let log_id = headers
             .get(http_header::LOG_ID)
@@ -53,28 +64,40 @@ impl RequestContext {
             user_id,
             username,
             organization_id,
+            agent_id: None,
+            task_id: None,
+            project_id: None,
             db_pool: storage::get().pool_owned(),
+            config,
         }
     }
 
     /// 生成新的上下文（带自动生成的 log_id）
-    pub fn new(user_id: Option<String>, username: Option<String>) -> Self {
+    pub fn new(user_id: Option<String>, username: Option<String>, config: Arc<AppConfig>) -> Self {
         Self {
             log_id: Self::generate_log_id(),
             user_id,
             username,
             organization_id: None,
+            agent_id: None,
+            task_id: None,
+            project_id: None,
             db_pool: storage::get().pool_owned(),
+            config,
         }
     }
 
-    pub fn new_simple(user_id: &str,  db_pool: SqlitePool) -> RequestContext {
+    pub fn new_simple(user_id: &str,  db_pool: SqlitePool, config: Arc<AppConfig>) -> RequestContext {
         Self {
             log_id: Self::generate_log_id(),
             user_id: Some(user_id.to_string()),
             username: None,
             organization_id: None,
+            agent_id: None,
+            task_id: None,
+            project_id: None,
             db_pool,
+            config,
         }
     }
 
@@ -86,6 +109,21 @@ impl RequestContext {
     /// 设置组织 ID（JWT 解析结果会覆盖 header 中的值，以 JWT 为准）
     pub fn set_organization_id(&mut self, organization_id: String) {
         self.organization_id = Some(organization_id);
+    }
+
+    /// 设置当前 Agent ID
+    pub fn set_agent_id(&mut self, agent_id: String) {
+        self.agent_id = Some(agent_id);
+    }
+
+    /// 设置当前 Task ID
+    pub fn set_task_id(&mut self, task_id: String) {
+        self.task_id = Some(task_id);
+    }
+
+    /// 设置当前 Project ID
+    pub fn set_project_id(&mut self, project_id: String) {
+        self.project_id = Some(project_id);
     }
 
     /// 生成新的 log_id
@@ -115,7 +153,27 @@ impl RequestContext {
     pub fn uname(&self) -> String {
         self.username.clone().unwrap_or_default()
     }
-    
+
+    /// 获取当前 Agent ID
+    pub fn agent_id(&self) -> Option<&String> {
+        self.agent_id.as_ref()
+    }
+
+    /// 获取当前 Task ID
+    pub fn task_id(&self) -> Option<&String> {
+        self.task_id.as_ref()
+    }
+
+    /// 获取当前 Project ID
+    pub fn project_id(&self) -> Option<&String> {
+        self.project_id.as_ref()
+    }
+
+    /// 获取应用配置
+    pub fn app_config(&self) -> &AppConfig {
+        &self.config
+    }
+
     pub fn db_pool(&self) -> &SqlitePool {
         &self.db_pool
     }

@@ -65,6 +65,7 @@ fn test_tool_call_logger_multiple_calls() -> anyhow::Result<()> {
         let entry = ToolCallEntry {
             call_id: format!("call-{}", i),
             tool_id: "multi_test".to_string(),
+            tool_name: "Multiple Test".to_string(),
             agent_id: None,
             task_id: None,
             project_id: None,
@@ -74,6 +75,7 @@ fn test_tool_call_logger_multiple_calls() -> anyhow::Result<()> {
             input: json!({ "index": i }),
             output: Some(json!({ "result": i * 2 })),
             error: None,
+            status: ToolCallStatus::Completed,
             metadata: json!({}),
         };
         let (_, line) = logger.log_call("multi_test", entry)?;
@@ -104,6 +106,7 @@ fn test_tool_call_logger_different_tools_separate_paths() -> anyhow::Result<()> 
         input: json!({}),
         output: None,
         error: None,
+        status: ToolCallStatus::Completed,
         metadata: json!({}),
     };
     let (date1, _) = logger.log_call("tool_a", entry1)?;
@@ -121,6 +124,7 @@ fn test_tool_call_logger_different_tools_separate_paths() -> anyhow::Result<()> 
         input: json!({}),
         output: None,
         error: None,
+        status: ToolCallStatus::Completed,
         metadata: json!({}),
     };
     let (date2, _) = logger.log_call("tool_b", entry2)?;
@@ -167,6 +171,7 @@ fn test_tool_call_failed_entry() -> anyhow::Result<()> {
         input: json!({ "param": "bad" }),
         output: None,
         error: Some("API rate limit exceeded".to_string()),
+        status: ToolCallStatus::Failed,
         metadata: json!({ "retry_count": 1 }),
     };
     
@@ -202,6 +207,7 @@ fn test_tool_call_with_context_ids() -> anyhow::Result<()> {
         input: json!({ "query": "what is this" }),
         output: Some(json!({ "answer": "this is a test" })),
         error: None,
+        status: ToolCallStatus::Completed,
         metadata: json!({}),
     };
     

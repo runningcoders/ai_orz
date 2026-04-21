@@ -10,6 +10,7 @@ use rig::providers::openai;
 use rig::providers::openai::responses_api::ResponsesCompletionModel;
 use crate::models::brain::CortexTrait;
 use crate::models::tool::Tool;
+use crate::pkg::request_context::RequestContext;
 
 /// OpenAI 原生 Cortex
 #[derive(Clone)]
@@ -18,7 +19,13 @@ pub struct OpenAiCortex {
 }
 
 impl OpenAiCortex {
-    pub fn new(api_key: String, model: String, base_url: Option<String>, tools: Vec<Tool>) -> Result<Self> {
+    pub fn new(
+        api_key: String, 
+        model: String, 
+        base_url: Option<String>, 
+        tools: Vec<Tool>, 
+        _ctx: &RequestContext,
+    ) -> Result<Self> {
         let builder = openai::Client::builder().api_key(api_key);
 
         let builder = if let Some(base_url) = base_url {
@@ -30,14 +37,11 @@ impl OpenAiCortex {
         let client = builder.build()
             .map_err(|e| anyhow!("Failed to build OpenAI client: {}", e))?;
 
-        // Extract pre-built tools from Tool struct (already built by ToolDao from registry)
-        // Rig expects Box<dyn ToolDyn>, our tools are already Send + Sync which is fine
+        // Extract pre-built tools from Tool struct - already wrapped with LoggingDecorator by ToolDao
+        // Rig expects Box<dyn ToolDyn>, coerce the type since our tools are already Send + Sync
         let tool_boxes: Vec<Box<dyn ToolDyn>> = tools
             .into_iter()
-            .map(|t| unsafe {
-                // SAFETY: We know all tools implement Send + Sync, transmute is safe here
-                std::mem::transmute(t.tool)
-            })
+            .map(|t| t.tool as Box<dyn ToolDyn>)
             .collect();
 
         // 使用指定模型创建 Agent

@@ -1,6 +1,5 @@
 //! OpenAI 兼容模式 Cortex 实现
-//!
-//! 兼容 OpenAI API 格式的第三方服务
+//!\n//! 兼容 OpenAI API 格式的第三方服务
 
 use async_trait::async_trait;
 use anyhow::{Result, anyhow};
@@ -12,6 +11,7 @@ use rig::providers::openai;
 use rig::providers::openai::responses_api::ResponsesCompletionModel;
 use crate::models::brain::CortexTrait;
 use crate::models::tool::Tool;
+use crate::pkg::request_context::RequestContext;
 
 /// OpenAI 兼容模式 Cortex
 #[derive(Clone)]
@@ -26,6 +26,7 @@ impl OpenAiCompatibleCortex {
         default_base_url: String,
         user_base_url: Option<String>,
         tools: Vec<Tool>,
+        _ctx: &RequestContext,
     ) -> Result<Self> {
         let base_url = user_base_url.unwrap_or(default_base_url);
 
@@ -34,14 +35,11 @@ impl OpenAiCompatibleCortex {
         let client = builder.build()
             .map_err(|e| anyhow!("Failed to build OpenAI compatible client: {}", e))?;
 
-        // Extract pre-built tools from Tool struct (already built by ToolDao from registry)
-        // Rig expects Box<dyn ToolDyn>, our tools are already Send + Sync which is fine
+        // Extract pre-built tools from Tool struct - already wrapped with LoggingDecorator by ToolDao
+        // Rig expects Box<dyn ToolDyn>, coerce the type since our tools are already Send + Sync
         let tool_boxes: Vec<Box<dyn ToolDyn>> = tools
             .into_iter()
-            .map(|t| unsafe {
-                // SAFETY: We know all tools implement Send + Sync, transmute is safe here
-                std::mem::transmute(t.tool)
-            })
+            .map(|t| t.tool as Box<dyn ToolDyn>)
             .collect();
 
         // 使用指定模型创建 Agent

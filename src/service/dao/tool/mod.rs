@@ -55,4 +55,9 @@ pub trait ToolDao: Send + Sync {
 
     /// List all tools for an agent (only POs)
     async fn list_tools_for_agent(&self, ctx: &RequestContext, agent_id: &str) -> Result<Vec<ToolPo>>;
+
+    /// Sync all registered built-in tools to database
+    /// If a tool already exists (by ID), skip it to avoid duplicates
+    /// Returns number of newly inserted tools
+    async fn sync_builtin_tools_to_db(&self, ctx: &RequestContext) -> Result<usize>;
 }

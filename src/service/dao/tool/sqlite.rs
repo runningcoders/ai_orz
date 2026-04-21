@@ -3,8 +3,10 @@
 use crate::models::tool::{Tool, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::GLOBAL_TOOL_REGISTRY;
+use crate::pkg::tool_tracing::{LoggingToolDecorator, ToolCallLogger};
 use anyhow::Result;
 use async_trait::async_trait;
+use rig::tool::ToolDyn;
 use std::sync::OnceLock;
 
 use super::ToolDao;
@@ -115,7 +117,21 @@ impl ToolDao for SqliteToolDao {
             return Ok(None);
         };
 
-        Ok(Some(Tool { po, tool }))
+        // Wrap with logging decorator for automatic call tracing
+        let logger = ToolCallLogger::new(ctx.app_config());
+        let decorated = LoggingToolDecorator::new(
+            tool,
+            po.id.clone(),
+            po.name.clone(),
+            ctx,
+            logger,
+        );
+        // SAFETY: LoggingToolDecorator is already Send + Sync, transmute is safe
+        let decorated_box: Box<dyn ToolDyn + Send + Sync> = unsafe {
+            std::mem::transmute(Box::new(decorated) as Box<dyn ToolDyn + Send + Sync>)
+        };
+
+        Ok(Some(Tool { po, tool: decorated_box }))
     }
 
     async fn get_by_name(&self, ctx: &RequestContext, name: &str) -> Result<Option<ToolPo>> {
@@ -154,7 +170,20 @@ impl ToolDao for SqliteToolDao {
         if let Some(registry) = GLOBAL_TOOL_REGISTRY.get() {
             for po in pos {
                 if let Some(tool) = registry.get(&po.id) {
-                    tools.push(Tool { po, tool });
+                    // Wrap with logging decorator for automatic call tracing
+                    let logger = ToolCallLogger::new(ctx.app_config());
+                    let decorated = LoggingToolDecorator::new(
+                        tool,
+                        po.id.clone(),
+                        po.name.clone(),
+                        ctx,
+                        logger,
+                    );
+                    // SAFETY: LoggingToolDecorator is already Send + Sync, transmute is safe
+                    let decorated_box: Box<dyn ToolDyn + Send + Sync> = unsafe {
+                        std::mem::transmute(Box::new(decorated) as Box<dyn ToolDyn + Send + Sync>)
+                    };
+                    tools.push(Tool { po, tool: decorated_box });
                 }
                 // Skip if not found in registry (automatic filtering)
             }
@@ -225,5 +254,46 @@ impl ToolDao for SqliteToolDao {
         .await?;
 
         Ok(rows)
+    }
+
+    async fn sync_builtin_tools_to_db(&self, ctx: &RequestContext) -> Result<usize> {
+        let registry = crate::pkg::tool_registry::get_registry();
+        let tool_ids = registry.list_builtin_ids();
+        let mut inserted = 0;
+
+        for tool_id in tool_ids {
+            // Check if tool already exists in DB
+            let exists: Option<ToolPo> = sqlx::query_as::<_, ToolPo>(
+                r#"
+                SELECT * FROM tools WHERE id = ?
+                "#
+            )
+                .bind(&tool_id)
+                .fetch_optional(ctx.db_pool())
+                .await?;
+
+            if exists.is_some() {
+                // Skip if already exists - idempotent, prevents duplicate
+                continue;
+            }
+
+            // Get the builtin tool from registry
+            let Some(tool) = registry.get_builtin(&tool_id) else {
+                continue;
+            };
+
+            // Create ToolPo for DB
+            let po = ToolPo::new_builtin(
+                tool.id().to_string(),
+                tool.id().to_string(),
+                tool.description().to_string(),
+            );
+
+            // Insert into DB
+            self.create_tool(ctx, &po).await?;
+            inserted += 1;
+        }
+
+        Ok(inserted)
     }
 }

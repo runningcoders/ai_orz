@@ -45,7 +45,3 @@ mod logging_test;
 mod request_context_test;
 #[cfg(test)]
 mod daily_jsonl_test;
-#[cfg(test)]
-mod tool_tracing_logger_test {
-    pub use super::tool_tracing::logger_test::*;
-}

@@ -3,9 +3,11 @@ use crate::middleware::{jwt_auth_middleware, request_context_middleware};
 use axum::{
     routing::{delete, get, post, put}, Router,
 };
+use common::config::AppConfig;
+use std::sync::Arc;
 use tower_http::services::ServeDir;
 
-pub fn create_router(frontend_dist_dir: &str) -> Router {
+pub fn create_router(frontend_dist_dir: &str, config: Arc<AppConfig>) -> Router {
     Router::new()
         // Public routes - no JWT authentication required
         .nest("/api/v1", public_routes())
@@ -14,7 +16,9 @@ pub fn create_router(frontend_dist_dir: &str) -> Router {
         .route("/health", get(handlers::health::health))
         // RequestContext 提取必须在 JWT 认证之前运行
         // JWT 认证会验证 token 后更新 RequestContext 中的用户信息
-        .layer(axum::middleware::from_fn(request_context_middleware))
+        .layer(axum::middleware::from_fn(move |req, next| {
+            request_context_middleware(config.clone(), req, next)
+        }))
         .fallback_service(ServeDir::new(frontend_dist_dir))
 }
 

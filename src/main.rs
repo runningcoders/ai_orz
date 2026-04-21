@@ -34,7 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let server_addr = &config.server.listen_addr;
 
     // 启动服务器
-    let app = router::create_router(&dist_dir);
+    let app = router::create_router(&dist_dir, config.clone());
     let listener = tokio::net::TcpListener::bind(&server_addr).await?;
     tracing::info!(
         "Server listening on {}, static files from {}",

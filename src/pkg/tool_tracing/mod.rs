@@ -9,6 +9,9 @@ pub mod entry;
 pub mod logger;
 pub mod decorator;
 
+#[cfg(test)]
+mod logger_test;
+
 pub use entry::{ToolCallEntry, ToolCallStatus};
 pub use logger::ToolCallLogger;
 pub use decorator::LoggingToolDecorator;
