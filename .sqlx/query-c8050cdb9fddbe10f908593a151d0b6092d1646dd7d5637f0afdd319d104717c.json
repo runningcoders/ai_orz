@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, knowledge_id, short_term_id, trace_id, date_path, byte_start, byte_length, created_at\nFROM knowledge_reference\nWHERE knowledge_id = ?\nORDER BY created_at ASC\n",
+  "query": "\nSELECT id, knowledge_id, short_term_id, trace_id, date_path, line_number, created_at\nFROM knowledge_reference\nWHERE knowledge_id = ?\nORDER BY created_at ASC\n",
   "describe": {
     "columns": [
       {
@@ -29,18 +29,13 @@
         "type_info": "Text"
       },
       {
-        "name": "byte_start",
+        "name": "line_number",
         "ordinal": 5,
         "type_info": "Integer"
       },
       {
-        "name": "byte_length",
-        "ordinal": 6,
-        "type_info": "Integer"
-      },
-      {
         "name": "created_at",
-        "ordinal": 7,
+        "ordinal": 6,
         "type_info": "Integer"
       }
     ],
@@ -54,9 +49,8 @@
       false,
       false,
       false,
-      false,
       false
     ]
   },
-  "hash": "6df74e9b097c3c494980f16c469cced2ad60d6512cd4bd76d31770ee79f5bd6b"
+  "hash": "c8050cdb9fddbe10f908593a151d0b6092d1646dd7d5637f0afdd319d104717c"
 }

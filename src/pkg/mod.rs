@@ -34,7 +34,7 @@ pub async fn init_all(config: &AppConfig) {
 
     // Initialize tool call tracing logger (singleton factory)
     tool_tracing::logger::ToolCallLogger::init(
-        std::path::PathBuf::from(config.base_data_path.clone())
+        config.base_data_path()
     );
 
     tracing::info!("All pkg modules initialized");

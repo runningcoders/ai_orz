@@ -6,26 +6,23 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-/// 默认配置文件内容（编译时嵌入二进制）
-pub const DEFAULT_CONFIG_EMBEDDED: &str = include_str!("../config/ai_orz.toml");
+/// 固定的基础数据根目录
+/// 所有数据文件（SQLite数据库、日志、配置文件、记忆文件等）都存储在此目录下
+pub const BASE_DATA_PATH: &str = ".ai_orz";
 
-/// 默认配置文件名
+/// 默认配置文件名（相对于 BASE_DATA_PATH）
 pub const CONFIG_FILE_NAME: &str = "ai_orz.toml";
 
 /// 应用整体配置
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AppConfig {
-    /// 基础数据存储路径
-    /// 所有数据文件（SQLite数据库、日志、记忆文件等）都基于此路径
-    pub base_data_path: String,
+    /// 服务器配置
+    #[serde(default)]
+    pub server: ServerConfig,
 
     /// 数据库配置
     #[serde(default)]
     pub database: DatabaseConfig,
-
-    /// 服务器配置
-    #[serde(default)]
-    pub server: ServerConfig,
 
     /// 前端配置
     #[serde(default)]
@@ -38,6 +35,28 @@ pub struct AppConfig {
     /// 产物存储配置（消息附件、Agent 生成的文件等都存在这里）
     #[serde(default)]
     pub artifact: ArtifactConfig,
+
+    /// JWT 配置
+    #[serde(default)]
+    pub jwt: JwtConfig,
+}
+
+/// JWT 配置
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct JwtConfig {
+    /// JWT签名密钥（生产环境务必修改！也可以通过环境变量 JWT_SECRET 设置）
+    pub secret: Option<String>,
+    /// JWT默认过期时间（小时），默认 7 天（168小时），也可以通过环境变量 JWT_EXPIRY_HOURS 设置
+    pub default_expiry_hours: Option<u32>,
+}
+
+impl Default for JwtConfig {
+    fn default() -> Self {
+        Self {
+            secret: None,
+            default_expiry_hours: None,
+        }
+    }
 }
 
 /// 产物存储配置（消息附件、Agent 生成的文件等）
@@ -58,7 +77,7 @@ impl Default for ArtifactConfig {
 }
 
 fn default_artifact_subdir() -> String {
-    "attachments".to_string()
+    "artifact".to_string()
 }
 
 /// 服务器配置
@@ -150,20 +169,30 @@ fn default_log_subdir() -> String {
 }
 
 impl AppConfig {
+    /// 获取基础数据路径
+    pub fn base_data_path(&self) -> PathBuf {
+        Path::new(BASE_DATA_PATH).to_path_buf()
+    }
+
+    /// 获取完整的配置文件路径
+    pub fn config_path(&self) -> PathBuf {
+        Path::new(BASE_DATA_PATH).join(CONFIG_FILE_NAME)
+    }
+
     /// 获取完整的日志目录路径
     pub fn log_dir(&self) -> PathBuf {
-        Path::new(&self.base_data_path).join(&self.logging.log_subdir)
+        self.base_data_path().join(&self.logging.log_subdir)
     }
 
     /// 获取数据库文件路径
     pub fn db_path(&self) -> PathBuf {
-        Path::new(&self.base_data_path).join(&self.database.db_file_name)
+        self.base_data_path().join(&self.database.db_file_name)
     }
 
     /// 获取产物/附件存储根目录路径（消息附件、Agent 生成文件等）
     /// 产物和附件统一存这里，不分开存储
     pub fn attachments_dir(&self) -> PathBuf {
-        Path::new(&self.base_data_path).join(&self.artifact.artifact_subdir)
+        self.base_data_path().join(&self.artifact.artifact_subdir)
     }
 
     /// 获取附件完整路径，传入相对路径
@@ -180,10 +209,9 @@ impl AppConfig {
     pub fn artifact_path(&self, relative_path: &str) -> PathBuf {
         self.attachment_path(relative_path)
     }
-
     /// 获取指定 Agent 的数据目录路径：base_data_path/agents/{agent_id}
     pub fn agent_data_dir(&self, agent_id: &str) -> PathBuf {
-        Path::new(&self.base_data_path).join("agents").join(agent_id)
+        self.base_data_path().join("agents").join(agent_id)
     }
 
     /// 获取指定 Agent 的记忆数据目录：base_data_path/agents/{agent_id}/memory
@@ -201,7 +229,7 @@ impl AppConfig {
 
     /// 获取所有技能的根目录
     pub fn skills_root_dir(&self) -> PathBuf {
-        Path::new(&self.base_data_path).join("skills")
+        self.base_data_path().join("skills")
     }
 
     /// 获取待沉淀技能根目录
@@ -240,7 +268,7 @@ impl AppConfig {
     /// 获取指定工具的调用追踪日志目录
     /// 路径: {base_data_path}/tools/{tool_id}/call_trace
     pub fn tool_call_trace_dir(&self, tool_id: &str) -> PathBuf {
-        Path::new(&self.base_data_path)
+        self.base_data_path()
             .join("tools")
             .join(tool_id)
             .join("call_trace")

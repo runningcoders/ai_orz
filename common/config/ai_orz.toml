@@ -4,10 +4,7 @@
 # 你可以修改这里的配置来自定义程序行为
 #
 # 环境变量会覆盖这里的配置
-
-# 基础数据存储路径
-# 所有数据文件（SQLite数据库、日志、记忆文件等）都会存储在此目录下
-base_data_path = ".ai_orz"
+# 基础数据目录固定为 .ai_orz/，不需要配置
 
 # 服务器配置
 [server]
@@ -16,7 +13,7 @@ listen_addr = "0.0.0.0:3000"
 
 # 数据库配置
 [database]
-# SQLite 数据库文件名（相对于 base_data_path）
+# SQLite 数据库文件名（相对于 .ai_orz/）
 db_file_name = "ai_orz.db"
 
 # 前端配置
@@ -28,18 +25,18 @@ dist_dir = "dist"
 [logging]
 # 是否启用文件日志
 enable_file_log = true
-# 日志文件目录（相对于 base_data_path）
+# 日志文件目录（相对于 .ai_orz/）
 log_subdir = "logs"
 
 # JWT配置
 [jwt]
-# JWT签名密钥（生产环境务必修改！也可以通过环境变量 JWT_SECRET 设置）
+# JWT签名密钥（生产环境务必修改！也可以通过环境变量 JWT_SECRET 设置
 # secret = "your-secret-key-here"
 # JWT默认过期时间（小时），默认 7 天（168小时），也可以通过环境变量 JWT_EXPIRY_HOURS 设置
 # default_expiry_hours = 168
 
-# 产物存储配置（消息附件、Agent 生成的文件等都存储在这里）
+# 产物存储配置（消息附件、Agent 生成的文件等都存储在这里
 [artifact]
-# 产物存储目录（相对于 base_data_path）
+# 产物存储目录（相对于 .ai_orz/）
 # 产物文件会按日期存储在此目录下：YYYYMMDD/filename（一层目录更扁平）
 artifact_subdir = "artifact"

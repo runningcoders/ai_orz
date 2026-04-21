@@ -20,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     pkg::init_all(&config).await;
     tracing::info!(
         "Logging & storage & JWT & tool registry initialized, base data path: {}",
-        config.base_data_path
+        config.base_data_path().display()
     );
 
     // 初始化 service 层
