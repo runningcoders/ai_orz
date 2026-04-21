@@ -1,6 +1,6 @@
 //! Tool call logging 单元测试
 
-use crate::pkg::tool_call_logging::{ToolCallEntry, ToolCallLogger};
+use crate::pkg::tool_tracing::{ToolCallEntry, ToolCallLogger, ToolCallStatus};
 use serde_json::json;
 use tempfile::tempdir;
 
@@ -15,6 +15,7 @@ fn test_tool_call_logger_basic() -> anyhow::Result<()> {
     let entry = ToolCallEntry {
         call_id: "call-123".to_string(),
         tool_id: "test_tool".to_string(),
+        tool_name: "Test Tool".to_string(),
         agent_id: None,
         task_id: None,
         project_id: None,
@@ -30,6 +31,7 @@ fn test_tool_call_logger_basic() -> anyhow::Result<()> {
             "answer": "42"
         })),
         error: None,
+        status: ToolCallStatus::Completed,
         metadata: json!({}),
     };
     
@@ -92,6 +94,7 @@ fn test_tool_call_logger_different_tools_separate_paths() -> anyhow::Result<()> 
     let entry1 = ToolCallEntry {
         call_id: "call-1".to_string(),
         tool_id: "tool_a".to_string(),
+        tool_name: "Tool A".to_string(),
         agent_id: None,
         task_id: None,
         project_id: None,
@@ -108,6 +111,7 @@ fn test_tool_call_logger_different_tools_separate_paths() -> anyhow::Result<()> 
     let entry2 = ToolCallEntry {
         call_id: "call-2".to_string(),
         tool_id: "tool_b".to_string(),
+        tool_name: "Tool B".to_string(),
         agent_id: None,
         task_id: None,
         project_id: None,
@@ -153,6 +157,7 @@ fn test_tool_call_failed_entry() -> anyhow::Result<()> {
     let entry = ToolCallEntry {
         call_id: "fail-001".to_string(),
         tool_id: "error_test".to_string(),
+        tool_name: "Error Test".to_string(),
         agent_id: None,
         task_id: None,
         project_id: None,
@@ -187,6 +192,7 @@ fn test_tool_call_with_context_ids() -> anyhow::Result<()> {
     let entry = ToolCallEntry {
         call_id: "call-with-context".to_string(),
         tool_id: "context_test".to_string(),
+        tool_name: "Context Test".to_string(),
         agent_id: Some("agent-abc".to_string()),
         task_id: Some("task-123".to_string()),
         project_id: Some("project-xyz".to_string()),

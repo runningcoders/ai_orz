@@ -5,7 +5,7 @@ pub mod jwt;
 pub mod storage;
 pub mod request_context;
 pub mod tool_registry;
-pub mod tool_call_logging;
+pub mod tool_tracing;
 
 use common::config::AppConfig;
 
@@ -46,4 +46,6 @@ mod request_context_test;
 #[cfg(test)]
 mod daily_jsonl_test;
 #[cfg(test)]
-mod tool_call_logging_test;
+mod tool_tracing_logger_test {
+    pub use super::tool_tracing::logger_test::*;
+}

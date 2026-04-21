@@ -7,38 +7,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use common::config::AppConfig as Config;
-use serde::{Deserialize, Serialize};
 
-use super::daily_jsonl::DailyJsonlWriter;
-
-/// A single tool call entry logged to JSONL
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolCallEntry {
-    /// Unique call ID
-    pub call_id: String,
-    /// Tool ID that was called
-    pub tool_id: String,
-    /// Agent ID that initiated this call (optional)
-    pub agent_id: Option<String>,
-    /// Task ID this call is associated with (optional)
-    pub task_id: Option<String>,
-    /// Project ID this call is associated with (optional)
-    pub project_id: Option<String>,
-    /// Start timestamp (unix millis)
-    pub started_at: u64,
-    /// Finish timestamp (unix millis)
-    pub finished_at: u64,
-    /// Duration in milliseconds
-    pub duration_ms: u64,
-    /// Input arguments as JSON (serialized)
-    pub input: serde_json::Value,
-    /// Output result as JSON (serialized)
-    pub output: Option<serde_json::Value>,
-    /// Error message if call failed
-    pub error: Option<String>,
-    /// Additional arbitrary metadata
-    pub metadata: serde_json::Value,
-}
+use super::entry::ToolCallEntry;
+use crate::pkg::daily_jsonl::DailyJsonlWriter;
 
 /// Tool call logger that writes to daily partitioned JSONL
 #[derive(Debug, Clone)]
@@ -80,6 +51,7 @@ impl ToolCallLogger {
     }
 
     /// Read a logged tool call entry by date and line number
+    #[allow(dead_code)]
     pub fn read_call(
         &self,
         tool_id: &str,
