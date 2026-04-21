@@ -22,14 +22,20 @@ impl Default for SkillStatus {
     }
 }
 
-impl From<i64> for SkillStatus {
-    fn from(v: i64) -> Self {
-        match v as i32 {
+impl From<i32> for SkillStatus {
+    fn from(v: i32) -> Self {
+        match v {
             0 => SkillStatus::Expired,
             1 => SkillStatus::Available,
             2 => SkillStatus::Pending,
-            _ => SkillStatus::Pending,
+            _ => SkillStatus::default(),
         }
+    }
+}
+
+impl From<i64> for SkillStatus {
+    fn from(v: i64) -> Self {
+        (v as i32).into()
     }
 }
 
