@@ -3,7 +3,7 @@
 use crate::models::tool::{Tool, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::GLOBAL_TOOL_REGISTRY;
-use crate::pkg::tool_tracing::{LoggingToolDecorator, ToolCallLogger};
+use crate::pkg::tool_tracing::LoggingToolDecorator;
 use anyhow::Result;
 use async_trait::async_trait;
 use rig::tool::ToolDyn;
@@ -118,13 +118,11 @@ impl ToolDao for SqliteToolDao {
         };
 
         // Wrap with logging decorator for automatic call tracing
-        let logger = ToolCallLogger::new(ctx.app_config());
         let decorated = LoggingToolDecorator::new(
             tool,
             po.id.clone(),
             po.name.clone(),
             ctx,
-            logger,
         );
         // SAFETY: LoggingToolDecorator is already Send + Sync, transmute is safe
         let decorated_box: Box<dyn ToolDyn + Send + Sync> = unsafe {
@@ -171,13 +169,11 @@ impl ToolDao for SqliteToolDao {
             for po in pos {
                 if let Some(tool) = registry.get(&po.id) {
                     // Wrap with logging decorator for automatic call tracing
-                    let logger = ToolCallLogger::new(ctx.app_config());
                     let decorated = LoggingToolDecorator::new(
                         tool,
                         po.id.clone(),
                         po.name.clone(),
                         ctx,
-                        logger,
                     );
                     // SAFETY: LoggingToolDecorator is already Send + Sync, transmute is safe
                     let decorated_box: Box<dyn ToolDyn + Send + Sync> = unsafe {

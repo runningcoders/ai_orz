@@ -3,48 +3,56 @@
 //! Stores tool call traces at: {base_data_path}/tools/{tool_id}/call_trace/{YYYYMMDD}.jsonl
 //! Each line is a single ToolCallEntry with full input/output metadata
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::Result;
-use common::config::AppConfig as Config;
+use once_cell::sync::OnceCell;
 
 use super::entry::ToolCallEntry;
 use crate::pkg::daily_jsonl::DailyJsonlWriter;
 
-/// Tool call logger that writes to daily partitioned JSONL
+/// Global ToolCallLogger singleton
+static INSTANCE: OnceCell<ToolCallLogger> = OnceCell::new();
+
+/// ToolCallLogger is a factory that provides daily JSONL writers for tool call tracing
+/// 
+/// This is a singleton - initialize once with base data path at application startup,
+/// then get the global instance anywhere with `ToolCallLogger::get()`.
 #[derive(Debug, Clone)]
 pub struct ToolCallLogger {
     base_data_path: PathBuf,
 }
 
 impl ToolCallLogger {
-    /// Create a new ToolCallLogger from the global config
-    pub fn new(config: &Config) -> Self {
-        Self {
-            base_data_path: PathBuf::from(config.base_data_path.clone()),
-        }
+    /// Initialize the global ToolCallLogger singleton
+    /// Must be called once at application startup
+    pub fn init(base_data_path: PathBuf) {
+        INSTANCE.set(Self { base_data_path })
+            .expect("ToolCallLogger already initialized");
     }
 
-    /// Create a new ToolCallLogger with explicit base path
+    /// Get the global ToolCallLogger singleton instance
+    /// Panics if not initialized yet
+    pub fn get() -> &'static Self {
+        INSTANCE.get().expect("ToolCallLogger not initialized")
+    }
+
+    /// Create a new ToolCallLogger instance (for direct use, prefer singleton)
     #[allow(dead_code)]
-    pub fn with_base_path(base_path: impl AsRef<Path>) -> Self {
-        Self {
-            base_data_path: base_path.as_ref().to_path_buf(),
-        }
+    pub fn new(base_data_path: PathBuf) -> Self {
+        Self { base_data_path }
     }
 
     /// Get the writer for a specific tool's call traces
     pub fn writer_for_tool(&self, tool_id: &str) -> DailyJsonlWriter {
-        let path = self
-            .base_data_path
+        let path = self.base_data_path
             .join("tools")
             .join(tool_id)
             .join("call_trace");
         DailyJsonlWriter::new(path)
     }
 
-    /// Log a tool call entry
-    /// Returns (date_path, line_number) for the logged entry
+    /// Log a tool call entry to the daily JSONL file
     pub fn log_call(&self, tool_id: &str, entry: ToolCallEntry) -> Result<(String, usize)> {
         let writer = self.writer_for_tool(tool_id);
         writer.append(&entry)

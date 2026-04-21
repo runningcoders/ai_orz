@@ -5,7 +5,7 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 ![GitHub last commit](https://img.shields.io/github/last-commit/runningcoders/ai_orz)
 ![GitHub license](https://img.shields.io/github/license/runningcoders/ai_orz)
 ![Rust](https://img.shields.io/badge/Rust-1.85+-000000?logo=rust)
-![Tests](https://img.shields.io/badge/tests-104%20%E2%9C%94-brightgreen)
+![Tests](https://img.shields.io/badge/tests-128%20%E2%9C%94-brightgreen)
 [![GitHub stars](https://img.shields.io/github/stars/runningcoders/ai_orz?style=social)](https://github.com/runningcoders/ai_orz)
 
 ## 技术栈
@@ -43,6 +43,7 @@ ai_orz/
 ├── dist/               # 编译好的前端静态文件（生产构建输出）
 ├── docs/               # 详细文档
 │   ├── ARCHITECTURE.md # 完整架构说明（最新）
+│   ├── tool_design.md  # 工具模块设计文档（含工具调用追踪）
 │   ├── event_design.md  # 事件总线设计文档
 │   ├── task_design.md  # 任务系统设计文档
 │   ├── project_design.md # 项目系统设计文档
@@ -87,10 +88,10 @@ Agent (po + brain: Option<Brain>)
 3. **高内聚低耦合** → 领域模块拆分清晰，trait 定义在 mod.rs，实现在子文件
 4. **统一编码规范** → 所有 DAO 使用 `OnceLock<Arc<dyn Trait>>` 单例模式
 5. **完整命名** → 子功能 trait 方法完整命名：`create_agent` 而不是 `create`
-6. **Handler 拆分** → 业务分组 + 方法粒度拆分，每个方法一个单独文件 ✅
-7. **API 契约统一** → 所有前后端共用 DTO 提取到独立 `common` crate，保证类型一致 ✅
-8. **类型安全枚举** → 数据库存储的枚举字段全部使用原生枚举类型，编译期检查 ✅
-9. **单元测试** → 每个业务模块都应该有单元测试，当前 96/96 全部通过 ✅
+7. **Handler 拆分** → 业务分组 + 方法粒度拆分，每个方法一个单独文件 ✅
+8. **API 契约统一** → 所有前后端共用 DTO 提取到独立 `common` crate，保证类型一致 ✅
+9. **类型安全枚举** → 数据库存储的枚举字段全部使用原生枚举类型，编译期检查 ✅
+10. **单元测试** → 每个业务模块都应该有单元测试，当前 **128/128 全部通过** ✅
 
 ## LLM 调用流程（最新版）
 
@@ -312,7 +313,7 @@ frontend/src/
 cargo test
 ```
 
-当前状态：**104 个测试全部通过 ✅**
+当前状态：**128 个测试全部通过 ✅**
 
 ### 单元测试设计
 

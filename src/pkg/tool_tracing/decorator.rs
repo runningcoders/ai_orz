@@ -24,8 +24,6 @@ pub struct LoggingToolDecorator {
     /// Full request context for this invocation
     /// Extracted at construction time because Rig calls do not provide context
     ctx: RequestContext,
-    /// Logger instance
-    logger: ToolCallLogger,
 }
 
 impl LoggingToolDecorator {
@@ -35,14 +33,12 @@ impl LoggingToolDecorator {
         tool_id: String,
         tool_name: String,
         ctx: &RequestContext,
-        logger: ToolCallLogger,
     ) -> Self {
         Self {
             inner,
             tool_id,
             tool_name,
             ctx: ctx.clone(),
-            logger,
         }
     }
 }
@@ -117,7 +113,7 @@ impl ToolDyn for LoggingToolDecorator {
 
             // Write the log entry - ignore logging errors, don't fail the actual call
             // because logging is optional/observability
-            let _ = self.logger.log_call(&self.tool_id, entry);
+            let _ = ToolCallLogger::get().log_call(&self.tool_id, entry);
 
             result
         })

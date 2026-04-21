@@ -236,4 +236,13 @@ impl AppConfig {
             format!("skills/available/{}", skill_id)
         }
     }
+
+    /// 获取指定工具的调用追踪日志目录
+    /// 路径: {base_data_path}/tools/{tool_id}/call_trace
+    pub fn tool_call_trace_dir(&self, tool_id: &str) -> PathBuf {
+        Path::new(&self.base_data_path)
+            .join("tools")
+            .join(tool_id)
+            .join("call_trace")
+    }
 }

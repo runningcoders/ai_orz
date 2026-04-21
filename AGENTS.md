@@ -268,27 +268,14 @@ let ctx = RequestContext::from_parts(parts);
 | **Short-Term Memory** | 最近会话摘要索引 | SQLite 数据库 | 需要时检索相关摘要带入 |
 | **Long-Term Knowledge** | 长期沉淀知识图谱 | SQLite 知识节点 + 文件原始细节 | 需要时检索相关知识带入 |
 
-**沉淀机制：**
-- 短期记忆聚合多条原始细节为一条摘要
-- 每日"睡眠"阶段：短期记忆沉淀到长期知识图谱
-- 知识关系独立存表，支持灵活查询扩展
+### 5.3 当前测试统计
+
+- **总测试数**: 128 个
+- **通过率**: 100% (128/128) ✅
 
 ---
 
-## 九、事件总线设计 ✅
-
-详见 [docs/event_design.md](./docs/event_design.md)
-
-**核心设计要点：**
-- ✅ 所有事件先持久化到 SQLite `messages` 表
-- ✅ 总线只存元数据 `message_id`，不存完整内容
-- ✅ 服务启动自动恢复所有 `pending` 事件
-- ✅ 优先级排序：`priority DESC, created_at ASC`
-- ✅ 顺序保证：相同 `order_key` 顺序消费，不同 `order_key` 并行消费
-
----
-
-## 十、已完成架构演进 ✅
+## 十、架构演进最新 ✅
 
 ### 第一轮重构（2026-04-08）
 
@@ -324,9 +311,105 @@ let ctx = RequestContext::from_parts(parts);
 - [x] 更新 `messages` 表结构：新增 `file_type` + `modified_by`，统一文件元数据
 - [x] 所有测试通过：**104/104** ✅
 
+### 第五轮开发（2026-04-17 ~ 2026-04-18）
+
+- [x] **工具模块基础架构**：支持多种协议（builtin/http/mcp），符合项目分层规范
+- [x] **Agent 工具绑定架构设计**：ToolDao 拼装完整工具复合实体，严格遵循分层规范
+- [x] **Rig 0.35 适配**：适配 breaking changes，一次性传入工具向量给 Rig Agent
+- [x] **完整单元测试覆盖**：新增测试覆盖全链路
+- [x] 所有测试通过：**119/119** ✅
+
+### 第六轮开发（2026-04-20 ~ 2026-04-21）
+
+- [x] **工具调用自动日志追踪**：装饰器模式非侵入实现，daily JSONL 存储完整调用轨迹
+- [x] **目录重构**：`tool_call_logging` → `tool_tracing` 统一目录结构
+- [x] **单例设计**：应用启动初始化一次，测试可创建本地实例
+- [x] **集成到现有架构**：ToolDao 拼装工具时自动包装装饰器，上层无感知
+- [x] 所有测试通过：**128/128** ✅
+
 ---
 
-## 十一、开发工作流规范
+## 十七、工具调用追踪设计规范
+
+### 核心设计思想
+
+工具调用追踪是横切关注点，使用**装饰器模式**实现非侵入式自动日志记录：
+- 不修改 Rig 原生 `ToolDyn` 接口
+- 不修改上层调用链
+- 在 `ToolDao` 拼装工具实体时自动完成包装
+
+### 目录结构规范
+
+```
+src/pkg/tool_tracing/
+├── entry.rs        # ToolCallEntry 数据结构定义 + ToolCallStatus 枚举
+├── logger.rs       # ToolCallLogger 单例工厂，提供日志写入方法
+├── decorator.rs    # LoggingToolDecorator 实现 Rig ToolDyn trait
+├── mod.rs          # 模块导出
+└── logger_test.rs  # 单元测试
+```
+
+### 存储路径规范
+
+日志按工具 + 日期分文件存储，格式：
+```
+{base_data_path}/tools/{tool_id}/call_trace/{YYYYMMDD}.jsonl
+```
+
+### 设计决策总结
+
+| 设计点 | 方案 |
+|--------|------|
+| 包装时机 | ToolDao 拼装工具实体时自动包装 |
+| 配置获取 | ToolCallLogger 从全局 config singleton 获取 base path |
+| 实例管理 | 全局单例工厂，应用启动 `init()` 一次 |
+| 测试支持 | 保留 `new()` 构造方法，测试可创建本地实例 |
+| 写入时机 | 工具调用完成后写入一次，不拆分多次写入 |
+| 侵入性 | 装饰器模式，完全不修改原有代码 |
+
+更多详细设计详见 [docs/tool_design.md](../docs/tool_design.md)
+
+---
+
+## 十八、Rig 0.35 升级适配规范
+
+rig-core 0.35 有重大不兼容变更，适配要点：
+
+### 核心变化
+
+| 0.34 | 0.35 |
+|------|------|
+| 支持增量 `agent.tool(...)` 添加工具 | 必须一次性 `agent.tools(tool_set)` 传入所有工具 |
+| `ToolSet::new()` 创建 | `ToolSet::from_tools_boxed(Vec<Box<dyn ToolDyn>>)` 创建 |
+
+### 适配方案
+
+```rust
+// 从 Agent.tools: Vec<Tool> 提取 Box<dyn ToolDyn>
+let tool_dyns: Vec<Box<dyn ToolDyn>> = agent
+    .tools()
+    .iter()
+    .map(|tool| {
+        // SAFETY: Tool 中 tool 已经是 Box<dyn ToolDyn + Send + Sync>
+        // Rig 要求 Box<dyn ToolDyn>，而我们的 trait 对象额外约束了 Send + Sync
+        // 这是一个安全的协变转换，因为额外的约束只会让它更严格
+        unsafe { std::mem::transmute(tool.tool.clone()) }
+    })
+    .collect();
+
+let tool_set = ToolSet::from_tools_boxed(tool_dyns);
+let agent = AgentBuilder::new(model)
+    .tools(tool_set)
+    .build();
+```
+
+### 安全性说明
+
+所有注册工具都保证实现 `Send + Sync`，Cortex 本身需要 `Send + Sync`，因此 transmute 转换是安全的。转换后的 `Box<dyn ToolDyn>` 仍然满足 Rig 的所有要求。
+
+---
+
+## 开发工作流规范
 
 ### 11.1 提交前标准流程
 

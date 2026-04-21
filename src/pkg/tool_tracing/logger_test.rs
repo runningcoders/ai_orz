@@ -9,7 +9,7 @@ fn test_tool_call_logger_basic() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     
     // Use direct base path, no need for AppConfig
-    let logger = ToolCallLogger::with_base_path(temp_dir.path());
+    let logger = ToolCallLogger::new(temp_dir.path().to_path_buf());
     
     // Log a tool call
     let entry = ToolCallEntry {
@@ -39,7 +39,7 @@ fn test_tool_call_logger_basic() -> anyhow::Result<()> {
     
     // We should get back a valid date and line 0 (first entry)
     assert_eq!(line_number, 0);
-    assert_eq!(date.len(), 8); // YYYYMMDD
+    assert_eq!(date.len(), 8usize); // YYYYMMDD
     
     // Check that we can read it back
     let read_back = logger.read_call("test_tool", &date, 0)?;
@@ -57,7 +57,7 @@ fn test_tool_call_logger_basic() -> anyhow::Result<()> {
 fn test_tool_call_logger_multiple_calls() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     
-    let logger = ToolCallLogger::with_base_path(temp_dir.path());
+    let logger = ToolCallLogger::new(temp_dir.path().to_path_buf());
     
     // Append multiple calls
     for i in 0..5 {
@@ -89,7 +89,7 @@ fn test_tool_call_logger_multiple_calls() -> anyhow::Result<()> {
 fn test_tool_call_logger_different_tools_separate_paths() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     
-    let logger = ToolCallLogger::with_base_path(temp_dir.path());
+    let logger = ToolCallLogger::new(temp_dir.path().to_path_buf());
     let now = chrono::Utc::now().timestamp_millis() as u64;
     
     // Different tools should have separate directories
@@ -155,7 +155,7 @@ fn test_tool_call_logger_different_tools_separate_paths() -> anyhow::Result<()> 
 fn test_tool_call_failed_entry() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     
-    let logger = ToolCallLogger::with_base_path(temp_dir.path());
+    let logger = ToolCallLogger::new(temp_dir.path().to_path_buf());
     
     let now = chrono::Utc::now().timestamp_millis() as u64;
     let entry = ToolCallEntry {
@@ -191,7 +191,7 @@ fn test_tool_call_failed_entry() -> anyhow::Result<()> {
 fn test_tool_call_with_context_ids() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     
-    let logger = ToolCallLogger::with_base_path(temp_dir.path());
+    let logger = ToolCallLogger::new(temp_dir.path().to_path_buf());
     let now = chrono::Utc::now().timestamp_millis() as u64;
     
     let entry = ToolCallEntry {

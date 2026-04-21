@@ -1,10 +1,8 @@
 /// 请求上下文（贯穿整个请求生命周期）
 
 use axum::http;
-use common::config::AppConfig;
 use common::constants::http_header;
 use sqlx::sqlite::SqlitePool;
-use std::sync::Arc;
 use crate::pkg::storage;
 
 /// 请求上下文
@@ -28,13 +26,11 @@ pub struct RequestContext {
 
     /// DB 相关信息
     db_pool: SqlitePool,
-    /// 应用配置全局引用
-    config: Arc<AppConfig>,
 }
 
 impl RequestContext {
     /// 从 header 中提取上下文
-    pub fn from_headers(headers: &http::HeaderMap, config: Arc<AppConfig>) -> Self {
+    pub fn from_headers(headers: &http::HeaderMap) -> Self {
         // 1. 优先从 header 获取 log_id
         let log_id = headers
             .get(http_header::LOG_ID)
@@ -68,12 +64,11 @@ impl RequestContext {
             task_id: None,
             project_id: None,
             db_pool: storage::get().pool_owned(),
-            config,
         }
     }
 
     /// 生成新的上下文（带自动生成的 log_id）
-    pub fn new(user_id: Option<String>, username: Option<String>, config: Arc<AppConfig>) -> Self {
+    pub fn new(user_id: Option<String>, username: Option<String>) -> Self {
         Self {
             log_id: Self::generate_log_id(),
             user_id,
@@ -83,11 +78,10 @@ impl RequestContext {
             task_id: None,
             project_id: None,
             db_pool: storage::get().pool_owned(),
-            config,
         }
     }
 
-    pub fn new_simple(user_id: &str,  db_pool: SqlitePool, config: Arc<AppConfig>) -> RequestContext {
+    pub fn new_simple(user_id: &str,  db_pool: SqlitePool) -> RequestContext {
         Self {
             log_id: Self::generate_log_id(),
             user_id: Some(user_id.to_string()),
@@ -97,7 +91,6 @@ impl RequestContext {
             task_id: None,
             project_id: None,
             db_pool,
-            config,
         }
     }
 
@@ -169,11 +162,7 @@ impl RequestContext {
         self.project_id.as_ref()
     }
 
-    /// 获取应用配置
-    pub fn app_config(&self) -> &AppConfig {
-        &self.config
-    }
-
+    /// 获取 DB pool
     pub fn db_pool(&self) -> &SqlitePool {
         &self.db_pool
     }

@@ -18,12 +18,12 @@ use crate::pkg::RequestContext;
 /// 从请求头提取所有信息创建 RequestContext 并注入到请求扩展中
 /// 处理 LogId：如果请求头有则使用，否则自动生成，最终写回响应头
 pub async fn request_context_middleware(
-    config: Arc<AppConfig>,
+    _config: Arc<AppConfig>,
     mut request: Request<Body>,
     next: Next,
 ) -> Response {
     let headers = request.headers();
-    let ctx = RequestContext::from_headers(headers, config);
+    let ctx = RequestContext::from_headers(headers);
     request.extensions_mut().insert(ctx.clone());
 
     // 处理请求并获取响应

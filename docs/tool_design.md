@@ -213,6 +213,109 @@ test result: ok. 119 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
 
 ---
 
+## 工具调用自动追踪（2026-04-20 ~ 2026-04-21 更新）
+
+### 目标
+为 Rig Agent 调用的所有内置工具自动添加完整调用日志追踪，记录完整的输入输出、调用参数、错误信息，方便调试、审计和后续训练数据收集。保持非侵入式设计，不修改 Rig 原生接口，方便后续扩展。
+
+### 架构设计
+
+#### 目录结构
+```diff
+ ai_orz/src/
+ ├── models/
+ │   └── tool.rs              # (已有) Tool 复合实体
+ ├── pkg/
+ │   ├── tool_registry/       # (已有) 全局工具实例注册中心
++│   └── tool_tracing/        # 新增：工具调用日志追踪模块
++│       ├── entry.rs         # ToolCallEntry 定义 + ToolCallStatus 枚举
++│       ├── logger.rs        # ToolCallLogger 单例工厂 + JSONL 写入
++│       ├── decorator.rs     # LoggingToolDecorator - 装饰器包装 ToolDyn
++│       ├── mod.rs           # 模块导出
++│       └── logger_test.rs   # 完整单元测试
+ └── service/
+     └── dao/tool/
+         └── sqlite.rs       # 更新：拼装 Tool 实体时自动添加装饰器包装
+```
+
+#### 工作流程图
+```
+应用启动
+  ↓
+ToolCallLogger::init(base_data_path) → 全局单例初始化完成
+  ↓
+ToolDao.get_tool_full / list_tools_for_agent_full
+  ↓
+找到 ToolPo + 从注册中心获取 Box<dyn ToolDyn>
+  ↓
+自动包装：LoggingToolDecorator::new(original_tool, tool_id, tool_name)
+  ↓
+返回拼装好的 Tool { po, tool: Box::new(decorator) }
+  ↓
+Cortex 提取 Box<dyn ToolDyn> 传给 Rig Agent
+  ↓
+Rig Agent 需要调用工具
+  ↓
+LoggingToolDecorator.call(...)
+    → 调用原始 tool.call(...) 得到结果
+    → 自动构造 ToolCallEntry 包含完整上下文
+    → ToolCallLogger::get().log_call() → 写入 daily JSONL 文件
+    → 返回结果给 Rig
+```
+
+### 存储结构
+
+日志文件按工具+日期分文件存储，路径格式：
+```
+{base_data_path}/tools/{tool_id}/call_trace/{YYYYMMDD}.jsonl
+```
+
+每个 JSONL 行是一个完整的 `ToolCallEntry`：
+```rust
+pub struct ToolCallEntry {
+    pub call_id: String,         // 唯一调用 ID
+    pub tool_id: String,         // 工具 ID
+    pub tool_name: String,       // 工具名称
+    pub agent_id: Option<String>,// 关联 Agent ID
+    pub task_id: Option<String>, // 关联任务 ID
+    pub project_id: Option<String>, // 关联项目 ID
+    pub started_at: u64,        // 开始时间毫秒时间戳
+    pub finished_at: u64,        // 结束时间毫秒时间戳
+    pub duration_ms: u64,        // 调用耗时毫秒
+    pub input: serde_json::Value,// 输入参数
+    pub output: Option<serde_json::Value>, // 输出结果
+    pub error: Option<String>,   // 错误信息（如果失败）
+    pub status: ToolCallStatus,  // 调用状态：Started/Completed/Failed
+    pub metadata: serde_json::Value, // 扩展元数据
+}
+```
+
+### 核心设计决策
+
+| 问题 | 方案 | 原因 |
+|------|------|------|
+| **在哪里添加日志包装？** | ToolDao 拼装时 | ToolDao 已经负责拼装完整 Tool 实体，在此添加装饰器最自然，上层不需要感知 |
+| **日志配置放在哪里？** | ToolCallLogger 从 config singleton 获取 | 配置已经是全局单例，不需要通过 DAO 传递参数，减少 API 污染 |
+| **全局还是每个工具一个实例？** | 全局单例工厂 | base path 只需要初始化一次，每个调用按需获取 writer，没有重复创建开销 |
+| **是否支持测试？** | 保留 `new()` 构造方法 | 测试可以创建本地实例用临时目录，不影响全局单例 |
+| **什么时候写入日志？** | 调用完成后写入一次 | 只需要最终结果，不需要启动时写一条，简化设计；Started 状态保留给未来自调度工具 |
+| **是否侵入原有代码？** | 装饰器模式 | 完全不修改 Rig 原生 `ToolDyn` 接口，符合开闭原则 |
+
+### 设计符合项目分层规范
+
+✅ **严格单向逐层调用**：没有新增跨层调用  \n✅ **职责单一清晰**：日志追踪是独立横切关注点，装饰器模式完美分离  \n✅ **配置不依赖注入**：配置已经是全局单例，`ToolCallLogger` 直接获取符合约定  \n✅ **单元测试完整覆盖**：5 个单元测试全部通过  \n\n### 单元测试
+
+新增 5 个单元测试覆盖核心功能：
+1. `test_tool_call_logger_basic` - 基础日志读写测试
+2. `test_tool_call_logger_multiple_calls` - 多次调用按行追加测试
+3. `test_tool_call_logger_different_tools_separate_paths` - 不同工具分开目录存储测试
+4. `test_tool_call_failed_entry` - 失败调用记录错误信息测试
+5. `test_tool_call_with_context_ids` - 关联 Agent/Task/Project ID 测试
+
+**全部 5 个测试通过**
+
+---
+
 ## 后续待扩展
 
 1. **添加第一个内置工具**：现在基础架构已完成，可以开始实现具体工具
@@ -220,6 +323,7 @@ test result: ok. 119 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
 3. **MCP 协议工具支持**：目前是占位结构，待实现
 4. **ToolEmbedding 语义自动选择**：基于 embedding 做工具相关性排序，减少上下文
 5. **运行时动态加载工具**：从数据库读取配置创建工具实例
+6. **启动时自动同步所有内置工具到数据库**：数据库和代码保持一致，支持工具管理界面
 
 ---
 
