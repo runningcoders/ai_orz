@@ -26,6 +26,8 @@ target
 /target
 /data
 /.ai_orz
+# User local configuration (generated on first run)
+/ai_orz.toml
 
 # Dioxus frontend build output
 /frontend/dist
