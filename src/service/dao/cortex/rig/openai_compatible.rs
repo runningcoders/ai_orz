@@ -10,7 +10,7 @@ use rig::tool::ToolDyn;
 use rig::providers::openai;
 use rig::providers::openai::responses_api::ResponsesCompletionModel;
 use crate::models::brain::CortexTrait;
-use crate::models::tool::Tool;
+use crate::models::tool::FullTool;
 use crate::pkg::request_context::RequestContext;
 
 /// OpenAI 兼容模式 Cortex
@@ -25,7 +25,7 @@ impl OpenAiCompatibleCortex {
         model: String,
         default_base_url: String,
         user_base_url: Option<String>,
-        tools: Vec<Tool>,
+        tools: Vec<FullTool>,
         _ctx: &RequestContext,
     ) -> Result<Self> {
         let base_url = user_base_url.unwrap_or(default_base_url);
@@ -35,11 +35,11 @@ impl OpenAiCompatibleCortex {
         let client = builder.build()
             .map_err(|e| anyhow!("Failed to build OpenAI compatible client: {}", e))?;
 
-        // Extract pre-built tools from Tool struct - already wrapped with LoggingDecorator by ToolDao
-        // Rig expects Box<dyn ToolDyn>, coerce the type since our tools are already Send + Sync
+        // Extract pre-built rig tools from Tool struct - already wrapped with RigToolCallLogger by ToolDao
+        // Rig expects Box<dyn ToolDyn>, only include tools in auto mode have rig_tool
         let tool_boxes: Vec<Box<dyn ToolDyn>> = tools
             .into_iter()
-            .map(|t| t.tool as Box<dyn ToolDyn>)
+            .filter_map(|t| t.rig_tool.map(|t| t as Box<dyn ToolDyn>))
             .collect();
 
         // 使用指定模型创建 Agent

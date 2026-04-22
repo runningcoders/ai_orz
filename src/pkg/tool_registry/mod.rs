@@ -3,13 +3,13 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use dyn_clone;
-use rig::tool::ToolDyn;
 
 pub mod builtin;
 pub mod http;
 pub mod mcp;
 
-pub use builtin::BuiltinTool;
+use crate::models::tool::{Tool, ToolPo};
+pub use builtin::BuiltinToolFactory;
 
 /// Global tool registry instance.
 pub static GLOBAL_TOOL_REGISTRY: OnceLock<ToolRegistry> = OnceLock::new();
@@ -25,57 +25,73 @@ pub fn get_registry() -> &'static ToolRegistry {
 }
 
 /// Global tool registry.
+/// 
+/// Stores FACTORIES, not instances. Instances are created per request from ToolPo
+/// loaded from database. This allows user configuration (name/description) in DB
+/// to be injected into the tool instance at creation time.
+/// 
 /// Each protocol type has its own typed storage field for better type safety.
 #[derive(Clone, Default)]
 pub struct ToolRegistry {
-    /// Built-in (pre-compiled) tools - stored as their own trait type `Box<dyn BuiltinTool>`
-    /// BuiltinTool inherits ToolDyn, so can be used directly where ToolDyn is needed.
-    builtins: Arc<Mutex<HashMap<String, Box<dyn BuiltinTool>>>>,
-    /// HTTP remote tools - placeholder for future implementation
-    http: Arc<Mutex<HashMap<String, ()>>>,
-    /// MCP protocol tools - placeholder for future implementation
-    mcp: Arc<Mutex<HashMap<String, ()>>>,
+    /// Built-in (pre-compiled) tools - stored as factories that create instances from ToolPo
+    builtin_factories: Arc<Mutex<HashMap<String, Box<dyn BuiltinToolFactory>>>>,
+    /// Dynamic MCP tools (future) - will store as factories
+    mcp_factories: Arc<Mutex<HashMap<String, ()>>>,
+    /// Dynamic HTTP tools (future) - will store as factories
+    http_factories: Arc<Mutex<HashMap<String, ()>>>,
 }
 
 impl ToolRegistry {
-    /// Register a built-in tool.
-    pub fn register_builtin(&self, tool: Box<dyn BuiltinTool>) {
-        let id = tool.id();
-        self.builtins.lock().unwrap().insert(id.to_string(), tool);
+    /// Register a built-in tool factory.
+    pub fn register_builtin_factory(&self, factory: Box<dyn BuiltinToolFactory>) {
+        let id = factory.id().to_string();
+        self.builtin_factories.lock().unwrap().insert(id, factory);
     }
 
-    /// Get a tool by ID from any registry.
-    /// Returns Rig's ToolDyn directly - can be added to Rig's ToolSet without any conversion.
-    pub fn get(&self, id: &str) -> Option<Box<dyn ToolDyn>> {
-        let lock = self.builtins.lock().unwrap();
-        let tool = lock.get(id)?;
-        // BuiltinTool implements ToolDyn, just clone and return
-        let cloned = dyn_clone::clone_box(&**tool);
-        Some(cloned)
+    /// Create a tool instance from registry given ToolPo loaded from DB.
+    /// 
+    /// Dispatches to the correct factory based on protocol type.
+    pub fn create_tool(&self, po: ToolPo) -> Option<Box<dyn Tool>> {
+        match po.protocol {
+            common::enums::ToolProtocol::Builtin => {
+                // Lookup factory by id
+                let lock = self.builtin_factories.lock().unwrap();
+                let factory = lock.get(&po.id)?;
+                Some(factory.create(po))
+            }
+            common::enums::ToolProtocol::Mcp => {
+                // Future: create from MCP factory
+                None
+            }
+            common::enums::ToolProtocol::Http => {
+                // Future: create from HTTP factory
+                None
+            }
+        }
     }
 
-    /// Unregister a tool by ID from all registries.
+    /// Get a built-in factory directly.
+    pub fn get_builtin_factory(&self, id: &str) -> Option<Box<dyn BuiltinToolFactory>> {
+        let lock = self.builtin_factories.lock().unwrap();
+        lock.get(id).map(|f| dyn_clone::clone_box(&**f))
+    }
+
+    /// Unregister a factory by ID from all registries.
     pub fn unregister(&self, id: &str) {
-        self.builtins.lock().unwrap().remove(id);
-        self.http.lock().unwrap().remove(id);
-        self.mcp.lock().unwrap().remove(id);
+        self.builtin_factories.lock().unwrap().remove(id);
+        self.http_factories.lock().unwrap().remove(id);
+        self.mcp_factories.lock().unwrap().remove(id);
     }
 
-    /// Clear all registered tools.
+    /// Clear all registered factories.
     pub fn clear_all(&self) {
-        self.builtins.lock().unwrap().clear();
-        self.http.lock().unwrap().clear();
-        self.mcp.lock().unwrap().clear();
+        self.builtin_factories.lock().unwrap().clear();
+        self.http_factories.lock().unwrap().clear();
+        self.mcp_factories.lock().unwrap().clear();
     }
 
     /// List all registered built-in tool IDs.
     pub fn list_builtin_ids(&self) -> Vec<String> {
-        self.builtins.lock().unwrap().keys().cloned().collect()
-    }
-
-    /// Get a built-in tool directly (if you need builtin-specific operations).
-    pub fn get_builtin(&self, id: &str) -> Option<Box<dyn BuiltinTool>> {
-        let lock = self.builtins.lock().unwrap();
-        lock.get(id).cloned()
+        self.builtin_factories.lock().unwrap().keys().cloned().collect()
     }
 }

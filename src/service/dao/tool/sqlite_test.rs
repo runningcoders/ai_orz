@@ -1,8 +1,8 @@
 //! Tool DAO SQLite 单元测试
 
 use sqlx::SqlitePool;
-use crate::models::tool::{ToolPo, Tool};
-use crate::pkg::RequestContext;
+use crate::models::tool::{ToolPo, FullTool};
+use crate::pkg::request_context::RequestContext;
 use common::enums::{ToolProtocol, ToolStatus};
 use crate::service::dao::tool::ToolDao;
 use crate::service::dao::tool::sqlite::{dao, init as dao_init};

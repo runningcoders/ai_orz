@@ -1,7 +1,7 @@
 //! Agent 实体
 
 use crate::models::brain::{Brain, Cortex, CortexTrait};
-use crate::models::tool::Tool;
+use crate::models::tool::FullTool;
 use common::enums::AgentStatus;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
@@ -22,7 +22,7 @@ pub struct Agent {
     /// 绑定的工具列表
     ///
     /// 每个工具包含元数据 + 可执行的 trait 对象
-    pub tools: Vec<Tool>,
+    pub tools: Vec<FullTool>,
     // 后续扩展字段：
     // pub execution_env: ExecutionEnv,
     // pub permissions: Vec<Permission>,
@@ -46,7 +46,7 @@ impl Agent {
     }
 
     /// 从 Po 创建 Agent 并带上工具列表
-    pub fn from_po_with_tools(po: AgentPo, tools: Vec<Tool>) -> Self {
+    pub fn from_po_with_tools(po: AgentPo, tools: Vec<FullTool>) -> Self {
         Self { po, brain: None, tools }
     }
 
@@ -91,12 +91,12 @@ impl Agent {
     }
 
     /// 获取绑定的工具列表
-    pub fn tools(&self) -> &[Tool] {
+    pub fn tools(&self) -> &[FullTool] {
         &self.tools
     }
 
     /// 设置绑定的工具列表
-    pub fn set_tools(&mut self, tools: Vec<Tool>) {
+    pub fn set_tools(&mut self, tools: Vec<FullTool>) {
         self.tools = tools;
     }
 }

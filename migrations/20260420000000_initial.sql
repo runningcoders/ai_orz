@@ -200,6 +200,7 @@ CREATE TABLE IF NOT EXISTS tools (
     name TEXT NOT NULL UNIQUE,
     description TEXT NOT NULL,
     protocol INTEGER NOT NULL,
+    control_mode INTEGER NOT NULL DEFAULT 0,
     config TEXT NOT NULL,
     parameters_schema TEXT,
     status INTEGER NOT NULL DEFAULT 1,

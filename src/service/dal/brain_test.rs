@@ -3,10 +3,10 @@
 //! 测试 Brain DAL 的 wake_brain 和 test_connection 功能
 
 use crate::service::dal::brain::{BrainDal, BrainDalTrait};
-use crate::models::{brain::*, model_provider::*, tool::Tool};
+use crate::models::{brain::*, model_provider::*, tool::FullTool};
 use crate::service::dao::cortex;
 use common::enums::ProviderType;
-use crate::pkg::RequestContext;
+use crate::pkg::request_context::RequestContext;
 use uuid::Uuid;
 use sqlx::SqlitePool;
 
@@ -40,7 +40,7 @@ async fn test_wake_brain(pool: SqlitePool) {
         "[\"chat\", \"question\"]".to_string(),
     );
 
-    let tools: Vec<Tool> = vec![];
+    let tools: Vec<FullTool> = vec![];
     let result = brain_dal.wake_brain(ctx.clone(), &provider, memory, tools);
     
     // 应该能成功创建，API key 不正确只会在实际调用时失败，创建本身不会失败

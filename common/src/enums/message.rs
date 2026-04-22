@@ -71,6 +71,10 @@ pub enum MessageType {
     Audio = 3,
     /// Video (视频)
     Video = 4,
+    /// ToolCallRequest (工具调用请求，自建链路)
+    ToolCallRequest = 5,
+    /// ToolCallResult (工具调用结果，自建链路)
+    ToolCallResult = 6,
 }
 
 impl From<i32> for MessageType {
@@ -81,6 +85,8 @@ impl From<i32> for MessageType {
             2 => MessageType::File,
             3 => MessageType::Audio,
             4 => MessageType::Video,
+            5 => MessageType::ToolCallRequest,
+            6 => MessageType::ToolCallResult,
             _ => MessageType::default(),
         }
     }
@@ -161,6 +167,53 @@ impl From<MessageStatus> for i32 {
 }
 
 impl From<i64> for MessageStatus {
+    fn from(v: i64) -> Self {
+        (v as i32).into()
+    }
+}
+
+/// Control mode (工具控制模式：rig自动处理 / 自建链路手动处理)
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(Type))]
+#[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
+pub enum ControlMode {
+    /// Auto (rig 原生自动处理，适合简单工具)
+    #[default]
+    Auto = 0,
+    /// Manual (自建链路处理，需要收敛控制的关键工具)
+    Manual = 1,
+}
+
+impl From<i32> for ControlMode {
+    fn from(v: i32) -> Self {
+        match v {
+            0 => ControlMode::Auto,
+            1 => ControlMode::Manual,
+            _ => ControlMode::default(),
+        }
+    }
+}
+
+impl ControlMode {
+    /// Convert from i32
+    pub fn from_i32(v: i32) -> Self {
+        v.into()
+    }
+
+    /// Convert to i32
+    pub fn to_i32(&self) -> i32 {
+        (*self).into()
+    }
+}
+
+impl From<ControlMode> for i32 {
+    fn from(t: ControlMode) -> i32 {
+        t as i32
+    }
+}
+
+impl From<i64> for ControlMode {
     fn from(v: i64) -> Self {
         (v as i32).into()
     }
