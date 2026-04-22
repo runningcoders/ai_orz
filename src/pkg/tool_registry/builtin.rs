@@ -1,6 +1,6 @@
 //! Builtin tool factory - built-in tools are created from constant definitions
 
-use crate::models::tool::{Tool, ToolPo};
+use crate::models::tool::{CoreTool, ToolPo};
 use dyn_clone::DynClone;
 use dyn_clone::clone_trait_object;
 
@@ -17,7 +17,7 @@ pub trait BuiltinToolFactory: DynClone + Send + Sync {
     fn description(&self) -> &'static str;
     /// Create a tool instance given the ToolPo from DB
     /// ToolPo is from database - factory injects configuration from DB
-    fn create(&self, po: ToolPo) -> Box<dyn Tool>;
+    fn create(&self, po: ToolPo) -> Box<dyn CoreTool>;
 }
 
 clone_trait_object!(BuiltinToolFactory);

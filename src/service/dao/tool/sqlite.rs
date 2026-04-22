@@ -1,7 +1,7 @@
 //! SQLite implementation of ToolDao
 
 use common::enums::message::ControlMode;
-use crate::models::tool::{FullTool, ToolEntity, ToolPo, Tool, RigToolAdapter};
+use crate::models::tool::{FullTool, Tool, ToolPo, CoreTool, RigToolAdapter};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::get_registry;
 use crate::pkg::tool_tracing::ToolCallLoggingDecorator;
@@ -124,34 +124,34 @@ impl ToolDao for SqliteToolDao {
             ControlMode::Auto => {
                 // Auto mode: our core tool exists + wrapped with logging decorator
                 let decorated_our = ToolCallLoggingDecorator::new(tool_raw);
-                let decorated_our_box: Box<dyn Tool + Send + Sync> =
+                let decorated_our_box: Box<dyn CoreTool + Send + Sync> =
                     Box::new(decorated_our);
                 
                 // Also wrap as Rig tool for Rig to use - RigToolAdapter holds ctx
                 let rig_adapter = RigToolAdapter::new(ctx.clone(), decorated_our_box.clone());
                 let rig_adapter_box: Box<dyn ToolDyn + Send + Sync> = Box::new(rig_adapter);
                 
-                ToolEntity {
+                Some(Tool {
                     po,
                     control_mode: ControlMode::Auto,
                     rig_tool: Some(rig_adapter_box),
                     our_tool: decorated_our_box,
-                }
+                })
             }
             ControlMode::Manual => {
                 // Manual mode: only our core tool wrapped with logging decorator
                 let decorated = ToolCallLoggingDecorator::new(tool_raw);
-                let decorated_box: Box<dyn Tool + Send + Sync> = Box::new(decorated);
-                ToolEntity {
+                let decorated_box: Box<dyn CoreTool + Send + Sync> = Box::new(decorated);
+                Some(Tool {
                     po,
                     control_mode: ControlMode::Manual,
                     rig_tool: None,
                     our_tool: decorated_box,
-                }
+                })
             }
         };
 
-        Ok(Some(tool))
+        Ok(tool)
     }
 
     async fn get_by_name(&self, ctx: &RequestContext, name: &str) -> Result<Option<ToolPo>> {
@@ -186,8 +186,8 @@ impl ToolDao for SqliteToolDao {
     async fn list_tools_for_agent_full(&self, ctx: &RequestContext, agent_id: &str) -> Result<Vec<FullTool>> {
         let pos = self.list_tools_for_agent(ctx, agent_id).await?;
 
-        let mut tools = Vec::new();
         let registry = get_registry();
+        let mut tools: Vec<FullTool> = Vec::new();
         for po in pos {
             if let Some(tool_raw) = registry.create_tool(po.clone()) {
                 // Based on control_mode, wrap with the appropriate logger decorator
@@ -195,33 +195,35 @@ impl ToolDao for SqliteToolDao {
                     ControlMode::Auto => {
                         // Auto mode: our core tool exists + wrapped with logging decorator
                         let decorated_our = ToolCallLoggingDecorator::new(tool_raw);
-                        let decorated_our_box: Box<dyn Tool + Send + Sync> =
+                        let decorated_our_box: Box<dyn CoreTool + Send + Sync> =
                             Box::new(decorated_our);
                         
                         // Also wrap as Rig tool for Rig to use - RigToolAdapter holds ctx
                         let rig_adapter = RigToolAdapter::new(ctx.clone(), decorated_our_box.clone());
                         let rig_adapter_box: Box<dyn ToolDyn + Send + Sync> = Box::new(rig_adapter);
                         
-                        ToolEntity {
+                        Some(Tool {
                             po,
                             control_mode: ControlMode::Auto,
                             rig_tool: Some(rig_adapter_box),
                             our_tool: decorated_our_box,
-                        }
+                        })
                     }
                     ControlMode::Manual => {
                         // Manual mode: only our core tool wrapped with logging decorator
                         let decorated = ToolCallLoggingDecorator::new(tool_raw);
-                        let decorated_box: Box<dyn Tool + Send + Sync> = Box::new(decorated);
-                        ToolEntity {
+                        let decorated_box: Box<dyn CoreTool + Send + Sync> = Box::new(decorated);
+                        Some(Tool {
                             po,
                             control_mode: ControlMode::Manual,
                             rig_tool: None,
                             our_tool: decorated_box,
-                        }
+                        })
                     }
                 };
-                tools.push(tool);
+                if let Some(tool) = tool {
+                    tools.push(tool);
+                }
             }
             // Skip if not found in registry (automatic filtering)
         }

@@ -9,7 +9,7 @@ use uuid::Uuid;
 use async_trait::async_trait;
 use rig::tool::ToolError;
 
-use crate::models::tool::{Tool, ToolPo};
+use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use super::entry::{ToolCallEntry, ToolCallStatus};
 use super::logger::ToolCallLogger;
@@ -19,20 +19,20 @@ use common::constants::utils::current_timestamp_ms;
 #[derive(Clone)]
 pub struct LoggingDecorator {
     /// The inner tool that actually does the work
-    inner: Box<dyn Tool + Send + Sync>,
+    inner: Box<dyn CoreTool + Send + Sync>,
 }
 
 impl LoggingDecorator {
     /// Create a new logging decorator wrapping an existing tool
     pub fn new(
-        inner: Box<dyn Tool + Send + Sync>,
+        inner: Box<dyn CoreTool + Send + Sync>,
     ) -> Self {
         Self { inner }
     }
 }
 
 #[async_trait]
-impl Tool for LoggingDecorator {
+impl CoreTool for LoggingDecorator {
     async fn call(
         &self,
         ctx: &RequestContext,

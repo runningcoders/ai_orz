@@ -8,7 +8,7 @@ pub mod builtin;
 pub mod http;
 pub mod mcp;
 
-use crate::models::tool::{Tool, ToolPo};
+use crate::models::tool::{CoreTool, ToolPo};
 pub use builtin::BuiltinToolFactory;
 
 /// Global tool registry instance.
@@ -51,7 +51,7 @@ impl ToolRegistry {
     /// Create a tool instance from registry given ToolPo loaded from DB.
     /// 
     /// Dispatches to the correct factory based on protocol type.
-    pub fn create_tool(&self, po: ToolPo) -> Option<Box<dyn Tool>> {
+    pub fn create_tool(&self, po: ToolPo) -> Option<Box<dyn CoreTool>> {
         match po.protocol {
             common::enums::ToolProtocol::Builtin => {
                 // Lookup factory by id
