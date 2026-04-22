@@ -10,7 +10,6 @@ use serde_json::Value;
 use sqlx::FromRow;
 use uuid::Uuid;
 use dyn_clone::DynClone;
-use std::pin::Pin;
 use futures_util::FutureExt;
 
 /// 核心工具 trait - 所有工具都必须实现这个
@@ -55,7 +54,7 @@ impl ToolDyn for RigToolAdapter {
         + std::marker::Send
         + 'a,
     >> {
-        use futures_util::FutureExt;
+        
         let definition = rig::completion::ToolDefinition {
             name: self.inner.po().name.clone(),
             description: self.inner.po().description.clone(),

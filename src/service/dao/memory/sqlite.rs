@@ -15,7 +15,7 @@ use serde_json;
 use sqlx::SqlitePool;
 use std::fs::{OpenOptions};
 use std::io::{Seek, SeekFrom, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 use crate::config;
 

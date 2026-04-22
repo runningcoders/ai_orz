@@ -11,9 +11,7 @@ pub mod entry;
 pub mod logger;
 pub mod tool_call_logger;
 
-#[cfg(test)]
-mod logger_test;
-
-pub use entry::{ToolCallEntry, ToolCallStatus};
-pub use logger::ToolCallLogger;
 pub use tool_call_logger::LoggingDecorator as ToolCallLoggingDecorator;
+
+#[cfg(test)]
+mod tests;
