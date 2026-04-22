@@ -327,6 +327,184 @@ pub struct ToolCallEntry {
 
 ---
 
+## 混合模式工具调用链路（2026-04-22 更新）
+
+### 目标
+实现**简单工具自动 + 关键工具收敛**的混合模式工具调用链路：
+- `auto` 模式：简单工具走 Rig 原生同步 function call 流程，开发高效
+- `manual` 模式：关键工具走自建异步事件链路，支持权限控制、全链路审计、大结果附件存储
+
+满足多 Agent 协作场景下对关键工具调用的可控性要求，同时兼容 Rig 原生能力。
+
+### 核心设计决策
+
+| 设计点 | 方案 | 原因 |
+|--------|------|------|
+| **混合模式分类** | `control_mode: auto \| manual` | 不是按工具类型分，而是按控制要求分：简单工具 `auto`，需要审计/权限 `manual` |
+| **工具调用存储** | 复用现有 `messages` 表 | 工具调用本身就是特殊消息，利用已有消息状态、附件存储、关联机制，不新建表 |
+| **核心 trait** | 内部统一用 `CoreTool`（带 `RequestContext`） | 所有工具都需要访问上下文（DB、用户、权限、跟踪ID），统一接口方便装饰器 |
+| **Rig 兼容** | `RigToolAdapter` 适配器 | Rig 需要 `ToolDyn`，适配器持有 `RequestContext`，调用 `CoreTool.call()` |
+| **日志装饰** | `LoggingDecorator` 独立 | 日志和工具执行是两个职责，装饰器模式非侵入式添加 |
+| **注册中心** | 存储工厂而非实例 | 每个工具实例从 `ToolPo` 创建，配置可动态从 DB 读取 |
+
+### 消息类型扩展
+
+在 `common/src/enums/message.rs` 的 `MessageType` 中新增：
+```rust
+pub enum MessageType {
+    // ... existing variants
+    ToolCallRequest,  // manual 模式：LLM 请求调用工具
+    ToolCallResult,   // manual 模式：工具执行完成返回结果
+}
+```
+
+### 核心结构
+
+```rust
+// src/models/tool.rs
+
+/// CoreTool trait - 项目核心工具接口，所有工具都必须实现
+/// 自带 RequestContext 上下文，支持权限、日志、追踪
+#[async_trait]
+pub trait CoreTool: DynClone + Send + Sync + Debug {
+    /// 执行工具调用
+    /// - ctx: RequestContext 包含用户、DB 连接、trace 等信息
+    /// - args: JSON 参数（由 LLM 生成）
+    /// - 返回: JSON 结果
+    async fn call(&self, ctx: &RequestContext, args: Value) -> Result<Value, ToolError>;
+
+    /// 工具参数 JSON Schema
+    fn parameters_schema(&self) -> Value;
+
+    /// 工具名称（用于 Rig 注册和 LLM 识别）
+    fn name(&self) -> &str;
+
+    /// 工具描述（给 LLM 看）
+    fn description(&self) -> &str;
+}
+
+/// 完整工具业务实体 - 包含持久化配置和可执行实例
+pub struct Tool {
+    pub po: ToolPo,              // 持久化配置（DB 读出）
+    pub control_mode: ControlMode, // auto | manual
+    pub rig_tool: Option<Box<dyn ToolDyn + Send + Sync>>, // Rig 需要的适配
+    pub our_tool: Box<dyn CoreTool + Send + Sync>,         // 我们核心实现
+}
+
+/// Rig 适配器 - 将 CoreTool 转换为 Rig 需要的 ToolDyn
+pub struct RigToolAdapter {
+    ctx: RequestContext,
+    inner: Box<dyn CoreTool>,
+}
+
+impl ToolDyn for RigToolAdapter {
+    // 实现 name/description/parameters_schema 转发给 inner
+    // call 方法从 self.ctx 获取 RequestContext，调用 inner.call()
+}
+
+/// 向后兼容类型别名
+pub type FullTool = Tool;
+```
+
+### 目录结构最终
+
+```
+ai_orz/
+├── common/src/enums/
+│   └── message.rs             # + MessageType: ToolCallRequest/ToolCallResult, + ControlMode
+├── src/
+│   ├── models/
+│   │   └── tool.rs            # CoreTool trait + Tool entity + RigToolAdapter
+│   ├── pkg/
+│   │   ├── tool_registry/
+│   │   │   ├── mod.rs         # ToolRegistry - 存储工厂，create_tool() -> Box<dyn CoreTool>
+│   │   │   ├── builtin.rs     # BuiltinToolFactory - 内建工具工厂 trait
+│   │   │   ├── http.rs        # HTTP 工具（占位）
+│   │   │   └── mcp.rs         # MCP 工具（占位）
+│   │   └── tool_tracing/
+│   │       ├── mod.rs         # 导出
+│   │       ├── entry.rs       # ToolCallEntry / ToolCallStatus - JSONL 日志结构
+│   │       ├── logger.rs      # ToolCallLogger - 全局日志单例
+│   │       ├── tool_call_logger.rs # LoggingDecorator - 包装 CoreTool 添加日志
+│   │       └── rig_tool_call_logger.rs # RigToolCallLoggingDecorator - 原始 auto 模式适配
+│   └── service/
+│       └── dao/tool/
+│           ├── mod.rs         # ToolDao trait
+│           └── sqlite.rs      # SQLite 实现 - get_tool_full() 按 control_mode 拼装
+└── migrations/
+    └── 20260417000000_create_tools.sql # 已包含 control_mode 字段
+```
+
+### 拼装流程（ToolDao.get_tool_full）
+
+```
+Input: ToolPo from DB
+  ↓
+1. 从 ToolRegistry 根据 protocol 获取工厂，create_tool(po) → Box<dyn CoreTool>
+  ↓
+2. 用 LoggingDecorator 包装 CoreTool（无论 auto/manual 都打日志）
+  ↓
+3. match control_mode:
+    - Auto:
+        * 创建 RigToolAdapter 持有 ctx + 已经日志包装的 CoreTool
+        * 包装成 Box<dyn ToolDyn>
+        * 返回 Tool { po, rig_tool: Some(...), our_tool: ... }
+    - Manual:
+        * 不需要 Rig 适配
+        * 返回 Tool { po, rig_tool: None, our_tool: ... }
+```
+
+### 工作流程图
+
+#### Auto 模式（Rig 原生）
+```
+User message → Agent → LLM → generates tool call → Rig calls ToolDyn
+                                    ↓
+                            RigToolAdapter → CoreTool.call(ctx, args)
+                                    ↓
+                            LoggingDecorator 记录日志 → 返回结果 → Rig → LLM → User
+```
+
+#### Manual 模式（自建链路）
+```
+1. LLM generates tool call request
+   ↓
+2. System 构造 ToolCallRequest 消息存入 messages 表
+   - 消息类型 = ToolCallRequest
+   - 状态 = Pending
+   - content 存工具调用参数 JSON
+   - 关联 agent_id / task_id / project_id
+   ↓
+3. 发布事件到 EventBus → Worker 消费
+   ↓
+4. Worker 根据 tool_id 拿到完整 Tool + CoreTool
+   执行 CoreTool.call(ctx, args) → 得到结果
+   ↓
+5. 构造 ToolCallResult 消息存入 messages 表
+   - 消息类型 = ToolCallResult
+   - 状态 = Success / Failed
+   - 大结果 → 存附件 file_meta，content 只存摘要
+   ↓
+6. 发布完成事件 → 唤醒 Agent → Agent 读取 ToolCallResult → 继续对话给用户
+```
+
+### 分层符合性检查
+
+✅ **严格单向逐层调用**：`handler → domain → dal → dao`，无反向调用  
+✅ **禁止同层互调**：dal 组合 dao，不跨 dal 调用  
+✅ **复用现有基础设施**：消息表、事件总线、附件存储全部复用  
+✅ **职责分离清晰**：注册中心、日志、Rig 适配分开，单一职责
+
+### 测试结果
+
+本次重构完成后：
+```
+test result: ok. 128 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
+```
+**全项目测试全部通过**，无破坏性变更。
+
+---
+
 ## 提交记录
 
 | 提交 hash | 说明 |
@@ -341,3 +519,6 @@ pub struct ToolCallEntry {
 | `5a90197` | 移动注册中心到 pkg，统一 pkg 初始化收口 |
 | `0a08d61` | 修复 SQLite JSON 类型、UUID 解码、枚举解码问题，测试全过 |
 | `eac393b` | 全链路改为 String ID，去掉 Uuid 强依赖，统一所有 DAO 导出 |
+| `d29a8f1` | 完成 Agent 工具绑定架构，符合分层规范，测试全过 |
+| `...` | ... |
+| `6039c39` | 完成混合模式命名对齐：CoreTool trait + Tool 实体，完整重构，测试全过 |
