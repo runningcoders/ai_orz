@@ -15,6 +15,7 @@ fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
 async fn test_create_and_get_tool_full(pool: SqlitePool) {
     dao_init();
     crate::pkg::tool_registry::init();
+    crate::pkg::tool_registry::init();
 
     let ctx = RequestContext::new_simple("admin", pool);
     let tool_dao = dao();
@@ -48,6 +49,7 @@ async fn test_create_and_get_tool_full(pool: SqlitePool) {
 async fn test_get_tool_full_exists(pool: SqlitePool) {
     dao_init();
     crate::pkg::tool_registry::init();
+    crate::pkg::tool_registry::init();
 
     let ctx = RequestContext::new_simple("admin", pool);
     let tool_dao = dao();
@@ -73,6 +75,7 @@ async fn test_get_tool_full_exists(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_add_tool_to_agent_and_list(pool: SqlitePool) {
     dao_init();
+    crate::pkg::tool_registry::init();
 
     let ctx = RequestContext::new_simple("admin", pool);
     let tool_dao = dao();
@@ -120,6 +123,7 @@ async fn test_add_tool_to_agent_and_list(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_remove_tool_from_agent(pool: SqlitePool) {
     dao_init();
+    crate::pkg::tool_registry::init();
 
     let ctx = RequestContext::new_simple("admin", pool);
     let tool_dao = dao();
@@ -154,6 +158,7 @@ async fn test_remove_tool_from_agent(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_list_enabled(pool: SqlitePool) {
     dao_init();
+    crate::pkg::tool_registry::init();
 
     let ctx = RequestContext::new_simple("admin", pool);
     let tool_dao = dao();
@@ -190,6 +195,7 @@ async fn test_list_enabled(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_get_by_name(pool: SqlitePool) {
     dao_init();
+    crate::pkg::tool_registry::init();
 
     let ctx = RequestContext::new_simple("admin", pool);
     let tool_dao = dao();
@@ -217,6 +223,7 @@ async fn test_get_by_name(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_update_tool(pool: SqlitePool) {
     dao_init();
+    crate::pkg::tool_registry::init();
 
     let ctx = RequestContext::new_simple("admin", pool);
     let tool_dao = dao();
@@ -252,6 +259,7 @@ async fn test_update_tool(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_find_not_exists(pool: SqlitePool) {
     dao_init();
+    crate::pkg::tool_registry::init();
 
     let ctx = RequestContext::new_simple("admin", pool);
     let tool_dao = dao();
