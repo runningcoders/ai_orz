@@ -1,6 +1,7 @@
 //! Message DAO 模块
 
 use crate::error::Result;
+use crate::models::file::FileMeta;
 use crate::models::message::MessagePo;
 use common::enums::MessageStatus;
 use crate::pkg::RequestContext;
@@ -40,6 +41,37 @@ pub trait MessageDaoTrait: Send + Sync {
 
     /// 根据多个状态查询消息（用于启动恢复未处理消息）
     async fn list_by_status(&self, ctx: RequestContext, status: Vec<MessageStatus>, limit: Option<usize>) -> Result<Vec<MessagePo>>;
+
+    /// 创建工具调用请求消息（便捷方法）
+    /// 工具调用请求由 Agent 发起，请求执行某个工具
+    async fn create_tool_call_request(
+        &self,
+        ctx: RequestContext,
+        project_id: Option<String>,
+        task_id: Option<String>,
+        from_agent_id: String,
+        to_agent_id: String,
+        tool_id: String,
+        tool_name: String,
+        args: serde_json::Value,
+        file_meta: Option<FileMeta>,
+    ) -> Result<MessagePo>;
+
+    /// 创建工具调用结果消息（便捷方法）
+    /// 工具调用结果由执行器返回，包含执行结果
+    async fn create_tool_call_result(
+        &self,
+        ctx: RequestContext,
+        project_id: Option<String>,
+        task_id: Option<String>,
+        from_executor_id: String,
+        to_agent_id: String,
+        tool_call_request_id: String,
+        tool_id: String,
+        result: serde_json::Value,
+        is_success: bool,
+        file_meta: Option<FileMeta>,
+    ) -> Result<MessagePo>;
 }
 
 

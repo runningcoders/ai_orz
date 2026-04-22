@@ -272,4 +272,133 @@ ORDER BY created_at ASC LIMIT ?
 
         Ok(messages)
     }
+
+    async fn create_tool_call_request(
+        &self,
+        ctx: RequestContext,
+        project_id: Option<String>,
+        task_id: Option<String>,
+        from_agent_id: String,
+        to_agent_id: String,
+        tool_id: String,
+        tool_name: String,
+        args: serde_json::Value,
+        file_meta: Option<FileMeta>,
+    ) -> Result<MessagePo> {
+        use common::enums::{MessageRole, MessageType};
+        use rand::Rng;
+
+        /// 生成随机 ID（和项目风格一致）
+        fn generate_id() -> String {
+            const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+            const ID_LEN: usize = 16;
+            let mut rng = rand::thread_rng();
+            (0..ID_LEN)
+                .map(|_| {
+                    let idx = rng.gen_range(0..CHARSET.len());
+                    CHARSET[idx] as char
+                })
+                .collect()
+        }
+
+        let message_id = generate_id();
+        // 序列化参数为 JSON 字符串存储在 content
+        let content = serde_json::to_string(&args)?;
+
+        // 使用传入的 file_meta 或默认空结构
+        let file_meta = file_meta.unwrap_or_default();
+
+        // 创建 MessagePo
+        let message = MessagePo::new(
+            message_id,
+            project_id,
+            task_id,
+            from_agent_id,
+            to_agent_id,
+            MessageRole::Agent,
+            MessageType::ToolCallRequest,
+            content,
+            None, // file_type 保持 None，这是结构化消息不是文件附件
+            file_meta,
+            ctx.uid().to_string(),
+        );
+
+        // 插入数据库
+        self.insert(ctx, &message).await?;
+
+        Ok(message)
+    }
+
+    async fn create_tool_call_result(
+        &self,
+        ctx: RequestContext,
+        project_id: Option<String>,
+        task_id: Option<String>,
+        from_executor_id: String,
+        to_agent_id: String,
+        tool_call_request_id: String,
+        tool_id: String,
+        result: serde_json::Value,
+        is_success: bool,
+        file_meta: Option<FileMeta>,
+    ) -> Result<MessagePo> {
+        use common::enums::{MessageRole, MessageType};
+        use rand::Rng;
+        use serde::Serialize;
+
+        /// 生成随机 ID（和项目风格一致）
+        fn generate_id() -> String {
+            const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+            const ID_LEN: usize = 16;
+            let mut rng = rand::thread_rng();
+            (0..ID_LEN)
+                .map(|_| {
+                    let idx = rng.gen_range(0..CHARSET.len());
+                    CHARSET[idx] as char
+                })
+                .collect()
+        }
+
+        #[derive(Serialize)]
+        struct ToolResultContent {
+            tool_call_request_id: String,
+            tool_id: String,
+            success: bool,
+            result: serde_json::Value,
+        }
+
+        let message_id = generate_id();
+
+        // 构造结果内容结构，包含请求ID、工具ID、是否成功、结果数据
+        let content_struct = ToolResultContent {
+            tool_call_request_id,
+            tool_id,
+            success: is_success,
+            result,
+        };
+        let content = serde_json::to_string(&content_struct)?;
+
+        // 使用传入的 file_meta 或默认空结构
+        let file_meta = file_meta.unwrap_or_default();
+
+        // 创建 MessagePo
+        let message = MessagePo::new(
+            message_id,
+            project_id,
+            task_id,
+            from_executor_id,
+            to_agent_id,
+            MessageRole::System,
+            MessageType::ToolCallResult,
+            content,
+            None, // file_type 保持 None，大结果通过 file_meta 附件机制存储
+            file_meta,
+            ctx.uid().to_string(),
+        );
+
+        // 插入数据库
+        self.insert(ctx, &message).await?;
+
+        Ok(message)
+    }
 }
