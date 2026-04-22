@@ -562,3 +562,176 @@ async fn test_list_by_status(pool: SqlitePool) -> Result<()> {
 
     Ok(())
 }
+/// 测试创建工具调用请求消息
+#[sqlx::test(migrations = "./migrations")]
+async fn test_create_tool_call_request(pool: SqlitePool) -> Result<()> {
+    crate::service::dao::message::init();
+    let message_dao = message::dao();
+    let ctx = new_ctx("test-user", pool);
+
+    // 创建工具调用请求
+    let args = serde_json::json!({
+        "query": "搜索关键词",
+        "limit": 10
+    });
+
+    let message = message_dao.create_tool_call_request(
+        ctx.clone(),
+        Some("project-001".to_string()),
+        Some("task-001".to_string()),
+        "agent-001".to_string(),   // from_agent_id (发起调用的 Agent)
+        "executor-agent".to_string(), // to_agent_id (执行工具的 Agent)
+        "tool-search-web".to_string(),
+        "Search Web".to_string(),
+        args.clone(),
+        None, // 无附件
+    ).await?;
+
+    // 查询验证
+    let found = message_dao.find_by_id(ctx.clone(), message.id.as_str()).await?;
+    assert!(found.is_some());
+    let found = found.unwrap();
+
+    // 验证字段
+    assert_eq!(found.project_id, Some("project-001".to_string()));
+    assert_eq!(found.task_id, Some("task-001".to_string()));
+    assert_eq!(found.from_id, "agent-001".to_string());
+    assert_eq!(found.to_id, "executor-agent".to_string());
+    assert_eq!(found.role, MessageRole::Agent);
+    assert_eq!(found.message_type, MessageType::ToolCallRequest);
+    assert_eq!(found.status, MessageStatus::Pending); // 默认 Pending
+
+    // 验证 content 是 args 的 JSON
+    let parsed_args: serde_json::Value = serde_json::from_str(&found.content)?;
+    assert_eq!(parsed_args, args);
+
+    Ok(())
+}
+
+/// 测试创建工具调用结果消息
+#[sqlx::test(migrations = "./migrations")]
+async fn test_create_tool_call_result(pool: SqlitePool) -> Result<()> {
+    crate::service::dao::message::init();
+    let message_dao = message::dao();
+    let ctx = new_ctx("test-user", pool);
+
+    // 1. 先创建一个工具调用请求（结果需要关联它）
+    let args = serde_json::json!({"query": "test"});
+    let request = message_dao.create_tool_call_request(
+        ctx.clone(),
+        Some("project-001".to_string()),
+        Some("task-001".to_string()),
+        "agent-001".to_string(),
+        "executor-agent".to_string(),
+        "tool-search".to_string(),
+        "Search".to_string(),
+        args,
+        None,
+    ).await?;
+
+    // 2. 创建工具调用成功结果
+    let result_data = serde_json::json!([
+        {"title": "Result 1", "url": "https://example.com"},
+        {"title": "Result 2", "url": "https://example.org"},
+    ]);
+
+    let result_msg = message_dao.create_tool_call_result(
+        ctx.clone(),
+        Some("project-001".to_string()),
+        Some("task-001".to_string()),
+        "executor-agent".to_string(), // 执行者回复给原 Agent
+        "agent-001".to_string(),
+        request.id.clone(),
+        "tool-search".to_string(),
+        result_data.clone(),
+        true, // success
+        None,
+    ).await?;
+
+    // 3. 查询验证
+    let found = message_dao.find_by_id(ctx.clone(), result_msg.id.as_str()).await?;
+    assert!(found.is_some());
+    let found = found.unwrap();
+
+    assert_eq!(found.project_id, Some("project-001".to_string()));
+    assert_eq!(found.task_id, Some("task-001".to_string()));
+    assert_eq!(found.from_id, "executor-agent".to_string());
+    assert_eq!(found.to_id, "agent-001".to_string());
+    assert_eq!(found.role, MessageRole::System);
+    assert_eq!(found.message_type, MessageType::ToolCallResult);
+
+    // 解析 content 验证结构
+    #[derive(serde::Deserialize)]
+    struct ResultContent {
+        tool_call_request_id: String,
+        tool_id: String,
+        success: bool,
+        result: serde_json::Value,
+    }
+    let content: ResultContent = serde_json::from_str(&found.content)?;
+
+    assert_eq!(content.tool_call_request_id, request.id);
+    assert_eq!(content.tool_id, "tool-search");
+    assert_eq!(content.success, true);
+    assert_eq!(content.result, result_data);
+
+    Ok(())
+}
+
+/// 测试创建工具调用结果消息（失败情况）
+#[sqlx::test(migrations = "./migrations")]
+async fn test_create_tool_call_result_failed(pool: SqlitePool) -> Result<()> {
+    crate::service::dao::message::init();
+    let message_dao = message::dao();
+    let ctx = new_ctx("test-user", pool);
+
+    // 先创建请求
+    let args = serde_json::json!({"path": "/nonexistent"});
+    let request = message_dao.create_tool_call_request(
+        ctx.clone(),
+        None,
+        Some("task-001".to_string()),
+        "agent-001".to_string(),
+        "executor-agent".to_string(),
+        "tool-read-file".to_string(),
+        "Read File".to_string(),
+        args,
+        None,
+    ).await?;
+
+    // 创建失败结果
+    let error_result = serde_json::json!({
+        "error": "File not found",
+        "error_code": "ENOENT"
+    });
+
+    let result_msg = message_dao.create_tool_call_result(
+        ctx.clone(),
+        None,
+        Some("task-001".to_string()),
+        "executor-agent".to_string(),
+        "agent-001".to_string(),
+        request.id.clone(),
+        "tool-read-file".to_string(),
+        error_result,
+        false, // 失败
+        None,
+    ).await?;
+
+    let found = message_dao.find_by_id(ctx.clone(), result_msg.id.as_str()).await?;
+    assert!(found.is_some());
+
+    #[derive(serde::Deserialize)]
+    struct ResultContent {
+        tool_call_request_id: String,
+        tool_id: String,
+        success: bool,
+        result: serde_json::Value,
+    }
+    let content: ResultContent = serde_json::from_str(&found.unwrap().content)?;
+
+    assert_eq!(content.tool_call_request_id, request.id);
+    assert_eq!(content.success, false);
+
+    Ok(())
+}
