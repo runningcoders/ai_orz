@@ -276,14 +276,7 @@ ORDER BY created_at ASC LIMIT ?
     async fn create_tool_call_request(
         &self,
         ctx: RequestContext,
-        project_id: Option<String>,
-        task_id: Option<String>,
-        from_agent_id: String,
-        to_agent_id: String,
-        tool_id: String,
-        tool_name: String,
-        args: serde_json::Value,
-        file_meta: Option<FileMeta>,
+        req: crate::models::message::ToolCallMessage,
     ) -> Result<MessagePo> {
         use common::enums::{MessageRole, MessageType};
         use rand::Rng;
@@ -302,19 +295,19 @@ ORDER BY created_at ASC LIMIT ?
         }
 
         let message_id = generate_id();
-        // 序列化参数为 JSON 字符串存储在 content
-        let content = serde_json::to_string(&args)?;
+        // 序列化整个 ToolCallMessage 为 JSON 存储在 content
+        let content = serde_json::to_string(&req)?;
 
-        // 使用传入的 file_meta 或默认空结构
-        let file_meta = file_meta.unwrap_or_default();
+        // 如果有大附件，取出来用 message.file_meta 存储
+        let file_meta = req.result_file_meta.unwrap_or_default();
 
         // 创建 MessagePo
         let message = MessagePo::new(
             message_id,
-            project_id,
-            task_id,
-            from_agent_id,
-            to_agent_id,
+            req.project_id,
+            req.task_id,
+            req.from_id,
+            req.to_id,
             MessageRole::Agent,
             MessageType::ToolCallRequest,
             content,
@@ -332,19 +325,10 @@ ORDER BY created_at ASC LIMIT ?
     async fn create_tool_call_result(
         &self,
         ctx: RequestContext,
-        project_id: Option<String>,
-        task_id: Option<String>,
-        from_executor_id: String,
-        to_agent_id: String,
-        tool_call_request_id: String,
-        tool_id: String,
-        result: serde_json::Value,
-        is_success: bool,
-        file_meta: Option<FileMeta>,
+        res: crate::models::message::ToolCallMessage,
     ) -> Result<MessagePo> {
         use common::enums::{MessageRole, MessageType};
         use rand::Rng;
-        use serde::Serialize;
 
         /// 生成随机 ID（和项目风格一致）
         fn generate_id() -> String {
@@ -359,35 +343,20 @@ ORDER BY created_at ASC LIMIT ?
                 .collect()
         }
 
-        #[derive(Serialize)]
-        struct ToolResultContent {
-            tool_call_request_id: String,
-            tool_id: String,
-            success: bool,
-            result: serde_json::Value,
-        }
-
         let message_id = generate_id();
+        // 序列化整个 ToolCallMessage 为 JSON 存储在 content
+        let content = serde_json::to_string(&res)?;
 
-        // 构造结果内容结构，包含请求ID、工具ID、是否成功、结果数据
-        let content_struct = ToolResultContent {
-            tool_call_request_id,
-            tool_id,
-            success: is_success,
-            result,
-        };
-        let content = serde_json::to_string(&content_struct)?;
-
-        // 使用传入的 file_meta 或默认空结构
-        let file_meta = file_meta.unwrap_or_default();
+        // 如果有大结果附件，取出来用 message.file_meta 存储
+        let file_meta = res.result_file_meta.unwrap_or_default();
 
         // 创建 MessagePo
         let message = MessagePo::new(
             message_id,
-            project_id,
-            task_id,
-            from_executor_id,
-            to_agent_id,
+            res.project_id,
+            res.task_id,
+            res.from_id,
+            res.to_id,
             MessageRole::System,
             MessageType::ToolCallResult,
             content,

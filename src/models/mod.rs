@@ -9,6 +9,6 @@ pub mod organization;
 pub mod project;
 pub mod artifact;
 pub mod task;
+pub mod tool;
 pub mod user;
 pub mod skill;
-pub mod tool;

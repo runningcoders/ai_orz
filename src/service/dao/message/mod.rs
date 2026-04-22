@@ -1,8 +1,7 @@
 //! Message DAO 模块
 
 use crate::error::Result;
-use crate::models::file::FileMeta;
-use crate::models::message::MessagePo;
+use crate::models::message::{MessagePo, ToolCallMessage};
 use common::enums::MessageStatus;
 use crate::pkg::RequestContext;
 
@@ -47,14 +46,7 @@ pub trait MessageDaoTrait: Send + Sync {
     async fn create_tool_call_request(
         &self,
         ctx: RequestContext,
-        project_id: Option<String>,
-        task_id: Option<String>,
-        from_agent_id: String,
-        to_agent_id: String,
-        tool_id: String,
-        tool_name: String,
-        args: serde_json::Value,
-        file_meta: Option<FileMeta>,
+        req: ToolCallMessage,
     ) -> Result<MessagePo>;
 
     /// 创建工具调用结果消息（便捷方法）
@@ -62,15 +54,7 @@ pub trait MessageDaoTrait: Send + Sync {
     async fn create_tool_call_result(
         &self,
         ctx: RequestContext,
-        project_id: Option<String>,
-        task_id: Option<String>,
-        from_executor_id: String,
-        to_agent_id: String,
-        tool_call_request_id: String,
-        tool_id: String,
-        result: serde_json::Value,
-        is_success: bool,
-        file_meta: Option<FileMeta>,
+        res: ToolCallMessage,
     ) -> Result<MessagePo>;
 }
 

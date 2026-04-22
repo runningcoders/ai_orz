@@ -196,3 +196,134 @@ impl MessagePo {
         }
     }
 }
+
+/// 统一工具调用消息内容
+/// 
+/// 不管是请求还是结果，都用这个结构存储在 message.content 中
+/// 对应 MessageType::ToolCallRequest 或 MessageType::ToolCallResult
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolCallMessage {
+    /// 工具调用请求 ID（每个请求唯一，结果中需要对应）
+    pub request_id: String,
+    /// 工具 ID
+    pub tool_id: String,
+    /// 工具名称（便于日志查看）
+    pub tool_name: String,
+    /// 关联项目 ID
+    pub project_id: Option<String>,
+    /// 关联任务 ID
+    pub task_id: Option<String>,
+    /// 发起方 ID（谁发起的这次调用）
+    pub from_id: String,
+    /// 目标执行方 ID（谁来执行这个调用）
+    pub to_id: String,
+    /// 调用参数（请求时有效）JSON 格式
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub args: Option<serde_json::Value>,
+    /// 调用结果（完成后有效）JSON 格式
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<serde_json::Value>,
+    /// 是否执行成功（结果时有效）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_success: Option<bool>,
+    /// 错误信息（执行失败时有值）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_message: Option<String>,
+    /// 大结果附件元数据（当结果太大放不下 content 时使用）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result_file_meta: Option<FileMeta>,
+}
+
+impl ToolCallMessage {
+    /// 创建新的工具调用请求
+    pub fn new_request(
+        request_id: String,
+        tool_id: String,
+        tool_name: String,
+        project_id: Option<String>,
+        task_id: Option<String>,
+        from_id: String,
+        to_id: String,
+        args: serde_json::Value,
+    ) -> Self {
+        Self {
+            request_id,
+            tool_id,
+            tool_name,
+            project_id,
+            task_id,
+            from_id,
+            to_id,
+            args: Some(args),
+            result: None,
+            is_success: None,
+            error_message: None,
+            result_file_meta: None,
+        }
+    }
+
+    /// 创建工具调用完成响应（成功）
+    pub fn new_success_result(
+        &self,
+        result: serde_json::Value,
+        result_file_meta: Option<FileMeta>,
+    ) -> Self {
+        Self {
+            request_id: self.request_id.clone(),
+            tool_id: self.tool_id.clone(),
+            tool_name: self.tool_name.clone(),
+            project_id: self.project_id.clone(),
+            task_id: self.task_id.clone(),
+            from_id: self.to_id.clone(), // 执行方反过来返回给原发起方
+            to_id: self.from_id.clone(),
+            args: self.args.clone(),
+            result: Some(result),
+            is_success: Some(true),
+            error_message: None,
+            result_file_meta,
+        }
+    }
+
+    /// 创建工具调用完成响应（失败）
+    pub fn new_error_result(
+        &self,
+        error_message: String,
+    ) -> Self {
+        Self {
+            request_id: self.request_id.clone(),
+            tool_id: self.tool_id.clone(),
+            tool_name: self.tool_name.clone(),
+            project_id: self.project_id.clone(),
+            task_id: self.task_id.clone(),
+            from_id: self.to_id.clone(), // 执行方反过来返回给原发起方
+            to_id: self.from_id.clone(),
+            args: self.args.clone(),
+            result: None,
+            is_success: Some(false),
+            error_message: Some(error_message),
+            result_file_meta: None,
+        }
+    }
+
+    /// 创建工具调用完成响应（失败，带有错误结果数据）
+    pub fn new_error_result_with_data(
+        &self,
+        result: serde_json::Value,
+        error_message: String,
+    ) -> Self {
+        Self {
+            request_id: self.request_id.clone(),
+            tool_id: self.tool_id.clone(),
+            tool_name: self.tool_name.clone(),
+            project_id: self.project_id.clone(),
+            task_id: self.task_id.clone(),
+            from_id: self.to_id.clone(), // 执行方反过来返回给原发起方
+            to_id: self.from_id.clone(),
+            args: self.args.clone(),
+            result: Some(result),
+            is_success: Some(false),
+            error_message: Some(error_message),
+            result_file_meta: None,
+        }
+    }
+}

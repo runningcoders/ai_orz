@@ -1,7 +1,7 @@
 //! Message DAO SQLite 单元测试
 
 use crate::error::Result;
-use crate::models::message::MessagePo;
+use crate::models::message::{MessagePo, ToolCallMessage};
 use crate::models::file::FileMeta;
 use common::enums::{MessageRole, MessageType, MessageStatus, FileType};
 use crate::pkg::RequestContext;
@@ -575,16 +575,20 @@ async fn test_create_tool_call_request(pool: SqlitePool) -> Result<()> {
         "limit": 10
     });
 
-    let message = message_dao.create_tool_call_request(
-        ctx.clone(),
-        Some("project-001".to_string()),
-        Some("task-001".to_string()),
-        "agent-001".to_string(),   // from_agent_id (发起调用的 Agent)
-        "executor-agent".to_string(), // to_agent_id (执行工具的 Agent)
+    let req = ToolCallMessage::new_request(
+        "test-request-001".to_string(),
         "tool-search-web".to_string(),
         "Search Web".to_string(),
+        Some("project-001".to_string()),
+        Some("task-001".to_string()),
+        "agent-001".to_string(),   // from_id (发起调用的 Agent)
+        "executor-agent".to_string(), // to_id (执行工具的 Agent)
         args.clone(),
-        None, // 无附件
+    );
+
+    let message = message_dao.create_tool_call_request(
+        ctx.clone(),
+        req,
     ).await?;
 
     // 查询验证
@@ -601,9 +605,13 @@ async fn test_create_tool_call_request(pool: SqlitePool) -> Result<()> {
     assert_eq!(found.message_type, MessageType::ToolCallRequest);
     assert_eq!(found.status, MessageStatus::Pending); // 默认 Pending
 
-    // 验证 content 是 args 的 JSON
-    let parsed_args: serde_json::Value = serde_json::from_str(&found.content)?;
-    assert_eq!(parsed_args, args);
+    // 验证 content 反序列化后得到正确的 ToolCallMessage
+    let parsed: ToolCallMessage = serde_json::from_str(&found.content)?;
+    assert_eq!(parsed.args, Some(args));
+    assert_eq!(parsed.tool_id, "tool-search-web");
+    assert_eq!(parsed.tool_name, "Search Web");
+    assert_eq!(parsed.project_id, Some("project-001".to_string()));
+    assert_eq!(parsed.task_id, Some("task-001".to_string()));
 
     Ok(())
 }
@@ -617,16 +625,21 @@ async fn test_create_tool_call_result(pool: SqlitePool) -> Result<()> {
 
     // 1. 先创建一个工具调用请求（结果需要关联它）
     let args = serde_json::json!({"query": "test"});
-    let request = message_dao.create_tool_call_request(
-        ctx.clone(),
+
+    let request_msg = ToolCallMessage::new_request(
+        "test-request-001".to_string(),
+        "tool-search".to_string(),
+        "Search".to_string(),
         Some("project-001".to_string()),
         Some("task-001".to_string()),
         "agent-001".to_string(),
         "executor-agent".to_string(),
-        "tool-search".to_string(),
-        "Search".to_string(),
         args,
-        None,
+    );
+
+    let request = message_dao.create_tool_call_request(
+        ctx.clone(),
+        request_msg.clone(),
     ).await?;
 
     // 2. 创建工具调用成功结果
@@ -635,17 +648,12 @@ async fn test_create_tool_call_result(pool: SqlitePool) -> Result<()> {
         {"title": "Result 2", "url": "https://example.org"},
     ]);
 
+    // 从原始请求创建成功结果，自动继承上下文
+    let result_msg = request_msg.new_success_result(result_data.clone(), None);
+
     let result_msg = message_dao.create_tool_call_result(
         ctx.clone(),
-        Some("project-001".to_string()),
-        Some("task-001".to_string()),
-        "executor-agent".to_string(), // 执行者回复给原 Agent
-        "agent-001".to_string(),
-        request.id.clone(),
-        "tool-search".to_string(),
-        result_data.clone(),
-        true, // success
-        None,
+        result_msg,
     ).await?;
 
     // 3. 查询验证
@@ -661,19 +669,13 @@ async fn test_create_tool_call_result(pool: SqlitePool) -> Result<()> {
     assert_eq!(found.message_type, MessageType::ToolCallResult);
 
     // 解析 content 验证结构
-    #[derive(serde::Deserialize)]
-    struct ResultContent {
-        tool_call_request_id: String,
-        tool_id: String,
-        success: bool,
-        result: serde_json::Value,
-    }
-    let content: ResultContent = serde_json::from_str(&found.content)?;
+    let parsed: ToolCallMessage = serde_json::from_str(&found.content)?;
+    
+    assert_eq!(parsed.request_id, "test-request-001");
+    assert_eq!(parsed.tool_id, "tool-search".to_string());
+    assert_eq!(parsed.is_success, Some(true));
+    assert_eq!(parsed.result, Some(result_data));
 
-    assert_eq!(content.tool_call_request_id, request.id);
-    assert_eq!(content.tool_id, "tool-search");
-    assert_eq!(content.success, true);
-    assert_eq!(content.result, result_data);
 
     Ok(())
 }
@@ -687,16 +689,21 @@ async fn test_create_tool_call_result_failed(pool: SqlitePool) -> Result<()> {
 
     // 先创建请求
     let args = serde_json::json!({"path": "/nonexistent"});
-    let request = message_dao.create_tool_call_request(
-        ctx.clone(),
-        None,
+
+    let request_msg = ToolCallMessage::new_request(
+        "test-request-002".to_string(),
+        "tool-read-file".to_string(),
+        "Read File".to_string(),
+        None, // project_id
         Some("task-001".to_string()),
         "agent-001".to_string(),
         "executor-agent".to_string(),
-        "tool-read-file".to_string(),
-        "Read File".to_string(),
         args,
-        None,
+    );
+
+    let request = message_dao.create_tool_call_request(
+        ctx.clone(),
+        request_msg.clone(),
     ).await?;
 
     // 创建失败结果
@@ -705,33 +712,22 @@ async fn test_create_tool_call_result_failed(pool: SqlitePool) -> Result<()> {
         "error_code": "ENOENT"
     });
 
+    // 从原始请求创建失败结果，自动继承上下文
+    let result_msg = request_msg.new_error_result_with_data(error_result, "File not found".to_string());
+
     let result_msg = message_dao.create_tool_call_result(
         ctx.clone(),
-        None,
-        Some("task-001".to_string()),
-        "executor-agent".to_string(),
-        "agent-001".to_string(),
-        request.id.clone(),
-        "tool-read-file".to_string(),
-        error_result,
-        false, // 失败
-        None,
+        result_msg,
     ).await?;
 
     let found = message_dao.find_by_id(ctx.clone(), result_msg.id.as_str()).await?;
-    assert!(found.is_some());
+    let found = found.unwrap();
+    // 解析 content 验证结构
+    let parsed: ToolCallMessage = serde_json::from_str(&found.content)?;
+    
+    assert_eq!(parsed.request_id, "test-request-002");
+    assert_eq!(parsed.is_success, Some(false));
 
-    #[derive(serde::Deserialize)]
-    struct ResultContent {
-        tool_call_request_id: String,
-        tool_id: String,
-        success: bool,
-        result: serde_json::Value,
-    }
-    let content: ResultContent = serde_json::from_str(&found.unwrap().content)?;
-
-    assert_eq!(content.tool_call_request_id, request.id);
-    assert_eq!(content.success, false);
 
     Ok(())
 }
