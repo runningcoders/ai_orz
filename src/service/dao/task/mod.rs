@@ -7,7 +7,7 @@ use common::enums::TaskStatus;
 
 /// Task DAO 接口
 #[async_trait::async_trait]
-pub trait TaskDaoTrait: Send + Sync + std::fmt::Debug {
+pub trait TaskDao: Send + Sync + std::fmt::Debug {
     /// 插入新任务
     async fn insert(&self, ctx: RequestContext, task: &TaskPo) -> Result<(), AppError>;
     /// 根据 ID 查询任务

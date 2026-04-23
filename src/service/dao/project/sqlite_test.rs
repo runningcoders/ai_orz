@@ -5,7 +5,7 @@ use common::enums::project::ProjectStatus;
 use crate::error::AppError;
 use crate::models::project::ProjectPo;
 use crate::pkg::RequestContext;
-use crate::service::dao::project::{ProjectDaoTrait, sqlite};
+use crate::service::dao::project::{ProjectDao, sqlite};
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     RequestContext::new_simple(user_id, pool)

@@ -327,6 +327,14 @@ let ctx = RequestContext::from_parts(parts);
 - [x] **集成到现有架构**：ToolDao 拼装工具时自动包装装饰器，上层无感知
 - [x] 所有测试通过：**128/128** ✅
 
+### 第七轮开发（2026-04-23 ~ 2026-04-24）
+
+- [x] **统一命名规范**：接口 trait 不带 `Trait` 后缀，具体实现类带 `Impl` 后缀
+- [x] **DAO 命名对齐**：所有 DAO 接口改名为 `XxxDao`，实现改名为 `XxxDaoSqliteImpl`
+- [x] **DAL 命名对齐**：所有 DAL 接口改名为 `XxxDal`，实现改名为 `XxxDalImpl`
+- [x] **严格依赖倒置**：上层只依赖 trait 接口，完全不依赖具体实现类，实现彻底隐藏
+- [x] 所有测试通过：**117/117** ✅
+
 ---
 
 ## 十七、工具调用追踪设计规范
@@ -478,9 +486,24 @@ Handler → Domain → DAL → DAO → DB
 ## 十三、命名规范
 
 - **文件**：snake_case 命名（`create_user.rs`、`model_provider.rs`）
-- **结构体**：PascalCase 命名（`AgentPo`、`ModelProviderDal`）
+- **结构体**：PascalCase 命名（`AgentPo`、`ModelProviderDalImpl`）
 - **变量/函数**：snake_case 命名（`create_agent`、`find_by_id`）
-- **trait**：PascalCase + 后缀 `Trait`（`AgentDaoTrait`、`ModelProviderDalTrait`）
+- **接口 trait**：PascalCase **不带 Trait 后缀**（`AgentDao`、`ModelProviderDal`）
+- **具体实现类**：接口名 + `Impl` 后缀（`AgentDalImpl`）；DAO 实现带介质标识 `XxxDaoSqliteImpl`
+
+### 完整对齐示例
+
+| 层级 | 接口 trait | 具体实现结构体 | 示例 |
+|------|------------|----------------|------|
+| DAO | `XxxDao` | `XxxDaoSqliteImpl` | `OrganizationDao` + `OrganizationDaoSqliteImpl` |
+| DAL | `XxxDal` | `XxxDalImpl` | `AgentDal` + `AgentDalImpl` |
+| Domain | `XxxDomain` | `XxxDomainImpl` | `HrDomain` + `HrDomainImpl` |
+
+**设计原因：**
+- 接口就是抽象，名字简洁不需要后缀
+- 具体实现才需要后缀标识，因为实现类不对外暴露，只需要区分接口
+- DAO 因为可能有多种存储实现，所以加上介质标识后缀（`SqliteImpl`）
+- 严格依赖倒置：上层只依赖接口 trait，不依赖具体实现类
 
 ---
 

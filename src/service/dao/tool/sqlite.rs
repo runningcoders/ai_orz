@@ -19,7 +19,7 @@ static TOOL_DAO: OnceLock<Box<dyn ToolDao>> = OnceLock::new();
 
 /// 创建一个全新的 Tool DAO 实例（用于测试）
 pub fn new() -> Box<dyn ToolDao> {
-    Box::new(SqliteToolDao::new())
+    Box::new(ToolDaoSqliteImpl::new())
 }
 
 /// Get global Tool DAO (alias for get, consistent with other DAOs)
@@ -29,9 +29,9 @@ pub fn dao() -> &'static Box<dyn ToolDao> {
 
 /// SQLite Tool DAO implementation
 #[derive(Clone, Default)]
-struct SqliteToolDao {}
+struct ToolDaoSqliteImpl {}
 
-impl SqliteToolDao {
+impl ToolDaoSqliteImpl {
     fn new() -> Self {
         Self {}
     }
@@ -44,7 +44,7 @@ pub fn init() {
 }
 
 #[async_trait]
-impl ToolDao for SqliteToolDao {
+impl ToolDao for ToolDaoSqliteImpl {
     async fn create_tool(&self, ctx: &RequestContext, po: &ToolPo) -> Result<()> {
         let pool = ctx.db_pool();
 

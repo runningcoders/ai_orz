@@ -7,33 +7,44 @@ use crate::error::AppError;
 use crate::models::event::Event;
 use crate::models::message::Message;
 use crate::pkg::RequestContext;
-use crate::service::dao::message::{MessageDaoTrait, self};
-use crate::service::dao::event_queue::{EventQueueDaoTrait, self};
+use crate::service::dao::message::{MessageDao, self};
+use crate::service::dao::event_queue::{EventQueueDao, self};
 use common::enums::MessageStatus;
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例管理 ====================
 
-static MESSAGE_DAL: OnceLock<Arc<dyn MessageDalTrait>> = OnceLock::new();
+static MESSAGE_DAL: OnceLock<Arc<dyn MessageDal>> = OnceLock::new();
 
 /// 获取 Message DAL 单例
-pub fn dal() -> Arc<dyn MessageDalTrait> {
+pub fn dal() -> Arc<dyn MessageDal> {
     MESSAGE_DAL.get().cloned().unwrap()
 }
 
 /// 初始化 Message DAL（使用全局单例 DAO）
 pub fn init() {
-    let _ = MESSAGE_DAL.set(Arc::new(MessageDal::new(
+    let _ = MESSAGE_DAL.set(new(
         message::dao(),
         event_queue::dao(),
-    )));
+    ));
+}
+
+/// 创建 Message DAL（返回 trait 对象）
+pub fn new(
+    message_dao: Arc<dyn MessageDao + Send + Sync>,
+    event_queue_dao: Arc<dyn EventQueueDao + Send + Sync>,
+) -> Arc<dyn MessageDal> {
+    Arc::new(MessageDalImpl {
+        message_dao,
+        event_queue_dao,
+    })
 }
 
 // ==================== DAL 接口 ====================
 
 /// Message DAL 接口
 #[async_trait::async_trait]
-pub trait MessageDalTrait: Send + Sync {
+pub trait MessageDal: Send + Sync {
     /// 保存消息
     ///
     /// 保存到数据库后自动入队事件队列，所有消息都入队不做过滤
@@ -137,16 +148,16 @@ pub trait MessageDalTrait: Send + Sync {
 // ==================== DAL 实现 ====================
 
 /// Message DAL 实现
-pub struct MessageDal {
-    message_dao: Arc<dyn MessageDaoTrait>,
-    event_queue_dao: Arc<dyn EventQueueDaoTrait>,
+struct MessageDalImpl {
+    message_dao: Arc<dyn MessageDao>,
+    event_queue_dao: Arc<dyn EventQueueDao>,
 }
 
-impl MessageDal {
+impl MessageDalImpl {
     /// 创建 DAL 实例
-    pub fn new(
-        message_dao: Arc<dyn MessageDaoTrait>,
-        event_queue_dao: Arc<dyn EventQueueDaoTrait>,
+    fn new(
+        message_dao: Arc<dyn MessageDao>,
+        event_queue_dao: Arc<dyn EventQueueDao>,
     ) -> Self {
         Self {
             message_dao,
@@ -156,7 +167,7 @@ impl MessageDal {
 }
 
 #[async_trait::async_trait]
-impl MessageDalTrait for MessageDal {
+impl MessageDal for MessageDalImpl {
     async fn save_message(&self, ctx: RequestContext, message: &Message) -> Result<(), AppError> {
         // 1. 保存消息到数据库
         self.message_dao.insert(ctx.clone(), &message.po).await?;

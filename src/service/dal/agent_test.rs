@@ -1,6 +1,6 @@
 //! Agent DAL 单元测试
 
-use crate::service::dal::agent::{dal, init, AgentDal, AgentDalTrait};
+use crate::service::dal::agent::{dal, init};
 use crate::service::dao::agent::init as agent_dao_init;
 use crate::models::agent::{Agent, AgentPo};
 use crate::pkg::RequestContext;

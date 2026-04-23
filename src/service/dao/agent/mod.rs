@@ -6,7 +6,7 @@ use crate::pkg::RequestContext;
 
 /// Agent DAO 接口
 #[async_trait::async_trait]
-pub trait AgentDaoTrait: Send + Sync {
+pub trait AgentDao: Send + Sync {
     async fn insert(&self, ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError>;
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<AgentPo>, AppError>;
     async fn find_all(&self, ctx: RequestContext) -> Result<Vec<AgentPo>, AppError>;

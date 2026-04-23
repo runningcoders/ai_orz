@@ -37,16 +37,16 @@ pub fn init() {
 /// Organization Domain 实现
 ///
 /// 聚合所有组织管理子功能实现
-pub struct OrganizationDomainImpl {
-    dal: Arc<dyn organization::OrganizationDalTrait + Send + Sync>,
-    user_dao: Arc<dyn user_dao::UserDaoTrait + Send + Sync>,
+struct OrganizationDomainImpl {
+    dal: Arc<dyn organization::OrganizationDal + Send + Sync>,
+    user_dao: Arc<dyn user_dao::UserDao + Send + Sync>,
 }
 
 impl OrganizationDomainImpl {
     /// 创建 Domain 实例
-    pub fn new(
-        dal: Arc<dyn organization::OrganizationDalTrait + Send + Sync>,
-        user_dao: Arc<dyn user_dao::UserDaoTrait + Send + Sync>,
+    fn new(
+        dal: Arc<dyn organization::OrganizationDal + Send + Sync>,
+        user_dao: Arc<dyn user_dao::UserDao + Send + Sync>,
     ) -> Self {
         Self { dal, user_dao }
     }

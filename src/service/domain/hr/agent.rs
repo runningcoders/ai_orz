@@ -3,7 +3,7 @@
 use crate::error::AppError;
 use crate::models::agent::Agent;
 use crate::pkg::RequestContext;
-use crate::service::dal::agent::AgentDalTrait;
+use crate::service::dal::agent::AgentDal;
 use crate::service::domain::hr::{AgentManage, HrDomainImpl};
 
 #[async_trait::async_trait]

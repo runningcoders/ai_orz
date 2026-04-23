@@ -8,33 +8,44 @@ use crate::error::AppError;
 use crate::models::organization::OrganizationPo;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
-use crate::service::dao::organization:: OrganizationDaoTrait;
-use crate::service::dao::user::{ UserDaoTrait};
+use crate::service::dao::organization::OrganizationDao;
+use crate::service::dao::user::UserDao;
 use rand::Rng;
 use std::sync::{Arc, OnceLock};
 use crate::service::dao::{organization, user};
 // ==================== 单例管理 ====================
 
-static ORGANIZATION_DAL: OnceLock<Arc<dyn OrganizationDalTrait + Send + Sync>> = OnceLock::new();
+static ORGANIZATION_DAL: OnceLock<Arc<dyn OrganizationDal + Send + Sync>> = OnceLock::new();
 
 /// 获取 Organization DAL 单例
-pub fn dal() -> Arc<dyn OrganizationDalTrait + Send + Sync> {
+pub fn dal() -> Arc<dyn OrganizationDal + Send + Sync> {
     ORGANIZATION_DAL.get().cloned().unwrap()
 }
 
 /// 初始化 Organization DAL
 pub fn init() {
-    let _ = ORGANIZATION_DAL.set(Arc::new(OrganizationDal::new(
-        organization::dao(), 
+    let _ = ORGANIZATION_DAL.set(new(
+        organization::dao(),
         user::dao(),
-    )));
+    ));
+}
+
+/// 创建 Organization DAL（返回 trait 对象）
+pub fn new(
+    organization_dao: Arc<dyn OrganizationDao + Send + Sync>,
+    user_dao: Arc<dyn UserDao + Send + Sync>,
+) -> Arc<dyn OrganizationDal + Send + Sync> {
+    Arc::new(OrganizationDalImpl {
+        organization_dao,
+        user_dao,
+    })
 }
 
 // ==================== DAL 接口 ====================
 
 /// Organization DAL 接口
 #[async_trait::async_trait]
-pub trait OrganizationDalTrait: Send + Sync {
+pub trait OrganizationDal: Send + Sync {
     /// 初始化系统：创建第一个组织和第一个超级管理员用户
     ///
     /// 用于系统首次初始化，当 organizations 表为空时调用
@@ -97,16 +108,16 @@ pub trait OrganizationDalTrait: Send + Sync {
 // ==================== DAL 实现 ====================
 
 /// Organization DAL 实现
-pub struct OrganizationDal {
-    organization_dao: Arc<dyn OrganizationDaoTrait + Send + Sync>,
-    user_dao: Arc<dyn UserDaoTrait + Send + Sync>,
+struct OrganizationDalImpl {
+    organization_dao: Arc<dyn OrganizationDao + Send + Sync>,
+    user_dao: Arc<dyn UserDao + Send + Sync>,
 }
 
-impl OrganizationDal {
+impl OrganizationDalImpl {
     /// 创建 DAL 实例
-    pub fn new(
-        organization_dao: Arc<dyn OrganizationDaoTrait + Send + Sync>,
-        user_dao: Arc<dyn UserDaoTrait + Send + Sync>,
+    fn new(
+        organization_dao: Arc<dyn OrganizationDao + Send + Sync>,
+        user_dao: Arc<dyn UserDao + Send + Sync>,
     ) -> Self {
         Self {
             organization_dao,
@@ -130,7 +141,7 @@ impl OrganizationDal {
 }
 
 #[async_trait::async_trait]
-impl OrganizationDalTrait for OrganizationDal {
+impl OrganizationDal for OrganizationDalImpl {
     async fn initialize_system(
         &self,
         ctx: RequestContext,

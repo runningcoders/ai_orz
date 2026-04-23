@@ -14,20 +14,20 @@ use std::sync::Arc;
 
 use crate::error::AppError;
 use crate::models::event::{Event, EventRef};
-use crate::service::dao::event_queue::EventQueueDaoTrait;
+use crate::service::dao::event_queue::EventQueueDao;
 use crate::pkg::RequestContext;
 
 // ==================== 工厂方法 + 单例 ====================
 
-static EVENT_QUEUE_DAO: OnceLock<Arc<dyn EventQueueDaoTrait>> = OnceLock::new();
+static EVENT_QUEUE_DAO: OnceLock<Arc<dyn EventQueueDao>> = OnceLock::new();
 
 /// 创建一个全新的内存事件队列实例（用于测试）
-pub fn new() -> Arc<dyn EventQueueDaoTrait> {
-    Arc::new(InMemoryEventQueue::new())
+pub fn new() -> Arc<dyn EventQueueDao> {
+    Arc::new(EventQueueDaoInMemoryImpl::new())
 }
 
 /// 获取全局事件队列 DAO 实例
-pub fn dao() -> Arc<dyn EventQueueDaoTrait> {
+pub fn dao() -> Arc<dyn EventQueueDao> {
     EVENT_QUEUE_DAO.get().unwrap().clone()
 }
 
@@ -52,7 +52,7 @@ pub fn init() {
 ///
 /// 使用 UnsafeCell 实现内部可变性，因为我们已经用 Mutex 保证了独占访问，所以是安全的
 #[derive(Debug, Default)]
-pub struct InMemoryEventQueue {
+pub struct EventQueueDaoInMemoryImpl {
     /// 所有未确认事件本体（待处理 + 处理中）
     events: UnsafeCell<HashMap<String, Box<dyn Event>>>,
     /// 每个 order_key 的等待堆（堆内按优先级排序，保证总是取出最高优先级）
@@ -68,10 +68,10 @@ pub struct InMemoryEventQueue {
 }
 
 // 由于我们只用 UnsafeCell 在 Mutex 保护下进行独占访问，所以 Send/Sync 是安全的
-unsafe impl Send for InMemoryEventQueue {}
-unsafe impl Sync for InMemoryEventQueue {}
+unsafe impl Send for EventQueueDaoInMemoryImpl {}
+unsafe impl Sync for EventQueueDaoInMemoryImpl {}
 
-impl InMemoryEventQueue {
+impl EventQueueDaoInMemoryImpl {
     /// 创建新的空内存事件队列
     pub fn new() -> Self {
         Self {
@@ -85,7 +85,7 @@ impl InMemoryEventQueue {
     }
 }
 
-impl EventQueueDaoTrait for InMemoryEventQueue {
+impl EventQueueDao for EventQueueDaoInMemoryImpl {
     fn enqueue(&self, _ctx: &RequestContext, event: Box<dyn Event>) -> Result<(), AppError> {
         let _guard = self.lock.lock().map_err(|e| AppError::Internal(e.to_string()))?;
 

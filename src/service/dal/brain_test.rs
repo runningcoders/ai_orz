@@ -2,7 +2,6 @@
 //! Brain DAL 单元测试
 //! 测试 Brain DAL 的 wake_brain 和 test_connection 功能
 
-use crate::service::dal::brain::{BrainDal, BrainDalTrait};
 use crate::models::{brain::*, model_provider::*, tool::FullTool};
 use crate::service::dao::cortex;
 use common::enums::ProviderType;
@@ -16,8 +15,9 @@ async fn test_wake_brain(pool: SqlitePool) {
     // Storage 已经自动迁移，使用传入的 pool
     // 初始化 cortex dao 和 brain dal
     cortex::init();
+    crate::service::dal::brain::init();
     let cortex_dao = cortex::dao();
-    let brain_dal = BrainDal::new(cortex_dao);
+    let brain_dal = crate::service::dal::brain::new(cortex_dao);
 
     let ctx = RequestContext::new_simple("test-user", pool);
 
@@ -53,8 +53,9 @@ async fn test_test_connection(pool: SqlitePool) {
     // Storage 已经自动迁移，使用传入的 pool
     // 初始化 cortex dao 和 brain dal
     cortex::init();
+    crate::service::dal::brain::init();
     let cortex_dao = cortex::dao();
-    let brain_dal = BrainDal::new(cortex_dao);
+    let brain_dal = crate::service::dal::brain::new(cortex_dao);
 
     let ctx = RequestContext::new_simple("test-user", pool);
 

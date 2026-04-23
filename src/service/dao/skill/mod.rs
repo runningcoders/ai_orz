@@ -10,7 +10,7 @@ use async_trait::async_trait;
 
 /// Skill DAO trait
 #[async_trait]
-pub trait SkillDaoTrait: Send + Sync {
+pub trait SkillDao: Send + Sync {
     /// Insert a new skill
     async fn insert(&self, ctx: RequestContext, skill: &SkillPo) -> Result<(), AppError>;
 

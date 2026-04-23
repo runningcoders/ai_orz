@@ -5,7 +5,7 @@
 use crate::error::AppError;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
-use crate::service::dao::user::UserDaoTrait;
+use crate::service::dao::user::UserDao;
 use async_trait::async_trait;
 
 #[async_trait]

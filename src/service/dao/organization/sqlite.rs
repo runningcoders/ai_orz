@@ -4,20 +4,20 @@ use crate::error::AppError;
 use crate::models::organization::OrganizationPo;
 use common::enums::{OrganizationStatus, OrganizationScope};
 use crate::pkg::RequestContext;
-use crate::service::dao::organization::OrganizationDaoTrait;
+use crate::service::dao::organization::OrganizationDao;
 use std::sync::{Arc, OnceLock};
 use chrono::Utc;
 // ==================== 工厂方法 + 单例管理 ====================
 
-static ORGANIZATION_DAO: OnceLock<Arc<dyn OrganizationDaoTrait>> = OnceLock::new();
+static ORGANIZATION_DAO: OnceLock<Arc<dyn OrganizationDao>> = OnceLock::new();
 
 /// 创建一个全新的 Organization DAO 实例（用于测试）
-pub fn new() -> Arc<dyn OrganizationDaoTrait> {
-    Arc::new(OrganizationDaoImpl::new())
+pub fn new() -> Arc<dyn OrganizationDao> {
+    Arc::new(OrganizationDaoSqliteImpl::new())
 }
 
 /// 获取 Organization DAO 单例
-pub fn dao() -> Arc<dyn OrganizationDaoTrait> {
+pub fn dao() -> Arc<dyn OrganizationDao> {
     ORGANIZATION_DAO.get().cloned().unwrap()
 }
 
@@ -28,16 +28,16 @@ pub fn init() {
 
 // ==================== 实现 ====================
 
-struct OrganizationDaoImpl;
+struct OrganizationDaoSqliteImpl;
 
-impl OrganizationDaoImpl {
+impl OrganizationDaoSqliteImpl {
     fn new() -> Self {
         Self
     }
 }
 
 #[async_trait::async_trait]
-impl OrganizationDaoTrait for OrganizationDaoImpl {
+impl OrganizationDao for OrganizationDaoSqliteImpl {
     async fn insert(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<(), AppError> {
         let status = org.status as i32;
         let scope = org.scope as i32;

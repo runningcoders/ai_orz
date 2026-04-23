@@ -3,21 +3,21 @@
 use crate::error::AppError;
 use crate::models::agent::AgentPo;
 use common::enums::AgentStatus;
-use crate::service::dao::agent::AgentDaoTrait;
+use crate::service::dao::agent::AgentDao;
 use std::sync::{Arc, OnceLock};
 use chrono::Utc;
 use crate::pkg::RequestContext;
 // ==================== 工厂方法 + 单例 ====================
 
-static AGENT_DAO: OnceLock<Arc<dyn AgentDaoTrait>> = OnceLock::new();
+static AGENT_DAO: OnceLock<Arc<dyn AgentDao>> = OnceLock::new();
 
 /// 创建一个全新的 Agent DAO 实例（用于测试）
-pub fn new() -> Arc<dyn AgentDaoTrait> {
-    Arc::new(AgentDaoImpl::new())
+pub fn new() -> Arc<dyn AgentDao> {
+    Arc::new(AgentDaoSqliteImpl::new())
 }
 
 /// 获取 AgentDao 单例
-pub fn dao() -> Arc<dyn AgentDaoTrait> {
+pub fn dao() -> Arc<dyn AgentDao> {
     AGENT_DAO.get().cloned().unwrap()
 }
 
@@ -28,15 +28,15 @@ pub fn init() {
 
 // ==================== 实现 ====================
 
-struct AgentDaoImpl;
+struct AgentDaoSqliteImpl;
 
-impl AgentDaoImpl {
+impl AgentDaoSqliteImpl {
     fn new() -> Self {
         Self
     }
 }
 #[async_trait::async_trait]
-impl AgentDaoTrait for AgentDaoImpl {
+impl AgentDao for AgentDaoSqliteImpl {
     async fn insert(&self, _ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError> {
         let status = agent.status as i32;
         sqlx::query!(

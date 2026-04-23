@@ -5,7 +5,7 @@ use crate::models::message::{MessagePo, ToolCallMessage};
 use crate::models::file::FileMeta;
 use common::enums::{MessageRole, MessageType, MessageStatus, FileType};
 use crate::pkg::RequestContext;
-use crate::service::dao::message::{self, MessageDaoTrait};
+use crate::service::dao::message::{self, MessageDao};
 use uuid::Uuid;
 use sqlx::SqlitePool;
 

@@ -3,7 +3,7 @@
 use crate::models::task::TaskPo;
 use crate::pkg::RequestContext;
 use common::enums::{TaskStatus, AssigneeType};
-use crate::service::dao::task::{self, TaskDaoTrait};
+use crate::service::dao::task::{self, TaskDao};
 use uuid::Uuid;
 use sqlx::SqlitePool;
 

@@ -5,21 +5,21 @@ use crate::models::message::MessagePo;
 use crate::models::file::FileMeta;
 use common::enums::{MessageRole, MessageType, MessageStatus, FileType};
 use crate::pkg::RequestContext;
-use crate::service::dao::message::MessageDaoTrait;
+use crate::service::dao::message::MessageDao;
 use sqlx::types::Json;
 use std::sync::{Arc, OnceLock};
 use chrono::Utc;
 // ==================== 工厂方法 + 单例管理 ====================
 
-static MESSAGE_DAO: OnceLock<Arc<dyn MessageDaoTrait>> = OnceLock::new();
+static MESSAGE_DAO: OnceLock<Arc<dyn MessageDao>> = OnceLock::new();
 
 /// 创建一个全新的 Message DAO 实例（用于测试）
-pub fn new() -> Arc<dyn MessageDaoTrait> {
-    Arc::new(MessageDaoImpl::new())
+pub fn new() -> Arc<dyn MessageDao> {
+    Arc::new(MessageDaoSqliteImpl::new())
 }
 
 /// 获取 Message DAO 单例
-pub fn dao() -> Arc<dyn MessageDaoTrait> {
+pub fn dao() -> Arc<dyn MessageDao> {
     MESSAGE_DAO.get().cloned().unwrap()
 }
 
@@ -30,16 +30,16 @@ pub fn init() {
 
 // ==================== 实现 ====================
 
-struct MessageDaoImpl;
+struct MessageDaoSqliteImpl;
 
-impl MessageDaoImpl {
+impl MessageDaoSqliteImpl {
     fn new() -> Self {
         Self
     }
 }
 
 #[async_trait::async_trait]
-impl MessageDaoTrait for MessageDaoImpl {
+impl MessageDao for MessageDaoSqliteImpl {
     async fn insert(&self, ctx: RequestContext, message: &MessagePo) -> Result<()> {
         let from_role = message.from_role as i32;
         let to_role = message.to_role as i32;

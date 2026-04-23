@@ -1,9 +1,8 @@
 //! HR Domain Agent 管理单元测试
 
-use super::{HrDomain, HrDomainImpl};
+use super::{HrDomain, domain};
 use crate::models::agent::{Agent, AgentPo};
 use crate::pkg::RequestContext;
-use std::sync::Arc;
 use uuid::Uuid;
 use sqlx::SqlitePool;
 
@@ -13,11 +12,11 @@ fn new_ctx(user_id: &str, pool: sqlx::SqlitePool) -> RequestContext {
 
 #[sqlx::test]
 async fn test_create_and_find_by_id(pool: sqlx::SqlitePool) {
-    // 初始化依赖：dao -> dal -> domain
+    // 初始化依赖：dao -> dal -> domain (和线上初始化顺序一致)
     crate::service::dao::agent::init();
     crate::service::dal::agent::init();
-    let dal = crate::service::dal::agent::dal();
-    let domain = Arc::new(HrDomainImpl::new(dal));
+    super::init();
+    let domain = domain();
     let ctx = new_ctx("admin", pool);
 
     let agent_po = AgentPo::new(
@@ -47,11 +46,11 @@ async fn test_create_and_find_by_id(pool: sqlx::SqlitePool) {
 
 #[sqlx::test]
 async fn test_list_agents(pool: sqlx::SqlitePool) {
-    // 初始化依赖：dao -> dal -> domain
+    // 初始化依赖：dao -> dal -> domain (和线上初始化顺序一致)
     crate::service::dao::agent::init();
     crate::service::dal::agent::init();
-    let dal = crate::service::dal::agent::dal();
-    let domain = Arc::new(HrDomainImpl::new(dal));
+    super::init();
+    let domain = domain();
 
     for i in 0..3 {
         let ctx = new_ctx("admin", pool.clone());
@@ -79,11 +78,11 @@ async fn test_list_agents(pool: sqlx::SqlitePool) {
 
 #[sqlx::test]
 async fn test_update_agent(pool: sqlx::SqlitePool) {
-    // 初始化依赖：dao -> dal -> domain
+    // 初始化依赖：dao -> dal -> domain (和线上初始化顺序一致)
     crate::service::dao::agent::init();
     crate::service::dal::agent::init();
-    let dal = crate::service::dal::agent::dal();
-    let domain = Arc::new(HrDomainImpl::new(dal));
+    super::init();
+    let domain = domain();
     let ctx = new_ctx("admin", pool.clone());
 
     let agent_po = AgentPo::new(
@@ -120,11 +119,11 @@ async fn test_update_agent(pool: sqlx::SqlitePool) {
 
 #[sqlx::test]
 async fn test_delete_agent(pool: sqlx::SqlitePool) {
-    // 初始化依赖：dao -> dal -> domain
+    // 初始化依赖：dao -> dal -> domain (和线上初始化顺序一致)
     crate::service::dao::agent::init();
     crate::service::dal::agent::init();
-    let dal = crate::service::dal::agent::dal();
-    let domain = Arc::new(HrDomainImpl::new(dal));
+    super::init();
+    let domain = domain();
     let ctx = new_ctx("admin", pool.clone());
 
     let agent_po = AgentPo::new(

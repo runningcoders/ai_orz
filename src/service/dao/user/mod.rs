@@ -8,7 +8,7 @@ use crate::pkg::RequestContext;
 
 /// User DAO trait
 #[async_trait::async_trait]
-pub trait UserDaoTrait: Send + Sync {
+pub trait UserDao: Send + Sync {
     /// 插入新用户
     async fn insert(&self, ctx: RequestContext, user: &UserPo) -> Result<(), AppError>;
 

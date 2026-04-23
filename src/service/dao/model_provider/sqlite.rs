@@ -4,35 +4,35 @@ use crate::error::AppError;
 use crate::models::model_provider::ModelProviderPo;
 use common::enums::{ModelProviderStatus, ProviderType};
 use crate::pkg::RequestContext;
-use crate::service::dao::model_provider::ModelProviderDaoTrait;
+use crate::service::dao::model_provider::ModelProviderDao;
 use std::sync::{Arc, OnceLock};
 use chrono::Utc;
 // ==================== 单例 ====================
 
-static MODEL_PROVIDER_DAO: OnceLock<Arc<dyn ModelProviderDaoTrait>> = OnceLock::new();
+static MODEL_PROVIDER_DAO: OnceLock<Arc<dyn ModelProviderDao>> = OnceLock::new();
 
 /// 获取 ModelProviderDao 单例
-pub fn dao() -> Arc<dyn ModelProviderDaoTrait> {
+pub fn dao() -> Arc<dyn ModelProviderDao> {
     MODEL_PROVIDER_DAO.get().cloned().unwrap()
 }
 
 /// 初始化单例
 pub fn init() {
-    let _ = MODEL_PROVIDER_DAO.set(Arc::new(ModelProviderDaoImpl::new()));
+    let _ = MODEL_PROVIDER_DAO.set(Arc::new(ModelProviderDaoSqliteImpl::new()));
 }
 
 // ==================== 实现 ====================
 
-pub struct ModelProviderDaoImpl;
+struct ModelProviderDaoSqliteImpl;
 
-impl ModelProviderDaoImpl {
+impl ModelProviderDaoSqliteImpl {
     pub fn new() -> Self {
         Self
     }
 }
 
 #[async_trait::async_trait]
-impl ModelProviderDaoTrait for ModelProviderDaoImpl {
+impl ModelProviderDao for ModelProviderDaoSqliteImpl {
     async fn insert(&self, ctx: RequestContext, provider: &ModelProviderPo) -> Result<(), AppError> {
         let provider_type = provider.provider_type as i32;
         let status = provider.status as i32;

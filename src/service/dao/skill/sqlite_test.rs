@@ -5,7 +5,7 @@ use common::enums::SkillStatus;
 use crate::error::AppError;
 use crate::models::skill::SkillPo;
 use crate::pkg::RequestContext;
-use crate::service::dao::skill::{self, SkillDaoTrait};
+use crate::service::dao::skill::{self, SkillDao};
 use uuid::Uuid;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {

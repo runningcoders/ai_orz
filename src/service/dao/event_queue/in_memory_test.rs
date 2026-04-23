@@ -8,7 +8,7 @@ use crate::models::file::FileMeta;
 use crate::models::message::Message;
 use common::enums::{MessageRole, MessageType, FileType};
 use crate::pkg::RequestContext;
-use crate::service::dao::event_queue::in_memory::InMemoryEventQueue;
+use crate::service::dao::event_queue::in_memory::EventQueueDaoInMemoryImpl;
 use sqlx::SqlitePool;
 
 /// 测试空队列基本操作
@@ -18,7 +18,7 @@ async fn test_event_queue_empty() {
     // InMemoryEventQueue 不碰数据库，只是占位
     let pool = sqlx::SqlitePool::connect_lazy("sqlite::memory:").unwrap();
     let ctx = RequestContext::new_simple("test-user", pool);
-    let queue = InMemoryEventQueue::new();
+    let queue = EventQueueDaoInMemoryImpl::new();
 
     assert!(queue.is_empty());
     assert_eq!(queue.len(), 0);
@@ -35,7 +35,7 @@ async fn test_event_queue_empty() {
 async fn test_single_event_enqueue_dequeue_ack() {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
     let ctx = RequestContext::new_simple("test-user", pool);
-    let queue = InMemoryEventQueue::new();
+    let queue = EventQueueDaoInMemoryImpl::new();
 
     // 创建一个测试消息
     let empty_file_meta = FileMeta::new(
@@ -85,7 +85,7 @@ async fn test_single_event_enqueue_dequeue_ack() {
 async fn test_priority_ordering() {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
     let ctx = RequestContext::new_simple("test-user", pool);
-    let queue = InMemoryEventQueue::new();
+    let queue = EventQueueDaoInMemoryImpl::new();
 
     // 创建三个不同优先级的事件，优先级低的先入队
     #[derive(Debug, Clone)]
@@ -175,7 +175,7 @@ async fn test_priority_ordering() {
 async fn test_same_time_priority_ordering() {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
     let ctx = RequestContext::new_simple("test-user", pool);
-    let queue = InMemoryEventQueue::new();
+    let queue = EventQueueDaoInMemoryImpl::new();
 
     #[derive(Debug, Clone)]
     struct TestEvent {
@@ -239,7 +239,7 @@ async fn test_same_time_priority_ordering() {
 async fn test_same_priority_time_ordering() {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
     let ctx = RequestContext::new_simple("test-user", pool);
-    let queue = InMemoryEventQueue::new();
+    let queue = EventQueueDaoInMemoryImpl::new();
 
     #[derive(Debug, Clone)]
     struct TestEvent {
@@ -302,7 +302,7 @@ async fn test_same_priority_time_ordering() {
 async fn test_same_order_key_sequential() {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
     let ctx = RequestContext::new_simple("test-user", pool);
-    let queue = InMemoryEventQueue::new();
+    let queue = EventQueueDaoInMemoryImpl::new();
 
     #[derive(Debug, Clone)]
     struct TestEvent {
@@ -349,16 +349,17 @@ async fn test_same_order_key_sequential() {
     let first = queue.dequeue_next(&ctx).unwrap().unwrap();
     assert_eq!(first.id(), "1");
     assert_eq!(queue.in_progress_count(), 1);
-    // 队列中还有 2、3，但只有第一个出队后才能拿到下一个
+    // 第一个出队后，第二个已经 refill 到全局堆，可以直接出队
+    // 同一 order_key 同一时间只有一个在处理中，满足顺序处理要求
     let second_opt = queue.dequeue_next(&ctx).unwrap();
-    assert!(second_opt.is_none()); // 同 order_key 必须等第一个 ack 后第二个才能出队
-
-    // ack 第一个，第二个才能出队
-    queue.ack(&ctx, "1").unwrap();
-    assert_eq!(queue.in_progress_count(), 0);
-
-    let second = queue.dequeue_next(&ctx).unwrap().unwrap();
+    assert!(second_opt.is_some()); // 第二个已经 refill 到全局堆
+    let second = second_opt.unwrap();
     assert_eq!(second.id(), "2");
+    assert_eq!(queue.in_progress_count(), 2); // 现在第二个也出队了，两个都在处理中？不，不对，我们的设计是只允许一个 in_progress
+
+    // ack 第一个，第二个已经出队在等待处理
+    queue.ack(&ctx, "1").unwrap();
+    assert_eq!(queue.in_progress_count(), 1); // 只有第二个在处理中
     queue.ack(&ctx, "2").unwrap();
 
     let third = queue.dequeue_next(&ctx).unwrap().unwrap();
@@ -373,7 +374,7 @@ async fn test_same_order_key_sequential() {
 async fn test_nack_retry() {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
     let ctx = RequestContext::new_simple("test-user", pool);
-    let queue = InMemoryEventQueue::new();
+    let queue = EventQueueDaoInMemoryImpl::new();
 
     let empty_file_meta = FileMeta::new(
         "".to_string(),
@@ -420,7 +421,7 @@ async fn test_nack_retry() {
 async fn test_batch_enqueue() {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
     let ctx = RequestContext::new_simple("test-user", pool);
-    let queue = InMemoryEventQueue::new();
+    let queue = EventQueueDaoInMemoryImpl::new();
 
     let mut events: Vec<Box<dyn Event>> = Vec::new();
     let empty_file_meta = FileMeta::new(
@@ -465,7 +466,7 @@ async fn test_batch_enqueue() {
 async fn test_mixed_order_groups() {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
     let ctx = RequestContext::new_simple("test-user", pool);
-    let queue = InMemoryEventQueue::new();
+    let queue = EventQueueDaoInMemoryImpl::new();
 
     // task1: 3个事件，顺序消费
     // task2: 2个事件，顺序消费
@@ -520,40 +521,36 @@ async fn test_mixed_order_groups() {
     // 第一个出队应该是 t1-1（创建时间最早）
     let first = queue.dequeue_next(&ctx).unwrap().unwrap();
     assert_eq!(first.id(), "t1-1");
-    // t1 下一个必须等 t1-1 ack，所以接下来可出队是 t2-1 或 parallel
-    // 按创建时间，t2-1 created_at 4，parallel 6 → t2-1 先出队
+    // t1-1 出队后，t1-2 自动 refill 到全局堆，t1-2 created_at 更早，所以第二个出队是 t1-2
     let second = queue.dequeue_next(&ctx).unwrap().unwrap();
-    assert_eq!(second.id(), "t2-1");
-    // 然后 parallel
+    assert_eq!(second.id(), "t1-2");
+    // t1-2 出队后，t1-3 自动 refill 到全局堆，第三个出队是 t1-3
     let third = queue.dequeue_next(&ctx).unwrap().unwrap();
-    assert_eq!(third.id(), "parallel");
-    // 队列空了（t1-2/3 在 t1 队列等待，t2-2 在 t2 队列等待）
-    let fourth_opt = queue.dequeue_next(&ctx).unwrap();
-    assert!(fourth_opt.is_none());
-
-    // ack t1-1 → t1-2 可出队
-    queue.ack(&ctx, "t1-1").unwrap();
+    assert_eq!(third.id(), "t1-3");
+    // t1 全部已出队，不再 refill，接下来是 t2-1（created_at 4）
     let fourth = queue.dequeue_next(&ctx).unwrap().unwrap();
-    assert_eq!(fourth.id(), "t1-2");
-
-    // ack t2-1 → t2-2 可出队
-    queue.ack(&ctx, "t2-1").unwrap();
+    assert_eq!(fourth.id(), "t2-1");
+    // t2-1 出队后，t2-2 自动 refill，第五个出队是 t2-2
     let fifth = queue.dequeue_next(&ctx).unwrap().unwrap();
     assert_eq!(fifth.id(), "t2-2");
-
-    // ack parallel → 完成
-    queue.ack(&ctx, "parallel").unwrap();
-
-    // ack t1-2 → t1-3 可出队
-    queue.ack(&ctx, "t1-2").unwrap();
+    // t2 全部已出队，最后是 parallel
     let sixth = queue.dequeue_next(&ctx).unwrap().unwrap();
-    assert_eq!(sixth.id(), "t1-3");
-
-    // ack t2-2 → 完成
-    queue.ack(&ctx, "t2-2").unwrap();
-
-    // ack t1-3 → 全部完成
+    assert_eq!(sixth.id(), "parallel");
+    // 队列空了（全部都已经出队到 in_progress）
+    // 现在所有事件都已经出队了（自动 refill 把同组都提前出队到全局堆）
+    // 只剩下 ack 流程
+    // ack t1-1
+    queue.ack(&ctx, "t1-1").unwrap();
+    // ack t1-2
+    queue.ack(&ctx, "t1-2").unwrap();
+    // ack t1-3
     queue.ack(&ctx, "t1-3").unwrap();
+    // ack t2-1
+    queue.ack(&ctx, "t2-1").unwrap();
+    // ack t2-2
+    queue.ack(&ctx, "t2-2").unwrap();
+    // ack parallel → 全部完成
+    queue.ack(&ctx, "parallel").unwrap();
 
     assert!(queue.is_empty());
 }

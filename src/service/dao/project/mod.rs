@@ -7,7 +7,7 @@ use common::enums::ProjectStatus;
 
 /// Project DAO 接口
 #[async_trait::async_trait]
-pub trait ProjectDaoTrait: Send + Sync + std::fmt::Debug {
+pub trait ProjectDao: Send + Sync + std::fmt::Debug {
     /// 插入新项目
     async fn insert(&self, ctx: RequestContext, project: &ProjectPo) -> Result<(), AppError>;
     /// 根据 ID 查询项目

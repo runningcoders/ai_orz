@@ -4,7 +4,7 @@
 
 use crate::models::model_provider::ModelProviderPo;
 use common::enums::{ProviderType, ModelProviderStatus};
-use crate::service::dao::model_provider::{self, ModelProviderDaoTrait};
+use crate::service::dao::model_provider::{self, ModelProviderDao};
 use crate::pkg::RequestContext;
 use uuid::Uuid;
 use sqlx::SqlitePool;

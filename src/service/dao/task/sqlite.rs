@@ -6,16 +6,16 @@ use common::enums::{TaskStatus, AssigneeType};
 use crate::error::AppError;
 use crate::models::task::TaskPo;
 use crate::pkg::RequestContext;
-use super::TaskDaoTrait;
+use super::TaskDao;
 
 // ==================== 工厂方法 + 单例 ====================
 
 /// Global DAO instance for dependency injection
-static DAO: OnceLock<Arc<dyn TaskDaoTrait + Send + Sync>> = OnceLock::new();
+static DAO: OnceLock<Arc<dyn TaskDao + Send + Sync>> = OnceLock::new();
 
 /// 创建一个全新的 Task DAO 实例（用于测试）
-pub fn new() -> Arc<dyn TaskDaoTrait + Send + Sync> {
-    Arc::new(SqliteTaskDao::new())
+pub fn new() -> Arc<dyn TaskDao + Send + Sync> {
+    Arc::new(TaskDaoSqliteImpl::new())
 }
 
 /// Initialize the DAO global instance
@@ -24,12 +24,12 @@ pub fn init() {
 }
 
 /// Get the global DAO instance
-pub fn get_dao() -> &'static Arc<dyn TaskDaoTrait + Send + Sync> {
+pub fn get_dao() -> &'static Arc<dyn TaskDao + Send + Sync> {
     DAO.get().expect("Task DAO not initialized")
 }
 
 /// Create a new DAO instance for dependency injection
-pub fn dao() -> Arc<dyn TaskDaoTrait + Send + Sync> {
+pub fn dao() -> Arc<dyn TaskDao + Send + Sync> {
     new()
 }
 
@@ -37,9 +37,9 @@ pub fn dao() -> Arc<dyn TaskDaoTrait + Send + Sync> {
 
 /// SQLite Task DAO implementation
 #[derive(Debug, Clone, Default)]
-struct SqliteTaskDao;
+struct TaskDaoSqliteImpl;
 
-impl SqliteTaskDao {
+impl TaskDaoSqliteImpl {
     /// Create a new SQLite Task DAO
     fn new() -> Self {
         Self
@@ -47,7 +47,7 @@ impl SqliteTaskDao {
 }
 
 #[async_trait::async_trait]
-impl TaskDaoTrait for SqliteTaskDao {
+impl TaskDao for TaskDaoSqliteImpl {
     async fn insert(&self, ctx: RequestContext, task: &TaskPo) -> Result<(), AppError> {
         let pool = ctx.db_pool();
         let status_i32 = task.status as i32;

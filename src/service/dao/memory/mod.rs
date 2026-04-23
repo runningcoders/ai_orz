@@ -17,7 +17,7 @@ use async_trait::async_trait;
 ///
 /// 原始记忆不可修改不可删除，只能追加查询
 #[async_trait]
-pub trait MemoryDaoTrait: Send + Sync {
+pub trait MemoryDao: Send + Sync {
     /// 追加写入记忆追踪到每日文件，并插入短期索引
     ///
     /// # 参数

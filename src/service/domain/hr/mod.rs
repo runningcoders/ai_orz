@@ -12,7 +12,7 @@ mod agent_test;
 use crate::error::AppError;
 use crate::models::agent::Agent;
 use crate::pkg::RequestContext;
-use crate::service::dal::agent::AgentDalTrait;
+use crate::service::dal::agent::AgentDal;
 use crate::service::dal::agent as agent_dal;
 use std::sync::{Arc, OnceLock};
 
@@ -38,13 +38,13 @@ pub fn init() {
 /// HR Domain 实现
 ///
 /// 聚合所有人力资源子功能实现
-pub struct HrDomainImpl {
-    agent_dal: Arc<dyn AgentDalTrait>,
+struct HrDomainImpl {
+    agent_dal: Arc<dyn AgentDal>,
 }
 
 impl HrDomainImpl {
     /// 创建 Domain 实例
-    pub fn new(agent_dal: Arc<dyn AgentDalTrait>) -> Self {
+    fn new(agent_dal: Arc<dyn AgentDal>) -> Self {
         Self { agent_dal }
     }
 }

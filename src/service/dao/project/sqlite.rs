@@ -7,16 +7,16 @@ use common::enums::project::ProjectStatus;
 use crate::error::AppError;
 use crate::models::project::ProjectPo;
 use crate::pkg::RequestContext;
-use super::ProjectDaoTrait;
+use super::ProjectDao;
 
 // ==================== 工厂方法 + 单例 ====================
 
 /// Global DAO instance for dependency injection
-static DAO: OnceLock<Arc<dyn ProjectDaoTrait + Send + Sync>> = OnceLock::new();
+static DAO: OnceLock<Arc<dyn ProjectDao + Send + Sync>> = OnceLock::new();
 
 /// 创建一个全新的 Project DAO 实例（用于测试）
-pub fn new() -> Arc<dyn ProjectDaoTrait + Send + Sync> {
-    Arc::new(SqliteProjectDao::new())
+pub fn new() -> Arc<dyn ProjectDao + Send + Sync> {
+    Arc::new(ProjectDaoSqliteImpl::new())
 }
 
 /// Initialize the DAO global instance
@@ -25,7 +25,7 @@ pub fn init() {
 }
 
 /// Get the global DAO instance
-pub fn dao() -> Arc<dyn ProjectDaoTrait + Send + Sync> {
+pub fn dao() -> Arc<dyn ProjectDao + Send + Sync> {
     DAO.get().expect("Project DAO not initialized").clone()
 }
 
@@ -33,9 +33,9 @@ pub fn dao() -> Arc<dyn ProjectDaoTrait + Send + Sync> {
 
 /// SQLite Project DAO implementation
 #[derive(Debug, Clone, Default)]
-struct SqliteProjectDao;
+struct ProjectDaoSqliteImpl;
 
-impl SqliteProjectDao {
+impl ProjectDaoSqliteImpl {
     /// Create a new SQLite Project DAO
     fn new() -> Self {
         Self
@@ -43,7 +43,7 @@ impl SqliteProjectDao {
 }
 
 #[async_trait::async_trait]
-impl ProjectDaoTrait for SqliteProjectDao {
+impl ProjectDao for ProjectDaoSqliteImpl {
     async fn insert(&self, ctx: RequestContext, project: &ProjectPo) -> Result<(), AppError> {
         let pool = ctx.db_pool();
         let status_i32 = project.status as i32;

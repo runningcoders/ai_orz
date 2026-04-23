@@ -9,7 +9,7 @@
 use crate::error::AppError;
 use crate::models::memory::{MemoryTrace, ShortTermMemoryIndexPo, LongTermKnowledgeNodePo, KnowledgeReferencePo, KnowledgeNodeRelationPo, KnowledgeRelationType};
 use crate::pkg::RequestContext;
-use crate::service::dao::memory::MemoryDaoTrait;
+use crate::service::dao::memory::MemoryDao;
 use async_trait::async_trait;
 use serde_json;
 use sqlx::SqlitePool;
@@ -21,15 +21,15 @@ use crate::config;
 
 // ==================== 工厂方法 + 单例 ====================
 
-static MEMORY_DAO: OnceLock<Arc<dyn super::MemoryDaoTrait + Send + Sync>> = OnceLock::new();
+static MEMORY_DAO: OnceLock<Arc<dyn super::MemoryDao + Send + Sync>> = OnceLock::new();
 
 /// 创建一个全新的 Memory DAO 实例（用于测试）
-pub fn new() -> Arc<dyn super::MemoryDaoTrait + Send + Sync> {
-    Arc::new(SqliteMemoryDao::new())
+pub fn new() -> Arc<dyn super::MemoryDao + Send + Sync> {
+    Arc::new(MemoryDaoSqliteImpl::new())
 }
 
 /// 获取 Memory DAO 单例
-pub fn dao() -> Arc<dyn super::MemoryDaoTrait + Send + Sync> {
+pub fn dao() -> Arc<dyn super::MemoryDao + Send + Sync> {
     MEMORY_DAO.get().cloned().unwrap()
 }
 
@@ -39,12 +39,12 @@ pub fn init() {
 }
 
 /// SQLite Memory DAO 实现
-struct SqliteMemoryDao;
+pub struct MemoryDaoSqliteImpl;
 
-impl SqliteMemoryDao {
+impl MemoryDaoSqliteImpl {
     /// 创建新的 DAO 实例
-    fn new() -> Self {
-        SqliteMemoryDao
+    pub fn new() -> Self {
+        MemoryDaoSqliteImpl
     }
 
     /// 获取 Agent 记忆目录完整路径（用于写入）
@@ -90,7 +90,7 @@ impl SqliteMemoryDao {
 }
 
 #[async_trait]
-impl MemoryDaoTrait for SqliteMemoryDao {
+impl MemoryDao for MemoryDaoSqliteImpl {
     async fn append_memory_trace(
         &self,
         ctx: RequestContext,

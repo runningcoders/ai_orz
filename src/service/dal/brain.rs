@@ -17,25 +17,34 @@ use futures_util::TryFutureExt;
 use crate::service::dao::cortex;
 // ==================== 单例管理 ====================
 
-static BRAIN_DAL: OnceLock<Arc<dyn BrainDalTrait>> = OnceLock::new();
+static BRAIN_DAL: OnceLock<Arc<dyn BrainDal>> = OnceLock::new();
 
 /// 获取 Brain DAL 单例
-pub fn dal() -> Arc<dyn BrainDalTrait> {
+pub fn dal() -> Arc<dyn BrainDal> {
     BRAIN_DAL.get().cloned().unwrap()
 }
 
 /// 初始化 Brain DAL
 pub fn init() {
-    let _ = BRAIN_DAL.set(Arc::new(BrainDal::new(
+    let _ = BRAIN_DAL.set(new(
         cortex::dao(),
-    )));
+    ));
+}
+
+/// 创建 Brain DAL（返回 trait 对象）
+pub fn new(
+    cortex_dao: Arc<dyn CortexDao + Send + Sync>,
+) -> Arc<dyn BrainDal> {
+    Arc::new(BrainDalImpl {
+        cortex_dao,
+    })
 }
 
 // ==================== DAL 接口 ====================
 
 /// Brain DAL 接口
 #[async_trait]
-pub trait BrainDalTrait: Send + Sync {
+pub trait BrainDal: Send + Sync {
     /// 从 ModelProvider、Memory 和工具列表创建完整的 Brain
     ///
     /// - BrainDal 内部调用 CortexDao 创建 Cortex
@@ -74,13 +83,13 @@ pub trait BrainDalTrait: Send + Sync {
 // ==================== DAL 实现 ====================
 
 /// Brain DAL 实现
-pub struct BrainDal {
+struct BrainDalImpl {
     cortex_dao: Arc<dyn CortexDao + Send + Sync>,
 }
 
-impl BrainDal {
+impl BrainDalImpl {
     /// 创建 DAL 实例
-    pub fn new(
+    fn new(
         cortex_dao: Arc<dyn CortexDao + Send + Sync>,
     ) -> Self {
         Self { cortex_dao }
@@ -88,7 +97,7 @@ impl BrainDal {
 }
 
 #[async_trait]
-impl BrainDalTrait for BrainDal {
+impl BrainDal for BrainDalImpl {
     fn wake_brain(
         &self,
         _ctx: RequestContext,

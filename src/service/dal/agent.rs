@@ -4,30 +4,39 @@ use crate::error::AppError;
 use crate::models::agent::Agent;
 use crate::models::brain::Brain;
 use crate::pkg::RequestContext;
-use crate::service::dao::agent::AgentDaoTrait;
+use crate::service::dao::agent::AgentDao;
 use std::sync::{Arc, OnceLock};
 use crate::service::dao::agent;
 // ==================== 单例管理 ====================
 
-static AGENT_DAL: OnceLock<Arc<dyn AgentDalTrait>> = OnceLock::new();
+static AGENT_DAL: OnceLock<Arc<dyn AgentDal>> = OnceLock::new();
 
 /// 获取 Agent DAL 单例
-pub fn dal() -> Arc<dyn AgentDalTrait> {
+pub fn dal() -> Arc<dyn AgentDal> {
     AGENT_DAL.get().cloned().unwrap()
 }
 
 /// 初始化 Agent DAL
 pub fn init() {
-    let _ = AGENT_DAL.set(Arc::new(AgentDal::new(
+    let _ = AGENT_DAL.set(new(
         agent::dao(),
-    )));
+    ));
+}
+
+/// 创建 Agent DAL（返回 trait 对象）
+pub fn new(
+    agent_dao: Arc<dyn AgentDao + Send + Sync>,
+) -> Arc<dyn AgentDal> {
+    Arc::new(AgentDalImpl {
+        agent_dao,
+    })
 }
 
 // ==================== DAL 接口 ====================
 
 /// Agent DAL 接口
 #[async_trait::async_trait]
-pub trait AgentDalTrait: Send + Sync {
+pub trait AgentDal: Send + Sync {
     /// 创建 Agent
     async fn create(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
 
@@ -54,19 +63,19 @@ pub trait AgentDalTrait: Send + Sync {
 }
 
 /// Agent DAL 实现
-pub struct AgentDal {
-    agent_dao: Arc<dyn AgentDaoTrait>,
+struct AgentDalImpl {
+    agent_dao: Arc<dyn AgentDao>,
 }
 
-impl AgentDal {
+impl AgentDalImpl {
     /// 创建 DAL 实例
-    pub fn new(agent_dao: Arc<dyn AgentDaoTrait>) -> Self {
+    fn new(agent_dao: Arc<dyn AgentDao>) -> Self {
         Self { agent_dao }
     }
 }
 
 #[async_trait::async_trait]
-impl AgentDalTrait for AgentDal {
+impl AgentDal for AgentDalImpl {
     async fn create(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError> {
         self.agent_dao.insert(ctx, &agent.po).await
     }

@@ -1,6 +1,5 @@
 //! Model Provider DAL 单元测试
 
-use crate::service::dal::model_provider::{ModelProviderDal, ModelProviderDalTrait};
 use crate::models::model_provider::{ModelProvider, ModelProviderPo};
 use common::enums::{ModelProviderStatus, ProviderType};
 use crate::pkg::RequestContext;

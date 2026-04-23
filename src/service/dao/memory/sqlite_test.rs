@@ -5,7 +5,7 @@
 use super::*;
 use crate::models::memory::{MemoryRole, MemoryTrace, LongTermKnowledgeNodePo, KnowledgeNodeRelationPo, KnowledgeReferencePo, KnowledgeRelationType};
 use crate::pkg::RequestContext;
-use crate::service::dao::memory::sqlite::SqliteMemoryDao;
+use crate::service::dao::memory::sqlite::MemoryDaoSqliteImpl;
 use common::enums::MemoryStatus;
 use sqlx::SqlitePool;
 
@@ -14,7 +14,7 @@ async fn test_append_memory_trace(pool: SqlitePool) {
     // 初始化配置
     crate::config::init().unwrap();
     // 自动迁移已经由 sqlx::test 执行
-    let dao = SqliteMemoryDao::new();
+    let dao = MemoryDaoSqliteImpl::new();
     let ctx = RequestContext::new_simple("test-user", pool);
 
     let trace = MemoryTrace::new(
@@ -45,7 +45,7 @@ async fn test_create_knowledge_node(pool: SqlitePool) {
     // 初始化配置
     crate::config::init().unwrap();
     // 自动迁移已经由 sqlx::test 执行
-    let dao = SqliteMemoryDao::new();
+    let dao = MemoryDaoSqliteImpl::new();
     let ctx = RequestContext::new_simple("test-user", pool.clone());
 
     // 测试插入知识节点 SQL 语法正确
@@ -65,7 +65,7 @@ async fn test_create_knowledge_node(pool: SqlitePool) {
     assert!(result.is_ok());
 
     // 查询验证插入成功
-    let dao = SqliteMemoryDao::new();
+    let dao = MemoryDaoSqliteImpl::new();
     let ctx2 = RequestContext::new_simple("test-user", pool);
     let fetched = dao.get_knowledge_node(ctx2, "node-1").await;
     assert!(fetched.is_ok());
@@ -80,7 +80,7 @@ async fn test_create_knowledge_node(pool: SqlitePool) {
 async fn test_add_knowledge_relation(pool: SqlitePool) {
     // 初始化配置
     crate::config::init().unwrap();
-    let dao = SqliteMemoryDao::new();
+    let dao = MemoryDaoSqliteImpl::new();
     let ctx = RequestContext::new_simple("test-user", pool);
 
     // 先创建两个节点
@@ -134,7 +134,7 @@ async fn test_add_knowledge_relation(pool: SqlitePool) {
 async fn test_add_knowledge_reference(pool: SqlitePool) {
     // 初始化配置
     crate::config::init().unwrap();
-    let dao = SqliteMemoryDao::new();
+    let dao = MemoryDaoSqliteImpl::new();
     let ctx = RequestContext::new_simple("test-user", pool);
 
     // 先创建节点

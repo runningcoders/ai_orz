@@ -4,21 +4,21 @@ use crate::error::AppError;
 use crate::models::user::UserPo;
 use common::enums::{UserRole, UserStatus};
 use crate::pkg::RequestContext;
-use crate::service::dao::user::UserDaoTrait;
+use crate::service::dao::user::UserDao;
 use std::sync::{Arc, OnceLock};
 use chrono::Utc;
 
 // ==================== 工厂方法 + 单例 ====================
 
-static USER_DAO: OnceLock<Arc<dyn UserDaoTrait>> = OnceLock::new();
+static USER_DAO: OnceLock<Arc<dyn UserDao>> = OnceLock::new();
 
 /// 创建一个全新的 User DAO 实例（用于测试）
-pub fn new() -> Arc<dyn UserDaoTrait> {
-    Arc::new(UserDaoImpl::new())
+pub fn new() -> Arc<dyn UserDao> {
+    Arc::new(UserDaoSqliteImpl::new())
 }
 
 /// 获取 User DAO 单例
-pub fn dao() -> Arc<dyn UserDaoTrait> {
+pub fn dao() -> Arc<dyn UserDao> {
     USER_DAO.get().cloned().unwrap()
 }
 
@@ -29,16 +29,16 @@ pub fn init() {
 
 // ==================== 实现 ====================
 
-struct UserDaoImpl;
+struct UserDaoSqliteImpl;
 
-impl UserDaoImpl {
+impl UserDaoSqliteImpl {
     fn new() -> Self {
         Self
     }
 }
 
 #[async_trait::async_trait]
-impl UserDaoTrait for UserDaoImpl {
+impl UserDao for UserDaoSqliteImpl {
     async fn insert(&self, ctx: RequestContext, user: &UserPo) -> Result<(), AppError> {
         let role = user.role as i32;
         let status = user.status as i32;

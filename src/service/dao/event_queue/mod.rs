@@ -6,10 +6,10 @@ use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::models::event::Event;
 
-/// 事件队列 DAO trait
+/// 事件队列 DAO 接口
 ///
 /// 通用事件队列接口，支持不同实现替换
-pub trait EventQueueDaoTrait: Send + Sync + std::fmt::Debug {
+pub trait EventQueueDao: Send + Sync + std::fmt::Debug {
     /// 入队一个事件
     fn enqueue(&self, ctx: &RequestContext, event: Box<dyn Event>) -> Result<(), AppError>;
 

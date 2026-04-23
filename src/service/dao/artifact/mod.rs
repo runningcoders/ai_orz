@@ -8,7 +8,7 @@ use crate::error::Result;
 
 /// Artifact DAO trait
 #[async_trait]
-pub trait ArtifactDaoTrait: Send + Sync + std::fmt::Debug {
+pub trait ArtifactDao: Send + Sync + std::fmt::Debug {
     /// Insert a new artifact
     async fn insert(&self, ctx: RequestContext, artifact: &ArtifactPo) -> Result<()>;
 
@@ -30,3 +30,6 @@ pub trait ArtifactDaoTrait: Send + Sync + std::fmt::Debug {
 
 pub mod sqlite;
 pub use self::sqlite::{dao, init, new};
+
+#[cfg(test)]
+pub(crate) mod sqlite_test;

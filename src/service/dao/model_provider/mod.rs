@@ -6,7 +6,7 @@ use crate::pkg::RequestContext;
 
 /// Model Provider DAO 接口
 #[async_trait::async_trait]
-pub trait ModelProviderDaoTrait: Send + Sync {
+pub trait ModelProviderDao: Send + Sync {
     async fn insert(&self, ctx: RequestContext, provider: &ModelProviderPo) -> Result<(), AppError>;
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<ModelProviderPo>, AppError>;
     async fn find_all(&self, ctx: RequestContext) -> Result<Vec<ModelProviderPo>, AppError>;

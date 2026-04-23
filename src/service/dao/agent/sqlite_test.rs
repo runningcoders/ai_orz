@@ -4,7 +4,7 @@ use sqlx::SqlitePool;
 use crate::models::agent::AgentPo;
 use crate::pkg::RequestContext;
 use common::enums::AgentStatus;
-use crate::service::dao::agent::AgentDaoTrait;
+use crate::service::dao::agent::AgentDao;
 use uuid::Uuid;
 use crate::service::dao::agent::sqlite::{dao, init};
 

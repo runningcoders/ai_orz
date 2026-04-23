@@ -5,20 +5,20 @@ use crate::error::AppError;
 use crate::models::skill::SkillPo;
 use crate::pkg::RequestContext;
 use common::enums::SkillStatus;
-use crate::service::dao::skill::SkillDaoTrait;
+use crate::service::dao::skill::SkillDao;
 use std::sync::{Arc, OnceLock};
 
 // ==================== 工厂方法 + 单例 ====================
 
-static SKILL_DAO: OnceLock<Arc<dyn SkillDaoTrait>> = OnceLock::new();
+static SKILL_DAO: OnceLock<Arc<dyn SkillDao>> = OnceLock::new();
 
 /// 创建一个全新的 Skill DAO 实例（用于测试）
-pub fn new() -> Arc<dyn SkillDaoTrait> {
-    Arc::new(SqliteSkillDao)
+pub fn new() -> Arc<dyn SkillDao> {
+    Arc::new(SkillDaoSqliteImpl)
 }
 
 /// Get Skill DAO singleton
-pub fn dao() -> Arc<dyn SkillDaoTrait> {
+pub fn dao() -> Arc<dyn SkillDao> {
     SKILL_DAO.get().cloned().unwrap()
 }
 
@@ -30,10 +30,10 @@ pub fn init() {
 // ==================== 实现 ====================
 
 #[derive(Debug, Clone)]
-struct SqliteSkillDao;
+struct SkillDaoSqliteImpl;
 
 #[async_trait]
-impl SkillDaoTrait for SqliteSkillDao {
+impl SkillDao for SkillDaoSqliteImpl {
     async fn insert(&self, ctx: RequestContext, skill: &SkillPo) -> Result<(), AppError> {
         let status_i32 = skill.status.to_i32();
         sqlx::query!(

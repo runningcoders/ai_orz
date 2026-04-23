@@ -3,7 +3,7 @@
 use crate::models::organization::OrganizationPo;
 use crate::pkg::RequestContext;
 use common::enums::{OrganizationStatus, OrganizationScope};
-use crate::service::dao::organization::{self, OrganizationDaoTrait};
+use crate::service::dao::organization::{self, OrganizationDao};
 use uuid::Uuid;
 use sqlx::SqlitePool;
 

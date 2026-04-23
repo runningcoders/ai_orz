@@ -3,30 +3,39 @@
 use crate::error::AppError;
 use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
-use crate::service::dao::model_provider::ModelProviderDaoTrait;
+use crate::service::dao::model_provider::ModelProviderDao;
 use std::sync::{Arc, OnceLock};
 use crate::service::dao::model_provider;
 // ==================== 单例管理 ====================
 
-static MODEL_PROVIDER_DAL: OnceLock<Arc<dyn ModelProviderDalTrait>> = OnceLock::new();
+static MODEL_PROVIDER_DAL: OnceLock<Arc<dyn ModelProviderDal>> = OnceLock::new();
 
 /// 获取 Model Provider DAL 单例
-pub fn dal() -> Arc<dyn ModelProviderDalTrait> {
+pub fn dal() -> Arc<dyn ModelProviderDal> {
     MODEL_PROVIDER_DAL.get().cloned().unwrap()
 }
 
 /// 初始化 Model Provider DAL
 pub fn init() {
-    let _ = MODEL_PROVIDER_DAL.set(Arc::new(ModelProviderDal::new(
+    let _ = MODEL_PROVIDER_DAL.set(new(
         model_provider::dao(),
-    )));
+    ));
+}
+
+/// 创建 Model Provider DAL（返回 trait 对象）
+pub fn new(
+    model_provider_dao: Arc<dyn ModelProviderDao + Send + Sync>,
+) -> Arc<dyn ModelProviderDal> {
+    Arc::new(ModelProviderDalImpl {
+        model_provider_dao,
+    })
 }
 
 // ==================== DAL 实现 ====================
 
 /// Model Provider DAL 接口
 #[async_trait::async_trait]
-pub trait ModelProviderDalTrait: Send + Sync {
+pub trait ModelProviderDal: Send + Sync {
     /// 创建 Model Provider
     async fn create(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError>;
 
@@ -44,21 +53,21 @@ pub trait ModelProviderDalTrait: Send + Sync {
 }
 
 /// Model Provider DAL 实现
-pub struct ModelProviderDal {
-    model_provider_dao: Arc<dyn ModelProviderDaoTrait>,
+struct ModelProviderDalImpl {
+    model_provider_dao: Arc<dyn ModelProviderDao>,
 }
 
-impl ModelProviderDal {
+impl ModelProviderDalImpl {
     /// 创建 DAL 实例
-    pub fn new(
-        model_provider_dao: Arc<dyn ModelProviderDaoTrait>,
+    fn new(
+        model_provider_dao: Arc<dyn ModelProviderDao>,
     ) -> Self {
         Self { model_provider_dao }
     }
 }
 
 #[async_trait::async_trait]
-impl ModelProviderDalTrait for ModelProviderDal {
+impl ModelProviderDal for ModelProviderDalImpl {
     async fn create(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError> {
         self.model_provider_dao.insert(ctx, &provider.po).await
     }

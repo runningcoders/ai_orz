@@ -74,13 +74,13 @@ pub fn init() {
 /// Finance Domain 实现
 ///
 /// 聚合所有财务领域子功能实现
-pub struct FinanceDomainImpl {
-    model_provider_dal: Arc<dyn model_provider_dal::ModelProviderDalTrait>,
+struct FinanceDomainImpl {
+    model_provider_dal: Arc<dyn model_provider_dal::ModelProviderDal>,
 }
 
 impl FinanceDomainImpl {
     /// 创建 Domain 实例
-    pub fn new(model_provider_dal: Arc<dyn model_provider_dal::ModelProviderDalTrait>) -> Self {
+    fn new(model_provider_dal: Arc<dyn model_provider_dal::ModelProviderDal>) -> Self {
         Self { model_provider_dal }
     }
 }

@@ -7,9 +7,9 @@ use crate::pkg::RequestContext;
 
 // ==================== 接口 ====================
 
-/// Message DAO trait
+/// Message DAO 接口
 #[async_trait::async_trait]
-pub trait MessageDaoTrait: Send + Sync {
+pub trait MessageDao: Send + Sync {
     /// 插入一条新消息
     async fn insert(&self, ctx: RequestContext, message: &MessagePo) -> Result<()>;
 

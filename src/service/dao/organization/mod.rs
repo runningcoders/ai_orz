@@ -7,7 +7,7 @@ use crate::pkg::RequestContext;
 
 /// Organization DAO 接口
 #[async_trait::async_trait]
-pub trait OrganizationDaoTrait: Send + Sync {
+pub trait OrganizationDao: Send + Sync {
     async fn insert(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<(), AppError>;
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<OrganizationPo>, AppError>;
     async fn find_all(&self, ctx: RequestContext) -> Result<Vec<OrganizationPo>, AppError>;

@@ -3,7 +3,6 @@
 use crate::models::file::FileMeta;
 use crate::models::message::Message;
 use crate::pkg::RequestContext;
-use crate::service::dal::message::{MessageDal, MessageDalTrait};
 use crate::service::dao::event_queue;
 use crate::service::dao::message;
 use common::enums::{MessageRole, MessageStatus, MessageType};
@@ -42,7 +41,7 @@ fn create_test_message(
 async fn test_save_and_find_by_id(pool: SqlitePool) {
     let message_dao = message::sqlite::new();
     let event_queue = event_queue::in_memory::new();
-    let dal = Arc::new(MessageDal::new(message_dao, event_queue));
+    let dal = crate::service::dal::message::new(message_dao, event_queue);
     let ctx = RequestContext::new_simple("admin", pool);
 
     let msg = create_test_message(
@@ -70,7 +69,7 @@ async fn test_save_and_find_by_id(pool: SqlitePool) {
 async fn test_list_by_task_id(pool: SqlitePool) {
     let message_dao = message::sqlite::new();
     let event_queue = event_queue::in_memory::new();
-    let dal = Arc::new(MessageDal::new(message_dao, event_queue));
+    let dal = crate::service::dal::message::new(message_dao, event_queue);
     let ctx = RequestContext::new_simple("admin", pool);
 
     // Add messages to two different tasks
@@ -113,7 +112,7 @@ async fn test_list_by_task_id(pool: SqlitePool) {
 async fn test_list_by_task_id_with_limit(pool: SqlitePool) {
     let message_dao = message::sqlite::new();
     let event_queue = event_queue::in_memory::new();
-    let dal = Arc::new(MessageDal::new(message_dao, event_queue));
+    let dal = crate::service::dal::message::new(message_dao, event_queue);
     let ctx = RequestContext::new_simple("admin", pool);
 
     for i in 0..10 {
@@ -140,7 +139,7 @@ async fn test_list_by_task_id_with_limit(pool: SqlitePool) {
 async fn test_list_by_from_id(pool: SqlitePool) {
     let message_dao = message::sqlite::new();
     let event_queue = event_queue::in_memory::new();
-    let dal = Arc::new(MessageDal::new(message_dao, event_queue));
+    let dal = crate::service::dal::message::new(message_dao, event_queue);
     let ctx = RequestContext::new_simple("admin", pool.clone());
 
     for i in 0..3 {
@@ -174,7 +173,7 @@ async fn test_list_by_from_id(pool: SqlitePool) {
 async fn test_list_by_to_id(pool: SqlitePool) {
     let message_dao = message::sqlite::new();
     let event_queue = event_queue::in_memory::new();
-    let dal = Arc::new(MessageDal::new(message_dao, event_queue));
+    let dal = crate::service::dal::message::new(message_dao, event_queue);
     let ctx = RequestContext::new_simple("admin", pool);
 
     for i in 0..4 {
@@ -197,7 +196,7 @@ async fn test_list_by_to_id(pool: SqlitePool) {
 async fn test_list_by_status(pool: SqlitePool) {
     let message_dao = message::sqlite::new();
     let event_queue = event_queue::in_memory::new();
-    let dal = Arc::new(MessageDal::new(message_dao, event_queue));
+    let dal = crate::service::dal::message::new(message_dao, event_queue);
     let ctx = RequestContext::new_simple("admin", pool);
 
     let mut msg1 = create_test_message(
@@ -236,7 +235,7 @@ async fn test_list_by_status(pool: SqlitePool) {
 async fn test_update_status(pool: SqlitePool) {
     let message_dao = message::sqlite::new();
     let event_queue = event_queue::in_memory::new();
-    let dal = Arc::new(MessageDal::new(message_dao, event_queue));
+    let dal = crate::service::dal::message::new(message_dao, event_queue);
     let ctx = RequestContext::new_simple("admin", pool);
 
     let mut msg = create_test_message(
@@ -263,7 +262,7 @@ async fn test_update_status(pool: SqlitePool) {
 async fn test_count_by_task_id(pool: SqlitePool) {
     let message_dao = message::sqlite::new();
     let event_queue = event_queue::in_memory::new();
-    let dal = Arc::new(MessageDal::new(message_dao, event_queue));
+    let dal = crate::service::dal::message::new(message_dao, event_queue);
     let ctx = RequestContext::new_simple("admin", pool);
 
     for i in 0..7 {
@@ -289,7 +288,7 @@ async fn test_count_by_task_id(pool: SqlitePool) {
 async fn test_delete_message(pool: SqlitePool) {
     let message_dao = message::sqlite::new();
     let event_queue = event_queue::in_memory::new();
-    let dal = Arc::new(MessageDal::new(message_dao, event_queue));
+    let dal = crate::service::dal::message::new(message_dao, event_queue);
     let ctx = RequestContext::new_simple("admin", pool);
 
     let msg = create_test_message(
@@ -315,7 +314,7 @@ async fn test_delete_message(pool: SqlitePool) {
 async fn test_delete_by_task_id(pool: SqlitePool) {
     let message_dao = message::sqlite::new();
     let event_queue = event_queue::in_memory::new();
-    let dal = Arc::new(MessageDal::new(message_dao, event_queue));
+    let dal = crate::service::dal::message::new(message_dao, event_queue);
     let ctx = RequestContext::new_simple("admin", pool);
 
     for i in 0..5 {
@@ -343,7 +342,7 @@ async fn test_delete_by_task_id(pool: SqlitePool) {
 async fn test_find_not_exists(pool: SqlitePool) {
     let message_dao = message::sqlite::new();
     let event_queue = event_queue::in_memory::new();
-    let dal = Arc::new(MessageDal::new(message_dao, event_queue));
+    let dal = crate::service::dal::message::new(message_dao, event_queue);
     let ctx = RequestContext::new_simple("admin", pool);
 
     let found = dal.find_by_id(ctx, "not-existent-id").await.unwrap();
@@ -354,7 +353,7 @@ async fn test_find_not_exists(pool: SqlitePool) {
 async fn test_dequeue_ack_nack(pool: SqlitePool) {
     let message_dao = message::sqlite::new();
     let event_queue = event_queue::in_memory::new();
-    let dal = Arc::new(MessageDal::new(message_dao, event_queue));
+    let dal = crate::service::dal::message::new(message_dao, event_queue);
     let ctx = RequestContext::new_simple("admin", pool);
 
     // 空队列第一次 dequeue 应该从 DB 加载
