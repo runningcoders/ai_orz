@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO messages (id, project_id, task_id, from_id, to_id, from_role, to_role, message_type, file_type, status, content, file_meta, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 16
+    },
+    "nullable": []
+  },
+  "hash": "b2c4377e61798944251be837cc3fe898f649ead6c0ec70bfbfca9002e602d804"
+}

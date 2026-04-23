@@ -22,4 +22,4 @@ pub use project::ProjectStatus;
 pub use file::FileType;
 pub use skill::SkillStatus;
 pub use memory::MemoryStatus;
-pub use tool::{ToolProtocol, ToolStatus};
+pub use tool::{ToolProtocol, ToolStatus, ControlMode};

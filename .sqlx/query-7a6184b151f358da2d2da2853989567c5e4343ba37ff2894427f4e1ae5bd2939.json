@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, project_id, task_id, from_id, to_id, \"role\" as \"role: MessageRole\", \"message_type\" as \"message_type: MessageType\", file_type as \"file_type: FileType\", \"status\" as \"status: MessageStatus\", content, file_meta as \"file_meta: Json<FileMeta>\", created_by, modified_by, created_at, updated_at\nFROM messages WHERE task_id = ? AND \"status\" != 0 ORDER BY created_at ASC\nLIMIT ?\n                ",
+  "query": "\nSELECT id, project_id, task_id, from_id, to_id, from_role as \"from_role: MessageRole\", to_role as \"to_role: MessageRole\", message_type as \"message_type: MessageType\", file_type as \"file_type: FileType\", \"status\" as \"status: MessageStatus\", content, file_meta as \"file_meta: Json<FileMeta>\", created_by, modified_by, created_at, updated_at\nFROM messages WHERE from_id = ? AND \"status\" != 0 ORDER BY created_at ASC\nLIMIT ?\n                ",
   "describe": {
     "columns": [
       {
@@ -29,53 +29,58 @@
         "type_info": "Text"
       },
       {
-        "name": "role: MessageRole",
+        "name": "from_role: MessageRole",
         "ordinal": 5,
         "type_info": "Integer"
       },
       {
-        "name": "message_type: MessageType",
+        "name": "to_role: MessageRole",
         "ordinal": 6,
         "type_info": "Integer"
       },
       {
-        "name": "file_type: FileType",
+        "name": "message_type: MessageType",
         "ordinal": 7,
         "type_info": "Integer"
       },
       {
-        "name": "status: MessageStatus",
+        "name": "file_type: FileType",
         "ordinal": 8,
         "type_info": "Integer"
       },
       {
-        "name": "content",
+        "name": "status: MessageStatus",
         "ordinal": 9,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "file_meta: Json<FileMeta>",
+        "name": "content",
         "ordinal": 10,
         "type_info": "Text"
       },
       {
-        "name": "created_by",
+        "name": "file_meta: Json<FileMeta>",
         "ordinal": 11,
         "type_info": "Text"
       },
       {
-        "name": "modified_by",
+        "name": "created_by",
         "ordinal": 12,
         "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "modified_by",
         "ordinal": 13,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 14,
         "type_info": "Integer"
       },
       {
         "name": "updated_at",
-        "ordinal": 14,
+        "ordinal": 15,
         "type_info": "Integer"
       }
     ],
@@ -90,6 +95,7 @@
       false,
       false,
       false,
+      false,
       true,
       false,
       false,
@@ -100,5 +106,5 @@
       false
     ]
   },
-  "hash": "0158498234c4764a03437c0f23cc3d95e2035999ba87a3a082ca1e86b574b765"
+  "hash": "7a6184b151f358da2d2da2853989567c5e4343ba37ff2894427f4e1ae5bd2939"
 }

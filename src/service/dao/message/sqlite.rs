@@ -36,19 +36,21 @@ impl MessageDaoImpl {
 #[async_trait::async_trait]
 impl MessageDaoTrait for MessageDaoImpl {
     async fn insert(&self, ctx: RequestContext, message: &MessagePo) -> Result<()> {
-        let role = message.role as i32;
+        let from_role = message.from_role as i32;
+        let to_role = message.to_role as i32;
         let message_type = message.message_type as i32;
         let status = message.status as i32;
         let file_type = message.file_type.map(|ft| ft as i32);
 
         sqlx::query!(
-            "INSERT INTO messages (id, project_id, task_id, from_id, to_id, role, message_type, file_type, status, content, file_meta, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO messages (id, project_id, task_id, from_id, to_id, from_role, to_role, message_type, file_type, status, content, file_meta, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             message.id,
             message.project_id,
             message.task_id,
             message.from_id,
             message.to_id,
-            role,
+            from_role,
+            to_role,
             message_type,
             file_type,
             status,
@@ -69,7 +71,7 @@ impl MessageDaoTrait for MessageDaoImpl {
         let message = sqlx::query_as!(
             MessagePo,
             r#"
-SELECT id, project_id, task_id, from_id, to_id, "role" as "role: MessageRole", "message_type" as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", created_by, modified_by, created_at, updated_at
+SELECT id, project_id, task_id, from_id, to_id, from_role as "from_role: MessageRole", to_role as "to_role: MessageRole", message_type as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", created_by, modified_by, created_at, updated_at
 FROM messages WHERE id = ? AND "status" != 0
             "#,
             id
@@ -86,7 +88,7 @@ FROM messages WHERE id = ? AND "status" != 0
             sqlx::query_as!(
                 MessagePo,
                 r#"
-SELECT id, project_id, task_id, from_id, to_id, "role" as "role: MessageRole", "message_type" as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", created_by, modified_by, created_at, updated_at
+SELECT id, project_id, task_id, from_id, to_id, from_role as "from_role: MessageRole", to_role as "to_role: MessageRole", message_type as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", created_by, modified_by, created_at, updated_at
 FROM messages WHERE task_id = ? AND "status" != 0 ORDER BY created_at ASC
 LIMIT ?
                 "#,
@@ -99,7 +101,7 @@ LIMIT ?
             sqlx::query_as!(
                 MessagePo,
                 r#"
-SELECT id, project_id, task_id, from_id, to_id, "role" as "role: MessageRole", "message_type" as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", created_by, modified_by, created_at, updated_at
+SELECT id, project_id, task_id, from_id, to_id, from_role as "from_role: MessageRole", to_role as "to_role: MessageRole", message_type as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", created_by, modified_by, created_at, updated_at
 FROM messages WHERE task_id = ? AND "status" != 0 ORDER BY created_at ASC
                 "#,
                 task_id
@@ -116,7 +118,7 @@ FROM messages WHERE task_id = ? AND "status" != 0 ORDER BY created_at ASC
             sqlx::query_as!(
                 MessagePo,
                 r#"
-SELECT id, project_id, task_id, from_id, to_id, "role" as "role: MessageRole", "message_type" as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", created_by, modified_by, created_at, updated_at
+SELECT id, project_id, task_id, from_id, to_id, from_role as "from_role: MessageRole", to_role as "to_role: MessageRole", message_type as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", created_by, modified_by, created_at, updated_at
 FROM messages WHERE from_id = ? AND "status" != 0 ORDER BY created_at ASC
 LIMIT ?
                 "#,
@@ -129,7 +131,7 @@ LIMIT ?
             sqlx::query_as!(
                 MessagePo,
                 r#"
-SELECT id, project_id, task_id, from_id, to_id, "role" as "role: MessageRole", "message_type" as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", created_by, modified_by, created_at, updated_at
+SELECT id, project_id, task_id, from_id, to_id, from_role as "from_role: MessageRole", to_role as "to_role: MessageRole", message_type as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", created_by, modified_by, created_at, updated_at
 FROM messages WHERE from_id = ? AND "status" != 0 ORDER BY created_at ASC
                 "#,
                 from_id
@@ -146,7 +148,7 @@ FROM messages WHERE from_id = ? AND "status" != 0 ORDER BY created_at ASC
             sqlx::query_as!(
                 MessagePo,
                 r#"
-SELECT id, project_id, task_id, from_id, to_id, "role" as "role: MessageRole", "message_type" as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", created_by, modified_by, created_at, updated_at
+SELECT id, project_id, task_id, from_id, to_id, from_role as "from_role: MessageRole", to_role as "to_role: MessageRole", message_type as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", created_by, modified_by, created_at, updated_at
 FROM messages WHERE to_id = ? AND "status" != 0 ORDER BY created_at ASC
 LIMIT ?
                 "#,
@@ -159,7 +161,7 @@ LIMIT ?
             sqlx::query_as!(
                 MessagePo,
                 r#"
-SELECT id, project_id, task_id, from_id, to_id, "role" as "role: MessageRole", "message_type" as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", created_by, modified_by, created_at, updated_at
+SELECT id, project_id, task_id, from_id, to_id, from_role as "from_role: MessageRole", to_role as "to_role: MessageRole", message_type as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", created_by, modified_by, created_at, updated_at
 FROM messages WHERE to_id = ? AND "status" != 0 ORDER BY created_at ASC
                 "#,
                 to_id
@@ -252,7 +254,7 @@ UPDATE messages SET "status" = ?, updated_at = ?, modified_by = ? WHERE id = ?
         let messages = sqlx::query_as!(
             MessagePo,
             r#"
-SELECT id, project_id, task_id, from_id, to_id, "role" as "role: MessageRole", "message_type" as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", created_by, modified_by, created_at, updated_at
+SELECT id, project_id, task_id, from_id, to_id, from_role as "from_role: MessageRole", to_role as "to_role: MessageRole", message_type as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", created_by, modified_by, created_at, updated_at
 FROM messages WHERE "status" != 0 AND (
     (? IS NOT NULL AND "status" = ?) OR
     (? IS NOT NULL AND "status" = ?) OR
@@ -308,7 +310,8 @@ ORDER BY created_at ASC LIMIT ?
             req.task_id,
             req.from_id,
             req.to_id,
-            MessageRole::Agent,
+            MessageRole::Agent,   // from_role
+            MessageRole::Agent,   // to_role (工具调用是 Agent → Agent)
             MessageType::ToolCallRequest,
             content,
             None, // file_type 保持 None，这是结构化消息不是文件附件
@@ -357,7 +360,8 @@ ORDER BY created_at ASC LIMIT ?
             res.task_id,
             res.from_id,
             res.to_id,
-            MessageRole::System,
+            MessageRole::System,   // from_role (结果来自系统工具执行)
+            MessageRole::Agent,    // to_role (结果返回给 Agent)
             MessageType::ToolCallResult,
             content,
             None, // file_type 保持 None，大结果通过 file_meta 附件机制存储

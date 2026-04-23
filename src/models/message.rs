@@ -56,14 +56,28 @@ impl Message {
         task_id: Option<String>,
         from_id: String,
         to_id: String,
-        role: MessageRole,
+        from_role: MessageRole,
+        to_role: MessageRole,
         message_type: MessageType,
         content: String,
         file_type: Option<FileType>,
         file_meta: FileMeta,
         created_by: String,
     ) -> Self {
-        let po = MessagePo::new(id, project_id, task_id, from_id, to_id, role, message_type, content, file_type, file_meta, created_by);
+        let po = MessagePo::new(
+            id,
+            project_id,
+            task_id,
+            from_id,
+            to_id,
+            from_role,
+            to_role,
+            message_type,
+            content,
+            file_type,
+            file_meta,
+            created_by,
+        );
         Self::from_po(po)
     }
 
@@ -74,14 +88,15 @@ impl Message {
         task_id: String,
         from_id: String,
         to_id: String,
-        role: MessageRole,
+        from_role: MessageRole,
+        to_role: MessageRole,
         message_type: MessageType,
         content: String,
         file_type: Option<FileType>,
         file_meta: FileMeta,
         created_by: String,
     ) -> Self {
-        Self::new_with_context(id, None, Some(task_id), from_id, to_id, role, message_type, content, file_type, file_meta, created_by)
+        Self::new_with_context(id, None, Some(task_id), from_id, to_id, from_role, to_role, message_type, content, file_type, file_meta, created_by)
     }
 }
 
@@ -131,12 +146,14 @@ pub struct MessagePo {
     pub project_id: Option<String>,
     /// 关联任务 ID（可为空，没有任务时为 None）
     pub task_id: Option<String>,
-    /// 来源 Agent ID（如果是用户发送则为用户 ID）
+    /// 来源 ID（如果是用户发送则为用户 ID，如果是 Agent 发送则为 Agent ID）
     pub from_id: String,
-    /// 目标 Agent ID（如果是发给用户则为用户 ID）
+    /// 目标 ID（如果是发给用户则为用户 ID，如果是发给 Agent 则为 Agent ID）
     pub to_id: String,
     /// 发送者角色
-    pub role: MessageRole,
+    pub from_role: MessageRole,
+    /// 接收者角色
+    pub to_role: MessageRole,
     /// 消息类型
     pub message_type: MessageType,
     /// 文件类型（附件消息才有值，None 表示纯文本消息）
@@ -169,7 +186,8 @@ impl MessagePo {
         task_id: Option<String>,
         from_id: String,
         to_id: String,
-        role: MessageRole,
+        from_role: MessageRole,
+        to_role: MessageRole,
         message_type: MessageType,
         content: String,
         file_type: Option<FileType>,
@@ -183,7 +201,8 @@ impl MessagePo {
             task_id,
             from_id,
             to_id,
-            role,
+            from_role,
+            to_role,
             message_type,
             file_type,
             status: MessageStatus::default(),

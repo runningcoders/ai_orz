@@ -49,6 +49,7 @@ async fn test_single_event_enqueue_dequeue_ack() {
         "user-001".to_string(),
         "agent-001".to_string(),
         MessageRole::User,
+        MessageRole::Agent, // to_role
         MessageType::Text,
         "测试消息".to_string(),
         None,
@@ -361,6 +362,7 @@ async fn test_nack_retry() {
         "user-001".to_string(),
         "agent-001".to_string(),
         MessageRole::User,
+        MessageRole::Agent, // to_role
         MessageType::Text,
         "测试 nack".to_string(),
         None,
@@ -409,6 +411,7 @@ async fn test_batch_enqueue() {
             "user-001".to_string(),
             "agent-001".to_string(),
             MessageRole::User,
+            MessageRole::Agent, // to_role
             MessageType::Text,
             format!("批量消息 {}", i),
             None,

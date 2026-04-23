@@ -1,6 +1,6 @@
 //! SQLite implementation of ToolDao
 
-use common::enums::message::ControlMode;
+use common::enums::tool::ControlMode;
 use crate::models::tool::{FullTool, Tool, ToolPo, CoreTool, RigToolAdapter};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::get_registry;

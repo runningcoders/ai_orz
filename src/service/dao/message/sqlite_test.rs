@@ -33,6 +33,7 @@ async fn test_insert_and_find_by_id(pool: SqlitePool) -> Result<()> {
         "user-001".to_string(),
         "".to_string(),
         MessageRole::User,
+        MessageRole::Agent,
         MessageType::Text,
         "你好，这是一条测试消息".to_string(),
         None,
@@ -49,7 +50,7 @@ async fn test_insert_and_find_by_id(pool: SqlitePool) -> Result<()> {
     assert_eq!(found.task_id, Some("task-001".to_string()));
     assert_eq!(found.from_id, "user-001".to_string());
     assert_eq!(found.to_id, "".to_string());
-    assert_eq!(found.role, MessageRole::User);
+    assert_eq!(found.from_role, MessageRole::User);
     assert_eq!(found.message_type, MessageType::Text);
     assert_eq!(found.content, "你好，这是一条测试消息".to_string());
     assert_eq!(found.created_by, "test-user".to_string());
@@ -78,6 +79,7 @@ async fn test_list_by_task_id(pool: SqlitePool) -> Result<()> {
         "user-001".to_string(),
         "".to_string(),
         MessageRole::User,
+        MessageRole::Agent,
         MessageType::Text,
         "你好，这是一条测试消息".to_string(),
         None,
@@ -94,6 +96,7 @@ async fn test_list_by_task_id(pool: SqlitePool) -> Result<()> {
         "user-001".to_string(),
         "".to_string(),
         MessageRole::User,
+        MessageRole::Agent,
         MessageType::Text,
         "第一条消息".to_string(),
         None,
@@ -107,6 +110,7 @@ async fn test_list_by_task_id(pool: SqlitePool) -> Result<()> {
         "ai-agent-001".to_string(),
         "user-001".to_string(),
         MessageRole::Agent,
+        MessageRole::User,
         MessageType::Text,
         "第二条消息".to_string(),
         None,
@@ -120,6 +124,7 @@ async fn test_list_by_task_id(pool: SqlitePool) -> Result<()> {
         "user-002".to_string(),
         "".to_string(),
         MessageRole::User,
+        MessageRole::Agent,
         MessageType::Text,
         "另一个任务的消息".to_string(),
         None,
@@ -165,6 +170,7 @@ async fn test_list_by_task_id_with_limit(pool: SqlitePool) -> Result<()> {
             "user-001".to_string(),
             "".to_string(),
             MessageRole::User,
+        MessageRole::Agent,
             MessageType::Text,
             format!("消息{}", i),
             None,
@@ -201,6 +207,7 @@ async fn test_list_by_from_id(pool: SqlitePool) -> Result<()> {
         "user-001".to_string(),
         "".to_string(),
         MessageRole::User,
+        MessageRole::Agent,
         MessageType::Text,
         "用户发送".to_string(),
         None,
@@ -214,6 +221,7 @@ async fn test_list_by_from_id(pool: SqlitePool) -> Result<()> {
         "ai-agent-001".to_string(),
         "user-001".to_string(),
         MessageRole::Agent,
+        MessageRole::User,
         MessageType::Text,
         "AI回复".to_string(),
         None,
@@ -227,6 +235,7 @@ async fn test_list_by_from_id(pool: SqlitePool) -> Result<()> {
         "user-001".to_string(),
         "".to_string(),
         MessageRole::User,
+        MessageRole::Agent,
         MessageType::Text,
         "另一个任务".to_string(),
         None,
@@ -263,6 +272,7 @@ async fn test_list_by_to_id(pool: SqlitePool) -> Result<()> {
         "user-001".to_string(),
         "".to_string(),
         MessageRole::User,
+        MessageRole::Agent,
         MessageType::Text,
         "用户发送给AI".to_string(),
         None,
@@ -276,6 +286,7 @@ async fn test_list_by_to_id(pool: SqlitePool) -> Result<()> {
         "ai-agent-001".to_string(),
         "user-001".to_string(),
         MessageRole::Agent,
+        MessageRole::User,
         MessageType::Text,
         "AI回复给用户".to_string(),
         None,
@@ -314,6 +325,7 @@ async fn test_count_by_task_id(pool: SqlitePool) -> Result<()> {
             "user-001".to_string(),
             "".to_string(),
             MessageRole::User,
+        MessageRole::Agent,
             MessageType::Text,
             "test".to_string(),
             None,
@@ -330,6 +342,7 @@ async fn test_count_by_task_id(pool: SqlitePool) -> Result<()> {
         "user-001".to_string(),
         "".to_string(),
         MessageRole::User,
+        MessageRole::Agent,
         MessageType::Text,
         "test".to_string(),
         None,
@@ -368,6 +381,7 @@ async fn test_delete_message(pool: SqlitePool) -> Result<()> {
         "user-001".to_string(),
         "".to_string(),
         MessageRole::User,
+        MessageRole::Agent,
         MessageType::Text,
         "要删除的消息".to_string(),
         None,
@@ -413,6 +427,7 @@ async fn test_delete_by_task_id(pool: SqlitePool) -> Result<()> {
             "user-001".to_string(),
             "".to_string(),
             MessageRole::User,
+        MessageRole::Agent,
             MessageType::Text,
             format!("消息{}", i),
             None,
@@ -457,6 +472,7 @@ async fn test_update_status(pool: SqlitePool) -> Result<()> {
         "user-001".to_string(),
         "".to_string(),
         MessageRole::User,
+        MessageRole::Agent,
         MessageType::Text,
         "测试消息".to_string(),
         None,
@@ -496,6 +512,7 @@ async fn test_image_message_with_metadata(pool: SqlitePool) -> Result<()> {
         "user-001".to_string(),
         "".to_string(),
         MessageRole::User,
+        MessageRole::Agent,
         MessageType::Image,
         "20260410/abc123.png".to_string(),
         Some(FileType::Image),
@@ -543,6 +560,7 @@ async fn test_list_by_status(pool: SqlitePool) -> Result<()> {
             "user-001".to_string(),
             "".to_string(),
             MessageRole::User,
+        MessageRole::Agent,
             MessageType::Text,
             "test".to_string(),
             None,
@@ -601,7 +619,7 @@ async fn test_create_tool_call_request(pool: SqlitePool) -> Result<()> {
     assert_eq!(found.task_id, Some("task-001".to_string()));
     assert_eq!(found.from_id, "agent-001".to_string());
     assert_eq!(found.to_id, "executor-agent".to_string());
-    assert_eq!(found.role, MessageRole::Agent);
+    assert_eq!(found.from_role, MessageRole::Agent);
     assert_eq!(found.message_type, MessageType::ToolCallRequest);
     assert_eq!(found.status, MessageStatus::Pending); // 默认 Pending
 
@@ -665,7 +683,7 @@ async fn test_create_tool_call_result(pool: SqlitePool) -> Result<()> {
     assert_eq!(found.task_id, Some("task-001".to_string()));
     assert_eq!(found.from_id, "executor-agent".to_string());
     assert_eq!(found.to_id, "agent-001".to_string());
-    assert_eq!(found.role, MessageRole::System);
+    assert_eq!(found.from_role, MessageRole::System);
     assert_eq!(found.message_type, MessageType::ToolCallResult);
 
     // 解析 content 验证结构

@@ -1,7 +1,7 @@
 //! Tool 持久化对象和完整实体
 
 use async_trait::async_trait;
-use common::enums::message::ControlMode;
+use common::enums::tool::ControlMode;
 use common::enums::{ToolProtocol, ToolStatus};
 use rig::tool::{ToolDyn, ToolError};
 use crate::pkg::request_context::RequestContext;
