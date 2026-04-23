@@ -32,9 +32,9 @@ pub struct AppConfig {
     #[serde(default)]
     pub logging: LoggingConfig,
 
-    /// 产物存储配置（消息附件、Agent 生成的文件等都存在这里）
+    /// 附件存储配置（消息附件、Agent 生成的文件等都存在这里）
     #[serde(default)]
-    pub artifact: ArtifactConfig,
+    pub attachment: AttachmentConfig,
 
     /// JWT 配置
     #[serde(default)]
@@ -59,25 +59,25 @@ impl Default for JwtConfig {
     }
 }
 
-/// 产物存储配置（消息附件、Agent 生成的文件等）
+/// 附件存储配置（消息附件、Agent 生成的文件等）
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ArtifactConfig {
-    /// 产物存储子目录（相对于 base_data_path）
-    /// 产物会按日期分层存储：YYYY/MM/DD/
-    #[serde(default = "default_artifact_subdir")]
-    pub artifact_subdir: String,
+pub struct AttachmentConfig {
+    /// 附件存储子目录（相对于 base_data_path）
+    /// 附件会按日期分层存储：YYYYMMDD/
+    #[serde(default = "default_attachment_subdir")]
+    pub attachment_subdir: String,
 }
 
-impl Default for ArtifactConfig {
+impl Default for AttachmentConfig {
     fn default() -> Self {
         Self {
-            artifact_subdir: default_artifact_subdir(),
+            attachment_subdir: default_attachment_subdir(),
         }
     }
 }
 
-fn default_artifact_subdir() -> String {
-    "artifact".to_string()
+fn default_attachment_subdir() -> String {
+    "attachment".to_string()
 }
 
 /// 服务器配置
@@ -192,7 +192,7 @@ impl AppConfig {
     /// 获取产物/附件存储根目录路径（消息附件、Agent 生成文件等）
     /// 产物和附件统一存这里，不分开存储
     pub fn attachments_dir(&self) -> PathBuf {
-        self.base_data_path().join(&self.artifact.artifact_subdir)
+        self.base_data_path().join(&self.attachment.attachment_subdir)
     }
 
     /// 获取附件完整路径，传入相对路径
