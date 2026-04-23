@@ -333,7 +333,9 @@ let ctx = RequestContext::from_parts(parts);
 - [x] **DAO 命名对齐**：所有 DAO 接口改名为 `XxxDao`，实现改名为 `XxxDaoSqliteImpl`
 - [x] **DAL 命名对齐**：所有 DAL 接口改名为 `XxxDal`，实现改名为 `XxxDalImpl`
 - [x] **严格依赖倒置**：上层只依赖 trait 接口，完全不依赖具体实现类，实现彻底隐藏
-- [x] 所有测试通过：**117/117** ✅
+- [x] **ArtifactDao 重构**：去掉全局 storage 依赖，改为从 RequestContext 获取连接
+- [x] **测试隔离经验总结**：写入文档，有状态内存组件必须每次新建实例
+- [x] 所有测试通过：**149/149** ✅
 
 ---
 
@@ -507,7 +509,44 @@ Handler → Domain → DAL → DAO → DB
 
 ---
 
-## 十四、可见性规范
+## 十四、测试隔离规范
+
+### 14.1 基本原则
+
+**测试隔离保证每个测试独立运行，不会互相污染，并发执行也不会出问题：**
+
+| 组件类型 | 测试做法 | 生产做法 |
+|---------|---------|---------|
+| **无状态组件** | 可以复用单例 | 使用单例 |
+| **有状态组件**（内存队列、缓存） | 测试每次调用 `new()` 新建实例 | 使用单例 |
+
+### 14.2 实现模式
+
+**对外暴露两种方式，兼顾隔离和性能：**
+```rust
+// 模块级导出，符合依赖倒置
+pub fn new() -> Arc<dyn EventQueueDao> {
+    Arc::new(EventQueueDaoInMemoryImpl::new())
+}
+
+// 生产单例
+static INSTANCE: OnceLock<Arc<dyn EventQueueDao>> = OnceLock::new();
+
+pub fn dao() -> Arc<dyn EventQueueDao> {
+    INSTANCE.get_or_init(|| new()).clone()
+}
+```
+
+### 14.3 经验总结
+
+- 内存有状态组件如果复用全局单例，多个并发测试会互相干扰，导致随机失败
+- 测试每次新建实例可以彻底解决竞争问题
+- 生产仍然使用单例，不损失性能
+- 上层只依赖 trait 接口，不知道具体实现，符合依赖倒置
+
+---
+
+## 十五、可见性规范
 
 - 遵循最小可见性原则：不需要公开的就是 private
 - 只有 trait 定义和 `dao()`/`init()` 需要公开
