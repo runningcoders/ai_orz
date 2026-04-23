@@ -9,9 +9,14 @@ use crate::service::dao::message::MessageDaoTrait;
 use sqlx::types::Json;
 use std::sync::{Arc, OnceLock};
 use chrono::Utc;
-// ==================== 单例管理 ====================
+// ==================== 工厂方法 + 单例管理 ====================
 
 static MESSAGE_DAO: OnceLock<Arc<dyn MessageDaoTrait>> = OnceLock::new();
+
+/// 创建一个全新的 Message DAO 实例（用于测试）
+pub fn new() -> Arc<dyn MessageDaoTrait> {
+    Arc::new(MessageDaoImpl::new())
+}
 
 /// 获取 Message DAO 单例
 pub fn dao() -> Arc<dyn MessageDaoTrait> {
@@ -20,7 +25,7 @@ pub fn dao() -> Arc<dyn MessageDaoTrait> {
 
 /// 初始化单例
 pub fn init() {
-    let _ = MESSAGE_DAO.set(Arc::new(MessageDaoImpl::new()));
+    let _ = MESSAGE_DAO.set(new());
 }
 
 // ==================== 实现 ====================

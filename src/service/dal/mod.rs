@@ -5,12 +5,14 @@
 
 pub mod agent;
 pub mod brain;
+pub mod message;
 pub mod model_provider;
 pub mod organization;
 
 pub fn init_all(){
     agent::init();
     brain::init();
+    message::init();
     model_provider::init();
     organization::init()
 }
@@ -20,5 +22,7 @@ pub fn init_all(){
 pub(crate) mod agent_test;
 #[cfg(test)]
 pub(crate) mod brain_test;
+#[cfg(test)]
+pub(crate) mod message_test;
 #[cfg(test)]
 pub(crate) mod model_provider_test;

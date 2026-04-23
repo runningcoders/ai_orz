@@ -115,6 +115,12 @@ async fn test_priority_ordering() {
         fn created_at(&self) -> i64 {
             self.created_at
         }
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+            fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+                self
+            }
     }
 
     let now = std::time::SystemTime::now()
@@ -198,6 +204,12 @@ async fn test_same_time_priority_ordering() {
         fn created_at(&self) -> i64 {
             self.created_at
         }
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+            fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+                self
+            }
     }
 
     let now = 1000;
@@ -256,6 +268,12 @@ async fn test_same_priority_time_ordering() {
         fn created_at(&self) -> i64 {
             self.created_at
         }
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+            fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+                self
+            }
     }
 
     let early = TestEvent {
@@ -308,6 +326,12 @@ async fn test_same_order_key_sequential() {
         fn created_at(&self) -> i64 {
             self.created_at
         }
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+            fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+                self
+            }
     }
 
     // 按顺序入队 1、2、3
@@ -470,6 +494,12 @@ async fn test_mixed_order_groups() {
         fn created_at(&self) -> i64 {
             self.created_at
         }
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+            fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+                self
+            }
     }
 
     let events = vec![

@@ -41,10 +41,13 @@ pub trait EventQueueDaoTrait: Send + Sync + std::fmt::Debug {
     /// 恢复启动：从持久化层恢复未完成事件重新入队
     /// 返回恢复的事件数量
     fn recover(&self, ctx: &RequestContext) -> Result<usize, AppError>;
+
+    /// 清空所有队列（测试用）
+    fn clear(&self);
 }
 
-mod in_memory;
-pub use self::in_memory::init;
+pub mod in_memory;
+pub use self::in_memory::{dao, init, new};
 
 #[cfg(test)]
 mod in_memory_test;

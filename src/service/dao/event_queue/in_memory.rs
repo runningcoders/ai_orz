@@ -17,9 +17,14 @@ use crate::models::event::{Event, EventRef};
 use crate::service::dao::event_queue::EventQueueDaoTrait;
 use crate::pkg::RequestContext;
 
-// ==================== 单例 ====================
+// ==================== 工厂方法 + 单例 ====================
 
 static EVENT_QUEUE_DAO: OnceLock<Arc<dyn EventQueueDaoTrait>> = OnceLock::new();
+
+/// 创建一个全新的内存事件队列实例（用于测试）
+pub fn new() -> Arc<dyn EventQueueDaoTrait> {
+    Arc::new(InMemoryEventQueue::new())
+}
 
 /// 获取全局事件队列 DAO 实例
 pub fn dao() -> Arc<dyn EventQueueDaoTrait> {
@@ -28,8 +33,7 @@ pub fn dao() -> Arc<dyn EventQueueDaoTrait> {
 
 /// 初始化全局事件队列 DAO
 pub fn init() {
-    let dao: Arc<dyn EventQueueDaoTrait> = Arc::new(InMemoryEventQueue::new());
-    EVENT_QUEUE_DAO.set(dao).expect("event_queue DAO already initialized");
+    let _ = EVENT_QUEUE_DAO.set(new());
 }
 
 // ==================== 实现 ====================
@@ -131,6 +135,7 @@ impl EventQueueDaoTrait for InMemoryEventQueue {
         let _guard = self.lock.lock().map_err(|e| AppError::Internal(e.to_string()))?;
 
         let events = unsafe { &mut *self.events.get() };
+        let queues = unsafe { &mut *self.queues.get() };
         let global_heap = unsafe { &mut *self.global_heap.get() };
         let in_progress = unsafe { &mut *self.in_progress.get() };
         let has_waiting_in_global = unsafe { &mut *self.has_waiting_in_global.get() };
@@ -153,6 +158,15 @@ impl EventQueueDaoTrait for InMemoryEventQueue {
             // 从 waiting 标记中移除，因为已经出队到处理中了
             if !order_key.is_empty() {
                 has_waiting_in_global.remove(order_key);
+                
+                // 如果分组堆还有元素， refill 下一个最高优先级到全局堆
+                if let Some(queue) = queues.get_mut(order_key) {
+                    if let Some(next_ref) = queue.pop() {
+                        global_heap.push(next_ref);
+                        has_waiting_in_global.insert(order_key.clone(), true);
+                    }
+                    // 如果分组堆空了，移除空分组（但不需要在这里移除 entry，nack ack 会处理）
+                }
             }
 
             // 克隆一份返回给调用者，原事件保留在 events 直到 ack
@@ -256,5 +270,20 @@ impl EventQueueDaoTrait for InMemoryEventQueue {
     fn recover(&self, _ctx: &RequestContext) -> Result<usize, AppError> {
         // 内存版本不需要从持久化恢复，恢复由上层调用者结合数据库完成
         Ok(0)
+    }
+
+    fn clear(&self) {
+        let _guard = self.lock.lock().ok();
+        let events = unsafe { &mut *self.events.get() };
+        let queues = unsafe { &mut *self.queues.get() };
+        let global_heap = unsafe { &mut *self.global_heap.get() };
+        let in_progress = unsafe { &mut *self.in_progress.get() };
+        let has_waiting_in_global = unsafe { &mut *self.has_waiting_in_global.get() };
+
+        events.clear();
+        queues.clear();
+        global_heap.clear();
+        in_progress.clear();
+        has_waiting_in_global.clear();
     }
 }

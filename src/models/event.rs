@@ -51,9 +51,15 @@ impl PartialOrd for EventRef {
 ///
 /// 所有可放入事件总线的事件都需要实现此 trait
 /// 需要 Clone 支持，因为 dequeue 返回克隆事件，原事件保留在队列直到 ack
-pub trait Event: Send + Sync + std::fmt::Debug + 'static {
+pub trait Event: Send + Sync + std::fmt::Debug + std::any::Any + 'static {
     /// 克隆事件对象（dyn 对象需要这个方法）
     fn clone_box(&self) -> Box<dyn Event>;
+
+    /// 转换为 Any 引用，用于向下转换具体类型
+    fn as_any(&self) -> &dyn std::any::Any;
+
+    /// 转换为 Box<dyn Any>，用于向下转换具体类型
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any>;
 
     /// 事件唯一 ID
     fn id(&self) -> &str;
