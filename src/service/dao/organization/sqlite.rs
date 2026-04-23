@@ -7,9 +7,14 @@ use crate::pkg::RequestContext;
 use crate::service::dao::organization::OrganizationDaoTrait;
 use std::sync::{Arc, OnceLock};
 use chrono::Utc;
-// ==================== 单例管理 ====================
+// ==================== 工厂方法 + 单例管理 ====================
 
 static ORGANIZATION_DAO: OnceLock<Arc<dyn OrganizationDaoTrait>> = OnceLock::new();
+
+/// 创建一个全新的 Organization DAO 实例（用于测试）
+pub fn new() -> Arc<dyn OrganizationDaoTrait> {
+    Arc::new(OrganizationDaoImpl::new())
+}
 
 /// 获取 Organization DAO 单例
 pub fn dao() -> Arc<dyn OrganizationDaoTrait> {
@@ -18,15 +23,15 @@ pub fn dao() -> Arc<dyn OrganizationDaoTrait> {
 
 /// 初始化单例
 pub fn init() {
-    let _ = ORGANIZATION_DAO.set(Arc::new(OrganizationDaoImpl::new()));
+    let _ = ORGANIZATION_DAO.set(new());
 }
 
 // ==================== 实现 ====================
 
-pub struct OrganizationDaoImpl;
+struct OrganizationDaoImpl;
 
 impl OrganizationDaoImpl {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self
     }
 }

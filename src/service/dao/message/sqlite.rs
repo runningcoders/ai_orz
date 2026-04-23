@@ -30,10 +30,10 @@ pub fn init() {
 
 // ==================== 实现 ====================
 
-pub struct MessageDaoImpl;
+struct MessageDaoImpl;
 
 impl MessageDaoImpl {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self
     }
 }

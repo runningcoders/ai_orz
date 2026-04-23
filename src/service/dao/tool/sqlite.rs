@@ -12,8 +12,15 @@ use std::sync::OnceLock;
 
 use super::ToolDao;
 
+// ==================== 工厂方法 + 单例 ====================
+
 /// Global Tool DAO instance
 static TOOL_DAO: OnceLock<Box<dyn ToolDao>> = OnceLock::new();
+
+/// 创建一个全新的 Tool DAO 实例（用于测试）
+pub fn new() -> Box<dyn ToolDao> {
+    Box::new(SqliteToolDao::new())
+}
 
 /// Get global Tool DAO (alias for get, consistent with other DAOs)
 pub fn dao() -> &'static Box<dyn ToolDao> {
@@ -22,10 +29,10 @@ pub fn dao() -> &'static Box<dyn ToolDao> {
 
 /// SQLite Tool DAO implementation
 #[derive(Clone, Default)]
-pub struct SqliteToolDao {}
+struct SqliteToolDao {}
 
 impl SqliteToolDao {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {}
     }
 }
@@ -33,8 +40,7 @@ impl SqliteToolDao {
 /// Initialize global Tool DAO
 pub fn init() {
     // Create DAO instance and set global
-    let dao = SqliteToolDao::new();
-    TOOL_DAO.set(Box::new(dao)).ok();
+    TOOL_DAO.set(new()).ok();
 }
 
 #[async_trait]

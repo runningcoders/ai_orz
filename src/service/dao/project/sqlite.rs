@@ -9,29 +9,37 @@ use crate::models::project::ProjectPo;
 use crate::pkg::RequestContext;
 use super::ProjectDaoTrait;
 
-/// SQLite Project DAO implementation
-#[derive(Debug, Clone, Default)]
-pub struct SqliteProjectDao;
-
-impl SqliteProjectDao {
-    /// Create a new SQLite Project DAO
-    pub fn new() -> Self {
-        Self
-    }
-}
+// ==================== 工厂方法 + 单例 ====================
 
 /// Global DAO instance for dependency injection
 static DAO: OnceLock<Arc<dyn ProjectDaoTrait + Send + Sync>> = OnceLock::new();
 
+/// 创建一个全新的 Project DAO 实例（用于测试）
+pub fn new() -> Arc<dyn ProjectDaoTrait + Send + Sync> {
+    Arc::new(SqliteProjectDao::new())
+}
+
 /// Initialize the DAO global instance
 pub fn init() {
-    let dao = SqliteProjectDao::new();
-    let _ = DAO.set(Arc::new(dao));
+    let _ = DAO.set(new());
 }
 
 /// Get the global DAO instance
 pub fn dao() -> Arc<dyn ProjectDaoTrait + Send + Sync> {
     DAO.get().expect("Project DAO not initialized").clone()
+}
+
+// ==================== 实现 ====================
+
+/// SQLite Project DAO implementation
+#[derive(Debug, Clone, Default)]
+struct SqliteProjectDao;
+
+impl SqliteProjectDao {
+    /// Create a new SQLite Project DAO
+    fn new() -> Self {
+        Self
+    }
 }
 
 #[async_trait::async_trait]

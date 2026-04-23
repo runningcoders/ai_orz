@@ -6,11 +6,11 @@ use anyhow::Result;
 use async_trait::async_trait;
 use std::boxed::Box;
 
-mod sqlite;
+pub mod sqlite;
 #[cfg(test)]
 mod sqlite_test;
 
-pub use sqlite::init;
+pub use sqlite::{init, dao, new};
 
 /// Tool DAO trait
 #[async_trait]

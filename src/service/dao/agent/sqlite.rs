@@ -7,9 +7,14 @@ use crate::service::dao::agent::AgentDaoTrait;
 use std::sync::{Arc, OnceLock};
 use chrono::Utc;
 use crate::pkg::RequestContext;
-// ==================== 单例 ====================
+// ==================== 工厂方法 + 单例 ====================
 
 static AGENT_DAO: OnceLock<Arc<dyn AgentDaoTrait>> = OnceLock::new();
+
+/// 创建一个全新的 Agent DAO 实例（用于测试）
+pub fn new() -> Arc<dyn AgentDaoTrait> {
+    Arc::new(AgentDaoImpl::new())
+}
 
 /// 获取 AgentDao 单例
 pub fn dao() -> Arc<dyn AgentDaoTrait> {
@@ -18,15 +23,15 @@ pub fn dao() -> Arc<dyn AgentDaoTrait> {
 
 /// 初始化单例
 pub fn init() {
-    let _ = AGENT_DAO.set(Arc::new(AgentDaoImpl::new()));
+    let _ = AGENT_DAO.set(new());
 }
 
 // ==================== 实现 ====================
 
-pub struct AgentDaoImpl;
+struct AgentDaoImpl;
 
 impl AgentDaoImpl {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self
     }
 }

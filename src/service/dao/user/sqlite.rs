@@ -7,9 +7,15 @@ use crate::pkg::RequestContext;
 use crate::service::dao::user::UserDaoTrait;
 use std::sync::{Arc, OnceLock};
 use chrono::Utc;
-// ==================== 单例管理 ====================
+
+// ==================== 工厂方法 + 单例 ====================
 
 static USER_DAO: OnceLock<Arc<dyn UserDaoTrait>> = OnceLock::new();
+
+/// 创建一个全新的 User DAO 实例（用于测试）
+pub fn new() -> Arc<dyn UserDaoTrait> {
+    Arc::new(UserDaoImpl::new())
+}
 
 /// 获取 User DAO 单例
 pub fn dao() -> Arc<dyn UserDaoTrait> {
@@ -18,15 +24,15 @@ pub fn dao() -> Arc<dyn UserDaoTrait> {
 
 /// 初始化单例
 pub fn init() {
-    let _ = USER_DAO.set(Arc::new(UserDaoImpl::new()));
+    let _ = USER_DAO.set(new());
 }
 
 // ==================== 实现 ====================
 
-pub struct UserDaoImpl;
+struct UserDaoImpl;
 
 impl UserDaoImpl {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self
     }
 }

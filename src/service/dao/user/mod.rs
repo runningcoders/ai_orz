@@ -34,10 +34,8 @@ pub trait UserDaoTrait: Send + Sync {
     async fn count_by_organization_id(&self, ctx: RequestContext, org_id: &str) -> Result<u64, AppError>;
 }
 
-
-
-mod sqlite;
-pub use self::sqlite::{dao,init};
+pub mod sqlite;
+pub use self::sqlite::{dao,init, new};
 
 #[cfg(test)]
 mod sqlite_test;

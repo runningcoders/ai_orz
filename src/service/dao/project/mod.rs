@@ -26,8 +26,8 @@ pub trait ProjectDaoTrait: Send + Sync + std::fmt::Debug {
     async fn count_by_root_user_and_status(&self, ctx: RequestContext, root_user_id: &str, status: ProjectStatus) -> Result<u64, AppError>;
 }
 
-mod sqlite;
-pub use self::sqlite::{dao, init};
+pub mod sqlite;
+pub use self::sqlite::{dao, init, new};
 
 #[cfg(test)]
 mod sqlite_test;

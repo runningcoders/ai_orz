@@ -8,24 +8,19 @@ use crate::models::task::TaskPo;
 use crate::pkg::RequestContext;
 use super::TaskDaoTrait;
 
-/// SQLite Task DAO implementation
-#[derive(Debug, Clone, Default)]
-pub struct SqliteTaskDao;
-
-impl SqliteTaskDao {
-    /// Create a new SQLite Task DAO
-    pub fn new() -> Self {
-        Self
-    }
-}
+// ==================== 工厂方法 + 单例 ====================
 
 /// Global DAO instance for dependency injection
 static DAO: OnceLock<Arc<dyn TaskDaoTrait + Send + Sync>> = OnceLock::new();
 
+/// 创建一个全新的 Task DAO 实例（用于测试）
+pub fn new() -> Arc<dyn TaskDaoTrait + Send + Sync> {
+    Arc::new(SqliteTaskDao::new())
+}
+
 /// Initialize the DAO global instance
 pub fn init() {
-    let dao = SqliteTaskDao::new();
-    let _ = DAO.set(Arc::new(dao));
+    let _ = DAO.set(new());
 }
 
 /// Get the global DAO instance
@@ -35,7 +30,20 @@ pub fn get_dao() -> &'static Arc<dyn TaskDaoTrait + Send + Sync> {
 
 /// Create a new DAO instance for dependency injection
 pub fn dao() -> Arc<dyn TaskDaoTrait + Send + Sync> {
-    Arc::new(SqliteTaskDao::new())
+    new()
+}
+
+// ==================== 实现 ====================
+
+/// SQLite Task DAO implementation
+#[derive(Debug, Clone, Default)]
+struct SqliteTaskDao;
+
+impl SqliteTaskDao {
+    /// Create a new SQLite Task DAO
+    fn new() -> Self {
+        Self
+    }
 }
 
 #[async_trait::async_trait]

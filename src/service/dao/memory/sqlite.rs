@@ -19,12 +19,14 @@ use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 use crate::config;
 
-/// SQLite Memory DAO 实现
-pub struct SqliteMemoryDao;
-
-// ==================== 单例 ====================
+// ==================== 工厂方法 + 单例 ====================
 
 static MEMORY_DAO: OnceLock<Arc<dyn super::MemoryDaoTrait + Send + Sync>> = OnceLock::new();
+
+/// 创建一个全新的 Memory DAO 实例（用于测试）
+pub fn new() -> Arc<dyn super::MemoryDaoTrait + Send + Sync> {
+    Arc::new(SqliteMemoryDao::new())
+}
 
 /// 获取 Memory DAO 单例
 pub fn dao() -> Arc<dyn super::MemoryDaoTrait + Send + Sync> {
@@ -33,13 +35,16 @@ pub fn dao() -> Arc<dyn super::MemoryDaoTrait + Send + Sync> {
 
 /// 初始化 Memory DAO 单例
 pub fn init() {
-    let _ = MEMORY_DAO.set(Arc::new(SqliteMemoryDao::new()));
+    let _ = MEMORY_DAO.set(new());
 }
+
+/// SQLite Memory DAO 实现
+struct SqliteMemoryDao;
 
 impl SqliteMemoryDao {
     /// 创建新的 DAO 实例
-    pub fn new() -> Self {
-        Self
+    fn new() -> Self {
+        SqliteMemoryDao
     }
 
     /// 获取 Agent 记忆目录完整路径（用于写入）

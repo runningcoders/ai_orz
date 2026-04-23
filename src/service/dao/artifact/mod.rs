@@ -28,5 +28,5 @@ pub trait ArtifactDaoTrait: Send + Sync + std::fmt::Debug {
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()>;
 }
 
-mod sqlite;
-pub use self::sqlite::{dao, init};
+pub mod sqlite;
+pub use self::sqlite::{dao, init, new};

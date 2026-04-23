@@ -9,7 +9,14 @@ use crate::models::{artifact::ArtifactPo, file::FileMeta};
 use crate::error::Result;
 use super::ArtifactDaoTrait;
 
+// ==================== 工厂方法 + 单例 ====================
+
 static DAO_INSTANCE: OnceLock<Arc<dyn ArtifactDaoTrait + Send + Sync>> = OnceLock::new();
+
+/// 创建一个全新的 Artifact DAO 实例（用于测试）
+pub fn new() -> Arc<dyn ArtifactDaoTrait + Send + Sync> {
+    Arc::new(SqliteArtifactDao::new())
+}
 
 /// Get the singleton Artifact DAO instance
 pub fn dao() -> Arc<dyn ArtifactDaoTrait + Send + Sync> {
@@ -18,15 +25,14 @@ pub fn dao() -> Arc<dyn ArtifactDaoTrait + Send + Sync> {
 
 /// Initialize the Artifact DAO
 pub fn init() {
-    let dao = Arc::new(SqliteArtifactDao::new());
-    DAO_INSTANCE.set(dao).expect("Artifact DAO already initialized");
+    let _ = DAO_INSTANCE.set(new());
 }
 
 #[derive(Debug, Default)]
-pub struct SqliteArtifactDao;
+struct SqliteArtifactDao;
 
 impl SqliteArtifactDao {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self
     }
 }

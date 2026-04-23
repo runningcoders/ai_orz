@@ -8,7 +8,14 @@ use common::enums::SkillStatus;
 use crate::service::dao::skill::SkillDaoTrait;
 use std::sync::{Arc, OnceLock};
 
+// ==================== 工厂方法 + 单例 ====================
+
 static SKILL_DAO: OnceLock<Arc<dyn SkillDaoTrait>> = OnceLock::new();
+
+/// 创建一个全新的 Skill DAO 实例（用于测试）
+pub fn new() -> Arc<dyn SkillDaoTrait> {
+    Arc::new(SqliteSkillDao)
+}
 
 /// Get Skill DAO singleton
 pub fn dao() -> Arc<dyn SkillDaoTrait> {
@@ -17,12 +24,13 @@ pub fn dao() -> Arc<dyn SkillDaoTrait> {
 
 /// Initialize singleton
 pub fn init() {
-    let dao = SqliteSkillDao;
-    let _ = SKILL_DAO.set(Arc::new(dao));
+    let _ = SKILL_DAO.set(new());
 }
 
+// ==================== 实现 ====================
+
 #[derive(Debug, Clone)]
-pub struct SqliteSkillDao;
+struct SqliteSkillDao;
 
 #[async_trait]
 impl SkillDaoTrait for SqliteSkillDao {
