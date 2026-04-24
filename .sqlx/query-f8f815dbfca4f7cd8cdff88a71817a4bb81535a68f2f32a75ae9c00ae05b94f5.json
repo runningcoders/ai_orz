@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, name, description, tags, category, parent_skill_id,\n       author_id, modifier_id, status AS \"status: SkillStatus\",\n       created_at, updated_at, content_path\nFROM skills WHERE author_id = ? ORDER BY updated_at DESC\n            ",
+  "query": "\nSELECT id, name, description, tags, category, parent_skill_id,\n       author_id, author_type AS \"author_type: SkillAuthorType\", modifier_id, status AS \"status: SkillStatus\",\n       created_at, updated_at, content_path\nFROM skills WHERE author_id = ? ORDER BY updated_at DESC\n            ",
   "describe": {
     "columns": [
       {
@@ -39,28 +39,33 @@
         "type_info": "Text"
       },
       {
-        "name": "modifier_id",
+        "name": "author_type: SkillAuthorType",
         "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "modifier_id",
+        "ordinal": 8,
         "type_info": "Text"
       },
       {
         "name": "status: SkillStatus",
-        "ordinal": 8,
-        "type_info": "Integer"
-      },
-      {
-        "name": "created_at",
         "ordinal": 9,
         "type_info": "Integer"
       },
       {
-        "name": "updated_at",
+        "name": "created_at",
         "ordinal": 10,
         "type_info": "Integer"
       },
       {
-        "name": "content_path",
+        "name": "updated_at",
         "ordinal": 11,
+        "type_info": "Integer"
+      },
+      {
+        "name": "content_path",
+        "ordinal": 12,
         "type_info": "Text"
       }
     ],
@@ -79,8 +84,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "6431ed92f4ed45cb0a159f67fb0249a2f797ac2deb700c2df739496cc61fb17b"
+  "hash": "f8f815dbfca4f7cd8cdff88a71817a4bb81535a68f2f32a75ae9c00ae05b94f5"
 }

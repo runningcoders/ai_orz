@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use crate::error::AppError;
 use crate::models::skill::SkillPo;
 use crate::pkg::RequestContext;
+use common::enums::skill::SkillAuthorType;
 use common::enums::SkillStatus;
 use crate::service::dao::skill::SkillDao;
 use std::sync::{Arc, OnceLock};
@@ -36,12 +37,13 @@ struct SkillDaoSqliteImpl;
 impl SkillDao for SkillDaoSqliteImpl {
     async fn insert(&self, ctx: RequestContext, skill: &SkillPo) -> Result<(), AppError> {
         let status_i32 = skill.status.to_i32();
+        let author_type_i32 = skill.author_type.to_i32();
         sqlx::query!(
             r#"
 INSERT INTO skills (
     id, name, description, tags, category, parent_skill_id,
-    author_id, modifier_id, status, created_at, updated_at, content_path
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    author_id, author_type, modifier_id, status, created_at, updated_at, content_path
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
             skill.id,
             skill.name,
@@ -50,6 +52,7 @@ INSERT INTO skills (
             skill.category,
             skill.parent_skill_id,
             skill.author_id,
+            author_type_i32,
             skill.modifier_id,
             status_i32,
             skill.created_at,
@@ -64,11 +67,12 @@ INSERT INTO skills (
     async fn update(&self, ctx: RequestContext, skill: &SkillPo) -> Result<(), AppError> {
         let now = chrono::Utc::now().timestamp_millis();
         let status_i32 = skill.status.to_i32();
+        let author_type_i32 = skill.author_type.to_i32();
         sqlx::query!(
             r#"
 UPDATE skills SET
     name = ?, description = ?, tags = ?, category = ?, parent_skill_id = ?,
-    author_id = ?, modifier_id = ?, status = ?, updated_at = ?, content_path = ?
+    author_id = ?, author_type = ?, modifier_id = ?, status = ?, updated_at = ?, content_path = ?
 WHERE id = ?
             "#,
             skill.name,
@@ -77,6 +81,7 @@ WHERE id = ?
             skill.category,
             skill.parent_skill_id,
             skill.author_id,
+            author_type_i32,
             skill.modifier_id,
             status_i32,
             now,
@@ -93,7 +98,7 @@ WHERE id = ?
             SkillPo,
             r#"
 SELECT id, name, description, tags, category, parent_skill_id,
-       author_id, modifier_id, status AS "status: SkillStatus",
+       author_id, author_type AS "author_type: SkillAuthorType", modifier_id, status AS "status: SkillStatus",
        created_at, updated_at, content_path
 FROM skills WHERE id = ?
             "#,
@@ -114,7 +119,7 @@ FROM skills WHERE id = ?
             SkillPo,
             r#"
 SELECT id, name, description, tags, category, parent_skill_id,
-       author_id, modifier_id, status AS "status: SkillStatus",
+       author_id, author_type AS "author_type: SkillAuthorType", modifier_id, status AS "status: SkillStatus",
        created_at, updated_at, content_path
 FROM skills WHERE status = ? ORDER BY updated_at DESC
             "#,
@@ -134,7 +139,7 @@ FROM skills WHERE status = ? ORDER BY updated_at DESC
             SkillPo,
             r#"
 SELECT id, name, description, tags, category, parent_skill_id,
-       author_id, modifier_id, status AS "status: SkillStatus",
+       author_id, author_type AS "author_type: SkillAuthorType", modifier_id, status AS "status: SkillStatus",
        created_at, updated_at, content_path
 FROM skills WHERE category = ? ORDER BY updated_at DESC
             "#,
@@ -154,7 +159,7 @@ FROM skills WHERE category = ? ORDER BY updated_at DESC
             SkillPo,
             r#"
 SELECT id, name, description, tags, category, parent_skill_id,
-       author_id, modifier_id, status AS "status: SkillStatus",
+       author_id, author_type AS "author_type: SkillAuthorType", modifier_id, status AS "status: SkillStatus",
        created_at, updated_at, content_path
 FROM skills WHERE author_id = ? ORDER BY updated_at DESC
             "#,
@@ -171,7 +176,7 @@ FROM skills WHERE author_id = ? ORDER BY updated_at DESC
             SkillPo,
             r#"
 SELECT id, name, description, tags, category, parent_skill_id,
-       author_id, modifier_id, status AS "status: SkillStatus",
+       author_id, author_type AS "author_type: SkillAuthorType", modifier_id, status AS "status: SkillStatus",
        created_at, updated_at, content_path
 FROM skills
 WHERE (name LIKE ? OR description LIKE ?) AND status != 0
@@ -229,6 +234,7 @@ UPDATE skills SET status = 0, updated_at = ? WHERE id = ?
             source_skill.category.clone(),
             source_skill.id.clone(), // parent_skill_id points to original
             target_agent_id.to_string(), // author is the agent
+            SkillAuthorType::Agent, // author type is Agent
             content_path, // content path calculated internally
         );
         // new_skill is already Draft by default

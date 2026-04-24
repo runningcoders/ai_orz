@@ -229,8 +229,9 @@ CREATE TABLE IF NOT EXISTS skills (
     category TEXT NOT NULL DEFAULT '',               -- 单一分类："文档写作" / "问题解决" / "代码开发" / "研究分析"
     parent_skill_id TEXT NOT NULL DEFAULT '',        -- 父技能ID（继承来源，技能树演进）
     author_id TEXT NOT NULL DEFAULT '',              -- 创建人用户ID
+    author_type INTEGER NOT NULL DEFAULT 0,          -- 创建者类型：0=User, 1=Agent
     modifier_id TEXT NOT NULL DEFAULT '',            -- 最后修改人用户ID
-    status INTEGER NOT NULL DEFAULT 2,               -- 技能状态：0=已过期 1=可用 2=待沉淀（默认待沉淀）
+    status INTEGER NOT NULL DEFAULT 2,               -- 技能状态：0=已过期 1=Published 2=Draft（默认Draft）
     created_at INTEGER NOT NULL,                     -- 创建时间戳（毫秒）
     updated_at INTEGER NOT NULL,                     -- 更新时间戳（毫秒）
     content_path TEXT NOT NULL                       -- 相对 base_data_path 的技能目录路径

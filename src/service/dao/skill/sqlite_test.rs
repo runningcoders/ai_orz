@@ -1,5 +1,6 @@
 //! Skill DAO SQLite 单元测试
 
+use common::enums::skill::SkillAuthorType;
 use sqlx::SqlitePool;
 use common::enums::SkillStatus;
 use crate::error::AppError;
@@ -27,6 +28,7 @@ async fn test_insert_and_find_by_id(pool: SqlitePool) -> Result<(), AppError> {
         "testing".to_string(),
         "".to_string(),
         "test-user".to_string(),
+        SkillAuthorType::User,
         format!("skills/pending/{skill_id}"),
     );
 
@@ -62,6 +64,7 @@ async fn test_update(pool: SqlitePool) -> Result<(), AppError> {
         "testing".to_string(),
         "".to_string(),
         "test-user".to_string(),
+        SkillAuthorType::User,
         format!("skills/pending/{skill_id}"),
     );
 
@@ -99,6 +102,7 @@ async fn test_list_by_status(pool: SqlitePool) -> Result<(), AppError> {
         "testing".to_string(),
         "".to_string(),
         "test-user".to_string(),
+        SkillAuthorType::User,
         format!("skills/pending/{skill1_id}"),
     );
     skill1.status = SkillStatus::Published;
@@ -112,6 +116,7 @@ async fn test_list_by_status(pool: SqlitePool) -> Result<(), AppError> {
         "testing".to_string(),
         "".to_string(),
         "test-user".to_string(),
+        SkillAuthorType::User,
         format!("skills/pending/{skill2_id}"),
     );
 
@@ -146,6 +151,7 @@ async fn test_list_by_category(pool: SqlitePool) -> Result<(), AppError> {
         "documentation".to_string(),
         "".to_string(),
         "test-user".to_string(),
+        SkillAuthorType::User,
         format!("skills/pending/{skill_id}"),
     );
 
@@ -174,6 +180,7 @@ async fn test_search(pool: SqlitePool) -> Result<(), AppError> {
         "testing".to_string(),
         "".to_string(),
         "test-user".to_string(),
+        SkillAuthorType::User,
         format!("skills/pending/{skill_id}"),
     );
 
@@ -206,6 +213,7 @@ async fn test_delete_by_id(pool: SqlitePool) -> Result<(), AppError> {
         "testing".to_string(),
         "".to_string(),
         "test-user".to_string(),
+        SkillAuthorType::User,
         format!("skills/pending/{skill_id}"),
     );
 
@@ -243,6 +251,7 @@ async fn test_list_by_author(pool: SqlitePool) -> Result<(), AppError> {
         "testing".to_string(),
         "".to_string(),
         "alice".to_string(),
+        SkillAuthorType::User,
         format!("skills/pending/{skill1_id}"),
     );
 
@@ -255,6 +264,7 @@ async fn test_list_by_author(pool: SqlitePool) -> Result<(), AppError> {
         "testing".to_string(),
         "".to_string(),
         "bob".to_string(),
+        SkillAuthorType::User,
         format!("skills/pending/{skill2_id}"),
     );
 
@@ -286,6 +296,7 @@ async fn test_install_to_agent(pool: SqlitePool) -> Result<(), AppError> {
         "tools".to_string(),
         "".to_string(), // parent_skill_id is empty for original shared skill
         "system".to_string(), // author is system (shared library)
+        SkillAuthorType::User,
         format!("shared/{}", source_id),
     );
     // Publish it
@@ -342,6 +353,7 @@ async fn test_install_non_published_fails(pool: SqlitePool) -> Result<(), AppErr
         "test".to_string(),
         "".to_string(),
         "author".to_string(),
+        SkillAuthorType::User,
         format!("skills/{}", source_id),
     );
     // It's Draft by default, not Published

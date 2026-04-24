@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nINSERT INTO skills (\n    id, name, description, tags, category, parent_skill_id,\n    author_id, author_type, modifier_id, status, created_at, updated_at, content_path\n) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 13
+    },
+    "nullable": []
+  },
+  "hash": "54462363fc25757110371d3b7b30f654e93c31d8884a9452cdc1d96c6571a566"
+}

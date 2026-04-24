@@ -1,5 +1,6 @@
 //! Skill 持久化对象
 
+use common::enums::skill::SkillAuthorType;
 use common::enums::SkillStatus;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
@@ -19,9 +20,11 @@ pub struct SkillPo {
     pub category: String,
     /// 父技能ID（继承来源，技能树演进）
     pub parent_skill_id: String,
-    /// 创建人用户ID
+    /// 创建人ID（用户ID 或 Agent ID）
     pub author_id: String,
-    /// 最后修改人用户ID
+    /// 作者类型
+    pub author_type: SkillAuthorType,
+    /// 最后修改人ID（用户ID 或 Agent ID）
     pub modifier_id: String,
     /// 技能状态
     pub status: SkillStatus,
@@ -43,6 +46,7 @@ impl SkillPo {
         category: String,
         parent_skill_id: String,
         author_id: String,
+        author_type: SkillAuthorType,
         content_path: String,
     ) -> Self {
         let now = chrono::Utc::now().timestamp_millis();
@@ -54,6 +58,7 @@ impl SkillPo {
             category,
             parent_skill_id,
             author_id: author_id.clone(),
+            author_type,
             modifier_id: author_id,
             status: SkillStatus::default(),
             created_at: now,

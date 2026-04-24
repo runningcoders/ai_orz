@@ -45,3 +45,43 @@ impl SkillStatus {
         self as i32
     }
 }
+
+/// 技能作者类型
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
+#[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
+pub enum SkillAuthorType {
+    /// 用户创建
+    User = 0,
+    /// Agent 创建
+    Agent = 1,
+}
+
+impl Default for SkillAuthorType {
+    fn default() -> Self {
+        SkillAuthorType::User
+    }
+}
+
+impl From<i32> for SkillAuthorType {
+    fn from(v: i32) -> Self {
+        match v {
+            1 => SkillAuthorType::Agent,
+            _ => SkillAuthorType::default(),
+        }
+    }
+}
+
+impl From<i64> for SkillAuthorType {
+    fn from(v: i64) -> Self {
+        (v as i32).into()
+    }
+}
+
+impl SkillAuthorType {
+    /// 转换为 i32 存储到数据库
+    pub fn to_i32(self) -> i32 {
+        self as i32
+    }
+}
