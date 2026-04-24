@@ -5,7 +5,7 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 ![GitHub last commit](https://img.shields.io/github/last-commit/runningcoders/ai_orz)
 ![GitHub license](https://img.shields.io/github/license/runningcoders/ai_orz)
 ![Rust](https://img.shields.io/badge/Rust-1.85+-000000?logo=rust)
-![Tests](https://img.shields.io/badge/tests-128%20%E2%9C%94-brightgreen)
+![Tests](https://img.shields.io/badge/tests-149%20%E2%9C%94-brightgreen)
 [![GitHub stars](https://img.shields.io/github/stars/runningcoders/ai_orz?style=social)](https://github.com/runningcoders/ai_orz)
 
 ## 技术栈
@@ -14,6 +14,18 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 - **前端**: Dioxus 0.7 (WebAssembly)
 - **common**: 独立 crate，存放前后端共享的 DTO、枚举、常量（API 契约统一）
 - **构建**: dioxus-cli + cargo workspace
+
+## 已实现功能特性 ✅
+
+- 👥 **组织用户权限体系** - 多级组织、用户角色、JWT 认证
+- 🤖 **Agent 完整生命周期管理** - Agent 创建、配置、绑定工具、唤醒执行
+- 🧠 **四层记忆系统** - Core/Working/Short-term/Long-term 分级存储
+- 💬 **全功能消息对话** - 用户 ↔ Agent 双向对话，支持项目上下文
+- 🛠️ **混合模式工具调用** - 简单工具走 rig 原生 auto，关键工具走自建 manual 可控链路
+- 📚 **技能库** - 可复用技能和工作流管理，支持搜索和分类
+- 📋 **任务项目管理** - 项目聚合对话，任务跟踪进度和状态
+- 📎 **统一附件存储** - 消息附件和项目产物统一存储
+- 🔍 **完整单元测试覆盖** - 149 个测试全部通过
 
 ## 项目结构
 
@@ -68,6 +80,8 @@ ai_orz/
 | **HR (Human Resources)** | 领域层 | 人力资源领域，统一管理 AI 智能体和人类员工 |
 | **Finance (财务管理)** | 领域层 | 财务管理领域，统一管理 LLM 模型提供商（付费资源） |
 | **EventQueue** | 基础设施 | 轻量级内存事件总线，支持优先级排序和顺序保证 |
+| **ToolRegistry** | 基础设施 | 统一工具注册中心，管理内置/动态/MCP/HTTP 工具 |
+| **Message** | 消息交互 | 用户 ↔ Agent 对话消息存储，支持工具调用消息复用消息表 |
 
 ## 最终实体层次关系 🎯
 
@@ -91,7 +105,7 @@ Agent (po + brain: Option<Brain>)
 7. **Handler 拆分** → 业务分组 + 方法粒度拆分，每个方法一个单独文件 ✅
 8. **API 契约统一** → 所有前后端共用 DTO 提取到独立 `common` crate，保证类型一致 ✅
 9. **类型安全枚举** → 数据库存储的枚举字段全部使用原生枚举类型，编译期检查 ✅
-10. **单元测试** → 每个业务模块都应该有单元测试，当前 **128/128 全部通过** ✅
+10. **单元测试** → 每个业务模块都应该有单元测试，当前 **149/149 全部通过** ✅
 
 ## LLM 调用流程（最新版）
 
@@ -248,6 +262,53 @@ log_subdir = "logs"
 |------|------|------|
 | GET | `/health` | 健康检查 |
 
+### 项目管理
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/v1/projects` | 创建项目 |
+| GET | `/api/v1/projects` | 列出项目 |
+| GET | `/api/v1/projects/{id}` | 获取项目详情 |
+| PUT | `/api/v1/projects/{id}` | 更新项目 |
+| DELETE | `/api/v1/projects/{id}` | 删除项目 |
+
+### 任务管理
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/v1/tasks` | 创建任务 |
+| GET | `/api/v1/tasks` | 列出任务 |
+| GET | `/api/v1/tasks/{id}` | 获取任务详情 |
+| PUT | `/api/v1/tasks/{id}` | 更新任务 |
+| PATCH | `/api/v1/tasks/{id}/status` | 更新任务状态 |
+| DELETE | `/api/v1/tasks/{id}` | 删除任务 |
+
+### 消息对话
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/projects/{project_id}/messages` | 获取项目消息列表 |
+| POST | `/api/v1/projects/{project_id}/messages` | 发送用户消息触发 Agent 执行 |
+| DELETE | `/api/v1/projects/{project_id}/messages` | 清空项目消息 |
+
+### 技能库
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/v1/skills` | 创建技能 |
+| GET | `/api/v1/skills` | 搜索列出技能 |
+| GET | `/api/v1/skills/{id}` | 获取技能详情 |
+| PUT | `/api/v1/skills/{id}` | 更新技能 |
+| DELETE | `/api/v1/skills/{id}` | 删除技能 |
+
+### 工具管理
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/tools` | 列出所有可用工具 |
+| POST | `/api/v1/agents/{agent_id}/tools` | 为 Agent 绑定工具 |
+| DELETE | `/api/v1/agents/{agent_id}/tools/{tool_id}` | 解绑 Agent 工具 |
+
 ## 前端架构
 
 ```
@@ -263,6 +324,8 @@ frontend/src/
     ├── reception.rs      # 前台接待欢迎页（系统初始化 + 登录）
     ├── agent_management.rs # Agent 管理页
     ├── model_provider_management.rs # Model Provider 管理页
+    ├── project_management.rs # 项目管理页
+    ├── task_management.rs   # 任务管理页
     ├── user_profile.rs   # 个人信息页（所有登录用户可访问）
     ├── organization_info.rs # 组织信息页（仅管理员可访问）
     ├── user_management.rs # 用户管理页（仅管理员可访问）
@@ -274,6 +337,8 @@ frontend/src/
   - 前台接待
   - 人力资源 → Agent 管理
   - **财务管理 → 模型管理**
+  - 项目管理 → 项目列表
+  - 任务管理 → 任务列表
   - 用户下拉菜单（个人信息 + 组织信息 + ⚙️ 设置 + 用户管理 - 仅管理员可见）
 - ✅ 前台接待/登录流程
   - 系统自动检测初始化状态，未初始化显示初始化表单
@@ -289,6 +354,8 @@ frontend/src/
 - ✅ 用户管理页（仅管理员可访问）：查看当前组织所有用户列表 + 创建用户
 - ✅ Agent 管理列表 + 创建弹窗 + 删除功能
 - ✅ **Model Provider 管理列表 + 创建弹窗 + 删除功能 + 创建后自动测试连通性**
+- ✅ 项目管理列表 + 创建弹窗 + 删除功能
+- ✅ 任务管理列表 + 创建弹窗 + 状态更新
 
 ## 前端开发
 
@@ -313,7 +380,7 @@ frontend/src/
 cargo test
 ```
 
-当前状态：**128 个测试全部通过 ✅**
+当前状态：**149 个测试全部通过 ✅**
 
 ### 单元测试设计
 
