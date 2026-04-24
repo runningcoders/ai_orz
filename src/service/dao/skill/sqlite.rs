@@ -198,4 +198,44 @@ UPDATE skills SET status = 0, updated_at = ? WHERE id = ?
         .await?;
         Ok(())
     }
+
+    async fn install_to_agent(
+        &self,
+        ctx: RequestContext,
+        source_skill: &SkillPo,
+        target_agent_id: &str,
+    ) -> Result<SkillPo, AppError> {
+        // Source skill must be Published (shared) to be installed
+        if source_skill.status != SkillStatus::Published {
+            return Err(AppError::BadRequest(format!(
+                "Only published skills can be installed, current status is {:?}",
+                source_skill.status
+            )));
+        }
+
+        // Generate new unique skill id internally (using v7 uuid for time ordering)
+        let new_skill_id = uuid::Uuid::now_v7().to_string();
+
+        // Calculate relative content path for agent-owned draft skill
+        // Format: agents/{agent_id}/skills/{skill_id}
+        let content_path = format!("agents/{}/skills/{}", target_agent_id, new_skill_id);
+
+        // Create new skill record: copy metadata from source, set new id, agent as author, draft status
+        let new_skill = SkillPo::new(
+            new_skill_id,
+            source_skill.name.clone(),
+            source_skill.description.clone(),
+            source_skill.parse_tags(),
+            source_skill.category.clone(),
+            source_skill.id.clone(), // parent_skill_id points to original
+            target_agent_id.to_string(), // author is the agent
+            content_path, // content path calculated internally
+        );
+        // new_skill is already Draft by default
+
+        // Insert the new skill into database
+        self.insert(ctx.clone(), &new_skill).await?;
+
+        Ok(new_skill)
+    }
 }

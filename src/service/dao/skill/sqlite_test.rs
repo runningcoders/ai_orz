@@ -269,3 +269,96 @@ async fn test_list_by_author(pool: SqlitePool) -> Result<(), AppError> {
 
     Ok(())
 }
+
+/// 测试安装共享技能到 Agent（install_to_agent）
+#[sqlx::test]
+async fn test_install_to_agent(pool: SqlitePool) -> Result<(), AppError> {
+    skill::init();
+    let skill_dao = skill::dao();
+
+    // 1. 创建一个已发布的共享技能（源技能）
+    let source_id = Uuid::now_v7().to_string();
+    let mut source_skill = SkillPo::new(
+        source_id.clone(),
+        "Shared Skill".to_string(),
+        "A shared published skill that can be installed to agents".to_string(),
+        vec!["shared".to_string(), "utility".to_string()],
+        "tools".to_string(),
+        "".to_string(), // parent_skill_id is empty for original shared skill
+        "system".to_string(), // author is system (shared library)
+        format!("shared/{}", source_id),
+    );
+    // Publish it
+    source_skill.status = SkillStatus::Published;
+
+    let ctx = new_ctx("system", pool.clone());
+    skill_dao.insert(ctx, &source_skill).await?;
+
+    // 2. Install to agent "agent-123"
+    let ctx = new_ctx("admin", pool.clone());
+    let installed = skill_dao.install_to_agent(ctx, &source_skill, "agent-123").await?;
+
+    // 3. Verify the installed copy
+    // - Should have new generated id
+    assert!(!installed.id.is_empty());
+    assert_ne!(installed.id, source_id);
+
+    // - Should copy all metadata
+    assert_eq!(installed.name, source_skill.name);
+    assert_eq!(installed.description, source_skill.description);
+    assert_eq!(installed.parse_tags(), source_skill.parse_tags());
+    assert_eq!(installed.category, source_skill.category);
+
+    // - Should have correct attributes
+    assert_eq!(installed.parent_skill_id, source_id.clone());
+    assert_eq!(installed.author_id, "agent-123");
+    assert_eq!(installed.status, SkillStatus::Draft); // default is Draft
+    assert_eq!(installed.content_path, format!("agents/agent-123/skills/{}", installed.id));
+
+    // 4. Verify it exists in database
+    let ctx = new_ctx("test-user", pool);
+    let found = skill_dao.find_by_id(ctx, &installed.id).await?;
+    assert!(found.is_some());
+    let found = found.unwrap();
+    assert_eq!(found.id, installed.id);
+    assert_eq!(found.parent_skill_id, source_id);
+
+    Ok(())
+}
+
+/// 测试安装非已发布技能应该返回错误
+#[sqlx::test]
+async fn test_install_non_published_fails(pool: SqlitePool) -> Result<(), AppError> {
+    skill::init();
+    let skill_dao = skill::dao();
+
+    // Create a draft skill (not published)
+    let source_id = Uuid::now_v7().to_string();
+    let source_skill = SkillPo::new(
+        source_id.clone(),
+        "Draft Skill".to_string(),
+        "This is still a draft".to_string(),
+        vec![],
+        "test".to_string(),
+        "".to_string(),
+        "author".to_string(),
+        format!("skills/{}", source_id),
+    );
+    // It's Draft by default, not Published
+
+    let ctx = new_ctx("test-user", pool.clone());
+    skill_dao.insert(ctx, &source_skill).await?;
+
+    // Try to install - should fail
+    let ctx = new_ctx("test-user", pool);
+    let result = skill_dao.install_to_agent(ctx, &source_skill, "agent-123").await;
+
+    // Should be error
+    assert!(result.is_err());
+    let err = result.err().unwrap();
+    // Error should mention that only published can be installed
+    let err_msg = err.to_string();
+    assert!(err_msg.contains("Only published skills can be installed"));
+
+    Ok(())
+}

@@ -28,12 +28,22 @@ pub trait SkillDao: Send + Sync {
 
     /// List skills by author
     async fn list_by_author(&self, ctx: RequestContext, author_id: &str) -> Result<Vec<SkillPo>, AppError>;
-
     /// Search skills by keyword in name or description
     async fn search(&self, ctx: RequestContext, keyword: &str) -> Result<Vec<SkillPo>, AppError>;
 
     /// Soft delete (mark as expired)
     async fn delete_by_id(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+
+    /// Install a published shared skill to an agent as a private draft copy
+    /// 
+    /// - source_skill: the source shared skill to install (already validated by upper layer)
+    /// - target_agent_id: which agent to install to (will be the author of the new copy)
+    async fn install_to_agent(
+        &self,
+        ctx: RequestContext,
+        source_skill: &SkillPo,
+        target_agent_id: &str,
+    ) -> Result<SkillPo, AppError>;
 }
 
 pub use sqlite::{dao, init, new};
