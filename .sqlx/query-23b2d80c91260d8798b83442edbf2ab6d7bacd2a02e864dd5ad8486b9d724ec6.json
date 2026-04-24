@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\nSELECT COUNT(*) as count FROM artifacts WHERE task_id = ? AND \"status\" != 0\n",
+  "describe": {
+    "columns": [
+      {
+        "name": "count",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "23b2d80c91260d8798b83442edbf2ab6d7bacd2a02e864dd5ad8486b9d724ec6"
+}

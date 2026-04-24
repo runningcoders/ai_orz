@@ -1,0 +1,68 @@
+{
+  "db_name": "SQLite",
+  "query": "\nSELECT id, agent_id, node_name, node_description, node_type, summary, status AS \"status: MemoryStatus\", created_at, updated_at\nFROM long_term_knowledge_node\nWHERE agent_id = ? AND (node_name MATCH ? OR summary MATCH ?) AND status != 0\nLIMIT ?\n",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "agent_id",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "node_name",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "node_description",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "node_type",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "summary",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "status: MemoryStatus",
+        "ordinal": 6,
+        "type_info": "Integer"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 8,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "688a5973f942bde05897633d0b7a46b89ca50a31ba26b6ace279eae90cb19746"
+}

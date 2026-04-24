@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nUPDATE skills SET\n    name = ?, description = ?, tags = ?, category = ?, parent_skill_id = ?,\n    author_id = ?, modifier_id = ?, status = ?, updated_at = ?, content_path = ?\nWHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 11
+    },
+    "nullable": []
+  },
+  "hash": "01de05ea22c3c63151e35af579da527400c15396a125c8e3cd5ec50f1f0cde1c"
+}

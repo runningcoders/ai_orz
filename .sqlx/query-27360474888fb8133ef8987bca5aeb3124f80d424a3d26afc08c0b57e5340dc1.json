@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nUPDATE long_term_knowledge_node\nSET agent_id = ?,\n    node_name = ?,\n    node_description = ?,\n    node_type = ?,\n    summary = ?,\n    status = ?,\n    updated_at = ?\nWHERE id = ?\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "27360474888fb8133ef8987bca5aeb3124f80d424a3d26afc08c0b57e5340dc1"
+}

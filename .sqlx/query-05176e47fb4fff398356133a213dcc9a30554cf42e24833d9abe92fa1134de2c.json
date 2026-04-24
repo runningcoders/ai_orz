@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nUPDATE short_term_memory_index\nSET status = ?, updated_at = ?\nWHERE id = ?\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "05176e47fb4fff398356133a213dcc9a30554cf42e24833d9abe92fa1134de2c"
+}

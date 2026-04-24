@@ -1,0 +1,122 @@
+{
+  "db_name": "SQLite",
+  "query": "\nSELECT id, title, description, \"status\" as 'status: TaskStatus', priority as 'priority: i32', tags, due_at, start_at, end_at, dependencies, root_user_id,\n       \"assignee_type\" as 'assignee_type: AssigneeType', assignee_id, project_id,\n       created_by, modified_by, created_at, updated_at\nFROM tasks WHERE \"status\" != 0 AND assignee_id = ? AND (\n    (? IS NOT NULL AND \"status\" = ?) OR\n    (? IS NOT NULL AND \"status\" = ?) OR\n    (? IS NOT NULL AND \"status\" = ?) OR\n    (? IS NOT NULL AND \"status\" = ?)\n)\nORDER BY priority DESC, created_at DESC LIMIT ?\n",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "title",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "description",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "status: TaskStatus",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "priority: i32",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "tags",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "due_at",
+        "ordinal": 6,
+        "type_info": "Integer"
+      },
+      {
+        "name": "start_at",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "end_at",
+        "ordinal": 8,
+        "type_info": "Integer"
+      },
+      {
+        "name": "dependencies",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "root_user_id",
+        "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "assignee_type: AssigneeType",
+        "ordinal": 11,
+        "type_info": "Integer"
+      },
+      {
+        "name": "assignee_id",
+        "ordinal": 12,
+        "type_info": "Text"
+      },
+      {
+        "name": "project_id",
+        "ordinal": 13,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_by",
+        "ordinal": 14,
+        "type_info": "Text"
+      },
+      {
+        "name": "modified_by",
+        "ordinal": 15,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 16,
+        "type_info": "Integer"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 17,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 10
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e118fe952b3e6d1e138eed0bcf641d02c80ee3facd51dbd126fced5b8ec10998"
+}

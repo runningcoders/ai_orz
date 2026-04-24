@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nUPDATE organizations SET status = 0, modified_by = ?, updated_at = ? WHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "861ce9a4b4f714368238f8cfddf42c888d62e4586e4d2da0d692960d8d4900e2"
+}
