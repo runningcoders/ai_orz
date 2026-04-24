@@ -40,6 +40,8 @@ target
 
 # tests directory - may contain sensitive test data
 /tests
+/dev.db
+/test.db
 
 /memory
 # /.sqlx  # sqlx offline query cache needs to be committed
