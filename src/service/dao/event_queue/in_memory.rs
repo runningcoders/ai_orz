@@ -14,26 +14,30 @@ use std::sync::Arc;
 
 use crate::error::AppError;
 use crate::models::event::{Event, EventRef};
+use crate::models::message::Message;
 use crate::service::dao::event_queue::EventQueueDao;
 use crate::pkg::RequestContext;
 
 // ==================== 工厂方法 + 单例 ====================
 
-static EVENT_QUEUE_DAO: OnceLock<Arc<dyn EventQueueDao>> = OnceLock::new();
+/// Message topic 的全局单例
+static EVENT_QUEUE_MESSAGE: OnceLock<Arc<dyn EventQueueDao<Message>>> = OnceLock::new();
 
-/// 创建一个全新的内存事件队列实例（用于测试）
-pub fn new() -> Arc<dyn EventQueueDao> {
-    Arc::new(EventQueueDaoInMemoryImpl::new())
+/// 创建一个全新的内存事件队列实例（用于测试或自定义 topic）
+///
+/// 创建新事件队列实例
+pub fn new<E: Event + Clone>() -> Arc<dyn EventQueueDao<E>> {
+    Arc::new(EventQueueDaoInMemoryImpl::<E>::new())
 }
 
-/// 获取全局事件队列 DAO 实例
-pub fn dao() -> Arc<dyn EventQueueDao> {
-    EVENT_QUEUE_DAO.get().unwrap().clone()
+/// 获取 Message topic 的全局事件队列单例
+pub fn message_dao() -> Arc<dyn EventQueueDao<Message>> {
+    EVENT_QUEUE_MESSAGE.get().unwrap().clone()
 }
 
-/// 初始化全局事件队列 DAO
-pub fn init() {
-    let _ = EVENT_QUEUE_DAO.set(new());
+/// 初始化 Message topic 全局事件队列
+pub fn init_message() {
+    let _ = EVENT_QUEUE_MESSAGE.set(new());
 }
 
 // ==================== 实现 ====================
@@ -52,9 +56,9 @@ pub fn init() {
 ///
 /// 使用 UnsafeCell 实现内部可变性，因为我们已经用 Mutex 保证了独占访问，所以是安全的
 #[derive(Debug, Default)]
-pub struct EventQueueDaoInMemoryImpl {
+pub struct EventQueueDaoInMemoryImpl<E: Event + Clone> {
     /// 所有未确认事件本体（待处理 + 处理中）
-    events: UnsafeCell<HashMap<String, Box<dyn Event>>>,
+    events: UnsafeCell<HashMap<String, Box<E>>>,
     /// 每个 order_key 的等待堆（堆内按优先级排序，保证总是取出最高优先级）
     queues: UnsafeCell<HashMap<String, BinaryHeap<EventRef>>>,
     /// 全局优先级堆（就绪事件）
@@ -68,10 +72,10 @@ pub struct EventQueueDaoInMemoryImpl {
 }
 
 // 由于我们只用 UnsafeCell 在 Mutex 保护下进行独占访问，所以 Send/Sync 是安全的
-unsafe impl Send for EventQueueDaoInMemoryImpl {}
-unsafe impl Sync for EventQueueDaoInMemoryImpl {}
+unsafe impl<E: Event + Clone + Send> Send for EventQueueDaoInMemoryImpl<E> {}
+unsafe impl<E: Event + Clone + Sync> Sync for EventQueueDaoInMemoryImpl<E> {}
 
-impl EventQueueDaoInMemoryImpl {
+impl<E: Event + Clone> EventQueueDaoInMemoryImpl<E> {
     /// 创建新的空内存事件队列
     pub fn new() -> Self {
         Self {
@@ -85,8 +89,8 @@ impl EventQueueDaoInMemoryImpl {
     }
 }
 
-impl EventQueueDao for EventQueueDaoInMemoryImpl {
-    fn enqueue(&self, _ctx: &RequestContext, event: Box<dyn Event>) -> Result<(), AppError> {
+impl<E: Event + Clone> EventQueueDao<E> for EventQueueDaoInMemoryImpl<E> {
+    fn enqueue(&self, _ctx: &RequestContext, event: Box<E>) -> Result<(), AppError> {
         let _guard = self.lock.lock().map_err(|e| AppError::Internal(e.to_string()))?;
 
         let events = unsafe { &mut *self.events.get() };
@@ -124,14 +128,14 @@ impl EventQueueDao for EventQueueDaoInMemoryImpl {
         Ok(())
     }
 
-    fn enqueue_batch(&self, ctx: &RequestContext, events: Vec<Box<dyn Event>>) -> Result<(), AppError> {
+    fn enqueue_batch(&self, ctx: &RequestContext, events: Vec<Box<E>>) -> Result<(), AppError> {
         for event in events {
             self.enqueue(ctx, event)?;
         }
         Ok(())
     }
 
-    fn dequeue_next(&self, _ctx: &RequestContext) -> Result<Option<Box<dyn Event>>, AppError> {
+    fn dequeue_next(&self, _ctx: &RequestContext) -> Result<Option<Box<E>>, AppError> {
         let _guard = self.lock.lock().map_err(|e| AppError::Internal(e.to_string()))?;
 
         let events = unsafe { &mut *self.events.get() };

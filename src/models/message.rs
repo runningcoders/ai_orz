@@ -8,7 +8,7 @@
 
 use common::constants::utils;
 use common::enums::{MessageRole, MessageStatus, MessageType, FileType};
-use crate::models::event::{Event, EventType};
+use crate::models::event::{Event, EventTopic};
 use crate::models::file::FileMeta;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
@@ -118,8 +118,8 @@ impl Event for Message {
         self.id()
     }
 
-    fn event_type(&self) -> EventType {
-        EventType::Message
+    fn topic(&self) -> EventTopic {
+        EventTopic::Message
     }
 
     fn order_key(&self) -> &str {

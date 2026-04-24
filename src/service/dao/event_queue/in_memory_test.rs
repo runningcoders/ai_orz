@@ -10,6 +10,7 @@ use common::enums::{MessageRole, MessageType, FileType};
 use crate::pkg::RequestContext;
 use crate::service::dao::event_queue::in_memory::EventQueueDaoInMemoryImpl;
 use sqlx::SqlitePool;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// 测试空队列基本操作
 #[tokio::test]
@@ -18,7 +19,7 @@ async fn test_event_queue_empty() {
     // InMemoryEventQueue 不碰数据库，只是占位
     let pool = sqlx::SqlitePool::connect_lazy("sqlite::memory:").unwrap();
     let ctx = RequestContext::new_simple("test-user", pool);
-    let queue = EventQueueDaoInMemoryImpl::new();
+    let queue = EventQueueDaoInMemoryImpl::<Message>::new();
 
     assert!(queue.is_empty());
     assert_eq!(queue.len(), 0);
@@ -35,7 +36,7 @@ async fn test_event_queue_empty() {
 async fn test_single_event_enqueue_dequeue_ack() {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
     let ctx = RequestContext::new_simple("test-user", pool);
-    let queue = EventQueueDaoInMemoryImpl::new();
+    let queue = EventQueueDaoInMemoryImpl::<Message>::new();
 
     // 创建一个测试消息
     let empty_file_meta = FileMeta::new(
@@ -85,7 +86,6 @@ async fn test_single_event_enqueue_dequeue_ack() {
 async fn test_priority_ordering() {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
     let ctx = RequestContext::new_simple("test-user", pool);
-    let queue = EventQueueDaoInMemoryImpl::new();
 
     // 创建三个不同优先级的事件，优先级低的先入队
     #[derive(Debug, Clone)]
@@ -100,11 +100,20 @@ async fn test_priority_ordering() {
         fn clone_box(&self) -> Box<dyn Event> {
             Box::new(self.clone())
         }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        fn into_any(self: Box<TestEvent>) -> Box<dyn std::any::Any> {
+            Box::new(self)
+        }
+
         fn id(&self) -> &str {
             &self.id
         }
-        fn event_type(&self) -> crate::models::event::EventType {
-            crate::models::event::EventType::Message
+        fn topic(&self) -> crate::models::event::EventTopic {
+            crate::models::event::EventTopic::Message
         }
         fn order_key(&self) -> &str {
             &self.order_key
@@ -115,19 +124,9 @@ async fn test_priority_ordering() {
         fn created_at(&self) -> i64 {
             self.created_at
         }
-            fn as_any(&self) -> &dyn std::any::Any {
-                self
-            }
-            fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
-                self
-            }
     }
 
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64;
-
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
     let low = TestEvent {
         id: "low".to_string(),
         priority: 1,
@@ -147,11 +146,12 @@ async fn test_priority_ordering() {
         order_key: "".to_string(),
     };
 
+    let queue = EventQueueDaoInMemoryImpl::<TestEvent>::new();
+
     // 按低、中、高顺序入队
     queue.enqueue(&ctx, Box::new(low)).unwrap();
     queue.enqueue(&ctx, Box::new(medium)).unwrap();
     queue.enqueue(&ctx, Box::new(high)).unwrap();
-
     // 出队顺序应该是高 → 中 → 低
     assert_eq!(queue.len(), 3);
 
@@ -175,7 +175,6 @@ async fn test_priority_ordering() {
 async fn test_same_time_priority_ordering() {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
     let ctx = RequestContext::new_simple("test-user", pool);
-    let queue = EventQueueDaoInMemoryImpl::new();
 
     #[derive(Debug, Clone)]
     struct TestEvent {
@@ -189,11 +188,20 @@ async fn test_same_time_priority_ordering() {
         fn clone_box(&self) -> Box<dyn Event> {
             Box::new(self.clone())
         }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        fn into_any(self: Box<TestEvent>) -> Box<dyn std::any::Any> {
+            Box::new(self)
+        }
+
         fn id(&self) -> &str {
             &self.id
         }
-        fn event_type(&self) -> crate::models::event::EventType {
-            crate::models::event::EventType::Message
+        fn topic(&self) -> crate::models::event::EventTopic {
+            crate::models::event::EventTopic::Message
         }
         fn order_key(&self) -> &str {
             &self.order_key
@@ -204,13 +212,9 @@ async fn test_same_time_priority_ordering() {
         fn created_at(&self) -> i64 {
             self.created_at
         }
-            fn as_any(&self) -> &dyn std::any::Any {
-                self
-            }
-            fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
-                self
-            }
     }
+
+    let queue = EventQueueDaoInMemoryImpl::<TestEvent>::new();
 
     let now = 1000;
 
@@ -239,7 +243,6 @@ async fn test_same_time_priority_ordering() {
 async fn test_same_priority_time_ordering() {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
     let ctx = RequestContext::new_simple("test-user", pool);
-    let queue = EventQueueDaoInMemoryImpl::new();
 
     #[derive(Debug, Clone)]
     struct TestEvent {
@@ -249,15 +252,26 @@ async fn test_same_priority_time_ordering() {
         order_key: String,
     }
 
+    let queue = EventQueueDaoInMemoryImpl::<TestEvent>::new();
+
     impl Event for TestEvent {
         fn clone_box(&self) -> Box<dyn Event> {
             Box::new(self.clone())
         }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        fn into_any(self: Box<TestEvent>) -> Box<dyn std::any::Any> {
+            Box::new(self)
+        }
+
         fn id(&self) -> &str {
             &self.id
         }
-        fn event_type(&self) -> crate::models::event::EventType {
-            crate::models::event::EventType::Message
+        fn topic(&self) -> crate::models::event::EventTopic {
+            crate::models::event::EventTopic::Message
         }
         fn order_key(&self) -> &str {
             &self.order_key
@@ -268,12 +282,6 @@ async fn test_same_priority_time_ordering() {
         fn created_at(&self) -> i64 {
             self.created_at
         }
-            fn as_any(&self) -> &dyn std::any::Any {
-                self
-            }
-            fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
-                self
-            }
     }
 
     let early = TestEvent {
@@ -302,7 +310,6 @@ async fn test_same_priority_time_ordering() {
 async fn test_same_order_key_sequential() {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
     let ctx = RequestContext::new_simple("test-user", pool);
-    let queue = EventQueueDaoInMemoryImpl::new();
 
     #[derive(Debug, Clone)]
     struct TestEvent {
@@ -310,15 +317,26 @@ async fn test_same_order_key_sequential() {
         created_at: i64,
     }
 
+    let queue = EventQueueDaoInMemoryImpl::<TestEvent>::new();
+
     impl Event for TestEvent {
         fn clone_box(&self) -> Box<dyn Event> {
             Box::new(self.clone())
         }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        fn into_any(self: Box<TestEvent>) -> Box<dyn std::any::Any> {
+            Box::new(self)
+        }
+
         fn id(&self) -> &str {
             &self.id
         }
-        fn event_type(&self) -> crate::models::event::EventType {
-            crate::models::event::EventType::Message
+        fn topic(&self) -> crate::models::event::EventTopic {
+            crate::models::event::EventTopic::Message
         }
         fn order_key(&self) -> &str {
             "task-001" // 所有事件同 order_key
@@ -326,12 +344,6 @@ async fn test_same_order_key_sequential() {
         fn created_at(&self) -> i64 {
             self.created_at
         }
-            fn as_any(&self) -> &dyn std::any::Any {
-                self
-            }
-            fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
-                self
-            }
     }
 
     // 按顺序入队 1、2、3
@@ -374,7 +386,7 @@ async fn test_same_order_key_sequential() {
 async fn test_nack_retry() {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
     let ctx = RequestContext::new_simple("test-user", pool);
-    let queue = EventQueueDaoInMemoryImpl::new();
+    let queue = EventQueueDaoInMemoryImpl::<Message>::new();
 
     let empty_file_meta = FileMeta::new(
         "".to_string(),
@@ -421,9 +433,9 @@ async fn test_nack_retry() {
 async fn test_batch_enqueue() {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
     let ctx = RequestContext::new_simple("test-user", pool);
-    let queue = EventQueueDaoInMemoryImpl::new();
+    let queue = EventQueueDaoInMemoryImpl::<Message>::new();
 
-    let mut events: Vec<Box<dyn Event>> = Vec::new();
+    let mut events: Vec<Box<Message>> = Vec::new();
     let empty_file_meta = FileMeta::new(
         "".to_string(),
         "".to_string(),
@@ -466,7 +478,6 @@ async fn test_batch_enqueue() {
 async fn test_mixed_order_groups() {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
     let ctx = RequestContext::new_simple("test-user", pool);
-    let queue = EventQueueDaoInMemoryImpl::new();
 
     // task1: 3个事件，顺序消费
     // task2: 2个事件，顺序消费
@@ -479,28 +490,36 @@ async fn test_mixed_order_groups() {
         created_at: i64,
     }
 
+    let queue = EventQueueDaoInMemoryImpl::<TestEvent>::new();
+
     impl Event for TestEvent {
         fn clone_box(&self) -> Box<dyn Event> {
             Box::new(self.clone())
         }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        fn into_any(self: Box<TestEvent>) -> Box<dyn std::any::Any> {
+            Box::new(self)
+        }
+
         fn id(&self) -> &str {
             &self.id
         }
-        fn event_type(&self) -> crate::models::event::EventType {
-            crate::models::event::EventType::Message
+        fn topic(&self) -> crate::models::event::EventTopic {
+            crate::models::event::EventTopic::Message
         }
         fn order_key(&self) -> &str {
             &self.order_key
         }
+        fn priority(&self) -> u8 {
+            0
+        }
         fn created_at(&self) -> i64 {
             self.created_at
         }
-            fn as_any(&self) -> &dyn std::any::Any {
-                self
-            }
-            fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
-                self
-            }
     }
 
     let events = vec![

@@ -25,14 +25,14 @@ pub fn dal() -> Arc<dyn MessageDal> {
 pub fn init() {
     let _ = MESSAGE_DAL.set(new(
         message::dao(),
-        event_queue::dao(),
+        event_queue::message_dao(),
     ));
 }
 
 /// 创建 Message DAL（返回 trait 对象）
 pub fn new(
     message_dao: Arc<dyn MessageDao + Send + Sync>,
-    event_queue_dao: Arc<dyn EventQueueDao + Send + Sync>,
+    event_queue_dao: Arc<dyn EventQueueDao<Message> + Send + Sync>,
 ) -> Arc<dyn MessageDal> {
     Arc::new(MessageDalImpl {
         message_dao,
@@ -150,14 +150,14 @@ pub trait MessageDal: Send + Sync {
 /// Message DAL 实现
 struct MessageDalImpl {
     message_dao: Arc<dyn MessageDao>,
-    event_queue_dao: Arc<dyn EventQueueDao>,
+    event_queue_dao: Arc<dyn EventQueueDao<Message>>,
 }
 
 impl MessageDalImpl {
     /// 创建 DAL 实例
     fn new(
         message_dao: Arc<dyn MessageDao>,
-        event_queue_dao: Arc<dyn EventQueueDao>,
+        event_queue_dao: Arc<dyn EventQueueDao<Message>>,
     ) -> Self {
         Self {
             message_dao,
@@ -174,7 +174,7 @@ impl MessageDal for MessageDalImpl {
 
         // 2. 消息本身就是事件，直接入队，所有消息都入队不做过滤
         // Message 已经实现了 Event trait
-        let event: Box<dyn crate::models::event::Event> = Box::new(message.clone());
+        let event: Box<Message> = Box::new(message.clone());
         self.event_queue_dao.enqueue(&ctx, event)?;
 
         Ok(())
@@ -267,16 +267,13 @@ impl MessageDal for MessageDalImpl {
         ctx: RequestContext,
     ) -> Result<Option<Message>, AppError> {
         // 1. 优先从内存队列取出
-        let opt_event = self.event_queue_dao.dequeue_next(&ctx)?;
-        match opt_event {
-            Some(event) => {
-                // Event trait 已经继承 Any，通过 into_any 转换为 Box<dyn Any> 再 downcast
-                let any_event = event.into_any();
-                let mut msg = any_event.downcast::<Message>()
-                    .map_err(|_| AppError::Internal("Event is not a Message".into()))?;
+        let opt_msg = self.event_queue_dao.dequeue_next(&ctx)?;
+        match opt_msg {
+            Some(msg) => {
                 // 出队成功后更新状态为 Processing，避免回源重复入队
-                self.update_status(ctx, msg.id(), MessageStatus::Processing).await?;
-                Ok(Some(*msg))
+                let msg = *msg;
+                self.update_status(ctx.clone(), msg.id(), MessageStatus::Processing).await?;
+                Ok(Some(msg))
             }
             None => {
                 // 2. 队列为空，回源 DB 查询 pending 状态的消息
@@ -294,19 +291,12 @@ impl MessageDal for MessageDalImpl {
 
                 // 3. 将 DB 查到的消息全部入队到内存队列
                 for msg in pending_messages {
-                    let event: Box<dyn crate::models::event::Event> = Box::new(msg.clone());
+                    let event: Box<Message> = Box::new(msg.clone());
                     self.event_queue_dao.enqueue(&ctx, event)?;
                 }
 
                 // 4. 再次尝试出队（肯定能取到了）
-                self.event_queue_dao.dequeue_next(&ctx)?
-                    .map(|event| {
-                        let any_event = event.into_any();
-                        any_event.downcast::<Message>()
-                            .map(|msg| *msg)
-                            .map_err(|_| AppError::Internal("Event is not a Message".into()))
-                    })
-                    .transpose()
+                Ok(self.event_queue_dao.dequeue_next(&ctx)?.map(|msg| *msg))
             }
         }
     }

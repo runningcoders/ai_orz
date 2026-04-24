@@ -4,16 +4,17 @@
 
 use std::cmp::Ordering;
 
-/// 事件类型枚举
+/// 事件主题（Topic）枚举
 ///
-/// 预定义系统事件类型，支持扩展自定义类型
+/// 每个主题对应一种具体事件类型，对应一个独立队列
+/// 预定义系统主题，支持扩展自定义主题
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum EventType {
-    /// Agent 消息事件
+pub enum EventTopic {
+    /// Agent 消息事件主题
     Message,
-    /// 任务状态变更事件
+    /// 任务状态变更事件主题
     TaskChange,
-    /// 自定义扩展事件
+    /// 自定义扩展主题
     Custom(u16),
 }
 
@@ -64,8 +65,8 @@ pub trait Event: Send + Sync + std::fmt::Debug + std::any::Any + 'static {
     /// 事件唯一 ID
     fn id(&self) -> &str;
 
-    /// 事件类型（用于区分不同业务事件，消费者可按类型过滤）
-    fn event_type(&self) -> EventType;
+    /// 事件主题（用于区分不同业务事件，每个主题对应独立队列）
+    fn topic(&self) -> EventTopic;
 
     /// 排序分组键 - 相同 order_key 的消息必须顺序消费
     /// 空字符串表示不需要分组，可并行消费

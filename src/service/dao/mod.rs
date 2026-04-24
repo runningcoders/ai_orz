@@ -16,7 +16,7 @@ pub fn init_all(){
     agent::init();
     artifact::init();
     cortex::init();
-    event_queue::init();
+    event_queue::init_message();
     message::init();
     model_provider::init();
     organization::init();
