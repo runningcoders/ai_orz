@@ -39,7 +39,7 @@ async fn test_insert_and_find_by_id(pool: SqlitePool) -> Result<(), AppError> {
     let found = found.unwrap();
     assert_eq!(found.id, skill_id);
     assert_eq!(found.name, "Test Skill");
-    assert_eq!(found.status, SkillStatus::Pending);
+    assert_eq!(found.status, SkillStatus::Draft);
     let tags = found.parse_tags();
     assert_eq!(tags.len(), 2);
     assert!(tags.contains(&"test".to_string()));
@@ -69,7 +69,7 @@ async fn test_update(pool: SqlitePool) -> Result<(), AppError> {
     skill_dao.insert(ctx, &skill).await?;
 
     skill.description = "Updated description".to_string();
-    skill.status = SkillStatus::Available;
+    skill.status = SkillStatus::Published;
 
     let ctx = new_ctx("test-user", pool.clone());
     skill_dao.update(ctx, &skill).await?;
@@ -79,7 +79,7 @@ async fn test_update(pool: SqlitePool) -> Result<(), AppError> {
     assert!(found.is_some());
     let found = found.unwrap();
     assert_eq!(found.description, "Updated description");
-    assert_eq!(found.status, SkillStatus::Available);
+    assert_eq!(found.status, SkillStatus::Published);
 
     Ok(())
 }
@@ -101,7 +101,7 @@ async fn test_list_by_status(pool: SqlitePool) -> Result<(), AppError> {
         "test-user".to_string(),
         format!("skills/pending/{skill1_id}"),
     );
-    skill1.status = SkillStatus::Available;
+    skill1.status = SkillStatus::Published;
 
     let skill2_id = Uuid::now_v7().to_string();
     let skill2 = SkillPo::new(
@@ -120,12 +120,12 @@ async fn test_list_by_status(pool: SqlitePool) -> Result<(), AppError> {
     skill_dao.insert(ctx, &skill2).await?;
 
     let ctx = new_ctx("test-user", pool.clone());
-    let available = skill_dao.list_by_status(ctx, SkillStatus::Available).await?;
+    let available = skill_dao.list_by_status(ctx, SkillStatus::Published).await?;
     assert!(available.iter().any(|s| s.id == skill1_id));
     assert!(!available.iter().any(|s| s.id == skill2_id));
 
     let ctx = new_ctx("test-user", pool);
-    let pending = skill_dao.list_by_status(ctx, SkillStatus::Pending).await?;
+    let pending = skill_dao.list_by_status(ctx, SkillStatus::Draft).await?;
     assert!(pending.iter().any(|s| s.id == skill2_id));
 
     Ok(())
@@ -215,7 +215,7 @@ async fn test_delete_by_id(pool: SqlitePool) -> Result<(), AppError> {
     let ctx = new_ctx("test-user", pool.clone());
     let found_before = skill_dao.find_by_id(ctx, &skill_id).await?;
     assert!(found_before.is_some());
-    assert_eq!(found_before.unwrap().status, SkillStatus::Pending);
+    assert_eq!(found_before.unwrap().status, SkillStatus::Draft);
 
     let ctx = new_ctx("test-user", pool.clone());
     skill_dao.delete_by_id(ctx, &skill_id).await?;

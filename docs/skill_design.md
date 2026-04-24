@@ -58,8 +58,8 @@ CREATE INDEX IF NOT EXISTS idx_skills_root_user_id ON skills(root_user_id);
 | 值 | 枚举名 | 含义 |
 |----|--------|------|
 | 0 | `Expired` | 已过期/软删除，默认不查询 |
-| 1 | `Available` | 可用，可以被检索和使用 |
-| 2 | `Pending` | 待沉淀，还需要审核或完善 |
+| 1 | `Published` | 已发布，正式沉淀完成，已经发布到共享库，可以被检索和使用 |
+| 2 | `Draft` | 草稿，Agent 自有技能，还在私有迭代中，未发布到共享库 |
 
 ## 分层架构
 
@@ -80,33 +80,50 @@ CREATE INDEX IF NOT EXISTS idx_skills_root_user_id ON skills(root_user_id);
 
 ## 路径存储设计
 
-技能内容文件存储在数据目录下，按状态分目录存储：
+技能内容文件存储在数据目录下，按技能类型分目录存储：
 
-- `{data_root}/skills/pending/{skill_id}：待沉淀技能
-- `{data_root}/skills/available/{skill_id}`：可用技能
+- `{data_root}/agents/{agent_id}/skills/{skill_id}`：Agent 自有草稿技能（`Draft` 状态）
+- `{data_root}/skills/{skill_id}`：已发布共享技能（`Published` 状态）
 
-`content_path` 存储相对路径，例如：`skills/pending/{skill_id}`
+`content_path` 存储相对路径，例如：
+- `agents/{agent_id}/skills/{skill_id}`（Draft）
+- `skills/{skill_id}`（Published）
 
 ### 路径计算方法（在 `AppConfig`）
 
 ```rust
-// 获取技能根目录
+// 获取共享技能根目录
 pub fn skills_root_dir(&self) -> PathBuf;
 
-// 获取待沉淀技能根目录
-pub fn skills_pending_dir(&self) -> PathBuf;
+// 获取 Agent 自有技能根目录
+pub fn agent_skills_root_dir(&self, agent_id: &str) -> PathBuf;
 
-// 获取可用技能根目录
-pub fn skills_available_dir(&self) -> PathBuf;
+// 获取 Agent 自有技能目录
+pub fn agent_skill_dir(&self, agent_id: &str, skill_id: &str) -> PathBuf;
 
-// 获取技能目录绝对路径
-pub fn skill_dir(&self, content_path: &str) -> PathBuf;
+// 获取 Agent 自有技能内容文件路径
+pub fn agent_skill_content_path(&self, agent_id: &str, skill_id: &str) -> PathBuf;
 
-// 获取技能内容文件绝对路径
-pub fn skill_content_path(&self, content_path: &str) -> PathBuf;
+// 获取 Agent 自有技能相对路径
+pub fn agent_skill_relative_path(&self, agent_id: &str, skill_id: &str) -> String;
+
+// 获取共享技能目录
+pub fn shared_skill_dir(&self, skill_id: &str) -> PathBuf;
+
+// 获取共享技能内容文件路径
+pub fn shared_skill_content_path(&self, skill_id: &str) -> PathBuf;
+
+// 获取共享技能相对路径
+pub fn shared_skill_relative_path(&self, skill_id: &str) -> String;
+
+// 根据技能状态获取正确的内容文件绝对路径
+pub fn skill_content_path(&self, agent_id: &str, skill_id: &str, status: SkillStatus) -> PathBuf;
+
+// 根据技能状态获取正确的相对路径（存储到数据库）
+pub fn skill_relative_path(&self, agent_id: &str, skill_id: &str, status: SkillStatus) -> String;
 ```
 
-默认技能内容文件命名为 `skill.md` 或 `main.rs` 等，根据技能类型确定。
+默认技能内容文件命名为 `skill.md`，存储技能 markdown 内容。
 
 ## DAO 接口定义
 

@@ -10,15 +10,15 @@ use serde::{Deserialize, Serialize};
 pub enum SkillStatus {
     /// 已过期/已废弃，不再推荐使用，但保留历史记录
     Expired = 0,
-    /// 可用，正式沉淀完成，可以正常使用
-    Available = 1,
-    /// 待沉淀，还在迭代中，不推荐在正式场景使用
-    Pending = 2,
+    /// 已发布，正式沉淀完成，已经发布到共享库，可以正常使用
+    Published = 1,
+    /// 草稿，Agent 自有技能，还在私有迭代中，未发布到共享库
+    Draft = 2,
 }
 
 impl Default for SkillStatus {
     fn default() -> Self {
-        SkillStatus::Pending
+        SkillStatus::Draft
     }
 }
 
@@ -26,8 +26,8 @@ impl From<i32> for SkillStatus {
     fn from(v: i32) -> Self {
         match v {
             0 => SkillStatus::Expired,
-            1 => SkillStatus::Available,
-            2 => SkillStatus::Pending,
+            1 => SkillStatus::Published,
+            2 => SkillStatus::Draft,
             _ => SkillStatus::default(),
         }
     }
