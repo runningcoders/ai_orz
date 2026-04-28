@@ -1,6 +1,6 @@
 //! Tool DAO trait
 
-use crate::models::tool::{FullTool, ToolPo};
+use crate::models::tool::{Tool, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -25,7 +25,7 @@ pub trait ToolDao: Send + Sync {
     async fn get_by_id(&self, ctx: &RequestContext, id: String) -> Result<Option<ToolPo>>;
 
     /// Get full tool by ID (PO + built ToolDyn from registry)
-    async fn get_tool_full(&self, ctx: &RequestContext, id: String) -> Result<Option<FullTool>>;
+    async fn get_tool_full(&self, ctx: &RequestContext, id: String) -> Result<Option<Tool>>;
 
     /// Get tool by name
     async fn get_by_name(&self, ctx: &RequestContext, name: &str) -> Result<Option<ToolPo>>;
@@ -34,7 +34,7 @@ pub trait ToolDao: Send + Sync {
     async fn list_enabled(&self, ctx: &RequestContext) -> Result<Vec<ToolPo>>;
 
     /// List full tools for an agent (each is PO + ToolDyn)
-    async fn list_tools_for_agent_full(&self, ctx: &RequestContext, agent_id: &str) -> Result<Vec<FullTool>>;
+    async fn list_tools_for_agent_full(&self, ctx: &RequestContext, agent_id: &str) -> Result<Vec<Tool>>;
 
     /// Add tool to agent
     async fn add_tool_to_agent(

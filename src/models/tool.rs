@@ -128,9 +128,6 @@ pub struct ToolPo {
     pub updated_by: Option<String>,
 }
 
-/// Type alias for backward compatibility - FullTool is the complete tool entity
-pub type FullTool = Tool;
-
 /// Tool - complete tool entity with PO and boxed trait object
 ///
 /// Contains persistent metadata + actual executable tool object

@@ -1,7 +1,7 @@
 //! Rig 驱动的 Cortex 实现
 
 use anyhow::Result;
-use crate::models::{brain::*, model_provider::ModelProvider, tool::FullTool};
+use crate::models::{brain::*, model_provider::ModelProvider, tool::Tool};
 use crate::pkg::request_context::RequestContext;
 use common::enums::ProviderType;
 use std::sync::{Arc, OnceLock};
@@ -33,7 +33,7 @@ impl RigCortexDao {
 
 #[async_trait::async_trait]
 impl super::CortexDao for RigCortexDao {
-    fn create_cortex_trait(&self, ctx: RequestContext, provider: &ModelProvider, tools: Vec<FullTool>) -> Result<Box<dyn CortexTrait + Send + Sync>> {
+    fn create_cortex_trait(&self, ctx: RequestContext, provider: &ModelProvider, tools: Vec<Tool>) -> Result<Box<dyn CortexTrait + Send + Sync>> {
         let api_key = provider.po.api_key.clone();
         let model = provider.po.model_name.clone();
 

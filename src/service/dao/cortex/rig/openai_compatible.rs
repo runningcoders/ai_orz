@@ -10,7 +10,7 @@ use rig::tool::ToolDyn;
 use rig::providers::openai;
 use rig::providers::openai::responses_api::ResponsesCompletionModel;
 use crate::models::brain::CortexTrait;
-use crate::models::tool::FullTool;
+use crate::models::tool::Tool;
 use crate::pkg::request_context::RequestContext;
 
 /// OpenAI 兼容模式 Cortex
@@ -24,9 +24,9 @@ impl OpenAiCompatibleCortex {
         api_key: String,
         model: String,
         default_base_url: String,
-        user_base_url: Option<String>,
-        tools: Vec<FullTool>,
-        _ctx: &RequestContext,
+         user_base_url: Option<String>,
+         tools: Vec<Tool>,
+         _ctx: &RequestContext,
     ) -> Result<Self> {
         let base_url = user_base_url.unwrap_or(default_base_url);
 

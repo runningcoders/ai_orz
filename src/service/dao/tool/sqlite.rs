@@ -1,30 +1,30 @@
 //! SQLite implementation of ToolDao
 
 use common::enums::tool::ControlMode;
-use crate::models::tool::{FullTool, Tool, ToolPo, CoreTool, RigToolAdapter};
+use crate::models::tool::{Tool, ToolPo, CoreTool, RigToolAdapter};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::get_registry;
 use crate::pkg::tool_tracing::ToolCallLoggingDecorator;
 use anyhow::Result;
 use async_trait::async_trait;
 use rig::tool::ToolDyn;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use super::ToolDao;
 
 // ==================== 工厂方法 + 单例 ====================
 
 /// Global Tool DAO instance
-static TOOL_DAO: OnceLock<Box<dyn ToolDao>> = OnceLock::new();
+static TOOL_DAO: OnceLock<Arc<dyn ToolDao>> = OnceLock::new();
 
 /// 创建一个全新的 Tool DAO 实例（用于测试）
-pub fn new() -> Box<dyn ToolDao> {
-    Box::new(ToolDaoSqliteImpl::new())
+pub fn new() -> Arc<dyn ToolDao> {
+    Arc::new(ToolDaoSqliteImpl::new())
 }
 
 /// Get global Tool DAO (alias for get, consistent with other DAOs)
-pub fn dao() -> &'static Box<dyn ToolDao> {
-    TOOL_DAO.get().unwrap()
+pub fn dao() -> Arc<dyn ToolDao> {
+    TOOL_DAO.get().cloned().unwrap()
 }
 
 /// SQLite Tool DAO implementation
@@ -114,7 +114,7 @@ impl ToolDao for ToolDaoSqliteImpl {
         Ok(row)
     }
 
-    async fn get_tool_full(&self, ctx: &RequestContext, id: String) -> Result<Option<FullTool>> {
+    async fn get_tool_full(&self, ctx: &RequestContext, id: String) -> Result<Option<Tool>> {
         let Some(po) = self.get_by_id(ctx, id).await? else {
             return Ok(None);
         };
@@ -189,11 +189,11 @@ impl ToolDao for ToolDaoSqliteImpl {
         Ok(rows)
     }
 
-    async fn list_tools_for_agent_full(&self, ctx: &RequestContext, agent_id: &str) -> Result<Vec<FullTool>> {
+    async fn list_tools_for_agent_full(&self, ctx: &RequestContext, agent_id: &str) -> Result<Vec<Tool>> {
         let pos = self.list_tools_for_agent(ctx, agent_id).await?;
 
-        let registry = get_registry();
-        let mut tools: Vec<FullTool> = Vec::new();
+         let registry = get_registry();
+         let mut tools: Vec<Tool> = Vec::new();
         for po in pos {
             if let Some(tool_raw) = registry.create_tool(po.clone()) {
                 // Based on control_mode, wrap with the appropriate logger decorator

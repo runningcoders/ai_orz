@@ -9,7 +9,7 @@ use rig::tool::ToolDyn;
 use rig::providers::openai;
 use rig::providers::openai::responses_api::ResponsesCompletionModel;
 use crate::models::brain::CortexTrait;
-use crate::models::tool::FullTool;
+use crate::models::tool::Tool;
 use crate::pkg::request_context::RequestContext;
 
 /// Ollama 本地 Cortex
@@ -21,10 +21,10 @@ pub struct OllamaCortex {
 impl OllamaCortex {
     pub fn new(
         api_key: String, 
-        model: String, 
-        base_url: Option<String>, 
-        tools: Vec<FullTool>, 
-        _ctx: &RequestContext,
+         model: String,
+         base_url: Option<String>,
+         tools: Vec<Tool>, 
+         _ctx: &RequestContext,
     ) -> Result<Self> {
         // Ollama 默认地址 http://localhost:11434/v1
         let default_base_url = "http://localhost:11434/v1".to_string();

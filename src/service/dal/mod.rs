@@ -8,13 +8,15 @@ pub mod brain;
 pub mod message;
 pub mod model_provider;
 pub mod organization;
+pub mod tool;
 
 pub fn init_all(){
     agent::init();
     brain::init();
     message::init();
     model_provider::init();
-    organization::init()
+    organization::init();
+    tool::init();
 }
 
 
@@ -26,3 +28,5 @@ pub(crate) mod brain_test;
 pub(crate) mod message_test;
 #[cfg(test)]
 pub(crate) mod model_provider_test;
+#[cfg(test)]
+pub(crate) mod tool_test;

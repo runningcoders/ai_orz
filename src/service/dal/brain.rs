@@ -8,7 +8,7 @@ use anyhow::Result;
 use crate::error::AppError;
 use crate::models::brain::{Brain, Cortex, CortexTrait, Memory};
 use crate::models::model_provider::ModelProvider;
-use crate::models::tool::FullTool;
+use crate::models::tool::Tool;
 use crate::pkg::RequestContext;
 use crate::service::dao::cortex::{CortexDao};
 use std::sync::{Arc, OnceLock};
@@ -55,9 +55,9 @@ pub trait BrainDal: Send + Sync {
         &self,
         ctx: RequestContext,
         provider: &ModelProvider,
-        memory: Memory,
-        tools: Vec<FullTool>,
-    ) -> Result<Brain, AppError>;
+         memory: Memory,
+         tools: Vec<Tool>,
+     ) -> Result<Brain, AppError>;
 
     /// 创建 Cortex 并测试连通性，执行一次 prompt 获取回答
     ///
@@ -102,9 +102,9 @@ impl BrainDal for BrainDalImpl {
         &self,
         _ctx: RequestContext,
         provider: &ModelProvider,
-        memory: Memory,
-        tools: Vec<FullTool>,
-    ) -> Result<Brain, AppError> {
+             memory: Memory,
+             tools: Vec<Tool>,
+         ) -> Result<Brain, AppError> {
         // 1. 创建 CortexTrait，传入工具列表
         let cortex_trait = self.cortex_dao.create_cortex_trait(_ctx, provider, tools)
             .map_err(|e| AppError::Internal(e.to_string()))?;
