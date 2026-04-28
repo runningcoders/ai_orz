@@ -11,6 +11,8 @@ use crate::models::model_provider::ModelProvider;
 use crate::models::tool::Tool;
 use crate::pkg::RequestContext;
 use crate::service::dao::cortex::{CortexDao};
+use crate::service::dao::tool_call::ToolCallDao;
+use rig::tool::ToolDyn;
 use std::sync::{Arc, OnceLock};
 use async_trait::async_trait;
 use futures_util::TryFutureExt;
@@ -28,15 +30,18 @@ pub fn dal() -> Arc<dyn BrainDal> {
 pub fn init() {
     let _ = BRAIN_DAL.set(new(
         cortex::dao(),
+        crate::service::dao::tool_call::dao(),
     ));
 }
 
 /// 创建 Brain DAL（返回 trait 对象）
 pub fn new(
     cortex_dao: Arc<dyn CortexDao + Send + Sync>,
+    tool_call_dao: Arc<dyn ToolCallDao + Send + Sync>,
 ) -> Arc<dyn BrainDal> {
     Arc::new(BrainDalImpl {
         cortex_dao,
+        tool_call_dao,
     })
 }
 
@@ -85,14 +90,16 @@ pub trait BrainDal: Send + Sync {
 /// Brain DAL 实现
 struct BrainDalImpl {
     cortex_dao: Arc<dyn CortexDao + Send + Sync>,
+    tool_call_dao: Arc<dyn ToolCallDao + Send + Sync>,
 }
 
 impl BrainDalImpl {
     /// 创建 DAL 实例
     fn new(
         cortex_dao: Arc<dyn CortexDao + Send + Sync>,
+        tool_call_dao: Arc<dyn ToolCallDao + Send + Sync>,
     ) -> Self {
-        Self { cortex_dao }
+        Self { cortex_dao, tool_call_dao }
     }
 }
 
@@ -106,7 +113,9 @@ impl BrainDal for BrainDalImpl {
              tools: Vec<Tool>,
          ) -> Result<Brain, AppError> {
         // 1. 创建 CortexTrait，传入工具列表
-        let cortex_trait = self.cortex_dao.create_cortex_trait(_ctx, provider, tools)
+        let rig_tools = self.tool_call_dao.wrap_for_rig(&tools, _ctx.clone());
+        
+        let cortex_trait = self.cortex_dao.create_cortex_trait(_ctx, provider, rig_tools)
             .map_err(|e| AppError::Internal(e.to_string()))?;
 
         // 2. 创建 Cortex 实体

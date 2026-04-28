@@ -9,8 +9,6 @@ use rig::tool::ToolDyn;
 use rig::providers::openai;
 use rig::providers::openai::responses_api::ResponsesCompletionModel;
 use crate::models::brain::CortexTrait;
-use crate::models::tool::Tool;
-use crate::pkg::request_context::RequestContext;
 
 /// Ollama 本地 Cortex
 #[derive(Clone)]
@@ -23,8 +21,7 @@ impl OllamaCortex {
         api_key: String, 
          model: String,
          base_url: Option<String>,
-         tools: Vec<Tool>, 
-         _ctx: &RequestContext,
+         rig_tools: Vec<Box<dyn ToolDyn>>,
     ) -> Result<Self> {
         // Ollama 默认地址 http://localhost:11434/v1
         let default_base_url = "http://localhost:11434/v1".to_string();
@@ -35,18 +32,11 @@ impl OllamaCortex {
         let client = builder.build()
             .map_err(|e| anyhow!("Failed to build Ollama client: {}", e))?;
 
-        // Extract pre-built rig tools from Tool struct - already wrapped with RigToolCallLogger by ToolDao
-        // Rig expects Box<dyn ToolDyn>, only include tools in auto mode have rig_tool
-        let tool_boxes: Vec<Box<dyn ToolDyn>> = tools
-            .into_iter()
-            .filter_map(|t| t.rig_tool.map(|t| t as Box<dyn ToolDyn>))
-            .collect();
-
         // 使用指定模型创建 Agent
-        let agent = if tool_boxes.is_empty() {
+        let agent = if rig_tools.is_empty() {
             client.agent(model).build()
         } else {
-            client.agent(model).tools(tool_boxes).build()
+            client.agent(model).tools(rig_tools).build()
         };
 
         Ok(Self { agent })

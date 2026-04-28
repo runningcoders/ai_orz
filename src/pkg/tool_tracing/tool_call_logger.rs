@@ -29,15 +29,19 @@ impl LoggingDecorator {
     ) -> Self {
         Self { inner }
     }
-}
 
-#[async_trait]
-impl CoreTool for LoggingDecorator {
-    async fn call(
+    /// Get the inner tool (unwrapped) for re-decorating
+    pub fn inner(&self) -> &(dyn CoreTool + Send + Sync) {
+        self.inner.as_ref()
+    }
+
+    /// Call the tool and return (result, entry)
+    /// Used for manual call chain where entry is needed for upper layers
+    pub async fn call_with_entry(
         &self,
         ctx: &RequestContext,
         args: Value,
-    ) -> Result<Value, ToolError> {
+    ) -> (Result<Value, ToolError>, ToolCallEntry) {
         let call_id = Uuid::now_v7().to_string();
         let started_at = current_timestamp_ms();
         let po = self.inner.po();
@@ -75,12 +79,30 @@ impl CoreTool for LoggingDecorator {
         };
 
         // Write the log entry - ignore logging errors, don't fail the actual call
-        let _ = ToolCallLogger::get().log_call(&po.id, entry);
+        let _ = ToolCallLogger::get().log_call(&po.id, entry.clone());
 
+        (result, entry)
+    }
+}
+
+#[async_trait]
+impl CoreTool for LoggingDecorator {
+    async fn call(&self, ctx: &RequestContext, args: Value) -> Result<Value, ToolError> {
+        let (result, entry) = self.call_with_entry(ctx, args).await;
+        // Log the entry immediately
+        let tool_id = entry.tool_id.clone();
+        ToolCallLogger::get().log_call(&tool_id, entry);
         result
     }
 
     fn po(&self) -> &ToolPo {
         self.inner.po()
+    }
+
+    fn as_original(&self) -> &(dyn CoreTool + Send + Sync) {
+        // inner is already the original - if it's decorated, inner would handle it
+        // but since inner is already a dyn object, we can't call as_original on it (Sized requirement)
+        // so just return the inner reference directly
+        self.inner.as_ref()
     }
 }

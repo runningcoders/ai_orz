@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use common::enums::tool::ControlMode;
 use common::enums::{ToolProtocol, ToolStatus};
 use rig::tool::{ToolDyn, ToolError};
+use rig::completion::ToolDefinition;
 use crate::pkg::request_context::RequestContext;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -22,6 +23,12 @@ pub trait CoreTool: Send + Sync + DynClone {
     
     /// 获取工具对应的数据库持久化对象
     fn po(&self) -> &ToolPo;
+
+    /// 获取原始的 inner 工具，如果已经被装饰过的话
+    /// 默认实现返回自身，覆盖这个方法用于装饰器取出原始工具
+    fn as_original(&self) -> &(dyn CoreTool + Send + Sync) where Self: Sized {
+        self
+    }
 }
 
 dyn_clone::clone_trait_object!(CoreTool);
@@ -90,7 +97,7 @@ impl ToolDyn for RigToolAdapter {
             // Serialize result back to string
             match result {
                 Ok(v) => Ok(serde_json::to_string(&v)?),
-                Err(e) => Err(rig::tool::ToolError::ToolCallError(e.to_string().into())),
+                Err(e) => Err(ToolError::ToolCallError(e.to_string().into())),
             }
         }
         .boxed()
@@ -131,17 +138,10 @@ pub struct ToolPo {
 /// Tool - complete tool entity with PO and boxed trait object
 ///
 /// Contains persistent metadata + actual executable tool object
-/// Based on control_mode:
-/// - Auto:  rig_tool is populated (rig's ToolDyn, already adapted)
-/// - Manual: rig_tool is None, use our_tool directly
 pub struct Tool {
     /// Persistent metadata from DB
     pub po: ToolPo,
-    /// Control mode (stored redundantly for easy matching)
-    pub control_mode: ControlMode,
-    /// Rig adapter (Auto mode only)
-    pub rig_tool: Option<Box<dyn ToolDyn + Send + Sync>>,
-    /// Our core interface tool (already wrapped with logging decorator)
+    /// Our core interface tool
     pub our_tool: Box<dyn CoreTool + Send + Sync>,
 }
 
@@ -150,8 +150,6 @@ impl std::fmt::Debug for Tool {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Tool")
             .field("po", &self.po)
-            .field("control_mode", &self.control_mode)
-            .field("rig_tool", &format_args!("Option<Box<dyn ToolDyn + Send + Sync>>"))
             .field("our_tool", &format_args!("Box<dyn CoreTool + Send + Sync>"))
             .finish()
     }

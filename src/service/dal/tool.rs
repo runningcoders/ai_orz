@@ -4,10 +4,14 @@
 //! 负责组合 DAO 完成业务级数据操作
 
 use crate::error::AppError;
-use crate::models::tool::{Tool, ToolPo};
+use crate::models::tool::{Tool, ToolPo, CoreTool};
 use crate::pkg::request_context::RequestContext;
+use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use crate::service::dao::tool::{ToolDao, self};
+use crate::service::dao::tool_call::{ToolCallDao, self};
+use rig::tool::ToolError;
 use anyhow::Result;
+use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例管理 ====================
@@ -23,15 +27,18 @@ pub fn dal() -> Arc<dyn ToolDal> {
 pub fn init() {
     let _ = TOOL_DAL.set(new(
         tool::dao(),
+        tool_call::dao(),
     ));
 }
 
 /// 创建 Tool DAL（返回 trait 对象）
 pub fn new(
     tool_dao: Arc<dyn ToolDao + Send + Sync>,
+    tool_call_dao: Arc<dyn ToolCallDao + Send + Sync>,
 ) -> Arc<dyn ToolDal> {
     Arc::new(ToolDalImpl {
         tool_dao,
+        tool_call_dao,
     })
 }
 
@@ -46,23 +53,17 @@ pub trait ToolDal: Send + Sync {
     /// 更新现有工具
     async fn update_tool(&self, ctx: &RequestContext, po: &ToolPo) -> Result<(), AppError>;
 
-    /// 根据 ID 获取工具 PO
-    async fn get_by_id(&self, ctx: &RequestContext, id: String) -> Result<Option<ToolPo>, AppError>;
+    /// 根据 ID 获取完整工具（PO + CoreTool 实例）
+    async fn get_by_id(&self, ctx: &RequestContext, id: String) -> Result<Option<Tool>, AppError>;
 
-    /// 根据 ID 获取完整工具（PO + ToolDyn 实例）
-    async fn get_tool_full(&self, ctx: &RequestContext, id: String) -> Result<Option<Tool>, AppError>;
-
-    /// 根据名称获取工具
-    async fn get_by_name(&self, ctx: &RequestContext, name: &str) -> Result<Option<ToolPo>, AppError>;
+    /// 根据名称获取完整工具
+    async fn get_by_name(&self, ctx: &RequestContext, name: &str) -> Result<Option<Tool>, AppError>;
 
     /// 获取所有启用的工具
-    async fn list_enabled(&self, ctx: &RequestContext) -> Result<Vec<ToolPo>, AppError>;
+    async fn list_enabled(&self, ctx: &RequestContext) -> Result<Vec<Tool>, AppError>;
 
-    /// 获取 Agent 的所有完整工具（每个都是 PO + ToolDyn）
+    /// 获取 Agent 的所有完整工具（每个都是 PO + CoreTool）
     async fn list_tools_for_agent_full(&self, ctx: &RequestContext, agent_id: &str) -> Result<Vec<Tool>, AppError>;
-
-    /// 获取 Agent 的所有工具（仅 PO）
-    async fn list_tools_for_agent(&self, ctx: &RequestContext, agent_id: &str) -> Result<Vec<ToolPo>, AppError>;
 
     /// 添加工具到 Agent
     async fn add_tool_to_agent(
@@ -85,6 +86,36 @@ pub trait ToolDal: Send + Sync {
     /// 已存在的工具（按 ID）跳过，避免重复
     /// 返回新增的工具数量
     async fn sync_builtin_tools_to_db(&self, ctx: &RequestContext) -> Result<usize, AppError>;
+
+    /// 执行工具调用（通过工具 ID）
+    /// 自动获取完整工具实体然后执行
+    async fn call_tool_by_id(
+        &self,
+        ctx: &RequestContext,
+        tool_id: String,
+        args: Value,
+    ) -> Result<Value, ToolError>;
+
+    /// 直接执行已获取的工具
+    /// 用于上层已经获取工具的场景（避免重复查询）
+    async fn call_tool(
+        &self,
+        ctx: &RequestContext,
+        tool: &Tool,
+        args: Value,
+    ) -> Result<Value, ToolError>;
+
+    /// 手动执行工具并返回完整调用追踪 entry
+    /// ToolCallDao 层负责每次调用新建 LoggingDecorator 捕获本次调用信息
+    async fn call_manual(
+        &self,
+        ctx: &RequestContext,
+        tool: &Tool,
+        args: Value,
+    ) -> Result<(Value, ToolCallEntry), ToolError>;
+
+    /// Wrap tools for Rig to use (convert to Box<dyn ToolDyn>)
+    fn wrap_for_rig(&self, tools: &[Tool], ctx: RequestContext) -> Vec<Box<dyn rig::tool::ToolDyn>>;
 }
 
 // ==================== DAL 实现 ====================
@@ -92,6 +123,7 @@ pub trait ToolDal: Send + Sync {
 /// Tool DAL 基础实现
 pub struct ToolDalImpl {
     tool_dao: Arc<dyn ToolDao + Send + Sync>,
+    tool_call_dao: Arc<dyn ToolCallDao + Send + Sync>,
 }
 
 #[async_trait::async_trait]
@@ -104,28 +136,46 @@ impl ToolDal for ToolDalImpl {
         Ok(self.tool_dao.update_tool(ctx, po).await?)
     }
 
-    async fn get_by_id(&self, ctx: &RequestContext, id: String) -> Result<Option<ToolPo>, AppError> {
-        Ok(self.tool_dao.get_by_id(ctx, id).await?)
+    async fn get_by_id(&self, ctx: &RequestContext, id: String) -> Result<Option<Tool>, AppError> {
+        let Some(po) = self.tool_dao.get_by_id(ctx, id).await? else {
+            return Ok(None);
+        };
+        let Some(our_tool) = self.tool_call_dao.assemble_core_tool(&po)? else {
+            return Ok(None);
+        };
+        Ok(Some(Tool { po, our_tool }))
     }
 
-    async fn get_tool_full(&self, ctx: &RequestContext, id: String) -> Result<Option<Tool>, AppError> {
-        Ok(self.tool_dao.get_tool_full(ctx, id).await?)
+    async fn get_by_name(&self, ctx: &RequestContext, name: &str) -> Result<Option<Tool>, AppError> {
+        let Some(po) = self.tool_dao.get_by_name(ctx, name).await? else {
+            return Ok(None);
+        };
+        let Some(our_tool) = self.tool_call_dao.assemble_core_tool(&po)? else {
+            return Ok(None);
+        };
+        Ok(Some(Tool { po, our_tool }))
     }
 
-    async fn get_by_name(&self, ctx: &RequestContext, name: &str) -> Result<Option<ToolPo>, AppError> {
-        Ok(self.tool_dao.get_by_name(ctx, name).await?)
-    }
-
-    async fn list_enabled(&self, ctx: &RequestContext) -> Result<Vec<ToolPo>, AppError> {
-        Ok(self.tool_dao.list_enabled(ctx).await?)
+    async fn list_enabled(&self, ctx: &RequestContext) -> Result<Vec<Tool>, AppError> {
+        let pos = self.tool_dao.list_enabled(ctx).await?;
+        let mut tools = Vec::new();
+        for po in pos {
+            if let Some(our_tool) = self.tool_call_dao.assemble_core_tool(&po)? {
+                tools.push(Tool { po, our_tool });
+            }
+        }
+        Ok(tools)
     }
 
     async fn list_tools_for_agent_full(&self, ctx: &RequestContext, agent_id: &str) -> Result<Vec<Tool>, AppError> {
-        Ok(self.tool_dao.list_tools_for_agent_full(ctx, agent_id).await?)
-    }
-
-    async fn list_tools_for_agent(&self, ctx: &RequestContext, agent_id: &str) -> Result<Vec<ToolPo>, AppError> {
-        Ok(self.tool_dao.list_tools_for_agent(ctx, agent_id).await?)
+        let pos = self.tool_dao.list_tools_for_agent(ctx, agent_id).await?;
+        let mut tools = Vec::new();
+        for po in pos {
+            if let Some(our_tool) = self.tool_call_dao.assemble_core_tool(&po)? {
+                tools.push(Tool { po, our_tool });
+            }
+        }
+        Ok(tools)
     }
 
     async fn add_tool_to_agent(
@@ -149,5 +199,45 @@ impl ToolDal for ToolDalImpl {
 
     async fn sync_builtin_tools_to_db(&self, ctx: &RequestContext) -> Result<usize, AppError> {
         Ok(self.tool_dao.sync_builtin_tools_to_db(ctx).await?)
+    }
+
+    async fn call_tool_by_id(
+        &self,
+        ctx: &RequestContext,
+        tool_id: String,
+        args: Value,
+    ) -> Result<Value, ToolError> {
+        // 获取完整工具
+        let tool = self.get_by_id(ctx, tool_id.clone()).await
+            .map_err(|e| ToolError::ToolCallError(e.to_string().into()))?;
+
+        let tool = tool.ok_or_else(|| ToolError::ToolCallError(format!("Tool not found: {}", tool_id).into()))?;
+
+        // 执行工具
+        self.call_tool(ctx, &tool, args).await
+    }
+
+    async fn call_tool(
+        &self,
+        ctx: &RequestContext,
+        tool: &Tool,
+        args: Value,
+    ) -> Result<Value, ToolError> {
+        // Delegate to call_manual and discard the entry
+        self.call_manual(ctx, tool, args).await
+            .map(|(value, _)| value)
+    }
+
+    async fn call_manual(
+        &self,
+        ctx: &RequestContext,
+        tool: &Tool,
+        args: Value,
+    ) -> Result<(Value, ToolCallEntry), ToolError> {
+        self.tool_call_dao.call_manual(ctx, tool, args).await
+    }
+
+    fn wrap_for_rig(&self, tools: &[Tool], ctx: RequestContext) -> Vec<Box<dyn rig::tool::ToolDyn>> {
+        self.tool_call_dao.wrap_for_rig(tools, ctx)
     }
 }

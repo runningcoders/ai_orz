@@ -1,13 +1,10 @@
 //! SQLite implementation of ToolDao
 
-use common::enums::tool::ControlMode;
-use crate::models::tool::{Tool, ToolPo, CoreTool, RigToolAdapter};
+use crate::models::tool::ToolPo;
 use crate::pkg::request_context::RequestContext;
-use crate::pkg::tool_registry::get_registry;
-use crate::pkg::tool_tracing::ToolCallLoggingDecorator;
 use anyhow::Result;
 use async_trait::async_trait;
-use rig::tool::ToolDyn;
+use sqlx::SqlitePool;
 use std::sync::{Arc, OnceLock};
 
 use super::ToolDao;
@@ -114,51 +111,6 @@ impl ToolDao for ToolDaoSqliteImpl {
         Ok(row)
     }
 
-    async fn get_tool_full(&self, ctx: &RequestContext, id: String) -> Result<Option<Tool>> {
-        let Some(po) = self.get_by_id(ctx, id).await? else {
-            return Ok(None);
-        };
-
-        // Create tool instance from registry factory given po from DB
-        let registry = get_registry();
-        let Some(tool_raw) = registry.create_tool(po.clone()) else {
-            return Ok(None);
-        };
-
-        // Based on control_mode, wrap with the appropriate logger decorator
-        let tool = match po.control_mode {
-            ControlMode::Auto => {
-                // Auto mode: our core tool exists + wrapped with logging decorator
-                let decorated_our = ToolCallLoggingDecorator::new(tool_raw);
-                let decorated_our_box: Box<dyn CoreTool + Send + Sync> =
-                    Box::new(decorated_our);
-                
-                // Also wrap as Rig tool for Rig to use - RigToolAdapter holds ctx
-                let rig_adapter = RigToolAdapter::new(ctx.clone(), decorated_our_box.clone());
-                let rig_adapter_box: Box<dyn ToolDyn + Send + Sync> = Box::new(rig_adapter);
-                
-                Some(Tool {
-                    po,
-                    control_mode: ControlMode::Auto,
-                    rig_tool: Some(rig_adapter_box),
-                    our_tool: decorated_our_box,
-                })
-            }
-            ControlMode::Manual => {
-                // Manual mode: only our core tool wrapped with logging decorator
-                let decorated = ToolCallLoggingDecorator::new(tool_raw);
-                let decorated_box: Box<dyn CoreTool + Send + Sync> = Box::new(decorated);
-                Some(Tool {
-                    po,
-                    control_mode: ControlMode::Manual,
-                    rig_tool: None,
-                    our_tool: decorated_box,
-                })
-            }
-        };
-
-        Ok(tool)
-    }
 
     async fn get_by_name(&self, ctx: &RequestContext, name: &str) -> Result<Option<ToolPo>> {
         let pool = ctx.db_pool();
@@ -189,54 +141,6 @@ impl ToolDao for ToolDaoSqliteImpl {
         Ok(rows)
     }
 
-    async fn list_tools_for_agent_full(&self, ctx: &RequestContext, agent_id: &str) -> Result<Vec<Tool>> {
-        let pos = self.list_tools_for_agent(ctx, agent_id).await?;
-
-         let registry = get_registry();
-         let mut tools: Vec<Tool> = Vec::new();
-        for po in pos {
-            if let Some(tool_raw) = registry.create_tool(po.clone()) {
-                // Based on control_mode, wrap with the appropriate logger decorator
-                let tool = match po.control_mode {
-                    ControlMode::Auto => {
-                        // Auto mode: our core tool exists + wrapped with logging decorator
-                        let decorated_our = ToolCallLoggingDecorator::new(tool_raw);
-                        let decorated_our_box: Box<dyn CoreTool + Send + Sync> =
-                            Box::new(decorated_our);
-                        
-                        // Also wrap as Rig tool for Rig to use - RigToolAdapter holds ctx
-                        let rig_adapter = RigToolAdapter::new(ctx.clone(), decorated_our_box.clone());
-                        let rig_adapter_box: Box<dyn ToolDyn + Send + Sync> = Box::new(rig_adapter);
-                        
-                        Some(Tool {
-                            po,
-                            control_mode: ControlMode::Auto,
-                            rig_tool: Some(rig_adapter_box),
-                            our_tool: decorated_our_box,
-                        })
-                    }
-                    ControlMode::Manual => {
-                        // Manual mode: only our core tool wrapped with logging decorator
-                        let decorated = ToolCallLoggingDecorator::new(tool_raw);
-                        let decorated_box: Box<dyn CoreTool + Send + Sync> = Box::new(decorated);
-                        Some(Tool {
-                            po,
-                            control_mode: ControlMode::Manual,
-                            rig_tool: None,
-                            our_tool: decorated_box,
-                        })
-                    }
-                };
-                if let Some(tool) = tool {
-                    tools.push(tool);
-                }
-            }
-            // Skip if not found in registry (automatic filtering)
-        }
-
-        Ok(tools)
-    }
-
     async fn add_tool_to_agent(
         &self,
         ctx: &RequestContext,
@@ -245,16 +149,19 @@ impl ToolDao for ToolDaoSqliteImpl {
         created_by: Option<String>,
     ) -> Result<()> {
         let pool = ctx.db_pool();
+        let now = common::constants::utils::current_timestamp();
 
         sqlx::query(
             r#"
-            INSERT OR IGNORE INTO agent_tools (agent_id, tool_id, created_by)
-            VALUES (?, ?, ?)
+            INSERT INTO agent_tools (agent_id, tool_id, created_at, created_by)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT (agent_id, tool_id) DO NOTHING
             "#
         )
         .bind(agent_id)
         .bind(tool_id)
-        .bind(created_by)
+        .bind(now)
+        .bind(&created_by)
         .execute(pool)
         .await?;
 
@@ -289,8 +196,8 @@ impl ToolDao for ToolDaoSqliteImpl {
             r#"
             SELECT t.* FROM tools t
             INNER JOIN agent_tools at ON t.id = at.tool_id
-            WHERE at.agent_id = ? AND t.status = 1
-            ORDER BY t.created_at DESC
+            WHERE at.agent_id = ?
+            ORDER BY at.created_at ASC
             "#
         )
         .bind(agent_id)

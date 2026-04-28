@@ -11,6 +11,7 @@ pub mod task;
 pub mod project;
 pub mod skill;
 pub mod tool;
+pub mod tool_call;
 
 pub fn init_all(){
     agent::init();
@@ -26,4 +27,5 @@ pub fn init_all(){
     project::init();
     skill::init();
     tool::init();
+    tool_call::init();
 }

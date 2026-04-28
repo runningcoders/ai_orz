@@ -4,7 +4,9 @@
 //! 包含 create_cortex_trait 和 prompt（执行 prompt 获取回答）
 
 use anyhow::{Result};
-use crate::models::{brain::*, model_provider::ModelProvider, tool::Tool};
+use crate::models::{brain::*, model_provider::ModelProvider};
+use async_trait::async_trait;
+use ::rig::tool::ToolDyn;
 use crate::pkg::RequestContext;
 
 /// Cortex DAO 工厂 trait
@@ -12,8 +14,8 @@ use crate::pkg::RequestContext;
 /// CortexDao 负责创建 CortexTrait 和 prompt，所有方法都传递 ctx
 #[async_trait::async_trait]
 pub trait CortexDao: Send + Sync {
-    /// 根据 Model Provider 创建 CortexTrait 实例，绑定指定工具列表
-    fn create_cortex_trait(&self, ctx: RequestContext, provider: &ModelProvider, tools: Vec<Tool>) -> Result<Box<dyn CortexTrait + Send + Sync>>;
+    /// 根据 Model Provider 创建 CortexTrait 实例，绑定已包装的 Rig 工具列表
+    fn create_cortex_trait(&self, ctx: RequestContext, provider: &ModelProvider, rig_tools: Vec<Box<dyn ToolDyn>>) -> Result<Box<dyn CortexTrait + Send + Sync>>;
 
     /// 执行 prompt：使用已创建的 CortexTrait 推理获取回答
     async fn prompt(&self, ctx: RequestContext, cortex: &dyn CortexTrait, prompt: &str) -> Result<String>;
