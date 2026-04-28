@@ -280,4 +280,131 @@ src/service/
 
 本文档创建于：2026-04-19，基于讨论总结。
 
-最后更新：2026-04-19
+最后更新：2026-04-28
+
+---
+
+## 混合模式工具调用设计
+
+### 核心理念
+
+系统支持**混合模式**工具调用，兼顾简洁性和可控性：
+
+| 模式 | 适用场景 | 调用方式 | 可控性 |
+|------|---------|---------|--------|
+| **auto 模式** | 简单无状态工具（如搜索引擎、代码格式化） | 交给 rig 原生自动调用 | rig 完全控制 |
+| **manual 模式** | 关键业务工具（如读写文件、执行命令、修改代码） | 自建链路控制，可收敛 | 可重试、可审核、可人工干预 |
+
+### 存储设计
+
+工具调用本身就是一种特殊消息，**复用现有 `messages` 表存储**，不需要单独新建表：
+
+| 消息类型枚举 | 说明 | content 存储格式 |
+|-------------|------|-----------------|
+| `Text` | 普通文本消息 | 纯文本 |
+| `ToolCallRequest` | 工具调用请求 | JSON 序列化的 `ToolCallRequest` |
+| `ToolCallResult` | 工具调用结果 | JSON 序列化的 `ToolCallResult` |
+
+### 代码组织规范
+
+根据设计要求，按功能分组存放，不拆分小文件：
+
+```
+common/src/enums/
+└── message.rs         # 统一存放所有消息相关枚举：
+                        # MessageRole / MessageStatus / MessageType
+
+src/models/
+└── message.rs         # 统一存放 PO + 工具调用结构体：
+                        # MessagePo / ToolCallRequest / ToolCallResult
+
+src/pkg/
+├── tool_registry/     # ContextTool trait 定义 + 注册中心
+│   └── mod.rs
+└── tool_tracing/      # ContextToolCallLogger 日志装饰器
+    └── mod.rs
+```
+
+### manual 模式调用流程
+
+```
+Agent 决策需要调用工具 → 生成 ToolCallRequest → 保存为消息 → 发布事件
+    ↓
+服务端取出事件 → 执行工具 → 生成 ToolCallResult → 保存为消息
+    ↓
+Agent 拉取到 ToolCallResult → 继续处理 → 生成最终回复
+```
+
+优势：
+- ✅ 完整链路可追溯，所有工具调用都记录在消息历史中
+- ✅ 支持人工审核工具调用后再执行
+- ✅ 支持重试失败的工具调用
+- ✅ 复用现有消息存储和投递机制，不增加基础设施复杂度
+
+---
+
+## 消息投递队列设计
+
+### 拉取模式消费
+
+每个 Agent 有自己的投递队列，使用拉取模式消费：
+
+1. Agent 启动后调用 `dequeue` 获取下一个 `Pending` 消息
+2. 更新消息状态为 `Processing`
+3. Agent 处理消息
+4. 处理完成调用 `ack` 更新状态为 `Completed`
+5. 如果处理失败调用 `nack` 改回 `Pending`，下次重新拉取
+
+### 领域层接口设计
+
+```rust
+pub trait DeliveryDomain {
+    /// 用户发送消息给 Agent
+    async fn send_to_agent(
+        &self,
+        ctx: RequestContext,
+        msg: NewMessage,
+    ) -> Result<MessagePo, AppError>;
+
+    /// Agent 发送消息给用户
+    async fn send_to_user(
+        &self,
+        ctx: RequestContext,
+        msg: NewMessage,
+    ) -> Result<MessagePo, AppError>;
+
+    /// Agent 拉取下一个待处理消息
+    async fn dequeue(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+    ) -> Result<Option<MessagePo>, AppError>;
+
+    /// 确认消息处理完成
+    async fn ack(
+        &self,
+        ctx: RequestContext,
+        message_id: &str,
+    ) -> Result<(), AppError>;
+
+    /// 消息处理失败，放回队列
+    async fn nack(
+        &self,
+        ctx: RequestContext,
+        message_id: &str,
+    ) -> Result<(), AppError>;
+}
+```
+
+## 当前实现进度
+
+- [x] 数据库 schema 设计完成，迁移已执行
+- [x] 枚举定义完成（common）
+- [x] PO 和工具调用结构体定义完成（models）
+- [x] DAO 层完成
+- [x] DAL 层完成
+- [x] Domain 层完成：delivery + management，所有测试通过
+- [x] 事件总线重构完成：泛型 topic 分离设计，彻底解决消息错乱
+- [ ] Handler 层开发进行中
+
+所有单元测试：**158/158 全部通过 ✅**
