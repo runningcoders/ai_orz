@@ -185,6 +185,25 @@ Agent (po + brain: Option<Brain>)
 
 ---
 
+## 三层设计哲学
+
+经过多轮开发实践，总结出各层的核心设计思想：
+
+| 层级 | 核心 | 设计要点 |
+|------|------|---------|
+| **dao** | **注重多态** | 定义接口协议，不同存储有不同实现，上层业务面向接口编程。例如：`ToolDao` 定义接口，`ToolDaoSqliteImpl` 提供 SQLite 实现。 |
+| **dal** | **注重继承** | 基础 dal 实现通用逻辑，特殊需求通过继承基础 dal 进行扩展。基础 dal 复用通用逻辑，特殊 dal 只需要实现差异部分。 |
+| **domain** | **注重组合** | 一个领域组合多个 dal，通过编排完成业务逻辑，保持高内聚低耦合。上层 handler 通过组合不同领域完成具体业务。 |
+
+**图示：**
+```
+dao:  [ToolDao ◇─── ToolDaoSqliteImpl]  (多态：接口 → 多种实现)
+dal:  [ToolDalBase ◇─── ToolDalSpecial] (继承：基础 → 扩展特殊)
+domain: [ToolDomain ←---- (ToolDal + AgentDal + MessageDal)] (组合：多个 dal 编排)
+```
+
+---
+
 ## 设计原则
 
 1. **严格分层不跨级调用** → 遵循 `handlers → domain → dal → dao → models` 层级依赖
@@ -254,7 +273,7 @@ Agent (po + brain: Option<Brain>)
 - 每个单元测试独立，使用随机临时 SQLite 文件，互不干扰
 - 每个测试在执行前重新初始化 storage，保证干净环境
 - 所有建表使用定义好的常量，不重复写 SQL
-- 当前项目总测试数：**66 个** → **全部通过** ✅
+- 当前项目总测试数：**158 个** → **全部通过** ✅
 
 ### 测试设计要点
 
