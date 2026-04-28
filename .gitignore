@@ -46,3 +46,7 @@ target
 /memory
 # /.sqlx  # sqlx offline query cache needs to be committed
 /tmp
+# SQLite database
+*.db
+*.db-wal
+*.db-shm
