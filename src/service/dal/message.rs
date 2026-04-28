@@ -61,6 +61,17 @@ pub trait MessageDal: Send + Sync {
         limit: Option<usize>,
     ) -> Result<Vec<Message>, AppError>;
 
+    /// 按项目 ID 查询消息列表
+    ///
+    /// 默认按 created_at 升序排序，保持对话顺序
+    /// 支持限制返回条数，用于分页加载
+    async fn list_by_project_id(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<Message>, AppError>;
+
     /// 按发送方 ID 查询消息列表
     async fn list_by_from_id(
         &self,
@@ -187,6 +198,16 @@ impl MessageDal for MessageDalImpl {
         limit: Option<usize>,
     ) -> Result<Vec<Message>, AppError> {
         let pos = self.message_dao.list_by_task_id(ctx, task_id, limit).await?;
+        Ok(pos.into_iter().map(Message::from_po).collect())
+    }
+
+    async fn list_by_project_id(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<Message>, AppError> {
+        let pos = self.message_dao.list_by_project_id(ctx, project_id, limit).await?;
         Ok(pos.into_iter().map(Message::from_po).collect())
     }
 

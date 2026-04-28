@@ -20,6 +20,10 @@ pub trait MessageDao: Send + Sync {
     /// 如果传入 limit 则限制返回数量
     async fn list_by_task_id(&self, ctx: RequestContext, task_id: &str, limit: Option<usize>) -> Result<Vec<MessagePo>>;
 
+    /// 根据项目 ID 查询所有消息，按创建时间升序排列
+    /// 如果传入 limit 则限制返回数量
+    async fn list_by_project_id(&self, ctx: RequestContext, project_id: &str, limit: Option<usize>) -> Result<Vec<MessagePo>>;
+
     /// 根据来源 ID 查询所有消息
     async fn list_by_from_id(&self, ctx: RequestContext, from_id: &str, limit: Option<usize>) -> Result<Vec<MessagePo>>;
 

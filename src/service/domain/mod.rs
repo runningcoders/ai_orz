@@ -4,11 +4,13 @@
 //! - hr → 人力资源（智能体管理）
 //! - finance → 财务管理（模型提供商管理）
 //! - organization → 组织管理（组织和用户管理）
+//! - message → 消息领域（消息投递和管理）
 
 
 pub mod hr;
 pub mod finance;
 pub mod organization;
+pub mod message;
 
 // Tests are located in subdirectories: finance/model_provider_test.rs and hr/agent_test.rs
 // No need to declare them here because mod rs already declared in subdirectories
@@ -19,4 +21,5 @@ pub fn init_all() {
     hr::init();
     finance::init();
     organization::init();
+    message::init();
 }

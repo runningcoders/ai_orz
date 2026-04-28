@@ -749,3 +749,111 @@ async fn test_create_tool_call_result_failed(pool: SqlitePool) -> Result<()> {
 
     Ok(())
 }
+
+
+/// 测试按 project_id 查询消息列表
+#[sqlx::test(migrations = "./migrations")]
+async fn test_list_by_project_id(pool: SqlitePool) -> Result<()> {
+    crate::service::dao::message::init();
+    let message_dao = message::dao();
+    let ctx = new_ctx("test-user", pool);
+
+    // 创建多条消息分属不同项目
+    // project-1: 3 条消息
+    let id1 = Uuid::now_v7().to_string();
+    let m1 = MessagePo::new(
+        id1,
+        Some("project-1".to_string()),
+        Some("task-1".to_string()),
+        "user-1".to_string(),
+        "agent-1".to_string(),
+        MessageRole::User,
+        MessageRole::Agent,
+        MessageType::Text,
+        "Hello project 1".to_string(),
+        None,
+        FileMeta::default(),
+        "test-user".to_string(),
+    );
+    let _m1 = message_dao.insert(ctx.clone(), &m1).await?;
+
+    let id2 = Uuid::now_v7().to_string();
+    let m2 = MessagePo::new(
+        id2,
+        Some("project-1".to_string()),
+        Some("task-1".to_string()),
+        "agent-1".to_string(),
+        "user-1".to_string(),
+        MessageRole::Agent,
+        MessageRole::User,
+        MessageType::Text,
+        "Reply to project 1".to_string(),
+        None,
+        FileMeta::default(),
+        "test-user".to_string(),
+    );
+    let _m2 = message_dao.insert(ctx.clone(), &m2).await?;
+
+    let id3 = Uuid::now_v7().to_string();
+    let m3 = MessagePo::new(
+        id3,
+        Some("project-1".to_string()),
+        Some("task-2".to_string()),
+        "user-1".to_string(),
+        "agent-1".to_string(),
+        MessageRole::User,
+        MessageRole::Agent,
+        MessageType::Text,
+        "Second message in project 1".to_string(),
+        None,
+        FileMeta::default(),
+        "test-user".to_string(),
+    );
+    let _m3 = message_dao.insert(ctx.clone(), &m3).await?;
+
+    // project-2: 1 条消息
+    let id4 = Uuid::now_v7().to_string();
+    let m4 = MessagePo::new(
+        id4,
+        Some("project-2".to_string()),
+        Some("task-3".to_string()),
+        "user-2".to_string(),
+        "agent-2".to_string(),
+        MessageRole::User,
+        MessageRole::Agent,
+        MessageType::Text,
+        "Hello project 2".to_string(),
+        None,
+        FileMeta::default(),
+        "test-user".to_string(),
+    );
+    let _m4 = message_dao.insert(ctx.clone(), &m4).await?;
+
+    // 查询 project-1 应该返回 3 条
+    let list = message_dao.list_by_project_id(ctx.clone(), "project-1", None).await?;
+    assert_eq!(list.len(), 3);
+    // 按创建时间正序排列，最早的在最前面
+    assert_eq!(list[0].content, "Hello project 1");
+    assert_eq!(list[1].content, "Reply to project 1");
+    assert_eq!(list[2].content, "Second message in project 1");
+
+    // 验证所有消息都属于正确的 project_id
+    for msg in &list {
+        assert_eq!(msg.project_id, Some("project-1".to_string()));
+    }
+
+    // 查询 project-2 应该返回 1 条
+    let list = message_dao.list_by_project_id(ctx.clone(), "project-2", None).await?;
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].content, "Hello project 2");
+
+    // 查询 project-3 应该返回空
+    let list = message_dao.list_by_project_id(ctx.clone(), "project-3", None).await?;
+    assert!(list.is_empty());
+
+    // 测试 limit 限制
+    let list = message_dao.list_by_project_id(ctx.clone(), "project-1", Some(2)).await?;
+    assert_eq!(list.len(), 2);
+
+    Ok(())
+}

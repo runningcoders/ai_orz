@@ -117,6 +117,36 @@ FROM messages WHERE task_id = ? AND "status" != 0 ORDER BY created_at ASC
         Ok(messages)
     }
 
+    async fn list_by_project_id(&self, ctx: RequestContext, project_id: &str, limit: Option<usize>) -> Result<Vec<MessagePo>> {
+        let messages = if let Some(limit) = limit {
+            let limit_i64 = limit as i64;
+            sqlx::query_as!(
+                MessagePo,
+                r#"
+SELECT id, project_id, task_id, from_id, to_id, from_role as "from_role: MessageRole", to_role as "to_role: MessageRole", message_type as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", created_by, modified_by, created_at, updated_at
+FROM messages WHERE project_id = ? AND "status" != 0 ORDER BY created_at ASC
+LIMIT ?
+                "#,
+                project_id,
+                limit_i64
+            )
+                .fetch_all(ctx.db_pool())
+                .await?
+        } else {
+            sqlx::query_as!(
+                MessagePo,
+                r#"
+SELECT id, project_id, task_id, from_id, to_id, from_role as "from_role: MessageRole", to_role as "to_role: MessageRole", message_type as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", created_by, modified_by, created_at, updated_at
+FROM messages WHERE project_id = ? AND "status" != 0 ORDER BY created_at ASC
+                "#,
+                project_id
+            )
+                .fetch_all(ctx.db_pool())
+                .await?
+        };
+        Ok(messages)
+    }
+
     async fn list_by_from_id(&self, ctx: RequestContext, from_id: &str, limit: Option<usize>) -> Result<Vec<MessagePo>> {
         let messages = if let Some(limit) = limit {
             let limit_i64 = limit as i64;
