@@ -270,8 +270,8 @@ let ctx = RequestContext::from_parts(parts);
 
 ### 5.3 当前测试统计
 
-- **总测试数**: 128 个
-- **通过率**: 100% (128/128) ✅
+- **总测试数**: 158 个
+- **通过率**: 100% (158/158) ✅
 
 ---
 
@@ -337,9 +337,117 @@ let ctx = RequestContext::from_parts(parts);
 - [x] **测试隔离经验总结**：写入文档，有状态内存组件必须每次新建实例
 - [x] 所有测试通过：**149/149** ✅
 
+### 第八轮开发（2026-04-27 ~ 2026-04-28）
+
+- [x] **消息领域层完整开发**：消息投递（send_to_agent/send_to_user/dequeue/ack/nack）+ 消息管理
+- [x] **消息交互架构设计**：Agent 作为可投递目标，支持用户 ↔ Agent 双向对话
+- [x] **混合模式工具调用设计**：简单工具走 rig 原生 auto，关键工具走自建 manual 链路可收敛控制
+- [x] **工具调用复用消息存储**：工具调用本身就是特殊消息，复用现有消息表不需要新建表
+- [x] **事件队列重构**：泛型 topic 分离设计，每个 topic 独立单例保证类型安全，彻底解决消息错乱问题
+- [x] **SQLite schema 迁移经验**：开发阶段直接重建表比迂回修改更干净
+- [x] 所有测试通过：**159/159** ✅
+
 ---
 
-## 十七、工具调用追踪设计规范
+## 十九、消息交互系统设计规范
+
+### 核心设计思想
+
+工具调用本身就是一种特殊消息，复用现有消息表存储，不需要单独新建表：
+
+| 消息类型 | 用途 | 存储位置 |
+|---------|------|---------|
+| `Text` | 普通文本消息 | messages 表 |
+| `ToolCallRequest` | 工具调用请求 | messages 表（content 存储 JSON）|
+| `ToolCallResult` | 工具调用结果 | messages 表（content 存储 JSON）|
+
+### 混合模式工具调用
+
+混合模式兼顾简洁性和可控性：
+
+| 模式 | 适用场景 | 调用方式 |
+|------|---------|---------|
+| **auto 模式** | 简单无状态工具 | 交给 rig 原生自动调用 |
+| **manual 模式** | 关键业务工具 | 自建链路控制，可收敛、可重试、可审核 |
+
+### 代码组织规范
+
+- **枚举分组存放**：所有消息相关枚举 `MessageRole`/`MessageStatus`/`MessageType` 统一放在 `common/src/enums/message.rs`，不拆小文件
+- **工具调用结构体**：`ToolCallRequest`/`ToolCallResult` 统一放在 `src/models/message.rs`，不单独新建文件
+- **ContextTool 定义**：带上下文的工具 trait 放在 `pkg/tool_registry`，提供转换方法适配 rig 接口
+- **日志装饰器**：`ContextToolCallLogger` 放在 `pkg/tool_tracing`，非侵入实现自动日志追踪
+
+### 投递队列设计
+
+消息使用**拉取模式**消费：
+
+1. Agent 启动后 `dequeue` 获取下一个待处理消息
+2. 处理完成 `ack` 确认，失败 `nack` 放回队列
+3. 支持并发处理，不会重复消费
+
+---
+
+## 二十、泛型 Topic 分离事件队列设计规范
+
+### 问题背景
+
+之前使用全局动态 `Box<dyn EventQueue>` 方案，不同业务事件会互相干扰，导致消息错乱。
+
+### 解决方案：泛型 + 泛型特化单例
+
+每个 topic（事件类型）独立一个单例队列，类型安全隔离：
+
+```rust
+// 每个事件类型 E 自动对应一个独立队列
+pub struct EventQueueDaoInMemoryImpl<E: Event + Clone> {
+    events: UnsafeCell<HashMap<String, Box<E>>>,
+    queues: UnsafeCell<HashMap<String, BinaryHeap<EventRef>>>,
+    // ...
+}
+
+// 单例通过泛型参数自动分离
+static INSTANCES: OnceLock<HashMap<String, Arc<dyn EventQueueDyn>>> = OnceLock::new();
+```
+
+### 优点
+
+- ✅ **类型安全**：不同 topic 编译期类型分离
+- ✅ **彻底隔离**：不会出现消息错乱问题
+- ✅ **零运行时开销**：泛型特化，单例访问无 Box 开销
+- ✅ **符合用户偏好**：按 topic 逻辑分离，命名符合业界通用概念
+
+---
+
+## 二十一、SQLx 离线编译问题解决规范
+
+### 常见问题
+
+```
+error: `SQLX_OFFLINE=true` but there is no cached data for this query
+```
+
+### 标准解决流程
+
+1. **本地有可用数据库** 运行：
+```bash
+cargo sqlx prepare --database-url sqlite://./test.db
+```
+
+2. **检查更新**：确认 `.sqlx/` 目录下新增了缓存文件
+3. **提交缓存**：`.sqlx` 目录必须纳入版本控制
+4. **重新推送**：让 CI 使用更新后的缓存编译
+
+### 经验总结
+
+| 要点 | 说明 |
+|------|------|
+| `.sqlx` 必须提交 | 否则 CI 离线编译一定会失败 |
+| schema 变更后必须重新 prepare | SQL 查询变了缓存也要更 |
+| 开发阶段 schema 变更推荐重建表 | SQLite 不支持 `ALTER COLUMN DROP NOT NULL`，重建比迂回修改更干净 |
+
+---
+
+## 最终架构流程图
 
 ### 核心设计思想
 
