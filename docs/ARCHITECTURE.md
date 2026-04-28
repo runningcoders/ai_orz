@@ -214,6 +214,49 @@ domain: [ToolDomain ←---- (ToolDal + AgentDal + MessageDal)] (组合：多个 
 
 ---
 
+## 分层架构最佳实践
+
+> **重要**：经过工具绑定架构的重构实践，我们总结了完整的分层架构规范和陷阱规避指南。
+>
+> 📖 **详细实践记录**：请参考 [LAYERED_ARCHITECTURE_PRACTICE.md](./LAYERED_ARCHITECTURE_PRACTICE.md)
+
+### 核心分层原则重申
+
+```
+Handler (API)
+    │
+    ▼
+Domain (领域逻辑) ← 组合多个 DAL，编排业务流程
+    │
+    ▼
+DAL (业务数据) ← 组合多个 DAO，组装业务实体
+    │
+    ▼
+DAO (数据访问) ← 单一数据源 CRUD
+```
+
+### 绝对禁止的反模式
+
+| 反模式 | 危害 |
+|--------|------|
+| ❌ DAO 层调用其他 DAO | 分层边界模糊，测试隔离困难 |
+| ❌ DAL 层调用其他 DAL | 循环依赖风险，复杂度失控 |
+| ❌ 跨层直接访问（如 Handler 直接调 DAO） | 业务逻辑散落，难以维护 |
+| ❌ DAO 层做实体组装/装饰 | 业务逻辑泄露到数据层 |
+
+### Known Issue: Rig 包名问题
+
+`rig-core` crate 的内部模块结构在版本升级时可能发生变化，导致编译错误。**解决方案：**
+
+- 确保 `Cargo.toml` 使用 `edition = "2024"`
+- 从正确路径导入：`use rig::tool::{ToolDyn, ToolError};`
+- 避免从 `rig::completion::*` 导入工具相关类型
+- 必要时锁定精确版本：`rig-core = "=0.34"`
+
+完整问题记录和解决方案详见 [LAYERED_ARCHITECTURE_PRACTICE.md](./LAYERED_ARCHITECTURE_PRACTICE.md)
+
+---
+
 ## 支持的模型提供商
 
 | 提供商 | 实现文件 | 支持 |

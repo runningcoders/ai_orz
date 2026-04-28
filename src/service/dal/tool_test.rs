@@ -1,21 +1,70 @@
 //! Tool DAL 单元测试
 //! 测试 Tool DAL 的基础功能
 
-use crate::models::tool::{ToolPo, Tool};
+use crate::models::tool::{ToolPo, Tool, CoreTool};
 use crate::pkg::request_context::RequestContext;
 use crate::service::dao::tool;
+use crate::pkg::tool_registry::{self, BuiltinToolFactory, get_registry};
 use common::enums::{ToolProtocol, ToolStatus};
+use rig::tool::ToolError;
 use sqlx::SqlitePool;
+use async_trait::async_trait;
 use uuid::Uuid;
+use serde_json::Value;
+
+// 测试用的简单工具工厂
+#[derive(Clone)]
+struct TestToolFactory;
+
+impl BuiltinToolFactory for TestToolFactory {
+    fn id(&self) -> &'static str {
+        "test_tool"
+    }
+    fn name(&self) -> &'static str {
+        "test_tool"
+    }
+    fn description(&self) -> &'static str {
+        "Test tool for unit tests"
+    }
+    fn create(&self, po: ToolPo) -> Box<dyn CoreTool> {
+        Box::new(TestTool { po })
+    }
+}
+
+// 测试用的工具
+#[derive(Clone)]
+struct TestTool {
+    po: ToolPo,
+}
+
+#[async_trait]
+impl CoreTool for TestTool {
+    fn po(&self) -> &ToolPo {
+        &self.po
+    }
+
+    async fn call(&self, _ctx: &RequestContext, _args: Value) -> Result<Value, ToolError> {
+        Ok(Value::Null)
+    }
+}
+
+/// 注册测试工具工厂（每个测试开始前调用）
+fn register_test_factory() {
+    let registry = get_registry();
+    registry.register_builtin_factory(Box::new(TestToolFactory));
+}
 
 /// 测试 Tool DAL 创建和获取工具完整信息
 #[sqlx::test]
 async fn test_create_and_get_tool_full(pool: SqlitePool) {
     // 初始化
     tool::init();
+    crate::service::dao::tool_call::init();
     crate::service::dal::tool::init();
+    crate::pkg::tool_registry::init();
     let tool_dao = tool::dao();
-    let tool_dal = crate::service::dal::tool::new(tool_dao);
+    let tool_call_dao = crate::service::dao::tool_call::dao();
+    let tool_dal = crate::service::dal::tool::new(tool_dao, tool_call_dao);
 
     let ctx = RequestContext::new_simple("test-user", pool);
 
@@ -33,31 +82,22 @@ async fn test_create_and_get_tool_full(pool: SqlitePool) {
     let result = tool_dal.create_tool(&ctx, &po).await;
     assert!(result.is_ok(), "create tool failed: {:?}", result);
 
-    // ========== 测试: get_by_id 获取 PO ==========
-    let got_po = tool_dal.get_by_id(&ctx, po.id.clone()).await;
-    assert!(got_po.is_ok());
-    let got_po = got_po.unwrap();
-    assert!(got_po.is_some());
-    let got_po = got_po.unwrap();
-    assert_eq!(got_po.name, "echo_test");
-    assert_eq!(got_po.status, ToolStatus::Enabled);
-
-    // ========== 测试: get_tool_full 获取完整工具 ==========
-    // 注意：内置工具需要注册到 registry 才能拼装成功
-    // 这里我们只测试查询流程，对于未注册的内置工具返回 None 是正确的
-    let got_full = tool_dal.get_tool_full(&ctx, po.id.clone()).await;
-    assert!(got_full.is_ok());
-    // 因为这个工具是我们新建的，没有在 registry 注册，所以返回 None
-    // 如果是已注册的内置工具，会返回 Some(Tool)
-    let got_full = got_full.unwrap();
-    assert!(got_full.is_none());
+    // ========== 测试: get_by_id 获取完整工具 ==========
+    // 因为 "echo_test" 没有在 ToolRegistry 注册，所以返回 None 是正常的
+    // 这正好验证了过滤逻辑
+    let got = tool_dal.get_by_id(&ctx, po.id.clone()).await;
+    assert!(got.is_ok());
+    let got = got.unwrap();
+    // 未注册的内置工具无法组装，返回 None 是预期行为
+    assert!(got.is_none());
 }
 
-/// 测试已存在工具的 get_tool_full（对于已注册的内置工具）
+/// 测试已存在工具的 get_by_id（对于已注册的内置工具）
 #[sqlx::test]
-async fn test_get_tool_full_exists(pool: SqlitePool) {
+async fn test_get_by_id_exists(pool: SqlitePool) {
     // 初始化
     tool::init();
+    crate::service::dao::tool_call::init();
     crate::service::dal::tool::init();
     crate::pkg::tool_registry::init();
 
@@ -77,10 +117,9 @@ async fn test_get_tool_full_exists(pool: SqlitePool) {
     let _ = tool_dal.create_tool(&ctx, &po).await;
 
     // 查询完整实体 - 因为没注册，还是 None，这是预期的
-    let got_full = tool_dal.get_tool_full(&ctx, po.id.clone()).await;
+    let got_full = tool_dal.get_by_id(&ctx, po.id.clone()).await;
     assert!(got_full.is_ok());
     let got_full = got_full.unwrap();
-    // 因为没在 registry 注册，所以是 None
     assert!(got_full.is_none());
 }
 
@@ -89,59 +128,44 @@ async fn test_get_tool_full_exists(pool: SqlitePool) {
 async fn test_add_tool_to_agent_and_list(pool: SqlitePool) {
     // 初始化
     tool::init();
+    crate::service::dao::tool_call::init();
     crate::service::dal::tool::init();
     crate::pkg::tool_registry::init();
-    let tool_dal = crate::service::dal::tool::new(tool::dao());
+    register_test_factory();  // 注册测试工厂
+    let tool_dal = crate::service::dal::tool::new(tool::dao(), crate::service::dao::tool_call::dao());
 
     let ctx = RequestContext::new_simple("test-user", pool);
 
-    // 创建两个测试工具（不需要依赖已注册的内置工具）
-    let tool1 = ToolPo::new(
-        "tool-1".to_string(),
-        "tool-1".to_string(),
-        "Tool 1".to_string(),
+    // 创建已注册的工具（id = test_tool）
+    let test_tool = ToolPo::new(
+        "test_tool".to_string(),
+        "test_tool".to_string(),
+        "Test tool for adding to agent".to_string(),
         ToolProtocol::Builtin,
         serde_json::Value::Null,
         None,
         Some("test-user".to_string()),
     );
-    let tool2 = ToolPo::new(
-        "tool-2".to_string(),
-        "tool-2".to_string(),
-        "Tool 2".to_string(),
-        ToolProtocol::Builtin,
-        serde_json::Value::Null,
-        None,
-        Some("test-user".to_string()),
-    );
-    let _ = tool_dal.create_tool(&ctx, &tool1).await;
-    let _ = tool_dal.create_tool(&ctx, &tool2).await;
+    tool_dal.create_tool(&ctx, &test_tool).await.unwrap();
 
-    // 获取所有启用的工具（现在应该有两个）
+    // 获取所有启用的工具（因为已经注册了 test_tool，所以至少有一个）
     let all_enabled = tool_dal.list_enabled(&ctx).await.unwrap();
     assert!(!all_enabled.is_empty());
 
     // 创建一个虚拟 Agent
     let agent_id = Uuid::now_v7().to_string();
-    let first_tool_id = &all_enabled[0].id;
 
     // ========== 测试: 添加工具到 Agent ==========
-    let result = tool_dal.add_tool_to_agent(&ctx, &agent_id, first_tool_id, Some("test-user".to_string())).await;
+    let result = tool_dal.add_tool_to_agent(&ctx, &agent_id, "test_tool", Some("test-user".to_string())).await;
     assert!(result.is_ok(), "add tool to agent failed: {:?}", result);
-
-    // ========== 测试: list_tools_for_agent (仅 PO) ==========
-    let list_po = tool_dal.list_tools_for_agent(&ctx, &agent_id).await;
-    assert!(list_po.is_ok());
-    let list_po = list_po.unwrap();
-    assert_eq!(list_po.len(), 1);
-    assert_eq!(&list_po[0].id, first_tool_id);
 
     // ========== 测试: list_tools_for_agent_full (完整工具) ==========
     let list_full = tool_dal.list_tools_for_agent_full(&ctx, &agent_id).await;
     assert!(list_full.is_ok());
     let list_full = list_full.unwrap();
-    // 两个工具都没注册，所以返回空（过滤了无法拼装的工具）
-    assert!(list_full.is_empty());
+    // 工具已注册，所以可以正常返回
+    assert_eq!(list_full.len(), 1);
+    assert_eq!(list_full[0].po.id, "test_tool");
 }
 
 /// 测试从 Agent 移除工具
@@ -149,39 +173,40 @@ async fn test_add_tool_to_agent_and_list(pool: SqlitePool) {
 async fn test_remove_tool_from_agent(pool: SqlitePool) {
     // 初始化
     tool::init();
+    crate::service::dao::tool_call::init();
     crate::service::dal::tool::init();
     crate::pkg::tool_registry::init();
-    let tool_dal = crate::service::dal::tool::new(tool::dao());
+    register_test_factory();  // 注册测试工厂
+    let tool_dal = crate::service::dal::tool::new(tool::dao(), crate::service::dao::tool_call::dao());
 
     let ctx = RequestContext::new_simple("test-user", pool);
 
-    // 创建测试工具
-    let tool1 = ToolPo::new(
-        "tool-1".to_string(),
-        "tool-1".to_string(),
-        "Tool 1".to_string(),
+    // 创建已注册的工具（id = test_tool）
+    let test_tool = ToolPo::new(
+        "test_tool".to_string(),
+        "test_tool".to_string(),
+        "Test tool for removing from agent".to_string(),
         ToolProtocol::Builtin,
         serde_json::Value::Null,
         None,
         Some("test-user".to_string()),
     );
-    let _ = tool_dal.create_tool(&ctx, &tool1).await;
+    tool_dal.create_tool(&ctx, &test_tool).await.unwrap();
 
     // 创建 Agent 并添加工具
     let agent_id = Uuid::now_v7().to_string();
-    let tool_id = &tool1.id;
-    tool_dal.add_tool_to_agent(&ctx, &agent_id, tool_id, Some("test-user".to_string())).await.unwrap();
+    tool_dal.add_tool_to_agent(&ctx, &agent_id, "test_tool", Some("test-user".to_string())).await.unwrap();
 
     // 确认添加成功
-    let list_before = tool_dal.list_tools_for_agent(&ctx, &agent_id).await.unwrap();
+    let list_before = tool_dal.list_tools_for_agent_full(&ctx, &agent_id).await.unwrap();
     assert_eq!(list_before.len(), 1);
 
     // ========== 测试: 移除工具 ==========
-    let result = tool_dal.remove_tool_from_agent(&ctx, &agent_id, tool_id).await;
+    let result = tool_dal.remove_tool_from_agent(&ctx, &agent_id, "test_tool").await;
     assert!(result.is_ok(), "remove tool from agent failed: {:?}", result);
 
     // ========== 验证: 列表为空 ==========
-    let list_after = tool_dal.list_tools_for_agent(&ctx, &agent_id).await.unwrap();
+    let list_after = tool_dal.list_tools_for_agent_full(&ctx, &agent_id).await.unwrap();
     assert!(list_after.is_empty());
 }
 
@@ -190,34 +215,29 @@ async fn test_remove_tool_from_agent(pool: SqlitePool) {
 async fn test_list_enabled(pool: SqlitePool) {
     // 初始化
     tool::init();
+    crate::service::dao::tool_call::init();
     crate::service::dal::tool::init();
+    crate::pkg::tool_registry::init();
+    register_test_factory();  // 注册测试工厂
     let tool_dal = crate::service::dal::tool::dal();
 
     let ctx = RequestContext::new_simple("test-user", pool);
 
-    // 创建几个测试工具，一个禁用
-    let enabled1 = ToolPo::new(
-        "enabled-1".to_string(),
-        "enabled-1".to_string(),
-        "Enabled tool 1".to_string(),
+    // 创建已注册的工具（启用，id = test_tool）
+    let mut test_tool = ToolPo::new(
+        "test_tool".to_string(),
+        "test_tool".to_string(),
+        "Test tool (enabled, registered)".to_string(),
         ToolProtocol::Builtin,
         serde_json::Value::Null,
         None,
         Some("test-user".to_string()),
     );
-    let enabled2 = ToolPo::new(
-        "enabled-2".to_string(),
-        "enabled-2".to_string(),
-        "Enabled tool 2".to_string(),
-        ToolProtocol::Builtin,
-        serde_json::Value::Null,
-        None,
-        Some("test-user".to_string()),
-    );
+    // 创建一个未注册的禁用工具
     let mut disabled = ToolPo::new(
         "disabled".to_string(),
         "disabled".to_string(),
-        "Disabled tool".to_string(),
+        "Disabled tool (disabled)".to_string(),
         ToolProtocol::Builtin,
         serde_json::Value::Null,
         None,
@@ -226,18 +246,19 @@ async fn test_list_enabled(pool: SqlitePool) {
     disabled.status = ToolStatus::Disabled;
     disabled.touch(Some("test-user".to_string()));
 
-    tool_dal.create_tool(&ctx, &enabled1).await.unwrap();
-    tool_dal.create_tool(&ctx, &enabled2).await.unwrap();
+    tool_dal.create_tool(&ctx, &test_tool).await.unwrap();
     tool_dal.create_tool(&ctx, &disabled).await.unwrap();
 
-    // 测试获取所有启用工具
+    // 测试获取所有启用工具（只有 test_tool 是已注册且启用的）
     let tools = tool_dal.list_enabled(&ctx).await;
     assert!(tools.is_ok());
     let tools = tools.unwrap();
-    assert_eq!(tools.len(), 2);
+    // 只有 test_tool 会被返回（已注册且启用）
+    assert_eq!(tools.len(), 1);
+    assert_eq!(tools[0].po.id, "test_tool");
     // 所有返回的工具都应该是 Enabled 状态
     for tool in &tools {
-        assert_eq!(tool.status, ToolStatus::Enabled);
+        assert_eq!(tool.po.status, ToolStatus::Enabled);
     }
 }
 
@@ -246,7 +267,9 @@ async fn test_list_enabled(pool: SqlitePool) {
 async fn test_get_by_name(pool: SqlitePool) {
     // 初始化
     tool::init();
+    crate::service::dao::tool_call::init();
     crate::service::dal::tool::init();
+    crate::pkg::tool_registry::init();
     let tool_dal = crate::service::dal::tool::dal();
 
     let ctx = RequestContext::new_simple("test-user", pool);
@@ -270,9 +293,8 @@ async fn test_get_by_name(pool: SqlitePool) {
     let got = tool_dal.get_by_name(&ctx, first_name).await;
     assert!(got.is_ok());
     let got = got.unwrap();
-    assert!(got.is_some());
-    let got = got.unwrap();
-    assert_eq!(&got.name, first_name);
+    // 因为未注册，返回 None 是预期的
+    assert!(got.is_none());
 
     // ========== 测试: 不存在的名称 ==========
     let got = tool_dal.get_by_name(&ctx, "not_exists_tool_name_xxx").await;
@@ -286,15 +308,18 @@ async fn test_get_by_name(pool: SqlitePool) {
 async fn test_update_tool(pool: SqlitePool) {
     // 初始化
     tool::init();
+    crate::service::dao::tool_call::init();
     crate::service::dal::tool::init();
-    let tool_dal = crate::service::dal::tool::new(tool::dao());
+    crate::pkg::tool_registry::init();
+    register_test_factory();  // 注册测试工厂
+    let tool_dal = crate::service::dal::tool::new(tool::dao(), crate::service::dao::tool_call::dao());
 
     let ctx = RequestContext::new_simple("test-user", pool);
 
-    // 创建工具
+    // 创建已注册的工具（id = test_tool）
     let mut po = ToolPo::new(
-        "".to_string(),
-        "test_update".to_string(),
+        "test_tool".to_string(),
+        "test_tool".to_string(),
         "Original description".to_string(),
         ToolProtocol::Builtin,
         serde_json::Value::Null,
@@ -313,23 +338,27 @@ async fn test_update_tool(pool: SqlitePool) {
     assert!(result.is_ok(), "update tool failed: {:?}", result);
 
     // ========== 验证: 更新生效 ==========
-    let got = tool_dal.get_by_id(&ctx, po.id.clone()).await.unwrap().unwrap();
-    assert_eq!(got.description, "Updated description");
-    assert_eq!(got.status, ToolStatus::Disabled);
+    // 因为 status 变成了 Disabled，所以 get_by_id 应该返回 None（过滤掉了禁用的）
+    // 我们验证数据库中确实更新成功了，通过 dao 层直接查询
+    let tool_dao = tool::dao();
+    let got_po = tool_dao.get_by_id(&ctx, po.id.clone()).await.unwrap().unwrap();
+    assert_eq!(got_po.description, "Updated description");
+    assert_eq!(got_po.status, ToolStatus::Disabled);
 }
 
-/// 测试在不存在的 ID 上调用 get_tool_full 返回 None 而不是错误
+/// 测试在不存在的 ID 上调用 get_by_id 返回 None 而不是错误
 #[sqlx::test]
 async fn test_find_not_exists(pool: SqlitePool) {
     // 初始化
     tool::init();
+    crate::service::dao::tool_call::init();
     crate::service::dal::tool::init();
     let tool_dal = crate::service::dal::tool::dal();
 
     let ctx = RequestContext::new_simple("test-user", pool);
 
     let not_exists_id = Uuid::now_v7().to_string();
-    let result = tool_dal.get_tool_full(&ctx, not_exists_id).await;
+    let result = tool_dal.get_by_id(&ctx, not_exists_id).await;
     assert!(result.is_ok());
     let result = result.unwrap();
     assert!(result.is_none());

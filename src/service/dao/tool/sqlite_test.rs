@@ -38,39 +38,9 @@ async fn test_create_and_get_tool_full(pool: SqlitePool) {
     assert!(found.is_some());
     let found_po = found.unwrap();
     assert_eq!(found_po.name, "test-tool".to_string());
-
-    // 测试 get_tool_full - 注册中心找不到，返回 None（因为没注册）
-    // 这符合预期：只有注册了的工具才能拿到完整实体
-    let found_full = tool_dao.get_tool_full(&ctx, tool_po.id.clone()).await.unwrap();
-    assert!(found_full.is_none());
 }
 
-#[sqlx::test]
-async fn test_get_tool_full_exists(pool: SqlitePool) {
-    dao_init();
-    crate::pkg::tool_registry::init();
-    crate::pkg::tool_registry::init();
 
-    let ctx = RequestContext::new_simple("admin", pool);
-    let tool_dao = dao();
-
-    // 创建一个工具，ID 对应一个已知的内置工具（我们用一个占位符，这里只测试拼装逻辑）
-    // 实际内置工具会提前注册到 GLOBAL_TOOL_REGISTRY
-    let tool_po = ToolPo::new(
-        "test-builtin-id".to_string(),
-        "test-builtin".to_string(),
-        "Test builtin".to_string(),
-        ToolProtocol::Builtin,
-        serde_json::Value::Null,
-        None,
-        Some("admin".to_string()),
-    );
-    let _ = tool_dao.create_tool(&ctx.clone(), &tool_po).await;
-
-    // 查询完整实体 - 因为没注册，还是 None
-    let found_full = tool_dao.get_tool_full(&ctx, tool_po.id.clone()).await.unwrap();
-    assert!(found_full.is_none());
-}
 
 #[sqlx::test]
 async fn test_add_tool_to_agent_and_list(pool: SqlitePool) {
@@ -113,11 +83,6 @@ async fn test_add_tool_to_agent_and_list(pool: SqlitePool) {
     let ids: Vec<String> = list.iter().map(|t| t.id.clone()).collect();
     assert!(ids.contains(&"tool-1".to_string()));
     assert!(ids.contains(&"tool-2".to_string()));
-
-    // 测试 list_tools_for_agent_full - 两个工具都没注册，所以返回空
-    // 但这个测试验证了过滤逻辑正确：没注册的自动过滤
-    let list_full = tool_dao.list_tools_for_agent_full(&ctx, agent_id).await.unwrap();
-    assert!(list_full.is_empty());
 }
 
 #[sqlx::test]

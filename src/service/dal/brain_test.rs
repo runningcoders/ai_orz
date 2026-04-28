@@ -15,9 +15,11 @@ async fn test_wake_brain(pool: SqlitePool) {
     // Storage 已经自动迁移，使用传入的 pool
     // 初始化 cortex dao 和 brain dal
     cortex::init();
+    crate::service::dao::tool_call::init();
     crate::service::dal::brain::init();
     let cortex_dao = cortex::dao();
-    let brain_dal = crate::service::dal::brain::new(cortex_dao);
+    let tool_call_dao = crate::service::dao::tool_call::dao();
+    let brain_dal = crate::service::dal::brain::new(cortex_dao, tool_call_dao);
 
     let ctx = RequestContext::new_simple("test-user", pool);
 
@@ -53,9 +55,11 @@ async fn test_test_connection(pool: SqlitePool) {
     // Storage 已经自动迁移，使用传入的 pool
     // 初始化 cortex dao 和 brain dal
     cortex::init();
+    crate::service::dao::tool_call::init();
     crate::service::dal::brain::init();
     let cortex_dao = cortex::dao();
-    let brain_dal = crate::service::dal::brain::new(cortex_dao);
+    let tool_call_dao = crate::service::dao::tool_call::dao();
+    let brain_dal = crate::service::dal::brain::new(cortex_dao, tool_call_dao);
 
     let ctx = RequestContext::new_simple("test-user", pool);
 

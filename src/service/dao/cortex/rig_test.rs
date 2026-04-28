@@ -5,6 +5,7 @@ use crate::models::{model_provider::{ModelProvider, ModelProviderPo}, tool::Tool
 use common::enums::ProviderType;
 use crate::pkg::request_context::RequestContext;
 use sqlx::SqlitePool;
+use ::rig::tool::ToolDyn;
 
 #[sqlx::test]
 async fn test_create_openai_cortex(pool: SqlitePool) {
@@ -28,8 +29,8 @@ async fn test_create_openai_cortex(pool: SqlitePool) {
     let provider = ModelProvider::from_po(provider_po);
 
     let dao = rig::RigCortexDao::new();
-    let tools: Vec<Tool> = vec![];
-    let result = dao.create_cortex_trait(ctx, &provider, tools);
+    let rig_tools: Vec<Box<dyn ToolDyn>> = vec![];
+    let result = dao.create_cortex_trait(ctx, &provider, rig_tools);
     
     // 应该能成功创建，API key 不正确只会在运行时失败，创建本身不会失败
     assert!(result.is_ok());
@@ -57,8 +58,8 @@ async fn test_create_deepseek_cortex(pool: SqlitePool) {
     let provider = ModelProvider::from_po(provider_po);
 
     let dao = rig::RigCortexDao::new();
-    let tools: Vec<Tool> = vec![];
-    let result = dao.create_cortex_trait(ctx, &provider, tools);
+    let rig_tools: Vec<Box<dyn ToolDyn>> = vec![];
+    let result = dao.create_cortex_trait(ctx, &provider, rig_tools);
     
     assert!(result.is_ok());
 }
@@ -85,8 +86,8 @@ async fn test_create_qwen_cortex(pool: SqlitePool) {
     let provider = ModelProvider::from_po(provider_po);
 
     let dao = rig::RigCortexDao::new();
-    let tools: Vec<Tool> = vec![];
-    let result = dao.create_cortex_trait(ctx, &provider, tools);
+    let rig_tools: Vec<Box<dyn ToolDyn>> = vec![];
+    let result = dao.create_cortex_trait(ctx, &provider, rig_tools);
     
     assert!(result.is_ok());
 }
@@ -113,8 +114,8 @@ async fn test_create_doubao_cortex(pool: SqlitePool) {
     let provider = ModelProvider::from_po(provider_po);
 
     let dao = rig::RigCortexDao::new();
-    let tools: Vec<Tool> = vec![];
-    let result = dao.create_cortex_trait(ctx, &provider, tools);
+    let rig_tools: Vec<Box<dyn ToolDyn>> = vec![];
+    let result = dao.create_cortex_trait(ctx, &provider, rig_tools);
     
     assert!(result.is_ok());
 }
@@ -141,8 +142,8 @@ async fn test_create_ollama_cortex(pool: SqlitePool) {
     let provider = ModelProvider::from_po(provider_po);
 
     let dao = rig::RigCortexDao::new();
-    let tools: Vec<Tool> = vec![];
-    let result = dao.create_cortex_trait(ctx, &provider, tools);
+    let rig_tools: Vec<Box<dyn ToolDyn>> = vec![];
+    let result = dao.create_cortex_trait(ctx, &provider, rig_tools);
     
     assert!(result.is_ok());
 }
@@ -169,8 +170,8 @@ async fn test_create_openai_compatible_custom_base_url(pool: SqlitePool) {
     let provider = ModelProvider::from_po(provider_po);
 
     let dao = rig::RigCortexDao::new();
-    let tools: Vec<Tool> = vec![];
-    let result = dao.create_cortex_trait(ctx, &provider, tools);
+    let rig_tools: Vec<Box<dyn ToolDyn>> = vec![];
+    let result = dao.create_cortex_trait(ctx, &provider, rig_tools);
     
     assert!(result.is_ok());
 }

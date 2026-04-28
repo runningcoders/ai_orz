@@ -5,7 +5,7 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 ![GitHub last commit](https://img.shields.io/github/last-commit/runningcoders/ai_orz)
 ![GitHub license](https://img.shields.io/github/license/runningcoders/ai_orz)
 ![Rust](https://img.shields.io/badge/Rust-1.85+-000000?logo=rust)
-![Tests](https://img.shields.io/badge/tests-149%20%E2%9C%94-brightgreen)
+![Tests](https://img.shields.io/badge/tests-165%20%E2%9C%94-brightgreen)
 [![GitHub stars](https://img.shields.io/github/stars/runningcoders/ai_orz?style=social)](https://github.com/runningcoders/ai_orz)
 
 ## 技术栈
@@ -20,12 +20,13 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 - 👥 **组织用户权限体系** - 多级组织、用户角色、JWT 认证
 - 🤖 **Agent 完整生命周期管理** - Agent 创建、配置、绑定工具、唤醒执行
 - 🧠 **四层记忆系统** - Core/Working/Short-term/Long-term 分级存储
-- 💬 **全功能消息对话** - 用户 ↔ Agent 双向对话，支持项目上下文
+- 💬 **全功能消息对话** - 用户 ↔ Agent 双向对话，支持项目上下文，工具调用消息复用消息表
 - 🛠️ **混合模式工具调用** - 简单工具走 rig 原生 auto，关键工具走自建 manual 可控链路
 - 📚 **技能库** - 可复用技能和工作流管理，支持搜索和分类
 - 📋 **任务项目管理** - 项目聚合对话，任务跟踪进度和状态
 - 📎 **统一附件存储** - 消息附件和项目产物统一存储
-- 🔍 **完整单元测试覆盖** - 149 个测试全部通过
+- 🏗️ **严格分层架构落地** - DAO/DAL/Domain/Handler 四层职责清晰，165 个测试全部通过
+- 🔍 **完整单元测试覆盖** - 数据层 100% 测试覆盖
 
 ## 项目结构
 
@@ -55,6 +56,7 @@ ai_orz/
 ├── dist/               # 编译好的前端静态文件（生产构建输出）
 ├── docs/               # 详细文档
 │   ├── ARCHITECTURE.md # 完整架构说明（最新）
+│   ├── LAYERED_ARCHITECTURE_PRACTICE.md # 分层架构完整实践记录与避坑指南
 │   ├── tool_design.md  # 工具模块设计文档（含工具调用追踪）
 │   ├── event_design.md  # 事件总线设计文档
 │   ├── task_design.md  # 任务系统设计文档

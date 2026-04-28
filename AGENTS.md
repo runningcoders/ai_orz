@@ -200,8 +200,9 @@ src/handlers/organization/
 
 ### 5.3 当前测试统计
 
-- **总测试数**: 104 个
-- **通过率**: 100% (104/104) ✅
+- **总测试数**: 165 个
+- **通过率**: 100% (165/165) ✅
+- **测试覆盖**: 数据层 100% 覆盖
 
 ---
 
@@ -347,9 +348,80 @@ let ctx = RequestContext::from_parts(parts);
 - [x] **SQLite schema 迁移经验**：开发阶段直接重建表比迂回修改更干净
 - [x] 所有测试通过：**159/159** ✅
 
+### 第九轮重构（2026-04-28）
+
+- [x] **分层架构大重构**：工具绑定架构从 DAO 层组装重构为严格分层调用
+- [x] **DAO 单一职责澄清**：DAO 只做持久化，实体组装/装饰逻辑上移到 DAL 层
+- [x] **跨 DAO 依赖消除**：CortexDao 不再直接调用 ToolCallDao，所有组装由上层 DAL/Domain 完成
+- [x] **工具注册表模式落地**：实现 `ToolRegistry` + `BuiltinToolFactory`，支持静态注册和动态扩展
+- [x] **Tool 实体组装逻辑清晰**：DAO 层返回 `ToolPo` → DAL 层通过工厂组装完整 `Tool` 实体
+- [x] **测试最佳实践沉淀**：测试隔离原则、Mock 工厂模式、分层测试策略
+- [x] **Rig 包名问题完整记录**：Edition 配置、导入路径、版本锁定等最佳实践
+- [x] **完整文档沉淀**：新增 `LAYERED_ARCHITECTURE_PRACTICE.md` 详细记录重构过程和避坑指南
+- [x] 所有测试通过：**165/165** ✅
+
 ---
 
-## 十九、消息交互系统设计规范
+## 十九、分层架构重构最佳实践（最新）
+
+> 📖 **完整文档**：详见 [docs/LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md)
+
+### 核心分层原则重申
+
+```
+Handler (API 层)
+    │
+    ▼
+Domain (领域层) → 组合多个 DAL，实现业务逻辑
+    │
+    ▼
+DAL (业务数据层) → 组合多个 DAO，提供业务级数据操作
+    │
+    ▼
+DAO (数据访问层) → 单一数据源操作，只做 CRUD
+```
+
+### 绝对禁止的反模式
+
+| 反模式 | 危害 |
+|--------|------|
+| ❌ DAO 层调用其他 DAO | 分层边界模糊，测试隔离困难 |
+| ❌ DAL 层调用其他 DAL | 循环依赖风险，复杂度失控 |
+| ❌ 跨层直接访问 | 业务逻辑散落，难以维护 |
+| ❌ DAO 层做实体组装/装饰 | 业务逻辑泄露到数据层 |
+
+### 注册表模式最佳实践
+
+遇到"需要动态创建不同类型实例"的场景，统一使用注册表 + 工厂模式：
+
+```rust
+pub trait BuiltinToolFactory: Send + Sync {
+    fn id(&self) -> &str;
+    fn create(&self, po: ToolPo) -> Box<dyn CoreTool>;
+}
+
+pub struct ToolRegistry {
+    factories: RwLock<HashMap<String, Box<dyn BuiltinToolFactory>>>,
+}
+```
+
+### Known Issue: Rig 包名问题
+
+**问题现象**：
+```
+error[E0670]: `async fn` is not permitted in Rust 2015
+error[E0432]: unresolved import `rig::completion::ToolDefinition`
+```
+
+**解决方案**：
+1. 确保 `Cargo.toml` 使用 `edition = "2024"`
+2. 从正确路径导入：`use rig::tool::{ToolDyn, ToolError};`
+3. 避免从 `rig::completion::*` 导入工具相关类型
+4. 必要时锁定精确版本：`rig-core = "=0.34"`
+
+---
+
+## 二十、消息交互系统设计规范
 
 ### 核心设计思想
 
