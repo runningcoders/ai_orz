@@ -67,3 +67,20 @@ async fn test_find_all_model_provider(pool: SqlitePool) {
     let all = dao.find_all(new_ctx("test", pool)).await.expect("Query all failed");
     assert!(all.is_empty());
 }
+
+
+#[sqlx::test]
+async fn test_query(pool: sqlx::SqlitePool) {
+    crate::service::dao::model_provider::init();
+    let dao = crate::service::dao::model_provider::dao();
+    let ctx = crate::pkg::RequestContext::new_simple("admin", pool);
+    
+    use common::enums::ModelProviderStatus;
+    use crate::service::dao::model_provider::ModelProviderQuery;
+    
+    // 测试空查询
+    let query = ModelProviderQuery::default();
+    let result = dao.query(ctx, query).await;
+    println!("Query result: {:?}", result);
+    assert!(result.is_ok());
+}

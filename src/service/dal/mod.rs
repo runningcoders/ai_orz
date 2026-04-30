@@ -9,6 +9,7 @@ pub mod message;
 pub mod model_provider;
 pub mod organization;
 pub mod tool;
+pub mod user;
 
 pub fn init_all(){
     agent::init();
@@ -17,6 +18,7 @@ pub fn init_all(){
     model_provider::init();
     organization::init();
     tool::init();
+    user::init();
 }
 
 

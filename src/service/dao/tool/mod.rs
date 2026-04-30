@@ -20,6 +20,14 @@ pub fn init() {
     sqlite::init();
 }
 
+/// Tool 查询参数
+#[derive(Debug, Clone, Default)]
+pub struct ToolQuery {
+    pub agent_id: Option<String>,
+    pub enabled_only: Option<bool>,
+    pub limit: Option<usize>,
+}
+
 /// Tool DAO trait
 #[async_trait]
 pub trait ToolDao: Send + Sync {
@@ -34,6 +42,9 @@ pub trait ToolDao: Send + Sync {
 
     /// Get tool by name
     async fn get_by_name(&self, ctx: &RequestContext, name: &str) -> Result<Option<ToolPo>>;
+
+    /// 通用查询
+    async fn query(&self, ctx: &RequestContext, query: ToolQuery) -> Result<Vec<ToolPo>>;
 
     /// List all enabled tools
     async fn list_enabled(&self, ctx: &RequestContext) -> Result<Vec<ToolPo>>;

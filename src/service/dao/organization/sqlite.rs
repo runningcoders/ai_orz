@@ -4,7 +4,7 @@ use crate::error::AppError;
 use crate::models::organization::OrganizationPo;
 use common::enums::{OrganizationStatus, OrganizationScope};
 use crate::pkg::RequestContext;
-use crate::service::dao::organization::OrganizationDao;
+use crate::service::dao::organization::{OrganizationDao, OrganizationQuery};
 use std::sync::{Arc, OnceLock};
 use chrono::Utc;
 // ==================== 工厂方法 + 单例管理 ====================
@@ -75,18 +75,30 @@ FROM organizations WHERE id = ? AND status != 0
         Ok(org)
     }
 
-    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<OrganizationPo>, AppError> {
-        let orgs = sqlx::query_as!(
-            OrganizationPo,
-            r#"
-SELECT id, name, description, base_url, status as 'status: OrganizationStatus', scope as 'scope: OrganizationScope', created_by, modified_by, created_at, updated_at
-FROM organizations WHERE status != 0
-            "#
-        )
-            .fetch_all(ctx.db_pool())
+    async fn query(&self, ctx: RequestContext, query: OrganizationQuery) -> Result<Vec<OrganizationPo>, AppError> {
+        let pool = ctx.db_pool();
+        let mut builder = sqlx::QueryBuilder::new(
+            r#"SELECT id, name, description, base_url, status, scope, created_by, modified_by, created_at, updated_at FROM organizations WHERE status != 0"#
+        );
+
+        // 排序
+        builder.push(" ORDER BY created_at DESC");
+
+        // 限制数量
+        if let Some(limit) = query.limit {
+            builder.push(" LIMIT ").push_bind(limit as i64);
+        }
+
+        let rows = builder.build_query_as()
+            .fetch_all(pool)
             .await?;
 
-        Ok(orgs)
+        Ok(rows)
+    }
+
+    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<OrganizationPo>, AppError> {
+        // 语法糖：调用通用查询
+        self.query(ctx, OrganizationQuery::default()).await
     }
 
     async fn update(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<(), AppError> {

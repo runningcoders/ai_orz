@@ -5,7 +5,7 @@ use crate::models::message::MessagePo;
 use crate::models::file::FileMeta;
 use common::enums::{MessageRole, MessageType, MessageStatus, FileType};
 use crate::pkg::RequestContext;
-use crate::service::dao::message::MessageDao;
+use crate::service::dao::message::{MessageDao, MessageQuery};
 use sqlx::types::Json;
 use std::sync::{Arc, OnceLock};
 use chrono::Utc;
@@ -73,6 +73,68 @@ impl MessageDao for MessageDaoSqliteImpl {
         Ok(())
     }
 
+    async fn query(&self, ctx: RequestContext, query: MessageQuery) -> Result<Vec<MessagePo>> {
+        // 使用 sqlx::QueryBuilder 动态构建查询
+        let mut builder = sqlx::QueryBuilder::new("SELECT * FROM messages WHERE 1=1");
+
+        // 默认软删除过滤：排除 Recalled (0) 状态的消息
+        // 如果用户显式指定了 status_in，则使用用户指定的状态（可能包含 0）
+        if query.status_in.is_none() {
+            builder.push(" AND \"status\" != 0");
+        }
+
+        // 逐个添加查询条件
+        if let Some(id) = &query.id {
+            builder.push(" AND id = ").push_bind(id);
+        }
+        if let Some(task_id) = &query.task_id {
+            builder.push(" AND task_id = ").push_bind(task_id);
+        }
+        if let Some(project_id) = &query.project_id {
+            builder.push(" AND project_id = ").push_bind(project_id);
+        }
+        if let Some(from_id) = &query.from_id {
+            builder.push(" AND from_id = ").push_bind(from_id);
+        }
+        if let Some(to_id) = &query.to_id {
+            builder.push(" AND to_id = ").push_bind(to_id);
+        }
+        if let Some(status_in) = &query.status_in {
+            if !status_in.is_empty() {
+                builder.push(" AND status IN (");
+                let mut separated = builder.separated(", ");
+                for s in status_in {
+                    separated.push_bind(*s as i32);
+                }
+                separated.push_unseparated(")");
+            }
+        }
+
+        // 添加排序
+        if let Some(order_by) = &query.order_by {
+            builder.push(format!(" ORDER BY {}", order_by));
+        } else {
+            // 默认按创建时间升序
+            builder.push(" ORDER BY created_at ASC");
+        }
+
+        // 添加分页
+        if let Some(limit) = query.limit {
+            builder.push(format!(" LIMIT {}", limit));
+            if let Some(offset) = query.offset {
+                builder.push(format!(" OFFSET {}", offset));
+            }
+        }
+
+        // 执行查询
+        let rows = builder
+            .build_query_as()
+            .fetch_all(ctx.db_pool())
+            .await?;
+
+        Ok(rows)
+    }
+
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<MessagePo>> {
         let message = sqlx::query_as!(
             MessagePo,
@@ -89,123 +151,39 @@ FROM messages WHERE id = ? AND "status" != 0
     }
 
     async fn list_by_task_id(&self, ctx: RequestContext, task_id: &str, limit: Option<usize>) -> Result<Vec<MessagePo>> {
-        let messages = if let Some(limit) = limit {
-            let limit_i64 = limit as i64;
-            sqlx::query_as!(
-                MessagePo,
-                r#"
-SELECT id, project_id, task_id, from_id, to_id, from_role as "from_role: MessageRole", to_role as "to_role: MessageRole", message_type as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", reply_to_id, created_by, modified_by, created_at, updated_at
-FROM messages WHERE task_id = ? AND "status" != 0 ORDER BY created_at ASC
-LIMIT ?
-                "#,
-                task_id,
-                limit_i64
-            )
-                .fetch_all(ctx.db_pool())
-                .await?
-        } else {
-            sqlx::query_as!(
-                MessagePo,
-                r#"
-SELECT id, project_id, task_id, from_id, to_id, from_role as "from_role: MessageRole", to_role as "to_role: MessageRole", message_type as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", reply_to_id, created_by, modified_by, created_at, updated_at
-FROM messages WHERE task_id = ? AND "status" != 0 ORDER BY created_at ASC
-                "#,
-                task_id
-            )
-                .fetch_all(ctx.db_pool())
-                .await?
-        };
-        Ok(messages)
+        // 语法糖：调用通用查询
+        self.query(ctx, MessageQuery {
+            task_id: Some(task_id.to_string()),
+            limit,
+            ..Default::default()
+        }).await
     }
 
     async fn list_by_project_id(&self, ctx: RequestContext, project_id: &str, limit: Option<usize>) -> Result<Vec<MessagePo>> {
-        let messages = if let Some(limit) = limit {
-            let limit_i64 = limit as i64;
-            sqlx::query_as!(
-                MessagePo,
-                r#"
-SELECT id, project_id, task_id, from_id, to_id, from_role as "from_role: MessageRole", to_role as "to_role: MessageRole", message_type as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", reply_to_id, created_by, modified_by, created_at, updated_at
-FROM messages WHERE project_id = ? AND "status" != 0 ORDER BY created_at ASC
-LIMIT ?
-                "#,
-                project_id,
-                limit_i64
-            )
-                .fetch_all(ctx.db_pool())
-                .await?
-        } else {
-            sqlx::query_as!(
-                MessagePo,
-                r#"
-SELECT id, project_id, task_id, from_id, to_id, from_role as "from_role: MessageRole", to_role as "to_role: MessageRole", message_type as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", reply_to_id, created_by, modified_by, created_at, updated_at
-FROM messages WHERE project_id = ? AND "status" != 0 ORDER BY created_at ASC
-                "#,
-                project_id
-            )
-                .fetch_all(ctx.db_pool())
-                .await?
-        };
-        Ok(messages)
+        // 语法糖：调用通用查询
+        self.query(ctx, MessageQuery {
+            project_id: Some(project_id.to_string()),
+            limit,
+            ..Default::default()
+        }).await
     }
 
     async fn list_by_from_id(&self, ctx: RequestContext, from_id: &str, limit: Option<usize>) -> Result<Vec<MessagePo>> {
-        let messages = if let Some(limit) = limit {
-            let limit_i64 = limit as i64;
-            sqlx::query_as!(
-                MessagePo,
-                r#"
-SELECT id, project_id, task_id, from_id, to_id, from_role as "from_role: MessageRole", to_role as "to_role: MessageRole", message_type as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", reply_to_id, created_by, modified_by, created_at, updated_at
-FROM messages WHERE from_id = ? AND "status" != 0 ORDER BY created_at ASC
-LIMIT ?
-                "#,
-                from_id,
-                limit_i64
-            )
-                .fetch_all(ctx.db_pool())
-                .await?
-        } else {
-            sqlx::query_as!(
-                MessagePo,
-                r#"
-SELECT id, project_id, task_id, from_id, to_id, from_role as "from_role: MessageRole", to_role as "to_role: MessageRole", message_type as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", reply_to_id, created_by, modified_by, created_at, updated_at
-FROM messages WHERE from_id = ? AND "status" != 0 ORDER BY created_at ASC
-                "#,
-                from_id
-            )
-                .fetch_all(ctx.db_pool())
-                .await?
-        };
-        Ok(messages)
+        // 语法糖：调用通用查询
+        self.query(ctx, MessageQuery {
+            from_id: Some(from_id.to_string()),
+            limit,
+            ..Default::default()
+        }).await
     }
 
     async fn list_by_to_id(&self, ctx: RequestContext, to_id: &str, limit: Option<usize>) -> Result<Vec<MessagePo>> {
-        let messages = if let Some(limit) = limit {
-            let limit_i64 = limit as i64;
-            sqlx::query_as!(
-                MessagePo,
-                r#"
-SELECT id, project_id, task_id, from_id, to_id, from_role as "from_role: MessageRole", to_role as "to_role: MessageRole", message_type as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", reply_to_id, created_by, modified_by, created_at, updated_at
-FROM messages WHERE to_id = ? AND "status" != 0 ORDER BY created_at ASC
-LIMIT ?
-                "#,
-                to_id,
-                limit_i64
-            )
-                .fetch_all(ctx.db_pool())
-                .await?
-        } else {
-            sqlx::query_as!(
-                MessagePo,
-                r#"
-SELECT id, project_id, task_id, from_id, to_id, from_role as "from_role: MessageRole", to_role as "to_role: MessageRole", message_type as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", reply_to_id, created_by, modified_by, created_at, updated_at
-FROM messages WHERE to_id = ? AND "status" != 0 ORDER BY created_at ASC
-                "#,
-                to_id
-            )
-                .fetch_all(ctx.db_pool())
-                .await?
-        };
-        Ok(messages)
+        // 语法糖：调用通用查询
+        self.query(ctx, MessageQuery {
+            to_id: Some(to_id.to_string()),
+            limit,
+            ..Default::default()
+        }).await
     }
 
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()> {
@@ -275,40 +253,13 @@ UPDATE messages SET "status" = ?, updated_at = ?, modified_by = ? WHERE id = ?
     }
 
     async fn list_by_status(&self, ctx: RequestContext, status: Vec<MessageStatus>, limit: Option<usize>) -> Result<Vec<MessagePo>> {
-        let pool = ctx.db_pool();
-        let limit = limit.unwrap_or(1000);
-        let limit_i64 = limit as i64;
-
-        // Convert Vec to fixed optional bindings (max 4 statuses, enough for all common use cases)
-        // Use OR to match ANY of the provided statuses: only non-null slots are checked
-        let s: Vec<i32> = status.iter().map(|x| (*x) as i32).collect();
-        let s1 = s.get(0).copied();
-        let s2 = s.get(1).copied();
-        let s3 = s.get(2).copied();
-        let s4 = s.get(3).copied();
-
-        let messages = sqlx::query_as!(
-            MessagePo,
-            r#"
-SELECT id, project_id, task_id, from_id, to_id, from_role as "from_role: MessageRole", to_role as "to_role: MessageRole", message_type as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", reply_to_id, created_by, modified_by, created_at, updated_at
-FROM messages WHERE "status" != 0 AND (
-    (? IS NOT NULL AND "status" = ?) OR
-    (? IS NOT NULL AND "status" = ?) OR
-    (? IS NOT NULL AND "status" = ?) OR
-    (? IS NOT NULL AND "status" = ?)
-)
-ORDER BY created_at ASC LIMIT ?
-"#,
-            s1, s1,
-            s2, s2,
-            s3, s3,
-            s4, s4,
-            limit_i64
-        )
-            .fetch_all(pool)
-            .await?;
-
-        Ok(messages)
+        // 语法糖：调用通用查询
+        // 注意：显式传入 status_in 会覆盖默认的 "status != 0" 过滤
+        self.query(ctx, MessageQuery {
+            status_in: Some(status),
+            limit,
+            ..Default::default()
+        }).await
     }
 
     async fn create_tool_call_request(

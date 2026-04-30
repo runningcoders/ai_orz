@@ -5,6 +5,14 @@ use crate::models::project::ProjectPo;
 use crate::pkg::RequestContext;
 use common::enums::ProjectStatus;
 
+/// Project 查询参数
+#[derive(Debug, Clone, Default)]
+pub struct ProjectQuery {
+    pub root_user_id: Option<String>,
+    pub status_in: Option<Vec<ProjectStatus>>,
+    pub limit: Option<usize>,
+}
+
 /// Project DAO 接口
 #[async_trait::async_trait]
 pub trait ProjectDao: Send + Sync + std::fmt::Debug {
@@ -12,6 +20,8 @@ pub trait ProjectDao: Send + Sync + std::fmt::Debug {
     async fn insert(&self, ctx: RequestContext, project: &ProjectPo) -> Result<(), AppError>;
     /// 根据 ID 查询项目
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<ProjectPo>, AppError>;
+    /// 通用查询
+    async fn query(&self, ctx: RequestContext, query: ProjectQuery) -> Result<Vec<ProjectPo>, AppError>;
     /// 根据根用户查询项目列表
     async fn list_by_root_user(&self, ctx: RequestContext, root_user_id: &str, limit: Option<usize>) -> Result<Vec<ProjectPo>, AppError>;
     /// 根据根用户和状态查询项目列表

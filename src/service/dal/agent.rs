@@ -4,7 +4,8 @@ use crate::error::AppError;
 use crate::models::agent::Agent;
 use crate::models::brain::Brain;
 use crate::pkg::RequestContext;
-use crate::service::dao::agent::AgentDao;
+use common::enums::AgentStatus;
+use crate::service::dao::agent::{AgentDao, AgentQuery};
 use std::sync::{Arc, OnceLock};
 use crate::service::dao::agent;
 // ==================== 单例管理 ====================
@@ -42,6 +43,11 @@ pub trait AgentDal: Send + Sync {
 
     /// 根据 ID 查询 Agent
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Agent>, AppError>;
+
+    /// 通用综合查询
+    ///
+    /// 支持组合查询条件，所有字段都是 Option
+    async fn query(&self, ctx: RequestContext, query: AgentQuery) -> Result<Vec<Agent>, AppError>;
 
     /// 查询所有 Agent
     async fn find_all(&self, ctx: RequestContext) -> Result<Vec<Agent>, AppError>;
@@ -85,9 +91,16 @@ impl AgentDal for AgentDalImpl {
         Ok(opt.map(Agent::from_po))
     }
 
-    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<Agent>, AppError> {
-        let agents = self.agent_dao.find_all(ctx).await?;
+    async fn query(&self, ctx: RequestContext, query: AgentQuery) -> Result<Vec<Agent>, AppError> {
+        let agents = self.agent_dao.query(ctx, query).await?;
         Ok(agents.into_iter().map(Agent::from_po).collect())
+    }
+
+    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<Agent>, AppError> {
+        self.query(ctx, AgentQuery { 
+            exclude_status: Some(AgentStatus::Deleted), 
+            ..Default::default() 
+        }).await
     }
 
     async fn update(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError> {

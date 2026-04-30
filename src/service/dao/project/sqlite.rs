@@ -7,7 +7,7 @@ use common::enums::project::ProjectStatus;
 use crate::error::AppError;
 use crate::models::project::ProjectPo;
 use crate::pkg::RequestContext;
-use super::ProjectDao;
+use super::{ProjectDao, ProjectQuery};
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -68,38 +68,67 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         Ok(project)
     }
 
+    async fn query(&self, ctx: RequestContext, query: ProjectQuery) -> Result<Vec<ProjectPo>, AppError> {
+        // 使用 sqlx::QueryBuilder 动态构建查询
+        let mut builder = sqlx::QueryBuilder::new(
+            "SELECT id, name, description, workflow, guidance, \"status\" as \"status\", priority, tags, root_user_id, owner_agent_id, start_at, due_at, end_at, created_by, modified_by, created_at, updated_at FROM projects WHERE 1=1"
+        );
+
+        // 默认软删除过滤
+        builder.push(" AND \"status\" != 0");
+
+        // 逐个添加查询条件
+        if let Some(root_user_id) = &query.root_user_id {
+            builder.push(" AND root_user_id = ").push_bind(root_user_id);
+        }
+
+        // 状态 IN 查询
+        if let Some(status_list) = &query.status_in {
+            if !status_list.is_empty() {
+                builder.push(" AND \"status\" IN (");
+                let mut separated = builder.separated(", ");
+                for s in status_list {
+                    separated.push_bind(*s as i32);
+                }
+                drop(separated); // 结束分隔器
+                builder.push(")");
+            }
+            // 如果 status_in 是 Some 但是数组为空，我们不添加任何条件
+        }
+
+        // 排序
+        builder.push(" ORDER BY priority DESC, created_at DESC");
+
+        // 限制数量
+        if let Some(limit) = query.limit {
+            builder.push(" LIMIT ").push_bind(limit as i64);
+        }
+
+        // 执行查询
+        let rows = builder.build_query_as()
+            .fetch_all(ctx.db_pool())
+            .await?;
+
+        Ok(rows)
+    }
+
     async fn list_by_root_user(&self, ctx: RequestContext, root_user_id: &str, limit: Option<usize>) -> Result<Vec<ProjectPo>, AppError> {
-        let pool = ctx.db_pool();
-        let limit = limit.unwrap_or(100);
-        let limit_i64 = limit as i64;
-        let projects = sqlx::query_as!(
-            ProjectPo,
-            "SELECT id, name, description, workflow, guidance, \"status\" as \"status: ProjectStatus\", priority as \"priority: i32\", tags, root_user_id, owner_agent_id, start_at, due_at, end_at, created_by, modified_by, created_at, updated_at FROM projects WHERE root_user_id = ? AND \"status\" != 0 ORDER BY priority DESC, created_at DESC LIMIT ?",
-            root_user_id, limit_i64
-        )
-        .fetch_all(pool)
-        .await?;
-        Ok(projects)
+        // 语法糖：调用通用查询
+        self.query(ctx, ProjectQuery {
+            root_user_id: Some(root_user_id.to_string()),
+            limit: Some(limit.unwrap_or(100)),
+            ..Default::default()
+        }).await
     }
 
     async fn list_by_root_user_and_status(&self, ctx: RequestContext, root_user_id: &str, status: Vec<ProjectStatus>, limit: Option<usize>) -> Result<Vec<ProjectPo>, AppError> {
-        let pool = ctx.db_pool();
-        let limit = limit.unwrap_or(100);
-        let limit_i64 = limit as i64;
-        let s: Vec<i32> = status.iter().map(|x| (*x) as i32).collect();
-        let s0 = s.get(0).copied();
-        let s1 = s.get(1).copied();
-        let s2 = s.get(2).copied();
-        let s3 = s.get(3).copied();
-
-        let projects = sqlx::query_as!(
-            ProjectPo,
-            "SELECT id, name, description, workflow, guidance, \"status\" as \"status: ProjectStatus\", priority as \"priority: i32\", tags, root_user_id, owner_agent_id, start_at, due_at, end_at, created_by, modified_by, created_at, updated_at FROM projects WHERE root_user_id = ? AND \"status\" != 0 AND ((? IS NOT NULL AND \"status\" = ?) OR (? IS NOT NULL AND \"status\" = ?) OR (? IS NOT NULL AND \"status\" = ?) OR (? IS NOT NULL AND \"status\" = ?)) ORDER BY priority DESC, created_at DESC LIMIT ?",
-            root_user_id, s0, s0, s1, s1, s2, s2, s3, s3, limit_i64
-        )
-        .fetch_all(pool)
-        .await?;
-        Ok(projects)
+        // 语法糖：调用通用查询
+        self.query(ctx, ProjectQuery {
+            root_user_id: Some(root_user_id.to_string()),
+            status_in: Some(status),
+            limit: Some(limit.unwrap_or(100)),
+            ..Default::default()
+        }).await
     }
 
     async fn update(&self, ctx: RequestContext, project: &ProjectPo) -> Result<(), AppError> {

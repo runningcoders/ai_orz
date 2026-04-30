@@ -6,7 +6,7 @@ use common::enums::{TaskStatus, AssigneeType};
 use crate::error::AppError;
 use crate::models::task::TaskPo;
 use crate::pkg::RequestContext;
-use super::TaskDao;
+use super::{TaskDao, TaskQuery};
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -98,120 +98,71 @@ FROM tasks WHERE id = ? AND "status" != 0
         Ok(task)
     }
 
-    async fn list_by_assignee(&self, ctx: RequestContext, assignee_type: Option<AssigneeType>, assignee_id: &str, limit: Option<usize>) -> Result<Vec<TaskPo>, AppError> {
-        let pool = ctx.db_pool();
-        let limit = limit.unwrap_or(100);
-        let limit_i64 = limit as i64;
+    async fn query(&self, ctx: RequestContext, query: TaskQuery) -> Result<Vec<TaskPo>, AppError> {
+        let mut builder = sqlx::QueryBuilder::new(
+            r#"SELECT id, title, description, "status", priority, tags, due_at, start_at, end_at, dependencies, root_user_id, "assignee_type", assignee_id, project_id, created_by, modified_by, created_at, updated_at FROM tasks WHERE 1=1"#
+        );
 
-        let tasks = match assignee_type {
-            Some(at) => {
-                let at_i32 = at as i32;
-                sqlx::query_as!(
-                    TaskPo,
-                    r#"
-SELECT id, title, description, "status" as "status: TaskStatus", priority as "priority: i32", tags, due_at, start_at, end_at, dependencies, root_user_id,
-       "assignee_type" as "assignee_type: AssigneeType", assignee_id, project_id,
-       created_by, modified_by, created_at, updated_at
-FROM tasks WHERE "assignee_type" = ? AND assignee_id = ? AND "status" != 0
-ORDER BY priority DESC, created_at DESC LIMIT ?
-"#,
-                    at_i32,
-                    assignee_id,
-                    limit_i64
-                )
-                .fetch_all(pool)
-                .await?
+        // 默认软删除过滤
+        builder.push(r#" AND "status" != 0"#);
+
+        // 逐个添加查询条件
+        if let Some(assignee_type) = &query.assignee_type {
+            builder.push(r#" AND "assignee_type" = "#).push_bind(*assignee_type as i32);
+        }
+
+        if let Some(assignee_id) = &query.assignee_id {
+            builder.push(" AND assignee_id = ").push_bind(assignee_id);
+        }
+
+        // 状态 IN 查询
+        if let Some(status_list) = &query.status_in {
+            if !status_list.is_empty() {
+                builder.push(r#" AND "status" IN ("#);
+                let mut separated = builder.separated(", ");
+                for s in status_list {
+                    separated.push_bind(*s as i32);
+                }
+                drop(separated);
+                builder.push(")");
             }
-            None => {
-                sqlx::query_as!(
-                    TaskPo,
-                    r#"
-SELECT id, title, description, "status" as "status: TaskStatus", priority as "priority: i32", tags, due_at, start_at, end_at, dependencies, root_user_id,
-       "assignee_type" as "assignee_type: AssigneeType", assignee_id, project_id,
-       created_by, modified_by, created_at, updated_at
-FROM tasks WHERE assignee_id = ? AND "status" != 0
-ORDER BY priority DESC, created_at DESC LIMIT ?
-"#,
-                    assignee_id,
-                    limit_i64
-                )
-                .fetch_all(pool)
-                .await?
-            }
-        };
-        Ok(tasks)
+        }
+
+        // 排序
+        builder.push(" ORDER BY priority DESC, created_at DESC");
+
+        // 限制数量
+        if let Some(limit) = query.limit {
+            builder.push(" LIMIT ").push_bind(limit as i64);
+        }
+
+        // 执行查询
+        let rows = builder.build_query_as()
+            .fetch_all(ctx.db_pool())
+            .await?;
+
+        Ok(rows)
+    }
+
+    async fn list_by_assignee(&self, ctx: RequestContext, assignee_type: Option<AssigneeType>, assignee_id: &str, limit: Option<usize>) -> Result<Vec<TaskPo>, AppError> {
+        // 语法糖：调用通用查询
+        self.query(ctx, TaskQuery {
+            assignee_type,
+            assignee_id: Some(assignee_id.to_string()),
+            limit: Some(limit.unwrap_or(100)),
+            ..Default::default()
+        }).await
     }
 
     async fn list_by_status(&self, ctx: RequestContext, assignee_type: Option<AssigneeType>, assignee_id: &str, status: Vec<TaskStatus>, limit: Option<usize>) -> Result<Vec<TaskPo>, AppError> {
-        let pool = ctx.db_pool();
-        let limit = limit.unwrap_or(100);
-        let limit_i64 = limit as i64;
-
-        // Convert Vec to fixed optional bindings (max 4 statuses, enough for all common use cases)
-        // Use the correct optional filtering pattern: (slot is null OR "status" = slot)
-        // If the slot is None, condition becomes (null OR ...) which equals always true
-        let s: Vec<i32> = status.iter().map(|x| (*x) as i32).collect();
-        let s1 = s.get(0).copied();
-        let s2 = s.get(1).copied();
-        let s3 = s.get(2).copied();
-        let s4 = s.get(3).copied();
-
-        let tasks = match assignee_type {
-            Some(at) => {
-                let at_i32 = at as i32;
-                sqlx::query_as!(
-                    TaskPo,
-                    r#"
-SELECT id, title, description, "status" as 'status: TaskStatus', priority as 'priority: i32', tags, due_at, start_at, end_at, dependencies, root_user_id,
-       "assignee_type" as 'assignee_type: AssigneeType', assignee_id, project_id,
-       created_by, modified_by, created_at, updated_at
-FROM tasks WHERE "status" != 0 AND assignee_id = ? AND "assignee_type" = ? AND (
-    (? IS NOT NULL AND "status" = ?) OR
-    (? IS NOT NULL AND "status" = ?) OR
-    (? IS NOT NULL AND "status" = ?) OR
-    (? IS NOT NULL AND "status" = ?)
-)
-ORDER BY priority DESC, created_at DESC LIMIT ?
-"#,
-                    assignee_id,
-                    at_i32,
-                    s1, s1,
-                    s2, s2,
-                    s3, s3,
-                    s4, s4,
-                    limit_i64
-                )
-                .fetch_all(pool)
-                .await?
-            }
-            None => {
-                sqlx::query_as!(
-                    TaskPo,
-                    r#"
-SELECT id, title, description, "status" as 'status: TaskStatus', priority as 'priority: i32', tags, due_at, start_at, end_at, dependencies, root_user_id,
-       "assignee_type" as 'assignee_type: AssigneeType', assignee_id, project_id,
-       created_by, modified_by, created_at, updated_at
-FROM tasks WHERE "status" != 0 AND assignee_id = ? AND (
-    (? IS NOT NULL AND "status" = ?) OR
-    (? IS NOT NULL AND "status" = ?) OR
-    (? IS NOT NULL AND "status" = ?) OR
-    (? IS NOT NULL AND "status" = ?)
-)
-ORDER BY priority DESC, created_at DESC LIMIT ?
-"#,
-                    assignee_id,
-                    s1, s1,
-                    s2, s2,
-                    s3, s3,
-                    s4, s4,
-                    limit_i64
-                )
-                .fetch_all(pool)
-                .await?
-            }
-        };
-
-        Ok(tasks)
+        // 语法糖：调用通用查询
+        self.query(ctx, TaskQuery {
+            assignee_type,
+            assignee_id: Some(assignee_id.to_string()),
+            status_in: Some(status),
+            limit: Some(limit.unwrap_or(100)),
+            ..Default::default()
+        }).await
     }
 
     async fn update(&self, ctx: RequestContext, task: &TaskPo) -> Result<(), AppError> {

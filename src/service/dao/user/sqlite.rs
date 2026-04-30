@@ -4,7 +4,7 @@ use crate::error::AppError;
 use crate::models::user::UserPo;
 use common::enums::{UserRole, UserStatus};
 use crate::pkg::RequestContext;
-use crate::service::dao::user::UserDao;
+use crate::service::dao::user::{UserDao, UserQuery};
 use std::sync::{Arc, OnceLock};
 use chrono::Utc;
 
@@ -95,20 +95,38 @@ FROM users WHERE username = ? AND status != 0
         Ok(user)
     }
 
-    async fn find_by_organization_id(&self, ctx: RequestContext, org_id: &str) -> Result<Vec<UserPo>, AppError> {
-        let users = sqlx::query_as!(
-            UserPo,
-            r#"
-SELECT id, organization_id, username, display_name, email, password_hash,
-       role as 'role: UserRole', status as 'status: UserStatus', created_by, modified_by, created_at, updated_at
-FROM users WHERE organization_id = ? AND status != 0
-            "#,
-            org_id
-        )
-            .fetch_all(ctx.db_pool())
+    async fn query(&self, ctx: RequestContext, query: UserQuery) -> Result<Vec<UserPo>, AppError> {
+        let pool = ctx.db_pool();
+        let mut builder = sqlx::QueryBuilder::new(
+            r#"SELECT id, organization_id, username, display_name, email, password_hash, role, status, created_by, modified_by, created_at, updated_at FROM users WHERE status != 0"#
+        );
+
+        // 组织过滤
+        if let Some(org_id) = &query.organization_id {
+            builder.push(" AND organization_id = ").push_bind(org_id);
+        }
+
+        // 排序
+        builder.push(" ORDER BY created_at DESC");
+
+        // 限制数量
+        if let Some(limit) = query.limit {
+            builder.push(" LIMIT ").push_bind(limit as i64);
+        }
+
+        let rows = builder.build_query_as()
+            .fetch_all(pool)
             .await?;
 
-        Ok(users)
+        Ok(rows)
+    }
+
+    async fn find_by_organization_id(&self, ctx: RequestContext, org_id: &str) -> Result<Vec<UserPo>, AppError> {
+        // 语法糖：调用通用查询
+        self.query(ctx, UserQuery {
+            organization_id: Some(org_id.to_string()),
+            ..Default::default()
+        }).await
     }
 
     async fn update(&self, ctx: RequestContext, user: &UserPo) -> Result<(), AppError> {

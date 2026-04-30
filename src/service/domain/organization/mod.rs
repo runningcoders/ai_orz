@@ -13,7 +13,7 @@ use crate::pkg::RequestContext;
 use std::sync::{Arc, OnceLock};
 use async_trait::async_trait;
 use crate::service::dal::organization;
-use crate::service::dao::user as user_dao;
+use crate::service::dal::user as user_dal;
 // ==================== 单例 ====================
 
 static ORGANIZATION_DOMAIN: OnceLock<Arc<dyn OrganizationDomain>> = OnceLock::new();
@@ -26,8 +26,8 @@ pub fn domain() -> Arc<dyn OrganizationDomain> {
 /// 初始化 Organization Domain
 pub fn init() {
     let domain = OrganizationDomainImpl::new(
-        organization:: dal(),
-        user_dao::dao(),
+        organization::dal(),
+        user_dal::dal(),
     );
     let _ = ORGANIZATION_DOMAIN.set(Arc::new(domain));
 }
@@ -38,17 +38,17 @@ pub fn init() {
 ///
 /// 聚合所有组织管理子功能实现
 struct OrganizationDomainImpl {
-    dal: Arc<dyn organization::OrganizationDal + Send + Sync>,
-    user_dao: Arc<dyn user_dao::UserDao + Send + Sync>,
+    org_dal: Arc<dyn organization::OrganizationDal + Send + Sync>,
+    user_dal: Arc<dyn user_dal::UserDal + Send + Sync>,
 }
 
 impl OrganizationDomainImpl {
     /// 创建 Domain 实例
     fn new(
-        dal: Arc<dyn organization::OrganizationDal + Send + Sync>,
-        user_dao: Arc<dyn user_dao::UserDao + Send + Sync>,
+        org_dal: Arc<dyn organization::OrganizationDal + Send + Sync>,
+        user_dal: Arc<dyn user_dal::UserDal + Send + Sync>,
     ) -> Self {
-        Self { dal, user_dao }
+        Self { org_dal, user_dal }
     }
 }
 

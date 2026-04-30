@@ -3,7 +3,8 @@
 use crate::error::AppError;
 use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
-use crate::service::dao::model_provider::ModelProviderDao;
+use common::enums::ModelProviderStatus;
+use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderQuery};
 use std::sync::{Arc, OnceLock};
 use crate::service::dao::model_provider;
 // ==================== 单例管理 ====================
@@ -45,6 +46,9 @@ pub trait ModelProviderDal: Send + Sync {
     /// 查询所有 Model Provider
     async fn find_all(&self, ctx: RequestContext) -> Result<Vec<ModelProvider>, AppError>;
 
+    /// 通用综合查询
+    async fn query(&self, ctx: RequestContext, query: ModelProviderQuery) -> Result<Vec<ModelProvider>, AppError>;
+
     /// 更新 Model Provider
     async fn update(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError>;
 
@@ -78,7 +82,14 @@ impl ModelProviderDal for ModelProviderDalImpl {
     }
 
     async fn find_all(&self, ctx: RequestContext) -> Result<Vec<ModelProvider>, AppError> {
-        let providers = self.model_provider_dao.find_all(ctx).await?;
+        self.query(ctx, ModelProviderQuery { 
+            exclude_status: Some(ModelProviderStatus::Deleted), 
+            ..Default::default() 
+        }).await
+    }
+
+    async fn query(&self, ctx: RequestContext, query: ModelProviderQuery) -> Result<Vec<ModelProvider>, AppError> {
+        let providers = self.model_provider_dao.query(ctx, query).await?;
         Ok(providers.into_iter().map(ModelProvider::from_po).collect())
     }
 

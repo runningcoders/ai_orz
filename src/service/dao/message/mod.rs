@@ -5,6 +5,35 @@ use crate::models::message::{MessagePo, ToolCallMessage};
 use common::enums::MessageStatus;
 use crate::pkg::RequestContext;
 
+// ==================== 查询参数 ====================
+
+/// 消息通用查询条件
+///
+/// 支持组合查询，所有字段都是 Option：
+/// - None 表示不限制该条件
+/// - Some(value) 表示必须匹配该值
+#[derive(Debug, Clone, Default)]
+pub struct MessageQuery {
+    /// 按消息 ID 查询（通常返回单条）
+    pub id: Option<String>,
+    /// 按任务 ID 查询
+    pub task_id: Option<String>,
+    /// 按项目 ID 查询
+    pub project_id: Option<String>,
+    /// 按发送方 ID 查询
+    pub from_id: Option<String>,
+    /// 按接收方 ID 查询
+    pub to_id: Option<String>,
+    /// 按状态 IN 查询（支持多选）
+    pub status_in: Option<Vec<MessageStatus>>,
+    /// 限制返回条数（分页）
+    pub limit: Option<usize>,
+    /// 跳过条数（分页）
+    pub offset: Option<usize>,
+    /// 排序规则，如 "created_at ASC", "created_at DESC"
+    pub order_by: Option<String>,
+}
+
 // ==================== 接口 ====================
 
 /// Message DAO 接口
@@ -12,6 +41,20 @@ use crate::pkg::RequestContext;
 pub trait MessageDao: Send + Sync {
     /// 插入一条新消息
     async fn insert(&self, ctx: RequestContext, message: &MessagePo) -> Result<()>;
+
+    /// 通用查询方法
+    ///
+    /// 支持组合查询条件，所有字段都是 Option
+    /// 示例：
+    /// ```
+    /// let messages = dao.query(ctx, MessageQuery {
+    ///     task_id: Some("task-123".to_string()),
+    ///     status_in: Some(vec![MessageStatus::Pending, MessageStatus::Processing]),
+    ///     limit: Some(10),
+    ///     ..Default::default()
+    /// }).await?;
+    /// ```
+    async fn query(&self, ctx: RequestContext, query: MessageQuery) -> Result<Vec<MessagePo>>;
 
     /// 根据 ID 查找消息
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<MessagePo>>;

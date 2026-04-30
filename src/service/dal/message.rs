@@ -7,7 +7,7 @@ use crate::error::AppError;
 use crate::models::event::Event;
 use crate::models::message::Message;
 use crate::pkg::RequestContext;
-use crate::service::dao::message::{MessageDao, self};
+use crate::service::dao::message::{MessageDao, MessageQuery, self};
 use crate::service::dao::event_queue::{EventQueueDao, self};
 use common::enums::MessageStatus;
 use std::sync::{Arc, OnceLock};
@@ -49,6 +49,20 @@ pub trait MessageDal: Send + Sync {
     ///
     /// 保存到数据库后自动入队事件队列，所有消息都入队不做过滤
     async fn save_message(&self, ctx: RequestContext, message: &Message) -> Result<(), AppError>;
+
+    /// 通用综合查询
+    ///
+    /// 支持组合查询条件，所有字段都是 Option
+    /// 示例：
+    /// ```
+    /// let messages = dal.query(ctx, MessageQuery {
+    ///     task_id: Some("task-123".to_string()),
+    ///     status_in: Some(vec![MessageStatus::Pending, MessageStatus::Processing]),
+    ///     limit: Some(10),
+    ///     ..Default::default()
+    /// }).await?;
+    /// ```
+    async fn query(&self, ctx: RequestContext, query: MessageQuery) -> Result<Vec<Message>, AppError>;
 
     /// 按任务 ID 查询消息列表
     ///
@@ -191,14 +205,25 @@ impl MessageDal for MessageDalImpl {
         Ok(())
     }
 
+    async fn query(&self, ctx: RequestContext, query: MessageQuery) -> Result<Vec<Message>, AppError> {
+        // 调用 DAO 层查询，得到 PO 列表
+        let pos = self.message_dao.query(ctx, query).await?;
+        // 转换为业务实体
+        Ok(pos.into_iter().map(Message::from_po).collect())
+    }
+
     async fn list_by_task_id(
         &self,
         ctx: RequestContext,
         task_id: &str,
         limit: Option<usize>,
     ) -> Result<Vec<Message>, AppError> {
-        let pos = self.message_dao.list_by_task_id(ctx, task_id, limit).await?;
-        Ok(pos.into_iter().map(Message::from_po).collect())
+        // 语法糖：调用通用查询
+        self.query(ctx, MessageQuery {
+            task_id: Some(task_id.to_string()),
+            limit,
+            ..Default::default()
+        }).await
     }
 
     async fn list_by_project_id(
@@ -207,8 +232,12 @@ impl MessageDal for MessageDalImpl {
         project_id: &str,
         limit: Option<usize>,
     ) -> Result<Vec<Message>, AppError> {
-        let pos = self.message_dao.list_by_project_id(ctx, project_id, limit).await?;
-        Ok(pos.into_iter().map(Message::from_po).collect())
+        // 语法糖：调用通用查询
+        self.query(ctx, MessageQuery {
+            project_id: Some(project_id.to_string()),
+            limit,
+            ..Default::default()
+        }).await
     }
 
     async fn list_by_from_id(
@@ -217,8 +246,12 @@ impl MessageDal for MessageDalImpl {
         from_id: &str,
         limit: Option<usize>,
     ) -> Result<Vec<Message>, AppError> {
-        let pos = self.message_dao.list_by_from_id(ctx, from_id, limit).await?;
-        Ok(pos.into_iter().map(Message::from_po).collect())
+        // 语法糖：调用通用查询
+        self.query(ctx, MessageQuery {
+            from_id: Some(from_id.to_string()),
+            limit,
+            ..Default::default()
+        }).await
     }
 
     async fn list_by_to_id(
@@ -227,8 +260,12 @@ impl MessageDal for MessageDalImpl {
         to_id: &str,
         limit: Option<usize>,
     ) -> Result<Vec<Message>, AppError> {
-        let pos = self.message_dao.list_by_to_id(ctx, to_id, limit).await?;
-        Ok(pos.into_iter().map(Message::from_po).collect())
+        // 语法糖：调用通用查询
+        self.query(ctx, MessageQuery {
+            to_id: Some(to_id.to_string()),
+            limit,
+            ..Default::default()
+        }).await
     }
 
     async fn list_by_status(
@@ -237,8 +274,12 @@ impl MessageDal for MessageDalImpl {
         status: Vec<MessageStatus>,
         limit: Option<usize>,
     ) -> Result<Vec<Message>, AppError> {
-        let pos = self.message_dao.list_by_status(ctx, status, limit).await?;
-        Ok(pos.into_iter().map(Message::from_po).collect())
+        // 语法糖：调用通用查询
+        self.query(ctx, MessageQuery {
+            status_in: Some(status),
+            limit,
+            ..Default::default()
+        }).await
     }
 
     async fn update_status(

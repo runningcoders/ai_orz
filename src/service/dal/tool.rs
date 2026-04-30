@@ -7,7 +7,7 @@ use crate::error::AppError;
 use crate::models::tool::{Tool, ToolPo, CoreTool};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
-use crate::service::dao::tool::{ToolDao, self};
+use crate::service::dao::tool::{ToolDao, ToolQuery, self};
 use crate::service::dao::tool_call::{ToolCallDao, self};
 use rig::tool::ToolError;
 use anyhow::Result;
@@ -58,6 +58,11 @@ pub trait ToolDal: Send + Sync {
 
     /// 根据名称获取完整工具
     async fn get_by_name(&self, ctx: &RequestContext, name: &str) -> Result<Option<Tool>, AppError>;
+
+    /// 通用综合查询（返回完整 Tool 实体，包含 PO + CoreTool）
+    ///
+    /// 支持组合查询条件，所有字段都是 Option
+    async fn query(&self, ctx: &RequestContext, query: ToolQuery) -> Result<Vec<Tool>, AppError>;
 
     /// 获取所有启用的工具
     async fn list_enabled(&self, ctx: &RequestContext) -> Result<Vec<Tool>, AppError>;
@@ -156,8 +161,8 @@ impl ToolDal for ToolDalImpl {
         Ok(Some(Tool { po, our_tool }))
     }
 
-    async fn list_enabled(&self, ctx: &RequestContext) -> Result<Vec<Tool>, AppError> {
-        let pos = self.tool_dao.list_enabled(ctx).await?;
+    async fn query(&self, ctx: &RequestContext, query: ToolQuery) -> Result<Vec<Tool>, AppError> {
+        let pos = self.tool_dao.query(ctx, query).await?;
         let mut tools = Vec::new();
         for po in pos {
             if let Some(our_tool) = self.tool_call_dao.assemble_core_tool(&po)? {
@@ -167,15 +172,12 @@ impl ToolDal for ToolDalImpl {
         Ok(tools)
     }
 
+    async fn list_enabled(&self, ctx: &RequestContext) -> Result<Vec<Tool>, AppError> {
+        self.query(ctx, ToolQuery { enabled_only: Some(true), ..Default::default() }).await
+    }
+
     async fn list_tools_for_agent_full(&self, ctx: &RequestContext, agent_id: &str) -> Result<Vec<Tool>, AppError> {
-        let pos = self.tool_dao.list_tools_for_agent(ctx, agent_id).await?;
-        let mut tools = Vec::new();
-        for po in pos {
-            if let Some(our_tool) = self.tool_call_dao.assemble_core_tool(&po)? {
-                tools.push(Tool { po, our_tool });
-            }
-        }
-        Ok(tools)
+        self.query(ctx, ToolQuery { agent_id: Some(agent_id.to_string()), ..Default::default() }).await
     }
 
     async fn add_tool_to_agent(

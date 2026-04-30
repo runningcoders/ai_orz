@@ -48,12 +48,14 @@ DAO (数据访问层) → 单一数据源操作，只做 CRUD
 
 ### 各层职责边界
 
-| 层级 | 职责 | 禁止做 |
-|------|------|--------|
-| **DAO** | 单一数据源的 CRUD 操作<br>SQL 拼接<br>数据库实体 PO 转换 | ❌ 跨 DAO 依赖<br>❌ 业务逻辑<br>❌ 实体组装/装饰 |
-| **DAL** | 组合多个 DAO<br>提供业务级数据接口<br>业务实体组装/过滤 | ❌ 跨 DAL 依赖<br>❌ 复杂业务编排 |
-| **Domain** | 组合多个 DAL<br>核心业务逻辑编排<br>跨领域事务 | ❌ 直接操作数据库 |
-| **Handler** | HTTP 路由<br>参数校验<br>调用 Domain 服务 | ❌ 业务逻辑 |
+| 层级 | 可以做 | 禁止做 |
+|------|--------|--------|
+| **DAO** | 单一/多个数据源的 CRUD 操作<br>SQL 拼接<br>数据库实体 PO 转换 | ❌ **同层 DAO 互调**<br>❌ 向上调用 DAL/Domain<br>❌ 业务逻辑<br>❌ 实体组装/装饰 |
+| **DAL** | ✅ **依赖多个 DAO**（业务决定）<br>提供业务级数据接口<br>PO → Entity 转换 | ❌ **同层 DAL 互调**<br>❌ 向上调用 Domain |
+| **Domain** | ✅ **依赖多个 DAL**（业务决定）<br>核心业务逻辑编排<br>跨领域事务 | ❌ **同层 Domain 互调**<br>❌ 直接调用 DAO（跨层） |
+| **Handler** | HTTP 路由<br>参数校验<br>调用 Domain 服务 | ❌ 直接调用 DAL/DAO（跨层） |
+
+> 💡 **设计哲学**：调用限制只有一个 —— **逐层单向调用**。DAL/Domain 内依赖多少个下一层组件，完全由业务内聚性决定。
 
 ---
 
@@ -651,6 +653,134 @@ impl MessageDao for MessageDaoSqliteImpl {
 5. **Step 5**：更新 DAL 实现和所有调用点
 6. **Step 6**：运行 `cargo test` 验证所有测试通过
 7. **Step 7**：总结模式，推广到 Agent、Tool 等其他模块
+
+---
+
+## 🔄 实践 4：Organization Domain 跨 DAL 依赖拆分
+
+> 记录日期：2024-04-30
+> 背景：修正 DAL 层跨领域依赖，强化分层边界
+
+### 🎯 问题发现
+
+**原设计违反 DAL 单一职责原则**：
+```rust
+// ❌ 错误：Organization DAL 直接依赖 UserDao，跨领域操作
+pub struct OrganizationDalImpl {
+    dao: Arc<dyn OrganizationDao + Send + Sync>,
+    user_dao: Arc<dyn UserDao + Send + Sync>,  // 跨领域 DAO 依赖
+}
+
+impl OrganizationDalImpl {
+    async fn initialize_system(&self, ...) -> Result<(String, String)> {
+        // 同时操作 organizations 和 users 两张表
+        // 跨领域逻辑下沉到 DAL 层，职责混淆
+    }
+}
+```
+
+### ✅ 修正后的架构方案
+
+**核心修正：DAL 层不跨领域，Domain 层负责编排**
+
+| 层级 | 修正前 | 修正后 |
+|------|--------|--------|
+| **DAL** | OrganizationDal 注入 UserDao，跨表操作 | OrganizationDal 仅依赖自身 OrganizationDao<br>**新增独立 UserDal** 封装用户领域操作 |
+| **Domain** | 只注入 OrganizationDal | OrganizationDomain **同时注入 OrganizationDal + UserDal**<br>在 `initialize_system` 方法中编排跨 DAL 调用 |
+
+**修正后的分层边界更新：**
+
+| 层级 | 可以做 | 禁止做 |
+|------|--------|--------|
+| **DAO** | 单一/多个数据源的 CRUD 操作<br>SQL 拼接<br>数据库实体 PO 转换 | ❌ **同层 DAO 互调**<br>❌ 向上调用 DAL/Domain<br>❌ 业务逻辑<br>❌ 实体组装/装饰 |
+| **DAL** | ✅ **依赖多个 DAO**（业务决定）<br>提供业务级数据接口<br>PO → Entity 转换 | ❌ **同层 DAL 互调**<br>❌ 向上调用 Domain |
+| **Domain** | ✅ **依赖多个 DAL**（业务决定）<br>核心业务逻辑编排<br>跨领域事务 | ❌ **同层 Domain 互调**<br>❌ 直接调用 DAO（跨层） |
+| **Handler** | HTTP 路由<br>参数校验<br>调用 Domain 服务 | ❌ 直接调用 DAL/DAO（跨层） |
+
+### 📝 本次重构的真实意图
+
+本次重构的**核心不是禁止 DAL 多 DAO 依赖**，而是：
+1. **User 是独立领域**，应该有自己独立的 DAL 封装，而不是作为 Organization DAL 的内部依赖
+2. **User DAL 可被其他领域复用**（HR、权限等），不应该被 Organization 独占
+3. **保持 DAL 的领域内聚性**：一个 DAL 应该服务于一个完整的业务领域，而不是多个领域的混合
+
+**这是一个领域边界划分的设计决策，不是对 DAL 多 DAO 依赖的禁止。**
+
+### 📝 代码示例
+
+**✅ User DAL 独立封装**
+```rust
+pub struct UserDalImpl {
+    dao: Arc<dyn UserDao + Send + Sync>,
+}
+
+#[async_trait]
+impl UserDal for UserDalImpl {
+    async fn create(&self, ctx: RequestContext, user: &UserPo) -> Result<UserPo, AppError> {
+        self.dao.create(ctx, user).await
+    }
+    
+    async fn query(&self, ctx: RequestContext, query: UserQuery) -> Result<Vec<UserPo>, AppError> {
+        self.dao.query(ctx, query).await
+    }
+    // ... 仅用户领域的方法
+}
+```
+
+**✅ Organization DAL 保持单一职责**
+```rust
+pub struct OrganizationDalImpl {
+    dao: Arc<dyn OrganizationDao + Send + Sync>,
+    // ✅ 不再注入 UserDao
+}
+
+#[async_trait]
+impl OrganizationDal for OrganizationDalImpl {
+    async fn create(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<OrganizationPo, AppError> {
+        self.dao.create(ctx, org).await
+    }
+    // ✅ 移除了跨表的 initialize_system 方法
+    // ... 仅组织领域的方法
+}
+```
+
+**✅ Organization Domain 实现跨 DAL 编排**
+```rust
+pub struct OrganizationDomainImpl {
+    org_dal: Arc<dyn OrganizationDal + Send + Sync>,
+    user_dal: Arc<dyn UserDal + Send + Sync>,  // ✅ 注入同级 DAL
+}
+
+#[async_trait]
+impl OrganizationManage for OrganizationDomainImpl {
+    async fn initialize_system(&self, ...) -> Result<(String, String), AppError> {
+        // 1. 调用 Organization DAL 创建组织
+        let org_id = generate_org_id();
+        let org = OrganizationPo::new(org_id.clone(), ...);
+        self.org_dal.create(ctx.clone(), &org).await?;
+
+        // 2. 调用 User DAL 创建超级管理员
+        let user_id = generate_user_id();
+        let user = UserPo::new(user_id.clone(), org_id.clone(), ...);
+        self.user_dal.create(ctx, &user).await?;
+
+        Ok((org_id, user_id))
+    }
+}
+```
+
+### 🎯 重构收益
+
+1. **职责清晰**：每个 DAL 只负责自己领域的数据操作，边界明确
+2. **复用性提升**：User DAL 可被其他领域（如 HR、权限系统）独立复用
+3. **测试隔离**：DAL 层测试无需考虑跨领域依赖，更易编写和维护
+4. **扩展性增强**：新增领域时只需提供对应 DAL，由 Domain 层自由组合
+
+### ✅ 验证结果
+
+- 编译通过 ✓
+- **167 个测试全部通过** ✓
+- 无破坏性变更 ✓
 
 ---
 

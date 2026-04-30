@@ -15,6 +15,7 @@ mod management_test;
 use crate::error::AppError;
 use crate::models::message::Message;
 use crate::pkg::RequestContext;
+use crate::service::dao::message::MessageQuery;
 use crate::service::dal::message::MessageDal;
 use async_trait::async_trait;
 use common::enums::{MessageRole, MessageStatus};
@@ -168,6 +169,15 @@ pub trait MessageDelivery: Send + Sync {
 /// 定义消息查询、更新、删除等管理接口
 #[async_trait::async_trait]
 pub trait MessageManagement: Send + Sync {
+    /// 通用综合查询
+    ///
+    /// 支持组合查询条件，所有字段都是 Option
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: MessageQuery,
+    ) -> Result<Vec<Message>, AppError>;
+
     /// 按任务 ID 查询消息列表
     async fn list_by_task_id(
         &self,

@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use sqlx::SqlitePool;
 use std::sync::{Arc, OnceLock};
 
-use super::ToolDao;
+use super::{ToolDao, ToolQuery};
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -127,18 +127,63 @@ impl ToolDao for ToolDaoSqliteImpl {
         Ok(row)
     }
 
-    async fn list_enabled(&self, ctx: &RequestContext) -> Result<Vec<ToolPo>> {
+    async fn query(&self, ctx: &RequestContext, query: ToolQuery) -> Result<Vec<ToolPo>> {
         let pool = ctx.db_pool();
+        let mut builder = sqlx::QueryBuilder::new(
+            r#"SELECT t.* FROM tools t"#
+        );
 
-        let rows = sqlx::query_as::<_, ToolPo>(
-            r#"
-            SELECT * FROM tools WHERE status = 1 ORDER BY created_at DESC
-            "#
-        )
-        .fetch_all(pool)
-        .await?;
+        // Agent 过滤（需要 JOIN）
+        let has_agent_filter = query.agent_id.is_some();
+        if has_agent_filter {
+            builder.push(" INNER JOIN agent_tools at ON t.id = at.tool_id");
+        }
+
+        let mut has_where = false;
+
+        // Agent 过滤
+        if let Some(agent_id) = &query.agent_id {
+            builder.push(" WHERE at.agent_id = ").push_bind(agent_id);
+            has_where = true;
+        }
+
+        // Enabled 过滤
+        if let Some(enabled_only) = query.enabled_only {
+            if enabled_only {
+                if has_where {
+                    builder.push(" AND");
+                } else {
+                    builder.push(" WHERE");
+                }
+                builder.push(" t.status = 1");
+            }
+        }
+
+        // 排序
+        if has_agent_filter {
+            builder.push(" ORDER BY at.created_at ASC");
+        } else {
+            builder.push(" ORDER BY t.created_at DESC");
+        }
+
+        // 限制数量
+        if let Some(limit) = query.limit {
+            builder.push(" LIMIT ").push_bind(limit as i64);
+        }
+
+        let rows = builder.build_query_as()
+            .fetch_all(pool)
+            .await?;
 
         Ok(rows)
+    }
+
+    async fn list_enabled(&self, ctx: &RequestContext) -> Result<Vec<ToolPo>> {
+        // 语法糖：调用通用查询
+        self.query(ctx, ToolQuery {
+            enabled_only: Some(true),
+            ..Default::default()
+        }).await
     }
 
     async fn add_tool_to_agent(
@@ -190,21 +235,11 @@ impl ToolDao for ToolDaoSqliteImpl {
     }
 
     async fn list_tools_for_agent(&self, ctx: &RequestContext, agent_id: &str) -> Result<Vec<ToolPo>> {
-        let pool = ctx.db_pool();
-
-        let rows = sqlx::query_as::<_, ToolPo>(
-            r#"
-            SELECT t.* FROM tools t
-            INNER JOIN agent_tools at ON t.id = at.tool_id
-            WHERE at.agent_id = ?
-            ORDER BY at.created_at ASC
-            "#
-        )
-        .bind(agent_id)
-        .fetch_all(pool)
-        .await?;
-
-        Ok(rows)
+        // 语法糖：调用通用查询
+        self.query(ctx, ToolQuery {
+            agent_id: Some(agent_id.to_string()),
+            ..Default::default()
+        }).await
     }
 
     async fn sync_builtin_tools_to_db(&self, ctx: &RequestContext) -> Result<usize> {

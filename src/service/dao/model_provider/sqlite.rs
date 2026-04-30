@@ -4,7 +4,8 @@ use crate::error::AppError;
 use crate::models::model_provider::ModelProviderPo;
 use common::enums::{ModelProviderStatus, ProviderType};
 use crate::pkg::RequestContext;
-use crate::service::dao::model_provider::ModelProviderDao;
+use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderQuery};
+use sqlx::QueryBuilder;
 use std::sync::{Arc, OnceLock};
 use chrono::Utc;
 // ==================== 单例 ====================
@@ -75,20 +76,47 @@ FROM model_providers WHERE id = ? AND status != 0
         Ok(provider)
     }
 
-    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<ModelProviderPo>, AppError> {
+    async fn query(&self, ctx: RequestContext, query: ModelProviderQuery) -> Result<Vec<ModelProviderPo>, AppError> {
         let pool = ctx.db_pool();
-        let providers = sqlx::query_as!(
-            ModelProviderPo,
-            r#"
-SELECT id, name, provider_type as 'provider_type: ProviderType', model_name, api_key, base_url, description,
-       status as 'status: ModelProviderStatus', created_by, modified_by, created_at, updated_at
-FROM model_providers WHERE status != 0
-            "#
-        )
+        let mut builder = QueryBuilder::new(r#"
+SELECT id, name, provider_type, model_name, api_key, base_url, description,
+       status, created_by, modified_by, created_at, updated_at
+FROM model_providers WHERE 1=1
+        "#);
+
+        // 枚举查询：直接转 i32 绑定
+        if let Some(provider_type) = query.provider_type {
+            builder.push(" AND provider_type = ");
+            builder.push_bind(provider_type as i32);
+        }
+
+        if let Some(status) = query.status {
+            builder.push(" AND status = ");
+            builder.push_bind(status as i32);
+        }
+
+        if let Some(exclude_status) = query.exclude_status {
+            builder.push(" AND status != ");
+            builder.push_bind(exclude_status as i32);
+        }
+
+        if let Some(limit) = query.limit {
+            builder.push(" LIMIT ");
+            builder.push_bind(limit as i64);
+        }
+
+        let providers: Vec<ModelProviderPo> = builder.build_query_as()
             .fetch_all(pool)
             .await?;
 
         Ok(providers)
+    }
+
+    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<ModelProviderPo>, AppError> {
+        self.query(ctx, ModelProviderQuery { 
+            exclude_status: Some(ModelProviderStatus::Deleted), 
+            ..Default::default() 
+        }).await
     }
 
     async fn update(&self, ctx: RequestContext, provider: &ModelProviderPo) -> Result<(), AppError> {

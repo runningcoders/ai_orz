@@ -8,6 +8,17 @@ use crate::pkg::RequestContext;
 use common::enums::SkillStatus;
 use async_trait::async_trait;
 
+/// Skill 查询参数
+#[derive(Debug, Clone, Default)]
+pub struct SkillQuery {
+    pub status: Option<SkillStatus>,
+    pub exclude_status: Option<SkillStatus>,
+    pub category: Option<String>,
+    pub author_id: Option<String>,
+    pub keyword: Option<String>,
+    pub limit: Option<usize>,
+}
+
 /// Skill DAO trait
 #[async_trait]
 pub trait SkillDao: Send + Sync {
@@ -19,6 +30,9 @@ pub trait SkillDao: Send + Sync {
 
     /// Find skill by id
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<SkillPo>, AppError>;
+
+    /// 通用查询
+    async fn query(&self, ctx: RequestContext, query: SkillQuery) -> Result<Vec<SkillPo>, AppError>;
 
     /// List skills by status
     async fn list_by_status(&self, ctx: RequestContext, status: SkillStatus) -> Result<Vec<SkillPo>, AppError>;

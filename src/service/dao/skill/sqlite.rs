@@ -6,7 +6,7 @@ use crate::models::skill::SkillPo;
 use crate::pkg::RequestContext;
 use common::enums::skill::SkillAuthorType;
 use common::enums::SkillStatus;
-use crate::service::dao::skill::SkillDao;
+use crate::service::dao::skill::{SkillDao, SkillQuery};
 use std::sync::{Arc, OnceLock};
 
 // ==================== 工厂方法 + 单例 ====================
@@ -109,25 +109,64 @@ FROM skills WHERE id = ?
         Ok(skill)
     }
 
+    async fn query(&self, ctx: RequestContext, query: SkillQuery) -> Result<Vec<SkillPo>, AppError> {
+        let mut builder = sqlx::QueryBuilder::new(
+            r#"SELECT id, name, description, tags, category, parent_skill_id, author_id, author_type, modifier_id, status, created_at, updated_at, content_path FROM skills WHERE 1=1"#
+        );
+
+        // 状态过滤
+        if let Some(status) = &query.status {
+            builder.push(" AND status = ").push_bind(*status as i32);
+        }
+
+        // 排除状态过滤
+        if let Some(exclude_status) = &query.exclude_status {
+            builder.push(" AND status != ").push_bind(*exclude_status as i32);
+        }
+
+        // 分类过滤
+        if let Some(category) = &query.category {
+            builder.push(" AND category = ").push_bind(category);
+        }
+
+        // 作者过滤
+        if let Some(author_id) = &query.author_id {
+            builder.push(" AND author_id = ").push_bind(author_id);
+        }
+
+        // 关键词搜索 (name 或 description)
+        if let Some(keyword) = &query.keyword {
+            let like_pattern = format!("%{}%", keyword);
+            builder.push(" AND (name LIKE ").push_bind(like_pattern.clone());
+            builder.push(" OR description LIKE ").push_bind(like_pattern).push(")");
+        }
+
+        // 排序
+        builder.push(" ORDER BY updated_at DESC");
+
+        // 限制数量
+        if let Some(limit) = query.limit {
+            builder.push(" LIMIT ").push_bind(limit as i64);
+        }
+
+        // 执行查询
+        let rows = builder.build_query_as()
+            .fetch_all(ctx.db_pool())
+            .await?;
+
+        Ok(rows)
+    }
+
     async fn list_by_status(
         &self,
         ctx: RequestContext,
         status: SkillStatus,
     ) -> Result<Vec<SkillPo>, AppError> {
-        let status_i32 = status.to_i32();
-        let skills = sqlx::query_as!(
-            SkillPo,
-            r#"
-SELECT id, name, description, tags, category, parent_skill_id,
-       author_id, author_type AS "author_type: SkillAuthorType", modifier_id, status AS "status: SkillStatus",
-       created_at, updated_at, content_path
-FROM skills WHERE status = ? ORDER BY updated_at DESC
-            "#,
-            status_i32
-        )
-        .fetch_all(ctx.db_pool())
-        .await?;
-        Ok(skills)
+        // 语法糖：调用通用查询
+        self.query(ctx, SkillQuery {
+            status: Some(status),
+            ..Default::default()
+        }).await
     }
 
     async fn list_by_category(
@@ -135,19 +174,11 @@ FROM skills WHERE status = ? ORDER BY updated_at DESC
         ctx: RequestContext,
         category: &str,
     ) -> Result<Vec<SkillPo>, AppError> {
-        let skills = sqlx::query_as!(
-            SkillPo,
-            r#"
-SELECT id, name, description, tags, category, parent_skill_id,
-       author_id, author_type AS "author_type: SkillAuthorType", modifier_id, status AS "status: SkillStatus",
-       created_at, updated_at, content_path
-FROM skills WHERE category = ? ORDER BY updated_at DESC
-            "#,
-            category
-        )
-        .fetch_all(ctx.db_pool())
-        .await?;
-        Ok(skills)
+        // 语法糖：调用通用查询
+        self.query(ctx, SkillQuery {
+            category: Some(category.to_string()),
+            ..Default::default()
+        }).await
     }
 
     async fn list_by_author(
@@ -155,39 +186,20 @@ FROM skills WHERE category = ? ORDER BY updated_at DESC
         ctx: RequestContext,
         author_id: &str,
     ) -> Result<Vec<SkillPo>, AppError> {
-        let skills = sqlx::query_as!(
-            SkillPo,
-            r#"
-SELECT id, name, description, tags, category, parent_skill_id,
-       author_id, author_type AS "author_type: SkillAuthorType", modifier_id, status AS "status: SkillStatus",
-       created_at, updated_at, content_path
-FROM skills WHERE author_id = ? ORDER BY updated_at DESC
-            "#,
-            author_id
-        )
-        .fetch_all(ctx.db_pool())
-        .await?;
-        Ok(skills)
+        // 语法糖：调用通用查询
+        self.query(ctx, SkillQuery {
+            author_id: Some(author_id.to_string()),
+            ..Default::default()
+        }).await
     }
 
     async fn search(&self, ctx: RequestContext, keyword: &str) -> Result<Vec<SkillPo>, AppError> {
-        let pattern = format!("%{}%", keyword);
-        let skills = sqlx::query_as!(
-            SkillPo,
-            r#"
-SELECT id, name, description, tags, category, parent_skill_id,
-       author_id, author_type AS "author_type: SkillAuthorType", modifier_id, status AS "status: SkillStatus",
-       created_at, updated_at, content_path
-FROM skills
-WHERE (name LIKE ? OR description LIKE ?) AND status != 0
-ORDER BY updated_at DESC
-            "#,
-            pattern,
-            pattern
-        )
-        .fetch_all(ctx.db_pool())
-        .await?;
-        Ok(skills)
+        // 语法糖：调用通用查询，排除已过期技能
+        self.query(ctx, SkillQuery {
+            keyword: Some(keyword.to_string()),
+            exclude_status: Some(SkillStatus::Expired),
+            ..Default::default()
+        }).await
     }
 
     async fn delete_by_id(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {

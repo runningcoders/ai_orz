@@ -8,7 +8,7 @@ use sqlx::SqlitePool;
 use common::enums::FileType;
 use crate::models::{artifact::ArtifactPo, file::FileMeta};
 use crate::error::Result;
-use super::ArtifactDao;
+use super::{ArtifactDao, ArtifactQuery};
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -100,25 +100,38 @@ WHERE id = ? AND "status" != 0
         Ok(artifact)
     }
 
-    async fn list_by_task(
-        &self,
-        ctx: RequestContext,
-        task_id: &str,
-    ) -> Result<Vec<ArtifactPo>> {
+    async fn query(&self, ctx: RequestContext, query: ArtifactQuery) -> Result<Vec<ArtifactPo>> {
         let pool = ctx.db_pool();
-        let artifacts = sqlx::query_as!(
-            ArtifactPo,
-r#"
-SELECT id, task_id, name, description, file_type as "file_type: FileType", file_meta as "file_meta: Json<FileMeta>", status as "status: i32", created_by, modified_by, created_at, updated_at
-FROM artifacts
-WHERE task_id = ? AND "status" != 0
-ORDER BY created_at DESC
-"#,
-            task_id
-        )
-        .fetch_all(pool)
-        .await?;
-        Ok(artifacts)
+        let mut builder = sqlx::QueryBuilder::new(
+            r#"SELECT id, task_id, name, description, file_type, file_meta, status, created_by, modified_by, created_at, updated_at FROM artifacts WHERE "status" != 0"#
+        );
+
+        // 任务过滤
+        if let Some(task_id) = &query.task_id {
+            builder.push(" AND task_id = ").push_bind(task_id);
+        }
+
+        // 排序
+        builder.push(" ORDER BY created_at DESC");
+
+        // 限制数量
+        if let Some(limit) = query.limit {
+            builder.push(" LIMIT ").push_bind(limit as i64);
+        }
+
+        let rows = builder.build_query_as()
+            .fetch_all(pool)
+            .await?;
+
+        Ok(rows)
+    }
+
+    async fn list_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<Vec<ArtifactPo>> {
+        // 语法糖：调用通用查询
+        self.query(ctx, ArtifactQuery {
+            task_id: Some(task_id.to_string()),
+            ..Default::default()
+        }).await
     }
 
     async fn count_by_task(

@@ -4,6 +4,13 @@ use crate::error::AppError;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 
+/// User 查询参数
+#[derive(Debug, Clone, Default)]
+pub struct UserQuery {
+    pub organization_id: Option<String>,
+    pub limit: Option<usize>,
+}
+
 // ==================== 接口 ====================
 
 /// User DAO trait
@@ -17,6 +24,9 @@ pub trait UserDao: Send + Sync {
 
     /// 根据用户名查询用户（用于登录）
     async fn find_by_username(&self, ctx: RequestContext, username: &str) -> Result<Option<UserPo>, AppError>;
+
+    /// 通用查询
+    async fn query(&self, ctx: RequestContext, query: UserQuery) -> Result<Vec<UserPo>, AppError>;
 
     /// 查询组织下所有用户
     async fn find_by_organization_id(&self, ctx: RequestContext, org_id: &str) -> Result<Vec<UserPo>, AppError>;

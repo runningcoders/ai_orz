@@ -3,7 +3,7 @@
 use crate::error::AppError;
 use crate::models::agent::AgentPo;
 use common::enums::AgentStatus;
-use crate::service::dao::agent::AgentDao;
+use crate::service::dao::agent::{AgentDao, AgentQuery};
 use std::sync::{Arc, OnceLock};
 use chrono::Utc;
 use crate::pkg::RequestContext;
@@ -76,19 +76,59 @@ FROM agents WHERE id = ? AND status <> 0
         Ok(agent)
     }
 
-    async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<AgentPo>, AppError> {
-        let agents = sqlx::query_as!(
-            AgentPo,
-            r#"
-SELECT id, name, role, description, soul, capabilities,
-       model_provider_id, status as 'status: AgentStatus', created_by, modified_by, created_at, updated_at
-FROM agents WHERE status != 0
-            "#
-        )
+    async fn query(&self, _ctx: RequestContext, query: AgentQuery) -> Result<Vec<AgentPo>, AppError> {
+        let mut builder = sqlx::QueryBuilder::new(
+            r#"SELECT id, name, role, description, soul, capabilities, model_provider_id, status, created_by, modified_by, created_at, updated_at FROM agents WHERE 1=1"#
+        );
+
+        // 名称模糊匹配
+        if let Some(name) = &query.name {
+            let like_pattern = format!("%{}%", name);
+            builder.push(" AND name LIKE ").push_bind(like_pattern);
+        }
+
+        // 状态过滤
+        if let Some(status) = &query.status {
+            builder.push(" AND status = ").push_bind(*status as i32);
+        }
+
+        // 排除状态过滤
+        if let Some(exclude_status) = &query.exclude_status {
+            builder.push(" AND status != ").push_bind(*exclude_status as i32);
+        }
+
+        // 创建者过滤
+        if let Some(created_by) = &query.created_by {
+            builder.push(" AND created_by = ").push_bind(created_by);
+        }
+
+        // 模型提供商过滤
+        if let Some(model_provider_id) = &query.model_provider_id {
+            builder.push(" AND model_provider_id = ").push_bind(model_provider_id);
+        }
+
+        // 排序
+        builder.push(" ORDER BY created_at DESC");
+
+        // 限制数量
+        if let Some(limit) = query.limit {
+            builder.push(" LIMIT ").push_bind(limit as i64);
+        }
+
+        // 执行查询
+        let rows = builder.build_query_as()
             .fetch_all(_ctx.db_pool())
             .await?;
 
-        Ok(agents)
+        Ok(rows)
+    }
+
+    async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<AgentPo>, AppError> {
+        // 语法糖：调用通用查询，排除已删除状态
+        self.query(_ctx, AgentQuery {
+            exclude_status: Some(AgentStatus::Deleted),
+            ..Default::default()
+        }).await
     }
 
     async fn update(&self, _ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError> {

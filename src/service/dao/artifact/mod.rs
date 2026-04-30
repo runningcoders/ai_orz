@@ -6,6 +6,13 @@ use crate::pkg::RequestContext;
 use crate::models::artifact::ArtifactPo;
 use crate::error::Result;
 
+/// Artifact 查询参数
+#[derive(Debug, Clone, Default)]
+pub struct ArtifactQuery {
+    pub task_id: Option<String>,
+    pub limit: Option<usize>,
+}
+
 /// Artifact DAO trait
 #[async_trait]
 pub trait ArtifactDao: Send + Sync + std::fmt::Debug {
@@ -14,6 +21,9 @@ pub trait ArtifactDao: Send + Sync + std::fmt::Debug {
 
     /// Find artifact by id, automatically filters deleted artifacts
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<ArtifactPo>>;
+
+    /// 通用查询
+    async fn query(&self, ctx: RequestContext, query: ArtifactQuery) -> Result<Vec<ArtifactPo>>;
 
     /// List all artifacts for a task, automatically filters deleted artifacts
     async fn list_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<Vec<ArtifactPo>>;

@@ -5,7 +5,6 @@
 use crate::error::AppError;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
-use crate::service::dao::user::UserDao;
 use async_trait::async_trait;
 
 #[async_trait]
@@ -16,7 +15,7 @@ impl super::UserManage for super::OrganizationDomainImpl {
         ctx: RequestContext,
         username: &str,
     ) -> Result<Option<UserPo>, AppError> {
-        self.user_dao.find_by_username(ctx, username).await
+        self.user_dal.find_by_username(ctx, username).await
     }
 
     /// 根据组织 ID 查询所有用户
@@ -25,7 +24,7 @@ impl super::UserManage for super::OrganizationDomainImpl {
         ctx: RequestContext,
         org_id: &str,
     ) -> Result<Vec<UserPo>, AppError> {
-        self.user_dao.find_by_organization_id(ctx, org_id).await
+        self.user_dal.find_by_organization_id(ctx, org_id).await
     }
 
     /// 创建新用户
@@ -34,7 +33,7 @@ impl super::UserManage for super::OrganizationDomainImpl {
         ctx: RequestContext,
         user: UserPo,
     ) -> Result<(), AppError> {
-        self.user_dao.insert(ctx, &user).await
+        self.user_dal.create(ctx, &user).await
     }
 
     /// 更新用户信息
@@ -43,7 +42,7 @@ impl super::UserManage for super::OrganizationDomainImpl {
         ctx: RequestContext,
         user: &UserPo,
     ) -> Result<(), AppError> {
-        self.user_dao.update(ctx, user).await
+        self.user_dal.update(ctx, user).await
     }
 
     /// 删除用户（软删除）
@@ -52,7 +51,7 @@ impl super::UserManage for super::OrganizationDomainImpl {
         ctx: RequestContext,
         user_id: &str,
     ) -> Result<(), AppError> {
-        self.user_dao.delete(ctx, user_id).await
+        self.user_dal.delete(ctx, user_id).await
     }
 
     /// 检查用户名是否已存在
@@ -61,7 +60,7 @@ impl super::UserManage for super::OrganizationDomainImpl {
         ctx: RequestContext,
         username: &str,
     ) -> Result<bool, AppError> {
-        self.user_dao.exists_by_username(ctx, username).await
+        self.user_dal.exists_by_username(ctx, username).await
     }
 
     /// 统计组织下用户总数
@@ -70,7 +69,7 @@ impl super::UserManage for super::OrganizationDomainImpl {
         ctx: RequestContext,
         org_id: &str,
     ) -> Result<u64, AppError> {
-        self.user_dao.count_by_organization_id(ctx, org_id).await
+        self.user_dal.count_by_organization_id(ctx, org_id).await
     }
 
     /// 验证用户名密码（用于登录）
@@ -82,7 +81,7 @@ impl super::UserManage for super::OrganizationDomainImpl {
         password_hash: &str,
     ) -> Result<UserPo, AppError> {
         // 先查找用户
-        let user = match self.user_dao.find_by_username(_ctx, username).await? {
+        let user = match self.user_dal.find_by_username(_ctx, username).await? {
             Some(u) => u,
             None => {
                 return Err(AppError::BadRequest("用户名或密码错误".to_string()));
@@ -113,6 +112,6 @@ impl super::UserManage for super::OrganizationDomainImpl {
         ctx: RequestContext,
         user_id: &str,
     ) -> Result<Option<UserPo>, AppError> {
-        self.user_dao.find_by_id(ctx, user_id).await
+        self.user_dal.find_by_id(ctx, user_id).await
     }
 }
