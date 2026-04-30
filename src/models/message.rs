@@ -162,7 +162,8 @@ impl Event for Message {
 }
 
 /// MessagePo 持久化对象
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, Default, derive_builder::Builder)]
+#[builder(setter(into), default)]
 pub struct MessagePo {
     /// 消息 ID
     pub id: String,
@@ -379,5 +380,41 @@ impl ToolCallMessage {
             error_message: Some(error_message),
             result_file_meta: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use common::enums::{MessageRole, MessageStatus, MessageType};
+
+    #[test]
+    fn test_message_po_builder() {
+        // 验证 Builder 模式可以正常工作 - 使用 MessagePoBuilder
+        let po = MessagePoBuilder::default()
+            .id("msg_001".to_string())
+            .project_id(Some("proj_001".to_string()))
+            .task_id(Some("task_001".to_string()))
+            .from_id("user_001".to_string())
+            .to_id("agent_001".to_string())
+            .from_role(MessageRole::User)
+            .to_role(MessageRole::Agent)
+            .message_type(MessageType::Text)
+            .file_type(None)
+            .status(MessageStatus::Pending)
+            .content("Hello, Builder!".to_string())
+            .file_meta(Json(FileMeta::default()))
+            .reply_to_id(None)
+            .created_by("tester".to_string())
+            .modified_by("tester".to_string())
+            .created_at(1234567890)
+            .updated_at(1234567890)
+            .build()
+            .unwrap();
+
+        assert_eq!(po.id, "msg_001");
+        assert_eq!(po.content, "Hello, Builder!");
+        assert_eq!(po.project_id, Some("proj_001".to_string()));
+        assert!(po.reply_to_id.is_none());
     }
 }
