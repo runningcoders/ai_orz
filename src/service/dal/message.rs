@@ -54,7 +54,7 @@ pub trait MessageDal: Send + Sync {
     ///
     /// 支持组合查询条件，所有字段都是 Option
     /// 示例：
-    /// ```
+    /// ```ignore
     /// let messages = dal.query(ctx, MessageQuery {
     ///     task_id: Some("task-123".to_string()),
     ///     status_in: Some(vec![MessageStatus::Pending, MessageStatus::Processing]),
