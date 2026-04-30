@@ -4,7 +4,7 @@ use crate::models::message::Message;
 use crate::models::message::MessagePo;
 use crate::pkg::RequestContext;
 use crate::service::domain::message::MessageDomainImpl;
-use crate::service::domain::message::{MessageDelivery, MessageManagement};
+use crate::service::domain::message::{MessageDelivery, MessageManagement, SendToAgentCommand, SendToUserCommand};
 use common::enums::{MessageRole, MessageStatus, MessageType};
 
 /// 生成新的消息 ID
@@ -17,30 +17,23 @@ impl MessageDelivery for MessageDomainImpl {
     async fn send_to_agent(
         &self,
         ctx: RequestContext,
-        from_id: &str,
-        from_role: MessageRole,
-        to_agent_id: &str,
-        content: &str,
-        project_id: Option<&str>,
-        task_id: Option<&str>,
-        reply_to_id: Option<&str>,
+        cmd: SendToAgentCommand<'_>,
     ) -> Result<Message, crate::error::AppError> {
-        // 创建消息 PO - 参数顺序匹配 MessagePo::new
-        // id, project_id, task_id, from_id, to_id, from_role, to_role, message_type, content, file_type, file_meta, reply_to_id, created_by
+        // 创建消息 PO - 使用 Builder 模式或直接 new
         let po = MessagePo::new(
             generate_id(),
-            project_id.map(|s| s.to_string()),
-            task_id.map(|s| s.to_string()),
-            from_id.to_string(),
-            to_agent_id.to_string(),
-            from_role,
+            cmd.project_id.map(|s| s.to_string()),
+            cmd.task_id.map(|s| s.to_string()),
+            cmd.from_id.to_string(),
+            cmd.to_agent_id.to_string(),
+            cmd.from_role,
             MessageRole::Agent,
             MessageType::Text,
-            content.to_string(),
+            cmd.content.to_string(),
             None, // file_type
             Default::default(), // file_meta - 需要 FileMeta 类型，用 Default
-            reply_to_id.map(|s| s.to_string()),
-            from_id.to_string(), // created_by
+            cmd.reply_to_id.map(|s| s.to_string()),
+            cmd.from_id.to_string(), // created_by
         );
 
         let message = Message::from_po(po);
@@ -52,28 +45,23 @@ impl MessageDelivery for MessageDomainImpl {
     async fn send_to_user(
         &self,
         ctx: RequestContext,
-        from_agent_id: &str,
-        to_user_id: &str,
-        content: &str,
-        project_id: Option<&str>,
-        task_id: Option<&str>,
-        reply_to_id: Option<&str>,
+        cmd: SendToUserCommand<'_>,
     ) -> Result<Message, crate::error::AppError> {
         // Agent 发送给用户，发送者角色固定为 Agent，接收者角色固定为 User
         let po = MessagePo::new(
             generate_id(),
-            project_id.map(|s| s.to_string()),
-            task_id.map(|s| s.to_string()),
-            from_agent_id.to_string(),
-            to_user_id.to_string(),
+            cmd.project_id.map(|s| s.to_string()),
+            cmd.task_id.map(|s| s.to_string()),
+            cmd.from_agent_id.to_string(),
+            cmd.to_user_id.to_string(),
             MessageRole::Agent,
             MessageRole::User,
             MessageType::Text,
-            content.to_string(),
+            cmd.content.to_string(),
             None, // file_type
             Default::default(), // file_meta
-            reply_to_id.map(|s| s.to_string()),
-            from_agent_id.to_string(), // created_by
+            cmd.reply_to_id.map(|s| s.to_string()),
+            cmd.from_agent_id.to_string(), // created_by
         );
 
         let message = Message::from_po(po);

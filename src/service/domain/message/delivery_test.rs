@@ -2,6 +2,7 @@
 
 use super::domain;
 use crate::pkg::RequestContext;
+use crate::service::domain::message::{SendToAgentCommand, SendToUserCommand};
 use common::enums::{MessageRole, MessageStatus, MessageType};
 use sqlx::SqlitePool;
 use uuid::Uuid;
@@ -27,13 +28,15 @@ async fn test_send_to_agent_and_send_to_user(pool: SqlitePool) {
         .delivery()
         .send_to_agent(
             ctx.clone(),
-            "user-1",
-            MessageRole::User,
-            "agent-1",
-            "User message to agent",
-            Some(&project_id),
-            Some(&task_id),
-                None,
+            SendToAgentCommand {
+                from_id: "user-1",
+                from_role: MessageRole::User,
+                to_agent_id: "agent-1",
+                content: "User message to agent",
+                project_id: Some(&project_id),
+                task_id: Some(&task_id),
+                reply_to_id: None,
+            },
         )
         .await
         .unwrap();
@@ -53,12 +56,14 @@ async fn test_send_to_agent_and_send_to_user(pool: SqlitePool) {
         .delivery()
         .send_to_user(
             ctx.clone(),
-            "agent-1",
-            "user-1",
-            "Agent reply to user",
-            Some(&project_id),
-            Some(&task_id),
-                None,
+            SendToUserCommand {
+                from_agent_id: "agent-1",
+                to_user_id: "user-1",
+                content: "Agent reply to user",
+                project_id: Some(&project_id),
+                task_id: Some(&task_id),
+                reply_to_id: None,
+            },
         )
         .await
         .unwrap();
@@ -89,13 +94,15 @@ async fn test_dequeue_ack_nack(pool: SqlitePool) {
         .delivery()
         .send_to_agent(
             ctx.clone(),
-            "user-1",
-            MessageRole::User,
-            "agent-1",
-            "Message for dequeue test",
-            None,
-                    None,
-            None,
+            SendToAgentCommand {
+                from_id: "user-1",
+                from_role: MessageRole::User,
+                to_agent_id: "agent-1",
+                content: "Message for dequeue test",
+                project_id: None,
+                task_id: None,
+                reply_to_id: None,
+            },
         )
         .await
         .unwrap();
@@ -176,13 +183,15 @@ async fn test_send_without_project_and_task(pool: SqlitePool) {
         .delivery()
         .send_to_agent(
             ctx.clone(),
-            "user-1",
-            MessageRole::User,
-            "agent-1",
-            "Direct message without context",
-            None,
-            None,
-            None,
+            SendToAgentCommand {
+                from_id: "user-1",
+                from_role: MessageRole::User,
+                to_agent_id: "agent-1",
+                content: "Direct message without context",
+                project_id: None,
+                task_id: None,
+                reply_to_id: None,
+            },
         )
         .await
         .unwrap();

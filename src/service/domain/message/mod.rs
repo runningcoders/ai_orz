@@ -70,6 +70,42 @@ impl MessageDomain for MessageDomainImpl {
 
 // ==================== traits 定义 ====================
 
+/// 发送消息给 Agent 的命令参数
+#[derive(Debug, Clone)]
+pub struct SendToAgentCommand<'a> {
+    /// 发送者 ID
+    pub from_id: &'a str,
+    /// 发送者角色（用户/Agent）
+    pub from_role: MessageRole,
+    /// 目标 Agent ID
+    pub to_agent_id: &'a str,
+    /// 消息内容
+    pub content: &'a str,
+    /// 关联项目 ID（可选）
+    pub project_id: Option<&'a str>,
+    /// 关联任务 ID（可选）
+    pub task_id: Option<&'a str>,
+    /// 引用的父消息 ID（可选，支持消息链）
+    pub reply_to_id: Option<&'a str>,
+}
+
+/// 发送消息给用户的命令参数
+#[derive(Debug, Clone)]
+pub struct SendToUserCommand<'a> {
+    /// 发送者 Agent ID
+    pub from_agent_id: &'a str,
+    /// 目标用户 ID
+    pub to_user_id: &'a str,
+    /// 消息内容
+    pub content: &'a str,
+    /// 关联项目 ID（可选）
+    pub project_id: Option<&'a str>,
+    /// 关联任务 ID（可选）
+    pub task_id: Option<&'a str>,
+    /// 引用的父消息 ID（可选，支持消息链）
+    pub reply_to_id: Option<&'a str>,
+}
+
 /// Message Domain 总 trait
 ///
 /// 聚合消息领域所有子功能 trait
@@ -86,45 +122,17 @@ pub trait MessageDomain: Send + Sync {
 #[async_trait::async_trait]
 pub trait MessageDelivery: Send + Sync {
     /// 发送消息给 Agent
-    ///
-    /// # 参数
-    /// - `from_id` - 发送者 ID
-    /// - `from_role` - 发送者角色（用户/Agent）
-    /// - `to_agent_id` - 目标 Agent ID
-    /// - `content` - 消息内容
-    /// - `project_id` - 关联项目 ID（可选）
-    /// - `task_id` - 关联任务 ID（可选）
-    /// - `reply_to_id` - 引用的父消息 ID（可选，支持消息链）
     async fn send_to_agent(
         &self,
         ctx: RequestContext,
-        from_id: &str,
-        from_role: MessageRole,
-        to_agent_id: &str,
-        content: &str,
-        project_id: Option<&str>,
-        task_id: Option<&str>,
-        reply_to_id: Option<&str>,
+        cmd: SendToAgentCommand<'_>,
     ) -> Result<Message, AppError>;
 
     /// 发送消息给用户
-    ///
-    /// # 参数
-    /// - `from_agent_id` - 发送者 Agent ID
-    /// - `to_user_id` - 目标用户 ID
-    /// - `content` - 消息内容
-    /// - `project_id` - 关联项目 ID（可选）
-    /// - `task_id` - 关联任务 ID（可选）
-    /// - `reply_to_id` - 引用的父消息 ID（可选，支持消息链）
     async fn send_to_user(
         &self,
         ctx: RequestContext,
-        from_agent_id: &str,
-        to_user_id: &str,
-        content: &str,
-        project_id: Option<&str>,
-        task_id: Option<&str>,
-        reply_to_id: Option<&str>,
+        cmd: SendToUserCommand<'_>,
     ) -> Result<Message, AppError>;
 
     /// 获取下一个待消费的消息

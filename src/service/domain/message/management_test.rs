@@ -3,6 +3,7 @@
 use super::{MessageDomain, domain};
 use crate::models::message::Message;
 use crate::pkg::RequestContext;
+use crate::service::domain::message::{SendToAgentCommand, SendToUserCommand};
 use common::enums::{MessageRole, MessageStatus, MessageType};
 use sqlx::SqlitePool;
 use uuid::Uuid;
@@ -32,13 +33,15 @@ async fn test_list_by_project_id(pool: SqlitePool) {
         .delivery()
         .send_to_agent(
             ctx.clone(),
-            "user-id-1",
-            MessageRole::User,
-            "agent-id-1",
-            "Hello from user to agent in project1",
-            Some(&project_id_1),
-            Some(&task_id_1),
-                    None,
+            SendToAgentCommand {
+                from_id: "user-id-1",
+                from_role: MessageRole::User,
+                to_agent_id: "agent-id-1",
+                content: "Hello from user to agent in project1",
+                project_id: Some(&project_id_1),
+                task_id: Some(&task_id_1),
+                reply_to_id: None,
+            },
         )
         .await
         .unwrap();
@@ -48,12 +51,14 @@ async fn test_list_by_project_id(pool: SqlitePool) {
         .delivery()
         .send_to_user(
             ctx.clone(),
-            "agent-id-1",
-            "user-id-1",
-            "Hello back from agent in project1",
-            Some(&project_id_1),
-            Some(&task_id_1),
-                    None,
+            SendToUserCommand {
+                from_agent_id: "agent-id-1",
+                to_user_id: "user-id-1",
+                content: "Hello back from agent in project1",
+                project_id: Some(&project_id_1),
+                task_id: Some(&task_id_1),
+                reply_to_id: None,
+            },
         )
         .await
         .unwrap();
@@ -63,13 +68,15 @@ async fn test_list_by_project_id(pool: SqlitePool) {
         .delivery()
         .send_to_agent(
             ctx.clone(),
-            "user-id-2",
-            MessageRole::User,
-            "agent-id-2",
-            "Hello in another project",
-            Some(&project_id_2),
-            Some(&task_id_2),
-                    None,
+            SendToAgentCommand {
+                from_id: "user-id-2",
+                from_role: MessageRole::User,
+                to_agent_id: "agent-id-2",
+                content: "Hello in another project",
+                project_id: Some(&project_id_2),
+                task_id: Some(&task_id_2),
+                reply_to_id: None,
+            },
         )
         .await
         .unwrap();
@@ -113,13 +120,15 @@ async fn test_get_by_id_and_update_status(pool: SqlitePool) {
         .delivery()
         .send_to_agent(
             ctx.clone(),
-            "user-1",
-            MessageRole::User,
-            "agent-1",
-            "Test message for get_by_id",
-            Some(&project_id),
-            Some(&task_id),
-                    None,
+            SendToAgentCommand {
+                from_id: "user-1",
+                from_role: MessageRole::User,
+                to_agent_id: "agent-1",
+                content: "Test message for get_by_id",
+                project_id: Some(&project_id),
+                task_id: Some(&task_id),
+                reply_to_id: None,
+            },
         )
         .await
         .unwrap();
@@ -170,14 +179,16 @@ async fn test_delete_by_id_and_cleanup_conversation(pool: SqlitePool) {
             .delivery()
             .send_to_agent(
                 ctx.clone(),
-                "user-1",
-                MessageRole::User,
-                "agent-1",
-                &format!("Message {} in task", i),
-                Some(&project_id),
-                Some(&task_id),
-                        None,
-        )
+                SendToAgentCommand {
+                    from_id: "user-1",
+                    from_role: MessageRole::User,
+                    to_agent_id: "agent-1",
+                    content: &format!("Message {} in task", i),
+                    project_id: Some(&project_id),
+                    task_id: Some(&task_id),
+                    reply_to_id: None,
+                },
+            )
             .await
             .unwrap();
     }
