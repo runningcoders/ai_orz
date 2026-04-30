@@ -38,6 +38,7 @@ async fn test_list_by_project_id(pool: SqlitePool) {
             "Hello from user to agent in project1",
             Some(&project_id_1),
             Some(&task_id_1),
+                    None,
         )
         .await
         .unwrap();
@@ -52,6 +53,7 @@ async fn test_list_by_project_id(pool: SqlitePool) {
             "Hello back from agent in project1",
             Some(&project_id_1),
             Some(&task_id_1),
+                    None,
         )
         .await
         .unwrap();
@@ -67,6 +69,7 @@ async fn test_list_by_project_id(pool: SqlitePool) {
             "Hello in another project",
             Some(&project_id_2),
             Some(&task_id_2),
+                    None,
         )
         .await
         .unwrap();
@@ -116,6 +119,7 @@ async fn test_get_by_id_and_update_status(pool: SqlitePool) {
             "Test message for get_by_id",
             Some(&project_id),
             Some(&task_id),
+                    None,
         )
         .await
         .unwrap();
@@ -172,7 +176,8 @@ async fn test_delete_by_id_and_cleanup_conversation(pool: SqlitePool) {
                 &format!("Message {} in task", i),
                 Some(&project_id),
                 Some(&task_id),
-            )
+                        None,
+        )
             .await
             .unwrap();
     }

@@ -34,7 +34,32 @@
 -- task_id 允许 NULL（支持没有任务的闲聊）
 ALTER TABLE messages ADD COLUMN project_id TEXT;
 ALTER TABLE messages ALTER COLUMN task_id DROP NOT NULL;
+
+-- 新增 reply_to_id 字段（支持消息回复链，引用回复）
+-- SQLite 不支持 ALTER COLUMN DROP NOT NULL，开发阶段建议直接重建表
+ALTER TABLE messages ADD COLUMN reply_to_id TEXT;
 ```
+
+### 最新 messages 表完整结构
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | TEXT | 消息ID |
+| task_id | TEXT NULL | 关联任务ID（可为空，没有任务时为NULL） |
+| project_id | TEXT NULL | 关联项目ID（可为空，没有项目时为NULL） |
+| reply_to_id | TEXT NULL | 回复的消息ID（支持引用回复，形成对话链） |
+| from_id | TEXT | 发送者ID（用户ID或AgentID） |
+| to_id | TEXT | 接收者ID（用户ID或AgentID） |
+| role | INTEGER | 发送者角色：0=User 1=Agent 2=System |
+| message_type | INTEGER | 消息类型：0=Text 1=Image 2=File 3=ToolCallRequest 4=ToolCallResult |
+| file_type | INTEGER | 文件类型（附件消息） |
+| status | INTEGER | 处理状态：0=撤回 1=待处理 2=处理中 3=已完成 4=失败 |
+| content | TEXT | 消息内容 |
+| file_meta | TEXT | 文件元数据JSON |
+| created_by | TEXT | 创建人 |
+| modified_by | TEXT | 最后修改人 |
+| created_at | INTEGER | 创建时间戳（毫秒） |
+| updated_at | INTEGER | 更新时间戳（毫秒） |
 
 ### 最终 messages 表结构
 
@@ -398,13 +423,16 @@ pub trait DeliveryDomain {
 
 ## 当前实现进度
 
-- [x] 数据库 schema 设计完成，迁移已执行
+- [x] 数据库 schema 设计完成，迁移已执行（含 reply_to_id 字段
 - [x] 枚举定义完成（common）
 - [x] PO 和工具调用结构体定义完成（models）
-- [x] DAO 层完成
+- [x] DAO 层完成，支持按会话/项目/任务查询
 - [x] DAL 层完成
 - [x] Domain 层完成：delivery + management，所有测试通过
 - [x] 事件总线重构完成：泛型 topic 分离设计，彻底解决消息错乱
+- [x] Tool Domain 层框架已搭建（management + execution）
 - [ ] Handler 层开发进行中
 
-所有单元测试：**158/158 全部通过 ✅**
+所有单元测试：**165/165 全部通过 ✅
+
+最后更新：2026-04-30

@@ -33,6 +33,7 @@ async fn test_send_to_agent_and_send_to_user(pool: SqlitePool) {
             "User message to agent",
             Some(&project_id),
             Some(&task_id),
+                None,
         )
         .await
         .unwrap();
@@ -57,6 +58,7 @@ async fn test_send_to_agent_and_send_to_user(pool: SqlitePool) {
             "Agent reply to user",
             Some(&project_id),
             Some(&task_id),
+                None,
         )
         .await
         .unwrap();
@@ -92,6 +94,7 @@ async fn test_dequeue_ack_nack(pool: SqlitePool) {
             "agent-1",
             "Message for dequeue test",
             None,
+                    None,
             None,
         )
         .await
@@ -177,6 +180,7 @@ async fn test_send_without_project_and_task(pool: SqlitePool) {
             MessageRole::User,
             "agent-1",
             "Direct message without context",
+            None,
             None,
             None,
         )

@@ -38,6 +38,7 @@ async fn test_insert_and_find_by_id(pool: SqlitePool) -> Result<()> {
         "你好，这是一条测试消息".to_string(),
         None,
         empty_file_meta,
+        None,
         "test-user".to_string(),
     );
     message_dao.insert(ctx.clone(), &msg).await?;
@@ -84,6 +85,7 @@ async fn test_list_by_task_id(pool: SqlitePool) -> Result<()> {
         "你好，这是一条测试消息".to_string(),
         None,
         empty_file_meta.clone(),
+        None,
         "test-user".to_string(),
     );
     message_dao.insert(ctx.clone(), &msg0).await?;
@@ -101,6 +103,7 @@ async fn test_list_by_task_id(pool: SqlitePool) -> Result<()> {
         "第一条消息".to_string(),
         None,
         empty_file_meta.clone(),
+        None,
         "test-user".to_string(),
     );
     let msg2 = MessagePo::new(
@@ -115,6 +118,7 @@ async fn test_list_by_task_id(pool: SqlitePool) -> Result<()> {
         "第二条消息".to_string(),
         None,
         empty_file_meta.clone(),
+        None,
         "test-user".to_string(),
     );
     let msg3 = MessagePo::new(
@@ -129,6 +133,7 @@ async fn test_list_by_task_id(pool: SqlitePool) -> Result<()> {
         "另一个任务的消息".to_string(),
         None,
         empty_file_meta,
+        None,
         "test-user".to_string(),
     );
     message_dao.insert(ctx.clone(), &msg1).await?;
@@ -175,6 +180,7 @@ async fn test_list_by_task_id_with_limit(pool: SqlitePool) -> Result<()> {
             format!("消息{}", i),
             None,
             empty_file_meta.clone(),
+        None,
             "test-user".to_string(),
         );
         message_dao.insert(ctx.clone(), &msg).await?;
@@ -212,6 +218,7 @@ async fn test_list_by_from_id(pool: SqlitePool) -> Result<()> {
         "用户发送".to_string(),
         None,
         empty_file_meta.clone(),
+        None,
         "test-user".to_string(),
     );
     let msg2 = MessagePo::new(
@@ -226,6 +233,7 @@ async fn test_list_by_from_id(pool: SqlitePool) -> Result<()> {
         "AI回复".to_string(),
         None,
         empty_file_meta.clone(),
+        None,
         "test-user".to_string(),
     );
     let msg3 = MessagePo::new(
@@ -240,6 +248,7 @@ async fn test_list_by_from_id(pool: SqlitePool) -> Result<()> {
         "另一个任务".to_string(),
         None,
         empty_file_meta,
+        None,
         "test-user".to_string(),
     );
     message_dao.insert(ctx.clone(), &msg1).await?;
@@ -277,6 +286,7 @@ async fn test_list_by_to_id(pool: SqlitePool) -> Result<()> {
         "用户发送给AI".to_string(),
         None,
         empty_file_meta.clone(),
+        None,
         "test-user".to_string(),
     );
     let msg2 = MessagePo::new(
@@ -291,6 +301,7 @@ async fn test_list_by_to_id(pool: SqlitePool) -> Result<()> {
         "AI回复给用户".to_string(),
         None,
         empty_file_meta,
+        None,
         "test-user".to_string(),
     );
     message_dao.insert(ctx.clone(), &msg1).await?;
@@ -330,6 +341,7 @@ async fn test_count_by_task_id(pool: SqlitePool) -> Result<()> {
             "test".to_string(),
             None,
             empty_file_meta.clone(),
+        None,
             "test-user".to_string(),
         );
         message_dao.insert(ctx.clone(), &msg).await?;
@@ -347,6 +359,7 @@ async fn test_count_by_task_id(pool: SqlitePool) -> Result<()> {
         "test".to_string(),
         None,
         empty_file_meta,
+        None,
         "test-user".to_string(),
     );
     message_dao.insert(ctx.clone(), &msg).await?;
@@ -386,6 +399,7 @@ async fn test_delete_message(pool: SqlitePool) -> Result<()> {
         "要删除的消息".to_string(),
         None,
         empty_file_meta,
+        None,
         "test-user".to_string(),
     );
     message_dao.insert(ctx.clone(), &msg_to_delete).await?;
@@ -432,6 +446,7 @@ async fn test_delete_by_task_id(pool: SqlitePool) -> Result<()> {
             format!("消息{}", i),
             None,
             empty_file_meta.clone(),
+        None,
             "test-user".to_string(),
         );
         message_dao.insert(ctx.clone(), &msg).await?;
@@ -477,6 +492,7 @@ async fn test_update_status(pool: SqlitePool) -> Result<()> {
         "测试消息".to_string(),
         None,
         empty_file_meta,
+        None,
         "test-user".to_string(),
     );
     message_dao.insert(ctx.clone(), &msg).await?;
@@ -517,6 +533,7 @@ async fn test_image_message_with_metadata(pool: SqlitePool) -> Result<()> {
         "20260410/abc123.png".to_string(),
         Some(FileType::Image),
         file_meta,
+        None,
         "test-user".to_string(),
     );
 
@@ -565,6 +582,7 @@ async fn test_list_by_status(pool: SqlitePool) -> Result<()> {
             "test".to_string(),
             None,
             empty_file_meta.clone(),
+        None,
             "test-user".to_string(),
         );
         message_dao.insert(ctx.clone(), &msg).await?;
@@ -601,6 +619,7 @@ async fn test_create_tool_call_request(pool: SqlitePool) -> Result<()> {
         Some("task-001".to_string()),
         "agent-001".to_string(),   // from_id (发起调用的 Agent)
         "executor-agent".to_string(), // to_id (执行工具的 Agent)
+        None,
         args.clone(),
     );
 
@@ -652,6 +671,7 @@ async fn test_create_tool_call_result(pool: SqlitePool) -> Result<()> {
         Some("task-001".to_string()),
         "agent-001".to_string(),
         "executor-agent".to_string(),
+        None,
         args,
     );
 
@@ -716,6 +736,7 @@ async fn test_create_tool_call_result_failed(pool: SqlitePool) -> Result<()> {
         Some("task-001".to_string()),
         "agent-001".to_string(),
         "executor-agent".to_string(),
+        None,
         args,
     );
 
@@ -773,6 +794,7 @@ async fn test_list_by_project_id(pool: SqlitePool) -> Result<()> {
         "Hello project 1".to_string(),
         None,
         FileMeta::default(),
+        None,
         "test-user".to_string(),
     );
     let _m1 = message_dao.insert(ctx.clone(), &m1).await?;
@@ -790,6 +812,7 @@ async fn test_list_by_project_id(pool: SqlitePool) -> Result<()> {
         "Reply to project 1".to_string(),
         None,
         FileMeta::default(),
+        None,
         "test-user".to_string(),
     );
     let _m2 = message_dao.insert(ctx.clone(), &m2).await?;
@@ -807,6 +830,7 @@ async fn test_list_by_project_id(pool: SqlitePool) -> Result<()> {
         "Second message in project 1".to_string(),
         None,
         FileMeta::default(),
+        None,
         "test-user".to_string(),
     );
     let _m3 = message_dao.insert(ctx.clone(), &m3).await?;
@@ -825,6 +849,7 @@ async fn test_list_by_project_id(pool: SqlitePool) -> Result<()> {
         "Hello project 2".to_string(),
         None,
         FileMeta::default(),
+        None,
         "test-user".to_string(),
     );
     let _m4 = message_dao.insert(ctx.clone(), &m4).await?;

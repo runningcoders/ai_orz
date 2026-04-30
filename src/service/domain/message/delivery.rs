@@ -23,9 +23,10 @@ impl MessageDelivery for MessageDomainImpl {
         content: &str,
         project_id: Option<&str>,
         task_id: Option<&str>,
+        reply_to_id: Option<&str>,
     ) -> Result<Message, crate::error::AppError> {
         // 创建消息 PO - 参数顺序匹配 MessagePo::new
-        // id, project_id, task_id, from_id, to_id, from_role, to_role, message_type, content, file_type, file_meta, created_by
+        // id, project_id, task_id, from_id, to_id, from_role, to_role, message_type, content, file_type, file_meta, reply_to_id, created_by
         let po = MessagePo::new(
             generate_id(),
             project_id.map(|s| s.to_string()),
@@ -38,6 +39,7 @@ impl MessageDelivery for MessageDomainImpl {
             content.to_string(),
             None, // file_type
             Default::default(), // file_meta - 需要 FileMeta 类型，用 Default
+            reply_to_id.map(|s| s.to_string()),
             from_id.to_string(), // created_by
         );
 
@@ -55,6 +57,7 @@ impl MessageDelivery for MessageDomainImpl {
         content: &str,
         project_id: Option<&str>,
         task_id: Option<&str>,
+        reply_to_id: Option<&str>,
     ) -> Result<Message, crate::error::AppError> {
         // Agent 发送给用户，发送者角色固定为 Agent，接收者角色固定为 User
         let po = MessagePo::new(
@@ -69,6 +72,7 @@ impl MessageDelivery for MessageDomainImpl {
             content.to_string(),
             None, // file_type
             Default::default(), // file_meta
+            reply_to_id.map(|s| s.to_string()),
             from_agent_id.to_string(), // created_by
         );
 

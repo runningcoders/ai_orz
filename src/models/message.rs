@@ -62,6 +62,7 @@ impl Message {
         content: String,
         file_type: Option<FileType>,
         file_meta: FileMeta,
+        reply_to_id: Option<String>,
         created_by: String,
     ) -> Self {
         let po = MessagePo::new(
@@ -76,6 +77,7 @@ impl Message {
             content,
             file_type,
             file_meta,
+            reply_to_id,
             created_by,
         );
         Self::from_po(po)
@@ -96,7 +98,21 @@ impl Message {
         file_meta: FileMeta,
         created_by: String,
     ) -> Self {
-        Self::new_with_context(id, None, Some(task_id), from_id, to_id, from_role, to_role, message_type, content, file_type, file_meta, created_by)
+        Self::new_with_context(
+            id,
+            None,
+            Some(task_id),
+            from_id,
+            to_id,
+            from_role,
+            to_role,
+            message_type,
+            content,
+            file_type,
+            file_meta,
+            None,
+            created_by,
+        )
     }
 }
 
@@ -176,6 +192,11 @@ pub struct MessagePo {
     /// - Text: 默认空结构
     /// - 附件: 存储文件路径、大小、MIME 类型等元信息
     pub file_meta: Json<FileMeta>,
+    /// 引用/回复的父消息 ID（支持消息链）
+    /// - 用户回复某条消息时使用
+    /// - 工具调用结果关联请求消息时使用
+    /// - Agent 思考过程关联上下文时使用
+    pub reply_to_id: Option<String>,
     /// 创建人 ID
     pub created_by: String,
     /// 最后修改人 ID
@@ -200,6 +221,7 @@ impl MessagePo {
         content: String,
         file_type: Option<FileType>,
         file_meta: FileMeta,
+        reply_to_id: Option<String>,
         created_by: String,
     ) -> Self {
         let now = utils::current_timestamp_ms();
@@ -216,6 +238,7 @@ impl MessagePo {
             status: MessageStatus::default(),
             content,
             file_meta: Json(file_meta),
+            reply_to_id,
             created_by: created_by.clone(),
             modified_by: created_by,
             created_at: now,
@@ -244,6 +267,8 @@ pub struct ToolCallMessage {
     pub from_id: String,
     /// 目标执行方 ID（谁来执行这个调用）
     pub to_id: String,
+    /// 引用的父消息 ID（支持消息链）
+    pub reply_to_id: Option<String>,
     /// 调用参数（请求时有效）JSON 格式
     #[serde(skip_serializing_if = "Option::is_none")]
     pub args: Option<serde_json::Value>,
@@ -271,6 +296,7 @@ impl ToolCallMessage {
         task_id: Option<String>,
         from_id: String,
         to_id: String,
+        reply_to_id: Option<String>,
         args: serde_json::Value,
     ) -> Self {
         Self {
@@ -281,6 +307,7 @@ impl ToolCallMessage {
             task_id,
             from_id,
             to_id,
+            reply_to_id,
             args: Some(args),
             result: None,
             is_success: None,
@@ -303,6 +330,7 @@ impl ToolCallMessage {
             task_id: self.task_id.clone(),
             from_id: self.to_id.clone(), // 执行方反过来返回给原发起方
             to_id: self.from_id.clone(),
+            reply_to_id: self.reply_to_id.clone(),
             args: self.args.clone(),
             result: Some(result),
             is_success: Some(true),
@@ -312,10 +340,7 @@ impl ToolCallMessage {
     }
 
     /// 创建工具调用完成响应（失败）
-    pub fn new_error_result(
-        &self,
-        error_message: String,
-    ) -> Self {
+    pub fn new_error_result(&self, error_message: String) -> Self {
         Self {
             request_id: self.request_id.clone(),
             tool_id: self.tool_id.clone(),
@@ -324,6 +349,7 @@ impl ToolCallMessage {
             task_id: self.task_id.clone(),
             from_id: self.to_id.clone(), // 执行方反过来返回给原发起方
             to_id: self.from_id.clone(),
+            reply_to_id: self.reply_to_id.clone(),
             args: self.args.clone(),
             result: None,
             is_success: Some(false),
@@ -346,6 +372,7 @@ impl ToolCallMessage {
             task_id: self.task_id.clone(),
             from_id: self.to_id.clone(), // 执行方反过来返回给原发起方
             to_id: self.from_id.clone(),
+            reply_to_id: self.reply_to_id.clone(),
             args: self.args.clone(),
             result: Some(result),
             is_success: Some(false),

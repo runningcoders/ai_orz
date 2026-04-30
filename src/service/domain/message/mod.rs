@@ -94,6 +94,7 @@ pub trait MessageDelivery: Send + Sync {
     /// - `content` - 消息内容
     /// - `project_id` - 关联项目 ID（可选）
     /// - `task_id` - 关联任务 ID（可选）
+    /// - `reply_to_id` - 引用的父消息 ID（可选，支持消息链）
     async fn send_to_agent(
         &self,
         ctx: RequestContext,
@@ -103,6 +104,7 @@ pub trait MessageDelivery: Send + Sync {
         content: &str,
         project_id: Option<&str>,
         task_id: Option<&str>,
+        reply_to_id: Option<&str>,
     ) -> Result<Message, AppError>;
 
     /// 发送消息给用户
@@ -113,6 +115,7 @@ pub trait MessageDelivery: Send + Sync {
     /// - `content` - 消息内容
     /// - `project_id` - 关联项目 ID（可选）
     /// - `task_id` - 关联任务 ID（可选）
+    /// - `reply_to_id` - 引用的父消息 ID（可选，支持消息链）
     async fn send_to_user(
         &self,
         ctx: RequestContext,
@@ -121,6 +124,7 @@ pub trait MessageDelivery: Send + Sync {
         content: &str,
         project_id: Option<&str>,
         task_id: Option<&str>,
+        reply_to_id: Option<&str>,
     ) -> Result<Message, AppError>;
 
     /// 获取下一个待消费的消息

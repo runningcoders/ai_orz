@@ -33,6 +33,7 @@ fn create_test_message(
         content,
         None,
         file_meta,
+        None,
         from_id.to_string(),
     )
 }

@@ -522,3 +522,91 @@ test result: ok. 128 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
 | `d29a8f1` | 完成 Agent 工具绑定架构，符合分层规范，测试全过 |
 | `...` | ... |
 | `6039c39` | 完成混合模式命名对齐：CoreTool trait + Tool 实体，完整重构，测试全过 |
+
+---
+
+## 2026-04-29 Tool Domain 层设计
+
+### 新增目录结构
+
+```
+ai_orz/src/service/domain/tool/
+├── mod.rs              # 模块定义、错误类型、单例
+├── management.rs       # 工具管理子模块（CRUD、绑定解绑、启用禁用）
+└── execution.rs        # 工具执行子模块（单次/批量执行）
+```
+
+### Tool Domain 层职责划分
+
+#### 1. ToolManagement - 工具管理子模块
+
+负责工具的全生命周期管理，作为上层调用的统一入口：
+
+| 方法 | 职责 |
+|------|------|
+| `sync_builtin_tools()` | 同步所有内置工具定义到数据库 |
+| `list_tools()` | 获取所有工具列表 |
+| `list_agent_tools()` | 获取某个 Agent 绑定的所有工具 |
+| `get_tool()` | 根据 ID 获取工具详细信息 |
+| `enable_tool()` / `disable_tool()` | 启用/禁用工具 |
+| `bind_to_agent()` / `unbind_from_agent()` | 工具与 Agent 绑定/解绑 |
+| `get_agent_bound_tool_ids()` | 获取 Agent 绑定的工具 ID 列表 |
+
+#### 2. ToolExecution - 工具执行子模块
+
+负责 manual 模式下的工具调用执行，支持重试和批量执行：
+
+| 方法 | 职责 |
+|------|------|
+| `call_tool()` | 执行单个工具，返回带追踪信息的结果 |
+| `batch_call_tools()` | 批量执行多个工具（可并行） |
+
+执行结果包含完整调用链路信息：
+```rust
+pub struct ToolExecutionResult {
+    pub request_id: String,      // 调用请求ID，用于关联
+    pub tool_id: String,         // 工具ID
+    pub tool_name: String,       // 工具名称
+    pub success: bool,           // 是否成功
+    pub result: Option<String>,  // 结果JSON
+    pub error: Option<String>,   // 错误信息
+    pub duration_ms: u64,        // 耗时毫秒
+    pub call_entry: ToolCallEntry, // 完整追踪条目
+}
+```
+
+### 错误类型设计
+
+```rust
+pub enum ToolDomainError {
+    ToolNotFound(String),        // 工具未找到
+    ToolNotEnabled(String),      // 工具未启用
+    ExecutionFailed(String),     // 执行失败
+    ValidationFailed(String),    // 参数验证失败
+    Internal(String),            // 内部错误
+    Database(sqlx::Error),       // 数据库错误
+}
+```
+
+### 分层调用关系
+
+```
+Handler 层
+    ↓
+ToolDomain
+  ├─ ToolManagement → ToolDal → ToolDao
+  └─ ToolExecution → ToolCallDao + ToolTracing
+```
+
+✅ 严格遵循分层规范，Domain 层编排 DAL，不直接操作 DAO
+
+### 当前实现状态
+
+- [x] 所有 trait 接口定义完成
+- [x] 错误类型定义完成
+- [x] 单例模式设计完成
+- [x] ToolManagement 接口占位实现
+- [x] ToolExecution 接口占位实现
+- [ ] ToolManagement 具体逻辑实现（调用 ToolDal）
+- [ ] ToolExecution 具体逻辑实现（调用 ToolCallDao）
+- [ ] 单元测试编写
