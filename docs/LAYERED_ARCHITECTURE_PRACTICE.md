@@ -356,5 +356,303 @@ cargo test
 
 ---
 
+## 📦 数据对象分层与参数优化规范
+
+> 记录日期：2024-04-30  
+> 背景：解决 domain/dal/dao 层创建实体方法参数过多问题，统一各层数据对象定义
+
+---
+
+### 🎯 问题背景
+
+**典型症状**：
+- `MessagePo::new` 有 13 个参数
+- `Message::new_with_context` 有 13 个参数
+- `ToolCallMessage::new_request` 有 10 个参数
+- 方法签名冗长，调用时容易传错参数顺序
+- 新增字段时需要修改所有调用点
+
+**根本原因**：
+1. 缺乏清晰的数据对象分类，所有结构混为一谈
+2. PO 实体直接使用位置参数构造
+3. Domain 层方法直接使用零散参数而非业务命令对象
+
+---
+
+### ✅ 四层数据对象清晰定义
+
+| 对象类型 | 所属层级 | 定义位置 | 用途 | 示例 | 序列化 |
+|----------|----------|----------|------|------|--------|
+| **API DTO** | Handler 层 | `common/src/api/**` | HTTP 请求/响应结构，前后端复用 | `CreateMessageRequest`, `MessageSummary` | ✅ 必须实现 Serialize/Deserialize |
+| **业务命令/查询对象** | Domain 层 | `src/service/domain/*/mod.rs` | Domain 层方法的输入参数，表达业务意图 | `CreateMessageCommand`, `MessageQuery` | ❌ 不实现序列化 |
+| **业务实体** | Domain 层 | `src/models/*.rs` | 核心业务对象，包含行为和状态 | `Message`, `Agent`, `Tool` | ❌ 不实现序列化 |
+| **PO (持久化对象)** | DAO 层 | `src/models/*.rs` | 数据库映射对象，1:1 对应表结构 | `MessagePo`, `AgentPo` | ✅ 实现 sqlx::FromRow |
+
+---
+
+### 🔄 数据传递规范
+
+#### 调用链数据流
+```
+HTTP Request
+    │
+    ▼
+Handler: 解析 JSON → API DTO → 转换为 Command/Query
+    │
+    ▼
+Domain: 接收 Command → 执行业务逻辑 → 返回业务实体
+    │
+    ▼
+DAL: 接收业务实体 → 转换为 PO
+    │
+    ▼
+DAO: 接收 PO → 持久化
+```
+
+#### 各层职责边界（数据角度）
+
+| 层级 | 输入 | 输出 | 转换职责 |
+|------|------|------|----------|
+| **Handler** | API DTO (JSON) | 业务命令/查询对象 | API 协议 → 业务概念 |
+| **Domain** | 业务命令/查询对象 | 业务实体 | 业务逻辑编排 |
+| **DAL** | 业务实体 | PO | 业务对象 → 持久化对象 |
+| **DAO** | PO | PO | 纯数据读写 |
+
+---
+
+### 🏗️ PO 实体构造优化：Builder 模式
+
+#### 方案选择
+
+| 方案 | 优点 | 缺点 | 适用场景 |
+|------|------|------|----------|
+| **derive_builder** | 零成本开箱即用<br>功能完善（可选字段、默认值）<br>社区成熟 | 运行时错误（缺失必填字段） | 90% 常规场景（推荐） |
+| **自定义 Typestate 宏** | 真正的编译期检查<br>零运行时开销 | 开发维护成本高<br>复杂度高 | 复杂领域模型 |
+| **位置参数构造** | 简单直接 | 参数过多时难以维护 | 字段 ≤ 5 个的简单结构 |
+
+**最终决策**：优先使用 `derive_builder` crate，性价比最高。
+
+#### 实施规范
+
+**Step 1: 添加依赖**
+```toml
+# Cargo.toml
+[dependencies]
+derive_builder = "0.20"
+```
+
+**Step 2: PO 实体实现**
+```rust
+// ✅ 正确：使用 Builder 模式
+#[derive(Debug, Clone, sqlx::FromRow, derive_builder::Builder)]
+#[builder(setter(into))]
+pub struct MessagePo {
+    pub id: Uuid,
+    pub conversation_id: Uuid,
+    pub sender_type: SenderType,
+    pub sender_id: Option<Uuid>,
+    // ... 其他字段
+    
+    #[builder(default)]
+    pub created_at: DateTime<Utc>,
+}
+
+// 可选：提供便捷的 default 实现
+impl Default for MessagePo {
+    fn default() -> Self {
+        Self {
+            id: Uuid::now_v7(),
+            created_at: Utc::now(),
+            // ...
+        }
+    }
+}
+```
+
+**Step 3: 调用方式**
+```rust
+// ✅ Builder 模式，命名参数清晰
+let po = MessagePoBuilder::default()
+    .conversation_id(conversation_id)
+    .sender_type(SenderType::User)
+    .sender_id(Some(user_id))
+    .content(content)
+    .build()
+    .expect("required fields missing");
+
+// ✅ 或者配合 Default 局部修改
+let po = MessagePo {
+    conversation_id,
+    sender_type: SenderType::User,
+    ..Default::default()
+};
+```
+
+**注意事项**：
+- DAL/DAO 层的 `create` 方法签名保持不变（接收完整 PO）
+- 这一层不需要简化参数，因为：
+  - 调用方已经在上层完成了 PO 构造
+  - 完整 PO 传递保证语义清晰，避免部分更新问题
+
+---
+
+### 📝 Domain 层输入对象规范
+
+#### 定义位置
+业务命令和查询对象**必须**定义在对应 domain 模块的 `mod.rs` 中，与 trait 定义放在一起：
+
+```rust
+// src/service/domain/message/mod.rs
+
+// ✅ 业务命令：表达创建意图
+#[derive(Debug, Clone)]
+pub struct CreateMessageCommand {
+    pub conversation_id: Uuid,
+    pub sender_type: SenderType,
+    pub sender_id: Option<Uuid>,
+    pub content: String,
+    pub message_type: MessageType,
+    pub metadata: Option<Value>,
+    pub reply_to_id: Option<Uuid>,
+}
+
+// ✅ 业务查询：表达查询意图
+#[derive(Debug, Clone, Default)]
+pub struct MessageQuery {
+    pub conversation_id: Option<Uuid>,
+    pub sender_id: Option<Uuid>,
+    pub message_type: Option<MessageType>,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+}
+
+#[async_trait]
+pub trait MessageDomain: Send + Sync {
+    // ✅ 使用命令对象而非 10+ 个参数
+    async fn create_message(
+        &self,
+        ctx: &RequestContext,
+        cmd: CreateMessageCommand,
+    ) -> Result<Message>;
+    
+    // ✅ 使用查询对象
+    async fn list_messages(
+        &self,
+        ctx: &RequestContext,
+        query: MessageQuery,
+    ) -> Result<Vec<Message>>;
+}
+```
+
+#### 设计原则
+
+1. **命名清晰**：
+   - 动词 + 名词 + `Command`：`CreateMessageCommand`
+   - 名词 + `Query`：`MessageQuery`
+   
+2. **不实现序列化**：
+   - Command/Query 是纯粹的业务输入，不是 API 契约
+   - 避免被错误地直接用于 HTTP 响应
+
+3. **可选字段合理使用**：
+   - Command：必填字段不要用 Option
+   - Query：大部分字段可以是 Option（动态查询）
+
+---
+
+### ❌ 常见反模式与陷阱
+
+#### 陷阱 1：DTO 污染 Domain 层
+```rust
+// ❌ 错误：把 API 响应结构放在 Domain 层
+// src/service/domain/message/mod.rs
+#[derive(Serialize)]  // ❌ Domain 层不需要序列化
+pub struct MessageSummary {  // ❌ 这是视图 DTO，不属于 Domain
+    pub id: Uuid,
+    pub content: String,
+}
+```
+
+**正确做法**：
+```rust
+// common/src/api/message.rs  ✅ DTO 放在 common 包
+#[derive(Serialize, Deserialize)]
+pub struct MessageSummaryResponse {
+    pub id: Uuid,
+    pub content: String,
+}
+
+// Handler 层做转换 ✅
+let summary = MessageSummaryResponse {
+    id: message.id(),
+    content: message.content().to_string(),
+};
+```
+
+---
+
+#### 陷阱 2：Domain 层方法参数爆炸
+```rust
+// ❌ 错误：10+ 个零散参数
+async fn create_message(
+    &self,
+    ctx: &RequestContext,
+    conversation_id: Uuid,
+    sender_type: SenderType,
+    sender_id: Option<Uuid>,
+    content: String,
+    message_type: MessageType,
+    metadata: Option<Value>,
+    reply_to_id: Option<Uuid>,
+    // ... 还有更多
+) -> Result<Message>;
+```
+
+**正确做法**：使用 Command 对象封装（见上文规范）。
+
+---
+
+#### 陷阱 3：PO 构造逻辑放在 DAO 层
+```rust
+// ❌ 错误：DAO 层做 PO 构造
+impl MessageDao for MessageDaoSqliteImpl {
+    async fn create(
+        &self,
+        ctx: &RequestContext,
+        conversation_id: Uuid,  // ❌ 零散参数
+        sender_type: SenderType,
+        // ...
+    ) -> Result<MessagePo> {
+        // 这里做构造...
+    }
+}
+```
+
+**正确做法**：
+```rust
+// ✅ DAO 层只接收完整 PO
+impl MessageDao for MessageDaoSqliteImpl {
+    async fn create(&self, ctx: &RequestContext, po: MessagePo) -> Result<MessagePo> {
+        // 纯 SQL INSERT
+    }
+}
+
+// ✅ PO 构造在上层（DAL/Domain）完成
+```
+
+---
+
+### ✅ 重构步骤（以 Message 模块为例）
+
+1. **Step 1**：添加 `derive_builder` 依赖到 `Cargo.toml`
+2. **Step 2**：为 `MessagePo` 实现 Builder 模式
+3. **Step 3**：在 `message/domain/mod.rs` 中定义 `CreateMessageCommand` 和 `MessageQuery`
+4. **Step 4**：重构 Domain trait 方法签名，使用 Command/Query 替换多参数
+5. **Step 5**：更新 DAL 实现和所有调用点
+6. **Step 6**：运行 `cargo test` 验证所有测试通过
+7. **Step 7**：总结模式，推广到 Agent、Tool 等其他模块
+
+---
+
 **文档维护者**：架构组  
 **下次更新**：Domain 层完成后
