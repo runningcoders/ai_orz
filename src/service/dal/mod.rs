@@ -32,3 +32,5 @@ pub(crate) mod message_test;
 pub(crate) mod model_provider_test;
 #[cfg(test)]
 pub(crate) mod tool_test;
+#[cfg(test)]
+pub(crate) mod user_test;
