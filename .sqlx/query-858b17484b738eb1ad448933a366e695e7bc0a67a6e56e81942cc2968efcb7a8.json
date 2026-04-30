@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, name, description, workflow, guidance, \"status\" as \"status: ProjectStatus\", priority as \"priority: i32\", tags, root_user_id, owner_agent_id, start_at, due_at, end_at, created_by, modified_by, created_at, updated_at FROM projects WHERE root_user_id = ? AND \"status\" != 0 ORDER BY priority DESC, created_at DESC LIMIT ?",
+  "query": "\nSELECT id, project_id, task_id, from_id, to_id, from_role as \"from_role: MessageRole\", to_role as \"to_role: MessageRole\", message_type as \"message_type: MessageType\", file_type as \"file_type: FileType\", \"status\" as \"status: MessageStatus\", content, file_meta as \"file_meta: Json<FileMeta>\", reply_to_id, created_by, modified_by, created_at, updated_at\nFROM messages WHERE id = ? AND \"status\" != 0\n            ",
   "describe": {
     "columns": [
       {
@@ -9,64 +9,64 @@
         "type_info": "Text"
       },
       {
-        "name": "name",
+        "name": "project_id",
         "ordinal": 1,
         "type_info": "Text"
       },
       {
-        "name": "description",
+        "name": "task_id",
         "ordinal": 2,
         "type_info": "Text"
       },
       {
-        "name": "workflow",
+        "name": "from_id",
         "ordinal": 3,
         "type_info": "Text"
       },
       {
-        "name": "guidance",
+        "name": "to_id",
         "ordinal": 4,
         "type_info": "Text"
       },
       {
-        "name": "status: ProjectStatus",
+        "name": "from_role: MessageRole",
         "ordinal": 5,
         "type_info": "Integer"
       },
       {
-        "name": "priority: i32",
+        "name": "to_role: MessageRole",
         "ordinal": 6,
         "type_info": "Integer"
       },
       {
-        "name": "tags",
+        "name": "message_type: MessageType",
         "ordinal": 7,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "root_user_id",
+        "name": "file_type: FileType",
         "ordinal": 8,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "owner_agent_id",
+        "name": "status: MessageStatus",
         "ordinal": 9,
+        "type_info": "Integer"
+      },
+      {
+        "name": "content",
+        "ordinal": 10,
         "type_info": "Text"
       },
       {
-        "name": "start_at",
-        "ordinal": 10,
-        "type_info": "Integer"
-      },
-      {
-        "name": "due_at",
+        "name": "file_meta: Json<FileMeta>",
         "ordinal": 11,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "end_at",
+        "name": "reply_to_id",
         "ordinal": 12,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
         "name": "created_by",
@@ -90,21 +90,21 @@
       }
     ],
     "parameters": {
-      "Right": 2
+      "Right": 1
     },
     "nullable": [
       false,
-      false,
-      false,
       true,
       true,
       false,
       false,
       false,
       false,
+      false,
       true,
-      true,
-      true,
+      false,
+      false,
+      false,
       true,
       false,
       false,
@@ -112,5 +112,5 @@
       false
     ]
   },
-  "hash": "5cdff5d0672a7730b6bf0f4cfdc6b4e716a917a996bfe38fb5b5da9e7c25a90a"
+  "hash": "858b17484b738eb1ad448933a366e695e7bc0a67a6e56e81942cc2968efcb7a8"
 }
