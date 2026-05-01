@@ -200,9 +200,9 @@ src/handlers/organization/
 
 ### 5.3 当前测试统计
 
-- **总测试数**: 165 个
-- **通过率**: 100% (165/165) ✅
-- **测试覆盖**: 数据层 100% 覆盖
+- **总测试数**: 175 个
+- **通过率**: 100% (175/175) ✅
+- **测试覆盖**: 数据层 + 领域层 100% 覆盖
 
 ---
 
@@ -269,10 +269,10 @@ let ctx = RequestContext::from_parts(parts);
 | **Short-Term Memory** | 最近会话摘要索引 | SQLite 数据库 | 需要时检索相关摘要带入 |
 | **Long-Term Knowledge** | 长期沉淀知识图谱 | SQLite 知识节点 + 文件原始细节 | 需要时检索相关知识带入 |
 
-### 5.3 当前测试统计
+### 8.5 当前测试统计
 
-- **总测试数**: 158 个
-- **通过率**: 100% (158/158) ✅
+- **总测试数**: 175 个
+- **通过率**: 100% (175/175) ✅
 
 ---
 
@@ -359,6 +359,17 @@ let ctx = RequestContext::from_parts(parts);
 - [x] **Rig 包名问题完整记录**：Edition 配置、导入路径、版本锁定等最佳实践
 - [x] **完整文档沉淀**：新增 `LAYERED_ARCHITECTURE_PRACTICE.md` 详细记录重构过程和避坑指南
 - [x] 所有测试通过：**165/165** ✅
+
+### 第十轮开发（2026-05-01）
+
+- [x] **领域层命名统一**：所有 Domain 接口与 DAO/DAL 对齐，接口直接叫 `XxxDomain`，实现类叫 `XxxDomainImpl`
+- [x] **全领域层 ctx 参数补齐**：finance、hr、organization、tool 所有领域层方法统一补充 RequestContext 第一个参数
+- [x] **finance/model_provider 领域层完成**：完整的 ModelProvider CRUD 业务逻辑
+- [x] **hr/agent 领域层完成**：完整的 Agent CRUD 业务逻辑
+- [x] **organization/org + user 领域层完成**：组织和用户管理完整业务逻辑
+- [x] **tool/management 领域层完成**：工具管理完整业务逻辑
+- [x] **分层架构彻底对齐**：Handler → Domain → DAL → DAO 四层严格单向依赖
+- [x] 所有测试通过：**175/175** ✅
 
 ---
 
