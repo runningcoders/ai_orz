@@ -26,10 +26,12 @@ userid, agentname, createAgent, newCtxWithUser
 
 ```
 // ✅ 正确
-AgentPo, RequestContext, AgentDaoTrait, AgentPoStatus
+AgentPo, RequestContext, AgentDao, AgentPoStatus
+```
 
+```
 // ❌ 错误（小驼峰）
-agentPo, requestContext, agentDaoTrait
+agentPo, requestContext, agentDao
 ```
 
 ### 2.3 全大写下划线（SNAKE_CASE）
@@ -56,7 +58,7 @@ fn get_agent_by_id(id: &str) -> Option<Agent>
 fn get_user_name(user_id: &str) -> String
 
 // ✅ 直接命名（无参数或简单获取）
-fn agent_dao() -> Arc<dyn AgentDaoTrait>  // 单例获取
+fn agent_dao() -> Arc<dyn AgentDao>  // 单例获取
 fn new() -> Self                             // 构造新实例
 fn uid(&self) -> String                       // 只读属性获取
 ```
@@ -185,9 +187,12 @@ enum AgentPoStatus { ... }
 ### 6.2 Trait
 
 ```rust
-// ✅ PascalCase + Trait 后缀（可选）
-trait AgentDaoTrait { ... }
+// ✅ PascalCase（不加 Trait 后缀，实现类加 Impl 后缀）
+trait AgentDao { ... }
+struct AgentDaoSqliteImpl;
+
 trait Service { ... }
+struct MyServiceImpl;
 ```
 
 ## 7. 常量命名
@@ -222,8 +227,8 @@ pub mod http_header {
 
 ```rust
 // ✅ 函数名直接用实体名
-fn agent_dao() -> Arc<dyn AgentDaoTrait>
-fn org_dao() -> Arc<dyn OrganizationDaoTrait>
+fn agent_dao() -> Arc<dyn AgentDao>
+fn org_dao() -> Arc<dyn OrganizationDao>
 
 // ❌ 避免
 fn get_agent_dao()
@@ -271,21 +276,24 @@ fn log_id(&self) -> &str      // 获取日志 ID
 
 ```rust
 // ✅ 正确：接口包含 ctx
-pub trait AgentDaoTrait: Send + Sync {
-    fn insert(&self, ctx: RequestContext, conn: &Connection, agent: &AgentPo) -> Result<(), AppError>;
-    fn find_by_id(&self, ctx: RequestContext, conn: &Connection, id: &str) -> Result<Option<AgentPo>, AppError>;
-    fn update(&self, ctx: RequestContext, conn: &Connection, agent: &AgentPo) -> Result<(), AppError>;
-    fn delete(&self, ctx: RequestContext, conn: &Connection, id: &str) -> Result<(), AppError>;
+pub trait AgentDao: Send + Sync {
+    fn insert(&self, ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError>;
+    fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<AgentPo>, AppError>;
+    fn update(&self, ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError>;
+    fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
 }
 
 // ✅ 正确：从 context 获取用户信息
-fn delete(&self, ctx: RequestContext, conn: &Connection, id: &str) -> Result<(), AppError> {
-    // deleted_by 从 ctx 获取，不再作为参数
-    conn.execute("UPDATE ... SET modified_by = ?1 ...", rusqlite::params![ctx.uid()])
+fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
+    // modified_by 从 ctx 获取，不再作为参数
+    sqlx::query("UPDATE ... SET modified_by = ?1 ...")
+        .bind(ctx.uid())
+        .execute(&pool)
+        .await?;
 }
 
 // ❌ 错误：用户信息作为单独参数
-fn delete(&self, conn: &Connection, id: &str, deleted_by: &str) -> Result<(), AppError>
+fn delete(&self, id: &str, modified_by: &str) -> Result<(), AppError>
 ```
 
 ### 10.4 Context 获取用户信息
