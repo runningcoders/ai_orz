@@ -5,7 +5,7 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 ![GitHub last commit](https://img.shields.io/github/last-commit/runningcoders/ai_orz)
 ![GitHub license](https://img.shields.io/github/license/runningcoders/ai_orz)
 ![Rust](https://img.shields.io/badge/Rust-1.85+-000000?logo=rust)
-![Tests](https://img.shields.io/badge/tests-165%20%E2%9C%94-brightgreen)
+![Tests](https://img.shields.io/badge/tests-175%20%E2%9C%94-brightgreen)
 [![GitHub stars](https://img.shields.io/github/stars/runningcoders/ai_orz?style=social)](https://github.com/runningcoders/ai_orz)
 
 ## 技术栈
@@ -25,8 +25,8 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 - 📚 **技能库** - 可复用技能和工作流管理，支持搜索和分类
 - 📋 **任务项目管理** - 项目聚合对话，任务跟踪进度和状态
 - 📎 **统一附件存储** - 消息附件和项目产物统一存储
-- 🏗️ **严格分层架构落地** - DAO/DAL/Domain/Handler 四层职责清晰，165 个测试全部通过
-- 🔍 **完整单元测试覆盖** - 数据层 100% 测试覆盖
+- 🏗️ **严格分层架构落地** - DAO/DAL/Domain/Handler 四层职责清晰，175 个测试全部通过
+- 🔍 **完整单元测试覆盖** - 数据层 + 领域层 100% 测试覆盖
 
 ## 项目结构
 
@@ -57,10 +57,15 @@ ai_orz/
 ├── docs/               # 详细文档
 │   ├── ARCHITECTURE.md # 完整架构说明（最新）
 │   ├── LAYERED_ARCHITECTURE_PRACTICE.md # 分层架构完整实践记录与避坑指南
-│   ├── tool_design.md  # 工具模块设计文档（含工具调用追踪）
+│   ├── MEMORY_DESIGN.md # 四层记忆系统设计文档
+│   ├── NAMING_CONVENTION.md # 项目命名规范
+│   ├── tool_design.md  # 工具模块设计文档（混合模式工具调用 + 工具调用追踪）
+│   ├── message_interaction_design.md # 消息交互与混合模式工具调用设计
 │   ├── event_design.md  # 事件总线设计文档
+│   ├── skill_design.md # 技能系统设计文档（两级技能库 + Agent自进化）
 │   ├── task_design.md  # 任务系统设计文档
 │   ├── project_design.md # 项目系统设计文档
+│   ├── organization_design.md # 组织用户权限体系设计
 │   ├── attachment_storage.md # 产物与消息附件统一存储设计
 │   └── sqlx_guide.md   # SQLx 0.8 + SQLite 开发规范与避坑指南
 ├── build-full.sh        # 全量构建脚本（后端 + 前端）
@@ -97,6 +102,26 @@ Agent (po + brain: Option<Brain>)
 
 更多详细架构说明请查看 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)
 
+## 📚 设计文档索引 📚
+
+按系统分类的完整设计文档，帮助快速理解各模块设计思路：
+
+| 文档 | 说明 | 核心内容 |
+|------|------|----------|
+| [ARCHITECTURE.md](./docs/ARCHITECTURE.md) | **整体架构** | 端到端全栈架构设计，核心概念解释，分层架构总览 |
+| [LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md) | **分层架构实践** | DAO/DAL/Domain 四层架构完整落地，跨层依赖问题，重构经验总结 |
+| [MEMORY_DESIGN.md](./docs/MEMORY_DESIGN.md) | **四层记忆系统设计** | Core/Working/Short-term/Long-term 分级存储设计，检索策略 |
+| [tool_design.md](./docs/tool_design.md) | **工具系统设计** | 混合模式工具调用（auto+manual），工具注册表，工具调用追踪装饰器，每日JSONL日志 |
+| [message_interaction_design.md](./docs/message_interaction_design.md) | **消息交互设计** | 用户↔Agent双向对话架构，前台Agent，项目上下文，异步消息处理 |
+| [skill_design.md](./docs/skill_design.md) | **技能系统设计** | 两级技能库（共享技能库 + Agent私有技能），Agent自进化沉淀技能，版本管理 |
+| [event_design.md](./docs/event_design.md) | **事件总线设计** | 泛型topic分离事件队列，类型安全，按业务逻辑隔离 |
+| [task_design.md](./docs/task_design.md) | **任务系统设计** | 任务状态机，任务分配，进度追踪，优先级管理 |
+| [project_design.md](./docs/project_design.md) | **项目系统设计** | 项目聚合对话上下文，项目状态管理，成员权限 |
+| [organization_design.md](./docs/organization_design.md) | **组织用户权限** | 多级组织架构，用户角色权限，JWT认证体系 |
+| [attachment_storage.md](./docs/attachment_storage.md) | **附件存储设计** | 消息附件 + 项目产物统一存储，FileMeta元数据，日期分层路径 |
+| [sqlx_guide.md](./docs/sqlx_guide.md) | **SQLx开发指南** | SQLite STRICT模式，枚举类型映射，迁移经验，测试隔离最佳实践 |
+| [NAMING_CONVENTION.md](./docs/NAMING_CONVENTION.md) | **命名规范** | 全项目统一命名约定，DAO/DAL/Domain 命名规则 |
+
 ## 设计原则
 
 1. **严格分层** → `handlers → domain → dal → dao → models`，不允许跨层级调用
@@ -107,7 +132,7 @@ Agent (po + brain: Option<Brain>)
 7. **Handler 拆分** → 业务分组 + 方法粒度拆分，每个方法一个单独文件 ✅
 8. **API 契约统一** → 所有前后端共用 DTO 提取到独立 `common` crate，保证类型一致 ✅
 9. **类型安全枚举** → 数据库存储的枚举字段全部使用原生枚举类型，编译期检查 ✅
-10. **单元测试** → 每个业务模块都应该有单元测试，当前 **149/149 全部通过** ✅
+10. **单元测试** → 每个业务模块都应该有单元测试，当前 **175/175 全部通过** ✅
 
 ## LLM 调用流程（最新版）
 
