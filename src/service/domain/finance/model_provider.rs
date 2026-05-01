@@ -6,11 +6,13 @@
 use crate::error::AppError;
 use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
+use crate::service::dao::model_provider::ModelProviderQuery;
 use crate::service::dal::brain::dal as brain_dal;
 use crate::service::dal::model_provider::ModelProviderDal;
 use super::{FinanceDomainImpl};
 use async_trait::async_trait;
 use super::ModelProviderManage;
+use common::enums::ModelProviderStatus;
 
 #[async_trait]
 impl ModelProviderManage for FinanceDomainImpl {
@@ -22,8 +24,25 @@ impl ModelProviderManage for FinanceDomainImpl {
         self.model_provider_dal.find_by_id(ctx, id).await
     }
 
+    /// 通用综合查询
+    ///
+    /// Domain 层可以添加业务逻辑：权限校验、数据过滤、业务规则验证
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: ModelProviderQuery,
+    ) -> Result<Vec<ModelProvider>, AppError> {
+        self.model_provider_dal.query(ctx, query).await
+    }
+
+    /// 列出所有 Model Provider
+    ///
+    /// 语法糖：调用通用查询，默认排除已删除状态
     async fn list_model_providers(&self, ctx: RequestContext) -> Result<Vec<ModelProvider>, AppError> {
-        self.model_provider_dal.find_all(ctx).await
+        self.query(ctx, ModelProviderQuery {
+            exclude_status: Some(ModelProviderStatus::Deleted),
+            ..Default::default()
+        }).await
     }
 
     async fn update_model_provider(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError> {

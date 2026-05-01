@@ -5,6 +5,8 @@
 use crate::error::AppError;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
+use crate::service::dao::user::UserQuery;
+use common::enums::UserStatus;
 use async_trait::async_trait;
 
 #[async_trait]
@@ -18,7 +20,20 @@ impl super::UserManage for super::OrganizationDomainImpl {
         self.user_dal.find_by_username(ctx, username).await
     }
 
+    /// 通用综合查询
+    ///
+    /// Domain 层可以添加业务逻辑：权限校验、数据过滤、业务规则验证
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: crate::service::dao::user::UserQuery,
+    ) -> Result<Vec<UserPo>, AppError> {
+        self.user_dal.query(ctx, query).await
+    }
+
     /// 根据组织 ID 查询所有用户
+    ///
+    /// 调用 DAL 层 find_by_organization_id 方法
     async fn find_by_organization_id(
         &self,
         ctx: RequestContext,

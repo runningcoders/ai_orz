@@ -34,6 +34,15 @@ pub trait ModelProviderManage: Send + Sync {
     /// 获取 Model Provider
     async fn get_model_provider(&self, ctx: RequestContext, id: &str) -> Result<Option<ModelProvider>, crate::error::AppError>;
 
+    /// 通用综合查询
+    ///
+    /// 支持组合查询条件，所有字段都是 Option
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: crate::service::dao::model_provider::ModelProviderQuery,
+    ) -> Result<Vec<ModelProvider>, crate::error::AppError>;
+
     /// 列出所有 Model Provider
     async fn list_model_providers(&self, ctx: RequestContext) -> Result<Vec<ModelProvider>, crate::error::AppError>;
 

@@ -76,6 +76,15 @@ pub trait AgentManage: Send + Sync {
     /// 获取 Agent
     async fn get_agent(&self, ctx: RequestContext, id: &str) -> Result<Option<Agent>, AppError>;
 
+    /// 通用综合查询
+    ///
+    /// 支持组合查询条件，所有字段都是 Option
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: crate::service::dao::agent::AgentQuery,
+    ) -> Result<Vec<Agent>, AppError>;
+
     /// 列出所有 Agent
     async fn list_agents(&self, ctx: RequestContext) -> Result<Vec<Agent>, AppError>;
 

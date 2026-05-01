@@ -16,6 +16,15 @@ pub trait ToolManagement: Send + Sync + Debug {
     /// 同步所有内置工具到数据库
     async fn sync_builtin_tools(&self, ctx: &RequestContext) -> Result<Vec<Tool>, ToolDomainError>;
 
+    /// 通用综合查询
+    ///
+    /// 支持组合查询条件，所有字段都是 Option
+    async fn query(
+        &self,
+        ctx: &RequestContext,
+        query: crate::service::dao::tool::ToolQuery,
+    ) -> Result<Vec<Tool>, ToolDomainError>;
+
     /// 获取所有工具列表
     async fn list_tools(&self, ctx: &RequestContext) -> Result<Vec<Tool>, ToolDomainError>;
 
@@ -67,17 +76,36 @@ impl ToolManagement for ToolManagementImpl {
         Ok(Vec::new())
     }
 
-    async fn list_tools(&self, _ctx: &RequestContext) -> Result<Vec<Tool>, ToolDomainError> {
-        // TODO: 实现工具列表查询
-        // 调用 ToolDal.list_all()
+    /// 通用综合查询
+    ///
+    /// Domain 层可以添加业务逻辑：权限校验、数据过滤、业务规则验证
+    async fn query(
+        &self,
+        ctx: &RequestContext,
+        query: crate::service::dao::tool::ToolQuery,
+    ) -> Result<Vec<Tool>, ToolDomainError> {
+        // TODO: 实现通用查询
+        // 调用 ToolDal.query()
         Ok(Vec::new())
     }
 
-    async fn list_agent_tools(&self, _ctx: &RequestContext, _agent_id: &str) -> Result<Vec<Tool>, ToolDomainError> {
-        // TODO: 实现 Agent 绑定工具列表查询
-        // 1. 获取 Agent 绑定的工具 ID 列表
-        // 2. 根据 ID 列表获取完整工具信息
+    /// 获取所有工具列表
+    ///
+    /// 调用 DAL 层对应方法
+    async fn list_tools(&self, ctx: &RequestContext) -> Result<Vec<Tool>, ToolDomainError> {
+        // TODO: 调用 ToolDal 对应方法
         Ok(Vec::new())
+    }
+
+    /// 获取某个 Agent 绑定的所有工具
+    ///
+    /// 语法糖：调用通用查询，指定 Agent ID
+    async fn list_agent_tools(&self, ctx: &RequestContext, agent_id: &str) -> Result<Vec<Tool>, ToolDomainError> {
+        self.query(ctx, crate::service::dao::tool::ToolQuery {
+            agent_id: Some(agent_id.to_string()),
+            enabled_only: None,
+            limit: None,
+        }).await
     }
 
     async fn get_tool(&self, _ctx: &RequestContext, _tool_id: &str) -> Result<Option<Tool>, ToolDomainError> {

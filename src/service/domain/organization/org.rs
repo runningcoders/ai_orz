@@ -7,6 +7,8 @@ use crate::error::AppError;
 use crate::models::organization::OrganizationPo;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
+use crate::service::dao::organization::OrganizationQuery;
+use common::enums::OrganizationStatus;
 use async_trait::async_trait;
 
 /// 生成组织 ID（12 位大写字母 + 数字）
@@ -89,7 +91,20 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
         self.org_dal.get_by_id(ctx, org_id).await
     }
 
+    /// 通用综合查询
+    ///
+    /// Domain 层可以添加业务逻辑：权限校验、数据过滤、业务规则验证
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: crate::service::dao::organization::OrganizationQuery,
+    ) -> Result<Vec<OrganizationPo>, AppError> {
+        self.org_dal.query(ctx, query).await
+    }
+
     /// 获取所有组织列表
+    ///
+    /// 调用 DAL 层 list_all 方法
     async fn list_all(&self, ctx: RequestContext) -> Result<Vec<OrganizationPo>, AppError> {
         self.org_dal.list_all(ctx).await
     }

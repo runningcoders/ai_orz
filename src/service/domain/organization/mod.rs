@@ -102,6 +102,15 @@ pub trait OrganizationManage: Send + Sync {
     /// 获取组织信息
     async fn get_by_id(&self, ctx: RequestContext, org_id: &str) -> Result<Option<OrganizationPo>, AppError>;
 
+    /// 通用综合查询
+    ///
+    /// 支持组合查询条件，所有字段都是 Option
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: crate::service::dao::organization::OrganizationQuery,
+    ) -> Result<Vec<OrganizationPo>, AppError>;
+
     /// 获取所有组织列表
     async fn list_all(&self, ctx: RequestContext) -> Result<Vec<OrganizationPo>, AppError>;
 
@@ -126,6 +135,15 @@ pub trait UserManage: Send + Sync {
         ctx: RequestContext,
         username: &str,
     ) -> Result<Option<crate::models::user::UserPo>, AppError>;
+
+    /// 通用综合查询
+    ///
+    /// 支持组合查询条件，所有字段都是 Option
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: crate::service::dao::user::UserQuery,
+    ) -> Result<Vec<crate::models::user::UserPo>, AppError>;
 
     /// 根据组织 ID 查询所有用户
     async fn find_by_organization_id(

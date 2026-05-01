@@ -3,8 +3,10 @@
 use crate::error::AppError;
 use crate::models::agent::Agent;
 use crate::pkg::RequestContext;
+use crate::service::dao::agent::AgentQuery;
 use crate::service::dal::agent::AgentDal;
 use crate::service::domain::hr::{AgentManage, HrDomainImpl};
+use common::enums::AgentStatus;
 
 #[async_trait::async_trait]
 impl AgentManage for HrDomainImpl {
@@ -22,11 +24,25 @@ impl AgentManage for HrDomainImpl {
         self.agent_dal.find_by_id(ctx, id).await
     }
 
+    /// 通用综合查询
+    ///
+    /// Domain 层可以添加业务逻辑：权限校验、数据过滤、业务规则验证
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: AgentQuery,
+    ) -> Result<Vec<Agent>, AppError> {
+        self.agent_dal.query(ctx, query).await
+    }
+
     /// 列出所有 Agent
     ///
-    /// 基础操作：查询所有有效的 Agent
+    /// 语法糖：调用通用查询，默认排除已删除状态
     async fn list_agents(&self, ctx: RequestContext) -> Result<Vec<Agent>, AppError> {
-        self.agent_dal.find_all(ctx).await
+        self.query(ctx, AgentQuery {
+            exclude_status: Some(AgentStatus::Deleted),
+            ..Default::default()
+        }).await
     }
 
     /// 更新 Agent
