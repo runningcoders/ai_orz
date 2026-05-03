@@ -394,36 +394,35 @@ async fn test_dequeue_ack_nack(pool: SqlitePool) {
     let dequeued1 = dequeued1.unwrap();
     assert_eq!(dequeued1.po.content, "Message 1");
 
-    // 第二次出队：内存队列还有，直接返回第二条
+    // 新的正确行为：出队后不自动 refill，所以第二次出队应该是 None
+    let dequeued2 = dal.dequeue_next_message(ctx.clone()).await.unwrap();
+    assert!(dequeued2.is_none());
+
+    // ack 第一个消息，触发 refill 第二个
+    dal.ack_message(ctx.clone(), dequeued1.id()).await.unwrap();
+    dal.update_status(ctx.clone(), dequeued1.id(), MessageStatus::Processed).await.unwrap();
+
+    // 现在可以出队第二条
     let dequeued2 = dal.dequeue_next_message(ctx.clone()).await.unwrap();
     assert!(dequeued2.is_some());
     let dequeued2 = dequeued2.unwrap();
     assert_eq!(dequeued2.po.content, "Message 2");
 
-    // 第三次出队：返回第三条
+    // ack 第二条，触发 refill 第三条
+    dal.ack_message(ctx.clone(), dequeued2.id()).await.unwrap();
+    dal.update_status(ctx.clone(), dequeued2.id(), MessageStatus::Processed).await.unwrap();
+
+    // 现在可以出队第三条
     let dequeued3 = dal.dequeue_next_message(ctx.clone()).await.unwrap();
     assert!(dequeued3.is_some());
     let dequeued3 = dequeued3.unwrap();
     assert_eq!(dequeued3.po.content, "Message 3");
 
-    // 第四次出队：内存队列空了，DB 也没有 pending 了，返回 None
+    // ack 第三条
+    dal.ack_message(ctx.clone(), dequeued3.id()).await.unwrap();
+    dal.update_status(ctx.clone(), dequeued3.id(), MessageStatus::Processed).await.unwrap();
+
+    // 全部处理完，返回 None
     let dequeued4 = dal.dequeue_next_message(ctx.clone()).await.unwrap();
-    if let Some(msg) = &dequeued4 {
-        println!("dequeued4 content: {}", msg.po.content);
-    }
     assert!(dequeued4.is_none());
-
-    // ack 第一个消息
-    dal.ack_message(ctx.clone(), dequeued1.id()).await.unwrap();
-    // 更新消息状态为 Processed
-    dal.update_status(ctx.clone(), dequeued1.id(), MessageStatus::Processed).await.unwrap();
-
-    // nack 第二个消息（处理失败，放回队列）
-    dal.nack_message(ctx.clone(), dequeued2.id()).await.unwrap();
-
-    // 再次出队应该能拿到被 nack 的消息
-    let dequeued5 = dal.dequeue_next_message(ctx.clone()).await.unwrap();
-    assert!(dequeued5.is_some());
-    let dequeued5 = dequeued5.unwrap();
-    assert_eq!(dequeued5.po.content, "Message 2");
 }

@@ -361,17 +361,21 @@ async fn test_same_order_key_sequential() {
     let first = queue.dequeue_next(&ctx).unwrap().unwrap();
     assert_eq!(first.id(), "1");
     assert_eq!(queue.in_progress_count(), 1);
-    // 第一个出队后，第二个已经 refill 到全局堆，可以直接出队
-    // 同一 order_key 同一时间只有一个在处理中，满足顺序处理要求
-    let second_opt = queue.dequeue_next(&ctx).unwrap();
-    assert!(second_opt.is_some()); // 第二个已经 refill 到全局堆
-    let second = second_opt.unwrap();
-    assert_eq!(second.id(), "2");
-    assert_eq!(queue.in_progress_count(), 2); // 现在第二个也出队了，两个都在处理中？不，不对，我们的设计是只允许一个 in_progress
 
-    // ack 第一个，第二个已经出队在等待处理
+    // 新的正确行为：出队后不 refill，此时 dequeue_next 应该返回 None
+    let second_opt = queue.dequeue_next(&ctx).unwrap();
+    assert!(second_opt.is_none()); // 还没 ack，第二个不会被 refill
+
+    // ack 第一个，触发 refill 第二个
     queue.ack(&ctx, "1").unwrap();
-    assert_eq!(queue.in_progress_count(), 1); // 只有第二个在处理中
+    assert_eq!(queue.in_progress_count(), 0); // 第一个已完成
+
+    // 现在可以出队第二个了
+    let second = queue.dequeue_next(&ctx).unwrap().unwrap();
+    assert_eq!(second.id(), "2");
+    assert_eq!(queue.in_progress_count(), 1);
+
+    // ack 第二个，触发 refill 第三个
     queue.ack(&ctx, "2").unwrap();
 
     let third = queue.dequeue_next(&ctx).unwrap().unwrap();
@@ -425,6 +429,174 @@ async fn test_nack_retry() {
     assert_eq!(event2.id(), msg.id());
     // ack 确认
     queue.ack(&ctx, event2.id()).unwrap();
+    assert!(queue.is_empty());
+}
+
+/// 测试：同 order_key 的消息入队时，前一个正在处理的情况
+/// 验证：消息 A 正在处理时，消息 B 入队不会被放到全局堆
+#[tokio::test]
+async fn test_same_order_key_while_processing() {
+    let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+    let ctx = RequestContext::new_simple("test-user", pool);
+
+    #[derive(Debug, Clone)]
+    struct TestEvent {
+        id: String,
+        order_key: String,
+        created_at: i64,
+    }
+
+    impl Event for TestEvent {
+        fn clone_box(&self) -> Box<dyn Event> {
+            Box::new(self.clone())
+        }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        fn into_any(self: Box<TestEvent>) -> Box<dyn std::any::Any> {
+            Box::new(self)
+        }
+
+        fn id(&self) -> &str {
+            &self.id
+        }
+        fn topic(&self) -> crate::models::event::EventTopic {
+            crate::models::event::EventTopic::Message
+        }
+        fn order_key(&self) -> &str {
+            &self.order_key
+        }
+        fn priority(&self) -> u8 {
+            0
+        }
+        fn created_at(&self) -> i64 {
+            self.created_at
+        }
+    }
+
+    let queue = EventQueueDaoInMemoryImpl::<TestEvent>::new();
+
+    // 消息 A 入队，出队，开始处理
+    queue.enqueue(&ctx, Box::new(TestEvent {
+        id: "msg-A".to_string(),
+        order_key: "task1".to_string(),
+        created_at: 1,
+    })).unwrap();
+
+    let a = queue.dequeue_next(&ctx).unwrap().unwrap();
+    assert_eq!(a.id(), "msg-A");
+    assert_eq!(queue.in_progress_count(), 1);
+
+    // 消息 B 入队（A 正在处理中）
+    queue.enqueue(&ctx, Box::new(TestEvent {
+        id: "msg-B".to_string(),
+        order_key: "task1".to_string(),
+        created_at: 2,
+    })).unwrap();
+
+    // 关键断言：此时全局堆应该是空的，B 不应该在全局堆
+    // 因为 A 正在处理，has_waiting_in_global 应该是 true
+    let next = queue.dequeue_next(&ctx).unwrap();
+    assert!(next.is_none(), "B 应该留在子队列等待，不应该在全局堆");
+
+    // ack A，应该触发 refill B
+    queue.ack(&ctx, "msg-A").unwrap();
+
+    // 现在应该可以出队 B 了
+    let b = queue.dequeue_next(&ctx).unwrap().unwrap();
+    assert_eq!(b.id(), "msg-B");
+}
+
+/// 测试带 order_key 的消息 nack 时的严格顺序保证
+/// 验证：同一 order_key 同一时间全局堆最多只有一个消息
+#[tokio::test]
+async fn test_order_key_nack_strict_ordering() {
+    let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+    let ctx = RequestContext::new_simple("test-user", pool);
+
+    #[derive(Debug, Clone)]
+    struct TestEvent {
+        id: String,
+        created_at: i64,
+    }
+
+    impl Event for TestEvent {
+        fn clone_box(&self) -> Box<dyn Event> {
+            Box::new(self.clone())
+        }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        fn into_any(self: Box<TestEvent>) -> Box<dyn std::any::Any> {
+            Box::new(self)
+        }
+
+        fn id(&self) -> &str {
+            &self.id
+        }
+        fn topic(&self) -> crate::models::event::EventTopic {
+            crate::models::event::EventTopic::Message
+        }
+        fn order_key(&self) -> &str {
+            "same-task" // 所有事件同 order_key
+        }
+        fn created_at(&self) -> i64 {
+            self.created_at
+        }
+    }
+
+    let queue = EventQueueDaoInMemoryImpl::<TestEvent>::new();
+
+    // 按顺序入队 A、B、C
+    let a = TestEvent { id: "A".to_string(), created_at: 1 };
+    let b = TestEvent { id: "B".to_string(), created_at: 2 };
+    let c = TestEvent { id: "C".to_string(), created_at: 3 };
+
+    queue.enqueue(&ctx, Box::new(a)).unwrap();
+    queue.enqueue(&ctx, Box::new(b)).unwrap();
+    queue.enqueue(&ctx, Box::new(c)).unwrap();
+
+    assert_eq!(queue.len(), 3);
+
+    // 第一个出队必须是 A
+    let first = queue.dequeue_next(&ctx).unwrap().unwrap();
+    assert_eq!(first.id(), "A");
+    assert_eq!(queue.in_progress_count(), 1);
+
+    // 尝试再次出队，应该是 None（因为 B、C 还在子队列，A 没 ack 不会 refill）
+    let second_try = queue.dequeue_next(&ctx).unwrap();
+    assert!(second_try.is_none(), "同一 order_key 同一时间只能有一个消息在全局堆");
+
+    // nack A，A 应该直接回到全局堆，B、C 仍在子队列
+    queue.nack(&ctx, "A").unwrap();
+    assert_eq!(queue.in_progress_count(), 0);
+
+    // 再次出队，应该还是 A（不是 B 也不是 C）
+    let after_nack = queue.dequeue_next(&ctx).unwrap().unwrap();
+    assert_eq!(after_nack.id(), "A", "nack 后应该优先处理刚才失败的消息 A");
+
+    // 再次尝试出队，应该还是 None（B、C 仍在子队列）
+    let third_try = queue.dequeue_next(&ctx).unwrap();
+    assert!(third_try.is_none(), "同一 order_key 同一时间只能有一个消息在全局堆");
+
+    // 现在正常 ack A，触发 refill B
+    queue.ack(&ctx, "A").unwrap();
+
+    // 出队应该是 B
+    let b_event = queue.dequeue_next(&ctx).unwrap().unwrap();
+    assert_eq!(b_event.id(), "B");
+
+    // ack B，触发 refill C
+    queue.ack(&ctx, "B").unwrap();
+    let c_event = queue.dequeue_next(&ctx).unwrap().unwrap();
+    assert_eq!(c_event.id(), "C");
+
+    // ack C，队列空
+    queue.ack(&ctx, "C").unwrap();
     assert!(queue.is_empty());
 }
 
@@ -537,38 +709,47 @@ async fn test_mixed_order_groups() {
 
     assert_eq!(queue.len(), 6);
 
-    // 第一个出队应该是 t1-1（创建时间最早）
+    // 全局堆初始有：t1-1 (created_at=1), t2-1 (created_at=4), parallel (created_at=6)
+    // 每个 order_key 的第一条消息入队时就被放到全局堆（只要该 order_key 还没有消息在全局堆）
+
+    // 第一个出队是 t1-1（created_at 最早）
     let first = queue.dequeue_next(&ctx).unwrap().unwrap();
     assert_eq!(first.id(), "t1-1");
-    // t1-1 出队后，t1-2 自动 refill 到全局堆，t1-2 created_at 更早，所以第二个出队是 t1-2
+
+    // t1-1 出队后不 refill，下一个是 t2-1（created_at=4）
     let second = queue.dequeue_next(&ctx).unwrap().unwrap();
-    assert_eq!(second.id(), "t1-2");
-    // t1-2 出队后，t1-3 自动 refill 到全局堆，第三个出队是 t1-3
+    assert_eq!(second.id(), "t2-1");
+
+    // t2-1 出队后不 refill，下一个是 parallel（created_at=6）
     let third = queue.dequeue_next(&ctx).unwrap().unwrap();
-    assert_eq!(third.id(), "t1-3");
-    // t1 全部已出队，不再 refill，接下来是 t2-1（created_at 4）
-    let fourth = queue.dequeue_next(&ctx).unwrap().unwrap();
-    assert_eq!(fourth.id(), "t2-1");
-    // t2-1 出队后，t2-2 自动 refill，第五个出队是 t2-2
-    let fifth = queue.dequeue_next(&ctx).unwrap().unwrap();
-    assert_eq!(fifth.id(), "t2-2");
-    // t2 全部已出队，最后是 parallel
-    let sixth = queue.dequeue_next(&ctx).unwrap().unwrap();
-    assert_eq!(sixth.id(), "parallel");
-    // 队列空了（全部都已经出队到 in_progress）
-    // 现在所有事件都已经出队了（自动 refill 把同组都提前出队到全局堆）
-    // 只剩下 ack 流程
-    // ack t1-1
+    assert_eq!(third.id(), "parallel");
+
+    // 现在全局堆空了
+    let fourth = queue.dequeue_next(&ctx).unwrap();
+    assert!(fourth.is_none());
+
+    // ack t1-1，触发 refill t1-2
     queue.ack(&ctx, "t1-1").unwrap();
-    // ack t1-2
+    let fifth = queue.dequeue_next(&ctx).unwrap().unwrap();
+    assert_eq!(fifth.id(), "t1-2");
+
+    // dequeue 又空了
+    let sixth = queue.dequeue_next(&ctx).unwrap();
+    assert!(sixth.is_none());
+
+    // ack t1-2，触发 refill t1-3
     queue.ack(&ctx, "t1-2").unwrap();
-    // ack t1-3
+    let seventh = queue.dequeue_next(&ctx).unwrap().unwrap();
+    assert_eq!(seventh.id(), "t1-3");
     queue.ack(&ctx, "t1-3").unwrap();
-    // ack t2-1
+
+    // ack t2-1，触发 refill t2-2
     queue.ack(&ctx, "t2-1").unwrap();
-    // ack t2-2
+    let eighth = queue.dequeue_next(&ctx).unwrap().unwrap();
+    assert_eq!(eighth.id(), "t2-2");
     queue.ack(&ctx, "t2-2").unwrap();
-    // ack parallel → 全部完成
+
+    // ack parallel
     queue.ack(&ctx, "parallel").unwrap();
 
     assert!(queue.is_empty());
