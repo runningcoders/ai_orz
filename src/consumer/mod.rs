@@ -154,4 +154,7 @@ pub async fn init(config: &common::config::ConsumerConfig) -> Result<()> {
 // ==================== 测试模块 ====================
 
 #[cfg(test)]
-mod tests;
+mod tests;          // 通用消费者框架测试
+
+#[cfg(test)]
+mod message_tests;  // Message Topic 消费者测试
