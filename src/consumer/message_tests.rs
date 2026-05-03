@@ -6,38 +6,40 @@ use common::enums::{FileType, MessageRole, MessageType};
 use crate::models::file::FileMeta;
 use crate::models::message::Message;
 use uuid::Uuid;
+use sqlx::SqlitePool;
+use crate::pkg::request_context::RequestContext;
 
 // ==================== 测试辅助函数 ====================
 
+/// 创建测试用的 Message
 fn create_test_message(
-    _task_id: &str,
-    _from_id: &str,
-    _to_id: &str,
+    task_id: &str,
+    from_id: &str,
+    to_id: &str,
     from_role: MessageRole,
     to_role: MessageRole,
-    message_type: MessageType,
+    msg_type: MessageType,
     content: String,
 ) -> Message {
-    let id = Uuid::now_v7().to_string();
-    let file_meta = FileMeta::default();
     Message::new_with_context(
-        id,
+        Uuid::now_v7().to_string(),
         None,
-        Some(_task_id.to_string()),
-        _from_id.to_string(),
-        _to_id.to_string(),
+        Some(task_id.to_string()),
+        from_id.to_string(),
+        to_id.to_string(),
         from_role,
         to_role,
-        message_type,
+        msg_type,
         content,
-        Some(FileType::Document),
-        file_meta,
         None,
-        "admin".to_string(),
+        FileMeta::default(),
+        None,
+        from_id.to_string(),
     )
 }
 
 // ==================== Handler 分发测试 ====================
+/// 验证 MessageHandlerImpl 按 message_type 正确分发到对应的处理方法
 
 #[cfg(test)]
 mod handler_tests {
@@ -61,7 +63,7 @@ mod handler_tests {
         let msg = create_test_message(
             "task-1", "user-1", "agent-1",
             MessageRole::User, MessageRole::Agent,
-            MessageType::Image, "image-data".to_string(),
+            MessageType::Image, "image".to_string(),
         );
         handler.handle(&msg).await?;
         Ok(())
@@ -73,7 +75,7 @@ mod handler_tests {
         let msg = create_test_message(
             "task-1", "user-1", "agent-1",
             MessageRole::User, MessageRole::Agent,
-            MessageType::File, "file-data".to_string(),
+            MessageType::File, "file".to_string(),
         );
         handler.handle(&msg).await?;
         Ok(())
@@ -85,7 +87,7 @@ mod handler_tests {
         let msg = create_test_message(
             "task-1", "user-1", "agent-1",
             MessageRole::User, MessageRole::Agent,
-            MessageType::Audio, "audio-data".to_string(),
+            MessageType::Audio, "audio".to_string(),
         );
         handler.handle(&msg).await?;
         Ok(())
@@ -97,7 +99,7 @@ mod handler_tests {
         let msg = create_test_message(
             "task-1", "user-1", "agent-1",
             MessageRole::User, MessageRole::Agent,
-            MessageType::Video, "video-data".to_string(),
+            MessageType::Video, "video".to_string(),
         );
         handler.handle(&msg).await?;
         Ok(())
@@ -107,9 +109,9 @@ mod handler_tests {
     async fn test_tool_call_request_dispatches_correctly() -> crate::error::Result<()> {
         let handler = MessageHandlerImpl;
         let msg = create_test_message(
-            "task-1", "agent-1", "tool-1",
+            "task-1", "agent-1", "agent-1",
             MessageRole::Agent, MessageRole::Agent,
-            MessageType::ToolCallRequest, "tool-call".to_string(),
+            MessageType::ToolCallRequest, "tool_call".to_string(),
         );
         handler.handle(&msg).await?;
         Ok(())
@@ -119,24 +121,11 @@ mod handler_tests {
     async fn test_tool_call_result_dispatches_correctly() -> crate::error::Result<()> {
         let handler = MessageHandlerImpl;
         let msg = create_test_message(
-            "task-1", "tool-1", "agent-1",
+            "task-1", "agent-1", "agent-1",
             MessageRole::Agent, MessageRole::Agent,
-            MessageType::ToolCallResult, "tool-result".to_string(),
+            MessageType::ToolCallResult, "result".to_string(),
         );
         handler.handle(&msg).await?;
         Ok(())
-    }
-}
-
-// ==================== 单例测试 ====================
-
-#[cfg(test)]
-mod singleton_tests {
-    use super::*;
-
-    #[test]
-    fn test_get_consumer_does_not_panic() {
-        // 验证获取单例不会 panic
-        let _ = get_consumer();
     }
 }

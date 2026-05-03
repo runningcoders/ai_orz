@@ -93,24 +93,54 @@ where
         }
     }
 
+    /// 消费单条消息（用于测试和调试）
+    /// 返回是否消费了消息
+    pub async fn consume_one(&self) -> Result<bool> {
+        match self.fetcher.dequeue_next().await {
+            Ok(Some(event)) => {
+                let event_id = event.id();
+                tracing::debug!("[{}] processing event: {}", self.topic, event_id);
+                
+                match self.handler.handle(&event).await {
+                    Ok(_) => {
+                        tracing::debug!("[{}] event {} handled successfully, acking", self.topic, event_id);
+                        self.fetcher.ack(event_id).await?;
+                        Ok(true)
+                    }
+                    Err(e) => {
+                        tracing::error!("[{}] event {} handle error: {}, nacking", self.topic, event_id, e);
+                        self.fetcher.nack(event_id).await?;
+                        // 处理失败也算完成了一次消费，返回 Ok 但日志记录错误
+                        Ok(true)
+                    }
+                }
+            }
+            Ok(None) => {
+                // 队列为空
+                Ok(false)
+            }
+            Err(e) => {
+                tracing::error!("[{}] dequeue error: {}", self.topic, e);
+                Err(e)
+            }
+        }
+    }
+
     /// 单个 worker 循环
     async fn run_worker(&self, worker_id: usize) {
         tracing::info!("[{}] worker {} started", self.topic, worker_id);
 
         loop {
-            match self.fetcher.dequeue_next().await {
-                Ok(Some(event)) => {
-                    // TODO: 获取 event.id() 需要 E 实现 Event trait
-                    // 暂时不处理，后续完善
-                    let _ = self.handler.handle(&event).await;
-                }
-                Ok(None) => {
-                    // 队列为空，休眠
-                    self.sleep_empty().await;
+            match self.consume_one().await {
+                Ok(consumed) => {
+                    if !consumed {
+                        // 队列为空，休眠
+                        self.sleep_empty().await;
+                    }
                 }
                 Err(e) => {
                     tracing::error!(
-                        "[{}] worker {} dequeue error: {}",
+                        "[{}] worker {} consume error: {}",
                         self.topic,
                         worker_id,
                         e
