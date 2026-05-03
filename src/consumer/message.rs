@@ -5,6 +5,7 @@
 use super::{GenericConsumer, MessageFetcher, MessageHandler};
 use async_trait::async_trait;
 use common::config::TopicConsumerConfig;
+use common::enums::MessageType;
 use crate::error::Result;
 use crate::models::message::Message;
 use std::sync::{Arc, OnceLock};
@@ -63,17 +64,77 @@ impl MessageFetcher<Message> for MessageFetcherImpl {
 #[async_trait]
 impl MessageHandler<Message> for MessageHandlerImpl {
     async fn handle(&self, message: &Message) -> Result<()> {
-        // TODO: 按 message_type 路由到对应 domain 业务方法
-        // 目前先空实现，后续逐步完善
-
         tracing::debug!("received message: {:?}", message.message_type());
 
-        // 暂时直接返回成功
+        // 按 message_type 分发到具体处理方法
+        match message.message_type() {
+            MessageType::Text => self.handle_text(message).await?,
+            MessageType::Image => self.handle_image(message).await?,
+            MessageType::File => self.handle_file(message).await?,
+            MessageType::Audio => self.handle_audio(message).await?,
+            MessageType::Video => self.handle_video(message).await?,
+            MessageType::ToolCallRequest => self.handle_tool_call_request(message).await?,
+            MessageType::ToolCallResult => self.handle_tool_call_result(message).await?,
+        }
+
         Ok(())
     }
 }
 
-// ==================== 初始化方法 ====================
+// ==================== 各消息类型的独立处理方法 ====================
+
+impl MessageHandlerImpl {
+    /// 文本消息处理
+    async fn handle_text(&self, _message: &Message) -> Result<()> {
+        // TODO: 根据 role 进一步分发：User->Agent 调用 Brain，Agent->User 推送等
+        Ok(())
+    }
+
+    /// 图片消息处理
+    async fn handle_image(&self, _message: &Message) -> Result<()> {
+        // TODO: 图片消息处理
+        Ok(())
+    }
+
+    /// 文件消息处理
+    async fn handle_file(&self, _message: &Message) -> Result<()> {
+        // TODO: 文件消息处理
+        Ok(())
+    }
+
+    /// 音频消息处理
+    async fn handle_audio(&self, _message: &Message) -> Result<()> {
+        // TODO: 音频消息处理
+        Ok(())
+    }
+
+    /// 视频消息处理
+    async fn handle_video(&self, _message: &Message) -> Result<()> {
+        // TODO: 视频消息处理
+        Ok(())
+    }
+
+    /// 工具调用请求处理
+    async fn handle_tool_call_request(&self, _message: &Message) -> Result<()> {
+        // TODO: domain.tool.execute_tool_call
+        Ok(())
+    }
+
+    /// 工具调用结果处理
+    async fn handle_tool_call_result(&self, _message: &Message) -> Result<()> {
+        // TODO: 工具结果持久化 + 上下文更新
+        Ok(())
+    }
+}
+
+// ==================== 初始化与单例访问 ====================
+
+/// 获取 Message 消费者单例
+///
+/// 用于监控、统计、状态检查等场景
+pub fn get_consumer() -> Option<&'static MessageConsumer> {
+    MESSAGE_CONSUMER.get().map(|arc| &**arc)
+}
 
 /// 初始化并启动 Message 消费者
 ///
