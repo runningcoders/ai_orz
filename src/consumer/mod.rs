@@ -150,3 +150,8 @@ pub async fn init(config: &common::config::ConsumerConfig) -> Result<()> {
     tracing::info!("all consumers initialized and started");
     Ok(())
 }
+
+// ==================== 测试模块 ====================
+
+#[cfg(test)]
+mod tests;
