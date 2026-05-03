@@ -5,7 +5,7 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 ![GitHub last commit](https://img.shields.io/github/last-commit/runningcoders/ai_orz)
 ![GitHub license](https://img.shields.io/github/license/runningcoders/ai_orz)
 ![Rust](https://img.shields.io/badge/Rust-1.85+-000000?logo=rust)
-![Tests](https://img.shields.io/badge/tests-175%20%E2%9C%94-brightgreen)
+![Tests](https://img.shields.io/badge/tests-191%20%E2%9C%94-brightgreen)
 [![GitHub stars](https://img.shields.io/github/stars/runningcoders/ai_orz?style=social)](https://github.com/runningcoders/ai_orz)
 
 ## 技术栈
@@ -25,7 +25,8 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 - 📚 **技能库** - 可复用技能和工作流管理，支持搜索和分类
 - 📋 **任务项目管理** - 项目聚合对话，任务跟踪进度和状态
 - 📎 **统一附件存储** - 消息附件和项目产物统一存储
-- 🏗️ **严格分层架构落地** - DAO/DAL/Domain/Handler 四层职责清晰，175 个测试全部通过
+- 🚀 **异步消费者系统** - 通用消费者框架 + Message Topic 三层分发（Agent/User/System）
+- 🏗️ **严格分层架构落地** - DAO/DAL/Domain/Handler/Consumer 五层职责清晰，191 个测试全部通过
 - 🔍 **完整单元测试覆盖** - 数据层 + 领域层 100% 测试覆盖
 
 ## 项目结构
@@ -47,6 +48,7 @@ ai_orz/
 │   │   └── domain/     # 领域层（核心业务逻辑）
 │   ├── middleware/     # Axum 中间件（JWT认证、RequestContext注入）
 │   ├── models/         # 持久化实体 PO
+│   ├── consumer/       # 异步消费者系统（通用框架 + 各 Topic 消费者）
 │   └── pkg/           # 公共工具包
 ├── frontend/            # Dioxus 前端源码
 │   ├── build.rs        # 构建脚本：编译时读取配置嵌入前端
@@ -61,6 +63,7 @@ ai_orz/
 │   ├── NAMING_CONVENTION.md # 项目命名规范
 │   ├── tool_design.md  # 工具模块设计文档（混合模式工具调用 + 工具调用追踪）
 │   ├── message_interaction_design.md # 消息交互与混合模式工具调用设计
+│   ├── consumer_architecture.md # 消费者架构设计文档（通用框架 + 三层分发）
 │   ├── event_design.md  # 事件总线设计文档
 │   ├── skill_design.md # 技能系统设计文档（两级技能库 + Agent自进化）
 │   ├── task_design.md  # 任务系统设计文档
@@ -89,6 +92,9 @@ ai_orz/
 | **EventQueue** | 基础设施 | 轻量级内存事件总线，支持优先级排序和顺序保证 |
 | **ToolRegistry** | 基础设施 | 统一工具注册中心，管理内置/动态/MCP/HTTP 工具 |
 | **Message** | 消息交互 | 用户 ↔ Agent 对话消息存储，支持工具调用消息复用消息表 |
+| **Consumer** | 异步处理层 | 通用消费者框架，支持 Worker 池、并发控制、重试机制 |
+| **MessageFetcher** | 异步处理层 | 消息拉取器 Trait，对接 Domain 层 |
+| **MessageHandler** | 异步处理层 | 消息处理器 Trait，按 to_role 三层分发（Agent/User/System） |
 
 ## 最终实体层次关系 🎯
 
