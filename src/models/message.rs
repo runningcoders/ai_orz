@@ -49,6 +49,11 @@ impl Message {
         self.po.task_id.as_deref()
     }
 
+    /// 获取消息类型
+    pub fn message_type(&self) -> MessageType {
+        self.po.message_type
+    }
+
     /// 创建新 Message（完整参数，指定 project_id 和 task_id）
     pub fn new_with_context(
         id: String,

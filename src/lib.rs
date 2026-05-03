@@ -1,6 +1,7 @@
 //! ai_orz - AI 代理执行框架
 
 pub mod config;
+pub mod consumer;
 pub mod error;
 pub mod handlers;
 pub mod middleware;

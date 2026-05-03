@@ -5,6 +5,7 @@
 
 use crate::enums::SkillStatus;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 /// 固定的基础数据根目录
@@ -40,6 +41,10 @@ pub struct AppConfig {
     /// JWT 配置
     #[serde(default)]
     pub jwt: JwtConfig,
+
+    /// 消费者配置
+    #[serde(default)]
+    pub consumer: ConsumerConfig,
 }
 
 /// JWT 配置
@@ -294,4 +299,76 @@ impl AppConfig {
             .join(tool_id)
             .join("call_trace")
     }
+}
+
+// ==================== 消费者配置 ====================
+
+/// 消费者全局配置
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ConsumerConfig {
+    /// 全局默认并发数
+    #[serde(default = "default_consumer_concurrency")]
+    pub concurrency: usize,
+
+    /// 全局默认空队列睡眠时间（ms）
+    #[serde(default = "default_consumer_empty_sleep")]
+    pub empty_queue_sleep_ms: u64,
+
+    /// 全局默认错误重试睡眠时间（ms）
+    #[serde(default = "default_consumer_error_sleep")]
+    pub error_retry_sleep_ms: u64,
+
+    /// Topic 专属配置（覆盖全局）
+    #[serde(default)]
+    pub topics: HashMap<String, TopicConsumerConfig>,
+}
+
+impl Default for ConsumerConfig {
+    fn default() -> Self {
+        Self {
+            concurrency: default_consumer_concurrency(),
+            empty_queue_sleep_ms: default_consumer_empty_sleep(),
+            error_retry_sleep_ms: default_consumer_error_sleep(),
+            topics: HashMap::default(),
+        }
+    }
+}
+
+/// Topic 专属消费者配置
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct TopicConsumerConfig {
+    /// 并发数（None 表示继承全局配置）
+    pub concurrency: Option<usize>,
+    /// 空队列睡眠时间（ms，None 表示继承全局配置）
+    pub empty_queue_sleep_ms: Option<u64>,
+    /// 错误重试睡眠时间（ms，None 表示继承全局配置）
+    pub error_retry_sleep_ms: Option<u64>,
+}
+
+impl ConsumerConfig {
+    /// 获取指定 topic 合并后的配置（topic 优先，全局兜底）
+    pub fn for_topic(&self, topic: &str) -> TopicConsumerConfig {
+        let topic_config = self.topics.get(topic).cloned().unwrap_or_default();
+        TopicConsumerConfig {
+            concurrency: topic_config.concurrency.or(Some(self.concurrency)),
+            empty_queue_sleep_ms: topic_config
+                .empty_queue_sleep_ms
+                .or(Some(self.empty_queue_sleep_ms)),
+            error_retry_sleep_ms: topic_config
+                .error_retry_sleep_ms
+                .or(Some(self.error_retry_sleep_ms)),
+        }
+    }
+}
+
+fn default_consumer_concurrency() -> usize {
+    1
+}
+
+fn default_consumer_empty_sleep() -> u64 {
+    100
+}
+
+fn default_consumer_error_sleep() -> u64 {
+    1000
 }

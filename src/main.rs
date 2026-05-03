@@ -1,4 +1,5 @@
 mod config;
+mod consumer;
 mod error;
 mod handlers;
 mod middleware;
@@ -26,6 +27,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 初始化 service 层
     service::init();
     tracing::info!("Service layer initialized");
+
+    // 初始化并启动所有消费者
+    consumer::init(&config.consumer).await?;
+    tracing::info!("All consumers started");
 
     // 前端静态文件目录从配置读取，环境变量可覆盖
     let dist_dir = get_env_or_default("FRONTEND_DIST_DIR", &config.frontend.dist_dir);
