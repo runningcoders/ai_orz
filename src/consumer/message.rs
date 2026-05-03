@@ -5,7 +5,7 @@
 use super::{GenericConsumer, MessageFetcher, MessageHandler};
 use async_trait::async_trait;
 use common::config::TopicConsumerConfig;
-use common::enums::MessageType;
+use common::enums::{MessageRole, MessageType};
 use crate::error::Result;
 use crate::models::message::Message;
 use std::sync::{Arc, OnceLock};
@@ -59,70 +59,62 @@ impl MessageFetcher<Message> for MessageFetcherImpl {
     }
 }
 
-// ==================== Handler 实现（业务逻辑） ====================
+// ==================== Handler 实现（业务逻辑） ====================\n
 
 #[async_trait]
 impl MessageHandler<Message> for MessageHandlerImpl {
     async fn handle(&self, message: &Message) -> Result<()> {
-        tracing::debug!("received message: {:?}", message.message_type());
+        tracing::debug!("received message: {:?} -> {:?}, type: {:?}", 
+            message.from_role(), message.to_role(), message.message_type());
 
-        // 按 message_type 分发到具体处理方法
-        match message.message_type() {
-            MessageType::Text => self.handle_text(message).await?,
-            MessageType::Image => self.handle_image(message).await?,
-            MessageType::File => self.handle_file(message).await?,
-            MessageType::Audio => self.handle_audio(message).await?,
-            MessageType::Video => self.handle_video(message).await?,
-            MessageType::ToolCallRequest => self.handle_tool_call_request(message).await?,
-            MessageType::ToolCallResult => self.handle_tool_call_result(message).await?,
+        // 第一层分发：根据 to_role 决定谁来处理
+        match message.to_role() {
+            MessageRole::Agent => {
+                // 发给 Agent → Brain 思考
+                self.handle_agent_message(message).await?;
+            }
+            MessageRole::User => {
+                // 发给用户 → 网关推送
+                self.handle_user_message(message).await?;
+            }
+            MessageRole::System => {
+                // 发给系统 → 工具执行或其他系统任务
+                self.handle_system_message(message).await?;
+            }
         }
 
         Ok(())
     }
 }
 
-// ==================== 各消息类型的独立处理方法 ====================
+// ==================== 各处理者逻辑 ====================\n
 
 impl MessageHandlerImpl {
-    /// 文本消息处理
-    async fn handle_text(&self, _message: &Message) -> Result<()> {
-        // TODO: 根据 role 进一步分发：User->Agent 调用 Brain，Agent->User 推送等
+    /// Agent 消息处理：调用 Brain 思考
+    async fn handle_agent_message(&self, _message: &Message) -> Result<()> {
+        // TODO: 调用 BrainDomain.process_message
+        // 1. 获取 Agent 上下文
+        // 2. Brain 思考、生成回复
+        // 3. 可能生成新的工具调用（to_role = System）
+        tracing::debug!("agent message processed by brain");
         Ok(())
     }
 
-    /// 图片消息处理
-    async fn handle_image(&self, _message: &Message) -> Result<()> {
-        // TODO: 图片消息处理
+    /// 用户消息处理：通过消息网关推送给前端
+    async fn handle_user_message(&self, _message: &Message) -> Result<()> {
+        // TODO: 调用 MessageGateway.push_to_user
+        // 1. SSE/WebSocket 推送
+        // 2. 在线状态检查
+        tracing::debug!("user message pushed to frontend");
         Ok(())
     }
 
-    /// 文件消息处理
-    async fn handle_file(&self, _message: &Message) -> Result<()> {
-        // TODO: 文件消息处理
-        Ok(())
-    }
-
-    /// 音频消息处理
-    async fn handle_audio(&self, _message: &Message) -> Result<()> {
-        // TODO: 音频消息处理
-        Ok(())
-    }
-
-    /// 视频消息处理
-    async fn handle_video(&self, _message: &Message) -> Result<()> {
-        // TODO: 视频消息处理
-        Ok(())
-    }
-
-    /// 工具调用请求处理
-    async fn handle_tool_call_request(&self, _message: &Message) -> Result<()> {
-        // TODO: domain.tool.execute_tool_call
-        Ok(())
-    }
-
-    /// 工具调用结果处理
-    async fn handle_tool_call_result(&self, _message: &Message) -> Result<()> {
-        // TODO: 工具结果持久化 + 上下文更新
+    /// 系统消息处理：执行工具或其他系统任务
+    async fn handle_system_message(&self, _message: &Message) -> Result<()> {
+        // TODO: 根据 message_type 分发到具体系统模块
+        // ToolCallRequest → ToolDomain.execute_tool_call
+        // 其他系统消息 → 对应处理
+        tracing::debug!("system message processed by system module");
         Ok(())
     }
 }

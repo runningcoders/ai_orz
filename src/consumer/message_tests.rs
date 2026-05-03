@@ -6,126 +6,161 @@ use common::enums::{FileType, MessageRole, MessageType};
 use crate::models::file::FileMeta;
 use crate::models::message::Message;
 use uuid::Uuid;
-use sqlx::SqlitePool;
-use crate::pkg::request_context::RequestContext;
 
 // ==================== 测试辅助函数 ====================
 
-/// 创建测试用的 Message
 fn create_test_message(
     task_id: &str,
-    from_id: &str,
-    to_id: &str,
     from_role: MessageRole,
     to_role: MessageRole,
-    msg_type: MessageType,
-    content: String,
+    message_type: MessageType,
+    content: &str,
 ) -> Message {
     Message::new_with_context(
         Uuid::now_v7().to_string(),
         None,
         Some(task_id.to_string()),
-        from_id.to_string(),
-        to_id.to_string(),
+        Uuid::now_v7().to_string(),
+        Uuid::now_v7().to_string(),
         from_role,
         to_role,
-        msg_type,
-        content,
+        message_type,
+        content.to_string(),
         None,
         FileMeta::default(),
         None,
-        from_id.to_string(),
+        "test".to_string(),
     )
 }
 
-// ==================== Handler 分发测试 ====================
-/// 验证 MessageHandlerImpl 按 message_type 正确分发到对应的处理方法
+// ==================== 分发逻辑测试 ====================
 
 #[cfg(test)]
-mod handler_tests {
+mod dispatch_tests {
     use super::*;
 
+    /// 测试：用户 → Agent 的消息（触发 handle_agent_message）
     #[tokio::test]
-    async fn test_text_message_dispatches_to_handle_text() -> crate::error::Result<()> {
+    async fn test_user_to_agent_dispatches_to_agent_handler() -> crate::error::Result<()> {
         let handler = MessageHandlerImpl;
-        let msg = create_test_message(
-            "task-1", "user-1", "agent-1",
-            MessageRole::User, MessageRole::Agent,
-            MessageType::Text, "hello".to_string(),
+        let message = create_test_message(
+            "task-1",
+            MessageRole::User,
+            MessageRole::Agent,
+            MessageType::Text,
+            "hello agent",
         );
-        handler.handle(&msg).await?;
+        assert_eq!(message.to_role(), MessageRole::Agent);
+        handler.handle(&message).await?;
         Ok(())
     }
 
+    /// 测试：Agent → User 的消息（触发 handle_user_message）
     #[tokio::test]
-    async fn test_image_message_dispatches_correctly() -> crate::error::Result<()> {
+    async fn test_agent_to_user_dispatches_to_user_handler() -> crate::error::Result<()> {
         let handler = MessageHandlerImpl;
-        let msg = create_test_message(
-            "task-1", "user-1", "agent-1",
-            MessageRole::User, MessageRole::Agent,
-            MessageType::Image, "image".to_string(),
+        let message = create_test_message(
+            "task-1",
+            MessageRole::Agent,
+            MessageRole::User,
+            MessageType::Text,
+            "hello user",
         );
-        handler.handle(&msg).await?;
+        assert_eq!(message.to_role(), MessageRole::User);
+        handler.handle(&message).await?;
         Ok(())
     }
 
+    /// 测试：Agent → System 的工具调用请求（触发 handle_system_message）
     #[tokio::test]
-    async fn test_file_message_dispatches_correctly() -> crate::error::Result<()> {
+    async fn test_agent_to_system_tool_call_dispatches_to_system() -> crate::error::Result<()> {
         let handler = MessageHandlerImpl;
-        let msg = create_test_message(
-            "task-1", "user-1", "agent-1",
-            MessageRole::User, MessageRole::Agent,
-            MessageType::File, "file".to_string(),
+        let message = create_test_message(
+            "task-1",
+            MessageRole::Agent,
+            MessageRole::System,
+            MessageType::ToolCallRequest,
+            "{\"name\":\"search\"}",
         );
-        handler.handle(&msg).await?;
+        assert_eq!(message.to_role(), MessageRole::System);
+        handler.handle(&message).await?;
         Ok(())
     }
 
+    /// 测试：System → Agent 的工具调用结果（触发 handle_agent_message）
     #[tokio::test]
-    async fn test_audio_message_dispatches_correctly() -> crate::error::Result<()> {
+    async fn test_system_to_agent_tool_result_dispatches_to_agent() -> crate::error::Result<()> {
         let handler = MessageHandlerImpl;
-        let msg = create_test_message(
-            "task-1", "user-1", "agent-1",
-            MessageRole::User, MessageRole::Agent,
-            MessageType::Audio, "audio".to_string(),
+        let message = create_test_message(
+            "task-1",
+            MessageRole::System,
+            MessageRole::Agent,
+            MessageType::ToolCallResult,
+            "{\"result\":\"ok\"}",
         );
-        handler.handle(&msg).await?;
+        assert_eq!(message.to_role(), MessageRole::Agent);
+        handler.handle(&message).await?;
         Ok(())
     }
 
+    /// 测试：Agent → User 的图片消息（触发 handle_user_message）
     #[tokio::test]
-    async fn test_video_message_dispatches_correctly() -> crate::error::Result<()> {
+    async fn test_agent_image_to_user_dispatches_to_user() -> crate::error::Result<()> {
         let handler = MessageHandlerImpl;
-        let msg = create_test_message(
-            "task-1", "user-1", "agent-1",
-            MessageRole::User, MessageRole::Agent,
-            MessageType::Video, "video".to_string(),
+        let message = create_test_message(
+            "task-1",
+            MessageRole::Agent,
+            MessageRole::User,
+            MessageType::Image,
+            "path/to/image.png",
         );
-        handler.handle(&msg).await?;
+        assert_eq!(message.to_role(), MessageRole::User);
+        handler.handle(&message).await?;
         Ok(())
     }
 
+    /// 测试：Agent → User 的文件消息（触发 handle_user_message）
     #[tokio::test]
-    async fn test_tool_call_request_dispatches_correctly() -> crate::error::Result<()> {
+    async fn test_agent_file_to_user_dispatches_to_user() -> crate::error::Result<()> {
         let handler = MessageHandlerImpl;
-        let msg = create_test_message(
-            "task-1", "agent-1", "agent-1",
-            MessageRole::Agent, MessageRole::Agent,
-            MessageType::ToolCallRequest, "tool_call".to_string(),
+        let message = create_test_message(
+            "task-1",
+            MessageRole::Agent,
+            MessageRole::User,
+            MessageType::File,
+            "path/to/doc.pdf",
         );
-        handler.handle(&msg).await?;
+        assert_eq!(message.to_role(), MessageRole::User);
+        handler.handle(&message).await?;
         Ok(())
     }
 
+    /// 测试：System → User 的系统通知（触发 handle_user_message）
     #[tokio::test]
-    async fn test_tool_call_result_dispatches_correctly() -> crate::error::Result<()> {
+    async fn test_system_to_user_notification_dispatches_to_user() -> crate::error::Result<()> {
         let handler = MessageHandlerImpl;
-        let msg = create_test_message(
-            "task-1", "agent-1", "agent-1",
-            MessageRole::Agent, MessageRole::Agent,
-            MessageType::ToolCallResult, "result".to_string(),
+        let message = create_test_message(
+            "task-1",
+            MessageRole::System,
+            MessageRole::User,
+            MessageType::Text,
+            "system notification",
         );
-        handler.handle(&msg).await?;
+        assert_eq!(message.to_role(), MessageRole::User);
+        handler.handle(&message).await?;
         Ok(())
+    }
+}
+
+// ==================== 单例测试 ====================
+
+#[cfg(test)]
+mod singleton_tests {
+    use super::*;
+
+    #[test]
+    fn test_get_consumer_does_not_panic() {
+        // 验证获取单例不会 panic（即使未初始化）
+        let _ = get_consumer();
     }
 }

@@ -54,6 +54,14 @@ impl Message {
         self.po.message_type
     }
 
+    pub fn from_role(&self) -> MessageRole {
+        self.po.from_role
+    }
+
+    pub fn to_role(&self) -> MessageRole {
+        self.po.to_role
+    }
+
     /// 创建新 Message（完整参数，指定 project_id 和 task_id）
     pub fn new_with_context(
         id: String,
