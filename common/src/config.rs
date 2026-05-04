@@ -100,6 +100,10 @@ pub struct DatabaseConfig {
     /// SQLite 数据库文件名（相对于 base_data_path）
     #[serde(default = "default_db_file_name")]
     pub db_file_name: String,
+    
+    /// 向量数据库文件名（相对于 base_data_path）
+    #[serde(default = "default_vector_db_file_name")]
+    pub vector_db_file_name: String,
 }
 
 /// 前端配置
@@ -125,6 +129,10 @@ fn default_db_file_name() -> String {
     "ai_orz.db".to_string()
 }
 
+fn default_vector_db_file_name() -> String {
+    "ai_orz_vector.db".to_string()
+}
+
 fn default_dist_dir() -> String {
     "dist".to_string()
 }
@@ -133,6 +141,7 @@ impl Default for DatabaseConfig {
     fn default() -> Self {
         Self {
             db_file_name: default_db_file_name(),
+            vector_db_file_name: default_vector_db_file_name(),
         }
     }
 }
@@ -193,6 +202,11 @@ impl AppConfig {
     /// 获取数据库文件路径
     pub fn db_path(&self) -> PathBuf {
         self.base_data_path().join(&self.database.db_file_name)
+    }
+
+    /// 获取向量数据库文件路径
+    pub fn vector_db_path(&self) -> PathBuf {
+        self.base_data_path().join(&self.database.vector_db_file_name)
     }
 
     /// 获取产物/附件存储根目录路径（消息附件、Agent 生成文件等）

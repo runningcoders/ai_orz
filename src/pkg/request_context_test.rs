@@ -8,7 +8,7 @@ fn create_test_pool() -> SqlitePool {
     crate::config::init().unwrap();
     let rt = Runtime::new().unwrap();
     rt.block_on(async {
-        crate::pkg::storage::init("sqlite::memory:").await;
+        crate::pkg::storage::init_for_test().await;
         crate::pkg::storage::get().pool_owned()
     })
 }
@@ -17,11 +17,7 @@ fn create_test_pool() -> SqlitePool {
 fn test_request_context() {
     crate::config::init().unwrap();
     // 创建一个内存数据库用于测试
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let pool = rt.block_on(async {
-        crate::pkg::storage::init("sqlite::memory:").await;
-        crate::pkg::storage::get().pool_owned()
-    });
+    let pool = create_test_pool();
     let ctx = RequestContext::new_simple("user1", pool);
     assert!(!ctx.log_id.is_empty());
     assert_eq!(ctx.uid(), "user1");
@@ -29,8 +25,8 @@ fn test_request_context() {
 
 #[test]
 fn test_log_id_format() {
-    let _pool = create_test_pool();
-    let ctx = RequestContext::new_simple("", _pool);
+    let pool = create_test_pool();
+    let ctx = RequestContext::new_simple("", pool);
     let log_id = &ctx.log_id;
     assert_eq!(log_id.len(), 20, "log_id 长度应为20位");
     assert!(
@@ -41,9 +37,9 @@ fn test_log_id_format() {
 
 #[test]
 fn test_log_id_uniqueness() {
-    let _pool = create_test_pool();
-    let ctx1 = RequestContext::new_simple("", _pool.clone());
-    let ctx2 = RequestContext::new_simple("", _pool);
+    let pool = create_test_pool();
+    let ctx1 = RequestContext::new_simple("", pool.clone());
+    let ctx2 = RequestContext::new_simple("", pool);
     println!("ctx1: {}, ctx2: {}", ctx1.log_id, ctx2.log_id);
     assert_ne!(ctx1.log_id, ctx2.log_id);
 }
@@ -105,26 +101,53 @@ fn test_context_uname_helper() {
 
     let mut headers = axum::http::HeaderMap::new();
     headers.insert(
-        axum::http::header::HeaderName::from_static("x-user-id"),
+        axum::http::header::HeaderName::from_static("x-username"),
         HeaderValue::from_static("test_user"),
     );
-    headers.insert(
-        axum::http::header::HeaderName::from_static("x-username"),
-        HeaderValue::from_static("test_name"),
-    );
-
     let ctx = RequestContext::from_headers(&headers);
-    assert_eq!(ctx.uname(), "test_name");
+    assert_eq!(ctx.uname(), "test_user");
 
-    let headers_empty = axum::http::HeaderMap::new();
-    let ctx_empty = RequestContext::from_headers(&headers_empty);
-    assert_eq!(ctx_empty.uname(), "");
+    // new_simple 测试 username 为空
+    let storage2 = create_test_pool();
+    let ctx2 = RequestContext::new_simple("user_id", storage2);
+    assert_eq!(ctx2.uname(), "");
 }
 
 #[test]
-fn test_context_clone() {
-    let pool = create_test_pool();
-    let ctx1 = RequestContext::new_simple("test_user", pool);
+fn test_format_timestamp() {
+    use chrono::Utc;
+    let timestamp = Utc::now().timestamp_millis() as u64;
+    let formatted = format_timestamp(timestamp);
+    assert_eq!(formatted.len(), 14, "时间戳格式化后应为14位数字");
+    assert!(
+        formatted.chars().all(|c| c.is_ascii_digit()),
+        "格式化后的时间戳必须全为数字"
+    );
+}
+
+#[test]
+fn test_generate_log_id() {
+    // 测试 log_id 生成的格式
+    let storage = create_test_pool();
+    let ctx = RequestContext::new_simple("", storage);
+    let log_id = ctx.log_id;
+
+    // 格式: yyyyMMddHHmmss + 6位随机数 = 20位
+    assert_eq!(log_id.len(), 20);
+
+    // 前14位应该是当前时间的格式
+    let time_part = &log_id[0..14];
+    assert!(time_part.chars().all(|c| c.is_ascii_digit()));
+
+    // 后6位应该是随机数
+    let random_part = &log_id[14..20];
+    assert!(random_part.chars().all(|c| c.is_ascii_digit()));
+}
+
+#[test]
+fn test_clone_context() {
+    let storage = create_test_pool();
+    let ctx1 = RequestContext::new_simple("user1", storage);
     let ctx2 = ctx1.clone();
 
     assert_eq!(ctx1.log_id, ctx2.log_id);
@@ -133,15 +156,25 @@ fn test_context_clone() {
 }
 
 #[test]
-fn test_generate_log_id() {
-    let log_id = RequestContext::generate_log_id();
-    println!("Generated log_id: {}", log_id);
-    assert_eq!(log_id.len(), 20); // 14 + 3 + 3 = 20
-    assert!(log_id.chars().all(|c| c.is_ascii_digit())); // 纯数字
+fn test_context_agent_id_setter() {
+    let storage = create_test_pool();
+    let mut ctx = RequestContext::new_simple("user1", storage);
+    ctx.set_agent_id("agent_001");
+    assert_eq!(ctx.agent_id, Some("agent_001".to_string()));
 }
 
 #[test]
-fn test_format_timestamp() {
-    let ts = format_timestamp(1709258400); // 2024-03-31 12:00:00 UTC
-    println!("Formatted: {}", ts);
+fn test_context_task_id_setter() {
+    let storage = create_test_pool();
+    let mut ctx = RequestContext::new_simple("user1", storage);
+    ctx.set_task_id("task_001");
+    assert_eq!(ctx.task_id, Some("task_001".to_string()));
+}
+
+#[test]
+fn test_context_project_id_setter() {
+    let storage = create_test_pool();
+    let mut ctx = RequestContext::new_simple("user1", storage);
+    ctx.set_project_id("project_001");
+    assert_eq!(ctx.project_id, Some("project_001".to_string()));
 }

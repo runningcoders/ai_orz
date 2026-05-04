@@ -9,7 +9,7 @@ fn create_test_pool() -> SqlitePool {
     crate::config::init().unwrap();
     let rt = Runtime::new().unwrap();
     rt.block_on(async {
-        crate::pkg::storage::init("sqlite::memory:").await;
+        crate::pkg::storage::init_for_test().await;
         crate::pkg::storage::get().pool_owned()
     })
 }

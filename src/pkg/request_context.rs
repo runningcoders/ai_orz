@@ -3,7 +3,7 @@
 use axum::http;
 use common::constants::http_header;
 use sqlx::sqlite::SqlitePool;
-use crate::pkg::storage;
+use crate::pkg::storage::{self, Storage, SqliteVssStore};
 
 /// 请求上下文
 #[derive(Debug, Clone)]
@@ -23,9 +23,9 @@ pub struct RequestContext {
     pub task_id: Option<String>,
     /// 当前 Project ID（可选，Project 上下文时有值）
     pub project_id: Option<String>,
-
-    /// DB 相关信息
-    db_pool: SqlitePool,
+    
+    /// 统一存储门面（SQLite + Vector）
+    storage: Storage,
 }
 
 impl RequestContext {
@@ -63,7 +63,7 @@ impl RequestContext {
             agent_id: None,
             task_id: None,
             project_id: None,
-            db_pool: storage::get().pool_owned(),
+            storage: storage::get().clone(),
         }
     }
 
@@ -77,11 +77,12 @@ impl RequestContext {
             agent_id: None,
             task_id: None,
             project_id: None,
-            db_pool: storage::get().pool_owned(),
+            storage: storage::get().clone(),
         }
     }
 
-    pub fn new_simple(user_id: &str,  db_pool: SqlitePool) -> RequestContext {
+    /// 创建简化上下文（测试专用，保证数据隔离）
+    pub fn new_simple(user_id: &str, pool: SqlitePool) -> RequestContext {
         Self {
             log_id: Self::generate_log_id(),
             user_id: Some(user_id.to_string()),
@@ -90,7 +91,7 @@ impl RequestContext {
             agent_id: None,
             task_id: None,
             project_id: None,
-            db_pool,
+            storage: Storage::with_sqlite_pool(pool),
         }
     }
 
@@ -99,24 +100,24 @@ impl RequestContext {
         self.log_id = log_id;
     }
 
-    /// 设置组织 ID（JWT 解析结果会覆盖 header 中的值，以 JWT 为准）
-    pub fn set_organization_id(&mut self, organization_id: String) {
-        self.organization_id = Some(organization_id);
+    /// 设置组织 ID
+    pub fn set_organization_id(&mut self, organization_id: impl Into<String>) {
+        self.organization_id = Some(organization_id.into());
     }
 
-    /// 设置当前 Agent ID
-    pub fn set_agent_id(&mut self, agent_id: String) {
-        self.agent_id = Some(agent_id);
+    /// 设置 Agent ID
+    pub fn set_agent_id(&mut self, agent_id: impl Into<String>) {
+        self.agent_id = Some(agent_id.into());
     }
 
-    /// 设置当前 Task ID
-    pub fn set_task_id(&mut self, task_id: String) {
-        self.task_id = Some(task_id);
+    /// 设置 Task ID
+    pub fn set_task_id(&mut self, task_id: impl Into<String>) {
+        self.task_id = Some(task_id.into());
     }
 
-    /// 设置当前 Project ID
-    pub fn set_project_id(&mut self, project_id: String) {
-        self.project_id = Some(project_id);
+    /// 设置 Project ID
+    pub fn set_project_id(&mut self, project_id: impl Into<String>) {
+        self.project_id = Some(project_id.into());
     }
 
     /// 生成新的 log_id
@@ -164,7 +165,18 @@ impl RequestContext {
 
     /// 获取 DB pool
     pub fn db_pool(&self) -> &SqlitePool {
-        &self.db_pool
+        // 从统一 Storage 获取，保持向后兼容
+        self.storage.sqlite_pool()
+    }
+    
+    /// 获取向量存储
+    pub fn vector_store(&self) -> SqliteVssStore {
+        self.storage.vector()
+    }
+    
+    /// 获取统一存储门面
+    pub fn storage(&self) -> &Storage {
+        &self.storage
     }
 }
 
