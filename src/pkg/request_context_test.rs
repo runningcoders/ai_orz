@@ -116,7 +116,7 @@ fn test_context_uname_helper() {
 #[test]
 fn test_format_timestamp() {
     use chrono::Utc;
-    let timestamp = Utc::now().timestamp_millis() as u64;
+    let timestamp = Utc::now().timestamp() as u64;  // 秒级时间戳
     let formatted = format_timestamp(timestamp);
     assert_eq!(formatted.len(), 14, "时间戳格式化后应为14位数字");
     assert!(
