@@ -4,23 +4,28 @@ use serde::{Serialize, Deserialize};
 #[cfg(feature = "sqlx")]
 use sqlx::Type;
 
-/// Agent status (lifecycle management)
+/// Agent 状态（生命周期管理）
+///
+/// 状态流转：
+/// Interviewing → PendingOnboard → Onboarded → PendingOffboard → Offboarded
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "sqlx", derive(Type))]
 #[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
 pub enum AgentStatus {
-    /// Deleted (soft deleted)
+    /// 已删除
     Deleted = 0,
-    /// Interviewing (draft status, being evaluated)
+    /// 面试中（创建 Agent 时的默认状态）
     #[default]
     Interviewing = 1,
-    /// Pending onboarding, ready to be activated
+    /// 待入职（确认入职，正在初始化）
     PendingOnboard = 2,
-    /// Onboarded, fully active and available
+    /// 已入职（正常可用状态）
     Onboarded = 3,
-    /// Offboarded, no longer active
+    /// 已离职
     Offboarded = 4,
+    /// 待离职（交接中，不接受新任务）
+    PendingOffboard = 5,
 }
 
 impl AgentStatus {
