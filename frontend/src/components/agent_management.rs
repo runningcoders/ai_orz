@@ -71,7 +71,7 @@ pub fn AgentManagement() -> Element {
         spawn(async move {
             let req = CreateAgentRequest {
                 name,
-                role: if role.is_empty() { None } else { Some(role) },
+                roles: if role.is_empty() { None } else { Some(vec![role]) },
                 description: None,
                 capabilities: None,
                 soul: None,
@@ -238,7 +238,7 @@ pub fn AgentManagement() -> Element {
                                                 border-bottom: 1px solid #dee2e6;
                                                 color: #666;
                                             ",
-                                            {agent.role.clone().unwrap_or_else(|| "-".to_string())}
+                                            {agent.roles.join(", ")}
                                         }
                                         td {
                                             style: "
