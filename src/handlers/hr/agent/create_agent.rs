@@ -20,10 +20,10 @@ pub async fn create_agent(
 
     let agent_po = AgentPo::new(
         req.name.clone(),
-        req.role.clone().unwrap_or_default(),
-        req.description.clone().unwrap_or_default(),
-        req.capabilities.clone().unwrap_or_default(),
-        req.soul.clone().unwrap_or_default(),
+        req.roles.unwrap_or_default(),
+        req.description.unwrap_or_default(),
+        req.capabilities.unwrap_or_default(),
+        req.soul.unwrap_or_default(),
         req.model_provider_id.clone(),
         ctx.uid().to_string(),
     );

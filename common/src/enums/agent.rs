@@ -4,7 +4,7 @@ use serde::{Serialize, Deserialize};
 #[cfg(feature = "sqlx")]
 use sqlx::Type;
 
-/// AgentPo status (for soft delete)
+/// Agent status (lifecycle management)
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "sqlx", derive(Type))]
@@ -12,9 +12,15 @@ use sqlx::Type;
 pub enum AgentStatus {
     /// Deleted (soft deleted)
     Deleted = 0,
-    /// Normal (available)
+    /// Interviewing (draft status, being evaluated)
     #[default]
-    Normal = 1,
+    Interviewing = 1,
+    /// Pending onboarding, ready to be activated
+    PendingOnboard = 2,
+    /// Onboarded, fully active and available
+    Onboarded = 3,
+    /// Offboarded, no longer active
+    Offboarded = 4,
 }
 
 impl AgentStatus {
@@ -22,7 +28,11 @@ impl AgentStatus {
     pub fn from_i32(v: i32) -> Self {
         match v {
             0 => Self::Deleted,
-            _ => Self::Normal,
+            1 => Self::Interviewing,
+            2 => Self::PendingOnboard,
+            3 => Self::Onboarded,
+            4 => Self::Offboarded,
+            _ => Self::Interviewing,
         }
     }
 

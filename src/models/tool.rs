@@ -123,6 +123,8 @@ pub struct ToolPo {
     pub config: serde_json::Value,
     /// 参数 JSON Schema（动态工具必填，内置工具可选）
     pub parameters_schema: Option<serde_json::Value>,
+    /// 标签列表（JSON string）：用于能力匹配和筛选
+    pub tags: String,
     /// 工具状态
     pub status: ToolStatus,
     /// 创建时间
@@ -172,6 +174,7 @@ impl ToolPo {
         protocol: ToolProtocol,
         config: serde_json::Value,
         parameters_schema: Option<serde_json::Value>,
+        tags: Vec<String>,
         creator: Option<String>,
     ) -> Self {
         let id = if id.is_empty() {
@@ -188,6 +191,7 @@ impl ToolPo {
             control_mode: ControlMode::Auto, // Default to Auto for backward compatibility
             config,
             parameters_schema,
+            tags: serde_json::to_string(&tags).unwrap_or_else(|_| "[]".to_string()),
             status: ToolStatus::Enabled,
             created_at: now,
             updated_at: now,
@@ -210,8 +214,17 @@ impl ToolPo {
             ToolProtocol::Builtin,
             serde_json::Value::Null, // No extra config for built-in tools
             None, // Parameters can be extracted from trait at runtime if needed
+            Vec::new(), // Empty tags by default
             None, // System built-in, no specific creator
         )
+    }
+
+    /// 获取标签列表
+    pub fn get_tags(&self) -> Vec<String> {
+        if self.tags.is_empty() {
+            return Vec::new();
+        }
+        serde_json::from_str(&self.tags).unwrap_or_default()
     }
 
     /// 更新时间戳和修改者

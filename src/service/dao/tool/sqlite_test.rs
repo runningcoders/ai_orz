@@ -28,6 +28,7 @@ async fn test_create_and_get_tool_full(pool: SqlitePool) {
         ToolProtocol::Builtin,
         serde_json::Value::Null,
         None,
+        vec![],
         Some("admin".to_string()),
     );
     let result = tool_dao.create_tool(&ctx.clone(), &tool_po).await;
@@ -51,23 +52,9 @@ async fn test_add_tool_to_agent_and_list(pool: SqlitePool) {
     let tool_dao = dao();
 
     // 创建两个工具
-    let tool1 = ToolPo::new(
-        "tool-1".to_string(),
-        "tool-1".to_string(),
-        "Tool 1".to_string(),
-        ToolProtocol::Builtin,
-        serde_json::Value::Null,
-        None,
-        Some("admin".to_string()),
+    let tool1 = ToolPo::new("tool-1".to_string(), "tool-1".to_string(), "Tool 1".to_string(), ToolProtocol::Builtin, serde_json::Value::Null, None, vec![], Some("admin".to_string()),
     );
-    let tool2 = ToolPo::new(
-        "tool-2".to_string(),
-        "tool-2".to_string(),
-        "Tool 2".to_string(),
-        ToolProtocol::Builtin,
-        serde_json::Value::Null,
-        None,
-        Some("admin".to_string()),
+    let tool2 = ToolPo::new("tool-2".to_string(), "tool-2".to_string(), "Tool 2".to_string(), ToolProtocol::Builtin, serde_json::Value::Null, None, vec![], Some("admin".to_string()),
     );
     let _ = tool_dao.create_tool(&ctx.clone(), &tool1).await;
     let _ = tool_dao.create_tool(&ctx.clone(), &tool2).await;
@@ -94,14 +81,7 @@ async fn test_remove_tool_from_agent(pool: SqlitePool) {
     let tool_dao = dao();
 
     // 创建工具并绑定
-    let tool = ToolPo::new(
-        "tool-to-remove".to_string(),
-        "tool-to-remove".to_string(),
-        "To remove".to_string(),
-        ToolProtocol::Builtin,
-        serde_json::Value::Null,
-        None,
-        Some("admin".to_string()),
+    let tool = ToolPo::new("tool-to-remove".to_string(), "tool-to-remove".to_string(), "To remove".to_string(), ToolProtocol::Builtin, serde_json::Value::Null, None, vec![], Some("admin".to_string()),
     );
     let agent_id = "test-agent-2";
     let _ = tool_dao.create_tool(&ctx.clone(), &tool).await;
@@ -129,23 +109,9 @@ async fn test_list_enabled(pool: SqlitePool) {
     let tool_dao = dao();
 
     // 创建一个启用，一个禁用
-    let mut enabled = ToolPo::new(
-        "enabled".to_string(),
-        "enabled".to_string(),
-        "Enabled tool".to_string(),
-        ToolProtocol::Builtin,
-        serde_json::Value::Null,
-        None,
-        Some("admin".to_string()),
+    let mut enabled = ToolPo::new("enabled".to_string(), "enabled".to_string(), "Enabled tool".to_string(), ToolProtocol::Builtin, serde_json::Value::Null, None, vec![], Some("admin".to_string()),
     );
-    let mut disabled = ToolPo::new(
-        "disabled".to_string(),
-        "disabled".to_string(),
-        "Disabled tool".to_string(),
-        ToolProtocol::Builtin,
-        serde_json::Value::Null,
-        None,
-        Some("admin".to_string()),
+    let mut disabled = ToolPo::new("disabled".to_string(), "disabled".to_string(), "Disabled tool".to_string(), ToolProtocol::Builtin, serde_json::Value::Null, None, vec![], Some("admin".to_string()),
     );
     disabled.status = ToolStatus::Disabled;
 
@@ -165,14 +131,7 @@ async fn test_get_by_name(pool: SqlitePool) {
     let ctx = RequestContext::new_simple("admin", pool);
     let tool_dao = dao();
 
-    let tool = ToolPo::new(
-        "".to_string(),
-        "my-unique-name".to_string(),
-        "Test".to_string(),
-        ToolProtocol::Builtin,
-        serde_json::Value::Null,
-        None,
-        Some("admin".to_string()),
+    let tool = ToolPo::new("".to_string(), "my-unique-name".to_string(), "Test".to_string(), ToolProtocol::Builtin, serde_json::Value::Null, None, vec![], Some("admin".to_string()),
     );
     let _ = tool_dao.create_tool(&ctx.clone(), &tool).await;
 
@@ -193,14 +152,7 @@ async fn test_update_tool(pool: SqlitePool) {
     let ctx = RequestContext::new_simple("admin", pool);
     let tool_dao = dao();
 
-    let mut tool = ToolPo::new(
-        "".to_string(),
-        "original-name".to_string(),
-        "Original description".to_string(),
-        ToolProtocol::Builtin,
-        serde_json::Value::Null,
-        None,
-        Some("creator".to_string()),
+    let mut tool = ToolPo::new("".to_string(), "original-name".to_string(), "Original description".to_string(), ToolProtocol::Builtin, serde_json::Value::Null, None, vec![], Some("creator".to_string()),
     );
     let _ = tool_dao.create_tool(&ctx.clone(), &tool).await;
 

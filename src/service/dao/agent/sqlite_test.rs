@@ -20,9 +20,7 @@ async fn test_insert_and_find_by_id(pool: SqlitePool) {
     let agent_dao = dao();
 
     // ========== 测试: 插入并查询
-    let agent_po = AgentPo::new(
-        "TestAgent".to_string(),
-        "worker".to_string(),
+    let agent_po = AgentPo::new("TestAgent".to_string(), vec!["worker".to_string()],
         "A helpful agent".to_string(),
         vec!["coding".to_string()],
         "A helpful agent that can code".to_string(),
@@ -49,9 +47,7 @@ async fn test_find_all(pool: SqlitePool) {
 
     // 插入两个 Agent（全部通过 DAO 接口插入）
     for i in 0..2 {
-        let agent_po2 = AgentPo::new(
-            format!("Agent{}", i),
-            "worker".to_string(),
+        let agent_po2 = AgentPo::new(format!("Agent{}", i), vec!["worker".to_string()],
             "".to_string(),
             vec![],
             "".to_string(),
@@ -73,9 +69,7 @@ async fn test_update(pool: SqlitePool) {
     let ctx_editor = new_ctx("editor", pool);
     let agent_dao = dao();
 
-    let agent_po = AgentPo::new(
-        "Original".to_string(),
-        "worker".to_string(),
+    let agent_po = AgentPo::new("Original".to_string(), vec!["worker".to_string()],
         "".to_string(),
         vec![],
         "".to_string(),
@@ -101,9 +95,7 @@ async fn test_soft_delete(pool: SqlitePool) {
     let ctx = new_ctx("admin", pool);
     let agent_dao = dao();
 
-    let agent_po = AgentPo::new(
-        "ToDelete".to_string(),
-        "worker".to_string(),
+    let agent_po = AgentPo::new("ToDelete".to_string(), vec!["worker".to_string()],
         "".to_string(),
         vec![],
         "".to_string(),
@@ -125,18 +117,14 @@ async fn test_find_all_excludes_deleted(pool: SqlitePool) {
     let agent_dao = dao();
 
     // 插入两个 Agent，删除一个
-    let agent_po1 = AgentPo::new(
-        "Normal".to_string(),
-        "worker".to_string(),
+    let agent_po1 = AgentPo::new("Normal".to_string(), vec!["worker".to_string()],
         "".to_string(),
         vec![],
         "".to_string(),
         "provider-id-1".to_string(),
         "admin".to_string(),
     );
-    let agent_po2 = AgentPo::new(
-        "Deleted".to_string(),
-        "worker".to_string(),
+    let agent_po2 = AgentPo::new("Deleted".to_string(), vec!["worker".to_string()],
         "".to_string(),
         vec![],
         "".to_string(),

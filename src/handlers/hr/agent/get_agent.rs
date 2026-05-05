@@ -24,14 +24,17 @@ pub async fn get_agent(
         .ok_or_else(|| AppError::NotFound(format!("Agent {} not found", id)))?;
 
     let capabilities: Vec<String> = agent.po.get_capabilities();
+    let roles: Vec<String> = agent.po.get_roles();
 
     Ok(Json(ApiResponse::success(GetAgentResponse {
         id: agent.id().to_string(),
         name: agent.name().to_string(),
+        roles,
         description: if agent.po.description.is_empty() { None } else { Some(agent.po.description.clone()) },
         capabilities: if capabilities.is_empty() { None } else { Some(capabilities) },
         soul: if agent.po.soul.is_empty() { None } else { Some(agent.po.soul.clone()) },
         model_provider_id: agent.po.model_provider_id.clone(),
+        status: agent.po.status as i32,
         created_at: agent.po.created_at,
         updated_at: agent.po.updated_at,
     })))

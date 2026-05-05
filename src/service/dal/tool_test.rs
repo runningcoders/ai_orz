@@ -69,14 +69,8 @@ async fn test_create_and_get_tool_full(pool: SqlitePool) {
     let ctx = RequestContext::new_simple("test-user", pool);
 
     // ========== 测试: 创建工具 ==========
-    let po = ToolPo::new(
-        "".to_string(), // id 自动生成
-        "echo_test".to_string(),
-        "Echo test tool".to_string(),
-        ToolProtocol::Builtin,
-        serde_json::Value::Null,
-        None,
-        Some("test-user".to_string()),
+    let po = ToolPo::new("".to_string(), // id 自动生成
+        "echo_test".to_string(), "Echo test tool".to_string(), ToolProtocol::Builtin, serde_json::Value::Null, None, vec![], Some("test-user".to_string()),
     );
 
     let result = tool_dal.create_tool(&ctx, &po).await;
@@ -105,14 +99,7 @@ async fn test_get_by_id_exists(pool: SqlitePool) {
     let tool_dal = crate::service::dal::tool::dal();
 
     // 创建一个测试工具
-    let po = ToolPo::new(
-        "test-builtin-id".to_string(),
-        "test-builtin".to_string(),
-        "Test builtin".to_string(),
-        ToolProtocol::Builtin,
-        serde_json::Value::Null,
-        None,
-        Some("test-user".to_string()),
+    let po = ToolPo::new("test-builtin-id".to_string(), "test-builtin".to_string(), "Test builtin".to_string(), ToolProtocol::Builtin, serde_json::Value::Null, None, vec![], Some("test-user".to_string()),
     );
     let _ = tool_dal.create_tool(&ctx, &po).await;
 
@@ -137,14 +124,7 @@ async fn test_add_tool_to_agent_and_list(pool: SqlitePool) {
     let ctx = RequestContext::new_simple("test-user", pool);
 
     // 创建已注册的工具（id = test_tool）
-    let test_tool = ToolPo::new(
-        "test_tool".to_string(),
-        "test_tool".to_string(),
-        "Test tool for adding to agent".to_string(),
-        ToolProtocol::Builtin,
-        serde_json::Value::Null,
-        None,
-        Some("test-user".to_string()),
+    let test_tool = ToolPo::new("test_tool".to_string(), "test_tool".to_string(), "Test tool for adding to agent".to_string(), ToolProtocol::Builtin, serde_json::Value::Null, None, vec![], Some("test-user".to_string()),
     );
     tool_dal.create_tool(&ctx, &test_tool).await.unwrap();
 
@@ -182,14 +162,7 @@ async fn test_remove_tool_from_agent(pool: SqlitePool) {
     let ctx = RequestContext::new_simple("test-user", pool);
 
     // 创建已注册的工具（id = test_tool）
-    let test_tool = ToolPo::new(
-        "test_tool".to_string(),
-        "test_tool".to_string(),
-        "Test tool for removing from agent".to_string(),
-        ToolProtocol::Builtin,
-        serde_json::Value::Null,
-        None,
-        Some("test-user".to_string()),
+    let test_tool = ToolPo::new("test_tool".to_string(), "test_tool".to_string(), "Test tool for removing from agent".to_string(), ToolProtocol::Builtin, serde_json::Value::Null, None, vec![], Some("test-user".to_string()),
     );
     tool_dal.create_tool(&ctx, &test_tool).await.unwrap();
 
@@ -224,24 +197,10 @@ async fn test_list_enabled(pool: SqlitePool) {
     let ctx = RequestContext::new_simple("test-user", pool);
 
     // 创建已注册的工具（启用，id = test_tool）
-    let mut test_tool = ToolPo::new(
-        "test_tool".to_string(),
-        "test_tool".to_string(),
-        "Test tool (enabled, registered)".to_string(),
-        ToolProtocol::Builtin,
-        serde_json::Value::Null,
-        None,
-        Some("test-user".to_string()),
+    let mut test_tool = ToolPo::new("test_tool".to_string(), "test_tool".to_string(), "Test tool (enabled, registered)".to_string(), ToolProtocol::Builtin, serde_json::Value::Null, None, vec![], Some("test-user".to_string()),
     );
     // 创建一个未注册的禁用工具
-    let mut disabled = ToolPo::new(
-        "disabled".to_string(),
-        "disabled".to_string(),
-        "Disabled tool (disabled)".to_string(),
-        ToolProtocol::Builtin,
-        serde_json::Value::Null,
-        None,
-        Some("test-user".to_string()),
+    let mut disabled = ToolPo::new("disabled".to_string(), "disabled".to_string(), "Disabled tool (disabled)".to_string(), ToolProtocol::Builtin, serde_json::Value::Null, None, vec![], Some("test-user".to_string()),
     );
     disabled.status = ToolStatus::Disabled;
     disabled.touch(Some("test-user".to_string()));
@@ -275,14 +234,7 @@ async fn test_get_by_name(pool: SqlitePool) {
     let ctx = RequestContext::new_simple("test-user", pool);
 
     // 创建测试工具
-    let po = ToolPo::new(
-        "".to_string(),
-        "get_by_name_test".to_string(),
-        "Test get by name".to_string(),
-        ToolProtocol::Builtin,
-        serde_json::Value::Null,
-        None,
-        Some("test-user".to_string()),
+    let po = ToolPo::new("".to_string(), "get_by_name_test".to_string(), "Test get by name".to_string(), ToolProtocol::Builtin, serde_json::Value::Null, None, vec![], Some("test-user".to_string()),
     );
     tool_dal.create_tool(&ctx, &po).await.unwrap();
 
@@ -317,14 +269,7 @@ async fn test_update_tool(pool: SqlitePool) {
     let ctx = RequestContext::new_simple("test-user", pool);
 
     // 创建已注册的工具（id = test_tool）
-    let mut po = ToolPo::new(
-        "test_tool".to_string(),
-        "test_tool".to_string(),
-        "Original description".to_string(),
-        ToolProtocol::Builtin,
-        serde_json::Value::Null,
-        None,
-        Some("test-user".to_string()),
+    let mut po = ToolPo::new("test_tool".to_string(), "test_tool".to_string(), "Original description".to_string(), ToolProtocol::Builtin, serde_json::Value::Null, None, vec![], Some("test-user".to_string()),
     );
 
     tool_dal.create_tool(&ctx, &po).await.unwrap();

@@ -49,8 +49,8 @@ impl ToolDao for ToolDaoSqliteImpl {
             r#"
             INSERT INTO tools (
                 id, name, description, protocol, config, parameters_schema,
-                status, created_at, updated_at, created_by, updated_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                tags, status, created_at, updated_at, created_by, updated_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#
         )
         .bind(po.id.to_string())
@@ -59,6 +59,7 @@ impl ToolDao for ToolDaoSqliteImpl {
         .bind(po.protocol as i32)
         .bind(&po.config)
         .bind(&po.parameters_schema)
+        .bind(&po.tags)
         .bind(po.status as i32)
         .bind(po.created_at)
         .bind(po.updated_at)
@@ -77,7 +78,7 @@ impl ToolDao for ToolDaoSqliteImpl {
             r#"
             UPDATE tools SET
                 name = ?, description = ?, protocol = ?, config = ?,
-                parameters_schema = ?, status = ?, updated_at = ?, updated_by = ?
+                parameters_schema = ?, tags = ?, status = ?, updated_at = ?, updated_by = ?
             WHERE id = ?
             "#
         )
@@ -86,6 +87,7 @@ impl ToolDao for ToolDaoSqliteImpl {
         .bind(po.protocol as i32)
         .bind(&po.config)
         .bind(&po.parameters_schema)
+        .bind(&po.tags)
         .bind(po.status as i32)
         .bind(po.updated_at)
         .bind(&po.updated_by)

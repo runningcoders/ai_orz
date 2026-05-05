@@ -15,9 +15,7 @@ async fn test_create_and_find_by_id(pool:SqlitePool) {
     let dal = dal();
     let ctx = RequestContext::new_simple("admin", pool);
 
-    let agent_po = AgentPo::new(
-        "TestAgent".to_string(),
-        "worker".to_string(),
+    let agent_po = AgentPo::new("TestAgent".to_string(), vec!["worker".to_string()],
         "A helpful agent".to_string(),
         vec!["coding".to_string()],
         "A helpful agent that can code".to_string(),
@@ -42,8 +40,7 @@ async fn test_find_all(pool:SqlitePool) {
 
     for i in 0..3 {
         let agent_po = AgentPo::new(
-            format!("Agent{}", i),
-            "worker".to_string(),
+            format!("Agent{}", i), vec!["worker".to_string()],
             "".to_string(),
             vec![],
             "".to_string(),
@@ -65,9 +62,7 @@ async fn test_update(pool:SqlitePool) {
     let dal = dal();
     let ctx = RequestContext::new_simple("admin", pool.clone());
 
-    let agent_po = AgentPo::new(
-        "Original".to_string(),
-        "worker".to_string(),
+    let agent_po = AgentPo::new("Original".to_string(), vec!["worker".to_string()],
         "".to_string(),
         vec![],
         "".to_string(),
@@ -93,9 +88,7 @@ async fn test_delete(pool:SqlitePool) {
     let dal = dal();
     let ctx = RequestContext::new_simple("admin", pool);
 
-    let agent_po = AgentPo::new(
-        "ToDelete".to_string(),
-        "worker".to_string(),
+    let agent_po = AgentPo::new("ToDelete".to_string(), vec!["worker".to_string()],
         "".to_string(),
         vec![],
         "".to_string(),
@@ -117,8 +110,8 @@ async fn test_find_all_excludes_deleted(pool:SqlitePool) {
     let dal = dal();
     let ctx = RequestContext::new_simple("admin", pool);
 
-    let agent1_po = AgentPo::new("Normal".to_string(), "w".to_string(), "".to_string(), vec![], "".to_string(), "provider-id-1".to_string(), "admin".to_string());
-    let agent2_po = AgentPo::new("Deleted".to_string(), "w".to_string(), "".to_string(), vec![], "".to_string(), "provider-id-2".to_string(), "admin".to_string());
+    let agent1_po = AgentPo::new("Normal".to_string(), vec!["w".to_string()], "".to_string(), vec![], "".to_string(), "provider-id-1".to_string(), "admin".to_string());
+    let agent2_po = AgentPo::new("Deleted".to_string(), vec!["w".to_string()], "".to_string(), vec![], "".to_string(), "provider-id-2".to_string(), "admin".to_string());
 
     let agent1 = Agent::from_po(agent1_po);
     let agent2 = Agent::from_po(agent2_po);

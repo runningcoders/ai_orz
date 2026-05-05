@@ -108,12 +108,12 @@ impl Agent {
 pub struct AgentPo {
     pub id: String,
     pub name: String,
-    pub role: String,         // Agent 角色描述
+    pub role: String,         // Agent 角色标签数组（JSON string）: ["产品经理", "rust工程师"]
     pub description: String,
-    pub capabilities: String, // JSON string
+    pub capabilities: String, // JSON string: 详细能力描述数组
     pub soul: String,          // 长文本：角色/性格/灵魂设定
     pub model_provider_id: String, // 关联模型提供商 ID
-    pub status: AgentStatus, // 软删除状态
+    pub status: AgentStatus, // 生命周期状态
     pub created_by: String,    // 创建者
     pub modified_by:String,   // 修改者
     pub created_at: i64,
@@ -123,7 +123,7 @@ pub struct AgentPo {
 impl AgentPo {
     pub fn new(
         name: String,
-        role:String,
+        roles: Vec<String>,
         description: String,
         capabilities: Vec<String>,
         soul: String,
@@ -133,17 +133,25 @@ impl AgentPo {
         Self {
             id: generate_id(),
             name,
-            role,
+            role: serde_json::to_string(&roles).unwrap_or_else(|_| "[]".to_string()),
             description,
             capabilities: serde_json::to_string(&capabilities).unwrap_or_else(|_| "[]".to_string()),
             soul,
             model_provider_id: model_provider_id,
-            status: AgentStatus::Normal,
+            status: AgentStatus::Interviewing,
             created_by: creator.clone(),
             modified_by: creator,
             created_at: current_timestamp(),
             updated_at: current_timestamp(),
         }
+    }
+
+    /// 获取角色标签列表
+    pub fn get_roles(&self) -> Vec<String> {
+        if self.role.is_empty() {
+            return Vec::new();
+        }
+        serde_json::from_str(&self.role).unwrap_or_default()
     }
 
     pub fn get_capabilities(&self) -> Vec<String> {
