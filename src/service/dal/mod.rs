@@ -8,6 +8,7 @@ pub mod brain;
 pub mod message;
 pub mod model_provider;
 pub mod organization;
+pub mod skill;
 pub mod tool;
 pub mod user;
 
@@ -17,6 +18,7 @@ pub fn init_all(){
     message::init();
     model_provider::init();
     organization::init();
+    skill::init();
     tool::init();
     user::init();
 }
@@ -32,6 +34,8 @@ pub(crate) mod message_test;
 pub(crate) mod model_provider_test;
 #[cfg(test)]
 pub(crate) mod organization_test;
+#[cfg(test)]
+pub(crate) mod skill_test;
 #[cfg(test)]
 pub(crate) mod tool_test;
 #[cfg(test)]

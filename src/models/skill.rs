@@ -83,3 +83,33 @@ impl SkillPo {
         serde_json::from_str(&self.tags).unwrap_or_default()
     }
 }
+
+// ==================== Skill 业务聚合实体 ====================
+
+/// 技能完整业务实体（PO + 文件系统内容）
+/// 
+/// - SkillPo：数据库持久化元数据
+/// - files：关联文件列表（小文件预读，大文件按需加载）
+#[derive(Debug, Clone)]
+pub struct Skill {
+    /// 数据库持久化元数据
+    pub po: SkillPo,
+    /// 关联文件列表
+    pub files: Vec<SkillFile>,
+}
+
+impl Skill {
+    /// 获取主文件内容（如果已加载）
+    pub fn main_content(&self) -> Option<&str> {
+        self.files.iter()
+            .find(|f| f.filename == "skill.md")
+            .and_then(|f| f.content.as_deref())
+    }
+
+    /// 获取指定文件名的内容（如果已加载）
+    pub fn file_content(&self, filename: &str) -> Option<&str> {
+        self.files.iter()
+            .find(|f| f.filename == filename)
+            .and_then(|f| f.content.as_deref())
+    }
+}
