@@ -5,6 +5,17 @@ use common::enums::SkillStatus;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
+/// 技能附属文件信息（纯数据结构，DAO 层使用）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillFile {
+    /// 文件名（相对于技能目录）
+    pub filename: String,
+    /// 文件大小（字节）
+    pub file_size: u64,
+    /// 文件内容（小文件直接预读，大文件按需加载）
+    pub content: Option<String>,
+}
+
 /// Skill 持久化对象
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct SkillPo {

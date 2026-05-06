@@ -3,7 +3,7 @@
 pub mod sqlite;
 
 use crate::error::AppError;
-use crate::models::skill::SkillPo;
+use crate::models::skill::{SkillPo, SkillFile};
 use crate::pkg::RequestContext;
 use common::enums::SkillStatus;
 use async_trait::async_trait;
@@ -52,12 +52,34 @@ pub trait SkillDao: Send + Sync {
     /// 
     /// - source_skill: the source shared skill to install (already validated by upper layer)
     /// - target_agent_id: which agent to install to (will be the author of the new copy)
+    /// 
+    /// Atomic operation: copies all skill files + creates database record
     async fn install_to_agent(
         &self,
         ctx: RequestContext,
         source_skill: &SkillPo,
         target_agent_id: &str,
     ) -> Result<SkillPo, AppError>;
+
+    // ===== 文件操作方法 =====
+
+    /// 读取 skill.md 主文件内容
+    fn read_main_content(&self, skill: &SkillPo) -> Result<String, AppError>;
+
+    /// 写入 skill.md 主文件内容
+    fn write_main_content(&self, skill: &SkillPo, content: &str) -> Result<(), AppError>;
+
+    /// 列出技能目录下的所有文件（返回文件名和大小，不读取内容）
+    fn list_files(&self, skill: &SkillPo) -> Result<Vec<SkillFile>, AppError>;
+
+    /// 读取指定文件名的内容
+    fn read_file(&self, skill: &SkillPo, filename: &str) -> Result<String, AppError>;
+
+    /// 写入指定文件名的内容
+    fn write_file(&self, skill: &SkillPo, filename: &str, content: &str) -> Result<(), AppError>;
+
+    /// 删除整个技能目录（卸载/删除时调用）
+    fn delete_skill_dir(&self, skill: &SkillPo) -> Result<(), AppError>;
 }
 
 pub use sqlite::{dao, init, new};
