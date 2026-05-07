@@ -11,6 +11,7 @@ pub mod file;
 pub mod skill;
 pub mod memory;
 pub mod tool;
+pub mod message_channel;
 
 pub use agent::{AgentStatus, ModelProviderStatus};
 pub use organization::{OrganizationStatus, OrganizationScope};
@@ -23,3 +24,4 @@ pub use file::FileType;
 pub use skill::SkillStatus;
 pub use memory::MemoryStatus;
 pub use tool::{ToolProtocol, ToolStatus, ControlMode};
+pub use message_channel::{ChannelType, ChannelStatus};

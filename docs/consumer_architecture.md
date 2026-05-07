@@ -377,4 +377,128 @@ if attempt >= config.retry_max_attempts {
 4. **扩展友好**：新增 Topic 只需实现 Trait，无需修改框架
 5. **文档先行**：设计决策沉淀为文档，便于传承和回顾
 
+---
+
+## 🌐 消息网关架构设计
+
+### 核心理念
+
+> **消息网关 = 外部消息 handlers + message domain**
+
+所有外部消息源（飞书 Webhook、微信 Webhook、Slack 等）都通过独立的 handler 接入，最终全部汇聚到同一个 `message domain` 处理。
+
+### 分层架构图
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     外部消息 Handlers                        │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
+│  │ Webhook  │  │ Webhook  │  │ Webhook  │  │ Webhook  │    │
+│  │  飞书    │  │  微信    │  │  Slack   │  │  ...     │    │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘    │
+└───────┼──────────────┼──────────────┼──────────────┼────────┘
+        │              │              │              │
+        └──────────────┴──────┬───────┴──────────────┘
+                               ▼
+                    ┌────────────────────┐
+                    │   Message Domain   │  ← 核心业务逻辑唯一入口
+                    └────────┬───────────┘
+                             │
+        ┌────────────────────┼────────────────────┐
+        ▼                    ▼                    ▼
+┌───────────────┐    ┌───────────────┐    ┌───────────────┐
+│ Message DAL   │    │  Lark DAL     │    │  Wechat DAL   │
+└───────┬───────┘    └───────┬───────┘    └───────┬───────┘
+        │                    │                    │
+        ▼                    ▼                    ▼
+┌───────────────┐    ┌───────────────┐    ┌───────────────┐
+│ Message DAO   │    │   Lark DAO    │    │  Wechat DAO   │
+│  (SQLite)     │    │ (三方 API)    │    │ (三方 API)    │
+└───────────────┘    └───────────────┘    └───────────────┘
+```
+
+### 发给用户消息的处理流程
+
+#### 当前实现（拉取模式）
+
+```rust
+// MessageHandlerImpl::handle_user_message
+async fn handle_user_message(&self, message: &MessagePo) -> Result<()> {
+    tracing::debug!("message delivered to user: {}", message.id);
+    
+    // 直接调用 DAL 更新状态，不需要额外 domain 方法
+    self.message_dal
+        .update_status(ctx, &message.id, MessageStatus::Completed)
+        .await?;
+    
+    Ok(())
+}
+```
+
+#### 未来扩展（多渠道推送，零侵入）
+
+**步骤 1：新增 DAO 层（纯三方 API 调用）**
+```rust
+// src/dao/lark/mod.rs
+pub trait LarkDao {
+    async fn send_message(&self, webhook: &str, content: &str) -> Result<()>;
+}
+```
+
+**步骤 2：新增 DAL 层（组合 DAO）**
+```rust
+// src/dal/lark_message.rs
+pub struct LarkMessageDalImpl {
+    message_dal: Arc<dyn MessageDal>,
+    lark_dao: Arc<dyn LarkDao>,
+    message_channel_dal: Arc<dyn MessageChannelDal>,
+}
+
+#[async_trait]
+impl LarkMessageDal for LarkMessageDalImpl {
+    async fn deliver_to_lark(&self, ctx: RequestContext, msg: &MessagePo) -> Result<()> {
+        // 查询用户绑定的飞书渠道
+        if let Some(channel) = self.message_channel_dal
+            .get_user_channel(ctx, msg.to_id(), ChannelType::Lark)
+            .await?
+        {
+            self.lark_dao.send_message(&channel.webhook_url, &msg.content).await?;
+        }
+        
+        Ok(())
+    }
+}
+```
+
+**步骤 3：Domain 层组合 DAL（修改 handle_user_message）**
+```rust
+// src/domain/message/process_message.rs
+async fn handle_user_message(&self, ctx: RequestContext, msg: &MessagePo) -> Result<()> {
+    // 基础投递：更新状态
+    self.message_dal
+        .update_status(ctx, &msg.id, MessageStatus::Completed)
+        .await?;
+    
+    // 扩展渠道：飞书推送
+    if let Some(lark_dal) = &self.lark_message_dal {
+        lark_dal.deliver_to_lark(ctx, msg).await?;
+    }
+    
+    // 扩展渠道：微信推送
+    // if let Some(wechat_dal) = &self.wechat_message_dal { ... }
+    
+    Ok(())
+}
+```
+
+### 架构优势
+
+1. **✅ 零侵入扩展**：新增推送渠道完全不修改现有代码，只是新增 DAO + DAL
+2. **✅ 职责单一**：DAO 只做 API 调用，DAL 负责组合，Domain 编排业务
+3. **✅ 复用最大化**：所有渠道共享同一个 message domain 核心逻辑
+4. **✅ 测试友好**：每个 DAO/DAL 可以独立 Mock 测试
+5. **✅ 符合分层原则**：严格单向依赖，handler → domain → dal → dao
+
+---
+
 这是一个经过深思熟虑的架构，能够支撑系统未来很长一段时间的发展！

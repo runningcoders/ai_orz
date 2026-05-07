@@ -3,6 +3,7 @@ pub mod artifact;
 pub mod cortex;
 pub mod event_queue;
 pub mod message;
+pub mod message_channel;
 pub mod model_provider;
 pub mod organization;
 pub mod user;
@@ -19,6 +20,7 @@ pub fn init_all(){
     cortex::init();
     event_queue::init_message();
     message::init();
+    message_channel::init();
     model_provider::init();
     organization::init();
     user::init();

@@ -1,0 +1,101 @@
+//! Message channel related enums
+
+use serde::{Serialize, Deserialize};
+#[cfg(feature = "sqlx")]
+use sqlx::Type;
+
+/// Channel type (推送渠道类型)
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(Type))]
+#[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
+pub enum ChannelType {
+    /// 飞书
+    #[default]
+    Lark = 0,
+    /// 微信
+    Wechat = 1,
+    /// Slack
+    Slack = 2,
+    /// 邮件
+    Email = 3,
+    /// 通用 Webhook
+    Webhook = 4,
+}
+
+impl From<i32> for ChannelType {
+    fn from(v: i32) -> Self {
+        match v {
+            0 => ChannelType::Lark,
+            1 => ChannelType::Wechat,
+            2 => ChannelType::Slack,
+            3 => ChannelType::Email,
+            4 => ChannelType::Webhook,
+            _ => ChannelType::default(),
+        }
+    }
+}
+
+impl ChannelType {
+    /// Convert from i32
+    pub fn from_i32(v: i32) -> Self {
+        v.into()
+    }
+
+    /// Convert to i32
+    pub fn to_i32(&self) -> i32 {
+        (*self).into()
+    }
+}
+
+impl From<ChannelType> for i32 {
+    fn from(r: ChannelType) -> i32 {
+        r as i32
+    }
+}
+
+impl ChannelType {
+    /// Get channel type name as string
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ChannelType::Lark => "lark",
+            ChannelType::Wechat => "wechat",
+            ChannelType::Slack => "slack",
+            ChannelType::Email => "email",
+            ChannelType::Webhook => "webhook",
+        }
+    }
+}
+
+/// 渠道状态
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(Type))]
+#[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
+pub enum ChannelStatus {
+    /// 活跃
+    Active = 1,
+    /// 已删除（软删除）
+    Deleted = 0,
+}
+
+impl Default for ChannelStatus {
+    fn default() -> Self {
+        ChannelStatus::Active
+    }
+}
+
+impl From<i32> for ChannelStatus {
+    fn from(v: i32) -> Self {
+        match v {
+            1 => ChannelStatus::Active,
+            _ => ChannelStatus::Deleted,
+        }
+    }
+}
+
+impl From<ChannelStatus> for i32 {
+    fn from(r: ChannelStatus) -> i32 {
+        r as i32
+    }
+}

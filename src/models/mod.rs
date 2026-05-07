@@ -4,6 +4,7 @@ pub mod event;
 pub mod file;
 pub mod memory;
 pub mod message;
+pub mod message_channel;
 pub mod model_provider;
 pub mod organization;
 pub mod project;

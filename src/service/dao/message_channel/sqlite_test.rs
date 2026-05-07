@@ -1,0 +1,290 @@
+//! MessageChannel DAO SQLite 单元测试
+
+use crate::error::Result;
+use crate::models::message_channel::{MessageChannelPo, ChannelConfig};
+use common::enums::{ChannelType, ChannelStatus};
+use crate::pkg::RequestContext;
+use crate::service::dao::message_channel::{self, MessageChannelDao, MessageChannelQuery};
+use uuid::Uuid;
+use sqlx::SqlitePool;
+
+fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
+    RequestContext::new_simple(user_id, pool)
+}
+
+/// 测试插入渠道和按 ID 查询
+#[sqlx::test(migrations = "./migrations")]
+async fn test_insert_and_find_by_id(pool: SqlitePool) -> Result<()> {
+    message_channel::init();
+    let dao = message_channel::dao();
+    let ctx = new_ctx("test-user", pool);
+
+    let channel = MessageChannelPo::new(
+        Uuid::now_v7().to_string(),
+        "org-001".to_string(),
+        "user-001".to_string(),
+        None,
+        ChannelType::Webhook,
+        "我的 Webhook 渠道".to_string(),
+        Some("https://webhook.example.com/abc".to_string()),
+        None,
+        None,
+        ChannelConfig::default(),
+        "test-user".to_string(),
+    );
+    dao.insert(ctx.clone(), &channel).await?;
+
+    let found = dao.find_by_id(ctx.clone(), &channel.id).await?;
+    assert!(found.is_some());
+    let found = found.unwrap();
+    assert_eq!(found.id, channel.id);
+    assert_eq!(found.org_id, "org-001");
+    assert_eq!(found.user_id, "user-001");
+    assert_eq!(found.channel_type, ChannelType::Webhook);
+    assert_eq!(found.channel_name, "我的 Webhook 渠道");
+    assert!(found.is_enabled);
+
+    Ok(())
+}
+
+/// 测试按用户 ID 查询渠道
+#[sqlx::test(migrations = "./migrations")]
+async fn test_list_by_user_id(pool: SqlitePool) -> Result<()> {
+    message_channel::init();
+    let dao = message_channel::dao();
+    let ctx = new_ctx("test-user", pool);
+
+    // 插入 3 个用户渠道
+    for i in 0..3 {
+        let channel = MessageChannelPo::new(
+            Uuid::now_v7().to_string(),
+            "org-001".to_string(),
+            "user-001".to_string(),
+            None,
+            ChannelType::Webhook,
+            format!("渠道 {}", i),
+            Some(format!("https://example.com/{}", i)),
+            None,
+            None,
+            ChannelConfig::default(),
+            "test-user".to_string(),
+        );
+        dao.insert(ctx.clone(), &channel).await?;
+    }
+
+    // 查询用户的所有启用渠道
+    let channels = dao.list_by_user_id(ctx.clone(), "user-001", true).await?;
+    assert_eq!(channels.len(), 3);
+
+    Ok(())
+}
+
+/// 测试 Agent 专属渠道优先级
+#[sqlx::test(migrations = "./migrations")]
+async fn test_agent_channel_priority(pool: SqlitePool) -> Result<()> {
+    message_channel::init();
+    let dao = message_channel::dao();
+    let ctx = new_ctx("test-user", pool);
+
+    // 用户通用渠道
+    let user_channel = MessageChannelPo::new(
+        Uuid::now_v7().to_string(),
+        "org-001".to_string(),
+        "user-001".to_string(),
+        None, // 无 Agent
+        ChannelType::Webhook,
+        "用户通用渠道".to_string(),
+        Some("https://example.com/user".to_string()),
+        None,
+        None,
+        ChannelConfig::default(),
+        "test-user".to_string(),
+    );
+    dao.insert(ctx.clone(), &user_channel).await?;
+
+    // Agent 专属渠道
+    let agent_channel = MessageChannelPo::new(
+        Uuid::now_v7().to_string(),
+        "org-001".to_string(),
+        "user-001".to_string(),
+        Some("agent-001".to_string()), // 绑定 Agent
+        ChannelType::Webhook,
+        "Agent 专属渠道".to_string(),
+        Some("https://example.com/agent".to_string()),
+        None,
+        None,
+        ChannelConfig::default(),
+        "test-user".to_string(),
+    );
+    dao.insert(ctx.clone(), &agent_channel).await?;
+
+    // 查询用户+Agent 的渠道（应该返回 2 条：Agent 专属 + 用户通用）
+    let channels = dao.list_by_user_and_agent_id(ctx.clone(), "user-001", "agent-001", true).await?;
+    assert_eq!(channels.len(), 2);
+
+    Ok(())
+}
+
+/// 测试设置启用/禁用
+#[sqlx::test(migrations = "./migrations")]
+async fn test_set_enabled(pool: SqlitePool) -> Result<()> {
+    message_channel::init();
+    let dao = message_channel::dao();
+    let ctx = new_ctx("test-user", pool);
+
+    let channel = MessageChannelPo::new(
+        Uuid::now_v7().to_string(),
+        "org-001".to_string(),
+        "user-001".to_string(),
+        None,
+        ChannelType::Webhook,
+        "测试渠道".to_string(),
+        None,
+        None,
+        None,
+        ChannelConfig::default(),
+        "test-user".to_string(),
+    );
+    dao.insert(ctx.clone(), &channel).await?;
+
+    // 禁用
+    dao.set_enabled(ctx.clone(), &channel.id, false).await?;
+    let found = dao.find_by_id(ctx.clone(), &channel.id).await?.unwrap();
+    assert!(!found.is_enabled);
+
+    // 重新启用
+    dao.set_enabled(ctx.clone(), &channel.id, true).await?;
+    let found = dao.find_by_id(ctx.clone(), &channel.id).await?.unwrap();
+    assert!(found.is_enabled);
+
+    Ok(())
+}
+
+/// 测试软删除
+#[sqlx::test(migrations = "./migrations")]
+async fn test_delete(pool: SqlitePool) -> Result<()> {
+    message_channel::init();
+    let dao = message_channel::dao();
+    let ctx = new_ctx("test-user", pool);
+
+    let channel = MessageChannelPo::new(
+        Uuid::now_v7().to_string(),
+        "org-001".to_string(),
+        "user-001".to_string(),
+        None,
+        ChannelType::Webhook,
+        "待删除渠道".to_string(),
+        None,
+        None,
+        None,
+        ChannelConfig::default(),
+        "test-user".to_string(),
+    );
+    dao.insert(ctx.clone(), &channel).await?;
+
+    // 删除
+    dao.delete(ctx.clone(), &channel.id).await?;
+
+    // 仍然可以查到（软删除）
+    let found = dao.find_by_id(ctx.clone(), &channel.id).await?;
+    assert!(found.is_some());
+
+    Ok(())
+}
+
+/// 测试通用查询
+#[sqlx::test(migrations = "./migrations")]
+async fn test_query(pool: SqlitePool) -> Result<()> {
+    message_channel::init();
+    let dao = message_channel::dao();
+    let ctx = new_ctx("test-user", pool);
+
+    // 插入测试数据
+    for i in 0..5 {
+        let channel = MessageChannelPo::new(
+            Uuid::now_v7().to_string(),
+            "org-001".to_string(),
+            format!("user-{}", i % 2),
+            None,
+            if i % 2 == 0 { ChannelType::Webhook } else { ChannelType::Lark },
+            format!("渠道 {}", i),
+            None,
+            None,
+            None,
+            ChannelConfig::default(),
+            "test-user".to_string(),
+        );
+        dao.insert(ctx.clone(), &channel).await?;
+    }
+
+    // 按用户 ID 查询
+    let query = MessageChannelQuery {
+        user_id: Some("user-0".to_string()),
+        ..Default::default()
+    };
+    let channels = dao.query(ctx.clone(), query).await?;
+    assert_eq!(channels.len(), 3); // user-0 有 3 条
+
+    // 按渠道类型查询
+    let query = MessageChannelQuery {
+        channel_type: Some(ChannelType::Lark),
+        ..Default::default()
+    };
+    let channels = dao.query(ctx.clone(), query).await?;
+    assert_eq!(channels.len(), 2); // Lark 有 2 条
+
+    // 只查询启用的
+    let query = MessageChannelQuery {
+        only_enabled: true,
+        ..Default::default()
+    };
+    let channels = dao.query(ctx.clone(), query).await?;
+    assert_eq!(channels.len(), 5); // 全部启用
+
+    // 测试分页
+    let query = MessageChannelQuery {
+        limit: Some(2),
+        offset: Some(1),
+        ..Default::default()
+    };
+    let channels = dao.query(ctx.clone(), query).await?;
+    assert_eq!(channels.len(), 2);
+
+    Ok(())
+}
+
+/// 测试标记推送成功/失败
+#[sqlx::test(migrations = "./migrations")]
+async fn test_mark_push_status(pool: SqlitePool) -> Result<()> {
+    message_channel::init();
+    let dao = message_channel::dao();
+    let ctx = new_ctx("test-user", pool);
+
+    let channel = MessageChannelPo::new(
+        Uuid::now_v7().to_string(),
+        "org-001".to_string(),
+        "user-001".to_string(),
+        None,
+        ChannelType::Webhook,
+        "测试推送".to_string(),
+        None,
+        None,
+        None,
+        ChannelConfig::default(),
+        "test-user".to_string(),
+    );
+    dao.insert(ctx.clone(), &channel).await?;
+
+    // 标记推送失败
+    dao.mark_push_failed(ctx.clone(), &channel.id, "连接超时").await?;
+    let found = dao.find_by_id(ctx.clone(), &channel.id).await?.unwrap();
+    assert_eq!(found.last_error, Some("连接超时".to_string()));
+    assert!(found.last_pushed_at.is_some());
+
+    // 标记推送成功（错误信息应该清空）
+    dao.mark_push_success(ctx.clone(), &channel.id).await?;
+    let found = dao.find_by_id(ctx.clone(), &channel.id).await?.unwrap();
+    assert_eq!(found.last_error, None);
+
+    Ok(())
+}
