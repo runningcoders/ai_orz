@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            UPDATE message_channels\n            SET org_id = ?, user_id = ?, agent_id = ?, channel_type = ?, channel_name = ?,\n                webhook_url = ?, access_token = ?, secret = ?, config_json = ?, status = ?,\n                last_pushed_at = ?, last_error = ?, modified_by = ?, updated_at = ?\n            WHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 15
+    },
+    "nullable": []
+  },
+  "hash": "06575857475e9cd863a7edaeccc3f5c6dbb346641a7aa899e307410d5859f518"
+}

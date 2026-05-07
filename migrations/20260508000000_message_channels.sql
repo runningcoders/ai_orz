@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS message_channels (
     access_token TEXT,                                   -- 访问 Token（需要鉴权的渠道）
     secret TEXT,                                         -- 签名密钥/Secret
     config_json TEXT NOT NULL DEFAULT '{}',              -- 扩展配置 JSON（各渠道的详细配置，对应 ChannelConfig 结构体）
-    is_enabled INTEGER NOT NULL DEFAULT 1,               -- 是否启用：0=禁用, 1=启用
+    status INTEGER NOT NULL DEFAULT 1,                   -- 渠道状态：1=Active, 0=Deleted
     last_pushed_at INTEGER,                              -- 最后成功推送的时间戳（毫秒）
     last_error TEXT,                                     -- 最后一次推送的错误信息
     created_by TEXT NOT NULL,                            -- 创建人 ID
@@ -27,4 +27,4 @@ CREATE INDEX IF NOT EXISTS idx_message_channels_org_id ON message_channels(org_i
 CREATE INDEX IF NOT EXISTS idx_message_channels_user_id ON message_channels(user_id);
 CREATE INDEX IF NOT EXISTS idx_message_channels_agent_id ON message_channels(agent_id);
 CREATE INDEX IF NOT EXISTS idx_message_channels_channel_type ON message_channels(channel_type);
-CREATE INDEX IF NOT EXISTS idx_message_channels_is_enabled ON message_channels(is_enabled);
+CREATE INDEX IF NOT EXISTS idx_message_channels_status ON message_channels(status);

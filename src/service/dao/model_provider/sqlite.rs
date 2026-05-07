@@ -61,17 +61,16 @@ impl ModelProviderDao for ModelProviderDaoSqliteImpl {
 
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<ModelProviderPo>, AppError> {
         let pool = ctx.db_pool();
-        let provider = sqlx::query_as!(
-            ModelProviderPo,
-            r#"
-SELECT id, name, provider_type as 'provider_type: ProviderType', model_name, api_key, base_url, description,
-       status as 'status: ModelProviderStatus', created_by, modified_by, created_at, updated_at
-FROM model_providers WHERE id = ? AND status != 0
-            "#,
-            id
-        )
-            .fetch_optional(pool)
-            .await?;
+        let provider = QueryBuilder::new(r#"
+SELECT id, name, provider_type, model_name, api_key, base_url, description,
+       status, created_by, modified_by, created_at, updated_at
+FROM model_providers WHERE id = 
+        "#)
+        .push_bind(id)
+        .push(" AND status != 0")
+        .build_query_as()
+        .fetch_optional(pool)
+        .await?;
 
         Ok(provider)
     }

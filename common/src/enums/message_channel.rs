@@ -73,10 +73,12 @@ impl ChannelType {
 #[cfg_attr(feature = "sqlx", derive(Type))]
 #[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
 pub enum ChannelStatus {
-    /// 活跃
-    Active = 1,
     /// 已删除（软删除）
     Deleted = 0,
+    /// 活跃
+    Active = 1,
+    /// 已禁用
+    Disabled = 2,
 }
 
 impl Default for ChannelStatus {
@@ -89,6 +91,7 @@ impl From<i32> for ChannelStatus {
     fn from(v: i32) -> Self {
         match v {
             1 => ChannelStatus::Active,
+            2 => ChannelStatus::Disabled,
             _ => ChannelStatus::Deleted,
         }
     }

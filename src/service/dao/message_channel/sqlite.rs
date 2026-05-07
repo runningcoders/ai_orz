@@ -4,7 +4,7 @@ use crate::error::Result;
 use crate::models::message_channel::MessageChannelPo;
 use crate::service::dao::message_channel::{MessageChannelDao, MessageChannelQuery};
 use chrono::Utc;
-use common::enums::{ChannelStatus, ChannelType};
+use common::enums::ChannelStatus;
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
 
@@ -16,13 +16,13 @@ pub struct MessageChannelDaoSqliteImpl;
 impl MessageChannelDao for MessageChannelDaoSqliteImpl {
     async fn insert(&self, ctx: RequestContext, po: &MessageChannelPo) -> Result<()> {
         let channel_type_i32 = po.channel_type as i32;
-        let is_enabled_i32 = po.is_enabled as i32;
+        let status_i32 = po.status as i32;
         
         sqlx::query!(
             r#"
             INSERT INTO message_channels (
                 id, org_id, user_id, agent_id, channel_type, channel_name,
-                webhook_url, access_token, secret, config_json, is_enabled,
+                webhook_url, access_token, secret, config_json, status,
                 last_pushed_at, last_error, created_by, modified_by, created_at, updated_at
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -37,7 +37,7 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
             po.access_token,
             po.secret,
             po.config_json as _,
-            is_enabled_i32,
+            status_i32,
             po.last_pushed_at,
             po.last_error,
             po.created_by,
@@ -54,13 +54,13 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
     async fn update(&self, ctx: RequestContext, po: &MessageChannelPo) -> Result<()> {
         let current_timestamp = Utc::now().timestamp();
         let channel_type_i32 = po.channel_type as i32;
-        let is_enabled_i32 = po.is_enabled as i32;
+        let status_i32 = po.status as i32;
 
         sqlx::query!(
             r#"
             UPDATE message_channels
             SET org_id = ?, user_id = ?, agent_id = ?, channel_type = ?, channel_name = ?,
-                webhook_url = ?, access_token = ?, secret = ?, config_json = ?, is_enabled = ?,
+                webhook_url = ?, access_token = ?, secret = ?, config_json = ?, status = ?,
                 last_pushed_at = ?, last_error = ?, modified_by = ?, updated_at = ?
             WHERE id = ?
             "#,
@@ -73,7 +73,7 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
             po.access_token,
             po.secret,
             po.config_json as _,
-            is_enabled_i32,
+            status_i32,
             po.last_pushed_at,
             po.last_error,
             po.modified_by,
@@ -107,7 +107,7 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
             builder.push(" AND channel_type = ").push_bind(channel_type as i32);
         }
         if query.only_enabled {
-            builder.push(" AND is_enabled = 1");
+            builder.push(" AND status = 1");
         }
         if let Some(status_in) = &query.status_in {
             if !status_in.is_empty() {
@@ -162,7 +162,7 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
             builder.push(" AND channel_type = ").push_bind(channel_type as i32);
         }
         if query.only_enabled {
-            builder.push(" AND is_enabled = 1");
+            builder.push(" AND status = 1");
         }
         if let Some(status_in) = &query.status_in {
             if !status_in.is_empty() {
@@ -213,8 +213,8 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
         agent_id: &str,
         only_enabled: bool,
     ) -> Result<Vec<MessageChannelPo>> {
-        // 1. 先查询 Agent 绑定的渠道
-        let agent_channels = self
+        // 查询用户+Agent 的所有渠道（Agent 专属 + 用户通用）
+        let mut agent_channels = self
             .query(
                 ctx.clone(),
                 MessageChannelQuery {
@@ -226,26 +226,31 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
             )
             .await?;
 
-        // 2. 如果 Agent 绑定了渠道，直接返回
-        if !agent_channels.is_empty() {
-            return Ok(agent_channels);
-        }
+        // 查询所有用户渠道
+        let all_user_channels = self.list_by_user_id(ctx.clone(), user_id, only_enabled).await?;
+        
+        // 过滤出用户通用渠道（未绑定 Agent 的）
+        let user_channels: Vec<_> = all_user_channels
+            .into_iter()
+            .filter(|c| c.agent_id.is_none())
+            .collect();
 
-        // 3. 如果 Agent 没有绑定渠道，返回用户的所有渠道
-        self.list_by_user_id(ctx, user_id, only_enabled).await
+        agent_channels.extend(user_channels);
+
+        Ok(agent_channels)
     }
 
-    async fn set_enabled(&self, ctx: RequestContext, id: &str, enabled: bool) -> Result<()> {
+    async fn set_status(&self, ctx: RequestContext, id: &str, status: ChannelStatus) -> Result<()> {
         let current_timestamp = Utc::now().timestamp();
-        let enabled_i32 = enabled as i32;
+        let status_i32 = status as i32;
 
         sqlx::query!(
             r#"
             UPDATE message_channels
-            SET is_enabled = ?, updated_at = ?
+            SET status = ?, updated_at = ?
             WHERE id = ?
             "#,
-            enabled_i32,
+            status_i32,
             current_timestamp,
             id,
         )
@@ -256,22 +261,7 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
     }
 
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()> {
-        let current_timestamp = Utc::now().timestamp();
-
-        sqlx::query!(
-            r#"
-            UPDATE message_channels
-            SET status = ?, updated_at = ?
-            WHERE id = ?
-            "#,
-            ChannelStatus::Deleted as i32,
-            current_timestamp,
-            id,
-        )
-        .execute(ctx.db_pool())
-        .await?;
-
-        Ok(())
+        self.set_status(ctx, id, ChannelStatus::Deleted).await
     }
 
     async fn mark_push_success(&self, ctx: RequestContext, id: &str) -> Result<()> {
@@ -280,7 +270,7 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
         sqlx::query!(
             r#"
             UPDATE message_channels
-            SET last_push_at = ?, last_error = ?, updated_at = ?
+            SET last_pushed_at = ?, last_error = ?, updated_at = ?
             WHERE id = ?
             "#,
             current_timestamp,
@@ -296,15 +286,17 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
 
     async fn mark_push_failed(&self, ctx: RequestContext, id: &str, error: &str) -> Result<()> {
         let current_timestamp = Utc::now().timestamp();
+        let error_str = error.to_string();
+        let error_opt = Some(error_str);
 
         sqlx::query!(
             r#"
             UPDATE message_channels
-            SET last_push_at = ?, last_error = ?, updated_at = ?
+            SET last_pushed_at = ?, last_error = ?, updated_at = ?
             WHERE id = ?
             "#,
             current_timestamp,
-            Some(error.to_string()),
+            error_opt,
             current_timestamp,
             id,
         )

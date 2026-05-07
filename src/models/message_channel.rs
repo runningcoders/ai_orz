@@ -8,7 +8,7 @@
 //! - 各渠道配置统一存储在 config_json 字段中（JSON 格式）
 
 use common::constants::utils;
-use common::enums::ChannelType;
+use common::enums::{ChannelType, ChannelStatus};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use sqlx::types::Json;
@@ -54,7 +54,7 @@ impl MessageChannel {
 
     /// 是否启用
     pub fn is_enabled(&self) -> bool {
-        self.po.is_enabled
+        matches!(self.po.status, ChannelStatus::Active)
     }
 
     /// 获取配置
@@ -87,8 +87,8 @@ pub struct MessageChannelPo {
     pub secret: Option<String>,
     /// 扩展配置 JSON（各渠道的详细配置）
     pub config_json: Json<ChannelConfig>,
-    /// 是否启用
-    pub is_enabled: bool,
+    /// 渠道状态
+    pub status: ChannelStatus,
     /// 最后成功推送的时间戳（毫秒）
     pub last_pushed_at: Option<i64>,
     /// 最后一次推送的错误信息
@@ -130,7 +130,7 @@ impl MessageChannelPo {
             access_token,
             secret,
             config_json: Json(config),
-            is_enabled: true,
+            status: ChannelStatus::Active,
             last_pushed_at: None,
             last_error: None,
             created_by: created_by.clone(),
@@ -212,7 +212,7 @@ mod tests {
             .access_token(None)
             .secret(Some("secret_123".to_string()))
             .config_json(Json(ChannelConfig::default()))
-            .is_enabled(true)
+            .status(ChannelStatus::Active)
             .created_by("tester".to_string())
             .modified_by("tester".to_string())
             .created_at(1234567890)
@@ -223,6 +223,6 @@ mod tests {
         assert_eq!(po.id, "channel_001");
         assert_eq!(po.channel_name, "飞书通知");
         assert_eq!(po.agent_id, Some("agent_001".to_string()));
-        assert!(po.is_enabled);
+        assert_eq!(po.status, ChannelStatus::Active);
     }
 }

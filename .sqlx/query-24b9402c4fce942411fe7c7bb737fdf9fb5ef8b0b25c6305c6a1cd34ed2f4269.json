@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT INTO message_channels (\n                id, org_id, user_id, agent_id, channel_type, channel_name,\n                webhook_url, access_token, secret, config_json, status,\n                last_pushed_at, last_error, created_by, modified_by, created_at, updated_at\n            )\n            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 17
+    },
+    "nullable": []
+  },
+  "hash": "24b9402c4fce942411fe7c7bb737fdf9fb5ef8b0b25c6305c6a1cd34ed2f4269"
+}

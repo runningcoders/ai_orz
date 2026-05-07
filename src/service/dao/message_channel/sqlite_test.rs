@@ -42,7 +42,7 @@ async fn test_insert_and_find_by_id(pool: SqlitePool) -> Result<()> {
     assert_eq!(found.user_id, "user-001");
     assert_eq!(found.channel_type, ChannelType::Webhook);
     assert_eq!(found.channel_name, "我的 Webhook 渠道");
-    assert!(found.is_enabled);
+    assert_eq!(found.status, ChannelStatus::Active);
 
     Ok(())
 }
@@ -148,14 +148,14 @@ async fn test_set_enabled(pool: SqlitePool) -> Result<()> {
     dao.insert(ctx.clone(), &channel).await?;
 
     // 禁用
-    dao.set_enabled(ctx.clone(), &channel.id, false).await?;
+    dao.set_status(ctx.clone(), &channel.id, ChannelStatus::Disabled).await?;
     let found = dao.find_by_id(ctx.clone(), &channel.id).await?.unwrap();
-    assert!(!found.is_enabled);
+    assert_eq!(found.status, ChannelStatus::Disabled);
 
     // 重新启用
-    dao.set_enabled(ctx.clone(), &channel.id, true).await?;
+    dao.set_status(ctx.clone(), &channel.id, ChannelStatus::Active).await?;
     let found = dao.find_by_id(ctx.clone(), &channel.id).await?.unwrap();
-    assert!(found.is_enabled);
+    assert_eq!(found.status, ChannelStatus::Active);
 
     Ok(())
 }

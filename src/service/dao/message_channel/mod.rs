@@ -70,8 +70,8 @@ pub trait MessageChannelDao: Send + Sync {
         only_enabled: bool,
     ) -> Result<Vec<MessageChannelPo>>;
 
-    /// 设置渠道启用/禁用状态
-    async fn set_enabled(&self, ctx: RequestContext, id: &str, enabled: bool) -> Result<()>;
+    /// 设置渠道状态
+    async fn set_status(&self, ctx: RequestContext, id: &str, status: ChannelStatus) -> Result<()>;
 
     /// 删除渠道（软删除，设置状态为 Deleted）
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()>;
