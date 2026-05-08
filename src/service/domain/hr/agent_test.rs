@@ -10,15 +10,31 @@ fn new_ctx(user_id: &str, pool: sqlx::SqlitePool) -> RequestContext {
     RequestContext::new_simple(user_id, pool)
 }
 
+/// 初始化 HR Domain 所有依赖
+/// 初始化顺序：dao -> dal -> domain
+fn init_hr_test_env() {
+    // 初始化所有 DAO
+    crate::service::dao::agent::init();
+    crate::service::dao::tool::init();
+    crate::service::dao::skill::init();
+    crate::service::dao::tool_call::init();
+    
+    // 初始化所有 DAL
+    crate::service::dal::agent::init();
+    crate::service::dal::tool::init();
+    crate::service::dal::skill::init();
+    
+    // 初始化 HR Domain
+    super::init();
+}
+
 #[sqlx::test]
 async fn test_create_and_find_by_id(pool: sqlx::SqlitePool) {
-    // 初始化依赖：dao -> dal -> domain (和线上初始化顺序一致)
-    crate::service::dao::agent::init();
-    crate::service::dal::agent::init();
-    super::init();
+    // 初始化测试环境
+    init_hr_test_env();
     let domain = domain();
     let ctx = new_ctx("admin", pool);
-
+    
     let agent_po = AgentPo::new("TestAgent".to_string(), vec!["worker".to_string()],
         "A helpful agent".to_string(),
         vec!["coding".to_string()],
@@ -27,13 +43,13 @@ async fn test_create_and_find_by_id(pool: sqlx::SqlitePool) {
         "admin".to_string(),
     );
     let agent = Agent::from_po(agent_po);
-
+    
     domain
         .agent_manage()
         .create_agent(ctx.clone(), &agent)
         .await
         .unwrap();
-
+    
     let found: Option<Agent> = domain
         .agent_manage()
         .get_agent(ctx, &agent.id())
@@ -44,12 +60,10 @@ async fn test_create_and_find_by_id(pool: sqlx::SqlitePool) {
 
 #[sqlx::test]
 async fn test_list_agents(pool: sqlx::SqlitePool) {
-    // 初始化依赖：dao -> dal -> domain (和线上初始化顺序一致)
-    crate::service::dao::agent::init();
-    crate::service::dal::agent::init();
-    super::init();
+    // 初始化测试环境
+    init_hr_test_env();
     let domain = domain();
-
+    
     for i in 0..3 {
         let ctx = new_ctx("admin", pool.clone());
         let agent_po = AgentPo::new(format!("Agent{}", i), vec!["worker".to_string()],
@@ -66,7 +80,7 @@ async fn test_list_agents(pool: sqlx::SqlitePool) {
             .await
             .unwrap();
     }
-
+    
     let ctx = new_ctx("admin", pool);
     let agents: Vec<Agent> = domain.agent_manage().list_agents(ctx).await.unwrap();
     assert_eq!(agents.len(), 3);
@@ -74,13 +88,11 @@ async fn test_list_agents(pool: sqlx::SqlitePool) {
 
 #[sqlx::test]
 async fn test_update_agent(pool: sqlx::SqlitePool) {
-    // 初始化依赖：dao -> dal -> domain (和线上初始化顺序一致)
-    crate::service::dao::agent::init();
-    crate::service::dal::agent::init();
-    super::init();
+    // 初始化测试环境
+    init_hr_test_env();
     let domain = domain();
     let ctx = new_ctx("admin", pool.clone());
-
+    
     let agent_po = AgentPo::new("Original".to_string(), vec!["worker".to_string()],
         "".to_string(),
         vec![],
@@ -94,7 +106,7 @@ async fn test_update_agent(pool: sqlx::SqlitePool) {
         .create_agent(ctx.clone(), &agent)
         .await
         .unwrap();
-
+    
     let mut updated = agent.clone();
     updated.po.name = "Updated".to_string();
     domain
@@ -102,7 +114,7 @@ async fn test_update_agent(pool: sqlx::SqlitePool) {
         .update_agent(new_ctx("editor", pool), &updated)
         .await
         .unwrap();
-
+    
     let found: Option<Agent> = domain
         .agent_manage()
         .get_agent(ctx, &updated.id())
@@ -113,13 +125,11 @@ async fn test_update_agent(pool: sqlx::SqlitePool) {
 
 #[sqlx::test]
 async fn test_delete_agent(pool: sqlx::SqlitePool) {
-    // 初始化依赖：dao -> dal -> domain (和线上初始化顺序一致)
-    crate::service::dao::agent::init();
-    crate::service::dal::agent::init();
-    super::init();
+    // 初始化测试环境
+    init_hr_test_env();
     let domain = domain();
     let ctx = new_ctx("admin", pool.clone());
-
+    
     let agent_po = AgentPo::new(
         "ToDelete".to_string(),
         vec!["worker".to_string()],
@@ -135,7 +145,7 @@ async fn test_delete_agent(pool: sqlx::SqlitePool) {
         .create_agent(ctx.clone(), &agent)
         .await
         .unwrap();
-
+    
     domain
         .agent_manage()
         .delete_agent(ctx.clone(), &agent)
