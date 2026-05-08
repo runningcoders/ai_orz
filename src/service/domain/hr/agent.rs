@@ -7,13 +7,29 @@ use crate::service::dao::agent::AgentQuery;
 use crate::service::dal::agent::AgentDal;
 use crate::service::domain::hr::{AgentManage, HrDomainImpl};
 use common::enums::AgentStatus;
+use tracing::warn;
 
 #[async_trait::async_trait]
 impl AgentManage for HrDomainImpl {
     /// 创建 Agent
     ///
     /// 基础操作：将 Agent 持久化到存储
+    /// 强制校验：必须指定 model_provider_id，创建后状态固定为 Interviewing
     async fn create_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError> {
+        // 强制校验：必须指定 model_provider_id
+        if agent.po.model_provider_id.is_empty() {
+            return Err(AppError::BadRequest(
+                "创建 Agent 必须指定 model_provider_id".to_string(),
+            ));
+        }
+        
+        // 强制校验：状态必须是 Interviewing
+        if agent.po.status != AgentStatus::Interviewing {
+            return Err(AppError::BadRequest(
+                "新建 Agent 状态必须为 Interviewing".to_string(),
+            ));
+        }
+        
         self.agent_dal.create(ctx, agent).await
     }
 
@@ -57,5 +73,88 @@ impl AgentManage for HrDomainImpl {
     /// 基础操作：软删除 Agent（标记为已删除）
     async fn delete_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError> {
         self.agent_dal.delete(ctx, agent).await
+    }
+
+    /// 状态流转
+    ///
+    /// 校验状态流转合法性，更新状态并持久化
+    async fn transition_status(
+        &self,
+        ctx: RequestContext,
+        agent: &mut Agent,
+        target_status: AgentStatus,
+    ) -> Result<(), AppError> {
+        let current_status = agent.po.status.clone();
+        
+        // 状态机校验：定义合法的流转路径
+        let is_valid_transition = match (&current_status, &target_status) {
+            // 面试中 → 待入职
+            (AgentStatus::Interviewing, AgentStatus::PendingOnboard) => true,
+            // 待入职 → 已入职
+            (AgentStatus::PendingOnboard, AgentStatus::Onboarded) => true,
+            // 已入职 → 待离职
+            (AgentStatus::Onboarded, AgentStatus::PendingOffboard) => true,
+            // 待离职 → 已离职
+            (AgentStatus::PendingOffboard, AgentStatus::Offboarded) => true,
+            // 任意状态 → 已删除
+            (_, AgentStatus::Deleted) => true,
+            // 同状态跳转：允许幂等
+            (a, b) if a == b => true,
+            // 其他情况：非法
+            _ => false,
+        };
+
+        if !is_valid_transition {
+            return Err(AppError::BadRequest(format!(
+                "非法状态流转：{:?} → {:?}",
+                current_status, target_status
+            )));
+        }
+
+        // 幂等：状态相同直接返回
+        if current_status == target_status {
+            return Ok(());
+        }
+
+        // 更新状态
+        agent.po.status = target_status;
+
+        // 持久化
+        self.agent_dal.update(ctx, agent).await
+    }
+
+    /// 校验入职就绪状态
+    ///
+    /// 检查工具绑定、技能安装等完整性条件
+    async fn validate_onboard_readiness(
+        &self,
+        ctx: RequestContext,
+        agent: &Agent,
+    ) -> Result<(), AppError> {
+        let agent_id = agent.po.id.as_str();
+
+        // 1. 校验状态必须是 PendingOnboard
+        if agent.po.status != AgentStatus::PendingOnboard {
+            return Err(AppError::BadRequest(format!(
+                "Agent 状态必须是 PendingOnboard 才能入职，当前状态：{:?}",
+                agent.po.status
+            )));
+        }
+
+        // 2. 校验至少绑定了 1 个工具
+        let tools = self.tool_dal.list_tools_for_agent_full(&ctx, agent_id).await?;
+        if tools.is_empty() {
+            return Err(AppError::BadRequest(
+                "Agent 至少绑定 1 个工具才能入职".to_string(),
+            ));
+        }
+
+        // 3. 校验技能：没有技能只告警，不阻止入职
+        let skills = self.skill_dal.list_for_agent(ctx.clone(), agent_id).await?;
+        if skills.is_empty() {
+            warn!("Agent {} 未安装任何技能", agent_id);
+        }
+
+        Ok(())
     }
 }

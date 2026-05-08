@@ -14,6 +14,11 @@ use crate::models::agent::Agent;
 use crate::pkg::RequestContext;
 use crate::service::dal::agent::AgentDal;
 use crate::service::dal::agent as agent_dal;
+use crate::service::dal::tool::ToolDal;
+use crate::service::dal::tool as tool_dal;
+use crate::service::dal::skill::SkillDal;
+use crate::service::dal::skill as skill_dal;
+use common::enums::AgentStatus;
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例 ====================
@@ -29,6 +34,8 @@ pub fn domain() -> Arc<dyn HrDomain> {
 pub fn init() {
     let hr_domain = HrDomainImpl::new(
         agent_dal::dal(),
+        tool_dal::dal(),
+        skill_dal::dal(),
     );
     let _ = HR_DOMAIN.set(Arc::new(hr_domain));
 }
@@ -40,12 +47,18 @@ pub fn init() {
 /// 聚合所有人力资源子功能实现
 struct HrDomainImpl {
     agent_dal: Arc<dyn AgentDal>,
+    tool_dal: Arc<dyn ToolDal>,
+    skill_dal: Arc<dyn SkillDal>,
 }
 
 impl HrDomainImpl {
     /// 创建 Domain 实例
-    fn new(agent_dal: Arc<dyn AgentDal>) -> Self {
-        Self { agent_dal }
+    fn new(
+        agent_dal: Arc<dyn AgentDal>,
+        tool_dal: Arc<dyn ToolDal>,
+        skill_dal: Arc<dyn SkillDal>,
+    ) -> Self {
+        Self { agent_dal, tool_dal, skill_dal }
     }
 }
 
@@ -93,4 +106,23 @@ pub trait AgentManage: Send + Sync {
 
     /// 删除 Agent
     async fn delete_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
+
+    /// 状态流转
+    ///
+    /// 校验状态流转合法性，更新状态并持久化
+    async fn transition_status(
+        &self,
+        ctx: RequestContext,
+        agent: &mut Agent,
+        target_status: AgentStatus,
+    ) -> Result<(), AppError>;
+
+    /// 校验入职就绪状态
+    ///
+    /// 检查工具绑定、技能安装等完整性条件
+    async fn validate_onboard_readiness(
+        &self,
+        ctx: RequestContext,
+        agent: &Agent,
+    ) -> Result<(), AppError>;
 }
