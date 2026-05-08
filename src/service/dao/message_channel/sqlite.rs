@@ -7,6 +7,7 @@ use chrono::Utc;
 use common::enums::ChannelStatus;
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
+use std::sync::{Arc, OnceLock};
 
 /// MessageChannel DAO SQLite 实现
 #[derive(Debug, Clone, Default)]
@@ -308,13 +309,13 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
 }
 
 /// 获取 DAO 单例
-pub fn dao() -> &'static MessageChannelDaoSqliteImpl {
-    static INSTANCE: std::sync::OnceLock<MessageChannelDaoSqliteImpl> = std::sync::OnceLock::new();
-    INSTANCE.get_or_init(|| MessageChannelDaoSqliteImpl::default())
+pub fn dao() -> Arc<dyn MessageChannelDao + Send + Sync> {
+    static INSTANCE: OnceLock<Arc<dyn MessageChannelDao + Send + Sync>> = OnceLock::new();
+    INSTANCE.get_or_init(|| Arc::new(MessageChannelDaoSqliteImpl::default())).clone()
 }
 
-pub fn new() -> MessageChannelDaoSqliteImpl {
-    MessageChannelDaoSqliteImpl::default()
+pub fn new() -> Arc<dyn MessageChannelDao + Send + Sync> {
+    Arc::new(MessageChannelDaoSqliteImpl::default())
 }
 
 pub fn init() {

@@ -17,6 +17,7 @@ pub fn init_all(){
     agent::init();
     brain::init();
     message::init();
+    message_channel::init();
     model_provider::init();
     organization::init();
     skill::init();
@@ -31,6 +32,8 @@ pub(crate) mod agent_test;
 pub(crate) mod brain_test;
 #[cfg(test)]
 pub(crate) mod message_test;
+#[cfg(test)]
+pub(crate) mod message_channel_test;
 #[cfg(test)]
 pub(crate) mod model_provider_test;
 #[cfg(test)]
