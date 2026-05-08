@@ -331,3 +331,235 @@ impl MessageProcessDomain {
 2. **失败隔离**：某个渠道推送失败不影响其他渠道和主流程
 3. **性能优化**：多个渠道可以并发推送，提高响应速度
 4. **重试机制**：后续可以独立实现推送重试逻辑，不影响消息处理
+
+---
+
+## 🏗️ 最终消息分发架构设计（2026-05-08 确认）
+
+### 核心设计原则（经过 5 轮讨论最终确认）
+
+| 原则 | 说明 |
+|------|------|
+| **无 trait，纯 match** | 不使用任何 trait 约束，最简单直接 |
+| **DAL 统一整合** | 渠道配置管理 + 消息分发统一在 `MessageChannelDal` |
+| **严格分层封装** | 所有 DAO 都是 DAL 私有字段，Domain 层完全看不到 DAO |
+| **无循环依赖** | DAL 依赖 DAO，DAO 不依赖 DAL，单向依赖 |
+| **错误统一** | 不创建独立错误类型，统一到 `AppError` |
+
+---
+
+### 最终架构图
+
+```
+Domain 层
+    │ 只能调用 DAL 暴露的 8 个公共方法
+    ▼
+MessageChannelDal (统一整合)
+    ├── 渠道配置管理
+    │   ├── create_channel()
+    │   ├── update_channel()
+    │   ├── delete_channel()
+    │   ├── get_channel()
+    │   ├── list_user_channels()
+    │   └── test_channel()  ✅ 测试渠道连接
+    │
+    └── 消息分发
+        └── deliver_message()  ✅ 分发消息到所有渠道
+        └── 内部私有方法（不对外暴露）
+            ├── push_to_channel()  纯 match 分发
+            └── update_channel_push_status()
+
+DAO 层（6 个完全独立的 DAO）
+    ├── MessageChannelDao  ✅ 渠道配置 CRUD
+    ├── LarkDao           ✅ 飞书推送
+    ├── WechatDao         ✅ 微信推送
+    ├── SlackDao          ✅ Slack 推送
+    ├── EmailDao          ✅ 邮件推送
+    └── WebhookDao        ✅ Webhook 推送
+```
+
+---
+
+### 目录结构（最简）
+
+```
+src/service/
+├── dao/
+│   ├── mod.rs
+│   ├── message_channel.rs      # 渠道配置 CRUD
+│   ├── lark_dao.rs             # 飞书 DAO
+│   ├── wechat_dao.rs           # 微信 DAO
+│   ├── slack_dao.rs            # Slack DAO
+│   ├── email_dao.rs            # 邮件 DAO
+│   └── webhook_dao.rs          # Webhook DAO
+│
+└── dal/
+    ├── mod.rs
+    └── message_channel_dal.rs   # 统一整合：配置管理 + 消息分发
+```
+
+---
+
+### 各渠道 DAO 设计（完全独立，无 trait）
+
+以 `lark_dao.rs` 为例：
+
+```rust
+#[derive(Clone, Default)]
+pub struct LarkDao;
+
+impl LarkDao {
+    /// 推送消息（约定方法名）
+    pub async fn push(
+        &self,
+        _ctx: RequestContext,
+        _message: &Message,
+        _channel: &MessageChannel,
+    ) -> Result<(), String> {
+        // TODO: 实现飞书推送逻辑
+        Err("飞书推送未实现".to_string())
+    }
+    
+    /// 测试连接（约定方法名）
+    pub async fn test_connection(
+        &self,
+        _ctx: RequestContext,
+        _channel: &MessageChannel,
+    ) -> Result<(), String> {
+        // TODO: 实现飞书连接测试逻辑
+        Err("飞书测试未实现".to_string())
+    }
+}
+```
+
+✅ 关键点：
+- 完全独立，不实现任何 trait
+- `push()` 和 `test_connection()` 只是约定的方法名
+- 可以自由添加其他渠道特有方法
+
+---
+
+### MessageChannelDal 核心分发逻辑
+
+```rust
+pub struct MessageChannelDal {
+    // ✅ 所有 DAO 都是私有，不对外暴露！
+    message_channel_dao: Arc<dyn MessageChannelDao>,
+    lark_dao: Arc<LarkDao>,
+    wechat_dao: Arc<WechatDao>,
+    slack_dao: Arc<SlackDao>,
+    email_dao: Arc<EmailDao>,
+    webhook_dao: Arc<WebhookDao>,
+}
+
+impl MessageChannelDal {
+    // ... 配置管理的公共方法 ...
+    
+    /// ✅ 测试渠道连接（公共方法）
+    pub async fn test_channel(&self, ctx: RequestContext, channel_id: &str) -> Result<()> {
+        let channel = self.get_channel(ctx.clone(), channel_id).await?;
+        
+        // 🎯 核心：纯 match 分发！无 trait！
+        match channel.channel_type() {
+            ChannelType::Lark => self.lark_dao.test_connection(ctx, &channel).await,
+            ChannelType::Wechat => self.wechat_dao.test_connection(ctx, &channel).await,
+            ChannelType::Slack => self.slack_dao.test_connection(ctx, &channel).await,
+            ChannelType::Email => self.email_dao.test_connection(ctx, &channel).await,
+            ChannelType::Webhook => self.webhook_dao.test_connection(ctx, &channel).await,
+        }.map_err(|e| AppError::ChannelPushError(e))
+    }
+    
+    /// ✅ 分发消息到用户所有可用渠道（公共方法）
+    pub async fn deliver_message(
+        &self,
+        ctx: RequestContext,
+        message: &Message,
+        user_id: &str,
+    ) -> Result<DeliveryResult> {
+        // 1. 查询用户可用渠道
+        let channels = self.message_channel_dao
+            .find_active_by_user(&ctx, user_id)
+            .await?;
+        
+        if channels.is_empty() {
+            return Ok(DeliveryResult::empty());
+        }
+        
+        // 2. 逐个渠道推送
+        let mut details = Vec::with_capacity(channels.len());
+        
+        for channel in channels {
+            let result = self.push_to_channel(ctx.clone(), message, &channel).await;
+            
+            // 3. 更新渠道状态
+            let _ = self.update_channel_push_status(&ctx, &channel, &result).await;
+            
+            details.push(ChannelDeliveryDetail {
+                channel_id: channel.id().to_string(),
+                channel_type: channel.channel_type(),
+                channel_name: channel.po.channel_name.clone(),
+                success: result.is_ok(),
+                error: result.err(),
+            });
+        }
+        
+        Ok(DeliveryResult::from_details(details))
+    }
+    
+    /// 🎯 核心分发逻辑（内部私有，不对外暴露！
+    async fn push_to_channel(
+        &self,
+        ctx: RequestContext,
+        message: &Message,
+        channel: &MessageChannel,
+    ) -> Result<(), String> {
+        match channel.channel_type() {
+            ChannelType::Lark => 
+                self.lark_dao.push(ctx, message, channel).await,
+            
+            ChannelType::Wechat => 
+                self.wechat_dao.push(ctx, message, channel).await,
+            
+            ChannelType::Slack => 
+                self.slack_dao.push(ctx, message, channel).await,
+            
+            ChannelType::Email => 
+                self.email_dao.push(ctx, message, channel).await,
+            
+            ChannelType::Webhook => 
+                self.webhook_dao.push(ctx, message, channel).await,
+        }
+    }
+}
+```
+
+---
+
+### 设计优势总结
+
+| 优势 | 说明 |
+|------|------|
+| ✅ **无循环依赖** | DAL 依赖 DAO，DAO 不依赖 DAL，单向依赖 |
+| ✅ **0 层抽象** | 没有 trait，没有工厂，没有注册表，纯 match |
+| ✅ **严格分层** | DAO 完全私有，Domain 层只能看到 DAL 公共方法 |
+| ✅ **渠道自由扩展** | 各渠道 DAO 可以自由添加特有方法 |
+| ✅ **编译安全** | 新增渠道漏加 match arm，编译直接报错 |
+
+---
+
+### 反模式提醒（绝对不要做）
+
+❌ **不要**：创建 PushChannel trait
+❌ **不要**：创建工厂模式动态创建渠道实例
+❌ **不要**：创建注册表模式
+❌ **不要**：在 DAL 暴露 DAO getter 方法
+❌ **不要**：创建独立的错误类型
+❌ **不要**：拆分 MessageChannelDal + MessageDeliveryDal（合并才是正确的）
+
+✅ **要**：纯 `match` 分发！
+✅ **要**：DAL 统一整合！
+✅ **要**：严格分层封装！
+
+---
+
+*此设计方案经过 5 轮讨论迭代，于 2026-05-08 最终确认，符合严格分层架构理念，无过度设计。*
