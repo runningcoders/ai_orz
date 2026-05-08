@@ -37,4 +37,10 @@ pub fn init_all(){
     skill::init();
     tool::init();
     tool_call::init();
+    // 消息推送渠道 DAO
+    lark::init();
+    wechat::init();
+    slack::init();
+    email::init();
+    webhook::init();
 }

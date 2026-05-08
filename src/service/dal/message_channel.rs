@@ -42,13 +42,15 @@ pub fn init() {
 pub fn new(
     message_channel_dao: Arc<dyn MessageChannelDao + Send + Sync>,
 ) -> Arc<dyn MessageChannelDal> {
+    use crate::service::dao::{lark, wechat, slack, email, webhook};
+    
     Arc::new(MessageChannelDalImpl {
         message_channel_dao,
-        lark_dao: Arc::new(LarkDao::default()),
-        wechat_dao: Arc::new(WechatDao::default()),
-        slack_dao: Arc::new(SlackDao::default()),
-        email_dao: Arc::new(EmailDao::default()),
-        webhook_dao: Arc::new(WebhookDao::default()),
+        lark_dao: lark::dao(),
+        wechat_dao: wechat::dao(),
+        slack_dao: slack::dao(),
+        email_dao: email::dao(),
+        webhook_dao: webhook::dao(),
     })
 }
 
@@ -105,11 +107,11 @@ struct MessageChannelDalImpl {
     message_channel_dao: Arc<dyn MessageChannelDao + Send + Sync>,
 
     /// 各渠道推送 DAO（私有，不对外暴露）
-    lark_dao: Arc<LarkDao>,
-    wechat_dao: Arc<WechatDao>,
-    slack_dao: Arc<SlackDao>,
-    email_dao: Arc<EmailDao>,
-    webhook_dao: Arc<WebhookDao>,
+    lark_dao: Arc<dyn LarkDao + Send + Sync>,
+    wechat_dao: Arc<dyn WechatDao + Send + Sync>,
+    slack_dao: Arc<dyn SlackDao + Send + Sync>,
+    email_dao: Arc<dyn EmailDao + Send + Sync>,
+    webhook_dao: Arc<dyn WebhookDao + Send + Sync>,
 }
 
 #[async_trait::async_trait]

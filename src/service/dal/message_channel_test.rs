@@ -2,15 +2,29 @@
 
 use crate::service::dal::message_channel::{dal, init};
 use crate::service::dao::message_channel::init as message_channel_dao_init;
+use crate::service::dao::lark::init as lark_dao_init;
+use crate::service::dao::wechat::init as wechat_dao_init;
+use crate::service::dao::slack::init as slack_dao_init;
+use crate::service::dao::email::init as email_dao_init;
+use crate::service::dao::webhook::init as webhook_dao_init;
 use crate::models::message_channel::{MessageChannel, MessageChannelPo, ChannelConfig};
 use crate::pkg::RequestContext;
 use common::enums::{ChannelType, ChannelStatus};
 use sqlx::SqlitePool;
 
+fn init_all_test_daos() {
+    message_channel_dao_init();
+    lark_dao_init();
+    wechat_dao_init();
+    slack_dao_init();
+    email_dao_init();
+    webhook_dao_init();
+    init();
+}
+
 #[sqlx::test]
 async fn test_create_and_get_channel(pool: SqlitePool) {
-    message_channel_dao_init();
-    init();
+    init_all_test_daos();
     let dal = dal();
     let ctx = RequestContext::new_simple("admin", pool);
 
@@ -41,8 +55,7 @@ async fn test_create_and_get_channel(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_list_user_channels(pool: SqlitePool) {
-    message_channel_dao_init();
-    init();
+    init_all_test_daos();
     let dal = dal();
     let ctx = RequestContext::new_simple("admin", pool);
 
@@ -96,8 +109,7 @@ async fn test_list_user_channels(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_update_channel(pool: SqlitePool) {
-    message_channel_dao_init();
-    init();
+    init_all_test_daos();
     let dal = dal();
     let ctx = RequestContext::new_simple("admin", pool.clone());
 
@@ -128,8 +140,7 @@ async fn test_update_channel(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_delete_and_set_status(pool: SqlitePool) {
-    message_channel_dao_init();
-    init();
+    init_all_test_daos();
     let dal = dal();
     let ctx = RequestContext::new_simple("admin", pool.clone());
 
@@ -173,8 +184,7 @@ async fn test_delete_and_set_status(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_query_channels(pool: SqlitePool) {
-    message_channel_dao_init();
-    init();
+    init_all_test_daos();
     let dal = dal();
     let ctx = RequestContext::new_simple("admin", pool);
 
@@ -214,8 +224,7 @@ async fn test_query_channels(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_deliver_message_skeleton(pool: SqlitePool) {
-    message_channel_dao_init();
-    init();
+    init_all_test_daos();
     let dal = dal();
     let ctx = RequestContext::new_simple("admin", pool);
 
