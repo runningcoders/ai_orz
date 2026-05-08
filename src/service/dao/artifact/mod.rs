@@ -9,6 +9,7 @@ use crate::error::Result;
 /// Artifact 查询参数
 #[derive(Debug, Clone, Default)]
 pub struct ArtifactQuery {
+    pub project_id: Option<String>,
     pub task_id: Option<String>,
     pub limit: Option<usize>,
 }
@@ -25,8 +26,14 @@ pub trait ArtifactDao: Send + Sync + std::fmt::Debug {
     /// 通用查询
     async fn query(&self, ctx: RequestContext, query: ArtifactQuery) -> Result<Vec<ArtifactPo>>;
 
+    /// List all artifacts for a project, automatically filters deleted artifacts
+    async fn list_by_project(&self, ctx: RequestContext, project_id: &str) -> Result<Vec<ArtifactPo>>;
+
     /// List all artifacts for a task, automatically filters deleted artifacts
     async fn list_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<Vec<ArtifactPo>>;
+
+    /// Count artifacts for a project
+    async fn count_by_project(&self, ctx: RequestContext, project_id: &str) -> Result<i64>;
 
     /// Count artifacts for a task
     async fn count_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<i64>;

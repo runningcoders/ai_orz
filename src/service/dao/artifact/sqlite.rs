@@ -49,7 +49,8 @@ impl ArtifactDao for ArtifactDaoSqliteImpl {
         let ft = artifact.file_type as i32;
         sqlx::query!(
 r#"
-INSERT INTO artifacts (id, task_id, name, description, file_type, file_meta, status, created_by, modified_by, created_at, updated_at) VALUES (
+INSERT INTO artifacts (id, project_id, task_id, name, description, file_type, file_meta, status, created_by, modified_by, created_at, updated_at) VALUES (
+?,
 ?,
 ?,
 ?,
@@ -64,6 +65,7 @@ INSERT INTO artifacts (id, task_id, name, description, file_type, file_meta, sta
 )
 "#,
             artifact.id,
+            artifact.project_id,
             artifact.task_id,
             artifact.name,
             artifact.description,
@@ -89,7 +91,7 @@ INSERT INTO artifacts (id, task_id, name, description, file_type, file_meta, sta
         let artifact = sqlx::query_as!(
             ArtifactPo,
 r#"
-SELECT id, task_id, name, description, file_type as "file_type: FileType", file_meta as "file_meta: Json<FileMeta>", status as "status: i32", created_by, modified_by, created_at, updated_at
+SELECT id, project_id, task_id, name, description, file_type as "file_type: FileType", file_meta as "file_meta: Json<FileMeta>", status as "status: i32", created_by, modified_by, created_at, updated_at
 FROM artifacts
 WHERE id = ? AND "status" != 0
 "#,
@@ -103,8 +105,13 @@ WHERE id = ? AND "status" != 0
     async fn query(&self, ctx: RequestContext, query: ArtifactQuery) -> Result<Vec<ArtifactPo>> {
         let pool = ctx.db_pool();
         let mut builder = sqlx::QueryBuilder::new(
-            r#"SELECT id, task_id, name, description, file_type, file_meta, status, created_by, modified_by, created_at, updated_at FROM artifacts WHERE "status" != 0"#
+            r#"SELECT id, project_id, task_id, name, description, file_type, file_meta, status, created_by, modified_by, created_at, updated_at FROM artifacts WHERE "status" != 0"#
         );
+
+        // 项目过滤
+        if let Some(project_id) = &query.project_id {
+            builder.push(" AND project_id = ").push_bind(project_id);
+        }
 
         // 任务过滤
         if let Some(task_id) = &query.task_id {
@@ -126,12 +133,37 @@ WHERE id = ? AND "status" != 0
         Ok(rows)
     }
 
+    async fn list_by_project(&self, ctx: RequestContext, project_id: &str) -> Result<Vec<ArtifactPo>> {
+        // 语法糖：调用通用查询
+        self.query(ctx, ArtifactQuery {
+            project_id: Some(project_id.to_string()),
+            ..Default::default()
+        }).await
+    }
+
     async fn list_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<Vec<ArtifactPo>> {
         // 语法糖：调用通用查询
         self.query(ctx, ArtifactQuery {
             task_id: Some(task_id.to_string()),
             ..Default::default()
         }).await
+    }
+
+    async fn count_by_project(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+    ) -> Result<i64> {
+        let pool = ctx.db_pool();
+        let row = sqlx::query!(
+r#"
+SELECT COUNT(*) as count FROM artifacts WHERE project_id = ? AND "status" != 0
+"#,
+            project_id
+        )
+        .fetch_one(pool)
+        .await?;
+        Ok(row.count)
     }
 
     async fn count_by_task(

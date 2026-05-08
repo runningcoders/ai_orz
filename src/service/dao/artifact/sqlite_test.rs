@@ -17,7 +17,8 @@ async fn test_insert_artifact(pool: SqlitePool) -> Result<()> {
         "text/markdown".to_string(),
         1024,
     );
-    let artifact = ArtifactPo::new(
+    let artifact = ArtifactPo::new_task(
+        "project-id-123".to_string(),
         "task-id-123".to_string(),
         "test-artifact".to_string(),
         "Test artifact for insertion".to_string(),
@@ -31,9 +32,90 @@ async fn test_insert_artifact(pool: SqlitePool) -> Result<()> {
     assert!(found.is_some());
     let found = found.unwrap();
     assert_eq!(found.id, artifact.id);
-    assert_eq!(found.task_id, "task-id-123");
+    assert_eq!(found.project_id, "project-id-123");
+    assert_eq!(found.task_id, Some("task-id-123".to_string()));
     assert_eq!(found.name, "test-artifact");
     assert_eq!(found.file_type, FileType::Document);
+
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn test_insert_project_level_artifact(pool: SqlitePool) -> Result<()> {
+    let ctx = RequestContext::new_simple("test-user", pool);
+    let dao = new();
+    
+    let file_meta = FileMeta::new(
+        format!("20260415/project-overview.md"),
+        "text/markdown".to_string(),
+        2048,
+    );
+    let artifact = ArtifactPo::new_project(
+        "project-id-123".to_string(),
+        "project-overview".to_string(),
+        "Project level documentation".to_string(),
+        FileType::Document,
+        file_meta,
+        "test-user".to_string(),
+    );
+    dao.insert(ctx.clone(), &artifact).await?;
+
+    let found = dao.find_by_id(ctx.clone(), &artifact.id).await?;
+    assert!(found.is_some());
+    let found = found.unwrap();
+    assert_eq!(found.id, artifact.id);
+    assert_eq!(found.project_id, "project-id-123");
+    assert_eq!(found.task_id, None);
+    assert_eq!(found.name, "project-overview");
+
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn test_list_by_project(pool: SqlitePool) -> Result<()> {
+    let ctx = RequestContext::new_simple("test-user", pool);
+    let dao = new();
+
+    let project_id = "project-id-123".to_string();
+    for i in 1..=3 {
+        let file_meta = FileMeta::new(
+            format!("20260415/{}.md", Uuid::now_v7()),
+            "text/markdown".to_string(),
+            100 * i,
+        );
+        let artifact = ArtifactPo::new_task(
+            project_id.clone(),
+            format!("task-id-{}", i),
+            format!("artifact-{}", i),
+            "".to_string(),
+            FileType::Document,
+            file_meta,
+            "test-user".to_string(),
+        );
+        dao.insert(ctx.clone(), &artifact).await?;
+    }
+
+    // Add one project-level artifact
+    let file_meta = FileMeta::new(
+        format!("20260415/{}.md", Uuid::now_v7()),
+        "text/markdown".to_string(),
+        500,
+    );
+    let artifact = ArtifactPo::new_project(
+        project_id.clone(),
+        "project-overview".to_string(),
+        "".to_string(),
+        FileType::Document,
+        file_meta,
+        "test-user".to_string(),
+    );
+    dao.insert(ctx.clone(), &artifact).await?;
+
+    let list = dao.list_by_project(ctx.clone(), &project_id).await?;
+    assert_eq!(list.len(), 4);
+
+    let count = dao.count_by_project(ctx, &project_id).await?;
+    assert_eq!(count, 4);
 
     Ok(())
 }
@@ -43,6 +125,7 @@ async fn test_list_by_task(pool: SqlitePool) -> Result<()> {
     let ctx = RequestContext::new_simple("test-user", pool);
     let dao = new();
 
+    let project_id = "project-id-123".to_string();
     let task_id = "task-id-123".to_string();
     for i in 1..=3 {
         let file_meta = FileMeta::new(
@@ -50,7 +133,8 @@ async fn test_list_by_task(pool: SqlitePool) -> Result<()> {
             "text/markdown".to_string(),
             100 * i,
         );
-        let artifact = ArtifactPo::new(
+        let artifact = ArtifactPo::new_task(
+            project_id.clone(),
             task_id.clone(),
             format!("artifact-{}", i),
             "".to_string(),
@@ -80,7 +164,8 @@ async fn test_update_status(pool: SqlitePool) -> Result<()> {
         "image/png".to_string(),
         204800,
     );
-    let artifact = ArtifactPo::new(
+    let artifact = ArtifactPo::new_task(
+        "project-id-123".to_string(),
         "task-1".to_string(),
         "test-image".to_string(),
         "".to_string(),
@@ -110,7 +195,8 @@ async fn test_delete_artifact(pool: SqlitePool) -> Result<()> {
         "application/octet-stream".to_string(),
         1000,
     );
-    let artifact = ArtifactPo::new(
+    let artifact = ArtifactPo::new_task(
+        "project-id-123".to_string(),
         "task-1".to_string(),
         "binary-file".to_string(),
         "".to_string(),
@@ -164,7 +250,8 @@ async fn test_all_file_types(pool: SqlitePool) -> Result<()> {
             mime.to_string(),
             1000,
         );
-        let artifact = ArtifactPo::new(
+        let artifact = ArtifactPo::new_task(
+            "project-id-123".to_string(),
             "task-1".to_string(),
             format!("{:?}", file_type),
             "".to_string(),

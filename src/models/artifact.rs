@@ -14,8 +14,10 @@ use crate::models::file::FileMeta;
 pub struct ArtifactPo {
     /// Unique artifact ID.
     pub id: String,
-    /// Associated task ID.
-    pub task_id: String,
+    /// Associated project ID (required for all artifacts).
+    pub project_id: String,
+    /// Associated task ID (optional: None = project-level artifact).
+    pub task_id: Option<String>,
     /// Artifact display name.
     pub name: String,
     /// Artifact description/summary.
@@ -37,8 +39,35 @@ pub struct ArtifactPo {
 }
 
 impl ArtifactPo {
-    /// Create a new artifact.
-    pub fn new(
+    /// Create a new project-level artifact (not associated with any task).
+    pub fn new_project(
+        project_id: String,
+        name: String,
+        description: String,
+        file_type: FileType,
+        file_meta: FileMeta,
+        created_by: String,
+    ) -> Self {
+        let now = common::constants::utils::current_timestamp_ms();
+        Self {
+            id: Uuid::now_v7().to_string(),
+            project_id,
+            task_id: None,
+            name,
+            description,
+            file_type,
+            file_meta: Json(file_meta),
+            status: 1,
+            created_by: created_by.clone(),
+            modified_by: created_by,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    /// Create a new task-level artifact.
+    pub fn new_task(
+        project_id: String,
         task_id: String,
         name: String,
         description: String,
@@ -49,7 +78,8 @@ impl ArtifactPo {
         let now = common::constants::utils::current_timestamp_ms();
         Self {
             id: Uuid::now_v7().to_string(),
-            task_id,
+            project_id,
+            task_id: Some(task_id),
             name,
             description,
             file_type,

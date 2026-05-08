@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, name, provider_type as \"provider_type: ProviderType\", model_name, api_key, base_url, description,\n       status as \"status: ModelProviderStatus\", created_by, modified_by, created_at, updated_at\nFROM model_providers WHERE id = ? AND status != 0\n            ",
+  "query": "\nSELECT id, project_id, task_id, name, description, file_type as \"file_type: FileType\", file_meta as \"file_meta: Json<FileMeta>\", status as \"status: i32\", created_by, modified_by, created_at, updated_at\nFROM artifacts\nWHERE id = ? AND \"status\" != 0\n",
   "describe": {
     "columns": [
       {
@@ -9,37 +9,37 @@
         "type_info": "Text"
       },
       {
-        "name": "name",
+        "name": "project_id",
         "ordinal": 1,
         "type_info": "Text"
       },
       {
-        "name": "provider_type: ProviderType",
+        "name": "task_id",
         "ordinal": 2,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "model_name",
+        "name": "name",
         "ordinal": 3,
         "type_info": "Text"
       },
       {
-        "name": "api_key",
+        "name": "description",
         "ordinal": 4,
         "type_info": "Text"
       },
       {
-        "name": "base_url",
+        "name": "file_type: FileType",
         "ordinal": 5,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "description",
+        "name": "file_meta: Json<FileMeta>",
         "ordinal": 6,
         "type_info": "Text"
       },
       {
-        "name": "status: ModelProviderStatus",
+        "name": "status: i32",
         "ordinal": 7,
         "type_info": "Integer"
       },
@@ -68,13 +68,13 @@
       "Right": 1
     },
     "nullable": [
-      true,
-      false,
-      false,
       false,
       false,
       true,
-      true,
+      false,
+      false,
+      false,
+      false,
       false,
       false,
       false,
@@ -82,5 +82,5 @@
       false
     ]
   },
-  "hash": "5dd9fe9b0353eed1756de474bfa83b8edfb9ef84450b6ff4147474cc3a09de6d"
+  "hash": "247fc43e934a7583e2c1c0ff7d660562f687b7dc4a7232edd801c4c14c1f4088"
 }

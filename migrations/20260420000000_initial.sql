@@ -181,7 +181,8 @@ CREATE TABLE IF NOT EXISTS messages (
 -- 工件附件表
 CREATE TABLE IF NOT EXISTS artifacts (
     id TEXT NOT NULL PRIMARY KEY,
-    task_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    task_id TEXT,
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     file_type INTEGER NOT NULL,
@@ -261,3 +262,6 @@ CREATE INDEX IF NOT EXISTS idx_skills_category ON skills(category);
 CREATE INDEX IF NOT EXISTS idx_skills_parent ON skills(parent_skill_id);
 CREATE INDEX IF NOT EXISTS idx_skills_updated ON skills(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_skills_author ON skills(author_id);
+CREATE INDEX IF NOT EXISTS idx_artifacts_project_id ON artifacts(project_id);
+CREATE INDEX IF NOT EXISTS idx_artifacts_task_id ON artifacts(task_id);
+CREATE INDEX IF NOT EXISTS idx_artifacts_status ON artifacts(status);
