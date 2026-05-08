@@ -14,6 +14,13 @@ pub mod skill;
 pub mod tool;
 pub mod tool_call;
 
+// 消息推送渠道 DAO（无状态，不需要 init）
+pub mod lark;
+pub mod wechat;
+pub mod slack;
+pub mod email;
+pub mod webhook;
+
 pub fn init_all(){
     agent::init();
     artifact::init();
