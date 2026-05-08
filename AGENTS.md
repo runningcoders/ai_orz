@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-05-07
+> 最后更新：2026-05-08
 
 ---
 
@@ -14,7 +14,7 @@
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + rig-core 0.34
 - **前端**：Dioxus 0.7 (WebAssembly)
-- **技术特色**：严格分层架构、类型安全、191 个测试 100% 通过率
+- **技术特色**：严格分层架构、类型安全、450 个测试 100% 通过率
 
 ### 1.2 已实现核心功能
 
@@ -24,6 +24,7 @@
 | 🤖 Agent 全生命周期 | ✅ | 创建、配置、工具绑定、唤醒执行 |
 | 🧠 四层记忆系统 | ✅ | Core/Working/Short-term/Long-term |
 | 💬 消息对话系统 | ✅ | 用户 ↔ Agent 双向对话，支持项目上下文 |
+| 📨 消息渠道系统 | ✅ | 多渠道消息接入，支持启用/禁用/测试 |
 | 🛠️ 混合模式工具调用 | ✅ | 简单工具走 rig auto，关键工具走自建 manual 可控链路 |
 | 📚 技能库系统 | ✅ | 可复用技能和工作流，支持搜索和分类 |
 | 📋 任务 + 项目管理 | ✅ | 任务状态机，项目聚合对话上下文 |
@@ -33,7 +34,7 @@
 
 ### 1.3 当前测试统计
 
-- **总测试数**: 191 个
+- **总测试数**: 450 个
 - **通过率**: 100% ✅
 - **覆盖范围**: 数据层 + 领域层 100% 覆盖
 
@@ -54,14 +55,16 @@
 |------|------|--------|
 | [docs/LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md) | **开发记录**：分层架构完整落地过程、反模式、避坑指南、经验总结 | ⭐⭐⭐ |
 | [docs/NAMING_CONVENTION.md](./docs/NAMING_CONVENTION.md) | 全项目统一命名约定、DAO/DAL/Domain 命名规则 | ⭐⭐ |
-
 ### 各模块详细设计
 | 文档 | 内容 | 优先级 |
+|------|------|--------|
 | [docs/sqlx_guide.md](./docs/sqlx_guide.md) | SQLx 0.8 + SQLite 开发规范、枚举映射、测试隔离 | ⭐⭐⭐ |
 | [docs/memory_design.md](./docs/memory_design.md) | 四层记忆系统设计、检索策略 | ⭐⭐ |
 | [docs/tool_design.md](./docs/tool_design.md) | 混合模式工具调用、工具注册表、调用追踪 | ⭐⭐ |
 | [docs/message_interaction_design.md](./docs/message_interaction_design.md) | 消息交互架构、用户↔Agent双向对话、工具调用复用消息表 | ⭐⭐ |
+| [docs/message_channel_design.md](./docs/message_channel_design.md) | 消息渠道系统设计、多渠道支持、状态管理 | ⭐⭐ |
 | [docs/consumer_architecture.md](./docs/consumer_architecture.md) | 异步消费者框架、按 to_role 分层分发 | ⭐⭐ |
+| [docs/task_scheduler_design.md](./docs/task_scheduler_design.md) | 任务调度器设计、Cron 表达式、定时任务执行 | ⭐⭐ |
 | [docs/event_design.md](./docs/event_design.md) | 泛型 topic 事件队列、类型安全隔离 | ⭐⭐ |
 | [docs/skill_design.md](./docs/skill_design.md) | 技能库系统、Agent 自进化沉淀技能 | ⭐⭐ |
 | [docs/vector_search_architecture.md](./docs/vector_search_architecture.md) | 向量搜索架构、SQLite VSS 扩展集成 | ⭐⭐ |

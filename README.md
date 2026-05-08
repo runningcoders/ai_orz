@@ -5,7 +5,7 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 ![GitHub last commit](https://img.shields.io/github/last-commit/runningcoders/ai_orz)
 ![GitHub license](https://img.shields.io/github/license/runningcoders/ai_orz)
 ![Rust](https://img.shields.io/badge/Rust-1.85+-000000?logo=rust)
-![Tests](https://img.shields.io/badge/tests-191%20%E2%9C%94-brightgreen)
+![Tests](https://img.shields.io/badge/tests-450%20%E2%9C%94-brightgreen)
 [![GitHub stars](https://img.shields.io/github/stars/runningcoders/ai_orz?style=social)](https://github.com/runningcoders/ai_orz)
 
 ---
@@ -27,6 +27,7 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 | 🤖 Agent 完整生命周期 | ✅ | 创建、配置、绑定工具、唤醒执行 |
 | 🧠 四层记忆系统 | ✅ | Core/Working/Short-term/Long-term 分级存储 |
 | 💬 全功能消息对话 | ✅ | 用户 ↔ Agent 双向对话，支持项目上下文，工具调用消息复用消息表 |
+| 📨 消息渠道系统 | ✅ | 多渠道消息接入，支持启用/禁用/连接测试 |
 | 🛠️ 混合模式工具调用 | ✅ | 简单工具走 rig 原生 auto，关键工具走自建 manual 可控链路 |
 | 📚 技能库 | ✅ | 可复用技能和工作流管理，支持搜索和分类 |
 | 📋 任务项目管理 | ✅ | 项目聚合对话，任务跟踪进度和状态 |
@@ -186,7 +187,7 @@ log_subdir = "logs"
 cargo test
 ```
 
-当前状态：**191 个测试全部通过 ✅**
+当前状态：**450 个测试全部通过 ✅**
 
 ---
 
@@ -220,6 +221,7 @@ cargo test
 | 项目管理 | `/api/v1/projects` | 项目 CRUD |
 | 任务管理 | `/api/v1/tasks` | 任务 CRUD、状态更新 |
 | 消息对话 | `/api/v1/projects/{id}/messages` | 发送消息、接收回复、触发 Agent 执行 |
+| 消息渠道 | `/api/v1/channels` | 消息渠道 CRUD、启用/禁用、连接测试 |
 | 技能库 | `/api/v1/skills` | 技能 CRUD、搜索 |
 | 工具管理 | `/api/v1/tools` | 工具列表、Agent 绑定/解绑工具 |
 
