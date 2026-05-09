@@ -71,10 +71,14 @@ pub enum MessageType {
     Audio = 3,
     /// Video (视频)
     Video = 4,
-    /// ToolCallRequest (工具调用请求，自建链路)
+    /// ToolCallRequest (工具调用请求，Agent→System)
     ToolCallRequest = 5,
-    /// ToolCallResult (工具调用结果，自建链路)
+    /// ToolCallResult (工具调用结果，System→Agent)
     ToolCallResult = 6,
+    /// ConfirmRequest (用户确认请求，Agent→User)
+    ConfirmRequest = 7,
+    /// ConfirmResponse (用户确认回复，User→Agent)
+    ConfirmResponse = 8,
 }
 
 impl From<i32> for MessageType {
@@ -87,6 +91,8 @@ impl From<i32> for MessageType {
             4 => MessageType::Video,
             5 => MessageType::ToolCallRequest,
             6 => MessageType::ToolCallResult,
+            7 => MessageType::ConfirmRequest,
+            8 => MessageType::ConfirmResponse,
             _ => MessageType::default(),
         }
     }

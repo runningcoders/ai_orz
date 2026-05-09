@@ -40,6 +40,8 @@ pub struct TaskPo {
     pub assignee_id: String,
     /// 所属项目 ID，可为空
     pub project_id: Option<String>,
+    /// 当前思考深度（轮次）
+    pub thinking_depth: i64,
     /// 创建者用户 ID（可能是 Agent 创建）
     pub created_by: String,
     /// 最后修改者用户 ID
@@ -154,6 +156,21 @@ impl Task {
     pub fn cancel(&mut self) {
         self.po.status = TaskStatus::Cancelled;
     }
+
+    /// 增加思考深度（每次思考调用）
+    pub fn increment_thinking_depth(&mut self) {
+        self.po.increment_thinking_depth();
+    }
+
+    /// 重置思考深度（用户回复后）
+    pub fn reset_thinking_depth(&mut self) {
+        self.po.reset_thinking_depth();
+    }
+
+    /// 获取当前思考深度
+    pub fn thinking_depth(&self) -> i64 {
+        self.po.thinking_depth
+    }
 }
 
 impl TaskPo {
@@ -198,6 +215,7 @@ impl TaskPo {
             assignee_type,
             assignee_id,
             project_id,
+            thinking_depth: 0,
             created_by: created_by.clone(),
             modified_by: created_by,
             created_at: now,
@@ -216,5 +234,17 @@ impl TaskPo {
             Some(deps) => serde_json::from_str(deps).unwrap_or_default(),
             None => Vec::new(),
         }
+    }
+
+    /// 增加思考深度（每次思考调用）
+    pub fn increment_thinking_depth(&mut self) {
+        self.thinking_depth += 1;
+        self.updated_at = utils::current_timestamp();
+    }
+
+    /// 重置思考深度（用户回复后）
+    pub fn reset_thinking_depth(&mut self) {
+        self.thinking_depth = 0;
+        self.updated_at = utils::current_timestamp();
     }
 }

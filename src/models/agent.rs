@@ -7,6 +7,70 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use std::fmt;
 
+/// Agent 运行时配置
+///
+/// 存储在 agents.runtime_config 字段（JSON 格式）
+/// 方便后续扩展各类运行时参数
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentRuntimeConfig {
+    /// 最大思考深度（轮次），默认 10
+    #[serde(default = "default_max_thinking_depth")]
+    pub max_thinking_depth: i32,
+
+    /// 思考间隔（毫秒），避免过快调用，默认 0（无间隔）
+    #[serde(default)]
+    pub thinking_interval_ms: i32,
+
+    /// 单步最大工具调用次数，默认 5
+    #[serde(default = "default_max_tool_calls_per_step")]
+    pub max_tool_calls_per_step: i32,
+
+    /// 是否启用反思模式
+    #[serde(default)]
+    pub enable_reflection: bool,
+
+    /// 是否启用用户确认机制
+    #[serde(default = "default_true")]
+    pub require_user_confirm: bool,
+}
+
+impl Default for AgentRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            max_thinking_depth: default_max_thinking_depth(),
+            thinking_interval_ms: 0,
+            max_tool_calls_per_step: default_max_tool_calls_per_step(),
+            enable_reflection: false,
+            require_user_confirm: true,
+        }
+    }
+}
+
+impl AgentRuntimeConfig {
+    /// 从 JSON 字符串解析
+    pub fn from_json(json: &str) -> Self {
+        serde_json::from_str(json).unwrap_or_default()
+    }
+
+    /// 序列化为 JSON 字符串
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_else(|_| "{}".to_string())
+    }
+}
+
+// 辅助函数用于 serde default
+fn default_max_thinking_depth() -> i32 {
+    10
+}
+
+fn default_max_tool_calls_per_step() -> i32 {
+    5
+}
+
+fn default_true() -> bool {
+    true
+}
+
 /// Agent 业务对象（DAL 层）
 ///
 /// 组合 AgentPo 和其他相关信息，作为业务层的核心对象
@@ -108,18 +172,26 @@ impl Agent {
 pub struct AgentPo {
     pub id: String,
     pub name: String,
-    pub role: String,         // Agent 角色标签数组（JSON string）: ["产品经理", "rust工程师"]
+    /// Agent 角色标签数组（JSON string）
+    pub role: String,
     pub description: String,
-    pub capabilities: String, // JSON string: 详细能力描述数组
-    pub soul: String,          // 长文本：角色/性格/灵魂设定
-    pub model_provider_id: String, // 关联模型提供商 ID
-    pub status: AgentStatus, // 生命周期状态
-    pub created_by: String,    // 创建者
-    pub modified_by:String,   // 修改者
+    /// 详细能力描述数组（JSON string）
+    pub capabilities: String,
+    /// 长文本：角色/性格/灵魂设定
+    pub soul: String,
+    /// 关联模型提供商 ID
+    pub model_provider_id: String,
+    /// 运行时配置（JSON string，AgentRuntimeConfig）
+    pub runtime_config: String,
+    /// 生命周期状态
+    pub status: AgentStatus,
+    /// 创建者
+    pub created_by: String,
+    /// 修改者
+    pub modified_by: String,
     pub created_at: i64,
     pub updated_at: i64,
 }
-
 impl AgentPo {
     pub fn new(
         name: String,
@@ -130,6 +202,7 @@ impl AgentPo {
         model_provider_id: String,
         creator: String,
     ) -> Self {
+        let runtime_config = AgentRuntimeConfig::default();
         Self {
             id: generate_id(),
             name,
@@ -138,6 +211,7 @@ impl AgentPo {
             capabilities: serde_json::to_string(&capabilities).unwrap_or_else(|_| "[]".to_string()),
             soul,
             model_provider_id: model_provider_id,
+            runtime_config: runtime_config.to_json(),
             status: AgentStatus::Interviewing,
             created_by: creator.clone(),
             modified_by: creator,
@@ -156,6 +230,17 @@ impl AgentPo {
 
     pub fn get_capabilities(&self) -> Vec<String> {
         serde_json::from_str(&self.capabilities).unwrap_or_default()
+    }
+
+    /// 获取运行时配置
+    pub fn get_runtime_config(&self) -> AgentRuntimeConfig {
+        AgentRuntimeConfig::from_json(&self.runtime_config)
+    }
+
+    /// 设置运行时配置
+    pub fn set_runtime_config(&mut self, config: &AgentRuntimeConfig) {
+        self.runtime_config = config.to_json();
+        self.updated_at = current_timestamp();
     }
 }
 

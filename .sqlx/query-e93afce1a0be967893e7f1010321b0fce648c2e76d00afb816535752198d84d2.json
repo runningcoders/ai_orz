@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, name, role, description, soul, capabilities,\n       model_provider_id, status as 'status: AgentStatus', created_by, modified_by, created_at, updated_at\nFROM agents WHERE id = ? AND status <> 0\n            ",
+  "query": "\nSELECT id, name, role, description, soul, capabilities, runtime_config,\n       model_provider_id, status as 'status: AgentStatus', created_by, modified_by, created_at, updated_at\nFROM agents WHERE id = ? AND status <> 0\n            ",
   "describe": {
     "columns": [
       {
@@ -34,33 +34,38 @@
         "type_info": "Text"
       },
       {
-        "name": "model_provider_id",
+        "name": "runtime_config",
         "ordinal": 6,
         "type_info": "Text"
       },
       {
-        "name": "status: AgentStatus",
+        "name": "model_provider_id",
         "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "status: AgentStatus",
+        "ordinal": 8,
         "type_info": "Integer"
       },
       {
         "name": "created_by",
-        "ordinal": 8,
-        "type_info": "Text"
-      },
-      {
-        "name": "modified_by",
         "ordinal": 9,
         "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "modified_by",
         "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 11,
         "type_info": "Integer"
       },
       {
         "name": "updated_at",
-        "ordinal": 11,
+        "ordinal": 12,
         "type_info": "Integer"
       }
     ],
@@ -79,8 +84,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "82eecf7453571c4b40deb3f79be22d4a2f079049501a9cf9019ecff55c417cf6"
+  "hash": "e93afce1a0be967893e7f1010321b0fce648c2e76d00afb816535752198d84d2"
 }

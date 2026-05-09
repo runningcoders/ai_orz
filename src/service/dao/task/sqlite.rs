@@ -55,9 +55,9 @@ impl TaskDao for TaskDaoSqliteImpl {
         sqlx::query!(
             r#"INSERT INTO tasks(
                 id, title, description, "status", priority, tags, due_at, start_at, end_at, dependencies, root_user_id,
-                "assignee_type", assignee_id, project_id, created_by, modified_by, created_at, updated_at
+                "assignee_type", assignee_id, project_id, thinking_depth, created_by, modified_by, created_at, updated_at
             ) VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             )"#,
             task.id,
             task.title,
@@ -73,6 +73,7 @@ impl TaskDao for TaskDaoSqliteImpl {
             assignee_type_i32,
             task.assignee_id,
             task.project_id,
+            task.thinking_depth,
             task.created_by,
             task.modified_by,
             task.created_at,
@@ -87,7 +88,7 @@ impl TaskDao for TaskDaoSqliteImpl {
             TaskPo,
             r#"
 SELECT id, title, description, "status" as "status: TaskStatus", priority as "priority: i32", tags, due_at, start_at, end_at, dependencies, root_user_id,
-       "assignee_type" as "assignee_type: AssigneeType", assignee_id, project_id,
+       "assignee_type" as "assignee_type: AssigneeType", assignee_id, project_id, thinking_depth,
        created_by, modified_by, created_at, updated_at
 FROM tasks WHERE id = ? AND "status" != 0
 "#,
@@ -100,7 +101,7 @@ FROM tasks WHERE id = ? AND "status" != 0
 
     async fn query(&self, ctx: RequestContext, query: TaskQuery) -> Result<Vec<TaskPo>, AppError> {
         let mut builder = sqlx::QueryBuilder::new(
-            r#"SELECT id, title, description, "status", priority, tags, due_at, start_at, end_at, dependencies, root_user_id, "assignee_type", assignee_id, project_id, created_by, modified_by, created_at, updated_at FROM tasks WHERE 1=1"#
+            r#"SELECT id, title, description, "status", priority, tags, due_at, start_at, end_at, dependencies, root_user_id, "assignee_type", assignee_id, project_id, thinking_depth, created_by, modified_by, created_at, updated_at FROM tasks WHERE 1=1"#
         );
 
         // 默认软删除过滤
@@ -191,6 +192,7 @@ UPDATE tasks SET
     "assignee_type" = ?,
     assignee_id = ?,
     project_id = ?,
+    thinking_depth = ?,
     modified_by = ?,
     updated_at = ?
 WHERE id = ?
@@ -207,6 +209,7 @@ WHERE id = ?
             assignee_type_i32,
             task.assignee_id,
             task.project_id,
+            task.thinking_depth,
             ctx_user_id,
             now,
             task.id

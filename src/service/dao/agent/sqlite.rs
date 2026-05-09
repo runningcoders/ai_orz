@@ -40,7 +40,7 @@ impl AgentDao for AgentDaoSqliteImpl {
     async fn insert(&self, _ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError> {
         let status = agent.status as i32;
         sqlx::query!(
-            "INSERT INTO agents (id, name, role, description, soul, capabilities, model_provider_id, status, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO agents (id, name, role, description, soul, capabilities, model_provider_id, runtime_config, status, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             agent.id,
             agent.name,
             agent.role,
@@ -48,6 +48,7 @@ impl AgentDao for AgentDaoSqliteImpl {
             agent.soul,
             agent.capabilities,
             agent.model_provider_id,
+            agent.runtime_config,
             status,
             agent.created_by,
             agent.modified_by,
@@ -64,7 +65,7 @@ impl AgentDao for AgentDaoSqliteImpl {
         let agent = sqlx::query_as!(
             AgentPo,
             r#"
-SELECT id, name, role, description, soul, capabilities,
+SELECT id, name, role, description, soul, capabilities, runtime_config,
        model_provider_id, status as 'status: AgentStatus', created_by, modified_by, created_at, updated_at
 FROM agents WHERE id = ? AND status <> 0
             "#,
@@ -78,7 +79,7 @@ FROM agents WHERE id = ? AND status <> 0
 
     async fn query(&self, _ctx: RequestContext, query: AgentQuery) -> Result<Vec<AgentPo>, AppError> {
         let mut builder = sqlx::QueryBuilder::new(
-            r#"SELECT id, name, role, description, soul, capabilities, model_provider_id, status, created_by, modified_by, created_at, updated_at FROM agents WHERE 1=1"#
+            r#"SELECT id, name, role, description, soul, capabilities, runtime_config, model_provider_id, status, created_by, modified_by, created_at, updated_at FROM agents WHERE 1=1"#
         );
 
         // 名称模糊匹配
@@ -138,7 +139,7 @@ FROM agents WHERE id = ? AND status <> 0
         sqlx::query!(
             r#"
 UPDATE agents
-SET name = ?, role = ?, description = ?, soul = ?, capabilities = ?,
+SET name = ?, role = ?, description = ?, soul = ?, capabilities = ?, runtime_config = ?,
     model_provider_id = ?, status = ?, created_by = ?, modified_by = ?, created_at = ?, updated_at = ?
 WHERE id = ?
             "#,
@@ -147,6 +148,7 @@ WHERE id = ?
             agent.description,
             agent.soul,
             agent.capabilities,
+            agent.runtime_config,
             agent.model_provider_id,
             status,
             agent.created_by,
