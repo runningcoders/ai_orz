@@ -31,6 +31,8 @@ pub struct ArtifactPo {
     pub file_type: FileType,
     /// File metadata (path, mime type, size) stored as JSON.
     pub file_meta: Json<FileMeta>,
+    /// Tags stored as JSON array: ["design", "report", "v1.0"]
+    pub tags: String,
     /// Status: 0 = deleted (soft delete), 1 = active.
     pub status: i32,
     /// Creator user ID.
@@ -131,6 +133,11 @@ impl Artifact {
     pub fn is_deleted(&self) -> bool {
         self.po.status == 0
     }
+
+    /// 获取标签列表
+    pub fn tags(&self) -> Vec<String> {
+        self.po.tags()
+    }
 }
 
 impl ArtifactPo {
@@ -152,6 +159,7 @@ impl ArtifactPo {
             description,
             file_type,
             file_meta: Json(file_meta),
+            tags: "[]".to_string(),
             status: 1,
             created_by: created_by.clone(),
             modified_by: created_by,
@@ -179,6 +187,7 @@ impl ArtifactPo {
             description,
             file_type,
             file_meta: Json(file_meta),
+            tags: "[]".to_string(),
             status: 1,
             created_by: created_by.clone(),
             modified_by: created_by,
@@ -190,6 +199,18 @@ impl ArtifactPo {
     /// Mark artifact as deleted (soft delete).
     pub fn mark_deleted(&mut self, modified_by: String) {
         self.status = 0;
+        self.modified_by = modified_by;
+        self.updated_at = common::constants::utils::current_timestamp_ms();
+    }
+
+    /// Get tags parsed as Vec<String>
+    pub fn tags(&self) -> Vec<String> {
+        serde_json::from_str(&self.tags).unwrap_or_default()
+    }
+
+    /// Set tags from Vec<String>
+    pub fn set_tags(&mut self, tags: Vec<String>, modified_by: String) {
+        self.tags = serde_json::to_string(&tags).unwrap_or_else(|_| "[]".to_string());
         self.modified_by = modified_by;
         self.updated_at = common::constants::utils::current_timestamp_ms();
     }

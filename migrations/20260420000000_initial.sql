@@ -189,6 +189,7 @@ CREATE TABLE IF NOT EXISTS artifacts (
     description TEXT NOT NULL DEFAULT '',
     file_type INTEGER NOT NULL,
     file_meta TEXT NOT NULL DEFAULT '{}',
+    tags TEXT NOT NULL DEFAULT '[]',
     status INTEGER NOT NULL DEFAULT 1,
     created_by TEXT NOT NULL DEFAULT '',
     modified_by TEXT NOT NULL DEFAULT '',

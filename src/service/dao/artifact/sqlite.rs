@@ -49,7 +49,8 @@ impl ArtifactDao for ArtifactDaoSqliteImpl {
         let ft = artifact.file_type as i32;
         sqlx::query!(
 r#"
-INSERT INTO artifacts (id, project_id, task_id, name, description, file_type, file_meta, status, created_by, modified_by, created_at, updated_at) VALUES (
+INSERT INTO artifacts (id, project_id, task_id, name, description, file_type, file_meta, tags, status, created_by, modified_by, created_at, updated_at) VALUES (
+?,
 ?,
 ?,
 ?,
@@ -71,6 +72,7 @@ INSERT INTO artifacts (id, project_id, task_id, name, description, file_type, fi
             artifact.description,
             ft,
             artifact.file_meta,
+            artifact.tags,
             artifact.status,
             artifact.created_by,
             artifact.modified_by,
@@ -91,7 +93,7 @@ INSERT INTO artifacts (id, project_id, task_id, name, description, file_type, fi
         let artifact = sqlx::query_as!(
             ArtifactPo,
 r#"
-SELECT id, project_id, task_id, name, description, file_type as "file_type: FileType", file_meta as "file_meta: Json<FileMeta>", status as "status: i32", created_by, modified_by, created_at, updated_at
+SELECT id, project_id, task_id, name, description, file_type as "file_type: FileType", file_meta as "file_meta: Json<FileMeta>", tags, status as "status: i32", created_by, modified_by, created_at, updated_at
 FROM artifacts
 WHERE id = ? AND "status" != 0
 "#,
@@ -105,7 +107,7 @@ WHERE id = ? AND "status" != 0
     async fn query(&self, ctx: RequestContext, query: ArtifactQuery) -> Result<Vec<ArtifactPo>> {
         let pool = ctx.db_pool();
         let mut builder = sqlx::QueryBuilder::new(
-            r#"SELECT id, project_id, task_id, name, description, file_type, file_meta, status, created_by, modified_by, created_at, updated_at FROM artifacts WHERE "status" != 0"#
+            r#"SELECT id, project_id, task_id, name, description, file_type, file_meta, tags, status, created_by, modified_by, created_at, updated_at FROM artifacts WHERE "status" != 0"#
         );
 
         // 项目过滤

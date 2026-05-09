@@ -15,17 +15,18 @@ CREATE TABLE artifacts_new (
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     file_type INTEGER NOT NULL,
-    file_meta TEXT NOT NULL,
+    file_meta TEXT NOT NULL DEFAULT '{}',
+    tags TEXT NOT NULL DEFAULT '[]',
     status INTEGER NOT NULL DEFAULT 1,
-    created_by TEXT NOT NULL,
-    modified_by TEXT NOT NULL,
+    created_by TEXT NOT NULL DEFAULT '',
+    modified_by TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 ) STRICT;
 
--- 迁移旧数据到新表（project_id 暂时为空字符串，需要业务层根据 task_id 回填）
+-- 迁移旧数据到新表（project_id 暂时为空字符串，需要后续根据 task_id 回填）
 INSERT INTO artifacts_new (
-    id, project_id, task_id, name, description, file_type, file_meta, status,
+    id, project_id, task_id, name, description, file_type, file_meta, tags, status,
     created_by, modified_by, created_at, updated_at
 )
 SELECT
@@ -36,6 +37,7 @@ SELECT
     description,
     file_type,
     file_meta,
+    '[]' AS tags,  -- 默认空标签数组
     status,
     created_by,
     modified_by,
