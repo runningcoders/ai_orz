@@ -244,7 +244,99 @@ DAO (数据访问) ← 单一数据源 CRUD
 | ❌ 跨层直接访问（如 Handler 直接调 DAO） | 业务逻辑散落，难以维护 |
 | ❌ DAO 层做实体组装/装饰 | 业务逻辑泄露到数据层 |
 
-### Known Issue: Rig 包名问题
+---
+
+### PO 与业务实体分层规范（2026-05-11 新增）
+
+经过 Project/Task/Artifact 三大模块的完整重构，我们确定了 PO 与业务实体的分层边界设计。
+
+#### 核心原则
+**PO 仅在 DAO/DAL 层内部使用，绝对不对外暴露到 Domain 层及以上**
+
+| 层级 | 可使用对象 | 数据转换 | 接口签名规范 |
+|------|------------|----------|------------|
+| **DAO 层** | 仅 PO | PO ↔ 数据库 | `fn create(&self, po: &XxxPo) -> Result<()>` |
+| **DAL 层** | 内部：PO，对外：业务实体 | PO ↔ 业务实体 | `fn create(&self, ctx: RequestContext, entity: &Xxx) -> Result<()>` |
+| **Domain 层** | 仅业务实体 | 业务实体 ↔ Command | 所有方法无 PO 依赖 |
+| **Handler 层** | 业务实体 + DTO | DTO ↔ 业务实体 | HTTP 接口层 |
+
+#### 业务实体标准设计
+
+**模式：业务实体内部持有 PO 字段**
+```rust
+pub struct Project {
+    pub po: ProjectPo,  // 内部持有 PO
+    // 可选：额外业务方法和计算字段
+}
+
+impl Project {
+    pub fn id(&self) -> &str { &self.po.id }
+    pub fn status(&self) -> ProjectStatus { self.po.status }
+    // 业务方法...
+}
+```
+
+**设计优势：**
+1. ✅ **零转换成本**：DAL 层直接通过 `&xxx.po` 传递给 DAO，无需字段逐一映射
+2. ✅ **易维护**：修改 PO 字段时只需修改一处，业务实体自动兼容
+3. ✅ **100% 向后兼容**：现有测试和业务逻辑无需修改
+4. ✅ **高性能**：写操作使用引用传递 `&`，避免不必要的 clone
+
+#### DAL 层接口设计范式
+
+```rust
+#[async_trait]
+pub trait ProjectDal: Send + Sync {
+    // 写操作：接收 &业务实体 引用
+    async fn create(&self, ctx: RequestContext, project: &Project) -> Result<(), AppError>;
+    async fn update(&self, ctx: RequestContext, project: &Project) -> Result<(), AppError>;
+    
+    // 读操作：返回 业务实体
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Project>, AppError>;
+    async fn list_by_user(&self, ctx: RequestContext, user_id: &str) -> Result<Vec<Project>, AppError>;
+}
+```
+
+#### RequestContext 跨层传递规范
+
+**统一使用 `ctx.clone()`：**
+```rust
+// ✅ 正确
+self.project_dal.create(ctx.clone(), project).await?;
+self.task_dal.create(ctx.clone(), task).await?;
+
+// ❌ 错误：所有权移动后无法继续使用
+// self.project_dal.create(ctx, project).await?;
+```
+
+**理由：**
+- RequestContext 内部是 Arc 引用，clone 成本极低（仅指针复制）
+- 避免所有权移动导致的编译错误
+- 与 message domain 风格保持一致
+
+#### 软删除设计范式
+
+**`status = 0` 视为软删除，常规查询默认过滤：**
+
+```rust
+// DAO 层示例
+async fn find_by_id(&self, id: &str) -> Result<Option<TaskPo>> {
+    sqlx::query_as!(
+        TaskPo,
+        r#"SELECT ... FROM tasks WHERE id = ? AND "status" != 0"#,
+        id
+    ).fetch_optional(&self.pool).await.map_err(Into::into)
+}
+```
+
+**典型场景：**
+- `TaskStatus::Cancelled = 0` - 取消的任务视为已删除
+- 需要查询历史/恢复时，使用 `query` 方法绕过过滤
+- 测试适配：cancel 后 get 返回 None 是预期行为
+
+> 📖 **完整重构记录和决策过程**：请参考 [LAYERED_ARCHITECTURE_PRACTICE.md](./LAYERED_ARCHITECTURE_PRACTICE.md) 和 [project_management_design.md](./project_management_design.md)
+
+---
 
 `rig-core` crate 的内部模块结构在版本升级时可能发生变化，导致编译错误。**解决方案：**
 

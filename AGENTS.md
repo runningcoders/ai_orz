@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-05-10
+> 最后更新：2026-05-11
 
 ---
 
@@ -193,6 +193,90 @@ ai_orz/
 | **业务实体** | `src/models/*.rs` | 核心业务对象，包含行为和状态 |
 | **PO (持久化对象)** | `src/models/*.rs` | 数据库映射，1:1 对应表结构 |
 
+### 3.5 PO 与业务实体分层边界规范（2026-05-11 新增，强制执行）
+
+**核心原则：PO 仅在 DAO/DAL 层内部使用，绝对不对外暴露到 Domain 层及以上**
+
+#### 分层边界定义
+
+| 层级 | 可使用对象 | 数据传递方式 | 说明 |
+|------|------------|------------|------|
+| **DAO 层** | 仅 PO | PO ↔ 数据库 | 单一数据源 CRUD，SQL 拼接，无业务逻辑 |
+| **DAL 层** | 内部：PO，对外：业务实体 | PO ↔ 业务实体 双向转换 | 组合 DAO，完成业务级数据操作 |
+| **Domain 层** | 仅业务实体 | 业务实体 ↔ Command | 核心业务逻辑编排，无 PO 依赖 |
+| **Handler 层** | 业务实体 + DTO | DTO ↔ 业务实体 | HTTP 接口，参数校验 |
+
+#### 业务实体内部设计
+
+**标准模式：业务实体内部持有 PO 字段**
+```rust
+// ✅ 正确：业务实体内部持有 PO，便于 DAL 层传递
+pub struct Project {
+    pub po: ProjectPo,
+    // 可选：额外业务方法和字段
+}
+
+pub struct Task {
+    pub po: TaskPo,
+    // 业务方法...
+}
+```
+
+**设计优势：**
+1. **避免重复转换代码**：DAL 层直接通过 `&xxx.po` 传递给 DAO，无需字段逐一映射
+2. **减少出错概率**：修改 PO 字段时只需修改一处，业务实体自动兼容
+3. **100% 向后兼容**：现有测试和业务逻辑无需修改
+4. **性能优化**：写操作使用引用传递 `&`，避免不必要的 clone
+
+#### DAL 层接口签名规范
+
+**所有 DAL 接口统一使用业务实体，不使用 PO：**
+```rust
+// ✅ 正确：写操作接收 &业务实体 引用
+async fn create(&self, ctx: RequestContext, project: &Project) -> Result<(), AppError>;
+async fn update(&self, ctx: RequestContext, project: &Project) -> Result<(), AppError>;
+
+// ✅ 正确：读操作返回 业务实体
+async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Project>, AppError>;
+async fn list_by_user(&self, ctx: RequestContext, user_id: &str) -> Result<Vec<Project>, AppError>;
+
+// ❌ 错误：直接使用 PO
+// async fn create(&self, ctx: RequestContext, po: &ProjectPo) -> Result<(), AppError>;
+```
+
+#### RequestContext 跨层传递规范
+
+**所有跨层 ctx 传递统一使用 `ctx.clone()`：**
+```rust
+// ✅ 正确：clone 后传递，避免所有权移动问题
+self.project_dal.create(ctx.clone(), project).await?;
+
+// ❌ 错误：直接移动，导致后续无法使用
+// self.project_dal.create(ctx, project).await?;
+```
+
+**理由：**
+- RequestContext 内部是 Arc 引用，clone 成本极低（仅指针复制）
+- 避免所有权移动导致的编译错误
+- 与 message domain 风格保持一致
+
+#### 软删除设计规范
+
+**`status = 0` 视为软删除，常规查询默认过滤：**
+```rust
+// DAO 层 find_by_id 示例
+sqlx::query_as!(
+    TaskPo,
+    r#"SELECT ... FROM tasks WHERE id = ? AND "status" != 0"#,
+    id
+)
+```
+
+**典型应用：**
+- `TaskStatus::Cancelled = 0` - 取消的任务视为已删除
+- 需要查询历史/恢复时，使用 `query` 方法绕过过滤
+- 测试需适配此行为：cancel 后 get 返回 None 是预期行为
+
 ---
 
 ## 四、关键约定（强制执行）
@@ -272,6 +356,21 @@ Agent
 ---
 
 ## 六、工作流与开发记录
+
+### 2026-05-11 里程碑
+**✅ PO 与业务实体分层架构完整落地**
+- **核心改造范围**：Project/Task/Artifact 三大业务对象全部完成分层重构
+- **DAO 层**：仅操作 PO，单一职责，不包含业务组装
+- **DAL 层**：内部完成 PO↔业务实体双向转换，对外接口统一使用业务实体
+- **Domain 层**：100% 无 PO 依赖，所有异步方法携带 RequestContext
+- **业务实体设计**：内部持有 `po: XxxPo` 字段，DAL 直接通过 `&xxx.po` 传递给 DAO
+- **新增规范落地**：
+  - ctx 跨层传递统一使用 `ctx.clone()`（内部 Arc，成本极低）
+  - 写操作使用引用传递 & 避免 clone 不必要的 clone
+  - TaskStatus::Cancelled = 0 设计为软删除，常规查询默认过滤
+- **测试统计**：267 个测试 100% 通过（Project Domain 新增 9 个单元测试）
+- **代码统计**：20 个文件修改，+1435/-943 行
+- **文档同步更新**：`docs/project_management_design.md` 同步更新架构落地细节
 
 ### 2026-05-10 里程碑
 **✅ Project Domain 骨架搭建完成**
