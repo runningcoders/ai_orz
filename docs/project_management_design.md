@@ -385,9 +385,138 @@ pub trait ArtifactDal: Send + Sync {
 
 ---
 
+## Agent 自主思考架构（2026-05-11 更新）
+
+### 核心理念
+
+**Agent 是自主主体，系统仅提供基础设施。** 这是整个架构设计的出发点：
+
+- 系统不预先为 Agent 组装所有数据和工具，Agent 在需要时自主查询获取
+- Project Domain 作为唯一编排层，承载 Agent 的思考循环逻辑
+- 所有中间过程（思考、工具调用、请求确认）均为可追溯的消息
+- 遵循严格分层：Handler → Domain → DAL → DAO
+
+### 设计决策总览
+
+| 决策项 | 结论 | 理由 |
+|--------|------|------|
+| 编排层位置 | Project Domain 唯一编排 | 符合领域驱动设计，避免过度封装 |
+| 工具绑定时机 | Agent 入职流程绑定，运行时动态注入 | 灵活配置，支持不同角色差异化工具集 |
+| 会话 vs Project | 一一对应，无类型区分 | 简化设计，前端会话直接映射 |
+| 工具调用实现 | 自定义消息格式，不依赖 LLM 原生 Function Calling | 跨模型兼容，支持多模板扩展 |
+| 思考深度限制 | Agent 可配置属性，默认 10 层 | 超过阈值触发反思求助 |
+| 复杂度升级 | Agent 判断 + 用户确认 | 避免简单聊天变成复杂项目 |
+| 思考循环执行 | 独立异步任务，不阻塞消费者 | 提升系统并发能力 |
+
+### 思考循环状态机
+
+```
+用户发消息 (UserMessage)
+    ↓
+进入 Project Domain process_agent_message
+    ↓
+┌─────────────────────────────────────┐
+│      思考循环 (异步任务执行)         │
+│  ┌─────────────────────────────┐   │
+│  │ 1. 组装 Prompt (上下文+历史)│   │
+│  │ 2. 调用 Cortex LLM 推理     │   │
+│  │ 3. 解析 LLM 输出格式        │   │
+│  └─────────────────────────────┘   │
+│           ↓ 分支判断                │
+│  ┌─────────┐  ┌──────────┐  ┌──────┐│
+│  │ reply   │→│直接回用户│  │tool  ││
+│  └─────────┘  └──────────┘  └──────┘│
+│                              ↓      │
+│                      发 ToolCallRequest │
+│                      给 System 角色    │
+│                              ↓      │
+│                  System 消费者执行工具│
+│                              ↓      │
+│                   发 ToolCallResult  │
+│                   回给 Agent 角色    │
+│                              ↓      │
+│                  回到思考循环起点    │
+│  ┌─────────┐                        │
+│  │ confirm │→ 发 ConfirmRequest 给用户│
+│  └─────────┘                        │
+│           ↓                          │
+│     深度计数 +1，超过阈值？→ 触发反思求助│
+└─────────────────────────────────────┘
+```
+
+### 消息格式扩展
+
+现有 `MessageType` 枚举需新增 4 种类型：
+
+```rust
+pub enum MessageType {
+    UserMessage = 0,      // 用户 → Agent
+    AgentMessage = 1,     // Agent → 用户
+    SystemMessage = 2,    // System → Agent
+    ToolCallRequest = 3,  // Agent → System（工具调用请求）
+    ToolCallResult = 4,   // System → Agent（工具执行结果）
+    ConfirmRequest = 5,   // Agent → User（确认请求，如升级项目）
+    ConfirmResponse = 6,  // User → Agent（确认回复）
+}
+```
+
+**LLM 输出格式设计**（JSON 模板）：
+
+```json
+{
+  "type": "reply|tool|confirm",
+  "content": "回复内容或工具参数",
+  "tool_name": "tool_name",     // type=tool 时必填
+  "tool_args": {},              // type=tool 时必填
+  "confirm_title": "标题",      // type=confirm 时必填
+  "confirm_options": ["是","否"] // type=confirm 时必填
+}
+```
+
+### 实现路径四阶段
+
+**阶段 1：最小思考闭环**
+- Project Domain 实现 `process_agent_message` 方法框架
+- 基础 Prompt 组装（上下文 + 最近消息历史）
+- 调用 CortexDao 完成 LLM 推理
+- 解析 `reply` 类型输出并回发给用户
+- 深度计数校验
+
+**阶段 2：工具调用闭环**
+- 工具注册表设计（ContextTool 统一接口）
+- System 消费者实现工具执行逻辑
+- 工具执行结果回发为 ToolCallResult 消息
+- 完整多轮思考循环（工具调用 → 结果返回 → 继续思考）
+
+**阶段 3：组织能力工具**
+- `create_project`：升级当前会话为正式项目
+- `create_task`：在 Project 下创建任务
+- `update_task_status`：更新任务状态
+- `assign_agent`：分配任务给其他 Agent
+- 用户确认机制（ConfirmRequest/Response）
+
+**阶段 4：记忆与技能工具**
+- `query_memory`：查询 Agent 个人记忆
+- `load_skill`：加载技能到 Agent
+- `search_history`：搜索历史消息
+- `summarize_context`：总结当前 Project 上下文
+
+### 核心改动模块清单
+
+| 模块 | 改动内容 |
+|------|----------|
+| `common/src/enums/message.rs` | MessageType 新增 4 个枚举值 |
+| `src/service/dal/agent/` | Agent 新增 max_thinking_depth 属性 |
+| `src/service/domain/project/` | 新增 process_agent_message 思考循环 |
+| `src/consumer/message.rs` | handle_system_message 实现工具执行 |
+| `src/pkg/tool_registry/` | 工具统一注册与调度接口 |
+| `src/service/dao/cortex/` | 新增 Prompt 模板管理 |
+
 ## 参考文档
 
-- [Project 模块设计](./project_design.md)
+- [ai-orz-domain-layer-implementation Skill](../.hermes/skills/rust/ai-orz-domain-layer-implementation/SKILL.md)
+- [consumer_architecture.md](./consumer_architecture.md) - 消息消费者框架
+- [tool_design.md](./tool_design.md) - 工具调用链路设计
 - [Task 模块设计](./task_design.md)
 - [分层架构规范](./architecture.md)
 - [测试规范](./testing_guidelines.md)

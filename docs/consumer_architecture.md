@@ -501,4 +501,107 @@ async fn handle_user_message(&self, ctx: RequestContext, msg: &MessagePo) -> Res
 
 ---
 
+## 🤖 Agent 思考循环架构（2026-05-11 更新）
+
+### 思考循环在消费者框架中的位置
+
+Agent 思考循环是消费者框架的**核心业务逻辑**，但不直接在消费者主线程中执行，而是以**独立异步任务**的形式派发。
+
+```
+消息入队 (enqueue_message)
+    ↓
+消费者主线程 (message_channel_dal.start())
+    ↓
+按 to_role 分发 (match msg.to_role)
+    ├── User   → handle_user_message (TODO)
+    ├── Agent  → handle_agent_message → 派发思考循环异步任务 ✨
+    └── System → handle_system_message → 执行工具调用 ✨
+```
+
+### 为什么采用独立异步任务
+
+| 考量 | 结论 |
+|------|------|
+| **阻塞问题** | 单条消息 LLM 推理可能耗时 5-30 秒，阻塞整个消费队列 |
+| **并发能力** | 独立任务允许同时处理多个 Agent 的思考请求 |
+| **可扩展性** | 后续支持分布式执行时改动最小 |
+| **容错隔离** | 单条消息失败不影响其他消息处理 |
+
+### handle_agent_message 执行流程
+
+```
+收到 Agent 角色消息
+    ↓
+1. 校验：确认消息属于某个 Project 上下文
+2. 校验：确认 thinking_depth < agent.max_thinking_depth（默认 10）
+    ↓
+3. 派发独立异步任务：tokio::spawn(async move { ... })
+    │
+    └─── 任务内部执行 ───┐
+                        ↓
+                从 Project Domain 获取上下文
+                查询最近 N 条消息历史
+                组装 Prompt
+                调用 CortexDao 完成 LLM 推理
+                解析输出格式 (reply/tool/confirm)
+                根据类型发回对应角色的消息
+                ↓
+                reply → 发回 User 角色
+                tool  → 发 ToolCallRequest 给 System 角色
+                confirm → 发 ConfirmRequest 给 User 角色
+                        ↓
+                新消息入队 → 触发下一轮消费循环
+```
+
+### handle_system_message 执行流程
+
+System 角色专门负责**工具执行**，不进行 LLM 推理：
+
+```
+收到 System 角色消息
+    ↓
+匹配 MessageType:
+    ├── ToolCallRequest → 执行工具调用
+    │       ↓
+    │   从工具注册表查询 tool_name
+    │   校验参数完整性
+    │   执行 tool.call(ctx, args)
+    │   捕获执行结果或错误
+    │   构造 ToolCallResult 消息
+    │   发回给 Agent 角色
+    │
+    └── 其他类型 → 记录日志后丢弃（System 不处理非工具消息）
+```
+
+### 深度计数与反思机制
+
+**思考深度计数规则**：
+- 每次进入 `handle_agent_message`，深度 +1
+- 用户发送的消息重置深度为 0
+- 深度超过 `max_thinking_depth`（默认 10）触发反思
+
+**反思触发后的处理**：
+```
+深度超过阈值
+    ↓
+暂停思考循环
+构造反思消息:
+  "我已经进行了 10 轮思考，需要你的反馈：
+   1. 是否继续深入思考？
+   2. 是否需要我总结当前结论？
+   3. 是否需要调用其他 Agent 协助？"
+发回给用户，等待用户回复后重置深度
+```
+
+### 关键设计决策记录
+
+| 决策 | 理由 | 替代方案 |
+|------|------|----------|
+| 思考循环放 Project Domain | 符合领域驱动，Project 是上下文容器 | 放 Message Domain |
+| 消费者只做分发不做业务 | 单一职责，消费者是基础设施 | 消费者直接处理逻辑 |
+| Tool 执行放 System 消费者 | 工具执行是系统能力，非 Agent 自主 | Agent 直接调用工具 |
+| 深度由消息计数 | 简单可靠，无需额外状态存储 | 独立深度计数器 |
+
+---
+
 这是一个经过深思熟虑的架构，能够支撑系统未来很长一段时间的发展！

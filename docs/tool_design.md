@@ -610,3 +610,208 @@ ToolDomain
 - [ ] ToolManagement 具体逻辑实现（调用 ToolDal）
 - [ ] ToolExecution 具体逻辑实现（调用 ToolCallDao）
 - [ ] 单元测试编写
+
+## 🔄 消息驱动工具调用链路（2026-05-11 更新）
+
+### 核心理念对齐
+
+**工具调用本身就是消息**。不依赖 LLM 原生 Function Calling，采用自定义消息格式实现，所有工具调用过程均可追溯、可审计、可回放。
+
+### 完整链路设计
+
+```
+┌─────────────┐
+│  用户发消息  │ UserMessage
+└──────┬──────┘
+       │
+       ▼
+┌──────────────────────────────────┐
+│  Agent 思考循环 (Project Domain) │
+│  - 组装上下文 + 历史消息          │
+│  - LLM 推理判断需求              │
+│  - 解析输出格式 → type=tool      │
+└──────┬───────────────────────────┘
+       │
+       ▼  构造 ToolCallRequest 消息
+┌──────────────────────────────────┐
+│     Message Channel DAL          │
+│     - 消息写入数据库              │
+│     - to_role = System           │
+│     - 触发消费者唤醒              │
+└──────┬───────────────────────────┘
+       │
+       ▼
+┌──────────────────────────────────┐
+│  消费者框架 (message.rs)         │
+│  match msg.to_role {             │
+│    System => handle_system_message │
+│  }                               │
+└──────┬───────────────────────────┘
+       │
+       ▼
+┌──────────────────────────────────┐
+│  handle_system_message           │
+│  match msg.msg_type {            │
+│    ToolCallRequest => {          │
+│      - 从 Tool Domain 查工具      │
+│      - 校验 tool_name + args     │
+│      - 调用 tool.call(ctx, args) │
+│      - 捕获结果/错误              │
+│    }                             │
+│  }                               │
+└──────┬───────────────────────────┘
+       │
+       ▼  构造 ToolCallResult 消息
+┌──────────────────────────────────┐
+│     Message Channel DAL          │
+│     - 消息写入数据库              │
+│     - to_role = Agent            │
+│     - 触发消费者唤醒              │
+└──────┬───────────────────────────┘
+       │
+       ▼
+┌──────────────────────────────────┐
+│  Agent 思考循环 (再次进入)        │
+│  - 读取 ToolCallResult           │
+│  - 结合结果继续 LLM 推理          │
+│  - 决定：reply / 再 tool / confirm │
+└──────────────────────────────────┘
+```
+
+### MessageType 枚举扩展（对齐 Project 设计）
+
+```rust
+pub enum MessageType {
+    UserMessage = 0,      // 用户 → Agent
+    AgentMessage = 1,     // Agent → 用户
+    SystemMessage = 2,    // System → Agent
+    ToolCallRequest = 3,  // Agent → System（工具调用请求）
+    ToolCallResult = 4,   // System → Agent（工具执行结果）
+    ConfirmRequest = 5,   // Agent → User（确认请求）
+    ConfirmResponse = 6,  // User → Agent（确认回复）
+}
+```
+
+### ToolCallRequest 消息格式
+
+**消息体 JSON 结构（存储在 message.content 字段）：**
+
+```json
+{
+  "tool_name": "create_task",
+  "tool_args": {
+    "project_id": "proj_xxx",
+    "title": "完成文档编写",
+    "description": "编写架构设计文档",
+    "priority": "high"
+  },
+  "thinking_depth": 3,
+  "trace_id": "trace_abc123"
+}
+```
+
+### ToolCallResult 消息格式
+
+```json
+{
+  "tool_name": "create_task",
+  "success": true,
+  "result": {
+    "task_id": "task_xyz",
+    "status": "pending"
+  },
+  "error": null,
+  "execution_ms": 234,
+  "trace_id": "trace_abc123"
+}
+```
+
+**失败场景：**
+```json
+{
+  "tool_name": "create_task",
+  "success": false,
+  "result": null,
+  "error": {
+    "code": "PERMISSION_DENIED",
+    "message": "Agent 没有在该 Project 下创建任务的权限"
+  },
+  "execution_ms": 15,
+  "trace_id": "trace_abc123"
+}
+```
+
+### 工具注册表设计
+
+**ContextTool 统一接口：**
+
+```rust
+#[async_trait]
+pub trait ContextTool: Send + Sync {
+    fn name(&self) -> &str;
+    fn description(&self) -> &str;
+    fn schema(&self) -> serde_json::Value;  // JSON Schema
+    
+    async fn call(
+        &self, 
+        ctx: RequestContext, 
+        args: serde_json::Value
+    ) -> Result<serde_json::Value, ToolError>;
+}
+```
+
+**工具注册表单例：**
+
+```rust
+pub struct ToolRegistry {
+    tools: HashMap<String, Box<dyn ContextTool>>,
+}
+
+impl ToolRegistry {
+    // 全局单例
+    pub fn instance() -> &'static Self { ... }
+    
+    // 注册工具（Agent 入职时绑定）
+    pub fn register(&self, tool: Box<dyn ContextTool>);
+    
+    // 查找工具
+    pub fn get(&self, name: &str) -> Option<&dyn ContextTool>;
+    
+    // 列出 Agent 可用工具（用于 Prompt 组装）
+    pub fn list_for_agent(&self, agent_id: &str) -> Vec<ToolInfo>;
+}
+```
+
+### 分层职责对齐（严格遵守）
+
+| 层级 | 职责 | 模块 |
+|------|------|------|
+| **Handler** | HTTP 接口：工具列表查询、手动触发测试 | `handlers/tools/` |
+| **Domain** | 工具注册、权限校验、工具执行编排 | `service/domain/tool/` |
+| **DAL** | 工具元数据 CRUD、绑定关系管理 | `service/dal/tool/` |
+| **DAO** | 工具表 SQL 操作、PO 转换 | `service/dao/tool/` |
+| **Pkg** | 工具注册表、ContextTool Trait、工具实现 | `pkg/tool_registry/` |
+| **Consumer** | System 消息消费、工具执行入口 | `consumer/message.rs` |
+
+### 与现有混合模式的关系
+
+| 模式 | 适用场景 | 实现方式 |
+|------|----------|----------|
+| **Rig Auto** | 简单无状态工具（计算、格式化等） | rig-core 原生工具调用机制，快速开发 |
+| **自建 Manual** | 组织能力工具（创建任务/项目、分配 Agent 等） | ✅ 消息驱动链路，可追溯、可审计、可控 |
+
+**两者共存策略：**
+- Rig Auto 工具直接在思考循环中同步调用，不经过消息队列
+- 自建 Manual 工具走完整消息链路，所有操作留痕
+- LLM 输出格式中通过 `tool_type: "rig" | "manual"` 区分
+
+### 关键设计决策记录
+
+| 决策 | 理由 | 影响 |
+|------|------|------|
+| 工具调用复用消息表 | 统一存储，天然支持追溯和回放 | 无需新增 tool_calls 表 |
+| 工具执行放在 System 消费者 | 单一职责，Agent 只做决策不做执行 | 解耦决策与执行 |
+| JSON 格式存储在 content | 灵活扩展，无需修改表结构 | 向后兼容 |
+| 两种模式共存 | 平衡开发速度与可控性 | 渐进式迁移 |
+
+---
