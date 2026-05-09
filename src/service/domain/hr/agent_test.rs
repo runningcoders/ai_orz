@@ -12,7 +12,7 @@ fn new_ctx(user_id: &str, pool: sqlx::SqlitePool) -> RequestContext {
 
 /// 初始化 HR Domain 所有依赖
 /// 初始化顺序：dao -> dal -> domain
-fn init_hr_test_env() {
+fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn HrDomain>, RequestContext) {
     // 初始化所有 DAO
     crate::service::dao::agent::init();
     crate::service::dao::tool::init();
@@ -26,23 +26,31 @@ fn init_hr_test_env() {
     
     // 初始化 HR Domain
     super::init();
-}
-
-#[sqlx::test]
-async fn test_create_and_find_by_id(pool: sqlx::SqlitePool) {
-    // 初始化测试环境
-    init_hr_test_env();
+    
     let domain = domain();
     let ctx = new_ctx("admin", pool);
-    
-    let agent_po = AgentPo::new("TestAgent".to_string(), vec!["worker".to_string()],
+    (domain, ctx)
+}
+
+/// 创建测试 Agent
+fn create_test_agent(name: &str) -> Agent {
+    let agent_po = AgentPo::new(
+        name.to_string(),
+        vec!["worker".to_string()],
         "A helpful agent".to_string(),
         vec!["coding".to_string()],
         "A helpful agent that can code".to_string(),
         "provider-id-1".to_string(),
         "admin".to_string(),
     );
-    let agent = Agent::from_po(agent_po);
+    Agent::from_po(agent_po)
+}
+
+#[sqlx::test]
+async fn test_create_and_find_by_id(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+    
+    let agent = create_test_agent("TestAgent");
     
     domain
         .agent_manage()
@@ -59,21 +67,11 @@ async fn test_create_and_find_by_id(pool: sqlx::SqlitePool) {
 }
 
 #[sqlx::test]
-async fn test_list_agents(pool: sqlx::SqlitePool) {
-    // 初始化测试环境
-    init_hr_test_env();
-    let domain = domain();
+async fn test_list_agents(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool.clone());
     
     for i in 0..3 {
-        let ctx = new_ctx("admin", pool.clone());
-        let agent_po = AgentPo::new(format!("Agent{}", i), vec!["worker".to_string()],
-            "".to_string(),
-            vec![],
-            "".to_string(),
-            "provider-id-1".to_string(),
-            "admin".to_string(),
-        );
-        let agent = Agent::from_po(agent_po);
+        let agent = create_test_agent(&format!("Agent{}", i));
         domain
             .agent_manage()
             .create_agent(ctx.clone(), &agent)
@@ -81,26 +79,15 @@ async fn test_list_agents(pool: sqlx::SqlitePool) {
             .unwrap();
     }
     
-    let ctx = new_ctx("admin", pool);
     let agents: Vec<Agent> = domain.agent_manage().list_agents(ctx).await.unwrap();
     assert_eq!(agents.len(), 3);
 }
 
 #[sqlx::test]
-async fn test_update_agent(pool: sqlx::SqlitePool) {
-    // 初始化测试环境
-    init_hr_test_env();
-    let domain = domain();
-    let ctx = new_ctx("admin", pool.clone());
+async fn test_update_agent(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool.clone());
     
-    let agent_po = AgentPo::new("Original".to_string(), vec!["worker".to_string()],
-        "".to_string(),
-        vec![],
-        "".to_string(),
-        "provider-id-1".to_string(),
-        "admin".to_string(),
-    );
-    let agent = Agent::from_po(agent_po);
+    let agent = create_test_agent("Original");
     domain
         .agent_manage()
         .create_agent(ctx.clone(), &agent)
@@ -124,22 +111,10 @@ async fn test_update_agent(pool: sqlx::SqlitePool) {
 }
 
 #[sqlx::test]
-async fn test_delete_agent(pool: sqlx::SqlitePool) {
-    // 初始化测试环境
-    init_hr_test_env();
-    let domain = domain();
-    let ctx = new_ctx("admin", pool.clone());
+async fn test_delete_agent(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool.clone());
     
-    let agent_po = AgentPo::new(
-        "ToDelete".to_string(),
-        vec!["worker".to_string()],
-        "".to_string(),
-        vec![],
-        "".to_string(),
-        "provider-id-1".to_string(),
-        "admin".to_string(),
-    );
-    let agent = Agent::from_po(agent_po);
+    let agent = create_test_agent("ToDelete");
     domain
         .agent_manage()
         .create_agent(ctx.clone(), &agent)

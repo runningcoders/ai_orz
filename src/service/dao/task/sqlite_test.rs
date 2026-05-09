@@ -5,6 +5,7 @@ use crate::pkg::RequestContext;
 use common::enums::{TaskStatus, AssigneeType};
 use crate::service::dao::task::{self, TaskDao};
 use uuid::Uuid;
+use std::sync::Arc;
 use sqlx::SqlitePool;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
@@ -12,10 +13,37 @@ fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
 }
 
 /// 测试插入新任务并按 ID 查询
+
+/// 初始化测试环境
+fn init_test_env() -> Arc<dyn TaskDao + Send + Sync> {
+    crate::service::dao::task::init();
+    crate::service::dao::task::dao()
+}
+
+/// 创建测试 TaskPo
+fn create_test_task(title: &str, assignee_id: &str, created_by: &str) -> TaskPo {
+    let task_id = Uuid::now_v7().to_string();
+    TaskPo::new(
+        task_id,
+        title.to_string(),
+        "".to_string(),
+        3,
+        vec![],
+        None,
+        None,
+        None,
+        vec![],
+        created_by.to_string(),
+        AssigneeType::User,
+        assignee_id.to_string(),
+        None,
+        created_by.to_string(),
+    )
+}
+
 #[sqlx::test]
 async fn test_insert_and_find_by_id(pool: SqlitePool) {
-    crate::service::dao::task::init();
-    let task_dao = crate::service::dao::task::dao();
+    let task_dao = init_test_env();
 
     let task_id = Uuid::now_v7().to_string();
     let assignee_id = "user-123";
@@ -58,8 +86,7 @@ async fn test_insert_and_find_by_id(pool: SqlitePool) {
 /// 测试更新任务信息
 #[sqlx::test]
 async fn test_update_task(pool: SqlitePool) {
-    crate::service::dao::task::init();
-    let task_dao = crate::service::dao::task::dao();
+    let task_dao = init_test_env();
 
     let task_id = Uuid::now_v7().to_string();
     let assignee_id = "user-123";
@@ -100,8 +127,7 @@ async fn test_update_task(pool: SqlitePool) {
 /// 测试更新任务状态
 #[sqlx::test]
 async fn test_update_task_status(pool: SqlitePool) {
-    crate::service::dao::task::init();
-    let task_dao = crate::service::dao::task::dao();
+    let task_dao = init_test_env();
 
     let task_id = Uuid::now_v7().to_string();
     let task = TaskPo::new(
@@ -133,8 +159,7 @@ async fn test_update_task_status(pool: SqlitePool) {
 /// 测试按分配人查询列表和优先级排序
 #[sqlx::test]
 async fn test_list_by_assignee(pool: SqlitePool) {
-    crate::service::dao::task::init();
-    let task_dao = crate::service::dao::task::dao();
+    let task_dao = init_test_env();
 
     let assignee_id = "user-123";
 
@@ -211,8 +236,7 @@ async fn test_list_by_assignee(pool: SqlitePool) {
 /// 测试按状态查询
 #[sqlx::test]
 async fn test_list_by_status(pool: SqlitePool) {
-    crate::service::dao::task::init();
-    let task_dao = crate::service::dao::task::dao();
+    let task_dao = init_test_env();
 
     let assignee_id = "user-123";
 
@@ -287,8 +311,7 @@ async fn test_list_by_status(pool: SqlitePool) {
 /// 测试计数功能
 #[sqlx::test]
 async fn test_count_functions(pool: SqlitePool) {
-    crate::service::dao::task::init();
-    let task_dao = crate::service::dao::task::dao();
+    let task_dao = init_test_env();
 
     let assignee_id = "user-123";
 
@@ -347,8 +370,7 @@ async fn test_count_functions(pool: SqlitePool) {
 /// 测试取消任务（软删除，status = 0 = Cancelled）
 #[sqlx::test]
 async fn test_cancel_task(pool: SqlitePool) {
-    crate::service::dao::task::init();
-    let task_dao = crate::service::dao::task::dao();
+    let task_dao = init_test_env();
 
     let assignee_id = "user-123";
 
@@ -407,8 +429,7 @@ async fn test_cancel_task(pool: SqlitePool) {
 /// 测试空列表边界情况
 #[sqlx::test]
 async fn test_empty_task_list(pool: SqlitePool) {
-    crate::service::dao::task::init();
-    let task_dao = crate::service::dao::task::dao();
+    let task_dao = init_test_env();
 
     let list = task_dao.list_by_assignee(new_ctx("test-user", pool.clone()), None, "nonexistent-user", Some(10)).await.unwrap();
     assert!(list.is_empty());

@@ -12,15 +12,20 @@ fn new_ctx(user_id: &str, pool: sqlx::SqlitePool) -> RequestContext {
     RequestContext::new_simple(user_id, pool)
 }
 
-#[sqlx::test]
-async fn test_list_by_project_id(pool: SqlitePool) {
-    // 初始化依赖：dao -> dal -> domain (和线上初始化顺序一致)
+/// 初始化测试环境
+fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn MessageDomain>, RequestContext) {
     crate::service::dao::message::init();
     crate::service::dao::event_queue::init_message();
     crate::service::dal::message::init();
     super::init();
     let domain = domain();
     let ctx = new_ctx("admin", pool);
+    (domain, ctx)
+}
+
+#[sqlx::test]
+async fn test_list_by_project_id(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
 
     let project_id_1 = Uuid::now_v7().to_string();
     let project_id_2 = Uuid::now_v7().to_string();

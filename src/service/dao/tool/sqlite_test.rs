@@ -1,6 +1,7 @@
 //! Tool DAO SQLite 单元测试
 
 use sqlx::SqlitePool;
+use std::sync::Arc;
 use crate::models::tool::{ToolPo, Tool};
 use crate::pkg::request_context::RequestContext;
 use common::enums::{ToolProtocol, ToolStatus};
@@ -11,14 +12,32 @@ fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     RequestContext::new_simple(user_id, pool)
 }
 
-#[sqlx::test]
-async fn test_create_and_get_tool_full(pool: SqlitePool) {
+
+/// 初始化测试环境
+fn init_test_env() -> Arc<dyn ToolDao> {
     dao_init();
     crate::pkg::tool_registry::init();
-    crate::pkg::tool_registry::init();
+    dao()
+}
 
+/// 创建测试 ToolPo
+fn create_test_tool(name: &str, description: &str) -> ToolPo {
+    ToolPo::new(
+        "".to_string(), // id 自动生成
+        name.to_string(),
+        description.to_string(),
+        ToolProtocol::Builtin,
+        serde_json::Value::Null,
+        None,
+        vec![],
+        Some("admin".to_string()),
+    )
+}
+
+#[sqlx::test]
+async fn test_create_and_get_tool_full(pool: SqlitePool) {
+    let tool_dao = init_test_env();
     let ctx = RequestContext::new_simple("admin", pool);
-    let tool_dao = dao();
 
     // ========== 测试: 创建工具并查询完整实体
     let tool_po = ToolPo::new(
@@ -45,11 +64,8 @@ async fn test_create_and_get_tool_full(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_add_tool_to_agent_and_list(pool: SqlitePool) {
-    dao_init();
-    crate::pkg::tool_registry::init();
-
+    let tool_dao = init_test_env();
     let ctx = RequestContext::new_simple("admin", pool);
-    let tool_dao = dao();
 
     // 创建两个工具
     let tool1 = ToolPo::new("tool-1".to_string(), "tool-1".to_string(), "Tool 1".to_string(), ToolProtocol::Builtin, serde_json::Value::Null, None, vec![], Some("admin".to_string()),
@@ -74,11 +90,8 @@ async fn test_add_tool_to_agent_and_list(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_remove_tool_from_agent(pool: SqlitePool) {
-    dao_init();
-    crate::pkg::tool_registry::init();
-
+    let tool_dao = init_test_env();
     let ctx = RequestContext::new_simple("admin", pool);
-    let tool_dao = dao();
 
     // 创建工具并绑定
     let tool = ToolPo::new("tool-to-remove".to_string(), "tool-to-remove".to_string(), "To remove".to_string(), ToolProtocol::Builtin, serde_json::Value::Null, None, vec![], Some("admin".to_string()),
@@ -102,11 +115,8 @@ async fn test_remove_tool_from_agent(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_list_enabled(pool: SqlitePool) {
-    dao_init();
-    crate::pkg::tool_registry::init();
-
+    let tool_dao = init_test_env();
     let ctx = RequestContext::new_simple("admin", pool);
-    let tool_dao = dao();
 
     // 创建一个启用，一个禁用
     let mut enabled = ToolPo::new("enabled".to_string(), "enabled".to_string(), "Enabled tool".to_string(), ToolProtocol::Builtin, serde_json::Value::Null, None, vec![], Some("admin".to_string()),
@@ -125,11 +135,8 @@ async fn test_list_enabled(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_get_by_name(pool: SqlitePool) {
-    dao_init();
-    crate::pkg::tool_registry::init();
-
+    let tool_dao = init_test_env();
     let ctx = RequestContext::new_simple("admin", pool);
-    let tool_dao = dao();
 
     let tool = ToolPo::new("".to_string(), "my-unique-name".to_string(), "Test".to_string(), ToolProtocol::Builtin, serde_json::Value::Null, None, vec![], Some("admin".to_string()),
     );
@@ -146,11 +153,8 @@ async fn test_get_by_name(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_update_tool(pool: SqlitePool) {
-    dao_init();
-    crate::pkg::tool_registry::init();
-
+    let tool_dao = init_test_env();
     let ctx = RequestContext::new_simple("admin", pool);
-    let tool_dao = dao();
 
     let mut tool = ToolPo::new("".to_string(), "original-name".to_string(), "Original description".to_string(), ToolProtocol::Builtin, serde_json::Value::Null, None, vec![], Some("creator".to_string()),
     );
@@ -175,11 +179,8 @@ async fn test_update_tool(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_find_not_exists(pool: SqlitePool) {
-    dao_init();
-    crate::pkg::tool_registry::init();
-
+    let tool_dao = init_test_env();
     let ctx = RequestContext::new_simple("admin", pool);
-    let tool_dao = dao();
 
     let found = tool_dao.get_by_id(&ctx, "not-exist-id".to_string()).await.unwrap();
     assert!(found.is_none());

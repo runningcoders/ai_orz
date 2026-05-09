@@ -11,6 +11,8 @@ use crate::models::message_channel::{MessageChannel, MessageChannelPo, ChannelCo
 use crate::pkg::RequestContext;
 use common::enums::{ChannelType, ChannelStatus};
 use sqlx::SqlitePool;
+use crate::service::dal::message_channel::MessageChannelDal;
+use std::sync::Arc;
 
 fn init_all_test_daos() {
     message_channel_dao_init();
@@ -22,11 +24,36 @@ fn init_all_test_daos() {
     init();
 }
 
-#[sqlx::test]
-async fn test_create_and_get_channel(pool: SqlitePool) {
+
+/// 初始化测试环境
+async fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageChannelDal + Send + Sync>, RequestContext) {
     init_all_test_daos();
     let dal = dal();
     let ctx = RequestContext::new_simple("admin", pool);
+    (dal, ctx)
+}
+
+/// 创建测试渠道
+fn create_test_channel(channel_id: &str, user_id: &str, channel_type: ChannelType, name: &str) -> MessageChannel {
+    let channel_po = MessageChannelPo::new(
+        channel_id.to_string(),
+        "org-1".to_string(),
+        user_id.to_string(),
+        None,
+        channel_type,
+        name.to_string(),
+        Some("https://example.com/webhook".to_string()),
+        None,
+        None,
+        ChannelConfig::default(),
+        "admin".to_string(),
+    );
+    MessageChannel::from_po(channel_po)
+}
+
+#[sqlx::test]
+async fn test_create_and_get_channel(pool: SqlitePool) {
+    let (dal, ctx) = init_test_env(pool).await;
 
     let channel_id = "test-create-channel".to_string();
     let channel_po = MessageChannelPo::new(
@@ -55,9 +82,7 @@ async fn test_create_and_get_channel(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_list_user_channels(pool: SqlitePool) {
-    init_all_test_daos();
-    let dal = dal();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     // 创建3个同一用户的渠道
     for i in 0..3 {
@@ -109,9 +134,7 @@ async fn test_list_user_channels(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_update_channel(pool: SqlitePool) {
-    init_all_test_daos();
-    let dal = dal();
-    let ctx = RequestContext::new_simple("admin", pool.clone());
+    let (dal, ctx) = init_test_env(pool.clone()).await;
 
     let channel_id = "test-update-channel".to_string();
     let channel_po = MessageChannelPo::new(
@@ -140,9 +163,7 @@ async fn test_update_channel(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_delete_and_set_status(pool: SqlitePool) {
-    init_all_test_daos();
-    let dal = dal();
-    let ctx = RequestContext::new_simple("admin", pool.clone());
+    let (dal, ctx) = init_test_env(pool.clone()).await;
 
     let channel_id = "test-delete-channel".to_string();
     let channel_po = MessageChannelPo::new(
@@ -184,9 +205,7 @@ async fn test_delete_and_set_status(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_query_channels(pool: SqlitePool) {
-    init_all_test_daos();
-    let dal = dal();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     // 创建不同类型的渠道
     for i in 0..4 {
@@ -224,9 +243,7 @@ async fn test_query_channels(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_deliver_message_skeleton(pool: SqlitePool) {
-    init_all_test_daos();
-    let dal = dal();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     // 创建一个测试渠道
     let channel_po = MessageChannelPo::new(

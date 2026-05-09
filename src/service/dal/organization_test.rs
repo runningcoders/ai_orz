@@ -4,14 +4,33 @@ use common::enums::OrganizationStatus;
 use crate::models::organization::OrganizationPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::organization::OrganizationQuery;
+use crate::service::dal::organization::OrganizationDal;
 use sqlx::SqlitePool;
+use std::sync::Arc;
 
-#[sqlx::test]
-async fn test_create_and_get_by_id(pool: SqlitePool) {
+/// 初始化测试环境
+async fn init_test_env(pool: SqlitePool) -> (Arc<dyn OrganizationDal + Send + Sync>, RequestContext) {
     crate::service::dao::organization::init();
     crate::service::dal::organization::init();
     let dal = crate::service::dal::organization::dal();
     let ctx = RequestContext::new_simple("admin", pool);
+    (dal, ctx)
+}
+
+/// 创建测试组织
+fn create_test_org(id: &str, name: &str) -> OrganizationPo {
+    OrganizationPo::new(
+        id.to_string(),
+        name.to_string(),
+        format!("Description for {}", name),
+        None,
+        "admin".to_string(),
+    )
+}
+
+#[sqlx::test]
+async fn test_create_and_get_by_id(pool: SqlitePool) {
+    let (dal, ctx) = init_test_env(pool).await;
 
     let org = OrganizationPo::new(
         "org-001".to_string(),
@@ -34,23 +53,14 @@ async fn test_create_and_get_by_id(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_is_initialized(pool: SqlitePool) {
-    crate::service::dao::organization::init();
-    crate::service::dal::organization::init();
-    let dal = crate::service::dal::organization::dal();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     // 空数据库未初始化
     let initialized = dal.is_initialized(ctx.clone()).await.unwrap();
     assert!(!initialized);
 
     // 创建组织后应该已初始化
-    let org = OrganizationPo::new(
-        "org-001".to_string(),
-        "测试组织".to_string(),
-        "测试描述".to_string(),
-        None,
-        "admin".to_string(),
-    );
+    let org = create_test_org("org-001", "测试组织");
     dal.create(ctx.clone(), &org).await.unwrap();
 
     let initialized = dal.is_initialized(ctx).await.unwrap();
@@ -59,32 +69,16 @@ async fn test_is_initialized(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_list_all(pool: SqlitePool) {
-    crate::service::dao::organization::init();
-    crate::service::dal::organization::init();
-    let dal = crate::service::dal::organization::dal();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     // 初始为空
     let list = dal.list_all(ctx.clone()).await.unwrap();
     assert_eq!(list.len(), 0);
 
     // 创建两个组织
-    let org1 = OrganizationPo::new(
-        "org-001".to_string(),
-        "组织一".to_string(),
-        "描述一".to_string(),
-        None,
-        "admin".to_string(),
-    );
+    let org1 = create_test_org("org-001", "组织一");
+    let org2 = create_test_org("org-002", "组织二");
     dal.create(ctx.clone(), &org1).await.unwrap();
-
-    let org2 = OrganizationPo::new(
-        "org-002".to_string(),
-        "组织二".to_string(),
-        "描述二".to_string(),
-        None,
-        "admin".to_string(),
-    );
     dal.create(ctx.clone(), &org2).await.unwrap();
 
     // 查询所有
@@ -96,20 +90,11 @@ async fn test_list_all(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_query_with_limit(pool: SqlitePool) {
-    crate::service::dao::organization::init();
-    crate::service::dal::organization::init();
-    let dal = crate::service::dal::organization::dal();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     // 创建3个组织
     for i in 1..=3 {
-        let org = OrganizationPo::new(
-            format!("org-{:03}", i),
-            format!("组织{}", i),
-            format!("描述{}", i),
-            None,
-            "admin".to_string(),
-        );
+        let org = create_test_org(&format!("org-{:03}", i), &format!("组织{}", i));
         dal.create(ctx.clone(), &org).await.unwrap();
     }
 
@@ -123,10 +108,7 @@ async fn test_query_with_limit(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_update(pool: SqlitePool) {
-    crate::service::dao::organization::init();
-    crate::service::dal::organization::init();
-    let dal = crate::service::dal::organization::dal();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     let mut org = OrganizationPo::new(
         "org-001".to_string(),
@@ -152,19 +134,9 @@ async fn test_update(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_delete(pool: SqlitePool) {
-    crate::service::dao::organization::init();
-    crate::service::dal::organization::init();
-    let dal = crate::service::dal::organization::dal();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
-    let org = OrganizationPo::new(
-        "org-001".to_string(),
-        "测试组织".to_string(),
-        "测试描述".to_string(),
-        None,
-        "admin".to_string(),
-    );
-
+    let org = create_test_org("org-001", "测试组织");
     dal.create(ctx.clone(), &org).await.unwrap();
 
     // 删除前能找到
@@ -180,10 +152,7 @@ async fn test_delete(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_count_organizations(pool: SqlitePool) {
-    crate::service::dao::organization::init();
-    crate::service::dal::organization::init();
-    let dal = crate::service::dal::organization::dal();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     // 初始计数为 0
     let count = dal.count_organizations(ctx.clone()).await.unwrap();
@@ -191,13 +160,7 @@ async fn test_count_organizations(pool: SqlitePool) {
 
     // 创建3个组织
     for i in 1..=3 {
-        let org = OrganizationPo::new(
-            format!("org-{:03}", i),
-            format!("组织{}", i),
-            format!("描述{}", i),
-            None,
-            "admin".to_string(),
-        );
+        let org = create_test_org(&format!("org-{:03}", i), &format!("组织{}", i));
         dal.create(ctx.clone(), &org).await.unwrap();
     }
 
@@ -208,10 +171,7 @@ async fn test_count_organizations(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_get_by_id_not_found(pool: SqlitePool) {
-    crate::service::dao::organization::init();
-    crate::service::dal::organization::init();
-    let dal = crate::service::dal::organization::dal();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     // 查询不存在的组织应该返回 None
     let found = dal.get_by_id(ctx, "nonexistent").await.unwrap();

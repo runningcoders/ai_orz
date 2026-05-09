@@ -9,6 +9,16 @@ use common::enums::{MessageRole, MessageStatus, MessageType};
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use uuid::Uuid;
+use crate::service::dal::message::MessageDal;
+
+/// 初始化测试环境
+async fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDal + Send + Sync>, RequestContext) {
+    let message_dao = message::sqlite::new();
+    let event_queue = event_queue::in_memory::new();
+    let dal = crate::service::dal::message::new(message_dao, event_queue);
+    let ctx = RequestContext::new_simple("admin", pool);
+    (dal, ctx)
+}
 
 /// 创建测试消息
 fn create_test_message(
@@ -40,10 +50,7 @@ fn create_test_message(
 
 #[sqlx::test]
 async fn test_save_and_find_by_id(pool: SqlitePool) {
-    let message_dao = message::sqlite::new();
-    let event_queue = event_queue::in_memory::new();
-    let dal = crate::service::dal::message::new(message_dao, event_queue);
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     let msg = create_test_message(
         "task-1",
@@ -68,10 +75,7 @@ async fn test_save_and_find_by_id(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_list_by_task_id(pool: SqlitePool) {
-    let message_dao = message::sqlite::new();
-    let event_queue = event_queue::in_memory::new();
-    let dal = crate::service::dal::message::new(message_dao, event_queue);
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     // Add messages to two different tasks
     for i in 0..5 {
@@ -111,10 +115,7 @@ async fn test_list_by_task_id(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_list_by_task_id_with_limit(pool: SqlitePool) {
-    let message_dao = message::sqlite::new();
-    let event_queue = event_queue::in_memory::new();
-    let dal = crate::service::dal::message::new(message_dao, event_queue);
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     for i in 0..10 {
         let msg = create_test_message(
@@ -138,10 +139,7 @@ async fn test_list_by_task_id_with_limit(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_list_by_from_id(pool: SqlitePool) {
-    let message_dao = message::sqlite::new();
-    let event_queue = event_queue::in_memory::new();
-    let dal = crate::service::dal::message::new(message_dao, event_queue);
-    let ctx = RequestContext::new_simple("admin", pool.clone());
+    let (dal, ctx) = init_test_env(pool).await;
 
     for i in 0..3 {
         let msg = create_test_message(
@@ -163,19 +161,15 @@ async fn test_list_by_from_id(pool: SqlitePool) {
         MessageRole::Agent,
         "From Bob".to_string(),
     );
-    dal.save_message(ctx, &msg2).await.unwrap();
+    dal.save_message(ctx.clone(), &msg2).await.unwrap();
 
-    let ctx = RequestContext::new_simple("admin", pool.clone());
     let list = dal.list_by_from_id(ctx, "user-alice", None).await.unwrap();
     assert_eq!(list.len(), 3);
 }
 
 #[sqlx::test]
 async fn test_list_by_to_id(pool: SqlitePool) {
-    let message_dao = message::sqlite::new();
-    let event_queue = event_queue::in_memory::new();
-    let dal = crate::service::dal::message::new(message_dao, event_queue);
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     for i in 0..4 {
         let msg = create_test_message(
@@ -195,10 +189,7 @@ async fn test_list_by_to_id(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_list_by_status(pool: SqlitePool) {
-    let message_dao = message::sqlite::new();
-    let event_queue = event_queue::in_memory::new();
-    let dal = crate::service::dal::message::new(message_dao, event_queue);
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     let mut msg1 = create_test_message(
         "task-1",
@@ -234,10 +225,7 @@ async fn test_list_by_status(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_update_status(pool: SqlitePool) {
-    let message_dao = message::sqlite::new();
-    let event_queue = event_queue::in_memory::new();
-    let dal = crate::service::dal::message::new(message_dao, event_queue);
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     let mut msg = create_test_message(
         "task-1",
@@ -261,10 +249,7 @@ async fn test_update_status(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_count_by_task_id(pool: SqlitePool) {
-    let message_dao = message::sqlite::new();
-    let event_queue = event_queue::in_memory::new();
-    let dal = crate::service::dal::message::new(message_dao, event_queue);
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     for i in 0..7 {
         let msg = create_test_message(
@@ -287,10 +272,7 @@ async fn test_count_by_task_id(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_delete_message(pool: SqlitePool) {
-    let message_dao = message::sqlite::new();
-    let event_queue = event_queue::in_memory::new();
-    let dal = crate::service::dal::message::new(message_dao, event_queue);
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     let msg = create_test_message(
         "task-1",
@@ -313,10 +295,7 @@ async fn test_delete_message(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_delete_by_task_id(pool: SqlitePool) {
-    let message_dao = message::sqlite::new();
-    let event_queue = event_queue::in_memory::new();
-    let dal = crate::service::dal::message::new(message_dao, event_queue);
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     for i in 0..5 {
         let msg = create_test_message(
@@ -341,10 +320,7 @@ async fn test_delete_by_task_id(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_find_not_exists(pool: SqlitePool) {
-    let message_dao = message::sqlite::new();
-    let event_queue = event_queue::in_memory::new();
-    let dal = crate::service::dal::message::new(message_dao, event_queue);
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     let found = dal.find_by_id(ctx, "not-existent-id").await.unwrap();
     assert!(found.is_none());
@@ -352,10 +328,7 @@ async fn test_find_not_exists(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_dequeue_ack_nack(pool: SqlitePool) {
-    let message_dao = message::sqlite::new();
-    let event_queue = event_queue::in_memory::new();
-    let dal = crate::service::dal::message::new(message_dao, event_queue);
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     // 空队列第一次 dequeue 应该从 DB 加载
     let msg1 = create_test_message(

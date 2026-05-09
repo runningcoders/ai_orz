@@ -4,23 +4,29 @@
 //! 它组合多个 DAO 完成业务逻辑，使用业务对象而非 Po
 
 pub mod agent;
+pub mod artifact;
 pub mod brain;
 pub mod message;
 pub mod message_channel;
 pub mod model_provider;
 pub mod organization;
+pub mod project;
 pub mod skill;
+pub mod task;
 pub mod tool;
 pub mod user;
 
 pub fn init_all(){
     agent::init();
+    artifact::init();
     brain::init();
     message::init();
     message_channel::init();
     model_provider::init();
     organization::init();
+    project::init();
     skill::init();
+    task::init();
     tool::init();
     user::init();
 }
@@ -28,6 +34,8 @@ pub fn init_all(){
 
 #[cfg(test)]
 pub(crate) mod agent_test;
+#[cfg(test)]
+pub(crate) mod artifact_test;
 #[cfg(test)]
 pub(crate) mod brain_test;
 #[cfg(test)]
@@ -39,7 +47,11 @@ pub(crate) mod model_provider_test;
 #[cfg(test)]
 pub(crate) mod organization_test;
 #[cfg(test)]
+pub(crate) mod project_test;
+#[cfg(test)]
 pub(crate) mod skill_test;
+#[cfg(test)]
+pub(crate) mod task_test;
 #[cfg(test)]
 pub(crate) mod tool_test;
 #[cfg(test)]

@@ -1,29 +1,28 @@
 //! Brain DAL 单元测试
-//! Brain DAL 单元测试
 //! 测试 Brain DAL 的 wake_brain 和 test_connection 功能
 
 use crate::models::{brain::*, model_provider::*, tool::Tool};
 use crate::service::dao::cortex;
 use common::enums::ProviderType;
 use crate::pkg::request_context::RequestContext;
-use uuid::Uuid;
 use sqlx::SqlitePool;
+use std::sync::Arc;
+use crate::service::dal::brain::BrainDal;
 
-/// 测试 Brain DAL 创建 wake_brain 功能
-#[sqlx::test]
-async fn test_wake_brain(pool: SqlitePool) {
-    // Storage 已经自动迁移，使用传入的 pool
-    // 初始化 cortex dao 和 brain dal
+/// 初始化测试环境
+async fn init_test_env(pool: SqlitePool) -> (Arc<dyn BrainDal + Send + Sync>, RequestContext) {
     cortex::init();
     crate::service::dao::tool_call::init();
     crate::service::dal::brain::init();
     let cortex_dao = cortex::dao();
     let tool_call_dao = crate::service::dao::tool_call::dao();
     let brain_dal = crate::service::dal::brain::new(cortex_dao, tool_call_dao);
-
     let ctx = RequestContext::new_simple("test-user", pool);
+    (brain_dal, ctx)
+}
 
-    // ========== 测试: wake_brain ==========
+/// 创建测试 ModelProvider
+fn create_test_provider() -> ModelProvider {
     let provider_po = ModelProviderPo::new(
         "OpenAI GPT-4o".to_string(),
         ProviderType::OpenAI,
@@ -33,8 +32,16 @@ async fn test_wake_brain(pool: SqlitePool) {
         Some("OpenAI GPT-4o Official".to_string()),
         "test".to_string(),
     );
+    ModelProvider::from_po(provider_po)
+}
 
-    let provider = ModelProvider::from_po(provider_po);
+/// 测试 Brain DAL 创建 wake_brain 功能
+#[sqlx::test]
+async fn test_wake_brain(pool: SqlitePool) {
+    let (brain_dal, ctx) = init_test_env(pool).await;
+
+    // ========== 测试: wake_brain ==========
+    let provider = create_test_provider();
 
     // 创建 Memory
     let memory = Memory::new(
@@ -44,7 +51,7 @@ async fn test_wake_brain(pool: SqlitePool) {
 
     let tools: Vec<Tool> = vec![];
     let result = brain_dal.wake_brain(ctx.clone(), &provider, memory, tools);
-    
+
     // 应该能成功创建，API key 不正确只会在实际调用时失败，创建本身不会失败
     assert!(result.is_ok());
 }
@@ -52,33 +59,14 @@ async fn test_wake_brain(pool: SqlitePool) {
 /// 测试 Brain DAL test_connection 功能
 #[sqlx::test]
 async fn test_test_connection(pool: SqlitePool) {
-    // Storage 已经自动迁移，使用传入的 pool
-    // 初始化 cortex dao 和 brain dal
-    cortex::init();
-    crate::service::dao::tool_call::init();
-    crate::service::dal::brain::init();
-    let cortex_dao = cortex::dao();
-    let tool_call_dao = crate::service::dao::tool_call::dao();
-    let brain_dal = crate::service::dal::brain::new(cortex_dao, tool_call_dao);
-
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let (brain_dal, ctx) = init_test_env(pool).await;
 
     // ========== 测试: test_connection ==========
-    let provider_po = ModelProviderPo::new(
-        "OpenAI GPT-4o".to_string(),
-        ProviderType::OpenAI,
-        "gpt-4o".to_string(),
-        "test-key".to_string(),
-        Some("https://api.openai.com/v1".to_string()),
-        Some("OpenAI GPT-4o Official".to_string()),
-        "test".to_string(),
-    );
-
-    let provider = ModelProvider::from_po(provider_po);
+    let provider = create_test_provider();
 
     // 即使 API key 不正确，test_connection 也应该完成路径调用，返回 Err，这是预期的
     let result = brain_dal.test_connection(ctx, &provider, "Hello!").await;
-    
+
     // 创建 Cortex 成功（我们只验证路径），调用会失败因为 API key 不对，这是预期的
     assert!(result.is_err());
 }

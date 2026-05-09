@@ -6,6 +6,7 @@ use common::enums::{ChannelType, ChannelStatus};
 use crate::pkg::RequestContext;
 use crate::service::dao::message_channel::{self, MessageChannelDao, MessageChannelQuery};
 use uuid::Uuid;
+use std::sync::Arc;
 use sqlx::SqlitePool;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
@@ -13,11 +14,35 @@ fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
 }
 
 /// 测试插入渠道和按 ID 查询
-#[sqlx::test(migrations = "./migrations")]
-async fn test_insert_and_find_by_id(pool: SqlitePool) -> Result<()> {
+
+/// 初始化测试环境
+fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageChannelDao + Send + Sync>, RequestContext) {
     message_channel::init();
     let dao = message_channel::dao();
     let ctx = new_ctx("test-user", pool);
+    (dao, ctx)
+}
+
+/// 创建测试 MessageChannelPo
+fn create_test_channel(org_id: &str, user_id: &str, name: &str) -> MessageChannelPo {
+    MessageChannelPo::new(
+        Uuid::now_v7().to_string(),
+        org_id.to_string(),
+        user_id.to_string(),
+        None,
+        ChannelType::Webhook,
+        name.to_string(),
+        Some("https://webhook.example.com/abc".to_string()),
+        None,
+        None,
+        ChannelConfig::default(),
+        user_id.to_string(),
+    )
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn test_insert_and_find_by_id(pool: SqlitePool) -> Result<()> {
+    let (dao, ctx) = init_test_env(pool);
 
     let channel = MessageChannelPo::new(
         Uuid::now_v7().to_string(),
@@ -50,9 +75,7 @@ async fn test_insert_and_find_by_id(pool: SqlitePool) -> Result<()> {
 /// 测试按用户 ID 查询渠道
 #[sqlx::test(migrations = "./migrations")]
 async fn test_list_by_user_id(pool: SqlitePool) -> Result<()> {
-    message_channel::init();
-    let dao = message_channel::dao();
-    let ctx = new_ctx("test-user", pool);
+    let (dao, ctx) = init_test_env(pool);
 
     // 插入 3 个用户渠道
     for i in 0..3 {
@@ -82,9 +105,7 @@ async fn test_list_by_user_id(pool: SqlitePool) -> Result<()> {
 /// 测试 Agent 专属渠道优先级
 #[sqlx::test(migrations = "./migrations")]
 async fn test_agent_channel_priority(pool: SqlitePool) -> Result<()> {
-    message_channel::init();
-    let dao = message_channel::dao();
-    let ctx = new_ctx("test-user", pool);
+    let (dao, ctx) = init_test_env(pool);
 
     // 用户通用渠道
     let user_channel = MessageChannelPo::new(
@@ -128,9 +149,7 @@ async fn test_agent_channel_priority(pool: SqlitePool) -> Result<()> {
 /// 测试设置启用/禁用
 #[sqlx::test(migrations = "./migrations")]
 async fn test_set_enabled(pool: SqlitePool) -> Result<()> {
-    message_channel::init();
-    let dao = message_channel::dao();
-    let ctx = new_ctx("test-user", pool);
+    let (dao, ctx) = init_test_env(pool);
 
     let channel = MessageChannelPo::new(
         Uuid::now_v7().to_string(),
@@ -163,9 +182,7 @@ async fn test_set_enabled(pool: SqlitePool) -> Result<()> {
 /// 测试软删除
 #[sqlx::test(migrations = "./migrations")]
 async fn test_delete(pool: SqlitePool) -> Result<()> {
-    message_channel::init();
-    let dao = message_channel::dao();
-    let ctx = new_ctx("test-user", pool);
+    let (dao, ctx) = init_test_env(pool);
 
     let channel = MessageChannelPo::new(
         Uuid::now_v7().to_string(),
@@ -195,9 +212,7 @@ async fn test_delete(pool: SqlitePool) -> Result<()> {
 /// 测试通用查询
 #[sqlx::test(migrations = "./migrations")]
 async fn test_query(pool: SqlitePool) -> Result<()> {
-    message_channel::init();
-    let dao = message_channel::dao();
-    let ctx = new_ctx("test-user", pool);
+    let (dao, ctx) = init_test_env(pool);
 
     // 插入测试数据
     for i in 0..5 {
@@ -256,9 +271,7 @@ async fn test_query(pool: SqlitePool) -> Result<()> {
 /// 测试标记推送成功/失败
 #[sqlx::test(migrations = "./migrations")]
 async fn test_mark_push_status(pool: SqlitePool) -> Result<()> {
-    message_channel::init();
-    let dao = message_channel::dao();
-    let ctx = new_ctx("test-user", pool);
+    let (dao, ctx) = init_test_env(pool);
 
     let channel = MessageChannelPo::new(
         Uuid::now_v7().to_string(),

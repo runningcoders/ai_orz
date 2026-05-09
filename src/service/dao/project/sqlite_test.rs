@@ -1,6 +1,8 @@
 //! Tests for SqliteProjectDao
 
 use sqlx::SqlitePool;
+use uuid::Uuid;
+use std::sync::Arc;
 use common::enums::project::ProjectStatus;
 use crate::error::AppError;
 use crate::models::project::ProjectPo;
@@ -11,10 +13,30 @@ fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     RequestContext::new_simple(user_id, pool)
 }
 
+
+/// 初始化测试环境
+fn init_test_env() -> Arc<dyn ProjectDao + Send + Sync> {
+    crate::service::dao::project::init();
+    sqlite::dao()
+}
+
+/// 创建测试 ProjectPo
+fn create_test_project(name: &str, created_by: &str) -> ProjectPo {
+    ProjectPo::new(
+        Uuid::now_v7().to_string(),
+        name.to_string(),
+        "".to_string(),
+        None, None,
+        3, vec![],
+        created_by.to_string(),
+        None, None, None, None,
+        created_by.to_string(),
+    )
+}
+
 #[sqlx::test]
 async fn test_insert_project(pool: SqlitePool) -> Result<(), AppError> {
-    crate::service::dao::project::init();
-    let dao = sqlite::dao();
+    let dao = init_test_env();
     let ctx = new_ctx("test-user", pool);
     
     let project_id = uuid::Uuid::now_v7().to_string();
@@ -40,8 +62,7 @@ async fn test_insert_project(pool: SqlitePool) -> Result<(), AppError> {
 
 #[sqlx::test]
 async fn test_find_by_id(pool: SqlitePool) -> Result<(), AppError> {
-    crate::service::dao::project::init();
-    let dao = sqlite::dao();
+    let dao = init_test_env();
     let ctx = new_ctx("test-user", pool);
     
     let project_id = uuid::Uuid::now_v7().to_string();
@@ -75,8 +96,7 @@ async fn test_find_by_id(pool: SqlitePool) -> Result<(), AppError> {
 
 #[sqlx::test]
 async fn test_list_by_root_user(pool: SqlitePool) -> Result<(), AppError> {
-    crate::service::dao::project::init();
-    let dao = sqlite::dao();
+    let dao = init_test_env();
     let ctx = new_ctx("test-user", pool);
     
     // Insert 3 projects for user1, 1 for user2
@@ -127,8 +147,7 @@ async fn test_list_by_root_user(pool: SqlitePool) -> Result<(), AppError> {
 
 #[sqlx::test]
 async fn test_list_by_root_user_and_status(pool: SqlitePool) -> Result<(), AppError> {
-    crate::service::dao::project::init();
-    let dao = sqlite::dao();
+    let dao = init_test_env();
     let ctx = new_ctx("test-user", pool);
     
     // Create projects with different statuses
@@ -185,8 +204,7 @@ async fn test_list_by_root_user_and_status(pool: SqlitePool) -> Result<(), AppEr
 
 #[sqlx::test]
 async fn test_update_project(pool: SqlitePool) -> Result<(), AppError> {
-    crate::service::dao::project::init();
-    let dao = sqlite::dao();
+    let dao = init_test_env();
     let ctx = new_ctx("test-user", pool);
     
     let project_id = uuid::Uuid::now_v7().to_string();
@@ -225,8 +243,7 @@ async fn test_update_project(pool: SqlitePool) -> Result<(), AppError> {
 
 #[sqlx::test]
 async fn test_update_status(pool: SqlitePool) -> Result<(), AppError> {
-    crate::service::dao::project::init();
-    let dao = sqlite::dao();
+    let dao = init_test_env();
     let ctx = new_ctx("test-user", pool);
     
     let project_id = uuid::Uuid::now_v7().to_string();
@@ -257,8 +274,7 @@ async fn test_update_status(pool: SqlitePool) -> Result<(), AppError> {
 
 #[sqlx::test]
 async fn test_count_functions(pool: SqlitePool) -> Result<(), AppError> {
-    crate::service::dao::project::init();
-    let dao = sqlite::dao();
+    let dao = init_test_env();
     let ctx = new_ctx("test-user", pool);
     
     for i in 0..5 {
@@ -296,8 +312,7 @@ async fn test_count_functions(pool: SqlitePool) -> Result<(), AppError> {
 
 #[sqlx::test]
 async fn test_deleted_not_found(pool: SqlitePool) -> Result<(), AppError> {
-    crate::service::dao::project::init();
-    let dao = sqlite::dao();
+    let dao = init_test_env();
     let ctx = new_ctx("test-user", pool);
     
     let project_id = uuid::Uuid::now_v7().to_string();

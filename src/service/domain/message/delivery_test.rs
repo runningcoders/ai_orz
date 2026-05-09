@@ -11,14 +11,19 @@ fn new_ctx(user_id: &str, pool: sqlx::SqlitePool) -> RequestContext {
     RequestContext::new_simple(user_id, pool)
 }
 
-#[sqlx::test]
-async fn test_send_to_agent_and_send_to_user(pool: SqlitePool) {
-    // 每个测试新建独立实例，保证测试隔离，避免全局单例残留影响
+/// 初始化测试环境（每个测试新建独立实例，保证测试隔离）
+fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn crate::service::domain::message::MessageDomain>, RequestContext) {
     let message_dao = crate::service::dao::message::sqlite::new();
     let event_queue = crate::service::dao::event_queue::in_memory::new();
     let message_dal = crate::service::dal::message::new(message_dao, event_queue);
     let domain = crate::service::domain::message::new(message_dal);
     let ctx = new_ctx("admin", pool);
+    (domain, ctx)
+}
+
+#[sqlx::test]
+async fn test_send_to_agent_and_send_to_user(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
 
     let project_id = Uuid::now_v7().to_string();
     let task_id = Uuid::now_v7().to_string();
@@ -78,12 +83,7 @@ async fn test_send_to_agent_and_send_to_user(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_dequeue_ack_nack(pool: SqlitePool) {
-    // 每个测试新建独立实例，保证测试隔离，避免全局单例残留影响
-    let message_dao = crate::service::dao::message::sqlite::new();
-    let event_queue = crate::service::dao::event_queue::in_memory::new();
-    let message_dal = crate::service::dal::message::new(message_dao, event_queue);
-    let domain = crate::service::domain::message::new(message_dal);
-    let ctx = new_ctx("admin", pool);
+    let (domain, ctx) = init_test_env(pool);
 
     // 队列初始为空
     let empty = domain.delivery().dequeue_next(ctx.clone()).await.unwrap();
@@ -171,12 +171,7 @@ async fn test_dequeue_ack_nack(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_send_without_project_and_task(pool: SqlitePool) {
-    // 每个测试新建独立实例，保证测试隔离，避免全局单例残留影响
-    let message_dao = crate::service::dao::message::sqlite::new();
-    let event_queue = crate::service::dao::event_queue::in_memory::new();
-    let message_dal = crate::service::dal::message::new(message_dao, event_queue);
-    let domain = crate::service::domain::message::new(message_dal);
-    let ctx = new_ctx("admin", pool);
+    let (domain, ctx) = init_test_env(pool);
 
     // 不关联项目和任务
     let sent = domain

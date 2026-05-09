@@ -7,6 +7,7 @@ use common::enums::{MessageRole, MessageType, MessageStatus, FileType};
 use crate::pkg::RequestContext;
 use crate::service::dao::message::{self, MessageDao};
 use uuid::Uuid;
+use std::sync::Arc;
 use sqlx::SqlitePool;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
@@ -14,11 +15,42 @@ fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
 }
 
 /// 测试插入消息和按 ID 查询
-#[sqlx::test(migrations = "./migrations")]
-async fn test_insert_and_find_by_id(pool: SqlitePool) -> Result<()> {
+
+/// 初始化测试环境
+fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDao + Send + Sync>, RequestContext) {
     crate::service::dao::message::init();
     let message_dao = message::dao();
     let ctx = new_ctx("test-user", pool);
+    (message_dao, ctx)
+}
+
+/// 创建测试 MessagePo
+fn create_test_message(task_id: &str, from_id: &str, content: &str) -> MessagePo {
+    let empty_file_meta = FileMeta::new(
+        "".to_string(),
+        "".to_string(),
+        0,
+    );
+    MessagePo::new(
+        Uuid::now_v7().to_string(),
+        None, // project_id
+        Some(task_id.to_string()),
+        from_id.to_string(),
+        "".to_string(),
+        MessageRole::User,
+        MessageRole::Agent,
+        MessageType::Text,
+        content.to_string(),
+        None,
+        empty_file_meta,
+        None,
+        "test-user".to_string(),
+    )
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn test_insert_and_find_by_id(pool: SqlitePool) -> Result<()> {
+    let (message_dao, ctx) = init_test_env(pool);
 
     let empty_file_meta = FileMeta::new(
         "".to_string(),
@@ -62,9 +94,7 @@ async fn test_insert_and_find_by_id(pool: SqlitePool) -> Result<()> {
 /// 测试按任务 ID 列表查询
 #[sqlx::test(migrations = "./migrations")]
 async fn test_list_by_task_id(pool: SqlitePool) -> Result<()> {
-    crate::service::dao::message::init();
-    let message_dao = message::dao();
-    let ctx = new_ctx("test-user", pool);
+    let (message_dao, ctx) = init_test_env(pool);
 
     let empty_file_meta = FileMeta::new(
         "".to_string(),
@@ -156,9 +186,7 @@ async fn test_list_by_task_id(pool: SqlitePool) -> Result<()> {
 /// 测试分页查询
 #[sqlx::test(migrations = "./migrations")]
 async fn test_list_by_task_id_with_limit(pool: SqlitePool) -> Result<()> {
-    crate::service::dao::message::init();
-    let message_dao = message::dao();
-    let ctx = new_ctx("test-user", pool);
+    let (message_dao, ctx) = init_test_env(pool);
 
     let empty_file_meta = FileMeta::new(
         "".to_string(),
@@ -196,9 +224,7 @@ async fn test_list_by_task_id_with_limit(pool: SqlitePool) -> Result<()> {
 /// 测试按 from_id 查询
 #[sqlx::test(migrations = "./migrations")]
 async fn test_list_by_from_id(pool: SqlitePool) -> Result<()> {
-    crate::service::dao::message::init();
-    let message_dao = message::dao();
-    let ctx = new_ctx("test-user", pool);
+    let (message_dao, ctx) = init_test_env(pool);
 
     let empty_file_meta = FileMeta::new(
         "".to_string(),
@@ -264,9 +290,7 @@ async fn test_list_by_from_id(pool: SqlitePool) -> Result<()> {
 /// 测试按 to_id 查询
 #[sqlx::test(migrations = "./migrations")]
 async fn test_list_by_to_id(pool: SqlitePool) -> Result<()> {
-    crate::service::dao::message::init();
-    let message_dao = message::dao();
-    let ctx = new_ctx("test-user", pool);
+    let (message_dao, ctx) = init_test_env(pool);
 
     let empty_file_meta = FileMeta::new(
         "".to_string(),
@@ -317,9 +341,7 @@ async fn test_list_by_to_id(pool: SqlitePool) -> Result<()> {
 /// 测试统计任务消息数量
 #[sqlx::test(migrations = "./migrations")]
 async fn test_count_by_task_id(pool: SqlitePool) -> Result<()> {
-    crate::service::dao::message::init();
-    let message_dao = message::dao();
-    let ctx = new_ctx("test-user", pool);
+    let (message_dao, ctx) = init_test_env(pool);
 
     let empty_file_meta = FileMeta::new(
         "".to_string(),
@@ -377,9 +399,7 @@ async fn test_count_by_task_id(pool: SqlitePool) -> Result<()> {
 /// 测试删除消息（软删除，Recalled 状态）
 #[sqlx::test(migrations = "./migrations")]
 async fn test_delete_message(pool: SqlitePool) -> Result<()> {
-    crate::service::dao::message::init();
-    let message_dao = message::dao();
-    let ctx = new_ctx("test-user", pool);
+    let (message_dao, ctx) = init_test_env(pool);
 
     let empty_file_meta = FileMeta::new(
         "".to_string(),
@@ -422,9 +442,7 @@ async fn test_delete_message(pool: SqlitePool) -> Result<()> {
 /// 测试批量删除任务下所有消息（软删除）
 #[sqlx::test(migrations = "./migrations")]
 async fn test_delete_by_task_id(pool: SqlitePool) -> Result<()> {
-    crate::service::dao::message::init();
-    let message_dao = message::dao();
-    let ctx = new_ctx("test-user", pool);
+    let (message_dao, ctx) = init_test_env(pool);
 
     let empty_file_meta = FileMeta::new(
         "".to_string(),
@@ -470,9 +488,7 @@ async fn test_delete_by_task_id(pool: SqlitePool) -> Result<()> {
 /// 测试更新消息状态
 #[sqlx::test(migrations = "./migrations")]
 async fn test_update_status(pool: SqlitePool) -> Result<()> {
-    crate::service::dao::message::init();
-    let message_dao = message::dao();
-    let ctx = new_ctx("test-user", pool);
+    let (message_dao, ctx) = init_test_env(pool);
 
     let empty_file_meta = FileMeta::new(
         "".to_string(),
@@ -510,9 +526,7 @@ async fn test_update_status(pool: SqlitePool) -> Result<()> {
 /// 测试图片消息带元数据
 #[sqlx::test(migrations = "./migrations")]
 async fn test_image_message_with_metadata(pool: SqlitePool) -> Result<()> {
-    crate::service::dao::message::init();
-    let message_dao = message::dao();
-    let ctx = new_ctx("test-user", pool);
+    let (message_dao, ctx) = init_test_env(pool);
 
     // 图片消息，content 存文件路径，file_meta 存宽高等信息
     let file_meta = FileMeta::new(
@@ -553,9 +567,7 @@ async fn test_image_message_with_metadata(pool: SqlitePool) -> Result<()> {
 /// 测试按状态列表查询（用于事件总线恢复）
 #[sqlx::test(migrations = "./migrations")]
 async fn test_list_by_status(pool: SqlitePool) -> Result<()> {
-    crate::service::dao::message::init();
-    let message_dao = message::dao();
-    let ctx = new_ctx("test-user", pool);
+    let (message_dao, ctx) = init_test_env(pool);
 
     let empty_file_meta = FileMeta::new(
         "".to_string(),
@@ -601,9 +613,7 @@ async fn test_list_by_status(pool: SqlitePool) -> Result<()> {
 /// 测试创建工具调用请求消息
 #[sqlx::test(migrations = "./migrations")]
 async fn test_create_tool_call_request(pool: SqlitePool) -> Result<()> {
-    crate::service::dao::message::init();
-    let message_dao = message::dao();
-    let ctx = new_ctx("test-user", pool);
+    let (message_dao, ctx) = init_test_env(pool);
 
     // 创建工具调用请求
     let args = serde_json::json!({
@@ -656,9 +666,7 @@ async fn test_create_tool_call_request(pool: SqlitePool) -> Result<()> {
 /// 测试创建工具调用结果消息
 #[sqlx::test(migrations = "./migrations")]
 async fn test_create_tool_call_result(pool: SqlitePool) -> Result<()> {
-    crate::service::dao::message::init();
-    let message_dao = message::dao();
-    let ctx = new_ctx("test-user", pool);
+    let (message_dao, ctx) = init_test_env(pool);
 
     // 1. 先创建一个工具调用请求（结果需要关联它）
     let args = serde_json::json!({"query": "test"});
@@ -721,9 +729,7 @@ async fn test_create_tool_call_result(pool: SqlitePool) -> Result<()> {
 /// 测试创建工具调用结果消息（失败情况）
 #[sqlx::test(migrations = "./migrations")]
 async fn test_create_tool_call_result_failed(pool: SqlitePool) -> Result<()> {
-    crate::service::dao::message::init();
-    let message_dao = message::dao();
-    let ctx = new_ctx("test-user", pool);
+    let (message_dao, ctx) = init_test_env(pool);
 
     // 先创建请求
     let args = serde_json::json!({"path": "/nonexistent"});
@@ -775,9 +781,7 @@ async fn test_create_tool_call_result_failed(pool: SqlitePool) -> Result<()> {
 /// 测试按 project_id 查询消息列表
 #[sqlx::test(migrations = "./migrations")]
 async fn test_list_by_project_id(pool: SqlitePool) -> Result<()> {
-    crate::service::dao::message::init();
-    let message_dao = message::dao();
-    let ctx = new_ctx("test-user", pool);
+    let (message_dao, ctx) = init_test_env(pool);
 
     // 创建多条消息分属不同项目
     // project-1: 3 条消息

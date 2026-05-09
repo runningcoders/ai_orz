@@ -8,46 +8,47 @@ use std::sync::Arc;
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
-#[sqlx::test]
-async fn test_create_and_find_by_id(pool:SqlitePool) {
+/// 初始化测试环境
+async fn init_test_env(pool: SqlitePool) -> (Arc<dyn crate::service::dal::agent::AgentDal + Send + Sync>, RequestContext) {
     agent_dao_init();
     init();
     let dal = dal();
     let ctx = RequestContext::new_simple("admin", pool);
+    (dal, ctx)
+}
 
-    let agent_po = AgentPo::new("TestAgent".to_string(), vec!["worker".to_string()],
-        "A helpful agent".to_string(),
-        vec!["coding".to_string()],
-        "A helpful agent that can code".to_string(),
-        "provider-id-1".to_string(),
+/// 创建测试 Agent
+fn create_test_agent(name: &str, provider_id: &str) -> Agent {
+    let agent_po = AgentPo::new(
+        name.to_string(),
+        vec!["worker".to_string()],
+        "".to_string(),
+        vec![],
+        "".to_string(),
+        provider_id.to_string(),
         "admin".to_string(),
     );
-    let agent = Agent::from_po(agent_po);
+    Agent::from_po(agent_po)
+}
 
+#[sqlx::test]
+async fn test_create_and_find_by_id(pool: SqlitePool) {
+    let (dal, ctx) = init_test_env(pool).await;
+
+    let agent = create_test_agent("TestAgent", "provider-id-1");
     dal.create(ctx.clone(), &agent).await.unwrap();
-    let found: Option<Agent> = dal.find_by_id(ctx, &agent.id()).await.unwrap();
 
+    let found: Option<Agent> = dal.find_by_id(ctx, &agent.id()).await.unwrap();
     assert_eq!(found.as_ref().unwrap().name(), "TestAgent");
     assert_eq!(found.unwrap().po.created_by, "admin".to_string());
 }
 
 #[sqlx::test]
-async fn test_find_all(pool:SqlitePool) {
-    agent_dao_init();
-    init();
-    let dal = dal();
-    let ctx = RequestContext::new_simple("admin", pool);
+async fn test_find_all(pool: SqlitePool) {
+    let (dal, ctx) = init_test_env(pool).await;
 
     for i in 0..3 {
-        let agent_po = AgentPo::new(
-            format!("Agent{}", i), vec!["worker".to_string()],
-            "".to_string(),
-            vec![],
-            "".to_string(),
-            format!("provider-{}", i),
-            "admin".to_string(),
-        );
-        let agent = Agent::from_po(agent_po);
+        let agent = create_test_agent(&format!("Agent{}", i), &format!("provider-{}", i));
         dal.create(ctx.clone(), &agent).await.unwrap();
     }
 
@@ -56,20 +57,10 @@ async fn test_find_all(pool:SqlitePool) {
 }
 
 #[sqlx::test]
-async fn test_update(pool:SqlitePool) {
-    agent_dao_init();
-    init();
-    let dal = dal();
-    let ctx = RequestContext::new_simple("admin", pool.clone());
+async fn test_update(pool: SqlitePool) {
+    let (dal, ctx) = init_test_env(pool.clone()).await;
 
-    let agent_po = AgentPo::new("Original".to_string(), vec!["worker".to_string()],
-        "".to_string(),
-        vec![],
-        "".to_string(),
-        "provider-id-1".to_string(),
-        "admin".to_string(),
-    );
-    let agent = Agent::from_po(agent_po);
+    let agent = create_test_agent("Original", "provider-id-1");
     dal.create(ctx.clone(), &agent).await.unwrap();
 
     let mut updated = agent.clone();
@@ -82,20 +73,10 @@ async fn test_update(pool:SqlitePool) {
 }
 
 #[sqlx::test]
-async fn test_delete(pool:SqlitePool) {
-    agent_dao_init();
-    init();
-    let dal = dal();
-    let ctx = RequestContext::new_simple("admin", pool);
+async fn test_delete(pool: SqlitePool) {
+    let (dal, ctx) = init_test_env(pool).await;
 
-    let agent_po = AgentPo::new("ToDelete".to_string(), vec!["worker".to_string()],
-        "".to_string(),
-        vec![],
-        "".to_string(),
-        "provider-id-1".to_string(),
-        "admin".to_string(),
-    );
-    let agent = Agent::from_po(agent_po);
+    let agent = create_test_agent("ToDelete", "provider-id-1");
     dal.create(ctx.clone(), &agent).await.unwrap();
 
     dal.delete(ctx.clone(), &agent).await.unwrap();
@@ -104,17 +85,11 @@ async fn test_delete(pool:SqlitePool) {
 }
 
 #[sqlx::test]
-async fn test_find_all_excludes_deleted(pool:SqlitePool) {
-    agent_dao_init();
-    init();
-    let dal = dal();
-    let ctx = RequestContext::new_simple("admin", pool);
+async fn test_find_all_excludes_deleted(pool: SqlitePool) {
+    let (dal, ctx) = init_test_env(pool).await;
 
-    let agent1_po = AgentPo::new("Normal".to_string(), vec!["w".to_string()], "".to_string(), vec![], "".to_string(), "provider-id-1".to_string(), "admin".to_string());
-    let agent2_po = AgentPo::new("Deleted".to_string(), vec!["w".to_string()], "".to_string(), vec![], "".to_string(), "provider-id-2".to_string(), "admin".to_string());
-
-    let agent1 = Agent::from_po(agent1_po);
-    let agent2 = Agent::from_po(agent2_po);
+    let agent1 = create_test_agent("Normal", "provider-id-1");
+    let agent2 = create_test_agent("Deleted", "provider-id-2");
 
     dal.create(ctx.clone(), &agent1).await.unwrap();
     dal.create(ctx.clone(), &agent2).await.unwrap();
@@ -128,11 +103,8 @@ async fn test_find_all_excludes_deleted(pool:SqlitePool) {
 }
 
 #[sqlx::test]
-async fn test_find_not_exists(pool:SqlitePool) {
-    agent_dao_init();
-    init();
-    let dal = dal();
-    let ctx = RequestContext::new_simple("admin", pool);
+async fn test_find_not_exists(pool: SqlitePool) {
+    let (dal, ctx) = init_test_env(pool).await;
 
     let found: Option<Agent> = dal.find_by_id(ctx, "not-exists").await.unwrap();
     assert!(found.is_none());

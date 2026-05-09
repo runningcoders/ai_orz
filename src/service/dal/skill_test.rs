@@ -18,6 +18,23 @@ fn init_test() -> Arc<dyn SkillDal> {
     new(skill::new())
 }
 
+/// 创建测试 SkillPo
+fn create_test_skill_po(name: &str) -> SkillPo {
+    let skill_id = uuid::Uuid::now_v7().to_string();
+    let content_path = format!("skills/{}/", skill_id);
+    SkillPo::new(
+        skill_id,
+        name.to_string(),
+        format!("Test skill: {}", name),
+        vec!["AI Agent".to_string()],
+        "development".to_string(),
+        "".to_string(), // parent_skill_id
+        "test-author".to_string(),
+        SkillAuthorType::User,
+        content_path,
+    )
+}
+
 /// 测试创建技能后按 ID 查询（含文件组装）
 #[sqlx::test]
 async fn test_create_and_get_by_id(pool: SqlitePool) -> Result<(), AppError> {
@@ -25,19 +42,8 @@ async fn test_create_and_get_by_id(pool: SqlitePool) -> Result<(), AppError> {
     let ctx = RequestContext::new_simple("test-user", pool);
 
     // 创建技能 PO
-    let skill_id = uuid::Uuid::now_v7().to_string();
-    let content_path = format!("skills/{}/", skill_id);
-    let po = SkillPo::new(
-        skill_id.clone(),
-        "test-skill".to_string(),
-        "Test skill description".to_string(),
-        vec!["AI Agent".to_string()],
-        "development".to_string(),
-        "".to_string(), // parent_skill_id
-        "test-author".to_string(),
-        SkillAuthorType::User,
-        content_path,
-    );
+    let mut po = create_test_skill_po("test-skill");
+    let skill_id = po.id.clone();
 
     // DAL 创建（自动创建空 skill.md）
     skill_dal.create(ctx.clone(), &po).await?;
@@ -71,19 +77,7 @@ async fn test_query_skills(pool: SqlitePool) -> Result<(), AppError> {
 
     // 创建多个技能
     for i in 0..3 {
-        let skill_id = uuid::Uuid::now_v7().to_string();
-        let content_path = format!("skills/{}/", skill_id);
-        let po = SkillPo::new(
-            skill_id,
-            format!("skill-{}", i),
-            format!("Test skill {}", i),
-            vec!["AI Agent".to_string()],
-            "development".to_string(),
-            "".to_string(),
-            "test-author".to_string(),
-            SkillAuthorType::User,
-            content_path,
-        );
+        let po = create_test_skill_po(&format!("skill-{}", i));
         skill_dal.create(ctx.clone(), &po).await?;
     }
 

@@ -4,27 +4,40 @@ use common::enums::{UserRole, UserStatus};
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::user::UserQuery;
+use crate::service::dal::user::UserDal;
 use sqlx::SqlitePool;
+use std::sync::Arc;
 use uuid::Uuid;
 
-#[sqlx::test]
-async fn test_create_and_find_by_id(pool: SqlitePool) {
+/// 初始化测试环境
+async fn init_test_env(pool: SqlitePool) -> (Arc<dyn UserDal + Send + Sync>, RequestContext) {
     crate::service::dao::user::init();
     crate::service::dal::user::init();
     let dal = crate::service::dal::user::dal();
     let ctx = RequestContext::new_simple("admin", pool);
+    (dal, ctx)
+}
+
+/// 创建测试用户
+fn create_test_user(id: &str, org_id: &str, username: &str, role: UserRole) -> UserPo {
+    UserPo::new(
+        id.to_string(),
+        org_id.to_string(),
+        username.to_string(),
+        format!("User {}", username),
+        format!("{}@example.com", username),
+        "hashed-password".to_string(),
+        role,
+        "admin".to_string(),
+    )
+}
+
+#[sqlx::test]
+async fn test_create_and_find_by_id(pool: SqlitePool) {
+    let (dal, ctx) = init_test_env(pool).await;
 
     let org_id = Uuid::now_v7().to_string();
-    let user = UserPo::new(
-        "user-001".to_string(),
-        org_id.clone(),
-        "testuser".to_string(),
-        "Test User".to_string(),
-        "test@example.com".to_string(),
-        "hashed-password".to_string(),
-        UserRole::Admin,
-        "admin".to_string(),
-    );
+    let user = create_test_user("user-001", &org_id, "testuser", UserRole::Admin);
 
     dal.create(ctx.clone(), &user).await.unwrap();
     let found = dal.find_by_id(ctx, "user-001").await.unwrap().unwrap();
@@ -32,8 +45,8 @@ async fn test_create_and_find_by_id(pool: SqlitePool) {
     assert_eq!(found.id, "user-001");
     assert_eq!(found.organization_id, org_id);
     assert_eq!(found.username, "testuser");
-    assert_eq!(found.display_name, "Test User");
-    assert_eq!(found.email, "test@example.com");
+    assert_eq!(found.display_name, "User testuser");
+    assert_eq!(found.email, "testuser@example.com");
     assert_eq!(found.role, UserRole::Admin);
     assert_eq!(found.created_by, "admin");
     assert_eq!(found.status, UserStatus::Active);
@@ -41,22 +54,10 @@ async fn test_create_and_find_by_id(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_find_by_username(pool: SqlitePool) {
-    crate::service::dao::user::init();
-    crate::service::dal::user::init();
-    let dal = crate::service::dal::user::dal();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     let org_id = Uuid::now_v7().to_string();
-    let user = UserPo::new(
-        "user-001".to_string(),
-        org_id,
-        "testuser".to_string(),
-        "Test User".to_string(),
-        "test@example.com".to_string(),
-        "hashed-password".to_string(),
-        UserRole::Admin,
-        "admin".to_string(),
-    );
+    let user = create_test_user("user-001", &org_id, "testuser", UserRole::Admin);
 
     dal.create(ctx.clone(), &user).await.unwrap();
     let found = dal.find_by_username(ctx, "testuser").await.unwrap().unwrap();
@@ -67,31 +68,19 @@ async fn test_find_by_username(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_find_by_organization_id(pool: SqlitePool) {
-    crate::service::dao::user::init();
-    crate::service::dal::user::init();
-    let dal = crate::service::dal::user::dal();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     let org_id = Uuid::now_v7().to_string();
     let other_org_id = Uuid::now_v7().to_string();
 
-    let users: [(&str, String, &str); 3] = [
-        ("user-001", org_id.clone(), "user1"),
-        ("user-002", org_id.clone(), "user2"),
-        ("user-003", other_org_id, "user3"),
+    let users: [(&str, &str, &str); 3] = [
+        ("user-001", &org_id, "user1"),
+        ("user-002", &org_id, "user2"),
+        ("user-003", &other_org_id, "user3"),
     ];
 
     for (id, oid, username) in users {
-        let user = UserPo::new(
-            id.to_string(),
-            oid,
-            username.to_string(),
-            username.to_string(),
-            format!("{}@example.com", username),
-            "hashed-password".to_string(),
-            UserRole::Member,
-            "admin".to_string(),
-        );
+        let user = create_test_user(id, oid, username, UserRole::Member);
         dal.create(ctx.clone(), &user).await.unwrap();
     }
 
@@ -103,38 +92,15 @@ async fn test_find_by_organization_id(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_query_with_organization_filter(pool: SqlitePool) {
-    crate::service::dao::user::init();
-    crate::service::dal::user::init();
-    let dal = crate::service::dal::user::dal();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     let org_id = Uuid::now_v7().to_string();
     let other_org_id = Uuid::now_v7().to_string();
 
-    // 组织1的用户
-    let user1 = UserPo::new(
-        "user-001".to_string(),
-        org_id.clone(),
-        "user1".to_string(),
-        "User One".to_string(),
-        "user1@example.com".to_string(),
-        "hashed-password".to_string(),
-        UserRole::Member,
-        "admin".to_string(),
-    );
-    dal.create(ctx.clone(), &user1).await.unwrap();
+    let user1 = create_test_user("user-001", &org_id, "user1", UserRole::Member);
+    let user2 = create_test_user("user-002", &other_org_id, "user2", UserRole::Member);
 
-    // 组织2的用户
-    let user2 = UserPo::new(
-        "user-002".to_string(),
-        other_org_id,
-        "user2".to_string(),
-        "User Two".to_string(),
-        "user2@example.com".to_string(),
-        "hashed-password".to_string(),
-        UserRole::Member,
-        "admin".to_string(),
-    );
+    dal.create(ctx.clone(), &user1).await.unwrap();
     dal.create(ctx.clone(), &user2).await.unwrap();
 
     // 按组织过滤
@@ -149,22 +115,10 @@ async fn test_query_with_organization_filter(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_update(pool: SqlitePool) {
-    crate::service::dao::user::init();
-    crate::service::dal::user::init();
-    let dal = crate::service::dal::user::dal();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     let org_id = Uuid::now_v7().to_string();
-    let mut user = UserPo::new(
-        "user-001".to_string(),
-        org_id,
-        "testuser".to_string(),
-        "Old Name".to_string(),
-        "old@example.com".to_string(),
-        "hashed-password".to_string(),
-        UserRole::Member,
-        "admin".to_string(),
-    );
+    let mut user = create_test_user("user-001", &org_id, "testuser", UserRole::Member);
 
     dal.create(ctx.clone(), &user).await.unwrap();
 
@@ -180,22 +134,10 @@ async fn test_update(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_delete(pool: SqlitePool) {
-    crate::service::dao::user::init();
-    crate::service::dal::user::init();
-    let dal = crate::service::dal::user::dal();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     let org_id = Uuid::now_v7().to_string();
-    let user = UserPo::new(
-        "user-001".to_string(),
-        org_id,
-        "testuser".to_string(),
-        "Test User".to_string(),
-        "test@example.com".to_string(),
-        "hashed-password".to_string(),
-        UserRole::Member,
-        "admin".to_string(),
-    );
+    let user = create_test_user("user-001", &org_id, "testuser", UserRole::Member);
 
     dal.create(ctx.clone(), &user).await.unwrap();
 
@@ -212,22 +154,10 @@ async fn test_delete(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_exists_by_username(pool: SqlitePool) {
-    crate::service::dao::user::init();
-    crate::service::dal::user::init();
-    let dal = crate::service::dal::user::dal();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     let org_id = Uuid::now_v7().to_string();
-    let user = UserPo::new(
-        "user-001".to_string(),
-        org_id,
-        "existing".to_string(),
-        "Existing User".to_string(),
-        "existing@example.com".to_string(),
-        "hashed-password".to_string(),
-        UserRole::Member,
-        "admin".to_string(),
-    );
+    let user = create_test_user("user-001", &org_id, "existing", UserRole::Member);
 
     dal.create(ctx.clone(), &user).await.unwrap();
 
@@ -240,24 +170,17 @@ async fn test_exists_by_username(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_count_by_organization_id(pool: SqlitePool) {
-    crate::service::dao::user::init();
-    crate::service::dal::user::init();
-    let dal = crate::service::dal::user::dal();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let (dal, ctx) = init_test_env(pool).await;
 
     let org_id = Uuid::now_v7().to_string();
     let other_org_id = Uuid::now_v7().to_string();
 
     for i in 1..=3 {
-        let user = UserPo::new(
-            format!("user-{:03}", i),
-            org_id.clone(),
-            format!("user{}", i),
-            format!("User {}", i),
-            format!("user{}@example.com", i),
-            "hashed-password".to_string(),
+        let user = create_test_user(
+            &format!("user-{:03}", i),
+            &org_id,
+            &format!("user{}", i),
             UserRole::Member,
-            "admin".to_string(),
         );
         dal.create(ctx.clone(), &user).await.unwrap();
     }

@@ -8,6 +8,7 @@ use crate::models::skill::SkillPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::skill::{self, SkillDao};
 use uuid::Uuid;
+use std::sync::Arc;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     RequestContext::new_simple(user_id, pool)
@@ -18,11 +19,33 @@ fn init_test() {
     // 必须先初始化 config（文件操作需要 base_data_path）
     let _ = crate::config::init();
 }
+
+/// 初始化测试环境
+fn init_test_env() -> Arc<dyn SkillDao> {
+    init_test();
+    skill::new()
+}
+
+/// 创建测试 SkillPo
+fn create_test_skill(name: &str, category: &str) -> SkillPo {
+    let skill_id = Uuid::now_v7().to_string();
+    SkillPo::new(
+        skill_id,
+        name.to_string(),
+        "".to_string(),
+        vec![],
+        category.to_string(),
+        "".to_string(),
+        "test-user".to_string(),
+        SkillAuthorType::User,
+        format!("skills/pending/{}", name),
+    )
+}
+
 /// 测试插入新技能并按 ID 查询
 #[sqlx::test]
 async fn test_insert_and_find_by_id(pool: SqlitePool) -> Result<(), AppError> {
-    init_test();
-    let skill_dao = skill::new(); // 不用单例，直接创建新实例
+    let skill_dao = init_test_env(); // 不用单例，直接创建新实例
 
     let skill_id = Uuid::now_v7().to_string();
     let skill = SkillPo::new(
@@ -57,8 +80,7 @@ async fn test_insert_and_find_by_id(pool: SqlitePool) -> Result<(), AppError> {
 /// 测试更新技能
 #[sqlx::test]
 async fn test_update(pool: SqlitePool) -> Result<(), AppError> {
-    init_test();
-    let skill_dao = skill::new();
+    let skill_dao = init_test_env();
 
     let skill_id = Uuid::now_v7().to_string();
     let mut skill = SkillPo::new(
@@ -95,8 +117,7 @@ async fn test_update(pool: SqlitePool) -> Result<(), AppError> {
 /// 测试按状态列表查询
 #[sqlx::test]
 async fn test_list_by_status(pool: SqlitePool) -> Result<(), AppError> {
-    init_test();
-    let skill_dao = skill::new();
+    let skill_dao = init_test_env();
 
     let skill1_id = Uuid::now_v7().to_string();
     let mut skill1 = SkillPo::new(
@@ -144,8 +165,7 @@ async fn test_list_by_status(pool: SqlitePool) -> Result<(), AppError> {
 /// 测试按分类列表查询
 #[sqlx::test]
 async fn test_list_by_category(pool: SqlitePool) -> Result<(), AppError> {
-    init_test();
-    let skill_dao = skill::new();
+    let skill_dao = init_test_env();
 
     let skill_id = Uuid::now_v7().to_string();
     let skill = SkillPo::new(
@@ -173,8 +193,7 @@ async fn test_list_by_category(pool: SqlitePool) -> Result<(), AppError> {
 /// 测试关键词搜索
 #[sqlx::test]
 async fn test_search(pool: SqlitePool) -> Result<(), AppError> {
-    init_test();
-    let skill_dao = skill::new();
+    let skill_dao = init_test_env();
 
     let skill_id = Uuid::now_v7().to_string();
     let skill = SkillPo::new(
@@ -206,8 +225,7 @@ async fn test_search(pool: SqlitePool) -> Result<(), AppError> {
 /// 测试软删除（标记为过期）
 #[sqlx::test]
 async fn test_delete_by_id(pool: SqlitePool) -> Result<(), AppError> {
-    init_test();
-    let skill_dao = skill::new();
+    let skill_dao = init_test_env();
 
     let skill_id = Uuid::now_v7().to_string();
     let skill = SkillPo::new(
@@ -244,8 +262,7 @@ async fn test_delete_by_id(pool: SqlitePool) -> Result<(), AppError> {
 /// 测试按作者列表查询
 #[sqlx::test]
 async fn test_list_by_author(pool: SqlitePool) -> Result<(), AppError> {
-    init_test();
-    let skill_dao = skill::new();
+    let skill_dao = init_test_env();
 
     let skill1_id = Uuid::now_v7().to_string();
     let skill1 = SkillPo::new(
@@ -288,8 +305,7 @@ async fn test_list_by_author(pool: SqlitePool) -> Result<(), AppError> {
 /// 测试安装共享技能到 Agent（install_to_agent）
 #[sqlx::test]
 async fn test_install_to_agent(pool: SqlitePool) -> Result<(), AppError> {
-    init_test();
-    let skill_dao = skill::new();
+    let skill_dao = init_test_env();
 
     // 1. 创建一个已发布的共享技能（源技能）
     let source_id = Uuid::now_v7().to_string();
@@ -345,8 +361,7 @@ async fn test_install_to_agent(pool: SqlitePool) -> Result<(), AppError> {
 /// 测试安装非已发布技能应该返回错误
 #[sqlx::test]
 async fn test_install_non_published_fails(pool: SqlitePool) -> Result<(), AppError> {
-    init_test();
-    let skill_dao = skill::new();
+    let skill_dao = init_test_env();
 
     // Create a draft skill (not published)
     let source_id = Uuid::now_v7().to_string();
@@ -383,8 +398,7 @@ async fn test_install_non_published_fails(pool: SqlitePool) -> Result<(), AppErr
 /// 测试读写 skill.md 主文件内容
 #[sqlx::test]
 async fn test_read_write_main_content(pool: SqlitePool) -> Result<(), AppError> {
-    init_test();
-    let skill_dao = skill::new();
+    let skill_dao = init_test_env();
 
     let skill_id = Uuid::now_v7().to_string();
     let skill = SkillPo::new(
@@ -420,8 +434,7 @@ async fn test_read_write_main_content(pool: SqlitePool) -> Result<(), AppError> 
 /// 测试读写附属文件
 #[sqlx::test]
 async fn test_read_write_attachment_files(pool: SqlitePool) -> Result<(), AppError> {
-    init_test();
-    let skill_dao = skill::new();
+    let skill_dao = init_test_env();
 
     let skill_id = Uuid::now_v7().to_string();
     let skill = SkillPo::new(
@@ -459,8 +472,7 @@ async fn test_read_write_attachment_files(pool: SqlitePool) -> Result<(), AppErr
 /// 测试 list_files 列出所有文件并自动预读小文件内容
 #[sqlx::test]
 async fn test_list_files_with_content(pool: SqlitePool) -> Result<(), AppError> {
-    init_test();
-    let skill_dao = skill::new();
+    let skill_dao = init_test_env();
 
     let skill_id = Uuid::now_v7().to_string();
     let skill = SkillPo::new(
@@ -501,8 +513,7 @@ async fn test_list_files_with_content(pool: SqlitePool) -> Result<(), AppError> 
 /// 测试不存在的技能目录返回空列表
 #[sqlx::test]
 async fn test_list_files_empty_dir(pool: SqlitePool) -> Result<(), AppError> {
-    init_test();
-    let skill_dao = skill::new();
+    let skill_dao = init_test_env();
 
     let skill_id = Uuid::now_v7().to_string();
     let skill = SkillPo::new(
@@ -531,8 +542,7 @@ async fn test_list_files_empty_dir(pool: SqlitePool) -> Result<(), AppError> {
 /// 测试删除技能目录
 #[sqlx::test]
 async fn test_delete_skill_dir(pool: SqlitePool) -> Result<(), AppError> {
-    init_test();
-    let skill_dao = skill::new();
+    let skill_dao = init_test_env();
 
     let skill_id = Uuid::now_v7().to_string();
     let skill = SkillPo::new(
@@ -571,8 +581,7 @@ async fn test_delete_skill_dir(pool: SqlitePool) -> Result<(), AppError> {
 /// 测试 install_to_agent 时完整拷贝所有文件
 #[sqlx::test]
 async fn test_install_to_agent_copies_all_files(pool: SqlitePool) -> Result<(), AppError> {
-    init_test();
-    let skill_dao = skill::new();
+    let skill_dao = init_test_env();
 
     // 1. 创建一个已发布的共享技能，带多个文件
     let source_id = Uuid::now_v7().to_string();
