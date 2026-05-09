@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS model_providers (
     api_key TEXT NOT NULL,
     base_url TEXT,
     description TEXT,
+    config TEXT NOT NULL DEFAULT '{}',
     status INTEGER NOT NULL DEFAULT 1,
     created_by TEXT NOT NULL DEFAULT '',
     modified_by TEXT NOT NULL DEFAULT '',

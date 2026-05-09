@@ -5,6 +5,29 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use std::fmt;
 
+/// 模型提供商配置（JSON 存储）
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ModelProviderConfig {
+    /// 上下文窗口长度
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_context_length: Option<i32>,
+    /// 最大输出 token 数
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<i32>,
+    /// 默认温度值 (0.0 - 2.0)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature_default: Option<f32>,
+    /// 每分钟请求数限制
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rpm_limit: Option<i32>,
+    /// 每分钟 token 数限制
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tpm_limit: Option<i32>,
+    /// 每日配额（token 或 请求数）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub daily_quota: Option<i64>,
+}
+
 /// 模型提供商持久化对象
 ///
 /// 对应 SQL 建表语句：`migrations/20260420000000_initial.sql`
@@ -17,6 +40,7 @@ pub struct ModelProviderPo {
     pub api_key: String,
     pub base_url: Option<String>,
     pub description: Option<String>,
+    pub config: String,  // JSON 存储配置
     pub status: ModelProviderStatus,
     pub created_by: String,
     pub modified_by: String,
@@ -112,14 +136,39 @@ impl ModelProviderPo {
             provider_type,
             model_name,
             api_key,
-            base_url: base_url.map(|s| if s.is_empty() { None } else { Some(s) }).unwrap_or_default(),
-            description: description.map(|s| if s.is_empty() { None } else { Some(s) }).unwrap_or_default(),
+            base_url: base_url
+                .map(|s| if s.is_empty() { None } else { Some(s) })
+                .unwrap_or_default(),
+            description: description
+                .map(|s| if s.is_empty() { None } else { Some(s) })
+                .unwrap_or_default(),
+            config: "{}".to_string(),
             status: ModelProviderStatus::Normal,
             created_by: creator.clone(),
             modified_by: creator,
             created_at: current_timestamp(),
             updated_at: current_timestamp(),
         }
+    }
+
+    /// 解析配置为 ModelProviderConfig 对象
+    pub fn config(&self) -> ModelProviderConfig {
+        serde_json::from_str(&self.config).unwrap_or_default()
+    }
+
+    /// 更新配置（完整替换）
+    pub fn set_config(&mut self, config: &ModelProviderConfig) {
+        self.config = serde_json::to_string(config).unwrap_or_else(|_| "{}".to_string());
+    }
+
+    /// 更新部分配置字段
+    pub fn update_config<F>(&mut self, f: F)
+    where
+        F: FnOnce(&mut ModelProviderConfig),
+    {
+        let mut config = self.config();
+        f(&mut config);
+        self.set_config(&config);
     }
 }
 

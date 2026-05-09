@@ -39,7 +39,7 @@ impl ModelProviderDao for ModelProviderDaoSqliteImpl {
         let status = provider.status as i32;
         let pool = ctx.db_pool();
         sqlx::query!(
-            "INSERT INTO model_providers (id, name, provider_type, model_name, api_key, base_url, description, status, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO model_providers (id, name, provider_type, model_name, api_key, base_url, description, config, status, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             provider.id,
             provider.name,
             provider_type,
@@ -47,6 +47,7 @@ impl ModelProviderDao for ModelProviderDaoSqliteImpl {
             provider.api_key,
             provider.base_url,
             provider.description,
+            provider.config,
             status,
             provider.created_by,
             provider.modified_by,
@@ -62,7 +63,7 @@ impl ModelProviderDao for ModelProviderDaoSqliteImpl {
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<ModelProviderPo>, AppError> {
         let pool = ctx.db_pool();
         let provider = QueryBuilder::new(r#"
-SELECT id, name, provider_type, model_name, api_key, base_url, description,
+SELECT id, name, provider_type, model_name, api_key, base_url, description, config,
        status, created_by, modified_by, created_at, updated_at
 FROM model_providers WHERE id = 
         "#)
@@ -78,7 +79,7 @@ FROM model_providers WHERE id =
     async fn query(&self, ctx: RequestContext, query: ModelProviderQuery) -> Result<Vec<ModelProviderPo>, AppError> {
         let pool = ctx.db_pool();
         let mut builder = QueryBuilder::new(r#"
-SELECT id, name, provider_type, model_name, api_key, base_url, description,
+SELECT id, name, provider_type, model_name, api_key, base_url, description, config,
        status, created_by, modified_by, created_at, updated_at
 FROM model_providers WHERE 1=1
         "#);
@@ -126,7 +127,7 @@ FROM model_providers WHERE 1=1
         sqlx::query!(
             r#"
 UPDATE model_providers
-SET name = ?, provider_type = ?, model_name = ?, api_key = ?, base_url = ?, description = ?,
+SET name = ?, provider_type = ?, model_name = ?, api_key = ?, base_url = ?, description = ?, config = ?,
     status = ?, modified_by = ?, updated_at = ?
 WHERE id = ?
             "#,
@@ -136,6 +137,7 @@ WHERE id = ?
             provider.api_key,
             provider.base_url,
             provider.description,
+            provider.config,
             status,
             provider.modified_by,
             current_timestamp,
@@ -143,7 +145,6 @@ WHERE id = ?
         )
             .execute(pool)
             .await?;
-
         Ok(())
     }
 
