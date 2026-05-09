@@ -1,6 +1,8 @@
-//! Project 持久化对象
+//! Project 模块
 //!
-//! 对应 SQL 建表语句：`migrations/20260420000000_initial.sql`
+//! 包含：
+//! - ProjectPo - 持久化对象（只在 DAO/DAL 层使用）
+//! - Project - 业务实体（Domain 层使用，包含聚合关系和业务方法）
 
 use common::constants::utils;
 use common::enums::project::ProjectStatus;
@@ -44,6 +46,105 @@ pub struct ProjectPo {
     pub created_at: i64,
     /// 更新时间戳（毫秒）
     pub updated_at: i64,
+}
+
+/// Project 业务实体
+///
+/// 聚合所有相关信息：项目基本信息 + 任务列表
+/// 这是 Domain 层返回给上层的类型
+#[derive(Debug, Clone)]
+pub struct Project {
+    /// 底层持久化对象
+    pub po: ProjectPo,
+}
+
+impl Project {
+    /// 从 PO 创建 Project
+    pub fn from_po(po: ProjectPo) -> Self {
+        Self { po }
+    }
+
+    /// 创建新的 Project
+    pub fn new(
+        id: String,
+        name: String,
+        description: String,
+        workflow: Option<String>,
+        guidance: Option<String>,
+        priority: i32,
+        tags: Vec<String>,
+        root_user_id: String,
+        owner_agent_id: Option<String>,
+        start_at: Option<i64>,
+        due_at: Option<i64>,
+        end_at: Option<i64>,
+        created_by: String,
+    ) -> Self {
+        Self {
+            po: ProjectPo::new(
+                id,
+                name,
+                description,
+                workflow,
+                guidance,
+                priority,
+                tags,
+                root_user_id,
+                owner_agent_id,
+                start_at,
+                due_at,
+                end_at,
+                created_by,
+            ),
+        }
+    }
+
+    /// 转换为 PO（消耗 self）
+    pub fn into_po(self) -> ProjectPo {
+        self.po
+    }
+
+    /// 获取项目 ID
+    pub fn id(&self) -> &str {
+        &self.po.id
+    }
+
+    /// 获取项目名称
+    pub fn name(&self) -> &str {
+        &self.po.name
+    }
+
+    /// 获取项目状态
+    pub fn status(&self) -> ProjectStatus {
+        self.po.status
+    }
+
+    /// 获取项目优先级
+    pub fn priority(&self) -> i32 {
+        self.po.priority
+    }
+
+    /// 判断项目是否已完成
+    pub fn is_completed(&self) -> bool {
+        matches!(self.po.status, ProjectStatus::Completed)
+    }
+
+    /// 判断项目是否已归档
+    pub fn is_archived(&self) -> bool {
+        matches!(self.po.status, ProjectStatus::Archived)
+    }
+
+    /// 启动项目
+    pub fn start(&mut self) {
+        self.po.status = ProjectStatus::InProgress;
+        self.po.start_at = Some(utils::current_timestamp());
+    }
+
+    /// 完成项目
+    pub fn complete(&mut self) {
+        self.po.status = ProjectStatus::Completed;
+        self.po.end_at = Some(utils::current_timestamp());
+    }
 }
 
 impl ProjectPo {

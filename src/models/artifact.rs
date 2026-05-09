@@ -1,5 +1,10 @@
-//! Artifact persistent object.
-//! Artifacts are task outputs (reports, audio, video, etc.).
+//! Artifact 模块
+//!
+//! 产物是任务的输出结果（报告、音视频、代码等）
+//!
+//! 包含：
+//! - ArtifactPo - 持久化对象（只在 DAO/DAL 层使用）
+//! - Artifact - 业务实体（Domain 层使用）
 
 use common::enums::FileType;
 use serde::{Deserialize, Serialize};
@@ -9,7 +14,7 @@ use uuid::Uuid;
 
 use crate::models::file::FileMeta;
 
-/// Artifact persistent object.
+/// ArtifactPo 持久化对象
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct ArtifactPo {
     /// Unique artifact ID.
@@ -36,6 +41,96 @@ pub struct ArtifactPo {
     pub created_at: i64,
     /// Last update timestamp (milliseconds).
     pub updated_at: i64,
+}
+
+/// Artifact 业务实体
+///
+/// 这是 Domain 层返回给上层的类型
+#[derive(Debug, Clone)]
+pub struct Artifact {
+    /// 底层持久化对象
+    pub po: ArtifactPo,
+}
+
+impl Artifact {
+    /// 从 PO 创建 Artifact
+    pub fn from_po(po: ArtifactPo) -> Self {
+        Self { po }
+    }
+
+    /// 创建新的项目级产物
+    pub fn new_project(
+        project_id: String,
+        name: String,
+        description: String,
+        file_type: FileType,
+        file_meta: FileMeta,
+        created_by: String,
+    ) -> Self {
+        Self {
+            po: ArtifactPo::new_project(
+                project_id,
+                name,
+                description,
+                file_type,
+                file_meta,
+                created_by,
+            ),
+        }
+    }
+
+    /// 创建新的任务级产物
+    pub fn new_task(
+        project_id: String,
+        task_id: String,
+        name: String,
+        description: String,
+        file_type: FileType,
+        file_meta: FileMeta,
+        created_by: String,
+    ) -> Self {
+        Self {
+            po: ArtifactPo::new_task(
+                project_id,
+                task_id,
+                name,
+                description,
+                file_type,
+                file_meta,
+                created_by,
+            ),
+        }
+    }
+
+    /// 转换为 PO
+    pub fn into_po(self) -> ArtifactPo {
+        self.po
+    }
+
+    /// 获取产物 ID
+    pub fn id(&self) -> &str {
+        &self.po.id
+    }
+
+    /// 获取所属项目 ID
+    pub fn project_id(&self) -> &str {
+        &self.po.project_id
+    }
+
+    /// 获取所属任务 ID
+    pub fn task_id(&self) -> Option<&str> {
+        self.po.task_id.as_deref()
+    }
+
+    /// 判断是否为项目级产物
+    pub fn is_project_level(&self) -> bool {
+        self.po.task_id.is_none()
+    }
+
+    /// 判断是否已删除
+    pub fn is_deleted(&self) -> bool {
+        self.po.status == 0
+    }
 }
 
 impl ArtifactPo {

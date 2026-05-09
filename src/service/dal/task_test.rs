@@ -1,7 +1,7 @@
 //! Task DAL 单元测试
 
 use common::enums::{TaskStatus, AssigneeType};
-use crate::models::task::TaskPo;
+use crate::models::task::Task;
 use crate::pkg::RequestContext;
 use crate::service::dao::task::TaskQuery;
 use crate::service::dal::task::TaskDal;
@@ -19,8 +19,8 @@ async fn init_test_env(pool: SqlitePool) -> (Arc<dyn TaskDal + Send + Sync>, Req
 }
 
 /// 创建测试任务
-fn create_test_task(title: &str, assignee_id: &str) -> TaskPo {
-    TaskPo::new(
+fn create_test_task(title: &str, assignee_id: &str) -> Task {
+    Task::new(
         Uuid::now_v7().to_string(),
         title.to_string(),
         format!("Description for {}", title),
@@ -44,18 +44,18 @@ async fn test_create_and_find_by_id(pool: SqlitePool) {
     let assignee_id = Uuid::now_v7().to_string();
 
     let task = create_test_task("Test Task", &assignee_id);
-    let task_id = task.id.clone();
-    let root_user_id = task.root_user_id.clone();
+    let task_id = task.po.id.clone();
+    let root_user_id = task.po.root_user_id.clone();
 
     dal.create(ctx.clone(), &task).await.unwrap();
     let found = dal.find_by_id(ctx, &task_id).await.unwrap().unwrap();
 
-    assert_eq!(found.id, task_id);
-    assert_eq!(found.title, "Test Task");
-    assert_eq!(found.root_user_id, root_user_id);
-    assert_eq!(found.assignee_type, AssigneeType::User);
-    assert_eq!(found.assignee_id, assignee_id);
-    assert_eq!(found.status, TaskStatus::Pending);
+    assert_eq!(found.po.id, task_id);
+    assert_eq!(found.po.title, "Test Task");
+    assert_eq!(found.po.root_user_id, root_user_id);
+    assert_eq!(found.po.assignee_type, AssigneeType::User);
+    assert_eq!(found.po.assignee_id, assignee_id);
+    assert_eq!(found.po.status, TaskStatus::Pending);
 }
 
 #[sqlx::test]
@@ -91,7 +91,7 @@ async fn test_list_by_status(pool: SqlitePool) {
 
     // Create 1 completed task
     let completed_task = create_test_task("Completed Task", &assignee_id);
-    let completed_task_id = completed_task.id.clone();
+    let completed_task_id = completed_task.po.id.clone();
     dal.create(ctx.clone(), &completed_task).await.unwrap();
     dal.update_status(ctx.clone(), &completed_task_id, TaskStatus::Completed, "admin").await.unwrap();
 
@@ -129,6 +129,7 @@ async fn test_query(pool: SqlitePool) {
     let query = TaskQuery {
         assignee_type: Some(AssigneeType::User),
         assignee_id: Some(assignee_id),
+        project_id: None,
         status_in: Some(vec![TaskStatus::Pending]),
         limit: Some(2),
     };
@@ -143,19 +144,19 @@ async fn test_update_task(pool: SqlitePool) {
     let assignee_id = Uuid::now_v7().to_string();
 
     let mut task = create_test_task("Original Title", &assignee_id);
-    let task_id = task.id.clone();
+    let task_id = task.po.id.clone();
     dal.create(ctx.clone(), &task).await.unwrap();
 
     // Update task
-    task.title = "Updated Title".to_string();
-    task.description = "Updated description".to_string();
-    task.priority = 2;
+    task.po.title = "Updated Title".to_string();
+    task.po.description = "Updated description".to_string();
+    task.po.priority = 2;
     dal.update(ctx.clone(), &task).await.unwrap();
 
     let found = dal.find_by_id(ctx, &task_id).await.unwrap().unwrap();
-    assert_eq!(found.title, "Updated Title");
-    assert_eq!(found.description, "Updated description");
-    assert_eq!(found.priority, 2);
+    assert_eq!(found.po.title, "Updated Title");
+    assert_eq!(found.po.description, "Updated description");
+    assert_eq!(found.po.priority, 2);
 }
 
 #[sqlx::test]
@@ -164,13 +165,13 @@ async fn test_update_status_and_cancel(pool: SqlitePool) {
     let assignee_id = Uuid::now_v7().to_string();
 
     let task = create_test_task("Test Task", &assignee_id);
-    let task_id = task.id.clone();
+    let task_id = task.po.id.clone();
     dal.create(ctx.clone(), &task).await.unwrap();
 
     // Update status to InProgress
     dal.update_status(ctx.clone(), &task_id, TaskStatus::InProgress, "admin").await.unwrap();
     let found = dal.find_by_id(ctx.clone(), &task_id).await.unwrap().unwrap();
-    assert_eq!(found.status, TaskStatus::InProgress);
+    assert_eq!(found.po.status, TaskStatus::InProgress);
 
     // Cancel task
     dal.cancel(ctx.clone(), &task_id, "admin").await.unwrap();
@@ -207,7 +208,7 @@ async fn test_count_by_assignee_and_status(pool: SqlitePool) {
     // Create 2 completed tasks
     for i in 0..2 {
         let task = create_test_task(&format!("Completed Task {}", i), &assignee_id);
-        let task_id = task.id.clone();
+        let task_id = task.po.id.clone();
         dal.create(ctx.clone(), &task).await.unwrap();
         dal.update_status(ctx.clone(), &task_id, TaskStatus::Completed, "admin").await.unwrap();
     }

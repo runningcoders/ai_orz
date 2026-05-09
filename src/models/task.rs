@@ -1,6 +1,8 @@
-//! Task 持久化对象
+//! Task 模块
 //!
-//! 对应 SQL 建表语句：`migrations/20260420000000_initial.sql`
+//! 包含：
+//! - TaskPo - 持久化对象（只在 DAO/DAL 层使用）
+//! - Task - 业务实体（Domain 层使用，包含聚合关系和业务方法）
 
 use common::constants::utils;
 use common::enums::{TaskStatus, AssigneeType};
@@ -46,6 +48,112 @@ pub struct TaskPo {
     pub created_at: i64,
     /// 更新时间戳（毫秒）
     pub updated_at: i64,
+}
+
+/// Task 业务实体
+///
+/// 聚合所有相关信息：任务基本信息 + 产物列表
+/// 这是 Domain 层返回给上层的类型
+#[derive(Debug, Clone)]
+pub struct Task {
+    /// 底层持久化对象
+    pub po: TaskPo,
+}
+
+impl Task {
+    /// 从 PO 创建 Task
+    pub fn from_po(po: TaskPo) -> Self {
+        Self { po }
+    }
+
+    /// 创建新的 Task
+    pub fn new(
+        id: String,
+        title: String,
+        description: String,
+        priority: i32,
+        tags: Vec<String>,
+        due_at: Option<i64>,
+        start_at: Option<i64>,
+        end_at: Option<i64>,
+        dependencies: Vec<String>,
+        root_user_id: String,
+        assignee_type: AssigneeType,
+        assignee_id: String,
+        project_id: Option<String>,
+        created_by: String,
+    ) -> Self {
+        Self {
+            po: TaskPo::new(
+                id,
+                title,
+                description,
+                priority,
+                tags,
+                due_at,
+                start_at,
+                end_at,
+                dependencies,
+                root_user_id,
+                assignee_type,
+                assignee_id,
+                project_id,
+                created_by,
+            ),
+        }
+    }
+
+    /// 转换为 PO
+    pub fn into_po(self) -> TaskPo {
+        self.po
+    }
+
+    /// 获取任务 ID
+    pub fn id(&self) -> &str {
+        &self.po.id
+    }
+
+    /// 获取任务标题
+    pub fn title(&self) -> &str {
+        &self.po.title
+    }
+
+    /// 获取任务状态
+    pub fn status(&self) -> TaskStatus {
+        self.po.status
+    }
+
+    /// 获取所属项目 ID
+    pub fn project_id(&self) -> Option<&str> {
+        self.po.project_id.as_deref()
+    }
+
+    /// 判断任务是否已完成
+    pub fn is_completed(&self) -> bool {
+        matches!(self.po.status, TaskStatus::Completed)
+    }
+
+    /// 判断任务是否已开始
+    pub fn is_started(&self) -> bool {
+        self.po.start_at.is_some()
+    }
+
+    /// 启动任务
+    pub fn start(&mut self) {
+        self.po.status = TaskStatus::InProgress;
+        self.po.start_at = Some(utils::current_timestamp());
+    }
+
+    /// 完成任务
+    pub fn complete(&mut self) {
+        self.po.status = TaskStatus::Completed;
+        self.po.end_at = Some(utils::current_timestamp());
+    }
+
+    /// 取消任务
+    pub fn cancel(&mut self) {
+        self.po.status = TaskStatus::Cancelled;
+    }
 }
 
 impl TaskPo {

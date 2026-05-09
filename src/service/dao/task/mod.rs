@@ -11,6 +11,7 @@ use common::enums::AssigneeType;
 pub struct TaskQuery {
     pub assignee_type: Option<AssigneeType>,
     pub assignee_id: Option<String>,
+    pub project_id: Option<String>,
     pub status_in: Option<Vec<TaskStatus>>,
     pub limit: Option<usize>,
 }

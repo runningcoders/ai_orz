@@ -115,6 +115,10 @@ FROM tasks WHERE id = ? AND "status" != 0
             builder.push(" AND assignee_id = ").push_bind(assignee_id);
         }
 
+        if let Some(project_id) = &query.project_id {
+            builder.push(" AND project_id = ").push_bind(project_id);
+        }
+
         // 状态 IN 查询
         if let Some(status_list) = &query.status_in {
             if !status_list.is_empty() {

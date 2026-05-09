@@ -4,7 +4,7 @@
 
 use common::enums::{TaskStatus, AssigneeType};
 use crate::error::AppError;
-use crate::models::task::TaskPo;
+use crate::models::task::{Task, TaskPo};
 use crate::pkg::RequestContext;
 use crate::service::dao::task::{TaskDao, TaskQuery};
 use std::sync::{Arc, OnceLock};
@@ -35,14 +35,14 @@ pub fn new(task_dao: Arc<dyn TaskDao + Send + Sync>) -> Arc<dyn TaskDal + Send +
 #[async_trait::async_trait]
 pub trait TaskDal: Send + Sync {
     /// 创建任务
-    async fn create(&self, ctx: RequestContext, task: &TaskPo) -> Result<(), AppError>;
+    async fn create(&self, ctx: RequestContext, task: &Task) -> Result<(), AppError>;
 
     /// 根据 ID 获取任务
     async fn find_by_id(
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<TaskPo>, AppError>;
+    ) -> Result<Option<Task>, AppError>;
 
     /// 获取分配对象下的所有任务
     async fn list_by_assignee(
@@ -63,11 +63,19 @@ pub trait TaskDal: Send + Sync {
         limit: Option<usize>,
     ) -> Result<Vec<TaskPo>, AppError>;
 
+    /// 获取项目下的所有任务
+    async fn list_by_project(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<Task>, AppError>;
+
     /// 通用综合查询
-    async fn query(&self, ctx: RequestContext, query: TaskQuery) -> Result<Vec<TaskPo>, AppError>;
+    async fn query(&self, ctx: RequestContext, query: TaskQuery) -> Result<Vec<Task>, AppError>;
 
     /// 更新任务信息
-    async fn update(&self, ctx: RequestContext, task: &TaskPo) -> Result<(), AppError>;
+    async fn update(&self, ctx: RequestContext, task: &Task) -> Result<(), AppError>;
 
     /// 更新任务状态
     async fn update_status(
@@ -106,16 +114,17 @@ struct TaskDalImpl {
 
 #[async_trait::async_trait]
 impl TaskDal for TaskDalImpl {
-    async fn create(&self, ctx: RequestContext, task: &TaskPo) -> Result<(), AppError> {
-        self.task_dao.insert(ctx, task).await
+    async fn create(&self, ctx: RequestContext, task: &Task) -> Result<(), AppError> {
+        self.task_dao.insert(ctx, &task.po).await
     }
 
     async fn find_by_id(
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<TaskPo>, AppError> {
-        self.task_dao.find_by_id(ctx, id).await
+    ) -> Result<Option<Task>, AppError> {
+        let opt = self.task_dao.find_by_id(ctx, id).await?;
+        Ok(opt.map(Task::from_po))
     }
 
     async fn list_by_assignee(
@@ -139,12 +148,29 @@ impl TaskDal for TaskDalImpl {
         self.task_dao.list_by_status(ctx, assignee_type, assignee_id, status, limit).await
     }
 
-    async fn query(&self, ctx: RequestContext, query: TaskQuery) -> Result<Vec<TaskPo>, AppError> {
-        self.task_dao.query(ctx, query).await
+    async fn list_by_project(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<Task>, AppError> {
+        let list = self.task_dao.query(ctx, TaskQuery {
+            assignee_type: None,
+            assignee_id: None,
+            project_id: Some(project_id.to_string()),
+            status_in: None,
+            limit,
+        }).await?;
+        Ok(list.into_iter().map(Task::from_po).collect())
     }
 
-    async fn update(&self, ctx: RequestContext, task: &TaskPo) -> Result<(), AppError> {
-        self.task_dao.update(ctx, task).await
+    async fn query(&self, ctx: RequestContext, query: TaskQuery) -> Result<Vec<Task>, AppError> {
+        let list = self.task_dao.query(ctx, query).await?;
+        Ok(list.into_iter().map(Task::from_po).collect())
+    }
+
+    async fn update(&self, ctx: RequestContext, task: &Task) -> Result<(), AppError> {
+        self.task_dao.update(ctx, &task.po).await
     }
 
     async fn update_status(

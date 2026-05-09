@@ -1,240 +1,112 @@
-//! Project Domain 模块
+//! Project Domain 层
 //!
-//! 项目领域，管理：
-//! - management - 项目管理（创建/更新/查询/归档）
-//! - execution - 项目执行（任务分配/进度跟踪/统计）
+//! 遵循严格分层架构：
+//! - Domain 层只组合 DAL，不调用 DAO
+//! - Domain 层返回业务实体（Project/Task/Artifact），不返回 PO
+//! - 按业务对象分模块，不是按操作分
+//!
+//! 模块结构：
+//! - project.rs - 项目核心业务
+//! - task.rs - 任务核心业务
+//! - artifact.rs - 产物核心业务
 
-pub mod management;
-pub mod execution;
+use async_trait::async_trait;
+use std::sync::{Arc, OnceLock};
+
+mod project;
+mod task;
+mod artifact;
 
 #[cfg(test)]
-mod management_test;
+mod project_test;
 
-use crate::error::AppError;
-use crate::models::project::ProjectPo;
-use crate::pkg::RequestContext;
-use crate::service::dao::project::ProjectQuery;
-use crate::service::dal::project::ProjectDal;
-use async_trait::async_trait;
-use common::enums::ProjectStatus;
-use std::sync::{Arc, OnceLock};
+pub use artifact::ArtifactDomain;
+pub use project::ProjectDomain;
+pub use task::TaskDomain;
 
 // ==================== 单例 ====================
 
-static PROJECT_DOMAIN: OnceLock<Arc<dyn ProjectDomain>> = OnceLock::new();
+static PROJECT_DOMAIN: OnceLock<Arc<dyn ProjectDomainProvider>> = OnceLock::new();
 
 /// 获取 Project Domain 单例
-pub fn domain() -> Arc<dyn ProjectDomain> {
+pub fn domain() -> Arc<dyn ProjectDomainProvider> {
     PROJECT_DOMAIN.get().cloned().unwrap()
 }
 
 /// 创建新的 Project Domain 实例（用于测试，每次测试创建独立实例保证隔离）
-pub fn new(project_dal: Arc<dyn ProjectDal>) -> Arc<dyn ProjectDomain> {
-    let domain = ProjectDomainImpl::new(project_dal);
-    Arc::new(domain)
+pub fn new(
+    project_dal: Arc<dyn crate::service::dal::project::ProjectDal + Send + Sync>,
+    task_dal: Arc<dyn crate::service::dal::task::TaskDal + Send + Sync>,
+    artifact_dal: Arc<dyn crate::service::dal::artifact::ArtifactDal + Send + Sync>,
+) -> Arc<dyn ProjectDomainProvider> {
+    Arc::new(ProjectDomainImpl::new(project_dal, task_dal, artifact_dal))
 }
 
 /// 初始化 Project Domain（使用全局单例 DAL）
 pub fn init() {
     let project_domain = ProjectDomainImpl::new(
         crate::service::dal::project::dal(),
+        crate::service::dal::task::dal(),
+        crate::service::dal::artifact::dal(),
     );
     let _ = PROJECT_DOMAIN.set(Arc::new(project_domain));
+}
+
+// ==================== trait 定义 ====================
+
+/// Project Domain 总接口
+///
+/// 统一对外暴露项目领域的所有能力
+pub trait ProjectDomainProvider: Send + Sync {
+    /// 获取项目业务
+    fn project(&self) -> &ProjectDomain;
+
+    /// 获取任务业务
+    fn task(&self) -> &TaskDomain;
+
+    /// 获取产物业务
+    fn artifact(&self) -> &ArtifactDomain;
 }
 
 // ==================== 实现 ====================
 
 /// Project Domain 实现
 ///
-/// 聚合所有项目子功能实现
+/// 聚合所有子领域实现
 struct ProjectDomainImpl {
-    project_dal: Arc<dyn ProjectDal>,
+    project: ProjectDomain,
+    task: TaskDomain,
+    artifact: ArtifactDomain,
 }
 
 impl ProjectDomainImpl {
     /// 创建 Domain 实例
-    fn new(project_dal: Arc<dyn ProjectDal>) -> Self {
-        Self { project_dal }
+    fn new(
+        project_dal: Arc<dyn crate::service::dal::project::ProjectDal + Send + Sync>,
+        task_dal: Arc<dyn crate::service::dal::task::TaskDal + Send + Sync>,
+        artifact_dal: Arc<dyn crate::service::dal::artifact::ArtifactDal + Send + Sync>,
+    ) -> Self {
+        let project = ProjectDomain::new(project_dal);
+        let task = TaskDomain::new(task_dal);
+        let artifact = ArtifactDomain::new(artifact_dal);
+        Self {
+            project,
+            task,
+            artifact,
+        }
     }
 }
 
-impl ProjectDomain for ProjectDomainImpl {
-    fn management(&self) -> &dyn ProjectManagement {
-        self
+impl ProjectDomainProvider for ProjectDomainImpl {
+    fn project(&self) -> &ProjectDomain {
+        &self.project
     }
-    fn execution(&self) -> &dyn ProjectExecution {
-        self
+
+    fn task(&self) -> &TaskDomain {
+        &self.task
     }
-}
 
-// ==================== Command 定义 ====================
-
-/// 创建项目命令参数
-#[derive(Debug, Clone)]
-pub struct CreateProjectCommand<'a> {
-    /// 项目名称
-    pub name: &'a str,
-    /// 项目详细描述
-    pub description: &'a str,
-    /// 项目运作流程描述（可选）
-    pub workflow: Option<&'a str>,
-    /// 用户对项目的指导建议（可选）
-    pub guidance: Option<&'a str>,
-    /// 优先级（数值越大优先级越高）
-    pub priority: i32,
-    /// 标签列表
-    pub tags: Vec<String>,
-    /// 根用户 ID
-    pub root_user_id: &'a str,
-    /// 负责人 Agent ID（可选）
-    pub owner_agent_id: Option<&'a str>,
-    /// 开始时间戳（毫秒，可选）
-    pub start_at: Option<i64>,
-    /// 截止时间戳（毫秒，可选）
-    pub due_at: Option<i64>,
-}
-
-/// 更新项目命令参数
-#[derive(Debug, Clone)]
-pub struct UpdateProjectCommand<'a> {
-    /// 项目 ID
-    pub project_id: &'a str,
-    /// 项目名称（可选，None 表示不更新）
-    pub name: Option<&'a str>,
-    /// 项目详细描述（可选）
-    pub description: Option<&'a str>,
-    /// 项目运作流程描述（可选）
-    pub workflow: Option<&'a str>,
-    /// 用户对项目的指导建议（可选）
-    pub guidance: Option<&'a str>,
-    /// 优先级（可选）
-    pub priority: Option<i32>,
-    /// 标签列表（可选）
-    pub tags: Option<Vec<String>>,
-    /// 负责人 Agent ID（可选）
-    pub owner_agent_id: Option<&'a str>,
-    /// 开始时间戳（可选）
-    pub start_at: Option<i64>,
-    /// 截止时间戳（可选）
-    pub due_at: Option<i64>,
-}
-
-// ==================== traits 定义 ====================
-
-/// Project Domain 总 trait
-///
-/// 聚合项目领域所有子功能 trait
-pub trait ProjectDomain: Send + Sync {
-    /// 项目管理能力
-    fn management(&self) -> &dyn ProjectManagement;
-    /// 项目执行能力
-    fn execution(&self) -> &dyn ProjectExecution;
-}
-
-/// 项目管理 trait
-///
-/// 定义项目管理相关的核心业务接口
-#[async_trait::async_trait]
-pub trait ProjectManagement: Send + Sync {
-    /// 创建新项目
-    async fn create_project(
-        &self,
-        ctx: RequestContext,
-        cmd: CreateProjectCommand<'_>,
-    ) -> Result<ProjectPo, AppError>;
-
-    /// 根据 ID 获取项目
-    async fn get_project_by_id(
-        &self,
-        ctx: RequestContext,
-        project_id: &str,
-    ) -> Result<Option<ProjectPo>, AppError>;
-
-    /// 获取用户的所有项目
-    async fn list_user_projects(
-        &self,
-        ctx: RequestContext,
-        root_user_id: &str,
-        limit: Option<usize>,
-    ) -> Result<Vec<ProjectPo>, AppError>;
-
-    /// 获取用户指定状态的项目
-    async fn list_user_projects_by_status(
-        &self,
-        ctx: RequestContext,
-        root_user_id: &str,
-        status: Vec<ProjectStatus>,
-        limit: Option<usize>,
-    ) -> Result<Vec<ProjectPo>, AppError>;
-
-    /// 通用项目查询
-    async fn query_projects(
-        &self,
-        ctx: RequestContext,
-        query: ProjectQuery,
-    ) -> Result<Vec<ProjectPo>, AppError>;
-
-    /// 更新项目信息
-    async fn update_project(
-        &self,
-        ctx: RequestContext,
-        cmd: UpdateProjectCommand<'_>,
-    ) -> Result<ProjectPo, AppError>;
-
-    /// 更新项目状态
-    async fn update_project_status(
-        &self,
-        ctx: RequestContext,
-        project_id: &str,
-        status: ProjectStatus,
-    ) -> Result<(), AppError>;
-
-    /// 归档项目（软删除）
-    async fn archive_project(
-        &self,
-        ctx: RequestContext,
-        project_id: &str,
-    ) -> Result<(), AppError>;
-
-    /// 统计用户的项目总数
-    async fn count_user_projects(
-        &self,
-        ctx: RequestContext,
-        root_user_id: &str,
-    ) -> Result<u64, AppError>;
-
-    /// 统计用户指定状态的项目数
-    async fn count_user_projects_by_status(
-        &self,
-        ctx: RequestContext,
-        root_user_id: &str,
-        status: ProjectStatus,
-    ) -> Result<u64, AppError>;
-}
-
-/// 项目执行 trait
-///
-/// 定义项目执行相关的核心业务接口
-#[async_trait::async_trait]
-pub trait ProjectExecution: Send + Sync {
-    /// 开始项目（状态变为 InProgress，设置 start_at）
-    async fn start_project(
-        &self,
-        ctx: RequestContext,
-        project_id: &str,
-    ) -> Result<(), AppError>;
-
-    /// 完成项目（状态变为 Completed，设置 end_at）
-    async fn complete_project(
-        &self,
-        ctx: RequestContext,
-        project_id: &str,
-    ) -> Result<(), AppError>;
-
-    /// 重新激活项目（从 Completed/Archived 变回 Active）
-    async fn reactivate_project(
-        &self,
-        ctx: RequestContext,
-        project_id: &str,
-    ) -> Result<(), AppError>;
+    fn artifact(&self) -> &ArtifactDomain {
+        &self.artifact
+    }
 }

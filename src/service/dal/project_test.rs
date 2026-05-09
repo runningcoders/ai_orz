@@ -1,7 +1,7 @@
 //! Project DAL 单元测试
 
 use common::enums::ProjectStatus;
-use crate::models::project::ProjectPo;
+use crate::models::project::Project;
 use crate::pkg::RequestContext;
 use crate::service::dao::project::ProjectQuery;
 use crate::service::dal::project::ProjectDal;
@@ -19,8 +19,8 @@ async fn init_test_env(pool: SqlitePool) -> (Arc<dyn ProjectDal + Send + Sync>, 
 }
 
 /// 创建测试项目
-fn create_test_project(name: &str, root_user_id: &str) -> ProjectPo {
-    ProjectPo::new(
+fn create_test_project(name: &str, root_user_id: &str) -> Project {
+    Project::new(
         Uuid::now_v7().to_string(),
         name.to_string(),
         format!("Description for {}", name),
@@ -33,7 +33,7 @@ fn create_test_project(name: &str, root_user_id: &str) -> ProjectPo {
         None,
         None,
         None,
-        "admin".to_string(),
+        "system".to_string(),
     )
 }
 
@@ -43,16 +43,16 @@ async fn test_create_and_find_by_id(pool: SqlitePool) {
     let root_user_id = Uuid::now_v7().to_string();
 
     let project = create_test_project("Test Project", &root_user_id);
-    let project_id = project.id.clone();
+    let project_id = project.po.id.clone();
 
     dal.create(ctx.clone(), &project).await.unwrap();
     let found = dal.find_by_id(ctx, &project_id).await.unwrap().unwrap();
 
-    assert_eq!(found.id, project_id);
-    assert_eq!(found.name, "Test Project");
-    assert_eq!(found.root_user_id, root_user_id);
-    assert_eq!(found.priority, 1);
-    assert_eq!(found.status, ProjectStatus::Active);
+    assert_eq!(found.po.id, project_id);
+    assert_eq!(found.po.name, "Test Project");
+    assert_eq!(found.po.root_user_id, root_user_id);
+    assert_eq!(found.po.priority, 1);
+    assert_eq!(found.po.status, ProjectStatus::Active);
 }
 
 #[sqlx::test]
@@ -88,7 +88,7 @@ async fn test_list_by_root_user_and_status(pool: SqlitePool) {
 
     // Create 1 archived project
     let archived_project = create_test_project("Archived Project", &root_user_id);
-    let archived_project_id = archived_project.id.clone();
+    let archived_project_id = archived_project.po.id.clone();
     dal.create(ctx.clone(), &archived_project).await.unwrap();
     dal.archive(ctx.clone(), &archived_project_id, "admin").await.unwrap();
 
@@ -137,19 +137,19 @@ async fn test_update_project(pool: SqlitePool) {
     let root_user_id = Uuid::now_v7().to_string();
 
     let mut project = create_test_project("Original Name", &root_user_id);
-    let project_id = project.id.clone();
+    let project_id = project.po.id.clone();
     dal.create(ctx.clone(), &project).await.unwrap();
 
     // Update project
-    project.name = "Updated Name".to_string();
-    project.description = "Updated description".to_string();
-    project.priority = 2;
+    project.po.name = "Updated Name".to_string();
+    project.po.description = "Updated description".to_string();
+    project.po.priority = 2;
     dal.update(ctx.clone(), &project).await.unwrap();
 
     let found = dal.find_by_id(ctx, &project_id).await.unwrap().unwrap();
-    assert_eq!(found.name, "Updated Name");
-    assert_eq!(found.description, "Updated description");
-    assert_eq!(found.priority, 2);
+    assert_eq!(found.po.name, "Updated Name");
+    assert_eq!(found.po.description, "Updated description");
+    assert_eq!(found.po.priority, 2);
 }
 
 #[sqlx::test]
@@ -158,18 +158,18 @@ async fn test_update_status_and_archive(pool: SqlitePool) {
     let root_user_id = Uuid::now_v7().to_string();
 
     let project = create_test_project("Test Project", &root_user_id);
-    let project_id = project.id.clone();
+    let project_id = project.po.id.clone();
     dal.create(ctx.clone(), &project).await.unwrap();
 
     // Update status to InProgress
     dal.update_status(ctx.clone(), &project_id, ProjectStatus::InProgress, "admin").await.unwrap();
     let found = dal.find_by_id(ctx.clone(), &project_id).await.unwrap().unwrap();
-    assert_eq!(found.status, ProjectStatus::InProgress);
+    assert_eq!(found.po.status, ProjectStatus::InProgress);
 
     // Archive project
     dal.archive(ctx.clone(), &project_id, "admin").await.unwrap();
     let found = dal.find_by_id(ctx, &project_id).await.unwrap().unwrap();
-    assert_eq!(found.status, ProjectStatus::Archived);
+    assert_eq!(found.po.status, ProjectStatus::Archived);
 }
 
 #[sqlx::test]
@@ -200,7 +200,7 @@ async fn test_count_by_root_user_and_status(pool: SqlitePool) {
     // Create 2 archived projects
     for i in 0..2 {
         let mut project = create_test_project(&format!("Archived Project {}", i), &root_user_id);
-        let project_id = project.id.clone();
+        let project_id = project.po.id.clone();
         dal.create(ctx.clone(), &project).await.unwrap();
         dal.archive(ctx.clone(), &project_id, "admin").await.unwrap();
     }

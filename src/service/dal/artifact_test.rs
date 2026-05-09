@@ -1,7 +1,7 @@
 //! Artifact DAL 单元测试
 
 use common::enums::FileType;
-use crate::models::artifact::ArtifactPo;
+use crate::models::artifact::Artifact;
 use crate::models::file::FileMeta;
 use crate::pkg::RequestContext;
 use crate::service::dao::artifact::ArtifactQuery;
@@ -29,8 +29,8 @@ fn create_test_file_meta(filename: &str) -> FileMeta {
 }
 
 /// 创建测试项目级产物
-fn create_project_artifact(name: &str, project_id: &str) -> ArtifactPo {
-    ArtifactPo::new_project(
+fn create_project_artifact(name: &str, project_id: &str) -> Artifact {
+    Artifact::new_project(
         project_id.to_string(),
         name.to_string(),
         format!("Description for {}", name),
@@ -41,8 +41,8 @@ fn create_project_artifact(name: &str, project_id: &str) -> ArtifactPo {
 }
 
 /// 创建测试任务级产物
-fn create_task_artifact(name: &str, project_id: &str, task_id: &str) -> ArtifactPo {
-    ArtifactPo::new_task(
+fn create_task_artifact(name: &str, project_id: &str, task_id: &str) -> Artifact {
+    Artifact::new_task(
         project_id.to_string(),
         task_id.to_string(),
         name.to_string(),
@@ -59,16 +59,16 @@ async fn test_create_and_find_by_id(pool: SqlitePool) {
     let project_id = Uuid::now_v7().to_string();
 
     let artifact = create_project_artifact("Test Report", &project_id);
-    let artifact_id = artifact.id.clone();
+    let artifact_id = artifact.po.id.clone();
 
     dal.create(ctx.clone(), &artifact).await.unwrap();
     let found = dal.find_by_id(ctx, &artifact_id).await.unwrap().unwrap();
 
-    assert_eq!(found.id, artifact_id);
-    assert_eq!(found.project_id, project_id);
-    assert_eq!(found.name, "Test Report");
-    assert_eq!(found.file_type, FileType::Document);
-    assert_eq!(found.status, 1);
+    assert_eq!(found.po.id, artifact_id);
+    assert_eq!(found.po.project_id, project_id);
+    assert_eq!(found.po.name, "Test Report");
+    assert_eq!(found.po.file_type, FileType::Document);
+    assert_eq!(found.po.status, 1);
 }
 
 #[sqlx::test]
@@ -138,13 +138,13 @@ async fn test_update_status(pool: SqlitePool) {
     let project_id = Uuid::now_v7().to_string();
 
     let artifact = create_project_artifact("Test Report", &project_id);
-    let artifact_id = artifact.id.clone();
+    let artifact_id = artifact.po.id.clone();
     dal.create(ctx.clone(), &artifact).await.unwrap();
 
     // Update status to 2 (archived)
     dal.update_status(ctx.clone(), &artifact_id, 2).await.unwrap();
     let found = dal.find_by_id(ctx.clone(), &artifact_id).await.unwrap().unwrap();
-    assert_eq!(found.status, 2);
+    assert_eq!(found.po.status, 2);
 
     // Delete (soft delete)
     dal.delete(ctx.clone(), &artifact_id).await.unwrap();
