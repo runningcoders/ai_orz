@@ -8,6 +8,7 @@
 
 use crate::models::memory::{self};
 use crate::models::model_provider::ModelProvider;
+use common::enums::ModelCapability;
 use async_trait::async_trait;
 use anyhow::Result;
 use dyn_clone::DynClone;
@@ -15,8 +16,14 @@ use dyn_clone::DynClone;
 /// 统一的 CortexTrait - 大脑皮层 trait，定义推理接口
 #[async_trait]
 pub trait CortexTrait: Send + Sync + DynClone {
+    /// 返回 Cortex 的能力类型
+    fn capability(&self) -> ModelCapability;
+
     /// 运行 prompt，获取回答
     async fn prompt(&self, prompt: &str) -> Result<String>;
+
+    /// 生成文本向量 embedding
+    async fn embeddings(&self, texts: &[String]) -> Result<Vec<Vec<f32>>>;
 
     /// 是否支持工具调用
     fn support_tools(&self) -> bool;

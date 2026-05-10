@@ -115,7 +115,7 @@ impl BrainDal for BrainDalImpl {
         // 1. 创建 CortexTrait，传入工具列表
         let rig_tools = self.tool_call_dao.wrap_for_rig(&tools, _ctx.clone());
         
-        let cortex_trait = self.cortex_dao.create_cortex_trait(_ctx, provider, rig_tools)
+        let cortex_trait = self.cortex_dao.create_cortex_trait(_ctx, &provider.po, rig_tools)
             .map_err(|e| AppError::Internal(e.to_string()))?;
 
         // 2. 创建 Cortex 实体
@@ -134,7 +134,7 @@ impl BrainDal for BrainDalImpl {
         prompt: &str,
     ) -> Result<String, AppError> {
         // 1. 创建 Cortex，测试连接不需要工具
-        let cortex_trait = self.cortex_dao.create_cortex_trait(ctx.clone(), provider, Vec::new())
+        let cortex_trait = self.cortex_dao.create_cortex_trait(ctx.clone(), &provider.po, Vec::new())
             .map_err(|e| AppError::Internal(e.to_string()))?;
 
         // 2. 执行 prompt 获取回答

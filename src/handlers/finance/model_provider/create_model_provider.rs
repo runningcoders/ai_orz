@@ -21,6 +21,7 @@ pub async fn create_model_provider(
     let provider_po = ModelProviderPo::new(
         req.name.clone(),
         req.provider_type.clone(),
+        req.capability.clone(),
         req.model_name.clone(),
         req.api_key.clone(),
         req.base_url.clone(),

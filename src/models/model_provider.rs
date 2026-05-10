@@ -1,6 +1,6 @@
 //! 模型提供商实体
 
-use common::enums::{ModelProviderStatus, ProviderType};
+use common::enums::{ModelCapability, ModelProviderStatus, ProviderType};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use std::fmt;
@@ -37,10 +37,11 @@ pub struct ModelProviderPo {
     pub name: String,
     pub provider_type: ProviderType,
     pub model_name: String,
+    pub capability: ModelCapability,
     pub api_key: String,
     pub base_url: Option<String>,
     pub description: Option<String>,
-    pub config: String,  // JSON 存储配置
+    pub config: String, // JSON 存储配置
     pub status: ModelProviderStatus,
     pub created_by: String,
     pub modified_by: String,
@@ -69,6 +70,7 @@ impl ModelProvider {
     pub fn new(
         name: String,
         provider_type: ProviderType,
+        capability: ModelCapability,
         model_name: String,
         api_key: String,
         base_url: Option<String>,
@@ -79,6 +81,7 @@ impl ModelProvider {
             po: ModelProviderPo::new(
                 name,
                 provider_type,
+                capability,
                 model_name,
                 api_key,
                 base_url,
@@ -108,6 +111,11 @@ impl ModelProvider {
         self.po.model_name.as_str()
     }
 
+    /// 获取模型能力类型
+    pub fn capability(&self) -> ModelCapability {
+        self.po.capability
+    }
+
     /// 获取 API Key
     pub fn api_key(&self) -> &str {
         self.po.api_key.as_str()
@@ -124,6 +132,7 @@ impl ModelProviderPo {
     pub fn new(
         name: String,
         provider_type: ProviderType,
+        capability: ModelCapability,
         model_name: String,
         api_key: String,
         base_url: Option<String>,
@@ -135,6 +144,7 @@ impl ModelProviderPo {
             name,
             provider_type,
             model_name,
+            capability,
             api_key,
             base_url: base_url
                 .map(|s| if s.is_empty() { None } else { Some(s) })

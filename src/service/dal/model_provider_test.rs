@@ -1,7 +1,7 @@
 //! Model Provider DAL 单元测试
 
 use crate::models::model_provider::{ModelProvider, ModelProviderPo};
-use common::enums::{ModelProviderStatus, ProviderType};
+use common::enums::{ModelCapability, ModelProviderStatus, ProviderType};
 use crate::pkg::RequestContext;
 use crate::service::dal::model_provider::ModelProviderDal;
 use std::sync::Arc;
@@ -22,6 +22,7 @@ fn create_test_provider(name: &str, provider_type: ProviderType, model_name: &st
     ModelProvider::new(
         name.to_string(),
         provider_type,
+        ModelCapability::Agent,
         model_name.to_string(),
         "test-key".to_string(),
         None,
@@ -37,6 +38,7 @@ async fn test_create_and_find_by_id(pool: SqlitePool) {
     let provider = ModelProvider::new(
         "OpenAI GPT-4o".to_string(),
         ProviderType::OpenAI,
+        ModelCapability::Agent,
         "gpt-4o".to_string(),
         "sk-xxx".to_string(),
         None,
@@ -116,6 +118,7 @@ async fn test_create_with_custom_base_url(pool: SqlitePool) {
     let provider = ModelProvider::new(
         "Custom OpenAI Compatible".to_string(),
         ProviderType::Custom,
+        ModelCapability::Agent,
         "custom-model".to_string(),
         "custom-key".to_string(),
         Some("https://custom.api.com/v1".to_string()),

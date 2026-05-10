@@ -3,7 +3,7 @@
 //! 单元测试使用独立数据库，测试隔离性好
 
 use crate::models::model_provider::ModelProviderPo;
-use common::enums::{ProviderType, ModelProviderStatus};
+use common::enums::{ModelCapability, ProviderType, ModelProviderStatus};
 use crate::service::dao::model_provider::{self, ModelProviderDao};
 use crate::pkg::RequestContext;
 use uuid::Uuid;
@@ -25,6 +25,7 @@ fn create_test_provider(name: &str, provider_type: ProviderType, api_key: &str) 
     ModelProviderPo::new(
         name.to_string(),
         provider_type,
+        ModelCapability::Agent,
         "gpt-4o".to_string(),
         api_key.to_string(),
         None,

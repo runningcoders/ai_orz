@@ -3,12 +3,14 @@
 use async_trait::async_trait;
 use crate::error::AppError;
 use crate::models::skill::{SkillPo, SkillFile};
+use crate::models::vector::{VectorIndexParams, SearchResult, SearchMatchInfo, MatchType};
 use crate::pkg::RequestContext;
 use common::enums::skill::SkillAuthorType;
 use common::enums::SkillStatus;
-use crate::service::dao::skill::{SkillDao, SkillQuery};
+use crate::service::dao::skill::{SkillDao, SkillQuery, SkillSearch};
 use std::sync::{Arc, OnceLock};
 use std::path::PathBuf;
+use std::collections::HashMap;
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -65,6 +67,29 @@ INSERT INTO skills (
         Ok(())
     }
 
+    async fn insert_with_vector(
+        &self,
+        ctx: RequestContext,
+        skill: &SkillPo,
+        vector_params: &VectorIndexParams,
+    ) -> Result<(), AppError> {
+        // 1. 先插入业务数据
+        self.insert(ctx.clone(), skill).await?;
+
+        // 2. 再插入向量索引
+        let vector_store = ctx.vector_store();
+        vector_store.upsert(
+            "skills",
+            &skill.id,
+            &vector_params.vector,
+            &vector_params.content_hash,
+            &vector_params.embedding_model,
+            vector_params.expire_at,
+        ).await?;
+
+        Ok(())
+    }
+
     async fn update(&self, ctx: RequestContext, skill: &SkillPo) -> Result<(), AppError> {
         let now = chrono::Utc::now().timestamp_millis();
         let status_i32 = skill.status.to_i32();
@@ -94,6 +119,29 @@ WHERE id = ?
         Ok(())
     }
 
+    async fn update_with_vector(
+        &self,
+        ctx: RequestContext,
+        skill: &SkillPo,
+        vector_params: &VectorIndexParams,
+    ) -> Result<(), AppError> {
+        // 1. 先更新业务数据
+        self.update(ctx.clone(), skill).await?;
+
+        // 2. 再更新向量索引
+        let vector_store = ctx.vector_store();
+        vector_store.upsert(
+            "skills",
+            &skill.id,
+            &vector_params.vector,
+            &vector_params.content_hash,
+            &vector_params.embedding_model,
+            vector_params.expire_at,
+        ).await?;
+
+        Ok(())
+    }
+
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<SkillPo>, AppError> {
         let skill = sqlx::query_as!(
             SkillPo,
@@ -114,6 +162,16 @@ FROM skills WHERE id = ?
         let mut builder = sqlx::QueryBuilder::new(
             r#"SELECT id, name, description, tags, category, parent_skill_id, author_id, author_type, modifier_id, status, created_at, updated_at, content_path FROM skills WHERE 1=1"#
         );
+
+        // ✅ 按 ID 批量查询（向量搜索的核心过滤）
+        if let Some(ids) = &query.ids {
+            builder.push(" AND id IN (");
+            let mut separated = builder.separated(", ");
+            for id in ids {
+                separated.push_bind(id);
+            }
+            separated.push_unseparated(")");
+        }
 
         // 状态过滤
         if let Some(status) = &query.status {
@@ -158,6 +216,112 @@ FROM skills WHERE id = ?
         Ok(rows)
     }
 
+    /// ✅ 统一搜索入口（支持关键词/向量/混合三种策略）
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: SkillSearch,
+    ) -> Result<Vec<SearchResult<SkillPo>>, AppError> {
+        // ========== 策略路由：根据入参选择搜索模式 ==========
+        match (search.keyword.as_ref(), search.query_vector.as_ref()) {
+            // ---------- 模式1：仅关键词搜索 ----------
+            (Some(keyword), None) => {
+                // 复用通用查询，走 SQL LIKE 匹配
+                let skills = self.query(ctx, SkillQuery {
+                    keyword: Some(keyword.to_string()),
+                    exclude_status: Some(SkillStatus::Expired),
+                    ..search.filters
+                }).await?;
+
+                // 包装为统一结果格式
+                Ok(skills.into_iter()
+                    .map(|skill| SearchResult {
+                        entity: skill,
+                        match_info: SearchMatchInfo {
+                            match_type: MatchType::Keyword,
+                            vector_distance: None,
+                            keyword_fields: Some(vec!["name".to_string(), "description".to_string()]),
+                            embedding_model: None,
+                            indexed_at: None,
+                            content_hash: None,
+                        },
+                    })
+                    .collect())
+            }
+
+            // ---------- 模式2：仅向量语义搜索 ----------
+            (None, Some(query_vector)) => {
+                // ========== 第一阶段：向量检索获取候选 ID 列表 ==========
+                let vector_store = ctx.vector_store();
+                let search_results = vector_store.search(
+                    "skills",
+                    query_vector,
+                    search.top_k.unwrap_or(20),
+                ).await?;
+
+                if search_results.is_empty() {
+                    return Ok(Vec::new());
+                }
+
+                // 提取 ID 列表和 distance 映射
+                let skill_ids: Vec<String> = search_results.iter().map(|(id, _)| id.clone()).collect();
+                let distance_map: HashMap<String, f32> = search_results.into_iter().collect();
+
+                // ========== 第二阶段：按业务条件过滤 ==========
+                let skills = self.query(ctx, SkillQuery {
+                    ids: Some(skill_ids),
+                    exclude_status: Some(SkillStatus::Expired),
+                    ..search.filters
+                }).await?;
+
+                // ========== 第三阶段：组合结果，按相似度排序 ==========
+                let mut results: Vec<_> = skills.into_iter()
+                    .map(|skill| SearchResult {
+                        entity: skill.clone(),
+                        match_info: SearchMatchInfo {
+                            match_type: MatchType::Vector,
+                            vector_distance: Some(distance_map.get(&skill.id).copied().unwrap_or(1.0)),
+                            keyword_fields: None,
+                            embedding_model: Some(String::new()), // TODO: 从元数据表填充
+                            indexed_at: Some(0), // TODO: 从元数据表填充
+                            content_hash: Some(String::new()), // TODO: 从元数据表填充
+                        },
+                    })
+                    .collect();
+
+                results.sort_by(|a, b| a.match_info.vector_distance.unwrap_or(1.0)
+                    .partial_cmp(&b.match_info.vector_distance.unwrap_or(1.0)).unwrap());
+                Ok(results)
+            }
+
+            // ---------- 模式3：混合搜索（关键词 + 向量取交集） ----------
+            (Some(keyword), Some(query_vector)) => {
+                // TODO: 实现混合排序策略（RRF / Borda Count / 加权和）
+                // 目前降级为仅向量搜索（后续可扩展）
+                let mut fallback_search = search.clone();
+                fallback_search.keyword = None;
+                self.search(ctx, fallback_search).await
+            }
+
+            // ---------- 模式4：无有效入参，返回空 ----------
+            (None, None) => {
+                Ok(Vec::new())
+            }
+        }
+    }
+
+    /// ✅ 查询技能的向量索引内容哈希（DAL 判断是否需要重索引）
+    async fn get_vector_content_hash(
+        &self,
+        ctx: RequestContext,
+        skill_id: &str,
+    ) -> Result<Option<String>, AppError> {
+        ctx.vector_store()
+            .get_content_hash("skills", skill_id)
+            .await
+            .map_err(|e| AppError::Internal(format!("Vector store error: {}", e)))
+    }
+
     async fn list_by_status(
         &self,
         ctx: RequestContext,
@@ -190,15 +354,6 @@ FROM skills WHERE id = ?
         // 语法糖：调用通用查询
         self.query(ctx, SkillQuery {
             author_id: Some(author_id.to_string()),
-            ..Default::default()
-        }).await
-    }
-
-    async fn search(&self, ctx: RequestContext, keyword: &str) -> Result<Vec<SkillPo>, AppError> {
-        // 语法糖：调用通用查询，排除已过期技能
-        self.query(ctx, SkillQuery {
-            keyword: Some(keyword.to_string()),
-            exclude_status: Some(SkillStatus::Expired),
             ..Default::default()
         }).await
     }

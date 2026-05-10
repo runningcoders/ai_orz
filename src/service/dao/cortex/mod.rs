@@ -3,8 +3,9 @@
 //! 根据 Model Provider 创建 CortexTrait 实例，提供统一推理接口
 //! 包含 create_cortex_trait 和 prompt（执行 prompt 获取回答）
 
+use crate::error::AppError;
 use anyhow::{Result};
-use crate::models::{brain::*, model_provider::ModelProvider};
+use crate::models::{brain::*, model_provider::ModelProviderPo, vector::{VectorIndexParams, Vectorizable}};
 use async_trait::async_trait;
 use ::rig::tool::ToolDyn;
 use crate::pkg::RequestContext;
@@ -15,7 +16,7 @@ use crate::pkg::RequestContext;
 #[async_trait::async_trait]
 pub trait CortexDao: Send + Sync {
     /// 根据 Model Provider 创建 CortexTrait 实例，绑定已包装的 Rig 工具列表
-    fn create_cortex_trait(&self, ctx: RequestContext, provider: &ModelProvider, rig_tools: Vec<Box<dyn ToolDyn>>) -> Result<Box<dyn CortexTrait + Send + Sync>>;
+    fn create_cortex_trait(&self, ctx: RequestContext, provider: &ModelProviderPo, rig_tools: Vec<Box<dyn ToolDyn>>) -> Result<Box<dyn CortexTrait + Send + Sync>>;
 
     /// 执行 prompt：使用已创建的 CortexTrait 推理获取回答
     async fn prompt(&self, ctx: RequestContext, cortex: &dyn CortexTrait, prompt: &str) -> Result<String>;
@@ -23,7 +24,7 @@ pub trait CortexDao: Send + Sync {
 
 mod rig;
 
-pub use self::rig::{dao, init};
+pub use self::rig::{dao, init, RigCortexDao};
 
 #[cfg(test)]
 mod rig_test;

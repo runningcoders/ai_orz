@@ -13,3 +13,4 @@ pub mod task;
 pub mod tool;
 pub mod user;
 pub mod skill;
+pub mod vector;

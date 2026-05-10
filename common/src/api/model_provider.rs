@@ -1,6 +1,6 @@
 //! Model Provider related API request/response DTOs - shared between backend and frontend
 
-use crate::enums::ProviderType;
+use crate::enums::{ProviderType, ModelCapability};
 use serde::{Deserialize, Serialize};
 
 /// 创建 Model Provider 请求
@@ -10,6 +10,8 @@ pub struct CreateModelProviderRequest {
     pub name: String,
     /// Provider 类型
     pub provider_type: ProviderType,
+    /// 模型能力类型
+    pub capability: ModelCapability,
     /// 模型名称
     pub model_name: String,
     /// API Key

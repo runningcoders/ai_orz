@@ -17,7 +17,7 @@ pub use agent::{AgentStatus, ModelProviderStatus};
 pub use organization::{OrganizationStatus, OrganizationScope};
 pub use user::{UserRole, UserStatus};
 pub use message::{MessageRole, MessageType, MessageStatus};
-pub use provider::ProviderType;
+pub use provider::{ProviderType, ModelCapability};
 pub use task::{TaskStatus, AssigneeType};
 pub use project::ProjectStatus;
 pub use file::FileType;

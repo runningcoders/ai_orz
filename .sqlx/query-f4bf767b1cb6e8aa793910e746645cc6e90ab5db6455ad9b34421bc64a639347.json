@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, project_id, task_id, name, description, file_type as \"file_type: FileType\", file_meta as \"file_meta: Json<FileMeta>\", status as \"status: i32\", created_by, modified_by, created_at, updated_at\nFROM artifacts\nWHERE id = ? AND \"status\" != 0\n",
+  "query": "\nSELECT id, project_id, task_id, name, description, file_type as \"file_type: FileType\", file_meta as \"file_meta: Json<FileMeta>\", tags, status as \"status: i32\", created_by, modified_by, created_at, updated_at\nFROM artifacts\nWHERE id = ? AND \"status\" != 0\n",
   "describe": {
     "columns": [
       {
@@ -39,28 +39,33 @@
         "type_info": "Text"
       },
       {
-        "name": "status: i32",
+        "name": "tags",
         "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "status: i32",
+        "ordinal": 8,
         "type_info": "Integer"
       },
       {
         "name": "created_by",
-        "ordinal": 8,
-        "type_info": "Text"
-      },
-      {
-        "name": "modified_by",
         "ordinal": 9,
         "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "modified_by",
         "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 11,
         "type_info": "Integer"
       },
       {
         "name": "updated_at",
-        "ordinal": 11,
+        "ordinal": 12,
         "type_info": "Integer"
       }
     ],
@@ -79,8 +84,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "247fc43e934a7583e2c1c0ff7d660562f687b7dc4a7232edd801c4c14c1f4088"
+  "hash": "f4bf767b1cb6e8aa793910e746645cc6e90ab5db6455ad9b34421bc64a639347"
 }

@@ -6,7 +6,7 @@
 use crate::error::AppError;
 use crate::models::skill::{Skill, SkillPo, SkillFile};
 use crate::pkg::request_context::RequestContext;
-use crate::service::dao::skill::{SkillDao, SkillQuery, self};
+use crate::service::dao::skill::{SkillDao, SkillQuery, SkillSearch, self};
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例管理 ====================
@@ -109,7 +109,7 @@ impl SkillDal for SkillDalImpl {
             return Ok(None);
         };
         let files = self.skill_dao.list_files(&po)?;
-        Ok(Some(Skill { po, files }))
+        Ok(Some(Skill { po, files, search_match: None }))
     }
 
     async fn get_po_by_id(&self, ctx: RequestContext, id: String) -> Result<Option<SkillPo>, AppError> {
@@ -121,7 +121,7 @@ impl SkillDal for SkillDalImpl {
         let mut skills = Vec::with_capacity(pos.len());
         for po in pos {
             let files = self.skill_dao.list_files(&po)?;
-            skills.push(Skill { po, files });
+            skills.push(Skill { po, files, search_match: None });
         }
         Ok(skills)
     }
@@ -143,11 +143,22 @@ impl SkillDal for SkillDalImpl {
     }
 
     async fn search(&self, ctx: RequestContext, keyword: &str) -> Result<Vec<Skill>, AppError> {
-        let pos = self.skill_dao.search(ctx, keyword).await?;
-        let mut skills = Vec::with_capacity(pos.len());
-        for po in pos {
-            let files = self.skill_dao.list_files(&po)?;
-            skills.push(Skill { po, files });
+        // 调用 DAO 统一 search 入口（仅关键词模式）
+        let results = self.skill_dao.search(ctx, SkillSearch {
+            keyword: Some(keyword.to_string()),
+            query_vector: None,
+            top_k: None,
+            filters: SkillQuery::default(),
+        }).await?;
+        
+        let mut skills = Vec::with_capacity(results.len());
+        for result in results {
+            let files = self.skill_dao.list_files(&result.entity)?;
+            skills.push(Skill {
+                po: result.entity,
+                files,
+                search_match: Some(result.match_info),
+            });
         }
         Ok(skills)
     }

@@ -3,12 +3,13 @@
 use crate::error::AppError;
 use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::RequestContext;
-use common::enums::{ModelProviderStatus, ProviderType};
+use common::enums::{ModelCapability, ModelProviderStatus, ProviderType};
 
 /// ModelProvider 查询参数
 #[derive(Debug, Clone, Default)]
 pub struct ModelProviderQuery {
     pub provider_type: Option<ProviderType>,
+    pub capability: Option<ModelCapability>,
     pub status: Option<ModelProviderStatus>,
     pub exclude_status: Option<ModelProviderStatus>,
     pub limit: Option<usize>,

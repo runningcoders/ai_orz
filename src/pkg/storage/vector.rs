@@ -145,6 +145,23 @@ impl SqliteVssStore {
         })
     }
     
+    /// 获取指定文档的内容哈希（用于增量索引判断
+    pub async fn get_content_hash(
+        &self,
+        collection: &str,
+        source_id: &str,
+    ) -> Result<Option<String>> {
+        let result: Option<(String,)> = sqlx::query_as(
+            "SELECT content_hash FROM vector_metadata WHERE collection = ? AND source_id = ?"
+        )
+        .bind(collection)
+        .bind(source_id)
+        .fetch_optional(&*self.pool)
+        .await?;
+        
+        Ok(result.map(|(h,)| h))
+    }
+    
     /// 删除向量
     pub async fn delete(&self, collection: &str, source_id: &str) -> Result<()> {
         // 1. 从元数据表获取 rowid

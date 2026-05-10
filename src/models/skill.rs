@@ -2,6 +2,7 @@
 
 use common::enums::skill::SkillAuthorType;
 use common::enums::SkillStatus;
+use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
@@ -17,7 +18,7 @@ pub struct SkillFile {
 }
 
 /// Skill 持久化对象
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, Default)]
 pub struct SkillPo {
     /// 技能ID: "name-slug--hash"
     pub id: String,
@@ -86,19 +87,72 @@ impl SkillPo {
 
 // ==================== Skill 业务聚合实体 ====================
 
-/// 技能完整业务实体（PO + 文件系统内容）
-/// 
+use crate::models::vector::{SearchMatchInfo, Vectorizable};
+
+/// 技能完整业务实体（PO + 文件系统内容 + 搜索元信息）
+///
 /// - SkillPo：数据库持久化元数据
 /// - files：关联文件列表（小文件预读，大文件按需加载）
-#[derive(Debug, Clone)]
+/// - search_match：搜索匹配元信息（仅搜索结果有值）
+#[derive(Debug, Clone, Builder)]
+#[builder(default)]
 pub struct Skill {
     /// 数据库持久化元数据
     pub po: SkillPo,
     /// 关联文件列表
     pub files: Vec<SkillFile>,
+    /// ✅ 搜索匹配元信息（可选）
+    /// - 普通查询返回：None
+    /// - 搜索返回：Some(包含匹配类型、距离、命中等元信息)
+    pub search_match: Option<SearchMatchInfo>,
+}
+
+impl Default for Skill {
+    fn default() -> Self {
+        Self {
+            po: SkillPo::default(),
+            files: Vec::new(),
+            search_match: None,
+        }
+    }
+}
+
+/// ✅ 实现 Vectorizable Trait（统一向量化行为）
+impl Vectorizable for Skill {
+    fn vectorize_text(&self) -> String {
+        // Skill 向量化：名称 + 描述 + 标签
+        let tags = self.po.parse_tags().join(" ");
+        format!("{} {} {}", self.po.name, self.po.description, tags)
+    }
+
+    fn vector_collection() -> &'static str {
+        "skills"
+    }
+}
+
+/// ✅ SkillPo 也实现 Vectorizable（DAL 层直接使用 PO）
+impl Vectorizable for SkillPo {
+    fn vectorize_text(&self) -> String {
+        // SkillPo 向量化：名称 + 描述 + 标签
+        let tags = self.parse_tags().join(" ");
+        format!("{} {} {}", self.name, self.description, tags)
+    }
+
+    fn vector_collection() -> &'static str {
+        "skills"
+    }
 }
 
 impl Skill {
+    /// 从 PO 快速创建实体
+    pub fn from(po: SkillPo) -> Self {
+        Self {
+            po,
+            files: Vec::new(),
+            search_match: None,
+        }
+    }
+
     /// 获取主文件内容（如果已加载）
     pub fn main_content(&self) -> Option<&str> {
         self.files.iter()

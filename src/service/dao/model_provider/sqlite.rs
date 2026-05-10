@@ -2,7 +2,7 @@
 
 use crate::error::AppError;
 use crate::models::model_provider::ModelProviderPo;
-use common::enums::{ModelProviderStatus, ProviderType};
+use common::enums::{ModelCapability, ModelProviderStatus, ProviderType};
 use crate::pkg::RequestContext;
 use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderQuery};
 use sqlx::QueryBuilder;
@@ -36,14 +36,16 @@ impl ModelProviderDaoSqliteImpl {
 impl ModelProviderDao for ModelProviderDaoSqliteImpl {
     async fn insert(&self, ctx: RequestContext, provider: &ModelProviderPo) -> Result<(), AppError> {
         let provider_type = provider.provider_type as i32;
+        let capability = provider.capability as i32;
         let status = provider.status as i32;
         let pool = ctx.db_pool();
         sqlx::query!(
-            "INSERT INTO model_providers (id, name, provider_type, model_name, api_key, base_url, description, config, status, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO model_providers (id, name, provider_type, model_name, capability, api_key, base_url, description, config, status, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             provider.id,
             provider.name,
             provider_type,
             provider.model_name,
+            capability,
             provider.api_key,
             provider.base_url,
             provider.description,
@@ -63,7 +65,7 @@ impl ModelProviderDao for ModelProviderDaoSqliteImpl {
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<ModelProviderPo>, AppError> {
         let pool = ctx.db_pool();
         let provider = QueryBuilder::new(r#"
-SELECT id, name, provider_type, model_name, api_key, base_url, description, config,
+SELECT id, name, provider_type, model_name, capability, api_key, base_url, description, config,
        status, created_by, modified_by, created_at, updated_at
 FROM model_providers WHERE id = 
         "#)
@@ -79,7 +81,7 @@ FROM model_providers WHERE id =
     async fn query(&self, ctx: RequestContext, query: ModelProviderQuery) -> Result<Vec<ModelProviderPo>, AppError> {
         let pool = ctx.db_pool();
         let mut builder = QueryBuilder::new(r#"
-SELECT id, name, provider_type, model_name, api_key, base_url, description, config,
+SELECT id, name, provider_type, model_name, capability, api_key, base_url, description, config,
        status, created_by, modified_by, created_at, updated_at
 FROM model_providers WHERE 1=1
         "#);
@@ -88,6 +90,11 @@ FROM model_providers WHERE 1=1
         if let Some(provider_type) = query.provider_type {
             builder.push(" AND provider_type = ");
             builder.push_bind(provider_type as i32);
+        }
+
+        if let Some(capability) = query.capability {
+            builder.push(" AND capability = ");
+            builder.push_bind(capability as i32);
         }
 
         if let Some(status) = query.status {
@@ -122,18 +129,20 @@ FROM model_providers WHERE 1=1
     async fn update(&self, ctx: RequestContext, provider: &ModelProviderPo) -> Result<(), AppError> {
         let current_timestamp = Utc::now().timestamp();
         let provider_type = provider.provider_type as i32;
+        let capability = provider.capability as i32;
         let status = provider.status as i32;
         let pool = ctx.db_pool();
         sqlx::query!(
             r#"
 UPDATE model_providers
-SET name = ?, provider_type = ?, model_name = ?, api_key = ?, base_url = ?, description = ?, config = ?,
+SET name = ?, provider_type = ?, model_name = ?, capability = ?, api_key = ?, base_url = ?, description = ?, config = ?,
     status = ?, modified_by = ?, updated_at = ?
 WHERE id = ?
             "#,
             provider.name,
             provider_type,
             provider.model_name,
+            capability,
             provider.api_key,
             provider.base_url,
             provider.description,

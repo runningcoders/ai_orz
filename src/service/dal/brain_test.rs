@@ -3,7 +3,7 @@
 
 use crate::models::{brain::*, model_provider::*, tool::Tool};
 use crate::service::dao::cortex;
-use common::enums::ProviderType;
+use common::enums::{ModelCapability, ProviderType};
 use crate::pkg::request_context::RequestContext;
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -26,6 +26,7 @@ fn create_test_provider() -> ModelProvider {
     let provider_po = ModelProviderPo::new(
         "OpenAI GPT-4o".to_string(),
         ProviderType::OpenAI,
+        ModelCapability::Agent,
         "gpt-4o".to_string(),
         "test-key".to_string(),
         Some("https://api.openai.com/v1".to_string()),

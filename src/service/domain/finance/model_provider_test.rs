@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests {
     use crate::models::model_provider::{ModelProvider, ModelProviderPo};
-    use common::enums::ProviderType;
+    use common::enums::{ModelCapability, ProviderType};
 
     #[test]
     fn test_create_model_provider_po() {
@@ -11,8 +11,9 @@ mod tests {
         let provider = ModelProviderPo::new(
             "测试OpenAI".to_string(),
             ProviderType::OpenAI,
+            ModelCapability::Agent,
             "gpt-3.5-turbo".to_string(),
-            "sk-test-12345".to_string(),
+            "***".to_string(),
             None,
             Some("测试用".to_string()),
             "test-user-1".to_string(),
@@ -20,8 +21,9 @@ mod tests {
 
         assert_eq!(provider.name, "测试OpenAI".to_string());
         assert!(matches!(provider.provider_type, ProviderType::OpenAI));
+        assert!(matches!(provider.capability, ModelCapability::Agent));
         assert_eq!(provider.model_name, "gpt-3.5-turbo".to_string());
-        assert_eq!(provider.api_key, "sk-test-12345".to_string());
+        assert_eq!(provider.api_key, "***".to_string());
         assert_eq!(provider.base_url, None);
         assert_eq!(provider.description, Some("测试用".to_string()));
         assert_eq!(provider.created_by, "test-user-1".to_string());
@@ -36,8 +38,9 @@ mod tests {
         let po = ModelProviderPo::new(
             "测试DeepSeek".to_string(),
             ProviderType::DeepSeek,
+            ModelCapability::Agent,
             "deepseek-chat".to_string(),
-            "sk-test-deepseek".to_string(),
+            "***".to_string(),
             None,
             Some("DeepSeek 官方API".to_string()),
             "test-user-1".to_string(),
@@ -54,6 +57,7 @@ mod tests {
         let po = ModelProviderPo::new(
             "自定义OpenAI".to_string(),
             ProviderType::Custom,
+            ModelCapability::Agent,
             "gpt-4".to_string(),
             "sk-custom".to_string(),
             Some("https://my-proxy.example.com/v1".to_string()),
@@ -83,6 +87,7 @@ mod tests {
             let _po = ModelProviderPo::new(
                 "test".to_string(),
                 t,
+                ModelCapability::Agent,
                 "model".to_string(),
                 "key".to_string(),
                 None,
