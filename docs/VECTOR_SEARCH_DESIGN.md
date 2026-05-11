@@ -1,52 +1,166 @@
 # 向量搜索系统设计文档
 
 > **最后更新**：2026-05-11
-> **状态**：✅ 已实现 V1（纯 Rust 线性搜索），🔄 V2 优化待实施（HNSW + FastEmbed）
-> **对应代码**：Skill Dao / Skill Dal / Cortex Dao / pkg/storage
+> **当前版本**：V1.2 ✅ 已实现（多种向量存储后端 + Config 解耦）
+> **对应代码**：Skill Dao / Skill Dal / Cortex Dao / pkg/storage / common/config
 
 ---
 
 ## 🎯 整体方案概览
 
-### 两层架构设计
+### 三层架构设计
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                   业务层（DAO/DAL）                          │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐        │
-│  │ Skill   │  │ Memory  │  │ Task    │  │ Agent   │  ...   │
-│  │ Vector  │  │ Vector  │  │ Vector  │  │ Vector  │        │
-│  │ Dao     │  │ Dao     │  │ Dao     │  │ Dao     │        │
-│  └─────────┘  └─────────┘  └─────────┘  └─────────┘        │
-└──────────────────────────┬──────────────────────────────────┘
-                           │
-┌──────────────────────────▼──────────────────────────────────┐
-│                  技术层（pkg/storage）                        │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │              VectorStore Trait（统一接口）              │  │
-│  │  • init_collection()  • upsert()  • search()          │  │
-│  │  • get_content_hash()  • delete()                     │  │
-│  └──────────────────────────────────────────────────────┘  │
-│           │                    │                            │
-│  ┌────────▼───────┐   ┌────────▼───────┐                   │
-│  │ InMemoryStore  │   │   HnswStore    │  ← 可插拔切换      │
-│  │ （已实现 V1）   │   │ （优化 V2）    │                   │
-│  │ 线性搜索        │   │ HNSW 近似搜索   │                   │
-│  │ 余弦距离        │   │ + FastEmbed    │                   │
-│  └─────────────────┘   └─────────────────┘                   │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                        业务层（DAO/DAL）                              │
+│  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐          │
+│  │ SkillDao       │  │ SkillVectorDao │  │ MemoryVector   │  ...    │
+│  │ (SQLite 基础)   │  │  (业务向量)     │  │ Dao            │         │
+│  └────────────────┘  └────────────────┘  └────────────────┘          │
+└──────────────────────────────────┬───────────────────────────────────┘
+                                   │
+┌──────────────────────────────────▼───────────────────────────────────┐
+│                      门面层（Storage 统一入口）                        │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │  Storage Facade                                              │  │
+│  │  • new(base_path, db_config)     ←  Config 完全解耦          │  │
+│  │  • with_sqlite_vss(...)          ←  不同后端独立构造器       │  │
+│  │  • with_sqlite_pool()            ←  测试专用隔离             │  │
+│  │  • sqlite() / vector()           ←  统一访问入口             │  │
+│  └────────────────────────────────────────────────────────────────┘  │
+│                                   │                                    │
+│  ┌────────────────────────────────┼────────────────────────────────┐  │
+│  │  VectorStore Trait（统一接口）  │                                │  │
+│  │  • init_collection()            • upsert(VectorIndexParams)    │  │
+│  │  • search()                     • delete()                     │  │
+│  │  • get_content_hash()                                          │  │
+│  └────────────────────────────────┼────────────────────────────────┘  │
+│                                   │                                    │
+│          ┌────────────────────────┼────────────────────────┐           │
+│          │                        │                        │           │
+│  ┌───────▼────────┐      ┌────────▼────────┐     ┌────────▼────────┐  │
+│  │ SqliteVssStore │      │ InMemoryVector   │     │ HnswStore      │  │
+│  │ (SQLite 扩展)   │      │ Store (V1 ✅)    │     │ (V2 优化)      │  │
+│  │ 需要系统依赖    │      │ 纯 Rust 零依赖    │     │ HNSW 近似搜索   │  │
+│  └────────────────┘      │ 线性搜索 + 磁盘    │     │ + FastEmbed    │  │
+│                          │ 持久化            │     │                │  │
+│                          └───────────────────┘     └─────────────────┘  │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
-### V1 已实现（当前版本）
-- **✅ 纯 Rust 线性搜索**：完整的向量存储 + 余弦相似度计算
-- **✅ Bincode 持久化**：懒加载模式，自动保存到磁盘
-- **✅ 分层解耦**：严格遵循 DAO/DAL 分层，无跨层耦合
-- **✅ 向后兼容**：SkillDal 所有调用点保持不变
+### V1.2 当前已实现（最新版本）
+- ✅ **纯 Rust InMemoryVectorStore**：完整的向量存储 + 余弦相似度计算
+- ✅ **Bincode 持久化**：懒加载模式，自动保存到 `{base_data_path}/vectors/`
+- ✅ **多种向量存储后端**：统一 `VectorStore` Trait，支持可插拔切换
+- ✅ **Storage 与 Config 解耦**：`Storage::new()` 接收 `base_data_path` + `DatabaseConfig`
+- ✅ **分层解耦**：严格遵循 DAO/DAL 分层，无跨层耦合
+- ✅ **向后兼容**：SkillDal 所有调用点保持不变
 
 ### V2 优化方案（HNSW + FastEmbed）
-- **🔄 HNSW 近似搜索**：高性能向量索引，支持百万级数据
-- **🔄 FastEmbed 本地向量化**：零 API 成本，不需要调用远程 LLM
-- **🔄 Feature Flag 切换**：V1/V2 可无缝切换，上层零改动
+- 🔄 **HnswStore**：高性能向量索引，支持百万级数据
+- 🔄 **FastEmbed 本地向量化**：零 API 成本，不需要调用远程 LLM
+- 🔄 **Feature Flag 切换**：各后端可无缝切换，上层零改动
+
+---
+
+## 🔌 多种向量存储后端支持方案
+
+### 核心设计原则
+
+1. **统一抽象 Trait**：所有后端实现同一个 `VectorStore` Trait
+2. **构造器分离**：不同后端使用不同的构造器方法，不污染主接口
+3. **路径统一管理**：所有向量数据存储在 `{base_data_path}/vectors/` 目录下
+4. **零侵入切换**：切换后端只需要改初始化代码，业务层 DAO/DAL 零改动
+
+### 支持的后端列表
+
+| 后端实现 | 状态 | 依赖 | 适用场景 | 性能 |
+|---------|------|------|---------|------|
+| `InMemoryVectorStore` | ✅ V1 默认 | 纯 Rust 零依赖 | 开发/测试/中小规模（<10w） | 线性搜索 O(n) |
+| `SqliteVssStore` | ✅ 可选 | SQLite VSS 扩展（系统依赖） | 已有 SQLite VSS 环境 | Faiss 加速 |
+| `HnswStore` | 🔄 待实现 | `hnsw` crate + `fastembed` | 生产环境（>10w） | 近似搜索 O(log n) |
+
+### 后端切换方式
+
+#### 方式 1：代码级别切换（推荐）
+
+```rust
+// 默认：InMemoryVectorStore（零依赖）
+let storage = Storage::new(base_data_path, db_config).await?;
+
+// 切换到 SQLite VSS（需要系统依赖）
+let storage = Storage::with_sqlite_vss(base_data_path, db_config).await?;
+
+// 未来：切换到 HNSW
+let storage = Storage::with_hnsw(base_data_path, db_config).await?;
+```
+
+#### 方式 2：Feature Flag 编译期切换
+
+```rust
+// src/pkg/storage/mod.rs
+let vector: Arc<dyn VectorStore> = {
+    #[cfg(feature = "sqlite-vss")]
+    { Arc::new(SqliteVssStore::new(...).await?) }
+    
+    #[cfg(feature = "hnsw")]
+    { Arc::new(HnswStore::new(...).await?) }
+    
+    #[cfg(not(any(feature = "sqlite-vss", feature = "hnsw")))]
+    { Arc::new(InMemoryVectorStore::with_path(&vectors_dir)?) }
+};
+```
+
+### Storage 与 Config 解耦设计
+
+#### 设计目标
+
+- ✅ **依赖方向正确**：`main → Config → Storage`，Storage 不再反向依赖全局 Config
+- ✅ **开闭原则**：新增数据库配置只需在 `DatabaseConfig` 加字段，`Storage::new()` 签名不变
+- ✅ **可测试性**：Storage 可独立初始化，不依赖全局配置环境
+
+#### 核心 API
+
+```rust
+// common/src/config.rs
+pub struct DatabaseConfig {
+    pub db_file_name: String,           // SQLite 主数据库文件名
+    pub vector_db_file_name: String,    // 向量数据库文件名（SQLite VSS 专用）
+}
+
+// src/pkg/storage/mod.rs
+impl Storage {
+    /// ✅ 标准构造器：InMemoryVectorStore（零依赖，推荐）
+    pub async fn new(
+        base_data_path: &Path, 
+        db_config: &DatabaseConfig
+    ) -> Result<Self>;
+    
+    /// ✅ SQLite VSS 构造器：需要系统依赖
+    pub async fn with_sqlite_vss(
+        base_data_path: &Path, 
+        db_config: &DatabaseConfig
+    ) -> Result<Self>;
+    
+    /// ✅ 测试专用：内存 SQLite + 临时目录向量存储
+    pub fn with_sqlite_pool(sqlite: SqlitePool) -> Self;
+}
+```
+
+#### 初始化流程
+
+```rust
+// src/pkg/mod.rs - 初始化入口
+pub async fn init_all(config: &AppConfig) {
+    // Storage 初始化：从 Config 中取出参数传入
+    storage::init(
+        config.base_data_path().as_path(), 
+        &config.database
+    ).await;
+    
+    // 其他模块初始化...
+}
+```
 
 ---
 
@@ -807,19 +921,21 @@ DAL 层（业务聚合）
 
 ```rust
 #[async_trait]
-pub trait VectorStore: Send + Sync {
-    /// 初始化向量集合
-    async fn init_collection(&self, collection: &str) -> Result<()>;
+pub trait VectorStore: Send + Sync + std::fmt::Debug {
+    /// 初始化向量集合（dimensions 是向量维度）
+    async fn init_collection(&self, collection: &str, dimensions: i32) -> Result<()>;
     
-    /// 插入/更新向量
+    /// ✅ 插入/更新向量（使用 VectorIndexParams 统一参数）
+    /// 
+    /// # 参数
+    /// - collection: 集合名称（如 skills, memories）
+    /// - id: 业务表 ID（如 skill_id, memory_id）
+    /// - params: 向量索引参数（向量、哈希、模型信息、过期时间）
     async fn upsert(
         &self,
         collection: &str,
         id: &str,
-        vector: &[f32],
-        content_hash: &str,
-        embedding_model: &str,
-        expire_at: Option<i64>,
+        params: &VectorIndexParams,
     ) -> Result<()>;
     
     /// 向量搜索
@@ -833,14 +949,17 @@ pub trait VectorStore: Send + Sync {
     /// 删除向量
     async fn delete(&self, collection: &str, id: &str) -> Result<()>;
     
-    /// 获取向量内容哈希
+    /// 获取向量内容哈希（用于增量索引判断）
     async fn get_content_hash(&self, collection: &str, id: &str) -> Result<Option<String>>;
 }
 
-// 现有 SqliteVssStore 实现 Trait
+// 现有 SqliteVssStore 实现 Trait（需要系统依赖）
 pub struct SqliteVssStore { ... }
 
-// 新增 HnswStore 也实现同一个 Trait
+// InMemoryVectorStore 纯 Rust 实现（V1 ✅ 默认，零依赖）
+pub struct InMemoryVectorStore { ... }
+
+// 新增 HnswStore 也实现同一个 Trait（V2 🔄）
 pub struct HnswStore { ... }
 ```
 
@@ -1076,34 +1195,48 @@ impl Storage {
 ### 📂 数据目录结构
 
 ```
-ai_orz_data/
-├── sqlite.db                    ← 主数据库（业务数据）
-└── vector_indexes/              ← 独立向量索引目录
-    ├── skills.hnsw              ← Skill 集合 HNSW 索引
-    ├── memories.hnsw           ← Memory 集合
-    ├── tasks.hnsw             ← Task 集合
-    └── agents.hnsw            ← Agent 集合
+{base_data_path}/                 ← 可配置基础目录
+├── {db_file_name}                ← 主数据库（业务数据，来自 DatabaseConfig）
+├── {vector_db_file_name}         ← SQLite VSS 向量数据库（可选，来自 DatabaseConfig）
+└── vectors/                      ← 向量索引目录（统一路径）
+    ├── skills.v1.bin             ← Skill 集合 InMemory 索引
+    ├── memories.v1.bin          ← Memory 集合 InMemory 索引
+    ├── tasks.v1.bin            ← Task 集合 InMemory 索引
+    └── agents.v1.bin          ← Agent 集合 InMemory 索引
 ```
 
 ---
 
 ### 🔬 三种实现对比
 
-| 维度 | SqliteVssStore | InMemoryVectorStore (V1 ✅) | HnswStore (V2 🔄) |
-|------|---------------|----------------------------|-------------------|
+| 维度 | SqliteVssStore | InMemoryVectorStore (V1 ✅ 默认) | HnswStore (V2 🔄) |
+|------|---------------|---------------------------------|-------------------|
 | **跨平台** | ❌ macOS 编译困难 | ✅ 纯 Rust 全平台 | ✅ 纯 Rust 全平台 |
 | **向量化** | ❌ 需要远程 API | ❌ 需要远程 API | ✅ FastEmbed 本地生成 |
 | **搜索性能** | ✅ 优化 | ⚠️ O(n) 线性扫描 | ✅ HNSW O(log n) |
-| **大数据量** | ✅ 支持百万级 | ⚠️ 千级以内较好 | ✅ 支持百万级 |
+| **大数据量** | ✅ 支持百万级 | ⚠️ 10w 以内较好 | ✅ 支持百万级 |
 | **内存占用** | ✅ SQLite 管理 | ⚠️ 全部加载到内存 | ✅ 懒加载按需加载 |
 | **依赖管理** | ❌ 需要系统扩展 | ✅ Cargo 一键安装 | ✅ Cargo 一键安装 |
 | **持久化** | ✅ SQLite 事务 | ✅ Bincode 二进制 | ✅ Bincode 二进制 |
+| **路径管理** | ❌ 单独配置 db 文件 | ✅ 统一 {base_data_path}/vectors/ | ✅ 统一 {base_data_path}/vectors/ |
+| **Config 依赖** | ✅ 解耦（参数传入） | ✅ 解耦（参数传入） | ✅ 解耦（参数传入） |
 | **API 兼容** | ✅ Trait 一致 | ✅ Trait 完全一致 | ✅ Trait 完全一致 |
-| **实现状态** | ❌ 废弃 | ✅ 已完成，可用 | 🔄 待实现 |
+| **实现状态** | ✅ 已实现（可选） | ✅ 已完成，默认启用 | 🔄 待实现 |
 
 ---
 
 ### 📋 实施清单
+
+#### V1.2 已完成 ✅ （最新版本）
+
+| 阶段 | 文件 | 核心内容 | 状态 |
+|------|------|---------|------|
+| V1.2-1 | `src/pkg/storage/mod.rs` | Storage::new() 接收 base_data_path + DatabaseConfig 参数 | ✅ 已完成 |
+| V1.2-2 | `src/pkg/storage/mod.rs` | Storage::with_sqlite_vss() 独立构造器，参数与 new() 对齐 | ✅ 已完成 |
+| V1.2-3 | `src/pkg/mod.rs` | 初始化时从 Config 取出参数传入 Storage，解耦反向依赖 | ✅ 已完成 |
+| V1.2-4 | `src/pkg/storage/mem_vector.rs` | InMemoryVectorStore::with_path() 统一使用 {base_data_path}/vectors/ | ✅ 已完成 |
+| V1.2-5 | `src/pkg/storage/vector.rs` | VectorStore::upsert() 统一使用 VectorIndexParams 参数 | ✅ 已完成 |
+| V1.2-6 | 单元测试 | 全部 273 个测试通过，保证重构零风险 | ✅ 已完成 |
 
 #### V1 已完成 ✅
 
@@ -1122,8 +1255,8 @@ ai_orz_data/
 | 阶段 | 文件 | 核心内容 | 优先级 |
 |------|------|---------|--------|
 | V2-1 | `src/pkg/embedding/mod.rs` | EmbeddingProvider Trait + FastEmbed 实现 | 🔴 高 |
-| V2-2 | `src/pkg/storage/hnsw_store.rs` | HNSW 高性能向量索引 | 🔴 高 |
-| V2-3 | `src/pkg/storage/mod.rs` | 集成 EmbeddingProvider + Feature Flag 切换 | 🟡 中 |
+| V2-2 | `src/pkg/storage/hnsw.rs` | HNSW 高性能向量索引 | 🔴 高 |
+| V2-3 | `src/pkg/storage/mod.rs` | Storage::with_hnsw() 构造器 + Feature Flag 切换 | 🟡 中 |
 | V2-4 | `src/service/dal/skill.rs` | 自动向量化支持（DAL 内部调用 FastEmbed） | 🟡 中 |
 | V2-5 | `Cargo.toml` | 添加 fastembed + hnsw 依赖 | 🟡 中 |
 | V2-6 | 单元测试 | FastEmbed 集成测试 + HNSW 性能基准 | 🟢 低 |
@@ -1135,12 +1268,15 @@ ai_orz_data/
 | 优势 | 说明 |
 |------|------|
 | 🎯 **严格分层** | pkg/storage 纯技术层，VectorDao 业务逻辑层，职责明确 |
-| 🔌 **可插拔设计** | InMemory ↔ HNSW / 本地 ↔ 远程 API 自由切换，上层零改动 |
-| 🦀 **纯 Rust 实现** | 不需要任何系统级依赖，跨平台完美支持 |
-| 🧠 **本地向量化** | FastEmbed 集成，零 API 成本，不依赖外部服务 |
-| 🏗️ **架构一致** | V1/V2 完全兼容同一个 VectorStore Trait |
+| 🔌 **可插拔设计** | InMemory ↔ SqliteVss ↔ HNSW 自由切换，上层 DAO/DAL 零改动 |
+| 🦀 **纯 Rust 实现** | 默认后端零系统依赖，跨平台完美支持 |
+| 🔗 **Config 解耦** | Storage 不再反向依赖全局 Config，所有配置通过参数传入 |
+| 📁 **路径统一** | 所有向量数据统一存储在 {base_data_path}/vectors/ 目录下 |
+| 🧠 **本地向量化** | FastEmbed 集成（V2），零 API 成本，不依赖外部服务 |
+| 🏗️ **架构一致** | V1/V2/V3 完全兼容同一个 VectorStore Trait |
 | 📦 **单一职责** | Storage 管索引和向量化，VectorDao 只负责业务逻辑 |
 | ✅ **向后兼容** | SkillDal 完全不用改，所有调用点保持不变 |
+| 🔒 **测试隔离** | with_sqlite_pool() 测试专用构造器，使用临时目录隔离 |
 
 ---
 
