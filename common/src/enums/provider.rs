@@ -23,6 +23,8 @@ pub enum ProviderType {
     Ollama = 4,
     /// Custom OpenAI compatible
     Custom = 5,
+    /// FastEmbed local embedding (纯本地向量化，无外部依赖)
+    FastEmbed = 6,
 }
 
 /// Model capability type - 区分模型是用于 Agent 思考还是 Embedding 向量化
@@ -47,6 +49,7 @@ impl From<i32> for ProviderType {
             3 => ProviderType::Doubao,
             4 => ProviderType::Ollama,
             5 => ProviderType::Custom,
+            6 => ProviderType::FastEmbed,
             _ => ProviderType::default(),
         }
     }

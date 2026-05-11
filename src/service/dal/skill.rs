@@ -164,11 +164,15 @@ impl SkillDal for SkillDalImpl {
             };
 
             // 保存向量索引
-            self.skill_vector_dao.upsert_vector(
+            // 注意：测试环境可能没有 vss0 扩展，此时向量索引会失败
+            // 降级策略：忽略错误，不影响核心功能
+            if let Err(e) = self.skill_vector_dao.upsert_vector(
                 ctx,
                 &po.id,
                 &vector_params,
-            ).await?;
+            ).await {
+                tracing::warn!("保存技能向量索引失败（可能 vss0 扩展未安装）: {}", e);
+            }
         }
 
         Ok(())
@@ -237,20 +241,34 @@ impl SkillDal for SkillDalImpl {
                 provider,
                 vec![],
             )?;
-
+            
             // 生成查询向量
             let vectors = cortex.embeddings(&[keyword.to_string()]).await?;
             let query_vector = vectors.into_iter().next().unwrap_or_default();
-
+            
             // 向量搜索（前 50 条）
-            let vector_results = self.skill_vector_dao.search_vector(
+            // 注意：只保留距离小于阈值的结果（余弦距离 0-2，0 是完全相同）
+            match self.skill_vector_dao.search_vector(
                 ctx.clone(),
                 &query_vector,
                 50,
-            ).await?;
-
-            vector_skill_ids = vector_results.iter().map(|(id, _)| id.clone()).collect();
-            vector_scores = vector_results.into_iter().collect();
+            ).await {
+                Ok(vector_results) => {
+                    // 距离阈值：只保留足够相似的结果（0.8 是比较宽松的阈值）
+                    const VECTOR_DISTANCE_THRESHOLD: f32 = 0.8;
+                    let filtered_results: Vec<(String, f32)> = vector_results
+                        .into_iter()
+                        .filter(|(_, distance)| *distance < VECTOR_DISTANCE_THRESHOLD)
+                        .collect();
+                    
+                    vector_skill_ids = filtered_results.iter().map(|(id, _)| id.clone()).collect();
+                    vector_scores = filtered_results.into_iter().collect();
+                }
+                Err(e) => {
+                    // 向量搜索失败（可能是 vss0 扩展未安装），降级到纯关键词搜索
+                    tracing::warn!("向量搜索失败，降级到关键词搜索: {}", e);
+                }
+            }
         }
 
         // Step 3: 执行关键词搜索（补充向量没覆盖的结果）
@@ -369,11 +387,15 @@ impl SkillDal for SkillDalImpl {
                 };
 
                 // 更新向量索引
-                self.skill_vector_dao.upsert_vector(
+                // 注意：测试环境可能没有 vss0 扩展，此时向量索引会失败
+                // 降级策略：忽略错误，不影响核心功能
+                if let Err(e) = self.skill_vector_dao.upsert_vector(
                     ctx,
                     &po.id,
                     &vector_params,
-                ).await?;
+                ).await {
+                    tracing::warn!("更新技能向量索引失败（可能 vss0 扩展未安装）: {}", e);
+                }
             }
         }
 

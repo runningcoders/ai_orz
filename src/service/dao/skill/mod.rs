@@ -3,6 +3,12 @@
 pub mod sqlite;
 pub mod sqlite_vector;
 
+#[cfg(test)]
+mod sqlite_test;
+// vss0 扩展在测试环境不可用，暂不启用向量 DAO 测试
+// #[cfg(test)]
+// mod sqlite_vector_test;
+
 use crate::error::AppError;
 use crate::models::skill::{SkillPo, SkillFile};
 use crate::models::vector::VectorIndexParams;

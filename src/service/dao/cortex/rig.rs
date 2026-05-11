@@ -59,6 +59,9 @@ impl super::CortexDao for RigCortexDao {
                 ProviderType::Custom => Box::new(
                     self::openai_compatible::OpenAiCompatibleCortex::new(provider.id.clone(), api_key, model, provider.base_url.clone().unwrap_or_default(), None, rig_tools)?
                 ),
+                ProviderType::FastEmbed => {
+                    return Err(anyhow::anyhow!("FastEmbed 仅支持 Embedding 能力，不支持 Agent 能力").into());
+                }
             },
             // 🔷 Embedding 类型 - 只支持向量化，不需要构建完整的 Agent
             // 对于 Embedding 模型，直接复用 OpenAI 兼容实现（大多数 Embedding API 都是 OpenAI 格式）
@@ -72,6 +75,14 @@ impl super::CortexDao for RigCortexDao {
                         provider.base_url.clone().unwrap_or_default(), 
                         None, 
                         Vec::new()
+                    )?
+                ),
+                ProviderType::FastEmbed => Box::new(
+                    self::fastembed::FastEmbedCortex::new(
+                        provider.id.as_str(),
+                        model.as_str(),
+                        provider.base_url.as_deref().unwrap_or(""),
+                        provider.api_key.as_str(),
                     )?
                 ),
             },
@@ -147,3 +158,4 @@ impl RigCortexDao {
 pub mod openai;
 pub mod openai_compatible;
 pub mod ollama;
+pub mod fastembed;

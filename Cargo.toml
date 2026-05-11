@@ -37,6 +37,15 @@ common = { path = "./common", features = ["sqlx"] }
 once_cell = "1.21.4"
 thiserror = "1.0"
 derive_builder = "0.20"
+bincode = "2.0"
+tempfile = "3"
 
-[dev-dependencies]
-tempfile = "3.10"
+# V2 向量搜索优化
+fastembed = "5.13"  # 纯本地向量化
+# lancedb = "0.27.2"   # 嵌入式向量数据库（lance-index 4.0.0 tempfile keep() API bug，等 rsproxy 同步 lance-index 4.0.1 后再试）
+
+[features]
+# V2 优化特性（TODO: 找到不依赖 yanked ort 的实现）
+# hnsw = ["dep:hnsw"]
+# fastembed = ["dep:fastembed"]
+# full-vector = ["hnsw", "fastembed"]

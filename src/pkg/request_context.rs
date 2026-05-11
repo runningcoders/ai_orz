@@ -3,7 +3,8 @@
 use axum::http;
 use common::constants::http_header;
 use sqlx::sqlite::SqlitePool;
-use crate::pkg::storage::{self, Storage, SqliteVssStore};
+use std::sync::Arc;
+use crate::pkg::storage::{self, Storage, VectorStore};
 
 /// 请求上下文
 #[derive(Debug, Clone)]
@@ -169,8 +170,8 @@ impl RequestContext {
         self.storage.sqlite_pool()
     }
     
-    /// 获取向量存储
-    pub fn vector_store(&self) -> SqliteVssStore {
+    /// 获取向量存储（统一 Trait 接口）
+    pub fn vector_store(&self) -> Arc<dyn VectorStore> {
         self.storage.vector()
     }
     

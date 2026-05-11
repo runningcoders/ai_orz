@@ -60,6 +60,18 @@ impl From<MigrateError> for AppError {
     }
 }
 
+impl From<bincode::error::EncodeError> for AppError {
+    fn from(err: bincode::error::EncodeError) -> Self {
+        AppError::Internal(format!("向量编码错误: {}", err))
+    }
+}
+
+impl From<bincode::error::DecodeError> for AppError {
+    fn from(err: bincode::error::DecodeError) -> Self {
+        AppError::Internal(format!("向量解码错误: {}", err))
+    }
+}
+
 impl From<std::io::Error> for AppError {
     fn from(err: std::io::Error) -> Self {
         AppError::Io(err)

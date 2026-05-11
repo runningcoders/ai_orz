@@ -1,14 +1,27 @@
 //! SQLite 存储模块
 //!
 //! 基于 sqlx 连接池管理，不再使用全局单例，支持依赖注入和测试隔离
+//!
+//! 向量存储后端：
+//! - SqliteVssStore: 基于 SQLite VSS 扩展（需要系统依赖）
+//! - InMemoryVectorStore: 纯 Rust 内存实现（推荐，零系统依赖）
+//! - HnswStore: HNSW 高性能近似最近邻索引（V2 优化）
 
 use crate::error::Result;
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
 use std::sync::Arc;
 
-/// 向量存储（SQLite VSS）
-mod vector;
-pub use vector::SqliteVssStore;
+/// 向量存储抽象 Trait
+pub mod vector;
+pub use vector::{VectorStore, SqliteVssStore};
+
+/// 纯 Rust 内存向量存储
+mod mem_vector;
+pub use mem_vector::InMemoryVectorStore;
+
+/// HNSW 高性能近似最近邻索引（V2 优化）
+mod hnsw;
+pub use hnsw::HnswStore;
 
 /// 统一存储门面（可克隆，内部 Arc，零成本克隆）
 #[derive(Clone, Debug)]
@@ -19,21 +32,26 @@ pub struct Storage {
 #[derive(Debug)]
 struct StorageInner {
     sqlite: SqlitePool,
-    vector: SqliteVssStore,
+    vector: Arc<dyn VectorStore>,
 }
 
 impl Storage {
     /// 从已有的 SQLite pool 创建 Storage（测试专用，保证隔离性）
+    /// 使用纯 Rust 内存向量存储
     pub fn with_sqlite_pool(sqlite: SqlitePool) -> Self {
-        // 测试场景下向量存储复用同一个 pool
-        let vector = SqliteVssStore::from_pool(sqlite.clone());
+        // 测试场景使用内存向量存储
+        let vector = Arc::new(
+            InMemoryVectorStore::new(std::env::temp_dir().join("ai_orz_test_vectors"))
+                .expect("创建测试向量存储失败")
+        );
         Self {
             inner: Arc::new(StorageInner { sqlite, vector }),
         }
     }
     
     /// 创建存储实例，初始化连接池，自动运行 migrations
-    pub async fn new(db_path: &str, vector_db_path: &str) -> Result<Self> {
+    /// 默认使用纯 Rust 内存向量存储（零系统依赖）
+    pub async fn new(db_path: &str, vector_base_path: &str) -> Result<Self> {
         // SQLite 连接 URL 格式：sqlite:path 不需要双斜杠
         // 双斜杠会导致相对路径解析错误，把当前目录当成域名解析了
         let connection_url = if db_path == ":memory:" {
@@ -50,8 +68,35 @@ impl Storage {
         // 运行所有 migrations，自动建表/升级
         sqlx::migrate!("./migrations").run(&sqlite).await?;
 
-        // 初始化向量存储
-        let vector = SqliteVssStore::new(vector_db_path).await?;
+        // 初始化向量存储（默认使用纯 Rust 内存实现）
+        let vector: Arc<dyn VectorStore> = Arc::new(
+            InMemoryVectorStore::new(vector_base_path)?
+        );
+
+        Ok(Self {
+            inner: Arc::new(StorageInner { sqlite, vector }),
+        })
+    }
+    
+    /// 创建使用 SQLite VSS 后端的存储（需要系统依赖）
+    pub async fn with_sqlite_vss(db_path: &str, vector_db_path: &str) -> Result<Self> {
+        let connection_url = if db_path == ":memory:" {
+            "sqlite::memory:".to_string()
+        } else {
+            format!("sqlite:{}", db_path)
+        };
+
+        let sqlite = SqlitePoolOptions::new()
+            .max_connections(5)
+            .connect(&connection_url)
+            .await?;
+
+        sqlx::migrate!("./migrations").run(&sqlite).await?;
+
+        // 使用 SQLite VSS 后端
+        let vector: Arc<dyn VectorStore> = Arc::new(
+            SqliteVssStore::new(vector_db_path).await?
+        );
 
         Ok(Self {
             inner: Arc::new(StorageInner { sqlite, vector }),
@@ -74,8 +119,8 @@ impl Storage {
         self.sqlite_pool_owned()
     }
 
-    /// 获取向量存储
-    pub fn vector(&self) -> SqliteVssStore {
+    /// 获取向量存储（统一 Trait 接口）
+    pub fn vector(&self) -> Arc<dyn VectorStore> {
         self.inner.vector.clone()
     }
 }

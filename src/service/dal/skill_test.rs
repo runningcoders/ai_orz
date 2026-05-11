@@ -1,27 +1,192 @@
 //! Skill DAL 单元测试
 
 use crate::error::AppError;
-use crate::models::skill::{SkillPo, SkillFile};
+use crate::models::skill::{SkillPo, SkillFile, Skill};
+use crate::models::brain::CortexTrait;
+use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::request_context::RequestContext;
 use crate::service::dao::skill;
-use crate::service::dao::cortex;
-use crate::service::dao::model_provider;
+use crate::service::dao::cortex::CortexDao;
+use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dal::skill::{SkillDal, SkillDalImpl, new};
+use ::rig::tool::ToolDyn;
+use anyhow::Result;
 use common::enums::skill::SkillAuthorType;
-use common::enums::SkillStatus;
+use common::enums::skill::SkillStatus;
+use dyn_clone::DynClone;
 use sqlx::SqlitePool;
 use std::sync::Arc;
 
-/// 初始化测试依赖（config + skill dao + skill dal）
-fn init_test() -> Arc<dyn SkillDal> {
+// ========== Mock Cortex Implementation ==========
+
+/// Mock Cortex 实现，用于测试（不依赖真实的 LLM）
+#[derive(Clone, Debug)]
+struct MockCortex {
+    model_name: String,
+}
+
+impl MockCortex {
+    fn new() -> Self {
+        Self {
+            model_name: "mock-embedding-v1".to_string(),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl CortexTrait for MockCortex {
+    fn capability(&self) -> common::enums::ModelCapability {
+        common::enums::ModelCapability::Embedding
+    }
+
+    fn model_provider_id(&self) -> &str {
+        "mock-provider"
+    }
+
+    fn model_name(&self) -> &str {
+        &self.model_name
+    }
+
+    async fn prompt(&self, _prompt: &str) -> Result<String> {
+        Ok("Mock response".to_string())
+    }
+
+    async fn embeddings(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
+        // Mock 向量生成：确保不同文本的向量有明显差异
+        // 使用简单的确定性算法，但保证区分度足够
+        let mut result = Vec::with_capacity(texts.len());
+        for text in texts {
+            let bytes = text.as_bytes();
+            
+            // 如果是技能内容（长文本），返回一个固定向量
+            // 如果是搜索关键词，根据关键词返回不同的向量
+            let vector = if text.len() > 20 {
+                // 技能内容向量
+                vec![0.1, 0.2, 0.3]
+            } else if text.contains("debug") {
+                // debug 相关的查询，返回相似的向量
+                vec![0.15, 0.25, 0.35]
+            } else {
+                // 不相关的查询，返回完全相反的向量（距离接近 1.0）
+                vec![-0.9, -0.8, -0.7]
+            };
+            
+            result.push(vector);
+        }
+        Ok(result)
+    }
+
+    fn support_tools(&self) -> bool {
+        false
+    }
+}
+
+/// Mock CortexDao，返回 MockCortex
+#[derive(Clone, Debug)]
+struct MockCortexDao;
+
+#[async_trait::async_trait]
+impl CortexDao for MockCortexDao {
+    fn create_cortex_trait(
+        &self,
+        _ctx: RequestContext,
+        _provider: &ModelProviderPo,
+        _rig_tools: Vec<Box<dyn ToolDyn>>,
+    ) -> Result<Box<dyn CortexTrait + Send + Sync>> {
+        Ok(Box::new(MockCortex::new()))
+    }
+
+    async fn prompt(&self, _ctx: RequestContext, _cortex: &dyn CortexTrait, _prompt: &str) -> Result<String> {
+        Ok("Mock response".to_string())
+    }
+}
+
+/// Mock ModelProviderDao，返回测试用的 ModelProvider
+#[derive(Clone, Debug)]
+struct MockModelProviderDao;
+
+#[async_trait::async_trait]
+impl ModelProviderDao for MockModelProviderDao {
+    async fn insert(&self, _ctx: RequestContext, _provider: &ModelProviderPo) -> Result<(), AppError> {
+        Ok(())
+    }
+
+    async fn find_by_id(&self, _ctx: RequestContext, _id: &str) -> Result<Option<ModelProviderPo>, AppError> {
+        Ok(None)
+    }
+
+    async fn query(&self, _ctx: RequestContext, _query: crate::service::dao::model_provider::ModelProviderQuery) -> Result<Vec<ModelProviderPo>, AppError> {
+        // 返回一个测试用的 provider（支持 Embedding）
+        Ok(vec![ModelProviderPo {
+            id: "mock-provider".to_string(),
+            name: "Mock Provider".to_string(),
+            provider_type: common::enums::ProviderType::Ollama,
+            model_name: "mock-embedding".to_string(),
+            capability: common::enums::ModelCapability::Embedding,
+            api_key: "".to_string(),
+            base_url: Some("http://localhost:11434".to_string()),
+            description: None,
+            config: "{}".to_string(),
+            status: common::enums::ModelProviderStatus::Normal,
+            created_by: "system".to_string(),
+            modified_by: "system".to_string(),
+            created_at: chrono::Utc::now().timestamp(),
+            updated_at: chrono::Utc::now().timestamp(),
+        }])
+    }
+
+    async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<ModelProviderPo>, AppError> {
+        Ok(vec![])
+    }
+
+    async fn update(&self, _ctx: RequestContext, _provider: &ModelProviderPo) -> Result<(), AppError> {
+        Ok(())
+    }
+
+    async fn delete(&self, _ctx: RequestContext, _provider: &ModelProviderPo) -> Result<(), AppError> {
+        Ok(())
+    }
+}
+
+/// 创建测试 RequestContext（使用测试 pool 注入）
+fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
+    RequestContext::new_simple(user_id, pool)
+}
+
+/// 初始化测试依赖（使用 Mock Dao 避免依赖真实 LLM）
+async fn init_test(pool: SqlitePool) -> Arc<dyn SkillDal> {
     // 必须先初始化 config（文件操作需要 base_data_path）
     let _ = crate::config::init();
+    
+    // 1. 创建向量元数据表（和生产环境 schema 一致）
+    let _ = sqlx::query(
+        "CREATE TABLE IF NOT EXISTS vector_metadata (
+            collection TEXT NOT NULL,
+            source_id TEXT NOT NULL,
+            content_hash TEXT,
+            model TEXT,
+            dimensions INTEGER,
+            indexed_at INTEGER NOT NULL DEFAULT (unixepoch()),
+            expire_at INTEGER,
+            PRIMARY KEY (collection, source_id)
+        );"
+    ).execute(&pool).await;
+    
+    // 2. 创建 vss_skills 表（测试环境无 vss0 扩展，用普通表模拟 vss0 虚拟表 schema）
+    // vss0 虚拟表只有 rowid, embedding 两列，查询时会降级到内存相似度计算
+    let _ = sqlx::query(
+        "CREATE TABLE IF NOT EXISTS vss_skills (
+            rowid INTEGER PRIMARY KEY AUTOINCREMENT,
+            embedding TEXT NOT NULL
+        );"
+    ).execute(&pool).await;
+    
     // 直接创建 DAL 实例（不用单例）
     new(
         skill::new_skill_dao(),
         skill::new_skill_vector_dao(),
-        crate::service::dao::cortex::dao(),
-        crate::service::dao::model_provider::dao(),
+        Arc::new(MockCortexDao),
+        Arc::new(MockModelProviderDao),
     )
 }
 
@@ -45,14 +210,14 @@ fn create_test_skill_po(name: &str) -> SkillPo {
 /// 测试创建技能后按 ID 查询（含文件组装）
 #[sqlx::test]
 async fn test_create_and_get_by_id(pool: SqlitePool) -> Result<(), AppError> {
-    let skill_dal = init_test();
-    let ctx = RequestContext::new_simple("test-user", pool);
-
+    let skill_dal = init_test(pool.clone()).await;
+    let ctx = new_ctx("test-user", pool);
+    
     // 创建技能 PO
     let mut po = create_test_skill_po("test-skill");
     let skill_id = po.id.clone();
-
-    // DAL 创建（自动创建空 skill.md）
+    
+    // DAL 创建（自动创建空 skill.md + 自动向量化）
     skill_dal.create(ctx.clone(), &po).await?;
 
     // ========== 测试: get_by_id 获取完整聚合实体 ==========
@@ -79,8 +244,8 @@ async fn test_create_and_get_by_id(pool: SqlitePool) -> Result<(), AppError> {
 /// 测试通用查询
 #[sqlx::test]
 async fn test_query_skills(pool: SqlitePool) -> Result<(), AppError> {
-    let skill_dal = init_test();
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let skill_dal = init_test(pool.clone()).await;
+    let ctx = new_ctx("test-user", pool);
 
     // 创建多个技能
     for i in 0..3 {
@@ -99,8 +264,8 @@ async fn test_query_skills(pool: SqlitePool) -> Result<(), AppError> {
 /// 测试按状态、分类、作者查询
 #[sqlx::test]
 async fn test_list_by_status(pool: SqlitePool) -> Result<(), AppError> {
-    let skill_dal = init_test();
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let skill_dal = init_test(pool.clone()).await;
+    let ctx = new_ctx("test-user", pool);
 
     // 创建不同状态的技能
     let id1 = uuid::Uuid::now_v7().to_string();
@@ -153,8 +318,8 @@ async fn test_list_by_status(pool: SqlitePool) -> Result<(), AppError> {
 /// 测试文件操作：读写主内容、列出文件、读写其他文件
 #[sqlx::test]
 async fn test_file_operations(pool: SqlitePool) -> Result<(), AppError> {
-    let skill_dal = init_test();
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let skill_dal = init_test(pool.clone()).await;
+    let ctx = new_ctx("test-user", pool);
 
     // 创建技能
     let skill_id = uuid::Uuid::now_v7().to_string();
@@ -206,8 +371,8 @@ async fn test_file_operations(pool: SqlitePool) -> Result<(), AppError> {
 /// 测试安装技能到 Agent（创建私有副本）
 #[sqlx::test]
 async fn test_install_to_agent(pool: SqlitePool) -> Result<(), AppError> {
-    let skill_dal = init_test();
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let skill_dal = init_test(pool.clone()).await;
+    let ctx = new_ctx("test-user", pool);
 
     // 创建一个 Published 的源技能（共享库技能）
     let source_id = uuid::Uuid::now_v7().to_string();
@@ -250,8 +415,8 @@ async fn test_install_to_agent(pool: SqlitePool) -> Result<(), AppError> {
 /// 测试删除技能（软删除 + 目录删除）
 #[sqlx::test]
 async fn test_delete_skill(pool: SqlitePool) -> Result<(), AppError> {
-    let skill_dal = init_test();
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let skill_dal = init_test(pool.clone()).await;
+    let ctx = new_ctx("test-user", pool);
 
     // 创建技能
     let skill_id = uuid::Uuid::now_v7().to_string();
@@ -286,8 +451,8 @@ async fn test_delete_skill(pool: SqlitePool) -> Result<(), AppError> {
 /// 测试搜索技能
 #[sqlx::test]
 async fn test_search_skill(pool: SqlitePool) -> Result<(), AppError> {
-    let skill_dal = init_test();
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let skill_dal = init_test(pool.clone()).await;
+    let ctx = new_ctx("test-user", pool);
 
     // 创建技能
     let skill_id = uuid::Uuid::now_v7().to_string();
@@ -324,8 +489,8 @@ async fn test_search_skill(pool: SqlitePool) -> Result<(), AppError> {
 /// 测试 get_po_by_id 只返回 PO 不读取文件（性能）
 #[sqlx::test]
 async fn test_get_po_only(pool: SqlitePool) -> Result<(), AppError> {
-    let skill_dal = init_test();
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let skill_dal = init_test(pool.clone()).await;
+    let ctx = new_ctx("test-user", pool);
 
     // 创建技能
     let skill_id = uuid::Uuid::now_v7().to_string();
