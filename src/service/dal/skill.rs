@@ -258,7 +258,8 @@ impl SkillDal for SkillDalImpl {
                     const VECTOR_DISTANCE_THRESHOLD: f32 = 0.8;
                     let filtered_results: Vec<(String, f32)> = vector_results
                         .into_iter()
-                        .filter(|(_, distance)| *distance < VECTOR_DISTANCE_THRESHOLD)
+                        .filter(|hit| hit.distance < VECTOR_DISTANCE_THRESHOLD)
+                        .map(|hit| (hit.row.id, hit.distance))
                         .collect();
                     
                     vector_skill_ids = filtered_results.iter().map(|(id, _)| id.clone()).collect();
@@ -364,7 +365,8 @@ impl SkillDal for SkillDalImpl {
             let new_hash = sha256::digest(&content);
             
             // 检查内容是否变化（如果没变就不需要重索引）
-            let old_hash = self.skill_vector_dao.get_content_hash(ctx.clone(), &po.id).await?;
+            let old_row = self.skill_vector_dao.get_vector_row(ctx.clone(), &po.id).await?;
+            let old_hash = old_row.map(|r| r.meta.content_hash);
             
             if old_hash.as_deref() != Some(&new_hash) {
                 // 创建 Cortex
@@ -451,6 +453,7 @@ impl SkillDal for SkillDalImpl {
         ctx: RequestContext,
         skill_id: &str,
     ) -> Result<Option<String>, AppError> {
-        Ok(self.skill_vector_dao.get_content_hash(ctx, skill_id).await?)
+        let row = self.skill_vector_dao.get_vector_row(ctx, skill_id).await?;
+        Ok(row.map(|r| r.meta.content_hash))
     }
 }

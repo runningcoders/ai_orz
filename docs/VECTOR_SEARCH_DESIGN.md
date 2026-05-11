@@ -1,7 +1,7 @@
 # 向量搜索系统设计文档
 
 > **最后更新**：2026-05-11
-> **当前版本**：V1.2 ✅ 已实现（多种向量存储后端 + Config 解耦）
+> **当前版本**：V1.3 ✅ 已实现（统一接口返回标准行结构体）
 > **对应代码**：Skill Dao / Skill Dal / Cortex Dao / pkg/storage / common/config
 
 ---
@@ -32,8 +32,8 @@
 │  ┌────────────────────────────────┼────────────────────────────────┐  │
 │  │  VectorStore Trait（统一接口）  │                                │  │
 │  │  • init_collection()            • upsert(VectorIndexParams)    │  │
-│  │  • search()                     • delete()                     │  │
-│  │  • get_content_hash()                                          │  │
+│  │  • search() → Vec<VectorSearchHit>  • delete()                 │  │
+│  │  • get() → Option<VectorRow>                                    │  │
 │  └────────────────────────────────┼────────────────────────────────┘  │
 │                                   │                                    │
 │          ┌────────────────────────┼────────────────────────┐           │
@@ -48,7 +48,10 @@
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-### V1.2 当前已实现（最新版本）
+### V1.3 当前已实现（最新版本）
+- ✅ **统一返回标准行结构体**：VectorStore trait 所有方法返回完整 `VectorRow`
+- ✅ **移除零散字段方法**：不再有 `get_content_hash` 等零散字段接口
+- ✅ **搜索结果标准化**：返回 `VectorSearchHit { row: VectorRow, distance: f32 }`
 - ✅ **纯 Rust InMemoryVectorStore**：完整的向量存储 + 余弦相似度计算
 - ✅ **Bincode 持久化**：懒加载模式，自动保存到 `{base_data_path}/vectors/`
 - ✅ **多种向量存储后端**：统一 `VectorStore` Trait，支持可插拔切换
@@ -471,11 +474,10 @@ impl SkillDao for SkillDaoSqliteImpl {
         ctx: RequestContext,
         skill_id: &str,
     ) -> Result<Option<String>, AppError> {
-        ctx.vector_store()
-            .get_content_hash("skills", skill_id)
-            .await
-            .map(Some)
-            .or_else(|_| Ok(None))
+        let row = ctx.vector_store()
+            .get("skills", skill_id)
+            .await?;
+        Ok(row.map(|r| r.meta.content_hash))
     }
 }
 ```
@@ -938,19 +940,19 @@ pub trait VectorStore: Send + Sync + std::fmt::Debug {
         params: &VectorIndexParams,
     ) -> Result<()>;
     
-    /// 向量搜索
+    /// 向量搜索（返回完整行数据 + 距离）
     async fn search(
         &self,
         collection: &str,
         query_vector: &[f32],
         top_k: i32,
-    ) -> Result<Vec<(String, f32)>>;
+    ) -> Result<Vec<VectorSearchHit>>;
+    
+    /// 获取完整向量行数据
+    async fn get(&self, collection: &str, id: &str) -> Result<Option<VectorRow>>;
     
     /// 删除向量
     async fn delete(&self, collection: &str, id: &str) -> Result<()>;
-    
-    /// 获取向量内容哈希（用于增量索引判断）
-    async fn get_content_hash(&self, collection: &str, id: &str) -> Result<Option<String>>;
 }
 
 // 现有 SqliteVssStore 实现 Trait（需要系统依赖）

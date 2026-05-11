@@ -4,7 +4,7 @@
 
 use async_trait::async_trait;
 use crate::error::Result;
-use crate::models::vector::VectorIndexParams;
+use crate::models::vector::{VectorIndexParams, VectorRow, VectorSearchHit};
 use crate::pkg::storage::InMemoryVectorStore;
 
 /// HNSW 向量存储（当前为 InMemory 的别名）
@@ -39,12 +39,12 @@ impl super::VectorStore for HnswStore {
         self.inner.upsert(collection, id, params).await
     }
 
-    async fn search(&self, collection: &str, query_vector: &[f32], top_k: i32) -> Result<Vec<(String, f32)>> {
+    async fn search(&self, collection: &str, query_vector: &[f32], top_k: i32) -> Result<Vec<VectorSearchHit>> {
         self.inner.search(collection, query_vector, top_k).await
     }
 
-    async fn get_content_hash(&self, collection: &str, id: &str) -> Result<Option<String>> {
-        self.inner.get_content_hash(collection, id).await
+    async fn get(&self, collection: &str, id: &str) -> Result<Option<VectorRow>> {
+        self.inner.get(collection, id).await
     }
 
     async fn delete(&self, collection: &str, id: &str) -> Result<()> {

@@ -1,11 +1,12 @@
 //! 向量搜索通用数据结构
 //!
-//! 包含向量索引参数、匹配元信息、搜索结果包装器
-//! 以及可向量化实体 Trait 接口
+//! 包含向量行数据、搜索命中结果、索引参数、以及可向量化实体 Trait 接口
 
 use bincode::{Encode, Decode};
 
-// ==================== 向量存储通用数据结构 ====================\n\n/// 向量元数据（持久化）
+// ==================== 向量存储通用数据结构 ====================
+
+/// 向量元数据（持久化）
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct VectorMeta {
     pub content_hash: String,
@@ -14,19 +15,31 @@ pub struct VectorMeta {
     pub expire_at: Option<i64>,
 }
 
-/// 单个向量条目（持久化）
+/// 向量行结构体（对应 vector_metadata 表，完整的一行数据）
 #[derive(Debug, Clone, Encode, Decode)]
-pub struct VectorEntry {
+pub struct VectorRow {
+    /// 业务表 ID（如 skill_id, memory_id）
     pub id: String,
+    /// 向量数据
     pub vector: Vec<f32>,
+    /// 元数据
     pub meta: VectorMeta,
+}
+
+/// 向量搜索命中结果（完整行数据 + 相似度距离）
+#[derive(Debug, Clone)]
+pub struct VectorSearchHit {
+    /// 完整的向量行数据
+    pub row: VectorRow,
+    /// 相似度距离（越小越相似）
+    pub distance: f32,
 }
 
 /// 向量集合（完整可序列化）
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct VectorCollection {
     pub dimensions: i32,
-    pub entries: Vec<VectorEntry>,
+    pub entries: Vec<VectorRow>,
 }
 
 impl VectorCollection {

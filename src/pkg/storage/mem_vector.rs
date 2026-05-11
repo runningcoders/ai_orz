@@ -7,7 +7,7 @@
 
 use async_trait::async_trait;
 use crate::error::Result;
-use crate::models::vector::{VectorMeta, VectorEntry, VectorCollection, VectorIndexParams};
+use crate::models::vector::{VectorMeta, VectorRow, VectorSearchHit, VectorCollection, VectorIndexParams};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -148,7 +148,7 @@ impl super::VectorStore for InMemoryVectorStore {
         // 查找已存在的条目
         if let Some(pos) = coll.entries.iter().position(|e| e.id == id) {
             // 更新
-            coll.entries[pos] = VectorEntry {
+            coll.entries[pos] = VectorRow {
                 id: id.to_string(),
                 vector: params.vector.clone(),
                 meta: VectorMeta {
@@ -160,7 +160,7 @@ impl super::VectorStore for InMemoryVectorStore {
             };
         } else {
             // 新增
-            coll.entries.push(VectorEntry {
+            coll.entries.push(VectorRow {
                 id: id.to_string(),
                 vector: params.vector.clone(),
                 meta: VectorMeta {
@@ -183,7 +183,7 @@ impl super::VectorStore for InMemoryVectorStore {
         Ok(())
     }
 
-    async fn search(&self, collection: &str, query_vector: &[f32], top_k: i32) -> Result<Vec<(String, f32)>> {
+    async fn search(&self, collection: &str, query_vector: &[f32], top_k: i32) -> Result<Vec<VectorSearchHit>> {
         let now = chrono::Utc::now().timestamp();
         
         // 获取或加载集合
@@ -191,31 +191,34 @@ impl super::VectorStore for InMemoryVectorStore {
             .unwrap_or_else(|| VectorCollection::new(query_vector.len() as i32));
         
         // 计算所有向量的相似度
-        let mut results: Vec<(String, f32)> = coll.entries.iter()
+        let mut results: Vec<VectorSearchHit> = coll.entries.iter()
             .filter(|e| {
                 // 过滤过期的向量
                 e.meta.expire_at.map_or(true, |exp| exp > now)
             })
             .map(|e| {
                 let distance = cosine_distance(query_vector, &e.vector);
-                (e.id.clone(), distance)
+                VectorSearchHit {
+                    row: e.clone(),
+                    distance,
+                }
             })
             .collect();
         
         // 按距离排序（越小越相似）
-        results.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(std::cmp::Ordering::Equal));
         
         // 返回前 top_k 个结果
         Ok(results.into_iter().take(top_k as usize).collect())
     }
 
-    async fn get_content_hash(&self, collection: &str, id: &str) -> Result<Option<String>> {
+    async fn get(&self, collection: &str, id: &str) -> Result<Option<VectorRow>> {
         let coll = self.get_or_load(collection).await?;
         
         Ok(coll.and_then(|c| {
             c.entries.iter()
                 .find(|e| e.id == id)
-                .map(|e| e.meta.content_hash.clone())
+                .cloned()
         }))
     }
 

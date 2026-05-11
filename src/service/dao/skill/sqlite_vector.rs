@@ -3,7 +3,7 @@
 
 use async_trait::async_trait;
 use crate::error::AppError;
-use crate::models::vector::VectorIndexParams;
+use crate::models::vector::{VectorIndexParams, VectorRow, VectorSearchHit};
 use crate::pkg::RequestContext;
 use crate::service::dao::skill::SkillVectorDao;
 use std::sync::{Arc, OnceLock};
@@ -54,7 +54,7 @@ impl SkillVectorDao for SkillVectorDaoSqliteImpl {
         ctx: RequestContext,
         query_vector: &[f32],
         top_k: i32,
-    ) -> Result<Vec<(String, f32)>, AppError> {
+    ) -> Result<Vec<VectorSearchHit>, AppError> {
         let vector_store = ctx.vector_store();
         let results = vector_store.search(
             "skills",
@@ -64,13 +64,13 @@ impl SkillVectorDao for SkillVectorDaoSqliteImpl {
         Ok(results)
     }
 
-    async fn get_content_hash(
+    async fn get_vector_row(
         &self,
         ctx: RequestContext,
         skill_id: &str,
-    ) -> Result<Option<String>, AppError> {
+    ) -> Result<Option<VectorRow>, AppError> {
         ctx.vector_store()
-            .get_content_hash("skills", skill_id)
+            .get("skills", skill_id)
             .await
             .map_err(|e| AppError::Internal(format!("Vector store error: {}", e)))
     }

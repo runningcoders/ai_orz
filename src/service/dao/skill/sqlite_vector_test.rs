@@ -54,7 +54,7 @@ async fn test_upsert_and_search_vector(pool: SqlitePool) -> Result<(), AppError>
     let results = vector_dao.search_vector(ctx.clone(), &query_vector, 2).await?;
     
     assert_eq!(results.len(), 2);
-    assert_eq!(results[0].0, "skill_0"); // 第一个应该是最接近的
+    assert_eq!(results[0].row.id, "skill_0"); // 第一个应该是最接近的
     
     Ok(())
 }
@@ -82,7 +82,7 @@ async fn test_upsert_update_existing(pool: SqlitePool) -> Result<(), AppError> {
     let results = vector_dao.search_vector(ctx.clone(), &query_vector, 1).await?;
     
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0].0, skill_id);
+    assert_eq!(results[0].row.id, skill_id);
     
     Ok(())
 }
@@ -98,9 +98,9 @@ async fn test_get_content_hash(pool: SqlitePool) -> Result<(), AppError> {
     let expected_hash = params.content_hash.clone();
     vector_dao.upsert_vector(ctx.clone(), skill_id, &params).await?;
     
-    let hash = vector_dao.get_content_hash(ctx.clone(), skill_id).await?;
+    let row = vector_dao.get_vector_row(ctx.clone(), skill_id).await?;
     
-    assert_eq!(hash, Some(expected_hash));
+    assert_eq!(row.map(|r| r.meta.content_hash), Some(expected_hash));
     
     Ok(())
 }
@@ -111,9 +111,9 @@ async fn test_get_content_hash_not_found(pool: SqlitePool) -> Result<(), AppErro
     let ctx = new_ctx("test_user", pool.clone());
     let vector_dao = init_test_env();
     
-    let hash = vector_dao.get_content_hash(ctx.clone(), "non_existent").await?;
+    let row = vector_dao.get_vector_row(ctx.clone(), "non_existent").await?;
     
-    assert_eq!(hash, None);
+    assert_eq!(row.map(|r| r.meta.content_hash), None);
     
     Ok(())
 }

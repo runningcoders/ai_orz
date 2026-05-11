@@ -10,7 +10,7 @@
 
 use async_trait::async_trait;
 use crate::error::Result;
-use crate::models::vector::VectorIndexParams;
+use crate::models::vector::{VectorIndexParams, VectorRow, VectorSearchHit, VectorMeta};
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -18,6 +18,7 @@ use std::sync::Arc;
 /// 向量存储抽象 Trait
 ///
 /// 所有向量存储后端都实现此 Trait，支持可插拔切换
+/// 作为基础适配层，所有方法返回统一的行级结构体
 #[async_trait]
 pub trait VectorStore: Send + Sync + std::fmt::Debug {
     /// 初始化向量集合
@@ -33,11 +34,11 @@ pub trait VectorStore: Send + Sync + std::fmt::Debug {
     
     /// 语义搜索
     /// 
-    /// 返回: Vec<(source_id, distance)>
-    async fn search(&self, collection: &str, query_vector: &[f32], top_k: i32) -> Result<Vec<(String, f32)>>;
+    /// 返回: 完整的向量行数据 + 相似度距离
+    async fn search(&self, collection: &str, query_vector: &[f32], top_k: i32) -> Result<Vec<VectorSearchHit>>;
     
-    /// 获取指定文档的内容哈希（用于增量索引判断）
-    async fn get_content_hash(&self, collection: &str, id: &str) -> Result<Option<String>>;
+    /// 获取指定文档的完整向量行
+    async fn get(&self, collection: &str, id: &str) -> Result<Option<VectorRow>>;
     
     /// 删除向量
     async fn delete(&self, collection: &str, id: &str) -> Result<()>;
@@ -86,10 +87,10 @@ impl VectorStore for SqliteVssStore {
         Ok(())
     }
 
-    async fn search(&self, collection: &str, query_vector: &[f32], top_k: i32) -> Result<Vec<(String, f32)>> {
+    async fn search(&self, collection: &str, query_vector: &[f32], top_k: i32) -> Result<Vec<VectorSearchHit>> {
         let vector_json = serde_json::to_string(query_vector)?;
         let sql = format!(
-            "SELECT m.source_id, v.distance 
+            "SELECT m.source_id, m.content_hash, m.model, m.dimensions, m.expire_at, v.distance 
              FROM vss_{} v
              JOIN vector_metadata m ON v.rowid = m.rowid
              WHERE v.embedding MATCH json(?)
@@ -99,25 +100,53 @@ impl VectorStore for SqliteVssStore {
             collection
         );
         
-        let results = sqlx::query_as::<_, (String, f32)>(&sql)
+        let results = sqlx::query_as::<_, (String, String, String, i32, Option<i64>, f32)>(&sql)
             .bind(vector_json)
             .bind(top_k)
             .fetch_all(&*self.pool)
             .await?;
         
-        Ok(results)
+        // 注意：SqliteVSS 不存储原始向量，这里返回的 VectorRow 中 vector 字段为空
+        // 实际业务场景中，业务 DAO 需要根据 source_id 从业务表获取内容并重新向量化
+        // 或者我们可以考虑在 metadata 表中存储原始向量的 JSON
+        Ok(results.into_iter().map(|(source_id, content_hash, model, _dimensions, expire_at, distance)| {
+            VectorSearchHit {
+                row: VectorRow {
+                    id: source_id,
+                    vector: Vec::new(), // SqliteVSS 不存储原始向量
+                    meta: VectorMeta {
+                        content_hash,
+                        embedding_model: model,
+                        indexed_at: 0, // SQLite 中没有存储索引时间，暂时用 0
+                        expire_at,
+                    },
+                },
+                distance,
+            }
+        }).collect())
     }
 
-    async fn get_content_hash(&self, collection: &str, id: &str) -> Result<Option<String>> {
-        let result: Option<(String,)> = sqlx::query_as(
-            "SELECT content_hash FROM vector_metadata WHERE collection = ? AND source_id = ?"
+    async fn get(&self, collection: &str, id: &str) -> Result<Option<VectorRow>> {
+        let result: Option<(String, String, String, Option<i64>)> = sqlx::query_as(
+            "SELECT source_id, content_hash, model, expire_at FROM vector_metadata WHERE collection = ? AND source_id = ?"
         )
         .bind(collection)
         .bind(id)
         .fetch_optional(&*self.pool)
         .await?;
         
-        Ok(result.map(|(h,)| h))
+        Ok(result.map(|(source_id, content_hash, model, expire_at)| {
+            VectorRow {
+                id: source_id,
+                vector: Vec::new(), // SqliteVSS 不存储原始向量
+                meta: VectorMeta {
+                    content_hash,
+                    embedding_model: model,
+                    indexed_at: 0,
+                    expire_at,
+                },
+            }
+        }))
     }
 
     async fn delete(&self, collection: &str, id: &str) -> Result<()> {

@@ -108,6 +108,7 @@ pub trait SkillDao: Send + Sync {
 // ==================== SkillVectorDao Trait ====================
 
 /// Skill Vector DAO trait - 仅负责技能向量索引的 CRUD，与基础技能数据解耦
+/// 所有方法返回完整的行级结构体，与底层 VectorStore trait 保持一致
 #[async_trait]
 pub trait SkillVectorDao: Send + Sync {
     /// 插入或更新技能的向量索引
@@ -118,20 +119,20 @@ pub trait SkillVectorDao: Send + Sync {
         vector_params: &VectorIndexParams,
     ) -> Result<(), AppError>;
 
-    /// 纯向量语义搜索，返回 (skill_id, distance) 列表
+    /// 纯向量语义搜索，返回完整的向量行数据 + 相似度距离
     async fn search_vector(
         &self,
         ctx: RequestContext,
         query_vector: &[f32],
         top_k: i32,
-    ) -> Result<Vec<(String, f32)>, AppError>;
+    ) -> Result<Vec<crate::models::vector::VectorSearchHit>, AppError>;
 
-    /// 查询技能的向量索引内容哈希（用于判断是否需要重索引）
-    async fn get_content_hash(
+    /// 获取指定技能的完整向量行数据（包含元信息）
+    async fn get_vector_row(
         &self,
         ctx: RequestContext,
         skill_id: &str,
-    ) -> Result<Option<String>, AppError>;
+    ) -> Result<Option<crate::models::vector::VectorRow>, AppError>;
 }
 
 // ==================== 统一导出 ====================
