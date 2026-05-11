@@ -18,9 +18,7 @@ pub async fn init_all(config: &AppConfig) {
     logging::init(config);
 
     // Initialize database storage
-    let db_path = config.db_path();
-    let vector_db_path = config.vector_db_path();
-    storage::init(&db_path.to_str().unwrap(), &vector_db_path.to_str().unwrap()).await;
+    storage::init(config.base_data_path().as_path(), &config.database).await;
 
     // Initialize JWT
     let jwt_secret = std::env::var("JWT_SECRET")

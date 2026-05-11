@@ -53,10 +53,11 @@ impl Storage {
     /// 创建存储实例，初始化连接池，自动运行 migrations
     /// 默认使用纯 Rust 内存向量存储（零系统依赖）
     /// 
-    /// 基于配置的 base_data_path 统一管理存储路径
-    pub async fn new() -> Result<Self> {
-        let config = crate::config::get();
-        let db_path = config.base_data_path().join("ai_orz.db");
+    /// # 参数
+    /// - base_data_path: 基础数据目录根路径
+    /// - db_config: 数据库配置片段（从完整 Config 中取出传入）
+    pub async fn new(base_data_path: &Path, db_config: &common::config::DatabaseConfig) -> Result<Self> {
+        let db_path = base_data_path.join(&db_config.db_file_name);
         let connection_url = format!("sqlite:{}", db_path.display());
 
         let sqlite = SqlitePoolOptions::new()
@@ -68,7 +69,8 @@ impl Storage {
         sqlx::migrate!("./migrations").run(&sqlite).await?;
 
         // 初始化向量存储（默认使用纯 Rust 内存实现）
-        let vector: Arc<dyn VectorStore> = Arc::new(InMemoryVectorStore::new()?);
+        let vectors_dir = base_data_path.join("vectors");
+        let vector: Arc<dyn VectorStore> = Arc::new(InMemoryVectorStore::with_path(&vectors_dir)?);
 
         Ok(Self {
             inner: Arc::new(StorageInner { sqlite, vector }),
@@ -76,9 +78,8 @@ impl Storage {
     }
     
     /// 创建使用 SQLite VSS 后端的存储（需要系统依赖）
-    pub async fn with_sqlite_vss() -> Result<Self> {
-        let config = crate::config::get();
-        let db_path = config.base_data_path().join("ai_orz.db");
+    pub async fn with_sqlite_vss(base_data_path: &Path, db_config: &common::config::DatabaseConfig) -> Result<Self> {
+        let db_path = base_data_path.join(&db_config.db_file_name);
         let connection_url = format!("sqlite:{}", db_path.display());
 
         let sqlite = SqlitePoolOptions::new()
@@ -89,7 +90,7 @@ impl Storage {
         sqlx::migrate!("./migrations").run(&sqlite).await?;
 
         // 使用 SQLite VSS 后端
-        let vector_db_path = config.base_data_path().join("vectors.db");
+        let vector_db_path = base_data_path.join(&db_config.vector_db_file_name);
         let vector: Arc<dyn VectorStore> = Arc::new(
             SqliteVssStore::new(vector_db_path.to_str().unwrap_or_default()).await?
         );
@@ -136,11 +137,10 @@ pub fn get() -> &'static Storage {
     STORAGE_INSTANCE.get().expect("Storage 尚未初始化，请先调用 storage::init()")
 }
 
-/// 初始化全局 Storage（向后兼容，推荐使用 Storage::new() 并使用依赖注入）
-pub async fn init(_db_path: &str, _vector_db_path: &str) {
-    // 新实现忽略传入路径，统一使用 config base_path
+/// 初始化全局 Storage（由 main.rs 调用，只调用一次）
+pub async fn init(base_data_path: &Path, db_config: &common::config::DatabaseConfig) {
     if STORAGE_INSTANCE.get().is_none() {
-        let storage = Storage::new().await.expect("初始化 Storage 失败");
+        let storage = Storage::new(base_data_path, db_config).await.expect("初始化 Storage 失败");
         let _ = STORAGE_INSTANCE.set(storage);
     }
 }
