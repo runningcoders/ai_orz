@@ -23,6 +23,10 @@ pub use mem_vector::InMemoryVectorStore;
 mod hnsw;
 pub use hnsw::HnswStore;
 
+/// LanceDB 高性能嵌入式向量数据库
+mod lance;
+pub use lance::LanceVectorStore;
+
 /// 统一存储门面（可克隆，内部 Arc，零成本克隆）
 #[derive(Clone, Debug)]
 pub struct Storage {
@@ -51,7 +55,7 @@ impl Storage {
     }
     
     /// 创建存储实例，初始化连接池，自动运行 migrations
-    /// 默认使用纯 Rust 内存向量存储（零系统依赖）
+    /// 根据配置自动选择向量存储后端
     /// 
     /// # 参数
     /// - base_data_path: 基础数据目录根路径
@@ -68,36 +72,35 @@ impl Storage {
         // 运行所有 migrations，自动建表/升级
         sqlx::migrate!("./migrations").run(&sqlite).await?;
 
-        // 初始化向量存储（默认使用纯 Rust 内存实现）
-        let vectors_dir = base_data_path.join("vectors");
-        let vector: Arc<dyn VectorStore> = Arc::new(InMemoryVectorStore::with_path(&vectors_dir)?);
+        // 根据配置选择向量存储后端
+        let vector: Arc<dyn VectorStore> = match db_config.vector_store_type {
+            common::config::VectorStoreType::InMemory => {
+                let vectors_dir = base_data_path.join("vectors");
+                Arc::new(InMemoryVectorStore::with_path(&vectors_dir)?)
+            }
+            common::config::VectorStoreType::Hnsw => {
+                Arc::new(HnswStore::new()?)
+            }
+            common::config::VectorStoreType::LanceDb => {
+                let lance_dir = base_data_path.join("vectors_lance");
+                Arc::new(LanceVectorStore::new(&lance_dir)?)
+            }
+            common::config::VectorStoreType::SqliteVss => {
+                let vector_db_path = base_data_path.join(&db_config.vector_db_file_name);
+                Arc::new(SqliteVssStore::new(vector_db_path.to_str().unwrap_or_default()).await?)
+            }
+        };
 
         Ok(Self {
             inner: Arc::new(StorageInner { sqlite, vector }),
         })
     }
     
-    /// 创建使用 SQLite VSS 后端的存储（需要系统依赖）
+    /// 创建使用 SQLite VSS 后端的存储（需要系统依赖，保留用于向后兼容）
     pub async fn with_sqlite_vss(base_data_path: &Path, db_config: &common::config::DatabaseConfig) -> Result<Self> {
-        let db_path = base_data_path.join(&db_config.db_file_name);
-        let connection_url = format!("sqlite:{}", db_path.display());
-
-        let sqlite = SqlitePoolOptions::new()
-            .max_connections(5)
-            .connect(&connection_url)
-            .await?;
-
-        sqlx::migrate!("./migrations").run(&sqlite).await?;
-
-        // 使用 SQLite VSS 后端
-        let vector_db_path = base_data_path.join(&db_config.vector_db_file_name);
-        let vector: Arc<dyn VectorStore> = Arc::new(
-            SqliteVssStore::new(vector_db_path.to_str().unwrap_or_default()).await?
-        );
-
-        Ok(Self {
-            inner: Arc::new(StorageInner { sqlite, vector }),
-        })
+        let mut db_config = db_config.clone();
+        db_config.vector_store_type = common::config::VectorStoreType::SqliteVss;
+        Self::new(base_data_path, &db_config).await
     }
 
     /// 获取 SQLite 连接池

@@ -3,7 +3,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use serde_json;
+use serde_json::Error as JsonError;
 use std::fmt;
 use sqlx::Error as SqlxError;
 use sqlx::migrate::MigrateError;
@@ -78,9 +78,15 @@ impl From<std::io::Error> for AppError {
     }
 }
 
-impl From<serde_json::Error> for AppError {
-    fn from(err: serde_json::Error) -> Self {
-        AppError::Internal(format!("JSON 序列化错误: {}", err))
+impl From<JsonError> for AppError {
+    fn from(err: JsonError) -> Self {
+        AppError::Internal(format!("Json error: {}", err))
+    }
+}
+
+impl From<lancedb::Error> for AppError {
+    fn from(err: lancedb::Error) -> Self {
+        AppError::Internal(format!("LanceDB error: {}", err))
     }
 }
 

@@ -1,4 +1,4 @@
-//! SQLite implementation of Skill Vector DAO
+//! Skill Vector DAO implementation
 //! 负责技能向量索引的 CRUD 操作，与基础技能数据完全解耦
 
 use async_trait::async_trait;
@@ -14,7 +14,7 @@ static SKILL_VECTOR_DAO: OnceLock<Arc<dyn SkillVectorDao>> = OnceLock::new();
 
 /// 创建一个全新的 Skill Vector DAO 实例（用于测试）
 pub fn new() -> Arc<dyn SkillVectorDao> {
-    Arc::new(SkillVectorDaoSqliteImpl)
+    Arc::new(SkillVectorDaoImpl)
 }
 
 /// 获取 Skill Vector DAO 单例
@@ -28,12 +28,13 @@ pub fn init() {
 }
 
 // ==================== 实现 ====================
-
+/// 技能向量 DAO 实现
+/// 基于存储层通用 VectorStore trait，不绑定具体数据库
 #[derive(Debug, Clone)]
-struct SkillVectorDaoSqliteImpl;
+pub struct SkillVectorDaoImpl;
 
 #[async_trait]
-impl SkillVectorDao for SkillVectorDaoSqliteImpl {
+impl SkillVectorDao for SkillVectorDaoImpl {
     async fn upsert_vector(
         &self,
         ctx: RequestContext,

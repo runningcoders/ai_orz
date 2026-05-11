@@ -81,6 +81,28 @@ pub struct DatabaseConfig {
     /// 向量数据库文件名（相对于 base_data_path）
     #[serde(default = "default_vector_db_file_name")]
     pub vector_db_file_name: String,
+    
+    /// 向量存储后端类型
+    #[serde(default)]
+    pub vector_store_type: VectorStoreType,
+}
+
+/// 向量存储后端类型
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum VectorStoreType {
+    /// LanceDB 嵌入式向量数据库（默认，高性能，生产级）
+    #[default]
+    LanceDb,
+    
+    /// 纯 Rust 内存向量存储（零系统依赖，用于测试）
+    InMemory,
+    
+    /// HNSW 高性能近似最近邻索引
+    Hnsw,
+    
+    /// SQLite VSS 向量扩展（需要系统依赖）
+    SqliteVss,
 }
 
 /// 前端配置
@@ -119,6 +141,7 @@ impl Default for DatabaseConfig {
         Self {
             db_file_name: default_db_file_name(),
             vector_db_file_name: default_vector_db_file_name(),
+            vector_store_type: VectorStoreType::default(),
         }
     }
 }

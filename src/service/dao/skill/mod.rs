@@ -1,12 +1,12 @@
 //! Skill DAO trait definition
 
 pub mod sqlite;
-pub mod sqlite_vector;
+pub mod vector;
 
 #[cfg(test)]
 mod sqlite_test;
 #[cfg(test)]
-mod sqlite_vector_test;
+mod vector_test;
 
 use crate::error::AppError;
 use crate::models::skill::{SkillPo, SkillFile};
@@ -139,7 +139,7 @@ pub trait SkillVectorDao: Send + Sync {
 
 // 子模块构造函数别名（用于 DAL 层组合）
 pub use sqlite::{dao as base_dao, init as init_base, new as new_skill_dao};
-pub use sqlite_vector::{dao as vector_dao, init as init_vector, new as new_skill_vector_dao};
+pub use vector::{dao as vector_dao, init as init_vector, new as new_skill_vector_dao};
 
 /// 统一初始化所有 Skill DAO 单例
 pub fn init() {

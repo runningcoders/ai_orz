@@ -38,14 +38,16 @@ once_cell = "1.21.4"
 thiserror = "1.0"
 derive_builder = "0.20"
 bincode = "2.0"
-tempfile = "3"
+tempfile = "3.27"
 
-# V2 向量搜索优化
-fastembed = "5.13"  # 纯本地向量化
-# lancedb = "0.27.2"   # 嵌入式向量数据库（lance-index 4.0.0 tempfile keep() API bug，等 rsproxy 同步 lance-index 4.0.1 后再试）
+# 向量搜索相关
+fastembed = "5.13"  # 纯本地向量化（纯 Rust candle 后端，零系统依赖）
+lancedb = "0.26"   # 嵌入式向量数据库
+arrow-array = "57.3.0"
+arrow-schema = "57.3.0"
+futures = "0.3.32"
 
 [features]
-# V2 优化特性（TODO: 找到不依赖 yanked ort 的实现）
+# 预留 feature flags - 暂不启用，直接默认启用纯 Rust InMemoryVectorStore
 # hnsw = ["dep:hnsw"]
-# fastembed = ["dep:fastembed"]
-# full-vector = ["hnsw", "fastembed"]
+# full-vector = ["hnsw"]
