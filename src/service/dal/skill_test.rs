@@ -4,6 +4,8 @@ use crate::error::AppError;
 use crate::models::skill::{SkillPo, SkillFile};
 use crate::pkg::request_context::RequestContext;
 use crate::service::dao::skill;
+use crate::service::dao::cortex;
+use crate::service::dao::model_provider;
 use crate::service::dal::skill::{SkillDal, SkillDalImpl, new};
 use common::enums::skill::SkillAuthorType;
 use common::enums::SkillStatus;
@@ -15,7 +17,12 @@ fn init_test() -> Arc<dyn SkillDal> {
     // 必须先初始化 config（文件操作需要 base_data_path）
     let _ = crate::config::init();
     // 直接创建 DAL 实例（不用单例）
-    new(skill::new())
+    new(
+        skill::new_skill_dao(),
+        skill::new_skill_vector_dao(),
+        crate::service::dao::cortex::dao(),
+        crate::service::dao::model_provider::dao(),
+    )
 }
 
 /// 创建测试 SkillPo

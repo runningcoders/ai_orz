@@ -19,6 +19,12 @@ pub trait CortexTrait: Send + Sync + DynClone {
     /// 返回 Cortex 的能力类型
     fn capability(&self) -> ModelCapability;
 
+    /// 返回模型提供商 ID
+    fn model_provider_id(&self) -> &str;
+
+    /// 返回模型名称
+    fn model_name(&self) -> &str;
+
     /// 运行 prompt，获取回答
     async fn prompt(&self, prompt: &str) -> Result<String>;
 
@@ -35,7 +41,6 @@ dyn_clone::clone_trait_object!(CortexTrait);
 ///
 /// Cortex = 模型配置 + 推理执行
 #[derive(Clone)]
-
 pub struct Cortex {
     /// 关联的模型提供商（业务对象，包含配置信息）
     pub model_provider: ModelProvider,
@@ -85,7 +90,6 @@ impl CoreMemory {
 /// - core: 核心认知（soul + capabilities）→ 每次全部拼入
 /// - working: 当前会话工作记忆 → 每次全部拼入
 #[derive(Clone)]
-
 pub struct Memory {
     /// 核心认知
     pub core: CoreMemory,

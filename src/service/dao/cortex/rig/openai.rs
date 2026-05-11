@@ -10,23 +10,25 @@ use rig::tool::ToolDyn;
 use rig::providers::openai;
 use rig::providers::openai::responses_api::ResponsesCompletionModel;
 use rig::embeddings::EmbeddingModel;
-use crate::models::brain::CortexTrait;
-use crate::pkg::request_context::RequestContext;
+use super::*;
 
 /// OpenAI 原生 Cortex - Agent 类型，支持对话和向量
 #[derive(Clone)]
 pub struct OpenAiCortex {
     client: openai::Client,
+    model_provider_id: String,
+    model_name: String,
     embedding_model: String,
     agent: Agent<ResponsesCompletionModel>,
 }
 
 impl OpenAiCortex {
     pub fn new(
-        api_key: String, 
-         model: String,
-         base_url: Option<String>,
-         rig_tools: Vec<Box<dyn ToolDyn>>,
+        model_provider_id: String,
+        api_key: String,
+        model: String,
+        base_url: Option<String>,
+        rig_tools: Vec<Box<dyn ToolDyn>>,
     ) -> Result<Self> {
         let builder = openai::Client::builder().api_key(api_key);
 
@@ -39,7 +41,7 @@ impl OpenAiCortex {
         let client = builder.build()
             .map_err(|e| anyhow!("Failed to build OpenAI client: {}", e))?;
 
-        // 使用指定模型创建 Agent
+        // ✅ 提前初始化好 Agent
         let agent = if rig_tools.is_empty() {
             client.agent(model.clone()).build()
         } else {
@@ -48,7 +50,9 @@ impl OpenAiCortex {
 
         Ok(Self {
             client,
-            embedding_model: model.clone(), // 使用 ModelProvider 指定的模型
+            model_provider_id,
+            model_name: model.clone(),
+            embedding_model: model,
             agent,
         })
     }
@@ -60,13 +64,20 @@ impl CortexTrait for OpenAiCortex {
         ModelCapability::Agent
     }
 
+    fn model_provider_id(&self) -> &str {
+        &self.model_provider_id
+    }
+
+    fn model_name(&self) -> &str {
+        &self.model_name
+    }
+
     async fn prompt(&self, prompt: &str) -> Result<String> {
         let response: Result<String, _> = self.agent.prompt(prompt).await;
         response.map_err(|e| anyhow!("OpenAI prompt failed: {}", e))
     }
 
     async fn embeddings(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
-        // ✅ 真正调用 OpenAI embedding API（rig-core 0.34+）
         let embedding_model = self.client.embedding_model(&self.embedding_model);
         let embeddings = embedding_model
             .embed_texts(texts.to_vec())

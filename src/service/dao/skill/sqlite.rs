@@ -1,35 +1,40 @@
 //! SQLite implementation of Skill DAO
 
+use std::path::PathBuf;
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use crate::error::AppError;
 use crate::models::skill::{SkillPo, SkillFile};
-use crate::models::vector::{VectorIndexParams, SearchResult, SearchMatchInfo, MatchType};
 use crate::pkg::RequestContext;
 use common::enums::skill::SkillAuthorType;
 use common::enums::SkillStatus;
-use crate::service::dao::skill::{SkillDao, SkillQuery, SkillSearch};
-use std::sync::{Arc, OnceLock};
-use std::path::PathBuf;
-use std::collections::HashMap;
+use crate::service::dao::skill::{SkillDao, SkillQuery};
 
-// ==================== 工厂方法 + 单例 ====================
 
-static SKILL_DAO: OnceLock<Arc<dyn SkillDao>> = OnceLock::new();
+// ==================== 单例模式 ====================
 
-/// 创建一个全新的 Skill DAO 实例（用于测试）
-pub fn new() -> Arc<dyn SkillDao> {
+static SKILL_DAO_INSTANCE: std::sync::OnceLock<Arc<dyn SkillDao + Send + Sync>> =
+    std::sync::OnceLock::new();
+
+/// 获取全局单例 Skill DAO
+pub fn dao() -> Arc<dyn SkillDao + Send + Sync> {
+    SKILL_DAO_INSTANCE
+        .get()
+        .expect("Skill DAO not initialized. Call dao::skill::init() first.")
+        .clone()
+}
+
+/// 初始化 Skill DAO 单例
+pub fn init() {
+    let _ = SKILL_DAO_INSTANCE.set(new());
+}
+
+/// 创建新的 Skill DAO 实例
+pub fn new() -> Arc<dyn SkillDao + Send + Sync> {
     Arc::new(SkillDaoSqliteImpl)
 }
 
-/// Get Skill DAO singleton
-pub fn dao() -> Arc<dyn SkillDao> {
-    SKILL_DAO.get().cloned().unwrap()
-}
-
-/// Initialize singleton
-pub fn init() {
-    let _ = SKILL_DAO.set(new());
-}
 
 // ==================== 实现 ====================
 
@@ -67,29 +72,6 @@ INSERT INTO skills (
         Ok(())
     }
 
-    async fn insert_with_vector(
-        &self,
-        ctx: RequestContext,
-        skill: &SkillPo,
-        vector_params: &VectorIndexParams,
-    ) -> Result<(), AppError> {
-        // 1. 先插入业务数据
-        self.insert(ctx.clone(), skill).await?;
-
-        // 2. 再插入向量索引
-        let vector_store = ctx.vector_store();
-        vector_store.upsert(
-            "skills",
-            &skill.id,
-            &vector_params.vector,
-            &vector_params.content_hash,
-            &vector_params.embedding_model,
-            vector_params.expire_at,
-        ).await?;
-
-        Ok(())
-    }
-
     async fn update(&self, ctx: RequestContext, skill: &SkillPo) -> Result<(), AppError> {
         let now = chrono::Utc::now().timestamp_millis();
         let status_i32 = skill.status.to_i32();
@@ -119,26 +101,17 @@ WHERE id = ?
         Ok(())
     }
 
-    async fn update_with_vector(
-        &self,
-        ctx: RequestContext,
-        skill: &SkillPo,
-        vector_params: &VectorIndexParams,
-    ) -> Result<(), AppError> {
-        // 1. 先更新业务数据
-        self.update(ctx.clone(), skill).await?;
-
-        // 2. 再更新向量索引
-        let vector_store = ctx.vector_store();
-        vector_store.upsert(
-            "skills",
-            &skill.id,
-            &vector_params.vector,
-            &vector_params.content_hash,
-            &vector_params.embedding_model,
-            vector_params.expire_at,
-        ).await?;
-
+    async fn delete_by_id(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
+        let now = chrono::Utc::now().timestamp_millis();
+        let deleted_status = SkillStatus::Expired.to_i32();
+        sqlx::query!(
+            "UPDATE skills SET status = ?, updated_at = ? WHERE id = ?",
+            deleted_status,
+            now,
+            id
+        )
+        .execute(ctx.db_pool())
+        .await?;
         Ok(())
     }
 
@@ -209,167 +182,64 @@ FROM skills WHERE id = ?
         }
 
         // 执行查询
-        let rows = builder.build_query_as()
+        let rows = builder
+            .build_query_as::<SkillPo>()
             .fetch_all(ctx.db_pool())
             .await?;
 
         Ok(rows)
     }
 
-    /// ✅ 统一搜索入口（支持关键词/向量/混合三种策略）
-    async fn search(
-        &self,
-        ctx: RequestContext,
-        search: SkillSearch,
-    ) -> Result<Vec<SearchResult<SkillPo>>, AppError> {
-        // ========== 策略路由：根据入参选择搜索模式 ==========
-        match (search.keyword.as_ref(), search.query_vector.as_ref()) {
-            // ---------- 模式1：仅关键词搜索 ----------
-            (Some(keyword), None) => {
-                // 复用通用查询，走 SQL LIKE 匹配
-                let skills = self.query(ctx, SkillQuery {
-                    keyword: Some(keyword.to_string()),
-                    exclude_status: Some(SkillStatus::Expired),
-                    ..search.filters
-                }).await?;
-
-                // 包装为统一结果格式
-                Ok(skills.into_iter()
-                    .map(|skill| SearchResult {
-                        entity: skill,
-                        match_info: SearchMatchInfo {
-                            match_type: MatchType::Keyword,
-                            vector_distance: None,
-                            keyword_fields: Some(vec!["name".to_string(), "description".to_string()]),
-                            embedding_model: None,
-                            indexed_at: None,
-                            content_hash: None,
-                        },
-                    })
-                    .collect())
-            }
-
-            // ---------- 模式2：仅向量语义搜索 ----------
-            (None, Some(query_vector)) => {
-                // ========== 第一阶段：向量检索获取候选 ID 列表 ==========
-                let vector_store = ctx.vector_store();
-                let search_results = vector_store.search(
-                    "skills",
-                    query_vector,
-                    search.top_k.unwrap_or(20),
-                ).await?;
-
-                if search_results.is_empty() {
-                    return Ok(Vec::new());
-                }
-
-                // 提取 ID 列表和 distance 映射
-                let skill_ids: Vec<String> = search_results.iter().map(|(id, _)| id.clone()).collect();
-                let distance_map: HashMap<String, f32> = search_results.into_iter().collect();
-
-                // ========== 第二阶段：按业务条件过滤 ==========
-                let skills = self.query(ctx, SkillQuery {
-                    ids: Some(skill_ids),
-                    exclude_status: Some(SkillStatus::Expired),
-                    ..search.filters
-                }).await?;
-
-                // ========== 第三阶段：组合结果，按相似度排序 ==========
-                let mut results: Vec<_> = skills.into_iter()
-                    .map(|skill| SearchResult {
-                        entity: skill.clone(),
-                        match_info: SearchMatchInfo {
-                            match_type: MatchType::Vector,
-                            vector_distance: Some(distance_map.get(&skill.id).copied().unwrap_or(1.0)),
-                            keyword_fields: None,
-                            embedding_model: Some(String::new()), // TODO: 从元数据表填充
-                            indexed_at: Some(0), // TODO: 从元数据表填充
-                            content_hash: Some(String::new()), // TODO: 从元数据表填充
-                        },
-                    })
-                    .collect();
-
-                results.sort_by(|a, b| a.match_info.vector_distance.unwrap_or(1.0)
-                    .partial_cmp(&b.match_info.vector_distance.unwrap_or(1.0)).unwrap());
-                Ok(results)
-            }
-
-            // ---------- 模式3：混合搜索（关键词 + 向量取交集） ----------
-            (Some(keyword), Some(query_vector)) => {
-                // TODO: 实现混合排序策略（RRF / Borda Count / 加权和）
-                // 目前降级为仅向量搜索（后续可扩展）
-                let mut fallback_search = search.clone();
-                fallback_search.keyword = None;
-                self.search(ctx, fallback_search).await
-            }
-
-            // ---------- 模式4：无有效入参，返回空 ----------
-            (None, None) => {
-                Ok(Vec::new())
-            }
-        }
-    }
-
-    /// ✅ 查询技能的向量索引内容哈希（DAL 判断是否需要重索引）
-    async fn get_vector_content_hash(
-        &self,
-        ctx: RequestContext,
-        skill_id: &str,
-    ) -> Result<Option<String>, AppError> {
-        ctx.vector_store()
-            .get_content_hash("skills", skill_id)
-            .await
-            .map_err(|e| AppError::Internal(format!("Vector store error: {}", e)))
-    }
-
-    async fn list_by_status(
-        &self,
-        ctx: RequestContext,
-        status: SkillStatus,
-    ) -> Result<Vec<SkillPo>, AppError> {
-        // 语法糖：调用通用查询
-        self.query(ctx, SkillQuery {
-            status: Some(status),
-            ..Default::default()
-        }).await
-    }
-
-    async fn list_by_category(
-        &self,
-        ctx: RequestContext,
-        category: &str,
-    ) -> Result<Vec<SkillPo>, AppError> {
-        // 语法糖：调用通用查询
-        self.query(ctx, SkillQuery {
-            category: Some(category.to_string()),
-            ..Default::default()
-        }).await
-    }
-
-    async fn list_by_author(
-        &self,
-        ctx: RequestContext,
-        author_id: &str,
-    ) -> Result<Vec<SkillPo>, AppError> {
-        // 语法糖：调用通用查询
-        self.query(ctx, SkillQuery {
-            author_id: Some(author_id.to_string()),
-            ..Default::default()
-        }).await
-    }
-
-    async fn delete_by_id(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
-        let now = chrono::Utc::now().timestamp_millis();
-        sqlx::query!(
+    async fn list_by_status(&self, ctx: RequestContext, status: SkillStatus) -> Result<Vec<SkillPo>, AppError> {
+        let status_i32 = status.to_i32();
+        let skills = sqlx::query_as!(
+            SkillPo,
             r#"
-UPDATE skills SET status = 0, updated_at = ? WHERE id = ?
+SELECT id, name, description, tags, category, parent_skill_id,
+       author_id, author_type AS "author_type: SkillAuthorType", modifier_id, status AS "status: SkillStatus",
+       created_at, updated_at, content_path
+FROM skills WHERE status = ?
+ORDER BY updated_at DESC
             "#,
-            now,
-            id
+            status_i32
         )
-        .execute(ctx.db_pool())
+        .fetch_all(ctx.db_pool())
         .await?;
-        Ok(())
+        Ok(skills)
+    }
+
+    async fn list_by_category(&self, ctx: RequestContext, category: &str) -> Result<Vec<SkillPo>, AppError> {
+        let skills = sqlx::query_as!(
+            SkillPo,
+            r#"
+SELECT id, name, description, tags, category, parent_skill_id,
+       author_id, author_type AS "author_type: SkillAuthorType", modifier_id, status AS "status: SkillStatus",
+       created_at, updated_at, content_path
+FROM skills WHERE category = ?
+ORDER BY updated_at DESC
+            "#,
+            category
+        )
+        .fetch_all(ctx.db_pool())
+        .await?;
+        Ok(skills)
+    }
+
+    async fn list_by_author(&self, ctx: RequestContext, author_id: &str) -> Result<Vec<SkillPo>, AppError> {
+        let skills = sqlx::query_as!(
+            SkillPo,
+            r#"
+SELECT id, name, description, tags, category, parent_skill_id,
+       author_id, author_type AS "author_type: SkillAuthorType", modifier_id, status AS "status: SkillStatus",
+       created_at, updated_at, content_path
+FROM skills WHERE author_id = ?
+ORDER BY updated_at DESC
+            "#,
+            author_id
+        )
+        .fetch_all(ctx.db_pool())
+        .await?;
+        Ok(skills)
     }
 
     async fn install_to_agent(
@@ -395,12 +265,12 @@ UPDATE skills SET status = 0, updated_at = ? WHERE id = ?
 
         // Create new skill record: copy metadata from source, set new id, agent as author, draft status
         let new_skill = SkillPo::new(
-            new_skill_id,
+            new_skill_id.clone(),
             source_skill.name.clone(),
             source_skill.description.clone(),
             source_skill.parse_tags(),
             source_skill.category.clone(),
-            source_skill.id.clone(), // parent_skill_id points to original
+            source_skill.id.clone(), // parent_skill_id points to original (String not Option)
             target_agent_id.to_string(), // author is the agent
             SkillAuthorType::Agent, // author type is Agent
             content_path, // content path calculated internally
@@ -416,7 +286,16 @@ UPDATE skills SET status = 0, updated_at = ? WHERE id = ?
         Ok(new_skill)
     }
 
-    // ===== 文件操作方法 =====
+    async fn search(&self, ctx: RequestContext, keyword: &str) -> Result<Vec<SkillPo>, AppError> {
+        // 用 query 做关键词搜索
+        let query = SkillQuery {
+            keyword: Some(keyword.to_string()),
+            ..Default::default()
+        };
+        self.query(ctx, query).await
+    }
+
+    // ========== 文件操作 ==========
 
     fn read_main_content(&self, skill: &SkillPo) -> Result<String, AppError> {
         let path = self.main_content_path(skill);

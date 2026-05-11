@@ -11,23 +11,26 @@ use rig::tool::ToolDyn;
 use rig::providers::openai;
 use rig::providers::openai::responses_api::ResponsesCompletionModel;
 use rig::embeddings::EmbeddingModel;
-use crate::models::brain::CortexTrait;
-use crate::pkg::request_context::RequestContext;
+use super::*;
+
 /// OpenAI 兼容模式 Cortex - Agent 类型
 #[derive(Clone)]
 pub struct OpenAiCompatibleCortex {
     client: openai::Client,
+    model_provider_id: String,
+    model_name: String,
     embedding_model: String,
     agent: Agent<ResponsesCompletionModel>,
 }
 
 impl OpenAiCompatibleCortex {
     pub fn new(
+        model_provider_id: String,
         api_key: String,
         model: String,
         default_base_url: String,
-         user_base_url: Option<String>,
-         rig_tools: Vec<Box<dyn ToolDyn>>,
+        user_base_url: Option<String>,
+        rig_tools: Vec<Box<dyn ToolDyn>>,
     ) -> Result<Self> {
         let base_url = user_base_url.unwrap_or(default_base_url);
 
@@ -36,7 +39,7 @@ impl OpenAiCompatibleCortex {
         let client = builder.build()
             .map_err(|e| anyhow!("Failed to build OpenAI compatible client: {}", e))?;
 
-        // 使用指定模型创建 Agent
+        // ✅ 提前初始化好 Agent
         let agent = if rig_tools.is_empty() {
             client.agent(model.clone()).build()
         } else {
@@ -45,7 +48,9 @@ impl OpenAiCompatibleCortex {
 
         Ok(Self {
             client,
-            embedding_model: model.clone(), // 使用 ModelProvider 指定的模型
+            model_provider_id,
+            model_name: model.clone(),
+            embedding_model: model,
             agent,
         })
     }
@@ -57,13 +62,20 @@ impl CortexTrait for OpenAiCompatibleCortex {
         ModelCapability::Agent
     }
 
+    fn model_provider_id(&self) -> &str {
+        &self.model_provider_id
+    }
+
+    fn model_name(&self) -> &str {
+        &self.model_name
+    }
+
     async fn prompt(&self, prompt: &str) -> Result<String> {
         let response: Result<String, _> = self.agent.prompt(prompt).await;
         response.map_err(|e| anyhow!("OpenAI compatible prompt failed: {}", e))
     }
 
     async fn embeddings(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
-        // ✅ 真正调用 OpenAI 兼容的 embedding API（rig-core 0.34+）
         let embedding_model = self.client.embedding_model(&self.embedding_model);
         let embeddings = embedding_model
             .embed_texts(texts.to_vec())

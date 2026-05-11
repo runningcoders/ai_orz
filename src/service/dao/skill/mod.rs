@@ -1,10 +1,11 @@
 //! Skill DAO trait definition
 
 pub mod sqlite;
+pub mod sqlite_vector;
 
 use crate::error::AppError;
 use crate::models::skill::{SkillPo, SkillFile};
-use crate::models::vector::{VectorIndexParams, SearchResult};
+use crate::models::vector::VectorIndexParams;
 use crate::pkg::RequestContext;
 use common::enums::SkillStatus;
 use async_trait::async_trait;
@@ -34,7 +35,9 @@ pub struct SkillSearch {
     pub filters: SkillQuery,
 }
 
-/// Skill DAO trait
+// ==================== 基础 SkillDao: 仅负责基础技能数据 ====================
+
+/// Skill DAO trait - 仅负责基础技能数据的 CRUD，不包含向量逻辑
 #[async_trait]
 pub trait SkillDao: Send + Sync {
     // ========== 基础 CRUD ==========
@@ -47,33 +50,6 @@ pub trait SkillDao: Send + Sync {
 
     /// Soft delete (mark as expired)
     async fn delete_by_id(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
-
-    // ========== 向量增强方法 ==========
-
-    /// Insert a new skill with vector index
-    async fn insert_with_vector(
-        &self,
-        ctx: RequestContext,
-        skill: &SkillPo,
-        vector_params: &VectorIndexParams,
-    ) -> Result<(), AppError>;
-
-    /// Update an existing skill with vector index
-    async fn update_with_vector(
-        &self,
-        ctx: RequestContext,
-        skill: &SkillPo,
-        vector_params: &VectorIndexParams,
-    ) -> Result<(), AppError>;
-
-    /// ✅ 查询技能的向量索引内容哈希（DAL 判断是否需要重索引）
-    async fn get_vector_content_hash(
-        &self,
-        ctx: RequestContext,
-        skill_id: &str,
-    ) -> Result<Option<String>, AppError>;
-
-    // ========== 查询与搜索 ==========
 
     /// Find skill by id
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<SkillPo>, AppError>;
@@ -90,30 +66,18 @@ pub trait SkillDao: Send + Sync {
     /// List skills by author
     async fn list_by_author(&self, ctx: RequestContext, author_id: &str) -> Result<Vec<SkillPo>, AppError>;
 
-    /// 搜索技能（支持关键词搜索 OR 向量语义搜索）
-    /// - 有 keyword 但无 query_vector: 走 SQL LIKE 模糊匹配
-    /// - 有 query_vector 但无 keyword: 走向量语义搜索
-    /// - 两者都有: 执行混合搜索策略（可扩展）
-    async fn search(
-        &self,
-        ctx: RequestContext,
-        search: SkillSearch,
-    ) -> Result<Vec<SearchResult<SkillPo>>, AppError>;
-
     // ========== 业务操作 ==========
 
     /// Install a published shared skill to an agent as a private draft copy
-    ///
-    /// - source_skill: the source shared skill to install (already validated by upper layer)
-    /// - target_agent_id: which agent to install to (will be the author of the new copy)
-    ///
-    /// Atomic operation: copies all skill files + creates database record
     async fn install_to_agent(
         &self,
         ctx: RequestContext,
         source_skill: &SkillPo,
         target_agent_id: &str,
     ) -> Result<SkillPo, AppError>;
+
+    /// 关键词搜索（向后兼容）
+    async fn search(&self, ctx: RequestContext, keyword: &str) -> Result<Vec<SkillPo>, AppError>;
 
     // ========== 文件操作 ==========
 
@@ -136,7 +100,52 @@ pub trait SkillDao: Send + Sync {
     fn delete_skill_dir(&self, skill: &SkillPo) -> Result<(), AppError>;
 }
 
-pub use sqlite::{dao, init, new};
+// ==================== SkillVectorDao Trait ====================
 
-#[cfg(test)]
-mod sqlite_test;
+/// Skill Vector DAO trait - 仅负责技能向量索引的 CRUD，与基础技能数据解耦
+#[async_trait]
+pub trait SkillVectorDao: Send + Sync {
+    /// 插入或更新技能的向量索引
+    async fn upsert_vector(
+        &self,
+        ctx: RequestContext,
+        skill_id: &str,
+        vector_params: &VectorIndexParams,
+    ) -> Result<(), AppError>;
+
+    /// 纯向量语义搜索，返回 (skill_id, distance) 列表
+    async fn search_vector(
+        &self,
+        ctx: RequestContext,
+        query_vector: &[f32],
+        top_k: i32,
+    ) -> Result<Vec<(String, f32)>, AppError>;
+
+    /// 查询技能的向量索引内容哈希（用于判断是否需要重索引）
+    async fn get_content_hash(
+        &self,
+        ctx: RequestContext,
+        skill_id: &str,
+    ) -> Result<Option<String>, AppError>;
+}
+
+// ==================== 统一导出 ====================
+
+// 子模块构造函数别名（用于 DAL 层组合）
+pub use sqlite::{dao as base_dao, init as init_base, new as new_skill_dao};
+pub use sqlite_vector::{dao as vector_dao, init as init_vector, new as new_skill_vector_dao};
+
+/// 统一初始化所有 Skill DAO 单例
+pub fn init() {
+    init_base();
+    init_vector();
+}
+
+// ========== 向后兼容：旧代码继续使用 `skill::new()` / `skill::dao()` ==========
+pub fn new() -> std::sync::Arc<dyn SkillDao> {
+    new_skill_dao()
+}
+
+pub fn dao() -> std::sync::Arc<dyn SkillDao> {
+    base_dao()
+}

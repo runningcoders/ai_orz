@@ -5,8 +5,13 @@
 
 use crate::error::AppError;
 use crate::models::skill::{Skill, SkillPo, SkillFile};
+use crate::models::model_provider::ModelProviderPo;
+use crate::models::vector::{VectorIndexParams, SearchMatchInfo, MatchType};
 use crate::pkg::request_context::RequestContext;
-use crate::service::dao::skill::{SkillDao, SkillQuery, SkillSearch, self};
+use crate::service::dao::skill::{SkillDao, SkillVectorDao, SkillQuery, self};
+use crate::service::dao::cortex::CortexDao;
+use crate::service::dao::model_provider::ModelProviderDao;
+use common::enums::{ModelCapability, ModelProviderStatus};
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例管理 ====================
@@ -20,12 +25,22 @@ pub fn dal() -> Arc<dyn SkillDal> {
 
 /// 初始化 Skill DAL（使用全局单例 DAO）
 pub fn init() {
-    let _ = SKILL_DAL.set(new(skill::dao()));
+    let _ = SKILL_DAL.set(new(
+        skill::dao(),
+        skill::vector_dao(),
+        crate::service::dao::cortex::dao(),
+        crate::service::dao::model_provider::dao(),
+    ));
 }
 
 /// 创建 Skill DAL（返回 trait 对象）
-pub fn new(skill_dao: Arc<dyn SkillDao + Send + Sync>) -> Arc<dyn SkillDal> {
-    Arc::new(SkillDalImpl { skill_dao })
+pub fn new(
+    skill_dao: Arc<dyn SkillDao + Send + Sync>,
+    skill_vector_dao: Arc<dyn SkillVectorDao + Send + Sync>,
+    cortex_dao: Arc<dyn CortexDao + Send + Sync>,
+    model_provider_dao: Arc<dyn ModelProviderDao + Send + Sync>,
+) -> Arc<dyn SkillDal> {
+    Arc::new(SkillDalImpl { skill_dao, skill_vector_dao, cortex_dao, model_provider_dao })
 }
 
 // ==================== DAL 接口 ====================
@@ -89,6 +104,13 @@ pub trait SkillDal: Send + Sync {
 
     /// 写入文件内容
     fn write_file(&self, skill: &SkillPo, filename: &str, content: &str) -> Result<(), AppError>;
+
+    /// 查询技能的向量索引内容哈希（判断是否需要重索引）
+    async fn get_vector_content_hash(
+        &self,
+        ctx: RequestContext,
+        skill_id: &str,
+    ) -> Result<Option<String>, AppError>;
 }
 
 // ==================== DAL 实现 ====================
@@ -96,12 +118,60 @@ pub trait SkillDal: Send + Sync {
 /// Skill DAL 基础实现
 pub struct SkillDalImpl {
     skill_dao: Arc<dyn SkillDao + Send + Sync>,
+    skill_vector_dao: Arc<dyn SkillVectorDao + Send + Sync>,
+    cortex_dao: Arc<dyn CortexDao + Send + Sync>,
+    model_provider_dao: Arc<dyn ModelProviderDao + Send + Sync>,
 }
 
 #[async_trait::async_trait]
 impl SkillDal for SkillDalImpl {
     async fn create(&self, ctx: RequestContext, po: &SkillPo) -> Result<(), AppError> {
-        Ok(self.skill_dao.insert(ctx, po).await?)
+        // 1. 先保存基础技能数据
+        self.skill_dao.insert(ctx.clone(), po).await?;
+
+        // 2. 查询可用的 Embedding 能力的 ModelProvider
+        let providers = self.model_provider_dao.query(
+            ctx.clone(),
+            crate::service::dao::model_provider::ModelProviderQuery {
+                capability: Some(ModelCapability::Embedding),
+                status: Some(ModelProviderStatus::Normal),
+                limit: Some(1),
+                ..Default::default()
+            },
+        ).await?;
+
+        // 3. 如果有可用的 Embedding Provider，生成向量并保存
+        if let Some(provider) = providers.first() {
+            // 创建 Cortex（这是同步方法，不需要 await）
+            let cortex = self.cortex_dao.create_cortex_trait(
+                ctx.clone(),
+                provider,
+                vec![],
+            )?;
+
+            // 生成向量（调用 CortexTrait 的方法）
+            let content = format!("{} {}", po.name, po.description);
+            let content_hash = sha256::digest(&content);
+            let vectors = cortex.embeddings(&[content]).await?;
+            
+            // 构建向量索引参数
+            let vector_params = VectorIndexParams {
+                vector: vectors.into_iter().next().unwrap_or_default(),
+                content_hash,
+                model_provider_id: provider.id.clone(),
+                embedding_model: provider.model_name.clone(),
+                expire_at: None,
+            };
+
+            // 保存向量索引
+            self.skill_vector_dao.upsert_vector(
+                ctx,
+                &po.id,
+                &vector_params,
+            ).await?;
+        }
+
+        Ok(())
     }
 
     async fn get_by_id(&self, ctx: RequestContext, id: String) -> Result<Option<Skill>, AppError> {
@@ -143,28 +213,171 @@ impl SkillDal for SkillDalImpl {
     }
 
     async fn search(&self, ctx: RequestContext, keyword: &str) -> Result<Vec<Skill>, AppError> {
-        // 调用 DAO 统一 search 入口（仅关键词模式）
-        let results = self.skill_dao.search(ctx, SkillSearch {
+        use std::collections::HashSet;
+
+        // Step 1: 查询是否有可用的 Embedding Provider
+        let providers = self.model_provider_dao.query(
+            ctx.clone(),
+            crate::service::dao::model_provider::ModelProviderQuery {
+                capability: Some(ModelCapability::Embedding),
+                status: Some(ModelProviderStatus::Normal),
+                limit: Some(1),
+                ..Default::default()
+            },
+        ).await?;
+
+        let mut vector_scores: std::collections::HashMap<String, f32> = std::collections::HashMap::new();
+        let mut vector_skill_ids: HashSet<String> = HashSet::new();
+
+        // Step 2: 如果有 Embedding Provider，执行向量搜索
+        if let Some(provider) = providers.first() {
+            // 创建 Cortex
+            let cortex = self.cortex_dao.create_cortex_trait(
+                ctx.clone(),
+                provider,
+                vec![],
+            )?;
+
+            // 生成查询向量
+            let vectors = cortex.embeddings(&[keyword.to_string()]).await?;
+            let query_vector = vectors.into_iter().next().unwrap_or_default();
+
+            // 向量搜索（前 50 条）
+            let vector_results = self.skill_vector_dao.search_vector(
+                ctx.clone(),
+                &query_vector,
+                50,
+            ).await?;
+
+            vector_skill_ids = vector_results.iter().map(|(id, _)| id.clone()).collect();
+            vector_scores = vector_results.into_iter().collect();
+        }
+
+        // Step 3: 执行关键词搜索（补充向量没覆盖的结果）
+        let keyword_query = SkillQuery {
             keyword: Some(keyword.to_string()),
-            query_vector: None,
-            top_k: None,
-            filters: SkillQuery::default(),
-        }).await?;
-        
-        let mut skills = Vec::with_capacity(results.len());
-        for result in results {
-            let files = self.skill_dao.list_files(&result.entity)?;
+            ..Default::default()
+        };
+        let keyword_pos = self.skill_dao.query(ctx.clone(), keyword_query).await?;
+
+        // Step 4: 如果有向量搜索，获取向量匹配的完整 PO
+        let mut all_pos = keyword_pos.clone();
+        if !vector_skill_ids.is_empty() {
+            // 关键词搜索可能没覆盖到向量匹配的结果，需要额外获取
+            let mut ids_to_fetch: Vec<String> = vector_skill_ids
+                .into_iter()
+                .filter(|id| !keyword_pos.iter().any(|po| po.id == *id))
+                .collect();
+            
+            if !ids_to_fetch.is_empty() {
+                // 分批获取（避免 SQL 太长）
+                ids_to_fetch.sort();
+                ids_to_fetch.dedup();
+                
+                for chunk in ids_to_fetch.chunks(20) {
+                    let chunk_ids: Vec<String> = chunk.to_vec();
+                    let chunk_query = SkillQuery {
+                        ids: Some(chunk_ids),
+                        ..Default::default()
+                    };
+                    let chunk_pos = self.skill_dao.query(ctx.clone(), chunk_query).await?;
+                    all_pos.extend(chunk_pos);
+                }
+            }
+        }
+
+        // Step 5: 去重
+        all_pos.sort_by(|a, b| a.id.cmp(&b.id));
+        all_pos.dedup_by(|a, b| a.id == b.id);
+
+        // Step 6: 构建 Skill 对象并排序
+        let mut skills = Vec::with_capacity(all_pos.len());
+        for po in all_pos {
+            let files = self.skill_dao.list_files(&po)?;
+            let match_info = if let Some(distance) = vector_scores.get(&po.id) {
+                SearchMatchInfo {
+                    match_type: MatchType::Hybrid,
+                    vector_distance: Some(*distance),
+                    ..Default::default()
+                }
+            } else {
+                SearchMatchInfo {
+                    match_type: MatchType::Keyword,
+                    ..Default::default()
+                }
+            };
             skills.push(Skill {
-                po: result.entity,
+                po,
                 files,
-                search_match: Some(result.match_info),
+                search_match: Some(match_info),
             });
         }
+
+        // Step 7: 排序（向量距离优先，距离越小越好；纯关键词按原有顺序）
+        if !vector_scores.is_empty() {
+            skills.sort_by(|a, b| {
+                let dist_a = a.search_match.as_ref().and_then(|m| m.vector_distance).unwrap_or(f32::MAX);
+                let dist_b = b.search_match.as_ref().and_then(|m| m.vector_distance).unwrap_or(f32::MAX);
+                dist_a.partial_cmp(&dist_b).unwrap_or(std::cmp::Ordering::Equal)
+            });
+        }
+
         Ok(skills)
     }
 
     async fn update(&self, ctx: RequestContext, po: &SkillPo) -> Result<(), AppError> {
-        Ok(self.skill_dao.update(ctx, po).await?)
+        // 1. 先更新基础技能数据
+        self.skill_dao.update(ctx.clone(), po).await?;
+
+        // 2. 查询可用的 Embedding 能力的 ModelProvider
+        let providers = self.model_provider_dao.query(
+            ctx.clone(),
+            crate::service::dao::model_provider::ModelProviderQuery {
+                capability: Some(ModelCapability::Embedding),
+                status: Some(ModelProviderStatus::Normal),
+                limit: Some(1),
+                ..Default::default()
+            },
+        ).await?;
+
+        // 3. 如果有可用的 Embedding Provider，更新向量
+        if let Some(provider) = providers.first() {
+            let content = format!("{} {}", po.name, po.description);
+            let new_hash = sha256::digest(&content);
+            
+            // 检查内容是否变化（如果没变就不需要重索引）
+            let old_hash = self.skill_vector_dao.get_content_hash(ctx.clone(), &po.id).await?;
+            
+            if old_hash.as_deref() != Some(&new_hash) {
+                // 创建 Cortex
+                let cortex = self.cortex_dao.create_cortex_trait(
+                    ctx.clone(),
+                    provider,
+                    vec![],
+                )?;
+
+                // 生成向量
+                let vectors = cortex.embeddings(&[content]).await?;
+                
+                // 构建向量索引参数
+                let vector_params = VectorIndexParams {
+                    vector: vectors.into_iter().next().unwrap_or_default(),
+                    content_hash: new_hash,
+                    model_provider_id: provider.id.clone(),
+                    embedding_model: provider.model_name.clone(),
+                    expire_at: None,
+                };
+
+                // 更新向量索引
+                self.skill_vector_dao.upsert_vector(
+                    ctx,
+                    &po.id,
+                    &vector_params,
+                ).await?;
+            }
+        }
+
+        Ok(())
     }
 
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
@@ -209,5 +422,13 @@ impl SkillDal for SkillDalImpl {
 
     fn write_file(&self, skill: &SkillPo, filename: &str, content: &str) -> Result<(), AppError> {
         Ok(self.skill_dao.write_file(skill, filename, content)?)
+    }
+
+    async fn get_vector_content_hash(
+        &self,
+        ctx: RequestContext,
+        skill_id: &str,
+    ) -> Result<Option<String>, AppError> {
+        Ok(self.skill_vector_dao.get_content_hash(ctx, skill_id).await?)
     }
 }

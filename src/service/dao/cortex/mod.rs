@@ -12,13 +12,13 @@ use crate::pkg::RequestContext;
 
 /// Cortex DAO 工厂 trait
 ///
-/// CortexDao 负责创建 CortexTrait 和 prompt，所有方法都传递 ctx
+/// CortexDao 负责创建 CortexTrait 和执行推理/向量化，所有方法都传递 ctx
 #[async_trait::async_trait]
 pub trait CortexDao: Send + Sync {
-    /// 根据 Model Provider 创建 CortexTrait 实例，绑定已包装的 Rig 工具列表
+    /// ✅ 根据 Model Provider 创建 CortexTrait 实例，绑定已包装的 Rig 工具列表
     fn create_cortex_trait(&self, ctx: RequestContext, provider: &ModelProviderPo, rig_tools: Vec<Box<dyn ToolDyn>>) -> Result<Box<dyn CortexTrait + Send + Sync>>;
 
-    /// 执行 prompt：使用已创建的 CortexTrait 推理获取回答
+    /// ✅ 执行 prompt：使用已创建的 CortexTrait 推理获取回答
     async fn prompt(&self, ctx: RequestContext, cortex: &dyn CortexTrait, prompt: &str) -> Result<String>;
 }
 
