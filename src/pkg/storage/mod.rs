@@ -37,11 +37,12 @@ struct StorageInner {
 
 impl Storage {
     /// 从已有的 SQLite pool 创建 Storage（测试专用，保证隔离性）
-    /// 使用纯 Rust 内存向量存储
+    /// 使用纯 Rust 内存向量存储，使用 tempdir 隔离数据
     pub fn with_sqlite_pool(sqlite: SqlitePool) -> Self {
-        // 测试场景使用内存向量存储
+        // 测试场景使用内存向量存储，基于临时目录
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
         let vector = Arc::new(
-            InMemoryVectorStore::new(std::env::temp_dir().join("ai_orz_test_vectors"))
+            InMemoryVectorStore::with_path(temp_dir.path())
                 .expect("创建测试向量存储失败")
         );
         Self {
@@ -51,14 +52,12 @@ impl Storage {
     
     /// 创建存储实例，初始化连接池，自动运行 migrations
     /// 默认使用纯 Rust 内存向量存储（零系统依赖）
-    pub async fn new(db_path: &str, vector_base_path: &str) -> Result<Self> {
-        // SQLite 连接 URL 格式：sqlite:path 不需要双斜杠
-        // 双斜杠会导致相对路径解析错误，把当前目录当成域名解析了
-        let connection_url = if db_path == ":memory:" {
-            "sqlite::memory:".to_string()
-        } else {
-            format!("sqlite:{}", db_path)
-        };
+    /// 
+    /// 基于配置的 base_data_path 统一管理存储路径
+    pub async fn new() -> Result<Self> {
+        let config = crate::config::get();
+        let db_path = config.base_data_path().join("ai_orz.db");
+        let connection_url = format!("sqlite:{}", db_path.display());
 
         let sqlite = SqlitePoolOptions::new()
             .max_connections(5) // SQLite 单文件写并发有限，不需要太多连接
@@ -69,9 +68,7 @@ impl Storage {
         sqlx::migrate!("./migrations").run(&sqlite).await?;
 
         // 初始化向量存储（默认使用纯 Rust 内存实现）
-        let vector: Arc<dyn VectorStore> = Arc::new(
-            InMemoryVectorStore::new(vector_base_path)?
-        );
+        let vector: Arc<dyn VectorStore> = Arc::new(InMemoryVectorStore::new()?);
 
         Ok(Self {
             inner: Arc::new(StorageInner { sqlite, vector }),
@@ -79,12 +76,10 @@ impl Storage {
     }
     
     /// 创建使用 SQLite VSS 后端的存储（需要系统依赖）
-    pub async fn with_sqlite_vss(db_path: &str, vector_db_path: &str) -> Result<Self> {
-        let connection_url = if db_path == ":memory:" {
-            "sqlite::memory:".to_string()
-        } else {
-            format!("sqlite:{}", db_path)
-        };
+    pub async fn with_sqlite_vss() -> Result<Self> {
+        let config = crate::config::get();
+        let db_path = config.base_data_path().join("ai_orz.db");
+        let connection_url = format!("sqlite:{}", db_path.display());
 
         let sqlite = SqlitePoolOptions::new()
             .max_connections(5)
@@ -94,8 +89,9 @@ impl Storage {
         sqlx::migrate!("./migrations").run(&sqlite).await?;
 
         // 使用 SQLite VSS 后端
+        let vector_db_path = config.base_data_path().join("vectors.db");
         let vector: Arc<dyn VectorStore> = Arc::new(
-            SqliteVssStore::new(vector_db_path).await?
+            SqliteVssStore::new(vector_db_path.to_str().unwrap_or_default()).await?
         );
 
         Ok(Self {
@@ -103,45 +99,65 @@ impl Storage {
         })
     }
 
-    /// 获取 SQLite 连接池引用
+    /// 获取 SQLite 连接池
+    pub fn sqlite(&self) -> &SqlitePool {
+        &self.inner.sqlite
+    }
+    
+    /// 获取 SQLite 连接池（别名，向后兼容）
     pub fn sqlite_pool(&self) -> &SqlitePool {
         &self.inner.sqlite
     }
 
-    /// 获取 SQLite 连接池的 owned clone（便宜，因为内部是 Arc）
-    pub fn sqlite_pool_owned(&self) -> SqlitePool {
+    /// 获取 owned SQLite 连接池（测试专用，向后兼容）
+    pub fn pool_owned(&self) -> SqlitePool {
         self.inner.sqlite.clone()
     }
-    
-    /// 向后兼容：旧代码调用 pool_owned()
-    #[deprecated = "Use sqlite_pool_owned() instead"]
-    pub fn pool_owned(&self) -> SqlitePool {
-        self.sqlite_pool_owned()
+
+    /// 获取向量存储
+    pub fn vector(&self) -> &Arc<dyn VectorStore> {
+        &self.inner.vector
     }
 
-    /// 获取向量存储（统一 Trait 接口）
-    pub fn vector(&self) -> Arc<dyn VectorStore> {
-        self.inner.vector.clone()
+    /// 获取向量存储（兼容旧代码）
+    pub fn vector_store(&self) -> &Arc<dyn VectorStore> {
+        &self.inner.vector
     }
 }
 
-/// 全局存储实例
-static STORAGE: std::sync::OnceLock<Storage> = std::sync::OnceLock::new();
+use std::path::Path;
+use std::sync::OnceLock;
 
-/// 初始化存储（测试专用，内存数据库）
-pub async fn init_for_test() {
-    init("sqlite::memory:", "sqlite::memory:").await;
-}
+/// 全局 Storage 单例（向后兼容）
+static STORAGE_INSTANCE: OnceLock<Storage> = OnceLock::new();
 
-/// 初始化存储
-pub async fn init(db_path: &str, vector_db_path: &str) {
-    let storage = Storage::new(db_path, vector_db_path).await.unwrap();
-    let _ = STORAGE.set(storage);
-}
-
-/// 获取存储实例
+/// 获取全局 Storage 单例（向后兼容）
 pub fn get() -> &'static Storage {
-    STORAGE
-        .get()
-        .expect("存储未初始化，请先调用 storage::init()")
+    STORAGE_INSTANCE.get().expect("Storage 尚未初始化，请先调用 storage::init()")
+}
+
+/// 初始化全局 Storage（向后兼容，推荐使用 Storage::new() 并使用依赖注入）
+pub async fn init(_db_path: &str, _vector_db_path: &str) {
+    // 新实现忽略传入路径，统一使用 config base_path
+    if STORAGE_INSTANCE.get().is_none() {
+        let storage = Storage::new().await.expect("初始化 Storage 失败");
+        let _ = STORAGE_INSTANCE.set(storage);
+    }
+}
+
+/// 测试专用：初始化空数据库（使用内存数据库）
+pub async fn init_for_test() {
+    if STORAGE_INSTANCE.get().is_none() {
+        // 测试场景使用内存数据库
+        let sqlite = SqlitePoolOptions::new()
+            .connect("sqlite::memory:")
+            .await
+            .expect("创建测试内存数据库失败");
+        
+        // 运行 migrations
+        sqlx::migrate!("./migrations").run(&sqlite).await.expect("运行 migrations 失败");
+        
+        let storage = Storage::with_sqlite_pool(sqlite);
+        let _ = STORAGE_INSTANCE.set(storage);
+    }
 }

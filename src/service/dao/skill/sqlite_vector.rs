@@ -44,10 +44,7 @@ impl SkillVectorDao for SkillVectorDaoSqliteImpl {
         vector_store.upsert(
             "skills",
             skill_id,
-            &vector_params.vector,
-            &vector_params.content_hash,
-            &vector_params.embedding_model,
-            vector_params.expire_at,
+            vector_params,
         ).await?;
         Ok(())
     }

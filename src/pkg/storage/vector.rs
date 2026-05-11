@@ -10,6 +10,7 @@
 
 use async_trait::async_trait;
 use crate::error::Result;
+use crate::models::vector::VectorIndexParams;
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -27,36 +28,16 @@ pub trait VectorStore: Send + Sync + std::fmt::Debug {
     /// # 参数
     /// - collection: 集合名称（如 skills, memories）
     /// - id: 业务表 ID（如 skill_id, memory_id）
-    /// - vector: 向量数据
-    /// - content_hash: 原始内容的哈希（用于判断是否需要重索引）
-    /// - embedding_model: 使用的 Embedding 模型名称
-    /// - expire_at: 过期时间戳（秒），None 表示永不过期
-    async fn upsert(
-        &self, 
-        collection: &str, 
-        id: &str, 
-        vector: &[f32],
-        content_hash: &str,
-        embedding_model: &str,
-        expire_at: Option<i64>,
-    ) -> Result<()>;
+    /// - params: 向量索引参数（向量、哈希、模型信息、过期时间）
+    async fn upsert(&self, collection: &str, id: &str, params: &VectorIndexParams) -> Result<()>;
     
     /// 语义搜索
     /// 
     /// 返回: Vec<(source_id, distance)>
-    async fn search(
-        &self, 
-        collection: &str, 
-        query_vector: &[f32], 
-        top_k: i32,
-    ) -> Result<Vec<(String, f32)>>;
+    async fn search(&self, collection: &str, query_vector: &[f32], top_k: i32) -> Result<Vec<(String, f32)>>;
     
     /// 获取指定文档的内容哈希（用于增量索引判断）
-    async fn get_content_hash(
-        &self,
-        collection: &str,
-        id: &str,
-    ) -> Result<Option<String>>;
+    async fn get_content_hash(&self, collection: &str, id: &str) -> Result<Option<String>>;
     
     /// 删除向量
     async fn delete(&self, collection: &str, id: &str) -> Result<()>;
@@ -80,15 +61,7 @@ impl VectorStore for SqliteVssStore {
         Ok(())
     }
 
-    async fn upsert(
-        &self, 
-        collection: &str, 
-        id: &str, 
-        vector: &[f32],
-        content_hash: &str,
-        embedding_model: &str,
-        expire_at: Option<i64>,
-    ) -> Result<()> {
+    async fn upsert(&self, collection: &str, id: &str, params: &VectorIndexParams) -> Result<()> {
         // 1. 先存到元数据表（id -> rowid 映射）
         let (rowid,): (i64,) = sqlx::query_as(
             "INSERT OR REPLACE INTO vector_metadata 
@@ -98,27 +71,22 @@ impl VectorStore for SqliteVssStore {
         )
         .bind(collection)
         .bind(id)
-        .bind(content_hash)
-        .bind(embedding_model)
-        .bind(vector.len() as i32)
-        .bind(expire_at)
+        .bind(&params.content_hash)
+        .bind(&params.embedding_model)
+        .bind(params.vector.len() as i32)
+        .bind(params.expire_at)
         .fetch_one(&*self.pool)
         .await?;
         
         // 2. 存到 vss 虚拟表
-        let vector_json = serde_json::to_string(vector)?;
+        let vector_json = serde_json::to_string(&params.vector)?;
         let sql = format!("INSERT OR REPLACE INTO vss_{}(rowid, embedding) VALUES (?, json(?));", collection);
         sqlx::query(&sql).bind(rowid).bind(vector_json).execute(&*self.pool).await?;
         
         Ok(())
     }
 
-    async fn search(
-        &self, 
-        collection: &str, 
-        query_vector: &[f32], 
-        top_k: i32,
-    ) -> Result<Vec<(String, f32)>> {
+    async fn search(&self, collection: &str, query_vector: &[f32], top_k: i32) -> Result<Vec<(String, f32)>> {
         let vector_json = serde_json::to_string(query_vector)?;
         let sql = format!(
             "SELECT m.source_id, v.distance 
@@ -140,11 +108,7 @@ impl VectorStore for SqliteVssStore {
         Ok(results)
     }
 
-    async fn get_content_hash(
-        &self,
-        collection: &str,
-        id: &str,
-    ) -> Result<Option<String>> {
+    async fn get_content_hash(&self, collection: &str, id: &str) -> Result<Option<String>> {
         let result: Option<(String,)> = sqlx::query_as(
             "SELECT content_hash FROM vector_metadata WHERE collection = ? AND source_id = ?"
         )

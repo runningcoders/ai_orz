@@ -167,12 +167,12 @@ impl RequestContext {
     /// 获取 DB pool
     pub fn db_pool(&self) -> &SqlitePool {
         // 从统一 Storage 获取，保持向后兼容
-        self.storage.sqlite_pool()
+        self.storage.sqlite()
     }
     
     /// 获取向量存储（统一 Trait 接口）
     pub fn vector_store(&self) -> Arc<dyn VectorStore> {
-        self.storage.vector()
+        self.storage.vector().clone()
     }
     
     /// 获取统一存储门面

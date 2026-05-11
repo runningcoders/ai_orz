@@ -7,44 +7,11 @@
 
 use async_trait::async_trait;
 use crate::error::Result;
-use bincode::{Encode, Decode};
+use crate::models::vector::{VectorMeta, VectorEntry, VectorCollection, VectorIndexParams};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-
-/// 向量元数据
-#[derive(Debug, Clone, Encode, Decode)]
-pub struct VectorMeta {
-    pub content_hash: String,
-    pub embedding_model: String,
-    pub indexed_at: i64,
-    pub expire_at: Option<i64>,
-}
-
-/// 单个向量条目
-#[derive(Debug, Clone, Encode, Decode)]
-pub struct VectorEntry {
-    pub id: String,
-    pub vector: Vec<f32>,
-    pub meta: VectorMeta,
-}
-
-/// 向量集合（完整可序列化）
-#[derive(Debug, Clone, Encode, Decode)]
-pub struct VectorCollection {
-    pub dimensions: i32,
-    pub entries: Vec<VectorEntry>,
-}
-
-impl VectorCollection {
-    pub fn new(dimensions: i32) -> Self {
-        Self {
-            dimensions,
-            entries: Vec::new(),
-        }
-    }
-}
 
 /// 内存向量存储
 ///
@@ -56,8 +23,20 @@ pub struct InMemoryVectorStore {
 }
 
 impl InMemoryVectorStore {
-    /// 创建新的内存向量存储
-    pub fn new<P: AsRef<Path>>(base_path: P) -> Result<Self> {
+    /// 创建新的内存向量存储（使用配置的 base_path）
+    pub fn new() -> Result<Self> {
+        let config = crate::config::get();
+        let base_path = config.base_data_path().join("vectors");
+        std::fs::create_dir_all(&base_path)?;
+        
+        Ok(Self {
+            base_path,
+            collections: Arc::new(RwLock::new(HashMap::new())),
+        })
+    }
+
+    /// 使用指定路径创建（测试专用）
+    pub fn with_path<P: AsRef<Path>>(base_path: P) -> Result<Self> {
         let base_path = base_path.as_ref().to_path_buf();
         std::fs::create_dir_all(&base_path)?;
         
@@ -156,19 +135,11 @@ impl super::VectorStore for InMemoryVectorStore {
         Ok(())
     }
 
-    async fn upsert(
-        &self, 
-        collection: &str, 
-        id: &str, 
-        vector: &[f32],
-        content_hash: &str,
-        embedding_model: &str,
-        expire_at: Option<i64>,
-    ) -> Result<()> {
+    async fn upsert(&self, collection: &str, id: &str, params: &VectorIndexParams) -> Result<()> {
         let now = chrono::Utc::now().timestamp();
         
         // 确保集合存在
-        self.init_collection(collection, vector.len() as i32).await?;
+        self.init_collection(collection, params.vector.len() as i32).await?;
         
         let mut collections = self.collections.write().await;
         let coll = collections.get_mut(collection)
@@ -179,24 +150,24 @@ impl super::VectorStore for InMemoryVectorStore {
             // 更新
             coll.entries[pos] = VectorEntry {
                 id: id.to_string(),
-                vector: vector.to_vec(),
+                vector: params.vector.clone(),
                 meta: VectorMeta {
-                    content_hash: content_hash.to_string(),
-                    embedding_model: embedding_model.to_string(),
+                    content_hash: params.content_hash.clone(),
+                    embedding_model: params.embedding_model.clone(),
                     indexed_at: now,
-                    expire_at,
+                    expire_at: params.expire_at,
                 },
             };
         } else {
             // 新增
             coll.entries.push(VectorEntry {
                 id: id.to_string(),
-                vector: vector.to_vec(),
+                vector: params.vector.clone(),
                 meta: VectorMeta {
-                    content_hash: content_hash.to_string(),
-                    embedding_model: embedding_model.to_string(),
+                    content_hash: params.content_hash.clone(),
+                    embedding_model: params.embedding_model.clone(),
                     indexed_at: now,
-                    expire_at,
+                    expire_at: params.expire_at,
                 },
             });
         }
@@ -212,12 +183,7 @@ impl super::VectorStore for InMemoryVectorStore {
         Ok(())
     }
 
-    async fn search(
-        &self, 
-        collection: &str, 
-        query_vector: &[f32], 
-        top_k: i32,
-    ) -> Result<Vec<(String, f32)>> {
+    async fn search(&self, collection: &str, query_vector: &[f32], top_k: i32) -> Result<Vec<(String, f32)>> {
         let now = chrono::Utc::now().timestamp();
         
         // 获取或加载集合
@@ -243,11 +209,7 @@ impl super::VectorStore for InMemoryVectorStore {
         Ok(results.into_iter().take(top_k as usize).collect())
     }
 
-    async fn get_content_hash(
-        &self,
-        collection: &str,
-        id: &str,
-    ) -> Result<Option<String>> {
+    async fn get_content_hash(&self, collection: &str, id: &str) -> Result<Option<String>> {
         let coll = self.get_or_load(collection).await?;
         
         Ok(coll.and_then(|c| {

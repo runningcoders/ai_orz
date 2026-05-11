@@ -3,9 +3,42 @@
 //! 包含向量索引参数、匹配元信息、搜索结果包装器
 //! 以及可向量化实体 Trait 接口
 
-// ==================== 向量索引创建/更新参数 ====================
+use bincode::{Encode, Decode};
 
-/// 向量索引创建/更新参数（通用，所有 DAO 复用）
+// ==================== 向量存储通用数据结构 ====================\n\n/// 向量元数据（持久化）
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct VectorMeta {
+    pub content_hash: String,
+    pub embedding_model: String,
+    pub indexed_at: i64,
+    pub expire_at: Option<i64>,
+}
+
+/// 单个向量条目（持久化）
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct VectorEntry {
+    pub id: String,
+    pub vector: Vec<f32>,
+    pub meta: VectorMeta,
+}
+
+/// 向量集合（完整可序列化）
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct VectorCollection {
+    pub dimensions: i32,
+    pub entries: Vec<VectorEntry>,
+}
+
+impl VectorCollection {
+    pub fn new(dimensions: i32) -> Self {
+        Self {
+            dimensions,
+            entries: Vec::new(),
+        }
+    }
+}
+
+// ==================== 向量索引创建/更新参数 ====================\n\n/// 向量索引创建/更新参数（通用，所有 DAO 复用）
 #[derive(Debug, Clone)]
 pub struct VectorIndexParams {
     /// 向量数据
@@ -76,9 +109,7 @@ pub struct SearchMatchInfo {
     pub content_hash: Option<String>,
 }
 
-// ==================== 向量搜索结果包装器 ====================
-
-/// 搜索结果包装器（通用，所有 DAO 复用）
+// ==================== 向量搜索结果包装器 ====================\n\n/// 搜索结果包装器（通用，所有 DAO 复用）
 ///
 /// 包含业务 PO 对象和匹配元信息，支持向量/关键词/混合多种搜索策略
 #[derive(Debug, Clone)]
@@ -89,16 +120,12 @@ pub struct SearchResult<T> {
     pub match_info: SearchMatchInfo,
 }
 
-// ==================== 可向量化实体 Trait ====================
-
-/// ✅ 可向量化实体 Trait
+// ==================== 可向量化实体 Trait ====================\n\n/// ✅ 可向量化实体 Trait
 ///
 /// 实现这个 Trait 的实体，表示它支持被向量索引
 /// 所有向量相关的业务逻辑都封装在实体内部
 pub trait Vectorizable {
-    // ===== 必须实现 =====
-
-    /// 生成待向量化的文本内容
+    // ===== 必须实现 =====\n\n    /// 生成待向量化的文本内容
     ///
     /// 由实体自己决定：哪些字段需要被向量化？
     /// 例如 Skill 可能是 name + description，Memory 是 content
@@ -109,9 +136,7 @@ pub trait Vectorizable {
     where
         Self: Sized;
 
-    // ===== 默认实现（不需要重写） =====
-
-    /// 计算内容哈希（默认 SHA256）
+    // ===== 默认实现（不需要重写） =====\n\n    /// 计算内容哈希（默认 SHA256）
     fn vector_content_hash(&self) -> String {
         sha256::digest(self.vectorize_text())
     }

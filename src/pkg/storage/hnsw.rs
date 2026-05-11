@@ -4,8 +4,8 @@
 
 use async_trait::async_trait;
 use crate::error::Result;
+use crate::models::vector::VectorIndexParams;
 use crate::pkg::storage::InMemoryVectorStore;
-use std::sync::Arc;
 
 /// HNSW 向量存储（当前为 InMemory 的别名）
 /// TODO: 替换为真正的 HNSW 实现
@@ -16,16 +16,16 @@ pub struct HnswStore {
 
 impl HnswStore {
     /// 创建新的 HNSW 向量存储
-    pub fn new() -> Self {
-        Self {
-            inner: InMemoryVectorStore::new(std::env::temp_dir()).expect("Failed to create InMemoryVectorStore"),
-        }
+    pub fn new() -> Result<Self> {
+        Ok(Self {
+            inner: InMemoryVectorStore::new()?,
+        })
     }
 }
 
 impl Default for HnswStore {
     fn default() -> Self {
-        Self::new()
+        Self::new().expect("创建 HnswStore 失败")
     }
 }
 
@@ -35,24 +35,11 @@ impl super::VectorStore for HnswStore {
         self.inner.init_collection(collection, dimensions).await
     }
 
-    async fn upsert(
-        &self,
-        collection: &str,
-        id: &str,
-        vector: &[f32],
-        content_hash: &str,
-        embedding_model: &str,
-        expire_at: Option<i64>,
-    ) -> Result<()> {
-        self.inner.upsert(collection, id, vector, content_hash, embedding_model, expire_at).await
+    async fn upsert(&self, collection: &str, id: &str, params: &VectorIndexParams) -> Result<()> {
+        self.inner.upsert(collection, id, params).await
     }
 
-    async fn search(
-        &self,
-        collection: &str,
-        query_vector: &[f32],
-        top_k: i32,
-    ) -> Result<Vec<(String, f32)>> {
+    async fn search(&self, collection: &str, query_vector: &[f32], top_k: i32) -> Result<Vec<(String, f32)>> {
         self.inner.search(collection, query_vector, top_k).await
     }
 
