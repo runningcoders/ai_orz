@@ -10,17 +10,18 @@
 
 ## 核心设计原则
 
-### 1. 索引与数据完全分离
+### 1. 索引与数据完全分离（同目录 DAO 拆分模式）
 
-- ✅ 向量数据物理隔离：存储在独立的 `ai_orz_vector.db` SQLite 数据库文件
-- ✅ 核心业务表零侵入：不修改任何现有业务表结构
-- ✅ 通过 `source_id`（业务表 UUID）跨库关联
-- ✅ 未来切换到专业向量数据库（Qdrant 等）业务层零感知
+- ✅ 业务逻辑解耦：SkillDao 拆分为 `sqlite.rs`（基础数据） + `vector.rs`（向量索引）
+- ✅ 同目录共存：两个 DAO 文件位于 `dao/skill/` 目录下，`mod.rs` 提供统一 trait 定义
+- ✅ 各自维护单例：`new_skill_dao()` + `new_skill_vector_dao()` 独立构造
+- ✅ 通过 `source_id`（业务表 UUID）跨层关联
+- ✅ 未来切换向量存储后端（LanceDB / Qdrant 等）业务层零感知
 
 ### 2. 触发式非全量索引
 
 - 不对所有数据强制向量化，节省 Embedding Token 成本
-- 由各业务 DAO 自主决定：
+- 由各业务 Domain 层自主决定：
   - **什么时候索引**（创建/更新时？还是后台异步？）
   - **索引什么内容**（name + description? 还是全部字段？）
   - **用什么模型**（text-embedding-3-small / large？）
@@ -29,8 +30,15 @@
 
 ### 3. 渐进式实现，可平滑升级
 
-- 当前阶段：SQLite + VSS 扩展（零运维成本，开箱即用）
-- 未来：可平滑升级到 Qdrant / pgvector 等专业向量数据库，上层接口不变
+- ✅ **第一阶段**：纯 Rust InMemoryVectorStore（余弦相似度 + Bincode 持久化），零系统依赖
+- ✅ **第二阶段**：LanceDB 嵌入式向量数据库（生产级高性能选项）
+- 未来：可平滑升级到 Qdrant 等专业向量数据库，上层接口不变
+
+### 4. 分层聚合，职责清晰
+
+- **DAO 层**：只做单一职责，基础数据 DAO 不碰向量，向量 DAO 不碰业务数据
+- **Domain 层**：组合两个 DAO，负责业务流程编排
+- **存储层**：纯通用能力，不感知业务逻辑
 
 ---
 
@@ -40,9 +48,10 @@
 
 | 层级 | 职责 | 位置 |
 |------|------|------|
-| **pkg/storage/vector.rs** | 通用向量索引层，纯底层能力，无业务逻辑<br>只懂向量增删查改，不知道"技能"/"记忆"是什么 | `src/pkg/storage/vector.rs` |
-| **业务 DAO**（SkillDao 等） | 决定业务逻辑：什么时候索引、索引什么内容、用什么模型 | `src/service/dao/skill/mod.rs` |
-| **业务 Domain** | 组合业务流程：如"创建技能后，调用 Embedding + 向量索引" | `src/service/domain/skill/mod.rs` |
+| **pkg/storage/** | 通用向量存储层，纯底层能力，无业务逻辑<br>只懂向量增删查改，不知道"技能"/"记忆"是什么 | `src/pkg/storage/` |
+| **业务 Vector Dao**（SkillVectorDao 等） | 封装向量存储调用，提供业务友好接口 | `src/service/dao/skill/vector.rs` |
+| **业务 Base Dao**（SkillDao 等） | 纯基础数据 CRUD，不感知向量存在 | `src/service/dao/skill/sqlite.rs` |
+| **业务 Domain** | 组合两个 DAO：如"创建技能后，调用 Embedding + 向量索引" | `src/service/domain/skill/mod.rs` |
 
 ### 调用链路示例
 
@@ -50,152 +59,215 @@
 业务操作（创建技能）
     ↓
 SkillDomain.create_skill()
-    ↓
-SkillDao.insert()  →  写入关系型数据库
-    ↓
-SkillDao.index_skill()
+    ├─ SkillDao.insert()  →  写入关系型数据库
+    ├─ 构建索引文本：name + description
     ├─ 调用 Cortex 生成 Embedding
     ├─ 计算内容 Hash
-    └─ 调用 ctx.vector_store().upsert()  →  写入向量数据库
+    └─ SkillVectorDao.upsert_vector()  →  写入向量存储
 ```
 
 ---
 
-## 数据结构设计
+## 向量存储后端
 
-### 1. 向量元数据表（SQLX 迁移管理）
+### 统一抽象：VectorStore trait
 
-**位置**：`migrations/20260505000000_vector_metadata.sql`
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| collection | TEXT | 集合名称，如 skills, memories, tasks |
-| source_id | TEXT | 业务表 UUID，跨库关联主键 |
-| content_hash | TEXT | 内容哈希，用于判断是否需要重索引 |
-| model | TEXT | 使用的 Embedding 模型名称 |
-| dimensions | INTEGER | 向量维度 |
-| indexed_at | INTEGER | 索引时间（unix 秒级时间戳） |
-| expire_at | INTEGER | 过期时间（NULL 表示永不过期） |
-
-**主键**：(collection, source_id)
-
-### 2. VSS 虚拟表（动态创建）
-
-每个集合一张虚拟表，命名规则：`vss_{collection}`
-
-```sql
-CREATE VIRTUAL TABLE IF NOT EXISTS vss_skills USING vss0(embedding(1536));
-```
-
-- 由 `create_collection()` 动态创建
-- 数量和维度灵活，新增集合不需要改迁移
-- 通过 `rowid` 与元数据表关联
-
----
-
-## 核心 API
-
-### 获取向量存储实例
+所有后端实现相同的接口，上层调用零感知：
 
 ```rust
-let vector_store = ctx.vector_store();
-```
-
-### 1. 创建向量集合
-
-```rust
-/// 创建向量集合（按领域分表）
-/// 幂等，重复调用安全
-async fn create_collection(collection: &str, dimensions: i32) -> Result<()>
-
-// 示例：创建技能向量集合，1536 维度
-vector_store.create_collection("skills", 1536).await?;
-```
-
-### 2. 插入/更新向量
-
-```rust
-/// 插入或更新向量索引
-async fn upsert(
-    collection: &str,
-    source_id: &str,
-    vector: &[f32],
-    content_hash: &str,
-    model: &str,
-    expire_at: Option<i64>,
-) -> Result<()>
-
-// 示例
-vector_store.upsert(
-    "skills",
-    "skill_001",
-    &vector,
-    "content_hash_abc",
-    "text-embedding-3-small",
-    None,
-).await?;
-```
-
-### 3. 语义搜索
-
-```rust
-/// 语义搜索，返回 (source_id, distance) 列表
-/// distance 越小越相似
-async fn search(
-    collection: &str,
-    query_vector: &[f32],
-    top_k: i32,
-) -> Result<Vec<(String, f32)>>
-
-// 示例：搜索最相似的 10 个技能
-let results = vector_store.search("skills", &query_vector, 10).await?;
-for (source_id, distance) in results {
-    println!("技能 {} 相似度 {}", source_id, 1.0 - distance);
+#[async_trait]
+pub trait VectorStore: Send + Sync {
+    async fn insert_or_update(&self, row: &VectorRow) -> Result<()>;
+    async fn get(&self, collection: &str, source_id: &str) -> Result<Option<VectorRow>>;
+    async fn delete(&self, collection: &str, source_id: &str) -> Result<()>;
+    async fn search(&self, collection: &str, vector: &[f32], top_k: i32) -> Result<Vec<VectorSearchHit>>;
+    async fn list_by_source_ids(&self, collection: &str, source_ids: &[String]) -> Result<Vec<VectorRow>>;
 }
 ```
 
-### 4. 检查是否需要重索引
+### 后端对比
+
+| 后端 | 实现位置 | 特点 | 适用场景 |
+|------|----------|------|----------|
+| **InMemoryVectorStore** | `in_memory.rs` | 纯 Rust，零依赖，余弦相似度，Bincode 持久化 | 开发、测试、小数据集 |
+| **LanceVectorStore** | `lance.rs` | 生产级，高性能，列式存储 | 生产环境、大数据集 |
+
+### 统一数据结构
 
 ```rust
-/// 检查内容是否变化，是否需要重索引
-async fn needs_reindex(
-    collection: &str,
-    source_id: &str,
-    current_content_hash: &str,
-) -> Result<bool>
-
-// 示例：更新技能前先检查
-if vector_store.needs_reindex("skills", "skill_001", &new_hash).await? {
-    // 需要重索引
+/// 向量行数据（所有后端统一格式）
+pub struct VectorRow {
+    pub collection: String,
+    pub source_id: String,
+    pub vector: Vec<f32>,
+    pub content_hash: String,
+    pub model: String,
+    pub indexed_at: i64,
 }
-```
 
-### 5. 删除向量
-
-```rust
-/// 删除向量索引
-async fn delete(collection: &str, source_id: &str) -> Result<()>
-
-// 示例
-vector_store.delete("skills", "skill_001").await?;
+/// 向量搜索结果
+pub struct VectorSearchHit {
+    pub source_id: String,
+    pub distance: f32,
+}
 ```
 
 ---
 
-## 迁移策略
+## Skill DAO 拆分设计
 
-### 混合模式：迁移 + 动态创建，互不冲突
+### mod.rs 统一入口
 
-| 表类型 | 管理方式 | 原因 |
-|--------|----------|------|
-| **vector_metadata** | ✅ SQLX 迁移文件 | 只有 1 张全局表，结构固定 |
-| **vss_{collection}** | ✅ `create_collection()` 动态创建 | 数量不确定，维度取决于模型，灵活优先 |
+```rust
+// dao/skill/mod.rs
 
-### 幂等保证
+// 1. Trait 定义（接口契约）
+#[async_trait]
+pub trait SkillDao: Send + Sync {
+    // 纯基础数据 CRUD
+    async fn insert(&self, ctx: RequestContext, skill: &SkillPo) -> Result<()>;
+    async fn update(&self, ctx: RequestContext, skill: &SkillPo) -> Result<()>;
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<SkillPo>>;
+    // ... 其他基础方法
+}
 
-- 迁移文件使用 `CREATE TABLE IF NOT EXISTS`
-- 动态创建使用 `CREATE VIRTUAL TABLE IF NOT EXISTS`
-- 两者完全不冲突，谁先执行都可以
+#[async_trait]
+pub trait SkillVectorDao: Send + Sync {
+    // 纯向量索引 CRUD
+    async fn upsert_vector(&self, ctx: RequestContext, row: VectorRow) -> Result<()>;
+    async fn search_vector(&self, ctx: RequestContext, collection: &str, vector: &[f32], top_k: i32) -> Result<Vec<VectorSearchHit>>;
+    async fn get_vector_row(&self, ctx: RequestContext, collection: &str, source_id: &str) -> Result<Option<VectorRow>>;
+}
+
+// 2. 子模块构造函数别名（用于 DAL 层组合）
+pub use sqlite::{dao as base_dao, new as new_skill_dao};
+pub use vector::{dao as vector_dao, new as new_skill_vector_dao};
+
+// 3. 统一初始化所有 Skill DAO 单例
+pub fn init() {
+    sqlite::init();
+    vector::init();
+}
+```
+
+### sqlite.rs - 基础数据 DAO
+
+```rust
+// dao/skill/sqlite.rs
+// 只负责基础数据 CRUD，完全不感知向量存在
+
+#[derive(Debug, Clone)]
+pub struct SkillDaoSqliteImpl;
+
+#[async_trait]
+impl SkillDao for SkillDaoSqliteImpl {
+    async fn insert(&self, ctx: RequestContext, skill: &SkillPo) -> Result<()> {
+        // 纯 SQLite 插入逻辑
+    }
+    // ... 其他基础方法
+}
+```
+
+### vector.rs - 向量索引 DAO
+
+```rust
+// dao/skill/vector.rs
+// 只负责向量索引，不碰业务数据
+
+#[derive(Debug, Clone)]
+pub struct SkillVectorDaoImpl;
+
+#[async_trait]
+impl SkillVectorDao for SkillVectorDaoImpl {
+    async fn upsert_vector(&self, ctx: RequestContext, row: VectorRow) -> Result<()> {
+        ctx.storage().vector_store().insert_or_update(&row).await
+    }
+    
+    async fn search_vector(&self, ctx: RequestContext, collection: &str, vector: &[f32], top_k: i32) -> Result<Vec<VectorSearchHit>> {
+        ctx.storage().vector_store().search(collection, vector, top_k).await
+    }
+    
+    async fn get_vector_row(&self, ctx: RequestContext, collection: &str, source_id: &str) -> Result<Option<VectorRow>> {
+        ctx.storage().vector_store().get(collection, source_id).await
+    }
+}
+```
+
+---
+
+## Domain 层组合示例
+
+```rust
+// domain/skill/mod.rs
+
+pub struct SkillDalImpl {
+    base_dao: Arc<dyn SkillDao>,
+    vector_dao: Arc<dyn SkillVectorDao>,
+}
+
+impl SkillDal for SkillDalImpl {
+    async fn create(&self, ctx: RequestContext, skill: SkillPo) -> Result<SkillPo> {
+        // 1. 写入基础数据
+        self.base_dao.insert(ctx.clone(), &skill).await?;
+        
+        // 2. 构建索引文本
+        let text = format!("{} {}", skill.name, skill.description);
+        
+        // 3. 生成 Embedding
+        let vector = self.generate_embedding(&text).await?;
+        let content_hash = sha256(&text);
+        
+        // 4. 写入向量索引
+        let row = VectorRow {
+            collection: "skills".to_string(),
+            source_id: skill.id.clone(),
+            vector,
+            content_hash,
+            model: "text-embedding-3-small".to_string(),
+            indexed_at: now(),
+        };
+        self.vector_dao.upsert_vector(ctx, row).await?;
+        
+        Ok(skill)
+    }
+    
+    async fn hybrid_search(&self, ctx: RequestContext, query: &str, top_k: i32) -> Result<Vec<SkillPo>> {
+        // 1. 关键词搜索（基础 DAO）
+        let keyword_results = self.base_dao.search(ctx.clone(), query).await?;
+        
+        // 2. 向量搜索（向量 DAO）
+        let query_vector = self.generate_embedding(query).await?;
+        let vector_hits = self.vector_dao.search_vector(ctx, "skills", &query_vector, top_k).await?;
+        let vector_ids: Vec<&str> = vector_hits.iter().map(|h| h.source_id.as_str()).collect();
+        let vector_results = self.base_dao.batch_get(ctx, &vector_ids).await?;
+        
+        // 3. 结果合并去重
+        Ok(self.merge_results(keyword_results, vector_results))
+    }
+}
+```
+
+---
+
+## 配置项
+
+在 `common/src/config.rs` 中：
+
+```rust
+pub struct DatabaseConfig {
+    pub db_file_name: String,              // 核心业务数据库
+    pub vector_store_type: VectorStoreType, // 向量存储后端类型
+}
+
+pub enum VectorStoreType {
+    InMemory,  // 纯 Rust 内存实现（默认）
+    LanceDB,   // LanceDB 嵌入式向量数据库
+}
+```
+
+默认值：
+- 核心数据库：`ai_orz.db`
+- 向量存储后端：`InMemory`
 
 ---
 
@@ -204,10 +276,10 @@ vector_store.delete("skills", "skill_001").await?;
 ### 统一入口
 
 ```rust
-// Storage 内部持有两个连接池：
+// Storage 内部持有向量存储实例
 struct StorageInner {
-    sqlite: SqlitePool,    // 核心业务数据库
-    vector: SqliteVssStore, // 向量数据库
+    sqlite: SqlitePool,          // 核心业务数据库
+    vector_store: Arc<dyn VectorStore>, // 向量存储（多后端支持）
 }
 
 // 零成本克隆（内部 Arc）
@@ -219,122 +291,18 @@ struct Storage;
 
 | 方法 | 场景 |
 |------|------|
-| `Storage::new(db_path, vector_db_path)` | 生产环境，初始化连接池 |
-| `Storage::with_sqlite_pool(pool)` | 测试专用，保证数据隔离 |
+| `Storage::new(config: &DatabaseConfig)` | 生产环境，根据配置选择后端 |
+| `Storage::with_sqlite_pool(pool)` | 测试专用，默认使用 InMemory 后端 |
 | `storage::init_for_test()` | 全局测试初始化 |
-
-### RequestContext 集成
-
-```rust
-// RequestContext 只持有 storage，不持有独立的 db_pool
-pub struct RequestContext {
-    storage: Storage,
-    // ... 其他字段
-}
-
-// 向后兼容接口
-impl RequestContext {
-    pub fn db_pool(&self) -> &SqlitePool {
-        self.storage.sqlite_pool()
-    }
-    
-    pub fn vector_store(&self) -> SqliteVssStore {
-        self.storage.vector()
-    }
-}
-```
-
----
-
-## 业务接入示例
-
-### 技能语义搜索
-
-在 `SkillDao` 中实现：
-
-```rust
-impl SkillDao {
-    /// 创建技能并建立向量索引
-    pub async fn create_with_index(&self, ctx: &RequestContext, skill: &Skill) -> Result<Skill> {
-        // 1. 写入关系型数据库
-        let skill = self.insert(ctx, skill).await?;
-        
-        // 2. 构建索引文本
-        let text = format!("{} {}", skill.name, skill.description);
-        
-        // 3. 生成 Embedding（调用 Cortex）
-        let vector = cortex_service::embed(&skill.model_provider_id, &text).await?;
-        
-        // 4. 计算内容哈希
-        let content_hash = sha256(&text);
-        
-        // 5. 写入向量索引
-        ctx.vector_store().upsert(
-            "skills",
-            &skill.id,
-            &vector,
-            &content_hash,
-            "text-embedding-3-small",
-            None,
-        ).await?;
-        
-        Ok(skill)
-    }
-    
-    /// 语义搜索技能
-    pub async fn search_semantic(&self, ctx: &RequestContext, query: &str, top_k: i32) -> Result<Vec<Skill>> {
-        // 1. 生成查询向量
-        let query_vector = cortex_service::embed(&model_provider_id, query).await?;
-        
-        // 2. 向量搜索
-        let results = ctx.vector_store().search("skills", &query_vector, top_k).await?;
-        
-        // 3. 通过 source_id 从关系型数据库获取完整数据
-        let skill_ids: Vec<&str> = results.iter().map(|(id, _)| id.as_str()).collect();
-        let skills = self.batch_get(ctx, &skill_ids).await?;
-        
-        Ok(skills)
-    }
-}
-```
-
----
-
-## 配置项
-
-在 `common/src/config.rs` 中新增：
-
-```rust
-pub struct DatabaseConfig {
-    pub db_file_name: String,              // 核心业务数据库
-    pub vector_db_file_name: String,       // 向量数据库（物理隔离）
-}
-
-impl AppConfig {
-    pub fn db_path(&self) -> PathBuf;
-    pub fn vector_db_path(&self) -> PathBuf;
-}
-```
-
-默认值：
-- 核心数据库：`ai_orz.db`
-- 向量数据库：`ai_orz_vector.db`
 
 ---
 
 ## 测试隔离保证
 
-1. **Storage::with_sqlite_pool()**：接受外部传入的 pool，保证测试数据隔离
-2. **`new_simple()` 接口不变**：所有现有测试零改动
-3. **向量存储复用测试 pool**：测试环境下向量和业务数据使用同一个连接池
-
----
-
-## 优雅降级机制
-
-- SQLite VSS 扩展加载失败时自动降级到**内存计算模式**
-- 核心功能（向量存储和检索）不受影响，仅性能差异
-- 不影响业务正常运行
+1. **DAO 独立单例**：每个 DAO 维护自己的 `OnceLock` 单例，测试间互不影响
+2. **Storage::with_sqlite_pool()**：接受外部传入的 pool，保证测试数据隔离
+3. **向量存储复用测试上下文**：测试环境下向量和业务数据使用相同的测试隔离
+4. **混合搜索可测试**：关键词和向量搜索可独立测试，也可联合测试
 
 ---
 
@@ -344,7 +312,11 @@ impl AppConfig {
 |--------|------|
 | `fb05c7d` | feat: 向量存储基础设施 + Storage 重构 |
 | `6bb9a0c` | fix: 修复时间戳测试使用毫秒而非秒的问题 |
+| `...` | refactor: 移除 SQLite VSS 依赖，改用纯 Rust InMemory 实现 |
+| `...` | feat: 新增 LanceDB 向量存储后端支持 |
+| `...` | refactor: SkillDao 拆分基础数据与向量索引（同目录双 DAO 模式） |
+| `0dc9f59` | refactor: 重命名 skill vector dao 文件与结构体，移除 sqlite 前缀 |
 
 ---
 
-*最后更新：2026-05-05*
+*最后更新：2026-05-12*
