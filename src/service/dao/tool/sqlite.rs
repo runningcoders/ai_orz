@@ -317,9 +317,11 @@ impl ToolDao for ToolDaoSqliteImpl {
     }
 
     async fn search(&self, ctx: &RequestContext, params: ToolSearch) -> Result<Vec<ToolPo>> {
-        // 用 query 做关键词搜索
+        // 参数转换后转发到 query，避免重复实现
         let query = ToolQuery {
             keyword: params.keyword.clone(),
+            agent_id: params.agent_id.clone(),
+            enabled_only: Some(params.enabled_only),
             limit: Some(params.limit),
             ..Default::default()
         };

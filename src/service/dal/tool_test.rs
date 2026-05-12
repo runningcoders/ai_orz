@@ -72,6 +72,9 @@ async fn init_test_env(pool: SqlitePool, register_factory: bool) -> (Arc<dyn Too
     let tool_dal = crate::service::dal::tool::new(
         tool::dao(),
         crate::service::dao::tool_call::dao(),
+        tool::vector_dao(),
+        crate::service::dao::model_provider::dao(),
+        crate::service::dao::cortex::dao(),
     );
     let ctx = RequestContext::new_simple("test-user", pool);
     (tool_dal, ctx)
@@ -249,11 +252,12 @@ async fn test_update_tool(pool: SqlitePool) {
     tool_dal.create_tool(&ctx, &po).await.unwrap();
 
     // ========== 测试: 更新工具 ==========
-    po.description = "Updated description".to_string();
-    po.status = ToolStatus::Disabled;
-    po.touch(Some("test-user".to_string()));
+    let mut tool = tool_dal.get_by_id(&ctx, po.id.clone()).await.unwrap().unwrap();
+    tool.po.description = "Updated description".to_string();
+    tool.po.status = ToolStatus::Disabled;
+    tool.po.touch(Some("test-user".to_string()));
 
-    let result = tool_dal.update_tool(&ctx, &po).await;
+    let result = tool_dal.update_tool(&ctx, &tool).await;
     assert!(result.is_ok(), "update tool failed: {:?}", result);
 
     // ========== 验证: 更新生效 ==========

@@ -5,9 +5,12 @@
 
 use crate::error::AppError;
 use crate::models::tool::{Tool, ToolPo, CoreTool};
+use crate::models::vector::{SearchMatchInfo, MatchType};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
-use crate::service::dao::tool::{ToolDao, ToolQuery, self};
+use crate::service::dao::cortex::CortexDao;
+use crate::service::dao::model_provider::ModelProviderDao;
+use crate::service::dao::tool::{ToolDao, ToolQuery, ToolVectorDao, self};
 use crate::service::dao::tool_call::{ToolCallDao, self};
 use rig::tool::ToolError;
 use anyhow::Result;
@@ -25,9 +28,13 @@ pub fn dal() -> Arc<dyn ToolDal> {
 
 /// 初始化 Tool DAL（使用全局单例 DAO）
 pub fn init() {
+    use crate::service::dao::{cortex, model_provider, tool};
     let _ = TOOL_DAL.set(new(
         tool::dao(),
         tool_call::dao(),
+        tool::vector_dao(),
+        model_provider::dao(),
+        cortex::dao(),
     ));
 }
 
@@ -35,10 +42,16 @@ pub fn init() {
 pub fn new(
     tool_dao: Arc<dyn ToolDao + Send + Sync>,
     tool_call_dao: Arc<dyn ToolCallDao + Send + Sync>,
+    tool_vector_dao: Arc<dyn ToolVectorDao + Send + Sync>,
+    model_provider_dao: Arc<dyn ModelProviderDao + Send + Sync>,
+    cortex_dao: Arc<dyn CortexDao + Send + Sync>,
 ) -> Arc<dyn ToolDal> {
     Arc::new(ToolDalImpl {
         tool_dao,
         tool_call_dao,
+        tool_vector_dao,
+        model_provider_dao,
+        cortex_dao,
     })
 }
 
@@ -132,6 +145,9 @@ pub trait ToolDal: Send + Sync {
 pub struct ToolDalImpl {
     tool_dao: Arc<dyn ToolDao + Send + Sync>,
     tool_call_dao: Arc<dyn ToolCallDao + Send + Sync>,
+    tool_vector_dao: Arc<dyn ToolVectorDao + Send + Sync>,
+    model_provider_dao: Arc<dyn ModelProviderDao + Send + Sync>,
+    cortex_dao: Arc<dyn CortexDao + Send + Sync>,
 }
 
 #[async_trait::async_trait]
@@ -223,13 +239,86 @@ impl ToolDal for ToolDalImpl {
     }
 
     async fn search(&self, ctx: &RequestContext, params: crate::service::dao::tool::ToolSearch) -> Result<Vec<Tool>, AppError> {
-        let pos = self.tool_dao.search(ctx, params).await?;
-        let mut tools = Vec::new();
-        for po in pos {
-            if let Some(our_tool) = self.tool_call_dao.assemble_core_tool(&po)? {
-                tools.push(Tool { po, our_tool, search_match: None });
+        let mut vector_scores: std::collections::HashMap<String, f32> = std::collections::HashMap::new();
+        let mut vector_tool_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        // 如果有关键词，尝试向量搜索
+        if params.keyword.is_some() {
+            if let Some(provider) = self.model_provider_dao.get_default_embedding_provider(ctx.clone()).await? {
+                // 创建 Cortex
+                let cortex = self.cortex_dao.create_cortex_trait(
+                    ctx.clone(),
+                    &provider,
+                    vec![],
+                )?;
+
+                // 生成查询向量（使用便捷方法）
+                if let Some(keyword) = &params.keyword {
+                    let query_vector = self.cortex_dao.embed_text(ctx.clone(), cortex.as_ref(), keyword)
+                        .await?;
+
+                    // 向量搜索（前 50 条）
+                    match self.tool_vector_dao.search_vector(
+                        ctx.clone(),
+                        &query_vector,
+                        50,
+                    ).await {
+                        Ok(vector_results) => {
+                            // 距离阈值：只保留足够相似的结果
+                            const VECTOR_DISTANCE_THRESHOLD: f32 = 0.8;
+                            let filtered_results: Vec<(String, f32)> = vector_results
+                                .into_iter()
+                                .filter(|hit| hit.distance < VECTOR_DISTANCE_THRESHOLD)
+                                .map(|hit| (hit.row.id, hit.distance))
+                                .collect();
+
+                            vector_tool_ids = filtered_results.iter().map(|(id, _)| id.clone()).collect();
+                            vector_scores = filtered_results.into_iter().collect();
+                        }
+                        Err(e) => {
+                            // 向量搜索失败，降级到纯关键词搜索
+                            tracing::warn!("Tool vector search failed: {}, fallback to keyword only", e);
+                        }
+                    }
+                }
             }
         }
+
+        // Step 2: 关键词搜索（统一使用 Dao 的 search 方法）
+        let pos = self.tool_dao.search(ctx, params).await?;
+
+        // Step 3: 合并结果（向量匹配 + 关键词匹配）
+        let mut tool_ids: std::collections::HashSet<String> = vector_tool_ids;
+        for po in &pos {
+            tool_ids.insert(po.id.clone());
+        }
+
+        // Step 4: 查询完整信息并组装排序
+        let query = crate::service::dao::tool::ToolQuery {
+            ids: if tool_ids.is_empty() { None } else { Some(tool_ids.into_iter().collect()) },
+            ..Default::default()
+        };
+        let all_pos = self.tool_dao.query(ctx, query).await?;
+
+        let mut tools = Vec::new();
+        for po in all_pos {
+            if let Some(our_tool) = self.tool_call_dao.assemble_core_tool(&po)? {
+                let search_match = vector_scores.get(&po.id).copied().map(|score| SearchMatchInfo {
+                    vector_distance: Some(score),
+                    ..Default::default()
+                });
+                tools.push(Tool { po, our_tool, search_match });
+            }
+        }
+
+        // 按向量距离排序（距离越小越相似排前面），没有向量分数的排后面
+        tools.sort_by(|a, b| match (a.search_match.as_ref(), b.search_match.as_ref()) {
+            (Some(sa), Some(sb)) => sa.vector_distance.unwrap_or(f32::MAX).partial_cmp(&sb.vector_distance.unwrap_or(f32::MAX)).unwrap_or(std::cmp::Ordering::Equal),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        });
+
         Ok(tools)
     }
 

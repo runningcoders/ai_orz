@@ -52,26 +52,15 @@ impl CortexTrait for MockCortex {
     }
 
     async fn embeddings(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
-        // Mock 向量生成：确保不同文本的向量有明显差异
-        // 使用简单的确定性算法，但保证区分度足够
+        // 统一使用 embed_text 的逻辑，保持向量生成一致性
         let mut result = Vec::with_capacity(texts.len());
         for text in texts {
-            let bytes = text.as_bytes();
-            
-            // 如果是技能内容（长文本），返回一个固定向量
-            // 如果是搜索关键词，根据关键词返回不同的向量
-            let vector = if text.len() > 20 {
-                // 技能内容向量
-                vec![0.1, 0.2, 0.3]
-            } else if text.contains("debug") {
-                // debug 相关的查询，返回相似的向量
-                vec![0.15, 0.25, 0.35]
+            let vec = if text.contains("nonexistent") {
+                vec![1.0, 0.0, 0.0]
             } else {
-                // 不相关的查询，返回完全相反的向量（距离接近 1.0）
-                vec![-0.9, -0.8, -0.7]
+                vec![0.0, 1.0, 1.0]
             };
-            
-            result.push(vector);
+            result.push(vec);
         }
         Ok(result)
     }
@@ -100,8 +89,24 @@ impl CortexDao for MockCortexDao {
         Ok("Mock response".to_string())
     }
 
-    async fn embed_text(&self, _ctx: RequestContext, _cortex: &dyn CortexTrait, _text: &str) -> Result<Vec<f32>> {
-        Ok(vec![0.1, 0.2, 0.3])
+    async fn embed_text(&self, _ctx: RequestContext, _cortex: &dyn CortexTrait, text: &str) -> Result<Vec<f32>> {
+        // 极端化向量差异：让 nonexistent 关键词的向量与其他向量距离 > 0.8
+        // 余弦距离 > 0.8 意味着相似度 < 0.2
+        let mut vec = vec![0.0; 3];
+        
+        if text.contains("nonexistent") {
+            // nonexistent 关键词的向量：[1.0, 0.0, 0.0]
+            vec[0] = 1.0;
+            vec[1] = 0.0;
+            vec[2] = 0.0;
+        } else {
+            // 其他文本的向量：[0.0, 1.0, 1.0] - 与上面的向量距离 = 1.0（完全正交）
+            vec[0] = 0.0;
+            vec[1] = 1.0;
+            vec[2] = 1.0;
+        }
+        
+        Ok(vec)
     }
 }
 
