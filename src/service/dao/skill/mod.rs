@@ -81,8 +81,8 @@ pub trait SkillDao: Send + Sync {
         target_agent_id: &str,
     ) -> Result<SkillPo, AppError>;
 
-    /// 关键词搜索（向后兼容）
-    async fn search(&self, ctx: RequestContext, keyword: &str) -> Result<Vec<SkillPo>, AppError>;
+    /// 统一搜索入口（关键词 + 业务过滤，向量搜索由 SkillVectorDao 单独处理）
+    async fn search(&self, ctx: RequestContext, search: SkillSearch) -> Result<Vec<SkillPo>, AppError>;
 
     // ========== 文件操作 ==========
 

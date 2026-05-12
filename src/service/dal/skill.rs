@@ -8,7 +8,7 @@ use crate::models::skill::{Skill, SkillPo, SkillFile};
 use crate::models::model_provider::ModelProviderPo;
 use crate::models::vector::{VectorIndexParams, SearchMatchInfo, MatchType};
 use crate::pkg::request_context::RequestContext;
-use crate::service::dao::skill::{SkillDao, SkillVectorDao, SkillQuery, self};
+use crate::service::dao::skill::{SkillDao, SkillVectorDao, SkillQuery, SkillSearch, self};
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::ModelProviderDao;
 use common::enums::{ModelCapability, ModelProviderStatus};
@@ -73,7 +73,7 @@ pub trait SkillDal: Send + Sync {
     async fn list_for_agent(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<Skill>, AppError>;
 
     /// 搜索技能（名称/描述/标签）
-    async fn search(&self, ctx: RequestContext, keyword: &str) -> Result<Vec<Skill>, AppError>;
+    async fn search(&self, ctx: RequestContext, search: SkillSearch) -> Result<Vec<Skill>, AppError>;
 
     /// 更新技能元数据（不影响文件）
     /// 更新技能（仅数据库）
@@ -206,68 +206,56 @@ impl SkillDal for SkillDalImpl {
         self.query(ctx, SkillQuery { author_id: Some(agent_id.to_string()), ..Default::default() }).await
     }
 
-    async fn search(&self, ctx: RequestContext, keyword: &str) -> Result<Vec<Skill>, AppError> {
-        use std::collections::HashSet;
-
-        // Step 1: 查询是否有可用的 Embedding Provider
-        let providers = self.model_provider_dao.query(
-            ctx.clone(),
-            crate::service::dao::model_provider::ModelProviderQuery {
-                capability: Some(ModelCapability::Embedding),
-                status: Some(ModelProviderStatus::Normal),
-                limit: Some(1),
-                ..Default::default()
-            },
-        ).await?;
-
+    async fn search(&self, ctx: RequestContext, search: SkillSearch) -> Result<Vec<Skill>, AppError> {
+        // Step 1: 查询是否有可用的 Embedding Provider（用便捷方法）
         let mut vector_scores: std::collections::HashMap<String, f32> = std::collections::HashMap::new();
-        let mut vector_skill_ids: HashSet<String> = HashSet::new();
+        let mut vector_skill_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-        // Step 2: 如果有 Embedding Provider，执行向量搜索
-        if let Some(provider) = providers.first() {
-            // 创建 Cortex
-            let cortex = self.cortex_dao.create_cortex_trait(
-                ctx.clone(),
-                provider,
-                vec![],
-            )?;
-            
-            // 生成查询向量
-            let vectors = cortex.embeddings(&[keyword.to_string()]).await?;
-            let query_vector = vectors.into_iter().next().unwrap_or_default();
-            
-            // 向量搜索（前 50 条）
-            // 注意：只保留距离小于阈值的结果（余弦距离 0-2，0 是完全相同）
-            match self.skill_vector_dao.search_vector(
-                ctx.clone(),
-                &query_vector,
-                50,
-            ).await {
-                Ok(vector_results) => {
-                    // 距离阈值：只保留足够相似的结果（0.8 是比较宽松的阈值）
-                    const VECTOR_DISTANCE_THRESHOLD: f32 = 0.8;
-                    let filtered_results: Vec<(String, f32)> = vector_results
-                        .into_iter()
-                        .filter(|hit| hit.distance < VECTOR_DISTANCE_THRESHOLD)
-                        .map(|hit| (hit.row.id, hit.distance))
-                        .collect();
-                    
-                    vector_skill_ids = filtered_results.iter().map(|(id, _)| id.clone()).collect();
-                    vector_scores = filtered_results.into_iter().collect();
-                }
-                Err(e) => {
-                    // 向量搜索失败（可能是 vss0 扩展未安装），降级到纯关键词搜索
-                    tracing::warn!("向量搜索失败，降级到关键词搜索: {}", e);
+        // 如果有关键词，尝试向量搜索
+        if search.keyword.is_some() {
+            if let Some(provider) = self.model_provider_dao.get_default_embedding_provider(ctx.clone()).await? {
+                // 创建 Cortex
+                let cortex = self.cortex_dao.create_cortex_trait(
+                    ctx.clone(),
+                    &provider,
+                    vec![],
+                )?;
+
+                // 生成查询向量（使用便捷方法）
+                if let Some(keyword) = &search.keyword {
+                    let query_vector = self.cortex_dao.embed_text(ctx.clone(), cortex.as_ref(), keyword)
+                        .await?;
+
+                    // 向量搜索（前 50 条）
+                    // 注意：只保留距离小于阈值的结果（余弦距离 0-2，0 是完全相同）
+                    match self.skill_vector_dao.search_vector(
+                        ctx.clone(),
+                        &query_vector,
+                        50,
+                    ).await {
+                        Ok(vector_results) => {
+                            // 距离阈值：只保留足够相似的结果（0.8 是比较宽松的阈值）
+                            const VECTOR_DISTANCE_THRESHOLD: f32 = 0.8;
+                            let filtered_results: Vec<(String, f32)> = vector_results
+                                .into_iter()
+                                .filter(|hit| hit.distance < VECTOR_DISTANCE_THRESHOLD)
+                                .map(|hit| (hit.row.id, hit.distance))
+                                .collect();
+
+                            vector_skill_ids = filtered_results.iter().map(|(id, _)| id.clone()).collect();
+                            vector_scores = filtered_results.into_iter().collect();
+                        }
+                        Err(e) => {
+                            // 向量搜索失败（可能是 vss0 扩展未安装），降级到纯关键词搜索
+                            tracing::warn!("向量搜索失败，降级到关键词搜索: {}", e);
+                        }
+                    }
                 }
             }
         }
 
-        // Step 3: 执行关键词搜索（补充向量没覆盖的结果）
-        let keyword_query = SkillQuery {
-            keyword: Some(keyword.to_string()),
-            ..Default::default()
-        };
-        let keyword_pos = self.skill_dao.query(ctx.clone(), keyword_query).await?;
+        // Step 3: 执行关键词搜索（用 DAO 新 search 方法，filters 自动透传）
+        let keyword_pos = self.skill_dao.search(ctx.clone(), search.clone()).await?;
 
         // Step 4: 如果有向量搜索，获取向量匹配的完整 PO
         let mut all_pos = keyword_pos.clone();

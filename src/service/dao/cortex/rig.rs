@@ -94,6 +94,11 @@ impl super::CortexDao for RigCortexDao {
     async fn prompt(&self, _ctx: RequestContext, cortex: &dyn CortexTrait, prompt: &str) -> Result<String> {
         cortex.prompt(prompt).await
     }
+
+    async fn embed_text(&self, _ctx: RequestContext, cortex: &dyn CortexTrait, text: &str) -> Result<Vec<f32>> {
+        let vectors = cortex.embeddings(&[text.to_string()]).await?;
+        Ok(vectors.into_iter().next().unwrap_or_default())
+    }
 }
 
 // ==================== 固有方法（不放在 trait 里，避免 dyn 不兼容 ====================

@@ -6,7 +6,7 @@ use common::enums::SkillStatus;
 use crate::error::AppError;
 use crate::models::skill::SkillPo;
 use crate::pkg::RequestContext;
-use crate::service::dao::skill::{self, SkillDao};
+use crate::service::dao::skill::{self, SkillDao, SkillSearch};
 use uuid::Uuid;
 use std::sync::Arc;
 
@@ -212,11 +212,17 @@ async fn test_search(pool: SqlitePool) -> Result<(), AppError> {
     skill_dao.insert(ctx, &skill).await?;
 
     let ctx = new_ctx("test-user", pool.clone());
-    let result = skill_dao.search(ctx, "Search").await?;
+    let result = skill_dao.search(ctx, SkillSearch {
+        keyword: Some("Search".to_string()),
+        ..Default::default()
+    }).await?;
     assert!(result.iter().any(|s| s.id == skill_id));
 
     let ctx = new_ctx("test-user", pool);
-    let result = skill_dao.search(ctx, "searching").await?;
+    let result = skill_dao.search(ctx, SkillSearch {
+        keyword: Some("searching".to_string()),
+        ..Default::default()
+    }).await?;
     assert!(result.iter().any(|s| s.id == skill_id));
 
     Ok(())

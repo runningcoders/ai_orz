@@ -9,7 +9,7 @@ use crate::models::skill::{SkillPo, SkillFile};
 use crate::pkg::RequestContext;
 use common::enums::skill::SkillAuthorType;
 use common::enums::SkillStatus;
-use crate::service::dao::skill::{SkillDao, SkillQuery};
+use crate::service::dao::skill::{SkillDao, SkillQuery, SkillSearch};
 
 
 // ==================== 单例模式 ====================
@@ -286,12 +286,19 @@ ORDER BY updated_at DESC
         Ok(new_skill)
     }
 
-    async fn search(&self, ctx: RequestContext, keyword: &str) -> Result<Vec<SkillPo>, AppError> {
-        // 用 query 做关键词搜索
-        let query = SkillQuery {
-            keyword: Some(keyword.to_string()),
-            ..Default::default()
-        };
+    async fn search(&self, ctx: RequestContext, search: SkillSearch) -> Result<Vec<SkillPo>, AppError> {
+        // ✅ 只做参数转换，直接转发到 query（DAO 层不碰向量搜索）
+        let mut query = search.filters;
+
+        // 如果 search 有关键词，补充到 query
+        if search.keyword.is_some() {
+            query.keyword = search.keyword;
+        }
+
+        // 向量搜索相关的 query_vector/top_k：DAO 层直接忽略
+        // （向量搜索由 DAL 层调 SkillVectorDao 单独处理）
+
+        // 转发到已有的 query 方法
         self.query(ctx, query).await
     }
 

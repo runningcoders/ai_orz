@@ -5,7 +5,7 @@ use crate::models::skill::{SkillPo, SkillFile, Skill};
 use crate::models::brain::CortexTrait;
 use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::request_context::RequestContext;
-use crate::service::dao::skill;
+use crate::service::dao::skill::{self, SkillSearch};
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dal::skill::{SkillDal, SkillDalImpl, new};
@@ -98,6 +98,10 @@ impl CortexDao for MockCortexDao {
 
     async fn prompt(&self, _ctx: RequestContext, _cortex: &dyn CortexTrait, _prompt: &str) -> Result<String> {
         Ok("Mock response".to_string())
+    }
+
+    async fn embed_text(&self, _ctx: RequestContext, _cortex: &dyn CortexTrait, _text: &str) -> Result<Vec<f32>> {
+        Ok(vec![0.1, 0.2, 0.3])
     }
 }
 
@@ -490,16 +494,16 @@ async fn test_search_skill(pool: SqlitePool) -> Result<(), AppError> {
     skill_dal.create(ctx.clone(), &po).await?;
 
     // 搜索：按名称匹配
-    let results = skill_dal.search(ctx.clone(), "debug").await?;
+    let results = skill_dal.search(ctx.clone(), SkillSearch { keyword: Some("debug".to_string()), ..Default::default() }).await?;
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].po.name, "debug-helper");
 
     // 搜索：按描述匹配
-    let results2 = skill_dal.search(ctx.clone(), "debugging").await?;
+    let results2 = skill_dal.search(ctx.clone(), SkillSearch { keyword: Some("debugging".to_string()), ..Default::default() }).await?;
     assert_eq!(results2.len(), 1);
 
     // 搜索：无匹配
-    let results3 = skill_dal.search(ctx.clone(), "nonexistent-keyword").await?;
+    let results3 = skill_dal.search(ctx.clone(), SkillSearch { keyword: Some("nonexistent-keyword".to_string()), ..Default::default() }).await?;
     assert_eq!(results3.len(), 0);
 
     Ok(())
