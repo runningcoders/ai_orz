@@ -137,7 +137,7 @@ pub struct SearchResult<T> {
 ///
 /// 实现这个 Trait 的实体，表示它支持被向量索引
 /// 所有向量相关的业务逻辑都封装在实体内部
-pub trait Vectorizable {
+pub trait Vectorizable: Send + Sync {
     // ===== 必须实现 =====\n\n    /// 生成待向量化的文本内容
     ///
     /// 由实体自己决定：哪些字段需要被向量化？

@@ -11,7 +11,7 @@ use crate::models::memory::{
     KnowledgeNodeRelationPo, KnowledgeReferencePo, LongTermKnowledgeNodePo, MemoryCreateParams,
     MemoryPo, MemoryTrace, MemoryType, ShortTermMemoryIndexPo,
 };
-use crate::models::vector::{SearchMatchInfo, VectorIndexParams};
+use crate::models::vector::{SearchMatchInfo, VectorIndexParams, Vectorizable};
 use crate::pkg::RequestContext;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::memory::{MemoryDao, MemoryQuery, MemorySearch, MemoryVectorDao};
@@ -212,7 +212,7 @@ impl MemoryDal for MemoryDalImpl {
                 self.memory_dao.update_short_term_index(ctx.clone(), short_term.clone()).await?;
 
                 // 重新向量化 summary
-                match try_build_vector_params(
+                match try_build_vector_params_for_search(
                     ctx.clone(),
                     &self.cortex_dao,
                     &self.model_provider_dao,
@@ -248,7 +248,7 @@ impl MemoryDal for MemoryDalImpl {
 
                 // 重新向量化（node_description + summary 拼接）
                 let text_for_embedding = format!("{}\n{}", node.node_description, node.summary);
-                match try_build_vector_params(
+                match try_build_vector_params_for_search(
                     ctx.clone(),
                     &self.cortex_dao,
                     &self.model_provider_dao,
@@ -333,7 +333,7 @@ impl MemoryDalImpl {
         // Step 2: 如果有关键词，执行向量搜索（用 try_build_vector_params 统一方式）
         if search.keyword.is_some() {
             if let Some(keyword) = &search.keyword {
-                match try_build_vector_params(
+                match try_build_vector_params_for_search(
                     ctx.clone(),
                     &self.cortex_dao,
                     &self.model_provider_dao,
@@ -438,7 +438,7 @@ impl MemoryDalImpl {
         // Step 2: 如果有关键词，执行向量搜索（用 try_build_vector_params 统一方式）
         if search.keyword.is_some() {
             if let Some(keyword) = &search.keyword {
-                match try_build_vector_params(
+                match try_build_vector_params_for_search(
                     ctx.clone(),
                     &self.cortex_dao,
                     &self.model_provider_dao,
@@ -583,7 +583,7 @@ impl MemoryDalImpl {
             .await?;
 
         // Step 2: 向量化 summary（失败 warn 降级，不影响主流程）
-        match try_build_vector_params(
+        match try_build_vector_params_for_search(
             ctx.clone(),
             &self.cortex_dao,
             &self.model_provider_dao,
@@ -635,7 +635,7 @@ impl MemoryDalImpl {
 
         // Step 3: 向量化（node_description + summary 拼接）
         let vector_text = format!("{}\n{}", node.node_description, node.summary);
-        match try_build_vector_params(
+        match try_build_vector_params_for_search(
             ctx.clone(),
             &self.cortex_dao,
             &self.model_provider_dao,
@@ -696,11 +696,11 @@ impl MemoryDalImpl {
 /// 1. 取默认 Embedding ModelProvider；无则返回 None（无可用 provider）
 /// 2. 创建 Cortex（trait 对象）
 /// 3. 调 `embeddings(&[text])` 生成向量
-/// 4. 组装 [`VectorIndexParams`]
+/// 尝试为查询文本构建向量索引参数（用于搜索场景）
 ///
 /// 任何中间步骤失败都会向上抛错；调用方决定是否 warn 降级。
 /// 返回 `Ok(None)` 表示无 Embedding Provider 配置（合法场景）。
-async fn try_build_vector_params(
+async fn try_build_vector_params_for_search(
     ctx: RequestContext,
     cortex_dao: &Arc<dyn CortexDao>,
     model_provider_dao: &Arc<dyn ModelProviderDao>,
@@ -713,15 +713,29 @@ async fn try_build_vector_params(
         return Ok(None);
     };
 
-    let cortex = cortex_dao.create_cortex_trait(ctx, &provider, vec![])?;
-    let vectors = cortex.embeddings(&[text.to_string()]).await?;
-    let content_hash = sha256::digest(text);
+    let cortex = cortex_dao.create_cortex_trait(ctx.clone(), &provider, vec![])?;
+    let params = cortex_dao.embed_text_for_search(ctx, cortex.as_ref(), text).await?;
+    Ok(Some(params))
+}
 
-    Ok(Some(VectorIndexParams {
-        vector: vectors.into_iter().next().unwrap_or_default(),
-        content_hash,
-        model_provider_id: provider.id.clone(),
-        embedding_model: provider.model_name.clone(),
-        expire_at: None,
-    }))
+/// 尝试为实体构建向量索引参数（用于索引场景）
+///
+/// 任何中间步骤失败都会向上抛错；调用方决定是否 warn 降级。
+/// 返回 `Ok(None)` 表示无 Embedding Provider 配置（合法场景）。
+async fn try_build_vector_params_for_entity(
+    ctx: RequestContext,
+    cortex_dao: &Arc<dyn CortexDao>,
+    model_provider_dao: &Arc<dyn ModelProviderDao>,
+    entity: &dyn Vectorizable,
+) -> Result<Option<VectorIndexParams>, AppError> {
+    let Some(provider) = model_provider_dao
+        .get_default_embedding_provider(ctx.clone())
+        .await?
+    else {
+        return Ok(None);
+    };
+
+    let cortex = cortex_dao.create_cortex_trait(ctx.clone(), &provider, vec![])?;
+    let params = cortex_dao.embed_entity(ctx, cortex.as_ref(), entity).await?;
+    Ok(Some(params))
 }

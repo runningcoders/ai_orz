@@ -254,8 +254,9 @@ impl ToolDal for ToolDalImpl {
 
                 // 生成查询向量（使用便捷方法）
                 if let Some(keyword) = &params.keyword {
-                    let query_vector = self.cortex_dao.embed_text(ctx.clone(), cortex.as_ref(), keyword)
+                    let query_vector_params = self.cortex_dao.embed_text_for_search(ctx.clone(), cortex.as_ref(), keyword)
                         .await?;
+                    let query_vector = query_vector_params.vector;
 
                     // 向量搜索（前 50 条）
                     match self.tool_vector_dao.search_vector(

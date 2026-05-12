@@ -237,3 +237,29 @@ impl ToolPo {
         self.updated_by = modifier;
     }
 }
+
+// ==================== 实现 Vectorizable trait ====================
+
+use crate::models::vector::Vectorizable;
+
+impl Vectorizable for ToolPo {
+    fn vectorize_text(&self) -> String {
+        // ToolPo 向量化：名称 + 描述 + 标签
+        let tags = self.get_tags().join(" ");
+        format!("{} {} {}", self.name, self.description, tags)
+    }
+
+    fn vector_collection() -> &'static str {
+        "tools"
+    }
+}
+
+impl Vectorizable for Tool {
+    fn vectorize_text(&self) -> String {
+        self.po.vectorize_text()
+    }
+
+    fn vector_collection() -> &'static str {
+        "tools"
+    }
+}

@@ -95,22 +95,12 @@ impl super::CortexDao for RigCortexDao {
         cortex.prompt(prompt).await
     }
 
-    async fn embed_text(&self, _ctx: RequestContext, cortex: &dyn CortexTrait, text: &str) -> Result<Vec<f32>> {
+    async fn embed_text_raw(&self, _ctx: RequestContext, cortex: &dyn CortexTrait, text: &str) -> Result<Vec<f32>> {
         let vectors = cortex.embeddings(&[text.to_string()]).await?;
         Ok(vectors.into_iter().next().unwrap_or_default())
     }
-}
 
-// ==================== 固有方法（不放在 trait 里，避免 dyn 不兼容 ====================
-
-impl RigCortexDao {
-    /// ✅ 实体向量化（用于索引场景，输入业务实体）
-    pub async fn embed<T: crate::models::vector::Vectorizable + Send + Sync>(
-        &self,
-        ctx: RequestContext,
-        cortex: &dyn CortexTrait,
-        entity: &T,
-    ) -> Result<VectorIndexParams> {
+    async fn embed_entity(&self, _ctx: RequestContext, cortex: &dyn CortexTrait, entity: &dyn crate::models::vector::Vectorizable) -> Result<crate::models::vector::VectorIndexParams> {
         // ✅ 完整组装 VectorIndexParams - 从 CortexTrait 直接获取所有信息
 
         // 1. 获取待向量化的文本
@@ -121,7 +111,7 @@ impl RigCortexDao {
         let vector = vectors.into_iter().next().unwrap_or_default();
 
         // 3. 从 CortexTrait 直接获取元信息，不需要外部传入
-        let params = VectorIndexParams {
+        let params = crate::models::vector::VectorIndexParams {
             vector,
             content_hash: entity.vector_content_hash(),
             model_provider_id: cortex.model_provider_id().to_string(),
@@ -132,13 +122,7 @@ impl RigCortexDao {
         Ok(params)
     }
 
-    /// ✅ 文本直接向量化（用于搜索场景，输入用户查询文本）
-    pub async fn embed_text(
-        &self,
-        ctx: RequestContext,
-        cortex: &dyn CortexTrait,
-        text: &str,
-    ) -> Result<VectorIndexParams> {
+    async fn embed_text_for_search(&self, _ctx: RequestContext, cortex: &dyn CortexTrait, text: &str) -> Result<crate::models::vector::VectorIndexParams> {
         // 1. 直接使用 cortex 的 embeddings 能力
         let vectors = cortex.embeddings(&[text.to_string()]).await?;
         let vector = vectors.into_iter().next().unwrap_or_default();
@@ -147,7 +131,7 @@ impl RigCortexDao {
         let content_hash = sha256::digest(text);
 
         // 3. 从 CortexTrait 直接获取元信息
-        let params = VectorIndexParams {
+        let params = crate::models::vector::VectorIndexParams {
             vector,
             content_hash,
             model_provider_id: cortex.model_provider_id().to_string(),

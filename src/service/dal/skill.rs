@@ -5,8 +5,7 @@
 
 use crate::error::AppError;
 use crate::models::skill::{Skill, SkillPo, SkillFile};
-use crate::models::model_provider::ModelProviderPo;
-use crate::models::vector::{VectorIndexParams, SearchMatchInfo, MatchType};
+use crate::models::vector::{SearchMatchInfo, MatchType, Vectorizable};
 use crate::pkg::request_context::RequestContext;
 use crate::service::dao::skill::{SkillDao, SkillVectorDao, SkillQuery, SkillSearch, self};
 use crate::service::dao::cortex::CortexDao;
@@ -132,30 +131,17 @@ impl SkillDal for SkillDalImpl {
 
         // 2. 查询可用的 Embedding 能力的 ModelProvider
         if let Some(provider) = self.model_provider_dao.get_default_embedding_provider(ctx.clone()).await? {
-            // 创建 Cortex（这是同步方法，不需要 await）
+            // 创建 Cortex
             let cortex = self.cortex_dao.create_cortex_trait(
                 ctx.clone(),
                 &provider,
                 vec![],
             )?;
 
-            // 生成向量（调用 CortexTrait 的方法）
-            let content = format!("{} {}", po.name, po.description);
-            let content_hash = sha256::digest(&content);
-            let vectors = cortex.embeddings(&[content]).await?;
-            
-            // 构建向量索引参数
-            let vector_params = VectorIndexParams {
-                vector: vectors.into_iter().next().unwrap_or_default(),
-                content_hash,
-                model_provider_id: provider.id.clone(),
-                embedding_model: provider.model_name.clone(),
-                expire_at: None,
-            };
+            // 使用便捷方法直接生成完整 VectorIndexParams
+            let vector_params = self.cortex_dao.embed_entity(ctx.clone(), cortex.as_ref(), po).await?;
 
             // 保存向量索引
-            // 注意：测试环境可能没有 vss0 扩展，此时向量索引会失败
-            // 降级策略：忽略错误，不影响核心功能
             if let Err(e) = self.skill_vector_dao.upsert_vector(
                 ctx,
                 &po.id,
@@ -223,8 +209,9 @@ impl SkillDal for SkillDalImpl {
 
                 // 生成查询向量（使用便捷方法）
                 if let Some(keyword) = &search.keyword {
-                    let query_vector = self.cortex_dao.embed_text(ctx.clone(), cortex.as_ref(), keyword)
+                    let query_vector_params = self.cortex_dao.embed_text_for_search(ctx.clone(), cortex.as_ref(), keyword)
                         .await?;
+                    let query_vector = query_vector_params.vector;
 
                     // 向量搜索（前 50 条）
                     // 注意：只保留距离小于阈值的结果（余弦距离 0-2，0 是完全相同）
@@ -339,12 +326,10 @@ impl SkillDal for SkillDalImpl {
 
         // 3. 如果有可用的 Embedding Provider，更新向量
         if let Some(provider) = providers.first() {
-            let content = format!("{} {}", skill.po.name, skill.po.description);
+            // 检查内容是否变化（通过 get_vector_content_hash）
+            let old_hash = self.get_vector_content_hash(ctx.clone(), &skill.po.id).await?;
+            let content = skill.po.vectorize_text();
             let new_hash = sha256::digest(&content);
-            
-            // 检查内容是否变化（如果没变就不需要重索引）
-            let old_row = self.skill_vector_dao.get_vector_row(ctx.clone(), &skill.po.id).await?;
-            let old_hash = old_row.map(|r| r.meta.content_hash);
             
             if old_hash.as_deref() != Some(&new_hash) {
                 // 创建 Cortex
@@ -354,21 +339,10 @@ impl SkillDal for SkillDalImpl {
                     vec![],
                 )?;
 
-                // 生成向量
-                let vectors = cortex.embeddings(&[content]).await?;
-                
-                // 构建向量索引参数
-                let vector_params = VectorIndexParams {
-                    vector: vectors.into_iter().next().unwrap_or_default(),
-                    content_hash: new_hash,
-                    model_provider_id: provider.id.clone(),
-                    embedding_model: provider.model_name.clone(),
-                    expire_at: None,
-                };
+                // 使用便捷方法直接生成完整 VectorIndexParams
+                let vector_params = self.cortex_dao.embed_entity(ctx.clone(), cortex.as_ref(), &skill.po).await?;
 
                 // 更新向量索引
-                // 注意：测试环境可能没有 vss0 扩展，此时向量索引会失败
-                // 降级策略：忽略错误，不影响核心功能
                 if let Err(e) = self.skill_vector_dao.upsert_vector(
                     ctx,
                     &skill.po.id,
