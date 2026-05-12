@@ -580,6 +580,47 @@ let st = dal.create(ctx, CreateShortTerm(st_po)).await?;
 
 ---
 
+## 实现完成总结（2026-05-13）
+
+### ✅ 已实现功能
+
+1. **通用查询方法** `MemoryQuery`：
+   - 支持 `ids` / `agent_id` / `status` / `exclude_status` / `memory_type` / `keyword` / `limit`
+   - DAO 层：`query_short_term()` / `query_knowledge_nodes()`
+   - DAL 层：`query()` 聚合返回
+
+2. **搜索优化**：
+   - 统一使用 `cortex.embeddings()` 向量化，不再手动调用 `model_provider_dao`
+   - 避免 N+1 查询：先用通用 `query(ids)` 批量获取 PO，再组装 `search_match`
+
+3. **update 方法完整实现**：
+   - `ShortTerm`：更新 PO + 重新向量化
+   - `KnowledgeNode`：更新 PO + 重新向量化
+   - `Trace`/`Relation`：返回 `AppError::Unsupported`
+
+4. **delete 方法完整实现**：
+   - `ShortTerm`：删除 PO + 删除向量索引
+   - `KnowledgeNode`：级联删除（关系/引用/节点/向量索引）
+   - `Trace`/`Relation`/`All`：返回 `AppError::Unsupported`
+
+5. **新增支持**：
+   - `AppError::Unsupported` 变体
+   - `MemoryVectorDao::delete_short_term_vector()` / `delete_knowledge_node_vector()`
+   - `MemoryType` 实现 `Display` trait
+
+### 📋 文件清单
+
+| 文件 | 变更说明 |
+|------|----------|
+| `src/models/memory.rs` | `MemoryType` 新增 `Display` |
+| `src/service/dao/memory/mod.rs` | `MemoryQuery` 新增 `ids`，新增通用 query 方法，新增向量删除方法 |
+| `src/service/dao/memory/sqlite.rs` | 实现通用 query 方法 |
+| `src/service/dao/memory/vector.rs` | 实现向量删除方法 |
+| `src/service/dal/memory.rs` | 完整实现 `query`/`search`/`create`/`update`/`delete` |
+| `src/error.rs` | 新增 `Unsupported` 变体 |
+
+---
+
 ## 更新历史
 
 | 日期 | 变更 | 作者 |
@@ -588,4 +629,5 @@ let st = dal.create(ctx, CreateShortTerm(st_po)).await?;
 | 2026-04-08 | 重构：短期聚合设计、关系分离存储、引用位置更新 |  |
 | 2026-05-12 | 新增 DAL 业务层设计：统一 Memory 实体、混合搜索接口 |  |
 | 2026-05-12 | 新增 DAL 写入逻辑：DAO 拆分两阶段、显式 trace_ids、create/update/delete 接口 |  |
+| 2026-05-13 | **实现完成**：通用 query、搜索优化、完整 update/delete |  |
 
