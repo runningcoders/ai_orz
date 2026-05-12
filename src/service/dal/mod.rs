@@ -30,6 +30,7 @@ impl SearchParams {
 pub mod agent;
 pub mod artifact;
 pub mod brain;
+pub mod memory;
 pub mod message;
 pub mod message_channel;
 pub mod model_provider;
@@ -44,6 +45,7 @@ pub fn init_all(){
     agent::init();
     artifact::init();
     brain::init();
+    memory::init();
     message::init();
     message_channel::init();
     model_provider::init();

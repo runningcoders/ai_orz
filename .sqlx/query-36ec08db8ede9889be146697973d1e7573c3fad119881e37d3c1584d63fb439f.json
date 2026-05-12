@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nINSERT INTO short_term_memory_index (\n    id, agent_id, task_id, role, summary, tags, trace_ids, status, created_at, updated_at\n) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 10
+    },
+    "nullable": []
+  },
+  "hash": "36ec08db8ede9889be146697973d1e7573c3fad119881e37d3c1584d63fb439f"
+}

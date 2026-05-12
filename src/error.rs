@@ -20,6 +20,7 @@ pub enum AppError {
     Internal(String),
     Io(std::io::Error),
     ChannelPushError(String),
+    Unsupported(String),
 }
 
 impl fmt::Display for AppError {
@@ -30,6 +31,7 @@ impl fmt::Display for AppError {
             AppError::Internal(msg) => write!(f, "Internal error: {}", msg),
             AppError::Io(err) => write!(f, "IO error: {}", err),
             AppError::ChannelPushError(msg) => write!(f, "Channel push error: {}", msg),
+            AppError::Unsupported(msg) => write!(f, "Unsupported operation: {}", msg),
         }
     }
 }
@@ -99,6 +101,7 @@ impl AppError {
             AppError::Internal(_) => 500,
             AppError::Io(_) => 500,
             AppError::ChannelPushError(_) => 500,
+            AppError::Unsupported(_) => 400,
         }
     }
 
@@ -116,6 +119,7 @@ impl IntoResponse for AppError {
             AppError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, 500, msg),
             AppError::Io(err) => (StatusCode::INTERNAL_SERVER_ERROR, 500, err.to_string()),
             AppError::ChannelPushError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, 500, msg),
+            AppError::Unsupported(msg) => (StatusCode::BAD_REQUEST, 400, msg),
         };
 
         let body = Json(serde_json::json!({

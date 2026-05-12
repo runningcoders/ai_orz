@@ -35,7 +35,8 @@ pub struct MemoryVectorDaoImpl;
 
 #[async_trait]
 impl MemoryVectorDao for MemoryVectorDaoImpl {
-    async fn upsert_vector(
+    /// 索引短期记忆向量（summary 字段）
+    async fn upsert_short_term_vector(
         &self,
         ctx: RequestContext,
         memory_id: &str,
@@ -43,14 +44,31 @@ impl MemoryVectorDao for MemoryVectorDaoImpl {
     ) -> Result<(), AppError> {
         let vector_store = ctx.vector_store();
         vector_store.upsert(
-            "memories",
+            "memory:short_term",
             memory_id,
             vector_params,
         ).await?;
         Ok(())
     }
 
-    async fn search_vector(
+    /// 索引长期知识节点向量（node_description + summary 拼接）
+    async fn upsert_knowledge_node_vector(
+        &self,
+        ctx: RequestContext,
+        knowledge_id: &str,
+        vector_params: &VectorIndexParams,
+    ) -> Result<(), AppError> {
+        let vector_store = ctx.vector_store();
+        vector_store.upsert(
+            "memory:knowledge_node",
+            knowledge_id,
+            vector_params,
+        ).await?;
+        Ok(())
+    }
+
+    /// 语义搜索短期记忆
+    async fn search_short_term_vector(
         &self,
         ctx: RequestContext,
         query_vector: &[f32],
@@ -58,21 +76,72 @@ impl MemoryVectorDao for MemoryVectorDaoImpl {
     ) -> Result<Vec<VectorSearchHit>, AppError> {
         let vector_store = ctx.vector_store();
         let results = vector_store.search(
-            "memories",
+            "memory:short_term",
             query_vector,
             top_k,
         ).await?;
         Ok(results)
     }
 
-    async fn get_vector_row(
+    /// 语义搜索长期知识节点
+    async fn search_knowledge_node_vector(
+        &self,
+        ctx: RequestContext,
+        query_vector: &[f32],
+        top_k: i32,
+    ) -> Result<Vec<VectorSearchHit>, AppError> {
+        let vector_store = ctx.vector_store();
+        let results = vector_store.search(
+            "memory:knowledge_node",
+            query_vector,
+            top_k,
+        ).await?;
+        Ok(results)
+    }
+
+    /// 获取指定短期记忆的完整向量行数据
+    async fn get_short_term_vector_row(
         &self,
         ctx: RequestContext,
         memory_id: &str,
     ) -> Result<Option<VectorRow>, AppError> {
         ctx.vector_store()
-            .get("memories", memory_id)
+            .get("memory:short_term", memory_id)
             .await
             .map_err(|e| AppError::Internal(format!("Vector store error: {e}")))
+    }
+
+    /// 获取指定知识节点的完整向量行数据
+    async fn get_knowledge_node_vector_row(
+        &self,
+        ctx: RequestContext,
+        knowledge_id: &str,
+    ) -> Result<Option<VectorRow>, AppError> {
+        ctx.vector_store()
+            .get("memory:knowledge_node", knowledge_id)
+            .await
+            .map_err(|e| AppError::Internal(format!("Vector store error: {e}")))
+    }
+
+    /// 删除短期记忆的向量索引
+    async fn delete_short_term_vector(
+        &self,
+        ctx: RequestContext,
+        memory_id: &str,
+    ) -> Result<(), AppError> {
+        let vector_store = ctx.vector_store();
+        vector_store.delete("memory:short_term", memory_id).await?;
+        Ok(())
+    }
+
+    /// 删除知识节点的向量索引
+    async fn delete_knowledge_node_vector(
+        &self,
+        ctx: RequestContext,
+        knowledge_id: &str,
+    ) -> Result<(), AppError> {
+        let vector_store = ctx.vector_store();
+        vector_store.delete("memory:knowledge_node", knowledge_id).await?;
+        Ok(())
     }
 }

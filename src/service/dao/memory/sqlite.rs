@@ -7,14 +7,15 @@
 //! - 原始记忆不可修改不可删除，只能追加
 
 use crate::error::AppError;
-use crate::models::memory::{MemoryTrace, ShortTermMemoryIndexPo, LongTermKnowledgeNodePo, KnowledgeReferencePo, KnowledgeNodeRelationPo, KnowledgeRelationType};
+use crate::models::memory::{
+    MemoryTrace, MemoryTracePosition, ShortTermMemoryIndexPo, LongTermKnowledgeNodePo,
+    KnowledgeReferencePo, KnowledgeNodeRelationPo, KnowledgeRelationType, MemoryType,
+};
 use crate::pkg::RequestContext;
-use crate::service::dao::memory::MemoryDao;
+use crate::service::dao::memory::{MemoryDao, MemorySearch, MemoryQuery};
 use async_trait::async_trait;
 use serde_json;
 use sqlx::SqlitePool;
-use std::fs::{OpenOptions};
-use std::io::{Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 use crate::config;
@@ -52,24 +53,9 @@ impl MemoryDaoSqliteImpl {
         config::get().agent_memory_dir(agent_id)
     }
 
-    /// 获取今日日期文件完整路径（用于写入）
-    fn today_path(&self, agent_id: &str) -> PathBuf {
-        let now = chrono::Local::now();
-        let date_str = now.format("%Y%m%d").to_string();
-        let agent_dir = self.agent_memory_dir(agent_id);
-        agent_dir.join(format!("{date_str}.jsonl"))
-    }
-
     /// 获取连接池从上下文
     fn pool(&self, ctx: RequestContext) -> SqlitePool {
         ctx.db_pool().clone()
-    }
-
-    /// 获取今日日期文件名（用于存储到数据库）
-    /// 格式: YYYYMMDD.jsonl（相对于 agent memory 目录）
-    pub fn today_filename(&self) -> String {
-        let now = chrono::Local::now();
-        now.format("%Y%m%d.jsonl").to_string()
     }
 
     /// Read original memory content by knowledge reference
@@ -91,59 +77,112 @@ impl MemoryDaoSqliteImpl {
 
 #[async_trait]
 impl MemoryDao for MemoryDaoSqliteImpl {
-    async fn append_memory_trace(
+    async fn append_trace(
         &self,
-        ctx: RequestContext,
+        _ctx: RequestContext,
         trace: &MemoryTrace,
-        summary: String,
-        tags: Vec<String>,
-    ) -> Result<ShortTermMemoryIndexPo, AppError> {
-        // 1. Use DailyJsonlWriter to append to the daily JSONL file
+    ) -> Result<MemoryTracePosition, AppError> {
         let agent_dir = self.agent_memory_dir(&trace.agent_id);
         let writer = crate::pkg::daily_jsonl::DailyJsonlWriter::new(agent_dir);
-        let (_date_filename, _line_number) = writer.append(trace)?;
+        let (date, line_number) = writer.append(trace)?;
+        Ok(MemoryTracePosition {
+            trace_id: trace.id.clone(),
+            date_filename: format!("{date}.jsonl"),
+            line_number: line_number as u64,
+        })
+    }
 
-        // 2. Insert short-term index to SQLite
+    async fn batch_append_traces(
+        &self,
+        _ctx: RequestContext,
+        traces: &[MemoryTrace],
+    ) -> Result<Vec<MemoryTracePosition>, AppError> {
+        if traces.is_empty() {
+            return Ok(Vec::new());
+        }
+        let agent_dir = self.agent_memory_dir(&traces[0].agent_id);
+        let writer = crate::pkg::daily_jsonl::DailyJsonlWriter::new(agent_dir);
+        let mut positions = Vec::with_capacity(traces.len());
+        for trace in traces {
+            let (date, line_number) = writer.append(trace)?;
+            positions.push(MemoryTracePosition {
+                trace_id: trace.id.clone(),
+                date_filename: format!("{date}.jsonl"),
+                line_number: line_number as u64,
+            });
+        }
+        Ok(positions)
+    }
+
+    async fn create_short_term_index(
+        &self,
+        ctx: RequestContext,
+        index: ShortTermMemoryIndexPo,
+    ) -> Result<(), AppError> {
         let pool = self.pool(ctx);
-        let tags_json = serde_json::to_string(&tags)?;
-        let role_str = trace.role.to_string();
-        let now = chrono::Utc::now().timestamp();
-        let created_at = trace.created_at;
-        let task_id = trace.task_id.as_ref();
-
-        use common::enums::MemoryStatus;
-        let status_i32 = MemoryStatus::Active as i32;
+        let status_i32 = index.status as i32;
         sqlx::query!(
             r#"
 INSERT INTO short_term_memory_index (
-    id, agent_id, task_id, role, summary, tags, status, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    id, agent_id, task_id, role, summary, tags, trace_ids, status, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 "#,
-            trace.id,
-            trace.agent_id,
-            task_id,
-            role_str,
-            summary,
-            tags_json,
+            index.id,
+            index.agent_id,
+            index.task_id,
+            index.role,
+            index.summary,
+            index.tags,
+            index.trace_ids,
             status_i32,
-            created_at,
-            now
+            index.created_at,
+            index.updated_at
+        )
+        .execute(&pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn update_short_term_index(
+        &self,
+        ctx: RequestContext,
+        index: ShortTermMemoryIndexPo,
+    ) -> Result<(), AppError> {
+        let pool = self.pool(ctx);
+        let status_i32 = index.status as i32;
+        let result = sqlx::query!(
+            r#"
+UPDATE short_term_memory_index
+SET agent_id = ?,
+    task_id = ?,
+    role = ?,
+    summary = ?,
+    tags = ?,
+    trace_ids = ?,
+    status = ?,
+    updated_at = ?
+WHERE id = ?
+"#,
+            index.agent_id,
+            index.task_id,
+            index.role,
+            index.summary,
+            index.tags,
+            index.trace_ids,
+            status_i32,
+            index.updated_at,
+            index.id,
         )
         .execute(&pool)
         .await?;
 
-        // 3. Return index
-        Ok(ShortTermMemoryIndexPo {
-            id: trace.id.clone(),
-            agent_id: trace.agent_id.clone(),
-            task_id: trace.task_id.clone(),
-            role: role_str,
-            summary,
-            tags: tags_json,
-            status: MemoryStatus::Active,
-            created_at,
-            updated_at: now,
-        })
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!(
+                "short_term_memory_index id={} not found",
+                index.id
+            )));
+        }
+        Ok(())
     }
 
     async fn forget_short_term_index(
@@ -172,103 +211,6 @@ WHERE id = ?
         Ok(())
     }
 
-    async fn batch_append_memory_traces(
-        &self,
-        ctx: RequestContext,
-        traces: &[(MemoryTrace, String, Vec<String>)],
-    ) -> Result<Vec<ShortTermMemoryIndexPo>, AppError> {
-        if traces.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        // 1. 确保第一个 trace 的 Agent 目录存在
-        if let Some((first_trace, _, _)) = traces.first() {
-            let agent_dir = self.agent_memory_dir(&first_trace.agent_id);
-            std::fs::create_dir_all(&agent_dir)?;
-        }
-
-        let pool = self.pool(ctx);
-        let mut tx = pool.begin().await?;
-
-        let mut result = Vec::with_capacity(traces.len());
-        let now = chrono::Utc::now().timestamp();
-
-        // 计算聚合 id: 所有 trace id 拼接后二次 hash
-        let mut combined_ids = String::new();
-        for (trace, _, _) in traces {
-            combined_ids.push_str(&trace.id);
-        }
-        let aggregated_id = sha256::digest(combined_ids.as_bytes());
-        let aggregated_id_cloned = aggregated_id.clone();
-
-        for (trace, summary, tags) in traces {
-            // 获取今日文件路径
-            let file_path = self.today_path(&trace.agent_id);
-
-            // 追加写入文件
-            let mut file = match OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&file_path)
-            {
-                Ok(file) => file,
-                Err(e) => return Err(AppError::Io(e)),
-            };
-
-            // 获取当前文件大小（就是我们要写入的起始偏移）
-            let content_md = trace.to_markdown();
-            let _byte_start = file.seek(SeekFrom::End(0))?;
-            let _byte_length = content_md.len() as u64;
-
-            // 写入 markdown
-            file.write_all(content_md.as_bytes())?;
-
-            let aggregated_id_for_insert = aggregated_id_cloned.clone();
-            let tags_json = serde_json::to_string(tags)?;
-            let role_str = trace.role.to_string();
-            let created_at = trace.created_at;
-            let task_id = trace.task_id.as_ref();
-
-            use common::enums::MemoryStatus;
-            // 9 Rust parameters → 9 question marks
-            let status_i32 = MemoryStatus::Active as i32;
-            sqlx::query!(
-                r#"
-INSERT INTO short_term_memory_index (
-    id, agent_id, task_id, role, summary, tags, status, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-"#,
-                aggregated_id_for_insert,
-                trace.agent_id,
-                task_id,
-                role_str,
-                summary,
-                tags_json,
-                status_i32,
-                created_at,
-                now
-            )
-            .execute(&mut *tx)
-            .await?;
-
-            // 保存结果
-            result.push(ShortTermMemoryIndexPo {
-                id: aggregated_id.clone(),
-                agent_id: trace.agent_id.clone(),
-                task_id: trace.task_id.clone(),
-                role: role_str,
-                summary: summary.clone(),
-                tags: tags_json.clone(),
-                status: MemoryStatus::Active,
-                created_at,
-                updated_at: now,
-            });
-        }
-
-        tx.commit().await?;
-        Ok(result)
-    }
-
     async fn get_short_term_index(
         &self,
         ctx: RequestContext,
@@ -279,7 +221,7 @@ INSERT INTO short_term_memory_index (
         let index = sqlx::query_as!(
             ShortTermMemoryIndexPo,
             r#"
-SELECT id, agent_id, task_id, role, summary, tags, status AS "status: MemoryStatus", created_at, updated_at
+SELECT id, agent_id, task_id, role, summary, tags, trace_ids, status AS "status: MemoryStatus", created_at, updated_at
 FROM short_term_memory_index
 WHERE id = ? AND status != 0
 "#,
@@ -297,24 +239,75 @@ WHERE id = ? AND status != 0
         agent_id: &str,
         limit: usize,
     ) -> Result<Vec<ShortTermMemoryIndexPo>, AppError> {
-        use common::enums::MemoryStatus;
-        let pool = self.pool(ctx);
-        let agent_id_owned = agent_id.to_string();
-        let limit_i64 = limit as i64;
-        let indexes = sqlx::query_as!(
-            ShortTermMemoryIndexPo,
-            r#"
-SELECT id, agent_id, task_id, role, summary, tags, status AS "status: MemoryStatus", created_at, updated_at
-FROM short_term_memory_index
-WHERE agent_id = ? AND status != 0
-ORDER BY created_at DESC
-LIMIT ?
-"#,
-            agent_id_owned,
-            limit_i64
+        self.query_short_term(
+            ctx,
+            MemoryQuery {
+                agent_id: Some(agent_id.to_string()),
+                limit: Some(limit),
+                ..Default::default()
+            },
         )
-        .fetch_all(&pool)
-        .await?;
+        .await
+    }
+
+    async fn query_short_term(
+        &self,
+        ctx: RequestContext,
+        query: MemoryQuery,
+    ) -> Result<Vec<ShortTermMemoryIndexPo>, AppError> {
+        use common::enums::MemoryStatus;
+        use sqlx::QueryBuilder;
+
+        let pool = self.pool(ctx);
+        let mut builder = QueryBuilder::new(
+            r#"SELECT id, agent_id, task_id, role, summary, tags, trace_ids, status AS "status: MemoryStatus", created_at, updated_at
+FROM short_term_memory_index WHERE 1=1"#
+        );
+
+        if let Some(ids) = &query.ids {
+            builder.push(" AND id IN (");
+            let mut separated = builder.separated(", ");
+            for id in ids {
+                separated.push_bind(id);
+            }
+            separated.push_unseparated(")");
+        }
+
+        if let Some(agent_id) = &query.agent_id {
+            builder.push(" AND agent_id = ");
+            builder.push_bind(agent_id);
+        }
+
+        if let Some(status) = &query.status {
+            let status_i32 = *status as i32;
+            builder.push(" AND status = ");
+            builder.push_bind(status_i32);
+        }
+
+        if let Some(exclude_status) = &query.exclude_status {
+            let exclude_i32 = *exclude_status as i32;
+            builder.push(" AND status != ");
+            builder.push_bind(exclude_i32);
+        } else {
+            builder.push(" AND status != 0");
+        }
+
+        if let Some(keyword) = &query.keyword {
+            builder.push(" AND summary MATCH ");
+            builder.push_bind(keyword);
+        }
+
+        builder.push(" ORDER BY created_at DESC");
+
+        if let Some(limit) = &query.limit {
+            builder.push(" LIMIT ");
+            builder.push_bind(*limit as i64);
+        }
+
+        let indexes = builder
+            .build_query_as::<ShortTermMemoryIndexPo>()
+            .fetch_all(&pool)
+            .await?;
 
         Ok(indexes)
     }
@@ -322,25 +315,26 @@ LIMIT ?
     async fn search_short_term(
         &self,
         ctx: RequestContext,
-        agent_id: &str,
-        query: &str,
-        limit: usize,
+        search: MemorySearch,
     ) -> Result<Vec<ShortTermMemoryIndexPo>, AppError> {
         use common::enums::MemoryStatus;
         let pool = self.pool(ctx);
-        let agent_id_owned = agent_id.to_string();
-        let query_owned = query.to_string();
-        let limit_i64 = limit as i64;
+        
+        // 从 MemorySearch 提取参数
+        let agent_id = search.filters.agent_id.unwrap_or_default();
+        let query = search.keyword.unwrap_or_default();
+        let limit_i64 = search.filters.limit.unwrap_or(50) as i64;
+        
         let indexes = sqlx::query_as!(
             ShortTermMemoryIndexPo,
             r#"
-SELECT id, agent_id, task_id, role, summary, tags, status AS "status: MemoryStatus", created_at, updated_at
+SELECT id, agent_id, task_id, role, summary, tags, trace_ids, status AS "status: MemoryStatus", created_at, updated_at
 FROM short_term_memory_index
 WHERE agent_id = ? AND summary MATCH ? AND status != 0
 LIMIT ?
 "#,
-            agent_id_owned,
-            query_owned,
+            agent_id,
+            query,
             limit_i64
         )
         .fetch_all(&pool)
@@ -417,6 +411,46 @@ INSERT INTO long_term_knowledge_node (
             .await?;
         }
 
+        Ok(())
+    }
+
+    async fn update_knowledge_node(
+        &self,
+        ctx: RequestContext,
+        node: &LongTermKnowledgeNodePo,
+    ) -> Result<(), AppError> {
+        let pool = self.pool(ctx);
+        let status_i32 = node.status as i32;
+        let result = sqlx::query!(
+            r#"
+UPDATE long_term_knowledge_node
+SET agent_id = ?,
+    node_name = ?,
+    node_description = ?,
+    node_type = ?,
+    summary = ?,
+    status = ?,
+    updated_at = ?
+WHERE id = ?
+"#,
+            node.agent_id,
+            node.node_name,
+            node.node_description,
+            node.node_type,
+            node.summary,
+            status_i32,
+            node.updated_at,
+            node.id,
+        )
+        .execute(&pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!(
+                "long_term_knowledge_node id={} not found",
+                node.id
+            )));
+        }
         Ok(())
     }
 
@@ -516,43 +550,90 @@ WHERE id = ? AND status != 0
         node_type: Option<&str>,
         limit: usize,
     ) -> Result<Vec<LongTermKnowledgeNodePo>, AppError> {
+        self.query_knowledge_nodes(
+            ctx,
+            MemoryQuery {
+                agent_id: Some(agent_id.to_string()),
+                memory_type: node_type.map(|t| match t {
+                    "Trace" => MemoryType::Trace,
+                    "ShortTerm" => MemoryType::ShortTerm,
+                    "KnowledgeNode" => MemoryType::KnowledgeNode,
+                    "Relation" => MemoryType::Relation,
+                    _ => MemoryType::All,
+                }),
+                limit: Some(limit),
+                ..Default::default()
+            },
+        )
+        .await
+    }
+
+    async fn query_knowledge_nodes(
+        &self,
+        ctx: RequestContext,
+        query: MemoryQuery,
+    ) -> Result<Vec<LongTermKnowledgeNodePo>, AppError> {
         use common::enums::MemoryStatus;
+        use sqlx::QueryBuilder;
+
         let pool = self.pool(ctx);
-        let agent_id_owned = agent_id.to_string();
-        let limit_i64 = limit as i64;
-        let nodes = if let Some(node_type) = node_type {
-            let node_type_owned = node_type.to_string();
-            sqlx::query_as!(
-                LongTermKnowledgeNodePo,
-                r#"
-SELECT id, agent_id, node_name, node_description, node_type, summary, status AS "status: MemoryStatus", created_at, updated_at
-FROM long_term_knowledge_node
-WHERE agent_id = ? AND node_type = ? AND status != 0
-ORDER BY updated_at DESC
-LIMIT ?
-"#,
-                agent_id_owned,
-                node_type_owned,
-                limit_i64
-            )
-            .fetch_all(&pool)
-            .await?
+        let mut builder = QueryBuilder::new(
+            r#"SELECT id, agent_id, node_name, node_description, node_type, summary, status AS "status: MemoryStatus", created_at, updated_at
+FROM long_term_knowledge_node WHERE 1=1"#
+        );
+
+        if let Some(ids) = &query.ids {
+            builder.push(" AND id IN (");
+            let mut separated = builder.separated(", ");
+            for id in ids {
+                separated.push_bind(id);
+            }
+            separated.push_unseparated(")");
+        }
+
+        if let Some(agent_id) = &query.agent_id {
+            builder.push(" AND agent_id = ");
+            builder.push_bind(agent_id);
+        }
+
+        if let Some(status) = &query.status {
+            let status_i32 = *status as i32;
+            builder.push(" AND status = ");
+            builder.push_bind(status_i32);
+        }
+
+        if let Some(exclude_status) = &query.exclude_status {
+            let exclude_i32 = *exclude_status as i32;
+            builder.push(" AND status != ");
+            builder.push_bind(exclude_i32);
         } else {
-            sqlx::query_as!(
-                LongTermKnowledgeNodePo,
-                r#"
-SELECT id, agent_id, node_name, node_description, node_type, summary, status AS "status: MemoryStatus", created_at, updated_at
-FROM long_term_knowledge_node
-WHERE agent_id = ? AND status != 0
-ORDER BY updated_at DESC
-LIMIT ?
-"#,
-                agent_id_owned,
-                limit_i64
-            )
+            builder.push(" AND status != 0");
+        }
+
+        if let Some(memory_type) = &query.memory_type {
+            builder.push(" AND node_type = ");
+            builder.push_bind(memory_type.to_string());
+        }
+
+        if let Some(keyword) = &query.keyword {
+            builder.push(" AND (node_name MATCH ");
+            builder.push_bind(keyword);
+            builder.push(" OR summary MATCH ");
+            builder.push_bind(keyword);
+            builder.push(")");
+        }
+
+        builder.push(" ORDER BY updated_at DESC");
+
+        if let Some(limit) = &query.limit {
+            builder.push(" LIMIT ");
+            builder.push_bind(*limit as i64);
+        }
+
+        let nodes = builder
+            .build_query_as::<LongTermKnowledgeNodePo>()
             .fetch_all(&pool)
-            .await?
-        };
+            .await?;
 
         Ok(nodes)
     }
@@ -560,16 +641,16 @@ LIMIT ?
     async fn search_knowledge_nodes(
         &self,
         ctx: RequestContext,
-        agent_id: &str,
-        query: &str,
-        limit: usize,
+        search: MemorySearch,
     ) -> Result<Vec<LongTermKnowledgeNodePo>, AppError> {
         use common::enums::MemoryStatus;
         let pool = self.pool(ctx);
-        let agent_id_owned = agent_id.to_string();
-        let query_owned = query.to_string();
-        let query_owned2 = query_owned.clone();
-        let limit_i64 = limit as i64;
+        
+        // 从 MemorySearch 提取参数
+        let agent_id = search.filters.agent_id.unwrap_or_default();
+        let query = search.keyword.unwrap_or_default();
+        let limit_i64 = search.filters.limit.unwrap_or(50) as i64;
+        
         let nodes = sqlx::query_as!(
             LongTermKnowledgeNodePo,
             r#"
@@ -578,9 +659,9 @@ FROM long_term_knowledge_node
 WHERE agent_id = ? AND (node_name MATCH ? OR summary MATCH ?) AND status != 0
 LIMIT ?
 "#,
-            agent_id_owned,
-            query_owned,
-            query_owned2,
+            agent_id,
+            query,
+            query,
             limit_i64
         )
         .fetch_all(&pool)
@@ -752,6 +833,38 @@ INSERT INTO knowledge_node_relation (
         }
 
         tx.commit().await?;
+        Ok(())
+    }
+
+    async fn upsert_knowledge_relation(
+        &self,
+        ctx: RequestContext,
+        relation: &KnowledgeNodeRelationPo,
+    ) -> Result<(), AppError> {
+        let pool = self.pool(ctx);
+        let relation_type_str = relation.relation_type.to_string();
+
+        sqlx::query!(
+            r#"
+INSERT INTO knowledge_node_relation (
+    id, source_node_id, target_node_id, relation_type, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+    source_node_id = excluded.source_node_id,
+    target_node_id = excluded.target_node_id,
+    relation_type  = excluded.relation_type,
+    updated_at     = excluded.updated_at
+"#,
+            relation.id,
+            relation.source_node_id,
+            relation.target_node_id,
+            relation_type_str,
+            relation.created_at,
+            relation.updated_at,
+        )
+        .execute(&pool)
+        .await?;
+
         Ok(())
     }
 

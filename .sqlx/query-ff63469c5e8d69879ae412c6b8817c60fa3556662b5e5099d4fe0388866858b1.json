@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nUPDATE short_term_memory_index\nSET agent_id = ?,\n    task_id = ?,\n    role = ?,\n    summary = ?,\n    tags = ?,\n    trace_ids = ?,\n    status = ?,\n    updated_at = ?\nWHERE id = ?\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 9
+    },
+    "nullable": []
+  },
+  "hash": "ff63469c5e8d69879ae412c6b8817c60fa3556662b5e5099d4fe0388866858b1"
+}

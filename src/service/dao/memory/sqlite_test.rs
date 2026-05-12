@@ -3,14 +3,14 @@
 //! 单元测试使用内存数据库，不依赖全局 storage 连接池
 
 use super::*;
-use crate::models::memory::{MemoryRole, MemoryTrace, LongTermKnowledgeNodePo, KnowledgeNodeRelationPo, KnowledgeReferencePo, KnowledgeRelationType};
+use crate::models::memory::{MemoryRole, MemoryTrace, ShortTermMemoryIndexPo, LongTermKnowledgeNodePo, KnowledgeNodeRelationPo, KnowledgeReferencePo, KnowledgeRelationType};
 use crate::pkg::RequestContext;
 use crate::service::dao::memory::sqlite::MemoryDaoSqliteImpl;
 use common::enums::MemoryStatus;
 use sqlx::SqlitePool;
 
 #[sqlx::test]
-async fn test_append_memory_trace(pool: SqlitePool) {
+async fn test_append_trace_and_create_short_term_index(pool: SqlitePool) {
     // 初始化配置
     crate::config::init().unwrap();
     // 自动迁移已经由 sqlx::test 执行
@@ -27,17 +27,27 @@ async fn test_append_memory_trace(pool: SqlitePool) {
         None, // 测试不需要 task_id
     );
 
-    let result = dao.append_memory_trace(
-        ctx,
-        &trace,
-        "测试摘要".to_string(),
-        vec!["test".to_string(), "memory".to_string()],
-    ).await;
+    // 阶段 1：append trace 到 daily jsonl
+    let position = dao.append_trace(ctx.clone(), &trace).await.unwrap();
+    assert_eq!(position.trace_id, trace.id);
+    assert!(position.date_filename.ends_with(".jsonl"));
 
+    // 阶段 2：创建 short-term index 关联 trace
+    let now = chrono::Utc::now().timestamp();
+    let index = ShortTermMemoryIndexPo {
+        id: "st-1".to_string(),
+        agent_id: "test-agent-1".to_string(),
+        task_id: None,
+        role: "user".to_string(),
+        summary: "测试摘要".to_string(),
+        tags: serde_json::to_string(&vec!["test", "memory"]).unwrap(),
+        trace_ids: serde_json::to_string(&vec![&position.trace_id]).unwrap(),
+        status: MemoryStatus::Active,
+        created_at: now,
+        updated_at: now,
+    };
+    let result = dao.create_short_term_index(ctx, index).await;
     assert!(result.is_ok());
-    let index = result.unwrap();
-    assert_eq!(index.agent_id, "test-agent-1");
-    assert_eq!(index.summary, "测试摘要");
 }
 
 #[sqlx::test]

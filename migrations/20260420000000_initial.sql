@@ -122,6 +122,7 @@ CREATE TABLE IF NOT EXISTS short_term_memory_index (
     role TEXT NOT NULL,
     summary TEXT NOT NULL,
     tags TEXT NOT NULL,
+    trace_ids TEXT NOT NULL DEFAULT '[]',
     "status" INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL

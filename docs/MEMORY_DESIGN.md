@@ -261,10 +261,331 @@ pub trait MemoryDaoTrait: Send + Sync {
 
 ---
 
+## DAL 业务层设计（2026-05-12）
+
+### 1. 类型枚举
+
+```rust
+/// 记忆类型（用于过滤查询）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemoryType {
+    ShortTerm,      // 短期记忆索引
+    KnowledgeNode,  // 长期知识节点
+    Relation,       // 知识节点关系
+    All,            // 所有类型
+}
+```
+
+### 2. PO 统一枚举
+
+包装所有底层 PO，用于 DAO 层返回统一类型：
+
+```rust
+/// 记忆底层 PO 统一枚举
+#[derive(Debug, Clone)]
+pub enum MemoryPo {
+    ShortTerm(ShortTermMemoryIndexPo),
+    KnowledgeNode(LongTermKnowledgeNodePo),
+    Relation(KnowledgeNodeRelationPo),
+}
+```
+
+### 3. 业务实体
+
+对齐 Skill/Tool 命名模式：
+
+```rust
+/// 记忆业务实体（包含 PO + 搜索匹配信息）
+#[derive(Debug, Clone)]
+pub struct Memory {
+    pub po: MemoryPo,
+    pub search_match: Option<SearchMatchInfo>,
+}
+```
+
+命名对齐：
+- Skill = SkillPo + search_match
+- Tool = ToolPo + search_match
+- Memory = MemoryPo + search_match
+
+### 4. 查询参数
+
+直接在 MemoryQuery 中添加 memory_type 字段，MemorySearch 通过包含 MemoryQuery 自动获得：
+
+```rust
+/// 记忆通用查询参数
+#[derive(Debug, Clone, Default)]
+pub struct MemoryQuery {
+    pub agent_id: Option<String>,
+    pub status: Option<MemoryStatus>,
+    pub keyword: Option<String>,
+    pub limit: Option<usize>,
+    pub memory_type: Option<MemoryType>,  // 按记忆类型过滤
+}
+
+/// 记忆搜索统一入参
+#[derive(Debug, Clone, Default)]
+pub struct MemorySearch {
+    pub keyword: Option<String>,
+    pub query_vector: Option<Vec<f32>>,
+    pub top_k: Option<i32>,
+    pub filters: MemoryQuery,  // 包含 memory_type
+}
+```
+
+### 5. DAL 统一接口
+
+```rust
+#[async_trait]
+pub trait MemoryDal: Send + Sync {
+    /// 🔍 统一混合搜索（关键词 + 向量语义）
+    async fn search(&self, ctx: RequestContext, search: MemorySearch) 
+        -> Result<Vec<Memory>, AppError>;
+    
+    /// 📋 通用关系型查询（纯数据库查询，无向量）
+    async fn query(&self, ctx: RequestContext, query: MemoryQuery) 
+        -> Result<Vec<Memory>, AppError>;
+}
+```
+
+### 6. 类型关系图
+
+```
+MemoryType (enum)
+    ↓ 用于过滤
+MemoryQuery { memory_type, ... }
+    ↓ 被包含
+MemorySearch { filters: MemoryQuery, query_vector, ... }
+    ↓ 作为入参
+MemoryDal::search() / query()
+    ↓ 返回
+Vec<Memory>
+    ↓ 包含
+Memory { po: MemoryPo, search_match: Option<SearchMatchInfo> }
+    ↓ 包含
+MemoryPo (enum)
+    ├─ ShortTerm(ShortTermMemoryIndexPo)
+    ├─ KnowledgeNode(LongTermKnowledgeNodePo)
+    └─ Relation(KnowledgeNodeRelationPo)
+```
+
+### 7. 实现要点
+
+**search 方法流程：**
+1. 根据 `search.filters.memory_type` 决定搜索哪些类型
+2. 对 ShortTerm / KnowledgeNode 执行混合搜索（向量 + 关键词）
+3. Relation 不支持向量搜索，只执行关键词查询（如果有关键词）
+4. 聚合所有结果，统一排序，应用 limit
+
+**query 方法流程：**
+1. 根据 `query.memory_type` 分发到底层 DAO
+2. 纯数据库查询，不涉及向量
+3. 聚合结果返回（Relation 类型的 search_match 为 None）
+
+---
+
+## DAL 写入逻辑设计（2026-05-12）
+
+### 1. 设计原则
+
+- **两阶段写入**：记忆细节（trace）先入库，归纳总结后再创建短期记忆索引；DAO 层不再耦合两阶段
+- **DAO 单一职责**：写 trace 就是写 trace，写 short-term 就是写 short-term，原子操作互不依赖
+- **关联显式化**：短期记忆通过新增字段 `trace_ids` 显式记录聚合的 trace id 列表，不再依赖 hash 拼接的隐式约定
+- **Trace 不可变**：MemoryTrace 写入后不可修改/删除；update/delete 仅支持 ShortTerm 与 KnowledgeNode
+- **向量化降级**：写入时自动生成向量索引（trace 除外），失败仅记录 warn 不影响主流程
+- **级联删除**：删除 KnowledgeNode 时同步清理入边/出边关系与引用，避免悬垂指针
+
+### 2. DAO 层接口拆分
+
+**移除**（与现有耦合实现一并删除，不保留 deprecated）：
+- `append_memory_trace(ctx, trace, summary, tags) -> ShortTermMemoryIndexPo`
+- `batch_append_memory_traces(ctx, traces) -> Vec<ShortTermMemoryIndexPo>`
+
+**新增**：
+```rust
+// === Trace 阶段：仅写 daily JSONL 文件 ===
+async fn append_trace(
+    &self,
+    ctx: RequestContext,
+    trace: &MemoryTrace,
+) -> Result<MemoryTrace, AppError>;
+
+async fn batch_append_traces(
+    &self,
+    ctx: RequestContext,
+    traces: &[MemoryTrace],
+) -> Result<Vec<MemoryTrace>, AppError>;
+
+// === Short-Term 阶段：仅 INSERT short_term_memory_index ===
+async fn create_short_term_index(
+    &self,
+    ctx: RequestContext,
+    index: &ShortTermMemoryIndexPo,
+) -> Result<ShortTermMemoryIndexPo, AppError>;
+```
+
+### 3. Schema 变更
+
+`short_term_memory_index` 表新增字段：
+
+```sql
+ALTER TABLE short_term_memory_index
+    ADD COLUMN trace_ids TEXT NOT NULL DEFAULT '[]';  -- JSON 数组
+```
+
+`ShortTermMemoryIndexPo` 同步新增 `trace_ids: Vec<String>` 字段（序列化时转 JSON 字符串）。
+
+### 4. MemoryPo / MemoryType 拓展
+
+```rust
+pub enum MemoryType {
+    Trace,           // 新增
+    ShortTerm,
+    KnowledgeNode,
+    Relation,
+    All,
+}
+
+pub enum MemoryPo {
+    Trace(MemoryTrace),                       // 新增
+    ShortTerm(ShortTermMemoryIndexPo),
+    KnowledgeNode(LongTermKnowledgeNodePo),
+    Relation(KnowledgeNodeRelationPo),
+}
+```
+
+`Memory` 业务实体新增辅助方法：
+```rust
+impl Memory {
+    pub fn id(&self) -> &str;
+    pub fn agent_id(&self) -> &str;
+    pub fn memory_type(&self) -> MemoryType;
+    pub fn vectorizable_content(&self) -> Option<&str>;  // Trace/Relation 返回 None
+    pub fn supports_update(&self) -> bool;               // ShortTerm/KnowledgeNode = true
+    pub fn supports_delete(&self) -> bool;               // ShortTerm/KnowledgeNode = true
+}
+```
+
+### 5. MemoryCreateParams 设计
+
+按写入范式分四个变体，参数全部使用 PO 对象（更优雅，对齐数据层）：
+
+```rust
+pub enum MemoryCreateParams {
+    /// 阶段 1：仅写 trace 细节（不向量化、不创建索引）
+    AppendTraces(Vec<MemoryTrace>),
+
+    /// 阶段 2：基于已存在的 trace 创建短期记忆索引
+    /// PO 内的 trace_ids 字段已包含阶段 1 返回的 id 列表
+    CreateShortTerm(ShortTermMemoryIndexPo),
+
+    /// 长期知识节点（可选附带引用关系）
+    CreateKnowledgeNode {
+        node: LongTermKnowledgeNodePo,
+        references: Vec<KnowledgeReferencePo>,
+    },
+
+    /// 知识关系列表
+    CreateRelations(Vec<KnowledgeNodeRelationPo>),
+}
+```
+
+### 6. DAL 写入接口
+
+```rust
+#[async_trait]
+pub trait MemoryDal: Send + Sync {
+    // ... 已有 search / query
+
+    /// 创建记忆（按变体分发）
+    async fn create(
+        &self,
+        ctx: RequestContext,
+        params: MemoryCreateParams,
+    ) -> Result<Vec<Memory>, AppError>;
+
+    /// 更新记忆（仅支持 ShortTerm / KnowledgeNode）
+    async fn update(
+        &self,
+        ctx: RequestContext,
+        memory: Memory,
+    ) -> Result<Memory, AppError>;
+
+    /// 删除记忆（仅支持 ShortTerm / KnowledgeNode；KnowledgeNode 级联删除）
+    async fn delete(
+        &self,
+        ctx: RequestContext,
+        memory_type: MemoryType,
+        id: &str,
+    ) -> Result<(), AppError>;
+}
+```
+
+### 7. create 方法分发流程
+
+| 变体 | 流程 | 向量化 |
+|---|---|---|
+| `AppendTraces(traces)` | `dao.batch_append_traces(traces)` → 包装为 `Memory::Trace` 列表 | 否 |
+| `CreateShortTerm(po)` | ① `dao.create_short_term_index(po)`<br>② 向量化 `po.summary` → `vector_dao.upsert_short_term_vector`（失败 warn）<br>③ 返回 `Memory::ShortTerm` | 是 |
+| `CreateKnowledgeNode { node, references }` | ① `dao.save_knowledge_node(node)`<br>② 遍历 references → `dao.add_knowledge_reference`<br>③ 向量化 `node.content` → `vector_dao.upsert_knowledge_node_vector`（失败 warn）<br>④ 返回 `Memory::KnowledgeNode` | 是 |
+| `CreateRelations(rels)` | 批量 `dao.add_knowledge_relation` → 返回 `Memory::Relation` 列表 | 否 |
+
+### 8. update 方法流程
+
+- `Memory::ShortTerm(po)` → `dao.update_short_term_index(po)` + 重新向量化 summary
+- `Memory::KnowledgeNode(po)` → `dao.save_knowledge_node(po)`（upsert 语义）+ 重新向量化 content
+- `Memory::Trace` / `Memory::Relation` → 返回 `AppError::Unsupported`
+
+### 9. delete 方法流程
+
+- `MemoryType::ShortTerm` → `dao.forget_short_term_index(id)` + 删除向量索引
+- `MemoryType::KnowledgeNode` → 级联：
+  - 删除该节点的所有入边/出边关系（`dao.delete_relations_by_node`）
+  - 删除该节点的所有引用（`dao.delete_references_by_node`）
+  - 删除节点本身（`dao.delete_knowledge_node`）
+  - 删除向量索引
+- `MemoryType::Trace` / `MemoryType::Relation` / `MemoryType::All` → 返回 `AppError::Unsupported`
+
+### 10. 典型业务调用顺序
+
+```rust
+// 阶段 1：细节先入库
+let traces = dal.create(ctx, AppendTraces(vec![t1, t2, t3])).await?;
+let trace_ids: Vec<_> = traces.iter().map(|m| m.id().to_string()).collect();
+
+// 阶段 2：归纳总结后创建短期记忆索引（PO 中含 trace_ids）
+let st_po = ShortTermMemoryIndexPo {
+    id, agent_id, task_id, role, summary, tags, trace_ids,
+    status: Active, created_at, updated_at,
+};
+let st = dal.create(ctx, CreateShortTerm(st_po)).await?;
+```
+
+### 11. 改动范围清单
+
+1. **migration**：新增 `short_term_memory_index.trace_ids TEXT NOT NULL DEFAULT '[]'`
+2. **models/memory.rs**：
+   - `MemoryType` 加 `Trace`
+   - `MemoryPo` 加 `Trace(MemoryTrace)` 变体
+   - `ShortTermMemoryIndexPo` 加 `trace_ids: Vec<String>`
+   - 新增 `MemoryCreateParams` 枚举
+3. **service/dao/memory/mod.rs**：删除 `append_memory_trace` / `batch_append_memory_traces`，新增 `append_trace` / `batch_append_traces` / `create_short_term_index`
+4. **service/dao/memory/sqlite.rs**：拆分实现
+5. **service/dao/memory 单测**：相应拆分（trace 测试 / short_term 测试独立）
+6. **service/dal/memory.rs**：
+   - 新增 `Memory` 辅助方法
+   - `MemoryDal` 加 `create` / `update` / `delete`
+   - `SqliteMemoryDal` 实现写入 + 向量化
+7. **调用方**：现有 `append_memory_trace` 调用点全部迁移到两阶段写入
+
+---
+
 ## 更新历史
 
 | 日期 | 变更 | 作者 |
 |------|------|------|
 | 2026-04-08 | 初始设计，四层记忆模型 |  |
 | 2026-04-08 | 重构：短期聚合设计、关系分离存储、引用位置更新 |  |
+| 2026-05-12 | 新增 DAL 业务层设计：统一 Memory 实体、混合搜索接口 |  |
+| 2026-05-12 | 新增 DAL 写入逻辑：DAO 拆分两阶段、显式 trace_ids、create/update/delete 接口 |  |
 
