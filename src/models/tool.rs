@@ -145,6 +145,10 @@ pub struct Tool {
     pub po: ToolPo,
     /// Our core interface tool
     pub our_tool: Box<dyn CoreTool + Send + Sync>,
+    /// ✅ 搜索匹配元信息（可选）
+    /// - 普通查询返回：None
+    /// - 搜索返回：Some(包含匹配类型、距离、命中等元信息)
+    pub search_match: Option<crate::models::vector::SearchMatchInfo>,
 }
 
 // Manual Debug implementation - skip the dyn fields

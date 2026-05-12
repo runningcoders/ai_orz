@@ -48,6 +48,15 @@ pub trait ToolManagement: Send + Sync + Debug {
 
     /// 获取 Agent 绑定的工具 ID 列表
     async fn get_agent_bound_tool_ids(&self, ctx: &RequestContext, agent_id: &str) -> Result<Vec<String>, ToolDomainError>;
+
+    /// 搜索工具（向量 + 关键词混合搜索）
+    async fn search(&self, ctx: &RequestContext, params: crate::service::dao::tool::ToolSearch) -> Result<Vec<Tool>, ToolDomainError>;
+
+    /// 创建工具
+    async fn create_tool(&self, ctx: &RequestContext, po: &ToolPo) -> Result<(), ToolDomainError>;
+
+    /// 更新工具
+    async fn update_tool(&self, ctx: &RequestContext, po: &ToolPo) -> Result<(), ToolDomainError>;
 }
 
 /// ToolManagement 默认实现
@@ -105,6 +114,8 @@ impl ToolManagement for ToolManagementImpl {
             agent_id: Some(agent_id.to_string()),
             enabled_only: None,
             limit: None,
+            ids: None,
+            keyword: None,
         }).await
     }
 
@@ -141,5 +152,30 @@ impl ToolManagement for ToolManagementImpl {
     async fn get_agent_bound_tool_ids(&self, _ctx: &RequestContext, _agent_id: &str) -> Result<Vec<String>, ToolDomainError> {
         // TODO: 实现获取 Agent 绑定的工具 ID 列表
         Ok(Vec::new())
+    }
+
+    async fn search(
+        &self,
+        ctx: &RequestContext,
+        params: crate::service::dao::tool::ToolSearch,
+    ) -> Result<Vec<Tool>, ToolDomainError> {
+        let tools = crate::service::dal::tool::dal()
+            .search(ctx, params)
+            .await?;
+        Ok(tools)
+    }
+
+    async fn create_tool(&self, ctx: &RequestContext, po: &ToolPo) -> Result<(), ToolDomainError> {
+        crate::service::dal::tool::dal()
+            .create_tool(ctx, po)
+            .await?;
+        Ok(())
+    }
+
+    async fn update_tool(&self, ctx: &RequestContext, po: &ToolPo) -> Result<(), ToolDomainError> {
+        crate::service::dal::tool::dal()
+            .update_tool(ctx, po)
+            .await?;
+        Ok(())
     }
 }

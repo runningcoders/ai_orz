@@ -59,6 +59,8 @@ fn register_test_factory() {
 /// 初始化测试环境
 async fn init_test_env(pool: SqlitePool, register_factory: bool) -> (Arc<dyn ToolDal + Send + Sync>, RequestContext) {
     tool::init();
+    crate::service::dao::model_provider::init();
+    crate::service::dao::cortex::init();
     crate::service::dao::tool_call::init();
     crate::service::dal::tool::init();
     crate::pkg::tool_registry::init();
@@ -67,7 +69,10 @@ async fn init_test_env(pool: SqlitePool, register_factory: bool) -> (Arc<dyn Too
         register_test_factory();
     }
 
-    let tool_dal = crate::service::dal::tool::new(tool::dao(), crate::service::dao::tool_call::dao());
+    let tool_dal = crate::service::dal::tool::new(
+        tool::dao(),
+        crate::service::dao::tool_call::dao(),
+    );
     let ctx = RequestContext::new_simple("test-user", pool);
     (tool_dal, ctx)
 }

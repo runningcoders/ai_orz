@@ -44,6 +44,12 @@ pub enum ToolDomainError {
     Database(#[from] sqlx::Error),
 }
 
+impl From<crate::error::AppError> for ToolDomainError {
+    fn from(e: crate::error::AppError) -> Self {
+        ToolDomainError::Internal(e.to_string())
+    }
+}
+
 /// Tool Domain 主 trait
 #[async_trait]
 pub trait ToolDomain: Send + Sync + Debug {

@@ -119,6 +119,9 @@ pub trait ToolDal: Send + Sync {
         args: Value,
     ) -> Result<(Value, ToolCallEntry), ToolError>;
 
+    /// 搜索工具（向量 + 关键词混合搜索）
+    async fn search(&self, ctx: &RequestContext, params: crate::service::dao::tool::ToolSearch) -> Result<Vec<Tool>, AppError>;
+
     /// Wrap tools for Rig to use (convert to Box<dyn ToolDyn>)
     fn wrap_for_rig(&self, tools: &[Tool], ctx: RequestContext) -> Vec<Box<dyn rig::tool::ToolDyn>>;
 }
@@ -148,7 +151,7 @@ impl ToolDal for ToolDalImpl {
         let Some(our_tool) = self.tool_call_dao.assemble_core_tool(&po)? else {
             return Ok(None);
         };
-        Ok(Some(Tool { po, our_tool }))
+        Ok(Some(Tool { po, our_tool, search_match: None }))
     }
 
     async fn get_by_name(&self, ctx: &RequestContext, name: &str) -> Result<Option<Tool>, AppError> {
@@ -158,7 +161,7 @@ impl ToolDal for ToolDalImpl {
         let Some(our_tool) = self.tool_call_dao.assemble_core_tool(&po)? else {
             return Ok(None);
         };
-        Ok(Some(Tool { po, our_tool }))
+        Ok(Some(Tool { po, our_tool, search_match: None }))
     }
 
     async fn query(&self, ctx: &RequestContext, query: ToolQuery) -> Result<Vec<Tool>, AppError> {
@@ -166,7 +169,7 @@ impl ToolDal for ToolDalImpl {
         let mut tools = Vec::new();
         for po in pos {
             if let Some(our_tool) = self.tool_call_dao.assemble_core_tool(&po)? {
-                tools.push(Tool { po, our_tool });
+                tools.push(Tool { po, our_tool, search_match: None });
             }
         }
         Ok(tools)
@@ -217,6 +220,17 @@ impl ToolDal for ToolDalImpl {
 
         // 执行工具
         self.call_tool(ctx, &tool, args).await
+    }
+
+    async fn search(&self, ctx: &RequestContext, params: crate::service::dao::tool::ToolSearch) -> Result<Vec<Tool>, AppError> {
+        let pos = self.tool_dao.search(ctx, params).await?;
+        let mut tools = Vec::new();
+        for po in pos {
+            if let Some(our_tool) = self.tool_call_dao.assemble_core_tool(&po)? {
+                tools.push(Tool { po, our_tool, search_match: None });
+            }
+        }
+        Ok(tools)
     }
 
     async fn call_tool(

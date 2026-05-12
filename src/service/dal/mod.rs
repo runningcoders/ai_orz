@@ -3,6 +3,30 @@
 //! DAL 层是业务逻辑层，不关心具体的存储细节
 //! 它组合多个 DAO 完成业务逻辑，使用业务对象而非 Po
 
+/// 统一搜索参数
+#[derive(Debug, Clone, Default)]
+pub struct SearchParams {
+    /// 搜索关键词
+    pub keyword: String,
+    /// 返回数量限制
+    pub limit: usize,
+    /// 分页偏移
+    pub offset: Option<usize>,
+    /// 是否只使用向量搜索
+    pub vector_only: Option<bool>,
+}
+
+impl SearchParams {
+    pub fn new(keyword: impl Into<String>, limit: usize) -> Self {
+        Self {
+            keyword: keyword.into(),
+            limit,
+            offset: None,
+            vector_only: None,
+        }
+    }
+}
+
 pub mod agent;
 pub mod artifact;
 pub mod brain;

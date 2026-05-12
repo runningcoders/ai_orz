@@ -130,22 +130,11 @@ impl SkillDal for SkillDalImpl {
         self.skill_dao.insert(ctx.clone(), po).await?;
 
         // 2. 查询可用的 Embedding 能力的 ModelProvider
-        let providers = self.model_provider_dao.query(
-            ctx.clone(),
-            crate::service::dao::model_provider::ModelProviderQuery {
-                capability: Some(ModelCapability::Embedding),
-                status: Some(ModelProviderStatus::Normal),
-                limit: Some(1),
-                ..Default::default()
-            },
-        ).await?;
-
-        // 3. 如果有可用的 Embedding Provider，生成向量并保存
-        if let Some(provider) = providers.first() {
+        if let Some(provider) = self.model_provider_dao.get_default_embedding_provider(ctx.clone()).await? {
             // 创建 Cortex（这是同步方法，不需要 await）
             let cortex = self.cortex_dao.create_cortex_trait(
                 ctx.clone(),
-                provider,
+                &provider,
                 vec![],
             )?;
 

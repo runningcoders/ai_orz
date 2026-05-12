@@ -27,6 +27,9 @@ pub trait ModelProviderDao: Send + Sync {
     async fn find_all(&self, ctx: RequestContext) -> Result<Vec<ModelProviderPo>, AppError>;
     async fn update(&self, ctx: RequestContext, provider: &ModelProviderPo) -> Result<(), AppError>;
     async fn delete(&self, ctx: RequestContext, provider: &ModelProviderPo) -> Result<(), AppError>;
+
+    /// 获取默认的 Embedding Provider（第一个可用的）
+    async fn get_default_embedding_provider(&self, ctx: RequestContext) -> Result<Option<ModelProviderPo>, AppError>;
 }
 
 

@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use sqlx::SqlitePool;
 use std::sync::{Arc, OnceLock};
 
-use super::{ToolDao, ToolQuery};
+use super::{ToolDao, ToolQuery, ToolSearch};
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -149,6 +149,37 @@ impl ToolDao for ToolDaoSqliteImpl {
             has_where = true;
         }
 
+        // IDs 批量查询
+        if let Some(ids) = &query.ids {
+            if !ids.is_empty() {
+                if has_where {
+                    builder.push(" AND");
+                } else {
+                    builder.push(" WHERE");
+                }
+                builder.push(" t.id IN (");
+                let mut separated = builder.separated(", ");
+                for id in ids {
+                    separated.push_bind(id.clone());
+                }
+                separated.push_unseparated(")");
+                has_where = true;
+            }
+        }
+
+        // 关键词搜索
+        if let Some(keyword) = &query.keyword {
+            if !keyword.is_empty() {
+                if has_where {
+                    builder.push(" AND");
+                } else {
+                    builder.push(" WHERE");
+                }
+                builder.push(" (t.name LIKE '%").push_bind(keyword.clone()).push("%' OR t.description LIKE '%").push_bind(keyword.clone()).push("%')");
+                has_where = true;
+            }
+        }
+
         // Enabled 过滤
         if let Some(enabled_only) = query.enabled_only {
             if enabled_only {
@@ -283,5 +314,15 @@ impl ToolDao for ToolDaoSqliteImpl {
         }
 
         Ok(inserted)
+    }
+
+    async fn search(&self, ctx: &RequestContext, params: ToolSearch) -> Result<Vec<ToolPo>> {
+        // 用 query 做关键词搜索
+        let query = ToolQuery {
+            keyword: params.keyword.clone(),
+            limit: Some(params.limit),
+            ..Default::default()
+        };
+        self.query(ctx, query).await
     }
 }

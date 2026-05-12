@@ -146,6 +146,25 @@ impl ModelProviderDao for MockModelProviderDao {
     async fn delete(&self, _ctx: RequestContext, _provider: &ModelProviderPo) -> Result<(), AppError> {
         Ok(())
     }
+
+    async fn get_default_embedding_provider(&self, _ctx: RequestContext) -> Result<Option<ModelProviderPo>, AppError> {
+        Ok(Some(ModelProviderPo {
+            id: "mock-provider".to_string(),
+            name: "Mock Provider".to_string(),
+            provider_type: common::enums::ProviderType::Ollama,
+            model_name: "mock-embedding".to_string(),
+            capability: common::enums::ModelCapability::Embedding,
+            api_key: "".to_string(),
+            base_url: Some("http://localhost:11434".to_string()),
+            description: None,
+            config: "{}".to_string(),
+            status: common::enums::ModelProviderStatus::Normal,
+            created_by: "system".to_string(),
+            modified_by: "system".to_string(),
+            created_at: chrono::Utc::now().timestamp(),
+            updated_at: chrono::Utc::now().timestamp(),
+        }))
+    }
 }
 
 /// 创建测试 RequestContext（使用测试 pool 注入）
