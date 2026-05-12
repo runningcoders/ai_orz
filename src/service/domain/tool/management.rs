@@ -56,7 +56,7 @@ pub trait ToolManagement: Send + Sync + Debug {
     async fn create_tool(&self, ctx: &RequestContext, po: &ToolPo) -> Result<(), ToolDomainError>;
 
     /// 更新工具
-    async fn update_tool(&self, ctx: &RequestContext, po: &ToolPo) -> Result<(), ToolDomainError>;
+    async fn update_tool(&self, ctx: &RequestContext, tool: &Tool) -> Result<(), ToolDomainError>;
 }
 
 /// ToolManagement 默认实现
@@ -172,9 +172,9 @@ impl ToolManagement for ToolManagementImpl {
         Ok(())
     }
 
-    async fn update_tool(&self, ctx: &RequestContext, po: &ToolPo) -> Result<(), ToolDomainError> {
+    async fn update_tool(&self, ctx: &RequestContext, tool: &Tool) -> Result<(), ToolDomainError> {
         crate::service::dal::tool::dal()
-            .update_tool(ctx, po)
+            .update_tool(ctx, tool)
             .await?;
         Ok(())
     }

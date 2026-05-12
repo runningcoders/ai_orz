@@ -76,7 +76,8 @@ pub trait SkillDal: Send + Sync {
     async fn search(&self, ctx: RequestContext, keyword: &str) -> Result<Vec<Skill>, AppError>;
 
     /// 更新技能元数据（不影响文件）
-    async fn update(&self, ctx: RequestContext, po: &SkillPo) -> Result<(), AppError>;
+    /// 更新技能（仅数据库）
+    async fn update(&self, ctx: RequestContext, skill: &Skill) -> Result<(), AppError>;
 
     /// 删除技能（删除数据库记录 + 文件目录）
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
@@ -333,9 +334,9 @@ impl SkillDal for SkillDalImpl {
         Ok(skills)
     }
 
-    async fn update(&self, ctx: RequestContext, po: &SkillPo) -> Result<(), AppError> {
+    async fn update(&self, ctx: RequestContext, skill: &Skill) -> Result<(), AppError> {
         // 1. 先更新基础技能数据
-        self.skill_dao.update(ctx.clone(), po).await?;
+        self.skill_dao.update(ctx.clone(), &skill.po).await?;
 
         // 2. 查询可用的 Embedding 能力的 ModelProvider
         let providers = self.model_provider_dao.query(
@@ -350,11 +351,11 @@ impl SkillDal for SkillDalImpl {
 
         // 3. 如果有可用的 Embedding Provider，更新向量
         if let Some(provider) = providers.first() {
-            let content = format!("{} {}", po.name, po.description);
+            let content = format!("{} {}", skill.po.name, skill.po.description);
             let new_hash = sha256::digest(&content);
             
             // 检查内容是否变化（如果没变就不需要重索引）
-            let old_row = self.skill_vector_dao.get_vector_row(ctx.clone(), &po.id).await?;
+            let old_row = self.skill_vector_dao.get_vector_row(ctx.clone(), &skill.po.id).await?;
             let old_hash = old_row.map(|r| r.meta.content_hash);
             
             if old_hash.as_deref() != Some(&new_hash) {
@@ -382,7 +383,7 @@ impl SkillDal for SkillDalImpl {
                 // 降级策略：忽略错误，不影响核心功能
                 if let Err(e) = self.skill_vector_dao.upsert_vector(
                     ctx,
-                    &po.id,
+                    &skill.po.id,
                     &vector_params,
                 ).await {
                     tracing::warn!("更新技能向量索引失败（可能 vss0 扩展未安装）: {}", e);

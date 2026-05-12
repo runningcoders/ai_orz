@@ -51,7 +51,7 @@ pub trait ToolDal: Send + Sync {
     async fn create_tool(&self, ctx: &RequestContext, po: &ToolPo) -> Result<(), AppError>;
 
     /// 更新现有工具
-    async fn update_tool(&self, ctx: &RequestContext, po: &ToolPo) -> Result<(), AppError>;
+    async fn update_tool(&self, ctx: &RequestContext, tool: &Tool) -> Result<(), AppError>;
 
     /// 根据 ID 获取完整工具（PO + CoreTool 实例）
     async fn get_by_id(&self, ctx: &RequestContext, id: String) -> Result<Option<Tool>, AppError>;
@@ -140,8 +140,8 @@ impl ToolDal for ToolDalImpl {
         Ok(self.tool_dao.create_tool(ctx, po).await?)
     }
 
-    async fn update_tool(&self, ctx: &RequestContext, po: &ToolPo) -> Result<(), AppError> {
-        Ok(self.tool_dao.update_tool(ctx, po).await?)
+    async fn update_tool(&self, ctx: &RequestContext, tool: &Tool) -> Result<(), AppError> {
+        Ok(self.tool_dao.update_tool(ctx, &tool.po).await?)
     }
 
     async fn get_by_id(&self, ctx: &RequestContext, id: String) -> Result<Option<Tool>, AppError> {
