@@ -22,6 +22,6 @@ pub use task::{TaskStatus, AssigneeType};
 pub use project::ProjectStatus;
 pub use file::FileType;
 pub use skill::SkillStatus;
-pub use memory::MemoryStatus;
+pub use memory::{MemoryStatus, MemoryRole, KnowledgeRelationType, MemoryType};
 pub use tool::{ToolProtocol, ToolStatus, ControlMode};
 pub use message_channel::{ChannelType, ChannelStatus};

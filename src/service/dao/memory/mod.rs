@@ -7,11 +7,14 @@
 //! - 原始记忆不可修改不可删除，只能追加，符合设计原则
 
 use crate::error::AppError;
-use crate::models::memory::{MemoryTrace, MemoryTracePosition, ShortTermMemoryIndexPo, LongTermKnowledgeNodePo, KnowledgeReferencePo, KnowledgeNodeRelationPo, KnowledgeRelationType};
+use crate::models::memory::{
+    MemoryTrace, MemoryTracePosition, ShortTermMemoryIndexPo, LongTermKnowledgeNodePo,
+    KnowledgeReferencePo, KnowledgeNodeRelationPo,
+};
 use crate::models::vector::{VectorIndexParams, VectorSearchHit};
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
-use common::enums::MemoryStatus;
+use common::enums::{KnowledgeRelationType, MemoryStatus, MemoryType};
 
 // ==================== 查询参数结构体 ====================
 
@@ -31,7 +34,7 @@ pub struct MemoryQuery {
     /// 最大返回条数
     pub limit: Option<usize>,
     /// ✅ 按记忆类型过滤
-    pub memory_type: Option<crate::models::memory::MemoryType>,
+    pub memory_type: Option<MemoryType>,
 }
 
 /// ✅ 记忆搜索统一入参（关键词搜索 + 向量语义搜索共用）

@@ -9,7 +9,7 @@
 use crate::error::AppError;
 use crate::models::memory::{
     KnowledgeNodeRelationPo, KnowledgeReferencePo, LongTermKnowledgeNodePo, MemoryCreateParams,
-    MemoryPo, MemoryTrace, MemoryType, ShortTermMemoryIndexPo,
+    MemoryPo, MemoryTrace, ShortTermMemoryIndexPo,
 };
 use crate::models::vector::{SearchMatchInfo, VectorIndexParams, Vectorizable};
 use crate::pkg::RequestContext;
@@ -17,6 +17,7 @@ use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::memory::{MemoryDao, MemoryQuery, MemorySearch, MemoryVectorDao};
 use crate::service::dao::model_provider::ModelProviderDao;
 use async_trait::async_trait;
+use common::enums::MemoryType;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 

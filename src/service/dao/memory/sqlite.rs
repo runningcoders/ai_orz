@@ -9,7 +9,7 @@
 use crate::error::AppError;
 use crate::models::memory::{
     MemoryTrace, MemoryTracePosition, ShortTermMemoryIndexPo, LongTermKnowledgeNodePo,
-    KnowledgeReferencePo, KnowledgeNodeRelationPo, KnowledgeRelationType, MemoryType,
+    KnowledgeReferencePo, KnowledgeNodeRelationPo,
 };
 use crate::pkg::RequestContext;
 use crate::service::dao::memory::{MemoryDao, MemorySearch, MemoryQuery};
@@ -19,6 +19,7 @@ use sqlx::SqlitePool;
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 use crate::config;
+use common::enums::{KnowledgeRelationType, MemoryType};
 
 // ==================== 工厂方法 + 单例 ====================
 
