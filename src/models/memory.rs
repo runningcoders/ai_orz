@@ -5,7 +5,9 @@
 //! - ShortTermMemoryIndexPo - 短期记忆索引（SQLite 持久化）
 //! - LongTermKnowledgeNodePo - 长期知识图谱节点（SQLite 持久化）
 //! - KnowledgeReferencePo - 知识节点引用原始短期索引
+//! - Memory - 记忆业务实体（包含 PO + 搜索匹配信息）
 
+use crate::models::vector::SearchMatchInfo;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use std::collections::HashMap;
@@ -252,4 +254,25 @@ pub enum MemoryCreateParams {
 
     /// 知识关系列表
     CreateRelations(Vec<KnowledgeNodeRelationPo>),
+}
+
+/// 记忆业务实体（包含 PO + 搜索匹配信息）
+/// 对齐 Skill/Tool 命名模式：Memory = MemoryPo + search_match
+#[derive(Debug, Clone)]
+pub struct Memory {
+    pub po: MemoryPo,
+    pub search_match: Option<SearchMatchInfo>,
+}
+
+impl Memory {
+    /// 创建新的 Memory 业务实体
+    pub fn new(po: MemoryPo) -> Self {
+        Self { po, search_match: None }
+    }
+
+    /// 设置搜索匹配信息
+    pub fn with_search_match(mut self, search_match: SearchMatchInfo) -> Self {
+        self.search_match = Some(search_match);
+        self
+    }
 }

@@ -8,8 +8,8 @@
 
 use crate::error::AppError;
 use crate::models::memory::{
-    KnowledgeNodeRelationPo, KnowledgeReferencePo, LongTermKnowledgeNodePo, MemoryCreateParams,
-    MemoryPo, MemoryTrace, ShortTermMemoryIndexPo,
+    KnowledgeNodeRelationPo, KnowledgeReferencePo, LongTermKnowledgeNodePo, Memory,
+    MemoryCreateParams, MemoryPo, MemoryTrace, ShortTermMemoryIndexPo,
 };
 use crate::models::vector::{SearchMatchInfo, VectorIndexParams, Vectorizable};
 use crate::pkg::RequestContext;
@@ -50,16 +50,6 @@ pub fn init() {
 
 pub fn dal() -> Arc<dyn MemoryDal> {
     MEMORY_DAL_INSTANCE.get().cloned().unwrap()
-}
-
-// ==================== Business Objects ====================
-
-/// 记忆业务实体（包含 PO + 搜索匹配信息）
-/// 对齐 Skill/Tool 命名模式：Memory = MemoryPo + search_match
-#[derive(Debug, Clone)]
-pub struct Memory {
-    pub po: MemoryPo,
-    pub search_match: Option<SearchMatchInfo>,
 }
 
 // ==================== DAL Trait ====================
