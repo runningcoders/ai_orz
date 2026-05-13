@@ -18,11 +18,14 @@ fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn HrDomain>, RequestCont
     crate::service::dao::tool::init();
     crate::service::dao::skill::init();
     crate::service::dao::tool_call::init();
+    crate::service::dao::model_provider::init();
+    crate::service::dao::cortex::init();
     
     // 初始化所有 DAL
     crate::service::dal::agent::init();
     crate::service::dal::tool::init();
     crate::service::dal::skill::init();
+    crate::service::dal::model_provider::init();
     
     // 初始化 HR Domain
     super::init();
