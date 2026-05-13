@@ -204,7 +204,8 @@ impl ToolDao for ToolDaoSqliteImpl {
                 } else {
                     builder.push(" WHERE");
                 }
-                builder.push(" (t.name LIKE '%").push_bind(keyword.clone()).push("%' OR t.description LIKE '%").push_bind(keyword.clone()).push("%')");
+                let like_pattern = format!("%{}%", keyword);
+                builder.push(" (t.name LIKE ").push_bind(like_pattern.clone()).push(" OR t.description LIKE ").push_bind(like_pattern).push(")");
                 has_where = true;
             }
         }
