@@ -47,7 +47,7 @@ CREATE INDEX IF NOT EXISTS idx_skills_root_user_id ON skills(root_user_id);
 | `author` | TEXT | 作者用户 ID |
 | `root_user_id` | TEXT | 归属用户 ID |
 | `content_path` | TEXT | 技能内容文件相对路径 |
-| `status` | INTEGER | 状态：0=Expired（已过期/软删除，1=Available（可用），2=Pending（待沉淀）|
+| `status` | INTEGER | 状态：0=Expired（已过期/软删除，1=Published（已发布），2=Draft（草稿）|
 | `created_by` | TEXT | 创建人 |
 | `modified_by` | TEXT | 修改人 |
 | `created_at` | INTEGER | 创建时间戳（毫秒）|
@@ -74,9 +74,12 @@ CREATE INDEX IF NOT EXISTS idx_skills_root_user_id ON skills(root_user_id);
 
 ### DAO 层 (`src/service/dao/skill`)
 
-- `SkillDaoTrait`：DAO 接口定义
+- `SkillDao`：DAO 接口定义（基础数据，不含向量）
+- `SkillVectorDao`：向量索引接口定义
 - `sqlite::SqliteSkillDao`：SQLite 实现
-- `sqlite_test.rs`：单元测试（7 个独立测试）
+- `sqlite_test.rs`：单元测试
+- `vector::SqliteVssSkillVectorDao`：向量索引 SQLite VSS 实现
+- `vector_test.rs`：向量索引测试
 
 ## 路径存储设计
 
@@ -127,32 +130,130 @@ pub fn skill_relative_path(&self, agent_id: &str, skill_id: &str, status: SkillS
 
 ## DAO 接口定义
 
+### `SkillDao` 基础数据接口（不含向量）
+
 ```rust
-#[async_trait::async_trait]
-pub trait SkillDaoTrait: Send + Sync + std::fmt::Debug {
-    /// 插入新技能
+#[async_trait]
+pub trait SkillDao: Send + Sync {
+    // ========== 基础 CRUD ==========
+
+    /// Insert a new skill
     async fn insert(&self, ctx: RequestContext, skill: &SkillPo) -> Result<(), AppError>;
 
-    /// 根据 ID 查询技能
-    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<SkillPo>, AppError>;
-
-    /// 更新技能信息
+    /// Update an existing skill
     async fn update(&self, ctx: RequestContext, skill: &SkillPo) -> Result<(), AppError>;
 
-    /// 按状态查询列表（默认只查询非过期）
-    async fn list_by_status(&self, ctx: RequestContext, status: SkillStatus) -> Result<Vec<SkillPo>, AppError>;
-
-    /// 按分类查询列表
-    async fn list_by_category(&self, ctx: RequestContext, category: &str) -> Result<Vec<SkillPo>, AppError>;
-
-    /// 关键词搜索（名称和描述中包含关键词）
-    async fn search(&self, ctx: RequestContext, keyword: &str) -> Result<Vec<SkillPo>, AppError>;
-
-    /// 软删除技能（标记为 Expired）
+    /// Soft delete (mark as expired)
     async fn delete_by_id(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
 
-    /// 按作者查询所有非过期技能
-    async fn list_by_author(&self, ctx: RequestContext, author: &str) -> Result<Vec<SkillPo>, AppError>;
+    /// Find skill by id (excludes Expired status)
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<SkillPo>, AppError>;
+
+    /// 通用组合查询
+    async fn query(&self, ctx: RequestContext, query: SkillQuery) -> Result<Vec<SkillPo>, AppError>;
+
+    /// List skills by status
+    async fn list_by_status(&self, ctx: RequestContext, status: SkillStatus) -> Result<Vec<SkillPo>, AppError>;
+
+    /// List skills by category
+    async fn list_by_category(&self, ctx: RequestContext, category: &str) -> Result<Vec<SkillPo>, AppError>;
+
+    /// List skills by author
+    async fn list_by_author(&self, ctx: RequestContext, author_id: &str) -> Result<Vec<SkillPo>, AppError>;
+
+    // ========== 业务操作 ==========
+
+    /// Install a published shared skill to an agent as a private draft copy
+    async fn install_to_agent(
+        &self,
+        ctx: RequestContext,
+        source_skill: &SkillPo,
+        target_agent_id: &str,
+    ) -> Result<SkillPo, AppError>;
+
+    /// 统一搜索入口（关键词 + 业务过滤，向量搜索由 SkillVectorDao 单独处理）
+    async fn search(&self, ctx: RequestContext, search: SkillSearch) -> Result<Vec<SkillPo>, AppError>;
+
+    // ========== 文件操作 ==========
+
+    /// 读取 skill.md 主文件内容
+    fn read_main_content(&self, skill: &SkillPo) -> Result<String, AppError>;
+
+    /// 写入 skill.md 主文件内容
+    fn write_main_content(&self, skill: &SkillPo, content: &str) -> Result<(), AppError>;
+
+    /// 列出技能目录下的所有文件（小文件自动预读内容）
+    fn list_files(&self, skill: &SkillPo) -> Result<Vec<SkillFile>, AppError>;
+
+    /// 读取指定文件名的内容
+    fn read_file(&self, skill: &SkillPo, filename: &str) -> Result<String, AppError>;
+
+    /// 写入指定文件名的内容
+    fn write_file(&self, skill: &SkillPo, filename: &str, content: &str) -> Result<(), AppError>;
+
+    /// 删除整个技能目录（卸载/删除时调用）
+    fn delete_skill_dir(&self, skill: &SkillPo) -> Result<(), AppError>;
+}
+```
+
+### `SkillQuery` 通用查询参数
+
+```rust
+#[derive(Debug, Clone, Default)]
+pub struct SkillQuery {
+    pub ids: Option<Vec<String>>,           // 按 ID 批量查询
+    pub status: Option<SkillStatus>,
+    pub exclude_status: Option<SkillStatus>,
+    pub category: Option<String>,
+    pub author_id: Option<String>,
+    pub keyword: Option<String>,
+    pub limit: Option<usize>,
+}
+```
+
+### `SkillSearch` 统一搜索入参
+
+```rust
+#[derive(Debug, Clone, Default)]
+pub struct SkillSearch {
+    /// 关键词搜索查询（用于传统 LIKE 匹配）
+    pub keyword: Option<String>,
+    /// 查询向量（用于向量语义搜索，DAL 层填充）
+    pub query_vector: Option<Vec<f32>>,
+    /// 返回 Top K 结果（向量搜索专用）
+    pub top_k: Option<i32>,
+    /// 业务过滤条件（直接复用 SkillQuery）
+    pub filters: SkillQuery,
+}
+```
+
+### `SkillVectorDao` 向量索引接口
+
+```rust
+#[async_trait]
+pub trait SkillVectorDao: Send + Sync {
+    /// 插入或更新技能的向量索引
+    async fn upsert_vector(
+        &self,
+        ctx: RequestContext,
+        skill_id: &str,
+        vector_params: &VectorIndexParams,
+    ) -> Result<(), AppError>;
+
+    /// 纯向量语义搜索，返回完整的向量行数据 + 相似度距离
+    async fn search_vector(
+        &self,
+        ctx: RequestContext,
+        query_vector: &[f32],
+        top_k: i32,
+    ) -> Result<Vec<VectorSearchHit>, AppError>;
+
+    /// 获取指定技能的完整向量行数据（包含元信息）
+    async fn get_vector_row(
+        &self,
+        ctx: RequestContext,
+        skill_id: &str,
+    ) -> Result<Option<VectorRow>, AppError>;
 }
 ```
 
@@ -310,9 +411,12 @@ async fn delete_by_id(&self, ctx: RequestContext, id: &str) -> Result<(), AppErr
 
 ### DAO 层 (`src/service/dao/skill`)
 
-- `SkillDaoTrait`：DAO 接口定义
+- `SkillDao`：DAO 接口定义（基础数据，不含向量）
+- `SkillVectorDao`：向量索引接口定义
 - `sqlite::SqliteSkillDao`：SQLite 实现
 - `sqlite_test.rs`：单元测试
+- `vector::SqliteVssSkillVectorDao`：向量索引 SQLite VSS 实现
+- `vector_test.rs`：向量索引测试
 
 ### DAL 层 (`src/service/dal/skill`)
 
@@ -433,3 +537,4 @@ HrDomainImpl
 | 2026-04-16 | 完成数据层开发，包括表结构、枚举、PO、DAO、单元测试 |
 | 2026-05-13 | 更新文档，添加 DAL 层和 Domain 层设计说明 |
 | 2026-05-14 | 添加完整的 hr skill 测试，修复 find_by_id 查询语义，排除过期技能 |
+| 2026-05-14 | 文档更新：修正状态枚举过期名称（Available/Pending → Published/Draft），更新 DAO 接口定义（SkillDaoTrait → SkillDao + SkillVectorDao），添加 SkillQuery/SkillSearch/SkillVectorDao 接口说明，更新分层架构 |
