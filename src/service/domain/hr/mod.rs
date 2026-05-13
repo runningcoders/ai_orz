@@ -3,22 +3,28 @@
 //! 人力资源模块，管理：
 //! - Agent - AI 智能体
 //! - Employee - 人类员工
+//! - Skill - 技能管理
 
 pub mod agent;
+pub mod skill;
 
 #[cfg(test)]
 mod agent_test;
+// #[cfg(test)]
+// mod skill_test;
 
 use crate::error::AppError;
 use crate::models::agent::Agent;
+use crate::models::skill::{Skill, SkillPo};
 use crate::pkg::RequestContext;
+use crate::service::dao::skill::{SkillQuery, SkillSearch};
 use crate::service::dal::agent::AgentDal;
 use crate::service::dal::agent as agent_dal;
 use crate::service::dal::tool::ToolDal;
 use crate::service::dal::tool as tool_dal;
 use crate::service::dal::skill::SkillDal;
 use crate::service::dal::skill as skill_dal;
-use common::enums::AgentStatus;
+use common::enums::{AgentStatus, SkillStatus};
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例 ====================
@@ -63,7 +69,10 @@ impl HrDomainImpl {
 }
 
 impl HrDomain for HrDomainImpl {
-    fn agent_manage(&self) -> &dyn crate::service::domain::hr::AgentManage {
+    fn agent_manage(&self) -> &dyn AgentManage {
+        self
+    }
+    fn skill_manage(&self) -> &dyn SkillManage {
         self
     }
 }
@@ -72,10 +81,12 @@ impl HrDomain for HrDomainImpl {
 
 /// HR Domain 总 trait
 ///
-/// 聚合人力资源模块所有子功能 trait
+/// 聚合人力资源领域所有子功能 trait
 pub trait HrDomain: Send + Sync {
     /// Agent 管理能力
     fn agent_manage(&self) -> &dyn AgentManage;
+    /// Skill 管理能力
+    fn skill_manage(&self) -> &dyn SkillManage;
 }
 
 /// Agent 管理 trait
@@ -125,4 +136,44 @@ pub trait AgentManage: Send + Sync {
         ctx: RequestContext,
         agent: &Agent,
     ) -> Result<(), AppError>;
+}
+
+/// 技能更新复合参数
+#[derive(Debug, Clone)]
+pub struct UpdateSkillParams<'a> {
+    /// 技能实体（包含要更新的元数据）
+    pub skill: &'a Skill,
+    /// 文件写入操作列表（文件名 -> 内容）
+    pub file_writes: Vec<(&'a str, &'a str)>,
+    /// 文件删除操作列表（文件名）
+    pub file_deletes: Vec<&'a str>,
+}
+
+/// Skill 管理 trait
+///
+/// 定义技能管理相关的业务接口
+#[async_trait::async_trait]
+pub trait SkillManage: Send + Sync {
+    // A. 技能基础管理（CRUD）
+    async fn create_skill(&self, ctx: RequestContext, skill: &Skill) -> Result<(), AppError>;
+    async fn get_skill(&self, ctx: RequestContext, id: &str) -> Result<Option<Skill>, AppError>;
+    async fn get_skill_po(&self, ctx: RequestContext, id: &str) -> Result<Option<SkillPo>, AppError>;
+    async fn update_skill(&self, ctx: RequestContext, params: UpdateSkillParams<'_>) -> Result<(), AppError>;
+    async fn delete_skill(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+
+    // B. 技能查询与搜索
+    async fn query_skills(&self, ctx: RequestContext, query: SkillQuery) -> Result<Vec<Skill>, AppError>;
+    async fn list_by_status(&self, ctx: RequestContext, status: SkillStatus) -> Result<Vec<Skill>, AppError>;
+    async fn list_by_category(&self, ctx: RequestContext, category: &str) -> Result<Vec<Skill>, AppError>;
+    async fn list_by_author(&self, ctx: RequestContext, author_id: &str) -> Result<Vec<Skill>, AppError>;
+    async fn list_for_agent(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<Skill>, AppError>;
+    async fn search_skills(&self, ctx: RequestContext, search: SkillSearch) -> Result<Vec<Skill>, AppError>;
+
+    // C. Agent 技能安装
+    async fn install_to_agent(
+        &self,
+        ctx: RequestContext,
+        source_skill_id: &str,
+        agent_id: &str,
+    ) -> Result<SkillPo, AppError>;
 }

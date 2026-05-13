@@ -202,17 +202,140 @@ impl SkillPo {
 
 当前测试结果：**7/7 全部通过，零失败**
 
+## 分层架构（完整）
+
+### 公共层 (`common`)
+
+- `common::enums::skill::SkillStatus`：技能状态枚举，支持 sqlx 类型
+- `common::config::AppConfig`：技能路径计算方法
+
+### 模型层 (`src/models`)
+
+- `src/models::skill::SkillPo`：技能持久化对象
+- `src/models::skill::Skill`：技能完整业务实体（PO + 文件 + 搜索元信息）
+- `src/models::skill::SkillFile`：技能附属文件信息
+
+### DAO 层 (`src/service/dao/skill`)
+
+- `SkillDaoTrait`：DAO 接口定义
+- `sqlite::SqliteSkillDao`：SQLite 实现
+- `sqlite_test.rs`：单元测试
+
+### DAL 层 (`src/service/dal/skill`)
+
+- `SkillDal`：DAL 接口定义
+- `SkillDalImpl`：DAL 实现
+- `skill_test.rs`：DAL 层测试
+
+### Domain 层 (`src/service/domain/hr`)
+
+- `HrDomain`：HR Domain 总入口，聚合 AgentManage + SkillManage
+- `SkillManage`：技能管理 trait 定义
+- `skill.rs`：SkillManage 实现
+- `skill_test.rs`：Domain 层测试
+
+## Domain 层设计
+
+### 整体架构
+
+将 Skill 管理作为 HR Domain 的一个子模块，与 Agent 管理平级：
+
+```
+HR Domain
+├── AgentManage - Agent 管理
+└── SkillManage - 技能管理
+```
+
+### 目录结构
+
+```
+src/service/domain/hr/
+├── mod.rs          # HR Domain 总入口
+├── agent.rs        # Agent 管理
+├── skill.rs        # Skill 管理
+├── agent_test.rs   # Agent 测试
+└── skill_test.rs   # Skill 测试
+```
+
+### 核心 Trait 设计
+
+#### 1. 总 HR Domain Trait
+
+```rust
+pub trait HrDomain: Send + Sync {
+    fn agent_manage(&self) -> &dyn AgentManage;
+    fn skill_manage(&self) -> &dyn SkillManage;
+}
+```
+
+#### 2. SkillManage Trait
+
+**设计原则：Domain 层是抽象业务层，少即是多**
+
+```rust
+/// 技能更新复合参数
+#[derive(Debug, Clone)]
+pub struct UpdateSkillParams<'a> {
+    /// 技能实体（包含要更新的元数据）
+    pub skill: &'a Skill,
+    /// 文件写入操作列表（文件名 -> 内容）
+    pub file_writes: Vec<(&'a str, &'a str)>,
+    /// 文件删除操作列表（文件名）
+    pub file_deletes: Vec<&'a str>,
+}
+
+#[async_trait::async_trait]
+pub trait SkillManage: Send + Sync {
+    // A. 技能基础管理（CRUD）
+    async fn create_skill(&self, ctx: RequestContext, skill: &Skill) -> Result<(), AppError>;
+    async fn get_skill(&self, ctx: RequestContext, id: &str) -> Result<Option<Skill>, AppError>;
+    async fn get_skill_po(&self, ctx: RequestContext, id: &str) -> Result<Option<SkillPo>, AppError>;
+    async fn update_skill(&self, ctx: RequestContext, params: UpdateSkillParams<'_>) -> Result<(), AppError>;
+    async fn delete_skill(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+
+    // B. 技能查询与搜索
+    async fn query_skills(&self, ctx: RequestContext, query: SkillQuery) -> Result<Vec<Skill>, AppError>;
+    async fn list_by_status(&self, ctx: RequestContext, status: SkillStatus) -> Result<Vec<Skill>, AppError>;
+    async fn list_by_category(&self, ctx: RequestContext, category: &str) -> Result<Vec<Skill>, AppError>;
+    async fn list_by_author(&self, ctx: RequestContext, author_id: &str) -> Result<Vec<Skill>, AppError>;
+    async fn list_for_agent(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<Skill>, AppError>;
+    async fn search_skills(&self, ctx: RequestContext, search: SkillSearch) -> Result<Vec<Skill>, AppError>;
+
+    // C. Agent 技能安装
+    async fn install_to_agent(
+        &self,
+        ctx: RequestContext,
+        source_skill_id: &str,
+        agent_id: &str,
+    ) -> Result<SkillPo, AppError>;
+}
+```
+
+### 实现结构
+
+```
+HrDomainImpl
+├── agent_dal: Arc<dyn AgentDal>
+├── tool_dal: Arc<dyn ToolDal>
+└── skill_dal: Arc<dyn SkillDal>
+```
+
+`HrDomainImpl` 同时实现：
+- `AgentManage` trait
+- `SkillManage` trait
+
 ## 后续扩展
 
 数据层已完成，待后续开发：
 
-1. **DAL 层**：业务数据访问层封装
-2. **Domain 层**：技能管理领域逻辑
-3. **Handler 层**：HTTP API 接口
-4. **Agent 集成**：Agent 自动沉淀技能流程
+1. ✅ **DAL 层**：业务数据访问层封装（已完成）
+2. 🔄 **Domain 层**：技能管理领域逻辑（进行中）
+3. ⏳ **Handler 层**：HTTP API 接口
+4. ⏳ **Agent 集成**：Agent 自动沉淀技能流程
 
 ## 变更记录
 
 | 日期 | 变更 |
 |------|------|
 | 2026-04-16 | 完成数据层开发，包括表结构、枚举、PO、DAO、单元测试 |
+| 2026-05-13 | 更新文档，添加 DAL 层和 Domain 层设计说明 |
