@@ -309,3 +309,36 @@ async fn test_find_not_exists(pool: SqlitePool) {
     let result = result.unwrap();
     assert!(result.is_none());
 }
+
+/// 测试内置工具不能删除（保护机制）
+#[sqlx::test]
+async fn test_delete_builtin_tool_protected(pool: SqlitePool) {
+    let (tool_dal, ctx) = init_test_env(pool, true).await;
+
+    // 创建内置工具（通过 test_tool factory）
+    let po = TestToolFactory {}.create_po();
+    tool_dal.create_tool(&ctx, &po).await.unwrap();
+
+    // ========== 测试：直接通过 DAO 层尝试删除内置工具应该失败 ==========
+    let tool_dao = tool::dao();
+    let result = tool_dao.delete_tool(&ctx, &po.id).await;
+    assert!(result.is_err(), "delete builtin tool should fail");
+}
+
+/// 测试 sync_builtin_tools_to_db 功能
+#[sqlx::test]
+async fn test_sync_builtin_tools_to_db(pool: SqlitePool) {
+    let (tool_dal, ctx) = init_test_env(pool, true).await;
+
+    // ========== 测试：首次同步应该插入工具 ==========
+    let inserted = tool_dal.sync_builtin_tools_to_db(&ctx).await.unwrap();
+    assert!(inserted > 0, "should insert at least one tool");
+
+    // ========== 测试：二次同步应该幂等，不插入重复内容 ==========
+    let inserted_again = tool_dal.sync_builtin_tools_to_db(&ctx).await.unwrap();
+    assert_eq!(inserted_again, 0, "should not insert duplicate tools");
+
+    // ========== 验证：工具确实存在 ==========
+    let found = tool::dao().get_by_id(&ctx, "test_tool".to_string()).await.unwrap();
+    assert!(found.is_some(), "test_tool should exist after sync");
+}
