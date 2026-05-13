@@ -10,8 +10,8 @@ pub mod skill;
 
 #[cfg(test)]
 mod agent_test;
-// #[cfg(test)]
-// mod skill_test;
+#[cfg(test)]
+mod skill_test;
 
 use crate::error::AppError;
 use crate::models::agent::Agent;

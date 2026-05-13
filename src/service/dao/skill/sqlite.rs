@@ -122,9 +122,10 @@ WHERE id = ?
 SELECT id, name, description, tags, category, parent_skill_id,
        author_id, author_type AS "author_type: SkillAuthorType", modifier_id, status AS "status: SkillStatus",
        created_at, updated_at, content_path
-FROM skills WHERE id = ?
+FROM skills WHERE id = ? AND status != ?
             "#,
-            id
+            id,
+            SkillStatus::Expired as i32
         )
         .fetch_optional(ctx.db_pool())
         .await?;

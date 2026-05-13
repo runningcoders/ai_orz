@@ -145,12 +145,27 @@ impl Vectorizable for SkillPo {
 
 impl Skill {
     /// 从 PO 快速创建实体
-    pub fn from(po: SkillPo) -> Self {
+    pub fn from_po(po: SkillPo) -> Self {
         Self {
             po,
             files: Vec::new(),
             search_match: None,
         }
+    }
+
+    /// 从 PO 快速创建实体（保留 from 别名用于兼容性）
+    pub fn from(po: SkillPo) -> Self {
+        Self::from_po(po)
+    }
+
+    /// 获取技能 ID
+    pub fn id(&self) -> &str {
+        &self.po.id
+    }
+
+    /// 获取技能名称
+    pub fn name(&self) -> &str {
+        &self.po.name
     }
 
     /// 获取主文件内容（如果已加载）

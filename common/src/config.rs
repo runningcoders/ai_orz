@@ -12,6 +12,9 @@ use std::path::{Path, PathBuf};
 /// 所有数据文件（SQLite数据库、日志、配置文件、记忆文件等）都存储在此目录下
 pub const BASE_DATA_PATH: &str = ".ai_orz";
 
+/// 环境变量名，用于覆盖默认的基础数据路径
+pub const BASE_DATA_PATH_ENV: &str = "AI_ORZ_BASE_PATH";
+
 /// 默认配置文件名（相对于 BASE_DATA_PATH）
 pub const CONFIG_FILE_NAME: &str = "ai_orz.toml";
 
@@ -186,12 +189,16 @@ fn default_log_subdir() -> String {
 impl AppConfig {
     /// 获取基础数据路径
     pub fn base_data_path(&self) -> PathBuf {
-        Path::new(BASE_DATA_PATH).to_path_buf()
+        if let Ok(path) = std::env::var(BASE_DATA_PATH_ENV) {
+            Path::new(&path).to_path_buf()
+        } else {
+            Path::new(BASE_DATA_PATH).to_path_buf()
+        }
     }
 
     /// 获取完整的配置文件路径
     pub fn config_path(&self) -> PathBuf {
-        Path::new(BASE_DATA_PATH).join(CONFIG_FILE_NAME)
+        self.base_data_path().join(CONFIG_FILE_NAME)
     }
 
     /// 获取完整的日志目录路径
