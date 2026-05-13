@@ -53,6 +53,9 @@ pub trait ToolDao: Send + Sync {
     /// Update an existing tool
     async fn update_tool(&self, ctx: &RequestContext, po: &ToolPo) -> Result<()>;
 
+    /// Delete a tool
+    async fn delete_tool(&self, ctx: &RequestContext, id: &str) -> Result<()>;
+
     /// Get tool by ID
     async fn get_by_id(&self, ctx: &RequestContext, id: String) -> Result<Option<ToolPo>>;
 

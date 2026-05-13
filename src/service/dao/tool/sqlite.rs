@@ -72,6 +72,13 @@ impl ToolDao for ToolDaoSqliteImpl {
     }
 
     async fn update_tool(&self, ctx: &RequestContext, po: &ToolPo) -> Result<()> {
+        // Check if this is a built-in tool
+        if let Some(existing) = self.get_by_id(ctx, po.id.clone()).await? {
+            if matches!(existing.protocol, common::enums::ToolProtocol::Builtin) {
+                return Err(anyhow::anyhow!("Built-in tools cannot be modified"));
+            }
+        }
+        
         let pool = ctx.db_pool();
 
         sqlx::query(
@@ -92,6 +99,28 @@ impl ToolDao for ToolDaoSqliteImpl {
         .bind(po.updated_at)
         .bind(&po.updated_by)
         .bind(po.id.to_string())
+        .execute(pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn delete_tool(&self, ctx: &RequestContext, id: &str) -> Result<()> {
+        // Check if this is a built-in tool
+        if let Some(existing) = self.get_by_id(ctx, id.to_string()).await? {
+            if matches!(existing.protocol, common::enums::ToolProtocol::Builtin) {
+                return Err(anyhow::anyhow!("Built-in tools cannot be deleted"));
+            }
+        }
+        
+        let pool = ctx.db_pool();
+
+        sqlx::query(
+            r#"
+            DELETE FROM tools WHERE id = ?
+            "#
+        )
+        .bind(id)
         .execute(pool)
         .await?;
 
@@ -301,12 +330,10 @@ impl ToolDao for ToolDaoSqliteImpl {
                 continue;
             };
 
-            // Create ToolPo for DB from factory metadata
-            let po = ToolPo::new_builtin(
-                factory.id().to_string(),
-                factory.name().to_string(),
-                factory.description().to_string(),
-            );
+            // Create ToolPo for DB from factory
+            let mut po = factory.create_po();
+            // Fill default values for builtin tools
+            po.fill_defaults_for_builtin();
 
             // Insert into DB
             self.create_tool(ctx, &po).await?;

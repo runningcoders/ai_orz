@@ -22,11 +22,17 @@ impl BuiltinToolFactory for TestToolFactory {
     fn id(&self) -> &'static str {
         "test_tool"
     }
-    fn name(&self) -> &'static str {
-        "test_tool"
-    }
-    fn description(&self) -> &'static str {
-        "Test tool for unit tests"
+    fn create_po(&self) -> ToolPo {
+        ToolPo::new(
+            "test_tool".to_string(),
+            "test_tool".to_string(),
+            "Test tool for unit tests".to_string(),
+            ToolProtocol::Builtin,
+            serde_json::Value::Null,
+            None,
+            vec![],
+            Some("test-user".to_string()),
+        )
     }
     fn create(&self, po: ToolPo) -> Box<dyn CoreTool> {
         Box::new(TestTool { po })
@@ -241,32 +247,58 @@ async fn test_get_by_name(pool: SqlitePool) {
     assert!(got.is_none());
 }
 
-/// 测试更新工具
+/// 测试更新工具（非内置工具可以更新）
 #[sqlx::test]
 async fn test_update_tool(pool: SqlitePool) {
-    let (tool_dal, ctx) = init_test_env(pool, true).await;
+    let (tool_dal, ctx) = init_test_env(pool, false).await;
 
-    // 创建已注册的工具（id = test_tool）
-    let mut po = create_test_tool_po("test_tool", "test_tool", "Original description");
+    // 创建非内置工具
+    let mut po = ToolPo::new(
+        "".to_string(),
+        "http-tool".to_string(),
+        "Original description".to_string(),
+        ToolProtocol::Http,
+        serde_json::Value::Null,
+        None,
+        vec![],
+        Some("test-user".to_string()),
+    );
 
     tool_dal.create_tool(&ctx, &po).await.unwrap();
 
     // ========== 测试: 更新工具 ==========
-    let mut tool = tool_dal.get_by_id(&ctx, po.id.clone()).await.unwrap().unwrap();
-    tool.po.description = "Updated description".to_string();
-    tool.po.status = ToolStatus::Disabled;
-    tool.po.touch(Some("test-user".to_string()));
+    let tool_dao = tool::dao();
+    let mut po_to_update = tool_dao.get_by_id(&ctx, po.id.clone()).await.unwrap().unwrap();
+    po_to_update.description = "Updated description".to_string();
+    po_to_update.status = ToolStatus::Disabled;
+    po_to_update.touch(Some("test-user".to_string()));
 
-    let result = tool_dal.update_tool(&ctx, &tool).await;
+    let result = tool_dao.update_tool(&ctx, &po_to_update).await;
     assert!(result.is_ok(), "update tool failed: {:?}", result);
 
     // ========== 验证: 更新生效 ==========
-    // 因为 status 变成了 Disabled，所以 get_by_id 应该返回 None（过滤掉了禁用的）
-    // 我们验证数据库中确实更新成功了，通过 dao 层直接查询
-    let tool_dao = tool::dao();
     let got_po = tool_dao.get_by_id(&ctx, po.id.clone()).await.unwrap().unwrap();
     assert_eq!(got_po.description, "Updated description");
     assert_eq!(got_po.status, ToolStatus::Disabled);
+}
+
+/// 测试内置工具不能更新（保护机制）
+#[sqlx::test]
+async fn test_update_builtin_tool_protected(pool: SqlitePool) {
+    let (tool_dal, ctx) = init_test_env(pool, true).await;
+
+    // 创建内置工具（通过 test_tool factory）
+    let mut po = TestToolFactory {}.create_po();
+    tool_dal.create_tool(&ctx, &po).await.unwrap();
+
+    // ========== 测试：直接通过 DAO 层尝试更新内置工具应该失败 ==========
+    let tool_dao = tool::dao();
+    let mut po_to_update = tool_dao.get_by_id(&ctx, po.id.clone()).await.unwrap().unwrap();
+    po_to_update.description = "Should not work".to_string();
+    po_to_update.touch(Some("test-user".to_string()));
+
+    let result = tool_dao.update_tool(&ctx, &po_to_update).await;
+    assert!(result.is_err(), "update builtin tool should fail");
 }
 
 /// 测试在不存在的 ID 上调用 get_by_id 返回 None 而不是错误

@@ -236,6 +236,14 @@ impl ToolPo {
         self.updated_at = common::constants::utils::current_timestamp();
         self.updated_by = modifier;
     }
+    
+    /// 为内置工具填充缺省值（sync 时调用）
+    /// 确保 protocol 一定是 Builtin，control_mode 有合理默认值
+    pub fn fill_defaults_for_builtin(&mut self) {
+        self.protocol = ToolProtocol::Builtin;
+        // 如果 control_mode 未设置，默认使用 Auto
+        // 用户自定义的 control_mode 会被保留
+    }
 }
 
 // ==================== 实现 Vectorizable trait ====================

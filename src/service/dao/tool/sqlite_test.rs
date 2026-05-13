@@ -156,7 +156,16 @@ async fn test_update_tool(pool: SqlitePool) {
     let tool_dao = init_test_env();
     let ctx = RequestContext::new_simple("admin", pool);
 
-    let mut tool = ToolPo::new("".to_string(), "original-name".to_string(), "Original description".to_string(), ToolProtocol::Builtin, serde_json::Value::Null, None, vec![], Some("creator".to_string()),
+    // 创建非内置工具
+    let mut tool = ToolPo::new(
+        "".to_string(),
+        "original-name".to_string(),
+        "Original description".to_string(),
+        ToolProtocol::Http,
+        serde_json::Value::Null,
+        None,
+        vec![],
+        Some("creator".to_string()),
     );
     let _ = tool_dao.create_tool(&ctx.clone(), &tool).await;
 
@@ -175,6 +184,57 @@ async fn test_update_tool(pool: SqlitePool) {
     assert_eq!(found_after.name, "updated-name");
     assert_eq!(found_after.description, "Updated description");
     assert_eq!(found_after.updated_by, Some("editor".to_string()));
+}
+
+#[sqlx::test]
+async fn test_update_builtin_tool_protected(pool: SqlitePool) {
+    let tool_dao = init_test_env();
+    let ctx = RequestContext::new_simple("admin", pool);
+
+    // 创建内置工具
+    let mut tool = ToolPo::new(
+        "".to_string(),
+        "builtin-tool".to_string(),
+        "Builtin description".to_string(),
+        ToolProtocol::Builtin,
+        serde_json::Value::Null,
+        None,
+        vec![],
+        Some("creator".to_string()),
+    );
+    let _ = tool_dao.create_tool(&ctx.clone(), &tool).await;
+
+    // 尝试修改内置工具应该失败
+    let found = tool_dao.get_by_id(&ctx.clone(), tool.id.clone()).await.unwrap().unwrap();
+    let mut updated = found;
+    updated.name = "should-not-work".to_string();
+    updated.touch(Some("editor".to_string()));
+
+    let result = tool_dao.update_tool(&ctx.clone(), &updated).await;
+    assert!(result.is_err());
+}
+
+#[sqlx::test]
+async fn test_delete_builtin_tool_protected(pool: SqlitePool) {
+    let tool_dao = init_test_env();
+    let ctx = RequestContext::new_simple("admin", pool);
+
+    // 创建内置工具
+    let mut tool = ToolPo::new(
+        "".to_string(),
+        "builtin-tool".to_string(),
+        "Builtin description".to_string(),
+        ToolProtocol::Builtin,
+        serde_json::Value::Null,
+        None,
+        vec![],
+        Some("creator".to_string()),
+    );
+    let _ = tool_dao.create_tool(&ctx.clone(), &tool).await;
+
+    // 尝试删除内置工具应该失败
+    let result = tool_dao.delete_tool(&ctx.clone(), &tool.id).await;
+    assert!(result.is_err());
 }
 
 #[sqlx::test]
