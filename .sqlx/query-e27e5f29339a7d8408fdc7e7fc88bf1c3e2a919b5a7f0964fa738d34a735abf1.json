@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, name, description, tags, category, parent_skill_id,\n       author_id, author_type AS \"author_type: SkillAuthorType\", modifier_id, status AS \"status: SkillStatus\",\n       created_at, updated_at, content_path\nFROM skills WHERE id = ? AND status != ?\n            ",
+  "query": "\nSELECT id, name, description, tags, category, parent_skill_id,\n       author_id, author_type AS \"author_type: SkillAuthorType\", modifier_id, status AS \"status: SkillStatus\",\n       created_at, updated_at, content_path\nFROM skills WHERE id = ?\n            ",
   "describe": {
     "columns": [
       {
@@ -70,7 +70,7 @@
       }
     ],
     "parameters": {
-      "Right": 2
+      "Right": 1
     },
     "nullable": [
       false,
@@ -88,5 +88,5 @@
       false
     ]
   },
-  "hash": "9653589e24eab8733f0d7da42d62c8bef8782684a3641439c7eb37609bc81c88"
+  "hash": "e27e5f29339a7d8408fdc7e7fc88bf1c3e2a919b5a7f0964fa738d34a735abf1"
 }
