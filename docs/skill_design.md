@@ -177,6 +177,67 @@ impl SkillPo {
 }
 ```
 
+## `Skill` 业务实体
+
+```rust
+impl Skill {
+    /// 从 SkillPo 构造 Skill 业务实体
+    pub fn from_po(po: SkillPo) -> Self;
+
+    /// 获取 ID
+    pub fn id(&self) -> &str;
+
+    /// 获取名称
+    pub fn name(&self) -> &str;
+
+    /// 获取描述
+    pub fn description(&self) -> &str;
+
+    /// 获取分类
+    pub fn category(&self) -> &str;
+
+    /// 获取状态
+    pub fn status(&self) -> SkillStatus;
+
+    /// 获取作者
+    pub fn author(&self) -> &str;
+
+    /// 获取内容路径
+    pub fn content_path(&self) -> &str;
+
+    /// 获取主内容（如果存在）
+    pub fn main_content(&self) -> Option<&str>;
+
+    /// 获取指定文件的内容（如果存在）
+    pub fn file_content(&self, filename: &str) -> Option<&str>;
+
+    /// 获取所有文件名列表
+    pub fn file_names(&self) -> Vec<&str>;
+}
+```
+
+## DAO 接口行为说明
+
+### `find_by_id` 查询语义
+
+`find_by_id` 方法默认**只返回非过期（非 Expired）状态的技能记录**：
+
+```rust
+async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<SkillPo>, AppError>;
+```
+
+- 查询条件：`id = ? AND status != 0` (0 = Expired)
+- 如果技能已被软删除（status = Expired），返回 `None`
+- 这与 Agent 模块的查询行为保持一致
+
+### 软删除机制
+
+`delete_by_id` 执行**软删除**：将技能状态设置为 `SkillStatus::Expired`，而不是物理删除：
+
+```rust
+async fn delete_by_id(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+```
+
 ## SQLx 开发规范遵循
 
 本模块开发遵循项目 `docs/sqlx_dev_guide.md` 中的规范：
@@ -190,6 +251,8 @@ impl SkillPo {
 
 ## 单元测试
 
+### DAO 层测试 (`src/service/dao/skill/sqlite_test.rs`)
+
 | 测试用例 | 说明 |
 |----------|------|
 | `test_insert_and_find_by_id` | 测试插入和按 ID 查询 |
@@ -201,6 +264,36 @@ impl SkillPo {
 | `test_list_by_author` | 测试按作者查询 |
 
 当前测试结果：**7/7 全部通过，零失败**
+
+### DAL 层测试 (`src/service/dal/skill_test.rs`)
+
+| 测试用例 | 说明 |
+|----------|------|
+| `test_create_and_get_by_id` | 测试创建和获取完整技能 |
+| `test_get_skill_po_only` | 测试只获取 PO（不加载文件） |
+| `test_update_skill` | 测试更新技能（元数据 + 文件） |
+| `test_delete_skill` | 测试软删除技能 |
+| `test_list_by_status` | 测试按状态查询 |
+| `test_list_by_category` | 测试按分类查询 |
+| `test_list_by_author` | 测试按作者查询 |
+| `test_query_skills` | 测试通用查询 |
+
+当前测试结果：**8/8 全部通过，零失败**
+
+### Domain 层测试 (`src/service/domain/hr/skill_test.rs`)
+
+| 测试用例 | 说明 |
+|----------|------|
+| `test_create_and_get_by_id` | 测试创建和获取技能 |
+| `test_get_skill_po_only` | 测试只获取 PO（不加载文件） |
+| `test_update_skill` | 测试更新技能 |
+| `test_delete_skill` | 测试删除技能 |
+| `test_list_by_status` | 测试按状态查询 |
+| `test_list_by_category` | 测试按分类查询 |
+| `test_list_by_author` | 测试按作者查询 |
+| `test_query_skills` | 测试通用查询 |
+
+当前测试结果：**12/12 全部通过，零失败**（包含 agent 和 skill 测试）
 
 ## 分层架构（完整）
 
@@ -329,7 +422,7 @@ HrDomainImpl
 数据层已完成，待后续开发：
 
 1. ✅ **DAL 层**：业务数据访问层封装（已完成）
-2. 🔄 **Domain 层**：技能管理领域逻辑（进行中）
+2. ✅ **Domain 层**：技能管理领域逻辑（已完成）
 3. ⏳ **Handler 层**：HTTP API 接口
 4. ⏳ **Agent 集成**：Agent 自动沉淀技能流程
 
@@ -339,3 +432,4 @@ HrDomainImpl
 |------|------|
 | 2026-04-16 | 完成数据层开发，包括表结构、枚举、PO、DAO、单元测试 |
 | 2026-05-13 | 更新文档，添加 DAL 层和 Domain 层设计说明 |
+| 2026-05-14 | 添加完整的 hr skill 测试，修复 find_by_id 查询语义，排除过期技能 |
