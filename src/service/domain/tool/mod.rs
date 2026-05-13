@@ -7,6 +7,7 @@
 use async_trait::async_trait;
 use std::fmt::Debug;
 
+use crate::error::AppError;
 use crate::models::tool::Tool;
 use crate::pkg::request_context::RequestContext;
 
@@ -15,40 +16,6 @@ mod execution;
 
 pub use management::ToolManagement;
 pub use execution::ToolExecution;
-
-/// Tool Domain 错误类型
-#[derive(Debug, thiserror::Error)]
-pub enum ToolDomainError {
-    /// 工具未找到
-    #[error("Tool not found: {0}")]
-    ToolNotFound(String),
-
-    /// 工具未启用
-    #[error("Tool not enabled: {0}")]
-    ToolNotEnabled(String),
-
-    /// 工具执行失败
-    #[error("Tool execution failed: {0}")]
-    ExecutionFailed(String),
-
-    /// 参数验证失败
-    #[error("Parameter validation failed: {0}")]
-    ValidationFailed(String),
-
-    /// 内部错误
-    #[error("Internal error: {0}")]
-    Internal(String),
-
-    /// 数据库错误
-    #[error("Database error: {0}")]
-    Database(#[from] sqlx::Error),
-}
-
-impl From<crate::error::AppError> for ToolDomainError {
-    fn from(e: crate::error::AppError) -> Self {
-        ToolDomainError::Internal(e.to_string())
-    }
-}
 
 /// Tool Domain 主 trait
 #[async_trait]

@@ -5,7 +5,7 @@
 use async_trait::async_trait;
 use std::fmt::Debug;
 
-use super::ToolDomainError;
+use crate::error::AppError;
 use crate::models::tool::Tool;
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
@@ -41,14 +41,14 @@ pub trait ToolExecution: Send + Sync + Debug {
         tool_id: &str,
         request_id: &str,
         params: &str,
-    ) -> Result<ToolExecutionResult, ToolDomainError>;
+    ) -> Result<ToolExecutionResult, AppError>;
 
     /// 批量执行多个工具
     async fn batch_call_tools(
         &self,
         ctx: &RequestContext,
         calls: Vec<(String, String, String)>, // (tool_id, request_id, params)
-    ) -> Result<Vec<ToolExecutionResult>, ToolDomainError>;
+    ) -> Result<Vec<ToolExecutionResult>, AppError>;
 }
 
 /// ToolExecution 默认实现
@@ -75,20 +75,20 @@ impl ToolExecution for ToolExecutionImpl {
         _tool_id: &str,
         _request_id: &str,
         _params: &str,
-    ) -> Result<ToolExecutionResult, ToolDomainError> {
+    ) -> Result<ToolExecutionResult, AppError> {
         // TODO: 实现工具执行逻辑
         // 1. 从 ToolDal 获取工具实体
         // 2. 验证工具是否启用
         // 3. 通过 ToolCallDao.call_manual() 执行工具
         // 4. 构造返回结果
-        Err(ToolDomainError::Internal("Not implemented".to_string()))
+        Err(AppError::Internal("Not implemented".to_string()))
     }
 
     async fn batch_call_tools(
         &self,
         _ctx: &RequestContext,
         _calls: Vec<(String, String, String)>,
-    ) -> Result<Vec<ToolExecutionResult>, ToolDomainError> {
+    ) -> Result<Vec<ToolExecutionResult>, AppError> {
         // TODO: 实现批量工具执行
         // 可以考虑并行执行
         Ok(Vec::new())
