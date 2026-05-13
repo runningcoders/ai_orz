@@ -19,9 +19,6 @@ use crate::service::dal::tool::ToolDal;
 struct TestToolFactory;
 
 impl BuiltinToolFactory for TestToolFactory {
-    fn id(&self) -> &'static str {
-        "test_tool"
-    }
     fn create_po(&self) -> ToolPo {
         ToolPo::new(
             "test_tool".to_string(),

@@ -44,7 +44,7 @@ pub struct ToolRegistry {
 impl ToolRegistry {
     /// Register a built-in tool factory.
     pub fn register_builtin_factory(&self, factory: Box<dyn BuiltinToolFactory>) {
-        let id = factory.id().to_string();
+        let id = factory.create_po().id;
         self.builtin_factories.lock().unwrap().insert(id, factory);
     }
 
