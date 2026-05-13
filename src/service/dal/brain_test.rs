@@ -1,7 +1,7 @@
 //! Brain DAL 单元测试
 //! 测试 Brain DAL 的 wake_brain 和 test_connection 功能
 
-use crate::models::{brain::*, model_provider::*, tool::Tool};
+use crate::models::{brain::*, model_provider::*, tool::Tool, memory::*};
 use crate::service::dao::cortex;
 use common::enums::{ModelCapability, ProviderType};
 use crate::pkg::request_context::RequestContext;
@@ -44,14 +44,25 @@ async fn test_wake_brain(pool: SqlitePool) {
     // ========== 测试: wake_brain ==========
     let provider = create_test_provider();
 
-    // 创建 Memory
-    let memory = Memory::new(
-        "你是一个有用的AI助手".to_string(),
-        "[\"chat\", \"question\"]".to_string(),
-    );
+    // 创建 Memory 列表 - 使用新的 Memory 结构
+    let now = chrono::Utc::now().timestamp();
+    let short_term_po = ShortTermMemoryIndexPo {
+        id: "test-memory-1".to_string(),
+        agent_id: "test-agent".to_string(),
+        task_id: None,
+        role: "system".to_string(),
+        summary: "你是一个有用的AI助手".to_string(),
+        tags: "[\"chat\", \"question\"]".to_string(),
+        trace_ids: "[]".to_string(),
+        status: common::enums::MemoryStatus::Active,
+        created_at: now,
+        updated_at: now,
+    };
+    let memory = Memory::new(MemoryPo::ShortTerm(short_term_po));
+    let memories = vec![memory];
 
     let tools: Vec<Tool> = vec![];
-    let result = brain_dal.wake_brain(ctx.clone(), &provider, memory, tools);
+    let result = brain_dal.wake_brain(ctx.clone(), &provider, memories, tools);
 
     // 应该能成功创建，API key 不正确只会在实际调用时失败，创建本身不会失败
     assert!(result.is_ok());

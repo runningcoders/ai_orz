@@ -3,10 +3,10 @@
 //! 单元测试使用内存数据库，不依赖全局 storage 连接池
 
 use super::*;
-use crate::models::memory::{MemoryRole, MemoryTrace, ShortTermMemoryIndexPo, LongTermKnowledgeNodePo, KnowledgeNodeRelationPo, KnowledgeReferencePo, KnowledgeRelationType};
+use crate::models::memory::{MemoryTrace, ShortTermMemoryIndexPo, LongTermKnowledgeNodePo, KnowledgeNodeRelationPo, KnowledgeReferencePo};
+use common::enums::{MemoryRole, KnowledgeRelationType, MemoryStatus};
 use crate::pkg::RequestContext;
 use crate::service::dao::memory::sqlite::MemoryDaoSqliteImpl;
-use common::enums::MemoryStatus;
 use sqlx::SqlitePool;
 
 #[sqlx::test]

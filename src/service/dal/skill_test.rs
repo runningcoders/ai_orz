@@ -89,7 +89,7 @@ impl CortexDao for MockCortexDao {
         Ok("Mock response".to_string())
     }
 
-    async fn embed_text(&self, _ctx: RequestContext, _cortex: &dyn CortexTrait, text: &str) -> Result<Vec<f32>> {
+    async fn embed_text_raw(&self, _ctx: RequestContext, _cortex: &dyn CortexTrait, text: &str) -> Result<Vec<f32>> {
         // 极端化向量差异：让 nonexistent 关键词的向量与其他向量距离 > 0.8
         // 余弦距离 > 0.8 意味着相似度 < 0.2
         let mut vec = vec![0.0; 3];
@@ -107,6 +107,29 @@ impl CortexDao for MockCortexDao {
         }
         
         Ok(vec)
+    }
+    
+    async fn embed_entity(&self, ctx: RequestContext, cortex: &dyn CortexTrait, entity: &dyn crate::models::vector::Vectorizable) -> Result<crate::models::vector::VectorIndexParams> {
+        // 复用 embed_text_raw 的逻辑，包装成 VectorIndexParams
+        let content = entity.vectorize_text();
+        let embedding = self.embed_text_raw(ctx, cortex, &content).await?;
+        Ok(crate::models::vector::VectorIndexParams::new(
+            &content, 
+            embedding, 
+            "mock-provider".to_string(), 
+            "mock-embedding-v1".to_string()
+        ))
+    }
+    
+    async fn embed_text_for_search(&self, _ctx: RequestContext, _cortex: &dyn CortexTrait, text: &str) -> Result<crate::models::vector::VectorIndexParams> {
+        // 复用 embed_text_raw 的逻辑，包装成 VectorIndexParams
+        let embedding = self.embed_text_raw(_ctx, _cortex, text).await?;
+        Ok(crate::models::vector::VectorIndexParams::new(
+            text, 
+            embedding, 
+            "mock-provider".to_string(), 
+            "mock-embedding-v1".to_string()
+        ))
     }
 }
 
