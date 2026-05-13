@@ -815,3 +815,113 @@ impl ToolRegistry {
 | 两种模式共存 | 平衡开发速度与可控性 | 渐进式迁移 |
 
 ---
+
+## 内置工具机制简化与保护（2026-05-13 更新）
+
+### 目标
+简化 BuiltinToolFactory trait，移除冗余方法，同时为 Builtin 类型工具添加保护机制，防止用户通过 API 修改或删除内置工具。
+
+### 核心变更
+
+#### 1. 简化 BuiltinToolFactory trait
+**之前：**
+```rust
+#[async_trait]
+pub trait BuiltinToolFactory: Send + Sync + Debug {
+    fn id(&self) -> &str;
+    fn name(&self) -> &str;
+    fn description(&self) -> &str;
+    async fn create(&self, po: ToolPo) -> Result<Box<dyn CoreTool>, AppError>;
+}
+```
+
+**现在：**
+```rust
+#[async_trait]
+pub trait BuiltinToolFactory: Send + Sync + Debug {
+    fn create_po(&self) -> ToolPo;
+    async fn create(&self, po: ToolPo) -> Result<Box<dyn CoreTool>, AppError>;
+}
+```
+
+#### 2. 新增 ToolPo::fill_defaults_for_builtin()
+为 Builtin 工具自动填充默认值：
+```rust
+impl ToolPo {
+    pub fn fill_defaults_for_builtin(mut self) -> Self {
+        self.protocol = ToolProtocol::Builtin;
+        self.control_mode = ControlMode::Auto;
+        self.version = 1;
+        self
+    }
+}
+```
+
+#### 3. 新增 Builtin 工具保护
+在 ToolDao 层添加保护：
+- `update_tool()`：检测 `ToolProtocol::Builtin`，返回错误
+- `delete_tool()`：检测 `ToolProtocol::Builtin`，返回错误
+
+**新增 DAO trait 方法：**
+```rust
+#[async_trait]
+pub trait ToolDao: Send + Sync {
+    // ... existing methods
+    async fn delete_tool(&self, ctx: &RequestContext, tool_id: &str) -> Result<(), AppError>;
+}
+```
+
+#### 4. 简化 sync_builtin_tools_to_db()
+**之前：**
+- 手动设置 protocol、control_mode、version
+- 手动构造 ToolPo
+
+**现在：**
+```rust
+let po = factory.create_po().fill_defaults_for_builtin();
+// 直接 upsert 即可
+```
+
+### 设计决策
+
+| 决策 | 理由 |
+|------|------|
+| trait 只保留 create_po() 和 create() | 元数据方法冗余，所有信息都可以放在 create_po() 返回的 ToolPo 里 |
+| ToolPo 负责填充默认值 | PO 自身知道默认值应该是什么，集中管理 |
+| 保护放在 DAO 层 | 最底层，确保任何上层调用（DAL/Domain/Handler）都无法绕过保护 |
+| 更新和删除都受保护 | 约定优于配置，内置工具应由代码维护，用户应扩展自己的工具 |
+
+### 测试更新
+- `test_update_tool`：改为使用 `ToolProtocol::Http`
+- `test_delete_builtin_tool_protected`：新增，验证 Builtin 工具无法删除
+- `test_update_builtin_tool_protected`：新增，验证 Builtin 工具无法更新
+
+### 测试结果
+```
+test result: ok. 283 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+**全项目测试全部通过**。
+
+---
+
+## 提交记录
+
+| 提交 hash | 说明 |
+|----------|------|
+| `77db3bb` | 完成基础架构搭建，编译零错误 |
+| `db6ebe5` | 修复 trait 定义错误 |
+| `f4cab62` | 第一次重构，统一注册中心 |
+| `7199874` | 按协议分类型存储 |
+| `b84f51e` | 简化重构，解决 dyn 兼容 |
+| `d28af5a` | 修复导入错误 |
+| `f8af4a7` | 基于 Rig 原生 ToolDyn 重构 |
+| `5a90197` | 移动注册中心到 pkg，统一 pkg 初始化收口 |
+| `0a08d61` | 修复 SQLite JSON 类型、UUID 解码、枚举解码问题，测试全过 |
+| `eac393b` | 全链路改为 String ID，去掉 Uuid 强依赖，统一所有 DAO 导出 |
+| `d29a8f1` | 完成 Agent 工具绑定架构，符合分层规范，测试全过 |
+| `...` | ... |
+| `6039c39` | 完成混合模式命名对齐：CoreTool trait + Tool 实体，完整重构，测试全过 |
+| `bc41fd8` | 修复 HR 测试缺失 DAO 初始化问题 |
+| `05ef2f0` | 简化内置工具机制并添加 Builtin 保护 |
+
+---
