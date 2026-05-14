@@ -161,7 +161,7 @@ fn cleanup_old_logs(logs_dir: &std::path::Path, retention: Duration) -> std::io:
     Ok(deleted_count)
 }
 
-/// 创建带完整上下文信息的 span
+/// 创建带完整上下文信息的 span（供日志宏使用）
 ///
 /// 包含 RequestContext 中的所有字段：
 /// - log_id: 日志追踪 ID
@@ -172,7 +172,8 @@ fn cleanup_old_logs(logs_dir: &std::path::Path, retention: Duration) -> std::io:
 /// - task_id: 任务 ID
 /// - project_id: 项目 ID
 /// - operation: 当前操作名称
-fn create_span(operation: &str, ctx: &RequestContext) -> tracing::Span {
+#[doc(hidden)]
+pub fn create_span(operation: &str, ctx: &RequestContext) -> tracing::Span {
     tracing::info_span!(
         "request",
         log_id = %ctx.log_id,
@@ -217,21 +218,100 @@ pub fn debug(ctx: RequestContext, operation: &str, msg: &str) {
 // ==================== 无上下文的系统日志（仅限 main/框架初始化使用） ====================
 
 /// 无上下文的 info 日志（仅限系统初始化/启动场景使用）
+#[track_caller]
 pub fn system_info(msg: &str) {
     tracing::info!(msg);
 }
 
 /// 无上下文的 warn 日志（仅限系统初始化/启动场景使用）
+#[track_caller]
 pub fn system_warn(msg: &str) {
     tracing::warn!(msg);
 }
 
 /// 无上下文的 error 日志（仅限系统初始化/启动场景使用）
+#[track_caller]
 pub fn system_error(msg: &str) {
     tracing::error!(msg);
 }
 
 /// 无上下文的 debug 日志（仅限系统初始化/启动场景使用）
+#[track_caller]
 pub fn system_debug(msg: &str) {
     tracing::debug!(msg);
+}
+
+// ==================== 日志宏（推荐使用，文件/行号信息正确） ====================
+/// 带上下文的 info 日志宏
+///
+/// 使用方式：
+/// ```rust
+/// log_info!(ctx, "send_message", "消息发送成功");
+/// log_info!(ctx, "send_message", "用户 {} 发送消息", username);  // 支持格式化
+/// ```
+#[macro_export]
+macro_rules! log_info {
+    ($ctx:expr, $operation:expr, $fmt:expr) => {{
+        use $crate::pkg::logging::create_span;
+        let span = create_span($operation, &$ctx);
+        let _guard = span.enter();
+        tracing::info!($fmt);
+    }};
+    ($ctx:expr, $operation:expr, $fmt:expr, $($arg:tt)*) => {{
+        use $crate::pkg::logging::create_span;
+        let span = create_span($operation, &$ctx);
+        let _guard = span.enter();
+        tracing::info!($fmt, $($arg)*);
+    }};
+}
+
+/// 带上下文的 warn 日志宏
+#[macro_export]
+macro_rules! log_warn {
+    ($ctx:expr, $operation:expr, $fmt:expr) => {{
+        use $crate::pkg::logging::create_span;
+        let span = create_span($operation, &$ctx);
+        let _guard = span.enter();
+        tracing::warn!($fmt);
+    }};
+    ($ctx:expr, $operation:expr, $fmt:expr, $($arg:tt)*) => {{
+        use $crate::pkg::logging::create_span;
+        let span = create_span($operation, &$ctx);
+        let _guard = span.enter();
+        tracing::warn!($fmt, $($arg)*);
+    }};
+}
+
+/// 带上下文的 error 日志宏
+#[macro_export]
+macro_rules! log_error {
+    ($ctx:expr, $operation:expr, $fmt:expr) => {{
+        use $crate::pkg::logging::create_span;
+        let span = create_span($operation, &$ctx);
+        let _guard = span.enter();
+        tracing::error!($fmt);
+    }};
+    ($ctx:expr, $operation:expr, $fmt:expr, $($arg:tt)*) => {{
+        use $crate::pkg::logging::create_span;
+        let span = create_span($operation, &$ctx);
+        let _guard = span.enter();
+        tracing::error!($fmt, $($arg)*);
+    }};
+}
+
+/// 带上下文的 debug 日志宏
+#[macro_export]
+macro_rules! log_debug {
+    ($ctx:expr, $operation:expr, $fmt:expr) => {{
+        use $crate::pkg::logging::create_span;
+        let span = create_span($operation, &$ctx);
+        let _guard = span.enter();
+        tracing::debug!($fmt);
+    }};
+    ($ctx:expr, $operation:expr, $fmt:expr, $($arg:tt)*) => {{
+        use $crate::pkg::logging::create_span;
+        let span = create_span($operation, &$ctx);
+        let _guard = span.enter();
+        tracing::debug!($fmt, $($arg)*);
+    }};
 }

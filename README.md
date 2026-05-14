@@ -208,20 +208,34 @@ cargo test
 3. **日志自动清理**：自动清理过期日志，避免磁盘空间耗尽
 4. **统一格式**：所有日志格式一致，便于排查问题
 
-### 正确使用方式
+### 正确使用方式（宏，推荐）
 
 ```rust
-use crate::pkg::logging::{self, info, log_error, warn, debug};
+// 直接使用宏，无需导入（已在 crate 根导出）
+// 支持格式化字符串，自动携带正确的文件/行号信息
 
-// 带上下文的日志（推荐，99% 场景使用）
-info(ctx.clone(), "send_message", "消息发送成功");
-warn(ctx.clone(), "memory_warning", "Agent 内存使用率超过 80%");
-log_error(ctx.clone(), "db_error", "数据库查询超时");
-debug(ctx.clone(), "debug_info", "调试信息");
+// 简单消息
+log_info!(ctx, "send_message", "消息发送成功");
+log_warn!(ctx, "memory_warning", "Agent 内存使用率超过 80%");
+log_error!(ctx, "db_error", "数据库查询超时");
+log_debug!(ctx, "debug_info", "调试信息");
+
+// 支持格式化
+log_info!(ctx, "create_agent", "用户 {} 创建了 Agent {}", username, agent_id);
 
 // 系统启动/无上下文场景（仅在 main/框架初始化时使用）
-// 可以直接使用 tracing::info! 等宏（仅限系统初始化）
+use crate::pkg::logging::{system_info, system_warn, system_error};
+system_info("服务启动成功");
 ```
+
+### 为什么要用宏？
+
+| 特性 | 函数封装 | 宏封装 |
+|------|---------|--------|
+| 文件/行号信息 | ❌ 全部显示 logging.rs 位置 | ✅ 正确显示调用位置 |
+| 格式化支持 | ✅ `format!()` 后传入 | ✅ 原生支持 `log_info!(ctx, "op", "a={}", a)` |
+| 导入便利性 | 需要导入函数 | 无需导入，宏在 crate 根可用 |
+| 性能 | 相同 | 相同 |
 
 ### 日志字段说明（JSON 格式）
 
