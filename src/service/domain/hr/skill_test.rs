@@ -159,7 +159,9 @@ async fn test_delete_skill(pool: SqlitePool) {
         .get_skill(ctx, &skill.id())
         .await
         .unwrap();
-    assert!(found.is_none());
+    // 软删除，记录还在，状态变为 Expired
+    assert!(found.is_some());
+    assert_eq!(found.unwrap().po.status, common::enums::SkillStatus::Expired);
 }
 
 #[sqlx::test]

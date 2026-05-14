@@ -261,7 +261,7 @@ WHERE id = ? AND status != 0
 
         let pool = self.pool(ctx);
         let mut builder = QueryBuilder::new(
-            r#"SELECT id, agent_id, task_id, role, summary, tags, trace_ids, status AS "status: MemoryStatus", created_at, updated_at
+            r#"SELECT id, agent_id, task_id, role, summary, tags, trace_ids, status, created_at, updated_at
 FROM short_term_memory_index WHERE 1=1"#
         );
 
@@ -289,7 +289,8 @@ FROM short_term_memory_index WHERE 1=1"#
             let exclude_i32 = *exclude_status as i32;
             builder.push(" AND status != ");
             builder.push_bind(exclude_i32);
-        } else {
+        } else if query.status.is_none() {
+            // 只有当没有明确指定 status 时，才默认排除 Forgotten（0）
             builder.push(" AND status != 0");
         }
 
@@ -579,7 +580,7 @@ WHERE id = ? AND status != 0
 
         let pool = self.pool(ctx);
         let mut builder = QueryBuilder::new(
-            r#"SELECT id, agent_id, node_name, node_description, node_type, summary, status AS "status: MemoryStatus", created_at, updated_at
+            r#"SELECT id, agent_id, node_name, node_description, node_type, summary, status, created_at, updated_at
 FROM long_term_knowledge_node WHERE 1=1"#
         );
 
@@ -607,7 +608,8 @@ FROM long_term_knowledge_node WHERE 1=1"#
             let exclude_i32 = *exclude_status as i32;
             builder.push(" AND status != ");
             builder.push_bind(exclude_i32);
-        } else {
+        } else if query.status.is_none() {
+            // 只有当没有明确指定 status 时，才默认排除 Forgotten（0）
             builder.push(" AND status != 0");
         }
 

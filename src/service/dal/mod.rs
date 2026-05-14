@@ -69,6 +69,8 @@ pub(crate) mod message_test;
 #[cfg(test)]
 pub(crate) mod message_channel_test;
 #[cfg(test)]
+pub(crate) mod memory_test;
+#[cfg(test)]
 pub(crate) mod model_provider_test;
 #[cfg(test)]
 pub(crate) mod organization_test;
