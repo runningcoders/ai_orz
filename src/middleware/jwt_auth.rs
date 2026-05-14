@@ -9,7 +9,7 @@ use axum::{
     middleware::Next,
     response::{Response, Redirect, IntoResponse},
 };
-use crate::pkg::{jwt};
+use crate::pkg::{jwt, logging::system_debug};
 use common::constants::http_header;
 use crate::error::AppError;
 
@@ -27,14 +27,14 @@ pub async fn jwt_auth_middleware(
     // 1. 从 Cookie 中找到 JWT token
     let cookie_header = req.headers().get(axum::http::header::COOKIE);
     if cookie_header.is_none() {
-        tracing::debug!("No Cookie header found, redirect to login");
+        system_debug("No Cookie header found, redirect to login");
         return Ok(Redirect::to("/").into_response());
     }
 
     let cookie_str = match cookie_header.unwrap().to_str() {
         Ok(s) => s,
         Err(_) => {
-            tracing::debug!("Invalid Cookie header, redirect to login");
+            system_debug("Invalid Cookie header, redirect to login");
             return Ok(Redirect::to("/").into_response());
         }
     };
@@ -55,7 +55,7 @@ pub async fn jwt_auth_middleware(
     let token = match token {
         Some(t) if !t.is_empty() => t,
         _ => {
-            tracing::debug!("No JWT token found in cookie, redirect to login");
+            system_debug("No JWT token found in cookie, redirect to login");
             return Ok(Redirect::to("/").into_response());
         }
     };
@@ -64,7 +64,7 @@ pub async fn jwt_auth_middleware(
     let claims = match jwt::decode_jwt(&token) {
         Ok(c) => c,
         Err(e) => {
-            tracing::debug!("JWT token validation failed: {}, redirect to login", e);
+            system_debug(&format!("JWT token validation failed: {}, redirect to login", e));
             return Ok(Redirect::to("/").into_response());
         }
     };

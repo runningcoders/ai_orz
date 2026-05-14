@@ -8,6 +8,8 @@ mod pkg;
 mod router;
 mod service;
 
+use pkg::logging::system_info;
+
 fn get_env_or_default(env_key: &str, default: &str) -> String {
     std::env::var(env_key).unwrap_or(default.to_string())
 }
@@ -19,18 +21,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Initialize all pkg modules in one call
     pkg::init_all(&config).await;
-    tracing::info!(
+    system_info(&format!(
         "Logging & storage & JWT & tool registry initialized, base data path: {}",
         config.base_data_path().display()
-    );
+    ));
 
     // 初始化 service 层
     service::init();
-    tracing::info!("Service layer initialized");
+    system_info("Service layer initialized");
 
     // 初始化并启动所有消费者
     consumer::init(&config.consumer).await?;
-    tracing::info!("All consumers started");
+    system_info("All consumers started");
 
     // 前端静态文件目录从配置读取，环境变量可覆盖
     let dist_dir = get_env_or_default("FRONTEND_DIST_DIR", &config.frontend.dist_dir);
@@ -41,11 +43,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 启动服务器
     let app = router::create_router(&dist_dir, config.clone());
     let listener = tokio::net::TcpListener::bind(&server_addr).await?;
-    tracing::info!(
+    system_info(&format!(
         "Server listening on {}, static files from {}",
-        server_addr,
-        dist_dir
-    );
+        server_addr, dist_dir
+    ));
 
     axum::serve(listener, app).await?;
 

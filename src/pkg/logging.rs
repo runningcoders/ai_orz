@@ -246,72 +246,55 @@ pub fn system_debug(msg: &str) {
 ///
 /// 使用方式：
 /// ```rust
+/// // 简单消息（推荐）
 /// log_info!(ctx, "send_message", "消息发送成功");
-/// log_info!(ctx, "send_message", "用户 {} 发送消息", username);  // 支持格式化
-/// ```
+/// // 支持格式化
+/// log_info!(ctx, "send_message", "用户 {} 发送消息", username);
+/// // 完全兼容 tracing 结构化语法
+/// log_info!(ctx, "send_message", user_id = %user_id, message_id = %msg...[truncated]
 #[macro_export]
 macro_rules! log_info {
-    ($ctx:expr, $operation:expr, $fmt:expr) => {{
+    // 兼容 tracing 结构化语法
+    ($ctx:expr, $operation:expr, $($fields:tt)*) => {{
         use $crate::pkg::logging::create_span;
         let span = create_span($operation, &$ctx);
         let _guard = span.enter();
-        tracing::info!($fmt);
-    }};
-    ($ctx:expr, $operation:expr, $fmt:expr, $($arg:tt)*) => {{
-        use $crate::pkg::logging::create_span;
-        let span = create_span($operation, &$ctx);
-        let _guard = span.enter();
-        tracing::info!($fmt, $($arg)*);
+        tracing::info!($($fields)*);
     }};
 }
 
 /// 带上下文的 warn 日志宏
 #[macro_export]
 macro_rules! log_warn {
-    ($ctx:expr, $operation:expr, $fmt:expr) => {{
+    // 兼容 tracing 结构化语法
+    ($ctx:expr, $operation:expr, $($fields:tt)*) => {{
         use $crate::pkg::logging::create_span;
         let span = create_span($operation, &$ctx);
         let _guard = span.enter();
-        tracing::warn!($fmt);
-    }};
-    ($ctx:expr, $operation:expr, $fmt:expr, $($arg:tt)*) => {{
-        use $crate::pkg::logging::create_span;
-        let span = create_span($operation, &$ctx);
-        let _guard = span.enter();
-        tracing::warn!($fmt, $($arg)*);
+        tracing::warn!($($fields)*);
     }};
 }
 
 /// 带上下文的 error 日志宏
 #[macro_export]
 macro_rules! log_error {
-    ($ctx:expr, $operation:expr, $fmt:expr) => {{
+    // 兼容 tracing 结构化语法
+    ($ctx:expr, $operation:expr, $($fields:tt)*) => {{
         use $crate::pkg::logging::create_span;
         let span = create_span($operation, &$ctx);
         let _guard = span.enter();
-        tracing::error!($fmt);
-    }};
-    ($ctx:expr, $operation:expr, $fmt:expr, $($arg:tt)*) => {{
-        use $crate::pkg::logging::create_span;
-        let span = create_span($operation, &$ctx);
-        let _guard = span.enter();
-        tracing::error!($fmt, $($arg)*);
+        tracing::error!($($fields)*);
     }};
 }
 
 /// 带上下文的 debug 日志宏
 #[macro_export]
 macro_rules! log_debug {
-    ($ctx:expr, $operation:expr, $fmt:expr) => {{
+    // 兼容 tracing 结构化语法
+    ($ctx:expr, $operation:expr, $($fields:tt)*) => {{
         use $crate::pkg::logging::create_span;
         let span = create_span($operation, &$ctx);
         let _guard = span.enter();
-        tracing::debug!($fmt);
-    }};
-    ($ctx:expr, $operation:expr, $fmt:expr, $($arg:tt)*) => {{
-        use $crate::pkg::logging::create_span;
-        let span = create_span($operation, &$ctx);
-        let _guard = span.enter();
-        tracing::debug!($fmt, $($arg)*);
+        tracing::debug!($($fields)*);
     }};
 }
