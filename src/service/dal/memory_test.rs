@@ -630,3 +630,374 @@ async fn test_delete_trace_unsupported(pool: SqlitePool) -> Result<(), AppError>
     
     Ok(())
 }
+
+#[sqlx::test]
+async fn test_search_short_term(pool: SqlitePool) -> Result<(), AppError> {
+    init_test_tables(&pool).await;
+    let dal = init_test(pool.clone()).await;
+    let ctx = create_test_ctx(pool.clone());
+    
+    // 创建多条短期记忆
+    let now = chrono::Utc::now().timestamp();
+    
+    let index1 = ShortTermMemoryIndexPo {
+        id: "st-search-001".to_string(),
+        agent_id: "agent-001".to_string(),
+        task_id: None,
+        role: "user".to_string(),
+        summary: "用户询问 Rust 编程基础概念".to_string(),
+        tags: "[]".to_string(),
+        trace_ids: "[]".to_string(),
+        status: MemoryStatus::Active,
+        created_at: now,
+        updated_at: now,
+    };
+    
+    let index2 = ShortTermMemoryIndexPo {
+        id: "st-search-002".to_string(),
+        agent_id: "agent-001".to_string(),
+        task_id: None,
+        role: "assistant".to_string(),
+        summary: "Python 数据处理与机器学习入门指南".to_string(),
+        tags: "[]".to_string(),
+        trace_ids: "[]".to_string(),
+        status: MemoryStatus::Active,
+        created_at: now,
+        updated_at: now,
+    };
+    
+    let index3 = ShortTermMemoryIndexPo {
+        id: "st-search-003".to_string(),
+        agent_id: "agent-001".to_string(),
+        task_id: None,
+        role: "assistant".to_string(),
+        summary: "其他无关内容".to_string(),
+        tags: "[]".to_string(),
+        trace_ids: "[]".to_string(),
+        status: MemoryStatus::Active,
+        created_at: now,
+        updated_at: now,
+    };
+    
+    dal.create(ctx.clone(), MemoryCreateParams::CreateShortTerm(index1)).await?;
+    dal.create(ctx.clone(), MemoryCreateParams::CreateShortTerm(index2)).await?;
+    dal.create(ctx.clone(), MemoryCreateParams::CreateShortTerm(index3)).await?;
+    
+    // 搜索：匹配 "Rust" 关键词（只匹配第一条）
+    let results = dal.search(ctx.clone(), MemorySearch {
+        keyword: Some("Rust".to_string()),
+        query_vector: None,
+        top_k: None,
+        filters: MemoryQuery {
+            agent_id: Some("agent-001".to_string()),
+            memory_type: Some(common::enums::MemoryType::ShortTerm),
+            limit: Some(10),
+            ..Default::default()
+        },
+    }).await?;
+    assert_eq!(results.len(), 1);
+    
+    // 搜索：匹配 "Python" 关键词（只匹配第二条）
+    let results2 = dal.search(ctx.clone(), MemorySearch {
+        keyword: Some("Python".to_string()),
+        query_vector: None,
+        top_k: None,
+        filters: MemoryQuery {
+            agent_id: Some("agent-001".to_string()),
+            memory_type: Some(common::enums::MemoryType::ShortTerm),
+            limit: Some(10),
+            ..Default::default()
+        },
+    }).await?;
+    assert_eq!(results2.len(), 1);
+    
+    // 搜索：无匹配
+    let results3 = dal.search(ctx.clone(), MemorySearch {
+        keyword: Some("nonexistent-keyword".to_string()),
+        query_vector: None,
+        top_k: None,
+        filters: MemoryQuery {
+            agent_id: Some("agent-001".to_string()),
+            memory_type: Some(common::enums::MemoryType::ShortTerm),
+            limit: Some(10),
+            ..Default::default()
+        },
+    }).await?;
+    assert_eq!(results3.len(), 0);
+    
+    Ok(())
+}
+
+#[sqlx::test]
+async fn test_search_knowledge_nodes(pool: SqlitePool) -> Result<(), AppError> {
+    init_test_tables(&pool).await;
+    let dal = init_test(pool.clone()).await;
+    let ctx = create_test_ctx(pool.clone());
+    
+    // 创建多个知识节点
+    let now = chrono::Utc::now().timestamp();
+    
+    let node1 = LongTermKnowledgeNodePo {
+        id: "kn-search-001".to_string(),
+        agent_id: "agent-001".to_string(),
+        node_name: "Rust 所有权机制".to_string(),
+        node_description: "深入理解 Rust 所有权、借用和生命周期概念".to_string(),
+        node_type: "concept".to_string(),
+        summary: "Rust 语言的核心特性之一，确保内存安全".to_string(),
+        status: MemoryStatus::Active,
+        created_at: now,
+        updated_at: now,
+    };
+    
+    let node2 = LongTermKnowledgeNodePo {
+        id: "kn-search-002".to_string(),
+        agent_id: "agent-001".to_string(),
+        node_name: "Python 装饰器详解".to_string(),
+        node_description: "Python 高级特性：函数装饰器原理与应用".to_string(),
+        node_type: "concept".to_string(),
+        summary: "Python 装饰器是一种强大的元编程工具".to_string(),
+        status: MemoryStatus::Active,
+        created_at: now,
+        updated_at: now,
+    };
+    
+    let node3 = LongTermKnowledgeNodePo {
+        id: "kn-search-003".to_string(),
+        agent_id: "agent-001".to_string(),
+        node_name: "其他内容".to_string(),
+        node_description: "无关描述".to_string(),
+        node_type: "other".to_string(),
+        summary: "无关总结".to_string(),
+        status: MemoryStatus::Active,
+        created_at: now,
+        updated_at: now,
+    };
+    
+    dal.create(ctx.clone(), MemoryCreateParams::CreateKnowledgeNode {
+        node: node1,
+        references: vec![],
+    }).await?;
+    dal.create(ctx.clone(), MemoryCreateParams::CreateKnowledgeNode {
+        node: node2,
+        references: vec![],
+    }).await?;
+    dal.create(ctx.clone(), MemoryCreateParams::CreateKnowledgeNode {
+        node: node3,
+        references: vec![],
+    }).await?;
+    
+    // 搜索：按 node_name 匹配 "Rust"
+    let results = dal.search(ctx.clone(), MemorySearch {
+        keyword: Some("Rust".to_string()),
+        query_vector: None,
+        top_k: None,
+        filters: MemoryQuery {
+            agent_id: Some("agent-001".to_string()),
+            memory_type: Some(common::enums::MemoryType::KnowledgeNode),
+            limit: Some(10),
+            ..Default::default()
+        },
+    }).await?;
+    assert_eq!(results.len(), 1);
+    
+    // 搜索：按 summary 匹配 "装饰器"
+    let results2 = dal.search(ctx.clone(), MemorySearch {
+        keyword: Some("装饰器".to_string()),
+        query_vector: None,
+        top_k: None,
+        filters: MemoryQuery {
+            agent_id: Some("agent-001".to_string()),
+            memory_type: Some(common::enums::MemoryType::KnowledgeNode),
+            limit: Some(10),
+            ..Default::default()
+        },
+    }).await?;
+    assert_eq!(results2.len(), 1);
+    
+    // 搜索：无匹配
+    let results3 = dal.search(ctx.clone(), MemorySearch {
+        keyword: Some("nonexistent-keyword".to_string()),
+        query_vector: None,
+        top_k: None,
+        filters: MemoryQuery {
+            agent_id: Some("agent-001".to_string()),
+            memory_type: Some(common::enums::MemoryType::KnowledgeNode),
+            limit: Some(10),
+            ..Default::default()
+        },
+    }).await?;
+    assert_eq!(results3.len(), 0);
+    
+    Ok(())
+}
+
+#[sqlx::test]
+async fn test_update_short_term(pool: SqlitePool) -> Result<(), AppError> {
+    init_test_tables(&pool).await;
+    let dal = init_test(pool.clone()).await;
+    let ctx = create_test_ctx(pool.clone());
+    
+    // 先创建短期记忆
+    let now = chrono::Utc::now().timestamp();
+    let original_index = ShortTermMemoryIndexPo {
+        id: "st-update-001".to_string(),
+        agent_id: "agent-001".to_string(),
+        task_id: None,
+        role: "user".to_string(),
+        summary: "原始内容".to_string(),
+        tags: "[]".to_string(),
+        trace_ids: "[]".to_string(),
+        status: MemoryStatus::Active,
+        created_at: now,
+        updated_at: now,
+    };
+    
+    dal.create(ctx.clone(), MemoryCreateParams::CreateShortTerm(original_index.clone())).await?;
+    
+    // 修改内容
+    let mut updated_index = original_index.clone();
+    updated_index.summary = "更新后的内容".to_string();
+    updated_index.tags = "[\"重要\"]".to_string();
+    
+    let updated_memory = Memory::new(MemoryPo::ShortTerm(updated_index.clone()));
+    let result = dal.update(ctx.clone(), updated_memory).await?;
+    
+    // 验证更新成功
+    match &result.po {
+        MemoryPo::ShortTerm(po) => {
+            assert_eq!(po.summary, "更新后的内容");
+            assert_eq!(po.tags, "[\"重要\"]");
+        }
+        _ => panic!("Expected ShortTerm"),
+    }
+    
+    // 验证数据库中确实更新了
+    let query_result = dal.query(ctx.clone(), MemoryQuery {
+        agent_id: Some("agent-001".to_string()),
+        memory_type: Some(common::enums::MemoryType::ShortTerm),
+        ..Default::default()
+    }).await?;
+    
+    assert_eq!(query_result.len(), 1);
+    match &query_result[0].po {
+        MemoryPo::ShortTerm(po) => {
+            assert_eq!(po.summary, "更新后的内容");
+        }
+        _ => panic!("Expected ShortTerm"),
+    }
+    
+    Ok(())
+}
+
+#[sqlx::test]
+async fn test_update_knowledge_node(pool: SqlitePool) -> Result<(), AppError> {
+    init_test_tables(&pool).await;
+    let dal = init_test(pool.clone()).await;
+    let ctx = create_test_ctx(pool.clone());
+    
+    // 先创建知识节点
+    let now = chrono::Utc::now().timestamp();
+    let original_node = LongTermKnowledgeNodePo {
+        id: "kn-update-001".to_string(),
+        agent_id: "agent-001".to_string(),
+        node_name: "原始节点名称".to_string(),
+        node_description: "原始描述".to_string(),
+        node_type: "concept".to_string(),
+        summary: "原始总结".to_string(),
+        status: MemoryStatus::Active,
+        created_at: now,
+        updated_at: now,
+    };
+    
+    dal.create(ctx.clone(), MemoryCreateParams::CreateKnowledgeNode {
+        node: original_node.clone(),
+        references: vec![],
+    }).await?;
+    
+    // 修改内容
+    let mut updated_node = original_node.clone();
+    updated_node.node_name = "更新后的节点名称".to_string();
+    updated_node.node_description = "更新后的描述".to_string();
+    updated_node.summary = "更新后的总结".to_string();
+    
+    let updated_memory = Memory::new(MemoryPo::KnowledgeNode(updated_node.clone()));
+    let result = dal.update(ctx.clone(), updated_memory).await?;
+    
+    // 验证更新成功
+    match &result.po {
+        MemoryPo::KnowledgeNode(po) => {
+            assert_eq!(po.node_name, "更新后的节点名称");
+            assert_eq!(po.node_description, "更新后的描述");
+            assert_eq!(po.summary, "更新后的总结");
+        }
+        _ => panic!("Expected KnowledgeNode"),
+    }
+    
+    // 验证数据库中确实更新了
+    let query_result = dal.query(ctx.clone(), MemoryQuery {
+        agent_id: Some("agent-001".to_string()),
+        ..Default::default()
+    }).await?;
+    
+    assert_eq!(query_result.len(), 1);
+    match &query_result[0].po {
+        MemoryPo::KnowledgeNode(po) => {
+            assert_eq!(po.node_name, "更新后的节点名称");
+        }
+        _ => panic!("Expected KnowledgeNode"),
+    }
+    
+    Ok(())
+}
+
+#[sqlx::test]
+async fn test_update_trace_unsupported(pool: SqlitePool) -> Result<(), AppError> {
+    init_test_tables(&pool).await;
+    let dal = init_test(pool.clone()).await;
+    let ctx = create_test_ctx(pool);
+    
+    // 创建 Trace 类型的 Memory
+    let trace = MemoryTrace::new(
+        "agent-001".to_string(),
+        "log-001".to_string(),
+        "user-001".to_string(),
+        "org-001".to_string(),
+        common::enums::MemoryRole::User,
+        "原始内容".to_string(),
+        None,
+    );
+    let memory = Memory::new(MemoryPo::Trace(trace));
+    
+    // 尝试更新应该返回错误
+    let result = dal.update(ctx, memory).await;
+    assert!(result.is_err());
+    assert!(format!("{:?}", result.unwrap_err()).contains("原始记忆 Trace 不可修改"));
+    
+    Ok(())
+}
+
+#[sqlx::test]
+async fn test_update_relation_unsupported(pool: SqlitePool) -> Result<(), AppError> {
+    init_test_tables(&pool).await;
+    let dal = init_test(pool.clone()).await;
+    let ctx = create_test_ctx(pool);
+    
+    // 创建 Relation 类型的 Memory（使用 PO 直接构造）
+    let now = chrono::Utc::now().timestamp();
+    let relation = KnowledgeNodeRelationPo {
+        id: "rel-001".to_string(),
+        source_node_id: "node-a".to_string(),
+        target_node_id: "node-b".to_string(),
+        relation_type: common::enums::KnowledgeRelationType::Related,
+        created_at: now,
+        updated_at: now,
+    };
+    let memory = Memory::new(MemoryPo::Relation(relation));
+    
+    // 尝试更新应该返回错误
+    let result = dal.update(ctx, memory).await;
+    assert!(result.is_err());
+    assert!(format!("{:?}", result.unwrap_err()).contains("记忆 Relation 不可修改，需删除后重建"));
+    
+    Ok(())
+}

@@ -324,19 +324,22 @@ FROM short_term_memory_index WHERE 1=1"#
         
         // 从 MemorySearch 提取参数
         let agent_id = search.filters.agent_id.unwrap_or_default();
-        let query = search.keyword.unwrap_or_default();
+        let keyword = search.keyword.unwrap_or_default();
         let limit_i64 = search.filters.limit.unwrap_or(50) as i64;
+        
+        // 使用 LIKE 做关键词匹配（普通表不支持 MATCH）
+        let like_pattern = format!("%{}%", keyword);
         
         let indexes = sqlx::query_as!(
             ShortTermMemoryIndexPo,
             r#"
 SELECT id, agent_id, task_id, role, summary, tags, trace_ids, status AS "status: MemoryStatus", created_at, updated_at
 FROM short_term_memory_index
-WHERE agent_id = ? AND summary MATCH ? AND status != 0
+WHERE agent_id = ? AND summary LIKE ? AND status != 0
 LIMIT ?
 "#,
             agent_id,
-            query,
+            like_pattern,
             limit_i64
         )
         .fetch_all(&pool)
@@ -651,20 +654,24 @@ FROM long_term_knowledge_node WHERE 1=1"#
         
         // 从 MemorySearch 提取参数
         let agent_id = search.filters.agent_id.unwrap_or_default();
-        let query = search.keyword.unwrap_or_default();
+        let keyword = search.keyword.unwrap_or_default();
         let limit_i64 = search.filters.limit.unwrap_or(50) as i64;
+        
+        // 使用 LIKE 做关键词匹配（普通表不支持 MATCH）
+        let like_pattern = format!("%{}%", keyword);
+        let like_pattern2 = like_pattern.clone();
         
         let nodes = sqlx::query_as!(
             LongTermKnowledgeNodePo,
             r#"
 SELECT id, agent_id, node_name, node_description, node_type, summary, status AS "status: MemoryStatus", created_at, updated_at
 FROM long_term_knowledge_node
-WHERE agent_id = ? AND (node_name MATCH ? OR summary MATCH ?) AND status != 0
+WHERE agent_id = ? AND (node_name LIKE ? OR summary LIKE ?) AND status != 0
 LIMIT ?
 "#,
             agent_id,
-            query,
-            query,
+            like_pattern,
+            like_pattern2,
             limit_i64
         )
         .fetch_all(&pool)

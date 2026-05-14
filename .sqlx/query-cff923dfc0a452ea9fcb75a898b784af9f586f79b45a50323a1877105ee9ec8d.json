@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, agent_id, task_id, role, summary, tags, trace_ids, status AS \"status: MemoryStatus\", created_at, updated_at\nFROM short_term_memory_index\nWHERE agent_id = ? AND summary MATCH ? AND status != 0\nLIMIT ?\n",
+  "query": "\nSELECT id, agent_id, task_id, role, summary, tags, trace_ids, status AS \"status: MemoryStatus\", created_at, updated_at\nFROM short_term_memory_index\nWHERE agent_id = ? AND summary LIKE ? AND status != 0\nLIMIT ?\n",
   "describe": {
     "columns": [
       {
@@ -70,5 +70,5 @@
       false
     ]
   },
-  "hash": "ca14763b060885af95c1bb248ad5618175fcfc46a1bad540997d6b35f0f9413f"
+  "hash": "cff923dfc0a452ea9fcb75a898b784af9f586f79b45a50323a1877105ee9ec8d"
 }

@@ -567,3 +567,129 @@ async fn test_get_po_only(pool: SqlitePool) -> Result<(), AppError> {
 
     Ok(())
 }
+
+/// 测试更新技能基本信息
+#[sqlx::test]
+async fn test_update_skill_basic_info(pool: SqlitePool) -> Result<(), AppError> {
+    let skill_dal = init_test(pool.clone()).await;
+    let ctx = new_ctx("test-user", pool);
+
+    // 先创建技能
+    let skill_id = uuid::Uuid::now_v7().to_string();
+    let content_path = format!("skills/{}/", skill_id);
+    let original_po = SkillPo::new(
+        skill_id.clone(),
+        "original-name".to_string(),
+        "Original description".to_string(),
+        vec!["AI Agent".to_string()],
+        "debugging".to_string(),
+        "".to_string(),
+        "test-author".to_string(),
+        SkillAuthorType::User,
+        content_path,
+    );
+    skill_dal.create(ctx.clone(), &original_po).await?;
+
+    // 获取完整的 Skill 实体
+    let skill_opt = skill_dal.get_by_id(ctx.clone(), skill_id.clone()).await?;
+    assert!(skill_opt.is_some());
+    let mut skill = skill_opt.unwrap();
+
+    // 更新字段
+    skill.po.name = "updated-name".to_string();
+    skill.po.description = "Updated description".to_string();
+    skill.po.category = "planning".to_string();
+    // tags 是 JSON 字符串格式
+    skill.po.tags = r#"["AI Agent", "Planning"]"#.to_string();
+
+    // 执行更新
+    skill_dal.update(ctx.clone(), &skill).await?;
+
+    // 验证更新成功
+    let updated_opt = skill_dal.get_by_id(ctx.clone(), skill_id).await?;
+    assert!(updated_opt.is_some());
+    let updated = updated_opt.unwrap();
+    assert_eq!(updated.po.name, "updated-name");
+    assert_eq!(updated.po.description, "Updated description");
+    assert_eq!(updated.po.category, "planning");
+    // tags 是 JSON 字符串格式，验证包含预期的标签
+    assert!(updated.po.tags.contains("AI Agent"));
+    assert!(updated.po.tags.contains("Planning"));
+
+    Ok(())
+}
+
+/// 测试更新技能状态（Draft → Published）
+#[sqlx::test]
+async fn test_update_skill_status(pool: SqlitePool) -> Result<(), AppError> {
+    let skill_dal = init_test(pool.clone()).await;
+    let ctx = new_ctx("test-user", pool);
+
+    // 创建技能（默认是 Draft）
+    let skill_id = uuid::Uuid::now_v7().to_string();
+    let content_path = format!("skills/{}/", skill_id);
+    let original_po = SkillPo::new(
+        skill_id.clone(),
+        "status-test-skill".to_string(),
+        "Test status change".to_string(),
+        vec!["Test".to_string()],
+        "testing".to_string(),
+        "".to_string(),
+        "test-author".to_string(),
+        SkillAuthorType::User,
+        content_path,
+    );
+    skill_dal.create(ctx.clone(), &original_po).await?;
+
+    // 验证初始状态
+    let skill_opt = skill_dal.get_by_id(ctx.clone(), skill_id.clone()).await?;
+    assert!(skill_opt.is_some());
+    let mut skill = skill_opt.unwrap();
+    assert_eq!(skill.po.status, SkillStatus::Draft);
+
+    // 更新为 Published
+    skill.po.status = SkillStatus::Published;
+    skill_dal.update(ctx.clone(), &skill).await?;
+
+    // 验证状态已更新
+    let updated_opt = skill_dal.get_by_id(ctx.clone(), skill_id).await?;
+    assert!(updated_opt.is_some());
+    let updated = updated_opt.unwrap();
+    assert_eq!(updated.po.status, SkillStatus::Published);
+
+    Ok(())
+}
+
+/// 测试更新不存在的技能（应该不报错，DAO 会静默处理）
+#[sqlx::test]
+async fn test_update_nonexistent_skill(pool: SqlitePool) -> Result<(), AppError> {
+    let skill_dal = init_test(pool.clone()).await;
+    let ctx = new_ctx("test-user", pool);
+
+    // 创建一个 PO 但不保存到数据库
+    let skill_id = uuid::Uuid::now_v7().to_string();
+    let content_path = format!("skills/{}/", skill_id);
+    let po = SkillPo::new(
+        skill_id,
+        "nonexistent-skill".to_string(),
+        "This skill doesn't exist".to_string(),
+        vec!["Test".to_string()],
+        "testing".to_string(),
+        "".to_string(),
+        "test-author".to_string(),
+        SkillAuthorType::User,
+        content_path,
+    );
+    // 直接构造 Skill 实体
+    let skill = Skill {
+        po,
+        files: Vec::new(),
+        search_match: None,
+    };
+
+    // 更新不存在的技能（应该不会报错，DAO 的 update 是 INSERT OR REPLACE）
+    let result = skill_dal.update(ctx, &skill).await;
+    assert!(result.is_ok());
+
+    Ok(())
+}

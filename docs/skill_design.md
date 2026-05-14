@@ -372,14 +372,19 @@ async fn delete_by_id(&self, ctx: RequestContext, id: &str) -> Result<(), AppErr
 |----------|------|
 | `test_create_and_get_by_id` | 测试创建和获取完整技能 |
 | `test_get_skill_po_only` | 测试只获取 PO（不加载文件） |
-| `test_update_skill` | 测试更新技能（元数据 + 文件） |
+| `test_update_skill_basic_info` | 测试更新技能基本信息（名称、描述、分类、标签） |
+| `test_update_skill_status` | 测试更新技能状态（Draft → Published） |
+| `test_update_nonexistent_skill` | 测试更新不存在的技能（INSERT OR REPLACE 行为） |
 | `test_delete_skill` | 测试软删除技能 |
 | `test_list_by_status` | 测试按状态查询 |
 | `test_list_by_category` | 测试按分类查询 |
 | `test_list_by_author` | 测试按作者查询 |
 | `test_query_skills` | 测试通用查询 |
+| `test_search_skill` | 测试技能搜索（关键词匹配） |
+| `test_install_to_agent` | 测试安装技能到 Agent |
+| `test_file_operations` | 测试技能文件读写操作 |
 
-当前测试结果：**8/8 全部通过，零失败**
+当前测试结果：**13/13 全部通过，零失败**
 
 ### Domain 层测试 (`src/service/domain/hr/skill_test.rs`)
 
