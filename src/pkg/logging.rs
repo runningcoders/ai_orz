@@ -213,3 +213,25 @@ pub fn debug(ctx: RequestContext, operation: &str, msg: &str) {
     let _guard = span.enter();
     tracing::debug!(msg);
 }
+
+// ==================== 无上下文的系统日志（仅限 main/框架初始化使用） ====================
+
+/// 无上下文的 info 日志（仅限系统初始化/启动场景使用）
+pub fn system_info(msg: &str) {
+    tracing::info!(msg);
+}
+
+/// 无上下文的 warn 日志（仅限系统初始化/启动场景使用）
+pub fn system_warn(msg: &str) {
+    tracing::warn!(msg);
+}
+
+/// 无上下文的 error 日志（仅限系统初始化/启动场景使用）
+pub fn system_error(msg: &str) {
+    tracing::error!(msg);
+}
+
+/// 无上下文的 debug 日志（仅限系统初始化/启动场景使用）
+pub fn system_debug(msg: &str) {
+    tracing::debug!(msg);
+}

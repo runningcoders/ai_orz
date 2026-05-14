@@ -34,6 +34,7 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 | 📋 任务项目管理 | ✅ | 项目聚合对话，任务跟踪进度、思考深度、优先级 |
 | 📎 统一附件存储 | ✅ | 消息附件和项目产物统一存储 |
 | 🚀 异步消费者系统 | ✅ | 通用消费者框架 + Message Topic 三层分发（Agent/User/System） |
+| 📝 结构化日志系统 | ✅ | JSON 格式，自动上下文关联，日志自动清理 |
 | 🏗️ 严格分层架构 | ✅ | DAO/DAL/Domain/Handler/Consumer 五层职责清晰 |
 | 🔍 单元测试覆盖 | ✅ | 数据层 + 领域层 100% 测试覆盖 |
 
@@ -124,6 +125,8 @@ dist_dir = "dist"
 [logging]
 enable_file_log = true
 log_subdir = "logs"
+format = "json"           # 日志格式: "json" (默认) 或 "text"
+retention_days = 30       # 日志保留天数，0 表示不清理
 
 [jwt]
 # JWT签名密钥（生产环境务必修改！也可以通过环境变量 JWT_SECRET 设置）
@@ -188,7 +191,60 @@ log_subdir = "logs"
 cargo test
 ```
 
-当前状态：**258 个测试全部通过 ✅**
+**测试状态：** **323 个测试全部通过 ✅**
+
+---
+
+## 日志系统使用规范 📝
+
+### 重要：必须使用封装的日志库
+
+**所有业务代码必须使用 `crate::pkg::logging` 模块提供的日志函数，禁止直接使用 `tracing::info!`/`tracing::error!` 等宏。**
+
+### 为什么？
+
+1. **自动上下文关联**：每条日志自动携带完整的 RequestContext 7 个字段（log_id/user_id/username/organization_id/agent_id/task_id/project_id + operation）
+2. **结构化 JSON 输出**：便于 ELK/Loki 等日志分析系统采集和查询
+3. **日志自动清理**：自动清理过期日志，避免磁盘空间耗尽
+4. **统一格式**：所有日志格式一致，便于排查问题
+
+### 正确使用方式
+
+```rust
+use crate::pkg::logging::{self, info, log_error, warn, debug};
+
+// 带上下文的日志（推荐，99% 场景使用）
+info(ctx.clone(), "send_message", "消息发送成功");
+warn(ctx.clone(), "memory_warning", "Agent 内存使用率超过 80%");
+log_error(ctx.clone(), "db_error", "数据库查询超时");
+debug(ctx.clone(), "debug_info", "调试信息");
+
+// 系统启动/无上下文场景（仅在 main/框架初始化时使用）
+// 可以直接使用 tracing::info! 等宏（仅限系统初始化）
+```
+
+### 日志字段说明（JSON 格式）
+
+```json
+{
+  "timestamp": "2026-05-14T15:30:45.123456Z",
+  "level": "INFO",
+  "target": "ai_orz::service::domain::message",
+  "filename": "src/service/domain/message/management.rs",
+  "line_number": 123,
+  "span": {
+    "log_id": "abc-123-xyz-456",
+    "user_id": "user_123",
+    "username": "张三",
+    "organization_id": "org_456",
+    "agent_id": "agent_789",
+    "task_id": "task_abc",
+    "project_id": "proj_def",
+    "operation": "send_message"
+  },
+  "message": "消息发送成功"
+}
+```
 
 ---
 
