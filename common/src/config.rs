@@ -125,6 +125,20 @@ pub struct LoggingConfig {
     /// 日志子目录（相对于 base_data_path）
     #[serde(default = "default_log_subdir")]
     pub log_subdir: String,
+    /// 日志输出格式（"text" 或 "json"）
+    #[serde(default = "default_log_format")]
+    pub format: String,
+    /// 日志保留天数（0 表示不清理）
+    #[serde(default = "default_log_retention_days")]
+    pub retention_days: u32,
+}
+
+fn default_log_format() -> String {
+    "json".to_string()  // 默认使用 JSON 格式，便于日志分析
+}
+
+fn default_log_retention_days() -> u32 {
+    30  // 默认保留 30 天
 }
 
 fn default_db_file_name() -> String {
@@ -170,6 +184,8 @@ impl Default for LoggingConfig {
         Self {
             enable_file_log: default_enable_file_log(),
             log_subdir: default_log_subdir(),
+            format: default_log_format(),
+            retention_days: default_log_retention_days(),
         }
     }
 }
