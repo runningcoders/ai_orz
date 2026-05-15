@@ -2,7 +2,7 @@
 
 use super::domain;
 use crate::pkg::RequestContext;
-use crate::service::domain::message::{SendToAgentCommand, SendToUserCommand};
+use crate::service::domain::message::{MessageDomain, SendToAgentCommand, SendToUserCommand};
 use common::enums::{MessageRole, MessageStatus, MessageType};
 use sqlx::SqlitePool;
 use uuid::Uuid;
@@ -11,12 +11,22 @@ fn new_ctx(user_id: &str, pool: sqlx::SqlitePool) -> RequestContext {
     RequestContext::new_simple(user_id, pool)
 }
 
+/// 初始化所有渠道 DAO 单例
+fn init_all_channel_daos() {
+    crate::service::dao::lark::init();
+    crate::service::dao::wechat::init();
+    crate::service::dao::slack::init();
+    crate::service::dao::email::init();
+    crate::service::dao::webhook::init();
+}
+
 /// 初始化测试环境（每个测试新建独立实例，保证测试隔离）
-fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn crate::service::domain::message::MessageDomain>, RequestContext) {
+fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn MessageDomain>, RequestContext) {
     let message_dao = crate::service::dao::message::new();
     let event_queue = crate::service::dao::event_queue::in_memory::new();
     let message_dal = crate::service::dal::message::new(message_dao, event_queue);
     let message_channel_dao = crate::service::dao::message_channel::new();
+    init_all_channel_daos();  // 初始化所有渠道 DAO 单例
     let message_channel_dal = crate::service::dal::message_channel::new(message_channel_dao);
     let domain = crate::service::domain::message::new(message_dal, message_channel_dal);
     let ctx = new_ctx("admin", pool);
@@ -267,7 +277,8 @@ async fn test_deliver_message_to_channels(pool: SqlitePool) {
 
     // 验证投递结果
     assert_eq!(result.total, 2);
-    // 因为是空的 channel_daos，所以投递成功但实际没有外部调用
-    assert_eq!(result.success, 0); // 没有注册的具体渠道 DAO，所以成功数为 0
-    assert_eq!(result.failed, 0);  // 也不会失败，只是跳过
+    // 因为渠道没有实际配置（webhook_url 等为空），所以会投递失败
+    // 这是预期行为：渠道存在但配置无效会导致 failed
+    assert_eq!(result.success, 0);
+    assert_eq!(result.failed, 2);
 }

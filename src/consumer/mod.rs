@@ -7,7 +7,6 @@ use async_trait::async_trait;
 use common::config::TopicConsumerConfig;
 use crate::error::Result;
 use crate::models::event::Event;
-use crate::pkg::logging::{system_debug, system_error, system_info};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -100,16 +99,16 @@ where
         match self.fetcher.dequeue_next().await {
             Ok(Some(event)) => {
                 let event_id = event.id();
-                system_debug(&format!("[{}] processing event: {}", self.topic, event_id));
+                sys_debug!(r"[{}] processing event: {}", self.topic, event_id);
                 
                 match self.handler.handle(&event).await {
                     Ok(_) => {
-                        system_debug(&format!("[{}] event {} handled successfully, acking", self.topic, event_id));
+                        sys_debug!(r"[{}] event {} handled successfully, acking", self.topic, event_id);
                         self.fetcher.ack(event_id).await?;
                         Ok(true)
                     }
                     Err(e) => {
-                        system_error(&format!("[{}] event {} handle error: {}, nacking", self.topic, event_id, e));
+                        sys_error!(r"[{}] event {} handle error: {}, nacking", self.topic, event_id, e);
                         self.fetcher.nack(event_id).await?;
                         // 处理失败也算完成了一次消费，返回 Ok 但日志记录错误
                         Ok(true)
@@ -121,7 +120,7 @@ where
                 Ok(false)
             }
             Err(e) => {
-                system_error(&format!("[{}] dequeue error: {}", self.topic, e));
+                sys_error!(r"[{}] dequeue error: {}", self.topic, e);
                 Err(e)
             }
         }
@@ -129,7 +128,7 @@ where
 
     /// 单个 worker 循环
     async fn run_worker(&self, worker_id: usize) {
-        system_info(&format!("[{}] worker {} started", self.topic, worker_id));
+        sys_info!(r"[{}] worker {} started", self.topic, worker_id);
 
         loop {
             match self.consume_one().await {
@@ -140,10 +139,10 @@ where
                     }
                 }
                 Err(e) => {
-                    system_error(&format!(
+                    sys_error!(
                         "[{}] worker {} consume error: {}",
                         self.topic, worker_id, e
-                    ));
+                    );
                     self.sleep_on_error().await;
                 }
             }
@@ -169,14 +168,14 @@ where
 ///
 /// 由 main.rs 调用，传入全局消费者配置。
 pub async fn init(config: &common::config::ConsumerConfig) -> Result<()> {
-    system_info("initializing consumers...");
+    sys_info!("initializing consumers...");
 
     // 初始化 message topic 消费者
     message::init(&config.for_topic("message")).await?;
 
     // 未来其他 topic 消费者在这里初始化...
 
-    system_info("all consumers initialized and started");
+    sys_info!("all consumers initialized and started");
     Ok(())
 }
 

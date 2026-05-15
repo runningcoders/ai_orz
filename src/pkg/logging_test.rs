@@ -25,32 +25,32 @@ fn new_ctx_with_user(user_id: &str) -> RequestContext {
 
 #[test]
 fn test_info_log() {
-    log_info!(&new_ctx()), "test_info", "这是一条 info 日志");
+    log_info!(&new_ctx(), "test_info", "这是一条 info 日志");
 }
 
 #[test]
 fn test_warn_log() {
-    log_warn!(&new_ctx()), "test_warn", "这是一条 warn 日志");
+    log_warn!(&new_ctx(), "test_warn", "这是一条 warn 日志");
 }
 
 #[test]
 fn test_error_log() {
-    log_error!(&new_ctx()), "test_error", "这是一条 error 日志");
+    log_error!(&new_ctx(), "test_error", "这是一条 error 日志");
 }
 
 #[test]
 fn test_debug_log() {
-    log_debug!(&new_ctx()), "test_debug", "这是一条 debug 日志");
+    log_debug!(&new_ctx(), "test_debug", "这是一条 debug 日志");
 }
 
 #[test]
 fn test_log_with_empty_user() {
-    log_info!(&new_ctx()), "anonymous", "匿名用户访问");
+    log_info!(&new_ctx(), "anonymous", "匿名用户访问");
 }
 
 #[test]
 fn test_long_operation_name() {
-    log_info!(&new_ctx()), "create_agent_with_validation", "创建 Agent 并验证");
+    log_info!(&new_ctx(), "create_agent_with_validation", "创建 Agent 并验证");
 }
 
 #[test]
@@ -75,13 +75,13 @@ fn test_special_characters_in_message() {
 
 #[test]
 fn test_empty_message() {
-    log_info!(&new_ctx()), "test", "");
+    log_info!(&new_ctx(), "test", "");
 }
 
 #[test]
 fn test_very_long_message() {
     let long_msg = "A".repeat(1000);
-    log_info!(&new_ctx()), "test", "{}", long_msg);
+    log_info!(&new_ctx(), "test", "{}", long_msg);
 }
 
 #[test]

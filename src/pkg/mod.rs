@@ -36,7 +36,7 @@ pub async fn init_all(config: &AppConfig) {
         config.base_data_path()
     );
 
-    logging::system_info("All pkg modules initialized");
+    sys_info!("All pkg modules initialized");
 }
 
 fn get_env_or_default(env_key: &str, default: &str) -> String {

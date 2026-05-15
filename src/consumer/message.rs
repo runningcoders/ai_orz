@@ -8,7 +8,6 @@ use common::config::TopicConsumerConfig;
 use common::enums::{MessageRole, MessageType};
 use crate::error::Result;
 use crate::models::message::Message;
-use crate::pkg::logging::{system_debug, system_info};
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例 ====================
@@ -65,8 +64,7 @@ impl MessageFetcher<Message> for MessageFetcherImpl {
 #[async_trait]
 impl MessageHandler<Message> for MessageHandlerImpl {
     async fn handle(&self, message: &Message) -> Result<()> {
-        system_debug(&format!("received message: {:?} -> {:?}, type: {:?}", 
-            message.from_role(), message.to_role(), message.message_type()));
+        sys_debug!(r"received message: {:?} -> {:?}, type: {:?}", message.from_role(), message.to_role(), message.message_type());
 
         // 第一层分发：根据 to_role 决定谁来处理
         match message.to_role() {
@@ -97,7 +95,7 @@ impl MessageHandlerImpl {
         // 1. 获取 Agent 上下文
         // 2. Brain 思考、生成回复
         // 3. 可能生成新的工具调用（to_role = System）
-        system_debug("agent message processed by brain");
+        sys_debug!("agent message processed by brain");
         Ok(())
     }
 
@@ -106,7 +104,7 @@ impl MessageHandlerImpl {
         // TODO: 调用 MessageGateway.push_to_user
         // 1. SSE/WebSocket 推送
         // 2. 在线状态检查
-        system_debug("user message pushed to frontend");
+        sys_debug!("user message pushed to frontend");
         Ok(())
     }
 
@@ -115,7 +113,7 @@ impl MessageHandlerImpl {
         // TODO: 根据 message_type 分发到具体系统模块
         // ToolCallRequest → ToolDomain.execute_tool_call
         // 其他系统消息 → 对应处理
-        system_debug("system message processed by system module");
+        sys_debug!("system message processed by system module");
         Ok(())
     }
 }
@@ -133,7 +131,7 @@ pub fn get_consumer() -> Option<&'static MessageConsumer> {
 ///
 /// 由 consumer::init 调用
 pub async fn init(config: &TopicConsumerConfig) -> Result<()> {
-    system_info("initializing message consumer...");
+    sys_info!("initializing message consumer...");
 
     // 创建 fetcher 和 handler
     let fetcher = MessageFetcherImpl;
@@ -151,7 +149,7 @@ pub async fn init(config: &TopicConsumerConfig) -> Result<()> {
     // 启动消费者
     consumer_arc.start().await;
 
-    system_info("message consumer started");
+    sys_info!("message consumer started");
     Ok(())
 }
 

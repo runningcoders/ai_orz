@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use common::enums::ProviderType;
+use common::enums::{ProviderType, ModelCapability};
 use common::api::{
     ModelProviderListItem, CreateModelProviderRequest,
 };
@@ -61,6 +61,7 @@ pub fn ModelProviderManagement() -> Element {
             let req = CreateModelProviderRequest {
                 name,
                 provider_type,
+                capability: ModelCapability::Agent,
                 model_name,
                 api_key,
                 base_url,
