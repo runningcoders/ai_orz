@@ -1,74 +1,75 @@
 //! ai_orz - AI 代理执行框架
 //! 统一日志宏
 //!
-//! 使用方式（自动检测是否带上下文）：
+//! 核心机制：第一个参数是字符串字面量 → 无上下文模式；第一个参数非字符串 + 第二个是字符串 → 带上下文模式
+//!
 //! - 带 ctx:  log_info!(&ctx, "operation", "message {}", var)
 //! - 无 ctx:  log_info!("message {}", var)
 
-/// info 日志（自动检测是否带上下文）
+/// info 日志
 #[macro_export]
 macro_rules! log_info {
-    // 带上下文: log_info!(&ctx, "operation", ...)
-    ($ctx:expr, $op:literal $(, $($fields:tt)*)?) => {{
+    // 无上下文: 第一个参数是字符串字面量（消息）
+    ($msg:literal $(, $($fields:tt)*)?) => {{
+        tracing::info!($msg $(, $($fields)*)?);
+    }};
+    
+    // 带上下文: 第一个参数非字符串（&ctx），第二个参数是字符串字面量（operation）
+    ($ctx:expr, $op:literal, $($fields:tt)*) => {{
         use $crate::pkg::logging::create_span;
         let span = create_span($op, $ctx);
         let _guard = span.enter();
-        tracing::info!($($($fields)*)?);
-    }};
-    
-    // 无上下文: log_info!("message {}", var)
-    ($($fields:tt)*) => {{
         tracing::info!($($fields)*);
     }};
 }
 
-/// warn 日志（自动检测是否带上下文）
+/// warn 日志
 #[macro_export]
 macro_rules! log_warn {
-    // 带上下文: log_warn!(&ctx, "operation", ...)
-    ($ctx:expr, $op:literal $(, $($fields:tt)*)?) => {{
+    // 无上下文: 第一个参数是字符串字面量（消息）
+    ($msg:literal $(, $($fields:tt)*)?) => {{
+        tracing::warn!($msg $(, $($fields)*)?);
+    }};
+    
+    // 带上下文: 第一个参数非字符串（&ctx），第二个参数是字符串字面量（operation）
+    ($ctx:expr, $op:literal, $($fields:tt)*) => {{
         use $crate::pkg::logging::create_span;
         let span = create_span($op, $ctx);
         let _guard = span.enter();
-        tracing::warn!($($($fields)*)?);
-    }};
-    
-    // 无上下文: log_warn!("message {}", var)
-    ($($fields:tt)*) => {{
         tracing::warn!($($fields)*);
     }};
 }
 
-/// error 日志（自动检测是否带上下文）
+/// error 日志
 #[macro_export]
 macro_rules! log_error {
-    // 带上下文: log_error!(&ctx, "operation", ...)
-    ($ctx:expr, $op:literal $(, $($fields:tt)*)?) => {{
+    // 无上下文: 第一个参数是字符串字面量（消息）
+    ($msg:literal $(, $($fields:tt)*)?) => {{
+        tracing::error!($msg $(, $($fields)*)?);
+    }};
+    
+    // 带上下文: 第一个参数非字符串（&ctx），第二个参数是字符串字面量（operation）
+    ($ctx:expr, $op:literal, $($fields:tt)*) => {{
         use $crate::pkg::logging::create_span;
         let span = create_span($op, $ctx);
         let _guard = span.enter();
-        tracing::error!($($($fields)*)?);
-    }};
-    
-    // 无上下文: log_error!("message {}", var)
-    ($($fields:tt)*) => {{
         tracing::error!($($fields)*);
     }};
 }
 
-/// debug 日志（自动检测是否带上下文）
+/// debug 日志
 #[macro_export]
 macro_rules! log_debug {
-    // 带上下文: log_debug!(&ctx, "operation", ...)
-    ($ctx:expr, $op:literal $(, $($fields:tt)*)?) => {{
+    // 无上下文: 第一个参数是字符串字面量（消息）
+    ($msg:literal $(, $($fields:tt)*)?) => {{
+        tracing::debug!($msg $(, $($fields)*)?);
+    }};
+    
+    // 带上下文: 第一个参数非字符串（&ctx），第二个参数是字符串字面量（operation）
+    ($ctx:expr, $op:literal, $($fields:tt)*) => {{
         use $crate::pkg::logging::create_span;
         let span = create_span($op, $ctx);
         let _guard = span.enter();
-        tracing::debug!($($($fields)*)?);
-    }};
-    
-    // 无上下文: log_debug!("message {}", var)
-    ($($fields:tt)*) => {{
         tracing::debug!($($fields)*);
     }};
 }
