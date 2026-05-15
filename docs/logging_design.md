@@ -83,24 +83,24 @@ log_info!(count = 42, status = "ok", "batch processed");
 
 **签名规范**：
 ```rust
-log_{level}!(&ctx, "operation_name", <tracing fields>);
+log_{level}!(ctx.clone(), "operation_name", <tracing fields>);
 ```
 
 **参数说明**：
-- `&ctx`：`&RequestContext` 引用，**必须传引用**
+- `ctx`：`RequestContext` 直接通过 clone() 传递值
 - `"operation_name"`：操作名称，字符串字面量，描述当前操作
 - `<tracing fields>`：标准 tracing 日志内容
 
 **示例**：
 ```rust
 // DAL 层示例
-log_info!(&ctx, "create_memory", "created memory id={}", memory_id);
+log_info!(ctx.clone(), "create_memory", "created memory id={}", memory_id);
 
 // Handler 层示例
-log_warn!(&ctx, "validate_input", "invalid email format: {}", email);
+log_warn!(ctx.clone(), "validate_input", "invalid email format: {}", email);
 
 // 错误日志
-log_error!(&ctx, "update_project", "db error: {:?}", err);
+log_error!(ctx.clone(), "update_project", "db error: {:?}", err);
 ```
 
 ### 3. 上下文包含字段
@@ -176,27 +176,27 @@ log_info!("some message");      // ✅
 **之前**：
 ```rust
 sys_info!("system message");    // 仍可用（兼容别名）
-sys_info!(ctx, "op", "msg");    // ❌ 旧形式已不支持
+sys_info!(ctx.clone(), "op", "msg");    // ❌ 旧形式已不支持
 ```
 
 **现在**：
 ```rust
 log_info!("system message");                    // ✅ 无上下文
-log_info!(&ctx, "operation", "message {}", x);  // ✅ 带上下文（必须传 &ctx）
+log_info!(ctx.clone(), "operation", "message {}", x);  // ✅ 带上下文（必须传 &ctx）
 ```
 
 ### 所有权问题
 
-**重要**：`create_span` 只接受 `&RequestContext` 引用，不接受所有权转移。
+**重要**：`create_span` 只接受 `RequestContext` 引用，不接受所有权转移。
 
 ✅ **正确**：
 ```rust
-log_info!(&ctx, "operation", "message");
+log_info!(ctx.clone(), "operation", "message");
 ```
 
 ❌ **错误**（编译错误）：
 ```rust
-log_info!(ctx, "operation", "message");  // 传值而非引用
+log_info!(ctx.clone(), "operation", "message");  // 传值而非引用
 ```
 
 ---

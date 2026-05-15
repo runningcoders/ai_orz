@@ -308,16 +308,22 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
     }
 }
 
-/// 获取 DAO 单例
-pub fn dao() -> Arc<dyn MessageChannelDao + Send + Sync> {
-    static INSTANCE: OnceLock<Arc<dyn MessageChannelDao + Send + Sync>> = OnceLock::new();
-    INSTANCE.get_or_init(|| Arc::new(MessageChannelDaoSqliteImpl::default())).clone()
-}
+// ==================== 工厂方法 + 单例 ====================
 
+/// Global MessageChannel DAO instance
+static MESSAGE_CHANNEL_DAO: OnceLock<Arc<dyn MessageChannelDao + Send + Sync>> = OnceLock::new();
+
+/// 创建一个全新的 MessageChannel DAO 实例（用于测试）
 pub fn new() -> Arc<dyn MessageChannelDao + Send + Sync> {
     Arc::new(MessageChannelDaoSqliteImpl::default())
 }
 
+/// 获取全局 MessageChannel DAO 单例
+pub fn dao() -> Arc<dyn MessageChannelDao + Send + Sync> {
+    MESSAGE_CHANNEL_DAO.get().cloned().unwrap()
+}
+
+/// 初始化全局 MessageChannel DAO
 pub fn init() {
-    let _ = dao();
+    MESSAGE_CHANNEL_DAO.set(new()).ok();
 }

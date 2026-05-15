@@ -2,50 +2,52 @@
 //!
 //! 消息渠道配置的 CRUD 测试，属于财务领域
 
+use sqlx::SqlitePool;
+
 #[cfg(test)]
 mod tests {
     use crate::models::message_channel::{MessageChannel, MessageChannelPo, ChannelConfig};
     use crate::pkg::RequestContext;
+    use crate::service::dao::message_channel::MessageChannelQuery;
     use crate::service::domain::finance;
     use common::enums::message_channel::{ChannelStatus, ChannelType};
     use sqlx::SqlitePool;
 
-    fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn finance::FinanceDomain>, RequestContext) {
-        // 初始化所有依赖的 DAO
-        crate::service::dao::message_channel::init(pool.clone());
-        crate::service::dao::model_provider::init(pool.clone());
-        crate::service::dao::brain::init();
-        crate::service::dao::lark::init(pool.clone());
-        crate::service::dao::wechat::init(pool.clone());
-        crate::service::dao::slack::init(pool.clone());
-        crate::service::dao::email::init(pool.clone());
-        crate::service::dao::webhook::init(pool.clone());
+    async fn init_test_env(
+        pool: SqlitePool,
+    ) -> (
+        std::sync::Arc<dyn finance::FinanceDomain>,
+        RequestContext,
+    ) {
+        // 初始化依赖的 DAO（不需要传 pool，DAO 通过 ctx 获取 pool）
+        crate::service::dao::message_channel::init();
+        crate::service::dao::model_provider::init();
+        crate::service::dao::tool::init();
+        crate::service::dao::tool_call::init();
+        crate::service::dao::cortex::init();
 
         // 初始化 DAL
         crate::service::dal::message_channel::init();
         crate::service::dal::model_provider::init();
+        crate::service::dal::tool::init();
         crate::service::dal::brain::init();
 
         // 创建 Domain
         let domain = finance::new(
             crate::service::dal::model_provider::dal(),
             crate::service::dal::message_channel::dal(),
+            crate::service::dal::tool::dal(),
             crate::service::dal::brain::dal(),
         );
 
-        let ctx = RequestContext::new(
-            "test-org-001".to_string(),
-            Some("test-user-001".to_string()),
-            None,
-            None,
-        );
+        let ctx = RequestContext::new_simple("test-user-001", pool);
 
         (domain, ctx)
     }
 
     #[sqlx::test]
     async fn test_channel_crud_operations(pool: SqlitePool) {
-        let (domain, ctx) = init_test_env(pool);
+        let (domain, ctx) = init_test_env(pool).await;
         let user_id = "test-user-001";
         let channel_id = "channel-001";
         let org_id = "test-org-001";
@@ -126,7 +128,7 @@ mod tests {
 
     #[sqlx::test]
     async fn test_list_and_query_channels(pool: SqlitePool) {
-        let (domain, ctx) = init_test_env(pool);
+        let (domain, ctx) = init_test_env(pool).await;
         let user_id = "test-user-002";
         let org_id = "test-org-002";
 
@@ -173,5 +175,138 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(results.len(), 3);
+    }
+
+
+    #[sqlx::test]
+    async fn test_set_channel_status(pool: SqlitePool) {
+        let (domain, ctx) = init_test_env(pool).await;
+        let user_id = "test-user-003";
+        let org_id = "test-org-003";
+        let channel_id = "channel-status-test";
+
+        let po = MessageChannelPo::new(
+            channel_id.to_string(),
+            org_id.to_string(),
+            user_id.to_string(),
+            None,
+            ChannelType::Email,
+            "状态测试渠道".to_string(),
+            None,
+            None,
+            None,
+            ChannelConfig::default(),
+            user_id.to_string(),
+        );
+        let mut channel = MessageChannel::from_po(po);
+        channel.po.status = ChannelStatus::Disabled;
+
+        domain
+            .message_channel_manage()
+            .create_message_channel(ctx.clone(), &channel)
+            .await
+            .unwrap();
+
+        // 设置为 Active（启用）- 使用 get + update 模式
+        let mut channel_to_enable = domain
+            .message_channel_manage()
+            .get_message_channel(ctx.clone(), channel_id)
+            .await
+            .unwrap()
+            .unwrap();
+        channel_to_enable.po.status = ChannelStatus::Active;
+        domain
+            .message_channel_manage()
+            .update_message_channel(ctx.clone(), &channel_to_enable)
+            .await
+            .unwrap();
+
+        // 验证状态变更
+        let fetched = domain
+            .message_channel_manage()
+            .get_message_channel(ctx.clone(), channel_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(fetched.po.status, ChannelStatus::Active);
+
+        // 再设置为 Disabled（禁用）- 使用 get + update 模式
+        let mut channel_to_disable = domain
+            .message_channel_manage()
+            .get_message_channel(ctx.clone(), channel_id)
+            .await
+            .unwrap()
+            .unwrap();
+        channel_to_disable.po.status = ChannelStatus::Disabled;
+        domain
+            .message_channel_manage()
+            .update_message_channel(ctx.clone(), &channel_to_disable)
+            .await
+            .unwrap();
+
+        let fetched_final = domain
+            .message_channel_manage()
+            .get_message_channel(ctx.clone(), channel_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(fetched_final.po.status, ChannelStatus::Disabled);
+    }
+
+    #[sqlx::test]
+    async fn test_query_channels(pool: SqlitePool) {
+        let (domain, ctx) = init_test_env(pool).await;
+        let user_id = "test-user-004";
+        let org_id = "test-org-004";
+
+        // 创建不同类型的渠道
+        let types = vec![ChannelType::Email, ChannelType::Webhook, ChannelType::Slack];
+        for (i, channel_type) in types.iter().enumerate() {
+            let po = MessageChannelPo::new(
+                format!("query-channel-{}", i),
+                org_id.to_string(),
+                user_id.to_string(),
+                None,
+                channel_type.clone(),
+                format!("Query Channel {}", i),
+                None,
+                None,
+                None,
+                ChannelConfig::default(),
+                user_id.to_string(),
+            );
+            let channel = MessageChannel::from_po(po);
+            domain
+                .message_channel_manage()
+                .create_message_channel(ctx.clone(), &channel)
+                .await
+                .unwrap();
+        }
+
+        // 按用户 ID 查询
+        let query = MessageChannelQuery {
+            user_id: Some(user_id.to_string()),
+            ..Default::default()
+        };
+        let results = domain
+            .message_channel_manage()
+            .query_channels(ctx.clone(), query)
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 3);
+
+        // 按类型查询
+        let query_by_type = MessageChannelQuery {
+            user_id: Some(user_id.to_string()),
+            channel_type: Some(ChannelType::Webhook),
+            ..Default::default()
+        };
+        let results_by_type = domain
+            .message_channel_manage()
+            .query_channels(ctx.clone(), query_by_type)
+            .await
+            .unwrap();
+        assert_eq!(results_by_type.len(), 1);
+        assert_eq!(results_by_type[0].po.channel_type, ChannelType::Webhook);
     }
 }

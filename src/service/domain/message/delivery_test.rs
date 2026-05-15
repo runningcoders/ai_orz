@@ -28,6 +28,8 @@ fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn MessageDomain>, Reques
     let message_channel_dao = crate::service::dao::message_channel::new();
     init_all_channel_daos();  // 初始化所有渠道 DAO 单例
     let message_channel_dal = crate::service::dal::message_channel::new(message_channel_dao);
+    // 初始化 MessageChannel DAL 单例（用于测试中创建渠道）
+    crate::service::dal::message_channel::init();
     let domain = crate::service::domain::message::new(message_dal, message_channel_dal);
     let ctx = new_ctx("admin", pool);
     (domain, ctx)
@@ -243,8 +245,8 @@ async fn test_deliver_message_to_channels(pool: SqlitePool) {
             user_id.to_string(),
         );
         let channel = MessageChannel::from_po(po);
-        domain
-            .management()
+        // 直接使用 DAL 创建渠道（MessageManagement 已经不包含渠道管理功能）
+        crate::service::dal::message_channel::dal()
             .create_channel(ctx.clone(), &channel)
             .await
             .unwrap();

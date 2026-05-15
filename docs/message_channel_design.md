@@ -286,7 +286,7 @@ impl MessageProcessDomain {
     }
     
     // 推送到具体渠道
-    async fn push_to_channel(&self, ctx: &RequestContext, msg: &MessagePo, channel: &MessageChannelPo) -> Result<(), AppError> {
+    async fn push_to_channel(&self, ctx: RequestContext, msg: &MessagePo, channel: &MessageChannelPo) -> Result<(), AppError> {
         match channel.channel_type {
             ChannelType::Lark => {
                 self.lark_dal.push_message(ctx, channel, msg).await

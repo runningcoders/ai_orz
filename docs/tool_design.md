@@ -371,7 +371,7 @@ pub trait CoreTool: DynClone + Send + Sync + Debug {
     /// - ctx: RequestContext 包含用户、DB 连接、trace 等信息
     /// - args: JSON 参数（由 LLM 生成）
     /// - 返回: JSON 结果
-    async fn call(&self, ctx: &RequestContext, args: Value) -> Result<Value, ToolError>;
+    async fn call(&self, ctx: RequestContext, args: Value) -> Result<Value, ToolError>;
 
     /// 工具参数 JSON Schema
     fn parameters_schema(&self) -> Value;
@@ -867,7 +867,7 @@ impl ToolPo {
 #[async_trait]
 pub trait ToolDao: Send + Sync {
     // ... existing methods
-    async fn delete_tool(&self, ctx: &RequestContext, tool_id: &str) -> Result<(), AppError>;
+    async fn delete_tool(&self, ctx: RequestContext, tool_id: &str) -> Result<(), AppError>;
 }
 ```
 

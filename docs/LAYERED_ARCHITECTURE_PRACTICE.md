@@ -16,7 +16,7 @@
 ```rust
 // ❌ 错误：DAO 层跨领域依赖其他 DAO
 impl CortexDao for CortexDaoSqliteImpl {
-    async fn wake(&self, ctx: &RequestContext, brain_id: Uuid) -> Result<Brain> {
+    async fn wake(&self, ctx: RequestContext, brain_id: Uuid) -> Result<Brain> {
         // ToolCallDao 被直接在 DAO 层调用
         let tool_dao = ToolCallDaoSqliteImpl::new();
         let tools = tool_dao.get_enabled_tools(ctx).await?;
@@ -74,14 +74,14 @@ DAO (数据访问层) → 单一数据源操作，只做 CRUD
 ```rust
 // ✅ DAO 层：只做数据读取
 impl ToolCallDao for ToolCallDaoSqliteImpl {
-    async fn get_tools_by_agent(&self, ctx: &RequestContext, agent_id: Uuid) -> Result<Vec<ToolPo>> {
+    async fn get_tools_by_agent(&self, ctx: RequestContext, agent_id: Uuid) -> Result<Vec<ToolPo>> {
         // 纯 SQL 查询
     }
 }
 
 // ✅ DAL 层：负责业务组装
 impl ToolDalImpl {
-    async fn list_tools_by_agent(&self, ctx: &RequestContext, agent_id: Uuid) -> Result<Vec<Tool>> {
+    async fn list_tools_by_agent(&self, ctx: RequestContext, agent_id: Uuid) -> Result<Vec<Tool>> {
         let pos = self.tool_call_dao.get_tools_by_agent(ctx, agent_id).await?;
         
         // 通过注册表过滤并组装完整实体
@@ -183,7 +183,7 @@ impl CoreTool for TestTool {
         &self.po
     }
     
-    async fn call(&self, _ctx: &RequestContext, _args: Value) -> Result<Value, ToolError> {
+    async fn call(&self, _ctx: RequestContext, _args: Value) -> Result<Value, ToolError> {
         Ok(Value::Null) // 测试用空实现
     }
 }
@@ -207,7 +207,7 @@ impl CoreTool for TestTool {
 **错误**：
 ```rust
 // ❌ CortexDao 直接调用 ToolCallDao
-async fn wake(&self, ctx: &RequestContext, brain_id: Uuid) -> Result<Brain> {
+async fn wake(&self, ctx: RequestContext, brain_id: Uuid) -> Result<Brain> {
     let tool_dao = ToolCallDaoSqliteImpl::new();
     let tools = tool_dao.get_enabled_tools(ctx).await?;
     // ...
@@ -228,7 +228,7 @@ async fn wake(&self, ctx: &RequestContext, brain_id: Uuid) -> Result<Brain> {
 **错误**：在 DAO 层完成实体组装
 ```rust
 // ❌ DAO 层承担组装职责
-async fn get_tool(&self, ctx: &RequestContext, id: Uuid) -> Result<Option<Tool>> {
+async fn get_tool(&self, ctx: RequestContext, id: Uuid) -> Result<Option<Tool>> {
     let po = ...; // 从数据库读取
     // 这里做组装... ❌
 }
@@ -533,14 +533,14 @@ pub trait MessageDomain: Send + Sync {
     // ✅ 使用命令对象而非 10+ 个参数
     async fn create_message(
         &self,
-        ctx: &RequestContext,
+        ctx: RequestContext,
         cmd: CreateMessageCommand,
     ) -> Result<Message>;
     
     // ✅ 使用查询对象
     async fn list_messages(
         &self,
-        ctx: &RequestContext,
+        ctx: RequestContext,
         query: MessageQuery,
     ) -> Result<Vec<Message>>;
 }
@@ -598,7 +598,7 @@ let summary = MessageSummaryResponse {
 // ❌ 错误：10+ 个零散参数
 async fn create_message(
     &self,
-    ctx: &RequestContext,
+    ctx: RequestContext,
     conversation_id: Uuid,
     sender_type: SenderType,
     sender_id: Option<Uuid>,
@@ -620,7 +620,7 @@ async fn create_message(
 impl MessageDao for MessageDaoSqliteImpl {
     async fn create(
         &self,
-        ctx: &RequestContext,
+        ctx: RequestContext,
         conversation_id: Uuid,  // ❌ 零散参数
         sender_type: SenderType,
         // ...
@@ -634,7 +634,7 @@ impl MessageDao for MessageDaoSqliteImpl {
 ```rust
 // ✅ DAO 层只接收完整 PO
 impl MessageDao for MessageDaoSqliteImpl {
-    async fn create(&self, ctx: &RequestContext, po: MessagePo) -> Result<MessagePo> {
+    async fn create(&self, ctx: RequestContext, po: MessagePo) -> Result<MessagePo> {
         // 纯 SQL INSERT
     }
 }

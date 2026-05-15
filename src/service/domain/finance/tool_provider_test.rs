@@ -4,53 +4,62 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::models::tool::Tool;
     use crate::service::domain::finance;
-    use crate::service::dal::tool::ToolDal;
-    use crate::service::dal::model_provider::ModelProviderDal;
-    use crate::service::dal::message_channel::MessageChannelDal;
-    use crate::service::dal::brain::BrainDal;
     use crate::pkg::RequestContext;
-    use std::sync::Arc;
+    use sqlx::SqlitePool;
 
-    /// 创建测试用的 Finance Domain
-    fn create_test_domain() -> Arc<dyn finance::FinanceDomain> {
-        // 使用测试环境初始化各 DAO
-        let model_provider_dal = crate::service::dal::model_provider::new_for_test();
-        let message_channel_dal = crate::service::dal::message_channel::new_for_test();
-        let tool_dal = crate::service::dal::tool::new_for_test();
-        let brain_dal = crate::service::dal::brain::new_for_test();
+    async fn init_test_env(
+        pool: SqlitePool,
+    ) -> (
+        std::sync::Arc<dyn finance::FinanceDomain>,
+        RequestContext,
+    ) {
+        // 初始化依赖的 DAO
+        crate::service::dao::tool::init();
+        crate::service::dao::tool_call::init();
+        crate::service::dao::cortex::init();
+        crate::service::dao::model_provider::init();
+        crate::service::dao::message_channel::init();
 
-        finance::new(model_provider_dal, message_channel_dal, tool_dal, brain_dal)
+        // 初始化 DAL
+        crate::service::dal::tool::init();
+        crate::service::dal::model_provider::init();
+        crate::service::dal::message_channel::init();
+        crate::service::dal::brain::init();
+
+        // 创建 Domain
+        let domain = finance::new(
+            crate::service::dal::model_provider::dal(),
+            crate::service::dal::message_channel::dal(),
+            crate::service::dal::tool::dal(),
+            crate::service::dal::brain::dal(),
+        );
+
+        let ctx = RequestContext::new_simple("test-user", pool);
+
+        (domain, ctx)
     }
 
-    fn create_test_ctx() -> RequestContext {
-        RequestContext::default()
-    }
-
-    #[tokio::test]
-    async fn test_list_tools() {
-        let domain = create_test_domain();
-        let ctx = create_test_ctx();
+    #[sqlx::test]
+    async fn test_list_tools(pool: SqlitePool) {
+        let (domain, ctx) = init_test_env(pool).await;
 
         let result = domain.tool_provider_manage().list_tools(ctx).await;
         assert!(result.is_ok(), "list_tools should succeed");
     }
 
-    #[tokio::test]
-    async fn test_get_tool_not_found() {
-        let domain = create_test_domain();
-        let ctx = create_test_ctx();
+    #[sqlx::test]
+    async fn test_get_tool_not_found(pool: SqlitePool) {
+        let (domain, ctx) = init_test_env(pool).await;
 
         let result = domain.tool_provider_manage().get_tool(ctx, "non-existent-id").await;
         assert!(result.is_ok(), "get_tool should succeed even if not found");
         assert!(result.unwrap().is_none(), "should return None for non-existent tool");
     }
 
-    #[tokio::test]
-    async fn test_query_tools() {
-        let domain = create_test_domain();
-        let ctx = create_test_ctx();
+    #[sqlx::test]
+    async fn test_query_tools(pool: SqlitePool) {
+        let (domain, ctx) = init_test_env(pool).await;
 
         let query = crate::service::dao::tool::ToolQuery::default();
         let result = domain.tool_provider_manage().query_tools(ctx, query).await;
