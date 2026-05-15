@@ -14,11 +14,14 @@ mod management_test;
 
 use crate::error::AppError;
 use crate::models::message::Message;
+use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;
 use crate::service::dao::message::MessageQuery;
+use crate::service::dao::message_channel::MessageChannelQuery;
 use crate::service::dal::message::MessageDal;
+pub use crate::service::dal::message_channel::{DeliveryResult, MessageChannelDal};
 use async_trait::async_trait;
-use common::enums::{MessageRole, MessageStatus};
+use common::enums::{ChannelStatus, MessageRole, MessageStatus};
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例 ====================
@@ -31,8 +34,11 @@ pub fn domain() -> Arc<dyn MessageDomain> {
 }
 
 /// 创建新的 Message Domain 实例（用于测试，每次测试创建独立实例保证隔离）
-pub fn new(message_dal: Arc<dyn MessageDal>) -> Arc<dyn MessageDomain> {
-    let domain = MessageDomainImpl::new(message_dal);
+pub fn new(
+    message_dal: Arc<dyn MessageDal>,
+    message_channel_dal: Arc<dyn MessageChannelDal>,
+) -> Arc<dyn MessageDomain> {
+    let domain = MessageDomainImpl::new(message_dal, message_channel_dal);
     Arc::new(domain)
 }
 
@@ -40,6 +46,7 @@ pub fn new(message_dal: Arc<dyn MessageDal>) -> Arc<dyn MessageDomain> {
 pub fn init() {
     let message_domain = MessageDomainImpl::new(
         crate::service::dal::message::dal(),
+        crate::service::dal::message_channel::dal(),
     );
     let _ = MESSAGE_DOMAIN.set(Arc::new(message_domain));
 }
@@ -51,12 +58,19 @@ pub fn init() {
 /// 聚合所有消息子功能实现
 struct MessageDomainImpl {
     message_dal: Arc<dyn MessageDal>,
+    message_channel_dal: Arc<dyn MessageChannelDal>,
 }
 
 impl MessageDomainImpl {
     /// 创建 Domain 实例
-    fn new(message_dal: Arc<dyn MessageDal>) -> Self {
-        Self { message_dal }
+    fn new(
+        message_dal: Arc<dyn MessageDal>,
+        message_channel_dal: Arc<dyn MessageChannelDal>,
+    ) -> Self {
+        Self {
+            message_dal,
+            message_channel_dal,
+        }
     }
 }
 
@@ -162,6 +176,16 @@ pub trait MessageDelivery: Send + Sync {
         ctx: RequestContext,
         message_id: &str,
     ) -> Result<(), AppError>;
+
+    /// 分发消息到用户所有可用渠道
+    ///
+    /// 自动查询用户配置的所有活跃渠道，将消息推送到每个渠道
+    async fn deliver_message(
+        &self,
+        ctx: RequestContext,
+        message: &Message,
+        user_id: &str,
+    ) -> Result<DeliveryResult, AppError>;
 }
 
 /// 消息管理 trait
@@ -220,4 +244,56 @@ pub trait MessageManagement: Send + Sync {
         ctx: RequestContext,
         task_id: &str,
     ) -> Result<(), AppError>;
+
+    // ---------- 渠道配置管理 ----------
+
+    /// 创建消息渠道
+    async fn create_channel(
+        &self,
+        ctx: RequestContext,
+        channel: &MessageChannel,
+    ) -> Result<(), AppError>;
+
+    /// 更新消息渠道
+    async fn update_channel(
+        &self,
+        ctx: RequestContext,
+        channel: &MessageChannel,
+    ) -> Result<(), AppError>;
+
+    /// 删除消息渠道
+    async fn delete_channel(&self, ctx: RequestContext, channel_id: &str) -> Result<(), AppError>;
+
+    /// 获取单个消息渠道
+    async fn get_channel(
+        &self,
+        ctx: RequestContext,
+        channel_id: &str,
+    ) -> Result<Option<MessageChannel>, AppError>;
+
+    /// 列出用户的所有消息渠道
+    async fn list_user_channels(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+        only_enabled: bool,
+    ) -> Result<Vec<MessageChannel>, AppError>;
+
+    /// 通用查询消息渠道
+    async fn query_channels(
+        &self,
+        ctx: RequestContext,
+        query: MessageChannelQuery,
+    ) -> Result<Vec<MessageChannel>, AppError>;
+
+    /// 设置渠道状态
+    async fn set_channel_status(
+        &self,
+        ctx: RequestContext,
+        channel_id: &str,
+        status: ChannelStatus,
+    ) -> Result<(), AppError>;
+
+    /// 测试渠道连接
+    async fn test_channel(&self, ctx: RequestContext, channel_id: &str) -> Result<(), AppError>;
 }

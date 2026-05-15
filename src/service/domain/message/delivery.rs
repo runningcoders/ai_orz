@@ -100,4 +100,15 @@ impl MessageDelivery for MessageDomainImpl {
         self.message_dal.update_status(ctx, message_id, MessageStatus::Pending).await?;
         Ok(())
     }
+
+    async fn deliver_message(
+        &self,
+        ctx: RequestContext,
+        message: &Message,
+        user_id: &str,
+    ) -> Result<crate::service::dal::message_channel::DeliveryResult, crate::error::AppError> {
+        self.message_channel_dal
+            .deliver_message(ctx, message, user_id)
+            .await
+    }
 }

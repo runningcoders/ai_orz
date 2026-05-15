@@ -81,4 +81,64 @@ impl MessageManagement for MessageDomainImpl {
         // DAL delete_by_task_id 直接完成删除
         self.message_dal.delete_by_task_id(ctx, task_id).await
     }
+
+    // ---------- 渠道配置管理实现 ----------
+
+    async fn create_channel(
+        &self,
+        ctx: RequestContext,
+        channel: &crate::models::message_channel::MessageChannel,
+    ) -> Result<(), AppError> {
+        self.message_channel_dal.create_channel(ctx, channel).await
+    }
+
+    async fn update_channel(
+        &self,
+        ctx: RequestContext,
+        channel: &crate::models::message_channel::MessageChannel,
+    ) -> Result<(), AppError> {
+        self.message_channel_dal.update_channel(ctx, channel).await
+    }
+
+    async fn delete_channel(&self, ctx: RequestContext, channel_id: &str) -> Result<(), AppError> {
+        self.message_channel_dal.delete_channel(ctx, channel_id).await
+    }
+
+    async fn get_channel(
+        &self,
+        ctx: RequestContext,
+        channel_id: &str,
+    ) -> Result<Option<crate::models::message_channel::MessageChannel>, AppError> {
+        self.message_channel_dal.get_channel(ctx, channel_id).await
+    }
+
+    async fn list_user_channels(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+        only_enabled: bool,
+    ) -> Result<Vec<crate::models::message_channel::MessageChannel>, AppError> {
+        self.message_channel_dal.list_user_channels(ctx, user_id, only_enabled).await
+    }
+
+    async fn query_channels(
+        &self,
+        ctx: RequestContext,
+        query: crate::service::dao::message_channel::MessageChannelQuery,
+    ) -> Result<Vec<crate::models::message_channel::MessageChannel>, AppError> {
+        self.message_channel_dal.query_channels(ctx, query).await
+    }
+
+    async fn set_channel_status(
+        &self,
+        ctx: RequestContext,
+        channel_id: &str,
+        status: common::enums::ChannelStatus,
+    ) -> Result<(), AppError> {
+        self.message_channel_dal.set_channel_status(ctx, channel_id, status).await
+    }
+
+    async fn test_channel(&self, ctx: RequestContext, channel_id: &str) -> Result<(), AppError> {
+        self.message_channel_dal.test_channel(ctx, channel_id).await
+    }
 }
