@@ -1,8 +1,10 @@
 //! Runtime Domain 模块
 //!
-//! 负责运行时执行逻辑：
-//! - ToolManagement: 工具运行时查询（注意：工具配置管理在 Finance Domain）
-//! - ToolExecution: 工具执行（单次/批量），返回调用结果和跟踪信息
+//! 【定位】运行时执行层 - 只负责动态执行逻辑，不负责任何静态配置管理
+//!
+//! 包含子模块：
+//! - ToolManagement: 工具运行时查询（Agent 执行时查询/搜索工具）
+//! - ToolExecution: 工具实际执行（单次/批量），返回调用结果和跟踪信息
 
 use async_trait::async_trait;
 use std::fmt::Debug;
