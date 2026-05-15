@@ -7,7 +7,6 @@ use crate::error::AppError;
 use crate::models::skill::{Skill, SkillPo, SkillFile};
 use crate::models::vector::{SearchMatchInfo, MatchType, Vectorizable};
 use crate::pkg::request_context::RequestContext;
-use crate::log_warn;
 use crate::service::dao::skill::{SkillDao, SkillVectorDao, SkillQuery, SkillSearch, self};
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::ModelProviderDao;
@@ -148,7 +147,7 @@ impl SkillDal for SkillDalImpl {
                 &po.id,
                 &vector_params,
             ).await {
-                log_warn!(ctx, "vector_index", "保存技能向量索引失败（可能 vss0 扩展未安装）: {}", e);
+                log_warn!(&ctx, "vector_index", "保存技能向量索引失败（可能 vss0 扩展未安装）: {}", e);
             }
         }
 
@@ -235,7 +234,7 @@ impl SkillDal for SkillDalImpl {
                         }
                         Err(e) => {
                             // 向量搜索失败（可能是 vss0 扩展未安装），降级到纯关键词搜索
-                            log_warn!(ctx, "vector_search", "向量搜索失败，降级到关键词搜索: {}", e);
+                            log_warn!(&ctx, "vector_search", "向量搜索失败，降级到关键词搜索: {}", e);
                         }
                     }
                 }
@@ -349,7 +348,7 @@ impl SkillDal for SkillDalImpl {
                     &skill.po.id,
                     &vector_params,
                 ).await {
-                    log_warn!(ctx, "vector_index", "更新技能向量索引失败（可能 vss0 扩展未安装）: {}", e);
+                    log_warn!(&ctx, "vector_index", "更新技能向量索引失败（可能 vss0 扩展未安装）: {}", e);
                 }
             }
         }

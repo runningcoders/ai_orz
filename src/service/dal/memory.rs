@@ -13,7 +13,6 @@ use crate::models::memory::{
 };
 use crate::models::vector::{SearchMatchInfo, VectorIndexParams, Vectorizable};
 use crate::pkg::RequestContext;
-use crate::{log_debug, log_warn};
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::memory::{MemoryDao, MemoryQuery, MemorySearch, MemoryVectorDao};
 use crate::service::dao::model_provider::ModelProviderDao;
@@ -218,14 +217,14 @@ impl MemoryDal for MemoryDalImpl {
                             .upsert_short_term_vector(ctx.clone(), &short_term.id, &vec_params)
                             .await
                         {
-                            log_warn!(ctx, "vector_index", memory_id= %short_term.id, error = ?e, "短期记忆向量索引更新失败，已降级");
+                            log_warn!(&ctx, "vector_index", memory_id= %short_term.id, error = ?e, "短期记忆向量索引更新失败，已降级");
                         }
                     }
                     Ok(None) => {
-                        log_debug!(ctx, "vector_index", memory_id= %short_term.id, "无可用 Embedding Provider，跳过向量索引更新");
+                        log_debug!(&ctx, "vector_index", memory_id= %short_term.id, "无可用 Embedding Provider，跳过向量索引更新");
                     }
                     Err(e) => {
-                        log_warn!(ctx, "vector_index", memory_id= %short_term.id, error = ?e, "短期记忆向量化失败，跳过向量索引更新");
+                        log_warn!(&ctx, "vector_index", memory_id= %short_term.id, error = ?e, "短期记忆向量化失败，跳过向量索引更新");
                     }
                 }
 
@@ -254,14 +253,14 @@ impl MemoryDal for MemoryDalImpl {
                             .upsert_knowledge_node_vector(ctx.clone(), &node.id, &vec_params)
                             .await
                         {
-                            log_warn!(ctx, "vector_index", knowledge_id= %node.id, error = ?e, "知识节点向量索引更新失败，已降级");
+                            log_warn!(&ctx, "vector_index", knowledge_id= %node.id, error = ?e, "知识节点向量索引更新失败，已降级");
                         }
                     }
                     Ok(None) => {
-                        log_debug!(ctx, "vector_index", knowledge_id= %node.id, "无可用 Embedding Provider，跳过向量索引更新");
+                        log_debug!(&ctx, "vector_index", knowledge_id= %node.id, "无可用 Embedding Provider，跳过向量索引更新");
                     }
                     Err(e) => {
-                        log_warn!(ctx, "vector_index", knowledge_id= %node.id, error = ?e, "知识节点向量化失败，跳过向量索引更新");
+                        log_warn!(&ctx, "vector_index", knowledge_id= %node.id, error = ?e, "知识节点向量化失败，跳过向量索引更新");
                     }
                 }
 
@@ -290,7 +289,7 @@ impl MemoryDal for MemoryDalImpl {
                 self.memory_dao.forget_short_term_index(ctx.clone(), &short_term.id).await?;
                 // 删除向量索引（忽略失败，不影响主流程）
                 if let Err(e) = self.memory_vector_dao.delete_short_term_vector(ctx.clone(), &short_term.id).await {
-                    log_warn!(ctx, "vector_index", memory_id= %short_term.id, error = ?e, "短期记忆向量索引删除失败，已降级");
+                    log_warn!(&ctx, "vector_index", memory_id= %short_term.id, error = ?e, "短期记忆向量索引删除失败，已降级");
                 }
                 Ok(())
             }
@@ -299,7 +298,7 @@ impl MemoryDal for MemoryDalImpl {
                 self.memory_dao.delete_knowledge_node(ctx.clone(), &node.id).await?;
                 // 删除向量索引（忽略失败，不影响主流程）
                 if let Err(e) = self.memory_vector_dao.delete_knowledge_node_vector(ctx.clone(), &node.id).await {
-                    log_warn!(ctx, "vector_index", knowledge_id= %node.id, error = ?e, "知识节点向量索引删除失败，已降级");
+                    log_warn!(&ctx, "vector_index", knowledge_id= %node.id, error = ?e, "知识节点向量索引删除失败，已降级");
                 }
                 Ok(())
             }
@@ -358,15 +357,15 @@ impl MemoryDalImpl {
                             }
                             Err(e) => {
                                 // 向量搜索失败，降级到纯关键词搜索
-                                log_warn!(ctx, "vector_search", "短期记忆向量搜索失败，降级到关键词搜索: {}", e);
+                                log_warn!(&ctx, "vector_search", "短期记忆向量搜索失败，降级到关键词搜索: {}", e);
                             }
                         }
                     }
                     Ok(None) => {
-                        log_debug!(ctx, "vector_search", "无可用 Embedding Provider，跳过向量搜索");
+                        log_debug!(&ctx, "vector_search", "无可用 Embedding Provider，跳过向量搜索");
                     }
                     Err(e) => {
-                        log_warn!(ctx, "vector_search", error = ?e, "短期记忆向量化失败，跳过向量搜索");
+                        log_warn!(&ctx, "vector_search", error = ?e, "短期记忆向量化失败，跳过向量搜索");
                     }
                 }
             }
@@ -463,15 +462,15 @@ impl MemoryDalImpl {
                             }
                             Err(e) => {
                                 // 向量搜索失败，降级到纯关键词搜索
-                                log_warn!(ctx, "vector_search", "知识节点向量搜索失败，降级到关键词搜索: {}", e);
+                                log_warn!(&ctx, "vector_search", "知识节点向量搜索失败，降级到关键词搜索: {}", e);
                             }
                         }
                     }
                     Ok(None) => {
-                        log_debug!(ctx, "vector_search", "无可用 Embedding Provider，跳过向量搜索");
+                        log_debug!(&ctx, "vector_search", "无可用 Embedding Provider，跳过向量搜索");
                     }
                     Err(e) => {
-                        log_warn!(ctx, "vector_search", error = ?e, "知识节点向量化失败，跳过向量搜索");
+                        log_warn!(&ctx, "vector_search", error = ?e, "知识节点向量化失败，跳过向量搜索");
                     }
                 }
             }
@@ -589,14 +588,14 @@ impl MemoryDalImpl {
                     .upsert_short_term_vector(ctx.clone(), &index.id, &vec_params)
                     .await
                 {
-                    log_warn!(ctx, "vector_index", memory_id= %index.id, error = ?e, "短期记忆向量索引写入失败，已降级");
+                    log_warn!(&ctx, "vector_index", memory_id= %index.id, error = ?e, "短期记忆向量索引写入失败，已降级");
                 }
             }
             Ok(None) => {
-                log_debug!(ctx, "vector_index", memory_id= %index.id, "无可用 Embedding Provider，跳过向量索引");
+                log_debug!(&ctx, "vector_index", memory_id= %index.id, "无可用 Embedding Provider，跳过向量索引");
             }
             Err(e) => {
-                log_warn!(ctx, "vector_index", memory_id= %index.id, error = ?e, "短期记忆向量化失败，已降级");
+                log_warn!(&ctx, "vector_index", memory_id= %index.id, error = ?e, "短期记忆向量化失败，已降级");
             }
         }
 
@@ -641,14 +640,14 @@ impl MemoryDalImpl {
                     .upsert_knowledge_node_vector(ctx.clone(), &node.id, &vec_params)
                     .await
                 {
-                    log_warn!(ctx, "vector_index", node_id= %node.id, error = ?e, "知识节点向量索引写入失败，已降级");
+                    log_warn!(&ctx, "vector_index", node_id= %node.id, error = ?e, "知识节点向量索引写入失败，已降级");
                 }
             }
             Ok(None) => {
-                log_debug!(ctx, "vector_index", node_id= %node.id, "无可用 Embedding Provider，跳过向量索引");
+                log_debug!(&ctx, "vector_index", node_id= %node.id, "无可用 Embedding Provider，跳过向量索引");
             }
             Err(e) => {
-                log_warn!(ctx, "vector_index", node_id= %node.id, error = ?e, "知识节点向量化失败，已降级");
+                log_warn!(&ctx, "vector_index", node_id= %node.id, error = ?e, "知识节点向量化失败，已降级");
             }
         }
 

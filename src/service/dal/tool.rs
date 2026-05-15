@@ -7,7 +7,6 @@ use crate::error::AppError;
 use crate::models::tool::{Tool, ToolPo, CoreTool};
 use crate::models::vector::{SearchMatchInfo, MatchType};
 use crate::pkg::request_context::RequestContext;
-use crate::log_warn;
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::ModelProviderDao;
@@ -279,7 +278,7 @@ impl ToolDal for ToolDalImpl {
                         }
                         Err(e) => {
                             // 向量搜索失败，降级到纯关键词搜索
-                            log_warn!(ctx, "vector_search", "Tool vector search failed: {}, fallback to keyword only", e);
+                            log_warn!(&ctx, "vector_search", "Tool vector search failed: {}, fallback to keyword only", e);
                         }
                     }
                 }
