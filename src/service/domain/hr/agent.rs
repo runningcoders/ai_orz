@@ -7,7 +7,6 @@ use crate::service::dao::agent::AgentQuery;
 use crate::service::dal::agent::AgentDal;
 use crate::service::domain::hr::{AgentManage, HrDomainImpl};
 use common::enums::AgentStatus;
-use tracing::warn;
 
 #[async_trait::async_trait]
 impl AgentManage for HrDomainImpl {
@@ -152,7 +151,7 @@ impl AgentManage for HrDomainImpl {
         // 3. 校验技能：没有技能只告警，不阻止入职
         let skills = self.skill_dal.list_for_agent(ctx.clone(), agent_id).await?;
         if skills.is_empty() {
-            warn!("Agent {} 未安装任何技能", agent_id);
+            log_warn!(&ctx, "onboard_agent", "Agent {} 未安装任何技能", agent_id);
         }
 
         Ok(())
