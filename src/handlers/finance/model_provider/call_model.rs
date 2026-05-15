@@ -24,7 +24,7 @@ pub async fn call_model(
         .ok_or_else(|| AppError::NotFound(format!("ModelProvider {} not found", id)))?;
 
     // 2. 调用模型生成结果
-    let result = domain().model_provider_manage().wake_cortex(ctx, &provider, &req.prompt).await?;
+    let result = domain().model_provider_manage().test_connection(ctx, &provider, &req.prompt).await?;
 
     Ok(Json(ApiResponse::success(CallModelResponse {
         result,

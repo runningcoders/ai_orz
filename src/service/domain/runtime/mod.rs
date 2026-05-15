@@ -1,7 +1,7 @@
-//! Tool Domain 模块
+//! Runtime Domain 模块
 //!
-//! 负责工具的管理与执行：
-//! - ToolManagement: 工具 CRUD、绑定解绑、启用禁用、内置工具同步
+//! 负责运行时执行逻辑：
+//! - ToolManagement: 工具运行时查询（注意：工具配置管理在 Finance Domain）
 //! - ToolExecution: 工具执行（单次/批量），返回调用结果和跟踪信息
 
 use async_trait::async_trait;
@@ -17,9 +17,9 @@ mod execution;
 pub use management::ToolManagement;
 pub use execution::ToolExecution;
 
-/// Tool Domain 主 trait
+/// Runtime Domain 主 trait
 #[async_trait]
-pub trait ToolDomain: Send + Sync + Debug {
+pub trait RuntimeDomain: Send + Sync + Debug {
     /// 获取工具管理子模块
     fn management(&self) -> &dyn ToolManagement;
 
@@ -27,15 +27,15 @@ pub trait ToolDomain: Send + Sync + Debug {
     fn execution(&self) -> &dyn ToolExecution;
 }
 
-/// Tool Domain 默认实现
+/// Runtime Domain 默认实现
 #[derive(Debug, Clone)]
-pub struct ToolDomainImpl {
+pub struct RuntimeDomainImpl {
     management: management::ToolManagementImpl,
     execution: execution::ToolExecutionImpl,
 }
 
-impl ToolDomainImpl {
-    /// 创建新的 ToolDomain 实例
+impl RuntimeDomainImpl {
+    /// 创建新的 RuntimeDomain 实例
     pub fn new() -> Self {
         Self {
             management: management::ToolManagementImpl::new(),
@@ -44,14 +44,14 @@ impl ToolDomainImpl {
     }
 }
 
-impl Default for ToolDomainImpl {
+impl Default for RuntimeDomainImpl {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[async_trait]
-impl ToolDomain for ToolDomainImpl {
+impl RuntimeDomain for RuntimeDomainImpl {
     fn management(&self) -> &dyn ToolManagement {
         &self.management
     }
@@ -62,11 +62,11 @@ impl ToolDomain for ToolDomainImpl {
 }
 
 /// Thread-safe singleton instance
-static TOOL_DOMAIN_INSTANCE: std::sync::OnceLock<ToolDomainImpl> = std::sync::OnceLock::new();
+static RUNTIME_DOMAIN_INSTANCE: std::sync::OnceLock<RuntimeDomainImpl> = std::sync::OnceLock::new();
 
-/// Get the global ToolDomain instance
-pub fn instance() -> &'static dyn ToolDomain {
-    TOOL_DOMAIN_INSTANCE.get_or_init(ToolDomainImpl::new)
+/// Get the global RuntimeDomain instance
+pub fn instance() -> &'static dyn RuntimeDomain {
+    RUNTIME_DOMAIN_INSTANCE.get_or_init(RuntimeDomainImpl::new)
 }
 
 /// Get the ToolManagement instance (convenience)

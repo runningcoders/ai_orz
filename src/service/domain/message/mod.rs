@@ -1,8 +1,10 @@
 //! Message Domain 模块
 //!
 //! 消息领域，管理：
-//! - delivery - 消息投递（发送/消费）
+//! - delivery - 消息投递（发送/消费/投递到渠道）
 //! - management - 消息管理（查询/更新/删除）
+//!
+//! 注意：渠道配置管理属于 Finance Domain，此处只保留实际投递能力
 
 pub mod delivery;
 pub mod management;
@@ -14,14 +16,12 @@ mod management_test;
 
 use crate::error::AppError;
 use crate::models::message::Message;
-use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;
 use crate::service::dao::message::MessageQuery;
-use crate::service::dao::message_channel::MessageChannelQuery;
 use crate::service::dal::message::MessageDal;
 pub use crate::service::dal::message_channel::{DeliveryResult, MessageChannelDal};
 use async_trait::async_trait;
-use common::enums::{ChannelStatus, MessageRole, MessageStatus};
+use common::enums::{MessageRole, MessageStatus};
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例 ====================
@@ -58,7 +58,7 @@ pub fn init() {
 /// 聚合所有消息子功能实现
 struct MessageDomainImpl {
     message_dal: Arc<dyn MessageDal>,
-    message_channel_dal: Arc<dyn MessageChannelDal>,
+    message_channel_dal: Arc<dyn MessageChannelDal>,  // 仅用于投递，不用于配置管理
 }
 
 impl MessageDomainImpl {
@@ -150,27 +150,20 @@ pub trait MessageDelivery: Send + Sync {
         cmd: SendToUserCommand<'_>,
     ) -> Result<Message, AppError>;
 
-    /// 获取下一个待消费的消息
-    ///
-    /// 返回 None 表示队列为空
-    /// 获取后消息状态变为 Processing，需要调用 ack 确认完成
+    /// 从队列取出下一条待处理消息
     async fn dequeue_next(
         &self,
         ctx: RequestContext,
     ) -> Result<Option<Message>, AppError>;
 
-    /// 确认消息消费完成
-    ///
-    /// 更新消息状态为 Processed，并从事件队列移除
+    /// 确认消息处理完成
     async fn ack(
         &self,
         ctx: RequestContext,
         message_id: &str,
     ) -> Result<(), AppError>;
 
-    /// 消息消费失败，重新入队等待重试
-    ///
-    /// 更新消息状态为 Pending，放回队列
+    /// 否定确认（消息放回队列重试）
     async fn nack(
         &self,
         ctx: RequestContext,
@@ -244,56 +237,4 @@ pub trait MessageManagement: Send + Sync {
         ctx: RequestContext,
         task_id: &str,
     ) -> Result<(), AppError>;
-
-    // ---------- 渠道配置管理 ----------
-
-    /// 创建消息渠道
-    async fn create_channel(
-        &self,
-        ctx: RequestContext,
-        channel: &MessageChannel,
-    ) -> Result<(), AppError>;
-
-    /// 更新消息渠道
-    async fn update_channel(
-        &self,
-        ctx: RequestContext,
-        channel: &MessageChannel,
-    ) -> Result<(), AppError>;
-
-    /// 删除消息渠道
-    async fn delete_channel(&self, ctx: RequestContext, channel_id: &str) -> Result<(), AppError>;
-
-    /// 获取单个消息渠道
-    async fn get_channel(
-        &self,
-        ctx: RequestContext,
-        channel_id: &str,
-    ) -> Result<Option<MessageChannel>, AppError>;
-
-    /// 列出用户的所有消息渠道
-    async fn list_user_channels(
-        &self,
-        ctx: RequestContext,
-        user_id: &str,
-        only_enabled: bool,
-    ) -> Result<Vec<MessageChannel>, AppError>;
-
-    /// 通用查询消息渠道
-    async fn query_channels(
-        &self,
-        ctx: RequestContext,
-        query: MessageChannelQuery,
-    ) -> Result<Vec<MessageChannel>, AppError>;
-
-    /// 设置渠道状态
-    async fn set_channel_status(
-        &self,
-        ctx: RequestContext,
-        channel_id: &str,
-        status: ChannelStatus,
-    ) -> Result<(), AppError>;
-
-    /// 测试渠道连接
-    async fn test_channel(&self, ctx: RequestContext, channel_id: &str) -> Result<(), AppError>;
 }

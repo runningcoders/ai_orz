@@ -177,3 +177,5 @@ pub trait SkillManage: Send + Sync {
         agent_id: &str,
     ) -> Result<SkillPo, AppError>;
 }
+
+
