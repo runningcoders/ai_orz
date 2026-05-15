@@ -1,75 +1,94 @@
 //! ai_orz - AI 代理执行框架
+//! 统一日志宏
+//!
+//! 使用方式（自动检测是否带上下文）：
+//! - 带 ctx:  log_info!(&ctx, "operation", "message {}", var)
+//! - 无 ctx:  log_info!("message {}", var)
 
-// 统一日志宏：两套宏，明确区分
-// - 业务代码（带 ctx）：log_info!(ctx, "op", "msg {}", var)
-// - 初始化代码（无 ctx）：sys_info!("msg {}", var)
-
-/// 带上下文 info 日志宏
+/// info 日志（自动检测是否带上下文）
 #[macro_export]
 macro_rules! log_info {
-    ($ctx:expr, $operation:expr, $($fields:tt)*) => {{
+    // 带上下文: log_info!(&ctx, "operation", ...)
+    ($ctx:expr, $op:literal $(, $($fields:tt)*)?) => {{
         use $crate::pkg::logging::create_span;
-        let span = create_span($operation, $ctx);
+        let span = create_span($op, $ctx);
         let _guard = span.enter();
+        tracing::info!($($($fields)*)?);
+    }};
+    
+    // 无上下文: log_info!("message {}", var)
+    ($($fields:tt)*) => {{
         tracing::info!($($fields)*);
     }};
 }
 
-/// 带上下文 warn 日志宏
+/// warn 日志（自动检测是否带上下文）
 #[macro_export]
 macro_rules! log_warn {
-    ($ctx:expr, $operation:expr, $($fields:tt)*) => {{
+    // 带上下文: log_warn!(&ctx, "operation", ...)
+    ($ctx:expr, $op:literal $(, $($fields:tt)*)?) => {{
         use $crate::pkg::logging::create_span;
-        let span = create_span($operation, $ctx);
+        let span = create_span($op, $ctx);
         let _guard = span.enter();
+        tracing::warn!($($($fields)*)?);
+    }};
+    
+    // 无上下文: log_warn!("message {}", var)
+    ($($fields:tt)*) => {{
         tracing::warn!($($fields)*);
     }};
 }
 
-/// 带上下文 error 日志宏
+/// error 日志（自动检测是否带上下文）
 #[macro_export]
 macro_rules! log_error {
-    ($ctx:expr, $operation:expr, $($fields:tt)*) => {{
+    // 带上下文: log_error!(&ctx, "operation", ...)
+    ($ctx:expr, $op:literal $(, $($fields:tt)*)?) => {{
         use $crate::pkg::logging::create_span;
-        let span = create_span($operation, $ctx);
+        let span = create_span($op, $ctx);
         let _guard = span.enter();
+        tracing::error!($($($fields)*)?);
+    }};
+    
+    // 无上下文: log_error!("message {}", var)
+    ($($fields:tt)*) => {{
         tracing::error!($($fields)*);
     }};
 }
 
-/// 带上下文 debug 日志宏
+/// debug 日志（自动检测是否带上下文）
 #[macro_export]
 macro_rules! log_debug {
-    ($ctx:expr, $operation:expr, $($fields:tt)*) => {{
+    // 带上下文: log_debug!(&ctx, "operation", ...)
+    ($ctx:expr, $op:literal $(, $($fields:tt)*)?) => {{
         use $crate::pkg::logging::create_span;
-        let span = create_span($operation, $ctx);
+        let span = create_span($op, $ctx);
         let _guard = span.enter();
+        tracing::debug!($($($fields)*)?);
+    }};
+    
+    // 无上下文: log_debug!("message {}", var)
+    ($($fields:tt)*) => {{
         tracing::debug!($($fields)*);
     }};
 }
 
-/// 系统 info 日志（无 ctx，仅用于初始化）
+// 兼容旧代码的别名（可以逐步删除）
 #[macro_export]
 macro_rules! sys_info {
-    ($($args:tt)*) => {{ tracing::info!($($args)*); }};
+    ($($tt:tt)*) => { $crate::log_info!($($tt)*) };
 }
-
-/// 系统 warn 日志（无 ctx，仅用于初始化）
 #[macro_export]
 macro_rules! sys_warn {
-    ($($args:tt)*) => {{ tracing::warn!($($args)*); }};
+    ($($tt:tt)*) => { $crate::log_warn!($($tt)*) };
 }
-
-/// 系统 error 日志（无 ctx，仅用于初始化）
 #[macro_export]
 macro_rules! sys_error {
-    ($($args:tt)*) => {{ tracing::error!($($args)*); }};
+    ($($tt:tt)*) => { $crate::log_error!($($tt)*) };
 }
-
-/// 系统 debug 日志（无 ctx，仅用于初始化）
 #[macro_export]
 macro_rules! sys_debug {
-    ($($args:tt)*) => {{ tracing::debug!($($args)*); }};
+    ($($tt:tt)*) => { $crate::log_debug!($($tt)*) };
 }
 
 // pkg 模块必须在宏之后声明，因为 pkg 内部使用 sys_info! 宏
