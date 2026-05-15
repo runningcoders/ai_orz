@@ -13,10 +13,12 @@ fn new_ctx(user_id: &str, pool: sqlx::SqlitePool) -> RequestContext {
 
 /// 初始化测试环境（每个测试新建独立实例，保证测试隔离）
 fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn crate::service::domain::message::MessageDomain>, RequestContext) {
-    let message_dao = crate::service::dao::message::sqlite::new();
+    let message_dao = crate::service::dao::message::new();
     let event_queue = crate::service::dao::event_queue::in_memory::new();
     let message_dal = crate::service::dal::message::new(message_dao, event_queue);
-    let domain = crate::service::domain::message::new(message_dal);
+    let message_channel_dao = crate::service::dao::message_channel::new();
+    let message_channel_dal = crate::service::dal::message_channel::new(message_channel_dao);
+    let domain = crate::service::domain::message::new(message_dal, message_channel_dal);
     let ctx = new_ctx("admin", pool);
     (domain, ctx)
 }
@@ -202,4 +204,70 @@ async fn test_send_without_project_and_task(pool: SqlitePool) {
         .await
         .unwrap();
     assert!(found.is_some());
+}
+
+#[sqlx::test]
+async fn test_deliver_message_to_channels(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+    let user_id = "test-delivery-user";
+    let org_id = "test-org-delivery";
+
+    use crate::models::message::Message;
+    use crate::models::message_channel::{MessageChannel, MessageChannelPo, ChannelConfig};
+    use common::enums::message_channel::{ChannelStatus, ChannelType};
+    use common::enums::{MessageRole, MessageType};
+
+    // 创建两个启用的渠道
+    for i in 0..2 {
+        let po = MessageChannelPo::new(
+            format!("delivery-channel-{}", i),
+            org_id.to_string(),
+            user_id.to_string(),
+            None,
+            ChannelType::Webhook,
+            format!("Delivery Channel {}", i),
+            Some(format!("https://example.com/webhook/{}", i)),
+            None,
+            None,
+            ChannelConfig::default(),
+            user_id.to_string(),
+        );
+        let channel = MessageChannel::from_po(po);
+        domain
+            .management()
+            .create_channel(ctx.clone(), &channel)
+            .await
+            .unwrap();
+    }
+
+    // 创建一条测试消息
+    let message_id = "test-message-001";
+    use common::enums::FileType;
+    use crate::models::file::FileMeta;
+    let message = Message::new(
+        message_id.to_string(),
+        "".to_string(),  // task_id
+        "agent-1".to_string(),
+        user_id.to_string(),
+        MessageRole::Agent,
+        MessageRole::User,
+        MessageType::Text,
+        "这是一条测试消息内容".to_string(),
+        None,  // file_type
+        FileMeta::default(),  // file_meta
+        user_id.to_string(),  // created_by
+    );
+
+    // 多渠道投递
+    let result = domain
+        .delivery()
+        .deliver_message(ctx.clone(), &message, user_id)
+        .await
+        .unwrap();
+
+    // 验证投递结果
+    assert_eq!(result.total, 2);
+    // 因为是空的 channel_daos，所以投递成功但实际没有外部调用
+    assert_eq!(result.success, 0); // 没有注册的具体渠道 DAO，所以成功数为 0
+    assert_eq!(result.failed, 0);  // 也不会失败，只是跳过
 }
