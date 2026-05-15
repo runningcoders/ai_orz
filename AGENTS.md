@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-05-11
+> 最后更新：2026-05-15
 
 ---
 
@@ -69,9 +69,10 @@
 | [docs/skill_design.md](./docs/skill_design.md) | 技能库系统、Agent 自进化沉淀技能 | ⭐⭐ |
 | [docs/vector_search_architecture.md](./docs/vector_search_architecture.md) | 向量搜索架构、SQLite VSS 扩展集成 | ⭐⭐ |
 
-### 数据层与规范
+### 基础设施与规范
 | 文档 | 内容 | 优先级 |
 |------|------|--------|
+| [docs/logging_design.md](./docs/logging_design.md) | **日志系统设计**：统一宏使用规范、上下文检测机制、tracing 语法速查 | ⭐⭐⭐ |
 | [docs/sqlx_guide.md](./docs/sqlx_guide.md) | SQLx 0.8 + SQLite 开发规范、枚举映射、STRICT 模式、测试隔离 | ⭐⭐⭐ |
 | [docs/task_design.md](./docs/task_design.md) | 任务系统设计、状态机、分配与进度追踪 | ⭐ |
 | [docs/project_design.md](./docs/project_design.md) | 项目系统设计、聚合对话上下文 | ⭐ |
@@ -324,6 +325,52 @@ fn wake_cortex(&self, provider: &ModelProvider, prompt: &str) -> Result<String>;
 - 测试使用独立数据库，不依赖全局状态
 - 所有测试使用 `#[sqlx::test]` 宏
 
+### 4.6 日志系统规范（强制执行，2026-05-15 新增）
+
+**核心原则：项目内所有代码必须使用统一日志宏，禁止直接调用 tracing::*!**
+
+#### 必须使用的宏
+
+| 级别 | 宏名 |
+|------|------|
+| INFO | `log_info!` |
+| WARN | `log_warn!` |
+| ERROR | `log_error!` |
+| DEBUG | `log_debug!` |
+
+#### 两种调用模式（自动检测）
+
+```rust
+// ✅ 模式 1：无上下文（系统级别，第一个参数是字符串）
+log_info!("application started");
+log_info!("config loaded from {}", path);
+
+// ✅ 模式 2：带上下文（请求级别，&ctx + operation 字符串）
+log_info!(&ctx, "create_memory", "created memory id={}", memory_id);
+log_error!(&ctx, "update_project", "db error: {:?}", err);
+```
+
+#### 禁止的写法
+
+```rust
+// ❌ 禁止：直接调用 tracing
+tracing::info!("some message");
+
+// ❌ 禁止：旧函数形式（已删除）
+logging::info("some message");
+
+// ❌ 禁止：传 ctx 值而非引用
+log_info!(ctx, "operation", "message");  // 必须是 &ctx
+```
+
+#### 检测机制
+
+宏通过**语法模式匹配顺序**自动区分两种模式：
+1. **优先匹配**：第一个参数是**字符串字面量** → 无上下文模式
+2. **兜底匹配**：第一个参数是表达式，第二个是字符串字面量 → 带上下文模式
+
+> 💡 **重要**：Operation 必须是字符串字面量，不能是变量。完整规范请参考 [docs/logging_design.md](./docs/logging_design.md)
+
 ---
 
 ## 五、核心概念与实体关系
@@ -356,6 +403,21 @@ Agent
 ---
 
 ## 六、工作流与开发记录
+
+### 2026-05-15 里程碑
+**✅ 日志系统完全宏化重构完成**
+- **核心改造**：删除所有旧函数实现，8 个宏合并为 4 个，自动上下文检测
+- **检测机制**：语法模式匹配，优先匹配字符串字面量为消息
+  - 第一个参数是字符串字面量 → 无上下文模式
+  - 第一个参数非字符串 + 第二个是字符串 → 带上下文模式
+- **统一 API**：`log_info!` / `log_warn!` / `log_error!` / `log_debug!`
+  - 无上下文：`log_info!("message {}", var)`
+  - 带上下文：`log_info!(&ctx, "operation", "message {}", var)`
+- **向后兼容**：保留 `sys_*` 宏系列作为无上下文别名
+- **强制规范**：项目内禁止直接调用 `tracing::*!`，必须使用统一宏
+- **测试统计**：所有测试 100% 通过
+- **文档同步**：新增 `docs/logging_design.md` 完整设计文档
+- **代码统计**：4 次提交，共 10 个文件修改
 
 ### 2026-05-11 里程碑
 **✅ PO 与业务实体分层架构完整落地**
