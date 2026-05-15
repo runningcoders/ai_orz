@@ -16,7 +16,7 @@ use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, Env
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::rolling;
 
-use super::RequestContext;
+use crate::pkg::RequestContext;
 
 /// 全局持有 tracing non-blocking writer 的 guard
 /// 保证程序退出前所有日志都被 flush 到磁盘

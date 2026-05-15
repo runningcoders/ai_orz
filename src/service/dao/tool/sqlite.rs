@@ -42,7 +42,7 @@ pub fn init() {
 
 #[async_trait]
 impl ToolDao for ToolDaoSqliteImpl {
-    async fn create_tool(&self, ctx: &RequestContext, po: &ToolPo) -> Result<()> {
+    async fn create_tool(&self, ctx: RequestContext, po: &ToolPo) -> Result<()> {
         let pool = ctx.db_pool();
 
         sqlx::query(
@@ -71,9 +71,9 @@ impl ToolDao for ToolDaoSqliteImpl {
         Ok(())
     }
 
-    async fn update_tool(&self, ctx: &RequestContext, po: &ToolPo) -> Result<()> {
+    async fn update_tool(&self, ctx: RequestContext, po: &ToolPo) -> Result<()> {
         // Check if this is a built-in tool
-        if let Some(existing) = self.get_by_id(ctx, po.id.clone()).await? {
+        if let Some(existing) = self.get_by_id(ctx.clone(), po.id.clone()).await? {
             if matches!(existing.protocol, common::enums::ToolProtocol::Builtin) {
                 return Err(anyhow::anyhow!("Built-in tools cannot be modified"));
             }
@@ -105,9 +105,9 @@ impl ToolDao for ToolDaoSqliteImpl {
         Ok(())
     }
 
-    async fn delete_tool(&self, ctx: &RequestContext, id: &str) -> Result<()> {
+    async fn delete_tool(&self, ctx: RequestContext, id: &str) -> Result<()> {
         // Check if this is a built-in tool
-        if let Some(existing) = self.get_by_id(ctx, id.to_string()).await? {
+        if let Some(existing) = self.get_by_id(ctx.clone(), id.to_string()).await? {
             if matches!(existing.protocol, common::enums::ToolProtocol::Builtin) {
                 return Err(anyhow::anyhow!("Built-in tools cannot be deleted"));
             }
@@ -127,7 +127,7 @@ impl ToolDao for ToolDaoSqliteImpl {
         Ok(())
     }
 
-    async fn get_by_id(&self, ctx: &RequestContext, id: String) -> Result<Option<ToolPo>> {
+    async fn get_by_id(&self, ctx: RequestContext, id: String) -> Result<Option<ToolPo>> {
         let pool = ctx.db_pool();
 
         let row = sqlx::query_as::<_, ToolPo>(
@@ -143,7 +143,7 @@ impl ToolDao for ToolDaoSqliteImpl {
     }
 
 
-    async fn get_by_name(&self, ctx: &RequestContext, name: &str) -> Result<Option<ToolPo>> {
+    async fn get_by_name(&self, ctx: RequestContext, name: &str) -> Result<Option<ToolPo>> {
         let pool = ctx.db_pool();
 
         let row = sqlx::query_as::<_, ToolPo>(
@@ -158,7 +158,7 @@ impl ToolDao for ToolDaoSqliteImpl {
         Ok(row)
     }
 
-    async fn query(&self, ctx: &RequestContext, query: ToolQuery) -> Result<Vec<ToolPo>> {
+    async fn query(&self, ctx: RequestContext, query: ToolQuery) -> Result<Vec<ToolPo>> {
         let pool = ctx.db_pool();
         let mut builder = sqlx::QueryBuilder::new(
             r#"SELECT t.* FROM tools t"#
@@ -241,9 +241,9 @@ impl ToolDao for ToolDaoSqliteImpl {
         Ok(rows)
     }
 
-    async fn list_enabled(&self, ctx: &RequestContext) -> Result<Vec<ToolPo>> {
+    async fn list_enabled(&self, ctx: RequestContext) -> Result<Vec<ToolPo>> {
         // 语法糖：调用通用查询
-        self.query(ctx, ToolQuery {
+        self.query(ctx.clone(), ToolQuery {
             enabled_only: Some(true),
             ..Default::default()
         }).await
@@ -251,7 +251,7 @@ impl ToolDao for ToolDaoSqliteImpl {
 
     async fn add_tool_to_agent(
         &self,
-        ctx: &RequestContext,
+        ctx: RequestContext,
         agent_id: &str,
         tool_id: &str,
         created_by: Option<String>,
@@ -278,7 +278,7 @@ impl ToolDao for ToolDaoSqliteImpl {
 
     async fn remove_tool_from_agent(
         &self,
-        ctx: &RequestContext,
+        ctx: RequestContext,
         agent_id: &str,
         tool_id: &str,
     ) -> Result<()> {
@@ -297,15 +297,15 @@ impl ToolDao for ToolDaoSqliteImpl {
         Ok(())
     }
 
-    async fn list_tools_for_agent(&self, ctx: &RequestContext, agent_id: &str) -> Result<Vec<ToolPo>> {
+    async fn list_tools_for_agent(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<ToolPo>> {
         // 语法糖：调用通用查询
-        self.query(ctx, ToolQuery {
+        self.query(ctx.clone(), ToolQuery {
             agent_id: Some(agent_id.to_string()),
             ..Default::default()
         }).await
     }
 
-    async fn sync_builtin_tools_to_db(&self, ctx: &RequestContext) -> Result<usize> {
+    async fn sync_builtin_tools_to_db(&self, ctx: RequestContext) -> Result<usize> {
         let registry = crate::pkg::tool_registry::get_registry();
         let tool_ids = registry.list_builtin_ids();
         let mut inserted = 0;
@@ -337,14 +337,14 @@ impl ToolDao for ToolDaoSqliteImpl {
             po.fill_defaults_for_builtin();
 
             // Insert into DB
-            self.create_tool(ctx, &po).await?;
+            self.create_tool(ctx.clone(), &po).await?;
             inserted += 1;
         }
 
         Ok(inserted)
     }
 
-    async fn search(&self, ctx: &RequestContext, params: ToolSearch) -> Result<Vec<ToolPo>> {
+    async fn search(&self, ctx: RequestContext, params: ToolSearch) -> Result<Vec<ToolPo>> {
         // 参数转换后转发到 query，避免重复实现
         let query = ToolQuery {
             keyword: params.keyword.clone(),
@@ -353,6 +353,6 @@ impl ToolDao for ToolDaoSqliteImpl {
             limit: Some(params.limit),
             ..Default::default()
         };
-        self.query(ctx, query).await
+        self.query(ctx.clone(), query).await
     }
 }

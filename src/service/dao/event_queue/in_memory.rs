@@ -90,7 +90,7 @@ impl<E: Event + Clone> EventQueueDaoInMemoryImpl<E> {
 }
 
 impl<E: Event + Clone> EventQueueDao<E> for EventQueueDaoInMemoryImpl<E> {
-    fn enqueue(&self, _ctx: &RequestContext, event: Box<E>) -> Result<(), AppError> {
+    fn enqueue(&self, _ctx: RequestContext, event: Box<E>) -> Result<(), AppError> {
         let _guard = self.lock.lock().map_err(|e| AppError::Internal(e.to_string()))?;
 
         let events = unsafe { &mut *self.events.get() };
@@ -135,14 +135,14 @@ impl<E: Event + Clone> EventQueueDao<E> for EventQueueDaoInMemoryImpl<E> {
         Ok(())
     }
 
-    fn enqueue_batch(&self, ctx: &RequestContext, events: Vec<Box<E>>) -> Result<(), AppError> {
+    fn enqueue_batch(&self, ctx: RequestContext, events: Vec<Box<E>>) -> Result<(), AppError> {
         for event in events {
-            self.enqueue(ctx, event)?;
+            self.enqueue(ctx.clone(), event)?;
         }
         Ok(())
     }
 
-    fn dequeue_next(&self, _ctx: &RequestContext) -> Result<Option<Box<E>>, AppError> {
+    fn dequeue_next(&self, _ctx: RequestContext) -> Result<Option<Box<E>>, AppError> {
         let _guard = self.lock.lock().map_err(|e| AppError::Internal(e.to_string()))?;
 
         let events = unsafe { &mut *self.events.get() };
@@ -184,7 +184,7 @@ impl<E: Event + Clone> EventQueueDao<E> for EventQueueDaoInMemoryImpl<E> {
         }
     }
 
-    fn ack(&self, _ctx: &RequestContext, event_id: &str) -> Result<(), AppError> {
+    fn ack(&self, _ctx: RequestContext, event_id: &str) -> Result<(), AppError> {
         let _guard = self.lock.lock().map_err(|e| AppError::Internal(e.to_string()))?;
 
         let events = unsafe { &mut *self.events.get() };
@@ -230,7 +230,7 @@ impl<E: Event + Clone> EventQueueDao<E> for EventQueueDaoInMemoryImpl<E> {
         Ok(())
     }
 
-    fn nack(&self, _ctx: &RequestContext, event_id: &str) -> Result<(), AppError> {
+    fn nack(&self, _ctx: RequestContext, event_id: &str) -> Result<(), AppError> {
         let _guard = self.lock.lock().map_err(|e| AppError::Internal(e.to_string()))?;
 
         let global_heap = unsafe { &mut *self.global_heap.get() };
@@ -271,7 +271,7 @@ impl<E: Event + Clone> EventQueueDao<E> for EventQueueDaoInMemoryImpl<E> {
         in_progress.len()
     }
 
-    fn recover(&self, _ctx: &RequestContext) -> Result<usize, AppError> {
+    fn recover(&self, _ctx: RequestContext) -> Result<usize, AppError> {
         // 内存版本不需要从持久化恢复，恢复由上层调用者结合数据库完成
         Ok(0)
     }

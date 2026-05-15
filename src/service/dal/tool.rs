@@ -61,32 +61,32 @@ pub fn new(
 #[async_trait::async_trait]
 pub trait ToolDal: Send + Sync {
     /// 创建新工具
-    async fn create_tool(&self, ctx: &RequestContext, po: &ToolPo) -> Result<(), AppError>;
+    async fn create_tool(&self, ctx: RequestContext, po: &ToolPo) -> Result<(), AppError>;
 
     /// 更新现有工具
-    async fn update_tool(&self, ctx: &RequestContext, tool: &Tool) -> Result<(), AppError>;
+    async fn update_tool(&self, ctx: RequestContext, tool: &Tool) -> Result<(), AppError>;
 
     /// 根据 ID 获取完整工具（PO + CoreTool 实例）
-    async fn get_by_id(&self, ctx: &RequestContext, id: String) -> Result<Option<Tool>, AppError>;
+    async fn get_by_id(&self, ctx: RequestContext, id: String) -> Result<Option<Tool>, AppError>;
 
     /// 根据名称获取完整工具
-    async fn get_by_name(&self, ctx: &RequestContext, name: &str) -> Result<Option<Tool>, AppError>;
+    async fn get_by_name(&self, ctx: RequestContext, name: &str) -> Result<Option<Tool>, AppError>;
 
     /// 通用综合查询（返回完整 Tool 实体，包含 PO + CoreTool）
     ///
     /// 支持组合查询条件，所有字段都是 Option
-    async fn query(&self, ctx: &RequestContext, query: ToolQuery) -> Result<Vec<Tool>, AppError>;
+    async fn query(&self, ctx: RequestContext, query: ToolQuery) -> Result<Vec<Tool>, AppError>;
 
     /// 获取所有启用的工具
-    async fn list_enabled(&self, ctx: &RequestContext) -> Result<Vec<Tool>, AppError>;
+    async fn list_enabled(&self, ctx: RequestContext) -> Result<Vec<Tool>, AppError>;
 
     /// 获取 Agent 的所有完整工具（每个都是 PO + CoreTool）
-    async fn list_tools_for_agent_full(&self, ctx: &RequestContext, agent_id: &str) -> Result<Vec<Tool>, AppError>;
+    async fn list_tools_for_agent_full(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<Tool>, AppError>;
 
     /// 添加工具到 Agent
     async fn add_tool_to_agent(
         &self,
-        ctx: &RequestContext,
+        ctx: RequestContext,
         agent_id: &str,
         tool_id: &str,
         created_by: Option<String>,
@@ -95,7 +95,7 @@ pub trait ToolDal: Send + Sync {
     /// 从 Agent 移除工具
     async fn remove_tool_from_agent(
         &self,
-        ctx: &RequestContext,
+        ctx: RequestContext,
         agent_id: &str,
         tool_id: &str,
     ) -> Result<(), AppError>;
@@ -103,13 +103,13 @@ pub trait ToolDal: Send + Sync {
     /// 同步所有注册的内置工具到数据库
     /// 已存在的工具（按 ID）跳过，避免重复
     /// 返回新增的工具数量
-    async fn sync_builtin_tools_to_db(&self, ctx: &RequestContext) -> Result<usize, AppError>;
+    async fn sync_builtin_tools_to_db(&self, ctx: RequestContext) -> Result<usize, AppError>;
 
     /// 执行工具调用（通过工具 ID）
     /// 自动获取完整工具实体然后执行
     async fn call_tool_by_id(
         &self,
-        ctx: &RequestContext,
+        ctx: RequestContext,
         tool_id: String,
         args: Value,
     ) -> Result<Value, ToolError>;
@@ -118,7 +118,7 @@ pub trait ToolDal: Send + Sync {
     /// 用于上层已经获取工具的场景（避免重复查询）
     async fn call_tool(
         &self,
-        ctx: &RequestContext,
+        ctx: RequestContext,
         tool: &Tool,
         args: Value,
     ) -> Result<Value, ToolError>;
@@ -127,13 +127,13 @@ pub trait ToolDal: Send + Sync {
     /// ToolCallDao 层负责每次调用新建 LoggingDecorator 捕获本次调用信息
     async fn call_manual(
         &self,
-        ctx: &RequestContext,
+        ctx: RequestContext,
         tool: &Tool,
         args: Value,
     ) -> Result<(Value, ToolCallEntry), ToolError>;
 
     /// 搜索工具（向量 + 关键词混合搜索）
-    async fn search(&self, ctx: &RequestContext, params: crate::service::dao::tool::ToolSearch) -> Result<Vec<Tool>, AppError>;
+    async fn search(&self, ctx: RequestContext, params: crate::service::dao::tool::ToolSearch) -> Result<Vec<Tool>, AppError>;
 
     /// Wrap tools for Rig to use (convert to Box<dyn ToolDyn>)
     fn wrap_for_rig(&self, tools: &[Tool], ctx: RequestContext) -> Vec<Box<dyn rig::tool::ToolDyn>>;
@@ -152,15 +152,15 @@ pub struct ToolDalImpl {
 
 #[async_trait::async_trait]
 impl ToolDal for ToolDalImpl {
-    async fn create_tool(&self, ctx: &RequestContext, po: &ToolPo) -> Result<(), AppError> {
+    async fn create_tool(&self, ctx: RequestContext, po: &ToolPo) -> Result<(), AppError> {
         Ok(self.tool_dao.create_tool(ctx, po).await?)
     }
 
-    async fn update_tool(&self, ctx: &RequestContext, tool: &Tool) -> Result<(), AppError> {
+    async fn update_tool(&self, ctx: RequestContext, tool: &Tool) -> Result<(), AppError> {
         Ok(self.tool_dao.update_tool(ctx, &tool.po).await?)
     }
 
-    async fn get_by_id(&self, ctx: &RequestContext, id: String) -> Result<Option<Tool>, AppError> {
+    async fn get_by_id(&self, ctx: RequestContext, id: String) -> Result<Option<Tool>, AppError> {
         let Some(po) = self.tool_dao.get_by_id(ctx, id).await? else {
             return Ok(None);
         };
@@ -170,7 +170,7 @@ impl ToolDal for ToolDalImpl {
         Ok(Some(Tool { po, our_tool, search_match: None }))
     }
 
-    async fn get_by_name(&self, ctx: &RequestContext, name: &str) -> Result<Option<Tool>, AppError> {
+    async fn get_by_name(&self, ctx: RequestContext, name: &str) -> Result<Option<Tool>, AppError> {
         let Some(po) = self.tool_dao.get_by_name(ctx, name).await? else {
             return Ok(None);
         };
@@ -180,7 +180,7 @@ impl ToolDal for ToolDalImpl {
         Ok(Some(Tool { po, our_tool, search_match: None }))
     }
 
-    async fn query(&self, ctx: &RequestContext, query: ToolQuery) -> Result<Vec<Tool>, AppError> {
+    async fn query(&self, ctx: RequestContext, query: ToolQuery) -> Result<Vec<Tool>, AppError> {
         let pos = self.tool_dao.query(ctx, query).await?;
         let mut tools = Vec::new();
         for po in pos {
@@ -191,17 +191,17 @@ impl ToolDal for ToolDalImpl {
         Ok(tools)
     }
 
-    async fn list_enabled(&self, ctx: &RequestContext) -> Result<Vec<Tool>, AppError> {
+    async fn list_enabled(&self, ctx: RequestContext) -> Result<Vec<Tool>, AppError> {
         self.query(ctx, ToolQuery { enabled_only: Some(true), ..Default::default() }).await
     }
 
-    async fn list_tools_for_agent_full(&self, ctx: &RequestContext, agent_id: &str) -> Result<Vec<Tool>, AppError> {
+    async fn list_tools_for_agent_full(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<Tool>, AppError> {
         self.query(ctx, ToolQuery { agent_id: Some(agent_id.to_string()), ..Default::default() }).await
     }
 
     async fn add_tool_to_agent(
         &self,
-        ctx: &RequestContext,
+        ctx: RequestContext,
         agent_id: &str,
         tool_id: &str,
         created_by: Option<String>,
@@ -211,25 +211,25 @@ impl ToolDal for ToolDalImpl {
 
     async fn remove_tool_from_agent(
         &self,
-        ctx: &RequestContext,
+        ctx: RequestContext,
         agent_id: &str,
         tool_id: &str,
     ) -> Result<(), AppError> {
         Ok(self.tool_dao.remove_tool_from_agent(ctx, agent_id, tool_id).await?)
     }
 
-    async fn sync_builtin_tools_to_db(&self, ctx: &RequestContext) -> Result<usize, AppError> {
+    async fn sync_builtin_tools_to_db(&self, ctx: RequestContext) -> Result<usize, AppError> {
         Ok(self.tool_dao.sync_builtin_tools_to_db(ctx).await?)
     }
 
     async fn call_tool_by_id(
         &self,
-        ctx: &RequestContext,
+        ctx: RequestContext,
         tool_id: String,
         args: Value,
     ) -> Result<Value, ToolError> {
         // 获取完整工具
-        let tool = self.get_by_id(ctx, tool_id.clone()).await
+        let tool = self.get_by_id(ctx.clone(), tool_id.clone()).await
             .map_err(|e| ToolError::ToolCallError(e.to_string().into()))?;
 
         let tool = tool.ok_or_else(|| ToolError::ToolCallError(format!("Tool not found: {}", tool_id).into()))?;
@@ -238,7 +238,7 @@ impl ToolDal for ToolDalImpl {
         self.call_tool(ctx, &tool, args).await
     }
 
-    async fn search(&self, ctx: &RequestContext, params: crate::service::dao::tool::ToolSearch) -> Result<Vec<Tool>, AppError> {
+    async fn search(&self, ctx: RequestContext, params: crate::service::dao::tool::ToolSearch) -> Result<Vec<Tool>, AppError> {
         let mut vector_scores: std::collections::HashMap<String, f32> = std::collections::HashMap::new();
         let mut vector_tool_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
 
@@ -278,7 +278,7 @@ impl ToolDal for ToolDalImpl {
                         }
                         Err(e) => {
                             // 向量搜索失败，降级到纯关键词搜索
-                            log_warn!(&ctx, "vector_search", "Tool vector search failed: {}, fallback to keyword only", e);
+                            log_warn!(ctx.clone(), "vector_search", "Tool vector search failed: {}, fallback to keyword only", e);
                         }
                     }
                 }
@@ -286,7 +286,7 @@ impl ToolDal for ToolDalImpl {
         }
 
         // Step 2: 关键词搜索（统一使用 Dao 的 search 方法）
-        let pos = self.tool_dao.search(ctx, params).await?;
+        let pos = self.tool_dao.search(ctx.clone(), params).await?;
 
         // Step 3: 合并结果（向量匹配 + 关键词匹配）
         let mut tool_ids: std::collections::HashSet<String> = vector_tool_ids;
@@ -325,7 +325,7 @@ impl ToolDal for ToolDalImpl {
 
     async fn call_tool(
         &self,
-        ctx: &RequestContext,
+        ctx: RequestContext,
         tool: &Tool,
         args: Value,
     ) -> Result<Value, ToolError> {
@@ -336,7 +336,7 @@ impl ToolDal for ToolDalImpl {
 
     async fn call_manual(
         &self,
-        ctx: &RequestContext,
+        ctx: RequestContext,
         tool: &Tool,
         args: Value,
     ) -> Result<(Value, ToolCallEntry), ToolError> {

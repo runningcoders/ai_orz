@@ -12,7 +12,7 @@ use crate::service::domain::finance::{FinanceDomainImpl, ToolProviderManage};
 impl ToolProviderManage for FinanceDomainImpl {
     /// 创建 Tool
     async fn create_tool(&self, ctx: RequestContext, tool: &Tool) -> Result<(), AppError> {
-        self.tool_dal.create_tool(&ctx, &tool.po).await
+        self.tool_dal.create_tool(ctx.clone(), &tool.po).await
     }
 
     /// 获取 Tool
@@ -21,7 +21,7 @@ impl ToolProviderManage for FinanceDomainImpl {
         ctx: RequestContext,
         tool_id: &str,
     ) -> Result<Option<Tool>, AppError> {
-        self.tool_dal.get_by_id(&ctx, tool_id.to_string()).await
+        self.tool_dal.get_by_id(ctx.clone(), tool_id.to_string()).await
     }
 
     /// 通用综合查询
@@ -30,17 +30,17 @@ impl ToolProviderManage for FinanceDomainImpl {
         ctx: RequestContext,
         query: crate::service::dao::tool::ToolQuery,
     ) -> Result<Vec<Tool>, AppError> {
-        self.tool_dal.query(&ctx, query).await
+        self.tool_dal.query(ctx.clone(), query).await
     }
 
     /// 列出所有 Tool
     async fn list_tools(&self, ctx: RequestContext) -> Result<Vec<Tool>, AppError> {
-        self.tool_dal.list_enabled(&ctx).await
+        self.tool_dal.list_enabled(ctx.clone()).await
     }
 
     /// 更新 Tool
     async fn update_tool(&self, ctx: RequestContext, tool: &Tool) -> Result<(), AppError> {
-        self.tool_dal.update_tool(&ctx, tool).await
+        self.tool_dal.update_tool(ctx.clone(), tool).await
     }
 
     /// 启用 Tool
@@ -65,7 +65,7 @@ impl ToolProviderManage for FinanceDomainImpl {
     ) -> Result<(), AppError> {
         let created_by = ctx.uid();
         self.tool_dal
-            .add_tool_to_agent(&ctx, agent_id, tool_id, Some(created_by))
+            .add_tool_to_agent(ctx.clone(), agent_id, tool_id, Some(created_by))
             .await
     }
 
@@ -77,7 +77,7 @@ impl ToolProviderManage for FinanceDomainImpl {
         tool_id: &str,
     ) -> Result<(), AppError> {
         self.tool_dal
-            .remove_tool_from_agent(&ctx, agent_id, tool_id)
+            .remove_tool_from_agent(ctx.clone(), agent_id, tool_id)
             .await
     }
 
@@ -87,7 +87,7 @@ impl ToolProviderManage for FinanceDomainImpl {
         ctx: RequestContext,
         agent_id: &str,
     ) -> Result<Vec<String>, AppError> {
-        let tools = self.tool_dal.list_tools_for_agent_full(&ctx, agent_id).await?;
+        let tools = self.tool_dal.list_tools_for_agent_full(ctx.clone(), agent_id).await?;
         Ok(tools.into_iter().map(|t| t.po.id).collect())
     }
 
@@ -97,6 +97,15 @@ impl ToolProviderManage for FinanceDomainImpl {
         ctx: RequestContext,
         agent_id: &str,
     ) -> Result<Vec<Tool>, AppError> {
-        self.tool_dal.list_tools_for_agent_full(&ctx, agent_id).await
+        self.tool_dal.list_tools_for_agent_full(ctx.clone(), agent_id).await
+    }
+
+    /// 搜索工具（向量 + 关键词混合搜索）
+    async fn search_tools(
+        &self,
+        ctx: RequestContext,
+        params: crate::service::dao::tool::ToolSearch,
+    ) -> Result<Vec<Tool>, AppError> {
+        self.tool_dal.search(ctx.clone(), params).await
     }
 }

@@ -48,30 +48,30 @@ pub struct ToolSearch {
 #[async_trait]
 pub trait ToolDao: Send + Sync {
     /// Create a new tool
-    async fn create_tool(&self, ctx: &RequestContext, po: &ToolPo) -> Result<()>;
+    async fn create_tool(&self, ctx: RequestContext, po: &ToolPo) -> Result<()>;
 
     /// Update an existing tool
-    async fn update_tool(&self, ctx: &RequestContext, po: &ToolPo) -> Result<()>;
+    async fn update_tool(&self, ctx: RequestContext, po: &ToolPo) -> Result<()>;
 
     /// Delete a tool
-    async fn delete_tool(&self, ctx: &RequestContext, id: &str) -> Result<()>;
+    async fn delete_tool(&self, ctx: RequestContext, id: &str) -> Result<()>;
 
     /// Get tool by ID
-    async fn get_by_id(&self, ctx: &RequestContext, id: String) -> Result<Option<ToolPo>>;
+    async fn get_by_id(&self, ctx: RequestContext, id: String) -> Result<Option<ToolPo>>;
 
     /// Get tool by name
-    async fn get_by_name(&self, ctx: &RequestContext, name: &str) -> Result<Option<ToolPo>>;
+    async fn get_by_name(&self, ctx: RequestContext, name: &str) -> Result<Option<ToolPo>>;
 
     /// 通用查询
-    async fn query(&self, ctx: &RequestContext, query: ToolQuery) -> Result<Vec<ToolPo>>;
+    async fn query(&self, ctx: RequestContext, query: ToolQuery) -> Result<Vec<ToolPo>>;
 
     /// List all enabled tools
-    async fn list_enabled(&self, ctx: &RequestContext) -> Result<Vec<ToolPo>>;
+    async fn list_enabled(&self, ctx: RequestContext) -> Result<Vec<ToolPo>>;
 
     /// Add tool to agent
     async fn add_tool_to_agent(
         &self,
-        ctx: &RequestContext,
+        ctx: RequestContext,
         agent_id: &str,
         tool_id: &str,
         created_by: Option<String>,
@@ -80,21 +80,21 @@ pub trait ToolDao: Send + Sync {
     /// Remove tool from agent
     async fn remove_tool_from_agent(
         &self,
-        ctx: &RequestContext,
+        ctx: RequestContext,
         agent_id: &str,
         tool_id: &str,
     ) -> Result<()>;
 
     /// List all tools for an agent
-    async fn list_tools_for_agent(&self, ctx: &RequestContext, agent_id: &str) -> Result<Vec<ToolPo>>;
+    async fn list_tools_for_agent(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<ToolPo>>;
 
     /// Sync all registered built-in tools to database
     /// If a tool already exists (by ID), skip it to avoid duplicates
     /// Returns number of newly inserted tools
-    async fn sync_builtin_tools_to_db(&self, ctx: &RequestContext) -> Result<usize>;
+    async fn sync_builtin_tools_to_db(&self, ctx: RequestContext) -> Result<usize>;
 
     /// 关键词搜索工具（使用 query 方法的关键词查询实现）
-    async fn search(&self, ctx: &RequestContext, params: ToolSearch) -> Result<Vec<ToolPo>>;
+    async fn search(&self, ctx: RequestContext, params: ToolSearch) -> Result<Vec<ToolPo>>;
 }
 
 // ==================== ToolVectorDao Trait ====================

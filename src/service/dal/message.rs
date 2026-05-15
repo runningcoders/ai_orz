@@ -200,7 +200,7 @@ impl MessageDal for MessageDalImpl {
         // 2. 消息本身就是事件，直接入队，所有消息都入队不做过滤
         // Message 已经实现了 Event trait
         let event: Box<Message> = Box::new(message.clone());
-        self.event_queue_dao.enqueue(&ctx, event)?;
+        self.event_queue_dao.enqueue(ctx.clone(), event)?;
 
         Ok(())
     }
@@ -329,7 +329,7 @@ impl MessageDal for MessageDalImpl {
         ctx: RequestContext,
     ) -> Result<Option<Message>, AppError> {
         // 1. 优先从内存队列取出
-        let opt_msg = self.event_queue_dao.dequeue_next(&ctx)?;
+        let opt_msg = self.event_queue_dao.dequeue_next(ctx.clone())?;
         match opt_msg {
             Some(msg) => {
                 // 出队成功后更新状态为 Processing，避免回源重复入队
@@ -354,11 +354,11 @@ impl MessageDal for MessageDalImpl {
                 // 3. 将 DB 查到的消息全部入队到内存队列
                 for msg in pending_messages {
                     let event: Box<Message> = Box::new(msg.clone());
-                    self.event_queue_dao.enqueue(&ctx, event)?;
+                    self.event_queue_dao.enqueue(ctx.clone(), event)?;
                 }
 
                 // 4. 再次尝试出队（肯定能取到了）
-                Ok(self.event_queue_dao.dequeue_next(&ctx)?.map(|msg| *msg))
+                Ok(self.event_queue_dao.dequeue_next(ctx.clone())?.map(|msg| *msg))
             }
         }
     }
@@ -368,7 +368,7 @@ impl MessageDal for MessageDalImpl {
         _ctx: RequestContext,
         message_id: &str,
     ) -> Result<(), AppError> {
-        self.event_queue_dao.ack(&_ctx, message_id)
+        self.event_queue_dao.ack(_ctx.clone(), message_id)
     }
 
     async fn nack_message(
@@ -376,6 +376,6 @@ impl MessageDal for MessageDalImpl {
         _ctx: RequestContext,
         message_id: &str,
     ) -> Result<(), AppError> {
-        self.event_queue_dao.nack(&_ctx, message_id)
+        self.event_queue_dao.nack(_ctx.clone(), message_id)
     }
 }

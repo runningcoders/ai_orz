@@ -50,11 +50,11 @@ async fn test_create_and_get_tool_full(pool: SqlitePool) {
         vec![],
         Some("admin".to_string()),
     );
-    let result = tool_dao.create_tool(&ctx.clone(), &tool_po).await;
+    let result = tool_dao.create_tool(ctx.clone(), &tool_po).await;
     assert!(result.is_ok());
 
     // 验证插入成功
-    let found = tool_dao.get_by_id(&ctx.clone(), tool_po.id.clone()).await.unwrap();
+    let found = tool_dao.get_by_id(ctx.clone(), tool_po.id.clone()).await.unwrap();
     assert!(found.is_some());
     let found_po = found.unwrap();
     assert_eq!(found_po.name, "test-tool".to_string());
@@ -72,16 +72,16 @@ async fn test_add_tool_to_agent_and_list(pool: SqlitePool) {
     );
     let tool2 = ToolPo::new("tool-2".to_string(), "tool-2".to_string(), "Tool 2".to_string(), ToolProtocol::Builtin, serde_json::Value::Null, None, vec![], Some("admin".to_string()),
     );
-    let _ = tool_dao.create_tool(&ctx.clone(), &tool1).await;
-    let _ = tool_dao.create_tool(&ctx.clone(), &tool2).await;
+    let _ = tool_dao.create_tool(ctx.clone(), &tool1).await;
+    let _ = tool_dao.create_tool(ctx.clone(), &tool2).await;
 
     // 绑定到 agent
     let agent_id = "test-agent-1";
-    let _ = tool_dao.add_tool_to_agent(&ctx.clone(), agent_id, &tool1.id, Some("test-user".to_string())).await;
-    let _ = tool_dao.add_tool_to_agent(&ctx.clone(), agent_id, &tool2.id, Some("test-user".to_string())).await;
+    let _ = tool_dao.add_tool_to_agent(ctx.clone(), agent_id, &tool1.id, Some("test-user".to_string())).await;
+    let _ = tool_dao.add_tool_to_agent(ctx.clone(), agent_id, &tool2.id, Some("test-user".to_string())).await;
 
     // 测试 list_tools_for_agent
-    let list = tool_dao.list_tools_for_agent(&ctx.clone(), agent_id).await.unwrap();
+    let list = tool_dao.list_tools_for_agent(ctx.clone(), agent_id).await.unwrap();
     assert_eq!(list.len(), 2);
     let ids: Vec<String> = list.iter().map(|t| t.id.clone()).collect();
     assert!(ids.contains(&"tool-1".to_string()));
@@ -97,19 +97,19 @@ async fn test_remove_tool_from_agent(pool: SqlitePool) {
     let tool = ToolPo::new("tool-to-remove".to_string(), "tool-to-remove".to_string(), "To remove".to_string(), ToolProtocol::Builtin, serde_json::Value::Null, None, vec![], Some("admin".to_string()),
     );
     let agent_id = "test-agent-2";
-    let _ = tool_dao.create_tool(&ctx.clone(), &tool).await;
-    let _ = tool_dao.add_tool_to_agent(&ctx.clone(), agent_id, &tool.id, Some("test-user".to_string())).await;
+    let _ = tool_dao.create_tool(ctx.clone(), &tool).await;
+    let _ = tool_dao.add_tool_to_agent(ctx.clone(), agent_id, &tool.id, Some("test-user".to_string())).await;
 
     // 验证绑定成功
-    let list = tool_dao.list_tools_for_agent(&ctx.clone(), agent_id).await.unwrap();
+    let list = tool_dao.list_tools_for_agent(ctx.clone(), agent_id).await.unwrap();
     assert_eq!(list.len(), 1);
 
     // 解绑
-    let result = tool_dao.remove_tool_from_agent(&ctx.clone(), agent_id, &tool.id).await;
+    let result = tool_dao.remove_tool_from_agent(ctx.clone(), agent_id, &tool.id).await;
     assert!(result.is_ok());
 
     // 验证解绑成功
-    let list_after = tool_dao.list_tools_for_agent(&ctx, agent_id).await.unwrap();
+    let list_after = tool_dao.list_tools_for_agent(ctx.clone(), agent_id).await.unwrap();
     assert!(list_after.is_empty());
 }
 
@@ -125,10 +125,10 @@ async fn test_list_enabled(pool: SqlitePool) {
     );
     disabled.status = ToolStatus::Disabled;
 
-    let _ = tool_dao.create_tool(&ctx.clone(), &enabled).await;
-    let _ = tool_dao.create_tool(&ctx.clone(), &disabled).await;
+    let _ = tool_dao.create_tool(ctx.clone(), &enabled).await;
+    let _ = tool_dao.create_tool(ctx.clone(), &disabled).await;
 
-    let list = tool_dao.list_enabled(&ctx).await.unwrap();
+    let list = tool_dao.list_enabled(ctx.clone()).await.unwrap();
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].id, "enabled".to_string());
 }
@@ -140,14 +140,14 @@ async fn test_get_by_name(pool: SqlitePool) {
 
     let tool = ToolPo::new("".to_string(), "my-unique-name".to_string(), "Test".to_string(), ToolProtocol::Builtin, serde_json::Value::Null, None, vec![], Some("admin".to_string()),
     );
-    let _ = tool_dao.create_tool(&ctx.clone(), &tool).await;
+    let _ = tool_dao.create_tool(ctx.clone(), &tool).await;
 
-    let found = tool_dao.get_by_name(&ctx, "my-unique-name").await.unwrap();
+    let found = tool_dao.get_by_name(ctx.clone(), "my-unique-name").await.unwrap();
     assert!(found.is_some());
     let found = found.unwrap();
     assert_eq!(found.name, "my-unique-name");
 
-    let not_found = tool_dao.get_by_name(&ctx, "not-exists").await.unwrap();
+    let not_found = tool_dao.get_by_name(ctx.clone(), "not-exists").await.unwrap();
     assert!(not_found.is_none());
 }
 
@@ -167,20 +167,20 @@ async fn test_update_tool(pool: SqlitePool) {
         vec![],
         Some("creator".to_string()),
     );
-    let _ = tool_dao.create_tool(&ctx.clone(), &tool).await;
+    let _ = tool_dao.create_tool(ctx.clone(), &tool).await;
 
     // 查询并修改
-    let found = tool_dao.get_by_id(&ctx.clone(), tool.id.clone()).await.unwrap().unwrap();
+    let found = tool_dao.get_by_id(ctx.clone(), tool.id.clone()).await.unwrap().unwrap();
     let mut updated = found;
     updated.name = "updated-name".to_string();
     updated.description = "Updated description".to_string();
     updated.touch(Some("editor".to_string()));
 
-    let result = tool_dao.update_tool(&ctx.clone(), &updated).await;
+    let result = tool_dao.update_tool(ctx.clone(), &updated).await;
     assert!(result.is_ok());
 
     // 验证修改
-    let found_after = tool_dao.get_by_id(&ctx, updated.id.clone()).await.unwrap().unwrap();
+    let found_after = tool_dao.get_by_id(ctx.clone(), updated.id.clone()).await.unwrap().unwrap();
     assert_eq!(found_after.name, "updated-name");
     assert_eq!(found_after.description, "Updated description");
     assert_eq!(found_after.updated_by, Some("editor".to_string()));
@@ -202,15 +202,15 @@ async fn test_update_builtin_tool_protected(pool: SqlitePool) {
         vec![],
         Some("creator".to_string()),
     );
-    let _ = tool_dao.create_tool(&ctx.clone(), &tool).await;
+    let _ = tool_dao.create_tool(ctx.clone(), &tool).await;
 
     // 尝试修改内置工具应该失败
-    let found = tool_dao.get_by_id(&ctx.clone(), tool.id.clone()).await.unwrap().unwrap();
+    let found = tool_dao.get_by_id(ctx.clone(), tool.id.clone()).await.unwrap().unwrap();
     let mut updated = found;
     updated.name = "should-not-work".to_string();
     updated.touch(Some("editor".to_string()));
 
-    let result = tool_dao.update_tool(&ctx.clone(), &updated).await;
+    let result = tool_dao.update_tool(ctx.clone(), &updated).await;
     assert!(result.is_err());
 }
 
@@ -230,10 +230,10 @@ async fn test_delete_builtin_tool_protected(pool: SqlitePool) {
         vec![],
         Some("creator".to_string()),
     );
-    let _ = tool_dao.create_tool(&ctx.clone(), &tool).await;
+    let _ = tool_dao.create_tool(ctx.clone(), &tool).await;
 
     // 尝试删除内置工具应该失败
-    let result = tool_dao.delete_tool(&ctx.clone(), &tool.id).await;
+    let result = tool_dao.delete_tool(ctx.clone(), &tool.id).await;
     assert!(result.is_err());
 }
 
@@ -242,7 +242,7 @@ async fn test_find_not_exists(pool: SqlitePool) {
     let tool_dao = init_test_env();
     let ctx = RequestContext::new_simple("admin", pool);
 
-    let found = tool_dao.get_by_id(&ctx, "not-exist-id".to_string()).await.unwrap();
+    let found = tool_dao.get_by_id(ctx.clone(), "not-exist-id".to_string()).await.unwrap();
     assert!(found.is_none());
 }
 
@@ -254,7 +254,7 @@ async fn test_sync_builtin_tools_to_db(pool: SqlitePool) {
     let ctx = RequestContext::new_simple("admin", pool);
     
     // 直接测试 sync 不会 panic 即可
-    let inserted_count = tool_dao.sync_builtin_tools_to_db(&ctx).await.unwrap();
+    let inserted_count = tool_dao.sync_builtin_tools_to_db(ctx.clone()).await.unwrap();
     // 不判断数量，因为测试环境可能没有注册内置工具
     assert!(inserted_count >= 0);
 }
@@ -287,15 +287,15 @@ async fn test_tool_query(pool: SqlitePool) {
     );
     tool2.status = ToolStatus::Disabled;
 
-    let _ = tool_dao.create_tool(&ctx, &tool1).await;
-    let _ = tool_dao.create_tool(&ctx, &tool2).await;
+    let _ = tool_dao.create_tool(ctx.clone(), &tool1).await;
+    let _ = tool_dao.create_tool(ctx.clone(), &tool2).await;
 
     // 1. 测试 ID 批量查询
     let query = crate::service::dao::tool::ToolQuery {
         ids: Some(vec!["id-1".to_string(), "id-2".to_string()]),
         ..Default::default()
     };
-    let results = tool_dao.query(&ctx, query).await.unwrap();
+    let results = tool_dao.query(ctx.clone(), query).await.unwrap();
     assert_eq!(results.len(), 2);
 
     // 2. 测试关键词搜索 - 不测试包含 SQL 的语法，直接测试简单查询
@@ -303,7 +303,7 @@ async fn test_tool_query(pool: SqlitePool) {
         keyword: Some("test-tool".to_string()),
         ..Default::default()
     };
-    let results = tool_dao.query(&ctx, query).await.unwrap();
+    let results = tool_dao.query(ctx.clone(), query).await.unwrap();
     assert_eq!(results.len(), 2);
 
     // 3. 测试 enabled_only 过滤
@@ -311,7 +311,7 @@ async fn test_tool_query(pool: SqlitePool) {
         enabled_only: Some(true),
         ..Default::default()
     };
-    let results = tool_dao.query(&ctx, query).await.unwrap();
+    let results = tool_dao.query(ctx.clone(), query).await.unwrap();
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].id, "id-1");
 
@@ -320,7 +320,7 @@ async fn test_tool_query(pool: SqlitePool) {
         limit: Some(1),
         ..Default::default()
     };
-    let results = tool_dao.query(&ctx, query).await.unwrap();
+    let results = tool_dao.query(ctx.clone(), query).await.unwrap();
     assert_eq!(results.len(), 1);
 }
 
@@ -351,8 +351,8 @@ async fn test_tool_search(pool: SqlitePool) {
         Some("admin".to_string()),
     );
 
-    let _ = tool_dao.create_tool(&ctx, &tool1).await;
-    let _ = tool_dao.create_tool(&ctx, &tool2).await;
+    let _ = tool_dao.create_tool(ctx.clone(), &tool1).await;
+    let _ = tool_dao.create_tool(ctx.clone(), &tool2).await;
 
     // 1. 关键词搜索
     let search = crate::service::dao::tool::ToolSearch {
@@ -361,7 +361,7 @@ async fn test_tool_search(pool: SqlitePool) {
         limit: 10,
         ..Default::default()
     };
-    let results = tool_dao.search(&ctx, search).await.unwrap();
+    let results = tool_dao.search(ctx.clone(), search).await.unwrap();
     assert_eq!(results.len(), 2);
 
     // 2. 测试 limit
@@ -371,6 +371,6 @@ async fn test_tool_search(pool: SqlitePool) {
         limit: 1,
         ..Default::default()
     };
-    let results = tool_dao.search(&ctx, search).await.unwrap();
+    let results = tool_dao.search(ctx.clone(), search).await.unwrap();
     assert_eq!(results.len(), 1);
 }

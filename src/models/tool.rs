@@ -19,7 +19,7 @@ use futures_util::FutureExt;
 #[async_trait]
 pub trait CoreTool: Send + Sync + DynClone {
     /// 执行工具调用
-    async fn call(&self, ctx: &RequestContext, args: Value) -> Result<Value, ToolError>;
+    async fn call(&self, ctx: RequestContext, args: Value) -> Result<Value, ToolError>;
     
     /// 获取工具对应的数据库持久化对象
     fn po(&self) -> &ToolPo;
@@ -92,7 +92,7 @@ impl ToolDyn for RigToolAdapter {
             };
 
             // Call our core tool
-            let result = inner.call(ctx, args).await;
+            let result = inner.call((*ctx).clone(), args).await;
 
             // Serialize result back to string
             match result {

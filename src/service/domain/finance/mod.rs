@@ -194,6 +194,15 @@ pub trait ToolProviderManage: Send + Sync {
         ctx: RequestContext,
         agent_id: &str,
     ) -> Result<Vec<crate::models::tool::Tool>, AppError>;
+
+    /// 搜索工具（向量 + 关键词混合搜索）
+    ///
+    /// Agent 思考时选择工具用
+    async fn search_tools(
+        &self,
+        ctx: RequestContext,
+        params: crate::service::dao::tool::ToolSearch,
+    ) -> Result<Vec<crate::models::tool::Tool>, AppError>;
 }
 
 // ==================== 实现 ====================

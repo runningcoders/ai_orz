@@ -14,10 +14,19 @@ macro_rules! log_info {
         tracing::info!($msg $(, $($fields)*)?);
     }};
     
-    // 带上下文: 第一个参数非字符串（&ctx），第二个参数是字符串字面量（operation）
+    // 带上下文: 第一个参数非字符串（ctx 或 &ctx），第二个参数是字符串字面量（operation）
     ($ctx:expr, $op:literal, $($fields:tt)*) => {{
-        use $crate::pkg::logging::create_span;
-        let span = create_span($op, $ctx);
+        let span = tracing::info_span!(
+            "request",
+            log_id = %$ctx.log_id,
+            user_id = %$ctx.user_id.as_deref().unwrap_or(""),
+            username = %$ctx.username.as_deref().unwrap_or(""),
+            organization_id = %$ctx.organization_id.as_deref().unwrap_or(""),
+            agent_id = %$ctx.agent_id.as_deref().unwrap_or(""),
+            task_id = %$ctx.task_id.as_deref().unwrap_or(""),
+            project_id = %$ctx.project_id.as_deref().unwrap_or(""),
+            operation = %$op
+        );
         let _guard = span.enter();
         tracing::info!($($fields)*);
     }};
@@ -31,10 +40,19 @@ macro_rules! log_warn {
         tracing::warn!($msg $(, $($fields)*)?);
     }};
     
-    // 带上下文: 第一个参数非字符串（&ctx），第二个参数是字符串字面量（operation）
+    // 带上下文: 第一个参数非字符串（ctx 或 &ctx），第二个参数是字符串字面量（operation）
     ($ctx:expr, $op:literal, $($fields:tt)*) => {{
-        use $crate::pkg::logging::create_span;
-        let span = create_span($op, $ctx);
+        let span = tracing::warn_span!(
+            "request",
+            log_id = %$ctx.log_id,
+            user_id = %$ctx.user_id.as_deref().unwrap_or(""),
+            username = %$ctx.username.as_deref().unwrap_or(""),
+            organization_id = %$ctx.organization_id.as_deref().unwrap_or(""),
+            agent_id = %$ctx.agent_id.as_deref().unwrap_or(""),
+            task_id = %$ctx.task_id.as_deref().unwrap_or(""),
+            project_id = %$ctx.project_id.as_deref().unwrap_or(""),
+            operation = %$op
+        );
         let _guard = span.enter();
         tracing::warn!($($fields)*);
     }};
@@ -48,10 +66,19 @@ macro_rules! log_error {
         tracing::error!($msg $(, $($fields)*)?);
     }};
     
-    // 带上下文: 第一个参数非字符串（&ctx），第二个参数是字符串字面量（operation）
+    // 带上下文: 第一个参数非字符串（ctx 或 &ctx），第二个参数是字符串字面量（operation）
     ($ctx:expr, $op:literal, $($fields:tt)*) => {{
-        use $crate::pkg::logging::create_span;
-        let span = create_span($op, $ctx);
+        let span = tracing::error_span!(
+            "request",
+            log_id = %$ctx.log_id,
+            user_id = %$ctx.user_id.as_deref().unwrap_or(""),
+            username = %$ctx.username.as_deref().unwrap_or(""),
+            organization_id = %$ctx.organization_id.as_deref().unwrap_or(""),
+            agent_id = %$ctx.agent_id.as_deref().unwrap_or(""),
+            task_id = %$ctx.task_id.as_deref().unwrap_or(""),
+            project_id = %$ctx.project_id.as_deref().unwrap_or(""),
+            operation = %$op
+        );
         let _guard = span.enter();
         tracing::error!($($fields)*);
     }};
@@ -65,10 +92,19 @@ macro_rules! log_debug {
         tracing::debug!($msg $(, $($fields)*)?);
     }};
     
-    // 带上下文: 第一个参数非字符串（&ctx），第二个参数是字符串字面量（operation）
+    // 带上下文: 第一个参数非字符串（ctx 或 &ctx），第二个参数是字符串字面量（operation）
     ($ctx:expr, $op:literal, $($fields:tt)*) => {{
-        use $crate::pkg::logging::create_span;
-        let span = create_span($op, $ctx);
+        let span = tracing::debug_span!(
+            "request",
+            log_id = %$ctx.log_id,
+            user_id = %$ctx.user_id.as_deref().unwrap_or(""),
+            username = %$ctx.username.as_deref().unwrap_or(""),
+            organization_id = %$ctx.organization_id.as_deref().unwrap_or(""),
+            agent_id = %$ctx.agent_id.as_deref().unwrap_or(""),
+            task_id = %$ctx.task_id.as_deref().unwrap_or(""),
+            project_id = %$ctx.project_id.as_deref().unwrap_or(""),
+            operation = %$op
+        );
         let _guard = span.enter();
         tracing::debug!($($fields)*);
     }};

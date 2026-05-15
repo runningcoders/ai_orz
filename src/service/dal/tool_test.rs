@@ -48,7 +48,7 @@ impl CoreTool for TestTool {
         &self.po
     }
 
-    async fn call(&self, _ctx: &RequestContext, _args: Value) -> Result<Value, ToolError> {
+    async fn call(&self, _ctx: RequestContext, _args: Value) -> Result<Value, ToolError> {
         Ok(Value::Null)
     }
 }
@@ -105,13 +105,13 @@ async fn test_create_and_get_tool_full(pool: SqlitePool) {
     // ========== 测试: 创建工具 ==========
     let po = create_test_tool_po("", "echo_test", "Echo test tool");
 
-    let result = tool_dal.create_tool(&ctx, &po).await;
+    let result = tool_dal.create_tool(ctx.clone(), &po).await;
     assert!(result.is_ok(), "create tool failed: {:?}", result);
 
     // ========== 测试: get_by_id 获取完整工具 ==========
     // 因为 "echo_test" 没有在 ToolRegistry 注册，所以返回 None 是正常的
     // 这正好验证了过滤逻辑
-    let got = tool_dal.get_by_id(&ctx, po.id.clone()).await;
+    let got = tool_dal.get_by_id(ctx.clone(), po.id.clone()).await;
     assert!(got.is_ok());
     let got = got.unwrap();
     // 未注册的内置工具无法组装，返回 None 是预期行为
@@ -125,10 +125,10 @@ async fn test_get_by_id_exists(pool: SqlitePool) {
 
     // 创建一个测试工具
     let po = create_test_tool_po("test-builtin-id", "test-builtin", "Test builtin");
-    let _ = tool_dal.create_tool(&ctx, &po).await;
+    let _ = tool_dal.create_tool(ctx.clone(), &po).await;
 
     // 查询完整实体 - 因为没注册，还是 None，这是预期的
-    let got_full = tool_dal.get_by_id(&ctx, po.id.clone()).await;
+    let got_full = tool_dal.get_by_id(ctx.clone(), po.id.clone()).await;
     assert!(got_full.is_ok());
     let got_full = got_full.unwrap();
     assert!(got_full.is_none());
@@ -141,21 +141,21 @@ async fn test_add_tool_to_agent_and_list(pool: SqlitePool) {
 
     // 创建已注册的工具（id = test_tool）
     let test_tool = create_test_tool_po("test_tool", "test_tool", "Test tool for adding to agent");
-    tool_dal.create_tool(&ctx, &test_tool).await.unwrap();
+    tool_dal.create_tool(ctx.clone(), &test_tool).await.unwrap();
 
     // 获取所有启用的工具（因为已经注册了 test_tool，所以至少有一个）
-    let all_enabled = tool_dal.list_enabled(&ctx).await.unwrap();
+    let all_enabled = tool_dal.list_enabled(ctx.clone()).await.unwrap();
     assert!(!all_enabled.is_empty());
 
     // 创建一个虚拟 Agent
     let agent_id = Uuid::now_v7().to_string();
 
     // ========== 测试: 添加工具到 Agent ==========
-    let result = tool_dal.add_tool_to_agent(&ctx, &agent_id, "test_tool", Some("test-user".to_string())).await;
+    let result = tool_dal.add_tool_to_agent(ctx.clone(), &agent_id, "test_tool", Some("test-user".to_string())).await;
     assert!(result.is_ok(), "add tool to agent failed: {:?}", result);
 
     // ========== 测试: list_tools_for_agent_full (完整工具) ==========
-    let list_full = tool_dal.list_tools_for_agent_full(&ctx, &agent_id).await;
+    let list_full = tool_dal.list_tools_for_agent_full(ctx.clone(), &agent_id).await;
     assert!(list_full.is_ok());
     let list_full = list_full.unwrap();
     // 工具已注册，所以可以正常返回
@@ -170,22 +170,22 @@ async fn test_remove_tool_from_agent(pool: SqlitePool) {
 
     // 创建已注册的工具（id = test_tool）
     let test_tool = create_test_tool_po("test_tool", "test_tool", "Test tool for removing from agent");
-    tool_dal.create_tool(&ctx, &test_tool).await.unwrap();
+    tool_dal.create_tool(ctx.clone(), &test_tool).await.unwrap();
 
     // 创建 Agent 并添加工具
     let agent_id = Uuid::now_v7().to_string();
-    tool_dal.add_tool_to_agent(&ctx, &agent_id, "test_tool", Some("test-user".to_string())).await.unwrap();
+    tool_dal.add_tool_to_agent(ctx.clone(), &agent_id, "test_tool", Some("test-user".to_string())).await.unwrap();
 
     // 确认添加成功
-    let list_before = tool_dal.list_tools_for_agent_full(&ctx, &agent_id).await.unwrap();
+    let list_before = tool_dal.list_tools_for_agent_full(ctx.clone(), &agent_id).await.unwrap();
     assert_eq!(list_before.len(), 1);
 
     // ========== 测试: 移除工具 ==========
-    let result = tool_dal.remove_tool_from_agent(&ctx, &agent_id, "test_tool").await;
+    let result = tool_dal.remove_tool_from_agent(ctx.clone(), &agent_id, "test_tool").await;
     assert!(result.is_ok(), "remove tool from agent failed: {:?}", result);
 
     // ========== 验证: 列表为空 ==========
-    let list_after = tool_dal.list_tools_for_agent_full(&ctx, &agent_id).await.unwrap();
+    let list_after = tool_dal.list_tools_for_agent_full(ctx.clone(), &agent_id).await.unwrap();
     assert!(list_after.is_empty());
 }
 
@@ -202,11 +202,11 @@ async fn test_list_enabled(pool: SqlitePool) {
     disabled.status = ToolStatus::Disabled;
     disabled.touch(Some("test-user".to_string()));
 
-    tool_dal.create_tool(&ctx, &test_tool).await.unwrap();
-    tool_dal.create_tool(&ctx, &disabled).await.unwrap();
+    tool_dal.create_tool(ctx.clone(), &test_tool).await.unwrap();
+    tool_dal.create_tool(ctx.clone(), &disabled).await.unwrap();
 
     // 测试获取所有启用工具（只有 test_tool 是已注册且启用的）
-    let tools = tool_dal.list_enabled(&ctx).await;
+    let tools = tool_dal.list_enabled(ctx.clone()).await;
     assert!(tools.is_ok());
     let tools = tools.unwrap();
     // 只有 test_tool 会被返回（已注册且启用）
@@ -225,20 +225,20 @@ async fn test_get_by_name(pool: SqlitePool) {
 
     // 创建测试工具
     let po = create_test_tool_po("", "get_by_name_test", "Test get by name");
-    tool_dal.create_tool(&ctx, &po).await.unwrap();
+    tool_dal.create_tool(ctx.clone(), &po).await.unwrap();
 
     // 获取名称
     let first_name = &po.name;
 
     // ========== 测试: get_by_name ==========
-    let got = tool_dal.get_by_name(&ctx, first_name).await;
+    let got = tool_dal.get_by_name(ctx.clone(), first_name).await;
     assert!(got.is_ok());
     let got = got.unwrap();
     // 因为未注册，返回 None 是预期的
     assert!(got.is_none());
 
     // ========== 测试: 不存在的名称 ==========
-    let got = tool_dal.get_by_name(&ctx, "not_exists_tool_name_xxx").await;
+    let got = tool_dal.get_by_name(ctx.clone(), "not_exists_tool_name_xxx").await;
     assert!(got.is_ok());
     let got = got.unwrap();
     assert!(got.is_none());
@@ -261,20 +261,20 @@ async fn test_update_tool(pool: SqlitePool) {
         Some("test-user".to_string()),
     );
 
-    tool_dal.create_tool(&ctx, &po).await.unwrap();
+    tool_dal.create_tool(ctx.clone(), &po).await.unwrap();
 
     // ========== 测试: 更新工具 ==========
     let tool_dao = tool::dao();
-    let mut po_to_update = tool_dao.get_by_id(&ctx, po.id.clone()).await.unwrap().unwrap();
+    let mut po_to_update = tool_dao.get_by_id(ctx.clone(), po.id.clone()).await.unwrap().unwrap();
     po_to_update.description = "Updated description".to_string();
     po_to_update.status = ToolStatus::Disabled;
     po_to_update.touch(Some("test-user".to_string()));
 
-    let result = tool_dao.update_tool(&ctx, &po_to_update).await;
+    let result = tool_dao.update_tool(ctx.clone(), &po_to_update).await;
     assert!(result.is_ok(), "update tool failed: {:?}", result);
 
     // ========== 验证: 更新生效 ==========
-    let got_po = tool_dao.get_by_id(&ctx, po.id.clone()).await.unwrap().unwrap();
+    let got_po = tool_dao.get_by_id(ctx.clone(), po.id.clone()).await.unwrap().unwrap();
     assert_eq!(got_po.description, "Updated description");
     assert_eq!(got_po.status, ToolStatus::Disabled);
 }
@@ -286,15 +286,15 @@ async fn test_update_builtin_tool_protected(pool: SqlitePool) {
 
     // 创建内置工具（通过 test_tool factory）
     let mut po = TestToolFactory {}.create_po();
-    tool_dal.create_tool(&ctx, &po).await.unwrap();
+    tool_dal.create_tool(ctx.clone(), &po).await.unwrap();
 
     // ========== 测试：直接通过 DAO 层尝试更新内置工具应该失败 ==========
     let tool_dao = tool::dao();
-    let mut po_to_update = tool_dao.get_by_id(&ctx, po.id.clone()).await.unwrap().unwrap();
+    let mut po_to_update = tool_dao.get_by_id(ctx.clone(), po.id.clone()).await.unwrap().unwrap();
     po_to_update.description = "Should not work".to_string();
     po_to_update.touch(Some("test-user".to_string()));
 
-    let result = tool_dao.update_tool(&ctx, &po_to_update).await;
+    let result = tool_dao.update_tool(ctx.clone(), &po_to_update).await;
     assert!(result.is_err(), "update builtin tool should fail");
 }
 
@@ -304,7 +304,7 @@ async fn test_find_not_exists(pool: SqlitePool) {
     let (tool_dal, ctx) = init_test_env(pool, false).await;
 
     let not_exists_id = Uuid::now_v7().to_string();
-    let result = tool_dal.get_by_id(&ctx, not_exists_id).await;
+    let result = tool_dal.get_by_id(ctx.clone(), not_exists_id).await;
     assert!(result.is_ok());
     let result = result.unwrap();
     assert!(result.is_none());
@@ -317,11 +317,11 @@ async fn test_delete_builtin_tool_protected(pool: SqlitePool) {
 
     // 创建内置工具（通过 test_tool factory）
     let po = TestToolFactory {}.create_po();
-    tool_dal.create_tool(&ctx, &po).await.unwrap();
+    tool_dal.create_tool(ctx.clone(), &po).await.unwrap();
 
     // ========== 测试：直接通过 DAO 层尝试删除内置工具应该失败 ==========
     let tool_dao = tool::dao();
-    let result = tool_dao.delete_tool(&ctx, &po.id).await;
+    let result = tool_dao.delete_tool(ctx.clone(), &po.id).await;
     assert!(result.is_err(), "delete builtin tool should fail");
 }
 
@@ -331,14 +331,14 @@ async fn test_sync_builtin_tools_to_db(pool: SqlitePool) {
     let (tool_dal, ctx) = init_test_env(pool, true).await;
 
     // ========== 测试：首次同步应该插入工具 ==========
-    let inserted = tool_dal.sync_builtin_tools_to_db(&ctx).await.unwrap();
+    let inserted = tool_dal.sync_builtin_tools_to_db(ctx.clone()).await.unwrap();
     assert!(inserted > 0, "should insert at least one tool");
 
     // ========== 测试：二次同步应该幂等，不插入重复内容 ==========
-    let inserted_again = tool_dal.sync_builtin_tools_to_db(&ctx).await.unwrap();
+    let inserted_again = tool_dal.sync_builtin_tools_to_db(ctx.clone()).await.unwrap();
     assert_eq!(inserted_again, 0, "should not insert duplicate tools");
 
     // ========== 验证：工具确实存在 ==========
-    let found = tool::dao().get_by_id(&ctx, "test_tool".to_string()).await.unwrap();
+    let found = tool::dao().get_by_id(ctx.clone(), "test_tool".to_string()).await.unwrap();
     assert!(found.is_some(), "test_tool should exist after sync");
 }

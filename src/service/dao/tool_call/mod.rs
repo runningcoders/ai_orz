@@ -31,7 +31,7 @@ pub trait ToolCallDao: Send + Sync {
     /// Creates new logging decorator for this call, captures trace entry
     async fn call_manual(
         &self,
-        ctx: &RequestContext,
+        ctx: RequestContext,
         tool: &Tool,
         args: serde_json::Value,
     ) -> Result<(serde_json::Value, ToolCallEntry), ToolError>;

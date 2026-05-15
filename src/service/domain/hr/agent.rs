@@ -141,7 +141,7 @@ impl AgentManage for HrDomainImpl {
         }
 
         // 2. 校验至少绑定了 1 个工具
-        let tools = self.tool_dal.list_tools_for_agent_full(&ctx, agent_id).await?;
+        let tools = self.tool_dal.list_tools_for_agent_full(ctx.clone(), agent_id).await?;
         if tools.is_empty() {
             return Err(AppError::BadRequest(
                 "Agent 至少绑定 1 个工具才能入职".to_string(),
@@ -151,7 +151,7 @@ impl AgentManage for HrDomainImpl {
         // 3. 校验技能：没有技能只告警，不阻止入职
         let skills = self.skill_dal.list_for_agent(ctx.clone(), agent_id).await?;
         if skills.is_empty() {
-            log_warn!(&ctx, "onboard_agent", "Agent {} 未安装任何技能", agent_id);
+            log_warn!(ctx.clone(), "onboard_agent", "Agent {} 未安装任何技能", agent_id);
         }
 
         Ok(())

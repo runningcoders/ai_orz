@@ -87,7 +87,7 @@ impl ToolCallDao for ToolCallDaoImpl {
 
     async fn call_manual(
         &self,
-        ctx: &RequestContext,
+        ctx: RequestContext,
         tool: &Tool,
         args: Value,
     ) -> Result<(Value, ToolCallEntry), ToolError> {

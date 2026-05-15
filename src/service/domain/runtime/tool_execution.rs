@@ -37,7 +37,7 @@ pub trait ToolExecution: Send + Sync + Debug {
     /// 执行单个工具
     async fn call_tool(
         &self,
-        ctx: &RequestContext,
+        ctx: RequestContext,
         tool_id: &str,
         request_id: &str,
         params: &str,
@@ -46,7 +46,7 @@ pub trait ToolExecution: Send + Sync + Debug {
     /// 批量执行多个工具
     async fn batch_call_tools(
         &self,
-        ctx: &RequestContext,
+        ctx: RequestContext,
         calls: Vec<(String, String, String)>, // (tool_id, request_id, params)
     ) -> Result<Vec<ToolExecutionResult>, AppError>;
 }
@@ -71,7 +71,7 @@ impl Default for ToolExecutionImpl {
 impl ToolExecution for ToolExecutionImpl {
     async fn call_tool(
         &self,
-        _ctx: &RequestContext,
+        _ctx: RequestContext,
         _tool_id: &str,
         _request_id: &str,
         _params: &str,
@@ -86,7 +86,7 @@ impl ToolExecution for ToolExecutionImpl {
 
     async fn batch_call_tools(
         &self,
-        _ctx: &RequestContext,
+        _ctx: RequestContext,
         _calls: Vec<(String, String, String)>,
     ) -> Result<Vec<ToolExecutionResult>, AppError> {
         // TODO: 实现批量工具执行

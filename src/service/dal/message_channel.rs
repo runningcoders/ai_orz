@@ -190,7 +190,7 @@ impl MessageChannelDal for MessageChannelDalImpl {
             let result = self.push_to_channel(ctx.clone(), message, &channel).await;
 
             // 3. 更新渠道推送状态
-            let _ = self.update_channel_push_status(&ctx, &channel, &result).await;
+            let _ = self.update_channel_push_status(ctx.clone(), &channel, &result).await;
 
             details.push(ChannelDeliveryDetail {
                 channel_id: channel.id().to_string(),
@@ -234,7 +234,7 @@ impl MessageChannelDalImpl {
     /// 更新渠道推送状态（内部私有）
     async fn update_channel_push_status(
         &self,
-        ctx: &RequestContext,
+        ctx: RequestContext,
         channel: &MessageChannel,
         result: &std::result::Result<(), String>,
     ) -> Result<()> {

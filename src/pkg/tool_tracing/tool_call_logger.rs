@@ -39,7 +39,7 @@ impl LoggingDecorator {
     /// Used for manual call chain where entry is needed for upper layers
     pub async fn call_with_entry(
         &self,
-        ctx: &RequestContext,
+        ctx: RequestContext,
         args: Value,
     ) -> (Result<Value, ToolError>, ToolCallEntry) {
         let call_id = Uuid::now_v7().to_string();
@@ -47,7 +47,7 @@ impl LoggingDecorator {
         let po = self.inner.po();
 
         // Execute the actual tool call
-        let result = self.inner.call(ctx, args.clone()).await;
+        let result = self.inner.call(ctx.clone(), args.clone()).await;
         let finished_at = current_timestamp_ms();
         let duration_ms = finished_at - started_at;
 
@@ -87,7 +87,7 @@ impl LoggingDecorator {
 
 #[async_trait]
 impl CoreTool for LoggingDecorator {
-    async fn call(&self, ctx: &RequestContext, args: Value) -> Result<Value, ToolError> {
+    async fn call(&self, ctx: RequestContext, args: Value) -> Result<Value, ToolError> {
         let (result, entry) = self.call_with_entry(ctx, args).await;
         // Log the entry immediately
         let tool_id = entry.tool_id.clone();

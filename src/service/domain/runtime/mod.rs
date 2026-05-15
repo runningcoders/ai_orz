@@ -3,45 +3,36 @@
 //! 【定位】运行时执行层 - 只负责动态执行逻辑，不负责任何静态配置管理
 //!
 //! 包含子模块：
-//! - ToolManagement: 工具运行时查询（Agent 执行时查询/搜索工具）
-//! - ToolExecution: 工具实际执行（单次/批量），返回调用结果和跟踪信息
+//! - ToolExecution: 工具实际执行（单次/批量）
 
 use async_trait::async_trait;
 use std::fmt::Debug;
 
 use crate::error::AppError;
-use crate::models::tool::Tool;
 use crate::pkg::request_context::RequestContext;
 
-mod management;
-mod execution;
+mod tool_execution;
 
-pub use management::ToolManagement;
-pub use execution::ToolExecution;
+pub use tool_execution::ToolExecution;
 
 /// Runtime Domain 主 trait
 #[async_trait]
 pub trait RuntimeDomain: Send + Sync + Debug {
-    /// 获取工具管理子模块
-    fn management(&self) -> &dyn ToolManagement;
-
     /// 获取工具执行子模块
-    fn execution(&self) -> &dyn ToolExecution;
+    fn tool_execution(&self) -> &dyn ToolExecution;
 }
 
 /// Runtime Domain 默认实现
 #[derive(Debug, Clone)]
 pub struct RuntimeDomainImpl {
-    management: management::ToolManagementImpl,
-    execution: execution::ToolExecutionImpl,
+    tool_execution: tool_execution::ToolExecutionImpl,
 }
 
 impl RuntimeDomainImpl {
     /// 创建新的 RuntimeDomain 实例
     pub fn new() -> Self {
         Self {
-            management: management::ToolManagementImpl::new(),
-            execution: execution::ToolExecutionImpl::new(),
+            tool_execution: tool_execution::ToolExecutionImpl::new(),
         }
     }
 }
@@ -54,12 +45,8 @@ impl Default for RuntimeDomainImpl {
 
 #[async_trait]
 impl RuntimeDomain for RuntimeDomainImpl {
-    fn management(&self) -> &dyn ToolManagement {
-        &self.management
-    }
-
-    fn execution(&self) -> &dyn ToolExecution {
-        &self.execution
+    fn tool_execution(&self) -> &dyn ToolExecution {
+        &self.tool_execution
     }
 }
 
@@ -71,12 +58,7 @@ pub fn instance() -> &'static dyn RuntimeDomain {
     RUNTIME_DOMAIN_INSTANCE.get_or_init(RuntimeDomainImpl::new)
 }
 
-/// Get the ToolManagement instance (convenience)
-pub fn management() -> &'static dyn ToolManagement {
-    instance().management()
-}
-
 /// Get the ToolExecution instance (convenience)
-pub fn execution() -> &'static dyn ToolExecution {
-    instance().execution()
+pub fn tool_execution() -> &'static dyn ToolExecution {
+    instance().tool_execution()
 }
