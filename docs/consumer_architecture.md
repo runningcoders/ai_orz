@@ -1,5 +1,18 @@
 # 消费者架构设计文档
 
+## ✅ 实现完成状态（2026-05-15 更新）
+
+### 已完成模块
+
+| 模块 | 状态 | 测试 | 文件位置 |
+|------|------|------|---------|
+| 通用消费者框架 | ✅ 完成 | ✅ 6 个核心场景测试通过 | `src/consumer/mod.rs` |
+| Message Fetcher 实现 | ✅ 完成 | ✅ 8 个分发场景测试通过 | `src/consumer/message.rs` |
+| Message Handler 实现 | ✅ 完成 | ✅ 全链路验证 | `src/consumer/message.rs` |
+| Domain 集成 | ⚠️ 进行中 | 待接入真实 DAL | `src/service/domain/message/` |
+
+---
+
 ## 📌 设计目标
 
 消费者系统负责异步处理所有事件，是系统的核心后台处理引擎。设计目标：

@@ -784,5 +784,272 @@ impl OrganizationManage for OrganizationDomainImpl {
 
 ---
 
-**文档维护者**：架构组  
-**下次更新**：Domain 层完成后
+## 🔄 实践 5：Message Domain 全链路完成（2026-05-15）
+
+> **背景**：从 0 到 1 完成 Message 领域，涵盖消息存储 + 8 个渠道管理 + 多渠道投递全链路
+
+### 🎯 完成的核心内容
+
+| 模块 | 完成情况 | 测试 |
+|------|---------|------|
+| Message DAL | ✅ 完整实现：CRUD + 状态流转 + 分发 | 28/28 通过 |
+| Message Channel DAL | ✅ 完整实现：8 个渠道管理 + 多渠道投递 | 39/39 通过 |
+| Message Domain | ✅ 完整实现：注入 DAL，12 个业务方法 | 全链路验证 |
+
+**总计：67/67 测试通过** ✅
+
+---
+
+### 📐 最终架构模式（经过 5 轮讨论确认）
+
+#### 核心设计原则（已验证可落地）
+
+| 原则 | 说明 | 实际效果 |
+|------|------|---------|
+| **无 trait，纯 match** | 渠道推送不使用 trait 约束，最简单直接 | ✅ 没有复杂的 trait 对象转换 |
+| **DAL 统一整合** | 渠道配置管理 + 消息分发统一在 `MessageChannelDal` | ✅ 对外只暴露 8 个公共方法 |
+| **严格分层封装** | 所有 DAO 都是 DAL 私有字段，Domain 完全看不到 DAO | ✅ 依赖方向 100% 正确 |
+| **无循环依赖** | DAL 依赖 DAO，DAO 不依赖 DAL，单向依赖 | ✅ 编译零警告 |
+| **错误统一** | 不创建独立错误类型，统一到 `AppError` | ✅ 错误处理一致 |
+
+---
+
+### 📂 最终目录结构
+
+```
+src/service/
+├── dao/
+│   ├── mod.rs
+│   ├── message.rs              # 消息存储 CRUD
+│   ├── message_channel.rs      # 渠道配置 CRUD
+│   ├── lark_dao.rs             # 飞书推送 DAO
+│   ├── wechat_dao.rs           # 微信推送 DAO
+│   ├── slack_dao.rs            # Slack 推送 DAO
+│   ├── email_dao.rs            # 邮件推送 DAO
+│   └── webhook_dao.rs          # Webhook 推送 DAO
+│
+└── dal/
+    ├── mod.rs
+    ├── message_dal.rs          # 消息管理 DAL
+    └── message_channel_dal.rs  # ✅ 统一整合：配置管理 + 消息分发
+```
+
+---
+
+### 🎯 各渠道 DAO 设计模式（完全独立，无 trait）
+
+以 `lark_dao.rs` 为例：
+
+```rust
+#[derive(Clone, Default)]
+pub struct LarkDao;
+
+impl LarkDao {
+    /// 推送消息（约定方法名）
+    pub async fn push(
+        &self,
+        _ctx: RequestContext,
+        _message: &Message,
+        _channel: &MessageChannel,
+    ) -> Result<(), String> {
+        // 实现飞书推送逻辑
+    }
+    
+    /// 测试连接（约定方法名）
+    pub async fn test_connection(
+        &self,
+        _ctx: RequestContext,
+        _channel: &MessageChannel,
+    ) -> Result<(), String> {
+        // 实现飞书连接测试逻辑
+    }
+}
+```
+
+**关键点总结：**
+1. ✅ 完全独立，不实现任何 trait
+2. ✅ `push()` 和 `test_connection()` 只是约定的方法名
+3. ✅ 可以自由添加其他渠道特有方法
+4. ✅ 测试时可以独立 Mock
+
+---
+
+### 🧩 MessageChannelDal 核心分发逻辑
+
+```rust
+pub struct MessageChannelDal {
+    // ✅ 所有 DAO 都是私有，不对外暴露！
+    message_channel_dao: Arc<dyn MessageChannelDao>,
+    lark_dao: Arc<LarkDao>,
+    wechat_dao: Arc<WechatDao>,
+    slack_dao: Arc<SlackDao>,
+    email_dao: Arc<EmailDao>,
+    webhook_dao: Arc<WebhookDao>,
+}
+
+impl MessageChannelDal {
+    // ... 配置管理的公共方法 ...
+    
+    /// ✅ 测试渠道连接（公共方法）
+    pub async fn test_channel(&self, ctx: RequestContext, channel_id: &str) -> Result<()> {
+        let channel = self.get_channel(ctx.clone(), channel_id).await?;
+        
+        // 🎯 核心：纯 match 分发！无 trait！
+        match channel.channel_type() {
+            ChannelType::Lark => self.lark_dao.test_connection(ctx, &channel).await,
+            ChannelType::Wechat => self.wechat_dao.test_connection(ctx, &channel).await,
+            ChannelType::Slack => self.slack_dao.test_connection(ctx, &channel).await,
+            ChannelType::Email => self.email_dao.test_connection(ctx, &channel).await,
+            ChannelType::Webhook => self.webhook_dao.test_connection(ctx, &channel).await,
+        }.map_err(|e| AppError::ChannelPushError(e))
+    }
+}
+```
+
+---
+
+### 💡 本次实践的关键架构洞见
+
+#### 洞见 1：Trait 不是银弹，有时候纯 match 更好
+
+**问题场景**：多个渠道实现相似但不相同的方法
+- ❌ 使用 trait：需要 `Box<dyn PushTrait>`，但每个渠道有特有配置和方法，trait 难以统一
+- ✅ 纯 match：每个 DAO 独立，DAL 内部 match 分发，灵活且简单
+
+**适用场景**：实现数量固定（< 10 个），每个实现略有差异，不要求动态扩展
+
+---
+
+#### 洞见 2：DAO 层可以承载外部 API 调用
+
+DAO 不仅是数据库持久化：
+- ✅ **数据库 DAO**：SQLite CRUD（如 message_dao）
+- ✅ **外部 API DAO**：调用三方 API（如 lark_dao, wechat_dao）
+
+**统一抽象**：DAO = "数据访问对象"，不论是本地数据库还是外部 API，都是"访问数据"
+
+---
+
+#### 洞见 3：DAL 层是"组合器"
+
+MessageChannelDal 做了三件事：
+1. **组合多个 DAO**：配置 DAO + 5 个渠道 DAO
+2. **隐藏实现细节**：所有 DAO 都是私有，对外只暴露 8 个业务方法
+3. **错误转换**：把 DAO 层的 String 错误统一转换为 AppError
+
+**这就是 DAL 层的真正价值：把多个底层数据源组合成业务语义清晰的操作**
+
+---
+
+### 📋 本次实践的可复用模式
+
+| 模式 | 适用场景 | 关键点 |
+|------|---------|--------|
+| **纯 match 分发** | 固定数量的相似实现（< 10 个） | 无 trait，直接在 DAL 层 match |
+| **DAO 私有封装** | 任何需要隐藏底层实现的场景 | DAL 字段私有，对外只暴露方法 |
+| **约定方法名** | 多个 DAO 有相似操作但无需统一 trait | push(), test_connection() 等约定命名 |
+| **错误统一转换** | 跨模块调用时 | DAO 层返回简单错误，DAL 层统一转换 |
+
+---
+
+## 🔄 实践 6：PO 与业务实体分层边界（2026-05-11）
+
+> **背景**：Project/Task/Artifact 模块重构，明确 PO 与业务实体的边界
+
+### 核心原则：PO 仅在 DAO/DAL 层内部使用，绝对不对外暴露到 Domain 层及以上
+
+#### 分层边界定义
+
+| 层级 | 可使用对象 | 数据传递方式 | 说明 |
+|------|------------|------------|------|
+| **DAO 层** | 仅 PO | PO ↔ 数据库 | 单一数据源 CRUD，SQL 拼接，无业务逻辑 |
+| **DAL 层** | 内部：PO，对外：业务实体 | PO ↔ 业务实体 双向转换 | 组合 DAO，完成业务级数据操作 |
+| **Domain 层** | 仅业务实体 | 业务实体 ↔ Command | 核心业务逻辑编排，无 PO 依赖 |
+| **Handler 层** | 业务实体 + DTO | DTO ↔ 业务实体 | HTTP 接口，参数校验 |
+
+#### 业务实体内部设计
+
+**标准模式：业务实体内部持有 PO**
+```rust
+// ✅ 正确：业务实体内部持有 PO，便于 DAL 层传递
+pub struct Project {
+    pub po: ProjectPo,
+    // 可选：额外业务方法和字段
+}
+
+pub struct Task {
+    pub po: TaskPo,
+    // 业务方法...
+}
+```
+
+**设计优势：**
+1. **避免重复转换代码**：DAL 层直接通过 `&xxx.po` 传递给 DAO，无需字段逐一映射
+2. **减少出错概率**：修改 PO 字段时只需修改一处，业务实体自动兼容
+3. **100% 向后兼容**：现有测试和业务逻辑无需修改
+4. **性能优化**：写操作使用引用传递 `&`，避免不必要的 clone
+
+#### DAL 层接口签名规范
+
+**所有 DAL 接口统一使用业务实体，不使用 PO：**
+```rust
+// ✅ 正确：写操作接收 &业务实体 引用
+async fn create(&self, ctx: RequestContext, project: &Project) -> Result<(), AppError>;
+async fn update(&self, ctx: RequestContext, project: &Project) -> Result<(), AppError>;
+
+// ✅ 正确：读操作返回 业务实体
+async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Project>, AppError>;
+async fn list_by_user(&self, ctx: RequestContext, user_id: &str) -> Result<Vec<Project>, AppError>;
+```
+
+#### RequestContext 跨层传递规范
+
+**所有跨层 ctx 传递统一使用 `ctx.clone()`：**
+```rust
+// ✅ 正确：clone 后传递，避免所有权移动问题
+self.project_dal.create(ctx.clone(), project).await?;
+```
+
+**理由：**
+- RequestContext 内部是 Arc 引用，clone 成本极低（仅指针复制）
+- 避免所有权移动导致的编译错误
+- 与 message domain 风格保持一致
+
+#### 软删除设计规范
+
+**`status = 0` 视为软删除，常规查询自动过滤**：
+- DAO 层的 `find_by_id`、`list_by_*` 等方法自动加 `WHERE status != 0`
+- 需要查询已删除数据时，使用独立方法如 `find_by_id_include_deleted`
+- Domain 层完全不需要感知软删除的存在
+
+---
+
+## 🏆 分层架构实践总结（截至 2026-05-15）
+
+### ✅ 已验证的最佳实践
+
+| 实践 | 验证模块 | 效果 |
+|------|---------|------|
+| **严格单向调用** | 全部 6 个领域 | ✅ 零跨层调用，零反向依赖 |
+| **DAO 职责单一** | 20 个 DAO | ✅ 每个 DAO 仅负责一个数据源 |
+| **纯 match 分发** | Message Channel | ✅ 简单灵活，无 trait 复杂度 |
+| **业务实体持 PO** | Project/Task/Artifact | ✅ 减少转换代码，兼容性好 |
+| **DAL 私有封装 DAO** | 全部 DAL | ✅ 隐藏实现细节，接口清晰 |
+| **Arc<dyn Trait> 注入** | 全部 Domain | ✅ 符合 DIP，测试友好 |
+
+---
+
+### ⚠️ 反模式避坑指南
+
+| 反模式 | 危害 | 正确做法 |
+|--------|------|---------|
+| DAO 调 DAO | 破坏单一职责，循环依赖 | DAL 层组合 DAO |
+| Domain 直接调 DAO | 跳过分层，职责混淆 | 必须通过 DAL 层 |
+| PO 暴露到 Domain 层 | 分层边界失效，耦合数据库 | 业务实体包装 PO |
+| 过度使用 trait | 复杂的对象转换，性能损耗 | 固定数量实现用纯 match |
+| Handler 直接调 DAL | 跳过业务逻辑层 | 必须通过 Domain 层 |
+
+---
+
+**文档维护者**：架构组
+**下次更新**：Message Handler 完成后

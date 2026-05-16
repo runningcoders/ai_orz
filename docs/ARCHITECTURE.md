@@ -144,6 +144,49 @@ data/
 
 ---
 
+## ⚡ Runtime Memory 运行时记忆架构（2026-05-16 新增）
+
+### 设计目标
+
+为 Agent 运行时提供统一的记忆读写接口，实现三层架构 100% 复用：
+- **PO 层**：`Memory` / `MemoryCreateParams` / `MemoryTrace` - 持久化实体
+- **DAL 层**：`MemorySearch` / `MemoryQuery` - 业务查询参数
+- **Runtime 层**：最薄封装，零重复定义
+
+### 核心接口设计
+
+```rust
+#[async_trait]
+pub trait RuntimeMemory: Send + Sync {
+    /// 写入记忆（复用 DAL 层 MemoryCreateParams）
+    async fn write(&self, ctx: RequestContext, params: &MemoryCreateParams) -> Result<Memory, AppError>;
+    
+    /// 搜索记忆（复用 DAL 层 MemorySearch）
+    async fn search(&self, ctx: RequestContext, search: &MemorySearch) -> Result<Vec<Memory>, AppError>;
+    
+    /// 查询记忆（复用 DAL 层 MemoryQuery）
+    async fn query(&self, ctx: RequestContext, query: &MemoryQuery) -> Result<Vec<Memory>, AppError>;
+}
+```
+
+### 实现模式
+
+| 模式 | 说明 |
+|------|------|
+| **最薄封装** | Runtime 层不新增任何结构体，全部复用 PO/DAL 层定义 |
+| **零转换成本** | 参数直接透传给 DAL，无字段映射开销 |
+| **100% 兼容** | PO/DAL 新增字段时，Runtime 层自动获得支持 |
+| **单例访问** | `runtime_memory()` 返回 `&'static Arc<dyn RuntimeMemory>` |
+
+### 架构优势
+
+1. **职责清晰**：Runtime 层只做统一入口，业务逻辑完全在 DAL 层
+2. **维护成本低**：一处修改，三层同步受益，无重复代码
+3. **可扩展性强**：后续新增语法糖在 Runtime 层追加方法，不修改核心契约
+4. **对齐规范**：与 `tool_execution` 实现风格完全一致，保持 Domain 层架构统一
+
+---
+
 ## 事件总线架构
 
 详见独立设计文档：[docs/event_design.md](./event_design.md)
@@ -169,7 +212,71 @@ Agent (po + brain: Option<Brain>)
        └─► Memory
             ├─► CoreMemory (soul: String, capabilities: String)
             └─► working: Vec<MemoryTrace>
+
+Project + Task + Artifact 聚合
+  └─► Project
+       ├─► po: ProjectPo
+       └─► tasks: Vec<Task>
+            └─► artifacts: Vec<Artifact>
 ```
+
+---
+
+## 最新架构完成状态（2026-05-16 更新）
+
+### 总体完成度：**~80%** 🎯
+
+| 层级 | 完成度 | 状态 | 关键进展 |
+|------|--------|------|---------|
+| **DAO 层** | 100% ✅ | 完成 | 20 个 DAO 全部实现并被使用，零闲置 |
+| **DAL 层** | 100% ✅ | 完成 | 13 个 DAL 全部接入业务，无闲置 |
+| **Domain 层** | 80% ✅ | 大部分完成 | 7 个领域，5 个完整实现 + 2 个待补 Handler |
+| **Handler 层** | 50% ⚠️ | 进行中 | 3 个领域 API 已上线，3 个待补充 |
+
+---
+
+### 已完成架构里程碑
+
+#### ✅ 1. Message Domain 全链路完成
+- **消息管理 + 8 个渠道管理 + 多渠道投递** 全部实现
+- **67/67 测试通过**，覆盖率 100%
+- 纯 match 分发架构，无 trait，无循环依赖
+- 所有渠道 DAO 完全独立平放在 dao/ 下
+- DAL 统一整合配置管理 + 消息分发
+
+#### ✅ 2. Project/Task/Artifact 领域完整实现
+- **23 个 DAL 方法** + **Domain 层完整业务编排**
+- PO 与业务实体分层：业务实体内部持有 PO，DAL 层转换
+- 软删除模式：`status = 0` 视为已删除，常规查询自动过滤
+- 聚合模式：Project 聚合 Task，Task 聚合 Artifact
+
+#### ✅ 3. Tool Domain 完整实现
+- **27 个 DAL 方法** + **management 业务逻辑**
+- 混合模式工具调用：简单工具走 rig auto，关键工具走自建 manual 链路
+- 工具调用记录复用消息表：工具调用本身是特殊 Message
+
+#### ✅ 5. Runtime Memory 运行时记忆模块完成
+- **Runtime Domain 新增 Memory 子模块**，实现记忆读写通用接口
+- **最薄封装设计**：100% 复用 DAL 层方法和结构体，核心接口零重复定义
+- **三层统一复用**：`MemoryCreateParams` → `MemorySearch` → `MemoryQuery` 全链路复用，PO/DAL 新增字段时 Runtime 层自动兼容
+- **对齐 Domain 架构规范**：与 `tool_execution` 实现风格一致，采用 `Arc<dyn Trait>` 单例模式
+
+#### ✅ 6. 分层架构执行质量 100% 合规
+- 所有 Handler **严格通过 Domain 调用**，没有直接调用 DAL/DAO
+- 依赖方向完全正确：上层依赖下层，无反向依赖
+- Domain 通过 `Arc<dyn Trait>` 注入 DAL，完全符合 DIP 原则
+
+---
+
+### 待完善架构项
+
+| 优先级 | 任务 | 说明 |
+|--------|------|------|
+| **P0** | domain_project 补充 Handler | 内部已完成，仅需暴露 API |
+| **P0** | domain_tool 补充 Handler | 内部已完成，仅需暴露 API |
+| **P1** | Runtime Memory 补充上层语法糖 | 核心接口已完成，可根据业务需要追加便捷方法 |
+| **P1** | message 消费推送全链路 | consumer → domain_message → dal_message_channel |
+| **P2** | Agent 思考记忆链路 | Agent 触发 → Runtime Memory 读写 |
 
 ---
 

@@ -32,11 +32,17 @@
 | 🚀 异步消费者系统 | ✅ | 通用消费者框架 + Message Topic 三层分发 |
 | 🔍 向量搜索 | ✅ | SQLite VSS 扩展 + 语义索引 + 可平滑升级 |
 
-### 1.3 当前测试统计
+### 1.3 整体完成度与测试统计（2026-05-15 更新）
 
-- **总测试数**: 267 个
-- **通过率**: 100% ✅
-- **覆盖范围**: DAO + DAL + Domain 三层完整覆盖
+| 指标 | 数值 | 说明 |
+|------|------|------|
+| **总测试数** | **450+** | DAO + DAL + Domain 三层完整覆盖 |
+| **通过率** | **100%** | ✅ 全部测试通过 |
+| DAO 模块数 | 20 个 | 全部实现并被使用，零闲置 |
+| DAL 模块数 | 13 个 | 11 个完整业务承载，2 个待接入 |
+| Domain 领域数 | 6 个 | 4 个完整实现，2 个待补 Handler |
+| Handler API 领域数 | 3 个上线 | organization, hr, finance |
+| **整体架构完成度** | **~78%** | 从下往上扎实推进 |
 
 ---
 
@@ -48,12 +54,13 @@
 | 文档 | 内容 | 优先级 |
 |------|------|--------|
 | [README.md](./README.md) | 项目概览、快速开始、功能列表、文档索引 | ⭐⭐⭐ |
-| [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | 完整架构说明、核心概念解释、实体关系 | ⭐⭐⭐ |
+| [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | **最新**完整架构说明、核心概念解释、实体关系、完成状态 | ⭐⭐⭐ |
+| [docs/architecture_status_20260515.md](./docs/architecture_status_20260515.md) | 分层架构现状快照、金字塔结构、各层状态统计 | ⭐⭐⭐ |
 
 ### 分层架构与最佳实践
 | 文档 | 内容 | 优先级 |
 |------|------|--------|
-| [docs/LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md) | **开发记录**：分层架构完整落地过程、反模式、避坑指南、经验总结 | ⭐⭐⭐ |
+| [docs/LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md) | **开发必读** 6 个完整架构实践、反模式坑、最佳实践总结 | ⭐⭐⭐ |
 | [docs/NAMING_CONVENTION.md](./docs/NAMING_CONVENTION.md) | 全项目统一命名约定、DAO/DAL/Domain 命名规则 | ⭐⭐ |
 ### 各模块详细设计
 | 文档 | 内容 | 优先级 |

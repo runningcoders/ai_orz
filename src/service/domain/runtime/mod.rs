@@ -11,8 +11,10 @@ use std::fmt::Debug;
 use crate::error::AppError;
 use crate::pkg::request_context::RequestContext;
 
+mod memory;
 mod tool_execution;
 
+pub use memory::RuntimeMemory;
 pub use tool_execution::ToolExecution;
 
 /// Runtime Domain 主 trait
@@ -20,12 +22,16 @@ pub use tool_execution::ToolExecution;
 pub trait RuntimeDomain: Send + Sync + Debug {
     /// 获取工具执行子模块
     fn tool_execution(&self) -> &dyn ToolExecution;
+
+    /// 获取运行时记忆子模块
+    fn memory(&self) -> &dyn RuntimeMemory;
 }
 
 /// Runtime Domain 默认实现
 #[derive(Debug, Clone)]
 pub struct RuntimeDomainImpl {
     tool_execution: tool_execution::ToolExecutionImpl,
+    memory: memory::RuntimeMemoryImpl,
 }
 
 impl RuntimeDomainImpl {
@@ -33,6 +39,7 @@ impl RuntimeDomainImpl {
     pub fn new() -> Self {
         Self {
             tool_execution: tool_execution::ToolExecutionImpl::new(),
+            memory: memory::RuntimeMemoryImpl::new(),
         }
     }
 }
@@ -48,6 +55,10 @@ impl RuntimeDomain for RuntimeDomainImpl {
     fn tool_execution(&self) -> &dyn ToolExecution {
         &self.tool_execution
     }
+
+    fn memory(&self) -> &dyn RuntimeMemory {
+        &self.memory
+    }
 }
 
 /// Thread-safe singleton instance
@@ -61,4 +72,9 @@ pub fn instance() -> &'static dyn RuntimeDomain {
 /// Get the ToolExecution instance (convenience)
 pub fn tool_execution() -> &'static dyn ToolExecution {
     instance().tool_execution()
+}
+
+/// Get the RuntimeMemory instance (convenience)
+pub fn memory() -> &'static dyn RuntimeMemory {
+    instance().memory()
 }
