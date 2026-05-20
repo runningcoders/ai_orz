@@ -121,6 +121,17 @@ mod tests {
     /// 测试 write - 追加 trace
     #[tokio::test]
     async fn test_runtime_memory_write_append_traces() {
+        // 0. 先初始化全局配置
+        let _ = crate::config::init();
+
+        // 1. 先初始化所有依赖的 DAO
+        crate::service::dao::memory::init();
+        crate::service::dao::model_provider::init();
+        crate::service::dao::cortex::init();
+
+        // 2. 初始化 DAL
+        crate::service::dal::memory::init();
+
         let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
         let ctx = RequestContext::new_simple("test-user", pool);
 
