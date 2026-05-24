@@ -66,6 +66,7 @@
 | 文档 | 内容 | 优先级 |
 |------|------|--------|
 | [docs/sqlx_guide.md](./docs/sqlx_guide.md) | SQLx 0.8 + SQLite 开发规范、枚举映射、测试隔离 | ⭐⭐⭐ |
+| [docs/runtime_design.md](./docs/runtime_design.md) | **Runtime Domain 总纲**：Agent 唤醒、神经 vs 外骨骼工具二分、上下文极薄设计 | ⭐⭐⭐ |
 | [docs/memory_design.md](./docs/memory_design.md) | 四层记忆系统设计、检索策略 | ⭐⭐ |
 | [docs/tool_design.md](./docs/tool_design.md) | 混合模式工具调用、工具注册表、调用追踪 | ⭐⭐ |
 | [docs/message_interaction_design.md](./docs/message_interaction_design.md) | 消息交互架构、用户↔Agent双向对话、工具调用复用消息表 | ⭐⭐ |
