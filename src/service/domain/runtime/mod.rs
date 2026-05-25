@@ -3,78 +3,183 @@
 //! 【定位】运行时执行层 - 只负责动态执行逻辑，不负责任何静态配置管理
 //!
 //! 包含子模块：
-//! - ToolExecution: 工具实际执行（单次/批量）
+//! - memory: 运行时记忆管理（读取历史、写入思考 Trace）
+//! - awakening: Agent 唤醒主流程
+//! - tool_execution: 工具实际执行（单次/批量）
+//! - context_assembly: Prompt 上下文组装（纯函数，无 async）
 
 use async_trait::async_trait;
 use std::fmt::Debug;
+use std::sync::Arc;
 
 use crate::error::AppError;
+use crate::models::agent::Agent;
+use crate::models::message::Message;
+use crate::models::memory::Memory;
 use crate::pkg::request_context::RequestContext;
 
-mod memory;
-mod tool_execution;
+// ==================== 枚举定义 ====================
 
-pub use memory::RuntimeMemory;
-pub use tool_execution::ToolExecution;
-
-/// Runtime Domain 主 trait
-#[async_trait]
-pub trait RuntimeDomain: Send + Sync + Debug {
-    /// 获取工具执行子模块
-    fn tool_execution(&self) -> &dyn ToolExecution;
-
-    /// 获取运行时记忆子模块
-    fn memory(&self) -> &dyn RuntimeMemory;
+/// 思考 Trace 类型
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThinkingTraceType {
+    /// 输入（Prompt）
+    Input,
+    /// 输出（模型返回）
+    Output,
+    /// 工具调用
+    ToolCall,
+    /// 工具调用结果
+    ToolResult,
 }
 
-/// Runtime Domain 默认实现
+// ==================== traits 定义 ====================
+
+/// Runtime Domain 总 trait
+///
+/// 聚合运行时领域所有子功能 trait
+pub trait RuntimeDomain: Send + Sync + Debug {
+    /// 记忆管理能力
+    fn memory(&self) -> &dyn RuntimeMemory;
+    /// 唤醒能力
+    fn awakening(&self) -> &dyn RuntimeAwakening;
+    /// 工具执行能力
+    fn tool_execution(&self) -> &dyn RuntimeToolExecution;
+}
+
+/// 记忆管理 trait
+///
+/// 定义记忆读取、思考 Trace 写入等接口
+#[async_trait]
+pub trait RuntimeMemory: Send + Sync {
+    /// 读取最近短期记忆
+    async fn get_recent_context(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        task_id: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<Memory>, AppError>;
+
+    /// 写入思考 Trace
+    async fn write_thinking_trace(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        trace_type: ThinkingTraceType,
+        content: &str,
+        trace_id: Option<String>,
+    ) -> Result<Memory, AppError>;
+}
+
+/// 唤醒能力 trait
+///
+/// 定义 Agent 唤醒相关的核心业务接口
+#[async_trait]
+pub trait RuntimeAwakening: Send + Sync {
+    /// 唤醒 Agent 并执行一次思考
+    ///
+    /// 【分层原则】
+    /// - 外部传入：Agent、Message（由上层 Domain 加载好传入）
+    /// - 内部获取：Memory、工具、技能（Runtime Domain 内部直接访问）
+    ///
+    /// 【流程】
+    /// 1. 读取最近短期记忆
+    /// 2. 收集关联的 Trace ID 列表
+    /// 3. 拼装 Prompt
+    /// 4. 记录输入 Trace
+    /// 5. 调用模型推理
+    /// 6. 记录输出 Trace
+    /// 7. 返回结果
+    async fn awaken(
+        &self,
+        ctx: RequestContext,
+        agent: &Agent,
+        message: &Message,
+    ) -> Result<AwakeningResult, AppError>;
+}
+
+/// 工具执行 trait
+///
+/// 定义工具实际执行的接口
+#[async_trait]
+pub trait RuntimeToolExecution: Send + Sync {
+    // （预留）后续实现工具执行能力
+}
+
+// ==================== 子模块  ====================
+// 注意：子模块必须在 trait 定义之后导入，这样子模块才能看到这些 trait
+
+mod memory;
+mod awakening;
+mod context_assembly;
+mod tool_execution;
+
+pub use context_assembly::{build_conversation_prompt, PromptBuilder};
+
+// ==================== 实现 ====================
+
+/// Runtime Domain 实现
+///
+/// 聚合所有运行时子功能实现
 #[derive(Debug, Clone)]
-pub struct RuntimeDomainImpl {
-    tool_execution: tool_execution::ToolExecutionImpl,
-    memory: memory::RuntimeMemoryImpl,
+struct RuntimeDomainImpl {
+    // （预留）后续接入 DAL 时在这里添加
 }
 
 impl RuntimeDomainImpl {
-    /// 创建新的 RuntimeDomain 实例
-    pub fn new() -> Self {
-        Self {
-            tool_execution: tool_execution::ToolExecutionImpl::new(),
-            memory: memory::RuntimeMemoryImpl::new(),
-        }
+    /// 创建 Domain 实例
+    fn new() -> Self {
+        Self {}
     }
 }
 
-impl Default for RuntimeDomainImpl {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
 impl RuntimeDomain for RuntimeDomainImpl {
-    fn tool_execution(&self) -> &dyn ToolExecution {
-        &self.tool_execution
-    }
-
     fn memory(&self) -> &dyn RuntimeMemory {
-        &self.memory
+        self
+    }
+    fn awakening(&self) -> &dyn RuntimeAwakening {
+        self
+    }
+    fn tool_execution(&self) -> &dyn RuntimeToolExecution {
+        self
     }
 }
 
-/// Thread-safe singleton instance
-static RUNTIME_DOMAIN_INSTANCE: std::sync::OnceLock<RuntimeDomainImpl> = std::sync::OnceLock::new();
+// ==================== 单例 ====================
 
-/// Get the global RuntimeDomain instance
-pub fn instance() -> &'static dyn RuntimeDomain {
-    RUNTIME_DOMAIN_INSTANCE.get_or_init(RuntimeDomainImpl::new)
+use std::sync::OnceLock;
+
+static RUNTIME_DOMAIN: OnceLock<Arc<dyn RuntimeDomain>> = OnceLock::new();
+
+/// 获取 Runtime Domain 单例
+pub fn domain() -> Arc<dyn RuntimeDomain> {
+    RUNTIME_DOMAIN.get().cloned().unwrap()
 }
 
-/// Get the ToolExecution instance (convenience)
-pub fn tool_execution() -> &'static dyn ToolExecution {
-    instance().tool_execution()
+/// 创建新的 Runtime Domain 实例（用于测试，每次测试创建独立实例保证隔离）
+pub fn new() -> Arc<dyn RuntimeDomain> {
+    let domain = RuntimeDomainImpl::new();
+    Arc::new(domain)
 }
 
-/// Get the RuntimeMemory instance (convenience)
-pub fn memory() -> &'static dyn RuntimeMemory {
-    instance().memory()
+/// 初始化 Runtime Domain（使用全局单例 DAO）
+pub fn init() {
+    let runtime_domain = RuntimeDomainImpl::new();
+    let _ = RUNTIME_DOMAIN.set(Arc::new(runtime_domain));
+}
+
+// ==================== 结果结构体 ====================
+
+/// 唤醒结果
+#[derive(Debug, Clone)]
+pub struct AwakeningResult {
+    /// Agent ID
+    pub agent_id: String,
+    /// 本次产生的 Trace ID 列表（输入 + 输出）
+    pub trace_ids: Vec<String>,
+    /// 原始输入（完整 Prompt）
+    pub raw_input: String,
+    /// 原始输出（模型返回）
+    pub raw_output: String,
 }

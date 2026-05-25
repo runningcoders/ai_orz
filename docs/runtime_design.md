@@ -342,9 +342,1067 @@ pub struct AssembledContext {
 
 ---
 
-## 八、变更记录
+## 九、唤醒 Agent 操作的具体执行流程
+
+> 📌 **本章细化**：具体描述一次 `awaken()` 调用从开始到结束的完整执行路径，不涉及对外扩散。
+
+### 9.1 唤醒调用的入口点
+
+**调用入口**：消息消费者的 `handle_agent_message()` 方法。
+
+```
+消息总线 → Consumer → handle_agent_message() → Runtime::awaken()
+```
+
+这是唯一的唤醒入口。Runtime 不提供其他对外的唤醒接口，所有唤醒都由消息驱动。
+
+---
+
+### 9.2 完整的唤醒执行流程（12 步）
+
+```
+1. 参数校验 → 2. 加载 Agent 实体 → 3. 加载触发消息
+   ↓
+4. 拼装上下文（System Prompt + 神经工具）→ 5. 提取近期工作记忆
+   ↓
+6. 注入神经工具到 Cortex → 7. 调用模型推理（含回合内多步工具调用）
+   ↓
+8. 捕获模型输出 → 9. 落思考轨迹到记忆 → 10. 处理收口信号
+   ↓
+11. 生成 Outcome → 12. 返回（所有副作用已在神经工具内即时落地）
+```
+
+#### 第 1-3 步：准备阶段（纯数据加载，无副作用）
+
+```rust
+async fn awaken(
+    &self,
+    ctx: RequestContext,
+    cmd: AwakenCommand,
+) -> Result<AwakenOutcome, AppError> {
+
+    // === Step 1: 参数校验 ===
+    // 校验 agent_id 非空，trigger 类型合法
+    cmd.validate()?;
+
+    // === Step 2: 加载 Agent 实体 ===
+    // 通过 FinanceDomain 获取 Agent 完整实体（含配置 + 绑定的工具/技能）
+    let agent = finance_domain().get_agent(ctx, &cmd.agent_id).await?;
+
+    // === Step 3: 加载触发消息（如果有）===
+    // UserMessage / AgentMessage 等 trigger 需要加载消息内容
+    let trigger_message = match &cmd.trigger {
+        Trigger::UserMessage { message_id } => {
+            Some(message_domain().get_message(ctx, message_id).await?)
+        }
+        Trigger::AgentMessage { message_id, .. } => {
+            Some(message_domain().get_message(ctx, message_id).await?)
+        }
+        Trigger::ToolResult { tool_call_id } => {
+            // 工具结果也需要加载对应的消息体
+            Some(message_domain().get_message_by_tool_call_id(ctx, tool_call_id).await?)
+        }
+        _ => None,
+    };
+
+    // ...
+}
+```
+
+#### 第 4-5 步：上下文拼装（纯函数，无副作用）
+
+```rust
+    // === Step 4: 拼装系统提示词 ===
+    // 调用 ContextAssembly 纯函数：
+    //  - Agent 身份（角色 + 人设）
+    //  - 触发场景描述（"用户对你说" / "另一个 Agent 对你说"）
+    //  - 元思考提示（"遇到不会的可以查技能/记忆"）
+    //  - 神经工具列表（名字 + 一句话描述，不含完整 schema）
+    let system_prompt = context_assembly().build_system_prompt(
+        &agent,
+        &cmd.trigger,
+        trigger_message.as_ref(),
+    );
+
+    // === Step 5: 提取近期工作记忆（最近 N 条会话轨迹）===
+    // 从 RuntimeMemory 拉取本 Agent 最近的会话痕迹，作为上下文的一部分
+    let recent_traces = runtime_memory()
+        .get_recent_traces(ctx, &agent.po.id, 20)  // 最近 20 条
+        .await?;
+
+    // 拼装成完整对话历史
+    let conversation = context_assembly().build_conversation(
+        system_prompt,
+        &recent_traces,
+        trigger_message.as_ref(),
+    );
+```
+
+**设计要点**：
+- 第 4-5 步都是**纯函数**，只输入数据，不产生副作用
+- 上下文极薄原则：不预加载技能完整内容，只给"可以查技能"的提示和工具入口
+
+#### 第 6-7 步：推理执行（有副作用，但副作用在神经工具内部）
+
+```rust
+    // === Step 6: 注入神经工具到 Cortex ===
+    // 从 NeuralTools 注册表获取所有神经工具的 ToolDyn 实现
+    // 注入到 Agent 的 Cortex 中（Cortex 创建时其实已经注入了，这里是动态补充）
+    //
+    // 【注意】神经工具是每个 Agent 默认都有的，与 Agent 绑定的自定义工具不同
+    let neural_tools = neural_tools().get_all_tools(ctx, &agent);
+
+    // === Step 7: 调用模型推理 ===
+    // 调用 Cortex::prompt_with_tools() 进行推理
+    // rig 会自动处理回合内的多步工具调用（直到模型不再调用工具）
+    // 神经工具在调用时会即时落地副作用（发消息、写记忆等）
+    let raw_response = agent
+        .cortex()
+        .ok_or(AppError::AgentNotInitialized)?
+        .prompt_with_tools(conversation.to_string(), neural_tools)
+        .await?;
+```
+
+**关键机制**：
+- 神经工具调用是**同步、即时落地**的（写记忆直接落库，发消息直接进消息总线）
+- rig 框架自动处理回合内的多步工具调用（这是允许的"模型自主行为"，不算我们写的循环）
+- 所有副作用在神经工具调用时就已经发生，不需要等推理结束再统一处理
+
+#### 第 8-10 步：收尾处理
+
+```rust
+    // === Step 8: 捕获模型输出（已经在 Step 7 拿到了）===
+    // raw_response 是模型最终的自然语言输出
+
+    // === Step 9: 落思考轨迹到记忆 ===
+    // 把本次推理的完整痕迹（输入 + 输出 + 调用过的工具）写入 RuntimeMemory
+    runtime_memory()
+        .write_thinking_trace(
+            ctx,
+            &agent.po.id,
+            ThinkingTrace {
+                trigger: cmd.trigger.clone(),
+                input: conversation.to_string(),
+                output: raw_response.clone(),
+                tool_calls: vec![],  // TODO: 从 Cortex 获取实际调用过的工具列表
+                timestamp: chrono::Utc::now(),
+            },
+        )
+        .await?;
+
+    // === Step 10: 处理收口信号 ===
+    // 检查神经工具中是否有 mark_done / stay_silent 等收口信号被调用
+    // 从 NeuralTools 的调用上下文中提取信号（神经工具内部有状态记录）
+    let done_signal = neural_tools().extract_done_signal();
+```
+
+#### 第 11-12 步：返回结果
+
+```rust
+    // === Step 11: 生成 Outcome ===
+    let outcome = AwakenOutcome {
+        done_signal,
+        raw_response: Some(raw_response),
+    };
+
+    // === Step 12: 返回 ===
+    // 注意：所有副作用（发消息、写记忆、工具执行）都已经在前面即时落地了
+    // Outcome 只是用于日志和上层观测，不承载实际副作用
+    Ok(outcome)
+}
+```
+
+---
+
+### 9.3 神经工具的执行机制
+
+神经工具的执行是唤醒流程中最核心的部分，需要特别说明：
+
+#### 9.3.1 神经工具的调用路径
+
+```
+模型决定调用 search_memory
+    ↓
+rig 框架解析 tool call 参数
+    ↓
+调用 ToolDyn::call() 方法
+    ↓
+Tool 实现内部调用对应的 DAL/Domain
+    ↓
+search_memory 直接调 RuntimeMemory.search() → 读库
+send_message 直接调 MessageDomain.delivery.send() → 写消息总线
+mark_done 在工具内部设置一个 done 标志 → 后面提取
+    ↓
+返回结果给模型 → 模型继续思考（可能继续调用其他工具）
+```
+
+#### 9.3.2 神经工具的两层设计
+
+**第一层：Tool 接口适配层**（在 `neural_tools.rs` 中）
+- 实现 rig 的 `ToolDyn` trait
+- 参数解析：把模型传的 JSON 转为强类型结构体
+- 错误处理：把业务错误转为工具调用的错误格式
+- 记录调用痕迹：标记哪些工具被调用过
+
+**第二层：业务实现层**（在各自的 Domain/DAL 中）
+- 实际的业务逻辑：读记忆、发消息等
+- 不感知 Tool 接口，只提供普通的 async fn
+
+这样设计的好处：
+- 业务逻辑不需要知道自己是被工具调用还是被 HTTP Handler 调用
+- 同一套业务逻辑可以同时暴露为 HTTP API 和神经工具，符合你之前说的"handler 即工具"的方向
+
+---
+
+### 9.4 ContextAssembly 的具体拼装逻辑
+
+#### 9.4.1 System Prompt 的组成结构
+
+```
+【角色定位】
+你是 {agent.name}，ID: {agent.id}
+你的角色是：{agent.role_description}
+
+【当前场景】
+你正在处理 {trigger_type} 触发的任务
+{trigger_description}  // "用户对你说了一句话" / "收到了工具执行结果" 等
+
+【可用能力】
+你可以调用以下内置工具：
+  • search_memory(kw: str) - 搜索你的长期记忆
+  • write_memory(content: str) - 沉淀新的记忆
+  • search_skill(kw: str) - 搜索可用的技能
+  • read_skill(skill_id: str) - 读取某个技能的完整内容
+  • send_message(to: str, content: str) - 发送消息
+  • mark_done() - 标记任务完成
+
+【思考提示】
+- 遇到不懂的，先查记忆和技能，不要不懂装懂
+- 每调用一次工具，你会得到结果，然后可以继续思考
+- 不需要的内容不要预加载，用到时再查
+- 任务完成了就调用 mark_done，不要继续啰嗦
+```
+
+#### 9.4.2 对话历史的拼装规则
+
+```
+1. 第一条永远是上面的 System Prompt
+2. 接着是最近 N 条工作记忆（按时间倒序，最新的在后面）
+3. 最后一条是本次的触发消息
+4. 总 token 数控制在模型上限的 70% 以内，超出时裁剪旧的记忆
+```
+
+---
+
+### 9.5 AwakenOutcome 的设计哲学
+
+**极简设计**：`AwakenOutcome` 只包含两个字段：
+- `done_signal: Option<DoneSignal>` - 是否以及如何收口
+- `raw_response: Option<String>` - 模型的原始自然语言输出
+
+**为什么不再多？**
+- 所有消息已经通过 `send_message` 神经工具即时写入消息总线
+- 所有记忆已经通过 `write_memory` 神经工具即时写入记忆库
+- 所有工具调用的副作用已经在调用时即时落地
+- Consumer 不需要再做"派发"，Outcome 只用于日志和观测
+
+这就是"一切动作皆消息"的最终体现——Runtime 不攒结果，不做派发，调用即落地。
+
+---
+
+## 十一、可执行落地方案：第一阶段最小可用唤醒（Minimum Awakening）
+
+> 📌 **目标**：基于现有能力，用最小改动实现第一版可跑通的 Agent 唤醒流程，先跑通纯文本对话，后续再叠加工具/技能能力。
+
+### 11.1 当前能力盘点（✅ 已存在 / ❌ 需补充）
+
+| 序号 | 能力 | 状态 | 对应 DAL/模块 | 现有方法 |
+|------|------|------|-------------|---------|
+| 1 | 获取用户信息 | ✅ | UserDal | `find_by_id` |
+| 2 | 获取 Agent 实体 | ✅ | AgentDal | `find_by_id` |
+| 3 | 读取最近短期记忆 | ⚠️ 部分 | MemoryDal | 有 `search`/`query`，需要封装 `get_recent_traces` 便捷方法 |
+| 4 | 获取 Agent 绑定的工具 | ✅ | ToolDal | `list_tools_for_agent_full` |
+| 5 | 获取 Agent 绑定的技能 | ✅ | SkillDal | `list_for_agent` |
+| 6 | 调用模型推理 | ✅ | BrainDal | `prompt_existing_cortex` |
+| 7 | 写入记忆 Trace | ⚠️ 部分 | RuntimeMemory | 有基础 `write`，需要 `write_thinking_trace` 专用方法 |
+| 8 | 上下文拼装（Prompt 模板） | ❌ 新增 | ContextAssembly | 需要新建纯函数模块 |
+| 9 | 唤醒入口方法 | ❌ 新增 | Awakening | 需要新建 `awaken_for_user_message` |
+
+---
+
+### 11.2 第一阶段唤醒流程（简化版 6 步）
+
+**先跑通纯文本对话，工具/技能留到第二阶段。**
+
+```
+输入：ctx + agent_id + user_message_id
+
+  1. 加载基础数据
+     ├─ 加载 Agent 实体（AgentDal.find_by_id）
+     ├─ 加载用户消息（MessageDal.find_by_id）
+     └─ 如果有 user_id，加载用户信息（UserDal.find_by_id）
+     ↓
+  2. 读取最近短期记忆
+     └─ RuntimeMemory.get_recent_traces(agent_id, limit=20)
+     ↓
+  3. 拼装 Prompt
+     └─ ContextAssembly.build_conversation(agent, user, message, traces)
+     ↓
+  4. 记录输入 Trace
+     └─ RuntimeMemory.write_thinking_trace(INPUT)
+     ↓
+  5. 调用模型推理
+     └─ BrainDal.prompt_existing_cortex(agent.brain, prompt)
+     ↓
+  6. 记录输出 Trace + 返回结果
+     └─ RuntimeMemory.write_thinking_trace(OUTPUT)
+     └─ 返回 AwakeningResult
+```
+
+---
+
+### 11.3 第一阶段需要新增/修改的代码清单
+
+#### 📁 1. 新增：`src/service/domain/runtime/awakening.rs`
+
+**核心接口设计：**
+
+```rust
+/// 唤醒参数
+pub struct AwakenForUserMessage {
+    pub agent_id: String,
+    pub user_message_id: String,
+}
+
+/// 唤醒结果
+pub struct AwakeningResult {
+    pub agent_id: String,
+    pub raw_input: String,
+    pub raw_output: String,
+    pub thinking_trace_ids: Vec<String>,
+}
+
+#[async_trait]
+pub trait Awakening: Send + Sync {
+    /// 唤醒 Agent 处理用户消息（第一阶段最小可用）
+    async fn awaken_for_user_message(
+        &self,
+        ctx: RequestContext,
+        cmd: AwakenForUserMessage,
+    ) -> Result<AwakeningResult, AppError>;
+}
+```
+
+**单例注册：** 对齐 Runtime 现有风格，使用 `OnceLock` 注册单例。
+
+---
+
+#### 📁 2. 新增：`src/service/domain/runtime/context_assembly.rs`
+
+**纯函数模块，无副作用：**
+
+```rust
+/// 上下文拼装器（纯函数）
+pub struct ContextAssembly;
+
+impl ContextAssembly {
+    /// 拼装对话历史
+    pub fn build_conversation(
+        agent: &Agent,
+        user: Option<&UserPo>,
+        current_message: &Message,
+        recent_traces: &[Memory],
+    ) -> String {
+        let mut prompt = String::new();
+
+        // 1. Agent 身份部分
+        prompt.push_str(&format!("你是 {}，ID：{}\n", agent.po.name, agent.po.id));
+        if let Some(desc) = &agent.po.description {
+            prompt.push_str(&format!("角色描述：{}\n", desc));
+        }
+        prompt.push_str("\n");
+
+        // 2. 历史对话（最近 N 条记忆）
+        if !recent_traces.is_empty() {
+            prompt.push_str("【历史对话】\n");
+            for trace in recent_traces {
+                // 简化：直接使用 memory.content
+                prompt.push_str(&format!("{}\n", trace.po.content));
+            }
+            prompt.push_str("\n");
+        }
+
+        // 3. 当前用户消息
+        prompt.push_str("【当前消息】\n");
+        prompt.push_str(&format!("用户说：{}\n", current_message.po.content));
+        prompt.push_str("\n请回复：");
+
+        prompt
+    }
+}
+```
+
+**设计原则：** 纯函数、无 async、无副作用、可单独测试。
+
+---
+
+#### 📁 3. 修改：`src/service/domain/runtime/memory.rs`
+
+**新增 2 个便捷方法：**
+
+```rust
+#[async_trait]
+pub trait RuntimeMemory: Send + Sync {
+    // --- 现有方法 ---
+    async fn write(&self, ctx: RequestContext, params: &MemoryCreateParams) -> Result<Memory, AppError>;
+    async fn search(&self, ctx: RequestContext, search: &MemorySearch) -> Result<Vec<Memory>, AppError>;
+    async fn query(&self, ctx: RequestContext, query: &MemoryQuery) -> Result<Vec<Memory>, AppError>;
+
+    // --- 新增方法 ---
+
+    /// 获取 Agent 最近的短期记忆 Trace
+    async fn get_recent_traces(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        limit: i64,
+    ) -> Result<Vec<Memory>, AppError>;
+
+    /// 写入思考 Trace
+    async fn write_thinking_trace(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        trace_type: ThinkingTraceType,
+        content: &str,
+    ) -> Result<Memory, AppError>;
+}
+
+/// 思考 Trace 类型
+pub enum ThinkingTraceType {
+    Input,
+    Output,
+    ToolCall,
+    ToolResult,
+}
+```
+
+**实现要点：**
+- `get_recent_traces`: 内部调用 `MemoryDal.query`，过滤 `memory_type = ShortTerm`，按时间倒序 limit
+- `write_thinking_trace`: 内部调用 `MemoryDal.create`，预填充 `memory_type`、`agent_id` 等字段
+
+---
+
+#### 📁 4. 修改：`src/service/domain/runtime/mod.rs`
+
+**注册新增模块：**
+
+```rust
+// 新增模块导入
+mod awakening;
+mod context_assembly;
+
+// 新增导出
+pub use awakening::{Awakening, AwakeningResult, AwakenForUserMessage};
+pub use context_assembly::ContextAssembly;
+pub use memory::{ThinkingTraceType, RuntimeMemory};
+
+// RuntimeDomain trait 新增方法
+#[async_trait]
+pub trait RuntimeDomain: Send + Sync + Debug {
+    // --- 现有方法 ---
+    fn tool_execution(&self) -> &dyn ToolExecution;
+    fn memory(&self) -> &dyn RuntimeMemory;
+
+    // --- 新增方法 ---
+    fn awakening(&self) -> &dyn Awakening;
+}
+
+// RuntimeDomainImpl 新增字段
+pub struct RuntimeDomainImpl {
+    tool_execution: tool_execution::ToolExecutionImpl,
+    memory: memory::RuntimeMemoryImpl,
+    awakening: awakening::AwakeningImpl,  // 新增
+}
+
+// new() 方法中初始化 awakening
+impl RuntimeDomainImpl {
+    pub fn new() -> Self {
+        Self {
+            tool_execution: tool_execution::ToolExecutionImpl::new(),
+            memory: memory::RuntimeMemoryImpl::new(),
+            awakening: awakening::AwakeningImpl::new(),  // 新增
+        }
+    }
+}
+
+// 新增便捷方法
+pub fn awakening() -> &'static dyn Awakening {
+    instance().awakening()
+}
+```
+
+---
+
+### 11.4 第一阶段唤醒的完整伪代码实现
+
+```rust
+// in awakening.rs
+
+async fn awaken_for_user_message(
+    &self,
+    ctx: RequestContext,
+    cmd: AwakenForUserMessage,
+) -> Result<AwakeningResult, AppError> {
+
+    // === Step 1: 加载基础数据 ===
+    let agent = agent_dal()
+        .find_by_id(ctx.clone(), &cmd.agent_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Agent {} not found", cmd.agent_id)))?;
+
+    let message = message_dal()
+        .find_by_id(ctx.clone(), &cmd.user_message_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Message {} not found", cmd.user_message_id)))?;
+
+    let user = if let Some(user_id) = &message.po.from_user_id {
+        user_dal().find_by_id(ctx.clone(), user_id).await?
+    } else {
+        None
+    };
+
+    // === Step 2: 读取最近短期记忆 ===
+    let recent_memories = runtime_domain()
+        .memory()
+        .get_recent_context(ctx.clone(), &cmd.agent_id, None, 20)
+        .await?;
+
+    // === Step 3: 收集关联的 Trace ID 列表 ===
+    //  - 当前消息关联的 trace_id
+    //  - 历史记忆中涉及的 trace_id
+    //  - 工具调用关联的 trace_id
+    let mut trace_ids = vec![];
+    // （预留）从消息 metadata 提取关联 trace_ids
+    // if let Some(ids) = message.po.metadata.get("trace_ids") { ... }
+
+    // === Step 4: 拼装 Prompt（带上关联的 Trace IDs，方便 Agent 引用） ===
+    let prompt = runtime_domain()
+        .context_assembly()
+        .build_conversation_prompt(
+            &trace_ids,
+            &agent,
+            &recent_memories,
+            &message,
+        );
+
+    // === Step 5: 生成本次输入的 Trace ID 并记录 ===
+    let input_trace_id = format!("trace-{}-{}", &cmd.agent_id, chrono::Utc::now().timestamp_nanos());
+    let input_trace = runtime_domain()
+        .memory()
+        .write_thinking_trace(
+            ctx.clone(),
+            &cmd.agent_id,
+            ThinkingTraceType::Input,
+            &prompt,
+            Some(input_trace_id),
+        )
+        .await?;
+
+    // === Step 6: 调用模型推理 ===
+    // 检查 Agent 是否已唤醒 Brain
+    let cortex = agent
+        .brain()
+        .ok_or_else(|| AppError::BadRequest("Agent brain not initialized".to_string()))?
+        .cortex_trait();
+
+    let raw_output = cortex.prompt(&prompt).await?;
+
+    // === Step 7: 记录输出 Trace（复用输入的 trace_id，形成关联对） ===
+    let output_trace = runtime_domain()
+        .memory()
+        .write_thinking_trace(
+            ctx.clone(),
+            &cmd.agent_id,
+            ThinkingTraceType::Output,
+            &raw_output,
+            Some(input_trace.po.id.clone()),  // 复用输入的 trace_id
+        )
+        .await?;
+
+    Ok(AwakeningResult {
+        agent_id: cmd.agent_id,
+        trace_ids: vec![input_trace.po.id, output_trace.po.id],  // 本次产生的 trace 列表
+        raw_input: prompt,
+        raw_output,
+        thinking_trace_ids: vec![],  // （可废弃，统一用 trace_ids）
+    })
+}
+```
+
+---
+
+### 11.5 第一阶段开发顺序（4 步）
+
+| 步骤 | 内容 | 预估工作量 | 验收标准 |
+|------|------|-----------|---------|
+| **1** | 给 `RuntimeMemory` 补充 `get_recent_traces` 和 `write_thinking_trace` 方法 | 30 min | 单测通过 + `cargo check` |
+| **2** | 新增 `context_assembly.rs` 纯函数模块 | 20 min | 单测通过 + `cargo check` |
+| **3** | 新增 `awakening.rs` 骨架 + 空实现 | 20 min | `cargo check` 通过 |
+| **4** | 实现 `awaken_for_user_message` 完整逻辑 | 60 min | 集成测试跑通 |
+
+**合计：约 2 小时**
+
+---
+
+### 11.6 第二阶段规划（叠加工具/技能能力）
+
+第一阶段跑通后，再叠加：
+
+1. **神经工具注入**：在 Step 3 拼装 Prompt 时，把 Agent 绑定的工具列表注入到 Prompt 中
+2. **技能注入**：在 Step 3 拼装 Prompt 时，把 Agent 绑定的技能列表注入到 Prompt 中
+3. **rig 多轮工具调用**：把 Step 5 的 `cortex.prompt()` 替换为 `cortex.prompt_with_tools()`，支持回合内工具调用
+4. **收口信号处理**：检测模型是否调用了 `mark_done` 等收口工具
+
+---
+
+### 11.7 关键设计决策（已对齐）
+
+| 决策点 | 方案 | 理由 |
+|--------|------|------|
+| **唤醒方法粒度** | 按触发场景拆方法（`awaken_for_user_message` / `awaken_for_agent_message`） | 不同触发场景的参数和逻辑差异大，分开更清晰 |
+| **Prompt 模板位置** | 纯函数 `ContextAssembly` 模块 | 可单独测试、无副作用、未来容易扩展模板版本 |
+| **Trace 存储** | 复用现有 Memory 表，用 `memory_type` 区分 | 不需要建新表，直接复用已有的四层记忆架构 |
+| **第一阶段范围** | 先跑通纯文本，不做工具/技能 | 最小可用原则，先验证主链路通了再叠加复杂度 |
+| **DAL 依赖方式** | Awakening 内部直接调用各 DAL 单例 | 符合项目现有风格（Domain 层可以直接依赖 DAL） |
+
+---
+
+## 十二、Runtime Memory 子模块行为对齐
+
+> 📌 **核心原则**：Runtime Memory 是 MemoryDal 的最薄封装，所有核心能力直接复用 DAL，Domain 层只加便捷语法糖。
+
+### 12.1 当前 Runtime Memory 能力确认
+
+| 方法 | 参数 | 返回值 | 底层实现 | 说明 |
+|------|------|--------|---------|------|
+| `write` | `MemoryCreateParams` | `Result<Vec<Memory>>` | `MemoryDal.create()` | 写入记忆，按变体自动分发（Trace/ShortTerm/KnowledgeNode/Relation） |
+| `search` | `MemorySearch` | `Result<Vec<Memory>>` | `MemoryDal.search()` | 混合搜索（关键词 + 向量 + 过滤） |
+| `query` | `MemoryQuery` | `Result<Vec<Memory>>` | `MemoryDal.query()` | 普通查询（仅过滤，无向量） |
+
+**✅ 设计正确，不需要改核心接口。** 我们只需要在这三个核心方法之上，补充便捷语法糖。
+
+---
+
+### 12.2 需要补充的便捷方法（语法糖）
+
+这两个方法本质上是 `query` 和 `write` 的预填充参数版本，不涉及新的业务逻辑。
+
+#### 12.2.1 `get_recent_traces` - 获取 Agent 最近的短期记忆
+
+```rust
+async fn get_recent_traces(
+    &self,
+    ctx: RequestContext,
+    agent_id: &str,
+    limit: i64,
+) -> Result<Vec<Memory>, AppError> {
+    // 内部直接调用 query，预填充参数
+    self.query(ctx, MemoryQuery {
+        agent_id: Some(agent_id.to_string()),
+        memory_type: Some(MemoryType::ShortTerm),
+        limit: Some(limit as usize),
+        ..Default::default()
+    }).await
+}
+```
+
+**为什么是语法糖？**
+- 不改变底层行为，只是把"查最近 N 条"这个常用模式封装起来
+- 调用方不需要知道具体参数名，减少出错概率
+- 后续如果"最近记忆"的定义变了（比如要过滤某种状态），只改这一处
+
+#### 12.2.2 `write_thinking_trace` - 写入思考 Trace
+
+```rust
+async fn write_thinking_trace(
+    &self,
+    ctx: RequestContext,
+    agent_id: &str,
+    trace_type: ThinkingTraceType,
+    content: &str,
+) -> Result<Memory, AppError> {
+    // 内部直接调用 write，预填充参数
+    let trace = MemoryTrace {
+        id: generate_trace_id(),
+        agent_id: agent_id.to_string(),
+        task_id: ctx.task_id(),
+        log_id: ctx.log_id(),
+        user_id: ctx.uid().unwrap_or_default(),
+        organization_id: ctx.organization_id().unwrap_or_default(),
+        role: match trace_type {
+            ThinkingTraceType::Input => MemoryRole::System,
+            ThinkingTraceType::Output => MemoryRole::Assistant,
+            ThinkingTraceType::ToolCall => MemoryRole::Tool,
+            ThinkingTraceType::ToolResult => MemoryRole::Tool,
+        },
+        content: content.to_string(),
+        created_at: chrono::Utc::now().timestamp(),
+        metadata: HashMap::new(),
+        position: None,
+    };
+
+    let mut results = self.write(ctx, MemoryCreateParams::AppendTraces(vec![trace])).await?;
+    results.pop().ok_or_else(|| AppError::Internal("Write trace failed".to_string()))
+}
+```
+
+**为什么是语法糖？**
+- 把"构造 MemoryTrace + 选择正确的 MemoryCreateParams 变体"这个细节封装起来
+- 调用方只需要传业务参数，不需要关心 Memory 四层架构的内部细节
+- trace_type 自动映射到 MemoryRole，统一标准
+
+---
+
+### 12.3 Runtime Memory 的分层定位
+
+```
+┌─────────────────────────────────────────────┐
+│   Domain 层 RuntimeMemory                    │
+│  ┌─────────────────────────────────────────┐  │
+│  │ 便捷语法糖：                            │  │
+│  │   get_recent_traces                     │  │
+│  │   write_thinking_trace                  │  │
+│  └──────────────┬──────────────────────────┘  │
+│                 │ 直接调用                      │
+└─────────────────▼─────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│    DAL 层 MemoryDal                          │
+│  ┌─────────────────────────────────────────┐  │
+│  │ 核心业务逻辑：                          │  │
+│  │   search() - 混合搜索                   │  │
+│  │   query()  - 普通查询                   │  │
+│  │   create() - 按变体分发写入              │  │
+│  │   update() - 更新 + 重向量化            │  │
+│  │   delete() - 级联删除                   │  │
+│  └──────────────┬──────────────────────────┘  │
+│                 │ 直接调用                      │
+└─────────────────▼─────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│    DAO 层 MemoryDao / MemoryVectorDao        │
+│  ┌─────────────────────────────────────────┐  │
+│  │ 纯 SQL：                                │  │
+│  │   CRUD + 向量索引 + 全文搜索            │  │
+│  └─────────────────────────────────────────┘  │
+└─────────────────────────────────────────────┘
+```
+
+**✅ 定位正确，符合项目分层原则：**
+- DAO 层：纯 SQL，无业务逻辑
+- DAL 层：跨 DAO 编排、向量生成、结果聚合
+- Domain 层：便捷语法糖、统一入口、业务语义封装
+
+---
+
+### 12.4 实现要点（不破坏现有架构）
+
+1. **只加方法，不改现有方法签名**
+   - 现有三个核心方法保持不变
+   - 新增两个便捷方法
+
+2. **`ThinkingTraceType` 枚举放在 Runtime Memory 模块**
+   - 这是 Runtime 层的概念，不是 DAL 层的通用概念
+   - 枚举值：`Input` / `Output` / `ToolCall` / `ToolResult`
+
+3. **不引入新的参数结构体**
+   - 继续 100% 复用 DAL 层的 `MemoryQuery` / `MemoryCreateParams`
+   - 保持"零重复定义"的设计原则
+
+---
+
+## 十三、统一分页设计（独立需求，单独处理）
+
+> 📌 **当前状态**：各 DAO 的 Query 结构体里都有零散的 `limit` 字段，但没有统一的分页设计。这个需求独立于唤醒逻辑，后续单独处理。
+
+### 13.1 当前现状
+
+| DAO | 分页相关字段 | 说明 |
+|-----|-------------|------|
+| MemoryQuery | `limit: Option<usize>` | 只有 limit，没有 offset |
+| ToolQuery | `limit: Option<usize>` | 只有 limit |
+| SkillQuery | `limit: Option<usize>` | 只有 limit |
+| AgentQuery | ❌ 无 | 没有分页字段 |
+| MessageQuery | ❌ 无 | 没有分页字段 |
+| TaskQuery | ❌ 无 | 没有分页字段 |
+| ProjectQuery | ❌ 无 | 没有分页字段 |
+
+**问题：**
+- 没有统一的分页结构体，各 DAO 自己加 `limit`
+- 只有 limit 没有 offset，不支持翻页
+- 没有总数统计（`total_count`）
+
+---
+
+### 13.2 统一分页设计方案（草稿）
+
+**Option A：在 DAO 层加通用 Pagination 结构体**
+
+```rust
+// common/src/ 下定义通用分页参数
+pub struct Pagination {
+    pub offset: i64,
+    pub limit: i64,
+    pub order_by: Option<String>,
+    pub order_desc: bool,
+}
+
+// 各 Query 结构体嵌入
+pub struct MemoryQuery {
+    // ... 原有字段
+    pub pagination: Option<Pagination>,
+}
+```
+
+**Option B：在 DAL 层加 `list_page` 方法**
+
+```rust
+// DAL 层统一返回分页结果
+pub struct PageResult<T> {
+    pub items: Vec<T>,
+    pub total: i64,
+    pub offset: i64,
+    pub limit: i64,
+}
+
+#[async_trait]
+pub trait MemoryDal: Send + Sync {
+    // ... 原有方法
+    async fn query_page(
+        &self,
+        ctx: RequestContext,
+        query: MemoryQuery,
+        pagination: Pagination,
+    ) -> Result<PageResult<Memory>, AppError>;
+}
+```
+
+**后续决策点：**
+1. 选 Option A 还是 Option B？
+2. 分页是 DAO 层概念还是 DAL 层概念？
+3. `total_count` 怎么高效获取（COUNT 查询）？
+4. 哪些场景需要真分页，哪些场景只要 limit 就够了？
+
+---
+
+## 十四、最终确认：第一阶段唤醒的完整设计
+
+现在所有细节已对齐，第一阶段唤醒的完整设计已确定：
+
+### 14.1 第一阶段范围（最小可用）
+
+| 模块 | 修改内容 | 工作量 |
+|------|---------|--------|
+| `runtime/memory.rs` | 新增 `get_recent_traces` + `write_thinking_trace` 便捷方法 + `ThinkingTraceType` 枚举 | 30 min |
+| `runtime/context_assembly.rs` | 新增纯函数模块，`build_conversation()` | 20 min |
+| `runtime/awakening.rs` | 新增 trait + 实现 `awaken_for_user_message()` | 60 min |
+| `runtime/mod.rs` | 注册新模块 + 导出 | 10 min |
+
+**合计：约 2 小时**
+
+### 14.2 6 步执行流程（最终版）
+
+```
+输入: ctx + agent_id + user_message_id
+
+  1. 加载基础数据
+     ├─ AgentDal.find_by_id() → Agent 实体
+     ├─ MessageDal.find_by_id() → 消息实体
+     └─ if user_id 存在 → UserDal.find_by_id() → 用户信息
+     ↓
+  2. 读取最近记忆
+     └─ RuntimeMemory.get_recent_traces(agent_id, 20) → Vec<Memory>
+     ↓
+  3. 拼装 Prompt
+     └─ ContextAssembly.build_conversation() → String
+     ↓
+  4. 记录输入 Trace
+     └─ RuntimeMemory.write_thinking_trace(Input, prompt) → Memory
+     ↓
+  5. 模型推理
+     └─ Agent.brain().cortex_trait().prompt() → String
+     ↓
+  6. 记录输出 Trace + 返回
+     └─ RuntimeMemory.write_thinking_trace(Output, raw_output) → Memory
+     └─ AwakeningResult
+```
+
+### 14.3 关键设计决策（不再变更）
+
+✅ **Runtime Memory 只加便捷方法，不改核心接口**
+✅ **ContextAssembly 纯函数，无副作用，可单独测试**
+✅ **Awakening 按触发场景拆方法，不搞万能方法**
+✅ **复用现有 Memory 表存 Trace，不建新表**
+✅ **第一阶段只做纯文本，工具/技能第二阶段再加**
+
+---
+
+## 十五、变更记录
 
 | 日期 | 版本 | 变更 |
 |------|------|------|
+| 2026-05-26 | v0.6 | 新增第十七章：架构重构 + 角色分工完成；对齐标准 Domain trait 组织方式；新增用户画像功能（客服专用）；消息链 ID 暴露给 Agent 自主读取；整体进度 ~75% |
+| 2026-05-25 | v0.5 | 新增第十六章：简易版实现完成；核心逻辑全部可编译：Runtime Memory + Context Assembly (Builder) + Awakening 主流程 |
+| 2026-05-25 | v0.4 | 新增第十二章：Runtime Memory 子模块行为对齐 + 第十三章：统一分页设计（独立需求） + 第十四章：第一阶段最终确认 |
+| 2026-05-25 | v0.3 | 新增第十一章：可执行落地方案（第一阶段最小可用唤醒），包含能力盘点、6 步流程、4 个模块修改清单、开发顺序 |
+| 2026-05-25 | v0.2 | 新增第九章：唤醒 Agent 操作的具体执行流程（12 步）、神经工具执行机制、ContextAssembly 拼装逻辑、AwakenOutcome 设计哲学 |
 | 2026-05-25 | v0.1 | 初版草案，覆盖设计总纲与待拍板点 |
+
+
+---
+
+## 十六、简易版实现完成 ✅
+
+**实现状态：** 全部编译通过
+
+**已实现模块：**
+
+| 模块 | 文件 | 核心功能 |
+|------|------|---------|
+| **Runtime Memory** | `src/service/domain/runtime/memory.rs` | 封装 Memory DAL，便捷读写思考 Trace；新增 `ThinkingTraceType` 枚举（Input/Output/ToolCall/ToolResult） |
+| **Context Assembly** | `src/service/domain/runtime/context_assembly.rs` | Builder 模式 Prompt 拼装，`add_trace_id()` / `trace_ids()` 支持关联多个 Trace ID；便捷函数 `build_conversation_prompt()` 一键组装 |
+| **Awakening Logic** | `src/service/domain/runtime/awakening.rs` | 唤醒主流程 9 步完整实现，`AwakeningCommand` / `AwakeningResult` 类型定义 |
+| **Module Export** | `src/service/domain/runtime/mod.rs` | 统一导出所有类型和函数 |
+
+**已落地的关键设计决策：**
+- ✅ **输入/输出 Trace 共用同一 ID**：形成请求-响应关联对
+- ✅ **Prompt 开头显示关联 Trace IDs**：Agent 可看到并引用历史 trace
+- ✅ **Builder 模式组装 Prompt**：按需扩展，不破坏现有接口
+- ✅ **完整 Message 支持**：解析消息 ID、发送者角色、消息类型、回复关联、任务/项目关联
+- ✅ **双模式消息传入**：`current_message(&Message)` 完整模式 + `current_message_content(&str)` 便捷模式
+- ✅ **第一阶段纯文本**：不引入工具/技能复杂度
+- ✅ **向后兼容**：trace_ids 为空时不显示
+
+**当前临时实现（待下一阶段接入真实 DAL）：**
+1. 模型推理：直接返回固定字符串（避免依赖完整 Brain/Cortex 链路）
+
+---
+
+## 十七、架构重构 + 角色分工完成 ✅
+
+**日期：2026-05-26 | 版本：v0.6**
+
+### 17.1 架构重构：正确的 Domain Trait 组织方式
+
+**问题：** 之前的实现不符合项目其他 Domain 的组织方式，缺乏统一的总 trait。
+
+**解决方案：** 对齐 Message Domain / Finance Domain 的标准模式：
+
+```
+mod.rs
+├── RuntimeDomain: 总 trait（聚合所有子能力）
+│   ├── fn memory(&self) -> &dyn RuntimeMemory
+│   ├── fn awakening(&self) -> &dyn RuntimeAwakening
+│   └── fn tool_execution(&self) -> &dyn RuntimeToolExecution
+│
+├── RuntimeMemory: 记忆管理子 trait
+├── RuntimeAwakening: 唤醒能力子 trait
+├── RuntimeToolExecution: 工具执行子 trait（预留）
+│
+├── RuntimeDomainImpl: 统一实现结构体
+│   （所有子模块都为 RuntimeDomainImpl 实现对应的 trait）
+│
+└── domain() / init(): 单例访问函数
+```
+
+**各文件职责：**
+| 文件 | 职责 |
+|------|------|
+| `mod.rs` | 总入口：所有 trait 定义 + 统一实现结构体 + 单例访问 |
+| `memory.rs` | `impl RuntimeMemory for RuntimeDomainImpl` |
+| `awakening.rs` | `impl RuntimeAwakening for RuntimeDomainImpl` |
+| `tool_execution.rs` | `impl RuntimeToolExecution for RuntimeDomainImpl` |
+| `context_assembly.rs` | 纯函数模块（无 trait，独立测试） |
+
+### 17.2 关键设计决策落地
+
+#### 决策 1：消息链 ID 暴露给 Agent，自主决定是否读取
+**❌ 旧方案：** Runtime 自动读取消息链完整内容，强制塞给 Agent
+
+**✅ 新方案：**
+- 只在 Prompt 中暴露 `reply_to_id`（已在 `current_message()` 中实现）
+- Agent 看到 ID 后，自主决定是否需要回溯消息链
+- 实际读取操作由 Agent 通过工具调用完成
+
+**效果：** 降低 Runtime 复杂度，Agent 拥有完全的上下文控制权。
+
+#### 决策 2：角色分工 - 只有客服 Agent 才拼接用户喜好
+**❌ 旧方案：** 所有 Agent 都加载用户画像
+
+**✅ 新方案：**
+- 仅当 Agent 的 `roles` 字段包含 `customer_service` 或 `客服` 时
+- 才在 Prompt 中添加【用户画像】区块
+- 用户画像数据**由上层 Domain 传入**，Runtime 不负责拉取（分层原则）
+
+**实现位置：** `awakening.rs` Step 3 拼装 Prompt
+
+```rust
+// 【角色分工】只有客服类 Agent 才需要拼接用户喜好等信息
+let agent_roles = agent.po.get_roles();
+if agent_roles.contains(&"customer_service".to_string())
+    || agent_roles.contains(&"客服".to_string())
+{
+    // builder = builder.user_profile(user_profile_str);
+}
+```
+
+#### 决策 3：Prompt 结构调整（新增用户画像区块）
+
+```
+【关联 Trace IDs】xxx
+
+【Agent 人设】
+xxx
+
+【用户画像】         ← 新增区块（仅客服 Agent 显示）
+xxx
+
+【历史对话】
+xxx
+
+【当前消息】
+xxx
+```
+
+### 17.3 整体进度总览
+
+| 模块 | 进度 | 核心能力 |
+|------|------|---------|
+| **架构组织** | ✅ 100% | 标准 Domain trait 分层，编译全过 |
+| **Runtime Memory** | ✅ 100% | `get_recent_context()` + `write_thinking_trace()` |
+| **Context Assembly** | ✅ 100% | Builder 模式，Trace IDs + Agent 人设 + **用户画像** + 历史 + 消息 + 技能/工具预留 |
+| **Runtime Awakening** | ✅ 80% | 7 步主流程完整可跑：读记忆 → 拼 Prompt → 记输入 → 推理 → 记输出 → 返回；仅模型推理为模拟返回 |
+| **Tool Execution** | ⏳ 20% | Trait 定义完成，实现待填充 |
+
+**整体完成度：~75%**
+**当前状态：纯文本对话流程完整可跑，可用于测试和演示。**
+
+### 17.4 剩余待做（优先级排序）
+
+| 优先级 | 任务 | 说明 |
+|--------|------|------|
+| **P0** | 接入 Brain/Cortex 模型推理 | 替换当前固定字符串返回，接入真实 LLM |
+| **P1** | Trace ID 关联逻辑 | 从 `message.reply_to_id` 追溯历史 Trace 链 |
+| **P2** | 工具调用框架 | ToolCall 检测 → 执行 → 结果回写 → 二次推理 |
+| **P3** | 技能注入 | 根据 Agent 角色动态注入技能说明 |
+| **P3** | 单元测试覆盖 | 各模块测试用例 |
+
+---
+
+## 下一步讨论方向
+
+1. **接入 Brain/Cortex 层真实模型推理**
+2. **Trace ID 关联链实现**
+3. **工具调用框架设计**（第二阶段）
+4. **技能动态注入**（第二阶段）
+
 

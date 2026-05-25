@@ -26,6 +26,6 @@ pub fn init_all() {
     finance::init();
     organization::init();
     message::init();
-    runtime::instance();
+    runtime::init();
     project::init();
 }
