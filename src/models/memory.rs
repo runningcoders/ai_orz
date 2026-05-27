@@ -230,6 +230,26 @@ pub enum MemoryPo {
     Relation(KnowledgeNodeRelationPo),
 }
 
+impl MemoryPo {
+    /// 将记忆格式化为 Prompt 可读的摘要字符串
+    ///
+    /// 目前仅 ShortTerm 类型的记忆会返回摘要，
+    /// 其他类型的记忆暂不组装到 prompt 中
+    pub fn to_prompt_summary(&self) -> Option<String> {
+        match self {
+            MemoryPo::ShortTerm(st) => {
+                if st.summary.is_empty() {
+                    None
+                } else {
+                    Some(st.summary.clone())
+                }
+            }
+            // 其他类型的记忆暂时不组装到 prompt 中
+            _ => None,
+        }
+    }
+}
+
 /// 记忆写入参数
 ///
 /// 写入分为两阶段：
@@ -268,6 +288,13 @@ impl Memory {
     /// 创建新的 Memory 业务实体
     pub fn new(po: MemoryPo) -> Self {
         Self { po, search_match: None }
+    }
+
+    /// 将记忆格式化为 Prompt 可读的摘要字符串
+    ///
+    /// 委托给 MemoryPo::to_prompt_summary()
+    pub fn to_prompt_summary(&self) -> Option<String> {
+        self.po.to_prompt_summary()
     }
 
     /// 设置搜索匹配信息

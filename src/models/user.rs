@@ -37,6 +37,31 @@ pub struct UserPo {
 }
 
 impl UserPo {
+    /// 生成用户基础信息的 Prompt 格式
+    ///
+    /// 包含：用户 ID、显示名称、用户名、邮箱、角色
+    /// 所有字段使用统一的【】标识格式，便于大模型识别和提取
+    /// 敏感信息（密码哈希等）不会暴露
+    pub fn to_basic_info_prompt(&self) -> String {
+        let role_name = match self.role {
+            UserRole::SuperAdmin => "超级管理员",
+            UserRole::Admin => "管理员",
+            UserRole::Member => "成员",
+            _ => "未知",
+        };
+
+        let mut parts = vec![
+            format!("【用户 ID】{}", self.id),
+            format!("【显示名称】{}", self.display_name),
+            format!("【用户名】{}", self.username),
+            format!("【邮箱】{}", self.email),
+            format!("【角色】{}", role_name),
+            format!("【组织 ID】{}", self.organization_id),
+        ];
+
+        parts.join("\n")
+    }
+
     /// 创建新的 UserPo
     pub fn new(
         id: String,

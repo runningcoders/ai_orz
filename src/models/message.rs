@@ -62,6 +62,13 @@ impl Message {
         self.po.to_role
     }
 
+    /// 将消息格式化为 Prompt 可读的字符串
+    ///
+    /// 委托给 MessagePo::to_prompt()
+    pub fn to_prompt(&self) -> String {
+        self.po.to_prompt()
+    }
+
     /// 创建新 Message（完整参数，指定 project_id 和 task_id）
     pub fn new_with_context(
         id: String,
@@ -222,6 +229,48 @@ pub struct MessagePo {
 }
 
 impl MessagePo {
+    /// 将消息格式化为 Prompt 可读的字符串
+    ///
+    /// 包含所有关键字段：消息ID、发送者、消息类型、回复关联、任务/项目关联、内容
+    /// 使用统一的【】标识格式，便于大模型识别和提取
+    pub fn to_prompt(&self) -> String {
+        let role_name = match self.from_role {
+            MessageRole::User => "用户",
+            MessageRole::Agent => "Agent",
+            MessageRole::System => "系统",
+            _ => "未知",
+        };
+
+        let msg_type = match self.message_type {
+            MessageType::Text => "文本",
+            MessageType::File => "文件",
+            MessageType::Image => "图片",
+            _ => "其他",
+        };
+
+        let mut msg_parts = vec![
+            format!("【消息 ID】{}", self.id),
+            format!("【发送者】{}", role_name),
+            format!("【消息类型】{}", msg_type),
+        ];
+
+        if let Some(reply_to) = &self.reply_to_id {
+            msg_parts.push(format!("【回复消息】{}", reply_to));
+        }
+
+        if let Some(task_id) = &self.task_id {
+            msg_parts.push(format!("【关联任务】{}", task_id));
+        }
+
+        if let Some(project_id) = &self.project_id {
+            msg_parts.push(format!("【关联项目】{}", project_id));
+        }
+
+        msg_parts.push(format!("\n【消息内容】\n{}", self.content));
+
+        msg_parts.join("\n")
+    }
+
     /// 创建新的 MessagePo
     pub fn new(
         id: String,

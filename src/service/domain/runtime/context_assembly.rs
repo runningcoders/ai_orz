@@ -7,6 +7,7 @@
 use crate::models::agent::Agent;
 use crate::models::memory::{Memory, MemoryPo};
 use crate::models::message::Message;
+use crate::models::user::UserPo;
 
 /// Prompt 构建器
 ///
@@ -57,30 +58,22 @@ impl PromptBuilder {
     }
 
     /// 添加 Agent 人设
+    ///
+    /// 调用 Agent::to_system_prompt() 生成标准格式的 System Prompt
+    /// Agent 相关的所有 prompt 格式化逻辑都内聚在 AgentPo 内部
     pub fn agent_system(mut self, agent: &Agent) -> Self {
-        let mut prompt = format!("你是 {}，ID：{}\n", agent.po.name, agent.po.id);
-
-        // 如果 Agent 有描述，追加到人设中
-        if !agent.po.description.is_empty() {
-            prompt.push_str(&format!("角色描述：{}\n", agent.po.description));
-        }
-
-        self.system_prompt = Some(prompt);
+        self.system_prompt = Some(agent.to_system_prompt());
         self
     }
 
     /// 添加历史对话记忆
+    ///
+    /// 调用 Memory::to_prompt_summary() 提取记忆摘要
+    /// 所有记忆格式化逻辑都内聚在 MemoryPo 内部
     pub fn history(mut self, memories: &[Memory]) -> Self {
-        // 遍历记忆，只提取 ShortTerm 类型的摘要内容
         for memory in memories {
-            match &memory.po {
-                MemoryPo::ShortTerm(st) => {
-                    if !st.summary.is_empty() {
-                        self.history.push(st.summary.clone());
-                    }
-                }
-                // 其他类型的记忆暂时不组装到 prompt 中
-                _ => {}
+            if let Some(summary) = memory.to_prompt_summary() {
+                self.history.push(summary);
             }
         }
         self
@@ -88,48 +81,10 @@ impl PromptBuilder {
 
     /// 添加当前用户消息
     ///
-    /// 完整支持 Message 的所有关键字段：
-    /// - 消息 ID
-    /// - 发送者角色（用户 / Agent）
-    /// - 消息类型（文本 / 附件等）
-    /// - 回复关联（reply_to_id）
-    /// - 消息内容
+    /// 调用 Message::to_prompt() 生成标准格式的消息内容
+    /// 所有消息格式化逻辑都内聚在 MessagePo 内部
     pub fn current_message(mut self, message: &Message) -> Self {
-        let role_name = match message.po.from_role {
-            common::enums::MessageRole::User => "用户",
-            common::enums::MessageRole::Agent => "Agent",
-            common::enums::MessageRole::System => "系统",
-            _ => "未知",
-        };
-
-        let msg_type = match message.po.message_type {
-            common::enums::MessageType::Text => "文本",
-            common::enums::MessageType::File => "文件",
-            common::enums::MessageType::Image => "图片",
-            _ => "其他",
-        };
-
-        let mut msg_parts = vec![
-            format!("【消息 ID】{}", message.po.id),
-            format!("【发送者】{}", role_name),
-            format!("【消息类型】{}", msg_type),
-        ];
-
-        if let Some(reply_to) = &message.po.reply_to_id {
-            msg_parts.push(format!("【回复消息】{}", reply_to));
-        }
-
-        if let Some(task_id) = &message.po.task_id {
-            msg_parts.push(format!("【关联任务】{}", task_id));
-        }
-
-        if let Some(project_id) = &message.po.project_id {
-            msg_parts.push(format!("【关联项目】{}", project_id));
-        }
-
-        msg_parts.push(format!("\n【消息内容】\n{}", message.po.content));
-
-        self.current_message = Some(msg_parts.join("\n"));
+        self.current_message = Some(message.to_prompt());
         self
     }
 
@@ -156,11 +111,20 @@ impl PromptBuilder {
     /// 添加用户画像信息
     ///
     /// 【使用场景】仅客服类 Agent 需要使用，包含：
-    /// - 用户基本信息
-    /// - 用户喜好/偏好
-    /// - 历史服务记录摘要
+    /// - 用户基础信息
+    /// - 用户喜好/偏好（动态补充）
+    /// - 历史服务记录摘要（动态补充）
     pub fn user_profile(mut self, user_profile: &str) -> Self {
         self.user_profile = Some(user_profile.to_string());
+        self
+    }
+
+    /// 便捷方法：从 UserPo 生成用户基础信息并添加到 Prompt
+    ///
+    /// 调用 UserPo::to_basic_info_prompt() 生成标准格式
+    /// 如果需要额外补充偏好/历史记录，可以继续调用 user_profile() 追加
+    pub fn user_basic_info(mut self, user: &UserPo) -> Self {
+        self.user_profile = Some(user.to_basic_info_prompt());
         self
     }
 
@@ -260,20 +224,24 @@ mod tests {
         // 创建一个最小的 Agent 用于测试
         use crate::models::agent::AgentPo;
 
-        let agent_po = AgentPo {
-            id: "agent-001".to_string(),
-            name: "测试助手".to_string(),
-            description: Some("我是一个测试助手".to_string()),
-            ..Default::default()
-        };
+        let agent_po = AgentPo::new(
+            "测试助手".to_string(),
+            vec!["助手".to_string()],
+            "我是一个测试助手".to_string(),
+            vec!["测试能力".to_string()],
+            "你是一个严谨、专业、乐于助人的助手。总是给出准确、有用的回答。".to_string(),
+            "provider-001".to_string(),
+            "tester".to_string(),
+        );
         let agent = Agent::from_po(agent_po);
 
-        let prompt = PromptBuilder::new()
-            .agent_system(&agent)
-            .build();
+        let prompt = PromptBuilder::new().agent_system(&agent).build();
 
+        assert!(prompt.contains("【Agent ID】"));
+        assert!(prompt.contains("【Agent 名称】"));
         assert!(prompt.contains("测试助手"));
-        assert!(prompt.contains("agent-001"));
-        assert!(prompt.contains("我是一个测试助手"));
+        assert!(prompt.contains("【角色描述】"));
+        assert!(prompt.contains("【灵魂设定】"));
+        assert!(prompt.contains("严谨、专业、乐于助人"));
     }
 }

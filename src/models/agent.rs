@@ -154,6 +154,13 @@ impl Agent {
         self.brain.as_ref().map(|b| b.cortex_trait())
     }
 
+    /// 生成 Agent 的 System Prompt 头部
+    ///
+    /// 委托给 AgentPo::to_system_prompt()
+    pub fn to_system_prompt(&self) -> String {
+        self.po.to_system_prompt()
+    }
+
     /// 获取绑定的工具列表
     pub fn tools(&self) -> &[Tool] {
         &self.tools
@@ -193,6 +200,27 @@ pub struct AgentPo {
     pub updated_at: i64,
 }
 impl AgentPo {
+    /// 生成 Agent 的 System Prompt 头部
+    ///
+    /// 包含：Agent ID、Agent 名称、角色描述、灵魂设定
+    /// 所有字段都使用统一的【】标识格式，便于大模型识别和提取
+    pub fn to_system_prompt(&self) -> String {
+        let mut prompt = format!(
+            "【Agent ID】{}\n【Agent 名称】{}\n",
+            self.id, self.name
+        );
+
+        if !self.description.is_empty() {
+            prompt.push_str(&format!("【角色描述】{}\n", self.description));
+        }
+
+        if !self.soul.is_empty() {
+            prompt.push_str(&format!("\n【灵魂设定】\n{}\n", self.soul));
+        }
+
+        prompt
+    }
+
     pub fn new(
         name: String,
         roles: Vec<String>,
