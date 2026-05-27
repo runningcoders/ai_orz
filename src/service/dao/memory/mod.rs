@@ -92,6 +92,16 @@ pub trait MemoryDao: Send + Sync {
         traces: &[MemoryTrace],
     ) -> Result<Vec<MemoryTracePosition>, AppError>;
 
+    /// 完成 Trace 回填输出
+    ///
+    /// 找到指定 trace_id 的记录，反序列化后更新 output 和 completed_at 字段
+    async fn complete_trace(
+        &self,
+        ctx: RequestContext,
+        trace_id: &str,
+        output: &str,
+    ) -> Result<(), AppError>;
+
     /// 创建短期记忆索引（仅写 SQLite，不接触文件）
     ///
     /// 由 DAL 层在 trace 落盘后构造完整 `ShortTermMemoryIndexPo`（含 trace_ids、summary、tags 等）

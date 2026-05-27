@@ -68,7 +68,8 @@ pub trait RuntimeMemory: Send + Sync {
         ctx: RequestContext,
         agent_id: &str,
         trace_type: ThinkingTraceType,
-        content: &str,
+        input: &str,
+        output: Option<&str>,
         trace_id: Option<String>,
     ) -> Result<Memory, AppError>;
 }

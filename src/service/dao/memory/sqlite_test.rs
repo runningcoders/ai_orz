@@ -183,21 +183,27 @@ async fn test_add_knowledge_reference(pool: SqlitePool) {
 }
 
 #[test]
-fn test_memory_trace_id_is_content_hash() {
-    // 验证 MemoryTrace 的 ID 是内容 hash
-    let content = "这是一段测试内容".to_string();
+fn test_memory_trace_id_is_trace_prefix() {
+    // 验证 MemoryTrace 的 ID 格式是 trace-{agent_id}-{timestamp}
     let trace = MemoryTrace::new(
         "test-agent-1".to_string(),
         "log-1".to_string(),
         "user-1".to_string(),
         "org-1".to_string(),
         MemoryRole::User,
-        content.clone(),
+        "这是一段测试内容".to_string(),
         None,
     );
 
-    let expected_hash = sha256::digest(content.as_bytes());
-    assert_eq!(trace.id, expected_hash);
+    // ID 应该以 trace- 开头
+    assert!(trace.id.starts_with("trace-"));
+    
+    // 应该包含 agent_id
+    assert!(trace.id.contains("test-agent-1"));
+    
+    // 最后一部分应该是数字（timestamp）
+    let parts: Vec<&str> = trace.id.rsplitn(2, '-').collect();
+    assert!(parts[0].parse::<u64>().is_ok());
 }
 
 #[test]

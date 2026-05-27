@@ -21,6 +21,8 @@ use crate::models::user::UserPo;
 /// ```
 #[derive(Debug, Clone, Default)]
 pub struct PromptBuilder {
+    /// 本次思考的 Trace ID（模型输出时可引用此 ID）
+    current_trace_id: Option<String>,
     /// 关联的 Trace ID 列表（多个 trace 的总结）
     trace_ids: Vec<String>,
     /// Agent 人设 / System Prompt
@@ -41,6 +43,14 @@ impl PromptBuilder {
     /// 创建空的 Builder
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// 设置本次思考的 Trace ID
+    ///
+    /// 模型可以在输出中引用此 ID，用于追溯完整思考闭环
+    pub fn current_trace_id(mut self, trace_id: &str) -> Self {
+        self.current_trace_id = Some(trace_id.to_string());
+        self
     }
 
     /// 添加关联 Trace ID
@@ -131,6 +141,11 @@ impl PromptBuilder {
     /// 构建最终的 Prompt 字符串
     pub fn build(self) -> String {
         let mut result = String::new();
+
+        // 0. 本次思考的 Trace ID（放在最最前面，模型能看到并可引用）
+        if let Some(trace_id) = &self.current_trace_id {
+            result.push_str(&format!("【思考 Trace ID】{}\n\n", trace_id));
+        }
 
         // 1. 关联的 Trace ID 列表（放在最前面，方便 Agent 引用）
         if !self.trace_ids.is_empty() {

@@ -34,7 +34,8 @@ impl RuntimeMemory for RuntimeDomainImpl {
         ctx: RequestContext,
         agent_id: &str,
         trace_type: ThinkingTraceType,
-        content: &str,
+        input: &str,
+        output: Option<&str>,
         trace_id: Option<String>,
     ) -> Result<Memory, AppError> {
         let role = match trace_type {
@@ -44,29 +45,30 @@ impl RuntimeMemory for RuntimeDomainImpl {
             ThinkingTraceType::ToolResult => common::enums::MemoryRole::System,
         };
 
-        // 复用传入的 trace_id，或生成新的
-        let trace_id = trace_id.unwrap_or_else(|| {
-            format!("trace-{}-{}", agent_id, chrono::Utc::now().timestamp_nanos())
-        });
-
-        // 构造 MemoryTrace 并写入
+        // 构造 MemoryTrace
         use crate::models::memory::{MemoryCreateParams, MemoryTrace};
         use crate::service::dal::memory::dal;
         use std::collections::HashMap;
 
-        let trace = MemoryTrace {
-            id: trace_id,
-            agent_id: agent_id.to_string(),
-            task_id: ctx.task_id().cloned(),
-            log_id: ctx.log_id.clone(),
-            user_id: ctx.uid(),
-            organization_id: ctx.organization_id.clone().unwrap_or_default(),
+        let mut trace = MemoryTrace::new(
+            agent_id.to_string(),
+            ctx.log_id.clone(),
+            ctx.uid(),
+            ctx.organization_id.clone().unwrap_or_default(),
             role,
-            content: content.to_string(),
-            created_at: chrono::Utc::now().timestamp(),
-            metadata: HashMap::new(),
-            position: None,
-        };
+            input.to_string(),
+            ctx.task_id().cloned(),
+        );
+
+        // 如果传入了 trace_id，覆盖自动生成的
+        if let Some(tid) = trace_id {
+            trace.id = tid;
+        }
+
+        // 如果有 output，回填完成状态
+        if let Some(out) = output {
+            trace.complete(out.to_string());
+        }
 
         let mut results = dal()
             .create(ctx, MemoryCreateParams::AppendTraces(vec![trace]))

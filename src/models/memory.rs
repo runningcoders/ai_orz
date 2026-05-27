@@ -14,13 +14,11 @@ use std::collections::HashMap;
 
 /// 记忆追踪条目
 ///
-/// 一条原始记忆，包含完整信息：
-/// - 既可以在内存中作为工作记忆使用
-/// - 也可以写入每日文件归档
-/// - ID = 内容 hash，唯一标识，防止重复
+/// 一条原始记忆，对应一次完整的思考闭环（输入 → 模型思考 → 输出）
+/// 所有字段都使用统一的 trace_id 贯穿，模型可以看到 trace_id 并自引用
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryTrace {
-    /// 唯一 ID = 内容 hash
+    /// 唯一 ID = trace-{agent_id}-{timestamp}
     pub id: String,
     /// 所属 Agent ID
     pub agent_id: String,
@@ -34,10 +32,17 @@ pub struct MemoryTrace {
     pub organization_id: String,
     /// 角色
     pub role: common::enums::MemoryRole,
-    /// 原始内容（完整细节）
-    pub content: String,
-    /// 创建时间戳
+    
+    // ========== 思考闭环字段 ==========
+    /// 思考输入（完整 Prompt）
+    pub input: String,
+    /// 思考输出（模型返回，可能为空表示中断）
+    pub output: Option<String>,
+    /// 思考创建时间（输入时间）
     pub created_at: i64,
+    /// 思考完成时间（输出写入时间）
+    pub completed_at: Option<i64>,
+    
     /// 元数据（可扩展存储额外信息）
     pub metadata: HashMap<String, String>,
     /// 物理位置（DAO 写入或查询后回填，不参与序列化）
@@ -62,33 +67,41 @@ pub struct MemoryTracePosition {
 }
 
 impl MemoryTrace {
-    /// 创建新的 MemoryTrace
+    /// 创建新的 MemoryTrace（思考闭环）
     ///
-    /// 自动生成内容 hash 作为 ID
+    /// 自动生成 trace_id = trace-{agent_id}-{timestamp}
     pub fn new(
         agent_id: String,
         log_id: String,
         user_id: String,
         organization_id: String,
         role: common::enums::MemoryRole,
-        content: String,
+        input: String,
         task_id: Option<String>,
     ) -> Self {
-        let content_hash = sha256::digest(content.as_bytes());
         let now = chrono::Utc::now().timestamp();
+        let trace_id = format!("trace-{}-{}", agent_id, chrono::Utc::now().timestamp_nanos());
         Self {
-            id: content_hash,
+            id: trace_id,
             agent_id,
             task_id,
             log_id,
             user_id,
             organization_id,
             role,
-            content,
+            input,
+            output: None,
             created_at: now,
+            completed_at: None,
             metadata: HashMap::new(),
             position: None,
         }
+    }
+
+    /// 完成思考，回填输出
+    pub fn complete(&mut self, output: String) {
+        self.output = Some(output);
+        self.completed_at = Some(chrono::Utc::now().timestamp());
     }
 
     /// 添加元数据
@@ -106,20 +119,32 @@ impl MemoryTrace {
             common::enums::MemoryRole::Summary => "**Summary**",
         };
 
-        format!(
+        let mut content = format!(
             r#"
 ---
 ID: {}
 Role: {}
 Created: {}
-
-{}
 "#,
-            self.id, role, self.created_at, self.content
+            self.id, role, self.created_at,
         )
         .trim()
-        .to_string()
-            + "\n\n"
+        .to_string();
+
+        // 写入 Input
+        content.push_str(&format!("\n\n### Input\n\n{}\n", self.input));
+
+        // 如果有 Output，也写入
+        if let Some(output) = &self.output {
+            content.push_str(&format!("\n### Output\n\n{}\n", output));
+        }
+
+        // 如果有完成时间，写入
+        if let Some(completed_at) = self.completed_at {
+            content.push_str(&format!("\nCompleted: {}\n", completed_at));
+        }
+
+        content + "\n\n"
     }
 }
 

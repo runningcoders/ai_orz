@@ -356,7 +356,7 @@ async fn test_create_append_traces(pool: SqlitePool) -> Result<(), AppError> {
     match &results[0].po {
         crate::models::memory::MemoryPo::Trace(t) => {
             assert_eq!(t.agent_id, "agent-001");
-            assert_eq!(t.content, "这是一条测试记忆内容");
+            assert_eq!(t.input, "这是一条测试记忆内容");
             assert!(t.position.is_some()); // 写入后应该有位置信息
         }
         _ => panic!("预期返回 Trace 类型"),
