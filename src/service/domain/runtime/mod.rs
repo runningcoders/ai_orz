@@ -15,26 +15,11 @@ use std::sync::Arc;
 use crate::error::AppError;
 use crate::models::agent::Agent;
 use crate::models::message::Message;
-use crate::models::memory::Memory;
+use crate::models::memory::{Memory, MemoryTrace};
 use crate::pkg::request_context::RequestContext;
 use crate::service::dal::brain::BrainDal;
 
-// ==================== 枚举定义 ====================
-
-/// 思考 Trace 类型
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ThinkingTraceType {
-    /// 输入（Prompt）
-    Input,
-    /// 输出（模型返回）
-    Output,
-    /// 工具调用
-    ToolCall,
-    /// 工具调用结果
-    ToolResult,
-}
-
-// ==================== traits 定义 ====================
+// ==================== traits 定义 ===================
 
 /// Runtime Domain 总 trait
 ///
@@ -63,14 +48,12 @@ pub trait RuntimeMemory: Send + Sync {
     ) -> Result<Vec<Memory>, AppError>;
 
     /// 写入思考 Trace
+    ///
+    /// 直接接收 MemoryTrace 结构体，内部可做统一信息补充
     async fn write_thinking_trace(
         &self,
         ctx: RequestContext,
-        agent_id: &str,
-        trace_type: ThinkingTraceType,
-        input: &str,
-        output: Option<&str>,
-        trace_id: Option<String>,
+        trace: MemoryTrace,
     ) -> Result<Memory, AppError>;
 }
 

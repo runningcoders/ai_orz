@@ -2,10 +2,11 @@
 
 use crate::error::AppError;
 use crate::models::agent::Agent;
+use crate::models::memory::MemoryTrace;
 use crate::models::message::Message;
 use crate::pkg::request_context::RequestContext;
 use crate::service::domain::runtime::{
-    AwakeningResult, RuntimeAwakening, RuntimeDomain, RuntimeDomainImpl, ThinkingTraceType,
+    AwakeningResult, RuntimeAwakening, RuntimeDomain, RuntimeDomainImpl,
 };
 
 use super::context_assembly::PromptBuilder;
@@ -28,8 +29,19 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         // 简易版：暂时为空，后续从 message.metadata 提取
         let trace_ids: Vec<String> = vec![];
 
-        // Step 3: 创建 MemoryTrace 拿到 trace_id 用于注入 Prompt
-        let trace_id = format!("trace-{}-{}", &agent.po.id, chrono::Utc::now().timestamp_nanos());
+        // Step 3: 预先构造 MemoryTrace 拿到 trace_id
+        // 调用方负责组装 trace，RuntimeMemory 负责写入和补全信息
+        use common::enums::MemoryRole;
+        let mut trace = MemoryTrace::new(
+            agent.po.id.clone(),
+            ctx.log_id.clone(),
+            ctx.uid(),
+            ctx.organization_id.clone().unwrap_or_default(),
+            MemoryRole::System,
+            String::new(),  // input 后续填充
+            ctx.task_id().cloned(),
+        );
+        let trace_id = trace.id.clone();
 
         // Step 4: 拼装 Prompt（注入 trace_id 到头部，模型可见）
         let mut builder = PromptBuilder::new()
@@ -60,21 +72,21 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             .think(ctx.clone(), brain, &prompt)
             .await?;
 
-        // Step 6: 通过 RuntimeMemory 子模块一次性写入完整 Trace
+        // Step 6: 回填 input 和 output，一次性写入完整 Trace
+        trace.input = prompt.clone();
+        trace.complete(raw_output.clone());
+
+        // Step 7: 通过 RuntimeMemory 子模块写入
         // 架构：awakening → RuntimeMemory → MemoryDal → MemoryDao
         self.memory().write_thinking_trace(
             ctx.clone(),
-            &agent.po.id,
-            ThinkingTraceType::Input,
-            &prompt,
-            Some(&raw_output),
-            Some(trace_id.clone()),
+            trace,
         ).await?;
 
-        // Step 7: 返回结果
+        // Step 8: 返回结果
         Ok(AwakeningResult {
             agent_id: agent.po.id.clone(),
-            trace_ids: vec![trace_id.clone()],
+            trace_ids: vec![trace_id],
             raw_input: prompt,
             raw_output,
         })
