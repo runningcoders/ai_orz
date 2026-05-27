@@ -29,20 +29,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         let trace_ids: Vec<String> = vec![];
 
         // Step 3: 创建 MemoryTrace 拿到 trace_id 用于注入 Prompt
-        // 注意：此时只创建空 trace，input/output 都暂不填，等 Prompt 构建完成后再赋值
-        use crate::models::memory::{MemoryCreateParams, MemoryTrace};
-        use crate::service::dal::memory::dal;
-
-        let mut trace = MemoryTrace::new(
-            agent.po.id.clone(),
-            ctx.log_id.clone(),
-            ctx.uid(),
-            ctx.organization_id.clone().unwrap_or_default(),
-            common::enums::MemoryRole::Assistant,
-            String::new(), // 占位，等构建好 Prompt 后回填
-            ctx.task_id().cloned(),
-        );
-        let trace_id = trace.id.clone();
+        let trace_id = format!("trace-{}-{}", &agent.po.id, chrono::Utc::now().timestamp_nanos());
 
         // Step 4: 拼装 Prompt（注入 trace_id 到头部，模型可见）
         let mut builder = PromptBuilder::new()
@@ -64,9 +51,6 @@ impl RuntimeAwakening for RuntimeDomainImpl {
 
         let prompt = builder.build();
 
-        // 回填 trace 的 input 字段
-        trace.input = prompt.clone();
-
         // Step 5: 调用大脑思考
         // 统一走 BrainDal.think() 入口，方便审计、统计、监控
         let brain = agent.brain.as_ref()
@@ -76,11 +60,16 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             .think(ctx.clone(), brain, &prompt)
             .await?;
 
-        // Step 6: 回填 trace 的 output 和完成思考闭环
-        trace.complete(raw_output.clone());
-
-        // Step 7: 一次性写入完成的 Trace
-        dal().create(ctx.clone(), MemoryCreateParams::AppendTraces(vec![trace])).await?;
+        // Step 6: 通过 RuntimeMemory 子模块一次性写入完整 Trace
+        // 架构：awakening → RuntimeMemory → MemoryDal → MemoryDao
+        self.memory().write_thinking_trace(
+            ctx.clone(),
+            &agent.po.id,
+            ThinkingTraceType::Input,
+            &prompt,
+            Some(&raw_output),
+            Some(trace_id.clone()),
+        ).await?;
 
         // Step 7: 返回结果
         Ok(AwakeningResult {
