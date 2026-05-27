@@ -115,67 +115,6 @@ impl MemoryDao for MemoryDaoSqliteImpl {
         Ok(positions)
     }
 
-    async fn complete_trace(
-        &self,
-        _ctx: RequestContext,
-        trace_id: &str,
-        output: &str,
-    ) -> Result<(), AppError> {
-        use chrono::Utc;
-        use std::fs;
-        
-        // trace_id 格式: trace-{agent_id}-{timestamp_nanos}
-        // 从 trace_id 提取 agent_id
-        let parts: Vec<&str> = trace_id.split('-').collect();
-        if parts.len() < 3 {
-            return Err(AppError::Internal(format!("Invalid trace_id format: {trace_id}")));
-        }
-        let agent_id = parts[1];
-        
-        // 读取今日文件
-        let agent_dir = self.agent_memory_dir(agent_id);
-        let today = Utc::now().format("%Y-%m-%d").to_string();
-        let file_path = agent_dir.join(format!("{today}.jsonl"));
-        
-        if !file_path.exists() {
-            return Err(AppError::NotFound(format!("Trace file not found: {file_path:?}")));
-        }
-        
-        // 读取所有行，找到并更新
-        let content = fs::read_to_string(&file_path)?;
-        let mut updated = false;
-        let mut new_lines = Vec::new();
-        
-        for line in content.lines() {
-            if line.is_empty() {
-                new_lines.push(line.to_string());
-                continue;
-            }
-            
-            let mut trace: MemoryTrace = serde_json::from_str(line)
-                .map_err(|e| AppError::Internal(format!("Failed to parse trace: {e}")))?;
-            
-            if trace.id == trace_id {
-                // 更新 output 和 completed_at
-                trace.output = Some(output.to_string());
-                trace.completed_at = Some(Utc::now().timestamp());
-                updated = true;
-            }
-            
-            new_lines.push(serde_json::to_string(&trace)
-                .map_err(|e| AppError::Internal(format!("Failed to serialize trace: {e}")))?);
-        }
-        
-        if !updated {
-            return Err(AppError::NotFound(format!("Trace not found: {trace_id}")));
-        }
-        
-        // 写回文件
-        fs::write(&file_path, new_lines.join("\n") + "\n")?;
-        
-        Ok(())
-    }
-
     async fn create_short_term_index(
         &self,
         ctx: RequestContext,

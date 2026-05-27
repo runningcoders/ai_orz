@@ -95,11 +95,6 @@ pub trait MemoryDal: Send + Sync {
     /// - `KnowledgeNode` → 级联：删入边/出边关系 + 删引用 + 删节点 + 删向量
     /// - `Trace` / `Relation` → 返回 `AppError::Unsupported`
     async fn delete(&self, ctx: RequestContext, memory: Memory) -> Result<(), AppError>;
-
-    /// ✅ 完成 Trace 回填输出
-    ///
-    /// 找到指定 trace_id 的记录，回填 output 字段并标记 completed_at
-    async fn complete_trace(&self, ctx: RequestContext, trace_id: &str, output: &str) -> Result<(), AppError>;
 }
 
 // ==================== Implementation ====================
@@ -314,12 +309,6 @@ impl MemoryDal for MemoryDalImpl {
                 Err(AppError::Unsupported("记忆 Relation 不可删除，需删除后重建".to_string()))
             }
         }
-    }
-
-    async fn complete_trace(&self, ctx: RequestContext, trace_id: &str, output: &str) -> Result<(), AppError> {
-        // Trace 存储在 daily JSONL 文件中，需要找到并更新
-        // 策略：读取今日文件，找到对应 trace_id 的行，更新后写回
-        self.memory_dao.complete_trace(ctx, trace_id, output).await
     }
 }
 

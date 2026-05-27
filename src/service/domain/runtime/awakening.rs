@@ -28,8 +28,8 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         // 简易版：暂时为空，后续从 message.metadata 提取
         let trace_ids: Vec<String> = vec![];
 
-        // Step 3: 【思考闭环 - 前置】先创建空的 MemoryTrace 拿到 trace_id
-        // 这样 trace_id 可以注入到 prompt 头部，模型能看到并引用
+        // Step 3: 创建 MemoryTrace 拿到 trace_id 用于注入 Prompt
+        // 注意：此时只创建空 trace，input/output 都暂不填，等 Prompt 构建完成后再赋值
         use crate::models::memory::{MemoryCreateParams, MemoryTrace};
         use crate::service::dal::memory::dal;
 
@@ -39,12 +39,12 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             ctx.uid(),
             ctx.organization_id.clone().unwrap_or_default(),
             common::enums::MemoryRole::Assistant,
-            String::new(), // 占位符，稍后替换为完整 prompt
+            String::new(), // 占位，等构建好 Prompt 后回填
             ctx.task_id().cloned(),
         );
         let trace_id = trace.id.clone();
 
-        // Step 4: 拼装 Prompt（注入本次思考的 trace_id）
+        // Step 4: 拼装 Prompt（注入 trace_id 到头部，模型可见）
         let mut builder = PromptBuilder::new()
             .current_trace_id(&trace_id)
             .trace_ids(&trace_ids)
@@ -64,11 +64,8 @@ impl RuntimeAwakening for RuntimeDomainImpl {
 
         let prompt = builder.build();
 
-        // 更新 trace 的 input 字段
+        // 回填 trace 的 input 字段
         trace.input = prompt.clone();
-
-        // Step 5: 写入未完成的 Trace（只有 input，output 待回填）
-        dal().create(ctx.clone(), MemoryCreateParams::AppendTraces(vec![trace])).await?;
 
         // Step 5: 调用大脑思考
         // 统一走 BrainDal.think() 入口，方便审计、统计、监控
@@ -79,9 +76,11 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             .think(ctx.clone(), brain, &prompt)
             .await?;
 
-        // Step 6: 【思考闭环 - 步骤2/2】回填输出，完成 Trace
-        // 直接通过 DAO 更新 output 和 completed_at 字段
-        dal().complete_trace(ctx.clone(), &trace_id, &raw_output).await?;
+        // Step 6: 回填 trace 的 output 和完成思考闭环
+        trace.complete(raw_output.clone());
+
+        // Step 7: 一次性写入完成的 Trace
+        dal().create(ctx.clone(), MemoryCreateParams::AppendTraces(vec![trace])).await?;
 
         // Step 7: 返回结果
         Ok(AwakeningResult {
