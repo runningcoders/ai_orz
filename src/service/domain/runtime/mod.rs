@@ -17,6 +17,7 @@ use crate::models::agent::Agent;
 use crate::models::message::Message;
 use crate::models::memory::Memory;
 use crate::pkg::request_context::RequestContext;
+use crate::service::dal::brain::BrainDal;
 
 // ==================== 枚举定义 ====================
 
@@ -122,15 +123,35 @@ pub use context_assembly::{build_conversation_prompt, PromptBuilder};
 /// Runtime Domain 实现
 ///
 /// 聚合所有运行时子功能实现
-#[derive(Debug, Clone)]
 struct RuntimeDomainImpl {
-    // （预留）后续接入 DAL 时在这里添加
+    brain_dal: Arc<dyn BrainDal>,
+}
+
+impl std::fmt::Debug for RuntimeDomainImpl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RuntimeDomainImpl")
+            .field("brain_dal", &"<BrainDal>")
+            .finish()
+    }
+}
+
+impl Clone for RuntimeDomainImpl {
+    fn clone(&self) -> Self {
+        Self {
+            brain_dal: self.brain_dal.clone(),
+        }
+    }
 }
 
 impl RuntimeDomainImpl {
     /// 创建 Domain 实例
-    fn new() -> Self {
-        Self {}
+    fn new(brain_dal: Arc<dyn BrainDal>) -> Self {
+        Self { brain_dal }
+    }
+
+    /// 获取 Brain DAL 引用
+    fn brain_dal(&self) -> &dyn BrainDal {
+        &*self.brain_dal
     }
 }
 
@@ -158,14 +179,14 @@ pub fn domain() -> Arc<dyn RuntimeDomain> {
 }
 
 /// 创建新的 Runtime Domain 实例（用于测试，每次测试创建独立实例保证隔离）
-pub fn new() -> Arc<dyn RuntimeDomain> {
-    let domain = RuntimeDomainImpl::new();
+pub fn new(brain_dal: Arc<dyn BrainDal>) -> Arc<dyn RuntimeDomain> {
+    let domain = RuntimeDomainImpl::new(brain_dal);
     Arc::new(domain)
 }
 
 /// 初始化 Runtime Domain（使用全局单例 DAO）
 pub fn init() {
-    let runtime_domain = RuntimeDomainImpl::new();
+    let runtime_domain = RuntimeDomainImpl::new(crate::service::dal::brain::dal());
     let _ = RUNTIME_DOMAIN.set(Arc::new(runtime_domain));
 }
 

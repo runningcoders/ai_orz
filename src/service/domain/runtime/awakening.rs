@@ -60,15 +60,14 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             )
             .await?;
 
-        // Step 5: 调用模型推理
-        // 简易版：暂时返回固定输出（避免依赖完整的 Brain/Cortex 链路）
-        let raw_output = format!(
-            "你好！我是 {}。这是我的第一次唤醒响应。\n\
-            当前时间：{}\n\
-            我已经记住了我们的对话历史。",
-            agent.po.name,
-            chrono::Utc::now().format("%Y-%m-%d %H:%M:%S")
-        );
+        // Step 5: 调用大脑思考
+        // 统一走 BrainDal.think() 入口，方便审计、统计、监控
+        let brain = agent.brain.as_ref()
+            .ok_or_else(|| AppError::Internal("Agent 大脑未唤醒，请先调用 wake_brain()".into()))?;
+        
+        let raw_output = self.brain_dal()
+            .think(ctx.clone(), brain, &prompt)
+            .await?;
 
         // Step 6: 记录输出 Trace（复用输入的 trace_id，形成关联对）
         let _output_trace = self

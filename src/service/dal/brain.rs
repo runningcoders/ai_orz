@@ -74,13 +74,17 @@ pub trait BrainDal: Send + Sync {
         prompt: &str,
     ) -> Result<String, AppError>;
 
-    /// 对已存在的 Cortex 执行 prompt 获取回答
+    /// 让大脑思考，执行 prompt 获取回答
     ///
-    /// 直接转发给 cortex_dao 异步执行
-    async fn prompt_existing_cortex(
+    /// 【统一入口】所有模型调用都经过此方法，方便：
+    /// - 统一审计日志
+    /// - Token 统计和成本核算
+    /// - 限流/重试策略
+    /// - 调用链追踪
+    async fn think(
         &self,
         ctx: RequestContext,
-        cortex: &dyn CortexTrait,
+        brain: &Brain,
         prompt: &str,
     ) -> Result<String, AppError>;
 }
@@ -133,21 +137,46 @@ impl BrainDal for BrainDalImpl {
         provider: &ModelProvider,
         prompt: &str,
     ) -> Result<String, AppError> {
-        // 1. 创建 Cortex，测试连接不需要工具
+        // 1. 创建临时 Cortex，测试连接不需要工具
         let cortex_trait = self.cortex_dao.create_cortex_trait(ctx.clone(), &provider.po, Vec::new())
             .map_err(|e| AppError::Internal(e.to_string()))?;
 
-        // 2. 执行 prompt 获取回答
-        self.prompt_existing_cortex(ctx, &*cortex_trait, prompt).await
+        // 2. 创建临时 Brain 用于测试
+        let temp_brain = Brain::new(
+            Cortex::new(provider.clone(), cortex_trait),
+            Vec::new(),
+        );
+
+        // 3. 使用 think 方法执行测试
+        self.think(ctx, &temp_brain, prompt).await
     }
 
-    async fn prompt_existing_cortex(
+    async fn think(
         &self,
         ctx: RequestContext,
-        cortex: &dyn CortexTrait,
+        brain: &Brain,
         prompt: &str,
     ) -> Result<String, AppError> {
-        self.cortex_dao.prompt(ctx, cortex, prompt).await
-            .map_err(|e| AppError::Internal(e.to_string()))
+        let start = std::time::Instant::now();
+
+        tracing::debug!(
+            "Brain think start, provider_id={}, model={}",
+            brain.cortex.model_provider.po.id,
+            brain.cortex.model_provider.po.model_name,
+        );
+
+        // 实际调用底层推理
+        let result = self.cortex_dao
+            .prompt(ctx, brain.cortex_trait(), prompt)
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()));
+
+        tracing::debug!(
+            "Brain think completed, provider_id={}, elapsed={:?}",
+            brain.cortex.model_provider.po.id,
+            start.elapsed()
+        );
+
+        result
     }
 }
