@@ -1250,6 +1250,7 @@ pub trait MemoryDal: Send + Sync {
 
 | 日期 | 版本 | 变更 |
 |------|------|------|
+| 2026-05-28 | v0.7 | 新增第十八章：记忆 Trace 闭环架构 + PO 自格式化重构完成；BrainDal 统一思考入口；简化 Trace 写入避免二次 IO；统一 Runtime 域内 Trace 写入路径；整体进度 ~90% |
 | 2026-05-26 | v0.6 | 新增第十七章：架构重构 + 角色分工完成；对齐标准 Domain trait 组织方式；新增用户画像功能（客服专用）；消息链 ID 暴露给 Agent 自主读取；整体进度 ~75% |
 | 2026-05-25 | v0.5 | 新增第十六章：简易版实现完成；核心逻辑全部可编译：Runtime Memory + Context Assembly (Builder) + Awakening 主流程 |
 | 2026-05-25 | v0.4 | 新增第十二章：Runtime Memory 子模块行为对齐 + 第十三章：统一分页设计（独立需求） + 第十四章：第一阶段最终确认 |
@@ -1398,11 +1399,254 @@ xxx
 
 ---
 
+## 十八、记忆 Trace 闭环架构 + PO 自格式化重构完成 ✅
+
+**日期：2026-05-28 | 版本：v0.7**
+
+### 18.1 本次重构概览（6 个核心变更）
+
+本次重构围绕「Trace 闭环」和「职责单一」两大原则，完成了 6 个核心变更，整体进度从 75% 推进到 ~90%。
+
+| Commit | 变更内容 | 核心理念 |
+|--------|---------|---------|
+| `01aeb2a` | **Prompt 格式化逻辑内聚到各 PO 实体** | 谁的数据谁负责格式化，符合单一职责 |
+| `5d6c6ba` | **BrainDal 统一思考入口 + 打通唤醒链路** | 所有 LLM 调用必经 BrainDal，统一审计/限流/Token 统计 |
+| `2ea2dec` | **记忆 Trace 闭环架构改造** | 输入/输出共用同一 Trace ID，形成完整闭环 |
+| `76dd26e` | **简化记忆 Trace 写入流程，避免二次 IO** | 先拿 ID 注入 Prompt，模型思考完成后一次性写入完整记录 |
+| `581eb6d` | **统一 Runtime 域内 Trace 写入路径** | 所有 Trace 写入收敛到一处，便于后续扩展 |
+| `3fd39de` | **RuntimeMemory.write_thinking_trace 直接接收 MemoryTrace 结构体** | 类型安全，参数爆炸零容忍 |
+
+---
+
+### 18.2 核心架构变更 1：PO 实体自格式化
+
+**❌ 旧问题：** Prompt 拼装逻辑散落在 ContextAssembly 中，每个 PO 的字段变化都要改拼装代码，容易遗漏。
+
+**✅ 新方案：PO 实体自己负责自己的 Prompt 格式化**
+
+```rust
+// 每个 PO 都实现 to_xxx_prompt() 方法
+impl AgentPo {
+    pub fn to_identity_prompt(&self) -> String {
+        format!("你是 {}，ID：{}\n{}",
+            self.name,
+            self.id,
+            self.description.as_deref().unwrap_or_default()
+        )
+    }
+}
+
+impl MessagePo {
+    pub fn to_conversation_line(&self) -> String {
+        let role = match self.from_agent_id {
+            Some(_) => "Agent",
+            None => "用户",
+        };
+        format!("{}：{}", role, self.content)
+    }
+}
+
+impl MemoryPo {
+    pub fn to_history_line(&self) -> String {
+        format!("[{}] {}", self.memory_type, self.content)
+    }
+}
+```
+
+**设计优势：**
+1. **单一职责**：PO 最了解自己的字段含义，格式化逻辑内聚
+2. **零遗漏**：新增字段时，修改 PO 的格式化方法即可，不会漏改拼装器
+3. **可测试**：每个 `to_xxx_prompt()` 都是纯函数，可单独写单测
+4. **可复用**：不同场景的 Prompt 拼装都可以复用这些方法
+
+---
+
+### 18.3 核心架构变更 2：BrainDal 统一思考入口
+
+**❌ 旧问题：** LLM 调用散落在各处（Awakening 直接调 Cortex，工具执行也直接调），无法统一审计和限流。
+
+**✅ 新方案：所有 LLM 调用必经 BrainDal**
+
+```rust
+// 语义化调用链：唤醒大脑 → 思考 → 返回结果
+let result = brain_dal()
+    .wake_brain(ctx, &agent.po.brain_id)  // 第一步：唤醒大脑
+    .await?
+    .think(ctx, prompt)                   // 第二步：思考（调用 LLM）
+    .await?;
+```
+
+**设计优势：**
+1. **统一入口**：所有 LLM 调用都经过 BrainDal，便于审计、限流、Token 统计
+2. **语义化命名**：`wake_brain` → `think` 语义清晰，符合业务直觉
+3. **可扩展**：未来加缓存、降级、重试，只需要改 BrainDal 一处
+4. **分层清晰**：Runtime Domain 不直接依赖底层的 Cortex，通过 BrainDal 间接访问
+
+---
+
+### 18.4 核心架构变更 3：Trace 闭环架构
+
+**❌ 旧方案：** 先写 Input Trace → 拿到 ID → 注入 Prompt → 模型思考 → 写 Output Trace（用新的 ID）。问题：输入输出是两条独立记录，关联关系弱。
+
+**✅ 新方案：输入输出共用同一 Trace ID，形成完整闭环**
+
+```
+1. 生成 trace_id（还没写库）
+   ↓
+2. 把 trace_id 注入到 Prompt 中（Agent 可以看到并引用）
+   ↓
+3. 模型思考，产生输出
+   ↓
+4. 一次性写入完整的 Trace 记录：
+   - id = 第 1 步生成的 trace_id
+   - input = 第 2 步的完整 Prompt
+   - output = 第 3 步的模型输出
+   - tool_calls = 本次调用的工具列表
+```
+
+**设计优势：**
+1. **真正的闭环**：输入输出同 ID，查询时一次拿到完整上下文
+2. **减少一次 IO**：原来写两次，现在只写一次
+3. **Agent 可见**：Trace ID 注入到 Prompt，Agent 可以在回复中引用这个 ID
+4. **便于追溯**：任何问题都可以通过 trace_id 查到完整的输入输出
+
+---
+
+### 18.5 核心架构变更 4：避免二次 IO 的写入流程
+
+**❌ 旧流程（两次 IO）：**
+```
+写 Input Trace → 拿 ID → 注入 Prompt → 模型思考 → 写 Output Trace
+（2 次数据库写入）
+```
+
+**✅ 新流程（一次 IO）：**
+```
+生成 trace_id（内存操作，不写库）
+    ↓
+注入 Prompt
+    ↓
+模型思考
+    ↓
+一次性写入完整记录（包含 input + output + metadata）
+（1 次数据库写入）
+```
+
+**代码实现：**
+```rust
+// Step 1: 先生成 trace_id（内存操作，不写库）
+let trace_id = format!("trace-{}-{}", agent_id, Utc::now().timestamp_nanos());
+
+// Step 2: 注入到 Prompt
+let prompt = builder
+    .trace_id(&trace_id)  // Agent 能看到这个 ID
+    .build();
+
+// Step 3: 模型思考
+let output = brain.think(ctx, &prompt).await?;
+
+// Step 4: 一次性写入完整记录
+runtime_memory()
+    .write_thinking_trace(ctx, MemoryTrace {
+        id: trace_id,      // 复用第一步生成的 ID
+        input: prompt,
+        output: Some(output),
+        // ... 其他字段
+    })
+    .await?;
+```
+
+**性能收益：** 减少 50% 的记忆写入 IO。
+
+---
+
+### 18.6 核心架构变更 5：统一 Trace 写入路径
+
+**❌ 旧问题：** Trace 写入散落在 Awakening、工具执行、消息处理等多处，每处都有自己的写入逻辑。
+
+**✅ 新方案：所有 Trace 写入收敛到 RuntimeMemory.write_thinking_trace()**
+
+```rust
+// 统一入口，所有场景都走这个方法
+async fn write_thinking_trace(
+    &self,
+    ctx: RequestContext,
+    trace: MemoryTrace,  // 直接接收完整结构体
+) -> Result<(), AppError>;
+```
+
+**设计优势：**
+1. **单点扩展**：未来加 Trace 上报、Trace 采样、Trace 清洗，只改这一处
+2. **类型安全**：接收完整结构体，避免参数爆炸
+3. **一致行为**：所有 Trace 写入都经过同样的校验和处理逻辑
+
+---
+
+### 18.7 重构后的完整唤醒流程（最终版 7 步）
+
+```
+输入: ctx + agent_id + user_message_id
+
+  1. 加载基础数据
+     ├─ AgentDal.find_by_id() → Agent 实体
+     ├─ MessageDal.find_by_id() → 消息实体
+     └─ if user_id 存在 → UserDal.find_by_id() → 用户信息
+     ↓
+  2. 读取最近记忆
+     └─ RuntimeMemory.get_recent_traces(agent_id, 20) → Vec<Memory>
+     ↓
+  3. 生成 Trace ID（内存操作）
+     └─ trace_id = generate()
+     ↓
+  4. 拼装 Prompt（PO 自格式化）
+     ├─ AgentPo.to_identity_prompt()
+     ├─ 每条 MemoryPo.to_history_line()
+     └─ MessagePo.to_conversation_line()
+     ↓
+  5. 统一入口调用 LLM
+     └─ BrainDal.wake_brain() → think() → 输出
+     ↓
+  6. 一次性写入完整 Trace（输入 + 输出同 ID）
+     └─ RuntimeMemory.write_thinking_trace(MemoryTrace { id, input, output, ... })
+     ↓
+  7. 返回 AwakeningResult
+```
+
+---
+
+### 18.8 本次重构后整体进度
+
+| 模块 | 进度 | 核心能力 |
+|------|------|---------|
+| **PO 自格式化** | ✅ 100% | Agent/Message/Memory 都实现了各自的 to_xxx_prompt() 方法 |
+| **BrainDal 统一入口** | ✅ 100% | wake_brain() → think() 语义化调用链，所有 LLM 必经此处 |
+| **Runtime Memory** | ✅ 100% | write_thinking_trace() 直接接收结构体，一次 IO 写入完整 Trace |
+| **Trace 闭环架构** | ✅ 100% | 输入输出同 ID，注入 Prompt 供 Agent 引用，完整可追溯 |
+| **Context Assembly** | ✅ 100% | Builder 模式，复用 PO 的自格式化方法 |
+| **Runtime Awakening** | ✅ 95% | 7 步主流程完整可跑，仅剩边缘场景处理 |
+| **Tool Execution** | ⏳ 20% | Trait 定义完成，实现待填充 |
+
+**整体完成度：~90%**
+**当前状态：核心架构全部落地，Trace 闭环打通，纯文本对话流程生产就绪。**
+
+---
+
+### 18.9 剩余待做（重构后更新）
+
+| 优先级 | 任务 | 说明 |
+|--------|------|------|
+| **P0** | 工具调用框架 | ToolCall 检测 → 执行 → 结果回写 → 二次推理 |
+| **P1** | Trace ID 关联链 | 从 `message.reply_to_id` 追溯历史 Trace 链，构建完整对话树 |
+| **P2** | 技能动态注入 | 根据 Agent 角色和当前场景，动态注入技能说明 |
+| **P2** | 单元测试覆盖 | 各模块测试用例，重点覆盖 PO 格式化和 Trace 写入 |
+| **P3** | 神经工具集 | 实现 search_memory / send_message / mark_done 等内置工具 |
+
+---
+
 ## 下一步讨论方向
 
-1. **接入 Brain/Cortex 层真实模型推理**
-2. **Trace ID 关联链实现**
-3. **工具调用框架设计**（第二阶段）
-4. **技能动态注入**（第二阶段）
+1. **工具调用框架设计**（P0，第二阶段核心）
+2. **Trace ID 关联链实现**（P1，完善追溯能力）
+3. **技能动态注入策略**（P2，Agent 能力扩展）
 
 
