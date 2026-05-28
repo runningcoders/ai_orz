@@ -12,7 +12,7 @@ use crate::models::user::UserPo;
 /// Prompt 构建器
 ///
 /// 链式调用，按需组装不同部分：
-/// ```rust
+/// ```rust, ignore
 /// let prompt = PromptBuilder::new()
 ///     .agent_system(&agent)
 ///     .history(&memories)
