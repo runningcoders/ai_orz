@@ -159,7 +159,9 @@ impl BrainDal for BrainDalImpl {
     ) -> Result<String, AppError> {
         let start = std::time::Instant::now();
 
-        tracing::debug!(
+        log_debug!(
+            ctx.clone(),
+            "brain_think",
             "Brain think start, provider_id={}, model={}",
             brain.cortex.model_provider.po.id,
             brain.cortex.model_provider.po.model_name,
@@ -167,11 +169,13 @@ impl BrainDal for BrainDalImpl {
 
         // 实际调用底层推理
         let result = self.cortex_dao
-            .prompt(ctx, brain.cortex_trait(), prompt)
+            .prompt(ctx.clone(), brain.cortex_trait(), prompt)
             .await
             .map_err(|e| AppError::Internal(e.to_string()));
 
-        tracing::debug!(
+        log_debug!(
+            ctx.clone(),
+            "brain_think_complete",
             "Brain think completed, provider_id={}, elapsed={:?}",
             brain.cortex.model_provider.po.id,
             start.elapsed()
