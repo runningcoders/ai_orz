@@ -1,7 +1,7 @@
 //! 根据用户名查询用户接口（用于登录）
 
 use crate::error::AppError;
-use crate::handlers::ApiResponse;
+use common::api::ApiResponse;
 use crate::pkg::RequestContext;
 use axum::{
     extract::{Extension, Path},

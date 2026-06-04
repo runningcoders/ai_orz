@@ -12,12 +12,12 @@
 ai_orz/
 ├── **common** 🎯 独立公共 crate
 │   ├── src/api/              # 所有前后端共用 API DTO（按功能分组）
-│   ├── src/constants/        # 公共常量、基础类型（ApiResponse、状态枚举等）
+│   ├── src/constants/        # 公共常量、基础类型
 │   └── src/enums/            # 公共枚举（UserRole 等）
 │
 ├── **src** 后端服务
 │   ├── models/               # 持久化实体 PO
-│   ├── handlers/             # HTTP 接口层（按业务域/功能分组，每个方法一个文件）
+│   ├── handlers/             # HTTP 接口层（按业务域/功能分组，每个方法对应一个用户 Action）
 │   ├── service/
 │   │   ├── dao/              # 数据访问层 DAO（单一数据源操作）
 │   │   ├── dal/              # 业务数据访问层 DAL（组合 DAO 提供业务级数据操作）
@@ -34,9 +34,21 @@ ai_orz/
 
 **common crate 设计原则：**
 - ✅ 所有前后端共用的 request/response DTO 都放在 `common/src/api/`，消除重复定义
+- ✅ 通用响应包装 `ApiResponse<T>` 也只保留在 `common::api`，Handler 不再定义本地响应包装
 - ✅ 所有公共枚举都放在 common，保证前后端类型一致
 - ✅ PO 实体保持在后端 `models/`，不移动到 common（只需要前端看到 DTO）
 - ✅ 后端数据库枚举字段直接使用 common 中的枚举类型，实现编译期类型安全
+
+**Handler 层设计原则：**
+- ✅ Handler 与用户 Action / HTTP API 直接对应，每个接口按自身需求完成请求级编排
+- ✅ Handler 负责 DTO 解析、`RequestContext` 参数补全、DTO ↔ Command/Query 转换、响应 DTO 组装
+- ✅ 复用优先通过组织 Command/Query 参数和调用 Domain 能力完成
+- ✅ 管理面 API 补齐先按 Domain 能力盘点，再对照 Handler/Router 覆盖，不按 DAO/DAL 表结构生成接口
+- ✅ 状态变更统一为 status update action，由请求参数传目标状态，避免 `/start`、`/complete`、`/enable`、`/disable` 等路由膨胀
+- ❌ 不抽象 `BaseHandler` / `GenericActionHandler`，不通过 Handler 间互调复用逻辑
+- ❌ 复杂业务规则、状态流转、权限语义放到 Domain，不写在 Handler 中
+
+> 管理面 API 补齐方案见：`docs/handler_management_api_plan.md`
 
 ---
 

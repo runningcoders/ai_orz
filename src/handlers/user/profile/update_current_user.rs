@@ -1,11 +1,10 @@
 //! 更新当前认证用户信息接口
 
 use axum::{extract::{Extension, Json}, http::StatusCode};
-use common::api::{EmptyResponse, UpdateCurrentUserRequest};
+use common::api::{ApiResponse, EmptyResponse, UpdateCurrentUserRequest};
 use common::constants::utils;
 use crate::{
     error::AppError,
-    handlers::ApiResponse,
     service::domain::organization,
     pkg::RequestContext,
 };

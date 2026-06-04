@@ -1,11 +1,10 @@
 //! 获取当前登录用户所在组织信息接口
 
 use axum::{extract::{Extension, Json}, http::StatusCode};
-use common::api::{GetCurrentOrganizationResponse, OrganizationInfoResponse};
+use common::api::{ApiResponse, GetCurrentOrganizationResponse, OrganizationInfoResponse};
 use crate::pkg::RequestContext;
 use crate::{
     error::AppError,
-    handlers::ApiResponse,
     service::domain::organization,
 };
 

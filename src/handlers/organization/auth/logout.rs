@@ -1,8 +1,8 @@
 //! 用户登出
 
+use common::api::ApiResponse;
 use common::api::LogoutResponse;
 use crate::error::AppError;
-use crate::handlers::{ApiResponse};
 use crate::middleware::jwt_auth::JWT_COOKIE_NAME;
 use axum::{
     http::{HeaderMap, StatusCode},

@@ -2,7 +2,7 @@
 
 use common::api::{LoginRequest, LoginResponse};
 use crate::error::AppError;
-use crate::handlers::ApiResponse;
+use common::api::ApiResponse;
 use crate::pkg::jwt;
 use crate::pkg::RequestContext;
 use crate::middleware::jwt_auth::JWT_COOKIE_NAME;

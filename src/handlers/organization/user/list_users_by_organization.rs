@@ -1,7 +1,7 @@
 //! 根据组织 ID 查询用户列表接口
 
 use crate::error::AppError;
-use crate::handlers::ApiResponse;
+use common::api::ApiResponse;
 use crate::pkg::RequestContext;
 use axum::{
     extract::{Extension, Path},

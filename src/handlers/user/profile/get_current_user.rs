@@ -1,12 +1,11 @@
 //! 获取当前认证用户信息接口
 
 use axum::{extract::{Extension, Json}, http::StatusCode};
-use common::api::{GetCurrentUserResponse, UserInfoResponse};
+use common::api::{ApiResponse, GetCurrentUserResponse, UserInfoResponse};
 use common::enums::UserRole;
 use crate::pkg::RequestContext;
 use crate::{
     error::AppError,
-    handlers::ApiResponse,
     service::domain::organization,
 };
 

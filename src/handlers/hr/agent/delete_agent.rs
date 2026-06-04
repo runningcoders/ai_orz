@@ -2,7 +2,7 @@
 
 use crate::pkg::RequestContext;
 use crate::error::AppError;
-use crate::handlers::ApiResponse;
+use common::api::ApiResponse;
 use crate::service::domain::hr::domain;
 use axum::{
     extract::{Extension, Path},

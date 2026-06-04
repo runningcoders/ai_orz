@@ -1,11 +1,10 @@
 //! 获取当前用户所在组织下的所有用户列表接口
 
 use axum::{extract::{Extension, Json}, http::StatusCode};
-use common::api::{ListUsersResponse, UserListItem};
+use common::api::{ApiResponse, ListUsersResponse, UserListItem};
 use crate::pkg::RequestContext;
 use crate::{
     error::AppError,
-    handlers::ApiResponse,
     service::domain::organization,
 };
 

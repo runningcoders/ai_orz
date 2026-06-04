@@ -5,7 +5,7 @@
 use common::api::{InitializeSystemRequest, InitializeSystemResponse};
 use crate::pkg::RequestContext;
 use crate::error::AppError;
-use crate::handlers::ApiResponse;
+use common::api::ApiResponse;
 use axum::{
     extract::{Extension, Json},
     http::StatusCode,

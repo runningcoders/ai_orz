@@ -108,16 +108,32 @@
 
 ## ⚠️ 第四层：Handler 层（~50% 完成）
 
+**定位原则**: Handler 是用户 Action / HTTP API 的入口层，与接口语义直接对应；不做通用 Handler 框架抽象，按单个接口需求完成请求级编排。
+
+**职责边界**:
+- ✅ 解析 API DTO、参数校验、从 `RequestContext` 补全组织/用户等请求上下文
+- ✅ 将 API DTO 转换为 Domain Command/Query
+- ✅ 按用户 Action 编排一个或多个 Domain 调用
+- ✅ 将业务实体组装为 Response DTO
+- ❌ 直接调用 DAL/DAO
+- ❌ 承载复杂业务规则、状态流转、权限语义
+- ❌ Handler 间互调或通过 `BaseHandler` / `GenericActionHandler` 复用
+
+**复用方式**: 优先复用 Domain 能力与 Command/Query 参数结构；当多个接口共享流程时，把可复用逻辑沉到 Domain，而不是抽象 Handler。
+
 **已上线 API 领域**:
 - ✅ organization: 组织管理、用户管理、系统初始化、个人资料
 - ✅ hr: Agent CRUD、Skill 管理
 - ✅ finance: Model Provider CRUD、模型调用测试
 
-**待补充 API 领域**:
-- 🔧 project: 项目、任务、附件 CRUD（P0 - 低投入高回报）
-- 🔧 tool: 工具 CRUD、工具执行（P0 - 低投入高回报）
-- 🔧 message: 消息收发、多渠道推送（P1 - 需先完成 DAL 集成）
-- 🔧 memory: 记忆查询、记忆管理（P2 - 需先设计领域）
+**待补充 API 领域**（详见 `docs/handler_management_api_plan.md`）:
+- 🔧 finance/message_channel: 消息渠道配置 CRUD（P0 - 纯配置类，响应需脱敏）
+- 🔧 finance/tool: 工具基础管理、查询、Agent 绑定关系（P0 - 工具执行不纳入本批）
+- 🔧 hr/agent/status: Agent 状态更新接口（P0 - 统一 status action）
+- 🔧 project: 项目、任务管理面 CRUD 与统一状态更新（P1 - 核心业务对象）
+- 🔧 hr/skill: Skill 元数据与主内容管理（P1 - 涉及文件内容，分阶段补）
+- 🔧 artifact/message-management: 附件与消息管理查询（P2 - 受文件上传/消息语义影响）
+- ⏸️ message delivery / runtime awakening / tool execution: 运行面能力，单独随 Consumer / Runtime 链路推进
 
 ---
 

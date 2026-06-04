@@ -123,7 +123,9 @@ Models (PO 持久化实体)
 | **DAO** | 单一数据源 CRUD、SQL 拼接、PO 转换 | ❌ DAO 调 DAO、❌ 业务逻辑、❌ 实体组装 |
 | **DAL** | 依赖多个 DAO、PO → Entity 转换 | ❌ DAL 调 DAL |
 | **Domain** | 依赖多个 DAL、核心业务逻辑编排、跨领域事务 | ❌ Domain 调 Domain、❌ 直接调用 DAO |
-| **Handler** | HTTP 路由、参数校验、调用 Domain | ❌ 直接调用 DAL/DAO |
+| **Handler** | HTTP 路由、参数校验、DTO ↔ Command/Query 转换、按用户 Action 编排 Domain、响应 DTO 组装 | ❌ 直接调用 DAL/DAO、❌ 承载复杂业务规则、❌ Handler 间互调、❌ 抽象通用 Handler 框架 |
+
+**Handler 层设计补充**：Handler 与用户 Action 直接对应，一个接口按需求完成自己的请求级编排即可；复用优先通过组织 Command/Query 参数和调用 Domain 能力完成，不为了复用提前抽象 `BaseHandler` / `GenericActionHandler`。复杂业务规则、状态流转、权限语义必须下沉到 Domain。
 
 ### 3.2 目录结构
 
@@ -197,7 +199,7 @@ ai_orz/
 
 | 对象类型 | 定义位置 | 用途 |
 |----------|----------|------|
-| **API DTO** | `common/src/api/**` | HTTP 请求/响应，前后端复用 |
+| **API DTO** | `common/src/api/**` | HTTP 请求/响应，前后端复用；通用响应包装使用 `common::api::ApiResponse<T>` |
 | **Command/Query** | `src/service/domain/*/mod.rs` | Domain 层输入，表达业务意图 |
 | **业务实体** | `src/models/*.rs` | 核心业务对象，包含行为和状态 |
 | **PO (持久化对象)** | `src/models/*.rs` | 数据库映射，1:1 对应表结构 |
@@ -324,7 +326,7 @@ fn wake_cortex(&self, provider: &ModelProvider, prompt: &str) -> Result<String>;
 - 按业务域分组（hr、finance、organization、user 等）
 - **每个业务方法一个独立文件**，单个文件只放一个 handler 函数
 - `mod.rs` 只保留模块导出，不存放实现
-- 所有 DTO 从 `common/src/api/` 导入
+- 所有 DTO 从 `common/src/api/` 导入；通用响应包装统一使用 `common::api::ApiResponse<T>`，禁止在 `src/handlers` 定义本地 `ApiResponse`
 
 ### 4.5 测试隔离原则
 

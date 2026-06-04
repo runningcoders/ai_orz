@@ -3,7 +3,7 @@
 use common::api::{CreateModelProviderRequest, CreateModelProviderResponse};
 use crate::pkg::RequestContext;
 use crate::error::AppError;
-use crate::handlers::ApiResponse;
+use common::api::ApiResponse;
 use crate::models::model_provider::{ModelProvider, ModelProviderPo};
 use crate::service::domain::finance::domain;
 use axum::{

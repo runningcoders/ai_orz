@@ -1,11 +1,10 @@
 //! 更新当前登录用户所在组织信息接口
 
 use axum::{extract::{Extension, Json}, http::StatusCode};
-use common::api::{EmptyResponse, UpdateCurrentOrganizationRequest};
+use common::api::{ApiResponse, EmptyResponse, UpdateCurrentOrganizationRequest};
 use common::constants::utils;
 use crate::{
     error::AppError,
-    handlers::ApiResponse,
     service::domain::organization,
     pkg::RequestContext,
 };

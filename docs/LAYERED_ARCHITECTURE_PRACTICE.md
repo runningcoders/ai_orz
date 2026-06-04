@@ -53,9 +53,9 @@ DAO (数据访问层) → 单一数据源操作，只做 CRUD
 | **DAO** | 单一/多个数据源的 CRUD 操作<br>SQL 拼接<br>数据库实体 PO 转换 | ❌ **同层 DAO 互调**<br>❌ 向上调用 DAL/Domain<br>❌ 业务逻辑<br>❌ 实体组装/装饰 |
 | **DAL** | ✅ **依赖多个 DAO**（业务决定）<br>提供业务级数据接口<br>PO → Entity 转换 | ❌ **同层 DAL 互调**<br>❌ 向上调用 Domain |
 | **Domain** | ✅ **依赖多个 DAL**（业务决定）<br>核心业务逻辑编排<br>跨领域事务 | ❌ **同层 Domain 互调**<br>❌ 直接调用 DAO（跨层） |
-| **Handler** | HTTP 路由<br>参数校验<br>调用 Domain 服务 | ❌ 直接调用 DAL/DAO（跨层） |
+| **Handler** | HTTP 路由<br>参数校验<br>DTO ↔ Command/Query 转换<br>按用户 Action 编排 Domain 调用<br>组装响应 DTO | ❌ 直接调用 DAL/DAO（跨层）<br>❌ 承载复杂业务规则<br>❌ 抽象通用 Handler 框架 |
 
-> 💡 **设计哲学**：调用限制只有一个 —— **逐层单向调用**。DAL/Domain 内依赖多少个下一层组件，完全由业务内聚性决定。
+> 💡 **设计哲学**：调用限制只有一个 —— **逐层单向调用**。DAL/Domain 内依赖多少个下一层组件，完全由业务内聚性决定。Handler 层面向用户 Action，不追求通用抽象；每个接口按需求完成自己的请求级编排，复用优先通过组织 Command/Query 参数和调用 Domain 能力完成。
 
 ---
 
@@ -385,7 +385,7 @@ cargo test
 
 | 对象类型 | 所属层级 | 定义位置 | 用途 | 示例 | 序列化 |
 |----------|----------|----------|------|------|--------|
-| **API DTO** | Handler 层 | `common/src/api/**` | HTTP 请求/响应结构，前后端复用 | `CreateMessageRequest`, `MessageSummary` | ✅ 必须实现 Serialize/Deserialize |
+| **API DTO** | Handler 层 | `common/src/api/**` | HTTP 请求/响应结构，前后端复用；通用响应包装统一使用 `common::api::ApiResponse<T>` | `CreateMessageRequest`, `MessageSummary`, `ApiResponse<T>` | ✅ 必须实现 Serialize/Deserialize |
 | **业务命令/查询对象** | Domain 层 | `src/service/domain/*/mod.rs` | Domain 层方法的输入参数，表达业务意图 | `CreateMessageCommand`, `MessageQuery` | ❌ 不实现序列化 |
 | **业务实体** | Domain 层 | `src/models/*.rs` | 核心业务对象，包含行为和状态 | `Message`, `Agent`, `Tool` | ❌ 不实现序列化 |
 | **PO (持久化对象)** | DAO 层 | `src/models/*.rs` | 数据库映射对象，1:1 对应表结构 | `MessagePo`, `AgentPo` | ✅ 实现 sqlx::FromRow |
@@ -399,10 +399,10 @@ cargo test
 HTTP Request
     │
     ▼
-Handler: 解析 JSON → API DTO → 转换为 Command/Query
+Handler: 解析 JSON → API DTO → 补全请求上下文 → 转换为 Command/Query → 按用户 Action 编排 Domain 调用
     │
     ▼
-Domain: 接收 Command → 执行业务逻辑 → 返回业务实体
+Domain: 接收 Command/Query → 执行业务逻辑 → 返回业务实体
     │
     ▼
 DAL: 接收业务实体 → 转换为 PO
@@ -415,10 +415,12 @@ DAO: 接收 PO → 持久化
 
 | 层级 | 输入 | 输出 | 转换职责 |
 |------|------|------|----------|
-| **Handler** | API DTO (JSON) | 业务命令/查询对象 | API 协议 → 业务概念 |
+| **Handler** | API DTO (JSON) | 业务命令/查询对象 + 响应 DTO | API 协议 → 业务概念；补全 `RequestContext` 派生参数；按用户 Action 编排 Domain；Entity → Response DTO |
 | **Domain** | 业务命令/查询对象 | 业务实体 | 业务逻辑编排 |
 | **DAL** | 业务实体 | PO | 业务对象 → 持久化对象 |
 | **DAO** | PO | PO | 纯数据读写 |
+
+> API 契约统一约定：Handler 的响应包装必须从 `common::api::ApiResponse` 导入；`src/handlers` 不再定义本地 `ApiResponse`，避免前后端共享 DTO 与后端本地响应结构分叉。
 
 ---
 
@@ -499,6 +501,14 @@ let po = MessagePo {
 ---
 
 ### 📝 Domain 层输入对象规范
+
+#### 与 Handler 的协作边界
+
+Handler 是用户 Action 的入口，Domain 输入对象是 Handler 与 Domain 之间的业务契约。设计时优先让每个 Handler 按接口需求组装明确的 Command/Query，而不是抽象出通用 Handler 或把 API DTO 直接下传。
+
+- **Handler 负责**：解析 API DTO、从 `RequestContext` 补全组织/用户等请求上下文、把前端协议字段转换为业务语义、根据这个 Action 编排一个或多个 Domain 调用、把业务实体转换为响应 DTO。
+- **Domain 负责**：承载可复用业务能力、状态规则、权限语义、跨 DAL 编排；同一 Domain 方法可以被多个 Handler 或 Consumer 复用。
+- **复用方式**：优先复用 Command/Query 参数结构和 Domain 方法，不通过 Handler 互调、`BaseHandler`、`GenericActionHandler` 等提前抽象来复用。
 
 #### 定义位置
 业务命令和查询对象**必须**定义在对应 domain 模块的 `mod.rs` 中，与 trait 定义放在一起：
@@ -593,7 +603,75 @@ let summary = MessageSummaryResponse {
 
 ---
 
-#### 陷阱 2：Domain 层方法参数爆炸
+#### 陷阱 2：Handler 过度抽象
+```rust
+// ❌ 错误：为了复用提前抽象通用 Handler，隐藏了用户 Action 的真实语义
+pub async fn generic_action_handler<TReq, TCmd, TResp>(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<RequestContext>,
+    Json(req): Json<TReq>,
+) -> Result<Json<TResp>, AppError> {
+    let cmd = req.into_command(ctx);
+    let entity = state.dispatch(cmd).await?;
+    Ok(Json(entity.into_response()))
+}
+```
+
+**问题**：
+- 接口语义被泛型调度隐藏，可读性下降
+- 不同 Action 的请求级编排差异被迫塞进 trait/回调
+- 后续需要组合多个 Domain 时，通用框架会变成新的耦合点
+
+**正确做法**：一个 Handler 对应一个用户 Action，直接组织参数并调用 Domain：
+```rust
+pub async fn send_user_message_handler(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<RequestContext>,
+    Json(req): Json<SendUserMessageRequest>,
+) -> Result<Json<MessageResponse>, AppError> {
+    let command = SendUserMessageCommand {
+        agent_id: req.agent_id,
+        content: req.content,
+        organization_id: ctx.organization_id,
+        user_id: ctx.user_id,
+    };
+
+    let message = state
+        .message_domain
+        .send_user_message(ctx.clone(), command)
+        .await?;
+
+    if req.auto_awaken {
+        state
+            .runtime_domain
+            .awaken_agent(ctx, AwakenAgentCommand {
+                agent_id: req.agent_id,
+                message_id: message.id(),
+            })
+            .await?;
+    }
+
+    Ok(Json(MessageResponse::from(message)))
+}
+```
+
+---
+
+#### 陷阱 3：Handler 间互调
+```rust
+// ❌ 错误：用已有 Handler 复用逻辑
+pub async fn create_project_and_task_handler(...) -> Result<Json<ProjectResponse>, AppError> {
+    let project = create_project_handler(...).await?;
+    create_task_handler(...).await?;
+    Ok(project)
+}
+```
+
+**正确做法**：把可复用逻辑沉到 Domain，Handler 只编排 Domain 方法或调用一个更明确的 Domain 流程方法。
+
+---
+
+#### 陷阱 4：Domain 层方法参数爆炸
 ```rust
 // ❌ 错误：10+ 个零散参数
 async fn create_message(
@@ -614,7 +692,7 @@ async fn create_message(
 
 ---
 
-#### 陷阱 3：PO 构造逻辑放在 DAO 层
+#### 陷阱 5：PO 构造逻辑放在 DAO 层
 ```rust
 // ❌ 错误：DAO 层做 PO 构造
 impl MessageDao for MessageDaoSqliteImpl {

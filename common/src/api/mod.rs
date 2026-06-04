@@ -14,6 +14,33 @@ pub struct ApiResponse<T> {
 }
 
 impl<T> ApiResponse<T> {
+    /// Successful response with data
+    pub fn success(data: T) -> Self {
+        Self {
+            code: 0,
+            message: "success".to_string(),
+            data: Some(data),
+        }
+    }
+
+    /// Successful response without data
+    pub fn ok() -> ApiResponse<()> {
+        ApiResponse {
+            code: 0,
+            message: "success".to_string(),
+            data: None,
+        }
+    }
+
+    /// Error response without data
+    pub fn error(code: i32, message: String) -> ApiResponse<()> {
+        ApiResponse {
+            code,
+            message,
+            data: None,
+        }
+    }
+
     /// Check if the response is successful
     pub fn is_success(&self) -> bool {
         self.code == 0

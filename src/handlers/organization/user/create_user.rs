@@ -3,7 +3,7 @@
 use common::api::{CreateUserRequest, CreateUserResponse};
 use common::enums::UserRole;
 use crate::error::AppError;
-use crate::handlers::ApiResponse;
+use common::api::ApiResponse;
 use crate::pkg::RequestContext;
 use axum::{
     extract::{Extension, Json},

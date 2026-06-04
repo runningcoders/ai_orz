@@ -2,7 +2,7 @@
 
 use common::api::{UpdateUserRequest, UpdateUserResponse};
 use crate::error::AppError;
-use crate::handlers::ApiResponse;
+use common::api::ApiResponse;
 use crate::pkg::RequestContext;
 use axum::{
     extract::{Extension, Path, Json},

@@ -1,4 +1,4 @@
-use crate::handlers::ApiResponse;
+use common::api::ApiResponse;
 use axum::Json;
 
 pub async fn health() -> Json<ApiResponse<HealthData>> {
