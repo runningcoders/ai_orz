@@ -55,6 +55,7 @@ pub mod agent;
 pub mod auth;
 pub mod organization;
 pub mod model_provider;
+pub mod message_channel;
 pub mod user;
 
 // Re-exports for convenient import
@@ -62,4 +63,5 @@ pub use agent::*;
 pub use auth::*;
 pub use organization::*;
 pub use model_provider::*;
+pub use message_channel::*;
 pub use user::*;

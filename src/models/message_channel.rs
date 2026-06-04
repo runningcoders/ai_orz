@@ -52,9 +52,53 @@ impl MessageChannel {
         self.po.channel_type
     }
 
+    /// 获取渠道状态
+    pub fn status(&self) -> ChannelStatus {
+        self.po.status
+    }
+
     /// 是否启用
     pub fn is_enabled(&self) -> bool {
         matches!(self.po.status, ChannelStatus::Active)
+    }
+
+    /// 当前状态下允许通过状态更新 Action 切换到的目标状态。
+    ///
+    /// `Deleted` 是删除 Action 的结果，不允许通过普通状态更新产生；
+    /// 已删除渠道为终态，不再提供可切换状态。
+    pub fn available_statuses(&self) -> Vec<ChannelStatus> {
+        match self.po.status {
+            ChannelStatus::Active => vec![ChannelStatus::Active, ChannelStatus::Disabled],
+            ChannelStatus::Disabled => vec![ChannelStatus::Disabled, ChannelStatus::Active],
+            ChannelStatus::Deleted => vec![],
+        }
+    }
+
+    /// 判断是否允许通过状态更新 Action 切换到目标状态。
+    pub fn can_transition_to(&self, target: ChannelStatus) -> bool {
+        self.available_statuses().contains(&target)
+    }
+
+    /// 切换渠道状态。
+    ///
+    /// 只处理依赖自身字段即可判断的简单状态迁移；如果未来规则涉及 Agent 绑定、
+    /// 权限、套餐或连通性测试结果，应上移到 Domain service 编排。
+    pub fn transition_status(
+        &mut self,
+        target: ChannelStatus,
+        modified_by: impl Into<String>,
+    ) -> Result<(), String> {
+        if !self.can_transition_to(target) {
+            return Err(format!(
+                "MessageChannel {} cannot transition from {:?} to {:?}",
+                self.po.id, self.po.status, target
+            ));
+        }
+
+        self.po.status = target;
+        self.po.modified_by = modified_by.into();
+        self.po.updated_at = utils::current_timestamp_ms();
+        Ok(())
     }
 
     /// 获取配置
@@ -195,34 +239,5 @@ pub struct ChannelConfig {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_message_channel_po_builder() {
-        // 验证 Builder 模式可以正常工作
-        let po = MessageChannelPoBuilder::default()
-            .id("channel_001".to_string())
-            .org_id("org_001".to_string())
-            .user_id("user_001".to_string())
-            .agent_id(Some("agent_001".to_string()))
-            .channel_type(ChannelType::Lark)
-            .channel_name("飞书通知".to_string())
-            .webhook_url(Some("https://example.com/webhook".to_string()))
-            .access_token(None)
-            .secret(Some("secret_123".to_string()))
-            .config_json(Json(ChannelConfig::default()))
-            .status(ChannelStatus::Active)
-            .created_by("tester".to_string())
-            .modified_by("tester".to_string())
-            .created_at(1234567890)
-            .updated_at(1234567890)
-            .build()
-            .unwrap();
-
-        assert_eq!(po.id, "channel_001");
-        assert_eq!(po.channel_name, "飞书通知");
-        assert_eq!(po.agent_id, Some("agent_001".to_string()));
-        assert_eq!(po.status, ChannelStatus::Active);
-    }
-}
+#[path = "message_channel_tests.rs"]
+mod message_channel_tests;

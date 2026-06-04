@@ -141,4 +141,32 @@ fn finance_routes() -> Router {
             "/model-providers/{id}",
             delete(handlers::finance::model_provider::delete_model_provider),
         )
+        .route(
+            "/message-channels",
+            post(handlers::finance::message_channel::create_message_channel),
+        )
+        .route(
+            "/message-channels",
+            get(handlers::finance::message_channel::list_message_channels),
+        )
+        .route(
+            "/message-channels/{id}",
+            get(handlers::finance::message_channel::get_message_channel),
+        )
+        .route(
+            "/message-channels/{id}",
+            put(handlers::finance::message_channel::update_message_channel),
+        )
+        .route(
+            "/message-channels/{id}/status",
+            put(handlers::finance::message_channel::update_message_channel_status),
+        )
+        .route(
+            "/message-channels/{id}/test",
+            post(handlers::finance::message_channel::test_message_channel_connection),
+        )
+        .route(
+            "/message-channels/{id}",
+            delete(handlers::finance::message_channel::delete_message_channel),
+        )
 }

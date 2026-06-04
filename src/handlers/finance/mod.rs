@@ -4,5 +4,6 @@
 //! - Model Provider - 大语言模型提供商管理
 
 pub mod model_provider;
+pub mod message_channel;
 
 // handler 函数导出供路由使用

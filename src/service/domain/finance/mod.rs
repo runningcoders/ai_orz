@@ -132,6 +132,9 @@ pub trait MessageChannelManage: Send + Sync {
 
     /// 删除 Message Channel
     async fn delete_message_channel(&self, ctx: RequestContext, channel: &crate::models::message_channel::MessageChannel) -> Result<(), AppError>;
+
+    /// 测试 Message Channel 连通性
+    async fn test_message_channel(&self, ctx: RequestContext, channel: &crate::models::message_channel::MessageChannel) -> Result<(), AppError>;
 }
 
 /// Tool Provider 管理 trait

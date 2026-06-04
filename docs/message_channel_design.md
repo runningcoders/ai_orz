@@ -1,6 +1,6 @@
 # 消息渠道设计文档
 
-## 🚀 实现完成状态（2026-05-15 更新）
+## 🚀 实现完成状态（2026-06-04 更新）
 
 ### ✅ 全部实现完成
 
@@ -12,7 +12,30 @@
 | 各渠道 DAO | ✅ 完成 | ✅ 测试通过 | `src/service/dao/lark_dao.rs`, `wechat_dao.rs` 等 |
 | MessageChannelDal | ✅ 完成 | ✅ 测试通过 | `src/service/dal/message_channel.rs` |
 | Message Domain | ✅ 完成 | ✅ 测试通过 | `src/service/domain/message/` |
+| Finance Domain 管理面 | ✅ CRUD/query/test 已具备 | `cargo check` 通过 | `src/service/domain/finance/message_channel.rs` |
+| API DTO | ✅ 管理面 DTO 已完成 | `cargo check` 通过 | `common/src/api/message_channel.rs` |
+| Handler / Router | ✅ 管理面 action 已完成 | `cargo check` 通过 | `src/handlers/finance/message_channel/`, `src/router.rs` |
 | 单元测试 | ✅ 完成 | **67/67 通过** | 各模块对应 `tests.rs` |
+
+### Handler 管理面范围
+
+当前管理面已暴露以下受保护路由：
+
+```http
+POST   /api/v1/finance/message-channels
+GET    /api/v1/finance/message-channels
+GET    /api/v1/finance/message-channels/{id}
+PUT    /api/v1/finance/message-channels/{id}
+DELETE /api/v1/finance/message-channels/{id}
+PUT    /api/v1/finance/message-channels/{id}/status
+POST   /api/v1/finance/message-channels/{id}/test
+```
+
+Handler 继续保持“一个用户 action 一个文件”的组织方式：`create/list/get/update/delete/status/test` 分别对应独立 handler 文件。Handler 只做 DTO 解析、`RequestContext` 补全、归属校验、Domain 编排和脱敏 Response DTO 组装，不直接调用 DAL/DAO，也不抽象通用 CRUD Handler。
+
+状态更新统一走 `/status`，请求体携带目标 `ChannelStatus`，不拆启用/禁用等多条路由。简单状态流转规则内聚在 `MessageChannel::transition_status`：`Active` 与 `Disabled` 可互相切换；`Deleted` 为删除 action 的结果，不允许通过状态更新接口产生。测试连接走 `/test`，Handler 通过 Finance Domain 的 `test_message_channel` 入口调用，不越层访问 DAL。
+
+响应 DTO 使用脱敏策略：查询与详情不返回 `access_token`、`secret`、`config_json` 内的 secret/password/token 明文，只返回 `has_access_token`、`has_secret`、`has_config_secret` 布尔值表达存在性。
 
 ---
 

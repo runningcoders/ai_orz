@@ -90,7 +90,7 @@ PUT /api/v1/tools/{id}/status
 
 | 优先级 | Domain | 管理对象 | Domain 已有能力 | Handler 状态 | 说明 |
 |--------|--------|----------|-----------------|----------------|------|
-| P0 | `finance` | MessageChannel | create/get/query/list/update/delete | 缺失 | 纯配置类，收益高；响应必须脱敏 |
+| P0 | `finance` | MessageChannel | create/get/query/list/update/delete/test | 已补 create/list/get/update/delete/status/test | 纯配置类，收益高；响应 DTO 已脱敏；状态更新统一 `/status`，测试连接统一 `/test` |
 | P0 | `finance` | Tool | create/get/query/list/update/bind/unbind/list_agent_tools/search | 缺失 | 先补基础管理与 Agent 绑定；工具执行不纳入本轮 |
 | P0 | `hr` | Agent Status | transition_status/validate_onboard_readiness | 缺失 | 使用统一 `PUT /agents/{id}/status` |
 | P1 | `project` | Project | create/get/list_by_user/update_basic/start/complete/archive | 缺失 | 状态方法先在 Handler 层收敛成统一 status action，必要时再补 Domain 统一入口 |
@@ -110,14 +110,18 @@ PUT /api/v1/tools/{id}/status
 ### 3.1 MessageChannel（P0）
 
 ```http
-POST   /api/v1/message-channels
-GET    /api/v1/message-channels
-GET    /api/v1/message-channels/{id}
-PUT    /api/v1/message-channels/{id}
-DELETE /api/v1/message-channels/{id}
+POST   /api/v1/finance/message-channels
+GET    /api/v1/finance/message-channels
+GET    /api/v1/finance/message-channels/{id}
+PUT    /api/v1/finance/message-channels/{id}
+DELETE /api/v1/finance/message-channels/{id}
+PUT    /api/v1/finance/message-channels/{id}/status
+POST   /api/v1/finance/message-channels/{id}/test
 ```
 
-查询列表支持 query 参数承载筛选条件，例如 `channel_type`、`status`、`provider`、`limit`。不要把 secret/config 原样放入响应。
+当前已落地以上七个管理面路由（create/list/get/update/delete/status/test）。查询列表支持 query 参数承载筛选条件，例如 `user_id`、`agent_id`、`channel_type`、`only_enabled`、`limit`、`offset`。响应 DTO 使用 `has_access_token`、`has_secret`、`has_config_secret` 表达敏感配置存在性，不返回 `access_token`、`secret` 或 `config_json` 中的 secret/password/token 明文。
+
+状态更新实现遵循“Handler 编排 + Entity 简单状态规则”模式：Handler 通过 Domain 读取实体、校验请求范围后调用 `MessageChannel::transition_status`，再复用 `update_message_channel` 写回；`Deleted` 不允许通过 `/status` 产生，必须走 `DELETE` action。`test connection` 不是字段更新，已在 Finance Domain 暴露 `test_message_channel` 语义入口，Handler 不越层调用 DAL。
 
 ### 3.2 Tool（P0）
 
@@ -237,7 +241,7 @@ GET    /api/v1/tasks/{task_id}/messages
 
 ### Phase 1：P0 纯配置 / 绑定关系
 
-1. 补 `finance/message_channel` Handler 文件与路由；
+1. 补 `finance/message_channel` Handler 文件与路由；已完成 `create_message_channel`、`list_message_channels`、`get_message_channel`、`update_message_channel`、`delete_message_channel`、`update_message_channel_status`、`test_message_channel_connection`，并新增/补齐 `common/src/api/message_channel.rs` 脱敏 DTO；
 2. 补 `finance/tool` 基础查询、管理与 Agent 绑定 Handler；
 3. 补 `hr/agent` 状态更新 Handler；
 4. 为新增 Handler 添加最小集成测试或 handler 级契约测试。
