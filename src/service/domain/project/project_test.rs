@@ -173,6 +173,87 @@ async fn test_project_transition_status_rejects_deleted(pool: SqlitePool) {
 }
 
 #[sqlx::test]
+async fn test_task_transition_status_updates_entity(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+    let project_id = Uuid::now_v7().to_string();
+    let root_user_id = Uuid::now_v7().to_string();
+    let assignee_id = Uuid::now_v7().to_string();
+
+    let mut task = domain
+        .task()
+        .create(
+            ctx.clone(),
+            "Status Task".to_string(),
+            "Status Description".to_string(),
+            1,
+            vec!["status".to_string()],
+            root_user_id,
+            common::enums::task::AssigneeType::Agent,
+            assignee_id,
+            Some(project_id),
+            "admin".to_string(),
+        )
+        .await
+        .unwrap();
+
+    domain
+        .task()
+        .transition_status(ctx.clone(), &mut task, TaskStatus::InProgress)
+        .await
+        .unwrap();
+    assert_eq!(task.po.status, TaskStatus::InProgress);
+    assert!(task.po.start_at.is_some());
+
+    domain
+        .task()
+        .transition_status(ctx.clone(), &mut task, TaskStatus::Completed)
+        .await
+        .unwrap();
+    assert_eq!(task.po.status, TaskStatus::Completed);
+    assert!(task.po.end_at.is_some());
+
+    let found = domain
+        .task()
+        .get(ctx.clone(), &task.po.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(found.po.status, TaskStatus::Completed);
+}
+
+#[sqlx::test]
+async fn test_task_transition_status_rejects_cancelled(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+    let project_id = Uuid::now_v7().to_string();
+    let root_user_id = Uuid::now_v7().to_string();
+    let assignee_id = Uuid::now_v7().to_string();
+
+    let mut task = domain
+        .task()
+        .create(
+            ctx.clone(),
+            "Cancel Status Task".to_string(),
+            "Status Description".to_string(),
+            1,
+            vec!["status".to_string()],
+            root_user_id,
+            common::enums::task::AssigneeType::Agent,
+            assignee_id,
+            Some(project_id),
+            "admin".to_string(),
+        )
+        .await
+        .unwrap();
+
+    let result = domain
+        .task()
+        .transition_status(ctx.clone(), &mut task, TaskStatus::Cancelled)
+        .await;
+
+    assert!(result.is_err());
+}
+
+#[sqlx::test]
 async fn test_project_start_complete_archive(pool: SqlitePool) {
     let (domain, ctx) = init_test_env(pool);
     let root_user_id = Uuid::now_v7().to_string();

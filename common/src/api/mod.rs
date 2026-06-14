@@ -61,6 +61,9 @@ pub mod organization;
 pub mod project;
 #[cfg(test)]
 mod project_test;
+pub mod task;
+#[cfg(test)]
+mod task_test;
 pub mod tool;
 pub mod user;
 
@@ -71,5 +74,6 @@ pub use message_channel::*;
 pub use model_provider::*;
 pub use organization::*;
 pub use project::*;
+pub use task::*;
 pub use tool::*;
 pub use user::*;

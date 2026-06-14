@@ -33,7 +33,9 @@ service/
 
 ### 管理面 API
 
-Batch 2.1 已补齐 Project 管理面 API，Handler 位于 `src/handlers/project/project/`，每个用户 action 单独文件，且只调用 Domain，不直接调用 DAL/DAO。
+Batch 2.1 已补齐 Project 管理面 API，Batch 2.2 已补齐 Task 管理面 API。Handler 位于 `src/handlers/project/project/` 与 `src/handlers/project/task/`，每个用户 action 单独文件，且只调用 Domain，不直接调用 DAL/DAO。
+
+Project：
 
 ```http
 POST   /api/v1/projects
@@ -50,7 +52,25 @@ PUT    /api/v1/projects/{id}/status
 - `UpdateProjectRequest` / `UpdateProjectResponse`
 - `UpdateProjectStatusRequest` / `UpdateProjectStatusResponse`
 
-状态更新统一使用 `/status` action，不新增 `/start`、`/complete`、`/archive` 等目标状态路由；合法性与流转副作用由 `ProjectDomain::transition_status(ctx, &mut project, target_status)` 承担。
+Task：
+
+```http
+POST   /api/v1/tasks
+GET    /api/v1/tasks/{id}
+GET    /api/v1/projects/{project_id}/tasks
+GET    /api/v1/agents/{agent_id}/tasks
+PUT    /api/v1/tasks/{id}
+PUT    /api/v1/tasks/{id}/status
+```
+
+共享 DTO 位于 `common/src/api/task.rs`，包括：
+- `CreateTaskRequest` / `CreateTaskResponse`
+- `ListTasksQuery` / `TaskListItem`
+- `GetTaskResponse`
+- `UpdateTaskRequest` / `UpdateTaskResponse`
+- `UpdateTaskStatusRequest` / `UpdateTaskStatusResponse`
+
+状态更新统一使用 `/status` action，不新增 `/start`、`/complete`、`/archive`、`/cancel` 等目标状态路由；合法性与流转副作用由 `ProjectDomain::transition_status(ctx, &mut project, target_status)` / `TaskDomain::transition_status(ctx, &mut task, target_status)` 承担。
 
 ### 实体持有关系
 

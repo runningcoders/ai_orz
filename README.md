@@ -290,7 +290,7 @@ system_info("服务启动成功");
 | Finance (财务管理) | `/api/v1/finance/model-providers` | LLM 模型配置管理、调用测试 |
 | 组织用户权限 | `/api/v1/organization/*`, `/api/v1/auth/*` | 系统初始化、登录、组织/用户管理 |
 | 项目管理 | `/api/v1/projects` | Project 创建、列表、详情、基础更新、状态更新 |
-| 任务管理 | `/api/v1/tasks` | 任务 CRUD、状态更新 |
+| 任务管理 | `/api/v1/tasks`, `/api/v1/projects/{project_id}/tasks`, `/api/v1/agents/{agent_id}/tasks` | Task 创建、详情、按 Project/Agent 列表、基础更新、状态更新 |
 | 消息对话 | `/api/v1/projects/{id}/messages` | 发送消息、接收回复、触发 Agent 执行 |
 | 消息渠道 | `/api/v1/finance/message-channels` | 消息渠道 CRUD、状态更新、连接测试 |
 | 技能库 | `/api/v1/skills` | 技能 CRUD、搜索 |

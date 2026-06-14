@@ -67,6 +67,8 @@ fn protected_routes() -> Router {
         .nest("/organization", organization_protected_routes())
         // Project routes
         .merge(project_routes())
+        // Task routes
+        .merge(task_routes())
         // Current user routes - for user profile
         .nest("/user", user_routes())
         // Add JWT authentication middleware to all protected routes
@@ -101,6 +103,25 @@ fn project_routes() -> Router {
         .route(
             "/projects/{id}/status",
             put(handlers::project::project::update_project_status),
+        )
+}
+
+fn task_routes() -> Router {
+    Router::new()
+        .route("/tasks", post(handlers::project::task::create_task))
+        .route("/tasks/{id}", get(handlers::project::task::get_task))
+        .route("/tasks/{id}", put(handlers::project::task::update_task))
+        .route(
+            "/tasks/{id}/status",
+            put(handlers::project::task::update_task_status),
+        )
+        .route(
+            "/projects/{project_id}/tasks",
+            get(handlers::project::task::list_project_tasks),
+        )
+        .route(
+            "/agents/{agent_id}/tasks",
+            get(handlers::project::task::list_agent_tasks),
         )
 }
 
