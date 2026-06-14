@@ -123,15 +123,13 @@
 
 **已上线 API 领域**:
 - ✅ organization: 组织管理、用户管理、系统初始化、个人资料
-- ✅ hr: Agent CRUD、Agent 状态更新、Skill 管理
+- ✅ hr: Agent CRUD、Agent 状态更新
 - ✅ finance: Model Provider CRUD、模型调用测试、MessageChannel 管理、Tool 管理与 Agent 绑定
 
 **待补充 API 领域**（详见 `docs/handler_management_api_plan.md`）:
-- 🔧 finance/message_channel: 消息渠道配置 CRUD（P0 - 纯配置类，响应需脱敏）
-- 🔧 finance/tool: 工具基础管理、查询、Agent 绑定关系（P0 - 工具执行不纳入本批）
-- 🔧 hr/agent/status: Agent 状态更新接口（P0 - 统一 status action）
-- 🔧 project: 项目、任务管理面 CRUD 与统一状态更新（P1 - 核心业务对象）
-- 🔧 hr/skill: Skill 元数据与主内容管理（P1 - 涉及文件内容，分阶段补）
+- 🔧 Phase 2 / Batch 2.1 project/project: 项目管理面 CRUD 与统一状态更新（P1 - 优先开始）
+- 🔧 Phase 2 / Batch 2.2 project/task: 任务管理面 CRUD、按 Project/Agent 列表与统一状态更新（P1）
+- 🔧 Phase 2 / Batch 2.3 hr/skill: Skill 元数据、主内容、搜索、安装到 Agent（P1 - 分阶段补，不先扩展复杂文件副作用）
 - 🔧 artifact/message-management: 附件与消息管理查询（P2 - 受文件上传/消息语义影响）
 - ⏸️ message delivery / runtime awakening / tool execution: 运行面能力，单独随 Consumer / Runtime 链路推进
 

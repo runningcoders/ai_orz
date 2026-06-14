@@ -506,13 +506,16 @@ async fn test_install_to_agent(pool: SqlitePool) -> Result<(), AppError> {
         .await?;
 
     // 验证：创建了新的独立副本
-    assert_ne!(installed.id, source_id);
-    assert_eq!(installed.author_id, agent_id);
+    assert_ne!(installed.po.id, source_id);
+    assert_eq!(installed.po.author_id, agent_id);
     // 安装后变为 Draft（Agent 私有副本）
-    assert_eq!(installed.status, SkillStatus::Draft);
+    assert_eq!(installed.po.status, SkillStatus::Draft);
+
+    // DAL 返回完整 Skill 实体，包含安装后副本的文件列表
+    assert!(!installed.files.is_empty());
 
     // 验证文件已复制
-    let installed_content = skill_dal.read_main_content(&installed)?;
+    let installed_content = skill_dal.read_main_content(&installed.po)?;
     assert!(!installed_content.is_empty());
     assert!(installed_content.contains("Shared Skill"));
 

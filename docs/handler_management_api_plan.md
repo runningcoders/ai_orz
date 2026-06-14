@@ -257,10 +257,66 @@ GET    /api/v1/tasks/{task_id}/messages
 
 ### Phase 2：P1 核心业务对象
 
-1. 补 `project/project` Handler；
-2. 补 `project/task` Handler；
-3. 补 `hr/skill` Handler；
-4. 对 Project/Task 状态更新先复用现有 Domain 状态方法，随后收敛为 Domain 统一状态更新入口。
+> 当前计划：Phase 2 按 Project → Task → Skill 三个小批次推进，每批独立完成 DTO、Handler、Router、最小契约/Domain 测试、文档更新、`cargo fmt/check/test` 与阶段性提交。这样避免一次性改动过大，也便于前端逐步接入。
+
+#### Batch 2.1：Project 管理面 API
+
+目标：先补最简单、闭环清晰的 Project 管理面接口。
+
+范围：
+1. 新增 `common/src/api/project.rs`，定义 create/list/get/update/status 的 Request / Response DTO；
+2. 新增 `src/handlers/project/project/` 下的单 action Handler 文件；
+3. 在 `src/handlers/project/mod.rs` 与 `src/router.rs` 暴露 Project 路由；
+4. `PUT /api/v1/projects/{id}/status` 先由 Handler 根据目标 `ProjectStatus` 调用现有 Domain 方法（如 start/complete/archive），不新增 `/start`、`/complete`、`/archive` 路由；
+5. 补 DTO 契约测试，必要时补 Domain 状态流转覆盖；
+6. 更新本文档和 README/API 速览。
+
+验收：Project 可创建、查询、列表、基础更新、状态更新；Handler 不越层调用 DAL/DAO。
+
+#### Batch 2.2：Task 管理面 API
+
+目标：复用 Project 的 Handler / DTO 模式，补齐 Task 管理面接口。
+
+范围：
+1. 新增 `common/src/api/task.rs`，定义 create/get/list/update/status 的 Request / Response DTO；
+2. 新增 `src/handlers/project/task/` 下的单 action Handler 文件；
+3. 在 Router 暴露：`POST /api/v1/tasks`、`GET /api/v1/tasks/{id}`、`GET /api/v1/projects/{project_id}/tasks`、`GET /api/v1/agents/{agent_id}/tasks`、`PUT /api/v1/tasks/{id}`、`PUT /api/v1/tasks/{id}/status`；
+4. `PUT /api/v1/tasks/{id}/status` 先由 Handler 根据目标 `TaskStatus` 调用现有 Domain 方法（如 start/complete/cancel），不新增 `/start`、`/complete`、`/cancel` 路由；
+5. 补 DTO 契约测试和关键 Domain 状态测试；
+6. 更新本文档和 README/API 速览。
+
+验收：Task 可创建、查询、按 Project/Agent 列表、基础更新、状态更新；状态路由不膨胀。
+
+#### Batch 2.3：Skill 管理面 API
+
+目标：补 HR Skill 管理面，先覆盖元数据 + 主内容 + 安装到 Agent，暂不扩展复杂文件副作用。
+
+范围：
+1. 新增 `common/src/api/skill.rs`，定义列表摘要 DTO、详情完整 DTO、创建/更新/搜索/安装请求 DTO；
+2. 新增 `src/handlers/hr/skill/` 下的单 action Handler 文件；
+3. 暴露：`POST /api/v1/skills`、`GET /api/v1/skills`、`GET /api/v1/skills/{id}`、`PUT /api/v1/skills/{id}`、`DELETE /api/v1/skills/{id}`、`GET /api/v1/skills/search`、`GET /api/v1/agents/{agent_id}/skills`、`POST /api/v1/agents/{agent_id}/skills/{skill_id}`；
+4. 列表响应使用摘要 DTO，详情响应返回完整主内容，避免列表接口返回大字段；
+5. 更新时只暴露元数据和主内容写入；文件删除、附件级读写等复杂文件能力等 Domain/DAL 语义稳定后再补；
+6. 补 DTO 契约测试和关键 Domain/Handler 契约覆盖；
+7. 更新本文档和 README/API 速览。
+
+验收：Skill 元数据、主内容、查询搜索、安装到 Agent 可从管理面操作；列表不返回大内容；Handler 不承载文件业务规则。
+
+#### Phase 2 进度跟踪
+
+| 批次 | 对象 | 状态 | 交付物 | 验证 |
+|------|------|------|--------|------|
+| Batch 2.1 | Project | 未开始 | DTO + Handler + Router + 测试 + 文档 | `cargo fmt --all && cargo check && cargo test` |
+| Batch 2.2 | Task | 未开始 | DTO + Handler + Router + 测试 + 文档 | `cargo fmt --all && cargo check && cargo test` |
+| Batch 2.3 | Skill | 未开始 | DTO + Handler + Router + 测试 + 文档 | `cargo fmt --all && cargo check && cargo test` |
+
+统一约束：
+- Handler 只调用 Domain，不直接调用 DAL/DAO；
+- 每个 Handler 文件对应一个明确用户 Action；
+- API DTO 保持在 `common/src/api/`，不把 Handler 本地结构泄漏给前端；
+- 状态更新统一使用 `/status` action，不拆目标状态路由；
+- Project/Task 状态更新可先适配现有 Domain 方法，后续再收敛为统一 `transition_status` 入口；
+- 每批完成后同步更新本文档、README 和架构状态文档。
 
 验收：Project/Task/Skill 管理面可从前端完整操作；状态更新路由不膨胀。
 

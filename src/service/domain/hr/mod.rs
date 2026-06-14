@@ -15,7 +15,7 @@ mod skill_test;
 
 use crate::error::AppError;
 use crate::models::agent::Agent;
-use crate::models::skill::{Skill, SkillPo};
+use crate::models::skill::Skill;
 use crate::pkg::RequestContext;
 use crate::service::dal::agent as agent_dal;
 use crate::service::dal::agent::AgentDal;
@@ -157,11 +157,6 @@ pub trait SkillManage: Send + Sync {
     // A. 技能基础管理（CRUD）
     async fn create_skill(&self, ctx: RequestContext, skill: &Skill) -> Result<(), AppError>;
     async fn get_skill(&self, ctx: RequestContext, id: &str) -> Result<Option<Skill>, AppError>;
-    async fn get_skill_po(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<Option<SkillPo>, AppError>;
     async fn update_skill(
         &self,
         ctx: RequestContext,
@@ -207,5 +202,5 @@ pub trait SkillManage: Send + Sync {
         ctx: RequestContext,
         source_skill_id: &str,
         agent_id: &str,
-    ) -> Result<SkillPo, AppError>;
+    ) -> Result<Skill, AppError>;
 }

@@ -1,9 +1,8 @@
 //! Skill 管理具体方法实现
 
 use crate::error::AppError;
-use crate::models::skill::{Skill, SkillPo};
+use crate::models::skill::Skill;
 use crate::pkg::RequestContext;
-use crate::service::dal::skill::SkillDal;
 use crate::service::dao::skill::{SkillQuery, SkillSearch};
 use crate::service::domain::hr::{HrDomainImpl, SkillManage, UpdateSkillParams};
 use common::enums::SkillStatus;
@@ -29,14 +28,6 @@ impl SkillManage for HrDomainImpl {
 
     async fn get_skill(&self, ctx: RequestContext, id: &str) -> Result<Option<Skill>, AppError> {
         self.skill_dal.get_by_id(ctx, id.to_string()).await
-    }
-
-    async fn get_skill_po(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<Option<SkillPo>, AppError> {
-        self.skill_dal.get_po_by_id(ctx, id.to_string()).await
     }
 
     async fn update_skill(
@@ -144,7 +135,7 @@ impl SkillManage for HrDomainImpl {
         ctx: RequestContext,
         source_skill_id: &str,
         agent_id: &str,
-    ) -> Result<SkillPo, AppError> {
+    ) -> Result<Skill, AppError> {
         self.skill_dal
             .install_to_agent(ctx, source_skill_id, agent_id)
             .await

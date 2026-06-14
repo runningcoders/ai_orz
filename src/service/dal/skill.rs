@@ -111,13 +111,13 @@ pub trait SkillDal: Send + Sync {
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
 
     /// 将已发布技能安装到 Agent（原子操作：复制文件 + 创建数据库记录）
-    /// 返回安装后新创建的技能 PO
+    /// 返回安装后新创建的完整 Skill 业务实体
     async fn install_to_agent(
         &self,
         ctx: RequestContext,
         source_skill_id: &str,
         agent_id: &str,
-    ) -> Result<SkillPo, AppError>;
+    ) -> Result<Skill, AppError>;
 
     /// 读取技能主文件内容（skill.md）
     fn read_main_content(&self, skill: &SkillPo) -> Result<String, AppError>;
@@ -504,18 +504,26 @@ impl SkillDal for SkillDalImpl {
         ctx: RequestContext,
         source_skill_id: &str,
         agent_id: &str,
-    ) -> Result<SkillPo, AppError> {
+    ) -> Result<Skill, AppError> {
         // 先获取源技能 PO
         let source_skill = self
             .skill_dao
             .find_by_id(ctx.clone(), source_skill_id)
             .await?
             .ok_or_else(|| AppError::NotFound("Skill not found".to_string()))?;
-        // 调用 DAO 原子安装
-        Ok(self
+        // 调用 DAO 原子安装，DAO 只返回持久化对象
+        let installed_po = self
             .skill_dao
             .install_to_agent(ctx, &source_skill, agent_id)
-            .await?)
+            .await?;
+
+        // DAL 负责组装业务实体（PO + 文件列表），不把 PO 泄漏给上层
+        let files = self.skill_dao.list_files(&installed_po)?;
+        Ok(Skill {
+            po: installed_po,
+            files,
+            search_match: None,
+        })
     }
 
     fn read_main_content(&self, skill: &SkillPo) -> Result<String, AppError> {

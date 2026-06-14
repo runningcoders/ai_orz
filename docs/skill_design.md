@@ -257,6 +257,30 @@ pub trait SkillVectorDao: Send + Sync {
 }
 ```
 
+## DAL 接口边界
+
+DAL 层对上层优先暴露 `Skill` 业务实体，`SkillPo` 主要限制在 DAO 持久化边界内使用。对于安装这类会创建新技能副本的操作，DAO 负责原子复制文件并写入数据库，DAL 负责把 DAO 返回的 `SkillPo` 组装为完整 `Skill`：
+
+```rust
+#[async_trait]
+pub trait SkillDal: Send + Sync {
+    async fn get_by_id(&self, ctx: RequestContext, id: String) -> Result<Option<Skill>, AppError>;
+    async fn query(&self, ctx: RequestContext, query: SkillQuery) -> Result<Vec<Skill>, AppError>;
+    async fn list_for_agent(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<Skill>, AppError>;
+    async fn update(&self, ctx: RequestContext, skill: &Skill) -> Result<(), AppError>;
+
+    /// 将已发布技能安装到 Agent，返回安装后新创建的完整 Skill 业务实体
+    async fn install_to_agent(
+        &self,
+        ctx: RequestContext,
+        source_skill_id: &str,
+        agent_id: &str,
+    ) -> Result<Skill, AppError>;
+}
+```
+
+> `get_po_by_id` 仅作为 DAL 内部/底层优化能力保留，不作为 Domain/Handler 的公共依赖方向。
+
 ## `SkillPo` 构造
 
 ```rust
@@ -391,7 +415,6 @@ async fn delete_by_id(&self, ctx: RequestContext, id: &str) -> Result<(), AppErr
 | 测试用例 | 说明 |
 |----------|------|
 | `test_create_and_get_by_id` | 测试创建和获取技能 |
-| `test_get_skill_po_only` | 测试只获取 PO（不加载文件） |
 | `test_update_skill` | 测试更新技能 |
 | `test_delete_skill` | 测试删除技能 |
 | `test_list_by_status` | 测试按状态查询 |
@@ -399,7 +422,7 @@ async fn delete_by_id(&self, ctx: RequestContext, id: &str) -> Result<(), AppErr
 | `test_list_by_author` | 测试按作者查询 |
 | `test_query_skills` | 测试通用查询 |
 
-当前测试结果：**12/12 全部通过，零失败**（包含 agent 和 skill 测试）
+当前测试结果：**11/11 全部通过，零失败**（包含 agent 和 skill 测试）
 
 ## 分层架构（完整）
 
@@ -491,7 +514,6 @@ pub trait SkillManage: Send + Sync {
     // A. 技能基础管理（CRUD）
     async fn create_skill(&self, ctx: RequestContext, skill: &Skill) -> Result<(), AppError>;
     async fn get_skill(&self, ctx: RequestContext, id: &str) -> Result<Option<Skill>, AppError>;
-    async fn get_skill_po(&self, ctx: RequestContext, id: &str) -> Result<Option<SkillPo>, AppError>;
     async fn update_skill(&self, ctx: RequestContext, params: UpdateSkillParams<'_>) -> Result<(), AppError>;
     async fn delete_skill(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
 
@@ -509,9 +531,11 @@ pub trait SkillManage: Send + Sync {
         ctx: RequestContext,
         source_skill_id: &str,
         agent_id: &str,
-    ) -> Result<SkillPo, AppError>;
+    ) -> Result<Skill, AppError>;
 }
 ```
+
+> Domain 和 DAL 层公共接口优先暴露 `Skill` 业务实体，不暴露 `SkillPo` / `get_skill_po` 这类持久化对象接口；DAL 内部仅保留轻量 PO 查询作为存储优化，默认不向上层传播 PO。
 
 ### 实现结构
 

@@ -90,26 +90,6 @@ async fn test_create_and_get_by_id(pool: SqlitePool) {
 }
 
 #[sqlx::test]
-async fn test_get_skill_po_only(pool: SqlitePool) {
-    let (domain, ctx, _temp_dir) = init_test_env(pool);
-
-    let skill = create_test_skill("TestPoSkill");
-
-    domain
-        .skill_manage()
-        .create_skill(ctx.clone(), &skill)
-        .await
-        .unwrap();
-
-    let found_po: Option<SkillPo> = domain
-        .skill_manage()
-        .get_skill_po(ctx, &skill.id())
-        .await
-        .unwrap();
-    assert_eq!(found_po.unwrap().name, "TestPoSkill");
-}
-
-#[sqlx::test]
 async fn test_update_skill(pool: SqlitePool) {
     let (domain, ctx, _temp_dir) = init_test_env(pool.clone());
 
