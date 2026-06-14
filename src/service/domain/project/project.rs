@@ -5,6 +5,7 @@
 use crate::error::AppError;
 use crate::models::project::Project;
 use crate::pkg::RequestContext;
+use common::constants::utils;
 use common::enums::project::ProjectStatus;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -66,6 +67,23 @@ impl ProjectDomain {
         root_user_id: &str,
     ) -> Result<Vec<Project>, AppError> {
         self.dal.list_by_root_user(ctx, root_user_id, None).await
+    }
+
+    /// 查询用户项目列表
+    pub async fn list(
+        &self,
+        ctx: RequestContext,
+        root_user_id: &str,
+        status: Option<ProjectStatus>,
+        limit: Option<usize>,
+    ) -> Result<Vec<Project>, AppError> {
+        if let Some(status) = status {
+            self.dal
+                .list_by_root_user_and_status(ctx, root_user_id, vec![status], limit)
+                .await
+        } else {
+            self.dal.list_by_root_user(ctx, root_user_id, limit).await
+        }
     }
 
     /// 启动项目
@@ -133,6 +151,7 @@ impl ProjectDomain {
         name: Option<String>,
         description: Option<String>,
         priority: Option<i32>,
+        tags: Option<Vec<String>>,
         modified_by: String,
     ) -> Result<Project, AppError> {
         let Some(mut project) = self.dal.find_by_id(ctx.clone(), project_id).await? else {
@@ -151,9 +170,73 @@ impl ProjectDomain {
         if let Some(priority) = priority {
             project.po.priority = priority;
         }
+        if let Some(tags) = tags {
+            project.po.tags = serde_json::to_string(&tags).unwrap_or_else(|_| "[]".to_string());
+        }
         project.po.modified_by = modified_by;
 
         self.dal.update(ctx, &project).await?;
         Ok(project)
+    }
+
+    /// 统一项目状态流转
+    pub async fn transition_status(
+        &self,
+        ctx: RequestContext,
+        project: &mut Project,
+        target_status: ProjectStatus,
+    ) -> Result<(), AppError> {
+        let current_status = project.po.status;
+
+        if target_status == ProjectStatus::Deleted {
+            return Err(AppError::BadRequest(
+                "Project 删除不允许通过状态接口执行，请使用删除/归档 action".to_string(),
+            ));
+        }
+
+        let is_valid_transition = match (current_status, target_status) {
+            (a, b) if a == b => true,
+            (ProjectStatus::Active, ProjectStatus::PendingReview) => true,
+            (ProjectStatus::Active, ProjectStatus::InProgress) => true,
+            (ProjectStatus::PendingReview, ProjectStatus::Active) => true,
+            (ProjectStatus::PendingReview, ProjectStatus::InProgress) => true,
+            (ProjectStatus::InProgress, ProjectStatus::Completed) => true,
+            (ProjectStatus::Completed, ProjectStatus::Archived) => true,
+            (ProjectStatus::Active, ProjectStatus::Archived) => true,
+            (ProjectStatus::PendingReview, ProjectStatus::Archived) => true,
+            (ProjectStatus::InProgress, ProjectStatus::Archived) => true,
+            _ => false,
+        };
+
+        if !is_valid_transition {
+            return Err(AppError::BadRequest(format!(
+                "非法项目状态流转：{:?} → {:?}",
+                current_status, target_status
+            )));
+        }
+
+        if current_status == target_status {
+            return Ok(());
+        }
+
+        match target_status {
+            ProjectStatus::InProgress => {
+                project.po.status = ProjectStatus::InProgress;
+                if project.po.start_at.is_none() {
+                    project.po.start_at = Some(utils::current_timestamp());
+                }
+            }
+            ProjectStatus::Completed => {
+                project.po.status = ProjectStatus::Completed;
+                project.po.end_at = Some(utils::current_timestamp());
+            }
+            ProjectStatus::Archived | ProjectStatus::Active | ProjectStatus::PendingReview => {
+                project.po.status = target_status;
+            }
+            ProjectStatus::Deleted => unreachable!("Deleted rejected above"),
+        }
+        project.po.modified_by = ctx.uid();
+
+        self.dal.update(ctx, project).await
     }
 }

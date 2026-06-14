@@ -31,7 +31,7 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 | 📨 消息渠道系统 | ✅ | 多渠道消息接入，支持启用/禁用/连接测试 |
 | 🛠️ 混合模式工具调用 | ✅ | 简单工具走 rig 原生 auto，关键工具走自建 manual 可控链路 |
 | 📚 技能库 | ✅ | 可复用技能和工作流管理，支持搜索和分类 |
-| 📋 任务项目管理 | ✅ | 项目聚合对话，任务跟踪进度、思考深度、优先级 |
+| 📋 任务项目管理 | ✅ | 项目聚合对话，项目管理面 API，任务跟踪进度、思考深度、优先级 |
 | 📎 统一附件存储 | ✅ | 消息附件和项目产物统一存储 |
 | 🚀 异步消费者系统 | ✅ | 通用消费者框架 + Message Topic 三层分发（Agent/User/System） |
 | 📝 结构化日志系统 | ✅ | JSON 格式，自动上下文关联，日志自动清理 |
@@ -289,7 +289,7 @@ system_info("服务启动成功");
 | HR (人力资源) | `/api/v1/hr/agents` | Agent CRUD、状态更新 |
 | Finance (财务管理) | `/api/v1/finance/model-providers` | LLM 模型配置管理、调用测试 |
 | 组织用户权限 | `/api/v1/organization/*`, `/api/v1/auth/*` | 系统初始化、登录、组织/用户管理 |
-| 项目管理 | `/api/v1/projects` | 项目 CRUD |
+| 项目管理 | `/api/v1/projects` | Project 创建、列表、详情、基础更新、状态更新 |
 | 任务管理 | `/api/v1/tasks` | 任务 CRUD、状态更新 |
 | 消息对话 | `/api/v1/projects/{id}/messages` | 发送消息、接收回复、触发 Agent 执行 |
 | 消息渠道 | `/api/v1/finance/message-channels` | 消息渠道 CRUD、状态更新、连接测试 |

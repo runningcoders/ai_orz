@@ -25,11 +25,32 @@ service/
 └── domain/
     └── project/              # 统一的 Project Domain ✅ 已完成
         ├── mod.rs            # Domain 入口 + Trait 定义
-        ├── project.rs        # 项目业务逻辑
+        ├── project.rs        # 项目业务逻辑（含统一状态流转入口）
         ├── task.rs           # 任务业务逻辑
         ├── artifact.rs       # 产物业务逻辑
-        └── project_test.rs   # 单元测试（9 个测试，100% 通过）
+        └── project_test.rs   # 单元测试（11 个测试，100% 通过）
 ```
+
+### 管理面 API
+
+Batch 2.1 已补齐 Project 管理面 API，Handler 位于 `src/handlers/project/project/`，每个用户 action 单独文件，且只调用 Domain，不直接调用 DAL/DAO。
+
+```http
+POST   /api/v1/projects
+GET    /api/v1/projects
+GET    /api/v1/projects/{id}
+PUT    /api/v1/projects/{id}
+PUT    /api/v1/projects/{id}/status
+```
+
+共享 DTO 位于 `common/src/api/project.rs`，包括：
+- `CreateProjectRequest` / `CreateProjectResponse`
+- `ListProjectsQuery` / `ProjectListItem`
+- `GetProjectResponse`
+- `UpdateProjectRequest` / `UpdateProjectResponse`
+- `UpdateProjectStatusRequest` / `UpdateProjectStatusResponse`
+
+状态更新统一使用 `/status` action，不新增 `/start`、`/complete`、`/archive` 等目标状态路由；合法性与流转副作用由 `ProjectDomain::transition_status(ctx, &mut project, target_status)` 承担。
 
 ### 实体持有关系
 

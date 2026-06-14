@@ -65,6 +65,8 @@ fn protected_routes() -> Router {
         .nest("/finance", finance_routes())
         // Organization (组织管理) routes (protected)
         .nest("/organization", organization_protected_routes())
+        // Project routes
+        .merge(project_routes())
         // Current user routes - for user profile
         .nest("/user", user_routes())
         // Add JWT authentication middleware to all protected routes
@@ -78,6 +80,27 @@ fn user_routes() -> Router {
         .route(
             "/me",
             put(profile::update_current_user::update_current_user),
+        )
+}
+
+fn project_routes() -> Router {
+    Router::new()
+        .route(
+            "/projects",
+            post(handlers::project::project::create_project),
+        )
+        .route("/projects", get(handlers::project::project::list_projects))
+        .route(
+            "/projects/{id}",
+            get(handlers::project::project::get_project),
+        )
+        .route(
+            "/projects/{id}",
+            put(handlers::project::project::update_project),
+        )
+        .route(
+            "/projects/{id}/status",
+            put(handlers::project::project::update_project_status),
         )
 }
 

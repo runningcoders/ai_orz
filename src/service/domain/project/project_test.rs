@@ -102,6 +102,77 @@ async fn test_project_list_by_user(pool: SqlitePool) {
 }
 
 #[sqlx::test]
+async fn test_project_transition_status_updates_entity(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+    let root_user_id = Uuid::now_v7().to_string();
+
+    let mut project = domain
+        .project()
+        .create(
+            ctx.clone(),
+            "Status Project".to_string(),
+            "Status Description".to_string(),
+            1,
+            vec!["status".to_string()],
+            root_user_id,
+            "admin".to_string(),
+        )
+        .await
+        .unwrap();
+
+    domain
+        .project()
+        .transition_status(ctx.clone(), &mut project, ProjectStatus::InProgress)
+        .await
+        .unwrap();
+    assert_eq!(project.po.status, ProjectStatus::InProgress);
+    assert!(project.po.start_at.is_some());
+
+    domain
+        .project()
+        .transition_status(ctx.clone(), &mut project, ProjectStatus::Completed)
+        .await
+        .unwrap();
+    assert_eq!(project.po.status, ProjectStatus::Completed);
+    assert!(project.po.end_at.is_some());
+
+    let found = domain
+        .project()
+        .get(ctx.clone(), &project.po.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(found.po.status, ProjectStatus::Completed);
+}
+
+#[sqlx::test]
+async fn test_project_transition_status_rejects_deleted(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+    let root_user_id = Uuid::now_v7().to_string();
+
+    let mut project = domain
+        .project()
+        .create(
+            ctx.clone(),
+            "Delete Status Project".to_string(),
+            "Status Description".to_string(),
+            1,
+            vec!["status".to_string()],
+            root_user_id,
+            "admin".to_string(),
+        )
+        .await
+        .unwrap();
+
+    let result = domain
+        .project()
+        .transition_status(ctx.clone(), &mut project, ProjectStatus::Deleted)
+        .await;
+
+    assert!(result.is_err());
+}
+
+#[sqlx::test]
 async fn test_project_start_complete_archive(pool: SqlitePool) {
     let (domain, ctx) = init_test_env(pool);
     let root_user_id = Uuid::now_v7().to_string();

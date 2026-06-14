@@ -58,6 +58,9 @@ pub mod auth;
 pub mod message_channel;
 pub mod model_provider;
 pub mod organization;
+pub mod project;
+#[cfg(test)]
+mod project_test;
 pub mod tool;
 pub mod user;
 
@@ -67,5 +70,6 @@ pub use auth::*;
 pub use message_channel::*;
 pub use model_provider::*;
 pub use organization::*;
+pub use project::*;
 pub use tool::*;
 pub use user::*;

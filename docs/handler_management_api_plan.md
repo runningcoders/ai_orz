@@ -93,7 +93,7 @@ PUT /api/v1/finance/tools/{id}/status
 | P0 | `finance` | MessageChannel | create/get/query/list/update/delete/test | 已补 create/list/get/update/delete/status/test | 纯配置类，收益高；响应 DTO 已脱敏；状态更新统一 `/status`，测试连接统一 `/test` |
 | P0 | `finance` | Tool | create/get/query/list/update/bind/unbind/list_agent_tools/search | 已补 create/list/get/update/delete/status/agent-bind | 已补基础管理与 Agent 绑定；搜索通过列表 query 的 `keyword` 承载，工具执行不纳入本轮 |
 | P0 | `hr` | Agent Status | transition_status/validate_onboard_readiness | 已补 status | 使用统一 `PUT /api/v1/hr/agents/{id}/status`，状态流转由 HR Domain 校验 |
-| P1 | `project` | Project | create/get/list_by_user/update_basic/start/complete/archive | 缺失 | 状态更新先补/使用 Domain 统一状态入口，Handler 只调用统一 status action |
+| P1 | `project` | Project | create/get/list_by_user/update_basic/start/complete/archive/transition_status | 已补 create/list/get/update/status | Batch 2.1 已落地；状态更新使用 Domain 统一 `transition_status`，Handler 只调用统一 status action |
 | P1 | `project` | Task | create/get/list_by_project/list_by_agent/start/complete/cancel | 缺失 | 同 Project，状态流转语义下沉 Domain，Handler 不分发业务状态 |
 | P1 | `hr` | Skill | create/get/update/delete/query/list/search/install_to_agent/list_for_agent | 缺失 | 先补元数据、主内容、搜索与安装；路由统一归入 HR 前缀 |
 | P2 | `project` | Artifact | create_project_artifact/create_task_artifact/get/list/delete | 缺失 | 受上传/附件存储机制影响，放后 |
@@ -187,8 +187,10 @@ PUT    /api/v1/tasks/{id}/status
 ```
 
 说明：
+- Batch 2.1 已落地 Project 管理面 API：`POST/GET /api/v1/projects`、`GET/PUT /api/v1/projects/{id}`、`PUT /api/v1/projects/{id}/status`；
+- 新增 `common/src/api/project.rs` 作为前后端共享 DTO，列表支持 `root_user_id`、`status`、`limit` query 参数；
 - 不新增 `/start`、`/complete`、`/archive`、`/cancel` 路由；
-- 状态更新必须先补/使用 Domain 统一 `update_status` / `transition_status` 入口，由 Domain 根据目标状态校验合法性并执行流转；
+- Project 状态更新使用 `ProjectDomain::transition_status(ctx, &mut project, target_status)`，由 Domain 根据目标状态校验合法性并持久化；
 - Handler 只解析目标状态并调用统一 Domain 方法，不在 Handler 层把目标状态分发到 `start/complete/archive/cancel` 等具体业务方法。
 
 ### 3.5 Skill（P1）
@@ -309,7 +311,7 @@ GET    /api/v1/tasks/{task_id}/messages
 
 | 批次 | 对象 | 状态 | 交付物 | 验证 |
 |------|------|------|--------|------|
-| Batch 2.1 | Project | 未开始 | DTO + Handler + Router + 测试 + 文档 | `cargo fmt --all && cargo check && cargo test` |
+| Batch 2.1 | Project | 已完成 | `common/src/api/project.rs`、`src/handlers/project/project/*`、`src/router.rs`、Project Domain `transition_status`、DTO/Domain 测试、文档更新 | `cargo fmt --all && cargo check && cargo test -p common api::project_test && cargo test --lib service::domain::project::project_test` |
 | Batch 2.2 | Task | 未开始 | DTO + Handler + Router + 测试 + 文档 | `cargo fmt --all && cargo check && cargo test` |
 | Batch 2.3 | Skill | 未开始 | DTO + Handler + Router + 测试 + 文档 | `cargo fmt --all && cargo check && cargo test` |
 
