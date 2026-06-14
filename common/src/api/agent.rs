@@ -1,5 +1,6 @@
 //! Agent (AI智能体) related API request/response DTOs - shared between backend and frontend
 
+use crate::enums::AgentStatus;
 use serde::{Deserialize, Serialize};
 
 /// 创建 Agent 请求
@@ -93,6 +94,15 @@ pub struct UpdateAgentRequest {
     pub model_provider_id: Option<String>,
 }
 
+/// 更新 Agent 状态请求
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct UpdateAgentStatusRequest {
+    /// 目标生命周期状态。
+    ///
+    /// 状态流转合法性由 HR Domain 校验；删除请优先使用 DELETE 接口。
+    pub status: AgentStatus,
+}
+
 /// 更新 Agent 响应
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateAgentResponse {
@@ -118,3 +128,6 @@ pub struct DeleteAgentResponse {
     /// 是否删除成功
     pub success: bool,
 }
+
+/// 更新 Agent 状态响应
+pub type UpdateAgentStatusResponse = GetAgentResponse;

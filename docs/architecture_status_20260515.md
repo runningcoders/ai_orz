@@ -123,8 +123,8 @@
 
 **已上线 API 领域**:
 - ✅ organization: 组织管理、用户管理、系统初始化、个人资料
-- ✅ hr: Agent CRUD、Skill 管理
-- ✅ finance: Model Provider CRUD、模型调用测试
+- ✅ hr: Agent CRUD、Agent 状态更新、Skill 管理
+- ✅ finance: Model Provider CRUD、模型调用测试、MessageChannel 管理、Tool 管理与 Agent 绑定
 
 **待补充 API 领域**（详见 `docs/handler_management_api_plan.md`）:
 - 🔧 finance/message_channel: 消息渠道配置 CRUD（P0 - 纯配置类，响应需脱敏）

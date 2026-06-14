@@ -92,7 +92,7 @@ PUT /api/v1/finance/tools/{id}/status
 |--------|--------|----------|-----------------|----------------|------|
 | P0 | `finance` | MessageChannel | create/get/query/list/update/delete/test | 已补 create/list/get/update/delete/status/test | 纯配置类，收益高；响应 DTO 已脱敏；状态更新统一 `/status`，测试连接统一 `/test` |
 | P0 | `finance` | Tool | create/get/query/list/update/bind/unbind/list_agent_tools/search | 已补 create/list/get/update/delete/status/agent-bind | 已补基础管理与 Agent 绑定；搜索通过列表 query 的 `keyword` 承载，工具执行不纳入本轮 |
-| P0 | `hr` | Agent Status | transition_status/validate_onboard_readiness | 缺失 | 使用统一 `PUT /api/v1/hr/agents/{id}/status` |
+| P0 | `hr` | Agent Status | transition_status/validate_onboard_readiness | 已补 status | 使用统一 `PUT /api/v1/hr/agents/{id}/status`，状态流转由 HR Domain 校验 |
 | P1 | `project` | Project | create/get/list_by_user/update_basic/start/complete/archive | 缺失 | 状态方法先在 Handler 层收敛成统一 status action，必要时再补 Domain 统一入口 |
 | P1 | `project` | Task | create/get/list_by_project/list_by_agent/start/complete/cancel | 缺失 | 同 Project，统一 status action |
 | P1 | `hr` | Skill | create/get/update/delete/query/list/search/install_to_agent/list_for_agent | 缺失 | 涉及文件内容，先补元数据与主内容管理 |
@@ -159,7 +159,9 @@ Agent 绑定关系通过 Tool 管理面 action 表达，请求体携带 `agent_i
 PUT /api/v1/hr/agents/{id}/status
 ```
 
-请求体传目标状态，由 Domain 的 `transition_status` 负责状态流转校验。必要时 Handler 可先调用 `validate_onboard_readiness` 做用户 Action 所需的前置提示，但最终业务规则仍归 Domain。
+当前已落地该状态更新路由。请求体使用 `UpdateAgentStatusRequest { status: AgentStatus }`，响应复用 Agent 详情契约 `UpdateAgentStatusResponse = GetAgentResponse`，便于前端拿到状态更新后的完整展示数据。
+
+Handler 仅负责读取 Agent、调用 HR Domain 的 `transition_status` 并返回 DTO；状态流转合法性由 Domain 校验。必要时后续可在确认入职类用户 Action 中调用 `validate_onboard_readiness` 做前置提示，但最终业务规则仍归 Domain。
 
 ### 3.4 Project / Task（P1）
 
@@ -248,8 +250,8 @@ GET    /api/v1/tasks/{task_id}/messages
 
 1. 补 `finance/message_channel` Handler 文件与路由；已完成 `create_message_channel`、`list_message_channels`、`get_message_channel`、`update_message_channel`、`delete_message_channel`、`update_message_channel_status`、`test_message_channel_connection`，并新增/补齐 `common/src/api/message_channel.rs` 脱敏 DTO；
 2. 补 `finance/tool` 基础查询、管理与 Agent 绑定 Handler；已完成 `create_tool`、`list_tools`、`get_tool`、`update_tool`、`delete_tool`、`update_tool_status`、`bind_tool_to_agent`、`unbind_tool_from_agent`，并新增 `common/src/api/tool.rs` 脱敏 DTO；
-3. 补 `hr/agent` 状态更新 Handler；
-4. 为新增 Handler 添加最小集成测试或 handler 级契约测试。
+3. 补 `hr/agent` 状态更新 Handler；已完成 `update_agent_status`、`UpdateAgentStatusRequest`、`UpdateAgentStatusResponse` 与路由；
+4. 为新增 Handler 添加最小集成测试或 handler 级契约测试；已补 Agent 状态 DTO 契约测试，并补充 HR Domain 状态流转成功/失败测试。
 
 验收：新增 API 能通过 Domain 完成真实操作；敏感字段响应不泄漏。
 

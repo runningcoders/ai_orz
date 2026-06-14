@@ -52,6 +52,8 @@ impl<T> ApiResponse<T> {
 pub struct EmptyResponse {}
 
 pub mod agent;
+#[cfg(test)]
+mod agent_test;
 pub mod auth;
 pub mod message_channel;
 pub mod model_provider;

@@ -3,6 +3,7 @@
 use super::{HrDomain, domain};
 use crate::models::agent::{Agent, AgentPo};
 use crate::pkg::RequestContext;
+use common::enums::AgentStatus;
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
@@ -135,4 +136,62 @@ async fn test_delete_agent(pool: SqlitePool) {
         .await
         .unwrap();
     assert!(found.is_none());
+}
+
+#[sqlx::test]
+async fn test_transition_status_persists_valid_agent_lifecycle(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool.clone());
+
+    let mut agent = create_test_agent("LifecycleAgent");
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+
+    domain
+        .agent_manage()
+        .transition_status(ctx.clone(), &mut agent, AgentStatus::PendingOnboard)
+        .await
+        .unwrap();
+
+    assert_eq!(agent.po.status, AgentStatus::PendingOnboard);
+
+    let found = domain
+        .agent_manage()
+        .get_agent(ctx, agent.id())
+        .await
+        .unwrap()
+        .expect("transitioned agent should be readable");
+
+    assert_eq!(found.po.status, AgentStatus::PendingOnboard);
+}
+
+#[sqlx::test]
+async fn test_transition_status_rejects_invalid_agent_lifecycle(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool.clone());
+
+    let mut agent = create_test_agent("InvalidLifecycleAgent");
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+
+    let result = domain
+        .agent_manage()
+        .transition_status(ctx.clone(), &mut agent, AgentStatus::Onboarded)
+        .await;
+
+    assert!(result.is_err());
+    assert_eq!(agent.po.status, AgentStatus::Interviewing);
+
+    let found = domain
+        .agent_manage()
+        .get_agent(ctx, agent.id())
+        .await
+        .unwrap()
+        .expect("rejected transition should keep agent readable");
+
+    assert_eq!(found.po.status, AgentStatus::Interviewing);
 }

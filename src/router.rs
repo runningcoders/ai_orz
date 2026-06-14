@@ -109,6 +109,10 @@ fn hr_routes() -> Router {
         .route("/agents", get(handlers::hr::agent::list_agents))
         .route("/agents/{id}", get(handlers::hr::agent::get_agent))
         .route("/agents/{id}", put(handlers::hr::agent::update_agent))
+        .route(
+            "/agents/{id}/status",
+            put(handlers::hr::agent::update_agent_status),
+        )
         .route("/agents/{id}", delete(handlers::hr::agent::delete_agent))
 }
 

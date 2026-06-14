@@ -286,7 +286,7 @@ system_info("服务启动成功");
 
 | 领域 | 路径前缀 | 功能 |
 |------|---------|------|
-| HR (人力资源) | `/api/v1/hr/agents` | Agent CRUD |
+| HR (人力资源) | `/api/v1/hr/agents` | Agent CRUD、状态更新 |
 | Finance (财务管理) | `/api/v1/finance/model-providers` | LLM 模型配置管理、调用测试 |
 | 组织用户权限 | `/api/v1/organization/*`, `/api/v1/auth/*` | 系统初始化、登录、组织/用户管理 |
 | 项目管理 | `/api/v1/projects` | 项目 CRUD |

@@ -37,6 +37,7 @@ impl AgentStatus {
             2 => Self::PendingOnboard,
             3 => Self::Onboarded,
             4 => Self::Offboarded,
+            5 => Self::PendingOffboard,
             _ => Self::Interviewing,
         }
     }
@@ -49,7 +50,7 @@ impl AgentStatus {
 
 impl From<i32> for AgentStatus {
     fn from(v: i32) -> Self {
-        v.into()
+        Self::from_i32(v)
     }
 }
 
