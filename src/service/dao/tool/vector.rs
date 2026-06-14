@@ -1,11 +1,11 @@
 //! Tool Vector DAO implementation
 //! 负责工具向量索引的 CRUD 操作，与基础工具数据完全解耦
 
-use async_trait::async_trait;
 use crate::error::AppError;
 use crate::models::vector::{VectorIndexParams, VectorRow, VectorSearchHit};
 use crate::pkg::RequestContext;
 use crate::service::dao::tool::ToolVectorDao;
+use async_trait::async_trait;
 use std::sync::{Arc, OnceLock};
 
 // ==================== 工厂方法 + 单例 ====================
@@ -42,11 +42,7 @@ impl ToolVectorDao for ToolVectorDaoImpl {
         vector_params: &VectorIndexParams,
     ) -> Result<(), AppError> {
         let vector_store = ctx.vector_store();
-        vector_store.upsert(
-            "tools",
-            tool_id,
-            vector_params,
-        ).await?;
+        vector_store.upsert("tools", tool_id, vector_params).await?;
         Ok(())
     }
 
@@ -57,11 +53,7 @@ impl ToolVectorDao for ToolVectorDaoImpl {
         top_k: i32,
     ) -> Result<Vec<VectorSearchHit>, AppError> {
         let vector_store = ctx.vector_store();
-        let results = vector_store.search(
-            "tools",
-            query_vector,
-            top_k,
-        ).await?;
+        let results = vector_store.search("tools", query_vector, top_k).await?;
         Ok(results)
     }
 

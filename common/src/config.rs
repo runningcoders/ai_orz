@@ -64,8 +64,6 @@ impl Default for JwtConfig {
     }
 }
 
-
-
 /// 服务器配置
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ServerConfig {
@@ -80,11 +78,11 @@ pub struct DatabaseConfig {
     /// SQLite 数据库文件名（相对于 base_data_path）
     #[serde(default = "default_db_file_name")]
     pub db_file_name: String,
-    
+
     /// 向量数据库文件名（相对于 base_data_path）
     #[serde(default = "default_vector_db_file_name")]
     pub vector_db_file_name: String,
-    
+
     /// 向量存储后端类型
     #[serde(default)]
     pub vector_store_type: VectorStoreType,
@@ -97,13 +95,13 @@ pub enum VectorStoreType {
     /// LanceDB 嵌入式向量数据库（默认，高性能，生产级）
     #[default]
     LanceDb,
-    
+
     /// 纯 Rust 内存向量存储（零系统依赖，用于测试）
     InMemory,
-    
+
     /// HNSW 高性能近似最近邻索引
     Hnsw,
-    
+
     /// SQLite VSS 向量扩展（需要系统依赖）
     SqliteVss,
 }
@@ -134,11 +132,11 @@ pub struct LoggingConfig {
 }
 
 fn default_log_format() -> String {
-    "json".to_string()  // 默认使用 JSON 格式，便于日志分析
+    "json".to_string() // 默认使用 JSON 格式，便于日志分析
 }
 
 fn default_log_retention_days() -> u32 {
-    30  // 默认保留 30 天
+    30 // 默认保留 30 天
 }
 
 fn default_db_file_name() -> String {
@@ -229,7 +227,8 @@ impl AppConfig {
 
     /// 获取向量数据库文件路径
     pub fn vector_db_path(&self) -> PathBuf {
-        self.base_data_path().join(&self.database.vector_db_file_name)
+        self.base_data_path()
+            .join(&self.database.vector_db_file_name)
     }
 
     /// 获取产物/附件存储根目录路径（消息附件、Agent 生成文件等）
@@ -324,7 +323,12 @@ impl AppConfig {
     }
 
     /// 根据技能状态获取正确的内容文件绝对路径
-    pub fn skill_content_path(&self, agent_id: &str, skill_id: &str, status: SkillStatus) -> PathBuf {
+    pub fn skill_content_path(
+        &self,
+        agent_id: &str,
+        skill_id: &str,
+        status: SkillStatus,
+    ) -> PathBuf {
         match status {
             SkillStatus::Draft => self.agent_skill_content_path(agent_id, skill_id),
             SkillStatus::Published => self.shared_skill_content_path(skill_id),
@@ -333,7 +337,12 @@ impl AppConfig {
     }
 
     /// 根据技能状态获取正确的相对路径（存储到数据库）
-    pub fn skill_relative_path(&self, agent_id: &str, skill_id: &str, status: SkillStatus) -> String {
+    pub fn skill_relative_path(
+        &self,
+        agent_id: &str,
+        skill_id: &str,
+        status: SkillStatus,
+    ) -> String {
         match status {
             SkillStatus::Draft => self.agent_skill_relative_path(agent_id, skill_id),
             SkillStatus::Published => self.shared_skill_relative_path(skill_id),

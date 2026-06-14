@@ -1,16 +1,16 @@
 //! 删除用户接口
 
-use common::api::DeleteUserResponse;
 use crate::error::AppError;
-use common::api::ApiResponse;
 use crate::pkg::RequestContext;
+use crate::service::domain::organization;
 use axum::{
+    Json,
     extract::{Extension, Path},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
-use crate::service::domain::organization;
+use common::api::ApiResponse;
+use common::api::DeleteUserResponse;
 
 /// 删除用户
 pub async fn delete_user(
@@ -20,7 +20,8 @@ pub async fn delete_user(
     let domain = organization::domain();
     domain.user_manage().delete_user(ctx, &user_id).await?;
 
-    Ok((StatusCode::OK, Json(ApiResponse::success(DeleteUserResponse {
-        success: true,
-    })).into_response()))
+    Ok((
+        StatusCode::OK,
+        Json(ApiResponse::success(DeleteUserResponse { success: true })).into_response(),
+    ))
 }

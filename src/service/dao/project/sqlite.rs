@@ -3,11 +3,11 @@
 use std::sync::Arc;
 use std::sync::OnceLock;
 
-use common::enums::project::ProjectStatus;
+use super::{ProjectDao, ProjectQuery};
 use crate::error::AppError;
 use crate::models::project::ProjectPo;
 use crate::pkg::RequestContext;
-use super::{ProjectDao, ProjectQuery};
+use common::enums::project::ProjectStatus;
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -56,7 +56,11 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         Ok(())
     }
 
-    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<ProjectPo>, AppError> {
+    async fn find_by_id(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<ProjectPo>, AppError> {
         let pool = ctx.db_pool();
         let project = sqlx::query_as!(
             ProjectPo,
@@ -68,10 +72,14 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         Ok(project)
     }
 
-    async fn query(&self, ctx: RequestContext, query: ProjectQuery) -> Result<Vec<ProjectPo>, AppError> {
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: ProjectQuery,
+    ) -> Result<Vec<ProjectPo>, AppError> {
         // 使用 sqlx::QueryBuilder 动态构建查询
         let mut builder = sqlx::QueryBuilder::new(
-            "SELECT id, name, description, workflow, guidance, \"status\" as \"status\", priority, tags, root_user_id, owner_agent_id, start_at, due_at, end_at, created_by, modified_by, created_at, updated_at FROM projects WHERE 1=1"
+            "SELECT id, name, description, workflow, guidance, \"status\" as \"status\", priority, tags, root_user_id, owner_agent_id, start_at, due_at, end_at, created_by, modified_by, created_at, updated_at FROM projects WHERE 1=1",
         );
 
         // 默认软删除过滤
@@ -105,30 +113,47 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         }
 
         // 执行查询
-        let rows = builder.build_query_as()
-            .fetch_all(ctx.db_pool())
-            .await?;
+        let rows = builder.build_query_as().fetch_all(ctx.db_pool()).await?;
 
         Ok(rows)
     }
 
-    async fn list_by_root_user(&self, ctx: RequestContext, root_user_id: &str, limit: Option<usize>) -> Result<Vec<ProjectPo>, AppError> {
+    async fn list_by_root_user(
+        &self,
+        ctx: RequestContext,
+        root_user_id: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<ProjectPo>, AppError> {
         // 语法糖：调用通用查询
-        self.query(ctx, ProjectQuery {
-            root_user_id: Some(root_user_id.to_string()),
-            limit: Some(limit.unwrap_or(100)),
-            ..Default::default()
-        }).await
+        self.query(
+            ctx,
+            ProjectQuery {
+                root_user_id: Some(root_user_id.to_string()),
+                limit: Some(limit.unwrap_or(100)),
+                ..Default::default()
+            },
+        )
+        .await
     }
 
-    async fn list_by_root_user_and_status(&self, ctx: RequestContext, root_user_id: &str, status: Vec<ProjectStatus>, limit: Option<usize>) -> Result<Vec<ProjectPo>, AppError> {
+    async fn list_by_root_user_and_status(
+        &self,
+        ctx: RequestContext,
+        root_user_id: &str,
+        status: Vec<ProjectStatus>,
+        limit: Option<usize>,
+    ) -> Result<Vec<ProjectPo>, AppError> {
         // 语法糖：调用通用查询
-        self.query(ctx, ProjectQuery {
-            root_user_id: Some(root_user_id.to_string()),
-            status_in: Some(status),
-            limit: Some(limit.unwrap_or(100)),
-            ..Default::default()
-        }).await
+        self.query(
+            ctx,
+            ProjectQuery {
+                root_user_id: Some(root_user_id.to_string()),
+                status_in: Some(status),
+                limit: Some(limit.unwrap_or(100)),
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     async fn update(&self, ctx: RequestContext, project: &ProjectPo) -> Result<(), AppError> {
@@ -144,20 +169,33 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         Ok(())
     }
 
-    async fn update_status(&self, ctx: RequestContext, id: &str, status: ProjectStatus, modified_by: &str) -> Result<(), AppError> {
+    async fn update_status(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        status: ProjectStatus,
+        modified_by: &str,
+    ) -> Result<(), AppError> {
         let pool = ctx.db_pool();
         let now = common::constants::utils::current_timestamp();
         let status_i32 = status as i32;
         sqlx::query!(
             "UPDATE projects SET \"status\" = ?, modified_by = ?, updated_at = ? WHERE id = ?",
-            status_i32, modified_by, now, id
+            status_i32,
+            modified_by,
+            now,
+            id
         )
         .execute(pool)
         .await?;
         Ok(())
     }
 
-    async fn count_by_root_user(&self, ctx: RequestContext, root_user_id: &str) -> Result<u64, AppError> {
+    async fn count_by_root_user(
+        &self,
+        ctx: RequestContext,
+        root_user_id: &str,
+    ) -> Result<u64, AppError> {
         let pool = ctx.db_pool();
         let count = sqlx::query!(
             "SELECT COUNT(*) as cnt FROM projects WHERE root_user_id = ? AND \"status\" != 0",
@@ -168,12 +206,18 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         Ok(count.cnt as u64)
     }
 
-    async fn count_by_root_user_and_status(&self, ctx: RequestContext, root_user_id: &str, status: ProjectStatus) -> Result<u64, AppError> {
+    async fn count_by_root_user_and_status(
+        &self,
+        ctx: RequestContext,
+        root_user_id: &str,
+        status: ProjectStatus,
+    ) -> Result<u64, AppError> {
         let pool = ctx.db_pool();
         let status_i32 = status as i32;
         let count = sqlx::query!(
             "SELECT COUNT(*) as cnt FROM projects WHERE root_user_id = ? AND \"status\" = ?",
-            root_user_id, status_i32
+            root_user_id,
+            status_i32
         )
         .fetch_one(pool)
         .await?;

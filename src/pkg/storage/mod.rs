@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 /// 向量存储抽象 Trait
 pub mod vector;
-pub use vector::{VectorStore, SqliteVssStore};
+pub use vector::{SqliteVssStore, VectorStore};
 
 /// 纯 Rust 内存向量存储
 mod mem_vector;
@@ -46,21 +46,23 @@ impl Storage {
         // 测试场景使用内存向量存储，基于临时目录
         let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
         let vector = Arc::new(
-            InMemoryVectorStore::with_path(temp_dir.path())
-                .expect("创建测试向量存储失败")
+            InMemoryVectorStore::with_path(temp_dir.path()).expect("创建测试向量存储失败"),
         );
         Self {
             inner: Arc::new(StorageInner { sqlite, vector }),
         }
     }
-    
+
     /// 创建存储实例，初始化连接池，自动运行 migrations
     /// 根据配置自动选择向量存储后端
-    /// 
+    ///
     /// # 参数
     /// - base_data_path: 基础数据目录根路径
     /// - db_config: 数据库配置片段（从完整 Config 中取出传入）
-    pub async fn new(base_data_path: &Path, db_config: &common::config::DatabaseConfig) -> Result<Self> {
+    pub async fn new(
+        base_data_path: &Path,
+        db_config: &common::config::DatabaseConfig,
+    ) -> Result<Self> {
         let db_path = base_data_path.join(&db_config.db_file_name);
         let connection_url = format!("sqlite:{}", db_path.display());
 
@@ -78,9 +80,7 @@ impl Storage {
                 let vectors_dir = base_data_path.join("vectors");
                 Arc::new(InMemoryVectorStore::with_path(&vectors_dir)?)
             }
-            common::config::VectorStoreType::Hnsw => {
-                Arc::new(HnswStore::new()?)
-            }
+            common::config::VectorStoreType::Hnsw => Arc::new(HnswStore::new()?),
             common::config::VectorStoreType::LanceDb => {
                 let lance_dir = base_data_path.join("vectors_lance");
                 Arc::new(LanceVectorStore::new(&lance_dir)?)
@@ -95,9 +95,12 @@ impl Storage {
             inner: Arc::new(StorageInner { sqlite, vector }),
         })
     }
-    
+
     /// 创建使用 SQLite VSS 后端的存储（需要系统依赖，保留用于向后兼容）
-    pub async fn with_sqlite_vss(base_data_path: &Path, db_config: &common::config::DatabaseConfig) -> Result<Self> {
+    pub async fn with_sqlite_vss(
+        base_data_path: &Path,
+        db_config: &common::config::DatabaseConfig,
+    ) -> Result<Self> {
         let mut db_config = db_config.clone();
         db_config.vector_store_type = common::config::VectorStoreType::SqliteVss;
         Self::new(base_data_path, &db_config).await
@@ -107,7 +110,7 @@ impl Storage {
     pub fn sqlite(&self) -> &SqlitePool {
         &self.inner.sqlite
     }
-    
+
     /// 获取 SQLite 连接池（别名，向后兼容）
     pub fn sqlite_pool(&self) -> &SqlitePool {
         &self.inner.sqlite
@@ -137,13 +140,17 @@ static STORAGE_INSTANCE: OnceLock<Storage> = OnceLock::new();
 
 /// 获取全局 Storage 单例（向后兼容）
 pub fn get() -> &'static Storage {
-    STORAGE_INSTANCE.get().expect("Storage 尚未初始化，请先调用 storage::init()")
+    STORAGE_INSTANCE
+        .get()
+        .expect("Storage 尚未初始化，请先调用 storage::init()")
 }
 
 /// 初始化全局 Storage（由 main.rs 调用，只调用一次）
 pub async fn init(base_data_path: &Path, db_config: &common::config::DatabaseConfig) {
     if STORAGE_INSTANCE.get().is_none() {
-        let storage = Storage::new(base_data_path, db_config).await.expect("初始化 Storage 失败");
+        let storage = Storage::new(base_data_path, db_config)
+            .await
+            .expect("初始化 Storage 失败");
         let _ = STORAGE_INSTANCE.set(storage);
     }
 }
@@ -156,10 +163,13 @@ pub async fn init_for_test() {
             .connect("sqlite::memory:")
             .await
             .expect("创建测试内存数据库失败");
-        
+
         // 运行 migrations
-        sqlx::migrate!("./migrations").run(&sqlite).await.expect("运行 migrations 失败");
-        
+        sqlx::migrate!("./migrations")
+            .run(&sqlite)
+            .await
+            .expect("运行 migrations 失败");
+
         let storage = Storage::with_sqlite_pool(sqlite);
         let _ = STORAGE_INSTANCE.set(storage);
     }

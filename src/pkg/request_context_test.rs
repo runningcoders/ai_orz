@@ -1,8 +1,8 @@
 //! RequestContext 公共方法单元测试
 
-use crate::pkg::request_context::{format_timestamp, RequestContext};
-use tokio::runtime::Runtime;
+use crate::pkg::request_context::{RequestContext, format_timestamp};
 use sqlx::sqlite::SqlitePool;
+use tokio::runtime::Runtime;
 
 fn create_test_pool() -> SqlitePool {
     crate::config::init().unwrap();
@@ -116,7 +116,7 @@ fn test_context_uname_helper() {
 #[test]
 fn test_format_timestamp() {
     use chrono::Utc;
-    let timestamp = Utc::now().timestamp() as u64;  // 秒级时间戳
+    let timestamp = Utc::now().timestamp() as u64; // 秒级时间戳
     let formatted = format_timestamp(timestamp);
     assert_eq!(formatted.len(), 14, "时间戳格式化后应为14位数字");
     assert!(

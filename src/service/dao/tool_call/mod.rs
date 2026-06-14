@@ -4,17 +4,17 @@
 //! 2. Wrap Tool's CoreTool into Rig's ToolDyn for Rig to use
 //! 3. Manual call a Tool with logging decorator, returns (result, entry)
 
-use crate::models::tool::{Tool, ToolPo, CoreTool};
+use crate::models::tool::{CoreTool, Tool, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
-use rig::tool::ToolError;
 use anyhow::Result;
 use async_trait::async_trait;
+use rig::tool::ToolError;
 use std::boxed::Box;
 
 pub mod r#impl;
 
-pub use r#impl::{init, dao, new};
+pub use r#impl::{dao, init, new};
 
 /// ToolCall DAO trait
 #[async_trait]
@@ -25,7 +25,8 @@ pub trait ToolCallDao: Send + Sync {
 
     /// Wrap a list of Tools into Rig's ToolDyn objects
     /// Each CoreTool is wrapped with logging decorator then adapted for Rig
-    fn wrap_for_rig(&self, tools: &[Tool], ctx: RequestContext) -> Vec<Box<dyn rig::tool::ToolDyn>>;
+    fn wrap_for_rig(&self, tools: &[Tool], ctx: RequestContext)
+    -> Vec<Box<dyn rig::tool::ToolDyn>>;
 
     /// Call a tool manually (our controlled mode)
     /// Creates new logging decorator for this call, captures trace entry

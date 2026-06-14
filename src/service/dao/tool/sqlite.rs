@@ -51,7 +51,7 @@ impl ToolDao for ToolDaoSqliteImpl {
                 id, name, description, protocol, config, parameters_schema,
                 tags, status, created_at, updated_at, created_by, updated_by
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#
+            "#,
         )
         .bind(po.id.to_string())
         .bind(&po.name)
@@ -78,7 +78,7 @@ impl ToolDao for ToolDaoSqliteImpl {
                 return Err(anyhow::anyhow!("Built-in tools cannot be modified"));
             }
         }
-        
+
         let pool = ctx.db_pool();
 
         sqlx::query(
@@ -87,7 +87,7 @@ impl ToolDao for ToolDaoSqliteImpl {
                 name = ?, description = ?, protocol = ?, config = ?,
                 parameters_schema = ?, tags = ?, status = ?, updated_at = ?, updated_by = ?
             WHERE id = ?
-            "#
+            "#,
         )
         .bind(&po.name)
         .bind(&po.description)
@@ -112,13 +112,13 @@ impl ToolDao for ToolDaoSqliteImpl {
                 return Err(anyhow::anyhow!("Built-in tools cannot be deleted"));
             }
         }
-        
+
         let pool = ctx.db_pool();
 
         sqlx::query(
             r#"
             DELETE FROM tools WHERE id = ?
-            "#
+            "#,
         )
         .bind(id)
         .execute(pool)
@@ -133,7 +133,7 @@ impl ToolDao for ToolDaoSqliteImpl {
         let row = sqlx::query_as::<_, ToolPo>(
             r#"
             SELECT * FROM tools WHERE id = ?
-            "#
+            "#,
         )
         .bind(id)
         .fetch_optional(pool)
@@ -142,14 +142,13 @@ impl ToolDao for ToolDaoSqliteImpl {
         Ok(row)
     }
 
-
     async fn get_by_name(&self, ctx: RequestContext, name: &str) -> Result<Option<ToolPo>> {
         let pool = ctx.db_pool();
 
         let row = sqlx::query_as::<_, ToolPo>(
             r#"
             SELECT * FROM tools WHERE name = ?
-            "#
+            "#,
         )
         .bind(name)
         .fetch_optional(pool)
@@ -160,9 +159,7 @@ impl ToolDao for ToolDaoSqliteImpl {
 
     async fn query(&self, ctx: RequestContext, query: ToolQuery) -> Result<Vec<ToolPo>> {
         let pool = ctx.db_pool();
-        let mut builder = sqlx::QueryBuilder::new(
-            r#"SELECT t.* FROM tools t"#
-        );
+        let mut builder = sqlx::QueryBuilder::new(r#"SELECT t.* FROM tools t"#);
 
         // Agent 过滤（需要 JOIN）
         let has_agent_filter = query.agent_id.is_some();
@@ -205,7 +202,12 @@ impl ToolDao for ToolDaoSqliteImpl {
                     builder.push(" WHERE");
                 }
                 let like_pattern = format!("%{}%", keyword);
-                builder.push(" (t.name LIKE ").push_bind(like_pattern.clone()).push(" OR t.description LIKE ").push_bind(like_pattern).push(")");
+                builder
+                    .push(" (t.name LIKE ")
+                    .push_bind(like_pattern.clone())
+                    .push(" OR t.description LIKE ")
+                    .push_bind(like_pattern)
+                    .push(")");
                 has_where = true;
             }
         }
@@ -234,19 +236,21 @@ impl ToolDao for ToolDaoSqliteImpl {
             builder.push(" LIMIT ").push_bind(limit as i64);
         }
 
-        let rows = builder.build_query_as()
-            .fetch_all(pool)
-            .await?;
+        let rows = builder.build_query_as().fetch_all(pool).await?;
 
         Ok(rows)
     }
 
     async fn list_enabled(&self, ctx: RequestContext) -> Result<Vec<ToolPo>> {
         // 语法糖：调用通用查询
-        self.query(ctx.clone(), ToolQuery {
-            enabled_only: Some(true),
-            ..Default::default()
-        }).await
+        self.query(
+            ctx.clone(),
+            ToolQuery {
+                enabled_only: Some(true),
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     async fn add_tool_to_agent(
@@ -264,7 +268,7 @@ impl ToolDao for ToolDaoSqliteImpl {
             INSERT INTO agent_tools (agent_id, tool_id, created_at, created_by)
             VALUES (?, ?, ?, ?)
             ON CONFLICT (agent_id, tool_id) DO NOTHING
-            "#
+            "#,
         )
         .bind(agent_id)
         .bind(tool_id)
@@ -287,7 +291,7 @@ impl ToolDao for ToolDaoSqliteImpl {
         sqlx::query(
             r#"
             DELETE FROM agent_tools WHERE agent_id = ? AND tool_id = ?
-            "#
+            "#,
         )
         .bind(agent_id)
         .bind(tool_id)
@@ -297,12 +301,20 @@ impl ToolDao for ToolDaoSqliteImpl {
         Ok(())
     }
 
-    async fn list_tools_for_agent(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<ToolPo>> {
+    async fn list_tools_for_agent(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+    ) -> Result<Vec<ToolPo>> {
         // 语法糖：调用通用查询
-        self.query(ctx.clone(), ToolQuery {
-            agent_id: Some(agent_id.to_string()),
-            ..Default::default()
-        }).await
+        self.query(
+            ctx.clone(),
+            ToolQuery {
+                agent_id: Some(agent_id.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     async fn sync_builtin_tools_to_db(&self, ctx: RequestContext) -> Result<usize> {
@@ -315,11 +327,11 @@ impl ToolDao for ToolDaoSqliteImpl {
             let exists: Option<ToolPo> = sqlx::query_as::<_, ToolPo>(
                 r#"
                 SELECT * FROM tools WHERE id = ?
-                "#
+                "#,
             )
-                .bind(&tool_id)
-                .fetch_optional(ctx.db_pool())
-                .await?;
+            .bind(&tool_id)
+            .fetch_optional(ctx.db_pool())
+            .await?;
 
             if exists.is_some() {
                 // Skip if already exists - idempotent, prevents duplicate

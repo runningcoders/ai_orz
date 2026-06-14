@@ -1,8 +1,8 @@
 //! 列出 Message Channel
 
 use axum::{
-    extract::{Extension, Query},
     Json,
+    extract::{Extension, Query},
 };
 use common::api::{ApiResponse, MessageChannelListItem, MessageChannelListQuery};
 

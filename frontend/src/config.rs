@@ -25,15 +25,14 @@ impl Default for FrontendConfig {
         let listen_addr = compiled_config.server.listen_addr.clone();
 
         // 如果 listen_addr 不包含域名，默认用 http 协议
-        let api_base_url = if listen_addr.starts_with("http://") || listen_addr.starts_with("https://") {
-            listen_addr
-        } else {
-            format!("http://{}", listen_addr)
-        };
+        let api_base_url =
+            if listen_addr.starts_with("http://") || listen_addr.starts_with("https://") {
+                listen_addr
+            } else {
+                format!("http://{}", listen_addr)
+            };
 
-        Self {
-            api_base_url,
-        }
+        Self { api_base_url }
     }
 }
 
@@ -51,7 +50,7 @@ impl FrontendConfig {
                     } else {
                         Self::default()
                     }
-                },
+                }
                 Err(_) => Self::default(),
             }
         } else {
@@ -63,7 +62,9 @@ impl FrontendConfig {
     pub fn save(&self) -> Result<(), String> {
         if let Some(storage) = get_local_storage() {
             let json = serde_json::to_string(self).map_err(|e| e.to_string())?;
-            storage.set("ai_orz_config", &json).map_err(|e| format!("{:?}", e))?;
+            storage
+                .set("ai_orz_config", &json)
+                .map_err(|e| format!("{:?}", e))?;
             Ok(())
         } else {
             Err("localStorage not available".to_string())

@@ -1,28 +1,14 @@
 //! Organization API client
 //! All DTOs are imported from common crate shared with backend
 
-use common::api::{
-    CheckInitializedResponse,
-    CreateUserRequest,
-    GetCurrentOrganizationResponse,
-    GetCurrentUserResponse,
-    InitializeSystemRequest,
-    ListOrganizationsResponse,
-    ListUsersResponse,
-    LoginRequest,
-    LoginResponse,
-    LogoutRequest,
-    LogoutResponse,
-    OrganizationInfoResponse,
-    OrganizationListItem,
-    UpdateCurrentUserRequest,
-    UpdateCurrentOrganizationRequest,
-    UserInfoResponse,
-    UserListItem,
-    EmptyResponse,
-    ApiResponse,
-};
 use crate::config::current_config;
+use common::api::{
+    ApiResponse, CheckInitializedResponse, CreateUserRequest, EmptyResponse,
+    GetCurrentOrganizationResponse, GetCurrentUserResponse, InitializeSystemRequest,
+    ListOrganizationsResponse, ListUsersResponse, LoginRequest, LoginResponse, LogoutRequest,
+    LogoutResponse, OrganizationInfoResponse, OrganizationListItem,
+    UpdateCurrentOrganizationRequest, UpdateCurrentUserRequest, UserInfoResponse, UserListItem,
+};
 use reqwest::Client;
 
 /// Check if system has been initialized
@@ -49,7 +35,10 @@ pub async fn check_initialized() -> Result<bool, String> {
         return Err(api_resp.message);
     }
 
-    Ok(api_resp.data.unwrap_or_else(|| CheckInitializedResponse { initialized: false }).initialized)
+    Ok(api_resp
+        .data
+        .unwrap_or_else(|| CheckInitializedResponse { initialized: false })
+        .initialized)
 }
 
 /// List all organizations (for login page selection)
@@ -76,13 +65,17 @@ pub async fn list_organizations() -> Result<Vec<OrganizationListItem>, String> {
         return Err(api_resp.message);
     }
 
-    Ok(api_resp.data.unwrap_or_else(|| ListOrganizationsResponse { data: Vec::new(), total: 0 }).data)
+    Ok(api_resp
+        .data
+        .unwrap_or_else(|| ListOrganizationsResponse {
+            data: Vec::new(),
+            total: 0,
+        })
+        .data)
 }
 
 /// Initialize system (create first organization and super admin)
-pub async fn initialize_system(
-    req: InitializeSystemRequest,
-) -> Result<(), String> {
+pub async fn initialize_system(req: InitializeSystemRequest) -> Result<(), String> {
     let config = current_config();
     let url = config.api_url("/api/v1/organization/initialize");
     let client = Client::new();
@@ -109,9 +102,7 @@ pub async fn initialize_system(
 }
 
 /// User login
-pub async fn login(
-    req: LoginRequest,
-) -> Result<LoginResponse, String> {
+pub async fn login(req: LoginRequest) -> Result<LoginResponse, String> {
     let config = current_config();
     let url = config.api_url("/api/v1/organization/auth/login");
     let client = Client::new();
@@ -192,9 +183,7 @@ pub async fn get_current_user_info() -> Result<UserInfoResponse, String> {
 }
 
 /// Update current logged-in user information
-pub async fn update_current_user_info(
-    req: UpdateCurrentUserRequest,
-) -> Result<(), String> {
+pub async fn update_current_user_info(req: UpdateCurrentUserRequest) -> Result<(), String> {
     let config = current_config();
     let url = config.api_url("/api/v1/user/me");
     let client = Client::new();
@@ -248,9 +237,7 @@ pub async fn get_organization_info() -> Result<OrganizationInfoResponse, String>
 }
 
 /// Update current user's organization information
-pub async fn update_organization_info(
-    req: UpdateCurrentOrganizationRequest,
-) -> Result<(), String> {
+pub async fn update_organization_info(req: UpdateCurrentOrganizationRequest) -> Result<(), String> {
     let config = current_config();
     let url = config.api_url("/api/v1/organization/me");
     let client = Client::new();
@@ -301,13 +288,17 @@ pub async fn list_users_by_current_organization() -> Result<Vec<UserListItem>, S
         return Err(api_resp.message);
     }
 
-    Ok(api_resp.data.unwrap_or_else(|| ListUsersResponse { data: Vec::new(), total: 0 }).data)
+    Ok(api_resp
+        .data
+        .unwrap_or_else(|| ListUsersResponse {
+            data: Vec::new(),
+            total: 0,
+        })
+        .data)
 }
 
 /// Create new user in current organization
-pub async fn create_user(
-    req: CreateUserRequest,
-) -> Result<(), String> {
+pub async fn create_user(req: CreateUserRequest) -> Result<(), String> {
     let config = current_config();
     let url = config.api_url("/api/v1/organization/user/");
     let client = Client::new();

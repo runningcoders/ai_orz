@@ -28,11 +28,15 @@ impl MessageManagement for MessageDomainImpl {
         task_id: &str,
     ) -> Result<Vec<Message>, AppError> {
         // 语法糖：调用通用查询，默认不限制条数
-        self.query(ctx, MessageQuery {
-            task_id: Some(task_id.to_string()),
-            limit: None,
-            ..Default::default()
-        }).await
+        self.query(
+            ctx,
+            MessageQuery {
+                task_id: Some(task_id.to_string()),
+                limit: None,
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     async fn list_by_project_id(
@@ -41,11 +45,15 @@ impl MessageManagement for MessageDomainImpl {
         project_id: &str,
     ) -> Result<Vec<Message>, AppError> {
         // 语法糖：调用通用查询，默认不限制条数
-        self.query(ctx, MessageQuery {
-            project_id: Some(project_id.to_string()),
-            limit: None,
-            ..Default::default()
-        }).await
+        self.query(
+            ctx,
+            MessageQuery {
+                project_id: Some(project_id.to_string()),
+                limit: None,
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     async fn get_by_id(
@@ -62,14 +70,12 @@ impl MessageManagement for MessageDomainImpl {
         message_id: &str,
         status: MessageStatus,
     ) -> Result<(), AppError> {
-        self.message_dal.update_status(ctx, message_id, status).await
+        self.message_dal
+            .update_status(ctx, message_id, status)
+            .await
     }
 
-    async fn delete_by_id(
-        &self,
-        ctx: RequestContext,
-        message_id: &str,
-    ) -> Result<(), AppError> {
+    async fn delete_by_id(&self, ctx: RequestContext, message_id: &str) -> Result<(), AppError> {
         self.message_dal.delete_message(ctx, message_id).await
     }
 

@@ -1,10 +1,10 @@
 //! Artifact DAO layer
 //! Artifacts are task outputs (reports, audio, video, etc.).
 
-use async_trait::async_trait;
-use crate::pkg::RequestContext;
-use crate::models::artifact::ArtifactPo;
 use crate::error::Result;
+use crate::models::artifact::ArtifactPo;
+use crate::pkg::RequestContext;
+use async_trait::async_trait;
 
 /// Artifact 查询参数
 #[derive(Debug, Clone, Default)]
@@ -27,7 +27,11 @@ pub trait ArtifactDao: Send + Sync + std::fmt::Debug {
     async fn query(&self, ctx: RequestContext, query: ArtifactQuery) -> Result<Vec<ArtifactPo>>;
 
     /// List all artifacts for a project, automatically filters deleted artifacts
-    async fn list_by_project(&self, ctx: RequestContext, project_id: &str) -> Result<Vec<ArtifactPo>>;
+    async fn list_by_project(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+    ) -> Result<Vec<ArtifactPo>>;
 
     /// List all artifacts for a task, automatically filters deleted artifacts
     async fn list_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<Vec<ArtifactPo>>;

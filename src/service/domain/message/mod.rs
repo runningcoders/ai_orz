@@ -17,9 +17,9 @@ mod management_test;
 use crate::error::AppError;
 use crate::models::message::Message;
 use crate::pkg::RequestContext;
-use crate::service::dao::message::MessageQuery;
 use crate::service::dal::message::MessageDal;
 pub use crate::service::dal::message_channel::{DeliveryResult, MessageChannelDal};
+use crate::service::dao::message::MessageQuery;
 use async_trait::async_trait;
 use common::enums::{MessageRole, MessageStatus};
 use std::sync::{Arc, OnceLock};
@@ -58,7 +58,7 @@ pub fn init() {
 /// 聚合所有消息子功能实现
 struct MessageDomainImpl {
     message_dal: Arc<dyn MessageDal>,
-    message_channel_dal: Arc<dyn MessageChannelDal>,  // 仅用于投递，不用于配置管理
+    message_channel_dal: Arc<dyn MessageChannelDal>, // 仅用于投递，不用于配置管理
 }
 
 impl MessageDomainImpl {
@@ -151,24 +151,13 @@ pub trait MessageDelivery: Send + Sync {
     ) -> Result<Message, AppError>;
 
     /// 从队列取出下一条待处理消息
-    async fn dequeue_next(
-        &self,
-        ctx: RequestContext,
-    ) -> Result<Option<Message>, AppError>;
+    async fn dequeue_next(&self, ctx: RequestContext) -> Result<Option<Message>, AppError>;
 
     /// 确认消息处理完成
-    async fn ack(
-        &self,
-        ctx: RequestContext,
-        message_id: &str,
-    ) -> Result<(), AppError>;
+    async fn ack(&self, ctx: RequestContext, message_id: &str) -> Result<(), AppError>;
 
     /// 否定确认（消息放回队列重试）
-    async fn nack(
-        &self,
-        ctx: RequestContext,
-        message_id: &str,
-    ) -> Result<(), AppError>;
+    async fn nack(&self, ctx: RequestContext, message_id: &str) -> Result<(), AppError>;
 
     /// 分发消息到用户所有可用渠道
     ///
@@ -225,11 +214,7 @@ pub trait MessageManagement: Send + Sync {
     ) -> Result<(), AppError>;
 
     /// 删除单条消息
-    async fn delete_by_id(
-        &self,
-        ctx: RequestContext,
-        message_id: &str,
-    ) -> Result<(), AppError>;
+    async fn delete_by_id(&self, ctx: RequestContext, message_id: &str) -> Result<(), AppError>;
 
     /// 清理对话（删除任务下所有消息）
     async fn cleanup_conversation(

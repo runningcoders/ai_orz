@@ -2,13 +2,13 @@
 //!
 //! 职责：User 领域的数据访问层，封装 UserDao 提供统一的查询接口
 
-use common::enums::UserStatus;
 use crate::error::AppError;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
-use crate::service::dao::user::{UserDao, UserQuery};
-use std::sync::{Arc, OnceLock};
 use crate::service::dao::user;
+use crate::service::dao::user::{UserDao, UserQuery};
+use common::enums::UserStatus;
+use std::sync::{Arc, OnceLock};
 
 // ==================== 单例管理 ====================
 
@@ -38,11 +38,7 @@ pub trait UserDal: Send + Sync {
     async fn create(&self, ctx: RequestContext, user: &UserPo) -> Result<(), AppError>;
 
     /// 根据 ID 获取用户
-    async fn find_by_id(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<Option<UserPo>, AppError>;
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<UserPo>, AppError>;
 
     /// 根据用户名获取用户
     async fn find_by_username(
@@ -95,11 +91,7 @@ impl UserDal for UserDalImpl {
         self.user_dao.insert(ctx, user).await
     }
 
-    async fn find_by_id(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<Option<UserPo>, AppError> {
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<UserPo>, AppError> {
         self.user_dao.find_by_id(ctx, id).await
     }
 
@@ -120,10 +112,14 @@ impl UserDal for UserDalImpl {
         ctx: RequestContext,
         org_id: &str,
     ) -> Result<Vec<UserPo>, AppError> {
-        self.query(ctx, UserQuery {
-            organization_id: Some(org_id.to_string()),
-            ..Default::default()
-        }).await
+        self.query(
+            ctx,
+            UserQuery {
+                organization_id: Some(org_id.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     async fn update(&self, ctx: RequestContext, user: &UserPo) -> Result<(), AppError> {

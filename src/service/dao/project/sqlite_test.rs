@@ -1,18 +1,17 @@
 //! Tests for SqliteProjectDao
 
-use sqlx::SqlitePool;
-use uuid::Uuid;
-use std::sync::Arc;
-use common::enums::project::ProjectStatus;
 use crate::error::AppError;
 use crate::models::project::ProjectPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::project::{ProjectDao, sqlite};
+use common::enums::project::ProjectStatus;
+use sqlx::SqlitePool;
+use std::sync::Arc;
+use uuid::Uuid;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     RequestContext::new_simple(user_id, pool)
 }
-
 
 /// 初始化测试环境
 fn init_test_env() -> Arc<dyn ProjectDao + Send + Sync> {
@@ -26,10 +25,15 @@ fn create_test_project(name: &str, created_by: &str) -> ProjectPo {
         Uuid::now_v7().to_string(),
         name.to_string(),
         "".to_string(),
-        None, None,
-        3, vec![],
+        None,
+        None,
+        3,
+        vec![],
         created_by.to_string(),
-        None, None, None, None,
+        None,
+        None,
+        None,
+        None,
         created_by.to_string(),
     )
 }
@@ -38,7 +42,7 @@ fn create_test_project(name: &str, created_by: &str) -> ProjectPo {
 async fn test_insert_project(pool: SqlitePool) -> Result<(), AppError> {
     let dao = init_test_env();
     let ctx = new_ctx("test-user", pool);
-    
+
     let project_id = uuid::Uuid::now_v7().to_string();
     let project = ProjectPo::new(
         project_id.clone(),
@@ -55,7 +59,7 @@ async fn test_insert_project(pool: SqlitePool) -> Result<(), AppError> {
         None, // end_at
         "test-user".to_string(),
     );
-    
+
     dao.insert(ctx, &project).await?;
     Ok(())
 }
@@ -64,7 +68,7 @@ async fn test_insert_project(pool: SqlitePool) -> Result<(), AppError> {
 async fn test_find_by_id(pool: SqlitePool) -> Result<(), AppError> {
     let dao = init_test_env();
     let ctx = new_ctx("test-user", pool);
-    
+
     let project_id = uuid::Uuid::now_v7().to_string();
     let project = ProjectPo::new(
         project_id.clone(),
@@ -81,10 +85,10 @@ async fn test_find_by_id(pool: SqlitePool) -> Result<(), AppError> {
         None,
         "test-user".to_string(),
     );
-    
+
     dao.insert(ctx.clone(), &project).await?;
     let found = dao.find_by_id(ctx, &project_id).await?;
-    
+
     assert!(found.is_some());
     let found = found.unwrap();
     assert_eq!(found.name, "Find Test");
@@ -98,7 +102,7 @@ async fn test_find_by_id(pool: SqlitePool) -> Result<(), AppError> {
 async fn test_list_by_root_user(pool: SqlitePool) -> Result<(), AppError> {
     let dao = init_test_env();
     let ctx = new_ctx("test-user", pool);
-    
+
     // Insert 3 projects for user1, 1 for user2
     for i in 0..3 {
         let project_id = uuid::Uuid::now_v7().to_string();
@@ -119,7 +123,7 @@ async fn test_list_by_root_user(pool: SqlitePool) -> Result<(), AppError> {
         );
         dao.insert(ctx.clone(), &project).await?;
     }
-    
+
     let project_id = uuid::Uuid::now_v7().to_string();
     let project = ProjectPo::new(
         project_id,
@@ -137,7 +141,7 @@ async fn test_list_by_root_user(pool: SqlitePool) -> Result<(), AppError> {
         "test-user".to_string(),
     );
     dao.insert(ctx.clone(), &project).await?;
-    
+
     let list = dao.list_by_root_user(ctx, "user1", Some(10)).await?;
     assert_eq!(list.len(), 3);
     // Ordered by priority desc
@@ -149,7 +153,7 @@ async fn test_list_by_root_user(pool: SqlitePool) -> Result<(), AppError> {
 async fn test_list_by_root_user_and_status(pool: SqlitePool) -> Result<(), AppError> {
     let dao = init_test_env();
     let ctx = new_ctx("test-user", pool);
-    
+
     // Create projects with different statuses
     let mut projects = Vec::new();
     for status in [
@@ -157,7 +161,9 @@ async fn test_list_by_root_user_and_status(pool: SqlitePool) -> Result<(), AppEr
         ProjectStatus::Active,
         ProjectStatus::Completed,
         ProjectStatus::Archived,
-    ].iter() {
+    ]
+    .iter()
+    {
         let project_id = uuid::Uuid::now_v7().to_string();
         let mut project = ProjectPo::new(
             project_id,
@@ -177,27 +183,31 @@ async fn test_list_by_root_user_and_status(pool: SqlitePool) -> Result<(), AppEr
         project.status = *status;
         projects.push(project);
     }
-    
+
     for p in &projects {
         dao.insert(ctx.clone(), p).await?;
     }
-    
+
     // Filter for Active
-    let list = dao.list_by_root_user_and_status(
-        ctx.clone(),
-        "test-user",
-        vec![ProjectStatus::Active],
-        Some(10)
-    ).await?;
+    let list = dao
+        .list_by_root_user_and_status(
+            ctx.clone(),
+            "test-user",
+            vec![ProjectStatus::Active],
+            Some(10),
+        )
+        .await?;
     assert_eq!(list.len(), 2);
-    
+
     // Filter for Active and Completed
-    let list = dao.list_by_root_user_and_status(
-        ctx.clone(),
-        "test-user",
-        vec![ProjectStatus::Active, ProjectStatus::Completed],
-        Some(10)
-    ).await?;
+    let list = dao
+        .list_by_root_user_and_status(
+            ctx.clone(),
+            "test-user",
+            vec![ProjectStatus::Active, ProjectStatus::Completed],
+            Some(10),
+        )
+        .await?;
     assert_eq!(list.len(), 3);
     Ok(())
 }
@@ -206,7 +216,7 @@ async fn test_list_by_root_user_and_status(pool: SqlitePool) -> Result<(), AppEr
 async fn test_update_project(pool: SqlitePool) -> Result<(), AppError> {
     let dao = init_test_env();
     let ctx = new_ctx("test-user", pool);
-    
+
     let project_id = uuid::Uuid::now_v7().to_string();
     let mut project = ProjectPo::new(
         project_id.clone(),
@@ -223,15 +233,15 @@ async fn test_update_project(pool: SqlitePool) -> Result<(), AppError> {
         None,
         "test-user".to_string(),
     );
-    
+
     dao.insert(ctx.clone(), &project).await?;
-    
+
     project.name = "Updated Name".to_string();
     project.description = "Updated Description".to_string();
     project.priority = 10;
     project.owner_agent_id = Some("agent-456".to_string());
     dao.update(ctx.clone(), &project).await?;
-    
+
     let found = dao.find_by_id(ctx, &project_id).await?;
     let found = found.unwrap();
     assert_eq!(found.name, "Updated Name");
@@ -245,7 +255,7 @@ async fn test_update_project(pool: SqlitePool) -> Result<(), AppError> {
 async fn test_update_status(pool: SqlitePool) -> Result<(), AppError> {
     let dao = init_test_env();
     let ctx = new_ctx("test-user", pool);
-    
+
     let project_id = uuid::Uuid::now_v7().to_string();
     let project = ProjectPo::new(
         project_id.clone(),
@@ -262,10 +272,16 @@ async fn test_update_status(pool: SqlitePool) -> Result<(), AppError> {
         None,
         "test-user".to_string(),
     );
-    
+
     dao.insert(ctx.clone(), &project).await?;
-    dao.update_status(ctx.clone(), &project_id, ProjectStatus::Completed, "test-user").await?;
-    
+    dao.update_status(
+        ctx.clone(),
+        &project_id,
+        ProjectStatus::Completed,
+        "test-user",
+    )
+    .await?;
+
     let found = dao.find_by_id(ctx, &project_id).await?;
     let found = found.unwrap();
     assert_eq!(found.status, ProjectStatus::Completed);
@@ -276,7 +292,7 @@ async fn test_update_status(pool: SqlitePool) -> Result<(), AppError> {
 async fn test_count_functions(pool: SqlitePool) -> Result<(), AppError> {
     let dao = init_test_env();
     let ctx = new_ctx("test-user", pool);
-    
+
     for i in 0..5 {
         let project_id = uuid::Uuid::now_v7().to_string();
         let mut project = ProjectPo::new(
@@ -301,11 +317,13 @@ async fn test_count_functions(pool: SqlitePool) -> Result<(), AppError> {
         }
         dao.insert(ctx.clone(), &project).await?;
     }
-    
+
     let total = dao.count_by_root_user(ctx.clone(), "test-user").await?;
     assert_eq!(total, 5);
-    
-    let active = dao.count_by_root_user_and_status(ctx, "test-user", ProjectStatus::Active).await?;
+
+    let active = dao
+        .count_by_root_user_and_status(ctx, "test-user", ProjectStatus::Active)
+        .await?;
     assert_eq!(active, 3);
     Ok(())
 }
@@ -314,7 +332,7 @@ async fn test_count_functions(pool: SqlitePool) -> Result<(), AppError> {
 async fn test_deleted_not_found(pool: SqlitePool) -> Result<(), AppError> {
     let dao = init_test_env();
     let ctx = new_ctx("test-user", pool);
-    
+
     let project_id = uuid::Uuid::now_v7().to_string();
     let mut project = ProjectPo::new(
         project_id.clone(),
@@ -333,7 +351,7 @@ async fn test_deleted_not_found(pool: SqlitePool) -> Result<(), AppError> {
     );
     project.status = ProjectStatus::Deleted;
     dao.insert(ctx.clone(), &project).await?;
-    
+
     let found = dao.find_by_id(ctx, &project_id).await?;
     assert!(found.is_none());
     Ok(())

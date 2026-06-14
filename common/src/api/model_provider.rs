@@ -1,6 +1,6 @@
 //! Model Provider related API request/response DTOs - shared between backend and frontend
 
-use crate::enums::{ProviderType, ModelCapability};
+use crate::enums::{ModelCapability, ProviderType};
 use serde::{Deserialize, Serialize};
 
 /// 创建 Model Provider 请求

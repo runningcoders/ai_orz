@@ -1,32 +1,35 @@
 //! Tool 持久化对象和完整实体
 
+use crate::pkg::request_context::RequestContext;
 use async_trait::async_trait;
 use common::enums::tool::ControlMode;
 use common::enums::{ToolProtocol, ToolStatus};
-use rig::tool::{ToolDyn, ToolError};
+use dyn_clone::DynClone;
+use futures_util::FutureExt;
 use rig::completion::ToolDefinition;
-use crate::pkg::request_context::RequestContext;
+use rig::tool::{ToolDyn, ToolError};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::FromRow;
 use uuid::Uuid;
-use dyn_clone::DynClone;
-use futures_util::FutureExt;
 
 /// 核心工具 trait - 所有工具都必须实现这个
-/// 
+///
 /// 提供带 RequestContext 的调用接口，并且能获取到对应的数据库持久化对象
 #[async_trait]
 pub trait CoreTool: Send + Sync + DynClone {
     /// 执行工具调用
     async fn call(&self, ctx: RequestContext, args: Value) -> Result<Value, ToolError>;
-    
+
     /// 获取工具对应的数据库持久化对象
     fn po(&self) -> &ToolPo;
 
     /// 获取原始的 inner 工具，如果已经被装饰过的话
     /// 默认实现返回自身，覆盖这个方法用于装饰器取出原始工具
-    fn as_original(&self) -> &(dyn CoreTool + Send + Sync) where Self: Sized {
+    fn as_original(&self) -> &(dyn CoreTool + Send + Sync)
+    where
+        Self: Sized,
+    {
         self
     }
 }
@@ -34,7 +37,7 @@ pub trait CoreTool: Send + Sync + DynClone {
 dyn_clone::clone_trait_object!(CoreTool);
 
 /// Rig 适配层 - 将我们的 CoreTool trait 转换为 Rig 的 ToolDyn trait
-/// 
+///
 /// 用于 auto 模式，让 Rig 可以直接调用我们的工具
 /// Rig 调用接口不传递 RequestContext，所以需要创建时持有
 pub struct RigToolAdapter {
@@ -56,16 +59,22 @@ impl ToolDyn for RigToolAdapter {
     fn definition<'a>(
         &'a self,
         _: String,
-    ) -> std::pin::Pin<Box<
-        dyn futures_util::Future<Output = rig::completion::ToolDefinition>
-        + std::marker::Send
-        + 'a,
-    >> {
-        
+    ) -> std::pin::Pin<
+        Box<
+            dyn futures_util::Future<Output = rig::completion::ToolDefinition>
+                + std::marker::Send
+                + 'a,
+        >,
+    > {
         let definition = rig::completion::ToolDefinition {
             name: self.inner.po().name.clone(),
             description: self.inner.po().description.clone(),
-            parameters: self.inner.po().parameters_schema.clone().unwrap_or_default(),
+            parameters: self
+                .inner
+                .po()
+                .parameters_schema
+                .clone()
+                .unwrap_or_default(),
         };
         Box::pin(async move { definition })
     }
@@ -73,11 +82,9 @@ impl ToolDyn for RigToolAdapter {
     fn call<'a>(
         &'a self,
         args: String,
-    ) -> std::pin::Pin<Box<
-        dyn futures_util::Future<Output = Result<String, ToolError>>
-        + std::marker::Send
-        + 'a,
-    >> {
+    ) -> std::pin::Pin<
+        Box<dyn futures_util::Future<Output = Result<String, ToolError>> + std::marker::Send + 'a>,
+    > {
         use futures_util::FutureExt;
         let ctx = &self.ctx;
         let inner = &self.inner;
@@ -169,6 +176,79 @@ impl Clone for Tool {
     }
 }
 
+/// 管理面占位工具。
+///
+/// HTTP/MCP 动态工具的运行时执行链路尚未接入时，管理面仍需要完整 Tool 实体
+/// 承载元数据 CRUD/status 操作；真正执行时应由 ToolCallDao 组装可执行工具。
+#[derive(Clone)]
+struct ManagementOnlyTool {
+    po: ToolPo,
+}
+
+#[async_trait]
+impl CoreTool for ManagementOnlyTool {
+    async fn call(&self, _ctx: RequestContext, _args: Value) -> Result<Value, ToolError> {
+        Err(ToolError::ToolCallError(
+            format!(
+                "Tool {} is not executable in management context",
+                self.po.id
+            )
+            .into(),
+        ))
+    }
+
+    fn po(&self) -> &ToolPo {
+        &self.po
+    }
+}
+
+impl Tool {
+    /// 从 Po 创建管理面 Tool 实体。
+    ///
+    /// 该构造仅用于配置管理，不代表工具运行时可执行。
+    pub fn from_po_for_management(po: ToolPo) -> Self {
+        Self {
+            our_tool: Box::new(ManagementOnlyTool { po: po.clone() }),
+            po,
+            search_match: None,
+        }
+    }
+
+    /// 当前状态下允许通过状态更新 Action 切换到的目标状态。
+    pub fn available_statuses(&self) -> Vec<ToolStatus> {
+        match self.po.status {
+            ToolStatus::Enabled => vec![ToolStatus::Enabled, ToolStatus::Disabled],
+            ToolStatus::Disabled => vec![ToolStatus::Disabled, ToolStatus::Enabled],
+        }
+    }
+
+    /// 判断是否允许通过状态更新 Action 切换到目标状态。
+    pub fn can_transition_to(&self, target: ToolStatus) -> bool {
+        self.available_statuses().contains(&target)
+    }
+
+    /// 切换工具状态。
+    ///
+    /// 只处理依赖自身字段即可判断的简单状态迁移；如果未来规则涉及权限、Agent
+    /// 绑定、套餐或外部依赖，应上移到 Finance Domain 编排。
+    pub fn transition_status(
+        &mut self,
+        target: ToolStatus,
+        modified_by: impl Into<String>,
+    ) -> Result<(), String> {
+        if !self.can_transition_to(target) {
+            return Err(format!(
+                "Tool {} cannot transition from {:?} to {:?}",
+                self.po.id, self.po.status, target
+            ));
+        }
+
+        self.po.status = target;
+        self.po.touch(Some(modified_by.into()));
+        Ok(())
+    }
+}
+
 impl ToolPo {
     /// 创建新 ToolPo（如果 id 为空自动生成 Uuid v7）
     pub fn new(
@@ -206,20 +286,16 @@ impl ToolPo {
 
     /// 创建 built-in 工具的默认 ToolPo
     /// id == name for built-in tools since they are constants
-    pub fn new_builtin(
-        id: String,
-        name: String,
-        description: String,
-    ) -> Self {
+    pub fn new_builtin(id: String, name: String, description: String) -> Self {
         Self::new(
             id,
             name,
             description,
             ToolProtocol::Builtin,
             serde_json::Value::Null, // No extra config for built-in tools
-            None, // Parameters can be extracted from trait at runtime if needed
-            Vec::new(), // Empty tags by default
-            None, // System built-in, no specific creator
+            None,                    // Parameters can be extracted from trait at runtime if needed
+            Vec::new(),              // Empty tags by default
+            None,                    // System built-in, no specific creator
         )
     }
 
@@ -236,7 +312,7 @@ impl ToolPo {
         self.updated_at = common::constants::utils::current_timestamp();
         self.updated_by = modifier;
     }
-    
+
     /// 为内置工具填充缺省值（sync 时调用）
     /// 确保 protocol 一定是 Builtin，control_mode 有合理默认值
     pub fn fill_defaults_for_builtin(&mut self) {
@@ -249,6 +325,10 @@ impl ToolPo {
 // ==================== 实现 Vectorizable trait ====================
 
 use crate::models::vector::Vectorizable;
+
+#[cfg(test)]
+#[path = "tool_tests.rs"]
+mod tool_tests;
 
 impl Vectorizable for ToolPo {
     fn vectorize_text(&self) -> String {

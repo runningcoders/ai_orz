@@ -6,7 +6,7 @@ use sqlx::SqlitePool;
 
 #[cfg(test)]
 mod tests {
-    use crate::models::message_channel::{MessageChannel, MessageChannelPo, ChannelConfig};
+    use crate::models::message_channel::{ChannelConfig, MessageChannel, MessageChannelPo};
     use crate::pkg::RequestContext;
     use crate::service::dao::message_channel::MessageChannelQuery;
     use crate::service::domain::finance;
@@ -15,10 +15,7 @@ mod tests {
 
     async fn init_test_env(
         pool: SqlitePool,
-    ) -> (
-        std::sync::Arc<dyn finance::FinanceDomain>,
-        RequestContext,
-    ) {
+    ) -> (std::sync::Arc<dyn finance::FinanceDomain>, RequestContext) {
         // 初始化依赖的 DAO（不需要传 pool，DAO 通过 ctx 获取 pool）
         crate::service::dao::message_channel::init();
         crate::service::dao::model_provider::init();
@@ -176,7 +173,6 @@ mod tests {
             .unwrap();
         assert_eq!(results.len(), 3);
     }
-
 
     #[sqlx::test]
     async fn test_set_channel_status(pool: SqlitePool) {

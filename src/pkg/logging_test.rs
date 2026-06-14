@@ -1,8 +1,8 @@
 //! 日志模块单元测试（只测试日志格式化输出）
 
 use super::RequestContext;
-use tokio::runtime::Runtime;
 use sqlx::sqlite::SqlitePool;
+use tokio::runtime::Runtime;
 
 fn create_test_pool() -> SqlitePool {
     crate::config::init().unwrap();
@@ -50,7 +50,11 @@ fn test_log_with_empty_user() {
 
 #[test]
 fn test_long_operation_name() {
-    log_info!(&new_ctx(), "create_agent_with_validation", "创建 Agent 并验证");
+    log_info!(
+        &new_ctx(),
+        "create_agent_with_validation",
+        "创建 Agent 并验证"
+    );
 }
 
 #[test]
@@ -65,11 +69,7 @@ fn test_chinese_message() {
 fn test_special_characters_in_message() {
     let ctx = new_ctx();
     // 注意：% 和 {} 在 tracing 宏中有特殊含义，需要转义
-    log_info!(
-        &ctx,
-        "test",
-        "特殊字符: @#$%^&*()_+-=[]{{}}|;':\",./<>?",
-    );
+    log_info!(&ctx, "test", "特殊字符: @#$%^&*()_+-=[]{{}}|;':\",./<>?",);
     log_info!(&ctx, "test", "JSON: {{\"key\": \"value\"}}");
 }
 

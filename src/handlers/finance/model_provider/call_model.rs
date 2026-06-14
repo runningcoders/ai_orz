@@ -1,14 +1,14 @@
 //! 调用 Model Provider 生成文本
 
-use common::api::{CallModelRequest, CallModelResponse};
-use crate::pkg::RequestContext;
 use crate::error::AppError;
-use common::api::ApiResponse;
+use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use axum::{
-    extract::{Extension, Path},
     Json,
+    extract::{Extension, Path},
 };
+use common::api::ApiResponse;
+use common::api::{CallModelRequest, CallModelResponse};
 
 /// 调用模型
 /// POST /model-providers/{id}/call
@@ -17,16 +17,18 @@ pub async fn call_model(
     Path(id): Path<String>,
     Json(req): Json<CallModelRequest>,
 ) -> Result<Json<ApiResponse<CallModelResponse>>, AppError> {
-
     // 1. 先查询 Model Provider
-    let provider = domain().model_provider_manage().get_model_provider(ctx.clone(), &id)
+    let provider = domain()
+        .model_provider_manage()
+        .get_model_provider(ctx.clone(), &id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("ModelProvider {} not found", id)))?;
 
     // 2. 调用模型生成结果
-    let result = domain().model_provider_manage().test_connection(ctx, &provider, &req.prompt).await?;
+    let result = domain()
+        .model_provider_manage()
+        .test_connection(ctx, &provider, &req.prompt)
+        .await?;
 
-    Ok(Json(ApiResponse::success(CallModelResponse {
-        result,
-    })))
+    Ok(Json(ApiResponse::success(CallModelResponse { result })))
 }

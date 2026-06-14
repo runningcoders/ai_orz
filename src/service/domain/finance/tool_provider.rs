@@ -16,12 +16,10 @@ impl ToolProviderManage for FinanceDomainImpl {
     }
 
     /// 获取 Tool
-    async fn get_tool(
-        &self,
-        ctx: RequestContext,
-        tool_id: &str,
-    ) -> Result<Option<Tool>, AppError> {
-        self.tool_dal.get_by_id(ctx.clone(), tool_id.to_string()).await
+    async fn get_tool(&self, ctx: RequestContext, tool_id: &str) -> Result<Option<Tool>, AppError> {
+        self.tool_dal
+            .get_by_id(ctx.clone(), tool_id.to_string())
+            .await
     }
 
     /// 通用综合查询
@@ -43,16 +41,9 @@ impl ToolProviderManage for FinanceDomainImpl {
         self.tool_dal.update_tool(ctx.clone(), tool).await
     }
 
-    /// 启用 Tool
-    async fn enable_tool(&self, _ctx: RequestContext, _tool_id: &str) -> Result<(), AppError> {
-        // ToolDal 没有单独的 enable 方法，暂留空
-        Ok(())
-    }
-
-    /// 禁用 Tool
-    async fn disable_tool(&self, _ctx: RequestContext, _tool_id: &str) -> Result<(), AppError> {
-        // ToolDal 没有单独的 disable 方法，暂留空
-        Ok(())
+    /// 删除 Tool
+    async fn delete_tool(&self, ctx: RequestContext, tool: &Tool) -> Result<(), AppError> {
+        self.tool_dal.delete_tool(ctx.clone(), &tool.po.id).await
     }
 
     /// ===== 工具借用（绑定）管理 =====
@@ -87,7 +78,10 @@ impl ToolProviderManage for FinanceDomainImpl {
         ctx: RequestContext,
         agent_id: &str,
     ) -> Result<Vec<String>, AppError> {
-        let tools = self.tool_dal.list_tools_for_agent_full(ctx.clone(), agent_id).await?;
+        let tools = self
+            .tool_dal
+            .list_tools_for_agent_full(ctx.clone(), agent_id)
+            .await?;
         Ok(tools.into_iter().map(|t| t.po.id).collect())
     }
 
@@ -97,7 +91,9 @@ impl ToolProviderManage for FinanceDomainImpl {
         ctx: RequestContext,
         agent_id: &str,
     ) -> Result<Vec<Tool>, AppError> {
-        self.tool_dal.list_tools_for_agent_full(ctx.clone(), agent_id).await
+        self.tool_dal
+            .list_tools_for_agent_full(ctx.clone(), agent_id)
+            .await
     }
 
     /// 搜索工具（向量 + 关键词混合搜索）

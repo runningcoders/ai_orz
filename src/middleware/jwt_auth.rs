@@ -3,15 +3,15 @@
 //! 从 Cookie 中提取 JWT token，验证后将用户信息注入到 RequestContext
 //! 如果 token 不存在或验证失败，直接返回重定向到首页（引导登录）
 
+use crate::error::AppError;
+use crate::pkg::jwt;
 use axum::{
     extract::Request,
     http::HeaderValue,
     middleware::Next,
-    response::{Response, Redirect, IntoResponse},
+    response::{IntoResponse, Redirect, Response},
 };
-use crate::pkg::jwt;
 use common::constants::http_header;
-use crate::error::AppError;
 
 /// JWT cookie 名称
 pub const JWT_COOKIE_NAME: &str = "ai_orz_jwt";
@@ -20,10 +20,7 @@ pub const JWT_COOKIE_NAME: &str = "ai_orz_jwt";
 ///
 /// 从 Cookie 中提取 JWT token，验证后将用户信息添加到请求头
 /// 验证失败直接返回 302 重定向到首页，引导用户到登录界面
-pub async fn jwt_auth_middleware(
-    mut req: Request,
-    next: Next,
-) -> Result<Response, AppError> {
+pub async fn jwt_auth_middleware(mut req: Request, next: Next) -> Result<Response, AppError> {
     // 1. 从 Cookie 中找到 JWT token
     let cookie_header = req.headers().get(axum::http::header::COOKIE);
     if cookie_header.is_none() {
@@ -72,21 +69,20 @@ pub async fn jwt_auth_middleware(
     // 4. 将用户信息添加到请求头
     if !claims.user_id.is_empty() {
         if let Ok(header_value) = HeaderValue::from_str(&claims.user_id) {
-            req.headers_mut().insert(
-                http_header::USER_ID, header_value);
+            req.headers_mut().insert(http_header::USER_ID, header_value);
         }
     }
     if !claims.username.is_empty() {
         if let Ok(header_value) = HeaderValue::from_str(&claims.username) {
-            req.headers_mut().insert(
-                http_header::USERNAME, header_value);
+            req.headers_mut()
+                .insert(http_header::USERNAME, header_value);
         }
     }
     // 将组织 ID 添加到请求头（覆盖请求头中原有的值，以 JWT 中的为准）
     if !claims.organization_id.is_empty() {
         if let Ok(header_value) = HeaderValue::from_str(&claims.organization_id) {
-            req.headers_mut().insert(
-                http_header::ORGANIZATION_ID, header_value);
+            req.headers_mut()
+                .insert(http_header::ORGANIZATION_ID, header_value);
         }
     }
 

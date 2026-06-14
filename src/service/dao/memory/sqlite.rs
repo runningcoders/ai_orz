@@ -6,20 +6,20 @@
 //! - 记忆追踪文件的写入（每日文件追加）
 //! - 原始记忆不可修改不可删除，只能追加
 
+use crate::config;
 use crate::error::AppError;
 use crate::models::memory::{
-    MemoryTrace, MemoryTracePosition, ShortTermMemoryIndexPo, LongTermKnowledgeNodePo,
-    KnowledgeReferencePo, KnowledgeNodeRelationPo,
+    KnowledgeNodeRelationPo, KnowledgeReferencePo, LongTermKnowledgeNodePo, MemoryTrace,
+    MemoryTracePosition, ShortTermMemoryIndexPo,
 };
 use crate::pkg::RequestContext;
-use crate::service::dao::memory::{MemoryDao, MemorySearch, MemoryQuery};
+use crate::service::dao::memory::{MemoryDao, MemoryQuery, MemorySearch};
 use async_trait::async_trait;
+use common::enums::{KnowledgeRelationType, MemoryType};
 use serde_json;
 use sqlx::SqlitePool;
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
-use crate::config;
-use common::enums::{KnowledgeRelationType, MemoryType};
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -62,9 +62,16 @@ impl MemoryDaoSqliteImpl {
     /// Read original memory content by knowledge reference
     ///
     /// Uses date_path (YYYYMMDD.jsonl) + line_number to read the exact JSON line
-    pub fn read_memory_reference(&self, reference: &KnowledgeReferencePo) -> Result<String, AppError> {
+    pub fn read_memory_reference(
+        &self,
+        reference: &KnowledgeReferencePo,
+    ) -> Result<String, AppError> {
         // Full path: agent memory dir + date file name
-        let agent_id = reference.knowledge_id.split('/').next().unwrap_or(&reference.knowledge_id);
+        let agent_id = reference
+            .knowledge_id
+            .split('/')
+            .next()
+            .unwrap_or(&reference.knowledge_id);
         let agent_dir = self.agent_memory_dir(agent_id);
         let writer = crate::pkg::daily_jsonl::DailyJsonlWriter::new(agent_dir);
         // date_path is just YYYYMMDD.jsonl
@@ -186,11 +193,7 @@ WHERE id = ?
         Ok(())
     }
 
-    async fn forget_short_term_index(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<(), AppError> {
+    async fn forget_short_term_index(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
         use common::enums::MemoryStatus;
         let pool = self.pool(ctx);
         let now = chrono::Utc::now().timestamp();
@@ -262,7 +265,7 @@ WHERE id = ? AND status != 0
         let pool = self.pool(ctx);
         let mut builder = QueryBuilder::new(
             r#"SELECT id, agent_id, task_id, role, summary, tags, trace_ids, status, created_at, updated_at
-FROM short_term_memory_index WHERE 1=1"#
+FROM short_term_memory_index WHERE 1=1"#,
         );
 
         if let Some(ids) = &query.ids {
@@ -321,15 +324,15 @@ FROM short_term_memory_index WHERE 1=1"#
     ) -> Result<Vec<ShortTermMemoryIndexPo>, AppError> {
         use common::enums::MemoryStatus;
         let pool = self.pool(ctx);
-        
+
         // 从 MemorySearch 提取参数
         let agent_id = search.filters.agent_id.unwrap_or_default();
         let keyword = search.keyword.unwrap_or_default();
         let limit_i64 = search.filters.limit.unwrap_or(50) as i64;
-        
+
         // 使用 LIKE 做关键词匹配（普通表不支持 MATCH）
         let like_pattern = format!("%{}%", keyword);
-        
+
         let indexes = sqlx::query_as!(
             ShortTermMemoryIndexPo,
             r#"
@@ -363,7 +366,7 @@ LIMIT ?
         let pool = self.pool(ctx);
 
         // 先试试更新，如果不存在就插入
-        
+
         let status_i32 = node.status as i32;
         let result: sqlx::Result<sqlx::sqlite::SqliteQueryResult> = sqlx::query!(
             r#"
@@ -394,7 +397,7 @@ WHERE id = ?
         if rows_affected == 0 {
             // 不存在，插入新节点
             // 9 Rust parameters → 9 question marks (all non-Option)
-            
+
             let status_i32 = node.status as i32;
             sqlx::query!(
                 r#"
@@ -468,7 +471,6 @@ WHERE id = ?
         let mut tx = pool.begin().await?;
 
         for node in nodes {
-            
             let status_i32 = node.status as i32;
             let result: sqlx::Result<sqlx::sqlite::SqliteQueryResult> = sqlx::query!(
                 r#"
@@ -499,7 +501,7 @@ WHERE id = ?
             if rows_affected == 0 {
                 // 不存在，插入新节点
                 // 9 Rust parameters → 9 question marks (all non-Option)
-                
+
                 let status_i32 = node.status as i32;
                 sqlx::query!(
                     r#"
@@ -584,7 +586,7 @@ WHERE id = ? AND status != 0
         let pool = self.pool(ctx);
         let mut builder = QueryBuilder::new(
             r#"SELECT id, agent_id, node_name, node_description, node_type, summary, status, created_at, updated_at
-FROM long_term_knowledge_node WHERE 1=1"#
+FROM long_term_knowledge_node WHERE 1=1"#,
         );
 
         if let Some(ids) = &query.ids {
@@ -651,16 +653,16 @@ FROM long_term_knowledge_node WHERE 1=1"#
     ) -> Result<Vec<LongTermKnowledgeNodePo>, AppError> {
         use common::enums::MemoryStatus;
         let pool = self.pool(ctx);
-        
+
         // 从 MemorySearch 提取参数
         let agent_id = search.filters.agent_id.unwrap_or_default();
         let keyword = search.keyword.unwrap_or_default();
         let limit_i64 = search.filters.limit.unwrap_or(50) as i64;
-        
+
         // 使用 LIKE 做关键词匹配（普通表不支持 MATCH）
         let like_pattern = format!("%{}%", keyword);
         let like_pattern2 = like_pattern.clone();
-        
+
         let nodes = sqlx::query_as!(
             LongTermKnowledgeNodePo,
             r#"
@@ -680,11 +682,7 @@ LIMIT ?
         Ok(nodes)
     }
 
-    async fn delete_knowledge_node(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<(), AppError> {
+    async fn delete_knowledge_node(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
         use common::enums::MemoryStatus;
         let pool = self.pool(ctx);
         let now = chrono::Utc::now().timestamp();

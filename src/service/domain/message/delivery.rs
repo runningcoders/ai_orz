@@ -4,7 +4,9 @@ use crate::models::message::Message;
 use crate::models::message::MessagePo;
 use crate::pkg::RequestContext;
 use crate::service::domain::message::MessageDomainImpl;
-use crate::service::domain::message::{MessageDelivery, MessageManagement, SendToAgentCommand, SendToUserCommand};
+use crate::service::domain::message::{
+    MessageDelivery, MessageManagement, SendToAgentCommand, SendToUserCommand,
+};
 use common::enums::{MessageRole, MessageStatus, MessageType};
 
 /// 生成新的消息 ID
@@ -30,7 +32,7 @@ impl MessageDelivery for MessageDomainImpl {
             MessageRole::Agent,
             MessageType::Text,
             cmd.content.to_string(),
-            None, // file_type
+            None,               // file_type
             Default::default(), // file_meta - 需要 FileMeta 类型，用 Default
             cmd.reply_to_id.map(|s| s.to_string()),
             cmd.from_id.to_string(), // created_by
@@ -58,7 +60,7 @@ impl MessageDelivery for MessageDomainImpl {
             MessageRole::User,
             MessageType::Text,
             cmd.content.to_string(),
-            None, // file_type
+            None,               // file_type
             Default::default(), // file_meta
             cmd.reply_to_id.map(|s| s.to_string()),
             cmd.from_agent_id.to_string(), // created_by
@@ -83,9 +85,13 @@ impl MessageDelivery for MessageDomainImpl {
         message_id: &str,
     ) -> Result<(), crate::error::AppError> {
         // 先确认出队
-        self.message_dal.ack_message(ctx.clone(), message_id).await?;
+        self.message_dal
+            .ack_message(ctx.clone(), message_id)
+            .await?;
         // 更新消息状态为 Processed - clone ctx 因为需要用两次
-        self.message_dal.update_status(ctx, message_id, MessageStatus::Processed).await?;
+        self.message_dal
+            .update_status(ctx, message_id, MessageStatus::Processed)
+            .await?;
         Ok(())
     }
 
@@ -95,9 +101,13 @@ impl MessageDelivery for MessageDomainImpl {
         message_id: &str,
     ) -> Result<(), crate::error::AppError> {
         // 放回队列
-        self.message_dal.nack_message(ctx.clone(), message_id).await?;
+        self.message_dal
+            .nack_message(ctx.clone(), message_id)
+            .await?;
         // 更新消息状态回到 Pending - clone ctx 因为需要用两次
-        self.message_dal.update_status(ctx, message_id, MessageStatus::Pending).await?;
+        self.message_dal
+            .update_status(ctx, message_id, MessageStatus::Pending)
+            .await?;
         Ok(())
     }
 

@@ -17,7 +17,7 @@ pub fn get() -> Arc<AppConfig> {
 }
 
 /// 初始化 Agent DAL
-pub fn init()  -> Result<(), Box<dyn std::error::Error>> {
+pub fn init() -> Result<(), Box<dyn std::error::Error>> {
     // 加载配置（默认配置嵌入在二进制中，不存在就自动生成）
     let _ = CONFIG.set(Arc::new(load_config()?));
     Ok(())
@@ -36,7 +36,7 @@ pub fn load_config() -> Result<AppConfig, Box<dyn std::error::Error>> {
     } else {
         std::path::PathBuf::from(BASE_DATA_PATH)
     };
-    
+
     // 确保基础数据目录存在
     if !base_data_path.exists() {
         std::fs::create_dir_all(&base_data_path)?;

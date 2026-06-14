@@ -1,14 +1,10 @@
 //! Model Provider 管理 API 客户端
 
-use common::api::{
-    ModelProviderListItem,
-    CreateModelProviderRequest,
-    CreateModelProviderResponse,
-    TestModelProviderConnectionResponse,
-    EmptyResponse,
-    ApiResponse,
-};
 use crate::config::current_config;
+use common::api::{
+    ApiResponse, CreateModelProviderRequest, CreateModelProviderResponse, EmptyResponse,
+    ModelProviderListItem, TestModelProviderConnectionResponse,
+};
 use reqwest::Client;
 
 /// 获取 Model Provider 列表
@@ -39,7 +35,9 @@ pub async fn list_model_providers() -> Result<Vec<ModelProviderListItem>, String
 }
 
 /// 创建新 Model Provider
-pub async fn create_model_provider(req: CreateModelProviderRequest) -> Result<CreateModelProviderResponse, String> {
+pub async fn create_model_provider(
+    req: CreateModelProviderRequest,
+) -> Result<CreateModelProviderResponse, String> {
     let config = current_config();
     let url = config.api_url("/api/v1/finance/model-providers");
     let client = Client::new();
@@ -93,7 +91,9 @@ pub async fn delete_model_provider(id: &str) -> Result<(), String> {
 }
 
 /// 测试 Model Provider 连通性
-pub async fn test_model_provider_connection(id: &str) -> Result<TestModelProviderConnectionResponse, String> {
+pub async fn test_model_provider_connection(
+    id: &str,
+) -> Result<TestModelProviderConnectionResponse, String> {
     let config = current_config();
     let url = config.api_url(&format!("/api/v1/finance/model-providers/{id}/test"));
     let client = Client::new();

@@ -1,13 +1,13 @@
 //! MessageChannel DAO SQLite 单元测试
 
 use crate::error::Result;
-use crate::models::message_channel::{MessageChannelPo, ChannelConfig};
-use common::enums::{ChannelType, ChannelStatus};
+use crate::models::message_channel::{ChannelConfig, MessageChannelPo};
 use crate::pkg::RequestContext;
 use crate::service::dao::message_channel::{self, MessageChannelDao, MessageChannelQuery};
-use uuid::Uuid;
-use std::sync::Arc;
+use common::enums::{ChannelStatus, ChannelType};
 use sqlx::SqlitePool;
+use std::sync::Arc;
+use uuid::Uuid;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     RequestContext::new_simple(user_id, pool)
@@ -140,7 +140,9 @@ async fn test_agent_channel_priority(pool: SqlitePool) -> Result<()> {
     dao.insert(ctx.clone(), &agent_channel).await?;
 
     // 查询用户+Agent 的渠道（应该返回 2 条：Agent 专属 + 用户通用）
-    let channels = dao.list_by_user_and_agent_id(ctx.clone(), "user-001", "agent-001", true).await?;
+    let channels = dao
+        .list_by_user_and_agent_id(ctx.clone(), "user-001", "agent-001", true)
+        .await?;
     assert_eq!(channels.len(), 2);
 
     Ok(())
@@ -167,12 +169,14 @@ async fn test_set_enabled(pool: SqlitePool) -> Result<()> {
     dao.insert(ctx.clone(), &channel).await?;
 
     // 禁用
-    dao.set_status(ctx.clone(), &channel.id, ChannelStatus::Disabled).await?;
+    dao.set_status(ctx.clone(), &channel.id, ChannelStatus::Disabled)
+        .await?;
     let found = dao.find_by_id(ctx.clone(), &channel.id).await?.unwrap();
     assert_eq!(found.status, ChannelStatus::Disabled);
 
     // 重新启用
-    dao.set_status(ctx.clone(), &channel.id, ChannelStatus::Active).await?;
+    dao.set_status(ctx.clone(), &channel.id, ChannelStatus::Active)
+        .await?;
     let found = dao.find_by_id(ctx.clone(), &channel.id).await?.unwrap();
     assert_eq!(found.status, ChannelStatus::Active);
 
@@ -221,7 +225,11 @@ async fn test_query(pool: SqlitePool) -> Result<()> {
             "org-001".to_string(),
             format!("user-{}", i % 2),
             None,
-            if i % 2 == 0 { ChannelType::Webhook } else { ChannelType::Lark },
+            if i % 2 == 0 {
+                ChannelType::Webhook
+            } else {
+                ChannelType::Lark
+            },
             format!("渠道 {}", i),
             None,
             None,
@@ -289,7 +297,8 @@ async fn test_mark_push_status(pool: SqlitePool) -> Result<()> {
     dao.insert(ctx.clone(), &channel).await?;
 
     // 标记推送失败
-    dao.mark_push_failed(ctx.clone(), &channel.id, "连接超时").await?;
+    dao.mark_push_failed(ctx.clone(), &channel.id, "连接超时")
+        .await?;
     let found = dao.find_by_id(ctx.clone(), &channel.id).await?.unwrap();
     assert_eq!(found.last_error, Some("连接超时".to_string()));
     assert!(found.last_pushed_at.is_some());

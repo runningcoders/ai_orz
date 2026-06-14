@@ -2,8 +2,8 @@
 
 use crate::error::Result;
 use crate::models::message_channel::MessageChannelPo;
-use common::enums::{ChannelStatus, ChannelType};
 use crate::pkg::RequestContext;
+use common::enums::{ChannelStatus, ChannelType};
 
 // ==================== 查询参数 ====================
 
@@ -50,7 +50,11 @@ pub trait MessageChannelDao: Send + Sync {
     /// 通用查询方法
     ///
     /// 支持组合查询条件，所有字段都是 Option
-    async fn query(&self, ctx: RequestContext, query: MessageChannelQuery) -> Result<Vec<MessageChannelPo>>;
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: MessageChannelQuery,
+    ) -> Result<Vec<MessageChannelPo>>;
 
     /// 统计查询结果数量
     async fn query_count(&self, ctx: RequestContext, query: MessageChannelQuery) -> Result<u64>;
@@ -59,7 +63,12 @@ pub trait MessageChannelDao: Send + Sync {
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<MessageChannelPo>>;
 
     /// 查询用户的所有渠道
-    async fn list_by_user_id(&self, ctx: RequestContext, user_id: &str, only_enabled: bool) -> Result<Vec<MessageChannelPo>>;
+    async fn list_by_user_id(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+        only_enabled: bool,
+    ) -> Result<Vec<MessageChannelPo>>;
 
     /// 查询用户 + Agent 的渠道（优先 Agent 专属，否则返回用户通用渠道）
     async fn list_by_user_and_agent_id(

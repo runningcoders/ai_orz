@@ -14,8 +14,8 @@ use std::sync::Arc;
 
 use crate::error::AppError;
 use crate::models::agent::Agent;
-use crate::models::message::Message;
 use crate::models::memory::{Memory, MemoryTrace};
+use crate::models::message::Message;
 use crate::pkg::request_context::RequestContext;
 use crate::service::dal::brain::BrainDal;
 
@@ -95,12 +95,12 @@ pub trait RuntimeToolExecution: Send + Sync {
 // ==================== 子模块  ====================
 // 注意：子模块必须在 trait 定义之后导入，这样子模块才能看到这些 trait
 
-mod memory;
 mod awakening;
 mod context_assembly;
+mod memory;
 mod tool_execution;
 
-pub use context_assembly::{build_conversation_prompt, PromptBuilder};
+pub use context_assembly::{PromptBuilder, build_conversation_prompt};
 
 // ==================== 实现 ====================
 

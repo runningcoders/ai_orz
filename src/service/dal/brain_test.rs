@@ -1,13 +1,13 @@
 //! Brain DAL 单元测试
 //! 测试 Brain DAL 的 wake_brain 和 test_connection 功能
 
-use crate::models::{brain::*, model_provider::*, tool::Tool, memory::*};
+use crate::models::{brain::*, memory::*, model_provider::*, tool::Tool};
+use crate::pkg::request_context::RequestContext;
+use crate::service::dal::brain::BrainDal;
 use crate::service::dao::cortex;
 use common::enums::{ModelCapability, ProviderType};
-use crate::pkg::request_context::RequestContext;
 use sqlx::SqlitePool;
 use std::sync::Arc;
-use crate::service::dal::brain::BrainDal;
 
 /// 初始化测试环境
 async fn init_test_env(pool: SqlitePool) -> (Arc<dyn BrainDal + Send + Sync>, RequestContext) {

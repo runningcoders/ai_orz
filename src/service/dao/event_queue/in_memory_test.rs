@@ -6,9 +6,9 @@ use super::*;
 use crate::models::event::Event;
 use crate::models::file::FileMeta;
 use crate::models::message::Message;
-use common::enums::{MessageRole, MessageType, FileType};
 use crate::pkg::RequestContext;
 use crate::service::dao::event_queue::in_memory::EventQueueDaoInMemoryImpl;
+use common::enums::{FileType, MessageRole, MessageType};
 use sqlx::SqlitePool;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -39,11 +39,7 @@ async fn test_single_event_enqueue_dequeue_ack() {
     let queue = EventQueueDaoInMemoryImpl::<Message>::new();
 
     // 创建一个测试消息
-    let empty_file_meta = FileMeta::new(
-        "".to_string(),
-        "".to_string(),
-        0,
-    );
+    let empty_file_meta = FileMeta::new("".to_string(), "".to_string(), 0);
     let msg = Message::new(
         uuid::Uuid::now_v7().to_string(),
         "task-001".to_string(),
@@ -126,7 +122,10 @@ async fn test_priority_ordering() {
         }
     }
 
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
     let low = TestEvent {
         id: "low".to_string(),
         priority: 1,
@@ -347,9 +346,18 @@ async fn test_same_order_key_sequential() {
     }
 
     // 按顺序入队 1、2、3
-    let e1 = TestEvent { id: "1".to_string(), created_at: 1 };
-    let e2 = TestEvent { id: "2".to_string(), created_at: 2 };
-    let e3 = TestEvent { id: "3".to_string(), created_at: 3 };
+    let e1 = TestEvent {
+        id: "1".to_string(),
+        created_at: 1,
+    };
+    let e2 = TestEvent {
+        id: "2".to_string(),
+        created_at: 2,
+    };
+    let e3 = TestEvent {
+        id: "3".to_string(),
+        created_at: 3,
+    };
 
     queue.enqueue(ctx.clone(), Box::new(e1)).unwrap();
     queue.enqueue(ctx.clone(), Box::new(e2)).unwrap();
@@ -392,11 +400,7 @@ async fn test_nack_retry() {
     let ctx = RequestContext::new_simple("test-user", pool);
     let queue = EventQueueDaoInMemoryImpl::<Message>::new();
 
-    let empty_file_meta = FileMeta::new(
-        "".to_string(),
-        "".to_string(),
-        0,
-    );
+    let empty_file_meta = FileMeta::new("".to_string(), "".to_string(), 0);
     let msg = Message::new(
         uuid::Uuid::now_v7().to_string(),
         "task-001".to_string(),
@@ -479,22 +483,32 @@ async fn test_same_order_key_while_processing() {
     let queue = EventQueueDaoInMemoryImpl::<TestEvent>::new();
 
     // 消息 A 入队，出队，开始处理
-    queue.enqueue(ctx.clone(), Box::new(TestEvent {
-        id: "msg-A".to_string(),
-        order_key: "task1".to_string(),
-        created_at: 1,
-    })).unwrap();
+    queue
+        .enqueue(
+            ctx.clone(),
+            Box::new(TestEvent {
+                id: "msg-A".to_string(),
+                order_key: "task1".to_string(),
+                created_at: 1,
+            }),
+        )
+        .unwrap();
 
     let a = queue.dequeue_next(ctx.clone()).unwrap().unwrap();
     assert_eq!(a.id(), "msg-A");
     assert_eq!(queue.in_progress_count(), 1);
 
     // 消息 B 入队（A 正在处理中）
-    queue.enqueue(ctx.clone(), Box::new(TestEvent {
-        id: "msg-B".to_string(),
-        order_key: "task1".to_string(),
-        created_at: 2,
-    })).unwrap();
+    queue
+        .enqueue(
+            ctx.clone(),
+            Box::new(TestEvent {
+                id: "msg-B".to_string(),
+                order_key: "task1".to_string(),
+                created_at: 2,
+            }),
+        )
+        .unwrap();
 
     // 关键断言：此时全局堆应该是空的，B 不应该在全局堆
     // 因为 A 正在处理，has_waiting_in_global 应该是 true
@@ -552,9 +566,18 @@ async fn test_order_key_nack_strict_ordering() {
     let queue = EventQueueDaoInMemoryImpl::<TestEvent>::new();
 
     // 按顺序入队 A、B、C
-    let a = TestEvent { id: "A".to_string(), created_at: 1 };
-    let b = TestEvent { id: "B".to_string(), created_at: 2 };
-    let c = TestEvent { id: "C".to_string(), created_at: 3 };
+    let a = TestEvent {
+        id: "A".to_string(),
+        created_at: 1,
+    };
+    let b = TestEvent {
+        id: "B".to_string(),
+        created_at: 2,
+    };
+    let c = TestEvent {
+        id: "C".to_string(),
+        created_at: 3,
+    };
 
     queue.enqueue(ctx.clone(), Box::new(a)).unwrap();
     queue.enqueue(ctx.clone(), Box::new(b)).unwrap();
@@ -569,7 +592,10 @@ async fn test_order_key_nack_strict_ordering() {
 
     // 尝试再次出队，应该是 None（因为 B、C 还在子队列，A 没 ack 不会 refill）
     let second_try = queue.dequeue_next(ctx.clone()).unwrap();
-    assert!(second_try.is_none(), "同一 order_key 同一时间只能有一个消息在全局堆");
+    assert!(
+        second_try.is_none(),
+        "同一 order_key 同一时间只能有一个消息在全局堆"
+    );
 
     // nack A，A 应该直接回到全局堆，B、C 仍在子队列
     queue.nack(ctx.clone(), "A").unwrap();
@@ -581,7 +607,10 @@ async fn test_order_key_nack_strict_ordering() {
 
     // 再次尝试出队，应该还是 None（B、C 仍在子队列）
     let third_try = queue.dequeue_next(ctx.clone()).unwrap();
-    assert!(third_try.is_none(), "同一 order_key 同一时间只能有一个消息在全局堆");
+    assert!(
+        third_try.is_none(),
+        "同一 order_key 同一时间只能有一个消息在全局堆"
+    );
 
     // 现在正常 ack A，触发 refill B
     queue.ack(ctx.clone(), "A").unwrap();
@@ -608,11 +637,7 @@ async fn test_batch_enqueue() {
     let queue = EventQueueDaoInMemoryImpl::<Message>::new();
 
     let mut events: Vec<Box<Message>> = Vec::new();
-    let empty_file_meta = FileMeta::new(
-        "".to_string(),
-        "".to_string(),
-        0,
-    );
+    let empty_file_meta = FileMeta::new("".to_string(), "".to_string(), 0);
     for i in 0..5 {
         let msg = Message::new(
             uuid::Uuid::now_v7().to_string(),
@@ -695,12 +720,36 @@ async fn test_mixed_order_groups() {
     }
 
     let events = vec![
-        TestEvent { id: "t1-1".to_string(), order_key: "task1".to_string(), created_at: 1 },
-        TestEvent { id: "t1-2".to_string(), order_key: "task1".to_string(), created_at: 2 },
-        TestEvent { id: "t1-3".to_string(), order_key: "task1".to_string(), created_at: 3 },
-        TestEvent { id: "t2-1".to_string(), order_key: "task2".to_string(), created_at: 4 },
-        TestEvent { id: "t2-2".to_string(), order_key: "task2".to_string(), created_at: 5 },
-        TestEvent { id: "parallel".to_string(), order_key: "".to_string(), created_at: 6 },
+        TestEvent {
+            id: "t1-1".to_string(),
+            order_key: "task1".to_string(),
+            created_at: 1,
+        },
+        TestEvent {
+            id: "t1-2".to_string(),
+            order_key: "task1".to_string(),
+            created_at: 2,
+        },
+        TestEvent {
+            id: "t1-3".to_string(),
+            order_key: "task1".to_string(),
+            created_at: 3,
+        },
+        TestEvent {
+            id: "t2-1".to_string(),
+            order_key: "task2".to_string(),
+            created_at: 4,
+        },
+        TestEvent {
+            id: "t2-2".to_string(),
+            order_key: "task2".to_string(),
+            created_at: 5,
+        },
+        TestEvent {
+            id: "parallel".to_string(),
+            order_key: "".to_string(),
+            created_at: 6,
+        },
     ];
 
     for e in events {

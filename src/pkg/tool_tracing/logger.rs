@@ -15,7 +15,7 @@ use crate::pkg::daily_jsonl::DailyJsonlWriter;
 static INSTANCE: OnceCell<ToolCallLogger> = OnceCell::new();
 
 /// ToolCallLogger is a factory that provides daily JSONL writers for tool call tracing
-/// 
+///
 /// This is a singleton - initialize once with base data path at application startup,
 /// then get the global instance anywhere with `ToolCallLogger::get()`.
 #[derive(Debug, Clone)]
@@ -27,7 +27,8 @@ impl ToolCallLogger {
     /// Initialize the global ToolCallLogger singleton
     /// Must be called once at application startup
     pub fn init(base_data_path: PathBuf) {
-        INSTANCE.set(Self { base_data_path })
+        INSTANCE
+            .set(Self { base_data_path })
             .expect("ToolCallLogger already initialized");
     }
 
@@ -45,7 +46,8 @@ impl ToolCallLogger {
 
     /// Get the writer for a specific tool's call traces
     pub fn writer_for_tool(&self, tool_id: &str) -> DailyJsonlWriter {
-        let path = self.base_data_path
+        let path = self
+            .base_data_path
             .join("tools")
             .join(tool_id)
             .join("call_trace");

@@ -1,12 +1,12 @@
 //! SQLite implementation of Task DAO
 
-use std::sync::Arc;
-use std::sync::OnceLock;
-use common::enums::{TaskStatus, AssigneeType};
+use super::{TaskDao, TaskQuery};
 use crate::error::AppError;
 use crate::models::task::TaskPo;
 use crate::pkg::RequestContext;
-use super::{TaskDao, TaskQuery};
+use common::enums::{AssigneeType, TaskStatus};
+use std::sync::Arc;
+use std::sync::OnceLock;
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -101,7 +101,7 @@ FROM tasks WHERE id = ? AND "status" != 0
 
     async fn query(&self, ctx: RequestContext, query: TaskQuery) -> Result<Vec<TaskPo>, AppError> {
         let mut builder = sqlx::QueryBuilder::new(
-            r#"SELECT id, title, description, "status", priority, tags, due_at, start_at, end_at, dependencies, root_user_id, "assignee_type", assignee_id, project_id, thinking_depth, created_by, modified_by, created_at, updated_at FROM tasks WHERE 1=1"#
+            r#"SELECT id, title, description, "status", priority, tags, due_at, start_at, end_at, dependencies, root_user_id, "assignee_type", assignee_id, project_id, thinking_depth, created_by, modified_by, created_at, updated_at FROM tasks WHERE 1=1"#,
         );
 
         // 默认软删除过滤
@@ -109,7 +109,9 @@ FROM tasks WHERE id = ? AND "status" != 0
 
         // 逐个添加查询条件
         if let Some(assignee_type) = &query.assignee_type {
-            builder.push(r#" AND "assignee_type" = "#).push_bind(*assignee_type as i32);
+            builder
+                .push(r#" AND "assignee_type" = "#)
+                .push_bind(*assignee_type as i32);
         }
 
         if let Some(assignee_id) = &query.assignee_id {
@@ -142,32 +144,51 @@ FROM tasks WHERE id = ? AND "status" != 0
         }
 
         // 执行查询
-        let rows = builder.build_query_as()
-            .fetch_all(ctx.db_pool())
-            .await?;
+        let rows = builder.build_query_as().fetch_all(ctx.db_pool()).await?;
 
         Ok(rows)
     }
 
-    async fn list_by_assignee(&self, ctx: RequestContext, assignee_type: Option<AssigneeType>, assignee_id: &str, limit: Option<usize>) -> Result<Vec<TaskPo>, AppError> {
+    async fn list_by_assignee(
+        &self,
+        ctx: RequestContext,
+        assignee_type: Option<AssigneeType>,
+        assignee_id: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<TaskPo>, AppError> {
         // 语法糖：调用通用查询
-        self.query(ctx, TaskQuery {
-            assignee_type,
-            assignee_id: Some(assignee_id.to_string()),
-            limit: Some(limit.unwrap_or(100)),
-            ..Default::default()
-        }).await
+        self.query(
+            ctx,
+            TaskQuery {
+                assignee_type,
+                assignee_id: Some(assignee_id.to_string()),
+                limit: Some(limit.unwrap_or(100)),
+                ..Default::default()
+            },
+        )
+        .await
     }
 
-    async fn list_by_status(&self, ctx: RequestContext, assignee_type: Option<AssigneeType>, assignee_id: &str, status: Vec<TaskStatus>, limit: Option<usize>) -> Result<Vec<TaskPo>, AppError> {
+    async fn list_by_status(
+        &self,
+        ctx: RequestContext,
+        assignee_type: Option<AssigneeType>,
+        assignee_id: &str,
+        status: Vec<TaskStatus>,
+        limit: Option<usize>,
+    ) -> Result<Vec<TaskPo>, AppError> {
         // 语法糖：调用通用查询
-        self.query(ctx, TaskQuery {
-            assignee_type,
-            assignee_id: Some(assignee_id.to_string()),
-            status_in: Some(status),
-            limit: Some(limit.unwrap_or(100)),
-            ..Default::default()
-        }).await
+        self.query(
+            ctx,
+            TaskQuery {
+                assignee_type,
+                assignee_id: Some(assignee_id.to_string()),
+                status_in: Some(status),
+                limit: Some(limit.unwrap_or(100)),
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     async fn update(&self, ctx: RequestContext, task: &TaskPo) -> Result<(), AppError> {
@@ -219,7 +240,13 @@ WHERE id = ?
         Ok(())
     }
 
-    async fn update_status(&self, ctx: RequestContext, id: &str, status: TaskStatus, modified_by: &str) -> Result<(), AppError> {
+    async fn update_status(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        status: TaskStatus,
+        modified_by: &str,
+    ) -> Result<(), AppError> {
         let pool = ctx.db_pool();
         let now = common::constants::utils::current_timestamp();
         let status_i32 = status as i32;
@@ -237,7 +264,11 @@ UPDATE tasks SET "status" = ?, modified_by = ?, updated_at = ? WHERE id = ?
         Ok(())
     }
 
-    async fn count_by_assignee(&self, ctx: RequestContext, assignee_id: &str) -> Result<u64, AppError> {
+    async fn count_by_assignee(
+        &self,
+        ctx: RequestContext,
+        assignee_id: &str,
+    ) -> Result<u64, AppError> {
         let pool = ctx.db_pool();
         let row = sqlx::query!(
             "SELECT COUNT(*) as \"count: i64\" FROM tasks WHERE assignee_id = ? AND \"status\" != 0",
@@ -248,7 +279,12 @@ UPDATE tasks SET "status" = ?, modified_by = ?, updated_at = ? WHERE id = ?
         Ok(row.count as u64)
     }
 
-    async fn count_by_assignee_and_status(&self, ctx: RequestContext, assignee_id: &str, status: TaskStatus) -> Result<u64, AppError> {
+    async fn count_by_assignee_and_status(
+        &self,
+        ctx: RequestContext,
+        assignee_id: &str,
+        status: TaskStatus,
+    ) -> Result<u64, AppError> {
         let pool = ctx.db_pool();
         let status_i32 = status as i32;
         let row = sqlx::query!(

@@ -20,7 +20,7 @@ fn get_env_or_default(env_key: &str, default: &str) -> String {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     config::init()?;
     let config = config::get();
-    
+
     // Initialize all pkg modules in one call
     pkg::init_all(&config).await;
     sys_info!(
@@ -47,7 +47,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = tokio::net::TcpListener::bind(&server_addr).await?;
     sys_info!(
         "Server listening on {}, static files from {}",
-        server_addr, dist_dir
+        server_addr,
+        dist_dir
     );
 
     axum::serve(listener, app).await?;

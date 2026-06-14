@@ -1,11 +1,10 @@
-use dioxus::prelude::*;
-use common::enums::{ProviderType, ModelCapability};
-use common::api::{
-    ModelProviderListItem, CreateModelProviderRequest,
-};
 use crate::api::model_provider::{
-    list_model_providers, create_model_provider, delete_model_provider, test_model_provider_connection,
+    create_model_provider, delete_model_provider, list_model_providers,
+    test_model_provider_connection,
 };
+use common::api::{CreateModelProviderRequest, ModelProviderListItem};
+use common::enums::{ModelCapability, ProviderType};
+use dioxus::prelude::*;
 
 #[component]
 pub fn ModelProviderManagement() -> Element {
@@ -49,8 +48,16 @@ pub fn ModelProviderManagement() -> Element {
         let name = new_name.read().clone();
         let model_name = new_model_name.read().clone();
         let api_key = new_api_key.read().clone();
-        let base_url = if new_base_url.read().is_empty() { None } else { Some(new_base_url.read().clone()) };
-        let description = if new_description.read().is_empty() { None } else { Some(new_description.read().clone()) };
+        let base_url = if new_base_url.read().is_empty() {
+            None
+        } else {
+            Some(new_base_url.read().clone())
+        };
+        let description = if new_description.read().is_empty() {
+            None
+        } else {
+            Some(new_description.read().clone())
+        };
         let provider_type = *selected_provider_type.read();
 
         if name.is_empty() || model_name.is_empty() || api_key.is_empty() {
@@ -84,7 +91,10 @@ pub fn ModelProviderManagement() -> Element {
 
                             // 如果测试失败，显示错误信息
                             if !test_resp.success {
-                                error.set(Some(format!("创建成功，但连通性测试失败: {}", test_resp.message)));
+                                error.set(Some(format!(
+                                    "创建成功，但连通性测试失败: {}",
+                                    test_resp.message
+                                )));
                             }
                         }
                         Err(e) => {

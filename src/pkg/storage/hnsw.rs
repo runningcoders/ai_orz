@@ -2,10 +2,10 @@
 //! TODO: 找到不依赖 yanked ort crate 的 HNSW 实现
 //! 当前暂时使用 InMemoryVectorStore 作为替代
 
-use async_trait::async_trait;
 use crate::error::Result;
 use crate::models::vector::{VectorIndexParams, VectorRow, VectorSearchHit};
 use crate::pkg::storage::InMemoryVectorStore;
+use async_trait::async_trait;
 
 /// HNSW 向量存储（当前为 InMemory 的别名）
 /// TODO: 替换为真正的 HNSW 实现
@@ -39,7 +39,12 @@ impl super::VectorStore for HnswStore {
         self.inner.upsert(collection, id, params).await
     }
 
-    async fn search(&self, collection: &str, query_vector: &[f32], top_k: i32) -> Result<Vec<VectorSearchHit>> {
+    async fn search(
+        &self,
+        collection: &str,
+        query_vector: &[f32],
+        top_k: i32,
+    ) -> Result<Vec<VectorSearchHit>> {
         self.inner.search(collection, query_vector, top_k).await
     }
 

@@ -1,8 +1,6 @@
-use dioxus::prelude::*;
+use crate::api::organization::{check_initialized, initialize_system, list_organizations, login};
 use common::api::{InitializeSystemRequest, LoginRequest, OrganizationListItem};
-use crate::api::organization::{
-    check_initialized, list_organizations, initialize_system, login,
-};
+use dioxus::prelude::*;
 
 #[component]
 pub fn Reception() -> Element {
@@ -68,11 +66,23 @@ pub fn Reception() -> Element {
 
             let req = InitializeSystemRequest {
                 organization_name: org_name(),
-                description: if org_description().is_empty() { None } else { Some(org_description()) },
+                description: if org_description().is_empty() {
+                    None
+                } else {
+                    Some(org_description())
+                },
                 admin_username: init_username(),
                 admin_password_hash: init_password(), // 前端应该已经是 bcrypt hash 了
-                admin_display_name: if display_name().is_empty() { None } else { Some(display_name()) },
-                admin_email: if email().is_empty() { None } else { Some(email()) },
+                admin_display_name: if display_name().is_empty() {
+                    None
+                } else {
+                    Some(display_name())
+                },
+                admin_email: if email().is_empty() {
+                    None
+                } else {
+                    Some(email())
+                },
             };
 
             match initialize_system(req).await {

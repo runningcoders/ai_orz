@@ -1,7 +1,7 @@
 //! Tool DAO trait
 
 use crate::error::AppError;
-use crate::models::tool::{ToolPo};
+use crate::models::tool::ToolPo;
 use crate::models::vector::VectorIndexParams;
 use crate::pkg::request_context::RequestContext;
 use anyhow::Result;
@@ -29,8 +29,8 @@ pub fn init() {
 #[derive(Debug, Clone, Default)]
 pub struct ToolQuery {
     pub agent_id: Option<String>,
-    pub ids: Option<Vec<String>>,           // 按 ID 批量查询
-    pub keyword: Option<String>,            // 关键词搜索
+    pub ids: Option<Vec<String>>, // 按 ID 批量查询
+    pub keyword: Option<String>,  // 关键词搜索
     pub enabled_only: Option<bool>,
     pub limit: Option<usize>,
 }
@@ -86,7 +86,11 @@ pub trait ToolDao: Send + Sync {
     ) -> Result<()>;
 
     /// List all tools for an agent
-    async fn list_tools_for_agent(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<ToolPo>>;
+    async fn list_tools_for_agent(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+    ) -> Result<Vec<ToolPo>>;
 
     /// Sync all registered built-in tools to database
     /// If a tool already exists (by ID), skip it to avoid duplicates

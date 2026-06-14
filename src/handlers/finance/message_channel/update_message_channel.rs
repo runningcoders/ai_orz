@@ -1,8 +1,8 @@
 //! 更新 Message Channel
 
 use axum::{
-    extract::{Extension, Json, Path},
     Json as AxumJson,
+    extract::{Extension, Json, Path},
 };
 use common::api::{ApiResponse, UpdateMessageChannelRequest, UpdateMessageChannelResponse};
 
@@ -35,7 +35,10 @@ pub async fn update_message_channel(
         .ok_or_else(|| AppError::NotFound(format!("MessageChannel {} not found", id)))?;
 
     if channel.po.org_id != org_id || channel.po.user_id != current_user_id {
-        return Err(AppError::NotFound(format!("MessageChannel {} not found", id)));
+        return Err(AppError::NotFound(format!(
+            "MessageChannel {} not found",
+            id
+        )));
     }
 
     if let Some(user_id) = req.user_id {

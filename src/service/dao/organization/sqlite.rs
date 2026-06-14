@@ -2,11 +2,11 @@
 
 use crate::error::AppError;
 use crate::models::organization::OrganizationPo;
-use common::enums::{OrganizationStatus, OrganizationScope};
 use crate::pkg::RequestContext;
 use crate::service::dao::organization::{OrganizationDao, OrganizationQuery};
-use std::sync::{Arc, OnceLock};
 use chrono::Utc;
+use common::enums::{OrganizationScope, OrganizationStatus};
+use std::sync::{Arc, OnceLock};
 // ==================== 工厂方法 + 单例管理 ====================
 
 static ORGANIZATION_DAO: OnceLock<Arc<dyn OrganizationDao>> = OnceLock::new();
@@ -60,7 +60,11 @@ impl OrganizationDao for OrganizationDaoSqliteImpl {
         Ok(())
     }
 
-    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<OrganizationPo>, AppError> {
+    async fn find_by_id(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<OrganizationPo>, AppError> {
         let org = sqlx::query_as!(
             OrganizationPo,
             r#"
@@ -75,10 +79,14 @@ FROM organizations WHERE id = ? AND status != 0
         Ok(org)
     }
 
-    async fn query(&self, ctx: RequestContext, query: OrganizationQuery) -> Result<Vec<OrganizationPo>, AppError> {
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: OrganizationQuery,
+    ) -> Result<Vec<OrganizationPo>, AppError> {
         let pool = ctx.db_pool();
         let mut builder = sqlx::QueryBuilder::new(
-            r#"SELECT id, name, description, base_url, status, scope, created_by, modified_by, created_at, updated_at FROM organizations WHERE status != 0"#
+            r#"SELECT id, name, description, base_url, status, scope, created_by, modified_by, created_at, updated_at FROM organizations WHERE status != 0"#,
         );
 
         // 排序
@@ -89,9 +97,7 @@ FROM organizations WHERE id = ? AND status != 0
             builder.push(" LIMIT ").push_bind(limit as i64);
         }
 
-        let rows = builder.build_query_as()
-            .fetch_all(pool)
-            .await?;
+        let rows = builder.build_query_as().fetch_all(pool).await?;
 
         Ok(rows)
     }
@@ -121,8 +127,8 @@ WHERE id = ?
             current_timestamp,
             org.id
         )
-            .execute(ctx.db_pool())
-            .await?;
+        .execute(ctx.db_pool())
+        .await?;
 
         Ok(())
     }
@@ -138,18 +144,17 @@ UPDATE organizations SET status = 0, modified_by = ?, updated_at = ? WHERE id = 
             current_timestamp,
             id
         )
-            .execute(ctx.db_pool())
-            .await?;
+        .execute(ctx.db_pool())
+        .await?;
 
         Ok(())
     }
 
     async fn count_all(&self, ctx: RequestContext) -> Result<u64, AppError> {
-        let count = sqlx::query!(
-            r#"SELECT COUNT(*) as count FROM organizations WHERE status != 0"#
-        )
-            .fetch_one(ctx.db_pool())
-            .await?;
+        let count =
+            sqlx::query!(r#"SELECT COUNT(*) as count FROM organizations WHERE status != 0"#)
+                .fetch_one(ctx.db_pool())
+                .await?;
 
         Ok(count.count as u64)
     }

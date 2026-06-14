@@ -12,4 +12,3 @@ pub mod initialize_system;
 pub mod organization;
 pub mod organization_me;
 pub mod user;
-

@@ -1,6 +1,5 @@
-
-use common::api::{MessageChannelDetail, MessageChannelListItem};
 use crate::models::message_channel::{ChannelConfig, MessageChannel};
+use common::api::{MessageChannelDetail, MessageChannelListItem};
 
 pub(super) fn to_list_item(channel: &MessageChannel) -> MessageChannelListItem {
     MessageChannelListItem {

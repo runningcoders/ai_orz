@@ -5,7 +5,7 @@
 //! - Task - 业务实体（Domain 层使用，包含聚合关系和业务方法）
 
 use common::constants::utils;
-use common::enums::{TaskStatus, AssigneeType};
+use common::enums::{AssigneeType, TaskStatus};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 

@@ -1,9 +1,9 @@
 pub mod daily_jsonl;
 pub mod external;
-pub mod logging;
 pub mod jwt;
-pub mod storage;
+pub mod logging;
 pub mod request_context;
+pub mod storage;
 pub mod tool_registry;
 pub mod tool_tracing;
 
@@ -32,9 +32,7 @@ pub async fn init_all(config: &AppConfig) {
     tool_registry::init();
 
     // Initialize tool call tracing logger (singleton factory)
-    tool_tracing::logger::ToolCallLogger::init(
-        config.base_data_path()
-    );
+    tool_tracing::logger::ToolCallLogger::init(config.base_data_path());
 
     sys_info!("All pkg modules initialized");
 }
@@ -44,8 +42,8 @@ fn get_env_or_default(env_key: &str, default: &str) -> String {
 }
 
 #[cfg(test)]
+mod daily_jsonl_test;
+#[cfg(test)]
 mod logging_test;
 #[cfg(test)]
 mod request_context_test;
-#[cfg(test)]
-mod daily_jsonl_test;

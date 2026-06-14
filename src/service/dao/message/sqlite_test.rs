@@ -1,14 +1,14 @@
 //! Message DAO SQLite 单元测试
 
 use crate::error::Result;
-use crate::models::message::{MessagePo, ToolCallMessage};
 use crate::models::file::FileMeta;
-use common::enums::{MessageRole, MessageType, MessageStatus, FileType};
+use crate::models::message::{MessagePo, ToolCallMessage};
 use crate::pkg::RequestContext;
 use crate::service::dao::message::{self, MessageDao};
-use uuid::Uuid;
-use std::sync::Arc;
+use common::enums::{FileType, MessageRole, MessageStatus, MessageType};
 use sqlx::SqlitePool;
+use std::sync::Arc;
+use uuid::Uuid;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     RequestContext::new_simple(user_id, pool)
@@ -26,11 +26,7 @@ fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDao + Send + Sync>, Reques
 
 /// 创建测试 MessagePo
 fn create_test_message(task_id: &str, from_id: &str, content: &str) -> MessagePo {
-    let empty_file_meta = FileMeta::new(
-        "".to_string(),
-        "".to_string(),
-        0,
-    );
+    let empty_file_meta = FileMeta::new("".to_string(), "".to_string(), 0);
     MessagePo::new(
         Uuid::now_v7().to_string(),
         None, // project_id
@@ -52,11 +48,7 @@ fn create_test_message(task_id: &str, from_id: &str, content: &str) -> MessagePo
 async fn test_insert_and_find_by_id(pool: SqlitePool) -> Result<()> {
     let (message_dao, ctx) = init_test_env(pool);
 
-    let empty_file_meta = FileMeta::new(
-        "".to_string(),
-        "".to_string(),
-        0,
-    );
+    let empty_file_meta = FileMeta::new("".to_string(), "".to_string(), 0);
 
     let msg = MessagePo::new(
         Uuid::now_v7().to_string(),
@@ -96,11 +88,7 @@ async fn test_insert_and_find_by_id(pool: SqlitePool) -> Result<()> {
 async fn test_list_by_task_id(pool: SqlitePool) -> Result<()> {
     let (message_dao, ctx) = init_test_env(pool);
 
-    let empty_file_meta = FileMeta::new(
-        "".to_string(),
-        "".to_string(),
-        0,
-    );
+    let empty_file_meta = FileMeta::new("".to_string(), "".to_string(), 0);
 
     // 插入第一条消息
     let msg0 = MessagePo::new(
@@ -153,7 +141,7 @@ async fn test_list_by_task_id(pool: SqlitePool) -> Result<()> {
     );
     let msg3 = MessagePo::new(
         Uuid::now_v7().to_string(),
-        None, // project_id (new parameter)
+        None,                         // project_id (new parameter)
         Some("task-002".to_string()), // 不同任务
         "user-002".to_string(),
         "".to_string(),
@@ -173,7 +161,9 @@ async fn test_list_by_task_id(pool: SqlitePool) -> Result<()> {
     message_dao.insert(ctx.clone(), &msg3).await?;
 
     // 查询 task-001 的消息（已经有一条，总共 3 条）
-    let list = message_dao.list_by_task_id(ctx.clone(), "task-001", None).await?;
+    let list = message_dao
+        .list_by_task_id(ctx.clone(), "task-001", None)
+        .await?;
     assert_eq!(list.len(), 3);
     // 按 created_at 升序排列
     assert_eq!(list[0].content, "你好，这是一条测试消息".to_string());
@@ -188,11 +178,7 @@ async fn test_list_by_task_id(pool: SqlitePool) -> Result<()> {
 async fn test_list_by_task_id_with_limit(pool: SqlitePool) -> Result<()> {
     let (message_dao, ctx) = init_test_env(pool);
 
-    let empty_file_meta = FileMeta::new(
-        "".to_string(),
-        "".to_string(),
-        0,
-    );
+    let empty_file_meta = FileMeta::new("".to_string(), "".to_string(), 0);
 
     // 插入三条消息
     for i in 0..3 {
@@ -203,19 +189,21 @@ async fn test_list_by_task_id_with_limit(pool: SqlitePool) -> Result<()> {
             "user-001".to_string(),
             "".to_string(),
             MessageRole::User,
-        MessageRole::Agent,
+            MessageRole::Agent,
             MessageType::Text,
             format!("消息{}", i),
             None,
             empty_file_meta.clone(),
-        None,
+            None,
             "test-user".to_string(),
         );
         message_dao.insert(ctx.clone(), &msg).await?;
         tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
     }
 
-    let list = message_dao.list_by_task_id(ctx.clone(), "task-001", Some(2)).await?;
+    let list = message_dao
+        .list_by_task_id(ctx.clone(), "task-001", Some(2))
+        .await?;
     assert_eq!(list.len(), 2);
 
     Ok(())
@@ -226,11 +214,7 @@ async fn test_list_by_task_id_with_limit(pool: SqlitePool) -> Result<()> {
 async fn test_list_by_from_id(pool: SqlitePool) -> Result<()> {
     let (message_dao, ctx) = init_test_env(pool);
 
-    let empty_file_meta = FileMeta::new(
-        "".to_string(),
-        "".to_string(),
-        0,
-    );
+    let empty_file_meta = FileMeta::new("".to_string(), "".to_string(), 0);
 
     let msg1 = MessagePo::new(
         Uuid::now_v7().to_string(),
@@ -281,7 +265,9 @@ async fn test_list_by_from_id(pool: SqlitePool) -> Result<()> {
     message_dao.insert(ctx.clone(), &msg2).await?;
     message_dao.insert(ctx.clone(), &msg3).await?;
 
-    let list = message_dao.list_by_from_id(ctx.clone(), "user-001", None).await?;
+    let list = message_dao
+        .list_by_from_id(ctx.clone(), "user-001", None)
+        .await?;
     assert_eq!(list.len(), 2); // msg1 + msg3
 
     Ok(())
@@ -292,11 +278,7 @@ async fn test_list_by_from_id(pool: SqlitePool) -> Result<()> {
 async fn test_list_by_to_id(pool: SqlitePool) -> Result<()> {
     let (message_dao, ctx) = init_test_env(pool);
 
-    let empty_file_meta = FileMeta::new(
-        "".to_string(),
-        "".to_string(),
-        0,
-    );
+    let empty_file_meta = FileMeta::new("".to_string(), "".to_string(), 0);
 
     let msg1 = MessagePo::new(
         Uuid::now_v7().to_string(),
@@ -331,7 +313,9 @@ async fn test_list_by_to_id(pool: SqlitePool) -> Result<()> {
     message_dao.insert(ctx.clone(), &msg1).await?;
     message_dao.insert(ctx.clone(), &msg2).await?;
 
-    let list = message_dao.list_by_to_id(ctx.clone(), "user-001", None).await?;
+    let list = message_dao
+        .list_by_to_id(ctx.clone(), "user-001", None)
+        .await?;
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].content, "AI回复给用户".to_string());
 
@@ -343,11 +327,7 @@ async fn test_list_by_to_id(pool: SqlitePool) -> Result<()> {
 async fn test_count_by_task_id(pool: SqlitePool) -> Result<()> {
     let (message_dao, ctx) = init_test_env(pool);
 
-    let empty_file_meta = FileMeta::new(
-        "".to_string(),
-        "".to_string(),
-        0,
-    );
+    let empty_file_meta = FileMeta::new("".to_string(), "".to_string(), 0);
 
     // task-001: 3 条消息
     for _ in 0..3 {
@@ -358,12 +338,12 @@ async fn test_count_by_task_id(pool: SqlitePool) -> Result<()> {
             "user-001".to_string(),
             "".to_string(),
             MessageRole::User,
-        MessageRole::Agent,
+            MessageRole::Agent,
             MessageType::Text,
             "test".to_string(),
             None,
             empty_file_meta.clone(),
-        None,
+            None,
             "test-user".to_string(),
         );
         message_dao.insert(ctx.clone(), &msg).await?;
@@ -386,11 +366,17 @@ async fn test_count_by_task_id(pool: SqlitePool) -> Result<()> {
     );
     message_dao.insert(ctx.clone(), &msg).await?;
 
-    let count = message_dao.count_by_task_id(ctx.clone(), "task-001").await?;
+    let count = message_dao
+        .count_by_task_id(ctx.clone(), "task-001")
+        .await?;
     assert_eq!(count, 3);
-    let count = message_dao.count_by_task_id(ctx.clone(), "task-002").await?;
+    let count = message_dao
+        .count_by_task_id(ctx.clone(), "task-002")
+        .await?;
     assert_eq!(count, 1);
-    let count = message_dao.count_by_task_id(ctx.clone(), "task-not-exists").await?;
+    let count = message_dao
+        .count_by_task_id(ctx.clone(), "task-not-exists")
+        .await?;
     assert_eq!(count, 0);
 
     Ok(())
@@ -401,11 +387,7 @@ async fn test_count_by_task_id(pool: SqlitePool) -> Result<()> {
 async fn test_delete_message(pool: SqlitePool) -> Result<()> {
     let (message_dao, ctx) = init_test_env(pool);
 
-    let empty_file_meta = FileMeta::new(
-        "".to_string(),
-        "".to_string(),
-        0,
-    );
+    let empty_file_meta = FileMeta::new("".to_string(), "".to_string(), 0);
 
     let msg_to_delete = MessagePo::new(
         Uuid::now_v7().to_string(),
@@ -425,15 +407,21 @@ async fn test_delete_message(pool: SqlitePool) -> Result<()> {
     message_dao.insert(ctx.clone(), &msg_to_delete).await?;
 
     // 删除前能找到
-    let found = message_dao.find_by_id(ctx.clone(), msg_to_delete.id.as_str()).await?;
+    let found = message_dao
+        .find_by_id(ctx.clone(), msg_to_delete.id.as_str())
+        .await?;
     assert!(found.is_some());
 
     // 删除（软删除，status 设为 0）
-    let result = message_dao.delete(ctx.clone(), msg_to_delete.id.as_str()).await;
+    let result = message_dao
+        .delete(ctx.clone(), msg_to_delete.id.as_str())
+        .await;
     assert!(result.is_ok());
 
     // 删除后找不到（已过滤）
-    let found = message_dao.find_by_id(ctx.clone(), msg_to_delete.id.as_str()).await?;
+    let found = message_dao
+        .find_by_id(ctx.clone(), msg_to_delete.id.as_str())
+        .await?;
     assert!(found.is_none());
 
     Ok(())
@@ -444,11 +432,7 @@ async fn test_delete_message(pool: SqlitePool) -> Result<()> {
 async fn test_delete_by_task_id(pool: SqlitePool) -> Result<()> {
     let (message_dao, ctx) = init_test_env(pool);
 
-    let empty_file_meta = FileMeta::new(
-        "".to_string(),
-        "".to_string(),
-        0,
-    );
+    let empty_file_meta = FileMeta::new("".to_string(), "".to_string(), 0);
 
     // 插入 3 条消息到 task-001
     for i in 0..3 {
@@ -459,19 +443,21 @@ async fn test_delete_by_task_id(pool: SqlitePool) -> Result<()> {
             "user-001".to_string(),
             "".to_string(),
             MessageRole::User,
-        MessageRole::Agent,
+            MessageRole::Agent,
             MessageType::Text,
             format!("消息{}", i),
             None,
             empty_file_meta.clone(),
-        None,
+            None,
             "test-user".to_string(),
         );
         message_dao.insert(ctx.clone(), &msg).await?;
     }
 
     // 删除前计数 3
-    let count = message_dao.count_by_task_id(ctx.clone(), "task-001").await?;
+    let count = message_dao
+        .count_by_task_id(ctx.clone(), "task-001")
+        .await?;
     assert_eq!(count, 3);
 
     // 批量软删除
@@ -479,7 +465,9 @@ async fn test_delete_by_task_id(pool: SqlitePool) -> Result<()> {
     assert!(result.is_ok());
 
     // 删除后计数 0（全部已撤回，过滤掉）
-    let count = message_dao.count_by_task_id(ctx.clone(), "task-001").await?;
+    let count = message_dao
+        .count_by_task_id(ctx.clone(), "task-001")
+        .await?;
     assert_eq!(count, 0);
 
     Ok(())
@@ -490,11 +478,7 @@ async fn test_delete_by_task_id(pool: SqlitePool) -> Result<()> {
 async fn test_update_status(pool: SqlitePool) -> Result<()> {
     let (message_dao, ctx) = init_test_env(pool);
 
-    let empty_file_meta = FileMeta::new(
-        "".to_string(),
-        "".to_string(),
-        0,
-    );
+    let empty_file_meta = FileMeta::new("".to_string(), "".to_string(), 0);
 
     let msg = MessagePo::new(
         Uuid::now_v7().to_string(),
@@ -514,10 +498,15 @@ async fn test_update_status(pool: SqlitePool) -> Result<()> {
     message_dao.insert(ctx.clone(), &msg).await?;
 
     // 更新状态为 Processed
-    let result = message_dao.update_status(ctx.clone(), msg.id.as_str(), MessageStatus::Processed).await;
+    let result = message_dao
+        .update_status(ctx.clone(), msg.id.as_str(), MessageStatus::Processed)
+        .await;
     assert!(result.is_ok());
 
-    let found = message_dao.find_by_id(ctx.clone(), msg.id.as_str()).await?.unwrap();
+    let found = message_dao
+        .find_by_id(ctx.clone(), msg.id.as_str())
+        .await?
+        .unwrap();
     assert_eq!(found.status, MessageStatus::Processed);
 
     Ok(())
@@ -552,7 +541,10 @@ async fn test_image_message_with_metadata(pool: SqlitePool) -> Result<()> {
     );
 
     message_dao.insert(ctx.clone(), &msg_image).await?;
-    let found = message_dao.find_by_id(ctx.clone(), msg_image.id.as_str()).await?.unwrap();
+    let found = message_dao
+        .find_by_id(ctx.clone(), msg_image.id.as_str())
+        .await?
+        .unwrap();
 
     assert_eq!(found.message_type, MessageType::Image);
     assert_eq!(found.content, "20260410/abc123.png".to_string());
@@ -569,11 +561,7 @@ async fn test_image_message_with_metadata(pool: SqlitePool) -> Result<()> {
 async fn test_list_by_status(pool: SqlitePool) -> Result<()> {
     let (message_dao, ctx) = init_test_env(pool);
 
-    let empty_file_meta = FileMeta::new(
-        "".to_string(),
-        "".to_string(),
-        0,
-    );
+    let empty_file_meta = FileMeta::new("".to_string(), "".to_string(), 0);
 
     // 插入不同状态的消息
     let mut ids = Vec::new();
@@ -589,22 +577,30 @@ async fn test_list_by_status(pool: SqlitePool) -> Result<()> {
             "user-001".to_string(),
             "".to_string(),
             MessageRole::User,
-        MessageRole::Agent,
+            MessageRole::Agent,
             MessageType::Text,
             "test".to_string(),
             None,
             empty_file_meta.clone(),
-        None,
+            None,
             "test-user".to_string(),
         );
         message_dao.insert(ctx.clone(), &msg).await?;
         // 更新状态
-        message_dao.update_status(ctx.clone(), msg.id.as_str(), status).await?;
+        message_dao
+            .update_status(ctx.clone(), msg.id.as_str(), status)
+            .await?;
         ids.push(msg.id);
     }
 
     // 查询 Pending + Processing
-    let list = message_dao.list_by_status(ctx.clone(), vec![MessageStatus::Pending, MessageStatus::Processing], None).await?;
+    let list = message_dao
+        .list_by_status(
+            ctx.clone(),
+            vec![MessageStatus::Pending, MessageStatus::Processing],
+            None,
+        )
+        .await?;
     // 应该找到 2 条
     assert_eq!(list.len(), 2);
 
@@ -627,19 +623,20 @@ async fn test_create_tool_call_request(pool: SqlitePool) -> Result<()> {
         "Search Web".to_string(),
         Some("project-001".to_string()),
         Some("task-001".to_string()),
-        "agent-001".to_string(),   // from_id (发起调用的 Agent)
+        "agent-001".to_string(),      // from_id (发起调用的 Agent)
         "executor-agent".to_string(), // to_id (执行工具的 Agent)
         None,
         args.clone(),
     );
 
-    let message = message_dao.create_tool_call_request(
-        ctx.clone(),
-        req,
-    ).await?;
+    let message = message_dao
+        .create_tool_call_request(ctx.clone(), req)
+        .await?;
 
     // 查询验证
-    let found = message_dao.find_by_id(ctx.clone(), message.id.as_str()).await?;
+    let found = message_dao
+        .find_by_id(ctx.clone(), message.id.as_str())
+        .await?;
     assert!(found.is_some());
     let found = found.unwrap();
 
@@ -683,10 +680,9 @@ async fn test_create_tool_call_result(pool: SqlitePool) -> Result<()> {
         args,
     );
 
-    let request = message_dao.create_tool_call_request(
-        ctx.clone(),
-        request_msg.clone(),
-    ).await?;
+    let request = message_dao
+        .create_tool_call_request(ctx.clone(), request_msg.clone())
+        .await?;
 
     // 2. 创建工具调用成功结果
     let result_data = serde_json::json!([
@@ -697,13 +693,14 @@ async fn test_create_tool_call_result(pool: SqlitePool) -> Result<()> {
     // 从原始请求创建成功结果，自动继承上下文
     let result_msg = request_msg.new_success_result(result_data.clone(), None);
 
-    let result_msg = message_dao.create_tool_call_result(
-        ctx.clone(),
-        result_msg,
-    ).await?;
+    let result_msg = message_dao
+        .create_tool_call_result(ctx.clone(), result_msg)
+        .await?;
 
     // 3. 查询验证
-    let found = message_dao.find_by_id(ctx.clone(), result_msg.id.as_str()).await?;
+    let found = message_dao
+        .find_by_id(ctx.clone(), result_msg.id.as_str())
+        .await?;
     assert!(found.is_some());
     let found = found.unwrap();
 
@@ -716,12 +713,11 @@ async fn test_create_tool_call_result(pool: SqlitePool) -> Result<()> {
 
     // 解析 content 验证结构
     let parsed: ToolCallMessage = serde_json::from_str(&found.content)?;
-    
+
     assert_eq!(parsed.request_id, "test-request-001");
     assert_eq!(parsed.tool_id, "tool-search".to_string());
     assert_eq!(parsed.is_success, Some(true));
     assert_eq!(parsed.result, Some(result_data));
-
 
     Ok(())
 }
@@ -746,10 +742,9 @@ async fn test_create_tool_call_result_failed(pool: SqlitePool) -> Result<()> {
         args,
     );
 
-    let request = message_dao.create_tool_call_request(
-        ctx.clone(),
-        request_msg.clone(),
-    ).await?;
+    let request = message_dao
+        .create_tool_call_request(ctx.clone(), request_msg.clone())
+        .await?;
 
     // 创建失败结果
     let error_result = serde_json::json!({
@@ -758,25 +753,25 @@ async fn test_create_tool_call_result_failed(pool: SqlitePool) -> Result<()> {
     });
 
     // 从原始请求创建失败结果，自动继承上下文
-    let result_msg = request_msg.new_error_result_with_data(error_result, "File not found".to_string());
+    let result_msg =
+        request_msg.new_error_result_with_data(error_result, "File not found".to_string());
 
-    let result_msg = message_dao.create_tool_call_result(
-        ctx.clone(),
-        result_msg,
-    ).await?;
+    let result_msg = message_dao
+        .create_tool_call_result(ctx.clone(), result_msg)
+        .await?;
 
-    let found = message_dao.find_by_id(ctx.clone(), result_msg.id.as_str()).await?;
+    let found = message_dao
+        .find_by_id(ctx.clone(), result_msg.id.as_str())
+        .await?;
     let found = found.unwrap();
     // 解析 content 验证结构
     let parsed: ToolCallMessage = serde_json::from_str(&found.content)?;
-    
+
     assert_eq!(parsed.request_id, "test-request-002");
     assert_eq!(parsed.is_success, Some(false));
 
-
     Ok(())
 }
-
 
 /// 测试按 project_id 查询消息列表
 #[sqlx::test(migrations = "./migrations")]
@@ -859,7 +854,9 @@ async fn test_list_by_project_id(pool: SqlitePool) -> Result<()> {
     let _m4 = message_dao.insert(ctx.clone(), &m4).await?;
 
     // 查询 project-1 应该返回 3 条
-    let list = message_dao.list_by_project_id(ctx.clone(), "project-1", None).await?;
+    let list = message_dao
+        .list_by_project_id(ctx.clone(), "project-1", None)
+        .await?;
     assert_eq!(list.len(), 3);
     // 按创建时间正序排列，最早的在最前面
     assert_eq!(list[0].content, "Hello project 1");
@@ -872,16 +869,22 @@ async fn test_list_by_project_id(pool: SqlitePool) -> Result<()> {
     }
 
     // 查询 project-2 应该返回 1 条
-    let list = message_dao.list_by_project_id(ctx.clone(), "project-2", None).await?;
+    let list = message_dao
+        .list_by_project_id(ctx.clone(), "project-2", None)
+        .await?;
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].content, "Hello project 2");
 
     // 查询 project-3 应该返回空
-    let list = message_dao.list_by_project_id(ctx.clone(), "project-3", None).await?;
+    let list = message_dao
+        .list_by_project_id(ctx.clone(), "project-3", None)
+        .await?;
     assert!(list.is_empty());
 
     // 测试 limit 限制
-    let list = message_dao.list_by_project_id(ctx.clone(), "project-1", Some(2)).await?;
+    let list = message_dao
+        .list_by_project_id(ctx.clone(), "project-1", Some(2))
+        .await?;
     assert_eq!(list.len(), 2);
 
     Ok(())

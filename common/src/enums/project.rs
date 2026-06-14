@@ -1,6 +1,6 @@
 //! Project status enum
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 #[cfg(feature = "sqlx")]
 use sqlx::Type;
 

@@ -1,7 +1,7 @@
 //! MCP (Model Context Protocol) tool provider
 
-use anyhow::{anyhow, Result};
 use crate::models::tool::ToolPo;
+use anyhow::{Result, anyhow};
 use rig::tool::ToolDyn;
 use serde::{Deserialize, Serialize};
 

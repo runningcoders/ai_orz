@@ -1,8 +1,8 @@
 //! 获取单个 Message Channel
 
 use axum::{
-    extract::{Extension, Path},
     Json,
+    extract::{Extension, Path},
 };
 use common::api::{ApiResponse, GetMessageChannelResponse};
 
@@ -34,7 +34,10 @@ pub async fn get_message_channel(
         .ok_or_else(|| AppError::NotFound(format!("MessageChannel {} not found", id)))?;
 
     if channel.po.org_id != org_id || channel.po.user_id != user_id {
-        return Err(AppError::NotFound(format!("MessageChannel {} not found", id)));
+        return Err(AppError::NotFound(format!(
+            "MessageChannel {} not found",
+            id
+        )));
     }
 
     Ok(Json(ApiResponse::success(to_detail(&channel))))

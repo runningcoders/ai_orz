@@ -1,26 +1,35 @@
 //! 获取当前登录用户所在组织信息接口
 
-use axum::{extract::{Extension, Json}, http::StatusCode};
-use common::api::{ApiResponse, GetCurrentOrganizationResponse, OrganizationInfoResponse};
 use crate::pkg::RequestContext;
-use crate::{
-    error::AppError,
-    service::domain::organization,
+use crate::{error::AppError, service::domain::organization};
+use axum::{
+    extract::{Extension, Json},
+    http::StatusCode,
 };
+use common::api::{ApiResponse, GetCurrentOrganizationResponse, OrganizationInfoResponse};
 
 /// Get current authenticated user's organization information
 /// 从 RequestContext 获取 organization_id，查询组织信息返回
 pub async fn get_current_organization(
     Extension(ctx): Extension<RequestContext>,
-) -> Result<(StatusCode, Json<ApiResponse<GetCurrentOrganizationResponse>>), AppError> {
+) -> Result<
+    (
+        StatusCode,
+        Json<ApiResponse<GetCurrentOrganizationResponse>>,
+    ),
+    AppError,
+> {
     // 从 RequestContext 获取当前组织 ID
-    let org_id = ctx.organization_id.clone().ok_or_else(|| {
-        AppError::BadRequest("未找到组织信息".to_string())
-    })?;
+    let org_id = ctx
+        .organization_id
+        .clone()
+        .ok_or_else(|| AppError::BadRequest("未找到组织信息".to_string()))?;
 
     let domain = organization::domain();
     // 获取组织完整信息
-    let org = domain.organization_manage().get_by_id(ctx, &org_id)
+    let org = domain
+        .organization_manage()
+        .get_by_id(ctx, &org_id)
         .await?
         .ok_or_else(|| AppError::NotFound("组织不存在".to_string()))?;
 
@@ -28,8 +37,16 @@ pub async fn get_current_organization(
     let info = OrganizationInfoResponse {
         organization_id: org.id.clone(),
         name: org.name.clone(),
-        description: if org.description.is_empty() { None } else { Some(org.description.clone()) },
-        base_url: if org.base_url.is_empty() { None } else { Some(org.base_url.clone()) },
+        description: if org.description.is_empty() {
+            None
+        } else {
+            Some(org.description.clone())
+        },
+        base_url: if org.base_url.is_empty() {
+            None
+        } else {
+            Some(org.base_url.clone())
+        },
         status: org.status.to_i32(),
         created_at: org.created_at,
     };

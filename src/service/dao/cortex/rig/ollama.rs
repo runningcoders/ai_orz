@@ -1,16 +1,16 @@
 //! Ollama 本地 Cortex 实现
 
-use async_trait::async_trait;
+use super::*;
 use anyhow::{Result, anyhow};
+use async_trait::async_trait;
 use common::enums::ModelCapability;
-use rig::prelude::*;
 use rig::agent::Agent;
 use rig::completion::Prompt;
-use rig::tool::ToolDyn;
+use rig::embeddings::EmbeddingModel;
+use rig::prelude::*;
 use rig::providers::openai;
 use rig::providers::openai::responses_api::ResponsesCompletionModel;
-use rig::embeddings::EmbeddingModel;
-use super::*;
+use rig::tool::ToolDyn;
 
 /// Ollama Cortex - 本地模型支持
 #[derive(Clone)]
@@ -25,7 +25,7 @@ pub struct OllamaCortex {
 impl OllamaCortex {
     pub fn new(
         model_provider_id: String,
-        api_key: String, 
+        api_key: String,
         model: String,
         base_url: Option<String>,
         rig_tools: Vec<Box<dyn ToolDyn>>,
@@ -34,9 +34,12 @@ impl OllamaCortex {
         let default_base_url = "http://localhost:11434/v1".to_string();
         let base_url = base_url.unwrap_or(default_base_url);
 
-        let builder = openai::Client::builder().api_key(api_key).base_url(base_url);
+        let builder = openai::Client::builder()
+            .api_key(api_key)
+            .base_url(base_url);
 
-        let client = builder.build()
+        let client = builder
+            .build()
             .map_err(|e| anyhow!("Failed to build Ollama client: {}", e))?;
 
         // ✅ 提前初始化好 Agent
@@ -81,7 +84,7 @@ impl CortexTrait for OllamaCortex {
             .embed_texts(texts.to_vec())
             .await
             .map_err(|e| anyhow!("Ollama embeddings failed: {}", e))?;
-        
+
         // 提取向量数据: Vec<Embedding> -> Vec<Vec<f32>>
         let vectors = embeddings
             .into_iter()

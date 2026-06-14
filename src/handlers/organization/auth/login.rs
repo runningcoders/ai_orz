@@ -1,19 +1,19 @@
 //! 用户登录
 
-use common::api::{LoginRequest, LoginResponse};
 use crate::error::AppError;
-use common::api::ApiResponse;
-use crate::pkg::jwt;
-use crate::pkg::RequestContext;
 use crate::middleware::jwt_auth::JWT_COOKIE_NAME;
+use crate::pkg::RequestContext;
+use crate::pkg::jwt;
 use crate::service::domain::organization::domain;
 use axum::{
     extract::{Extension, Json},
     http::StatusCode,
     response::IntoResponse,
 };
-use cookie::{Cookie, SameSite};
+use common::api::ApiResponse;
+use common::api::{LoginRequest, LoginResponse};
 use cookie::time;
+use cookie::{Cookie, SameSite};
 
 /// 用户登录
 /// POST /organization/auth/login
@@ -24,13 +24,10 @@ pub async fn login(
     let domain = domain();
 
     // 验证用户名密码
-    let user = domain.user_manage().verify_password(
-        ctx,
-        &req.organization_id,
-        &req.username,
-        &req.password_hash,
-    )
-    .await?;
+    let user = domain
+        .user_manage()
+        .verify_password(ctx, &req.organization_id, &req.username, &req.password_hash)
+        .await?;
 
     // 签发 JWT
     let token = jwt::encode_jwt(
@@ -45,7 +42,7 @@ pub async fn login(
         .http_only(true)
         .same_site(SameSite::Lax)
         .max_age(time::Duration::seconds(
-            jwt::jwt_config().default_expiry_seconds()
+            jwt::jwt_config().default_expiry_seconds(),
         ))
         .secure(false); // 如果是 HTTPS 需要设置为 true
 

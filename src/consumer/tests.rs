@@ -8,8 +8,8 @@
 //!
 //! 使用 Mock 方式测试 GenericConsumer 的核心逻辑，不依赖真实数据库。
 
-use super::*;
 use super::MessageHandler;
+use super::*;
 use async_trait::async_trait;
 use std::sync::Mutex;
 use uuid::Uuid;
@@ -86,11 +86,17 @@ impl MockFetcher {
     }
 
     fn was_acked(&self, event_id: &str) -> bool {
-        self.ack_called.lock().unwrap().contains(&event_id.to_string())
+        self.ack_called
+            .lock()
+            .unwrap()
+            .contains(&event_id.to_string())
     }
 
     fn was_nacked(&self, event_id: &str) -> bool {
-        self.nack_called.lock().unwrap().contains(&event_id.to_string())
+        self.nack_called
+            .lock()
+            .unwrap()
+            .contains(&event_id.to_string())
     }
 }
 
@@ -130,7 +136,10 @@ impl MockHandler {
     }
 
     fn was_handled(&self, event_id: &str) -> bool {
-        self.handled_events.lock().unwrap().contains(&event_id.to_string())
+        self.handled_events
+            .lock()
+            .unwrap()
+            .contains(&event_id.to_string())
     }
 }
 
@@ -139,7 +148,9 @@ impl MessageHandler<MockEvent> for MockHandler {
     async fn handle(&self, event: &MockEvent) -> crate::error::Result<()> {
         self.handled_events.lock().unwrap().push(event.id.clone());
         if self.should_fail {
-            Err(crate::error::AppError::Internal("mock handle failure".to_string()))
+            Err(crate::error::AppError::Internal(
+                "mock handle failure".to_string(),
+            ))
         } else {
             Ok(())
         }

@@ -5,8 +5,8 @@
 //! - MessageChannel - 消息渠道配置
 //! - ToolProvider - 外部工具提供商配置 + Agent 工具借用（绑定）关系
 
-pub mod model_provider;
 pub mod message_channel;
+pub mod model_provider;
 pub mod tool_provider;
 
 #[cfg(test)]
@@ -21,10 +21,10 @@ mod tool_provider_test;
 use crate::error::AppError;
 use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
-use crate::service::dal::model_provider::ModelProviderDal;
-use crate::service::dal::message_channel::MessageChannelDal;
-use crate::service::dal::tool::ToolDal;
 use crate::service::dal::brain::BrainDal;
+use crate::service::dal::message_channel::MessageChannelDal;
+use crate::service::dal::model_provider::ModelProviderDal;
+use crate::service::dal::tool::ToolDal;
 use async_trait::async_trait;
 use std::sync::{Arc, OnceLock};
 
@@ -44,7 +44,8 @@ pub fn new(
     tool_dal: Arc<dyn ToolDal>,
     brain_dal: Arc<dyn BrainDal>,
 ) -> Arc<dyn FinanceDomain> {
-    let domain = FinanceDomainImpl::new(model_provider_dal, message_channel_dal, tool_dal, brain_dal);
+    let domain =
+        FinanceDomainImpl::new(model_provider_dal, message_channel_dal, tool_dal, brain_dal);
     Arc::new(domain)
 }
 
@@ -81,10 +82,18 @@ pub trait FinanceDomain: Send + Sync {
 #[async_trait]
 pub trait ModelProviderManage: Send + Sync {
     /// 创建 Model Provider
-    async fn create_model_provider(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError>;
+    async fn create_model_provider(
+        &self,
+        ctx: RequestContext,
+        provider: &ModelProvider,
+    ) -> Result<(), AppError>;
 
     /// 获取 Model Provider
-    async fn get_model_provider(&self, ctx: RequestContext, id: &str) -> Result<Option<ModelProvider>, AppError>;
+    async fn get_model_provider(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<ModelProvider>, AppError>;
 
     /// 通用综合查询
     async fn query(
@@ -94,16 +103,32 @@ pub trait ModelProviderManage: Send + Sync {
     ) -> Result<Vec<ModelProvider>, AppError>;
 
     /// 列出所有 Model Provider
-    async fn list_model_providers(&self, ctx: RequestContext) -> Result<Vec<ModelProvider>, AppError>;
+    async fn list_model_providers(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<Vec<ModelProvider>, AppError>;
 
     /// 更新 Model Provider
-    async fn update_model_provider(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError>;
+    async fn update_model_provider(
+        &self,
+        ctx: RequestContext,
+        provider: &ModelProvider,
+    ) -> Result<(), AppError>;
 
     /// 删除 Model Provider
-    async fn delete_model_provider(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError>;
+    async fn delete_model_provider(
+        &self,
+        ctx: RequestContext,
+        provider: &ModelProvider,
+    ) -> Result<(), AppError>;
 
     /// 测试 Model Provider 连接
-    async fn test_connection(&self, ctx: RequestContext, provider: &ModelProvider, prompt: &str) -> Result<String, AppError>;
+    async fn test_connection(
+        &self,
+        ctx: RequestContext,
+        provider: &ModelProvider,
+        prompt: &str,
+    ) -> Result<String, AppError>;
 }
 
 /// Message Channel 管理 trait
@@ -112,10 +137,18 @@ pub trait ModelProviderManage: Send + Sync {
 #[async_trait]
 pub trait MessageChannelManage: Send + Sync {
     /// 创建 Message Channel
-    async fn create_message_channel(&self, ctx: RequestContext, channel: &crate::models::message_channel::MessageChannel) -> Result<(), AppError>;
+    async fn create_message_channel(
+        &self,
+        ctx: RequestContext,
+        channel: &crate::models::message_channel::MessageChannel,
+    ) -> Result<(), AppError>;
 
     /// 获取 Message Channel
-    async fn get_message_channel(&self, ctx: RequestContext, id: &str) -> Result<Option<crate::models::message_channel::MessageChannel>, AppError>;
+    async fn get_message_channel(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<crate::models::message_channel::MessageChannel>, AppError>;
 
     /// 通用综合查询
     async fn query_channels(
@@ -125,16 +158,31 @@ pub trait MessageChannelManage: Send + Sync {
     ) -> Result<Vec<crate::models::message_channel::MessageChannel>, AppError>;
 
     /// 列出所有 Message Channel
-    async fn list_message_channels(&self, ctx: RequestContext) -> Result<Vec<crate::models::message_channel::MessageChannel>, AppError>;
+    async fn list_message_channels(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<Vec<crate::models::message_channel::MessageChannel>, AppError>;
 
     /// 更新 Message Channel
-    async fn update_message_channel(&self, ctx: RequestContext, channel: &crate::models::message_channel::MessageChannel) -> Result<(), AppError>;
+    async fn update_message_channel(
+        &self,
+        ctx: RequestContext,
+        channel: &crate::models::message_channel::MessageChannel,
+    ) -> Result<(), AppError>;
 
     /// 删除 Message Channel
-    async fn delete_message_channel(&self, ctx: RequestContext, channel: &crate::models::message_channel::MessageChannel) -> Result<(), AppError>;
+    async fn delete_message_channel(
+        &self,
+        ctx: RequestContext,
+        channel: &crate::models::message_channel::MessageChannel,
+    ) -> Result<(), AppError>;
 
     /// 测试 Message Channel 连通性
-    async fn test_message_channel(&self, ctx: RequestContext, channel: &crate::models::message_channel::MessageChannel) -> Result<(), AppError>;
+    async fn test_message_channel(
+        &self,
+        ctx: RequestContext,
+        channel: &crate::models::message_channel::MessageChannel,
+    ) -> Result<(), AppError>;
 }
 
 /// Tool Provider 管理 trait
@@ -143,10 +191,18 @@ pub trait MessageChannelManage: Send + Sync {
 #[async_trait]
 pub trait ToolProviderManage: Send + Sync {
     /// 创建 Tool
-    async fn create_tool(&self, ctx: RequestContext, tool: &crate::models::tool::Tool) -> Result<(), AppError>;
+    async fn create_tool(
+        &self,
+        ctx: RequestContext,
+        tool: &crate::models::tool::Tool,
+    ) -> Result<(), AppError>;
 
     /// 获取 Tool
-    async fn get_tool(&self, ctx: RequestContext, tool_id: &str) -> Result<Option<crate::models::tool::Tool>, AppError>;
+    async fn get_tool(
+        &self,
+        ctx: RequestContext,
+        tool_id: &str,
+    ) -> Result<Option<crate::models::tool::Tool>, AppError>;
 
     /// 通用综合查询
     async fn query_tools(
@@ -156,16 +212,24 @@ pub trait ToolProviderManage: Send + Sync {
     ) -> Result<Vec<crate::models::tool::Tool>, AppError>;
 
     /// 列出所有 Tool
-    async fn list_tools(&self, ctx: RequestContext) -> Result<Vec<crate::models::tool::Tool>, AppError>;
+    async fn list_tools(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<Vec<crate::models::tool::Tool>, AppError>;
 
     /// 更新 Tool
-    async fn update_tool(&self, ctx: RequestContext, tool: &crate::models::tool::Tool) -> Result<(), AppError>;
+    async fn update_tool(
+        &self,
+        ctx: RequestContext,
+        tool: &crate::models::tool::Tool,
+    ) -> Result<(), AppError>;
 
-    /// 启用 Tool
-    async fn enable_tool(&self, ctx: RequestContext, tool_id: &str) -> Result<(), AppError>;
-
-    /// 禁用 Tool
-    async fn disable_tool(&self, ctx: RequestContext, tool_id: &str) -> Result<(), AppError>;
+    /// 删除 Tool
+    async fn delete_tool(
+        &self,
+        ctx: RequestContext,
+        tool: &crate::models::tool::Tool,
+    ) -> Result<(), AppError>;
 
     /// ===== 工具借用（绑定）管理 =====
     /// Agent 借用工具（绑定）

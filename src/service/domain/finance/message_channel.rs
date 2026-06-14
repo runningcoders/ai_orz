@@ -67,6 +67,8 @@ impl super::MessageChannelManage for FinanceDomainImpl {
         ctx: RequestContext,
         channel: &MessageChannel,
     ) -> Result<(), AppError> {
-        self.message_channel_dal.test_channel(ctx, &channel.po.id).await
+        self.message_channel_dal
+            .test_channel(ctx, &channel.po.id)
+            .await
     }
 }

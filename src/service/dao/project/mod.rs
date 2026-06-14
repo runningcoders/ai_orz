@@ -19,21 +19,55 @@ pub trait ProjectDao: Send + Sync + std::fmt::Debug {
     /// 插入新项目
     async fn insert(&self, ctx: RequestContext, project: &ProjectPo) -> Result<(), AppError>;
     /// 根据 ID 查询项目
-    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<ProjectPo>, AppError>;
+    async fn find_by_id(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<ProjectPo>, AppError>;
     /// 通用查询
-    async fn query(&self, ctx: RequestContext, query: ProjectQuery) -> Result<Vec<ProjectPo>, AppError>;
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: ProjectQuery,
+    ) -> Result<Vec<ProjectPo>, AppError>;
     /// 根据根用户查询项目列表
-    async fn list_by_root_user(&self, ctx: RequestContext, root_user_id: &str, limit: Option<usize>) -> Result<Vec<ProjectPo>, AppError>;
+    async fn list_by_root_user(
+        &self,
+        ctx: RequestContext,
+        root_user_id: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<ProjectPo>, AppError>;
     /// 根据根用户和状态查询项目列表
-    async fn list_by_root_user_and_status(&self, ctx: RequestContext, root_user_id: &str, status: Vec<ProjectStatus>, limit: Option<usize>) -> Result<Vec<ProjectPo>, AppError>;
+    async fn list_by_root_user_and_status(
+        &self,
+        ctx: RequestContext,
+        root_user_id: &str,
+        status: Vec<ProjectStatus>,
+        limit: Option<usize>,
+    ) -> Result<Vec<ProjectPo>, AppError>;
     /// 更新项目
     async fn update(&self, ctx: RequestContext, project: &ProjectPo) -> Result<(), AppError>;
     /// 更新项目状态
-    async fn update_status(&self, ctx: RequestContext, id: &str, status: ProjectStatus, modified_by: &str) -> Result<(), AppError>;
+    async fn update_status(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        status: ProjectStatus,
+        modified_by: &str,
+    ) -> Result<(), AppError>;
     /// 统计根用户的项目总数
-    async fn count_by_root_user(&self, ctx: RequestContext, root_user_id: &str) -> Result<u64, AppError>;
+    async fn count_by_root_user(
+        &self,
+        ctx: RequestContext,
+        root_user_id: &str,
+    ) -> Result<u64, AppError>;
     /// 统计根用户指定状态的项目数
-    async fn count_by_root_user_and_status(&self, ctx: RequestContext, root_user_id: &str, status: ProjectStatus) -> Result<u64, AppError>;
+    async fn count_by_root_user_and_status(
+        &self,
+        ctx: RequestContext,
+        root_user_id: &str,
+        status: ProjectStatus,
+    ) -> Result<u64, AppError>;
 }
 
 pub mod sqlite;

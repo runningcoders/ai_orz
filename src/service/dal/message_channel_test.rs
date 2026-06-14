@@ -1,17 +1,17 @@
 //! MessageChannel DAL 单元测试
 
-use crate::service::dal::message_channel::{dal, init};
-use crate::service::dao::message_channel::init as message_channel_dao_init;
-use crate::service::dao::lark::init as lark_dao_init;
-use crate::service::dao::wechat::init as wechat_dao_init;
-use crate::service::dao::slack::init as slack_dao_init;
-use crate::service::dao::email::init as email_dao_init;
-use crate::service::dao::webhook::init as webhook_dao_init;
-use crate::models::message_channel::{MessageChannel, MessageChannelPo, ChannelConfig};
+use crate::models::message_channel::{ChannelConfig, MessageChannel, MessageChannelPo};
 use crate::pkg::RequestContext;
-use common::enums::{ChannelType, ChannelStatus};
-use sqlx::SqlitePool;
 use crate::service::dal::message_channel::MessageChannelDal;
+use crate::service::dal::message_channel::{dal, init};
+use crate::service::dao::email::init as email_dao_init;
+use crate::service::dao::lark::init as lark_dao_init;
+use crate::service::dao::message_channel::init as message_channel_dao_init;
+use crate::service::dao::slack::init as slack_dao_init;
+use crate::service::dao::webhook::init as webhook_dao_init;
+use crate::service::dao::wechat::init as wechat_dao_init;
+use common::enums::{ChannelStatus, ChannelType};
+use sqlx::SqlitePool;
 use std::sync::Arc;
 
 fn init_all_test_daos() {
@@ -24,9 +24,10 @@ fn init_all_test_daos() {
     init();
 }
 
-
 /// 初始化测试环境
-async fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageChannelDal + Send + Sync>, RequestContext) {
+async fn init_test_env(
+    pool: SqlitePool,
+) -> (Arc<dyn MessageChannelDal + Send + Sync>, RequestContext) {
     init_all_test_daos();
     let dal = dal();
     let ctx = RequestContext::new_simple("admin", pool);
@@ -34,7 +35,12 @@ async fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageChannelDal + Send + 
 }
 
 /// 创建测试渠道
-fn create_test_channel(channel_id: &str, user_id: &str, channel_type: ChannelType, name: &str) -> MessageChannel {
+fn create_test_channel(
+    channel_id: &str,
+    user_id: &str,
+    channel_type: ChannelType,
+    name: &str,
+) -> MessageChannel {
     let channel_po = MessageChannelPo::new(
         channel_id.to_string(),
         "org-1".to_string(),
@@ -121,14 +127,20 @@ async fn test_list_user_channels(pool: SqlitePool) {
         ChannelConfig::default(),
         "admin".to_string(),
     );
-    dal.create_channel(ctx.clone(), &MessageChannel::from_po(other_channel_po)).await.unwrap();
+    dal.create_channel(ctx.clone(), &MessageChannel::from_po(other_channel_po))
+        .await
+        .unwrap();
 
     // 查询 user-1 的所有启用渠道
-    let channels: Vec<MessageChannel> = dal.list_user_channels(ctx.clone(), "user-1", true).await.unwrap();
+    let channels: Vec<MessageChannel> = dal
+        .list_user_channels(ctx.clone(), "user-1", true)
+        .await
+        .unwrap();
     assert_eq!(channels.len(), 3);
 
     // 查询所有用户渠道（不过滤）
-    let all_channels: Vec<MessageChannel> = dal.list_user_channels(ctx, "user-1", false).await.unwrap();
+    let all_channels: Vec<MessageChannel> =
+        dal.list_user_channels(ctx, "user-1", false).await.unwrap();
     assert_eq!(all_channels.len(), 3);
 }
 
@@ -155,7 +167,9 @@ async fn test_update_channel(pool: SqlitePool) {
 
     // 更新渠道名称
     channel.po.channel_name = "更新后名称".to_string();
-    dal.update_channel(RequestContext::new_simple("editor", pool), &channel).await.unwrap();
+    dal.update_channel(RequestContext::new_simple("editor", pool), &channel)
+        .await
+        .unwrap();
 
     let found: Option<MessageChannel> = dal.get_channel(ctx, &channel_id).await.unwrap();
     assert_eq!(found.as_ref().unwrap().po.channel_name, "更新后名称");
@@ -183,21 +197,32 @@ async fn test_delete_and_set_status(pool: SqlitePool) {
     dal.create_channel(ctx.clone(), &channel).await.unwrap();
 
     // 设置为禁用状态
-    dal.set_channel_status(ctx.clone(), &channel_id, ChannelStatus::Disabled).await.unwrap();
+    dal.set_channel_status(ctx.clone(), &channel_id, ChannelStatus::Disabled)
+        .await
+        .unwrap();
 
     // 查询 only_enabled=true 应该找不到
-    let active_channels = dal.list_user_channels(ctx.clone(), "user-1", true).await.unwrap();
+    let active_channels = dal
+        .list_user_channels(ctx.clone(), "user-1", true)
+        .await
+        .unwrap();
     assert_eq!(active_channels.len(), 0);
 
     // 查询 only_enabled=false 应该能找到
-    let all_channels = dal.list_user_channels(ctx.clone(), "user-1", false).await.unwrap();
+    let all_channels = dal
+        .list_user_channels(ctx.clone(), "user-1", false)
+        .await
+        .unwrap();
     assert_eq!(all_channels.len(), 1);
 
     // 删除渠道（软删除）
     dal.delete_channel(ctx, &channel_id).await.unwrap();
 
     // 应该找不到了
-    let found = dal.get_channel(RequestContext::new_simple("admin", pool), &channel_id).await.unwrap();
+    let found = dal
+        .get_channel(RequestContext::new_simple("admin", pool), &channel_id)
+        .await
+        .unwrap();
     // 因为是软删除，状态变成 Deleted，查询时默认过滤掉
     // 删除只是标记状态，数据库中仍然存在
     assert!(found.is_some());
@@ -216,8 +241,8 @@ async fn test_query_channels(pool: SqlitePool) {
             None,
             match i {
                 0 | 1 => ChannelType::Lark, // 2个飞书
-                2 => ChannelType::Wechat,    // 1个微信
-                _ => ChannelType::Slack,     // 1个 Slack
+                2 => ChannelType::Wechat,   // 1个微信
+                _ => ChannelType::Slack,    // 1个 Slack
             },
             format!("渠道{}", i),
             Some(format!("https://example.com/webhook/{}", i)),
@@ -263,9 +288,9 @@ async fn test_deliver_message_skeleton(pool: SqlitePool) {
     dal.create_channel(ctx.clone(), &channel).await.unwrap();
 
     // 测试消息分发（目前是骨架，只返回成功不实际推送）
-    use crate::models::message::{Message, MessagePo};
     use crate::models::file::FileMeta;
-    use common::enums::{MessageType, MessageRole};
+    use crate::models::message::{Message, MessagePo};
+    use common::enums::{MessageRole, MessageType};
 
     let message_po = MessagePo::new(
         "test-msg".to_string(),

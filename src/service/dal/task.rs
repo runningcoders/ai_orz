@@ -2,13 +2,13 @@
 //!
 //! 职责：Task 领域的数据访问层，封装 TaskDao 提供统一的查询接口
 
-use common::enums::{TaskStatus, AssigneeType};
 use crate::error::AppError;
 use crate::models::task::{Task, TaskPo};
 use crate::pkg::RequestContext;
-use crate::service::dao::task::{TaskDao, TaskQuery};
-use std::sync::{Arc, OnceLock};
 use crate::service::dao::task;
+use crate::service::dao::task::{TaskDao, TaskQuery};
+use common::enums::{AssigneeType, TaskStatus};
+use std::sync::{Arc, OnceLock};
 
 // ==================== 单例管理 ====================
 
@@ -38,11 +38,7 @@ pub trait TaskDal: Send + Sync {
     async fn create(&self, ctx: RequestContext, task: &Task) -> Result<(), AppError>;
 
     /// 根据 ID 获取任务
-    async fn find_by_id(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<Option<Task>, AppError>;
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Task>, AppError>;
 
     /// 获取分配对象下的所有任务
     async fn list_by_assignee(
@@ -87,7 +83,12 @@ pub trait TaskDal: Send + Sync {
     ) -> Result<(), AppError>;
 
     /// 取消任务
-    async fn cancel(&self, ctx: RequestContext, id: &str, modified_by: &str) -> Result<(), AppError>;
+    async fn cancel(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        modified_by: &str,
+    ) -> Result<(), AppError>;
 
     /// 统计分配对象的任务总数
     async fn count_by_assignee(
@@ -118,11 +119,7 @@ impl TaskDal for TaskDalImpl {
         self.task_dao.insert(ctx, &task.po).await
     }
 
-    async fn find_by_id(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<Option<Task>, AppError> {
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Task>, AppError> {
         let opt = self.task_dao.find_by_id(ctx, id).await?;
         Ok(opt.map(Task::from_po))
     }
@@ -134,7 +131,9 @@ impl TaskDal for TaskDalImpl {
         assignee_id: &str,
         limit: Option<usize>,
     ) -> Result<Vec<TaskPo>, AppError> {
-        self.task_dao.list_by_assignee(ctx, assignee_type, assignee_id, limit).await
+        self.task_dao
+            .list_by_assignee(ctx, assignee_type, assignee_id, limit)
+            .await
     }
 
     async fn list_by_status(
@@ -145,7 +144,9 @@ impl TaskDal for TaskDalImpl {
         status: Vec<TaskStatus>,
         limit: Option<usize>,
     ) -> Result<Vec<TaskPo>, AppError> {
-        self.task_dao.list_by_status(ctx, assignee_type, assignee_id, status, limit).await
+        self.task_dao
+            .list_by_status(ctx, assignee_type, assignee_id, status, limit)
+            .await
     }
 
     async fn list_by_project(
@@ -154,13 +155,19 @@ impl TaskDal for TaskDalImpl {
         project_id: &str,
         limit: Option<usize>,
     ) -> Result<Vec<Task>, AppError> {
-        let list = self.task_dao.query(ctx, TaskQuery {
-            assignee_type: None,
-            assignee_id: None,
-            project_id: Some(project_id.to_string()),
-            status_in: None,
-            limit,
-        }).await?;
+        let list = self
+            .task_dao
+            .query(
+                ctx,
+                TaskQuery {
+                    assignee_type: None,
+                    assignee_id: None,
+                    project_id: Some(project_id.to_string()),
+                    status_in: None,
+                    limit,
+                },
+            )
+            .await?;
         Ok(list.into_iter().map(Task::from_po).collect())
     }
 
@@ -180,11 +187,20 @@ impl TaskDal for TaskDalImpl {
         status: TaskStatus,
         modified_by: &str,
     ) -> Result<(), AppError> {
-        self.task_dao.update_status(ctx, id, status, modified_by).await
+        self.task_dao
+            .update_status(ctx, id, status, modified_by)
+            .await
     }
 
-    async fn cancel(&self, ctx: RequestContext, id: &str, modified_by: &str) -> Result<(), AppError> {
-        self.task_dao.update_status(ctx, id, TaskStatus::Cancelled, modified_by).await
+    async fn cancel(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        modified_by: &str,
+    ) -> Result<(), AppError> {
+        self.task_dao
+            .update_status(ctx, id, TaskStatus::Cancelled, modified_by)
+            .await
     }
 
     async fn count_by_assignee(
@@ -201,6 +217,8 @@ impl TaskDal for TaskDalImpl {
         assignee_id: &str,
         status: TaskStatus,
     ) -> Result<u64, AppError> {
-        self.task_dao.count_by_assignee_and_status(ctx, assignee_id, status).await
+        self.task_dao
+            .count_by_assignee_and_status(ctx, assignee_id, status)
+            .await
     }
 }

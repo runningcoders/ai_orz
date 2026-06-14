@@ -904,6 +904,126 @@ test result: ok. 283 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 
 ---
 
+## Tool 管理面 Handler（2026-06-04 更新）
+
+### 目标
+
+在既有 Finance Domain / Tool DAL 能力之上补齐用户管理面的 Tool CRUD、状态更新和 Agent 绑定接口。Handler 与用户 Action 一一对应，不引入通用 CRUD Handler 抽象；复用通过 `common/src/api/tool.rs` DTO、`ToolQuery` 查询参数和 Finance Domain 能力完成。
+
+### 路由
+
+所有 Tool 管理面路由统一挂在 Finance 管理域下：
+
+```http
+POST   /api/v1/finance/tools
+GET    /api/v1/finance/tools
+GET    /api/v1/finance/tools/{id}
+PUT    /api/v1/finance/tools/{id}
+PUT    /api/v1/finance/tools/{id}/status
+DELETE /api/v1/finance/tools/{id}
+POST   /api/v1/finance/tools/{id}/agent-bind
+DELETE /api/v1/finance/tools/{id}/agent-bind
+```
+
+列表查询通过 query 参数表达筛选：
+
+| 参数 | 说明 |
+|------|------|
+| `keyword` | 关键词过滤，复用 `ToolQuery.keyword` |
+| `enabled_only` | 只返回启用工具 |
+| `agent_id` | 查询指定 Agent 已绑定工具 |
+| `limit` | 限制返回数量 |
+
+### DTO 与敏感字段策略
+
+新增 `common/src/api/tool.rs`，前后端共享 Tool 管理面 DTO：
+
+- `CreateToolRequest`
+- `ToolListQuery`
+- `UpdateToolRequest`
+- `UpdateToolStatusRequest`
+- `BindToolToAgentRequest`
+- `UnbindToolFromAgentRequest`
+- `ToolListItem`
+- `ToolDetail`
+
+Tool 协议配置 `config` 可能包含 header、token、connection string 等敏感信息：
+
+- 写入接口允许接收 `config`；
+- 列表/详情响应不返回 `config` 原文；
+- 响应仅返回 `has_config: bool` 表达是否存在配置；
+- `parameters_schema` 可以返回，因为它描述参数结构而不是运行密钥。
+
+### Handler 职责边界
+
+`src/handlers/finance/tool/` 按 action 拆文件：
+
+```text
+create_tool.rs
+list_tools.rs
+get_tool.rs
+update_tool.rs
+update_tool_status.rs
+delete_tool.rs
+bind_tool_to_agent.rs
+unbind_tool_from_agent.rs
+response.rs
+```
+
+Handler 只做请求级编排：
+
+1. 解析 Path / Query / Json DTO；
+2. 从 `RequestContext` 补全当前用户；
+3. 将 DTO 组装为 Entity 或 `ToolQuery`；
+4. 调用 `domain().tool_provider_manage()`；
+5. 将 `Tool` 转换为脱敏 Response DTO。
+
+不做：
+
+- 不直接调用 DAL / DAO；
+- 不在 Handler 间互调；
+- 不承载复杂状态规则；
+- 不抽象通用 Handler 框架。
+
+### 状态更新与内置工具保护
+
+状态变更统一使用：
+
+```http
+PUT /api/v1/finance/tools/{id}/status
+```
+
+请求体：
+
+```json
+{
+  "status": "Enabled"
+}
+```
+
+实现规则：
+
+- 不新增 `/enable`、`/disable` 路由；
+- `enable_tool` / `disable_tool` 薄方法已从 Domain 移除；
+- Handler 读取实体后调用 `Tool::transition_status`，再通过 `update_tool` 写回；
+- `Builtin` Tool 由系统同步维护，管理面禁止创建、修改、删除内置工具。
+
+### 管理面 Tool 实体拼装
+
+运行面完整 Tool 需要 `ToolPo + CoreTool`；但 Http / Mcp 等管理面工具可能还没有运行时 `CoreTool` 实例。为避免管理面列表/详情被运行时注册中心阻塞，DAL 的 `query` 对非 Builtin 工具支持返回 `Tool::from_po_for_management(po)`：
+
+- Builtin：仍要求注册中心存在运行实例，避免运行面工具不可用；
+- 非 Builtin：允许作为管理面实体返回，便于 CRUD、状态、绑定管理；
+- 运行面执行仍应使用完整可调用 Tool，不因管理面 fallback 改变执行语义。
+
+### 验证
+
+- `cargo check` 通过；
+- `cargo test` 通过；
+- Tool DAO / DAL / Domain 覆盖了删除、内置工具保护、状态迁移和列表查询相关测试。
+
+---
+
 ## 提交记录
 
 | 提交 hash | 说明 |

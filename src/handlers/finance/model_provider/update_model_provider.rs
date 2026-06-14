@@ -1,13 +1,11 @@
 //! 更新 Model Provider
 
-use common::api::{UpdateModelProviderRequest, UpdateModelProviderResponse};
-use crate::pkg::RequestContext;
 use crate::error::AppError;
-use common::api::ApiResponse;
+use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
-use axum::{
-    extract::{Extension, Path, Json},
-};
+use axum::extract::{Extension, Json, Path};
+use common::api::ApiResponse;
+use common::api::{UpdateModelProviderRequest, UpdateModelProviderResponse};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// 获取当前时间戳
@@ -25,7 +23,6 @@ pub async fn update_model_provider(
     Path(id): Path<String>,
     Json(req): Json<UpdateModelProviderRequest>,
 ) -> Result<Json<ApiResponse<UpdateModelProviderResponse>>, AppError> {
-
     let mut provider = domain()
         .model_provider_manage()
         .get_model_provider(ctx.clone(), &id)
@@ -55,15 +52,31 @@ pub async fn update_model_provider(
     provider.po.modified_by = ctx.uid();
     provider.po.updated_at = current_timestamp();
 
-    domain().model_provider_manage().update_model_provider(ctx, &provider).await?;
+    domain()
+        .model_provider_manage()
+        .update_model_provider(ctx, &provider)
+        .await?;
 
     Ok(Json(ApiResponse::success(UpdateModelProviderResponse {
         id: provider.po.id.clone(),
         name: provider.po.name.clone(),
         provider_type: provider.po.provider_type.clone(),
         model_name: provider.po.model_name.clone(),
-        base_url: if provider.po.base_url.as_ref().map_or(true, |d| d.is_empty()) { None } else { provider.po.base_url.clone() },
-        description: if provider.po.description.as_ref().map_or(true, |d| d.is_empty()) { None } else { provider.po.description.clone() },
+        base_url: if provider.po.base_url.as_ref().map_or(true, |d| d.is_empty()) {
+            None
+        } else {
+            provider.po.base_url.clone()
+        },
+        description: if provider
+            .po
+            .description
+            .as_ref()
+            .map_or(true, |d| d.is_empty())
+        {
+            None
+        } else {
+            provider.po.description.clone()
+        },
         updated_at: provider.po.updated_at,
     })))
 }

@@ -6,9 +6,9 @@
 use crate::error::AppError;
 use crate::models::organization::OrganizationPo;
 use crate::pkg::RequestContext;
+use crate::service::dao::organization;
 use crate::service::dao::organization::{OrganizationDao, OrganizationQuery};
 use std::sync::{Arc, OnceLock};
-use crate::service::dao::organization;
 
 // ==================== 单例管理 ====================
 
@@ -25,7 +25,9 @@ pub fn init() {
 }
 
 /// 创建 Organization DAL（返回 trait 对象）
-pub fn new(organization_dao: Arc<dyn OrganizationDao + Send + Sync>) -> Arc<dyn OrganizationDal + Send + Sync> {
+pub fn new(
+    organization_dao: Arc<dyn OrganizationDao + Send + Sync>,
+) -> Arc<dyn OrganizationDal + Send + Sync> {
     Arc::new(OrganizationDalImpl { organization_dao })
 }
 
@@ -59,30 +61,16 @@ pub trait OrganizationDal: Send + Sync {
     ) -> Result<Vec<OrganizationPo>, AppError>;
 
     /// 获取所有组织
-    async fn list_all(
-        &self,
-        ctx: RequestContext,
-    ) -> Result<Vec<OrganizationPo>, AppError>;
+    async fn list_all(&self, ctx: RequestContext) -> Result<Vec<OrganizationPo>, AppError>;
 
     /// 更新组织信息
-    async fn update(
-        &self,
-        ctx: RequestContext,
-        org: &OrganizationPo,
-    ) -> Result<(), AppError>;
+    async fn update(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<(), AppError>;
 
     /// 删除组织（软删除）
-    async fn delete(
-        &self,
-        ctx: RequestContext,
-        org_id: &str,
-    ) -> Result<(), AppError>;
+    async fn delete(&self, ctx: RequestContext, org_id: &str) -> Result<(), AppError>;
 
     /// 统计组织总数
-    async fn count_organizations(
-        &self,
-        ctx: RequestContext,
-    ) -> Result<u64, AppError>;
+    async fn count_organizations(&self, ctx: RequestContext) -> Result<u64, AppError>;
 }
 
 // ==================== DAL 实现 ====================
@@ -119,33 +107,19 @@ impl OrganizationDal for OrganizationDalImpl {
         self.organization_dao.query(ctx, query).await
     }
 
-    async fn list_all(
-        &self,
-        ctx: RequestContext,
-    ) -> Result<Vec<OrganizationPo>, AppError> {
+    async fn list_all(&self, ctx: RequestContext) -> Result<Vec<OrganizationPo>, AppError> {
         self.query(ctx, OrganizationQuery::default()).await
     }
 
-    async fn update(
-        &self,
-        ctx: RequestContext,
-        org: &OrganizationPo,
-    ) -> Result<(), AppError> {
+    async fn update(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<(), AppError> {
         self.organization_dao.update(ctx, org).await
     }
 
-    async fn delete(
-        &self,
-        ctx: RequestContext,
-        org_id: &str,
-    ) -> Result<(), AppError> {
+    async fn delete(&self, ctx: RequestContext, org_id: &str) -> Result<(), AppError> {
         self.organization_dao.delete(ctx, org_id).await
     }
 
-    async fn count_organizations(
-        &self,
-        ctx: RequestContext,
-    ) -> Result<u64, AppError> {
+    async fn count_organizations(&self, ctx: RequestContext) -> Result<u64, AppError> {
         self.organization_dao.count_all(ctx).await
     }
 }

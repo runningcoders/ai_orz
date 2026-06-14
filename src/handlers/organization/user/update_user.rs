@@ -1,15 +1,15 @@
 //! 更新用户信息接口
 
-use common::api::{UpdateUserRequest, UpdateUserResponse};
 use crate::error::AppError;
-use common::api::ApiResponse;
 use crate::pkg::RequestContext;
+use crate::service::domain::organization;
 use axum::{
-    extract::{Extension, Path, Json},
+    extract::{Extension, Json, Path},
     http::StatusCode,
     response::IntoResponse,
 };
-use crate::service::domain::organization;
+use common::api::ApiResponse;
+use common::api::{UpdateUserRequest, UpdateUserResponse};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// 获取当前时间戳
@@ -27,11 +27,13 @@ pub async fn update_user(
     Json(req): Json<UpdateUserRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let domain = organization::domain();
-    
-    let mut user = domain.user_manage().get_user_by_id(ctx.clone(), &user_id)
+
+    let mut user = domain
+        .user_manage()
+        .get_user_by_id(ctx.clone(), &user_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("User {} not found", user_id)))?;
-    
+
     // 更新字段
     if let Some(display_name) = req.display_name {
         user.display_name = display_name;
@@ -59,17 +61,29 @@ pub async fn update_user(
         user.password_hash = password_hash;
     }
     user.updated_at = current_timestamp();
-    
+
     domain.user_manage().update_user(ctx, &user).await?;
-    
+
     let _role_name = user.user_role().display_name().to_string();
-    
-    Ok((StatusCode::OK, Json(ApiResponse::success(UpdateUserResponse {
-        user_id: user.id.clone(),
-        username: user.username.clone(),
-        display_name: if user.display_name.is_empty() { None } else { Some(user.display_name.clone()) },
-        email: if user.email.is_empty() { None } else { Some(user.email.clone()) },
-        role: user.user_role() as i32,
-        status: user.status.to_i32(),
-    })).into_response()))
+
+    Ok((
+        StatusCode::OK,
+        Json(ApiResponse::success(UpdateUserResponse {
+            user_id: user.id.clone(),
+            username: user.username.clone(),
+            display_name: if user.display_name.is_empty() {
+                None
+            } else {
+                Some(user.display_name.clone())
+            },
+            email: if user.email.is_empty() {
+                None
+            } else {
+                Some(user.email.clone())
+            },
+            role: user.user_role() as i32,
+            status: user.status.to_i32(),
+        }))
+        .into_response(),
+    ))
 }

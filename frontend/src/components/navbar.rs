@@ -1,5 +1,5 @@
-use dioxus::prelude::*;
 use crate::Page;
+use dioxus::prelude::*;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum UserRole {
@@ -19,7 +19,7 @@ pub fn Navbar(on_navigate: EventHandler<Page>) -> Element {
     let mut hr_menu_open = use_signal(|| false);
     let mut finance_menu_open = use_signal(|| false);
     let mut user_menu_open = use_signal(|| false);
-    
+
     // TODO: 从登录状态获取真实用户信息和角色
     // 暂时使用占位值，后续对接后端获取
     let current_username = "admin";

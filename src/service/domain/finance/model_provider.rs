@@ -2,9 +2,7 @@
 
 use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
-use crate::service::domain::finance::{
-    FinanceDomainImpl, ModelProviderManage,
-};
+use crate::service::domain::finance::{FinanceDomainImpl, ModelProviderManage};
 
 #[async_trait::async_trait]
 impl ModelProviderManage for FinanceDomainImpl {

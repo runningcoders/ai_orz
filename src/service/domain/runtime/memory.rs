@@ -16,15 +16,17 @@ impl RuntimeMemory for RuntimeDomainImpl {
         limit: usize,
     ) -> Result<Vec<Memory>, AppError> {
         use crate::service::dal::memory::dal;
-        dal().query(
-            ctx,
-            MemoryQuery {
-                agent_id: Some(agent_id.to_string()),
-                memory_type: Some(common::enums::MemoryType::ShortTerm),
-                limit: Some(limit),
-                ..Default::default()
-            },
-        ).await
+        dal()
+            .query(
+                ctx,
+                MemoryQuery {
+                    agent_id: Some(agent_id.to_string()),
+                    memory_type: Some(common::enums::MemoryType::ShortTerm),
+                    limit: Some(limit),
+                    ..Default::default()
+                },
+            )
+            .await
     }
 
     /// 写入思考 Trace

@@ -8,7 +8,7 @@
 //! - 各渠道配置统一存储在 config_json 字段中（JSON 格式）
 
 use common::constants::utils;
-use common::enums::{ChannelType, ChannelStatus};
+use common::enums::{ChannelStatus, ChannelType};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use sqlx::types::Json;

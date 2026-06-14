@@ -1,6 +1,6 @@
-use common::api::{UserInfoResponse, UpdateCurrentUserRequest};
-use dioxus::prelude::*;
 use crate::api::organization::{get_current_user_info, update_current_user_info};
+use common::api::{UpdateCurrentUserRequest, UserInfoResponse};
+use dioxus::prelude::*;
 
 #[component]
 pub fn UserProfile() -> Element {
@@ -42,7 +42,8 @@ pub fn UserProfile() -> Element {
                 success.set(String::new());
 
                 let req = UpdateCurrentUserRequest {
-                    display_name: if editing_display_name() != info.display_name.unwrap_or_default() {
+                    display_name: if editing_display_name() != info.display_name.unwrap_or_default()
+                    {
                         Some(editing_display_name())
                     } else {
                         None
@@ -66,7 +67,8 @@ pub fn UserProfile() -> Element {
                         // 重新获取最新信息
                         match get_current_user_info().await {
                             Ok(new_info) => {
-                                editing_display_name.set(new_info.display_name.clone().unwrap_or_default());
+                                editing_display_name
+                                    .set(new_info.display_name.clone().unwrap_or_default());
                                 editing_email.set(new_info.email.clone().unwrap_or_default());
                                 user_info.set(Some(new_info));
                             }

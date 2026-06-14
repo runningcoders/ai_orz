@@ -3,8 +3,8 @@
 use crate::error::AppError;
 use crate::models::agent::Agent;
 use crate::pkg::RequestContext;
-use crate::service::dao::agent::AgentQuery;
 use crate::service::dal::agent::AgentDal;
+use crate::service::dao::agent::AgentQuery;
 use crate::service::domain::hr::{AgentManage, HrDomainImpl};
 use common::enums::AgentStatus;
 
@@ -21,14 +21,14 @@ impl AgentManage for HrDomainImpl {
                 "创建 Agent 必须指定 model_provider_id".to_string(),
             ));
         }
-        
+
         // 强制校验：状态必须是 Interviewing
         if agent.po.status != AgentStatus::Interviewing {
             return Err(AppError::BadRequest(
                 "新建 Agent 状态必须为 Interviewing".to_string(),
             ));
         }
-        
+
         self.agent_dal.create(ctx, agent).await
     }
 
@@ -42,11 +42,7 @@ impl AgentManage for HrDomainImpl {
     /// 通用综合查询
     ///
     /// Domain 层可以添加业务逻辑：权限校验、数据过滤、业务规则验证
-    async fn query(
-        &self,
-        ctx: RequestContext,
-        query: AgentQuery,
-    ) -> Result<Vec<Agent>, AppError> {
+    async fn query(&self, ctx: RequestContext, query: AgentQuery) -> Result<Vec<Agent>, AppError> {
         self.agent_dal.query(ctx, query).await
     }
 
@@ -54,10 +50,14 @@ impl AgentManage for HrDomainImpl {
     ///
     /// 语法糖：调用通用查询，默认排除已删除状态
     async fn list_agents(&self, ctx: RequestContext) -> Result<Vec<Agent>, AppError> {
-        self.query(ctx, AgentQuery {
-            exclude_status: Some(AgentStatus::Deleted),
-            ..Default::default()
-        }).await
+        self.query(
+            ctx,
+            AgentQuery {
+                exclude_status: Some(AgentStatus::Deleted),
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     /// 更新 Agent
@@ -84,7 +84,7 @@ impl AgentManage for HrDomainImpl {
         target_status: AgentStatus,
     ) -> Result<(), AppError> {
         let current_status = agent.po.status.clone();
-        
+
         // 状态机校验：定义合法的流转路径
         let is_valid_transition = match (&current_status, &target_status) {
             // 面试中 → 待入职
@@ -141,7 +141,10 @@ impl AgentManage for HrDomainImpl {
         }
 
         // 2. 校验至少绑定了 1 个工具
-        let tools = self.tool_dal.list_tools_for_agent_full(ctx.clone(), agent_id).await?;
+        let tools = self
+            .tool_dal
+            .list_tools_for_agent_full(ctx.clone(), agent_id)
+            .await?;
         if tools.is_empty() {
             return Err(AppError::BadRequest(
                 "Agent 至少绑定 1 个工具才能入职".to_string(),
@@ -151,7 +154,12 @@ impl AgentManage for HrDomainImpl {
         // 3. 校验技能：没有技能只告警，不阻止入职
         let skills = self.skill_dal.list_for_agent(ctx.clone(), agent_id).await?;
         if skills.is_empty() {
-            log_warn!(ctx.clone(), "onboard_agent", "Agent {} 未安装任何技能", agent_id);
+            log_warn!(
+                ctx.clone(),
+                "onboard_agent",
+                "Agent {} 未安装任何技能",
+                agent_id
+            );
         }
 
         Ok(())

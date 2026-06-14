@@ -1,8 +1,8 @@
 //! Global tool registry - each protocol has its own typed storage
 
+use dyn_clone;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
-use dyn_clone;
 
 pub mod builtin;
 pub mod http;
@@ -25,11 +25,11 @@ pub fn get_registry() -> &'static ToolRegistry {
 }
 
 /// Global tool registry.
-/// 
+///
 /// Stores FACTORIES, not instances. Instances are created per request from ToolPo
 /// loaded from database. This allows user configuration (name/description) in DB
 /// to be injected into the tool instance at creation time.
-/// 
+///
 /// Each protocol type has its own typed storage field for better type safety.
 #[derive(Clone, Default)]
 pub struct ToolRegistry {
@@ -49,7 +49,7 @@ impl ToolRegistry {
     }
 
     /// Create a tool instance from registry given ToolPo loaded from DB.
-    /// 
+    ///
     /// Dispatches to the correct factory based on protocol type.
     pub fn create_tool(&self, po: ToolPo) -> Option<Box<dyn CoreTool>> {
         match po.protocol {
@@ -92,6 +92,11 @@ impl ToolRegistry {
 
     /// List all registered built-in tool IDs.
     pub fn list_builtin_ids(&self) -> Vec<String> {
-        self.builtin_factories.lock().unwrap().keys().cloned().collect()
+        self.builtin_factories
+            .lock()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect()
     }
 }

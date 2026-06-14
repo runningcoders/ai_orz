@@ -1,7 +1,7 @@
 //! Skill 持久化对象
 
-use common::enums::skill::SkillAuthorType;
 use common::enums::SkillStatus;
+use common::enums::skill::SkillAuthorType;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
@@ -170,14 +170,16 @@ impl Skill {
 
     /// 获取主文件内容（如果已加载）
     pub fn main_content(&self) -> Option<&str> {
-        self.files.iter()
+        self.files
+            .iter()
             .find(|f| f.filename == "skill.md")
             .and_then(|f| f.content.as_deref())
     }
 
     /// 获取指定文件名的内容（如果已加载）
     pub fn file_content(&self, filename: &str) -> Option<&str> {
-        self.files.iter()
+        self.files
+            .iter()
             .find(|f| f.filename == filename)
             .and_then(|f| f.content.as_deref())
     }

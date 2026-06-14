@@ -292,9 +292,9 @@ system_info("服务启动成功");
 | 项目管理 | `/api/v1/projects` | 项目 CRUD |
 | 任务管理 | `/api/v1/tasks` | 任务 CRUD、状态更新 |
 | 消息对话 | `/api/v1/projects/{id}/messages` | 发送消息、接收回复、触发 Agent 执行 |
-| 消息渠道 | `/api/v1/channels` | 消息渠道 CRUD、启用/禁用、连接测试 |
+| 消息渠道 | `/api/v1/finance/message-channels` | 消息渠道 CRUD、状态更新、连接测试 |
 | 技能库 | `/api/v1/skills` | 技能 CRUD、搜索 |
-| 工具管理 | `/api/v1/tools` | 工具列表、Agent 绑定/解绑工具 |
+| 工具管理 | `/api/v1/finance/tools` | 工具 CRUD、状态更新、Agent 绑定/解绑工具 |
 
 ---
 

@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod artifact;
 pub mod brain;
 pub mod event;
 pub mod file;
@@ -8,9 +9,8 @@ pub mod message_channel;
 pub mod model_provider;
 pub mod organization;
 pub mod project;
-pub mod artifact;
+pub mod skill;
 pub mod task;
 pub mod tool;
 pub mod user;
-pub mod skill;
 pub mod vector;

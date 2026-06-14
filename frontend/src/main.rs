@@ -1,12 +1,15 @@
-mod components;
 mod api;
+mod components;
 mod config;
 
 // Include compile-time generated configuration from build.rs
 include!(concat!(env!("OUT_DIR"), "/compiled_config.rs"));
 
+use components::{
+    AgentManagement, ModelProviderManagement, Navbar, OrganizationInfo, Reception, SettingsPage,
+    UserManagement, UserProfile,
+};
 use dioxus::prelude::*;
-use components::{Navbar, Reception, AgentManagement, ModelProviderManagement, UserProfile, OrganizationInfo, UserManagement, SettingsPage};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Page {

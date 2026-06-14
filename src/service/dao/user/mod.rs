@@ -23,13 +23,21 @@ pub trait UserDao: Send + Sync {
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<UserPo>, AppError>;
 
     /// 根据用户名查询用户（用于登录）
-    async fn find_by_username(&self, ctx: RequestContext, username: &str) -> Result<Option<UserPo>, AppError>;
+    async fn find_by_username(
+        &self,
+        ctx: RequestContext,
+        username: &str,
+    ) -> Result<Option<UserPo>, AppError>;
 
     /// 通用查询
     async fn query(&self, ctx: RequestContext, query: UserQuery) -> Result<Vec<UserPo>, AppError>;
 
     /// 查询组织下所有用户
-    async fn find_by_organization_id(&self, ctx: RequestContext, org_id: &str) -> Result<Vec<UserPo>, AppError>;
+    async fn find_by_organization_id(
+        &self,
+        ctx: RequestContext,
+        org_id: &str,
+    ) -> Result<Vec<UserPo>, AppError>;
 
     /// 更新用户
     async fn update(&self, ctx: RequestContext, user: &UserPo) -> Result<(), AppError>;
@@ -38,14 +46,22 @@ pub trait UserDao: Send + Sync {
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
 
     /// 检查用户名是否已存在
-    async fn exists_by_username(&self, ctx: RequestContext, username: &str) -> Result<bool, AppError>;
+    async fn exists_by_username(
+        &self,
+        ctx: RequestContext,
+        username: &str,
+    ) -> Result<bool, AppError>;
 
     /// 统计组织下用户总数
-    async fn count_by_organization_id(&self, ctx: RequestContext, org_id: &str) -> Result<u64, AppError>;
+    async fn count_by_organization_id(
+        &self,
+        ctx: RequestContext,
+        org_id: &str,
+    ) -> Result<u64, AppError>;
 }
 
 pub mod sqlite;
-pub use self::sqlite::{dao,init, new};
+pub use self::sqlite::{dao, init, new};
 
 #[cfg(test)]
 mod sqlite_test;

@@ -8,19 +8,19 @@
 
 use std::sync::{Arc, OnceLock};
 
-use common::enums::{ChannelType, ChannelStatus};
+use common::enums::{ChannelStatus, ChannelType};
 use serde::Serialize;
 
 use crate::error::{AppError, Result};
 use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
-use crate::service::dao::message_channel::{MessageChannelDao, MessageChannelQuery};
-use crate::service::dao::lark::LarkDao;
-use crate::service::dao::wechat::WechatDao;
-use crate::service::dao::slack::SlackDao;
-use crate::service::dao::email::EmailDao;
-use crate::service::dao::webhook::WebhookDao;
 use crate::pkg::RequestContext;
+use crate::service::dao::email::EmailDao;
+use crate::service::dao::lark::LarkDao;
+use crate::service::dao::message_channel::{MessageChannelDao, MessageChannelQuery};
+use crate::service::dao::slack::SlackDao;
+use crate::service::dao::webhook::WebhookDao;
+use crate::service::dao::wechat::WechatDao;
 
 // ==================== 单例管理 ====================
 
@@ -42,8 +42,8 @@ pub fn init() {
 pub fn new(
     message_channel_dao: Arc<dyn MessageChannelDao + Send + Sync>,
 ) -> Arc<dyn MessageChannelDal> {
-    use crate::service::dao::{lark, wechat, slack, email, webhook};
-    
+    use crate::service::dao::{email, lark, slack, webhook, wechat};
+
     Arc::new(MessageChannelDalImpl {
         message_channel_dao,
         lark_dao: lark::dao(),
@@ -71,16 +71,34 @@ pub trait MessageChannelDal: Send + Sync {
     async fn delete_channel(&self, ctx: RequestContext, channel_id: &str) -> Result<()>;
 
     /// 获取单个渠道
-    async fn get_channel(&self, ctx: RequestContext, channel_id: &str) -> Result<Option<MessageChannel>>;
+    async fn get_channel(
+        &self,
+        ctx: RequestContext,
+        channel_id: &str,
+    ) -> Result<Option<MessageChannel>>;
 
     /// 列出用户的所有渠道
-    async fn list_user_channels(&self, ctx: RequestContext, user_id: &str, only_enabled: bool) -> Result<Vec<MessageChannel>>;
+    async fn list_user_channels(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+        only_enabled: bool,
+    ) -> Result<Vec<MessageChannel>>;
 
     /// 通用查询渠道
-    async fn query_channels(&self, ctx: RequestContext, query: MessageChannelQuery) -> Result<Vec<MessageChannel>>;
+    async fn query_channels(
+        &self,
+        ctx: RequestContext,
+        query: MessageChannelQuery,
+    ) -> Result<Vec<MessageChannel>>;
 
     /// 设置渠道状态
-    async fn set_channel_status(&self, ctx: RequestContext, channel_id: &str, status: ChannelStatus) -> Result<()>;
+    async fn set_channel_status(
+        &self,
+        ctx: RequestContext,
+        channel_id: &str,
+        status: ChannelStatus,
+    ) -> Result<()>;
 
     /// 测试渠道连接
     async fn test_channel(&self, ctx: RequestContext, channel_id: &str) -> Result<()>;
@@ -96,7 +114,12 @@ pub trait MessageChannelDal: Send + Sync {
     ///
     /// # 返回
     /// 分发结果详情，包含各渠道的推送状态
-    async fn deliver_message(&self, ctx: RequestContext, message: &Message, user_id: &str) -> Result<DeliveryResult>;
+    async fn deliver_message(
+        &self,
+        ctx: RequestContext,
+        message: &Message,
+        user_id: &str,
+    ) -> Result<DeliveryResult>;
 }
 
 // ==================== DAL 实现 ====================
@@ -130,12 +153,21 @@ impl MessageChannelDal for MessageChannelDalImpl {
         self.message_channel_dao.delete(ctx, channel_id).await
     }
 
-    async fn get_channel(&self, ctx: RequestContext, channel_id: &str) -> Result<Option<MessageChannel>> {
+    async fn get_channel(
+        &self,
+        ctx: RequestContext,
+        channel_id: &str,
+    ) -> Result<Option<MessageChannel>> {
         let po = self.message_channel_dao.find_by_id(ctx, channel_id).await?;
         Ok(po.map(MessageChannel::from_po))
     }
 
-    async fn list_user_channels(&self, ctx: RequestContext, user_id: &str, only_enabled: bool) -> Result<Vec<MessageChannel>> {
+    async fn list_user_channels(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+        only_enabled: bool,
+    ) -> Result<Vec<MessageChannel>> {
         let pos = self
             .message_channel_dao
             .list_by_user_id(ctx, user_id, only_enabled)
@@ -143,13 +175,24 @@ impl MessageChannelDal for MessageChannelDalImpl {
         Ok(pos.into_iter().map(MessageChannel::from_po).collect())
     }
 
-    async fn query_channels(&self, ctx: RequestContext, query: MessageChannelQuery) -> Result<Vec<MessageChannel>> {
+    async fn query_channels(
+        &self,
+        ctx: RequestContext,
+        query: MessageChannelQuery,
+    ) -> Result<Vec<MessageChannel>> {
         let pos = self.message_channel_dao.query(ctx, query).await?;
         Ok(pos.into_iter().map(MessageChannel::from_po).collect())
     }
 
-    async fn set_channel_status(&self, ctx: RequestContext, channel_id: &str, status: ChannelStatus) -> Result<()> {
-        self.message_channel_dao.set_status(ctx, channel_id, status).await
+    async fn set_channel_status(
+        &self,
+        ctx: RequestContext,
+        channel_id: &str,
+        status: ChannelStatus,
+    ) -> Result<()> {
+        self.message_channel_dao
+            .set_status(ctx, channel_id, status)
+            .await
     }
 
     async fn test_channel(&self, ctx: RequestContext, channel_id: &str) -> Result<()> {
@@ -171,7 +214,12 @@ impl MessageChannelDal for MessageChannelDalImpl {
 
     // ---------- 消息分发 ----------
 
-    async fn deliver_message(&self, ctx: RequestContext, message: &Message, user_id: &str) -> Result<DeliveryResult> {
+    async fn deliver_message(
+        &self,
+        ctx: RequestContext,
+        message: &Message,
+        user_id: &str,
+    ) -> Result<DeliveryResult> {
         // 1. 查询用户的所有活跃渠道
         let channels = self
             .message_channel_dao
@@ -190,7 +238,9 @@ impl MessageChannelDal for MessageChannelDalImpl {
             let result = self.push_to_channel(ctx.clone(), message, &channel).await;
 
             // 3. 更新渠道推送状态
-            let _ = self.update_channel_push_status(ctx.clone(), &channel, &result).await;
+            let _ = self
+                .update_channel_push_status(ctx.clone(), &channel, &result)
+                .await;
 
             details.push(ChannelDeliveryDetail {
                 channel_id: channel.id().to_string(),

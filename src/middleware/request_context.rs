@@ -3,6 +3,7 @@
 //! 自动从请求头提取 X-User-Id 和 X-User-Name，创建 RequestContext 并通过 Extension 注入
 //! 处理 LogId：如果请求头有则使用，否则自动生成，最终写回响应头
 
+use crate::pkg::RequestContext;
 use axum::{
     body::Body,
     http::{HeaderValue, Request},
@@ -11,7 +12,6 @@ use axum::{
 };
 use common::config::AppConfig;
 use std::sync::Arc;
-use crate::pkg::RequestContext;
 
 /// RequestContext 提取中间件
 ///

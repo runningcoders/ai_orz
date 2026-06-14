@@ -1,13 +1,13 @@
 //! Default implementation of ToolCallDao
 
-use common::enums::tool::ControlMode;
-use crate::models::tool::{Tool, ToolPo, CoreTool, RigToolAdapter};
+use crate::models::tool::{CoreTool, RigToolAdapter, Tool, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::get_registry;
-use crate::pkg::tool_tracing::{ToolCallLoggingDecorator};
+use crate::pkg::tool_tracing::ToolCallLoggingDecorator;
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use anyhow::Result;
 use async_trait::async_trait;
+use common::enums::tool::ControlMode;
 use dyn_clone::DynClone;
 use rig::tool::{ToolDyn, ToolError};
 use serde_json::Value;

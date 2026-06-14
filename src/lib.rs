@@ -13,7 +13,7 @@ macro_rules! log_info {
     ($msg:literal $(, $($fields:tt)*)?) => {{
         tracing::info!($msg $(, $($fields)*)?);
     }};
-    
+
     // 带上下文: 第一个参数非字符串（ctx 或 &ctx），第二个参数是字符串字面量（operation）
     ($ctx:expr, $op:literal, $($fields:tt)*) => {{
         let span = tracing::info_span!(
@@ -39,7 +39,7 @@ macro_rules! log_warn {
     ($msg:literal $(, $($fields:tt)*)?) => {{
         tracing::warn!($msg $(, $($fields)*)?);
     }};
-    
+
     // 带上下文: 第一个参数非字符串（ctx 或 &ctx），第二个参数是字符串字面量（operation）
     ($ctx:expr, $op:literal, $($fields:tt)*) => {{
         let span = tracing::warn_span!(
@@ -65,7 +65,7 @@ macro_rules! log_error {
     ($msg:literal $(, $($fields:tt)*)?) => {{
         tracing::error!($msg $(, $($fields)*)?);
     }};
-    
+
     // 带上下文: 第一个参数非字符串（ctx 或 &ctx），第二个参数是字符串字面量（operation）
     ($ctx:expr, $op:literal, $($fields:tt)*) => {{
         let span = tracing::error_span!(
@@ -91,7 +91,7 @@ macro_rules! log_debug {
     ($msg:literal $(, $($fields:tt)*)?) => {{
         tracing::debug!($msg $(, $($fields)*)?);
     }};
-    
+
     // 带上下文: 第一个参数非字符串（ctx 或 &ctx），第二个参数是字符串字面量（operation）
     ($ctx:expr, $op:literal, $($fields:tt)*) => {{
         let span = tracing::debug_span!(

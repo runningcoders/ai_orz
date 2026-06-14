@@ -1,15 +1,17 @@
 //! Model Provider DAL 单元测试
 
 use crate::models::model_provider::{ModelProvider, ModelProviderPo};
-use common::enums::{ModelCapability, ModelProviderStatus, ProviderType};
 use crate::pkg::RequestContext;
 use crate::service::dal::model_provider::ModelProviderDal;
-use std::sync::Arc;
+use common::enums::{ModelCapability, ModelProviderStatus, ProviderType};
 use sqlx::SqlitePool;
+use std::sync::Arc;
 use uuid::Uuid;
 
 /// 初始化测试环境
-async fn init_test_env(pool: SqlitePool) -> (Arc<dyn ModelProviderDal + Send + Sync>, RequestContext) {
+async fn init_test_env(
+    pool: SqlitePool,
+) -> (Arc<dyn ModelProviderDal + Send + Sync>, RequestContext) {
     crate::service::dao::model_provider::init();
     crate::service::dal::model_provider::init();
     let dal = crate::service::dal::model_provider::dal();
@@ -18,7 +20,11 @@ async fn init_test_env(pool: SqlitePool) -> (Arc<dyn ModelProviderDal + Send + S
 }
 
 /// 创建测试 ModelProvider
-fn create_test_provider(name: &str, provider_type: ProviderType, model_name: &str) -> ModelProvider {
+fn create_test_provider(
+    name: &str,
+    provider_type: ProviderType,
+    model_name: &str,
+) -> ModelProvider {
     ModelProvider::new(
         name.to_string(),
         provider_type,
@@ -86,7 +92,9 @@ async fn test_update(pool: SqlitePool) {
     updated.po.model_name = "gpt-4o".to_string();
     updated.touch("editor");
 
-    dal.update(RequestContext::new_simple("editor", pool), &updated).await.unwrap();
+    dal.update(RequestContext::new_simple("editor", pool), &updated)
+        .await
+        .unwrap();
 
     let found = dal.find_by_id(ctx, &updated.po.id).await.unwrap().unwrap();
     assert_eq!(found.po.name, "Updated".to_string());
@@ -102,7 +110,12 @@ async fn test_delete(pool: SqlitePool) {
     dal.create(ctx.clone(), &provider).await.unwrap();
 
     dal.delete(ctx.clone(), &provider).await.unwrap();
-    assert!(dal.find_by_id(ctx, &provider.po.id).await.unwrap().is_none());
+    assert!(
+        dal.find_by_id(ctx, &provider.po.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[sqlx::test]
@@ -129,7 +142,10 @@ async fn test_create_with_custom_base_url(pool: SqlitePool) {
     dal.create(ctx.clone(), &provider).await.unwrap();
     let found = dal.find_by_id(ctx, &provider.po.id).await.unwrap().unwrap();
 
-    assert_eq!(found.po.base_url, Some("https://custom.api.com/v1".to_string()));
+    assert_eq!(
+        found.po.base_url,
+        Some("https://custom.api.com/v1".to_string())
+    );
     assert_eq!(found.po.provider_type, ProviderType::Custom);
 }
 

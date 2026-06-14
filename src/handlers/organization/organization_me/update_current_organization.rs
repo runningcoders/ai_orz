@@ -1,13 +1,12 @@
 //! 更新当前登录用户所在组织信息接口
 
-use axum::{extract::{Extension, Json}, http::StatusCode};
+use crate::{error::AppError, pkg::RequestContext, service::domain::organization};
+use axum::{
+    extract::{Extension, Json},
+    http::StatusCode,
+};
 use common::api::{ApiResponse, EmptyResponse, UpdateCurrentOrganizationRequest};
 use common::constants::utils;
-use crate::{
-    error::AppError,
-    service::domain::organization,
-    pkg::RequestContext,
-};
 
 /// Update current authenticated user's organization information
 /// 允许管理员更新当前用户所在组织的可修改信息
@@ -16,13 +15,16 @@ pub async fn update_current_organization(
     Json(req): Json<UpdateCurrentOrganizationRequest>,
 ) -> Result<(StatusCode, Json<ApiResponse<EmptyResponse>>), AppError> {
     // 从 RequestContext 获取当前组织 ID
-    let org_id = ctx.organization_id.clone().ok_or_else(|| {
-        AppError::BadRequest("未找到组织信息".to_string())
-    })?;
+    let org_id = ctx
+        .organization_id
+        .clone()
+        .ok_or_else(|| AppError::BadRequest("未找到组织信息".to_string()))?;
 
     let domain = organization::domain();
     // 获取当前组织信息
-    let mut org = domain.organization_manage().get_by_id(ctx.clone(), &org_id)
+    let mut org = domain
+        .organization_manage()
+        .get_by_id(ctx.clone(), &org_id)
         .await?
         .ok_or_else(|| AppError::NotFound("组织不存在".to_string()))?;
 
@@ -46,8 +48,5 @@ pub async fn update_current_organization(
     // 保存更新
     domain.organization_manage().update(ctx, &org).await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(ApiResponse::success(EmptyResponse {})),
-    ))
+    Ok((StatusCode::OK, Json(ApiResponse::success(EmptyResponse {}))))
 }

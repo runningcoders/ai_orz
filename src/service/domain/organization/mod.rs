@@ -10,10 +10,10 @@ pub mod user;
 use crate::error::AppError;
 use crate::models::organization::OrganizationPo;
 use crate::pkg::RequestContext;
-use std::sync::{Arc, OnceLock};
-use async_trait::async_trait;
 use crate::service::dal::organization;
 use crate::service::dal::user as user_dal;
+use async_trait::async_trait;
+use std::sync::{Arc, OnceLock};
 // ==================== 单例 ====================
 
 static ORGANIZATION_DOMAIN: OnceLock<Arc<dyn OrganizationDomain>> = OnceLock::new();
@@ -25,10 +25,7 @@ pub fn domain() -> Arc<dyn OrganizationDomain> {
 
 /// 初始化 Organization Domain
 pub fn init() {
-    let domain = OrganizationDomainImpl::new(
-        organization::dal(),
-        user_dal::dal(),
-    );
+    let domain = OrganizationDomainImpl::new(organization::dal(), user_dal::dal());
     let _ = ORGANIZATION_DOMAIN.set(Arc::new(domain));
 }
 
@@ -100,7 +97,11 @@ pub trait OrganizationManage: Send + Sync {
     ) -> Result<(String, String), AppError>;
 
     /// 获取组织信息
-    async fn get_by_id(&self, ctx: RequestContext, org_id: &str) -> Result<Option<OrganizationPo>, AppError>;
+    async fn get_by_id(
+        &self,
+        ctx: RequestContext,
+        org_id: &str,
+    ) -> Result<Option<OrganizationPo>, AppError>;
 
     /// 通用综合查询
     ///
@@ -167,11 +168,7 @@ pub trait UserManage: Send + Sync {
     ) -> Result<(), AppError>;
 
     /// 删除用户（软删除）
-    async fn delete_user(
-        &self,
-        ctx: RequestContext,
-        user_id: &str,
-    ) -> Result<(), AppError>;
+    async fn delete_user(&self, ctx: RequestContext, user_id: &str) -> Result<(), AppError>;
 
     /// 检查用户名是否已存在
     async fn exists_by_username(

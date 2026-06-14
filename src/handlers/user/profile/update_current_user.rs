@@ -1,13 +1,12 @@
 //! 更新当前认证用户信息接口
 
-use axum::{extract::{Extension, Json}, http::StatusCode};
+use crate::{error::AppError, pkg::RequestContext, service::domain::organization};
+use axum::{
+    extract::{Extension, Json},
+    http::StatusCode,
+};
 use common::api::{ApiResponse, EmptyResponse, UpdateCurrentUserRequest};
 use common::constants::utils;
-use crate::{
-    error::AppError,
-    service::domain::organization,
-    pkg::RequestContext,
-};
 
 /// Update current authenticated user information
 /// 允许用户更新自己的可修改信息：显示名称、邮箱、密码
@@ -17,13 +16,16 @@ pub async fn update_current_user(
     Json(req): Json<UpdateCurrentUserRequest>,
 ) -> Result<(StatusCode, Json<ApiResponse<EmptyResponse>>), AppError> {
     // 从 RequestContext 获取当前用户 ID（JWT 已经验证过）
-    let user_id = ctx.user_id.clone().ok_or_else(|| {
-        AppError::BadRequest("用户未登录".to_string())
-    })?;
+    let user_id = ctx
+        .user_id
+        .clone()
+        .ok_or_else(|| AppError::BadRequest("用户未登录".to_string()))?;
 
     // 通过 organization domain 获取用户当前信息
     let domain = organization::domain();
-    let mut user = domain.user_manage().get_user_by_id(ctx.clone(), &user_id)
+    let mut user = domain
+        .user_manage()
+        .get_user_by_id(ctx.clone(), &user_id)
         .await?
         .ok_or_else(|| AppError::NotFound("用户不存在".to_string()))?;
 
@@ -52,8 +54,5 @@ pub async fn update_current_user(
     let domain = organization::domain();
     domain.user_manage().update_user(ctx, &user).await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(ApiResponse::success(EmptyResponse {})),
-    ))
+    Ok((StatusCode::OK, Json(ApiResponse::success(EmptyResponse {}))))
 }

@@ -2,11 +2,11 @@
 
 use crate::error::Result;
 use crate::models::message_channel::MessageChannelPo;
+use crate::pkg::RequestContext;
 use crate::service::dao::message_channel::{MessageChannelDao, MessageChannelQuery};
+use async_trait::async_trait;
 use chrono::Utc;
 use common::enums::ChannelStatus;
-use crate::pkg::RequestContext;
-use async_trait::async_trait;
 use std::sync::{Arc, OnceLock};
 
 /// MessageChannel DAO SQLite 实现
@@ -18,7 +18,7 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
     async fn insert(&self, ctx: RequestContext, po: &MessageChannelPo) -> Result<()> {
         let channel_type_i32 = po.channel_type as i32;
         let status_i32 = po.status as i32;
-        
+
         sqlx::query!(
             r#"
             INSERT INTO message_channels (
@@ -87,7 +87,11 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
         Ok(())
     }
 
-    async fn query(&self, ctx: RequestContext, query: MessageChannelQuery) -> Result<Vec<MessageChannelPo>> {
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: MessageChannelQuery,
+    ) -> Result<Vec<MessageChannelPo>> {
         // 使用 sqlx::QueryBuilder 动态构建查询
         let mut builder = sqlx::QueryBuilder::new("SELECT * FROM message_channels WHERE 1=1");
 
@@ -105,7 +109,9 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
             builder.push(" AND agent_id = ").push_bind(agent_id);
         }
         if let Some(channel_type) = query.channel_type {
-            builder.push(" AND channel_type = ").push_bind(channel_type as i32);
+            builder
+                .push(" AND channel_type = ")
+                .push_bind(channel_type as i32);
         }
         if query.only_enabled {
             builder.push(" AND status = 1");
@@ -137,17 +143,15 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
         }
 
         // 执行查询
-        let rows = builder
-            .build_query_as()
-            .fetch_all(ctx.db_pool())
-            .await?;
+        let rows = builder.build_query_as().fetch_all(ctx.db_pool()).await?;
 
         Ok(rows)
     }
 
     async fn query_count(&self, ctx: RequestContext, query: MessageChannelQuery) -> Result<u64> {
         // 使用 sqlx::QueryBuilder 动态构建 COUNT 查询
-        let mut builder = sqlx::QueryBuilder::new("SELECT COUNT(*) FROM message_channels WHERE 1=1");
+        let mut builder =
+            sqlx::QueryBuilder::new("SELECT COUNT(*) FROM message_channels WHERE 1=1");
 
         // 逐个添加查询条件
         if let Some(org_id) = &query.org_id {
@@ -160,7 +164,9 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
             builder.push(" AND agent_id = ").push_bind(agent_id);
         }
         if let Some(channel_type) = query.channel_type {
-            builder.push(" AND channel_type = ").push_bind(channel_type as i32);
+            builder
+                .push(" AND channel_type = ")
+                .push_bind(channel_type as i32);
         }
         if query.only_enabled {
             builder.push(" AND status = 1");
@@ -177,7 +183,10 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
         }
 
         // 执行查询
-        let count: i64 = builder.build_query_scalar().fetch_one(ctx.db_pool()).await?;
+        let count: i64 = builder
+            .build_query_scalar()
+            .fetch_one(ctx.db_pool())
+            .await?;
 
         Ok(count as u64)
     }
@@ -195,7 +204,12 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
         Ok(channels.pop())
     }
 
-    async fn list_by_user_id(&self, ctx: RequestContext, user_id: &str, only_enabled: bool) -> Result<Vec<MessageChannelPo>> {
+    async fn list_by_user_id(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+        only_enabled: bool,
+    ) -> Result<Vec<MessageChannelPo>> {
         self.query(
             ctx,
             MessageChannelQuery {
@@ -228,8 +242,10 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
             .await?;
 
         // 查询所有用户渠道
-        let all_user_channels = self.list_by_user_id(ctx.clone(), user_id, only_enabled).await?;
-        
+        let all_user_channels = self
+            .list_by_user_id(ctx.clone(), user_id, only_enabled)
+            .await?;
+
         // 过滤出用户通用渠道（未绑定 Agent 的）
         let user_channels: Vec<_> = all_user_channels
             .into_iter()

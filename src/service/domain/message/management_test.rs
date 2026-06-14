@@ -26,7 +26,7 @@ fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn MessageDomain>, Reques
     crate::service::dao::message::init();
     crate::service::dao::event_queue::init_message();
     crate::service::dao::message_channel::init();
-    init_all_channel_daos();  // 初始化所有渠道 DAO 单例
+    init_all_channel_daos(); // 初始化所有渠道 DAO 单例
     crate::service::dal::message::init();
     crate::service::dal::message_channel::init();
     super::init();

@@ -41,7 +41,7 @@ pub mod task;
 pub mod tool;
 pub mod user;
 
-pub fn init_all(){
+pub fn init_all() {
     agent::init();
     artifact::init();
     brain::init();
@@ -57,7 +57,6 @@ pub fn init_all(){
     user::init();
 }
 
-
 #[cfg(test)]
 pub(crate) mod agent_test;
 #[cfg(test)]
@@ -65,11 +64,11 @@ pub(crate) mod artifact_test;
 #[cfg(test)]
 pub(crate) mod brain_test;
 #[cfg(test)]
-pub(crate) mod message_test;
+pub(crate) mod memory_test;
 #[cfg(test)]
 pub(crate) mod message_channel_test;
 #[cfg(test)]
-pub(crate) mod memory_test;
+pub(crate) mod message_test;
 #[cfg(test)]
 pub(crate) mod model_provider_test;
 #[cfg(test)]

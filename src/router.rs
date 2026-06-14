@@ -1,7 +1,8 @@
 use crate::handlers;
 use crate::middleware::{jwt_auth_middleware, request_context_middleware};
 use axum::{
-    routing::{delete, get, post, put}, Router,
+    Router,
+    routing::{delete, get, post, put},
 };
 use common::config::AppConfig;
 use std::sync::Arc;
@@ -169,4 +170,21 @@ fn finance_routes() -> Router {
             "/message-channels/{id}",
             delete(handlers::finance::message_channel::delete_message_channel),
         )
+        .route("/tools", post(handlers::finance::tool::create_tool))
+        .route("/tools", get(handlers::finance::tool::list_tools))
+        .route("/tools/{id}", get(handlers::finance::tool::get_tool))
+        .route("/tools/{id}", put(handlers::finance::tool::update_tool))
+        .route(
+            "/tools/{id}/status",
+            put(handlers::finance::tool::update_tool_status),
+        )
+        .route(
+            "/tools/{id}/agent-bind",
+            post(handlers::finance::tool::bind_tool_to_agent),
+        )
+        .route(
+            "/tools/{id}/agent-bind",
+            delete(handlers::finance::tool::unbind_tool_from_agent),
+        )
+        .route("/tools/{id}", delete(handlers::finance::tool::delete_tool))
 }

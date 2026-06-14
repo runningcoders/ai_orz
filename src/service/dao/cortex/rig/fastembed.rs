@@ -1,12 +1,12 @@
 //! FastEmbed 本地向量化 Cortex 实现
 
-use async_trait::async_trait;
+use super::*;
+use ::fastembed::{InitOptions, TextEmbedding};
 use anyhow::{Result, anyhow};
+use async_trait::async_trait;
 use common::enums::ModelCapability;
 use std::sync::Arc;
 use std::sync::Mutex;
-use ::fastembed::{TextEmbedding, InitOptions};
-use super::*;
 
 /// FastEmbed Cortex 实现
 pub struct FastEmbedCortex {
@@ -36,7 +36,12 @@ impl Clone for FastEmbedCortex {
 
 impl FastEmbedCortex {
     /// 创建新的 FastEmbed Cortex
-    pub fn new(model_provider_id: &str, model_name: &str, _base_url: &str, _api_key: &str) -> Result<Self> {
+    pub fn new(
+        model_provider_id: &str,
+        model_name: &str,
+        _base_url: &str,
+        _api_key: &str,
+    ) -> Result<Self> {
         // 使用默认模型 fast-bge-small-en
         // 中文模型需要 fastembed 的 nomic 或者其他特性
         let embedding = TextEmbedding::try_new(InitOptions::default())?;
@@ -59,11 +64,12 @@ impl CortexTrait for FastEmbedCortex {
         // fastembed 的 embed 是同步的，用 spawn_blocking 包装
         let texts = texts.to_vec();
         let embedding = self.embedding.clone();
-        
+
         let embeddings = tokio::task::spawn_blocking(move || {
             let mut embed = embedding.lock().map_err(|e| anyhow!("锁失败: {}", e))?;
             (*embed).embed(texts, None)
-        }).await??;
+        })
+        .await??;
 
         Ok(embeddings)
     }

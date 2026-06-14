@@ -3,14 +3,13 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use crate::error::AppError;
-use crate::models::skill::{SkillPo, SkillFile};
+use crate::models::skill::{SkillFile, SkillPo};
 use crate::pkg::RequestContext;
-use common::enums::skill::SkillAuthorType;
-use common::enums::SkillStatus;
 use crate::service::dao::skill::{SkillDao, SkillQuery, SkillSearch};
-
+use async_trait::async_trait;
+use common::enums::SkillStatus;
+use common::enums::skill::SkillAuthorType;
 
 // ==================== 单例模式 ====================
 
@@ -34,7 +33,6 @@ pub fn init() {
 pub fn new() -> Arc<dyn SkillDao + Send + Sync> {
     Arc::new(SkillDaoSqliteImpl)
 }
-
 
 // ==================== 实现 ====================
 
@@ -131,9 +129,13 @@ FROM skills WHERE id = ?
         Ok(skill)
     }
 
-    async fn query(&self, ctx: RequestContext, query: SkillQuery) -> Result<Vec<SkillPo>, AppError> {
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: SkillQuery,
+    ) -> Result<Vec<SkillPo>, AppError> {
         let mut builder = sqlx::QueryBuilder::new(
-            r#"SELECT id, name, description, tags, category, parent_skill_id, author_id, author_type, modifier_id, status, created_at, updated_at, content_path FROM skills WHERE 1=1"#
+            r#"SELECT id, name, description, tags, category, parent_skill_id, author_id, author_type, modifier_id, status, created_at, updated_at, content_path FROM skills WHERE 1=1"#,
         );
 
         // ✅ 按 ID 批量查询（向量搜索的核心过滤）
@@ -153,7 +155,9 @@ FROM skills WHERE id = ?
 
         // 排除状态过滤
         if let Some(exclude_status) = &query.exclude_status {
-            builder.push(" AND status != ").push_bind(*exclude_status as i32);
+            builder
+                .push(" AND status != ")
+                .push_bind(*exclude_status as i32);
         }
 
         // 分类过滤
@@ -169,8 +173,13 @@ FROM skills WHERE id = ?
         // 关键词搜索 (name 或 description)
         if let Some(keyword) = &query.keyword {
             let like_pattern = format!("%{}%", keyword);
-            builder.push(" AND (name LIKE ").push_bind(like_pattern.clone());
-            builder.push(" OR description LIKE ").push_bind(like_pattern).push(")");
+            builder
+                .push(" AND (name LIKE ")
+                .push_bind(like_pattern.clone());
+            builder
+                .push(" OR description LIKE ")
+                .push_bind(like_pattern)
+                .push(")");
         }
 
         // 排序
@@ -190,7 +199,11 @@ FROM skills WHERE id = ?
         Ok(rows)
     }
 
-    async fn list_by_status(&self, ctx: RequestContext, status: SkillStatus) -> Result<Vec<SkillPo>, AppError> {
+    async fn list_by_status(
+        &self,
+        ctx: RequestContext,
+        status: SkillStatus,
+    ) -> Result<Vec<SkillPo>, AppError> {
         let status_i32 = status.to_i32();
         let skills = sqlx::query_as!(
             SkillPo,
@@ -208,7 +221,11 @@ ORDER BY updated_at DESC
         Ok(skills)
     }
 
-    async fn list_by_category(&self, ctx: RequestContext, category: &str) -> Result<Vec<SkillPo>, AppError> {
+    async fn list_by_category(
+        &self,
+        ctx: RequestContext,
+        category: &str,
+    ) -> Result<Vec<SkillPo>, AppError> {
         let skills = sqlx::query_as!(
             SkillPo,
             r#"
@@ -225,7 +242,11 @@ ORDER BY updated_at DESC
         Ok(skills)
     }
 
-    async fn list_by_author(&self, ctx: RequestContext, author_id: &str) -> Result<Vec<SkillPo>, AppError> {
+    async fn list_by_author(
+        &self,
+        ctx: RequestContext,
+        author_id: &str,
+    ) -> Result<Vec<SkillPo>, AppError> {
         let skills = sqlx::query_as!(
             SkillPo,
             r#"
@@ -272,8 +293,8 @@ ORDER BY updated_at DESC
             source_skill.category.clone(),
             source_skill.id.clone(), // parent_skill_id points to original (String not Option)
             target_agent_id.to_string(), // author is the agent
-            SkillAuthorType::Agent, // author type is Agent
-            content_path, // content path calculated internally
+            SkillAuthorType::Agent,  // author type is Agent
+            content_path,            // content path calculated internally
         );
         // new_skill is already Draft by default
 
@@ -286,7 +307,11 @@ ORDER BY updated_at DESC
         Ok(new_skill)
     }
 
-    async fn search(&self, ctx: RequestContext, search: SkillSearch) -> Result<Vec<SkillPo>, AppError> {
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: SkillSearch,
+    ) -> Result<Vec<SkillPo>, AppError> {
         // ✅ 只做参数转换，直接转发到 query（DAO 层不碰向量搜索）
         let mut query = search.filters;
 
@@ -344,7 +369,11 @@ ORDER BY updated_at DESC
                     None
                 };
 
-                files.push(SkillFile { filename, file_size, content });
+                files.push(SkillFile {
+                    filename,
+                    file_size,
+                    content,
+                });
             }
         }
 
@@ -384,7 +413,9 @@ ORDER BY updated_at DESC
 impl SkillDaoSqliteImpl {
     /// 获取技能的完整目录路径
     fn skill_dir(&self, skill: &SkillPo) -> PathBuf {
-        crate::config::get().base_data_path().join(&skill.content_path)
+        crate::config::get()
+            .base_data_path()
+            .join(&skill.content_path)
     }
 
     /// 获取技能主文件（skill.md）的完整路径

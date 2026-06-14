@@ -2,14 +2,14 @@
 //!
 //! 定义组织相关业务接口实现
 
-use rand::Rng;
 use crate::error::AppError;
 use crate::models::organization::OrganizationPo;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::organization::OrganizationQuery;
-use common::enums::OrganizationStatus;
 use async_trait::async_trait;
+use common::enums::OrganizationStatus;
+use rand::Rng;
 
 /// 生成组织 ID（12 位大写字母 + 数字）
 fn generate_org_id() -> String {
@@ -87,7 +87,11 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
     }
 
     /// 获取组织信息
-    async fn get_by_id(&self, ctx: RequestContext, org_id: &str) -> Result<Option<OrganizationPo>, AppError> {
+    async fn get_by_id(
+        &self,
+        ctx: RequestContext,
+        org_id: &str,
+    ) -> Result<Option<OrganizationPo>, AppError> {
         self.org_dal.get_by_id(ctx, org_id).await
     }
 

@@ -1,27 +1,27 @@
 //! Shared enumerations used by both backend and frontend
 
 pub mod agent;
-pub mod organization;
-pub mod user;
-pub mod message;
-pub mod provider;
-pub mod task;
-pub mod project;
 pub mod file;
-pub mod skill;
 pub mod memory;
-pub mod tool;
+pub mod message;
 pub mod message_channel;
+pub mod organization;
+pub mod project;
+pub mod provider;
+pub mod skill;
+pub mod task;
+pub mod tool;
+pub mod user;
 
 pub use agent::{AgentStatus, ModelProviderStatus};
-pub use organization::{OrganizationStatus, OrganizationScope};
-pub use user::{UserRole, UserStatus};
-pub use message::{MessageRole, MessageType, MessageStatus};
-pub use provider::{ProviderType, ModelCapability};
-pub use task::{TaskStatus, AssigneeType};
-pub use project::ProjectStatus;
 pub use file::FileType;
+pub use memory::{KnowledgeRelationType, MemoryRole, MemoryStatus, MemoryType};
+pub use message::{MessageRole, MessageStatus, MessageType};
+pub use message_channel::{ChannelStatus, ChannelType};
+pub use organization::{OrganizationScope, OrganizationStatus};
+pub use project::ProjectStatus;
+pub use provider::{ModelCapability, ProviderType};
 pub use skill::SkillStatus;
-pub use memory::{MemoryStatus, MemoryRole, KnowledgeRelationType, MemoryType};
-pub use tool::{ToolProtocol, ToolStatus, ControlMode};
-pub use message_channel::{ChannelType, ChannelStatus};
+pub use task::{AssigneeType, TaskStatus};
+pub use tool::{ControlMode, ToolProtocol, ToolStatus};
+pub use user::{UserRole, UserStatus};

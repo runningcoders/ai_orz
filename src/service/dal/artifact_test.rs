@@ -1,11 +1,11 @@
 //! Artifact DAL 单元测试
 
-use common::enums::FileType;
 use crate::models::artifact::Artifact;
 use crate::models::file::FileMeta;
 use crate::pkg::RequestContext;
-use crate::service::dao::artifact::ArtifactQuery;
 use crate::service::dal::artifact::ArtifactDal;
+use crate::service::dao::artifact::ArtifactQuery;
+use common::enums::FileType;
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -142,8 +142,14 @@ async fn test_update_status(pool: SqlitePool) {
     dal.create(ctx.clone(), &artifact).await.unwrap();
 
     // Update status to 2 (archived)
-    dal.update_status(ctx.clone(), &artifact_id, 2).await.unwrap();
-    let found = dal.find_by_id(ctx.clone(), &artifact_id).await.unwrap().unwrap();
+    dal.update_status(ctx.clone(), &artifact_id, 2)
+        .await
+        .unwrap();
+    let found = dal
+        .find_by_id(ctx.clone(), &artifact_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(found.po.status, 2);
 
     // Delete (soft delete)
@@ -170,7 +176,10 @@ async fn test_count_by_project_and_task(pool: SqlitePool) {
         dal.create(ctx.clone(), &artifact).await.unwrap();
     }
 
-    let project_count = dal.count_by_project(ctx.clone(), &project_id).await.unwrap();
+    let project_count = dal
+        .count_by_project(ctx.clone(), &project_id)
+        .await
+        .unwrap();
     assert_eq!(project_count, 5); // 3 + 2
 
     let task_count = dal.count_by_task(ctx, &task_id).await.unwrap();

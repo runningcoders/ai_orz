@@ -1,14 +1,14 @@
 //! Project Domain 单元测试
 
 use super::{ProjectDomainImpl, ProjectDomainProvider};
-use crate::models::project::Project;
-use crate::models::task::Task;
 use crate::models::artifact::Artifact;
 use crate::models::file::FileMeta;
+use crate::models::project::Project;
+use crate::models::task::Task;
 use crate::pkg::RequestContext;
+use common::enums::FileType;
 use common::enums::project::ProjectStatus;
 use common::enums::task::TaskStatus;
-use common::enums::FileType;
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -127,7 +127,12 @@ async fn test_project_start_complete_archive(pool: SqlitePool) {
         .start(ctx.clone(), project_id, "admin".to_string())
         .await
         .unwrap();
-    let started = domain.project().get(ctx.clone(), project_id).await.unwrap().unwrap();
+    let started = domain
+        .project()
+        .get(ctx.clone(), project_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(started.po.status, ProjectStatus::InProgress);
 
     domain
@@ -135,7 +140,12 @@ async fn test_project_start_complete_archive(pool: SqlitePool) {
         .complete(ctx.clone(), project_id, "admin".to_string())
         .await
         .unwrap();
-    let completed = domain.project().get(ctx.clone(), project_id).await.unwrap().unwrap();
+    let completed = domain
+        .project()
+        .get(ctx.clone(), project_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(completed.po.status, ProjectStatus::Completed);
 
     domain
@@ -143,7 +153,12 @@ async fn test_project_start_complete_archive(pool: SqlitePool) {
         .archive(ctx.clone(), project_id, "admin".to_string())
         .await
         .unwrap();
-    let archived = domain.project().get(ctx.clone(), project_id).await.unwrap().unwrap();
+    let archived = domain
+        .project()
+        .get(ctx.clone(), project_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(archived.po.status, ProjectStatus::Archived);
 }
 
@@ -261,7 +276,12 @@ async fn test_task_start_complete_cancel(pool: SqlitePool) {
         .start(ctx.clone(), task_id, "admin".to_string())
         .await
         .unwrap();
-    let started = domain.task().get(ctx.clone(), task_id).await.unwrap().unwrap();
+    let started = domain
+        .task()
+        .get(ctx.clone(), task_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(started.po.status, TaskStatus::InProgress);
 
     domain
@@ -269,7 +289,12 @@ async fn test_task_start_complete_cancel(pool: SqlitePool) {
         .complete(ctx.clone(), task_id, "admin".to_string())
         .await
         .unwrap();
-    let completed = domain.task().get(ctx.clone(), task_id).await.unwrap().unwrap();
+    let completed = domain
+        .task()
+        .get(ctx.clone(), task_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(completed.po.status, TaskStatus::Completed);
 
     let task2 = domain
@@ -294,10 +319,13 @@ async fn test_task_start_complete_cancel(pool: SqlitePool) {
         .cancel(ctx.clone(), &task2.po.id, "admin".to_string())
         .await
         .unwrap();
-    
+
     // Cancelled 状态被当作软删除，find_by_id 查不到（设计如此）
     let canceled = domain.task().get(ctx.clone(), &task2.po.id).await.unwrap();
-    assert!(canceled.is_none(), "Cancelled task should not be found (soft delete)");
+    assert!(
+        canceled.is_none(),
+        "Cancelled task should not be found (soft delete)"
+    );
 }
 
 // ==================== ArtifactDomain 测试 ====================
@@ -414,10 +442,25 @@ async fn test_artifact_delete(pool: SqlitePool) {
         .unwrap();
 
     let artifact_id = &artifact.po.id;
-    assert!(domain.artifact().get(ctx.clone(), artifact_id).await.unwrap().is_some());
+    assert!(
+        domain
+            .artifact()
+            .get(ctx.clone(), artifact_id)
+            .await
+            .unwrap()
+            .is_some()
+    );
 
-    domain.artifact().delete(ctx.clone(), artifact_id).await.unwrap();
+    domain
+        .artifact()
+        .delete(ctx.clone(), artifact_id)
+        .await
+        .unwrap();
 
-    let found = domain.artifact().get(ctx.clone(), artifact_id).await.unwrap();
+    let found = domain
+        .artifact()
+        .get(ctx.clone(), artifact_id)
+        .await
+        .unwrap();
     assert!(found.is_none());
 }

@@ -7,8 +7,8 @@ use crate::error::AppError;
 use crate::models::event::Event;
 use crate::models::message::Message;
 use crate::pkg::RequestContext;
-use crate::service::dao::message::{MessageDao, MessageQuery, self};
-use crate::service::dao::event_queue::{EventQueueDao, self};
+use crate::service::dao::event_queue::{self, EventQueueDao};
+use crate::service::dao::message::{self, MessageDao, MessageQuery};
 use common::enums::MessageStatus;
 use std::sync::{Arc, OnceLock};
 
@@ -23,10 +23,7 @@ pub fn dal() -> Arc<dyn MessageDal> {
 
 /// 初始化 Message DAL（使用全局单例 DAO）
 pub fn init() {
-    let _ = MESSAGE_DAL.set(new(
-        message::dao(),
-        event_queue::message_dao(),
-    ));
+    let _ = MESSAGE_DAL.set(new(message::dao(), event_queue::message_dao()));
 }
 
 /// 创建 Message DAL（返回 trait 对象）
@@ -62,7 +59,11 @@ pub trait MessageDal: Send + Sync {
     ///     ..Default::default()
     /// }).await?;
     /// ```
-    async fn query(&self, ctx: RequestContext, query: MessageQuery) -> Result<Vec<Message>, AppError>;
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: MessageQuery,
+    ) -> Result<Vec<Message>, AppError>;
 
     /// 按任务 ID 查询消息列表
     ///
@@ -119,55 +120,28 @@ pub trait MessageDal: Send + Sync {
     ) -> Result<(), AppError>;
 
     /// 统计任务消息数量
-    async fn count_by_task_id(
-        &self,
-        ctx: RequestContext,
-        task_id: &str,
-    ) -> Result<u64, AppError>;
+    async fn count_by_task_id(&self, ctx: RequestContext, task_id: &str) -> Result<u64, AppError>;
 
     /// 根据 ID 查询消息
-    async fn find_by_id(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<Option<Message>, AppError>;
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Message>, AppError>;
 
     /// 删除消息
-    async fn delete_message(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<(), AppError>;
+    async fn delete_message(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
 
     /// 删除任务下所有消息
-    async fn delete_by_task_id(
-        &self,
-        ctx: RequestContext,
-        task_id: &str,
-    ) -> Result<(), AppError>;
+    async fn delete_by_task_id(&self, ctx: RequestContext, task_id: &str) -> Result<(), AppError>;
 
     /// 从事件队列中取出下一个待处理的消息事件
     ///
     /// 返回 None 表示队列为空
     /// 获取后消息事件进入 "处理中" 状态，需要调用 ack_message 确认完成
-    async fn dequeue_next_message(
-        &self,
-        ctx: RequestContext,
-    ) -> Result<Option<Message>, AppError>;
+    async fn dequeue_next_message(&self, ctx: RequestContext) -> Result<Option<Message>, AppError>;
 
     /// 确认消息处理完成，从事件队列中移除
-    async fn ack_message(
-        &self,
-        ctx: RequestContext,
-        message_id: &str,
-    ) -> Result<(), AppError>;
+    async fn ack_message(&self, ctx: RequestContext, message_id: &str) -> Result<(), AppError>;
 
     /// 标记消息处理失败，重新放回队列等待重试
-    async fn nack_message(
-        &self,
-        ctx: RequestContext,
-        message_id: &str,
-    ) -> Result<(), AppError>;
+    async fn nack_message(&self, ctx: RequestContext, message_id: &str) -> Result<(), AppError>;
 }
 
 // ==================== DAL 实现 ====================
@@ -205,7 +179,11 @@ impl MessageDal for MessageDalImpl {
         Ok(())
     }
 
-    async fn query(&self, ctx: RequestContext, query: MessageQuery) -> Result<Vec<Message>, AppError> {
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: MessageQuery,
+    ) -> Result<Vec<Message>, AppError> {
         // 调用 DAO 层查询，得到 PO 列表
         let pos = self.message_dao.query(ctx, query).await?;
         // 转换为业务实体
@@ -219,11 +197,15 @@ impl MessageDal for MessageDalImpl {
         limit: Option<usize>,
     ) -> Result<Vec<Message>, AppError> {
         // 语法糖：调用通用查询
-        self.query(ctx, MessageQuery {
-            task_id: Some(task_id.to_string()),
-            limit,
-            ..Default::default()
-        }).await
+        self.query(
+            ctx,
+            MessageQuery {
+                task_id: Some(task_id.to_string()),
+                limit,
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     async fn list_by_project_id(
@@ -233,11 +215,15 @@ impl MessageDal for MessageDalImpl {
         limit: Option<usize>,
     ) -> Result<Vec<Message>, AppError> {
         // 语法糖：调用通用查询
-        self.query(ctx, MessageQuery {
-            project_id: Some(project_id.to_string()),
-            limit,
-            ..Default::default()
-        }).await
+        self.query(
+            ctx,
+            MessageQuery {
+                project_id: Some(project_id.to_string()),
+                limit,
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     async fn list_by_from_id(
@@ -247,11 +233,15 @@ impl MessageDal for MessageDalImpl {
         limit: Option<usize>,
     ) -> Result<Vec<Message>, AppError> {
         // 语法糖：调用通用查询
-        self.query(ctx, MessageQuery {
-            from_id: Some(from_id.to_string()),
-            limit,
-            ..Default::default()
-        }).await
+        self.query(
+            ctx,
+            MessageQuery {
+                from_id: Some(from_id.to_string()),
+                limit,
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     async fn list_by_to_id(
@@ -261,11 +251,15 @@ impl MessageDal for MessageDalImpl {
         limit: Option<usize>,
     ) -> Result<Vec<Message>, AppError> {
         // 语法糖：调用通用查询
-        self.query(ctx, MessageQuery {
-            to_id: Some(to_id.to_string()),
-            limit,
-            ..Default::default()
-        }).await
+        self.query(
+            ctx,
+            MessageQuery {
+                to_id: Some(to_id.to_string()),
+                limit,
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     async fn list_by_status(
@@ -275,11 +269,15 @@ impl MessageDal for MessageDalImpl {
         limit: Option<usize>,
     ) -> Result<Vec<Message>, AppError> {
         // 语法糖：调用通用查询
-        self.query(ctx, MessageQuery {
-            status_in: Some(status),
-            limit,
-            ..Default::default()
-        }).await
+        self.query(
+            ctx,
+            MessageQuery {
+                status_in: Some(status),
+                limit,
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     async fn update_status(
@@ -288,63 +286,45 @@ impl MessageDal for MessageDalImpl {
         message_id: &str,
         status: MessageStatus,
     ) -> Result<(), AppError> {
-        self.message_dao.update_status(ctx, message_id, status).await
+        self.message_dao
+            .update_status(ctx, message_id, status)
+            .await
     }
 
-    async fn count_by_task_id(
-        &self,
-        ctx: RequestContext,
-        task_id: &str,
-    ) -> Result<u64, AppError> {
+    async fn count_by_task_id(&self, ctx: RequestContext, task_id: &str) -> Result<u64, AppError> {
         self.message_dao.count_by_task_id(ctx, task_id).await
     }
 
-    async fn find_by_id(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<Option<Message>, AppError> {
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Message>, AppError> {
         let opt = self.message_dao.find_by_id(ctx, id).await?;
         Ok(opt.map(Message::from_po))
     }
 
-    async fn delete_message(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<(), AppError> {
+    async fn delete_message(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
         self.message_dao.delete(ctx, id).await
     }
 
-    async fn delete_by_task_id(
-        &self,
-        ctx: RequestContext,
-        task_id: &str,
-    ) -> Result<(), AppError> {
+    async fn delete_by_task_id(&self, ctx: RequestContext, task_id: &str) -> Result<(), AppError> {
         self.message_dao.delete_by_task_id(ctx, task_id).await
     }
 
-    async fn dequeue_next_message(
-        &self,
-        ctx: RequestContext,
-    ) -> Result<Option<Message>, AppError> {
+    async fn dequeue_next_message(&self, ctx: RequestContext) -> Result<Option<Message>, AppError> {
         // 1. 优先从内存队列取出
         let opt_msg = self.event_queue_dao.dequeue_next(ctx.clone())?;
         match opt_msg {
             Some(msg) => {
                 // 出队成功后更新状态为 Processing，避免回源重复入队
                 let msg = *msg;
-                self.update_status(ctx.clone(), msg.id(), MessageStatus::Processing).await?;
+                self.update_status(ctx.clone(), msg.id(), MessageStatus::Processing)
+                    .await?;
                 Ok(Some(msg))
             }
             None => {
                 // 2. 队列为空，回源 DB 查询 pending 状态的消息
                 // 查询 Pending 状态，最多取 5 条，按创建时间升序
-                let pending_messages = self.list_by_status(
-                    ctx.clone(),
-                    vec![MessageStatus::Pending],
-                    Some(5),
-                ).await?;
+                let pending_messages = self
+                    .list_by_status(ctx.clone(), vec![MessageStatus::Pending], Some(5))
+                    .await?;
 
                 if pending_messages.is_empty() {
                     // DB 也没有，真的空了
@@ -358,24 +338,19 @@ impl MessageDal for MessageDalImpl {
                 }
 
                 // 4. 再次尝试出队（肯定能取到了）
-                Ok(self.event_queue_dao.dequeue_next(ctx.clone())?.map(|msg| *msg))
+                Ok(self
+                    .event_queue_dao
+                    .dequeue_next(ctx.clone())?
+                    .map(|msg| *msg))
             }
         }
     }
 
-    async fn ack_message(
-        &self,
-        _ctx: RequestContext,
-        message_id: &str,
-    ) -> Result<(), AppError> {
+    async fn ack_message(&self, _ctx: RequestContext, message_id: &str) -> Result<(), AppError> {
         self.event_queue_dao.ack(_ctx.clone(), message_id)
     }
 
-    async fn nack_message(
-        &self,
-        _ctx: RequestContext,
-        message_id: &str,
-    ) -> Result<(), AppError> {
+    async fn nack_message(&self, _ctx: RequestContext, message_id: &str) -> Result<(), AppError> {
         self.event_queue_dao.nack(_ctx.clone(), message_id)
     }
 }

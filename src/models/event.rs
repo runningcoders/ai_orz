@@ -37,7 +37,8 @@ impl Ord for EventRef {
     fn cmp(&self, other: &Self) -> Ordering {
         // BinaryHeap 是最大堆，所以优先级高的在前，同优先级创建时间早的在前
         // 对于创建时间：越早的 created_at 数值越小，我们需要让它排在前面 → 所以反转比较结果
-        self.priority.cmp(&other.priority)
+        self.priority
+            .cmp(&other.priority)
             .then_with(|| self.created_at.cmp(&other.created_at).reverse())
     }
 }

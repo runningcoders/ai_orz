@@ -4,10 +4,10 @@ use crate::error::AppError;
 use crate::models::agent::Agent;
 use crate::models::brain::Brain;
 use crate::pkg::RequestContext;
-use common::enums::AgentStatus;
-use crate::service::dao::agent::{AgentDao, AgentQuery};
-use std::sync::{Arc, OnceLock};
 use crate::service::dao::agent;
+use crate::service::dao::agent::{AgentDao, AgentQuery};
+use common::enums::AgentStatus;
+use std::sync::{Arc, OnceLock};
 // ==================== 单例管理 ====================
 
 static AGENT_DAL: OnceLock<Arc<dyn AgentDal>> = OnceLock::new();
@@ -19,18 +19,12 @@ pub fn dal() -> Arc<dyn AgentDal> {
 
 /// 初始化 Agent DAL
 pub fn init() {
-    let _ = AGENT_DAL.set(new(
-        agent::dao(),
-    ));
+    let _ = AGENT_DAL.set(new(agent::dao()));
 }
 
 /// 创建 Agent DAL（返回 trait 对象）
-pub fn new(
-    agent_dao: Arc<dyn AgentDao + Send + Sync>,
-) -> Arc<dyn AgentDal> {
-    Arc::new(AgentDalImpl {
-        agent_dao,
-    })
+pub fn new(agent_dao: Arc<dyn AgentDao + Send + Sync>) -> Arc<dyn AgentDal> {
+    Arc::new(AgentDalImpl { agent_dao })
 }
 
 // ==================== DAL 接口 ====================
@@ -65,7 +59,12 @@ pub trait AgentDal: Send + Sync {
     ///
     /// 唤醒完成后将 brain 写入 Agent 的 brain 字段
     /// 如果 model_provider_id 发生变化，自动更新数据库
-    async fn wake_brain(&self, ctx: RequestContext, agent: &mut Agent, brain: Brain) -> Result<(), AppError>;
+    async fn wake_brain(
+        &self,
+        ctx: RequestContext,
+        agent: &mut Agent,
+        brain: Brain,
+    ) -> Result<(), AppError>;
 }
 
 /// Agent DAL 实现
@@ -97,10 +96,14 @@ impl AgentDal for AgentDalImpl {
     }
 
     async fn find_all(&self, ctx: RequestContext) -> Result<Vec<Agent>, AppError> {
-        self.query(ctx, AgentQuery { 
-            exclude_status: Some(AgentStatus::Deleted), 
-            ..Default::default() 
-        }).await
+        self.query(
+            ctx,
+            AgentQuery {
+                exclude_status: Some(AgentStatus::Deleted),
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     async fn update(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError> {
@@ -111,7 +114,12 @@ impl AgentDal for AgentDalImpl {
         self.agent_dao.delete(ctx, &agent.po).await
     }
 
-    async fn wake_brain(&self, ctx: RequestContext, agent: &mut Agent, brain: Brain) -> Result<(), AppError> {
+    async fn wake_brain(
+        &self,
+        ctx: RequestContext,
+        agent: &mut Agent,
+        brain: Brain,
+    ) -> Result<(), AppError> {
         // 1. 从 Brain 中获取 Cortex，Cortex 持有 ModelProvider，从中获取 model_provider_id
         let model_provider_id = brain.cortex().model_provider.po.id.clone();
 

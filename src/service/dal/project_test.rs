@@ -1,10 +1,10 @@
 //! Project DAL 单元测试
 
-use common::enums::ProjectStatus;
 use crate::models::project::Project;
 use crate::pkg::RequestContext;
-use crate::service::dao::project::ProjectQuery;
 use crate::service::dal::project::ProjectDal;
+use crate::service::dao::project::ProjectQuery;
+use common::enums::ProjectStatus;
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -71,7 +71,10 @@ async fn test_list_by_root_user(pool: SqlitePool) {
     let project = create_test_project("Other Project", &other_root_user_id);
     dal.create(ctx.clone(), &project).await.unwrap();
 
-    let projects = dal.list_by_root_user(ctx, &root_user_id, None).await.unwrap();
+    let projects = dal
+        .list_by_root_user(ctx, &root_user_id, None)
+        .await
+        .unwrap();
     assert_eq!(projects.len(), 3);
 }
 
@@ -90,24 +93,27 @@ async fn test_list_by_root_user_and_status(pool: SqlitePool) {
     let archived_project = create_test_project("Archived Project", &root_user_id);
     let archived_project_id = archived_project.po.id.clone();
     dal.create(ctx.clone(), &archived_project).await.unwrap();
-    dal.archive(ctx.clone(), &archived_project_id, "admin").await.unwrap();
+    dal.archive(ctx.clone(), &archived_project_id, "admin")
+        .await
+        .unwrap();
 
     // Query only active projects
-    let projects = dal.list_by_root_user_and_status(
-        ctx.clone(),
-        &root_user_id,
-        vec![ProjectStatus::Active],
-        None,
-    ).await.unwrap();
+    let projects = dal
+        .list_by_root_user_and_status(
+            ctx.clone(),
+            &root_user_id,
+            vec![ProjectStatus::Active],
+            None,
+        )
+        .await
+        .unwrap();
     assert_eq!(projects.len(), 2);
 
     // Query archived projects
-    let projects = dal.list_by_root_user_and_status(
-        ctx,
-        &root_user_id,
-        vec![ProjectStatus::Archived],
-        None,
-    ).await.unwrap();
+    let projects = dal
+        .list_by_root_user_and_status(ctx, &root_user_id, vec![ProjectStatus::Archived], None)
+        .await
+        .unwrap();
     assert_eq!(projects.len(), 1);
 }
 
@@ -162,12 +168,20 @@ async fn test_update_status_and_archive(pool: SqlitePool) {
     dal.create(ctx.clone(), &project).await.unwrap();
 
     // Update status to InProgress
-    dal.update_status(ctx.clone(), &project_id, ProjectStatus::InProgress, "admin").await.unwrap();
-    let found = dal.find_by_id(ctx.clone(), &project_id).await.unwrap().unwrap();
+    dal.update_status(ctx.clone(), &project_id, ProjectStatus::InProgress, "admin")
+        .await
+        .unwrap();
+    let found = dal
+        .find_by_id(ctx.clone(), &project_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(found.po.status, ProjectStatus::InProgress);
 
     // Archive project
-    dal.archive(ctx.clone(), &project_id, "admin").await.unwrap();
+    dal.archive(ctx.clone(), &project_id, "admin")
+        .await
+        .unwrap();
     let found = dal.find_by_id(ctx, &project_id).await.unwrap().unwrap();
     assert_eq!(found.po.status, ProjectStatus::Archived);
 }
@@ -202,20 +216,20 @@ async fn test_count_by_root_user_and_status(pool: SqlitePool) {
         let mut project = create_test_project(&format!("Archived Project {}", i), &root_user_id);
         let project_id = project.po.id.clone();
         dal.create(ctx.clone(), &project).await.unwrap();
-        dal.archive(ctx.clone(), &project_id, "admin").await.unwrap();
+        dal.archive(ctx.clone(), &project_id, "admin")
+            .await
+            .unwrap();
     }
 
-    let active_count = dal.count_by_root_user_and_status(
-        ctx.clone(),
-        &root_user_id,
-        ProjectStatus::Active,
-    ).await.unwrap();
+    let active_count = dal
+        .count_by_root_user_and_status(ctx.clone(), &root_user_id, ProjectStatus::Active)
+        .await
+        .unwrap();
     assert_eq!(active_count, 3);
 
-    let archived_count = dal.count_by_root_user_and_status(
-        ctx,
-        &root_user_id,
-        ProjectStatus::Archived,
-    ).await.unwrap();
+    let archived_count = dal
+        .count_by_root_user_and_status(ctx, &root_user_id, ProjectStatus::Archived)
+        .await
+        .unwrap();
     assert_eq!(archived_count, 2);
 }

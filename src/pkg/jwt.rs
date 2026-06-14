@@ -2,12 +2,10 @@
 //!
 //! 用于用户登录认证，签发和验证 JWT token
 
-use jsonwebtoken::{
-    decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation,
-};
-use std::sync::OnceLock;
-use serde::{Deserialize, Serialize};
 use chrono::{Duration, Utc};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
 
 /// JWT Claims (包含用户信息)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,11 +87,8 @@ impl JwtConfig {
     pub fn decode(&self, token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
         let validation = Validation::new(Algorithm::HS256);
 
-        decode::<Claims>(
-            token,
-            &DecodingKey::from_secret(&self.secret),
-            &validation,
-        ).map(|data| data.claims)
+        decode::<Claims>(token, &DecodingKey::from_secret(&self.secret), &validation)
+            .map(|data| data.claims)
     }
 
     /// 获取默认过期时间（秒）
@@ -107,7 +102,8 @@ static JWT_CONFIG: OnceLock<JwtConfig> = OnceLock::new();
 
 /// 初始化全局 JWT 配置
 pub fn init_jwt(secret: &str, default_expiry_hours: i64) {
-    JWT_CONFIG.set(JwtConfig::new(secret, default_expiry_hours))
+    JWT_CONFIG
+        .set(JwtConfig::new(secret, default_expiry_hours))
         .expect("JWT config already initialized");
 }
 
@@ -137,11 +133,9 @@ mod tests {
     #[test]
     fn test_jwt_encode_decode() {
         let config = JwtConfig::new("test-secret-key-very-long-for-security", 24);
-        let token = config.encode(
-            "user-123",
-            "testuser",
-            "org-456",
-        ).expect("encode should succeed");
+        let token = config
+            .encode("user-123", "testuser", "org-456")
+            .expect("encode should succeed");
 
         println!("Generated token: {}", token);
 

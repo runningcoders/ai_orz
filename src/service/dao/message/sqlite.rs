@@ -1,14 +1,14 @@
 //! Message DAO SQLite 实现
 
 use crate::error::Result;
-use crate::models::message::MessagePo;
 use crate::models::file::FileMeta;
-use common::enums::{MessageRole, MessageType, MessageStatus, FileType};
+use crate::models::message::MessagePo;
 use crate::pkg::RequestContext;
 use crate::service::dao::message::{MessageDao, MessageQuery};
+use chrono::Utc;
+use common::enums::{FileType, MessageRole, MessageStatus, MessageType};
 use sqlx::types::Json;
 use std::sync::{Arc, OnceLock};
-use chrono::Utc;
 // ==================== 工厂方法 + 单例管理 ====================
 
 static MESSAGE_DAO: OnceLock<Arc<dyn MessageDao>> = OnceLock::new();
@@ -127,10 +127,7 @@ impl MessageDao for MessageDaoSqliteImpl {
         }
 
         // 执行查询
-        let rows = builder
-            .build_query_as()
-            .fetch_all(ctx.db_pool())
-            .await?;
+        let rows = builder.build_query_as().fetch_all(ctx.db_pool()).await?;
 
         Ok(rows)
     }
@@ -150,40 +147,76 @@ FROM messages WHERE id = ? AND "status" != 0
         Ok(message)
     }
 
-    async fn list_by_task_id(&self, ctx: RequestContext, task_id: &str, limit: Option<usize>) -> Result<Vec<MessagePo>> {
+    async fn list_by_task_id(
+        &self,
+        ctx: RequestContext,
+        task_id: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<MessagePo>> {
         // 语法糖：调用通用查询
-        self.query(ctx, MessageQuery {
-            task_id: Some(task_id.to_string()),
-            limit,
-            ..Default::default()
-        }).await
+        self.query(
+            ctx,
+            MessageQuery {
+                task_id: Some(task_id.to_string()),
+                limit,
+                ..Default::default()
+            },
+        )
+        .await
     }
 
-    async fn list_by_project_id(&self, ctx: RequestContext, project_id: &str, limit: Option<usize>) -> Result<Vec<MessagePo>> {
+    async fn list_by_project_id(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<MessagePo>> {
         // 语法糖：调用通用查询
-        self.query(ctx, MessageQuery {
-            project_id: Some(project_id.to_string()),
-            limit,
-            ..Default::default()
-        }).await
+        self.query(
+            ctx,
+            MessageQuery {
+                project_id: Some(project_id.to_string()),
+                limit,
+                ..Default::default()
+            },
+        )
+        .await
     }
 
-    async fn list_by_from_id(&self, ctx: RequestContext, from_id: &str, limit: Option<usize>) -> Result<Vec<MessagePo>> {
+    async fn list_by_from_id(
+        &self,
+        ctx: RequestContext,
+        from_id: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<MessagePo>> {
         // 语法糖：调用通用查询
-        self.query(ctx, MessageQuery {
-            from_id: Some(from_id.to_string()),
-            limit,
-            ..Default::default()
-        }).await
+        self.query(
+            ctx,
+            MessageQuery {
+                from_id: Some(from_id.to_string()),
+                limit,
+                ..Default::default()
+            },
+        )
+        .await
     }
 
-    async fn list_by_to_id(&self, ctx: RequestContext, to_id: &str, limit: Option<usize>) -> Result<Vec<MessagePo>> {
+    async fn list_by_to_id(
+        &self,
+        ctx: RequestContext,
+        to_id: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<MessagePo>> {
         // 语法糖：调用通用查询
-        self.query(ctx, MessageQuery {
-            to_id: Some(to_id.to_string()),
-            limit,
-            ..Default::default()
-        }).await
+        self.query(
+            ctx,
+            MessageQuery {
+                to_id: Some(to_id.to_string()),
+                limit,
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()> {
@@ -198,8 +231,8 @@ UPDATE messages SET "status" = 0, updated_at = ?, modified_by = ? WHERE id = ?
             uid,
             id
         )
-            .execute(ctx.db_pool())
-            .await?;
+        .execute(ctx.db_pool())
+        .await?;
 
         Ok(())
     }
@@ -209,8 +242,8 @@ UPDATE messages SET "status" = 0, updated_at = ?, modified_by = ? WHERE id = ?
             r#"SELECT COUNT(*) as count FROM messages WHERE task_id = ? AND "status" != 0"#,
             task_id
         )
-            .fetch_one(ctx.db_pool())
-            .await?;
+        .fetch_one(ctx.db_pool())
+        .await?;
 
         Ok(count.count as u64)
     }
@@ -227,13 +260,18 @@ UPDATE messages SET "status" = 0, updated_at = ?, modified_by = ? WHERE task_id 
             uid,
             task_id
         )
-            .execute(ctx.db_pool())
-            .await?;
+        .execute(ctx.db_pool())
+        .await?;
 
         Ok(())
     }
 
-    async fn update_status(&self, ctx: RequestContext, id: &str, status: MessageStatus) -> Result<()> {
+    async fn update_status(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        status: MessageStatus,
+    ) -> Result<()> {
         let current_timestamp = Utc::now().timestamp();
         let uid = ctx.uid().to_string();
         let status_i32 = status as i32;
@@ -246,20 +284,29 @@ UPDATE messages SET "status" = ?, updated_at = ?, modified_by = ? WHERE id = ?
             uid,
             id
         )
-            .execute(ctx.db_pool())
-            .await?;
+        .execute(ctx.db_pool())
+        .await?;
 
         Ok(())
     }
 
-    async fn list_by_status(&self, ctx: RequestContext, status: Vec<MessageStatus>, limit: Option<usize>) -> Result<Vec<MessagePo>> {
+    async fn list_by_status(
+        &self,
+        ctx: RequestContext,
+        status: Vec<MessageStatus>,
+        limit: Option<usize>,
+    ) -> Result<Vec<MessagePo>> {
         // 语法糖：调用通用查询
         // 注意：显式传入 status_in 会覆盖默认的 "status != 0" 过滤
-        self.query(ctx, MessageQuery {
-            status_in: Some(status),
-            limit,
-            ..Default::default()
-        }).await
+        self.query(
+            ctx,
+            MessageQuery {
+                status_in: Some(status),
+                limit,
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     async fn create_tool_call_request(
@@ -297,8 +344,8 @@ UPDATE messages SET "status" = ?, updated_at = ?, modified_by = ? WHERE id = ?
             req.task_id,
             req.from_id,
             req.to_id,
-            MessageRole::Agent,   // from_role
-            MessageRole::Agent,   // to_role (工具调用是 Agent → Agent)
+            MessageRole::Agent, // from_role
+            MessageRole::Agent, // to_role (工具调用是 Agent → Agent)
             MessageType::ToolCallRequest,
             content,
             None, // file_type 保持 None，这是结构化消息不是文件附件
@@ -348,8 +395,8 @@ UPDATE messages SET "status" = ?, updated_at = ?, modified_by = ? WHERE id = ?
             res.task_id,
             res.from_id,
             res.to_id,
-            MessageRole::System,   // from_role (结果来自系统工具执行)
-            MessageRole::Agent,    // to_role (结果返回给 Agent)
+            MessageRole::System, // from_role (结果来自系统工具执行)
+            MessageRole::Agent,  // to_role (结果返回给 Agent)
             MessageType::ToolCallResult,
             content,
             None, // file_type 保持 None，大结果通过 file_meta 附件机制存储

@@ -1,10 +1,10 @@
 //! Message Topic 消费者单元测试
 
-use super::message::*;
 use super::MessageHandler;
-use common::enums::{FileType, MessageRole, MessageType};
+use super::message::*;
 use crate::models::file::FileMeta;
 use crate::models::message::Message;
+use common::enums::{FileType, MessageRole, MessageType};
 use uuid::Uuid;
 
 // ==================== 测试辅助函数 ====================

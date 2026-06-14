@@ -1,8 +1,8 @@
 //! 测试 Message Channel 连通性
 
 use axum::{
-    extract::{Extension, Path},
     Json,
+    extract::{Extension, Path},
 };
 use common::api::{ApiResponse, TestMessageChannelConnectionResponse};
 
@@ -32,7 +32,10 @@ pub async fn test_message_channel_connection(
         .ok_or_else(|| AppError::NotFound(format!("MessageChannel {} not found", id)))?;
 
     if channel.po.org_id != org_id || channel.po.user_id != user_id {
-        return Err(AppError::NotFound(format!("MessageChannel {} not found", id)));
+        return Err(AppError::NotFound(format!(
+            "MessageChannel {} not found",
+            id
+        )));
     }
 
     let response = match domain()

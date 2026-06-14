@@ -2,11 +2,11 @@
 
 use crate::error::AppError;
 use crate::models::agent::AgentPo;
-use common::enums::AgentStatus;
-use crate::service::dao::agent::{AgentDao, AgentQuery};
-use std::sync::{Arc, OnceLock};
-use chrono::Utc;
 use crate::pkg::RequestContext;
+use crate::service::dao::agent::{AgentDao, AgentQuery};
+use chrono::Utc;
+use common::enums::AgentStatus;
+use std::sync::{Arc, OnceLock};
 // ==================== 工厂方法 + 单例 ====================
 
 static AGENT_DAO: OnceLock<Arc<dyn AgentDao>> = OnceLock::new();
@@ -61,7 +61,11 @@ impl AgentDao for AgentDaoSqliteImpl {
         Ok(())
     }
 
-    async fn find_by_id(&self, _ctx: RequestContext, id: &str) -> Result<Option<AgentPo>, AppError> {
+    async fn find_by_id(
+        &self,
+        _ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<AgentPo>, AppError> {
         let agent = sqlx::query_as!(
             AgentPo,
             r#"
@@ -77,9 +81,13 @@ FROM agents WHERE id = ? AND status <> 0
         Ok(agent)
     }
 
-    async fn query(&self, _ctx: RequestContext, query: AgentQuery) -> Result<Vec<AgentPo>, AppError> {
+    async fn query(
+        &self,
+        _ctx: RequestContext,
+        query: AgentQuery,
+    ) -> Result<Vec<AgentPo>, AppError> {
         let mut builder = sqlx::QueryBuilder::new(
-            r#"SELECT id, name, role, description, soul, capabilities, runtime_config, model_provider_id, status, created_by, modified_by, created_at, updated_at FROM agents WHERE 1=1"#
+            r#"SELECT id, name, role, description, soul, capabilities, runtime_config, model_provider_id, status, created_by, modified_by, created_at, updated_at FROM agents WHERE 1=1"#,
         );
 
         // 名称模糊匹配
@@ -95,7 +103,9 @@ FROM agents WHERE id = ? AND status <> 0
 
         // 排除状态过滤
         if let Some(exclude_status) = &query.exclude_status {
-            builder.push(" AND status != ").push_bind(*exclude_status as i32);
+            builder
+                .push(" AND status != ")
+                .push_bind(*exclude_status as i32);
         }
 
         // 创建者过滤
@@ -105,7 +115,9 @@ FROM agents WHERE id = ? AND status <> 0
 
         // 模型提供商过滤
         if let Some(model_provider_id) = &query.model_provider_id {
-            builder.push(" AND model_provider_id = ").push_bind(model_provider_id);
+            builder
+                .push(" AND model_provider_id = ")
+                .push_bind(model_provider_id);
         }
 
         // 排序
@@ -117,19 +129,21 @@ FROM agents WHERE id = ? AND status <> 0
         }
 
         // 执行查询
-        let rows = builder.build_query_as()
-            .fetch_all(_ctx.db_pool())
-            .await?;
+        let rows = builder.build_query_as().fetch_all(_ctx.db_pool()).await?;
 
         Ok(rows)
     }
 
     async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<AgentPo>, AppError> {
         // 语法糖：调用通用查询，排除已删除状态
-        self.query(_ctx, AgentQuery {
-            exclude_status: Some(AgentStatus::Deleted),
-            ..Default::default()
-        }).await
+        self.query(
+            _ctx,
+            AgentQuery {
+                exclude_status: Some(AgentStatus::Deleted),
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     async fn update(&self, _ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError> {
@@ -174,8 +188,8 @@ UPDATE agents SET status = 0, modified_by = ?, updated_at = ? WHERE id = ?
             current_timestamp,
             agent.id
         )
-            .execute(_ctx.db_pool())
-            .await?;
+        .execute(_ctx.db_pool())
+        .await?;
 
         Ok(())
     }

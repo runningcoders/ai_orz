@@ -12,9 +12,9 @@ use std::time::Duration;
 
 use common::config::AppConfig;
 use once_cell::sync::OnceCell;
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::rolling;
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::pkg::RequestContext;
 
@@ -33,21 +33,23 @@ pub fn init(config: &AppConfig) {
     let is_json_format = config.logging.format.to_lowercase() == "json";
 
     // 过滤层：从环境变量读取，默认 info 级别
-    let filter_layer =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter_layer = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     // 如果启用文件日志，输出到配置的目录
     if config.logging.enable_file_log {
         let logs_dir = config.log_dir();
         // 创建日志目录（如果不存在，load_config 已经创建过，但保险起见再检查一次）
         if !logs_dir.exists() {
-            std::fs::create_dir_all(&logs_dir)
-                .expect(&format!("Failed to create logs directory at {:?}", logs_dir));
+            std::fs::create_dir_all(&logs_dir).expect(&format!(
+                "Failed to create logs directory at {:?}",
+                logs_dir
+            ));
         }
 
         // 自动清理旧日志
         if config.logging.retention_days > 0 {
-            let retention_period = Duration::from_secs(config.logging.retention_days as u64 * 86400);
+            let retention_period =
+                Duration::from_secs(config.logging.retention_days as u64 * 86400);
             let _ = cleanup_old_logs(&logs_dir, retention_period);
         }
 
@@ -186,4 +188,3 @@ pub fn create_span(operation: &str, ctx: &RequestContext) -> tracing::Span {
         operation = %operation
     )
 }
-

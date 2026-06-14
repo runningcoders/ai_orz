@@ -1,13 +1,12 @@
-use sqlx::SqlitePool;
-use common::enums::{FileType, TaskStatus};
 use crate::error::Result;
 use crate::models::artifact::ArtifactPo;
 use crate::models::file::FileMeta;
-use crate::service::dao::artifact::{ArtifactDao, new};
 use crate::pkg::request_context::RequestContext;
-use uuid::Uuid;
+use crate::service::dao::artifact::{ArtifactDao, new};
+use common::enums::{FileType, TaskStatus};
+use sqlx::SqlitePool;
 use std::sync::Arc;
-
+use uuid::Uuid;
 
 /// 初始化测试环境
 fn init_test_env(pool: SqlitePool) -> (Arc<dyn ArtifactDao + Send + Sync>, RequestContext) {
@@ -19,7 +18,7 @@ fn init_test_env(pool: SqlitePool) -> (Arc<dyn ArtifactDao + Send + Sync>, Reque
 #[sqlx::test(migrations = "./migrations")]
 async fn test_insert_artifact(pool: SqlitePool) -> Result<()> {
     let (dao, ctx) = init_test_env(pool);
-    
+
     let file_meta = FileMeta::new(
         format!("20260415/test.md"),
         "text/markdown".to_string(),
@@ -51,7 +50,7 @@ async fn test_insert_artifact(pool: SqlitePool) -> Result<()> {
 #[sqlx::test(migrations = "./migrations")]
 async fn test_insert_project_level_artifact(pool: SqlitePool) -> Result<()> {
     let (dao, ctx) = init_test_env(pool);
-    
+
     let file_meta = FileMeta::new(
         format!("20260415/project-overview.md"),
         "text/markdown".to_string(),
@@ -216,7 +215,7 @@ async fn test_delete_artifact(pool: SqlitePool) -> Result<()> {
 
     let found_after = dao.find_by_id(ctx.clone(), &artifact.id).await?;
     assert!(found_after.is_none());
-    
+
     Ok(())
 }
 
@@ -262,7 +261,7 @@ async fn test_all_file_types(pool: SqlitePool) -> Result<()> {
             "test-user".to_string(),
         );
         dao.insert(ctx.clone(), &artifact).await?;
-        
+
         let found = dao.find_by_id(ctx.clone(), &artifact.id).await?;
         assert!(found.is_some());
         let found = found.unwrap();

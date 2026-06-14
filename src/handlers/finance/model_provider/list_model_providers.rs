@@ -1,21 +1,21 @@
 //! 列出所有 Model Provider
 
-use common::api::ModelProviderListItem;
-use crate::pkg::RequestContext;
 use crate::error::AppError;
-use common::api::ApiResponse;
+use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
-use axum::{
-    extract::{Extension, Json},
-};
+use axum::extract::{Extension, Json};
+use common::api::ApiResponse;
+use common::api::ModelProviderListItem;
 
 /// 列出所有 Model Provider
 /// GET /model-providers
 pub async fn list_model_providers(
-    Extension(ctx): Extension<RequestContext>
+    Extension(ctx): Extension<RequestContext>,
 ) -> Result<Json<ApiResponse<Vec<ModelProviderListItem>>>, AppError> {
-
-    let providers = domain().model_provider_manage().list_model_providers(ctx).await?;
+    let providers = domain()
+        .model_provider_manage()
+        .list_model_providers(ctx)
+        .await?;
     let responses: Vec<ModelProviderListItem> = providers
         .iter()
         .map(|provider| ModelProviderListItem {
@@ -23,7 +23,16 @@ pub async fn list_model_providers(
             name: provider.po.name.clone(),
             provider_type: provider.po.provider_type.clone(),
             model_name: provider.po.model_name.clone(),
-            description: if provider.po.description.as_ref().map_or(true, |d| d.is_empty()) { None } else { provider.po.description.clone() },
+            description: if provider
+                .po
+                .description
+                .as_ref()
+                .map_or(true, |d| d.is_empty())
+            {
+                None
+            } else {
+                provider.po.description.clone()
+            },
             created_at: provider.po.created_at,
         })
         .collect();

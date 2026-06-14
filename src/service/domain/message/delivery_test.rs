@@ -26,7 +26,7 @@ fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn MessageDomain>, Reques
     let event_queue = crate::service::dao::event_queue::in_memory::new();
     let message_dal = crate::service::dal::message::new(message_dao, event_queue);
     let message_channel_dao = crate::service::dao::message_channel::new();
-    init_all_channel_daos();  // 初始化所有渠道 DAO 单例
+    init_all_channel_daos(); // 初始化所有渠道 DAO 单例
     let message_channel_dal = crate::service::dal::message_channel::new(message_channel_dao);
     // 初始化 MessageChannel DAL 单例（用于测试中创建渠道）
     crate::service::dal::message_channel::init();
@@ -225,7 +225,7 @@ async fn test_deliver_message_to_channels(pool: SqlitePool) {
     let org_id = "test-org-delivery";
 
     use crate::models::message::Message;
-    use crate::models::message_channel::{MessageChannel, MessageChannelPo, ChannelConfig};
+    use crate::models::message_channel::{ChannelConfig, MessageChannel, MessageChannelPo};
     use common::enums::message_channel::{ChannelStatus, ChannelType};
     use common::enums::{MessageRole, MessageType};
 
@@ -254,20 +254,20 @@ async fn test_deliver_message_to_channels(pool: SqlitePool) {
 
     // 创建一条测试消息
     let message_id = "test-message-001";
-    use common::enums::FileType;
     use crate::models::file::FileMeta;
+    use common::enums::FileType;
     let message = Message::new(
         message_id.to_string(),
-        "".to_string(),  // task_id
+        "".to_string(), // task_id
         "agent-1".to_string(),
         user_id.to_string(),
         MessageRole::Agent,
         MessageRole::User,
         MessageType::Text,
         "这是一条测试消息内容".to_string(),
-        None,  // file_type
-        FileMeta::default(),  // file_meta
-        user_id.to_string(),  // created_by
+        None,                // file_type
+        FileMeta::default(), // file_meta
+        user_id.to_string(), // created_by
     );
 
     // 多渠道投递

@@ -1,14 +1,14 @@
 //! Skill DAL 单元测试
 
 use crate::error::AppError;
-use crate::models::skill::{SkillPo, SkillFile, Skill};
 use crate::models::brain::CortexTrait;
 use crate::models::model_provider::ModelProviderPo;
+use crate::models::skill::{Skill, SkillFile, SkillPo};
 use crate::pkg::request_context::RequestContext;
-use crate::service::dao::skill::{self, SkillSearch};
+use crate::service::dal::skill::{SkillDal, SkillDalImpl, new};
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::ModelProviderDao;
-use crate::service::dal::skill::{SkillDal, SkillDalImpl, new};
+use crate::service::dao::skill::{self, SkillSearch};
 use ::rig::tool::ToolDyn;
 use anyhow::Result;
 use common::enums::skill::SkillAuthorType;
@@ -85,15 +85,25 @@ impl CortexDao for MockCortexDao {
         Ok(Box::new(MockCortex::new()))
     }
 
-    async fn prompt(&self, _ctx: RequestContext, _cortex: &dyn CortexTrait, _prompt: &str) -> Result<String> {
+    async fn prompt(
+        &self,
+        _ctx: RequestContext,
+        _cortex: &dyn CortexTrait,
+        _prompt: &str,
+    ) -> Result<String> {
         Ok("Mock response".to_string())
     }
 
-    async fn embed_text_raw(&self, _ctx: RequestContext, _cortex: &dyn CortexTrait, text: &str) -> Result<Vec<f32>> {
+    async fn embed_text_raw(
+        &self,
+        _ctx: RequestContext,
+        _cortex: &dyn CortexTrait,
+        text: &str,
+    ) -> Result<Vec<f32>> {
         // 极端化向量差异：让 nonexistent 关键词的向量与其他向量距离 > 0.8
         // 余弦距离 > 0.8 意味着相似度 < 0.2
         let mut vec = vec![0.0; 3];
-        
+
         if text.contains("nonexistent") {
             // nonexistent 关键词的向量：[1.0, 0.0, 0.0]
             vec[0] = 1.0;
@@ -105,30 +115,40 @@ impl CortexDao for MockCortexDao {
             vec[1] = 1.0;
             vec[2] = 1.0;
         }
-        
+
         Ok(vec)
     }
-    
-    async fn embed_entity(&self, ctx: RequestContext, cortex: &dyn CortexTrait, entity: &dyn crate::models::vector::Vectorizable) -> Result<crate::models::vector::VectorIndexParams> {
+
+    async fn embed_entity(
+        &self,
+        ctx: RequestContext,
+        cortex: &dyn CortexTrait,
+        entity: &dyn crate::models::vector::Vectorizable,
+    ) -> Result<crate::models::vector::VectorIndexParams> {
         // 复用 embed_text_raw 的逻辑，包装成 VectorIndexParams
         let content = entity.vectorize_text();
         let embedding = self.embed_text_raw(ctx, cortex, &content).await?;
         Ok(crate::models::vector::VectorIndexParams::new(
-            &content, 
-            embedding, 
-            "mock-provider".to_string(), 
-            "mock-embedding-v1".to_string()
+            &content,
+            embedding,
+            "mock-provider".to_string(),
+            "mock-embedding-v1".to_string(),
         ))
     }
-    
-    async fn embed_text_for_search(&self, _ctx: RequestContext, _cortex: &dyn CortexTrait, text: &str) -> Result<crate::models::vector::VectorIndexParams> {
+
+    async fn embed_text_for_search(
+        &self,
+        _ctx: RequestContext,
+        _cortex: &dyn CortexTrait,
+        text: &str,
+    ) -> Result<crate::models::vector::VectorIndexParams> {
         // 复用 embed_text_raw 的逻辑，包装成 VectorIndexParams
         let embedding = self.embed_text_raw(_ctx, _cortex, text).await?;
         Ok(crate::models::vector::VectorIndexParams::new(
-            text, 
-            embedding, 
-            "mock-provider".to_string(), 
-            "mock-embedding-v1".to_string()
+            text,
+            embedding,
+            "mock-provider".to_string(),
+            "mock-embedding-v1".to_string(),
         ))
     }
 }
@@ -139,15 +159,27 @@ struct MockModelProviderDao;
 
 #[async_trait::async_trait]
 impl ModelProviderDao for MockModelProviderDao {
-    async fn insert(&self, _ctx: RequestContext, _provider: &ModelProviderPo) -> Result<(), AppError> {
+    async fn insert(
+        &self,
+        _ctx: RequestContext,
+        _provider: &ModelProviderPo,
+    ) -> Result<(), AppError> {
         Ok(())
     }
 
-    async fn find_by_id(&self, _ctx: RequestContext, _id: &str) -> Result<Option<ModelProviderPo>, AppError> {
+    async fn find_by_id(
+        &self,
+        _ctx: RequestContext,
+        _id: &str,
+    ) -> Result<Option<ModelProviderPo>, AppError> {
         Ok(None)
     }
 
-    async fn query(&self, _ctx: RequestContext, _query: crate::service::dao::model_provider::ModelProviderQuery) -> Result<Vec<ModelProviderPo>, AppError> {
+    async fn query(
+        &self,
+        _ctx: RequestContext,
+        _query: crate::service::dao::model_provider::ModelProviderQuery,
+    ) -> Result<Vec<ModelProviderPo>, AppError> {
         // 返回一个测试用的 provider（支持 Embedding）
         Ok(vec![ModelProviderPo {
             id: "mock-provider".to_string(),
@@ -171,15 +203,26 @@ impl ModelProviderDao for MockModelProviderDao {
         Ok(vec![])
     }
 
-    async fn update(&self, _ctx: RequestContext, _provider: &ModelProviderPo) -> Result<(), AppError> {
+    async fn update(
+        &self,
+        _ctx: RequestContext,
+        _provider: &ModelProviderPo,
+    ) -> Result<(), AppError> {
         Ok(())
     }
 
-    async fn delete(&self, _ctx: RequestContext, _provider: &ModelProviderPo) -> Result<(), AppError> {
+    async fn delete(
+        &self,
+        _ctx: RequestContext,
+        _provider: &ModelProviderPo,
+    ) -> Result<(), AppError> {
         Ok(())
     }
 
-    async fn get_default_embedding_provider(&self, _ctx: RequestContext) -> Result<Option<ModelProviderPo>, AppError> {
+    async fn get_default_embedding_provider(
+        &self,
+        _ctx: RequestContext,
+    ) -> Result<Option<ModelProviderPo>, AppError> {
         Ok(Some(ModelProviderPo {
             id: "mock-provider".to_string(),
             name: "Mock Provider".to_string(),
@@ -208,7 +251,7 @@ fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
 async fn init_test(pool: SqlitePool) -> Arc<dyn SkillDal> {
     // 必须先初始化 config（文件操作需要 base_data_path）
     let _ = crate::config::init();
-    
+
     // 1. 创建向量元数据表（和生产环境 schema 一致）
     let _ = sqlx::query(
         "CREATE TABLE IF NOT EXISTS vector_metadata (
@@ -220,18 +263,22 @@ async fn init_test(pool: SqlitePool) -> Arc<dyn SkillDal> {
             indexed_at INTEGER NOT NULL DEFAULT (unixepoch()),
             expire_at INTEGER,
             PRIMARY KEY (collection, source_id)
-        );"
-    ).execute(&pool).await;
-    
+        );",
+    )
+    .execute(&pool)
+    .await;
+
     // 2. 创建 vss_skills 表（测试环境无 vss0 扩展，用普通表模拟 vss0 虚拟表 schema）
     // vss0 虚拟表只有 rowid, embedding 两列，查询时会降级到内存相似度计算
     let _ = sqlx::query(
         "CREATE TABLE IF NOT EXISTS vss_skills (
             rowid INTEGER PRIMARY KEY AUTOINCREMENT,
             embedding TEXT NOT NULL
-        );"
-    ).execute(&pool).await;
-    
+        );",
+    )
+    .execute(&pool)
+    .await;
+
     // 直接创建 DAL 实例（不用单例）
     new(
         skill::new_skill_dao(),
@@ -263,11 +310,11 @@ fn create_test_skill_po(name: &str) -> SkillPo {
 async fn test_create_and_get_by_id(pool: SqlitePool) -> Result<(), AppError> {
     let skill_dal = init_test(pool.clone()).await;
     let ctx = new_ctx("test-user", pool);
-    
+
     // 创建技能 PO
     let mut po = create_test_skill_po("test-skill");
     let skill_id = po.id.clone();
-    
+
     // DAL 创建（自动创建空 skill.md + 自动向量化）
     skill_dal.create(ctx.clone(), &po).await?;
 
@@ -351,12 +398,16 @@ async fn test_list_by_status(pool: SqlitePool) -> Result<(), AppError> {
     skill_dal.create(ctx.clone(), &po_draft).await?;
 
     // 按状态查询
-    let published = skill_dal.list_by_status(ctx.clone(), SkillStatus::Published).await?;
+    let published = skill_dal
+        .list_by_status(ctx.clone(), SkillStatus::Published)
+        .await?;
     assert_eq!(published.len(), 1);
     assert_eq!(published[0].po.name, "published-skill");
 
     // 按分类查询
-    let dev = skill_dal.list_by_category(ctx.clone(), "development").await?;
+    let dev = skill_dal
+        .list_by_category(ctx.clone(), "development")
+        .await?;
     assert_eq!(dev.len(), 1);
 
     // 按作者查询
@@ -389,7 +440,10 @@ async fn test_file_operations(pool: SqlitePool) -> Result<(), AppError> {
     skill_dal.create(ctx.clone(), &po).await?;
 
     // 获取 PO
-    let skill_po = skill_dal.get_po_by_id(ctx.clone(), skill_id.clone()).await?.unwrap();
+    let skill_po = skill_dal
+        .get_po_by_id(ctx.clone(), skill_id.clone())
+        .await?
+        .unwrap();
 
     // ========== 测试: 更新主内容 ==========
     let new_content = "# Test Skill\n\nThis is a test skill markdown file.";
@@ -447,7 +501,9 @@ async fn test_install_to_agent(pool: SqlitePool) -> Result<(), AppError> {
 
     // 安装到 Agent
     let agent_id = "agent-123";
-    let installed = skill_dal.install_to_agent(ctx.clone(), &source_id, agent_id).await?;
+    let installed = skill_dal
+        .install_to_agent(ctx.clone(), &source_id, agent_id)
+        .await?;
 
     // 验证：创建了新的独立副本
     assert_ne!(installed.id, source_id);
@@ -489,7 +545,9 @@ async fn test_delete_skill(pool: SqlitePool) -> Result<(), AppError> {
     skill_dal.delete(ctx.clone(), &skill_id).await?;
 
     // 验证：查询不到（DAO 是硬删除）
-    let po_opt = skill_dal.get_po_by_id(ctx.clone(), skill_id.clone()).await?;
+    let po_opt = skill_dal
+        .get_po_by_id(ctx.clone(), skill_id.clone())
+        .await?;
     // 根据 DAO 实现，可能是软删除（Expired）或硬删除（None）
     if let Some(po) = po_opt {
         assert_eq!(po.status, SkillStatus::Expired);
@@ -522,16 +580,40 @@ async fn test_search_skill(pool: SqlitePool) -> Result<(), AppError> {
     skill_dal.create(ctx.clone(), &po).await?;
 
     // 搜索：按名称匹配
-    let results = skill_dal.search(ctx.clone(), SkillSearch { keyword: Some("debug".to_string()), ..Default::default() }).await?;
+    let results = skill_dal
+        .search(
+            ctx.clone(),
+            SkillSearch {
+                keyword: Some("debug".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].po.name, "debug-helper");
 
     // 搜索：按描述匹配
-    let results2 = skill_dal.search(ctx.clone(), SkillSearch { keyword: Some("debugging".to_string()), ..Default::default() }).await?;
+    let results2 = skill_dal
+        .search(
+            ctx.clone(),
+            SkillSearch {
+                keyword: Some("debugging".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
     assert_eq!(results2.len(), 1);
 
     // 搜索：无匹配
-    let results3 = skill_dal.search(ctx.clone(), SkillSearch { keyword: Some("nonexistent-keyword".to_string()), ..Default::default() }).await?;
+    let results3 = skill_dal
+        .search(
+            ctx.clone(),
+            SkillSearch {
+                keyword: Some("nonexistent-keyword".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
     assert_eq!(results3.len(), 0);
 
     Ok(())

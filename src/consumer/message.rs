@@ -3,11 +3,11 @@
 //! 负责消费所有类型的消息（用户消息、Agent 间消息、工具调用等）
 
 use super::{GenericConsumer, MessageFetcher, MessageHandler};
+use crate::error::Result;
+use crate::models::message::Message;
 use async_trait::async_trait;
 use common::config::TopicConsumerConfig;
 use common::enums::{MessageRole, MessageType};
-use crate::error::Result;
-use crate::models::message::Message;
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例 ====================
@@ -64,7 +64,12 @@ impl MessageFetcher<Message> for MessageFetcherImpl {
 #[async_trait]
 impl MessageHandler<Message> for MessageHandlerImpl {
     async fn handle(&self, message: &Message) -> Result<()> {
-        sys_debug!(r"received message: {:?} -> {:?}, type: {:?}", message.from_role(), message.to_role(), message.message_type());
+        sys_debug!(
+            r"received message: {:?} -> {:?}, type: {:?}",
+            message.from_role(),
+            message.to_role(),
+            message.message_type()
+        );
 
         // 第一层分发：根据 to_role 决定谁来处理
         match message.to_role() {
@@ -142,9 +147,9 @@ pub async fn init(config: &TopicConsumerConfig) -> Result<()> {
 
     // 设置单例
     let consumer_arc = Arc::new(consumer);
-    MESSAGE_CONSUMER
-        .set(consumer_arc.clone())
-        .map_err(|_| crate::error::AppError::Internal("message consumer already initialized".to_string()))?;
+    MESSAGE_CONSUMER.set(consumer_arc.clone()).map_err(|_| {
+        crate::error::AppError::Internal("message consumer already initialized".to_string())
+    })?;
 
     // 启动消费者
     consumer_arc.start().await;

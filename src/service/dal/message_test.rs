@@ -3,13 +3,13 @@
 use crate::models::file::FileMeta;
 use crate::models::message::Message;
 use crate::pkg::RequestContext;
+use crate::service::dal::message::MessageDal;
 use crate::service::dao::event_queue;
 use crate::service::dao::message;
 use common::enums::{MessageRole, MessageStatus, MessageType};
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use uuid::Uuid;
-use crate::service::dal::message::MessageDal;
 
 /// 初始化测试环境
 async fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDal + Send + Sync>, RequestContext) {
@@ -102,7 +102,10 @@ async fn test_list_by_task_id(pool: SqlitePool) {
         dal.save_message(ctx.clone(), &msg).await.unwrap();
     }
 
-    let list = dal.list_by_task_id(ctx.clone(), "task-1", None).await.unwrap();
+    let list = dal
+        .list_by_task_id(ctx.clone(), "task-1", None)
+        .await
+        .unwrap();
     assert_eq!(list.len(), 5);
     // Check order: created_at ASC
     for (i, msg) in list.iter().enumerate() {
@@ -213,13 +216,26 @@ async fn test_list_by_status(pool: SqlitePool) {
     dal.save_message(ctx.clone(), &msg1).await.unwrap();
     dal.save_message(ctx.clone(), &msg2).await.unwrap();
 
-    let pending = dal.list_by_status(ctx.clone(), vec![MessageStatus::Pending], None).await.unwrap();
+    let pending = dal
+        .list_by_status(ctx.clone(), vec![MessageStatus::Pending], None)
+        .await
+        .unwrap();
     assert_eq!(pending.len(), 1);
 
-    let processed = dal.list_by_status(ctx.clone(), vec![MessageStatus::Processed], None).await.unwrap();
+    let processed = dal
+        .list_by_status(ctx.clone(), vec![MessageStatus::Processed], None)
+        .await
+        .unwrap();
     assert_eq!(processed.len(), 1);
 
-    let both = dal.list_by_status(ctx, vec![MessageStatus::Pending, MessageStatus::Processed], None).await.unwrap();
+    let both = dal
+        .list_by_status(
+            ctx,
+            vec![MessageStatus::Pending, MessageStatus::Processed],
+            None,
+        )
+        .await
+        .unwrap();
     assert_eq!(both.len(), 2);
 }
 
@@ -238,10 +254,16 @@ async fn test_update_status(pool: SqlitePool) {
     msg.po.status = MessageStatus::Pending;
     dal.save_message(ctx.clone(), &msg).await.unwrap();
 
-    let found = dal.find_by_id(ctx.clone(), msg.id()).await.unwrap().unwrap();
+    let found = dal
+        .find_by_id(ctx.clone(), msg.id())
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(found.po.status, MessageStatus::Pending);
 
-    dal.update_status(ctx.clone(), msg.id(), MessageStatus::Processed).await.unwrap();
+    dal.update_status(ctx.clone(), msg.id(), MessageStatus::Processed)
+        .await
+        .unwrap();
 
     let found = dal.find_by_id(ctx, msg.id()).await.unwrap().unwrap();
     assert_eq!(found.po.status, MessageStatus::Processed);
@@ -263,7 +285,10 @@ async fn test_count_by_task_id(pool: SqlitePool) {
         dal.save_message(ctx.clone(), &msg).await.unwrap();
     }
 
-    let count = dal.count_by_task_id(ctx.clone(), "task-counter").await.unwrap();
+    let count = dal
+        .count_by_task_id(ctx.clone(), "task-counter")
+        .await
+        .unwrap();
     assert_eq!(count, 7);
 
     let count2 = dal.count_by_task_id(ctx, "empty-task").await.unwrap();
@@ -309,10 +334,15 @@ async fn test_delete_by_task_id(pool: SqlitePool) {
         dal.save_message(ctx.clone(), &msg).await.unwrap();
     }
 
-    let count = dal.count_by_task_id(ctx.clone(), "task-to-delete").await.unwrap();
+    let count = dal
+        .count_by_task_id(ctx.clone(), "task-to-delete")
+        .await
+        .unwrap();
     assert_eq!(count, 5);
 
-    dal.delete_by_task_id(ctx.clone(), "task-to-delete").await.unwrap();
+    dal.delete_by_task_id(ctx.clone(), "task-to-delete")
+        .await
+        .unwrap();
 
     let count = dal.count_by_task_id(ctx, "task-to-delete").await.unwrap();
     assert_eq!(count, 0);
@@ -373,7 +403,9 @@ async fn test_dequeue_ack_nack(pool: SqlitePool) {
 
     // ack 第一个消息，触发 refill 第二个
     dal.ack_message(ctx.clone(), dequeued1.id()).await.unwrap();
-    dal.update_status(ctx.clone(), dequeued1.id(), MessageStatus::Processed).await.unwrap();
+    dal.update_status(ctx.clone(), dequeued1.id(), MessageStatus::Processed)
+        .await
+        .unwrap();
 
     // 现在可以出队第二条
     let dequeued2 = dal.dequeue_next_message(ctx.clone()).await.unwrap();
@@ -383,7 +415,9 @@ async fn test_dequeue_ack_nack(pool: SqlitePool) {
 
     // ack 第二条，触发 refill 第三条
     dal.ack_message(ctx.clone(), dequeued2.id()).await.unwrap();
-    dal.update_status(ctx.clone(), dequeued2.id(), MessageStatus::Processed).await.unwrap();
+    dal.update_status(ctx.clone(), dequeued2.id(), MessageStatus::Processed)
+        .await
+        .unwrap();
 
     // 现在可以出队第三条
     let dequeued3 = dal.dequeue_next_message(ctx.clone()).await.unwrap();
@@ -393,7 +427,9 @@ async fn test_dequeue_ack_nack(pool: SqlitePool) {
 
     // ack 第三条
     dal.ack_message(ctx.clone(), dequeued3.id()).await.unwrap();
-    dal.update_status(ctx.clone(), dequeued3.id(), MessageStatus::Processed).await.unwrap();
+    dal.update_status(ctx.clone(), dequeued3.id(), MessageStatus::Processed)
+        .await
+        .unwrap();
 
     // 全部处理完，返回 None
     let dequeued4 = dal.dequeue_next_message(ctx.clone()).await.unwrap();

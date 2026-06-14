@@ -1,5 +1,5 @@
-use dioxus::prelude::*;
 use crate::api::health::fetch_health;
+use dioxus::prelude::*;
 
 #[derive(Clone, Debug)]
 struct HealthStatus {

@@ -4,15 +4,15 @@
 //! to automatically log invocations the same way.
 
 use anyhow::Result;
-use serde_json::{Value};
-use uuid::Uuid;
 use async_trait::async_trait;
 use rig::tool::ToolError;
+use serde_json::Value;
+use uuid::Uuid;
 
-use crate::models::tool::{CoreTool, ToolPo};
-use crate::pkg::request_context::RequestContext;
 use super::entry::{ToolCallEntry, ToolCallStatus};
 use super::logger::ToolCallLogger;
+use crate::models::tool::{CoreTool, ToolPo};
+use crate::pkg::request_context::RequestContext;
 use common::constants::utils::current_timestamp_ms;
 
 /// Logging decorator that wraps a Tool instance and automatically logs all calls
@@ -24,9 +24,7 @@ pub struct LoggingDecorator {
 
 impl LoggingDecorator {
     /// Create a new logging decorator wrapping an existing tool
-    pub fn new(
-        inner: Box<dyn CoreTool + Send + Sync>,
-    ) -> Self {
+    pub fn new(inner: Box<dyn CoreTool + Send + Sync>) -> Self {
         Self { inner }
     }
 

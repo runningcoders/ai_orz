@@ -1,14 +1,14 @@
 //! Skill DAO SQLite 单元测试
 
-use common::enums::skill::SkillAuthorType;
-use sqlx::SqlitePool;
-use common::enums::SkillStatus;
 use crate::error::AppError;
 use crate::models::skill::SkillPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::skill::{self, SkillDao, SkillSearch};
-use uuid::Uuid;
+use common::enums::SkillStatus;
+use common::enums::skill::SkillAuthorType;
+use sqlx::SqlitePool;
 use std::sync::Arc;
+use uuid::Uuid;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     RequestContext::new_simple(user_id, pool)
@@ -151,7 +151,9 @@ async fn test_list_by_status(pool: SqlitePool) -> Result<(), AppError> {
     skill_dao.insert(ctx, &skill2).await?;
 
     let ctx = new_ctx("test-user", pool.clone());
-    let available = skill_dao.list_by_status(ctx, SkillStatus::Published).await?;
+    let available = skill_dao
+        .list_by_status(ctx, SkillStatus::Published)
+        .await?;
     assert!(available.iter().any(|s| s.id == skill1_id));
     assert!(!available.iter().any(|s| s.id == skill2_id));
 
@@ -212,17 +214,27 @@ async fn test_search(pool: SqlitePool) -> Result<(), AppError> {
     skill_dao.insert(ctx, &skill).await?;
 
     let ctx = new_ctx("test-user", pool.clone());
-    let result = skill_dao.search(ctx, SkillSearch {
-        keyword: Some("Search".to_string()),
-        ..Default::default()
-    }).await?;
+    let result = skill_dao
+        .search(
+            ctx,
+            SkillSearch {
+                keyword: Some("Search".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
     assert!(result.iter().any(|s| s.id == skill_id));
 
     let ctx = new_ctx("test-user", pool);
-    let result = skill_dao.search(ctx, SkillSearch {
-        keyword: Some("searching".to_string()),
-        ..Default::default()
-    }).await?;
+    let result = skill_dao
+        .search(
+            ctx,
+            SkillSearch {
+                keyword: Some("searching".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
     assert!(result.iter().any(|s| s.id == skill_id));
 
     Ok(())
@@ -321,7 +333,7 @@ async fn test_install_to_agent(pool: SqlitePool) -> Result<(), AppError> {
         "A shared published skill that can be installed to agents".to_string(),
         vec!["shared".to_string(), "utility".to_string()],
         "tools".to_string(),
-        "".to_string(), // parent_skill_id is empty for original shared skill
+        "".to_string(),       // parent_skill_id is empty for original shared skill
         "system".to_string(), // author is system (shared library)
         SkillAuthorType::User,
         format!("shared/{}", source_id),
@@ -334,7 +346,9 @@ async fn test_install_to_agent(pool: SqlitePool) -> Result<(), AppError> {
 
     // 2. Install to agent "agent-123"
     let ctx = new_ctx("admin", pool.clone());
-    let installed = skill_dao.install_to_agent(ctx, &source_skill, "agent-123").await?;
+    let installed = skill_dao
+        .install_to_agent(ctx, &source_skill, "agent-123")
+        .await?;
 
     // 3. Verify the installed copy
     // - Should have new generated id
@@ -351,7 +365,10 @@ async fn test_install_to_agent(pool: SqlitePool) -> Result<(), AppError> {
     assert_eq!(installed.parent_skill_id, source_id.clone());
     assert_eq!(installed.author_id, "agent-123");
     assert_eq!(installed.status, SkillStatus::Draft); // default is Draft
-    assert_eq!(installed.content_path, format!("agents/agent-123/skills/{}", installed.id));
+    assert_eq!(
+        installed.content_path,
+        format!("agents/agent-123/skills/{}", installed.id)
+    );
 
     // 4. Verify it exists in database
     let ctx = new_ctx("test-user", pool);
@@ -389,7 +406,9 @@ async fn test_install_non_published_fails(pool: SqlitePool) -> Result<(), AppErr
 
     // Try to install - should fail
     let ctx = new_ctx("test-user", pool);
-    let result = skill_dao.install_to_agent(ctx, &source_skill, "agent-123").await;
+    let result = skill_dao
+        .install_to_agent(ctx, &source_skill, "agent-123")
+        .await;
 
     // Should be error
     assert!(result.is_err());
@@ -510,7 +529,10 @@ async fn test_list_files_with_content(pool: SqlitePool) -> Result<(), AppError> 
     // 小文件应该自动预读了内容
     assert!(files[0].content.is_some());
     assert!(files[1].content.is_some());
-    assert_eq!(files[0].content.as_ref().unwrap(), "# Main Skill\n\nContent here.");
+    assert_eq!(
+        files[0].content.as_ref().unwrap(),
+        "# Main Skill\n\nContent here."
+    );
     assert_eq!(files[1].content.as_ref().unwrap(), "This is a small file.");
 
     Ok(())
@@ -606,22 +628,35 @@ async fn test_install_to_agent_copies_all_files(pool: SqlitePool) -> Result<(), 
 
     // 写入源技能文件
     skill_dao.write_main_content(&source_skill, "# Shared Skill\n\nThis is a shared skill.")?;
-    skill_dao.write_file(&source_skill, "example.rs", "fn main() { println!(\"hello\"); }")?;
-    skill_dao.write_file(&source_skill, "usage.md", "# Usage\n\nHow to use this skill.")?;
+    skill_dao.write_file(
+        &source_skill,
+        "example.rs",
+        "fn main() { println!(\"hello\"); }",
+    )?;
+    skill_dao.write_file(
+        &source_skill,
+        "usage.md",
+        "# Usage\n\nHow to use this skill.",
+    )?;
 
     let ctx = new_ctx("system", pool.clone());
     skill_dao.insert(ctx, &source_skill).await?;
 
     // 2. 安装到 Agent
     let ctx = new_ctx("admin", pool.clone());
-    let installed = skill_dao.install_to_agent(ctx, &source_skill, "agent-456").await?;
+    let installed = skill_dao
+        .install_to_agent(ctx, &source_skill, "agent-456")
+        .await?;
 
     // 3. 验证所有文件都被拷贝了
     let installed_files = skill_dao.list_files(&installed)?;
     assert_eq!(installed_files.len(), 3); // skill.md + example.rs + usage.md
 
     // 验证文件名都在
-    let filenames: Vec<&str> = installed_files.iter().map(|f| f.filename.as_str()).collect();
+    let filenames: Vec<&str> = installed_files
+        .iter()
+        .map(|f| f.filename.as_str())
+        .collect();
     assert!(filenames.contains(&"skill.md"));
     assert!(filenames.contains(&"example.rs"));
     assert!(filenames.contains(&"usage.md"));

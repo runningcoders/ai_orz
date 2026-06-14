@@ -1,6 +1,6 @@
+use crate::api::organization::{get_organization_info, update_organization_info};
 use common::api::{OrganizationInfoResponse, UpdateCurrentOrganizationRequest};
 use dioxus::prelude::*;
-use crate::api::organization::{get_organization_info, update_organization_info};
 
 #[component]
 pub fn OrganizationInfo() -> Element {
@@ -67,7 +67,8 @@ pub fn OrganizationInfo() -> Element {
                         match get_organization_info().await {
                             Ok(new_info) => {
                                 editing_name.set(new_info.name.clone());
-                                editing_description.set(new_info.description.clone().unwrap_or_default());
+                                editing_description
+                                    .set(new_info.description.clone().unwrap_or_default());
                                 editing_base_url.set(new_info.base_url.clone().unwrap_or_default());
                                 org_info.set(Some(new_info));
                             }

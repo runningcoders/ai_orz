@@ -3,10 +3,13 @@
 //! 单元测试使用内存数据库，不依赖全局 storage 连接池
 
 use super::*;
-use crate::models::memory::{MemoryTrace, ShortTermMemoryIndexPo, LongTermKnowledgeNodePo, KnowledgeNodeRelationPo, KnowledgeReferencePo};
-use common::enums::{MemoryRole, KnowledgeRelationType, MemoryStatus};
+use crate::models::memory::{
+    KnowledgeNodeRelationPo, KnowledgeReferencePo, LongTermKnowledgeNodePo, MemoryTrace,
+    ShortTermMemoryIndexPo,
+};
 use crate::pkg::RequestContext;
 use crate::service::dao::memory::sqlite::MemoryDaoSqliteImpl;
+use common::enums::{KnowledgeRelationType, MemoryRole, MemoryStatus};
 use sqlx::SqlitePool;
 
 #[sqlx::test]
@@ -134,7 +137,10 @@ async fn test_add_knowledge_relation(pool: SqlitePool) {
     assert!(result.is_ok());
 
     // 查询验证
-    let relations = dao.list_outgoing_relations(ctx.clone(), "node-1").await.unwrap();
+    let relations = dao
+        .list_outgoing_relations(ctx.clone(), "node-1")
+        .await
+        .unwrap();
     assert_eq!(relations.len(), 1);
     assert_eq!(relations[0].source_node_id, "node-1");
     assert_eq!(relations[0].target_node_id, "node-2");
@@ -176,7 +182,10 @@ async fn test_add_knowledge_reference(pool: SqlitePool) {
     assert!(result.is_ok());
 
     // 查询验证
-    let references = dao.list_knowledge_references(ctx.clone(), "node-1").await.unwrap();
+    let references = dao
+        .list_knowledge_references(ctx.clone(), "node-1")
+        .await
+        .unwrap();
     assert_eq!(references.len(), 1);
     assert_eq!(references[0].knowledge_id, "node-1");
     assert_eq!(references[0].short_term_id, "st-1");
@@ -197,10 +206,10 @@ fn test_memory_trace_id_is_trace_prefix() {
 
     // ID 应该以 trace- 开头
     assert!(trace.id.starts_with("trace-"));
-    
+
     // 应该包含 agent_id
     assert!(trace.id.contains("test-agent-1"));
-    
+
     // 最后一部分应该是数字（timestamp）
     let parts: Vec<&str> = trace.id.rsplitn(2, '-').collect();
     assert!(parts[0].parse::<u64>().is_ok());
@@ -293,7 +302,9 @@ async fn test_get_and_update_short_term_index(pool: SqlitePool) {
     };
 
     // 创建
-    dao.create_short_term_index(ctx.clone(), index).await.unwrap();
+    dao.create_short_term_index(ctx.clone(), index)
+        .await
+        .unwrap();
 
     // 查询
     let fetched = dao.get_short_term_index(ctx.clone(), "st-1").await.unwrap();
@@ -317,7 +328,9 @@ async fn test_get_and_update_short_term_index(pool: SqlitePool) {
         updated_at: now2,
     };
 
-    dao.update_short_term_index(ctx.clone(), updated_index).await.unwrap();
+    dao.update_short_term_index(ctx.clone(), updated_index)
+        .await
+        .unwrap();
 
     // 验证更新
     let fetched2 = dao.get_short_term_index(ctx, "st-1").await.unwrap();
@@ -340,21 +353,34 @@ async fn test_list_and_query_short_term(pool: SqlitePool) {
     for i in 0..5 {
         let index = ShortTermMemoryIndexPo {
             id: format!("st-{}", i),
-            agent_id: if i < 3 { "agent-1".to_string() } else { "agent-2".to_string() },
+            agent_id: if i < 3 {
+                "agent-1".to_string()
+            } else {
+                "agent-2".to_string()
+            },
             task_id: None,
             role: "user".to_string(),
             summary: format!("摘要 {}", i),
             tags: serde_json::to_string(&vec!["test"]).unwrap(),
             trace_ids: serde_json::to_string(&vec![format!("trace-{}", i)]).unwrap(),
-            status: if i == 0 { MemoryStatus::Forgotten } else { MemoryStatus::Active },
+            status: if i == 0 {
+                MemoryStatus::Forgotten
+            } else {
+                MemoryStatus::Active
+            },
             created_at: now,
             updated_at: now,
         };
-        dao.create_short_term_index(ctx.clone(), index).await.unwrap();
+        dao.create_short_term_index(ctx.clone(), index)
+            .await
+            .unwrap();
     }
 
     // 测试 list_short_term_by_agent
-    let list = dao.list_short_term_by_agent(ctx.clone(), "agent-1", 10).await.unwrap();
+    let list = dao
+        .list_short_term_by_agent(ctx.clone(), "agent-1", 10)
+        .await
+        .unwrap();
     assert_eq!(list.len(), 2); // 默认过滤 status=0 (Forgotten)，所以只有 st-1, st-2
 
     // 测试 query_short_term 按 agent_id + 排除状态
@@ -399,14 +425,24 @@ async fn test_forget_short_term_index(pool: SqlitePool) {
     };
 
     // 创建
-    dao.create_short_term_index(ctx.clone(), index).await.unwrap();
+    dao.create_short_term_index(ctx.clone(), index)
+        .await
+        .unwrap();
 
     // 遗忘（软删除）
-    dao.forget_short_term_index(ctx.clone(), "st-forget").await.unwrap();
+    dao.forget_short_term_index(ctx.clone(), "st-forget")
+        .await
+        .unwrap();
 
     // 验证无法再通过 get_short_term_index 获取（软删除过滤）
-    let fetched = dao.get_short_term_index(ctx.clone(), "st-forget").await.unwrap();
-    assert!(fetched.is_none(), "软删除后无法通过 get_short_term_index 获取");
+    let fetched = dao
+        .get_short_term_index(ctx.clone(), "st-forget")
+        .await
+        .unwrap();
+    assert!(
+        fetched.is_none(),
+        "软删除后无法通过 get_short_term_index 获取"
+    );
 
     // 验证可以通过 query_short_term 获取（设置 exclude_status=Some(MemoryStatus::Active) 只排除 Active，不排除 Forgotten）
     use crate::service::dao::memory::MemoryQuery;
@@ -417,8 +453,8 @@ async fn test_forget_short_term_index(pool: SqlitePool) {
     };
     let results = dao.query_short_term(ctx, query).await.unwrap();
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0].status, MemoryStatus::Forgotten);}
-
+    assert_eq!(results[0].status, MemoryStatus::Forgotten);
+}
 
 #[sqlx::test]
 async fn test_update_and_list_knowledge_nodes(pool: SqlitePool) {
@@ -443,9 +479,14 @@ async fn test_update_and_list_knowledge_nodes(pool: SqlitePool) {
     // 测试 update_knowledge_node
     let mut updated_node = node.clone();
     updated_node.summary = "更新后的摘要".to_string();
-    dao.update_knowledge_node(ctx.clone(), &updated_node).await.unwrap();
+    dao.update_knowledge_node(ctx.clone(), &updated_node)
+        .await
+        .unwrap();
 
-    let fetched = dao.get_knowledge_node(ctx.clone(), "node-update").await.unwrap();
+    let fetched = dao
+        .get_knowledge_node(ctx.clone(), "node-update")
+        .await
+        .unwrap();
     assert!(fetched.is_some());
     assert_eq!(fetched.unwrap().summary, "更新后的摘要");
 
@@ -474,10 +515,15 @@ async fn test_update_and_list_knowledge_nodes(pool: SqlitePool) {
             updated_at: now,
         },
     ];
-    dao.batch_save_knowledge_nodes(ctx.clone(), &nodes).await.unwrap();
+    dao.batch_save_knowledge_nodes(ctx.clone(), &nodes)
+        .await
+        .unwrap();
 
     // 测试 list_knowledge_nodes_by_agent
-    let list = dao.list_knowledge_nodes_by_agent(ctx.clone(), "test-agent", None, 10).await.unwrap();
+    let list = dao
+        .list_knowledge_nodes_by_agent(ctx.clone(), "test-agent", None, 10)
+        .await
+        .unwrap();
     assert_eq!(list.len(), 3); // node-update, node-batch-1, node-batch-2
 }
 
@@ -524,7 +570,9 @@ async fn test_query_and_delete_knowledge_nodes(pool: SqlitePool) {
             updated_at: now,
         },
     ];
-    dao.batch_save_knowledge_nodes(ctx.clone(), &nodes).await.unwrap();
+    dao.batch_save_knowledge_nodes(ctx.clone(), &nodes)
+        .await
+        .unwrap();
 
     // 测试 query_knowledge_nodes 按 agent_id
     use crate::service::dao::memory::MemoryQuery;
@@ -550,8 +598,13 @@ async fn test_query_and_delete_knowledge_nodes(pool: SqlitePool) {
     // assert_eq!(search_results.len(), 1); // query-1
 
     // 测试 delete_knowledge_node
-    dao.delete_knowledge_node(ctx.clone(), "query-1").await.unwrap();
-    let deleted = dao.get_knowledge_node(ctx.clone(), "query-1").await.unwrap();
+    dao.delete_knowledge_node(ctx.clone(), "query-1")
+        .await
+        .unwrap();
+    let deleted = dao
+        .get_knowledge_node(ctx.clone(), "query-1")
+        .await
+        .unwrap();
     assert!(deleted.is_none());
 }
 
@@ -587,34 +640,47 @@ async fn test_knowledge_relations(pool: SqlitePool) {
             updated_at: now,
         },
     ];
-    dao.batch_save_knowledge_nodes(ctx.clone(), &nodes).await.unwrap();
+    dao.batch_save_knowledge_nodes(ctx.clone(), &nodes)
+        .await
+        .unwrap();
 
     // 测试 batch_add_knowledge_relations
-    let relations = vec![
-        KnowledgeNodeRelationPo {
-            id: "rel-rel-1-2".to_string(),
-            source_node_id: "rel-1".to_string(),
-            target_node_id: "rel-2".to_string(),
-            relation_type: KnowledgeRelationType::Related,
-            created_at: now,
-            updated_at: now,
-        },
-    ];
-    dao.batch_add_knowledge_relations(ctx.clone(), &relations).await.unwrap();
+    let relations = vec![KnowledgeNodeRelationPo {
+        id: "rel-rel-1-2".to_string(),
+        source_node_id: "rel-1".to_string(),
+        target_node_id: "rel-2".to_string(),
+        relation_type: KnowledgeRelationType::Related,
+        created_at: now,
+        updated_at: now,
+    }];
+    dao.batch_add_knowledge_relations(ctx.clone(), &relations)
+        .await
+        .unwrap();
 
     // 测试 list_outgoing_relations
-    let outgoing = dao.list_outgoing_relations(ctx.clone(), "rel-1").await.unwrap();
+    let outgoing = dao
+        .list_outgoing_relations(ctx.clone(), "rel-1")
+        .await
+        .unwrap();
     assert_eq!(outgoing.len(), 1);
     assert_eq!(outgoing[0].target_node_id, "rel-2");
 
     // 测试 list_incoming_relations
-    let incoming = dao.list_incoming_relations(ctx.clone(), "rel-2").await.unwrap();
+    let incoming = dao
+        .list_incoming_relations(ctx.clone(), "rel-2")
+        .await
+        .unwrap();
     assert_eq!(incoming.len(), 1);
     assert_eq!(incoming[0].source_node_id, "rel-1");
 
     // 测试 delete_knowledge_relation (按 relation_id)
-    dao.delete_knowledge_relation(ctx.clone(), "rel-rel-1-2").await.unwrap();
-    let outgoing_after = dao.list_outgoing_relations(ctx.clone(), "rel-1").await.unwrap();
+    dao.delete_knowledge_relation(ctx.clone(), "rel-rel-1-2")
+        .await
+        .unwrap();
+    let outgoing_after = dao
+        .list_outgoing_relations(ctx.clone(), "rel-1")
+        .await
+        .unwrap();
     assert_eq!(outgoing_after.len(), 0);
 }
 
@@ -660,9 +726,14 @@ async fn test_knowledge_references(pool: SqlitePool) {
             created_at: now,
         },
     ];
-    dao.batch_add_knowledge_references(ctx.clone(), &references).await.unwrap();
+    dao.batch_add_knowledge_references(ctx.clone(), &references)
+        .await
+        .unwrap();
 
     // 测试 list_knowledge_references
-    let refs = dao.list_knowledge_references(ctx.clone(), "ref-node").await.unwrap();
+    let refs = dao
+        .list_knowledge_references(ctx.clone(), "ref-node")
+        .await
+        .unwrap();
     assert_eq!(refs.len(), 2);
 }

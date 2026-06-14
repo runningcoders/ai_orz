@@ -2,12 +2,12 @@
 
 use crate::error::AppError;
 use crate::models::model_provider::ModelProviderPo;
-use common::enums::{ModelCapability, ModelProviderStatus, ProviderType};
 use crate::pkg::RequestContext;
 use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderQuery};
+use chrono::Utc;
+use common::enums::{ModelCapability, ModelProviderStatus, ProviderType};
 use sqlx::QueryBuilder;
 use std::sync::{Arc, OnceLock};
-use chrono::Utc;
 // ==================== 单例 ====================
 
 static MODEL_PROVIDER_DAO: OnceLock<Arc<dyn ModelProviderDao>> = OnceLock::new();
@@ -34,7 +34,11 @@ impl ModelProviderDaoSqliteImpl {
 
 #[async_trait::async_trait]
 impl ModelProviderDao for ModelProviderDaoSqliteImpl {
-    async fn insert(&self, ctx: RequestContext, provider: &ModelProviderPo) -> Result<(), AppError> {
+    async fn insert(
+        &self,
+        ctx: RequestContext,
+        provider: &ModelProviderPo,
+    ) -> Result<(), AppError> {
         let provider_type = provider.provider_type as i32;
         let capability = provider.capability as i32;
         let status = provider.status as i32;
@@ -62,13 +66,19 @@ impl ModelProviderDao for ModelProviderDaoSqliteImpl {
         Ok(())
     }
 
-    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<ModelProviderPo>, AppError> {
+    async fn find_by_id(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<ModelProviderPo>, AppError> {
         let pool = ctx.db_pool();
-        let provider = QueryBuilder::new(r#"
+        let provider = QueryBuilder::new(
+            r#"
 SELECT id, name, provider_type, model_name, capability, api_key, base_url, description, config,
        status, created_by, modified_by, created_at, updated_at
 FROM model_providers WHERE id = 
-        "#)
+        "#,
+        )
         .push_bind(id)
         .push(" AND status != 0")
         .build_query_as()
@@ -78,13 +88,19 @@ FROM model_providers WHERE id =
         Ok(provider)
     }
 
-    async fn query(&self, ctx: RequestContext, query: ModelProviderQuery) -> Result<Vec<ModelProviderPo>, AppError> {
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: ModelProviderQuery,
+    ) -> Result<Vec<ModelProviderPo>, AppError> {
         let pool = ctx.db_pool();
-        let mut builder = QueryBuilder::new(r#"
+        let mut builder = QueryBuilder::new(
+            r#"
 SELECT id, name, provider_type, model_name, capability, api_key, base_url, description, config,
        status, created_by, modified_by, created_at, updated_at
 FROM model_providers WHERE 1=1
-        "#);
+        "#,
+        );
 
         // 枚举查询：直接转 i32 绑定
         if let Some(provider_type) = query.provider_type {
@@ -112,21 +128,27 @@ FROM model_providers WHERE 1=1
             builder.push_bind(limit as i64);
         }
 
-        let providers: Vec<ModelProviderPo> = builder.build_query_as()
-            .fetch_all(pool)
-            .await?;
+        let providers: Vec<ModelProviderPo> = builder.build_query_as().fetch_all(pool).await?;
 
         Ok(providers)
     }
 
     async fn find_all(&self, ctx: RequestContext) -> Result<Vec<ModelProviderPo>, AppError> {
-        self.query(ctx, ModelProviderQuery { 
-            exclude_status: Some(ModelProviderStatus::Deleted), 
-            ..Default::default() 
-        }).await
+        self.query(
+            ctx,
+            ModelProviderQuery {
+                exclude_status: Some(ModelProviderStatus::Deleted),
+                ..Default::default()
+            },
+        )
+        .await
     }
 
-    async fn update(&self, ctx: RequestContext, provider: &ModelProviderPo) -> Result<(), AppError> {
+    async fn update(
+        &self,
+        ctx: RequestContext,
+        provider: &ModelProviderPo,
+    ) -> Result<(), AppError> {
         let current_timestamp = Utc::now().timestamp();
         let provider_type = provider.provider_type as i32;
         let capability = provider.capability as i32;
@@ -157,7 +179,11 @@ WHERE id = ?
         Ok(())
     }
 
-    async fn delete(&self, ctx: RequestContext, provider: &ModelProviderPo) -> Result<(), AppError> {
+    async fn delete(
+        &self,
+        ctx: RequestContext,
+        provider: &ModelProviderPo,
+    ) -> Result<(), AppError> {
         let current_timestamp = Utc::now().timestamp();
         let uid = ctx.uid().to_string();
         let pool = ctx.db_pool();
@@ -169,19 +195,27 @@ UPDATE model_providers SET status = 0, modified_by = ?, updated_at = ? WHERE id 
             current_timestamp,
             provider.id
         )
-            .execute(pool)
-            .await?;
+        .execute(pool)
+        .await?;
 
         Ok(())
     }
 
-    async fn get_default_embedding_provider(&self, ctx: RequestContext) -> Result<Option<ModelProviderPo>, AppError> {
-        let providers = self.query(ctx, ModelProviderQuery {
-            capability: Some(ModelCapability::Embedding),
-            status: Some(ModelProviderStatus::Normal),
-            limit: Some(1),
-            ..Default::default()
-        }).await?;
+    async fn get_default_embedding_provider(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<Option<ModelProviderPo>, AppError> {
+        let providers = self
+            .query(
+                ctx,
+                ModelProviderQuery {
+                    capability: Some(ModelCapability::Embedding),
+                    status: Some(ModelProviderStatus::Normal),
+                    limit: Some(1),
+                    ..Default::default()
+                },
+            )
+            .await?;
         Ok(providers.into_iter().next())
     }
 }

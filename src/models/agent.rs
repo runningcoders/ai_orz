@@ -106,12 +106,20 @@ impl fmt::Debug for Agent {
 impl Agent {
     /// 从 Po 创建 Agent
     pub fn from_po(po: AgentPo) -> Self {
-        Self { po, brain: None, tools: Vec::new() }
+        Self {
+            po,
+            brain: None,
+            tools: Vec::new(),
+        }
     }
 
     /// 从 Po 创建 Agent 并带上工具列表
     pub fn from_po_with_tools(po: AgentPo, tools: Vec<Tool>) -> Self {
-        Self { po, brain: None, tools }
+        Self {
+            po,
+            brain: None,
+            tools,
+        }
     }
 
     /// 转换为 Po
@@ -205,10 +213,7 @@ impl AgentPo {
     /// 包含：Agent ID、Agent 名称、角色描述、灵魂设定
     /// 所有字段都使用统一的【】标识格式，便于大模型识别和提取
     pub fn to_system_prompt(&self) -> String {
-        let mut prompt = format!(
-            "【Agent ID】{}\n【Agent 名称】{}\n",
-            self.id, self.name
-        );
+        let mut prompt = format!("【Agent ID】{}\n【Agent 名称】{}\n", self.id, self.name);
 
         if !self.description.is_empty() {
             prompt.push_str(&format!("【角色描述】{}\n", self.description));

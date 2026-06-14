@@ -2,7 +2,7 @@
 //!
 //! 包含向量行数据、搜索命中结果、索引参数、以及可向量化实体 Trait 接口
 
-use bincode::{Encode, Decode};
+use bincode::{Decode, Encode};
 
 // ==================== 向量存储通用数据结构 ====================
 
@@ -68,7 +68,12 @@ pub struct VectorIndexParams {
 
 impl VectorIndexParams {
     /// 从向量化文本和向量创建索引参数
-    pub fn new(content: &str, vector: Vec<f32>, model_provider_id: String, embedding_model: String) -> Self {
+    pub fn new(
+        content: &str,
+        vector: Vec<f32>,
+        model_provider_id: String,
+        embedding_model: String,
+    ) -> Self {
         let content_hash = sha256::digest(content);
         Self {
             vector,

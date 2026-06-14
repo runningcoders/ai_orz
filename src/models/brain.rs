@@ -8,9 +8,9 @@
 
 use crate::models::memory::{self};
 use crate::models::model_provider::ModelProvider;
-use common::enums::ModelCapability;
-use async_trait::async_trait;
 use anyhow::Result;
+use async_trait::async_trait;
+use common::enums::ModelCapability;
 use dyn_clone::DynClone;
 
 /// 统一的 CortexTrait - 大脑皮层 trait，定义推理接口

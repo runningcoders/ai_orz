@@ -1,15 +1,15 @@
 //! 更新组织信息接口
 
-use common::api::UpdateCurrentOrganizationRequest;
 use crate::error::AppError;
-use common::api::ApiResponse;
 use crate::pkg::RequestContext;
+use crate::service::domain::organization;
 use axum::{
     extract::{Extension, Json},
     http::StatusCode,
     response::IntoResponse,
 };
-use crate::service::domain::organization;
+use common::api::ApiResponse;
+use common::api::UpdateCurrentOrganizationRequest;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// 获取当前时间戳
@@ -26,15 +26,19 @@ pub async fn update_organization(
     Json(req): Json<UpdateCurrentOrganizationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let domain = organization::domain();
-    
+
     // 从 context 获取组织 ID
-    let org_id = ctx.organization_id.clone()
+    let org_id = ctx
+        .organization_id
+        .clone()
         .ok_or_else(|| AppError::BadRequest("未找到组织信息".to_string()))?;
-    
-    let mut org = domain.organization_manage().get_by_id(ctx.clone(), &org_id)
+
+    let mut org = domain
+        .organization_manage()
+        .get_by_id(ctx.clone(), &org_id)
         .await?
         .ok_or_else(|| AppError::NotFound("组织不存在".to_string()))?;
-    
+
     // 更新字段
     if let Some(name) = req.name {
         org.name = name;
@@ -46,8 +50,11 @@ pub async fn update_organization(
         org.base_url = base_url;
     }
     org.updated_at = current_timestamp();
-    
+
     domain.organization_manage().update(ctx, &org).await?;
 
-    Ok((StatusCode::OK, Json(ApiResponse::success(())).into_response()))
+    Ok((
+        StatusCode::OK,
+        Json(ApiResponse::success(())).into_response(),
+    ))
 }

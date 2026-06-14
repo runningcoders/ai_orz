@@ -6,10 +6,10 @@
 //! - Text 消息：content 直接存储文本内容，file_meta 为默认值
 //! - Image/File/Audio/Video 附件：content 存储文件相对路径，file_meta 存储元数据（路径、大小、MIME类型）
 
-use common::constants::utils;
-use common::enums::{MessageRole, MessageStatus, MessageType, FileType};
 use crate::models::event::{Event, EventTopic};
 use crate::models::file::FileMeta;
+use common::constants::utils;
+use common::enums::{FileType, MessageRole, MessageStatus, MessageType};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use sqlx::types::Json;
@@ -311,7 +311,7 @@ impl MessagePo {
 }
 
 /// 统一工具调用消息内容
-/// 
+///
 /// 不管是请求还是结果，都用这个结构存储在 message.content 中
 /// 对应 MessageType::ToolCallRequest 或 MessageType::ToolCallResult
 #[derive(Debug, Clone, Serialize, Deserialize)]

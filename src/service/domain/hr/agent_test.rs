@@ -3,8 +3,8 @@
 use super::{HrDomain, domain};
 use crate::models::agent::{Agent, AgentPo};
 use crate::pkg::RequestContext;
-use uuid::Uuid;
 use sqlx::SqlitePool;
+use uuid::Uuid;
 
 fn new_ctx(user_id: &str, pool: sqlx::SqlitePool) -> RequestContext {
     RequestContext::new_simple(user_id, pool)
@@ -20,16 +20,16 @@ fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn HrDomain>, RequestCont
     crate::service::dao::tool_call::init();
     crate::service::dao::model_provider::init();
     crate::service::dao::cortex::init();
-    
+
     // 初始化所有 DAL
     crate::service::dal::agent::init();
     crate::service::dal::tool::init();
     crate::service::dal::skill::init();
     crate::service::dal::model_provider::init();
-    
+
     // 初始化 HR Domain
     super::init();
-    
+
     let domain = domain();
     let ctx = new_ctx("admin", pool);
     (domain, ctx)
@@ -52,15 +52,15 @@ fn create_test_agent(name: &str) -> Agent {
 #[sqlx::test]
 async fn test_create_and_find_by_id(pool: SqlitePool) {
     let (domain, ctx) = init_test_env(pool);
-    
+
     let agent = create_test_agent("TestAgent");
-    
+
     domain
         .agent_manage()
         .create_agent(ctx.clone(), &agent)
         .await
         .unwrap();
-    
+
     let found: Option<Agent> = domain
         .agent_manage()
         .get_agent(ctx, &agent.id())
@@ -72,7 +72,7 @@ async fn test_create_and_find_by_id(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_list_agents(pool: SqlitePool) {
     let (domain, ctx) = init_test_env(pool.clone());
-    
+
     for i in 0..3 {
         let agent = create_test_agent(&format!("Agent{}", i));
         domain
@@ -81,7 +81,7 @@ async fn test_list_agents(pool: SqlitePool) {
             .await
             .unwrap();
     }
-    
+
     let agents: Vec<Agent> = domain.agent_manage().list_agents(ctx).await.unwrap();
     assert_eq!(agents.len(), 3);
 }
@@ -89,14 +89,14 @@ async fn test_list_agents(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_update_agent(pool: SqlitePool) {
     let (domain, ctx) = init_test_env(pool.clone());
-    
+
     let agent = create_test_agent("Original");
     domain
         .agent_manage()
         .create_agent(ctx.clone(), &agent)
         .await
         .unwrap();
-    
+
     let mut updated = agent.clone();
     updated.po.name = "Updated".to_string();
     domain
@@ -104,7 +104,7 @@ async fn test_update_agent(pool: SqlitePool) {
         .update_agent(new_ctx("editor", pool), &updated)
         .await
         .unwrap();
-    
+
     let found: Option<Agent> = domain
         .agent_manage()
         .get_agent(ctx, &updated.id())
@@ -116,14 +116,14 @@ async fn test_update_agent(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_delete_agent(pool: SqlitePool) {
     let (domain, ctx) = init_test_env(pool.clone());
-    
+
     let agent = create_test_agent("ToDelete");
     domain
         .agent_manage()
         .create_agent(ctx.clone(), &agent)
         .await
         .unwrap();
-    
+
     domain
         .agent_manage()
         .delete_agent(ctx.clone(), &agent)

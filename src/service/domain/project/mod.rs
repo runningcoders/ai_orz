@@ -13,9 +13,9 @@
 use async_trait::async_trait;
 use std::sync::{Arc, OnceLock};
 
+mod artifact;
 mod project;
 mod task;
-mod artifact;
 
 #[cfg(test)]
 mod project_test;

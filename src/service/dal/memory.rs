@@ -63,12 +63,17 @@ pub trait MemoryDal: Send + Sync {
     /// - query_vector 存在 → 走向量语义搜索
     /// - 两者都有 → 混合搜索，合并结果
     /// - memory_type 过滤 → 只搜索指定类型
-    async fn search(&self, ctx: RequestContext, search: MemorySearch) -> Result<Vec<Memory>, AppError>;
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: MemorySearch,
+    ) -> Result<Vec<Memory>, AppError>;
 
     /// 📋 通用关系型查询（纯数据库查询，无向量）
     ///
     /// 支持所有组合过滤条件，可单独指定查询哪种记忆类型
-    async fn query(&self, ctx: RequestContext, query: MemoryQuery) -> Result<Vec<Memory>, AppError>;
+    async fn query(&self, ctx: RequestContext, query: MemoryQuery)
+    -> Result<Vec<Memory>, AppError>;
 
     /// ✍️ 创建记忆（按 MemoryCreateParams 变体分发）
     ///
@@ -108,33 +113,55 @@ pub struct MemoryDalImpl {
 
 #[async_trait]
 impl MemoryDal for MemoryDalImpl {
-    async fn search(&self, ctx: RequestContext, search: MemorySearch) -> Result<Vec<Memory>, AppError> {
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: MemorySearch,
+    ) -> Result<Vec<Memory>, AppError> {
         let memory_type = search.filters.memory_type.unwrap_or(MemoryType::All);
         let mut results: Vec<Memory> = Vec::new();
 
         // 1. 搜索短期记忆
         if memory_type == MemoryType::All || memory_type == MemoryType::ShortTerm {
-            let short_term_results = self.search_short_term_internal(ctx.clone(), search.clone()).await?;
+            let short_term_results = self
+                .search_short_term_internal(ctx.clone(), search.clone())
+                .await?;
             results.extend(short_term_results);
         }
 
         // 2. 搜索知识节点
         if memory_type == MemoryType::All || memory_type == MemoryType::KnowledgeNode {
-            let knowledge_results = self.search_knowledge_nodes_internal(ctx.clone(), search.clone()).await?;
+            let knowledge_results = self
+                .search_knowledge_nodes_internal(ctx.clone(), search.clone())
+                .await?;
             results.extend(knowledge_results);
         }
 
         // 3. Relation 类型不支持向量搜索，但支持关键词查询（如果有关键词）
-        if (memory_type == MemoryType::All || memory_type == MemoryType::Relation) && search.keyword.is_some() {
-            let relation_results = self.search_relations_internal(ctx.clone(), search.clone()).await?;
+        if (memory_type == MemoryType::All || memory_type == MemoryType::Relation)
+            && search.keyword.is_some()
+        {
+            let relation_results = self
+                .search_relations_internal(ctx.clone(), search.clone())
+                .await?;
             results.extend(relation_results);
         }
 
         // 4. 统一排序：按向量距离排序（有距离的在前），然后按创建时间倒序
         results.sort_by(|a, b| {
-            let dist_a = a.search_match.as_ref().and_then(|m| m.vector_distance).unwrap_or(f32::MAX);
-            let dist_b = b.search_match.as_ref().and_then(|m| m.vector_distance).unwrap_or(f32::MAX);
-            dist_a.partial_cmp(&dist_b).unwrap_or(std::cmp::Ordering::Equal)
+            let dist_a = a
+                .search_match
+                .as_ref()
+                .and_then(|m| m.vector_distance)
+                .unwrap_or(f32::MAX);
+            let dist_b = b
+                .search_match
+                .as_ref()
+                .and_then(|m| m.vector_distance)
+                .unwrap_or(f32::MAX);
+            dist_a
+                .partial_cmp(&dist_b)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         // 5. 应用 limit
@@ -145,13 +172,20 @@ impl MemoryDal for MemoryDalImpl {
         Ok(results)
     }
 
-    async fn query(&self, ctx: RequestContext, query: MemoryQuery) -> Result<Vec<Memory>, AppError> {
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: MemoryQuery,
+    ) -> Result<Vec<Memory>, AppError> {
         let memory_type = query.memory_type.unwrap_or(MemoryType::All);
         let mut results: Vec<Memory> = Vec::new();
 
         // 1. 查询短期记忆（用 DAO 的通用 query
         if memory_type == MemoryType::All || memory_type == MemoryType::ShortTerm {
-            let pos = self.memory_dao.query_short_term(ctx.clone(), query.clone()).await?;
+            let pos = self
+                .memory_dao
+                .query_short_term(ctx.clone(), query.clone())
+                .await?;
             results.extend(pos.into_iter().map(|po| Memory {
                 po: MemoryPo::ShortTerm(po),
                 search_match: None,
@@ -160,7 +194,10 @@ impl MemoryDal for MemoryDalImpl {
 
         // 2. 查询知识节点
         if memory_type == MemoryType::All || memory_type == MemoryType::KnowledgeNode {
-            let pos = self.memory_dao.query_knowledge_nodes(ctx.clone(), query).await?;
+            let pos = self
+                .memory_dao
+                .query_knowledge_nodes(ctx.clone(), query)
+                .await?;
             results.extend(pos.into_iter().map(|po| Memory {
                 po: MemoryPo::KnowledgeNode(po),
                 search_match: None,
@@ -184,9 +221,7 @@ impl MemoryDal for MemoryDalImpl {
             MemoryCreateParams::AppendTraces(traces) => {
                 self.create_append_traces(ctx, traces).await
             }
-            MemoryCreateParams::CreateShortTerm(index) => {
-                self.create_short_term(ctx, index).await
-            }
+            MemoryCreateParams::CreateShortTerm(index) => self.create_short_term(ctx, index).await,
             MemoryCreateParams::CreateKnowledgeNode { node, references } => {
                 self.create_knowledge_node(ctx, node, references).await
             }
@@ -200,7 +235,9 @@ impl MemoryDal for MemoryDalImpl {
         match memory.po {
             crate::models::memory::MemoryPo::ShortTerm(short_term) => {
                 // 更新 SQLite 索引
-                self.memory_dao.update_short_term_index(ctx.clone(), short_term.clone()).await?;
+                self.memory_dao
+                    .update_short_term_index(ctx.clone(), short_term.clone())
+                    .await?;
 
                 // 重新向量化 summary
                 match try_build_vector_params_for_search(
@@ -235,7 +272,9 @@ impl MemoryDal for MemoryDalImpl {
             }
             crate::models::memory::MemoryPo::KnowledgeNode(node) => {
                 // 更新 SQLite 节点
-                self.memory_dao.update_knowledge_node(ctx.clone(), &node).await?;
+                self.memory_dao
+                    .update_knowledge_node(ctx.clone(), &node)
+                    .await?;
 
                 // 重新向量化（node_description + summary 拼接）
                 let text_for_embedding = format!("{}\n{}", node.node_description, node.summary);
@@ -272,32 +311,40 @@ impl MemoryDal for MemoryDalImpl {
             crate::models::memory::MemoryPo::Trace(_) => {
                 Err(AppError::Unsupported("原始记忆 Trace 不可修改".to_string()))
             }
-            crate::models::memory::MemoryPo::Relation(_) => {
-                Err(AppError::Unsupported("记忆 Relation 不可修改，需删除后重建".to_string()))
-            }
+            crate::models::memory::MemoryPo::Relation(_) => Err(AppError::Unsupported(
+                "记忆 Relation 不可修改，需删除后重建".to_string(),
+            )),
         }
     }
 
-    async fn delete(
-        &self,
-        ctx: RequestContext,
-        memory: Memory,
-    ) -> Result<(), AppError> {
+    async fn delete(&self, ctx: RequestContext, memory: Memory) -> Result<(), AppError> {
         match memory.po {
             crate::models::memory::MemoryPo::ShortTerm(short_term) => {
                 // 软删除 SQLite 索引
-                self.memory_dao.forget_short_term_index(ctx.clone(), &short_term.id).await?;
+                self.memory_dao
+                    .forget_short_term_index(ctx.clone(), &short_term.id)
+                    .await?;
                 // 删除向量索引（忽略失败，不影响主流程）
-                if let Err(e) = self.memory_vector_dao.delete_short_term_vector(ctx.clone(), &short_term.id).await {
+                if let Err(e) = self
+                    .memory_vector_dao
+                    .delete_short_term_vector(ctx.clone(), &short_term.id)
+                    .await
+                {
                     log_warn!(ctx, "vector_index", memory_id= %short_term.id, error = ?e, "短期记忆向量索引删除失败，已降级");
                 }
                 Ok(())
             }
             crate::models::memory::MemoryPo::KnowledgeNode(node) => {
                 // 级联删除 SQLite 节点（包含关系和引用）
-                self.memory_dao.delete_knowledge_node(ctx.clone(), &node.id).await?;
+                self.memory_dao
+                    .delete_knowledge_node(ctx.clone(), &node.id)
+                    .await?;
                 // 删除向量索引（忽略失败，不影响主流程）
-                if let Err(e) = self.memory_vector_dao.delete_knowledge_node_vector(ctx.clone(), &node.id).await {
+                if let Err(e) = self
+                    .memory_vector_dao
+                    .delete_knowledge_node_vector(ctx.clone(), &node.id)
+                    .await
+                {
                     log_warn!(ctx, "vector_index", knowledge_id= %node.id, error = ?e, "知识节点向量索引删除失败，已降级");
                 }
                 Ok(())
@@ -305,9 +352,9 @@ impl MemoryDal for MemoryDalImpl {
             crate::models::memory::MemoryPo::Trace(_) => {
                 Err(AppError::Unsupported("原始记忆 Trace 不可删除".to_string()))
             }
-            crate::models::memory::MemoryPo::Relation(_) => {
-                Err(AppError::Unsupported("记忆 Relation 不可删除，需删除后重建".to_string()))
-            }
+            crate::models::memory::MemoryPo::Relation(_) => Err(AppError::Unsupported(
+                "记忆 Relation 不可删除，需删除后重建".to_string(),
+            )),
         }
     }
 }
@@ -316,7 +363,11 @@ impl MemoryDal for MemoryDalImpl {
 
 impl MemoryDalImpl {
     /// 搜索短期记忆（内部实现）
-    async fn search_short_term_internal(&self, ctx: RequestContext, search: MemorySearch) -> Result<Vec<Memory>, AppError> {
+    async fn search_short_term_internal(
+        &self,
+        ctx: RequestContext,
+        search: MemorySearch,
+    ) -> Result<Vec<Memory>, AppError> {
         // Step 1: 准备向量搜索结果容器
         let mut vector_scores: HashMap<String, f32> = HashMap::new();
         let mut vector_ids: HashSet<String> = HashSet::new();
@@ -337,11 +388,7 @@ impl MemoryDalImpl {
                         const VECTOR_DISTANCE_THRESHOLD: f32 = 0.8;
                         match self
                             .memory_vector_dao
-                            .search_short_term_vector(
-                                ctx.clone(),
-                                &vec_params.vector,
-                                50,
-                            )
+                            .search_short_term_vector(ctx.clone(), &vec_params.vector, 50)
                             .await
                         {
                             Ok(vector_results) => {
@@ -352,17 +399,27 @@ impl MemoryDalImpl {
                                     .map(|hit| (hit.row.id, hit.distance))
                                     .collect();
 
-                                vector_ids = filtered_results.iter().map(|(id, _)| id.clone()).collect();
+                                vector_ids =
+                                    filtered_results.iter().map(|(id, _)| id.clone()).collect();
                                 vector_scores = filtered_results.into_iter().collect();
                             }
                             Err(e) => {
                                 // 向量搜索失败，降级到纯关键词搜索
-                                log_warn!(ctx, "vector_search", "短期记忆向量搜索失败，降级到关键词搜索: {}", e);
+                                log_warn!(
+                                    ctx,
+                                    "vector_search",
+                                    "短期记忆向量搜索失败，降级到关键词搜索: {}",
+                                    e
+                                );
                             }
                         }
                     }
                     Ok(None) => {
-                        log_debug!(ctx, "vector_search", "无可用 Embedding Provider，跳过向量搜索");
+                        log_debug!(
+                            ctx,
+                            "vector_search",
+                            "无可用 Embedding Provider，跳过向量搜索"
+                        );
                     }
                     Err(e) => {
                         log_warn!(ctx, "vector_search", error = ?e, "短期记忆向量化失败，跳过向量搜索");
@@ -372,7 +429,10 @@ impl MemoryDalImpl {
         }
 
         // Step 3: 执行关键词搜索
-        let keyword_pos = self.memory_dao.search_short_term(ctx.clone(), search.clone()).await?;
+        let keyword_pos = self
+            .memory_dao
+            .search_short_term(ctx.clone(), search.clone())
+            .await?;
 
         // Step 4: 聚合结果（如果有向量结果，用通用 query 批量获取，避免 N+1）
         let mut all_pos = keyword_pos.clone();
@@ -421,7 +481,11 @@ impl MemoryDalImpl {
     }
 
     /// 搜索知识节点（内部实现）
-    async fn search_knowledge_nodes_internal(&self, ctx: RequestContext, search: MemorySearch) -> Result<Vec<Memory>, AppError> {
+    async fn search_knowledge_nodes_internal(
+        &self,
+        ctx: RequestContext,
+        search: MemorySearch,
+    ) -> Result<Vec<Memory>, AppError> {
         // Step 1: 准备向量搜索结果容器
         let mut vector_scores: HashMap<String, f32> = HashMap::new();
         let mut vector_ids: HashSet<String> = HashSet::new();
@@ -442,11 +506,7 @@ impl MemoryDalImpl {
                         const VECTOR_DISTANCE_THRESHOLD: f32 = 0.8;
                         match self
                             .memory_vector_dao
-                            .search_knowledge_node_vector(
-                                ctx.clone(),
-                                &vec_params.vector,
-                                50,
-                            )
+                            .search_knowledge_node_vector(ctx.clone(), &vec_params.vector, 50)
                             .await
                         {
                             Ok(vector_results) => {
@@ -457,17 +517,27 @@ impl MemoryDalImpl {
                                     .map(|hit| (hit.row.id, hit.distance))
                                     .collect();
 
-                                vector_ids = filtered_results.iter().map(|(id, _)| id.clone()).collect();
+                                vector_ids =
+                                    filtered_results.iter().map(|(id, _)| id.clone()).collect();
                                 vector_scores = filtered_results.into_iter().collect();
                             }
                             Err(e) => {
                                 // 向量搜索失败，降级到纯关键词搜索
-                                log_warn!(ctx, "vector_search", "知识节点向量搜索失败，降级到关键词搜索: {}", e);
+                                log_warn!(
+                                    ctx,
+                                    "vector_search",
+                                    "知识节点向量搜索失败，降级到关键词搜索: {}",
+                                    e
+                                );
                             }
                         }
                     }
                     Ok(None) => {
-                        log_debug!(ctx, "vector_search", "无可用 Embedding Provider，跳过向量搜索");
+                        log_debug!(
+                            ctx,
+                            "vector_search",
+                            "无可用 Embedding Provider，跳过向量搜索"
+                        );
                     }
                     Err(e) => {
                         log_warn!(ctx, "vector_search", error = ?e, "知识节点向量化失败，跳过向量搜索");
@@ -477,7 +547,10 @@ impl MemoryDalImpl {
         }
 
         // Step 3: 执行关键词搜索
-        let keyword_pos = self.memory_dao.search_knowledge_nodes(ctx.clone(), search.clone()).await?;
+        let keyword_pos = self
+            .memory_dao
+            .search_knowledge_nodes(ctx.clone(), search.clone())
+            .await?;
 
         // Step 4: 聚合结果（如果有向量结果，用通用 query 批量获取，避免 N+1）
         let mut all_pos = keyword_pos.clone();
@@ -526,7 +599,11 @@ impl MemoryDalImpl {
     }
 
     /// 搜索关系（仅关键词搜索）
-    async fn search_relations_internal(&self, _ctx: RequestContext, _search: MemorySearch) -> Result<Vec<Memory>, AppError> {
+    async fn search_relations_internal(
+        &self,
+        _ctx: RequestContext,
+        _search: MemorySearch,
+    ) -> Result<Vec<Memory>, AppError> {
         // TODO: DAO 层目前没有关系搜索方法，后续补充
         Ok(Vec::new())
     }
@@ -545,10 +622,7 @@ impl MemoryDalImpl {
         if traces.is_empty() {
             return Ok(Vec::new());
         }
-        let positions = self
-            .memory_dao
-            .batch_append_traces(ctx, &traces)
-            .await?;
+        let positions = self.memory_dao.batch_append_traces(ctx, &traces).await?;
         // 回填 position 到 trace
         for (trace, pos) in traces.iter_mut().zip(positions.into_iter()) {
             trace.position = Some(pos);
@@ -705,7 +779,9 @@ async fn try_build_vector_params_for_search(
     };
 
     let cortex = cortex_dao.create_cortex_trait(ctx.clone(), &provider, vec![])?;
-    let params = cortex_dao.embed_text_for_search(ctx.clone(), cortex.as_ref(), text).await?;
+    let params = cortex_dao
+        .embed_text_for_search(ctx.clone(), cortex.as_ref(), text)
+        .await?;
     Ok(Some(params))
 }
 
@@ -727,6 +803,8 @@ async fn try_build_vector_params_for_entity(
     };
 
     let cortex = cortex_dao.create_cortex_trait(ctx.clone(), &provider, vec![])?;
-    let params = cortex_dao.embed_entity(ctx, cortex.as_ref(), entity).await?;
+    let params = cortex_dao
+        .embed_entity(ctx, cortex.as_ref(), entity)
+        .await?;
     Ok(Some(params))
 }

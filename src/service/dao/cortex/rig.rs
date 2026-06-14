@@ -1,15 +1,14 @@
 //! Rig 驱动的 Cortex 实现
 
-use anyhow::Result;
 use crate::models::{brain::*, model_provider::ModelProviderPo, vector::VectorIndexParams};
 use crate::pkg::request_context::RequestContext;
-use rig::tool::ToolDyn;
+use anyhow::Result;
 use common::enums::{ModelCapability, ProviderType};
+use rig::tool::ToolDyn;
 use std::sync::{Arc, OnceLock};
 
 /// Rig 驱动的 Cortex 实现
-pub struct RigCortexDao {
-}
+pub struct RigCortexDao {}
 
 static CORTEX_DAO: OnceLock<Arc<RigCortexDao>> = OnceLock::new();
 
@@ -25,14 +24,18 @@ pub fn init() {
 
 impl RigCortexDao {
     pub fn new() -> Self {
-        Self {
-        }
+        Self {}
     }
 }
 
 #[async_trait::async_trait]
 impl super::CortexDao for RigCortexDao {
-    fn create_cortex_trait(&self, _ctx: RequestContext, provider: &ModelProviderPo, rig_tools: Vec<Box<dyn ToolDyn>>) -> Result<Box<dyn CortexTrait + Send + Sync>> {
+    fn create_cortex_trait(
+        &self,
+        _ctx: RequestContext,
+        provider: &ModelProviderPo,
+        rig_tools: Vec<Box<dyn ToolDyn>>,
+    ) -> Result<Box<dyn CortexTrait + Send + Sync>> {
         let api_key = provider.api_key.clone();
         let model = provider.model_name.clone();
 
@@ -41,66 +44,122 @@ impl super::CortexDao for RigCortexDao {
         let cortex: Box<dyn CortexTrait + Send + Sync> = match provider.capability {
             // 🔷 Agent 类型 - 支持完整的对话、工具调用、向量化
             ModelCapability::Agent => match provider.provider_type {
-                ProviderType::OpenAI => Box::new(
-                    self::openai::OpenAiCortex::new(provider.id.clone(), api_key, model, provider.base_url.clone(), rig_tools)?
-                ),
-                ProviderType::DeepSeek => Box::new(
-                    self::openai_compatible::OpenAiCompatibleCortex::new(provider.id.clone(), api_key, model, "https://api.deepseek.com".to_string(), provider.base_url.clone(), rig_tools)?
-                ),
-                ProviderType::Qwen => Box::new(
-                    self::openai_compatible::OpenAiCompatibleCortex::new(provider.id.clone(), api_key, model, "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string(), provider.base_url.clone(), rig_tools)?
-                ),
-                ProviderType::Doubao => Box::new(
-                    self::openai_compatible::OpenAiCompatibleCortex::new(provider.id.clone(), api_key, model, "https://ark.cn-beijing.volces.com/api".to_string(), provider.base_url.clone(), rig_tools)?
-                ),
-                ProviderType::Ollama => Box::new(
-                    self::ollama::OllamaCortex::new(provider.id.clone(), api_key, model, provider.base_url.clone(), rig_tools)?
-                ),
-                ProviderType::Custom => Box::new(
-                    self::openai_compatible::OpenAiCompatibleCortex::new(provider.id.clone(), api_key, model, provider.base_url.clone().unwrap_or_default(), None, rig_tools)?
-                ),
+                ProviderType::OpenAI => Box::new(self::openai::OpenAiCortex::new(
+                    provider.id.clone(),
+                    api_key,
+                    model,
+                    provider.base_url.clone(),
+                    rig_tools,
+                )?),
+                ProviderType::DeepSeek => {
+                    Box::new(self::openai_compatible::OpenAiCompatibleCortex::new(
+                        provider.id.clone(),
+                        api_key,
+                        model,
+                        "https://api.deepseek.com".to_string(),
+                        provider.base_url.clone(),
+                        rig_tools,
+                    )?)
+                }
+                ProviderType::Qwen => {
+                    Box::new(self::openai_compatible::OpenAiCompatibleCortex::new(
+                        provider.id.clone(),
+                        api_key,
+                        model,
+                        "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string(),
+                        provider.base_url.clone(),
+                        rig_tools,
+                    )?)
+                }
+                ProviderType::Doubao => {
+                    Box::new(self::openai_compatible::OpenAiCompatibleCortex::new(
+                        provider.id.clone(),
+                        api_key,
+                        model,
+                        "https://ark.cn-beijing.volces.com/api".to_string(),
+                        provider.base_url.clone(),
+                        rig_tools,
+                    )?)
+                }
+                ProviderType::Ollama => Box::new(self::ollama::OllamaCortex::new(
+                    provider.id.clone(),
+                    api_key,
+                    model,
+                    provider.base_url.clone(),
+                    rig_tools,
+                )?),
+                ProviderType::Custom => {
+                    Box::new(self::openai_compatible::OpenAiCompatibleCortex::new(
+                        provider.id.clone(),
+                        api_key,
+                        model,
+                        provider.base_url.clone().unwrap_or_default(),
+                        None,
+                        rig_tools,
+                    )?)
+                }
                 ProviderType::FastEmbed => {
-                    return Err(anyhow::anyhow!("FastEmbed 仅支持 Embedding 能力，不支持 Agent 能力").into());
+                    return Err(anyhow::anyhow!(
+                        "FastEmbed 仅支持 Embedding 能力，不支持 Agent 能力"
+                    )
+                    .into());
                 }
             },
             // 🔷 Embedding 类型 - 只支持向量化，不需要构建完整的 Agent
             // 对于 Embedding 模型，直接复用 OpenAI 兼容实现（大多数 Embedding API 都是 OpenAI 格式）
             ModelCapability::Embedding => match provider.provider_type {
-                ProviderType::OpenAI | ProviderType::DeepSeek | ProviderType::Qwen |
-                ProviderType::Doubao | ProviderType::Ollama | ProviderType::Custom => Box::new(
-                    self::openai_compatible::OpenAiCompatibleCortex::new(
+                ProviderType::OpenAI
+                | ProviderType::DeepSeek
+                | ProviderType::Qwen
+                | ProviderType::Doubao
+                | ProviderType::Ollama
+                | ProviderType::Custom => {
+                    Box::new(self::openai_compatible::OpenAiCompatibleCortex::new(
                         provider.id.clone(),
-                        api_key, 
-                        model, 
-                        provider.base_url.clone().unwrap_or_default(), 
-                        None, 
-                        Vec::new()
-                    )?
-                ),
-                ProviderType::FastEmbed => Box::new(
-                    self::fastembed::FastEmbedCortex::new(
-                        provider.id.as_str(),
-                        model.as_str(),
-                        provider.base_url.as_deref().unwrap_or(""),
-                        provider.api_key.as_str(),
-                    )?
-                ),
+                        api_key,
+                        model,
+                        provider.base_url.clone().unwrap_or_default(),
+                        None,
+                        Vec::new(),
+                    )?)
+                }
+                ProviderType::FastEmbed => Box::new(self::fastembed::FastEmbedCortex::new(
+                    provider.id.as_str(),
+                    model.as_str(),
+                    provider.base_url.as_deref().unwrap_or(""),
+                    provider.api_key.as_str(),
+                )?),
             },
         };
 
         Ok(cortex)
     }
 
-    async fn prompt(&self, _ctx: RequestContext, cortex: &dyn CortexTrait, prompt: &str) -> Result<String> {
+    async fn prompt(
+        &self,
+        _ctx: RequestContext,
+        cortex: &dyn CortexTrait,
+        prompt: &str,
+    ) -> Result<String> {
         cortex.prompt(prompt).await
     }
 
-    async fn embed_text_raw(&self, _ctx: RequestContext, cortex: &dyn CortexTrait, text: &str) -> Result<Vec<f32>> {
+    async fn embed_text_raw(
+        &self,
+        _ctx: RequestContext,
+        cortex: &dyn CortexTrait,
+        text: &str,
+    ) -> Result<Vec<f32>> {
         let vectors = cortex.embeddings(&[text.to_string()]).await?;
         Ok(vectors.into_iter().next().unwrap_or_default())
     }
 
-    async fn embed_entity(&self, _ctx: RequestContext, cortex: &dyn CortexTrait, entity: &dyn crate::models::vector::Vectorizable) -> Result<crate::models::vector::VectorIndexParams> {
+    async fn embed_entity(
+        &self,
+        _ctx: RequestContext,
+        cortex: &dyn CortexTrait,
+        entity: &dyn crate::models::vector::Vectorizable,
+    ) -> Result<crate::models::vector::VectorIndexParams> {
         // ✅ 完整组装 VectorIndexParams - 从 CortexTrait 直接获取所有信息
 
         // 1. 获取待向量化的文本
@@ -122,7 +181,12 @@ impl super::CortexDao for RigCortexDao {
         Ok(params)
     }
 
-    async fn embed_text_for_search(&self, _ctx: RequestContext, cortex: &dyn CortexTrait, text: &str) -> Result<crate::models::vector::VectorIndexParams> {
+    async fn embed_text_for_search(
+        &self,
+        _ctx: RequestContext,
+        cortex: &dyn CortexTrait,
+        text: &str,
+    ) -> Result<crate::models::vector::VectorIndexParams> {
         // 1. 直接使用 cortex 的 embeddings 能力
         let vectors = cortex.embeddings(&[text.to_string()]).await?;
         let vector = vectors.into_iter().next().unwrap_or_default();
@@ -144,7 +208,7 @@ impl super::CortexDao for RigCortexDao {
 }
 
 // 具体不同提供商的 Cortex 实现
+pub mod fastembed;
+pub mod ollama;
 pub mod openai;
 pub mod openai_compatible;
-pub mod ollama;
-pub mod fastembed;

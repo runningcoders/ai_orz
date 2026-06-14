@@ -1,8 +1,8 @@
 //! 设置页面
 //! 允许用户在浏览器中修改前端配置（存储在 localStorage）
 
-use dioxus::prelude::*;
 use crate::config::FrontendConfig;
+use dioxus::prelude::*;
 
 #[component]
 pub fn SettingsPage() -> Element {

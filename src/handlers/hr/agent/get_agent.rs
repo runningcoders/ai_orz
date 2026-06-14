@@ -1,14 +1,14 @@
 //! 获取单个 Agent
 
-use common::api::GetAgentResponse;
 use crate::error::AppError;
-use common::api::ApiResponse;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use axum::{
-    extract::{Extension, Path},
     Json,
+    extract::{Extension, Path},
 };
+use common::api::ApiResponse;
+use common::api::GetAgentResponse;
 
 /// 获取 Agent
 /// GET /agents/{id}
@@ -16,7 +16,6 @@ pub async fn get_agent(
     Extension(ctx): Extension<RequestContext>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<GetAgentResponse>>, AppError> {
-
     let agent = domain()
         .agent_manage()
         .get_agent(ctx, &id)
@@ -30,9 +29,21 @@ pub async fn get_agent(
         id: agent.id().to_string(),
         name: agent.name().to_string(),
         roles,
-        description: if agent.po.description.is_empty() { None } else { Some(agent.po.description.clone()) },
-        capabilities: if capabilities.is_empty() { None } else { Some(capabilities) },
-        soul: if agent.po.soul.is_empty() { None } else { Some(agent.po.soul.clone()) },
+        description: if agent.po.description.is_empty() {
+            None
+        } else {
+            Some(agent.po.description.clone())
+        },
+        capabilities: if capabilities.is_empty() {
+            None
+        } else {
+            Some(capabilities)
+        },
+        soul: if agent.po.soul.is_empty() {
+            None
+        } else {
+            Some(agent.po.soul.clone())
+        },
         model_provider_id: agent.po.model_provider_id.clone(),
         status: agent.po.status as i32,
         created_at: agent.po.created_at,

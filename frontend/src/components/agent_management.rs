@@ -1,8 +1,6 @@
-use dioxus::prelude::*;
+use crate::api::agent::{create_agent, delete_agent, list_agents};
 use common::api::{AgentListItem, CreateAgentRequest};
-use crate::api::agent::{
-    list_agents, create_agent, delete_agent,
-};
+use dioxus::prelude::*;
 
 #[derive(Clone, Debug)]
 pub enum AgentStatus {
@@ -71,7 +69,11 @@ pub fn AgentManagement() -> Element {
         spawn(async move {
             let req = CreateAgentRequest {
                 name,
-                roles: if role.is_empty() { None } else { Some(vec![role]) },
+                roles: if role.is_empty() {
+                    None
+                } else {
+                    Some(vec![role])
+                },
                 description: None,
                 capabilities: None,
                 soul: None,

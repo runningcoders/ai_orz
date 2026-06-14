@@ -1,11 +1,14 @@
 //! Cortex DAO 测试
 
 use super::*;
-use crate::models::{model_provider::{ModelProvider, ModelProviderPo}, tool::Tool};
-use common::enums::{ModelCapability, ProviderType};
+use crate::models::{
+    model_provider::{ModelProvider, ModelProviderPo},
+    tool::Tool,
+};
 use crate::pkg::request_context::RequestContext;
-use sqlx::SqlitePool;
 use ::rig::tool::ToolDyn;
+use common::enums::{ModelCapability, ProviderType};
+use sqlx::SqlitePool;
 
 #[sqlx::test]
 async fn test_create_openai_cortex(pool: SqlitePool) {
@@ -28,12 +31,10 @@ async fn test_create_openai_cortex(pool: SqlitePool) {
         updated_at: 0,
     };
 
-    
-
     let dao = rig::RigCortexDao::new();
     let rig_tools: Vec<Box<dyn ToolDyn>> = vec![];
     let result = dao.create_cortex_trait(ctx, &provider_po, rig_tools);
-    
+
     // 应该能成功创建，API key 不正确只会在运行时失败，创建本身不会失败
     assert!(result.is_ok());
 }
@@ -59,12 +60,10 @@ async fn test_create_deepseek_cortex(pool: SqlitePool) {
         updated_at: 0,
     };
 
-    
-
     let dao = rig::RigCortexDao::new();
     let rig_tools: Vec<Box<dyn ToolDyn>> = vec![];
     let result = dao.create_cortex_trait(ctx, &provider_po, rig_tools);
-    
+
     assert!(result.is_ok());
 }
 
@@ -89,12 +88,10 @@ async fn test_create_qwen_cortex(pool: SqlitePool) {
         updated_at: 0,
     };
 
-    
-
     let dao = rig::RigCortexDao::new();
     let rig_tools: Vec<Box<dyn ToolDyn>> = vec![];
     let result = dao.create_cortex_trait(ctx, &provider_po, rig_tools);
-    
+
     assert!(result.is_ok());
 }
 
@@ -119,12 +116,10 @@ async fn test_create_doubao_cortex(pool: SqlitePool) {
         updated_at: 0,
     };
 
-    
-
     let dao = rig::RigCortexDao::new();
     let rig_tools: Vec<Box<dyn ToolDyn>> = vec![];
     let result = dao.create_cortex_trait(ctx, &provider_po, rig_tools);
-    
+
     assert!(result.is_ok());
 }
 
@@ -149,12 +144,10 @@ async fn test_create_ollama_cortex(pool: SqlitePool) {
         updated_at: 0,
     };
 
-    
-
     let dao = rig::RigCortexDao::new();
     let rig_tools: Vec<Box<dyn ToolDyn>> = vec![];
     let result = dao.create_cortex_trait(ctx, &provider_po, rig_tools);
-    
+
     assert!(result.is_ok());
 }
 
@@ -179,11 +172,9 @@ async fn test_create_openai_compatible_custom_base_url(pool: SqlitePool) {
         updated_at: 0,
     };
 
-    
-
     let dao = rig::RigCortexDao::new();
     let rig_tools: Vec<Box<dyn ToolDyn>> = vec![];
     let result = dao.create_cortex_trait(ctx, &provider_po, rig_tools);
-    
+
     assert!(result.is_ok());
 }

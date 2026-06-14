@@ -8,8 +8,8 @@
 
 use crate::error::AppError;
 use crate::models::memory::{
-    MemoryTrace, MemoryTracePosition, ShortTermMemoryIndexPo, LongTermKnowledgeNodePo,
-    KnowledgeReferencePo, KnowledgeNodeRelationPo,
+    KnowledgeNodeRelationPo, KnowledgeReferencePo, LongTermKnowledgeNodePo, MemoryTrace,
+    MemoryTracePosition, ShortTermMemoryIndexPo,
 };
 use crate::models::vector::{VectorIndexParams, VectorSearchHit};
 use crate::pkg::RequestContext;
@@ -189,11 +189,7 @@ pub trait MemoryDao: Send + Sync {
     /// - id: 索引 ID
     /// # 返回
     /// - 成功返回 Ok(())
-    async fn forget_short_term_index(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<(), AppError>;
+    async fn forget_short_term_index(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
 
     // ========== 长期知识图谱相关 ==========
 
@@ -300,11 +296,7 @@ pub trait MemoryDao: Send + Sync {
     /// - id: 节点 ID
     /// # 返回
     /// - 成功返回 Ok(())
-    async fn delete_knowledge_node(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<(), AppError>;
+    async fn delete_knowledge_node(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
 
     /// 添加知识引用
     ///
@@ -565,6 +557,6 @@ pub fn dao() -> std::sync::Arc<dyn MemoryDao> {
 }
 
 #[cfg(test)]
- mod sqlite_test;
+mod sqlite_test;
 #[cfg(test)]
- mod vector_test;
+mod vector_test;

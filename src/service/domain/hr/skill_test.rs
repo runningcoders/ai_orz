@@ -1,6 +1,6 @@
 //! HR Domain Skill 管理单元测试
 
-use super::{HrDomain, domain, UpdateSkillParams};
+use super::{HrDomain, UpdateSkillParams, domain};
 use crate::models::skill::{Skill, SkillPo};
 use crate::pkg::RequestContext;
 use common::enums::SkillStatus;
@@ -18,12 +18,12 @@ fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn HrDomain>, RequestCont
     // 初始化 config 使用临时目录
     let temp_dir = TempDir::new().unwrap();
     let base_path = temp_dir.path().to_path_buf();
-    
+
     // 设置测试用的配置
     unsafe {
         std::env::set_var("AI_ORZ_BASE_PATH", base_path.to_str().unwrap());
     }
-    
+
     // 初始化 config
     crate::config::init().unwrap();
 
@@ -52,7 +52,11 @@ fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn HrDomain>, RequestCont
 /// 创建测试 Skill
 fn create_test_skill(name: &str) -> Skill {
     let skill_po = SkillPo::new(
-        format!("{}--{}", name.to_lowercase().replace(" ", "-"), uuid::Uuid::new_v4()),
+        format!(
+            "{}--{}",
+            name.to_lowercase().replace(" ", "-"),
+            uuid::Uuid::new_v4()
+        ),
         name.to_string(),
         "A test skill".to_string(),
         vec!["test".to_string()],
@@ -161,7 +165,10 @@ async fn test_delete_skill(pool: SqlitePool) {
         .unwrap();
     // 软删除，记录还在，状态变为 Expired
     assert!(found.is_some());
-    assert_eq!(found.unwrap().po.status, common::enums::SkillStatus::Expired);
+    assert_eq!(
+        found.unwrap().po.status,
+        common::enums::SkillStatus::Expired
+    );
 }
 
 #[sqlx::test]

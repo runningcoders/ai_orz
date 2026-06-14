@@ -4,12 +4,12 @@
 //! 负责组合 DAO 完成业务级数据操作，组装完整 Skill 实体（PO + 文件）
 
 use crate::error::AppError;
-use crate::models::skill::{Skill, SkillPo, SkillFile};
-use crate::models::vector::{SearchMatchInfo, MatchType, Vectorizable};
+use crate::models::skill::{Skill, SkillFile, SkillPo};
+use crate::models::vector::{MatchType, SearchMatchInfo, Vectorizable};
 use crate::pkg::request_context::RequestContext;
-use crate::service::dao::skill::{SkillDao, SkillVectorDao, SkillQuery, SkillSearch, self};
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::ModelProviderDao;
+use crate::service::dao::skill::{self, SkillDao, SkillQuery, SkillSearch, SkillVectorDao};
 use common::enums::{ModelCapability, ModelProviderStatus};
 use std::sync::{Arc, OnceLock};
 
@@ -39,7 +39,12 @@ pub fn new(
     cortex_dao: Arc<dyn CortexDao + Send + Sync>,
     model_provider_dao: Arc<dyn ModelProviderDao + Send + Sync>,
 ) -> Arc<dyn SkillDal> {
-    Arc::new(SkillDalImpl { skill_dao, skill_vector_dao, cortex_dao, model_provider_dao })
+    Arc::new(SkillDalImpl {
+        skill_dao,
+        skill_vector_dao,
+        cortex_dao,
+        model_provider_dao,
+    })
 }
 
 // ==================== DAL 接口 ====================
@@ -54,25 +59,49 @@ pub trait SkillDal: Send + Sync {
     async fn get_by_id(&self, ctx: RequestContext, id: String) -> Result<Option<Skill>, AppError>;
 
     /// 根据 ID 获取 PO 数据（不需要文件时用这个）
-    async fn get_po_by_id(&self, ctx: RequestContext, id: String) -> Result<Option<SkillPo>, AppError>;
+    async fn get_po_by_id(
+        &self,
+        ctx: RequestContext,
+        id: String,
+    ) -> Result<Option<SkillPo>, AppError>;
 
     /// 通用综合查询（返回完整 Skill 实体，包含 PO + 文件列表）
     async fn query(&self, ctx: RequestContext, query: SkillQuery) -> Result<Vec<Skill>, AppError>;
 
     /// 按状态查询（返回完整 Skill 实体）
-    async fn list_by_status(&self, ctx: RequestContext, status: common::enums::SkillStatus) -> Result<Vec<Skill>, AppError>;
+    async fn list_by_status(
+        &self,
+        ctx: RequestContext,
+        status: common::enums::SkillStatus,
+    ) -> Result<Vec<Skill>, AppError>;
 
     /// 按分类查询（返回完整 Skill 实体）
-    async fn list_by_category(&self, ctx: RequestContext, category: &str) -> Result<Vec<Skill>, AppError>;
+    async fn list_by_category(
+        &self,
+        ctx: RequestContext,
+        category: &str,
+    ) -> Result<Vec<Skill>, AppError>;
 
     /// 按作者查询（返回完整 Skill 实体）
-    async fn list_by_author(&self, ctx: RequestContext, author_id: &str) -> Result<Vec<Skill>, AppError>;
+    async fn list_by_author(
+        &self,
+        ctx: RequestContext,
+        author_id: &str,
+    ) -> Result<Vec<Skill>, AppError>;
 
     /// 获取 Agent 的所有技能（返回完整 Skill 实体）
-    async fn list_for_agent(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<Skill>, AppError>;
+    async fn list_for_agent(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+    ) -> Result<Vec<Skill>, AppError>;
 
     /// 搜索技能（名称/描述/标签）
-    async fn search(&self, ctx: RequestContext, search: SkillSearch) -> Result<Vec<Skill>, AppError>;
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: SkillSearch,
+    ) -> Result<Vec<Skill>, AppError>;
 
     /// 更新技能元数据（不影响文件）
     /// 更新技能（仅数据库）
@@ -130,24 +159,34 @@ impl SkillDal for SkillDalImpl {
         self.skill_dao.insert(ctx.clone(), po).await?;
 
         // 2. 查询可用的 Embedding 能力的 ModelProvider
-        if let Some(provider) = self.model_provider_dao.get_default_embedding_provider(ctx.clone()).await? {
+        if let Some(provider) = self
+            .model_provider_dao
+            .get_default_embedding_provider(ctx.clone())
+            .await?
+        {
             // 创建 Cortex
-            let cortex = self.cortex_dao.create_cortex_trait(
-                ctx.clone(),
-                &provider,
-                vec![],
-            )?;
+            let cortex = self
+                .cortex_dao
+                .create_cortex_trait(ctx.clone(), &provider, vec![])?;
 
             // 使用便捷方法直接生成完整 VectorIndexParams
-            let vector_params = self.cortex_dao.embed_entity(ctx.clone(), cortex.as_ref(), po).await?;
+            let vector_params = self
+                .cortex_dao
+                .embed_entity(ctx.clone(), cortex.as_ref(), po)
+                .await?;
 
             // 保存向量索引
-            if let Err(e) = self.skill_vector_dao.upsert_vector(
-                ctx.clone(),
-                &po.id,
-                &vector_params,
-            ).await {
-                log_warn!(&ctx, "vector_index", "保存技能向量索引失败（可能 vss0 扩展未安装）: {}", e);
+            if let Err(e) = self
+                .skill_vector_dao
+                .upsert_vector(ctx.clone(), &po.id, &vector_params)
+                .await
+            {
+                log_warn!(
+                    &ctx,
+                    "vector_index",
+                    "保存技能向量索引失败（可能 vss0 扩展未安装）: {}",
+                    e
+                );
             }
         }
 
@@ -159,10 +198,18 @@ impl SkillDal for SkillDalImpl {
             return Ok(None);
         };
         let files = self.skill_dao.list_files(&po)?;
-        Ok(Some(Skill { po, files, search_match: None }))
+        Ok(Some(Skill {
+            po,
+            files,
+            search_match: None,
+        }))
     }
 
-    async fn get_po_by_id(&self, ctx: RequestContext, id: String) -> Result<Option<SkillPo>, AppError> {
+    async fn get_po_by_id(
+        &self,
+        ctx: RequestContext,
+        id: String,
+    ) -> Result<Option<SkillPo>, AppError> {
         Ok(self.skill_dao.find_by_id(ctx, &id).await?)
     }
 
@@ -171,55 +218,113 @@ impl SkillDal for SkillDalImpl {
         let mut skills = Vec::with_capacity(pos.len());
         for po in pos {
             let files = self.skill_dao.list_files(&po)?;
-            skills.push(Skill { po, files, search_match: None });
+            skills.push(Skill {
+                po,
+                files,
+                search_match: None,
+            });
         }
         Ok(skills)
     }
 
-    async fn list_by_status(&self, ctx: RequestContext, status: common::enums::SkillStatus) -> Result<Vec<Skill>, AppError> {
-        self.query(ctx, SkillQuery { status: Some(status), ..Default::default() }).await
+    async fn list_by_status(
+        &self,
+        ctx: RequestContext,
+        status: common::enums::SkillStatus,
+    ) -> Result<Vec<Skill>, AppError> {
+        self.query(
+            ctx,
+            SkillQuery {
+                status: Some(status),
+                ..Default::default()
+            },
+        )
+        .await
     }
 
-    async fn list_by_category(&self, ctx: RequestContext, category: &str) -> Result<Vec<Skill>, AppError> {
-        self.query(ctx, SkillQuery { category: Some(category.to_string()), ..Default::default() }).await
+    async fn list_by_category(
+        &self,
+        ctx: RequestContext,
+        category: &str,
+    ) -> Result<Vec<Skill>, AppError> {
+        self.query(
+            ctx,
+            SkillQuery {
+                category: Some(category.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
     }
 
-    async fn list_by_author(&self, ctx: RequestContext, author_id: &str) -> Result<Vec<Skill>, AppError> {
-        self.query(ctx, SkillQuery { author_id: Some(author_id.to_string()), ..Default::default() }).await
+    async fn list_by_author(
+        &self,
+        ctx: RequestContext,
+        author_id: &str,
+    ) -> Result<Vec<Skill>, AppError> {
+        self.query(
+            ctx,
+            SkillQuery {
+                author_id: Some(author_id.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
     }
 
-    async fn list_for_agent(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<Skill>, AppError> {
-        self.query(ctx, SkillQuery { author_id: Some(agent_id.to_string()), ..Default::default() }).await
+    async fn list_for_agent(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+    ) -> Result<Vec<Skill>, AppError> {
+        self.query(
+            ctx,
+            SkillQuery {
+                author_id: Some(agent_id.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
     }
 
-    async fn search(&self, ctx: RequestContext, search: SkillSearch) -> Result<Vec<Skill>, AppError> {
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: SkillSearch,
+    ) -> Result<Vec<Skill>, AppError> {
         // Step 1: 查询是否有可用的 Embedding Provider（用便捷方法）
-        let mut vector_scores: std::collections::HashMap<String, f32> = std::collections::HashMap::new();
-        let mut vector_skill_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut vector_scores: std::collections::HashMap<String, f32> =
+            std::collections::HashMap::new();
+        let mut vector_skill_ids: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
 
         // 如果有关键词，尝试向量搜索
         if search.keyword.is_some() {
-            if let Some(provider) = self.model_provider_dao.get_default_embedding_provider(ctx.clone()).await? {
+            if let Some(provider) = self
+                .model_provider_dao
+                .get_default_embedding_provider(ctx.clone())
+                .await?
+            {
                 // 创建 Cortex
-                let cortex = self.cortex_dao.create_cortex_trait(
-                    ctx.clone(),
-                    &provider,
-                    vec![],
-                )?;
+                let cortex = self
+                    .cortex_dao
+                    .create_cortex_trait(ctx.clone(), &provider, vec![])?;
 
                 // 生成查询向量（使用便捷方法）
                 if let Some(keyword) = &search.keyword {
-                    let query_vector_params = self.cortex_dao.embed_text_for_search(ctx.clone(), cortex.as_ref(), keyword)
+                    let query_vector_params = self
+                        .cortex_dao
+                        .embed_text_for_search(ctx.clone(), cortex.as_ref(), keyword)
                         .await?;
                     let query_vector = query_vector_params.vector;
 
                     // 向量搜索（前 50 条）
                     // 注意：只保留距离小于阈值的结果（余弦距离 0-2，0 是完全相同）
-                    match self.skill_vector_dao.search_vector(
-                        ctx.clone(),
-                        &query_vector,
-                        50,
-                    ).await {
+                    match self
+                        .skill_vector_dao
+                        .search_vector(ctx.clone(), &query_vector, 50)
+                        .await
+                    {
                         Ok(vector_results) => {
                             // 距离阈值：只保留足够相似的结果（0.8 是比较宽松的阈值）
                             const VECTOR_DISTANCE_THRESHOLD: f32 = 0.8;
@@ -229,12 +334,18 @@ impl SkillDal for SkillDalImpl {
                                 .map(|hit| (hit.row.id, hit.distance))
                                 .collect();
 
-                            vector_skill_ids = filtered_results.iter().map(|(id, _)| id.clone()).collect();
+                            vector_skill_ids =
+                                filtered_results.iter().map(|(id, _)| id.clone()).collect();
                             vector_scores = filtered_results.into_iter().collect();
                         }
                         Err(e) => {
                             // 向量搜索失败（可能是 vss0 扩展未安装），降级到纯关键词搜索
-                            log_warn!(&ctx, "vector_search", "向量搜索失败，降级到关键词搜索: {}", e);
+                            log_warn!(
+                                &ctx,
+                                "vector_search",
+                                "向量搜索失败，降级到关键词搜索: {}",
+                                e
+                            );
                         }
                     }
                 }
@@ -252,12 +363,12 @@ impl SkillDal for SkillDalImpl {
                 .into_iter()
                 .filter(|id| !keyword_pos.iter().any(|po| po.id == *id))
                 .collect();
-            
+
             if !ids_to_fetch.is_empty() {
                 // 分批获取（避免 SQL 太长）
                 ids_to_fetch.sort();
                 ids_to_fetch.dedup();
-                
+
                 for chunk in ids_to_fetch.chunks(20) {
                     let chunk_ids: Vec<String> = chunk.to_vec();
                     let chunk_query = SkillQuery {
@@ -300,9 +411,19 @@ impl SkillDal for SkillDalImpl {
         // Step 7: 排序（向量距离优先，距离越小越好；纯关键词按原有顺序）
         if !vector_scores.is_empty() {
             skills.sort_by(|a, b| {
-                let dist_a = a.search_match.as_ref().and_then(|m| m.vector_distance).unwrap_or(f32::MAX);
-                let dist_b = b.search_match.as_ref().and_then(|m| m.vector_distance).unwrap_or(f32::MAX);
-                dist_a.partial_cmp(&dist_b).unwrap_or(std::cmp::Ordering::Equal)
+                let dist_a = a
+                    .search_match
+                    .as_ref()
+                    .and_then(|m| m.vector_distance)
+                    .unwrap_or(f32::MAX);
+                let dist_b = b
+                    .search_match
+                    .as_ref()
+                    .and_then(|m| m.vector_distance)
+                    .unwrap_or(f32::MAX);
+                dist_a
+                    .partial_cmp(&dist_b)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             });
         }
 
@@ -314,41 +435,52 @@ impl SkillDal for SkillDalImpl {
         self.skill_dao.update(ctx.clone(), &skill.po).await?;
 
         // 2. 查询可用的 Embedding 能力的 ModelProvider
-        let providers = self.model_provider_dao.query(
-            ctx.clone(),
-            crate::service::dao::model_provider::ModelProviderQuery {
-                capability: Some(ModelCapability::Embedding),
-                status: Some(ModelProviderStatus::Normal),
-                limit: Some(1),
-                ..Default::default()
-            },
-        ).await?;
+        let providers = self
+            .model_provider_dao
+            .query(
+                ctx.clone(),
+                crate::service::dao::model_provider::ModelProviderQuery {
+                    capability: Some(ModelCapability::Embedding),
+                    status: Some(ModelProviderStatus::Normal),
+                    limit: Some(1),
+                    ..Default::default()
+                },
+            )
+            .await?;
 
         // 3. 如果有可用的 Embedding Provider，更新向量
         if let Some(provider) = providers.first() {
             // 检查内容是否变化（通过 get_vector_content_hash）
-            let old_hash = self.get_vector_content_hash(ctx.clone(), &skill.po.id).await?;
+            let old_hash = self
+                .get_vector_content_hash(ctx.clone(), &skill.po.id)
+                .await?;
             let content = skill.po.vectorize_text();
             let new_hash = sha256::digest(&content);
-            
+
             if old_hash.as_deref() != Some(&new_hash) {
                 // 创建 Cortex
-                let cortex = self.cortex_dao.create_cortex_trait(
-                    ctx.clone(),
-                    provider,
-                    vec![],
-                )?;
+                let cortex = self
+                    .cortex_dao
+                    .create_cortex_trait(ctx.clone(), provider, vec![])?;
 
                 // 使用便捷方法直接生成完整 VectorIndexParams
-                let vector_params = self.cortex_dao.embed_entity(ctx.clone(), cortex.as_ref(), &skill.po).await?;
+                let vector_params = self
+                    .cortex_dao
+                    .embed_entity(ctx.clone(), cortex.as_ref(), &skill.po)
+                    .await?;
 
                 // 更新向量索引
-                if let Err(e) = self.skill_vector_dao.upsert_vector(
-                    ctx.clone(),
-                    &skill.po.id,
-                    &vector_params,
-                ).await {
-                    log_warn!(&ctx, "vector_index", "更新技能向量索引失败（可能 vss0 扩展未安装）: {}", e);
+                if let Err(e) = self
+                    .skill_vector_dao
+                    .upsert_vector(ctx.clone(), &skill.po.id, &vector_params)
+                    .await
+                {
+                    log_warn!(
+                        &ctx,
+                        "vector_index",
+                        "更新技能向量索引失败（可能 vss0 扩展未安装）: {}",
+                        e
+                    );
                 }
             }
         }
@@ -374,10 +506,16 @@ impl SkillDal for SkillDalImpl {
         agent_id: &str,
     ) -> Result<SkillPo, AppError> {
         // 先获取源技能 PO
-        let source_skill = self.skill_dao.find_by_id(ctx.clone(), source_skill_id).await?
-                .ok_or_else(|| AppError::NotFound("Skill not found".to_string()))?;
+        let source_skill = self
+            .skill_dao
+            .find_by_id(ctx.clone(), source_skill_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Skill not found".to_string()))?;
         // 调用 DAO 原子安装
-        Ok(self.skill_dao.install_to_agent(ctx, &source_skill, agent_id).await?)
+        Ok(self
+            .skill_dao
+            .install_to_agent(ctx, &source_skill, agent_id)
+            .await?)
     }
 
     fn read_main_content(&self, skill: &SkillPo) -> Result<String, AppError> {

@@ -3,7 +3,7 @@
 //! 对应 SQL 建表语句：`migrations/20260420000000_initial.sql`
 
 use common::constants::utils;
-use common::enums::{OrganizationStatus, OrganizationScope};
+use common::enums::{OrganizationScope, OrganizationStatus};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 

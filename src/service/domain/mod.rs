@@ -8,17 +8,15 @@
 //! - runtime → 运行时领域（工具执行等运行时逻辑）
 //! - project → 项目领域（项目管理和执行）
 
-
-pub mod hr;
 pub mod finance;
-pub mod organization;
+pub mod hr;
 pub mod message;
-pub mod runtime;
+pub mod organization;
 pub mod project;
+pub mod runtime;
 
 // Tests are located in subdirectories
 // No need to declare them here because mod rs already declared in subdirectories
-
 
 /// 初始化所有 Domain
 pub fn init_all() {

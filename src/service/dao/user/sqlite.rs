@@ -2,11 +2,11 @@
 
 use crate::error::AppError;
 use crate::models::user::UserPo;
-use common::enums::{UserRole, UserStatus};
 use crate::pkg::RequestContext;
 use crate::service::dao::user::{UserDao, UserQuery};
-use std::sync::{Arc, OnceLock};
 use chrono::Utc;
+use common::enums::{UserRole, UserStatus};
+use std::sync::{Arc, OnceLock};
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -79,7 +79,11 @@ FROM users WHERE id = ? AND status != 0
         Ok(user)
     }
 
-    async fn find_by_username(&self, ctx: RequestContext, username: &str) -> Result<Option<UserPo>, AppError> {
+    async fn find_by_username(
+        &self,
+        ctx: RequestContext,
+        username: &str,
+    ) -> Result<Option<UserPo>, AppError> {
         let user = sqlx::query_as!(
             UserPo,
             r#"
@@ -98,7 +102,7 @@ FROM users WHERE username = ? AND status != 0
     async fn query(&self, ctx: RequestContext, query: UserQuery) -> Result<Vec<UserPo>, AppError> {
         let pool = ctx.db_pool();
         let mut builder = sqlx::QueryBuilder::new(
-            r#"SELECT id, organization_id, username, display_name, email, password_hash, role, status, created_by, modified_by, created_at, updated_at FROM users WHERE status != 0"#
+            r#"SELECT id, organization_id, username, display_name, email, password_hash, role, status, created_by, modified_by, created_at, updated_at FROM users WHERE status != 0"#,
         );
 
         // 组织过滤
@@ -114,19 +118,25 @@ FROM users WHERE username = ? AND status != 0
             builder.push(" LIMIT ").push_bind(limit as i64);
         }
 
-        let rows = builder.build_query_as()
-            .fetch_all(pool)
-            .await?;
+        let rows = builder.build_query_as().fetch_all(pool).await?;
 
         Ok(rows)
     }
 
-    async fn find_by_organization_id(&self, ctx: RequestContext, org_id: &str) -> Result<Vec<UserPo>, AppError> {
+    async fn find_by_organization_id(
+        &self,
+        ctx: RequestContext,
+        org_id: &str,
+    ) -> Result<Vec<UserPo>, AppError> {
         // 语法糖：调用通用查询
-        self.query(ctx, UserQuery {
-            organization_id: Some(org_id.to_string()),
-            ..Default::default()
-        }).await
+        self.query(
+            ctx,
+            UserQuery {
+                organization_id: Some(org_id.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     async fn update(&self, ctx: RequestContext, user: &UserPo) -> Result<(), AppError> {
@@ -152,8 +162,8 @@ WHERE id = ?
             current_timestamp,
             user.id
         )
-            .execute(ctx.db_pool())
-            .await?;
+        .execute(ctx.db_pool())
+        .await?;
 
         Ok(())
     }
@@ -169,30 +179,38 @@ UPDATE users SET status = 0, modified_by = ?, updated_at = ? WHERE id = ?
             current_timestamp,
             id
         )
-            .execute(ctx.db_pool())
-            .await?;
+        .execute(ctx.db_pool())
+        .await?;
 
         Ok(())
     }
 
-    async fn exists_by_username(&self, ctx: RequestContext, username: &str) -> Result<bool, AppError> {
+    async fn exists_by_username(
+        &self,
+        ctx: RequestContext,
+        username: &str,
+    ) -> Result<bool, AppError> {
         let count = sqlx::query!(
             "SELECT COUNT(*) as count FROM users WHERE username = ?",
             username
         )
-            .fetch_one(ctx.db_pool())
-            .await?;
+        .fetch_one(ctx.db_pool())
+        .await?;
 
         Ok(count.count > 0)
     }
 
-    async fn count_by_organization_id(&self, ctx: RequestContext, org_id: &str) -> Result<u64, AppError> {
+    async fn count_by_organization_id(
+        &self,
+        ctx: RequestContext,
+        org_id: &str,
+    ) -> Result<u64, AppError> {
         let count = sqlx::query!(
             "SELECT COUNT(*) as count FROM users WHERE organization_id = ? AND status != 0",
             org_id
         )
-            .fetch_one(ctx.db_pool())
-            .await?;
+        .fetch_one(ctx.db_pool())
+        .await?;
 
         Ok(count.count as u64)
     }

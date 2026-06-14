@@ -1,22 +1,20 @@
 //! 用户登出
 
-use common::api::ApiResponse;
-use common::api::LogoutResponse;
 use crate::error::AppError;
 use crate::middleware::jwt_auth::JWT_COOKIE_NAME;
 use axum::{
+    Json,
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    Json,
 };
-use cookie::{Cookie, SameSite};
+use common::api::ApiResponse;
+use common::api::LogoutResponse;
 use cookie::time;
+use cookie::{Cookie, SameSite};
 
 /// 用户登出
 /// POST /organization/auth/logout
-pub async fn logout(
-    _headers: HeaderMap,
-) -> Result<impl IntoResponse, AppError> {
+pub async fn logout(_headers: HeaderMap) -> Result<impl IntoResponse, AppError> {
     // 清除 cookie，设置过期时间为 0
     let cookie = Cookie::build((JWT_COOKIE_NAME, ""))
         .path("/")
@@ -35,9 +33,7 @@ pub async fn logout(
         headers,
         (
             StatusCode::OK,
-            Json(ApiResponse::success(LogoutResponse {
-                success: true,
-            })),
+            Json(ApiResponse::success(LogoutResponse { success: true })),
         ),
     ))
 }

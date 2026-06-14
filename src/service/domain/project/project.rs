@@ -60,12 +60,21 @@ impl ProjectDomain {
     }
 
     /// 获取用户的所有项目
-    pub async fn list_by_user(&self, ctx: RequestContext, root_user_id: &str) -> Result<Vec<Project>, AppError> {
+    pub async fn list_by_user(
+        &self,
+        ctx: RequestContext,
+        root_user_id: &str,
+    ) -> Result<Vec<Project>, AppError> {
         self.dal.list_by_root_user(ctx, root_user_id, None).await
     }
 
     /// 启动项目
-    pub async fn start(&self, ctx: RequestContext, project_id: &str, modified_by: String) -> Result<(), AppError> {
+    pub async fn start(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+        modified_by: String,
+    ) -> Result<(), AppError> {
         let Some(mut project) = self.dal.find_by_id(ctx.clone(), project_id).await? else {
             return Err(AppError::NotFound(format!(
                 "Project not found: {}",
@@ -79,7 +88,12 @@ impl ProjectDomain {
     }
 
     /// 完成项目
-    pub async fn complete(&self, ctx: RequestContext, project_id: &str, modified_by: String) -> Result<(), AppError> {
+    pub async fn complete(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+        modified_by: String,
+    ) -> Result<(), AppError> {
         let Some(mut project) = self.dal.find_by_id(ctx.clone(), project_id).await? else {
             return Err(AppError::NotFound(format!(
                 "Project not found: {}",
@@ -93,7 +107,12 @@ impl ProjectDomain {
     }
 
     /// 归档项目
-    pub async fn archive(&self, ctx: RequestContext, project_id: &str, modified_by: String) -> Result<(), AppError> {
+    pub async fn archive(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+        modified_by: String,
+    ) -> Result<(), AppError> {
         let Some(mut project) = self.dal.find_by_id(ctx.clone(), project_id).await? else {
             return Err(AppError::NotFound(format!(
                 "Project not found: {}",

@@ -9,16 +9,16 @@ mod sqlite_test;
 mod vector_test;
 
 use crate::error::AppError;
-use crate::models::skill::{SkillPo, SkillFile};
+use crate::models::skill::{SkillFile, SkillPo};
 use crate::models::vector::VectorIndexParams;
 use crate::pkg::RequestContext;
-use common::enums::SkillStatus;
 use async_trait::async_trait;
+use common::enums::SkillStatus;
 
 /// Skill 查询参数
 #[derive(Debug, Clone, Default)]
 pub struct SkillQuery {
-    pub ids: Option<Vec<String>>,           // 按 ID 批量查询
+    pub ids: Option<Vec<String>>, // 按 ID 批量查询
     pub status: Option<SkillStatus>,
     pub exclude_status: Option<SkillStatus>,
     pub category: Option<String>,
@@ -60,16 +60,29 @@ pub trait SkillDao: Send + Sync {
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<SkillPo>, AppError>;
 
     /// 通用组合查询
-    async fn query(&self, ctx: RequestContext, query: SkillQuery) -> Result<Vec<SkillPo>, AppError>;
+    async fn query(&self, ctx: RequestContext, query: SkillQuery)
+    -> Result<Vec<SkillPo>, AppError>;
 
     /// List skills by status
-    async fn list_by_status(&self, ctx: RequestContext, status: SkillStatus) -> Result<Vec<SkillPo>, AppError>;
+    async fn list_by_status(
+        &self,
+        ctx: RequestContext,
+        status: SkillStatus,
+    ) -> Result<Vec<SkillPo>, AppError>;
 
     /// List skills by category
-    async fn list_by_category(&self, ctx: RequestContext, category: &str) -> Result<Vec<SkillPo>, AppError>;
+    async fn list_by_category(
+        &self,
+        ctx: RequestContext,
+        category: &str,
+    ) -> Result<Vec<SkillPo>, AppError>;
 
     /// List skills by author
-    async fn list_by_author(&self, ctx: RequestContext, author_id: &str) -> Result<Vec<SkillPo>, AppError>;
+    async fn list_by_author(
+        &self,
+        ctx: RequestContext,
+        author_id: &str,
+    ) -> Result<Vec<SkillPo>, AppError>;
 
     // ========== 业务操作 ==========
 
@@ -82,7 +95,11 @@ pub trait SkillDao: Send + Sync {
     ) -> Result<SkillPo, AppError>;
 
     /// 统一搜索入口（关键词 + 业务过滤，向量搜索由 SkillVectorDao 单独处理）
-    async fn search(&self, ctx: RequestContext, search: SkillSearch) -> Result<Vec<SkillPo>, AppError>;
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: SkillSearch,
+    ) -> Result<Vec<SkillPo>, AppError>;
 
     // ========== 文件操作 ==========
 

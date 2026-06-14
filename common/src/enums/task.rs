@@ -1,6 +1,6 @@
 //! Task related enums
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 #[cfg(feature = "sqlx")]
 use sqlx::Type;
 

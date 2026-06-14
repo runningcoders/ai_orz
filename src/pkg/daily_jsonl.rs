@@ -62,10 +62,7 @@ impl DailyJsonlWriter {
         let line_number = self.count_lines(&path)?;
 
         // Open file in append mode, create if it doesn't exist
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)?;
+        let mut file = OpenOptions::new().create(true).append(true).open(&path)?;
 
         // Serialize to JSON and write with newline
         let json = serde_json::to_string(entry)?;

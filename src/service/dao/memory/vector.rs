@@ -1,11 +1,11 @@
 //! Memory Vector DAO implementation
 //! 负责记忆向量索引的 CRUD 操作，与基础记忆数据完全解耦
 
-use async_trait::async_trait;
 use crate::error::AppError;
 use crate::models::vector::{VectorIndexParams, VectorRow, VectorSearchHit};
 use crate::pkg::RequestContext;
 use crate::service::dao::memory::MemoryVectorDao;
+use async_trait::async_trait;
 use std::sync::{Arc, OnceLock};
 
 // ==================== 工厂方法 + 单例 ====================
@@ -43,11 +43,9 @@ impl MemoryVectorDao for MemoryVectorDaoImpl {
         vector_params: &VectorIndexParams,
     ) -> Result<(), AppError> {
         let vector_store = ctx.vector_store();
-        vector_store.upsert(
-            "memory:short_term",
-            memory_id,
-            vector_params,
-        ).await?;
+        vector_store
+            .upsert("memory:short_term", memory_id, vector_params)
+            .await?;
         Ok(())
     }
 
@@ -59,11 +57,9 @@ impl MemoryVectorDao for MemoryVectorDaoImpl {
         vector_params: &VectorIndexParams,
     ) -> Result<(), AppError> {
         let vector_store = ctx.vector_store();
-        vector_store.upsert(
-            "memory:knowledge_node",
-            knowledge_id,
-            vector_params,
-        ).await?;
+        vector_store
+            .upsert("memory:knowledge_node", knowledge_id, vector_params)
+            .await?;
         Ok(())
     }
 
@@ -75,11 +71,9 @@ impl MemoryVectorDao for MemoryVectorDaoImpl {
         top_k: i32,
     ) -> Result<Vec<VectorSearchHit>, AppError> {
         let vector_store = ctx.vector_store();
-        let results = vector_store.search(
-            "memory:short_term",
-            query_vector,
-            top_k,
-        ).await?;
+        let results = vector_store
+            .search("memory:short_term", query_vector, top_k)
+            .await?;
         Ok(results)
     }
 
@@ -91,11 +85,9 @@ impl MemoryVectorDao for MemoryVectorDaoImpl {
         top_k: i32,
     ) -> Result<Vec<VectorSearchHit>, AppError> {
         let vector_store = ctx.vector_store();
-        let results = vector_store.search(
-            "memory:knowledge_node",
-            query_vector,
-            top_k,
-        ).await?;
+        let results = vector_store
+            .search("memory:knowledge_node", query_vector, top_k)
+            .await?;
         Ok(results)
     }
 
@@ -141,7 +133,9 @@ impl MemoryVectorDao for MemoryVectorDaoImpl {
         knowledge_id: &str,
     ) -> Result<(), AppError> {
         let vector_store = ctx.vector_store();
-        vector_store.delete("memory:knowledge_node", knowledge_id).await?;
+        vector_store
+            .delete("memory:knowledge_node", knowledge_id)
+            .await?;
         Ok(())
     }
 }

@@ -6,8 +6,8 @@ use crate::error::AppError;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::user::UserQuery;
-use common::enums::UserStatus;
 use async_trait::async_trait;
+use common::enums::UserStatus;
 
 #[async_trait]
 impl super::UserManage for super::OrganizationDomainImpl {
@@ -43,29 +43,17 @@ impl super::UserManage for super::OrganizationDomainImpl {
     }
 
     /// 创建新用户
-    async fn create_user(
-        &self,
-        ctx: RequestContext,
-        user: UserPo,
-    ) -> Result<(), AppError> {
+    async fn create_user(&self, ctx: RequestContext, user: UserPo) -> Result<(), AppError> {
         self.user_dal.create(ctx, &user).await
     }
 
     /// 更新用户信息
-    async fn update_user(
-        &self,
-        ctx: RequestContext,
-        user: &UserPo,
-    ) -> Result<(), AppError> {
+    async fn update_user(&self, ctx: RequestContext, user: &UserPo) -> Result<(), AppError> {
         self.user_dal.update(ctx, user).await
     }
 
     /// 删除用户（软删除）
-    async fn delete_user(
-        &self,
-        ctx: RequestContext,
-        user_id: &str,
-    ) -> Result<(), AppError> {
+    async fn delete_user(&self, ctx: RequestContext, user_id: &str) -> Result<(), AppError> {
         self.user_dal.delete(ctx, user_id).await
     }
 

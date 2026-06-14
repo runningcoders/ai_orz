@@ -1,10 +1,10 @@
 //! User DAL 单元测试
 
-use common::enums::{UserRole, UserStatus};
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
-use crate::service::dao::user::UserQuery;
 use crate::service::dal::user::UserDal;
+use crate::service::dao::user::UserQuery;
+use common::enums::{UserRole, UserStatus};
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -60,7 +60,11 @@ async fn test_find_by_username(pool: SqlitePool) {
     let user = create_test_user("user-001", &org_id, "testuser", UserRole::Admin);
 
     dal.create(ctx.clone(), &user).await.unwrap();
-    let found = dal.find_by_username(ctx, "testuser").await.unwrap().unwrap();
+    let found = dal
+        .find_by_username(ctx, "testuser")
+        .await
+        .unwrap()
+        .unwrap();
 
     assert_eq!(found.id, "user-001");
     assert_eq!(found.username, "testuser");
@@ -104,10 +108,16 @@ async fn test_query_with_organization_filter(pool: SqlitePool) {
     dal.create(ctx.clone(), &user2).await.unwrap();
 
     // 按组织过滤
-    let results = dal.query(ctx, UserQuery {
-        organization_id: Some(org_id),
-        limit: None,
-    }).await.unwrap();
+    let results = dal
+        .query(
+            ctx,
+            UserQuery {
+                organization_id: Some(org_id),
+                limit: None,
+            },
+        )
+        .await
+        .unwrap();
 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].username, "user1");
@@ -161,7 +171,10 @@ async fn test_exists_by_username(pool: SqlitePool) {
 
     dal.create(ctx.clone(), &user).await.unwrap();
 
-    let exists = dal.exists_by_username(ctx.clone(), "existing").await.unwrap();
+    let exists = dal
+        .exists_by_username(ctx.clone(), "existing")
+        .await
+        .unwrap();
     let not_exists = dal.exists_by_username(ctx, "nonexistent").await.unwrap();
 
     assert!(exists);
@@ -185,8 +198,14 @@ async fn test_count_by_organization_id(pool: SqlitePool) {
         dal.create(ctx.clone(), &user).await.unwrap();
     }
 
-    let count = dal.count_by_organization_id(ctx.clone(), &org_id).await.unwrap();
-    let other_count = dal.count_by_organization_id(ctx, &other_org_id).await.unwrap();
+    let count = dal
+        .count_by_organization_id(ctx.clone(), &org_id)
+        .await
+        .unwrap();
+    let other_count = dal
+        .count_by_organization_id(ctx, &other_org_id)
+        .await
+        .unwrap();
 
     assert_eq!(count, 3);
     assert_eq!(other_count, 0);

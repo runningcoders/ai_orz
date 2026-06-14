@@ -1,14 +1,14 @@
 //! SQLite implementation of Artifact DAO
 
-use std::sync::OnceLock;
-use std::sync::Arc;
-use crate::pkg::RequestContext;
-use sqlx::types::Json;
-use sqlx::SqlitePool;
-use common::enums::FileType;
-use crate::models::{artifact::ArtifactPo, file::FileMeta};
-use crate::error::Result;
 use super::{ArtifactDao, ArtifactQuery};
+use crate::error::Result;
+use crate::models::{artifact::ArtifactPo, file::FileMeta};
+use crate::pkg::RequestContext;
+use common::enums::FileType;
+use sqlx::SqlitePool;
+use sqlx::types::Json;
+use std::sync::Arc;
+use std::sync::OnceLock;
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -21,7 +21,10 @@ pub fn new() -> Arc<dyn ArtifactDao + Send + Sync> {
 
 /// Get the singleton Artifact DAO instance
 pub fn dao() -> Arc<dyn ArtifactDao + Send + Sync> {
-    DAO_INSTANCE.get().expect("Artifact DAO not initialized").clone()
+    DAO_INSTANCE
+        .get()
+        .expect("Artifact DAO not initialized")
+        .clone()
 }
 
 /// Initialize the Artifact DAO
@@ -40,11 +43,7 @@ impl ArtifactDaoSqliteImpl {
 
 #[async_trait::async_trait]
 impl ArtifactDao for ArtifactDaoSqliteImpl {
-    async fn insert(
-        &self,
-        ctx: RequestContext,
-        artifact: &ArtifactPo,
-    ) -> Result<()> {
+    async fn insert(&self, ctx: RequestContext, artifact: &ArtifactPo) -> Result<()> {
         let pool = ctx.db_pool();
         let ft = artifact.file_type as i32;
         sqlx::query!(
@@ -84,11 +83,7 @@ INSERT INTO artifacts (id, project_id, task_id, name, description, file_type, fi
         Ok(())
     }
 
-    async fn find_by_id(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<Option<ArtifactPo>> {
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<ArtifactPo>> {
         let pool = ctx.db_pool();
         let artifact = sqlx::query_as!(
             ArtifactPo,
@@ -107,7 +102,7 @@ WHERE id = ? AND "status" != 0
     async fn query(&self, ctx: RequestContext, query: ArtifactQuery) -> Result<Vec<ArtifactPo>> {
         let pool = ctx.db_pool();
         let mut builder = sqlx::QueryBuilder::new(
-            r#"SELECT id, project_id, task_id, name, description, file_type, file_meta, tags, status, created_by, modified_by, created_at, updated_at FROM artifacts WHERE "status" != 0"#
+            r#"SELECT id, project_id, task_id, name, description, file_type, file_meta, tags, status, created_by, modified_by, created_at, updated_at FROM artifacts WHERE "status" != 0"#,
         );
 
         // 项目过滤
@@ -128,37 +123,43 @@ WHERE id = ? AND "status" != 0
             builder.push(" LIMIT ").push_bind(limit as i64);
         }
 
-        let rows = builder.build_query_as()
-            .fetch_all(pool)
-            .await?;
+        let rows = builder.build_query_as().fetch_all(pool).await?;
 
         Ok(rows)
     }
 
-    async fn list_by_project(&self, ctx: RequestContext, project_id: &str) -> Result<Vec<ArtifactPo>> {
+    async fn list_by_project(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+    ) -> Result<Vec<ArtifactPo>> {
         // 语法糖：调用通用查询
-        self.query(ctx, ArtifactQuery {
-            project_id: Some(project_id.to_string()),
-            ..Default::default()
-        }).await
+        self.query(
+            ctx,
+            ArtifactQuery {
+                project_id: Some(project_id.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     async fn list_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<Vec<ArtifactPo>> {
         // 语法糖：调用通用查询
-        self.query(ctx, ArtifactQuery {
-            task_id: Some(task_id.to_string()),
-            ..Default::default()
-        }).await
+        self.query(
+            ctx,
+            ArtifactQuery {
+                task_id: Some(task_id.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
     }
 
-    async fn count_by_project(
-        &self,
-        ctx: RequestContext,
-        project_id: &str,
-    ) -> Result<i64> {
+    async fn count_by_project(&self, ctx: RequestContext, project_id: &str) -> Result<i64> {
         let pool = ctx.db_pool();
         let row = sqlx::query!(
-r#"
+            r#"
 SELECT COUNT(*) as count FROM artifacts WHERE project_id = ? AND "status" != 0
 "#,
             project_id
@@ -168,14 +169,10 @@ SELECT COUNT(*) as count FROM artifacts WHERE project_id = ? AND "status" != 0
         Ok(row.count)
     }
 
-    async fn count_by_task(
-        &self,
-        ctx: RequestContext,
-        task_id: &str,
-    ) -> Result<i64> {
+    async fn count_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<i64> {
         let pool = ctx.db_pool();
         let row = sqlx::query!(
-r#"
+            r#"
 SELECT COUNT(*) as count FROM artifacts WHERE task_id = ? AND "status" != 0
 "#,
             task_id
@@ -185,16 +182,11 @@ SELECT COUNT(*) as count FROM artifacts WHERE task_id = ? AND "status" != 0
         Ok(row.count)
     }
 
-    async fn update_status(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-        status: i32,
-    ) -> Result<()> {
+    async fn update_status(&self, ctx: RequestContext, id: &str, status: i32) -> Result<()> {
         let pool = ctx.db_pool();
         let now = common::constants::utils::current_timestamp_ms();
         sqlx::query!(
-r#"
+            r#"
 UPDATE artifacts SET "status" = ?, updated_at = ? WHERE id = ?
 "#,
             status,
@@ -206,11 +198,7 @@ UPDATE artifacts SET "status" = ?, updated_at = ? WHERE id = ?
         Ok(())
     }
 
-    async fn delete(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<()> {
+    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()> {
         self.update_status(ctx, id, 0).await
     }
 }

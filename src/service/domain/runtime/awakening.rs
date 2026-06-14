@@ -38,7 +38,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             ctx.uid(),
             ctx.organization_id.clone().unwrap_or_default(),
             MemoryRole::System,
-            String::new(),  // input 后续填充
+            String::new(), // input 后续填充
             ctx.task_id().cloned(),
         );
         let trace_id = trace.id.clone();
@@ -65,12 +65,12 @@ impl RuntimeAwakening for RuntimeDomainImpl {
 
         // Step 5: 调用大脑思考
         // 统一走 BrainDal.think() 入口，方便审计、统计、监控
-        let brain = agent.brain.as_ref()
+        let brain = agent
+            .brain
+            .as_ref()
             .ok_or_else(|| AppError::Internal("Agent 大脑未唤醒，请先调用 wake_brain()".into()))?;
-        
-        let raw_output = self.brain_dal()
-            .think(ctx.clone(), brain, &prompt)
-            .await?;
+
+        let raw_output = self.brain_dal().think(ctx.clone(), brain, &prompt).await?;
 
         // Step 6: 回填 input 和 output，一次性写入完整 Trace
         trace.input = prompt.clone();
@@ -78,10 +78,9 @@ impl RuntimeAwakening for RuntimeDomainImpl {
 
         // Step 7: 通过 RuntimeMemory 子模块写入
         // 架构：awakening → RuntimeMemory → MemoryDal → MemoryDao
-        self.memory().write_thinking_trace(
-            ctx.clone(),
-            trace,
-        ).await?;
+        self.memory()
+            .write_thinking_trace(ctx.clone(), trace)
+            .await?;
 
         // Step 8: 返回结果
         Ok(AwakeningResult {

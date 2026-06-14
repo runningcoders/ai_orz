@@ -6,17 +6,17 @@
 //! - 空 order_key 支持并行消费
 //! - ack/nack 完整支持
 
-use std::collections::{HashMap, BinaryHeap};
 use std::cell::UnsafeCell;
+use std::collections::{BinaryHeap, HashMap};
+use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::OnceLock;
-use std::sync::Arc;
 
 use crate::error::AppError;
 use crate::models::event::{Event, EventRef};
 use crate::models::message::Message;
-use crate::service::dao::event_queue::EventQueueDao;
 use crate::pkg::RequestContext;
+use crate::service::dao::event_queue::EventQueueDao;
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -91,7 +91,10 @@ impl<E: Event + Clone> EventQueueDaoInMemoryImpl<E> {
 
 impl<E: Event + Clone> EventQueueDao<E> for EventQueueDaoInMemoryImpl<E> {
     fn enqueue(&self, _ctx: RequestContext, event: Box<E>) -> Result<(), AppError> {
-        let _guard = self.lock.lock().map_err(|e| AppError::Internal(e.to_string()))?;
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|e| AppError::Internal(e.to_string()))?;
 
         let events = unsafe { &mut *self.events.get() };
         let queues = unsafe { &mut *self.queues.get() };
@@ -143,7 +146,10 @@ impl<E: Event + Clone> EventQueueDao<E> for EventQueueDaoInMemoryImpl<E> {
     }
 
     fn dequeue_next(&self, _ctx: RequestContext) -> Result<Option<Box<E>>, AppError> {
-        let _guard = self.lock.lock().map_err(|e| AppError::Internal(e.to_string()))?;
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|e| AppError::Internal(e.to_string()))?;
 
         let events = unsafe { &mut *self.events.get() };
         let queues = unsafe { &mut *self.queues.get() };
@@ -185,7 +191,10 @@ impl<E: Event + Clone> EventQueueDao<E> for EventQueueDaoInMemoryImpl<E> {
     }
 
     fn ack(&self, _ctx: RequestContext, event_id: &str) -> Result<(), AppError> {
-        let _guard = self.lock.lock().map_err(|e| AppError::Internal(e.to_string()))?;
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|e| AppError::Internal(e.to_string()))?;
 
         let events = unsafe { &mut *self.events.get() };
         let queues = unsafe { &mut *self.queues.get() };
@@ -231,7 +240,10 @@ impl<E: Event + Clone> EventQueueDao<E> for EventQueueDaoInMemoryImpl<E> {
     }
 
     fn nack(&self, _ctx: RequestContext, event_id: &str) -> Result<(), AppError> {
-        let _guard = self.lock.lock().map_err(|e| AppError::Internal(e.to_string()))?;
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|e| AppError::Internal(e.to_string()))?;
 
         let global_heap = unsafe { &mut *self.global_heap.get() };
         let in_progress = unsafe { &mut *self.in_progress.get() };

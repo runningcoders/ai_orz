@@ -17,13 +17,13 @@ use crate::error::AppError;
 use crate::models::agent::Agent;
 use crate::models::skill::{Skill, SkillPo};
 use crate::pkg::RequestContext;
-use crate::service::dao::skill::{SkillQuery, SkillSearch};
-use crate::service::dal::agent::AgentDal;
 use crate::service::dal::agent as agent_dal;
-use crate::service::dal::tool::ToolDal;
-use crate::service::dal::tool as tool_dal;
-use crate::service::dal::skill::SkillDal;
+use crate::service::dal::agent::AgentDal;
 use crate::service::dal::skill as skill_dal;
+use crate::service::dal::skill::SkillDal;
+use crate::service::dal::tool as tool_dal;
+use crate::service::dal::tool::ToolDal;
+use crate::service::dao::skill::{SkillQuery, SkillSearch};
 use common::enums::{AgentStatus, SkillStatus};
 use std::sync::{Arc, OnceLock};
 
@@ -38,11 +38,7 @@ pub fn domain() -> Arc<dyn HrDomain> {
 
 /// 初始化 HR Domain
 pub fn init() {
-    let hr_domain = HrDomainImpl::new(
-        agent_dal::dal(),
-        tool_dal::dal(),
-        skill_dal::dal(),
-    );
+    let hr_domain = HrDomainImpl::new(agent_dal::dal(), tool_dal::dal(), skill_dal::dal());
     let _ = HR_DOMAIN.set(Arc::new(hr_domain));
 }
 
@@ -64,7 +60,11 @@ impl HrDomainImpl {
         tool_dal: Arc<dyn ToolDal>,
         skill_dal: Arc<dyn SkillDal>,
     ) -> Self {
-        Self { agent_dal, tool_dal, skill_dal }
+        Self {
+            agent_dal,
+            tool_dal,
+            skill_dal,
+        }
     }
 }
 
@@ -157,17 +157,49 @@ pub trait SkillManage: Send + Sync {
     // A. 技能基础管理（CRUD）
     async fn create_skill(&self, ctx: RequestContext, skill: &Skill) -> Result<(), AppError>;
     async fn get_skill(&self, ctx: RequestContext, id: &str) -> Result<Option<Skill>, AppError>;
-    async fn get_skill_po(&self, ctx: RequestContext, id: &str) -> Result<Option<SkillPo>, AppError>;
-    async fn update_skill(&self, ctx: RequestContext, params: UpdateSkillParams<'_>) -> Result<(), AppError>;
+    async fn get_skill_po(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<SkillPo>, AppError>;
+    async fn update_skill(
+        &self,
+        ctx: RequestContext,
+        params: UpdateSkillParams<'_>,
+    ) -> Result<(), AppError>;
     async fn delete_skill(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
 
     // B. 技能查询与搜索
-    async fn query_skills(&self, ctx: RequestContext, query: SkillQuery) -> Result<Vec<Skill>, AppError>;
-    async fn list_by_status(&self, ctx: RequestContext, status: SkillStatus) -> Result<Vec<Skill>, AppError>;
-    async fn list_by_category(&self, ctx: RequestContext, category: &str) -> Result<Vec<Skill>, AppError>;
-    async fn list_by_author(&self, ctx: RequestContext, author_id: &str) -> Result<Vec<Skill>, AppError>;
-    async fn list_for_agent(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<Skill>, AppError>;
-    async fn search_skills(&self, ctx: RequestContext, search: SkillSearch) -> Result<Vec<Skill>, AppError>;
+    async fn query_skills(
+        &self,
+        ctx: RequestContext,
+        query: SkillQuery,
+    ) -> Result<Vec<Skill>, AppError>;
+    async fn list_by_status(
+        &self,
+        ctx: RequestContext,
+        status: SkillStatus,
+    ) -> Result<Vec<Skill>, AppError>;
+    async fn list_by_category(
+        &self,
+        ctx: RequestContext,
+        category: &str,
+    ) -> Result<Vec<Skill>, AppError>;
+    async fn list_by_author(
+        &self,
+        ctx: RequestContext,
+        author_id: &str,
+    ) -> Result<Vec<Skill>, AppError>;
+    async fn list_for_agent(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+    ) -> Result<Vec<Skill>, AppError>;
+    async fn search_skills(
+        &self,
+        ctx: RequestContext,
+        search: SkillSearch,
+    ) -> Result<Vec<Skill>, AppError>;
 
     // C. Agent 技能安装
     async fn install_to_agent(
@@ -177,5 +209,3 @@ pub trait SkillManage: Send + Sync {
         agent_id: &str,
     ) -> Result<SkillPo, AppError>;
 }
-
-

@@ -14,10 +14,18 @@ pub struct OrganizationQuery {
 #[async_trait::async_trait]
 pub trait OrganizationDao: Send + Sync {
     async fn insert(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<(), AppError>;
-    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<OrganizationPo>, AppError>;
+    async fn find_by_id(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<OrganizationPo>, AppError>;
 
     /// 通用查询
-    async fn query(&self, ctx: RequestContext, query: OrganizationQuery) -> Result<Vec<OrganizationPo>, AppError>;
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: OrganizationQuery,
+    ) -> Result<Vec<OrganizationPo>, AppError>;
 
     async fn find_all(&self, ctx: RequestContext) -> Result<Vec<OrganizationPo>, AppError>;
     async fn update(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<(), AppError>;

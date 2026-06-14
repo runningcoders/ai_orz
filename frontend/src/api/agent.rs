@@ -1,13 +1,9 @@
 //! Agent 管理 API 客户端
 
-use common::api::{
-    AgentListItem,
-    CreateAgentRequest,
-    CreateAgentResponse,
-    EmptyResponse,
-    ApiResponse,
-};
 use crate::config::current_config;
+use common::api::{
+    AgentListItem, ApiResponse, CreateAgentRequest, CreateAgentResponse, EmptyResponse,
+};
 use reqwest::Client;
 
 /// 获取 Agent 列表

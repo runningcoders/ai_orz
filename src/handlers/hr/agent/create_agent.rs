@@ -1,15 +1,15 @@
 //! 创建 Agent
 
-use common::api::{CreateAgentRequest, CreateAgentResponse};
-use crate::pkg::RequestContext;
 use crate::error::AppError;
-use common::api::ApiResponse;
 use crate::models::agent::{Agent, AgentPo};
+use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use axum::{
     extract::{Extension, Json},
     http::StatusCode,
 };
+use common::api::ApiResponse;
+use common::api::{CreateAgentRequest, CreateAgentResponse};
 
 /// 创建 Agent
 /// POST /agents
@@ -17,7 +17,6 @@ pub async fn create_agent(
     Extension(ctx): Extension<RequestContext>,
     Json(req): Json<CreateAgentRequest>,
 ) -> Result<(StatusCode, Json<ApiResponse<CreateAgentResponse>>), AppError> {
-
     let agent_po = AgentPo::new(
         req.name.clone(),
         req.roles.unwrap_or_default(),
@@ -36,7 +35,11 @@ pub async fn create_agent(
         Json(ApiResponse::success(CreateAgentResponse {
             id: agent.id().to_string(),
             name: agent.name().to_string(),
-            description: if agent.po.description.is_empty() { None } else { Some(agent.po.description.clone()) },
+            description: if agent.po.description.is_empty() {
+                None
+            } else {
+                Some(agent.po.description.clone())
+            },
             created_at: agent.po.created_at,
         })),
     ))

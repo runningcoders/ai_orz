@@ -1,12 +1,12 @@
 use axum::{
+    Json,
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
 };
 use serde_json::Error as JsonError;
-use std::fmt;
 use sqlx::Error as SqlxError;
 use sqlx::migrate::MigrateError;
+use std::fmt;
 
 /// 统一 Result 类型
 pub type Result<T> = std::result::Result<T, AppError>;

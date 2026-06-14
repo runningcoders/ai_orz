@@ -32,7 +32,7 @@ pub struct MemoryTrace {
     pub organization_id: String,
     /// 角色
     pub role: common::enums::MemoryRole,
-    
+
     // ========== 思考闭环字段 ==========
     /// 思考输入（完整 Prompt）
     pub input: String,
@@ -42,7 +42,7 @@ pub struct MemoryTrace {
     pub created_at: i64,
     /// 思考完成时间（输出写入时间）
     pub completed_at: Option<i64>,
-    
+
     /// 元数据（可扩展存储额外信息）
     pub metadata: HashMap<String, String>,
     /// 物理位置（DAO 写入或查询后回填，不参与序列化）
@@ -80,7 +80,11 @@ impl MemoryTrace {
         task_id: Option<String>,
     ) -> Self {
         let now = chrono::Utc::now().timestamp();
-        let trace_id = format!("trace-{}-{}", agent_id, chrono::Utc::now().timestamp_nanos());
+        let trace_id = format!(
+            "trace-{}-{}",
+            agent_id,
+            chrono::Utc::now().timestamp_nanos()
+        );
         Self {
             id: trace_id,
             agent_id,
@@ -312,7 +316,10 @@ pub struct Memory {
 impl Memory {
     /// 创建新的 Memory 业务实体
     pub fn new(po: MemoryPo) -> Self {
-        Self { po, search_match: None }
+        Self {
+            po,
+            search_match: None,
+        }
     }
 
     /// 将记忆格式化为 Prompt 可读的摘要字符串

@@ -1,7 +1,7 @@
+use crate::api::organization::{create_user, list_users_by_current_organization};
 use common::api::{CreateUserRequest, UserListItem};
 use dioxus::prelude::*;
 use tracing::info;
-use crate::api::organization::{list_users_by_current_organization, create_user};
 
 #[component]
 pub fn UserManagement() -> Element {
@@ -69,8 +69,16 @@ pub fn UserManagement() -> Element {
 
             let req = CreateUserRequest {
                 username: new_username(),
-                display_name: if new_display_name().is_empty() { None } else { Some(new_display_name()) },
-                email: if new_email().is_empty() { None } else { Some(new_email()) },
+                display_name: if new_display_name().is_empty() {
+                    None
+                } else {
+                    Some(new_display_name())
+                },
+                email: if new_email().is_empty() {
+                    None
+                } else {
+                    Some(new_email())
+                },
                 password_hash: new_password_hash(),
                 role: new_role(),
             };

@@ -6,20 +6,22 @@
 //! - 持久化到磁盘，支持元数据过滤
 //! - 单文件存储，跨平台完美支持
 
-use async_trait::async_trait;
 use crate::error::{AppError, Result};
-use crate::models::vector::{VectorIndexParams, VectorRow, VectorSearchHit, VectorMeta};
-use lancedb::{connect, Connection, Table};
+use crate::models::vector::{VectorIndexParams, VectorMeta, VectorRow, VectorSearchHit};
+use arrow_array::types::Float32Type;
+use arrow_array::{
+    FixedSizeListArray, Float32Array, Int64Array, RecordBatch, RecordBatchIterator, StringArray,
+};
+use arrow_schema::{DataType, Field, Schema};
+use async_trait::async_trait;
+use futures::TryStreamExt;
 use lancedb::query::{ExecutableQuery, QueryBase};
+use lancedb::{Connection, Table, connect};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use tokio::sync::RwLock;
-use std::collections::HashMap;
-use arrow_array::{RecordBatchIterator, RecordBatch, Float32Array, StringArray, Int64Array, FixedSizeListArray};
-use arrow_array::types::Float32Type;
-use arrow_schema::{Schema, Field, DataType};
 use std::sync::Arc as StdArc;
-use futures::TryStreamExt;
+use tokio::sync::RwLock;
 
 /// LanceDB 向量存储
 ///
@@ -50,7 +52,8 @@ impl LanceVectorStore {
                 let path_str = base_path.to_str().unwrap_or_default();
                 connect(path_str).execute().await
             })
-        }).map_err(|e| AppError::Internal(format!("LanceDB connect error: {}", e)))?;
+        })
+        .map_err(|e| AppError::Internal(format!("LanceDB connect error: {}", e)))?;
 
         Ok(Self {
             db,
@@ -69,21 +72,32 @@ impl LanceVectorStore {
         }
 
         // 检查表是否已存在
-        let table_names = self.db.table_names().execute().await
+        let table_names = self
+            .db
+            .table_names()
+            .execute()
+            .await
             .map_err(|e| AppError::Internal(format!("LanceDB table names error: {}", e)))?;
 
         let table = if table_names.contains(&collection.to_string()) {
             // 打开已存在的表
-            self.db.open_table(collection).execute().await
+            self.db
+                .open_table(collection)
+                .execute()
+                .await
                 .map_err(|e| AppError::Internal(format!("LanceDB open table error: {}", e)))?
         } else {
             // 创建新表 schema - 使用 FixedSizeListArray 替代 ListArray
             let schema = StdArc::new(Schema::new(vec![
                 Field::new("id", DataType::Utf8, false),
-                Field::new("vector", DataType::FixedSizeList(
-                    StdArc::new(Field::new("item", DataType::Float32, true)),
-                    dimensions,
-                ), false),
+                Field::new(
+                    "vector",
+                    DataType::FixedSizeList(
+                        StdArc::new(Field::new("item", DataType::Float32, true)),
+                        dimensions,
+                    ),
+                    false,
+                ),
                 Field::new("content_hash", DataType::Utf8, false),
                 Field::new("embedding_model", DataType::Utf8, false),
                 Field::new("indexed_at", DataType::Int64, false),
@@ -91,7 +105,10 @@ impl LanceVectorStore {
             ]));
 
             // 创建空表 - 新版 API 直接接受 schema
-            self.db.create_empty_table(collection, schema.clone()).execute().await
+            self.db
+                .create_empty_table(collection, schema.clone())
+                .execute()
+                .await
                 .map_err(|e| AppError::Internal(format!("LanceDB create table error: {}", e)))?
         };
 
@@ -113,24 +130,22 @@ impl super::VectorStore for LanceVectorStore {
         Ok(())
     }
 
-    async fn upsert(
-        &self,
-        collection: &str,
-        id: &str,
-        params: &VectorIndexParams,
-    ) -> Result<()> {
+    async fn upsert(&self, collection: &str, id: &str, params: &VectorIndexParams) -> Result<()> {
         let dimensions = params.vector.len() as i32;
         let table = self.get_or_create_table(collection, dimensions).await?;
 
         let now = chrono::Utc::now().timestamp();
 
         // 先删除旧数据
-        table.delete(&format!("id = '{}'", id)).await
+        table
+            .delete(&format!("id = '{}'", id))
+            .await
             .map_err(|e| AppError::Internal(format!("LanceDB delete error: {}", e)))?;
 
         // 创建 Arrow 记录批 - 使用 FixedSizeListArray 存储向量
         // FixedSizeListArray 需要 Vec<Option<f32>> 格式
-        let vector_with_options: Vec<Option<f32>> = params.vector.iter().map(|&v| Some(v)).collect();
+        let vector_with_options: Vec<Option<f32>> =
+            params.vector.iter().map(|&v| Some(v)).collect();
 
         let id_array = StringArray::from(vec![id.to_string()]);
         let vector_array = FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
@@ -144,10 +159,14 @@ impl super::VectorStore for LanceVectorStore {
 
         let schema = StdArc::new(Schema::new(vec![
             Field::new("id", DataType::Utf8, false),
-            Field::new("vector", DataType::FixedSizeList(
-                StdArc::new(Field::new("item", DataType::Float32, true)),
-                dimensions,
-            ), false),
+            Field::new(
+                "vector",
+                DataType::FixedSizeList(
+                    StdArc::new(Field::new("item", DataType::Float32, true)),
+                    dimensions,
+                ),
+                false,
+            ),
             Field::new("content_hash", DataType::Utf8, false),
             Field::new("embedding_model", DataType::Utf8, false),
             Field::new("indexed_at", DataType::Int64, false),
@@ -164,11 +183,15 @@ impl super::VectorStore for LanceVectorStore {
                 StdArc::new(indexed_at_array),
                 StdArc::new(expire_at_array),
             ],
-        ).map_err(|e| AppError::Internal(format!("Arrow record batch error: {}", e)))?;
+        )
+        .map_err(|e| AppError::Internal(format!("Arrow record batch error: {}", e)))?;
 
         let batches = RecordBatchIterator::new(vec![Ok(batch)], schema);
 
-        table.add(batches).execute().await
+        table
+            .add(batches)
+            .execute()
+            .await
             .map_err(|e| AppError::Internal(format!("LanceDB add error: {}", e)))?;
 
         Ok(())
@@ -180,7 +203,9 @@ impl super::VectorStore for LanceVectorStore {
         query_vector: &[f32],
         top_k: i32,
     ) -> Result<Vec<VectorSearchHit>> {
-        let table = self.get_or_create_table(collection, query_vector.len() as i32).await?;
+        let table = self
+            .get_or_create_table(collection, query_vector.len() as i32)
+            .await?;
 
         // 执行向量搜索 - 0.26 API 使用 vector_search
         let stream = table
@@ -208,14 +233,28 @@ impl super::VectorStore for LanceVectorStore {
             let expire_at_col = batch.column_by_name("expire_at");
             let dist_col = batch.column_by_name("_distance");
 
-            if let (Some(id_col), Some(hash_col), Some(model_col),
-                    Some(indexed_at_col), Some(expire_at_col), Some(dist_col)) =
-                   (id_col, hash_col, model_col, indexed_at_col, expire_at_col, dist_col) {
-
+            if let (
+                Some(id_col),
+                Some(hash_col),
+                Some(model_col),
+                Some(indexed_at_col),
+                Some(expire_at_col),
+                Some(dist_col),
+            ) = (
+                id_col,
+                hash_col,
+                model_col,
+                indexed_at_col,
+                expire_at_col,
+                dist_col,
+            ) {
                 let id_array = id_col.as_any().downcast_ref::<StringArray>().unwrap();
                 let hash_array = hash_col.as_any().downcast_ref::<StringArray>().unwrap();
                 let model_array = model_col.as_any().downcast_ref::<StringArray>().unwrap();
-                let indexed_at_array = indexed_at_col.as_any().downcast_ref::<Int64Array>().unwrap();
+                let indexed_at_array = indexed_at_col
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap();
                 let expire_at_array = expire_at_col.as_any().downcast_ref::<Int64Array>().unwrap();
                 let dist_array = dist_col.as_any().downcast_ref::<Float32Array>().unwrap();
 
@@ -259,8 +298,13 @@ impl super::VectorStore for LanceVectorStore {
 
         for batch in results {
             if batch.num_rows() > 0 {
-                if let (Some(id_col), Some(hash_col), Some(model_col),
-                        Some(indexed_at_col), Some(expire_at_col)) = (
+                if let (
+                    Some(id_col),
+                    Some(hash_col),
+                    Some(model_col),
+                    Some(indexed_at_col),
+                    Some(expire_at_col),
+                ) = (
                     batch.column_by_name("id"),
                     batch.column_by_name("content_hash"),
                     batch.column_by_name("embedding_model"),
@@ -270,8 +314,12 @@ impl super::VectorStore for LanceVectorStore {
                     let id_array = id_col.as_any().downcast_ref::<StringArray>().unwrap();
                     let hash_array = hash_col.as_any().downcast_ref::<StringArray>().unwrap();
                     let model_array = model_col.as_any().downcast_ref::<StringArray>().unwrap();
-                    let indexed_at_array = indexed_at_col.as_any().downcast_ref::<Int64Array>().unwrap();
-                    let expire_at_array = expire_at_col.as_any().downcast_ref::<Int64Array>().unwrap();
+                    let indexed_at_array = indexed_at_col
+                        .as_any()
+                        .downcast_ref::<Int64Array>()
+                        .unwrap();
+                    let expire_at_array =
+                        expire_at_col.as_any().downcast_ref::<Int64Array>().unwrap();
 
                     let expire_at_val = expire_at_array.iter().next().flatten();
 
@@ -294,7 +342,9 @@ impl super::VectorStore for LanceVectorStore {
 
     async fn delete(&self, collection: &str, id: &str) -> Result<()> {
         let table = self.get_or_create_table(collection, 0).await?;
-        table.delete(&format!("id = '{}'", id)).await
+        table
+            .delete(&format!("id = '{}'", id))
+            .await
             .map_err(|e| AppError::Internal(format!("LanceDB delete error: {}", e)))?;
         Ok(())
     }

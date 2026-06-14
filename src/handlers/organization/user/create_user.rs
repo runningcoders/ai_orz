@@ -1,18 +1,18 @@
 //! 创建新用户接口
 
-use common::api::{CreateUserRequest, CreateUserResponse};
-use common::enums::UserRole;
 use crate::error::AppError;
-use common::api::ApiResponse;
+use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
+use crate::service::domain::organization;
 use axum::{
     extract::{Extension, Json},
     http::StatusCode,
     response::IntoResponse,
 };
+use common::api::ApiResponse;
+use common::api::{CreateUserRequest, CreateUserResponse};
+use common::enums::UserRole;
 use rand::Rng;
-use crate::service::domain::organization;
-use crate::models::user::UserPo;
 
 /// 创建新用户
 /// 在当前登录用户所在组织下创建新用户，organization_id 从 RequestContext 获取
@@ -21,9 +21,10 @@ pub async fn create_user(
     Json(req): Json<CreateUserRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     // 从 RequestContext 获取当前组织 ID
-    let organization_id = ctx.organization_id.clone().ok_or_else(|| {
-        AppError::BadRequest("未找到组织信息".to_string())
-    })?;
+    let organization_id = ctx
+        .organization_id
+        .clone()
+        .ok_or_else(|| AppError::BadRequest("未找到组织信息".to_string()))?;
 
     let domain = organization::domain();
 
@@ -51,13 +52,17 @@ pub async fn create_user(
 
     domain.user_manage().create_user(ctx, user).await?;
 
-    Ok((StatusCode::OK, Json(ApiResponse::success(CreateUserResponse {
-        user_id,
-        username: req.username,
-        display_name: req.display_name,
-        email: req.email,
-        role: req.role,
-    }))).into_response())
+    Ok((
+        StatusCode::OK,
+        Json(ApiResponse::success(CreateUserResponse {
+            user_id,
+            username: req.username,
+            display_name: req.display_name,
+            email: req.email,
+            role: req.role,
+        })),
+    )
+        .into_response())
 }
 
 /// 生成随机 ID

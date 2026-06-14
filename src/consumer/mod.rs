@@ -3,10 +3,10 @@
 //! 与 handlers 同级，负责从队列消费消息并执行业务逻辑。
 //! 调用链路: consumer → domain → dal → dao
 
-use async_trait::async_trait;
-use common::config::TopicConsumerConfig;
 use crate::error::Result;
 use crate::models::event::Event;
+use async_trait::async_trait;
+use common::config::TopicConsumerConfig;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -65,12 +65,7 @@ where
     H: MessageHandler<E> + Send + Sync + 'static,
 {
     /// 创建消费者实例
-    pub fn new(
-        topic: &str,
-        config: TopicConsumerConfig,
-        fetcher: F,
-        handler: H,
-    ) -> Self {
+    pub fn new(topic: &str, config: TopicConsumerConfig, fetcher: F, handler: H) -> Self {
         Self {
             topic: topic.to_string(),
             config,
@@ -100,15 +95,24 @@ where
             Ok(Some(event)) => {
                 let event_id = event.id();
                 sys_debug!(r"[{}] processing event: {}", self.topic, event_id);
-                
+
                 match self.handler.handle(&event).await {
                     Ok(_) => {
-                        sys_debug!(r"[{}] event {} handled successfully, acking", self.topic, event_id);
+                        sys_debug!(
+                            r"[{}] event {} handled successfully, acking",
+                            self.topic,
+                            event_id
+                        );
                         self.fetcher.ack(event_id).await?;
                         Ok(true)
                     }
                     Err(e) => {
-                        sys_error!(r"[{}] event {} handle error: {}, nacking", self.topic, event_id, e);
+                        sys_error!(
+                            r"[{}] event {} handle error: {}, nacking",
+                            self.topic,
+                            event_id,
+                            e
+                        );
                         self.fetcher.nack(event_id).await?;
                         // 处理失败也算完成了一次消费，返回 Ok 但日志记录错误
                         Ok(true)
@@ -139,10 +143,7 @@ where
                     }
                 }
                 Err(e) => {
-                    sys_error!(
-                        "[{}] worker {} consume error: {}",
-                        self.topic, worker_id, e
-                    );
+                    sys_error!("[{}] worker {} consume error: {}", self.topic, worker_id, e);
                     self.sleep_on_error().await;
                 }
             }
@@ -182,7 +183,7 @@ pub async fn init(config: &common::config::ConsumerConfig) -> Result<()> {
 // ==================== 测试模块 ====================
 
 #[cfg(test)]
-mod tests;          // 通用消费者框架测试
+mod tests; // 通用消费者框架测试
 
 #[cfg(test)]
-mod message_tests;  // Message Topic 消费者测试
+mod message_tests; // Message Topic 消费者测试

@@ -1,10 +1,9 @@
+use crate::pkg::storage::{self, Storage, VectorStore};
 /// 请求上下文（贯穿整个请求生命周期）
-
 use axum::http;
 use common::constants::http_header;
 use sqlx::sqlite::SqlitePool;
 use std::sync::Arc;
-use crate::pkg::storage::{self, Storage, VectorStore};
 
 /// 请求上下文
 #[derive(Debug, Clone)]
@@ -24,7 +23,7 @@ pub struct RequestContext {
     pub task_id: Option<String>,
     /// 当前 Project ID（可选，Project 上下文时有值）
     pub project_id: Option<String>,
-    
+
     /// 统一存储门面（SQLite + Vector）
     storage: Storage,
 }
@@ -169,12 +168,12 @@ impl RequestContext {
         // 从统一 Storage 获取，保持向后兼容
         self.storage.sqlite()
     }
-    
+
     /// 获取向量存储（统一 Trait 接口）
     pub fn vector_store(&self) -> Arc<dyn VectorStore> {
         self.storage.vector().clone()
     }
-    
+
     /// 获取统一存储门面
     pub fn storage(&self) -> &Storage {
         &self.storage
@@ -252,5 +251,3 @@ fn rand_simple() -> u32 {
         .as_nanos() as u32;
     time2.wrapping_add(hasher.finish() as u32)
 }
-
-

@@ -3,12 +3,12 @@
 //! 单元测试使用独立数据库，测试隔离性好
 
 use crate::models::model_provider::ModelProviderPo;
-use common::enums::{ModelCapability, ProviderType, ModelProviderStatus};
-use crate::service::dao::model_provider::{self, ModelProviderDao};
 use crate::pkg::RequestContext;
-use uuid::Uuid;
+use crate::service::dao::model_provider::{self, ModelProviderDao};
+use common::enums::{ModelCapability, ModelProviderStatus, ProviderType};
 use sqlx::SqlitePool;
 use std::sync::Arc;
+use uuid::Uuid;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     RequestContext::new_simple(user_id, pool)
@@ -37,16 +37,21 @@ fn create_test_provider(name: &str, provider_type: ProviderType, api_key: &str) 
 #[sqlx::test]
 async fn test_insert_and_find_model_provider(pool: SqlitePool) {
     let dao = init_test_env();
-    
+
     // 创建测试对象
     let provider_po = create_test_provider("OpenAI GPT-4o", ProviderType::OpenAI, "test-key");
-    
+
     // 测试插入
-    let result = dao.insert(new_ctx("test", pool.clone()), &provider_po).await;
+    let result = dao
+        .insert(new_ctx("test", pool.clone()), &provider_po)
+        .await;
     assert!(result.is_ok());
-    
+
     // 测试查询
-    let found = dao.find_by_id(new_ctx("test", pool), provider_po.id.as_str()).await.expect("Query failed");
+    let found = dao
+        .find_by_id(new_ctx("test", pool), provider_po.id.as_str())
+        .await
+        .expect("Query failed");
     assert!(found.is_some());
     let found = found.unwrap();
     assert_eq!(found.name, "OpenAI GPT-4o".to_string());
@@ -60,18 +65,24 @@ async fn test_insert_and_find_model_provider(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_find_by_id_not_exists(pool: SqlitePool) {
     let dao = init_test_env();
-    
+
     // 查询不存在的 ID 应该返回 Ok(None)
-    let found = dao.find_by_id(new_ctx("test", pool), "not-exists-id").await.expect("Query failed");
+    let found = dao
+        .find_by_id(new_ctx("test", pool), "not-exists-id")
+        .await
+        .expect("Query failed");
     assert!(found.is_none());
 }
 
 #[sqlx::test]
 async fn test_find_all_model_provider(pool: SqlitePool) {
     let dao = init_test_env();
-    
+
     // 查询空表应该返回空 Vec，不报错
-    let all = dao.find_all(new_ctx("test", pool)).await.expect("Query all failed");
+    let all = dao
+        .find_all(new_ctx("test", pool))
+        .await
+        .expect("Query all failed");
     assert!(all.is_empty());
 }
 
@@ -79,10 +90,10 @@ async fn test_find_all_model_provider(pool: SqlitePool) {
 async fn test_query(pool: sqlx::SqlitePool) {
     let dao = init_test_env();
     let ctx = crate::pkg::RequestContext::new_simple("admin", pool);
-    
-    use common::enums::ModelProviderStatus;
+
     use crate::service::dao::model_provider::ModelProviderQuery;
-    
+    use common::enums::ModelProviderStatus;
+
     // 测试空查询
     let query = ModelProviderQuery::default();
     let result = dao.query(ctx, query).await;

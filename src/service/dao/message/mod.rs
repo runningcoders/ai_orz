@@ -2,8 +2,8 @@
 
 use crate::error::Result;
 use crate::models::message::{MessagePo, ToolCallMessage};
-use common::enums::MessageStatus;
 use crate::pkg::RequestContext;
+use common::enums::MessageStatus;
 
 // ==================== 查询参数 ====================
 
@@ -61,17 +61,37 @@ pub trait MessageDao: Send + Sync {
 
     /// 根据任务 ID 查询所有消息，按创建时间升序排列
     /// 如果传入 limit 则限制返回数量
-    async fn list_by_task_id(&self, ctx: RequestContext, task_id: &str, limit: Option<usize>) -> Result<Vec<MessagePo>>;
+    async fn list_by_task_id(
+        &self,
+        ctx: RequestContext,
+        task_id: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<MessagePo>>;
 
     /// 根据项目 ID 查询所有消息，按创建时间升序排列
     /// 如果传入 limit 则限制返回数量
-    async fn list_by_project_id(&self, ctx: RequestContext, project_id: &str, limit: Option<usize>) -> Result<Vec<MessagePo>>;
+    async fn list_by_project_id(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<MessagePo>>;
 
     /// 根据来源 ID 查询所有消息
-    async fn list_by_from_id(&self, ctx: RequestContext, from_id: &str, limit: Option<usize>) -> Result<Vec<MessagePo>>;
+    async fn list_by_from_id(
+        &self,
+        ctx: RequestContext,
+        from_id: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<MessagePo>>;
 
     /// 根据目标 ID 查询所有消息
-    async fn list_by_to_id(&self, ctx: RequestContext, to_id: &str, limit: Option<usize>) -> Result<Vec<MessagePo>>;
+    async fn list_by_to_id(
+        &self,
+        ctx: RequestContext,
+        to_id: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<MessagePo>>;
 
     /// 删除消息（软删除可以用 status，但消息一般不删除，这里留作审计，所以接口只做物理删除保留）
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()>;
@@ -83,10 +103,20 @@ pub trait MessageDao: Send + Sync {
     async fn delete_by_task_id(&self, ctx: RequestContext, task_id: &str) -> Result<()>;
 
     /// 更新消息处理状态
-    async fn update_status(&self, ctx: RequestContext, id: &str, status: MessageStatus) -> Result<()>;
+    async fn update_status(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        status: MessageStatus,
+    ) -> Result<()>;
 
     /// 根据多个状态查询消息（用于启动恢复未处理消息）
-    async fn list_by_status(&self, ctx: RequestContext, status: Vec<MessageStatus>, limit: Option<usize>) -> Result<Vec<MessagePo>>;
+    async fn list_by_status(
+        &self,
+        ctx: RequestContext,
+        status: Vec<MessageStatus>,
+        limit: Option<usize>,
+    ) -> Result<Vec<MessagePo>>;
 
     /// 创建工具调用请求消息（便捷方法）
     /// 工具调用请求由 Agent 发起，请求执行某个工具
@@ -104,8 +134,6 @@ pub trait MessageDao: Send + Sync {
         res: ToolCallMessage,
     ) -> Result<MessagePo>;
 }
-
-
 
 pub mod sqlite;
 pub use self::sqlite::{dao, init, new};

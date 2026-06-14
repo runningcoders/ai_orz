@@ -5,9 +5,9 @@
 use crate::error::AppError;
 use crate::models::artifact::{Artifact, ArtifactPo};
 use crate::pkg::RequestContext;
+use crate::service::dao::artifact;
 use crate::service::dao::artifact::{ArtifactDao, ArtifactQuery};
 use std::sync::{Arc, OnceLock};
-use crate::service::dao::artifact;
 
 // ==================== 单例管理 ====================
 
@@ -37,11 +37,8 @@ pub trait ArtifactDal: Send + Sync {
     async fn create(&self, ctx: RequestContext, artifact: &Artifact) -> Result<(), AppError>;
 
     /// 根据 ID 获取产物
-    async fn find_by_id(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<Option<Artifact>, AppError>;
+    async fn find_by_id(&self, ctx: RequestContext, id: &str)
+    -> Result<Option<Artifact>, AppError>;
 
     /// 获取项目下的所有产物
     async fn list_by_project(
@@ -58,7 +55,11 @@ pub trait ArtifactDal: Send + Sync {
     ) -> Result<Vec<Artifact>, AppError>;
 
     /// 通用综合查询
-    async fn query(&self, ctx: RequestContext, query: ArtifactQuery) -> Result<Vec<Artifact>, AppError>;
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: ArtifactQuery,
+    ) -> Result<Vec<Artifact>, AppError>;
 
     /// 更新产物状态
     async fn update_status(
@@ -79,11 +80,7 @@ pub trait ArtifactDal: Send + Sync {
     ) -> Result<u64, AppError>;
 
     /// 统计任务下的产物数量
-    async fn count_by_task(
-        &self,
-        ctx: RequestContext,
-        task_id: &str,
-    ) -> Result<u64, AppError>;
+    async fn count_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<u64, AppError>;
 }
 
 // ==================== DAL 实现 ====================
@@ -126,7 +123,11 @@ impl ArtifactDal for ArtifactDalImpl {
         Ok(po_list.into_iter().map(Artifact::from_po).collect())
     }
 
-    async fn query(&self, ctx: RequestContext, query: ArtifactQuery) -> Result<Vec<Artifact>, AppError> {
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: ArtifactQuery,
+    ) -> Result<Vec<Artifact>, AppError> {
         let list = self.artifact_dao.query(ctx, query).await?;
         Ok(list.into_iter().map(Artifact::from_po).collect())
     }
@@ -149,17 +150,15 @@ impl ArtifactDal for ArtifactDalImpl {
         ctx: RequestContext,
         project_id: &str,
     ) -> Result<u64, AppError> {
-        self.artifact_dao.count_by_project(ctx, project_id)
+        self.artifact_dao
+            .count_by_project(ctx, project_id)
             .await
             .map(|v| v as u64)
     }
 
-    async fn count_by_task(
-        &self,
-        ctx: RequestContext,
-        task_id: &str,
-    ) -> Result<u64, AppError> {
-        self.artifact_dao.count_by_task(ctx, task_id)
+    async fn count_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<u64, AppError> {
+        self.artifact_dao
+            .count_by_task(ctx, task_id)
             .await
             .map(|v| v as u64)
     }

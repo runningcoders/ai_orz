@@ -1,15 +1,15 @@
 //! 创建 Model Provider
 
-use common::api::{CreateModelProviderRequest, CreateModelProviderResponse};
-use crate::pkg::RequestContext;
 use crate::error::AppError;
-use common::api::ApiResponse;
 use crate::models::model_provider::{ModelProvider, ModelProviderPo};
+use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use axum::{
     extract::{Extension, Json},
     http::StatusCode,
 };
+use common::api::ApiResponse;
+use common::api::{CreateModelProviderRequest, CreateModelProviderResponse};
 
 /// 创建 Model Provider
 /// POST /model-providers
@@ -17,7 +17,6 @@ pub async fn create_model_provider(
     Extension(ctx): Extension<RequestContext>,
     Json(req): Json<CreateModelProviderRequest>,
 ) -> Result<(StatusCode, Json<ApiResponse<CreateModelProviderResponse>>), AppError> {
-
     let provider_po = ModelProviderPo::new(
         req.name.clone(),
         req.provider_type.clone(),
@@ -30,7 +29,10 @@ pub async fn create_model_provider(
     );
     let provider = ModelProvider::from_po(provider_po);
 
-    domain().model_provider_manage().create_model_provider(ctx, &provider).await?;
+    domain()
+        .model_provider_manage()
+        .create_model_provider(ctx, &provider)
+        .await?;
 
     Ok((
         StatusCode::CREATED,
@@ -39,7 +41,16 @@ pub async fn create_model_provider(
             name: provider.po.name.clone(),
             provider_type: provider.po.provider_type.clone(),
             model_name: provider.po.model_name.clone(),
-            description: if provider.po.description.as_ref().map_or(true, |d| d.is_empty()) { None } else { provider.po.description.clone() },
+            description: if provider
+                .po
+                .description
+                .as_ref()
+                .map_or(true, |d| d.is_empty())
+            {
+                None
+            } else {
+                provider.po.description.clone()
+            },
             created_at: provider.po.created_at,
         })),
     ))

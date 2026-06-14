@@ -65,9 +65,15 @@ mod tests {
             "test-user-1".to_string(),
         );
 
-        assert_eq!(po.base_url, Some("https://my-proxy.example.com/v1".to_string()));
+        assert_eq!(
+            po.base_url,
+            Some("https://my-proxy.example.com/v1".to_string())
+        );
         let model = ModelProvider::from_po(po);
-        assert_eq!(model.po.base_url, Some("https://my-proxy.example.com/v1".to_string()));
+        assert_eq!(
+            model.po.base_url,
+            Some("https://my-proxy.example.com/v1".to_string())
+        );
     }
 
     #[test]

@@ -4,7 +4,7 @@
 //! - ToolCallEntry/ToolCallStatus: Structured logging entry with call status
 //! - ToolCallLogger: Daily JSONL based logger for persistent tool call history
 //! - tool_call_logger::ToolCallLogger: Logging decorator for our core Tool trait
-//! 
+//!
 //! Rig adapter moved to models::tool::RigToolAdapter now.
 
 pub mod entry;

@@ -1,15 +1,17 @@
 //! Organization DAL 单元测试
 
-use common::enums::OrganizationStatus;
 use crate::models::organization::OrganizationPo;
 use crate::pkg::RequestContext;
-use crate::service::dao::organization::OrganizationQuery;
 use crate::service::dal::organization::OrganizationDal;
+use crate::service::dao::organization::OrganizationQuery;
+use common::enums::OrganizationStatus;
 use sqlx::SqlitePool;
 use std::sync::Arc;
 
 /// 初始化测试环境
-async fn init_test_env(pool: SqlitePool) -> (Arc<dyn OrganizationDal + Send + Sync>, RequestContext) {
+async fn init_test_env(
+    pool: SqlitePool,
+) -> (Arc<dyn OrganizationDal + Send + Sync>, RequestContext) {
     crate::service::dao::organization::init();
     crate::service::dal::organization::init();
     let dal = crate::service::dal::organization::dal();
@@ -99,9 +101,10 @@ async fn test_query_with_limit(pool: SqlitePool) {
     }
 
     // 限制返回 2 条
-    let results = dal.query(ctx, OrganizationQuery {
-        limit: Some(2),
-    }).await.unwrap();
+    let results = dal
+        .query(ctx, OrganizationQuery { limit: Some(2) })
+        .await
+        .unwrap();
 
     assert_eq!(results.len(), 2);
 }

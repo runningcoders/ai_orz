@@ -75,12 +75,20 @@ impl ArtifactDomain {
     }
 
     /// 获取项目下的所有产物
-    pub async fn list_by_project(&self, ctx: RequestContext, project_id: &str) -> Result<Vec<Artifact>, AppError> {
+    pub async fn list_by_project(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+    ) -> Result<Vec<Artifact>, AppError> {
         self.dal.list_by_project(ctx, project_id).await
     }
 
     /// 获取任务下的所有产物
-    pub async fn list_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<Vec<Artifact>, AppError> {
+    pub async fn list_by_task(
+        &self,
+        ctx: RequestContext,
+        task_id: &str,
+    ) -> Result<Vec<Artifact>, AppError> {
         self.dal.list_by_task(ctx, task_id).await
     }
 

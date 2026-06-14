@@ -4,19 +4,19 @@
 //! BrainDal 依赖 CortexDao 创建 CortexTrait，然后组装成完整的 Brain
 //! 合并了原来 CortexDal 的功能，不再重复拆分
 
-use anyhow::Result;
 use crate::error::AppError;
 use crate::models::brain::{Brain, Cortex, CortexTrait};
 use crate::models::model_provider::ModelProvider;
 use crate::models::tool::Tool;
 use crate::pkg::RequestContext;
-use crate::service::dao::cortex::{CortexDao};
+use crate::service::dao::cortex;
+use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::tool_call::ToolCallDao;
-use rig::tool::ToolDyn;
-use std::sync::{Arc, OnceLock};
+use anyhow::Result;
 use async_trait::async_trait;
 use futures_util::TryFutureExt;
-use crate::service::dao::cortex;
+use rig::tool::ToolDyn;
+use std::sync::{Arc, OnceLock};
 // ==================== 单例管理 ====================
 
 static BRAIN_DAL: OnceLock<Arc<dyn BrainDal>> = OnceLock::new();
@@ -28,10 +28,7 @@ pub fn dal() -> Arc<dyn BrainDal> {
 
 /// 初始化 Brain DAL
 pub fn init() {
-    let _ = BRAIN_DAL.set(new(
-        cortex::dao(),
-        crate::service::dao::tool_call::dao(),
-    ));
+    let _ = BRAIN_DAL.set(new(cortex::dao(), crate::service::dao::tool_call::dao()));
 }
 
 /// 创建 Brain DAL（返回 trait 对象）
@@ -60,9 +57,9 @@ pub trait BrainDal: Send + Sync {
         &self,
         ctx: RequestContext,
         provider: &ModelProvider,
-         memories: Vec<crate::models::memory::Memory>,
-         tools: Vec<Tool>,
-     ) -> Result<Brain, AppError>;
+        memories: Vec<crate::models::memory::Memory>,
+        tools: Vec<Tool>,
+    ) -> Result<Brain, AppError>;
 
     /// 创建 Cortex 并测试连通性，执行一次 prompt 获取回答
     ///
@@ -103,7 +100,10 @@ impl BrainDalImpl {
         cortex_dao: Arc<dyn CortexDao + Send + Sync>,
         tool_call_dao: Arc<dyn ToolCallDao + Send + Sync>,
     ) -> Self {
-        Self { cortex_dao, tool_call_dao }
+        Self {
+            cortex_dao,
+            tool_call_dao,
+        }
     }
 }
 
@@ -113,13 +113,15 @@ impl BrainDal for BrainDalImpl {
         &self,
         _ctx: RequestContext,
         provider: &ModelProvider,
-             memories: Vec<crate::models::memory::Memory>,
-             tools: Vec<Tool>,
-         ) -> Result<Brain, AppError> {
+        memories: Vec<crate::models::memory::Memory>,
+        tools: Vec<Tool>,
+    ) -> Result<Brain, AppError> {
         // 1. 创建 CortexTrait，传入工具列表
         let rig_tools = self.tool_call_dao.wrap_for_rig(&tools, _ctx.clone());
-        
-        let cortex_trait = self.cortex_dao.create_cortex_trait(_ctx, &provider.po, rig_tools)
+
+        let cortex_trait = self
+            .cortex_dao
+            .create_cortex_trait(_ctx, &provider.po, rig_tools)
             .map_err(|e| AppError::Internal(e.to_string()))?;
 
         // 2. 创建 Cortex 实体
@@ -138,14 +140,13 @@ impl BrainDal for BrainDalImpl {
         prompt: &str,
     ) -> Result<String, AppError> {
         // 1. 创建临时 Cortex，测试连接不需要工具
-        let cortex_trait = self.cortex_dao.create_cortex_trait(ctx.clone(), &provider.po, Vec::new())
+        let cortex_trait = self
+            .cortex_dao
+            .create_cortex_trait(ctx.clone(), &provider.po, Vec::new())
             .map_err(|e| AppError::Internal(e.to_string()))?;
 
         // 2. 创建临时 Brain 用于测试
-        let temp_brain = Brain::new(
-            Cortex::new(provider.clone(), cortex_trait),
-            Vec::new(),
-        );
+        let temp_brain = Brain::new(Cortex::new(provider.clone(), cortex_trait), Vec::new());
 
         // 3. 使用 think 方法执行测试
         self.think(ctx, &temp_brain, prompt).await
@@ -168,7 +169,8 @@ impl BrainDal for BrainDalImpl {
         );
 
         // 实际调用底层推理
-        let result = self.cortex_dao
+        let result = self
+            .cortex_dao
             .prompt(ctx.clone(), brain.cortex_trait(), prompt)
             .await
             .map_err(|e| AppError::Internal(e.to_string()));

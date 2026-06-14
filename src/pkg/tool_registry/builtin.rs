@@ -5,7 +5,7 @@ use dyn_clone::DynClone;
 use dyn_clone::clone_trait_object;
 
 /// Built-in tool factory - creates tool instance from given ToolPo
-/// 
+///
 /// Each built-in tool registers a factory that knows how to construct itself given the ToolPo from DB.
 /// Built-in tools cannot be modified or deleted by users - they can only be synced from code.
 pub trait BuiltinToolFactory: DynClone + Send + Sync {

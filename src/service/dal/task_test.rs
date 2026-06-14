@@ -1,10 +1,10 @@
 //! Task DAL 单元测试
 
-use common::enums::{TaskStatus, AssigneeType};
 use crate::models::task::Task;
 use crate::pkg::RequestContext;
-use crate::service::dao::task::TaskQuery;
 use crate::service::dal::task::TaskDal;
+use crate::service::dao::task::TaskQuery;
+use common::enums::{AssigneeType, TaskStatus};
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -74,7 +74,10 @@ async fn test_list_by_assignee(pool: SqlitePool) {
     let task = create_test_task("Other Task", &other_assignee_id);
     dal.create(ctx.clone(), &task).await.unwrap();
 
-    let tasks = dal.list_by_assignee(ctx, Some(AssigneeType::User), &assignee_id, None).await.unwrap();
+    let tasks = dal
+        .list_by_assignee(ctx, Some(AssigneeType::User), &assignee_id, None)
+        .await
+        .unwrap();
     assert_eq!(tasks.len(), 3);
 }
 
@@ -93,26 +96,39 @@ async fn test_list_by_status(pool: SqlitePool) {
     let completed_task = create_test_task("Completed Task", &assignee_id);
     let completed_task_id = completed_task.po.id.clone();
     dal.create(ctx.clone(), &completed_task).await.unwrap();
-    dal.update_status(ctx.clone(), &completed_task_id, TaskStatus::Completed, "admin").await.unwrap();
+    dal.update_status(
+        ctx.clone(),
+        &completed_task_id,
+        TaskStatus::Completed,
+        "admin",
+    )
+    .await
+    .unwrap();
 
     // Query only pending tasks
-    let tasks = dal.list_by_status(
-        ctx.clone(),
-        Some(AssigneeType::User),
-        &assignee_id,
-        vec![TaskStatus::Pending],
-        None,
-    ).await.unwrap();
+    let tasks = dal
+        .list_by_status(
+            ctx.clone(),
+            Some(AssigneeType::User),
+            &assignee_id,
+            vec![TaskStatus::Pending],
+            None,
+        )
+        .await
+        .unwrap();
     assert_eq!(tasks.len(), 2);
 
     // Query completed tasks
-    let tasks = dal.list_by_status(
-        ctx,
-        Some(AssigneeType::User),
-        &assignee_id,
-        vec![TaskStatus::Completed],
-        None,
-    ).await.unwrap();
+    let tasks = dal
+        .list_by_status(
+            ctx,
+            Some(AssigneeType::User),
+            &assignee_id,
+            vec![TaskStatus::Completed],
+            None,
+        )
+        .await
+        .unwrap();
     assert_eq!(tasks.len(), 1);
 }
 
@@ -169,8 +185,14 @@ async fn test_update_status_and_cancel(pool: SqlitePool) {
     dal.create(ctx.clone(), &task).await.unwrap();
 
     // Update status to InProgress
-    dal.update_status(ctx.clone(), &task_id, TaskStatus::InProgress, "admin").await.unwrap();
-    let found = dal.find_by_id(ctx.clone(), &task_id).await.unwrap().unwrap();
+    dal.update_status(ctx.clone(), &task_id, TaskStatus::InProgress, "admin")
+        .await
+        .unwrap();
+    let found = dal
+        .find_by_id(ctx.clone(), &task_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(found.po.status, TaskStatus::InProgress);
 
     // Cancel task
@@ -210,20 +232,20 @@ async fn test_count_by_assignee_and_status(pool: SqlitePool) {
         let task = create_test_task(&format!("Completed Task {}", i), &assignee_id);
         let task_id = task.po.id.clone();
         dal.create(ctx.clone(), &task).await.unwrap();
-        dal.update_status(ctx.clone(), &task_id, TaskStatus::Completed, "admin").await.unwrap();
+        dal.update_status(ctx.clone(), &task_id, TaskStatus::Completed, "admin")
+            .await
+            .unwrap();
     }
 
-    let pending_count = dal.count_by_assignee_and_status(
-        ctx.clone(),
-        &assignee_id,
-        TaskStatus::Pending,
-    ).await.unwrap();
+    let pending_count = dal
+        .count_by_assignee_and_status(ctx.clone(), &assignee_id, TaskStatus::Pending)
+        .await
+        .unwrap();
     assert_eq!(pending_count, 3);
 
-    let completed_count = dal.count_by_assignee_and_status(
-        ctx,
-        &assignee_id,
-        TaskStatus::Completed,
-    ).await.unwrap();
+    let completed_count = dal
+        .count_by_assignee_and_status(ctx, &assignee_id, TaskStatus::Completed)
+        .await
+        .unwrap();
     assert_eq!(completed_count, 2);
 }

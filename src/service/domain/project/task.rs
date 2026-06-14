@@ -43,9 +43,9 @@ impl TaskDomain {
             description,
             priority,
             tags,
-            None, // due_at
-            None, // start_at
-            None, // end_at
+            None,       // due_at
+            None,       // start_at
+            None,       // end_at
             Vec::new(), // dependencies
             root_user_id,
             assignee_type,
@@ -64,18 +64,34 @@ impl TaskDomain {
     }
 
     /// 获取项目下的所有任务
-    pub async fn list_by_project(&self, ctx: RequestContext, project_id: &str) -> Result<Vec<Task>, AppError> {
+    pub async fn list_by_project(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+    ) -> Result<Vec<Task>, AppError> {
         self.dal.list_by_project(ctx, project_id, None).await
     }
 
     /// 获取分配给 Agent 的所有任务
-    pub async fn list_by_agent(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<Task>, AppError> {
-        let list = self.dal.list_by_assignee(ctx.clone(), Some(AssigneeType::Agent), agent_id, None).await?;
+    pub async fn list_by_agent(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+    ) -> Result<Vec<Task>, AppError> {
+        let list = self
+            .dal
+            .list_by_assignee(ctx.clone(), Some(AssigneeType::Agent), agent_id, None)
+            .await?;
         Ok(list.into_iter().map(Task::from_po).collect())
     }
 
     /// 开始任务
-    pub async fn start(&self, ctx: RequestContext, task_id: &str, modified_by: String) -> Result<(), AppError> {
+    pub async fn start(
+        &self,
+        ctx: RequestContext,
+        task_id: &str,
+        modified_by: String,
+    ) -> Result<(), AppError> {
         let Some(mut task) = self.dal.find_by_id(ctx.clone(), task_id).await? else {
             return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
         };
@@ -86,7 +102,12 @@ impl TaskDomain {
     }
 
     /// 完成任务
-    pub async fn complete(&self, ctx: RequestContext, task_id: &str, modified_by: String) -> Result<(), AppError> {
+    pub async fn complete(
+        &self,
+        ctx: RequestContext,
+        task_id: &str,
+        modified_by: String,
+    ) -> Result<(), AppError> {
         let Some(mut task) = self.dal.find_by_id(ctx.clone(), task_id).await? else {
             return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
         };
@@ -97,7 +118,12 @@ impl TaskDomain {
     }
 
     /// 取消任务
-    pub async fn cancel(&self, ctx: RequestContext, task_id: &str, modified_by: String) -> Result<(), AppError> {
+    pub async fn cancel(
+        &self,
+        ctx: RequestContext,
+        task_id: &str,
+        modified_by: String,
+    ) -> Result<(), AppError> {
         let Some(mut task) = self.dal.find_by_id(ctx.clone(), task_id).await? else {
             return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
         };

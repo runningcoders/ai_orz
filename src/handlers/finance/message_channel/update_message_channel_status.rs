@@ -1,8 +1,8 @@
 //! 更新 Message Channel 状态
 
 use axum::{
-    extract::{Extension, Json, Path},
     Json as AxumJson,
+    extract::{Extension, Json, Path},
 };
 use common::api::{
     ApiResponse, UpdateMessageChannelStatusRequest, UpdateMessageChannelStatusResponse,
@@ -37,7 +37,10 @@ pub async fn update_message_channel_status(
         .ok_or_else(|| AppError::NotFound(format!("MessageChannel {} not found", id)))?;
 
     if channel.po.org_id != org_id || channel.po.user_id != user_id {
-        return Err(AppError::NotFound(format!("MessageChannel {} not found", id)));
+        return Err(AppError::NotFound(format!(
+            "MessageChannel {} not found",
+            id
+        )));
     }
 
     channel

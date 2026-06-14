@@ -1,17 +1,17 @@
 //! 根据组织 ID 查询用户列表接口
 
 use crate::error::AppError;
-use common::api::ApiResponse;
+use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
+use crate::service::domain::organization;
 use axum::{
+    Json,
     extract::{Extension, Path},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
+use common::api::ApiResponse;
 use serde::Serialize;
-use crate::service::domain::organization;
-use crate::models::user::UserPo;
 
 /// 根据组织 ID 查询用户列表响应
 #[derive(Debug, Serialize)]
@@ -26,9 +26,16 @@ pub async fn list_users_by_organization(
     Path(org_id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let domain = organization::domain();
-    let users = domain.user_manage().find_by_organization_id(ctx, &org_id).await?;
+    let users = domain
+        .user_manage()
+        .find_by_organization_id(ctx, &org_id)
+        .await?;
 
-    Ok((StatusCode::OK, Json(ApiResponse::success(ListUsersByOrganizationResponse {
-        users,
-    }))).into_response())
+    Ok((
+        StatusCode::OK,
+        Json(ApiResponse::success(ListUsersByOrganizationResponse {
+            users,
+        })),
+    )
+        .into_response())
 }

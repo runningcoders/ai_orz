@@ -1,7 +1,7 @@
 //! Unit tests for tool call tracing module
 
-use tempfile::tempdir;
 use serde_json::json;
+use tempfile::tempdir;
 
 use super::entry::{ToolCallEntry, ToolCallStatus};
 use super::logger::ToolCallLogger;
@@ -15,7 +15,7 @@ fn test_logger_creates_correct_directory_structure() {
     // Get writer for a tool - writer creates directory on first write
     let tool_id = "test-tool-123";
     let writer = logger.writer_for_tool(tool_id);
-    
+
     // Do an empty write to create directory
     let _ = writer.append(&json!({}));
 
@@ -59,7 +59,11 @@ fn test_log_and_read_entry_roundtrip() {
 
     // Read it back
     let read_result = logger.read_call(tool_id, &date, line_number);
-    assert!(read_result.is_ok(), "Reading should succeed: {:?}", read_result);
+    assert!(
+        read_result.is_ok(),
+        "Reading should succeed: {:?}",
+        read_result
+    );
 
     let read_entry = read_result.unwrap();
 
@@ -165,7 +169,10 @@ fn test_failed_entry_logged_correctly() {
     let read_entry = logger.read_call(tool_id, &date, line).unwrap();
 
     assert_eq!(read_entry.status, ToolCallStatus::Failed);
-    assert_eq!(read_entry.error, Some("Parameter validation failed: bad_param is invalid".to_string()));
+    assert_eq!(
+        read_entry.error,
+        Some("Parameter validation failed: bad_param is invalid".to_string())
+    );
     assert!(read_entry.output.is_none());
 }
 

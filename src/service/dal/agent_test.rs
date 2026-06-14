@@ -1,15 +1,20 @@
 //! Agent DAL 单元测试
 
-use crate::service::dal::agent::{dal, init};
-use crate::service::dao::agent::init as agent_dao_init;
 use crate::models::agent::{Agent, AgentPo};
 use crate::pkg::RequestContext;
-use std::sync::Arc;
+use crate::service::dal::agent::{dal, init};
+use crate::service::dao::agent::init as agent_dao_init;
 use sqlx::SqlitePool;
+use std::sync::Arc;
 use uuid::Uuid;
 
 /// 初始化测试环境
-async fn init_test_env(pool: SqlitePool) -> (Arc<dyn crate::service::dal::agent::AgentDal + Send + Sync>, RequestContext) {
+async fn init_test_env(
+    pool: SqlitePool,
+) -> (
+    Arc<dyn crate::service::dal::agent::AgentDal + Send + Sync>,
+    RequestContext,
+) {
     agent_dao_init();
     init();
     let dal = dal();
@@ -65,7 +70,9 @@ async fn test_update(pool: SqlitePool) {
 
     let mut updated = agent.clone();
     updated.po.name = "Updated".to_string();
-    dal.update(RequestContext::new_simple("editor", pool), &updated).await.unwrap();
+    dal.update(RequestContext::new_simple("editor", pool), &updated)
+        .await
+        .unwrap();
 
     let found: Option<Agent> = dal.find_by_id(ctx, &updated.id()).await.unwrap();
     assert_eq!(found.as_ref().unwrap().name(), "Updated");

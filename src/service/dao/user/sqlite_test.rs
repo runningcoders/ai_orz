@@ -2,10 +2,10 @@
 
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
-use common::enums::{UserRole, UserStatus};
 use crate::service::dao::user::{self, UserDao};
-use uuid::Uuid;
+use common::enums::{UserRole, UserStatus};
 use sqlx::SqlitePool;
+use uuid::Uuid;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     RequestContext::new_simple(user_id, pool)
@@ -34,13 +34,18 @@ async fn test_all_user_dao_functions(pool: SqlitePool) {
         UserRole::SuperAdmin,
         "test-user-1".to_string(),
     );
-    let result = user_dao.insert(new_ctx("test-user", pool.clone()), &user).await;
+    let result = user_dao
+        .insert(new_ctx("test-user", pool.clone()), &user)
+        .await;
     if let Err(e) = &result {
         panic!("insert user failed: {}", e);
     }
     assert!(result.is_ok());
 
-    let found: Option<UserPo> = user_dao.find_by_id(new_ctx("test-user", pool.clone()), &user_id1).await.unwrap();
+    let found: Option<UserPo> = user_dao
+        .find_by_id(new_ctx("test-user", pool.clone()), &user_id1)
+        .await
+        .unwrap();
     assert!(found.is_some());
     let found = found.unwrap();
     assert_eq!(found.id, user_id1);
@@ -64,10 +69,15 @@ async fn test_all_user_dao_functions(pool: SqlitePool) {
         UserRole::Member,
         "test-user-1".to_string(),
     );
-    let result = user_dao.insert(new_ctx("test-user", pool.clone()), &user_login).await;
+    let result = user_dao
+        .insert(new_ctx("test-user", pool.clone()), &user_login)
+        .await;
     assert!(result.is_ok());
 
-    let found: Option<UserPo> = user_dao.find_by_username(new_ctx("test-user", pool.clone()), &username_login).await.unwrap();
+    let found: Option<UserPo> = user_dao
+        .find_by_username(new_ctx("test-user", pool.clone()), &username_login)
+        .await
+        .unwrap();
     assert!(found.is_some());
     assert_eq!(found.unwrap().id, user_id_login);
 
@@ -88,7 +98,9 @@ async fn test_all_user_dao_functions(pool: SqlitePool) {
         UserRole::Member,
         "test-user-1".to_string(),
     );
-    let result = user_dao.insert(new_ctx("test-user", pool.clone()), &user1).await;
+    let result = user_dao
+        .insert(new_ctx("test-user", pool.clone()), &user1)
+        .await;
     assert!(result.is_ok());
 
     let user_id_count2 = Uuid::now_v7().to_string();
@@ -103,7 +115,9 @@ async fn test_all_user_dao_functions(pool: SqlitePool) {
         UserRole::Member,
         "test-user-1".to_string(),
     );
-    let result = user_dao.insert(new_ctx("test-user", pool.clone()), &user2).await;
+    let result = user_dao
+        .insert(new_ctx("test-user", pool.clone()), &user2)
+        .await;
     assert!(result.is_ok());
 
     let user_id_count3 = Uuid::now_v7().to_string();
@@ -118,10 +132,15 @@ async fn test_all_user_dao_functions(pool: SqlitePool) {
         UserRole::Member,
         "test-user-1".to_string(),
     );
-    let result = user_dao.insert(new_ctx("test-user", pool.clone()), &user3).await;
+    let result = user_dao
+        .insert(new_ctx("test-user", pool.clone()), &user3)
+        .await;
     assert!(result.is_ok());
 
-    let users: Vec<UserPo> = user_dao.find_by_organization_id(new_ctx("test-user", pool.clone()), &count_org_id1).await.unwrap();
+    let users: Vec<UserPo> = user_dao
+        .find_by_organization_id(new_ctx("test-user", pool.clone()), &count_org_id1)
+        .await
+        .unwrap();
     assert_eq!(users.len(), 2);
 
     // 测试 4: 更新用户
@@ -137,16 +156,23 @@ async fn test_all_user_dao_functions(pool: SqlitePool) {
         UserRole::Member,
         "test-user-1".to_string(),
     );
-    let result = user_dao.insert(new_ctx("test-user", pool.clone()), &user_update).await;
+    let result = user_dao
+        .insert(new_ctx("test-user", pool.clone()), &user_update)
+        .await;
     assert!(result.is_ok());
 
     user_update.username = format!("newuser_{}", Uuid::now_v7());
     user_update.display_name = "新名称".to_string();
     user_update.email = "new@example.com".to_string();
-    let result = user_dao.update(new_ctx("test-user", pool.clone()), &user_update).await;
+    let result = user_dao
+        .update(new_ctx("test-user", pool.clone()), &user_update)
+        .await;
     assert!(result.is_ok());
 
-    let found: Option<UserPo> = user_dao.find_by_id(new_ctx("test-user", pool.clone()), &user_id_update).await.unwrap();
+    let found: Option<UserPo> = user_dao
+        .find_by_id(new_ctx("test-user", pool.clone()), &user_id_update)
+        .await
+        .unwrap();
     assert!(found.is_some());
     let found = found.unwrap();
     assert_eq!(found.username, user_update.username);
@@ -166,13 +192,20 @@ async fn test_all_user_dao_functions(pool: SqlitePool) {
         UserRole::Member,
         "test-user-1".to_string(),
     );
-    let result = user_dao.insert(new_ctx("test-user", pool.clone()), &user_delete).await;
+    let result = user_dao
+        .insert(new_ctx("test-user", pool.clone()), &user_delete)
+        .await;
     assert!(result.is_ok());
 
-    let result = user_dao.delete(new_ctx("test-user", pool.clone()), &user_id_delete).await;
+    let result = user_dao
+        .delete(new_ctx("test-user", pool.clone()), &user_id_delete)
+        .await;
     assert!(result.is_ok());
 
     // delete is soft delete, found will be None because query filters out disabled
-    let found: Option<UserPo> = user_dao.find_by_id(new_ctx("test-user", pool.clone()), &user_id_delete).await.unwrap();
+    let found: Option<UserPo> = user_dao
+        .find_by_id(new_ctx("test-user", pool.clone()), &user_id_delete)
+        .await
+        .unwrap();
     assert!(found.is_none());
 }

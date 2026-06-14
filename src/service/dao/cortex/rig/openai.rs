@@ -1,16 +1,16 @@
 //! OpenAI 原生 Cortex 实现
 
-use async_trait::async_trait;
+use super::*;
 use anyhow::{Result, anyhow};
+use async_trait::async_trait;
 use common::enums::ModelCapability;
-use rig::prelude::*;
 use rig::agent::Agent;
 use rig::completion::Prompt;
-use rig::tool::ToolDyn;
+use rig::embeddings::EmbeddingModel;
+use rig::prelude::*;
 use rig::providers::openai;
 use rig::providers::openai::responses_api::ResponsesCompletionModel;
-use rig::embeddings::EmbeddingModel;
-use super::*;
+use rig::tool::ToolDyn;
 
 /// OpenAI 原生 Cortex - Agent 类型，支持对话和向量
 #[derive(Clone)]
@@ -38,7 +38,8 @@ impl OpenAiCortex {
             builder
         };
 
-        let client = builder.build()
+        let client = builder
+            .build()
             .map_err(|e| anyhow!("Failed to build OpenAI client: {}", e))?;
 
         // ✅ 提前初始化好 Agent
@@ -83,7 +84,7 @@ impl CortexTrait for OpenAiCortex {
             .embed_texts(texts.to_vec())
             .await
             .map_err(|e| anyhow!("OpenAI embeddings failed: {}", e))?;
-        
+
         // 提取向量数据: Vec<Embedding> -> Vec<Vec<f32>>
         let vectors = embeddings
             .into_iter()
