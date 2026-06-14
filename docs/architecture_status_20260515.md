@@ -127,9 +127,9 @@
 - ✅ finance: Model Provider CRUD、模型调用测试、MessageChannel 管理、Tool 管理与 Agent 绑定
 
 **待补充 API 领域**（详见 `docs/handler_management_api_plan.md`）:
-- 🔧 Phase 2 / Batch 2.1 project/project: 项目管理面 CRUD 与统一状态更新（P1 - 优先开始）
-- 🔧 Phase 2 / Batch 2.2 project/task: 任务管理面 CRUD、按 Project/Agent 列表与统一状态更新（P1）
-- 🔧 Phase 2 / Batch 2.3 hr/skill: Skill 元数据、主内容、搜索、安装到 Agent（P1 - 分阶段补，不先扩展复杂文件副作用）
+- 🔧 Phase 2 / Batch 2.1 project/project: 项目管理面 CRUD 与统一状态更新（P1 - 优先开始）；状态流转语义先补/使用 Domain 统一入口，Handler 不分发到具体状态方法
+- 🔧 Phase 2 / Batch 2.2 project/task: 任务管理面 CRUD、按 Project/Agent 列表与统一状态更新（P1）；状态合法性与流转规则下沉 Domain
+- 🔧 Phase 2 / Batch 2.3 hr/skill: Skill 元数据、主内容、搜索、安装到 Agent（P1 - 路由统一 `/api/v1/hr/...`，安装能力已具备完整 `Skill` 实体返回；暂不扩展附件级文件副作用）
 - 🔧 artifact/message-management: 附件与消息管理查询（P2 - 受文件上传/消息语义影响）
 - ⏸️ message delivery / runtime awakening / tool execution: 运行面能力，单独随 Consumer / Runtime 链路推进
 
@@ -169,6 +169,8 @@
 |------|------------|------|
 | domain_project 补充 Handler API | 极低 | 内部已完成，仅需暴露 |
 | domain_tool 补充 Handler API | 极低 | 内部已完成，仅需暴露 |
+
+> 管理面 API 的第二阶段实施顺序按 `Project → Task → Skill` 推进。Project / Task 的状态更新必须通过 Domain 统一 `update_status` / `transition_status` 入口承载业务语义，Handler 只做 DTO 解析和统一方法调用；Skill 属于 HR Domain，管理面路由统一使用 `/api/v1/hr/skills...` 与 `/api/v1/hr/agents/{agent_id}/skills...`。
 
 ### 🎯 第三阶段：扩展核心能力（P1）
 **目标**: 为 Memory 设计业务承载者
@@ -213,6 +215,12 @@
 
 4. ✅ **面向接口编程**: Domain 通过 Trait 依赖 DAL，DAL 通过 Trait 依赖 DAO
    - 当前执行情况: 已实现，使用 Arc<dyn XxxDal + Send + Sync> 注入
+
+5. ✅ **状态流转语义归属 Domain**: 管理面统一暴露 `/status` action，但状态合法性、状态流转和副作用由 Domain 统一入口承担
+   - 当前执行情况: Agent 已按该模式落地；Project / Task 在 Phase 2 实施时先补/使用统一 `update_status` / `transition_status`，避免 Handler 分发到 `start/complete/archive/cancel`
+
+6. ✅ **Skill 业务实体边界收敛**: Domain / DAL 对上层优先暴露完整 `Skill` 业务实体，`SkillPo` 保持在 DAO/存储映射边界内
+   - 当前执行情况: `install_to_agent` 已具备完整 `Skill` 返回能力，可纳入 HR Skill 管理面正式 API；附件级文件读写/删除仍暂缓
 
 ---
 

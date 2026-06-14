@@ -93,9 +93,9 @@ PUT /api/v1/finance/tools/{id}/status
 | P0 | `finance` | MessageChannel | create/get/query/list/update/delete/test | 已补 create/list/get/update/delete/status/test | 纯配置类，收益高；响应 DTO 已脱敏；状态更新统一 `/status`，测试连接统一 `/test` |
 | P0 | `finance` | Tool | create/get/query/list/update/bind/unbind/list_agent_tools/search | 已补 create/list/get/update/delete/status/agent-bind | 已补基础管理与 Agent 绑定；搜索通过列表 query 的 `keyword` 承载，工具执行不纳入本轮 |
 | P0 | `hr` | Agent Status | transition_status/validate_onboard_readiness | 已补 status | 使用统一 `PUT /api/v1/hr/agents/{id}/status`，状态流转由 HR Domain 校验 |
-| P1 | `project` | Project | create/get/list_by_user/update_basic/start/complete/archive | 缺失 | 状态方法先在 Handler 层收敛成统一 status action，必要时再补 Domain 统一入口 |
-| P1 | `project` | Task | create/get/list_by_project/list_by_agent/start/complete/cancel | 缺失 | 同 Project，统一 status action |
-| P1 | `hr` | Skill | create/get/update/delete/query/list/search/install_to_agent/list_for_agent | 缺失 | 涉及文件内容，先补元数据与主内容管理 |
+| P1 | `project` | Project | create/get/list_by_user/update_basic/start/complete/archive | 缺失 | 状态更新先补/使用 Domain 统一状态入口，Handler 只调用统一 status action |
+| P1 | `project` | Task | create/get/list_by_project/list_by_agent/start/complete/cancel | 缺失 | 同 Project，状态流转语义下沉 Domain，Handler 不分发业务状态 |
+| P1 | `hr` | Skill | create/get/update/delete/query/list/search/install_to_agent/list_for_agent | 缺失 | 先补元数据、主内容、搜索与安装；路由统一归入 HR 前缀 |
 | P2 | `project` | Artifact | create_project_artifact/create_task_artifact/get/list/delete | 缺失 | 受上传/附件存储机制影响，放后 |
 | P2 | `message` | MessageManagement | query/list_by_task/list_by_project/get/update_status/delete/cleanup | 缺失 | 只补管理查询与状态，不做投递消费 |
 | 暂缓 | `message` | MessageDelivery | send/dequeue/ack/nack/deliver | 不作为 CRUD 补齐 | 运行面能力，跟 Consumer / Runtime 链路单独推进 |
@@ -188,24 +188,27 @@ PUT    /api/v1/tasks/{id}/status
 
 说明：
 - 不新增 `/start`、`/complete`、`/archive`、`/cancel` 路由；
-- 如果 Domain 当前只有 `start/complete/archive/cancel` 方法，第一步可由 Handler 根据目标状态调用现有 Domain 方法；第二步再补 Domain 统一 `update_status`/`transition_status` 入口，收敛状态流转规则。
+- 状态更新必须先补/使用 Domain 统一 `update_status` / `transition_status` 入口，由 Domain 根据目标状态校验合法性并执行流转；
+- Handler 只解析目标状态并调用统一 Domain 方法，不在 Handler 层把目标状态分发到 `start/complete/archive/cancel` 等具体业务方法。
 
 ### 3.5 Skill（P1）
 
 ```http
-POST   /api/v1/skills
-GET    /api/v1/skills
-GET    /api/v1/skills/{id}
-PUT    /api/v1/skills/{id}
-DELETE /api/v1/skills/{id}
-GET    /api/v1/skills/search
-GET    /api/v1/agents/{agent_id}/skills
-POST   /api/v1/agents/{agent_id}/skills/{skill_id}
+POST   /api/v1/hr/skills
+GET    /api/v1/hr/skills
+GET    /api/v1/hr/skills/{id}
+PUT    /api/v1/hr/skills/{id}
+DELETE /api/v1/hr/skills/{id}
+GET    /api/v1/hr/skills/search
+GET    /api/v1/hr/agents/{agent_id}/skills
+POST   /api/v1/hr/agents/{agent_id}/skills/{skill_id}
 ```
 
 说明：
-- 第一阶段只补元数据 + 主文件内容相关能力；
-- 如文件删除、安装副作用等能力在 Domain/DAL 中仍有 TODO，不先暴露为正式 API；
+- Skill 属于 HR Domain，管理面路由统一使用 `/api/v1/hr/...` 前缀，与 Agent 管理面保持一致；
+- 第一阶段只补元数据、主文件内容、搜索和安装到 Agent；
+- `install_to_agent` 已完成 Domain/DAL 分层边界收敛，可通过 Domain/DAL 返回完整 `Skill` 业务实体，因此纳入 Batch 2.3 正式 API；
+- 文件删除、附件级读写等复杂文件副作用等 Domain/DAL 语义稳定后再补；
 - Skill 内容可能较大，列表响应使用摘要 DTO，详情响应再返回完整内容。
 
 ### 3.6 Artifact / MessageManagement（P2）
@@ -267,7 +270,7 @@ GET    /api/v1/tasks/{task_id}/messages
 1. 新增 `common/src/api/project.rs`，定义 create/list/get/update/status 的 Request / Response DTO；
 2. 新增 `src/handlers/project/project/` 下的单 action Handler 文件；
 3. 在 `src/handlers/project/mod.rs` 与 `src/router.rs` 暴露 Project 路由；
-4. `PUT /api/v1/projects/{id}/status` 先由 Handler 根据目标 `ProjectStatus` 调用现有 Domain 方法（如 start/complete/archive），不新增 `/start`、`/complete`、`/archive` 路由；
+4. `PUT /api/v1/projects/{id}/status` 先补/使用 Domain 统一状态入口（如 `update_status` / `transition_status`），由 Domain 根据目标 `ProjectStatus` 执行合法性校验与流转；Handler 不分发到 `start/complete/archive`，也不新增 `/start`、`/complete`、`/archive` 路由；
 5. 补 DTO 契约测试，必要时补 Domain 状态流转覆盖；
 6. 更新本文档和 README/API 速览。
 
@@ -281,7 +284,7 @@ GET    /api/v1/tasks/{task_id}/messages
 1. 新增 `common/src/api/task.rs`，定义 create/get/list/update/status 的 Request / Response DTO；
 2. 新增 `src/handlers/project/task/` 下的单 action Handler 文件；
 3. 在 Router 暴露：`POST /api/v1/tasks`、`GET /api/v1/tasks/{id}`、`GET /api/v1/projects/{project_id}/tasks`、`GET /api/v1/agents/{agent_id}/tasks`、`PUT /api/v1/tasks/{id}`、`PUT /api/v1/tasks/{id}/status`；
-4. `PUT /api/v1/tasks/{id}/status` 先由 Handler 根据目标 `TaskStatus` 调用现有 Domain 方法（如 start/complete/cancel），不新增 `/start`、`/complete`、`/cancel` 路由；
+4. `PUT /api/v1/tasks/{id}/status` 先补/使用 Domain 统一状态入口（如 `update_status` / `transition_status`），由 Domain 根据目标 `TaskStatus` 执行合法性校验与流转；Handler 不分发到 `start/complete/cancel`，也不新增 `/start`、`/complete`、`/cancel` 路由；
 5. 补 DTO 契约测试和关键 Domain 状态测试；
 6. 更新本文档和 README/API 速览。
 
@@ -294,9 +297,9 @@ GET    /api/v1/tasks/{task_id}/messages
 范围：
 1. 新增 `common/src/api/skill.rs`，定义列表摘要 DTO、详情完整 DTO、创建/更新/搜索/安装请求 DTO；
 2. 新增 `src/handlers/hr/skill/` 下的单 action Handler 文件；
-3. 暴露：`POST /api/v1/skills`、`GET /api/v1/skills`、`GET /api/v1/skills/{id}`、`PUT /api/v1/skills/{id}`、`DELETE /api/v1/skills/{id}`、`GET /api/v1/skills/search`、`GET /api/v1/agents/{agent_id}/skills`、`POST /api/v1/agents/{agent_id}/skills/{skill_id}`；
+3. 暴露：`POST /api/v1/hr/skills`、`GET /api/v1/hr/skills`、`GET /api/v1/hr/skills/{id}`、`PUT /api/v1/hr/skills/{id}`、`DELETE /api/v1/hr/skills/{id}`、`GET /api/v1/hr/skills/search`、`GET /api/v1/hr/agents/{agent_id}/skills`、`POST /api/v1/hr/agents/{agent_id}/skills/{skill_id}`；
 4. 列表响应使用摘要 DTO，详情响应返回完整主内容，避免列表接口返回大字段；
-5. 更新时只暴露元数据和主内容写入；文件删除、附件级读写等复杂文件能力等 Domain/DAL 语义稳定后再补；
+5. 安装到 Agent 使用已收敛的 `install_to_agent` Domain/DAL 能力，返回完整 `Skill` 业务实体；更新时只暴露元数据和主内容写入；文件删除、附件级读写等复杂文件能力等 Domain/DAL 语义稳定后再补；
 6. 补 DTO 契约测试和关键 Domain/Handler 契约覆盖；
 7. 更新本文档和 README/API 速览。
 
@@ -315,7 +318,8 @@ GET    /api/v1/tasks/{task_id}/messages
 - 每个 Handler 文件对应一个明确用户 Action；
 - API DTO 保持在 `common/src/api/`，不把 Handler 本地结构泄漏给前端；
 - 状态更新统一使用 `/status` action，不拆目标状态路由；
-- Project/Task 状态更新可先适配现有 Domain 方法，后续再收敛为统一 `transition_status` 入口；
+- Project/Task 状态更新优先补/使用 Domain 统一 `update_status` / `transition_status` 入口，Handler 不承载状态分发语义；
+- Skill 管理面路由统一使用 HR 前缀 `/api/v1/hr/skills...`，安装和 Agent 技能列表也归入 `/api/v1/hr/agents/{agent_id}/skills...`；
 - 每批完成后同步更新本文档、README 和架构状态文档。
 
 验收：Project/Task/Skill 管理面可从前端完整操作；状态更新路由不膨胀。
