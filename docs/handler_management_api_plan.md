@@ -96,6 +96,7 @@ PUT /api/v1/finance/tools/{id}/status
 | P1 | `project` | Project | create/get/list_by_user/update_basic/start/complete/archive/transition_status | 已补 create/list/get/update/status | Batch 2.1 已落地；状态更新使用 Domain 统一 `transition_status`，Handler 只调用统一 status action |
 | P1 | `project` | Task | create/get/list_by_project/list_by_agent/update_basic/start/complete/cancel/transition_status | 已补 create/list/get/update/status | Batch 2.2 已落地；状态更新使用 Domain 统一 `transition_status`，Handler 只调用统一 status action |
 | P1 | `hr` | Skill | create/get/update/delete/query/list/search/install_to_agent/list_for_agent | 已补 create/list/get/update/delete/search/install/list_agent_skills | Batch 2.3 已落地；先补元数据、主内容、搜索与安装；路由统一归入 HR 前缀 |
+| P1.5 | `finance` | Attachment | upload/get/query/delete | 已补 upload/list/get/delete | Batch 2.4 已落地；Attachment 作为用户资产，按 DAO/DAL/Finance Domain/Handler 分层实现通用上传，供 Skill/Message/Artifact/Tool 复用 |
 | P2 | `project` | Artifact | create_project_artifact/create_task_artifact/get/list/delete | 缺失 | 受上传/附件存储机制影响，放后 |
 | P2 | `message` | MessageManagement | query/list_by_task/list_by_project/get/update_status/delete/cleanup | 缺失 | 只补管理查询与状态，不做投递消费 |
 | 暂缓 | `message` | MessageDelivery | send/dequeue/ack/nack/deliver | 不作为 CRUD 补齐 | 运行面能力，跟 Consumer / Runtime 链路单独推进 |
@@ -215,7 +216,28 @@ POST   /api/v1/hr/agents/{agent_id}/skills/{skill_id}
 - `POST/PUT` 支持主内容 `content` 写入，列表与搜索响应使用摘要 DTO，不返回大内容；详情、创建、更新、安装响应返回完整详情 DTO；
 - 文件删除、附件级读写等复杂文件副作用等 Domain/DAL 语义稳定后再补。
 
-### 3.6 Artifact / MessageManagement（P2）
+### 3.6 Finance Attachment（P1.5）
+
+Attachment 作为 Finance Domain 下的用户资产管理能力，提供通用上传与基础查询接口。业务域不直接接收 multipart，而是引用已上传的 `attachment_id`。
+
+```http
+POST   /api/v1/finance/attachments/upload
+GET    /api/v1/finance/attachments
+GET    /api/v1/finance/attachments/{id}
+DELETE /api/v1/finance/attachments/{id}
+```
+
+说明：
+- 通用上传能力归属 `finance`，因为它是跨 Skill / Message / Project / Tool 复用的用户资产，而不是某个业务域私有能力；
+- 当前已落地以上四个管理面路由（upload/list/get/delete），上传使用 `multipart/form-data`，列表查询支持 `purpose`、`file_type`、`limit`；
+- 实现必须遵循 `handler → finance domain → attachment dal → attachment dao`；
+- 新增 `attachments` 元数据表，文件物理存储继续复用 `<base_data_path>/attachments/YYYYMMDD/{file_id}{extension}`；
+- Handler 只解析 multipart 和 query/path 参数，并调用 Finance Domain；不直接写文件，不直接调用 DAL/DAO；
+- Attachment DAO 负责 `AttachmentPo` 持久化和给定路径的文件系统基础读写；
+- Attachment DAL 负责生成 ID/存储路径、推断文件类型、写文件、插入元数据并组装 `Attachment` 业务实体；
+- 后续 Skill 文件更新通过 `attachment_id + target_path` 引用导入，不让 Skill API 直接接收文件流。
+
+### 3.7 Artifact / MessageManagement（P2）
 
 Artifact 受文件上传机制影响，建议等附件上传/存储 API 稳定后再补：
 
@@ -309,6 +331,38 @@ GET    /api/v1/tasks/{task_id}/messages
 
 验收：Skill 元数据、主内容、查询搜索、安装到 Agent 可从管理面操作；列表不返回大内容；Handler 不承载文件业务规则。
 
+#### Batch 2.4：Finance Attachment 通用上传 API
+
+目标：补 Finance Domain 下的通用 Attachment 上传与基础查询能力，为后续 Skill 文件导入、Message 附件、Project Artifact、Tool 大结果附件提供统一前置能力。
+
+范围：
+1. 更新 `docs/attachment_storage.md`，确认 Attachment 是 Finance Domain 用户资产，并记录 DAO/DAL/Domain/Handler 分层边界；
+2. 新增 `attachments` 表迁移，记录上传文件元数据：`id/original_name/stored_name/relative_path/mime_type/file_type/size/purpose/status/root_user_id/created_by/modified_by/timestamps`；
+3. 新增 `src/models/attachment.rs`，定义 `AttachmentPo`、`Attachment`、`AttachmentQuery`、`AttachmentUpload` 等模型；
+4. 新增 `src/service/dao/attachment/`，实现 `AttachmentDao`：元数据 CRUD / query / soft delete，以及给定相对路径的文件基础读写；DAO 不承载业务归属、用途解释、跨领域导入规则；
+5. 新增 `src/service/dal/attachment.rs`，实现 `AttachmentDal`：生成 ID/存储文件名/日期相对路径，推断文件类型，写文件并插入元数据，返回 `Attachment` 业务实体；
+6. 在 Finance Domain 新增 `attachment_manage()` / `AttachmentManage` 能力，暴露 `upload_attachment/get_attachment/list_attachments/delete_attachment`；
+7. 新增 `common/src/api/attachment.rs`，定义 `AttachmentDetail`、`AttachmentListQuery`、`UploadAttachmentResponse` 等前后端共享 DTO；
+8. 新增 `src/handlers/finance/attachment/` 单 action Handler：`upload_attachment`、`get_attachment`、`list_attachments`、`delete_attachment`；
+9. 在 `src/router.rs` 暴露 `POST /api/v1/finance/attachments/upload`、`GET /api/v1/finance/attachments`、`GET /api/v1/finance/attachments/{id}`、`DELETE /api/v1/finance/attachments/{id}`；
+10. 补 DAO/DAL/DTO 契约测试，必要时补 Finance Domain 测试；
+11. 更新 README/API 速览与本文档进度。
+
+验收：Attachment 文件可通过 Finance 管理面上传、查询、列表、软删除；返回 `attachment_id` 可被后续业务接口引用；Handler 不越层，不直接写文件；路径生成和读取防止路径穿越；`cargo fmt/check/test` 通过。
+
+#### Batch 2.5：Skill 文件引用导入
+
+目标：在 Attachment 能力稳定后，扩展 Skill 更新接口，使 Skill 附加文件通过 `attachment_id + target_path` 引用导入。
+
+范围：
+1. 扩展 `common/src/api/skill.rs`，新增 `SkillFileInput { attachment_id, target_path }`，并在更新请求中增加 `files: Option<Vec<SkillFileInput>>`；
+2. HR Skill Domain 校验 attachment 归属和 target path 安全性；
+3. 通过 Attachment 能力读取已上传文件，再复制到 Skill 的 `content_path` 目录；
+4. 保持主文件 `skill.md` 仍由 `content` 字段更新；
+5. 更新 Skill DTO 契约测试、Domain 测试与 `docs/skill_design.md`。
+
+验收：用户可先上传文件获取 `attachment_id`，再通过 Skill 更新接口导入附加文件；Skill Handler 不直接接收 multipart，不直接访问 Attachment DAO/DAL。
+
 #### Phase 2 进度跟踪
 
 | 批次 | 对象 | 状态 | 交付物 | 验证 |
@@ -316,6 +370,8 @@ GET    /api/v1/tasks/{task_id}/messages
 | Batch 2.1 | Project | 已完成 | `common/src/api/project.rs`、`src/handlers/project/project/*`、`src/router.rs`、Project Domain `transition_status`、DTO/Domain 测试、文档更新 | `cargo fmt --all && cargo check && cargo test -p common api::project_test && cargo test --lib service::domain::project::project_test` |
 | Batch 2.2 | Task | 已完成 | `common/src/api/task.rs`、`src/handlers/project/task/*`、`src/router.rs`、Task Domain `create_with_options/list/update_basic/transition_status`、DTO/Domain 测试、文档更新 | `cargo fmt --all && cargo check && cargo test -p common api::task_test && cargo test --lib service::domain::project::project_test` |
 | Batch 2.3 | Skill | 已完成 | `common/src/api/skill.rs`、`src/handlers/hr/skill/*`、`src/router.rs`、DTO/Domain 测试、文档更新 | `cargo fmt --all -- --check && cargo check && cargo test -p common api::skill_test && cargo test --lib service::domain::hr::skill_test` |
+| Batch 2.4 | Finance Attachment | 方案已记录，待实现 | 计划新增 `attachments` migration、`common/src/api/attachment.rs`、`src/models/attachment.rs`、`src/service/dao/attachment/*`、`src/service/dal/attachment.rs`、Finance Domain attachment manage、`src/handlers/finance/attachment/*`、Router 路由、测试与文档 | 计划验证 `cargo fmt --all -- --check && cargo check && cargo test -p common api::attachment_test && cargo test --lib service::dao::attachment::sqlite_test && cargo test --lib service::dal::attachment_test` |
+| Batch 2.5 | Skill 文件引用导入 | 计划中 | 计划扩展 Skill update DTO，支持 `attachment_id + target_path` 导入附加文件 | Attachment 能力稳定后执行 |
 
 统一约束：
 - Handler 只调用 Domain，不直接调用 DAL/DAO；
@@ -324,6 +380,7 @@ GET    /api/v1/tasks/{task_id}/messages
 - 状态更新统一使用 `/status` action，不拆目标状态路由；
 - Project/Task 状态更新优先补/使用 Domain 统一 `update_status` / `transition_status` 入口，Handler 不承载状态分发语义；
 - Skill 管理面路由统一使用 HR 前缀 `/api/v1/hr/skills...`，安装和 Agent 技能列表也归入 `/api/v1/hr/agents/{agent_id}/skills...`；
+- Attachment 通用上传归属 Finance Domain，路由统一使用 `/api/v1/finance/attachments...`，业务域通过 `attachment_id` 引用，不直接接收 multipart；
 - 每批完成后同步更新本文档、README 和架构状态文档。
 
 验收：Project/Task/Skill 管理面可从前端完整操作；状态更新路由不膨胀。

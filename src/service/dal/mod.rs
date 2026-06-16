@@ -29,6 +29,7 @@ impl SearchParams {
 
 pub mod agent;
 pub mod artifact;
+pub mod attachment;
 pub mod brain;
 pub mod memory;
 pub mod message;
@@ -44,6 +45,7 @@ pub mod user;
 pub fn init_all() {
     agent::init();
     artifact::init();
+    attachment::init();
     brain::init();
     memory::init();
     message::init();
@@ -61,6 +63,8 @@ pub fn init_all() {
 pub(crate) mod agent_test;
 #[cfg(test)]
 pub(crate) mod artifact_test;
+#[cfg(test)]
+pub(crate) mod attachment_test;
 #[cfg(test)]
 pub(crate) mod brain_test;
 #[cfg(test)]

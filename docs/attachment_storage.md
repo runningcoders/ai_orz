@@ -8,6 +8,32 @@
 
 ## 核心设计决策
 
+### 0. Attachment 作为 Finance Domain 的用户资产
+
+通用文件上传能力不归属于 Message / Skill / Project 中的任一业务域，而是作为**用户资产（Attachment Asset）**归入 `finance` Domain 管理：
+
+- 上传文件是可被多个业务域复用的通用资源；
+- 后续可服务于 Skill 附件、Message 附件、Project Artifact、Tool 大结果附件、头像/配置文件等场景；
+- Handler 必须遵循统一分层：`handler → finance domain → attachment dal → attachment dao`；
+- Handler 不直接写文件，不直接调用 DAL/DAO；
+- 业务接口不直接接收 multipart 文件流，而是引用已上传的 `attachment_id`。
+
+通用上传链路：
+
+```text
+POST /api/v1/finance/attachments/upload
+    ↓ multipart/form-data
+Finance Attachment Handler
+    ↓ UploadAttachmentCommand
+Finance Domain
+    ↓
+AttachmentDal
+    ↓
+AttachmentDao(SQLite 元数据 + 文件系统落盘)
+    ↓
+AttachmentDetail / attachment_id
+```
+
 ### 1. 元数据复用统一结构
 
 产物和消息附件共用：
@@ -32,6 +58,57 @@
 ```
 
 ### 3. 数据库表设计
+
+#### attachments 表（通用上传文件资产表）
+
+`attachments` 表记录用户上传文件的资产元数据。物理文件存放在统一 attachments 目录下，业务域通过 `attachment_id` 引用上传结果，再根据自身语义导入或绑定。
+
+```sql
+CREATE TABLE IF NOT EXISTS attachments (
+    id TEXT NOT NULL PRIMARY KEY,
+    original_name TEXT NOT NULL,
+    stored_name TEXT NOT NULL,
+    relative_path TEXT NOT NULL,
+    mime_type TEXT NOT NULL DEFAULT '',
+    file_type INTEGER NOT NULL,
+    size INTEGER NOT NULL DEFAULT 0,
+    purpose TEXT NOT NULL DEFAULT '',
+    status INTEGER NOT NULL DEFAULT 1,
+    root_user_id TEXT NOT NULL,
+    created_by TEXT NOT NULL DEFAULT '',
+    modified_by TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS idx_attachments_root_user_id ON attachments(root_user_id);
+CREATE INDEX IF NOT EXISTS idx_attachments_purpose ON attachments(purpose);
+CREATE INDEX IF NOT EXISTS idx_attachments_status ON attachments(status);
+```
+
+字段说明：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | TEXT | 上传文件资产 ID，后续业务接口通过该 ID 引用文件 |
+| original_name | TEXT | 用户上传时的原始文件名，仅作为展示元数据，不参与物理路径拼接 |
+| stored_name | TEXT | 系统生成的存储文件名，通常为 `{id}{extension}` |
+| relative_path | TEXT | 相对 attachments 根目录的路径，如 `20260617/{id}.md` |
+| mime_type | TEXT | MIME 类型，可来自 multipart header 与扩展名推断 |
+| file_type | INTEGER | 文件类型（FileType 枚举）|
+| size | INTEGER | 文件大小，单位 bytes |
+| purpose | TEXT | 可选用途标记，如 `skill` / `message` / `artifact` / `tool_result` |
+| status | INTEGER | 状态：0=已删除，1=正常 |
+| root_user_id | TEXT | 文件资产所属根用户，用于权限隔离 |
+| created_by | TEXT | 上传人 |
+| modified_by | TEXT | 最后修改人 |
+| created_at | INTEGER | 创建时间戳（毫秒）|
+| updated_at | INTEGER | 更新时间戳（毫秒）|
+
+权限设计：
+- 通用 Attachment 是用户资产，必须保存 `root_user_id`；
+- 查询、导入、删除时都必须校验当前 `RequestContext` 与资产归属；
+- `relative_path` 只作为系统内部路径片段，不允许外部直接提交任意路径进行业务绑定。
 
 #### artifacts 表（产物表）
 
@@ -93,17 +170,32 @@ modified_by TEXT NOT NULL DEFAULT '',
 ```
 common/
 ├── src/
+│   ├── api/
+│   │   └── attachment.rs    # Attachment 上传/查询 API DTO
 │   ├── enums/
 │   │   └── file.rs          # FileType 枚举
 │   └── config.rs            # 路径生成方法：generate_date_relative_path
 
 src/
 ├── models/
+│   ├── attachment.rs        # AttachmentPo / Attachment / AttachmentQuery
 │   ├── file.rs              # FileMeta 公共结构体
 │   ├── artifact.rs          # ArtifactPo 持久化对象
 │   └── message.rs           # 更新 MessagePo 适配新字段
+├── handlers/
+│   └── finance/
+│       └── attachment/      # upload/get/list/delete 等用户资产管理面 Handler
 └── service/
+    ├── dal/
+    │   └── attachment.rs    # AttachmentDal：上传编排、元数据+文件组合
+    ├── domain/
+    │   └── finance/
+    │       └── attachment.rs # Finance Attachment 用户资产管理能力
     └── dao/
+        ├── attachment/
+        │   ├── mod.rs       # AttachmentDao trait 定义
+        │   ├── sqlite.rs    # SQLite 元数据 + 文件落盘基础实现
+        │   └── sqlite_test.rs
         ├── artifact/
         │   ├── mod.rs       # ArtifactDaoTrait 定义
         │   ├── sqlite.rs    # Sqlite 实现
@@ -114,6 +206,61 @@ src/
 ```
 
 ## DAO 接口设计
+
+### AttachmentDao
+
+`AttachmentDao` 保持单一职责：负责 `AttachmentPo` 持久化和给定路径的文件系统基础读写，不承载业务归属、用途解释、跨领域导入等规则。
+
+```rust
+#[async_trait::async_trait]
+pub trait AttachmentDao: Send + Sync {
+    async fn insert(&self, ctx: RequestContext, po: &AttachmentPo) -> Result<(), AppError>;
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<AttachmentPo>, AppError>;
+    async fn query(&self, ctx: RequestContext, query: AttachmentQuery) -> Result<Vec<AttachmentPo>, AppError>;
+    async fn update_status(&self, ctx: RequestContext, id: &str, status: i32) -> Result<(), AppError>;
+    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+
+    fn write_file(&self, relative_path: &str, bytes: &[u8]) -> Result<(), AppError>;
+    fn read_file(&self, relative_path: &str) -> Result<Vec<u8>, AppError>;
+    fn file_exists(&self, relative_path: &str) -> bool;
+}
+```
+
+### AttachmentDal
+
+`AttachmentDal` 负责上传编排和实体组装：生成 ID/存储名/相对路径，推断 `FileType`，写入文件，插入元数据，并返回业务实体。
+
+```rust
+#[async_trait::async_trait]
+pub trait AttachmentDal: Send + Sync {
+    async fn create_from_upload(
+        &self,
+        ctx: RequestContext,
+        upload: AttachmentUpload,
+    ) -> Result<Attachment, AppError>;
+
+    async fn get_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Attachment>, AppError>;
+    async fn query(&self, ctx: RequestContext, query: AttachmentQuery) -> Result<Vec<Attachment>, AppError>;
+    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+    fn read_file(&self, attachment: &Attachment) -> Result<Vec<u8>, AppError>;
+}
+```
+
+### Finance Domain
+
+Finance Domain 对外暴露用户资产语义，不暴露 DAO/DAL 细节：
+
+```rust
+#[async_trait::async_trait]
+pub trait AttachmentManage: Send + Sync {
+    async fn create_attachment(&self, ctx: RequestContext, upload: AttachmentUpload) -> Result<Attachment, AppError>;
+    async fn get_attachment(&self, ctx: RequestContext, id: &str) -> Result<Option<Attachment>, AppError>;
+    async fn query_attachments(&self, ctx: RequestContext, query: AttachmentQuery) -> Result<Vec<Attachment>, AppError>;
+    async fn delete_attachment(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+}
+```
+
+### ArtifactDao
 
 ```rust
 #[async_trait::async_trait]
@@ -166,8 +313,87 @@ pub fn generate_date_relative_path(&self, file_id: &str, extension: &str) -> Str
 - 所有默认查询都添加 `AND "status" != 0` 过滤已删除记录
 - 保留数据用于审计，不物理删除
 
+## 通用上传 API 设计
+
+### Batch 2.4：Finance Attachment 管理面 API
+
+第一阶段先落地通用上传与基础查询能力：
+
+```http
+POST   /api/v1/finance/attachments/upload
+GET    /api/v1/finance/attachments/{id}
+GET    /api/v1/finance/attachments
+DELETE /api/v1/finance/attachments/{id}
+```
+
+上传请求：`multipart/form-data`
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| file | binary | 是 | 上传文件内容 |
+| purpose | string | 否 | 用途标记，如 `skill` / `message` / `artifact` |
+
+响应 DTO：
+
+```rust
+pub struct AttachmentDetail {
+    pub id: String,
+    pub original_name: String,
+    pub stored_name: String,
+    pub relative_path: String,
+    pub mime_type: String,
+    pub file_type: FileType,
+    pub size: u64,
+    pub purpose: String,
+    pub root_user_id: String,
+    pub created_by: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+```
+
+安全约束：
+- 物理文件名必须由系统生成，不能直接使用 `original_name`；
+- `relative_path` 必须由系统生成，禁止接受用户提交路径；
+- 所有路径拼接必须防止 `../`、绝对路径、空路径；
+- 单文件大小需设置上限，初期可先使用固定常量，后续如有必要再配置化；
+- MIME 类型不可完全信任客户端，第一阶段可结合 multipart header 与扩展名做基础推断；
+- 删除采用软删除，是否物理清理由后续后台清理策略统一处理。
+
+## 与 Skill 文件更新的衔接
+
+### Batch 2.5：Skill 文件引用导入
+
+通用 Attachment 能力稳定后，Skill 更新接口不直接接收 multipart，而是接收已上传附件引用：
+
+```rust
+pub struct SkillFileInput {
+    pub attachment_id: String,
+    pub target_path: String,
+}
+```
+
+推荐链路：
+
+```text
+1. POST /api/v1/finance/attachments/upload
+   → 返回 attachment_id
+
+2. PUT /api/v1/hr/skills/{id}
+   body.files = [{ attachment_id, target_path }]
+   → HR Skill Domain 校验并导入到 Skill 内容目录
+```
+
+Skill 导入规则：
+- `attachment_id` 必须属于当前 root_user_id；
+- `target_path` 只能是 Skill 目录内的相对路径，禁止 `../` 和绝对路径；
+- 主文件 `skill.md` 仍由 Skill 的 `content` 字段负责；
+- 附加文件由 `files` 引用导入，导入时复制文件到 Skill 自己的 `content_path` 目录；
+- Skill Handler 不直接读取上传文件，也不直接访问 Attachment DAO。
+
 ## 版本历史
 
 | 日期 | 变更 | 作者 |
 |------|------|------|
 | 2026-04-15 | 初始设计文档，完成数据层开发 | 王挺 |
+| 2026-06-17 | 落地 Finance Attachment 通用上传 API：新增 attachments 表、Attachment DAO/DAL、Finance Domain 管理能力、common DTO、Axum Handler/Router，并规划 Skill 文件引用导入链路 | Hermes |

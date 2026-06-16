@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod artifact;
+pub mod attachment;
 pub mod cortex;
 pub mod event_queue;
 pub mod memory;
@@ -24,6 +25,7 @@ pub mod wechat;
 pub fn init_all() {
     agent::init();
     artifact::init();
+    attachment::init();
     cortex::init();
     event_queue::init_message();
     message::init();

@@ -22,12 +22,14 @@ mod tests {
         crate::service::dao::tool::init();
         crate::service::dao::tool_call::init();
         crate::service::dao::cortex::init();
+        crate::service::dao::attachment::init();
 
         // 初始化 DAL
         crate::service::dal::message_channel::init();
         crate::service::dal::model_provider::init();
         crate::service::dal::tool::init();
         crate::service::dal::brain::init();
+        crate::service::dal::attachment::init();
 
         // 创建 Domain
         let domain = finance::new(
@@ -35,6 +37,7 @@ mod tests {
             crate::service::dal::message_channel::dal(),
             crate::service::dal::tool::dal(),
             crate::service::dal::brain::dal(),
+            crate::service::dal::attachment::dal(),
         );
 
         let ctx = RequestContext::new_simple("test-user-001", pool);

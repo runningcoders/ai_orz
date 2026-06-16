@@ -177,6 +177,22 @@ fn hr_routes() -> Router {
 fn finance_routes() -> Router {
     Router::new()
         .route(
+            "/attachments/upload",
+            post(handlers::finance::attachment::upload_attachment),
+        )
+        .route(
+            "/attachments",
+            get(handlers::finance::attachment::list_attachments),
+        )
+        .route(
+            "/attachments/{id}",
+            get(handlers::finance::attachment::get_attachment),
+        )
+        .route(
+            "/attachments/{id}",
+            delete(handlers::finance::attachment::delete_attachment),
+        )
+        .route(
             "/model-providers",
             post(handlers::finance::model_provider::create_model_provider),
         )

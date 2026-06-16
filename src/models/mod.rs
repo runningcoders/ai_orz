@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod artifact;
+pub mod attachment;
 pub mod brain;
 pub mod event;
 pub mod file;

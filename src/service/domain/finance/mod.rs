@@ -5,9 +5,13 @@
 //! - MessageChannel - 消息渠道配置
 //! - ToolProvider - 外部工具提供商配置 + Agent 工具借用（绑定）关系
 
+pub mod attachment;
 pub mod message_channel;
 pub mod model_provider;
 pub mod tool_provider;
+
+#[cfg(test)]
+mod attachment_test;
 
 #[cfg(test)]
 mod model_provider_test;
@@ -19,8 +23,10 @@ mod message_channel_test;
 mod tool_provider_test;
 
 use crate::error::AppError;
+use crate::models::attachment::{Attachment, AttachmentUpload};
 use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
+use crate::service::dal::attachment::AttachmentDal;
 use crate::service::dal::brain::BrainDal;
 use crate::service::dal::message_channel::MessageChannelDal;
 use crate::service::dal::model_provider::ModelProviderDal;
@@ -43,9 +49,15 @@ pub fn new(
     message_channel_dal: Arc<dyn MessageChannelDal>,
     tool_dal: Arc<dyn ToolDal>,
     brain_dal: Arc<dyn BrainDal>,
+    attachment_dal: Arc<dyn AttachmentDal + Send + Sync>,
 ) -> Arc<dyn FinanceDomain> {
-    let domain =
-        FinanceDomainImpl::new(model_provider_dal, message_channel_dal, tool_dal, brain_dal);
+    let domain = FinanceDomainImpl::new(
+        model_provider_dal,
+        message_channel_dal,
+        tool_dal,
+        brain_dal,
+        attachment_dal,
+    );
     Arc::new(domain)
 }
 
@@ -56,6 +68,7 @@ pub fn init() {
         crate::service::dal::message_channel::dal(),
         crate::service::dal::tool::dal(),
         crate::service::dal::brain::dal(),
+        crate::service::dal::attachment::dal(),
     );
     let _ = FINANCE_DOMAIN.set(Arc::new(finance_domain));
 }
@@ -74,6 +87,9 @@ pub trait FinanceDomain: Send + Sync {
 
     /// Tool Provider 管理能力（工具配置 + Agent 借用关系）
     fn tool_provider_manage(&self) -> &dyn ToolProviderManage;
+
+    /// Attachment 管理能力（通用上传文件资产）
+    fn attachment_manage(&self) -> &dyn AttachmentManage;
 }
 
 /// Model Provider 管理 trait
@@ -185,6 +201,36 @@ pub trait MessageChannelManage: Send + Sync {
     ) -> Result<(), AppError>;
 }
 
+/// Attachment 管理 trait
+///
+/// 定义通用上传文件资产相关的业务接口。
+#[async_trait]
+pub trait AttachmentManage: Send + Sync {
+    /// 创建上传文件资产。
+    async fn create_attachment(
+        &self,
+        ctx: RequestContext,
+        upload: AttachmentUpload,
+    ) -> Result<Attachment, AppError>;
+
+    /// 获取上传文件资产。
+    async fn get_attachment(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<Attachment>, AppError>;
+
+    /// 查询上传文件资产。
+    async fn query_attachments(
+        &self,
+        ctx: RequestContext,
+        query: crate::service::dao::attachment::AttachmentQuery,
+    ) -> Result<Vec<Attachment>, AppError>;
+
+    /// 删除上传文件资产。
+    async fn delete_attachment(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+}
+
 /// Tool Provider 管理 trait
 ///
 /// 定义 Tool Provider 相关的业务接口
@@ -282,6 +328,7 @@ pub struct FinanceDomainImpl {
     pub message_channel_dal: Arc<dyn MessageChannelDal>,
     pub tool_dal: Arc<dyn ToolDal>,
     pub brain_dal: Arc<dyn BrainDal>,
+    pub attachment_dal: Arc<dyn AttachmentDal + Send + Sync>,
 }
 
 impl FinanceDomainImpl {
@@ -291,12 +338,14 @@ impl FinanceDomainImpl {
         message_channel_dal: Arc<dyn MessageChannelDal>,
         tool_dal: Arc<dyn ToolDal>,
         brain_dal: Arc<dyn BrainDal>,
+        attachment_dal: Arc<dyn AttachmentDal + Send + Sync>,
     ) -> Self {
         Self {
             model_provider_dal,
             message_channel_dal,
             tool_dal,
             brain_dal,
+            attachment_dal,
         }
     }
 }
@@ -311,6 +360,10 @@ impl FinanceDomain for FinanceDomainImpl {
     }
 
     fn tool_provider_manage(&self) -> &dyn ToolProviderManage {
+        self
+    }
+
+    fn attachment_manage(&self) -> &dyn AttachmentManage {
         self
     }
 }
