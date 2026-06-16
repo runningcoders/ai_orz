@@ -1,6 +1,6 @@
 //! SQLite implementation of Skill DAO
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::error::AppError;
@@ -31,13 +31,22 @@ pub fn init() {
 
 /// 创建新的 Skill DAO 实例
 pub fn new() -> Arc<dyn SkillDao + Send + Sync> {
-    Arc::new(SkillDaoSqliteImpl)
+    Arc::new(SkillDaoSqliteImpl { base_path: None })
+}
+
+/// 创建使用指定 base_path 的 Skill DAO 实例（测试专用）。
+pub fn new_with_base_path(base_path: PathBuf) -> Arc<dyn SkillDao + Send + Sync> {
+    Arc::new(SkillDaoSqliteImpl {
+        base_path: Some(base_path),
+    })
 }
 
 // ==================== 实现 ====================
 
 #[derive(Debug, Clone)]
-struct SkillDaoSqliteImpl;
+struct SkillDaoSqliteImpl {
+    base_path: Option<PathBuf>,
+}
 
 #[async_trait]
 impl SkillDao for SkillDaoSqliteImpl {
@@ -354,28 +363,7 @@ ORDER BY updated_at DESC
         }
 
         let mut files = Vec::new();
-        for entry in std::fs::read_dir(&dir)? {
-            let entry = entry?;
-            let file_type = entry.file_type()?;
-            if file_type.is_file() {
-                let filename = entry.file_name().to_string_lossy().to_string();
-                let metadata = entry.metadata()?;
-                let file_size = metadata.len();
-
-                // 小文件直接读取内容，大文件留空让上层按需读取
-                let content = if file_size <= SMALL_FILE_THRESHOLD {
-                    Some(std::fs::read_to_string(entry.path())?)
-                } else {
-                    None
-                };
-
-                files.push(SkillFile {
-                    filename,
-                    file_size,
-                    content,
-                });
-            }
-        }
+        self.collect_files(&dir, &dir, &mut files, SMALL_FILE_THRESHOLD)?;
 
         // 按文件名排序，让 skill.md 排在前面
         files.sort_by(|a, b| a.filename.cmp(&b.filename));
@@ -392,10 +380,20 @@ ORDER BY updated_at DESC
     }
 
     fn write_file(&self, skill: &SkillPo, filename: &str, content: &str) -> Result<(), AppError> {
-        let dir = self.skill_dir(skill);
-        std::fs::create_dir_all(&dir)?;
+        self.write_file_bytes(skill, filename, content.as_bytes())
+    }
+
+    fn write_file_bytes(
+        &self,
+        skill: &SkillPo,
+        filename: &str,
+        bytes: &[u8],
+    ) -> Result<(), AppError> {
         let path = self.file_path(skill, filename);
-        std::fs::write(path, content)?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, bytes)?;
         Ok(())
     }
 
@@ -413,8 +411,9 @@ ORDER BY updated_at DESC
 impl SkillDaoSqliteImpl {
     /// 获取技能的完整目录路径
     fn skill_dir(&self, skill: &SkillPo) -> PathBuf {
-        crate::config::get()
-            .base_data_path()
+        self.base_path
+            .clone()
+            .unwrap_or_else(|| crate::config::get().base_data_path())
             .join(&skill.content_path)
     }
 
@@ -426,6 +425,51 @@ impl SkillDaoSqliteImpl {
     /// 获取技能中指定文件的完整路径
     fn file_path(&self, skill: &SkillPo, filename: &str) -> PathBuf {
         self.skill_dir(skill).join(filename)
+    }
+
+    fn collect_files(
+        &self,
+        base_dir: &Path,
+        current_dir: &Path,
+        files: &mut Vec<SkillFile>,
+        small_file_threshold: u64,
+    ) -> Result<(), AppError> {
+        for entry in std::fs::read_dir(current_dir)? {
+            let entry = entry?;
+            let file_type = entry.file_type()?;
+            let path = entry.path();
+            if file_type.is_dir() {
+                self.collect_files(base_dir, &path, files, small_file_threshold)?;
+                continue;
+            }
+
+            if !file_type.is_file() {
+                continue;
+            }
+
+            let filename = path
+                .strip_prefix(base_dir)
+                .map_err(|e| AppError::Internal(format!("计算技能文件相对路径失败: {}", e)))?
+                .to_string_lossy()
+                .replace('\\', "/");
+            let metadata = entry.metadata()?;
+            let file_size = metadata.len();
+
+            // 小文件直接读取内容；非 UTF-8 小文件保留为 None，避免列表接口因二进制附件失败。
+            let content = if file_size <= small_file_threshold {
+                std::fs::read_to_string(&path).ok()
+            } else {
+                None
+            };
+
+            files.push(SkillFile {
+                filename,
+                file_size,
+                content,
+            });
+        }
+
+        Ok(())
     }
 
     /// 递归拷贝技能目录（用于 install_to_agent）

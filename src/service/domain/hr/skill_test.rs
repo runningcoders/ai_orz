@@ -1,6 +1,6 @@
 //! HR Domain Skill 管理单元测试
 
-use super::{HrDomain, UpdateSkillParams, domain};
+use super::{HrDomain, SkillFileImport, UpdateSkillParams};
 use crate::models::skill::{Skill, SkillPo};
 use crate::pkg::RequestContext;
 use common::enums::SkillStatus;
@@ -30,7 +30,7 @@ fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn HrDomain>, RequestCont
     // 初始化所有 DAO
     crate::service::dao::agent::init();
     crate::service::dao::tool::init();
-    crate::service::dao::skill::init();
+    crate::service::dao::skill::init_vector();
     crate::service::dao::tool_call::init();
     crate::service::dao::model_provider::init();
     crate::service::dao::cortex::init();
@@ -38,13 +38,19 @@ fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn HrDomain>, RequestCont
     // 初始化所有 DAL
     crate::service::dal::agent::init();
     crate::service::dal::tool::init();
-    crate::service::dal::skill::init();
     crate::service::dal::model_provider::init();
+    let skill_dal = crate::service::dal::skill::new(
+        crate::service::dao::skill::new_skill_dao_with_base_path(base_path),
+        crate::service::dao::skill::vector_dao(),
+        crate::service::dao::cortex::dao(),
+        crate::service::dao::model_provider::dao(),
+    );
 
-    // 初始化 HR Domain
-    super::init();
-
-    let domain = domain();
+    let domain = super::new(
+        crate::service::dal::agent::dal(),
+        crate::service::dal::tool::dal(),
+        skill_dal,
+    );
     let ctx = new_ctx("admin", pool);
     (domain, ctx, temp_dir)
 }
@@ -106,6 +112,7 @@ async fn test_update_skill(pool: SqlitePool) {
         skill: &updated,
         file_writes: Vec::new(),
         file_deletes: Vec::new(),
+        file_imports: Vec::new(),
     };
 
     domain
@@ -268,4 +275,85 @@ async fn test_query_skills(pool: SqlitePool) {
         .await
         .unwrap();
     assert_eq!(skills.len(), 1);
+}
+
+#[sqlx::test]
+async fn test_update_skill_imports_attachment_file_content(pool: SqlitePool) {
+    let (domain, ctx, _temp_dir) = init_test_env(pool.clone());
+
+    let skill = create_test_skill("ImportAttachment");
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), &skill)
+        .await
+        .unwrap();
+
+    let params = UpdateSkillParams {
+        skill: &skill,
+        file_writes: Vec::new(),
+        file_deletes: Vec::new(),
+        file_imports: vec![SkillFileImport {
+            target_path: "references/guide.md".to_string(),
+            bytes: b"# Guide".to_vec(),
+        }],
+    };
+
+    domain
+        .skill_manage()
+        .update_skill(new_ctx("editor", pool), params)
+        .await
+        .unwrap();
+
+    let found = domain
+        .skill_manage()
+        .get_skill(ctx, skill.id())
+        .await
+        .unwrap()
+        .unwrap();
+    let imported = found
+        .files
+        .iter()
+        .find(|file| file.filename == "references/guide.md")
+        .expect("imported file should be listed");
+    assert_eq!(imported.content.as_deref(), Some("# Guide"));
+}
+
+#[sqlx::test]
+async fn test_update_skill_rejects_unsafe_import_target_path(pool: SqlitePool) {
+    let (domain, ctx, _temp_dir) = init_test_env(pool.clone());
+
+    let skill = create_test_skill("UnsafeImport");
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), &skill)
+        .await
+        .unwrap();
+
+    for target_path in [
+        "../escape.md",
+        "/tmp/escape.md",
+        "./guide.md",
+        "skill.md",
+        "Skill.md",
+        "SKILL.md",
+        "references/",
+        "references\\guide.md",
+    ] {
+        let params = UpdateSkillParams {
+            skill: &skill,
+            file_writes: Vec::new(),
+            file_deletes: Vec::new(),
+            file_imports: vec![SkillFileImport {
+                target_path: target_path.to_string(),
+                bytes: b"bad".to_vec(),
+            }],
+        };
+
+        let result = domain
+            .skill_manage()
+            .update_skill(new_ctx("editor", pool.clone()), params)
+            .await;
+
+        assert!(result.is_err(), "{target_path} should be rejected");
+    }
 }

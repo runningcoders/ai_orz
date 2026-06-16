@@ -7,8 +7,10 @@ use axum::{
 use common::api::{ApiResponse, UpdateSkillRequest, UpdateSkillResponse};
 
 use crate::error::AppError;
+use crate::models::attachment::AttachmentGetOptions;
 use crate::pkg::RequestContext;
-use crate::service::domain::hr::{UpdateSkillParams, domain};
+use crate::service::domain::finance::domain as finance_domain;
+use crate::service::domain::hr::{SkillFileImport, UpdateSkillParams, domain};
 
 use super::response::to_detail;
 
@@ -60,6 +62,41 @@ pub async fn update_skill(
         .map(|content| vec![("skill.md", content)])
         .unwrap_or_default();
 
+    let mut file_imports = Vec::new();
+    for file in req.files.unwrap_or_default() {
+        if file.attachment_id.trim().is_empty() {
+            return Err(AppError::BadRequest("附件 ID 不能为空".to_string()));
+        }
+        if file.target_path.trim().is_empty() {
+            return Err(AppError::BadRequest(
+                "Skill 文件目标路径不能为空".to_string(),
+            ));
+        }
+
+        let attachment = finance_domain()
+            .attachment_manage()
+            .get_attachment(
+                ctx.clone(),
+                &file.attachment_id,
+                AttachmentGetOptions {
+                    include_file_content: true,
+                },
+            )
+            .await?
+            .ok_or_else(|| {
+                AppError::BadRequest(format!("附件 {} 不存在或无权访问", file.attachment_id))
+            })?;
+
+        let read_result = attachment.read_results.into_iter().next().ok_or_else(|| {
+            AppError::BadRequest(format!("附件 {} 内容读取失败", file.attachment_id))
+        })?;
+
+        file_imports.push(SkillFileImport {
+            target_path: file.target_path,
+            bytes: read_result.bytes,
+        });
+    }
+
     domain()
         .skill_manage()
         .update_skill(
@@ -68,6 +105,7 @@ pub async fn update_skill(
                 skill: &skill,
                 file_writes,
                 file_deletes: vec![],
+                file_imports,
             },
         )
         .await?;

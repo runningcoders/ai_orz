@@ -6,6 +6,7 @@ use crate::pkg::RequestContext;
 use crate::service::dao::skill::{SkillQuery, SkillSearch};
 use crate::service::domain::hr::{HrDomainImpl, SkillManage, UpdateSkillParams};
 use common::enums::SkillStatus;
+use std::path::{Component, Path};
 
 #[async_trait::async_trait]
 impl SkillManage for HrDomainImpl {
@@ -35,19 +36,33 @@ impl SkillManage for HrDomainImpl {
         ctx: RequestContext,
         params: UpdateSkillParams<'_>,
     ) -> Result<(), AppError> {
-        // 1. 更新元数据
+        // 1. 先校验所有附加文件导入路径，避免后续失败时产生部分文件/元数据更新。
+        for file_import in &params.file_imports {
+            validate_skill_import_target_path(&file_import.target_path)?;
+        }
+
+        // 2. 更新元数据
         self.skill_dal.update(ctx.clone(), params.skill).await?;
 
-        // 2. 处理文件写入
+        // 3. 处理文件写入
         for (filename, content) in params.file_writes {
             self.skill_dal
                 .write_file(&params.skill.po, filename, content)?;
         }
 
-        // 3. 处理文件删除：DAL 层暂时没有删除文件的方法，这里先留空
+        // 4. 处理文件删除：DAL 层暂时没有删除文件的方法，这里先留空
         // 后续可以在 DAO/DAL 层添加
         for _filename in params.file_deletes {
             // TODO: 实现文件删除
+        }
+
+        // 5. 处理附加文件导入。路径安全规则属于 HR Skill Domain，Handler 只负责编排数据来源。
+        for file_import in params.file_imports {
+            self.skill_dal.write_file_bytes(
+                &params.skill.po,
+                &file_import.target_path,
+                &file_import.bytes,
+            )?;
         }
 
         Ok(())
@@ -140,4 +155,62 @@ impl SkillManage for HrDomainImpl {
             .install_to_agent(ctx, source_skill_id, agent_id)
             .await
     }
+}
+
+fn validate_skill_import_target_path(target_path: &str) -> Result<(), AppError> {
+    if target_path.trim().is_empty() {
+        return Err(AppError::BadRequest(
+            "Skill import target_path 不能为空".to_string(),
+        ));
+    }
+
+    let path = Path::new(target_path);
+    if path.is_absolute() {
+        return Err(AppError::BadRequest(
+            "Skill import target_path 不能是绝对路径".to_string(),
+        ));
+    }
+
+    if path.components().next().is_none() {
+        return Err(AppError::BadRequest(
+            "Skill import target_path 不能为空".to_string(),
+        ));
+    }
+
+    if target_path.contains('\\') {
+        return Err(AppError::BadRequest(
+            "Skill import target_path 不能包含反斜杠路径分隔符".to_string(),
+        ));
+    }
+
+    if target_path.ends_with('/') {
+        return Err(AppError::BadRequest(
+            "Skill import target_path 不能指向目录".to_string(),
+        ));
+    }
+
+    let components: Vec<_> = path.components().collect();
+    if components.len() == 1
+        && matches!(components[0], Component::Normal(part) if part.eq_ignore_ascii_case("skill.md"))
+    {
+        return Err(AppError::BadRequest(
+            "Skill import target_path 不能覆盖主内容文件 skill.md".to_string(),
+        ));
+    }
+
+    for component in path.components() {
+        match component {
+            Component::Normal(_) => {}
+            Component::CurDir
+            | Component::ParentDir
+            | Component::RootDir
+            | Component::Prefix(_) => {
+                return Err(AppError::BadRequest(
+                    "Skill import target_path 包含非法路径片段".to_string(),
+                ));
+            }
+        }
+    }
+
+    Ok(())
 }

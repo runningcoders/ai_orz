@@ -23,7 +23,7 @@ mod message_channel_test;
 mod tool_provider_test;
 
 use crate::error::AppError;
-use crate::models::attachment::{Attachment, AttachmentUpload};
+use crate::models::attachment::{Attachment, AttachmentGetOptions, AttachmentUpload};
 use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
 use crate::service::dal::attachment::AttachmentDal;
@@ -218,6 +218,7 @@ pub trait AttachmentManage: Send + Sync {
         &self,
         ctx: RequestContext,
         id: &str,
+        options: AttachmentGetOptions,
     ) -> Result<Option<Attachment>, AppError>;
 
     /// 查询上传文件资产。

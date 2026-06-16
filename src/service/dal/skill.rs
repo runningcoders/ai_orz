@@ -134,6 +134,14 @@ pub trait SkillDal: Send + Sync {
     /// 写入文件内容
     fn write_file(&self, skill: &SkillPo, filename: &str, content: &str) -> Result<(), AppError>;
 
+    /// 写入文件 bytes
+    fn write_file_bytes(
+        &self,
+        skill: &SkillPo,
+        filename: &str,
+        bytes: &[u8],
+    ) -> Result<(), AppError>;
+
     /// 查询技能的向量索引内容哈希（判断是否需要重索引）
     async fn get_vector_content_hash(
         &self,
@@ -544,6 +552,15 @@ impl SkillDal for SkillDalImpl {
 
     fn write_file(&self, skill: &SkillPo, filename: &str, content: &str) -> Result<(), AppError> {
         Ok(self.skill_dao.write_file(skill, filename, content)?)
+    }
+
+    fn write_file_bytes(
+        &self,
+        skill: &SkillPo,
+        filename: &str,
+        bytes: &[u8],
+    ) -> Result<(), AppError> {
+        Ok(self.skill_dao.write_file_bytes(skill, filename, bytes)?)
     }
 
     async fn get_vector_content_hash(

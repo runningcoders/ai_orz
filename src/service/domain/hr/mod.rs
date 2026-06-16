@@ -38,8 +38,16 @@ pub fn domain() -> Arc<dyn HrDomain> {
 
 /// 初始化 HR Domain
 pub fn init() {
-    let hr_domain = HrDomainImpl::new(agent_dal::dal(), tool_dal::dal(), skill_dal::dal());
-    let _ = HR_DOMAIN.set(Arc::new(hr_domain));
+    let _ = HR_DOMAIN.set(new(agent_dal::dal(), tool_dal::dal(), skill_dal::dal()));
+}
+
+/// 创建 HR Domain 实例（测试可注入隔离依赖）。
+pub fn new(
+    agent_dal: Arc<dyn AgentDal>,
+    tool_dal: Arc<dyn ToolDal>,
+    skill_dal: Arc<dyn SkillDal>,
+) -> Arc<dyn HrDomain> {
+    Arc::new(HrDomainImpl::new(agent_dal, tool_dal, skill_dal))
 }
 
 // ==================== 实现 ====================
@@ -138,6 +146,17 @@ pub trait AgentManage: Send + Sync {
     ) -> Result<(), AppError>;
 }
 
+/// Skill 附加文件导入数据。
+///
+/// Handler 负责将 Finance Attachment 转换为该领域输入，避免 HR Domain 泄漏 attachment_id 等 Finance 概念。
+#[derive(Debug, Clone)]
+pub struct SkillFileImport {
+    /// 导入到 Skill 内容目录内的相对目标路径。
+    pub target_path: String,
+    /// 文件 bytes。
+    pub bytes: Vec<u8>,
+}
+
 /// 技能更新复合参数
 #[derive(Debug, Clone)]
 pub struct UpdateSkillParams<'a> {
@@ -147,6 +166,8 @@ pub struct UpdateSkillParams<'a> {
     pub file_writes: Vec<(&'a str, &'a str)>,
     /// 文件删除操作列表（文件名）
     pub file_deletes: Vec<&'a str>,
+    /// 附加文件导入列表（目标路径 -> bytes）
+    pub file_imports: Vec<SkillFileImport>,
 }
 
 /// Skill 管理 trait

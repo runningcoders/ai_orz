@@ -7,6 +7,7 @@ use axum::{
 use common::api::{ApiResponse, EmptyResponse};
 
 use crate::error::AppError;
+use crate::models::attachment::AttachmentGetOptions;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
@@ -23,7 +24,7 @@ pub async fn delete_attachment(
 
     let attachment = domain()
         .attachment_manage()
-        .get_attachment(ctx.clone(), &id)
+        .get_attachment(ctx.clone(), &id, AttachmentGetOptions::default())
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Attachment {} not found", id)))?;
 

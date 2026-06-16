@@ -364,7 +364,15 @@ pub struct AttachmentDetail {
 
 ### Batch 2.5：Skill 文件引用导入
 
-通用 Attachment 能力稳定后，Skill 更新接口不直接接收 multipart，而是接收已上传附件引用：
+通用 Attachment 能力稳定后，Skill 更新接口不直接接收 multipart，而是接收已上传附件引用。跨域编排采用 **方案 B：Handler 层编排 Finance + HR**：
+
+- Skill Handler 负责把用户请求里的 `attachment_id + target_path` 转换为 HR Domain 可处理的导入文件；
+- Finance Domain 负责 Attachment 归属校验、元数据读取、按需装配物理文件读取结果；
+- HR Skill Domain 只负责 Skill 自身业务规则、`target_path` 安全校验、写入 Skill 内容目录；
+- HR Skill Domain 不直接依赖 Finance Domain，也不直接访问 Attachment DAL/DAO；
+- Handler 只调用 Domain，不直接访问 DAO/DAL，不直接拼接或写入文件系统路径。
+
+Skill 更新请求扩展：
 
 ```rust
 pub struct SkillFileInput {
@@ -373,7 +381,33 @@ pub struct SkillFileInput {
 }
 ```
 
-推荐链路：
+Finance Attachment 查询扩展为可选装配文件内容：
+
+```rust
+pub struct AttachmentGetOptions {
+    pub include_file_content: bool,
+}
+
+pub struct AttachmentReadResult {
+    pub relative_path: String,
+    pub bytes: Vec<u8>,
+    pub size: usize,
+}
+
+pub struct Attachment {
+    pub po: AttachmentPo,
+    pub read_results: Vec<AttachmentReadResult>,
+}
+```
+
+约定：
+- `include_file_content = false`：只返回 Attachment metadata，供普通管理面 GET 使用；
+- `include_file_content = true`：Finance Domain 通过 Attachment DAL/DAO 读取物理文件，并把读取结果装配到 `Attachment.read_results`；
+- 当前单附件只产生一个 `AttachmentReadResult`，保留集合结构是为了后续兼容多文件资产或组合附件；
+- HTTP `GET /api/v1/finance/attachments/{id}` 默认不返回 bytes，避免管理面误传大字段；
+- 内部编排场景由 Skill Handler 调用 Finance Domain 并显式要求装配文件内容。
+
+最终链路：
 
 ```text
 1. POST /api/v1/finance/attachments/upload
@@ -381,15 +415,28 @@ pub struct SkillFileInput {
 
 2. PUT /api/v1/hr/skills/{id}
    body.files = [{ attachment_id, target_path }]
-   → HR Skill Domain 校验并导入到 Skill 内容目录
+   → Skill Handler 调 Finance Domain get_attachment(include_file_content = true)
+   → Skill Handler 将 AttachmentReadResult 转换为 SkillFileImport
+   → HR Skill Domain 校验 target_path 并导入到 Skill 内容目录
+```
+
+HR Skill Domain 接收的导入对象不包含 `attachment_id`，避免把 Finance 领域概念泄漏到 HR Domain：
+
+```rust
+pub struct SkillFileImport {
+    pub target_path: String,
+    pub bytes: Vec<u8>,
+}
 ```
 
 Skill 导入规则：
 - `attachment_id` 必须属于当前 root_user_id；
 - `target_path` 只能是 Skill 目录内的相对路径，禁止 `../` 和绝对路径；
+- `target_path` 不能为空，不能指向目录，不能包含反斜杠路径分隔符，不能直接覆盖主文件 `skill.md`（大小写变体也拒绝）；
 - 主文件 `skill.md` 仍由 Skill 的 `content` 字段负责；
 - 附加文件由 `files` 引用导入，导入时复制文件到 Skill 自己的 `content_path` 目录；
-- Skill Handler 不直接读取上传文件，也不直接访问 Attachment DAO。
+- Skill Handler 不直接访问 Attachment DAO/DAL，也不直接访问 Skill DAO/DAL；
+- Skill Handler 允许做跨 Domain 编排，但不能承载路径安全规则，路径安全仍由 HR Skill Domain 统一校验。
 
 ## 版本历史
 

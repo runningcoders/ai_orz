@@ -64,6 +64,17 @@ pub struct UpdateSkillRequest {
     pub status: Option<SkillStatus>,
     /// 主内容文件 skill.md 内容。
     pub content: Option<String>,
+    /// 附加文件导入列表。
+    pub files: Option<Vec<SkillFileInput>>,
+}
+
+/// Skill 附加文件导入输入。
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SkillFileInput {
+    /// 已上传的通用 Attachment ID。
+    pub attachment_id: String,
+    /// 导入到 Skill 内容目录下的目标相对路径。
+    pub target_path: String,
 }
 
 /// Skill 文件摘要。

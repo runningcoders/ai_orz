@@ -102,6 +102,101 @@ POST   /api/v1/hr/agents/{agent_id}/skills/{skill_id}
 - 创建/更新仅支持元数据与主文件 `skill.md` 内容写入；附件级读写、文件删除等复杂副作用后续等 Domain/DAL 语义稳定后再补；
 - 安装到 Agent 复用 `SkillManage::install_to_agent`，创建 Agent 私有 Skill 副本并返回完整详情。
 
+### Batch 2.5：Skill 文件引用导入
+
+Skill 附加文件导入基于 Finance Attachment 通用上传能力，不让 Skill API 直接接收 multipart 文件流。用户先上传 Attachment，再在 Skill 更新请求中引用 `attachment_id + target_path`。
+
+```json
+{
+  "files": [
+    {
+      "attachment_id": "att_xxx",
+      "target_path": "references/demo.md"
+    }
+  ]
+}
+```
+
+#### 架构决策：Handler 层编排 Finance + HR
+
+采用方案 B，避免 HR Skill Domain 直接依赖 Finance Domain：
+
+```text
+PUT /api/v1/hr/skills/{id}
+    ↓
+Skill Handler
+    ├─ Finance Domain get_attachment(include_file_content = true)
+    │   └─ 校验 Attachment 归属当前 root_user_id，并装配文件读取结果
+    ↓
+    HR Skill Domain update/import_files
+        └─ 校验 target_path，并写入 Skill 内容目录
+```
+
+职责边界：
+- Skill Handler：允许跨 Domain 编排，将 `attachment_id` 转换为 HR Domain 可接受的导入文件；不访问 DAO/DAL，不直接读写文件系统；
+- Finance Domain：负责用户资产语义、Attachment 归属校验、文件读取结果装配；
+- HR Skill Domain：不接收 `attachment_id`，只接收已经读取好的 `SkillFileImport`，负责路径安全校验和写入 Skill 内容目录；
+- Skill DAO/DAL：只负责 Skill 元数据、主内容、附加文件的基础文件读写，不感知 Attachment。
+
+#### DTO 设计
+
+`common/src/api/skill.rs` 扩展：
+
+```rust
+pub struct SkillFileInput {
+    pub attachment_id: String,
+    pub target_path: String,
+}
+
+pub struct UpdateSkillRequest {
+    // existing fields...
+    pub files: Option<Vec<SkillFileInput>>,
+}
+```
+
+兼容性约定：
+- `files = None`：保持现有更新行为；
+- `files = Some(vec![])`：不导入附加文件；
+- `files = Some([...])`：由 Handler 编排 Attachment 读取并交给 HR Domain 导入。
+
+#### Domain 入参模型
+
+HR Domain 不暴露 Attachment 概念，接收：
+
+```rust
+pub struct SkillFileImport {
+    pub target_path: String,
+    pub bytes: Vec<u8>,
+}
+```
+
+Finance Domain 的 Attachment get 能力支持按需装配文件内容：
+
+```rust
+pub struct AttachmentGetOptions {
+    pub include_file_content: bool,
+}
+```
+
+`include_file_content = false` 用于普通 Attachment 管理面查询；`true` 用于 Skill Handler 等内部编排场景。
+
+#### 路径安全规则
+
+HR Skill Domain 统一校验 `target_path`：
+
+- 只能是相对路径，拒绝绝对路径；
+- 拒绝空路径、`.` / `..` 路径片段；
+- 拒绝尾随 `/` 的目录目标；
+- 拒绝反斜杠路径分隔符，避免跨平台路径语义差异；
+- 拒绝直接覆盖主内容文件 `skill.md`，大小写变体（如 `Skill.md` / `SKILL.md`）也会被拒绝。
+
+#### 验收测试
+
+- DTO：旧请求不带 `files` 仍可反序列化；带 `files` 可正常序列化/反序列化；
+- Finance：`get_attachment(include_file_content=false)` 不读取 bytes；`true` 返回 `AttachmentReadResult`；跨 `root_user_id` 不可读取；
+- HR Skill：正常导入 `references/demo.md`；拒绝 `../evil.md`、`/tmp/evil.md`、`./evil.md`、尾随 `/` 的目录目标、反斜杠路径、空路径、直接覆盖主内容路径及其大小写变体；
+- Handler：Skill 更新时可把多个 `attachment_id + target_path` 编排为多个 `SkillFileImport`。
+
 ## 路径存储设计
 
 技能内容文件存储在数据目录下，按技能类型分目录存储：

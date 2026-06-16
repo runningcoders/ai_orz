@@ -118,6 +118,14 @@ pub trait SkillDao: Send + Sync {
     /// 写入指定文件名的内容
     fn write_file(&self, skill: &SkillPo, filename: &str, content: &str) -> Result<(), AppError>;
 
+    /// 写入指定文件名的原始 bytes。
+    fn write_file_bytes(
+        &self,
+        skill: &SkillPo,
+        filename: &str,
+        bytes: &[u8],
+    ) -> Result<(), AppError>;
+
     /// 删除整个技能目录（卸载/删除时调用）
     fn delete_skill_dir(&self, skill: &SkillPo) -> Result<(), AppError>;
 }
@@ -155,7 +163,10 @@ pub trait SkillVectorDao: Send + Sync {
 // ==================== 统一导出 ====================
 
 // 子模块构造函数别名（用于 DAL 层组合）
-pub use sqlite::{dao as base_dao, init as init_base, new as new_skill_dao};
+pub use sqlite::{
+    dao as base_dao, init as init_base, new as new_skill_dao,
+    new_with_base_path as new_skill_dao_with_base_path,
+};
 pub use vector::{dao as vector_dao, init as init_vector, new as new_skill_vector_dao};
 
 /// 统一初始化所有 Skill DAO 单例

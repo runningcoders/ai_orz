@@ -44,6 +44,26 @@ pub struct AttachmentPo {
 pub struct Attachment {
     /// 底层持久化对象。
     pub po: AttachmentPo,
+    /// 按需装配的文件读取结果。
+    pub read_results: Vec<AttachmentReadResult>,
+}
+
+/// Attachment 获取选项。
+#[derive(Debug, Clone, Default)]
+pub struct AttachmentGetOptions {
+    /// 是否读取并返回文件内容。
+    pub include_file_content: bool,
+}
+
+/// Attachment 文件读取结果。
+#[derive(Debug, Clone)]
+pub struct AttachmentReadResult {
+    /// 相对 attachments 根目录的路径。
+    pub relative_path: String,
+    /// 文件 bytes。
+    pub bytes: Vec<u8>,
+    /// 文件大小（bytes）。
+    pub size: usize,
 }
 
 /// 上传文件数据。
@@ -62,7 +82,16 @@ pub struct AttachmentUpload {
 impl Attachment {
     /// 从 PO 创建实体。
     pub fn from_po(po: AttachmentPo) -> Self {
-        Self { po }
+        Self {
+            po,
+            read_results: Vec::new(),
+        }
+    }
+
+    /// 添加文件读取结果。
+    pub fn with_read_result(mut self, read_result: AttachmentReadResult) -> Self {
+        self.read_results.push(read_result);
+        self
     }
 
     /// 获取 ID。

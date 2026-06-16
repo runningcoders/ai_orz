@@ -7,6 +7,7 @@ use axum::{
 use common::api::{ApiResponse, GetAttachmentResponse};
 
 use crate::error::AppError;
+use crate::models::attachment::AttachmentGetOptions;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
@@ -25,7 +26,7 @@ pub async fn get_attachment(
 
     let attachment = domain()
         .attachment_manage()
-        .get_attachment(ctx, &id)
+        .get_attachment(ctx, &id, AttachmentGetOptions::default())
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Attachment {} not found", id)))?;
 

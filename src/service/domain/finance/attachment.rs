@@ -3,7 +3,9 @@
 //! 通用上传文件资产管理，归属 Finance Domain。
 
 use crate::error::AppError;
-use crate::models::attachment::{Attachment, AttachmentUpload};
+use crate::models::attachment::{
+    Attachment, AttachmentGetOptions, AttachmentReadResult, AttachmentUpload,
+};
 use crate::pkg::RequestContext;
 use crate::service::dao::attachment::AttachmentQuery;
 use crate::service::domain::finance::{AttachmentManage, FinanceDomainImpl};
@@ -22,8 +24,27 @@ impl AttachmentManage for FinanceDomainImpl {
         &self,
         ctx: RequestContext,
         id: &str,
+        options: AttachmentGetOptions,
     ) -> Result<Option<Attachment>, AppError> {
-        self.attachment_dal.get_by_id(ctx, id).await
+        let Some(attachment) = self.attachment_dal.get_by_id(ctx.clone(), id).await? else {
+            return Ok(None);
+        };
+
+        if attachment.po.root_user_id != ctx.uid() {
+            return Ok(None);
+        }
+
+        if !options.include_file_content {
+            return Ok(Some(attachment));
+        }
+
+        let bytes = self.attachment_dal.read_file(&attachment)?;
+        let read_result = AttachmentReadResult {
+            relative_path: attachment.po.relative_path.clone(),
+            size: bytes.len(),
+            bytes,
+        };
+        Ok(Some(attachment.with_read_result(read_result)))
     }
 
     async fn query_attachments(

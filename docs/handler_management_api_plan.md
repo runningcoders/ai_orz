@@ -354,12 +354,37 @@ GET    /api/v1/tasks/{task_id}/messages
 
 目标：在 Attachment 能力稳定后，扩展 Skill 更新接口，使 Skill 附加文件通过 `attachment_id + target_path` 引用导入。
 
+架构决策：采用 **方案 B：Handler 层跨 Domain 编排**，避免 HR Skill Domain 直接依赖 Finance Domain。
+
+职责边界：
+- Finance Domain：负责 Attachment 用户资产归属校验、metadata 查询、按需装配文件读取结果；
+- HR Skill Domain：负责 Skill 业务规则、`target_path` 安全校验、导入文件写入 Skill 内容目录；
+- Skill Handler：负责解析用户请求、调用 Finance Domain 获取已装配附件、转换为 HR Domain 的 `SkillFileImport`，再调用 HR Domain 完成更新；
+- Handler 不直接调用 DAO/DAL，不直接读写文件系统，不承载路径安全业务规则。
+
 范围：
 1. 扩展 `common/src/api/skill.rs`，新增 `SkillFileInput { attachment_id, target_path }`，并在更新请求中增加 `files: Option<Vec<SkillFileInput>>`；
-2. HR Skill Domain 校验 attachment 归属和 target path 安全性；
-3. 通过 Attachment 能力读取已上传文件，再复制到 Skill 的 `content_path` 目录；
-4. 保持主文件 `skill.md` 仍由 `content` 字段更新；
-5. 更新 Skill DTO 契约测试、Domain 测试与 `docs/skill_design.md`。
+2. 扩展 Finance `AttachmentManage::get_attachment`，增加 `AttachmentGetOptions { include_file_content }`；默认只返回 metadata，内部编排场景可要求装配 `AttachmentReadResult`；
+3. 扩展 `Attachment` 业务实体，支持 `read_results: Vec<AttachmentReadResult>`，当前单附件只装配一个读取结果，后续可兼容多文件资产；
+4. HR Skill Domain 新增 `SkillFileImport` 入参模型，只接收已读取文件 bytes 和目标路径，不接收 `attachment_id`，避免 Finance 概念泄漏进 HR Domain；
+5. HR Skill Domain 校验 target path 安全性，并将文件写入 Skill 的 `content_path` 目录；
+6. Skill Handler 对 `files` 做跨域编排：逐个调用 Finance get(include_file_content=true)，转换为 `SkillFileImport`，再调用 HR Skill Domain；
+7. 保持主文件 `skill.md` 仍由 `content` 字段更新，附加文件不能绕过该语义直接覆盖主内容；
+8. 更新 Skill DTO 契约测试、Finance Attachment Domain 测试、HR Skill Domain 文件导入测试与 `docs/skill_design.md`。
+
+计划链路：
+
+```text
+PUT /api/v1/hr/skills/{id}
+  body.files = [{ attachment_id, target_path }]
+    ↓
+Skill Handler
+    ├─ Finance Domain get_attachment(include_file_content = true)
+    │   └─ 校验 root_user_id，装配 AttachmentReadResult(bytes)
+    ↓
+    └─ HR Skill Domain update/import_files(SkillFileImport)
+        └─ 校验 target_path，写入 skill.content_path/target_path
+```
 
 验收：用户可先上传文件获取 `attachment_id`，再通过 Skill 更新接口导入附加文件；Skill Handler 不直接接收 multipart，不直接访问 Attachment DAO/DAL。
 
@@ -370,8 +395,8 @@ GET    /api/v1/tasks/{task_id}/messages
 | Batch 2.1 | Project | 已完成 | `common/src/api/project.rs`、`src/handlers/project/project/*`、`src/router.rs`、Project Domain `transition_status`、DTO/Domain 测试、文档更新 | `cargo fmt --all && cargo check && cargo test -p common api::project_test && cargo test --lib service::domain::project::project_test` |
 | Batch 2.2 | Task | 已完成 | `common/src/api/task.rs`、`src/handlers/project/task/*`、`src/router.rs`、Task Domain `create_with_options/list/update_basic/transition_status`、DTO/Domain 测试、文档更新 | `cargo fmt --all && cargo check && cargo test -p common api::task_test && cargo test --lib service::domain::project::project_test` |
 | Batch 2.3 | Skill | 已完成 | `common/src/api/skill.rs`、`src/handlers/hr/skill/*`、`src/router.rs`、DTO/Domain 测试、文档更新 | `cargo fmt --all -- --check && cargo check && cargo test -p common api::skill_test && cargo test --lib service::domain::hr::skill_test` |
-| Batch 2.4 | Finance Attachment | 方案已记录，待实现 | 计划新增 `attachments` migration、`common/src/api/attachment.rs`、`src/models/attachment.rs`、`src/service/dao/attachment/*`、`src/service/dal/attachment.rs`、Finance Domain attachment manage、`src/handlers/finance/attachment/*`、Router 路由、测试与文档 | 计划验证 `cargo fmt --all -- --check && cargo check && cargo test -p common api::attachment_test && cargo test --lib service::dao::attachment::sqlite_test && cargo test --lib service::dal::attachment_test` |
-| Batch 2.5 | Skill 文件引用导入 | 计划中 | 计划扩展 Skill update DTO，支持 `attachment_id + target_path` 导入附加文件 | Attachment 能力稳定后执行 |
+| Batch 2.4 | Finance Attachment | 已完成 | `attachments` migration、`common/src/api/attachment.rs`、`src/models/attachment.rs`、`src/service/dao/attachment/*`、`src/service/dal/attachment.rs`、Finance Domain attachment manage、`src/handlers/finance/attachment/*`、Router 路由、测试与文档 | `cargo fmt --all -- --check && SQLX_OFFLINE=true cargo check && SQLX_OFFLINE=true cargo test` |
+| Batch 2.5 | Skill 文件引用导入 | 已完成 | 扩展 Skill update DTO，Finance get 按需装配文件读取结果，Skill Handler 编排 Finance+HR，HR Domain 导入 `SkillFileImport` | `cargo fmt --all -- --check && SQLX_OFFLINE=true cargo check --bin ai_orz && SQLX_OFFLINE=true cargo test -p common api::skill_test && SQLX_OFFLINE=true cargo test service::domain::finance::attachment_test && SQLX_OFFLINE=true cargo test service::domain::hr::skill_test` |
 
 统一约束：
 - Handler 只调用 Domain，不直接调用 DAL/DAO；

@@ -1,8 +1,8 @@
 //! Skill API DTO contract tests.
 
 use super::{
-    ApiResponse, CreateSkillRequest, InstallSkillToAgentResponse, SkillDetail, SkillFileItem,
-    SkillListItem, SkillSearchQuery, UpdateSkillRequest,
+    ApiResponse, CreateSkillRequest, InstallSkillToAgentResponse, SkillDetail, SkillFileInput,
+    SkillFileItem, SkillListItem, SkillSearchQuery, UpdateSkillRequest,
 };
 use crate::enums::SkillStatus;
 use crate::enums::skill::SkillAuthorType;
@@ -80,6 +80,7 @@ fn update_skill_request_allows_partial_fields() {
         category: None,
         status: Some(SkillStatus::Published),
         content: None,
+        files: None,
     };
 
     let json = serde_json::to_string(&request).unwrap();
@@ -87,6 +88,27 @@ fn update_skill_request_allows_partial_fields() {
     assert_eq!(decoded.name.as_deref(), Some("Renamed"));
     assert_eq!(decoded.tags, Some(vec!["updated".to_string()]));
     assert_eq!(decoded.status, Some(SkillStatus::Published));
+}
+
+#[test]
+fn update_skill_request_accepts_attachment_file_imports() {
+    let request = UpdateSkillRequest {
+        files: Some(vec![SkillFileInput {
+            attachment_id: "attachment-1".to_string(),
+            target_path: "references/guide.md".to_string(),
+        }]),
+        ..Default::default()
+    };
+
+    let json = serde_json::to_string(&request).unwrap();
+    assert!(json.contains("attachment-1"));
+    assert!(json.contains("references/guide.md"));
+
+    let decoded: UpdateSkillRequest = serde_json::from_str(&json).unwrap();
+    let files = decoded.files.expect("files should deserialize");
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].attachment_id, "attachment-1");
+    assert_eq!(files[0].target_path, "references/guide.md");
 }
 
 #[test]
