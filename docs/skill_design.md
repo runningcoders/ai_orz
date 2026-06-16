@@ -81,6 +81,27 @@ CREATE INDEX IF NOT EXISTS idx_skills_root_user_id ON skills(root_user_id);
 - `vector::SqliteVssSkillVectorDao`：向量索引 SQLite VSS 实现
 - `vector_test.rs`：向量索引测试
 
+### 管理面 API
+
+Batch 2.3 已补齐 HR Skill 管理面 API。共享 DTO 位于 `common/src/api/skill.rs`，Handler 位于 `src/handlers/hr/skill/`，每个用户 action 单独文件，且只调用 HR Domain，不直接调用 DAL/DAO。
+
+```http
+POST   /api/v1/hr/skills
+GET    /api/v1/hr/skills
+GET    /api/v1/hr/skills/search
+GET    /api/v1/hr/skills/{id}
+PUT    /api/v1/hr/skills/{id}
+DELETE /api/v1/hr/skills/{id}
+GET    /api/v1/hr/agents/{agent_id}/skills
+POST   /api/v1/hr/agents/{agent_id}/skills/{skill_id}
+```
+
+约束：
+- 列表与搜索返回 `SkillListItem` 摘要，不返回主内容大字段；
+- 详情、创建、更新、安装返回 `SkillDetail`，包含主内容 `content` 和文件摘要；
+- 创建/更新仅支持元数据与主文件 `skill.md` 内容写入；附件级读写、文件删除等复杂副作用后续等 Domain/DAL 语义稳定后再补；
+- 安装到 Agent 复用 `SkillManage::install_to_agent`，创建 Agent 私有 Skill 副本并返回完整详情。
+
 ## 路径存储设计
 
 技能内容文件存储在数据目录下，按技能类型分目录存储：

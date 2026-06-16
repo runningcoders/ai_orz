@@ -158,6 +158,20 @@ fn hr_routes() -> Router {
             put(handlers::hr::agent::update_agent_status),
         )
         .route("/agents/{id}", delete(handlers::hr::agent::delete_agent))
+        .route("/skills", post(handlers::hr::skill::create_skill))
+        .route("/skills", get(handlers::hr::skill::list_skills))
+        .route("/skills/search", get(handlers::hr::skill::search_skills))
+        .route("/skills/{id}", get(handlers::hr::skill::get_skill))
+        .route("/skills/{id}", put(handlers::hr::skill::update_skill))
+        .route("/skills/{id}", delete(handlers::hr::skill::delete_skill))
+        .route(
+            "/agents/{agent_id}/skills",
+            get(handlers::hr::skill::list_agent_skills),
+        )
+        .route(
+            "/agents/{agent_id}/skills/{skill_id}",
+            post(handlers::hr::skill::install_skill_to_agent),
+        )
 }
 
 fn finance_routes() -> Router {

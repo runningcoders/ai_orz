@@ -293,7 +293,7 @@ system_info("服务启动成功");
 | 任务管理 | `/api/v1/tasks`, `/api/v1/projects/{project_id}/tasks`, `/api/v1/agents/{agent_id}/tasks` | Task 创建、详情、按 Project/Agent 列表、基础更新、状态更新 |
 | 消息对话 | `/api/v1/projects/{id}/messages` | 发送消息、接收回复、触发 Agent 执行 |
 | 消息渠道 | `/api/v1/finance/message-channels` | 消息渠道 CRUD、状态更新、连接测试 |
-| 技能库 | `/api/v1/skills` | 技能 CRUD、搜索 |
+| 技能库 | `/api/v1/hr/skills`, `/api/v1/hr/agents/{agent_id}/skills` | Skill CRUD、搜索、Agent 技能列表/安装 |
 | 工具管理 | `/api/v1/finance/tools` | 工具 CRUD、状态更新、Agent 绑定/解绑工具 |
 
 ---

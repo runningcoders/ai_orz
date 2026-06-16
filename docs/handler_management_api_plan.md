@@ -95,7 +95,7 @@ PUT /api/v1/finance/tools/{id}/status
 | P0 | `hr` | Agent Status | transition_status/validate_onboard_readiness | 已补 status | 使用统一 `PUT /api/v1/hr/agents/{id}/status`，状态流转由 HR Domain 校验 |
 | P1 | `project` | Project | create/get/list_by_user/update_basic/start/complete/archive/transition_status | 已补 create/list/get/update/status | Batch 2.1 已落地；状态更新使用 Domain 统一 `transition_status`，Handler 只调用统一 status action |
 | P1 | `project` | Task | create/get/list_by_project/list_by_agent/update_basic/start/complete/cancel/transition_status | 已补 create/list/get/update/status | Batch 2.2 已落地；状态更新使用 Domain 统一 `transition_status`，Handler 只调用统一 status action |
-| P1 | `hr` | Skill | create/get/update/delete/query/list/search/install_to_agent/list_for_agent | 缺失 | 先补元数据、主内容、搜索与安装；路由统一归入 HR 前缀 |
+| P1 | `hr` | Skill | create/get/update/delete/query/list/search/install_to_agent/list_for_agent | 已补 create/list/get/update/delete/search/install/list_agent_skills | Batch 2.3 已落地；先补元数据、主内容、搜索与安装；路由统一归入 HR 前缀 |
 | P2 | `project` | Artifact | create_project_artifact/create_task_artifact/get/list/delete | 缺失 | 受上传/附件存储机制影响，放后 |
 | P2 | `message` | MessageManagement | query/list_by_task/list_by_project/get/update_status/delete/cleanup | 缺失 | 只补管理查询与状态，不做投递消费 |
 | 暂缓 | `message` | MessageDelivery | send/dequeue/ack/nack/deliver | 不作为 CRUD 补齐 | 运行面能力，跟 Consumer / Runtime 链路单独推进 |
@@ -209,10 +209,11 @@ POST   /api/v1/hr/agents/{agent_id}/skills/{skill_id}
 
 说明：
 - Skill 属于 HR Domain，管理面路由统一使用 `/api/v1/hr/...` 前缀，与 Agent 管理面保持一致；
+- 当前已落地以上八个管理面路由（create/list/get/update/delete/search/list_agent_skills/install_to_agent）；
 - 第一阶段只补元数据、主文件内容、搜索和安装到 Agent；
-- `install_to_agent` 已完成 Domain/DAL 分层边界收敛，可通过 Domain/DAL 返回完整 `Skill` 业务实体，因此纳入 Batch 2.3 正式 API；
-- 文件删除、附件级读写等复杂文件副作用等 Domain/DAL 语义稳定后再补；
-- Skill 内容可能较大，列表响应使用摘要 DTO，详情响应再返回完整内容。
+- `install_to_agent` 已完成 Domain/DAL 分层边界收敛，通过 HR Domain 返回完整 `Skill` 业务实体，因此纳入 Batch 2.3 正式 API；
+- `POST/PUT` 支持主内容 `content` 写入，列表与搜索响应使用摘要 DTO，不返回大内容；详情、创建、更新、安装响应返回完整详情 DTO；
+- 文件删除、附件级读写等复杂文件副作用等 Domain/DAL 语义稳定后再补。
 
 ### 3.6 Artifact / MessageManagement（P2）
 
@@ -314,7 +315,7 @@ GET    /api/v1/tasks/{task_id}/messages
 |------|------|------|--------|------|
 | Batch 2.1 | Project | 已完成 | `common/src/api/project.rs`、`src/handlers/project/project/*`、`src/router.rs`、Project Domain `transition_status`、DTO/Domain 测试、文档更新 | `cargo fmt --all && cargo check && cargo test -p common api::project_test && cargo test --lib service::domain::project::project_test` |
 | Batch 2.2 | Task | 已完成 | `common/src/api/task.rs`、`src/handlers/project/task/*`、`src/router.rs`、Task Domain `create_with_options/list/update_basic/transition_status`、DTO/Domain 测试、文档更新 | `cargo fmt --all && cargo check && cargo test -p common api::task_test && cargo test --lib service::domain::project::project_test` |
-| Batch 2.3 | Skill | 未开始 | DTO + Handler + Router + 测试 + 文档 | `cargo fmt --all && cargo check && cargo test` |
+| Batch 2.3 | Skill | 已完成 | `common/src/api/skill.rs`、`src/handlers/hr/skill/*`、`src/router.rs`、DTO/Domain 测试、文档更新 | `cargo fmt --all -- --check && cargo check && cargo test -p common api::skill_test && cargo test --lib service::domain::hr::skill_test` |
 
 统一约束：
 - Handler 只调用 Domain，不直接调用 DAL/DAO；
