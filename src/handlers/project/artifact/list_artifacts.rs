@@ -25,7 +25,7 @@ pub async fn list_artifacts(
     }
 
     let artifacts = project::domain()
-        .artifact()
+        .artifact_manage()
         .list(
             ctx,
             ListArtifactsParams {

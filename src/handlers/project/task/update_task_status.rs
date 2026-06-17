@@ -19,13 +19,13 @@ pub async fn update_task_status(
     Json(req): Json<UpdateTaskStatusRequest>,
 ) -> Result<AxumJson<ApiResponse<UpdateTaskStatusResponse>>, AppError> {
     let mut task = domain()
-        .task()
+        .task_manage()
         .get(ctx.clone(), &id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Task {} not found", id)))?;
 
     domain()
-        .task()
+        .task_manage()
         .transition_status(ctx, &mut task, req.status)
         .await?;
 

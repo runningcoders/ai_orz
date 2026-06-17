@@ -192,7 +192,7 @@ PUT    /api/v1/tasks/{id}/status
 - Batch 2.2 已落地 Task 管理面 API：`POST /api/v1/tasks`、`GET/PUT /api/v1/tasks/{id}`、`GET /api/v1/projects/{project_id}/tasks`、`GET /api/v1/agents/{agent_id}/tasks`、`PUT /api/v1/tasks/{id}/status`；
 - 新增 `common/src/api/project.rs` 与 `common/src/api/task.rs` 作为前后端共享 DTO；Project 列表支持 `root_user_id`、`status`、`limit` query 参数，Task 列表支持 `status`、`limit` query 参数；
 - 不新增 `/start`、`/complete`、`/archive`、`/cancel` 路由；
-- Project 状态更新使用 `ProjectDomain::transition_status(ctx, &mut project, target_status)`，Task 状态更新使用 `TaskDomain::transition_status(ctx, &mut task, target_status)`，由 Domain 根据目标状态校验合法性并持久化；
+- Project 状态更新使用 `ProjectDomain::project_manage().transition_status(ctx, &mut project, target_status)`，Task 状态更新使用 `ProjectDomain::task_manage().transition_status(ctx, &mut task, target_status)`，由 Domain 根据目标状态校验合法性并持久化；
 - Handler 只解析目标状态并调用统一 Domain 方法，不在 Handler 层把目标状态分发到 `start/complete/archive/cancel` 等具体业务方法。
 
 ### 3.5 Skill（P1）
@@ -506,7 +506,7 @@ GET /api/v1/project/artifacts?project_id=proj_xxx&limit=50
 1. 新增 `common/src/api/artifact.rs`，定义 `CreateArtifactRequest`、`ArtifactSourceType`、`ArtifactDetail`、`ArtifactListQuery`、`ArtifactListItem`、`ListArtifactsResponse`、`GetArtifactResponse`、`DeleteArtifactResponse` 等 DTO，并在 `common/src/api/mod.rs` 导出；
 2. 新增 `common/src/api/artifact_test.rs`，覆盖 DTO JSON 契约：项目级/任务级、`attachment` 来源、`generated_content` 预留请求形态；
 3. 扩展 `src/models/artifact.rs` / artifacts 表，补 `source_type` 字段（整数枚举：1=`attachment`，2=`generated_content`，3=`remote_url`），避免只靠 `file_meta.file_path` 前缀反推来源；
-4. 扩展 `src/service/domain/project/artifact.rs`，提供面向 Handler 的统一创建入口，例如 `create_artifact(ctx, CreateArtifactParams)`；`ArtifactDomain` 需要持有 `ProjectDal` / `TaskDal` / `ArtifactDal`，在 Domain 内部校验 `project_id` 存在、`task_id` 归属一致，并按 `source_type` 组装 Artifact；
+4. 扩展 `src/service/domain/project/artifact.rs`，在 Project Domain 的 `artifact_manage()` 子能力下提供面向 Handler 的统一创建入口，例如 `create_attachment_artifact(...)` / `list(ctx, ListArtifactsParams)`；`ProjectDomainImpl` 组合 `ProjectDal` / `TaskDal` / `ArtifactDal`，在 Domain 内部校验 `project_id` 存在、`task_id` 归属一致，并按 `source_type` 组装 Artifact；
 5. Artifact 文件存储能力暂不纳入 Batch 3.1；后续落地 `generated_content` 时，位置建议在 Artifact DAL 或其下沉的文件存储辅助模块中，负责把内容写入 `artifacts/projects/{project_id}/{artifact_id}/{file_name}`，并返回 `FileMeta`；DAO 仍只负责 artifacts 表持久化；
 6. 如现有 Artifact Domain 只能按 project/task 分别查询，补统一 `list_artifacts(ctx, ArtifactListParams)`，转成 DAL/DAO `ArtifactQuery`；`ArtifactQuery` 需补 `file_type: Option<FileType>` 与 `source_type: Option<ArtifactSourceType>` 以匹配管理面查询参数；
 7. 新增 `src/handlers/project/artifact/`，每个用户 action 单独文件：`create_artifact.rs`、`list_artifacts.rs`、`get_artifact.rs`、`delete_artifact.rs`、`response.rs`、`mod.rs`；

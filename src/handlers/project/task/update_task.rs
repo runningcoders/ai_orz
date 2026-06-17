@@ -19,7 +19,7 @@ pub async fn update_task(
     Json(req): Json<UpdateTaskRequest>,
 ) -> Result<AxumJson<ApiResponse<UpdateTaskResponse>>, AppError> {
     let task = domain()
-        .task()
+        .task_manage()
         .update_basic(
             ctx,
             &id,

@@ -17,12 +17,12 @@ pub async fn delete_artifact(
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<()>>, AppError> {
     project::domain()
-        .artifact()
+        .artifact_manage()
         .get(ctx.clone(), &id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Artifact {} not found", id)))?;
 
-    project::domain().artifact().delete(ctx, &id).await?;
+    project::domain().artifact_manage().delete(ctx, &id).await?;
 
     Ok(Json(ApiResponse::<()>::ok()))
 }

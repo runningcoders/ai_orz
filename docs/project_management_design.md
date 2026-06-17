@@ -96,7 +96,7 @@ Artifact 虽然属于 Project Domain，但采用独立资源集合 API，而不�
 - `ArtifactDetail` / `GetArtifactResponse`
 - 删除接口返回通用 `ApiResponse<()>`
 
-状态更新统一使用 `/status` action，不新增 `/start`、`/complete`、`/archive`、`/cancel` 等目标状态路由；合法性与流转副作用由 `ProjectDomain::transition_status(ctx, &mut project, target_status)` / `TaskDomain::transition_status(ctx, &mut task, target_status)` 承担。Artifact 当前只规划 active/deleted 软删除语义，Batch 3.1 不单独引入状态流转路由。
+状态更新统一使用 `/status` action，不新增 `/start`、`/complete`、`/archive`、`/cancel` 等目标状态路由；合法性与流转副作用由 `ProjectDomain::project_manage().transition_status(ctx, &mut project, target_status)` / `ProjectDomain::task_manage().transition_status(ctx, &mut task, target_status)` 承担。Artifact 当前只规划 active/deleted 软删除语义，Batch 3.1 不单独引入状态流转路由。
 
 ### 实体持有关系
 

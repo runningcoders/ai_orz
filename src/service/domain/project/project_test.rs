@@ -1,10 +1,7 @@
 //! Project Domain 单元测试
 
-use super::{ProjectDomainImpl, ProjectDomainProvider};
-use crate::models::artifact::Artifact;
+use super::ProjectDomain;
 use crate::models::file::FileMeta;
-use crate::models::project::Project;
-use crate::models::task::Task;
 use crate::pkg::RequestContext;
 use common::enums::project::ProjectStatus;
 use common::enums::task::TaskStatus;
@@ -17,7 +14,7 @@ fn new_ctx(user_id: &str, pool: sqlx::SqlitePool) -> RequestContext {
     RequestContext::new_simple(user_id, pool)
 }
 
-fn init_test_env(pool: SqlitePool) -> (Arc<dyn ProjectDomainProvider>, RequestContext) {
+fn init_test_env(pool: SqlitePool) -> (Arc<dyn ProjectDomain>, RequestContext) {
     crate::service::dao::project::init();
     crate::service::dao::task::init();
     crate::service::dao::artifact::init();
@@ -41,7 +38,7 @@ async fn test_project_create_and_get(pool: SqlitePool) {
     let root_user_id = Uuid::now_v7().to_string();
 
     let project = domain
-        .project()
+        .project_manage()
         .create(
             ctx.clone(),
             "Test Project".to_string(),
@@ -61,7 +58,7 @@ async fn test_project_create_and_get(pool: SqlitePool) {
     assert_eq!(project.po.status, ProjectStatus::Active);
 
     let found = domain
-        .project()
+        .project_manage()
         .get(ctx.clone(), &project.po.id)
         .await
         .unwrap()
@@ -78,7 +75,7 @@ async fn test_project_list_by_user(pool: SqlitePool) {
 
     for i in 0..3 {
         domain
-            .project()
+            .project_manage()
             .create(
                 ctx.clone(),
                 format!("Project {}", i),
@@ -93,7 +90,7 @@ async fn test_project_list_by_user(pool: SqlitePool) {
     }
 
     let projects = domain
-        .project()
+        .project_manage()
         .list_by_user(ctx.clone(), &root_user_id)
         .await
         .unwrap();
@@ -107,7 +104,7 @@ async fn test_project_transition_status_updates_entity(pool: SqlitePool) {
     let root_user_id = Uuid::now_v7().to_string();
 
     let mut project = domain
-        .project()
+        .project_manage()
         .create(
             ctx.clone(),
             "Status Project".to_string(),
@@ -121,7 +118,7 @@ async fn test_project_transition_status_updates_entity(pool: SqlitePool) {
         .unwrap();
 
     domain
-        .project()
+        .project_manage()
         .transition_status(ctx.clone(), &mut project, ProjectStatus::InProgress)
         .await
         .unwrap();
@@ -129,7 +126,7 @@ async fn test_project_transition_status_updates_entity(pool: SqlitePool) {
     assert!(project.po.start_at.is_some());
 
     domain
-        .project()
+        .project_manage()
         .transition_status(ctx.clone(), &mut project, ProjectStatus::Completed)
         .await
         .unwrap();
@@ -137,7 +134,7 @@ async fn test_project_transition_status_updates_entity(pool: SqlitePool) {
     assert!(project.po.end_at.is_some());
 
     let found = domain
-        .project()
+        .project_manage()
         .get(ctx.clone(), &project.po.id)
         .await
         .unwrap()
@@ -151,7 +148,7 @@ async fn test_project_transition_status_rejects_deleted(pool: SqlitePool) {
     let root_user_id = Uuid::now_v7().to_string();
 
     let mut project = domain
-        .project()
+        .project_manage()
         .create(
             ctx.clone(),
             "Delete Status Project".to_string(),
@@ -165,7 +162,7 @@ async fn test_project_transition_status_rejects_deleted(pool: SqlitePool) {
         .unwrap();
 
     let result = domain
-        .project()
+        .project_manage()
         .transition_status(ctx.clone(), &mut project, ProjectStatus::Deleted)
         .await;
 
@@ -180,7 +177,7 @@ async fn test_task_transition_status_updates_entity(pool: SqlitePool) {
     let assignee_id = Uuid::now_v7().to_string();
 
     let mut task = domain
-        .task()
+        .task_manage()
         .create(
             ctx.clone(),
             "Status Task".to_string(),
@@ -197,7 +194,7 @@ async fn test_task_transition_status_updates_entity(pool: SqlitePool) {
         .unwrap();
 
     domain
-        .task()
+        .task_manage()
         .transition_status(ctx.clone(), &mut task, TaskStatus::InProgress)
         .await
         .unwrap();
@@ -205,7 +202,7 @@ async fn test_task_transition_status_updates_entity(pool: SqlitePool) {
     assert!(task.po.start_at.is_some());
 
     domain
-        .task()
+        .task_manage()
         .transition_status(ctx.clone(), &mut task, TaskStatus::Completed)
         .await
         .unwrap();
@@ -213,7 +210,7 @@ async fn test_task_transition_status_updates_entity(pool: SqlitePool) {
     assert!(task.po.end_at.is_some());
 
     let found = domain
-        .task()
+        .task_manage()
         .get(ctx.clone(), &task.po.id)
         .await
         .unwrap()
@@ -229,7 +226,7 @@ async fn test_task_transition_status_rejects_cancelled(pool: SqlitePool) {
     let assignee_id = Uuid::now_v7().to_string();
 
     let mut task = domain
-        .task()
+        .task_manage()
         .create(
             ctx.clone(),
             "Cancel Status Task".to_string(),
@@ -246,7 +243,7 @@ async fn test_task_transition_status_rejects_cancelled(pool: SqlitePool) {
         .unwrap();
 
     let result = domain
-        .task()
+        .task_manage()
         .transition_status(ctx.clone(), &mut task, TaskStatus::Cancelled)
         .await;
 
@@ -259,7 +256,7 @@ async fn test_project_start_complete_archive(pool: SqlitePool) {
     let root_user_id = Uuid::now_v7().to_string();
 
     let project = domain
-        .project()
+        .project_manage()
         .create(
             ctx.clone(),
             "Test Project".to_string(),
@@ -275,12 +272,12 @@ async fn test_project_start_complete_archive(pool: SqlitePool) {
     let project_id = &project.po.id;
 
     domain
-        .project()
+        .project_manage()
         .start(ctx.clone(), project_id, "admin".to_string())
         .await
         .unwrap();
     let started = domain
-        .project()
+        .project_manage()
         .get(ctx.clone(), project_id)
         .await
         .unwrap()
@@ -288,12 +285,12 @@ async fn test_project_start_complete_archive(pool: SqlitePool) {
     assert_eq!(started.po.status, ProjectStatus::InProgress);
 
     domain
-        .project()
+        .project_manage()
         .complete(ctx.clone(), project_id, "admin".to_string())
         .await
         .unwrap();
     let completed = domain
-        .project()
+        .project_manage()
         .get(ctx.clone(), project_id)
         .await
         .unwrap()
@@ -301,12 +298,12 @@ async fn test_project_start_complete_archive(pool: SqlitePool) {
     assert_eq!(completed.po.status, ProjectStatus::Completed);
 
     domain
-        .project()
+        .project_manage()
         .archive(ctx.clone(), project_id, "admin".to_string())
         .await
         .unwrap();
     let archived = domain
-        .project()
+        .project_manage()
         .get(ctx.clone(), project_id)
         .await
         .unwrap()
@@ -314,7 +311,7 @@ async fn test_project_start_complete_archive(pool: SqlitePool) {
     assert_eq!(archived.po.status, ProjectStatus::Archived);
 }
 
-// ==================== TaskDomain 测试 ====================
+// ==================== TaskManage 测试 ====================
 
 #[sqlx::test]
 async fn test_task_create_and_get(pool: SqlitePool) {
@@ -324,7 +321,7 @@ async fn test_task_create_and_get(pool: SqlitePool) {
     let assignee_id = Uuid::now_v7().to_string();
 
     let task = domain
-        .task()
+        .task_manage()
         .create(
             ctx.clone(),
             "Test Task".to_string(),
@@ -346,7 +343,7 @@ async fn test_task_create_and_get(pool: SqlitePool) {
     assert_eq!(task.po.status, TaskStatus::Pending);
 
     let found = domain
-        .task()
+        .task_manage()
         .get(ctx.clone(), &task.po.id)
         .await
         .unwrap()
@@ -365,7 +362,7 @@ async fn test_task_list_by_project_and_agent(pool: SqlitePool) {
 
     for i in 0..3 {
         domain
-            .task()
+            .task_manage()
             .create(
                 ctx.clone(),
                 format!("Task {}", i),
@@ -383,14 +380,14 @@ async fn test_task_list_by_project_and_agent(pool: SqlitePool) {
     }
 
     let tasks_by_project = domain
-        .task()
+        .task_manage()
         .list_by_project(ctx.clone(), &project_id)
         .await
         .unwrap();
     assert_eq!(tasks_by_project.len(), 3);
 
     let tasks_by_agent = domain
-        .task()
+        .task_manage()
         .list_by_agent(ctx.clone(), &agent_id)
         .await
         .unwrap();
@@ -405,7 +402,7 @@ async fn test_task_start_complete_cancel(pool: SqlitePool) {
     let assignee_id = Uuid::now_v7().to_string();
 
     let task = domain
-        .task()
+        .task_manage()
         .create(
             ctx.clone(),
             "Test Task".to_string(),
@@ -424,12 +421,12 @@ async fn test_task_start_complete_cancel(pool: SqlitePool) {
     let task_id = &task.po.id;
 
     domain
-        .task()
+        .task_manage()
         .start(ctx.clone(), task_id, "admin".to_string())
         .await
         .unwrap();
     let started = domain
-        .task()
+        .task_manage()
         .get(ctx.clone(), task_id)
         .await
         .unwrap()
@@ -437,12 +434,12 @@ async fn test_task_start_complete_cancel(pool: SqlitePool) {
     assert_eq!(started.po.status, TaskStatus::InProgress);
 
     domain
-        .task()
+        .task_manage()
         .complete(ctx.clone(), task_id, "admin".to_string())
         .await
         .unwrap();
     let completed = domain
-        .task()
+        .task_manage()
         .get(ctx.clone(), task_id)
         .await
         .unwrap()
@@ -450,7 +447,7 @@ async fn test_task_start_complete_cancel(pool: SqlitePool) {
     assert_eq!(completed.po.status, TaskStatus::Completed);
 
     let task2 = domain
-        .task()
+        .task_manage()
         .create(
             ctx.clone(),
             "Task to cancel".to_string(),
@@ -467,26 +464,30 @@ async fn test_task_start_complete_cancel(pool: SqlitePool) {
         .unwrap();
 
     domain
-        .task()
+        .task_manage()
         .cancel(ctx.clone(), &task2.po.id, "admin".to_string())
         .await
         .unwrap();
 
     // Cancelled 状态被当作软删除，find_by_id 查不到（设计如此）
-    let canceled = domain.task().get(ctx.clone(), &task2.po.id).await.unwrap();
+    let canceled = domain
+        .task_manage()
+        .get(ctx.clone(), &task2.po.id)
+        .await
+        .unwrap();
     assert!(
         canceled.is_none(),
         "Cancelled task should not be found (soft delete)"
     );
 }
 
-// ==================== ArtifactDomain 测试 ====================
+// ==================== ArtifactManage 测试 ====================
 
 #[sqlx::test]
 async fn test_artifact_create_project_artifact_and_get(pool: SqlitePool) {
     let (domain, ctx) = init_test_env(pool);
     let project = domain
-        .project()
+        .project_manage()
         .create(
             ctx.clone(),
             "Artifact Project".to_string(),
@@ -507,7 +508,7 @@ async fn test_artifact_create_project_artifact_and_get(pool: SqlitePool) {
     };
 
     let artifact = domain
-        .artifact()
+        .artifact_manage()
         .create_project_artifact(
             ctx.clone(),
             project_id.clone(),
@@ -525,7 +526,7 @@ async fn test_artifact_create_project_artifact_and_get(pool: SqlitePool) {
     assert!(artifact.po.task_id.is_none());
 
     let found = domain
-        .artifact()
+        .artifact_manage()
         .get(ctx.clone(), &artifact.po.id)
         .await
         .unwrap()
@@ -540,7 +541,7 @@ async fn test_artifact_create_task_artifact_and_list(pool: SqlitePool) {
     let (domain, ctx) = init_test_env(pool);
     let assignee_id = Uuid::now_v7().to_string();
     let project = domain
-        .project()
+        .project_manage()
         .create(
             ctx.clone(),
             "Artifact Task Project".to_string(),
@@ -555,7 +556,7 @@ async fn test_artifact_create_task_artifact_and_list(pool: SqlitePool) {
     let project_id = project.po.id.clone();
 
     let task = domain
-        .task()
+        .task_manage()
         .create(
             ctx.clone(),
             "Artifact Task".to_string(),
@@ -579,7 +580,7 @@ async fn test_artifact_create_task_artifact_and_list(pool: SqlitePool) {
     };
 
     let artifact = domain
-        .artifact()
+        .artifact_manage()
         .create_task_artifact(
             ctx.clone(),
             project_id.clone(),
@@ -598,14 +599,14 @@ async fn test_artifact_create_task_artifact_and_list(pool: SqlitePool) {
     assert_eq!(artifact.po.task_id, Some(task_id.clone()));
 
     let artifacts_by_project = domain
-        .artifact()
+        .artifact_manage()
         .list_by_project(ctx.clone(), &project_id)
         .await
         .unwrap();
     assert_eq!(artifacts_by_project.len(), 1);
 
     let artifacts_by_task = domain
-        .artifact()
+        .artifact_manage()
         .list_by_task(ctx.clone(), &task_id)
         .await
         .unwrap();
@@ -619,7 +620,7 @@ async fn test_artifact_create_attachment_artifact_validates_project_and_task(poo
     let assignee_id = Uuid::now_v7().to_string();
 
     let project = domain
-        .project()
+        .project_manage()
         .create(
             ctx.clone(),
             "Artifact Project".to_string(),
@@ -633,7 +634,7 @@ async fn test_artifact_create_attachment_artifact_validates_project_and_task(poo
         .unwrap();
 
     let task = domain
-        .task()
+        .task_manage()
         .create(
             ctx.clone(),
             "Artifact Task".to_string(),
@@ -650,7 +651,7 @@ async fn test_artifact_create_attachment_artifact_validates_project_and_task(poo
         .unwrap();
 
     let artifact = domain
-        .artifact()
+        .artifact_manage()
         .create_attachment_artifact(
             ctx.clone(),
             project.po.id.clone(),
@@ -688,7 +689,7 @@ async fn test_artifact_list_filters_by_project_file_type_source_type_and_limit(p
     let root_user_id = "admin".to_string();
 
     let project = domain
-        .project()
+        .project_manage()
         .create(
             ctx.clone(),
             "Artifact List Project".to_string(),
@@ -702,7 +703,7 @@ async fn test_artifact_list_filters_by_project_file_type_source_type_and_limit(p
         .unwrap();
 
     domain
-        .artifact()
+        .artifact_manage()
         .create_attachment_artifact(
             ctx.clone(),
             project.po.id.clone(),
@@ -722,7 +723,7 @@ async fn test_artifact_list_filters_by_project_file_type_source_type_and_limit(p
         .unwrap();
 
     domain
-        .artifact()
+        .artifact_manage()
         .create_attachment_artifact(
             ctx.clone(),
             project.po.id.clone(),
@@ -742,7 +743,7 @@ async fn test_artifact_list_filters_by_project_file_type_source_type_and_limit(p
         .unwrap();
 
     let artifacts = domain
-        .artifact()
+        .artifact_manage()
         .list(
             ctx.clone(),
             super::artifact::ListArtifactsParams {
@@ -770,7 +771,7 @@ async fn test_artifact_create_attachment_artifact_rejects_task_project_mismatch(
     let assignee_id = Uuid::now_v7().to_string();
 
     let target_project = domain
-        .project()
+        .project_manage()
         .create(
             ctx.clone(),
             "Target Project".to_string(),
@@ -784,7 +785,7 @@ async fn test_artifact_create_attachment_artifact_rejects_task_project_mismatch(
         .unwrap();
 
     let other_project = domain
-        .project()
+        .project_manage()
         .create(
             ctx.clone(),
             "Other Project".to_string(),
@@ -798,7 +799,7 @@ async fn test_artifact_create_attachment_artifact_rejects_task_project_mismatch(
         .unwrap();
 
     let task = domain
-        .task()
+        .task_manage()
         .create(
             ctx.clone(),
             "Other Task".to_string(),
@@ -815,7 +816,7 @@ async fn test_artifact_create_attachment_artifact_rejects_task_project_mismatch(
         .unwrap();
 
     let result = domain
-        .artifact()
+        .artifact_manage()
         .create_attachment_artifact(
             ctx,
             target_project.po.id,
@@ -840,7 +841,7 @@ async fn test_artifact_create_attachment_artifact_rejects_task_project_mismatch(
 async fn test_artifact_delete(pool: SqlitePool) {
     let (domain, ctx) = init_test_env(pool);
     let project = domain
-        .project()
+        .project_manage()
         .create(
             ctx.clone(),
             "Artifact Delete Project".to_string(),
@@ -861,7 +862,7 @@ async fn test_artifact_delete(pool: SqlitePool) {
     };
 
     let artifact = domain
-        .artifact()
+        .artifact_manage()
         .create_project_artifact(
             ctx.clone(),
             project_id,
@@ -877,7 +878,7 @@ async fn test_artifact_delete(pool: SqlitePool) {
     let artifact_id = &artifact.po.id;
     assert!(
         domain
-            .artifact()
+            .artifact_manage()
             .get(ctx.clone(), artifact_id)
             .await
             .unwrap()
@@ -885,13 +886,13 @@ async fn test_artifact_delete(pool: SqlitePool) {
     );
 
     domain
-        .artifact()
+        .artifact_manage()
         .delete(ctx.clone(), artifact_id)
         .await
         .unwrap();
 
     let found = domain
-        .artifact()
+        .artifact_manage()
         .get(ctx.clone(), artifact_id)
         .await
         .unwrap();

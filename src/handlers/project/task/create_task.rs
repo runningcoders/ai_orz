@@ -30,7 +30,7 @@ pub async fn create_task(
     }
 
     let task = domain()
-        .task()
+        .task_manage()
         .create_with_options(
             ctx,
             req.title,

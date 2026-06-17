@@ -19,7 +19,7 @@ pub async fn get_artifact(
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<GetArtifactResponse>>, AppError> {
     let artifact = project::domain()
-        .artifact()
+        .artifact_manage()
         .get(ctx, &id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Artifact {} not found", id)))?;

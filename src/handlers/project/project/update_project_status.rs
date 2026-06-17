@@ -19,13 +19,13 @@ pub async fn update_project_status(
     Json(req): Json<UpdateProjectStatusRequest>,
 ) -> Result<AxumJson<ApiResponse<UpdateProjectStatusResponse>>, AppError> {
     let mut project = domain()
-        .project()
+        .project_manage()
         .get(ctx.clone(), &id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Project {} not found", id)))?;
 
     domain()
-        .project()
+        .project_manage()
         .transition_status(ctx, &mut project, req.status)
         .await?;
 

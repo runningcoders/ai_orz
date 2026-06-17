@@ -19,7 +19,7 @@ pub async fn list_project_tasks(
     Query(query): Query<ListTasksQuery>,
 ) -> Result<Json<ApiResponse<Vec<TaskListItem>>>, AppError> {
     let tasks = domain()
-        .task()
+        .task_manage()
         .list(
             ctx,
             Some(&project_id),

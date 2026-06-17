@@ -8,7 +8,8 @@ use crate::models::file::FileMeta;
 use crate::pkg::RequestContext;
 use crate::service::dal::artifact::ArtifactQuery;
 use common::enums::{ArtifactSourceType, FileType};
-use std::sync::Arc;
+
+use super::ProjectDomainImpl;
 
 /// Artifact 列表查询参数。
 #[derive(Debug, Clone)]
@@ -20,31 +21,11 @@ pub struct ListArtifactsParams {
     pub limit: Option<usize>,
 }
 
-/// Artifact 业务领域
-#[derive(Clone)]
-pub struct ArtifactDomain {
-    project_dal: Arc<dyn crate::service::dal::project::ProjectDal + Send + Sync>,
-    task_dal: Arc<dyn crate::service::dal::task::TaskDal + Send + Sync>,
-    dal: Arc<dyn crate::service::dal::artifact::ArtifactDal + Send + Sync>,
-}
-
-impl ArtifactDomain {
-    /// 创建 ArtifactDomain 实例
-    pub fn new(
-        project_dal: Arc<dyn crate::service::dal::project::ProjectDal + Send + Sync>,
-        task_dal: Arc<dyn crate::service::dal::task::TaskDal + Send + Sync>,
-        dal: Arc<dyn crate::service::dal::artifact::ArtifactDal + Send + Sync>,
-    ) -> Self {
-        Self {
-            project_dal,
-            task_dal,
-            dal,
-        }
-    }
-
+#[async_trait::async_trait]
+impl super::ArtifactManage for ProjectDomainImpl {
     /// 创建 Attachment 引用型产物。
     #[allow(clippy::too_many_arguments)]
-    pub async fn create_attachment_artifact(
+    async fn create_attachment_artifact(
         &self,
         ctx: RequestContext,
         project_id: String,
@@ -82,12 +63,12 @@ impl ArtifactDomain {
             )
         };
         artifact.po.set_tags(tags, created_by);
-        self.dal.create(ctx, &artifact).await?;
+        self.artifact_dal.create(ctx, &artifact).await?;
         Ok(artifact)
     }
 
     /// 创建项目级产物
-    pub async fn create_project_artifact(
+    async fn create_project_artifact(
         &self,
         ctx: RequestContext,
         project_id: String,
@@ -107,12 +88,12 @@ impl ArtifactDomain {
             file_meta,
             created_by,
         );
-        self.dal.create(ctx.clone(), &artifact).await?;
+        self.artifact_dal.create(ctx.clone(), &artifact).await?;
         Ok(artifact)
     }
 
     /// 创建任务级产物
-    pub async fn create_task_artifact(
+    async fn create_task_artifact(
         &self,
         ctx: RequestContext,
         project_id: String,
@@ -134,13 +115,13 @@ impl ArtifactDomain {
             file_meta,
             created_by,
         );
-        self.dal.create(ctx.clone(), &artifact).await?;
+        self.artifact_dal.create(ctx.clone(), &artifact).await?;
         Ok(artifact)
     }
 
     /// 根据 ID 获取产物
-    pub async fn get(&self, ctx: RequestContext, id: &str) -> Result<Option<Artifact>, AppError> {
-        let Some(artifact) = self.dal.find_by_id(ctx.clone(), id).await? else {
+    async fn get(&self, ctx: RequestContext, id: &str) -> Result<Option<Artifact>, AppError> {
+        let Some(artifact) = self.artifact_dal.find_by_id(ctx.clone(), id).await? else {
             return Ok(None);
         };
         self.validate_project_access(ctx, &artifact.po.project_id)
@@ -149,18 +130,18 @@ impl ArtifactDomain {
     }
 
     /// 获取项目下的所有产物
-    pub async fn list_by_project(
+    async fn list_by_project(
         &self,
         ctx: RequestContext,
         project_id: &str,
     ) -> Result<Vec<Artifact>, AppError> {
         self.validate_project_access(ctx.clone(), project_id)
             .await?;
-        self.dal.list_by_project(ctx, project_id).await
+        self.artifact_dal.list_by_project(ctx, project_id).await
     }
 
     /// 获取任务下的所有产物
-    pub async fn list_by_task(
+    async fn list_by_task(
         &self,
         ctx: RequestContext,
         task_id: &str,
@@ -176,11 +157,11 @@ impl ArtifactDomain {
         };
         self.validate_project_access(ctx.clone(), project_id)
             .await?;
-        self.dal.list_by_task(ctx, task_id).await
+        self.artifact_dal.list_by_task(ctx, task_id).await
     }
 
     /// 按项目范围查询产物，支持 task/file/source/limit 过滤。
-    pub async fn list(
+    async fn list(
         &self,
         ctx: RequestContext,
         params: ListArtifactsParams,
@@ -192,7 +173,7 @@ impl ArtifactDomain {
         self.validate_project_and_task(ctx.clone(), &params.project_id, params.task_id.as_deref())
             .await?;
 
-        self.dal
+        self.artifact_dal
             .query(
                 ctx,
                 ArtifactQuery {
@@ -207,15 +188,17 @@ impl ArtifactDomain {
     }
 
     /// 删除产物
-    pub async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
-        let Some(artifact) = self.dal.find_by_id(ctx.clone(), id).await? else {
+    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
+        let Some(artifact) = self.artifact_dal.find_by_id(ctx.clone(), id).await? else {
             return Err(AppError::NotFound(format!("Artifact not found: {}", id)));
         };
         self.validate_project_access(ctx.clone(), &artifact.po.project_id)
             .await?;
-        self.dal.delete(ctx, id).await
+        self.artifact_dal.delete(ctx, id).await
     }
+}
 
+impl ProjectDomainImpl {
     async fn validate_project_access(
         &self,
         ctx: RequestContext,

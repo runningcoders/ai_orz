@@ -13,6 +13,14 @@
 use async_trait::async_trait;
 use std::sync::{Arc, OnceLock};
 
+use crate::error::AppError;
+use crate::models::artifact::Artifact;
+use crate::models::file::FileMeta;
+use crate::models::project::Project;
+use crate::models::task::Task;
+use crate::pkg::RequestContext;
+use common::enums::{AssigneeType, FileType, ProjectStatus, TaskStatus};
+
 mod artifact;
 mod project;
 mod task;
@@ -20,16 +28,14 @@ mod task;
 #[cfg(test)]
 mod project_test;
 
-pub use artifact::{ArtifactDomain, ListArtifactsParams};
-pub use project::ProjectDomain;
-pub use task::TaskDomain;
+pub use artifact::ListArtifactsParams;
 
 // ==================== 单例 ====================
 
-static PROJECT_DOMAIN: OnceLock<Arc<dyn ProjectDomainProvider>> = OnceLock::new();
+static PROJECT_DOMAIN: OnceLock<Arc<dyn ProjectDomain>> = OnceLock::new();
 
 /// 获取 Project Domain 单例
-pub fn domain() -> Arc<dyn ProjectDomainProvider> {
+pub fn domain() -> Arc<dyn ProjectDomain> {
     PROJECT_DOMAIN.get().cloned().unwrap()
 }
 
@@ -38,7 +44,7 @@ pub fn new(
     project_dal: Arc<dyn crate::service::dal::project::ProjectDal + Send + Sync>,
     task_dal: Arc<dyn crate::service::dal::task::TaskDal + Send + Sync>,
     artifact_dal: Arc<dyn crate::service::dal::artifact::ArtifactDal + Send + Sync>,
-) -> Arc<dyn ProjectDomainProvider> {
+) -> Arc<dyn ProjectDomain> {
     Arc::new(ProjectDomainImpl::new(project_dal, task_dal, artifact_dal))
 }
 
@@ -54,29 +60,293 @@ pub fn init() {
 
 // ==================== trait 定义 ====================
 
-/// Project Domain 总接口
+/// Project Domain 总 trait
 ///
-/// 统一对外暴露项目领域的所有能力
-pub trait ProjectDomainProvider: Send + Sync {
-    /// 获取项目业务
-    fn project(&self) -> &ProjectDomain;
+/// 聚合项目领域所有子功能 trait
+pub trait ProjectDomain: Send + Sync {
+    /// Project 管理能力
+    fn project_manage(&self) -> &dyn ProjectManage;
 
-    /// 获取任务业务
-    fn task(&self) -> &TaskDomain;
+    /// Task 管理能力
+    fn task_manage(&self) -> &dyn TaskManage;
 
-    /// 获取产物业务
-    fn artifact(&self) -> &ArtifactDomain;
+    /// Artifact 管理能力
+    fn artifact_manage(&self) -> &dyn ArtifactManage;
+}
+
+/// Project 管理 trait
+///
+/// 定义项目相关的业务接口
+#[async_trait]
+pub trait ProjectManage: Send + Sync {
+    /// 创建新项目
+    async fn create(
+        &self,
+        ctx: RequestContext,
+        name: String,
+        description: String,
+        priority: i32,
+        tags: Vec<String>,
+        root_user_id: String,
+        created_by: String,
+    ) -> Result<Project, AppError>;
+
+    /// 根据 ID 获取项目
+    async fn get(&self, ctx: RequestContext, id: &str) -> Result<Option<Project>, AppError>;
+
+    /// 获取用户的所有项目
+    async fn list_by_user(
+        &self,
+        ctx: RequestContext,
+        root_user_id: &str,
+    ) -> Result<Vec<Project>, AppError>;
+
+    /// 查询用户项目列表
+    async fn list(
+        &self,
+        ctx: RequestContext,
+        root_user_id: &str,
+        status: Option<ProjectStatus>,
+        limit: Option<usize>,
+    ) -> Result<Vec<Project>, AppError>;
+
+    /// 启动项目
+    async fn start(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+        modified_by: String,
+    ) -> Result<(), AppError>;
+
+    /// 完成项目
+    async fn complete(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+        modified_by: String,
+    ) -> Result<(), AppError>;
+
+    /// 归档项目
+    async fn archive(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+        modified_by: String,
+    ) -> Result<(), AppError>;
+
+    /// 更新项目基本信息
+    async fn update_basic(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+        name: Option<String>,
+        description: Option<String>,
+        priority: Option<i32>,
+        tags: Option<Vec<String>>,
+        modified_by: String,
+    ) -> Result<Project, AppError>;
+
+    /// 统一项目状态流转
+    async fn transition_status(
+        &self,
+        ctx: RequestContext,
+        project: &mut Project,
+        target_status: ProjectStatus,
+    ) -> Result<(), AppError>;
+}
+
+/// Task 管理 trait
+///
+/// 定义任务相关的业务接口
+#[async_trait]
+pub trait TaskManage: Send + Sync {
+    /// 创建新任务
+    async fn create(
+        &self,
+        ctx: RequestContext,
+        title: String,
+        description: String,
+        priority: i32,
+        tags: Vec<String>,
+        root_user_id: String,
+        assignee_type: AssigneeType,
+        assignee_id: String,
+        project_id: Option<String>,
+        created_by: String,
+    ) -> Result<Task, AppError>;
+
+    /// 创建新任务（支持管理面完整可选字段）
+    async fn create_with_options(
+        &self,
+        ctx: RequestContext,
+        title: String,
+        description: String,
+        priority: i32,
+        tags: Vec<String>,
+        root_user_id: String,
+        assignee_type: AssigneeType,
+        assignee_id: String,
+        project_id: Option<String>,
+        due_at: Option<i64>,
+        dependencies: Vec<String>,
+        created_by: String,
+    ) -> Result<Task, AppError>;
+
+    /// 根据 ID 获取任务
+    async fn get(&self, ctx: RequestContext, id: &str) -> Result<Option<Task>, AppError>;
+
+    /// 获取项目下的所有任务
+    async fn list_by_project(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+    ) -> Result<Vec<Task>, AppError>;
+
+    /// 获取分配给 Agent 的所有任务
+    async fn list_by_agent(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+    ) -> Result<Vec<Task>, AppError>;
+
+    /// 查询任务列表
+    async fn list(
+        &self,
+        ctx: RequestContext,
+        project_id: Option<&str>,
+        assignee_type: Option<AssigneeType>,
+        assignee_id: Option<&str>,
+        status: Option<TaskStatus>,
+        limit: Option<usize>,
+    ) -> Result<Vec<Task>, AppError>;
+
+    /// 更新任务基本信息
+    async fn update_basic(
+        &self,
+        ctx: RequestContext,
+        task_id: &str,
+        title: Option<String>,
+        description: Option<String>,
+        priority: Option<i32>,
+        tags: Option<Vec<String>>,
+        due_at: Option<i64>,
+        dependencies: Option<Vec<String>>,
+    ) -> Result<Task, AppError>;
+
+    /// 开始任务
+    async fn start(
+        &self,
+        ctx: RequestContext,
+        task_id: &str,
+        modified_by: String,
+    ) -> Result<(), AppError>;
+
+    /// 完成任务
+    async fn complete(
+        &self,
+        ctx: RequestContext,
+        task_id: &str,
+        modified_by: String,
+    ) -> Result<(), AppError>;
+
+    /// 取消任务
+    async fn cancel(
+        &self,
+        ctx: RequestContext,
+        task_id: &str,
+        modified_by: String,
+    ) -> Result<(), AppError>;
+
+    /// 统一任务状态流转
+    async fn transition_status(
+        &self,
+        ctx: RequestContext,
+        task: &mut Task,
+        target_status: TaskStatus,
+    ) -> Result<(), AppError>;
+}
+
+/// Artifact 管理 trait
+///
+/// 定义产物相关的业务接口
+#[async_trait]
+pub trait ArtifactManage: Send + Sync {
+    /// 创建 Attachment 引用型产物。
+    async fn create_attachment_artifact(
+        &self,
+        ctx: RequestContext,
+        project_id: String,
+        task_id: Option<String>,
+        name: String,
+        description: String,
+        file_type: FileType,
+        file_meta: FileMeta,
+        tags: Vec<String>,
+        created_by: String,
+    ) -> Result<Artifact, AppError>;
+
+    /// 创建项目级产物
+    async fn create_project_artifact(
+        &self,
+        ctx: RequestContext,
+        project_id: String,
+        name: String,
+        description: String,
+        file_type: FileType,
+        file_meta: FileMeta,
+        created_by: String,
+    ) -> Result<Artifact, AppError>;
+
+    /// 创建任务级产物
+    async fn create_task_artifact(
+        &self,
+        ctx: RequestContext,
+        project_id: String,
+        task_id: String,
+        name: String,
+        description: String,
+        file_type: FileType,
+        file_meta: FileMeta,
+        created_by: String,
+    ) -> Result<Artifact, AppError>;
+
+    /// 根据 ID 获取产物
+    async fn get(&self, ctx: RequestContext, id: &str) -> Result<Option<Artifact>, AppError>;
+
+    /// 获取项目下的所有产物
+    async fn list_by_project(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+    ) -> Result<Vec<Artifact>, AppError>;
+
+    /// 获取任务下的所有产物
+    async fn list_by_task(
+        &self,
+        ctx: RequestContext,
+        task_id: &str,
+    ) -> Result<Vec<Artifact>, AppError>;
+
+    /// 按项目范围查询产物，支持 task/file/source/limit 过滤。
+    async fn list(
+        &self,
+        ctx: RequestContext,
+        params: ListArtifactsParams,
+    ) -> Result<Vec<Artifact>, AppError>;
+
+    /// 删除产物
+    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
 }
 
 // ==================== 实现 ====================
 
 /// Project Domain 实现
 ///
-/// 聚合所有子领域实现
+/// 聚合所有项目子功能实现
 struct ProjectDomainImpl {
-    project: ProjectDomain,
-    task: TaskDomain,
-    artifact: ArtifactDomain,
+    project_dal: Arc<dyn crate::service::dal::project::ProjectDal + Send + Sync>,
+    task_dal: Arc<dyn crate::service::dal::task::TaskDal + Send + Sync>,
+    artifact_dal: Arc<dyn crate::service::dal::artifact::ArtifactDal + Send + Sync>,
 }
 
 impl ProjectDomainImpl {
@@ -86,27 +356,24 @@ impl ProjectDomainImpl {
         task_dal: Arc<dyn crate::service::dal::task::TaskDal + Send + Sync>,
         artifact_dal: Arc<dyn crate::service::dal::artifact::ArtifactDal + Send + Sync>,
     ) -> Self {
-        let project = ProjectDomain::new(project_dal.clone());
-        let task = TaskDomain::new(task_dal.clone());
-        let artifact = ArtifactDomain::new(project_dal, task_dal, artifact_dal);
         Self {
-            project,
-            task,
-            artifact,
+            project_dal,
+            task_dal,
+            artifact_dal,
         }
     }
 }
 
-impl ProjectDomainProvider for ProjectDomainImpl {
-    fn project(&self) -> &ProjectDomain {
-        &self.project
+impl ProjectDomain for ProjectDomainImpl {
+    fn project_manage(&self) -> &dyn ProjectManage {
+        self
     }
 
-    fn task(&self) -> &TaskDomain {
-        &self.task
+    fn task_manage(&self) -> &dyn TaskManage {
+        self
     }
 
-    fn artifact(&self) -> &ArtifactDomain {
-        &self.artifact
+    fn artifact_manage(&self) -> &dyn ArtifactManage {
+        self
     }
 }

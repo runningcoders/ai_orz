@@ -7,23 +7,14 @@ use crate::models::task::Task;
 use crate::pkg::RequestContext;
 use common::constants::utils;
 use common::enums::{AssigneeType, TaskStatus};
-use std::sync::Arc;
 use uuid::Uuid;
 
-/// Task 业务领域
-#[derive(Clone)]
-pub struct TaskDomain {
-    dal: Arc<dyn crate::service::dal::task::TaskDal + Send + Sync>,
-}
+use super::ProjectDomainImpl;
 
-impl TaskDomain {
-    /// 创建 TaskDomain 实例
-    pub fn new(dal: Arc<dyn crate::service::dal::task::TaskDal + Send + Sync>) -> Self {
-        Self { dal }
-    }
-
+#[async_trait::async_trait]
+impl super::TaskManage for ProjectDomainImpl {
     /// 创建新任务
-    pub async fn create(
+    async fn create(
         &self,
         ctx: RequestContext,
         title: String,
@@ -54,7 +45,7 @@ impl TaskDomain {
     }
 
     /// 创建新任务（支持管理面完整可选字段）
-    pub async fn create_with_options(
+    async fn create_with_options(
         &self,
         ctx: RequestContext,
         title: String,
@@ -88,26 +79,26 @@ impl TaskDomain {
             created_by,
         );
 
-        self.dal.create(ctx.clone(), &task).await?;
+        self.task_dal.create(ctx.clone(), &task).await?;
         Ok(task)
     }
 
     /// 根据 ID 获取任务
-    pub async fn get(&self, ctx: RequestContext, id: &str) -> Result<Option<Task>, AppError> {
-        self.dal.find_by_id(ctx, id).await
+    async fn get(&self, ctx: RequestContext, id: &str) -> Result<Option<Task>, AppError> {
+        self.task_dal.find_by_id(ctx, id).await
     }
 
     /// 获取项目下的所有任务
-    pub async fn list_by_project(
+    async fn list_by_project(
         &self,
         ctx: RequestContext,
         project_id: &str,
     ) -> Result<Vec<Task>, AppError> {
-        self.dal.list_by_project(ctx, project_id, None).await
+        self.task_dal.list_by_project(ctx, project_id, None).await
     }
 
     /// 获取分配给 Agent 的所有任务
-    pub async fn list_by_agent(
+    async fn list_by_agent(
         &self,
         ctx: RequestContext,
         agent_id: &str,
@@ -124,7 +115,7 @@ impl TaskDomain {
     }
 
     /// 查询任务列表
-    pub async fn list(
+    async fn list(
         &self,
         ctx: RequestContext,
         project_id: Option<&str>,
@@ -133,7 +124,7 @@ impl TaskDomain {
         status: Option<TaskStatus>,
         limit: Option<usize>,
     ) -> Result<Vec<Task>, AppError> {
-        self.dal
+        self.task_dal
             .query(
                 ctx,
                 crate::service::dao::task::TaskQuery {
@@ -148,7 +139,7 @@ impl TaskDomain {
     }
 
     /// 更新任务基本信息
-    pub async fn update_basic(
+    async fn update_basic(
         &self,
         ctx: RequestContext,
         task_id: &str,
@@ -159,7 +150,7 @@ impl TaskDomain {
         due_at: Option<i64>,
         dependencies: Option<Vec<String>>,
     ) -> Result<Task, AppError> {
-        let Some(mut task) = self.dal.find_by_id(ctx.clone(), task_id).await? else {
+        let Some(mut task) = self.task_dal.find_by_id(ctx.clone(), task_id).await? else {
             return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
         };
 
@@ -187,60 +178,60 @@ impl TaskDomain {
         }
         task.po.modified_by = ctx.uid();
 
-        self.dal.update(ctx, &task).await?;
+        self.task_dal.update(ctx, &task).await?;
         Ok(task)
     }
 
     /// 开始任务
-    pub async fn start(
+    async fn start(
         &self,
         ctx: RequestContext,
         task_id: &str,
         modified_by: String,
     ) -> Result<(), AppError> {
-        let Some(mut task) = self.dal.find_by_id(ctx.clone(), task_id).await? else {
+        let Some(mut task) = self.task_dal.find_by_id(ctx.clone(), task_id).await? else {
             return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
         };
         task.start();
         task.po.modified_by = modified_by;
-        self.dal.update(ctx, &task).await?;
+        self.task_dal.update(ctx, &task).await?;
         Ok(())
     }
 
     /// 完成任务
-    pub async fn complete(
+    async fn complete(
         &self,
         ctx: RequestContext,
         task_id: &str,
         modified_by: String,
     ) -> Result<(), AppError> {
-        let Some(mut task) = self.dal.find_by_id(ctx.clone(), task_id).await? else {
+        let Some(mut task) = self.task_dal.find_by_id(ctx.clone(), task_id).await? else {
             return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
         };
         task.complete();
         task.po.modified_by = modified_by;
-        self.dal.update(ctx, &task).await?;
+        self.task_dal.update(ctx, &task).await?;
         Ok(())
     }
 
     /// 取消任务
-    pub async fn cancel(
+    async fn cancel(
         &self,
         ctx: RequestContext,
         task_id: &str,
         modified_by: String,
     ) -> Result<(), AppError> {
-        let Some(mut task) = self.dal.find_by_id(ctx.clone(), task_id).await? else {
+        let Some(mut task) = self.task_dal.find_by_id(ctx.clone(), task_id).await? else {
             return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
         };
         task.cancel();
         task.po.modified_by = modified_by;
-        self.dal.update(ctx, &task).await?;
+        self.task_dal.update(ctx, &task).await?;
         Ok(())
     }
 
     /// 统一任务状态流转
-    pub async fn transition_status(
+    async fn transition_status(
         &self,
         ctx: RequestContext,
         task: &mut Task,
@@ -296,6 +287,6 @@ impl TaskDomain {
         }
         task.po.modified_by = ctx.uid();
 
-        self.dal.update(ctx, task).await
+        self.task_dal.update(ctx, task).await
     }
 }

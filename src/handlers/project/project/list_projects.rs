@@ -23,7 +23,7 @@ pub async fn list_projects(
     }
 
     let projects = domain()
-        .project()
+        .project_manage()
         .list(ctx, &root_user_id, query.status, query.limit)
         .await?;
     let response_items = projects.iter().map(response::to_list_item).collect();

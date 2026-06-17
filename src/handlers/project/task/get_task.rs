@@ -18,7 +18,7 @@ pub async fn get_task(
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<GetTaskResponse>>, AppError> {
     let task = domain()
-        .task()
+        .task_manage()
         .get(ctx, &id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Task {} not found", id)))?;

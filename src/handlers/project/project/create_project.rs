@@ -23,7 +23,7 @@ pub async fn create_project(
     }
 
     let project = domain()
-        .project()
+        .project_manage()
         .create(
             ctx,
             req.name,

@@ -20,7 +20,7 @@ pub async fn list_agent_tasks(
     Query(query): Query<ListTasksQuery>,
 ) -> Result<Json<ApiResponse<Vec<TaskListItem>>>, AppError> {
     let tasks = domain()
-        .task()
+        .task_manage()
         .list(
             ctx,
             None,

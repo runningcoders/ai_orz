@@ -18,7 +18,7 @@ pub async fn get_project(
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<GetProjectResponse>>, AppError> {
     let project = domain()
-        .project()
+        .project_manage()
         .get(ctx, &id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Project {} not found", id)))?;

@@ -20,7 +20,7 @@ pub async fn update_project(
 ) -> Result<AxumJson<ApiResponse<UpdateProjectResponse>>, AppError> {
     let modified_by = ctx.uid();
     let project = domain()
-        .project()
+        .project_manage()
         .update_basic(
             ctx,
             &id,

@@ -7,23 +7,14 @@ use crate::models::project::Project;
 use crate::pkg::RequestContext;
 use common::constants::utils;
 use common::enums::project::ProjectStatus;
-use std::sync::Arc;
 use uuid::Uuid;
 
-/// Project 业务领域
-#[derive(Clone)]
-pub struct ProjectDomain {
-    dal: Arc<dyn crate::service::dal::project::ProjectDal + Send + Sync>,
-}
+use super::ProjectDomainImpl;
 
-impl ProjectDomain {
-    /// 创建 ProjectDomain 实例
-    pub fn new(dal: Arc<dyn crate::service::dal::project::ProjectDal + Send + Sync>) -> Self {
-        Self { dal }
-    }
-
+#[async_trait::async_trait]
+impl super::ProjectManage for ProjectDomainImpl {
     /// 创建新项目
-    pub async fn create(
+    async fn create(
         &self,
         ctx: RequestContext,
         name: String,
@@ -51,26 +42,28 @@ impl ProjectDomain {
             created_by.clone(),
         );
 
-        self.dal.create(ctx.clone(), &project).await?;
+        self.project_dal.create(ctx.clone(), &project).await?;
         Ok(project)
     }
 
     /// 根据 ID 获取项目
-    pub async fn get(&self, ctx: RequestContext, id: &str) -> Result<Option<Project>, AppError> {
-        self.dal.find_by_id(ctx, id).await
+    async fn get(&self, ctx: RequestContext, id: &str) -> Result<Option<Project>, AppError> {
+        self.project_dal.find_by_id(ctx, id).await
     }
 
     /// 获取用户的所有项目
-    pub async fn list_by_user(
+    async fn list_by_user(
         &self,
         ctx: RequestContext,
         root_user_id: &str,
     ) -> Result<Vec<Project>, AppError> {
-        self.dal.list_by_root_user(ctx, root_user_id, None).await
+        self.project_dal
+            .list_by_root_user(ctx, root_user_id, None)
+            .await
     }
 
     /// 查询用户项目列表
-    pub async fn list(
+    async fn list(
         &self,
         ctx: RequestContext,
         root_user_id: &str,
@@ -78,22 +71,24 @@ impl ProjectDomain {
         limit: Option<usize>,
     ) -> Result<Vec<Project>, AppError> {
         if let Some(status) = status {
-            self.dal
+            self.project_dal
                 .list_by_root_user_and_status(ctx, root_user_id, vec![status], limit)
                 .await
         } else {
-            self.dal.list_by_root_user(ctx, root_user_id, limit).await
+            self.project_dal
+                .list_by_root_user(ctx, root_user_id, limit)
+                .await
         }
     }
 
     /// 启动项目
-    pub async fn start(
+    async fn start(
         &self,
         ctx: RequestContext,
         project_id: &str,
         modified_by: String,
     ) -> Result<(), AppError> {
-        let Some(mut project) = self.dal.find_by_id(ctx.clone(), project_id).await? else {
+        let Some(mut project) = self.project_dal.find_by_id(ctx.clone(), project_id).await? else {
             return Err(AppError::NotFound(format!(
                 "Project not found: {}",
                 project_id
@@ -101,18 +96,18 @@ impl ProjectDomain {
         };
         project.start();
         project.po.modified_by = modified_by;
-        self.dal.update(ctx, &project).await?;
+        self.project_dal.update(ctx, &project).await?;
         Ok(())
     }
 
     /// 完成项目
-    pub async fn complete(
+    async fn complete(
         &self,
         ctx: RequestContext,
         project_id: &str,
         modified_by: String,
     ) -> Result<(), AppError> {
-        let Some(mut project) = self.dal.find_by_id(ctx.clone(), project_id).await? else {
+        let Some(mut project) = self.project_dal.find_by_id(ctx.clone(), project_id).await? else {
             return Err(AppError::NotFound(format!(
                 "Project not found: {}",
                 project_id
@@ -120,18 +115,18 @@ impl ProjectDomain {
         };
         project.complete();
         project.po.modified_by = modified_by;
-        self.dal.update(ctx, &project).await?;
+        self.project_dal.update(ctx, &project).await?;
         Ok(())
     }
 
     /// 归档项目
-    pub async fn archive(
+    async fn archive(
         &self,
         ctx: RequestContext,
         project_id: &str,
         modified_by: String,
     ) -> Result<(), AppError> {
-        let Some(mut project) = self.dal.find_by_id(ctx.clone(), project_id).await? else {
+        let Some(mut project) = self.project_dal.find_by_id(ctx.clone(), project_id).await? else {
             return Err(AppError::NotFound(format!(
                 "Project not found: {}",
                 project_id
@@ -139,12 +134,12 @@ impl ProjectDomain {
         };
         project.po.status = ProjectStatus::Archived;
         project.po.modified_by = modified_by;
-        self.dal.update(ctx, &project).await?;
+        self.project_dal.update(ctx, &project).await?;
         Ok(())
     }
 
     /// 更新项目基本信息
-    pub async fn update_basic(
+    async fn update_basic(
         &self,
         ctx: RequestContext,
         project_id: &str,
@@ -154,7 +149,7 @@ impl ProjectDomain {
         tags: Option<Vec<String>>,
         modified_by: String,
     ) -> Result<Project, AppError> {
-        let Some(mut project) = self.dal.find_by_id(ctx.clone(), project_id).await? else {
+        let Some(mut project) = self.project_dal.find_by_id(ctx.clone(), project_id).await? else {
             return Err(AppError::NotFound(format!(
                 "Project not found: {}",
                 project_id
@@ -175,12 +170,12 @@ impl ProjectDomain {
         }
         project.po.modified_by = modified_by;
 
-        self.dal.update(ctx, &project).await?;
+        self.project_dal.update(ctx, &project).await?;
         Ok(project)
     }
 
     /// 统一项目状态流转
-    pub async fn transition_status(
+    async fn transition_status(
         &self,
         ctx: RequestContext,
         project: &mut Project,
@@ -237,6 +232,6 @@ impl ProjectDomain {
         }
         project.po.modified_by = ctx.uid();
 
-        self.dal.update(ctx, project).await
+        self.project_dal.update(ctx, project).await
     }
 }

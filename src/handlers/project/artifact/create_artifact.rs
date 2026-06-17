@@ -81,7 +81,7 @@ async fn create_from_attachment(
     );
 
     project::domain()
-        .artifact()
+        .artifact_manage()
         .create_attachment_artifact(
             ctx,
             req.project_id,
