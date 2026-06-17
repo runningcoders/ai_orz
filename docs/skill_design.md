@@ -458,7 +458,9 @@ pub struct SkillSearch {
 }
 ```
 
-### `SkillVectorDao` 向量索引接口
+### `SkillVectorDao` 向量索引接口 (Completed)
+
+**已实现基于通用 `VectorStore` trait，通过 `ctx.vector_store()` 获取存储层实现，不绑定具体数据库。**
 
 ```rust
 #[async_trait]
@@ -792,14 +794,20 @@ HrDomainImpl
 - `AgentManage` trait
 - `SkillManage` trait
 
-## 后续扩展
+## 完成状态
 
-数据层已完成，待后续开发：
+所有核心功能已开发完成：
 
-1. ✅ **DAL 层**：业务数据访问层封装（已完成）
-2. ✅ **Domain 层**：技能管理领域逻辑（已完成）
-3. ⏳ **Handler 层**：HTTP API 接口
-4. ⏳ **Agent 集成**：Agent 自动沉淀技能流程
+| 模块 | 状态 |
+|------|------|
+| 数据库表结构 | ✅ 完成 |
+| DAO 基础数据 + 文件操作 | ✅ 完成 |
+| DAO 向量搜索 | ✅ 完成 |
+| DAL 层业务数据封装 | ✅ 完成 |
+| Domain 领域逻辑 | ✅ 完成 |
+| Handler HTTP API 基础 CRUD | ✅ 完成 |
+| Handler 多文件文本编辑 API | ✅ 完成 |
+| Agent 集成：自动沉淀技能流程 | ⏳ 后续随着 Agent 运行时迭代逐步完善 |
 
 ## 变更记录
 
@@ -809,3 +817,5 @@ HrDomainImpl
 | 2026-05-13 | 更新文档，添加 DAL 层和 Domain 层设计说明 |
 | 2026-05-14 | 添加完整的 hr skill 测试，修复 find_by_id 查询语义，排除过期技能 |
 | 2026-05-14 | 文档更新：修正状态枚举过期名称（Available/Pending → Published/Draft），更新 DAO 接口定义（SkillDaoTrait → SkillDao + SkillVectorDao），添加 SkillQuery/SkillSearch/SkillVectorDao 接口说明，更新分层架构 |
+| 2026-06-19 | 完成多文件文本编辑功能：`initial_files` 创建支持 + 列出/读取/更新三个 API + 完整路径安全校验 |
+| 2026-06-19 | 确认 Skill 向量搜索 DAO 已完整实现，基于通用 `VectorStore` trait |
