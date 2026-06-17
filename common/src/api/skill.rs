@@ -186,3 +186,10 @@ pub struct ListSkillFilesResponse {
     /// 文件列表。
     pub files: Vec<SkillFileItem>,
 }
+
+/// 列出 Skill 文件参数。
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+pub struct ListSkillFilesParams {
+    /// Skill ID。
+    pub skill_id: String,
+}

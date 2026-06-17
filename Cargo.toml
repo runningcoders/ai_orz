@@ -3,6 +3,7 @@ members = [
     ".",
     "frontend",
     "common",
+    "ai-orz-macros",
 ]
 resolver = "2"
 
@@ -39,6 +40,12 @@ thiserror = "1.0"
 derive_builder = "0.20"
 bincode = "2.0"
 tempfile = "3.27"
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = { version = "2.0", features = ["full", "parsing"] }
+ctor = "0.2"
+schemars = { version = "0.8", features = ["derive"] }
+ai-orz-macros = { path = "./ai-orz-macros" }
 
 # 向量搜索相关
 fastembed = "5.13"  # 纯本地向量化（纯 Rust candle 后端，零系统依赖）

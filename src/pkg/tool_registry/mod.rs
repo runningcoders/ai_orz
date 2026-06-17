@@ -5,11 +5,13 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
 pub mod builtin;
+pub mod handler_adapter;
 pub mod http;
 pub mod mcp;
 
 use crate::models::tool::{CoreTool, ToolPo};
 pub use builtin::BuiltinToolFactory;
+pub use handler_adapter::register_handler_tool;
 
 /// Global tool registry instance.
 pub static GLOBAL_TOOL_REGISTRY: OnceLock<ToolRegistry> = OnceLock::new();
