@@ -6,9 +6,9 @@ use crate::models::file::FileMeta;
 use crate::models::project::Project;
 use crate::models::task::Task;
 use crate::pkg::RequestContext;
-use common::enums::FileType;
 use common::enums::project::ProjectStatus;
 use common::enums::task::TaskStatus;
+use common::enums::{ArtifactSourceType, FileType};
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -485,7 +485,20 @@ async fn test_task_start_complete_cancel(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_artifact_create_project_artifact_and_get(pool: SqlitePool) {
     let (domain, ctx) = init_test_env(pool);
-    let project_id = Uuid::now_v7().to_string();
+    let project = domain
+        .project()
+        .create(
+            ctx.clone(),
+            "Artifact Project".to_string(),
+            "Project for artifact".to_string(),
+            1,
+            vec!["artifact".to_string()],
+            "admin".to_string(),
+            "admin".to_string(),
+        )
+        .await
+        .unwrap();
+    let project_id = project.po.id.clone();
 
     let file_meta = FileMeta {
         file_path: "/path/to/report.pdf".to_string(),
@@ -525,8 +538,39 @@ async fn test_artifact_create_project_artifact_and_get(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_artifact_create_task_artifact_and_list(pool: SqlitePool) {
     let (domain, ctx) = init_test_env(pool);
-    let project_id = Uuid::now_v7().to_string();
-    let task_id = Uuid::now_v7().to_string();
+    let assignee_id = Uuid::now_v7().to_string();
+    let project = domain
+        .project()
+        .create(
+            ctx.clone(),
+            "Artifact Task Project".to_string(),
+            "Project for task artifact".to_string(),
+            1,
+            vec!["artifact".to_string()],
+            "admin".to_string(),
+            "admin".to_string(),
+        )
+        .await
+        .unwrap();
+    let project_id = project.po.id.clone();
+
+    let task = domain
+        .task()
+        .create(
+            ctx.clone(),
+            "Artifact Task".to_string(),
+            "Task for artifact".to_string(),
+            1,
+            vec![],
+            "admin".to_string(),
+            common::enums::task::AssigneeType::Agent,
+            assignee_id,
+            Some(project_id.clone()),
+            "admin".to_string(),
+        )
+        .await
+        .unwrap();
+    let task_id = task.po.id.clone();
 
     let file_meta = FileMeta {
         file_path: "/path/to/output.pdf".to_string(),
@@ -569,9 +613,246 @@ async fn test_artifact_create_task_artifact_and_list(pool: SqlitePool) {
 }
 
 #[sqlx::test]
+async fn test_artifact_create_attachment_artifact_validates_project_and_task(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+    let root_user_id = "admin".to_string();
+    let assignee_id = Uuid::now_v7().to_string();
+
+    let project = domain
+        .project()
+        .create(
+            ctx.clone(),
+            "Artifact Project".to_string(),
+            "Project for artifact".to_string(),
+            1,
+            vec!["artifact".to_string()],
+            root_user_id.clone(),
+            "admin".to_string(),
+        )
+        .await
+        .unwrap();
+
+    let task = domain
+        .task()
+        .create(
+            ctx.clone(),
+            "Artifact Task".to_string(),
+            "Task for artifact".to_string(),
+            1,
+            vec![],
+            root_user_id,
+            common::enums::task::AssigneeType::Agent,
+            assignee_id,
+            Some(project.po.id.clone()),
+            "admin".to_string(),
+        )
+        .await
+        .unwrap();
+
+    let artifact = domain
+        .artifact()
+        .create_attachment_artifact(
+            ctx.clone(),
+            project.po.id.clone(),
+            Some(task.po.id.clone()),
+            "Referenced Attachment".to_string(),
+            "Attachment-backed artifact".to_string(),
+            FileType::Document,
+            FileMeta::new(
+                "attachments/20260617/report.md".to_string(),
+                "text/markdown".to_string(),
+                128,
+            ),
+            vec!["report".to_string()],
+            "admin".to_string(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(artifact.po.project_id, project.po.id);
+    assert_eq!(artifact.po.task_id, Some(task.po.id));
+    assert_eq!(
+        artifact.po.source_type,
+        common::enums::ArtifactSourceType::Attachment
+    );
+    assert_eq!(
+        artifact.po.file_meta.0.file_path,
+        "attachments/20260617/report.md"
+    );
+    assert_eq!(artifact.tags(), vec!["report".to_string()]);
+}
+
+#[sqlx::test]
+async fn test_artifact_list_filters_by_project_file_type_source_type_and_limit(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+    let root_user_id = "admin".to_string();
+
+    let project = domain
+        .project()
+        .create(
+            ctx.clone(),
+            "Artifact List Project".to_string(),
+            "Project for artifact list".to_string(),
+            1,
+            vec!["artifact".to_string()],
+            root_user_id,
+            "admin".to_string(),
+        )
+        .await
+        .unwrap();
+
+    domain
+        .artifact()
+        .create_attachment_artifact(
+            ctx.clone(),
+            project.po.id.clone(),
+            None,
+            "Document Artifact".to_string(),
+            "Document attachment".to_string(),
+            FileType::Document,
+            FileMeta::new(
+                "attachments/20260617/report.md".to_string(),
+                "text/markdown".to_string(),
+                128,
+            ),
+            vec!["report".to_string()],
+            "admin".to_string(),
+        )
+        .await
+        .unwrap();
+
+    domain
+        .artifact()
+        .create_attachment_artifact(
+            ctx.clone(),
+            project.po.id.clone(),
+            None,
+            "Image Artifact".to_string(),
+            "Image attachment".to_string(),
+            FileType::Image,
+            FileMeta::new(
+                "attachments/20260617/screenshot.png".to_string(),
+                "image/png".to_string(),
+                256,
+            ),
+            vec!["screenshot".to_string()],
+            "admin".to_string(),
+        )
+        .await
+        .unwrap();
+
+    let artifacts = domain
+        .artifact()
+        .list(
+            ctx.clone(),
+            super::artifact::ListArtifactsParams {
+                project_id: project.po.id.clone(),
+                task_id: None,
+                file_type: Some(FileType::Document),
+                source_type: Some(ArtifactSourceType::Attachment),
+                limit: Some(10),
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(artifacts.len(), 1);
+    assert_eq!(artifacts[0].po.name, "Document Artifact");
+    assert_eq!(artifacts[0].po.project_id, project.po.id);
+    assert_eq!(artifacts[0].po.file_type, FileType::Document);
+    assert_eq!(artifacts[0].po.source_type, ArtifactSourceType::Attachment);
+}
+
+#[sqlx::test]
+async fn test_artifact_create_attachment_artifact_rejects_task_project_mismatch(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+    let root_user_id = "admin".to_string();
+    let assignee_id = Uuid::now_v7().to_string();
+
+    let target_project = domain
+        .project()
+        .create(
+            ctx.clone(),
+            "Target Project".to_string(),
+            "Target".to_string(),
+            1,
+            vec![],
+            root_user_id.clone(),
+            "admin".to_string(),
+        )
+        .await
+        .unwrap();
+
+    let other_project = domain
+        .project()
+        .create(
+            ctx.clone(),
+            "Other Project".to_string(),
+            "Other".to_string(),
+            1,
+            vec![],
+            root_user_id.clone(),
+            "admin".to_string(),
+        )
+        .await
+        .unwrap();
+
+    let task = domain
+        .task()
+        .create(
+            ctx.clone(),
+            "Other Task".to_string(),
+            "Task belongs to other project".to_string(),
+            1,
+            vec![],
+            root_user_id,
+            common::enums::task::AssigneeType::Agent,
+            assignee_id,
+            Some(other_project.po.id),
+            "admin".to_string(),
+        )
+        .await
+        .unwrap();
+
+    let result = domain
+        .artifact()
+        .create_attachment_artifact(
+            ctx,
+            target_project.po.id,
+            Some(task.po.id),
+            "Invalid Artifact".to_string(),
+            "Should be rejected".to_string(),
+            FileType::Document,
+            FileMeta::new(
+                "attachments/20260617/report.md".to_string(),
+                "text/markdown".to_string(),
+                128,
+            ),
+            vec![],
+            "admin".to_string(),
+        )
+        .await;
+
+    assert!(result.is_err());
+}
+
+#[sqlx::test]
 async fn test_artifact_delete(pool: SqlitePool) {
     let (domain, ctx) = init_test_env(pool);
-    let project_id = Uuid::now_v7().to_string();
+    let project = domain
+        .project()
+        .create(
+            ctx.clone(),
+            "Artifact Delete Project".to_string(),
+            "Project for artifact delete".to_string(),
+            1,
+            vec!["artifact".to_string()],
+            "admin".to_string(),
+            "admin".to_string(),
+        )
+        .await
+        .unwrap();
+    let project_id = project.po.id.clone();
 
     let file_meta = FileMeta {
         file_path: "/path/to/delete.pdf".to_string(),

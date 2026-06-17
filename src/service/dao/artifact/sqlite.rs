@@ -4,8 +4,7 @@ use super::{ArtifactDao, ArtifactQuery};
 use crate::error::Result;
 use crate::models::{artifact::ArtifactPo, file::FileMeta};
 use crate::pkg::RequestContext;
-use common::enums::FileType;
-use sqlx::SqlitePool;
+use common::enums::{ArtifactSourceType, FileType};
 use sqlx::types::Json;
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -46,9 +45,11 @@ impl ArtifactDao for ArtifactDaoSqliteImpl {
     async fn insert(&self, ctx: RequestContext, artifact: &ArtifactPo) -> Result<()> {
         let pool = ctx.db_pool();
         let ft = artifact.file_type as i32;
+        let source_type = artifact.source_type as i32;
         sqlx::query!(
 r#"
-INSERT INTO artifacts (id, project_id, task_id, name, description, file_type, file_meta, tags, status, created_by, modified_by, created_at, updated_at) VALUES (
+INSERT INTO artifacts (id, project_id, task_id, name, description, file_type, file_meta, source_type, tags, status, created_by, modified_by, created_at, updated_at) VALUES (
+?,
 ?,
 ?,
 ?,
@@ -71,6 +72,7 @@ INSERT INTO artifacts (id, project_id, task_id, name, description, file_type, fi
             artifact.description,
             ft,
             artifact.file_meta,
+            source_type,
             artifact.tags,
             artifact.status,
             artifact.created_by,
@@ -88,7 +90,7 @@ INSERT INTO artifacts (id, project_id, task_id, name, description, file_type, fi
         let artifact = sqlx::query_as!(
             ArtifactPo,
 r#"
-SELECT id, project_id, task_id, name, description, file_type as "file_type: FileType", file_meta as "file_meta: Json<FileMeta>", tags, status as "status: i32", created_by, modified_by, created_at, updated_at
+SELECT id, project_id, task_id, name, description, file_type as "file_type: FileType", file_meta as "file_meta: Json<FileMeta>", source_type as "source_type: ArtifactSourceType", tags, status as "status: i32", created_by, modified_by, created_at, updated_at
 FROM artifacts
 WHERE id = ? AND "status" != 0
 "#,
@@ -102,7 +104,7 @@ WHERE id = ? AND "status" != 0
     async fn query(&self, ctx: RequestContext, query: ArtifactQuery) -> Result<Vec<ArtifactPo>> {
         let pool = ctx.db_pool();
         let mut builder = sqlx::QueryBuilder::new(
-            r#"SELECT id, project_id, task_id, name, description, file_type, file_meta, tags, status, created_by, modified_by, created_at, updated_at FROM artifacts WHERE "status" != 0"#,
+            r#"SELECT id, project_id, task_id, name, description, file_type, file_meta, source_type, tags, status, created_by, modified_by, created_at, updated_at FROM artifacts WHERE "status" != 0"#,
         );
 
         // 项目过滤
@@ -113,6 +115,20 @@ WHERE id = ? AND "status" != 0
         // 任务过滤
         if let Some(task_id) = &query.task_id {
             builder.push(" AND task_id = ").push_bind(task_id);
+        }
+
+        // 文件类型过滤
+        if let Some(file_type) = query.file_type {
+            builder
+                .push(" AND file_type = ")
+                .push_bind(file_type as i32);
+        }
+
+        // 来源类型过滤
+        if let Some(source_type) = query.source_type {
+            builder
+                .push(" AND source_type = ")
+                .push_bind(source_type as i32);
         }
 
         // 排序

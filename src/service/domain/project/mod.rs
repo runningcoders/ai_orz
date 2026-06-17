@@ -20,7 +20,7 @@ mod task;
 #[cfg(test)]
 mod project_test;
 
-pub use artifact::ArtifactDomain;
+pub use artifact::{ArtifactDomain, ListArtifactsParams};
 pub use project::ProjectDomain;
 pub use task::TaskDomain;
 
@@ -86,9 +86,9 @@ impl ProjectDomainImpl {
         task_dal: Arc<dyn crate::service::dal::task::TaskDal + Send + Sync>,
         artifact_dal: Arc<dyn crate::service::dal::artifact::ArtifactDal + Send + Sync>,
     ) -> Self {
-        let project = ProjectDomain::new(project_dal);
-        let task = TaskDomain::new(task_dal);
-        let artifact = ArtifactDomain::new(artifact_dal);
+        let project = ProjectDomain::new(project_dal.clone());
+        let task = TaskDomain::new(task_dal.clone());
+        let artifact = ArtifactDomain::new(project_dal, task_dal, artifact_dal);
         Self {
             project,
             task,

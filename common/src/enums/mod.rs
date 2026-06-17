@@ -1,6 +1,7 @@
 //! Shared enumerations used by both backend and frontend
 
 pub mod agent;
+pub mod artifact;
 pub mod file;
 pub mod memory;
 pub mod message;
@@ -14,6 +15,7 @@ pub mod tool;
 pub mod user;
 
 pub use agent::{AgentStatus, ModelProviderStatus};
+pub use artifact::ArtifactSourceType;
 pub use file::FileType;
 pub use memory::{KnowledgeRelationType, MemoryRole, MemoryStatus, MemoryType};
 pub use message::{MessageRole, MessageStatus, MessageType};

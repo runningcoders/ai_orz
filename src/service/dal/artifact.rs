@@ -3,11 +3,24 @@
 //! 职责：Artifact 领域的数据访问层，封装 ArtifactDao 提供统一的查询接口
 
 use crate::error::AppError;
-use crate::models::artifact::{Artifact, ArtifactPo};
+use crate::models::artifact::Artifact;
 use crate::pkg::RequestContext;
 use crate::service::dao::artifact;
-use crate::service::dao::artifact::{ArtifactDao, ArtifactQuery};
+use crate::service::dao::artifact::ArtifactDao;
+use common::enums::{ArtifactSourceType, FileType};
 use std::sync::{Arc, OnceLock};
+
+/// Artifact DAL 查询参数。
+///
+/// Domain 层只依赖 DAL 的查询对象，不暴露 DAO 查询结构。
+#[derive(Debug, Clone, Default)]
+pub struct ArtifactQuery {
+    pub project_id: Option<String>,
+    pub task_id: Option<String>,
+    pub file_type: Option<FileType>,
+    pub source_type: Option<ArtifactSourceType>,
+    pub limit: Option<usize>,
+}
 
 // ==================== 单例管理 ====================
 
@@ -128,7 +141,19 @@ impl ArtifactDal for ArtifactDalImpl {
         ctx: RequestContext,
         query: ArtifactQuery,
     ) -> Result<Vec<Artifact>, AppError> {
-        let list = self.artifact_dao.query(ctx, query).await?;
+        let list = self
+            .artifact_dao
+            .query(
+                ctx,
+                artifact::ArtifactQuery {
+                    project_id: query.project_id,
+                    task_id: query.task_id,
+                    file_type: query.file_type,
+                    source_type: query.source_type,
+                    limit: query.limit,
+                },
+            )
+            .await?;
         Ok(list.into_iter().map(Artifact::from_po).collect())
     }
 

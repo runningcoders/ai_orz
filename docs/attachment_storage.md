@@ -115,11 +115,14 @@ CREATE INDEX IF NOT EXISTS idx_attachments_status ON attachments(status);
 ```sql
 CREATE TABLE IF NOT EXISTS artifacts (
     id TEXT NOT NULL PRIMARY KEY,
-    task_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    task_id TEXT,
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     file_type INTEGER NOT NULL,
     file_meta JSON NOT NULL DEFAULT '{}',
+    source_type INTEGER NOT NULL DEFAULT 1,
+    tags TEXT NOT NULL DEFAULT '[]',
     status INTEGER NOT NULL DEFAULT 1,
     created_by TEXT NOT NULL DEFAULT '',
     modified_by TEXT NOT NULL DEFAULT '',
@@ -127,6 +130,7 @@ CREATE TABLE IF NOT EXISTS artifacts (
     updated_at INTEGER NOT NULL
 ) STRICT;
 
+CREATE INDEX IF NOT EXISTS idx_artifacts_project_id ON artifacts(project_id);
 CREATE INDEX IF NOT EXISTS idx_artifacts_task_id ON artifacts(task_id);
 ```
 
@@ -134,20 +138,29 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_task_id ON artifacts(task_id);
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | TEXT | 产物唯一ID（UUID） |
-| task_id | TEXT | 所属任务ID |
+| project_id | TEXT | 所属项目 ID，必填；项目级与任务级产物都必须记录 |
+| task_id | TEXT | 可选所属任务 ID；NULL 表示项目级产物 |
 | name | TEXT | 产物名称 |
 | description | TEXT | 产物描述 |
 | file_type | INTEGER | 文件类型（FileType 枚举）|
 | file_meta | JSON | 文件元数据（FileMeta）|
+| source_type | INTEGER | 产物来源：1=attachment，2=generated_content，3=remote_url |
+| tags | TEXT | 标签 JSON 数组 |
 | status | INTEGER | 状态：0=已删除，1=正常 |
 | created_by | TEXT | 创建人ID |
 | modified_by | TEXT | 最后修改人ID |
 | created_at | INTEGER | 创建时间戳（毫秒）|
 | updated_at | INTEGER | 更新时间戳（毫秒）|
 
-权限设计：
-- 产物权限通过任务 `task_id` 继承，不冗余存储 `root_user_id`
-- 查询产物需要先校验任务权限，再查询产物
+权限与归属设计：
+- 产物权限通过 `project_id` 继承 Project Domain 的项目权限，不在 artifacts 表冗余 `root_user_id`；
+- `task_id` 仅作为可选细分归属，创建/查询时如传入 task，Domain 必须校验 `task.project_id == artifact.project_id`；
+- Artifact 管理面采用独立资源 API：`/api/v1/project/artifacts`，通过 query/body 参数传递 `project_id` / `task_id`，避免路径强绑定导致项目级与任务级查询不通用；
+- 来源枚举支持 `attachment`、`generated_content`、`remote_url`；Batch 3.1 创建闭环仅落地 `attachment` 引用 Finance Attachment；
+- `attachment` 来源由 Handler 编排 Finance Domain 和 Project Domain，只读取 Attachment metadata 组装 `file_meta`，不做二次文件复制/搬运；
+- `generated_content` 当前仅在 DTO 契约中预留，创建 Handler 暂返回 Unsupported；后续落地时由 Handler 接收 `content + file_name + mime_type` 并交给 Project Domain，最终由 Artifact DAL/文件存储辅助模块写入 `artifacts/projects/{project_id}/{artifact_id}/{file_name}`；Handler 不直接读写文件或调用 DAO/DAL；
+- 大文件仍应走 Finance Attachment 上传，再创建 attachment 引用型 Artifact，避免绕过通用上传能力；
+- 后续可在 Finance Attachment 自身补充直接写入文本/文件内容的能力，让 Attachment 除 multipart 上传外也支持 Agent/系统创建文件资产；该扩展不属于 Project Artifact Batch 3.1。
 
 #### messages 表变更
 

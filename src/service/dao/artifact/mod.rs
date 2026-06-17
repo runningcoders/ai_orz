@@ -5,12 +5,15 @@ use crate::error::Result;
 use crate::models::artifact::ArtifactPo;
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
+use common::enums::{ArtifactSourceType, FileType};
 
 /// Artifact 查询参数
 #[derive(Debug, Clone, Default)]
 pub struct ArtifactQuery {
     pub project_id: Option<String>,
     pub task_id: Option<String>,
+    pub file_type: Option<FileType>,
+    pub source_type: Option<ArtifactSourceType>,
     pub limit: Option<usize>,
 }
 

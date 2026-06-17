@@ -67,6 +67,8 @@ fn protected_routes() -> Router {
         .nest("/organization", organization_protected_routes())
         // Project routes
         .merge(project_routes())
+        // Artifact routes
+        .nest("/project", artifact_routes())
         // Task routes
         .merge(task_routes())
         // Current user routes - for user profile
@@ -122,6 +124,20 @@ fn task_routes() -> Router {
         .route(
             "/agents/{agent_id}/tasks",
             get(handlers::project::task::list_agent_tasks),
+        )
+}
+
+fn artifact_routes() -> Router {
+    Router::new()
+        .route(
+            "/artifacts",
+            post(handlers::project::artifact::create_artifact)
+                .get(handlers::project::artifact::list_artifacts),
+        )
+        .route(
+            "/artifacts/{id}",
+            get(handlers::project::artifact::get_artifact)
+                .delete(handlers::project::artifact::delete_artifact),
         )
 }
 

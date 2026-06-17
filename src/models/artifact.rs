@@ -6,7 +6,7 @@
 //! - ArtifactPo - 持久化对象（只在 DAO/DAL 层使用）
 //! - Artifact - 业务实体（Domain 层使用）
 
-use common::enums::FileType;
+use common::enums::{ArtifactSourceType, FileType};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use sqlx::types::Json;
@@ -31,6 +31,8 @@ pub struct ArtifactPo {
     pub file_type: FileType,
     /// File metadata (path, mime type, size) stored as JSON.
     pub file_meta: Json<FileMeta>,
+    /// Source type: attachment, generated content, or reserved future source.
+    pub source_type: ArtifactSourceType,
     /// Tags stored as JSON array: ["design", "report", "v1.0"]
     pub tags: String,
     /// Status: 0 = deleted (soft delete), 1 = active.
@@ -81,6 +83,29 @@ impl Artifact {
         }
     }
 
+    /// 创建新的项目级产物，显式指定来源类型
+    pub fn new_project_with_source_type(
+        project_id: String,
+        name: String,
+        description: String,
+        file_type: FileType,
+        file_meta: FileMeta,
+        source_type: ArtifactSourceType,
+        created_by: String,
+    ) -> Self {
+        Self {
+            po: ArtifactPo::new_project_with_source_type(
+                project_id,
+                name,
+                description,
+                file_type,
+                file_meta,
+                source_type,
+                created_by,
+            ),
+        }
+    }
+
     /// 创建新的任务级产物
     pub fn new_task(
         project_id: String,
@@ -99,6 +124,31 @@ impl Artifact {
                 description,
                 file_type,
                 file_meta,
+                created_by,
+            ),
+        }
+    }
+
+    /// 创建新的任务级产物，显式指定来源类型
+    pub fn new_task_with_source_type(
+        project_id: String,
+        task_id: String,
+        name: String,
+        description: String,
+        file_type: FileType,
+        file_meta: FileMeta,
+        source_type: ArtifactSourceType,
+        created_by: String,
+    ) -> Self {
+        Self {
+            po: ArtifactPo::new_task_with_source_type(
+                project_id,
+                task_id,
+                name,
+                description,
+                file_type,
+                file_meta,
+                source_type,
                 created_by,
             ),
         }
@@ -150,6 +200,27 @@ impl ArtifactPo {
         file_meta: FileMeta,
         created_by: String,
     ) -> Self {
+        Self::new_project_with_source_type(
+            project_id,
+            name,
+            description,
+            file_type,
+            file_meta,
+            ArtifactSourceType::Attachment,
+            created_by,
+        )
+    }
+
+    /// Create a new project-level artifact with explicit source type.
+    pub fn new_project_with_source_type(
+        project_id: String,
+        name: String,
+        description: String,
+        file_type: FileType,
+        file_meta: FileMeta,
+        source_type: ArtifactSourceType,
+        created_by: String,
+    ) -> Self {
         let now = common::constants::utils::current_timestamp_ms();
         Self {
             id: Uuid::now_v7().to_string(),
@@ -159,6 +230,7 @@ impl ArtifactPo {
             description,
             file_type,
             file_meta: Json(file_meta),
+            source_type,
             tags: "[]".to_string(),
             status: 1,
             created_by: created_by.clone(),
@@ -178,6 +250,29 @@ impl ArtifactPo {
         file_meta: FileMeta,
         created_by: String,
     ) -> Self {
+        Self::new_task_with_source_type(
+            project_id,
+            task_id,
+            name,
+            description,
+            file_type,
+            file_meta,
+            ArtifactSourceType::Attachment,
+            created_by,
+        )
+    }
+
+    /// Create a new task-level artifact with explicit source type.
+    pub fn new_task_with_source_type(
+        project_id: String,
+        task_id: String,
+        name: String,
+        description: String,
+        file_type: FileType,
+        file_meta: FileMeta,
+        source_type: ArtifactSourceType,
+        created_by: String,
+    ) -> Self {
         let now = common::constants::utils::current_timestamp_ms();
         Self {
             id: Uuid::now_v7().to_string(),
@@ -187,6 +282,7 @@ impl ArtifactPo {
             description,
             file_type,
             file_meta: Json(file_meta),
+            source_type,
             tags: "[]".to_string(),
             status: 1,
             created_by: created_by.clone(),

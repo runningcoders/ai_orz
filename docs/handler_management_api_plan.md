@@ -412,9 +412,146 @@ Skill Handler
 
 ### Phase 3：P2 文件 / 消息管理
 
-1. 在附件上传机制稳定后补 `project/artifact` Handler；
-2. 补 `message/management` 查询、状态更新、删除/清理接口；
-3. 保持 MessageDelivery、Consumer、Runtime 唤醒链路独立推进。
+Phase 3 从 Artifact 开始推进，再补 Message 管理面。Artifact 虽然归属 Project Domain，但不是 `Project` 的纯嵌套资源：它可以是项目级产物，也可以绑定到某个 Task。因此 Artifact 管理面采用 **独立资源集合 API**，不使用 `/projects/{project_id}/artifacts` 作为主入口。
+
+#### Batch 3.1：Project Artifact 独立资源 API
+
+目标：补齐 Project Domain 下的 Artifact 管理面 API，使产物可以通过统一入口创建、查询、详情、删除，并通过参数表达项目/任务归属关系。API path 保持独立资源集合方案不变；Batch 3.1 仅落地 `attachment` 引用型创建闭环，`generated_content` 与 `remote_url` 只作为 DTO/枚举契约预留，创建 Handler 暂返回 `Unsupported`。
+
+核心决策：
+- API 路径按资源类型建模：`/api/v1/project/artifacts...`；
+- Domain 归属仍是 Project Domain，不拆独立 Artifact Domain；
+- `project_id` 是 Artifact 的必填归属字段，`task_id` 可选；
+- `task_id = None` 表示项目级产物，`task_id = Some(...)` 表示任务级产物；
+- 如果传入 `task_id`，Domain 必须校验该 Task 属于同一个 `project_id`；
+- Artifact 来源枚举预留三类：
+  - `attachment`：前端/用户先上传 Finance Attachment，再用 `attachment_id` 创建 Artifact 引用；Batch 3.1 已落地；
+  - `generated_content`：Agent 在执行项目/任务时，直接通过 Artifact API 写入文本类产物（方案、报告、代码片段、执行记录等），用于过程留痕和长期归档；当前仅在 DTO 契约中预留，创建 Handler 暂返回 Unsupported；
+  - `remote_url`：远程 URL 类产物引用，当前仅预留枚举；
+- Handler 可编排 Finance Domain + Project Domain，但不能直接调用 DAO/DAL，也不能直接读写文件系统；
+- `attachment` 来源不做二次文件复制/搬运，只记录文件元数据引用；`generated_content` 后续落地时再由 Project Domain / Artifact DAL 写入 artifact 专属存储路径；
+- Artifact 文件路径按逻辑根前缀记录在 `file_meta.file_path`：Batch 3.1 的 Attachment 引用使用 `attachments/{relative_path}`；Agent 生成内容后续使用 `artifacts/projects/{project_id}/{artifact_id}/{file_name}`。
+
+路由状态：
+
+```http
+POST   /api/v1/project/artifacts       # ✅ 已落地：attachment 引用型创建
+GET    /api/v1/project/artifacts       # ✅ 已落地：按 project/task/file/source/limit 查询
+GET    /api/v1/project/artifacts/{id}  # ✅ 已落地：详情查询
+DELETE /api/v1/project/artifacts/{id}  # ✅ 已落地：软删除
+```
+
+暂不在 Batch 3.1 引入复杂编辑接口；如需修改名称、描述、tags，可后续补：
+
+```http
+PUT    /api/v1/project/artifacts/{id}
+```
+
+创建请求采用同一个入口、按 `source_type` 区分来源模式；Batch 3.1 已落地 `attachment` 引用型创建，`generated_content` 与 `remote_url` 先保留契约/枚举，后续补存储与元数据策略。
+
+Attachment 引用模式：
+
+```json
+{
+  "project_id": "proj_xxx",
+  "task_id": "task_xxx",
+  "source_type": "attachment",
+  "attachment_id": "att_xxx",
+  "name": "设计稿",
+  "description": "第一版方案",
+  "tags": ["design", "draft"]
+}
+```
+
+Agent 生成内容模式（仅契约预留，Batch 3.1 创建暂返回 `Unsupported`）：
+
+```json
+{
+  "project_id": "proj_xxx",
+  "task_id": "task_xxx",
+  "source_type": "generated_content",
+  "file_name": "implementation-plan.md",
+  "content": "# 实施方案\n...",
+  "mime_type": "text/markdown",
+  "name": "实施方案",
+  "description": "Agent 执行任务前沉淀的方案",
+  "tags": ["agent-generated", "plan"]
+}
+```
+
+字段语义：
+- `project_id`：必填，用于权限校验、归属校验和存储路径组织；
+- `task_id`：可选，传入时必须属于同一个 `project_id`；
+- `source_type`：必填，`attachment` 表示引用已上传文件，`generated_content` 表示 Agent 直接写入产物内容（当前 DTO 预留，创建暂不落地），`remote_url` 表示远程 URL 引用（当前仅预留枚举）；
+- `attachment_id`：仅 `source_type = attachment` 时必填，指向 Finance Attachment 用户资产；Handler 只读取 Attachment metadata，不直接读写文件；
+- `content/file_name/mime_type`：仅 `source_type = generated_content` 时使用；当前仅 DTO 契约预留，创建 Handler 暂返回 `Unsupported`；后续落地时 Handler 不直接写文件，只把内容交给 Project Domain，最终由 Artifact DAL 写入 artifact 专属存储；
+- `name/description/tags`：Artifact 业务元数据；Batch 3.1 不新增独立 `version` 字段，确需表达版本时可先放入 `name/description/tags`，后续再评估是否扩展模型。
+
+校验规则：`attachment_id` 与 `content` 二选一，必须与 `source_type` 匹配；Batch 3.1 创建 Handler 仅接受 `attachment_id` 引用型产物，`generated_content` / `remote_url` 暂返回 Unsupported；后续落地 `generated_content` 时应只面向文本类内容，并限制单次请求最大内容长度，避免把大文件上传能力绕过 Attachment。
+
+后续扩展：可在 Finance Attachment 自身补充“直接写入文本/文件内容”的能力，让 Attachment 除 multipart 上传外也支持由 Agent/系统直接创建文件资产；该能力不改变 Artifact API path，也不纳入 Batch 3.1。本批次只预留 `generated_content` 请求形态，暂不实现写入闭环。
+
+列表查询建议：
+
+```http
+GET /api/v1/project/artifacts?project_id=proj_xxx
+GET /api/v1/project/artifacts?project_id=proj_xxx&task_id=task_xxx
+GET /api/v1/project/artifacts?project_id=proj_xxx&source_type=attachment
+GET /api/v1/project/artifacts?project_id=proj_xxx&limit=50
+```
+
+`project_id` 作为列表查询必填参数，避免无边界扫全库；`task_id/file_type/source_type/limit` 作为可选过滤条件。`source_type` 按 API 枚举字符串传递（如 `attachment`、`generated_content`、`remote_url`）；`file_type` 遵循共享 `FileType` 的 serde 枚举格式。后续如需要 Agent 视角或全文搜索，可在同一资源集合上扩展 query 参数，而不是新增嵌套路由。
+
+实现范围：
+1. 新增 `common/src/api/artifact.rs`，定义 `CreateArtifactRequest`、`ArtifactSourceType`、`ArtifactDetail`、`ArtifactListQuery`、`ArtifactListItem`、`ListArtifactsResponse`、`GetArtifactResponse`、`DeleteArtifactResponse` 等 DTO，并在 `common/src/api/mod.rs` 导出；
+2. 新增 `common/src/api/artifact_test.rs`，覆盖 DTO JSON 契约：项目级/任务级、`attachment` 来源、`generated_content` 预留请求形态；
+3. 扩展 `src/models/artifact.rs` / artifacts 表，补 `source_type` 字段（整数枚举：1=`attachment`，2=`generated_content`，3=`remote_url`），避免只靠 `file_meta.file_path` 前缀反推来源；
+4. 扩展 `src/service/domain/project/artifact.rs`，提供面向 Handler 的统一创建入口，例如 `create_artifact(ctx, CreateArtifactParams)`；`ArtifactDomain` 需要持有 `ProjectDal` / `TaskDal` / `ArtifactDal`，在 Domain 内部校验 `project_id` 存在、`task_id` 归属一致，并按 `source_type` 组装 Artifact；
+5. Artifact 文件存储能力暂不纳入 Batch 3.1；后续落地 `generated_content` 时，位置建议在 Artifact DAL 或其下沉的文件存储辅助模块中，负责把内容写入 `artifacts/projects/{project_id}/{artifact_id}/{file_name}`，并返回 `FileMeta`；DAO 仍只负责 artifacts 表持久化；
+6. 如现有 Artifact Domain 只能按 project/task 分别查询，补统一 `list_artifacts(ctx, ArtifactListParams)`，转成 DAL/DAO `ArtifactQuery`；`ArtifactQuery` 需补 `file_type: Option<FileType>` 与 `source_type: Option<ArtifactSourceType>` 以匹配管理面查询参数；
+7. 新增 `src/handlers/project/artifact/`，每个用户 action 单独文件：`create_artifact.rs`、`list_artifacts.rs`、`get_artifact.rs`、`delete_artifact.rs`、`response.rs`、`mod.rs`；
+8. `create_artifact` Handler 按 `source_type` 分支：`attachment` 时调用 Finance Domain 获取 Attachment metadata（`include_file_content = false`）并转换为 `FileMeta`；`generated_content` / `remote_url` 在 Batch 3.1 暂返回 `Unsupported`；Handler 不直接读文件、不直接写 artifact 文件；
+9. 在 `src/handlers/project/mod.rs` 导出 artifact handlers；
+10. 在 `src/router.rs` 增加 `artifact_routes()`，暴露 `/project/artifacts...` 路由；
+11. 更新 `docs/project_management_design.md`、本文档、README/API 速览；
+12. 运行 fmt/check/相关测试并阶段性提交。
+
+计划链路：
+
+```text
+POST /api/v1/project/artifacts
+  body = { project_id, task_id?, source_type, ... }
+    ↓
+Artifact Handler
+    ├─ 校验 source_type 与请求字段匹配
+    ├─ attachment 来源：Finance Domain get_attachment(include_file_content = false)
+    │   └─ 校验 attachment 属于当前用户，返回 metadata
+    ├─ generated_content / remote_url 来源：Batch 3.1 暂返回 Unsupported
+    ↓
+    └─ Project Domain create_artifact(CreateArtifactParams)
+        ├─ 校验 project 存在且属于当前用户上下文
+        ├─ 若 task_id 存在，校验 task.project_id == project_id
+        ├─ attachment 来源：组装 Attachment 引用型 FileMeta
+        ├─ 组装 Artifact 业务实体
+        └─ 调用 Artifact DAL 持久化 metadata
+```
+
+Attachment 引用来源也可以先通过通用上传获得 `attachment_id`：
+
+```text
+POST /api/v1/finance/attachments/upload
+  → 得到 attachment_id
+POST /api/v1/project/artifacts
+  body = { project_id, task_id?, source_type: "attachment", attachment_id, name, description?, tags? }
+```
+
+验收：Artifact 可通过独立资源 API 创建、按项目/任务查询、查看详情、软删除；项目级与任务级产物均可表达；Batch 3.1 创建闭环仅支持引用 Finance Attachment，Agent 写入文本类归档内容仅保留 DTO/枚举契约且暂返回 `Unsupported`；Task 与 Project 不一致时由 Domain 拒绝；Handler 不越层、不直接触碰文件系统。
+
+#### Batch 3.2：Message 管理面 API
+
+1. 补 `message/management` 查询、状态更新、删除/清理接口；
+2. 保持 MessageDelivery、Consumer、Runtime 唤醒链路独立推进；
+3. 管理面只做 CRUD/查询/清理，不混入运行面队列投递逻辑。
 
 验收：文件和消息管理能力可用，但不把运行面队列/投递逻辑混入 CRUD Handler。
 

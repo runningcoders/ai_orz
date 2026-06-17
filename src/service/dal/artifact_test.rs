@@ -3,8 +3,7 @@
 use crate::models::artifact::Artifact;
 use crate::models::file::FileMeta;
 use crate::pkg::RequestContext;
-use crate::service::dal::artifact::ArtifactDal;
-use crate::service::dao::artifact::ArtifactQuery;
+use crate::service::dal::artifact::{ArtifactDal, ArtifactQuery};
 use common::enums::FileType;
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -125,6 +124,8 @@ async fn test_query_by_project(pool: SqlitePool) {
     let query = ArtifactQuery {
         project_id: Some(project_id),
         task_id: None,
+        file_type: None,
+        source_type: None,
         limit: Some(2),
     };
 

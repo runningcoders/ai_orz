@@ -54,6 +54,9 @@ pub struct EmptyResponse {}
 pub mod agent;
 #[cfg(test)]
 mod agent_test;
+pub mod artifact;
+#[cfg(test)]
+mod artifact_test;
 pub mod attachment;
 #[cfg(test)]
 mod attachment_test;
@@ -75,6 +78,7 @@ pub mod user;
 
 // Re-exports for convenient import
 pub use agent::*;
+pub use artifact::*;
 pub use attachment::*;
 pub use auth::*;
 pub use message_channel::*;
