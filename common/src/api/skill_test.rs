@@ -2,10 +2,12 @@
 
 use super::{
     ApiResponse, CreateSkillRequest, InstallSkillToAgentResponse, SkillDetail, SkillFileInput,
-    SkillFileItem, SkillListItem, SkillSearchQuery, UpdateSkillRequest,
+    SkillFileItem, SkillListItem, SkillSearchQuery, UpdateSkillFileContentRequest,
+    UpdateSkillRequest,
 };
 use crate::enums::SkillStatus;
 use crate::enums::skill::SkillAuthorType;
+use std::collections::HashMap;
 
 #[test]
 fn skill_requests_and_responses_serialize_contract() {
@@ -16,6 +18,7 @@ fn skill_requests_and_responses_serialize_contract() {
         category: Some("engineering".to_string()),
         status: Some(SkillStatus::Draft),
         content: Some("# Rust Debugging".to_string()),
+        initial_files: None,
     };
 
     let json = serde_json::to_string(&create).unwrap();
@@ -157,4 +160,56 @@ fn install_skill_to_agent_response_returns_installed_skill_detail() {
     assert_eq!(data.agent_id, "agent-1");
     assert_eq!(data.skill.parent_skill_id, "skill-source");
     assert_eq!(data.skill.status, SkillStatus::Draft);
+}
+
+#[test]
+fn create_skill_request_accepts_initial_files() {
+    let mut files = HashMap::new();
+    files.insert("skill.md".to_string(), "# Main Content".to_string());
+    files.insert("prompt.md".to_string(), "System Prompt".to_string());
+
+    let request = CreateSkillRequest {
+        name: "Multi-file Skill".to_string(),
+        description: "Skill with multiple markdown files".to_string(),
+        tags: vec!["template".to_string()],
+        category: Some("prompt".to_string()),
+        status: Some(SkillStatus::Draft),
+        content: None,
+        initial_files: Some(files),
+    };
+
+    let json = serde_json::to_string(&request).unwrap();
+    assert!(json.contains("skill.md"));
+    assert!(json.contains("Main Content"));
+    assert!(json.contains("prompt.md"));
+
+    let decoded: CreateSkillRequest = serde_json::from_str(&json).unwrap();
+    let decoded_files = decoded
+        .initial_files
+        .expect("initial_files should deserialize");
+    assert_eq!(decoded_files.len(), 2);
+    assert_eq!(
+        decoded_files.get("skill.md"),
+        Some(&"# Main Content".to_string())
+    );
+    assert_eq!(
+        decoded_files.get("prompt.md"),
+        Some(&"System Prompt".to_string())
+    );
+}
+
+#[test]
+fn update_skill_file_content_request_supports_optimistic_lock() {
+    let request = UpdateSkillFileContentRequest {
+        content: "Updated content".to_string(),
+        expected_updated_at: Some(1234567890),
+    };
+
+    let json = serde_json::to_string(&request).unwrap();
+    assert!(json.contains("Updated content"));
+    assert!(json.contains("1234567890"));
+
+    let decoded: UpdateSkillFileContentRequest = serde_json::from_str(&json).unwrap();
+    assert_eq!(decoded.content, "Updated content");
+    assert_eq!(decoded.expected_updated_at, Some(1234567890));
 }

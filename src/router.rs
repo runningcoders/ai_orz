@@ -193,6 +193,18 @@ fn hr_routes() -> Router {
             "/agents/{agent_id}/skills/{skill_id}",
             post(handlers::hr::skill::install_skill_to_agent),
         )
+        .route(
+            "/skills/{skill_id}/files",
+            get(handlers::hr::skill::list_skill_files_handler),
+        )
+        .route(
+            "/skills/{skill_id}/files/{*filename}",
+            get(handlers::hr::skill::get_skill_file_content_handler),
+        )
+        .route(
+            "/skills/{skill_id}/files/{*filename}",
+            put(handlers::hr::skill::update_skill_file_content_handler),
+        )
 }
 
 fn finance_routes() -> Router {

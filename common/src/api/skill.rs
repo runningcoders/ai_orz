@@ -3,6 +3,7 @@
 use crate::enums::SkillStatus;
 use crate::enums::skill::SkillAuthorType;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// 创建 Skill 请求。
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -19,6 +20,8 @@ pub struct CreateSkillRequest {
     pub status: Option<SkillStatus>,
     /// 主内容文件 skill.md 内容。
     pub content: Option<String>,
+    /// 初始多文件内容：filename -> content 映射，创建时直接生成所有文件。
+    pub initial_files: Option<HashMap<String, String>>,
 }
 
 /// Skill 列表查询参数。
@@ -165,5 +168,21 @@ pub type CreateSkillResponse = SkillDetail;
 /// 获取 Skill 响应。
 pub type GetSkillResponse = SkillDetail;
 
-/// 更新 Skill 响应。
-pub type UpdateSkillResponse = SkillDetail;
+/// 获取 Skill 文件内容响应。
+pub type GetSkillFileContentResponse = String;
+
+/// 更新 Skill 文件内容请求。
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct UpdateSkillFileContentRequest {
+    /// 文件内容。
+    pub content: String,
+    /// 乐观锁：期望的 Skill 更新时间戳（秒），不匹配返回 409 Conflict。
+    pub expected_updated_at: Option<i64>,
+}
+
+/// 列出 Skill 文件响应。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListSkillFilesResponse {
+    /// 文件列表。
+    pub files: Vec<SkillFileItem>,
+}

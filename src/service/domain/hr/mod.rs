@@ -224,4 +224,31 @@ pub trait SkillManage: Send + Sync {
         source_skill_id: &str,
         agent_id: &str,
     ) -> Result<Skill, AppError>;
+
+    // D. Skill 文件独立操作
+    /// 列出 Skill 所有文件，返回文件列表摘要
+    async fn list_skill_files(
+        &self,
+        ctx: RequestContext,
+        skill_id: &str,
+    ) -> Result<Option<Vec<crate::models::skill::SkillFile>>, AppError>;
+
+    /// 读取 Skill 指定文件内容，返回 UTF-8 文本
+    async fn get_skill_file_content(
+        &self,
+        ctx: RequestContext,
+        skill_id: &str,
+        filename: &str,
+    ) -> Result<Option<String>, AppError>;
+
+    /// 创建或更新 Skill 指定文件内容
+    /// 如果 skill 不存在返回 NotFound，如果乐观锁不匹配返回 Conflict
+    async fn update_skill_file_content(
+        &self,
+        ctx: RequestContext,
+        skill_id: &str,
+        filename: &str,
+        content: &str,
+        expected_updated_at: Option<i64>,
+    ) -> Result<(), AppError>;
 }

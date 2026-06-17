@@ -56,6 +56,23 @@ pub async fn create_skill(
         });
     }
 
+    // 处理初始多文件
+    if let Some(initial_files) = req.initial_files {
+        for (filename, content) in initial_files {
+            // 跳过 skill.md（已经由 content 处理了，如果重复保留 content）
+            if filename == "skill.md" {
+                continue;
+            }
+            // 校验文件名合法性，防止路径遍历攻击
+            crate::service::domain::hr::skill::validate_skill_import_target_path(&filename)?;
+            skill.files.push(SkillFile {
+                filename,
+                file_size: content.len() as u64,
+                content: Some(content),
+            });
+        }
+    }
+
     domain().skill_manage().create_skill(ctx, &skill).await?;
 
     Ok((

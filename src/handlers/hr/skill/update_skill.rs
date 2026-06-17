@@ -4,7 +4,7 @@ use axum::{
     Json as AxumJson,
     extract::{Extension, Json, Path},
 };
-use common::api::{ApiResponse, UpdateSkillRequest, UpdateSkillResponse};
+use common::api::{ApiResponse, SkillDetail, UpdateSkillRequest};
 
 use crate::error::AppError;
 use crate::models::attachment::AttachmentGetOptions;
@@ -20,7 +20,7 @@ pub async fn update_skill(
     Extension(ctx): Extension<RequestContext>,
     Path(id): Path<String>,
     Json(req): Json<UpdateSkillRequest>,
-) -> Result<AxumJson<ApiResponse<UpdateSkillResponse>>, AppError> {
+) -> Result<AxumJson<ApiResponse<SkillDetail>>, AppError> {
     let user_id = ctx.uid();
     if user_id.is_empty() {
         return Err(AppError::BadRequest("当前请求缺少用户上下文".to_string()));

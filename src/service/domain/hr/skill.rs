@@ -5,6 +5,7 @@ use crate::models::skill::Skill;
 use crate::pkg::RequestContext;
 use crate::service::dao::skill::{SkillQuery, SkillSearch};
 use crate::service::domain::hr::{HrDomainImpl, SkillManage, UpdateSkillParams};
+use common::constants::utils::current_timestamp;
 use common::enums::SkillStatus;
 use std::path::{Component, Path};
 
@@ -155,9 +156,116 @@ impl SkillManage for HrDomainImpl {
             .install_to_agent(ctx, source_skill_id, agent_id)
             .await
     }
+
+    async fn list_skill_files(
+        &self,
+        ctx: RequestContext,
+        skill_id: &str,
+    ) -> Result<Option<Vec<crate::models::skill::SkillFile>>, AppError> {
+        let uid = ctx.uid().to_string();
+        let Some(po) = self
+            .skill_dal
+            .get_po_by_id(ctx, skill_id.to_string())
+            .await?
+        else {
+            return Ok(None);
+        };
+
+        // 权限检查：仅作者可访问
+        if po.author_id != uid {
+            return Err(AppError::BadRequest(
+                "你没有权限访问该 Skill".to_string(),
+            ));
+        }
+
+        let files = self.skill_dal.list_files(&po)?;
+        Ok(Some(files))
+    }
+
+    async fn get_skill_file_content(
+        &self,
+        ctx: RequestContext,
+        skill_id: &str,
+        filename: &str,
+    ) -> Result<Option<String>, AppError> {
+        let uid = ctx.uid().to_string();
+        let Some(po) = self
+            .skill_dal
+            .get_po_by_id(ctx, skill_id.to_string())
+            .await?
+        else {
+            return Ok(None);
+        };
+
+        // 权限检查：仅作者可访问
+        if po.author_id != uid {
+            return Err(AppError::BadRequest(
+                "你没有权限访问该 Skill".to_string(),
+            ));
+        }
+
+        let content = self.skill_dal.read_file(&po, filename)?;
+        Ok(Some(content))
+    }
+
+    async fn update_skill_file_content(
+        &self,
+        ctx: RequestContext,
+        skill_id: &str,
+        filename: &str,
+        content: &str,
+        expected_updated_at: Option<i64>,
+    ) -> Result<(), AppError> {
+        let Some(mut po) = self
+            .skill_dal
+            .get_po_by_id(ctx.clone(), skill_id.to_string())
+            .await?
+        else {
+            return Err(AppError::NotFound(format!("Skill not found: {}", skill_id)));
+        };
+
+        // 权限检查：仅作者可修改
+        if po.author_id != ctx.uid() {
+            return Err(AppError::BadRequest(
+                "你没有权限修改该 Skill".to_string(),
+            ));
+        }
+
+        // 乐观锁校验
+        if let Some(expected) = expected_updated_at {
+            if po.updated_at != expected {
+                return Err(AppError::Conflict(format!(
+                    "Skill updated_at mismatch: expected {}, current {}",
+                    expected, po.updated_at
+                )));
+            }
+        }
+
+        // 校验文件名合法性（复用导入校验逻辑）
+        validate_skill_import_target_path(filename)?;
+
+        // 写入文件内容
+        self.skill_dal.write_file(&po, filename, content)?;
+
+        // 更新 skill 元数据
+        po.updated_at = current_timestamp();
+        po.modifier_id = ctx.uid().to_string();
+        self.skill_dal
+            .update(
+                ctx.clone(),
+                &Skill {
+                    po,
+                    files: vec![],
+                    search_match: None,
+                },
+            )
+            .await?;
+
+        Ok(())
+    }
 }
 
-fn validate_skill_import_target_path(target_path: &str) -> Result<(), AppError> {
+pub(crate) fn validate_skill_import_target_path(target_path: &str) -> Result<(), AppError> {
     if target_path.trim().is_empty() {
         return Err(AppError::BadRequest(
             "Skill import target_path 不能为空".to_string(),
