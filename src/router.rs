@@ -139,6 +139,11 @@ fn artifact_routes() -> Router {
             get(handlers::project::artifact::get_artifact)
                 .delete(handlers::project::artifact::delete_artifact),
         )
+        .route(
+            "/artifacts/{id}/content",
+            get(handlers::project::artifact::get_artifact_content)
+                .put(handlers::project::artifact::update_artifact_content),
+        )
 }
 
 fn organization_protected_routes() -> Router {

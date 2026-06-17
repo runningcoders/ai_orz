@@ -50,6 +50,26 @@ pub trait ArtifactDao: Send + Sync + std::fmt::Debug {
 
     /// Delete artifact (soft delete)
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()>;
+
+    /// Update an existing artifact full record.
+    async fn update(&self, ctx: RequestContext, artifact: &ArtifactPo) -> Result<()>;
+
+    /// Read artifact content from disk (for source_type = GeneratedContent).
+    /// Returns the raw bytes, None if artifact does not exist or no file.
+    async fn read_content(
+        &self,
+        ctx: RequestContext,
+        artifact: &ArtifactPo,
+    ) -> Result<Option<Vec<u8>>>;
+
+    /// Write artifact content to disk (for source_type = GeneratedContent).
+    /// Overwrites existing file if it exists.
+    async fn write_content(
+        &self,
+        ctx: RequestContext,
+        artifact: &ArtifactPo,
+        content: &[u8],
+    ) -> Result<()>;
 }
 
 pub mod sqlite;

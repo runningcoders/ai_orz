@@ -101,3 +101,36 @@ pub type GetArtifactResponse = ArtifactDetail;
 
 /// List Artifact response.
 pub type ListArtifactsResponse = Vec<ArtifactDetail>;
+/// Get artifact content response (text-based content).
+///
+/// Used when source_type = GeneratedContent, serves UTF-8 text content directly.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetArtifactContentResponse {
+    /// Artifact basic detail.
+    pub artifact: ArtifactDetail,
+    /// Text content response.
+    pub content: ArtifactContentText,
+}
+
+/// Text content metadata and payload.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArtifactContentText {
+    /// UTF-8 encoded content.
+    pub content: String,
+    /// Content encoding (always utf-8).
+    pub encoding: String,
+    /// Content size in bytes.
+    pub size: u64,
+    /// Last updated timestamp.
+    pub updated_at: i64,
+}
+
+/// Update artifact content request (full replace).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct UpdateArtifactContentRequest {
+    /// Full new content for replacement.
+    pub content: String,
+    /// Optional optimistic locking: expect current updated_at matches this value.
+    /// If mismatch, returns 409 Conflict.
+    pub expected_updated_at: Option<i64>,
+}

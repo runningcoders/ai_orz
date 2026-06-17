@@ -94,6 +94,24 @@ pub trait ArtifactDal: Send + Sync {
 
     /// 统计任务下的产物数量
     async fn count_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<u64, AppError>;
+
+    /// Update an existing artifact full record.
+    async fn update(&self, ctx: RequestContext, artifact: &Artifact) -> Result<(), AppError>;
+
+    /// Read artifact content (for generated content artifacts).
+    async fn read_content(
+        &self,
+        ctx: RequestContext,
+        artifact: &Artifact,
+    ) -> Result<Option<Vec<u8>>, AppError>;
+
+    /// Write artifact content (for generated content artifacts).
+    async fn write_content(
+        &self,
+        ctx: RequestContext,
+        artifact: &Artifact,
+        content: &[u8],
+    ) -> Result<(), AppError>;
 }
 
 // ==================== DAL 实现 ====================
@@ -186,5 +204,28 @@ impl ArtifactDal for ArtifactDalImpl {
             .count_by_task(ctx, task_id)
             .await
             .map(|v| v as u64)
+    }
+
+    async fn update(&self, ctx: RequestContext, artifact: &Artifact) -> Result<(), AppError> {
+        self.artifact_dao.update(ctx, &artifact.po).await
+    }
+
+    async fn read_content(
+        &self,
+        ctx: RequestContext,
+        artifact: &Artifact,
+    ) -> Result<Option<Vec<u8>>, AppError> {
+        self.artifact_dao.read_content(ctx, &artifact.po).await
+    }
+
+    async fn write_content(
+        &self,
+        ctx: RequestContext,
+        artifact: &Artifact,
+        content: &[u8],
+    ) -> Result<(), AppError> {
+        self.artifact_dao
+            .write_content(ctx, &artifact.po, content)
+            .await
     }
 }

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nUPDATE artifacts SET\n    project_id = ?,\n    task_id = ?,\n    name = ?,\n    description = ?,\n    file_type = ?,\n    file_meta = ?,\n    source_type = ?,\n    tags = ?,\n    status = ?,\n    created_by = ?,\n    modified_by = ?,\n    created_at = ?,\n    updated_at = ?\nWHERE id = ?\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 14
+    },
+    "nullable": []
+  },
+  "hash": "14f5ccd7339996b927692346a8be9e1a280e0de4029f7c35c9f074f2f7451704"
+}

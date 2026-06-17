@@ -1,6 +1,9 @@
 //! Artifact API DTO contract tests.
 
-use super::{ApiResponse, ArtifactDetail, CreateArtifactRequest, ListArtifactsQuery};
+use super::{
+    ApiResponse, ArtifactDetail, CreateArtifactRequest, GetArtifactContentResponse,
+    ListArtifactsQuery, UpdateArtifactContentRequest,
+};
 use crate::enums::{ArtifactSourceType, FileType};
 
 #[test]
@@ -105,4 +108,62 @@ fn list_artifacts_query_and_response_serialize_contract() {
     let response_json = serde_json::to_string(&response).unwrap();
     assert!(response_json.contains("artifact-1"));
     assert!(response_json.contains("attachments/20260617/doc.md"));
+}
+
+#[test]
+fn get_artifact_content_response_contract_serializes_correctly() {
+    let content = super::ArtifactContentText {
+        content: "# Hello World".to_string(),
+        encoding: "utf-8".to_string(),
+        size: 14,
+        updated_at: 1718000000,
+    };
+    let artifact = ArtifactDetail {
+        id: "artifact-1".to_string(),
+        project_id: "project-1".to_string(),
+        task_id: None,
+        name: "Hello.md".to_string(),
+        description: "".to_string(),
+        file_type: FileType::Document,
+        source_type: ArtifactSourceType::GeneratedContent,
+        file_path: "artifacts/projects/project-1/artifact-1/Hello.md".to_string(),
+        mime_type: "text/markdown".to_string(),
+        file_size: 14,
+        tags: vec![],
+        status: 1,
+        created_by: "user-1".to_string(),
+        modified_by: "user-1".to_string(),
+        created_at: 1718000000,
+        updated_at: 1718000000,
+    };
+    let resp = GetArtifactContentResponse { artifact, content };
+    let json = serde_json::to_string(&resp).unwrap();
+    assert!(json.contains("utf-8"));
+    assert!(json.contains("Hello World"));
+    let decoded: GetArtifactContentResponse = serde_json::from_str(&json).unwrap();
+    assert_eq!(decoded.content.content, "# Hello World");
+    assert_eq!(decoded.content.encoding, "utf-8");
+}
+
+#[test]
+fn update_artifact_content_request_supports_optional_optimistic_lock() {
+    // without optimistic lock
+    let req = UpdateArtifactContentRequest {
+        content: "new content".to_string(),
+        expected_updated_at: None,
+    };
+    let json = serde_json::to_string(&req).unwrap();
+    let decoded: UpdateArtifactContentRequest = serde_json::from_str(&json).unwrap();
+    assert_eq!(decoded.content, "new content");
+    assert_eq!(decoded.expected_updated_at, None);
+
+    // with optimistic lock
+    let req = UpdateArtifactContentRequest {
+        content: "updated".to_string(),
+        expected_updated_at: Some(1718000000),
+    };
+    let json = serde_json::to_string(&req).unwrap();
+    assert!(json.contains("1718000000"));
+    let decoded: UpdateArtifactContentRequest = serde_json::from_str(&json).unwrap();
+    assert_eq!(decoded.expected_updated_at, Some(1718000000));
 }

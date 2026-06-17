@@ -1,11 +1,12 @@
 //! SQLite implementation of Artifact DAO
 
 use super::{ArtifactDao, ArtifactQuery};
-use crate::error::Result;
+use crate::error::{AppError, Result};
 use crate::models::{artifact::ArtifactPo, file::FileMeta};
 use crate::pkg::RequestContext;
 use common::enums::{ArtifactSourceType, FileType};
 use sqlx::types::Json;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::OnceLock;
 
@@ -13,9 +14,9 @@ use std::sync::OnceLock;
 
 static DAO_INSTANCE: OnceLock<Arc<dyn ArtifactDao + Send + Sync>> = OnceLock::new();
 
-/// 创建一个全新的 Artifact DAO 实例（用于测试）
+/// Create a new Artifact DAO instance
 pub fn new() -> Arc<dyn ArtifactDao + Send + Sync> {
-    Arc::new(ArtifactDaoSqliteImpl::new())
+    Arc::new(ArtifactDaoSqliteImpl)
 }
 
 /// Get the singleton Artifact DAO instance
@@ -31,12 +32,27 @@ pub fn init() {
     let _ = DAO_INSTANCE.set(new());
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct ArtifactDaoSqliteImpl;
 
 impl ArtifactDaoSqliteImpl {
-    fn new() -> Self {
-        Self
+    fn resolve_generated_content_path(&self, artifact: &ArtifactPo) -> Result<PathBuf> {
+        // Use Config's built-in method to get the correct path:
+        // {base_data_dir}/artifacts/projects/{project_id}/{artifact_id}/{file_path}
+        let config = crate::config::get();
+        let dir_path = config
+            .artifact_project_dir(&artifact.project_id)
+            .join(&artifact.id);
+        let path = dir_path.join(&artifact.file_meta.0.file_path);
+
+        // Check for path traversal (double-check)
+        if !path.starts_with(config.artifacts_dir()) {
+            return Err(AppError::BadRequest(
+                "Invalid artifact file path: path traversal attempt detected".to_string(),
+            ));
+        }
+
+        Ok(path)
     }
 }
 
@@ -216,5 +232,94 @@ UPDATE artifacts SET "status" = ?, updated_at = ? WHERE id = ?
 
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()> {
         self.update_status(ctx, id, 0).await
+    }
+
+    async fn update(&self, ctx: RequestContext, artifact: &ArtifactPo) -> Result<()> {
+        let pool = ctx.db_pool();
+        let ft = artifact.file_type as i32;
+        let source_type = artifact.source_type as i32;
+        sqlx::query!(
+            r#"
+UPDATE artifacts SET
+    project_id = ?,
+    task_id = ?,
+    name = ?,
+    description = ?,
+    file_type = ?,
+    file_meta = ?,
+    source_type = ?,
+    tags = ?,
+    status = ?,
+    created_by = ?,
+    modified_by = ?,
+    created_at = ?,
+    updated_at = ?
+WHERE id = ?
+"#,
+            artifact.project_id,
+            artifact.task_id,
+            artifact.name,
+            artifact.description,
+            ft,
+            artifact.file_meta,
+            source_type,
+            artifact.tags,
+            artifact.status,
+            artifact.created_by,
+            artifact.modified_by,
+            artifact.created_at,
+            artifact.updated_at,
+            artifact.id
+        )
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn read_content(
+        &self,
+        _ctx: RequestContext,
+        artifact: &ArtifactPo,
+    ) -> Result<Option<Vec<u8>>> {
+        // Only generated content is stored on disk
+        if artifact.source_type != common::enums::ArtifactSourceType::GeneratedContent {
+            return Ok(None);
+        }
+
+        let file_path = self.resolve_generated_content_path(artifact)?;
+
+        if !file_path.exists() {
+            return Ok(None);
+        }
+
+        let content = std::fs::read(file_path)?;
+        Ok(Some(content))
+    }
+
+    async fn write_content(
+        &self,
+        _ctx: RequestContext,
+        artifact: &ArtifactPo,
+        content: &[u8],
+    ) -> Result<()> {
+        // Only generated content can be written to disk
+        // (Attachment content is handled separately by finance attachment)
+        if artifact.source_type != common::enums::ArtifactSourceType::GeneratedContent {
+            return Err(AppError::BadRequest(format!(
+                "Cannot write content to artifact of source type {:?}",
+                artifact.source_type
+            )));
+        }
+
+        let file_path = self.resolve_generated_content_path(artifact)?;
+
+        // Ensure parent directory exists
+        if let Some(parent) = file_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        std::fs::write(file_path, content)?;
+
+        Ok(())
     }
 }

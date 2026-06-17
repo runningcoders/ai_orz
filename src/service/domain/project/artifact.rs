@@ -196,6 +196,79 @@ impl super::ArtifactManage for ProjectDomainImpl {
             .await?;
         self.artifact_dal.delete(ctx, id).await
     }
+
+    /// Get artifact content for generated-content artifacts.
+    async fn get_artifact_content(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<(Artifact, Vec<u8>)>, AppError> {
+        let Some(artifact) = self.artifact_dal.find_by_id(ctx.clone(), id).await? else {
+            return Ok(None);
+        };
+        // Validate user has access to this artifact via project ownership
+        self.validate_project_access(ctx.clone(), &artifact.po.project_id)
+            .await?;
+
+        if artifact.po.source_type != common::enums::ArtifactSourceType::GeneratedContent {
+            return Err(AppError::BadRequest(format!(
+                "Cannot read content directly from artifact source type {:?}, only GeneratedContent artifacts support direct content access.",
+                artifact.po.source_type
+            )));
+        }
+
+        let content = self.artifact_dal.read_content(ctx, &artifact).await?;
+        Ok(content.map(|c| (artifact, c)))
+    }
+
+    /// Update artifact content (full replacement) for generated-content artifacts.
+    async fn update_artifact_content(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        content: Vec<u8>,
+        expected_updated_at: Option<i64>,
+    ) -> Result<Artifact, AppError> {
+        let Some(mut artifact) = self.artifact_dal.find_by_id(ctx.clone(), id).await? else {
+            return Err(AppError::NotFound(format!("Artifact not found: {}", id)));
+        };
+        // Validate user has access to this artifact via project ownership
+        self.validate_project_access(ctx.clone(), &artifact.po.project_id)
+            .await?;
+
+        if artifact.po.source_type != common::enums::ArtifactSourceType::GeneratedContent {
+            return Err(AppError::BadRequest(format!(
+                "Cannot update content directly for artifact source type {:?}, only GeneratedContent artifacts support direct content update.",
+                artifact.po.source_type
+            )));
+        }
+
+        // Optimistic locking check
+        if let Some(expected) = expected_updated_at {
+            if artifact.po.updated_at != expected {
+                return Err(AppError::Conflict(format!(
+                    "Conflict: expected updated_at = {}, current updated_at = {}. Please reload and try again.",
+                    expected, artifact.po.updated_at
+                )));
+            }
+        }
+
+        // Write the new content to disk
+        self.artifact_dal
+            .write_content(ctx.clone(), &artifact, &content)
+            .await?;
+
+        // Update the artifact metadata: file size and updated timestamp
+        let now = common::constants::utils::current_timestamp_ms();
+        artifact.po.file_meta.0.file_size = content.len() as u64;
+        artifact.po.updated_at = now;
+        artifact.po.modified_by = ctx.uid();
+
+        // Update the artifact record in database
+        self.artifact_dal.update(ctx.clone(), &artifact).await?;
+
+        Ok(artifact)
+    }
 }
 
 impl ProjectDomainImpl {

@@ -336,6 +336,24 @@ pub trait ArtifactManage: Send + Sync {
 
     /// 删除产物
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+
+    /// Get artifact content (only for generated-content artifacts).
+    /// Returns the raw bytes if exists, None otherwise.
+    async fn get_artifact_content(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<(Artifact, Vec<u8>)>, AppError>;
+
+    /// Update artifact content (full replace, only for generated-content artifacts).
+    /// Returns the updated artifact.
+    async fn update_artifact_content(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        content: Vec<u8>,
+        expected_updated_at: Option<i64>,
+    ) -> Result<Artifact, AppError>;
 }
 
 // ==================== 实现 ====================
