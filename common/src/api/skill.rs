@@ -1,5 +1,6 @@
 //! Skill management API request/response DTOs - shared between backend and frontend
 
+use ai_orz_macros::Params;
 use crate::enums::SkillStatus;
 use crate::enums::skill::SkillAuthorType;
 use serde::{Deserialize, Serialize};
@@ -48,6 +49,8 @@ pub struct SkillSearchQuery {
     pub status: Option<SkillStatus>,
     /// 可选分类筛选。
     pub category: Option<String>,
+    /// 可选作者筛选。
+    pub author_id: Option<String>,
     /// 返回数量限制。
     pub limit: Option<usize>,
 }
@@ -180,6 +183,28 @@ pub struct UpdateSkillFileContentRequest {
     pub expected_updated_at: Option<i64>,
 }
 
+/// 更新 Skill 文件内容参数。
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema, Params)]
+pub struct UpdateSkillFileContentParams {
+    /// Skill ID。
+    #[param(source = "path")]
+    pub skill_id: String,
+
+    /// 文件路径。
+    #[param(source = "path")]
+    pub filename: String,
+
+    /// 文件内容。
+    pub content: String,
+
+    /// 乐观锁：期望的 Skill 更新时间戳（秒），不匹配返回 409 Conflict。
+    pub expected_updated_at: Option<i64>,
+}
+
+/// 更新 Skill 文件内容响应。
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+pub struct UpdateSkillFileContentResponse {}
+
 /// 列出 Skill 文件响应。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListSkillFilesResponse {
@@ -188,8 +213,21 @@ pub struct ListSkillFilesResponse {
 }
 
 /// 列出 Skill 文件参数。
-#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema, Params)]
 pub struct ListSkillFilesParams {
     /// Skill ID。
+    #[param(source = "path")]
     pub skill_id: String,
+}
+
+/// 获取 Skill 文件内容参数。
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema, Params)]
+pub struct GetSkillFileContentParams {
+    /// Skill ID。
+    #[param(source = "path")]
+    pub skill_id: String,
+
+    /// 文件路径。
+    #[param(source = "path")]
+    pub filename: String,
 }

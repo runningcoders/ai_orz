@@ -8,67 +8,54 @@
 
 做到**一份定义，两端通用**，不需要维护多份参数代码。
 
-## 架构设计
+## 最终实现方案（稳定版，不需要 nightly）
 
-### 整体流程
+使用 `#[derive(Params)]` + `#[param(source = "...")]` 标记参数来源：
 
-```
-common/src/api/MyEndpointParams.rs
-  ├─ struct MyEndpointParams {
-  │     #[path] id: String,
-  │     #[body] content: String,
-  │ }
-  │
-  ↓  (一份定义)
+```rust
+// common/src/api/skill.rs
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema, Params)]
+pub struct UpdateSkillFileContentParams {
+    /// Skill ID
+    #[param(source = "path")]
+    pub skill_id: String,
 
-src/handlers/module/endpoint.rs
-  ├─ #[register_handler_tool(...)]
-  ├─ #[generate_http_handler]
-  ├─ async fn my_endpoint(
-  │       ctx: RequestContext,
-  │       params: MyEndpointParams,
-  │   ) -> Result<Output, AppError> {
-  │       // 核心逻辑，调用 domain...
-  │   }
-  │
-  ↓  (两个宏自动生成)
+    /// File path in skill
+    #[param(source = "path")]
+    pub filename: String,
 
-  1. register_handler_tool 自动生成：
-     - 工厂结构体
-     - 自动注册到全局工具注册表
-     - 自动 JSON Schema 生成
+    /// New file content (UTF-8 text)
+    pub content: String,
 
-  2. generate_http_handler 自动生成：
-     - my_endpoint_handler 函数
-     - 自动提取 path/query/body 字段
-     - 组装成 Params 结构体
-     - 调用核心逻辑
-     - 包装成 Json<ApiResponse<Output>> 返回
+    /// Expected last updated timestamp (for optimistic locking), optional
+    pub expected_updated_at: Option<i64>,
+}
 ```
 
-### 字段注解
+- `#[derive(Params)]`：这个 derive 不生成任何代码，只是让 `#[param]` 属性可以被解析
+- `#[param(source = "path")]`：标记该参数来自 URL 路径
+- `#[param(source = "query")]`：标记该参数来自 URL 查询参数
+- 没有 `#[param]` 的字段默认来自 JSON 请求体
 
-用户在参数结构体上用字段注解标记参数来源：
+不需要 nightly，完全稳定可用！
 
-| 注解 | 说明 | 提取方式 |
+## 字段注解
+
+| 注解方式 | 说明 | 提取方式 |
 |------|------|----------|
-| `#[path]` | URL 路径参数 | 从 `Path` 提取 |
-| `#[query]` | URL 查询参数 | 从 query string 提取 |
-| `#[body]` | JSON 请求体 | 从 `Json` 提取整个结构体，或者只提取指定字段 |
+| `#[param(source = "path")]` | URL 路径参数 | 从 `Path` 提取 |
+| `#[param(source = "query")]` | URL 查询参数 | 从 query string 提取 |
+| 无注解 | JSON 请求体 | 从 `Json` 提取 |
 
-> **设计选择：** 推荐方式 - 如果大部分参数在 body，可以 `#[body]` 标记整个结构体：
-> ```rust
-> #[derive(Deserialize, Serialize, JsonSchema)]
-> struct CreateUserParams {
->     #[path] organization_id: String,
->     #[body] name: String,
->     #[body] email: String,
-> }
-> ```
+> **默认规则：** 没有 `#[param]` 注解的字段默认都来自 `body`，整个结构体通过 `Json` 反序列化后，再用 `path`/`query` 覆盖对应字段。
 
 ## 宏设计
 
-### 1. `#[generate_http_handler]` 属性宏
+### 1. `#[derive(Params)]` derive 宏
+
+这是一个空 derive 宏，**不生成任何代码**，只是为了让 `#[param]` 属性可以被 `syn` 解析读取。
+
+### 2. `#[generate_http_handler]` 属性宏
 
 **使用方式：**
 
@@ -78,9 +65,9 @@ src/handlers/module/endpoint.rs
 
 **作用：**
 - 读取函数签名中的参数类型 `Params`
-- 通过 `syn` 遍历结构体字段，查找 `#[path]`/`#[query]`/`#[body]` 注解
+- 通过 `syn` 读取源码文件，查找 `#[param(source = ...)]` 注解，分类收集 `path`/`query`/`body` 字段
 - 生成对应的 axum `Path`/`Query`/`Json` extractor 参数
-- 组装成完整的 `Params` 结构体
+- 组装成完整的 `Params` 结构体（先反序列化 body，然后用 query 覆盖，最后用 path 覆盖）
 - 调用用户的核心函数
 - 将返回值包装成 `Json<ApiResponse<Output>>`
 
@@ -117,9 +104,13 @@ pub async fn update_skill_file_content_handler(
 }
 ```
 
-### 2. `#[register_handler_tool]` 保持不变
+### 3. `#[register_handler_tool]` 属性宏（保持不变）
 
-之前已经实现，增加对 `params = "path::to::Type"` 的解析，自动生成工具注册。
+自动注册为 LLM 内置工具：
+- 生成工厂结构体
+- 程序启动自动注册到全局工具注册表
+- 自动生成 JSON Schema 存入数据库
+- 支持 `Result<Value, AppError>` 和 `Result<impl Serialize, AppError>` 两种返回类型
 
 ## 处理规则
 
@@ -318,4 +309,4 @@ pub async fn update_skill_file_content_handler(
 
  | 日期 | 更新内容 | 作者 |
  |------|----------|------|
- | 2026-06-21 | 初始设计文档完成，完整支持 `#[path]` `#[query]` 任意组合，优先级 `path > query > body` | AI Orz |
+ | 2026-06-21 | 初始设计文档完成，完整支持 `#[param(source = "path")]` `#[param(source = "query")]`，最终方案采用 `#[derive(Params)]` + `#[param]`，不需要 nightly，完全稳定可用。优先级 `path > query > body` | AI Orz |

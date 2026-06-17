@@ -1,7 +1,17 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, AngleBracketedGenericArguments};
-use syn::{Ident, ItemFn, Lit, LitStr, Meta, Type};
+use syn::{Ident, ItemFn, Lit, LitStr, Meta, MetaNameValue, Type};
+
+/// Derive macro to mark HTTP params and their source locations.
+/// This is used together with #[generate_http_handler] to automatically
+/// collect which fields come from path/query/body.
+#[proc_macro_derive(Params, attributes(param))]
+pub fn derive_params(input: TokenStream) -> TokenStream {
+    // This derive doesn't generate any code, it just holds the #[param] attributes
+    // for #[generate_http_handler] to read.
+    TokenStream::new()
+}
 
 /// Register a handler function as a built-in tool
 ///
@@ -27,57 +37,36 @@ use syn::{Ident, ItemFn, Lit, LitStr, Meta, Type};
 #[proc_macro_attribute]
 pub fn register_handler_tool(args: TokenStream, input: TokenStream) -> TokenStream {
     let item_fn = parse_macro_input!(input as syn::ItemFn);
-    let meta = parse_macro_input!(args as Meta);
 
-    // Parse attributes
+    // Parse with a parser that allows trailing commas
+    use syn::parse::Parser;
     let mut id = None;
     let mut name = None;
     let mut description = None;
     let mut params_type = None;
-    let mut handler_ident = None;
+    let mut handler_ident: Option<Ident> = None;
 
-    if let Meta::List(meta_list) = meta {
-        use proc_macro2::TokenStream;
-        let mut tokens = TokenStream::new();
-        for nested in meta_list.tokens {
-            tokens.extend(std::iter::once(nested));
-            if let Some(nested_meta) = syn::parse::<Meta>(tokens.clone().into()).ok() {
-                tokens = TokenStream::new();
-                match nested_meta {
-                    Meta::NameValue(nv) => {
-                        if let Some(ident) = nv.path.get_ident() {
-                            if ident == "id" {
-                                if let Some(s) = get_lit_str(&nv.value) {
-                                    id = Some(s.value());
-                                }
-                            } else if ident == "name" {
-                                if let Some(s) = get_lit_str(&nv.value) {
-                                    name = Some(s.value());
-                                }
-                            } else if ident == "description" {
-                                if let Some(s) = get_lit_str(&nv.value) {
-                                    description = Some(s.value());
-                                }
-                            } else if ident == "params" {
-                                if let Some(s) = get_lit_str(&nv.value) {
-                                    let ty: Type = syn::parse_str(&s.value()).unwrap();
-                                    params_type = Some(ty);
-                                }
-                            }
-                        }
-                    }
-                    Meta::Path(p) => {
-                        if handler_ident.is_none() {
-                            if let Some(ident) = p.get_ident() {
-                                handler_ident = Some(ident.clone());
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
+    let parser = syn::meta::parser(|meta| {
+        if meta.path.is_ident("id") {
+            id = Some(meta.value()?.parse::<LitStr>()?.value());
+            Ok(())
+        } else if meta.path.is_ident("name") {
+            name = Some(meta.value()?.parse::<LitStr>()?.value());
+            Ok(())
+        } else if meta.path.is_ident("description") {
+            description = Some(meta.value()?.parse::<LitStr>()?.value());
+            Ok(())
+        } else if meta.path.is_ident("params") {
+            let s = meta.value()?.parse::<LitStr>()?;
+            let ty: Type = syn::parse_str(&s.value()).unwrap();
+            params_type = Some(ty);
+            Ok(())
+        } else {
+            Err(meta.error("unexpected argument"))
         }
-    }
+    });
+
+    parser.parse(args).unwrap();
 
     fn get_lit_str(expr: &syn::Expr) -> Option<&LitStr> {
         match expr {
@@ -148,16 +137,32 @@ pub fn register_handler_tool(args: TokenStream, input: TokenStream) -> TokenStre
 
         struct #factory_ident;
 
+        use crate::models::tool::{CoreTool, ToolPo};
+        use crate::pkg::tool_registry::BuiltinToolFactory;
+
+        impl Clone for #factory_ident {
+            fn clone(&self) -> Self {
+                #factory_ident
+            }
+        }
+
+        impl Copy for #factory_ident {}
+
+        unsafe impl Send for #factory_ident {}
+        unsafe impl Sync for #factory_ident {}
+
         impl BuiltinToolFactory for #factory_ident {
             fn create_po(&self) -> ToolPo {
                 use common::enums::tool::{ControlMode, ToolProtocol, ToolStatus};
+                let schema = schemars::schema_for!(#params_type);
+                let schema_json = serde_json::to_value(&schema).unwrap();
                 let mut po = ToolPo::new(
                     #id.to_string(),
                     #name.to_string(),
                     #description.to_string(),
                     ToolProtocol::Builtin,
-                    serde_json::Value::Null,
-                    Some(schemars::schema_for!(#params_type)),
+                    schema_json,
+                    None,
                     vec![],
                     None,
                 );
@@ -168,9 +173,11 @@ pub fn register_handler_tool(args: TokenStream, input: TokenStream) -> TokenStre
 
             fn create(&self, po: ToolPo) -> Box<dyn CoreTool> {
                 use crate::pkg::tool_registry::handler_adapter::*;
+                let schema = schemars::schema_for!(#params_type);
+                let json = serde_json::to_value(&schema).unwrap();
                 let adapter = HandlerToolAdapter::<#params_type>::new(
                     po,
-                    schemars::schema_for!(#params_type),
+                    json,
                     #factory_expanded,
                 );
                 Box::new(adapter)
@@ -289,16 +296,13 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
         _ => panic!("Params must be a named struct type"),
     };
 
-    // Try to find and parse the params struct source file to collect #[path] and #[query] annotations
-    let (path_idents, query_idents) = collect_path_and_query_fields_from_type(params_ty_path);
+    // Collect #[path_param] and #[query_param] annotations from the struct definition
+    let (path_fields, query_fields) = collect_path_and_query_fields_from_type(params_ty_path);
+    let path_idents: Vec<Ident> = path_fields.iter().map(|(ident, _)| ident.clone()).collect();
+    let path_types: Vec<syn::Type> = path_fields.iter().map(|(_, ty)| ty.clone()).collect();
     let has_path = !path_idents.is_empty();
-    let has_query = !query_idents.is_empty();
-
-    // All path and query fields are assumed to be String (our convention)
-    let path_types: Vec<syn::Type> = path_idents
-        .iter()
-        .map(|_| syn::parse_str::<Type>("String").unwrap())
-        .collect();
+    let has_query = !query_fields.is_empty();
+    let query_idents: Vec<Ident> = query_fields.iter().map(|(ident, _)| ident.clone()).collect();
 
     // Generate the handler code
     let expanded = match (has_path, has_query) {
@@ -395,47 +399,56 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
 
     expanded.into()
 }
-
-/// Collect field ids that have #[path] or #[query] attribute by parsing the source file
-fn collect_path_and_query_fields_from_type(path: syn::Path) -> (Vec<Ident>, Vec<Ident>) {
+/// Collect field ids that have #[param(source = "path")] or #[param(source = "query")] attribute by parsing the source file
+fn collect_path_and_query_fields_from_type(path: syn::Path) -> (Vec<(Ident, Type)>, Vec<(Ident, Type)>) {
     // Get the last segment (the type name)
-    let type_name = match path.segments.last() {
-        Some(seg) => seg.ident.to_string(),
-        None => return (vec![], vec![]),
-    };
+    let type_name = path.segments.last().unwrap().ident.to_string();
 
-    // Try to find the source file for this type
-    // We know the convention: common/src/api/.../mod.rs or .../{type_name}.rs
-    // We search from the current workspace root
-    let current_dir = std::env::current_dir().ok();
-    if current_dir.is_none() {
-        return (vec![], vec![]);
-    }
-    let _current_dir = current_dir.unwrap();
+    // Get the project root from current environment
+    let workspace_root = std::env::var("CARGO_WORKSPACE_DIR").unwrap_or_else(|_| ".".to_string());
 
-    // Common search locations: common/src/api/**/*.rs
-    // Use glob to find the file
-    let pattern = format!("common/src/api/**/*{}.rs", to_snake_case(&type_name));
-    if let Ok(paths) = glob::glob(&pattern) {
-        for entry in paths.flatten() {
-            if let Ok(content) = std::fs::read_to_string(&entry) {
-                // Parse the file and look for the struct with matching name
-                if let Ok(file) = syn::parse_file(&content) {
-                    for item in &file.items {
+    // Search for the file that contains this type
+    // common/src/api/**/*.rs
+    let pattern = format!("{}/**/*.rs", workspace_root);
+
+    for entry in glob::glob(&pattern).unwrap() {
+        if let Ok(path) = entry {
+            let content = std::fs::read_to_string(path).ok();
+            if let Some(content) = content {
+                let syntax = syn::parse_file(&content).ok();
+                if let Some(syntax) = syntax {
+                    for item in &syntax.items {
                         if let syn::Item::Struct(item_struct) = item {
                             if item_struct.ident.to_string() == type_name {
-                                // Found it! Collect fields with #[path] or #[query] attribute
+                                // Found it! Collect fields with #[param(source = "...")] attribute
                                 let mut path_fields = Vec::new();
                                 let mut query_fields = Vec::new();
                                 for field in &item_struct.fields {
                                     for attr in &field.attrs {
-                                        if attr.path().is_ident("path") {
-                                            if let Some(ident) = &field.ident {
-                                                path_fields.push(ident.clone());
-                                            }
-                                        } else if attr.path().is_ident("query") {
-                                            if let Some(ident) = &field.ident {
-                                                query_fields.push(ident.clone());
+                                        if attr.path().is_ident("param") {
+                                            // Parse #[param(source = "path")]
+                                            if let Meta::NameValue(MetaNameValue { path: _, value, .. }) = &attr.meta {
+                                                if let Ok(lit_str) = match value {
+                                                    syn::Expr::Lit(syn::ExprLit { lit: Lit::Str(s), .. }) => Ok(s),
+                                                    _ => Err(()),
+                                                } {
+                                                    match lit_str.value().as_str() {
+                                                        "path" => {
+                                                            if let Some(ident) = &field.ident {
+                                                                path_fields.push((ident.clone(), field.ty.clone()));
+                                                            }
+                                                        }
+                                                        "query" => {
+                                                            if let Some(ident) = &field.ident {
+                                                                query_fields.push((ident.clone(), field.ty.clone()));
+                                                            }
+                                                        }
+                                                        "body" => {
+                                                            // body is default, no need to collect
+                                                        }
+                                                        _ => {}
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -449,8 +462,8 @@ fn collect_path_and_query_fields_from_type(path: syn::Path) -> (Vec<Ident>, Vec<
         }
     }
 
-    // If not found, return empty
-    (vec![], vec![])
+    // If not found, panic
+    panic!("Could not find struct type {} in source files", type_name);
 }
 
 fn to_snake_case(s: &str) -> String {

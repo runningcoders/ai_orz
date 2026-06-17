@@ -10,4 +10,5 @@ serde_json = "1"
 chrono = { version = "0.4", default-features = false, features = ["serde", "std", "clock"] }
 schemars = { version = "0.8", features = ["derive"] }
 sqlx = { version = "0.8.6", features = ["macros"], default-features = false, optional = true }
+ai-orz-macros = { path = "../ai-orz-macros" }
 

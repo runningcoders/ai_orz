@@ -1,32 +1,33 @@
 //! Handler: GET /api/v1/skills/{skill_id}/files/{*filename} - 读取 Skill 文件内容
 
-use axum::{
-    Json,
-    extract::{Extension, Path},
-};
-use common::api::{ApiResponse, GetSkillFileContentResponse};
-
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{GetSkillFileContentParams, GetSkillFileContentResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 
-/// GET /hr/skills/{skill_id}/files/{filename}
-///
-/// 读取 Skill 指定文件的 UTF-8 文本内容。
-pub async fn get_skill_file_content_handler(
-    Extension(ctx): Extension<RequestContext>,
-    Path((skill_id, filename)): Path<(String, String)>,
-) -> Result<Json<ApiResponse<GetSkillFileContentResponse>>, AppError> {
+/// Get the content of a file in a skill
+#[register_handler_tool(
+    id = "get_skill_file_content",
+    name = "get_skill_file_content",
+    description = "Read the text content of a specific file from a skill",
+    params = "common::api::GetSkillFileContentParams"
+)]
+#[generate_http_handler]
+pub async fn get_skill_file_content(
+    ctx: RequestContext,
+    params: GetSkillFileContentParams,
+) -> Result<GetSkillFileContentResponse, AppError> {
     let result = domain()
         .skill_manage()
-        .get_skill_file_content(ctx, &skill_id, &filename)
+        .get_skill_file_content(ctx, &params.skill_id, &params.filename)
         .await?;
 
     match result {
         None => Err(AppError::NotFound(format!(
-            "Skill or file not found: {}/{}",
-            skill_id, filename
+            "Skill file not found: {}/{}",
+            params.skill_id, params.filename
         ))),
-        Some(content) => Ok(Json(ApiResponse::success(content))),
+        Some(content) => Ok(content),
     }
 }

@@ -1,34 +1,33 @@
 //! Handler: PUT /api/v1/skills/{skill_id}/files/{*filename} - 创建或更新 Skill 文件
 
-use axum::{
-    Json,
-    extract::{Extension, Path},
-};
-use common::api::{ApiResponse, UpdateSkillFileContentRequest};
-
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{UpdateSkillFileContentParams, UpdateSkillFileContentResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 
-/// PUT /hr/skills/{skill_id}/files/{filename}
-///
-/// 创建或更新 Skill 指定文件的 UTF-8 文本内容。
-/// 如果文件不存在则创建，已存在则覆盖。支持乐观锁通过 expected_updated_at。
-pub async fn update_skill_file_content_handler(
-    Extension(ctx): Extension<RequestContext>,
-    Path((skill_id, filename)): Path<(String, String)>,
-    Json(req): Json<UpdateSkillFileContentRequest>,
-) -> Result<Json<ApiResponse<()>>, AppError> {
+/// Create or update a text file in a skill
+#[register_handler_tool(
+    id = "update_skill_file_content",
+    name = "update_skill_file_content",
+    description = "Create a new file or update the content of an existing text file in a skill. Supports optimistic locking with expected_updated_at to prevent conflicts.",
+    params = "common::api::UpdateSkillFileContentParams"
+)]
+#[generate_http_handler]
+pub async fn update_skill_file_content(
+    ctx: RequestContext,
+    params: UpdateSkillFileContentParams,
+) -> Result<UpdateSkillFileContentResponse, AppError> {
     domain()
         .skill_manage()
         .update_skill_file_content(
             ctx,
-            &skill_id,
-            &filename,
-            &req.content,
-            req.expected_updated_at,
+            &params.skill_id,
+            &params.filename,
+            &params.content,
+            params.expected_updated_at,
         )
         .await?;
 
-    Ok(Json(ApiResponse::<()>::ok()))
+    Ok(UpdateSkillFileContentResponse {})
 }
