@@ -1,5 +1,5 @@
-use crate::models::attachment::Attachment;
-use common::api::AttachmentDetail;
+use crate::models::attachment::{Attachment, AttachmentTextContent};
+use common::api::{AttachmentContentResponse, AttachmentDetail, TextContentResponse};
 
 pub(super) fn to_detail(attachment: &Attachment) -> AttachmentDetail {
     AttachmentDetail {
@@ -15,5 +15,17 @@ pub(super) fn to_detail(attachment: &Attachment) -> AttachmentDetail {
         created_by: attachment.po.created_by.clone(),
         created_at: attachment.po.created_at,
         updated_at: attachment.po.updated_at,
+    }
+}
+
+pub(super) fn to_content_response(content: &AttachmentTextContent) -> AttachmentContentResponse {
+    AttachmentContentResponse {
+        attachment: to_detail(&content.attachment),
+        text: TextContentResponse {
+            content: content.content.clone(),
+            encoding: content.encoding.clone(),
+            size: content.size,
+            updated_at: content.updated_at,
+        },
     }
 }

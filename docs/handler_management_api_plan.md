@@ -489,7 +489,7 @@ Agent 生成内容模式（仅契约预留，Batch 3.1 创建暂返回 `Unsuppor
 
 校验规则：`attachment_id` 与 `content` 二选一，必须与 `source_type` 匹配；Batch 3.1 创建 Handler 仅接受 `attachment_id` 引用型产物，`generated_content` / `remote_url` 暂返回 Unsupported；后续落地 `generated_content` 时应只面向文本类内容，并限制单次请求最大内容长度，避免把大文件上传能力绕过 Attachment。
 
-后续扩展：可在 Finance Attachment 自身补充“直接写入文本/文件内容”的能力，让 Attachment 除 multipart 上传外也支持由 Agent/系统直接创建文件资产；该能力不改变 Artifact API path，也不纳入 Batch 3.1。本批次只预留 `generated_content` 请求形态，暂不实现写入闭环。
+后续扩展：Batch 4.2 在 Finance Attachment 自身补充 `POST /api/v1/finance/attachments/text`，让 Attachment 除 multipart 上传外也支持由 Agent/系统通过 JSON 创建小型 UTF-8 文本文件资产；该能力不改变 Artifact API path，也不纳入 Batch 3.1。本批次只预留 `generated_content` 请求形态，暂不实现写入闭环。
 
 列表查询建议：
 
@@ -554,6 +554,100 @@ POST /api/v1/project/artifacts
 3. 管理面只做 CRUD/查询/清理，不混入运行面队列投递逻辑。
 
 验收：文件和消息管理能力可用，但不把运行面队列/投递逻辑混入 CRUD Handler。
+
+### Phase 4：简单文本内容编辑 API
+
+Phase 4 目标是在不引入通用 FileEdit Domain 的前提下，为 Finance Attachment、HR Skill、Project Artifact 三类已有资源补充“小文本文件内容读取/全量替换”能力。三个资源共享 DTO 与校验思路，但仍分别落在所属 Domain，避免跨领域副作用：
+
+- Attachment：用户资产，归属 Finance Domain；
+- Skill：技能主内容与附加文件，归属 HR Domain；
+- Artifact：项目/任务产物，归属 Project Domain；
+- Handler 只调用 Domain，不直接调用 DAL/DAO，不直接拼接或读写文件系统路径。
+
+#### Batch 4.1：共享文本内容 DTO 与校验边界
+
+共享 DTO 放在 `common/src/api/text_content.rs`，并由 `attachment.rs`、`artifact.rs`、`skill.rs` 组合使用：
+
+```rust
+pub struct TextContentResponse {
+    pub content: String,
+    pub encoding: String, // "utf-8"
+    pub size: u64,
+    pub updated_at: i64,
+}
+
+pub struct UpdateTextContentRequest {
+    pub content: String,
+    pub expected_updated_at: Option<i64>,
+}
+```
+
+统一约束：
+- 第一版只支持 UTF-8 简单文本；
+- 默认最大内容 `64KB`，避免绕过 Attachment 大文件上传能力；
+- `PUT` 采用全量替换，不做 patch/diff/version；
+- `expected_updated_at` 可选，传入时执行乐观锁，不匹配返回 `409 Conflict`；
+- 可编辑类型初期限制为 `text/*`、`.txt`、`.md`、`.json`、`.yaml`、`.yml`、`.toml`、`.csv`；
+- 所有路径和文件名校验必须在对应 Domain 内完成，Handler 不承载路径安全规则。
+
+#### Batch 4.2：Finance Attachment 文本内容创建与编辑
+
+路由：
+
+```http
+POST /api/v1/finance/attachments/text
+GET  /api/v1/finance/attachments/{id}/content
+PUT  /api/v1/finance/attachments/{id}/content
+```
+
+范围：
+1. 扩展 `common/src/api/attachment.rs`：`CreateTextAttachmentRequest { file_name, content, mime_type?, purpose? }`、`CreateTextAttachmentResponse = AttachmentDetail`、`AttachmentContentResponse { attachment, text }`，并复用 `UpdateTextContentRequest`；
+2. 扩展 Finance Domain `AttachmentManage`：`create_text_attachment` / `get_text_content` / `update_text_content`；
+3. `POST /attachments/text` 仅用于 JSON 传入的小型 UTF-8 文本内容，默认最大 `64KB`；大文件、二进制仍走 multipart upload；
+4. Domain 校验 `file_name` 安全（禁止 `/`、`\`、`..`、绝对路径、空路径、目录目标）、`mime_type`/扩展名属于文本类型、内容为 UTF-8、大小不超限、Attachment 属于当前 `root_user_id`；
+5. 读取/更新时继续校验 Attachment 存在、未删除、是可编辑文本、小于阈值、UTF-8、乐观锁匹配；
+6. AttachmentDal 当前已有 `create_from_upload` 与 `read_file`，需补 `create_from_text` / `update_text_content`，负责创建时生成 `id/stored_name/relative_path/FileType/size`，写入文件与 metadata；更新时完成文件覆盖与 metadata 刷新；
+7. AttachmentDao 当前已有 `write_file/read_file/file_exists` 文件 primitive 与 `insert/find/query/delete` metadata primitive，需补更新 metadata 的 primitive（如更新 `size/mime_type/file_type/modified_by/updated_at`）；DAO 不做 UTF-8、MIME、归属、乐观锁等业务判断；
+8. 新增 `src/handlers/finance/attachment/create_text_attachment.rs`、`get_attachment_content.rs` 与 `update_attachment_content.rs`，并注册路由。
+
+验收：可以通过 JSON 直接创建小文本 Attachment，也可以读取/替换已存在小文本 Attachment；危险文件名、二进制、超限、跨用户、乐观锁冲突均被拒绝；Handler 不读写文件、不拼接物理路径。
+
+#### Batch 4.3：HR Skill 文本文件内容编辑
+
+路由：
+
+```http
+GET /api/v1/hr/skills/{id}/files/content?path=skill.md
+PUT /api/v1/hr/skills/{id}/files/content?path=references/guide.md
+```
+
+范围：
+1. 扩展 `common/src/api/skill.rs`：`SkillFileContentQuery`、`SkillFileContentResponse`；
+2. 扩展 HR Domain `SkillManage`：`get_text_file_content` / `update_text_file_content`；
+3. Domain 校验 Skill 存在、可编辑、path 安全、文本大小/UTF-8/乐观锁；
+4. 显式内容编辑接口允许编辑 `skill.md`，但 Batch 2.5 的 Attachment 导入接口仍禁止覆盖 `skill.md`；
+5. 附加文本文件可通过安全相对路径直接全量写入；第一版不做删除、重命名、批量编辑。
+
+验收：可以读取/替换 `skill.md` 和 `references/*.md` 等附加文本；路径穿越、反斜杠、目录目标、超限、非 UTF-8 被拒绝。
+
+#### Batch 4.4：Project Artifact generated_content 创建与文本内容编辑
+
+路由：
+
+```http
+POST /api/v1/project/artifacts                # 扩展支持 source_type=generated_content
+GET  /api/v1/project/artifacts/{id}/content   # 仅 generated_content
+PUT  /api/v1/project/artifacts/{id}/content   # 仅 generated_content
+```
+
+范围：
+1. 扩展 `common/src/api/artifact.rs`：`ArtifactContentResponse`，复用 `UpdateTextContentRequest`；
+2. Project Domain `artifact_manage()` 补 `create_generated_content_artifact`、`get_text_content`、`update_text_content`；
+3. Domain 继续校验 `project_id` 存在、`task_id` 归属一致；
+4. ArtifactDal 或其内部文件存储辅助模块负责写入/读取 `artifacts/projects/{project_id}/{artifact_id}/{file_name}` 并返回/更新 `FileMeta`；ArtifactDao 仍只负责 artifacts 表持久化；
+5. `attachment` 来源 Artifact 不允许通过 Artifact API 编辑底层文件，需改用 Finance Attachment 内容编辑 API；`remote_url` 仍返回 Unsupported。
+
+验收：Agent/用户可以创建 generated_content 文本产物并后续读取/替换；attachment-backed Artifact 不会被 Artifact API 间接修改原始 Attachment。
 
 ---
 

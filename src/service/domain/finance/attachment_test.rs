@@ -2,8 +2,11 @@
 //!
 //! 通用上传文件资产 CRUD 测试，属于 Finance Domain。
 
-use crate::error::Result;
-use crate::models::attachment::{AttachmentGetOptions, AttachmentUpload};
+use crate::error::{AppError, Result};
+use crate::models::attachment::{
+    Attachment, AttachmentGetOptions, AttachmentReadResult, AttachmentTextContent,
+    AttachmentUpload, TextAttachmentCreate, TextContentUpdate,
+};
 use crate::pkg::RequestContext;
 use crate::service::dao::attachment::AttachmentQuery;
 use crate::service::domain::finance;
@@ -162,4 +165,60 @@ async fn test_get_attachment_hides_cross_root_user_assets(pool: SqlitePool) -> R
 
     assert!(found.is_none());
     Ok(())
+}
+
+#[test]
+fn text_attachment_domain_contract_types_are_available() {
+    let create = TextAttachmentCreate {
+        file_name: "notes.md".to_string(),
+        content: "# Notes".to_string(),
+        mime_type: None,
+        purpose: Some("skill".to_string()),
+    };
+    assert_eq!(create.file_name, "notes.md");
+
+    let update = TextContentUpdate {
+        content: "updated".to_string(),
+        expected_updated_at: Some(42),
+    };
+    assert_eq!(update.expected_updated_at, Some(42));
+
+    let upload = AttachmentUpload {
+        original_name: "notes.md".to_string(),
+        mime_type: "text/markdown".to_string(),
+        purpose: "skill".to_string(),
+        bytes: b"updated".to_vec(),
+    };
+    let po = crate::models::attachment::AttachmentPo::new(
+        "att-1".to_string(),
+        upload.original_name,
+        "att-1.md".to_string(),
+        "20260617/att-1.md".to_string(),
+        upload.mime_type,
+        common::enums::FileType::Document,
+        upload.bytes.len() as i64,
+        upload.purpose,
+        "test-user".to_string(),
+        "test-user".to_string(),
+    );
+    let attachment = Attachment::from_po(po).with_read_result(AttachmentReadResult {
+        relative_path: "20260617/att-1.md".to_string(),
+        bytes: b"updated".to_vec(),
+        size: 7,
+    });
+    let content = AttachmentTextContent {
+        attachment,
+        content: "updated".to_string(),
+        encoding: "utf-8".to_string(),
+        size: 7,
+        updated_at: 42,
+    };
+    assert_eq!(content.encoding, "utf-8");
+    assert_eq!(content.attachment.read_results.len(), 1);
+
+    assert_eq!(AppError::Conflict("stale".to_string()).code(), 409);
+    assert_eq!(
+        AppError::PayloadTooLarge("too large".to_string()).code(),
+        413
+    );
 }

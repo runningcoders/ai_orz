@@ -1,5 +1,6 @@
 //! Attachment upload/query API DTOs - shared between backend and frontend
 
+use crate::api::TextContentResponse;
 use crate::enums::FileType;
 use serde::{Deserialize, Serialize};
 
@@ -48,3 +49,28 @@ pub type UploadAttachmentResponse = AttachmentDetail;
 
 /// 获取 Attachment 响应。
 pub type GetAttachmentResponse = AttachmentDetail;
+
+/// JSON 创建小型 UTF-8 文本 Attachment 请求。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CreateTextAttachmentRequest {
+    /// 安全文件名，不能包含路径分隔符或路径穿越片段。
+    pub file_name: String,
+    /// UTF-8 文本内容。
+    pub content: String,
+    /// 可选 MIME 类型，不传时按扩展名推断。
+    pub mime_type: Option<String>,
+    /// 可选用途，如 skill/message/artifact/tool_result。
+    pub purpose: Option<String>,
+}
+
+/// JSON 创建小型 UTF-8 文本 Attachment 响应。
+pub type CreateTextAttachmentResponse = AttachmentDetail;
+
+/// Attachment 文本内容响应，组合 Attachment metadata 与文本内容。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttachmentContentResponse {
+    /// Attachment metadata。
+    pub attachment: AttachmentDetail,
+    /// UTF-8 文本内容。
+    pub text: TextContentResponse,
+}

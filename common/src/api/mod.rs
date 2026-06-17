@@ -73,6 +73,9 @@ mod skill_test;
 pub mod task;
 #[cfg(test)]
 mod task_test;
+pub mod text_content;
+#[cfg(test)]
+mod text_content_test;
 pub mod tool;
 pub mod user;
 
@@ -87,5 +90,6 @@ pub use organization::*;
 pub use project::*;
 pub use skill::*;
 pub use task::*;
+pub use text_content::*;
 pub use tool::*;
 pub use user::*;

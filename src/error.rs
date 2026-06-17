@@ -17,6 +17,8 @@ pub type Result<T> = std::result::Result<T, AppError>;
 pub enum AppError {
     NotFound(String),
     BadRequest(String),
+    Conflict(String),
+    PayloadTooLarge(String),
     Internal(String),
     Io(std::io::Error),
     ChannelPushError(String),
@@ -28,6 +30,8 @@ impl fmt::Display for AppError {
         match self {
             AppError::NotFound(msg) => write!(f, "Not found: {}", msg),
             AppError::BadRequest(msg) => write!(f, "Bad request: {}", msg),
+            AppError::Conflict(msg) => write!(f, "Conflict: {}", msg),
+            AppError::PayloadTooLarge(msg) => write!(f, "Payload too large: {}", msg),
             AppError::Internal(msg) => write!(f, "Internal error: {}", msg),
             AppError::Io(err) => write!(f, "IO error: {}", err),
             AppError::ChannelPushError(msg) => write!(f, "Channel push error: {}", msg),
@@ -98,6 +102,8 @@ impl AppError {
         match self {
             AppError::NotFound(_) => 404,
             AppError::BadRequest(_) => 400,
+            AppError::Conflict(_) => 409,
+            AppError::PayloadTooLarge(_) => 413,
             AppError::Internal(_) => 500,
             AppError::Io(_) => 500,
             AppError::ChannelPushError(_) => 500,
@@ -116,6 +122,8 @@ impl IntoResponse for AppError {
         let (status, code, message) = match self {
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, 404, msg),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, 400, msg),
+            AppError::Conflict(msg) => (StatusCode::CONFLICT, 409, msg),
+            AppError::PayloadTooLarge(msg) => (StatusCode::PAYLOAD_TOO_LARGE, 413, msg),
             AppError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, 500, msg),
             AppError::Io(err) => (StatusCode::INTERNAL_SERVER_ERROR, 500, err.to_string()),
             AppError::ChannelPushError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, 500, msg),

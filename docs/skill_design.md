@@ -197,6 +197,101 @@ HR Skill Domain 统一校验 `target_path`：
 - HR Skill：正常导入 `references/demo.md`；拒绝 `../evil.md`、`/tmp/evil.md`、`./evil.md`、尾随 `/` 的目录目标、反斜杠路径、空路径、直接覆盖主内容路径及其大小写变体；
 - Handler：Skill 更新时可把多个 `attachment_id + target_path` 编排为多个 `SkillFileImport`。
 
+### Batch 4.3：Skill 简单文本文件内容编辑
+
+Skill 已支持主内容 `skill.md` 与附加文件导入。下一步补充显式的“小文本文件内容编辑”接口，用于前端或 Agent 直接读取/替换 Skill 目录内的文本文件内容。该能力属于 HR Skill Domain，不依赖 Finance Attachment，也不接收 `attachment_id`。
+
+路由规划：
+
+```http
+GET /api/v1/hr/skills/{id}/files/content?path=skill.md
+PUT /api/v1/hr/skills/{id}/files/content?path=references/guide.md
+```
+
+选择 query 参数 `path`，而不是 path wildcard，原因是：
+- 避免 Axum wildcard 路由与已有 `/skills/{id}`、`/skills/search` 路由产生歧义；
+- 统一由 HR Domain 校验相对路径，Handler 不拼接文件系统路径；
+- 前端可对路径做 URL 编码，支持 `references/guide.md` 等子目录文件。
+
+DTO 建议复用通用文本结构：
+
+```rust
+pub struct SkillFileContentQuery {
+    pub path: String,
+}
+
+pub struct SkillFileContentResponse {
+    pub skill_id: String,
+    pub path: String,
+    pub text: TextContentResponse,
+}
+
+pub struct UpdateTextContentRequest {
+    pub content: String,
+    pub expected_updated_at: Option<i64>,
+}
+```
+
+编辑规则：
+
+- 仅支持 UTF-8 简单文本，默认最大内容 `64KB`；
+- `PUT` 是全量替换，不做 patch/diff/version；
+- `expected_updated_at` 可选，用于乐观锁；
+- 显式文件内容编辑接口允许编辑主文件 `skill.md`，区别于 Batch 2.5 的 Attachment 导入：导入接口仍禁止外部附件覆盖 `skill.md`，内容编辑接口则是用户/Agent 对 Skill 本身的显式修改；
+- 附加文件路径必须是 Skill 内容目录内的相对路径：拒绝空路径、绝对路径、`.`/`..` 片段、尾随 `/`、反斜杠路径分隔符；
+- 第一版不提供文件删除、重命名、批量编辑、二进制写入；如需新增附加文本文件，可通过 `PUT` 指定安全相对路径并写入内容。
+
+分层职责：
+
+```text
+GET/PUT /api/v1/hr/skills/{id}/files/content?path=...
+    ↓
+Skill Handler
+    ↓
+HR Domain SkillManage
+    ├─ 校验 Skill 存在、未过期、可被当前用户/Agent 编辑
+    ├─ 校验 path 安全与文本内容边界
+    ├─ path == skill.md 时读写主内容
+    └─ 其他 path 读写附加文件
+    ↓
+SkillDal
+    ↓
+SkillDao(技能目录文件读写 + metadata 更新时间)
+```
+
+建议 Domain 接口形态：
+
+```rust
+pub struct SkillTextFilePath {
+    pub path: String,
+}
+
+pub struct UpdateSkillTextFileParams {
+    pub skill_id: String,
+    pub path: String,
+    pub content: String,
+    pub expected_updated_at: Option<i64>,
+}
+
+#[async_trait]
+pub trait SkillManage: Send + Sync {
+    async fn get_text_file_content(
+        &self,
+        ctx: RequestContext,
+        skill_id: &str,
+        path: &str,
+    ) -> Result<Option<SkillTextFileContent>, AppError>;
+
+    async fn update_text_file_content(
+        &self,
+        ctx: RequestContext,
+        params: UpdateSkillTextFileParams,
+    ) -> Result<SkillTextFileContent, AppError>;
+}
+```
+
+`SkillTextFileContent` 返回业务对象，不暴露 `SkillPo`。如实现中需要更新 `updated_at/modified_by`，由 Domain 修改业务实体后调用 DAL 更新；文件写入仍通过 SkillDal/SkillDao 完成。
+
 ## 路径存储设计
 
 技能内容文件存储在数据目录下，按技能类型分目录存储：

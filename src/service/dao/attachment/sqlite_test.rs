@@ -132,6 +132,28 @@ async fn test_file_read_write_exists(pool: SqlitePool) -> Result<()> {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn test_update_file_and_metadata_size(pool: SqlitePool) -> Result<()> {
+    let (_temp_dir, dao, ctx) = init_test_env(pool);
+    let mut attachment = create_test_attachment("attachment-1", "skill.md", "skill");
+    dao.write_file(&attachment.relative_path, b"old")?;
+    dao.insert(ctx.clone(), &attachment).await?;
+
+    dao.write_file(&attachment.relative_path, b"new content")?;
+    dao.update_file_metadata(ctx.clone(), &attachment.id, 11)
+        .await?;
+
+    let found = dao.find_by_id(ctx, &attachment.id).await?.unwrap();
+    assert_eq!(found.size, 11);
+    assert_eq!(found.modified_by, "test-user");
+    assert!(found.updated_at >= attachment.updated_at);
+    assert_eq!(dao.read_file(&attachment.relative_path)?, b"new content");
+
+    attachment.mark_deleted("test-user".to_string());
+    assert_eq!(attachment.status, 0);
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn test_reject_path_traversal(pool: SqlitePool) -> Result<()> {
     let (_temp_dir, dao, _ctx) = init_test_env(pool);
 

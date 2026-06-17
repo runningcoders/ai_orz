@@ -37,6 +37,9 @@ pub trait AttachmentDao: Send + Sync + std::fmt::Debug {
     /// 更新状态。
     async fn update_status(&self, ctx: RequestContext, id: &str, status: i32) -> Result<()>;
 
+    /// 更新文件元数据。
+    async fn update_file_metadata(&self, ctx: RequestContext, id: &str, size: i64) -> Result<()>;
+
     /// 软删除。
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()>;
 

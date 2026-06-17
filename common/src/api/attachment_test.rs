@@ -1,4 +1,7 @@
-use crate::api::{ApiResponse, AttachmentDetail, AttachmentListQuery};
+use crate::api::{
+    ApiResponse, AttachmentDetail, AttachmentListQuery, CreateTextAttachmentRequest,
+    TextContentResponse, UpdateTextContentRequest,
+};
 use crate::enums::FileType;
 
 #[test]
@@ -29,4 +32,40 @@ fn attachment_query_and_response_serialize_contract() {
     let response_json = serde_json::to_string(&response).unwrap();
     assert!(response_json.contains("att-1"));
     assert!(response_json.contains("skill.md"));
+}
+
+#[test]
+fn text_attachment_create_and_content_contract() {
+    let request = CreateTextAttachmentRequest {
+        file_name: "notes.md".to_string(),
+        content: "# Notes".to_string(),
+        mime_type: None,
+        purpose: Some("skill".to_string()),
+    };
+    let json = serde_json::to_string(&request).unwrap();
+    assert!(json.contains("notes.md"));
+    assert!(json.contains("# Notes"));
+
+    let decoded: CreateTextAttachmentRequest = serde_json::from_str(&json).unwrap();
+    assert_eq!(decoded.file_name, "notes.md");
+    assert_eq!(decoded.mime_type, None);
+    assert_eq!(decoded.purpose, Some("skill".to_string()));
+
+    let content = TextContentResponse {
+        content: "updated".to_string(),
+        encoding: "utf-8".to_string(),
+        size: 7,
+        updated_at: 42,
+    };
+    let response = ApiResponse::success(content);
+    let response_json = serde_json::to_string(&response).unwrap();
+    assert!(response_json.contains("utf-8"));
+    assert!(response_json.contains("updated"));
+
+    let update = UpdateTextContentRequest {
+        content: "next".to_string(),
+        expected_updated_at: Some(42),
+    };
+    let update_json = serde_json::to_string(&update).unwrap();
+    assert!(update_json.contains("expected_updated_at"));
 }

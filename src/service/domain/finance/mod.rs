@@ -23,7 +23,10 @@ mod message_channel_test;
 mod tool_provider_test;
 
 use crate::error::AppError;
-use crate::models::attachment::{Attachment, AttachmentGetOptions, AttachmentUpload};
+use crate::models::attachment::{
+    Attachment, AttachmentGetOptions, AttachmentReadResult, AttachmentTextContent,
+    AttachmentUpload, TextAttachmentCreate, TextContentUpdate,
+};
 use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
 use crate::service::dal::attachment::AttachmentDal;
@@ -213,6 +216,13 @@ pub trait AttachmentManage: Send + Sync {
         upload: AttachmentUpload,
     ) -> Result<Attachment, AppError>;
 
+    /// 创建小型 UTF-8 文本 Attachment。
+    async fn create_text_attachment(
+        &self,
+        ctx: RequestContext,
+        create: TextAttachmentCreate,
+    ) -> Result<Attachment, AppError>;
+
     /// 获取上传文件资产。
     async fn get_attachment(
         &self,
@@ -220,6 +230,21 @@ pub trait AttachmentManage: Send + Sync {
         id: &str,
         options: AttachmentGetOptions,
     ) -> Result<Option<Attachment>, AppError>;
+
+    /// 读取 Attachment UTF-8 文本内容。
+    async fn get_attachment_text_content(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<AttachmentTextContent>, AppError>;
+
+    /// 全量替换 Attachment UTF-8 文本内容。
+    async fn update_attachment_text_content(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        update: TextContentUpdate,
+    ) -> Result<Option<AttachmentTextContent>, AppError>;
 
     /// 查询上传文件资产。
     async fn query_attachments(

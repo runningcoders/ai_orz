@@ -160,7 +160,7 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_task_id ON artifacts(task_id);
 - `attachment` 来源由 Handler 编排 Finance Domain 和 Project Domain，只读取 Attachment metadata 组装 `file_meta`，不做二次文件复制/搬运；
 - `generated_content` 当前仅在 DTO 契约中预留，创建 Handler 暂返回 Unsupported；后续落地时由 Handler 接收 `content + file_name + mime_type` 并交给 Project Domain，最终由 Artifact DAL/文件存储辅助模块写入 `artifacts/projects/{project_id}/{artifact_id}/{file_name}`；Handler 不直接读写文件或调用 DAO/DAL；
 - 大文件仍应走 Finance Attachment 上传，再创建 attachment 引用型 Artifact，避免绕过通用上传能力；
-- 后续可在 Finance Attachment 自身补充直接写入文本/文件内容的能力，让 Attachment 除 multipart 上传外也支持 Agent/系统创建文件资产；该扩展不属于 Project Artifact Batch 3.1。
+- Batch 4.2 在 Finance Attachment 自身补充 `POST /api/v1/finance/attachments/text`，让 Attachment 除 multipart 上传外也支持 Agent/系统通过 JSON 创建小型 UTF-8 文本文件资产；该扩展不属于 Project Artifact Batch 3.1。
 
 #### messages 表变更
 
@@ -373,6 +373,138 @@ pub struct AttachmentDetail {
 - MIME 类型不可完全信任客户端，第一阶段可结合 multipart header 与扩展名做基础推断；
 - 删除采用软删除，是否物理清理由后续后台清理策略统一处理。
 
+### Batch 4.2：Attachment 简单文本内容创建与编辑
+
+通用上传能力稳定后，Finance Attachment 需要补充面向“小文本文件”的直接创建、内容读取与全量替换能力，使用户或 Agent 可以直接创建和维护 `txt/md/json/yaml/toml/csv` 等轻量文本资产。该能力仍归属 Finance Domain，不拆独立文件编辑 Domain；大文件和二进制文件继续走 multipart upload。
+
+路由规划：
+
+```http
+POST /api/v1/finance/attachments/text
+GET  /api/v1/finance/attachments/{id}/content
+PUT  /api/v1/finance/attachments/{id}/content
+```
+
+请求与响应 DTO 建议复用通用文本结构，并在 Attachment API 中组合资源上下文：
+
+```rust
+pub struct CreateTextAttachmentRequest {
+    pub file_name: String,
+    pub content: String,
+    pub mime_type: Option<String>,
+    pub purpose: Option<String>,
+}
+
+pub type CreateTextAttachmentResponse = AttachmentDetail;
+
+pub struct TextContentResponse {
+    pub content: String,
+    pub encoding: String, // 固定 "utf-8"
+    pub size: u64,
+    pub updated_at: i64,
+}
+
+pub struct UpdateTextContentRequest {
+    pub content: String,
+    pub expected_updated_at: Option<i64>,
+}
+
+pub struct AttachmentContentResponse {
+    pub attachment: AttachmentDetail,
+    pub text: TextContentResponse,
+}
+```
+
+创建边界：
+
+- `POST /attachments/text` 仅用于 JSON 传入的小型 UTF-8 文本内容，默认最大 `64KB`；
+- `file_name` 只能是安全文件名，不能包含 `/`、`\`、`..`、绝对路径、空路径或目录目标；
+- `mime_type` 可选，不传则按扩展名推断；即使传入，也只能作为提示，不能绕过文本类型和 UTF-8 校验；
+- `purpose` 可选，如 `skill` / `message` / `artifact` / `tool_result`；
+- 成功后由 AttachmentDal 生成 `id`、`stored_name`、`relative_path`、`FileType`、`size`，写入文件并持久化 metadata，返回 `AttachmentDetail`；
+- Handler 不写文件、不生成物理路径，只把请求转换为 Finance Domain 命令。
+
+编辑边界：
+
+- 仅支持 UTF-8 简单文本，第一版不支持二进制、富文本、分片上传、patch/diff、版本历史；
+- 默认最大内容建议沿用 Skill 小文件预读阈值 `64KB`，超过阈值返回 `Unsupported` 或 `PayloadTooLarge`，避免绕过通用上传的大文件边界；
+- 可编辑类型通过 MIME 与扩展名双重兜底判断：`text/*`、`.txt`、`.md`、`.json`、`.yaml`、`.yml`、`.toml`、`.csv`；
+- `PUT` 为全量替换语义，不做增量 patch；
+- `expected_updated_at` 可选：传入时执行乐观锁校验，不匹配返回 `409 Conflict`；不传时按显式覆盖处理；
+- 更新成功后必须刷新 `size`、`modified_by`、`updated_at`，`mime_type/file_type` 可保持原值或按文件名重新推断，但不得信任用户直接提交路径。
+
+分层职责：
+
+```text
+POST /api/v1/finance/attachments/text
+GET/PUT /api/v1/finance/attachments/{id}/content
+    ↓
+Finance Attachment Handler
+    ↓
+Finance Domain AttachmentManage
+    ├─ 创建：校验 file_name/content/mime_type/purpose 与文本大小
+    ├─ 读取/编辑：校验 Attachment 存在、未删除、属于当前 root_user_id
+    ├─ 校验 MIME/扩展名/大小/UTF-8/乐观锁
+    ↓
+AttachmentDal
+    ├─ 创建：生成 id/stored_name/relative_path/FileType/size，写入文件与 metadata
+    ├─ 读取/编辑：read_file / write_file_bytes
+    └─ 更新 Attachment 元数据实体
+    ↓
+AttachmentDao(SQLite metadata + 文件系统 primitive IO)
+```
+
+当前代码能力确认与需补齐缺口：
+
+| 层级 | 当前能力 | Batch 4.2 需补齐 |
+|------|----------|------------------|
+| DAO | 已有 `insert/find_by_id/query/delete` 元数据持久化；已有 `write_file/read_file/file_exists` 基础文件 primitive，且 `write_file` 可覆盖同一路径内容 | 需新增“更新 Attachment 元数据”的持久化 primitive，例如更新 `size/mime_type/file_type/modified_by/updated_at`；DAO 不做 UTF-8、MIME、归属、乐观锁等业务判断 |
+| DAL | 已有 `create_from_upload`：生成 `id/stored_name/relative_path/FileType/size`，写文件并插入 metadata；已有 `read_file` | 需新增 `create_from_text` 与 `update_text_content`：复用路径/文件名生成与类型推断，完成写文件 + 插入/更新 metadata 的组合编排 |
+| Domain | 已有 `create_attachment` 与 `get_attachment(include_file_content=true)`，可读 bytes 并校验 root_user_id | 需新增文本语义接口：校验安全文件名、文本类型、UTF-8、64KB、归属、乐观锁，并把结果映射为 `AttachmentTextContent` |
+| Handler | 已有 multipart upload/get/list/delete | 需新增 JSON 文本创建、文本内容读取、文本内容全量替换三个用户 action；Handler 不直接碰文件系统 |
+
+结论：现有 DAO/DAL 已具备“文件创建/读取”的底层基础，但还不具备完整文本内容链路所需的“文本创建命令、文本更新编排、元数据更新、乐观锁与 UTF-8 校验”。Batch 4.2 必须把这些作为同一闭环实现，而不是只补 Handler/DTO。
+
+建议接口形态：
+
+```rust
+pub struct TextAttachmentCreate {
+    pub file_name: String,
+    pub content: String,
+    pub mime_type: Option<String>,
+    pub purpose: Option<String>,
+}
+
+pub struct TextContentUpdate {
+    pub content: String,
+    pub expected_updated_at: Option<i64>,
+}
+
+#[async_trait::async_trait]
+pub trait AttachmentManage: Send + Sync {
+    async fn create_text_attachment(
+        &self,
+        ctx: RequestContext,
+        create: TextAttachmentCreate,
+    ) -> Result<Attachment, AppError>;
+
+    async fn get_text_content(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<AttachmentTextContent>, AppError>;
+
+    async fn update_text_content(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        update: TextContentUpdate,
+    ) -> Result<AttachmentTextContent, AppError>;
+}
+```
+
+`AttachmentTextContent` 属于 Finance Domain 业务返回对象，可包含 `attachment: Attachment` 与 `content/encoding/size/updated_at`；Handler 再转换为 `AttachmentContentResponse`。创建文本 Attachment 时，Handler 也只把 `CreateTextAttachmentRequest` 转成 Domain 命令，不直接读写文件、不直接改 `AttachmentPo`，也不直接拼接文件路径。
+
 ## 与 Skill 文件更新的衔接
 
 ### Batch 2.5：Skill 文件引用导入
@@ -457,3 +589,4 @@ Skill 导入规则：
 |------|------|------|
 | 2026-04-15 | 初始设计文档，完成数据层开发 | 王挺 |
 | 2026-06-17 | 落地 Finance Attachment 通用上传 API：新增 attachments 表、Attachment DAO/DAL、Finance Domain 管理能力、common DTO、Axum Handler/Router，并规划 Skill 文件引用导入链路 | Hermes |
+| 2026-06-17 | 规划 Attachment 简单文本内容创建/读取/全量替换 API，明确 UTF-8、小文件、乐观锁、Finance Domain 归属与分层边界 | Hermes |

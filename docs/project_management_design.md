@@ -77,6 +77,8 @@ POST   /api/v1/project/artifacts       # ✅ 已落地：attachment 引用型创
 GET    /api/v1/project/artifacts       # ✅ 已落地：按 project/task/file/source/limit 查询
 GET    /api/v1/project/artifacts/{id}  # ✅ 已落地：详情查询
 DELETE /api/v1/project/artifacts/{id}  # ✅ 已落地：软删除
+GET    /api/v1/project/artifacts/{id}/content # ⏱ 规划：读取 generated_content 文本内容
+PUT    /api/v1/project/artifacts/{id}/content # ⏱ 规划：全量替换 generated_content 文本内容
 ```
 
 Artifact 虽然属于 Project Domain，但采用独立资源集合 API，而不是主入口绑定到 `/projects/{project_id}/artifacts`。API path 保持通用资源集合方案不变；`generated_content` 只是创建请求能力的后续扩展，不新增专用写入路径。原因是 Artifact 同时支持项目级产物与任务级产物，并且支持多种产物来源：
@@ -310,7 +312,7 @@ impl ProjectManage {
 **Batch 3.1 规则**：
 - Artifact 来源枚举支持 `attachment`、`generated_content` 与 `remote_url`；其中本批次创建闭环仅落地 `attachment` 引用型产物
 - `attachment` 来源：创建时引用 Finance Attachment 的 `attachment_id`；Handler 通过 Finance Domain 读取 Attachment metadata，转换为 `FileMeta { file_path, mime_type, file_size }`；不做二次文件复制/搬运
-- `generated_content` 来源：Agent 直接提交 `content + file_name + mime_type`；Handler 不写文件，只将内容交给 Project Domain；当前仅在 DTO 契约中预留，创建 Handler 暂返回 Unsupported，后续由 Project Domain / Artifact DAL 写入 artifact 专属存储路径并生成 `FileMeta`
+- `generated_content` 来源：Agent 直接提交 `content + file_name + mime_type`；Handler 不写文件，只将内容交给 Project Domain；Batch 3.1 仅在 DTO 契约中预留，创建 Handler 暂返回 Unsupported；Batch 4.4 规划由 Project Domain / Artifact DAL 写入 artifact 专属存储路径并生成 `FileMeta`
 - `file_meta.file_path` 使用逻辑前缀区分来源：Batch 3.1 的 Attachment 引用使用 `attachments/{relative_path}`，Agent 生成内容后续使用 `artifacts/projects/{project_id}/{artifact_id}/{file_name}`
 - artifacts 表已补 `source_type` 字段，明确记录来源类型，避免仅通过路径前缀推断
 
@@ -319,7 +321,83 @@ impl ProjectManage {
 /data/artifacts/projects/{project_id}/{artifact_id}/{file_name}
 ```
 
-该能力属于后续 Agent 过程留痕/归档扩展；大文件仍应走 Finance Attachment 上传，再创建 attachment 引用型 Artifact。后续可在 Finance Attachment 自身补充直接写入文本/文件内容的能力，但不改变 Artifact API path。
+该能力属于后续 Agent 过程留痕/归档扩展；大文件仍应走 Finance Attachment 上传，再创建 attachment 引用型 Artifact。Batch 4.2 规划在 Finance Attachment 自身补充 `POST /api/v1/finance/attachments/text`，支持 Agent/系统通过 JSON 创建小型 UTF-8 文本文件资产；该能力不改变 Artifact API path。
+
+### Batch 4.4：Artifact generated_content 文本内容编辑
+
+Artifact 内容编辑只面向 `source_type = generated_content` 的自有文本产物，不通过 Artifact API 修改 `attachment` 引用型产物的底层文件。原因是 Attachment 可能被多个业务对象复用，若从 Artifact API 修改其内容，会产生跨领域副作用；需要修改 Attachment 文件本身时，应使用 Finance Attachment 的文本内容编辑 API。
+
+路由规划：
+
+```http
+POST /api/v1/project/artifacts                # 扩展：正式支持 generated_content 创建
+GET  /api/v1/project/artifacts/{id}/content   # 读取 generated_content 文本内容
+PUT  /api/v1/project/artifacts/{id}/content   # 全量替换 generated_content 文本内容
+```
+
+`generated_content` 创建请求继续复用现有 Artifact 创建入口，按 `source_type` 分支：
+
+```json
+{
+  "project_id": "proj_xxx",
+  "task_id": "task_xxx",
+  "source_type": "generated_content",
+  "file_name": "report.md",
+  "mime_type": "text/markdown",
+  "content": "# report\n...",
+  "name": "执行报告",
+  "description": "Agent 生成的阶段报告",
+  "tags": ["agent-generated", "report"]
+}
+```
+
+内容读取/更新 DTO 复用通用文本结构：
+
+```rust
+pub struct ArtifactContentResponse {
+    pub artifact: ArtifactDetail,
+    pub text: TextContentResponse,
+}
+
+pub struct UpdateTextContentRequest {
+    pub content: String,
+    pub expected_updated_at: Option<i64>,
+}
+```
+
+编辑规则：
+
+- `GET/PUT /content` 仅支持 `source_type = generated_content`；
+- `source_type = attachment` 返回 `Unsupported` 或 `409 Conflict`，提示应通过 `/api/v1/finance/attachments/{id}/content` 编辑原始 Attachment；
+- `source_type = remote_url` 返回 `Unsupported`；
+- 仅支持 UTF-8 简单文本，默认最大内容 `64KB`；
+- 文件名必须是安全文件名，不允许绝对路径、目录穿越、反斜杠、空文件名或目录目标；
+- `PUT` 是全量替换，更新成功后刷新 artifact 的 `file_meta.file_size`、`modified_by`、`updated_at`；
+- `expected_updated_at` 可选，用于乐观锁，防止前端多人编辑覆盖。
+
+分层职责：
+
+```text
+POST /api/v1/project/artifacts(source_type=generated_content)
+GET/PUT /api/v1/project/artifacts/{id}/content
+    ↓
+Artifact Handler
+    ↓
+Project Domain artifact_manage()
+    ├─ 校验 project 存在与权限边界
+    ├─ 若 task_id 存在，校验 task.project_id == project_id
+    ├─ 校验 source_type 与文本内容边界
+    ↓
+ArtifactDal
+    ├─ 生成/读取/覆盖 artifacts/projects/{project_id}/{artifact_id}/{file_name}
+    ├─ 返回/更新 FileMeta
+    └─ 持久化 Artifact metadata
+    ↓
+ArtifactDao(仅 artifacts 表持久化)
+```
+
+建议保持 DAO 单一职责：ArtifactDao 不直接承担文件路径生成和文件 IO 规则；文件读写能力放在 ArtifactDal 内部或其下沉的文件存储辅助模块，Domain 只表达业务语义，Handler 不触碰文件系统。
+
 
 ---
 

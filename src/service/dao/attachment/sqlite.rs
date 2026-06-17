@@ -179,6 +179,24 @@ UPDATE attachments SET "status" = ?, modified_by = ?, updated_at = ? WHERE id = 
         self.update_status(ctx, id, 0).await
     }
 
+    async fn update_file_metadata(&self, ctx: RequestContext, id: &str, size: i64) -> Result<()> {
+        let pool = ctx.db_pool();
+        let now = common::constants::utils::current_timestamp_ms();
+        let modified_by = ctx.uid();
+        sqlx::query(
+            r#"
+UPDATE attachments SET size = ?, modified_by = ?, updated_at = ? WHERE id = ? AND "status" != 0
+"#,
+        )
+        .bind(size)
+        .bind(modified_by)
+        .bind(now)
+        .bind(id)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
     fn write_file(&self, relative_path: &str, bytes: &[u8]) -> Result<()> {
         let path = self.resolve_relative_path(relative_path)?;
         if let Some(parent) = path.parent() {

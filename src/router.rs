@@ -197,8 +197,20 @@ fn finance_routes() -> Router {
             post(handlers::finance::attachment::upload_attachment),
         )
         .route(
+            "/attachments/text",
+            post(handlers::finance::attachment::create_text_attachment),
+        )
+        .route(
             "/attachments",
             get(handlers::finance::attachment::list_attachments),
+        )
+        .route(
+            "/attachments/{id}/content",
+            get(handlers::finance::attachment::get_attachment_content),
+        )
+        .route(
+            "/attachments/{id}/content",
+            put(handlers::finance::attachment::update_attachment_content),
         )
         .route(
             "/attachments/{id}",

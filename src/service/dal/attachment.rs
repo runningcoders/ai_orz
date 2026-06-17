@@ -3,7 +3,7 @@
 //! 职责：上传编排、文件名/路径生成、文件类型推断、元数据与文件写入组合。
 
 use crate::error::AppError;
-use crate::models::attachment::{Attachment, AttachmentPo, AttachmentUpload};
+use crate::models::attachment::{Attachment, AttachmentPo, AttachmentUpload, TextAttachmentCreate};
 use crate::pkg::RequestContext;
 use crate::service::dao::attachment;
 use crate::service::dao::attachment::{AttachmentDao, AttachmentQuery};
@@ -44,6 +44,13 @@ pub trait AttachmentDal: Send + Sync {
         upload: AttachmentUpload,
     ) -> Result<Attachment, AppError>;
 
+    /// 从小型 UTF-8 文本创建通用 Attachment 资产。
+    async fn create_from_text(
+        &self,
+        ctx: RequestContext,
+        create: TextAttachmentCreate,
+    ) -> Result<Attachment, AppError>;
+
     /// 根据 ID 获取 Attachment。
     async fn get_by_id(
         &self,
@@ -63,6 +70,14 @@ pub trait AttachmentDal: Send + Sync {
 
     /// 读取 Attachment 文件 bytes。
     fn read_file(&self, attachment: &Attachment) -> Result<Vec<u8>, AppError>;
+
+    /// 全量替换 Attachment 文件内容，并刷新文件元数据。
+    async fn update_file_content(
+        &self,
+        ctx: RequestContext,
+        attachment: &Attachment,
+        bytes: &[u8],
+    ) -> Result<Attachment, AppError>;
 }
 
 // ==================== DAL 实现 ====================
@@ -114,6 +129,23 @@ impl AttachmentDal for AttachmentDalImpl {
         Ok(Attachment::from_po(po))
     }
 
+    async fn create_from_text(
+        &self,
+        ctx: RequestContext,
+        create: TextAttachmentCreate,
+    ) -> Result<Attachment, AppError> {
+        let mime_type = create
+            .mime_type
+            .unwrap_or_else(|| infer_mime_type(&create.file_name));
+        let upload = AttachmentUpload {
+            original_name: create.file_name,
+            mime_type,
+            purpose: create.purpose.unwrap_or_default(),
+            bytes: create.content.into_bytes(),
+        };
+        self.create_from_upload(ctx, upload).await
+    }
+
     async fn get_by_id(
         &self,
         ctx: RequestContext,
@@ -139,6 +171,22 @@ impl AttachmentDal for AttachmentDalImpl {
     fn read_file(&self, attachment: &Attachment) -> Result<Vec<u8>, AppError> {
         self.attachment_dao.read_file(&attachment.po.relative_path)
     }
+
+    async fn update_file_content(
+        &self,
+        ctx: RequestContext,
+        attachment: &Attachment,
+        bytes: &[u8],
+    ) -> Result<Attachment, AppError> {
+        self.attachment_dao
+            .write_file(&attachment.po.relative_path, bytes)?;
+        self.attachment_dao
+            .update_file_metadata(ctx.clone(), attachment.id(), bytes.len() as i64)
+            .await?;
+        self.get_by_id(ctx, attachment.id())
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Attachment {} not found", attachment.id())))
+    }
 }
 
 fn generate_relative_path(file_id: &str, extension: &str) -> String {
@@ -160,7 +208,10 @@ fn infer_extension(original_name: &str, mime_type: &str) -> String {
     match mime_type.split(';').next().unwrap_or_default().trim() {
         "text/markdown" => ".md".to_string(),
         "text/plain" => ".txt".to_string(),
+        "text/csv" => ".csv".to_string(),
         "application/json" => ".json".to_string(),
+        "application/yaml" => ".yaml".to_string(),
+        "application/toml" => ".toml".to_string(),
         "application/pdf" => ".pdf".to_string(),
         "image/png" => ".png".to_string(),
         "image/jpeg" => ".jpg".to_string(),
@@ -169,6 +220,23 @@ fn infer_extension(original_name: &str, mime_type: &str) -> String {
         "audio/wav" => ".wav".to_string(),
         "video/mp4" => ".mp4".to_string(),
         _ => String::new(),
+    }
+}
+
+fn infer_mime_type(file_name: &str) -> String {
+    match Path::new(file_name)
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "md" => "text/markdown".to_string(),
+        "json" => "application/json".to_string(),
+        "yaml" | "yml" => "application/yaml".to_string(),
+        "toml" => "application/toml".to_string(),
+        "csv" => "text/csv".to_string(),
+        _ => "text/plain".to_string(),
     }
 }
 
@@ -198,7 +266,7 @@ fn infer_file_type(mime_type: &str, extension: &str) -> FileType {
         .to_ascii_lowercase()
         .as_str()
     {
-        "md" | "txt" | "pdf" | "doc" | "docx" | "json" | "csv" | "yaml" | "yml" => {
+        "md" | "txt" | "pdf" | "doc" | "docx" | "json" | "csv" | "yaml" | "yml" | "toml" => {
             FileType::Document
         }
         "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" => FileType::Image,

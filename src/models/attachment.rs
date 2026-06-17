@@ -79,6 +79,43 @@ pub struct AttachmentUpload {
     pub bytes: Vec<u8>,
 }
 
+/// JSON 创建小型文本 Attachment 命令。
+#[derive(Debug, Clone)]
+pub struct TextAttachmentCreate {
+    /// 安全文件名。
+    pub file_name: String,
+    /// UTF-8 文本内容。
+    pub content: String,
+    /// 可选 MIME 类型。
+    pub mime_type: Option<String>,
+    /// 可选用途。
+    pub purpose: Option<String>,
+}
+
+/// 文本内容全量替换命令。
+#[derive(Debug, Clone)]
+pub struct TextContentUpdate {
+    /// 新的 UTF-8 文本内容。
+    pub content: String,
+    /// 可选乐观锁时间戳。
+    pub expected_updated_at: Option<i64>,
+}
+
+/// Attachment 文本内容业务返回对象。
+#[derive(Debug, Clone)]
+pub struct AttachmentTextContent {
+    /// Attachment metadata。
+    pub attachment: Attachment,
+    /// UTF-8 文本内容。
+    pub content: String,
+    /// 编码名，当前固定为 utf-8。
+    pub encoding: String,
+    /// 内容大小（bytes）。
+    pub size: u64,
+    /// 更新时间戳。
+    pub updated_at: i64,
+}
+
 impl Attachment {
     /// 从 PO 创建实体。
     pub fn from_po(po: AttachmentPo) -> Self {
