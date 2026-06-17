@@ -94,6 +94,9 @@ PUT    /api/v1/hr/skills/{id}
 DELETE /api/v1/hr/skills/{id}
 GET    /api/v1/hr/agents/{agent_id}/skills
 POST   /api/v1/hr/agents/{agent_id}/skills/{skill_id}
+GET    /api/v1/hr/skills/{skill_id}/files/{*filename}
+PUT    /api/v1/hr/skills/{skill_id}/files/{*filename}
+GET    /api/v1/hr/skills/{skill_id}/files
 ```
 
 约束：
@@ -197,47 +200,64 @@ HR Skill Domain 统一校验 `target_path`：
 - HR Skill：正常导入 `references/demo.md`；拒绝 `../evil.md`、`/tmp/evil.md`、`./evil.md`、尾随 `/` 的目录目标、反斜杠路径、空路径、直接覆盖主内容路径及其大小写变体；
 - Handler：Skill 更新时可把多个 `attachment_id + target_path` 编排为多个 `SkillFileImport`。
 
-### Batch 4.3：Skill 简单文本文件内容编辑
+### Batch 4.4：Skill 简单文本文件内容编辑 (Completed)
 
-Skill 已支持主内容 `skill.md` 与附加文件导入。下一步补充显式的“小文本文件内容编辑”接口，用于前端或 Agent 直接读取/替换 Skill 目录内的文本文件内容。该能力属于 HR Skill Domain，不依赖 Finance Attachment，也不接收 `attachment_id`。
+Skill 已支持主内容 `skill.md` 与附加文件导入。已完成补充显式的"小文本文件内容编辑"接口，用于前端或 Agent 直接读取/替换 Skill 目录内的文本文件内容。该能力属于 HR Skill Domain，不依赖 Finance Attachment，也不接收 `attachment_id`。
 
-路由规划：
+路由实现：
 
 ```http
-GET /api/v1/hr/skills/{id}/files/content?path=skill.md
-PUT /api/v1/hr/skills/{id}/files/content?path=references/guide.md
+GET  /api/v1/hr/skills/{skill_id}/files          - 列出所有文件
+GET  /api/v1/hr/skills/{skill_id}/files/{*filename} - 读取指定文件内容
+PUT  /api/v1/hr/skills/{skill_id}/files/{*filename} - 更新指定文件内容
 ```
 
-选择 query 参数 `path`，而不是 path wildcard，原因是：
-- 避免 Axum wildcard 路由与已有 `/skills/{id}`、`/skills/search` 路由产生歧义；
-- 统一由 HR Domain 校验相对路径，Handler 不拼接文件系统路径；
-- 前端可对路径做 URL 编码，支持 `references/guide.md` 等子目录文件。
+选择 Axum wildcard 路由 `{*filename}` 而不是 query 参数 `path`，原因是：
+- 现有的 `/skills/{id}` 路由在更前面，wildcard 不会产生歧义；
+- URL 路径语义更清晰，`/files/references/design.md` 一目了然；
+- 前端不需要手动 URL 编码完整路径，Axum 自动处理。
 
-DTO 建议复用通用文本结构：
+DTO 设计：
 
 ```rust
-pub struct SkillFileContentQuery {
-    pub path: String,
+// CreateSkillRequest 新增支持初始化多文件
+pub struct CreateSkillRequest {
+    // existing fields...
+    pub initial_files: Option<HashMap<String, String>>,
 }
 
-pub struct SkillFileContentResponse {
+// 列出文件响应
+pub struct ListSkillFilesResponse {
     pub skill_id: String,
-    pub path: String,
-    pub text: TextContentResponse,
+    pub files: Vec<SkillFileListItem>,
 }
 
-pub struct UpdateTextContentRequest {
+pub struct SkillFileListItem {
+    pub filename: String,
+    pub file_size: u64,
+    pub content: Option<String>, // 小文件 (<64KB) 直接返回内容
+}
+
+// 获取文件内容响应
+pub struct GetSkillFileContentResponse {
+    pub skill_id: String,
+    pub filename: String,
     pub content: String,
-    pub expected_updated_at: Option<i64>,
+}
+
+// 更新文件内容请求
+pub struct UpdateSkillFileContentRequest {
+    pub content: String,
+    pub expected_updated_at: Option<i64>, // 乐观锁
 }
 ```
 
 编辑规则：
 
 - 仅支持 UTF-8 简单文本，默认最大内容 `64KB`；
-- `PUT` 是全量替换，不做 patch/diff/version；
-- `expected_updated_at` 可选，用于乐观锁；
-- 显式文件内容编辑接口允许编辑主文件 `skill.md`，区别于 Batch 2.5 的 Attachment 导入：导入接口仍禁止外部附件覆盖 `skill.md`，内容编辑接口则是用户/Agent 对 Skill 本身的显式修改；
+- `PUT` 是全量替换，不存在文件会自动创建（包括父目录递归创建）；
+- `expected_updated_at` 可选，用于乐观锁并发控制；
+- 允许编辑主文件 `skill.md`；
 - 附加文件路径必须是 Skill 内容目录内的相对路径：拒绝空路径、绝对路径、`.`/`..` 片段、尾随 `/`、反斜杠路径分隔符；
 - 第一版不提供文件删除、重命名、批量编辑、二进制写入；如需新增附加文本文件，可通过 `PUT` 指定安全相对路径并写入内容。
 
@@ -476,6 +496,7 @@ DAL 层对上层优先暴露 `Skill` 业务实体，`SkillPo` 主要限制在 DA
 #[async_trait]
 pub trait SkillDal: Send + Sync {
     async fn get_by_id(&self, ctx: RequestContext, id: String) -> Result<Option<Skill>, AppError>;
+    async fn get_po_by_id(&self, ctx: RequestContext, id: String) -> Result<Option<SkillPo>, AppError>;
     async fn query(&self, ctx: RequestContext, query: SkillQuery) -> Result<Vec<Skill>, AppError>;
     async fn list_for_agent(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<Skill>, AppError>;
     async fn update(&self, ctx: RequestContext, skill: &Skill) -> Result<(), AppError>;
@@ -487,6 +508,16 @@ pub trait SkillDal: Send + Sync {
         source_skill_id: &str,
         agent_id: &str,
     ) -> Result<Skill, AppError>;
+
+    // ========== 文件操作 ==========
+    /// 列出技能目录下所有文件（小文件自动预读内容）
+    fn list_files(&self, skill: &SkillPo) -> Result<Vec<SkillFile>, AppError>;
+
+    /// 读取指定文件内容
+    fn read_file(&self, skill: &SkillPo, filename: &str) -> Result<String, AppError>;
+
+    /// 写入指定文件内容
+    fn write_file(&self, skill: &SkillPo, filename: &str, content: &str) -> Result<(), AppError>;
 }
 ```
 
