@@ -1,24 +1,23 @@
-//! 获取当前登录用户所在组织信息接口
+//! Handler: GET /api/v1/organization/me - Get current authenticated user's organization information
 
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{GetCurrentOrganizationRequest, GetCurrentOrganizationResponse, OrganizationInfoResponse};
+use crate::error::AppError;
 use crate::pkg::RequestContext;
-use crate::{error::AppError, service::domain::organization};
-use axum::{
-    extract::{Extension, Json},
-    http::StatusCode,
-};
-use common::api::{ApiResponse, GetCurrentOrganizationResponse, OrganizationInfoResponse};
+use crate::service::domain::organization;
 
-/// Get current authenticated user's organization information
-/// 从 RequestContext 获取 organization_id，查询组织信息返回
+/// Get information for the currently authenticated user's organization
+#[register_handler_tool(
+    id = "get_current_organization",
+    name = "get_current_organization",
+    description = "Get detailed information about the organization that the currently authenticated user belongs to",
+    params = "common::api::GetCurrentOrganizationRequest",
+)]
+#[generate_http_handler]
 pub async fn get_current_organization(
-    Extension(ctx): Extension<RequestContext>,
-) -> Result<
-    (
-        StatusCode,
-        Json<ApiResponse<GetCurrentOrganizationResponse>>,
-    ),
-    AppError,
-> {
+    ctx: RequestContext,
+    _params: GetCurrentOrganizationRequest,
+) -> Result<GetCurrentOrganizationResponse, AppError> {
     // 从 RequestContext 获取当前组织 ID
     let org_id = ctx
         .organization_id
@@ -34,7 +33,7 @@ pub async fn get_current_organization(
         .ok_or_else(|| AppError::NotFound("组织不存在".to_string()))?;
 
     // 转换为响应格式
-    let info = OrganizationInfoResponse {
+    let data = OrganizationInfoResponse {
         organization_id: org.id.clone(),
         name: org.name.clone(),
         description: if org.description.is_empty() {
@@ -51,10 +50,5 @@ pub async fn get_current_organization(
         created_at: org.created_at,
     };
 
-    Ok((
-        StatusCode::OK,
-        Json(ApiResponse::success(GetCurrentOrganizationResponse {
-            data: info,
-        })),
-    ))
+    Ok(GetCurrentOrganizationResponse { data })
 }

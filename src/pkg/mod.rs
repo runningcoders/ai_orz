@@ -28,9 +28,6 @@ pub async fn init_all(config: &AppConfig) {
         .unwrap_or(168);
     jwt::init_jwt(&jwt_secret, jwt_expiry_hours);
 
-    // Initialize global tool registry
-    tool_registry::init();
-
     // Initialize tool call tracing logger (singleton factory)
     tool_tracing::logger::ToolCallLogger::init(config.base_data_path());
 

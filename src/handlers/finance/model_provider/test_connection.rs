@@ -1,31 +1,32 @@
-//! 测试 Model Provider 连通性
+//! Handler: POST /api/v1/model-providers/{id}/test - Test model provider connectivity
 
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{TestModelProviderConnectionRequest, TestConnectionResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
-use axum::{
-    Json,
-    extract::{Extension, Path},
-};
-use common::api::ApiResponse;
-use common::api::{TestConnectionRequest, TestConnectionResponse};
 
-/// 测试 Model Provider 连通性
-/// POST /model-providers/{id}/test
+/// Test connectivity and authentication to a model provider with a sample prompt
+#[register_handler_tool(
+    id = "test_model_provider_connection",
+    name = "test_model_provider_connection",
+    description = "Test connectivity and authentication to a model provider with a sample prompt",
+    params = "common::api::TestModelProviderConnectionRequest",
+)]
+#[generate_http_handler]
 pub async fn test_model_provider_connection(
-    Extension(ctx): Extension<RequestContext>,
-    Path(id): Path<String>,
-    Json(req): Json<TestConnectionRequest>,
-) -> Result<Json<ApiResponse<TestConnectionResponse>>, AppError> {
-    // 1. 先查询 Model Provider
+    ctx: RequestContext,
+    params: TestModelProviderConnectionRequest,
+) -> Result<TestConnectionResponse, AppError> {
+    // 1. Get the model provider
     let provider = domain()
         .model_provider_manage()
-        .get_model_provider(ctx.clone(), &id)
+        .get_model_provider(ctx.clone(), &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("ModelProvider {} not found", id)))?;
+        .ok_or_else(|| AppError::NotFound(format!("ModelProvider {} not found", params.id)))?;
 
-    // 2. 使用 prompt 测试连通性，默认用 "Hello!"
-    let prompt = req.prompt.clone().unwrap_or_else(|| "Hello!".to_string());
+    // 2. Use prompt for connection test, default to "Hello!"
+    let prompt = params.prompt.clone().unwrap_or_else(|| "Hello!".to_string());
 
     match domain()
         .model_provider_manage()
@@ -33,25 +34,25 @@ pub async fn test_model_provider_connection(
         .await
     {
         Ok(result) => {
-            // 如果结果为空也算测试失败
+            // Empty result also counts as failed
             if result.trim().is_empty() {
-                Ok(Json(ApiResponse::success(TestConnectionResponse {
+                Ok(TestConnectionResponse {
                     success: false,
                     response: Some("模型返回空响应，连通性测试不通过".to_string()),
                     error: None,
-                })))
+                })
             } else {
-                Ok(Json(ApiResponse::success(TestConnectionResponse {
+                Ok(TestConnectionResponse {
                     success: true,
                     response: Some(result),
                     error: None,
-                })))
+                })
             }
         }
-        Err(e) => Ok(Json(ApiResponse::success(TestConnectionResponse {
+        Err(e) => Ok(TestConnectionResponse {
             success: false,
             response: None,
             error: Some(e.to_string()),
-        }))),
+        }),
     }
 }

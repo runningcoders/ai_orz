@@ -1,21 +1,23 @@
-//! 测试 Message Channel 连通性
+//! Handler: POST /api/v1/message-channels/{id}/test - Test message channel connectivity
 
-use axum::{
-    Json,
-    extract::{Extension, Path},
-};
-use common::api::{ApiResponse, TestMessageChannelConnectionResponse};
-
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{TestMessageChannelConnectionRequest, TestMessageChannelConnectionResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
-/// 测试 Message Channel 连通性
-/// POST /message-channels/{id}/test
+/// Test connectivity to a message channel by sending a test notification
+#[register_handler_tool(
+    id = "test_message_channel_connection",
+    name = "test_message_channel_connection",
+    description = "Test connectivity to a message channel by sending a test notification",
+    params = "common::api::TestMessageChannelConnectionRequest",
+)]
+#[generate_http_handler]
 pub async fn test_message_channel_connection(
-    Extension(ctx): Extension<RequestContext>,
-    Path(id): Path<String>,
-) -> Result<Json<ApiResponse<TestMessageChannelConnectionResponse>>, AppError> {
+    ctx: RequestContext,
+    params: TestMessageChannelConnectionRequest,
+) -> Result<TestMessageChannelConnectionResponse, AppError> {
     let org_id = ctx
         .organization_id
         .clone()
@@ -27,14 +29,14 @@ pub async fn test_message_channel_connection(
 
     let channel = domain()
         .message_channel_manage()
-        .get_message_channel(ctx.clone(), &id)
+        .get_message_channel(ctx.clone(), &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("MessageChannel {} not found", id)))?;
+        .ok_or_else(|| AppError::NotFound(format!("MessageChannel {} not found", params.id)))?;
 
     if channel.po.org_id != org_id || channel.po.user_id != user_id {
         return Err(AppError::NotFound(format!(
             "MessageChannel {} not found",
-            id
+            params.id
         )));
     }
 
@@ -53,5 +55,5 @@ pub async fn test_message_channel_connection(
         },
     };
 
-    Ok(Json(ApiResponse::success(response)))
+    Ok(response)
 }

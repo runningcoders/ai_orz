@@ -1,20 +1,25 @@
-//! 更新当前认证用户信息接口
+//! Handler: PUT /api/v1/user/me - Update current authenticated user information
 
-use crate::{error::AppError, pkg::RequestContext, service::domain::organization};
-use axum::{
-    extract::{Extension, Json},
-    http::StatusCode,
-};
-use common::api::{ApiResponse, EmptyResponse, UpdateCurrentUserRequest};
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{UpdateCurrentUserRequest, UpdateCurrentUserResponse, UserInfoResponse};
 use common::constants::utils;
+use common::enums::UserRole;
+use crate::error::AppError;
+use crate::pkg::RequestContext;
+use crate::service::domain::organization;
 
-/// Update current authenticated user information
-/// 允许用户更新自己的可修改信息：显示名称、邮箱、密码
-/// 通过组合已有的抽象方法实现：find_by_id (dao) + update_user (domain)
+/// Update current user's own information (display name, email, password)
+#[register_handler_tool(
+    id = "update_current_user",
+    name = "update_current_user",
+    description = "Update information for the currently authenticated user, allows changing display name, email, and password",
+    params = "common::api::UpdateCurrentUserRequest",
+)]
+#[generate_http_handler]
 pub async fn update_current_user(
-    Extension(ctx): Extension<RequestContext>,
-    Json(req): Json<UpdateCurrentUserRequest>,
-) -> Result<(StatusCode, Json<ApiResponse<EmptyResponse>>), AppError> {
+    ctx: RequestContext,
+    params: UpdateCurrentUserRequest,
+) -> Result<UpdateCurrentUserResponse, AppError> {
     // 从 RequestContext 获取当前用户 ID（JWT 已经验证过）
     let user_id = ctx
         .user_id
@@ -34,13 +39,13 @@ pub async fn update_current_user(
 
     // 更新可修改字段：只允许修改显示名称、邮箱、密码哈希
     // 用户不能修改自己的角色、状态、组织ID等敏感信息
-    if let Some(new_display_name) = req.display_name {
+    if let Some(new_display_name) = params.display_name {
         user.display_name = new_display_name;
     }
-    if let Some(new_email) = req.email {
+    if let Some(new_email) = params.email {
         user.email = new_email;
     }
-    if let Some(new_password_hash) = req.password_hash {
+    if let Some(new_password_hash) = params.password_hash {
         user.password_hash = new_password_hash;
     }
 
@@ -54,5 +59,32 @@ pub async fn update_current_user(
     let domain = organization::domain();
     domain.user_manage().update_user(ctx, &user).await?;
 
-    Ok((StatusCode::OK, Json(ApiResponse::success(EmptyResponse {}))))
+    let role = user.user_role();
+    let role_name = match role {
+        UserRole::Member => "成员",
+        UserRole::Admin => "管理员",
+        UserRole::SuperAdmin => "超级管理员",
+    }
+    .to_string();
+
+    let info = UserInfoResponse {
+        user_id: user.id.clone(),
+        username: user.username.clone(),
+        display_name: if user.display_name.is_empty() {
+            None
+        } else {
+            Some(user.display_name.clone())
+        },
+        email: if user.email.is_empty() {
+            None
+        } else {
+            Some(user.email.clone())
+        },
+        organization_id: user.organization_id.clone(),
+        role: role as i32,
+        role_name,
+        status: user.status.to_i32(),
+    };
+
+    Ok(UpdateCurrentUserResponse { data: info })
 }

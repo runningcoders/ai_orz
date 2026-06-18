@@ -1,9 +1,11 @@
 //! Organization-related API request/response DTOs - shared between backend and frontend
 
+use ai_orz_macros::Params;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// 系统初始化请求 - 创建第一个组织和超级管理员
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct InitializeSystemRequest {
     /// 组织名称
     pub organization_name: String,
@@ -20,7 +22,7 @@ pub struct InitializeSystemRequest {
 }
 
 /// 系统初始化响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct InitializeSystemResponse {
     /// 组织 ID
     pub organization_id: String,
@@ -29,14 +31,14 @@ pub struct InitializeSystemResponse {
 }
 
 /// 检查初始化状态响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CheckInitializedResponse {
     /// 系统是否已初始化（至少有一个组织）
     pub initialized: bool,
 }
 
 /// 组织列表项（用于登录页选择）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct OrganizationListItem {
     /// 组织 ID
     pub organization_id: String,
@@ -47,7 +49,7 @@ pub struct OrganizationListItem {
 }
 
 /// 列出所有组织响应（登录页选择用）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ListOrganizationsResponse {
     /// 组织列表
     pub data: Vec<OrganizationListItem>,
@@ -56,7 +58,7 @@ pub struct ListOrganizationsResponse {
 }
 
 /// 组织基础信息响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct OrganizationInfoResponse {
     /// 组织 ID
     pub organization_id: String,
@@ -72,15 +74,19 @@ pub struct OrganizationInfoResponse {
     pub created_at: i64,
 }
 
+/// 获取当前组织信息请求
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct GetCurrentOrganizationRequest {}
+
 /// 获取当前组织信息响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GetCurrentOrganizationResponse {
     /// 组织信息数据
     pub data: OrganizationInfoResponse,
 }
 
 /// 更新当前组织信息请求
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct UpdateCurrentOrganizationRequest {
     /// 新组织名称（None 表示不修改）
     pub name: Option<String>,
@@ -91,22 +97,33 @@ pub struct UpdateCurrentOrganizationRequest {
 }
 
 /// 更新当前组织信息响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct UpdateCurrentOrganizationResponse {
     /// 更新后的组织信息
     pub data: OrganizationInfoResponse,
 }
 
-/// 删除组织响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DeleteOrganizationResponse {
-    /// 是否删除成功
-    pub success: bool,
+/// 获取组织信息请求
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct GetOrganizationRequest {
+    /// Organization ID
+    #[param(source = "path")]
+    pub organization_id: String,
+}
+
+/// 获取组织信息响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct GetOrganizationResponse {
+    /// 组织信息数据
+    pub data: OrganizationInfoResponse,
 }
 
 /// 更新组织信息请求（管理员更新任意组织）
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct UpdateOrganizationRequest {
+    /// Organization ID
+    #[param(source = "path")]
+    pub organization_id: String,
     /// 新组织名称（None 表示不修改）
     pub name: Option<String>,
     /// 新组织描述（None 表示不修改）
@@ -115,4 +132,31 @@ pub struct UpdateOrganizationRequest {
     pub base_url: Option<String>,
     /// 新组织状态（None 表示不修改）
     pub status: Option<i32>,
+}
+
+/// 更新组织信息响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct UpdateOrganizationResponse {
+    /// 更新后的组织信息
+    pub data: OrganizationInfoResponse,
+}
+
+/// 删除组织请求
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct DeleteOrganizationRequest {
+    /// Organization ID
+    #[param(source = "path")]
+    pub organization_id: String,
+}
+
+/// 删除组织响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct DeleteOrganizationResponse {
+    /// 是否删除成功
+    pub success: bool,
+}
+
+/// 列出所有组织请求
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ListOrganizationsRequest {
 }

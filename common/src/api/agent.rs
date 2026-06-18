@@ -1,10 +1,12 @@
 //! Agent (AI智能体) related API request/response DTOs - shared between backend and frontend
 
+use ai_orz_macros::Params;
 use crate::enums::AgentStatus;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// 创建 Agent 请求
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct CreateAgentRequest {
     /// Agent 名称
     pub name: String,
@@ -21,7 +23,7 @@ pub struct CreateAgentRequest {
 }
 
 /// 创建 Agent 响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CreateAgentResponse {
     /// Agent ID
     pub id: String,
@@ -34,7 +36,7 @@ pub struct CreateAgentResponse {
 }
 
 /// Agent 列表项响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AgentListItem {
     /// Agent ID
     pub id: String,
@@ -52,8 +54,16 @@ pub struct AgentListItem {
     pub created_at: i64,
 }
 
+/// 获取 Agent 请求
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct GetAgentRequest {
+    /// Agent ID
+    #[param(source = "path")]
+    pub id: String,
+}
+
 /// 获取 Agent 响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GetAgentResponse {
     /// Agent ID
     pub id: String,
@@ -78,8 +88,12 @@ pub struct GetAgentResponse {
 }
 
 /// 更新 Agent 请求
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct UpdateAgentRequest {
+    /// Agent ID
+    #[param(source = "path")]
+    pub id: String,
+
     /// Agent 名称
     pub name: Option<String>,
     /// Agent 角色标签列表
@@ -95,16 +109,28 @@ pub struct UpdateAgentRequest {
 }
 
 /// 更新 Agent 状态请求
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct UpdateAgentStatusRequest {
+    /// Agent ID
+    #[param(source = "path")]
+    pub id: String,
+
     /// 目标生命周期状态。
     ///
     /// 状态流转合法性由 HR Domain 校验；删除请优先使用 DELETE 接口。
     pub status: AgentStatus,
 }
 
+/// 删除 Agent 请求
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct DeleteAgentRequest {
+    /// Agent ID
+    #[param(source = "path")]
+    pub id: String,
+}
+
 /// 更新 Agent 响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct UpdateAgentResponse {
     /// Agent ID
     pub id: String,
@@ -123,10 +149,25 @@ pub struct UpdateAgentResponse {
 }
 
 /// 删除 Agent 响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DeleteAgentResponse {
     /// 是否删除成功
     pub success: bool,
+}
+
+/// 获取 Agent 列表请求
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ListAgentsRequest {
+    /// 可选状态筛选
+    #[param(source = "query")]
+    pub status: Option<AgentStatus>,
+}
+
+/// 获取 Agent 列表响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ListAgentsResponse {
+    /// Agent 列表
+    pub agents: Vec<AgentListItem>,
 }
 
 /// 更新 Agent 状态响应

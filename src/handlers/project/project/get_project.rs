@@ -1,27 +1,29 @@
-//! 获取 Project
+//! Handler: GET /api/v1/projects/{id} - Get project detailed information
 
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{GetProjectRequest, GetProjectResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
-use axum::{
-    Json,
-    extract::{Extension, Path},
-};
-use common::api::{ApiResponse, GetProjectResponse};
-
 use super::response;
 
-/// 获取 Project
-/// GET /projects/{id}
+/// Get project detailed information
+#[register_handler_tool(
+    id = "get_project",
+    name = "get_project",
+    description = "Get project detailed information by ID",
+    params = "common::api::GetProjectRequest",
+)]
+#[generate_http_handler]
 pub async fn get_project(
-    Extension(ctx): Extension<RequestContext>,
-    Path(id): Path<String>,
-) -> Result<Json<ApiResponse<GetProjectResponse>>, AppError> {
+    ctx: RequestContext,
+    params: GetProjectRequest,
+) -> Result<GetProjectResponse, AppError> {
     let project = domain()
         .project_manage()
-        .get(ctx, &id)
+        .get(ctx, &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Project {} not found", id)))?;
+        .ok_or_else(|| AppError::NotFound(format!("Project {} not found", params.id)))?;
 
-    Ok(Json(ApiResponse::success(response::to_detail(&project))))
+    Ok(response::to_detail(&project))
 }

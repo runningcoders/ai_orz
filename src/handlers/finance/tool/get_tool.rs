@@ -1,28 +1,30 @@
-//! 获取单个 Tool
+//! Handler: GET /api/v1/tools/{id} - Get tool detailed information
 
-use axum::{
-    Json,
-    extract::{Extension, Path},
-};
-use common::api::{ApiResponse, GetToolResponse};
-
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{GetToolRequest, GetToolResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
 use super::response::to_detail;
 
-/// 获取 Tool
-/// GET /tools/{id}
+/// Get detailed information about a specific tool including configuration
+#[register_handler_tool(
+    id = "get_tool",
+    name = "get_tool",
+    description = "Get detailed information about a specific tool including configuration",
+    params = "common::api::GetToolRequest",
+)]
+#[generate_http_handler]
 pub async fn get_tool(
-    Extension(ctx): Extension<RequestContext>,
-    Path(id): Path<String>,
-) -> Result<Json<ApiResponse<GetToolResponse>>, AppError> {
+    ctx: RequestContext,
+    params: GetToolRequest,
+) -> Result<GetToolResponse, AppError> {
     let tool = domain()
         .tool_provider_manage()
-        .get_tool(ctx, &id)
+        .get_tool(ctx, &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Tool {} not found", id)))?;
+        .ok_or_else(|| AppError::NotFound(format!("Tool {} not found", params.id)))?;
 
-    Ok(Json(ApiResponse::success(to_detail(&tool))))
+    Ok(to_detail(&tool))
 }

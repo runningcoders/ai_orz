@@ -76,6 +76,7 @@ dependencies = [
  "futures-util",
  "jsonwebtoken",
  "lancedb",
+ "lazy_static",
  "once_cell",
  "proc-macro2",
  "quote",

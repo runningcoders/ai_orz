@@ -15,7 +15,6 @@ fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
 /// 初始化测试环境
 fn init_test_env() -> Arc<dyn ToolDao> {
     dao_init();
-    crate::pkg::tool_registry::init();
     dao()
 }
 

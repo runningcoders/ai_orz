@@ -1,8 +1,9 @@
 //! Global tool registry - each protocol has its own typed storage
 
 use dyn_clone;
+use lazy_static::lazy_static;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 pub mod builtin;
 pub mod handler_adapter;
@@ -13,17 +14,14 @@ use crate::models::tool::{CoreTool, ToolPo};
 pub use builtin::BuiltinToolFactory;
 pub use handler_adapter::register_handler_tool;
 
-/// Global tool registry instance.
-pub static GLOBAL_TOOL_REGISTRY: OnceLock<ToolRegistry> = OnceLock::new();
-
-/// Initialize global tool registry.
-pub fn init() {
-    GLOBAL_TOOL_REGISTRY.set(ToolRegistry::default()).ok();
+lazy_static! {
+    /// Global tool registry instance - initialized automatically on first access.
+    pub static ref GLOBAL_TOOL_REGISTRY: ToolRegistry = ToolRegistry::default();
 }
 
 /// Get the global tool registry.
 pub fn get_registry() -> &'static ToolRegistry {
-    GLOBAL_TOOL_REGISTRY.get().unwrap()
+    &GLOBAL_TOOL_REGISTRY
 }
 
 /// Global tool registry.

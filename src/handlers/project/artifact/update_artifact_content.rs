@@ -1,28 +1,26 @@
-//! Update artifact content handler
-//!
-//! PUT /api/v1/project/artifacts/{id}/content
-//! Fully replaces the text content of a generated-content artifact.
+//! Handler: PUT /api/v1/project/artifacts/{id}/content - Update artifact text content
 
-use axum::{
-    Json,
-    extract::{Extension, Path},
-};
-use common::api::ApiResponse;
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
 use common::api::artifact::{ArtifactDetail, UpdateArtifactContentRequest};
-
 use crate::error::AppError;
 use crate::handlers::project::artifact::response;
 use crate::pkg::RequestContext;
 
-/// PUT /api/v1/project/artifacts/{artifact_id}/content
+/// Update the full text content of a generated-content artifact (full replace)
+#[register_handler_tool(
+    id = "update_artifact_content",
+    name = "update_artifact_content",
+    description = "Fully replace the text content of a generated-content artifact, supports optimistic locking with expected_updated_at",
+    params = "common::api::UpdateArtifactContentRequest",
+)]
+#[generate_http_handler]
 pub async fn update_artifact_content(
-    Extension(ctx): Extension<RequestContext>,
-    Path(artifact_id): Path<String>,
-    Json(req): Json<UpdateArtifactContentRequest>,
-) -> Result<Json<ApiResponse<ArtifactDetail>>, AppError> {
+    ctx: RequestContext,
+    params: UpdateArtifactContentRequest,
+) -> Result<ArtifactDetail, AppError> {
     let domain = crate::service::domain::project::domain();
     // Convert String content to bytes
-    let content_bytes = req.content.into_bytes();
+    let content_bytes = params.content.into_bytes();
     // Validate content size (max 1MB for text)
     if content_bytes.len() > 1024 * 1024 {
         return Err(AppError::BadRequest(
@@ -34,12 +32,12 @@ pub async fn update_artifact_content(
         .artifact_manage()
         .update_artifact_content(
             ctx.clone(),
-            &artifact_id,
+            &params.artifact_id,
             content_bytes,
-            req.expected_updated_at,
+            params.expected_updated_at,
         )
         .await?;
 
     let detail = response::to_detail(&updated_artifact);
-    Ok(Json(ApiResponse::success(detail)))
+    Ok(detail)
 }

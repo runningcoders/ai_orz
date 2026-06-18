@@ -51,13 +51,15 @@ fn task_requests_and_responses_serialize_contract() {
 #[test]
 fn update_task_status_request_uses_task_status_enum() {
     let request = UpdateTaskStatusRequest {
+        id: "task-1".to_string(),
         status: TaskStatus::InProgress,
     };
 
     let json = serde_json::to_string(&request).unwrap();
-    assert_eq!(json, r#"{"status":"InProgress"}"#);
+    assert_eq!(json, r#"{"id":"task-1","status":"InProgress"}"#);
 
     let decoded: UpdateTaskStatusRequest = serde_json::from_str(&json).unwrap();
+    assert_eq!(decoded.id, "task-1");
     assert_eq!(decoded.status, TaskStatus::InProgress);
 }
 
@@ -94,6 +96,7 @@ fn update_task_status_response_uses_task_detail_contract() {
 #[test]
 fn update_task_request_allows_partial_fields() {
     let request = UpdateTaskRequest {
+        id: "task-1".to_string(),
         title: Some("Renamed".to_string()),
         description: None,
         priority: None,
@@ -104,6 +107,7 @@ fn update_task_request_allows_partial_fields() {
 
     let json = serde_json::to_string(&request).unwrap();
     let decoded: UpdateTaskRequest = serde_json::from_str(&json).unwrap();
+    assert_eq!(decoded.id, "task-1");
     assert_eq!(decoded.title.as_deref(), Some("Renamed"));
     assert_eq!(decoded.tags, Some(vec!["updated".to_string()]));
     assert_eq!(decoded.dependencies, Some(vec!["task-0".to_string()]));

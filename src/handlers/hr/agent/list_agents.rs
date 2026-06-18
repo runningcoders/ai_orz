@@ -1,20 +1,34 @@
-//! 列出所有 Agent
+//! Handler: GET /api/v1/agents - List all agents with optional status filtering
 
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{ListAgentsRequest, ListAgentsResponse, AgentListItem};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
-use axum::{Json, extract::Extension};
-use common::api::AgentListItem;
-use common::api::ApiResponse;
+use crate::service::dao::agent::AgentQuery;
 
-/// 列出所有 Agent
-/// GET /agents
+/// List all AI agents with optional status filtering
+#[register_handler_tool(
+    id = "list_agents",
+    name = "list_agents",
+    description = "List all AI agents with optional status filtering",
+    params = "common::api::ListAgentsRequest",
+)]
+#[generate_http_handler]
 pub async fn list_agents(
-    Extension(ctx): Extension<RequestContext>,
-) -> Result<Json<ApiResponse<Vec<AgentListItem>>>, AppError> {
+    ctx: RequestContext,
+    params: ListAgentsRequest,
+) -> Result<ListAgentsResponse, AppError> {
     let agents = domain().agent_manage().list_agents(ctx).await?;
-    let responses: Vec<AgentListItem> = agents
+    let agents: Vec<AgentListItem> = agents
         .iter()
+        .filter(|agent| {
+            if let Some(status) = params.status {
+                agent.po.status == status
+            } else {
+                true
+            }
+        })
         .map(|agent| AgentListItem {
             id: agent.id().to_string(),
             name: agent.name().to_string(),
@@ -30,5 +44,5 @@ pub async fn list_agents(
         })
         .collect();
 
-    Ok(Json(ApiResponse::success(responses)))
+    Ok(ListAgentsResponse { agents })
 }

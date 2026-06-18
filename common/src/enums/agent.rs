@@ -1,5 +1,6 @@
 //! Agent related enums
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "sqlx")]
 use sqlx::Type;
@@ -9,7 +10,7 @@ use sqlx::Type;
 /// 状态流转：
 /// Interviewing → PendingOnboard → Onboarded → PendingOffboard → Offboarded
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, JsonSchema)]
 #[cfg_attr(feature = "sqlx", derive(Type))]
 #[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
 pub enum AgentStatus {
@@ -62,7 +63,7 @@ impl From<i64> for AgentStatus {
 
 /// ModelProvider status (for soft delete)
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, JsonSchema)]
 #[cfg_attr(feature = "sqlx", derive(Type))]
 #[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
 pub enum ModelProviderStatus {

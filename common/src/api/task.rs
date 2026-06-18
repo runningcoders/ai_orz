@@ -1,10 +1,12 @@
 //! Task related API request/response DTOs - shared between backend and frontend
 
+use ai_orz_macros::Params;
 use crate::enums::{AssigneeType, TaskStatus};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// 创建 Task 请求
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct CreateTaskRequest {
     /// 任务标题
     pub title: String,
@@ -31,17 +33,44 @@ pub struct CreateTaskRequest {
 /// 创建 Task 响应
 pub type CreateTaskResponse = GetTaskResponse;
 
-/// Task 列表查询参数
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct ListTasksQuery {
+/// 获取 Task 请求
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct GetTaskRequest {
+    /// Task ID
+    #[param(source = "path")]
+    pub id: String,
+}
+
+/// 获取 Task 列表（按 Agent）请求
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ListAgentTasksRequest {
+    /// Agent ID
+    #[param(source = "path")]
+    pub agent_id: String,
     /// 可选状态筛选
+    #[param(source = "query")]
     pub status: Option<TaskStatus>,
     /// 返回数量限制
+    #[param(source = "query")]
+    pub limit: Option<usize>,
+}
+
+/// 获取 Task 列表（按 Project）请求
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ListProjectTasksRequest {
+    /// Project ID
+    #[param(source = "path")]
+    pub project_id: String,
+    /// 可选状态筛选
+    #[param(source = "query")]
+    pub status: Option<TaskStatus>,
+    /// 返回数量限制
+    #[param(source = "query")]
     pub limit: Option<usize>,
 }
 
 /// Task 列表项响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct TaskListItem {
     /// Task ID
     pub id: String,
@@ -72,7 +101,7 @@ pub struct TaskListItem {
 }
 
 /// 获取 Task 响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GetTaskResponse {
     /// Task ID
     pub id: String,
@@ -115,8 +144,11 @@ pub struct GetTaskResponse {
 }
 
 /// 更新 Task 请求
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct UpdateTaskRequest {
+    /// Task ID
+    #[param(source = "path")]
+    pub id: String,
     /// 任务标题
     pub title: Option<String>,
     /// 任务描述
@@ -135,8 +167,11 @@ pub struct UpdateTaskRequest {
 pub type UpdateTaskResponse = GetTaskResponse;
 
 /// 更新 Task 状态请求
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct UpdateTaskStatusRequest {
+    /// Task ID
+    #[param(source = "path")]
+    pub id: String,
     /// 目标任务状态。
     ///
     /// 状态流转合法性由 Project Domain 的 Task 子能力校验。

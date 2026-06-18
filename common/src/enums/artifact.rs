@@ -1,5 +1,6 @@
 //! Artifact related enums.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "sqlx")]
 use sqlx::Type;
@@ -10,7 +11,7 @@ use sqlx::Type;
 /// `RemoteUrl` is reserved for future URL-backed artifacts and is not enabled by
 /// the Batch 3.1 create flow yet.
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "sqlx", derive(Type))]
 #[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]

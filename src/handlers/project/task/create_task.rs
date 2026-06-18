@@ -1,31 +1,33 @@
-//! 创建 Task
+//! Handler: POST /api/v1/tasks - Create a new task
 
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{CreateTaskRequest, CreateTaskResponse};
+use common::enums::AssigneeType;
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
-use axum::{
-    extract::{Extension, Json},
-    http::StatusCode,
-};
-use common::api::{ApiResponse, CreateTaskRequest, CreateTaskResponse};
-use common::enums::AssigneeType;
-
 use super::response;
 
-/// 创建 Task
-/// POST /tasks
+/// Create a new task
+#[register_handler_tool(
+    id = "create_task",
+    name = "create_task",
+    description = "Create a new task with specified title, description, assignee, etc.",
+    params = "common::api::CreateTaskRequest",
+)]
+#[generate_http_handler]
 pub async fn create_task(
-    Extension(ctx): Extension<RequestContext>,
-    Json(req): Json<CreateTaskRequest>,
-) -> Result<(StatusCode, Json<ApiResponse<CreateTaskResponse>>), AppError> {
+    ctx: RequestContext,
+    params: CreateTaskRequest,
+) -> Result<CreateTaskResponse, AppError> {
     let current_user_id = ctx.uid();
     if current_user_id.is_empty() {
         return Err(AppError::BadRequest("当前用户不能为空".to_string()));
     }
-    if req.title.trim().is_empty() {
+    if params.title.trim().is_empty() {
         return Err(AppError::BadRequest("任务标题不能为空".to_string()));
     }
-    if req.assignee_id.trim().is_empty() {
+    if params.assignee_id.trim().is_empty() {
         return Err(AppError::BadRequest("assignee_id 不能为空".to_string()));
     }
 
@@ -33,22 +35,19 @@ pub async fn create_task(
         .task_manage()
         .create_with_options(
             ctx,
-            req.title,
-            req.description.unwrap_or_default(),
-            req.priority.unwrap_or_default(),
-            req.tags.unwrap_or_default(),
-            req.root_user_id.unwrap_or_else(|| current_user_id.clone()),
-            req.assignee_type.unwrap_or(AssigneeType::Agent),
-            req.assignee_id,
-            req.project_id,
-            req.due_at,
-            req.dependencies.unwrap_or_default(),
+            params.title,
+            params.description.unwrap_or_default(),
+            params.priority.unwrap_or_default(),
+            params.tags.unwrap_or_default(),
+            params.root_user_id.unwrap_or_else(|| current_user_id.clone()),
+            params.assignee_type.unwrap_or(AssigneeType::Agent),
+            params.assignee_id,
+            params.project_id,
+            params.due_at,
+            params.dependencies.unwrap_or_default(),
             current_user_id,
         )
         .await?;
 
-    Ok((
-        StatusCode::CREATED,
-        Json(ApiResponse::success(response::to_detail(&task))),
-    ))
+    Ok(response::to_detail(&task))
 }

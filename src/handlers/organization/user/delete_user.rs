@@ -1,27 +1,25 @@
-//! 删除用户接口
+//! Handler: DELETE /api/v1/organizations/users/{id} - Delete a user
 
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{DeleteUserRequest, DeleteUserResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
-use axum::{
-    Json,
-    extract::{Extension, Path},
-    http::StatusCode,
-    response::IntoResponse,
-};
-use common::api::ApiResponse;
-use common::api::DeleteUserResponse;
 
-/// 删除用户
+/// Delete an existing user by ID (requires admin permissions)
+#[register_handler_tool(
+    id = "delete_user",
+    name = "delete_user",
+    description = "Delete a user from the organization. Requires admin permissions.",
+    params = "common::api::DeleteUserRequest",
+)]
+#[generate_http_handler]
 pub async fn delete_user(
-    Extension(ctx): Extension<RequestContext>,
-    Path(user_id): Path<String>,
-) -> Result<impl IntoResponse, AppError> {
+    ctx: RequestContext,
+    params: DeleteUserRequest,
+) -> Result<DeleteUserResponse, AppError> {
     let domain = organization::domain();
-    domain.user_manage().delete_user(ctx, &user_id).await?;
+    domain.user_manage().delete_user(ctx, &params.user_id).await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(ApiResponse::success(DeleteUserResponse { success: true })).into_response(),
-    ))
+    Ok(DeleteUserResponse { success: true })
 }

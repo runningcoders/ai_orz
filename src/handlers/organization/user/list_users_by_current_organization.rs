@@ -1,18 +1,23 @@
-//! 获取当前用户所在组织下的所有用户列表接口
+//! Handler: GET /api/v1/organizations/users - List all users in current organization
 
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{ListUsersByCurrentOrganizationRequest, ListUsersResponse, UserListItem};
+use crate::error::AppError;
 use crate::pkg::RequestContext;
-use crate::{error::AppError, service::domain::organization};
-use axum::{
-    extract::{Extension, Json},
-    http::StatusCode,
-};
-use common::api::{ApiResponse, ListUsersResponse, UserListItem};
+use crate::service::domain::organization;
 
-/// 获取当前用户所在组织下的所有用户列表
-/// 从 RequestContext 提取 organization_id，直接返回列表，不需要前端传参
+/// List all users belonging to the current authenticated user's organization
+#[register_handler_tool(
+    id = "list_users_by_current_organization",
+    name = "list_users_by_current_organization",
+    description = "List all users in the organization that the current authenticated user belongs to",
+    params = "common::api::ListUsersByCurrentOrganizationRequest",
+)]
+#[generate_http_handler]
 pub async fn list_users_by_current_organization(
-    Extension(ctx): Extension<RequestContext>,
-) -> Result<(StatusCode, Json<ApiResponse<ListUsersResponse>>), AppError> {
+    ctx: RequestContext,
+    _params: ListUsersByCurrentOrganizationRequest,
+) -> Result<ListUsersResponse, AppError> {
     // 从 RequestContext 获取当前组织 ID
     let org_id = ctx
         .organization_id
@@ -50,8 +55,5 @@ pub async fn list_users_by_current_organization(
         })
         .collect();
 
-    Ok((
-        StatusCode::OK,
-        Json(ApiResponse::success(ListUsersResponse { data, total })),
-    ))
+    Ok(ListUsersResponse { data, total })
 }

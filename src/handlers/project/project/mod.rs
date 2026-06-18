@@ -8,8 +8,8 @@ mod response;
 mod update_project;
 mod update_project_status;
 
-pub use create_project::create_project;
-pub use get_project::get_project;
-pub use list_projects::list_projects;
-pub use update_project::update_project;
-pub use update_project_status::update_project_status;
+pub use create_project::create_project_handler;
+pub use get_project::get_project_handler;
+pub use list_projects::list_projects_handler;
+pub use update_project::update_project_handler;
+pub use update_project_status::update_project_status_handler;

@@ -39,6 +39,15 @@ pub struct UpdateSkillFileContentParams {
 
 不需要 nightly，完全稳定可用！
 
+## 命名规范
+
+遵循项目原有语义约定：
+- 请求结构体：`XXXRequest`
+- 响应结构体：`XXXResponse`
+- 类型别名可以继续使用：`pub type GetSkillResponse = SkillDetail;`
+
+这样 `req/resp` 语义呼应，保持项目原有一致性。
+
 ## 字段注解
 
 | 注解方式 | 说明 | 提取方式 |

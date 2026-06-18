@@ -1,11 +1,7 @@
-//! 列出 Message Channel
+//! Handler: GET /api/v1/message-channels - List message channels with filtering
 
-use axum::{
-    Json,
-    extract::{Extension, Query},
-};
-use common::api::{ApiResponse, MessageChannelListItem, MessageChannelListQuery};
-
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{ListMessageChannelsRequest, ListMessageChannelsResponse, MessageChannelListItem};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::dao::message_channel::MessageChannelQuery;
@@ -13,17 +9,23 @@ use crate::service::domain::finance::domain;
 
 use super::response::to_list_item;
 
-/// 列出 Message Channel
-/// GET /message-channels
+/// List message channels with optional filtering by user, agent, channel type, enabled status
+#[register_handler_tool(
+    id = "list_message_channels",
+    name = "list_message_channels",
+    description = "List message channels with optional filtering by user, agent, channel type, enabled status",
+    params = "common::api::ListMessageChannelsRequest",
+)]
+#[generate_http_handler]
 pub async fn list_message_channels(
-    Extension(ctx): Extension<RequestContext>,
-    Query(req): Query<MessageChannelListQuery>,
-) -> Result<Json<ApiResponse<Vec<MessageChannelListItem>>>, AppError> {
+    ctx: RequestContext,
+    params: ListMessageChannelsRequest,
+) -> Result<ListMessageChannelsResponse, AppError> {
     let org_id = ctx
         .organization_id
         .clone()
         .ok_or_else(|| AppError::BadRequest("当前请求缺少组织上下文".to_string()))?;
-    let user_id = req.user_id.clone().unwrap_or_else(|| ctx.uid());
+    let user_id = params.user_id.clone().unwrap_or_else(|| ctx.uid());
     if user_id.is_empty() {
         return Err(AppError::BadRequest("当前请求缺少用户上下文".to_string()));
     }
@@ -31,20 +33,21 @@ pub async fn list_message_channels(
     let channels = domain()
         .message_channel_manage()
         .query_channels(
-            ctx,
-            MessageChannelQuery {
+            ctx.clone(),
+            crate::service::dao::message_channel::MessageChannelQuery {
                 org_id: Some(org_id),
                 user_id: Some(user_id),
-                agent_id: req.agent_id.clone(),
-                channel_type: req.channel_type,
-                only_enabled: req.only_enabled.unwrap_or(false),
-                limit: req.limit,
-                offset: req.offset,
+                agent_id: params.agent_id.clone(),
+                channel_type: params.channel_type,
+                only_enabled: params.only_enabled.unwrap_or(false),
+                limit: params.limit,
+                offset: params.offset,
                 ..Default::default()
             },
         )
         .await?;
 
-    let responses = channels.iter().map(to_list_item).collect();
-    Ok(Json(ApiResponse::success(responses)))
+    let total = channels.len();
+    let channels: Vec<MessageChannelListItem> = channels.iter().map(to_list_item).collect();
+    Ok(ListMessageChannelsResponse { channels, total: total as usize })
 }

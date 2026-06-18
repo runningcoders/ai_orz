@@ -1,35 +1,36 @@
-//! 列出 Project 下的 Task
+//! Handler: GET /api/v1/projects/{project_id}/tasks - List tasks under a project
 
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{ListProjectTasksRequest, TaskListItem};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
-use axum::{
-    Json,
-    extract::{Extension, Path, Query},
-};
-use common::api::{ApiResponse, ListTasksQuery, TaskListItem};
-
 use super::response;
 
-/// 列出 Project 下的 Task
-/// GET /projects/{project_id}/tasks
+/// List all tasks under a specific project, with optional status filtering
+#[register_handler_tool(
+    id = "list_project_tasks",
+    name = "list_project_tasks",
+    description = "List all tasks under a specific project, with optional status filtering",
+    params = "common::api::ListProjectTasksRequest",
+)]
+#[generate_http_handler]
 pub async fn list_project_tasks(
-    Extension(ctx): Extension<RequestContext>,
-    Path(project_id): Path<String>,
-    Query(query): Query<ListTasksQuery>,
-) -> Result<Json<ApiResponse<Vec<TaskListItem>>>, AppError> {
+    ctx: RequestContext,
+    params: ListProjectTasksRequest,
+) -> Result<Vec<TaskListItem>, AppError> {
     let tasks = domain()
         .task_manage()
         .list(
             ctx,
-            Some(&project_id),
+            Some(&params.project_id),
             None,
             None,
-            query.status,
-            query.limit,
+            params.status,
+            params.limit,
         )
         .await?;
     let response_items = tasks.iter().map(response::to_list_item).collect();
 
-    Ok(Json(ApiResponse::success(response_items)))
+    Ok(response_items)
 }

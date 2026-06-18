@@ -1,12 +1,8 @@
-//! 搜索 Skill
+//! Handler: GET /api/v1/skills/search - Search skills by keyword with filtering
 
-use axum::{
-    Json,
-    extract::{Extension, Query},
-};
-use common::api::{ApiResponse, SkillListItem, SkillSearchQuery};
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{SearchSkillsRequest, SearchSkillsResponse, SkillListItem};
 use common::enums::SkillStatus;
-
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::dao::skill::{SkillQuery, SkillSearch};
@@ -14,31 +10,38 @@ use crate::service::domain::hr::domain;
 
 use super::response::to_list_item;
 
-/// 搜索 Skill
-/// GET /hr/skills/search
+/// Search public skills by keyword with optional filtering. Returns matching skills sorted by relevance.
+#[register_handler_tool(
+    id = "search_skills",
+    name = "search_skills",
+    description = "Search public skills by keyword with optional filtering. Returns matching skills sorted by relevance.",
+    params = "common::api::SearchSkillsRequest"
+)]
+#[generate_http_handler]
 pub async fn search_skills(
-    Extension(ctx): Extension<RequestContext>,
-    Query(req): Query<SkillSearchQuery>,
-) -> Result<Json<ApiResponse<Vec<SkillListItem>>>, AppError> {
+    ctx: RequestContext,
+    params: SearchSkillsRequest,
+) -> Result<SearchSkillsResponse, AppError> {
     let skills = domain()
         .skill_manage()
         .search_skills(
             ctx,
             SkillSearch {
-                keyword: req.keyword,
+                keyword: params.keyword,
                 query_vector: None,
-                top_k: req.limit.map(|limit| limit as i32),
+                top_k: params.limit.map(|limit| limit as i32),
                 filters: SkillQuery {
-                    status: req.status,
-                    exclude_status: req.status.is_none().then_some(SkillStatus::Expired),
-                    category: req.category,
-                    limit: req.limit,
+                    status: params.status,
+                    exclude_status: params.status.is_none().then_some(SkillStatus::Expired),
+                    category: params.category,
+                    author_id: params.author_id,
+                    limit: params.limit,
                     ..Default::default()
                 },
             },
         )
         .await?;
 
-    let responses = skills.iter().map(to_list_item).collect();
-    Ok(Json(ApiResponse::success(responses)))
+    let skills = skills.iter().map(to_list_item).collect();
+    Ok(SearchSkillsResponse { skills })
 }

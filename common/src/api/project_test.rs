@@ -44,13 +44,15 @@ fn project_requests_and_responses_serialize_contract() {
 #[test]
 fn update_project_status_request_uses_project_status_enum() {
     let request = UpdateProjectStatusRequest {
+        id: "project-1".to_string(),
         status: ProjectStatus::InProgress,
     };
 
     let json = serde_json::to_string(&request).unwrap();
-    assert_eq!(json, r#"{"status":"InProgress"}"#);
+    assert_eq!(json, r#"{"id":"project-1","status":"InProgress"}"#);
 
     let decoded: UpdateProjectStatusRequest = serde_json::from_str(&json).unwrap();
+    assert_eq!(decoded.id, "project-1");
     assert_eq!(decoded.status, ProjectStatus::InProgress);
 }
 
@@ -86,6 +88,7 @@ fn update_project_status_response_uses_project_detail_contract() {
 #[test]
 fn update_project_request_allows_partial_fields() {
     let request = UpdateProjectRequest {
+        id: "project-1".to_string(),
         name: Some("Renamed".to_string()),
         description: None,
         priority: None,
@@ -94,6 +97,7 @@ fn update_project_request_allows_partial_fields() {
 
     let json = serde_json::to_string(&request).unwrap();
     let decoded: UpdateProjectRequest = serde_json::from_str(&json).unwrap();
+    assert_eq!(decoded.id, "project-1");
     assert_eq!(decoded.name.as_deref(), Some("Renamed"));
     assert_eq!(decoded.tags, Some(vec!["updated".to_string()]));
 }

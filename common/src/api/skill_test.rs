@@ -77,6 +77,7 @@ fn skill_detail_contains_content_but_list_item_does_not() {
 #[test]
 fn update_skill_request_allows_partial_fields() {
     let request = UpdateSkillRequest {
+        skill_id: "skill-1".to_string(),
         name: Some("Renamed".to_string()),
         description: None,
         tags: Some(vec!["updated".to_string()]),
@@ -88,6 +89,7 @@ fn update_skill_request_allows_partial_fields() {
 
     let json = serde_json::to_string(&request).unwrap();
     let decoded: UpdateSkillRequest = serde_json::from_str(&json).unwrap();
+    assert_eq!(decoded.skill_id, "skill-1");
     assert_eq!(decoded.name.as_deref(), Some("Renamed"));
     assert_eq!(decoded.tags, Some(vec!["updated".to_string()]));
     assert_eq!(decoded.status, Some(SkillStatus::Published));
@@ -118,6 +120,7 @@ fn update_skill_request_accepts_attachment_file_imports() {
 fn skill_search_query_uses_skill_status_enum() {
     let query = SkillSearchQuery {
         keyword: Some("debug".to_string()),
+        author_id: Some("user-1".to_string()),
         status: Some(SkillStatus::Published),
         category: Some("engineering".to_string()),
         limit: Some(10),
@@ -126,6 +129,7 @@ fn skill_search_query_uses_skill_status_enum() {
     let json = serde_json::to_string(&query).unwrap();
     assert!(json.contains("Published"));
     let decoded: SkillSearchQuery = serde_json::from_str(&json).unwrap();
+    assert_eq!(decoded.author_id, Some("user-1".to_string()));
     assert_eq!(decoded.status, Some(SkillStatus::Published));
 }
 
@@ -201,6 +205,8 @@ fn create_skill_request_accepts_initial_files() {
 #[test]
 fn update_skill_file_content_request_supports_optimistic_lock() {
     let request = UpdateSkillFileContentRequest {
+        skill_id: "skill-1".to_string(),
+        filename: "skill.md".to_string(),
         content: "Updated content".to_string(),
         expected_updated_at: Some(1234567890),
     };
@@ -210,6 +216,8 @@ fn update_skill_file_content_request_supports_optimistic_lock() {
     assert!(json.contains("1234567890"));
 
     let decoded: UpdateSkillFileContentRequest = serde_json::from_str(&json).unwrap();
+    assert_eq!(decoded.skill_id, "skill-1");
+    assert_eq!(decoded.filename, "skill.md");
     assert_eq!(decoded.content, "Updated content");
     assert_eq!(decoded.expected_updated_at, Some(1234567890));
 }

@@ -69,7 +69,6 @@ async fn init_test_env(
     crate::service::dao::cortex::init();
     crate::service::dao::tool_call::init();
     crate::service::dal::tool::init();
-    crate::pkg::tool_registry::init();
 
     if register_factory {
         register_test_factory();

@@ -1,26 +1,25 @@
-//! 更新 Message Channel 状态
+//! Handler: PUT /api/v1/message-channels/{id}/status - Update message channel status (active/disabled)
 
-use axum::{
-    Json as AxumJson,
-    extract::{Extension, Json, Path},
-};
-use common::api::{
-    ApiResponse, UpdateMessageChannelStatusRequest, UpdateMessageChannelStatusResponse,
-};
-
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{UpdateMessageChannelStatusRequest, UpdateMessageChannelStatusResponse, MessageChannelDetail};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
 use super::response::to_detail;
 
-/// 更新 Message Channel 状态
-/// PUT /message-channels/{id}/status
+/// Update the status of a message channel (enable/disable it)
+#[register_handler_tool(
+    id = "update_message_channel_status",
+    name = "update_message_channel_status",
+    description = "Update the status of a message channel (enable/disable it)",
+    params = "common::api::UpdateMessageChannelStatusRequest",
+)]
+#[generate_http_handler]
 pub async fn update_message_channel_status(
-    Extension(ctx): Extension<RequestContext>,
-    Path(id): Path<String>,
-    Json(req): Json<UpdateMessageChannelStatusRequest>,
-) -> Result<AxumJson<ApiResponse<UpdateMessageChannelStatusResponse>>, AppError> {
+    ctx: RequestContext,
+    params: UpdateMessageChannelStatusRequest,
+) -> Result<UpdateMessageChannelStatusResponse, AppError> {
     let org_id = ctx
         .organization_id
         .clone()
@@ -32,19 +31,19 @@ pub async fn update_message_channel_status(
 
     let mut channel = domain()
         .message_channel_manage()
-        .get_message_channel(ctx.clone(), &id)
+        .get_message_channel(ctx.clone(), &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("MessageChannel {} not found", id)))?;
+        .ok_or_else(|| AppError::NotFound(format!("MessageChannel {} not found", params.id)))?;
 
     if channel.po.org_id != org_id || channel.po.user_id != user_id {
         return Err(AppError::NotFound(format!(
             "MessageChannel {} not found",
-            id
+            params.id
         )));
     }
 
     channel
-        .transition_status(req.status, user_id)
+        .transition_status(params.status, user_id)
         .map_err(AppError::BadRequest)?;
 
     domain()
@@ -52,5 +51,5 @@ pub async fn update_message_channel_status(
         .update_message_channel(ctx, &channel)
         .await?;
 
-    Ok(AxumJson(ApiResponse::success(to_detail(&channel))))
+    Ok(to_detail(&channel))
 }

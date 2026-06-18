@@ -1,28 +1,29 @@
-//! 获取 Artifact 详情
+//! Handler: GET /api/v1/project/artifacts/{id} - Get artifact basic information
 
-use axum::{
-    Json,
-    extract::{Extension, Path},
-};
-use common::api::{ApiResponse, GetArtifactResponse};
-
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{GetArtifactRequest, GetArtifactResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::project;
-
 use super::response;
 
-/// 获取 Artifact 详情
-/// GET /api/v1/project/artifacts/{id}
+/// Get artifact detailed information by ID
+#[register_handler_tool(
+    id = "get_artifact",
+    name = "get_artifact",
+    description = "Get detailed metadata information about an artifact",
+    params = "common::api::GetArtifactRequest",
+)]
+#[generate_http_handler]
 pub async fn get_artifact(
-    Extension(ctx): Extension<RequestContext>,
-    Path(id): Path<String>,
-) -> Result<Json<ApiResponse<GetArtifactResponse>>, AppError> {
+    ctx: RequestContext,
+    params: GetArtifactRequest,
+) -> Result<GetArtifactResponse, AppError> {
     let artifact = project::domain()
         .artifact_manage()
-        .get(ctx, &id)
+        .get(ctx, &params.artifact_id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Artifact {} not found", id)))?;
+        .ok_or_else(|| AppError::NotFound(format!("Artifact {} not found", params.artifact_id)))?;
 
-    Ok(Json(ApiResponse::success(response::to_detail(&artifact))))
+    Ok(response::to_detail(&artifact))
 }

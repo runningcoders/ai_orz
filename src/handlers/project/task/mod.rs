@@ -9,9 +9,9 @@ mod response;
 mod update_task;
 mod update_task_status;
 
-pub use create_task::create_task;
-pub use get_task::get_task;
-pub use list_agent_tasks::list_agent_tasks;
-pub use list_project_tasks::list_project_tasks;
-pub use update_task::update_task;
-pub use update_task_status::update_task_status;
+pub use create_task::create_task_handler;
+pub use get_task::get_task_handler;
+pub use list_agent_tasks::list_agent_tasks_handler;
+pub use list_project_tasks::list_project_tasks_handler;
+pub use update_task::update_task_handler;
+pub use update_task_status::update_task_status_handler;

@@ -1,42 +1,42 @@
-//! Get artifact content handler
-//!
-//! GET /api/v1/project/artifacts/{id}/content
-//! Retrieves the full text content of a generated-content artifact.
+//! Handler: GET /api/v1/project/artifacts/{id}/content - Get artifact text content
 
-use axum::{
-    Json,
-    extract::{Extension, Path},
-};
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
 use common::api::artifact::{ArtifactContentText, GetArtifactContentResponse};
-use common::api::{ApiResponse, GetArtifactResponse};
-
+use common::api::{GetArtifactContentRequest};
 use crate::error::AppError;
 use crate::handlers::project::artifact::response;
 use crate::pkg::RequestContext;
 use crate::service::domain::project;
 
-/// GET /api/v1/project/artifacts/{artifact_id}/content
+/// Get the full text content of a generated-content artifact
+#[register_handler_tool(
+    id = "get_artifact_content",
+    name = "get_artifact_content",
+    description = "Get the text content of an artifact with source_type = generated_content",
+    params = "common::api::GetArtifactContentRequest",
+)]
+#[generate_http_handler]
 pub async fn get_artifact_content(
-    Extension(ctx): Extension<RequestContext>,
-    Path(artifact_id): Path<String>,
-) -> Result<Json<ApiResponse<GetArtifactContentResponse>>, AppError> {
+    ctx: RequestContext,
+    params: GetArtifactContentRequest,
+) -> Result<GetArtifactContentResponse, AppError> {
     let domain = project::domain();
     let result = domain
         .artifact_manage()
-        .get_artifact_content(ctx.clone(), &artifact_id)
+        .get_artifact_content(ctx.clone(), &params.artifact_id)
         .await?;
 
     match result {
         None => Err(AppError::NotFound(format!(
             "Artifact not found or no content available: {}",
-            artifact_id
+            params.artifact_id
         ))),
         Some((artifact, content_bytes)) => {
             // Validate that content is valid UTF-8
             let content_str = String::from_utf8(content_bytes).map_err(|_| {
                 AppError::BadRequest(format!(
                     "Artifact content is not valid UTF-8 text: {}",
-                    artifact_id
+                    params.artifact_id
                 ))
             })?;
 
@@ -53,7 +53,7 @@ pub async fn get_artifact_content(
                 content,
             };
 
-            Ok(Json(ApiResponse::success(response)))
+            Ok(response)
         }
     }
 }

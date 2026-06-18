@@ -1,24 +1,25 @@
-//! 更新 Tool 状态
+//! Handler: PUT /api/v1/tools/{id}/status - Update tool status (enable/disable)
 
-use axum::{
-    Json as AxumJson,
-    extract::{Extension, Json, Path},
-};
-use common::api::{ApiResponse, UpdateToolStatusRequest, UpdateToolStatusResponse};
-
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{UpdateToolStatusRequest, UpdateToolStatusResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
 use super::response::to_detail;
 
-/// 更新 Tool 状态
-/// PUT /tools/{id}/status
+/// Update the status of a tool (enable/disable it)
+#[register_handler_tool(
+    id = "update_tool_status",
+    name = "update_tool_status",
+    description = "Update the status of a tool (enable/disable it)",
+    params = "common::api::UpdateToolStatusRequest",
+)]
+#[generate_http_handler]
 pub async fn update_tool_status(
-    Extension(ctx): Extension<RequestContext>,
-    Path(id): Path<String>,
-    Json(req): Json<UpdateToolStatusRequest>,
-) -> Result<AxumJson<ApiResponse<UpdateToolStatusResponse>>, AppError> {
+    ctx: RequestContext,
+    params: UpdateToolStatusRequest,
+) -> Result<UpdateToolStatusResponse, AppError> {
     let user_id = ctx.uid();
     if user_id.is_empty() {
         return Err(AppError::BadRequest("当前请求缺少用户上下文".to_string()));
@@ -26,11 +27,11 @@ pub async fn update_tool_status(
 
     let mut tool = domain()
         .tool_provider_manage()
-        .get_tool(ctx.clone(), &id)
+        .get_tool(ctx.clone(), &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Tool {} not found", id)))?;
+        .ok_or_else(|| AppError::NotFound(format!("Tool {} not found", params.id)))?;
 
-    tool.transition_status(req.status, user_id)
+    tool.transition_status(params.status, user_id)
         .map_err(AppError::BadRequest)?;
 
     domain()
@@ -38,5 +39,5 @@ pub async fn update_tool_status(
         .update_tool(ctx, &tool)
         .await?;
 
-    Ok(AxumJson(ApiResponse::success(to_detail(&tool))))
+    Ok(to_detail(&tool))
 }

@@ -1,11 +1,7 @@
-//! 更新 Skill
+//! Handler: PUT /api/v1/skills/{skill_id} - Update skill metadata and content
 
-use axum::{
-    Json as AxumJson,
-    extract::{Extension, Json, Path},
-};
-use common::api::{ApiResponse, SkillDetail, UpdateSkillRequest};
-
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{UpdateSkillRequest, UpdateSkillResponse};
 use crate::error::AppError;
 use crate::models::attachment::AttachmentGetOptions;
 use crate::pkg::RequestContext;
@@ -14,13 +10,18 @@ use crate::service::domain::hr::{SkillFileImport, UpdateSkillParams, domain};
 
 use super::response::to_detail;
 
-/// 更新 Skill
-/// PUT /hr/skills/{id}
+/// Update an existing skill's metadata, main content, and add new attached files from uploads.
+#[register_handler_tool(
+    id = "update_skill",
+    name = "update_skill",
+    description = "Update an existing skill's metadata, main content, and add new attached files from uploads.",
+    params = "common::api::UpdateSkillRequest"
+)]
+#[generate_http_handler]
 pub async fn update_skill(
-    Extension(ctx): Extension<RequestContext>,
-    Path(id): Path<String>,
-    Json(req): Json<UpdateSkillRequest>,
-) -> Result<AxumJson<ApiResponse<SkillDetail>>, AppError> {
+    ctx: RequestContext,
+    params: UpdateSkillRequest,
+) -> Result<UpdateSkillResponse, AppError> {
     let user_id = ctx.uid();
     if user_id.is_empty() {
         return Err(AppError::BadRequest("当前请求缺少用户上下文".to_string()));
@@ -28,42 +29,42 @@ pub async fn update_skill(
 
     let mut skill = domain()
         .skill_manage()
-        .get_skill(ctx.clone(), &id)
+        .get_skill(ctx.clone(), &params.skill_id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Skill {} not found", id)))?;
+        .ok_or_else(|| AppError::NotFound(format!("Skill {} not found", params.skill_id)))?;
 
-    if let Some(name) = req.name {
+    if let Some(name) = params.name {
         if name.trim().is_empty() {
             return Err(AppError::BadRequest("技能名称不能为空".to_string()));
         }
         skill.po.name = name;
     }
-    if let Some(description) = req.description {
+    if let Some(description) = params.description {
         skill.po.description = description;
     }
-    if let Some(tags) = req.tags {
+    if let Some(tags) = params.tags {
         skill.po.tags = serde_json::to_string(&tags).unwrap_or_else(|_| "[]".to_string());
     }
-    if let Some(category) = req.category {
+    if let Some(category) = params.category {
         if category.trim().is_empty() {
             return Err(AppError::BadRequest("技能分类不能为空".to_string()));
         }
         skill.po.category = category;
     }
-    if let Some(status) = req.status {
+    if let Some(status) = params.status {
         skill.po.status = status;
     }
     skill.po.modifier_id = user_id;
     skill.po.updated_at = chrono::Utc::now().timestamp_millis();
 
-    let file_writes = req
+    let file_writes = params
         .content
         .as_deref()
         .map(|content| vec![("skill.md", content)])
         .unwrap_or_default();
 
     let mut file_imports = Vec::new();
-    for file in req.files.unwrap_or_default() {
+    for file in params.files.unwrap_or_default() {
         if file.attachment_id.trim().is_empty() {
             return Err(AppError::BadRequest("附件 ID 不能为空".to_string()));
         }
@@ -112,9 +113,9 @@ pub async fn update_skill(
 
     let updated = domain()
         .skill_manage()
-        .get_skill(ctx, &id)
+        .get_skill(ctx, &params.skill_id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Skill {} not found", id)))?;
+        .ok_or_else(|| AppError::NotFound(format!("Skill {} not found", params.skill_id)))?;
 
-    Ok(AxumJson(ApiResponse::success(to_detail(&updated))))
+    Ok(to_detail(&updated))
 }

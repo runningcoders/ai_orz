@@ -1,9 +1,15 @@
 //! User-related API request/response DTOs - shared between backend and frontend
 
+use ai_orz_macros::Params;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// Get current user info request
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct GetCurrentUserRequest {}
+
 /// 当前用户信息响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct UserInfoResponse {
     /// 用户 ID
     pub user_id: String,
@@ -24,14 +30,14 @@ pub struct UserInfoResponse {
 }
 
 /// 获取当前用户信息响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GetCurrentUserResponse {
     /// 用户信息数据
     pub data: UserInfoResponse,
 }
 
 /// 更新当前用户信息请求
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct UpdateCurrentUserRequest {
     /// 新显示名称（None 表示不修改）
     pub display_name: Option<String>,
@@ -42,14 +48,29 @@ pub struct UpdateCurrentUserRequest {
 }
 
 /// 更新当前用户信息响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct UpdateCurrentUserResponse {
     /// 更新后的用户信息
     pub data: UserInfoResponse,
 }
 
+/// Get user by username request
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct GetUserByUsernameRequest {
+    /// Username to query
+    #[param(source = "path")]
+    pub username: String,
+}
+
+/// Get user by username response
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct GetUserByUsernameResponse {
+    /// User information if found
+    pub user: Option<UserInfoResponse>,
+}
+
 /// 用户列表项
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct UserListItem {
     /// 用户 ID
     pub user_id: String,
@@ -69,8 +90,20 @@ pub struct UserListItem {
     pub created_at: i64,
 }
 
+/// List users by organization request (specified organization ID in path)
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ListUsersByOrganizationRequest {
+    /// Organization ID to query
+    #[param(source = "path")]
+    pub organization_id: String,
+}
+
+/// List users by current organization request (no parameters needed, gets organization from auth context)
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ListUsersByCurrentOrganizationRequest {}
+
 /// 列出用户响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ListUsersResponse {
     /// 组织内用户列表
     pub data: Vec<UserListItem>,
@@ -79,7 +112,7 @@ pub struct ListUsersResponse {
 }
 
 /// 创建新用户请求
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct CreateUserRequest {
     /// 用户名（必填，组织内唯一）
     pub username: String,
@@ -94,7 +127,7 @@ pub struct CreateUserRequest {
 }
 
 /// 创建新用户响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CreateUserResponse {
     /// 用户 ID
     pub user_id: String,
@@ -108,9 +141,28 @@ pub struct CreateUserResponse {
     pub role: i32,
 }
 
+/// Get user request
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct GetUserRequest {
+    /// User ID
+    #[param(source = "path")]
+    pub user_id: String,
+}
+
+/// Delete user request
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct DeleteUserRequest {
+    /// User ID
+    #[param(source = "path")]
+    pub user_id: String,
+}
+
 /// 更新用户请求
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct UpdateUserRequest {
+    /// User ID
+    #[param(source = "path")]
+    pub user_id: String,
     /// 显示名称（None 表示不修改）
     pub display_name: Option<String>,
     /// 邮箱（None 表示不修改）
@@ -124,7 +176,7 @@ pub struct UpdateUserRequest {
 }
 
 /// 更新用户响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct UpdateUserResponse {
     /// 用户 ID
     pub user_id: String,
@@ -141,14 +193,14 @@ pub struct UpdateUserResponse {
 }
 
 /// 删除用户响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DeleteUserResponse {
     /// 是否删除成功
     pub success: bool,
 }
 
 /// 空成功响应（用于不需要返回数据的操作）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct EmptyResponse {
     /// 响应码（0 表示成功，非零表示错误）
     pub code: i32,

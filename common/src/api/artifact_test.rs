@@ -2,7 +2,7 @@
 
 use super::{
     ApiResponse, ArtifactDetail, CreateArtifactRequest, GetArtifactContentResponse,
-    ListArtifactsQuery, UpdateArtifactContentRequest,
+    ListArtifactsRequest, UpdateArtifactContentRequest,
 };
 use crate::enums::{ArtifactSourceType, FileType};
 
@@ -75,7 +75,7 @@ fn artifact_source_type_keeps_remote_url_reserved_for_extension() {
 
 #[test]
 fn list_artifacts_query_and_response_serialize_contract() {
-    let query = ListArtifactsQuery {
+    let query = ListArtifactsRequest {
         project_id: "project-1".to_string(),
         task_id: None,
         file_type: Some(FileType::Document),
@@ -149,21 +149,25 @@ fn get_artifact_content_response_contract_serializes_correctly() {
 fn update_artifact_content_request_supports_optional_optimistic_lock() {
     // without optimistic lock
     let req = UpdateArtifactContentRequest {
+        artifact_id: "artifact-1".to_string(),
         content: "new content".to_string(),
         expected_updated_at: None,
     };
     let json = serde_json::to_string(&req).unwrap();
     let decoded: UpdateArtifactContentRequest = serde_json::from_str(&json).unwrap();
+    assert_eq!(decoded.artifact_id, "artifact-1");
     assert_eq!(decoded.content, "new content");
     assert_eq!(decoded.expected_updated_at, None);
 
     // with optimistic lock
     let req = UpdateArtifactContentRequest {
+        artifact_id: "artifact-1".to_string(),
         content: "updated".to_string(),
         expected_updated_at: Some(1718000000),
     };
     let json = serde_json::to_string(&req).unwrap();
     assert!(json.contains("1718000000"));
     let decoded: UpdateArtifactContentRequest = serde_json::from_str(&json).unwrap();
+    assert_eq!(decoded.artifact_id, "artifact-1");
     assert_eq!(decoded.expected_updated_at, Some(1718000000));
 }

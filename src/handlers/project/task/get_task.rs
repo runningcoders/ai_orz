@@ -1,27 +1,29 @@
-//! 获取 Task 详情
+//! Handler: GET /api/v1/tasks/{id} - Get task detailed information
 
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{GetTaskRequest, GetTaskResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
-use axum::{
-    Json,
-    extract::{Extension, Path},
-};
-use common::api::{ApiResponse, GetTaskResponse};
-
 use super::response;
 
-/// 获取 Task 详情
-/// GET /tasks/{id}
+/// Get task detailed information by ID
+#[register_handler_tool(
+    id = "get_task",
+    name = "get_task",
+    description = "Get detailed information about a specific task by its ID",
+    params = "common::api::GetTaskRequest",
+)]
+#[generate_http_handler]
 pub async fn get_task(
-    Extension(ctx): Extension<RequestContext>,
-    Path(id): Path<String>,
-) -> Result<Json<ApiResponse<GetTaskResponse>>, AppError> {
+    ctx: RequestContext,
+    params: GetTaskRequest,
+) -> Result<GetTaskResponse, AppError> {
     let task = domain()
         .task_manage()
-        .get(ctx, &id)
+        .get(ctx, &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Task {} not found", id)))?;
+        .ok_or_else(|| AppError::NotFound(format!("Task {} not found", params.id)))?;
 
-    Ok(Json(ApiResponse::success(response::to_detail(&task))))
+    Ok(response::to_detail(&task))
 }

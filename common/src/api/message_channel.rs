@@ -1,229 +1,271 @@
 //! Message Channel related API request/response DTOs - shared between backend and frontend
 
+use ai_orz_macros::Params;
 use crate::enums::{ChannelStatus, ChannelType};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// 创建 Message Channel 请求
-#[derive(Debug, Clone, Deserialize, Serialize)]
+/// Create Message Channel request
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct CreateMessageChannelRequest {
-    /// 绑定用户 ID；为空时默认使用当前登录用户
+    /// Bound user ID; defaults to current logged-in user if empty
     pub user_id: Option<String>,
-    /// 关联 Agent ID；None 表示用户全局默认渠道
+    /// Associated Agent ID; None means user global default channel
     pub agent_id: Option<String>,
-    /// 渠道类型
+    /// Channel type
     pub channel_type: ChannelType,
-    /// 用户自定义渠道名称
+    /// User custom channel name
     pub channel_name: String,
-    /// Webhook 地址（飞书、Slack、通用 Webhook 等使用）
+    /// Webhook URL (for Feishu, Slack, generic webhook)
     pub webhook_url: Option<String>,
-    /// 访问 Token（仅请求入参，不会在响应中返回）
+    /// Access token (only in request, not returned in response)
     pub access_token: Option<String>,
-    /// 签名密钥/Secret（仅请求入参，不会在响应中返回）
+    /// Signing secret (only in request, not returned in response)
     pub secret: Option<String>,
     /// Lark App ID
     pub lark_app_id: Option<String>,
-    /// Lark App Secret（仅请求入参，不会在响应中返回）
+    /// Lark App Secret (only in request, not returned in response)
     pub lark_app_secret: Option<String>,
-    /// Lark 加密密钥（仅请求入参，不会在响应中返回）
+    /// Lark encryption key (only in request, not returned in response)
     pub lark_encrypt_key: Option<String>,
-    /// Lark 验证令牌（仅请求入参，不会在响应中返回）
+    /// Lark verification token (only in request, not returned in response)
     pub lark_verification_token: Option<String>,
     /// WeChat App ID
     pub wechat_app_id: Option<String>,
-    /// WeChat App Secret（仅请求入参，不会在响应中返回）
+    /// WeChat App Secret (only in request, not returned in response)
     pub wechat_app_secret: Option<String>,
     /// WeChat Open ID
     pub wechat_open_id: Option<String>,
-    /// SMTP 服务器地址
+    /// SMTP server host
     pub email_smtp_host: Option<String>,
-    /// SMTP 服务器端口
+    /// SMTP server port
     pub email_smtp_port: Option<u16>,
-    /// 邮箱用户名
+    /// Email username
     pub email_username: Option<String>,
-    /// 邮箱密码（仅请求入参，不会在响应中返回）
+    /// Email password (only in request, not returned in response)
     pub email_password: Option<String>,
-    /// 发件人邮箱
+    /// From email address
     pub email_from_address: Option<String>,
-    /// 收件人邮箱
+    /// To email address
     pub email_to_address: Option<String>,
-    /// Slack Bot Token（仅请求入参，不会在响应中返回）
+    /// Slack Bot Token (only in request, not returned in response)
     pub slack_bot_token: Option<String>,
-    /// Slack 频道 ID
+    /// Slack channel ID
     pub slack_channel_id: Option<String>,
-    /// Webhook HTTP 方法
+    /// Webhook HTTP method
     pub webhook_method: Option<String>,
-    /// Webhook 请求体模板
+    /// Webhook body template
     pub webhook_body_template: Option<String>,
 }
 
-/// Message Channel 列表查询参数
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct MessageChannelListQuery {
-    /// 按用户 ID 查询；为空时默认当前登录用户
+/// Get Message Channel request
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct GetMessageChannelRequest {
+    /// Channel ID
+    #[param(source = "path")]
+    pub id: String,
+}
+
+/// Delete Message Channel request
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct DeleteMessageChannelRequest {
+    /// Channel ID
+    #[param(source = "path")]
+    pub id: String,
+}
+
+/// Message Channel list query parameters
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ListMessageChannelsRequest {
+    /// Filter by user ID; defaults to current logged-in user if empty
     pub user_id: Option<String>,
-    /// 按 Agent ID 查询
+    /// Filter by Agent ID
     pub agent_id: Option<String>,
-    /// 按渠道类型查询
+    /// Filter by channel type
     pub channel_type: Option<ChannelType>,
-    /// 只查询启用渠道
+    /// Only return enabled channels
     pub only_enabled: Option<bool>,
-    /// 限制返回条数
+    /// Limit result count
     pub limit: Option<usize>,
-    /// 跳过条数
+    /// Skip count
     pub offset: Option<usize>,
 }
 
-/// 更新 Message Channel 请求
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+/// List Message Channels response
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ListMessageChannelsResponse {
+    /// List of message channels
+    pub channels: Vec<MessageChannelListItem>,
+    /// Total count matching query
+    pub total: usize,
+}
+
+/// Update Message Channel request
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct UpdateMessageChannelRequest {
-    /// 绑定用户 ID
+    /// Channel ID
+    #[param(source = "path")]
+    pub id: String,
+
+    /// Bound user ID
     pub user_id: Option<String>,
-    /// 关联 Agent ID；None 表示不修改
+    /// Associated Agent ID; None means no change
     pub agent_id: Option<String>,
-    /// 渠道类型
+    /// Channel type
     pub channel_type: Option<ChannelType>,
-    /// 用户自定义渠道名称
+    /// User custom channel name
     pub channel_name: Option<String>,
-    /// Webhook 地址
+    /// Webhook URL
     pub webhook_url: Option<String>,
-    /// 访问 Token（仅请求入参，不会在响应中返回）
+    /// Access token (only in request, not returned in response)
     pub access_token: Option<String>,
-    /// 签名密钥/Secret（仅请求入参，不会在响应中返回）
+    /// Signing secret (only in request, not returned in response)
     pub secret: Option<String>,
     /// Lark App ID
     pub lark_app_id: Option<String>,
-    /// Lark App Secret（仅请求入参，不会在响应中返回）
+    /// Lark App Secret (only in request, not returned in response)
     pub lark_app_secret: Option<String>,
-    /// Lark 加密密钥（仅请求入参，不会在响应中返回）
+    /// Lark encryption key (only in request, not returned in response)
     pub lark_encrypt_key: Option<String>,
-    /// Lark 验证令牌（仅请求入参，不会在响应中返回）
+    /// Lark verification token (only in request, not returned in response)
     pub lark_verification_token: Option<String>,
     /// WeChat App ID
     pub wechat_app_id: Option<String>,
-    /// WeChat App Secret（仅请求入参，不会在响应中返回）
+    /// WeChat App Secret (only in request, not returned in response)
     pub wechat_app_secret: Option<String>,
     /// WeChat Open ID
     pub wechat_open_id: Option<String>,
-    /// SMTP 服务器地址
+    /// SMTP server host
     pub email_smtp_host: Option<String>,
-    /// SMTP 服务器端口
+    /// SMTP server port
     pub email_smtp_port: Option<u16>,
-    /// 邮箱用户名
+    /// Email username
     pub email_username: Option<String>,
-    /// 邮箱密码（仅请求入参，不会在响应中返回）
+    /// Email password (only in request, not returned in response)
     pub email_password: Option<String>,
-    /// 发件人邮箱
+    /// From email address
     pub email_from_address: Option<String>,
-    /// 收件人邮箱
+    /// To email address
     pub email_to_address: Option<String>,
-    /// Slack Bot Token（仅请求入参，不会在响应中返回）
+    /// Slack Bot Token (only in request, not returned in response)
     pub slack_bot_token: Option<String>,
-    /// Slack 频道 ID
+    /// Slack channel ID
     pub slack_channel_id: Option<String>,
-    /// Webhook HTTP 方法
+    /// Webhook HTTP method
     pub webhook_method: Option<String>,
-    /// Webhook 请求体模板
+    /// Webhook body template
     pub webhook_body_template: Option<String>,
 }
 
-/// 更新 Message Channel 状态请求
-#[derive(Debug, Clone, Deserialize, Serialize)]
+/// Update Message Channel status request
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct UpdateMessageChannelStatusRequest {
-    /// 目标状态。Deleted 不允许通过状态更新接口产生，请使用 DELETE 接口。
+    /// Channel ID
+    #[param(source = "path")]
+    pub id: String,
+    /// Target status. Deleted is not allowed via this API, use DELETE instead.
     pub status: ChannelStatus,
 }
 
-/// 测试 Message Channel 连通性响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Test Message Channel connection request
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct TestMessageChannelConnectionRequest {
+    /// Channel ID
+    #[param(source = "path")]
+    pub id: String,
+}
+
+/// Test Message Channel connection response
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct TestMessageChannelConnectionResponse {
-    /// 连通性测试是否成功
+    /// Whether connection test succeeded
     pub success: bool,
-    /// 错误信息
+    /// Error message if failed
     pub error: Option<String>,
 }
 
-/// 创建 Message Channel 响应
+/// Create Message Channel response
 pub type CreateMessageChannelResponse = MessageChannelDetail;
 
-/// 更新 Message Channel 响应
+/// Update Message Channel response
 pub type UpdateMessageChannelResponse = MessageChannelDetail;
 
-/// 更新 Message Channel 状态响应
+/// Update Message Channel status response
 pub type UpdateMessageChannelStatusResponse = MessageChannelDetail;
 
-/// 获取 Message Channel 响应
+/// Get Message Channel response
 pub type GetMessageChannelResponse = MessageChannelDetail;
 
-/// Message Channel 列表项响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Message Channel list item response
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MessageChannelListItem {
-    /// 渠道 ID
+    /// Channel ID
     pub id: String,
-    /// 组织 ID
+    /// Organization ID
     pub org_id: String,
-    /// 绑定用户 ID
+    /// Bound user ID
     pub user_id: String,
-    /// 关联 Agent ID
+    /// Associated Agent ID
     pub agent_id: Option<String>,
-    /// 渠道类型
+    /// Channel type
     pub channel_type: ChannelType,
-    /// 用户自定义渠道名称
+    /// User custom channel name
     pub channel_name: String,
-    /// Webhook 地址
+    /// Webhook URL
     pub webhook_url: Option<String>,
-    /// 渠道状态
+    /// Channel status
     pub status: ChannelStatus,
-    /// 是否配置 access token
+    /// Whether access token is configured
     pub has_access_token: bool,
-    /// 是否配置 secret
+    /// Whether secret is configured
     pub has_secret: bool,
-    /// 是否存在配置中的敏感字段
+    /// Whether there are sensitive fields in config
     pub has_config_secret: bool,
-    /// 最后成功推送时间戳
+    /// Last successful push timestamp
     pub last_pushed_at: Option<i64>,
-    /// 最后一次推送错误信息
+    /// Last push error message
     pub last_error: Option<String>,
-    /// 创建时间戳
+    /// Created timestamp
     pub created_at: i64,
-    /// 更新时间戳
+    /// Updated timestamp
     pub updated_at: i64,
 }
 
-/// Message Channel 详情响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Message Channel detail response
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MessageChannelDetail {
-    /// 渠道 ID
+    /// Channel ID
     pub id: String,
-    /// 组织 ID
+    /// Organization ID
     pub org_id: String,
-    /// 绑定用户 ID
+    /// Bound user ID
     pub user_id: String,
-    /// 关联 Agent ID
+    /// Associated Agent ID
     pub agent_id: Option<String>,
-    /// 渠道类型
+    /// Channel type
     pub channel_type: ChannelType,
-    /// 用户自定义渠道名称
+    /// User custom channel name
     pub channel_name: String,
-    /// Webhook 地址
+    /// Webhook URL
     pub webhook_url: Option<String>,
-    /// 渠道状态
+    /// Channel status
     pub status: ChannelStatus,
-    /// 是否配置 access token
+    /// Whether access token is configured
     pub has_access_token: bool,
-    /// 是否配置 secret
+    /// Whether secret is configured
     pub has_secret: bool,
-    /// 是否存在配置中的敏感字段
+    /// Whether there are sensitive fields in config
     pub has_config_secret: bool,
-    /// 最后成功推送时间戳
+    /// Last successful push timestamp
     pub last_pushed_at: Option<i64>,
-    /// 最后一次推送错误信息
+    /// Last push error message
     pub last_error: Option<String>,
-    /// 创建人 ID
+    /// Creator ID
     pub created_by: String,
-    /// 最后修改人 ID
+    /// Last modifier ID
     pub modified_by: String,
-    /// 创建时间戳
+    /// Created timestamp
     pub created_at: i64,
-    /// 更新时间戳
+    /// Updated timestamp
     pub updated_at: i64,
 }

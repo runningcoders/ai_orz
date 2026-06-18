@@ -1,19 +1,24 @@
-//! 更新当前登录用户所在组织信息接口
+//! Handler: PUT /api/v1/organization/me - Update current authenticated user's organization information
 
-use crate::{error::AppError, pkg::RequestContext, service::domain::organization};
-use axum::{
-    extract::{Extension, Json},
-    http::StatusCode,
-};
-use common::api::{ApiResponse, EmptyResponse, UpdateCurrentOrganizationRequest};
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{OrganizationInfoResponse, UpdateCurrentOrganizationRequest, UpdateCurrentOrganizationResponse};
+use crate::error::AppError;
+use crate::pkg::RequestContext;
+use crate::service::domain::organization;
 use common::constants::utils;
 
-/// Update current authenticated user's organization information
-/// 允许管理员更新当前用户所在组织的可修改信息
+/// Update information for the currently authenticated user's organization (admin only)
+#[register_handler_tool(
+    id = "update_current_organization",
+    name = "update_current_organization",
+    description = "Update information for the organization that the currently authenticated user belongs to (requires admin privileges within the organization)",
+    params = "common::api::UpdateCurrentOrganizationRequest",
+)]
+#[generate_http_handler]
 pub async fn update_current_organization(
-    Extension(ctx): Extension<RequestContext>,
-    Json(req): Json<UpdateCurrentOrganizationRequest>,
-) -> Result<(StatusCode, Json<ApiResponse<EmptyResponse>>), AppError> {
+    ctx: RequestContext,
+    params: UpdateCurrentOrganizationRequest,
+) -> Result<UpdateCurrentOrganizationResponse, AppError> {
     // 从 RequestContext 获取当前组织 ID
     let org_id = ctx
         .organization_id
@@ -29,13 +34,13 @@ pub async fn update_current_organization(
         .ok_or_else(|| AppError::NotFound("组织不存在".to_string()))?;
 
     // 更新可修改字段
-    if let Some(new_name) = req.name {
+    if let Some(new_name) = params.name {
         org.name = new_name;
     }
-    if let Some(new_description) = req.description {
+    if let Some(new_description) = params.description {
         org.description = new_description;
     }
-    if let Some(new_base_url) = req.base_url {
+    if let Some(new_base_url) = params.base_url {
         org.base_url = new_base_url;
     }
 
@@ -48,5 +53,22 @@ pub async fn update_current_organization(
     // 保存更新
     domain.organization_manage().update(ctx, &org).await?;
 
-    Ok((StatusCode::OK, Json(ApiResponse::success(EmptyResponse {}))))
+    let data = OrganizationInfoResponse {
+        organization_id: org.id.clone(),
+        name: org.name.clone(),
+        description: if org.description.is_empty() {
+            None
+        } else {
+            Some(org.description.clone())
+        },
+        base_url: if org.base_url.is_empty() {
+            None
+        } else {
+            Some(org.base_url.clone())
+        },
+        status: org.status.to_i32(),
+        created_at: org.created_at,
+    };
+
+    Ok(UpdateCurrentOrganizationResponse { data })
 }

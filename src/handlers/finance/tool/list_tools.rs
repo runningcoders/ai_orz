@@ -1,11 +1,7 @@
-//! 列出 Tool
+//! Handler: GET /api/v1/tools - List tools with filtering (by agent, keyword, enabled status)
 
-use axum::{
-    Json,
-    extract::{Extension, Query},
-};
-use common::api::{ApiResponse, ToolListItem, ToolListQuery};
-
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{ListToolsRequest, ListToolsResponse, ToolListItem};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::dao::tool::ToolQuery;
@@ -13,26 +9,32 @@ use crate::service::domain::finance::domain;
 
 use super::response::to_list_item;
 
-/// 列出 Tool
-/// GET /tools
+/// List all tools with optional filtering by agent, keyword, and enabled status
+#[register_handler_tool(
+    id = "list_tools",
+    name = "list_tools",
+    description = "List all tools with optional filtering by agent, keyword, and enabled status",
+    params = "common::api::ListToolsRequest",
+)]
+#[generate_http_handler]
 pub async fn list_tools(
-    Extension(ctx): Extension<RequestContext>,
-    Query(req): Query<ToolListQuery>,
-) -> Result<Json<ApiResponse<Vec<ToolListItem>>>, AppError> {
+    ctx: RequestContext,
+    params: ListToolsRequest,
+) -> Result<ListToolsResponse, AppError> {
     let tools = domain()
         .tool_provider_manage()
         .query_tools(
             ctx,
             ToolQuery {
-                agent_id: req.agent_id.clone(),
-                keyword: req.keyword.clone(),
-                enabled_only: req.enabled_only,
-                limit: req.limit,
+                agent_id: params.agent_id.clone(),
+                keyword: params.keyword.clone(),
+                enabled_only: params.only_enabled,
+                limit: None,
                 ..Default::default()
             },
         )
         .await?;
 
-    let responses = tools.iter().map(to_list_item).collect();
-    Ok(Json(ApiResponse::success(responses)))
+    let tools: Vec<ToolListItem> = tools.iter().map(to_list_item).collect();
+    Ok(ListToolsResponse { tools })
 }

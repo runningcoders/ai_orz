@@ -1,22 +1,24 @@
-//! 创建 Project
+//! Handler: POST /api/v1/projects - Create a new project
 
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{CreateProjectRequest, CreateProjectResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
-use axum::{
-    extract::{Extension, Json},
-    http::StatusCode,
-};
-use common::api::{ApiResponse, CreateProjectRequest, CreateProjectResponse};
-
 use super::response;
 
-/// 创建 Project
-/// POST /projects
+/// Create a new project
+#[register_handler_tool(
+    id = "create_project",
+    name = "create_project",
+    description = "Create a new project",
+    params = "common::api::CreateProjectRequest",
+)]
+#[generate_http_handler]
 pub async fn create_project(
-    Extension(ctx): Extension<RequestContext>,
-    Json(req): Json<CreateProjectRequest>,
-) -> Result<(StatusCode, Json<ApiResponse<CreateProjectResponse>>), AppError> {
+    ctx: RequestContext,
+    params: CreateProjectRequest,
+) -> Result<CreateProjectResponse, AppError> {
     let current_user_id = ctx.uid();
     if current_user_id.is_empty() {
         return Err(AppError::BadRequest("当前用户不能为空".to_string()));
@@ -26,17 +28,14 @@ pub async fn create_project(
         .project_manage()
         .create(
             ctx,
-            req.name,
-            req.description.unwrap_or_default(),
-            req.priority.unwrap_or_default(),
-            req.tags.unwrap_or_default(),
+            params.name,
+            params.description.unwrap_or_default(),
+            params.priority.unwrap_or_default(),
+            params.tags.unwrap_or_default(),
             current_user_id.clone(),
             current_user_id,
         )
         .await?;
 
-    Ok((
-        StatusCode::CREATED,
-        Json(ApiResponse::success(response::to_detail(&project))),
-    ))
+    Ok(response::to_detail(&project))
 }

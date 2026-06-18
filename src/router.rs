@@ -45,13 +45,13 @@ fn public_routes() -> Router {
         .route("/organization/auth/logout", post(auth::logout::logout))
         // Get organization basic info - public query (no login required)
         .route(
-            "/organization/{org_id}",
-            get(organization::get_organization::get_organization),
+            "/organization/{organization_id}",
+            get(organization::get_organization_handler),
         )
         // List all organizations - public query (for login page selection, no login required)
         .route(
             "/organization/list",
-            get(organization::list_organizations::list_organizations),
+            get(organization::list_organizations_handler),
         )
 }
 
@@ -80,10 +80,10 @@ fn protected_routes() -> Router {
 fn user_routes() -> Router {
     use crate::handlers::user::profile;
     Router::new()
-        .route("/me", get(profile::get_current_user::get_current_user))
+        .route("/me", get(profile::get_current_user_handler))
         .route(
             "/me",
-            put(profile::update_current_user::update_current_user),
+            put(profile::update_current_user_handler),
         )
 }
 
@@ -91,39 +91,39 @@ fn project_routes() -> Router {
     Router::new()
         .route(
             "/projects",
-            post(handlers::project::project::create_project),
+            post(handlers::project::project::create_project_handler),
         )
-        .route("/projects", get(handlers::project::project::list_projects))
+        .route("/projects", get(handlers::project::project::list_projects_handler))
         .route(
             "/projects/{id}",
-            get(handlers::project::project::get_project),
+            get(handlers::project::project::get_project_handler),
         )
         .route(
             "/projects/{id}",
-            put(handlers::project::project::update_project),
+            put(handlers::project::project::update_project_handler),
         )
         .route(
             "/projects/{id}/status",
-            put(handlers::project::project::update_project_status),
+            put(handlers::project::project::update_project_status_handler),
         )
 }
 
 fn task_routes() -> Router {
     Router::new()
-        .route("/tasks", post(handlers::project::task::create_task))
-        .route("/tasks/{id}", get(handlers::project::task::get_task))
-        .route("/tasks/{id}", put(handlers::project::task::update_task))
+        .route("/tasks", post(handlers::project::task::create_task_handler))
+        .route("/tasks/{id}", get(handlers::project::task::get_task_handler))
+        .route("/tasks/{id}", put(handlers::project::task::update_task_handler))
         .route(
             "/tasks/{id}/status",
-            put(handlers::project::task::update_task_status),
+            put(handlers::project::task::update_task_status_handler),
         )
         .route(
             "/projects/{project_id}/tasks",
-            get(handlers::project::task::list_project_tasks),
+            get(handlers::project::task::list_project_tasks_handler),
         )
         .route(
             "/agents/{agent_id}/tasks",
-            get(handlers::project::task::list_agent_tasks),
+            get(handlers::project::task::list_agent_tasks_handler),
         )
 }
 
@@ -131,18 +131,18 @@ fn artifact_routes() -> Router {
     Router::new()
         .route(
             "/artifacts",
-            post(handlers::project::artifact::create_artifact)
-                .get(handlers::project::artifact::list_artifacts),
+            post(handlers::project::artifact::create_artifact_handler)
+                .get(handlers::project::artifact::list_artifacts_handler),
         )
         .route(
             "/artifacts/{id}",
-            get(handlers::project::artifact::get_artifact)
-                .delete(handlers::project::artifact::delete_artifact),
+            get(handlers::project::artifact::get_artifact_handler)
+                .delete(handlers::project::artifact::delete_artifact_handler),
         )
         .route(
             "/artifacts/{id}/content",
-            get(handlers::project::artifact::get_artifact_content)
-                .put(handlers::project::artifact::update_artifact_content),
+            get(handlers::project::artifact::get_artifact_content_handler)
+                .put(handlers::project::artifact::update_artifact_content_handler),
         )
 }
 
@@ -154,44 +154,46 @@ fn organization_protected_routes() -> Router {
 
     Router::new()
         // Get/update current user's organization info
-        .route("/me", get(organization_me::get_current_organization::get_current_organization))
-        .route("/me", put(organization_me::update_current_organization::update_current_organization))
-        .route("/update", put(organization::update_organization::update_organization))
-        .route("/{org_id}", delete(organization::delete_organization::delete_organization))
+        .route("/me", get(organization_me::get_current_organization_handler))
+        .route("/me", put(organization_me::update_current_organization_handler))
+        .route("/", get(organization::list_organizations_handler))
+        .route("/{organization_id}", delete(organization::delete_organization_handler))
+        .route("/{organization_id}", get(organization::get_organization_handler))
+        .route("/{organization_id}", put(organization::update_organization_handler))
         .nest("/user", Router::new()
-            .route("/", post(user::create_user::create_user))
-            .route("/me/list", get(user::list_users_by_current_organization::list_users_by_current_organization))
-            .route("/{org_id}/list", get(user::list_users_by_organization::list_users_by_organization))
-            .route("/update", put(user::update_user::update_user))
-            .route("/username/{username}", get(user::get_user_by_username::get_user_by_username))
-            .route("/id/{user_id}", delete(user::delete_user::delete_user))
+            .route("/", post(user::create_user_handler))
+            .route("/me/list", get(user::list_users_by_current_organization_handler))
+            .route("/{org_id}/list", get(user::list_users_by_organization_handler))
+            .route("/update", put(user::update_user_handler))
+            .route("/username/{username}", get(user::get_user_by_username_handler))
+            .route("/id/{user_id}", delete(user::delete_user_handler))
         )
 }
 
 fn hr_routes() -> Router {
     Router::new()
-        .route("/agents", post(handlers::hr::agent::create_agent))
-        .route("/agents", get(handlers::hr::agent::list_agents))
-        .route("/agents/{id}", get(handlers::hr::agent::get_agent))
-        .route("/agents/{id}", put(handlers::hr::agent::update_agent))
+        .route("/agents", post(handlers::hr::agent::create_agent_handler))
+        .route("/agents", get(handlers::hr::agent::list_agents_handler))
+        .route("/agents/{id}", get(handlers::hr::agent::get_agent_handler))
+        .route("/agents/{id}", put(handlers::hr::agent::update_agent_handler))
         .route(
             "/agents/{id}/status",
-            put(handlers::hr::agent::update_agent_status),
+            put(handlers::hr::agent::update_agent_status_handler),
         )
-        .route("/agents/{id}", delete(handlers::hr::agent::delete_agent))
-        .route("/skills", post(handlers::hr::skill::create_skill))
-        .route("/skills", get(handlers::hr::skill::list_skills))
-        .route("/skills/search", get(handlers::hr::skill::search_skills))
-        .route("/skills/{id}", get(handlers::hr::skill::get_skill))
-        .route("/skills/{id}", put(handlers::hr::skill::update_skill))
-        .route("/skills/{id}", delete(handlers::hr::skill::delete_skill))
+        .route("/agents/{id}", delete(handlers::hr::agent::delete_agent_handler))
+        .route("/skills", post(handlers::hr::skill::create_skill_handler))
+        .route("/skills", get(handlers::hr::skill::list_skills_handler))
+        .route("/skills/search", get(handlers::hr::skill::search_skills_handler))
+        .route("/skills/{id}", get(handlers::hr::skill::get_skill_handler))
+        .route("/skills/{id}", put(handlers::hr::skill::update_skill_handler))
+        .route("/skills/{id}", delete(handlers::hr::skill::delete_skill_handler))
         .route(
             "/agents/{agent_id}/skills",
-            get(handlers::hr::skill::list_agent_skills),
+            get(handlers::hr::skill::list_agent_skills_handler),
         )
         .route(
             "/agents/{agent_id}/skills/{skill_id}",
-            post(handlers::hr::skill::install_skill_to_agent),
+            post(handlers::hr::skill::install_skill_to_agent_handler),
         )
         .route(
             "/skills/{skill_id}/files",
@@ -239,75 +241,75 @@ fn finance_routes() -> Router {
         )
         .route(
             "/model-providers",
-            post(handlers::finance::model_provider::create_model_provider),
+            post(handlers::finance::model_provider::create_model_provider::create_model_provider_handler),
         )
         .route(
             "/model-providers",
-            get(handlers::finance::model_provider::list_model_providers),
+            get(handlers::finance::model_provider::list_model_providers::list_model_providers_handler),
         )
         .route(
             "/model-providers/{id}",
-            get(handlers::finance::model_provider::get_model_provider),
+            get(handlers::finance::model_provider::get_model_provider::get_model_provider_handler),
         )
         .route(
             "/model-providers/{id}",
-            put(handlers::finance::model_provider::update_model_provider),
+            put(handlers::finance::model_provider::update_model_provider::update_model_provider_handler),
         )
         .route(
             "/model-providers/{id}/test",
-            post(handlers::finance::model_provider::test_model_provider_connection),
+            post(handlers::finance::model_provider::test_connection::test_model_provider_connection_handler),
         )
         .route(
             "/model-providers/{id}/call",
-            post(handlers::finance::model_provider::call_model),
+            post(handlers::finance::model_provider::call_model::call_model_handler),
         )
         .route(
             "/model-providers/{id}",
-            delete(handlers::finance::model_provider::delete_model_provider),
+            delete(handlers::finance::model_provider::delete_model_provider::delete_model_provider_handler),
         )
         .route(
             "/message-channels",
-            post(handlers::finance::message_channel::create_message_channel),
+            post(handlers::finance::message_channel::create_message_channel::create_message_channel_handler),
         )
         .route(
             "/message-channels",
-            get(handlers::finance::message_channel::list_message_channels),
+            get(handlers::finance::message_channel::list_message_channels::list_message_channels_handler),
         )
         .route(
             "/message-channels/{id}",
-            get(handlers::finance::message_channel::get_message_channel),
+            get(handlers::finance::message_channel::get_message_channel::get_message_channel_handler),
         )
         .route(
             "/message-channels/{id}",
-            put(handlers::finance::message_channel::update_message_channel),
+            put(handlers::finance::message_channel::update_message_channel::update_message_channel_handler),
         )
         .route(
             "/message-channels/{id}/status",
-            put(handlers::finance::message_channel::update_message_channel_status),
+            put(handlers::finance::message_channel::update_message_channel_status::update_message_channel_status_handler),
         )
         .route(
             "/message-channels/{id}/test",
-            post(handlers::finance::message_channel::test_message_channel_connection),
+            post(handlers::finance::message_channel::test_message_channel_connection::test_message_channel_connection_handler),
         )
         .route(
             "/message-channels/{id}",
-            delete(handlers::finance::message_channel::delete_message_channel),
+            delete(handlers::finance::message_channel::delete_message_channel::delete_message_channel_handler),
         )
-        .route("/tools", post(handlers::finance::tool::create_tool))
-        .route("/tools", get(handlers::finance::tool::list_tools))
-        .route("/tools/{id}", get(handlers::finance::tool::get_tool))
-        .route("/tools/{id}", put(handlers::finance::tool::update_tool))
+        .route("/tools", post(handlers::finance::tool::create_tool::create_tool_handler))
+        .route("/tools", get(handlers::finance::tool::list_tools::list_tools_handler))
+        .route("/tools/{id}", get(handlers::finance::tool::get_tool::get_tool_handler))
+        .route("/tools/{id}", put(handlers::finance::tool::update_tool::update_tool_handler))
         .route(
             "/tools/{id}/status",
-            put(handlers::finance::tool::update_tool_status),
+            put(handlers::finance::tool::update_tool_status::update_tool_status_handler),
         )
         .route(
-            "/tools/{id}/agent-bind",
-            post(handlers::finance::tool::bind_tool_to_agent),
+            "/agents/{agent_id}/tools/{tool_id}/bind",
+            post(handlers::finance::tool::bind_tool_to_agent::bind_tool_to_agent_handler),
         )
         .route(
-            "/tools/{id}/agent-bind",
-            delete(handlers::finance::tool::unbind_tool_from_agent),
+            "/agents/{agent_id}/tools/{tool_id}/bind",
+            delete(handlers::finance::tool::unbind_tool_from_agent::unbind_tool_from_agent_handler),
         )
-        .route("/tools/{id}", delete(handlers::finance::tool::delete_tool))
+        .route("/tools/{id}", delete(handlers::finance::tool::delete_tool::delete_tool_handler))
 }

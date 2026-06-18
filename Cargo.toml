@@ -45,6 +45,7 @@ quote = "1.0"
 syn = { version = "2.0", features = ["full", "parsing"] }
 ctor = "0.2"
 schemars = { version = "0.8", features = ["derive"] }
+lazy_static = "1.4.0"
 ai-orz-macros = { path = "./ai-orz-macros" }
 
 # 向量搜索相关

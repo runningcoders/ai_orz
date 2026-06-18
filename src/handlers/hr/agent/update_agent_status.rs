@@ -1,33 +1,37 @@
-//! 更新 Agent 状态
+//! Handler: PUT /api/v1/agents/{id}/status - Update agent status
 
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{UpdateAgentStatusRequest, UpdateAgentStatusResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
-use axum::{
-    Json,
-    extract::{Extension, Path},
-};
-use common::api::{ApiResponse, UpdateAgentStatusRequest, UpdateAgentStatusResponse};
 
-/// 更新 Agent 状态
-/// PUT /agents/{id}/status
+/// Update the status of an AI agent (active/disabled)
+#[register_handler_tool(
+    id = "update_agent_status",
+    name = "update_agent_status",
+    description = "Update the status of an AI agent (active/disabled)",
+    params = "common::api::UpdateAgentStatusRequest",
+)]
+#[generate_http_handler]
 pub async fn update_agent_status(
-    Extension(ctx): Extension<RequestContext>,
-    Path(id): Path<String>,
-    Json(req): Json<UpdateAgentStatusRequest>,
-) -> Result<Json<ApiResponse<UpdateAgentStatusResponse>>, AppError> {
+    ctx: RequestContext,
+    params: UpdateAgentStatusRequest,
+) -> Result<UpdateAgentStatusResponse, AppError> {
     let mut agent = domain()
         .agent_manage()
-        .get_agent(ctx.clone(), &id)
+        .get_agent(ctx.clone(), &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Agent {} not found", id)))?;
+        .ok_or_else(|| AppError::NotFound(format!("Agent {} not found", params.id)))?;
 
     domain()
         .agent_manage()
-        .transition_status(ctx, &mut agent, req.status)
+        .transition_status(ctx, &mut agent, params.status)
         .await?;
 
-    Ok(Json(ApiResponse::success(UpdateAgentStatusResponse {
+    let capabilities: Vec<String> = agent.po.get_capabilities();
+
+    Ok(UpdateAgentStatusResponse {
         id: agent.id().to_string(),
         name: agent.name().to_string(),
         roles: agent.po.get_roles(),
@@ -53,5 +57,5 @@ pub async fn update_agent_status(
         status: agent.po.status as i32,
         created_at: agent.po.created_at,
         updated_at: agent.po.updated_at,
-    })))
+    })
 }

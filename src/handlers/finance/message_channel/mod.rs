@@ -11,10 +11,10 @@ pub mod update_message_channel_status;
 
 mod response;
 
-pub use create_message_channel::create_message_channel;
-pub use delete_message_channel::delete_message_channel;
-pub use get_message_channel::get_message_channel;
-pub use list_message_channels::list_message_channels;
-pub use test_message_channel_connection::test_message_channel_connection;
-pub use update_message_channel::update_message_channel;
-pub use update_message_channel_status::update_message_channel_status;
+pub use create_message_channel::create_message_channel_handler;
+pub use delete_message_channel::delete_message_channel_handler;
+pub use get_message_channel::get_message_channel_handler;
+pub use list_message_channels::list_message_channels_handler;
+pub use test_message_channel_connection::test_message_channel_connection_handler;
+pub use update_message_channel::update_message_channel_handler;
+pub use update_message_channel_status::update_message_channel_status_handler;

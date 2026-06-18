@@ -1,33 +1,34 @@
-//! 更新 Task 状态
+//! Handler: PUT /api/v1/tasks/{id}/status - Update task status (state transition)
 
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{UpdateTaskStatusRequest, UpdateTaskStatusResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
-use axum::{
-    Json as AxumJson,
-    extract::{Extension, Json, Path},
-};
-use common::api::{ApiResponse, UpdateTaskStatusRequest, UpdateTaskStatusResponse};
-
 use super::response;
 
-/// 更新 Task 状态
-/// PUT /tasks/{id}/status
+/// Update task status with state transition validation
+#[register_handler_tool(
+    id = "update_task_status",
+    name = "update_task_status",
+    description = "Update the status of a task with proper state transition validation",
+    params = "common::api::UpdateTaskStatusRequest",
+)]
+#[generate_http_handler]
 pub async fn update_task_status(
-    Extension(ctx): Extension<RequestContext>,
-    Path(id): Path<String>,
-    Json(req): Json<UpdateTaskStatusRequest>,
-) -> Result<AxumJson<ApiResponse<UpdateTaskStatusResponse>>, AppError> {
+    ctx: RequestContext,
+    params: UpdateTaskStatusRequest,
+) -> Result<UpdateTaskStatusResponse, AppError> {
     let mut task = domain()
         .task_manage()
-        .get(ctx.clone(), &id)
+        .get(ctx.clone(), &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Task {} not found", id)))?;
+        .ok_or_else(|| AppError::NotFound(format!("Task {} not found", params.id)))?;
 
     domain()
         .task_manage()
-        .transition_status(ctx, &mut task, req.status)
+        .transition_status(ctx, &mut task, params.status)
         .await?;
 
-    Ok(AxumJson(ApiResponse::success(response::to_detail(&task))))
+    Ok(response::to_detail(&task))
 }

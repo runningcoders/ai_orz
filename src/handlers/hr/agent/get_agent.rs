@@ -1,31 +1,33 @@
-//! 获取单个 Agent
+//! Handler: GET /api/v1/agents/{id} - Get agent detailed information
 
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{GetAgentRequest, GetAgentResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
-use axum::{
-    Json,
-    extract::{Extension, Path},
-};
-use common::api::ApiResponse;
-use common::api::GetAgentResponse;
 
-/// 获取 Agent
-/// GET /agents/{id}
+/// Get detailed information about an AI agent
+#[register_handler_tool(
+    id = "get_agent",
+    name = "get_agent",
+    description = "Get detailed information about an AI agent by ID",
+    params = "common::api::GetAgentRequest",
+)]
+#[generate_http_handler]
 pub async fn get_agent(
-    Extension(ctx): Extension<RequestContext>,
-    Path(id): Path<String>,
-) -> Result<Json<ApiResponse<GetAgentResponse>>, AppError> {
+    ctx: RequestContext,
+    params: GetAgentRequest,
+) -> Result<GetAgentResponse, AppError> {
     let agent = domain()
         .agent_manage()
-        .get_agent(ctx, &id)
+        .get_agent(ctx, &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Agent {} not found", id)))?;
+        .ok_or_else(|| AppError::NotFound(format!("Agent {} not found", params.id)))?;
 
     let capabilities: Vec<String> = agent.po.get_capabilities();
     let roles: Vec<String> = agent.po.get_roles();
 
-    Ok(Json(ApiResponse::success(GetAgentResponse {
+    Ok(GetAgentResponse {
         id: agent.id().to_string(),
         name: agent.name().to_string(),
         roles,
@@ -48,5 +50,5 @@ pub async fn get_agent(
         status: agent.po.status as i32,
         created_at: agent.po.created_at,
         updated_at: agent.po.updated_at,
-    })))
+    })
 }

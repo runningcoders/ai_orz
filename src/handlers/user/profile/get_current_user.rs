@@ -1,19 +1,24 @@
-//! 获取当前认证用户信息接口
+//! Handler: GET /api/v1/user/me - Get current authenticated user information
 
-use crate::pkg::RequestContext;
-use crate::{error::AppError, service::domain::organization};
-use axum::{
-    extract::{Extension, Json},
-    http::StatusCode,
-};
-use common::api::{ApiResponse, GetCurrentUserResponse, UserInfoResponse};
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{GetCurrentUserRequest, GetCurrentUserResponse, UserInfoResponse};
 use common::enums::UserRole;
+use crate::error::AppError;
+use crate::pkg::RequestContext;
+use crate::service::domain::organization;
 
-/// Get current authenticated user information
-/// 从 RequestContext 中获取已认证用户信息并返回
+/// Get current authenticated user information from request context
+#[register_handler_tool(
+    id = "get_current_user",
+    name = "get_current_user",
+    description = "Get information about the currently authenticated user",
+    params = "common::api::GetCurrentUserRequest",
+)]
+#[generate_http_handler]
 pub async fn get_current_user(
-    Extension(ctx): Extension<RequestContext>,
-) -> Result<(StatusCode, Json<ApiResponse<GetCurrentUserResponse>>), AppError> {
+    ctx: RequestContext,
+    _params: GetCurrentUserRequest,
+) -> Result<GetCurrentUserResponse, AppError> {
     // 从 RequestContext 获取当前用户 ID
     let user_id = ctx
         .user_id
@@ -56,8 +61,5 @@ pub async fn get_current_user(
         status: user.status.to_i32(),
     };
 
-    Ok((
-        StatusCode::OK,
-        Json(ApiResponse::success(GetCurrentUserResponse { data: info })),
-    ))
+    Ok(GetCurrentUserResponse { data: info })
 }

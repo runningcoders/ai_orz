@@ -1,30 +1,27 @@
-//! 删除组织接口
+//! Handler: DELETE /api/v1/organizations/{id} - Delete an organization
 
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{DeleteOrganizationRequest, DeleteOrganizationResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
-use axum::{
-    Json,
-    extract::{Extension, Path},
-    http::StatusCode,
-    response::IntoResponse,
-};
-use common::api::ApiResponse;
-use common::api::DeleteOrganizationResponse;
 
-/// 删除组织
+/// Delete an organization (requires admin privileges)
+#[register_handler_tool(
+    id = "delete_organization",
+    name = "delete_organization",
+    description = "Delete an existing organization, requires admin privileges",
+    params = "common::api::DeleteOrganizationRequest",
+)]
+#[generate_http_handler]
 pub async fn delete_organization(
-    Extension(ctx): Extension<RequestContext>,
-    Path(org_id): Path<String>,
-) -> Result<impl IntoResponse, AppError> {
+    ctx: RequestContext,
+    params: DeleteOrganizationRequest,
+) -> Result<DeleteOrganizationResponse, AppError> {
     let domain = organization::domain();
-    domain.organization_manage().delete(ctx, &org_id).await?;
+    domain.organization_manage().delete(ctx, &params.organization_id).await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(ApiResponse::success(DeleteOrganizationResponse {
-            success: true,
-        }))
-        .into_response(),
-    ))
+    Ok(DeleteOrganizationResponse {
+        success: true,
+    })
 }

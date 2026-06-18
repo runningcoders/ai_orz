@@ -1,23 +1,25 @@
-//! 获取单个 Message Channel
+//! Handler: GET /api/v1/message-channels/{id} - Get message channel detailed information
 
-use axum::{
-    Json,
-    extract::{Extension, Path},
-};
-use common::api::{ApiResponse, GetMessageChannelResponse};
-
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{GetMessageChannelRequest, GetMessageChannelResponse, MessageChannelDetail};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
 use super::response::to_detail;
 
-/// 获取 Message Channel
-/// GET /message-channels/{id}
+/// Get detailed information about a specific message channel
+#[register_handler_tool(
+    id = "get_message_channel",
+    name = "get_message_channel",
+    description = "Get detailed information about a specific message channel",
+    params = "common::api::GetMessageChannelRequest",
+)]
+#[generate_http_handler]
 pub async fn get_message_channel(
-    Extension(ctx): Extension<RequestContext>,
-    Path(id): Path<String>,
-) -> Result<Json<ApiResponse<GetMessageChannelResponse>>, AppError> {
+    ctx: RequestContext,
+    params: GetMessageChannelRequest,
+) -> Result<GetMessageChannelResponse, AppError> {
     let org_id = ctx
         .organization_id
         .clone()
@@ -29,16 +31,16 @@ pub async fn get_message_channel(
 
     let channel = domain()
         .message_channel_manage()
-        .get_message_channel(ctx, &id)
+        .get_message_channel(ctx.clone(), &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("MessageChannel {} not found", id)))?;
+        .ok_or_else(|| AppError::NotFound(format!("MessageChannel {} not found", params.id)))?;
 
     if channel.po.org_id != org_id || channel.po.user_id != user_id {
         return Err(AppError::NotFound(format!(
             "MessageChannel {} not found",
-            id
+            params.id
         )));
     }
 
-    Ok(Json(ApiResponse::success(to_detail(&channel))))
+    Ok(to_detail(&channel))
 }

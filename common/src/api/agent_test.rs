@@ -6,13 +6,15 @@ use crate::enums::AgentStatus;
 #[test]
 fn update_agent_status_request_serializes_status_enum() {
     let request = UpdateAgentStatusRequest {
+        id: "agent-1".to_string(),
         status: AgentStatus::PendingOnboard,
     };
 
     let json = serde_json::to_string(&request).unwrap();
-    assert_eq!(json, r#"{"status":"PendingOnboard"}"#);
+    assert_eq!(json, r#"{"id":"agent-1","status":"PendingOnboard"}"#);
 
     let decoded: UpdateAgentStatusRequest = serde_json::from_str(&json).unwrap();
+    assert_eq!(decoded.id, "agent-1");
     assert_eq!(decoded.status, AgentStatus::PendingOnboard);
 }
 

@@ -1,31 +1,33 @@
-//! 获取单个 Model Provider
+//! Handler: GET /api/v1/model-providers/{id} - Get model provider detailed information
 
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{GetModelProviderRequest, GetModelProviderResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
-use axum::{
-    Json,
-    extract::{Extension, Path},
-};
-use common::api::ApiResponse;
-use common::api::GetModelProviderResponse;
 
-/// 获取 Model Provider
-/// GET /model-providers/{id}
+/// Get detailed information about a specific model provider configuration
+#[register_handler_tool(
+    id = "get_model_provider",
+    name = "get_model_provider",
+    description = "Get detailed information about a specific model provider configuration",
+    params = "common::api::GetModelProviderRequest",
+)]
+#[generate_http_handler]
 pub async fn get_model_provider(
-    Extension(ctx): Extension<RequestContext>,
-    Path(id): Path<String>,
-) -> Result<Json<ApiResponse<GetModelProviderResponse>>, AppError> {
+    ctx: RequestContext,
+    params: GetModelProviderRequest,
+) -> Result<GetModelProviderResponse, AppError> {
     let provider = domain()
         .model_provider_manage()
-        .get_model_provider(ctx, &id)
+        .get_model_provider(ctx, &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("ModelProvider {} not found", id)))?;
+        .ok_or_else(|| AppError::NotFound(format!("ModelProvider {} not found", params.id)))?;
 
-    Ok(Json(ApiResponse::success(GetModelProviderResponse {
+    Ok(GetModelProviderResponse {
         id: provider.po.id.clone(),
         name: provider.po.name.clone(),
-        provider_type: provider.po.provider_type.clone(),
+        provider_type: provider.po.provider_type,
         model_name: provider.po.model_name.clone(),
         base_url: if provider.po.base_url.as_ref().map_or(true, |d| d.is_empty()) {
             None
@@ -44,5 +46,5 @@ pub async fn get_model_provider(
         },
         created_at: provider.po.created_at,
         updated_at: provider.po.updated_at,
-    })))
+    })
 }

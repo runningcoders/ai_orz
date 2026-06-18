@@ -1,54 +1,57 @@
-//! 更新 Model Provider
+//! Handler: PUT /api/v1/model-providers/{id} - Update model provider configuration
 
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{UpdateModelProviderRequest, UpdateModelProviderResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
-use axum::extract::{Extension, Json, Path};
-use common::api::ApiResponse;
-use common::api::{UpdateModelProviderRequest, UpdateModelProviderResponse};
-use std::time::{SystemTime, UNIX_EPOCH};
 
-/// 获取当前时间戳
+/// Get current timestamp
 fn current_timestamp() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64
 }
 
-/// 更新 Model Provider
-/// PUT /model-providers/{id}
+/// Update an existing model provider configuration (name, credentials, model name, etc.)
+#[register_handler_tool(
+    id = "update_model_provider",
+    name = "update_model_provider",
+    description = "Update an existing model provider configuration (name, credentials, model name, etc.)",
+    params = "common::api::UpdateModelProviderRequest",
+)]
+#[generate_http_handler]
 pub async fn update_model_provider(
-    Extension(ctx): Extension<RequestContext>,
-    Path(id): Path<String>,
-    Json(req): Json<UpdateModelProviderRequest>,
-) -> Result<Json<ApiResponse<UpdateModelProviderResponse>>, AppError> {
+    ctx: RequestContext,
+    params: UpdateModelProviderRequest,
+) -> Result<UpdateModelProviderResponse, AppError> {
     let mut provider = domain()
         .model_provider_manage()
-        .get_model_provider(ctx.clone(), &id)
+        .get_model_provider(ctx.clone(), &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("ModelProvider {} not found", id)))?;
+        .ok_or_else(|| AppError::NotFound(format!("ModelProvider {} not found", params.id)))?;
 
-    // 更新字段
-    if let Some(name) = req.name {
+    // Update fields
+    if let Some(name) = params.name {
         provider.po.name = name;
     }
-    if let Some(provider_type) = req.provider_type {
+    if let Some(provider_type) = params.provider_type {
         provider.po.provider_type = provider_type;
     }
-    if let Some(model_name) = req.model_name {
+    if let Some(model_name) = params.model_name {
         provider.po.model_name = model_name;
     }
-    if let Some(api_key) = req.api_key {
+    if let Some(api_key) = params.api_key {
         provider.po.api_key = api_key;
     }
-    if let Some(base_url) = req.base_url {
+    if let Some(base_url) = params.base_url {
         provider.po.base_url = Some(base_url);
     }
-    if let Some(description) = req.description {
+    if let Some(description) = params.description {
         provider.po.description = Some(description);
     }
-    // 更新 modified_by 和 updated_at
+    // Update modified_by and updated_at
     provider.po.modified_by = ctx.uid();
     provider.po.updated_at = current_timestamp();
 
@@ -57,10 +60,10 @@ pub async fn update_model_provider(
         .update_model_provider(ctx, &provider)
         .await?;
 
-    Ok(Json(ApiResponse::success(UpdateModelProviderResponse {
+    Ok(UpdateModelProviderResponse {
         id: provider.po.id.clone(),
         name: provider.po.name.clone(),
-        provider_type: provider.po.provider_type.clone(),
+        provider_type: provider.po.provider_type,
         model_name: provider.po.model_name.clone(),
         base_url: if provider.po.base_url.as_ref().map_or(true, |d| d.is_empty()) {
             None
@@ -78,5 +81,5 @@ pub async fn update_model_provider(
             provider.po.description.clone()
         },
         updated_at: provider.po.updated_at,
-    })))
+    })
 }

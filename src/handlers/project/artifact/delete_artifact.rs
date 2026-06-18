@@ -1,28 +1,30 @@
-//! 删除 Artifact
+//! Handler: DELETE /api/v1/project/artifacts/{id} - Delete an artifact
 
-use axum::{
-    Json,
-    extract::{Extension, Path},
-};
-use common::api::ApiResponse;
-
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{DeleteArtifactRequest, DeleteArtifactResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::project;
 
-/// 删除 Artifact
-/// DELETE /api/v1/project/artifacts/{id}
+/// Delete an existing artifact by ID
+#[register_handler_tool(
+    id = "delete_artifact",
+    name = "delete_artifact",
+    description = "Delete an artifact from a project",
+    params = "common::api::DeleteArtifactRequest",
+)]
+#[generate_http_handler]
 pub async fn delete_artifact(
-    Extension(ctx): Extension<RequestContext>,
-    Path(id): Path<String>,
-) -> Result<Json<ApiResponse<()>>, AppError> {
+    ctx: RequestContext,
+    params: DeleteArtifactRequest,
+) -> Result<DeleteArtifactResponse, AppError> {
     project::domain()
         .artifact_manage()
-        .get(ctx.clone(), &id)
+        .get(ctx.clone(), &params.artifact_id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Artifact {} not found", id)))?;
+        .ok_or_else(|| AppError::NotFound(format!("Artifact {} not found", params.artifact_id)))?;
 
-    project::domain().artifact_manage().delete(ctx, &id).await?;
+    project::domain().artifact_manage().delete(ctx, &params.artifact_id).await?;
 
-    Ok(Json(ApiResponse::<()>::ok()))
+    Ok(DeleteArtifactResponse { success: true })
 }

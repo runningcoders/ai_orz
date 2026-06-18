@@ -1,36 +1,37 @@
-//! 更新 Task 基础信息
+//! Handler: PUT /api/v1/tasks/{id} - Update task basic information
 
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{UpdateTaskRequest, UpdateTaskResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
-use axum::{
-    Json as AxumJson,
-    extract::{Extension, Json, Path},
-};
-use common::api::{ApiResponse, UpdateTaskRequest, UpdateTaskResponse};
-
 use super::response;
 
-/// 更新 Task 基础信息
-/// PUT /tasks/{id}
+/// Update task basic information (title, description, priority, tags, etc.)
+#[register_handler_tool(
+    id = "update_task",
+    name = "update_task",
+    description = "Update basic information of an existing task",
+    params = "common::api::UpdateTaskRequest",
+)]
+#[generate_http_handler]
 pub async fn update_task(
-    Extension(ctx): Extension<RequestContext>,
-    Path(id): Path<String>,
-    Json(req): Json<UpdateTaskRequest>,
-) -> Result<AxumJson<ApiResponse<UpdateTaskResponse>>, AppError> {
+    ctx: RequestContext,
+    params: UpdateTaskRequest,
+) -> Result<UpdateTaskResponse, AppError> {
     let task = domain()
         .task_manage()
         .update_basic(
             ctx,
-            &id,
-            req.title,
-            req.description,
-            req.priority,
-            req.tags,
-            req.due_at,
-            req.dependencies,
+            &params.id,
+            params.title,
+            params.description,
+            params.priority,
+            params.tags,
+            params.due_at,
+            params.dependencies,
         )
         .await?;
 
-    Ok(AxumJson(ApiResponse::success(response::to_detail(&task))))
+    Ok(response::to_detail(&task))
 }

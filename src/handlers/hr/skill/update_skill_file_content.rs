@@ -1,22 +1,22 @@
 //! Handler: PUT /api/v1/skills/{skill_id}/files/{*filename} - 创建或更新 Skill 文件
 
 use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{UpdateSkillFileContentParams, UpdateSkillFileContentResponse};
+use common::api::{UpdateSkillFileContentRequest, UpdateSkillFileContentResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 
-/// Create or update a text file in a skill
+/// Create a new file or update the content of an existing text file in a skill. If the file doesn't exist, it will be created. If it exists, it will be overwritten.
 #[register_handler_tool(
     id = "update_skill_file_content",
     name = "update_skill_file_content",
-    description = "Create a new file or update the content of an existing text file in a skill. Supports optimistic locking with expected_updated_at to prevent conflicts.",
-    params = "common::api::UpdateSkillFileContentParams"
+    description = "Create a new file or update the content of an existing text file in a skill. Supports optimistic locking with expected_updated_at.",
+    params = "common::api::UpdateSkillFileContentRequest"
 )]
 #[generate_http_handler]
 pub async fn update_skill_file_content(
     ctx: RequestContext,
-    params: UpdateSkillFileContentParams,
+    params: UpdateSkillFileContentRequest,
 ) -> Result<UpdateSkillFileContentResponse, AppError> {
     domain()
         .skill_manage()

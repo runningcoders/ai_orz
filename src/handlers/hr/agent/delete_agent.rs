@@ -1,27 +1,30 @@
-//! 删除 Agent
+//! Handler: DELETE /api/v1/agents/{id} - Delete an agent
 
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{DeleteAgentRequest, DeleteAgentResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
-use axum::{
-    Json,
-    extract::{Extension, Path},
-};
-use common::api::ApiResponse;
 
-/// 删除 Agent
-/// DELETE /agents/:id
+/// Delete an existing AI agent
+#[register_handler_tool(
+    id = "delete_agent",
+    name = "delete_agent",
+    description = "Delete an existing AI agent",
+    params = "common::api::DeleteAgentRequest",
+)]
+#[generate_http_handler]
 pub async fn delete_agent(
-    Extension(ctx): Extension<RequestContext>,
-    Path(id): Path<String>,
-) -> Result<Json<ApiResponse<()>>, AppError> {
+    ctx: RequestContext,
+    params: DeleteAgentRequest,
+) -> Result<DeleteAgentResponse, AppError> {
     let agent = domain()
         .agent_manage()
-        .get_agent(ctx.clone(), &id)
+        .get_agent(ctx.clone(), &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Agent {} not found", id)))?;
+        .ok_or_else(|| AppError::NotFound(format!("Agent {} not found", params.id)))?;
 
     domain().agent_manage().delete_agent(ctx, &agent).await?;
 
-    Ok(Json(ApiResponse::<()>::ok()))
+    Ok(DeleteAgentResponse { success: true })
 }

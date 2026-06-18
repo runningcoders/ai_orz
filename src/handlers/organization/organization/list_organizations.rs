@@ -1,19 +1,26 @@
-//! 获取组织列表接口
+//! Handler: GET /api/v1/organizations - List all organizations in the system
 
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{ListOrganizationsRequest, ListOrganizationsResponse, OrganizationListItem};
 use crate::error::AppError;
 use crate::models::organization::OrganizationPo;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
-use axum::{Json, extract::Extension, http::StatusCode, response::IntoResponse};
-use common::api::ApiResponse;
-use common::api::{ListOrganizationsResponse, OrganizationListItem};
 
-/// 获取组织列表
+/// List all organizations available to the current user
+#[register_handler_tool(
+    id = "list_organizations",
+    name = "list_organizations",
+    description = "List all organizations in the system that the current user has access to",
+    params = "common::api::ListOrganizationsRequest",
+)]
+#[generate_http_handler]
 pub async fn list_organizations(
-    Extension(ctx): Extension<RequestContext>,
-) -> Result<impl IntoResponse, AppError> {
+    ctx: RequestContext,
+    _params: ListOrganizationsRequest,
+) -> Result<ListOrganizationsResponse, AppError> {
     let domain = organization::domain();
-    let orgs = domain.organization_manage().list_all(ctx.clone()).await?;
+    let orgs = domain.organization_manage().list_all(ctx).await?;
     let total = orgs.len() as u64;
     let items: Vec<OrganizationListItem> = orgs
         .into_iter()
@@ -28,12 +35,8 @@ pub async fn list_organizations(
         })
         .collect();
 
-    Ok((
-        StatusCode::OK,
-        Json(ApiResponse::success(ListOrganizationsResponse {
-            data: items,
-            total,
-        })),
-    )
-        .into_response())
+    Ok(ListOrganizationsResponse {
+        data: items,
+        total,
+    })
 }

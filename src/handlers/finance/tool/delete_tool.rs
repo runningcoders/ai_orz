@@ -1,31 +1,33 @@
-//! 删除 Tool
+//! Handler: DELETE /api/v1/tools/{id} - Delete a custom tool
 
-use axum::{
-    Json,
-    extract::{Extension, Path},
-};
-use common::api::ApiResponse;
-
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{DeleteToolRequest, DeleteToolResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
-/// 删除 Tool
-/// DELETE /tools/{id}
+/// Delete an existing custom tool (soft delete)
+#[register_handler_tool(
+    id = "delete_tool",
+    name = "delete_tool",
+    description = "Delete an existing custom tool (soft delete)",
+    params = "common::api::DeleteToolRequest",
+)]
+#[generate_http_handler]
 pub async fn delete_tool(
-    Extension(ctx): Extension<RequestContext>,
-    Path(id): Path<String>,
-) -> Result<Json<ApiResponse<()>>, AppError> {
+    ctx: RequestContext,
+    params: DeleteToolRequest,
+) -> Result<DeleteToolResponse, AppError> {
     let tool = domain()
         .tool_provider_manage()
-        .get_tool(ctx.clone(), &id)
+        .get_tool(ctx.clone(), &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Tool {} not found", id)))?;
+        .ok_or_else(|| AppError::NotFound(format!("Tool {} not found", params.id)))?;
 
     domain()
         .tool_provider_manage()
         .delete_tool(ctx, &tool)
         .await?;
 
-    Ok(Json(ApiResponse::<()>::ok()))
+    Ok(DeleteToolResponse { success: true })
 }

@@ -1,38 +1,37 @@
-//! 更新 Project
+//! Handler: PUT /api/v1/projects/{id} - Update project basic information
 
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{UpdateProjectRequest, UpdateProjectResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
-use axum::{
-    Json as AxumJson,
-    extract::{Extension, Json, Path},
-};
-use common::api::{ApiResponse, UpdateProjectRequest, UpdateProjectResponse};
-
 use super::response;
 
-/// 更新 Project
-/// PUT /projects/{id}
+/// Update project basic information
+#[register_handler_tool(
+    id = "update_project",
+    name = "update_project",
+    description = "Update project basic information (name, description, tags, priority)",
+    params = "common::api::UpdateProjectRequest",
+)]
+#[generate_http_handler]
 pub async fn update_project(
-    Extension(ctx): Extension<RequestContext>,
-    Path(id): Path<String>,
-    Json(req): Json<UpdateProjectRequest>,
-) -> Result<AxumJson<ApiResponse<UpdateProjectResponse>>, AppError> {
+    ctx: RequestContext,
+    params: UpdateProjectRequest,
+) -> Result<UpdateProjectResponse, AppError> {
     let modified_by = ctx.uid();
     let project = domain()
         .project_manage()
         .update_basic(
             ctx,
-            &id,
-            req.name,
-            req.description,
-            req.priority,
-            req.tags,
+            &params.id,
+            params.name,
+            params.description,
+            params.priority,
+            params.tags,
             modified_by,
         )
         .await?;
 
-    Ok(AxumJson(ApiResponse::success(response::to_detail(
-        &project,
-    ))))
+    Ok(response::to_detail(&project))
 }

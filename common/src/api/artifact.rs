@@ -1,6 +1,8 @@
 //! Artifact management API DTOs - shared between backend and frontend.
 
+use ai_orz_macros::Params;
 use crate::enums::{ArtifactSourceType, FileType};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Create Artifact request.
@@ -15,7 +17,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// `RemoteUrl` is reserved by `ArtifactSourceType` for future extension and is
 /// not accepted by the initial create handler until a URL metadata policy is added.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct CreateArtifactRequest {
     /// Project ID. Required for all artifacts.
     pub project_id: String,
@@ -41,23 +43,60 @@ pub struct CreateArtifactRequest {
     pub tags: Option<Vec<String>>,
 }
 
-/// Artifact list query.
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct ListArtifactsQuery {
+/// Create Artifact response.
+pub type CreateArtifactResponse = ArtifactDetail;
+
+/// Get Artifact request.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct GetArtifactRequest {
+    /// Artifact ID.
+    #[param(source = "path")]
+    pub artifact_id: String,
+}
+
+/// Get Artifact response.
+pub type GetArtifactResponse = ArtifactDetail;
+
+/// Delete Artifact request.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct DeleteArtifactRequest {
+    /// Artifact ID.
+    #[param(source = "path")]
+    pub artifact_id: String,
+}
+
+/// Delete Artifact response.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct DeleteArtifactResponse {
+    /// Success flag.
+    pub success: bool,
+}
+
+/// List Artifact request (by project).
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ListArtifactsRequest {
     /// Project ID. Required by handler for bounded queries.
+    #[param(source = "path")]
     pub project_id: String,
     /// Optional task ID filter.
+    #[param(source = "query")]
     pub task_id: Option<String>,
     /// Optional file type filter.
+    #[param(source = "query")]
     pub file_type: Option<FileType>,
     /// Optional source type filter.
+    #[param(source = "query")]
     pub source_type: Option<ArtifactSourceType>,
     /// Return limit.
+    #[param(source = "query")]
     pub limit: Option<usize>,
 }
 
+/// List Artifact response.
+pub type ListArtifactsResponse = Vec<ArtifactDetail>;
+
 /// Artifact detail response.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ArtifactDetail {
     /// Artifact ID.
     pub id: String,
@@ -93,18 +132,20 @@ pub struct ArtifactDetail {
     pub updated_at: i64,
 }
 
-/// Create Artifact response.
-pub type CreateArtifactResponse = ArtifactDetail;
+/// Get artifact content request (text-based content).
+///
+/// Used when source_type = GeneratedContent, retrieves the full UTF-8 text content directly.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct GetArtifactContentRequest {
+    /// Artifact ID.
+    #[param(source = "path")]
+    pub artifact_id: String,
+}
 
-/// Get Artifact response.
-pub type GetArtifactResponse = ArtifactDetail;
-
-/// List Artifact response.
-pub type ListArtifactsResponse = Vec<ArtifactDetail>;
 /// Get artifact content response (text-based content).
 ///
 /// Used when source_type = GeneratedContent, serves UTF-8 text content directly.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GetArtifactContentResponse {
     /// Artifact basic detail.
     pub artifact: ArtifactDetail,
@@ -113,7 +154,7 @@ pub struct GetArtifactContentResponse {
 }
 
 /// Text content metadata and payload.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ArtifactContentText {
     /// UTF-8 encoded content.
     pub content: String,
@@ -126,8 +167,11 @@ pub struct ArtifactContentText {
 }
 
 /// Update artifact content request (full replace).
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct UpdateArtifactContentRequest {
+    /// Artifact ID.
+    #[param(source = "path")]
+    pub artifact_id: String,
     /// Full new content for replacement.
     pub content: String,
     /// Optional optimistic locking: expect current updated_at matches this value.

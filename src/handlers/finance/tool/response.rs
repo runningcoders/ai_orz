@@ -1,4 +1,5 @@
 use common::api::{ToolDetail, ToolListItem};
+use common::enums::ToolStatus;
 use serde_json::Value;
 
 use crate::models::tool::Tool;
@@ -7,13 +8,15 @@ pub(super) fn to_list_item(tool: &Tool) -> ToolListItem {
     ToolListItem {
         id: tool.po.id.clone(),
         name: tool.po.name.clone(),
-        description: tool.po.description.clone(),
+        description: Some(tool.po.description.clone()),
         protocol: tool.po.protocol,
         control_mode: tool.po.control_mode,
         parameters_schema: tool.po.parameters_schema.clone(),
         tags: tool.po.get_tags(),
         status: tool.po.status,
         has_config: has_config(&tool.po.config),
+        enabled: matches!(tool.po.status, ToolStatus::Enabled),
+        created_by: tool.po.created_by.clone().unwrap_or_default(),
         created_at: tool.po.created_at,
         updated_at: tool.po.updated_at,
     }
@@ -26,10 +29,12 @@ pub(super) fn to_detail(tool: &Tool) -> ToolDetail {
         description: tool.po.description.clone(),
         protocol: tool.po.protocol,
         control_mode: tool.po.control_mode,
+        config: Some(tool.po.config.clone()),
+        has_config: has_config(&tool.po.config),
         parameters_schema: tool.po.parameters_schema.clone(),
         tags: tool.po.get_tags(),
         status: tool.po.status,
-        has_config: has_config(&tool.po.config),
+        enabled: matches!(tool.po.status, ToolStatus::Enabled),
         created_by: tool.po.created_by.clone(),
         updated_by: tool.po.updated_by.clone(),
         created_at: tool.po.created_at,

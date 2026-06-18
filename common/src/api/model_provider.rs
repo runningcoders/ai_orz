@@ -1,164 +1,212 @@
 //! Model Provider related API request/response DTOs - shared between backend and frontend
 
+use ai_orz_macros::Params;
 use crate::enums::{ModelCapability, ProviderType};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// 创建 Model Provider 请求
-#[derive(Debug, Clone, Deserialize, Serialize)]
+/// Create Model Provider request
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct CreateModelProviderRequest {
-    /// Provider 名称
+    /// Provider name
     pub name: String,
-    /// Provider 类型
+    /// Provider type
     pub provider_type: ProviderType,
-    /// 模型能力类型
+    /// Model capability
     pub capability: ModelCapability,
-    /// 模型名称
+    /// Model name
     pub model_name: String,
     /// API Key
     pub api_key: String,
-    /// 自定义 Base URL
+    /// Custom Base URL
     pub base_url: Option<String>,
-    /// 描述
+    /// Description
     pub description: Option<String>,
 }
 
-/// 创建 Model Provider 响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Create Model Provider response
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CreateModelProviderResponse {
     /// Provider ID
     pub id: String,
-    /// Provider 名称
+    /// Provider name
     pub name: String,
-    /// Provider 类型
+    /// Provider type
     pub provider_type: ProviderType,
-    /// 模型名称
+    /// Model name
     pub model_name: String,
-    /// 描述
+    /// Description
     pub description: Option<String>,
-    /// 创建时间戳
+    /// Created timestamp
     pub created_at: i64,
 }
 
-/// Model Provider 列表项响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Model Provider list item response
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ModelProviderListItem {
     /// Provider ID
     pub id: String,
-    /// Provider 名称
+    /// Provider name
     pub name: String,
-    /// Provider 类型
+    /// Provider type
     pub provider_type: ProviderType,
-    /// 模型名称
+    /// Model name
     pub model_name: String,
-    /// 描述
+    /// Description
     pub description: Option<String>,
-    /// 创建时间戳
+    /// Created timestamp
     pub created_at: i64,
 }
 
-/// 获取 Model Provider 响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Get Model Provider request
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct GetModelProviderRequest {
+    /// Provider ID
+    #[param(source = "path")]
+    pub id: String,
+}
+
+/// Get Model Provider response
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GetModelProviderResponse {
     /// Provider ID
     pub id: String,
-    /// Provider 名称
+    /// Provider name
     pub name: String,
-    /// Provider 类型
+    /// Provider type
     pub provider_type: ProviderType,
-    /// 模型名称
+    /// Model name
     pub model_name: String,
-    /// 自定义 Base URL
+    /// Custom Base URL
     pub base_url: Option<String>,
-    /// 描述
+    /// Description
     pub description: Option<String>,
-    /// 创建时间戳
+    /// Created timestamp
     pub created_at: i64,
-    /// 更新时间戳
+    /// Updated timestamp
     pub updated_at: i64,
 }
 
-/// 更新 Model Provider 请求
-#[derive(Debug, Clone, Deserialize, Serialize)]
+/// Update Model Provider request
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct UpdateModelProviderRequest {
-    /// Provider 名称
+    /// Provider ID
+    #[param(source = "path")]
+    pub id: String,
+
+    /// New provider name
     pub name: Option<String>,
-    /// Provider 类型
+    /// New provider type
     pub provider_type: Option<ProviderType>,
-    /// 模型名称
+    /// New model name
     pub model_name: Option<String>,
-    /// API Key
+    /// New API Key
     pub api_key: Option<String>,
-    /// 自定义 Base URL
+    /// New custom Base URL
     pub base_url: Option<String>,
-    /// 描述
+    /// New description
     pub description: Option<String>,
 }
 
-/// 更新 Model Provider 响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Update Model Provider response
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct UpdateModelProviderResponse {
     /// Provider ID
     pub id: String,
-    /// Provider 名称
+    /// Provider name
     pub name: String,
-    /// Provider 类型
+    /// Provider type
     pub provider_type: ProviderType,
-    /// 模型名称
+    /// Model name
     pub model_name: String,
-    /// 自定义 Base URL
+    /// Custom Base URL
     pub base_url: Option<String>,
-    /// 描述
+    /// Description
     pub description: Option<String>,
-    /// 更新时间戳
+    /// Updated timestamp
     pub updated_at: i64,
 }
 
-/// 测试连接请求
-#[derive(Debug, Clone, Deserialize, Serialize)]
+/// Test connection request
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct TestConnectionRequest {
-    /// 可选的测试提示词
+    /// Optional test prompt
     pub prompt: Option<String>,
 }
 
-/// 测试连接响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Test connection response
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct TestConnectionResponse {
-    /// 测试是否成功
+    /// Whether the test succeeded
     pub success: bool,
-    /// 模型响应（成功时）
+    /// Model response (on success)
     pub response: Option<String>,
-    /// 错误信息（失败时）
+    /// Error message (on failure)
     pub error: Option<String>,
 }
 
-/// 调用模型请求
-#[derive(Debug, Clone, Deserialize, Serialize)]
+/// Test Model Provider connection request
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct TestModelProviderConnectionRequest {
+    /// Provider ID to test
+    #[param(source = "path")]
+    pub id: String,
+    /// Optional test prompt
+    pub prompt: Option<String>,
+}
+
+/// Call model request
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct CallModelRequest {
-    /// 调用提示词
+    /// Provider ID
+    #[param(source = "path")]
+    pub id: String,
+    /// Prompt to call
     pub prompt: String,
 }
 
-/// 调用模型响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Call model response
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CallModelResponse {
-    /// 生成结果
+    /// Generated result
     pub result: String,
 }
 
-/// 删除 Model Provider 响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Delete Model Provider request
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct DeleteModelProviderRequest {
+    /// Provider ID
+    #[param(source = "path")]
+    pub id: String,
+}
+
+/// Delete Model Provider response
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DeleteModelProviderResponse {
-    /// 是否删除成功
+    /// Whether deletion succeeded
     pub success: bool,
 }
 
-/// 测试 Model Provider 连通性响应（别名兼容前端命名）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// List Model Providers request
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ListModelProvidersRequest {
+    // No parameters needed - all providers are returned
+}
+
+/// List Model Providers response
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ListModelProvidersResponse {
+    /// List of all model providers
+    pub providers: Vec<ModelProviderListItem>,
+}
+
+/// Test Model Provider connectivity response (alias for frontend compatibility)
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct TestModelProviderConnectionResponse {
-    /// 测试是否成功
+    /// Whether the test succeeded
     pub success: bool,
-    /// 测试结果信息
+    /// Test result message
     pub message: String,
-    /// 模型响应结果（成功时）
+    /// Model result (on success)
     pub result: Option<String>,
 }

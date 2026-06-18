@@ -1,60 +1,65 @@
-//! 更新组织信息接口
+//! Handler: PUT /api/v1/organizations/{id} - Update organization information (admin)
 
+use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use common::api::{GetOrganizationResponse, OrganizationInfoResponse, UpdateOrganizationRequest, UpdateOrganizationResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
-use axum::{
-    extract::{Extension, Json},
-    http::StatusCode,
-    response::IntoResponse,
-};
-use common::api::ApiResponse;
-use common::api::UpdateCurrentOrganizationRequest;
-use std::time::{SystemTime, UNIX_EPOCH};
+use common::constants::utils;
 
-/// 获取当前时间戳
-fn current_timestamp() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64
-}
-
-/// 更新组织信息
+/// Update organization information (admin only)
+#[register_handler_tool(
+    id = "update_organization",
+    name = "update_organization",
+    description = "Update organization information including name, description, base URL, and status (requires admin privileges)",
+    params = "common::api::UpdateOrganizationRequest",
+)]
+#[generate_http_handler]
 pub async fn update_organization(
-    Extension(ctx): Extension<RequestContext>,
-    Json(req): Json<UpdateCurrentOrganizationRequest>,
-) -> Result<impl IntoResponse, AppError> {
+    ctx: RequestContext,
+    params: UpdateOrganizationRequest,
+) -> Result<UpdateOrganizationResponse, AppError> {
     let domain = organization::domain();
-
-    // 从 context 获取组织 ID
-    let org_id = ctx
-        .organization_id
-        .clone()
-        .ok_or_else(|| AppError::BadRequest("未找到组织信息".to_string()))?;
 
     let mut org = domain
         .organization_manage()
-        .get_by_id(ctx.clone(), &org_id)
+        .get_by_id(ctx.clone(), &params.organization_id)
         .await?
         .ok_or_else(|| AppError::NotFound("组织不存在".to_string()))?;
 
     // 更新字段
-    if let Some(name) = req.name {
+    if let Some(name) = params.name {
         org.name = name;
     }
-    if let Some(description) = req.description {
+    if let Some(description) = params.description {
         org.description = description;
     }
-    if let Some(base_url) = req.base_url {
+    if let Some(base_url) = params.base_url {
         org.base_url = base_url;
     }
-    org.updated_at = current_timestamp();
+    if let Some(status) = params.status {
+        org.status = status.into();
+    }
+    org.updated_at = utils::current_timestamp();
 
     domain.organization_manage().update(ctx, &org).await?;
 
-    Ok((
-        StatusCode::OK,
-        Json(ApiResponse::success(())).into_response(),
-    ))
+    let data = OrganizationInfoResponse {
+        organization_id: org.id.clone(),
+        name: org.name.clone(),
+        description: if org.description.is_empty() {
+            None
+        } else {
+            Some(org.description.clone())
+        },
+        base_url: if org.base_url.is_empty() {
+            None
+        } else {
+            Some(org.base_url.clone())
+        },
+        status: org.status.to_i32(),
+        created_at: org.created_at,
+    };
+
+    Ok(UpdateOrganizationResponse { data })
 }
