@@ -144,7 +144,7 @@ where
 /// Adapter that converts a Handler to CoreTool
 ///
 /// # Example
-/// ```rust
+/// ```rust,ignore
 /// let adapter = HandlerToolAdapter::new(
 ///     po,
 ///     parameters_schema,
