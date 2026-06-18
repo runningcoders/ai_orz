@@ -319,6 +319,9 @@ impl ToolPo {
         self.protocol = ToolProtocol::Builtin;
         // 如果 control_mode 未设置，默认使用 Auto
         // 用户自定义的 control_mode 会被保留
+        if self.control_mode == 0 {
+            self.control_mode = ControlMode::Auto;
+        }
     }
 }
 
