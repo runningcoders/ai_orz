@@ -2,6 +2,7 @@
 //! 兼容 OpenAI API 格式的第三方服务
 
 use super::*;
+use crate::pkg::monitoring::rig_hook::RuntimeMonitoringHook;
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use common::enums::ModelCapability;
@@ -20,7 +21,7 @@ pub struct OpenAiCompatibleCortex {
     model_provider_id: String,
     model_name: String,
     embedding_model: String,
-    agent: Agent<ResponsesCompletionModel>,
+    agent: Agent<ResponsesCompletionModel, RuntimeMonitoringHook>,
 }
 
 impl OpenAiCompatibleCortex {
@@ -30,6 +31,7 @@ impl OpenAiCompatibleCortex {
         model: String,
         default_base_url: String,
         user_base_url: Option<String>,
+        ctx: RequestContext,
         rig_tools: Vec<Box<dyn ToolDyn>>,
     ) -> Result<Self> {
         let base_url = user_base_url.unwrap_or(default_base_url);
@@ -43,10 +45,11 @@ impl OpenAiCompatibleCortex {
             .map_err(|e| anyhow!("Failed to build OpenAI compatible client: {}", e))?;
 
         // ✅ 提前初始化好 Agent
+        let hook = RuntimeMonitoringHook::new(ctx.clone());
         let agent = if rig_tools.is_empty() {
-            client.agent(model.clone()).build()
+            client.agent(model.clone()).hook(hook).build()
         } else {
-            client.agent(model.clone()).tools(rig_tools).build()
+            client.agent(model.clone()).hook(hook).tools(rig_tools).build()
         };
 
         Ok(Self {

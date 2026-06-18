@@ -1,6 +1,7 @@
 //! Ollama 本地 Cortex 实现
 
 use super::*;
+use crate::pkg::monitoring::rig_hook::RuntimeMonitoringHook;
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use common::enums::ModelCapability;
@@ -19,7 +20,7 @@ pub struct OllamaCortex {
     model_provider_id: String,
     model_name: String,
     embedding_model: String,
-    agent: Agent<ResponsesCompletionModel>,
+    agent: Agent<ResponsesCompletionModel, RuntimeMonitoringHook>,
 }
 
 impl OllamaCortex {
@@ -28,6 +29,7 @@ impl OllamaCortex {
         api_key: String,
         model: String,
         base_url: Option<String>,
+        ctx: RequestContext,
         rig_tools: Vec<Box<dyn ToolDyn>>,
     ) -> Result<Self> {
         // Ollama 默认地址 http://localhost:11434/v1
@@ -43,10 +45,11 @@ impl OllamaCortex {
             .map_err(|e| anyhow!("Failed to build Ollama client: {}", e))?;
 
         // ✅ 提前初始化好 Agent
+        let hook = RuntimeMonitoringHook::new(ctx.clone());
         let agent = if rig_tools.is_empty() {
-            client.agent(model.clone()).build()
+            client.agent(model.clone()).hook(hook).build()
         } else {
-            client.agent(model.clone()).tools(rig_tools).build()
+            client.agent(model.clone()).hook(hook).tools(rig_tools).build()
         };
 
         Ok(Self {

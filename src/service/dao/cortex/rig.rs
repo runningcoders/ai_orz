@@ -32,7 +32,7 @@ impl RigCortexDao {
 impl super::CortexDao for RigCortexDao {
     fn create_cortex_trait(
         &self,
-        _ctx: RequestContext,
+        mut ctx: RequestContext,
         provider: &ModelProviderPo,
         rig_tools: Vec<Box<dyn ToolDyn>>,
     ) -> Result<Box<dyn CortexTrait + Send + Sync>> {
@@ -49,6 +49,7 @@ impl super::CortexDao for RigCortexDao {
                     api_key,
                     model,
                     provider.base_url.clone(),
+                    ctx.clone(),
                     rig_tools,
                 )?),
                 ProviderType::DeepSeek => {
@@ -58,6 +59,7 @@ impl super::CortexDao for RigCortexDao {
                         model,
                         "https://api.deepseek.com".to_string(),
                         provider.base_url.clone(),
+                        ctx.clone(),
                         rig_tools,
                     )?)
                 }
@@ -68,6 +70,7 @@ impl super::CortexDao for RigCortexDao {
                         model,
                         "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string(),
                         provider.base_url.clone(),
+                        ctx.clone(),
                         rig_tools,
                     )?)
                 }
@@ -78,6 +81,7 @@ impl super::CortexDao for RigCortexDao {
                         model,
                         "https://ark.cn-beijing.volces.com/api".to_string(),
                         provider.base_url.clone(),
+                        ctx.clone(),
                         rig_tools,
                     )?)
                 }
@@ -86,6 +90,7 @@ impl super::CortexDao for RigCortexDao {
                     api_key,
                     model,
                     provider.base_url.clone(),
+                    ctx.clone(),
                     rig_tools,
                 )?),
                 ProviderType::Custom => {
@@ -95,6 +100,7 @@ impl super::CortexDao for RigCortexDao {
                         model,
                         provider.base_url.clone().unwrap_or_default(),
                         None,
+                        ctx.clone(),
                         rig_tools,
                     )?)
                 }
@@ -120,6 +126,7 @@ impl super::CortexDao for RigCortexDao {
                         model,
                         provider.base_url.clone().unwrap_or_default(),
                         None,
+                        ctx.clone(),
                         Vec::new(),
                     )?)
                 }

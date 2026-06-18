@@ -1,6 +1,7 @@
 //! OpenAI 原生 Cortex 实现
 
 use super::*;
+use crate::pkg::monitoring::rig_hook::RuntimeMonitoringHook;
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use common::enums::ModelCapability;
@@ -19,7 +20,7 @@ pub struct OpenAiCortex {
     model_provider_id: String,
     model_name: String,
     embedding_model: String,
-    agent: Agent<ResponsesCompletionModel>,
+    agent: Agent<ResponsesCompletionModel, RuntimeMonitoringHook>,
 }
 
 impl OpenAiCortex {
@@ -28,6 +29,7 @@ impl OpenAiCortex {
         api_key: String,
         model: String,
         base_url: Option<String>,
+        ctx: RequestContext,
         rig_tools: Vec<Box<dyn ToolDyn>>,
     ) -> Result<Self> {
         let builder = openai::Client::builder().api_key(api_key);
@@ -43,10 +45,11 @@ impl OpenAiCortex {
             .map_err(|e| anyhow!("Failed to build OpenAI client: {}", e))?;
 
         // ✅ 提前初始化好 Agent
+        let hook = RuntimeMonitoringHook::new(ctx.clone());
         let agent = if rig_tools.is_empty() {
-            client.agent(model.clone()).build()
+            client.agent(model.clone()).hook(hook).build()
         } else {
-            client.agent(model.clone()).tools(rig_tools).build()
+            client.agent(model.clone()).hook(hook).tools(rig_tools).build()
         };
 
         Ok(Self {
