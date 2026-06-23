@@ -634,6 +634,148 @@ impl CoreTool for McpCoreTool {
 }
 ```
 
+## 下一步实施方案：MCP Tool 运行面最小闭环
+
+当前 MCP 管理面已经完成：MCP Server 可管理，MCP Tool 可通过 `tools/list` 同步为标准 `ToolPo`，并可按 server 查询。下一步优先验证并补齐运行面闭环，目标不是继续增加管理 API，而是证明“同步出来的 MCP Tool 可以被运行时执行”。
+
+### 目标
+
+打通 stdio MCP Tool 的最小执行链路：
+
+```text
+McpServerPo(stdio config)
+  ↓
+McpToolDal.sync_from_server(ctx, server_id)
+  ↓
+ToolPo(protocol=Mcp, config={server_id, tool_name})
+  ↓
+McpToolDal.get_by_id / call_tool_by_id
+  ↓
+McpToolCallDao.assemble_mcp_core_tool(po, server)
+  ↓
+McpCoreTool.call
+  ↓
+McpClientRuntime.call_tool(server, tool_name, args)
+  ↓
+stdio MCP Server tools/call
+  ↓
+标准 ToolCallEntry + result
+```
+
+### 架构边界决策
+
+1. 不让 `ToolDal` 注入或直接调用 `McpToolDal`，避免 DAL 同层互调。
+2. MCP 可执行 Tool 的组装仍由 `McpToolDal` 负责，因为只有它同时拥有 `ToolDao + McpServerDao + McpToolCallDao`。
+3. 通用 `ToolDal.get_by_id/query/list_tools_for_agent_full` 对 MCP Tool 可继续返回 management-safe `Tool::from_po_for_management(po)`，用于列表、绑定、Prompt 展示；真正执行 MCP Tool 必须走 `McpToolDal` 或更上层 Domain/Runtime 路由。
+4. 后续 Runtime/Message Consumer 需要执行工具时，由 Domain/Runtime 层按 `ToolProtocol` 路由：Builtin/HTTP 走通用 `ToolDal`，MCP 走 `McpToolDal`。不要把协议分发下沉到 DAO。
+5. `McpToolCallDaoImpl` 继续拥有唯一 `McpClientRuntime` 生命周期；`McpToolDal` 只复用该 DAO，不自行创建 runtime 或 base `ToolCallDao`。
+6. 第一版仍只支持 stdio；`streamable_http` 在 SSRF/header/redirect 安全策略完成前继续显式 `not implemented`。
+
+### Batch A：McpToolDal 执行 API + E2E 测试
+
+状态：已完成。DAL 层已经补齐 MCP 专属 manual call 入口，并通过 stdio MCP E2E 测试证明 sync 后的 MCP Tool 能被调用。
+
+涉及文件：
+
+- `src/service/dal/mcp_tool.rs`
+  - 在 `McpToolDal` trait 新增：
+    - `call_tool_by_id(ctx, tool_id, args) -> Result<Value, ToolError>`
+    - `call_manual(ctx, &Tool, args) -> Result<(Value, ToolCallEntry), ToolError>`
+  - 实现逻辑：
+    - `call_tool_by_id` 调用 `self.get_by_id(...)` 组装完整 `McpCoreTool`；
+    - 找不到 tool 返回 `ToolError::ToolCallError("Tool not found: ...")`；
+    - 组装失败/非 MCP/缺 server 统一转换为不泄漏 config 的 `ToolError`；
+    - `call_manual` 委托同一个 `mcp_tool_call_dao.call_manual(ctx, tool, args)`，复用现有 tracing decorator。
+- `src/service/dal/mcp_tool_test.rs`
+  - 新增 stdio MCP test server fixture；
+  - 已覆盖流程：create server → sync tools → call synced tool by id → assert result；
+  - 已覆盖 JSON object 参数成功路径；
+  - 待补充错误路径：非 object 参数返回明确错误；
+  - 待补充错误路径：缺失 server / 缺失 tool 的错误不包含 command/env/headers/url。
+
+建议首个 RED 测试：
+
+```text
+sync_then_call_stdio_mcp_tool_by_id_returns_result
+```
+
+断言重点：
+
+- `sync_from_server` 返回 1；
+- persisted tool 的 `protocol == ToolProtocol::Mcp`；
+- persisted config 只有 `server_id/tool_name`；
+- `mcp_tool_dal.call_tool_by_id(ctx, "mcp.echo-server.echo", {"text":"hi"})` 返回 MCP `CallToolResult` 序列化 JSON；
+- 返回内容包含 echo 结果；
+- 不依赖通用 `ToolDal` 注入 MCP DAL。
+
+### Batch B：运行面协议路由设计落点
+
+目标：为后续 Message Consumer / Runtime Domain 调用工具提供一个上层路由，不把协议分发塞进 DAO/DAL 同层调用。
+
+建议先设计、后实现：
+
+```text
+Runtime Domain / Tool Execution Domain
+  ↓
+读取标准 Tool 元信息（通过 ToolDal.get_by_id 或专门 management 查询）
+  ↓
+match tool.po.protocol
+  Builtin | Http => ToolDal.call_tool_by_id / call_manual
+  Mcp          => McpToolDal.call_tool_by_id / call_manual
+```
+
+第一阶段可以暂不新增 HTTP API，也不接 LLM 自动调用；只为消息消费者后续编排准备纯能力入口。
+
+验收标准：
+
+- Domain 层负责协议路由，符合 handler→domain→dal→dao 单向分层；
+- DAL 之间不互调；
+- DAO 仍只做持久化；
+- MCP server config 不出现在 Domain 返回值、日志或错误文本中。
+
+### Batch C：Agent 绑定与 Prompt 可见性验证
+
+目标：证明 MCP Tool 作为标准 Tool 可以被绑定到 Agent，并能在运行时工具列表/Prompt 展示中出现，但仍默认 `Manual`，不直接进入 Rig auto tool calling。
+
+测试重点：
+
+- sync 后 bind MCP tool to agent；
+- `list_agent_tools` / `list_tools_for_agent_full` 不过滤掉 `ToolProtocol::Mcp`；
+- MCP Tool 展示只使用 `ToolPo` 的 name/description/schema/tags，不需要 server config；
+- `ControlMode::Manual` 默认保持；
+- `wrap_for_rig` 暂不把 MCP 自动暴露给 Rig，除非后续明确设计 Auto 策略。
+
+### Batch D：可观测性与安全补强
+
+在最小执行闭环跑通后，再补：
+
+- MCP tool call trace 的 input/output/error 默认脱敏或截断策略；
+- timeout、server disabled、server not found、tool not found 的错误语义；
+- stdio process/session close 失败时的错误脱敏；
+- 并发调用同一个 MCP server 的 runtime 行为；
+- server update/delete 后 invalidate 与下一次调用重连验证。
+
+### 验证命令
+
+每个 Batch 都遵循 TDD：RED → GREEN → VERIFY → REVIEW。最小验证集：
+
+```bash
+cargo fmt --all -- --check
+git diff --check
+cargo test -q mcp_tool -- --nocapture
+cargo test -q mcp_tool_handler -- --nocapture
+cargo check -q
+```
+
+注意：过滤测试必须确认输出中 `running N tests` 且 `N > 0`，不能接受 0-test 通过。
+
+### 暂不做事项
+
+- 暂不启用 `streamable_http` runtime；
+- 暂不新增更多管理 API（例如 stale reconcile/delete synced tool/detail schema）；
+- 暂不把 MCP Tool 直接注册为 Rig auto tool；
+- 暂不把 MCP 执行路由下沉到 DAO 或让 `ToolDal` 依赖 `McpToolDal`。
+
 ## 连接生命周期
 
 ### MVP：按需连接 + 缓存
@@ -772,7 +914,7 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 
 ### Phase 4：接入官方 rmcp 并同步 MCP Tools
 
-状态：stdio 调用与 tools/list 同步子阶段已完成；Finance Domain 管理面编排仍待接入。
+状态：stdio 调用、tools/list 同步子阶段、Finance Domain/Handler 管理面编排均已完成；下一步进入运行面最小闭环。
 
 - ✅ 添加官方 `rmcp = "1.7"`，启用 `client` + `transport-child-process`；
 - ✅ `McpClientRuntime::call_tool(server, tool_name, args)` 第一版只支持 `McpTransport::Stdio`；
@@ -782,15 +924,24 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 - ✅ session 初始化受 `connect_timeout_ms` 约束，`tools/call` 受 `timeout_ms` 约束；
 - ✅ `tools/call` 成功、失败、超时后统一尝试 `client.close()`，避免 stdio session/子进程泄漏；
 - ✅ `McpCoreTool.call` 委托同一个 `McpClientRuntime`，返回序列化后的 `CallToolResult`（`structuredContent/isError/content`）；
-- ⏳ Finance Domain 编排 `sync_mcp_tools(server_id)`；
+- ✅ Finance Domain/Handler 编排 `sync_mcp_tools(server_id)`，暴露 `POST /api/v1/finance/mcp-servers/{server_id}/tools/sync`；
 - ✅ `McpClientRuntime.list_tools(server)` 支持 stdio `tools/list`；
 - ✅ `tools/list` 映射为标准 `ToolPo`；
 - ✅ upsert `ToolProtocol::Mcp` tools，保留 audit/status 并拒绝 id/binding 碰撞；
 - ✅ 默认 `ControlMode::Manual`，且 SQLite create/update 持久化该字段。
 
-### Phase 5：安全、管理面和完整测试
+### Phase 5：MCP Tool 运行面最小闭环
 
-- Finance Domain 编排 MCP Server/Tool 管理面；
+状态：Batch A 已完成，后续继续补运行面协议路由、绑定展示与更完整安全策略。
+
+- ✅ `McpToolDal.call_tool_by_id/call_manual`：sync 后按标准 Tool ID 执行 MCP Tool；
+- ✅ DAL 级 E2E 测试：create server → sync tools → call synced tool → assert result；
+- ⏳ 错误路径测试：tool/server 缺失、非 object args、错误文本不泄漏 command/env/headers/url；
+- ⏳ 上层 Runtime/Message Consumer 协议路由设计：MCP 走 `McpToolDal`，Builtin/HTTP 走通用 `ToolDal`，禁止 DAL 同层互调；
+- ⏳ Agent 绑定与 Prompt 可见性验证：MCP Tool 可作为标准 Tool 绑定展示，但默认 `Manual`，暂不进入 Rig auto tool calling。
+
+### Phase 6：安全、管理面和完整测试
+
 - trace/error/result 脱敏与截断；
 - streamable HTTP runtime（需继承 HTTP Tool SSRF/redirect/header 安全策略）；
 - session cache、reconnect、health check；
@@ -809,9 +960,8 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 
 ## 待确认问题
 
-1. 第一版是否只支持 `stdio`，还是同时支持 `streamable_http`？
-2. stdio `command` 是否采用 allowlist？allowlist 放配置还是代码常量？
-3. MCP Server 是否只允许管理员配置？
-4. MCP Tool 同步时，远端删除的 tool 是禁用、软删除，还是保留 stale 状态？
-5. MCP trace 默认全脱敏是否接受？是否需要按 server/tool 配置 trace policy？
-6. `McpToolDal` 是否等 Phase 3 后再根据同步复杂度决定，而不是第一版立即新增？
+1. stdio `command` 是否采用 allowlist？allowlist 放配置还是代码常量？
+2. MCP Server 是否只允许管理员配置？
+3. MCP Tool 同步时，远端删除的 tool 是禁用、软删除，还是保留 stale 状态？
+4. MCP trace 默认全脱敏是否接受？是否需要按 server/tool 配置 trace policy？
+5. MCP Tool 进入 Agent 工具列表后，Manual tool 的 Prompt 展示格式是否需要区别于可自动调用工具？

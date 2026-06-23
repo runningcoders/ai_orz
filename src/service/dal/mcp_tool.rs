@@ -7,6 +7,7 @@ use crate::error::AppError;
 use crate::models::tool::{Tool, ToolPo};
 use crate::pkg::RequestContext;
 use crate::pkg::tool_registry::mcp::{McpToolConfig, RemoteMcpTool};
+use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use crate::service::dao::mcp_server::McpServerDao;
 use crate::service::dao::tool::{ToolDao, ToolQuery};
 use crate::service::dao::tool_call::{self, McpToolCallDao};
@@ -14,6 +15,8 @@ use anyhow::Result as AnyhowResult;
 use async_trait::async_trait;
 use common::api::{ListMcpToolsByServerRequest, PagedResult};
 use common::enums::{ControlMode, ToolProtocol};
+use rig::tool::ToolError;
+use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 
 static MCP_TOOL_DAL: OnceLock<Arc<dyn McpToolDal + Send + Sync>> = OnceLock::new();
@@ -64,6 +67,22 @@ pub trait McpToolDal: Send + Sync {
         ctx: RequestContext,
         params: ListMcpToolsByServerRequest,
     ) -> Result<PagedResult<Tool>, AppError>;
+
+    /// Execute an MCP tool by standard ToolPo id.
+    async fn call_tool_by_id(
+        &self,
+        ctx: RequestContext,
+        tool_id: String,
+        args: Value,
+    ) -> Result<Value, ToolError>;
+
+    /// Execute an already assembled MCP tool manually and return its trace entry.
+    async fn call_manual(
+        &self,
+        ctx: RequestContext,
+        tool: &Tool,
+        args: Value,
+    ) -> Result<(Value, ToolCallEntry), ToolError>;
 
     /// Invalidate cached MCP runtime/session for a server.
     fn invalidate_server(&self, server_id: &str);
@@ -221,6 +240,35 @@ impl McpToolDal for McpToolDalImpl {
             items: page.into_iter().map(Tool::from_po_for_management).collect(),
             total,
         })
+    }
+
+    async fn call_tool_by_id(
+        &self,
+        ctx: RequestContext,
+        tool_id: String,
+        args: Value,
+    ) -> Result<Value, ToolError> {
+        let tool = self
+            .get_by_id(ctx.clone(), tool_id.clone())
+            .await
+            .map_err(|e| ToolError::ToolCallError(e.to_string().into()))?
+            .ok_or_else(|| {
+                ToolError::ToolCallError(format!("Tool not found: {}", tool_id).into())
+            })?;
+
+        self.call_manual(ctx, &tool, args)
+            .await
+            .map(|(value, _)| value)
+    }
+
+    async fn call_manual(
+        &self,
+        ctx: RequestContext,
+        tool: &Tool,
+        args: Value,
+    ) -> Result<(Value, ToolCallEntry), ToolError> {
+        ensure_mcp_tool(&tool.po).map_err(|e| ToolError::ToolCallError(e.to_string().into()))?;
+        self.mcp_tool_call_dao.call_manual(ctx, tool, args).await
     }
 
     fn invalidate_server(&self, server_id: &str) {

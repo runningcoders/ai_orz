@@ -7,12 +7,14 @@ use crate::error::Result;
 use crate::models::mcp_server::{McpServerConfig, McpServerPo, McpTransport};
 use crate::models::tool::ToolPo;
 use crate::pkg::RequestContext;
+use crate::pkg::tool_tracing::entry::ToolCallStatus;
+use crate::pkg::tool_tracing::logger::ToolCallLogger;
 use crate::service::dal::mcp_tool::{self, McpToolDal};
 use crate::service::dao::{mcp_server, tool, tool_call};
 use common::enums::{ControlMode, ToolProtocol, ToolStatus};
 use serde_json::json;
 use sqlx::SqlitePool;
-use std::sync::Arc;
+use std::sync::{Arc, Once};
 
 fn mcp_tool_po(server_id: &str, tool_name: &str) -> ToolPo {
     ToolPo::new(
@@ -108,6 +110,19 @@ for line in sys.stdin:
             },
         }
         print(json.dumps(response), flush=True)
+    elif method == "tools/call":
+        args = message.get("params", {}).get("arguments", {})
+        text = args.get("text", "")
+        response = {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "content": [{"type": "text", "text": text}],
+                "structuredContent": {"echo": text},
+                "isError": False,
+            },
+        }
+        print(json.dumps(response), flush=True)
 "#;
 
     let mut file = tempfile::NamedTempFile::new().expect("temp MCP script should be created");
@@ -117,6 +132,7 @@ for line in sys.stdin:
 }
 
 fn init_test_env(pool: SqlitePool) -> (Arc<dyn McpToolDal + Send + Sync>, RequestContext) {
+    init_test_tool_call_logger();
     let base_tool_call_dao = tool_call::new();
     let mcp_tool_call_dao = tool_call::new_mcp_tool_call_dao(base_tool_call_dao);
     let dal = mcp_tool::new(
@@ -126,6 +142,18 @@ fn init_test_env(pool: SqlitePool) -> (Arc<dyn McpToolDal + Send + Sync>, Reques
     );
     let ctx = RequestContext::new_simple("test-user", pool);
     (dal, ctx)
+}
+
+fn init_test_tool_call_logger() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let base_path = std::env::temp_dir().join(format!(
+            "ai_orz_mcp_tool_dal_trace_tests_{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&base_path).expect("test tool trace base path should be created");
+        ToolCallLogger::init(base_path);
+    });
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -194,6 +222,63 @@ async fn mcp_tool_dal_syncs_stdio_server_tools_into_tool_records(pool: SqlitePoo
     assert!(persisted.tags.contains(&"mcp".to_string()));
     assert!(persisted.tags.contains(&"echo-server".to_string()));
     assert!(persisted.tags.contains(&"echo".to_string()));
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn sync_then_call_stdio_mcp_tool_by_id_returns_result(pool: SqlitePool) -> Result<()> {
+    let (dal, ctx) = init_test_env(pool);
+    let script = write_echo_mcp_server_script();
+    let server = mcp_server_with_command(
+        "echo-server",
+        "python3".to_string(),
+        vec![script.path().to_string_lossy().to_string()],
+    );
+
+    mcp_server::new_mcp_server_dao()
+        .insert(ctx.clone(), &server)
+        .await?;
+
+    let synced = dal.sync_from_server(ctx.clone(), &server.id).await?;
+    assert_eq!(synced, 1);
+
+    let tool_id = "mcp.echo-server.echo".to_string();
+    let persisted = tool::new_tool_dao()
+        .get_by_id(ctx.clone(), tool_id.clone())
+        .await?
+        .expect("synced MCP tool should be persisted before runtime call");
+    assert_eq!(
+        persisted.config,
+        json!({
+            "server_id": "echo-server",
+            "tool_name": "echo",
+        })
+    );
+
+    let result = dal
+        .call_tool_by_id(ctx.clone(), tool_id.clone(), json!({ "text": "hello MCP" }))
+        .await
+        .expect("synced MCP stdio tool should execute by id");
+
+    assert_eq!(result["structuredContent"]["echo"], "hello MCP");
+    assert_eq!(result["isError"], false);
+
+    let executable = dal
+        .get_by_id(ctx.clone(), tool_id.clone())
+        .await?
+        .expect("synced MCP tool should be executable");
+    let (manual_result, entry) = dal
+        .call_manual(ctx, &executable, json!({ "text": "manual MCP" }))
+        .await
+        .expect("manual MCP stdio tool call should return trace entry");
+
+    assert_eq!(manual_result["structuredContent"]["echo"], "manual MCP");
+    assert_eq!(entry.tool_id, tool_id);
+    assert_eq!(entry.tool_name, "mcp.echo-server.echo");
+    assert_eq!(entry.status, ToolCallStatus::Completed);
+    assert_eq!(entry.input, json!({ "text": "manual MCP" }));
+    assert_eq!(entry.output, Some(manual_result));
+    assert!(entry.error.is_none());
     Ok(())
 }
 
