@@ -17,7 +17,7 @@
 | Handler / Router | ✅ 管理面 action 已完成 | `cargo check` 通过 | `src/handlers/finance/message_channel/`, `src/router.rs` |
 | 单元测试 | ✅ 完成 | **67/67 通过** | 各模块对应 `tests.rs` |
 
-> 运行面消息发送接口已统一使用 Command 参数对象：`SendToAgentCommand`、`SendToUserCommand`、`SendToolCallResultCommand`、`DeliverMessageCommand`，避免后续调用点参数继续膨胀。
+> 运行面消息发送接口已统一使用 Command 参数对象：`SendToAgentCommand`、`SendToUserCommand`、`SendToolCallRequestCommand`、`SendToolCallResultCommand`、`DeliverMessageCommand`，避免后续调用点参数继续膨胀。
 
 ### Handler 管理面范围
 

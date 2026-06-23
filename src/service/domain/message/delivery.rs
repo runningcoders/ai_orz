@@ -7,7 +7,7 @@ use crate::pkg::RequestContext;
 use crate::service::domain::message::MessageDomainImpl;
 use crate::service::domain::message::{
     DeliverMessageCommand, MessageDelivery, SendToAgentCommand, SendToUserCommand,
-    SendToolCallResultCommand, ToolCallExecutionOutcome,
+    SendToolCallRequestCommand, SendToolCallResultCommand, ToolCallExecutionOutcome,
 };
 use common::enums::{MessageRole, MessageStatus, MessageType};
 
@@ -66,6 +66,49 @@ impl MessageDelivery for MessageDomainImpl {
             Default::default(), // file_meta
             cmd.reply_to_id.map(|s| s.to_string()),
             cmd.from_agent_id.to_string(), // created_by
+        );
+
+        let message = Message::from_po(po);
+        self.message_dal.save_message(ctx.clone(), &message).await?;
+
+        Ok(message)
+    }
+
+    async fn send_tool_call_request(
+        &self,
+        ctx: RequestContext,
+        cmd: SendToolCallRequestCommand<'_>,
+    ) -> Result<Message, crate::error::AppError> {
+        let payload = ToolCallMessage::new_request(
+            cmd.request_id.to_string(),
+            cmd.tool_id.to_string(),
+            cmd.tool_name.to_string(),
+            cmd.project_id.map(|s| s.to_string()),
+            cmd.task_id.map(|s| s.to_string()),
+            cmd.from_agent_id.to_string(),
+            cmd.to_executor_id.to_string(),
+            cmd.reply_to_id.map(|s| s.to_string()),
+            cmd.args,
+        );
+
+        let content = serde_json::to_string(&payload).map_err(|_| {
+            crate::error::AppError::Internal("failed to serialize tool call request".to_string())
+        })?;
+
+        let po = MessagePo::new(
+            generate_id(),
+            payload.project_id.clone(),
+            payload.task_id.clone(),
+            payload.from_id.clone(),
+            payload.to_id.clone(),
+            MessageRole::Agent,
+            MessageRole::System,
+            MessageType::ToolCallRequest,
+            content,
+            None,
+            Default::default(),
+            payload.reply_to_id.clone(),
+            payload.from_id.clone(),
         );
 
         let message = Message::from_po(po);

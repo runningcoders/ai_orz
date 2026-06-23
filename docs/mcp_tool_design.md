@@ -785,7 +785,9 @@ match tool.po.protocol
 ```text
 Agent 推理并决定调用 Manual MCP Tool
   ↓
-发送 ToolCallRequest 消息
+MessageDomain.delivery().send_tool_call_request(...)
+  ↓
+Message Domain 保存 ToolCallRequest 并发布消息事件
   ↓
 ToolCallRequest Consumer 消费请求
   ↓
@@ -831,8 +833,26 @@ pub struct SendToolCallResultCommand<'a> {
     pub outcome: ToolCallExecutionOutcome,
 }
 
+pub struct SendToolCallRequestCommand<'a> {
+    pub request_id: &'a str,
+    pub tool_id: &'a str,
+    pub tool_name: &'a str,
+    pub from_agent_id: &'a str,
+    pub to_executor_id: &'a str,
+    pub project_id: Option<&'a str>,
+    pub task_id: Option<&'a str>,
+    pub reply_to_id: Option<&'a str>,
+    pub args: serde_json::Value,
+}
+
 #[async_trait::async_trait]
 pub trait MessageDelivery: Send + Sync {
+    async fn send_tool_call_request(
+        &self,
+        ctx: RequestContext,
+        cmd: SendToolCallRequestCommand<'_>,
+    ) -> Result<Message, AppError>;
+
     async fn send_tool_call_result(
         &self,
         ctx: RequestContext,
@@ -840,6 +860,13 @@ pub trait MessageDelivery: Send + Sync {
     ) -> Result<Message, AppError>;
 }
 ```
+
+`send_tool_call_request` 的职责：
+
+- 基于 Command 构造 `ToolCallMessage::new_request(...)` 并序列化到 `message.content`；
+- 固定消息语义为 `Agent -> System`、`MessageType::ToolCallRequest`、`Pending`；
+- 保留 `request_id/tool_id/tool_name/project_id/task_id/reply_to_id/args`，用于工具执行与后续结果关联；
+- 通过 Message Domain 保存消息并发布事件，避免调用方直接拼装/写入 `MessageDal`。
 
 `send_tool_call_result` 的职责：
 

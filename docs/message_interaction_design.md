@@ -398,6 +398,20 @@ pub trait DeliveryDomain {
         cmd: SendToUserCommand<'_>,
     ) -> Result<MessagePo, AppError>;
 
+    /// Agent 发送 Manual 工具调用请求
+    async fn send_tool_call_request(
+        &self,
+        ctx: RequestContext,
+        cmd: SendToolCallRequestCommand<'_>,
+    ) -> Result<MessagePo, AppError>;
+
+    /// 工具执行器发送工具调用结果回调
+    async fn send_tool_call_result(
+        &self,
+        ctx: RequestContext,
+        cmd: SendToolCallResultCommand<'_>,
+    ) -> Result<MessagePo, AppError>;
+
     /// 分发消息到用户所有可用渠道
     async fn deliver_message(
         &self,

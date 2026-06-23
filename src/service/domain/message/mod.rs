@@ -122,6 +122,29 @@ pub struct SendToUserCommand<'a> {
     pub reply_to_id: Option<&'a str>,
 }
 
+/// 发送工具调用请求消息的命令参数
+#[derive(Debug, Clone)]
+pub struct SendToolCallRequestCommand<'a> {
+    /// 工具调用请求 ID（用于请求/结果关联）
+    pub request_id: &'a str,
+    /// 工具 ID
+    pub tool_id: &'a str,
+    /// 工具名称（便于日志和 Prompt 展示）
+    pub tool_name: &'a str,
+    /// 发起调用的 Agent ID
+    pub from_agent_id: &'a str,
+    /// 工具执行方 ID（通常是系统工具执行器）
+    pub to_executor_id: &'a str,
+    /// 关联项目 ID（可选）
+    pub project_id: Option<&'a str>,
+    /// 关联任务 ID（可选）
+    pub task_id: Option<&'a str>,
+    /// 引用的父消息 ID（可选，支持消息链）
+    pub reply_to_id: Option<&'a str>,
+    /// 工具调用参数
+    pub args: Value,
+}
+
 /// 工具调用执行结果
 #[derive(Debug, Clone)]
 pub enum ToolCallExecutionOutcome {
@@ -184,6 +207,13 @@ pub trait MessageDelivery: Send + Sync {
         &self,
         ctx: RequestContext,
         cmd: SendToUserCommand<'_>,
+    ) -> Result<Message, AppError>;
+
+    /// 发送工具调用请求消息
+    async fn send_tool_call_request(
+        &self,
+        ctx: RequestContext,
+        cmd: SendToolCallRequestCommand<'_>,
     ) -> Result<Message, AppError>;
 
     /// 发送工具调用结果回调消息

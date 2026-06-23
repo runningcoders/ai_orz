@@ -5,7 +5,7 @@ use crate::models::message::{Message, ToolCallMessage};
 use crate::pkg::RequestContext;
 use crate::service::domain::message::{
     DeliverMessageCommand, MessageDomain, SendToAgentCommand, SendToUserCommand,
-    SendToolCallResultCommand, ToolCallExecutionOutcome,
+    SendToolCallRequestCommand, SendToolCallResultCommand, ToolCallExecutionOutcome,
 };
 use common::enums::{MessageRole, MessageStatus, MessageType};
 use serde_json::json;
@@ -219,6 +219,70 @@ async fn test_send_without_project_and_task(pool: SqlitePool) {
     let found = domain
         .management()
         .get_by_id(ctx.clone(), &sent.po.id)
+        .await
+        .unwrap();
+    assert!(found.is_some());
+}
+
+#[sqlx::test]
+async fn test_send_tool_call_request_creates_pending_system_message(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+
+    let request_message = domain
+        .delivery()
+        .send_tool_call_request(
+            ctx.clone(),
+            SendToolCallRequestCommand {
+                request_id: "tool-request-003",
+                tool_id: "tool-mcp-weather",
+                tool_name: "weather_lookup",
+                from_agent_id: "agent-003",
+                to_executor_id: "tool-executor",
+                project_id: Some("project-003"),
+                task_id: Some("task-003"),
+                reply_to_id: Some("parent-message-003"),
+                args: json!({ "city": "Beijing" }),
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        request_message.po.message_type,
+        MessageType::ToolCallRequest
+    );
+    assert_eq!(request_message.po.from_id, "agent-003");
+    assert_eq!(request_message.po.to_id, "tool-executor");
+    assert_eq!(request_message.po.from_role, MessageRole::Agent);
+    assert_eq!(request_message.po.to_role, MessageRole::System);
+    assert_eq!(
+        request_message.po.project_id.as_deref(),
+        Some("project-003")
+    );
+    assert_eq!(request_message.po.task_id.as_deref(), Some("task-003"));
+    assert_eq!(
+        request_message.po.reply_to_id.as_deref(),
+        Some("parent-message-003")
+    );
+    assert_eq!(request_message.po.status, MessageStatus::Pending);
+
+    let payload: ToolCallMessage = serde_json::from_str(&request_message.po.content).unwrap();
+    assert_eq!(payload.request_id, "tool-request-003");
+    assert_eq!(payload.tool_id, "tool-mcp-weather");
+    assert_eq!(payload.tool_name, "weather_lookup");
+    assert_eq!(payload.from_id, "agent-003");
+    assert_eq!(payload.to_id, "tool-executor");
+    assert_eq!(payload.project_id.as_deref(), Some("project-003"));
+    assert_eq!(payload.task_id.as_deref(), Some("task-003"));
+    assert_eq!(payload.reply_to_id.as_deref(), Some("parent-message-003"));
+    assert_eq!(payload.args, Some(json!({ "city": "Beijing" })));
+    assert!(payload.result.is_none());
+    assert!(payload.is_success.is_none());
+    assert!(payload.error_message.is_none());
+
+    let found = domain
+        .management()
+        .get_by_id(ctx.clone(), request_message.id())
         .await
         .unwrap();
     assert!(found.is_some());
