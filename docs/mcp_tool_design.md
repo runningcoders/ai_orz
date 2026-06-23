@@ -904,7 +904,15 @@ Batch D 测试重点：
 
 ### Batch E：可观测性与安全补强
 
-在最小执行闭环跑通后，再补：
+状态：已完成第一步 Runtime MCP 下层错误脱敏；其余观测性与 runtime 生命周期补强继续作为后续 Batch。
+
+已完成：
+
+- ✅ `RuntimeDomain.tool_execution().call_tool_by_id(...)` 已在 Runtime 边界对 `McpToolDal.call_tool_by_id(...)` 的下层错误做 fail-closed 映射；
+- ✅ 对外错误只保留安全上下文（例如 `tool_id`），不传播 stdio command、env、headers、URL、credential、rmcp/process 原始错误文本；
+- ✅ 已补充 stub DAL 单元测试，验证 MCP 协议只路由到 `McpToolDal`，Builtin/HTTP 只路由到通用 `ToolDal`，并验证敏感错误片段不会出现在 Runtime 返回错误中。
+
+后续继续补：
 
 - MCP tool call trace 的 input/output/error 默认脱敏或截断策略；
 - timeout、server disabled、server not found、tool not found 的错误语义；
