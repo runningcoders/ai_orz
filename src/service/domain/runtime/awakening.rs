@@ -44,10 +44,11 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         let trace_id = trace.id.clone();
 
         // Step 4: 拼装 Prompt（注入 trace_id 到头部，模型可见）
-        let mut builder = PromptBuilder::new()
+        let builder = PromptBuilder::new()
             .current_trace_id(&trace_id)
             .trace_ids(&trace_ids)
             .agent_system(agent)
+            .agent_tools(agent)
             .history(&recent_memories)
             .current_message(message);
 

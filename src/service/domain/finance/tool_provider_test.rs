@@ -34,6 +34,24 @@ mod tests {
         Tool::from_po_for_management(po)
     }
 
+    fn mcp_management_tool(name: &str) -> Tool {
+        let po = ToolPo::new(
+            String::new(),
+            name.to_string(),
+            "Domain MCP tool".to_string(),
+            ToolProtocol::Mcp,
+            json!({"server_id": "echo-server", "tool_name": name}),
+            Some(json!({
+                "type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"]
+            })),
+            vec!["mcp".to_string()],
+            Some("test-user".to_string()),
+        );
+        Tool::from_po_for_management(po)
+    }
+
     async fn init_test_env(
         pool: SqlitePool,
     ) -> (std::sync::Arc<dyn finance::FinanceDomain>, RequestContext) {
@@ -203,5 +221,60 @@ mod tests {
             .await
             .unwrap();
         assert!(stored.is_none(), "invalid HTTP tool must not be persisted");
+    }
+
+    #[sqlx::test]
+    async fn test_create_mcp_tool_rejects_auto_control_mode(pool: SqlitePool) {
+        let (domain, ctx) = init_test_env(pool).await;
+        let mut tool = mcp_management_tool("domain-mcp-auto-rejected");
+        tool.po.control_mode = ControlMode::Auto;
+        let tool_id = tool.po.id.clone();
+
+        let result = domain
+            .tool_provider_manage()
+            .create_tool(ctx.clone(), &tool)
+            .await;
+
+        assert!(result.is_err(), "MCP tools should be manual-only");
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("Mcp Tool"));
+        assert!(error.contains("Manual"));
+
+        let stored = domain
+            .tool_provider_manage()
+            .get_tool(ctx.clone(), &tool_id)
+            .await
+            .unwrap();
+        assert!(stored.is_none(), "Auto MCP tool must not be persisted");
+    }
+
+    #[sqlx::test]
+    async fn test_update_mcp_tool_rejects_auto_control_mode(pool: SqlitePool) {
+        let (domain, ctx) = init_test_env(pool).await;
+        let tool = mcp_management_tool("domain-mcp-update-auto-rejected");
+        let tool_id = tool.po.id.clone();
+        domain
+            .tool_provider_manage()
+            .create_tool(ctx.clone(), &tool)
+            .await
+            .unwrap();
+
+        let mut stored = domain
+            .tool_provider_manage()
+            .get_tool(ctx.clone(), &tool_id)
+            .await
+            .unwrap()
+            .expect("created MCP tool should be readable for management");
+        stored.po.control_mode = ControlMode::Auto;
+
+        let result = domain
+            .tool_provider_manage()
+            .update_tool(ctx.clone(), &stored)
+            .await;
+
+        assert!(result.is_err(), "MCP tools should reject Auto on update");
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("Mcp Tool"));
+        assert!(error.contains("Manual"));
     }
 }

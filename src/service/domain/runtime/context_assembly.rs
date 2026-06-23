@@ -118,6 +118,17 @@ impl PromptBuilder {
         self
     }
 
+    /// 添加 Agent 当前绑定的工具说明。
+    ///
+    /// 工具自身负责格式化 Prompt 内容；Builder 只做组合。
+    /// 注意：`ToolPo::to_tool_prompt()` 不输出协议 config，避免 MCP server
+    /// command/env/url/headers 等敏感配置进入模型上下文。
+    pub fn agent_tools(mut self, agent: &Agent) -> Self {
+        self.tools
+            .extend(agent.tools().iter().map(|tool| tool.po.to_tool_prompt()));
+        self
+    }
+
     /// 添加用户画像信息
     ///
     /// 【使用场景】仅客服类 Agent 需要使用，包含：
@@ -190,6 +201,9 @@ impl PromptBuilder {
         // 6. （预留）工具说明
         if !self.tools.is_empty() {
             result.push_str("【可用工具】\n");
+            result.push_str(
+                "调用以下 ai_orz 工具时，请发送一条工具调用消息，由消息机制处理；不要把它当作可直接执行的 Rig/function calling。\n",
+            );
             for t in &self.tools {
                 result.push_str(&format!("- {}\n", t));
             }
@@ -209,7 +223,7 @@ impl PromptBuilder {
 
 /// 便捷函数：快速构建 Agent 对话 Prompt
 ///
-/// 封装了最常用的组合：Trace ID 列表 + Agent 人设 + 历史记忆 + 当前消息
+/// 封装了最常用的组合：Trace ID 列表 + Agent 人设 + Agent 绑定工具 + 历史记忆 + 当前消息
 pub fn build_conversation_prompt(
     trace_ids: &[String],
     agent: &Agent,
@@ -219,6 +233,7 @@ pub fn build_conversation_prompt(
     PromptBuilder::new()
         .trace_ids(trace_ids)
         .agent_system(agent)
+        .agent_tools(agent)
         .history(recent_memories)
         .current_message(current_message)
         .build()
@@ -258,5 +273,64 @@ mod tests {
         assert!(prompt.contains("【角色描述】"));
         assert!(prompt.contains("【灵魂设定】"));
         assert!(prompt.contains("严谨、专业、乐于助人"));
+    }
+
+    #[test]
+    fn builder_includes_bound_mcp_tools_without_server_config_details() {
+        use crate::models::agent::AgentPo;
+        use crate::models::tool::{Tool, ToolPo};
+        use common::enums::ToolProtocol;
+        use serde_json::json;
+
+        let agent_po = AgentPo::new(
+            "工具助手".to_string(),
+            vec!["助手".to_string()],
+            "可以使用工具".to_string(),
+            vec!["工具调用".to_string()],
+            "按需使用工具。".to_string(),
+            "provider-001".to_string(),
+            "tester".to_string(),
+        );
+        let mcp_tool = Tool::from_po_for_management(ToolPo::new(
+            "mcp.echo-server.echo".to_string(),
+            "mcp.echo-server.echo".to_string(),
+            "Echo input text".to_string(),
+            ToolProtocol::Mcp,
+            json!({
+                "server_id": "echo-server",
+                "tool_name": "echo",
+                "command": "python3 /tmp/private_echo_server.py",
+                "env": {"PRIVATE_VALUE": "placeholder-value"},
+                "url": "https://internal.example.test/mcp"
+            }),
+            Some(json!({
+                "type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"]
+            })),
+            vec!["mcp".to_string(), "echo-server".to_string()],
+            Some("creator".to_string()),
+        ));
+        let agent = Agent::from_po_with_tools(agent_po, vec![mcp_tool]);
+
+        let prompt = PromptBuilder::new()
+            .agent_system(&agent)
+            .agent_tools(&agent)
+            .build();
+
+        assert!(prompt.contains("【可用工具】"));
+        assert!(prompt.contains("工具调用消息"));
+        assert!(prompt.contains("消息机制处理"));
+        assert!(prompt.contains("Rig/function calling"));
+        assert!(prompt.contains("mcp.echo-server.echo"));
+        assert!(prompt.contains("Echo input text"));
+        assert!(prompt.contains("Manual"));
+        assert!(prompt.contains("text"));
+        assert!(!prompt.contains("python3"));
+        assert!(!prompt.contains("PRIVATE_VALUE"));
+        assert!(!prompt.contains("placeholder-value"));
+        assert!(!prompt.contains("internal.example.test"));
+        assert!(!prompt.contains("server_id"));
+        assert!(!prompt.contains("tool_name"));
     }
 }

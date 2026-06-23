@@ -111,15 +111,21 @@ impl ToolProviderManage for FinanceDomainImpl {
 }
 
 fn validate_tool_management_policy(tool: &Tool) -> Result<(), AppError> {
-    if !matches!(tool.po.protocol, ToolProtocol::Http) {
+    if !matches!(tool.po.protocol, ToolProtocol::Http | ToolProtocol::Mcp) {
         return Ok(());
     }
 
     if !matches!(tool.po.control_mode, ControlMode::Manual) {
-        return Err(AppError::BadRequest(
-            "HTTP Tool only supports Manual control mode".to_string(),
-        ));
+        return Err(AppError::BadRequest(format!(
+            "{:?} Tool only supports Manual control mode",
+            tool.po.protocol
+        )));
     }
 
-    http::validate_tool_po_config(&tool.po).map_err(|err| AppError::BadRequest(err.to_string()))
+    if matches!(tool.po.protocol, ToolProtocol::Http) {
+        http::validate_tool_po_config(&tool.po)
+            .map_err(|err| AppError::BadRequest(err.to_string()))?;
+    }
+
+    Ok(())
 }

@@ -752,6 +752,14 @@ match tool.po.protocol
 
 目标：证明 MCP Tool 作为标准 Tool 可以被绑定到 Agent，并能在运行时工具列表/Prompt 展示中出现，但仍默认 `Manual`，不直接进入 Rig auto tool calling。
 
+实现结论：
+
+- `ToolPo::to_tool_prompt()` 负责输出模型可见的工具说明，只包含 `id/name/description/protocol/control_mode/parameters_schema`，不输出 `ToolPo.config`；
+- `to_tool_prompt()` 会对远端 MCP metadata 来源的 `description/parameters_schema` 做模型可见脱敏，避免 `command/env/url/headers/authorization/token/secret/password/credential` 等敏感词原样进入 Prompt；
+- `PromptBuilder::agent_tools(agent)` 只组合 Agent 当前绑定工具的安全 Prompt 文本，遵循「PO 负责格式化、Builder 纯组合」，并补充 ai_orz 工具调用方式说明：调用工具应发送工具调用消息，由消息机制处理，不是直接 Rig/function calling；
+- `build_conversation_prompt()` 与 `RuntimeAwakening::awaken()` 已把 Agent 绑定工具加入 Prompt，因此 MCP Tool 可在唤醒上下文中被模型看到；
+- MCP Tool 仍保持 `ControlMode::Manual`，`ToolDal.wrap_for_rig()` 不会把它暴露给 Rig auto tool calling；Finance Domain 在 create/update 写入侧拒绝 HTTP/MCP `Auto`，不依赖运行时兜底。
+
 测试重点：
 
 - sync 后 bind MCP tool to agent；
@@ -759,6 +767,13 @@ match tool.po.protocol
 - MCP Tool 展示只使用 `ToolPo` 的 name/description/schema/tags，不需要 server config；
 - `ControlMode::Manual` 默认保持；
 - `wrap_for_rig` 暂不把 MCP 自动暴露给 Rig，除非后续明确设计 Auto 策略。
+
+验收结论：
+
+- Agent 绑定 MCP Tool 后，运行时工具列表可返回该 Tool；
+- Prompt 中能看到 MCP Tool 的安全元信息和参数 schema；
+- Prompt 不包含 server `command/env/url/headers/credential`，也不包含 MCP tool binding config 的 `server_id/tool_name` 字段名；
+- MCP Tool 默认 `Manual` 且不进入 Rig auto tool calling。
 
 ### Batch D：可观测性与安全补强
 
@@ -947,7 +962,7 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 
 ### Phase 5：MCP Tool 运行面最小闭环
 
-状态：Batch A 与 Batch B 已完成，后续继续补绑定展示与更完整安全策略。
+状态：Batch A、Batch B、Batch C 已完成，后续继续补 Message Consumer 接入与更完整安全策略。
 
 - ✅ `McpToolDal.call_tool_by_id/call_manual`：sync 后按标准 Tool ID 执行 MCP Tool；
 - ✅ DAL 级 E2E 测试：create server → sync tools → call synced tool → assert result；
@@ -955,7 +970,7 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 - ✅ Runtime MCP 错误边界脱敏：MCP 下层错误统一映射为安全错误，不输出 command/env/headers/url/credential；
 - ⏳ 错误路径测试：tool/server 缺失、非 object args、错误文本不泄漏 command/env/headers/url；
 - ⏳ Message Consumer 接入 Runtime 工具执行入口；
-- ⏳ Agent 绑定与 Prompt 可见性验证：MCP Tool 可作为标准 Tool 绑定展示，但默认 `Manual`，暂不进入 Rig auto tool calling。
+- ✅ Agent 绑定与 Prompt 可见性验证：MCP Tool 可作为标准 Tool 绑定展示，但默认 `Manual`，暂不进入 Rig auto tool calling；
 
 ### Phase 6：安全、管理面和完整测试
 

@@ -7,7 +7,7 @@ use crate::pkg::tool_registry::{self, BuiltinToolFactory, get_registry};
 use crate::service::dal::tool::ToolDal;
 use crate::service::dao::tool;
 use async_trait::async_trait;
-use common::enums::{ToolProtocol, ToolStatus};
+use common::enums::{ControlMode, ToolProtocol, ToolStatus};
 use rig::tool::ToolError;
 use serde_json::Value;
 use sqlx::SqlitePool;
@@ -172,6 +172,70 @@ async fn test_add_tool_to_agent_and_list(pool: SqlitePool) {
     // 工具已注册，所以可以正常返回
     assert_eq!(list_full.len(), 1);
     assert_eq!(list_full[0].po.id, "test_tool");
+}
+
+/// 测试 MCP Tool 可以作为标准 Tool 绑定到 Agent 并进入运行时工具列表，
+/// 但默认 Manual，不会被 wrap_for_rig 暴露为自动调用工具。
+#[sqlx::test]
+async fn test_mcp_tool_bind_to_agent_visible_but_not_wrapped_for_rig(pool: SqlitePool) {
+    let (tool_dal, ctx) = init_test_env(pool, false).await;
+
+    let mcp_tool = ToolPo::new(
+        "mcp.echo-server.echo".to_string(),
+        "mcp.echo-server.echo".to_string(),
+        "Echo input text".to_string(),
+        ToolProtocol::Mcp,
+        serde_json::json!({
+            "server_id": "echo-server",
+            "tool_name": "echo",
+            "command": "python3 /tmp/private_echo_server.py",
+            "env": {"PRIVATE_VALUE": "placeholder-value"},
+            "url": "https://internal.example.test/mcp"
+        }),
+        Some(serde_json::json!({
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"]
+        })),
+        vec!["mcp".to_string(), "echo-server".to_string()],
+        Some("test-user".to_string()),
+    );
+    tool_dal.create_tool(ctx.clone(), &mcp_tool).await.unwrap();
+
+    let agent_id = Uuid::now_v7().to_string();
+    tool_dal
+        .add_tool_to_agent(
+            ctx.clone(),
+            &agent_id,
+            &mcp_tool.id,
+            Some("test-user".to_string()),
+        )
+        .await
+        .unwrap();
+
+    let list_full = tool_dal
+        .list_tools_for_agent_full(ctx.clone(), &agent_id)
+        .await
+        .unwrap();
+    assert_eq!(list_full.len(), 1);
+    assert_eq!(list_full[0].po.id, "mcp.echo-server.echo");
+    assert_eq!(list_full[0].po.protocol, ToolProtocol::Mcp);
+    assert_eq!(list_full[0].po.control_mode, ControlMode::Manual);
+
+    let prompt = list_full[0].po.to_tool_prompt();
+    assert!(prompt.contains("mcp.echo-server.echo"));
+    assert!(prompt.contains("Echo input text"));
+    assert!(prompt.contains("Manual"));
+    assert!(prompt.contains("text"));
+    assert!(!prompt.contains("python3"));
+    assert!(!prompt.contains("PRIVATE_VALUE"));
+    assert!(!prompt.contains("placeholder-value"));
+    assert!(!prompt.contains("internal.example.test"));
+    assert!(!prompt.contains("server_id"));
+    assert!(!prompt.contains("tool_name"));
+
+    let rig_tools = tool_dal.wrap_for_rig(&list_full, ctx.clone());
+    assert!(rig_tools.is_empty());
 }
 
 /// 测试从 Agent 移除工具
