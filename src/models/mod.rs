@@ -4,6 +4,7 @@ pub mod attachment;
 pub mod brain;
 pub mod event;
 pub mod file;
+pub mod mcp_server;
 pub mod memory;
 pub mod message;
 pub mod message_channel;

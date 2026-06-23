@@ -7,7 +7,7 @@ MCP（Model Context Protocol）工具不应被建模为单个裸 `mcp_call(serve
 ```text
 MCP Server 是外部能力 Provider；
 MCP Tool 是 Provider 暴露出的具体工具实体；
-运行时通过 MCP Client Manager 连接 Server 并调用具体 Tool。
+运行时通过 MCP client runtime 连接 Server 并调用具体 Tool。
 ```
 
 本设计延续现有 Tool 架构：`ToolProtocol` 表达工具来源/协议，`ControlMode` 表达调用方式。第一版 MCP Tool 默认走 `Manual`，不直接进入 Rig auto tool calling。
@@ -24,7 +24,7 @@ MCP Tool 是 Provider 暴露出的具体工具实体；
 6. 新增 `McpToolCallDaoImpl` 作为 `ToolCallDao` 的协议增强实现：
    - 组合基础 `ToolCallDao`，大部分通用方法直接转发；
    - 主要重写/扩展 MCP CoreTool 构造能力；
-   - 内部管理 MCP client/session 生命周期；
+   - 持有 `pkg::mcp::McpClientRuntime` 依赖，由 runtime 管理 MCP client/session 生命周期；
    - 构造 MCP Tool 时支持传入 server config、client runtime 等额外参数。
 7. MCP Tool 仍注册到 `tool_registry`；工厂构造 MCP Tool 时不强行复用单一 `create_tool(po)` 签名，而是采用 builder 模式或专用 `create_mcp_tool(po, deps)`，由 `McpToolDal` 按需准备并传入参数。
 
@@ -38,22 +38,22 @@ MCP Server 是外部能力 Provider，需要独立持久化：
 mcp_servers (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  transport TEXT NOT NULL,       -- stdio | streamable_http
+  transport INTEGER NOT NULL CHECK (transport IN (0, 1)), -- 0=stdio, 1=streamable_http
   config TEXT NOT NULL,          -- JSON serialized McpServerConfig
-  status TEXT NOT NULL,          -- enabled | disabled
+  status INTEGER NOT NULL CHECK (status IN (0, 1, 2)), -- 0=Deleted, 1=Enabled, 2=Disabled
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   created_by TEXT,
   updated_by TEXT
 )
+
+UNIQUE INDEX idx_mcp_servers_active_name_unique ON mcp_servers(name) WHERE status != 0
 ```
 
 ### `McpServerConfig`
 
 ```rust
 pub struct McpServerConfig {
-    pub transport: McpTransport,
-
     // stdio transport
     pub command: Option<String>,
     pub args: Vec<String>,
@@ -132,7 +132,7 @@ src/service/dao/
 └── tool_call/
     ├── mod.rs                   # ToolCallDao trait：通用 CoreTool 生产/包装/调用
     ├── impl.rs                  # 基础 ToolCallDaoImpl
-    ├── mcp.rs                   # McpToolCallDaoImpl：协议增强实现，内含 MCP client/session lifecycle
+    ├── mcp.rs                   # McpToolCallDaoImpl：协议增强实现，依赖 pkg::mcp::McpClientRuntime
     └── mcp_test.rs
 
 src/service/dal/
@@ -157,7 +157,7 @@ src/pkg/tool_registry/
 
 ## DAO 初始化与连接初始化边界
 
-MCP client/session 生命周期是**工具调用底层能力**，不作为上层可见的独立 DAO 暴露，而内聚到 `McpToolCallDaoImpl` 中。
+MCP client/session 生命周期是**工具调用底层能力**，不作为上层可见的独立 DAO 暴露；由 `pkg::mcp::McpClientRuntime` 管理，`McpToolCallDaoImpl` 只持有 runtime 依赖并负责协议路由/装饰。
 
 ```text
 service::dao::mcp_server::init()
@@ -166,7 +166,7 @@ service::dao::mcp_server::init()
 service::dao::tool_call::init()
   初始化基础 ToolCallDaoImpl
   初始化/组合 McpToolCallDaoImpl
-  McpToolCallDaoImpl 内部持有 MCP client/session runtime
+  McpToolCallDaoImpl 持有 MCP client runtime 依赖，不直接管理 session 细节
 
 McpToolDal
   读取 ToolPo + McpServerPo
@@ -179,7 +179,7 @@ McpToolDal
 ```text
 McpServerDao init = 持久化组件初始化
 ToolCallDaoImpl = 通用工具调用基础实现
-McpToolCallDaoImpl = ToolCallDao 的 MCP 协议增强实现，管理 MCP client/session 生命周期
+McpToolCallDaoImpl = ToolCallDao 的 MCP 协议增强实现，组合 pkg::mcp::McpClientRuntime
 McpToolDal = MCP 专属 DAL，准备 server config 并调用 MCP 增强组装/调用能力
 ```
 
@@ -209,14 +209,7 @@ McpServerDao
 mcp_servers 表
 ```
 
-创建/更新后可以选择：
-
-```text
-McpClientDao.invalidate(server_id)
-McpClientDao.connect_or_refresh(server_config)
-```
-
-连接测试/刷新应通过 `McpClientDao` 完成。连接失败不应污染持久化事务，建议提供单独的 `test_connection` 或 `sync_tools` 动作展示连接结果。
+创建/更新只修改持久化配置，不在 DAO/DAL 初始化阶段启动连接。后续如果 server 配置变化，需要由 MCP tool call runtime 内部的 session/client 管理组件按 `server_id` 做 invalidate/refresh；连接失败不应污染持久化事务，建议提供单独的 `test_connection` 或 `sync_tools` 动作展示连接结果。
 
 ### 同步 MCP Tools
 
@@ -229,7 +222,7 @@ McpToolDal.sync_from_server(server_id)
   ↓
 McpServerDao.get_by_id(server_id)
   ↓
-McpClientDao.list_tools(server_config)
+MCP tool call runtime / rmcp client list_tools(server_config)
   ↓
 MCP initialize + tools/list
   ↓
@@ -653,36 +646,45 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 
 ### Phase 1：MCP Server 持久化
 
-- 新增 `McpServerPo/McpServerConfig`；
-- 新增 `mcp_servers` migration；
-- 新增 `McpServerDao` + SQLite 实现；
-- 新增 `McpServerDal`；
-- 管理面 create/update/detail/list/delete，先不真实连接。
+状态：DAO 持久化子阶段已完成。
 
-### Phase 2：MCP Client Manager
+- ✅ 新增 `McpServerPo/McpServerConfig`；
+- ✅ 新增 `mcp_servers` migration（active name 唯一索引、transport/status CHECK 约束）；
+- ✅ 新增 `McpServerDao` + SQLite 实现；
+- ✅ 覆盖 insert/find/query/update/delete、软删除默认过滤、显式查询 Deleted、offset-only 查询、软删除后重建同名记录等单元测试；
+- ⏳ `McpServerDal` 与管理面 create/update/detail/list/delete 后续单独接入，先不真实连接。
 
-- 新增 `pkg::mcp::McpClientDao`；
-- 支持 register/update/invalidate；
-- 支持 `test_connection`；
-- 支持 `list_tools`；
-- 支持错误脱敏和 timeout。
+### Phase 2：MCP Tool config + registry stub
 
-### Phase 3：同步 MCP Tools
+- 新增 `McpToolConfig { server_id, tool_name }`；
+- 在 `pkg::tool_registry::mcp` 提供 `create_mcp_tool(po, deps)` 或 stub；
+- registry 对 `ToolProtocol::Mcp` 先明确走 stub/依赖注入边界；
+- 不在通用 `ToolDal` 膨胀 MCP 专属逻辑。
+
+### Phase 3：McpToolDal / McpToolCallDaoImpl 骨架
+
+- 新增 `McpToolDal` 处理 MCP 专属同步/按 server 管理；
+- 新增 `McpToolCallDaoImpl` 组合基础 `ToolCallDao`，通用方法转发；
+- `McpToolCallDaoImpl` 组合 `pkg::mcp::McpClientRuntime`，client/session lifecycle 由 pkg runtime 管理；
+- 支持错误脱敏和 timeout 骨架。
+
+### Phase 4：接入官方 rmcp 并同步 MCP Tools
 
 - Finance Domain 编排 `sync_mcp_tools(server_id)`；
 - `tools/list` 映射为 `ToolPo`；
 - upsert `ToolProtocol::Mcp` tools；
 - 默认 `ControlMode::Manual`。
 
-### Phase 4：运行时调用
+### Phase 5：安全、管理面和完整测试
 
-- 实现 `McpToolConfig`；
-- 实现 `McpCoreTool`；
-- `ToolCallDao.assemble_core_tool` 支持 `ToolProtocol::Mcp`；
-- manual tool call 调用 `McpClientDao.call_tool`；
-- trace/error/result 脱敏与截断。
+- Finance Domain 编排 MCP Server/Tool 管理面；
+- `McpCoreTool` manual call 通过 MCP tool call runtime 调用 rmcp；
+- trace/error/result 脱敏与截断；
+- session cache、reconnect、health check；
+- server update/delete 后 session invalidate；
+- 并发调用策略。
 
-### Phase 5：连接生命周期增强
+### 后续增强：连接生命周期增强
 
 - session cache；
 - reconnect；

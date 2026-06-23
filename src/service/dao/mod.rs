@@ -3,6 +3,7 @@ pub mod artifact;
 pub mod attachment;
 pub mod cortex;
 pub mod event_queue;
+pub mod mcp_server;
 pub mod memory;
 pub mod message;
 pub mod message_channel;
@@ -30,6 +31,7 @@ pub fn init_all() {
     event_queue::init_message();
     message::init();
     message_channel::init();
+    mcp_server::init();
     model_provider::init();
     organization::init();
     user::init();
