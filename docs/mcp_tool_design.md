@@ -121,7 +121,7 @@ pub struct McpToolConfig {
 
 ```text
 src/models/
-└── mcp_server.rs                # McpServerPo + McpServerConfig + McpToolConfig
+└── mcp_server.rs                # McpServerPo + McpServerConfig
 
 src/service/dao/
 ├── mcp_server/

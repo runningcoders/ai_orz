@@ -14,6 +14,7 @@ use crate::models::tool::{CoreTool, ToolPo};
 pub use builtin::BuiltinToolFactory;
 pub use handler_adapter::register_handler_tool;
 pub use http::{DefaultHttpToolFactory, HttpToolFactory};
+pub use mcp::{McpCoreTool, McpToolConfig};
 
 lazy_static! {
     /// Global tool registry instance - initialized automatically on first access.
@@ -79,8 +80,9 @@ impl ToolRegistry {
                 Some(factory.create(po))
             }
             common::enums::ToolProtocol::Mcp => {
-                // Future: create from MCP factory
-                None
+                // Stage 2: MCP tools are config-driven stubs. Later McpToolDal
+                // stages will pass server/runtime deps to a dedicated factory.
+                mcp::create_tool(po).ok()
             }
             common::enums::ToolProtocol::Http => {
                 // HTTP tools are database-registered; ToolPo.config stores HttpToolConfig.
