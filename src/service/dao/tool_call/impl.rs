@@ -42,7 +42,12 @@ impl ToolCallDaoImpl {
 
 /// Initialize global ToolCall DAO
 pub fn init() {
-    TOOL_CALL_DAO.set(new()).ok();
+    let base = new();
+    let enhanced: Arc<dyn ToolCallDao> = Arc::new(super::mcp::McpToolCallDaoImpl::new(
+        base,
+        Arc::new(crate::pkg::tool_registry::mcp::McpClientRuntime::default()),
+    ));
+    TOOL_CALL_DAO.set(enhanced).ok();
 }
 
 #[async_trait]

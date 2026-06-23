@@ -13,8 +13,13 @@ use rig::tool::ToolError;
 use std::boxed::Box;
 
 pub mod r#impl;
+pub mod mcp;
 
 pub use r#impl::{dao, init, new};
+pub use mcp::{McpToolCallDao, new as new_mcp_tool_call_dao};
+
+#[cfg(test)]
+mod mcp_test;
 
 /// ToolCall DAO trait
 #[async_trait]

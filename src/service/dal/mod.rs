@@ -31,6 +31,7 @@ pub mod agent;
 pub mod artifact;
 pub mod attachment;
 pub mod brain;
+pub mod mcp_tool;
 pub mod memory;
 pub mod message;
 pub mod message_channel;
@@ -56,6 +57,7 @@ pub fn init_all() {
     skill::init();
     task::init();
     tool::init();
+    mcp_tool::init();
     user::init();
 }
 
@@ -67,6 +69,8 @@ pub(crate) mod artifact_test;
 pub(crate) mod attachment_test;
 #[cfg(test)]
 pub(crate) mod brain_test;
+#[cfg(test)]
+pub(crate) mod mcp_tool_test;
 #[cfg(test)]
 pub(crate) mod memory_test;
 #[cfg(test)]
