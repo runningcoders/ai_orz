@@ -355,6 +355,42 @@ mod tests {
         assert_eq!(tool_dal.calls(), 0);
     }
 
+    #[tokio::test]
+    async fn runtime_preserves_safe_mcp_timeout_error_semantics() {
+        assert_mcp_lower_error_maps_to_safe_message(
+            "MCP tool echo on server server-a timed out after 25ms",
+            "MCP tool call timed out for tool_id: mcp-tool-1",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn runtime_preserves_safe_mcp_server_not_found_error_semantics() {
+        assert_mcp_lower_error_maps_to_safe_message(
+            "MCP server not found for tool mcp-tool-1: server-a",
+            "MCP server not found for tool_id: mcp-tool-1",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn runtime_preserves_safe_mcp_server_disabled_error_semantics() {
+        assert_mcp_lower_error_maps_to_safe_message(
+            "MCP server disabled: server-a",
+            "MCP server disabled for tool_id: mcp-tool-1",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn runtime_preserves_safe_mcp_tool_disabled_error_semantics() {
+        assert_mcp_lower_error_maps_to_safe_message(
+            "MCP tool disabled: mcp-tool-1",
+            "MCP tool disabled: mcp-tool-1",
+        )
+        .await;
+    }
+
     async fn assert_non_mcp_protocol_routes_to_generic_tool_dal(
         protocol: ToolProtocol,
         tool_id: &str,
@@ -376,5 +412,38 @@ mod tests {
         assert_eq!(result["called_by"], "tool_dal");
         assert_eq!(tool_dal.calls(), 1);
         assert_eq!(mcp_tool_dal.calls(), 0);
+    }
+
+    async fn assert_mcp_lower_error_maps_to_safe_message(lower_error: &str, expected: &str) {
+        let tool_dal = Arc::new(RecordingToolDal::new(ToolProtocol::Mcp));
+        let mcp_tool_dal = Arc::new(RecordingMcpToolDal::failing(lower_error));
+        let runtime = crate::service::domain::runtime::new_with_tool_dals(
+            Arc::new(StubBrainDal),
+            tool_dal.clone(),
+            mcp_tool_dal.clone(),
+        );
+
+        let error = runtime
+            .tool_execution()
+            .call_tool_by_id(
+                test_ctx(),
+                "mcp-tool-1".to_string(),
+                json!({ "text": "hi" }),
+            )
+            .await
+            .expect_err("MCP semantic lower-layer failure should stay visible safely");
+
+        let message = error.to_string();
+        assert!(
+            message.contains(expected),
+            "message `{}` should contain `{}`",
+            message,
+            expected
+        );
+        assert!(!message.contains("placeholder-value"));
+        assert!(!message.contains("API_TOKEN"));
+        assert!(!message.contains("credential"));
+        assert_eq!(mcp_tool_dal.calls(), 1);
+        assert_eq!(tool_dal.calls(), 0);
     }
 }

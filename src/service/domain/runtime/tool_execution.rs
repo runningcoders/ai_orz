@@ -28,14 +28,30 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
                 .mcp_tool_dal
                 .call_tool_by_id(ctx, tool_id.clone(), args)
                 .await
-                .map_err(|_| {
-                    ToolError::ToolCallError(
-                        format!("MCP tool call failed for tool_id: {}", tool_id).into(),
-                    )
-                }),
+                .map_err(|e| map_mcp_tool_error(&tool_id, e)),
             ToolProtocol::Builtin | ToolProtocol::Http => {
                 self.tool_dal.call_tool_by_id(ctx, tool_id, args).await
             }
         }
     }
+}
+
+fn map_mcp_tool_error(tool_id: &str, error: ToolError) -> ToolError {
+    let message = error.to_string();
+    let normalized = message.to_lowercase();
+    let safe_message = if normalized.contains("timed out") || normalized.contains("timeout") {
+        format!("MCP tool call timed out for tool_id: {}", tool_id)
+    } else if normalized.contains("server") && normalized.contains("not found") {
+        format!("MCP server not found for tool_id: {}", tool_id)
+    } else if normalized.contains("server") && normalized.contains("disabled") {
+        format!("MCP server disabled for tool_id: {}", tool_id)
+    } else if normalized.contains("tool") && normalized.contains("disabled") {
+        format!("MCP tool disabled: {}", tool_id)
+    } else if normalized.contains("tool") && normalized.contains("not found") {
+        format!("MCP tool not found: {}", tool_id)
+    } else {
+        format!("MCP tool call failed for tool_id: {}", tool_id)
+    };
+
+    ToolError::ToolCallError(safe_message.into())
 }

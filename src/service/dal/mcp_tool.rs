@@ -4,6 +4,7 @@
 //! dependency preparation out of the generic `ToolDal`.
 
 use crate::error::AppError;
+use crate::models::mcp_server::McpServerStatus;
 use crate::models::tool::{Tool, ToolPo};
 use crate::pkg::RequestContext;
 use crate::pkg::tool_registry::mcp::{McpToolConfig, RemoteMcpTool};
@@ -14,7 +15,7 @@ use crate::service::dao::tool_call::{self, McpToolCallDao};
 use anyhow::Result as AnyhowResult;
 use async_trait::async_trait;
 use common::api::{ListMcpToolsByServerRequest, PagedResult};
-use common::enums::{ControlMode, ToolProtocol};
+use common::enums::{ControlMode, ToolProtocol, ToolStatus};
 use rig::tool::ToolError;
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
@@ -123,6 +124,9 @@ impl McpToolDal for McpToolDalImpl {
                 po.id, config.server_id
             )));
         };
+
+        ensure_mcp_tool_enabled(&po)?;
+        ensure_mcp_server_enabled(&server)?;
 
         let Some(our_tool) = self
             .mcp_tool_call_dao
@@ -316,6 +320,28 @@ fn ensure_mcp_tool(po: &ToolPo) -> Result<(), AppError> {
         return Err(AppError::BadRequest(format!(
             "Tool {} is not an MCP tool",
             po.id
+        )));
+    }
+    Ok(())
+}
+
+fn ensure_mcp_tool_enabled(po: &ToolPo) -> Result<(), AppError> {
+    if po.status != ToolStatus::Enabled {
+        return Err(AppError::BadRequest(format!(
+            "MCP tool disabled: {}",
+            po.id
+        )));
+    }
+    Ok(())
+}
+
+fn ensure_mcp_server_enabled(
+    server: &crate::models::mcp_server::McpServerPo,
+) -> Result<(), AppError> {
+    if server.status != McpServerStatus::Enabled {
+        return Err(AppError::BadRequest(format!(
+            "MCP server disabled: {}",
+            server.id
         )));
     }
     Ok(())

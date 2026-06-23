@@ -904,7 +904,7 @@ Batch D 测试重点：
 
 ### Batch E：可观测性与安全补强
 
-状态：已完成 Runtime MCP 下层错误脱敏与 MCP tool call trace 默认脱敏；其余 runtime 生命周期补强继续作为后续 Batch。
+状态：已完成 Runtime MCP 下层错误脱敏、MCP tool call trace 默认脱敏，以及第一组安全错误语义映射；其余 runtime 生命周期补强继续作为后续 Batch。
 
 已完成：
 
@@ -912,11 +912,12 @@ Batch D 测试重点：
 - ✅ 对外错误只保留安全上下文（例如 `tool_id`），不传播 stdio command、env、headers、URL、credential、rmcp/process 原始错误文本；
 - ✅ 已补充 stub DAL 单元测试，验证 MCP 协议只路由到 `McpToolDal`，Builtin/HTTP 只路由到通用 `ToolDal`，并验证敏感错误片段不会出现在 Runtime 返回错误中；
 - ✅ `LoggingDecorator` 对 `ToolProtocol::Mcp` 与 `ToolProtocol::Http` 的 trace `input/output/error` 采用 fail-closed 默认脱敏，避免外部工具参数、返回值或错误文本进入 tool call JSONL trace；
-- ✅ 已补充 MCP trace 脱敏回归测试，验证 `placeholder-value`、URL host、`credential` 等敏感片段不会出现在序列化后的 trace entry 中。
+- ✅ 已补充 MCP trace 脱敏回归测试，验证 `placeholder-value`、URL host、`credential` 等敏感片段不会出现在序列化后的 trace entry 中；
+- ✅ Runtime MCP 错误语义已做最小安全分类：timeout、server not found、server disabled、tool disabled/tool not found 会映射为只含 `tool_id` 的安全错误文案，其余未知错误继续 fail-closed 映射为通用 `MCP tool call failed for tool_id: ...`；
+- ✅ `McpToolDal.get_by_id/call_tool_by_id` 已在组装执行工具前拒绝 disabled MCP tool 与 disabled MCP server，避免继续连接外部 runtime；DAO 仍只负责持久化，状态语义检查停留在 DAL/Runtime 边界。
 
 后续继续补：
 
-- timeout、server disabled、server not found、tool not found 的错误语义；
 - stdio process/session close 失败时的错误脱敏；
 - 并发调用同一个 MCP server 的 runtime 行为；
 - server update/delete 后 invalidate 与下一次调用重连验证。

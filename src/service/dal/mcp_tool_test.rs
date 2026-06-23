@@ -449,6 +449,50 @@ async fn mcp_tool_dal_rejects_non_mcp_tool(pool: SqlitePool) -> Result<()> {
     Ok(())
 }
 
+#[sqlx::test(migrations = "./migrations")]
+async fn mcp_tool_dal_rejects_disabled_tool_when_calling_by_id(pool: SqlitePool) -> Result<()> {
+    let (dal, ctx) = init_test_env(pool);
+    let server = mcp_server("disabled-tool-server");
+    let mut po = mcp_tool_po(&server.id, "read_file");
+    po.status = ToolStatus::Disabled;
+
+    mcp_server::new_mcp_server_dao()
+        .insert(ctx.clone(), &server)
+        .await?;
+    tool::new_tool_dao().create_tool(ctx.clone(), &po).await?;
+
+    let err = dal
+        .call_tool_by_id(ctx.clone(), po.id.clone(), json!({ "path": "/tmp/a" }))
+        .await
+        .expect_err("McpToolDal should reject disabled MCP tool before execution");
+
+    assert!(err.to_string().contains("MCP tool disabled"));
+    assert!(err.to_string().contains(&po.id));
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn mcp_tool_dal_rejects_disabled_server_when_calling_by_id(pool: SqlitePool) -> Result<()> {
+    let (dal, ctx) = init_test_env(pool);
+    let mut server = mcp_server("disabled-server");
+    server.status = crate::models::mcp_server::McpServerStatus::Disabled;
+    let po = mcp_tool_po(&server.id, "read_file");
+
+    mcp_server::new_mcp_server_dao()
+        .insert(ctx.clone(), &server)
+        .await?;
+    tool::new_tool_dao().create_tool(ctx.clone(), &po).await?;
+
+    let err = dal
+        .call_tool_by_id(ctx.clone(), po.id.clone(), json!({ "path": "/tmp/a" }))
+        .await
+        .expect_err("McpToolDal should reject disabled MCP server before execution");
+
+    assert!(err.to_string().contains("MCP server disabled"));
+    assert!(err.to_string().contains(&server.id));
+    Ok(())
+}
+
 #[test]
 fn mcp_tool_global_dal_invalidates_global_mcp_tool_call_runtime() {
     crate::service::dao::mcp_server::init();
