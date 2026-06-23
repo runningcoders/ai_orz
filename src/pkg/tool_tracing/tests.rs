@@ -320,6 +320,81 @@ async fn http_tool_logging_decorator_redacts_input_and_output() {
     );
 }
 
+#[tokio::test]
+async fn mcp_tool_logging_decorator_redacts_error() {
+    init_test_tool_call_logger();
+
+    let tool = FailingFakeCoreTool {
+        po: fake_tool_po(ToolProtocol::Mcp),
+    };
+    let decorated = LoggingDecorator::new(Box::new(tool));
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("test sqlite pool should be created");
+    let ctx = RequestContext::new_simple("test-user", pool);
+
+    let (_result, entry) = decorated
+        .call_with_entry(ctx, json!({ "access_token": "placeholder-value" }))
+        .await;
+
+    let trace_text = serde_json::to_string(&entry).expect("trace entry should serialize");
+    assert!(trace_text.contains("[REDACTED]"));
+    assert!(
+        !trace_text.contains("placeholder-value"),
+        "MCP trace leaked sensitive value: {trace_text}"
+    );
+    assert!(
+        !trace_text.contains("api.example.invalid"),
+        "MCP trace leaked URL host: {trace_text}"
+    );
+}
+
+#[tokio::test]
+async fn mcp_tool_logging_decorator_redacts_input_and_output() {
+    init_test_tool_call_logger();
+
+    let sensitive_value = "placeholder-value";
+    let tool = FakeCoreTool {
+        po: fake_tool_po(ToolProtocol::Mcp),
+        result: json!({
+            "status": "ok",
+            "payload": {
+                "credential": sensitive_value
+            }
+        }),
+    };
+    let decorated = LoggingDecorator::new(Box::new(tool));
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("test sqlite pool should be created");
+    let ctx = RequestContext::new_simple("test-user", pool);
+
+    let (_result, entry) = decorated
+        .call_with_entry(
+            ctx,
+            json!({
+                "query": "rust",
+                "credential": sensitive_value
+            }),
+        )
+        .await;
+
+    let trace_text = serde_json::to_string(&entry).expect("trace entry should serialize");
+    assert!(trace_text.contains("[REDACTED]"));
+    assert!(
+        !trace_text.contains(sensitive_value),
+        "MCP trace leaked sensitive value: {trace_text}"
+    );
+    assert!(
+        !trace_text.contains("credential"),
+        "MCP trace leaked sensitive key: {trace_text}"
+    );
+}
+
 #[test]
 fn test_read_nonexistent_entry_returns_error() {
     let temp_dir = tempdir().unwrap();

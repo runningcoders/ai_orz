@@ -96,7 +96,7 @@ fn redact_trace_values_for_tool(
     output: Option<Value>,
     error: Option<String>,
 ) -> (Value, Option<Value>, Option<String>) {
-    if !matches!(po.protocol, ToolProtocol::Http) {
+    if !matches!(po.protocol, ToolProtocol::Http | ToolProtocol::Mcp) {
         return (input, output, error);
     }
 
