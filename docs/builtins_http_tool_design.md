@@ -120,10 +120,12 @@ src/service/dao/tool_call/
 ToolCallDao
   → ToolRegistry.create_tool(po)
     → match po.protocol
-      → Builtin factory
-      → http::create_tool(po)
-      → mcp::create_tool(po)
+      → Builtin id factory
+      → HTTP protocol factory (`HttpToolFactory.create(po)`)
+      → MCP 专用 factory/builder（由 MCP DAL 准备 deps）
 ```
+
+HTTP Tool 是数据库注册、配置驱动的协议工具，不需要按 tool id 注册 factory；`ToolRegistry` 持有一个协议级 `HttpToolFactory`，默认实现为 `DefaultHttpToolFactory`，用于依赖注入和测试替换。
 
 ---
 
@@ -251,7 +253,7 @@ ToolCallDao.assemble_core_tool()
   ↓
 ToolRegistry.create_tool(po)
   ↓
-ToolProtocol::Http → http::create_tool(po) → HttpCoreTool
+ToolProtocol::Http → HttpToolFactory.create(po) → HttpCoreTool
   ↓
 ToolCallDao.call_manual()
   ↓

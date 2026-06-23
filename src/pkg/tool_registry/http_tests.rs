@@ -120,6 +120,66 @@ fn registry_creates_manual_http_core_tool_from_tool_po_config() {
 }
 
 #[test]
+fn registry_uses_injected_http_protocol_factory() {
+    use crate::models::tool::CoreTool;
+    use crate::pkg::tool_registry::HttpToolFactory;
+    use anyhow::Result;
+    use async_trait::async_trait;
+    use rig::tool::ToolError;
+    use serde_json::Value;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone)]
+    struct DummyHttpTool {
+        po: ToolPo,
+    }
+
+    #[async_trait]
+    impl CoreTool for DummyHttpTool {
+        async fn call(
+            &self,
+            _ctx: crate::pkg::RequestContext,
+            _args: Value,
+        ) -> Result<Value, ToolError> {
+            Ok(json!({ "ok": true }))
+        }
+
+        fn po(&self) -> &ToolPo {
+            &self.po
+        }
+    }
+
+    struct RecordingHttpFactory {
+        calls: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl HttpToolFactory for RecordingHttpFactory {
+        fn create(&self, po: ToolPo) -> Result<Box<dyn CoreTool>> {
+            self.calls.lock().unwrap().push(po.id.clone());
+            Ok(Box::new(DummyHttpTool { po }))
+        }
+    }
+
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let registry = ToolRegistry::with_http_factory(Arc::new(RecordingHttpFactory {
+        calls: calls.clone(),
+    }));
+    let po = http_tool_po(json!({
+        "method": "GET"
+    }));
+
+    let tool = registry
+        .create_tool(po)
+        .expect("registry should delegate HTTP construction to injected factory");
+
+    assert_eq!(tool.po().protocol, ToolProtocol::Http);
+    assert_eq!(
+        calls.lock().unwrap().as_slice(),
+        &["github_search_repositories".to_string()]
+    );
+}
+
+#[test]
 fn registry_rejects_invalid_http_tool_config() {
     let po = http_tool_po(json!({
         "method": "GET"

@@ -18,6 +18,24 @@ use std::str::FromStr;
 use std::time::Duration;
 use tokio::net::lookup_host;
 
+/// Protocol-level HTTP tool factory.
+///
+/// HTTP tools are database-registered and config-driven, so they do not need
+/// one factory per tool id. A protocol-level factory keeps dependency injection
+/// explicit while still constructing each executable tool from its `ToolPo`.
+pub trait HttpToolFactory: Send + Sync {
+    fn create(&self, po: ToolPo) -> Result<Box<dyn CoreTool>>;
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct DefaultHttpToolFactory;
+
+impl HttpToolFactory for DefaultHttpToolFactory {
+    fn create(&self, po: ToolPo) -> Result<Box<dyn CoreTool>> {
+        create_tool(po)
+    }
+}
+
 const DEFAULT_RESPONSE_MAX_BYTES: usize = 1024 * 1024;
 const HARD_RESPONSE_MAX_BYTES: usize = 10 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;

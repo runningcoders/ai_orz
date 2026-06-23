@@ -22,7 +22,7 @@ ai_orz/
 │   │       ├── mod.rs           # ToolRegistry 定义
 │   │       ├── builtin.rs       # BuiltinTool trait
 │   │       ├── http.rs          # HTTP 工具（占位）
-│   │       └── mcp.rs           # MCP 工具（占位）
+│   │       └── mcp.rs           # MCP 工具运行时（规划中，详见 docs/mcp_tool_design.md）
 │   └── service/
 │       └── dao/
 │           └── tool/            # Tool DAO 层
@@ -1024,6 +1024,64 @@ PUT /api/v1/finance/tools/{id}/status
 
 ---
 
+## MCP Tool Runtime 规划补充（2026-06-23 更新）
+
+详细设计见 `docs/mcp_tool_design.md`。核心结论：
+
+```text
+MCP Server 是外部能力 Provider；
+MCP Tool 是 Provider 暴露出的具体工具实体；
+ToolPo.config 只保存 server_id + tool_name，不复制 server credential。
+```
+
+### 代码结构决策
+
+- 新增 `mcp_servers` 表与 `McpServerDao`，`McpServerDao` 只负责持久化 CRUD；
+- `ToolDal` 保持通用基础 DAL，不承载 MCP/HTTP 等协议专属膨胀逻辑；
+- 第一版新增 `McpToolDal`，负责 MCP tools 同步、按 server 管理、读取 server config、组装带 MCP 依赖的可调用 `Tool` 实体；
+- MCP client/session 生命周期不单独暴露成上层可见的 `McpClientDao`，而是内聚到 `McpToolCallDaoImpl`；
+- `McpToolCallDaoImpl` 作为 `ToolCallDao` 的 MCP 协议增强实现，组合基础 `ToolCallDao`，大部分方法转发，主要扩展 `assemble_mcp_core_tool(po, server)`；
+- MCP Tool 仍注册到 `tool_registry`，但不强行复用单一 `create_tool(po)`；第一版优先提供专用 `create_mcp_tool(po, deps)`，后续参数增多再演进为 builder 模式，由 `McpToolDal` 准备并传入 deps。
+
+### MCP 调用链路
+
+```text
+ToolCallRequest(tool_id, args)
+  ↓
+Runtime/Finance Domain 识别 protocol=Mcp
+  ↓
+McpToolDal.call_by_tool_id(ctx, tool_id, args)
+  ↓
+ToolDao -> ToolPo(config={server_id, tool_name})
+  ↓
+McpServerDao -> McpServerPo / McpServerConfig
+  ↓
+McpToolCallDao.assemble_mcp_core_tool(po, server)
+  ↓
+registry::mcp::create_mcp_tool(po, deps) 或 McpToolBuilder -> McpCoreTool
+  ↓
+ToolCallDao.call_manual(ctx, tool, args)
+  ↓
+McpCoreTool.call -> McpClientRuntime -> rmcp tools/call
+  ↓
+ToolCallResult 写回消息链路
+```
+
+### 分层边界
+
+```text
+handler → domain → dal → dao
+```
+
+- Handler：只对应管理面 action；
+- Domain：权限、安全策略、同步工具、跨 DAL 编排；
+- DAL：通用 `ToolDal` 保持基础能力，MCP 专属逻辑进入 `McpToolDal`；
+- DAO：`McpServerDao` 只做持久化；`McpToolCallDaoImpl` 作为 `ToolCallDao` 的协议增强实现，内聚 MCP client/session 生命周期；
+- pkg：提供 rmcp transport、SDK-neutral 类型、脱敏、timeout 等基础实现，不直接承载业务编排。
+
+
+---
+
 ## HTTP Tool Runtime 设计补充（2026-06-22 更新）
 
 ### 核心结论
@@ -1057,7 +1115,7 @@ ToolPo {
 |---|---|
 | `Builtin` | 代码内置工具，由内置工厂创建 |
 | `Http` | HTTP 协议工具，由 `ToolPo.config` 驱动 |
-| `Mcp` | MCP 协议工具，后续扩展 |
+| `Mcp` | MCP 协议工具；MCP Server 独立建模，具体工具通过 `server_id + tool_name` 绑定 |
 
 `ControlMode` 表达谁来调用：
 
@@ -1110,10 +1168,12 @@ let tool = registry.create_tool(po.clone());
 ```rust
 match po.protocol {
     ToolProtocol::Builtin => builtin_factory.create(po),
-    ToolProtocol::Http => http::create_tool(po),
-    ToolProtocol::Mcp => None, // 后续扩展
+    ToolProtocol::Http => http_factory.create(po),
+    ToolProtocol::Mcp => mcp::create_mcp_tool(po, deps), // 或 McpToolBuilder；deps 由 McpToolDal 准备
 }
 ```
+
+HTTP Tool 是数据库注册、配置驱动的协议工具，因此不使用 `HashMap<tool_id, factory>`。`ToolRegistry` 持有一个协议级 `HttpToolFactory`，默认实现为 `DefaultHttpToolFactory`，内部再构造 `HttpCoreTool`。这样 registry 不直接依赖包级别 `http::create_tool(po)` 函数，后续可以通过依赖注入替换 HTTP runtime、client、resolver 或测试替身。
 
 ### HTTP Tool 执行链路
 
@@ -1138,7 +1198,7 @@ ToolCallDao.assemble_core_tool()
   ↓
 ToolRegistry.create_tool(po)
   ↓
-ToolProtocol::Http → HttpCoreTool
+ToolProtocol::Http → HttpToolFactory.create(po) → HttpCoreTool
   ↓
 ToolCallDao.call_manual()
   ↓

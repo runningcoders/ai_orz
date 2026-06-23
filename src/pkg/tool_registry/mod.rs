@@ -13,6 +13,7 @@ pub mod mcp;
 use crate::models::tool::{CoreTool, ToolPo};
 pub use builtin::BuiltinToolFactory;
 pub use handler_adapter::register_handler_tool;
+pub use http::{DefaultHttpToolFactory, HttpToolFactory};
 
 lazy_static! {
     /// Global tool registry instance - initialized automatically on first access.
@@ -31,17 +32,35 @@ pub fn get_registry() -> &'static ToolRegistry {
 /// to be injected into the tool instance at creation time.
 ///
 /// Each protocol type has its own typed storage field for better type safety.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct ToolRegistry {
     /// Built-in (pre-compiled) tools - stored as factories that create instances from ToolPo
     builtin_factories: Arc<Mutex<HashMap<String, Box<dyn BuiltinToolFactory>>>>,
     /// Dynamic MCP tools (future) - will store as factories
     mcp_factories: Arc<Mutex<HashMap<String, ()>>>,
-    /// Dynamic HTTP tools (future) - will store as factories
-    http_factories: Arc<Mutex<HashMap<String, ()>>>,
+    /// Dynamic HTTP tools are config-driven and use one protocol-level factory.
+    http_factory: Arc<dyn HttpToolFactory>,
+}
+
+impl Default for ToolRegistry {
+    fn default() -> Self {
+        Self {
+            builtin_factories: Arc::new(Mutex::new(HashMap::new())),
+            mcp_factories: Arc::new(Mutex::new(HashMap::new())),
+            http_factory: Arc::new(DefaultHttpToolFactory),
+        }
+    }
 }
 
 impl ToolRegistry {
+    /// Create a registry with a custom protocol-level HTTP factory.
+    pub fn with_http_factory(http_factory: Arc<dyn HttpToolFactory>) -> Self {
+        Self {
+            http_factory,
+            ..Self::default()
+        }
+    }
+
     /// Register a built-in tool factory.
     pub fn register_builtin_factory(&self, factory: Box<dyn BuiltinToolFactory>) {
         let id = factory.create_po().id;
@@ -65,7 +84,7 @@ impl ToolRegistry {
             }
             common::enums::ToolProtocol::Http => {
                 // HTTP tools are database-registered; ToolPo.config stores HttpToolConfig.
-                http::create_tool(po).ok()
+                self.http_factory.create(po).ok()
             }
         }
     }
@@ -79,14 +98,12 @@ impl ToolRegistry {
     /// Unregister a factory by ID from all registries.
     pub fn unregister(&self, id: &str) {
         self.builtin_factories.lock().unwrap().remove(id);
-        self.http_factories.lock().unwrap().remove(id);
         self.mcp_factories.lock().unwrap().remove(id);
     }
 
     /// Clear all registered factories.
     pub fn clear_all(&self) {
         self.builtin_factories.lock().unwrap().clear();
-        self.http_factories.lock().unwrap().clear();
         self.mcp_factories.lock().unwrap().clear();
     }
 
