@@ -668,24 +668,36 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 
 ### Phase 3：McpToolDal / McpToolCallDaoImpl 骨架
 
-- 新增 `McpToolDal` 骨架，支持 `get_by_id` 读取 `ToolPo + McpServerPo` 并组装可执行 `Tool`；
-- 新增 `McpToolCallDaoImpl` 组合基础 `ToolCallDao`，通用方法转发；
-- `McpToolCallDaoImpl` 组合 `pkg::tool_registry::mcp::McpClientRuntime`，client/session lifecycle 由工具协议 runtime 管理；
-- generic `assemble_core_tool(&po)` 对 MCP 返回 `None`，强制 MCP 走 `assemble_mcp_core_tool(&po, &server)`；
-- Stage 3 暂不接入 rmcp 真执行，`McpCoreTool.call` 返回明确未实现错误。
+状态：已完成。
+
+- ✅ 新增 `McpToolDal` 骨架，支持 `get_by_id` 读取 `ToolPo + McpServerPo` 并组装可执行 `Tool`；
+- ✅ 新增 `McpToolCallDaoImpl` 组合基础 `ToolCallDao`，通用方法转发；
+- ✅ `McpToolCallDaoImpl` 组合 `pkg::tool_registry::mcp::McpClientRuntime`，client/session lifecycle 由工具协议 runtime 管理；
+- ✅ generic `assemble_core_tool(&po)` 对 MCP 返回 `None`，强制 MCP 走 `assemble_mcp_core_tool(&po, &server)`；
+- ✅ `McpClientRuntime` 已接入最小 stdio rmcp runtime，`McpCoreTool.call` 可通过 `tools/call` 执行 stdio MCP 工具。
 
 ### Phase 4：接入官方 rmcp 并同步 MCP Tools
 
-- Finance Domain 编排 `sync_mcp_tools(server_id)`；
-- `tools/list` 映射为 `ToolPo`；
-- upsert `ToolProtocol::Mcp` tools；
-- 默认 `ControlMode::Manual`。
+状态：stdio 调用子阶段已完成；tools/list 同步仍待实现。
+
+- ✅ 添加官方 `rmcp = "1.7"`，启用 `client` + `transport-child-process`；
+- ✅ `McpClientRuntime::call_tool(server, tool_name, args)` 第一版只支持 `McpTransport::Stdio`；
+- ✅ stdio 启动使用 `tokio::process::Command` + `command/args`，不做 shell 拼接；
+- ✅ 默认 `env_clear()`，只注入 `McpServerConfig.env` 显式环境变量；
+- ✅ 启动 stdio 子进程前先校验 tool arguments 必须为 JSON object，非法参数不会启动外部进程；
+- ✅ session 初始化受 `connect_timeout_ms` 约束，`tools/call` 受 `timeout_ms` 约束；
+- ✅ `tools/call` 成功、失败、超时后统一尝试 `client.close()`，避免 stdio session/子进程泄漏；
+- ✅ `McpCoreTool.call` 委托同一个 `McpClientRuntime`，返回序列化后的 `CallToolResult`（`structuredContent/isError/content`）；
+- ⏳ Finance Domain 编排 `sync_mcp_tools(server_id)`；
+- ⏳ `tools/list` 映射为 `ToolPo`；
+- ⏳ upsert `ToolProtocol::Mcp` tools；
+- ✅ 默认 `ControlMode::Manual`。
 
 ### Phase 5：安全、管理面和完整测试
 
 - Finance Domain 编排 MCP Server/Tool 管理面；
-- `McpCoreTool` manual call 通过 MCP tool call runtime 调用 rmcp；
 - trace/error/result 脱敏与截断；
+- streamable HTTP runtime（需继承 HTTP Tool SSRF/redirect/header 安全策略）；
 - session cache、reconnect、health check；
 - server update/delete 后 session invalidate；
 - 并发调用策略。

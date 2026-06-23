@@ -1,9 +1,13 @@
-use super::{McpToolConfig, create_tool};
+use super::{McpClientRuntime, McpToolConfig, McpToolDeps, create_mcp_tool, create_tool};
+use crate::models::mcp_server::{McpServerConfig, McpServerPo, McpTransport};
 use crate::models::tool::ToolPo;
+use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::ToolRegistry;
 use common::enums::tool::ControlMode;
 use common::enums::{ToolProtocol, ToolStatus};
 use serde_json::json;
+use sqlx::sqlite::SqlitePoolOptions;
+use std::sync::Arc;
 
 fn mcp_tool_po(config: serde_json::Value) -> ToolPo {
     let mut po = ToolPo::new(
@@ -135,4 +139,98 @@ fn mcp_factory_rejects_non_mcp_tool_po() {
         create_tool(po).is_err(),
         "MCP factory should fail closed when called with a non-MCP ToolPo"
     );
+}
+
+fn mcp_server_with_command(id: &str, command: String, args: Vec<String>) -> McpServerPo {
+    McpServerPo::new(
+        id.to_string(),
+        "stdio-test-server".to_string(),
+        McpTransport::Stdio,
+        McpServerConfig {
+            command: Some(command),
+            args,
+            ..McpServerConfig::default_stdio()
+        },
+        Some("test".to_string()),
+    )
+}
+
+fn write_echo_mcp_server_script() -> tempfile::NamedTempFile {
+    let script = r#"
+import json
+import sys
+
+for line in sys.stdin:
+    message = json.loads(line)
+    method = message.get("method")
+    request_id = message.get("id")
+    if method == "initialize":
+        response = {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "protocolVersion": "2025-11-25",
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "echo-test-server", "version": "1.0.0"},
+            },
+        }
+        print(json.dumps(response), flush=True)
+    elif method == "notifications/initialized":
+        continue
+    elif method == "tools/call":
+        args = message.get("params", {}).get("arguments", {})
+        text = args.get("text", "")
+        response = {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "content": [{"type": "text", "text": text}],
+                "structuredContent": {"echo": text},
+                "isError": False,
+            },
+        }
+        print(json.dumps(response), flush=True)
+"#;
+
+    let mut file = tempfile::NamedTempFile::new().expect("temp MCP script should be created");
+    std::io::Write::write_all(&mut file, script.as_bytes())
+        .expect("temp MCP script should be written");
+    file
+}
+
+#[tokio::test]
+async fn mcp_core_tool_calls_stdio_server_through_rmcp_runtime() {
+    let script = write_echo_mcp_server_script();
+    let po = mcp_tool_po(json!({
+        "server_id": "echo-server",
+        "tool_name": "echo"
+    }));
+    let server = mcp_server_with_command(
+        "echo-server",
+        "python3".to_string(),
+        vec![script.path().to_string_lossy().to_string()],
+    );
+    let runtime = Arc::new(McpClientRuntime::default());
+    let tool = create_mcp_tool(
+        po,
+        McpToolDeps {
+            server,
+            client_runtime: runtime,
+        },
+    )
+    .expect("MCP tool with runtime deps should be created");
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("test sqlite pool should be created");
+    let ctx = RequestContext::new_simple("test-user", pool);
+
+    let result = tool
+        .call(ctx, json!({ "text": "hello MCP" }))
+        .await
+        .expect("MCP stdio tool should execute through rmcp runtime");
+
+    assert_eq!(result["structuredContent"]["echo"], "hello MCP");
+    assert_eq!(result["isError"], false);
 }
