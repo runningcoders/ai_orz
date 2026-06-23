@@ -10,7 +10,7 @@ pub mod unbind_tool_from_agent;
 pub mod update_tool;
 pub mod update_tool_status;
 
-mod response;
+pub(crate) mod response;
 
 #[cfg(test)]
 mod response_test;

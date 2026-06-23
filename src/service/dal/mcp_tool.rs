@@ -8,10 +8,11 @@ use crate::models::tool::{Tool, ToolPo};
 use crate::pkg::RequestContext;
 use crate::pkg::tool_registry::mcp::{McpToolConfig, RemoteMcpTool};
 use crate::service::dao::mcp_server::McpServerDao;
-use crate::service::dao::tool::ToolDao;
+use crate::service::dao::tool::{ToolDao, ToolQuery};
 use crate::service::dao::tool_call::{self, McpToolCallDao};
 use anyhow::Result as AnyhowResult;
 use async_trait::async_trait;
+use common::api::{ListMcpToolsByServerRequest, PagedResult};
 use common::enums::{ControlMode, ToolProtocol};
 use std::sync::{Arc, OnceLock};
 
@@ -56,6 +57,13 @@ pub trait McpToolDal: Send + Sync {
         ctx: RequestContext,
         server_id: &str,
     ) -> Result<usize, AppError>;
+
+    /// List standard Tool records synced from one MCP Server.
+    async fn list_by_server(
+        &self,
+        ctx: RequestContext,
+        params: ListMcpToolsByServerRequest,
+    ) -> Result<PagedResult<Tool>, AppError>;
 
     /// Invalidate cached MCP runtime/session for a server.
     fn invalidate_server(&self, server_id: &str);
@@ -162,6 +170,57 @@ impl McpToolDal for McpToolDalImpl {
         }
 
         Ok(synced)
+    }
+
+    async fn list_by_server(
+        &self,
+        ctx: RequestContext,
+        params: ListMcpToolsByServerRequest,
+    ) -> Result<PagedResult<Tool>, AppError> {
+        let server_exists = self
+            .mcp_server_dao
+            .find_by_id(ctx.clone(), &params.server_id)
+            .await?
+            .is_some();
+        if !server_exists {
+            return Err(AppError::NotFound(format!(
+                "MCP server not found: {}",
+                params.server_id
+            )));
+        }
+
+        let base_query = ToolQuery {
+            keyword: params.keyword.clone(),
+            protocol: Some(ToolProtocol::Mcp),
+            status: params.status,
+            mcp_server_id: Some(params.server_id.clone()),
+            ..Default::default()
+        };
+
+        let all = self
+            .tool_dao
+            .query(ctx.clone(), base_query.clone())
+            .await
+            .map_err(AppError::from)?;
+        let total = all.len();
+
+        let page = self
+            .tool_dao
+            .query(
+                ctx,
+                ToolQuery {
+                    limit: params.pagination.limit,
+                    offset: params.pagination.offset,
+                    ..base_query
+                },
+            )
+            .await
+            .map_err(AppError::from)?;
+
+        Ok(PagedResult {
+            items: page.into_iter().map(Tool::from_po_for_management).collect(),
+            total,
+        })
     }
 
     fn invalidate_server(&self, server_id: &str) {

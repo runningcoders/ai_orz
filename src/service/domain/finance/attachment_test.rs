@@ -41,6 +41,7 @@ fn init_test_env(
     crate::service::dal::model_provider::init();
     crate::service::dal::message_channel::init();
     crate::service::dal::mcp_server::init();
+    crate::service::dal::mcp_tool::init();
     crate::service::dal::tool::init();
     crate::service::dal::brain::init();
 
@@ -48,6 +49,7 @@ fn init_test_env(
         crate::service::dal::model_provider::dal(),
         crate::service::dal::message_channel::dal(),
         crate::service::dal::mcp_server::dal(),
+        crate::service::dal::mcp_tool::dal(),
         crate::service::dal::tool::dal(),
         crate::service::dal::brain::dal(),
         attachment_dal,

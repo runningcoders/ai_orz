@@ -6,6 +6,7 @@ use crate::models::vector::VectorIndexParams;
 use crate::pkg::request_context::RequestContext;
 use anyhow::Result;
 use async_trait::async_trait;
+use common::enums::{ToolProtocol, ToolStatus};
 use std::sync::Arc;
 
 pub mod sqlite;
@@ -31,8 +32,12 @@ pub struct ToolQuery {
     pub agent_id: Option<String>,
     pub ids: Option<Vec<String>>, // 按 ID 批量查询
     pub keyword: Option<String>,  // 关键词搜索
+    pub protocol: Option<ToolProtocol>,
+    pub status: Option<ToolStatus>,
+    pub mcp_server_id: Option<String>,
     pub enabled_only: Option<bool>,
     pub limit: Option<usize>,
+    pub offset: Option<usize>,
 }
 
 /// Tool 搜索参数（向量 + 关键词混合搜索）

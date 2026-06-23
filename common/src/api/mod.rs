@@ -95,6 +95,7 @@ pub mod auth;
 pub mod mcp_server;
 #[cfg(test)]
 mod mcp_server_test;
+pub mod mcp_tool;
 pub mod message_channel;
 pub mod model_provider;
 pub mod organization;
@@ -119,6 +120,7 @@ pub use artifact::*;
 pub use attachment::*;
 pub use auth::*;
 pub use mcp_server::*;
+pub use mcp_tool::*;
 pub use message_channel::*;
 pub use model_provider::*;
 pub use organization::*;

@@ -7,6 +7,7 @@
 
 pub mod attachment;
 pub mod mcp_server;
+pub mod mcp_tool;
 pub mod message_channel;
 pub mod model_provider;
 pub mod tool_provider;
@@ -36,6 +37,7 @@ use crate::pkg::RequestContext;
 use crate::service::dal::attachment::AttachmentDal;
 use crate::service::dal::brain::BrainDal;
 use crate::service::dal::mcp_server::McpServerDal;
+use crate::service::dal::mcp_tool::McpToolDal;
 use crate::service::dal::message_channel::MessageChannelDal;
 use crate::service::dal::model_provider::ModelProviderDal;
 use crate::service::dal::tool::ToolDal;
@@ -56,6 +58,7 @@ pub fn new(
     model_provider_dal: Arc<dyn ModelProviderDal>,
     message_channel_dal: Arc<dyn MessageChannelDal>,
     mcp_server_dal: Arc<dyn McpServerDal + Send + Sync>,
+    mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
     tool_dal: Arc<dyn ToolDal>,
     brain_dal: Arc<dyn BrainDal>,
     attachment_dal: Arc<dyn AttachmentDal + Send + Sync>,
@@ -64,6 +67,7 @@ pub fn new(
         model_provider_dal,
         message_channel_dal,
         mcp_server_dal,
+        mcp_tool_dal,
         tool_dal,
         brain_dal,
         attachment_dal,
@@ -77,6 +81,7 @@ pub fn init() {
         crate::service::dal::model_provider::dal(),
         crate::service::dal::message_channel::dal(),
         crate::service::dal::mcp_server::dal(),
+        crate::service::dal::mcp_tool::dal(),
         crate::service::dal::tool::dal(),
         crate::service::dal::brain::dal(),
         crate::service::dal::attachment::dal(),
@@ -101,6 +106,9 @@ pub trait FinanceDomain: Send + Sync {
 
     /// MCP Server 管理能力（外部 MCP Provider 配置）
     fn mcp_server_manage(&self) -> &dyn McpServerManage;
+
+    /// MCP Tool 管理能力（从 MCP Provider 同步/管理工具）
+    fn mcp_tool_manage(&self) -> &dyn McpToolManage;
 
     /// Attachment 管理能力（通用上传文件资产）
     fn attachment_manage(&self) -> &dyn AttachmentManage;
@@ -319,6 +327,23 @@ pub trait McpServerManage: Send + Sync {
     async fn delete_mcp_server(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
 }
 
+/// MCP Tool 管理 trait
+///
+/// 定义 MCP Server 暴露工具的同步与查询接口。
+#[async_trait]
+pub trait McpToolManage: Send + Sync {
+    /// 从指定 MCP Server 同步远端 tools/list 到本地 Tool 记录。
+    async fn sync_mcp_tools(&self, ctx: RequestContext, server_id: &str)
+    -> Result<usize, AppError>;
+
+    /// 查询指定 MCP Server 绑定的本地 MCP Tool 记录。
+    async fn list_mcp_tools_by_server(
+        &self,
+        ctx: RequestContext,
+        params: common::api::ListMcpToolsByServerRequest,
+    ) -> Result<common::api::PagedResult<crate::models::tool::Tool>, AppError>;
+}
+
 /// Tool Provider 管理 trait
 ///
 /// 定义 Tool Provider 相关的业务接口
@@ -415,6 +440,7 @@ pub struct FinanceDomainImpl {
     pub model_provider_dal: Arc<dyn ModelProviderDal>,
     pub message_channel_dal: Arc<dyn MessageChannelDal>,
     pub mcp_server_dal: Arc<dyn McpServerDal + Send + Sync>,
+    pub mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
     pub tool_dal: Arc<dyn ToolDal>,
     pub brain_dal: Arc<dyn BrainDal>,
     pub attachment_dal: Arc<dyn AttachmentDal + Send + Sync>,
@@ -426,6 +452,7 @@ impl FinanceDomainImpl {
         model_provider_dal: Arc<dyn ModelProviderDal>,
         message_channel_dal: Arc<dyn MessageChannelDal>,
         mcp_server_dal: Arc<dyn McpServerDal + Send + Sync>,
+        mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
         tool_dal: Arc<dyn ToolDal>,
         brain_dal: Arc<dyn BrainDal>,
         attachment_dal: Arc<dyn AttachmentDal + Send + Sync>,
@@ -434,6 +461,7 @@ impl FinanceDomainImpl {
             model_provider_dal,
             message_channel_dal,
             mcp_server_dal,
+            mcp_tool_dal,
             tool_dal,
             brain_dal,
             attachment_dal,
@@ -455,6 +483,10 @@ impl FinanceDomain for FinanceDomainImpl {
     }
 
     fn mcp_server_manage(&self) -> &dyn McpServerManage {
+        self
+    }
+
+    fn mcp_tool_manage(&self) -> &dyn McpToolManage {
         self
     }
 

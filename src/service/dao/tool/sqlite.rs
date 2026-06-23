@@ -214,6 +214,41 @@ impl ToolDao for ToolDaoSqliteImpl {
             }
         }
 
+        // Protocol 过滤
+        if let Some(protocol) = query.protocol {
+            if has_where {
+                builder.push(" AND");
+            } else {
+                builder.push(" WHERE");
+            }
+            builder.push(" t.protocol = ").push_bind(protocol as i32);
+            has_where = true;
+        }
+
+        // Status 过滤
+        if let Some(status) = query.status {
+            if has_where {
+                builder.push(" AND");
+            } else {
+                builder.push(" WHERE");
+            }
+            builder.push(" t.status = ").push_bind(status as i32);
+            has_where = true;
+        }
+
+        // MCP Server 过滤
+        if let Some(server_id) = &query.mcp_server_id {
+            if has_where {
+                builder.push(" AND");
+            } else {
+                builder.push(" WHERE");
+            }
+            builder
+                .push(" json_extract(t.config, '$.server_id') = ")
+                .push_bind(server_id.clone());
+            has_where = true;
+        }
+
         // Enabled 过滤
         if let Some(enabled_only) = query.enabled_only {
             if enabled_only {
@@ -233,9 +268,21 @@ impl ToolDao for ToolDaoSqliteImpl {
             builder.push(" ORDER BY t.created_at DESC");
         }
 
-        // 限制数量
-        if let Some(limit) = query.limit {
-            builder.push(" LIMIT ").push_bind(limit as i64);
+        // 分页
+        match (query.limit, query.offset) {
+            (Some(limit), Some(offset)) => {
+                builder.push(" LIMIT ").push_bind(limit as i64);
+                builder.push(" OFFSET ").push_bind(offset as i64);
+            }
+            (Some(limit), None) => {
+                builder.push(" LIMIT ").push_bind(limit as i64);
+            }
+            (None, Some(offset)) => {
+                // SQLite requires OFFSET to be paired with LIMIT.
+                // LIMIT -1 means "no upper bound" while preserving offset-only pagination semantics.
+                builder.push(" LIMIT -1 OFFSET ").push_bind(offset as i64);
+            }
+            (None, None) => {}
         }
 
         let rows = builder.build_query_as().fetch_all(pool).await?;

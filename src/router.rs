@@ -366,6 +366,14 @@ fn finance_routes() -> Router {
             "/mcp-servers/{id}",
             delete(handlers::finance::mcp_server::delete_mcp_server_handler),
         )
+        .route(
+            "/mcp-servers/{server_id}/tools/sync",
+            post(handlers::finance::mcp_tool::sync_mcp_tools_handler),
+        )
+        .route(
+            "/mcp-servers/{server_id}/tools",
+            get(handlers::finance::mcp_tool::list_mcp_tools_by_server_handler),
+        )
         .route("/tools", post(handlers::finance::tool::create_tool::create_tool_handler))
         .route("/tools", get(handlers::finance::tool::list_tools::list_tools_handler))
         .route("/tools/{id}", get(handlers::finance::tool::get_tool::get_tool_handler))

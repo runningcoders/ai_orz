@@ -5,6 +5,7 @@
 
 pub mod attachment;
 pub mod mcp_server;
+pub mod mcp_tool;
 pub mod message_channel;
 pub mod model_provider;
 pub mod tool;

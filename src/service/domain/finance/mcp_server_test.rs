@@ -59,6 +59,7 @@ mod tests {
         crate::service::dal::model_provider::init();
         crate::service::dal::message_channel::init();
         crate::service::dal::mcp_server::init();
+        crate::service::dal::mcp_tool::init();
         crate::service::dal::brain::init();
         crate::service::dal::attachment::init();
 
@@ -66,6 +67,7 @@ mod tests {
             crate::service::dal::model_provider::dal(),
             crate::service::dal::message_channel::dal(),
             crate::service::dal::mcp_server::dal(),
+            crate::service::dal::mcp_tool::dal(),
             crate::service::dal::tool::dal(),
             crate::service::dal::brain::dal(),
             crate::service::dal::attachment::dal(),

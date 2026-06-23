@@ -278,7 +278,16 @@ Handler 仅做 DTO ↔ 业务实体/命令转换，然后调用 Finance Domain�
 
 软删除记录不可通过 update/set_status 复活：DAO 层写操作带 `status != Deleted` 条件，恢复必须通过后续单独设计的明确 restore action，而不能被普通状态更新旁路。
 
-`sync-tools` 暂未在本 Batch 暴露为 HTTP API，后续随 Finance Domain MCP Tool 同步编排一起接入。
+MCP Tool 同步/查询管理面已在后续增量接入，复用同一 Finance Domain 前缀：
+
+```text
+POST   /api/v1/finance/mcp-servers/{server_id}/tools/sync
+GET    /api/v1/finance/mcp-servers/{server_id}/tools
+```
+
+其中 `sync-tools` 仅负责触发 `tools/list` 同步并返回本次同步数量；按 server 查询 tools 使用统一分页契约 `ListMcpToolsByServerRequest.pagination: PaginationParams { limit, offset }`，并返回 `ListMcpToolsByServerResponse { tools, total }`。
+
+Handler 只做 DTO 映射，业务编排进入 Finance Domain，再由 `McpToolDal` 调用 `ToolDao` 与 MCP runtime；不会在 API/Handler 层读取或暴露 `McpServerPo.config` 中的 command/env/headers/url 等连接配置。
 
 #### Batch 4：安全与可观测性补强
 

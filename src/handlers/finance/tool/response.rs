@@ -5,7 +5,7 @@ use serde_json::{Map, Value};
 
 use crate::models::tool::Tool;
 
-pub(super) fn to_list_item(tool: &Tool) -> ToolListItem {
+pub(crate) fn to_list_item(tool: &Tool) -> ToolListItem {
     ToolListItem {
         id: tool.po.id.clone(),
         name: tool.po.name.clone(),
