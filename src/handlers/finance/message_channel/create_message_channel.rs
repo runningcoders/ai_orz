@@ -1,7 +1,9 @@
 //! Handler: POST /api/v1/message-channels - Create a new message channel for notifications
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{CreateMessageChannelRequest, CreateMessageChannelResponse, MessageChannelDetail};
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{
+    CreateMessageChannelRequest, CreateMessageChannelResponse, MessageChannelDetail,
+};
 use uuid::Uuid;
 
 use crate::error::AppError;
@@ -16,7 +18,7 @@ use super::response::to_detail;
     id = "create_message_channel",
     name = "create_message_channel",
     description = "Create a new message channel for sending notifications to external services/users",
-    params = "common::api::CreateMessageChannelRequest",
+    params = "common::api::CreateMessageChannelRequest"
 )]
 #[generate_http_handler]
 pub async fn create_message_channel(

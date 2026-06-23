@@ -1,18 +1,18 @@
 //! Handler: POST /api/v1/agents - 创建新 Agent
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{CreateAgentRequest, CreateAgentResponse};
 use crate::error::AppError;
 use crate::models::agent::{Agent, AgentPo};
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{CreateAgentRequest, CreateAgentResponse};
 
 /// Create a new AI agent
 #[register_handler_tool(
     id = "create_agent",
     name = "create_agent",
     description = "Create a new AI agent with specified configuration",
-    params = "common::api::CreateAgentRequest",
+    params = "common::api::CreateAgentRequest"
 )]
 #[generate_http_handler]
 pub async fn create_agent(
@@ -35,7 +35,10 @@ pub async fn create_agent(
     );
     let agent = Agent::from_po(agent_po);
 
-    domain().agent_manage().create_agent(ctx.clone(), &agent).await?;
+    domain()
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await?;
 
     let created = domain()
         .agent_manage()

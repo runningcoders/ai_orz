@@ -1,19 +1,19 @@
 //! Handler: PUT /api/v1/user/me - Update current authenticated user information
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{UpdateCurrentUserRequest, UpdateCurrentUserResponse, UserInfoResponse};
-use common::constants::utils;
-use common::enums::UserRole;
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{UpdateCurrentUserRequest, UpdateCurrentUserResponse, UserInfoResponse};
+use common::constants::utils;
+use common::enums::UserRole;
 
 /// Update current user's own information (display name, email, password)
 #[register_handler_tool(
     id = "update_current_user",
     name = "update_current_user",
     description = "Update information for the currently authenticated user, allows changing display name, email, and password",
-    params = "common::api::UpdateCurrentUserRequest",
+    params = "common::api::UpdateCurrentUserRequest"
 )]
 #[generate_http_handler]
 pub async fn update_current_user(

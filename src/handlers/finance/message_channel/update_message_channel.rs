@@ -1,10 +1,12 @@
 //! Handler: PUT /api/v1/message-channels/{id} - Update message channel configuration
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{UpdateMessageChannelRequest, UpdateMessageChannelResponse, MessageChannelDetail};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{
+    MessageChannelDetail, UpdateMessageChannelRequest, UpdateMessageChannelResponse,
+};
 
 use super::response::to_detail;
 
@@ -13,7 +15,7 @@ use super::response::to_detail;
     id = "update_message_channel",
     name = "update_message_channel",
     description = "Update an existing message channel configuration (name, credentials, settings, etc.)",
-    params = "common::api::UpdateMessageChannelRequest",
+    params = "common::api::UpdateMessageChannelRequest"
 )]
 #[generate_http_handler]
 pub async fn update_message_channel(

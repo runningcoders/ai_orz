@@ -261,18 +261,24 @@ mcp_servers 表
 
 目标：HTTP API 只作为用户 action 入口，不承载文件/持久化/运行时逻辑。
 
-建议路由：
+当前已接入 MCP Server 管理 API，路由遵循 Finance Domain 统一前缀：
 
 ```text
-POST   /api/mcp/servers
-GET    /api/mcp/servers/:id
-GET    /api/mcp/servers
-PUT    /api/mcp/servers/:id
-DELETE /api/mcp/servers/:id
-POST   /api/mcp/servers/:id/sync-tools
+POST   /api/v1/finance/mcp-servers
+GET    /api/v1/finance/mcp-servers/{id}
+GET    /api/v1/finance/mcp-servers
+PUT    /api/v1/finance/mcp-servers/{id}
+PUT    /api/v1/finance/mcp-servers/{id}/status
+DELETE /api/v1/finance/mcp-servers/{id}
 ```
 
-Handler 仅做 DTO ↔ 业务实体/命令转换，然后调用 Finance Domain。
+Handler 仅做 DTO ↔ 业务实体/命令转换，然后调用 Finance Domain。`common/src/api/mcp_server.rs` 提供前后端共享 DTO，`common/src/enums/mcp_server.rs` 提供 API 枚举；Handler 返回 Domain/DAL 提供的管理面脱敏视图，不直接暴露原始 `McpServerPo.config`。`streamable_http` 创建/更新仍由 Domain/DAL 校验拒绝，直到 SSRF/header/redirect 等安全策略落地。
+
+列表 API 使用统一分页契约：`ListMcpServersRequest.pagination: PaginationParams { limit, offset }`，DAO/DAL/Domain 的 `query` 返回 `PagedResult<T> { items, total }`。`total` 与 `items` 复用同一组查询过滤条件，分页只作用于 `items`，避免独立 count 查询条件漂移。默认查询排除软删除记录；显式 `status = Deleted` 时可查询已删除记录用于管理/测试。
+
+软删除记录不可通过 update/set_status 复活：DAO 层写操作带 `status != Deleted` 条件，恢复必须通过后续单独设计的明确 restore action，而不能被普通状态更新旁路。
+
+`sync-tools` 暂未在本 Batch 暴露为 HTTP API，后续随 Finance Domain MCP Tool 同步编排一起接入。
 
 #### Batch 4：安全与可观测性补强
 
@@ -726,15 +732,17 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 
 ### Phase 1：MCP Server 持久化与管理面
 
-状态：DAO 持久化子阶段已完成；当前进入 Batch 1 的 `McpServer` 业务实体与 `McpServerDal`。
+状态：MCP Server DAO/DAL、Finance Domain 管理面、Handler/API 管理入口均已完成；MCP Tool 同步编排与连接健康检查继续后续阶段。
 
 - ✅ 新增 `McpServerPo/McpServerConfig`；
 - ✅ 新增 `mcp_servers` migration（active name 唯一索引、transport/status CHECK 约束）；
 - ✅ 新增 `McpServerDao` + SQLite 实现；
 - ✅ 覆盖 insert/find/query/update/delete、软删除默认过滤、显式查询 Deleted、offset-only 查询、软删除后重建同名记录等单元测试；
-- ⏳ 新增 `McpServer` 业务实体与 `McpServerDal`，先完成 create/find/query/update/delete/set_status 与最小配置校验；
-- ⏳ Finance Domain 管理面和 Handler/API 在后续 Batch 接入；
-- ⏳ 创建/更新/删除后的 runtime invalidate 通过 `McpToolCallDao.invalidate_mcp_server(server_id)` 触发，不在 DAO/DAL init 阶段启动连接。
+- ✅ 新增 `McpServer` 业务实体与 `McpServerDal`，完成 create/find/query/update/delete/set_status 与最小配置校验；
+- ✅ Finance Domain 管理面接入 MCP Server CRUD/query/status，审计字段从 `RequestContext` 派生；
+- ✅ Handler/API 接入 `/api/v1/finance/mcp-servers` 管理路由与共享 DTO/enums；
+- ✅ 创建/更新/删除后的 runtime invalidate 通过 `McpToolCallDao.invalidate_mcp_server(server_id)` 触发，不在 DAO/DAL init 阶段启动连接；
+- ✅ 管理面 detail/list 返回脱敏配置；更新时 `[REDACTED]` 占位符会保留数据库中的既有真实敏感值。
 
 ### Phase 2：MCP Tool config + registry stub
 

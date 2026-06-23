@@ -1,18 +1,18 @@
 //! Handler: PUT /api/v1/projects/{id}/status - Update project status
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{UpdateProjectStatusRequest, UpdateProjectStatusResponse};
+use super::response;
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
-use super::response;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{UpdateProjectStatusRequest, UpdateProjectStatusResponse};
 
 /// Update project status
 #[register_handler_tool(
     id = "update_project_status",
     name = "update_project_status",
     description = "Update project status (transition to next state)",
-    params = "common::api::UpdateProjectStatusRequest",
+    params = "common::api::UpdateProjectStatusRequest"
 )]
 #[generate_http_handler]
 pub async fn update_project_status(

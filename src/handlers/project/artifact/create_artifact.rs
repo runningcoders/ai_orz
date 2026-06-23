@@ -1,21 +1,21 @@
 //! Handler: POST /api/v1/project/artifacts - Create a new artifact
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{CreateArtifactRequest, CreateArtifactResponse};
-use common::enums::ArtifactSourceType;
+use super::response;
 use crate::error::AppError;
 use crate::models::attachment::AttachmentGetOptions;
 use crate::models::file::FileMeta;
 use crate::pkg::RequestContext;
 use crate::service::domain::{finance, project};
-use super::response;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{CreateArtifactRequest, CreateArtifactResponse};
+use common::enums::ArtifactSourceType;
 
 /// Create a new artifact (from existing attachment or generated content)
 #[register_handler_tool(
     id = "create_artifact",
     name = "create_artifact",
     description = "Create a new artifact in a project, supports creating from existing attachment or reserved for generated content",
-    params = "common::api::CreateArtifactRequest",
+    params = "common::api::CreateArtifactRequest"
 )]
 #[generate_http_handler]
 pub async fn create_artifact(

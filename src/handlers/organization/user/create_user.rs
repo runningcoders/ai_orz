@@ -1,12 +1,12 @@
 //! Handler: POST /api/v1/organizations/users - Create a new user in current organization
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{CreateUserRequest, CreateUserResponse};
-use common::enums::UserRole;
 use crate::error::AppError;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{CreateUserRequest, CreateUserResponse};
+use common::enums::UserRole;
 use rand::Rng;
 
 /// Create a new user within the current authenticated user's organization
@@ -14,7 +14,7 @@ use rand::Rng;
     id = "create_user",
     name = "create_user",
     description = "Create a new user in the current organization. Requires admin permissions.",
-    params = "common::api::CreateUserRequest",
+    params = "common::api::CreateUserRequest"
 )]
 #[generate_http_handler]
 pub async fn create_user(

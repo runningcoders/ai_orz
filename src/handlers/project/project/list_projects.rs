@@ -1,18 +1,18 @@
 //! Handler: GET /api/v1/projects - List all projects for a user with optional filtering
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{ListProjectsRequest, ProjectListItem};
+use super::response;
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
-use super::response;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{ListProjectsRequest, ProjectListItem};
 
 /// List all projects for a user with optional filtering
 #[register_handler_tool(
     id = "list_projects",
     name = "list_projects",
     description = "List all projects for a user with optional status filtering",
-    params = "common::api::ListProjectsRequest",
+    params = "common::api::ListProjectsRequest"
 )]
 #[generate_http_handler]
 pub async fn list_projects(

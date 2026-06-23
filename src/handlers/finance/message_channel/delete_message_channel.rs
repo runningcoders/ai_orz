@@ -1,17 +1,17 @@
 //! Handler: DELETE /api/v1/message-channels/{id} - Delete a message channel
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{DeleteMessageChannelRequest, EmptyResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{DeleteMessageChannelRequest, EmptyResponse};
 
 /// Delete an existing message channel (soft delete)
 #[register_handler_tool(
     id = "delete_message_channel",
     name = "delete_message_channel",
     description = "Delete an existing message channel (soft delete)",
-    params = "common::api::DeleteMessageChannelRequest",
+    params = "common::api::DeleteMessageChannelRequest"
 )]
 #[generate_http_handler]
 pub async fn delete_message_channel(

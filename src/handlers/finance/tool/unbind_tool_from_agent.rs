@@ -1,17 +1,17 @@
 //! Handler: DELETE /api/v1/agents/{agent_id}/tools/{tool_id}/bind - Unbind a tool from an agent
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{UnbindToolFromAgentRequest, UnbindToolFromAgentResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{UnbindToolFromAgentRequest, UnbindToolFromAgentResponse};
 
 /// Unbind a tool from an agent so the agent can no longer use it
 #[register_handler_tool(
     id = "unbind_tool_from_agent",
     name = "unbind_tool_from_agent",
     description = "Unbind a tool from an agent so the agent can no longer use it",
-    params = "common::api::UnbindToolFromAgentRequest",
+    params = "common::api::UnbindToolFromAgentRequest"
 )]
 #[generate_http_handler]
 pub async fn unbind_tool_from_agent(

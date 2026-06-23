@@ -1,10 +1,10 @@
 //! Handler: PUT /api/v1/model-providers/{id} - Update model provider configuration
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{UpdateModelProviderRequest, UpdateModelProviderResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{UpdateModelProviderRequest, UpdateModelProviderResponse};
 
 /// Get current timestamp
 fn current_timestamp() -> i64 {
@@ -19,7 +19,7 @@ fn current_timestamp() -> i64 {
     id = "update_model_provider",
     name = "update_model_provider",
     description = "Update an existing model provider configuration (name, credentials, model name, etc.)",
-    params = "common::api::UpdateModelProviderRequest",
+    params = "common::api::UpdateModelProviderRequest"
 )]
 #[generate_http_handler]
 pub async fn update_model_provider(

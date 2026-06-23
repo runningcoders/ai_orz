@@ -1,11 +1,11 @@
 //! Handler: POST /api/v1/skills - 创建新 Skill
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{CreateSkillRequest, CreateSkillResponse};
 use crate::error::AppError;
 use crate::models::skill::{Skill, SkillFile, SkillPo};
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{CreateSkillRequest, CreateSkillResponse};
 use common::enums::skill::SkillAuthorType;
 
 use super::response::to_detail;
@@ -36,7 +36,8 @@ pub async fn create_skill(
         params.name,
         params.description,
         params.tags,
-        params.category
+        params
+            .category
             .filter(|category| !category.trim().is_empty())
             .unwrap_or_else(|| "uncategorized".to_string()),
         String::new(),
@@ -74,7 +75,10 @@ pub async fn create_skill(
         }
     }
 
-    domain().skill_manage().create_skill(ctx.clone(), &skill).await?;
+    domain()
+        .skill_manage()
+        .create_skill(ctx.clone(), &skill)
+        .await?;
 
     let created = domain()
         .skill_manage()

@@ -1,12 +1,12 @@
 //! Handler: PUT /api/v1/skills/{skill_id} - Update skill metadata and content
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{UpdateSkillRequest, UpdateSkillResponse};
 use crate::error::AppError;
 use crate::models::attachment::AttachmentGetOptions;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain as finance_domain;
 use crate::service::domain::hr::{SkillFileImport, UpdateSkillParams, domain};
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{UpdateSkillRequest, UpdateSkillResponse};
 
 use super::response::to_detail;
 

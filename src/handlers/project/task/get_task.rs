@@ -1,18 +1,18 @@
 //! Handler: GET /api/v1/tasks/{id} - Get task detailed information
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{GetTaskRequest, GetTaskResponse};
+use super::response;
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
-use super::response;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{GetTaskRequest, GetTaskResponse};
 
 /// Get task detailed information by ID
 #[register_handler_tool(
     id = "get_task",
     name = "get_task",
     description = "Get detailed information about a specific task by its ID",
-    params = "common::api::GetTaskRequest",
+    params = "common::api::GetTaskRequest"
 )]
 #[generate_http_handler]
 pub async fn get_task(

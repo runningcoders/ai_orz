@@ -1,18 +1,18 @@
 //! Handler: GET /api/v1/user/me - Get current authenticated user information
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{GetCurrentUserRequest, GetCurrentUserResponse, UserInfoResponse};
-use common::enums::UserRole;
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{GetCurrentUserRequest, GetCurrentUserResponse, UserInfoResponse};
+use common::enums::UserRole;
 
 /// Get current authenticated user information from request context
 #[register_handler_tool(
     id = "get_current_user",
     name = "get_current_user",
     description = "Get information about the currently authenticated user",
-    params = "common::api::GetCurrentUserRequest",
+    params = "common::api::GetCurrentUserRequest"
 )]
 #[generate_http_handler]
 pub async fn get_current_user(

@@ -1,10 +1,10 @@
 //! Handler: PUT /api/v1/tools/{id}/status - Update tool status (enable/disable)
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{UpdateToolStatusRequest, UpdateToolStatusResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{UpdateToolStatusRequest, UpdateToolStatusResponse};
 
 use super::response::to_detail;
 
@@ -13,7 +13,7 @@ use super::response::to_detail;
     id = "update_tool_status",
     name = "update_tool_status",
     description = "Update the status of a tool (enable/disable it)",
-    params = "common::api::UpdateToolStatusRequest",
+    params = "common::api::UpdateToolStatusRequest"
 )]
 #[generate_http_handler]
 pub async fn update_tool_status(

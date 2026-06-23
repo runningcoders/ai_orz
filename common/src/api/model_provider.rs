@@ -1,7 +1,7 @@
 //! Model Provider related API request/response DTOs - shared between backend and frontend
 
-use ai_orz_macros::Params;
 use crate::enums::{ModelCapability, ProviderType};
+use ai_orz_macros::Params;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 

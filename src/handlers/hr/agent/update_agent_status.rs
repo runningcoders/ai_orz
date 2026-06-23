@@ -1,17 +1,17 @@
 //! Handler: PUT /api/v1/agents/{id}/status - Update agent status
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{UpdateAgentStatusRequest, UpdateAgentStatusResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{UpdateAgentStatusRequest, UpdateAgentStatusResponse};
 
 /// Update the status of an AI agent (active/disabled)
 #[register_handler_tool(
     id = "update_agent_status",
     name = "update_agent_status",
     description = "Update the status of an AI agent (active/disabled)",
-    params = "common::api::UpdateAgentStatusRequest",
+    params = "common::api::UpdateAgentStatusRequest"
 )]
 #[generate_http_handler]
 pub async fn update_agent_status(

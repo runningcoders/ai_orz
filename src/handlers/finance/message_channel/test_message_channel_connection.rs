@@ -1,17 +1,17 @@
 //! Handler: POST /api/v1/message-channels/{id}/test - Test message channel connectivity
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{TestMessageChannelConnectionRequest, TestMessageChannelConnectionResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{TestMessageChannelConnectionRequest, TestMessageChannelConnectionResponse};
 
 /// Test connectivity to a message channel by sending a test notification
 #[register_handler_tool(
     id = "test_message_channel_connection",
     name = "test_message_channel_connection",
     description = "Test connectivity to a message channel by sending a test notification",
-    params = "common::api::TestMessageChannelConnectionRequest",
+    params = "common::api::TestMessageChannelConnectionRequest"
 )]
 #[generate_http_handler]
 pub async fn test_message_channel_connection(

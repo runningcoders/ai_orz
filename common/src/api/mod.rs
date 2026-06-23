@@ -1,5 +1,6 @@
 //! Shared API request/response DTOs - these are used by both backend and frontend
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Standard API response format for all HTTP responses
@@ -51,6 +52,36 @@ impl<T> ApiResponse<T> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmptyResponse {}
 
+/// Unified offset-based pagination parameters.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub struct PaginationParams {
+    /// Limit result count.
+    #[serde(default)]
+    pub limit: Option<usize>,
+    /// Skip count.
+    #[serde(default)]
+    pub offset: Option<usize>,
+}
+
+/// Unified paged query result.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct PagedResult<T> {
+    /// Current page items.
+    pub items: Vec<T>,
+    /// Total count matching query, ignoring pagination.
+    pub total: usize,
+}
+
+impl<T> PagedResult<T> {
+    /// Transform page items while preserving total count.
+    pub fn map<U>(self, f: impl FnMut(T) -> U) -> PagedResult<U> {
+        PagedResult {
+            items: self.items.into_iter().map(f).collect(),
+            total: self.total,
+        }
+    }
+}
+
 pub mod agent;
 #[cfg(test)]
 mod agent_test;
@@ -61,6 +92,9 @@ pub mod attachment;
 #[cfg(test)]
 mod attachment_test;
 pub mod auth;
+pub mod mcp_server;
+#[cfg(test)]
+mod mcp_server_test;
 pub mod message_channel;
 pub mod model_provider;
 pub mod organization;
@@ -84,6 +118,7 @@ pub use agent::*;
 pub use artifact::*;
 pub use attachment::*;
 pub use auth::*;
+pub use mcp_server::*;
 pub use message_channel::*;
 pub use model_provider::*;
 pub use organization::*;

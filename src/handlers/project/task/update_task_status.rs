@@ -1,18 +1,18 @@
 //! Handler: PUT /api/v1/tasks/{id}/status - Update task status (state transition)
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{UpdateTaskStatusRequest, UpdateTaskStatusResponse};
+use super::response;
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
-use super::response;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{UpdateTaskStatusRequest, UpdateTaskStatusResponse};
 
 /// Update task status with state transition validation
 #[register_handler_tool(
     id = "update_task_status",
     name = "update_task_status",
     description = "Update the status of a task with proper state transition validation",
-    params = "common::api::UpdateTaskStatusRequest",
+    params = "common::api::UpdateTaskStatusRequest"
 )]
 #[generate_http_handler]
 pub async fn update_task_status(

@@ -1,18 +1,18 @@
 //! Handler: GET /api/v1/agents - List all agents with optional status filtering
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{ListAgentsRequest, ListAgentsResponse, AgentListItem};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
-use crate::service::domain::hr::domain;
 use crate::service::dao::agent::AgentQuery;
+use crate::service::domain::hr::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{AgentListItem, ListAgentsRequest, ListAgentsResponse};
 
 /// List all AI agents with optional status filtering
 #[register_handler_tool(
     id = "list_agents",
     name = "list_agents",
     description = "List all AI agents with optional status filtering",
-    params = "common::api::ListAgentsRequest",
+    params = "common::api::ListAgentsRequest"
 )]
 #[generate_http_handler]
 pub async fn list_agents(

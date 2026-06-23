@@ -94,8 +94,9 @@ async fn test_query_by_transport_and_status(pool: SqlitePool) -> Result<()> {
     dao.delete(ctx.clone(), &stdio_server.id).await?;
 
     let default_query = dao.query(ctx.clone(), McpServerQuery::default()).await?;
-    assert_eq!(default_query.len(), 1);
-    assert_eq!(default_query[0].id, http_server.id);
+    assert_eq!(default_query.items.len(), 1);
+    assert_eq!(default_query.items[0].id, http_server.id);
+    assert_eq!(default_query.total, 1);
 
     let enabled_stdio = dao
         .query(
@@ -107,7 +108,8 @@ async fn test_query_by_transport_and_status(pool: SqlitePool) -> Result<()> {
             },
         )
         .await?;
-    assert!(enabled_stdio.is_empty());
+    assert!(enabled_stdio.items.is_empty());
+    assert_eq!(enabled_stdio.total, 0);
 
     let all_non_deleted = dao
         .query(
@@ -118,20 +120,122 @@ async fn test_query_by_transport_and_status(pool: SqlitePool) -> Result<()> {
             },
         )
         .await?;
-    assert_eq!(all_non_deleted.len(), 1);
+    assert_eq!(all_non_deleted.items.len(), 1);
+    assert_eq!(all_non_deleted.total, 1);
 
     let deleted_stdio = dao
         .query(
             ctx.clone(),
             McpServerQuery {
                 status: Some(McpServerStatus::Deleted),
-                offset: Some(0),
+                pagination: common::api::PaginationParams {
+                    offset: Some(0),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         )
         .await?;
-    assert_eq!(deleted_stdio.len(), 1);
-    assert_eq!(deleted_stdio[0].id, stdio_server.id);
+    assert_eq!(deleted_stdio.items.len(), 1);
+    assert_eq!(deleted_stdio.items[0].id, stdio_server.id);
+    assert_eq!(deleted_stdio.total, 1);
+
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn test_query_returns_page_items_and_total_with_unified_pagination(
+    pool: SqlitePool,
+) -> Result<()> {
+    let (dao, ctx) = init_test_env(pool);
+    let server_a = create_stdio_server("page-a", "test-user");
+    let server_b = create_stdio_server("page-b", "test-user");
+    let mut server_c = create_stdio_server("page-c", "test-user");
+    server_c.status = McpServerStatus::Disabled;
+
+    dao.insert(ctx.clone(), &server_a).await?;
+    dao.insert(ctx.clone(), &server_b).await?;
+    dao.insert(ctx.clone(), &server_c).await?;
+
+    let page = dao
+        .query(
+            ctx.clone(),
+            McpServerQuery {
+                transport: Some(McpTransport::Stdio),
+                pagination: common::api::PaginationParams {
+                    limit: Some(1),
+                    offset: Some(1),
+                },
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.total, 3);
+
+    let enabled_total = dao
+        .query(
+            ctx.clone(),
+            McpServerQuery {
+                status: Some(McpServerStatus::Enabled),
+                pagination: common::api::PaginationParams {
+                    limit: Some(1),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(enabled_total.items.len(), 1);
+    assert_eq!(enabled_total.total, 2);
+
+    dao.delete(ctx.clone(), &server_a.id).await?;
+    let non_deleted_total = dao.query(ctx.clone(), McpServerQuery::default()).await?;
+    assert_eq!(non_deleted_total.items.len(), 2);
+    assert_eq!(non_deleted_total.total, 2);
+
+    let offset_only_page = dao
+        .query(
+            ctx.clone(),
+            McpServerQuery {
+                pagination: common::api::PaginationParams {
+                    offset: Some(1),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(offset_only_page.items.len(), 1);
+    assert_eq!(offset_only_page.total, 2);
+
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn test_set_status_does_not_restore_soft_deleted_server(pool: SqlitePool) -> Result<()> {
+    let (dao, ctx) = init_test_env(pool);
+    let server = create_stdio_server("filesystem", "test-user");
+
+    dao.insert(ctx.clone(), &server).await?;
+    dao.delete(ctx.clone(), &server.id).await?;
+    dao.set_status(ctx.clone(), &server.id, McpServerStatus::Enabled)
+        .await?;
+
+    let active_rows = dao.query(ctx.clone(), McpServerQuery::default()).await?;
+    assert!(active_rows.items.is_empty());
+
+    let deleted_rows = dao
+        .query(
+            ctx.clone(),
+            McpServerQuery {
+                id: Some(server.id),
+                status: Some(McpServerStatus::Deleted),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(deleted_rows.items.len(), 1);
 
     Ok(())
 }
@@ -166,13 +270,15 @@ async fn test_update_and_soft_delete(pool: SqlitePool) -> Result<()> {
             },
         )
         .await?;
-    assert_eq!(deleted_rows.len(), 1);
+    assert_eq!(deleted_rows.items.len(), 1);
+    assert_eq!(deleted_rows.total, 1);
 
     let recreated = create_stdio_server("filesystem-updated", "test-user");
     dao.insert(ctx.clone(), &recreated).await?;
     let active_rows = dao.query(ctx.clone(), McpServerQuery::default()).await?;
-    assert_eq!(active_rows.len(), 1);
-    assert_eq!(active_rows[0].id, recreated.id);
+    assert_eq!(active_rows.items.len(), 1);
+    assert_eq!(active_rows.items[0].id, recreated.id);
+    assert_eq!(active_rows.total, 1);
 
     Ok(())
 }

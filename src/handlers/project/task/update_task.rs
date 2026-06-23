@@ -1,18 +1,18 @@
 //! Handler: PUT /api/v1/tasks/{id} - Update task basic information
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{UpdateTaskRequest, UpdateTaskResponse};
+use super::response;
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
-use super::response;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{UpdateTaskRequest, UpdateTaskResponse};
 
 /// Update task basic information (title, description, priority, tags, etc.)
 #[register_handler_tool(
     id = "update_task",
     name = "update_task",
     description = "Update basic information of an existing task",
-    params = "common::api::UpdateTaskRequest",
+    params = "common::api::UpdateTaskRequest"
 )]
 #[generate_http_handler]
 pub async fn update_task(

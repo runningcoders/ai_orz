@@ -1,10 +1,10 @@
 //! Handler: GET /api/v1/skills/{skill_id} - 获取 Skill 详情
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{GetSkillRequest, GetSkillResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{GetSkillRequest, GetSkillResponse};
 
 use super::response::to_detail;
 

@@ -1,17 +1,17 @@
 //! Handler: GET /api/v1/agents/{id} - Get agent detailed information
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{GetAgentRequest, GetAgentResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{GetAgentRequest, GetAgentResponse};
 
 /// Get detailed information about an AI agent
 #[register_handler_tool(
     id = "get_agent",
     name = "get_agent",
     description = "Get detailed information about an AI agent by ID",
-    params = "common::api::GetAgentRequest",
+    params = "common::api::GetAgentRequest"
 )]
 #[generate_http_handler]
 pub async fn get_agent(

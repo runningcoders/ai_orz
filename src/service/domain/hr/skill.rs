@@ -173,9 +173,7 @@ impl SkillManage for HrDomainImpl {
 
         // 权限检查：仅作者可访问
         if po.author_id != uid {
-            return Err(AppError::BadRequest(
-                "你没有权限访问该 Skill".to_string(),
-            ));
+            return Err(AppError::BadRequest("你没有权限访问该 Skill".to_string()));
         }
 
         let files = self.skill_dal.list_files(&po)?;
@@ -199,9 +197,7 @@ impl SkillManage for HrDomainImpl {
 
         // 权限检查：仅作者可访问
         if po.author_id != uid {
-            return Err(AppError::BadRequest(
-                "你没有权限访问该 Skill".to_string(),
-            ));
+            return Err(AppError::BadRequest("你没有权限访问该 Skill".to_string()));
         }
 
         let content = self.skill_dal.read_file(&po, filename)?;
@@ -226,9 +222,7 @@ impl SkillManage for HrDomainImpl {
 
         // 权限检查：仅作者可修改
         if po.author_id != ctx.uid() {
-            return Err(AppError::BadRequest(
-                "你没有权限修改该 Skill".to_string(),
-            ));
+            return Err(AppError::BadRequest("你没有权限修改该 Skill".to_string()));
         }
 
         // 乐观锁校验

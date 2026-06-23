@@ -1,17 +1,17 @@
 //! Handler: GET /api/v1/model-providers/{id} - Get model provider detailed information
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{GetModelProviderRequest, GetModelProviderResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{GetModelProviderRequest, GetModelProviderResponse};
 
 /// Get detailed information about a specific model provider configuration
 #[register_handler_tool(
     id = "get_model_provider",
     name = "get_model_provider",
     description = "Get detailed information about a specific model provider configuration",
-    params = "common::api::GetModelProviderRequest",
+    params = "common::api::GetModelProviderRequest"
 )]
 #[generate_http_handler]
 pub async fn get_model_provider(

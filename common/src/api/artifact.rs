@@ -1,7 +1,7 @@
 //! Artifact management API DTOs - shared between backend and frontend.
 
-use ai_orz_macros::Params;
 use crate::enums::{ArtifactSourceType, FileType};
+use ai_orz_macros::Params;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 

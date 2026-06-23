@@ -1,18 +1,18 @@
 //! Handler: GET /api/v1/organizations - List all organizations in the system
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{ListOrganizationsRequest, ListOrganizationsResponse, OrganizationListItem};
 use crate::error::AppError;
 use crate::models::organization::OrganizationPo;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{ListOrganizationsRequest, ListOrganizationsResponse, OrganizationListItem};
 
 /// List all organizations available to the current user
 #[register_handler_tool(
     id = "list_organizations",
     name = "list_organizations",
     description = "List all organizations in the system that the current user has access to",
-    params = "common::api::ListOrganizationsRequest",
+    params = "common::api::ListOrganizationsRequest"
 )]
 #[generate_http_handler]
 pub async fn list_organizations(
@@ -35,8 +35,5 @@ pub async fn list_organizations(
         })
         .collect();
 
-    Ok(ListOrganizationsResponse {
-        data: items,
-        total,
-    })
+    Ok(ListOrganizationsResponse { data: items, total })
 }

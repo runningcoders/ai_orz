@@ -1,8 +1,8 @@
 //! Skill management API request/response DTOs - shared between backend and frontend
 
-use ai_orz_macros::Params;
 use crate::enums::SkillStatus;
 use crate::enums::skill::SkillAuthorType;
+use ai_orz_macros::Params;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

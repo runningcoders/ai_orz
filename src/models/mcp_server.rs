@@ -10,6 +10,10 @@ use uuid::Uuid;
 
 pub const REDACTED_CONFIG_VALUE: &str = "[REDACTED]";
 
+#[cfg(test)]
+#[path = "mcp_server_test.rs"]
+mod mcp_server_test;
+
 /// MCP Server transport 类型。
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -165,9 +169,38 @@ impl McpServerConfig {
             .keys()
             .map(|key| (key.clone(), REDACTED_CONFIG_VALUE.to_string()))
             .collect();
-        config.url = config.url.as_deref().map(redact_url_query);
+        config.url = config.url.as_deref().map(redact_url_for_management);
         config
     }
+}
+
+fn redact_url_for_management(url: &str) -> String {
+    let url = redact_url_userinfo(url);
+    redact_url_query(&url)
+}
+
+fn redact_url_userinfo(url: &str) -> String {
+    let Some(authority_start) = url.find("://").map(|idx| idx + 3) else {
+        return url.to_string();
+    };
+
+    let authority_end = url[authority_start..]
+        .find(['/', '?', '#'])
+        .map(|idx| authority_start + idx)
+        .unwrap_or(url.len());
+    let Some(userinfo_end) = url[authority_start..authority_end]
+        .rfind('@')
+        .map(|idx| authority_start + idx)
+    else {
+        return url.to_string();
+    };
+
+    format!(
+        "{}{}{}",
+        &url[..authority_start],
+        REDACTED_CONFIG_VALUE,
+        &url[userinfo_end..]
+    )
 }
 
 fn redact_url_query(url: &str) -> String {
@@ -236,8 +269,7 @@ pub struct McpServerQuery {
     pub transport: Option<McpTransport>,
     pub status: Option<McpServerStatus>,
     pub exclude_status: Option<McpServerStatus>,
-    pub limit: Option<usize>,
-    pub offset: Option<usize>,
+    pub pagination: common::api::PaginationParams,
 }
 
 /// MCP Server 持久化对象。

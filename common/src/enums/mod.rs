@@ -3,6 +3,7 @@
 pub mod agent;
 pub mod artifact;
 pub mod file;
+pub mod mcp_server;
 pub mod memory;
 pub mod message;
 pub mod message_channel;
@@ -17,6 +18,7 @@ pub mod user;
 pub use agent::{AgentStatus, ModelProviderStatus};
 pub use artifact::ArtifactSourceType;
 pub use file::FileType;
+pub use mcp_server::{McpServerStatus, McpTransport};
 pub use memory::{KnowledgeRelationType, MemoryRole, MemoryStatus, MemoryType};
 pub use message::{MessageRole, MessageStatus, MessageType};
 pub use message_channel::{ChannelStatus, ChannelType};

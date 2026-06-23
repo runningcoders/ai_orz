@@ -1,17 +1,17 @@
 //! Handler: POST /api/v1/model-providers/{id}/test - Test model provider connectivity
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{TestModelProviderConnectionRequest, TestConnectionResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{TestConnectionResponse, TestModelProviderConnectionRequest};
 
 /// Test connectivity and authentication to a model provider with a sample prompt
 #[register_handler_tool(
     id = "test_model_provider_connection",
     name = "test_model_provider_connection",
     description = "Test connectivity and authentication to a model provider with a sample prompt",
-    params = "common::api::TestModelProviderConnectionRequest",
+    params = "common::api::TestModelProviderConnectionRequest"
 )]
 #[generate_http_handler]
 pub async fn test_model_provider_connection(
@@ -26,7 +26,10 @@ pub async fn test_model_provider_connection(
         .ok_or_else(|| AppError::NotFound(format!("ModelProvider {} not found", params.id)))?;
 
     // 2. Use prompt for connection test, default to "Hello!"
-    let prompt = params.prompt.clone().unwrap_or_else(|| "Hello!".to_string());
+    let prompt = params
+        .prompt
+        .clone()
+        .unwrap_or_else(|| "Hello!".to_string());
 
     match domain()
         .model_provider_manage()

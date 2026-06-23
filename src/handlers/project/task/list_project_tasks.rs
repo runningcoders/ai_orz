@@ -1,18 +1,18 @@
 //! Handler: GET /api/v1/projects/{project_id}/tasks - List tasks under a project
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{ListProjectTasksRequest, TaskListItem};
+use super::response;
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
-use super::response;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{ListProjectTasksRequest, TaskListItem};
 
 /// List all tasks under a specific project, with optional status filtering
 #[register_handler_tool(
     id = "list_project_tasks",
     name = "list_project_tasks",
     description = "List all tasks under a specific project, with optional status filtering",
-    params = "common::api::ListProjectTasksRequest",
+    params = "common::api::ListProjectTasksRequest"
 )]
 #[generate_http_handler]
 pub async fn list_project_tasks(

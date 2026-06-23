@@ -1,10 +1,10 @@
 //! Handler: GET /api/v1/skills/{skill_id}/files/{*filename} - 读取 Skill 文件内容
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{GetSkillFileContentRequest, GetSkillFileContentResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{GetSkillFileContentRequest, GetSkillFileContentResponse};
 
 /// Read the text content of a specific file from a skill
 #[register_handler_tool(

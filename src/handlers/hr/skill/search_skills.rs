@@ -1,12 +1,12 @@
 //! Handler: GET /api/v1/skills/search - Search skills by keyword with filtering
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{SearchSkillsRequest, SearchSkillsResponse, SkillListItem};
-use common::enums::SkillStatus;
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::dao::skill::{SkillQuery, SkillSearch};
 use crate::service::domain::hr::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{SearchSkillsRequest, SearchSkillsResponse, SkillListItem};
+use common::enums::SkillStatus;
 
 use super::response::to_list_item;
 

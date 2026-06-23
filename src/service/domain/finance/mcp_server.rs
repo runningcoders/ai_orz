@@ -38,14 +38,12 @@ impl McpServerManage for FinanceDomainImpl {
         &self,
         ctx: RequestContext,
         query: McpServerQuery,
-    ) -> Result<Vec<McpServer>, AppError> {
+    ) -> Result<common::api::PagedResult<McpServer>, AppError> {
         Ok(self
             .mcp_server_dal
             .query(ctx, query)
             .await?
-            .into_iter()
-            .map(McpServer::redacted_for_management)
-            .collect())
+            .map(McpServer::redacted_for_management))
     }
 
     /// 列出所有 MCP Server
@@ -54,6 +52,7 @@ impl McpServerManage for FinanceDomainImpl {
             .mcp_server_dal
             .query(ctx, McpServerQuery::default())
             .await?
+            .items
             .into_iter()
             .map(McpServer::redacted_for_management)
             .collect())

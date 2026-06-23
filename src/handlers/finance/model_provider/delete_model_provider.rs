@@ -1,17 +1,17 @@
 //! Handler: DELETE /api/v1/model-providers/{id} - Delete a model provider
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{DeleteModelProviderRequest, DeleteModelProviderResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{DeleteModelProviderRequest, DeleteModelProviderResponse};
 
 /// Delete an existing model provider configuration
 #[register_handler_tool(
     id = "delete_model_provider",
     name = "delete_model_provider",
     description = "Delete an existing model provider configuration",
-    params = "common::api::DeleteModelProviderRequest",
+    params = "common::api::DeleteModelProviderRequest"
 )]
 #[generate_http_handler]
 pub async fn delete_model_provider(

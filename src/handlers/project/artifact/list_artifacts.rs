@@ -1,11 +1,11 @@
 //! Handler: GET /api/v1/projects/{project_id}/artifacts - List artifacts under a project
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{ListArtifactsRequest, ListArtifactsResponse};
+use super::response;
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::{self, ListArtifactsParams};
-use super::response;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{ListArtifactsRequest, ListArtifactsResponse};
 
 const DEFAULT_MAX_LIMIT: usize = 100;
 
@@ -14,7 +14,7 @@ const DEFAULT_MAX_LIMIT: usize = 100;
     id = "list_artifacts",
     name = "list_artifacts",
     description = "List all artifacts under a project, with optional filtering by task, file type, or source type",
-    params = "common::api::ListArtifactsRequest",
+    params = "common::api::ListArtifactsRequest"
 )]
 #[generate_http_handler]
 pub async fn list_artifacts(

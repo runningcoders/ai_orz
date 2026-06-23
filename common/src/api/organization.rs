@@ -158,5 +158,4 @@ pub struct DeleteOrganizationResponse {
 
 /// 列出所有组织请求
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
-pub struct ListOrganizationsRequest {
-}
+pub struct ListOrganizationsRequest {}

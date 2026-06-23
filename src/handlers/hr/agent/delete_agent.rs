@@ -1,17 +1,17 @@
 //! Handler: DELETE /api/v1/agents/{id} - Delete an agent
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{DeleteAgentRequest, DeleteAgentResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{DeleteAgentRequest, DeleteAgentResponse};
 
 /// Delete an existing AI agent
 #[register_handler_tool(
     id = "delete_agent",
     name = "delete_agent",
     description = "Delete an existing AI agent",
-    params = "common::api::DeleteAgentRequest",
+    params = "common::api::DeleteAgentRequest"
 )]
 #[generate_http_handler]
 pub async fn delete_agent(

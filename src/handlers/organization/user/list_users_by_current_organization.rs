@@ -1,17 +1,17 @@
 //! Handler: GET /api/v1/organizations/users - List all users in current organization
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{ListUsersByCurrentOrganizationRequest, ListUsersResponse, UserListItem};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{ListUsersByCurrentOrganizationRequest, ListUsersResponse, UserListItem};
 
 /// List all users belonging to the current authenticated user's organization
 #[register_handler_tool(
     id = "list_users_by_current_organization",
     name = "list_users_by_current_organization",
     description = "List all users in the organization that the current authenticated user belongs to",
-    params = "common::api::ListUsersByCurrentOrganizationRequest",
+    params = "common::api::ListUsersByCurrentOrganizationRequest"
 )]
 #[generate_http_handler]
 pub async fn list_users_by_current_organization(

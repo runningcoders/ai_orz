@@ -1,18 +1,18 @@
 //! Handler: POST /api/v1/projects - Create a new project
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{CreateProjectRequest, CreateProjectResponse};
+use super::response;
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
-use super::response;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{CreateProjectRequest, CreateProjectResponse};
 
 /// Create a new project
 #[register_handler_tool(
     id = "create_project",
     name = "create_project",
     description = "Create a new project",
-    params = "common::api::CreateProjectRequest",
+    params = "common::api::CreateProjectRequest"
 )]
 #[generate_http_handler]
 pub async fn create_project(

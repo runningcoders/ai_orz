@@ -1,10 +1,10 @@
 //! Handler: GET /api/v1/skills/{skill_id}/files - 列出 Skill 所有文件
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{ListSkillFilesRequest, ListSkillFilesResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{ListSkillFilesRequest, ListSkillFilesResponse};
 
 /// List all files in a skill with their metadata (filename, size)
 #[register_handler_tool(
@@ -24,9 +24,13 @@ pub async fn list_skill_files(
         .await?;
 
     match result {
-        None => Err(AppError::NotFound(format!("Skill not found: {}", params.skill_id))),
+        None => Err(AppError::NotFound(format!(
+            "Skill not found: {}",
+            params.skill_id
+        ))),
         Some(files) => {
-            let files = files.into_iter()
+            let files = files
+                .into_iter()
                 .map(|f| common::api::SkillFileItem {
                     filename: f.filename,
                     file_size: f.file_size,

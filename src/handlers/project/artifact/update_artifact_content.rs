@@ -1,17 +1,17 @@
 //! Handler: PUT /api/v1/project/artifacts/{id}/content - Update artifact text content
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::artifact::{ArtifactDetail, UpdateArtifactContentRequest};
 use crate::error::AppError;
 use crate::handlers::project::artifact::response;
 use crate::pkg::RequestContext;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::artifact::{ArtifactDetail, UpdateArtifactContentRequest};
 
 /// Update the full text content of a generated-content artifact (full replace)
 #[register_handler_tool(
     id = "update_artifact_content",
     name = "update_artifact_content",
     description = "Fully replace the text content of a generated-content artifact, supports optimistic locking with expected_updated_at",
-    params = "common::api::UpdateArtifactContentRequest",
+    params = "common::api::UpdateArtifactContentRequest"
 )]
 #[generate_http_handler]
 pub async fn update_artifact_content(

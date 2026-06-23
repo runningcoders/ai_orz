@@ -1,18 +1,18 @@
 //! Handler: POST /api/v1/model-providers - Create a new model provider
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{CreateModelProviderRequest, CreateModelProviderResponse};
 use crate::error::AppError;
 use crate::models::model_provider::{ModelProvider, ModelProviderPo};
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{CreateModelProviderRequest, CreateModelProviderResponse};
 
 /// Create a new model provider configuration for AI inference
 #[register_handler_tool(
     id = "create_model_provider",
     name = "create_model_provider",
     description = "Create a new model provider configuration for AI inference",
-    params = "common::api::CreateModelProviderRequest",
+    params = "common::api::CreateModelProviderRequest"
 )]
 #[generate_http_handler]
 pub async fn create_model_provider(

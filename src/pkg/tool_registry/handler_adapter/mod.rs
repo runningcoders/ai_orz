@@ -20,9 +20,9 @@ use dyn_clone::DynClone;
 use futures_util::Future;
 use rig::tool::ToolError;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
-use std::pin::Pin;
+use serde_json::{Value, json};
 use std::marker::PhantomData;
+use std::pin::Pin;
 
 /// Trait for handler functions that can be adapted to CoreTool
 ///
@@ -165,11 +165,7 @@ impl<Params> HandlerToolAdapter<Params>
 where
     Params: for<'de> Deserialize<'de> + Serialize + Send + Sync + Clone + 'static,
 {
-    pub fn new(
-        po: ToolPo,
-        parameters_schema: Value,
-        inner: Box<dyn HandlerFn<Params>>,
-    ) -> Self {
+    pub fn new(po: ToolPo, parameters_schema: Value, inner: Box<dyn HandlerFn<Params>>) -> Self {
         Self {
             po,
             parameters_schema,
@@ -234,12 +230,12 @@ impl HandlerToolBuilder {
         self
     }
 
-    pub fn build<Params, F>(
-        self,
-        f: F,
-    ) -> (ToolPo, Box<dyn HandlerFn<Params>>)
+    pub fn build<Params, F>(self, f: F) -> (ToolPo, Box<dyn HandlerFn<Params>>)
     where
-        F: Fn(RequestContext, Params) -> Pin<Box<dyn Future<Output = Result<Value, AppError>> + Send>>
+        F: Fn(
+                RequestContext,
+                Params,
+            ) -> Pin<Box<dyn Future<Output = Result<Value, AppError>> + Send>>
             + Send
             + Sync
             + Clone
@@ -253,10 +249,10 @@ impl HandlerToolBuilder {
             self.name.clone(),
             self.description.clone(),
             ToolProtocol::Builtin,
-            serde_json::Value::Null, // config
+            serde_json::Value::Null,              // config
             Some(self.parameters_schema.clone()), // parameters_schema is already Value
-            vec![], // tags
-            None, // creator
+            vec![],                               // tags
+            None,                                 // creator
         );
         po.status = ToolStatus::Enabled;
         po.control_mode = ControlMode::Auto;

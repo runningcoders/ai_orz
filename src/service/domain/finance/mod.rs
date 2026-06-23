@@ -292,7 +292,7 @@ pub trait McpServerManage: Send + Sync {
         &self,
         ctx: RequestContext,
         query: crate::models::mcp_server::McpServerQuery,
-    ) -> Result<Vec<crate::models::mcp_server::McpServer>, AppError>;
+    ) -> Result<common::api::PagedResult<crate::models::mcp_server::McpServer>, AppError>;
 
     /// 列出所有 MCP Server
     async fn list_mcp_servers(

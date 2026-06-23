@@ -1,11 +1,11 @@
 //! Handler: GET /api/v1/tools - List tools with filtering (by agent, keyword, enabled status)
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{ListToolsRequest, ListToolsResponse, ToolListItem};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::dao::tool::ToolQuery;
 use crate::service::domain::finance::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{ListToolsRequest, ListToolsResponse, ToolListItem};
 
 use super::response::to_list_item;
 
@@ -14,7 +14,7 @@ use super::response::to_list_item;
     id = "list_tools",
     name = "list_tools",
     description = "List all tools with optional filtering by agent, keyword, and enabled status",
-    params = "common::api::ListToolsRequest",
+    params = "common::api::ListToolsRequest"
 )]
 #[generate_http_handler]
 pub async fn list_tools(

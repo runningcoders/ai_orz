@@ -1,11 +1,13 @@
 //! Handler: GET /api/v1/message-channels - List message channels with filtering
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{ListMessageChannelsRequest, ListMessageChannelsResponse, MessageChannelListItem};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::dao::message_channel::MessageChannelQuery;
 use crate::service::domain::finance::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{
+    ListMessageChannelsRequest, ListMessageChannelsResponse, MessageChannelListItem,
+};
 
 use super::response::to_list_item;
 
@@ -14,7 +16,7 @@ use super::response::to_list_item;
     id = "list_message_channels",
     name = "list_message_channels",
     description = "List message channels with optional filtering by user, agent, channel type, enabled status",
-    params = "common::api::ListMessageChannelsRequest",
+    params = "common::api::ListMessageChannelsRequest"
 )]
 #[generate_http_handler]
 pub async fn list_message_channels(
@@ -49,5 +51,8 @@ pub async fn list_message_channels(
 
     let total = channels.len();
     let channels: Vec<MessageChannelListItem> = channels.iter().map(to_list_item).collect();
-    Ok(ListMessageChannelsResponse { channels, total: total as usize })
+    Ok(ListMessageChannelsResponse {
+        channels,
+        total: total as usize,
+    })
 }

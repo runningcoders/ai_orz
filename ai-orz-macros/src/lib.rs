@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, AngleBracketedGenericArguments};
+use syn::{AngleBracketedGenericArguments, parse_macro_input};
 use syn::{Ident, ItemFn, Lit, LitStr, Meta, MetaNameValue, Type};
 
 /// Derive macro to mark HTTP params and their source locations.
@@ -281,7 +281,9 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
             _ => panic!("Expected second parameter to be params: Params"),
         }
     } else {
-        panic!("Expected function signature: async fn name(ctx: RequestContext, params: Params) -> Result<Output, AppError>");
+        panic!(
+            "Expected function signature: async fn name(ctx: RequestContext, params: Params) -> Result<Output, AppError>"
+        );
     };
 
     // Get the output type
@@ -302,7 +304,10 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
     let path_types: Vec<syn::Type> = path_fields.iter().map(|(_, ty)| ty.clone()).collect();
     let has_path = !path_idents.is_empty();
     let has_query = !query_fields.is_empty();
-    let query_idents: Vec<Ident> = query_fields.iter().map(|(ident, _)| ident.clone()).collect();
+    let query_idents: Vec<Ident> = query_fields
+        .iter()
+        .map(|(ident, _)| ident.clone())
+        .collect();
 
     // Generate the handler code
     let expanded = match (has_path, has_query) {
@@ -400,7 +405,9 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
     expanded.into()
 }
 /// Collect field ids that have #[param(source = "path")] or #[param(source = "query")] attribute by parsing the source file
-fn collect_path_and_query_fields_from_type(path: syn::Path) -> (Vec<(Ident, Type)>, Vec<(Ident, Type)>) {
+fn collect_path_and_query_fields_from_type(
+    path: syn::Path,
+) -> (Vec<(Ident, Type)>, Vec<(Ident, Type)>) {
     // Get the last segment (the type name)
     let type_name = path.segments.last().unwrap().ident.to_string();
 
@@ -427,20 +434,34 @@ fn collect_path_and_query_fields_from_type(path: syn::Path) -> (Vec<(Ident, Type
                                     for attr in &field.attrs {
                                         if attr.path().is_ident("param") {
                                             // Parse #[param(source = "path")]
-                                            if let Meta::NameValue(MetaNameValue { path: _, value, .. }) = &attr.meta {
+                                            if let Meta::NameValue(MetaNameValue {
+                                                path: _,
+                                                value,
+                                                ..
+                                            }) = &attr.meta
+                                            {
                                                 if let Ok(lit_str) = match value {
-                                                    syn::Expr::Lit(syn::ExprLit { lit: Lit::Str(s), .. }) => Ok(s),
+                                                    syn::Expr::Lit(syn::ExprLit {
+                                                        lit: Lit::Str(s),
+                                                        ..
+                                                    }) => Ok(s),
                                                     _ => Err(()),
                                                 } {
                                                     match lit_str.value().as_str() {
                                                         "path" => {
                                                             if let Some(ident) = &field.ident {
-                                                                path_fields.push((ident.clone(), field.ty.clone()));
+                                                                path_fields.push((
+                                                                    ident.clone(),
+                                                                    field.ty.clone(),
+                                                                ));
                                                             }
                                                         }
                                                         "query" => {
                                                             if let Some(ident) = &field.ident {
-                                                                query_fields.push((ident.clone(), field.ty.clone()));
+                                                                query_fields.push((
+                                                                    ident.clone(),
+                                                                    field.ty.clone(),
+                                                                ));
                                                             }
                                                         }
                                                         "body" => {

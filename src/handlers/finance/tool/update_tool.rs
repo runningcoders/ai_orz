@@ -1,6 +1,6 @@
 //! Handler: PUT /api/v1/tools/{id} - Update tool configuration
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateToolRequest, UpdateToolResponse};
 use common::enums::ToolProtocol;
 
@@ -15,7 +15,7 @@ use super::response::to_detail;
     id = "update_tool",
     name = "update_tool",
     description = "Update an existing custom tool's configuration (name, description, credentials, etc.)",
-    params = "common::api::UpdateToolRequest",
+    params = "common::api::UpdateToolRequest"
 )]
 #[generate_http_handler]
 pub async fn update_tool(

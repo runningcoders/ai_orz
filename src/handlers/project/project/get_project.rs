@@ -1,18 +1,18 @@
 //! Handler: GET /api/v1/projects/{id} - Get project detailed information
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{GetProjectRequest, GetProjectResponse};
+use super::response;
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
-use super::response;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{GetProjectRequest, GetProjectResponse};
 
 /// Get project detailed information
 #[register_handler_tool(
     id = "get_project",
     name = "get_project",
     description = "Get project detailed information by ID",
-    params = "common::api::GetProjectRequest",
+    params = "common::api::GetProjectRequest"
 )]
 #[generate_http_handler]
 pub async fn get_project(

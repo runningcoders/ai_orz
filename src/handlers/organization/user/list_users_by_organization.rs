@@ -1,17 +1,17 @@
 //! Handler: GET /api/v1/organizations/{id}/users - List all users by organization ID
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{ListUsersByOrganizationRequest, ListUsersResponse, UserListItem};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{ListUsersByOrganizationRequest, ListUsersResponse, UserListItem};
 
 /// List all users belonging to a specific organization by organization ID
 #[register_handler_tool(
     id = "list_users_by_organization",
     name = "list_users_by_organization",
     description = "List all users in a specified organization",
-    params = "common::api::ListUsersByOrganizationRequest",
+    params = "common::api::ListUsersByOrganizationRequest"
 )]
 #[generate_http_handler]
 pub async fn list_users_by_organization(

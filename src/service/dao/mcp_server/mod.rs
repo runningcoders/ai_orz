@@ -6,6 +6,7 @@ use crate::error::Result;
 use crate::models::mcp_server::{McpServerPo, McpServerQuery, McpServerStatus};
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
+use common::api::PagedResult;
 use std::sync::Arc;
 
 /// MCP Server DAO 接口。
@@ -17,7 +18,11 @@ pub trait McpServerDao: Send + Sync {
 
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<McpServerPo>>;
 
-    async fn query(&self, ctx: RequestContext, query: McpServerQuery) -> Result<Vec<McpServerPo>>;
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: McpServerQuery,
+    ) -> Result<PagedResult<McpServerPo>>;
 
     async fn set_status(
         &self,

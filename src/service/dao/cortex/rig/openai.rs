@@ -49,7 +49,11 @@ impl OpenAiCortex {
         let agent = if rig_tools.is_empty() {
             client.agent(model.clone()).hook(hook).build()
         } else {
-            client.agent(model.clone()).hook(hook).tools(rig_tools).build()
+            client
+                .agent(model.clone())
+                .hook(hook)
+                .tools(rig_tools)
+                .build()
         };
 
         Ok(Self {

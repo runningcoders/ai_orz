@@ -1,19 +1,19 @@
 //! Handler: GET /api/v1/project/artifacts/{id}/content - Get artifact text content
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::artifact::{ArtifactContentText, GetArtifactContentResponse};
-use common::api::{GetArtifactContentRequest};
 use crate::error::AppError;
 use crate::handlers::project::artifact::response;
 use crate::pkg::RequestContext;
 use crate::service::domain::project;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::GetArtifactContentRequest;
+use common::api::artifact::{ArtifactContentText, GetArtifactContentResponse};
 
 /// Get the full text content of a generated-content artifact
 #[register_handler_tool(
     id = "get_artifact_content",
     name = "get_artifact_content",
     description = "Get the text content of an artifact with source_type = generated_content",
-    params = "common::api::GetArtifactContentRequest",
+    params = "common::api::GetArtifactContentRequest"
 )]
 #[generate_http_handler]
 pub async fn get_artifact_content(

@@ -12,6 +12,7 @@ use crate::pkg::RequestContext;
 use crate::service::dao::mcp_server::McpServerDao;
 use crate::service::dao::tool_call::{self, McpToolCallDao};
 use async_trait::async_trait;
+use common::api::PagedResult;
 use std::sync::{Arc, OnceLock};
 
 static MCP_SERVER_DAL: OnceLock<Arc<dyn McpServerDal + Send + Sync>> = OnceLock::new();
@@ -52,7 +53,7 @@ pub trait McpServerDal: Send + Sync {
         &self,
         ctx: RequestContext,
         query: McpServerQuery,
-    ) -> Result<Vec<McpServer>, AppError>;
+    ) -> Result<PagedResult<McpServer>, AppError>;
 
     async fn update(&self, ctx: RequestContext, server: &McpServer) -> Result<(), AppError>;
 
@@ -101,14 +102,12 @@ impl McpServerDal for McpServerDalImpl {
         &self,
         ctx: RequestContext,
         query: McpServerQuery,
-    ) -> Result<Vec<McpServer>, AppError> {
+    ) -> Result<PagedResult<McpServer>, AppError> {
         Ok(self
             .mcp_server_dao
             .query(ctx, query)
             .await?
-            .into_iter()
-            .map(McpServer::from_po)
-            .collect())
+            .map(McpServer::from_po))
     }
 
     async fn update(&self, ctx: RequestContext, server: &McpServer) -> Result<(), AppError> {

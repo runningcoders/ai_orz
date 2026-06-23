@@ -1,10 +1,12 @@
 //! Handler: PUT /api/v1/message-channels/{id}/status - Update message channel status (active/disabled)
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{UpdateMessageChannelStatusRequest, UpdateMessageChannelStatusResponse, MessageChannelDetail};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{
+    MessageChannelDetail, UpdateMessageChannelStatusRequest, UpdateMessageChannelStatusResponse,
+};
 
 use super::response::to_detail;
 
@@ -13,7 +15,7 @@ use super::response::to_detail;
     id = "update_message_channel_status",
     name = "update_message_channel_status",
     description = "Update the status of a message channel (enable/disable it)",
-    params = "common::api::UpdateMessageChannelStatusRequest",
+    params = "common::api::UpdateMessageChannelStatusRequest"
 )]
 #[generate_http_handler]
 pub async fn update_message_channel_status(

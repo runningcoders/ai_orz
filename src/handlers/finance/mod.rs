@@ -4,6 +4,7 @@
 //! - Model Provider - 大语言模型提供商管理
 
 pub mod attachment;
+pub mod mcp_server;
 pub mod message_channel;
 pub mod model_provider;
 pub mod tool;

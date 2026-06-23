@@ -1,7 +1,7 @@
 //! Agent (AI智能体) related API request/response DTOs - shared between backend and frontend
 
-use ai_orz_macros::Params;
 use crate::enums::AgentStatus;
+use ai_orz_macros::Params;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 

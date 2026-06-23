@@ -1,17 +1,19 @@
 //! Handler: GET /api/v1/organization/me - Get current authenticated user's organization information
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{GetCurrentOrganizationRequest, GetCurrentOrganizationResponse, OrganizationInfoResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{
+    GetCurrentOrganizationRequest, GetCurrentOrganizationResponse, OrganizationInfoResponse,
+};
 
 /// Get information for the currently authenticated user's organization
 #[register_handler_tool(
     id = "get_current_organization",
     name = "get_current_organization",
     description = "Get detailed information about the organization that the currently authenticated user belongs to",
-    params = "common::api::GetCurrentOrganizationRequest",
+    params = "common::api::GetCurrentOrganizationRequest"
 )]
 #[generate_http_handler]
 pub async fn get_current_organization(

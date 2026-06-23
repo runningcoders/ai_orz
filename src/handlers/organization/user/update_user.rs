@@ -1,11 +1,11 @@
 //! Handler: PUT /api/v1/organizations/users/{id} - Update user information
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{UpdateUserRequest, UpdateUserResponse};
-use common::enums::{UserRole, UserStatus};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{UpdateUserRequest, UpdateUserResponse};
+use common::enums::{UserRole, UserStatus};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Get current timestamp
@@ -21,7 +21,7 @@ fn current_timestamp() -> i64 {
     id = "update_user",
     name = "update_user",
     description = "Update user information including display name, email, role, status, and password hash. Requires admin permissions.",
-    params = "common::api::UpdateUserRequest",
+    params = "common::api::UpdateUserRequest"
 )]
 #[generate_http_handler]
 pub async fn update_user(

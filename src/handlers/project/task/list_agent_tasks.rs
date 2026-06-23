@@ -1,19 +1,19 @@
 //! Handler: GET /api/v1/agents/{agent_id}/tasks - List tasks assigned to an agent
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{ListAgentTasksRequest, TaskListItem};
-use common::enums::AssigneeType;
+use super::response;
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
-use super::response;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{ListAgentTasksRequest, TaskListItem};
+use common::enums::AssigneeType;
 
 /// List tasks assigned to a specific agent
 #[register_handler_tool(
     id = "list_agent_tasks",
     name = "list_agent_tasks",
     description = "List all tasks assigned to a specific agent, with optional status filtering",
-    params = "common::api::ListAgentTasksRequest",
+    params = "common::api::ListAgentTasksRequest"
 )]
 #[generate_http_handler]
 pub async fn list_agent_tasks(

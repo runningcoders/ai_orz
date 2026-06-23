@@ -1,10 +1,10 @@
 //! Handler: GET /api/v1/tools/{id} - Get tool detailed information
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{GetToolRequest, GetToolResponse};
 use crate::error::AppError;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{GetToolRequest, GetToolResponse};
 
 use super::response::to_detail;
 
@@ -13,7 +13,7 @@ use super::response::to_detail;
     id = "get_tool",
     name = "get_tool",
     description = "Get detailed information about a specific tool including configuration",
-    params = "common::api::GetToolRequest",
+    params = "common::api::GetToolRequest"
 )]
 #[generate_http_handler]
 pub async fn get_tool(

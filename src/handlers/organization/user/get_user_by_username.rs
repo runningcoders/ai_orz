@@ -1,18 +1,18 @@
 //! Handler: GET /api/v1/organizations/users/by-username/{username} - Get user by username
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{GetUserByUsernameRequest, GetUserByUsernameResponse};
 use crate::error::AppError;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{GetUserByUsernameRequest, GetUserByUsernameResponse};
 
 /// Find a user by username (used for login authentication)
 #[register_handler_tool(
     id = "get_user_by_username",
     name = "get_user_by_username",
     description = "Find a user by username, used for authentication",
-    params = "common::api::GetUserByUsernameRequest",
+    params = "common::api::GetUserByUsernameRequest"
 )]
 #[generate_http_handler]
 pub async fn get_user_by_username(
@@ -54,5 +54,7 @@ pub async fn get_user_by_username(
         }
     });
 
-    Ok(GetUserByUsernameResponse { user: user_response })
+    Ok(GetUserByUsernameResponse {
+        user: user_response,
+    })
 }
