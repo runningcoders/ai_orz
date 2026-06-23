@@ -3,11 +3,17 @@
 //! 负责消费所有类型的消息（用户消息、Agent 间消息、工具调用等）
 
 use super::{GenericConsumer, MessageFetcher, MessageHandler};
-use crate::error::Result;
-use crate::models::message::Message;
+use crate::error::{AppError, Result};
+use crate::models::message::{Message, ToolCallMessage};
+use crate::service::domain::message::{
+    MessageDomain, SendToolCallResultCommand, ToolCallExecutionOutcome,
+};
+use crate::service::domain::runtime::RuntimeDomain;
 use async_trait::async_trait;
 use common::config::TopicConsumerConfig;
 use common::enums::{MessageRole, MessageType};
+use rig::tool::ToolError;
+use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例 ====================
@@ -21,7 +27,10 @@ static MESSAGE_CONSUMER: OnceLock<Arc<MessageConsumer>> = OnceLock::new();
 pub struct MessageFetcherImpl;
 
 /// Message 处理器：业务逻辑
-pub struct MessageHandlerImpl;
+pub struct MessageHandlerImpl {
+    runtime_domain: Arc<dyn RuntimeDomain>,
+    message_domain: Arc<dyn MessageDomain>,
+}
 
 /// Message 消费者具体类型
 pub type MessageConsumer = GenericConsumer<Message, MessageFetcherImpl, MessageHandlerImpl>;
@@ -94,6 +103,26 @@ impl MessageHandler<Message> for MessageHandlerImpl {
 // ==================== 各处理者逻辑 ====================\n
 
 impl MessageHandlerImpl {
+    /// 创建生产处理器（使用全局 Domain 单例）
+    pub fn new() -> Self {
+        Self {
+            runtime_domain: crate::service::domain::runtime::domain(),
+            message_domain: crate::service::domain::message::domain(),
+        }
+    }
+
+    /// 创建测试处理器（显式注入 Domain，避免绑定全局单例）
+    #[cfg(test)]
+    pub fn new_for_test(
+        runtime_domain: Arc<dyn RuntimeDomain>,
+        message_domain: Arc<dyn MessageDomain>,
+    ) -> Self {
+        Self {
+            runtime_domain,
+            message_domain,
+        }
+    }
+
     /// Agent 消息处理：调用 Brain 思考
     async fn handle_agent_message(&self, _message: &Message) -> Result<()> {
         // TODO: 调用 BrainDomain.process_message
@@ -114,13 +143,78 @@ impl MessageHandlerImpl {
     }
 
     /// 系统消息处理：执行工具或其他系统任务
-    async fn handle_system_message(&self, _message: &Message) -> Result<()> {
-        // TODO: 根据 message_type 分发到具体系统模块
-        // ToolCallRequest → ToolDomain.execute_tool_call
-        // 其他系统消息 → 对应处理
-        sys_debug!("system message processed by system module");
+    async fn handle_system_message(&self, message: &Message) -> Result<()> {
+        match message.message_type() {
+            MessageType::ToolCallRequest => self.handle_tool_call_request(message).await,
+            _ => {
+                sys_debug!("system message processed by system module");
+                Ok(())
+            }
+        }
+    }
+
+    /// ToolCallRequest 处理：编排 Runtime Domain 执行工具，并通过 Message Domain 回写结果
+    async fn handle_tool_call_request(&self, message: &Message) -> Result<()> {
+        let tool_call = parse_tool_call_request(message)?;
+        let args = tool_call.args.unwrap_or(Value::Null);
+
+        let mut ctx = crate::pkg::RequestContext::new(None, None);
+        ctx.set_agent_id(tool_call.from_id.clone());
+        if let Some(project_id) = &tool_call.project_id {
+            ctx.set_project_id(project_id.clone());
+        }
+        if let Some(task_id) = &tool_call.task_id {
+            ctx.set_task_id(task_id.clone());
+        }
+
+        let outcome = match self
+            .runtime_domain
+            .tool_execution()
+            .call_tool_by_id(ctx.clone(), tool_call.tool_id.clone(), args)
+            .await
+        {
+            Ok(result) => ToolCallExecutionOutcome::Success {
+                result,
+                result_file_meta: None,
+            },
+            Err(err) => ToolCallExecutionOutcome::Failure {
+                error_message: tool_error_message(err),
+            },
+        };
+
+        self.message_domain
+            .delivery()
+            .send_tool_call_result(
+                ctx,
+                SendToolCallResultCommand {
+                    request_message: message,
+                    outcome,
+                },
+            )
+            .await?;
+
         Ok(())
     }
+}
+
+fn parse_tool_call_request(message: &Message) -> Result<ToolCallMessage> {
+    if message.message_type() != MessageType::ToolCallRequest {
+        return Err(AppError::BadRequest(format!(
+            "expected ToolCallRequest message, got {:?}",
+            message.message_type()
+        )));
+    }
+
+    serde_json::from_str(&message.po.content)
+        .map_err(|err| AppError::BadRequest(format!("invalid ToolCallRequest content: {}", err)))
+}
+
+fn tool_error_message(err: ToolError) -> String {
+    let message = err.to_string();
+    message
+        .strip_prefix("ToolCallError: ")
+        .unwrap_or(&message)
+        .to_string()
 }
 
 // ==================== 初始化与单例访问 ====================
@@ -140,7 +234,7 @@ pub async fn init(config: &TopicConsumerConfig) -> Result<()> {
 
     // 创建 fetcher 和 handler
     let fetcher = MessageFetcherImpl;
-    let handler = MessageHandlerImpl;
+    let handler = MessageHandlerImpl::new();
 
     // 调用泛型 new 方法
     let consumer = MessageConsumer::new("message", config.clone(), fetcher, handler);

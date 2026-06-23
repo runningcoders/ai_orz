@@ -778,6 +778,8 @@ match tool.po.protocol
 
 ### Batch D：Manual MCP ToolCallResult 回调消息闭环
 
+状态：已完成最小闭环。Message Domain 已提供 `send_tool_call_request` / `send_tool_call_result` Command API；`MessageHandlerImpl` 已支持测试依赖注入，并在收到 `ToolCallRequest` 后编排 Runtime Domain 执行工具，再通过 Message Domain 回写 `ToolCallResult`。当前覆盖成功、Runtime 失败、非法请求、非 ToolCallRequest 系统消息忽略四类 Consumer 单元测试。
+
 目标：把 Manual MCP Tool 从“Prompt 可见”推进到“异步消息调用闭环”。Manual 工具调用不是 Rig/function calling 的同步返回，而是 ai_orz 自建的消息协议：Agent 发出 `ToolCallRequest` 消息，工具执行器消费并调用 Runtime Domain，执行结果再作为 `ToolCallResult` 回调消息发送给 Agent，随后由消息机制重新唤醒 Agent 继续推理。
 
 核心语义：
@@ -813,6 +815,19 @@ Agent 在下一轮 Prompt 中看到工具回调结果并继续完成用户任务
 - **Message Domain 管发送**：负责把工具执行结果转换为 `ToolCallResult` 回调消息，保存、发布事件、触发后续投递/唤醒；
 - **Message DAL/DAO 只做持久化**：Consumer 不应直接依赖 `MessageDal` 写入结果消息，避免绕过 Message Domain 的发送语义、事件发布和唤醒流程；
 - **Domain 不同层互调**：不要让 `RuntimeDomain` 直接调用 `MessageDomain`。Consumer 作为上层入口/应用编排层，可以同时协调 Runtime Domain 与 Message Domain。
+
+当前实现落点：
+
+- `src/consumer/message.rs`
+  - `MessageHandlerImpl` 持有 `Arc<dyn RuntimeDomain>` 与 `Arc<dyn MessageDomain>`；
+  - 生产环境通过 `MessageHandlerImpl::new()` 使用全局 Domain 单例；
+  - 测试环境通过 `MessageHandlerImpl::new_for_test(...)` 注入 mock，避免 Consumer 单元测试绑定全局单例；
+  - `MessageType::ToolCallRequest` 被解析为 `ToolCallMessage`，`args` 缺省时按 `Value::Null` 传入 Runtime；
+  - Consumer 基于 ToolCallMessage 中的 `from_id/project_id/task_id` 构造 `RequestContext`，调用 `runtime_domain.tool_execution().call_tool_by_id(ctx, tool_id, args)`；
+  - 执行成功映射为 `ToolCallExecutionOutcome::Success`，执行失败映射为 `ToolCallExecutionOutcome::Failure`，再统一调用 `message_domain.delivery().send_tool_call_result(...)`。
+- `src/consumer/message_tests.rs`
+  - 使用 `RecordingRuntimeDomain` / `RecordingMessageDomain` 记录调用，不直接依赖真实 Runtime/Message 全局单例；
+  - 覆盖 Consumer 成功回调、失败回调、非法 JSON 返回错误（由上层 nack）、非 ToolCallRequest 系统消息忽略。
 
 已新增 Message Domain 能力：
 
@@ -880,12 +895,12 @@ pub trait MessageDelivery: Send + Sync {
 
 Batch D 测试重点：
 
-- Consumer 收到 `ToolCallRequest` 后调用 `RuntimeDomain.tool_execution()`，而不是直接调用 DAL；
-- 工具成功时，Consumer 调用 `MessageDomain.delivery().send_tool_call_result(...)` 发送成功回调；
-- 工具失败时，发送失败回调，且错误中不包含 MCP server `command/env/url/headers/credential` 等敏感信息；
-- Consumer 不直接依赖 `MessageDal` 写入 `ToolCallResult`；
-- `ToolCallResult` 写入后会进入消息事件/唤醒链路，而不是只作为存档记录；
-- 只允许调用当前 Agent 已绑定的 `Manual` 工具；Auto 工具不走这个消息模式。
+- ✅ Consumer 收到 `ToolCallRequest` 后调用 `RuntimeDomain.tool_execution()`，而不是直接调用 DAL；
+- ✅ 工具成功时，Consumer 调用 `MessageDomain.delivery().send_tool_call_result(...)` 发送成功回调；
+- ✅ 工具失败时，Consumer 发送失败回调；错误脱敏由 Runtime 边界负责，Consumer 不拼接 MCP server `command/env/url/headers/credential` 等配置细节；
+- ✅ Consumer 不直接依赖 `MessageDal` 写入 `ToolCallResult`；
+- ✅ `ToolCallResult` 写入沿用 Message Domain 发送语义，后续事件发布/唤醒链路不被 Consumer 绕过；
+- ⏭️ “只允许调用当前 Agent 已绑定的 `Manual` 工具；Auto 工具不走这个消息模式”由 Runtime/Finance 工具绑定与 Prompt 可见性规则共同约束，后续可在授权/绑定校验 Batch 中补更细断言。
 
 ### Batch E：可观测性与安全补强
 
