@@ -756,7 +756,7 @@ match tool.po.protocol
 
 - `ToolPo::to_tool_prompt()` 负责输出模型可见的工具说明，只包含 `id/name/description/protocol/control_mode/parameters_schema`，不输出 `ToolPo.config`；
 - `to_tool_prompt()` 会对远端 MCP metadata 来源的 `description/parameters_schema` 做模型可见脱敏，避免 `command/env/url/headers/authorization/token/secret/password/credential` 等敏感词原样进入 Prompt；
-- `PromptBuilder::agent_tools(agent)` 只组合 Agent 当前绑定工具的安全 Prompt 文本，遵循「PO 负责格式化、Builder 纯组合」，并补充 ai_orz 工具调用方式说明：调用工具应发送工具调用消息，由消息机制处理，不是直接 Rig/function calling；
+- `PromptBuilder::agent_tools(agent)` 只组合 Agent 当前绑定工具中的 `Manual` 工具安全 Prompt 文本，遵循「PO 负责格式化、Builder 纯组合」，并补充 ai_orz 工具调用方式说明：下方列出的 Manual 工具应发送工具调用消息，由消息机制处理；已经注册到 Rig 的 Auto 工具不在该列表中，仍使用模型默认 Rig/function calling 调用方式；
 - `build_conversation_prompt()` 与 `RuntimeAwakening::awaken()` 已把 Agent 绑定工具加入 Prompt，因此 MCP Tool 可在唤醒上下文中被模型看到；
 - MCP Tool 仍保持 `ControlMode::Manual`，`ToolDal.wrap_for_rig()` 不会把它暴露给 Rig auto tool calling；Finance Domain 在 create/update 写入侧拒绝 HTTP/MCP `Auto`，不依赖运行时兜底。
 
@@ -772,10 +772,95 @@ match tool.po.protocol
 
 - Agent 绑定 MCP Tool 后，运行时工具列表可返回该 Tool；
 - Prompt 中能看到 MCP Tool 的安全元信息和参数 schema；
+- Prompt 中的工具列表只展示需要消息模式调用的 Manual 工具，并明确 Auto 工具仍走 Rig 默认调用方式；
 - Prompt 不包含 server `command/env/url/headers/credential`，也不包含 MCP tool binding config 的 `server_id/tool_name` 字段名；
 - MCP Tool 默认 `Manual` 且不进入 Rig auto tool calling。
 
-### Batch D：可观测性与安全补强
+### Batch D：Manual MCP ToolCallResult 回调消息闭环
+
+目标：把 Manual MCP Tool 从“Prompt 可见”推进到“异步消息调用闭环”。Manual 工具调用不是 Rig/function calling 的同步返回，而是 ai_orz 自建的消息协议：Agent 发出 `ToolCallRequest` 消息，工具执行器消费并调用 Runtime Domain，执行结果再作为 `ToolCallResult` 回调消息发送给 Agent，随后由消息机制重新唤醒 Agent 继续推理。
+
+核心语义：
+
+```text
+Agent 推理并决定调用 Manual MCP Tool
+  ↓
+发送 ToolCallRequest 消息
+  ↓
+ToolCallRequest Consumer 消费请求
+  ↓
+RuntimeDomain.tool_execution().call_tool_by_id(ctx, tool_id, args)
+  ↓
+按 ToolProtocol 路由并调用 McpToolDal / ToolDal
+  ↓
+Consumer 得到 result / error
+  ↓
+MessageDomain.delivery().send_tool_call_result(...)
+  ↓
+Message Domain 保存 ToolCallResult 并发布消息事件
+  ↓
+消息机制重新唤醒 Agent
+  ↓
+Agent 在下一轮 Prompt 中看到工具回调结果并继续完成用户任务
+```
+
+分层边界：
+
+- **Consumer 管编排**：消费 `ToolCallRequest`，调用 Runtime Domain 执行工具，然后调用 Message Domain 发送结果；
+- **Runtime Domain 管执行**：负责工具执行入口与协议路由，`ToolProtocol::Mcp` 路由到 `McpToolDal.call_tool_by_id`，Builtin/HTTP 路由到通用 `ToolDal.call_tool_by_id`；
+- **Message Domain 管发送**：负责把工具执行结果转换为 `ToolCallResult` 回调消息，保存、发布事件、触发后续投递/唤醒；
+- **Message DAL/DAO 只做持久化**：Consumer 不应直接依赖 `MessageDal` 写入结果消息，避免绕过 Message Domain 的发送语义、事件发布和唤醒流程；
+- **Domain 不同层互调**：不要让 `RuntimeDomain` 直接调用 `MessageDomain`。Consumer 作为上层入口/应用编排层，可以同时协调 Runtime Domain 与 Message Domain。
+
+已新增 Message Domain 能力：
+
+```rust
+pub enum ToolCallExecutionOutcome {
+    Success {
+        result: serde_json::Value,
+        result_file_meta: Option<FileMeta>,
+    },
+    Failure {
+        // 由 Runtime 边界提供已脱敏错误文本
+        error_message: String,
+    },
+}
+
+pub struct SendToolCallResultCommand<'a> {
+    pub request_message: &'a Message,
+    pub outcome: ToolCallExecutionOutcome,
+}
+
+#[async_trait::async_trait]
+pub trait MessageDelivery: Send + Sync {
+    async fn send_tool_call_result(
+        &self,
+        ctx: RequestContext,
+        cmd: SendToolCallResultCommand<'_>,
+    ) -> Result<Message, AppError>;
+}
+```
+
+`send_tool_call_result` 的职责：
+
+- 基于原始 `ToolCallRequest` 生成 `ToolCallResult`；
+- 保持同一个 `request_id`，用于请求/结果关联；
+- 自动反转 `from_id/to_id`，表现为系统/工具执行器回调给 Agent；
+- 继承 `project_id/task_id/tool_id/tool_name` 等上下文；
+- 对错误结果使用 Runtime 边界脱敏后的安全错误文本；
+- 通过 Message Domain 现有发送流程保存消息并发布事件，使 Agent 被重新唤醒；
+- 为大结果预留 `result_file_meta` / attachment 方案，避免过大内容直接塞入 message content。
+
+Batch D 测试重点：
+
+- Consumer 收到 `ToolCallRequest` 后调用 `RuntimeDomain.tool_execution()`，而不是直接调用 DAL；
+- 工具成功时，Consumer 调用 `MessageDomain.delivery().send_tool_call_result(...)` 发送成功回调；
+- 工具失败时，发送失败回调，且错误中不包含 MCP server `command/env/url/headers/credential` 等敏感信息；
+- Consumer 不直接依赖 `MessageDal` 写入 `ToolCallResult`；
+- `ToolCallResult` 写入后会进入消息事件/唤醒链路，而不是只作为存档记录；
+- 只允许调用当前 Agent 已绑定的 `Manual` 工具；Auto 工具不走这个消息模式。
+
+### Batch E：可观测性与安全补强
 
 在最小执行闭环跑通后，再补：
 

@@ -8,6 +8,7 @@ use crate::models::agent::Agent;
 use crate::models::memory::{Memory, MemoryPo};
 use crate::models::message::Message;
 use crate::models::user::UserPo;
+use common::enums::ControlMode;
 
 /// Prompt 构建器
 ///
@@ -124,8 +125,13 @@ impl PromptBuilder {
     /// 注意：`ToolPo::to_tool_prompt()` 不输出协议 config，避免 MCP server
     /// command/env/url/headers 等敏感配置进入模型上下文。
     pub fn agent_tools(mut self, agent: &Agent) -> Self {
-        self.tools
-            .extend(agent.tools().iter().map(|tool| tool.po.to_tool_prompt()));
+        self.tools.extend(
+            agent
+                .tools()
+                .iter()
+                .filter(|tool| matches!(tool.po.control_mode, ControlMode::Manual))
+                .map(|tool| tool.po.to_tool_prompt()),
+        );
         self
     }
 
@@ -198,11 +204,11 @@ impl PromptBuilder {
             result.push_str("\n");
         }
 
-        // 6. （预留）工具说明
+        // 6. Manual 工具说明
         if !self.tools.is_empty() {
-            result.push_str("【可用工具】\n");
+            result.push_str("【可用 Manual 工具】\n");
             result.push_str(
-                "调用以下 ai_orz 工具时，请发送一条工具调用消息，由消息机制处理；不要把它当作可直接执行的 Rig/function calling。\n",
+                "以下仅列出需要通过 ai_orz 消息机制调用的 Manual 工具：如需调用，请发送一条工具调用消息。已经注册到 Rig 的 Auto 工具不在此处列出，仍使用模型默认的 Rig/function calling 调用方式。\n",
             );
             for t in &self.tools {
                 result.push_str(&format!("- {}\n", t));
@@ -279,7 +285,7 @@ mod tests {
     fn builder_includes_bound_mcp_tools_without_server_config_details() {
         use crate::models::agent::AgentPo;
         use crate::models::tool::{Tool, ToolPo};
-        use common::enums::ToolProtocol;
+        use common::enums::{ControlMode, ToolProtocol};
         use serde_json::json;
 
         let agent_po = AgentPo::new(
@@ -311,18 +317,34 @@ mod tests {
             vec!["mcp".to_string(), "echo-server".to_string()],
             Some("creator".to_string()),
         ));
-        let agent = Agent::from_po_with_tools(agent_po, vec![mcp_tool]);
+        let mut auto_tool_po = ToolPo::new(
+            "builtin.auto-tool".to_string(),
+            "builtin.auto-tool".to_string(),
+            "Auto tool should use Rig default calling".to_string(),
+            ToolProtocol::Builtin,
+            json!(null),
+            Some(json!({"type": "object"})),
+            vec!["builtin".to_string()],
+            Some("creator".to_string()),
+        );
+        auto_tool_po.control_mode = ControlMode::Auto;
+        let auto_tool = Tool::from_po_for_management(auto_tool_po);
+        let agent = Agent::from_po_with_tools(agent_po, vec![mcp_tool, auto_tool]);
 
         let prompt = PromptBuilder::new()
             .agent_system(&agent)
             .agent_tools(&agent)
             .build();
 
-        assert!(prompt.contains("【可用工具】"));
+        assert!(prompt.contains("【可用 Manual 工具】"));
+        assert!(prompt.contains("Manual 工具"));
         assert!(prompt.contains("工具调用消息"));
-        assert!(prompt.contains("消息机制处理"));
-        assert!(prompt.contains("Rig/function calling"));
+        assert!(prompt.contains("消息机制调用"));
+        assert!(prompt.contains("Auto 工具"));
+        assert!(prompt.contains("模型默认的 Rig/function calling"));
         assert!(prompt.contains("mcp.echo-server.echo"));
+        assert!(!prompt.contains("builtin.auto-tool"));
+        assert!(!prompt.contains("Auto tool should use Rig default calling"));
         assert!(prompt.contains("Echo input text"));
         assert!(prompt.contains("Manual"));
         assert!(prompt.contains("text"));

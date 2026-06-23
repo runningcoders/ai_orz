@@ -15,13 +15,14 @@ mod delivery_test;
 mod management_test;
 
 use crate::error::AppError;
+use crate::models::file::FileMeta;
 use crate::models::message::Message;
 use crate::pkg::RequestContext;
 use crate::service::dal::message::MessageDal;
 pub use crate::service::dal::message_channel::{DeliveryResult, MessageChannelDal};
 use crate::service::dao::message::MessageQuery;
-use async_trait::async_trait;
 use common::enums::{MessageRole, MessageStatus};
+use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例 ====================
@@ -121,6 +122,32 @@ pub struct SendToUserCommand<'a> {
     pub reply_to_id: Option<&'a str>,
 }
 
+/// 工具调用执行结果
+#[derive(Debug, Clone)]
+pub enum ToolCallExecutionOutcome {
+    /// 工具执行成功
+    Success {
+        /// 工具返回结果
+        result: Value,
+        /// 大结果附件元数据（可选）
+        result_file_meta: Option<FileMeta>,
+    },
+    /// 工具执行失败
+    Failure {
+        /// 已脱敏的错误信息
+        error_message: String,
+    },
+}
+
+/// 发送工具调用结果回调消息的命令参数
+#[derive(Debug, Clone)]
+pub struct SendToolCallResultCommand<'a> {
+    /// 原始工具调用请求消息
+    pub request_message: &'a Message,
+    /// 执行结果
+    pub outcome: ToolCallExecutionOutcome,
+}
+
 /// Message Domain 总 trait
 ///
 /// 聚合消息领域所有子功能 trait
@@ -148,6 +175,13 @@ pub trait MessageDelivery: Send + Sync {
         &self,
         ctx: RequestContext,
         cmd: SendToUserCommand<'_>,
+    ) -> Result<Message, AppError>;
+
+    /// 发送工具调用结果回调消息
+    async fn send_tool_call_result(
+        &self,
+        ctx: RequestContext,
+        cmd: SendToolCallResultCommand<'_>,
     ) -> Result<Message, AppError>;
 
     /// 从队列取出下一条待处理消息

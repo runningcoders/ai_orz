@@ -1,9 +1,14 @@
 //! Message Delivery 单元测试
 
 use super::domain;
+use crate::models::message::{Message, ToolCallMessage};
 use crate::pkg::RequestContext;
-use crate::service::domain::message::{MessageDomain, SendToAgentCommand, SendToUserCommand};
+use crate::service::domain::message::{
+    MessageDomain, SendToAgentCommand, SendToUserCommand, SendToolCallResultCommand,
+    ToolCallExecutionOutcome,
+};
 use common::enums::{MessageRole, MessageStatus, MessageType};
+use serde_json::json;
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
@@ -25,6 +30,7 @@ fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn MessageDomain>, Reques
     let message_dao = crate::service::dao::message::new();
     let event_queue = crate::service::dao::event_queue::in_memory::new();
     let message_dal = crate::service::dal::message::new(message_dao, event_queue);
+    crate::service::dao::message_channel::init();
     let message_channel_dao = crate::service::dao::message_channel::new();
     init_all_channel_daos(); // 初始化所有渠道 DAO 单例
     let message_channel_dal = crate::service::dal::message_channel::new(message_channel_dao);
@@ -216,6 +222,151 @@ async fn test_send_without_project_and_task(pool: SqlitePool) {
         .await
         .unwrap();
     assert!(found.is_some());
+}
+
+#[sqlx::test]
+async fn test_send_tool_call_result_success_reuses_request_context(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+
+    let request = ToolCallMessage::new_request(
+        "tool-request-001".to_string(),
+        "tool-mcp-weather".to_string(),
+        "weather_lookup".to_string(),
+        Some("project-001".to_string()),
+        Some("task-001".to_string()),
+        "agent-001".to_string(),
+        "tool-executor".to_string(),
+        Some("parent-message-001".to_string()),
+        json!({ "city": "Shanghai" }),
+    );
+
+    let request_content = serde_json::to_string(&request).unwrap();
+    let request_message = Message::new_with_context(
+        "message-tool-request-001".to_string(),
+        request.project_id.clone(),
+        request.task_id.clone(),
+        request.from_id.clone(),
+        request.to_id.clone(),
+        MessageRole::Agent,
+        MessageRole::System,
+        MessageType::ToolCallRequest,
+        request_content,
+        None,
+        Default::default(),
+        request.reply_to_id.clone(),
+        request.from_id.clone(),
+    );
+
+    let result_message = domain
+        .delivery()
+        .send_tool_call_result(
+            ctx.clone(),
+            SendToolCallResultCommand {
+                request_message: &request_message,
+                outcome: ToolCallExecutionOutcome::Success {
+                    result: json!({ "temperature": 23, "unit": "celsius" }),
+                    result_file_meta: None,
+                },
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(result_message.po.message_type, MessageType::ToolCallResult);
+    assert_eq!(result_message.po.from_id, "tool-executor");
+    assert_eq!(result_message.po.to_id, "agent-001");
+    assert_eq!(result_message.po.from_role, MessageRole::System);
+    assert_eq!(result_message.po.to_role, MessageRole::Agent);
+    assert_eq!(result_message.po.project_id.as_deref(), Some("project-001"));
+    assert_eq!(result_message.po.task_id.as_deref(), Some("task-001"));
+    assert_eq!(
+        result_message.po.reply_to_id.as_deref(),
+        Some(request_message.id())
+    );
+
+    let payload: ToolCallMessage = serde_json::from_str(&result_message.po.content).unwrap();
+    assert_eq!(payload.request_id, "tool-request-001");
+    assert_eq!(payload.tool_id, "tool-mcp-weather");
+    assert_eq!(payload.tool_name, "weather_lookup");
+    assert_eq!(payload.from_id, "tool-executor");
+    assert_eq!(payload.to_id, "agent-001");
+    assert_eq!(payload.is_success, Some(true));
+    assert_eq!(
+        payload.result,
+        Some(json!({ "temperature": 23, "unit": "celsius" }))
+    );
+    assert!(payload.error_message.is_none());
+}
+
+#[sqlx::test]
+async fn test_send_tool_call_result_failure_reuses_request_context(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+
+    let request = ToolCallMessage::new_request(
+        "tool-request-002".to_string(),
+        "tool-mcp-failing".to_string(),
+        "failing_tool".to_string(),
+        Some("project-002".to_string()),
+        Some("task-002".to_string()),
+        "agent-002".to_string(),
+        "tool-executor".to_string(),
+        None,
+        json!({ "input": "safe-placeholder" }),
+    );
+
+    let request_content = serde_json::to_string(&request).unwrap();
+    let request_message = Message::new_with_context(
+        "message-tool-request-002".to_string(),
+        request.project_id.clone(),
+        request.task_id.clone(),
+        request.from_id.clone(),
+        request.to_id.clone(),
+        MessageRole::Agent,
+        MessageRole::System,
+        MessageType::ToolCallRequest,
+        request_content,
+        None,
+        Default::default(),
+        request.reply_to_id.clone(),
+        request.from_id.clone(),
+    );
+
+    let result_message = domain
+        .delivery()
+        .send_tool_call_result(
+            ctx.clone(),
+            SendToolCallResultCommand {
+                request_message: &request_message,
+                outcome: ToolCallExecutionOutcome::Failure {
+                    error_message: "tool execution failed".to_string(),
+                },
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(result_message.po.message_type, MessageType::ToolCallResult);
+    assert_eq!(result_message.po.from_id, "tool-executor");
+    assert_eq!(result_message.po.to_id, "agent-002");
+    assert_eq!(result_message.po.from_role, MessageRole::System);
+    assert_eq!(result_message.po.to_role, MessageRole::Agent);
+    assert_eq!(result_message.po.project_id.as_deref(), Some("project-002"));
+    assert_eq!(result_message.po.task_id.as_deref(), Some("task-002"));
+    assert_eq!(
+        result_message.po.reply_to_id.as_deref(),
+        Some(request_message.id())
+    );
+
+    let payload: ToolCallMessage = serde_json::from_str(&result_message.po.content).unwrap();
+    assert_eq!(payload.request_id, "tool-request-002");
+    assert_eq!(payload.from_id, "tool-executor");
+    assert_eq!(payload.to_id, "agent-002");
+    assert_eq!(payload.is_success, Some(false));
+    assert_eq!(
+        payload.error_message.as_deref(),
+        Some("tool execution failed")
+    );
+    assert!(payload.result.is_none());
 }
 
 #[sqlx::test]

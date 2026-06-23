@@ -2,10 +2,12 @@
 
 use crate::models::message::Message;
 use crate::models::message::MessagePo;
+use crate::models::message::ToolCallMessage;
 use crate::pkg::RequestContext;
 use crate::service::domain::message::MessageDomainImpl;
 use crate::service::domain::message::{
-    MessageDelivery, MessageManagement, SendToAgentCommand, SendToUserCommand,
+    MessageDelivery, SendToAgentCommand, SendToUserCommand, SendToolCallResultCommand,
+    ToolCallExecutionOutcome,
 };
 use common::enums::{MessageRole, MessageStatus, MessageType};
 
@@ -64,6 +66,58 @@ impl MessageDelivery for MessageDomainImpl {
             Default::default(), // file_meta
             cmd.reply_to_id.map(|s| s.to_string()),
             cmd.from_agent_id.to_string(), // created_by
+        );
+
+        let message = Message::from_po(po);
+        self.message_dal.save_message(ctx.clone(), &message).await?;
+
+        Ok(message)
+    }
+
+    async fn send_tool_call_result(
+        &self,
+        ctx: RequestContext,
+        cmd: SendToolCallResultCommand<'_>,
+    ) -> Result<Message, crate::error::AppError> {
+        if cmd.request_message.po.message_type != MessageType::ToolCallRequest {
+            return Err(crate::error::AppError::BadRequest(
+                "request_message must be ToolCallRequest".to_string(),
+            ));
+        }
+
+        let request: ToolCallMessage = serde_json::from_str(&cmd.request_message.po.content)
+            .map_err(|_| {
+                crate::error::AppError::BadRequest("invalid tool call request message".to_string())
+            })?;
+
+        let result_payload = match cmd.outcome {
+            ToolCallExecutionOutcome::Success {
+                result,
+                result_file_meta,
+            } => request.new_success_result(result, result_file_meta),
+            ToolCallExecutionOutcome::Failure { error_message } => {
+                request.new_error_result(error_message)
+            }
+        };
+
+        let content = serde_json::to_string(&result_payload).map_err(|_| {
+            crate::error::AppError::Internal("failed to serialize tool call result".to_string())
+        })?;
+
+        let po = MessagePo::new(
+            generate_id(),
+            result_payload.project_id.clone(),
+            result_payload.task_id.clone(),
+            result_payload.from_id.clone(),
+            result_payload.to_id.clone(),
+            MessageRole::System,
+            MessageRole::Agent,
+            MessageType::ToolCallResult,
+            content,
+            None,
+            Default::default(),
+            Some(cmd.request_message.id().to_string()),
+            result_payload.from_id.clone(),
         );
 
         let message = Message::from_po(po);
