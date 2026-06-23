@@ -8,7 +8,7 @@ use super::ToolCallDao;
 use crate::models::mcp_server::McpServerPo;
 use crate::models::tool::{CoreTool, Tool, ToolPo};
 use crate::pkg::request_context::RequestContext;
-use crate::pkg::tool_registry::mcp::{self, McpClientRuntime, McpToolDeps};
+use crate::pkg::tool_registry::mcp::{self, McpClientRuntime, McpToolDeps, RemoteMcpTool};
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -31,6 +31,8 @@ pub trait McpToolCallDao: ToolCallDao {
     ) -> Result<Option<Box<dyn CoreTool + Send + Sync>>>;
 
     fn invalidate_mcp_server(&self, server_id: &str);
+
+    async fn list_mcp_tools(&self, server: &McpServerPo) -> Result<Vec<RemoteMcpTool>>;
 
     #[cfg(test)]
     fn is_mcp_server_invalidated(&self, server_id: &str) -> bool;
@@ -114,6 +116,10 @@ impl McpToolCallDao for McpToolCallDaoImpl {
 
     fn invalidate_mcp_server(&self, server_id: &str) {
         self.client_runtime.invalidate_server(server_id);
+    }
+
+    async fn list_mcp_tools(&self, server: &McpServerPo) -> Result<Vec<RemoteMcpTool>> {
+        self.client_runtime.list_tools(server).await
     }
 
     #[cfg(test)]

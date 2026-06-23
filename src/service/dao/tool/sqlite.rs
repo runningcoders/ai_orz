@@ -48,15 +48,16 @@ impl ToolDao for ToolDaoSqliteImpl {
         sqlx::query(
             r#"
             INSERT INTO tools (
-                id, name, description, protocol, config, parameters_schema,
+                id, name, description, protocol, control_mode, config, parameters_schema,
                 tags, status, created_at, updated_at, created_by, updated_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(po.id.to_string())
         .bind(&po.name)
         .bind(&po.description)
         .bind(po.protocol as i32)
+        .bind(po.control_mode as i32)
         .bind(&po.config)
         .bind(&po.parameters_schema)
         .bind(&po.tags)
@@ -84,7 +85,7 @@ impl ToolDao for ToolDaoSqliteImpl {
         sqlx::query(
             r#"
             UPDATE tools SET
-                name = ?, description = ?, protocol = ?, config = ?,
+                name = ?, description = ?, protocol = ?, control_mode = ?, config = ?,
                 parameters_schema = ?, tags = ?, status = ?, updated_at = ?, updated_by = ?
             WHERE id = ?
             "#,
@@ -92,6 +93,7 @@ impl ToolDao for ToolDaoSqliteImpl {
         .bind(&po.name)
         .bind(&po.description)
         .bind(po.protocol as i32)
+        .bind(po.control_mode as i32)
         .bind(&po.config)
         .bind(&po.parameters_schema)
         .bind(&po.tags)

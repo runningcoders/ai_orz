@@ -6,14 +6,17 @@
 //! Server connection details, credentials, headers, env, and commands belong to
 //! `McpServerPo.config` and must not be duplicated into each MCP tool config.
 
-use crate::models::mcp_server::{McpServerPo, McpTransport};
+use crate::models::mcp_server::{McpServerConfig, McpServerPo, McpTransport};
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use common::enums::ToolProtocol;
 use rig::tool::ToolError;
-use rmcp::{ServiceExt, model::CallToolRequestParams, transport::TokioChildProcess};
+use rmcp::{
+    RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService,
+    transport::TokioChildProcess,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashSet;
@@ -34,6 +37,14 @@ pub struct McpToolConfig {
     pub server_id: String,
     /// Name of the concrete tool exposed by that MCP server.
     pub tool_name: String,
+}
+
+/// Tool metadata discovered from a remote MCP server via `tools/list`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RemoteMcpTool {
+    pub name: String,
+    pub description: Option<String>,
+    pub input_schema: Value,
 }
 
 /// Minimal MCP client runtime.
@@ -68,6 +79,58 @@ impl McpClientRuntime {
         }
     }
 
+    pub async fn list_tools(&self, server: &McpServerPo) -> Result<Vec<RemoteMcpTool>> {
+        match server.transport {
+            McpTransport::Stdio => self.list_stdio_tools(server).await,
+            McpTransport::StreamableHttp => Err(anyhow!(
+                "MCP streamable HTTP runtime is not implemented yet"
+            )),
+        }
+    }
+
+    async fn list_stdio_tools(&self, server: &McpServerPo) -> Result<Vec<RemoteMcpTool>> {
+        let config = server.config();
+        let mut client = connect_stdio_client(server, &config).await?;
+
+        let list_result = match tokio::time::timeout(
+            Duration::from_millis(config.timeout_ms),
+            client.peer().list_all_tools(),
+        )
+        .await
+        {
+            Ok(Ok(tools)) => Ok(tools),
+            Ok(Err(e)) => Err(anyhow!(
+                "MCP tools/list on server {} failed: {}",
+                server.id,
+                e
+            )),
+            Err(_) => Err(anyhow!(
+                "MCP tools/list on server {} timed out after {}ms",
+                server.id,
+                config.timeout_ms
+            )),
+        };
+
+        let close_result = client.close().await;
+        let tools = list_result?;
+        if let Err(e) = close_result {
+            return Err(anyhow!(
+                "MCP tools/list on server {} completed but session close failed: {}",
+                server.id,
+                e
+            ));
+        }
+
+        Ok(tools
+            .into_iter()
+            .map(|tool| RemoteMcpTool {
+                name: tool.name.to_string(),
+                description: tool.description.map(|description| description.to_string()),
+                input_schema: Value::Object(tool.input_schema.as_ref().clone()),
+            })
+            .collect())
+    }
+
     async fn call_stdio_tool(
         &self,
         server: &McpServerPo,
@@ -85,41 +148,7 @@ impl McpClientRuntime {
         };
 
         let config = server.config();
-        let command = config
-            .command
-            .as_deref()
-            .map(str::trim)
-            .filter(|command| !command.is_empty())
-            .ok_or_else(|| anyhow!("MCP stdio server {} command is required", server.id))?;
-
-        let mut process = Command::new(resolve_command_path(command)?);
-        process.args(&config.args);
-        process.env_clear();
-        for (key, value) in &config.env {
-            process.env(key, value);
-        }
-
-        let transport = TokioChildProcess::new(process)
-            .map_err(|e| anyhow!("failed to spawn MCP stdio server {}: {}", server.id, e))?;
-        let mut client = tokio::time::timeout(
-            Duration::from_millis(config.connect_timeout_ms),
-            ().serve(transport),
-        )
-        .await
-        .map_err(|_| {
-            anyhow!(
-                "MCP stdio server {} session initialization timed out after {}ms",
-                server.id,
-                config.connect_timeout_ms
-            )
-        })?
-        .map_err(|e| {
-            anyhow!(
-                "failed to initialize MCP stdio server {} session: {}",
-                server.id,
-                e
-            )
-        })?;
+        let mut client = connect_stdio_client(server, &config).await?;
 
         let params = CallToolRequestParams::new(tool_name.to_string()).with_arguments(arguments);
 
@@ -163,6 +192,47 @@ impl McpClientRuntime {
     pub fn is_invalidated(&self, server_id: &str) -> bool {
         self.invalidated_servers.lock().unwrap().contains(server_id)
     }
+}
+
+async fn connect_stdio_client(
+    server: &McpServerPo,
+    config: &McpServerConfig,
+) -> Result<RunningService<RoleClient, ()>> {
+    let command = config
+        .command
+        .as_deref()
+        .map(str::trim)
+        .filter(|command| !command.is_empty())
+        .ok_or_else(|| anyhow!("MCP stdio server {} command is required", server.id))?;
+
+    let mut process = Command::new(resolve_command_path(command)?);
+    process.args(&config.args);
+    process.env_clear();
+    for (key, value) in &config.env {
+        process.env(key, value);
+    }
+
+    let transport = TokioChildProcess::new(process)
+        .map_err(|e| anyhow!("failed to spawn MCP stdio server {}: {}", server.id, e))?;
+    tokio::time::timeout(
+        Duration::from_millis(config.connect_timeout_ms),
+        ().serve(transport),
+    )
+    .await
+    .map_err(|_| {
+        anyhow!(
+            "MCP stdio server {} session initialization timed out after {}ms",
+            server.id,
+            config.connect_timeout_ms
+        )
+    })?
+    .map_err(|e| {
+        anyhow!(
+            "failed to initialize MCP stdio server {} session: {}",
+            server.id,
+            e
+        )
+    })
 }
 
 fn resolve_command_path(command: &str) -> Result<PathBuf> {

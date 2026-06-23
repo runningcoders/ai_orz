@@ -216,31 +216,34 @@ mcp_servers 表
 
 ### 同步 MCP Tools
 
+当前实现状态：stdio transport 已支持通过 rmcp 初始化 session 并调用 `tools/list`；streamable HTTP transport 在 SSRF/header 安全策略落地前仍显式返回 `not implemented`。
+
 ```text
 Handler: sync_mcp_tools(server_id)
   ↓
 Finance Domain: McpServerProviderDomain.sync_tools
   ↓
-McpToolDal.sync_from_server(server_id)
+McpToolDal.sync_from_server(ctx, server_id)
   ↓
-McpServerDao.get_by_id(server_id)
+McpServerDao.find_by_id(ctx, server_id)
   ↓
-MCP tool call runtime / rmcp client list_tools(server_config)
+McpToolCallDao.list_mcp_tools(server)
+  ↓
+McpClientRuntime.list_tools(server)
   ↓
 MCP initialize + tools/list
   ↓
-Finance Domain 将 MCP tool metadata 映射为 ToolPo
+McpToolDal 将 remote tool metadata 映射/同步为 ToolPo
   ↓
-McpToolDal 将 MCP tool metadata 映射/同步为 ToolPo
-  ↓
-ToolDao upsert tools 表
+ToolDao create/update tools 表
 ```
 
-生成的 `ToolPo`：
+生成的 `ToolPo` 规则：
 
 ```rust
 ToolPo {
     id: format!("mcp.{server_id}.{tool_name}"),
+    name: format!("mcp.{server_id}.{tool_name}"),
     protocol: ToolProtocol::Mcp,
     control_mode: ControlMode::Manual,
     parameters_schema: input_schema_from_mcp,
@@ -248,9 +251,19 @@ ToolPo {
         "server_id": server_id,
         "tool_name": tool_name,
     }),
+    tags: vec!["mcp", server_id, tool_name],
     ...
 }
 ```
+
+同步 upsert 约定：
+
+- 不存在则创建新的标准 `ToolPo`；
+- 已存在则先校验现有记录必须是 `ToolProtocol::Mcp`，且 `ToolPo.config.server_id/tool_name` 与本次同步目标一致；否则返回 `Conflict`，避免 id 碰撞覆盖其他工具；
+- 校验通过后更新名称/描述/schema/config/tags 等可同步元数据；
+- 已存在记录保留 `created_at`、`created_by` 和当前 `status`，`updated_by` 使用当前 `RequestContext.user_id`；
+- `ToolPo.config` 只保存 `server_id/tool_name` 绑定关系，不复制 `McpServerPo.config` 中的 command、env、headers、url 等连接配置或敏感信息；
+- `ToolDaoSqliteImpl::create_tool/update_tool` 必须持久化 `control_mode`，确保 MCP 默认 `Manual` 不会落库丢失。
 
 ---
 
@@ -312,24 +325,19 @@ Tool { po, our_tool }
 
 ```rust
 pub trait McpToolDal: Send + Sync {
-    async fn sync_from_server(
-        &self,
-        ctx: &RequestContext,
-        server_id: String,
-    ) -> Result<Vec<Tool>, AppError>;
-
     async fn get_by_id(
         &self,
-        ctx: &RequestContext,
+        ctx: RequestContext,
         tool_id: String,
     ) -> Result<Option<Tool>, AppError>;
 
-    async fn call_by_tool_id(
+    async fn sync_from_server(
         &self,
-        ctx: &RequestContext,
-        tool_id: String,
-        args: serde_json::Value,
-    ) -> Result<serde_json::Value, ToolError>;
+        ctx: RequestContext,
+        server_id: &str,
+    ) -> Result<usize, AppError>;
+
+    fn invalidate_server(&self, server_id: &str);
 }
 
 pub struct McpToolDalImpl {
@@ -432,7 +440,7 @@ pub trait McpToolCallDao: ToolCallDao {
     async fn list_mcp_tools(
         &self,
         server: &McpServerPo,
-    ) -> Result<Vec<McpDiscoveredTool>, ToolError>;
+    ) -> Result<Vec<RemoteMcpTool>>;
 
     fn invalidate_mcp_server(&self, server_id: &str);
 }
@@ -497,7 +505,7 @@ Message Consumer / Runtime Domain
   ↓
 根据 ToolProtocol 路由：MCP 走 McpToolDal
   ↓
-McpToolDal.call_by_tool_id(ctx, tool_id, args)
+McpToolDal.get_by_id(ctx, tool_id)
   ↓
 ToolDao -> ToolPo(protocol=Mcp, config={server_id, tool_name})
   ↓
@@ -505,9 +513,9 @@ McpServerDao -> McpServerPo / McpServerConfig
   ↓
 McpToolCallDao.assemble_mcp_core_tool(po, server)
   ↓
-registry::mcp::McpToolBuilder / create_mcp_tool(po, deps) -> McpCoreTool
+registry::mcp::create_mcp_tool(po, deps) -> McpCoreTool
   ↓
-ToolCallDao.call_manual(ctx, tool, args)
+ToolCallDao.call_manual(ctx, &tool, args)
   ↓
 McpCoreTool.call
   ↓
@@ -678,7 +686,7 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 
 ### Phase 4：接入官方 rmcp 并同步 MCP Tools
 
-状态：stdio 调用子阶段已完成；tools/list 同步仍待实现。
+状态：stdio 调用与 tools/list 同步子阶段已完成；Finance Domain 管理面编排仍待接入。
 
 - ✅ 添加官方 `rmcp = "1.7"`，启用 `client` + `transport-child-process`；
 - ✅ `McpClientRuntime::call_tool(server, tool_name, args)` 第一版只支持 `McpTransport::Stdio`；
@@ -689,9 +697,10 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 - ✅ `tools/call` 成功、失败、超时后统一尝试 `client.close()`，避免 stdio session/子进程泄漏；
 - ✅ `McpCoreTool.call` 委托同一个 `McpClientRuntime`，返回序列化后的 `CallToolResult`（`structuredContent/isError/content`）；
 - ⏳ Finance Domain 编排 `sync_mcp_tools(server_id)`；
-- ⏳ `tools/list` 映射为 `ToolPo`；
-- ⏳ upsert `ToolProtocol::Mcp` tools；
-- ✅ 默认 `ControlMode::Manual`。
+- ✅ `McpClientRuntime.list_tools(server)` 支持 stdio `tools/list`；
+- ✅ `tools/list` 映射为标准 `ToolPo`；
+- ✅ upsert `ToolProtocol::Mcp` tools，保留 audit/status 并拒绝 id/binding 碰撞；
+- ✅ 默认 `ControlMode::Manual`，且 SQLite create/update 持久化该字段。
 
 ### Phase 5：安全、管理面和完整测试
 

@@ -9,7 +9,7 @@ use crate::models::tool::ToolPo;
 use crate::pkg::RequestContext;
 use crate::service::dal::mcp_tool::{self, McpToolDal};
 use crate::service::dao::{mcp_server, tool, tool_call};
-use common::enums::ToolProtocol;
+use common::enums::{ControlMode, ToolProtocol, ToolStatus};
 use serde_json::json;
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -53,6 +53,69 @@ fn mcp_server(id: &str) -> McpServerPo {
     )
 }
 
+fn mcp_server_with_command(id: &str, command: String, args: Vec<String>) -> McpServerPo {
+    McpServerPo::new(
+        id.to_string(),
+        "echo".to_string(),
+        McpTransport::Stdio,
+        McpServerConfig {
+            command: Some(command),
+            args,
+            ..McpServerConfig::default_stdio()
+        },
+        Some("test-user".to_string()),
+    )
+}
+
+fn write_echo_mcp_server_script() -> tempfile::NamedTempFile {
+    let script = r#"
+import json
+import sys
+
+for line in sys.stdin:
+    message = json.loads(line)
+    method = message.get("method")
+    request_id = message.get("id")
+    if method == "initialize":
+        response = {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "protocolVersion": "2025-11-25",
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "echo-test-server", "version": "1.0.0"},
+            },
+        }
+        print(json.dumps(response), flush=True)
+    elif method == "notifications/initialized":
+        continue
+    elif method == "tools/list":
+        response = {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "tools": [
+                    {
+                        "name": "echo",
+                        "description": "Echo input text",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {"text": {"type": "string"}},
+                            "required": ["text"],
+                        },
+                    }
+                ]
+            },
+        }
+        print(json.dumps(response), flush=True)
+"#;
+
+    let mut file = tempfile::NamedTempFile::new().expect("temp MCP script should be created");
+    std::io::Write::write_all(&mut file, script.as_bytes())
+        .expect("temp MCP script should be written");
+    file
+}
+
 fn init_test_env(pool: SqlitePool) -> (Arc<dyn McpToolDal + Send + Sync>, RequestContext) {
     let base_tool_call_dao = tool_call::new();
     let mcp_tool_call_dao = tool_call::new_mcp_tool_call_dao(base_tool_call_dao);
@@ -83,6 +146,202 @@ async fn mcp_tool_dal_get_by_id_assembles_tool_with_server_config(pool: SqlitePo
 
     assert_eq!(tool.po.id, po.id);
     assert_eq!(tool.po.protocol, ToolProtocol::Mcp);
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn mcp_tool_dal_syncs_stdio_server_tools_into_tool_records(pool: SqlitePool) -> Result<()> {
+    let (dal, ctx) = init_test_env(pool);
+    let script = write_echo_mcp_server_script();
+    let server = mcp_server_with_command(
+        "echo-server",
+        "python3".to_string(),
+        vec![script.path().to_string_lossy().to_string()],
+    );
+
+    mcp_server::new_mcp_server_dao()
+        .insert(ctx.clone(), &server)
+        .await?;
+
+    let synced = dal.sync_from_server(ctx.clone(), &server.id).await?;
+    assert_eq!(synced, 1);
+
+    let persisted = tool::new_tool_dao()
+        .get_by_id(ctx.clone(), "mcp.echo-server.echo".to_string())
+        .await?
+        .expect("synced MCP tool should be persisted as a standard ToolPo");
+
+    assert_eq!(persisted.id, "mcp.echo-server.echo");
+    assert_eq!(persisted.name, "mcp.echo-server.echo");
+    assert_eq!(persisted.description, "Echo input text");
+    assert_eq!(persisted.protocol, ToolProtocol::Mcp);
+    assert_eq!(persisted.control_mode, ControlMode::Manual);
+    assert_eq!(
+        persisted.config,
+        json!({
+            "server_id": "echo-server",
+            "tool_name": "echo",
+        })
+    );
+    assert_eq!(
+        persisted.parameters_schema,
+        Some(json!({
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"]
+        }))
+    );
+    assert!(persisted.tags.contains(&"mcp".to_string()));
+    assert!(persisted.tags.contains(&"echo-server".to_string()));
+    assert!(persisted.tags.contains(&"echo".to_string()));
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn mcp_tool_dal_sync_upserts_existing_tool_and_preserves_audit_and_status(
+    pool: SqlitePool,
+) -> Result<()> {
+    let (dal, ctx) = init_test_env(pool);
+    let script = write_echo_mcp_server_script();
+    let server = mcp_server_with_command(
+        "echo-server",
+        "python3".to_string(),
+        vec![script.path().to_string_lossy().to_string()],
+    );
+
+    mcp_server::new_mcp_server_dao()
+        .insert(ctx.clone(), &server)
+        .await?;
+
+    let mut existing = ToolPo::new(
+        "mcp.echo-server.echo".to_string(),
+        "stale-name".to_string(),
+        "Old local description".to_string(),
+        ToolProtocol::Mcp,
+        json!({
+            "server_id": "echo-server",
+            "tool_name": "echo",
+        }),
+        Some(json!({"type": "object", "properties": {}})),
+        vec!["old-tag".to_string()],
+        Some("original-user".to_string()),
+    );
+    existing.status = ToolStatus::Disabled;
+    let original_created_at = existing.created_at;
+    let original_created_by = existing.created_by.clone();
+    tool::new_tool_dao()
+        .create_tool(ctx.clone(), &existing)
+        .await?;
+
+    let synced = dal.sync_from_server(ctx.clone(), &server.id).await?;
+    assert_eq!(synced, 1);
+
+    let persisted = tool::new_tool_dao()
+        .get_by_id(ctx.clone(), "mcp.echo-server.echo".to_string())
+        .await?
+        .expect("existing MCP tool should still exist after sync upsert");
+
+    assert_eq!(persisted.name, "mcp.echo-server.echo");
+    assert_eq!(persisted.description, "Echo input text");
+    assert_eq!(persisted.protocol, ToolProtocol::Mcp);
+    assert_eq!(persisted.control_mode, ControlMode::Manual);
+    assert_eq!(persisted.status, ToolStatus::Disabled);
+    assert_eq!(persisted.created_at, original_created_at);
+    assert_eq!(persisted.created_by, original_created_by);
+    assert_eq!(persisted.updated_by, Some("test-user".to_string()));
+    assert_eq!(persisted.config["server_id"], "echo-server");
+    assert_eq!(persisted.config["tool_name"], "echo");
+    assert_eq!(
+        persisted.parameters_schema.as_ref().unwrap()["properties"]["text"]["type"],
+        "string"
+    );
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn mcp_tool_dal_sync_rejects_non_mcp_id_collision(pool: SqlitePool) -> Result<()> {
+    let (dal, ctx) = init_test_env(pool);
+    let script = write_echo_mcp_server_script();
+    let server = mcp_server_with_command(
+        "echo-server",
+        "python3".to_string(),
+        vec![script.path().to_string_lossy().to_string()],
+    );
+
+    mcp_server::new_mcp_server_dao()
+        .insert(ctx.clone(), &server)
+        .await?;
+
+    let collision = ToolPo::new_builtin(
+        "mcp.echo-server.echo".to_string(),
+        "builtin_collision".to_string(),
+        "Existing non-MCP tool with MCP-generated id".to_string(),
+    );
+    tool::new_tool_dao()
+        .create_tool(ctx.clone(), &collision)
+        .await?;
+
+    let err = dal
+        .sync_from_server(ctx.clone(), &server.id)
+        .await
+        .expect_err("MCP sync should reject non-MCP id collisions instead of overwriting");
+
+    assert!(err.to_string().contains("already exists as non-MCP tool"));
+    let persisted = tool::new_tool_dao()
+        .get_by_id(ctx.clone(), collision.id.clone())
+        .await?
+        .expect("collision tool should remain untouched");
+    assert_eq!(persisted.protocol, ToolProtocol::Builtin);
+    assert_eq!(persisted.name, "builtin_collision");
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn mcp_tool_dal_sync_rejects_mcp_binding_collision(pool: SqlitePool) -> Result<()> {
+    let (dal, ctx) = init_test_env(pool);
+    let script = write_echo_mcp_server_script();
+    let server = mcp_server_with_command(
+        "echo-server",
+        "python3".to_string(),
+        vec![script.path().to_string_lossy().to_string()],
+    );
+
+    mcp_server::new_mcp_server_dao()
+        .insert(ctx.clone(), &server)
+        .await?;
+
+    let existing = ToolPo::new(
+        "mcp.echo-server.echo".to_string(),
+        "wrong-binding".to_string(),
+        "Existing MCP tool with mismatched binding".to_string(),
+        ToolProtocol::Mcp,
+        json!({
+            "server_id": "other-server",
+            "tool_name": "echo",
+        }),
+        Some(json!({"type": "object", "properties": {}})),
+        vec!["mcp".to_string()],
+        Some("original-user".to_string()),
+    );
+    tool::new_tool_dao()
+        .create_tool(ctx.clone(), &existing)
+        .await?;
+
+    let err = dal
+        .sync_from_server(ctx.clone(), &server.id)
+        .await
+        .expect_err("MCP sync should reject mismatched MCP config bindings");
+
+    assert!(
+        err.to_string()
+            .contains("already binds to other-server/echo")
+    );
+    let persisted = tool::new_tool_dao()
+        .get_by_id(ctx.clone(), existing.id.clone())
+        .await?
+        .expect("existing MCP collision record should remain untouched");
+    assert_eq!(persisted.name, "wrong-binding");
+    assert_eq!(persisted.config["server_id"], "other-server");
     Ok(())
 }
 

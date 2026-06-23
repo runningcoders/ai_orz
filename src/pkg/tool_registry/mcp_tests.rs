@@ -177,6 +177,25 @@ for line in sys.stdin:
         print(json.dumps(response), flush=True)
     elif method == "notifications/initialized":
         continue
+    elif method == "tools/list":
+        response = {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "tools": [
+                    {
+                        "name": "echo",
+                        "description": "Echo input text",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {"text": {"type": "string"}},
+                            "required": ["text"],
+                        },
+                    }
+                ]
+            },
+        }
+        print(json.dumps(response), flush=True)
     elif method == "tools/call":
         args = message.get("params", {}).get("arguments", {})
         text = args.get("text", "")
@@ -233,4 +252,29 @@ async fn mcp_core_tool_calls_stdio_server_through_rmcp_runtime() {
 
     assert_eq!(result["structuredContent"]["echo"], "hello MCP");
     assert_eq!(result["isError"], false);
+}
+
+#[tokio::test]
+async fn mcp_client_runtime_lists_stdio_server_tools() {
+    let script = write_echo_mcp_server_script();
+    let server = mcp_server_with_command(
+        "echo-server",
+        "python3".to_string(),
+        vec![script.path().to_string_lossy().to_string()],
+    );
+    let runtime = McpClientRuntime::default();
+
+    let tools = runtime
+        .list_tools(&server)
+        .await
+        .expect("MCP stdio runtime should list remote tools");
+
+    assert_eq!(tools.len(), 1);
+    assert_eq!(tools[0].name, "echo");
+    assert_eq!(tools[0].description.as_deref(), Some("Echo input text"));
+    assert_eq!(tools[0].input_schema["type"], "object");
+    assert_eq!(
+        tools[0].input_schema["properties"]["text"]["type"],
+        "string"
+    );
 }
