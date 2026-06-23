@@ -388,15 +388,22 @@ pub trait DeliveryDomain {
     async fn send_to_agent(
         &self,
         ctx: RequestContext,
-        msg: NewMessage,
+        cmd: SendToAgentCommand<'_>,
     ) -> Result<MessagePo, AppError>;
 
     /// Agent 发送消息给用户
     async fn send_to_user(
         &self,
         ctx: RequestContext,
-        msg: NewMessage,
+        cmd: SendToUserCommand<'_>,
     ) -> Result<MessagePo, AppError>;
+
+    /// 分发消息到用户所有可用渠道
+    async fn deliver_message(
+        &self,
+        ctx: RequestContext,
+        cmd: DeliverMessageCommand<'_>,
+    ) -> Result<DeliveryResult, AppError>;
 
     /// Agent 拉取下一个待处理消息
     async fn dequeue(

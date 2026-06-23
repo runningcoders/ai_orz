@@ -148,6 +148,15 @@ pub struct SendToolCallResultCommand<'a> {
     pub outcome: ToolCallExecutionOutcome,
 }
 
+/// 分发消息到用户所有可用渠道的命令参数
+#[derive(Debug, Clone)]
+pub struct DeliverMessageCommand<'a> {
+    /// 待分发的消息
+    pub message: &'a Message,
+    /// 目标用户 ID
+    pub user_id: &'a str,
+}
+
 /// Message Domain 总 trait
 ///
 /// 聚合消息领域所有子功能 trait
@@ -199,8 +208,7 @@ pub trait MessageDelivery: Send + Sync {
     async fn deliver_message(
         &self,
         ctx: RequestContext,
-        message: &Message,
-        user_id: &str,
+        cmd: DeliverMessageCommand<'_>,
     ) -> Result<DeliveryResult, AppError>;
 }
 

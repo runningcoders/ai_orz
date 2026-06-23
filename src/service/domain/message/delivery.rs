@@ -6,8 +6,8 @@ use crate::models::message::ToolCallMessage;
 use crate::pkg::RequestContext;
 use crate::service::domain::message::MessageDomainImpl;
 use crate::service::domain::message::{
-    MessageDelivery, SendToAgentCommand, SendToUserCommand, SendToolCallResultCommand,
-    ToolCallExecutionOutcome,
+    DeliverMessageCommand, MessageDelivery, SendToAgentCommand, SendToUserCommand,
+    SendToolCallResultCommand, ToolCallExecutionOutcome,
 };
 use common::enums::{MessageRole, MessageStatus, MessageType};
 
@@ -168,11 +168,10 @@ impl MessageDelivery for MessageDomainImpl {
     async fn deliver_message(
         &self,
         ctx: RequestContext,
-        message: &Message,
-        user_id: &str,
+        cmd: DeliverMessageCommand<'_>,
     ) -> Result<crate::service::dal::message_channel::DeliveryResult, crate::error::AppError> {
         self.message_channel_dal
-            .deliver_message(ctx, message, user_id)
+            .deliver_message(ctx, cmd.message, cmd.user_id)
             .await
     }
 }

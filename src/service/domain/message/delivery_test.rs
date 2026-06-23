@@ -4,8 +4,8 @@ use super::domain;
 use crate::models::message::{Message, ToolCallMessage};
 use crate::pkg::RequestContext;
 use crate::service::domain::message::{
-    MessageDomain, SendToAgentCommand, SendToUserCommand, SendToolCallResultCommand,
-    ToolCallExecutionOutcome,
+    DeliverMessageCommand, MessageDomain, SendToAgentCommand, SendToUserCommand,
+    SendToolCallResultCommand, ToolCallExecutionOutcome,
 };
 use common::enums::{MessageRole, MessageStatus, MessageType};
 use serde_json::json;
@@ -424,7 +424,13 @@ async fn test_deliver_message_to_channels(pool: SqlitePool) {
     // 多渠道投递
     let result = domain
         .delivery()
-        .deliver_message(ctx.clone(), &message, user_id)
+        .deliver_message(
+            ctx.clone(),
+            DeliverMessageCommand {
+                message: &message,
+                user_id,
+            },
+        )
         .await
         .unwrap();
 
