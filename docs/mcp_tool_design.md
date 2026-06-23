@@ -710,28 +710,43 @@ sync_then_call_stdio_mcp_tool_by_id_returns_result
 
 ### Batch B：运行面协议路由设计落点
 
-目标：为后续 Message Consumer / Runtime Domain 调用工具提供一个上层路由，不把协议分发塞进 DAO/DAL 同层调用。
+状态：已完成。Runtime Domain 已新增 `RuntimeToolExecution::call_tool_by_id` 作为后续 Message Consumer 调用工具的上层能力入口；协议分发停留在 Domain 层，不下沉到 DAO，也不让 `ToolDal` 依赖 `McpToolDal`。
 
-建议先设计、后实现：
+当前调用链路：
 
 ```text
-Runtime Domain / Tool Execution Domain
+RuntimeDomain.tool_execution().call_tool_by_id(ctx, tool_id, args)
   ↓
-读取标准 Tool 元信息（通过 ToolDal.get_by_id 或专门 management 查询）
+ToolDal.get_by_id(ctx, tool_id) 读取标准 Tool 元信息
   ↓
 match tool.po.protocol
-  Builtin | Http => ToolDal.call_tool_by_id / call_manual
-  Mcp          => McpToolDal.call_tool_by_id / call_manual
+  Builtin | Http => ToolDal.call_tool_by_id(ctx, tool_id, args)
+  Mcp            => McpToolDal.call_tool_by_id(ctx, tool_id, args)
 ```
 
-第一阶段可以暂不新增 HTTP API，也不接 LLM 自动调用；只为消息消费者后续编排准备纯能力入口。
+当前落地文件：
 
-验收标准：
+- `src/service/domain/runtime/mod.rs`
+  - `RuntimeDomain` 新增 `tool_execution()` 能力入口；
+  - `RuntimeToolExecution` 新增 `call_tool_by_id(ctx, tool_id, args)`；
+  - `RuntimeDomainImpl` 组合 `ToolDal` 与 `McpToolDal`，但只在 Domain 层做协议路由。
+- `src/service/domain/runtime/tool_execution.rs`
+  - 先通过 `ToolDal.get_by_id` 读取通用 Tool 元信息；
+  - `ToolProtocol::Mcp` 转发到 `McpToolDal.call_tool_by_id`，并在 Runtime 边界将下层错误统一映射为安全错误，避免 command/env/headers/url/credential 等 server config 派生信息透出；
+  - `ToolProtocol::Builtin | ToolProtocol::Http` 转发到 `ToolDal.call_tool_by_id`。
+- `src/service/domain/runtime/tool_execution_test.rs`
+  - 覆盖 MCP 工具路由到 `McpToolDal`；
+  - 覆盖 Builtin/HTTP 工具路由到通用 `ToolDal`；
+  - 覆盖 MCP 下层错误脱敏：Runtime 返回值保留 tool_id 与通用失败原因，不包含 command/env/url/credential 等敏感细节；
+  - 使用 stub DAL 验证调用次数，避免依赖全局单例和真实外部 runtime。
+
+验收结论：
 
 - Domain 层负责协议路由，符合 handler→domain→dal→dao 单向分层；
-- DAL 之间不互调；
+- DAL 之间不互调，`ToolDal` 不注入、不调用 `McpToolDal`；
 - DAO 仍只做持久化；
-- MCP server config 不出现在 Domain 返回值、日志或错误文本中。
+- MCP server config 不进入 Runtime Domain 返回值；Runtime 对 MCP 下层错误做 fail-closed 脱敏，当前测试与实现不输出 command/env/headers/url/credential；
+- 第一阶段不新增 HTTP API，不接 LLM 自动调用，只为消息消费者后续编排准备纯能力入口。
 
 ### Batch C：Agent 绑定与 Prompt 可见性验证
 
@@ -932,12 +947,14 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 
 ### Phase 5：MCP Tool 运行面最小闭环
 
-状态：Batch A 已完成，后续继续补运行面协议路由、绑定展示与更完整安全策略。
+状态：Batch A 与 Batch B 已完成，后续继续补绑定展示与更完整安全策略。
 
 - ✅ `McpToolDal.call_tool_by_id/call_manual`：sync 后按标准 Tool ID 执行 MCP Tool；
 - ✅ DAL 级 E2E 测试：create server → sync tools → call synced tool → assert result；
+- ✅ Runtime Domain 协议路由：MCP 走 `McpToolDal`，Builtin/HTTP 走通用 `ToolDal`，禁止 DAL 同层互调；
+- ✅ Runtime MCP 错误边界脱敏：MCP 下层错误统一映射为安全错误，不输出 command/env/headers/url/credential；
 - ⏳ 错误路径测试：tool/server 缺失、非 object args、错误文本不泄漏 command/env/headers/url；
-- ⏳ 上层 Runtime/Message Consumer 协议路由设计：MCP 走 `McpToolDal`，Builtin/HTTP 走通用 `ToolDal`，禁止 DAL 同层互调；
+- ⏳ Message Consumer 接入 Runtime 工具执行入口；
 - ⏳ Agent 绑定与 Prompt 可见性验证：MCP Tool 可作为标准 Tool 绑定展示，但默认 `Manual`，暂不进入 Rig auto tool calling。
 
 ### Phase 6：安全、管理面和完整测试

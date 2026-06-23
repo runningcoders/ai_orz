@@ -27,9 +27,7 @@ impl ToolCallLogger {
     /// Initialize the global ToolCallLogger singleton
     /// Must be called once at application startup
     pub fn init(base_data_path: PathBuf) {
-        INSTANCE
-            .set(Self { base_data_path })
-            .expect("ToolCallLogger already initialized");
+        let _ = INSTANCE.get_or_init(|| Self { base_data_path });
     }
 
     /// Get the global ToolCallLogger singleton instance

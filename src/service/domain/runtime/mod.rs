@@ -18,6 +18,8 @@ use crate::models::memory::{Memory, MemoryTrace};
 use crate::models::message::Message;
 use crate::pkg::request_context::RequestContext;
 use crate::service::dal::brain::BrainDal;
+use crate::service::dal::mcp_tool::McpToolDal;
+use crate::service::dal::tool::ToolDal;
 
 // ==================== traits 定义 ===================
 
@@ -89,7 +91,17 @@ pub trait RuntimeAwakening: Send + Sync {
 /// 定义工具实际执行的接口
 #[async_trait]
 pub trait RuntimeToolExecution: Send + Sync {
-    // （预留）后续实现工具执行能力
+    /// Execute one tool by standard Tool ID.
+    ///
+    /// Runtime Domain owns protocol routing:
+    /// - MCP tools go through `McpToolDal`;
+    /// - Builtin/HTTP tools go through generic `ToolDal`.
+    async fn call_tool_by_id(
+        &self,
+        ctx: RequestContext,
+        tool_id: String,
+        args: serde_json::Value,
+    ) -> Result<serde_json::Value, rig::tool::ToolError>;
 }
 
 // ==================== 子模块  ====================
@@ -100,6 +112,9 @@ mod context_assembly;
 mod memory;
 mod tool_execution;
 
+#[cfg(test)]
+mod tool_execution_test;
+
 pub use context_assembly::{PromptBuilder, build_conversation_prompt};
 
 // ==================== 实现 ====================
@@ -109,12 +124,16 @@ pub use context_assembly::{PromptBuilder, build_conversation_prompt};
 /// 聚合所有运行时子功能实现
 struct RuntimeDomainImpl {
     brain_dal: Arc<dyn BrainDal>,
+    tool_dal: Arc<dyn ToolDal>,
+    mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
 }
 
 impl std::fmt::Debug for RuntimeDomainImpl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RuntimeDomainImpl")
             .field("brain_dal", &"<BrainDal>")
+            .field("tool_dal", &"<ToolDal>")
+            .field("mcp_tool_dal", &"<McpToolDal>")
             .finish()
     }
 }
@@ -123,6 +142,8 @@ impl Clone for RuntimeDomainImpl {
     fn clone(&self) -> Self {
         Self {
             brain_dal: self.brain_dal.clone(),
+            tool_dal: self.tool_dal.clone(),
+            mcp_tool_dal: self.mcp_tool_dal.clone(),
         }
     }
 }
@@ -130,7 +151,27 @@ impl Clone for RuntimeDomainImpl {
 impl RuntimeDomainImpl {
     /// 创建 Domain 实例
     fn new(brain_dal: Arc<dyn BrainDal>) -> Self {
-        Self { brain_dal }
+        Self {
+            brain_dal,
+            tool_dal: crate::service::dal::tool::dal(),
+            mcp_tool_dal: crate::service::dal::mcp_tool::dal(),
+        }
+    }
+
+    /// 创建带显式 Tool DAL 依赖的 Domain 实例。
+    ///
+    /// 仅用于测试 Runtime 协议路由，避免依赖全局单例与真实外部 runtime。
+    #[cfg(test)]
+    fn new_with_tool_dals(
+        brain_dal: Arc<dyn BrainDal>,
+        tool_dal: Arc<dyn ToolDal>,
+        mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
+    ) -> Self {
+        Self {
+            brain_dal,
+            tool_dal,
+            mcp_tool_dal,
+        }
     }
 
     /// 获取 Brain DAL 引用
@@ -165,6 +206,17 @@ pub fn domain() -> Arc<dyn RuntimeDomain> {
 /// 创建新的 Runtime Domain 实例（用于测试，每次测试创建独立实例保证隔离）
 pub fn new(brain_dal: Arc<dyn BrainDal>) -> Arc<dyn RuntimeDomain> {
     let domain = RuntimeDomainImpl::new(brain_dal);
+    Arc::new(domain)
+}
+
+/// 创建新的 Runtime Domain 实例并显式注入 Tool DAL（用于测试）。
+#[cfg(test)]
+pub fn new_with_tool_dals(
+    brain_dal: Arc<dyn BrainDal>,
+    tool_dal: Arc<dyn ToolDal>,
+    mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
+) -> Arc<dyn RuntimeDomain> {
+    let domain = RuntimeDomainImpl::new_with_tool_dals(brain_dal, tool_dal, mcp_tool_dal);
     Arc::new(domain)
 }
 
