@@ -8,6 +8,8 @@ use sqlx::{FromRow, Type};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
+pub const REDACTED_CONFIG_VALUE: &str = "[REDACTED]";
+
 /// MCP Server transport 类型。
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -150,12 +152,92 @@ impl McpServerConfig {
             response_max_bytes: 10 * 1024 * 1024,
         }
     }
+
+    pub fn redacted_for_management(&self) -> Self {
+        let mut config = self.clone();
+        config.env = config
+            .env
+            .keys()
+            .map(|key| (key.clone(), REDACTED_CONFIG_VALUE.to_string()))
+            .collect();
+        config.headers = config
+            .headers
+            .keys()
+            .map(|key| (key.clone(), REDACTED_CONFIG_VALUE.to_string()))
+            .collect();
+        config.url = config.url.as_deref().map(redact_url_query);
+        config
+    }
+}
+
+fn redact_url_query(url: &str) -> String {
+    let Some(query_start) = url.find('?') else {
+        return url.to_string();
+    };
+
+    let fragment_start = url[query_start + 1..]
+        .find('#')
+        .map(|idx| query_start + 1 + idx);
+
+    match fragment_start {
+        Some(fragment_start) => format!(
+            "{}?{}{}",
+            &url[..query_start],
+            REDACTED_CONFIG_VALUE,
+            &url[fragment_start..]
+        ),
+        None => format!("{}?{}", &url[..query_start], REDACTED_CONFIG_VALUE),
+    }
 }
 
 impl Default for McpServerConfig {
     fn default() -> Self {
         Self::default_stdio()
     }
+}
+
+/// MCP Server 业务实体。
+///
+/// 上层 Domain/Handler 应使用该业务实体；`McpServerPo` 仅作为 DAL/DAO 内部的持久化细节。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpServer {
+    pub po: McpServerPo,
+}
+
+impl McpServer {
+    pub fn new(
+        id: String,
+        name: String,
+        transport: McpTransport,
+        config: McpServerConfig,
+        creator: Option<String>,
+    ) -> Self {
+        Self {
+            po: McpServerPo::new(id, name, transport, config, creator),
+        }
+    }
+
+    pub fn from_po(po: McpServerPo) -> Self {
+        Self { po }
+    }
+
+    pub fn redacted_for_management(mut self) -> Self {
+        let config = self.po.config().redacted_for_management();
+        self.po.set_config(&config);
+        self
+    }
+}
+
+/// MCP Server 通用查询条件。
+#[derive(Debug, Clone, Default)]
+pub struct McpServerQuery {
+    pub id: Option<String>,
+    pub name: Option<String>,
+    pub transport: Option<McpTransport>,
+    pub status: Option<McpServerStatus>,
+    pub exclude_status: Option<McpServerStatus>,
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
 }
 
 /// MCP Server 持久化对象。

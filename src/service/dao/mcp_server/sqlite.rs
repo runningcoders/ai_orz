@@ -7,7 +7,8 @@ use async_trait::async_trait;
 use sqlx::QueryBuilder;
 use std::sync::{Arc, OnceLock};
 
-use super::{McpServerDao, McpServerQuery};
+use super::McpServerDao;
+use crate::models::mcp_server::McpServerQuery;
 
 static MCP_SERVER_DAO: OnceLock<Arc<dyn McpServerDao + Send + Sync>> = OnceLock::new();
 

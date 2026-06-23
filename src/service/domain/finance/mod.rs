@@ -6,6 +6,7 @@
 //! - ToolProvider - 外部工具提供商配置 + Agent 工具借用（绑定）关系
 
 pub mod attachment;
+pub mod mcp_server;
 pub mod message_channel;
 pub mod model_provider;
 pub mod tool_provider;
@@ -20,6 +21,9 @@ mod model_provider_test;
 mod message_channel_test;
 
 #[cfg(test)]
+mod mcp_server_test;
+
+#[cfg(test)]
 mod tool_provider_test;
 
 use crate::error::AppError;
@@ -31,6 +35,7 @@ use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
 use crate::service::dal::attachment::AttachmentDal;
 use crate::service::dal::brain::BrainDal;
+use crate::service::dal::mcp_server::McpServerDal;
 use crate::service::dal::message_channel::MessageChannelDal;
 use crate::service::dal::model_provider::ModelProviderDal;
 use crate::service::dal::tool::ToolDal;
@@ -50,6 +55,7 @@ pub fn domain() -> Arc<dyn FinanceDomain> {
 pub fn new(
     model_provider_dal: Arc<dyn ModelProviderDal>,
     message_channel_dal: Arc<dyn MessageChannelDal>,
+    mcp_server_dal: Arc<dyn McpServerDal + Send + Sync>,
     tool_dal: Arc<dyn ToolDal>,
     brain_dal: Arc<dyn BrainDal>,
     attachment_dal: Arc<dyn AttachmentDal + Send + Sync>,
@@ -57,6 +63,7 @@ pub fn new(
     let domain = FinanceDomainImpl::new(
         model_provider_dal,
         message_channel_dal,
+        mcp_server_dal,
         tool_dal,
         brain_dal,
         attachment_dal,
@@ -69,6 +76,7 @@ pub fn init() {
     let finance_domain = FinanceDomainImpl::new(
         crate::service::dal::model_provider::dal(),
         crate::service::dal::message_channel::dal(),
+        crate::service::dal::mcp_server::dal(),
         crate::service::dal::tool::dal(),
         crate::service::dal::brain::dal(),
         crate::service::dal::attachment::dal(),
@@ -90,6 +98,9 @@ pub trait FinanceDomain: Send + Sync {
 
     /// Tool Provider 管理能力（工具配置 + Agent 借用关系）
     fn tool_provider_manage(&self) -> &dyn ToolProviderManage;
+
+    /// MCP Server 管理能力（外部 MCP Provider 配置）
+    fn mcp_server_manage(&self) -> &dyn McpServerManage;
 
     /// Attachment 管理能力（通用上传文件资产）
     fn attachment_manage(&self) -> &dyn AttachmentManage;
@@ -257,6 +268,57 @@ pub trait AttachmentManage: Send + Sync {
     async fn delete_attachment(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
 }
 
+/// MCP Server 管理 trait
+///
+/// 定义 MCP Server Provider 配置相关的业务接口
+#[async_trait]
+pub trait McpServerManage: Send + Sync {
+    /// 创建 MCP Server
+    async fn create_mcp_server(
+        &self,
+        ctx: RequestContext,
+        server: &crate::models::mcp_server::McpServer,
+    ) -> Result<(), AppError>;
+
+    /// 获取 MCP Server
+    async fn get_mcp_server(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+    ) -> Result<Option<crate::models::mcp_server::McpServer>, AppError>;
+
+    /// 通用综合查询
+    async fn query_mcp_servers(
+        &self,
+        ctx: RequestContext,
+        query: crate::models::mcp_server::McpServerQuery,
+    ) -> Result<Vec<crate::models::mcp_server::McpServer>, AppError>;
+
+    /// 列出所有 MCP Server
+    async fn list_mcp_servers(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<Vec<crate::models::mcp_server::McpServer>, AppError>;
+
+    /// 更新 MCP Server
+    async fn update_mcp_server(
+        &self,
+        ctx: RequestContext,
+        server: &crate::models::mcp_server::McpServer,
+    ) -> Result<(), AppError>;
+
+    /// 更新 MCP Server 状态
+    async fn update_mcp_server_status(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        status: crate::models::mcp_server::McpServerStatus,
+    ) -> Result<(), AppError>;
+
+    /// 删除 MCP Server
+    async fn delete_mcp_server(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+}
+
 /// Tool Provider 管理 trait
 ///
 /// 定义 Tool Provider 相关的业务接口
@@ -352,6 +414,7 @@ pub trait ToolProviderManage: Send + Sync {
 pub struct FinanceDomainImpl {
     pub model_provider_dal: Arc<dyn ModelProviderDal>,
     pub message_channel_dal: Arc<dyn MessageChannelDal>,
+    pub mcp_server_dal: Arc<dyn McpServerDal + Send + Sync>,
     pub tool_dal: Arc<dyn ToolDal>,
     pub brain_dal: Arc<dyn BrainDal>,
     pub attachment_dal: Arc<dyn AttachmentDal + Send + Sync>,
@@ -362,6 +425,7 @@ impl FinanceDomainImpl {
     pub fn new(
         model_provider_dal: Arc<dyn ModelProviderDal>,
         message_channel_dal: Arc<dyn MessageChannelDal>,
+        mcp_server_dal: Arc<dyn McpServerDal + Send + Sync>,
         tool_dal: Arc<dyn ToolDal>,
         brain_dal: Arc<dyn BrainDal>,
         attachment_dal: Arc<dyn AttachmentDal + Send + Sync>,
@@ -369,6 +433,7 @@ impl FinanceDomainImpl {
         Self {
             model_provider_dal,
             message_channel_dal,
+            mcp_server_dal,
             tool_dal,
             brain_dal,
             attachment_dal,
@@ -386,6 +451,10 @@ impl FinanceDomain for FinanceDomainImpl {
     }
 
     fn tool_provider_manage(&self) -> &dyn ToolProviderManage {
+        self
+    }
+
+    fn mcp_server_manage(&self) -> &dyn McpServerManage {
         self
     }
 

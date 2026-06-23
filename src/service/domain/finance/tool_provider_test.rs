@@ -46,6 +46,7 @@ mod tests {
         crate::service::dao::attachment::init();
         crate::service::dao::model_provider::init();
         crate::service::dao::message_channel::init();
+        crate::service::dao::mcp_server::init();
         crate::service::dao::lark::init();
         crate::service::dao::wechat::init();
         crate::service::dao::slack::init();
@@ -56,6 +57,7 @@ mod tests {
         crate::service::dal::tool::init();
         crate::service::dal::model_provider::init();
         crate::service::dal::message_channel::init();
+        crate::service::dal::mcp_server::init();
         crate::service::dal::brain::init();
         crate::service::dal::attachment::init();
 
@@ -63,6 +65,7 @@ mod tests {
         let domain = finance::new(
             crate::service::dal::model_provider::dal(),
             crate::service::dal::message_channel::dal(),
+            crate::service::dal::mcp_server::dal(),
             crate::service::dal::tool::dal(),
             crate::service::dal::brain::dal(),
             crate::service::dal::attachment::dal(),

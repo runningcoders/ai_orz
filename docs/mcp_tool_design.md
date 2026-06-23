@@ -200,19 +200,86 @@ McpToolDal = MCP 专属 DAL，准备 server config 并调用全局 MCP ToolCall 
 ```text
 Handler: create/update_mcp_server
   ↓
-Finance Domain: McpServerProviderDomain
-  - 权限校验
+Finance Domain: McpServerProviderManage
+  - 权限校验（第一版只在 Domain 层预留边界，不下沉 DAO）
   - transport/config 安全校验
   - detail/list 脱敏策略
   ↓
 McpServerDal
+  - 使用业务实体 `McpServer`，不向 Domain/Handler 暴露 `McpServerPo`
+  - 执行创建/更新前的最小配置校验
+  - 更新/删除成功后通知 MCP runtime invalidate server cache
   ↓
 McpServerDao
+  - 只负责 `mcp_servers` 纯持久化 CRUD/query/status
   ↓
 mcp_servers 表
 ```
 
-创建/更新只修改持久化配置，不在 DAO/DAL 初始化阶段启动连接。后续如果 server 配置变化，需要由 MCP tool call runtime 内部的 session/client 管理组件按 `server_id` 做 invalidate/refresh；连接失败不应污染持久化事务，建议提供单独的 `test_connection` 或 `sync_tools` 动作展示连接结果。
+创建/更新只修改持久化配置，不在 DAO/DAL 初始化阶段启动连接。后续如果 server 配置变化，由 MCP tool call runtime 内部的 session/client 管理组件按 `server_id` 做 invalidate/refresh；连接失败不应污染持久化事务，使用单独的 `test_connection` 或 `sync_tools` 动作展示连接结果。
+
+### MCP Server 管理面增量实施方案
+
+本阶段按“DAL → Finance Domain → Handler/API”的顺序小步接入，避免一次性把管理面、同步、HTTP runtime、安全策略混在一起。
+
+#### Batch 1：`McpServer` 业务实体 + `McpServerDal`
+
+目标：让上层可以用业务实体管理 MCP Server，同时 DAO 仍只暴露纯持久化。
+
+涉及文件：
+
+- `src/models/mcp_server.rs`
+  - 新增 `McpServer { po: McpServerPo }` 业务实体；
+  - 提供 `new_stdio(...)` / `new_streamable_http(...)` 或 `from_po(...)` 等轻量构造/转换；
+  - 保留 `McpServerPo` 作为存储细节。
+- `src/service/dal/mcp_server.rs`
+  - 新增 `McpServerDal` trait：`create/find_by_id/query/update/delete/set_status`；
+  - 组合 `McpServerDao`，只做 DAL 级业务校验与 PO/entity 转换；
+  - stdio 第一版要求 `command` 非空；
+  - streamable HTTP 第一版在 SSRF/header/redirect 安全策略落地前拒绝创建/更新，runtime 继续保持 not implemented；
+  - 更新/删除后调用 `McpToolCallDao.invalidate_mcp_server(server_id)`，不直接创建 runtime。
+- `src/service/dal/mod.rs`
+  - 挂载 `mcp_server` 模块、测试模块和 init。
+
+首个 TDD 合约：`McpServerDal.create` 能创建合法 stdio server 并通过 `find_by_id` 返回业务实体；缺少 stdio `command` 时返回 `BadRequest` 且不落库。
+
+#### Batch 2：Finance Domain MCP Server 管理面
+
+目标：把 MCP Server 纳入 Finance Domain 的外部能力配置管理面。
+
+涉及文件：
+
+- `src/service/domain/finance/mod.rs`
+  - 新增 `McpServerProviderManage` trait；
+  - `FinanceDomain` 增加 `mcp_server_provider_manage()`；
+  - `FinanceDomainImpl` 注入 `Arc<dyn McpServerDal>`。
+- `src/service/domain/finance/mcp_server_provider.rs`
+  - 实现 create/get/query/update/delete/set_status；
+  - `sync_mcp_tools(server_id)` 调用 `McpToolDal.sync_from_server(ctx, server_id)`。
+
+#### Batch 3：Handler/API 接入
+
+目标：HTTP API 只作为用户 action 入口，不承载文件/持久化/运行时逻辑。
+
+建议路由：
+
+```text
+POST   /api/mcp/servers
+GET    /api/mcp/servers/:id
+GET    /api/mcp/servers
+PUT    /api/mcp/servers/:id
+DELETE /api/mcp/servers/:id
+POST   /api/mcp/servers/:id/sync-tools
+```
+
+Handler 仅做 DTO ↔ 业务实体/命令转换，然后调用 Finance Domain。
+
+#### Batch 4：安全与可观测性补强
+
+- detail/list/log/error 对 `env`、`headers`、URL query 做脱敏；管理面更新需保留 `[REDACTED]` 占位符对应的既有敏感值，避免 read-modify-update 覆盖真实密钥；
+- stdio command allowlist 是否启用继续保留决策点；
+- trace input/output/error 默认 `[REDACTED]`，后续由 tool-level trace policy 放宽；
+- streamable HTTP runtime 在 SSRF/header/redirect 策略完成前继续显式 `not implemented`。
 
 ### 同步 MCP Tools
 
@@ -657,15 +724,17 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
   - `tools/call`；
   - 确认 API、feature、错误类型与 async 生命周期。
 
-### Phase 1：MCP Server 持久化
+### Phase 1：MCP Server 持久化与管理面
 
-状态：DAO 持久化子阶段已完成。
+状态：DAO 持久化子阶段已完成；当前进入 Batch 1 的 `McpServer` 业务实体与 `McpServerDal`。
 
 - ✅ 新增 `McpServerPo/McpServerConfig`；
 - ✅ 新增 `mcp_servers` migration（active name 唯一索引、transport/status CHECK 约束）；
 - ✅ 新增 `McpServerDao` + SQLite 实现；
 - ✅ 覆盖 insert/find/query/update/delete、软删除默认过滤、显式查询 Deleted、offset-only 查询、软删除后重建同名记录等单元测试；
-- ⏳ `McpServerDal` 与管理面 create/update/detail/list/delete 后续单独接入，先不真实连接。
+- ⏳ 新增 `McpServer` 业务实体与 `McpServerDal`，先完成 create/find/query/update/delete/set_status 与最小配置校验；
+- ⏳ Finance Domain 管理面和 Handler/API 在后续 Batch 接入；
+- ⏳ 创建/更新/删除后的 runtime invalidate 通过 `McpToolCallDao.invalidate_mcp_server(server_id)` 触发，不在 DAO/DAL init 阶段启动连接。
 
 ### Phase 2：MCP Tool config + registry stub
 

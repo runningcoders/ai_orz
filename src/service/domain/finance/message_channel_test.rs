@@ -18,6 +18,7 @@ mod tests {
     ) -> (std::sync::Arc<dyn finance::FinanceDomain>, RequestContext) {
         // 初始化依赖的 DAO（不需要传 pool，DAO 通过 ctx 获取 pool）
         crate::service::dao::message_channel::init();
+        crate::service::dao::mcp_server::init();
         crate::service::dao::model_provider::init();
         crate::service::dao::tool::init();
         crate::service::dao::tool_call::init();
@@ -26,6 +27,7 @@ mod tests {
 
         // 初始化 DAL
         crate::service::dal::message_channel::init();
+        crate::service::dal::mcp_server::init();
         crate::service::dal::model_provider::init();
         crate::service::dal::tool::init();
         crate::service::dal::brain::init();
@@ -35,6 +37,7 @@ mod tests {
         let domain = finance::new(
             crate::service::dal::model_provider::dal(),
             crate::service::dal::message_channel::dal(),
+            crate::service::dal::mcp_server::dal(),
             crate::service::dal::tool::dal(),
             crate::service::dal::brain::dal(),
             crate::service::dal::attachment::dal(),

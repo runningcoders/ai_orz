@@ -29,6 +29,7 @@ fn init_test_env(
     // Attachment 测试只使用 AttachmentManage；其它依赖使用单例保持构造兼容。
     crate::service::dao::model_provider::init();
     crate::service::dao::message_channel::init();
+    crate::service::dao::mcp_server::init();
     crate::service::dao::tool::init();
     crate::service::dao::tool_call::init();
     crate::service::dao::cortex::init();
@@ -39,12 +40,14 @@ fn init_test_env(
     crate::service::dao::webhook::init();
     crate::service::dal::model_provider::init();
     crate::service::dal::message_channel::init();
+    crate::service::dal::mcp_server::init();
     crate::service::dal::tool::init();
     crate::service::dal::brain::init();
 
     let domain = finance::new(
         crate::service::dal::model_provider::dal(),
         crate::service::dal::message_channel::dal(),
+        crate::service::dal::mcp_server::dal(),
         crate::service::dal::tool::dal(),
         crate::service::dal::brain::dal(),
         attachment_dal,

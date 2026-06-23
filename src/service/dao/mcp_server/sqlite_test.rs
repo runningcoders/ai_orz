@@ -3,9 +3,10 @@
 //! Stage 1 只验证 MCP Server 配置持久化，不启动 MCP client/session。
 
 use crate::error::Result;
+use crate::models::mcp_server::McpServerQuery;
 use crate::models::mcp_server::{McpServerConfig, McpServerPo, McpServerStatus, McpTransport};
 use crate::pkg::RequestContext;
-use crate::service::dao::mcp_server::{self, McpServerDao, McpServerQuery};
+use crate::service::dao::mcp_server::{self, McpServerDao};
 use sqlx::SqlitePool;
 use std::collections::BTreeMap;
 use std::sync::Arc;
