@@ -31,6 +31,9 @@ pub trait McpToolCallDao: ToolCallDao {
     ) -> Result<Option<Box<dyn CoreTool + Send + Sync>>>;
 
     fn invalidate_mcp_server(&self, server_id: &str);
+
+    #[cfg(test)]
+    fn is_mcp_server_invalidated(&self, server_id: &str) -> bool;
 }
 
 /// Create an MCP-enhanced ToolCall DAO with the default MCP client runtime.
@@ -111,5 +114,10 @@ impl McpToolCallDao for McpToolCallDaoImpl {
 
     fn invalidate_mcp_server(&self, server_id: &str) {
         self.client_runtime.invalidate_server(server_id);
+    }
+
+    #[cfg(test)]
+    fn is_mcp_server_invalidated(&self, server_id: &str) -> bool {
+        self.client_runtime.is_invalidated(server_id)
     }
 }

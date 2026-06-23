@@ -151,20 +151,28 @@ src/pkg/tool_registry/
 
 ## DAO 初始化与连接初始化边界
 
-MCP client/session 生命周期是**工具调用底层能力**，不作为上层可见的独立 DAO 暴露；当前内聚在 `pkg::tool_registry::mcp::McpClientRuntime`，`McpToolCallDaoImpl` 只持有 runtime 依赖并负责协议路由/装饰。
+MCP client/session 生命周期是**工具调用底层能力**，不作为上层可见的独立 DAO 暴露；当前内聚在 `pkg::tool_registry::mcp::McpClientRuntime`，由 `McpToolCallDaoImpl` 持有并负责失效/后续 session 管理。`McpToolDal` 只组合 DAO 单例，不自行创建 base `ToolCallDao` 或新的 `McpClientRuntime`。
 
 ```text
 service::dao::mcp_server::init()
   初始化 McpServerDaoSqliteImpl 单例（纯持久化）
 
 service::dao::tool_call::init()
-  初始化基础 ToolCallDaoImpl
-  初始化/组合 McpToolCallDaoImpl
-  McpToolCallDaoImpl 持有 MCP client runtime 依赖，不直接管理 session 细节
+  通过单个 OnceLock 原子初始化一次 McpToolCallDaoImpl(base, McpClientRuntime)
+  其中 base 是基础 ToolCallDaoImpl
+  同一个 McpToolCallDaoImpl 同时暴露为：
+    - tool_call::dao()      -> Arc<dyn ToolCallDao>
+    - tool_call::mcp_dao()  -> Arc<dyn McpToolCallDao + Send + Sync>
+
+service::dal::mcp_tool::init()
+  new(tool::dao(), mcp_server::dao(), tool_call::mcp_dao())
+  不调用 tool_call::new()
+  不调用 new_mcp_tool_call_dao(...)
+  不创建第二份 McpClientRuntime
 
 McpToolDal
   读取 ToolPo + McpServerPo
-  调用 McpToolCallDaoImpl 的 MCP 专属组装方法
+  调用同一个全局 McpToolCallDao 的 MCP 专属组装/失效方法
   得到可调用 McpCoreTool
 ```
 
@@ -172,16 +180,17 @@ McpToolDal
 
 ```text
 McpServerDao init = 持久化组件初始化
-ToolCallDaoImpl = 通用工具调用基础实现
-McpToolCallDaoImpl = ToolCallDao 的 MCP 协议增强实现，组合 pkg::tool_registry::mcp::McpClientRuntime
-McpToolDal = MCP 专属 DAL，准备 server config 并调用 MCP 增强组装/调用能力
+ToolCallDaoImpl = 通用工具调用基础实现，只创建一次并作为 MCP 增强 DAO 的 base
+McpToolCallDaoImpl = ToolCallDao 的 MCP 协议增强实现，拥有 pkg::tool_registry::mcp::McpClientRuntime 生命周期
+McpToolDal = MCP 专属 DAL，准备 server config 并调用全局 MCP ToolCall DAO，不拥有 runtime 生命周期
 ```
 
 这样可以实现：
 
 - 上层使用时只关心 `ToolDal` / `McpToolDal`，不关心 MCP client 如何连接；
 - `ToolDal` 保持通用，不因 MCP/HTTP/未来协议膨胀；
-- MCP client 是工具调用方式底层，生命周期由 MCP tool call 实现管理；
+- MCP client/session/process/cache 是工具调用方式底层，生命周期由 `McpToolCallDaoImpl` 统一管理；
+- `McpToolDal.invalidate_server(server_id)` 与 MCP Tool 实际调用链路命中同一个 runtime/cache，避免双 runtime / 双缓存；
 - MCP Tool 工厂仍由 registry 承载，但构造所需参数由 `McpToolDal` 准备并传入。
 
 ## MCP Server 管理面链路

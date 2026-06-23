@@ -17,8 +17,9 @@ use super::ToolCallDao;
 
 // ==================== 工厂方法 + 单例 ====================
 
-/// Global ToolCall DAO instance
-static TOOL_CALL_DAO: OnceLock<Arc<dyn ToolCallDao>> = OnceLock::new();
+/// Global MCP-enhanced ToolCall DAO instance.
+static MCP_TOOL_CALL_DAO: OnceLock<Arc<dyn super::mcp::McpToolCallDao + Send + Sync>> =
+    OnceLock::new();
 
 /// 创建一个全新的 ToolCall DAO 实例（用于测试）
 pub fn new() -> Arc<dyn ToolCallDao> {
@@ -27,7 +28,12 @@ pub fn new() -> Arc<dyn ToolCallDao> {
 
 /// Get global ToolCall DAO
 pub fn dao() -> Arc<dyn ToolCallDao> {
-    TOOL_CALL_DAO.get().cloned().unwrap()
+    mcp_dao()
+}
+
+/// Get global MCP-enhanced ToolCall DAO.
+pub fn mcp_dao() -> Arc<dyn super::mcp::McpToolCallDao + Send + Sync> {
+    MCP_TOOL_CALL_DAO.get().cloned().unwrap()
 }
 
 /// ToolCall DAO implementation
@@ -42,12 +48,12 @@ impl ToolCallDaoImpl {
 
 /// Initialize global ToolCall DAO
 pub fn init() {
-    let base = new();
-    let enhanced: Arc<dyn ToolCallDao> = Arc::new(super::mcp::McpToolCallDaoImpl::new(
-        base,
-        Arc::new(crate::pkg::tool_registry::mcp::McpClientRuntime::default()),
-    ));
-    TOOL_CALL_DAO.set(enhanced).ok();
+    MCP_TOOL_CALL_DAO.get_or_init(|| {
+        Arc::new(super::mcp::McpToolCallDaoImpl::new(
+            new(),
+            Arc::new(crate::pkg::tool_registry::mcp::McpClientRuntime::default()),
+        ))
+    });
 }
 
 #[async_trait]

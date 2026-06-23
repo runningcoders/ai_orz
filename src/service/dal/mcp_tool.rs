@@ -25,8 +25,7 @@ pub fn dal() -> Arc<dyn McpToolDal + Send + Sync> {
 /// Initialize global MCP Tool DAL using global DAO singletons.
 pub fn init() {
     use crate::service::dao::{mcp_server, tool};
-    let mcp_tool_call_dao = tool_call::new_mcp_tool_call_dao(tool_call::new());
-    let _ = MCP_TOOL_DAL.set(new(tool::dao(), mcp_server::dao(), mcp_tool_call_dao));
+    let _ = MCP_TOOL_DAL.set(new(tool::dao(), mcp_server::dao(), tool_call::mcp_dao()));
 }
 
 /// Create MCP Tool DAL with explicit dependencies.

@@ -15,7 +15,7 @@ use std::boxed::Box;
 pub mod r#impl;
 pub mod mcp;
 
-pub use r#impl::{dao, init, new};
+pub use r#impl::{dao, init, mcp_dao, new};
 pub use mcp::{McpToolCallDao, new as new_mcp_tool_call_dao};
 
 #[cfg(test)]

@@ -104,3 +104,24 @@ async fn mcp_tool_dal_rejects_non_mcp_tool(pool: SqlitePool) -> Result<()> {
     assert!(err.to_string().contains("not an MCP tool"));
     Ok(())
 }
+
+#[test]
+fn mcp_tool_global_dal_invalidates_global_mcp_tool_call_runtime() {
+    crate::service::dao::mcp_server::init();
+    crate::service::dao::tool::init();
+    crate::service::dao::tool_call::init();
+    crate::service::dal::mcp_tool::init();
+
+    let server_id = "global-singleton-server";
+    assert!(
+        !tool_call::mcp_dao().is_mcp_server_invalidated(server_id),
+        "fresh global MCP ToolCall DAO runtime should not already be invalidated"
+    );
+
+    mcp_tool::dal().invalidate_server(server_id);
+
+    assert!(
+        tool_call::mcp_dao().is_mcp_server_invalidated(server_id),
+        "global McpToolDal must reuse tool_call::mcp_dao() so invalidation reaches the same runtime"
+    );
+}
