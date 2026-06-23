@@ -6,12 +6,15 @@
 use crate::error::AppError;
 use crate::models::tool::Tool;
 use crate::pkg::RequestContext;
+use crate::pkg::tool_registry::http;
 use crate::service::domain::finance::{FinanceDomainImpl, ToolProviderManage};
+use common::enums::{ControlMode, ToolProtocol};
 
 #[async_trait::async_trait]
 impl ToolProviderManage for FinanceDomainImpl {
     /// 创建 Tool
     async fn create_tool(&self, ctx: RequestContext, tool: &Tool) -> Result<(), AppError> {
+        validate_tool_management_policy(tool)?;
         self.tool_dal.create_tool(ctx.clone(), &tool.po).await
     }
 
@@ -38,6 +41,7 @@ impl ToolProviderManage for FinanceDomainImpl {
 
     /// 更新 Tool
     async fn update_tool(&self, ctx: RequestContext, tool: &Tool) -> Result<(), AppError> {
+        validate_tool_management_policy(tool)?;
         self.tool_dal.update_tool(ctx.clone(), tool).await
     }
 
@@ -104,4 +108,18 @@ impl ToolProviderManage for FinanceDomainImpl {
     ) -> Result<Vec<Tool>, AppError> {
         self.tool_dal.search(ctx.clone(), params).await
     }
+}
+
+fn validate_tool_management_policy(tool: &Tool) -> Result<(), AppError> {
+    if !matches!(tool.po.protocol, ToolProtocol::Http) {
+        return Ok(());
+    }
+
+    if !matches!(tool.po.control_mode, ControlMode::Manual) {
+        return Err(AppError::BadRequest(
+            "HTTP Tool only supports Manual control mode".to_string(),
+        ));
+    }
+
+    http::validate_tool_po_config(&tool.po).map_err(|err| AppError::BadRequest(err.to_string()))
 }

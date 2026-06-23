@@ -1,10 +1,18 @@
 //! Unit tests for tool call tracing module
 
-use serde_json::json;
+use crate::models::tool::{CoreTool, ToolPo};
+use crate::pkg::RequestContext;
+use async_trait::async_trait;
+use common::enums::{ToolProtocol, ToolStatus};
+use rig::tool::ToolError;
+use serde_json::{Value, json};
+use sqlx::sqlite::SqlitePoolOptions;
+use std::{fs, process, sync::Once};
 use tempfile::tempdir;
 
 use super::entry::{ToolCallEntry, ToolCallStatus};
 use super::logger::ToolCallLogger;
+use super::tool_call_logger::LoggingDecorator;
 
 #[test]
 fn test_logger_creates_correct_directory_structure() {
@@ -174,6 +182,142 @@ fn test_failed_entry_logged_correctly() {
         Some("Parameter validation failed: bad_param is invalid".to_string())
     );
     assert!(read_entry.output.is_none());
+}
+
+#[derive(Clone)]
+struct FakeCoreTool {
+    po: ToolPo,
+    result: Value,
+}
+
+#[async_trait]
+impl CoreTool for FakeCoreTool {
+    async fn call(&self, _ctx: RequestContext, _args: Value) -> Result<Value, ToolError> {
+        Ok(self.result.clone())
+    }
+
+    fn po(&self) -> &ToolPo {
+        &self.po
+    }
+}
+
+fn init_test_tool_call_logger() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let base_path =
+            std::env::temp_dir().join(format!("ai_orz_tool_trace_tests_{}", process::id()));
+        fs::create_dir_all(&base_path).expect("test tool trace base path should be created");
+        ToolCallLogger::init(base_path);
+    });
+}
+
+fn fake_tool_po(protocol: ToolProtocol) -> ToolPo {
+    let mut po = ToolPo::new(
+        "fake-http-tool".to_string(),
+        "fake-http-tool".to_string(),
+        "Fake HTTP tool".to_string(),
+        protocol,
+        json!({}),
+        None,
+        vec![],
+        Some("test".to_string()),
+    );
+    po.status = ToolStatus::Enabled;
+    po
+}
+
+#[derive(Clone)]
+struct FailingFakeCoreTool {
+    po: ToolPo,
+}
+
+#[async_trait]
+impl CoreTool for FailingFakeCoreTool {
+    async fn call(&self, _ctx: RequestContext, _args: Value) -> Result<Value, ToolError> {
+        Err(ToolError::ToolCallError(
+            "http request failed for https://api.example.invalid/search?access_token=placeholder-value"
+                .into(),
+        ))
+    }
+
+    fn po(&self) -> &ToolPo {
+        &self.po
+    }
+}
+
+#[tokio::test]
+async fn http_tool_logging_decorator_redacts_error() {
+    init_test_tool_call_logger();
+
+    let tool = FailingFakeCoreTool {
+        po: fake_tool_po(ToolProtocol::Http),
+    };
+    let decorated = LoggingDecorator::new(Box::new(tool));
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("test sqlite pool should be created");
+    let ctx = RequestContext::new_simple("test-user", pool);
+
+    let (_result, entry) = decorated
+        .call_with_entry(ctx, json!({ "access_token": "placeholder-value" }))
+        .await;
+
+    let trace_text = serde_json::to_string(&entry).expect("trace entry should serialize");
+    assert!(trace_text.contains("[REDACTED]"));
+    assert!(
+        !trace_text.contains("placeholder-value"),
+        "HTTP trace leaked sensitive value: {trace_text}"
+    );
+    assert!(
+        !trace_text.contains("api.example.invalid"),
+        "HTTP trace leaked URL host: {trace_text}"
+    );
+}
+
+#[tokio::test]
+async fn http_tool_logging_decorator_redacts_input_and_output() {
+    init_test_tool_call_logger();
+
+    let sensitive_value = "placeholder-value";
+    let tool = FakeCoreTool {
+        po: fake_tool_po(ToolProtocol::Http),
+        result: json!({
+            "status": 200,
+            "body": {
+                "access_token": sensitive_value
+            }
+        }),
+    };
+    let decorated = LoggingDecorator::new(Box::new(tool));
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("test sqlite pool should be created");
+    let ctx = RequestContext::new_simple("test-user", pool);
+
+    let (_result, entry) = decorated
+        .call_with_entry(
+            ctx,
+            json!({
+                "query": "rust",
+                "access_token": sensitive_value
+            }),
+        )
+        .await;
+
+    let trace_text = serde_json::to_string(&entry).expect("trace entry should serialize");
+    assert!(trace_text.contains("[REDACTED]"));
+    assert!(
+        !trace_text.contains(sensitive_value),
+        "HTTP trace leaked sensitive value: {trace_text}"
+    );
+    assert!(
+        !trace_text.contains("access_token"),
+        "HTTP trace leaked sensitive key: {trace_text}"
+    );
 }
 
 #[test]

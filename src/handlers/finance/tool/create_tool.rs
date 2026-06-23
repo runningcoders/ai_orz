@@ -1,7 +1,7 @@
 //! Handler: POST /api/v1/tools - Create a new custom tool
 
-use ai_orz_macros::{register_handler_tool, generate_http_handler};
-use common::api::{CreateToolRequest, CreateToolResponse, GetToolResponse};
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{CreateToolRequest, CreateToolResponse};
 use common::enums::ToolProtocol;
 
 use crate::error::AppError;
@@ -9,14 +9,12 @@ use crate::models::tool::Tool;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
-use super::response::to_detail;
-
 /// Create a new custom tool (HTTP/MCP). Built-in tools cannot be created via this API.
 #[register_handler_tool(
     id = "create_tool",
     name = "create_tool",
     description = "Create a new custom tool (HTTP/MCP). Built-in tools cannot be created via this API.",
-    params = "common::api::CreateToolRequest",
+    params = "common::api::CreateToolRequest"
 )]
 #[generate_http_handler]
 pub async fn create_tool(

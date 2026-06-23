@@ -267,12 +267,16 @@ impl ToolPo {
             id
         };
         let now = common::constants::utils::current_timestamp();
+        let control_mode = match protocol {
+            ToolProtocol::Http => ControlMode::Manual,
+            _ => ControlMode::Auto,
+        };
         Self {
             id,
             name,
             description,
             protocol,
-            control_mode: ControlMode::Auto, // Default to Auto for backward compatibility
+            control_mode,
             config,
             parameters_schema,
             tags: serde_json::to_string(&tags).unwrap_or_else(|_| "[]".to_string()),
@@ -319,7 +323,7 @@ impl ToolPo {
         self.protocol = ToolProtocol::Builtin;
         // 如果 control_mode 未设置，默认使用 Auto
         // 用户自定义的 control_mode 会被保留
-        if self.control_mode == 0 {
+        if self.control_mode == ControlMode::Auto {
             self.control_mode = ControlMode::Auto;
         }
     }

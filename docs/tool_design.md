@@ -950,8 +950,8 @@ DELETE /api/v1/finance/tools/{id}/agent-bind
 Tool 协议配置 `config` 可能包含 header、token、connection string 等敏感信息：
 
 - 写入接口允许接收 `config`；
-- 列表/详情响应不返回 `config` 原文；
-- 响应仅返回 `has_config: bool` 表达是否存在配置；
+- 列表响应不返回 `config` 原文，仅返回 `has_config: bool` 表达是否存在配置；
+- 详情响应可以返回脱敏后的 `config`：HTTP `headers` / `query` / `body` 中的值默认全部替换为 `[REDACTED]`（保留字段结构，不保留原值），URL 中的 userinfo 移除，URL query 的所有值统一替换为 `[REDACTED]`；
 - `parameters_schema` 可以返回，因为它描述参数结构而不是运行密钥。
 
 ### Handler 职责边界
@@ -1021,6 +1021,145 @@ PUT /api/v1/finance/tools/{id}/status
 - `cargo check` 通过；
 - `cargo test` 通过；
 - Tool DAO / DAL / Domain 覆盖了删除、内置工具保护、状态迁移和列表查询相关测试。
+
+---
+
+## HTTP Tool Runtime 设计补充（2026-06-22 更新）
+
+### 核心结论
+
+HTTP 工具不设计为一个固定暴露给 Agent 的裸 `http_get` / `http_post` 内置工具，而设计为一套**通用 HTTP Tool Runtime**：
+
+```text
+HTTP Runtime 是代码内置能力；
+HTTP Tool 是数据库驱动的用户/系统注册工具。
+```
+
+用户通过管理页面创建具体 HTTP 工具，写入标准 `tools` 表记录：
+
+```rust
+ToolPo {
+    protocol: ToolProtocol::Http,
+    control_mode: ControlMode::Manual,
+    parameters_schema,
+    config: HttpToolConfig JSON,
+    ...
+}
+```
+
+运行时根据 `ToolProtocol::Http` 动态构建 `HttpCoreTool` 并执行。
+
+### ToolProtocol 与 ControlMode 正交
+
+`ToolProtocol` 表达工具来源/协议，不决定调用方式：
+
+| 字段值 | 含义 |
+|---|---|
+| `Builtin` | 代码内置工具，由内置工厂创建 |
+| `Http` | HTTP 协议工具，由 `ToolPo.config` 驱动 |
+| `Mcp` | MCP 协议工具，后续扩展 |
+
+`ControlMode` 表达谁来调用：
+
+| 字段值 | 含义 |
+|---|---|
+| `Auto` | 进入 Rig tools，由 Rig 原生 tool calling 自动调用 |
+| `Manual` | 不进入 Rig，走自建 `ToolCallRequest` / `ToolCallResult` 消息链路 |
+
+因此：
+
+```text
+Builtin 不等于 Auto；
+Http 不等于 Manual；
+是否进入 Rig 只看 ControlMode。
+```
+
+`wrap_for_rig` 的唯一过滤条件是：
+
+```rust
+if tool.po.control_mode != ControlMode::Auto {
+    continue;
+}
+```
+
+### 代码组织
+
+`HttpCoreTool` 直接放在工具中心，统一工具构建逻辑：
+
+```text
+src/pkg/tool_registry/http.rs
+```
+
+该模块负责：
+
+- 定义 `HttpToolConfig`；
+- 定义 `HttpCoreTool`；
+- 为每次调用创建带 timeout、redirect policy、DNS pinning 的 `reqwest::Client`；
+- 根据 `ToolPo.config` 创建 HTTP 类型 `CoreTool`；
+- 执行模板渲染、安全校验、HTTP 请求、响应裁剪和脱敏。
+
+`ToolCallDao` 不直接知道 HTTP 请求细节，只通过现有统一入口获取工具实例：
+
+```rust
+let registry = get_registry();
+let tool = registry.create_tool(po.clone());
+```
+
+`ToolRegistry.create_tool()` 根据 `ToolProtocol` 分发：
+
+```rust
+match po.protocol {
+    ToolProtocol::Builtin => builtin_factory.create(po),
+    ToolProtocol::Http => http::create_tool(po),
+    ToolProtocol::Mcp => None, // 后续扩展
+}
+```
+
+### HTTP Tool 执行链路
+
+```text
+用户页面创建 HTTP Tool
+  ↓
+Finance Tool 管理面
+  ↓
+ToolDal.create_tool()
+  ↓
+ToolDao 写入 tools 表
+  ↓
+Agent Prompt 展示该 Manual Tool
+  ↓
+LLM 输出 ToolCallRequest(tool_id, args)
+  ↓
+Message Consumer 识别 ToolCallRequest
+  ↓
+ToolDal.call_tool_by_id()
+  ↓
+ToolCallDao.assemble_core_tool()
+  ↓
+ToolRegistry.create_tool(po)
+  ↓
+ToolProtocol::Http → HttpCoreTool
+  ↓
+ToolCallDao.call_manual()
+  ↓
+HttpCoreTool.call(ctx, args)
+  ↓
+ToolCallResult 写回消息链路
+```
+
+### 设计约束
+
+- Agent 不直接获得裸 `http_get(url, headers)` 能力；
+- URL、method、headers、query、body 模板由 `HttpToolConfig` 固定；
+- Agent 只能填写 `parameters_schema` 定义的业务参数；
+- HTTP Tool 第一版默认 `ControlMode::Manual`；
+- SSRF 防护、timeout、response size limit、redirect 策略、敏感 header 脱敏必须内置到 HTTP Runtime；
+- 本地/私网 HTTP Tool 采用默认拒绝 + 显式授权：`blocked_domains` 优先拒绝，只有配置 `allow_local_network=true` 才允许访问 localhost/私网/link-local 目标；运行时还会在发请求前解析域名，任一解析 IP 命中本地/私网/metadata/保留网段等非公网风险地址时默认拒绝，并将校验后的地址 pin 到本次请求、禁用代理，避免校验与实际连接之间发生 DNS rebinding；域名匹配前会统一去尾点，避免 `example.com.` 绕过白/黑名单；
+- HTTP Runtime 会在请求前做轻量参数 schema 校验（required、基础类型、enum、additionalProperties=false）并拒绝未解析或暂未支持的 `{{...}}` 模板占位符；
+- HTTP Runtime 默认不跟随重定向（`redirect::Policy::none()`），避免初始 URL 合法但 3xx 跳转到 localhost/私网/metadata 风险地址；3xx 响应按普通响应进入 `allowed_status_codes` 校验；
+- 管理面继续遵循 `config` 脱敏策略：写入可接收，列表不返回原文仅返回 `has_config`，详情可返回脱敏后的 `config`；HTTP 详情 config 对 `headers` / `query` / `body` 值默认全量脱敏，仅保留字段结构，URL userinfo 移除且 URL query 所有值脱敏；create/update 在持久化前校验 HTTP config 并强制第一版 Manual-only，固定目标若命中 localhost/私网/特殊地址、`blocked_domains`，或不满足 `allowed_domains`，会在写入前拒绝；运行时对外错误不包含渲染后的 URL、header、query/body 值或密钥；HTTP Tool 调用追踪日志中 input/output/error 均以 `[REDACTED]` 记录。
+
+详细方案见：`docs/builtins_http_tool_design.md`。
 
 ---
 

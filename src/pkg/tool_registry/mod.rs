@@ -64,8 +64,8 @@ impl ToolRegistry {
                 None
             }
             common::enums::ToolProtocol::Http => {
-                // Future: create from HTTP factory
-                None
+                // HTTP tools are database-registered; ToolPo.config stores HttpToolConfig.
+                http::create_tool(po).ok()
             }
         }
     }

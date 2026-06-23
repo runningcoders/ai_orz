@@ -7,12 +7,38 @@ mod tests {
     use crate::models::tool::{Tool, ToolPo};
     use crate::pkg::RequestContext;
     use crate::service::domain::finance;
-    use common::enums::ToolProtocol;
+    use common::enums::{ControlMode, ToolProtocol};
+    use serde_json::{Value, json};
     use sqlx::SqlitePool;
+
+    fn valid_http_config() -> Value {
+        json!({
+            "method": "GET",
+            "url": "https://api.example.com/search",
+            "timeout_ms": 1000,
+            "response_max_bytes": 1024
+        })
+    }
+
+    fn http_management_tool(name: &str) -> Tool {
+        let po = ToolPo::new(
+            String::new(),
+            name.to_string(),
+            "Domain HTTP tool".to_string(),
+            ToolProtocol::Http,
+            valid_http_config(),
+            None,
+            vec![],
+            Some("test-user".to_string()),
+        );
+        Tool::from_po_for_management(po)
+    }
 
     async fn init_test_env(
         pool: SqlitePool,
     ) -> (std::sync::Arc<dyn finance::FinanceDomain>, RequestContext) {
+        crate::config::init().unwrap();
+
         // 初始化依赖的 DAO
         crate::service::dao::tool::init();
         crate::service::dao::tool_call::init();
@@ -74,17 +100,8 @@ mod tests {
     async fn test_delete_tool(pool: SqlitePool) {
         let (domain, ctx) = init_test_env(pool).await;
 
-        let po = ToolPo::new(
-            "".to_string(),
-            "domain-delete-http-tool".to_string(),
-            "Domain delete tool".to_string(),
-            ToolProtocol::Http,
-            serde_json::json!({"endpoint":"https://example.com/tool"}),
-            None,
-            vec![],
-            Some("test-user".to_string()),
-        );
-        let tool = Tool::from_po_for_management(po.clone());
+        let tool = http_management_tool("domain-delete-http-tool");
+        let tool_id = tool.po.id.clone();
         domain
             .tool_provider_manage()
             .create_tool(ctx.clone(), &tool)
@@ -93,7 +110,7 @@ mod tests {
 
         let stored = domain
             .tool_provider_manage()
-            .get_tool(ctx.clone(), &po.id)
+            .get_tool(ctx.clone(), &tool_id)
             .await
             .unwrap()
             .expect("created tool should be readable for management");
@@ -106,9 +123,80 @@ mod tests {
 
         let got = domain
             .tool_provider_manage()
-            .get_tool(ctx.clone(), &po.id)
+            .get_tool(ctx.clone(), &tool_id)
             .await
             .unwrap();
         assert!(got.is_none(), "deleted tool should not be found");
+    }
+
+    #[sqlx::test]
+    async fn test_create_http_tool_rejects_auto_control_mode(pool: SqlitePool) {
+        let (domain, ctx) = init_test_env(pool).await;
+        let mut tool = http_management_tool("domain-http-auto-rejected");
+        tool.po.control_mode = ControlMode::Auto;
+
+        let result = domain
+            .tool_provider_manage()
+            .create_tool(ctx.clone(), &tool)
+            .await;
+
+        assert!(result.is_err(), "HTTP tools should be manual-only");
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("HTTP Tool"));
+        assert!(error.contains("Manual"));
+    }
+
+    #[sqlx::test]
+    async fn test_update_http_tool_rejects_auto_control_mode(pool: SqlitePool) {
+        let (domain, ctx) = init_test_env(pool).await;
+        let tool = http_management_tool("domain-http-update-auto-rejected");
+        let tool_id = tool.po.id.clone();
+        domain
+            .tool_provider_manage()
+            .create_tool(ctx.clone(), &tool)
+            .await
+            .unwrap();
+
+        let mut stored = domain
+            .tool_provider_manage()
+            .get_tool(ctx.clone(), &tool_id)
+            .await
+            .unwrap()
+            .expect("created tool should be readable for management");
+        stored.po.control_mode = ControlMode::Auto;
+
+        let result = domain
+            .tool_provider_manage()
+            .update_tool(ctx.clone(), &stored)
+            .await;
+
+        assert!(result.is_err(), "HTTP tools should reject Auto on update");
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("HTTP Tool"));
+        assert!(error.contains("Manual"));
+    }
+
+    #[sqlx::test]
+    async fn test_create_http_tool_rejects_invalid_config_before_persist(pool: SqlitePool) {
+        let (domain, ctx) = init_test_env(pool).await;
+        let mut tool = http_management_tool("domain-http-invalid-config");
+        tool.po.config = json!({
+            "method": "PUT",
+            "url": "https://api.example.com/search"
+        });
+        let tool_id = tool.po.id.clone();
+
+        let result = domain
+            .tool_provider_manage()
+            .create_tool(ctx.clone(), &tool)
+            .await;
+
+        assert!(result.is_err(), "invalid HTTP config should be rejected");
+        let stored = domain
+            .tool_provider_manage()
+            .get_tool(ctx.clone(), &tool_id)
+            .await
+            .unwrap();
+        assert!(stored.is_none(), "invalid HTTP tool must not be persisted");
     }
 }

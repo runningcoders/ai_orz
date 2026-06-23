@@ -5,6 +5,7 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
+use common::enums::ToolProtocol;
 use rig::tool::ToolError;
 use serde_json::Value;
 use uuid::Uuid;
@@ -54,6 +55,12 @@ impl LoggingDecorator {
             Ok(v) => Some(v.clone()),
             Err(_) => None,
         };
+        let (log_input, log_output, log_error) = redact_trace_values_for_tool(
+            po,
+            args,
+            output_json,
+            result.as_ref().err().map(|e| e.to_string()),
+        );
 
         // Build the log entry
         let entry = ToolCallEntry {
@@ -66,9 +73,9 @@ impl LoggingDecorator {
             started_at: started_at.try_into().unwrap(),
             finished_at: finished_at.try_into().unwrap(),
             duration_ms: duration_ms.try_into().unwrap(),
-            input: args,
-            output: output_json,
-            error: result.as_ref().err().map(|e| e.to_string()),
+            input: log_input,
+            output: log_output,
+            error: log_error,
             status: match &result {
                 Ok(_) => ToolCallStatus::Completed,
                 Err(_) => ToolCallStatus::Failed,
@@ -83,13 +90,30 @@ impl LoggingDecorator {
     }
 }
 
+fn redact_trace_values_for_tool(
+    po: &ToolPo,
+    input: Value,
+    output: Option<Value>,
+    error: Option<String>,
+) -> (Value, Option<Value>, Option<String>) {
+    if !matches!(po.protocol, ToolProtocol::Http) {
+        return (input, output, error);
+    }
+
+    (
+        Value::String("[REDACTED]".to_string()),
+        output.map(|_| Value::String("[REDACTED]".to_string())),
+        error.map(|_| "[REDACTED]".to_string()),
+    )
+}
+
 #[async_trait]
 impl CoreTool for LoggingDecorator {
     async fn call(&self, ctx: RequestContext, args: Value) -> Result<Value, ToolError> {
         let (result, entry) = self.call_with_entry(ctx, args).await;
         // Log the entry immediately
         let tool_id = entry.tool_id.clone();
-        ToolCallLogger::get().log_call(&tool_id, entry);
+        let _ = ToolCallLogger::get().log_call(&tool_id, entry);
         result
     }
 
