@@ -7,7 +7,7 @@ use crate::models::agent::Agent;
 use crate::models::file::FileMeta;
 use crate::models::memory::{Memory, MemoryTrace};
 use crate::models::message::{Message, ToolCallMessage};
-use crate::models::tool::Tool;
+use crate::models::tool::{Tool, ToolCallTraceRef, ToolExecutionError, ToolExecutionResult};
 use crate::pkg::RequestContext;
 use crate::service::dao::message::MessageQuery;
 use crate::service::domain::message::{
@@ -98,7 +98,7 @@ async fn init_storage_for_test() {
 struct RecordingRuntimeDomain {
     calls: Mutex<Vec<(String, Value)>>,
     manual_calls: Mutex<Vec<(String, String, Value)>>,
-    result: Mutex<std::result::Result<Value, String>>,
+    result: Mutex<std::result::Result<ToolExecutionResult, String>>,
 }
 
 impl RecordingRuntimeDomain {
@@ -106,7 +106,11 @@ impl RecordingRuntimeDomain {
         Arc::new(Self {
             calls: Mutex::new(Vec::new()),
             manual_calls: Mutex::new(Vec::new()),
-            result: Mutex::new(Ok(result)),
+            result: Mutex::new(Ok(ToolExecutionResult::new(
+                result,
+                "tool-mcp-weather".to_string(),
+                "trace-call-001".to_string(),
+            ))),
         })
     }
 
@@ -115,6 +119,14 @@ impl RecordingRuntimeDomain {
             calls: Mutex::new(Vec::new()),
             manual_calls: Mutex::new(Vec::new()),
             result: Mutex::new(Err(error_message.to_string())),
+        })
+    }
+
+    fn failure_with_trace(error_message: &str, tool_id: &str, call_id: &str) -> Arc<Self> {
+        Arc::new(Self {
+            calls: Mutex::new(Vec::new()),
+            manual_calls: Mutex::new(Vec::new()),
+            result: Mutex::new(Err(format!("{}|{}|{}", error_message, tool_id, call_id))),
         })
     }
 
@@ -135,6 +147,19 @@ impl fmt::Debug for RecordingRuntimeDomain {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RecordingRuntimeDomain")
             .finish_non_exhaustive()
+    }
+}
+
+fn recorded_error_to_tool_execution_error(error_message: String) -> ToolExecutionError {
+    let parts = error_message.split('|').collect::<Vec<_>>();
+    if parts.len() == 3 {
+        ToolExecutionError::with_trace(
+            ToolError::ToolCallError(parts[0].to_string().into()),
+            parts[1].to_string(),
+            parts[2].to_string(),
+        )
+    } else {
+        ToolExecutionError::without_trace(ToolError::ToolCallError(error_message.into()))
     }
 }
 
@@ -192,11 +217,11 @@ impl RuntimeToolExecution for RecordingRuntimeDomain {
         _ctx: RequestContext,
         tool_id: String,
         args: Value,
-    ) -> std::result::Result<Value, ToolError> {
+    ) -> std::result::Result<ToolExecutionResult, ToolExecutionError> {
         self.calls.lock().unwrap().push((tool_id, args));
         match self.result.lock().unwrap().clone() {
             Ok(result) => Ok(result),
-            Err(error_message) => Err(ToolError::ToolCallError(error_message.into())),
+            Err(error_message) => Err(recorded_error_to_tool_execution_error(error_message)),
         }
     }
 
@@ -205,11 +230,11 @@ impl RuntimeToolExecution for RecordingRuntimeDomain {
         _ctx: RequestContext,
         tool: &Tool,
         args: Value,
-    ) -> std::result::Result<Value, ToolError> {
+    ) -> std::result::Result<ToolExecutionResult, ToolExecutionError> {
         self.calls.lock().unwrap().push((tool.po.id.clone(), args));
         match self.result.lock().unwrap().clone() {
             Ok(result) => Ok(result),
-            Err(error_message) => Err(ToolError::ToolCallError(error_message.into())),
+            Err(error_message) => Err(recorded_error_to_tool_execution_error(error_message)),
         }
     }
 
@@ -219,14 +244,14 @@ impl RuntimeToolExecution for RecordingRuntimeDomain {
         agent_id: String,
         tool_id: String,
         args: Value,
-    ) -> std::result::Result<Value, ToolError> {
+    ) -> std::result::Result<ToolExecutionResult, ToolExecutionError> {
         self.manual_calls
             .lock()
             .unwrap()
             .push((agent_id, tool_id, args));
         match self.result.lock().unwrap().clone() {
             Ok(result) => Ok(result),
-            Err(error_message) => Err(ToolError::ToolCallError(error_message.into())),
+            Err(error_message) => Err(recorded_error_to_tool_execution_error(error_message)),
         }
     }
 
@@ -564,11 +589,19 @@ mod tool_call_request_tests {
             ToolCallExecutionOutcome::Success {
                 result,
                 result_file_meta,
+                trace_ref,
             } => {
                 assert_eq!(result, json!({ "temperature": 23 }));
                 assert!(result_file_meta.is_none());
+                assert_eq!(
+                    trace_ref,
+                    Some(ToolCallTraceRef {
+                        tool_id: "tool-mcp-weather".to_string(),
+                        call_id: "trace-call-001".to_string(),
+                    })
+                );
             }
-            ToolCallExecutionOutcome::Failure { error_message } => {
+            ToolCallExecutionOutcome::Failure { error_message, .. } => {
                 panic!("expected success result, got failure: {}", error_message);
             }
         }
@@ -596,10 +629,56 @@ mod tool_call_request_tests {
             ToolCallExecutionOutcome::Success { result, .. } => {
                 panic!("expected failure result, got success: {}", result);
             }
-            ToolCallExecutionOutcome::Failure { error_message } => {
+            ToolCallExecutionOutcome::Failure {
+                error_message,
+                trace_ref,
+            } => {
                 assert_eq!(
                     error_message,
                     "MCP tool call failed for tool_id: tool-mcp-weather"
+                );
+                assert!(trace_ref.is_none());
+            }
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_tool_call_request_started_failure_preserves_trace_ref() -> Result<()> {
+        init_storage_for_test().await;
+        let runtime_domain = RecordingRuntimeDomain::failure_with_trace(
+            "MCP tool call failed after execution started",
+            "tool-mcp-weather",
+            "real-call-999",
+        );
+        let message_domain = RecordingMessageDomain::new();
+        let handler = test_handler(runtime_domain.clone(), message_domain.clone());
+        let message = create_tool_call_request_message();
+
+        handler.handle(&message).await?;
+
+        assert_eq!(runtime_domain.call_count(), 1);
+        assert_eq!(message_domain.result_count(), 1);
+        let (_request_message_id, outcome) = message_domain.first_result();
+        match outcome {
+            ToolCallExecutionOutcome::Success { result, .. } => {
+                panic!("expected failure result, got success: {}", result);
+            }
+            ToolCallExecutionOutcome::Failure {
+                error_message,
+                trace_ref,
+            } => {
+                assert_eq!(
+                    error_message,
+                    "MCP tool call failed after execution started"
+                );
+                assert_eq!(
+                    trace_ref,
+                    Some(ToolCallTraceRef {
+                        tool_id: "tool-mcp-weather".to_string(),
+                        call_id: "real-call-999".to_string(),
+                    })
                 );
             }
         }

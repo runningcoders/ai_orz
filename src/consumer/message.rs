@@ -5,6 +5,7 @@
 use super::{GenericConsumer, MessageFetcher, MessageHandler};
 use crate::error::{AppError, Result};
 use crate::models::message::{Message, ToolCallMessage};
+use crate::models::tool::ToolExecutionError;
 use crate::service::domain::message::{
     MessageDomain, SendToolCallResultCommand, ToolCallExecutionOutcome,
 };
@@ -12,7 +13,6 @@ use crate::service::domain::runtime::RuntimeDomain;
 use async_trait::async_trait;
 use common::config::TopicConsumerConfig;
 use common::enums::{MessageRole, MessageType};
-use rig::tool::ToolError;
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 
@@ -167,7 +167,7 @@ impl MessageHandlerImpl {
             ctx.set_task_id(task_id.clone());
         }
 
-        let outcome = match self
+        let execution = self
             .runtime_domain
             .tool_execution()
             .call_manual_tool_for_agent(
@@ -176,14 +176,17 @@ impl MessageHandlerImpl {
                 tool_call.tool_id.clone(),
                 args,
             )
-            .await
-        {
-            Ok(result) => ToolCallExecutionOutcome::Success {
-                result,
+            .await;
+
+        let outcome = match execution {
+            Ok(execution_result) => ToolCallExecutionOutcome::Success {
+                result: execution_result.result,
                 result_file_meta: None,
+                trace_ref: Some(execution_result.trace_ref),
             },
             Err(err) => ToolCallExecutionOutcome::Failure {
-                error_message: tool_error_message(err),
+                error_message: tool_error_message(&err),
+                trace_ref: err.trace_ref,
             },
         };
 
@@ -214,8 +217,8 @@ fn parse_tool_call_request(message: &Message) -> Result<ToolCallMessage> {
         .map_err(|err| AppError::BadRequest(format!("invalid ToolCallRequest content: {}", err)))
 }
 
-fn tool_error_message(err: ToolError) -> String {
-    let message = err.to_string();
+fn tool_error_message(err: &ToolExecutionError) -> String {
+    let message = err.error.to_string();
     message
         .strip_prefix("ToolCallError: ")
         .unwrap_or(&message)

@@ -5,7 +5,7 @@
 
 use crate::error::AppError;
 use crate::models::mcp_server::McpServerStatus;
-use crate::models::tool::{Tool, ToolPo};
+use crate::models::tool::{Tool, ToolExecutionError, ToolPo};
 use crate::pkg::RequestContext;
 use crate::pkg::tool_registry::mcp::{McpToolConfig, RemoteMcpTool};
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
@@ -75,7 +75,7 @@ pub trait McpToolDal: Send + Sync {
         ctx: RequestContext,
         tool_id: String,
         args: Value,
-    ) -> Result<Value, ToolError>;
+    ) -> Result<(Value, ToolCallEntry), ToolExecutionError>;
 
     /// Execute an already assembled MCP tool.
     ///
@@ -86,7 +86,7 @@ pub trait McpToolDal: Send + Sync {
         ctx: RequestContext,
         tool: &Tool,
         args: Value,
-    ) -> Result<Value, ToolError>;
+    ) -> Result<(Value, ToolCallEntry), ToolExecutionError>;
 
     /// Execute an already assembled MCP tool manually and return its trace entry.
     async fn call_manual(
@@ -94,7 +94,7 @@ pub trait McpToolDal: Send + Sync {
         ctx: RequestContext,
         tool: &Tool,
         args: Value,
-    ) -> Result<(Value, ToolCallEntry), ToolError>;
+    ) -> Result<(Value, ToolCallEntry), ToolExecutionError>;
 
     /// Invalidate cached MCP runtime/session for a server.
     fn invalidate_server(&self, server_id: &str);
@@ -269,13 +269,17 @@ impl McpToolDal for McpToolDalImpl {
         ctx: RequestContext,
         tool_id: String,
         args: Value,
-    ) -> Result<Value, ToolError> {
+    ) -> Result<(Value, ToolCallEntry), ToolExecutionError> {
         let tool = self
             .get_by_id(ctx.clone(), tool_id.clone())
             .await
-            .map_err(|e| ToolError::ToolCallError(e.to_string().into()))?
+            .map_err(|e| {
+                ToolExecutionError::without_trace(ToolError::ToolCallError(e.to_string().into()))
+            })?
             .ok_or_else(|| {
-                ToolError::ToolCallError(format!("Tool not found: {}", tool_id).into())
+                ToolExecutionError::without_trace(ToolError::ToolCallError(
+                    format!("Tool not found: {}", tool_id).into(),
+                ))
             })?;
 
         self.call_tool(ctx, &tool, args).await
@@ -286,10 +290,8 @@ impl McpToolDal for McpToolDalImpl {
         ctx: RequestContext,
         tool: &Tool,
         args: Value,
-    ) -> Result<Value, ToolError> {
-        self.call_manual(ctx, tool, args)
-            .await
-            .map(|(value, _)| value)
+    ) -> Result<(Value, ToolCallEntry), ToolExecutionError> {
+        self.call_manual(ctx, tool, args).await
     }
 
     async fn call_manual(
@@ -297,11 +299,13 @@ impl McpToolDal for McpToolDalImpl {
         ctx: RequestContext,
         tool: &Tool,
         args: Value,
-    ) -> Result<(Value, ToolCallEntry), ToolError> {
+    ) -> Result<(Value, ToolCallEntry), ToolExecutionError> {
         let executable = self
             .assemble_executable_tool(ctx.clone(), &tool.po)
             .await
-            .map_err(|e| ToolError::ToolCallError(e.to_string().into()))?;
+            .map_err(|e| {
+                ToolExecutionError::without_trace(ToolError::ToolCallError(e.to_string().into()))
+            })?;
         self.mcp_tool_call_dao
             .call_manual(ctx, &executable, args)
             .await

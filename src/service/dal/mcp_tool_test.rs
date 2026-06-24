@@ -260,8 +260,8 @@ async fn sync_then_call_stdio_mcp_tool_by_id_returns_result(pool: SqlitePool) ->
         .await
         .expect("synced MCP stdio tool should execute by id");
 
-    assert_eq!(result["structuredContent"]["echo"], "hello MCP");
-    assert_eq!(result["isError"], false);
+    assert_eq!(result.0["structuredContent"]["echo"], "hello MCP");
+    assert_eq!(result.0["isError"], false);
 
     let executable = dal
         .get_by_id(ctx.clone(), tool_id.clone())
@@ -277,7 +277,7 @@ async fn sync_then_call_stdio_mcp_tool_by_id_returns_result(pool: SqlitePool) ->
         .await
         .expect("McpToolDal should reassemble executable MCP tool from authorized metadata");
     assert_eq!(
-        from_management_result["structuredContent"]["echo"],
+        from_management_result.0["structuredContent"]["echo"],
         "management MCP"
     );
 

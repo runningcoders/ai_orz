@@ -4,12 +4,12 @@
 //! 2. Wrap Tool's CoreTool into Rig's ToolDyn for Rig to use
 //! 3. Manual call a Tool with logging decorator, returns (result, entry)
 
-use crate::models::tool::{CoreTool, Tool, ToolPo};
+use crate::models::tool::{CoreTool, Tool, ToolExecutionError, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use anyhow::Result;
 use async_trait::async_trait;
-use rig::tool::ToolError;
+
 use std::boxed::Box;
 
 pub mod r#impl;
@@ -40,5 +40,5 @@ pub trait ToolCallDao: Send + Sync {
         ctx: RequestContext,
         tool: &Tool,
         args: serde_json::Value,
-    ) -> Result<(serde_json::Value, ToolCallEntry), ToolError>;
+    ) -> Result<(serde_json::Value, ToolCallEntry), ToolExecutionError>;
 }

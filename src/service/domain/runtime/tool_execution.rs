@@ -1,7 +1,7 @@
 //! Runtime Tool Execution 具体实现
 
 use crate::error::AppError;
-use crate::models::tool::Tool;
+use crate::models::tool::{Tool, ToolExecutionError, ToolExecutionResult};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use crate::pkg::tool_tracing::logger::{ToolCallLogger, ToolCallQuery};
@@ -17,14 +17,18 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
         ctx: RequestContext,
         tool_id: String,
         args: Value,
-    ) -> Result<Value, ToolError> {
+    ) -> Result<ToolExecutionResult, ToolExecutionError> {
         let tool = self
             .tool_dal
             .get_by_id(ctx.clone(), tool_id.clone())
             .await
-            .map_err(|e| ToolError::ToolCallError(e.to_string().into()))?
+            .map_err(|e| {
+                ToolExecutionError::without_trace(ToolError::ToolCallError(e.to_string().into()))
+            })?
             .ok_or_else(|| {
-                ToolError::ToolCallError(format!("Tool not found: {}", tool_id).into())
+                ToolExecutionError::without_trace(ToolError::ToolCallError(
+                    format!("Tool not found: {}", tool_id).into(),
+                ))
             })?;
 
         self.call_tool(ctx, &tool, args).await
@@ -35,20 +39,37 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
         ctx: RequestContext,
         tool: &Tool,
         args: Value,
-    ) -> Result<Value, ToolError> {
+    ) -> Result<ToolExecutionResult, ToolExecutionError> {
         let tool_id = tool.po.id.clone();
-        ensure_tool_enabled(&tool_id, &tool.po.status)?;
+        ensure_tool_enabled(&tool_id, &tool.po.status)
+            .map_err(ToolExecutionError::without_trace)?;
 
-        match tool.po.protocol {
-            ToolProtocol::Mcp => self
-                .mcp_tool_dal
-                .call_tool(ctx, tool, args)
-                .await
-                .map_err(|e| map_mcp_tool_error(&tool_id, e)),
+        let execution = match tool.po.protocol {
+            ToolProtocol::Mcp => self.mcp_tool_dal.call_tool(ctx, tool, args).await,
             ToolProtocol::Builtin | ToolProtocol::Http => {
                 self.tool_dal.call_tool(ctx, tool, args).await
             }
-        }
+        };
+
+        let (result, entry) = match execution {
+            Ok((result, entry)) => (result, entry),
+            Err(error) => {
+                let mapped_error = match tool.po.protocol {
+                    ToolProtocol::Mcp => map_mcp_tool_error(&tool_id, error.error),
+                    ToolProtocol::Builtin | ToolProtocol::Http => error.error,
+                };
+                return Err(ToolExecutionError {
+                    error: mapped_error,
+                    trace_ref: error.trace_ref,
+                });
+            }
+        };
+
+        Ok(ToolExecutionResult::new(
+            result,
+            entry.tool_id,
+            entry.call_id,
+        ))
     }
 
     async fn call_manual_tool_for_agent(
@@ -57,34 +78,36 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
         agent_id: String,
         tool_id: String,
         args: Value,
-    ) -> Result<Value, ToolError> {
+    ) -> Result<ToolExecutionResult, ToolExecutionError> {
         let bound_tools = self
             .tool_dal
             .list_tools_for_agent_full(ctx.clone(), &agent_id)
             .await
-            .map_err(|e| ToolError::ToolCallError(e.to_string().into()))?;
+            .map_err(|e| {
+                ToolExecutionError::without_trace(ToolError::ToolCallError(e.to_string().into()))
+            })?;
 
         let tool = bound_tools
             .iter()
             .find(|tool| tool.po.id == tool_id)
             .ok_or_else(|| {
-                ToolError::ToolCallError(
+                ToolExecutionError::without_trace(ToolError::ToolCallError(
                     format!(
                         "Manual tool call denied: tool {} is not bound to agent {}",
                         tool_id, agent_id
                     )
                     .into(),
-                )
+                ))
             })?;
 
         if tool.po.control_mode != ControlMode::Manual {
-            return Err(ToolError::ToolCallError(
+            return Err(ToolExecutionError::without_trace(ToolError::ToolCallError(
                 format!(
                     "Manual tool call denied: tool {} has control mode {:?}",
                     tool_id, tool.po.control_mode
                 )
                 .into(),
-            ));
+            )));
         }
 
         self.call_tool(ctx, tool, args).await

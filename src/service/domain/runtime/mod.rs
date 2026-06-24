@@ -101,7 +101,7 @@ pub trait RuntimeToolExecution: Send + Sync {
         ctx: RequestContext,
         tool_id: String,
         args: serde_json::Value,
-    ) -> Result<serde_json::Value, rig::tool::ToolError>;
+    ) -> Result<crate::models::tool::ToolExecutionResult, crate::models::tool::ToolExecutionError>;
 
     /// Execute one already-loaded tool.
     ///
@@ -112,7 +112,7 @@ pub trait RuntimeToolExecution: Send + Sync {
         ctx: RequestContext,
         tool: &crate::models::tool::Tool,
         args: serde_json::Value,
-    ) -> Result<serde_json::Value, rig::tool::ToolError>;
+    ) -> Result<crate::models::tool::ToolExecutionResult, crate::models::tool::ToolExecutionError>;
 
     /// Execute a message-mode Manual tool call for one Agent.
     ///
@@ -124,7 +124,7 @@ pub trait RuntimeToolExecution: Send + Sync {
         agent_id: String,
         tool_id: String,
         args: serde_json::Value,
-    ) -> Result<serde_json::Value, rig::tool::ToolError>;
+    ) -> Result<crate::models::tool::ToolExecutionResult, crate::models::tool::ToolExecutionError>;
 
     /// Query tool call trace entries with access scope enforced by Runtime Domain.
     async fn query_tool_call_entries(

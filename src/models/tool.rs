@@ -36,6 +36,79 @@ pub trait CoreTool: Send + Sync + DynClone {
 
 dyn_clone::clone_trait_object!(CoreTool);
 
+/// 轻量工具调用追踪引用。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolCallTraceRef {
+    /// Tool-specific call trace 所属工具 ID。
+    pub tool_id: String,
+    /// Tool-specific call trace ID。
+    pub call_id: String,
+}
+
+/// Runtime 工具执行成功结果。
+///
+/// 工具调用成功时必须同时返回业务结果与 tool-specific call trace 引用，
+/// 避免上层把 request_id 误当成真实工具调用 call_id。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolExecutionResult {
+    /// 工具业务返回值。
+    pub result: Value,
+    /// 指向 tool-specific call_trace 的轻量引用。
+    pub trace_ref: ToolCallTraceRef,
+}
+
+impl ToolExecutionResult {
+    pub fn new(result: Value, tool_id: String, call_id: String) -> Self {
+        Self {
+            result,
+            trace_ref: ToolCallTraceRef { tool_id, call_id },
+        }
+    }
+}
+
+/// Runtime 工具执行错误。
+///
+/// 执行前失败（例如未绑定、非 Manual、工具不可用）没有真实 tool-specific trace，
+/// `trace_ref` 必须为 None；工具已实际开始执行并生成 ToolCallEntry 后失败时，
+/// `trace_ref` 携带真实 `{ tool_id, call_id }`，供 ToolCallResult 关联完整审计记录。
+#[derive(Debug)]
+pub struct ToolExecutionError {
+    /// 已映射/脱敏后的工具错误。
+    pub error: ToolError,
+    /// 指向 tool-specific call_trace 的轻量引用。
+    pub trace_ref: Option<ToolCallTraceRef>,
+}
+
+impl ToolExecutionError {
+    pub fn without_trace(error: ToolError) -> Self {
+        Self {
+            error,
+            trace_ref: None,
+        }
+    }
+
+    pub fn with_trace(error: ToolError, tool_id: String, call_id: String) -> Self {
+        Self {
+            error,
+            trace_ref: Some(ToolCallTraceRef { tool_id, call_id }),
+        }
+    }
+}
+
+impl From<ToolError> for ToolExecutionError {
+    fn from(error: ToolError) -> Self {
+        Self::without_trace(error)
+    }
+}
+
+impl std::fmt::Display for ToolExecutionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.error)
+    }
+}
+
+impl std::error::Error for ToolExecutionError {}
+
 /// Rig 适配层 - 将我们的 CoreTool trait 转换为 Rig 的 ToolDyn trait
 ///
 /// 用于 auto 模式，让 Rig 可以直接调用我们的工具

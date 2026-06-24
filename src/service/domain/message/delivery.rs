@@ -146,15 +146,26 @@ impl MessageDelivery for MessageDomainImpl {
                 crate::error::AppError::BadRequest("invalid tool call request message".to_string())
             })?;
 
-        let result_payload = match cmd.outcome {
+        let (mut result_payload, trace_ref) = match cmd.outcome {
             ToolCallExecutionOutcome::Success {
                 result,
                 result_file_meta,
-            } => request.new_success_result(bounded_inline_tool_result(result), result_file_meta),
-            ToolCallExecutionOutcome::Failure { error_message } => {
-                request.new_error_result(error_message)
-            }
+                trace_ref,
+            } => (
+                request.new_success_result(bounded_inline_tool_result(result), result_file_meta),
+                trace_ref,
+            ),
+            ToolCallExecutionOutcome::Failure {
+                error_message,
+                trace_ref,
+            } => (request.new_error_result(error_message), trace_ref),
         };
+        if let Some(trace_ref) = trace_ref {
+            result_payload.trace_ref = Some(json!({
+                "tool_id": trace_ref.tool_id,
+                "call_id": trace_ref.call_id,
+            }));
+        }
 
         let content = serde_json::to_string(&result_payload).map_err(|_| {
             crate::error::AppError::Internal("failed to serialize tool call result".to_string())

@@ -1307,7 +1307,7 @@ mod.rs
 │
 ├── RuntimeMemory: 记忆管理子 trait
 ├── RuntimeAwakening: 唤醒能力子 trait
-├── RuntimeToolExecution: 工具执行子 trait（预留）
+├── RuntimeToolExecution: 工具执行子 trait（Manual 工具授权、协议路由、trace_ref 结果引用）
 │
 ├── RuntimeDomainImpl: 统一实现结构体
 │   （所有子模块都为 RuntimeDomainImpl 实现对应的 trait）
@@ -1382,16 +1382,15 @@ xxx
 | **Runtime Memory** | ✅ 100% | `get_recent_context()` + `write_thinking_trace()` |
 | **Context Assembly** | ✅ 100% | Builder 模式，Trace IDs + Agent 人设 + **用户画像** + 历史 + 消息 + 技能/工具预留 |
 | **Runtime Awakening** | ✅ 80% | 7 步主流程完整可跑：读记忆 → 拼 Prompt → 记输入 → 推理 → 记输出 → 返回；仅模型推理为模拟返回 |
-| **Tool Execution** | ✅ 85% | Runtime Domain 已支持按协议路由 Builtin/HTTP/MCP；Manual 工具消息模式已完成 Agent 绑定授权、执行与 ToolCallResult 回调闭环；MCP synced tool stale/reconcile 已完成；ToolCallResult 已补不复制 request args、大结果 inline bound、基于 call_id/tool_id 的 tool-specific call trace 查询 API；trace_ref 仍是后续协议字段，后续补二次推理与更多 E2E 场景 |
+| **Tool Execution** | ✅ 88% | Runtime Domain 已支持按协议路由 Builtin/HTTP/MCP；Manual 工具消息模式已完成 Agent 绑定授权、执行与 ToolCallResult 回调闭环；MCP synced tool stale/reconcile 已完成；ToolCallResult 已补不复制 request args、大结果 inline bound、显式 `trace_ref = { tool_id, call_id }` 轻量引用、以及基于 call_id/tool_id 的 tool-specific call trace 查询 API；后续补二次推理与更多 E2E 场景 |
 
-**整体完成度：~85%**
-**当前状态：纯文本对话流程完整可跑；工具执行已完成 MCP/Manual 最小闭环、MCP synced tool stale/reconcile 状态一致性，以及 ToolCallResult 第一层结果边界（不复制 request args、大结果安全 marker、基于 call_id/tool_id 查询完整 ToolCallEntry；trace_ref 后续补协议字段），后续继续完善二次推理、产物化引用和更完整运行面策略。**
+**整体完成度：~86%**
+**当前状态：纯文本对话流程完整可跑；工具执行已完成 MCP/Manual 最小闭环、MCP synced tool stale/reconcile 状态一致性，以及 ToolCallResult 第一层结果边界（不复制 request args、大结果安全 marker、显式 trace_ref 关联完整 ToolCallEntry、基于 call_id/tool_id 查询完整 ToolCallEntry），后续继续完善二次推理、产物化引用和更完整运行面策略。**
 
 ### 17.4 剩余待做（优先级排序）
 
 | 优先级 | 任务 | 说明 |
 |--------|------|------|
-| **P1** | ToolCallResult trace_ref 协议字段 | 在已完成 call_id/tool_id 查询 API 基础上，让结果消息显式携带 `{ tool_id, call_id }` 轻量引用，避免模型/前端只能从 content 推断 |
 | **P1** | 工具调用二次推理 | Agent 收到 ToolCallResult 后继续推理并生成最终用户答复；可使用 trace_ref/call_id 按需读取完整 ToolCallEntry |
 | **P1** | Trace ID 关联逻辑 | 从 `message.reply_to_id` 追溯历史 Trace 链 |
 | **P2** | 工具调用框架增强 | 在已完成 Manual ToolCallRequest → Runtime → ToolCallResult 最小闭环和 ToolCallEntry 查询基础上，补二次推理与更多 E2E 场景 |

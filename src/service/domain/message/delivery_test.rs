@@ -6,6 +6,7 @@ use crate::pkg::RequestContext;
 use crate::service::domain::message::{
     DeliverMessageCommand, MessageDomain, SendToAgentCommand, SendToUserCommand,
     SendToolCallRequestCommand, SendToolCallResultCommand, ToolCallExecutionOutcome,
+    ToolCallTraceRef,
 };
 use common::enums::{MessageRole, MessageStatus, MessageType};
 use serde_json::json;
@@ -330,6 +331,10 @@ async fn test_send_tool_call_result_success_reuses_request_context(pool: SqliteP
                 outcome: ToolCallExecutionOutcome::Success {
                     result: json!({ "temperature": 23, "unit": "celsius" }),
                     result_file_meta: None,
+                    trace_ref: Some(ToolCallTraceRef {
+                        tool_id: "tool-mcp-weather".to_string(),
+                        call_id: "trace-call-001".to_string(),
+                    }),
                 },
             },
         )
@@ -360,6 +365,15 @@ async fn test_send_tool_call_result_success_reuses_request_context(pool: SqliteP
         Some(json!({ "temperature": 23, "unit": "celsius" }))
     );
     assert!(payload.error_message.is_none());
+
+    let raw_payload: serde_json::Value = serde_json::from_str(&result_message.po.content).unwrap();
+    assert_eq!(
+        raw_payload.get("trace_ref"),
+        Some(&json!({
+            "tool_id": "tool-mcp-weather",
+            "call_id": "trace-call-001"
+        }))
+    );
 }
 
 #[sqlx::test]
@@ -403,6 +417,7 @@ async fn test_send_tool_call_result_failure_reuses_request_context(pool: SqliteP
                 request_message: &request_message,
                 outcome: ToolCallExecutionOutcome::Failure {
                     error_message: "tool execution failed".to_string(),
+                    trace_ref: None,
                 },
             },
         )
@@ -431,6 +446,74 @@ async fn test_send_tool_call_result_failure_reuses_request_context(pool: SqliteP
         Some("tool execution failed")
     );
     assert!(payload.result.is_none());
+    assert!(payload.trace_ref.is_none());
+}
+
+#[sqlx::test]
+async fn test_send_tool_call_result_failure_can_include_trace_ref(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+
+    let request = ToolCallMessage::new_request(
+        "tool-request-failed-traced".to_string(),
+        "tool-mcp-failing".to_string(),
+        "failing_tool".to_string(),
+        Some("project-failed-traced".to_string()),
+        Some("task-failed-traced".to_string()),
+        "agent-failed-traced".to_string(),
+        "tool-executor".to_string(),
+        None,
+        json!({ "input": "safe-placeholder" }),
+    );
+
+    let request_message = Message::new_with_context(
+        "message-tool-request-failed-traced".to_string(),
+        request.project_id.clone(),
+        request.task_id.clone(),
+        request.from_id.clone(),
+        request.to_id.clone(),
+        MessageRole::Agent,
+        MessageRole::System,
+        MessageType::ToolCallRequest,
+        serde_json::to_string(&request).unwrap(),
+        None,
+        Default::default(),
+        request.reply_to_id.clone(),
+        request.from_id.clone(),
+    );
+
+    let result_message = domain
+        .delivery()
+        .send_tool_call_result(
+            ctx.clone(),
+            SendToolCallResultCommand {
+                request_message: &request_message,
+                outcome: ToolCallExecutionOutcome::Failure {
+                    error_message: "tool execution failed after start".to_string(),
+                    trace_ref: Some(ToolCallTraceRef {
+                        tool_id: "tool-mcp-failing".to_string(),
+                        call_id: "trace-call-failed-001".to_string(),
+                    }),
+                },
+            },
+        )
+        .await
+        .unwrap();
+
+    let payload: ToolCallMessage = serde_json::from_str(&result_message.po.content).unwrap();
+    assert_eq!(payload.is_success, Some(false));
+    assert_eq!(
+        payload.error_message.as_deref(),
+        Some("tool execution failed after start")
+    );
+
+    let raw_payload: serde_json::Value = serde_json::from_str(&result_message.po.content).unwrap();
+    assert_eq!(
+        raw_payload.get("trace_ref"),
+        Some(&json!({
+            "tool_id": "tool-mcp-failing",
+            "call_id": "trace-call-failed-001"
+        }))
+    );
 }
 
 #[sqlx::test]
@@ -476,6 +559,7 @@ async fn test_send_tool_call_result_failure_does_not_leak_request_args(pool: Sql
                 request_message: &request_message,
                 outcome: ToolCallExecutionOutcome::Failure {
                     error_message: "tool execution failed".to_string(),
+                    trace_ref: None,
                 },
             },
         )
@@ -536,6 +620,7 @@ async fn test_send_tool_call_result_large_success_uses_safe_inline_marker(pool: 
                 outcome: ToolCallExecutionOutcome::Success {
                     result: json!({ "output": huge_output }),
                     result_file_meta: None,
+                    trace_ref: None,
                 },
             },
         )

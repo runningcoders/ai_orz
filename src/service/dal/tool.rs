@@ -4,7 +4,7 @@
 //! 负责组合 DAO 完成业务级数据操作
 
 use crate::error::AppError;
-use crate::models::tool::{CoreTool, Tool, ToolPo};
+use crate::models::tool::{CoreTool, Tool, ToolExecutionError, ToolPo};
 use crate::models::vector::{MatchType, SearchMatchInfo};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
@@ -14,7 +14,6 @@ use crate::service::dao::tool::{self, ToolDao, ToolQuery, ToolVectorDao};
 use crate::service::dao::tool_call::{self, ToolCallDao};
 use anyhow::Result;
 use common::enums::ToolStatus;
-use rig::tool::ToolError;
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 
@@ -120,7 +119,7 @@ pub trait ToolDal: Send + Sync {
         ctx: RequestContext,
         tool_id: String,
         args: Value,
-    ) -> Result<Value, ToolError>;
+    ) -> Result<(Value, ToolCallEntry), ToolExecutionError>;
 
     /// 直接执行已获取的工具
     /// 用于上层已经获取工具的场景（避免重复查询）
@@ -129,7 +128,7 @@ pub trait ToolDal: Send + Sync {
         ctx: RequestContext,
         tool: &Tool,
         args: Value,
-    ) -> Result<Value, ToolError>;
+    ) -> Result<(Value, ToolCallEntry), ToolExecutionError>;
 
     /// 手动执行工具并返回完整调用追踪 entry
     /// ToolCallDao 层负责每次调用新建 LoggingDecorator 捕获本次调用信息
@@ -138,7 +137,7 @@ pub trait ToolDal: Send + Sync {
         ctx: RequestContext,
         tool: &Tool,
         args: Value,
-    ) -> Result<(Value, ToolCallEntry), ToolError>;
+    ) -> Result<(Value, ToolCallEntry), ToolExecutionError>;
 
     /// 搜索工具（向量 + 关键词混合搜索）
     async fn search(
@@ -291,15 +290,21 @@ impl ToolDal for ToolDalImpl {
         ctx: RequestContext,
         tool_id: String,
         args: Value,
-    ) -> Result<Value, ToolError> {
+    ) -> Result<(Value, ToolCallEntry), ToolExecutionError> {
         // 获取完整工具
         let tool = self
             .get_by_id(ctx.clone(), tool_id.clone())
             .await
-            .map_err(|e| ToolError::ToolCallError(e.to_string().into()))?;
+            .map_err(|e| {
+                ToolExecutionError::without_trace(rig::tool::ToolError::ToolCallError(
+                    e.to_string().into(),
+                ))
+            })?;
 
         let tool = tool.ok_or_else(|| {
-            ToolError::ToolCallError(format!("Tool not found: {}", tool_id).into())
+            ToolExecutionError::without_trace(rig::tool::ToolError::ToolCallError(
+                format!("Tool not found: {}", tool_id).into(),
+            ))
         })?;
 
         // 执行工具
@@ -431,11 +436,8 @@ impl ToolDal for ToolDalImpl {
         ctx: RequestContext,
         tool: &Tool,
         args: Value,
-    ) -> Result<Value, ToolError> {
-        // Delegate to call_manual and discard the entry
-        self.call_manual(ctx, tool, args)
-            .await
-            .map(|(value, _)| value)
+    ) -> Result<(Value, ToolCallEntry), ToolExecutionError> {
+        self.call_manual(ctx, tool, args).await
     }
 
     async fn call_manual(
@@ -443,7 +445,7 @@ impl ToolDal for ToolDalImpl {
         ctx: RequestContext,
         tool: &Tool,
         args: Value,
-    ) -> Result<(Value, ToolCallEntry), ToolError> {
+    ) -> Result<(Value, ToolCallEntry), ToolExecutionError> {
         self.tool_call_dao.call_manual(ctx, tool, args).await
     }
 

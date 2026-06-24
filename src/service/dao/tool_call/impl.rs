@@ -1,6 +1,6 @@
 //! Default implementation of ToolCallDao
 
-use crate::models::tool::{CoreTool, RigToolAdapter, Tool, ToolPo};
+use crate::models::tool::{CoreTool, RigToolAdapter, Tool, ToolExecutionError, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::get_registry;
 use crate::pkg::tool_tracing::ToolCallLoggingDecorator;
@@ -9,7 +9,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use common::enums::tool::ControlMode;
 use dyn_clone::DynClone;
-use rig::tool::{ToolDyn, ToolError};
+use rig::tool::ToolDyn;
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 
@@ -101,7 +101,7 @@ impl ToolCallDao for ToolCallDaoImpl {
         ctx: RequestContext,
         tool: &Tool,
         args: Value,
-    ) -> Result<(Value, ToolCallEntry), ToolError> {
+    ) -> Result<(Value, ToolCallEntry), ToolExecutionError> {
         // our_tool is always raw (not pre-decorated) - clone and create a new decorator for this call
         // this guarantees we get a fresh entry for this specific invocation
         let cloned: Box<dyn CoreTool + Send + Sync> = dyn_clone::clone_box(&*tool.our_tool);
@@ -121,6 +121,13 @@ impl ToolCallDao for ToolCallDaoImpl {
             entry.metadata = Value::Object(map);
         }
 
-        result.map(|v| (v, entry))
+        match result {
+            Ok(value) => Ok((value, entry)),
+            Err(error) => Err(ToolExecutionError::with_trace(
+                error,
+                entry.tool_id,
+                entry.call_id,
+            )),
+        }
     }
 }

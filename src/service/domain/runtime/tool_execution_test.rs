@@ -6,7 +6,7 @@ mod tests {
     use crate::models::brain::Brain;
     use crate::models::memory::Memory;
     use crate::models::model_provider::ModelProvider;
-    use crate::models::tool::{Tool, ToolPo};
+    use crate::models::tool::{Tool, ToolCallTraceRef, ToolExecutionError, ToolPo};
     use crate::pkg::RequestContext;
     use crate::pkg::tool_tracing::entry::{ToolCallEntry, ToolCallStatus};
     use crate::pkg::tool_tracing::logger::{ToolCallLogger, ToolCallQuery};
@@ -217,9 +217,17 @@ mod tests {
             _ctx: RequestContext,
             tool_id: String,
             args: Value,
-        ) -> Result<Value, ToolError> {
+        ) -> Result<(Value, ToolCallEntry), ToolExecutionError> {
             self.call_by_id_count.fetch_add(1, Ordering::SeqCst);
-            Ok(json!({ "called_by": "tool_dal", "tool_id": tool_id, "args": args }))
+            Ok((
+                json!({ "called_by": "tool_dal", "tool_id": tool_id, "args": args }),
+                test_tool_call_entry(
+                    "trace-tool-dal-call-by-id",
+                    "tool-dal-tool",
+                    "agent-1",
+                    "project-1",
+                ),
+            ))
         }
 
         async fn call_tool(
@@ -227,9 +235,12 @@ mod tests {
             _ctx: RequestContext,
             tool: &Tool,
             args: Value,
-        ) -> Result<Value, ToolError> {
+        ) -> Result<(Value, ToolCallEntry), ToolExecutionError> {
             self.call_tool_count.fetch_add(1, Ordering::SeqCst);
-            Ok(json!({ "called_by": "tool_dal", "tool_id": tool.po.id, "args": args }))
+            Ok((
+                json!({ "called_by": "tool_dal", "tool_id": tool.po.id, "args": args }),
+                test_tool_call_entry("trace-tool-dal-call", &tool.po.id, "agent-1", "project-1"),
+            ))
         }
 
         async fn call_manual(
@@ -237,7 +248,7 @@ mod tests {
             _ctx: RequestContext,
             _tool: &Tool,
             _args: Value,
-        ) -> Result<(Value, ToolCallEntry), ToolError> {
+        ) -> Result<(Value, ToolCallEntry), ToolExecutionError> {
             unimplemented!("not needed by tool execution routing tests")
         }
 
@@ -258,6 +269,7 @@ mod tests {
         call_by_id_count: AtomicUsize,
         call_tool_count: AtomicUsize,
         error_message: Option<String>,
+        error_trace_ref: Option<ToolCallTraceRef>,
     }
 
     impl RecordingMcpToolDal {
@@ -266,6 +278,7 @@ mod tests {
                 call_by_id_count: AtomicUsize::new(0),
                 call_tool_count: AtomicUsize::new(0),
                 error_message: None,
+                error_trace_ref: None,
             }
         }
 
@@ -274,6 +287,19 @@ mod tests {
                 call_by_id_count: AtomicUsize::new(0),
                 call_tool_count: AtomicUsize::new(0),
                 error_message: Some(error_message.to_string()),
+                error_trace_ref: None,
+            }
+        }
+
+        fn failing_with_trace(error_message: &str, tool_id: &str, call_id: &str) -> Self {
+            Self {
+                call_by_id_count: AtomicUsize::new(0),
+                call_tool_count: AtomicUsize::new(0),
+                error_message: Some(error_message.to_string()),
+                error_trace_ref: Some(ToolCallTraceRef {
+                    tool_id: tool_id.to_string(),
+                    call_id: call_id.to_string(),
+                }),
             }
         }
 
@@ -317,12 +343,27 @@ mod tests {
             _ctx: RequestContext,
             tool_id: String,
             args: Value,
-        ) -> Result<Value, ToolError> {
+        ) -> Result<(Value, ToolCallEntry), ToolExecutionError> {
             self.call_by_id_count.fetch_add(1, Ordering::SeqCst);
             if let Some(error_message) = &self.error_message {
-                return Err(ToolError::ToolCallError(error_message.clone().into()));
+                let error = ToolError::ToolCallError(error_message.clone().into());
+                return Err(match &self.error_trace_ref {
+                    Some(trace_ref) => ToolExecutionError {
+                        error,
+                        trace_ref: Some(trace_ref.clone()),
+                    },
+                    None => ToolExecutionError::without_trace(error),
+                });
             }
-            Ok(json!({ "called_by": "mcp_tool_dal", "tool_id": tool_id, "args": args }))
+            Ok((
+                json!({ "called_by": "mcp_tool_dal", "tool_id": tool_id, "args": args }),
+                test_tool_call_entry(
+                    "trace-mcp-dal-call-by-id",
+                    "mcp-tool",
+                    "agent-1",
+                    "project-1",
+                ),
+            ))
         }
 
         async fn call_tool(
@@ -330,12 +371,22 @@ mod tests {
             _ctx: RequestContext,
             tool: &Tool,
             args: Value,
-        ) -> Result<Value, ToolError> {
+        ) -> Result<(Value, ToolCallEntry), ToolExecutionError> {
             self.call_tool_count.fetch_add(1, Ordering::SeqCst);
             if let Some(error_message) = &self.error_message {
-                return Err(ToolError::ToolCallError(error_message.clone().into()));
+                let error = ToolError::ToolCallError(error_message.clone().into());
+                return Err(match &self.error_trace_ref {
+                    Some(trace_ref) => ToolExecutionError {
+                        error,
+                        trace_ref: Some(trace_ref.clone()),
+                    },
+                    None => ToolExecutionError::without_trace(error),
+                });
             }
-            Ok(json!({ "called_by": "mcp_tool_dal", "tool_id": tool.po.id, "args": args }))
+            Ok((
+                json!({ "called_by": "mcp_tool_dal", "tool_id": tool.po.id, "args": args }),
+                test_tool_call_entry("trace-mcp-dal-call", &tool.po.id, "agent-1", "project-1"),
+            ))
         }
 
         async fn call_manual(
@@ -343,7 +394,7 @@ mod tests {
             _ctx: RequestContext,
             _tool: &Tool,
             _args: Value,
-        ) -> Result<(Value, ToolCallEntry), ToolError> {
+        ) -> Result<(Value, ToolCallEntry), ToolExecutionError> {
             unimplemented!("not needed by tool execution routing tests")
         }
 
@@ -678,7 +729,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(result["called_by"], "mcp_tool_dal");
+        assert_eq!(result.result["called_by"], "mcp_tool_dal");
         assert_eq!(tool_dal.get_by_id_calls(), 1);
         assert_eq!(mcp_tool_dal.call_tool_calls(), 1);
         assert_eq!(mcp_tool_dal.call_by_id_calls(), 0);
@@ -703,7 +754,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(result["called_by"], "mcp_tool_dal");
+        assert_eq!(result.result["called_by"], "mcp_tool_dal");
         assert_eq!(tool_dal.get_by_id_calls(), 0);
         assert_eq!(mcp_tool_dal.call_tool_calls(), 1);
         assert_eq!(mcp_tool_dal.call_by_id_calls(), 0);
@@ -844,7 +895,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(result["called_by"], "mcp_tool_dal");
+        assert_eq!(result.result["called_by"], "mcp_tool_dal");
         assert_eq!(tool_dal.list_for_agent_calls(), 1);
         assert_eq!(tool_dal.get_by_id_calls(), 0);
         assert_eq!(tool_dal.call_tool_calls(), 0);
@@ -878,7 +929,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(result["called_by"], "tool_dal");
+        assert_eq!(result.result["called_by"], "tool_dal");
         assert_eq!(tool_dal.list_for_agent_calls(), 1);
         assert_eq!(tool_dal.get_by_id_calls(), 0);
         assert_eq!(tool_dal.call_tool_calls(), 1);
@@ -977,6 +1028,44 @@ mod tests {
         .await;
     }
 
+    #[tokio::test]
+    async fn runtime_preserves_trace_ref_when_mcp_started_failure_is_mapped() {
+        let tool_dal = Arc::new(RecordingToolDal::new(ToolProtocol::Mcp));
+        let mcp_tool_dal = Arc::new(RecordingMcpToolDal::failing_with_trace(
+            "MCP tool call failed for tool_id: mcp-tool-1",
+            "mcp-tool-1",
+            "real-mcp-call-777",
+        ));
+        let runtime = crate::service::domain::runtime::new_with_tool_dals(
+            Arc::new(StubBrainDal),
+            tool_dal.clone(),
+            mcp_tool_dal.clone(),
+        );
+
+        let error = runtime
+            .tool_execution()
+            .call_tool_by_id(
+                test_ctx(),
+                "mcp-tool-1".to_string(),
+                json!({ "text": "hi" }),
+            )
+            .await
+            .expect_err("started MCP failure should return structured execution error");
+
+        assert_eq!(
+            error.trace_ref,
+            Some(ToolCallTraceRef {
+                tool_id: "mcp-tool-1".to_string(),
+                call_id: "real-mcp-call-777".to_string(),
+            })
+        );
+        assert!(
+            error
+                .to_string()
+                .contains("MCP tool call failed for tool_id: mcp-tool-1")
+        );
+    }
+
     async fn assert_non_mcp_protocol_routes_to_generic_tool_dal(
         protocol: ToolProtocol,
         tool_id: &str,
@@ -995,7 +1084,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(result["called_by"], "tool_dal");
+        assert_eq!(result.result["called_by"], "tool_dal");
         assert_eq!(tool_dal.get_by_id_calls(), 1);
         assert_eq!(tool_dal.call_tool_calls(), 1);
         assert_eq!(tool_dal.call_by_id_calls(), 0);

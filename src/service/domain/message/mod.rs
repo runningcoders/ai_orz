@@ -17,6 +17,7 @@ mod management_test;
 use crate::error::AppError;
 use crate::models::file::FileMeta;
 use crate::models::message::Message;
+pub use crate::models::tool::ToolCallTraceRef;
 use crate::pkg::RequestContext;
 use crate::service::dal::message::MessageDal;
 pub use crate::service::dal::message_channel::{DeliveryResult, MessageChannelDal};
@@ -154,11 +155,18 @@ pub enum ToolCallExecutionOutcome {
         result: Value,
         /// 大结果附件元数据（可选）
         result_file_meta: Option<FileMeta>,
+        /// 可选轻量追踪引用，指向 tool-specific call_trace。
+        trace_ref: Option<ToolCallTraceRef>,
     },
     /// 工具执行失败
     Failure {
         /// 已脱敏的错误信息
         error_message: String,
+        /// 可选轻量追踪引用。
+        ///
+        /// 仅当 Runtime 已经实际开始工具执行并产生真实 ToolCallEntry.call_id 时填写；
+        /// 执行前授权/校验/路由失败不得伪造 trace_ref。
+        trace_ref: Option<ToolCallTraceRef>,
     },
 }
 

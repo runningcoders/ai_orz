@@ -6,14 +6,14 @@
 
 use super::ToolCallDao;
 use crate::models::mcp_server::McpServerPo;
-use crate::models::tool::{CoreTool, Tool, ToolPo};
+use crate::models::tool::{CoreTool, Tool, ToolExecutionError, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::mcp::{self, McpClientRuntime, McpToolDeps, RemoteMcpTool};
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use anyhow::Result;
 use async_trait::async_trait;
 use common::enums::ToolProtocol;
-use rig::tool::{ToolDyn, ToolError};
+use rig::tool::ToolDyn;
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -94,7 +94,7 @@ impl ToolCallDao for McpToolCallDaoImpl {
         ctx: RequestContext,
         tool: &Tool,
         args: Value,
-    ) -> std::result::Result<(Value, ToolCallEntry), ToolError> {
+    ) -> std::result::Result<(Value, ToolCallEntry), ToolExecutionError> {
         self.base.call_manual(ctx, tool, args).await
     }
 }

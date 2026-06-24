@@ -347,6 +347,9 @@ pub struct ToolCallMessage {
     /// 大结果附件元数据（当结果太大放不下 content 时使用）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result_file_meta: Option<FileMeta>,
+    /// 轻量工具调用追踪引用（结果消息有效）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trace_ref: Option<serde_json::Value>,
 }
 
 impl ToolCallMessage {
@@ -376,6 +379,7 @@ impl ToolCallMessage {
             is_success: None,
             error_message: None,
             result_file_meta: None,
+            trace_ref: None,
         }
     }
 
@@ -399,6 +403,7 @@ impl ToolCallMessage {
             is_success: Some(true),
             error_message: None,
             result_file_meta,
+            trace_ref: None,
         }
     }
 
@@ -418,6 +423,7 @@ impl ToolCallMessage {
             is_success: Some(false),
             error_message: Some(error_message),
             result_file_meta: None,
+            trace_ref: None,
         }
     }
 
@@ -441,6 +447,7 @@ impl ToolCallMessage {
             is_success: Some(false),
             error_message: Some(error_message),
             result_file_meta: None,
+            trace_ref: None,
         }
     }
 }
