@@ -8,6 +8,7 @@
 
 use crate::models::event::{Event, EventTopic};
 use crate::models::file::FileMeta;
+use crate::models::tool::ToolCallTraceRef;
 use common::constants::utils;
 use common::enums::{FileType, MessageRole, MessageStatus, MessageType};
 use serde::{Deserialize, Serialize};
@@ -347,9 +348,9 @@ pub struct ToolCallMessage {
     /// 大结果附件元数据（当结果太大放不下 content 时使用）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result_file_meta: Option<FileMeta>,
-    /// 轻量工具调用追踪引用（结果消息有效）
+    /// 轻量工具调用追踪引用（结果消息有效），最小包含真实 `{ tool_id, call_id }`。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub trace_ref: Option<serde_json::Value>,
+    pub trace_ref: Option<ToolCallTraceRef>,
 }
 
 impl ToolCallMessage {

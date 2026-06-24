@@ -1307,7 +1307,7 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 
 状态：Phase 5 的最小运行闭环已经完成，Phase 6 不再补“能调用”的主链路，而是补安全策略、管理面一致性、结果引用和更完整的集成测试。**Batch G：MCP ToolCallResult 结果边界与端到端脱敏测试已完成第一步安全闭环**：结果消息不再复制 request args，成功结果在写入 `message.content` 前执行 inline size bound，超限时使用安全 marker。**Batch H：MCP 管理面状态与同步一致性已完成**：同步异常统一使用 `ToolStatus::Stale` 表达，远端删除/改名/重新出现时保留本地记录、绑定和审计历史，同时确保正常业务路径默认过滤 stale。**Batch I：ToolCallEntry 查询能力已完成**：基于 tool-specific daily JSONL call trace，提供 Runtime Domain 查询与 HTTP handler，支持 `call_id`/`tool_id`/scope/status/time/limit 过滤，默认 latest，响应统一脱敏，scope 与 limit fail-closed。
 
-**当前推荐下一步：先做 Batch J（ToolCallResult trace_ref 协议字段）**。原因是 Batch I 已经能通过 `call_id` / `tool_id` 读取完整审计详情，下一步应把 `{ tool_id, call_id }` 轻量引用显式写入 `ToolCallResult` 协议，让 Agent/前端/handler tool 不再只能从消息 content 推断关联。attachment / artifact 仅在结果需要用户下载或成为 Project Artifact 时作为后续产物化路径，不作为普通工具审计详情的默认存储。
+**Batch J：ToolCallResult trace_ref 协议字段已完成**。`ToolCallResult` 现在会强类型携带 `trace_ref = { tool_id, call_id }` 轻量引用，让 Agent/前端/handler tool 可按需读取完整 ToolCallEntry；成功和已开始执行后的失败可携带真实引用，执行前/策略失败不伪造。attachment / artifact 仅在结果需要用户下载或成为 Project Artifact 时作为后续产物化路径，不作为普通工具审计详情的默认存储。
 
 建议拆分：
 
@@ -1331,10 +1331,10 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
    - ✅ 查询必须从 `RequestContext` 派生可信 scope，request 中的 `agent_id/project_id/task_id` 只能收窄且必须与同字段 context scope 匹配；
    - ✅ `get_tool_call_entry_by_id` 缺失/空 `call_id` fail-closed；
    - ✅ HTTP handler 返回 `ToolCallEntryDetail` 前统一脱敏 `input/output/error/metadata`，不暴露 JSONL date/line/path。
-4. **Batch J：ToolCallResult trace_ref 协议字段**（推荐下一步）
-   - 在 `ToolCallResult` 中新增轻量 `trace_ref`，最小字段为 `{ tool_id, call_id }`；
-   - Message Domain 继续负责结果消息形状和 inline bound，不写 tool trace 文件；
-   - Consumer 继续只做编排：Runtime 执行 → Message Domain 回写结果。
+4. **Batch J：ToolCallResult trace_ref 协议字段** ✅ 已完成
+   - ✅ 在 `ToolCallResult` 中新增强类型轻量 `trace_ref`，最小字段为 `{ tool_id, call_id }`；
+   - ✅ Message Domain 继续负责结果消息形状和 inline bound，不写 tool trace 文件；
+   - ✅ Consumer 继续只做编排：Runtime 执行 → Message Domain 回写结果。
 5. **Batch K：ToolCallResult attachment / artifact 产物化引用策略**
    - 仅当结果需要用户下载或成为 Project Artifact 时，设计 Finance Attachment / Project Artifact 接入；
    - 普通工具审计详情继续通过 `trace_ref/call_id -> ToolCallEntry` 查询，不复制到 attachment / artifact。

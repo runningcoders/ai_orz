@@ -161,10 +161,7 @@ impl MessageDelivery for MessageDomainImpl {
             } => (request.new_error_result(error_message), trace_ref),
         };
         if let Some(trace_ref) = trace_ref {
-            result_payload.trace_ref = Some(json!({
-                "tool_id": trace_ref.tool_id,
-                "call_id": trace_ref.call_id,
-            }));
+            result_payload.trace_ref = Some(trace_ref);
         }
 
         let content = serde_json::to_string(&result_payload).map_err(|_| {

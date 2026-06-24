@@ -324,10 +324,9 @@ pub struct ToolCallEntry {
 
 ## 后续待扩展
 
-1. **ToolCallResult trace_ref 协议字段**：基于已完成的 ToolCallEntry 查询能力，在结果消息中显式携带 `{ tool_id, call_id }` 轻量引用
-2. **ToolCallResult 产物化引用策略**：仅当结果需要用户下载或成为 Project Artifact 时接入 attachment / artifact
-3. **ToolEmbedding 语义自动选择**：基于 embedding 做工具相关性排序，减少上下文
-4. **运行时动态加载工具增强**：在现有 Builtin/HTTP/MCP 基础上继续完善生命周期、缓存和健康检查
+1. **ToolCallResult 产物化引用策略**：仅当结果需要用户下载或成为 Project Artifact 时接入 attachment / artifact；普通工具审计详情继续通过已完成的强类型 `trace_ref = { tool_id, call_id }` 查询 ToolCallEntry
+2. **ToolEmbedding 语义自动选择**：基于 embedding 做工具相关性排序，减少上下文
+3. **运行时动态加载工具增强**：在现有 Builtin/HTTP/MCP 基础上继续完善生命周期、缓存和健康检查
 
 ---
 

@@ -366,6 +366,14 @@ async fn test_send_tool_call_result_success_reuses_request_context(pool: SqliteP
     );
     assert!(payload.error_message.is_none());
 
+    assert_eq!(
+        payload.trace_ref,
+        Some(ToolCallTraceRef {
+            tool_id: "tool-mcp-weather".to_string(),
+            call_id: "trace-call-001".to_string(),
+        })
+    );
+
     let raw_payload: serde_json::Value = serde_json::from_str(&result_message.po.content).unwrap();
     assert_eq!(
         raw_payload.get("trace_ref"),
@@ -504,6 +512,14 @@ async fn test_send_tool_call_result_failure_can_include_trace_ref(pool: SqlitePo
     assert_eq!(
         payload.error_message.as_deref(),
         Some("tool execution failed after start")
+    );
+
+    assert_eq!(
+        payload.trace_ref,
+        Some(ToolCallTraceRef {
+            tool_id: "tool-mcp-failing".to_string(),
+            call_id: "trace-call-failed-001".to_string(),
+        })
     );
 
     let raw_payload: serde_json::Value = serde_json::from_str(&result_message.po.content).unwrap();
