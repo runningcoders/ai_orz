@@ -328,7 +328,7 @@ src/service/
 |-------------|------|-----------------|
 | `Text` | 普通文本消息 | 纯文本 |
 | `ToolCallRequest` | 工具调用请求 | JSON 序列化的 `ToolCallRequest` |
-| `ToolCallResult` | 工具调用结果 | JSON 序列化的 `ToolCallResult`；结果消息不复制 request args；成功结果超过 inline 限制时先写入安全 marker；成功结果显式携带 `trace_ref = { tool_id, call_id }` 轻量引用，指向 tool-specific call trace；完整审计详情通过 Runtime Domain 查询接口读取；attachment / artifact 仅用于产物化或用户下载文件 |
+| `ToolCallResult` | 工具调用结果 | JSON 序列化的 `ToolCallResult`；结果消息不复制 request args；成功结果超过 inline 限制时先写入安全 marker；成功和“工具已开始执行后失败”的结果可强类型携带 `trace_ref = ToolCallTraceRef { tool_id, call_id }` 轻量引用，指向 tool-specific call trace；执行前失败/策略失败不伪造引用；完整审计详情通过 Runtime Domain 查询接口读取；attachment / artifact 仅用于产物化或用户下载文件 |
 
 ### 代码组织规范
 
@@ -359,7 +359,7 @@ System Consumer 取出事件 → 仅做编排：调用 Runtime Domain 执行工�
     ↓
 Runtime Domain 完成 Agent 绑定授权、Manual 校验、协议路由与安全错误映射
     ↓
-Message Domain 生成 ToolCallResult → 保存为消息（不复制 request args，大结果 inline bound；成功结果透传 Runtime 返回的 trace_ref = { tool_id, call_id }，用于关联完整 ToolCallEntry）
+Message Domain 生成 ToolCallResult → 保存为消息（不复制 request args，大结果 inline bound；成功和已开始执行后失败透传 Runtime 返回的强类型 trace_ref = { tool_id, call_id }，用于关联完整 ToolCallEntry；执行前/策略失败不伪造）
     ↓
 Agent 拉取到 ToolCallResult → 继续处理 → 生成最终回复
 ```

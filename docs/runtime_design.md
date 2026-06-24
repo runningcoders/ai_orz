@@ -1307,7 +1307,7 @@ mod.rs
 │
 ├── RuntimeMemory: 记忆管理子 trait
 ├── RuntimeAwakening: 唤醒能力子 trait
-├── RuntimeToolExecution: 工具执行子 trait（Manual 工具授权、协议路由、trace_ref 结果引用）
+├── RuntimeToolExecution: 工具执行子 trait（Manual 工具授权、协议路由、强类型 trace_ref 结果引用）
 │
 ├── RuntimeDomainImpl: 统一实现结构体
 │   （所有子模块都为 RuntimeDomainImpl 实现对应的 trait）
@@ -1382,10 +1382,10 @@ xxx
 | **Runtime Memory** | ✅ 100% | `get_recent_context()` + `write_thinking_trace()` |
 | **Context Assembly** | ✅ 100% | Builder 模式，Trace IDs + Agent 人设 + **用户画像** + 历史 + 消息 + 技能/工具预留 |
 | **Runtime Awakening** | ✅ 80% | 7 步主流程完整可跑：读记忆 → 拼 Prompt → 记输入 → 推理 → 记输出 → 返回；仅模型推理为模拟返回 |
-| **Tool Execution** | ✅ 88% | Runtime Domain 已支持按协议路由 Builtin/HTTP/MCP；Manual 工具消息模式已完成 Agent 绑定授权、执行与 ToolCallResult 回调闭环；MCP synced tool stale/reconcile 已完成；ToolCallResult 已补不复制 request args、大结果 inline bound、显式 `trace_ref = { tool_id, call_id }` 轻量引用、以及基于 call_id/tool_id 的 tool-specific call trace 查询 API；后续补二次推理与更多 E2E 场景 |
+| **Tool Execution** | ✅ 88% | Runtime Domain 已支持按协议路由 Builtin/HTTP/MCP；Manual 工具消息模式已完成 Agent 绑定授权、执行与 ToolCallResult 回调闭环；MCP synced tool stale/reconcile 已完成；ToolCallResult 已补不复制 request args、大结果 inline bound、强类型 `trace_ref = ToolCallTraceRef { tool_id, call_id }` 轻量引用、以及基于 call_id/tool_id 的 tool-specific call trace 查询 API；后续补二次推理与更多 E2E 场景 |
 
 **整体完成度：~86%**
-**当前状态：纯文本对话流程完整可跑；工具执行已完成 MCP/Manual 最小闭环、MCP synced tool stale/reconcile 状态一致性，以及 ToolCallResult 第一层结果边界（不复制 request args、大结果安全 marker、显式 trace_ref 关联完整 ToolCallEntry、基于 call_id/tool_id 查询完整 ToolCallEntry），后续继续完善二次推理、产物化引用和更完整运行面策略。**
+**当前状态：纯文本对话流程完整可跑；工具执行已完成 MCP/Manual 最小闭环、MCP synced tool stale/reconcile 状态一致性，以及 ToolCallResult 第一层结果边界（不复制 request args、大结果安全 marker、强类型 trace_ref 关联完整 ToolCallEntry、基于 call_id/tool_id 查询完整 ToolCallEntry；执行前/策略失败不伪造 trace_ref），后续继续完善二次推理、产物化引用和更完整运行面策略。**
 
 ### 17.4 剩余待做（优先级排序）
 
@@ -1624,7 +1624,7 @@ async fn write_thinking_trace(
 | **Trace 闭环架构** | ✅ 100% | 输入输出同 ID，注入 Prompt 供 Agent 引用，完整可追溯 |
 | **Context Assembly** | ✅ 100% | Builder 模式，复用 PO 的自格式化方法 |
 | **Runtime Awakening** | ✅ 95% | 7 步主流程完整可跑，仅剩边缘场景处理 |
-| **Tool Execution** | ✅ 88% | Runtime Domain 协议路由、MCP 调用、Manual 授权与 ToolCallResult 回调闭环已完成；MCP synced tool stale/reconcile 状态一致性已完成；ToolCallResult 已补不复制 request args、大结果 inline bound、基于 call_id/tool_id 的 tool-specific call trace 查询 API，并已强类型携带 `trace_ref = ToolCallTraceRef { tool_id, call_id }`；后续补二次推理、产物化引用和完整 E2E |
+| **Tool Execution** | ✅ 88% | Runtime Domain 协议路由、MCP 调用、Manual 授权与 ToolCallResult 回调闭环已完成；MCP synced tool stale/reconcile 状态一致性已完成；ToolCallResult 已补不复制 request args、大结果 inline bound、基于 call_id/tool_id 的 tool-specific call trace 查询 API，并已强类型携带 `trace_ref = ToolCallTraceRef { tool_id, call_id }`；成功和已开始执行后失败可携带真实引用，执行前/策略失败不伪造；后续补二次推理、产物化引用和完整 E2E |
 
 **整体完成度：~93%**
 **当前状态：核心架构全部落地，Trace 闭环打通；纯文本对话流程生产就绪，MCP/Manual 工具调用闭环已补 ToolCallResult 第一层结果边界与基于 call_id/tool_id 的 ToolCallEntry 查询能力，并完成 synced tool stale/reconcile 状态一致性。**
@@ -1635,7 +1635,7 @@ async fn write_thinking_trace(
 
 | 优先级 | 任务 | 说明 |
 |--------|------|------|
-| ✅ 已完成 | ToolCallResult trace_ref 协议字段 | 已在结果协议中强类型写入 `trace_ref = { tool_id, call_id }`，不暴露 JSONL date/line/path；成功和已开始执行后的失败可携带真实引用，执行前/策略失败不伪造 |
+| ✅ 已完成 | ToolCallResult trace_ref 协议字段 | 已在结果协议中强类型写入 `trace_ref = ToolCallTraceRef { tool_id, call_id }`，wire JSON 保持 `{ tool_id, call_id }`；不暴露 JSONL date/line/path；成功和已开始执行后的失败可携带真实引用，执行前/策略失败不伪造 |
 | **P1** | 工具调用二次推理 | Agent 收到 ToolCallResult 后继续推理并生成最终用户答复；必要时通过 trace_ref/call_id 查询完整 ToolCallEntry |
 | **P1** | ToolCallResult 产物化引用策略 | 仅当结果需要用户下载或成为 Project Artifact 时接入 attachment / artifact，不作为普通工具审计详情的默认存储 |
 | **P1** | Trace ID 关联链 | 从 `message.reply_to_id` 追溯历史 Trace 链，构建完整对话树 |
@@ -1647,7 +1647,7 @@ async fn write_thinking_trace(
 
 ## 下一步讨论方向
 
-1. **工具调用二次推理**（P1，让 Agent 消费 ToolCallResult 后继续完成用户任务；必要时通过 trace_ref 查询完整 ToolCallEntry）
+1. **工具调用二次推理**（推荐 P1，让 Agent 消费 ToolCallResult 后继续完成用户任务；必要时通过强类型 trace_ref 查询完整 ToolCallEntry）
 2. **ToolCallResult attachment / artifact 产物化引用策略**（P1，仅当结果需要用户下载或成为 Project Artifact 时接入）
 3. **Trace ID 关联链实现**（P1，完善 `message.reply_to_id` 追溯能力）
 4. **streamable HTTP MCP runtime**（P2，继承 HTTP Tool SSRF/header/redirect 安全策略后再做）

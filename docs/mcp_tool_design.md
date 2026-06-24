@@ -1307,7 +1307,7 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 
 状态：Phase 5 的最小运行闭环已经完成，Phase 6 不再补“能调用”的主链路，而是补安全策略、管理面一致性、结果引用和更完整的集成测试。**Batch G：MCP ToolCallResult 结果边界与端到端脱敏测试已完成第一步安全闭环**：结果消息不再复制 request args，成功结果在写入 `message.content` 前执行 inline size bound，超限时使用安全 marker。**Batch H：MCP 管理面状态与同步一致性已完成**：同步异常统一使用 `ToolStatus::Stale` 表达，远端删除/改名/重新出现时保留本地记录、绑定和审计历史，同时确保正常业务路径默认过滤 stale。**Batch I：ToolCallEntry 查询能力已完成**：基于 tool-specific daily JSONL call trace，提供 Runtime Domain 查询与 HTTP handler，支持 `call_id`/`tool_id`/scope/status/time/limit 过滤，默认 latest，响应统一脱敏，scope 与 limit fail-closed。
 
-**Batch J：ToolCallResult trace_ref 协议字段已完成**。`ToolCallResult` 现在会强类型携带 `trace_ref = { tool_id, call_id }` 轻量引用，让 Agent/前端/handler tool 可按需读取完整 ToolCallEntry；成功和已开始执行后的失败可携带真实引用，执行前/策略失败不伪造。attachment / artifact 仅在结果需要用户下载或成为 Project Artifact 时作为后续产物化路径，不作为普通工具审计详情的默认存储。
+**Batch J：ToolCallResult trace_ref 协议字段已完成**。`ToolCallResult` 现在会强类型携带 `trace_ref = ToolCallTraceRef { tool_id, call_id }` 轻量引用（wire JSON 仍为 `{ tool_id, call_id }`），让 Agent/前端/handler tool 可按需读取完整 ToolCallEntry；成功和已开始执行后的失败可携带真实引用，执行前/策略失败不伪造。attachment / artifact 仅在结果需要用户下载或成为 Project Artifact 时作为后续产物化路径，不作为普通工具审计详情的默认存储。
 
 建议拆分：
 
@@ -1332,9 +1332,10 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
    - ✅ `get_tool_call_entry_by_id` 缺失/空 `call_id` fail-closed；
    - ✅ HTTP handler 返回 `ToolCallEntryDetail` 前统一脱敏 `input/output/error/metadata`，不暴露 JSONL date/line/path。
 4. **Batch J：ToolCallResult trace_ref 协议字段** ✅ 已完成
-   - ✅ 在 `ToolCallResult` 中新增强类型轻量 `trace_ref`，最小字段为 `{ tool_id, call_id }`；
+   - ✅ 在 `ToolCallResult` 中新增强类型轻量 `trace_ref: Option<ToolCallTraceRef>`，最小字段为 `{ tool_id, call_id }`；
    - ✅ Message Domain 继续负责结果消息形状和 inline bound，不写 tool trace 文件；
-   - ✅ Consumer 继续只做编排：Runtime 执行 → Message Domain 回写结果。
+   - ✅ Consumer 继续只做编排：Runtime 执行 → Message Domain 回写结果；
+   - ✅ 成功和已开始执行后失败可携带真实 `trace_ref`；执行前/策略失败不伪造。
 5. **Batch K：ToolCallResult attachment / artifact 产物化引用策略**
    - 仅当结果需要用户下载或成为 Project Artifact 时，设计 Finance Attachment / Project Artifact 接入；
    - 普通工具审计详情继续通过 `trace_ref/call_id -> ToolCallEntry` 查询，不复制到 attachment / artifact。
@@ -1353,13 +1354,13 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 - ✅ stdio session close 失败脱敏；
 - ✅ server update/status/delete 后 invalidation marker 消费验证；
 - ✅ per-operation stdio session 下的并发同 server 调用策略验证；
-- ✅ ToolCallResult 结果边界第一步：结果消息不复制 request args，成功大结果超限时使用安全 inline marker。
+- ✅ ToolCallResult 结果边界：结果消息不复制 request args，成功大结果超限时使用安全 inline marker，并强类型携带 `trace_ref = ToolCallTraceRef { tool_id, call_id }` 关联完整 ToolCallEntry。
 - ✅ synced tool stale/reconcile 管理策略：新增 `ToolStatus::Stale`，sync 缺失标记 stale，重新出现时仅 stale 自动恢复 enabled，正常业务默认过滤 stale，管理面可显式查询 stale。
 - ✅ ToolCallEntry 查询能力：通过 Runtime Domain / HTTP handler 按 `call_id` 或 scope/filter 查询 tool-specific JSONL trace，查询响应统一脱敏并限制 `limit`。
 
 仍待补强（推荐顺序）：
 
-1. ToolCallResult trace_ref 协议字段（先把 `{ tool_id, call_id }` 写入结果消息，闭合已完成查询 API 的引用链）；
+1. 工具调用二次推理（Agent 消费 ToolCallResult 后继续完成用户任务，必要时通过强类型 trace_ref 查询完整 ToolCallEntry）；
 2. ToolCallResult attachment / artifact 产物化引用策略（仅当结果需要用户下载或成为 Project Artifact 时做）；
 3. streamable HTTP runtime（继承 HTTP Tool 安全策略后再做）；
 4. session cache / reconnect / health check（仅在明确需要长连接复用时做）。
