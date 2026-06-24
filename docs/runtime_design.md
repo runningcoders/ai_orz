@@ -28,6 +28,12 @@ Runtime 只负责：
 - 给它一组"神经级工具"
 - 让它自己决定想什么、调什么、什么时候停
 
+**边界补充（2026-06-24）**：
+- 一次 `awaken()` 是一次**外部唤醒轮次**；轮次之间是否继续，由消息事件与统计模块共同驱动，不在 Runtime 内部写 `while` 循环。
+- `ToolCallResult` 只是下一次唤醒的触发消息之一；Consumer / Runtime 不代替 Agent 生成最终用户回复。
+- 最终用户回复必须由 Agent 在 Rig 思考过程中主动调用 `send_message` / handler-backed 神经工具完成。
+- 思考轮次限制、任务执行进度、Agent 工作状态等运行面判断应来自统一的**统计模块**，而不是零散的消息计数或局部 depth 字段。
+
 **对比传统 Agent 框架**：
 
 | 维度 | 传统框架（LangChain / AutoGPT） | ai_orz Runtime |
@@ -169,6 +175,12 @@ pub struct AwakenOutcome {
 **rig 回合内多步工具调用是允许的**：
 - rig 的 auto 模式下，模型可以在一次 `prompt()` 内连续调用多次神经工具然后给出最终回答
 - 这是**模型自主行为**，不是我们写的循环——符合"模型自己决定"的原则
+
+**外部唤醒轮次由统计模块约束**：
+- ToolCallResult、AgentMessage、Scheduled 等消息都可以触发新的 `awaken()`；
+- 触发前由调度侧查询统计模块，判断当前 task / agent / conversation 是否还有轮次预算；
+- 轮次预算耗尽时，系统只停止继续唤醒或要求人工反馈，不伪造 Agent 的最终答复；
+- 页面上的任务执行情况、Agent 工作情况、工具调用耗时、Token / 轮次消耗，应和这里的预算判断使用同一套统计数据。
 
 **Trigger 显式化**：
 - 每种 trigger 决定 system_prompt 里附加什么开场（"你被用户消息触发"/"你被工具结果触发"）
@@ -1382,18 +1394,18 @@ xxx
 | **Runtime Memory** | ✅ 100% | `get_recent_context()` + `write_thinking_trace()` |
 | **Context Assembly** | ✅ 100% | Builder 模式，Trace IDs + Agent 人设 + **用户画像** + 历史 + 消息 + 技能/工具预留 |
 | **Runtime Awakening** | ✅ 80% | 7 步主流程完整可跑：读记忆 → 拼 Prompt → 记输入 → 推理 → 记输出 → 返回；仅模型推理为模拟返回 |
-| **Tool Execution** | ✅ 88% | Runtime Domain 已支持按协议路由 Builtin/HTTP/MCP；Manual 工具消息模式已完成 Agent 绑定授权、执行与 ToolCallResult 回调闭环；MCP synced tool stale/reconcile 已完成；ToolCallResult 已补不复制 request args、大结果 inline bound、强类型 `trace_ref = ToolCallTraceRef { tool_id, call_id }` 轻量引用、以及基于 call_id/tool_id 的 tool-specific call trace 查询 API；后续补二次推理与更多 E2E 场景 |
+| **Tool Execution** | ✅ 88% | Runtime Domain 已支持按协议路由 Builtin/HTTP/MCP；Manual 工具消息模式已完成 Agent 绑定授权、执行与 ToolCallResult 回调闭环；MCP synced tool stale/reconcile 已完成；ToolCallResult 已补不复制 request args、大结果 inline bound、强类型 `trace_ref = ToolCallTraceRef { tool_id, call_id }` 轻量引用、以及基于 call_id/tool_id 的 tool-specific call trace 查询 API；后续补 ToolCallResult 触发的外部唤醒调度、统计模块驱动轮次预算与更多 E2E 场景 |
 
 **整体完成度：~86%**
-**当前状态：纯文本对话流程完整可跑；工具执行已完成 MCP/Manual 最小闭环、MCP synced tool stale/reconcile 状态一致性，以及 ToolCallResult 第一层结果边界（不复制 request args、大结果安全 marker、强类型 trace_ref 关联完整 ToolCallEntry、基于 call_id/tool_id 查询完整 ToolCallEntry；执行前/策略失败不伪造 trace_ref），后续继续完善二次推理、产物化引用和更完整运行面策略。**
+**当前状态：纯文本对话流程完整可跑；工具执行已完成 MCP/Manual 最小闭环、MCP synced tool stale/reconcile 状态一致性，以及 ToolCallResult 第一层结果边界（不复制 request args、大结果安全 marker、强类型 trace_ref 关联完整 ToolCallEntry、基于 call_id/tool_id 查询完整 ToolCallEntry；执行前/策略失败不伪造 trace_ref）。后续重点转向 ToolCallResult 触发的外部唤醒轮次、统计模块驱动的轮次限制、产物化引用和更完整运行面策略。**
 
 ### 17.4 剩余待做（优先级排序）
 
 | 优先级 | 任务 | 说明 |
 |--------|------|------|
-| **P1** | 工具调用二次推理 | Agent 收到 ToolCallResult 后继续推理并生成最终用户答复；可使用 trace_ref/call_id 按需读取完整 ToolCallEntry |
+| **P1** | 统计模块驱动的外部唤醒轮次 | Agent 收到 ToolCallResult 后可被消息机制再次唤醒；是否继续唤醒、还能唤醒几轮、是否暂停等待用户反馈，统一由统计模块的 task / agent / conversation 运行数据决定；最终用户答复仍由 Agent 在 Rig 回合内调用 `send_message` 等工具发出 |
 | **P1** | Trace ID 关联逻辑 | 从 `message.reply_to_id` 追溯历史 Trace 链 |
-| **P2** | 工具调用框架增强 | 在已完成 Manual ToolCallRequest → Runtime → ToolCallResult 最小闭环和 ToolCallEntry 查询基础上，补二次推理与更多 E2E 场景 |
+| **P2** | 工具调用框架增强 | 在已完成 Manual ToolCallRequest → Runtime → ToolCallResult 最小闭环和 ToolCallEntry 查询基础上，补外部唤醒调度与更多 E2E 场景 |
 | **P3** | 技能注入 | 根据 Agent 角色动态注入技能说明 |
 | **P3** | 单元测试覆盖 | 各模块测试用例 |
 
@@ -1624,7 +1636,7 @@ async fn write_thinking_trace(
 | **Trace 闭环架构** | ✅ 100% | 输入输出同 ID，注入 Prompt 供 Agent 引用，完整可追溯 |
 | **Context Assembly** | ✅ 100% | Builder 模式，复用 PO 的自格式化方法 |
 | **Runtime Awakening** | ✅ 95% | 7 步主流程完整可跑，仅剩边缘场景处理 |
-| **Tool Execution** | ✅ 88% | Runtime Domain 协议路由、MCP 调用、Manual 授权与 ToolCallResult 回调闭环已完成；MCP synced tool stale/reconcile 状态一致性已完成；ToolCallResult 已补不复制 request args、大结果 inline bound、基于 call_id/tool_id 的 tool-specific call trace 查询 API，并已强类型携带 `trace_ref = ToolCallTraceRef { tool_id, call_id }`；成功和已开始执行后失败可携带真实引用，执行前/策略失败不伪造；后续补二次推理、产物化引用和完整 E2E |
+| **Tool Execution** | ✅ 88% | Runtime Domain 协议路由、MCP 调用、Manual 授权与 ToolCallResult 回调闭环已完成；MCP synced tool stale/reconcile 状态一致性已完成；ToolCallResult 已补不复制 request args、大结果 inline bound、基于 call_id/tool_id 的 tool-specific call trace 查询 API，并已强类型携带 `trace_ref = ToolCallTraceRef { tool_id, call_id }`；成功和已开始执行后失败可携带真实引用，执行前/策略失败不伪造；后续补统计模块驱动的外部唤醒轮次、产物化引用和完整 E2E |
 
 **整体完成度：~93%**
 **当前状态：核心架构全部落地，Trace 闭环打通；纯文本对话流程生产就绪，MCP/Manual 工具调用闭环已补 ToolCallResult 第一层结果边界与基于 call_id/tool_id 的 ToolCallEntry 查询能力，并完成 synced tool stale/reconcile 状态一致性。**
@@ -1636,7 +1648,7 @@ async fn write_thinking_trace(
 | 优先级 | 任务 | 说明 |
 |--------|------|------|
 | ✅ 已完成 | ToolCallResult trace_ref 协议字段 | 已在结果协议中强类型写入 `trace_ref = ToolCallTraceRef { tool_id, call_id }`，wire JSON 保持 `{ tool_id, call_id }`；不暴露 JSONL date/line/path；成功和已开始执行后的失败可携带真实引用，执行前/策略失败不伪造 |
-| **P1** | 工具调用二次推理 | Agent 收到 ToolCallResult 后继续推理并生成最终用户答复；必要时通过 trace_ref/call_id 查询完整 ToolCallEntry |
+| **P1** | 统计模块驱动的外部唤醒轮次 | Agent 收到 ToolCallResult 后可被消息机制再次唤醒；轮次限制、暂停/继续、页面可见的执行进度统一来自统计模块；必要时通过 trace_ref/call_id 查询完整 ToolCallEntry；最终用户答复由 Agent 自己调用 `send_message` 等工具发出 |
 | **P1** | ToolCallResult 产物化引用策略 | 仅当结果需要用户下载或成为 Project Artifact 时接入 attachment / artifact，不作为普通工具审计详情的默认存储 |
 | **P1** | Trace ID 关联链 | 从 `message.reply_to_id` 追溯历史 Trace 链，构建完整对话树 |
 | **P2** | 技能动态注入 | 根据 Agent 角色和当前场景，动态注入技能说明 |
@@ -1647,7 +1659,7 @@ async fn write_thinking_trace(
 
 ## 下一步讨论方向
 
-1. **工具调用二次推理**（推荐 P1，让 Agent 消费 ToolCallResult 后继续完成用户任务；必要时通过强类型 trace_ref 查询完整 ToolCallEntry）
+1. **统计模块驱动的外部唤醒轮次**（推荐 P1：让 ToolCallResult 触发下一次 Agent 唤醒，但轮次预算、暂停/继续和页面状态统一来自统计模块；必要时通过强类型 trace_ref 查询完整 ToolCallEntry）
 2. **ToolCallResult attachment / artifact 产物化引用策略**（P1，仅当结果需要用户下载或成为 Project Artifact 时接入）
 3. **Trace ID 关联链实现**（P1，完善 `message.reply_to_id` 追溯能力）
 4. **streamable HTTP MCP runtime**（P2，继承 HTTP Tool SSRF/header/redirect 安全策略后再做）

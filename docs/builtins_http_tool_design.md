@@ -474,7 +474,7 @@ http_post(url, body, headers)
 - [ ] 页面/Handler 创建 HTTP Tool；
 - [ ] 绑定到 Agent；
 - [ ] 通过 ToolCallRequest 执行；
-- [ ] ToolCallResult 回写并唤醒 Agent。
+- [ ] ToolCallResult 回写后，按统计模块轮次预算触发 Agent 下一轮唤醒。
 
 ## 管理面脱敏与校验补充
 

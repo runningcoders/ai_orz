@@ -797,7 +797,7 @@ match tool.po.protocol
 
 状态：已完成最小闭环。Message Domain 已提供 `send_tool_call_request` / `send_tool_call_result` Command API；`MessageHandlerImpl` 已支持测试依赖注入，并在收到 `ToolCallRequest` 后编排 Runtime Domain 执行工具，再通过 Message Domain 回写 `ToolCallResult`。当前覆盖成功、Runtime 失败、非法请求、非 ToolCallRequest 系统消息忽略四类 Consumer 单元测试。
 
-目标：把 Manual MCP Tool 从“Prompt 可见”推进到“异步消息调用闭环”。Manual 工具调用不是 Rig/function calling 的同步返回，而是 ai_orz 自建的消息协议：Agent 发出 `ToolCallRequest` 消息，工具执行器消费并调用 Runtime Domain，执行结果再作为 `ToolCallResult` 回调消息发送给 Agent，随后由消息机制重新唤醒 Agent 继续推理。
+目标：把 Manual MCP Tool 从“Prompt 可见”推进到“异步消息调用闭环”。Manual 工具调用不是 Rig/function calling 的同步返回，而是 ai_orz 自建的消息协议：Agent 发出 `ToolCallRequest` 消息，工具执行器消费并调用 Runtime Domain，执行结果再作为 `ToolCallResult` 回调消息发送给 Agent；随后消息机制可按统计模块给出的 task / agent / conversation 轮次预算重新唤醒 Agent。最终用户回复必须由 Agent 在后续 Rig 回合内主动调用 `send_message` / handler 工具完成，Consumer / Runtime 不代生成最终答复。
 
 核心语义：
 
@@ -1336,13 +1336,17 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
    - ✅ Message Domain 继续负责结果消息形状和 inline bound，不写 tool trace 文件；
    - ✅ Consumer 继续只做编排：Runtime 执行 → Message Domain 回写结果；
    - ✅ 成功和已开始执行后失败可携带真实 `trace_ref`；执行前/策略失败不伪造。
-5. **Batch K：ToolCallResult attachment / artifact 产物化引用策略**
+5. **Batch K：统计模块驱动的外部唤醒轮次**
+   - ToolCallResult、AgentMessage、Scheduled 等消息都可以触发新的 Agent 唤醒；
+   - 是否继续唤醒、轮次预算、暂停/继续、任务/Agent 页面状态统一由统计模块提供；
+   - Runtime 只执行单次 `awaken()`，rig 只负责回合内 auto 工具循环；最终回复由 Agent 调用消息工具发出。
+6. **Batch L：ToolCallResult attachment / artifact 产物化引用策略**
    - 仅当结果需要用户下载或成为 Project Artifact 时，设计 Finance Attachment / Project Artifact 接入；
    - 普通工具审计详情继续通过 `trace_ref/call_id -> ToolCallEntry` 查询，不复制到 attachment / artifact。
-6. **Batch L：streamable HTTP MCP runtime**
+7. **Batch M：streamable HTTP MCP runtime**
    - 继承 HTTP Tool 的 SSRF、redirect、header/query/body 脱敏、timeout/response bound 策略；
    - 第一版仍建议默认 Manual，不进入 Rig auto tool calling。
-7. **Batch M：连接生命周期增强**
+8. **Batch N：连接生命周期增强**
    - 如确有性能需求，再引入 session cache；
    - `invalidate_mcp_server(server_id)` 扩展为关闭/丢弃 cached session；
    - 补 reconnect、health check、并发同 server 调用策略。
@@ -1360,7 +1364,7 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 
 仍待补强（推荐顺序）：
 
-1. 工具调用二次推理（Agent 消费 ToolCallResult 后继续完成用户任务，必要时通过强类型 trace_ref 查询完整 ToolCallEntry）；
+1. 统计模块驱动的外部唤醒轮次（ToolCallResult 可触发 Agent 下一次唤醒；轮次限制、任务/Agent 页面状态、暂停/继续判断统一来自统计模块）；
 2. ToolCallResult attachment / artifact 产物化引用策略（仅当结果需要用户下载或成为 Project Artifact 时做）；
 3. streamable HTTP runtime（继承 HTTP Tool 安全策略后再做）；
 4. session cache / reconnect / health check（仅在明确需要长连接复用时做）。

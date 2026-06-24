@@ -361,7 +361,7 @@ Runtime Domain 完成 Agent 绑定授权、Manual 校验、协议路由与安全
     ↓
 Message Domain 生成 ToolCallResult → 保存为消息（不复制 request args，大结果 inline bound；成功和已开始执行后失败透传 Runtime 返回的强类型 trace_ref = { tool_id, call_id }，用于关联完整 ToolCallEntry；执行前/策略失败不伪造）
     ↓
-Agent 拉取到 ToolCallResult → 继续处理 → 生成最终回复
+ToolCallResult 作为消息回到 Agent 队列 → 外部调度侧查询统计模块轮次预算 → 允许时再次唤醒 Agent → Agent 在 Rig 回合内继续处理，并通过 `send_message` / handler 工具生成最终用户回复
 ```
 
 优势：

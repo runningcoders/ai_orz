@@ -324,7 +324,7 @@ pub struct ToolCallEntry {
 
 ## 后续待扩展
 
-1. **工具调用二次推理**：Agent 消费 ToolCallResult 后继续完成用户任务；普通工具审计详情继续通过已完成的强类型 `trace_ref = ToolCallTraceRef { tool_id, call_id }` 查询 ToolCallEntry
+1. **统计模块驱动的外部唤醒轮次**：ToolCallResult 可触发 Agent 下一次唤醒；是否继续、轮次上限、暂停/继续和页面可见的任务/Agent 运行状态统一来自统计模块；普通工具审计详情继续通过已完成的强类型 `trace_ref = ToolCallTraceRef { tool_id, call_id }` 查询 ToolCallEntry
 2. **ToolCallResult 产物化引用策略**：仅当结果需要用户下载或成为 Project Artifact 时接入 attachment / artifact；普通工具审计详情不复制到 attachment / artifact
 3. **ToolEmbedding 语义自动选择**：基于 embedding 做工具相关性排序，减少上下文
 4. **运行时动态加载工具增强**：在现有 Builtin/HTTP/MCP 基础上继续完善生命周期、缓存和健康检查
@@ -489,7 +489,7 @@ User message → Agent → LLM → generates tool call → Rig calls ToolDyn
    - 状态 = Success / Failed
    - 大结果 → 存附件 file_meta，content 只存摘要
    ↓
-6. 发布完成事件 → 唤醒 Agent → Agent 读取 ToolCallResult → 继续对话给用户
+6. 发布完成事件 → 按统计模块轮次预算唤醒 Agent → Agent 读取 ToolCallResult → 在后续 Rig 回合内自行决定是否继续调用工具或通过 `send_message` 回复用户
 ```
 
 ### 分层符合性检查
@@ -675,10 +675,10 @@ ToolDomain
        │
        ▼
 ┌──────────────────────────────────┐
-│  Agent 思考循环 (再次进入)        │
+│  Agent 唤醒回合 (外部再次触发)    │
 │  - 读取 ToolCallResult           │
-│  - 结合结果继续 LLM 推理          │
-│  - 决定：reply / 再 tool / confirm │
+│  - 统计模块校验轮次预算           │
+│  - 决定：send_message / 再 tool / confirm │
 └──────────────────────────────────┘
 ```
 

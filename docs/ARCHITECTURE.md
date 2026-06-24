@@ -285,7 +285,7 @@ Project + Task + Artifact 聚合
 | 优先级 | 任务 | 说明 |
 |--------|------|------|
 | ✅ 已完成 | ToolCallResult trace_ref 协议字段 | ToolCallResult 已完成不复制 request args、inline size bound、基于 call_id/tool_id 的 ToolCallEntry 查询，并已强类型携带 `trace_ref = ToolCallTraceRef { tool_id, call_id }`；成功和已开始执行后失败可携带真实引用，执行前/策略失败不伪造；attachment / artifact 仅用于用户下载或 Project Artifact 产物化 |
-| **P1** | 工具调用二次推理 | Agent 消费 ToolCallResult 后继续完成用户任务；必要时通过强类型 trace_ref 查询完整 ToolCallEntry |
+| **P1** | 统计模块驱动的外部唤醒轮次 | ToolCallResult 可触发 Agent 下一次唤醒；是否继续、还能继续几轮、是否暂停等待反馈，由统一统计模块基于 task / agent / conversation 运行数据决定；最终用户答复由 Agent 在 Rig 回合内调用 `send_message` 等工具发出，Consumer / Runtime 不代生成 |
 | **P1** | Runtime Memory 补充上层语法糖 | 核心接口已完成，可根据业务需要追加便捷方法 |
 | **P2** | message 消费推送全链路 E2E | consumer → domain_message → dal_message_channel；Manual ToolCallRequest → Runtime → ToolCallResult 最小闭环已完成，后续补更多 E2E |
 | **P2** | Agent 思考记忆链路 | Agent 触发 → Runtime Memory 读写 |
