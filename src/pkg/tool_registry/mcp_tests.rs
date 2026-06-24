@@ -254,6 +254,19 @@ async fn mcp_core_tool_calls_stdio_server_through_rmcp_runtime() {
     assert_eq!(result["isError"], false);
 }
 
+#[test]
+fn mcp_stdio_session_close_failure_message_redacts_lower_layer_details() {
+    let message = super::mcp_stdio_session_close_failed_message("private-server", "tool call echo");
+
+    assert!(message.contains("MCP stdio session close failed"));
+    assert!(message.contains("private-server"));
+    assert!(message.contains("tool call echo"));
+    assert!(!message.contains("/opt/private/mcp-server"));
+    assert!(!message.contains("API_TOKEN"));
+    assert!(!message.contains("placeholder-value"));
+    assert!(!message.contains("credential"));
+}
+
 #[tokio::test]
 async fn mcp_client_runtime_lists_stdio_server_tools() {
     let script = write_echo_mcp_server_script();

@@ -276,8 +276,8 @@ async fn sync_then_call_stdio_mcp_tool_by_id_returns_result(pool: SqlitePool) ->
     assert_eq!(entry.tool_id, tool_id);
     assert_eq!(entry.tool_name, "mcp.echo-server.echo");
     assert_eq!(entry.status, ToolCallStatus::Completed);
-    assert_eq!(entry.input, json!({ "text": "manual MCP" }));
-    assert_eq!(entry.output, Some(manual_result));
+    assert_eq!(entry.input, json!("[REDACTED]"));
+    assert_eq!(entry.output, Some(json!("[REDACTED]")));
     assert!(entry.error.is_none());
     Ok(())
 }

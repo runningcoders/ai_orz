@@ -113,12 +113,11 @@ impl McpClientRuntime {
 
         let close_result = client.close().await;
         let tools = list_result?;
-        if let Err(e) = close_result {
-            return Err(anyhow!(
-                "MCP tools/list on server {} completed but session close failed: {}",
-                server.id,
-                e
-            ));
+        if let Err(_e) = close_result {
+            return Err(anyhow!(mcp_stdio_session_close_failed_message(
+                &server.id,
+                "tools/list",
+            )));
         }
 
         Ok(tools
@@ -175,13 +174,11 @@ impl McpClientRuntime {
 
         let close_result = client.close().await;
         let result = call_result?;
-        if let Err(e) = close_result {
-            return Err(anyhow!(
-                "MCP tool {} on server {} completed but session close failed: {}",
-                tool_name,
-                server.id,
-                e
-            ));
+        if let Err(_e) = close_result {
+            return Err(anyhow!(mcp_stdio_session_close_failed_message(
+                &server.id,
+                &format!("tool call {}", tool_name),
+            )));
         }
 
         serde_json::to_value(result)
@@ -233,6 +230,13 @@ async fn connect_stdio_client(
             e
         )
     })
+}
+
+fn mcp_stdio_session_close_failed_message(server_id: &str, operation: &str) -> String {
+    format!(
+        "MCP stdio session close failed after {} on server {}",
+        operation, server_id
+    )
 }
 
 fn resolve_command_path(command: &str) -> Result<PathBuf> {

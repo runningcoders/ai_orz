@@ -914,11 +914,11 @@ Batch D 测试重点：
 - ✅ `LoggingDecorator` 对 `ToolProtocol::Mcp` 与 `ToolProtocol::Http` 的 trace `input/output/error` 采用 fail-closed 默认脱敏，避免外部工具参数、返回值或错误文本进入 tool call JSONL trace；
 - ✅ 已补充 MCP trace 脱敏回归测试，验证 `placeholder-value`、URL host、`credential` 等敏感片段不会出现在序列化后的 trace entry 中；
 - ✅ Runtime MCP 错误语义已做最小安全分类：timeout、server not found、server disabled、tool disabled/tool not found 会映射为只含 `tool_id` 的安全错误文案，其余未知错误继续 fail-closed 映射为通用 `MCP tool call failed for tool_id: ...`；
-- ✅ `McpToolDal.get_by_id/call_tool_by_id` 已在组装执行工具前拒绝 disabled MCP tool 与 disabled MCP server，避免继续连接外部 runtime；DAO 仍只负责持久化，状态语义检查停留在 DAL/Runtime 边界。
+- ✅ `McpToolDal.get_by_id/call_tool_by_id` 已在组装执行工具前拒绝 disabled MCP tool 与 disabled MCP server，避免继续连接外部 runtime；DAO 仍只负责持久化，状态语义检查停留在 DAL/Runtime 边界；
+- ✅ stdio `tools/list` / `tools/call` 成功后关闭 session 失败时，不再传播 rmcp/process 下层错误文本，仅返回安全文案 `MCP stdio session close failed after ... on server ...`，避免 command/env/credential 等细节外泄。
 
 后续继续补：
 
-- stdio process/session close 失败时的错误脱敏；
 - 并发调用同一个 MCP server 的 runtime 行为；
 - server update/delete 后 invalidate 与下一次调用重连验证。
 
