@@ -116,9 +116,14 @@ fn validate_tool_management_policy(tool: &Tool) -> Result<(), AppError> {
     }
 
     if !matches!(tool.po.control_mode, ControlMode::Manual) {
+        let tool_type = match tool.po.protocol {
+            ToolProtocol::Http => "HTTP Tool",
+            ToolProtocol::Mcp => "Mcp Tool",
+            _ => "Tool",
+        };
         return Err(AppError::BadRequest(format!(
-            "{:?} Tool only supports Manual control mode",
-            tool.po.protocol
+            "{} only supports Manual control mode",
+            tool_type
         )));
     }
 
