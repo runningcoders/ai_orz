@@ -1317,13 +1317,13 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
    - ✅ attachment/file persistence 尚未落地时，超限结果先使用安全 marker：`{"truncated": true, "message": "tool result exceeded inline message limit"}`；
    - ✅ Consumer 仍只做编排，不处理协议判断、授权校验、脱敏或结果承载策略；
    - ✅ 目标测试覆盖失败结果不泄漏 request args、成功大结果被安全 marker 替换。
-2. **Batch H：MCP 管理面状态与同步一致性**
-   - 明确远端删除/改名后的 synced tool 策略：推荐新增 `ToolStatus::Stale` 或等价同步状态，避免直接复用 `Disabled` 导致“管理员手动禁用”和“远端已消失”语义混淆；
-   - 远端缺失时保留本地 `ToolPo`、Agent 绑定和审计信息，但将工具从 Prompt 可见列表与 Runtime 可执行路径中排除；
-   - 远端重新出现时只更新可同步元数据，是否从 `Stale` 自动恢复为 `Enabled` 需要显式策略，避免覆盖管理员手动状态；
-   - 远端改名按“旧 tool 缺失 + 新 tool 新增”处理，因为当前标准 ID 包含 `server_id/tool_name`；
-   - 补充重新 sync 时对 Agent 绑定、audit/status 保留策略的回归测试；
-   - 管理面 detail/list 继续只返回脱敏配置，不暴露 server command/env/header/credential。
+2. **Batch H：MCP 管理面状态与同步一致性**（设计已确定，进入实现）
+   - 新增 `ToolStatus::Stale` 作为同步异常状态，避免复用 `Disabled` 混淆“管理员手动禁用”和“远端已消失”；
+   - sync reconcile 算法：一次 `tools/list` 后生成远端 ID 集合；对远端返回的 tool 做 upsert；对同一 `server_id` 下本地已存在但本次远端未返回的 `Enabled` MCP Tool 标记为 `Stale`；已 `Disabled` 的工具保持管理员状态，不因远端缺失自动变更；
+   - 远端重新出现时：若本地状态为 `Stale`，恢复为 `Enabled` 并更新可同步元数据；若本地状态为 `Disabled`，只更新可同步元数据但保持 `Disabled`，不覆盖管理员手动禁用；
+   - 远端改名按“旧 tool 缺失 + 新 tool 新增”处理，因为当前标准 ID 包含 `server_id/tool_name`；旧记录保留 `ToolPo`、Agent 绑定和审计历史，但进入 `Stale`；
+   - 正常业务过滤规则：默认查询/search/Agent 绑定工具列表排除 `Stale`；Prompt 只展示 `status=Enabled && control_mode=Manual`；Runtime 执行入口拒绝所有非 `Enabled` 状态，即使 Agent 绑定仍存在；MCP Server tools 管理列表可通过 `status=Stale` 显式查询异常记录；
+   - 安全边界不变：管理面 detail/list 继续只返回脱敏配置，不暴露 server command/env/header/credential；Runtime/MCP 下层错误继续 fail-closed 脱敏。
 3. **Batch I：streamable HTTP MCP runtime**
    - 继承 HTTP Tool 的 SSRF、redirect、header/query/body 脱敏、timeout/response bound 策略；
    - 第一版仍建议默认 Manual，不进入 Rig auto tool calling。
@@ -1343,7 +1343,7 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 
 仍待补强（推荐顺序）：
 
-1. synced tool stale/reconcile 管理策略（Batch H，优先）；
+1. synced tool stale/reconcile 管理策略（Batch H，设计已确定，当前实现中：新增 `ToolStatus::Stale`，sync 缺失标记 stale，重新出现时仅 stale 自动恢复 enabled，正常业务默认过滤 stale）；
 2. ToolCallResult attachment / artifact 引用承载策略（单独设计，解决大结果完整保存）；
 3. streamable HTTP runtime（继承 HTTP Tool 安全策略后再做）；
 4. session cache / reconnect / health check（仅在明确需要长连接复用时做）。
@@ -1364,6 +1364,6 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 
 1. stdio `command` 是否采用 allowlist？allowlist 放配置还是代码常量？
 2. MCP Server 是否只允许管理员配置？
-3. MCP Tool 同步时，远端删除的 tool 是禁用、软删除，还是保留 stale 状态？当前建议优先采用 stale 语义，保留本地记录与绑定但禁止 Prompt 展示和 Runtime 执行。
+3. MCP Tool 同步时，远端删除的 tool 是禁用、软删除，还是保留 stale 状态？已确定采用 `ToolStatus::Stale`：保留本地记录与绑定但禁止 Prompt 展示和 Runtime 执行；远端重新出现时仅 `Stale` 自动恢复为 `Enabled`，不覆盖管理员 `Disabled`。
 4. MCP trace 默认全脱敏已作为第一版安全默认值落地；后续是否需要按 server/tool 配置 trace policy？
 5. 大型 MCP ToolCallResult 是直接截断、写入 attachment，还是写入 Artifact/文件引用？

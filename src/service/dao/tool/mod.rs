@@ -34,6 +34,7 @@ pub struct ToolQuery {
     pub keyword: Option<String>,  // 关键词搜索
     pub protocol: Option<ToolProtocol>,
     pub status: Option<ToolStatus>,
+    pub exclude_status: Option<ToolStatus>,
     pub mcp_server_id: Option<String>,
     pub enabled_only: Option<bool>,
     pub limit: Option<usize>,

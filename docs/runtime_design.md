@@ -1391,7 +1391,7 @@ xxx
 
 | 优先级 | 任务 | 说明 |
 |--------|------|------|
-| **P1** | MCP synced tool stale/reconcile 策略 | 推荐作为下一步 Batch H：远端删除/改名时保留本地 ToolPo/绑定/审计，但标记 stale 并排除 Prompt 可见与 Runtime 执行；需明确重新出现时是否自动恢复 |
+| **P1** | MCP synced tool stale/reconcile 策略 | Batch H 设计已确定并进入实现：新增 `ToolStatus::Stale`；远端删除/改名时保留本地 ToolPo/绑定/审计但标记 stale；Prompt、Runtime、默认 list/search 均过滤 stale；远端重新出现时仅 Stale 自动恢复 Enabled，不覆盖管理员 Disabled |
 | **P1** | ToolCallResult attachment 持久化策略 | 大结果当前先用安全 marker 替代；后续接入 attachment / artifact 引用承载完整结果，需单独设计 Message Domain 与 Finance Attachment/Project Artifact 边界 |
 | **P1** | Trace ID 关联逻辑 | 从 `message.reply_to_id` 追溯历史 Trace 链 |
 | **P2** | 工具调用框架增强 | 在已完成 Manual ToolCallRequest → Runtime → ToolCallResult 最小闭环基础上，补二次推理与更多 E2E 场景 |
@@ -1636,7 +1636,7 @@ async fn write_thinking_trace(
 
 | 优先级 | 任务 | 说明 |
 |--------|------|------|
-| **P1** | MCP synced tool stale/reconcile 策略 | 推荐下一步优先做：远端删除/改名时保留本地记录、绑定和审计，但用 stale 语义从 Prompt 可见列表与 Runtime 执行路径排除 |
+| **P1** | MCP synced tool stale/reconcile 策略 | Batch H 设计已确定并进入实现：远端删除/改名时保留本地记录、绑定和审计，但用 `ToolStatus::Stale` 从 Prompt 可见、Runtime 执行、默认 list/search 正常业务路径排除；远端重新出现时仅 Stale 自动恢复 Enabled |
 | **P1** | ToolCallResult attachment 持久化策略 | 当前已完成不复制 request args 与大结果安全 marker；后续接入 attachment / artifact 引用承载完整结果 |
 | **P1** | 工具调用二次推理 | Agent 收到 ToolCallResult 后继续推理并生成最终用户答复 |
 | **P1** | Trace ID 关联链 | 从 `message.reply_to_id` 追溯历史 Trace 链，构建完整对话树 |
@@ -1648,7 +1648,7 @@ async fn write_thinking_trace(
 
 ## 下一步讨论方向
 
-1. **MCP synced tool stale/reconcile 策略**（P1，建议下一步先做；先稳住管理面和运行面状态一致性）
+1. **MCP synced tool stale/reconcile 策略**（P1，Batch H 设计已确定，当前进入实现）
 2. **ToolCallResult attachment 持久化策略**（P1，接入 attachment / artifact 引用承载完整大结果）
 3. **工具调用二次推理**（P1，让 Agent 消费工具结果后继续完成用户任务）
 4. **Trace ID 关联链实现**（P1，完善追溯能力）

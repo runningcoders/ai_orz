@@ -13,6 +13,7 @@ use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::tool::{self, ToolDao, ToolQuery, ToolVectorDao};
 use crate::service::dao::tool_call::{self, ToolCallDao};
 use anyhow::Result;
+use common::enums::ToolStatus;
 use rig::tool::ToolError;
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
@@ -211,6 +212,7 @@ impl ToolDal for ToolDalImpl {
     }
 
     async fn query(&self, ctx: RequestContext, query: ToolQuery) -> Result<Vec<Tool>, AppError> {
+        let query = exclude_stale_by_default(query);
         let pos = self.tool_dao.query(ctx, query).await?;
         let mut tools = Vec::new();
         for po in pos {
@@ -383,6 +385,7 @@ impl ToolDal for ToolDalImpl {
             } else {
                 Some(tool_ids.into_iter().collect())
             },
+            exclude_status: Some(ToolStatus::Stale),
             ..Default::default()
         };
         let all_pos = self.tool_dao.query(ctx, query).await?;
@@ -451,4 +454,11 @@ impl ToolDal for ToolDalImpl {
     ) -> Vec<Box<dyn rig::tool::ToolDyn>> {
         self.tool_call_dao.wrap_for_rig(tools, ctx)
     }
+}
+
+fn exclude_stale_by_default(mut query: ToolQuery) -> ToolQuery {
+    if query.status.is_none() && query.exclude_status.is_none() {
+        query.exclude_status = Some(ToolStatus::Stale);
+    }
+    query
 }

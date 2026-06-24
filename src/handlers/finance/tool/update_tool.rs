@@ -2,7 +2,7 @@
 
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateToolRequest, UpdateToolResponse};
-use common::enums::ToolProtocol;
+use common::enums::{ToolProtocol, ToolStatus};
 
 use crate::error::AppError;
 use crate::pkg::RequestContext;
@@ -66,11 +66,13 @@ pub async fn update_tool(
         tool.po.tags = serde_json::to_string(&tags).unwrap_or_else(|_| "[]".to_string());
     }
     if let Some(enabled) = params.enabled {
-        tool.po.status = if enabled {
-            common::enums::tool::ToolStatus::Enabled
+        let target_status = if enabled {
+            ToolStatus::Enabled
         } else {
-            common::enums::tool::ToolStatus::Disabled
+            ToolStatus::Disabled
         };
+        tool.transition_status(target_status, user_id.clone())
+            .map_err(AppError::BadRequest)?;
     }
     tool.po.touch(Some(user_id));
 

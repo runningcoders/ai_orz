@@ -14,7 +14,7 @@ mod tests {
     use crate::service::dal::tool::ToolDal;
     use crate::service::dao::tool::{ToolQuery, ToolSearch};
     use async_trait::async_trait;
-    use common::enums::{ControlMode, ToolProtocol};
+    use common::enums::{ControlMode, ToolProtocol, ToolStatus};
     use rig::tool::{ToolDyn, ToolError};
     use serde_json::{Value, json};
     use std::sync::Arc;
@@ -55,7 +55,7 @@ mod tests {
 
     struct RecordingToolDal {
         protocol: ToolProtocol,
-        bound_tools: Vec<(String, ToolProtocol, ControlMode)>,
+        bound_tools: Vec<(String, ToolProtocol, ControlMode, ToolStatus)>,
         get_by_id_count: AtomicUsize,
         list_for_agent_count: AtomicUsize,
         call_by_id_count: AtomicUsize,
@@ -75,6 +75,18 @@ mod tests {
         }
 
         fn with_bound_tools(bound_tools: Vec<(String, ToolProtocol, ControlMode)>) -> Self {
+            let bound_tools = bound_tools
+                .into_iter()
+                .map(|(tool_id, protocol, control_mode)| {
+                    (tool_id, protocol, control_mode, ToolStatus::Enabled)
+                })
+                .collect();
+            Self::with_bound_tools_and_status(bound_tools)
+        }
+
+        fn with_bound_tools_and_status(
+            bound_tools: Vec<(String, ToolProtocol, ControlMode, ToolStatus)>,
+        ) -> Self {
             Self {
                 protocol: ToolProtocol::Builtin,
                 bound_tools,
@@ -105,12 +117,15 @@ mod tests {
             Tool::from_po_for_management(test_tool_po(tool_id, self.protocol))
         }
 
-        fn bound_tool(tool_id: &str, protocol: ToolProtocol, control_mode: ControlMode) -> Tool {
-            Tool::from_po_for_management(test_tool_po_with_control_mode(
-                tool_id,
-                protocol,
-                control_mode,
-            ))
+        fn bound_tool(
+            tool_id: &str,
+            protocol: ToolProtocol,
+            control_mode: ControlMode,
+            status: ToolStatus,
+        ) -> Tool {
+            let mut po = test_tool_po_with_control_mode(tool_id, protocol, control_mode);
+            po.status = status;
+            Tool::from_po_for_management(po)
         }
     }
 
@@ -166,8 +181,8 @@ mod tests {
             Ok(self
                 .bound_tools
                 .iter()
-                .map(|(tool_id, protocol, control_mode)| {
-                    Self::bound_tool(tool_id, *protocol, *control_mode)
+                .map(|(tool_id, protocol, control_mode, status)| {
+                    Self::bound_tool(tool_id, *protocol, *control_mode, *status)
                 })
                 .collect())
         }
@@ -478,6 +493,44 @@ mod tests {
         assert!(message.contains("Manual tool call denied"));
         assert!(message.contains("tool-1"));
         assert!(message.contains("Auto"));
+        assert_eq!(tool_dal.list_for_agent_calls(), 1);
+        assert_eq!(tool_dal.get_by_id_calls(), 0);
+        assert_eq!(tool_dal.call_tool_calls(), 0);
+        assert_eq!(tool_dal.call_by_id_calls(), 0);
+        assert_eq!(mcp_tool_dal.call_tool_calls(), 0);
+        assert_eq!(mcp_tool_dal.call_by_id_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn runtime_denies_manual_tool_call_when_bound_tool_is_stale() {
+        let tool_dal = Arc::new(RecordingToolDal::with_bound_tools_and_status(vec![(
+            "tool-1".to_string(),
+            ToolProtocol::Mcp,
+            ControlMode::Manual,
+            ToolStatus::Stale,
+        )]));
+        let mcp_tool_dal = Arc::new(RecordingMcpToolDal::new());
+        let runtime = crate::service::domain::runtime::new_with_tool_dals(
+            Arc::new(StubBrainDal),
+            tool_dal.clone(),
+            mcp_tool_dal.clone(),
+        );
+
+        let error = runtime
+            .tool_execution()
+            .call_manual_tool_for_agent(
+                test_ctx(),
+                "agent-1".to_string(),
+                "tool-1".to_string(),
+                json!({ "text": "hi" }),
+            )
+            .await
+            .expect_err("Stale tools must not execute even when bindings remain");
+
+        let message = error.to_string();
+        assert!(message.contains("Tool execution denied"));
+        assert!(message.contains("tool-1"));
+        assert!(message.contains("Stale"));
         assert_eq!(tool_dal.list_for_agent_calls(), 1);
         assert_eq!(tool_dal.get_by_id_calls(), 0);
         assert_eq!(tool_dal.call_tool_calls(), 0);

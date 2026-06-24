@@ -147,9 +147,13 @@ impl McpToolDal for McpToolDalImpl {
             .list_mcp_tools(&server)
             .await
             .map_err(AppError::from)?;
+        let remote_tool_ids: std::collections::HashSet<String> = remote_tools
+            .iter()
+            .map(|remote_tool| mcp_tool_record_id(&server.id, &remote_tool.name))
+            .collect();
         let mut synced = 0;
 
-        for remote_tool in remote_tools {
+        for remote_tool in &remote_tools {
             let mut po = build_synced_tool_po(&server, &remote_tool, ctx.user_id.clone());
             if let Some(existing) = self
                 .tool_dao
@@ -160,7 +164,11 @@ impl McpToolDal for McpToolDalImpl {
                 ensure_sync_target_matches(&existing, &po)?;
                 po.created_at = existing.created_at;
                 po.created_by = existing.created_by;
-                po.status = existing.status;
+                po.status = if existing.status == ToolStatus::Stale {
+                    ToolStatus::Enabled
+                } else {
+                    existing.status
+                };
                 po.updated_by = ctx.user_id.clone();
                 self.tool_dao
                     .update_tool(ctx.clone(), &po)
@@ -173,6 +181,33 @@ impl McpToolDal for McpToolDalImpl {
                     .map_err(AppError::from)?;
             }
             synced += 1;
+        }
+
+        let existing_enabled_tools = self
+            .tool_dao
+            .query(
+                ctx.clone(),
+                ToolQuery {
+                    protocol: Some(ToolProtocol::Mcp),
+                    status: Some(ToolStatus::Enabled),
+                    mcp_server_id: Some(server.id.clone()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(AppError::from)?;
+
+        for mut existing in existing_enabled_tools {
+            if remote_tool_ids.contains(&existing.id) {
+                continue;
+            }
+            existing.status = ToolStatus::Stale;
+            existing.updated_by = ctx.user_id.clone();
+            existing.touch(ctx.user_id.clone());
+            self.tool_dao
+                .update_tool(ctx.clone(), &existing)
+                .await
+                .map_err(AppError::from)?;
         }
 
         Ok(synced)

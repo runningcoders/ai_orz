@@ -358,6 +358,199 @@ async fn mcp_tool_dal_sync_upserts_existing_tool_and_preserves_audit_and_status(
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn mcp_tool_dal_sync_marks_missing_enabled_tools_stale_and_preserves_disabled(
+    pool: SqlitePool,
+) -> Result<()> {
+    let (dal, ctx) = init_test_env(pool);
+    let script = write_echo_mcp_server_script();
+    let server = mcp_server_with_command(
+        "echo-server",
+        "python3".to_string(),
+        vec![script.path().to_string_lossy().to_string()],
+    );
+
+    mcp_server::new_mcp_server_dao()
+        .insert(ctx.clone(), &server)
+        .await?;
+
+    let mut missing_enabled = ToolPo::new(
+        "mcp.echo-server.old".to_string(),
+        "mcp.echo-server.old".to_string(),
+        "Remote tool that disappeared".to_string(),
+        ToolProtocol::Mcp,
+        json!({"server_id": "echo-server", "tool_name": "old"}),
+        Some(json!({"type": "object"})),
+        vec![
+            "mcp".to_string(),
+            "echo-server".to_string(),
+            "old".to_string(),
+        ],
+        Some("original-user".to_string()),
+    );
+    missing_enabled.status = ToolStatus::Enabled;
+    let mut missing_disabled = ToolPo::new(
+        "mcp.echo-server.disabled".to_string(),
+        "mcp.echo-server.disabled".to_string(),
+        "Admin disabled disappeared tool".to_string(),
+        ToolProtocol::Mcp,
+        json!({"server_id": "echo-server", "tool_name": "disabled"}),
+        Some(json!({"type": "object"})),
+        vec![
+            "mcp".to_string(),
+            "echo-server".to_string(),
+            "disabled".to_string(),
+        ],
+        Some("original-user".to_string()),
+    );
+    missing_disabled.status = ToolStatus::Disabled;
+    let disabled_created_at = missing_disabled.created_at;
+
+    tool::new_tool_dao()
+        .create_tool(ctx.clone(), &missing_enabled)
+        .await?;
+    tool::new_tool_dao()
+        .create_tool(ctx.clone(), &missing_disabled)
+        .await?;
+    tool::new_tool_dao()
+        .add_tool_to_agent(
+            ctx.clone(),
+            "agent-keeps-binding",
+            &missing_enabled.id,
+            Some("test-user".to_string()),
+        )
+        .await?;
+
+    let synced = dal.sync_from_server(ctx.clone(), &server.id).await?;
+    assert_eq!(synced, 1);
+
+    let stale = tool::new_tool_dao()
+        .get_by_id(ctx.clone(), "mcp.echo-server.old".to_string())
+        .await?
+        .expect("missing enabled MCP tool should be retained locally");
+    assert_eq!(stale.status, ToolStatus::Stale);
+    assert_eq!(stale.config["server_id"], "echo-server");
+    assert_eq!(stale.config["tool_name"], "old");
+
+    let disabled = tool::new_tool_dao()
+        .get_by_id(ctx.clone(), "mcp.echo-server.disabled".to_string())
+        .await?
+        .expect("missing disabled MCP tool should be retained locally");
+    assert_eq!(disabled.status, ToolStatus::Disabled);
+    assert_eq!(disabled.created_at, disabled_created_at);
+
+    let bindings = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM agent_tools WHERE agent_id = ? AND tool_id = ?",
+    )
+    .bind("agent-keeps-binding")
+    .bind("mcp.echo-server.old")
+    .fetch_one(ctx.db_pool())
+    .await?;
+    assert_eq!(
+        bindings, 1,
+        "stale reconcile must not delete Agent bindings"
+    );
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn mcp_tool_dal_sync_restores_stale_tool_when_remote_reappears(
+    pool: SqlitePool,
+) -> Result<()> {
+    let (dal, ctx) = init_test_env(pool);
+    let script = write_echo_mcp_server_script();
+    let server = mcp_server_with_command(
+        "echo-server",
+        "python3".to_string(),
+        vec![script.path().to_string_lossy().to_string()],
+    );
+
+    mcp_server::new_mcp_server_dao()
+        .insert(ctx.clone(), &server)
+        .await?;
+
+    let mut existing = ToolPo::new(
+        "mcp.echo-server.echo".to_string(),
+        "mcp.echo-server.echo".to_string(),
+        "Previously stale remote tool".to_string(),
+        ToolProtocol::Mcp,
+        json!({"server_id": "echo-server", "tool_name": "echo"}),
+        Some(json!({"type": "object"})),
+        vec![
+            "mcp".to_string(),
+            "echo-server".to_string(),
+            "echo".to_string(),
+        ],
+        Some("original-user".to_string()),
+    );
+    existing.status = ToolStatus::Stale;
+    tool::new_tool_dao()
+        .create_tool(ctx.clone(), &existing)
+        .await?;
+
+    let synced = dal.sync_from_server(ctx.clone(), &server.id).await?;
+    assert_eq!(synced, 1);
+
+    let restored = tool::new_tool_dao()
+        .get_by_id(ctx.clone(), "mcp.echo-server.echo".to_string())
+        .await?
+        .expect("reappeared stale MCP tool should still exist");
+    assert_eq!(restored.status, ToolStatus::Enabled);
+    assert_eq!(restored.description, "Echo input text");
+    assert_eq!(
+        restored.parameters_schema.as_ref().unwrap()["properties"]["text"]["type"],
+        "string"
+    );
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn mcp_tool_dal_sync_keeps_disabled_tool_disabled_when_remote_reappears(
+    pool: SqlitePool,
+) -> Result<()> {
+    let (dal, ctx) = init_test_env(pool);
+    let script = write_echo_mcp_server_script();
+    let server = mcp_server_with_command(
+        "echo-server",
+        "python3".to_string(),
+        vec![script.path().to_string_lossy().to_string()],
+    );
+
+    mcp_server::new_mcp_server_dao()
+        .insert(ctx.clone(), &server)
+        .await?;
+
+    let mut existing = ToolPo::new(
+        "mcp.echo-server.echo".to_string(),
+        "mcp.echo-server.echo".to_string(),
+        "Admin disabled remote tool".to_string(),
+        ToolProtocol::Mcp,
+        json!({"server_id": "echo-server", "tool_name": "echo"}),
+        Some(json!({"type": "object"})),
+        vec![
+            "mcp".to_string(),
+            "echo-server".to_string(),
+            "echo".to_string(),
+        ],
+        Some("original-user".to_string()),
+    );
+    existing.status = ToolStatus::Disabled;
+    tool::new_tool_dao()
+        .create_tool(ctx.clone(), &existing)
+        .await?;
+
+    let synced = dal.sync_from_server(ctx.clone(), &server.id).await?;
+    assert_eq!(synced, 1);
+
+    let persisted = tool::new_tool_dao()
+        .get_by_id(ctx.clone(), "mcp.echo-server.echo".to_string())
+        .await?
+        .expect("disabled MCP tool should still exist after re-sync");
+    assert_eq!(persisted.status, ToolStatus::Disabled);
+    assert_eq!(persisted.description, "Echo input text");
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn mcp_tool_dal_sync_rejects_non_mcp_id_collision(pool: SqlitePool) -> Result<()> {
     let (dal, ctx) = init_test_env(pool);
     let script = write_echo_mcp_server_script();
@@ -479,6 +672,28 @@ async fn mcp_tool_dal_rejects_disabled_tool_when_calling_by_id(pool: SqlitePool)
         .call_tool_by_id(ctx.clone(), po.id.clone(), json!({ "path": "/tmp/a" }))
         .await
         .expect_err("McpToolDal should reject disabled MCP tool before execution");
+
+    assert!(err.to_string().contains("MCP tool disabled"));
+    assert!(err.to_string().contains(&po.id));
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn mcp_tool_dal_rejects_stale_tool_when_calling_by_id(pool: SqlitePool) -> Result<()> {
+    let (dal, ctx) = init_test_env(pool);
+    let server = mcp_server("stale-tool-server");
+    let mut po = mcp_tool_po(&server.id, "read_file");
+    po.status = ToolStatus::Stale;
+
+    mcp_server::new_mcp_server_dao()
+        .insert(ctx.clone(), &server)
+        .await?;
+    tool::new_tool_dao().create_tool(ctx.clone(), &po).await?;
+
+    let err = dal
+        .call_tool_by_id(ctx.clone(), po.id.clone(), json!({ "path": "/tmp/a" }))
+        .await
+        .expect_err("McpToolDal should reject stale MCP tool before execution");
 
     assert!(err.to_string().contains("MCP tool disabled"));
     assert!(err.to_string().contains(&po.id));

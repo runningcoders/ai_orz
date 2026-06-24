@@ -70,6 +70,8 @@ pub enum ToolStatus {
     Disabled = 0,
     /// 启用
     Enabled = 1,
+    /// 同步异常：远端工具已消失/改名，本地记录与绑定保留但正常业务不可用
+    Stale = 2,
 }
 
 impl Default for ToolStatus {
@@ -83,6 +85,7 @@ impl From<i32> for ToolStatus {
         match v {
             0 => ToolStatus::Disabled,
             1 => ToolStatus::Enabled,
+            2 => ToolStatus::Stale,
             _ => ToolStatus::Enabled,
         }
     }
@@ -106,6 +109,7 @@ impl fmt::Display for ToolStatus {
         match self {
             ToolStatus::Enabled => write!(f, "enabled"),
             ToolStatus::Disabled => write!(f, "disabled"),
+            ToolStatus::Stale => write!(f, "stale"),
         }
     }
 }

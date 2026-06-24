@@ -8,7 +8,7 @@ use crate::models::agent::Agent;
 use crate::models::memory::{Memory, MemoryPo};
 use crate::models::message::Message;
 use crate::models::user::UserPo;
-use common::enums::ControlMode;
+use common::enums::{ControlMode, ToolStatus};
 
 /// Prompt 构建器
 ///
@@ -129,7 +129,10 @@ impl PromptBuilder {
             agent
                 .tools()
                 .iter()
-                .filter(|tool| matches!(tool.po.control_mode, ControlMode::Manual))
+                .filter(|tool| {
+                    matches!(tool.po.control_mode, ControlMode::Manual)
+                        && matches!(tool.po.status, ToolStatus::Enabled)
+                })
                 .map(|tool| tool.po.to_tool_prompt()),
         );
         self
@@ -285,7 +288,7 @@ mod tests {
     fn builder_includes_bound_mcp_tools_without_server_config_details() {
         use crate::models::agent::AgentPo;
         use crate::models::tool::{Tool, ToolPo};
-        use common::enums::{ControlMode, ToolProtocol};
+        use common::enums::{ControlMode, ToolProtocol, ToolStatus};
         use serde_json::json;
 
         let agent_po = AgentPo::new(
@@ -329,7 +332,19 @@ mod tests {
         );
         auto_tool_po.control_mode = ControlMode::Auto;
         let auto_tool = Tool::from_po_for_management(auto_tool_po);
-        let agent = Agent::from_po_with_tools(agent_po, vec![mcp_tool, auto_tool]);
+        let mut stale_tool_po = ToolPo::new(
+            "mcp.echo-server.stale".to_string(),
+            "mcp.echo-server.stale".to_string(),
+            "Stale MCP tool should not be visible".to_string(),
+            ToolProtocol::Mcp,
+            json!({"server_id": "echo-server", "tool_name": "stale"}),
+            Some(json!({"type": "object"})),
+            vec!["mcp".to_string(), "echo-server".to_string()],
+            Some("creator".to_string()),
+        );
+        stale_tool_po.status = ToolStatus::Stale;
+        let stale_tool = Tool::from_po_for_management(stale_tool_po);
+        let agent = Agent::from_po_with_tools(agent_po, vec![mcp_tool, auto_tool, stale_tool]);
 
         let prompt = PromptBuilder::new()
             .agent_system(&agent)
@@ -343,6 +358,8 @@ mod tests {
         assert!(prompt.contains("Auto 工具"));
         assert!(prompt.contains("模型默认的 Rig/function calling"));
         assert!(prompt.contains("mcp.echo-server.echo"));
+        assert!(!prompt.contains("mcp.echo-server.stale"));
+        assert!(!prompt.contains("Stale MCP tool should not be visible"));
         assert!(!prompt.contains("builtin.auto-tool"));
         assert!(!prompt.contains("Auto tool should use Rig default calling"));
         assert!(prompt.contains("Echo input text"));

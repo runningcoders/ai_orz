@@ -121,6 +121,65 @@ async fn test_add_tool_to_agent_and_list(pool: SqlitePool) {
 }
 
 #[sqlx::test]
+async fn test_list_tools_for_agent_preserves_stale_bindings_for_management(pool: SqlitePool) {
+    let tool_dao = init_test_env();
+    let ctx = RequestContext::new_simple("admin", pool);
+
+    let enabled = ToolPo::new(
+        "tool-agent-enabled".to_string(),
+        "tool-agent-enabled".to_string(),
+        "Enabled bound tool".to_string(),
+        ToolProtocol::Builtin,
+        serde_json::Value::Null,
+        None,
+        vec![],
+        Some("admin".to_string()),
+    );
+    let mut stale = ToolPo::new(
+        "tool-agent-stale".to_string(),
+        "tool-agent-stale".to_string(),
+        "Stale bound tool".to_string(),
+        ToolProtocol::Mcp,
+        serde_json::json!({"server_id": "server-a", "tool_name": "stale"}),
+        None,
+        vec![],
+        Some("admin".to_string()),
+    );
+    stale.status = ToolStatus::Stale;
+
+    tool_dao.create_tool(ctx.clone(), &enabled).await.unwrap();
+    tool_dao.create_tool(ctx.clone(), &stale).await.unwrap();
+
+    let agent_id = "test-agent-stale-filter";
+    tool_dao
+        .add_tool_to_agent(
+            ctx.clone(),
+            agent_id,
+            &enabled.id,
+            Some("admin".to_string()),
+        )
+        .await
+        .unwrap();
+    tool_dao
+        .add_tool_to_agent(ctx.clone(), agent_id, &stale.id, Some("admin".to_string()))
+        .await
+        .unwrap();
+
+    let list = tool_dao
+        .list_tools_for_agent(ctx.clone(), agent_id)
+        .await
+        .unwrap();
+    let ids: Vec<String> = list.iter().map(|tool| tool.id.clone()).collect();
+    assert_eq!(
+        ids,
+        vec![
+            "tool-agent-enabled".to_string(),
+            "tool-agent-stale".to_string()
+        ]
+    );
+}
+
+#[sqlx::test]
 async fn test_remove_tool_from_agent(pool: SqlitePool) {
     let tool_dao = init_test_env();
     let ctx = RequestContext::new_simple("admin", pool);
@@ -425,6 +484,80 @@ async fn test_tool_query(pool: SqlitePool) {
     };
     let results = tool_dao.query(ctx.clone(), query).await.unwrap();
     assert_eq!(results.len(), 1);
+}
+
+#[sqlx::test]
+async fn test_tool_query_can_exclude_stale_and_allows_explicit_stale_status(pool: SqlitePool) {
+    let tool_dao = init_test_env();
+    let ctx = RequestContext::new_simple("admin", pool);
+
+    let enabled = ToolPo::new(
+        "query-enabled".to_string(),
+        "query-enabled".to_string(),
+        "Query enabled tool".to_string(),
+        ToolProtocol::Http,
+        serde_json::Value::Null,
+        None,
+        vec![],
+        Some("admin".to_string()),
+    );
+    let mut disabled = ToolPo::new(
+        "query-disabled".to_string(),
+        "query-disabled".to_string(),
+        "Query disabled tool".to_string(),
+        ToolProtocol::Http,
+        serde_json::Value::Null,
+        None,
+        vec![],
+        Some("admin".to_string()),
+    );
+    disabled.status = ToolStatus::Disabled;
+    let mut stale = ToolPo::new(
+        "query-stale".to_string(),
+        "query-stale".to_string(),
+        "Query stale tool".to_string(),
+        ToolProtocol::Mcp,
+        serde_json::json!({"server_id": "server-a", "tool_name": "query-stale"}),
+        None,
+        vec![],
+        Some("admin".to_string()),
+    );
+    stale.status = ToolStatus::Stale;
+
+    tool_dao.create_tool(ctx.clone(), &enabled).await.unwrap();
+    tool_dao.create_tool(ctx.clone(), &disabled).await.unwrap();
+    tool_dao.create_tool(ctx.clone(), &stale).await.unwrap();
+
+    let non_stale_results = tool_dao
+        .query(
+            ctx.clone(),
+            crate::service::dao::tool::ToolQuery {
+                exclude_status: Some(ToolStatus::Stale),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let non_stale_ids: Vec<String> = non_stale_results
+        .iter()
+        .map(|tool| tool.id.clone())
+        .collect();
+    assert!(non_stale_ids.contains(&"query-enabled".to_string()));
+    assert!(non_stale_ids.contains(&"query-disabled".to_string()));
+    assert!(!non_stale_ids.contains(&"query-stale".to_string()));
+
+    let stale_results = tool_dao
+        .query(
+            ctx.clone(),
+            crate::service::dao::tool::ToolQuery {
+                status: Some(ToolStatus::Stale),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(stale_results.len(), 1);
+    assert_eq!(stale_results[0].id, "query-stale");
 }
 
 #[sqlx::test]

@@ -225,7 +225,7 @@ impl ToolDao for ToolDaoSqliteImpl {
             has_where = true;
         }
 
-        // Status 过滤
+        // Status 过滤：DAO 只按显式查询条件持久化过滤；默认不注入业务状态语义
         if let Some(status) = query.status {
             if has_where {
                 builder.push(" AND");
@@ -233,6 +233,19 @@ impl ToolDao for ToolDaoSqliteImpl {
                 builder.push(" WHERE");
             }
             builder.push(" t.status = ").push_bind(status as i32);
+            has_where = true;
+        }
+
+        // 排除状态过滤：由 DAL/Domain 显式传入业务过滤语义
+        if let Some(exclude_status) = query.exclude_status {
+            if has_where {
+                builder.push(" AND");
+            } else {
+                builder.push(" WHERE");
+            }
+            builder
+                .push(" t.status != ")
+                .push_bind(exclude_status as i32);
             has_where = true;
         }
 

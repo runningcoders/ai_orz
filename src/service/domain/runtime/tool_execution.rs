@@ -3,7 +3,7 @@
 use crate::models::tool::Tool;
 use crate::pkg::request_context::RequestContext;
 use crate::service::domain::runtime::{RuntimeDomainImpl, RuntimeToolExecution};
-use common::enums::{ControlMode, ToolProtocol};
+use common::enums::{ControlMode, ToolProtocol, ToolStatus};
 use rig::tool::ToolError;
 use serde_json::Value;
 
@@ -34,6 +34,8 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
         args: Value,
     ) -> Result<Value, ToolError> {
         let tool_id = tool.po.id.clone();
+        ensure_tool_enabled(&tool_id, &tool.po.status)?;
+
         match tool.po.protocol {
             ToolProtocol::Mcp => self
                 .mcp_tool_dal
@@ -84,6 +86,20 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
 
         self.call_tool(ctx, tool, args).await
     }
+}
+
+fn ensure_tool_enabled(tool_id: &str, status: &ToolStatus) -> Result<(), ToolError> {
+    if *status != ToolStatus::Enabled {
+        return Err(ToolError::ToolCallError(
+            format!(
+                "Tool execution denied: tool {} has status {:?}",
+                tool_id, status
+            )
+            .into(),
+        ));
+    }
+
+    Ok(())
 }
 
 fn map_mcp_tool_error(tool_id: &str, error: ToolError) -> ToolError {

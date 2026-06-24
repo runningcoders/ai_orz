@@ -14,6 +14,8 @@ pub(crate) mod response;
 
 #[cfg(test)]
 mod response_test;
+#[cfg(test)]
+mod update_tool_test;
 
 pub use bind_tool_to_agent::bind_tool_to_agent_handler;
 pub use create_tool::create_tool_handler;

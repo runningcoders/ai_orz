@@ -219,6 +219,9 @@ impl Tool {
         match self.po.status {
             ToolStatus::Enabled => vec![ToolStatus::Enabled, ToolStatus::Disabled],
             ToolStatus::Disabled => vec![ToolStatus::Disabled, ToolStatus::Enabled],
+            // Stale is sync-owned: only MCP sync can restore it when the remote tool reappears.
+            // Management status updates must not manually move it back into normal business paths.
+            ToolStatus::Stale => vec![ToolStatus::Stale],
         }
     }
 

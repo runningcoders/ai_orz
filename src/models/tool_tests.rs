@@ -43,6 +43,28 @@ fn disabled_tool_can_transition_to_disabled_or_enabled() {
 }
 
 #[test]
+fn stale_tool_is_sync_owned_and_cannot_be_manually_enabled_or_disabled() {
+    let mut tool = test_tool_with_status(ToolStatus::Stale);
+
+    assert_eq!(tool.available_statuses(), vec![ToolStatus::Stale]);
+    assert!(tool.can_transition_to(ToolStatus::Stale));
+    assert!(!tool.can_transition_to(ToolStatus::Enabled));
+    assert!(!tool.can_transition_to(ToolStatus::Disabled));
+
+    let enabled_err = tool
+        .transition_status(ToolStatus::Enabled, "editor")
+        .expect_err("stale tool cannot be manually enabled; MCP sync must restore it");
+    assert!(enabled_err.contains("cannot transition"));
+    assert_eq!(tool.po.status, ToolStatus::Stale);
+
+    let disabled_err = tool
+        .transition_status(ToolStatus::Disabled, "editor")
+        .expect_err("stale tool cannot be manually disabled and later re-enabled");
+    assert!(disabled_err.contains("cannot transition"));
+    assert_eq!(tool.po.status, ToolStatus::Stale);
+}
+
+#[test]
 fn transition_status_updates_status_modifier_and_timestamp() {
     let mut tool = test_tool_with_status(ToolStatus::Enabled);
     let old_updated_at = tool.po.updated_at;
