@@ -828,7 +828,7 @@ Agent 在下一轮 Prompt 中看到工具回调结果并继续完成用户任务
 分层边界：
 
 - **Consumer 管编排**：消费 `ToolCallRequest`，调用 Runtime Domain 执行工具，然后调用 Message Domain 发送结果；
-- **Runtime Domain 管执行**：负责工具执行入口与协议路由，`ToolProtocol::Mcp` 路由到 `McpToolDal.call_tool_by_id`，Builtin/HTTP 路由到通用 `ToolDal.call_tool_by_id`；
+- **Runtime Domain 管执行**：负责工具执行入口与协议路由，`call_tool_by_id` 先读取标准 `Tool` 元信息并委托 `call_tool`，随后 `ToolProtocol::Mcp` 路由到 `McpToolDal.call_tool`，Builtin/HTTP 路由到通用 `ToolDal.call_tool`；
 - **Message Domain 管发送**：负责把工具执行结果转换为 `ToolCallResult` 回调消息，保存、发布事件、触发后续投递/唤醒；
 - **Message DAL/DAO 只做持久化**：Consumer 不应直接依赖 `MessageDal` 写入结果消息，避免绕过 Message Domain 的发送语义、事件发布和唤醒流程；
 - **Domain 不同层互调**：不要让 `RuntimeDomain` 直接调用 `MessageDomain`。Consumer 作为上层入口/应用编排层，可以同时协调 Runtime Domain 与 Message Domain。
@@ -1122,15 +1122,16 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 
 ### Phase 5：MCP Tool 运行面最小闭环
 
-状态：Batch A、Batch B、Batch C 已完成，后续继续补 Message Consumer 接入与更完整安全策略。
+状态：Batch A、Batch B、Batch C、Batch D 已完成，stdio MCP Tool 已打通从同步、绑定展示、Manual ToolCallRequest 消费、Runtime 协议路由，到 ToolCallResult 回调的最小运行闭环。后续继续补授权/绑定校验细化与更完整安全策略。
 
 - ✅ `McpToolDal.call_tool_by_id/call_manual`：sync 后按标准 Tool ID 执行 MCP Tool；
 - ✅ DAL 级 E2E 测试：create server → sync tools → call synced tool → assert result；
 - ✅ Runtime Domain 协议路由：MCP 走 `McpToolDal`，Builtin/HTTP 走通用 `ToolDal`，禁止 DAL 同层互调；
 - ✅ Runtime MCP 错误边界脱敏：MCP 下层错误统一映射为安全错误，不输出 command/env/headers/url/credential；
 - ✅ 错误路径测试：tool/server 缺失、非 object args、stdio command resolution、`tools/list`/`tools/call` 下层失败均验证不泄漏 command/env/headers/url/credential；
-- ⏳ Message Consumer 接入 Runtime 工具执行入口；
+- ✅ Message Consumer 接入 Runtime 工具执行入口，收到 `ToolCallRequest` 后调用 Runtime Domain 执行工具，并通过 Message Domain 回写 `ToolCallResult`；
 - ✅ Agent 绑定与 Prompt 可见性验证：MCP Tool 可作为标准 Tool 绑定展示，但默认 `Manual`，暂不进入 Rig auto tool calling；
+- ⏳ Manual 工具调用授权/绑定校验细化：只允许当前 Agent 调用已绑定的 Manual 工具，Auto 工具不走消息模式。
 
 ### Phase 6：安全、管理面和完整测试
 
