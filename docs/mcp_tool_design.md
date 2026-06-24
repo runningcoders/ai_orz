@@ -1305,19 +1305,51 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 
 ### Phase 6：安全、管理面和完整测试
 
-- trace/error/result 脱敏与截断；
-- streamable HTTP runtime（需继承 HTTP Tool SSRF/redirect/header 安全策略）；
-- session cache、reconnect、health check；
-- server update/delete 后 session invalidate；
-- 并发调用策略。
+状态：Phase 5 的最小运行闭环已经完成，Phase 6 不再补“能调用”的主链路，而是补安全策略、管理面一致性、结果承载和更完整的集成测试。下一步建议先做 **Batch G：MCP ToolCallResult 结果边界与端到端脱敏测试**，再进入 streamable HTTP 与连接缓存增强。
+
+建议拆分：
+
+1. **Batch G：ToolCallResult 结果边界 / Consumer E2E 脱敏**
+   - 为 `ToolCallRequest → Runtime → ToolCallResult` 增加更接近真实链路的集成测试；
+   - 覆盖 Runtime 返回失败时，`ToolCallResult.error_message` 不包含 MCP server `command/env/url/headers/credential`、调用 args、外部工具原始 stderr/stdout；
+   - 明确 `result_file_meta` / attachment 承载策略：大结果不直接塞入 message content，第一步可先加大小阈值与文档化 Unsupported/截断策略；
+   - 保持 Consumer 只做编排，不把协议判断、授权校验或脱敏逻辑下沉到 Consumer。
+2. **Batch H：MCP 管理面状态与同步一致性**
+   - 处理远端删除/改名后的 synced tool 策略：禁用、软删除或 stale 标记；
+   - 补充重新 sync 时对 Agent 绑定、audit/status 保留策略的回归测试；
+   - 管理面 detail/list 继续只返回脱敏配置，不暴露 server command/env/header/credential。
+3. **Batch I：streamable HTTP MCP runtime**
+   - 继承 HTTP Tool 的 SSRF、redirect、header/query/body 脱敏、timeout/response bound 策略；
+   - 第一版仍建议默认 Manual，不进入 Rig auto tool calling。
+4. **Batch J：连接生命周期增强**
+   - 如确有性能需求，再引入 session cache；
+   - `invalidate_mcp_server(server_id)` 扩展为关闭/丢弃 cached session；
+   - 补 reconnect、health check、并发同 server 调用策略。
+
+当前已完成的 Phase 6 子项：
+
+- ✅ MCP/HTTP 外部工具 trace `input/output/error` 默认 fail-closed 脱敏；
+- ✅ Runtime MCP 下层错误脱敏；
+- ✅ stdio session close 失败脱敏；
+- ✅ server update/status/delete 后 invalidation marker 消费验证；
+- ✅ per-operation stdio session 下的并发同 server 调用策略验证。
+
+仍待补强：
+
+- ToolCallResult 结果大小边界、截断/attachment 策略与 Consumer 端到端错误脱敏集成测试；
+- synced tool stale/reconcile 管理策略；
+- streamable HTTP runtime；
+- session cache / reconnect / health check（仅在明确需要长连接复用时做）。
 
 ### 后续增强：连接生命周期增强
+
+当前采用 per-operation stdio session，无共享 session cache；同 server 并发调用通过独立 stdio session 保持天然隔离。只有在真实性能瓶颈出现后，才进入以下增强：
 
 - session cache；
 - reconnect；
 - health check；
-- server update/delete 后 session invalidate；
-- 并发调用策略。
+- server update/delete 后主动关闭并移除 cached session；
+- cached session 下的并发调用策略。
 
 ---
 
@@ -1326,5 +1358,5 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 1. stdio `command` 是否采用 allowlist？allowlist 放配置还是代码常量？
 2. MCP Server 是否只允许管理员配置？
 3. MCP Tool 同步时，远端删除的 tool 是禁用、软删除，还是保留 stale 状态？
-4. MCP trace 默认全脱敏是否接受？是否需要按 server/tool 配置 trace policy？
-5. MCP Tool 进入 Agent 工具列表后，Manual tool 的 Prompt 展示格式是否需要区别于可自动调用工具？
+4. MCP trace 默认全脱敏已作为第一版安全默认值落地；后续是否需要按 server/tool 配置 trace policy？
+5. 大型 MCP ToolCallResult 是直接截断、写入 attachment，还是写入 Artifact/文件引用？

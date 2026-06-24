@@ -1382,18 +1382,18 @@ xxx
 | **Runtime Memory** | ✅ 100% | `get_recent_context()` + `write_thinking_trace()` |
 | **Context Assembly** | ✅ 100% | Builder 模式，Trace IDs + Agent 人设 + **用户画像** + 历史 + 消息 + 技能/工具预留 |
 | **Runtime Awakening** | ✅ 80% | 7 步主流程完整可跑：读记忆 → 拼 Prompt → 记输入 → 推理 → 记输出 → 返回；仅模型推理为模拟返回 |
-| **Tool Execution** | ⏳ 20% | Trait 定义完成，实现待填充 |
+| **Tool Execution** | ✅ 70% | Runtime Domain 已支持按协议路由 Builtin/HTTP/MCP；Manual 工具消息模式已完成 Agent 绑定授权、执行与 ToolCallResult 回调闭环，后续补结果边界与更完整 E2E 测试 |
 
-**整体完成度：~75%**
-**当前状态：纯文本对话流程完整可跑，可用于测试和演示。**
+**整体完成度：~85%**
+**当前状态：纯文本对话流程完整可跑；工具执行已完成 MCP/Manual 最小闭环，可继续补结果边界、安全集成测试和更完整运行面策略。**
 
 ### 17.4 剩余待做（优先级排序）
 
 | 优先级 | 任务 | 说明 |
 |--------|------|------|
-| **P0** | 接入 Brain/Cortex 模型推理 | 替换当前固定字符串返回，接入真实 LLM |
+| **P0** | ToolCallResult 结果边界与端到端脱敏测试 | 大结果截断/attachment 策略、失败回调不泄漏外部工具 command/env/url/header/credential/args/result |
 | **P1** | Trace ID 关联逻辑 | 从 `message.reply_to_id` 追溯历史 Trace 链 |
-| **P2** | 工具调用框架 | ToolCall 检测 → 执行 → 结果回写 → 二次推理 |
+| **P2** | 工具调用框架增强 | 在已完成 Manual ToolCallRequest → Runtime → ToolCallResult 最小闭环基础上，补二次推理与更多 E2E 场景 |
 | **P3** | 技能注入 | 根据 Agent 角色动态注入技能说明 |
 | **P3** | 单元测试覆盖 | 各模块测试用例 |
 
@@ -1624,10 +1624,10 @@ async fn write_thinking_trace(
 | **Trace 闭环架构** | ✅ 100% | 输入输出同 ID，注入 Prompt 供 Agent 引用，完整可追溯 |
 | **Context Assembly** | ✅ 100% | Builder 模式，复用 PO 的自格式化方法 |
 | **Runtime Awakening** | ✅ 95% | 7 步主流程完整可跑，仅剩边缘场景处理 |
-| **Tool Execution** | ⏳ 20% | Trait 定义完成，实现待填充 |
+| **Tool Execution** | ✅ 70% | Runtime Domain 协议路由、MCP 调用、Manual 授权与 ToolCallResult 回调最小闭环已完成；后续补结果边界、二次推理和完整 E2E |
 
-**整体完成度：~90%**
-**当前状态：核心架构全部落地，Trace 闭环打通，纯文本对话流程生产就绪。**
+**整体完成度：~92%**
+**当前状态：核心架构全部落地，Trace 闭环打通；纯文本对话流程生产就绪，MCP/Manual 工具调用已具备最小可用闭环。**
 
 ---
 
@@ -1635,18 +1635,20 @@ async fn write_thinking_trace(
 
 | 优先级 | 任务 | 说明 |
 |--------|------|------|
-| **P0** | 工具调用框架 | ToolCall 检测 → 执行 → 结果回写 → 二次推理 |
+| **P0** | ToolCallResult 结果边界 / Consumer E2E 脱敏 | 在已完成 Manual 工具闭环基础上，补大结果承载、失败回调脱敏和真实链路集成测试 |
+| **P1** | 工具调用二次推理 | Agent 收到 ToolCallResult 后继续推理并生成最终用户答复 |
 | **P1** | Trace ID 关联链 | 从 `message.reply_to_id` 追溯历史 Trace 链，构建完整对话树 |
 | **P2** | 技能动态注入 | 根据 Agent 角色和当前场景，动态注入技能说明 |
-| **P2** | 单元测试覆盖 | 各模块测试用例，重点覆盖 PO 格式化和 Trace 写入 |
+| **P2** | 单元测试覆盖 | 各模块测试用例，重点覆盖 PO 格式化、Trace 写入和工具消息闭环 |
 | **P3** | 神经工具集 | 实现 search_memory / send_message / mark_done 等内置工具 |
 
 ---
 
 ## 下一步讨论方向
 
-1. **工具调用框架设计**（P0，第二阶段核心）
-2. **Trace ID 关联链实现**（P1，完善追溯能力）
-3. **技能动态注入策略**（P2，Agent 能力扩展）
+1. **ToolCallResult 结果边界与 Consumer E2E 脱敏**（P0，先补安全闭环）
+2. **工具调用二次推理**（P1，让 Agent 消费工具结果后继续完成用户任务）
+3. **Trace ID 关联链实现**（P1，完善追溯能力）
+4. **技能动态注入策略**（P2，Agent 能力扩展）
 
 
