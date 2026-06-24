@@ -391,6 +391,15 @@ mod tests {
         .await;
     }
 
+    #[tokio::test]
+    async fn runtime_preserves_safe_mcp_tool_not_found_error_semantics() {
+        assert_mcp_lower_error_maps_to_safe_message(
+            "Tool not found: mcp-tool-1 with config credential=placeholder-value",
+            "MCP tool not found: mcp-tool-1",
+        )
+        .await;
+    }
+
     async fn assert_non_mcp_protocol_routes_to_generic_tool_dal(
         protocol: ToolProtocol,
         tool_id: &str,

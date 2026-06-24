@@ -111,11 +111,7 @@ impl McpClientRuntime {
         .await
         {
             Ok(Ok(tools)) => Ok(tools),
-            Ok(Err(e)) => Err(anyhow!(
-                "MCP tools/list on server {} failed: {}",
-                server.id,
-                e
-            )),
+            Ok(Err(_e)) => Err(anyhow!("MCP tools/list on server {} failed", server.id)),
             Err(_) => Err(anyhow!(
                 "MCP tools/list on server {} timed out after {}ms",
                 server.id,
@@ -150,11 +146,8 @@ impl McpClientRuntime {
     ) -> Result<Value> {
         let arguments = match args {
             Value::Object(map) => map,
-            other => {
-                return Err(anyhow!(
-                    "MCP tool arguments must be a JSON object, got {}",
-                    other
-                ));
+            _other => {
+                return Err(anyhow!("MCP tool arguments must be a JSON object"));
             }
         };
 
@@ -170,11 +163,10 @@ impl McpClientRuntime {
         .await
         {
             Ok(Ok(result)) => Ok(result),
-            Ok(Err(e)) => Err(anyhow!(
-                "MCP tool {} on server {} call failed: {}",
+            Ok(Err(_e)) => Err(anyhow!(
+                "MCP tool {} on server {} call failed",
                 tool_name,
-                server.id,
-                e
+                server.id
             )),
             Err(_) => Err(anyhow!(
                 "MCP tool {} on server {} timed out after {}ms",
@@ -222,7 +214,7 @@ async fn connect_stdio_client(
     }
 
     let transport = TokioChildProcess::new(process)
-        .map_err(|e| anyhow!("failed to spawn MCP stdio server {}: {}", server.id, e))?;
+        .map_err(|_e| anyhow!("failed to spawn MCP stdio server {}", server.id))?;
     tokio::time::timeout(
         Duration::from_millis(config.connect_timeout_ms),
         ().serve(transport),
@@ -235,11 +227,10 @@ async fn connect_stdio_client(
             config.connect_timeout_ms
         )
     })?
-    .map_err(|e| {
+    .map_err(|_e| {
         anyhow!(
-            "failed to initialize MCP stdio server {} session: {}",
-            server.id,
-            e
+            "failed to initialize MCP stdio server {} session",
+            server.id
         )
     })
 }
@@ -258,10 +249,7 @@ fn resolve_command_path(command: &str) -> Result<PathBuf> {
     }
 
     let paths = std::env::var_os("PATH").ok_or_else(|| {
-        anyhow!(
-            "PATH is required to resolve MCP stdio command {}; use an absolute path instead",
-            command
-        )
+        anyhow!("PATH is required to resolve MCP stdio command; use an absolute path instead")
     })?;
 
     for dir in std::env::split_paths(&paths) {
@@ -272,8 +260,7 @@ fn resolve_command_path(command: &str) -> Result<PathBuf> {
     }
 
     Err(anyhow!(
-        "MCP stdio command {} was not found in PATH; use an absolute path instead",
-        command
+        "MCP stdio command was not found in PATH; use an absolute path instead"
     ))
 }
 

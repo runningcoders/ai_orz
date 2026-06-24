@@ -917,12 +917,12 @@ Batch D 测试重点：
 - ✅ `McpToolDal.get_by_id/call_tool_by_id` 已在组装执行工具前拒绝 disabled MCP tool 与 disabled MCP server，避免继续连接外部 runtime；DAO 仍只负责持久化，状态语义检查停留在 DAL/Runtime 边界；
 - ✅ stdio `tools/list` / `tools/call` 成功后关闭 session 失败时，不再传播 rmcp/process 下层错误文本，仅返回安全文案 `MCP stdio session close failed after ... on server ...`，避免 command/env/credential 等细节外泄；
 - ✅ 当前 stdio runtime 采用每次 `tools/list` / `tools/call` 独立连接、执行、关闭的无共享 session 策略，同一 MCP server 的并发调用各自使用独立 stdio session，可并发执行且不持有跨 await 的共享锁；
-- ✅ server update/status/delete 触发的 runtime invalidation marker 已验证会在下一次成功 stdio 调用后被消费；当前 per-operation session 策略下等价于下一次调用按最新持久化 server config 重新连接，后续若引入 session cache，该 marker 将扩展为关闭/丢弃旧 session。
+- ✅ server update/status/delete 触发的 runtime invalidation marker 已验证会在下一次成功 stdio 调用后被消费；当前 per-operation session 策略下等价于下一次调用按最新持久化 server config 重新连接，后续若引入 session cache，该 marker 将扩展为关闭/丢弃旧 session；
+- ✅ 已补充 stdio runtime 错误路径脱敏测试：非 object args 会在启动外部进程前拒绝且不回显输入；command resolution、`tools/list` 下层失败、`tools/call` 下层失败均不传播 command、env、credential、URL host 或外部错误原文。
 
 后续继续补：
 
-- session cache / health check / reconnect 的增强实现；
-- 更完整的 MCP 错误路径测试：tool/server 缺失、非 object args、错误文本不泄漏 command/env/headers/url。
+- session cache / health check / reconnect 的增强实现。
 
 ### 验证命令
 
@@ -1111,7 +1111,7 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 - ✅ DAL 级 E2E 测试：create server → sync tools → call synced tool → assert result；
 - ✅ Runtime Domain 协议路由：MCP 走 `McpToolDal`，Builtin/HTTP 走通用 `ToolDal`，禁止 DAL 同层互调；
 - ✅ Runtime MCP 错误边界脱敏：MCP 下层错误统一映射为安全错误，不输出 command/env/headers/url/credential；
-- ⏳ 错误路径测试：tool/server 缺失、非 object args、错误文本不泄漏 command/env/headers/url；
+- ✅ 错误路径测试：tool/server 缺失、非 object args、stdio command resolution、`tools/list`/`tools/call` 下层失败均验证不泄漏 command/env/headers/url/credential；
 - ⏳ Message Consumer 接入 Runtime 工具执行入口；
 - ✅ Agent 绑定与 Prompt 可见性验证：MCP Tool 可作为标准 Tool 绑定展示，但默认 `Manual`，暂不进入 Rig auto tool calling；
 

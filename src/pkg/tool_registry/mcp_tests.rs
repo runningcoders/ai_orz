@@ -217,6 +217,70 @@ for line in sys.stdin:
     file
 }
 
+fn write_failing_mcp_server_script(method_to_fail: &str) -> tempfile::NamedTempFile {
+    let script = format!(
+        r#"
+import json
+import sys
+
+METHOD_TO_FAIL = {method_to_fail:?}
+SENSITIVE_ERROR = "lower layer failed for /opt/private/mcp-server with env API_TOKEN=placeholder-value url=https://example.invalid/mcp?credential=placeholder-value"
+
+for line in sys.stdin:
+    message = json.loads(line)
+    method = message.get("method")
+    request_id = message.get("id")
+    if method == "initialize":
+        response = {{
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {{
+                "protocolVersion": "2025-11-25",
+                "capabilities": {{"tools": {{}}}},
+                "serverInfo": {{"name": "failing-test-server", "version": "1.0.0"}},
+            }},
+        }}
+        print(json.dumps(response), flush=True)
+    elif method == "notifications/initialized":
+        continue
+    elif method == METHOD_TO_FAIL:
+        response = {{
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "error": {{"code": -32000, "message": SENSITIVE_ERROR}},
+        }}
+        print(json.dumps(response), flush=True)
+    elif method == "tools/list":
+        response = {{
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {{"tools": [{{"name": "echo", "description": "Echo input text", "inputSchema": {{"type": "object"}}}}]}},
+        }}
+        print(json.dumps(response), flush=True)
+    elif method == "tools/call":
+        response = {{
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {{"content": [], "structuredContent": {{}}, "isError": False}},
+        }}
+        print(json.dumps(response), flush=True)
+"#
+    );
+
+    let mut file = tempfile::NamedTempFile::new().expect("temp MCP script should be created");
+    std::io::Write::write_all(&mut file, script.as_bytes())
+        .expect("temp MCP script should be written");
+    file
+}
+
+fn assert_mcp_runtime_error_is_redacted(message: &str) {
+    assert!(!message.contains("/opt/private/mcp-server"));
+    assert!(!message.contains("API_TOKEN"));
+    assert!(!message.contains("placeholder-value"));
+    assert!(!message.contains("credential"));
+    assert!(!message.contains("example.invalid"));
+}
+
 #[tokio::test]
 async fn mcp_core_tool_calls_stdio_server_through_rmcp_runtime() {
     let script = write_echo_mcp_server_script();
@@ -265,6 +329,88 @@ fn mcp_stdio_session_close_failure_message_redacts_lower_layer_details() {
     assert!(!message.contains("API_TOKEN"));
     assert!(!message.contains("placeholder-value"));
     assert!(!message.contains("credential"));
+}
+
+#[tokio::test]
+async fn mcp_client_runtime_rejects_non_object_args_without_leaking_args() {
+    let runtime = McpClientRuntime::default();
+    let server = mcp_server_with_command(
+        "echo-server",
+        "mcp-command-with-credential-placeholder-value".to_string(),
+        Vec::new(),
+    );
+
+    let error = runtime
+        .call_tool(
+            &server,
+            "echo",
+            json!("/opt/private/mcp-server?credential=placeholder-value"),
+        )
+        .await
+        .expect_err("non-object MCP args should be rejected before spawning stdio process");
+
+    let message = error.to_string();
+    assert!(message.contains("MCP tool arguments must be a JSON object"));
+    assert_mcp_runtime_error_is_redacted(&message);
+}
+
+#[tokio::test]
+async fn mcp_client_runtime_redacts_stdio_command_resolution_errors() {
+    let runtime = McpClientRuntime::default();
+    let server = mcp_server_with_command(
+        "echo-server",
+        "mcp-command-with-credential-placeholder-value".to_string(),
+        Vec::new(),
+    );
+
+    let error = runtime
+        .list_tools(&server)
+        .await
+        .expect_err("missing MCP stdio command should fail safely");
+
+    let message = error.to_string();
+    assert!(message.contains("MCP stdio command was not found in PATH"));
+    assert_mcp_runtime_error_is_redacted(&message);
+}
+
+#[tokio::test]
+async fn mcp_client_runtime_redacts_stdio_tools_list_lower_layer_errors() {
+    let script = write_failing_mcp_server_script("tools/list");
+    let server = mcp_server_with_command(
+        "echo-server",
+        "python3".to_string(),
+        vec![script.path().to_string_lossy().to_string()],
+    );
+    let runtime = McpClientRuntime::default();
+
+    let error = runtime
+        .list_tools(&server)
+        .await
+        .expect_err("MCP tools/list lower-layer error should fail safely");
+
+    let message = error.to_string();
+    assert!(message.contains("MCP tools/list on server echo-server failed"));
+    assert_mcp_runtime_error_is_redacted(&message);
+}
+
+#[tokio::test]
+async fn mcp_client_runtime_redacts_stdio_tool_call_lower_layer_errors() {
+    let script = write_failing_mcp_server_script("tools/call");
+    let server = mcp_server_with_command(
+        "echo-server",
+        "python3".to_string(),
+        vec![script.path().to_string_lossy().to_string()],
+    );
+    let runtime = McpClientRuntime::default();
+
+    let error = runtime
+        .call_tool(&server, "echo", json!({ "text": "hello" }))
+        .await
+        .expect_err("MCP tools/call lower-layer error should fail safely");
+
+    let message = error.to_string();
+    assert!(message.contains("MCP tool echo on server echo-server call failed"));
+    assert_mcp_runtime_error_is_redacted(&message);
 }
 
 #[tokio::test]
