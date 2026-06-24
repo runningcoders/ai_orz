@@ -10,6 +10,19 @@ use crate::service::domain::message::{
     SendToolCallRequestCommand, SendToolCallResultCommand, ToolCallExecutionOutcome,
 };
 use common::enums::{MessageRole, MessageStatus, MessageType};
+use serde_json::json;
+
+const TOOL_CALL_RESULT_INLINE_CONTENT_LIMIT: usize = 8 * 1024;
+
+fn bounded_inline_tool_result(result: serde_json::Value) -> serde_json::Value {
+    match serde_json::to_string(&result) {
+        Ok(serialized) if serialized.len() <= TOOL_CALL_RESULT_INLINE_CONTENT_LIMIT => result,
+        _ => json!({
+            "truncated": true,
+            "message": "tool result exceeded inline message limit"
+        }),
+    }
+}
 
 /// 生成新的消息 ID
 fn generate_id() -> String {
@@ -137,7 +150,7 @@ impl MessageDelivery for MessageDomainImpl {
             ToolCallExecutionOutcome::Success {
                 result,
                 result_file_meta,
-            } => request.new_success_result(result, result_file_meta),
+            } => request.new_success_result(bounded_inline_tool_result(result), result_file_meta),
             ToolCallExecutionOutcome::Failure { error_message } => {
                 request.new_error_result(error_message)
             }

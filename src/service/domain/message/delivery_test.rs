@@ -434,6 +434,129 @@ async fn test_send_tool_call_result_failure_reuses_request_context(pool: SqliteP
 }
 
 #[sqlx::test]
+async fn test_send_tool_call_result_failure_does_not_leak_request_args(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+
+    let request = ToolCallMessage::new_request(
+        "tool-request-sensitive".to_string(),
+        "tool-mcp-sensitive".to_string(),
+        "sensitive_tool".to_string(),
+        Some("project-sensitive".to_string()),
+        Some("task-sensitive".to_string()),
+        "agent-sensitive".to_string(),
+        "tool-executor".to_string(),
+        None,
+        json!({
+            "credential": "placeholder-value",
+            "path": "/tmp/placeholder-input"
+        }),
+    );
+
+    let request_message = Message::new_with_context(
+        "message-tool-request-sensitive".to_string(),
+        request.project_id.clone(),
+        request.task_id.clone(),
+        request.from_id.clone(),
+        request.to_id.clone(),
+        MessageRole::Agent,
+        MessageRole::System,
+        MessageType::ToolCallRequest,
+        serde_json::to_string(&request).unwrap(),
+        None,
+        Default::default(),
+        request.reply_to_id.clone(),
+        request.from_id.clone(),
+    );
+
+    let result_message = domain
+        .delivery()
+        .send_tool_call_result(
+            ctx.clone(),
+            SendToolCallResultCommand {
+                request_message: &request_message,
+                outcome: ToolCallExecutionOutcome::Failure {
+                    error_message: "tool execution failed".to_string(),
+                },
+            },
+        )
+        .await
+        .unwrap();
+
+    assert!(!result_message.po.content.contains("placeholder-value"));
+    assert!(!result_message.po.content.contains("/tmp/placeholder-input"));
+
+    let payload: ToolCallMessage = serde_json::from_str(&result_message.po.content).unwrap();
+    assert_eq!(payload.is_success, Some(false));
+    assert!(payload.args.is_none());
+    assert_eq!(
+        payload.error_message.as_deref(),
+        Some("tool execution failed")
+    );
+}
+
+#[sqlx::test]
+async fn test_send_tool_call_result_large_success_uses_safe_inline_marker(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+
+    let request = ToolCallMessage::new_request(
+        "tool-request-large".to_string(),
+        "tool-mcp-large".to_string(),
+        "large_tool".to_string(),
+        Some("project-large".to_string()),
+        Some("task-large".to_string()),
+        "agent-large".to_string(),
+        "tool-executor".to_string(),
+        None,
+        json!({ "input": "safe-placeholder" }),
+    );
+
+    let request_message = Message::new_with_context(
+        "message-tool-request-large".to_string(),
+        request.project_id.clone(),
+        request.task_id.clone(),
+        request.from_id.clone(),
+        request.to_id.clone(),
+        MessageRole::Agent,
+        MessageRole::System,
+        MessageType::ToolCallRequest,
+        serde_json::to_string(&request).unwrap(),
+        None,
+        Default::default(),
+        request.reply_to_id.clone(),
+        request.from_id.clone(),
+    );
+
+    let huge_output = "x".repeat(70_000);
+    let result_message = domain
+        .delivery()
+        .send_tool_call_result(
+            ctx.clone(),
+            SendToolCallResultCommand {
+                request_message: &request_message,
+                outcome: ToolCallExecutionOutcome::Success {
+                    result: json!({ "output": huge_output }),
+                    result_file_meta: None,
+                },
+            },
+        )
+        .await
+        .unwrap();
+
+    assert!(result_message.po.content.len() < 8_000);
+    let payload: ToolCallMessage = serde_json::from_str(&result_message.po.content).unwrap();
+    assert_eq!(payload.is_success, Some(true));
+    assert!(payload.args.is_none());
+    assert_eq!(
+        payload.result.as_ref().and_then(|v| v.get("truncated")),
+        Some(&json!(true))
+    );
+    assert_eq!(
+        payload.result.as_ref().and_then(|v| v.get("message")),
+        Some(&json!("tool result exceeded inline message limit"))
+    );
+}
+
+#[sqlx::test]
 async fn test_deliver_message_to_channels(pool: SqlitePool) {
     let (domain, ctx) = init_test_env(pool);
     let user_id = "test-delivery-user";

@@ -1305,15 +1305,16 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 
 ### Phase 6：安全、管理面和完整测试
 
-状态：Phase 5 的最小运行闭环已经完成，Phase 6 不再补“能调用”的主链路，而是补安全策略、管理面一致性、结果承载和更完整的集成测试。下一步建议先做 **Batch G：MCP ToolCallResult 结果边界与端到端脱敏测试**，再进入 streamable HTTP 与连接缓存增强。
+状态：Phase 5 的最小运行闭环已经完成，Phase 6 不再补“能调用”的主链路，而是补安全策略、管理面一致性、结果承载和更完整的集成测试。**Batch G：MCP ToolCallResult 结果边界与端到端脱敏测试已完成第一步安全闭环**：结果消息不再复制 request args，成功结果在写入 `message.content` 前执行 inline size bound，超限时使用安全 marker。下一步进入 streamable HTTP 与连接缓存增强。
 
 建议拆分：
 
-1. **Batch G：ToolCallResult 结果边界 / Consumer E2E 脱敏**
-   - 为 `ToolCallRequest → Runtime → ToolCallResult` 增加更接近真实链路的集成测试；
-   - 覆盖 Runtime 返回失败时，`ToolCallResult.error_message` 不包含 MCP server `command/env/url/headers/credential`、调用 args、外部工具原始 stderr/stdout；
-   - 明确 `result_file_meta` / attachment 承载策略：大结果不直接塞入 message content，第一步可先加大小阈值与文档化 Unsupported/截断策略；
-   - 保持 Consumer 只做编排，不把协议判断、授权校验或脱敏逻辑下沉到 Consumer。
+1. **Batch G：ToolCallResult 结果边界 / Consumer E2E 脱敏** ✅ 已完成第一步
+   - ✅ `ToolCallResult` 消息形状不再复制原 `ToolCallRequest.args`，避免 request-local 参数、路径或凭据进入结果回调；
+   - ✅ `MessageDomain.delivery().send_tool_call_result(...)` 在持久化前对成功结果执行 inline size bound，大结果不直接塞入 `message.content`；
+   - ✅ attachment/file persistence 尚未落地时，超限结果先使用安全 marker：`{"truncated": true, "message": "tool result exceeded inline message limit"}`；
+   - ✅ Consumer 仍只做编排，不处理协议判断、授权校验、脱敏或结果承载策略；
+   - ✅ 目标测试覆盖失败结果不泄漏 request args、成功大结果被安全 marker 替换。
 2. **Batch H：MCP 管理面状态与同步一致性**
    - 处理远端删除/改名后的 synced tool 策略：禁用、软删除或 stale 标记；
    - 补充重新 sync 时对 Agent 绑定、audit/status 保留策略的回归测试；
@@ -1332,11 +1333,11 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 - ✅ Runtime MCP 下层错误脱敏；
 - ✅ stdio session close 失败脱敏；
 - ✅ server update/status/delete 后 invalidation marker 消费验证；
-- ✅ per-operation stdio session 下的并发同 server 调用策略验证。
+- ✅ per-operation stdio session 下的并发同 server 调用策略验证；
+- ✅ ToolCallResult 结果边界第一步：结果消息不复制 request args，成功大结果超限时使用安全 inline marker。
 
 仍待补强：
 
-- ToolCallResult 结果大小边界、截断/attachment 策略与 Consumer 端到端错误脱敏集成测试；
 - synced tool stale/reconcile 管理策略；
 - streamable HTTP runtime；
 - session cache / reconnect / health check（仅在明确需要长连接复用时做）。

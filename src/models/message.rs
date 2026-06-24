@@ -394,7 +394,7 @@ impl ToolCallMessage {
             from_id: self.to_id.clone(), // 执行方反过来返回给原发起方
             to_id: self.from_id.clone(),
             reply_to_id: self.reply_to_id.clone(),
-            args: self.args.clone(),
+            args: None,
             result: Some(result),
             is_success: Some(true),
             error_message: None,
@@ -413,7 +413,7 @@ impl ToolCallMessage {
             from_id: self.to_id.clone(), // 执行方反过来返回给原发起方
             to_id: self.from_id.clone(),
             reply_to_id: self.reply_to_id.clone(),
-            args: self.args.clone(),
+            args: None,
             result: None,
             is_success: Some(false),
             error_message: Some(error_message),
@@ -436,7 +436,7 @@ impl ToolCallMessage {
             from_id: self.to_id.clone(), // 执行方反过来返回给原发起方
             to_id: self.from_id.clone(),
             reply_to_id: self.reply_to_id.clone(),
-            args: self.args.clone(),
+            args: None,
             result: Some(result),
             is_success: Some(false),
             error_message: Some(error_message),
