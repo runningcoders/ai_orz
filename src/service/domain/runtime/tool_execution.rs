@@ -3,7 +3,7 @@
 use crate::models::tool::Tool;
 use crate::pkg::request_context::RequestContext;
 use crate::service::domain::runtime::{RuntimeDomainImpl, RuntimeToolExecution};
-use common::enums::ToolProtocol;
+use common::enums::{ControlMode, ToolProtocol};
 use rig::tool::ToolError;
 use serde_json::Value;
 
@@ -44,6 +44,45 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
                 self.tool_dal.call_tool(ctx, tool, args).await
             }
         }
+    }
+
+    async fn call_manual_tool_for_agent(
+        &self,
+        ctx: RequestContext,
+        agent_id: String,
+        tool_id: String,
+        args: Value,
+    ) -> Result<Value, ToolError> {
+        let bound_tools = self
+            .tool_dal
+            .list_tools_for_agent_full(ctx.clone(), &agent_id)
+            .await
+            .map_err(|e| ToolError::ToolCallError(e.to_string().into()))?;
+
+        let tool = bound_tools
+            .iter()
+            .find(|tool| tool.po.id == tool_id)
+            .ok_or_else(|| {
+                ToolError::ToolCallError(
+                    format!(
+                        "Manual tool call denied: tool {} is not bound to agent {}",
+                        tool_id, agent_id
+                    )
+                    .into(),
+                )
+            })?;
+
+        if tool.po.control_mode != ControlMode::Manual {
+            return Err(ToolError::ToolCallError(
+                format!(
+                    "Manual tool call denied: tool {} has control mode {:?}",
+                    tool_id, tool.po.control_mode
+                )
+                .into(),
+            ));
+        }
+
+        self.call_tool(ctx, tool, args).await
     }
 }
 

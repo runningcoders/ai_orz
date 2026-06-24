@@ -113,6 +113,18 @@ pub trait RuntimeToolExecution: Send + Sync {
         tool: &crate::models::tool::Tool,
         args: serde_json::Value,
     ) -> Result<serde_json::Value, rig::tool::ToolError>;
+
+    /// Execute a message-mode Manual tool call for one Agent.
+    ///
+    /// This entry point owns runtime authorization for `ToolCallRequest`:
+    /// the tool must be bound to the Agent and must use `ControlMode::Manual`.
+    async fn call_manual_tool_for_agent(
+        &self,
+        ctx: RequestContext,
+        agent_id: String,
+        tool_id: String,
+        args: serde_json::Value,
+    ) -> Result<serde_json::Value, rig::tool::ToolError>;
 }
 
 // ==================== 子模块  ====================
@@ -126,7 +138,7 @@ mod tool_execution;
 #[cfg(test)]
 mod tool_execution_test;
 
-pub use context_assembly::{build_conversation_prompt, PromptBuilder};
+pub use context_assembly::{PromptBuilder, build_conversation_prompt};
 
 // ==================== 实现 ====================
 

@@ -6,9 +6,9 @@
 use crate::error::AppError;
 use crate::models::mcp_server::McpServerStatus;
 use crate::models::tool::{Tool, ToolPo};
+use crate::pkg::RequestContext;
 use crate::pkg::tool_registry::mcp::{McpToolConfig, RemoteMcpTool};
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
-use crate::pkg::RequestContext;
 use crate::service::dao::mcp_server::McpServerDao;
 use crate::service::dao::tool::{ToolDao, ToolQuery};
 use crate::service::dao::tool_call::{self, McpToolCallDao};
@@ -123,35 +123,7 @@ impl McpToolDal for McpToolDalImpl {
         };
 
         ensure_mcp_tool(&po)?;
-        let config = parse_mcp_tool_config(&po)?;
-
-        let Some(server) = self
-            .mcp_server_dao
-            .find_by_id(ctx.clone(), &config.server_id)
-            .await?
-        else {
-            return Err(AppError::NotFound(format!(
-                "MCP server not found for tool {}: {}",
-                po.id, config.server_id
-            )));
-        };
-
-        ensure_mcp_tool_enabled(&po)?;
-        ensure_mcp_server_enabled(&server)?;
-
-        let Some(our_tool) = self
-            .mcp_tool_call_dao
-            .assemble_mcp_core_tool(&po, &server)
-            .map_err(AppError::from)?
-        else {
-            return Ok(Some(Tool::from_po_for_management(po)));
-        };
-
-        Ok(Some(Tool {
-            po,
-            our_tool,
-            search_match: None,
-        }))
+        Ok(Some(self.assemble_executable_tool(ctx, &po).await?))
     }
 
     async fn sync_from_server(
@@ -291,12 +263,58 @@ impl McpToolDal for McpToolDalImpl {
         tool: &Tool,
         args: Value,
     ) -> Result<(Value, ToolCallEntry), ToolError> {
-        ensure_mcp_tool(&tool.po).map_err(|e| ToolError::ToolCallError(e.to_string().into()))?;
-        self.mcp_tool_call_dao.call_manual(ctx, tool, args).await
+        let executable = self
+            .assemble_executable_tool(ctx.clone(), &tool.po)
+            .await
+            .map_err(|e| ToolError::ToolCallError(e.to_string().into()))?;
+        self.mcp_tool_call_dao
+            .call_manual(ctx, &executable, args)
+            .await
     }
 
     fn invalidate_server(&self, server_id: &str) {
         self.mcp_tool_call_dao.invalidate_mcp_server(server_id);
+    }
+}
+
+impl McpToolDalImpl {
+    async fn assemble_executable_tool(
+        &self,
+        ctx: RequestContext,
+        po: &ToolPo,
+    ) -> Result<Tool, AppError> {
+        ensure_mcp_tool(po)?;
+        ensure_mcp_tool_enabled(po)?;
+        let config = parse_mcp_tool_config(po)?;
+
+        let Some(server) = self
+            .mcp_server_dao
+            .find_by_id(ctx, &config.server_id)
+            .await?
+        else {
+            return Err(AppError::NotFound(format!(
+                "MCP server not found for tool {}: {}",
+                po.id, config.server_id
+            )));
+        };
+        ensure_mcp_server_enabled(&server)?;
+
+        let Some(our_tool) = self
+            .mcp_tool_call_dao
+            .assemble_mcp_core_tool(po, &server)
+            .map_err(AppError::from)?
+        else {
+            return Err(AppError::BadRequest(format!(
+                "MCP tool is not executable: {}",
+                po.id
+            )));
+        };
+
+        Ok(Tool {
+            po: po.clone(),
+            our_tool,
+            search_match: None,
+        })
     }
 }
 

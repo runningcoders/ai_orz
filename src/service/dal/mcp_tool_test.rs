@@ -5,7 +5,7 @@
 
 use crate::error::Result;
 use crate::models::mcp_server::{McpServerConfig, McpServerPo, McpTransport};
-use crate::models::tool::ToolPo;
+use crate::models::tool::{Tool, ToolPo};
 use crate::pkg::RequestContext;
 use crate::pkg::tool_tracing::entry::ToolCallStatus;
 use crate::pkg::tool_tracing::logger::ToolCallLogger;
@@ -267,6 +267,20 @@ async fn sync_then_call_stdio_mcp_tool_by_id_returns_result(pool: SqlitePool) ->
         .get_by_id(ctx.clone(), tool_id.clone())
         .await?
         .expect("synced MCP tool should be executable");
+    let management_tool = Tool::from_po_for_management(executable.po.clone());
+    let from_management_result = dal
+        .call_tool(
+            ctx.clone(),
+            &management_tool,
+            json!({ "text": "management MCP" }),
+        )
+        .await
+        .expect("McpToolDal should reassemble executable MCP tool from authorized metadata");
+    assert_eq!(
+        from_management_result["structuredContent"]["echo"],
+        "management MCP"
+    );
+
     let (manual_result, entry) = dal
         .call_manual(ctx, &executable, json!({ "text": "manual MCP" }))
         .await

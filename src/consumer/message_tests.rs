@@ -1,7 +1,7 @@
 //! Message Topic 消费者单元测试
 
-use super::message::*;
 use super::MessageHandler;
+use super::message::*;
 use crate::error::{AppError, Result};
 use crate::models::agent::Agent;
 use crate::models::file::FileMeta;
@@ -21,7 +21,7 @@ use crate::service::domain::runtime::{
 use async_trait::async_trait;
 use common::enums::{MessageRole, MessageStatus, MessageType};
 use rig::tool::ToolError;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::fmt;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
@@ -97,6 +97,7 @@ async fn init_storage_for_test() {
 
 struct RecordingRuntimeDomain {
     calls: Mutex<Vec<(String, Value)>>,
+    manual_calls: Mutex<Vec<(String, String, Value)>>,
     result: Mutex<std::result::Result<Value, String>>,
 }
 
@@ -104,6 +105,7 @@ impl RecordingRuntimeDomain {
     fn success(result: Value) -> Arc<Self> {
         Arc::new(Self {
             calls: Mutex::new(Vec::new()),
+            manual_calls: Mutex::new(Vec::new()),
             result: Mutex::new(Ok(result)),
         })
     }
@@ -111,16 +113,21 @@ impl RecordingRuntimeDomain {
     fn failure(error_message: &str) -> Arc<Self> {
         Arc::new(Self {
             calls: Mutex::new(Vec::new()),
+            manual_calls: Mutex::new(Vec::new()),
             result: Mutex::new(Err(error_message.to_string())),
         })
     }
 
     fn call_count(&self) -> usize {
+        self.calls.lock().unwrap().len() + self.manual_calls.lock().unwrap().len()
+    }
+
+    fn legacy_call_by_id_count(&self) -> usize {
         self.calls.lock().unwrap().len()
     }
 
-    fn first_call(&self) -> (String, Value) {
-        self.calls.lock().unwrap()[0].clone()
+    fn first_manual_call(&self) -> (String, String, Value) {
+        self.manual_calls.lock().unwrap()[0].clone()
     }
 }
 
@@ -200,6 +207,23 @@ impl RuntimeToolExecution for RecordingRuntimeDomain {
         args: Value,
     ) -> std::result::Result<Value, ToolError> {
         self.calls.lock().unwrap().push((tool.po.id.clone(), args));
+        match self.result.lock().unwrap().clone() {
+            Ok(result) => Ok(result),
+            Err(error_message) => Err(ToolError::ToolCallError(error_message.into())),
+        }
+    }
+
+    async fn call_manual_tool_for_agent(
+        &self,
+        _ctx: RequestContext,
+        agent_id: String,
+        tool_id: String,
+        args: Value,
+    ) -> std::result::Result<Value, ToolError> {
+        self.manual_calls
+            .lock()
+            .unwrap()
+            .push((agent_id, tool_id, args));
         match self.result.lock().unwrap().clone() {
             Ok(result) => Ok(result),
             Err(error_message) => Err(ToolError::ToolCallError(error_message.into())),
@@ -511,7 +535,9 @@ mod tool_call_request_tests {
         handler.handle(&message).await?;
 
         assert_eq!(runtime_domain.call_count(), 1);
-        let (tool_id, args) = runtime_domain.first_call();
+        assert_eq!(runtime_domain.legacy_call_by_id_count(), 0);
+        let (agent_id, tool_id, args) = runtime_domain.first_manual_call();
+        assert_eq!(agent_id, "agent-001");
         assert_eq!(tool_id, "tool-mcp-weather");
         assert_eq!(args, json!({ "city": "Shanghai" }));
 
@@ -535,8 +561,8 @@ mod tool_call_request_tests {
     }
 
     #[tokio::test]
-    async fn test_tool_call_request_runtime_failure_sends_failure_result_and_acks_request(
-    ) -> Result<()> {
+    async fn test_tool_call_request_runtime_failure_sends_failure_result_and_acks_request()
+    -> Result<()> {
         init_storage_for_test().await;
         let runtime_domain =
             RecordingRuntimeDomain::failure("MCP tool call failed for tool_id: tool-mcp-weather");

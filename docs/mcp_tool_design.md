@@ -810,9 +810,9 @@ Message Domain 保存 ToolCallRequest 并发布消息事件
   ↓
 ToolCallRequest Consumer 消费请求
   ↓
-RuntimeDomain.tool_execution().call_tool_by_id(ctx, tool_id, args)
+RuntimeDomain.tool_execution().call_manual_tool_for_agent(ctx, agent_id, tool_id, args)
   ↓
-按 ToolProtocol 路由并调用 Runtime `call_tool` 新路径，再分发到 McpToolDal.call_tool / ToolDal.call_tool
+Runtime 先校验 Agent 绑定与 `ControlMode::Manual`，再按 ToolProtocol 路由并调用 Runtime `call_tool` 新路径，分发到 McpToolDal.call_tool / ToolDal.call_tool
   ↓
 Consumer 得到 result / error
   ↓
@@ -828,7 +828,7 @@ Agent 在下一轮 Prompt 中看到工具回调结果并继续完成用户任务
 分层边界：
 
 - **Consumer 管编排**：消费 `ToolCallRequest`，调用 Runtime Domain 执行工具，然后调用 Message Domain 发送结果；
-- **Runtime Domain 管执行**：负责工具执行入口与协议路由，`call_tool_by_id` 先读取标准 `Tool` 元信息并委托 `call_tool`，随后 `ToolProtocol::Mcp` 路由到 `McpToolDal.call_tool`，Builtin/HTTP 路由到通用 `ToolDal.call_tool`；
+- **Runtime Domain 管执行**：负责工具执行入口、Manual 授权校验与协议路由；消息模式使用 `call_manual_tool_for_agent` 先校验当前 Agent 已绑定该工具且工具为 `ControlMode::Manual`，授权通过后复用已加载 `Tool` 实体委托 `call_tool`，随后 `ToolProtocol::Mcp` 路由到 `McpToolDal.call_tool`，Builtin/HTTP 路由到通用 `ToolDal.call_tool`；
 - **Message Domain 管发送**：负责把工具执行结果转换为 `ToolCallResult` 回调消息，保存、发布事件、触发后续投递/唤醒；
 - **Message DAL/DAO 只做持久化**：Consumer 不应直接依赖 `MessageDal` 写入结果消息，避免绕过 Message Domain 的发送语义、事件发布和唤醒流程；
 - **Domain 不同层互调**：不要让 `RuntimeDomain` 直接调用 `MessageDomain`。Consumer 作为上层入口/应用编排层，可以同时协调 Runtime Domain 与 Message Domain。
@@ -840,7 +840,7 @@ Agent 在下一轮 Prompt 中看到工具回调结果并继续完成用户任务
   - 生产环境通过 `MessageHandlerImpl::new()` 使用全局 Domain 单例；
   - 测试环境通过 `MessageHandlerImpl::new_for_test(...)` 注入 mock，避免 Consumer 单元测试绑定全局单例；
   - `MessageType::ToolCallRequest` 被解析为 `ToolCallMessage`，`args` 缺省时按 `Value::Null` 传入 Runtime；
-  - Consumer 基于 ToolCallMessage 中的 `from_id/project_id/task_id` 构造 `RequestContext`，调用 `runtime_domain.tool_execution().call_tool_by_id(ctx, tool_id, args)`；
+  - Consumer 基于 ToolCallMessage 中的 `from_id/project_id/task_id` 构造 `RequestContext`，调用 `runtime_domain.tool_execution().call_manual_tool_for_agent(ctx, from_id, tool_id, args)`；
   - 执行成功映射为 `ToolCallExecutionOutcome::Success`，执行失败映射为 `ToolCallExecutionOutcome::Failure`，再统一调用 `message_domain.delivery().send_tool_call_result(...)`。
 - `src/consumer/message_tests.rs`
   - 使用 `RecordingRuntimeDomain` / `RecordingMessageDomain` 记录调用，不直接依赖真实 Runtime/Message 全局单例；
@@ -917,7 +917,7 @@ Batch D 测试重点：
 - ✅ 工具失败时，Consumer 发送失败回调；错误脱敏由 Runtime 边界负责，Consumer 不拼接 MCP server `command/env/url/headers/credential` 等配置细节；
 - ✅ Consumer 不直接依赖 `MessageDal` 写入 `ToolCallResult`；
 - ✅ `ToolCallResult` 写入沿用 Message Domain 发送语义，后续事件发布/唤醒链路不被 Consumer 绕过；
-- ⏭️ “只允许调用当前 Agent 已绑定的 `Manual` 工具；Auto 工具不走这个消息模式”由 Runtime/Finance 工具绑定与 Prompt 可见性规则共同约束，后续可在授权/绑定校验 Batch 中补更细断言。
+- ✅ “只允许调用当前 Agent 已绑定的 `Manual` 工具；Auto 工具不走这个消息模式”已由 Batch F 在 Runtime Domain 的 `call_manual_tool_for_agent` 入口补齐，Consumer 仍只做消息编排。
 
 ### Batch E：可观测性与安全补强
 
@@ -943,7 +943,7 @@ Batch D 测试重点：
 
 ### Batch F：Manual 工具调用授权 / 绑定校验
 
-状态：设计待实现。该 Batch 专门收敛 Batch D 留下的授权边界：`ToolCallRequest` 只能调用当前发起 Agent 已绑定、且 `ControlMode::Manual` 的工具；`ControlMode::Auto` 工具不允许通过消息模式执行。
+状态：已完成。该 Batch 专门收敛 Batch D 留下的授权边界：`ToolCallRequest` 只能调用当前发起 Agent 已绑定、且 `ControlMode::Manual` 的工具；`ControlMode::Auto` 工具不允许通过消息模式执行。
 
 #### 目标
 
@@ -974,7 +974,7 @@ RuntimeDomain.call_tool(ctx, &bound_manual_tool, args)
 5. **使用已加载实体执行**：授权查询已经拿到 `Tool` 实体后，必须调用现有 `call_tool(ctx, &tool, args)`，避免再通过 `call_tool_by_id` 做第二次 Tool 查询。
 6. **错误信息 fail-closed**：未绑定、非 Manual、未找到等错误只包含 `agent_id/tool_id/control_mode` 这类安全上下文，不包含 `ToolPo.config`、MCP server command/env/url/header/credential 或调用 args/result。
 
-#### 拟新增 Runtime 接口
+#### Runtime 接口
 
 ```rust
 #[async_trait]
@@ -1003,7 +1003,7 @@ pub trait RuntimeToolExecution: Send + Sync {
 }
 ```
 
-#### 拟实现逻辑
+#### 实现逻辑
 
 ```rust
 async fn call_manual_tool_for_agent(
@@ -1062,6 +1062,15 @@ async fn call_manual_tool_for_agent(
 
 这样 Consumer 仍只做编排，不新增 Tool 查询/绑定判断；授权语义由 Runtime Domain 统一负责。
 
+#### 已完成实现
+
+- ✅ `RuntimeToolExecution` 新增 `call_manual_tool_for_agent(ctx, agent_id, tool_id, args)` 入口；
+- ✅ Runtime Domain 通过 `ToolDal.list_tools_for_agent_full(ctx, agent_id)` 读取当前 Agent 已绑定工具集合，并在 Runtime 边界完成绑定校验；
+- ✅ 未绑定工具、已绑定但 `ControlMode::Auto` 的工具都会在协议路由前拒绝执行；
+- ✅ 授权通过后复用已加载 `Tool` 实体调用 `call_tool(ctx, &tool, args)`，不再二次 `get_by_id` / `call_tool_by_id` 查询；
+- ✅ Manual MCP Tool 仍路由到 `McpToolDal.call_tool`，Manual Builtin/HTTP Tool 仍路由到通用 `ToolDal.call_tool`，保持 DAL 不同层/同层互调边界；
+- ✅ Consumer 已切换为只调用 Runtime Manual 专用入口，并传入 `ToolCallRequest.from_id` 作为授权 `agent_id`；Consumer 不新增 Tool/DAL/Finance Domain 依赖。
+
 #### RED 测试清单
 
 1. `runtime_denies_manual_tool_call_when_tool_not_bound_to_agent`
@@ -1085,7 +1094,7 @@ async fn call_manual_tool_for_agent(
    - Consumer 处理 `ToolCallRequest` 后，断言传入 `agent_id == tool_call.from_id`、`tool_id` 与 `args`；
    - 断言不再调用 `call_tool_by_id`。
 
-#### GREEN 实现顺序
+#### GREEN 实现顺序（已完成）
 
 1. 扩展 `RuntimeToolExecution` trait 与 `RecordingRuntimeDomain` 测试桩，先让编译失败定位所有实现点。
 2. 在 `src/service/domain/runtime/tool_execution_test.rs` 写 Runtime 授权 RED 测试，补 `RecordingToolDal` 返回绑定工具列表和调用计数。
@@ -1283,7 +1292,7 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 
 ### Phase 5：MCP Tool 运行面最小闭环
 
-状态：Batch A、Batch B、Batch C、Batch D 已完成，stdio MCP Tool 已打通从同步、绑定展示、Manual ToolCallRequest 消费、Runtime 协议路由，到 ToolCallResult 回调的最小运行闭环。后续继续补授权/绑定校验细化与更完整安全策略。
+状态：Batch A、Batch B、Batch C、Batch D、Batch F 已完成，stdio MCP Tool 已打通从同步、绑定展示、Manual ToolCallRequest 消费、Runtime 协议路由、授权/绑定校验，到 ToolCallResult 回调的最小运行闭环。后续继续补更完整安全策略与连接生命周期增强。
 
 - ✅ `McpToolDal.call_tool_by_id/call_manual`：sync 后按标准 Tool ID 执行 MCP Tool；
 - ✅ DAL 级 E2E 测试：create server → sync tools → call synced tool → assert result；
@@ -1292,7 +1301,7 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 - ✅ 错误路径测试：tool/server 缺失、非 object args、stdio command resolution、`tools/list`/`tools/call` 下层失败均验证不泄漏 command/env/headers/url/credential；
 - ✅ Message Consumer 接入 Runtime 工具执行入口，收到 `ToolCallRequest` 后调用 Runtime Domain 执行工具，并通过 Message Domain 回写 `ToolCallResult`；
 - ✅ Agent 绑定与 Prompt 可见性验证：MCP Tool 可作为标准 Tool 绑定展示，但默认 `Manual`，暂不进入 Rig auto tool calling；
-- ⏳ Manual 工具调用授权/绑定校验细化：只允许当前 Agent 调用已绑定的 Manual 工具，Auto 工具不走消息模式。
+- ✅ Manual 工具调用授权/绑定校验细化：只允许当前 Agent 调用已绑定的 Manual 工具，Auto 工具不走消息模式。
 
 ### Phase 6：安全、管理面和完整测试
 

@@ -170,7 +170,12 @@ impl MessageHandlerImpl {
         let outcome = match self
             .runtime_domain
             .tool_execution()
-            .call_tool_by_id(ctx.clone(), tool_call.tool_id.clone(), args)
+            .call_manual_tool_for_agent(
+                ctx.clone(),
+                tool_call.from_id.clone(),
+                tool_call.tool_id.clone(),
+                args,
+            )
             .await
         {
             Ok(result) => ToolCallExecutionOutcome::Success {
