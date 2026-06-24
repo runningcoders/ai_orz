@@ -6,9 +6,9 @@
 use crate::error::AppError;
 use crate::models::mcp_server::McpServerStatus;
 use crate::models::tool::{Tool, ToolPo};
-use crate::pkg::RequestContext;
 use crate::pkg::tool_registry::mcp::{McpToolConfig, RemoteMcpTool};
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
+use crate::pkg::RequestContext;
 use crate::service::dao::mcp_server::McpServerDao;
 use crate::service::dao::tool::{ToolDao, ToolQuery};
 use crate::service::dao::tool_call::{self, McpToolCallDao};
@@ -74,6 +74,17 @@ pub trait McpToolDal: Send + Sync {
         &self,
         ctx: RequestContext,
         tool_id: String,
+        args: Value,
+    ) -> Result<Value, ToolError>;
+
+    /// Execute an already assembled MCP tool.
+    ///
+    /// Use this when the caller already has the complete `Tool` entity so the
+    /// execution path does not re-query tool metadata.
+    async fn call_tool(
+        &self,
+        ctx: RequestContext,
+        tool: &Tool,
         args: Value,
     ) -> Result<Value, ToolError>;
 
@@ -260,7 +271,16 @@ impl McpToolDal for McpToolDalImpl {
                 ToolError::ToolCallError(format!("Tool not found: {}", tool_id).into())
             })?;
 
-        self.call_manual(ctx, &tool, args)
+        self.call_tool(ctx, &tool, args).await
+    }
+
+    async fn call_tool(
+        &self,
+        ctx: RequestContext,
+        tool: &Tool,
+        args: Value,
+    ) -> Result<Value, ToolError> {
+        self.call_manual(ctx, tool, args)
             .await
             .map(|(value, _)| value)
     }

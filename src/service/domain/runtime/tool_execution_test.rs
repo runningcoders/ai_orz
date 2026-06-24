@@ -7,8 +7,8 @@ mod tests {
     use crate::models::memory::Memory;
     use crate::models::model_provider::ModelProvider;
     use crate::models::tool::{Tool, ToolPo};
-    use crate::pkg::RequestContext;
     use crate::pkg::tool_tracing::entry::ToolCallEntry;
+    use crate::pkg::RequestContext;
     use crate::service::dal::brain::BrainDal;
     use crate::service::dal::mcp_tool::McpToolDal;
     use crate::service::dal::tool::ToolDal;
@@ -16,9 +16,9 @@ mod tests {
     use async_trait::async_trait;
     use common::enums::{ControlMode, ToolProtocol};
     use rig::tool::{ToolDyn, ToolError};
-    use serde_json::{Value, json};
-    use std::sync::Arc;
+    use serde_json::{json, Value};
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
 
     struct StubBrainDal;
 
@@ -55,19 +55,31 @@ mod tests {
 
     struct RecordingToolDal {
         protocol: ToolProtocol,
-        call_count: AtomicUsize,
+        get_by_id_count: AtomicUsize,
+        call_by_id_count: AtomicUsize,
+        call_tool_count: AtomicUsize,
     }
 
     impl RecordingToolDal {
         fn new(protocol: ToolProtocol) -> Self {
             Self {
                 protocol,
-                call_count: AtomicUsize::new(0),
+                get_by_id_count: AtomicUsize::new(0),
+                call_by_id_count: AtomicUsize::new(0),
+                call_tool_count: AtomicUsize::new(0),
             }
         }
 
-        fn calls(&self) -> usize {
-            self.call_count.load(Ordering::SeqCst)
+        fn get_by_id_calls(&self) -> usize {
+            self.get_by_id_count.load(Ordering::SeqCst)
+        }
+
+        fn call_by_id_calls(&self) -> usize {
+            self.call_by_id_count.load(Ordering::SeqCst)
+        }
+
+        fn call_tool_calls(&self) -> usize {
+            self.call_tool_count.load(Ordering::SeqCst)
         }
 
         fn tool(&self, tool_id: &str) -> Tool {
@@ -94,6 +106,7 @@ mod tests {
             _ctx: RequestContext,
             id: String,
         ) -> Result<Option<Tool>, AppError> {
+            self.get_by_id_count.fetch_add(1, Ordering::SeqCst);
             Ok(Some(self.tool(&id)))
         }
 
@@ -154,17 +167,18 @@ mod tests {
             tool_id: String,
             args: Value,
         ) -> Result<Value, ToolError> {
-            self.call_count.fetch_add(1, Ordering::SeqCst);
+            self.call_by_id_count.fetch_add(1, Ordering::SeqCst);
             Ok(json!({ "called_by": "tool_dal", "tool_id": tool_id, "args": args }))
         }
 
         async fn call_tool(
             &self,
             _ctx: RequestContext,
-            _tool: &Tool,
-            _args: Value,
+            tool: &Tool,
+            args: Value,
         ) -> Result<Value, ToolError> {
-            unimplemented!("not needed by tool execution routing tests")
+            self.call_tool_count.fetch_add(1, Ordering::SeqCst);
+            Ok(json!({ "called_by": "tool_dal", "tool_id": tool.po.id, "args": args }))
         }
 
         async fn call_manual(
@@ -190,27 +204,34 @@ mod tests {
     }
 
     struct RecordingMcpToolDal {
-        call_count: AtomicUsize,
+        call_by_id_count: AtomicUsize,
+        call_tool_count: AtomicUsize,
         error_message: Option<String>,
     }
 
     impl RecordingMcpToolDal {
         fn new() -> Self {
             Self {
-                call_count: AtomicUsize::new(0),
+                call_by_id_count: AtomicUsize::new(0),
+                call_tool_count: AtomicUsize::new(0),
                 error_message: None,
             }
         }
 
         fn failing(error_message: &str) -> Self {
             Self {
-                call_count: AtomicUsize::new(0),
+                call_by_id_count: AtomicUsize::new(0),
+                call_tool_count: AtomicUsize::new(0),
                 error_message: Some(error_message.to_string()),
             }
         }
 
-        fn calls(&self) -> usize {
-            self.call_count.load(Ordering::SeqCst)
+        fn call_by_id_calls(&self) -> usize {
+            self.call_by_id_count.load(Ordering::SeqCst)
+        }
+
+        fn call_tool_calls(&self) -> usize {
+            self.call_tool_count.load(Ordering::SeqCst)
         }
     }
 
@@ -246,11 +267,24 @@ mod tests {
             tool_id: String,
             args: Value,
         ) -> Result<Value, ToolError> {
-            self.call_count.fetch_add(1, Ordering::SeqCst);
+            self.call_by_id_count.fetch_add(1, Ordering::SeqCst);
             if let Some(error_message) = &self.error_message {
                 return Err(ToolError::ToolCallError(error_message.clone().into()));
             }
             Ok(json!({ "called_by": "mcp_tool_dal", "tool_id": tool_id, "args": args }))
+        }
+
+        async fn call_tool(
+            &self,
+            _ctx: RequestContext,
+            tool: &Tool,
+            args: Value,
+        ) -> Result<Value, ToolError> {
+            self.call_tool_count.fetch_add(1, Ordering::SeqCst);
+            if let Some(error_message) = &self.error_message {
+                return Err(ToolError::ToolCallError(error_message.clone().into()));
+            }
+            Ok(json!({ "called_by": "mcp_tool_dal", "tool_id": tool.po.id, "args": args }))
         }
 
         async fn call_manual(
@@ -308,8 +342,36 @@ mod tests {
             .unwrap();
 
         assert_eq!(result["called_by"], "mcp_tool_dal");
-        assert_eq!(mcp_tool_dal.calls(), 1);
-        assert_eq!(tool_dal.calls(), 0);
+        assert_eq!(tool_dal.get_by_id_calls(), 1);
+        assert_eq!(mcp_tool_dal.call_tool_calls(), 1);
+        assert_eq!(mcp_tool_dal.call_by_id_calls(), 0);
+        assert_eq!(tool_dal.call_tool_calls(), 0);
+        assert_eq!(tool_dal.call_by_id_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn runtime_routes_already_loaded_mcp_tool_without_second_tool_lookup() {
+        let tool_dal = Arc::new(RecordingToolDal::new(ToolProtocol::Mcp));
+        let mcp_tool_dal = Arc::new(RecordingMcpToolDal::new());
+        let runtime = crate::service::domain::runtime::new_with_tool_dals(
+            Arc::new(StubBrainDal),
+            tool_dal.clone(),
+            mcp_tool_dal.clone(),
+        );
+        let tool = Tool::from_po_for_management(test_tool_po("mcp-tool-1", ToolProtocol::Mcp));
+
+        let result = runtime
+            .tool_execution()
+            .call_tool(test_ctx(), &tool, json!({ "text": "hi" }))
+            .await
+            .unwrap();
+
+        assert_eq!(result["called_by"], "mcp_tool_dal");
+        assert_eq!(tool_dal.get_by_id_calls(), 0);
+        assert_eq!(mcp_tool_dal.call_tool_calls(), 1);
+        assert_eq!(mcp_tool_dal.call_by_id_calls(), 0);
+        assert_eq!(tool_dal.call_tool_calls(), 0);
+        assert_eq!(tool_dal.call_by_id_calls(), 0);
     }
 
     #[tokio::test]
@@ -351,8 +413,10 @@ mod tests {
         assert!(!message.contains("API_TOKEN"));
         assert!(!message.contains("placeholder-value"));
         assert!(!message.contains("credential"));
-        assert_eq!(mcp_tool_dal.calls(), 1);
-        assert_eq!(tool_dal.calls(), 0);
+        assert_eq!(mcp_tool_dal.call_tool_calls(), 1);
+        assert_eq!(mcp_tool_dal.call_by_id_calls(), 0);
+        assert_eq!(tool_dal.call_tool_calls(), 0);
+        assert_eq!(tool_dal.call_by_id_calls(), 0);
     }
 
     #[tokio::test]
@@ -419,8 +483,11 @@ mod tests {
             .unwrap();
 
         assert_eq!(result["called_by"], "tool_dal");
-        assert_eq!(tool_dal.calls(), 1);
-        assert_eq!(mcp_tool_dal.calls(), 0);
+        assert_eq!(tool_dal.get_by_id_calls(), 1);
+        assert_eq!(tool_dal.call_tool_calls(), 1);
+        assert_eq!(tool_dal.call_by_id_calls(), 0);
+        assert_eq!(mcp_tool_dal.call_tool_calls(), 0);
+        assert_eq!(mcp_tool_dal.call_by_id_calls(), 0);
     }
 
     async fn assert_mcp_lower_error_maps_to_safe_message(lower_error: &str, expected: &str) {
@@ -452,7 +519,9 @@ mod tests {
         assert!(!message.contains("placeholder-value"));
         assert!(!message.contains("API_TOKEN"));
         assert!(!message.contains("credential"));
-        assert_eq!(mcp_tool_dal.calls(), 1);
-        assert_eq!(tool_dal.calls(), 0);
+        assert_eq!(mcp_tool_dal.call_tool_calls(), 1);
+        assert_eq!(mcp_tool_dal.call_by_id_calls(), 0);
+        assert_eq!(tool_dal.call_tool_calls(), 0);
+        assert_eq!(tool_dal.call_by_id_calls(), 0);
     }
 }

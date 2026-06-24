@@ -102,6 +102,17 @@ pub trait RuntimeToolExecution: Send + Sync {
         tool_id: String,
         args: serde_json::Value,
     ) -> Result<serde_json::Value, rig::tool::ToolError>;
+
+    /// Execute one already-loaded tool.
+    ///
+    /// Callers that already have a `Tool` should use this method to avoid a
+    /// second Tool lookup. Protocol routing is still owned by Runtime Domain.
+    async fn call_tool(
+        &self,
+        ctx: RequestContext,
+        tool: &crate::models::tool::Tool,
+        args: serde_json::Value,
+    ) -> Result<serde_json::Value, rig::tool::ToolError>;
 }
 
 // ==================== 子模块  ====================
@@ -115,7 +126,7 @@ mod tool_execution;
 #[cfg(test)]
 mod tool_execution_test;
 
-pub use context_assembly::{PromptBuilder, build_conversation_prompt};
+pub use context_assembly::{build_conversation_prompt, PromptBuilder};
 
 // ==================== 实现 ====================
 

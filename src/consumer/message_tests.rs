@@ -1,12 +1,13 @@
 //! Message Topic 消费者单元测试
 
-use super::MessageHandler;
 use super::message::*;
+use super::MessageHandler;
 use crate::error::{AppError, Result};
 use crate::models::agent::Agent;
 use crate::models::file::FileMeta;
 use crate::models::memory::{Memory, MemoryTrace};
 use crate::models::message::{Message, ToolCallMessage};
+use crate::models::tool::Tool;
 use crate::pkg::RequestContext;
 use crate::service::dao::message::MessageQuery;
 use crate::service::domain::message::{
@@ -20,7 +21,7 @@ use crate::service::domain::runtime::{
 use async_trait::async_trait;
 use common::enums::{MessageRole, MessageStatus, MessageType};
 use rig::tool::ToolError;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::fmt;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
@@ -186,6 +187,19 @@ impl RuntimeToolExecution for RecordingRuntimeDomain {
         args: Value,
     ) -> std::result::Result<Value, ToolError> {
         self.calls.lock().unwrap().push((tool_id, args));
+        match self.result.lock().unwrap().clone() {
+            Ok(result) => Ok(result),
+            Err(error_message) => Err(ToolError::ToolCallError(error_message.into())),
+        }
+    }
+
+    async fn call_tool(
+        &self,
+        _ctx: RequestContext,
+        tool: &Tool,
+        args: Value,
+    ) -> std::result::Result<Value, ToolError> {
+        self.calls.lock().unwrap().push((tool.po.id.clone(), args));
         match self.result.lock().unwrap().clone() {
             Ok(result) => Ok(result),
             Err(error_message) => Err(ToolError::ToolCallError(error_message.into())),
@@ -521,8 +535,8 @@ mod tool_call_request_tests {
     }
 
     #[tokio::test]
-    async fn test_tool_call_request_runtime_failure_sends_failure_result_and_acks_request()
-    -> Result<()> {
+    async fn test_tool_call_request_runtime_failure_sends_failure_result_and_acks_request(
+    ) -> Result<()> {
         init_storage_for_test().await;
         let runtime_domain =
             RecordingRuntimeDomain::failure("MCP tool call failed for tool_id: tool-mcp-weather");

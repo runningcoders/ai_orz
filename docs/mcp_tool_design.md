@@ -680,9 +680,11 @@ stdio MCP Server tools/call
 - `src/service/dal/mcp_tool.rs`
   - 在 `McpToolDal` trait 新增：
     - `call_tool_by_id(ctx, tool_id, args) -> Result<Value, ToolError>`
+    - `call_tool(ctx, &Tool, args) -> Result<Value, ToolError>`
     - `call_manual(ctx, &Tool, args) -> Result<(Value, ToolCallEntry), ToolError>`
   - 实现逻辑：
-    - `call_tool_by_id` 调用 `self.get_by_id(...)` 组装完整 `McpCoreTool`；
+    - `call_tool_by_id` 只作为兼容入口：先调用 `self.get_by_id(...)` 组装完整 `McpCoreTool`，再委托 `call_tool`；
+    - `call_tool` 接收调用方已持有的完整 `Tool` 实体，直接委托 `call_manual`，避免 Runtime 已查出 Tool 后再次按 ID 查询；
     - 找不到 tool 返回 `ToolError::ToolCallError("Tool not found: ...")`；
     - 组装失败/非 MCP/缺 server 统一转换为不泄漏 config 的 `ToolError`；
     - `call_manual` 委托同一个 `mcp_tool_call_dao.call_manual(ctx, tool, args)`，复用现有 tracing decorator。
@@ -710,7 +712,7 @@ sync_then_call_stdio_mcp_tool_by_id_returns_result
 
 ### Batch B：运行面协议路由设计落点
 
-状态：已完成。Runtime Domain 已新增 `RuntimeToolExecution::call_tool_by_id` 作为后续 Message Consumer 调用工具的上层能力入口；协议分发停留在 Domain 层，不下沉到 DAO，也不让 `ToolDal` 依赖 `McpToolDal`。
+状态：已完成。Runtime Domain 已新增 `RuntimeToolExecution::call_tool_by_id` 与 `call_tool` 作为后续 Message Consumer/运行面调用工具的上层能力入口；协议分发停留在 Domain 层，不下沉到 DAO，也不让 `ToolDal` 依赖 `McpToolDal`。其中 `call_tool_by_id` 是按 ID 入口，负责先读取标准 `Tool` 元信息；当调用点已经持有完整 `Tool` 实体时应直接走 `call_tool(ctx, &tool, args)`，避免重复查询。
 
 当前调用链路：
 
@@ -719,24 +721,38 @@ RuntimeDomain.tool_execution().call_tool_by_id(ctx, tool_id, args)
   ↓
 ToolDal.get_by_id(ctx, tool_id) 读取标准 Tool 元信息
   ↓
+RuntimeDomain.tool_execution().call_tool(ctx, &tool, args)
+  ↓
 match tool.po.protocol
-  Builtin | Http => ToolDal.call_tool_by_id(ctx, tool_id, args)
-  Mcp            => McpToolDal.call_tool_by_id(ctx, tool_id, args)
+  Builtin | Http => ToolDal.call_tool(ctx, &tool, args)
+  Mcp            => McpToolDal.call_tool(ctx, &tool, args)
+```
+
+如果上游调用点已经持有 `Tool`：
+
+```text
+RuntimeDomain.tool_execution().call_tool(ctx, &tool, args)
+  ↓
+match tool.po.protocol
+  Builtin | Http => ToolDal.call_tool(ctx, &tool, args)
+  Mcp            => McpToolDal.call_tool(ctx, &tool, args)
 ```
 
 当前落地文件：
 
 - `src/service/domain/runtime/mod.rs`
   - `RuntimeDomain` 新增 `tool_execution()` 能力入口；
-  - `RuntimeToolExecution` 新增 `call_tool_by_id(ctx, tool_id, args)`；
+  - `RuntimeToolExecution` 新增 `call_tool_by_id(ctx, tool_id, args)` 与 `call_tool(ctx, &Tool, args)`；
   - `RuntimeDomainImpl` 组合 `ToolDal` 与 `McpToolDal`，但只在 Domain 层做协议路由。
 - `src/service/domain/runtime/tool_execution.rs`
   - 先通过 `ToolDal.get_by_id` 读取通用 Tool 元信息；
-  - `ToolProtocol::Mcp` 转发到 `McpToolDal.call_tool_by_id`，并在 Runtime 边界将下层错误统一映射为安全错误，避免 command/env/headers/url/credential 等 server config 派生信息透出；
-  - `ToolProtocol::Builtin | ToolProtocol::Http` 转发到 `ToolDal.call_tool_by_id`。
+  - `call_tool_by_id` 读取后立即委托 `call_tool`，确保后续协议路由复用已持有的 `Tool`；
+  - `ToolProtocol::Mcp` 转发到 `McpToolDal.call_tool`，并在 Runtime 边界将下层错误统一映射为安全错误，避免 command/env/headers/url/credential 等 server config 派生信息透出；
+  - `ToolProtocol::Builtin | ToolProtocol::Http` 转发到 `ToolDal.call_tool`。
 - `src/service/domain/runtime/tool_execution_test.rs`
   - 覆盖 MCP 工具路由到 `McpToolDal`；
   - 覆盖 Builtin/HTTP 工具路由到通用 `ToolDal`；
+  - 覆盖 Runtime 已持有 `Tool` 后使用 `call_tool` 新路径，不再回落到 `call_tool_by_id` 导致二次查询；
   - 覆盖 MCP 下层错误脱敏：Runtime 返回值保留 tool_id 与通用失败原因，不包含 command/env/url/credential 等敏感细节；
   - 使用 stub DAL 验证调用次数，避免依赖全局单例和真实外部 runtime。
 
@@ -744,6 +760,7 @@ match tool.po.protocol
 
 - Domain 层负责协议路由，符合 handler→domain→dal→dao 单向分层；
 - DAL 之间不互调，`ToolDal` 不注入、不调用 `McpToolDal`；
+- Runtime `call_tool_by_id` 只做一次 `ToolDal.get_by_id`，随后所有协议分发都基于已持有的 `Tool` 调用 `call_tool`，避免重复 Tool 查询；
 - DAO 仍只做持久化；
 - MCP server config 不进入 Runtime Domain 返回值；Runtime 对 MCP 下层错误做 fail-closed 脱敏，当前测试与实现不输出 command/env/headers/url/credential；
 - 第一阶段不新增 HTTP API，不接 LLM 自动调用，只为消息消费者后续编排准备纯能力入口。
@@ -795,7 +812,7 @@ ToolCallRequest Consumer 消费请求
   ↓
 RuntimeDomain.tool_execution().call_tool_by_id(ctx, tool_id, args)
   ↓
-按 ToolProtocol 路由并调用 McpToolDal / ToolDal
+按 ToolProtocol 路由并调用 Runtime `call_tool` 新路径，再分发到 McpToolDal.call_tool / ToolDal.call_tool
   ↓
 Consumer 得到 result / error
   ↓

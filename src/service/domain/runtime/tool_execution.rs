@@ -1,5 +1,6 @@
 //! Runtime Tool Execution 具体实现
 
+use crate::models::tool::Tool;
 use crate::pkg::request_context::RequestContext;
 use crate::service::domain::runtime::{RuntimeDomainImpl, RuntimeToolExecution};
 use common::enums::ToolProtocol;
@@ -23,14 +24,24 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
                 ToolError::ToolCallError(format!("Tool not found: {}", tool_id).into())
             })?;
 
+        self.call_tool(ctx, &tool, args).await
+    }
+
+    async fn call_tool(
+        &self,
+        ctx: RequestContext,
+        tool: &Tool,
+        args: Value,
+    ) -> Result<Value, ToolError> {
+        let tool_id = tool.po.id.clone();
         match tool.po.protocol {
             ToolProtocol::Mcp => self
                 .mcp_tool_dal
-                .call_tool_by_id(ctx, tool_id.clone(), args)
+                .call_tool(ctx, tool, args)
                 .await
                 .map_err(|e| map_mcp_tool_error(&tool_id, e)),
             ToolProtocol::Builtin | ToolProtocol::Http => {
-                self.tool_dal.call_tool_by_id(ctx, tool_id, args).await
+                self.tool_dal.call_tool(ctx, tool, args).await
             }
         }
     }
