@@ -291,3 +291,64 @@ async fn mcp_client_runtime_lists_stdio_server_tools() {
         "string"
     );
 }
+
+#[tokio::test]
+async fn mcp_client_runtime_consumes_invalidation_on_next_stdio_call() {
+    let script = write_echo_mcp_server_script();
+    let server = mcp_server_with_command(
+        "echo-server",
+        "python3".to_string(),
+        vec![script.path().to_string_lossy().to_string()],
+    );
+    let runtime = McpClientRuntime::default();
+
+    runtime.invalidate_server(&server.id);
+    assert!(runtime.is_invalidated(&server.id));
+
+    let result = runtime
+        .call_tool(&server, "echo", json!({ "text": "after invalidate" }))
+        .await
+        .expect("next MCP stdio call after invalidation should reconnect and execute");
+
+    assert_eq!(result["structuredContent"]["echo"], "after invalidate");
+    assert_eq!(result["isError"], false);
+    assert!(
+        !runtime.is_invalidated(&server.id),
+        "successful next call should consume the invalidation marker"
+    );
+}
+
+#[tokio::test]
+async fn mcp_client_runtime_allows_concurrent_stdio_calls_to_same_server() {
+    let script = write_echo_mcp_server_script();
+    let server = Arc::new(mcp_server_with_command(
+        "echo-server",
+        "python3".to_string(),
+        vec![script.path().to_string_lossy().to_string()],
+    ));
+    let runtime = Arc::new(McpClientRuntime::default());
+
+    let first_runtime = runtime.clone();
+    let first_server = server.clone();
+    let second_runtime = runtime.clone();
+    let second_server = server.clone();
+
+    let (first, second) = tokio::join!(
+        async move {
+            first_runtime
+                .call_tool(&first_server, "echo", json!({ "text": "first" }))
+                .await
+        },
+        async move {
+            second_runtime
+                .call_tool(&second_server, "echo", json!({ "text": "second" }))
+                .await
+        }
+    );
+
+    let first = first.expect("first concurrent MCP stdio call should succeed");
+    let second = second.expect("second concurrent MCP stdio call should succeed");
+
+    assert_eq!(first["structuredContent"]["echo"], "first");
+    assert_eq!(second["structuredContent"]["echo"], "second");
+}

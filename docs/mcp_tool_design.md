@@ -915,12 +915,14 @@ Batch D 测试重点：
 - ✅ 已补充 MCP trace 脱敏回归测试，验证 `placeholder-value`、URL host、`credential` 等敏感片段不会出现在序列化后的 trace entry 中；
 - ✅ Runtime MCP 错误语义已做最小安全分类：timeout、server not found、server disabled、tool disabled/tool not found 会映射为只含 `tool_id` 的安全错误文案，其余未知错误继续 fail-closed 映射为通用 `MCP tool call failed for tool_id: ...`；
 - ✅ `McpToolDal.get_by_id/call_tool_by_id` 已在组装执行工具前拒绝 disabled MCP tool 与 disabled MCP server，避免继续连接外部 runtime；DAO 仍只负责持久化，状态语义检查停留在 DAL/Runtime 边界；
-- ✅ stdio `tools/list` / `tools/call` 成功后关闭 session 失败时，不再传播 rmcp/process 下层错误文本，仅返回安全文案 `MCP stdio session close failed after ... on server ...`，避免 command/env/credential 等细节外泄。
+- ✅ stdio `tools/list` / `tools/call` 成功后关闭 session 失败时，不再传播 rmcp/process 下层错误文本，仅返回安全文案 `MCP stdio session close failed after ... on server ...`，避免 command/env/credential 等细节外泄；
+- ✅ 当前 stdio runtime 采用每次 `tools/list` / `tools/call` 独立连接、执行、关闭的无共享 session 策略，同一 MCP server 的并发调用各自使用独立 stdio session，可并发执行且不持有跨 await 的共享锁；
+- ✅ server update/status/delete 触发的 runtime invalidation marker 已验证会在下一次成功 stdio 调用后被消费；当前 per-operation session 策略下等价于下一次调用按最新持久化 server config 重新连接，后续若引入 session cache，该 marker 将扩展为关闭/丢弃旧 session。
 
 后续继续补：
 
-- 并发调用同一个 MCP server 的 runtime 行为；
-- server update/delete 后 invalidate 与下一次调用重连验证。
+- session cache / health check / reconnect 的增强实现；
+- 更完整的 MCP 错误路径测试：tool/server 缺失、非 object args、错误文本不泄漏 command/env/headers/url。
 
 ### 验证命令
 
@@ -945,21 +947,23 @@ cargo check -q
 
 ## 连接生命周期
 
-### MVP：按需连接 + 缓存
+### MVP：按需连接 + 无共享 session
 
-连接生命周期归属 `McpToolCallDaoImpl` 内部的 `McpClientRuntime`：
+连接生命周期归属 `McpToolCallDaoImpl` 内部的 `McpClientRuntime`。当前第一版先采用 per-operation stdio session，不缓存跨调用 session，优先保证实现简单、并发安全和关闭语义明确：
 
 ```text
 McpCoreTool.call
   ↓
-McpClientRuntime.get_or_connect(server)
+McpClientRuntime.call_tool(server, tool_name, args)
   ↓
-没有 session：使用 server config 连接并 initialize
+使用当前持久化 server config 启动 stdio process 并 initialize
   ↓
 tools/call
   ↓
-保留 session，供后续复用
+client.close()，不保留共享 session
 ```
+
+并发策略：同一个 MCP server 的并发 `tools/call` 会各自创建独立 stdio session；runtime 只维护轻量 invalidation marker，不持有跨 `.await` 的共享 session lock，因此不会因为同 server 调用串行化或产生 MutexGuard across await 风险。
 
 ### 更新/删除 Server
 
@@ -970,7 +974,7 @@ McpServerDao.update
   ↓
 McpToolCallDao.invalidate_mcp_server(server_id)
   ↓
-下次调用按新配置重连
+下次成功调用消费 invalidation marker，并按当前持久化配置重新启动 stdio session
 ```
 
 ```text
@@ -982,6 +986,8 @@ McpServerDao.delete
   ↓
 McpToolDal.disable/delete tools by server_id
 ```
+
+当前 per-operation session 策略下，invalidate 不需要主动关闭长连接；它作为生命周期契约 marker，证明管理面变更已经触达 runtime。后续如引入 session cache，`invalidate_mcp_server(server_id)` 必须扩展为关闭并移除对应 cached session，下一次调用再重连。
 
 ## 官方 SDK 选择
 

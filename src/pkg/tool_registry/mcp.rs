@@ -65,27 +65,39 @@ impl McpClientRuntime {
             .insert(server_id.to_string());
     }
 
+    fn clear_invalidated_server(&self, server_id: &str) {
+        self.invalidated_servers.lock().unwrap().remove(server_id);
+    }
+
     pub async fn call_tool(
         &self,
         server: &McpServerPo,
         tool_name: &str,
         args: Value,
     ) -> Result<Value> {
-        match server.transport {
+        let result = match server.transport {
             McpTransport::Stdio => self.call_stdio_tool(server, tool_name, args).await,
             McpTransport::StreamableHttp => Err(anyhow!(
                 "MCP streamable HTTP runtime is not implemented yet"
             )),
+        };
+        if result.is_ok() {
+            self.clear_invalidated_server(&server.id);
         }
+        result
     }
 
     pub async fn list_tools(&self, server: &McpServerPo) -> Result<Vec<RemoteMcpTool>> {
-        match server.transport {
+        let result = match server.transport {
             McpTransport::Stdio => self.list_stdio_tools(server).await,
             McpTransport::StreamableHttp => Err(anyhow!(
                 "MCP streamable HTTP runtime is not implemented yet"
             )),
+        };
+        if result.is_ok() {
+            self.clear_invalidated_server(&server.id);
         }
+        result
     }
 
     async fn list_stdio_tools(&self, server: &McpServerPo) -> Result<Vec<RemoteMcpTool>> {
