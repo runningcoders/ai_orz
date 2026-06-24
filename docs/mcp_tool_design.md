@@ -941,6 +941,167 @@ Batch D 测试重点：
 
 - session cache / health check / reconnect 的增强实现。
 
+### Batch F：Manual 工具调用授权 / 绑定校验
+
+状态：设计待实现。该 Batch 专门收敛 Batch D 留下的授权边界：`ToolCallRequest` 只能调用当前发起 Agent 已绑定、且 `ControlMode::Manual` 的工具；`ControlMode::Auto` 工具不允许通过消息模式执行。
+
+#### 目标
+
+把 Manual 工具消息调用从“能执行”推进到“只能按 Agent 工具绑定与控制模式执行”：
+
+```text
+ToolCallRequest(from_id=agent_id, tool_id, args)
+  ↓
+Message Consumer 只解析消息并构造 RequestContext(agent_id/project_id/task_id)
+  ↓
+RuntimeDomain.tool_execution().call_manual_tool_for_agent(ctx, agent_id, tool_id, args)
+  ↓
+ToolDal.list_tools_for_agent_full(ctx, agent_id)
+  ↓
+查找 tool_id，并校验 control_mode == Manual
+  ↓
+RuntimeDomain.call_tool(ctx, &bound_manual_tool, args)
+  ↓
+按 ToolProtocol 路由到 McpToolDal / ToolDal
+```
+
+#### 架构边界决策
+
+1. **授权校验落在 Runtime Domain**：Consumer 是消息编排层，不查 Tool、不判断绑定、不判断协议；它只把 `ToolCallRequest.from_id` 注入 `RequestContext.agent_id` 并调用 Runtime Domain 的 Manual 专用入口。
+2. **绑定数据来源使用 `ToolDal.list_tools_for_agent_full`**：Tool/Agent 绑定归属工具管理能力，Runtime Domain 可以依赖 ToolDal 读取“当前 Agent 已绑定工具集合”；不新增 DAO 查询，也不让 Consumer 依赖 Finance Domain。
+3. **执行入口新增 Manual 语义方法**：保留 `call_tool_by_id(ctx, tool_id, args)` 作为低层/兼容入口；新增 `call_manual_tool_for_agent(ctx, agent_id, tool_id, args)` 承担消息模式授权校验，避免把所有工具调用都强制绑定到 Agent。
+4. **只允许 Manual**：如果 tool 已绑定但 `control_mode != Manual`，Runtime 返回安全拒绝错误；Auto 工具只能走 Rig/function calling 路径，不走 `ToolCallRequest` 消息模式。
+5. **使用已加载实体执行**：授权查询已经拿到 `Tool` 实体后，必须调用现有 `call_tool(ctx, &tool, args)`，避免再通过 `call_tool_by_id` 做第二次 Tool 查询。
+6. **错误信息 fail-closed**：未绑定、非 Manual、未找到等错误只包含 `agent_id/tool_id/control_mode` 这类安全上下文，不包含 `ToolPo.config`、MCP server command/env/url/header/credential 或调用 args/result。
+
+#### 拟新增 Runtime 接口
+
+```rust
+#[async_trait]
+pub trait RuntimeToolExecution: Send + Sync {
+    async fn call_tool_by_id(
+        &self,
+        ctx: RequestContext,
+        tool_id: String,
+        args: serde_json::Value,
+    ) -> Result<serde_json::Value, rig::tool::ToolError>;
+
+    async fn call_tool(
+        &self,
+        ctx: RequestContext,
+        tool: &crate::models::tool::Tool,
+        args: serde_json::Value,
+    ) -> Result<serde_json::Value, rig::tool::ToolError>;
+
+    async fn call_manual_tool_for_agent(
+        &self,
+        ctx: RequestContext,
+        agent_id: String,
+        tool_id: String,
+        args: serde_json::Value,
+    ) -> Result<serde_json::Value, rig::tool::ToolError>;
+}
+```
+
+#### 拟实现逻辑
+
+```rust
+async fn call_manual_tool_for_agent(
+    &self,
+    ctx: RequestContext,
+    agent_id: String,
+    tool_id: String,
+    args: Value,
+) -> Result<Value, ToolError> {
+    let tools = self.tool_dal
+        .list_tools_for_agent_full(ctx.clone(), &agent_id)
+        .await
+        .map_err(|e| ToolError::ToolCallError(e.to_string().into()))?;
+
+    let tool = tools
+        .into_iter()
+        .find(|tool| tool.po.id == tool_id)
+        .ok_or_else(|| ToolError::ToolCallError(
+            format!("Manual tool call denied: tool {} is not bound to agent {}", tool_id, agent_id).into()
+        ))?;
+
+    if tool.po.control_mode != ControlMode::Manual {
+        return Err(ToolError::ToolCallError(
+            format!("Manual tool call denied: tool {} is not Manual", tool_id).into()
+        ));
+    }
+
+    self.call_tool(ctx, &tool, args).await
+}
+```
+
+> 实现时可按现有错误脱敏风格再抽小 helper，但不要引入新的权限抽象层；先保持最小增量。
+
+#### Consumer 调整
+
+`src/consumer/message.rs` 中 `handle_tool_call_request` 从：
+
+```rust
+.runtime_domain
+.tool_execution()
+.call_tool_by_id(ctx.clone(), tool_call.tool_id.clone(), args)
+```
+
+调整为：
+
+```rust
+.runtime_domain
+.tool_execution()
+.call_manual_tool_for_agent(
+    ctx.clone(),
+    tool_call.from_id.clone(),
+    tool_call.tool_id.clone(),
+    args,
+)
+```
+
+这样 Consumer 仍只做编排，不新增 Tool 查询/绑定判断；授权语义由 Runtime Domain 统一负责。
+
+#### RED 测试清单
+
+1. `runtime_denies_manual_tool_call_when_tool_not_bound_to_agent`
+   - Stub `ToolDal.list_tools_for_agent_full` 返回空；
+   - 调用 `call_manual_tool_for_agent(ctx, "agent-a", "tool-x", args)`；
+   - 断言返回错误包含 deny/not bound，不包含 args/config/credential；
+   - 断言未调用 `ToolDal.call_tool` / `McpToolDal.call_tool`。
+2. `runtime_denies_manual_tool_call_for_bound_auto_tool`
+   - Stub 返回一个已绑定但 `ControlMode::Auto` 的 Tool；
+   - 断言拒绝消息模式执行；
+   - 断言未进入协议路由。
+3. `runtime_executes_bound_manual_mcp_tool_without_second_lookup`
+   - Stub 返回已绑定 Manual MCP Tool；
+   - 断言走 `McpToolDal.call_tool(ctx, &tool, args)`；
+   - 断言不调用 `ToolDal.get_by_id` / `ToolDal.call_tool_by_id`，复用已加载实体。
+4. `runtime_executes_bound_manual_builtin_or_http_tool_via_generic_tool_dal`
+   - Stub 返回已绑定 Manual Builtin/HTTP Tool；
+   - 断言走通用 `ToolDal.call_tool(ctx, &tool, args)`。
+5. `consumer_uses_manual_tool_authorization_entrypoint`
+   - `RecordingRuntimeDomain` 增加 `call_manual_tool_for_agent` 记录；
+   - Consumer 处理 `ToolCallRequest` 后，断言传入 `agent_id == tool_call.from_id`、`tool_id` 与 `args`；
+   - 断言不再调用 `call_tool_by_id`。
+
+#### GREEN 实现顺序
+
+1. 扩展 `RuntimeToolExecution` trait 与 `RecordingRuntimeDomain` 测试桩，先让编译失败定位所有实现点。
+2. 在 `src/service/domain/runtime/tool_execution_test.rs` 写 Runtime 授权 RED 测试，补 `RecordingToolDal` 返回绑定工具列表和调用计数。
+3. 实现 `RuntimeDomainImpl::call_manual_tool_for_agent` 最小逻辑：list → find → control_mode check → `call_tool`。
+4. 调整 `src/consumer/message.rs` 使用 Manual 专用入口，更新 `src/consumer/message_tests.rs` 断言。
+5. 运行目标测试、格式化、`cargo check`、diff 安全扫描、独立 review 后再提交。
+
+#### 验收标准
+
+- 未绑定工具不会被执行；
+- 绑定但 Auto 的工具不会通过消息模式执行；
+- 绑定 Manual MCP Tool 仍走 `McpToolDal.call_tool`，Builtin/HTTP 仍走通用 `ToolDal.call_tool`；
+- 授权通过路径复用 `list_tools_for_agent_full` 得到的 `Tool` 实体，不二次查询 Tool；
+- Consumer 不新增 Tool/DAL/Finance Domain 依赖，只调用 Runtime Domain；
+- 错误文本不泄漏 tool config、MCP server config、外部工具 args/result。
+
 ### 验证命令
 
 每个 Batch 都遵循 TDD：RED → GREEN → VERIFY → REVIEW。最小验证集：
