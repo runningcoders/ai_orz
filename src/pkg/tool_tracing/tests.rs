@@ -93,6 +93,113 @@ fn test_log_and_read_entry_roundtrip() {
 }
 
 #[test]
+fn query_calls_filters_and_returns_latest_matching_entry_by_default() {
+    let temp_dir = tempdir().unwrap();
+    let logger = ToolCallLogger::new(temp_dir.path().to_path_buf());
+
+    let old_entry = ToolCallEntry {
+        call_id: "call-old".to_string(),
+        tool_id: "tool-a".to_string(),
+        tool_name: "Tool A".to_string(),
+        agent_id: Some("agent-1".to_string()),
+        task_id: Some("task-1".to_string()),
+        project_id: Some("project-1".to_string()),
+        started_at: 1000,
+        finished_at: 1100,
+        duration_ms: 100,
+        input: json!({"index": 1}),
+        output: Some(json!({"ok": true})),
+        error: None,
+        status: ToolCallStatus::Completed,
+        metadata: json!(null),
+    };
+    let latest_entry = ToolCallEntry {
+        call_id: "call-latest".to_string(),
+        started_at: 3000,
+        finished_at: 3100,
+        ..old_entry.clone()
+    };
+    let other_agent_entry = ToolCallEntry {
+        call_id: "call-other-agent".to_string(),
+        agent_id: Some("agent-2".to_string()),
+        started_at: 5000,
+        finished_at: 5100,
+        ..old_entry.clone()
+    };
+
+    logger.log_call("tool-a", old_entry).unwrap();
+    logger.log_call("tool-a", latest_entry.clone()).unwrap();
+    logger.log_call("tool-a", other_agent_entry).unwrap();
+
+    let results = logger
+        .query_calls(super::logger::ToolCallQuery {
+            agent_id: Some("agent-1".to_string()),
+            ..Default::default()
+        })
+        .expect("query should succeed");
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].call_id, latest_entry.call_id);
+}
+
+#[test]
+fn query_calls_supports_call_id_and_cross_tool_filters() {
+    let temp_dir = tempdir().unwrap();
+    let logger = ToolCallLogger::new(temp_dir.path().to_path_buf());
+
+    let entry_a = ToolCallEntry {
+        call_id: "shared-filter-call-a".to_string(),
+        tool_id: "tool-a".to_string(),
+        tool_name: "Tool A".to_string(),
+        agent_id: Some("agent-1".to_string()),
+        task_id: Some("task-a".to_string()),
+        project_id: Some("project-1".to_string()),
+        started_at: 1000,
+        finished_at: 1100,
+        duration_ms: 100,
+        input: json!({"tool": "a"}),
+        output: Some(json!({"ok": true})),
+        error: None,
+        status: ToolCallStatus::Completed,
+        metadata: json!(null),
+    };
+    let entry_b = ToolCallEntry {
+        call_id: "target-call".to_string(),
+        tool_id: "tool-b".to_string(),
+        tool_name: "Tool B".to_string(),
+        task_id: Some("task-b".to_string()),
+        status: ToolCallStatus::Failed,
+        started_at: 2000,
+        finished_at: 2100,
+        input: json!({"tool": "b"}),
+        output: None,
+        error: Some("failed".to_string()),
+        ..entry_a.clone()
+    };
+
+    logger.log_call("tool-a", entry_a).unwrap();
+    logger.log_call("tool-b", entry_b.clone()).unwrap();
+
+    let by_call_id = logger
+        .read_call_by_id(None, "target-call")
+        .expect("read by call id should succeed")
+        .expect("target call should exist");
+    assert_eq!(by_call_id.tool_id, "tool-b");
+
+    let failed_for_project = logger
+        .query_calls(super::logger::ToolCallQuery {
+            project_id: Some("project-1".to_string()),
+            status: Some(ToolCallStatus::Failed),
+            limit: Some(10),
+            ..Default::default()
+        })
+        .expect("query should succeed");
+
+    assert_eq!(failed_for_project.len(), 1);
+    assert_eq!(failed_for_project[0].call_id, entry_b.call_id);
+}
+
+#[test]
 fn test_multiple_entries_append_correctly() {
     let temp_dir = tempdir().unwrap();
     let base_path = temp_dir.path().to_path_buf();

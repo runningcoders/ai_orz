@@ -328,7 +328,7 @@ src/service/
 |-------------|------|-----------------|
 | `Text` | 普通文本消息 | 纯文本 |
 | `ToolCallRequest` | 工具调用请求 | JSON 序列化的 `ToolCallRequest` |
-| `ToolCallResult` | 工具调用结果 | JSON 序列化的 `ToolCallResult`；结果消息不复制 request args；成功结果超过 inline 限制时先写入安全 marker，后续再接入 attachment / artifact 引用承载完整结果 |
+| `ToolCallResult` | 工具调用结果 | JSON 序列化的 `ToolCallResult`；结果消息不复制 request args；成功结果超过 inline 限制时先写入安全 marker；当前通过 `call_id` + `tool_id` 关联 tool-specific call trace，完整审计详情通过 Runtime Domain 查询接口读取；`trace_ref` 是后续轻量引用协议字段，attachment / artifact 仅用于产物化或用户下载文件 |
 
 ### 代码组织规范
 
@@ -359,7 +359,7 @@ System Consumer 取出事件 → 仅做编排：调用 Runtime Domain 执行工�
     ↓
 Runtime Domain 完成 Agent 绑定授权、Manual 校验、协议路由与安全错误映射
     ↓
-Message Domain 生成 ToolCallResult → 保存为消息（不复制 request args，大结果 inline bound）
+Message Domain 生成 ToolCallResult → 保存为消息（不复制 request args，大结果 inline bound；当前用 call_id/tool_id 关联完整 ToolCallEntry，trace_ref 后续补协议字段）
     ↓
 Agent 拉取到 ToolCallResult → 继续处理 → 生成最终回复
 ```

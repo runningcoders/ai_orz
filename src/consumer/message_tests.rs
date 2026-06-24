@@ -229,6 +229,22 @@ impl RuntimeToolExecution for RecordingRuntimeDomain {
             Err(error_message) => Err(ToolError::ToolCallError(error_message.into())),
         }
     }
+
+    async fn query_tool_call_entries(
+        &self,
+        _ctx: RequestContext,
+        _query: crate::pkg::tool_tracing::logger::ToolCallQuery,
+    ) -> std::result::Result<Vec<crate::pkg::tool_tracing::entry::ToolCallEntry>, AppError> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn get_tool_call_entry_by_id(
+        &self,
+        _ctx: RequestContext,
+        _query: crate::pkg::tool_tracing::logger::ToolCallQuery,
+    ) -> std::result::Result<Option<crate::pkg::tool_tracing::entry::ToolCallEntry>, AppError> {
+        unimplemented!("not needed by message consumer tests")
+    }
 }
 
 struct RecordingMessageDomain {

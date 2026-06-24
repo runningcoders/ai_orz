@@ -8,7 +8,8 @@ mod tests {
     use crate::models::model_provider::ModelProvider;
     use crate::models::tool::{Tool, ToolPo};
     use crate::pkg::RequestContext;
-    use crate::pkg::tool_tracing::entry::ToolCallEntry;
+    use crate::pkg::tool_tracing::entry::{ToolCallEntry, ToolCallStatus};
+    use crate::pkg::tool_tracing::logger::{ToolCallLogger, ToolCallQuery};
     use crate::service::dal::brain::BrainDal;
     use crate::service::dal::mcp_tool::McpToolDal;
     use crate::service::dal::tool::ToolDal;
@@ -18,6 +19,7 @@ mod tests {
     use rig::tool::{ToolDyn, ToolError};
     use serde_json::{Value, json};
     use std::sync::Arc;
+    use std::sync::Once;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct StubBrainDal;
@@ -355,6 +357,51 @@ mod tests {
         RequestContext::new_simple("test-user", pool)
     }
 
+    fn init_test_tool_call_logger() {
+        static INIT: Once = Once::new();
+        INIT.call_once(|| {
+            let base_path = std::env::temp_dir().join(format!(
+                "ai_orz_runtime_tool_call_query_tests_{}",
+                std::process::id()
+            ));
+            std::fs::create_dir_all(&base_path)
+                .expect("runtime tool call query trace base path should be created");
+            ToolCallLogger::init(base_path);
+        });
+    }
+
+    fn scoped_test_ctx(agent_id: &str, project_id: &str, task_id: &str) -> RequestContext {
+        let mut ctx = test_ctx();
+        ctx.set_agent_id(agent_id);
+        ctx.set_project_id(project_id);
+        ctx.set_task_id(task_id);
+        ctx
+    }
+
+    fn test_tool_call_entry(
+        call_id: &str,
+        tool_id: &str,
+        agent_id: &str,
+        project_id: &str,
+    ) -> ToolCallEntry {
+        ToolCallEntry {
+            call_id: call_id.to_string(),
+            tool_id: tool_id.to_string(),
+            tool_name: tool_id.to_string(),
+            agent_id: Some(agent_id.to_string()),
+            task_id: Some("runtime-task-1".to_string()),
+            project_id: Some(project_id.to_string()),
+            started_at: 1_760_000_000_000,
+            finished_at: 1_760_000_000_100,
+            duration_ms: 100,
+            input: json!({"q": "weather"}),
+            output: Some(json!({"ok": true})),
+            error: None,
+            status: ToolCallStatus::Completed,
+            metadata: json!({"source": "runtime-test"}),
+        }
+    }
+
     fn test_tool_po(tool_id: &str, protocol: ToolProtocol) -> ToolPo {
         test_tool_po_with_control_mode(tool_id, protocol, ControlMode::Manual)
     }
@@ -376,6 +423,239 @@ mod tests {
         );
         po.control_mode = control_mode;
         po
+    }
+
+    #[tokio::test]
+    async fn runtime_query_tool_call_entries_derives_scope_from_context() {
+        init_test_tool_call_logger();
+        let runtime = crate::service::domain::runtime::new_with_tool_dals(
+            Arc::new(StubBrainDal),
+            Arc::new(RecordingToolDal::new(ToolProtocol::Builtin)),
+            Arc::new(RecordingMcpToolDal::new()),
+        );
+        let call_id = format!("runtime-query-{}", uuid::Uuid::now_v7());
+        let entry = test_tool_call_entry(
+            &call_id,
+            "runtime-query-tool",
+            "runtime-agent-1",
+            "runtime-project-1",
+        );
+        ToolCallLogger::get()
+            .log_call("runtime-query-tool", entry.clone())
+            .expect("trace entry should be logged");
+
+        let results = runtime
+            .tool_execution()
+            .query_tool_call_entries(
+                scoped_test_ctx("runtime-agent-1", "runtime-project-1", "runtime-task-1"),
+                ToolCallQuery {
+                    call_id: Some(call_id.clone()),
+                    limit: Some(10),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("runtime query should succeed with context scope");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].call_id, call_id);
+    }
+
+    #[tokio::test]
+    async fn runtime_tool_call_query_requires_access_scope() {
+        init_test_tool_call_logger();
+        let runtime = crate::service::domain::runtime::new_with_tool_dals(
+            Arc::new(StubBrainDal),
+            Arc::new(RecordingToolDal::new(ToolProtocol::Builtin)),
+            Arc::new(RecordingMcpToolDal::new()),
+        );
+
+        let error = runtime
+            .tool_execution()
+            .query_tool_call_entries(test_ctx(), ToolCallQuery::default())
+            .await
+            .expect_err("unscoped tool call query must fail closed");
+
+        assert!(matches!(error, AppError::BadRequest(_)));
+    }
+
+    #[tokio::test]
+    async fn runtime_tool_call_query_rejects_request_scope_without_context_scope() {
+        init_test_tool_call_logger();
+        let runtime = crate::service::domain::runtime::new_with_tool_dals(
+            Arc::new(StubBrainDal),
+            Arc::new(RecordingToolDal::new(ToolProtocol::Builtin)),
+            Arc::new(RecordingMcpToolDal::new()),
+        );
+
+        let error = runtime
+            .tool_execution()
+            .query_tool_call_entries(
+                test_ctx(),
+                ToolCallQuery {
+                    agent_id: Some("user-supplied-agent".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect_err("request-supplied scope without context scope must fail closed");
+
+        assert!(matches!(error, AppError::BadRequest(_)));
+    }
+
+    #[tokio::test]
+    async fn runtime_tool_call_query_rejects_request_scope_without_matching_context_field() {
+        init_test_tool_call_logger();
+        let runtime = crate::service::domain::runtime::new_with_tool_dals(
+            Arc::new(StubBrainDal),
+            Arc::new(RecordingToolDal::new(ToolProtocol::Builtin)),
+            Arc::new(RecordingMcpToolDal::new()),
+        );
+        let mut ctx = test_ctx();
+        ctx.agent_id = Some("runtime-agent-only".to_string());
+
+        let error = runtime
+            .tool_execution()
+            .query_tool_call_entries(
+                ctx,
+                ToolCallQuery {
+                    project_id: Some("user-supplied-project".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect_err(
+                "request-supplied project scope without matching context project must fail closed",
+            );
+
+        assert!(matches!(error, AppError::BadRequest(_)));
+    }
+
+    #[tokio::test]
+    async fn runtime_get_tool_call_entry_by_id_requires_call_id() {
+        init_test_tool_call_logger();
+        let runtime = crate::service::domain::runtime::new_with_tool_dals(
+            Arc::new(StubBrainDal),
+            Arc::new(RecordingToolDal::new(ToolProtocol::Builtin)),
+            Arc::new(RecordingMcpToolDal::new()),
+        );
+
+        let error = runtime
+            .tool_execution()
+            .get_tool_call_entry_by_id(
+                scoped_test_ctx(
+                    "runtime-agent-call-id",
+                    "runtime-project-call-id",
+                    "runtime-task-1",
+                ),
+                ToolCallQuery::default(),
+            )
+            .await
+            .expect_err("detail lookup without call_id must fail closed");
+
+        assert!(matches!(error, AppError::BadRequest(_)));
+    }
+
+    #[tokio::test]
+    async fn runtime_tool_call_query_rejects_over_limit_request() {
+        init_test_tool_call_logger();
+        let runtime = crate::service::domain::runtime::new_with_tool_dals(
+            Arc::new(StubBrainDal),
+            Arc::new(RecordingToolDal::new(ToolProtocol::Builtin)),
+            Arc::new(RecordingMcpToolDal::new()),
+        );
+
+        let error = runtime
+            .tool_execution()
+            .query_tool_call_entries(
+                scoped_test_ctx(
+                    "runtime-agent-limit",
+                    "runtime-project-limit",
+                    "runtime-task-1",
+                ),
+                ToolCallQuery {
+                    limit: Some(crate::pkg::tool_tracing::logger::MAX_TOOL_CALL_QUERY_LIMIT + 1),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect_err("over-limit query must fail closed");
+
+        assert!(matches!(error, AppError::BadRequest(_)));
+    }
+
+    #[tokio::test]
+    async fn runtime_tool_call_query_rejects_scope_conflicting_with_request_context() {
+        init_test_tool_call_logger();
+        let runtime = crate::service::domain::runtime::new_with_tool_dals(
+            Arc::new(StubBrainDal),
+            Arc::new(RecordingToolDal::new(ToolProtocol::Builtin)),
+            Arc::new(RecordingMcpToolDal::new()),
+        );
+
+        let error = runtime
+            .tool_execution()
+            .query_tool_call_entries(
+                scoped_test_ctx("runtime-agent-3", "runtime-project-3", "runtime-task-1"),
+                ToolCallQuery {
+                    project_id: Some("other-project".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect_err("query must not widen or swap scoped context");
+
+        assert!(matches!(error, AppError::BadRequest(_)));
+    }
+
+    #[tokio::test]
+    async fn runtime_get_tool_call_entry_by_id_filters_by_request_scope() {
+        init_test_tool_call_logger();
+        let runtime = crate::service::domain::runtime::new_with_tool_dals(
+            Arc::new(StubBrainDal),
+            Arc::new(RecordingToolDal::new(ToolProtocol::Builtin)),
+            Arc::new(RecordingMcpToolDal::new()),
+        );
+        let call_id = format!("runtime-get-{}", uuid::Uuid::now_v7());
+        let entry = test_tool_call_entry(
+            &call_id,
+            "runtime-get-tool",
+            "runtime-agent-2",
+            "runtime-project-2",
+        );
+        ToolCallLogger::get()
+            .log_call("runtime-get-tool", entry)
+            .expect("trace entry should be logged");
+
+        let mismatched = runtime
+            .tool_execution()
+            .get_tool_call_entry_by_id(
+                scoped_test_ctx("runtime-agent-2", "wrong-project", "runtime-task-1"),
+                ToolCallQuery {
+                    call_id: Some(call_id.clone()),
+                    tool_id: Some("runtime-get-tool".to_string()),
+                    limit: Some(1),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("scoped query should succeed");
+        assert!(mismatched.is_none());
+
+        let matched = runtime
+            .tool_execution()
+            .get_tool_call_entry_by_id(
+                scoped_test_ctx("runtime-agent-2", "runtime-project-2", "runtime-task-1"),
+                ToolCallQuery {
+                    call_id: Some(call_id.clone()),
+                    tool_id: Some("runtime-get-tool".to_string()),
+                    limit: Some(1),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("scoped query should succeed");
+        assert_eq!(matched.expect("entry should match scope").call_id, call_id);
     }
 
     #[tokio::test]

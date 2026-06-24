@@ -284,7 +284,7 @@ Project + Task + Artifact 聚合
 
 | 优先级 | 任务 | 说明 |
 |--------|------|------|
-| **P1** | ToolCallResult 大结果引用承载 | ToolCallResult 已完成不复制 request args 与 inline size bound；下一步需要设计并实现 attachment / artifact 引用承载完整结果 |
+| **P1** | ToolCallResult 产物化引用策略 | ToolCallResult 已完成不复制 request args、inline size bound、基于 call_id/tool_id 的 ToolCallEntry 查询；trace_ref 仍是后续轻量引用协议字段；仅当结果需要用户下载或成为 Project Artifact 时再接入 attachment / artifact |
 | **P1** | Runtime Memory 补充上层语法糖 | 核心接口已完成，可根据业务需要追加便捷方法 |
 | **P1** | message 消费推送全链路 | consumer → domain_message → dal_message_channel；Manual ToolCallRequest → Runtime → ToolCallResult 最小闭环已完成，后续补二次推理与更多 E2E |
 | **P2** | Agent 思考记忆链路 | Agent 触发 → Runtime Memory 读写 |

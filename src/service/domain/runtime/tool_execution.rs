@@ -1,7 +1,10 @@
 //! Runtime Tool Execution 具体实现
 
+use crate::error::AppError;
 use crate::models::tool::Tool;
 use crate::pkg::request_context::RequestContext;
+use crate::pkg::tool_tracing::entry::ToolCallEntry;
+use crate::pkg::tool_tracing::logger::{ToolCallLogger, ToolCallQuery};
 use crate::service::domain::runtime::{RuntimeDomainImpl, RuntimeToolExecution};
 use common::enums::{ControlMode, ToolProtocol, ToolStatus};
 use rig::tool::ToolError;
@@ -85,6 +88,30 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
         }
 
         self.call_tool(ctx, tool, args).await
+    }
+
+    async fn query_tool_call_entries(
+        &self,
+        ctx: RequestContext,
+        query: ToolCallQuery,
+    ) -> Result<Vec<ToolCallEntry>, AppError> {
+        let query = super::tool_call_query::with_context_scope(ctx, query)?;
+        ToolCallLogger::get()
+            .query_calls(query)
+            .map_err(AppError::from)
+    }
+
+    async fn get_tool_call_entry_by_id(
+        &self,
+        ctx: RequestContext,
+        query: ToolCallQuery,
+    ) -> Result<Option<ToolCallEntry>, AppError> {
+        super::tool_call_query::ensure_call_id_present(&query)?;
+        let query = super::tool_call_query::with_context_scope(ctx, query)?;
+        let mut entries = ToolCallLogger::get()
+            .query_calls(query)
+            .map_err(AppError::from)?;
+        Ok(entries.pop())
     }
 }
 

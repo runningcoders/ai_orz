@@ -376,6 +376,14 @@ fn finance_routes() -> Router {
         )
         .route("/tools", post(handlers::finance::tool::create_tool::create_tool_handler))
         .route("/tools", get(handlers::finance::tool::list_tools::list_tools_handler))
+        .route(
+            "/tool-call-entries",
+            get(handlers::finance::tool::query_tool_call_entries_handler),
+        )
+        .route(
+            "/tool-call-entries/{call_id}",
+            get(handlers::finance::tool::get_tool_call_entry_handler),
+        )
         .route("/tools/{id}", get(handlers::finance::tool::get_tool::get_tool_handler))
         .route("/tools/{id}", put(handlers::finance::tool::update_tool::update_tool_handler))
         .route(

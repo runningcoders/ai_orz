@@ -5,7 +5,9 @@ pub mod bind_tool_to_agent;
 pub mod create_tool;
 pub mod delete_tool;
 pub mod get_tool;
+pub mod get_tool_call_entry;
 pub mod list_tools;
+pub mod query_tool_call_entries;
 pub mod unbind_tool_from_agent;
 pub mod update_tool;
 pub mod update_tool_status;
@@ -15,13 +17,17 @@ pub(crate) mod response;
 #[cfg(test)]
 mod response_test;
 #[cfg(test)]
+mod tool_call_entry_test;
+#[cfg(test)]
 mod update_tool_test;
 
 pub use bind_tool_to_agent::bind_tool_to_agent_handler;
 pub use create_tool::create_tool_handler;
 pub use delete_tool::delete_tool_handler;
 pub use get_tool::get_tool_handler;
+pub use get_tool_call_entry::get_tool_call_entry_handler;
 pub use list_tools::list_tools_handler;
+pub use query_tool_call_entries::query_tool_call_entries_handler;
 pub use unbind_tool_from_agent::unbind_tool_from_agent_handler;
 pub use update_tool::update_tool_handler;
 pub use update_tool_status::update_tool_status_handler;

@@ -125,6 +125,20 @@ pub trait RuntimeToolExecution: Send + Sync {
         tool_id: String,
         args: serde_json::Value,
     ) -> Result<serde_json::Value, rig::tool::ToolError>;
+
+    /// Query tool call trace entries with access scope enforced by Runtime Domain.
+    async fn query_tool_call_entries(
+        &self,
+        ctx: RequestContext,
+        query: crate::pkg::tool_tracing::logger::ToolCallQuery,
+    ) -> Result<Vec<crate::pkg::tool_tracing::entry::ToolCallEntry>, AppError>;
+
+    /// Get one tool call trace entry by call ID with access scope enforced by Runtime Domain.
+    async fn get_tool_call_entry_by_id(
+        &self,
+        ctx: RequestContext,
+        query: crate::pkg::tool_tracing::logger::ToolCallQuery,
+    ) -> Result<Option<crate::pkg::tool_tracing::entry::ToolCallEntry>, AppError>;
 }
 
 // ==================== 子模块  ====================
@@ -133,12 +147,14 @@ pub trait RuntimeToolExecution: Send + Sync {
 mod awakening;
 mod context_assembly;
 mod memory;
+mod tool_call_query;
 mod tool_execution;
 
 #[cfg(test)]
 mod tool_execution_test;
 
 pub use context_assembly::{PromptBuilder, build_conversation_prompt};
+pub(crate) use tool_call_query::status_from_dto;
 
 // ==================== 实现 ====================
 

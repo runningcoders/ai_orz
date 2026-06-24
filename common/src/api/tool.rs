@@ -227,3 +227,93 @@ pub struct UnbindToolFromAgentResponse {
     /// Whether unbinding succeeded
     pub success: bool,
 }
+
+/// Tool call status DTO.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+pub enum ToolCallStatusDto {
+    /// Tool invocation has started.
+    Started,
+    /// Tool invocation completed successfully.
+    Completed,
+    /// Tool invocation failed.
+    Failed,
+}
+
+/// Query tool call trace entries.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct QueryToolCallEntriesRequest {
+    /// Exact call ID filter.
+    pub call_id: Option<String>,
+    /// Filter by Agent ID.
+    pub agent_id: Option<String>,
+    /// Filter by Project ID.
+    pub project_id: Option<String>,
+    /// Filter by Task ID.
+    pub task_id: Option<String>,
+    /// Filter by Tool ID.
+    pub tool_id: Option<String>,
+    /// Filter by call status.
+    pub status: Option<ToolCallStatusDto>,
+    /// Inclusive lower bound for started_at unix millis.
+    pub started_after: Option<u64>,
+    /// Inclusive upper bound for started_at unix millis.
+    pub started_before: Option<u64>,
+    /// Max result count. Defaults to 1 (latest matching entry).
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+/// Query tool call trace entries response.
+pub type QueryToolCallEntriesResponse = Vec<ToolCallEntryDetail>;
+
+/// Get one tool call trace entry by call ID.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct GetToolCallEntryRequest {
+    /// Exact call ID.
+    #[param(source = "path")]
+    pub call_id: String,
+    /// Optional Tool ID narrows lookup to one tool trace directory.
+    pub tool_id: Option<String>,
+    /// Optional Agent ID access scope.
+    pub agent_id: Option<String>,
+    /// Optional Project ID access scope.
+    pub project_id: Option<String>,
+    /// Optional Task ID access scope.
+    pub task_id: Option<String>,
+}
+
+/// Get one tool call trace entry response.
+pub type GetToolCallEntryResponse = ToolCallEntryDetail;
+
+/// Tool call trace entry detail.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct ToolCallEntryDetail {
+    /// Unique call ID.
+    pub call_id: String,
+    /// Tool ID.
+    pub tool_id: String,
+    /// Tool display name at call time.
+    pub tool_name: String,
+    /// Agent ID that initiated this call, if available.
+    pub agent_id: Option<String>,
+    /// Task ID associated with this call, if available.
+    pub task_id: Option<String>,
+    /// Project ID associated with this call, if available.
+    pub project_id: Option<String>,
+    /// Start timestamp in unix milliseconds.
+    pub started_at: u64,
+    /// Finish timestamp in unix milliseconds.
+    pub finished_at: u64,
+    /// Duration in milliseconds.
+    pub duration_ms: u64,
+    /// Redacted input arguments captured in trace storage.
+    pub input: serde_json::Value,
+    /// Redacted output result captured in trace storage.
+    pub output: Option<serde_json::Value>,
+    /// Redacted error marker captured in trace storage.
+    pub error: Option<String>,
+    /// Call status.
+    pub status: ToolCallStatusDto,
+    /// Redacted additional trace metadata.
+    pub metadata: serde_json::Value,
+}
