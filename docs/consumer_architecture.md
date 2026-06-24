@@ -574,13 +574,15 @@ System 角色专门负责**工具执行**，不进行 LLM 推理：
 收到 System 角色消息
     ↓
 匹配 MessageType:
-    ├── ToolCallRequest → 执行工具调用
+    ├── ToolCallRequest → 编排 Manual 工具调用
     │       ↓
-    │   从工具注册表查询 tool_name
-    │   校验参数完整性
-    │   执行 tool.call(ctx, args)
-    │   捕获执行结果或错误
-    │   构造 ToolCallResult 消息
+    │   解析 ToolCallRequest 消息内容
+    │   构造 RequestContext(agent_id/project_id/task_id)
+    │   调用 Runtime Domain: call_manual_tool_for_agent(ctx, agent_id, tool_id, args)
+    │   Runtime Domain 负责 Agent 绑定授权、Manual 校验与 Builtin/HTTP/MCP 协议路由
+    │   捕获已脱敏执行结果或错误
+    │   调用 Message Domain: send_tool_call_result(...)
+    │   Message Domain 负责 ToolCallResult 消息形状、不复制 request args 与大结果 inline bound
     │   发回给 Agent 角色
     │
     └── 其他类型 → 记录日志后丢弃（System 不处理非工具消息）

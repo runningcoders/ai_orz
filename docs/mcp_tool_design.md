@@ -1305,7 +1305,9 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 
 ### Phase 6：安全、管理面和完整测试
 
-状态：Phase 5 的最小运行闭环已经完成，Phase 6 不再补“能调用”的主链路，而是补安全策略、管理面一致性、结果承载和更完整的集成测试。**Batch G：MCP ToolCallResult 结果边界与端到端脱敏测试已完成第一步安全闭环**：结果消息不再复制 request args，成功结果在写入 `message.content` 前执行 inline size bound，超限时使用安全 marker。下一步进入 streamable HTTP 与连接缓存增强。
+状态：Phase 5 的最小运行闭环已经完成，Phase 6 不再补“能调用”的主链路，而是补安全策略、管理面一致性、结果承载和更完整的集成测试。**Batch G：MCP ToolCallResult 结果边界与端到端脱敏测试已完成第一步安全闭环**：结果消息不再复制 request args，成功结果在写入 `message.content` 前执行 inline size bound，超限时使用安全 marker。
+
+**当前推荐下一步：先做 Batch H（MCP 管理面状态与同步一致性）**。原因是运行闭环已经可用，继续扩展 streamable HTTP / session cache 前，应先明确 synced tool 在远端删除、改名、重新出现时的本地状态语义，避免 Agent 仍绑定或看到已经不存在的远端工具。ToolCallResult attachment 持久化也值得做，但它涉及 Message Domain 与 Finance Attachment / Artifact 的结果承载边界，建议单独设计后再进入实现。
 
 建议拆分：
 
@@ -1316,7 +1318,10 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
    - ✅ Consumer 仍只做编排，不处理协议判断、授权校验、脱敏或结果承载策略；
    - ✅ 目标测试覆盖失败结果不泄漏 request args、成功大结果被安全 marker 替换。
 2. **Batch H：MCP 管理面状态与同步一致性**
-   - 处理远端删除/改名后的 synced tool 策略：禁用、软删除或 stale 标记；
+   - 明确远端删除/改名后的 synced tool 策略：推荐新增 `ToolStatus::Stale` 或等价同步状态，避免直接复用 `Disabled` 导致“管理员手动禁用”和“远端已消失”语义混淆；
+   - 远端缺失时保留本地 `ToolPo`、Agent 绑定和审计信息，但将工具从 Prompt 可见列表与 Runtime 可执行路径中排除；
+   - 远端重新出现时只更新可同步元数据，是否从 `Stale` 自动恢复为 `Enabled` 需要显式策略，避免覆盖管理员手动状态；
+   - 远端改名按“旧 tool 缺失 + 新 tool 新增”处理，因为当前标准 ID 包含 `server_id/tool_name`；
    - 补充重新 sync 时对 Agent 绑定、audit/status 保留策略的回归测试；
    - 管理面 detail/list 继续只返回脱敏配置，不暴露 server command/env/header/credential。
 3. **Batch I：streamable HTTP MCP runtime**
@@ -1336,11 +1341,12 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 - ✅ per-operation stdio session 下的并发同 server 调用策略验证；
 - ✅ ToolCallResult 结果边界第一步：结果消息不复制 request args，成功大结果超限时使用安全 inline marker。
 
-仍待补强：
+仍待补强（推荐顺序）：
 
-- synced tool stale/reconcile 管理策略；
-- streamable HTTP runtime；
-- session cache / reconnect / health check（仅在明确需要长连接复用时做）。
+1. synced tool stale/reconcile 管理策略（Batch H，优先）；
+2. ToolCallResult attachment / artifact 引用承载策略（单独设计，解决大结果完整保存）；
+3. streamable HTTP runtime（继承 HTTP Tool 安全策略后再做）；
+4. session cache / reconnect / health check（仅在明确需要长连接复用时做）。
 
 ### 后续增强：连接生命周期增强
 
@@ -1358,6 +1364,6 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 
 1. stdio `command` 是否采用 allowlist？allowlist 放配置还是代码常量？
 2. MCP Server 是否只允许管理员配置？
-3. MCP Tool 同步时，远端删除的 tool 是禁用、软删除，还是保留 stale 状态？
+3. MCP Tool 同步时，远端删除的 tool 是禁用、软删除，还是保留 stale 状态？当前建议优先采用 stale 语义，保留本地记录与绑定但禁止 Prompt 展示和 Runtime 执行。
 4. MCP trace 默认全脱敏已作为第一版安全默认值落地；后续是否需要按 server/tool 配置 trace policy？
 5. 大型 MCP ToolCallResult 是直接截断、写入 attachment，还是写入 Artifact/文件引用？

@@ -284,10 +284,9 @@ Project + Task + Artifact 聚合
 
 | 优先级 | 任务 | 说明 |
 |--------|------|------|
-| **P0** | domain_project 补充 Handler | 内部已完成，仅需暴露 API |
-| **P0** | domain_tool 补充 Handler | 内部已完成，仅需暴露 API |
+| **P0** | Tool / MCP Tool 运行面状态一致性 | Tool 管理 API 与 MCP Tool sync/list 已接入；下一步补 synced tool stale/reconcile 语义，远端删除/改名时保留本地 ToolPo/绑定/审计，但排除 Prompt 可见与 Runtime 执行 |
 | **P1** | Runtime Memory 补充上层语法糖 | 核心接口已完成，可根据业务需要追加便捷方法 |
-| **P1** | message 消费推送全链路 | consumer → domain_message → dal_message_channel |
+| **P1** | message 消费推送全链路 | consumer → domain_message → dal_message_channel；Manual ToolCallRequest → Runtime → ToolCallResult 最小闭环已完成，后续补二次推理与更多 E2E |
 | **P2** | Agent 思考记忆链路 | Agent 触发 → Runtime Memory 读写 |
 
 ---
