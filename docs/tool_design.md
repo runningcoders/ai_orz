@@ -290,6 +290,12 @@ pub struct ToolCallEntry {
 }
 ```
 
+查询能力（Batch I 已完成）：
+- `ToolCallLogger` 支持按 `call_id`、`tool_id`、`agent_id`、`project_id`、`task_id`、`status`、时间范围和 `limit` 扫描 tool-specific daily JSONL；
+- 默认返回最新匹配记录（`limit = 1`），并设置最大 `limit` 防止无界 IO/内存放大；
+- Runtime Domain 负责 scope 边界：查询必须从 `RequestContext` 派生可信 `agent_id/project_id/task_id`，request scope 只能收窄且必须与同字段 context scope 匹配；
+- HTTP handler 返回 `ToolCallEntryDetail` 前统一脱敏 `input/output/error/metadata`，公共 API 不暴露 JSONL date、line number 或文件路径。
+
 ### 核心设计决策
 
 | 问题 | 方案 | 原因 |
@@ -318,12 +324,10 @@ pub struct ToolCallEntry {
 
 ## 后续待扩展
 
-1. **添加第一个内置工具**：现在基础架构已完成，可以开始实现具体工具
-2. **HTTP 协议工具支持**：目前是占位结构，待实现
-3. **MCP 协议工具支持**：目前是占位结构，待实现
-4. **ToolEmbedding 语义自动选择**：基于 embedding 做工具相关性排序，减少上下文
-5. **运行时动态加载工具**：从数据库读取配置创建工具实例
-6. **启动时自动同步所有内置工具到数据库**：数据库和代码保持一致，支持工具管理界面
+1. **ToolCallResult trace_ref 协议字段**：基于已完成的 ToolCallEntry 查询能力，在结果消息中显式携带 `{ tool_id, call_id }` 轻量引用
+2. **ToolCallResult 产物化引用策略**：仅当结果需要用户下载或成为 Project Artifact 时接入 attachment / artifact
+3. **ToolEmbedding 语义自动选择**：基于 embedding 做工具相关性排序，减少上下文
+4. **运行时动态加载工具增强**：在现有 Builtin/HTTP/MCP 基础上继续完善生命周期、缓存和健康检查
 
 ---
 

@@ -1391,9 +1391,10 @@ xxx
 
 | 优先级 | 任务 | 说明 |
 |--------|------|------|
-| **P1** | 工具调用二次推理 | Agent 收到 ToolCallResult 后继续推理并生成最终用户答复 |
+| **P1** | ToolCallResult trace_ref 协议字段 | 在已完成 call_id/tool_id 查询 API 基础上，让结果消息显式携带 `{ tool_id, call_id }` 轻量引用，避免模型/前端只能从 content 推断 |
+| **P1** | 工具调用二次推理 | Agent 收到 ToolCallResult 后继续推理并生成最终用户答复；可使用 trace_ref/call_id 按需读取完整 ToolCallEntry |
 | **P1** | Trace ID 关联逻辑 | 从 `message.reply_to_id` 追溯历史 Trace 链 |
-| **P2** | 工具调用框架增强 | 在已完成 Manual ToolCallRequest → Runtime → ToolCallResult 最小闭环基础上，补二次推理与更多 E2E 场景 |
+| **P2** | 工具调用框架增强 | 在已完成 Manual ToolCallRequest → Runtime → ToolCallResult 最小闭环和 ToolCallEntry 查询基础上，补二次推理与更多 E2E 场景 |
 | **P3** | 技能注入 | 根据 Agent 角色动态注入技能说明 |
 | **P3** | 单元测试覆盖 | 各模块测试用例 |
 
@@ -1635,7 +1636,8 @@ async fn write_thinking_trace(
 
 | 优先级 | 任务 | 说明 |
 |--------|------|------|
-| **P1** | 工具调用二次推理 | Agent 收到 ToolCallResult 后继续推理并生成最终用户答复 |
+| **P1** | ToolCallResult trace_ref 协议字段 | 在已完成 `call_id` / `tool_id` 查询 API 基础上，把轻量引用显式写入结果协议，最小字段为 `{ tool_id, call_id }`，不暴露 JSONL date/line/path |
+| **P1** | 工具调用二次推理 | Agent 收到 ToolCallResult 后继续推理并生成最终用户答复；必要时通过 trace_ref/call_id 查询完整 ToolCallEntry |
 | **P1** | ToolCallResult 产物化引用策略 | 仅当结果需要用户下载或成为 Project Artifact 时接入 attachment / artifact，不作为普通工具审计详情的默认存储 |
 | **P1** | Trace ID 关联链 | 从 `message.reply_to_id` 追溯历史 Trace 链，构建完整对话树 |
 | **P2** | 技能动态注入 | 根据 Agent 角色和当前场景，动态注入技能说明 |
@@ -1646,10 +1648,11 @@ async fn write_thinking_trace(
 
 ## 下一步讨论方向
 
-1. **工具调用二次推理**（P1，让 Agent 消费 ToolCallResult 后继续完成用户任务）
-2. **ToolCallResult attachment / artifact 产物化引用策略**（P1，仅当结果需要用户下载或成为 Project Artifact 时接入）
-3. **Trace ID 关联链实现**（P1，完善 `message.reply_to_id` 追溯能力）
-4. **streamable HTTP MCP runtime**（P2，继承 HTTP Tool SSRF/header/redirect 安全策略后再做）
-5. **技能动态注入策略**（P2，Agent 能力扩展）
+1. **ToolCallResult trace_ref 协议字段**（P1，基于已完成的 call_id/tool_id 查询 API，让结果消息显式携带轻量引用）
+2. **工具调用二次推理**（P1，让 Agent 消费 ToolCallResult 后继续完成用户任务；必要时通过 trace_ref 查询完整 ToolCallEntry）
+3. **ToolCallResult attachment / artifact 产物化引用策略**（P1，仅当结果需要用户下载或成为 Project Artifact 时接入）
+4. **Trace ID 关联链实现**（P1，完善 `message.reply_to_id` 追溯能力）
+5. **streamable HTTP MCP runtime**（P2，继承 HTTP Tool SSRF/header/redirect 安全策略后再做）
+6. **技能动态注入策略**（P2，Agent 能力扩展）
 
 
