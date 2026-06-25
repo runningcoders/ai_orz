@@ -7,7 +7,7 @@
 //! - 原始记忆不可修改不可删除，只能追加
 
 use crate::config;
-use crate::error::AppError;
+use common::error::Error;
 use crate::models::memory::{
     KnowledgeNodeRelationPo, KnowledgeReferencePo, LongTermKnowledgeNodePo, MemoryTrace,
     MemoryTracePosition, ShortTermMemoryIndexPo,
@@ -65,7 +65,7 @@ impl MemoryDaoSqliteImpl {
     pub fn read_memory_reference(
         &self,
         reference: &KnowledgeReferencePo,
-    ) -> Result<String, AppError> {
+    ) -> Result<String> {
         // Full path: agent memory dir + date file name
         let agent_id = reference
             .knowledge_id
@@ -89,7 +89,7 @@ impl MemoryDao for MemoryDaoSqliteImpl {
         &self,
         _ctx: RequestContext,
         trace: &MemoryTrace,
-    ) -> Result<MemoryTracePosition, AppError> {
+    ) -> Result<MemoryTracePosition> {
         let agent_dir = self.agent_memory_dir(&trace.agent_id);
         let writer = crate::pkg::daily_jsonl::DailyJsonlWriter::new(agent_dir);
         let (date, line_number) = writer.append(trace)?;
@@ -104,7 +104,7 @@ impl MemoryDao for MemoryDaoSqliteImpl {
         &self,
         _ctx: RequestContext,
         traces: &[MemoryTrace],
-    ) -> Result<Vec<MemoryTracePosition>, AppError> {
+    ) -> Result<Vec<MemoryTracePosition>> {
         if traces.is_empty() {
             return Ok(Vec::new());
         }
@@ -126,7 +126,7 @@ impl MemoryDao for MemoryDaoSqliteImpl {
         &self,
         ctx: RequestContext,
         index: ShortTermMemoryIndexPo,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let pool = self.pool(ctx);
         let status_i32 = index.status as i32;
         sqlx::query!(
@@ -155,7 +155,7 @@ INSERT INTO short_term_memory_index (
         &self,
         ctx: RequestContext,
         index: ShortTermMemoryIndexPo,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let pool = self.pool(ctx);
         let status_i32 = index.status as i32;
         let result = sqlx::query!(
@@ -185,15 +185,12 @@ WHERE id = ?
         .await?;
 
         if result.rows_affected() == 0 {
-            return Err(AppError::NotFound(format!(
-                "short_term_memory_index id={} not found",
-                index.id
-            )));
+            bail_err!(ResourceNotFound, "short_term_memory_index id={} not found", index.id);
         }
         Ok(())
     }
 
-    async fn forget_short_term_index(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
+    async fn forget_short_term_index(&self, ctx: RequestContext, id: &str) -> Result<()> {
         use common::enums::MemoryStatus;
         let pool = self.pool(ctx);
         let now = chrono::Utc::now().timestamp();
@@ -219,7 +216,7 @@ WHERE id = ?
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<ShortTermMemoryIndexPo>, AppError> {
+    ) -> Result<Option<ShortTermMemoryIndexPo>> {
         use common::enums::MemoryStatus;
         let pool = self.pool(ctx);
         let index = sqlx::query_as!(
@@ -242,7 +239,7 @@ WHERE id = ? AND status != 0
         ctx: RequestContext,
         agent_id: &str,
         limit: usize,
-    ) -> Result<Vec<ShortTermMemoryIndexPo>, AppError> {
+    ) -> Result<Vec<ShortTermMemoryIndexPo>> {
         self.query_short_term(
             ctx,
             MemoryQuery {
@@ -258,7 +255,7 @@ WHERE id = ? AND status != 0
         &self,
         ctx: RequestContext,
         query: MemoryQuery,
-    ) -> Result<Vec<ShortTermMemoryIndexPo>, AppError> {
+    ) -> Result<Vec<ShortTermMemoryIndexPo>> {
         use common::enums::MemoryStatus;
         use sqlx::QueryBuilder;
 
@@ -321,7 +318,7 @@ FROM short_term_memory_index WHERE 1=1"#,
         &self,
         ctx: RequestContext,
         search: MemorySearch,
-    ) -> Result<Vec<ShortTermMemoryIndexPo>, AppError> {
+    ) -> Result<Vec<ShortTermMemoryIndexPo>> {
         use common::enums::MemoryStatus;
         let pool = self.pool(ctx);
 
@@ -351,7 +348,7 @@ LIMIT ?
         Ok(indexes)
     }
 
-    fn read_memory_content(&self, _index: &ShortTermMemoryIndexPo) -> Result<String, AppError> {
+    fn read_memory_content(&self, _index: &ShortTermMemoryIndexPo) -> Result<String> {
         // 原始文件读取由上层业务处理，这里直接返回空字符串占位
         Ok(String::new())
     }
@@ -362,7 +359,7 @@ LIMIT ?
         &self,
         ctx: RequestContext,
         node: &LongTermKnowledgeNodePo,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let pool = self.pool(ctx);
 
         // 先试试更新，如果不存在就插入
@@ -426,7 +423,7 @@ INSERT INTO long_term_knowledge_node (
         &self,
         ctx: RequestContext,
         node: &LongTermKnowledgeNodePo,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let pool = self.pool(ctx);
         let status_i32 = node.status as i32;
         let result = sqlx::query!(
@@ -454,10 +451,7 @@ WHERE id = ?
         .await?;
 
         if result.rows_affected() == 0 {
-            return Err(AppError::NotFound(format!(
-                "long_term_knowledge_node id={} not found",
-                node.id
-            )));
+            bail_err!(ResourceNotFound, "long_term_knowledge_node id={} not found", node.id);
         }
         Ok(())
     }
@@ -466,7 +460,7 @@ WHERE id = ?
         &self,
         ctx: RequestContext,
         nodes: &[LongTermKnowledgeNodePo],
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let pool = self.pool(ctx);
         let mut tx = pool.begin().await?;
 
@@ -532,7 +526,7 @@ INSERT INTO long_term_knowledge_node (
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<LongTermKnowledgeNodePo>, AppError> {
+    ) -> Result<Option<LongTermKnowledgeNodePo>> {
         use common::enums::MemoryStatus;
         let pool = self.pool(ctx);
         let node = sqlx::query_as!(
@@ -556,7 +550,7 @@ WHERE id = ? AND status != 0
         agent_id: &str,
         node_type: Option<&str>,
         limit: usize,
-    ) -> Result<Vec<LongTermKnowledgeNodePo>, AppError> {
+    ) -> Result<Vec<LongTermKnowledgeNodePo>> {
         self.query_knowledge_nodes(
             ctx,
             MemoryQuery {
@@ -579,7 +573,7 @@ WHERE id = ? AND status != 0
         &self,
         ctx: RequestContext,
         query: MemoryQuery,
-    ) -> Result<Vec<LongTermKnowledgeNodePo>, AppError> {
+    ) -> Result<Vec<LongTermKnowledgeNodePo>> {
         use common::enums::MemoryStatus;
         use sqlx::QueryBuilder;
 
@@ -650,7 +644,7 @@ FROM long_term_knowledge_node WHERE 1=1"#,
         &self,
         ctx: RequestContext,
         search: MemorySearch,
-    ) -> Result<Vec<LongTermKnowledgeNodePo>, AppError> {
+    ) -> Result<Vec<LongTermKnowledgeNodePo>> {
         use common::enums::MemoryStatus;
         let pool = self.pool(ctx);
 
@@ -682,8 +676,12 @@ LIMIT ?
         Ok(nodes)
     }
 
-    async fn delete_knowledge_node(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
+    async fn delete_knowledge_node(&self, ctx: RequestContext, id: &str) -> Result<()> {
         use common::enums::MemoryStatus;
+use common::{err, bail_err};
+use common::error::Result;
+use common::err;
+use common::bail_err;
         let pool = self.pool(ctx);
         let now = chrono::Utc::now().timestamp();
         let status_i32 = MemoryStatus::Forgotten as i32;
@@ -708,7 +706,7 @@ WHERE id = ?
         &self,
         ctx: RequestContext,
         reference: &KnowledgeReferencePo,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let pool = self.pool(ctx);
 
         sqlx::query!(
@@ -735,7 +733,7 @@ INSERT INTO knowledge_reference (
         &self,
         ctx: RequestContext,
         references: &[KnowledgeReferencePo],
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let pool = self.pool(ctx);
         let mut tx = pool.begin().await?;
 
@@ -766,7 +764,7 @@ INSERT INTO knowledge_reference (
         &self,
         ctx: RequestContext,
         knowledge_id: &str,
-    ) -> Result<Vec<KnowledgeReferencePo>, AppError> {
+    ) -> Result<Vec<KnowledgeReferencePo>> {
         let pool = self.pool(ctx);
         let references = sqlx::query_as!(
             KnowledgeReferencePo,
@@ -790,7 +788,7 @@ ORDER BY created_at ASC
         &self,
         ctx: RequestContext,
         relation: &KnowledgeNodeRelationPo,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let pool = self.pool(ctx);
         let relation_type_str = relation.relation_type.to_string();
 
@@ -817,7 +815,7 @@ INSERT INTO knowledge_node_relation (
         &self,
         ctx: RequestContext,
         relations: &[KnowledgeNodeRelationPo],
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let pool = self.pool(ctx);
         let mut tx = pool.begin().await?;
 
@@ -848,7 +846,7 @@ INSERT INTO knowledge_node_relation (
         &self,
         ctx: RequestContext,
         relation: &KnowledgeNodeRelationPo,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let pool = self.pool(ctx);
         let relation_type_str = relation.relation_type.to_string();
 
@@ -880,7 +878,7 @@ ON CONFLICT(id) DO UPDATE SET
         &self,
         ctx: RequestContext,
         source_id: &str,
-    ) -> Result<Vec<KnowledgeNodeRelationPo>, AppError> {
+    ) -> Result<Vec<KnowledgeNodeRelationPo>> {
         let pool = self.pool(ctx);
         // sqlx 不自动映射枚举，需要手动处理
         let rows = sqlx::query!(
@@ -915,7 +913,7 @@ ORDER BY created_at ASC
         &self,
         ctx: RequestContext,
         target_id: &str,
-    ) -> Result<Vec<KnowledgeNodeRelationPo>, AppError> {
+    ) -> Result<Vec<KnowledgeNodeRelationPo>> {
         let pool = self.pool(ctx);
         let rows = sqlx::query!(
             r#"
@@ -949,7 +947,7 @@ ORDER BY created_at ASC
         &self,
         ctx: RequestContext,
         node_id: &str,
-    ) -> Result<Vec<KnowledgeNodeRelationPo>, AppError> {
+    ) -> Result<Vec<KnowledgeNodeRelationPo>> {
         let pool = self.pool(ctx);
         let rows = sqlx::query!(
             r#"
@@ -984,7 +982,7 @@ ORDER BY created_at ASC
         &self,
         ctx: RequestContext,
         relation_id: &str,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let pool = self.pool(ctx);
 
         sqlx::query!(
@@ -1001,7 +999,7 @@ ORDER BY created_at ASC
         &self,
         ctx: RequestContext,
         node_id: &str,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let pool = self.pool(ctx);
         let mut tx = pool.begin().await?;
 
@@ -1030,7 +1028,7 @@ ORDER BY created_at ASC
         ctx: RequestContext,
         source_id: &str,
         relation_type: KnowledgeRelationType,
-    ) -> Result<Vec<KnowledgeNodeRelationPo>, AppError> {
+    ) -> Result<Vec<KnowledgeNodeRelationPo>> {
         let pool = self.pool(ctx);
         let relation_type_str = relation_type.to_string();
         let rows = sqlx::query!(

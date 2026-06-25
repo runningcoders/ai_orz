@@ -1,11 +1,13 @@
 //! Handler: GET /api/v1/projects - List all projects for a user with optional filtering
 
 use super::response;
-use crate::error::AppError;
+use common::bail_err;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListProjectsRequest, ProjectListItem};
+use common::error::Result;
+use common::err;
 
 /// List all projects for a user with optional filtering
 #[register_handler_tool(
@@ -18,10 +20,10 @@ use common::api::{ListProjectsRequest, ProjectListItem};
 pub async fn list_projects(
     ctx: RequestContext,
     params: ListProjectsRequest,
-) -> Result<Vec<ProjectListItem>, AppError> {
+) -> Result<Vec<ProjectListItem>> {
     let root_user_id = params.root_user_id.unwrap_or_else(|| ctx.uid());
     if root_user_id.is_empty() {
-        return Err(AppError::BadRequest("root_user_id 不能为空".to_string()));
+        bail_err!(InvalidRequest, "当前请求缺少用户上下文");
     }
 
     let projects = domain()

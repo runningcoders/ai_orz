@@ -1,3 +1,5 @@
+use common::error::Result;
+use common::bail_err;
 // 导入 lib crate 的所有宏
 #[macro_use]
 extern crate ai_orz;

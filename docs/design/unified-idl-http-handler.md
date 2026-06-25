@@ -79,6 +79,7 @@ pub struct UpdateSkillFileContentParams {
 - 组装成完整的 `Params` 结构体（先反序列化 body，然后用 query 覆盖，最后用 path 覆盖）
 - 调用用户的核心函数
 - 将返回值包装成 `Json<ApiResponse<Output>>`
+- 错误分支后续统一通过 `common::error::{ErrorCode, Error}` 映射，保持 HTTP wire format `{ code, message, data }` 兼容，同时让 HTTP handler 与 LLM 工具调用共享同一套错误契约；详见 `docs/design/common-error-type.md`
 
 **生成的代码示例：**
 
@@ -318,4 +319,5 @@ pub async fn update_skill_file_content_handler(
 
  | 日期 | 更新内容 | 作者 |
  |------|----------|------|
+ | 2026-06-25 | 补充 common 统一错误类型目标：后续错误分支统一映射到 `common::error::{ErrorCode, Error}`，HTTP 与 LLM 工具调用共享错误契约，wire format 继续兼容 `{ code, message, data }` | Hermes |
  | 2026-06-21 | 初始设计文档完成，完整支持 `#[param(source = "path")]` `#[param(source = "query")]`，最终方案采用 `#[derive(Params)]` + `#[param]`，不需要 nightly，完全稳定可用。优先级 `path > query > body` | AI Orz |

@@ -88,6 +88,7 @@ impl SkillPo {
 // ==================== Skill 业务聚合实体 ====================
 
 use crate::models::vector::{SearchMatchInfo, Vectorizable};
+use common::bail_err;
 
 /// 技能完整业务实体（PO + 文件系统内容 + 搜索元信息）
 ///

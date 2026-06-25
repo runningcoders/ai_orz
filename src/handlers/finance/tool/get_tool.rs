@@ -1,12 +1,13 @@
 //! Handler: GET /api/v1/tools/{id} - Get tool detailed information
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetToolRequest, GetToolResponse};
 
 use super::response::to_detail;
+use common::bail_err;
 
 /// Get detailed information about a specific tool including configuration
 #[register_handler_tool(
@@ -19,12 +20,12 @@ use super::response::to_detail;
 pub async fn get_tool(
     ctx: RequestContext,
     params: GetToolRequest,
-) -> Result<GetToolResponse, AppError> {
+) -> Result<GetToolResponse> {
     let tool = domain()
         .tool_provider_manage()
         .get_tool(ctx, &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Tool {} not found", params.id)))?;
+        .ok_or_else(|| common::error::Error::not_found(format!("Tool {} not found", params.id)))?;
 
     Ok(to_detail(&tool))
 }

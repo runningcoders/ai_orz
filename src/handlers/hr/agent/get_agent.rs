@@ -1,10 +1,11 @@
 //! Handler: GET /api/v1/agents/{id} - Get agent detailed information
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetAgentRequest, GetAgentResponse};
+use common::bail_err;
 
 /// Get detailed information about an AI agent
 #[register_handler_tool(
@@ -17,12 +18,12 @@ use common::api::{GetAgentRequest, GetAgentResponse};
 pub async fn get_agent(
     ctx: RequestContext,
     params: GetAgentRequest,
-) -> Result<GetAgentResponse, AppError> {
+) -> Result<GetAgentResponse> {
     let agent = domain()
         .agent_manage()
         .get_agent(ctx, &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Agent {} not found", params.id)))?;
+        .ok_or_else(|| common::error::Error::not_found(format!("Agent {} not found", params.id)))?;
 
     let capabilities: Vec<String> = agent.po.get_capabilities();
     let roles: Vec<String> = agent.po.get_roles();

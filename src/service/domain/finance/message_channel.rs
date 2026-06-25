@@ -2,11 +2,12 @@
 //!
 //! 消息渠道配置管理：CRUD + 查询
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::FinanceDomainImpl;
 use async_trait::async_trait;
+use common::bail_err;
 
 /// 为 FinanceDomainImpl 实现 MessageChannelManage
 #[async_trait]
@@ -15,7 +16,7 @@ impl super::MessageChannelManage for FinanceDomainImpl {
         &self,
         ctx: RequestContext,
         channel: &MessageChannel,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         self.message_channel_dal.create_channel(ctx, channel).await
     }
 
@@ -23,7 +24,7 @@ impl super::MessageChannelManage for FinanceDomainImpl {
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<MessageChannel>, AppError> {
+    ) -> Result<Option<MessageChannel>> {
         self.message_channel_dal.get_channel(ctx, id).await
     }
 
@@ -31,14 +32,14 @@ impl super::MessageChannelManage for FinanceDomainImpl {
         &self,
         ctx: RequestContext,
         query: crate::service::dao::message_channel::MessageChannelQuery,
-    ) -> Result<Vec<MessageChannel>, AppError> {
+    ) -> Result<Vec<MessageChannel>> {
         self.message_channel_dal.query_channels(ctx, query).await
     }
 
     async fn list_message_channels(
         &self,
         ctx: RequestContext,
-    ) -> Result<Vec<MessageChannel>, AppError> {
+    ) -> Result<Vec<MessageChannel>> {
         // 没有全局 list_all，用 query 替代
         let query = crate::service::dao::message_channel::MessageChannelQuery::default();
         self.message_channel_dal.query_channels(ctx, query).await
@@ -48,7 +49,7 @@ impl super::MessageChannelManage for FinanceDomainImpl {
         &self,
         ctx: RequestContext,
         channel: &MessageChannel,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         self.message_channel_dal.update_channel(ctx, channel).await
     }
 
@@ -56,7 +57,7 @@ impl super::MessageChannelManage for FinanceDomainImpl {
         &self,
         ctx: RequestContext,
         channel: &MessageChannel,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         self.message_channel_dal
             .delete_channel(ctx, &channel.po.id)
             .await
@@ -66,7 +67,7 @@ impl super::MessageChannelManage for FinanceDomainImpl {
         &self,
         ctx: RequestContext,
         channel: &MessageChannel,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         self.message_channel_dal
             .test_channel(ctx, &channel.po.id)
             .await

@@ -7,13 +7,14 @@
 pub mod org;
 pub mod user;
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::models::organization::OrganizationPo;
 use crate::pkg::RequestContext;
 use crate::service::dal::organization;
 use crate::service::dal::user as user_dal;
 use async_trait::async_trait;
 use std::sync::{Arc, OnceLock};
+use common::bail_err;
 // ==================== 单例 ====================
 
 static ORGANIZATION_DOMAIN: OnceLock<Arc<dyn OrganizationDomain>> = OnceLock::new();
@@ -80,7 +81,7 @@ pub trait OrganizationDomain: Send + Sync {
 #[async_trait]
 pub trait OrganizationManage: Send + Sync {
     /// 检查系统是否已经初始化
-    async fn check_initialized(&self, ctx: RequestContext) -> Result<bool, AppError>;
+    async fn check_initialized(&self, ctx: RequestContext) -> Result<bool>;
 
     /// 初始化系统：创建第一个组织和第一个超级管理员用户
     ///
@@ -94,14 +95,14 @@ pub trait OrganizationManage: Send + Sync {
         password_hash: String,
         display_name: Option<String>,
         email: Option<String>,
-    ) -> Result<(String, String), AppError>;
+    ) -> Result<String>;
 
     /// 获取组织信息
     async fn get_by_id(
         &self,
         ctx: RequestContext,
         org_id: &str,
-    ) -> Result<Option<OrganizationPo>, AppError>;
+    ) -> Result<Option<OrganizationPo>>;
 
     /// 通用综合查询
     ///
@@ -110,19 +111,19 @@ pub trait OrganizationManage: Send + Sync {
         &self,
         ctx: RequestContext,
         query: crate::service::dao::organization::OrganizationQuery,
-    ) -> Result<Vec<OrganizationPo>, AppError>;
+    ) -> Result<Vec<OrganizationPo>>;
 
     /// 获取所有组织列表
-    async fn list_all(&self, ctx: RequestContext) -> Result<Vec<OrganizationPo>, AppError>;
+    async fn list_all(&self, ctx: RequestContext) -> Result<Vec<OrganizationPo>>;
 
     /// 更新组织信息
-    async fn update(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<(), AppError>;
+    async fn update(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<()>;
 
     /// 删除组织（软删除）
-    async fn delete(&self, ctx: RequestContext, org_id: &str) -> Result<(), AppError>;
+    async fn delete(&self, ctx: RequestContext, org_id: &str) -> Result<()>;
 
     /// 统计组织总数
-    async fn count_organizations(&self, ctx: RequestContext) -> Result<u64, AppError>;
+    async fn count_organizations(&self, ctx: RequestContext) -> Result<u64>;
 }
 
 /// 用户管理 trait
@@ -135,7 +136,7 @@ pub trait UserManage: Send + Sync {
         &self,
         ctx: RequestContext,
         username: &str,
-    ) -> Result<Option<crate::models::user::UserPo>, AppError>;
+    ) -> Result<Option<crate::models::user::UserPo>>;
 
     /// 通用综合查询
     ///
@@ -144,45 +145,45 @@ pub trait UserManage: Send + Sync {
         &self,
         ctx: RequestContext,
         query: crate::service::dao::user::UserQuery,
-    ) -> Result<Vec<crate::models::user::UserPo>, AppError>;
+    ) -> Result<Vec<crate::models::user::UserPo>>;
 
     /// 根据组织 ID 查询所有用户
     async fn find_by_organization_id(
         &self,
         ctx: RequestContext,
         org_id: &str,
-    ) -> Result<Vec<crate::models::user::UserPo>, AppError>;
+    ) -> Result<Vec<crate::models::user::UserPo>>;
 
     /// 创建新用户
     async fn create_user(
         &self,
         ctx: RequestContext,
         user: crate::models::user::UserPo,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 更新用户信息
     async fn update_user(
         &self,
         ctx: RequestContext,
         user: &crate::models::user::UserPo,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 删除用户（软删除）
-    async fn delete_user(&self, ctx: RequestContext, user_id: &str) -> Result<(), AppError>;
+    async fn delete_user(&self, ctx: RequestContext, user_id: &str) -> Result<()>;
 
     /// 检查用户名是否已存在
     async fn exists_by_username(
         &self,
         ctx: RequestContext,
         username: &str,
-    ) -> Result<bool, AppError>;
+    ) -> Result<bool>;
 
     /// 统计组织下用户总数
     async fn count_by_organization_id(
         &self,
         ctx: RequestContext,
         org_id: &str,
-    ) -> Result<u64, AppError>;
+    ) -> Result<u64>;
 
     /// 验证用户名密码（用于登录）
     /// 返回用户信息，如果验证成功
@@ -192,12 +193,12 @@ pub trait UserManage: Send + Sync {
         org_id: &str,
         username: &str,
         password_hash: &str,
-    ) -> Result<crate::models::user::UserPo, AppError>;
+    ) -> Result<crate::models::user::UserPo>;
 
     /// 根据用户 ID 获取用户信息
     async fn get_user_by_id(
         &self,
         ctx: RequestContext,
         user_id: &str,
-    ) -> Result<Option<crate::models::user::UserPo>, AppError>;
+    ) -> Result<Option<crate::models::user::UserPo>>;
 }

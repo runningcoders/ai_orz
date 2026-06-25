@@ -5,6 +5,7 @@ use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;
 use std::sync::{Arc, OnceLock};
+use common::bail_err;
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -42,7 +43,7 @@ impl LarkDao for LarkDaoHttpImpl {
         _ctx: RequestContext,
         _message: &Message,
         _channel: &MessageChannel,
-    ) -> std::result::Result<(), String> {
+    ) -> std::result::Result<(), common::error::Error> {
         // TODO: 实现飞书推送逻辑
         Err("飞书推送功能尚未实现".to_string())
     }
@@ -51,7 +52,7 @@ impl LarkDao for LarkDaoHttpImpl {
         &self,
         _ctx: RequestContext,
         _channel: &MessageChannel,
-    ) -> std::result::Result<(), String> {
+    ) -> std::result::Result<(), common::error::Error> {
         // TODO: 实现飞书连接测试逻辑
         Err("飞书连接测试功能尚未实现".to_string())
     }

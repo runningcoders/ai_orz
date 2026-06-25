@@ -3,7 +3,7 @@
 //! 技能数据访问层，提供技能查询和管理能力
 //! 负责组合 DAO 完成业务级数据操作，组装完整 Skill 实体（PO + 文件）
 
-use crate::error::AppError;
+use common::error::{Result};
 use crate::models::skill::{Skill, SkillFile, SkillPo};
 use crate::models::vector::{MatchType, SearchMatchInfo, Vectorizable};
 use crate::pkg::request_context::RequestContext;
@@ -12,6 +12,8 @@ use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::skill::{self, SkillDao, SkillQuery, SkillSearch, SkillVectorDao};
 use common::enums::{ModelCapability, ModelProviderStatus};
 use std::sync::{Arc, OnceLock};
+use common::err;
+use common::bail_err;
 
 // ==================== 单例管理 ====================
 
@@ -53,62 +55,62 @@ pub fn new(
 #[async_trait::async_trait]
 pub trait SkillDal: Send + Sync {
     /// 创建新技能（仅数据库）
-    async fn create(&self, ctx: RequestContext, po: &SkillPo) -> Result<(), AppError>;
+    async fn create(&self, ctx: RequestContext, po: &SkillPo) -> Result<()>;
 
     /// 根据 ID 获取完整技能（PO + 文件列表）
-    async fn get_by_id(&self, ctx: RequestContext, id: String) -> Result<Option<Skill>, AppError>;
+    async fn get_by_id(&self, ctx: RequestContext, id: String) -> Result<Option<Skill>>;
 
     /// 根据 ID 获取 PO 数据（不需要文件时用这个）
     async fn get_po_by_id(
         &self,
         ctx: RequestContext,
         id: String,
-    ) -> Result<Option<SkillPo>, AppError>;
+    ) -> Result<Option<SkillPo>>;
 
     /// 通用综合查询（返回完整 Skill 实体，包含 PO + 文件列表）
-    async fn query(&self, ctx: RequestContext, query: SkillQuery) -> Result<Vec<Skill>, AppError>;
+    async fn query(&self, ctx: RequestContext, query: SkillQuery) -> Result<Vec<Skill>>;
 
     /// 按状态查询（返回完整 Skill 实体）
     async fn list_by_status(
         &self,
         ctx: RequestContext,
         status: common::enums::SkillStatus,
-    ) -> Result<Vec<Skill>, AppError>;
+    ) -> Result<Vec<Skill>>;
 
     /// 按分类查询（返回完整 Skill 实体）
     async fn list_by_category(
         &self,
         ctx: RequestContext,
         category: &str,
-    ) -> Result<Vec<Skill>, AppError>;
+    ) -> Result<Vec<Skill>>;
 
     /// 按作者查询（返回完整 Skill 实体）
     async fn list_by_author(
         &self,
         ctx: RequestContext,
         author_id: &str,
-    ) -> Result<Vec<Skill>, AppError>;
+    ) -> Result<Vec<Skill>>;
 
     /// 获取 Agent 的所有技能（返回完整 Skill 实体）
     async fn list_for_agent(
         &self,
         ctx: RequestContext,
         agent_id: &str,
-    ) -> Result<Vec<Skill>, AppError>;
+    ) -> Result<Vec<Skill>>;
 
     /// 搜索技能（名称/描述/标签）
     async fn search(
         &self,
         ctx: RequestContext,
         search: SkillSearch,
-    ) -> Result<Vec<Skill>, AppError>;
+    ) -> Result<Vec<Skill>>;
 
     /// 更新技能元数据（不影响文件）
     /// 更新技能（仅数据库）
-    async fn update(&self, ctx: RequestContext, skill: &Skill) -> Result<(), AppError>;
+    async fn update(&self, ctx: RequestContext, skill: &Skill) -> Result<()>;
 
     /// 删除技能（删除数据库记录 + 文件目录）
-    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()>;
 
     /// 将已发布技能安装到 Agent（原子操作：复制文件 + 创建数据库记录）
     /// 返回安装后新创建的完整 Skill 业务实体
@@ -117,22 +119,22 @@ pub trait SkillDal: Send + Sync {
         ctx: RequestContext,
         source_skill_id: &str,
         agent_id: &str,
-    ) -> Result<Skill, AppError>;
+    ) -> Result<Skill>;
 
     /// 读取技能主文件内容（skill.md）
-    fn read_main_content(&self, skill: &SkillPo) -> Result<String, AppError>;
+    fn read_main_content(&self, skill: &SkillPo) -> Result<String>;
 
     /// 写入技能主文件内容（skill.md）
-    fn write_main_content(&self, skill: &SkillPo, content: &str) -> Result<(), AppError>;
+    fn write_main_content(&self, skill: &SkillPo, content: &str) -> Result<()>;
 
     /// 列出技能的所有文件（小文件自动预读内容）
-    fn list_files(&self, skill: &SkillPo) -> Result<Vec<SkillFile>, AppError>;
+    fn list_files(&self, skill: &SkillPo) -> Result<Vec<SkillFile>>;
 
     /// 读取指定文件内容
-    fn read_file(&self, skill: &SkillPo, filename: &str) -> Result<String, AppError>;
+    fn read_file(&self, skill: &SkillPo, filename: &str) -> Result<String>;
 
     /// 写入文件内容
-    fn write_file(&self, skill: &SkillPo, filename: &str, content: &str) -> Result<(), AppError>;
+    fn write_file(&self, skill: &SkillPo, filename: &str, content: &str) -> Result<()>;
 
     /// 写入文件 bytes
     fn write_file_bytes(
@@ -140,14 +142,14 @@ pub trait SkillDal: Send + Sync {
         skill: &SkillPo,
         filename: &str,
         bytes: &[u8],
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 查询技能的向量索引内容哈希（判断是否需要重索引）
     async fn get_vector_content_hash(
         &self,
         ctx: RequestContext,
         skill_id: &str,
-    ) -> Result<Option<String>, AppError>;
+    ) -> Result<Option<String>>;
 }
 
 // ==================== DAL 实现 ====================
@@ -162,7 +164,7 @@ pub struct SkillDalImpl {
 
 #[async_trait::async_trait]
 impl SkillDal for SkillDalImpl {
-    async fn create(&self, ctx: RequestContext, po: &SkillPo) -> Result<(), AppError> {
+    async fn create(&self, ctx: RequestContext, po: &SkillPo) -> Result<()> {
         // 1. 先保存基础技能数据
         self.skill_dao.insert(ctx.clone(), po).await?;
 
@@ -201,7 +203,7 @@ impl SkillDal for SkillDalImpl {
         Ok(())
     }
 
-    async fn get_by_id(&self, ctx: RequestContext, id: String) -> Result<Option<Skill>, AppError> {
+    async fn get_by_id(&self, ctx: RequestContext, id: String) -> Result<Option<Skill>> {
         let Some(po) = self.skill_dao.find_by_id(ctx, &id).await? else {
             return Ok(None);
         };
@@ -217,11 +219,11 @@ impl SkillDal for SkillDalImpl {
         &self,
         ctx: RequestContext,
         id: String,
-    ) -> Result<Option<SkillPo>, AppError> {
+    ) -> Result<Option<SkillPo>> {
         Ok(self.skill_dao.find_by_id(ctx, &id).await?)
     }
 
-    async fn query(&self, ctx: RequestContext, query: SkillQuery) -> Result<Vec<Skill>, AppError> {
+    async fn query(&self, ctx: RequestContext, query: SkillQuery) -> Result<Vec<Skill>> {
         let pos = self.skill_dao.query(ctx, query).await?;
         let mut skills = Vec::with_capacity(pos.len());
         for po in pos {
@@ -239,7 +241,7 @@ impl SkillDal for SkillDalImpl {
         &self,
         ctx: RequestContext,
         status: common::enums::SkillStatus,
-    ) -> Result<Vec<Skill>, AppError> {
+    ) -> Result<Vec<Skill>> {
         self.query(
             ctx,
             SkillQuery {
@@ -254,7 +256,7 @@ impl SkillDal for SkillDalImpl {
         &self,
         ctx: RequestContext,
         category: &str,
-    ) -> Result<Vec<Skill>, AppError> {
+    ) -> Result<Vec<Skill>> {
         self.query(
             ctx,
             SkillQuery {
@@ -269,7 +271,7 @@ impl SkillDal for SkillDalImpl {
         &self,
         ctx: RequestContext,
         author_id: &str,
-    ) -> Result<Vec<Skill>, AppError> {
+    ) -> Result<Vec<Skill>> {
         self.query(
             ctx,
             SkillQuery {
@@ -284,7 +286,7 @@ impl SkillDal for SkillDalImpl {
         &self,
         ctx: RequestContext,
         agent_id: &str,
-    ) -> Result<Vec<Skill>, AppError> {
+    ) -> Result<Vec<Skill>> {
         self.query(
             ctx,
             SkillQuery {
@@ -299,7 +301,7 @@ impl SkillDal for SkillDalImpl {
         &self,
         ctx: RequestContext,
         search: SkillSearch,
-    ) -> Result<Vec<Skill>, AppError> {
+    ) -> Result<Vec<Skill>> {
         // Step 1: 查询是否有可用的 Embedding Provider（用便捷方法）
         let mut vector_scores: std::collections::HashMap<String, f32> =
             std::collections::HashMap::new();
@@ -438,7 +440,7 @@ impl SkillDal for SkillDalImpl {
         Ok(skills)
     }
 
-    async fn update(&self, ctx: RequestContext, skill: &Skill) -> Result<(), AppError> {
+    async fn update(&self, ctx: RequestContext, skill: &Skill) -> Result<()> {
         // 1. 先更新基础技能数据
         self.skill_dao.update(ctx.clone(), &skill.po).await?;
 
@@ -496,7 +498,7 @@ impl SkillDal for SkillDalImpl {
         Ok(())
     }
 
-    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
+    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()> {
         // 先获取 PO（用于删除文件时获取 content_path）
         let Some(po) = self.skill_dao.find_by_id(ctx.clone(), id).await? else {
             return Ok(()); // 不存在就返回成功
@@ -512,13 +514,13 @@ impl SkillDal for SkillDalImpl {
         ctx: RequestContext,
         source_skill_id: &str,
         agent_id: &str,
-    ) -> Result<Skill, AppError> {
+    ) -> Result<Skill> {
         // 先获取源技能 PO
         let source_skill = self
             .skill_dao
             .find_by_id(ctx.clone(), source_skill_id)
             .await?
-            .ok_or_else(|| AppError::NotFound("Skill not found".to_string()))?;
+            .ok_or_else(|| err!(ResourceNotFound, "Skill not found"))?;
         // 调用 DAO 原子安装，DAO 只返回持久化对象
         let installed_po = self
             .skill_dao
@@ -534,23 +536,23 @@ impl SkillDal for SkillDalImpl {
         })
     }
 
-    fn read_main_content(&self, skill: &SkillPo) -> Result<String, AppError> {
+    fn read_main_content(&self, skill: &SkillPo) -> Result<String> {
         Ok(self.skill_dao.read_main_content(skill)?)
     }
 
-    fn write_main_content(&self, skill: &SkillPo, content: &str) -> Result<(), AppError> {
+    fn write_main_content(&self, skill: &SkillPo, content: &str) -> Result<()> {
         Ok(self.skill_dao.write_main_content(skill, content)?)
     }
 
-    fn list_files(&self, skill: &SkillPo) -> Result<Vec<SkillFile>, AppError> {
+    fn list_files(&self, skill: &SkillPo) -> Result<Vec<SkillFile>> {
         Ok(self.skill_dao.list_files(skill)?)
     }
 
-    fn read_file(&self, skill: &SkillPo, filename: &str) -> Result<String, AppError> {
+    fn read_file(&self, skill: &SkillPo, filename: &str) -> Result<String> {
         Ok(self.skill_dao.read_file(skill, filename)?)
     }
 
-    fn write_file(&self, skill: &SkillPo, filename: &str, content: &str) -> Result<(), AppError> {
+    fn write_file(&self, skill: &SkillPo, filename: &str, content: &str) -> Result<()> {
         Ok(self.skill_dao.write_file(skill, filename, content)?)
     }
 
@@ -559,7 +561,7 @@ impl SkillDal for SkillDalImpl {
         skill: &SkillPo,
         filename: &str,
         bytes: &[u8],
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         Ok(self.skill_dao.write_file_bytes(skill, filename, bytes)?)
     }
 
@@ -567,7 +569,7 @@ impl SkillDal for SkillDalImpl {
         &self,
         ctx: RequestContext,
         skill_id: &str,
-    ) -> Result<Option<String>, AppError> {
+    ) -> Result<Option<String>> {
         let row = self.skill_vector_dao.get_vector_row(ctx, skill_id).await?;
         Ok(row.map(|r| r.meta.content_hash))
     }

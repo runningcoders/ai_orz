@@ -3,12 +3,13 @@ use common::enums::{ToolProtocol, ToolStatus};
 use serde_json::json;
 use sqlx::SqlitePool;
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::models::tool::ToolPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::tool;
 
 use super::update_tool::update_tool;
+use common::bail_err;
 
 fn init_test_singletons() {
     let _ = crate::config::init();
@@ -56,7 +57,7 @@ async fn update_tool_enabled_cannot_manually_restore_stale_tool(pool: SqlitePool
     .await
     .expect_err("generic update must not restore Stale tools");
 
-    assert!(matches!(err, AppError::BadRequest(_)));
+    assert!(matches!(err, common::error::Error::bad_request(_)));
     let persisted = tool::new_tool_dao()
         .get_by_id(ctx, stale_tool.id)
         .await

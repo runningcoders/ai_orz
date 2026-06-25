@@ -12,6 +12,7 @@ use axum::{
 };
 use common::config::AppConfig;
 use std::sync::Arc;
+use common::bail_err;
 
 /// RequestContext 提取中间件
 ///

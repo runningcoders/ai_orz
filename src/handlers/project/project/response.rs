@@ -1,6 +1,7 @@
 use common::api::{GetProjectResponse, ProjectListItem};
 
 use crate::models::project::Project;
+use common::bail_err;
 
 pub(super) fn to_list_item(project: &Project) -> ProjectListItem {
     ProjectListItem {

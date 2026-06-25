@@ -1,6 +1,6 @@
 //! Handler: GET /api/v1/tool-call-entries/{call_id} - Get one tool call trace entry
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::pkg::tool_tracing::logger::ToolCallQuery;
 use crate::service::domain::runtime;
@@ -8,6 +8,7 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetToolCallEntryRequest, GetToolCallEntryResponse};
 
 use super::response::to_tool_call_entry_detail;
+use common::bail_err;
 
 /// Get one tool call trace entry by call ID.
 #[register_handler_tool(
@@ -20,7 +21,7 @@ use super::response::to_tool_call_entry_detail;
 pub async fn get_tool_call_entry(
     ctx: RequestContext,
     params: GetToolCallEntryRequest,
-) -> Result<GetToolCallEntryResponse, AppError> {
+) -> Result<GetToolCallEntryResponse> {
     let entry = runtime::domain()
         .tool_execution()
         .get_tool_call_entry_by_id(
@@ -36,7 +37,7 @@ pub async fn get_tool_call_entry(
             },
         )
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Tool call {} not found", params.call_id)))?;
+        .ok_or_else(|| common::error::Error::not_found(format!("Tool call {} not found", params.call_id)))?;
 
     Ok(to_tool_call_entry_detail(&entry))
 }

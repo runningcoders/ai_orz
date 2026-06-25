@@ -2,12 +2,14 @@
 //!
 //! 定义用户相关业务接口实现
 
-use crate::error::AppError;
+use common::error::{err, bail_err, Result};
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::user::UserQuery;
 use async_trait::async_trait;
 use common::enums::UserStatus;
+use common::err;
+use common::bail_err;
 
 #[async_trait]
 impl super::UserManage for super::OrganizationDomainImpl {
@@ -16,7 +18,7 @@ impl super::UserManage for super::OrganizationDomainImpl {
         &self,
         ctx: RequestContext,
         username: &str,
-    ) -> Result<Option<UserPo>, AppError> {
+    ) -> Result<Option<UserPo>> {
         self.user_dal.find_by_username(ctx, username).await
     }
 
@@ -27,7 +29,7 @@ impl super::UserManage for super::OrganizationDomainImpl {
         &self,
         ctx: RequestContext,
         query: crate::service::dao::user::UserQuery,
-    ) -> Result<Vec<UserPo>, AppError> {
+    ) -> Result<Vec<UserPo>> {
         self.user_dal.query(ctx, query).await
     }
 
@@ -38,22 +40,22 @@ impl super::UserManage for super::OrganizationDomainImpl {
         &self,
         ctx: RequestContext,
         org_id: &str,
-    ) -> Result<Vec<UserPo>, AppError> {
+    ) -> Result<Vec<UserPo>> {
         self.user_dal.find_by_organization_id(ctx, org_id).await
     }
 
     /// 创建新用户
-    async fn create_user(&self, ctx: RequestContext, user: UserPo) -> Result<(), AppError> {
+    async fn create_user(&self, ctx: RequestContext, user: UserPo) -> Result<()> {
         self.user_dal.create(ctx, &user).await
     }
 
     /// 更新用户信息
-    async fn update_user(&self, ctx: RequestContext, user: &UserPo) -> Result<(), AppError> {
+    async fn update_user(&self, ctx: RequestContext, user: &UserPo) -> Result<()> {
         self.user_dal.update(ctx, user).await
     }
 
     /// 删除用户（软删除）
-    async fn delete_user(&self, ctx: RequestContext, user_id: &str) -> Result<(), AppError> {
+    async fn delete_user(&self, ctx: RequestContext, user_id: &str) -> Result<()> {
         self.user_dal.delete(ctx, user_id).await
     }
 
@@ -62,7 +64,7 @@ impl super::UserManage for super::OrganizationDomainImpl {
         &self,
         ctx: RequestContext,
         username: &str,
-    ) -> Result<bool, AppError> {
+    ) -> Result<bool> {
         self.user_dal.exists_by_username(ctx, username).await
     }
 
@@ -71,7 +73,7 @@ impl super::UserManage for super::OrganizationDomainImpl {
         &self,
         ctx: RequestContext,
         org_id: &str,
-    ) -> Result<u64, AppError> {
+    ) -> Result<u64> {
         self.user_dal.count_by_organization_id(ctx, org_id).await
     }
 
@@ -82,28 +84,28 @@ impl super::UserManage for super::OrganizationDomainImpl {
         org_id: &str,
         username: &str,
         password_hash: &str,
-    ) -> Result<UserPo, AppError> {
+    ) -> Result<UserPo> {
         // 先查找用户
         let user = match self.user_dal.find_by_username(_ctx, username).await? {
             Some(u) => u,
             None => {
-                return Err(AppError::BadRequest("用户名或密码错误".to_string()));
+                bail_err!(InvalidRequest, "用户名或密码错误");
             }
         };
 
         // 检查用户所属组织是否匹配
         if user.organization_id.as_str() != org_id {
-            return Err(AppError::BadRequest("用户名或密码错误".to_string()));
+            bail_err!(InvalidRequest, "用户名或密码错误");
         }
 
         // 验证密码哈希
         if user.password_hash.as_str() != password_hash {
-            return Err(AppError::BadRequest("用户名或密码错误".to_string()));
+            bail_err!(InvalidRequest, "用户名或密码错误");
         }
 
         // 用户状态检查：Active 表示启用
         if user.status != common::enums::UserStatus::Active {
-            return Err(AppError::BadRequest("用户已被禁用".to_string()));
+            bail_err!(InvalidRequest, "用户已被禁用");
         }
 
         Ok(user)
@@ -114,7 +116,7 @@ impl super::UserManage for super::OrganizationDomainImpl {
         &self,
         ctx: RequestContext,
         user_id: &str,
-    ) -> Result<Option<UserPo>, AppError> {
+    ) -> Result<Option<UserPo>> {
         self.user_dal.find_by_id(ctx, user_id).await
     }
 }

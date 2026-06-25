@@ -8,12 +8,13 @@ mod sqlite_test;
 #[cfg(test)]
 mod vector_test;
 
-use crate::error::AppError;
+use common::error::{err, bail_err, Error, Result};
 use crate::models::skill::{SkillFile, SkillPo};
 use crate::models::vector::VectorIndexParams;
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
 use common::enums::SkillStatus;
+use common::bail_err;
 
 /// Skill 查询参数
 #[derive(Debug, Clone, Default)]
@@ -48,41 +49,41 @@ pub trait SkillDao: Send + Sync {
     // ========== 基础 CRUD ==========
 
     /// Insert a new skill
-    async fn insert(&self, ctx: RequestContext, skill: &SkillPo) -> Result<(), AppError>;
+    async fn insert(&self, ctx: RequestContext, skill: &SkillPo) -> Result<()>;
 
     /// Update an existing skill
-    async fn update(&self, ctx: RequestContext, skill: &SkillPo) -> Result<(), AppError>;
+    async fn update(&self, ctx: RequestContext, skill: &SkillPo) -> Result<()>;
 
     /// Soft delete (mark as expired)
-    async fn delete_by_id(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+    async fn delete_by_id(&self, ctx: RequestContext, id: &str) -> Result<()>;
 
     /// Find skill by id
-    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<SkillPo>, AppError>;
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<SkillPo>>;
 
     /// 通用组合查询
     async fn query(&self, ctx: RequestContext, query: SkillQuery)
-    -> Result<Vec<SkillPo>, AppError>;
+    -> Result<Vec<SkillPo>>;
 
     /// List skills by status
     async fn list_by_status(
         &self,
         ctx: RequestContext,
         status: SkillStatus,
-    ) -> Result<Vec<SkillPo>, AppError>;
+    ) -> Result<Vec<SkillPo>>;
 
     /// List skills by category
     async fn list_by_category(
         &self,
         ctx: RequestContext,
         category: &str,
-    ) -> Result<Vec<SkillPo>, AppError>;
+    ) -> Result<Vec<SkillPo>>;
 
     /// List skills by author
     async fn list_by_author(
         &self,
         ctx: RequestContext,
         author_id: &str,
-    ) -> Result<Vec<SkillPo>, AppError>;
+    ) -> Result<Vec<SkillPo>>;
 
     // ========== 业务操作 ==========
 
@@ -92,31 +93,31 @@ pub trait SkillDao: Send + Sync {
         ctx: RequestContext,
         source_skill: &SkillPo,
         target_agent_id: &str,
-    ) -> Result<SkillPo, AppError>;
+    ) -> Result<SkillPo>;
 
     /// 统一搜索入口（关键词 + 业务过滤，向量搜索由 SkillVectorDao 单独处理）
     async fn search(
         &self,
         ctx: RequestContext,
         search: SkillSearch,
-    ) -> Result<Vec<SkillPo>, AppError>;
+    ) -> Result<Vec<SkillPo>>;
 
     // ========== 文件操作 ==========
 
     /// 读取 skill.md 主文件内容
-    fn read_main_content(&self, skill: &SkillPo) -> Result<String, AppError>;
+    fn read_main_content(&self, skill: &SkillPo) -> Result<String>;
 
     /// 写入 skill.md 主文件内容
-    fn write_main_content(&self, skill: &SkillPo, content: &str) -> Result<(), AppError>;
+    fn write_main_content(&self, skill: &SkillPo, content: &str) -> Result<()>;
 
     /// 列出技能目录下的所有文件（小文件自动预读内容）
-    fn list_files(&self, skill: &SkillPo) -> Result<Vec<SkillFile>, AppError>;
+    fn list_files(&self, skill: &SkillPo) -> Result<Vec<SkillFile>>;
 
     /// 读取指定文件名的内容
-    fn read_file(&self, skill: &SkillPo, filename: &str) -> Result<String, AppError>;
+    fn read_file(&self, skill: &SkillPo, filename: &str) -> Result<String>;
 
     /// 写入指定文件名的内容
-    fn write_file(&self, skill: &SkillPo, filename: &str, content: &str) -> Result<(), AppError>;
+    fn write_file(&self, skill: &SkillPo, filename: &str, content: &str) -> Result<()>;
 
     /// 写入指定文件名的原始 bytes。
     fn write_file_bytes(
@@ -124,10 +125,10 @@ pub trait SkillDao: Send + Sync {
         skill: &SkillPo,
         filename: &str,
         bytes: &[u8],
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 删除整个技能目录（卸载/删除时调用）
-    fn delete_skill_dir(&self, skill: &SkillPo) -> Result<(), AppError>;
+    fn delete_skill_dir(&self, skill: &SkillPo) -> Result<()>;
 }
 
 // ==================== SkillVectorDao Trait ====================
@@ -142,7 +143,7 @@ pub trait SkillVectorDao: Send + Sync {
         ctx: RequestContext,
         skill_id: &str,
         vector_params: &VectorIndexParams,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 纯向量语义搜索，返回完整的向量行数据 + 相似度距离
     async fn search_vector(
@@ -150,14 +151,14 @@ pub trait SkillVectorDao: Send + Sync {
         ctx: RequestContext,
         query_vector: &[f32],
         top_k: i32,
-    ) -> Result<Vec<crate::models::vector::VectorSearchHit>, AppError>;
+    ) -> Result<Vec<crate::models::vector::VectorSearchHit>>;
 
     /// 获取指定技能的完整向量行数据（包含元信息）
     async fn get_vector_row(
         &self,
         ctx: RequestContext,
         skill_id: &str,
-    ) -> Result<Option<crate::models::vector::VectorRow>, AppError>;
+    ) -> Result<Option<crate::models::vector::VectorRow>>;
 }
 
 // ==================== 统一导出 ====================

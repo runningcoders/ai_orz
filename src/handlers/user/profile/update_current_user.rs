@@ -1,12 +1,13 @@
 //! Handler: PUT /api/v1/user/me - Update current authenticated user information
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateCurrentUserRequest, UpdateCurrentUserResponse, UserInfoResponse};
 use common::constants::utils;
 use common::enums::UserRole;
+use common::bail_err;
 
 /// Update current user's own information (display name, email, password)
 #[register_handler_tool(
@@ -19,12 +20,12 @@ use common::enums::UserRole;
 pub async fn update_current_user(
     ctx: RequestContext,
     params: UpdateCurrentUserRequest,
-) -> Result<UpdateCurrentUserResponse, AppError> {
+) -> Result<UpdateCurrentUserResponse> {
     // 从 RequestContext 获取当前用户 ID（JWT 已经验证过）
     let user_id = ctx
         .user_id
         .clone()
-        .ok_or_else(|| AppError::BadRequest("用户未登录".to_string()))?;
+        .ok_or_else(|| common::error::Error::bad_request("用户未登录".to_string()))?;
 
     // 通过 organization domain 获取用户当前信息
     let domain = organization::domain();
@@ -32,7 +33,7 @@ pub async fn update_current_user(
         .user_manage()
         .get_user_by_id(ctx.clone(), &user_id)
         .await?
-        .ok_or_else(|| AppError::NotFound("用户不存在".to_string()))?;
+        .ok_or_else(|| common::error::Error::not_found("用户不存在".to_string()))?;
 
     // 权限检查：只能修改自己，JWT 已经认证过，这里用户ID匹配就是合法的
     // 不需要额外权限校验，JWT 中间件已经保证 user_id 是合法的当前用户

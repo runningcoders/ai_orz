@@ -1,10 +1,10 @@
 //! EventQueue DAO 层
-//!
 //! 通用事件队列 DAO 接口定义
 
-use crate::error::AppError;
+use common::error::{Error, Result};
 use crate::models::event::Event;
 use crate::pkg::RequestContext;
+use common::bail_err;
 
 /// 事件队列 DAO 接口
 ///
@@ -12,21 +12,21 @@ use crate::pkg::RequestContext;
 /// 每个队列只存储一种具体类型的事件，E 必须实现 Event trait
 pub trait EventQueueDao<E: Event>: Send + Sync + std::fmt::Debug {
     /// 入队一个事件
-    fn enqueue(&self, ctx: RequestContext, event: Box<E>) -> Result<(), AppError>;
+    fn enqueue(&self, ctx: RequestContext, event: Box<E>) -> Result<()>;
 
     /// 批量入队多个事件
-    fn enqueue_batch(&self, ctx: RequestContext, events: Vec<Box<E>>) -> Result<(), AppError>;
+    fn enqueue_batch(&self, ctx: RequestContext, events: Vec<Box<E>>) -> Result<()>;
 
     /// 获取下一个待处理事件
     /// 返回 None 表示队列为空
     /// 获取后事件进入 "处理中" 状态，需要调用 ack 确认完成
-    fn dequeue_next(&self, ctx: RequestContext) -> Result<Option<Box<E>>, AppError>;
+    fn dequeue_next(&self, ctx: RequestContext) -> Result<Option<Box<E>>>;
 
     /// 确认事件处理完成，从队列中移除
-    fn ack(&self, ctx: RequestContext, event_id: &str) -> Result<(), AppError>;
+    fn ack(&self, ctx: RequestContext, event_id: &str) -> Result<()>;
 
     /// 标记事件处理失败，重新放回队列等待重试
-    fn nack(&self, ctx: RequestContext, event_id: &str) -> Result<(), AppError>;
+    fn nack(&self, ctx: RequestContext, event_id: &str) -> Result<()>;
 
     /// 获取当前队列总长度（包含待处理 + 处理中）
     fn len(&self) -> usize;
@@ -41,14 +41,14 @@ pub trait EventQueueDao<E: Event>: Send + Sync + std::fmt::Debug {
 
     /// 恢复启动：从持久化层恢复未完成事件重新入队
     /// 返回恢复的事件数量
-    fn recover(&self, ctx: RequestContext) -> Result<usize, AppError>;
+    fn recover(&self, ctx: RequestContext) -> Result<usize>;
 
     /// 清空所有队列（测试用）
     fn clear(&self);
 }
 
+/// In-memory implementation for message event queue
 pub mod in_memory;
-pub use self::in_memory::{init_message, message_dao, new};
 
-#[cfg(test)]
-mod in_memory_test;
+pub use in_memory::message_dao;
+pub use in_memory::init_message;

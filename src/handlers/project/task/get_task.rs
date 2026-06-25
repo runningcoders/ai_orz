@@ -1,11 +1,12 @@
 //! Handler: GET /api/v1/tasks/{id} - Get task detailed information
 
 use super::response;
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetTaskRequest, GetTaskResponse};
+use common::bail_err;
 
 /// Get task detailed information by ID
 #[register_handler_tool(
@@ -18,12 +19,12 @@ use common::api::{GetTaskRequest, GetTaskResponse};
 pub async fn get_task(
     ctx: RequestContext,
     params: GetTaskRequest,
-) -> Result<GetTaskResponse, AppError> {
+) -> Result<GetTaskResponse> {
     let task = domain()
         .task_manage()
         .get(ctx, &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Task {} not found", params.id)))?;
+        .ok_or_else(|| common::error::Error::not_found(format!("Task {} not found", params.id)))?;
 
     Ok(response::to_detail(&task))
 }

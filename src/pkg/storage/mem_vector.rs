@@ -14,6 +14,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use common::error::Result;
+use common::bail_err;
 
 /// 内存向量存储
 ///

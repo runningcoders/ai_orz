@@ -6,6 +6,8 @@ use anyhow::Result;
 use common::enums::{ModelCapability, ProviderType};
 use rig::tool::ToolDyn;
 use std::sync::{Arc, OnceLock};
+use common::error::Result;
+use common::bail_err;
 
 /// Rig 驱动的 Cortex 实现
 pub struct RigCortexDao {}

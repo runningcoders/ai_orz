@@ -1,6 +1,6 @@
 //! Skill 管理具体方法实现
 
-use crate::error::AppError;
+use common::bail_err;
 use crate::models::skill::Skill;
 use crate::pkg::RequestContext;
 use crate::service::dao::skill::{SkillQuery, SkillSearch};
@@ -8,12 +8,14 @@ use crate::service::domain::hr::{HrDomainImpl, SkillManage, UpdateSkillParams};
 use common::constants::utils::current_timestamp;
 use common::enums::SkillStatus;
 use std::path::{Component, Path};
+use common::error::Result;
+use common::err;
 
 #[async_trait::async_trait]
 impl SkillManage for HrDomainImpl {
     // A. 技能基础管理（CRUD）
 
-    async fn create_skill(&self, ctx: RequestContext, skill: &Skill) -> Result<(), AppError> {
+    async fn create_skill(&self, ctx: RequestContext, skill: &Skill) -> Result<()> {
         // DAL 的 create 接收 SkillPo，需要先保存元数据
         self.skill_dal.create(ctx.clone(), &skill.po).await?;
 
@@ -28,7 +30,7 @@ impl SkillManage for HrDomainImpl {
         Ok(())
     }
 
-    async fn get_skill(&self, ctx: RequestContext, id: &str) -> Result<Option<Skill>, AppError> {
+    async fn get_skill(&self, ctx: RequestContext, id: &str) -> Result<Option<Skill>> {
         self.skill_dal.get_by_id(ctx, id.to_string()).await
     }
 
@@ -36,7 +38,7 @@ impl SkillManage for HrDomainImpl {
         &self,
         ctx: RequestContext,
         params: UpdateSkillParams<'_>,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         // 1. 先校验所有附加文件导入路径，避免后续失败时产生部分文件/元数据更新。
         for file_import in &params.file_imports {
             validate_skill_import_target_path(&file_import.target_path)?;
@@ -69,7 +71,7 @@ impl SkillManage for HrDomainImpl {
         Ok(())
     }
 
-    async fn delete_skill(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
+    async fn delete_skill(&self, ctx: RequestContext, id: &str) -> Result<()> {
         self.skill_dal.delete(ctx, id).await
     }
 
@@ -79,7 +81,7 @@ impl SkillManage for HrDomainImpl {
         &self,
         ctx: RequestContext,
         query: SkillQuery,
-    ) -> Result<Vec<Skill>, AppError> {
+    ) -> Result<Vec<Skill>> {
         self.skill_dal.query(ctx, query).await
     }
 
@@ -87,7 +89,7 @@ impl SkillManage for HrDomainImpl {
         &self,
         ctx: RequestContext,
         status: SkillStatus,
-    ) -> Result<Vec<Skill>, AppError> {
+    ) -> Result<Vec<Skill>> {
         self.query_skills(
             ctx,
             SkillQuery {
@@ -102,7 +104,7 @@ impl SkillManage for HrDomainImpl {
         &self,
         ctx: RequestContext,
         category: &str,
-    ) -> Result<Vec<Skill>, AppError> {
+    ) -> Result<Vec<Skill>> {
         self.query_skills(
             ctx,
             SkillQuery {
@@ -117,7 +119,7 @@ impl SkillManage for HrDomainImpl {
         &self,
         ctx: RequestContext,
         author_id: &str,
-    ) -> Result<Vec<Skill>, AppError> {
+    ) -> Result<Vec<Skill>> {
         self.query_skills(
             ctx,
             SkillQuery {
@@ -132,7 +134,7 @@ impl SkillManage for HrDomainImpl {
         &self,
         ctx: RequestContext,
         agent_id: &str,
-    ) -> Result<Vec<Skill>, AppError> {
+    ) -> Result<Vec<Skill>> {
         self.skill_dal.list_for_agent(ctx, agent_id).await
     }
 
@@ -140,7 +142,7 @@ impl SkillManage for HrDomainImpl {
         &self,
         ctx: RequestContext,
         search: SkillSearch,
-    ) -> Result<Vec<Skill>, AppError> {
+    ) -> Result<Vec<Skill>> {
         self.skill_dal.search(ctx, search).await
     }
 
@@ -151,7 +153,7 @@ impl SkillManage for HrDomainImpl {
         ctx: RequestContext,
         source_skill_id: &str,
         agent_id: &str,
-    ) -> Result<Skill, AppError> {
+    ) -> Result<Skill> {
         self.skill_dal
             .install_to_agent(ctx, source_skill_id, agent_id)
             .await
@@ -161,7 +163,7 @@ impl SkillManage for HrDomainImpl {
         &self,
         ctx: RequestContext,
         skill_id: &str,
-    ) -> Result<Option<Vec<crate::models::skill::SkillFile>>, AppError> {
+    ) -> Result<Option<Vec<crate::models::skill::SkillFile>>> {
         let uid = ctx.uid().to_string();
         let Some(po) = self
             .skill_dal
@@ -173,7 +175,7 @@ impl SkillManage for HrDomainImpl {
 
         // 权限检查：仅作者可访问
         if po.author_id != uid {
-            return Err(AppError::BadRequest("你没有权限访问该 Skill".to_string()));
+            bail_err!(InvalidRequest, "你没有权限访问该 Skill");
         }
 
         let files = self.skill_dal.list_files(&po)?;
@@ -185,7 +187,7 @@ impl SkillManage for HrDomainImpl {
         ctx: RequestContext,
         skill_id: &str,
         filename: &str,
-    ) -> Result<Option<String>, AppError> {
+    ) -> Result<Option<String>> {
         let uid = ctx.uid().to_string();
         let Some(po) = self
             .skill_dal
@@ -197,7 +199,7 @@ impl SkillManage for HrDomainImpl {
 
         // 权限检查：仅作者可访问
         if po.author_id != uid {
-            return Err(AppError::BadRequest("你没有权限访问该 Skill".to_string()));
+            bail_err!(InvalidRequest, "你没有权限访问该 Skill");
         }
 
         let content = self.skill_dal.read_file(&po, filename)?;
@@ -211,27 +213,24 @@ impl SkillManage for HrDomainImpl {
         filename: &str,
         content: &str,
         expected_updated_at: Option<i64>,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let Some(mut po) = self
             .skill_dal
             .get_po_by_id(ctx.clone(), skill_id.to_string())
             .await?
         else {
-            return Err(AppError::NotFound(format!("Skill not found: {}", skill_id)));
+            bail_err!(NotFound, "Skill not found: {}", skill_id);
         };
 
         // 权限检查：仅作者可修改
         if po.author_id != ctx.uid() {
-            return Err(AppError::BadRequest("你没有权限修改该 Skill".to_string()));
+            bail_err!(InvalidRequest, "你没有权限修改该 Skill");
         }
 
         // 乐观锁校验
         if let Some(expected) = expected_updated_at {
             if po.updated_at != expected {
-                return Err(AppError::Conflict(format!(
-                    "Skill updated_at mismatch: expected {}, current {}",
-                    expected, po.updated_at
-                )));
+                bail_err!(Conflict, "Skill updated_at mismatch: expected {}, current {}", expected, po.updated_at);
             }
         }
 
@@ -259,45 +258,33 @@ impl SkillManage for HrDomainImpl {
     }
 }
 
-pub(crate) fn validate_skill_import_target_path(target_path: &str) -> Result<(), AppError> {
+pub(crate) fn validate_skill_import_target_path(target_path: &str) -> Result<()> {
     if target_path.trim().is_empty() {
-        return Err(AppError::BadRequest(
-            "Skill import target_path 不能为空".to_string(),
-        ));
+        bail_err!(InvalidRequest, "Skill import target_path 不能为空");
     }
 
     let path = Path::new(target_path);
     if path.is_absolute() {
-        return Err(AppError::BadRequest(
-            "Skill import target_path 不能是绝对路径".to_string(),
-        ));
+        bail_err!(InvalidRequest, "Skill import target_path 不能是绝对路径");
     }
 
     if path.components().next().is_none() {
-        return Err(AppError::BadRequest(
-            "Skill import target_path 不能为空".to_string(),
-        ));
+        bail_err!(InvalidRequest, "Skill import target_path 不能为空");
     }
 
     if target_path.contains('\\') {
-        return Err(AppError::BadRequest(
-            "Skill import target_path 不能包含反斜杠路径分隔符".to_string(),
-        ));
+        bail_err!(InvalidRequest, "Skill import target_path 不能包含反斜杠路径分隔符");
     }
 
     if target_path.ends_with('/') {
-        return Err(AppError::BadRequest(
-            "Skill import target_path 不能指向目录".to_string(),
-        ));
+        bail_err!(InvalidRequest, "Skill import target_path 不能指向目录");
     }
 
     let components: Vec<_> = path.components().collect();
     if components.len() == 1
         && matches!(components[0], Component::Normal(part) if part.eq_ignore_ascii_case("skill.md"))
     {
-        return Err(AppError::BadRequest(
-            "Skill import target_path 不能覆盖主内容文件 skill.md".to_string(),
-        ));
+        bail_err!(InvalidRequest, "Skill import target_path 不能覆盖主内容文件 skill.md");
     }
 
     for component in path.components() {
@@ -307,9 +294,7 @@ pub(crate) fn validate_skill_import_target_path(target_path: &str) -> Result<(),
             | Component::ParentDir
             | Component::RootDir
             | Component::Prefix(_) => {
-                return Err(AppError::BadRequest(
-                    "Skill import target_path 包含非法路径片段".to_string(),
-                ));
+                bail_err!(InvalidRequest, "Skill import target_path 包含非法路径片段");
             }
         }
     }

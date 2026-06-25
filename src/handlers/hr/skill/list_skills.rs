@@ -1,6 +1,6 @@
 //! Handler: GET /api/v1/skills - List skills with optional filtering
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::dao::skill::SkillQuery;
 use crate::service::domain::hr::domain;
@@ -9,6 +9,7 @@ use common::api::{ListSkillsRequest, ListSkillsResponse, SkillListItem};
 use common::enums::SkillStatus;
 
 use super::response::to_list_item;
+use common::bail_err;
 
 /// List public skills with optional filtering by status, category, author, and keyword.
 #[register_handler_tool(
@@ -21,7 +22,7 @@ use super::response::to_list_item;
 pub async fn list_skills(
     ctx: RequestContext,
     params: ListSkillsRequest,
-) -> Result<ListSkillsResponse, AppError> {
+) -> Result<ListSkillsResponse> {
     let skills = domain()
         .skill_manage()
         .query_skills(

@@ -4,10 +4,12 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CreateToolRequest, CreateToolResponse};
 use common::enums::ToolProtocol;
 
-use crate::error::AppError;
+use common::bail_err;
 use crate::models::tool::Tool;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
+use common::error::Result;
+use common::err;
 
 /// Create a new custom tool (HTTP/MCP). Built-in tools cannot be created via this API.
 #[register_handler_tool(
@@ -20,15 +22,13 @@ use crate::service::domain::finance::domain;
 pub async fn create_tool(
     ctx: RequestContext,
     params: CreateToolRequest,
-) -> Result<CreateToolResponse, AppError> {
+) -> Result<CreateToolResponse> {
     let user_id = ctx.uid();
     if user_id.is_empty() {
-        return Err(AppError::BadRequest("当前请求缺少用户上下文".to_string()));
+        bail_err!(InvalidRequest, "当前请求缺少用户上下文");
     }
     if matches!(params.protocol, ToolProtocol::Builtin) {
-        return Err(AppError::BadRequest(
-            "内置 Tool 由系统同步，不允许通过管理接口创建".to_string(),
-        ));
+        bail_err!(InvalidRequest, "内置 Tool 由系统同步，不允许通过管理接口创建");
     }
 
     let tags = params.tags.clone().unwrap_or_default();

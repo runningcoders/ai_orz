@@ -7,6 +7,7 @@ use crate::service::domain::message::{SendToAgentCommand, SendToUserCommand};
 use common::enums::{MessageRole, MessageStatus, MessageType};
 use sqlx::SqlitePool;
 use uuid::Uuid;
+use common::bail_err;
 
 fn new_ctx(user_id: &str, pool: sqlx::SqlitePool) -> RequestContext {
     RequestContext::new_simple(user_id, pool)

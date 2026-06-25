@@ -2,7 +2,7 @@
 //!
 //! 通用上传文件资产管理，归属 Finance Domain。
 
-use crate::error::AppError;
+use common::bail_err;
 use crate::models::attachment::{
     Attachment, AttachmentGetOptions, AttachmentReadResult, AttachmentTextContent,
     AttachmentUpload, TextAttachmentCreate, TextContentUpdate,
@@ -11,6 +11,8 @@ use crate::pkg::RequestContext;
 use crate::service::dao::attachment::AttachmentQuery;
 use crate::service::domain::finance::{AttachmentManage, FinanceDomainImpl};
 use std::path::{Component, Path};
+use common::error::Result;
+use common::err;
 
 const MAX_TEXT_CONTENT_BYTES: usize = 64 * 1024;
 
@@ -20,7 +22,7 @@ impl AttachmentManage for FinanceDomainImpl {
         &self,
         ctx: RequestContext,
         upload: AttachmentUpload,
-    ) -> Result<Attachment, AppError> {
+    ) -> Result<Attachment> {
         self.attachment_dal.create_from_upload(ctx, upload).await
     }
 
@@ -28,7 +30,7 @@ impl AttachmentManage for FinanceDomainImpl {
         &self,
         ctx: RequestContext,
         create: TextAttachmentCreate,
-    ) -> Result<Attachment, AppError> {
+    ) -> Result<Attachment> {
         validate_file_name(&create.file_name)?;
         validate_text_content(&create.content)?;
         validate_text_size(create.content.as_bytes().len())?;
@@ -43,7 +45,7 @@ impl AttachmentManage for FinanceDomainImpl {
         ctx: RequestContext,
         id: &str,
         options: AttachmentGetOptions,
-    ) -> Result<Option<Attachment>, AppError> {
+    ) -> Result<Option<Attachment>> {
         let Some(attachment) = self.attachment_dal.get_by_id(ctx.clone(), id).await? else {
             return Ok(None);
         };
@@ -69,7 +71,7 @@ impl AttachmentManage for FinanceDomainImpl {
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<AttachmentTextContent>, AppError> {
+    ) -> Result<Option<AttachmentTextContent>> {
         let Some(attachment) = self
             .get_attachment(
                 ctx,
@@ -90,7 +92,7 @@ impl AttachmentManage for FinanceDomainImpl {
         ctx: RequestContext,
         id: &str,
         update: TextContentUpdate,
-    ) -> Result<Option<AttachmentTextContent>, AppError> {
+    ) -> Result<Option<AttachmentTextContent>> {
         validate_text_content(&update.content)?;
         validate_text_size(update.content.as_bytes().len())?;
 
@@ -106,9 +108,7 @@ impl AttachmentManage for FinanceDomainImpl {
         validate_attachment_is_text(&attachment)?;
         if let Some(expected_updated_at) = update.expected_updated_at {
             if expected_updated_at != attachment.po.updated_at {
-                return Err(AppError::Conflict(
-                    "Attachment 内容已被其他请求修改，请刷新后重试".to_string(),
-                ));
+                bail_err!(Conflict, "Attachment 内容已被其他请求修改，请刷新后重试");
             }
         }
 
@@ -129,24 +129,24 @@ impl AttachmentManage for FinanceDomainImpl {
         &self,
         ctx: RequestContext,
         query: AttachmentQuery,
-    ) -> Result<Vec<Attachment>, AppError> {
+    ) -> Result<Vec<Attachment>> {
         self.attachment_dal.query(ctx, query).await
     }
 
-    async fn delete_attachment(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
+    async fn delete_attachment(&self, ctx: RequestContext, id: &str) -> Result<()> {
         self.attachment_dal.delete(ctx, id).await
     }
 }
 
-fn attachment_to_text_content(attachment: Attachment) -> Result<AttachmentTextContent, AppError> {
+fn attachment_to_text_content(attachment: Attachment) -> Result<AttachmentTextContent> {
     validate_attachment_is_text(&attachment)?;
     let read_result = attachment
         .read_results
         .first()
-        .ok_or_else(|| AppError::Internal("Attachment 文件内容未装配".to_string()))?;
+        .ok_or_else(|| bail_err!(Internal, "Attachment 文件内容未装配"))?;
     validate_text_size(read_result.bytes.len())?;
     let content = std::str::from_utf8(&read_result.bytes)
-        .map_err(|_| AppError::BadRequest("Attachment 内容不是 UTF-8 文本".to_string()))?
+        .map_err(|_| bail_err!(InvalidRequest, "Attachment 内容不是 UTF-8 文本"))?
         .to_string();
     validate_text_content(&content)?;
     Ok(AttachmentTextContent {
@@ -158,68 +158,52 @@ fn attachment_to_text_content(attachment: Attachment) -> Result<AttachmentTextCo
     })
 }
 
-fn validate_file_name(file_name: &str) -> Result<(), AppError> {
+fn validate_file_name(file_name: &str) -> Result<()> {
     let trimmed = file_name.trim();
     if trimmed.is_empty() {
-        return Err(AppError::BadRequest("file_name 不能为空".to_string()));
+        bail_err!(InvalidRequest, "file_name 不能为空");
     }
     if trimmed.contains('/') || trimmed.contains('\\') || trimmed.contains("..") {
-        return Err(AppError::BadRequest(
-            "file_name 不能包含路径分隔符或路径穿越片段".to_string(),
-        ));
+        bail_err!(InvalidRequest, "file_name 不能包含路径分隔符或路径穿越片段");
     }
     let path = Path::new(trimmed);
     if path.is_absolute() {
-        return Err(AppError::BadRequest("file_name 不能是绝对路径".to_string()));
+        bail_err!(InvalidRequest, "file_name 不能是绝对路径");
     }
     if path.components().count() != 1 {
-        return Err(AppError::BadRequest(
-            "file_name 必须是单个文件名".to_string(),
-        ));
+        bail_err!(InvalidRequest, "file_name 必须是单个文件名");
     }
     if !matches!(path.components().next(), Some(Component::Normal(_))) {
-        return Err(AppError::BadRequest(
-            "file_name 包含非法路径片段".to_string(),
-        ));
+        bail_err!(InvalidRequest, "file_name 包含非法路径片段");
     }
     Ok(())
 }
 
-fn validate_text_content(content: &str) -> Result<(), AppError> {
+fn validate_text_content(content: &str) -> Result<()> {
     if content.as_bytes().contains(&0) {
-        return Err(AppError::BadRequest(
-            "文本内容包含二进制 NUL 字节".to_string(),
-        ));
+        bail_err!(InvalidRequest, "文本内容包含二进制 NUL 字节");
     }
     Ok(())
 }
 
-fn validate_text_size(size: usize) -> Result<(), AppError> {
+fn validate_text_size(size: usize) -> Result<()> {
     if size > MAX_TEXT_CONTENT_BYTES {
-        return Err(AppError::PayloadTooLarge(format!(
-            "文本内容超过 {} bytes 限制",
-            MAX_TEXT_CONTENT_BYTES
-        )));
+        bail_err!(PayloadTooLarge, "文本内容超过 {} bytes 限制", MAX_TEXT_CONTENT_BYTES);
     }
     Ok(())
 }
 
-fn validate_text_mime(mime_type: &str) -> Result<(), AppError> {
+fn validate_text_mime(mime_type: &str) -> Result<()> {
     let normalized = mime_type.split(';').next().unwrap_or_default().trim();
     if is_text_mime(normalized) {
         return Ok(());
     }
-    Err(AppError::BadRequest(format!(
-        "不支持的文本 MIME 类型: {}",
-        mime_type
-    )))
+    bail_err!(InvalidRequest, "不支持的文本 MIME 类型: {}", mime_type);
 }
 
-fn validate_attachment_is_text(attachment: &Attachment) -> Result<(), AppError> {
+fn validate_attachment_is_text(attachment: &Attachment) -> Result<()> {
     if attachment.po.file_type != common::enums::FileType::Document {
-        return Err(AppError::BadRequest(
-            "Attachment 不是文本类文件".to_string(),
-        ));
+        bail_err!(InvalidRequest, "Attachment 不是文本类文件");
     }
     let mime_type = attachment
         .po
@@ -231,9 +215,7 @@ fn validate_attachment_is_text(attachment: &Attachment) -> Result<(), AppError> 
     if is_text_mime(mime_type) || is_text_extension(&attachment.po.original_name) {
         return Ok(());
     }
-    Err(AppError::BadRequest(
-        "Attachment 不支持作为简单文本读取".to_string(),
-    ))
+    bail_err!(InvalidRequest, "Attachment 不支持作为简单文本读取");
 }
 
 fn is_text_mime(mime_type: &str) -> bool {

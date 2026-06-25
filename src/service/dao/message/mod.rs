@@ -1,11 +1,12 @@
 //! Message DAO 模块
 
-use crate::error::Result;
+//! Message DAO 模块
+
+use common::error::Result;
 use crate::models::message::{MessagePo, ToolCallMessage};
 use crate::pkg::RequestContext;
 use common::enums::MessageStatus;
-
-// ==================== 查询参数 ====================
+use common::bail_err;
 
 /// 消息通用查询条件
 ///

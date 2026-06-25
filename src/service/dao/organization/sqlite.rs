@@ -38,7 +38,7 @@ impl OrganizationDaoSqliteImpl {
 
 #[async_trait::async_trait]
 impl OrganizationDao for OrganizationDaoSqliteImpl {
-    async fn insert(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<(), AppError> {
+    async fn insert(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<()> {
         let status = org.status as i32;
         let scope = org.scope as i32;
         sqlx::query!(
@@ -64,7 +64,7 @@ impl OrganizationDao for OrganizationDaoSqliteImpl {
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<OrganizationPo>, AppError> {
+    ) -> Result<Option<OrganizationPo>> {
         let org = sqlx::query_as!(
             OrganizationPo,
             r#"
@@ -83,7 +83,7 @@ FROM organizations WHERE id = ? AND status != 0
         &self,
         ctx: RequestContext,
         query: OrganizationQuery,
-    ) -> Result<Vec<OrganizationPo>, AppError> {
+    ) -> Result<Vec<OrganizationPo>> {
         let pool = ctx.db_pool();
         let mut builder = sqlx::QueryBuilder::new(
             r#"SELECT id, name, description, base_url, status, scope, created_by, modified_by, created_at, updated_at FROM organizations WHERE status != 0"#,
@@ -102,12 +102,12 @@ FROM organizations WHERE id = ? AND status != 0
         Ok(rows)
     }
 
-    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<OrganizationPo>, AppError> {
+    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<OrganizationPo>> {
         // 语法糖：调用通用查询
         self.query(ctx, OrganizationQuery::default()).await
     }
 
-    async fn update(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<(), AppError> {
+    async fn update(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<()> {
         let current_timestamp = Utc::now().timestamp();
         let uid = ctx.uid().to_string();
         let status = org.status as i32;
@@ -133,7 +133,7 @@ WHERE id = ?
         Ok(())
     }
 
-    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
+    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()> {
         let current_timestamp = Utc::now().timestamp();
         let uid = ctx.uid().to_string();
         sqlx::query!(
@@ -150,7 +150,7 @@ UPDATE organizations SET status = 0, modified_by = ?, updated_at = ? WHERE id = 
         Ok(())
     }
 
-    async fn count_all(&self, ctx: RequestContext) -> Result<u64, AppError> {
+    async fn count_all(&self, ctx: RequestContext) -> Result<u64> {
         let count =
             sqlx::query!(r#"SELECT COUNT(*) as count FROM organizations WHERE status != 0"#)
                 .fetch_one(ctx.db_pool())
@@ -162,6 +162,8 @@ UPDATE organizations SET status = 0, modified_by = ?, updated_at = ? WHERE id = 
 
 fn current_timestamp() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
+use common::error::Result;
+use common::bail_err;
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()

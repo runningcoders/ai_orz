@@ -1,6 +1,6 @@
 //! Runtime Awakening 具体实现
 
-use crate::error::AppError;
+use common::error::{err, bail_err, Result};
 use crate::models::agent::Agent;
 use crate::models::memory::MemoryTrace;
 use crate::models::message::Message;
@@ -18,7 +18,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         ctx: RequestContext,
         agent: &Agent,
         message: &Message,
-    ) -> Result<AwakeningResult, AppError> {
+    ) -> Result<AwakeningResult> {
         // Step 1: 读取最近短期记忆
         let recent_memories = self
             .memory()
@@ -32,6 +32,8 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         // Step 3: 预先构造 MemoryTrace 拿到 trace_id
         // 调用方负责组装 trace，RuntimeMemory 负责写入和补全信息
         use common::enums::MemoryRole;
+use common::err;
+use common::bail_err;
         let mut trace = MemoryTrace::new(
             agent.po.id.clone(),
             ctx.log_id.clone(),
@@ -69,7 +71,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         let brain = agent
             .brain
             .as_ref()
-            .ok_or_else(|| AppError::Internal("Agent 大脑未唤醒，请先调用 wake_brain()".into()))?;
+            .ok_or_else(|| err!(Internal, "Agent 大脑未唤醒，请先调用 wake_brain()"))?;
 
         let raw_output = self.brain_dal().think(ctx.clone(), brain, &prompt).await?;
 

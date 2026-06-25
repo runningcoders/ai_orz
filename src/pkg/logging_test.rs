@@ -3,6 +3,7 @@
 use super::RequestContext;
 use sqlx::sqlite::SqlitePool;
 use tokio::runtime::Runtime;
+use common::bail_err;
 
 fn create_test_pool() -> SqlitePool {
     crate::config::init().unwrap();

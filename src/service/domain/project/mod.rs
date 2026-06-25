@@ -13,13 +13,14 @@
 use async_trait::async_trait;
 use std::sync::{Arc, OnceLock};
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::models::artifact::Artifact;
 use crate::models::file::FileMeta;
 use crate::models::project::Project;
 use crate::models::task::Task;
 use crate::pkg::RequestContext;
 use common::enums::{AssigneeType, FileType, ProjectStatus, TaskStatus};
+use common::bail_err;
 
 mod artifact;
 mod project;
@@ -89,17 +90,17 @@ pub trait ProjectManage: Send + Sync {
         tags: Vec<String>,
         root_user_id: String,
         created_by: String,
-    ) -> Result<Project, AppError>;
+    ) -> Result<Project>;
 
     /// 根据 ID 获取项目
-    async fn get(&self, ctx: RequestContext, id: &str) -> Result<Option<Project>, AppError>;
+    async fn get(&self, ctx: RequestContext, id: &str) -> Result<Option<Project>>;
 
     /// 获取用户的所有项目
     async fn list_by_user(
         &self,
         ctx: RequestContext,
         root_user_id: &str,
-    ) -> Result<Vec<Project>, AppError>;
+    ) -> Result<Vec<Project>>;
 
     /// 查询用户项目列表
     async fn list(
@@ -108,7 +109,7 @@ pub trait ProjectManage: Send + Sync {
         root_user_id: &str,
         status: Option<ProjectStatus>,
         limit: Option<usize>,
-    ) -> Result<Vec<Project>, AppError>;
+    ) -> Result<Vec<Project>>;
 
     /// 启动项目
     async fn start(
@@ -116,7 +117,7 @@ pub trait ProjectManage: Send + Sync {
         ctx: RequestContext,
         project_id: &str,
         modified_by: String,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 完成项目
     async fn complete(
@@ -124,7 +125,7 @@ pub trait ProjectManage: Send + Sync {
         ctx: RequestContext,
         project_id: &str,
         modified_by: String,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 归档项目
     async fn archive(
@@ -132,7 +133,7 @@ pub trait ProjectManage: Send + Sync {
         ctx: RequestContext,
         project_id: &str,
         modified_by: String,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 更新项目基本信息
     async fn update_basic(
@@ -144,7 +145,7 @@ pub trait ProjectManage: Send + Sync {
         priority: Option<i32>,
         tags: Option<Vec<String>>,
         modified_by: String,
-    ) -> Result<Project, AppError>;
+    ) -> Result<Project>;
 
     /// 统一项目状态流转
     async fn transition_status(
@@ -152,7 +153,7 @@ pub trait ProjectManage: Send + Sync {
         ctx: RequestContext,
         project: &mut Project,
         target_status: ProjectStatus,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 }
 
 /// Task 管理 trait
@@ -173,7 +174,7 @@ pub trait TaskManage: Send + Sync {
         assignee_id: String,
         project_id: Option<String>,
         created_by: String,
-    ) -> Result<Task, AppError>;
+    ) -> Result<Task>;
 
     /// 创建新任务（支持管理面完整可选字段）
     async fn create_with_options(
@@ -190,24 +191,24 @@ pub trait TaskManage: Send + Sync {
         due_at: Option<i64>,
         dependencies: Vec<String>,
         created_by: String,
-    ) -> Result<Task, AppError>;
+    ) -> Result<Task>;
 
     /// 根据 ID 获取任务
-    async fn get(&self, ctx: RequestContext, id: &str) -> Result<Option<Task>, AppError>;
+    async fn get(&self, ctx: RequestContext, id: &str) -> Result<Option<Task>>;
 
     /// 获取项目下的所有任务
     async fn list_by_project(
         &self,
         ctx: RequestContext,
         project_id: &str,
-    ) -> Result<Vec<Task>, AppError>;
+    ) -> Result<Vec<Task>>;
 
     /// 获取分配给 Agent 的所有任务
     async fn list_by_agent(
         &self,
         ctx: RequestContext,
         agent_id: &str,
-    ) -> Result<Vec<Task>, AppError>;
+    ) -> Result<Vec<Task>>;
 
     /// 查询任务列表
     async fn list(
@@ -218,7 +219,7 @@ pub trait TaskManage: Send + Sync {
         assignee_id: Option<&str>,
         status: Option<TaskStatus>,
         limit: Option<usize>,
-    ) -> Result<Vec<Task>, AppError>;
+    ) -> Result<Vec<Task>>;
 
     /// 更新任务基本信息
     async fn update_basic(
@@ -231,7 +232,7 @@ pub trait TaskManage: Send + Sync {
         tags: Option<Vec<String>>,
         due_at: Option<i64>,
         dependencies: Option<Vec<String>>,
-    ) -> Result<Task, AppError>;
+    ) -> Result<Task>;
 
     /// 开始任务
     async fn start(
@@ -239,7 +240,7 @@ pub trait TaskManage: Send + Sync {
         ctx: RequestContext,
         task_id: &str,
         modified_by: String,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 完成任务
     async fn complete(
@@ -247,7 +248,7 @@ pub trait TaskManage: Send + Sync {
         ctx: RequestContext,
         task_id: &str,
         modified_by: String,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 取消任务
     async fn cancel(
@@ -255,7 +256,7 @@ pub trait TaskManage: Send + Sync {
         ctx: RequestContext,
         task_id: &str,
         modified_by: String,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 统一任务状态流转
     async fn transition_status(
@@ -263,7 +264,7 @@ pub trait TaskManage: Send + Sync {
         ctx: RequestContext,
         task: &mut Task,
         target_status: TaskStatus,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 }
 
 /// Artifact 管理 trait
@@ -283,7 +284,7 @@ pub trait ArtifactManage: Send + Sync {
         file_meta: FileMeta,
         tags: Vec<String>,
         created_by: String,
-    ) -> Result<Artifact, AppError>;
+    ) -> Result<Artifact>;
 
     /// 创建项目级产物
     async fn create_project_artifact(
@@ -295,7 +296,7 @@ pub trait ArtifactManage: Send + Sync {
         file_type: FileType,
         file_meta: FileMeta,
         created_by: String,
-    ) -> Result<Artifact, AppError>;
+    ) -> Result<Artifact>;
 
     /// 创建任务级产物
     async fn create_task_artifact(
@@ -308,34 +309,34 @@ pub trait ArtifactManage: Send + Sync {
         file_type: FileType,
         file_meta: FileMeta,
         created_by: String,
-    ) -> Result<Artifact, AppError>;
+    ) -> Result<Artifact>;
 
     /// 根据 ID 获取产物
-    async fn get(&self, ctx: RequestContext, id: &str) -> Result<Option<Artifact>, AppError>;
+    async fn get(&self, ctx: RequestContext, id: &str) -> Result<Option<Artifact>>;
 
     /// 获取项目下的所有产物
     async fn list_by_project(
         &self,
         ctx: RequestContext,
         project_id: &str,
-    ) -> Result<Vec<Artifact>, AppError>;
+    ) -> Result<Vec<Artifact>>;
 
     /// 获取任务下的所有产物
     async fn list_by_task(
         &self,
         ctx: RequestContext,
         task_id: &str,
-    ) -> Result<Vec<Artifact>, AppError>;
+    ) -> Result<Vec<Artifact>>;
 
     /// 按项目范围查询产物，支持 task/file/source/limit 过滤。
     async fn list(
         &self,
         ctx: RequestContext,
         params: ListArtifactsParams,
-    ) -> Result<Vec<Artifact>, AppError>;
+    ) -> Result<Vec<Artifact>>;
 
     /// 删除产物
-    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()>;
 
     /// Get artifact content (only for generated-content artifacts).
     /// Returns the raw bytes if exists, None otherwise.
@@ -343,7 +344,7 @@ pub trait ArtifactManage: Send + Sync {
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<(Artifact, Vec<u8>)>, AppError>;
+    ) -> std::result::Result<Option<(Artifact)>, common::error::Error>;
 
     /// Update artifact content (full replace, only for generated-content artifacts).
     /// Returns the updated artifact.
@@ -353,7 +354,7 @@ pub trait ArtifactManage: Send + Sync {
         id: &str,
         content: Vec<u8>,
         expected_updated_at: Option<i64>,
-    ) -> Result<Artifact, AppError>;
+    ) -> Result<Artifact>;
 }
 
 // ==================== 实现 ====================

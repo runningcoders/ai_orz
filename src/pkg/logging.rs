@@ -17,6 +17,8 @@ use tracing_appender::rolling;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::pkg::RequestContext;
+use common::error::Result;
+use common::bail_err;
 
 /// 全局持有 tracing non-blocking writer 的 guard
 /// 保证程序退出前所有日志都被 flush 到磁盘

@@ -6,12 +6,14 @@ use axum::{
 };
 use common::api::{ApiResponse, AttachmentContentResponse, UpdateTextContentRequest};
 
-use crate::error::AppError;
+use common::bail_err;
 use crate::models::attachment::TextContentUpdate;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
 use super::response::to_content_response;
+use common::error::Result;
+use common::err;
 
 /// 全量替换 Attachment UTF-8 文本内容
 /// PUT /attachments/{id}/content
@@ -19,10 +21,10 @@ pub async fn update_attachment_content(
     Extension(ctx): Extension<RequestContext>,
     Path(id): Path<String>,
     Json(req): Json<UpdateTextContentRequest>,
-) -> Result<Json<ApiResponse<AttachmentContentResponse>>, AppError> {
+) -> Result<Json<ApiResponse<AttachmentContentResponse>>> {
     let user_id = ctx.uid();
     if user_id.is_empty() {
-        return Err(AppError::BadRequest("当前请求缺少用户上下文".to_string()));
+        bail_err!(InvalidRequest, "当前请求缺少用户上下文");
     }
 
     let content = domain()
@@ -36,7 +38,7 @@ pub async fn update_attachment_content(
             },
         )
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Attachment {} not found", id)))?;
+        .ok_or_else(|| err!(NotFound, "Attachment {} not found", id))?;
 
     Ok(Json(ApiResponse::success(to_content_response(&content))))
 }

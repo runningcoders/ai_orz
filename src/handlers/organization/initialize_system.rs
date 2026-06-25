@@ -2,7 +2,7 @@
 //!
 //! 当系统还没有初始化时，调用这个接口创建第一个组织和超级管理员
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use axum::{
@@ -12,11 +12,12 @@ use axum::{
 };
 use common::api::ApiResponse;
 use common::api::{InitializeSystemRequest, InitializeSystemResponse};
+use common::bail_err;
 
 /// 检查系统是否已经初始化
 pub async fn check_initialized(
     Extension(ctx): Extension<RequestContext>,
-) -> Result<(StatusCode, Json<ApiResponse<bool>>), AppError> {
+) -> std::result::Result<(StatusCode, Json<ApiResponse<bool, common::error::Error>>)> {
     let domain = organization::domain();
     let initialized = domain.organization_manage().check_initialized(ctx).await?;
 
@@ -27,7 +28,7 @@ pub async fn check_initialized(
 pub async fn initialize_system(
     Extension(ctx): Extension<RequestContext>,
     Json(req): Json<InitializeSystemRequest>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<impl IntoResponse> {
     let domain = organization::domain();
     let (org_id, user_id) = domain
         .organization_manage()

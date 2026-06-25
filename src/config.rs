@@ -7,6 +7,8 @@ use common::config::{AppConfig, BASE_DATA_PATH, CONFIG_FILE_NAME};
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
+use common::error::Result;
+use common::bail_err;
 // ==================== 单例管理 ====================
 
 static CONFIG: OnceLock<Arc<AppConfig>> = OnceLock::new();

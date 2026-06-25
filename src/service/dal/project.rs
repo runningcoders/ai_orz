@@ -2,13 +2,14 @@
 //!
 //! 职责：Project 领域的数据访问层，封装 ProjectDao 提供统一的查询接口
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::models::project::{Project, ProjectPo};
 use crate::pkg::RequestContext;
 use crate::service::dao::project;
 use crate::service::dao::project::{ProjectDao, ProjectQuery};
 use common::enums::ProjectStatus;
 use std::sync::{Arc, OnceLock};
+use common::bail_err;
 
 // ==================== 单例管理 ====================
 
@@ -35,10 +36,10 @@ pub fn new(project_dao: Arc<dyn ProjectDao + Send + Sync>) -> Arc<dyn ProjectDal
 #[async_trait::async_trait]
 pub trait ProjectDal: Send + Sync {
     /// 创建项目
-    async fn create(&self, ctx: RequestContext, project: &Project) -> Result<(), AppError>;
+    async fn create(&self, ctx: RequestContext, project: &Project) -> Result<()>;
 
     /// 根据 ID 获取项目
-    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Project>, AppError>;
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Project>>;
 
     /// 获取根用户下的所有项目
     async fn list_by_root_user(
@@ -46,7 +47,7 @@ pub trait ProjectDal: Send + Sync {
         ctx: RequestContext,
         root_user_id: &str,
         limit: Option<usize>,
-    ) -> Result<Vec<Project>, AppError>;
+    ) -> Result<Vec<Project>>;
 
     /// 获取根用户下指定状态的项目
     async fn list_by_root_user_and_status(
@@ -55,17 +56,17 @@ pub trait ProjectDal: Send + Sync {
         root_user_id: &str,
         status: Vec<ProjectStatus>,
         limit: Option<usize>,
-    ) -> Result<Vec<Project>, AppError>;
+    ) -> Result<Vec<Project>>;
 
     /// 通用综合查询
     async fn query(
         &self,
         ctx: RequestContext,
         query: ProjectQuery,
-    ) -> Result<Vec<Project>, AppError>;
+    ) -> Result<Vec<Project>>;
 
     /// 更新项目信息
-    async fn update(&self, ctx: RequestContext, project: &Project) -> Result<(), AppError>;
+    async fn update(&self, ctx: RequestContext, project: &Project) -> Result<()>;
 
     /// 更新项目状态
     async fn update_status(
@@ -74,7 +75,7 @@ pub trait ProjectDal: Send + Sync {
         id: &str,
         status: ProjectStatus,
         modified_by: &str,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 归档项目（软删除）
     async fn archive(
@@ -82,14 +83,14 @@ pub trait ProjectDal: Send + Sync {
         ctx: RequestContext,
         id: &str,
         modified_by: &str,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 统计根用户的项目总数
     async fn count_by_root_user(
         &self,
         ctx: RequestContext,
         root_user_id: &str,
-    ) -> Result<u64, AppError>;
+    ) -> Result<u64>;
 
     /// 统计根用户指定状态的项目数
     async fn count_by_root_user_and_status(
@@ -97,7 +98,7 @@ pub trait ProjectDal: Send + Sync {
         ctx: RequestContext,
         root_user_id: &str,
         status: ProjectStatus,
-    ) -> Result<u64, AppError>;
+    ) -> Result<u64>;
 }
 
 // ==================== DAL 实现 ====================
@@ -109,11 +110,11 @@ struct ProjectDalImpl {
 
 #[async_trait::async_trait]
 impl ProjectDal for ProjectDalImpl {
-    async fn create(&self, ctx: RequestContext, project: &Project) -> Result<(), AppError> {
+    async fn create(&self, ctx: RequestContext, project: &Project) -> Result<()> {
         self.project_dao.insert(ctx, &project.po).await
     }
 
-    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Project>, AppError> {
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Project>> {
         let opt = self.project_dao.find_by_id(ctx, id).await?;
         Ok(opt.map(Project::from_po))
     }
@@ -123,7 +124,7 @@ impl ProjectDal for ProjectDalImpl {
         ctx: RequestContext,
         root_user_id: &str,
         limit: Option<usize>,
-    ) -> Result<Vec<Project>, AppError> {
+    ) -> Result<Vec<Project>> {
         let list = self
             .project_dao
             .list_by_root_user(ctx, root_user_id, limit)
@@ -137,7 +138,7 @@ impl ProjectDal for ProjectDalImpl {
         root_user_id: &str,
         status: Vec<ProjectStatus>,
         limit: Option<usize>,
-    ) -> Result<Vec<Project>, AppError> {
+    ) -> Result<Vec<Project>> {
         let list = self
             .project_dao
             .list_by_root_user_and_status(ctx, root_user_id, status, limit)
@@ -149,12 +150,12 @@ impl ProjectDal for ProjectDalImpl {
         &self,
         ctx: RequestContext,
         query: ProjectQuery,
-    ) -> Result<Vec<Project>, AppError> {
+    ) -> Result<Vec<Project>> {
         let list = self.project_dao.query(ctx, query).await?;
         Ok(list.into_iter().map(Project::from_po).collect())
     }
 
-    async fn update(&self, ctx: RequestContext, project: &Project) -> Result<(), AppError> {
+    async fn update(&self, ctx: RequestContext, project: &Project) -> Result<()> {
         self.project_dao.update(ctx, &project.po).await
     }
 
@@ -164,7 +165,7 @@ impl ProjectDal for ProjectDalImpl {
         id: &str,
         status: ProjectStatus,
         modified_by: &str,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         self.project_dao
             .update_status(ctx, id, status, modified_by)
             .await
@@ -175,7 +176,7 @@ impl ProjectDal for ProjectDalImpl {
         ctx: RequestContext,
         id: &str,
         modified_by: &str,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         self.project_dao
             .update_status(ctx, id, ProjectStatus::Archived, modified_by)
             .await
@@ -185,7 +186,7 @@ impl ProjectDal for ProjectDalImpl {
         &self,
         ctx: RequestContext,
         root_user_id: &str,
-    ) -> Result<u64, AppError> {
+    ) -> Result<u64> {
         self.project_dao.count_by_root_user(ctx, root_user_id).await
     }
 
@@ -194,7 +195,7 @@ impl ProjectDal for ProjectDalImpl {
         ctx: RequestContext,
         root_user_id: &str,
         status: ProjectStatus,
-    ) -> Result<u64, AppError> {
+    ) -> Result<u64> {
         self.project_dao
             .count_by_root_user_and_status(ctx, root_user_id, status)
             .await

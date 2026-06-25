@@ -1,12 +1,14 @@
 //! Tool Vector DAO implementation
 //! 负责工具向量索引的 CRUD 操作，与基础工具数据完全解耦
 
-use crate::error::AppError;
+use common::error::{err, bail_err, Result, ErrorCode};
 use crate::models::vector::{VectorIndexParams, VectorRow, VectorSearchHit};
 use crate::pkg::RequestContext;
 use crate::service::dao::tool::ToolVectorDao;
 use async_trait::async_trait;
 use std::sync::{Arc, OnceLock};
+use common::err;
+use common::bail_err;
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -37,34 +39,34 @@ pub struct ToolVectorDaoImpl;
 impl ToolVectorDao for ToolVectorDaoImpl {
     async fn upsert_vector(
         &self,
-        ctx: RequestContext,
+        _ctx: RequestContext,
         tool_id: &str,
         vector_params: &VectorIndexParams,
-    ) -> Result<(), AppError> {
-        let vector_store = ctx.vector_store();
+    ) -> Result<()> {
+        let vector_store = _ctx.vector_store();
         vector_store.upsert("tools", tool_id, vector_params).await?;
         Ok(())
     }
 
     async fn search_vector(
         &self,
-        ctx: RequestContext,
+        _ctx: RequestContext,
         query_vector: &[f32],
         top_k: i32,
-    ) -> Result<Vec<VectorSearchHit>, AppError> {
-        let vector_store = ctx.vector_store();
+    ) -> Result<Vec<VectorSearchHit>> {
+        let vector_store = _ctx.vector_store();
         let results = vector_store.search("tools", query_vector, top_k).await?;
         Ok(results)
     }
 
     async fn get_vector_row(
         &self,
-        ctx: RequestContext,
+        _ctx: RequestContext,
         tool_id: &str,
-    ) -> Result<Option<VectorRow>, AppError> {
-        ctx.vector_store()
+    ) -> Result<Option<VectorRow>> {
+        _ctx.vector_store()
             .get("tools", tool_id)
             .await
-            .map_err(|e| AppError::Internal(format!("Vector store error: {e}")))
+            .map_err(|e| err!(Internal, "Vector store error: {e}").with_source(e))
     }
 }

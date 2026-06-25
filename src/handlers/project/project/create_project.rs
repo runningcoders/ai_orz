@@ -1,11 +1,13 @@
 //! Handler: POST /api/v1/projects - Create a new project
 
 use super::response;
-use crate::error::AppError;
+use common::bail_err;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CreateProjectRequest, CreateProjectResponse};
+use common::error::Result;
+use common::err;
 
 /// Create a new project
 #[register_handler_tool(
@@ -18,10 +20,10 @@ use common::api::{CreateProjectRequest, CreateProjectResponse};
 pub async fn create_project(
     ctx: RequestContext,
     params: CreateProjectRequest,
-) -> Result<CreateProjectResponse, AppError> {
+) -> Result<CreateProjectResponse> {
     let current_user_id = ctx.uid();
     if current_user_id.is_empty() {
-        return Err(AppError::BadRequest("当前用户不能为空".to_string()));
+        bail_err!(InvalidRequest, "当前请求缺少用户上下文");
     }
 
     let project = domain()

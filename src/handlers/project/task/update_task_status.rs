@@ -1,11 +1,12 @@
 //! Handler: PUT /api/v1/tasks/{id}/status - Update task status (state transition)
 
 use super::response;
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateTaskStatusRequest, UpdateTaskStatusResponse};
+use common::bail_err;
 
 /// Update task status with state transition validation
 #[register_handler_tool(
@@ -18,12 +19,12 @@ use common::api::{UpdateTaskStatusRequest, UpdateTaskStatusResponse};
 pub async fn update_task_status(
     ctx: RequestContext,
     params: UpdateTaskStatusRequest,
-) -> Result<UpdateTaskStatusResponse, AppError> {
+) -> Result<UpdateTaskStatusResponse> {
     let mut task = domain()
         .task_manage()
         .get(ctx.clone(), &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Task {} not found", params.id)))?;
+        .ok_or_else(|| common::error::Error::not_found(format!("Task {} not found", params.id)))?;
 
     domain()
         .task_manage()

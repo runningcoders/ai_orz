@@ -1,7 +1,7 @@
 //! Handler: POST /api/v1/project/artifacts - Create a new artifact
 
 use super::response;
-use crate::error::AppError;
+use common::error::{err, bail_err, Result};
 use crate::models::attachment::AttachmentGetOptions;
 use crate::models::file::FileMeta;
 use crate::pkg::RequestContext;
@@ -9,6 +9,8 @@ use crate::service::domain::{finance, project};
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CreateArtifactRequest, CreateArtifactResponse};
 use common::enums::ArtifactSourceType;
+use common::err;
+use common::bail_err;
 
 /// Create a new artifact (from existing attachment or generated content)
 #[register_handler_tool(
@@ -21,16 +23,16 @@ use common::enums::ArtifactSourceType;
 pub async fn create_artifact(
     ctx: RequestContext,
     params: CreateArtifactRequest,
-) -> Result<CreateArtifactResponse, AppError> {
+) -> Result<CreateArtifactResponse> {
     let current_user_id = ctx.uid();
     if current_user_id.is_empty() {
-        return Err(AppError::BadRequest("当前用户不能为空".to_string()));
+        bail_err!(InvalidRequest, "当前请求缺少用户上下文");
     }
     if params.project_id.trim().is_empty() {
-        return Err(AppError::BadRequest("project_id 不能为空".to_string()));
+        bail_err!(InvalidRequest, "project_id不能为空");
     }
     if params.name.trim().is_empty() {
-        return Err(AppError::BadRequest("产物名称不能为空".to_string()));
+        bail_err!(InvalidRequest, "name不能为空");
     }
 
     let artifact = match params.source_type {
@@ -38,14 +40,10 @@ pub async fn create_artifact(
             create_from_attachment(ctx, params, current_user_id).await?
         }
         ArtifactSourceType::GeneratedContent => {
-            return Err(AppError::Unsupported(
-                "generated_content artifact create is not implemented yet".to_string(),
-            ));
+            bail_err!(UnsupportedOperation, "generated_content artifact create is not implemented yet");
         }
         ArtifactSourceType::RemoteUrl => {
-            return Err(AppError::Unsupported(
-                "remote_url artifact create is reserved for future extension".to_string(),
-            ));
+            bail_err!(UnsupportedOperation, "remote_url artifact create is reserved for future extension");
         }
     };
 
@@ -56,25 +54,23 @@ async fn create_from_attachment(
     ctx: RequestContext,
     params: CreateArtifactRequest,
     current_user_id: String,
-) -> Result<crate::models::artifact::Artifact, AppError> {
+) -> Result<crate::models::artifact::Artifact> {
     let attachment_id = params
         .attachment_id
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| AppError::BadRequest("attachment_id 不能为空".to_string()))?;
+        .ok_or_else(|| err!(InvalidRequest, "attachment_id 不能为空"))?;
 
     if params.content.is_some() || params.file_name.is_some() || params.mime_type.is_some() {
-        return Err(AppError::BadRequest(
-            "attachment 类型产物不能同时携带 content/file_name/mime_type".to_string(),
-        ));
+        bail_err!(InvalidRequest, "attachment 类型产物不能同时携带 content/file_name/mime_type");
     }
 
     let attachment = finance::domain()
         .attachment_manage()
         .get_attachment(ctx.clone(), attachment_id, AttachmentGetOptions::default())
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Attachment {} not found", attachment_id)))?;
+        .ok_or_else(|| err!(NotFound, "Attachment {} not found", attachment_id))?;
 
     let file_type = params.file_type.unwrap_or(attachment.po.file_type);
     let file_meta = FileMeta::new(

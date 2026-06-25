@@ -148,7 +148,7 @@ impl MessageHandler<MockEvent> for MockHandler {
     async fn handle(&self, event: &MockEvent) -> crate::error::Result<()> {
         self.handled_events.lock().unwrap().push(event.id.clone());
         if self.should_fail {
-            Err(crate::error::AppError::Internal(
+            Err(common::error::Error::internal(
                 "mock handle failure".to_string(),
             ))
         } else {
@@ -170,6 +170,8 @@ fn create_mock_event(content: &str) -> MockEvent {
 mod consumer_behavior_tests {
     use super::*;
     use common::config::TopicConsumerConfig;
+use common::error::Result;
+use common::bail_err;
 
     #[tokio::test]
     async fn test_empty_queue_returns_false() -> crate::error::Result<()> {

@@ -6,7 +6,7 @@
 //! - 记忆追踪文件的写入（每日文件追加）
 //! - 原始记忆不可修改不可删除，只能追加，符合设计原则
 
-use crate::error::AppError;
+use common::error::{err, bail_err, Error, Result};
 use crate::models::memory::{
     KnowledgeNodeRelationPo, KnowledgeReferencePo, LongTermKnowledgeNodePo, MemoryTrace,
     MemoryTracePosition, ShortTermMemoryIndexPo,
@@ -15,6 +15,7 @@ use crate::models::vector::{VectorIndexParams, VectorSearchHit};
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
 use common::enums::{KnowledgeRelationType, MemoryStatus, MemoryType};
+use common::bail_err;
 
 // ==================== 查询参数结构体 ====================
 
@@ -73,7 +74,7 @@ pub trait MemoryDao: Send + Sync {
         &self,
         ctx: RequestContext,
         trace: &MemoryTrace,
-    ) -> Result<MemoryTracePosition, AppError>;
+    ) -> Result<MemoryTracePosition>;
 
     /// 批量追加多条 MemoryTrace 到每日 JSONL 文件
     ///
@@ -90,7 +91,7 @@ pub trait MemoryDao: Send + Sync {
         &self,
         ctx: RequestContext,
         traces: &[MemoryTrace],
-    ) -> Result<Vec<MemoryTracePosition>, AppError>;
+    ) -> Result<Vec<MemoryTracePosition>>;
 
     /// 创建短期记忆索引（仅写 SQLite，不接触文件）
     ///
@@ -107,7 +108,7 @@ pub trait MemoryDao: Send + Sync {
         &self,
         ctx: RequestContext,
         index: ShortTermMemoryIndexPo,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 更新短期记忆索引（按 id 全字段覆盖）
     ///
@@ -116,12 +117,12 @@ pub trait MemoryDao: Send + Sync {
     /// - index: 完整短期记忆索引（id 必须存在）
     /// # 返回
     /// - 成功返回 Ok(())
-    /// - 记录不存在返回 Err(AppError::NotFound)
+    /// - 记录不存在返回 Err(common::error::Error::not_found)
     async fn update_short_term_index(
         &self,
         ctx: RequestContext,
         index: ShortTermMemoryIndexPo,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 根据 ID 查询短期记忆索引
     ///
@@ -135,7 +136,7 @@ pub trait MemoryDao: Send + Sync {
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<ShortTermMemoryIndexPo>, AppError>;
+    ) -> Result<Option<ShortTermMemoryIndexPo>>;
 
     /// 查询 Agent 的所有短期记忆索引（按时间倒序）
     ///
@@ -150,14 +151,14 @@ pub trait MemoryDao: Send + Sync {
         ctx: RequestContext,
         agent_id: &str,
         limit: usize,
-    ) -> Result<Vec<ShortTermMemoryIndexPo>, AppError>;
+    ) -> Result<Vec<ShortTermMemoryIndexPo>>;
 
     /// 通用组合查询短期记忆索引
     async fn query_short_term(
         &self,
         ctx: RequestContext,
         query: MemoryQuery,
-    ) -> Result<Vec<ShortTermMemoryIndexPo>, AppError>;
+    ) -> Result<Vec<ShortTermMemoryIndexPo>>;
 
     /// 全文检索短期记忆索引
     ///
@@ -170,7 +171,7 @@ pub trait MemoryDao: Send + Sync {
         &self,
         ctx: RequestContext,
         search: MemorySearch,
-    ) -> Result<Vec<ShortTermMemoryIndexPo>, AppError>;
+    ) -> Result<Vec<ShortTermMemoryIndexPo>>;
 
     /// 读取记忆追踪完整内容
     ///
@@ -180,7 +181,7 @@ pub trait MemoryDao: Send + Sync {
     /// - index: 短期索引
     /// # 返回
     /// - 完整内容字符串
-    fn read_memory_content(&self, index: &ShortTermMemoryIndexPo) -> Result<String, AppError>;
+    fn read_memory_content(&self, index: &ShortTermMemoryIndexPo) -> Result<String>;
 
     /// 遗忘短期记忆索引（软删除，标记为已遗忘）
     ///
@@ -189,7 +190,7 @@ pub trait MemoryDao: Send + Sync {
     /// - id: 索引 ID
     /// # 返回
     /// - 成功返回 Ok(())
-    async fn forget_short_term_index(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+    async fn forget_short_term_index(&self, ctx: RequestContext, id: &str) -> Result<()>;
 
     // ========== 长期知识图谱相关 ==========
 
@@ -206,7 +207,7 @@ pub trait MemoryDao: Send + Sync {
         &self,
         ctx: RequestContext,
         node: &LongTermKnowledgeNodePo,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 更新知识节点（按 id 全字段覆盖）
     ///
@@ -215,12 +216,12 @@ pub trait MemoryDao: Send + Sync {
     /// - node: 完整知识节点（id 必须存在）
     /// # 返回
     /// - 成功返回 Ok(())
-    /// - 记录不存在返回 Err(AppError::NotFound)
+    /// - 记录不存在返回 Err(common::error::Error::not_found)
     async fn update_knowledge_node(
         &self,
         ctx: RequestContext,
         node: &LongTermKnowledgeNodePo,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 批量创建或更新知识节点（批量 upsert）
     ///
@@ -235,7 +236,7 @@ pub trait MemoryDao: Send + Sync {
         &self,
         ctx: RequestContext,
         nodes: &[LongTermKnowledgeNodePo],
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 根据 ID 获取知识节点
     ///
@@ -248,7 +249,7 @@ pub trait MemoryDao: Send + Sync {
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<LongTermKnowledgeNodePo>, AppError>;
+    ) -> Result<Option<LongTermKnowledgeNodePo>>;
 
     /// 查询 Agent 的所有知识节点
     ///
@@ -265,14 +266,14 @@ pub trait MemoryDao: Send + Sync {
         agent_id: &str,
         node_type: Option<&str>,
         limit: usize,
-    ) -> Result<Vec<LongTermKnowledgeNodePo>, AppError>;
+    ) -> Result<Vec<LongTermKnowledgeNodePo>>;
 
     /// 通用组合查询知识节点
     async fn query_knowledge_nodes(
         &self,
         ctx: RequestContext,
         query: MemoryQuery,
-    ) -> Result<Vec<LongTermKnowledgeNodePo>, AppError>;
+    ) -> Result<Vec<LongTermKnowledgeNodePo>>;
 
     /// 全文检索知识节点
     ///
@@ -285,7 +286,7 @@ pub trait MemoryDao: Send + Sync {
         &self,
         ctx: RequestContext,
         search: MemorySearch,
-    ) -> Result<Vec<LongTermKnowledgeNodePo>, AppError>;
+    ) -> Result<Vec<LongTermKnowledgeNodePo>>;
 
     /// 删除知识节点
     ///
@@ -296,7 +297,7 @@ pub trait MemoryDao: Send + Sync {
     /// - id: 节点 ID
     /// # 返回
     /// - 成功返回 Ok(())
-    async fn delete_knowledge_node(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+    async fn delete_knowledge_node(&self, ctx: RequestContext, id: &str) -> Result<()>;
 
     /// 添加知识引用
     ///
@@ -311,7 +312,7 @@ pub trait MemoryDao: Send + Sync {
         &self,
         ctx: RequestContext,
         reference: &KnowledgeReferencePo,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 批量添加知识引用
     ///
@@ -324,7 +325,7 @@ pub trait MemoryDao: Send + Sync {
         &self,
         ctx: RequestContext,
         references: &[KnowledgeReferencePo],
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 获取知识节点的所有引用
     ///
@@ -337,7 +338,7 @@ pub trait MemoryDao: Send + Sync {
         &self,
         ctx: RequestContext,
         knowledge_id: &str,
-    ) -> Result<Vec<KnowledgeReferencePo>, AppError>;
+    ) -> Result<Vec<KnowledgeReferencePo>>;
 
     // ========== 知识节点关系相关 ==========
 
@@ -352,7 +353,7 @@ pub trait MemoryDao: Send + Sync {
         &self,
         ctx: RequestContext,
         relation: &KnowledgeNodeRelationPo,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 批量添加知识节点关系
     ///
@@ -365,7 +366,7 @@ pub trait MemoryDao: Send + Sync {
         &self,
         ctx: RequestContext,
         relations: &[KnowledgeNodeRelationPo],
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// Upsert 知识节点关系（按 id 冲突更新 source/target/type/updated_at）
     ///
@@ -380,7 +381,7 @@ pub trait MemoryDao: Send + Sync {
         &self,
         ctx: RequestContext,
         relation: &KnowledgeNodeRelationPo,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 获取节点的所有出边关系（从该节点出发）
     ///
@@ -393,7 +394,7 @@ pub trait MemoryDao: Send + Sync {
         &self,
         ctx: RequestContext,
         source_id: &str,
-    ) -> Result<Vec<KnowledgeNodeRelationPo>, AppError>;
+    ) -> Result<Vec<KnowledgeNodeRelationPo>>;
 
     /// 获取节点的所有入边关系（指向该节点）
     ///
@@ -406,7 +407,7 @@ pub trait MemoryDao: Send + Sync {
         &self,
         ctx: RequestContext,
         target_id: &str,
-    ) -> Result<Vec<KnowledgeNodeRelationPo>, AppError>;
+    ) -> Result<Vec<KnowledgeNodeRelationPo>>;
 
     /// 获取节点的所有关系（出入边都包含）
     ///
@@ -419,7 +420,7 @@ pub trait MemoryDao: Send + Sync {
         &self,
         ctx: RequestContext,
         node_id: &str,
-    ) -> Result<Vec<KnowledgeNodeRelationPo>, AppError>;
+    ) -> Result<Vec<KnowledgeNodeRelationPo>>;
 
     /// 删除指定关系
     ///
@@ -432,7 +433,7 @@ pub trait MemoryDao: Send + Sync {
         &self,
         ctx: RequestContext,
         relation_id: &str,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 删除节点的所有关系
     ///
@@ -447,7 +448,7 @@ pub trait MemoryDao: Send + Sync {
         &self,
         ctx: RequestContext,
         node_id: &str,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 查询指定类型的关系
     ///
@@ -462,14 +463,14 @@ pub trait MemoryDao: Send + Sync {
         ctx: RequestContext,
         source_id: &str,
         relation_type: KnowledgeRelationType,
-    ) -> Result<Vec<KnowledgeNodeRelationPo>, AppError>;
+    ) -> Result<Vec<KnowledgeNodeRelationPo>>;
 }
 
 // ==================== MemoryVectorDao Trait ====================
 
+pub use vector::*;
+
 /// ✅ Memory Vector DAO trait - 仅负责记忆向量索引的 CRUD，与基础记忆数据完全解耦
-/// 分为短期记忆和长期知识节点两个独立的索引空间，互不干扰
-#[async_trait]
 pub trait MemoryVectorDao: Send + Sync {
     /// 索引短期记忆向量（summary 字段）
     async fn upsert_short_term_vector(
@@ -477,7 +478,7 @@ pub trait MemoryVectorDao: Send + Sync {
         ctx: RequestContext,
         memory_id: &str,
         vector_params: &VectorIndexParams,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 索引长期知识节点向量（node_description + summary 拼接）
     async fn upsert_knowledge_node_vector(
@@ -485,7 +486,7 @@ pub trait MemoryVectorDao: Send + Sync {
         ctx: RequestContext,
         knowledge_id: &str,
         vector_params: &VectorIndexParams,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 语义搜索短期记忆，返回完整的向量行数据 + 相似度距离
     async fn search_short_term_vector(
@@ -493,7 +494,7 @@ pub trait MemoryVectorDao: Send + Sync {
         ctx: RequestContext,
         query_vector: &[f32],
         top_k: i32,
-    ) -> Result<Vec<VectorSearchHit>, AppError>;
+    ) -> Result<Vec<VectorSearchHit>>;
 
     /// 语义搜索长期知识节点，返回完整的向量行数据 + 相似度距离
     async fn search_knowledge_node_vector(
@@ -501,35 +502,35 @@ pub trait MemoryVectorDao: Send + Sync {
         ctx: RequestContext,
         query_vector: &[f32],
         top_k: i32,
-    ) -> Result<Vec<VectorSearchHit>, AppError>;
+    ) -> Result<Vec<VectorSearchHit>>;
 
     /// 获取指定短期记忆的完整向量行数据（包含元信息）
     async fn get_short_term_vector_row(
         &self,
         ctx: RequestContext,
         memory_id: &str,
-    ) -> Result<Option<crate::models::vector::VectorRow>, AppError>;
+    ) -> Result<Option<crate::models::vector::VectorRow>>;
 
     /// 获取指定知识节点的完整向量行数据（包含元信息）
     async fn get_knowledge_node_vector_row(
         &self,
         ctx: RequestContext,
         knowledge_id: &str,
-    ) -> Result<Option<crate::models::vector::VectorRow>, AppError>;
+    ) -> Result<Option<crate::models::vector::VectorRow>>;
 
     /// 删除短期记忆的向量索引
     async fn delete_short_term_vector(
         &self,
         ctx: RequestContext,
         memory_id: &str,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 删除知识节点的向量索引
     async fn delete_knowledge_node_vector(
         &self,
         ctx: RequestContext,
         knowledge_id: &str,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 }
 
 // ==================== SQLite 实现 ====================

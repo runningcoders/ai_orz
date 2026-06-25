@@ -11,6 +11,7 @@ mod tests {
     use crate::service::domain::finance;
     use sqlx::SqlitePool;
     use std::collections::BTreeMap;
+use common::bail_err;
 
     fn stdio_server(name: &str, creator: &str) -> McpServer {
         let mut env = BTreeMap::new();

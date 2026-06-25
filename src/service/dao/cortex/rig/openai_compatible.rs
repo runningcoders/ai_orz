@@ -13,6 +13,8 @@ use rig::prelude::*;
 use rig::providers::openai;
 use rig::providers::openai::responses_api::ResponsesCompletionModel;
 use rig::tool::ToolDyn;
+use common::error::Result;
+use common::bail_err;
 
 /// OpenAI 兼容模式 Cortex - Agent 类型
 #[derive(Clone)]
@@ -81,7 +83,7 @@ impl CortexTrait for OpenAiCompatibleCortex {
     }
 
     async fn prompt(&self, prompt: &str) -> Result<String> {
-        let response: Result<String, _> = self.agent.prompt(prompt).await;
+        let response: Result<String> = self.agent.prompt(prompt).await;
         response.map_err(|e| anyhow!("OpenAI compatible prompt failed: {}", e))
     }
 

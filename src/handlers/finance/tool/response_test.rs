@@ -4,6 +4,7 @@ use serde_json::json;
 use crate::models::tool::{Tool, ToolPo};
 
 use super::response::to_detail;
+use common::bail_err;
 
 fn http_tool_with_config(config: serde_json::Value) -> Tool {
     let po = ToolPo::new(

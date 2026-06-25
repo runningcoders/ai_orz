@@ -5,6 +5,7 @@ use crate::models::mcp_server::{
 };
 
 use super::response::to_detail;
+use common::bail_err;
 
 fn redacted_stdio_server() -> McpServer {
     let mut env = BTreeMap::new();

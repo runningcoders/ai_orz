@@ -134,6 +134,8 @@ impl Storage {
 
 use std::path::Path;
 use std::sync::OnceLock;
+use common::error::Result;
+use common::bail_err;
 
 /// 全局 Storage 单例（向后兼容）
 static STORAGE_INSTANCE: OnceLock<Storage> = OnceLock::new();

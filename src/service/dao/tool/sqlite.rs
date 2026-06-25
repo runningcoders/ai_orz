@@ -2,12 +2,13 @@
 
 use crate::models::tool::ToolPo;
 use crate::pkg::request_context::RequestContext;
-use anyhow::Result;
+use common::error::Result;
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 use std::sync::{Arc, OnceLock};
 
 use super::{ToolDao, ToolQuery, ToolSearch};
+use common::bail_err;
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -76,7 +77,7 @@ impl ToolDao for ToolDaoSqliteImpl {
         // Check if this is a built-in tool
         if let Some(existing) = self.get_by_id(ctx.clone(), po.id.clone()).await? {
             if matches!(existing.protocol, common::enums::ToolProtocol::Builtin) {
-                return Err(anyhow::anyhow!("Built-in tools cannot be modified"));
+                return Err(anyhow::anyhow!("Built-in tools cannot be modified").into());
             }
         }
 
@@ -111,7 +112,7 @@ impl ToolDao for ToolDaoSqliteImpl {
         // Check if this is a built-in tool
         if let Some(existing) = self.get_by_id(ctx.clone(), id.to_string()).await? {
             if matches!(existing.protocol, common::enums::ToolProtocol::Builtin) {
-                return Err(anyhow::anyhow!("Built-in tools cannot be deleted"));
+                return Err(anyhow::anyhow!("Built-in tools cannot be deleted").into());
             }
         }
 

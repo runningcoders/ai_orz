@@ -11,6 +11,7 @@ use crate::models::vector::SearchMatchInfo;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use std::collections::HashMap;
+use common::bail_err;
 
 /// 记忆追踪条目
 ///

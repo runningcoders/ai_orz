@@ -2,13 +2,14 @@
 //!
 //! 职责：User 领域的数据访问层，封装 UserDao 提供统一的查询接口
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::user;
 use crate::service::dao::user::{UserDao, UserQuery};
 use common::enums::UserStatus;
 use std::sync::{Arc, OnceLock};
+use common::bail_err;
 
 // ==================== 单例管理 ====================
 
@@ -35,47 +36,47 @@ pub fn new(user_dao: Arc<dyn UserDao + Send + Sync>) -> Arc<dyn UserDal + Send +
 #[async_trait::async_trait]
 pub trait UserDal: Send + Sync {
     /// 创建用户
-    async fn create(&self, ctx: RequestContext, user: &UserPo) -> Result<(), AppError>;
+    async fn create(&self, ctx: RequestContext, user: &UserPo) -> Result<()>;
 
     /// 根据 ID 获取用户
-    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<UserPo>, AppError>;
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<UserPo>>;
 
     /// 根据用户名获取用户
     async fn find_by_username(
         &self,
         ctx: RequestContext,
         username: &str,
-    ) -> Result<Option<UserPo>, AppError>;
+    ) -> Result<Option<UserPo>>;
 
     /// 通用综合查询
-    async fn query(&self, ctx: RequestContext, query: UserQuery) -> Result<Vec<UserPo>, AppError>;
+    async fn query(&self, ctx: RequestContext, query: UserQuery) -> Result<Vec<UserPo>>;
 
     /// 获取组织下的所有用户
     async fn find_by_organization_id(
         &self,
         ctx: RequestContext,
         org_id: &str,
-    ) -> Result<Vec<UserPo>, AppError>;
+    ) -> Result<Vec<UserPo>>;
 
     /// 更新用户信息
-    async fn update(&self, ctx: RequestContext, user: &UserPo) -> Result<(), AppError>;
+    async fn update(&self, ctx: RequestContext, user: &UserPo) -> Result<()>;
 
     /// 删除用户（软删除）
-    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()>;
 
     /// 检查用户名是否存在
     async fn exists_by_username(
         &self,
         ctx: RequestContext,
         username: &str,
-    ) -> Result<bool, AppError>;
+    ) -> Result<bool>;
 
     /// 统计组织下的用户数量
     async fn count_by_organization_id(
         &self,
         ctx: RequestContext,
         org_id: &str,
-    ) -> Result<u64, AppError>;
+    ) -> Result<u64>;
 }
 
 // ==================== DAL 实现 ====================
@@ -87,11 +88,11 @@ struct UserDalImpl {
 
 #[async_trait::async_trait]
 impl UserDal for UserDalImpl {
-    async fn create(&self, ctx: RequestContext, user: &UserPo) -> Result<(), AppError> {
+    async fn create(&self, ctx: RequestContext, user: &UserPo) -> Result<()> {
         self.user_dao.insert(ctx, user).await
     }
 
-    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<UserPo>, AppError> {
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<UserPo>> {
         self.user_dao.find_by_id(ctx, id).await
     }
 
@@ -99,11 +100,11 @@ impl UserDal for UserDalImpl {
         &self,
         ctx: RequestContext,
         username: &str,
-    ) -> Result<Option<UserPo>, AppError> {
+    ) -> Result<Option<UserPo>> {
         self.user_dao.find_by_username(ctx, username).await
     }
 
-    async fn query(&self, ctx: RequestContext, query: UserQuery) -> Result<Vec<UserPo>, AppError> {
+    async fn query(&self, ctx: RequestContext, query: UserQuery) -> Result<Vec<UserPo>> {
         self.user_dao.query(ctx, query).await
     }
 
@@ -111,7 +112,7 @@ impl UserDal for UserDalImpl {
         &self,
         ctx: RequestContext,
         org_id: &str,
-    ) -> Result<Vec<UserPo>, AppError> {
+    ) -> Result<Vec<UserPo>> {
         self.query(
             ctx,
             UserQuery {
@@ -122,11 +123,11 @@ impl UserDal for UserDalImpl {
         .await
     }
 
-    async fn update(&self, ctx: RequestContext, user: &UserPo) -> Result<(), AppError> {
+    async fn update(&self, ctx: RequestContext, user: &UserPo) -> Result<()> {
         self.user_dao.update(ctx, user).await
     }
 
-    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
+    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()> {
         self.user_dao.delete(ctx, id).await
     }
 
@@ -134,7 +135,7 @@ impl UserDal for UserDalImpl {
         &self,
         ctx: RequestContext,
         username: &str,
-    ) -> Result<bool, AppError> {
+    ) -> Result<bool> {
         self.user_dao.exists_by_username(ctx, username).await
     }
 
@@ -142,7 +143,7 @@ impl UserDal for UserDalImpl {
         &self,
         ctx: RequestContext,
         org_id: &str,
-    ) -> Result<u64, AppError> {
+    ) -> Result<u64> {
         self.user_dao.count_by_organization_id(ctx, org_id).await
     }
 }

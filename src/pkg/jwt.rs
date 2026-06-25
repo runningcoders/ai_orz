@@ -2,6 +2,7 @@
 //!
 //! 用于用户登录认证，签发和验证 JWT token
 
+use common::error::Result;
 use chrono::{Duration, Utc};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
@@ -68,7 +69,7 @@ impl JwtConfig {
         user_id: &str,
         username: &str,
         organization_id: &str,
-    ) -> Result<String, jsonwebtoken::errors::Error> {
+    ) -> Result<String> {
         let claims = Claims::new(
             user_id.to_string(),
             username.to_string(),
@@ -84,7 +85,7 @@ impl JwtConfig {
     }
 
     /// 验证并解码 JWT token
-    pub fn decode(&self, token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
+    pub fn decode(&self, token: &str) -> Result<Claims> {
         let validation = Validation::new(Algorithm::HS256);
 
         decode::<Claims>(token, &DecodingKey::from_secret(&self.secret), &validation)
@@ -117,18 +118,19 @@ pub fn encode_jwt(
     user_id: &str,
     username: &str,
     organization_id: &str,
-) -> Result<String, jsonwebtoken::errors::Error> {
+) -> Result<String> {
     jwt_config().encode(user_id, username, organization_id)
 }
 
 /// 验证并解码 JWT token 使用全局配置
-pub fn decode_jwt(token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
+pub fn decode_jwt(token: &str) -> Result<Claims> {
     jwt_config().decode(token)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+use common::bail_err;
 
     #[test]
     fn test_jwt_encode_decode() {

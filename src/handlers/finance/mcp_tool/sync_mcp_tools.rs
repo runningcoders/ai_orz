@@ -1,10 +1,11 @@
 //! Handler: POST /api/v1/mcp-servers/{server_id}/tools/sync - Sync MCP tools.
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{SyncMcpToolsRequest, SyncMcpToolsResponse};
+use common::bail_err;
 
 /// Sync remote MCP tools from one server into local Tool records.
 #[register_handler_tool(
@@ -17,7 +18,7 @@ use common::api::{SyncMcpToolsRequest, SyncMcpToolsResponse};
 pub async fn sync_mcp_tools(
     ctx: RequestContext,
     params: SyncMcpToolsRequest,
-) -> Result<SyncMcpToolsResponse, AppError> {
+) -> Result<SyncMcpToolsResponse> {
     let synced = domain()
         .mcp_tool_manage()
         .sync_mcp_tools(ctx, &params.server_id)

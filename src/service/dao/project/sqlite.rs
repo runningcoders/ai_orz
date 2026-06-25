@@ -8,6 +8,8 @@ use crate::error::AppError;
 use crate::models::project::ProjectPo;
 use crate::pkg::RequestContext;
 use common::enums::project::ProjectStatus;
+use common::error::Result;
+use common::bail_err;
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -44,7 +46,7 @@ impl ProjectDaoSqliteImpl {
 
 #[async_trait::async_trait]
 impl ProjectDao for ProjectDaoSqliteImpl {
-    async fn insert(&self, ctx: RequestContext, project: &ProjectPo) -> Result<(), AppError> {
+    async fn insert(&self, ctx: RequestContext, project: &ProjectPo) -> Result<()> {
         let pool = ctx.db_pool();
         let status_i32 = project.status as i32;
         sqlx::query!(
@@ -60,7 +62,7 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<ProjectPo>, AppError> {
+    ) -> Result<Option<ProjectPo>> {
         let pool = ctx.db_pool();
         let project = sqlx::query_as!(
             ProjectPo,
@@ -76,7 +78,7 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         &self,
         ctx: RequestContext,
         query: ProjectQuery,
-    ) -> Result<Vec<ProjectPo>, AppError> {
+    ) -> Result<Vec<ProjectPo>> {
         // 使用 sqlx::QueryBuilder 动态构建查询
         let mut builder = sqlx::QueryBuilder::new(
             "SELECT id, name, description, workflow, guidance, \"status\" as \"status\", priority, tags, root_user_id, owner_agent_id, start_at, due_at, end_at, created_by, modified_by, created_at, updated_at FROM projects WHERE 1=1",
@@ -123,7 +125,7 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         ctx: RequestContext,
         root_user_id: &str,
         limit: Option<usize>,
-    ) -> Result<Vec<ProjectPo>, AppError> {
+    ) -> Result<Vec<ProjectPo>> {
         // 语法糖：调用通用查询
         self.query(
             ctx,
@@ -142,7 +144,7 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         root_user_id: &str,
         status: Vec<ProjectStatus>,
         limit: Option<usize>,
-    ) -> Result<Vec<ProjectPo>, AppError> {
+    ) -> Result<Vec<ProjectPo>> {
         // 语法糖：调用通用查询
         self.query(
             ctx,
@@ -156,7 +158,7 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         .await
     }
 
-    async fn update(&self, ctx: RequestContext, project: &ProjectPo) -> Result<(), AppError> {
+    async fn update(&self, ctx: RequestContext, project: &ProjectPo) -> Result<()> {
         let pool = ctx.db_pool();
         let now = common::constants::utils::current_timestamp();
         let status_i32 = project.status as i32;
@@ -175,7 +177,7 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         id: &str,
         status: ProjectStatus,
         modified_by: &str,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let pool = ctx.db_pool();
         let now = common::constants::utils::current_timestamp();
         let status_i32 = status as i32;
@@ -195,7 +197,7 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         &self,
         ctx: RequestContext,
         root_user_id: &str,
-    ) -> Result<u64, AppError> {
+    ) -> Result<u64> {
         let pool = ctx.db_pool();
         let count = sqlx::query!(
             "SELECT COUNT(*) as cnt FROM projects WHERE root_user_id = ? AND \"status\" != 0",
@@ -211,7 +213,7 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         ctx: RequestContext,
         root_user_id: &str,
         status: ProjectStatus,
-    ) -> Result<u64, AppError> {
+    ) -> Result<u64> {
         let pool = ctx.db_pool();
         let status_i32 = status as i32;
         let count = sqlx::query!(

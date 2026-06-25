@@ -1,12 +1,14 @@
 //! Handler: GET /api/v1/project/artifacts/{id}/content - Get artifact text content
 
-use crate::error::AppError;
+use common::error::{err, bail_err, Result};
 use crate::handlers::project::artifact::response;
 use crate::pkg::RequestContext;
 use crate::service::domain::project;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::GetArtifactContentRequest;
 use common::api::artifact::{ArtifactContentText, GetArtifactContentResponse};
+use common::err;
+use common::bail_err;
 
 /// Get the full text content of a generated-content artifact
 #[register_handler_tool(
@@ -19,7 +21,7 @@ use common::api::artifact::{ArtifactContentText, GetArtifactContentResponse};
 pub async fn get_artifact_content(
     ctx: RequestContext,
     params: GetArtifactContentRequest,
-) -> Result<GetArtifactContentResponse, AppError> {
+) -> Result<GetArtifactContentResponse> {
     let domain = project::domain();
     let result = domain
         .artifact_manage()
@@ -27,17 +29,13 @@ pub async fn get_artifact_content(
         .await?;
 
     match result {
-        None => Err(AppError::NotFound(format!(
-            "Artifact not found or no content available: {}",
-            params.artifact_id
-        ))),
+        None => {
+            bail_err!(NotFound, "Artifact not found or no content available: {}", params.artifact_id);
+        }
         Some((artifact, content_bytes)) => {
             // Validate that content is valid UTF-8
             let content_str = String::from_utf8(content_bytes).map_err(|_| {
-                AppError::BadRequest(format!(
-                    "Artifact content is not valid UTF-8 text: {}",
-                    params.artifact_id
-                ))
+                err!(InvalidRequest, "Artifact content is not valid UTF-8 text: {}", params.artifact_id)
             })?;
 
             let content = ArtifactContentText {

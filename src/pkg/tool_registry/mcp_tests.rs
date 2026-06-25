@@ -8,6 +8,7 @@ use common::enums::{ToolProtocol, ToolStatus};
 use serde_json::json;
 use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::Arc;
+use common::bail_err;
 
 fn mcp_tool_po(config: serde_json::Value) -> ToolPo {
     let mut po = ToolPo::new(

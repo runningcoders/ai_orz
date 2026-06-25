@@ -1,6 +1,6 @@
 //! Handler: POST /api/v1/skills - 创建新 Skill
 
-use crate::error::AppError;
+use common::bail_err;
 use crate::models::skill::{Skill, SkillFile, SkillPo};
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
@@ -9,6 +9,8 @@ use common::api::{CreateSkillRequest, CreateSkillResponse};
 use common::enums::skill::SkillAuthorType;
 
 use super::response::to_detail;
+use common::error::Result;
+use common::err;
 
 /// Create a new empty skill with optional initial content and files. Returns the created skill detail.
 #[register_handler_tool(
@@ -21,13 +23,13 @@ use super::response::to_detail;
 pub async fn create_skill(
     ctx: RequestContext,
     params: CreateSkillRequest,
-) -> Result<CreateSkillResponse, AppError> {
+) -> Result<CreateSkillResponse> {
     let user_id = ctx.uid();
     if user_id.is_empty() {
-        return Err(AppError::BadRequest("当前请求缺少用户上下文".to_string()));
+        bail_err!(InvalidRequest, "当前请求缺少用户上下文");
     }
     if params.name.trim().is_empty() {
-        return Err(AppError::BadRequest("技能名称不能为空".to_string()));
+        bail_err!(InvalidRequest, "skill name 不能为空");
     }
 
     let skill_id = uuid::Uuid::now_v7().to_string();
@@ -84,7 +86,7 @@ pub async fn create_skill(
         .skill_manage()
         .get_skill(ctx, &skill_id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Skill {} not found", skill_id)))?;
+        .ok_or_else(|| err!(NotFound, "Skill {} not found", skill_id))?;
 
     Ok(to_detail(&created))
 }

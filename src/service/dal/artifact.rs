@@ -2,13 +2,14 @@
 //!
 //! 职责：Artifact 领域的数据访问层，封装 ArtifactDao 提供统一的查询接口
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::models::artifact::Artifact;
 use crate::pkg::RequestContext;
 use crate::service::dao::artifact;
 use crate::service::dao::artifact::ArtifactDao;
 use common::enums::{ArtifactSourceType, FileType};
 use std::sync::{Arc, OnceLock};
+use common::bail_err;
 
 /// Artifact DAL 查询参数。
 ///
@@ -47,32 +48,32 @@ pub fn new(artifact_dao: Arc<dyn ArtifactDao + Send + Sync>) -> Arc<dyn Artifact
 #[async_trait::async_trait]
 pub trait ArtifactDal: Send + Sync {
     /// 创建产物
-    async fn create(&self, ctx: RequestContext, artifact: &Artifact) -> Result<(), AppError>;
+    async fn create(&self, ctx: RequestContext, artifact: &Artifact) -> Result<()>;
 
     /// 根据 ID 获取产物
     async fn find_by_id(&self, ctx: RequestContext, id: &str)
-    -> Result<Option<Artifact>, AppError>;
+    -> Result<Option<Artifact>>;
 
     /// 获取项目下的所有产物
     async fn list_by_project(
         &self,
         ctx: RequestContext,
         project_id: &str,
-    ) -> Result<Vec<Artifact>, AppError>;
+    ) -> Result<Vec<Artifact>>;
 
     /// 获取任务下的所有产物
     async fn list_by_task(
         &self,
         ctx: RequestContext,
         task_id: &str,
-    ) -> Result<Vec<Artifact>, AppError>;
+    ) -> Result<Vec<Artifact>>;
 
     /// 通用综合查询
     async fn query(
         &self,
         ctx: RequestContext,
         query: ArtifactQuery,
-    ) -> Result<Vec<Artifact>, AppError>;
+    ) -> Result<Vec<Artifact>>;
 
     /// 更新产物状态
     async fn update_status(
@@ -80,30 +81,30 @@ pub trait ArtifactDal: Send + Sync {
         ctx: RequestContext,
         id: &str,
         status: i32,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 删除产物（软删除）
-    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()>;
 
     /// 统计项目下的产物数量
     async fn count_by_project(
         &self,
         ctx: RequestContext,
         project_id: &str,
-    ) -> Result<u64, AppError>;
+    ) -> Result<u64>;
 
     /// 统计任务下的产物数量
-    async fn count_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<u64, AppError>;
+    async fn count_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<u64>;
 
     /// Update an existing artifact full record.
-    async fn update(&self, ctx: RequestContext, artifact: &Artifact) -> Result<(), AppError>;
+    async fn update(&self, ctx: RequestContext, artifact: &Artifact) -> Result<()>;
 
     /// Read artifact content (for generated content artifacts).
     async fn read_content(
         &self,
         ctx: RequestContext,
         artifact: &Artifact,
-    ) -> Result<Option<Vec<u8>>, AppError>;
+    ) -> Result<Option<Vec<u8>>>;
 
     /// Write artifact content (for generated content artifacts).
     async fn write_content(
@@ -111,7 +112,7 @@ pub trait ArtifactDal: Send + Sync {
         ctx: RequestContext,
         artifact: &Artifact,
         content: &[u8],
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 }
 
 // ==================== DAL 实现 ====================
@@ -123,7 +124,7 @@ struct ArtifactDalImpl {
 
 #[async_trait::async_trait]
 impl ArtifactDal for ArtifactDalImpl {
-    async fn create(&self, ctx: RequestContext, artifact: &Artifact) -> Result<(), AppError> {
+    async fn create(&self, ctx: RequestContext, artifact: &Artifact) -> Result<()> {
         self.artifact_dao.insert(ctx, &artifact.po).await
     }
 
@@ -131,7 +132,7 @@ impl ArtifactDal for ArtifactDalImpl {
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<Artifact>, AppError> {
+    ) -> Result<Option<Artifact>> {
         let opt = self.artifact_dao.find_by_id(ctx, id).await?;
         Ok(opt.map(Artifact::from_po))
     }
@@ -140,7 +141,7 @@ impl ArtifactDal for ArtifactDalImpl {
         &self,
         ctx: RequestContext,
         project_id: &str,
-    ) -> Result<Vec<Artifact>, AppError> {
+    ) -> Result<Vec<Artifact>> {
         let po_list = self.artifact_dao.list_by_project(ctx, project_id).await?;
         Ok(po_list.into_iter().map(Artifact::from_po).collect())
     }
@@ -149,7 +150,7 @@ impl ArtifactDal for ArtifactDalImpl {
         &self,
         ctx: RequestContext,
         task_id: &str,
-    ) -> Result<Vec<Artifact>, AppError> {
+    ) -> Result<Vec<Artifact>> {
         let po_list = self.artifact_dao.list_by_task(ctx, task_id).await?;
         Ok(po_list.into_iter().map(Artifact::from_po).collect())
     }
@@ -158,7 +159,7 @@ impl ArtifactDal for ArtifactDalImpl {
         &self,
         ctx: RequestContext,
         query: ArtifactQuery,
-    ) -> Result<Vec<Artifact>, AppError> {
+    ) -> Result<Vec<Artifact>> {
         let list = self
             .artifact_dao
             .query(
@@ -180,11 +181,11 @@ impl ArtifactDal for ArtifactDalImpl {
         ctx: RequestContext,
         id: &str,
         status: i32,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         self.artifact_dao.update_status(ctx, id, status).await
     }
 
-    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
+    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()> {
         self.artifact_dao.delete(ctx, id).await
     }
 
@@ -192,21 +193,21 @@ impl ArtifactDal for ArtifactDalImpl {
         &self,
         ctx: RequestContext,
         project_id: &str,
-    ) -> Result<u64, AppError> {
+    ) -> Result<u64> {
         self.artifact_dao
             .count_by_project(ctx, project_id)
             .await
             .map(|v| v as u64)
     }
 
-    async fn count_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<u64, AppError> {
+    async fn count_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<u64> {
         self.artifact_dao
             .count_by_task(ctx, task_id)
             .await
             .map(|v| v as u64)
     }
 
-    async fn update(&self, ctx: RequestContext, artifact: &Artifact) -> Result<(), AppError> {
+    async fn update(&self, ctx: RequestContext, artifact: &Artifact) -> Result<()> {
         self.artifact_dao.update(ctx, &artifact.po).await
     }
 
@@ -214,7 +215,7 @@ impl ArtifactDal for ArtifactDalImpl {
         &self,
         ctx: RequestContext,
         artifact: &Artifact,
-    ) -> Result<Option<Vec<u8>>, AppError> {
+    ) -> Result<Option<Vec<u8>>> {
         self.artifact_dao.read_content(ctx, &artifact.po).await
     }
 
@@ -223,7 +224,7 @@ impl ArtifactDal for ArtifactDalImpl {
         ctx: RequestContext,
         artifact: &Artifact,
         content: &[u8],
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         self.artifact_dao
             .write_content(ctx, &artifact.po, content)
             .await

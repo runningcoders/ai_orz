@@ -1,10 +1,11 @@
 //! Handler: GET /api/v1/organizations/{id} - Get organization basic information
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetOrganizationRequest, GetOrganizationResponse, OrganizationInfoResponse};
+use common::bail_err;
 
 /// Get organization basic information by ID
 #[register_handler_tool(
@@ -17,14 +18,14 @@ use common::api::{GetOrganizationRequest, GetOrganizationResponse, OrganizationI
 pub async fn get_organization(
     ctx: RequestContext,
     params: GetOrganizationRequest,
-) -> Result<GetOrganizationResponse, AppError> {
+) -> Result<GetOrganizationResponse> {
     let domain = organization::domain();
     let org = domain
         .organization_manage()
         .get_by_id(ctx, &params.organization_id)
         .await?;
 
-    let org = org.ok_or_else(|| AppError::NotFound("组织不存在".to_string()))?;
+    let org = org.ok_or_else(|| common::error::Error::not_found("组织不存在".to_string()))?;
 
     let data = OrganizationInfoResponse {
         organization_id: org.id.clone(),

@@ -1,6 +1,6 @@
 //! Agent DAL 模块
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::models::agent::Agent;
 use crate::models::brain::Brain;
 use crate::pkg::RequestContext;
@@ -8,6 +8,7 @@ use crate::service::dao::agent;
 use crate::service::dao::agent::{AgentDao, AgentQuery};
 use common::enums::AgentStatus;
 use std::sync::{Arc, OnceLock};
+use common::bail_err;
 // ==================== 单例管理 ====================
 
 static AGENT_DAL: OnceLock<Arc<dyn AgentDal>> = OnceLock::new();
@@ -33,24 +34,24 @@ pub fn new(agent_dao: Arc<dyn AgentDao + Send + Sync>) -> Arc<dyn AgentDal> {
 #[async_trait::async_trait]
 pub trait AgentDal: Send + Sync {
     /// 创建 Agent
-    async fn create(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
+    async fn create(&self, ctx: RequestContext, agent: &Agent) -> Result<()>;
 
     /// 根据 ID 查询 Agent
-    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Agent>, AppError>;
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Agent>>;
 
     /// 通用综合查询
     ///
     /// 支持组合查询条件，所有字段都是 Option
-    async fn query(&self, ctx: RequestContext, query: AgentQuery) -> Result<Vec<Agent>, AppError>;
+    async fn query(&self, ctx: RequestContext, query: AgentQuery) -> Result<Vec<Agent>>;
 
     /// 查询所有 Agent
-    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<Agent>, AppError>;
+    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<Agent>>;
 
     /// 更新 Agent
-    async fn update(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
+    async fn update(&self, ctx: RequestContext, agent: &Agent) -> Result<()>;
 
     /// 删除 Agent
-    async fn delete(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
+    async fn delete(&self, ctx: RequestContext, agent: &Agent) -> Result<()>;
 
     /// 唤醒 Brain
     ///
@@ -64,7 +65,7 @@ pub trait AgentDal: Send + Sync {
         ctx: RequestContext,
         agent: &mut Agent,
         brain: Brain,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 }
 
 /// Agent DAL 实现
@@ -81,21 +82,21 @@ impl AgentDalImpl {
 
 #[async_trait::async_trait]
 impl AgentDal for AgentDalImpl {
-    async fn create(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError> {
+    async fn create(&self, ctx: RequestContext, agent: &Agent) -> Result<()> {
         self.agent_dao.insert(ctx, &agent.po).await
     }
 
-    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Agent>, AppError> {
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Agent>> {
         let opt = self.agent_dao.find_by_id(ctx, id).await?;
         Ok(opt.map(Agent::from_po))
     }
 
-    async fn query(&self, ctx: RequestContext, query: AgentQuery) -> Result<Vec<Agent>, AppError> {
+    async fn query(&self, ctx: RequestContext, query: AgentQuery) -> Result<Vec<Agent>> {
         let agents = self.agent_dao.query(ctx, query).await?;
         Ok(agents.into_iter().map(Agent::from_po).collect())
     }
 
-    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<Agent>, AppError> {
+    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<Agent>> {
         self.query(
             ctx,
             AgentQuery {
@@ -106,11 +107,11 @@ impl AgentDal for AgentDalImpl {
         .await
     }
 
-    async fn update(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError> {
+    async fn update(&self, ctx: RequestContext, agent: &Agent) -> Result<()> {
         self.agent_dao.update(ctx, &agent.po).await
     }
 
-    async fn delete(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError> {
+    async fn delete(&self, ctx: RequestContext, agent: &Agent) -> Result<()> {
         self.agent_dao.delete(ctx, &agent.po).await
     }
 
@@ -119,7 +120,7 @@ impl AgentDal for AgentDalImpl {
         ctx: RequestContext,
         agent: &mut Agent,
         brain: Brain,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         // 1. 从 Brain 中获取 Cortex，Cortex 持有 ModelProvider，从中获取 model_provider_id
         let model_provider_id = brain.cortex().model_provider.po.id.clone();
 
@@ -129,7 +130,6 @@ impl AgentDal for AgentDalImpl {
         if need_update {
             agent.po.model_provider_id = model_provider_id;
         }
-
         // 3. 直接使用传入的 brain 赋值给 Agent
         agent.set_brain(brain);
 

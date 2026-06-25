@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::models::agent::Agent;
 use crate::models::memory::{Memory, MemoryTrace};
 use crate::models::message::Message;
@@ -47,7 +47,7 @@ pub trait RuntimeMemory: Send + Sync {
         agent_id: &str,
         task_id: Option<&str>,
         limit: usize,
-    ) -> Result<Vec<Memory>, AppError>;
+    ) -> Result<Vec<Memory>>;
 
     /// 写入思考 Trace
     ///
@@ -56,7 +56,7 @@ pub trait RuntimeMemory: Send + Sync {
         &self,
         ctx: RequestContext,
         trace: MemoryTrace,
-    ) -> Result<Memory, AppError>;
+    ) -> Result<Memory>;
 }
 
 /// 唤醒能力 trait
@@ -83,7 +83,7 @@ pub trait RuntimeAwakening: Send + Sync {
         ctx: RequestContext,
         agent: &Agent,
         message: &Message,
-    ) -> Result<AwakeningResult, AppError>;
+    ) -> Result<AwakeningResult>;
 }
 
 /// 工具执行 trait
@@ -101,7 +101,7 @@ pub trait RuntimeToolExecution: Send + Sync {
         ctx: RequestContext,
         tool_id: String,
         args: serde_json::Value,
-    ) -> Result<crate::models::tool::ToolExecutionResult, crate::models::tool::ToolExecutionError>;
+    ) -> std::result::Result<crate::models::tool::ToolExecutionResult, common::error::Error>;
 
     /// Execute one already-loaded tool.
     ///
@@ -112,7 +112,7 @@ pub trait RuntimeToolExecution: Send + Sync {
         ctx: RequestContext,
         tool: &crate::models::tool::Tool,
         args: serde_json::Value,
-    ) -> Result<crate::models::tool::ToolExecutionResult, crate::models::tool::ToolExecutionError>;
+    ) -> std::result::Result<crate::models::tool::ToolExecutionResult, common::error::Error>;
 
     /// Execute a message-mode Manual tool call for one Agent.
     ///
@@ -124,21 +124,21 @@ pub trait RuntimeToolExecution: Send + Sync {
         agent_id: String,
         tool_id: String,
         args: serde_json::Value,
-    ) -> Result<crate::models::tool::ToolExecutionResult, crate::models::tool::ToolExecutionError>;
+    ) -> std::result::Result<crate::models::tool::ToolExecutionResult, common::error::Error>;
 
     /// Query tool call trace entries with access scope enforced by Runtime Domain.
     async fn query_tool_call_entries(
         &self,
         ctx: RequestContext,
         query: crate::pkg::tool_tracing::logger::ToolCallQuery,
-    ) -> Result<Vec<crate::pkg::tool_tracing::entry::ToolCallEntry>, AppError>;
+    ) -> Result<Vec<crate::pkg::tool_tracing::entry::ToolCallEntry>>;
 
     /// Get one tool call trace entry by call ID with access scope enforced by Runtime Domain.
     async fn get_tool_call_entry_by_id(
         &self,
         ctx: RequestContext,
         query: crate::pkg::tool_tracing::logger::ToolCallQuery,
-    ) -> Result<Option<crate::pkg::tool_tracing::entry::ToolCallEntry>, AppError>;
+    ) -> Result<Option<crate::pkg::tool_tracing::entry::ToolCallEntry>>;
 }
 
 // ==================== 子模块  ====================
@@ -234,6 +234,7 @@ impl RuntimeDomain for RuntimeDomainImpl {
 // ==================== 单例 ====================
 
 use std::sync::OnceLock;
+use common::bail_err;
 
 static RUNTIME_DOMAIN: OnceLock<Arc<dyn RuntimeDomain>> = OnceLock::new();
 

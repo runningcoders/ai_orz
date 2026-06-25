@@ -1,5 +1,6 @@
 use axum::Json;
 use common::api::ApiResponse;
+use common::bail_err;
 
 pub async fn health() -> Json<ApiResponse<HealthData>> {
     Json(ApiResponse::success(HealthData {

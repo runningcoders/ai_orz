@@ -24,6 +24,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::process::Command;
+use common::error::Result;
+use common::bail_err;
 
 /// MCP tool binding configuration stored in `ToolPo.config`.
 ///
@@ -198,7 +200,7 @@ impl McpClientRuntime {
 async fn connect_stdio_client(
     server: &McpServerPo,
     config: &McpServerConfig,
-) -> Result<RunningService<RoleClient, ()>> {
+) -> Result<RunningService<RoleClient>> {
     let command = config
         .command
         .as_deref()
@@ -318,7 +320,7 @@ impl McpCoreTool {
 
 #[async_trait]
 impl CoreTool for McpCoreTool {
-    async fn call(&self, _ctx: RequestContext, args: Value) -> Result<Value, ToolError> {
+    async fn call(&self, _ctx: RequestContext, args: Value) -> Result<Value> {
         let server = self.server.as_ref().ok_or_else(|| {
             ToolError::ToolCallError(
                 format!(

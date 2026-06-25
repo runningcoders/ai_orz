@@ -1,13 +1,14 @@
+
 //! MCP Server DAO 模块
-//!
 //! Stage 1 仅包含 MCP Server 配置的纯持久化能力，不管理 MCP client/session 生命周期。
 
-use crate::error::Result;
+use common::error::Result;
 use crate::models::mcp_server::{McpServerPo, McpServerQuery, McpServerStatus};
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
 use common::api::PagedResult;
 use std::sync::Arc;
+use common::bail_err;
 
 /// MCP Server DAO 接口。
 #[async_trait]

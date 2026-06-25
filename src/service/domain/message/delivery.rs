@@ -1,5 +1,6 @@
 //! Message Delivery 具体实现
 
+use common::error::{err, bail_err, Result};
 use crate::models::message::Message;
 use crate::models::message::MessagePo;
 use crate::models::message::ToolCallMessage;
@@ -11,6 +12,8 @@ use crate::service::domain::message::{
 };
 use common::enums::{MessageRole, MessageStatus, MessageType};
 use serde_json::json;
+use common::err;
+use common::bail_err;
 
 const TOOL_CALL_RESULT_INLINE_CONTENT_LIMIT: usize = 8 * 1024;
 
@@ -35,7 +38,7 @@ impl MessageDelivery for MessageDomainImpl {
         &self,
         ctx: RequestContext,
         cmd: SendToAgentCommand<'_>,
-    ) -> Result<Message, crate::error::AppError> {
+    ) -> Result<Message> {
         // 创建消息 PO - 使用 Builder 模式或直接 new
         let po = MessagePo::new(
             generate_id(),
@@ -63,7 +66,7 @@ impl MessageDelivery for MessageDomainImpl {
         &self,
         ctx: RequestContext,
         cmd: SendToUserCommand<'_>,
-    ) -> Result<Message, crate::error::AppError> {
+    ) -> Result<Message> {
         // Agent 发送给用户，发送者角色固定为 Agent，接收者角色固定为 User
         let po = MessagePo::new(
             generate_id(),
@@ -91,7 +94,7 @@ impl MessageDelivery for MessageDomainImpl {
         &self,
         ctx: RequestContext,
         cmd: SendToolCallRequestCommand<'_>,
-    ) -> Result<Message, crate::error::AppError> {
+    ) -> Result<Message> {
         let payload = ToolCallMessage::new_request(
             cmd.request_id.to_string(),
             cmd.tool_id.to_string(),
@@ -104,9 +107,8 @@ impl MessageDelivery for MessageDomainImpl {
             cmd.args,
         );
 
-        let content = serde_json::to_string(&payload).map_err(|_| {
-            crate::error::AppError::Internal("failed to serialize tool call request".to_string())
-        })?;
+         let content = serde_json::to_string(&payload)
+            .map_err(|e| err!(Internal, "failed to serialize tool call request").with_source(e))?;
 
         let po = MessagePo::new(
             generate_id(),
@@ -134,17 +136,13 @@ impl MessageDelivery for MessageDomainImpl {
         &self,
         ctx: RequestContext,
         cmd: SendToolCallResultCommand<'_>,
-    ) -> Result<Message, crate::error::AppError> {
+    ) -> Result<Message> {
         if cmd.request_message.po.message_type != MessageType::ToolCallRequest {
-            return Err(crate::error::AppError::BadRequest(
-                "request_message must be ToolCallRequest".to_string(),
-            ));
+            bail_err!(InvalidRequest, "request_message must be ToolCallRequest");
         }
 
-        let request: ToolCallMessage = serde_json::from_str(&cmd.request_message.po.content)
-            .map_err(|_| {
-                crate::error::AppError::BadRequest("invalid tool call request message".to_string())
-            })?;
+         let request: ToolCallMessage = serde_json::from_str(&cmd.request_message.po.content)
+            .map_err(|e| err!(InvalidRequest, "invalid tool call request message").with_source(e))?;
 
         let (mut result_payload, trace_ref) = match cmd.outcome {
             ToolCallExecutionOutcome::Success {
@@ -164,9 +162,8 @@ impl MessageDelivery for MessageDomainImpl {
             result_payload.trace_ref = Some(trace_ref);
         }
 
-        let content = serde_json::to_string(&result_payload).map_err(|_| {
-            crate::error::AppError::Internal("failed to serialize tool call result".to_string())
-        })?;
+         let content = serde_json::to_string(&result_payload)
+            .map_err(|e| err!(Internal, "failed to serialize tool call result").with_source(e))?;
 
         let po = MessagePo::new(
             generate_id(),
@@ -193,7 +190,7 @@ impl MessageDelivery for MessageDomainImpl {
     async fn dequeue_next(
         &self,
         ctx: RequestContext,
-    ) -> Result<Option<Message>, crate::error::AppError> {
+    ) -> Result<Option<Message>> {
         self.message_dal.dequeue_next_message(ctx).await
     }
 
@@ -201,7 +198,7 @@ impl MessageDelivery for MessageDomainImpl {
         &self,
         ctx: RequestContext,
         message_id: &str,
-    ) -> Result<(), crate::error::AppError> {
+    ) -> Result<()> {
         // 先确认出队
         self.message_dal
             .ack_message(ctx.clone(), message_id)
@@ -217,7 +214,7 @@ impl MessageDelivery for MessageDomainImpl {
         &self,
         ctx: RequestContext,
         message_id: &str,
-    ) -> Result<(), crate::error::AppError> {
+    ) -> Result<()> {
         // 放回队列
         self.message_dal
             .nack_message(ctx.clone(), message_id)
@@ -233,7 +230,7 @@ impl MessageDelivery for MessageDomainImpl {
         &self,
         ctx: RequestContext,
         cmd: DeliverMessageCommand<'_>,
-    ) -> Result<crate::service::dal::message_channel::DeliveryResult, crate::error::AppError> {
+    ) -> Result<crate::service::dal::message_channel::DeliveryResult> {
         self.message_channel_dal
             .deliver_message(ctx, cmd.message, cmd.user_id)
             .await

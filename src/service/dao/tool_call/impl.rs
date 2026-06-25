@@ -14,6 +14,8 @@ use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 
 use super::ToolCallDao;
+use common::error::Result;
+use common::bail_err;
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -101,7 +103,7 @@ impl ToolCallDao for ToolCallDaoImpl {
         ctx: RequestContext,
         tool: &Tool,
         args: Value,
-    ) -> Result<(Value, ToolCallEntry), ToolExecutionError> {
+    ) -> Result<Value> {
         // our_tool is always raw (not pre-decorated) - clone and create a new decorator for this call
         // this guarantees we get a fresh entry for this specific invocation
         let cloned: Box<dyn CoreTool + Send + Sync> = dyn_clone::clone_box(&*tool.our_tool);

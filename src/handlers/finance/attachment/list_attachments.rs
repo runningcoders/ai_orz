@@ -6,22 +6,24 @@ use axum::{
 };
 use common::api::{ApiResponse, AttachmentDetail, AttachmentListQuery};
 
-use crate::error::AppError;
+use common::bail_err;
 use crate::pkg::RequestContext;
 use crate::service::dao::attachment::AttachmentQuery;
 use crate::service::domain::finance::domain;
 
 use super::response::to_detail;
+use common::error::Result;
+use common::err;
 
 /// 列出 Attachment
 /// GET /attachments
 pub async fn list_attachments(
     Extension(ctx): Extension<RequestContext>,
     Query(req): Query<AttachmentListQuery>,
-) -> Result<Json<ApiResponse<Vec<AttachmentDetail>>>, AppError> {
+) -> Result<Json<ApiResponse<Vec<AttachmentDetail>>>> {
     let user_id = ctx.uid();
     if user_id.is_empty() {
-        return Err(AppError::BadRequest("当前请求缺少用户上下文".to_string()));
+        bail_err!(InvalidRequest, "当前请求缺少用户上下文");
     }
 
     let attachments = domain()

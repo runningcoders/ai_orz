@@ -9,6 +9,7 @@ use crate::pkg::request_context::RequestContext;
 use ::rig::tool::ToolDyn;
 use common::enums::{ModelCapability, ProviderType};
 use sqlx::SqlitePool;
+use common::bail_err;
 
 #[sqlx::test]
 async fn test_create_openai_cortex(pool: SqlitePool) {

@@ -1,11 +1,12 @@
 //! Handler: PUT /api/v1/projects/{id}/status - Update project status
 
 use super::response;
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateProjectStatusRequest, UpdateProjectStatusResponse};
+use common::bail_err;
 
 /// Update project status
 #[register_handler_tool(
@@ -18,12 +19,12 @@ use common::api::{UpdateProjectStatusRequest, UpdateProjectStatusResponse};
 pub async fn update_project_status(
     ctx: RequestContext,
     params: UpdateProjectStatusRequest,
-) -> Result<UpdateProjectStatusResponse, AppError> {
+) -> Result<UpdateProjectStatusResponse> {
     let mut project = domain()
         .project_manage()
         .get(ctx.clone(), &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Project {} not found", params.id)))?;
+        .ok_or_else(|| common::error::Error::not_found(format!("Project {} not found", params.id)))?;
 
     domain()
         .project_manage()

@@ -1,6 +1,7 @@
 use common::api::{SkillDetail, SkillFileItem, SkillListItem};
 
 use crate::models::skill::{Skill, SkillFile};
+use common::bail_err;
 
 pub(super) fn to_list_item(skill: &Skill) -> SkillListItem {
     SkillListItem {

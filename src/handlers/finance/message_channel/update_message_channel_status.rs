@@ -1,6 +1,6 @@
 //! Handler: PUT /api/v1/message-channels/{id}/status - Update message channel status (active/disabled)
 
-use crate::error::AppError;
+use common::bail_err;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
@@ -9,6 +9,8 @@ use common::api::{
 };
 
 use super::response::to_detail;
+use common::error::Result;
+use common::err;
 
 /// Update the status of a message channel (enable/disable it)
 #[register_handler_tool(
@@ -21,32 +23,29 @@ use super::response::to_detail;
 pub async fn update_message_channel_status(
     ctx: RequestContext,
     params: UpdateMessageChannelStatusRequest,
-) -> Result<UpdateMessageChannelStatusResponse, AppError> {
+) -> Result<UpdateMessageChannelStatusResponse> {
     let org_id = ctx
         .organization_id
         .clone()
-        .ok_or_else(|| AppError::BadRequest("当前请求缺少组织上下文".to_string()))?;
+        .ok_or_else(|| err!(InvalidRequest, "当前请求缺少组织上下文"))?;
     let user_id = ctx.uid();
     if user_id.is_empty() {
-        return Err(AppError::BadRequest("当前请求缺少用户上下文".to_string()));
+        bail_err!(InvalidRequest, "当前请求缺少用户上下文");
     }
 
     let mut channel = domain()
         .message_channel_manage()
         .get_message_channel(ctx.clone(), &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("MessageChannel {} not found", params.id)))?;
+        .ok_or_else(|| err!(NotFound, "MessageChannel {} not found", params.id))?;
 
     if channel.po.org_id != org_id || channel.po.user_id != user_id {
-        return Err(AppError::NotFound(format!(
-            "MessageChannel {} not found",
-            params.id
-        )));
+        bail_err!(NotFound, "MessageChannel {} not found", params.id);
     }
 
     channel
         .transition_status(params.status, user_id)
-        .map_err(AppError::BadRequest)?;
+        .map_err(|e| err!(InvalidRequest, "{}", e))?;
 
     domain()
         .message_channel_manage()

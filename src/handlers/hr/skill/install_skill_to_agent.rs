@@ -1,12 +1,13 @@
 //! Handler: POST /api/v1/agents/{agent_id}/skills/{skill_id} - Install Skill to Agent
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{InstallSkillToAgentRequest, InstallSkillToAgentResponse};
 
 use super::response::to_detail;
+use common::bail_err;
 
 /// Install an existing public skill to your agent. Creates a private copy of the skill for your agent.
 #[register_handler_tool(
@@ -19,7 +20,7 @@ use super::response::to_detail;
 pub async fn install_skill_to_agent(
     ctx: RequestContext,
     params: InstallSkillToAgentRequest,
-) -> Result<InstallSkillToAgentResponse, AppError> {
+) -> Result<InstallSkillToAgentResponse> {
     let skill = domain()
         .skill_manage()
         .install_to_agent(ctx, &params.skill_id, &params.agent_id)

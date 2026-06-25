@@ -3,9 +3,10 @@
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{DeleteMcpServerRequest, DeleteMcpServerResponse};
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
+use common::bail_err;
 
 /// Soft-delete an MCP Server by ID.
 #[register_handler_tool(
@@ -18,7 +19,7 @@ use crate::service::domain::finance::domain;
 pub async fn delete_mcp_server(
     ctx: RequestContext,
     params: DeleteMcpServerRequest,
-) -> Result<DeleteMcpServerResponse, AppError> {
+) -> Result<DeleteMcpServerResponse> {
     domain()
         .mcp_server_manage()
         .delete_mcp_server(ctx, &params.id)

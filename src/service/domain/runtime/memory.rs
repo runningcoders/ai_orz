@@ -1,6 +1,6 @@
 //! Runtime Memory 具体实现
 
-use crate::error::AppError;
+use common::error::{Error, Result};
 use crate::models::memory::{Memory, MemoryTrace};
 use crate::pkg::request_context::RequestContext;
 use crate::service::dao::memory::MemoryQuery;
@@ -14,7 +14,7 @@ impl RuntimeMemory for RuntimeDomainImpl {
         agent_id: &str,
         task_id: Option<&str>,
         limit: usize,
-    ) -> Result<Vec<Memory>, AppError> {
+    ) -> Result<Vec<Memory>> {
         use crate::service::dal::memory::dal;
         dal()
             .query(
@@ -37,9 +37,11 @@ impl RuntimeMemory for RuntimeDomainImpl {
         &self,
         ctx: RequestContext,
         mut trace: MemoryTrace,
-    ) -> Result<Memory, AppError> {
+    ) -> Result<Memory> {
         use crate::models::memory::MemoryCreateParams;
         use crate::service::dal::memory::dal;
+use common::err;
+use common::bail_err;
 
         // 可选：内部统一补充信息（如果缺失）
         if trace.log_id.is_empty() {
@@ -61,6 +63,6 @@ impl RuntimeMemory for RuntimeDomainImpl {
 
         results
             .pop()
-            .ok_or_else(|| AppError::Internal("Write trace failed, no memory returned".to_string()))
+            .ok_or_else(|| err!(Internal, "Write trace failed, no memory returned"))
     }
 }

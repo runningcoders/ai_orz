@@ -1,12 +1,13 @@
 //! AgentDao SQLite 实现
 
-use crate::error::AppError;
+use common::error::{Error, Result};
 use crate::models::agent::AgentPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::agent::{AgentDao, AgentQuery};
 use chrono::Utc;
 use common::enums::AgentStatus;
 use std::sync::{Arc, OnceLock};
+use common::bail_err;
 // ==================== 工厂方法 + 单例 ====================
 
 static AGENT_DAO: OnceLock<Arc<dyn AgentDao>> = OnceLock::new();
@@ -37,7 +38,7 @@ impl AgentDaoSqliteImpl {
 }
 #[async_trait::async_trait]
 impl AgentDao for AgentDaoSqliteImpl {
-    async fn insert(&self, _ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError> {
+    async fn insert(&self, _ctx: RequestContext, agent: &AgentPo) -> Result<()> {
         let status = agent.status as i32;
         sqlx::query!(
             "INSERT INTO agents (id, name, role, description, soul, capabilities, model_provider_id, runtime_config, status, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -65,7 +66,7 @@ impl AgentDao for AgentDaoSqliteImpl {
         &self,
         _ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<AgentPo>, AppError> {
+    ) -> Result<Option<AgentPo>> {
         let agent = sqlx::query_as!(
             AgentPo,
             r#"
@@ -85,7 +86,7 @@ FROM agents WHERE id = ? AND status <> 0
         &self,
         _ctx: RequestContext,
         query: AgentQuery,
-    ) -> Result<Vec<AgentPo>, AppError> {
+    ) -> Result<Vec<AgentPo>> {
         let mut builder = sqlx::QueryBuilder::new(
             r#"SELECT id, name, role, description, soul, capabilities, runtime_config, model_provider_id, status, created_by, modified_by, created_at, updated_at FROM agents WHERE 1=1"#,
         );
@@ -134,7 +135,7 @@ FROM agents WHERE id = ? AND status <> 0
         Ok(rows)
     }
 
-    async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<AgentPo>, AppError> {
+    async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<AgentPo>> {
         // 语法糖：调用通用查询，排除已删除状态
         self.query(
             _ctx,
@@ -146,7 +147,7 @@ FROM agents WHERE id = ? AND status <> 0
         .await
     }
 
-    async fn update(&self, _ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError> {
+    async fn update(&self, _ctx: RequestContext, agent: &AgentPo) -> Result<()> {
         let current_timestamp = Utc::now().timestamp();
         let status = agent.status as i32;
         let uid = _ctx.uid();
@@ -177,7 +178,7 @@ WHERE id = ?
         Ok(())
     }
 
-    async fn delete(&self, _ctx: RequestContext, agent: &AgentPo) -> Result<(), AppError> {
+    async fn delete(&self, _ctx: RequestContext, agent: &AgentPo) -> Result<()> {
         let current_timestamp = Utc::now().timestamp();
         let uid = _ctx.uid().to_string();
         sqlx::query!(

@@ -5,6 +5,8 @@ use crate::service::dao::attachment::{AttachmentDao, AttachmentQuery, new_with_a
 use common::enums::FileType;
 use sqlx::SqlitePool;
 use std::sync::Arc;
+use common::error::Result;
+use common::bail_err;
 
 /// 初始化测试环境
 fn init_test_env(

@@ -1,10 +1,11 @@
 //! Handler: GET /api/v1/organizations/users - List all users in current organization
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListUsersByCurrentOrganizationRequest, ListUsersResponse, UserListItem};
+use common::bail_err;
 
 /// List all users belonging to the current authenticated user's organization
 #[register_handler_tool(
@@ -17,12 +18,12 @@ use common::api::{ListUsersByCurrentOrganizationRequest, ListUsersResponse, User
 pub async fn list_users_by_current_organization(
     ctx: RequestContext,
     _params: ListUsersByCurrentOrganizationRequest,
-) -> Result<ListUsersResponse, AppError> {
+) -> Result<ListUsersResponse> {
     // 从 RequestContext 获取当前组织 ID
     let org_id = ctx
         .organization_id
         .clone()
-        .ok_or_else(|| AppError::BadRequest("未找到组织信息".to_string()))?;
+        .ok_or_else(|| common::error::Error::bad_request("未找到组织信息".to_string()))?;
 
     let domain = organization::domain();
     // 获取组织下所有用户

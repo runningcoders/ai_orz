@@ -170,6 +170,7 @@ mod tests {
 
         // 通用查询
         use crate::service::dao::message_channel::MessageChannelQuery;
+use common::bail_err;
         let query = MessageChannelQuery {
             user_id: Some(user_id.to_string()),
             ..Default::default()

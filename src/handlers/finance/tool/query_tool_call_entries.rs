@@ -1,6 +1,6 @@
 //! Handler: GET /api/v1/tool-call-entries - Query tool call trace entries
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::pkg::tool_tracing::logger::ToolCallQuery;
 use crate::service::domain::runtime;
@@ -8,6 +8,7 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{QueryToolCallEntriesRequest, QueryToolCallEntriesResponse};
 
 use super::response::to_tool_call_entry_detail;
+use common::bail_err;
 
 /// Query tool call trace entries with common filters.
 #[register_handler_tool(
@@ -20,7 +21,7 @@ use super::response::to_tool_call_entry_detail;
 pub async fn query_tool_call_entries(
     ctx: RequestContext,
     params: QueryToolCallEntriesRequest,
-) -> Result<QueryToolCallEntriesResponse, AppError> {
+) -> Result<QueryToolCallEntriesResponse> {
     let entries = runtime::domain()
         .tool_execution()
         .query_tool_call_entries(

@@ -1,10 +1,11 @@
 //! Handler: PUT /api/v1/agents/{id}/status - Update agent status
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateAgentStatusRequest, UpdateAgentStatusResponse};
+use common::bail_err;
 
 /// Update the status of an AI agent (active/disabled)
 #[register_handler_tool(
@@ -17,12 +18,12 @@ use common::api::{UpdateAgentStatusRequest, UpdateAgentStatusResponse};
 pub async fn update_agent_status(
     ctx: RequestContext,
     params: UpdateAgentStatusRequest,
-) -> Result<UpdateAgentStatusResponse, AppError> {
+) -> Result<UpdateAgentStatusResponse> {
     let mut agent = domain()
         .agent_manage()
         .get_agent(ctx.clone(), &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Agent {} not found", params.id)))?;
+        .ok_or_else(|| common::error::Error::not_found(format!("Agent {} not found", params.id)))?;
 
     domain()
         .agent_manage()

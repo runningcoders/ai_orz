@@ -1,6 +1,6 @@
 //! Handler: PUT /api/v1/organization/me - Update current authenticated user's organization information
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
@@ -8,6 +8,7 @@ use common::api::{
     OrganizationInfoResponse, UpdateCurrentOrganizationRequest, UpdateCurrentOrganizationResponse,
 };
 use common::constants::utils;
+use common::bail_err;
 
 /// Update information for the currently authenticated user's organization (admin only)
 #[register_handler_tool(
@@ -20,12 +21,12 @@ use common::constants::utils;
 pub async fn update_current_organization(
     ctx: RequestContext,
     params: UpdateCurrentOrganizationRequest,
-) -> Result<UpdateCurrentOrganizationResponse, AppError> {
+) -> Result<UpdateCurrentOrganizationResponse> {
     // 从 RequestContext 获取当前组织 ID
     let org_id = ctx
         .organization_id
         .clone()
-        .ok_or_else(|| AppError::BadRequest("未找到组织信息".to_string()))?;
+        .ok_or_else(|| common::error::Error::bad_request("未找到组织信息".to_string()))?;
 
     let domain = organization::domain();
     // 获取当前组织信息
@@ -33,7 +34,7 @@ pub async fn update_current_organization(
         .organization_manage()
         .get_by_id(ctx.clone(), &org_id)
         .await?
-        .ok_or_else(|| AppError::NotFound("组织不存在".to_string()))?;
+        .ok_or_else(|| common::error::Error::not_found("组织不存在".to_string()))?;
 
     // 更新可修改字段
     if let Some(new_name) = params.name {

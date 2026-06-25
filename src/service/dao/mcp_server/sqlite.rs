@@ -1,6 +1,6 @@
 //! SQLite implementation of McpServerDao
 
-use crate::error::Result;
+use common::error::Result;
 use crate::models::mcp_server::{McpServerPo, McpServerStatus};
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
@@ -10,6 +10,7 @@ use std::sync::{Arc, OnceLock};
 
 use super::McpServerDao;
 use crate::models::mcp_server::McpServerQuery;
+use common::bail_err;
 
 static MCP_SERVER_DAO: OnceLock<Arc<dyn McpServerDao + Send + Sync>> = OnceLock::new();
 

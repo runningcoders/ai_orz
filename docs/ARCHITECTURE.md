@@ -13,7 +13,8 @@ ai_orz/
 ├── **common** 🎯 独立公共 crate
 │   ├── src/api/              # 所有前后端共用 API DTO（按功能分组）
 │   ├── src/constants/        # 公共常量、基础类型
-│   └── src/enums/            # 公共枚举（UserRole 等）
+│   ├── src/enums/            # 公共枚举（UserRole 等）
+│   └── src/error.rs          # 规划新增：前后端/工具调用共享错误类型（ErrorCode + Error）
 │
 ├── **src** 后端服务
 │   ├── models/               # 持久化实体 PO
@@ -36,6 +37,7 @@ ai_orz/
 - ✅ 所有前后端共用的 request/response DTO 都放在 `common/src/api/`，消除重复定义
 - ✅ 通用响应包装 `ApiResponse<T>` 也只保留在 `common::api`，Handler 不再定义本地响应包装
 - ✅ 所有公共枚举都放在 common，保证前后端类型一致
+- ✅ 规划新增统一错误类型：`common::error::{ErrorCode, Error, Result}` 作为前后端、HTTP handler 宏、LLM 工具调用共享错误契约；详见 `docs/design/common-error-type.md`
 - ✅ PO 实体保持在后端 `models/`，不移动到 common（只需要前端看到 DTO）
 - ✅ 后端数据库枚举字段直接使用 common 中的枚举类型，实现编译期类型安全
 

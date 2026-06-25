@@ -1,12 +1,14 @@
 //! Memory Vector DAO 单元测试
 //! 使用 InMemoryVectorStore（纯 Rust 实现，零系统依赖）
 
-use crate::error::AppError;
+use common::error::Error;
 use crate::models::vector::VectorIndexParams;
 use crate::pkg::RequestContext;
 use crate::service::dao::memory::{self, MemoryVectorDao};
 use sqlx::SqlitePool;
 use std::sync::Arc;
+use common::error::Result;
+use common::bail_err;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     RequestContext::new_simple(user_id, pool)
@@ -40,7 +42,7 @@ fn create_test_vector_params(id: &str, dimension: usize) -> VectorIndexParams {
 
 /// 测试插入短期记忆向量索引并搜索
 #[sqlx::test]
-async fn test_upsert_and_search_short_term(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_upsert_and_search_short_term(pool: SqlitePool) -> Result<()> {
     let ctx = new_ctx("test_user", pool.clone());
     let vector_dao = init_test_env();
 
@@ -69,7 +71,7 @@ async fn test_upsert_and_search_short_term(pool: SqlitePool) -> Result<(), AppEr
 
 /// 测试 upsert 可以更新已有短期记忆向量
 #[sqlx::test]
-async fn test_upsert_update_short_term(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_upsert_update_short_term(pool: SqlitePool) -> Result<()> {
     let ctx = new_ctx("test_user", pool.clone());
     let vector_dao = init_test_env();
 
@@ -104,7 +106,7 @@ async fn test_upsert_update_short_term(pool: SqlitePool) -> Result<(), AppError>
 
 /// 测试获取短期记忆向量行数据
 #[sqlx::test]
-async fn test_get_short_term_vector_row(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_get_short_term_vector_row(pool: SqlitePool) -> Result<()> {
     let ctx = new_ctx("test_user", pool.clone());
     let vector_dao = init_test_env();
 
@@ -139,7 +141,7 @@ async fn test_get_short_term_vector_row(pool: SqlitePool) -> Result<(), AppError
 
 /// 测试插入知识节点向量索引并搜索
 #[sqlx::test]
-async fn test_upsert_and_search_knowledge_node(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_upsert_and_search_knowledge_node(pool: SqlitePool) -> Result<()> {
     let ctx = new_ctx("test_user", pool.clone());
     let vector_dao = init_test_env();
 
@@ -168,7 +170,7 @@ async fn test_upsert_and_search_knowledge_node(pool: SqlitePool) -> Result<(), A
 
 /// 测试 upsert 可以更新已有知识节点向量
 #[sqlx::test]
-async fn test_upsert_update_knowledge_node(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_upsert_update_knowledge_node(pool: SqlitePool) -> Result<()> {
     let ctx = new_ctx("test_user", pool.clone());
     let vector_dao = init_test_env();
 
@@ -203,7 +205,7 @@ async fn test_upsert_update_knowledge_node(pool: SqlitePool) -> Result<(), AppEr
 
 /// 测试获取知识节点向量行数据
 #[sqlx::test]
-async fn test_get_knowledge_node_vector_row(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_get_knowledge_node_vector_row(pool: SqlitePool) -> Result<()> {
     let ctx = new_ctx("test_user", pool.clone());
     let vector_dao = init_test_env();
 
@@ -238,7 +240,7 @@ async fn test_get_knowledge_node_vector_row(pool: SqlitePool) -> Result<(), AppE
 
 /// 测试短期记忆和知识节点的向量索引是隔离，互不干扰
 #[sqlx::test]
-async fn test_namespace_isolation(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_namespace_isolation(pool: SqlitePool) -> Result<()> {
     let ctx = new_ctx("test_user", pool.clone());
     let vector_dao = init_test_env();
 

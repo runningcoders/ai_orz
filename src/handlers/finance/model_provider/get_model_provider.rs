@@ -1,10 +1,11 @@
 //! Handler: GET /api/v1/model-providers/{id} - Get model provider detailed information
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetModelProviderRequest, GetModelProviderResponse};
+use common::bail_err;
 
 /// Get detailed information about a specific model provider configuration
 #[register_handler_tool(
@@ -17,12 +18,12 @@ use common::api::{GetModelProviderRequest, GetModelProviderResponse};
 pub async fn get_model_provider(
     ctx: RequestContext,
     params: GetModelProviderRequest,
-) -> Result<GetModelProviderResponse, AppError> {
+) -> Result<GetModelProviderResponse> {
     let provider = domain()
         .model_provider_manage()
         .get_model_provider(ctx, &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("ModelProvider {} not found", params.id)))?;
+        .ok_or_else(|| common::error::Error::not_found(format!("ModelProvider {} not found", params.id)))?;
 
     Ok(GetModelProviderResponse {
         id: provider.po.id.clone(),

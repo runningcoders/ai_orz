@@ -1,11 +1,12 @@
 //! Handler: GET /api/v1/organizations - List all organizations in the system
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::models::organization::OrganizationPo;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListOrganizationsRequest, ListOrganizationsResponse, OrganizationListItem};
+use common::bail_err;
 
 /// List all organizations available to the current user
 #[register_handler_tool(
@@ -18,7 +19,7 @@ use common::api::{ListOrganizationsRequest, ListOrganizationsResponse, Organizat
 pub async fn list_organizations(
     ctx: RequestContext,
     _params: ListOrganizationsRequest,
-) -> Result<ListOrganizationsResponse, AppError> {
+) -> Result<ListOrganizationsResponse> {
     let domain = organization::domain();
     let orgs = domain.organization_manage().list_all(ctx).await?;
     let total = orgs.len() as u64;

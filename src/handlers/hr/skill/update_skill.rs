@@ -1,6 +1,6 @@
 //! Handler: PUT /api/v1/skills/{skill_id} - Update skill metadata and content
 
-use crate::error::AppError;
+use common::error::{err, bail_err, Result};
 use crate::models::attachment::AttachmentGetOptions;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain as finance_domain;
@@ -9,6 +9,8 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateSkillRequest, UpdateSkillResponse};
 
 use super::response::to_detail;
+use common::err;
+use common::bail_err;
 
 /// Update an existing skill's metadata, main content, and add new attached files from uploads.
 #[register_handler_tool(
@@ -21,21 +23,21 @@ use super::response::to_detail;
 pub async fn update_skill(
     ctx: RequestContext,
     params: UpdateSkillRequest,
-) -> Result<UpdateSkillResponse, AppError> {
+) -> Result<UpdateSkillResponse> {
     let user_id = ctx.uid();
     if user_id.is_empty() {
-        return Err(AppError::BadRequest("当前请求缺少用户上下文".to_string()));
+        bail_err!(InvalidRequest, "当前请求缺少用户上下文");
     }
 
     let mut skill = domain()
         .skill_manage()
         .get_skill(ctx.clone(), &params.skill_id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Skill {} not found", params.skill_id)))?;
+        .ok_or_else(|| err!(NotFound, "Skill {} not found", params.skill_id))?;
 
     if let Some(name) = params.name {
         if name.trim().is_empty() {
-            return Err(AppError::BadRequest("技能名称不能为空".to_string()));
+            bail_err!(InvalidRequest, "skill name 不能为空");
         }
         skill.po.name = name;
     }
@@ -47,7 +49,7 @@ pub async fn update_skill(
     }
     if let Some(category) = params.category {
         if category.trim().is_empty() {
-            return Err(AppError::BadRequest("技能分类不能为空".to_string()));
+            bail_err!(InvalidRequest, "skill category 不能为空");
         }
         skill.po.category = category;
     }
@@ -66,12 +68,10 @@ pub async fn update_skill(
     let mut file_imports = Vec::new();
     for file in params.files.unwrap_or_default() {
         if file.attachment_id.trim().is_empty() {
-            return Err(AppError::BadRequest("附件 ID 不能为空".to_string()));
+            bail_err!(InvalidRequest, "attachment_id 不能为空");
         }
         if file.target_path.trim().is_empty() {
-            return Err(AppError::BadRequest(
-                "Skill 文件目标路径不能为空".to_string(),
-            ));
+            bail_err!(InvalidRequest, "Skill 文件目标路径不能为空");
         }
 
         let attachment = finance_domain()
@@ -84,12 +84,10 @@ pub async fn update_skill(
                 },
             )
             .await?
-            .ok_or_else(|| {
-                AppError::BadRequest(format!("附件 {} 不存在或无权访问", file.attachment_id))
-            })?;
+            .ok_or_else(|| err!(InvalidRequest, "附件 {} 不存在或无权访问", file.attachment_id))?;
 
         let read_result = attachment.read_results.into_iter().next().ok_or_else(|| {
-            AppError::BadRequest(format!("附件 {} 内容读取失败", file.attachment_id))
+            err!(InvalidRequest, "附件 {} 内容读取失败", file.attachment_id)
         })?;
 
         file_imports.push(SkillFileImport {
@@ -115,7 +113,7 @@ pub async fn update_skill(
         .skill_manage()
         .get_skill(ctx, &params.skill_id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Skill {} not found", params.skill_id)))?;
+        .ok_or_else(|| err!(NotFound, "Skill {} not found", params.skill_id))?;
 
     Ok(to_detail(&updated))
 }

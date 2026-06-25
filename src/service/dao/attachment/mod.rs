@@ -1,12 +1,13 @@
+
 //! Attachment DAO layer
-//!
 //! DAO 只负责 AttachmentPo 持久化和给定相对路径的基础文件读写。
 
-use crate::error::Result;
+use common::error::Result;
 use crate::models::attachment::AttachmentPo;
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
 use common::enums::FileType;
+use common::bail_err;
 
 /// Attachment 查询参数。
 #[derive(Debug, Clone, Default)]

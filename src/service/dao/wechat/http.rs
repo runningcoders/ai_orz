@@ -5,6 +5,7 @@ use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;
 use std::sync::{Arc, OnceLock};
+use common::bail_err;
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -42,7 +43,7 @@ impl WechatDao for WechatDaoHttpImpl {
         _ctx: RequestContext,
         _message: &Message,
         _channel: &MessageChannel,
-    ) -> std::result::Result<(), String> {
+    ) -> std::result::Result<(), common::error::Error> {
         // TODO: 实现微信推送逻辑
         Err("微信推送功能尚未实现".to_string())
     }
@@ -51,7 +52,7 @@ impl WechatDao for WechatDaoHttpImpl {
         &self,
         _ctx: RequestContext,
         _channel: &MessageChannel,
-    ) -> std::result::Result<(), String> {
+    ) -> std::result::Result<(), common::error::Error> {
         // TODO: 实现微信连接测试逻辑
         Err("微信连接测试功能尚未实现".to_string())
     }

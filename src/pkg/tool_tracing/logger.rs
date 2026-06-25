@@ -12,6 +12,8 @@ use once_cell::sync::OnceCell;
 
 use super::entry::{ToolCallEntry, ToolCallStatus};
 use crate::pkg::daily_jsonl::DailyJsonlWriter;
+use common::error::Result;
+use common::bail_err;
 
 pub const MAX_TOOL_CALL_QUERY_LIMIT: usize = 100;
 

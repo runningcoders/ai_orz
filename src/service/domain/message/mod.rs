@@ -14,7 +14,7 @@ mod delivery_test;
 #[cfg(test)]
 mod management_test;
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::models::file::FileMeta;
 use crate::models::message::Message;
 pub use crate::models::tool::ToolCallTraceRef;
@@ -25,6 +25,7 @@ use crate::service::dao::message::MessageQuery;
 use common::enums::{MessageRole, MessageStatus};
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
+use common::bail_err;
 
 // ==================== 单例 ====================
 
@@ -208,37 +209,37 @@ pub trait MessageDelivery: Send + Sync {
         &self,
         ctx: RequestContext,
         cmd: SendToAgentCommand<'_>,
-    ) -> Result<Message, AppError>;
+    ) -> Result<Message>;
 
     /// 发送消息给用户
     async fn send_to_user(
         &self,
         ctx: RequestContext,
         cmd: SendToUserCommand<'_>,
-    ) -> Result<Message, AppError>;
+    ) -> Result<Message>;
 
     /// 发送工具调用请求消息
     async fn send_tool_call_request(
         &self,
         ctx: RequestContext,
         cmd: SendToolCallRequestCommand<'_>,
-    ) -> Result<Message, AppError>;
+    ) -> Result<Message>;
 
     /// 发送工具调用结果回调消息
     async fn send_tool_call_result(
         &self,
         ctx: RequestContext,
         cmd: SendToolCallResultCommand<'_>,
-    ) -> Result<Message, AppError>;
+    ) -> Result<Message>;
 
     /// 从队列取出下一条待处理消息
-    async fn dequeue_next(&self, ctx: RequestContext) -> Result<Option<Message>, AppError>;
+    async fn dequeue_next(&self, ctx: RequestContext) -> Result<Option<Message>>;
 
     /// 确认消息处理完成
-    async fn ack(&self, ctx: RequestContext, message_id: &str) -> Result<(), AppError>;
+    async fn ack(&self, ctx: RequestContext, message_id: &str) -> Result<()>;
 
     /// 否定确认（消息放回队列重试）
-    async fn nack(&self, ctx: RequestContext, message_id: &str) -> Result<(), AppError>;
+    async fn nack(&self, ctx: RequestContext, message_id: &str) -> Result<()>;
 
     /// 分发消息到用户所有可用渠道
     ///
@@ -247,7 +248,7 @@ pub trait MessageDelivery: Send + Sync {
         &self,
         ctx: RequestContext,
         cmd: DeliverMessageCommand<'_>,
-    ) -> Result<DeliveryResult, AppError>;
+    ) -> Result<DeliveryResult>;
 }
 
 /// 消息管理 trait
@@ -262,28 +263,28 @@ pub trait MessageManagement: Send + Sync {
         &self,
         ctx: RequestContext,
         query: MessageQuery,
-    ) -> Result<Vec<Message>, AppError>;
+    ) -> Result<Vec<Message>>;
 
     /// 按任务 ID 查询消息列表
     async fn list_by_task_id(
         &self,
         ctx: RequestContext,
         task_id: &str,
-    ) -> Result<Vec<Message>, AppError>;
+    ) -> Result<Vec<Message>>;
 
     /// 按项目 ID 查询消息列表
     async fn list_by_project_id(
         &self,
         ctx: RequestContext,
         project_id: &str,
-    ) -> Result<Vec<Message>, AppError>;
+    ) -> Result<Vec<Message>>;
 
     /// 根据消息 ID 获取消息
     async fn get_by_id(
         &self,
         ctx: RequestContext,
         message_id: &str,
-    ) -> Result<Option<Message>, AppError>;
+    ) -> Result<Option<Message>>;
 
     /// 更新消息状态
     async fn update_status(
@@ -291,15 +292,15 @@ pub trait MessageManagement: Send + Sync {
         ctx: RequestContext,
         message_id: &str,
         status: MessageStatus,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 删除单条消息
-    async fn delete_by_id(&self, ctx: RequestContext, message_id: &str) -> Result<(), AppError>;
+    async fn delete_by_id(&self, ctx: RequestContext, message_id: &str) -> Result<()>;
 
     /// 清理对话（删除任务下所有消息）
     async fn cleanup_conversation(
         &self,
         ctx: RequestContext,
         task_id: &str,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 }

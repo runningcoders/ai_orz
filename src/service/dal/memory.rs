@@ -6,7 +6,7 @@
 //! - 混合搜索（全文 + 向量）
 //! - 结果聚合排序
 
-use crate::error::AppError;
+use common::error::{err, bail_err, Result};
 use crate::models::memory::{
     KnowledgeNodeRelationPo, KnowledgeReferencePo, LongTermKnowledgeNodePo, Memory,
     MemoryCreateParams, MemoryPo, MemoryTrace, ShortTermMemoryIndexPo,
@@ -20,6 +20,8 @@ use async_trait::async_trait;
 use common::enums::MemoryType;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use common::err;
+use common::bail_err;
 
 // ==================== Factory + Singleton ====================
 
@@ -67,13 +69,13 @@ pub trait MemoryDal: Send + Sync {
         &self,
         ctx: RequestContext,
         search: MemorySearch,
-    ) -> Result<Vec<Memory>, AppError>;
+    ) -> Result<Vec<Memory>>;
 
     /// 📋 通用关系型查询（纯数据库查询，无向量）
     ///
     /// 支持所有组合过滤条件，可单独指定查询哪种记忆类型
     async fn query(&self, ctx: RequestContext, query: MemoryQuery)
-    -> Result<Vec<Memory>, AppError>;
+    -> Result<Vec<Memory>>;
 
     /// ✍️ 创建记忆（按 MemoryCreateParams 变体分发）
     ///
@@ -86,20 +88,20 @@ pub trait MemoryDal: Send + Sync {
         &self,
         ctx: RequestContext,
         params: MemoryCreateParams,
-    ) -> Result<Vec<Memory>, AppError>;
+    ) -> Result<Vec<Memory>>;
 
     /// 🔄 更新记忆（仅支持 ShortTerm / KnowledgeNode）
     ///
-    /// 自动重新向量化。Trace / Relation 返回 `AppError::Unsupported`。
-    async fn update(&self, ctx: RequestContext, memory: Memory) -> Result<Memory, AppError>;
+    /// 自动重新向量化。Trace / Relation 返回 `common::error::Error::Unsupported`。
+    async fn update(&self, ctx: RequestContext, memory: Memory) -> Result<Memory>;
 
     /// 🗑️ 删除记忆（仅支持 ShortTerm / KnowledgeNode）
     ///
     /// 入参为业务实体本身，便于 DAL 内做删除前校验/审计而无需重新查询：
     /// - `ShortTerm` → 删库 + 删向量索引
     /// - `KnowledgeNode` → 级联：删入边/出边关系 + 删引用 + 删节点 + 删向量
-    /// - `Trace` / `Relation` → 返回 `AppError::Unsupported`
-    async fn delete(&self, ctx: RequestContext, memory: Memory) -> Result<(), AppError>;
+    /// - `Trace` / `Relation` → 返回 `common::error::Error::Unsupported`
+    async fn delete(&self, ctx: RequestContext, memory: Memory) -> Result<()>;
 }
 
 // ==================== Implementation ====================
@@ -117,7 +119,7 @@ impl MemoryDal for MemoryDalImpl {
         &self,
         ctx: RequestContext,
         search: MemorySearch,
-    ) -> Result<Vec<Memory>, AppError> {
+    ) -> Result<Vec<Memory>> {
         let memory_type = search.filters.memory_type.unwrap_or(MemoryType::All);
         let mut results: Vec<Memory> = Vec::new();
 
@@ -176,7 +178,7 @@ impl MemoryDal for MemoryDalImpl {
         &self,
         ctx: RequestContext,
         query: MemoryQuery,
-    ) -> Result<Vec<Memory>, AppError> {
+    ) -> Result<Vec<Memory>> {
         let memory_type = query.memory_type.unwrap_or(MemoryType::All);
         let mut results: Vec<Memory> = Vec::new();
 
@@ -216,7 +218,7 @@ impl MemoryDal for MemoryDalImpl {
         &self,
         ctx: RequestContext,
         params: MemoryCreateParams,
-    ) -> Result<Vec<Memory>, AppError> {
+    ) -> Result<Vec<Memory>> {
         match params {
             MemoryCreateParams::AppendTraces(traces) => {
                 self.create_append_traces(ctx, traces).await
@@ -231,7 +233,7 @@ impl MemoryDal for MemoryDalImpl {
         }
     }
 
-    async fn update(&self, ctx: RequestContext, memory: Memory) -> Result<Memory, AppError> {
+    async fn update(&self, ctx: RequestContext, memory: Memory) -> Result<Memory> {
         match memory.po {
             crate::models::memory::MemoryPo::ShortTerm(short_term) => {
                 // 更新 SQLite 索引
@@ -309,15 +311,15 @@ impl MemoryDal for MemoryDalImpl {
                 })
             }
             crate::models::memory::MemoryPo::Trace(_) => {
-                Err(AppError::Unsupported("原始记忆 Trace 不可修改".to_string()))
+                bail_err!(UnsupportedOperation, "原始记忆 Trace 不可修改");
             }
-            crate::models::memory::MemoryPo::Relation(_) => Err(AppError::Unsupported(
-                "记忆 Relation 不可修改，需删除后重建".to_string(),
-            )),
+            crate::models::memory::MemoryPo::Relation(_) => {
+                bail_err!(UnsupportedOperation, "记忆 Relation 不可修改，需删除后重建");
+            }
         }
     }
 
-    async fn delete(&self, ctx: RequestContext, memory: Memory) -> Result<(), AppError> {
+    async fn delete(&self, ctx: RequestContext, memory: Memory) -> Result<()> {
         match memory.po {
             crate::models::memory::MemoryPo::ShortTerm(short_term) => {
                 // 软删除 SQLite 索引
@@ -350,11 +352,11 @@ impl MemoryDal for MemoryDalImpl {
                 Ok(())
             }
             crate::models::memory::MemoryPo::Trace(_) => {
-                Err(AppError::Unsupported("原始记忆 Trace 不可删除".to_string()))
+                bail_err!(UnsupportedOperation, "原始记忆 Trace 不可删除");
             }
-            crate::models::memory::MemoryPo::Relation(_) => Err(AppError::Unsupported(
-                "记忆 Relation 不可删除，需删除后重建".to_string(),
-            )),
+            crate::models::memory::MemoryPo::Relation(_) => {
+                bail_err!(UnsupportedOperation, "记忆 Relation 不可删除，需删除后重建");
+            }
         }
     }
 }
@@ -367,7 +369,7 @@ impl MemoryDalImpl {
         &self,
         ctx: RequestContext,
         search: MemorySearch,
-    ) -> Result<Vec<Memory>, AppError> {
+    ) -> Result<Vec<Memory>> {
         // Step 1: 准备向量搜索结果容器
         let mut vector_scores: HashMap<String, f32> = HashMap::new();
         let mut vector_ids: HashSet<String> = HashSet::new();
@@ -485,7 +487,7 @@ impl MemoryDalImpl {
         &self,
         ctx: RequestContext,
         search: MemorySearch,
-    ) -> Result<Vec<Memory>, AppError> {
+    ) -> Result<Vec<Memory>> {
         // Step 1: 准备向量搜索结果容器
         let mut vector_scores: HashMap<String, f32> = HashMap::new();
         let mut vector_ids: HashSet<String> = HashSet::new();
@@ -603,7 +605,7 @@ impl MemoryDalImpl {
         &self,
         _ctx: RequestContext,
         _search: MemorySearch,
-    ) -> Result<Vec<Memory>, AppError> {
+    ) -> Result<Vec<Memory>> {
         // TODO: DAO 层目前没有关系搜索方法，后续补充
         Ok(Vec::new())
     }
@@ -618,7 +620,7 @@ impl MemoryDalImpl {
         &self,
         ctx: RequestContext,
         mut traces: Vec<MemoryTrace>,
-    ) -> Result<Vec<Memory>, AppError> {
+    ) -> Result<Vec<Memory>> {
         if traces.is_empty() {
             return Ok(Vec::new());
         }
@@ -641,7 +643,7 @@ impl MemoryDalImpl {
         &self,
         ctx: RequestContext,
         index: ShortTermMemoryIndexPo,
-    ) -> Result<Vec<Memory>, AppError> {
+    ) -> Result<Vec<Memory>> {
         // Step 1: 写 SQLite
         self.memory_dao
             .create_short_term_index(ctx.clone(), index.clone())
@@ -685,7 +687,7 @@ impl MemoryDalImpl {
         ctx: RequestContext,
         node: LongTermKnowledgeNodePo,
         references: Vec<KnowledgeReferencePo>,
-    ) -> Result<Vec<Memory>, AppError> {
+    ) -> Result<Vec<Memory>> {
         // Step 1: 写节点
         self.memory_dao
             .save_knowledge_node(ctx.clone(), &node)
@@ -736,7 +738,7 @@ impl MemoryDalImpl {
         &self,
         ctx: RequestContext,
         relations: Vec<KnowledgeNodeRelationPo>,
-    ) -> Result<Vec<Memory>, AppError> {
+    ) -> Result<Vec<Memory>> {
         if relations.is_empty() {
             return Ok(Vec::new());
         }
@@ -770,7 +772,7 @@ async fn try_build_vector_params_for_search(
     cortex_dao: &Arc<dyn CortexDao>,
     model_provider_dao: &Arc<dyn ModelProviderDao>,
     text: &str,
-) -> Result<Option<VectorIndexParams>, AppError> {
+) -> Result<Option<VectorIndexParams>> {
     let Some(provider) = model_provider_dao
         .get_default_embedding_provider(ctx.clone())
         .await?
@@ -794,7 +796,7 @@ async fn try_build_vector_params_for_entity(
     cortex_dao: &Arc<dyn CortexDao>,
     model_provider_dao: &Arc<dyn ModelProviderDao>,
     entity: &dyn Vectorizable,
-) -> Result<Option<VectorIndexParams>, AppError> {
+) -> Result<Option<VectorIndexParams>> {
     let Some(provider) = model_provider_dao
         .get_default_embedding_provider(ctx.clone())
         .await?

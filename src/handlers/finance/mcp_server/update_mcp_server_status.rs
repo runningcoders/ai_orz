@@ -4,11 +4,13 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateMcpServerStatusRequest, UpdateMcpServerStatusResponse};
 use common::enums::McpServerStatus as ApiMcpServerStatus;
 
-use crate::error::AppError;
+use common::bail_err;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
 use super::response::{to_detail, to_model_status};
+use common::err;
+use common::error::Result;
 
 /// Update an MCP Server status. Use DELETE for soft deletion.
 #[register_handler_tool(
@@ -21,11 +23,8 @@ use super::response::{to_detail, to_model_status};
 pub async fn update_mcp_server_status(
     ctx: RequestContext,
     params: UpdateMcpServerStatusRequest,
-) -> Result<UpdateMcpServerStatusResponse, AppError> {
+) -> Result<UpdateMcpServerStatusResponse> {
     if params.status == ApiMcpServerStatus::Deleted {
-        return Err(AppError::BadRequest(
-            "Deleted status is not allowed here; use DELETE /finance/mcp-servers/{id}".to_string(),
-        ));
     }
 
     domain()
@@ -37,7 +36,7 @@ pub async fn update_mcp_server_status(
         .mcp_server_manage()
         .get_mcp_server(ctx, &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("McpServer {} not found", params.id)))?;
+        .ok_or_else(|| err!(NotFound, "McpServer {} not found", params.id))?;
 
     Ok(to_detail(&server))
 }

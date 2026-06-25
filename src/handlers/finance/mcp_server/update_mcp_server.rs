@@ -3,11 +3,12 @@
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateMcpServerRequest, UpdateMcpServerResponse};
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
 use super::response::{to_detail, to_model_config, to_model_transport};
+use common::bail_err;
 
 /// Update an MCP Server configuration.
 #[register_handler_tool(
@@ -20,12 +21,12 @@ use super::response::{to_detail, to_model_config, to_model_transport};
 pub async fn update_mcp_server(
     ctx: RequestContext,
     params: UpdateMcpServerRequest,
-) -> Result<UpdateMcpServerResponse, AppError> {
+) -> Result<UpdateMcpServerResponse> {
     let mut server = domain()
         .mcp_server_manage()
         .get_mcp_server(ctx.clone(), &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("McpServer {} not found", params.id)))?;
+        .ok_or_else(|| common::error::Error::not_found(format!("McpServer {} not found", params.id)))?;
 
     if let Some(name) = params.name {
         server.po.name = name;

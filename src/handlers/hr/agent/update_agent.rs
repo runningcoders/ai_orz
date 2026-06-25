@@ -1,11 +1,12 @@
 //! Handler: PUT /api/v1/agents/{id} - Update agent information
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateAgentRequest, UpdateAgentResponse};
 use std::time::{SystemTime, UNIX_EPOCH};
+use common::bail_err;
 
 /// Update the metadata and configuration of an existing AI agent
 #[register_handler_tool(
@@ -18,7 +19,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub async fn update_agent(
     ctx: RequestContext,
     params: UpdateAgentRequest,
-) -> Result<UpdateAgentResponse, AppError> {
+) -> Result<UpdateAgentResponse> {
     fn current_timestamp() -> i64 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -30,7 +31,7 @@ pub async fn update_agent(
         .agent_manage()
         .get_agent(ctx.clone(), &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Agent {} not found", params.id)))?;
+        .ok_or_else(|| common::error::Error::not_found(format!("Agent {} not found", params.id)))?;
 
     // Update fields
     if let Some(name) = params.name {

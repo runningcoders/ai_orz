@@ -1,10 +1,11 @@
 //! Handler: DELETE /api/v1/project/artifacts/{id} - Delete an artifact
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::project;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{DeleteArtifactRequest, DeleteArtifactResponse};
+use common::bail_err;
 
 /// Delete an existing artifact by ID
 #[register_handler_tool(
@@ -17,12 +18,12 @@ use common::api::{DeleteArtifactRequest, DeleteArtifactResponse};
 pub async fn delete_artifact(
     ctx: RequestContext,
     params: DeleteArtifactRequest,
-) -> Result<DeleteArtifactResponse, AppError> {
+) -> Result<DeleteArtifactResponse> {
     project::domain()
         .artifact_manage()
         .get(ctx.clone(), &params.artifact_id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Artifact {} not found", params.artifact_id)))?;
+        .ok_or_else(|| common::error::Error::not_found(format!("Artifact {} not found", params.artifact_id)))?;
 
     project::domain()
         .artifact_manage()

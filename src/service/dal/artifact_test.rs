@@ -8,6 +8,7 @@ use common::enums::FileType;
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use uuid::Uuid;
+use common::bail_err;
 
 /// 初始化测试环境
 async fn init_test_env(pool: SqlitePool) -> (Arc<dyn ArtifactDal + Send + Sync>, RequestContext) {

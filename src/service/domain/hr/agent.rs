@@ -1,12 +1,14 @@
 //! Agent 管理具体方法实现
 
-use crate::error::AppError;
+use common::bail_err;
 use crate::models::agent::Agent;
 use crate::pkg::RequestContext;
 use crate::service::dal::agent::AgentDal;
 use crate::service::dao::agent::AgentQuery;
 use crate::service::domain::hr::{AgentManage, HrDomainImpl};
 use common::enums::AgentStatus;
+use common::error::Result;
+use common::err;
 
 #[async_trait::async_trait]
 impl AgentManage for HrDomainImpl {
@@ -14,19 +16,15 @@ impl AgentManage for HrDomainImpl {
     ///
     /// 基础操作：将 Agent 持久化到存储
     /// 强制校验：必须指定 model_provider_id，创建后状态固定为 Interviewing
-    async fn create_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError> {
+    async fn create_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<()> {
         // 强制校验：必须指定 model_provider_id
         if agent.po.model_provider_id.is_empty() {
-            return Err(AppError::BadRequest(
-                "创建 Agent 必须指定 model_provider_id".to_string(),
-            ));
+            bail_err!(InvalidRequest, "创建 Agent 必须指定 model_provider_id");
         }
 
         // 强制校验：状态必须是 Interviewing
         if agent.po.status != AgentStatus::Interviewing {
-            return Err(AppError::BadRequest(
-                "新建 Agent 状态必须为 Interviewing".to_string(),
-            ));
+            bail_err!(InvalidRequest, "新建 Agent 状态必须为 Interviewing");
         }
 
         self.agent_dal.create(ctx, agent).await
@@ -35,21 +33,21 @@ impl AgentManage for HrDomainImpl {
     /// 获取 Agent
     ///
     /// 基础操作：根据 ID 查询 Agent
-    async fn get_agent(&self, ctx: RequestContext, id: &str) -> Result<Option<Agent>, AppError> {
+    async fn get_agent(&self, ctx: RequestContext, id: &str) -> Result<Option<Agent>> {
         self.agent_dal.find_by_id(ctx, id).await
     }
 
     /// 通用综合查询
     ///
     /// Domain 层可以添加业务逻辑：权限校验、数据过滤、业务规则验证
-    async fn query(&self, ctx: RequestContext, query: AgentQuery) -> Result<Vec<Agent>, AppError> {
+    async fn query(&self, ctx: RequestContext, query: AgentQuery) -> Result<Vec<Agent>> {
         self.agent_dal.query(ctx, query).await
     }
 
     /// 列出所有 Agent
     ///
     /// 语法糖：调用通用查询，默认排除已删除状态
-    async fn list_agents(&self, ctx: RequestContext) -> Result<Vec<Agent>, AppError> {
+    async fn list_agents(&self, ctx: RequestContext) -> Result<Vec<Agent>> {
         self.query(
             ctx,
             AgentQuery {
@@ -63,14 +61,14 @@ impl AgentManage for HrDomainImpl {
     /// 更新 Agent
     ///
     /// 基础操作：更新 Agent 信息
-    async fn update_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError> {
+    async fn update_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<()> {
         self.agent_dal.update(ctx, agent).await
     }
 
     /// 删除 Agent
     ///
     /// 基础操作：软删除 Agent（标记为已删除）
-    async fn delete_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError> {
+    async fn delete_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<()> {
         self.agent_dal.delete(ctx, agent).await
     }
 
@@ -82,7 +80,7 @@ impl AgentManage for HrDomainImpl {
         ctx: RequestContext,
         agent: &mut Agent,
         target_status: AgentStatus,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let current_status = agent.po.status.clone();
 
         // 状态机校验：定义合法的流转路径
@@ -104,10 +102,7 @@ impl AgentManage for HrDomainImpl {
         };
 
         if !is_valid_transition {
-            return Err(AppError::BadRequest(format!(
-                "非法状态流转：{:?} → {:?}",
-                current_status, target_status
-            )));
+            bail_err!(InvalidRequest, "非法状态流转：{:?} → {:?}", current_status, target_status);
         }
 
         // 幂等：状态相同直接返回
@@ -129,15 +124,12 @@ impl AgentManage for HrDomainImpl {
         &self,
         ctx: RequestContext,
         agent: &Agent,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let agent_id = agent.po.id.as_str();
 
         // 1. 校验状态必须是 PendingOnboard
         if agent.po.status != AgentStatus::PendingOnboard {
-            return Err(AppError::BadRequest(format!(
-                "Agent 状态必须是 PendingOnboard 才能入职，当前状态：{:?}",
-                agent.po.status
-            )));
+            bail_err!(InvalidRequest, "Agent 状态必须是 PendingOnboard 才能入职，当前状态：{:?}", agent.po.status);
         }
 
         // 2. 校验至少绑定了 1 个工具
@@ -146,9 +138,7 @@ impl AgentManage for HrDomainImpl {
             .list_tools_for_agent_full(ctx.clone(), agent_id)
             .await?;
         if tools.is_empty() {
-            return Err(AppError::BadRequest(
-                "Agent 至少绑定 1 个工具才能入职".to_string(),
-            ));
+            bail_err!(InvalidRequest, "Agent 至少绑定 1 个工具才能入职");
         }
 
         // 3. 校验技能：没有技能只告警，不阻止入职

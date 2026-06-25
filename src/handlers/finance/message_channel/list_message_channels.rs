@@ -1,6 +1,6 @@
 //! Handler: GET /api/v1/message-channels - List message channels with filtering
 
-use crate::error::AppError;
+use common::bail_err;
 use crate::pkg::RequestContext;
 use crate::service::dao::message_channel::MessageChannelQuery;
 use crate::service::domain::finance::domain;
@@ -10,6 +10,8 @@ use common::api::{
 };
 
 use super::response::to_list_item;
+use common::error::Result;
+use common::err;
 
 /// List message channels with optional filtering by user, agent, channel type, enabled status
 #[register_handler_tool(
@@ -22,14 +24,14 @@ use super::response::to_list_item;
 pub async fn list_message_channels(
     ctx: RequestContext,
     params: ListMessageChannelsRequest,
-) -> Result<ListMessageChannelsResponse, AppError> {
+) -> Result<ListMessageChannelsResponse> {
     let org_id = ctx
         .organization_id
         .clone()
-        .ok_or_else(|| AppError::BadRequest("当前请求缺少组织上下文".to_string()))?;
+        .ok_or_else(|| err!(InvalidRequest, "当前请求缺少组织上下文"))?;
     let user_id = params.user_id.clone().unwrap_or_else(|| ctx.uid());
     if user_id.is_empty() {
-        return Err(AppError::BadRequest("当前请求缺少用户上下文".to_string()));
+        bail_err!(InvalidRequest, "当前请求缺少用户上下文");
     }
 
     let channels = domain()

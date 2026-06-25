@@ -11,3 +11,7 @@ pub mod api;
 pub mod config;
 pub mod constants;
 pub mod enums;
+pub mod error;
+
+#[cfg(test)]
+mod error_test;

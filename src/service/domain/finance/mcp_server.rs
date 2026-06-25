@@ -2,12 +2,13 @@
 //!
 //! MCP Server 属于外部能力 Provider 配置，由 Finance Domain 统一管理。
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::models::mcp_server::{
     McpServer, McpServerConfig, McpServerQuery, McpServerStatus, REDACTED_CONFIG_VALUE,
 };
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::{FinanceDomainImpl, McpServerManage};
+use common::bail_err;
 
 #[async_trait::async_trait]
 impl McpServerManage for FinanceDomainImpl {
@@ -16,7 +17,7 @@ impl McpServerManage for FinanceDomainImpl {
         &self,
         ctx: RequestContext,
         server: &McpServer,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         self.mcp_server_dal.create(ctx, server).await
     }
 
@@ -25,7 +26,7 @@ impl McpServerManage for FinanceDomainImpl {
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<McpServer>, AppError> {
+    ) -> Result<Option<McpServer>> {
         Ok(self
             .mcp_server_dal
             .find_by_id(ctx, id)
@@ -38,7 +39,7 @@ impl McpServerManage for FinanceDomainImpl {
         &self,
         ctx: RequestContext,
         query: McpServerQuery,
-    ) -> Result<common::api::PagedResult<McpServer>, AppError> {
+    ) -> Result<common::api::PagedResult<McpServer>> {
         Ok(self
             .mcp_server_dal
             .query(ctx, query)
@@ -47,7 +48,7 @@ impl McpServerManage for FinanceDomainImpl {
     }
 
     /// 列出所有 MCP Server
-    async fn list_mcp_servers(&self, ctx: RequestContext) -> Result<Vec<McpServer>, AppError> {
+    async fn list_mcp_servers(&self, ctx: RequestContext) -> Result<Vec<McpServer>> {
         Ok(self
             .mcp_server_dal
             .query(ctx, McpServerQuery::default())
@@ -63,7 +64,7 @@ impl McpServerManage for FinanceDomainImpl {
         &self,
         ctx: RequestContext,
         server: &McpServer,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let mut server_to_update = server.clone();
         if let Some(existing) = self
             .mcp_server_dal
@@ -82,12 +83,12 @@ impl McpServerManage for FinanceDomainImpl {
         ctx: RequestContext,
         id: &str,
         status: McpServerStatus,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         self.mcp_server_dal.set_status(ctx, id, status).await
     }
 
     /// 删除 MCP Server
-    async fn delete_mcp_server(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
+    async fn delete_mcp_server(&self, ctx: RequestContext, id: &str) -> Result<()> {
         self.mcp_server_dal.delete(ctx, id).await
     }
 }

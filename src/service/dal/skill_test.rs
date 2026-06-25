@@ -1,6 +1,6 @@
 //! Skill DAL 单元测试
 
-use crate::error::AppError;
+use common::error::Error;
 use crate::models::brain::CortexTrait;
 use crate::models::model_provider::ModelProviderPo;
 use crate::models::skill::{Skill, SkillFile, SkillPo};
@@ -163,7 +163,7 @@ impl ModelProviderDao for MockModelProviderDao {
         &self,
         _ctx: RequestContext,
         _provider: &ModelProviderPo,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         Ok(())
     }
 
@@ -171,7 +171,7 @@ impl ModelProviderDao for MockModelProviderDao {
         &self,
         _ctx: RequestContext,
         _id: &str,
-    ) -> Result<Option<ModelProviderPo>, AppError> {
+    ) -> Result<Option<ModelProviderPo>> {
         Ok(None)
     }
 
@@ -179,7 +179,7 @@ impl ModelProviderDao for MockModelProviderDao {
         &self,
         _ctx: RequestContext,
         _query: crate::service::dao::model_provider::ModelProviderQuery,
-    ) -> Result<Vec<ModelProviderPo>, AppError> {
+    ) -> Result<Vec<ModelProviderPo>> {
         // 返回一个测试用的 provider（支持 Embedding）
         Ok(vec![ModelProviderPo {
             id: "mock-provider".to_string(),
@@ -199,7 +199,7 @@ impl ModelProviderDao for MockModelProviderDao {
         }])
     }
 
-    async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<ModelProviderPo>, AppError> {
+    async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<ModelProviderPo>> {
         Ok(vec![])
     }
 
@@ -207,7 +207,7 @@ impl ModelProviderDao for MockModelProviderDao {
         &self,
         _ctx: RequestContext,
         _provider: &ModelProviderPo,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         Ok(())
     }
 
@@ -215,14 +215,14 @@ impl ModelProviderDao for MockModelProviderDao {
         &self,
         _ctx: RequestContext,
         _provider: &ModelProviderPo,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         Ok(())
     }
 
     async fn get_default_embedding_provider(
         &self,
         _ctx: RequestContext,
-    ) -> Result<Option<ModelProviderPo>, AppError> {
+    ) -> Result<Option<ModelProviderPo>> {
         Ok(Some(ModelProviderPo {
             id: "mock-provider".to_string(),
             name: "Mock Provider".to_string(),
@@ -307,7 +307,7 @@ fn create_test_skill_po(name: &str) -> SkillPo {
 
 /// 测试创建技能后按 ID 查询（含文件组装）
 #[sqlx::test]
-async fn test_create_and_get_by_id(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_create_and_get_by_id(pool: SqlitePool) -> Result<()> {
     let skill_dal = init_test(pool.clone()).await;
     let ctx = new_ctx("test-user", pool);
 
@@ -341,7 +341,7 @@ async fn test_create_and_get_by_id(pool: SqlitePool) -> Result<(), AppError> {
 
 /// 测试通用查询
 #[sqlx::test]
-async fn test_query_skills(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_query_skills(pool: SqlitePool) -> Result<()> {
     let skill_dal = init_test(pool.clone()).await;
     let ctx = new_ctx("test-user", pool);
 
@@ -353,6 +353,8 @@ async fn test_query_skills(pool: SqlitePool) -> Result<(), AppError> {
 
     // 查询全部
     use crate::service::dao::skill::SkillQuery;
+use common::error::Result;
+use common::bail_err;
     let all = skill_dal.query(ctx.clone(), SkillQuery::default()).await?;
     assert_eq!(all.len(), 3);
 
@@ -361,7 +363,7 @@ async fn test_query_skills(pool: SqlitePool) -> Result<(), AppError> {
 
 /// 测试按状态、分类、作者查询
 #[sqlx::test]
-async fn test_list_by_status(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_list_by_status(pool: SqlitePool) -> Result<()> {
     let skill_dal = init_test(pool.clone()).await;
     let ctx = new_ctx("test-user", pool);
 
@@ -419,7 +421,7 @@ async fn test_list_by_status(pool: SqlitePool) -> Result<(), AppError> {
 
 /// 测试文件操作：读写主内容、列出文件、读写其他文件
 #[sqlx::test]
-async fn test_file_operations(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_file_operations(pool: SqlitePool) -> Result<()> {
     let skill_dal = init_test(pool.clone()).await;
     let ctx = new_ctx("test-user", pool);
 
@@ -475,7 +477,7 @@ async fn test_file_operations(pool: SqlitePool) -> Result<(), AppError> {
 
 /// 测试安装技能到 Agent（创建私有副本）
 #[sqlx::test]
-async fn test_install_to_agent(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_install_to_agent(pool: SqlitePool) -> Result<()> {
     let skill_dal = init_test(pool.clone()).await;
     let ctx = new_ctx("test-user", pool);
 
@@ -524,7 +526,7 @@ async fn test_install_to_agent(pool: SqlitePool) -> Result<(), AppError> {
 
 /// 测试删除技能（软删除 + 目录删除）
 #[sqlx::test]
-async fn test_delete_skill(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_delete_skill(pool: SqlitePool) -> Result<()> {
     let skill_dal = init_test(pool.clone()).await;
     let ctx = new_ctx("test-user", pool);
 
@@ -562,7 +564,7 @@ async fn test_delete_skill(pool: SqlitePool) -> Result<(), AppError> {
 
 /// 测试搜索技能
 #[sqlx::test]
-async fn test_search_skill(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_search_skill(pool: SqlitePool) -> Result<()> {
     let skill_dal = init_test(pool.clone()).await;
     let ctx = new_ctx("test-user", pool);
 
@@ -624,7 +626,7 @@ async fn test_search_skill(pool: SqlitePool) -> Result<(), AppError> {
 
 /// 测试 get_po_by_id 只返回 PO 不读取文件（性能）
 #[sqlx::test]
-async fn test_get_po_only(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_get_po_only(pool: SqlitePool) -> Result<()> {
     let skill_dal = init_test(pool.clone()).await;
     let ctx = new_ctx("test-user", pool);
 
@@ -655,7 +657,7 @@ async fn test_get_po_only(pool: SqlitePool) -> Result<(), AppError> {
 
 /// 测试更新技能基本信息
 #[sqlx::test]
-async fn test_update_skill_basic_info(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_update_skill_basic_info(pool: SqlitePool) -> Result<()> {
     let skill_dal = init_test(pool.clone()).await;
     let ctx = new_ctx("test-user", pool);
 
@@ -706,7 +708,7 @@ async fn test_update_skill_basic_info(pool: SqlitePool) -> Result<(), AppError> 
 
 /// 测试更新技能状态（Draft → Published）
 #[sqlx::test]
-async fn test_update_skill_status(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_update_skill_status(pool: SqlitePool) -> Result<()> {
     let skill_dal = init_test(pool.clone()).await;
     let ctx = new_ctx("test-user", pool);
 
@@ -747,7 +749,7 @@ async fn test_update_skill_status(pool: SqlitePool) -> Result<(), AppError> {
 
 /// 测试更新不存在的技能（应该不报错，DAO 会静默处理）
 #[sqlx::test]
-async fn test_update_nonexistent_skill(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_update_nonexistent_skill(pool: SqlitePool) -> Result<()> {
     let skill_dal = init_test(pool.clone()).await;
     let ctx = new_ctx("test-user", pool);
 

@@ -1,9 +1,10 @@
 //! Model Provider DAO 模块
 
-use crate::error::AppError;
+use common::error::{Error, Result};
 use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::RequestContext;
 use common::enums::{ModelCapability, ModelProviderStatus, ProviderType};
+use common::bail_err;
 
 /// ModelProvider 查询参数
 #[derive(Debug, Clone, Default)]
@@ -19,31 +20,31 @@ pub struct ModelProviderQuery {
 #[async_trait::async_trait]
 pub trait ModelProviderDao: Send + Sync {
     async fn insert(&self, ctx: RequestContext, provider: &ModelProviderPo)
-    -> Result<(), AppError>;
+    -> Result<()>;
     async fn find_by_id(
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<ModelProviderPo>, AppError>;
+    ) -> Result<Option<ModelProviderPo>>;
 
     /// 通用查询
     async fn query(
         &self,
         ctx: RequestContext,
         query: ModelProviderQuery,
-    ) -> Result<Vec<ModelProviderPo>, AppError>;
+    ) -> Result<Vec<ModelProviderPo>>;
 
-    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<ModelProviderPo>, AppError>;
+    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<ModelProviderPo>>;
     async fn update(&self, ctx: RequestContext, provider: &ModelProviderPo)
-    -> Result<(), AppError>;
+    -> Result<()>;
     async fn delete(&self, ctx: RequestContext, provider: &ModelProviderPo)
-    -> Result<(), AppError>;
+    -> Result<()>;
 
     /// 获取默认的 Embedding Provider（第一个可用的）
     async fn get_default_embedding_provider(
         &self,
         ctx: RequestContext,
-    ) -> Result<Option<ModelProviderPo>, AppError>;
+    ) -> Result<Option<ModelProviderPo>>;
 }
 
 mod sqlite;

@@ -2,7 +2,7 @@
 //!
 //! 负责项目的创建、查询、状态流转
 
-use crate::error::AppError;
+use common::bail_err;
 use crate::models::project::Project;
 use crate::pkg::RequestContext;
 use common::constants::utils;
@@ -10,6 +10,8 @@ use common::enums::project::ProjectStatus;
 use uuid::Uuid;
 
 use super::ProjectDomainImpl;
+use common::error::Result;
+use common::err;
 
 #[async_trait::async_trait]
 impl super::ProjectManage for ProjectDomainImpl {
@@ -23,7 +25,7 @@ impl super::ProjectManage for ProjectDomainImpl {
         tags: Vec<String>,
         root_user_id: String,
         created_by: String,
-    ) -> Result<Project, AppError> {
+    ) -> Result<Project> {
         let project_id = Uuid::now_v7().to_string();
 
         let project = Project::new(
@@ -47,7 +49,7 @@ impl super::ProjectManage for ProjectDomainImpl {
     }
 
     /// 根据 ID 获取项目
-    async fn get(&self, ctx: RequestContext, id: &str) -> Result<Option<Project>, AppError> {
+    async fn get(&self, ctx: RequestContext, id: &str) -> Result<Option<Project>> {
         self.project_dal.find_by_id(ctx, id).await
     }
 
@@ -56,7 +58,7 @@ impl super::ProjectManage for ProjectDomainImpl {
         &self,
         ctx: RequestContext,
         root_user_id: &str,
-    ) -> Result<Vec<Project>, AppError> {
+    ) -> Result<Vec<Project>> {
         self.project_dal
             .list_by_root_user(ctx, root_user_id, None)
             .await
@@ -69,7 +71,7 @@ impl super::ProjectManage for ProjectDomainImpl {
         root_user_id: &str,
         status: Option<ProjectStatus>,
         limit: Option<usize>,
-    ) -> Result<Vec<Project>, AppError> {
+    ) -> Result<Vec<Project>> {
         if let Some(status) = status {
             self.project_dal
                 .list_by_root_user_and_status(ctx, root_user_id, vec![status], limit)
@@ -87,12 +89,9 @@ impl super::ProjectManage for ProjectDomainImpl {
         ctx: RequestContext,
         project_id: &str,
         modified_by: String,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let Some(mut project) = self.project_dal.find_by_id(ctx.clone(), project_id).await? else {
-            return Err(AppError::NotFound(format!(
-                "Project not found: {}",
-                project_id
-            )));
+            bail_err!(NotFound, "Project not found: {}", project_id);
         };
         project.start();
         project.po.modified_by = modified_by;
@@ -106,12 +105,9 @@ impl super::ProjectManage for ProjectDomainImpl {
         ctx: RequestContext,
         project_id: &str,
         modified_by: String,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let Some(mut project) = self.project_dal.find_by_id(ctx.clone(), project_id).await? else {
-            return Err(AppError::NotFound(format!(
-                "Project not found: {}",
-                project_id
-            )));
+            bail_err!(NotFound, "Project not found: {}", project_id);
         };
         project.complete();
         project.po.modified_by = modified_by;
@@ -125,12 +121,9 @@ impl super::ProjectManage for ProjectDomainImpl {
         ctx: RequestContext,
         project_id: &str,
         modified_by: String,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let Some(mut project) = self.project_dal.find_by_id(ctx.clone(), project_id).await? else {
-            return Err(AppError::NotFound(format!(
-                "Project not found: {}",
-                project_id
-            )));
+            bail_err!(NotFound, "Project not found: {}", project_id);
         };
         project.po.status = ProjectStatus::Archived;
         project.po.modified_by = modified_by;
@@ -148,12 +141,9 @@ impl super::ProjectManage for ProjectDomainImpl {
         priority: Option<i32>,
         tags: Option<Vec<String>>,
         modified_by: String,
-    ) -> Result<Project, AppError> {
+    ) -> Result<Project> {
         let Some(mut project) = self.project_dal.find_by_id(ctx.clone(), project_id).await? else {
-            return Err(AppError::NotFound(format!(
-                "Project not found: {}",
-                project_id
-            )));
+            bail_err!(NotFound, "Project not found: {}", project_id);
         };
 
         if let Some(name) = name {
@@ -180,13 +170,11 @@ impl super::ProjectManage for ProjectDomainImpl {
         ctx: RequestContext,
         project: &mut Project,
         target_status: ProjectStatus,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let current_status = project.po.status;
 
         if target_status == ProjectStatus::Deleted {
-            return Err(AppError::BadRequest(
-                "Project 删除不允许通过状态接口执行，请使用删除/归档 action".to_string(),
-            ));
+            bail_err!(InvalidRequest, "Project 删除不允许通过状态接口执行，请使用删除/归档 action");
         }
 
         let is_valid_transition = match (current_status, target_status) {
@@ -204,10 +192,7 @@ impl super::ProjectManage for ProjectDomainImpl {
         };
 
         if !is_valid_transition {
-            return Err(AppError::BadRequest(format!(
-                "非法项目状态流转：{:?} → {:?}",
-                current_status, target_status
-            )));
+            bail_err!(InvalidRequest, "非法项目状态流转：{:?} → {:?}", current_status, target_status);
         }
 
         if current_status == target_status {

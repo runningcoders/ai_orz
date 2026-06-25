@@ -1,12 +1,13 @@
 //! Handler: PUT /api/v1/organizations/users/{id} - Update user information
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateUserRequest, UpdateUserResponse};
 use common::enums::{UserRole, UserStatus};
 use std::time::{SystemTime, UNIX_EPOCH};
+use common::bail_err;
 
 /// Get current timestamp
 fn current_timestamp() -> i64 {
@@ -27,14 +28,14 @@ fn current_timestamp() -> i64 {
 pub async fn update_user(
     ctx: RequestContext,
     params: UpdateUserRequest,
-) -> Result<UpdateUserResponse, AppError> {
+) -> Result<UpdateUserResponse> {
     let domain = organization::domain();
 
     let mut user = domain
         .user_manage()
         .get_user_by_id(ctx.clone(), &params.user_id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("User {} not found", params.user_id)))?;
+        .ok_or_else(|| common::error::Error::not_found(format!("User {} not found", params.user_id)))?;
 
     // 更新字段
     if let Some(display_name) = params.display_name {

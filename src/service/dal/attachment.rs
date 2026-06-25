@@ -2,7 +2,7 @@
 //!
 //! 职责：上传编排、文件名/路径生成、文件类型推断、元数据与文件写入组合。
 
-use crate::error::AppError;
+use common::error::{err, bail_err, Result};
 use crate::models::attachment::{Attachment, AttachmentPo, AttachmentUpload, TextAttachmentCreate};
 use crate::pkg::RequestContext;
 use crate::service::dao::attachment;
@@ -10,6 +10,8 @@ use crate::service::dao::attachment::{AttachmentDao, AttachmentQuery};
 use common::enums::FileType;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
+use common::err;
+use common::bail_err;
 
 // ==================== 单例管理 ====================
 
@@ -42,34 +44,34 @@ pub trait AttachmentDal: Send + Sync {
         &self,
         ctx: RequestContext,
         upload: AttachmentUpload,
-    ) -> Result<Attachment, AppError>;
+    ) -> Result<Attachment>;
 
     /// 从小型 UTF-8 文本创建通用 Attachment 资产。
     async fn create_from_text(
         &self,
         ctx: RequestContext,
         create: TextAttachmentCreate,
-    ) -> Result<Attachment, AppError>;
+    ) -> Result<Attachment>;
 
     /// 根据 ID 获取 Attachment。
     async fn get_by_id(
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<Attachment>, AppError>;
+    ) -> Result<Option<Attachment>>;
 
     /// 通用查询。
     async fn query(
         &self,
         ctx: RequestContext,
         query: AttachmentQuery,
-    ) -> Result<Vec<Attachment>, AppError>;
+    ) -> Result<Vec<Attachment>>;
 
     /// 删除 Attachment（软删除元数据，不物理删除文件）。
-    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()>;
 
     /// 读取 Attachment 文件 bytes。
-    fn read_file(&self, attachment: &Attachment) -> Result<Vec<u8>, AppError>;
+    fn read_file(&self, attachment: &Attachment) -> Result<Vec<u8>>;
 
     /// 全量替换 Attachment 文件内容，并刷新文件元数据。
     async fn update_file_content(
@@ -77,7 +79,7 @@ pub trait AttachmentDal: Send + Sync {
         ctx: RequestContext,
         attachment: &Attachment,
         bytes: &[u8],
-    ) -> Result<Attachment, AppError>;
+    ) -> Result<Attachment>;
 }
 
 // ==================== DAL 实现 ====================
@@ -93,25 +95,25 @@ impl AttachmentDal for AttachmentDalImpl {
         &self,
         ctx: RequestContext,
         upload: AttachmentUpload,
-    ) -> Result<Attachment, AppError> {
+    ) -> Result<Attachment> {
         let user_id = ctx.uid();
         if user_id.is_empty() {
-            return Err(AppError::BadRequest("当前请求缺少用户上下文".to_string()));
+            bail_err!(InvalidRequest, "当前请求缺少用户上下文");
         }
         if upload.bytes.is_empty() {
-            return Err(AppError::BadRequest("上传文件不能为空".to_string()));
+            bail_err!(InvalidRequest, "上传文件不能为空");
         }
 
         let id = uuid::Uuid::now_v7().to_string();
         let extension = infer_extension(&upload.original_name, &upload.mime_type);
-        let stored_name = format!("{}{}", id, extension);
+        let stored_name = format!("{id}{extension}");
         let relative_path = generate_relative_path(&id, &extension);
         let file_type = infer_file_type(&upload.mime_type, &extension);
         let size = upload.bytes.len() as i64;
         let purpose = upload.purpose.trim().to_string();
 
         let po = AttachmentPo::new(
-            id,
+            id.clone(),
             upload.original_name,
             stored_name,
             relative_path.clone(),
@@ -133,7 +135,7 @@ impl AttachmentDal for AttachmentDalImpl {
         &self,
         ctx: RequestContext,
         create: TextAttachmentCreate,
-    ) -> Result<Attachment, AppError> {
+    ) -> Result<Attachment> {
         let mime_type = create
             .mime_type
             .unwrap_or_else(|| infer_mime_type(&create.file_name));
@@ -150,7 +152,7 @@ impl AttachmentDal for AttachmentDalImpl {
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<Attachment>, AppError> {
+    ) -> Result<Option<Attachment>> {
         let po = self.attachment_dao.find_by_id(ctx, id).await?;
         Ok(po.map(Attachment::from_po))
     }
@@ -159,16 +161,16 @@ impl AttachmentDal for AttachmentDalImpl {
         &self,
         ctx: RequestContext,
         query: AttachmentQuery,
-    ) -> Result<Vec<Attachment>, AppError> {
+    ) -> Result<Vec<Attachment>> {
         let list = self.attachment_dao.query(ctx, query).await?;
         Ok(list.into_iter().map(Attachment::from_po).collect())
     }
 
-    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
+    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()> {
         self.attachment_dao.delete(ctx, id).await
     }
 
-    fn read_file(&self, attachment: &Attachment) -> Result<Vec<u8>, AppError> {
+    fn read_file(&self, attachment: &Attachment) -> Result<Vec<u8>> {
         self.attachment_dao.read_file(&attachment.po.relative_path)
     }
 
@@ -177,7 +179,7 @@ impl AttachmentDal for AttachmentDalImpl {
         ctx: RequestContext,
         attachment: &Attachment,
         bytes: &[u8],
-    ) -> Result<Attachment, AppError> {
+    ) -> Result<Attachment> {
         self.attachment_dao
             .write_file(&attachment.po.relative_path, bytes)?;
         self.attachment_dao
@@ -185,14 +187,14 @@ impl AttachmentDal for AttachmentDalImpl {
             .await?;
         self.get_by_id(ctx, attachment.id())
             .await?
-            .ok_or_else(|| AppError::NotFound(format!("Attachment {} not found", attachment.id())))
+            .ok_or_else(|| err!(ResourceNotFound, "Attachment {} not found", attachment.id()))
     }
 }
 
 fn generate_relative_path(file_id: &str, extension: &str) -> String {
     let now = chrono::Utc::now();
     let date = now.format("%Y%m%d");
-    format!("{}/{}{}", date, file_id, extension)
+    format!("{}/{file_id}{extension}", date)
 }
 
 fn infer_extension(original_name: &str, mime_type: &str) -> String {
@@ -202,7 +204,7 @@ fn infer_extension(original_name: &str, mime_type: &str) -> String {
         .map(sanitize_extension)
         .filter(|value| !value.is_empty())
     {
-        return format!(".{}", ext);
+        return format!(".{ext}");
     }
 
     match mime_type.split(';').next().unwrap_or_default().trim() {

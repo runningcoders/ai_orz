@@ -1,6 +1,6 @@
 //! Tests for SqliteProjectDao
 
-use crate::error::AppError;
+use common::error::Error;
 use crate::models::project::ProjectPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::project::{ProjectDao, sqlite};
@@ -8,6 +8,8 @@ use common::enums::project::ProjectStatus;
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use uuid::Uuid;
+use common::error::Result;
+use common::bail_err;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     RequestContext::new_simple(user_id, pool)
@@ -39,7 +41,7 @@ fn create_test_project(name: &str, created_by: &str) -> ProjectPo {
 }
 
 #[sqlx::test]
-async fn test_insert_project(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_insert_project(pool: SqlitePool) -> Result<()> {
     let dao = init_test_env();
     let ctx = new_ctx("test-user", pool);
 
@@ -65,7 +67,7 @@ async fn test_insert_project(pool: SqlitePool) -> Result<(), AppError> {
 }
 
 #[sqlx::test]
-async fn test_find_by_id(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_find_by_id(pool: SqlitePool) -> Result<()> {
     let dao = init_test_env();
     let ctx = new_ctx("test-user", pool);
 
@@ -99,7 +101,7 @@ async fn test_find_by_id(pool: SqlitePool) -> Result<(), AppError> {
 }
 
 #[sqlx::test]
-async fn test_list_by_root_user(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_list_by_root_user(pool: SqlitePool) -> Result<()> {
     let dao = init_test_env();
     let ctx = new_ctx("test-user", pool);
 
@@ -150,7 +152,7 @@ async fn test_list_by_root_user(pool: SqlitePool) -> Result<(), AppError> {
 }
 
 #[sqlx::test]
-async fn test_list_by_root_user_and_status(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_list_by_root_user_and_status(pool: SqlitePool) -> Result<()> {
     let dao = init_test_env();
     let ctx = new_ctx("test-user", pool);
 
@@ -213,7 +215,7 @@ async fn test_list_by_root_user_and_status(pool: SqlitePool) -> Result<(), AppEr
 }
 
 #[sqlx::test]
-async fn test_update_project(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_update_project(pool: SqlitePool) -> Result<()> {
     let dao = init_test_env();
     let ctx = new_ctx("test-user", pool);
 
@@ -252,7 +254,7 @@ async fn test_update_project(pool: SqlitePool) -> Result<(), AppError> {
 }
 
 #[sqlx::test]
-async fn test_update_status(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_update_status(pool: SqlitePool) -> Result<()> {
     let dao = init_test_env();
     let ctx = new_ctx("test-user", pool);
 
@@ -289,7 +291,7 @@ async fn test_update_status(pool: SqlitePool) -> Result<(), AppError> {
 }
 
 #[sqlx::test]
-async fn test_count_functions(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_count_functions(pool: SqlitePool) -> Result<()> {
     let dao = init_test_env();
     let ctx = new_ctx("test-user", pool);
 
@@ -329,7 +331,7 @@ async fn test_count_functions(pool: SqlitePool) -> Result<(), AppError> {
 }
 
 #[sqlx::test]
-async fn test_deleted_not_found(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_deleted_not_found(pool: SqlitePool) -> Result<()> {
     let dao = init_test_env();
     let ctx = new_ctx("test-user", pool);
 

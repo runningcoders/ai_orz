@@ -1,12 +1,14 @@
 //! Handler: PUT /api/v1/tools/{id}/status - Update tool status (enable/disable)
 
-use crate::error::AppError;
+use common::bail_err;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateToolStatusRequest, UpdateToolStatusResponse};
 
 use super::response::to_detail;
+use common::error::Result;
+use common::err;
 
 /// Update the status of a tool (enable/disable it)
 #[register_handler_tool(
@@ -19,20 +21,20 @@ use super::response::to_detail;
 pub async fn update_tool_status(
     ctx: RequestContext,
     params: UpdateToolStatusRequest,
-) -> Result<UpdateToolStatusResponse, AppError> {
+) -> Result<UpdateToolStatusResponse> {
     let user_id = ctx.uid();
     if user_id.is_empty() {
-        return Err(AppError::BadRequest("当前请求缺少用户上下文".to_string()));
+        bail_err!(InvalidRequest, "当前请求缺少用户上下文");
     }
 
     let mut tool = domain()
         .tool_provider_manage()
         .get_tool(ctx.clone(), &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Tool {} not found", params.id)))?;
+        .ok_or_else(|| err!(NotFound, "Tool {} not found", params.id))?;
 
     tool.transition_status(params.status, user_id)
-        .map_err(AppError::BadRequest)?;
+        .map_err(|e| err!(InvalidRequest, "{}", e))?;
 
     domain()
         .tool_provider_manage()

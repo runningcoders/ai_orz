@@ -1,13 +1,13 @@
 //! Tool DAO trait
 
-use crate::error::AppError;
+use common::error::{err, bail_err, Error, Result};
 use crate::models::tool::ToolPo;
 use crate::models::vector::VectorIndexParams;
 use crate::pkg::request_context::RequestContext;
-use anyhow::Result;
 use async_trait::async_trait;
 use common::enums::{ToolProtocol, ToolStatus};
 use std::sync::Arc;
+use common::bail_err;
 
 pub mod sqlite;
 pub mod vector;
@@ -118,7 +118,7 @@ pub trait ToolVectorDao: Send + Sync {
         ctx: RequestContext,
         tool_id: &str,
         vector_params: &VectorIndexParams,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 纯向量语义搜索，返回完整的向量行数据 + 相似度距离
     async fn search_vector(
@@ -126,14 +126,14 @@ pub trait ToolVectorDao: Send + Sync {
         ctx: RequestContext,
         query_vector: &[f32],
         top_k: i32,
-    ) -> Result<Vec<crate::models::vector::VectorSearchHit>, AppError>;
+    ) -> Result<Vec<crate::models::vector::VectorSearchHit>>;
 
     /// 获取指定工具的完整向量行数据（包含元信息）
     async fn get_vector_row(
         &self,
         ctx: RequestContext,
         tool_id: &str,
-    ) -> Result<Option<crate::models::vector::VectorRow>, AppError>;
+    ) -> Result<Option<crate::models::vector::VectorRow>>;
 }
 
 // ==================== 统一导出 ====================

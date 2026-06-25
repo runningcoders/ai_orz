@@ -13,6 +13,8 @@ use serde_json::Value;
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use uuid::Uuid;
+use common::error::Result;
+use common::bail_err;
 
 // 测试用的简单工具工厂
 #[derive(Clone)]
@@ -48,7 +50,7 @@ impl CoreTool for TestTool {
         &self.po
     }
 
-    async fn call(&self, _ctx: RequestContext, _args: Value) -> Result<Value, ToolError> {
+    async fn call(&self, _ctx: RequestContext, _args: Value) -> Result<Value> {
         Ok(Value::Null)
     }
 }

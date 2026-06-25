@@ -1,7 +1,7 @@
 //! SQLite implementation of Artifact DAO
 
 use super::{ArtifactDao, ArtifactQuery};
-use crate::error::{AppError, Result};
+use common::error::{err, bail_err, Error, Result};
 use crate::models::{artifact::ArtifactPo, file::FileMeta};
 use crate::pkg::RequestContext;
 use common::enums::{ArtifactSourceType, FileType};
@@ -9,6 +9,8 @@ use sqlx::types::Json;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::OnceLock;
+use common::err;
+use common::bail_err;
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -47,9 +49,7 @@ impl ArtifactDaoSqliteImpl {
 
         // Check for path traversal (double-check)
         if !path.starts_with(config.artifacts_dir()) {
-            return Err(AppError::BadRequest(
-                "Invalid artifact file path: path traversal attempt detected".to_string(),
-            ));
+            bail_err!(InvalidRequest, "Invalid artifact file path: path traversal attempt detected");
         }
 
         Ok(path)
@@ -305,10 +305,7 @@ WHERE id = ?
         // Only generated content can be written to disk
         // (Attachment content is handled separately by finance attachment)
         if artifact.source_type != common::enums::ArtifactSourceType::GeneratedContent {
-            return Err(AppError::BadRequest(format!(
-                "Cannot write content to artifact of source type {:?}",
-                artifact.source_type
-            )));
+            bail_err!(InvalidRequest, "Cannot write content to artifact of source type {:?}", artifact.source_type);
         }
 
         let file_path = self.resolve_generated_content_path(artifact)?;

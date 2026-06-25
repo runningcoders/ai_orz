@@ -7,6 +7,8 @@ use async_trait::async_trait;
 use common::enums::ModelCapability;
 use std::sync::Arc;
 use std::sync::Mutex;
+use common::error::Result;
+use common::bail_err;
 
 /// FastEmbed Cortex 实现
 pub struct FastEmbedCortex {

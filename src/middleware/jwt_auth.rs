@@ -3,7 +3,7 @@
 //! 从 Cookie 中提取 JWT token，验证后将用户信息注入到 RequestContext
 //! 如果 token 不存在或验证失败，直接返回重定向到首页（引导登录）
 
-use crate::error::AppError;
+use common::error::Error;
 use crate::pkg::jwt;
 use axum::{
     extract::Request,
@@ -12,6 +12,8 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
 };
 use common::constants::http_header;
+use common::error::Result;
+use common::bail_err;
 
 /// JWT cookie 名称
 pub const JWT_COOKIE_NAME: &str = "ai_orz_jwt";
@@ -20,7 +22,7 @@ pub const JWT_COOKIE_NAME: &str = "ai_orz_jwt";
 ///
 /// 从 Cookie 中提取 JWT token，验证后将用户信息添加到请求头
 /// 验证失败直接返回 302 重定向到首页，引导用户到登录界面
-pub async fn jwt_auth_middleware(mut req: Request, next: Next) -> Result<Response, AppError> {
+pub async fn jwt_auth_middleware(mut req: Request, next: Next) -> Result<Response> {
     // 1. 从 Cookie 中找到 JWT token
     let cookie_header = req.headers().get(axum::http::header::COOKIE);
     if cookie_header.is_none() {

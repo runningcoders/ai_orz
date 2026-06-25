@@ -337,7 +337,7 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
                     axum::extract::Path(#path_tuple): axum::extract::Path<#path_ty_tuple>,
                     axum::extract::Query(query): axum::extract::Query<#params_ty>,
                     axum::Json(mut params): axum::Json<#params_ty>,
-                ) -> Result<axum::Json<common::api::ApiResponse<#output_ty>>, AppError> {
+                ) -> Result<axum::Json<common::api::ApiResponse<#output_ty>>, common::error::Error> {
                     // Priority: path > query > body, so assign in that order
                     #assign_queries
                     #assign_paths
@@ -366,7 +366,7 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
                     axum::extract::Extension(ctx): axum::extract::Extension<RequestContext>,
                     axum::extract::Path(#path_tuple): axum::extract::Path<#path_ty_tuple>,
                     axum::Json(mut params): axum::Json<#params_ty>,
-                ) -> Result<axum::Json<common::api::ApiResponse<#output_ty>>, AppError> {
+                ) -> Result<axum::Json<common::api::ApiResponse<#output_ty>>, common::error::Error> {
                     #assign_paths
                     let result = #core_ident(ctx, params).await?;
                     Ok(axum::Json(common::api::ApiResponse::success(result)))
@@ -380,7 +380,7 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
                 pub async fn #handler_ident(
                     axum::extract::Extension(ctx): axum::extract::Extension<RequestContext>,
                     axum::extract::Query(params): axum::extract::Query<#params_ty>,
-                ) -> Result<axum::Json<common::api::ApiResponse<#output_ty>>, AppError> {
+                ) -> Result<axum::Json<common::api::ApiResponse<#output_ty>>, common::error::Error> {
                     let result = #core_ident(ctx, params).await?;
                     Ok(axum::Json(common::api::ApiResponse::success(result)))
                 }
@@ -394,7 +394,7 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
                 pub async fn #handler_ident(
                     axum::extract::Extension(ctx): axum::extract::Extension<RequestContext>,
                     axum::Json(params): axum::Json<#params_ty>,
-                ) -> Result<axum::Json<common::api::ApiResponse<#output_ty>>, AppError> {
+                ) -> Result<axum::Json<common::api::ApiResponse<#output_ty>>, common::error::Error> {
                     let result = #core_ident(ctx, params).await?;
                     Ok(axum::Json(common::api::ApiResponse::success(result)))
                 }

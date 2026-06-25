@@ -695,6 +695,7 @@ async fn test_deliver_message_to_channels(pool: SqlitePool) {
     let message_id = "test-message-001";
     use crate::models::file::FileMeta;
     use common::enums::FileType;
+use common::bail_err;
     let message = Message::new(
         message_id.to_string(),
         "".to_string(), // task_id

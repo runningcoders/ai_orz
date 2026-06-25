@@ -8,6 +8,7 @@ use common::constants::utils;
 use common::enums::{AssigneeType, TaskStatus};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use common::bail_err;
 
 /// TaskPo 任务持久化对象
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]

@@ -3,12 +3,13 @@
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListMcpServersRequest, ListMcpServersResponse, McpServerListItem};
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::models::mcp_server::McpServerQuery;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
 use super::response::{to_list_item, to_model_status, to_model_transport};
+use common::bail_err;
 
 /// List management-safe MCP Servers with optional filters.
 #[register_handler_tool(
@@ -21,7 +22,7 @@ use super::response::{to_list_item, to_model_status, to_model_transport};
 pub async fn list_mcp_servers(
     ctx: RequestContext,
     params: ListMcpServersRequest,
-) -> Result<ListMcpServersResponse, AppError> {
+) -> Result<ListMcpServersResponse> {
     let query = McpServerQuery {
         id: params.id,
         name: params.name,

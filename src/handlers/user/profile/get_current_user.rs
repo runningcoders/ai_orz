@@ -1,11 +1,12 @@
 //! Handler: GET /api/v1/user/me - Get current authenticated user information
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetCurrentUserRequest, GetCurrentUserResponse, UserInfoResponse};
 use common::enums::UserRole;
+use common::bail_err;
 
 /// Get current authenticated user information from request context
 #[register_handler_tool(
@@ -18,12 +19,12 @@ use common::enums::UserRole;
 pub async fn get_current_user(
     ctx: RequestContext,
     _params: GetCurrentUserRequest,
-) -> Result<GetCurrentUserResponse, AppError> {
+) -> Result<GetCurrentUserResponse> {
     // 从 RequestContext 获取当前用户 ID
     let user_id = ctx
         .user_id
         .clone()
-        .ok_or_else(|| AppError::BadRequest("用户未登录".to_string()))?;
+        .ok_or_else(|| common::error::Error::bad_request("用户未登录".to_string()))?;
 
     // 通过 organization domain 获取用户完整信息
     let domain = organization::domain();
@@ -31,7 +32,7 @@ pub async fn get_current_user(
         .user_manage()
         .get_user_by_id(ctx, &user_id)
         .await?
-        .ok_or_else(|| AppError::NotFound("用户不存在".to_string()))?;
+        .ok_or_else(|| common::error::Error::not_found("用户不存在".to_string()))?;
 
     // 转换为响应格式
     let role = user.user_role();

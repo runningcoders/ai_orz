@@ -6,12 +6,14 @@ use common::api::{
 };
 use uuid::Uuid;
 
-use crate::error::AppError;
+use common::bail_err;
 use crate::models::message_channel::{ChannelConfig, MessageChannel, MessageChannelPo};
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
 use super::response::to_detail;
+use common::error::Result;
+use common::err;
 
 /// Create a new message channel for sending notifications to external services/users
 #[register_handler_tool(
@@ -24,14 +26,14 @@ use super::response::to_detail;
 pub async fn create_message_channel(
     ctx: RequestContext,
     params: CreateMessageChannelRequest,
-) -> Result<CreateMessageChannelResponse, AppError> {
+) -> Result<CreateMessageChannelResponse> {
     let org_id = ctx
         .organization_id
         .clone()
-        .ok_or_else(|| AppError::BadRequest("当前请求缺少组织上下文".to_string()))?;
+        .ok_or_else(|| err!(InvalidRequest, "当前请求缺少组织上下文"))?;
     let user_id = params.user_id.clone().unwrap_or_else(|| ctx.uid());
     if user_id.is_empty() {
-        return Err(AppError::BadRequest("当前请求缺少用户上下文".to_string()));
+        bail_err!(InvalidRequest, "当前请求缺少用户上下文");
     }
 
     let channel_po = MessageChannelPo::new(

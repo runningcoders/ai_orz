@@ -1,6 +1,7 @@
 use super::{Tool, ToolPo};
 use common::enums::{ControlMode, ToolProtocol, ToolStatus};
 use serde_json::json;
+use common::bail_err;
 
 fn test_tool_with_status(status: ToolStatus) -> Tool {
     let mut po = ToolPo::new(

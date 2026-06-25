@@ -3,7 +3,7 @@
 //! 负责消费所有类型的消息（用户消息、Agent 间消息、工具调用等）
 
 use super::{GenericConsumer, MessageFetcher, MessageHandler};
-use crate::error::{AppError, Result};
+use common::error::{Error, Result};
 use crate::models::message::{Message, ToolCallMessage};
 use crate::models::tool::ToolExecutionError;
 use crate::service::domain::message::{
@@ -15,6 +15,7 @@ use common::config::TopicConsumerConfig;
 use common::enums::{MessageRole, MessageType};
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
+use common::bail_err;
 
 // ==================== 单例 ====================
 
@@ -207,14 +208,14 @@ impl MessageHandlerImpl {
 
 fn parse_tool_call_request(message: &Message) -> Result<ToolCallMessage> {
     if message.message_type() != MessageType::ToolCallRequest {
-        return Err(AppError::BadRequest(format!(
+        return Err(common::error::Error::bad_request(format!(
             "expected ToolCallRequest message, got {:?}",
             message.message_type()
         )));
     }
 
     serde_json::from_str(&message.po.content)
-        .map_err(|err| AppError::BadRequest(format!("invalid ToolCallRequest content: {}", err)))
+        .map_err(|err| common::error::Error::bad_request(format!("invalid ToolCallRequest content: {}", err)))
 }
 
 fn tool_error_message(err: &ToolExecutionError) -> String {
@@ -250,7 +251,7 @@ pub async fn init(config: &TopicConsumerConfig) -> Result<()> {
     // 设置单例
     let consumer_arc = Arc::new(consumer);
     MESSAGE_CONSUMER.set(consumer_arc.clone()).map_err(|_| {
-        crate::error::AppError::Internal("message consumer already initialized".to_string())
+        common::error::Error::internal("message consumer already initialized".to_string())
     })?;
 
     // 启动消费者

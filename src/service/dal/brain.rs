@@ -4,7 +4,7 @@
 //! BrainDal 依赖 CortexDao 创建 CortexTrait，然后组装成完整的 Brain
 //! 合并了原来 CortexDal 的功能，不再重复拆分
 
-use crate::error::AppError;
+use common::error::{err, bail_err, Result};
 use crate::models::brain::{Brain, Cortex, CortexTrait};
 use crate::models::model_provider::ModelProvider;
 use crate::models::tool::Tool;
@@ -12,11 +12,11 @@ use crate::pkg::RequestContext;
 use crate::service::dao::cortex;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::tool_call::ToolCallDao;
-use anyhow::Result;
 use async_trait::async_trait;
-use futures_util::TryFutureExt;
 use rig::tool::ToolDyn;
 use std::sync::{Arc, OnceLock};
+use common::err;
+use common::bail_err;
 // ==================== 单例管理 ====================
 
 static BRAIN_DAL: OnceLock<Arc<dyn BrainDal>> = OnceLock::new();
@@ -59,7 +59,7 @@ pub trait BrainDal: Send + Sync {
         provider: &ModelProvider,
         memories: Vec<crate::models::memory::Memory>,
         tools: Vec<Tool>,
-    ) -> Result<Brain, AppError>;
+    ) -> Result<Brain>;
 
     /// 创建 Cortex 并测试连通性，执行一次 prompt 获取回答
     ///
@@ -69,7 +69,7 @@ pub trait BrainDal: Send + Sync {
         ctx: RequestContext,
         provider: &ModelProvider,
         prompt: &str,
-    ) -> Result<String, AppError>;
+    ) -> Result<String>;
 
     /// 让大脑思考，执行 prompt 获取回答
     ///
@@ -83,7 +83,7 @@ pub trait BrainDal: Send + Sync {
         ctx: RequestContext,
         brain: &Brain,
         prompt: &str,
-    ) -> Result<String, AppError>;
+    ) -> Result<String>;
 }
 
 // ==================== DAL 实现 ====================
@@ -115,14 +115,14 @@ impl BrainDal for BrainDalImpl {
         provider: &ModelProvider,
         memories: Vec<crate::models::memory::Memory>,
         tools: Vec<Tool>,
-    ) -> Result<Brain, AppError> {
+    ) -> Result<Brain> {
         // 1. 创建 CortexTrait，传入工具列表
         let rig_tools = self.tool_call_dao.wrap_for_rig(&tools, _ctx.clone());
 
         let cortex_trait = self
             .cortex_dao
             .create_cortex_trait(_ctx, &provider.po, rig_tools)
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+            .map_err(|e| err!(Internal, "failed to create cortex: {e}").with_source(e))?;
 
         // 2. 创建 Cortex 实体
         let cortex = Cortex::new(provider.clone(), cortex_trait);
@@ -138,12 +138,12 @@ impl BrainDal for BrainDalImpl {
         ctx: RequestContext,
         provider: &ModelProvider,
         prompt: &str,
-    ) -> Result<String, AppError> {
+    ) -> Result<String> {
         // 1. 创建临时 Cortex，测试连接不需要工具
         let cortex_trait = self
             .cortex_dao
             .create_cortex_trait(ctx.clone(), &provider.po, Vec::new())
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+            .map_err(|e| err!(Internal, "failed to create cortex: {e}").with_source(e))?;
 
         // 2. 创建临时 Brain 用于测试
         let temp_brain = Brain::new(Cortex::new(provider.clone(), cortex_trait), Vec::new());
@@ -157,7 +157,7 @@ impl BrainDal for BrainDalImpl {
         ctx: RequestContext,
         brain: &Brain,
         prompt: &str,
-    ) -> Result<String, AppError> {
+    ) -> Result<String> {
         let start = std::time::Instant::now();
 
         log_debug!(
@@ -173,7 +173,7 @@ impl BrainDal for BrainDalImpl {
             .cortex_dao
             .prompt(ctx.clone(), brain.cortex_trait(), prompt)
             .await
-            .map_err(|e| AppError::Internal(e.to_string()));
+            .map_err(|e| err!(Internal, "brain think failed: {e}").with_source(e));
 
         log_debug!(
             ctx.clone(),

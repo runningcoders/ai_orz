@@ -1,6 +1,6 @@
 //! Handler: GET /api/v1/skills/search - Search skills by keyword with filtering
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::dao::skill::{SkillQuery, SkillSearch};
 use crate::service::domain::hr::domain;
@@ -9,6 +9,7 @@ use common::api::{SearchSkillsRequest, SearchSkillsResponse, SkillListItem};
 use common::enums::SkillStatus;
 
 use super::response::to_list_item;
+use common::bail_err;
 
 /// Search public skills by keyword with optional filtering. Returns matching skills sorted by relevance.
 #[register_handler_tool(
@@ -21,7 +22,7 @@ use super::response::to_list_item;
 pub async fn search_skills(
     ctx: RequestContext,
     params: SearchSkillsRequest,
-) -> Result<SearchSkillsResponse, AppError> {
+) -> Result<SearchSkillsResponse> {
     let skills = domain()
         .skill_manage()
         .search_skills(

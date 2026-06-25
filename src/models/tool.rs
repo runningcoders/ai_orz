@@ -1,6 +1,7 @@
 //! Tool 持久化对象和完整实体
 
 use crate::pkg::request_context::RequestContext;
+use common::error::Result;
 use async_trait::async_trait;
 use common::enums::tool::ControlMode;
 use common::enums::{ToolProtocol, ToolStatus};
@@ -19,7 +20,7 @@ use uuid::Uuid;
 #[async_trait]
 pub trait CoreTool: Send + Sync + DynClone {
     /// 执行工具调用
-    async fn call(&self, ctx: RequestContext, args: Value) -> Result<Value, ToolError>;
+    async fn call(&self, ctx: RequestContext, args: Value) -> Result<Value>;
 
     /// 获取工具对应的数据库持久化对象
     fn po(&self) -> &ToolPo;
@@ -109,6 +110,18 @@ impl std::fmt::Display for ToolExecutionError {
 
 impl std::error::Error for ToolExecutionError {}
 
+/// Convert ToolExecutionError to new unified Error.
+impl From<ToolExecutionError> for common::error::Error {
+    fn from(err: ToolExecutionError) -> Self {
+        use common::error::{ErrorCode, ErrorType};
+        common::error::Error::typed(
+            ErrorCode::ToolExecutionFailed,
+            ErrorType::Tool,
+            err.to_string(),
+        ).with_source(err)
+    }
+}
+
 /// Rig 适配层 - 将我们的 CoreTool trait 转换为 Rig 的 ToolDyn trait
 ///
 /// 用于 auto 模式，让 Rig 可以直接调用我们的工具
@@ -156,7 +169,7 @@ impl ToolDyn for RigToolAdapter {
         &'a self,
         args: String,
     ) -> std::pin::Pin<
-        Box<dyn futures_util::Future<Output = Result<String, ToolError>> + std::marker::Send + 'a>,
+        Box<dyn futures_util::Future<Output = std::result::Result<String, ToolError, common::error::Error>> + std::marker::Send + 'a>,
     > {
         use futures_util::FutureExt;
         let ctx = &self.ctx;
@@ -260,7 +273,7 @@ struct ManagementOnlyTool {
 
 #[async_trait]
 impl CoreTool for ManagementOnlyTool {
-    async fn call(&self, _ctx: RequestContext, _args: Value) -> Result<Value, ToolError> {
+    async fn call(&self, _ctx: RequestContext, _args: Value) -> Result<Value> {
         Err(ToolError::ToolCallError(
             format!(
                 "Tool {} is not executable in management context",
@@ -311,7 +324,7 @@ impl Tool {
         &mut self,
         target: ToolStatus,
         modified_by: impl Into<String>,
-    ) -> Result<(), String> {
+    ) -> Result<()> {
         if !self.can_transition_to(target) {
             return Err(format!(
                 "Tool {} cannot transition from {:?} to {:?}",
@@ -500,6 +513,7 @@ fn replace_case_insensitive(input: &str, needle: &str, replacement: &str) -> Str
 // ==================== 实现 Vectorizable trait ====================
 
 use crate::models::vector::Vectorizable;
+use common::bail_err;
 
 #[cfg(test)]
 #[path = "tool_tests.rs"]

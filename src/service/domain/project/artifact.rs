@@ -2,7 +2,7 @@
 //!
 //! 负责产物的创建、查询、管理
 
-use crate::error::AppError;
+use common::bail_err;
 use crate::models::artifact::Artifact;
 use crate::models::file::FileMeta;
 use crate::pkg::RequestContext;
@@ -10,6 +10,8 @@ use crate::service::dal::artifact::ArtifactQuery;
 use common::enums::{ArtifactSourceType, FileType};
 
 use super::ProjectDomainImpl;
+use common::error::Result;
+use common::err;
 
 /// Artifact 列表查询参数。
 #[derive(Debug, Clone)]
@@ -36,7 +38,7 @@ impl super::ArtifactManage for ProjectDomainImpl {
         file_meta: FileMeta,
         tags: Vec<String>,
         created_by: String,
-    ) -> Result<Artifact, AppError> {
+    ) -> Result<Artifact> {
         self.validate_project_and_task(ctx.clone(), &project_id, task_id.as_deref())
             .await?;
 
@@ -77,7 +79,7 @@ impl super::ArtifactManage for ProjectDomainImpl {
         file_type: FileType,
         file_meta: FileMeta,
         created_by: String,
-    ) -> Result<Artifact, AppError> {
+    ) -> Result<Artifact> {
         self.validate_project_access(ctx.clone(), &project_id)
             .await?;
         let artifact = Artifact::new_project(
@@ -103,7 +105,7 @@ impl super::ArtifactManage for ProjectDomainImpl {
         file_type: FileType,
         file_meta: FileMeta,
         created_by: String,
-    ) -> Result<Artifact, AppError> {
+    ) -> Result<Artifact> {
         self.validate_project_and_task(ctx.clone(), &project_id, Some(&task_id))
             .await?;
         let artifact = Artifact::new_task(
@@ -120,7 +122,7 @@ impl super::ArtifactManage for ProjectDomainImpl {
     }
 
     /// 根据 ID 获取产物
-    async fn get(&self, ctx: RequestContext, id: &str) -> Result<Option<Artifact>, AppError> {
+    async fn get(&self, ctx: RequestContext, id: &str) -> Result<Option<Artifact>> {
         let Some(artifact) = self.artifact_dal.find_by_id(ctx.clone(), id).await? else {
             return Ok(None);
         };
@@ -134,7 +136,7 @@ impl super::ArtifactManage for ProjectDomainImpl {
         &self,
         ctx: RequestContext,
         project_id: &str,
-    ) -> Result<Vec<Artifact>, AppError> {
+    ) -> Result<Vec<Artifact>> {
         self.validate_project_access(ctx.clone(), project_id)
             .await?;
         self.artifact_dal.list_by_project(ctx, project_id).await
@@ -145,15 +147,12 @@ impl super::ArtifactManage for ProjectDomainImpl {
         &self,
         ctx: RequestContext,
         task_id: &str,
-    ) -> Result<Vec<Artifact>, AppError> {
+    ) -> Result<Vec<Artifact>> {
         let Some(task) = self.task_dal.find_by_id(ctx.clone(), task_id).await? else {
-            return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
+            bail_err!(NotFound, "Task not found: {}", task_id);
         };
         let Some(project_id) = task.po.project_id.as_deref() else {
-            return Err(AppError::BadRequest(format!(
-                "Task {} does not belong to a project",
-                task_id
-            )));
+            bail_err!(InvalidRequest, "Task {} does not belong to a project", task_id);
         };
         self.validate_project_access(ctx.clone(), project_id)
             .await?;
@@ -165,9 +164,9 @@ impl super::ArtifactManage for ProjectDomainImpl {
         &self,
         ctx: RequestContext,
         params: ListArtifactsParams,
-    ) -> Result<Vec<Artifact>, AppError> {
+    ) -> Result<Vec<Artifact>> {
         if params.project_id.trim().is_empty() {
-            return Err(AppError::BadRequest("project_id 不能为空".to_string()));
+            bail_err!(InvalidRequest, "project_id 不能为空");
         }
 
         self.validate_project_and_task(ctx.clone(), &params.project_id, params.task_id.as_deref())
@@ -188,9 +187,9 @@ impl super::ArtifactManage for ProjectDomainImpl {
     }
 
     /// 删除产物
-    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
+    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()> {
         let Some(artifact) = self.artifact_dal.find_by_id(ctx.clone(), id).await? else {
-            return Err(AppError::NotFound(format!("Artifact not found: {}", id)));
+            bail_err!(NotFound, "Artifact not found: {}", id);
         };
         self.validate_project_access(ctx.clone(), &artifact.po.project_id)
             .await?;
@@ -202,7 +201,7 @@ impl super::ArtifactManage for ProjectDomainImpl {
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<(Artifact, Vec<u8>)>, AppError> {
+    ) -> Result<Option<Artifact>> {
         let Some(artifact) = self.artifact_dal.find_by_id(ctx.clone(), id).await? else {
             return Ok(None);
         };
@@ -211,10 +210,7 @@ impl super::ArtifactManage for ProjectDomainImpl {
             .await?;
 
         if artifact.po.source_type != common::enums::ArtifactSourceType::GeneratedContent {
-            return Err(AppError::BadRequest(format!(
-                "Cannot read content directly from artifact source type {:?}, only GeneratedContent artifacts support direct content access.",
-                artifact.po.source_type
-            )));
+            bail_err!(InvalidRequest, "Cannot read content directly from artifact source type {:?}, only GeneratedContent artifacts support direct content access.", artifact.po.source_type);
         }
 
         let content = self.artifact_dal.read_content(ctx, &artifact).await?;
@@ -228,28 +224,22 @@ impl super::ArtifactManage for ProjectDomainImpl {
         id: &str,
         content: Vec<u8>,
         expected_updated_at: Option<i64>,
-    ) -> Result<Artifact, AppError> {
+    ) -> Result<Artifact> {
         let Some(mut artifact) = self.artifact_dal.find_by_id(ctx.clone(), id).await? else {
-            return Err(AppError::NotFound(format!("Artifact not found: {}", id)));
+            bail_err!(NotFound, "Artifact not found: {}", id);
         };
         // Validate user has access to this artifact via project ownership
         self.validate_project_access(ctx.clone(), &artifact.po.project_id)
             .await?;
 
         if artifact.po.source_type != common::enums::ArtifactSourceType::GeneratedContent {
-            return Err(AppError::BadRequest(format!(
-                "Cannot update content directly for artifact source type {:?}, only GeneratedContent artifacts support direct content update.",
-                artifact.po.source_type
-            )));
+            bail_err!(InvalidRequest, "Cannot update content directly for artifact source type {:?}, only GeneratedContent artifacts support direct content update.", artifact.po.source_type);
         }
 
         // Optimistic locking check
         if let Some(expected) = expected_updated_at {
             if artifact.po.updated_at != expected {
-                return Err(AppError::Conflict(format!(
-                    "Conflict: expected updated_at = {}, current updated_at = {}. Please reload and try again.",
-                    expected, artifact.po.updated_at
-                )));
+                bail_err!(Conflict, "Conflict: expected updated_at = {}, current updated_at = {}. Please reload and try again.", expected, artifact.po.updated_at);
             }
         }
 
@@ -276,23 +266,17 @@ impl ProjectDomainImpl {
         &self,
         ctx: RequestContext,
         project_id: &str,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let Some(project) = self.project_dal.find_by_id(ctx.clone(), project_id).await? else {
-            return Err(AppError::NotFound(format!(
-                "Project not found: {}",
-                project_id
-            )));
+            bail_err!(NotFound, "Project not found: {}", project_id);
         };
 
         let current_user_id = ctx.uid();
         if current_user_id.is_empty() {
-            return Err(AppError::BadRequest("当前用户不能为空".to_string()));
+            bail_err!(InvalidRequest, "当前用户不能为空");
         }
         if project.po.root_user_id != current_user_id {
-            return Err(AppError::BadRequest(format!(
-                "无权访问 Project: {}",
-                project_id
-            )));
+            bail_err!(InvalidRequest, "无权访问 Project: {}", project_id);
         }
 
         Ok(())
@@ -303,19 +287,16 @@ impl ProjectDomainImpl {
         ctx: RequestContext,
         project_id: &str,
         task_id: Option<&str>,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         self.validate_project_access(ctx.clone(), project_id)
             .await?;
 
         if let Some(task_id) = task_id {
             let Some(task) = self.task_dal.find_by_id(ctx, task_id).await? else {
-                return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
+                bail_err!(NotFound, "Task not found: {}", task_id);
             };
             if task.po.project_id.as_deref() != Some(project_id) {
-                return Err(AppError::BadRequest(format!(
-                    "Task {} does not belong to project {}",
-                    task_id, project_id
-                )));
+                bail_err!(InvalidRequest, "Task {} does not belong to project {}", task_id, project_id);
             }
         }
 

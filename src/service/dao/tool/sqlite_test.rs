@@ -7,6 +7,7 @@ use crate::service::dao::tool::sqlite::{dao, init as dao_init};
 use common::enums::{ToolProtocol, ToolStatus};
 use sqlx::SqlitePool;
 use std::sync::Arc;
+use common::bail_err;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     RequestContext::new_simple(user_id, pool)

@@ -1,10 +1,11 @@
 //! Handler: GET /api/v1/model-providers - List all model providers
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListModelProvidersRequest, ListModelProvidersResponse, ModelProviderListItem};
+use common::bail_err;
 
 /// List all configured model providers. Returns basic information for each provider.
 #[register_handler_tool(
@@ -17,7 +18,7 @@ use common::api::{ListModelProvidersRequest, ListModelProvidersResponse, ModelPr
 pub async fn list_model_providers(
     ctx: RequestContext,
     _params: ListModelProvidersRequest,
-) -> Result<ListModelProvidersResponse, AppError> {
+) -> Result<ListModelProvidersResponse> {
     let providers = domain()
         .model_provider_manage()
         .list_model_providers(ctx)

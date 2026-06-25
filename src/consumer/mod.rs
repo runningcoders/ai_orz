@@ -9,6 +9,8 @@ use async_trait::async_trait;
 use common::config::TopicConsumerConfig;
 use std::marker::PhantomData;
 use std::sync::Arc;
+use common::error::Result;
+use common::bail_err;
 
 pub mod message;
 

@@ -2,7 +2,7 @@
 //!
 //! 定义组织相关业务接口实现
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::models::organization::OrganizationPo;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
@@ -10,6 +10,7 @@ use crate::service::dao::organization::OrganizationQuery;
 use async_trait::async_trait;
 use common::enums::OrganizationStatus;
 use rand::Rng;
+use common::bail_err;
 
 /// 生成组织 ID（12 位大写字母 + 数字）
 fn generate_org_id() -> String {
@@ -40,7 +41,7 @@ fn generate_user_id() -> String {
 #[async_trait]
 impl super::OrganizationManage for super::OrganizationDomainImpl {
     /// 检查系统是否已经初始化
-    async fn check_initialized(&self, ctx: RequestContext) -> Result<bool, AppError> {
+    async fn check_initialized(&self, ctx: RequestContext) -> Result<bool> {
         let count = self.org_dal.count_organizations(ctx).await?;
         Ok(count > 0)
     }
@@ -57,7 +58,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
         password_hash: String,
         display_name: Option<String>,
         email: Option<String>,
-    ) -> Result<(String, String), AppError> {
+    ) -> Result<String> {
         // 1. 创建组织
         let org_id = generate_org_id();
         let org = OrganizationPo::new(
@@ -91,7 +92,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
         &self,
         ctx: RequestContext,
         org_id: &str,
-    ) -> Result<Option<OrganizationPo>, AppError> {
+    ) -> Result<Option<OrganizationPo>> {
         self.org_dal.get_by_id(ctx, org_id).await
     }
 
@@ -102,29 +103,29 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
         &self,
         ctx: RequestContext,
         query: crate::service::dao::organization::OrganizationQuery,
-    ) -> Result<Vec<OrganizationPo>, AppError> {
+    ) -> Result<Vec<OrganizationPo>> {
         self.org_dal.query(ctx, query).await
     }
 
     /// 获取所有组织列表
     ///
     /// 调用 DAL 层 list_all 方法
-    async fn list_all(&self, ctx: RequestContext) -> Result<Vec<OrganizationPo>, AppError> {
+    async fn list_all(&self, ctx: RequestContext) -> Result<Vec<OrganizationPo>> {
         self.org_dal.list_all(ctx).await
     }
 
     /// 更新组织信息
-    async fn update(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<(), AppError> {
+    async fn update(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<()> {
         self.org_dal.update(ctx, org).await
     }
 
     /// 删除组织（软删除）
-    async fn delete(&self, ctx: RequestContext, org_id: &str) -> Result<(), AppError> {
+    async fn delete(&self, ctx: RequestContext, org_id: &str) -> Result<()> {
         self.org_dal.delete(ctx, org_id).await
     }
 
     /// 统计组织总数
-    async fn count_organizations(&self, ctx: RequestContext) -> Result<u64, AppError> {
+    async fn count_organizations(&self, ctx: RequestContext) -> Result<u64> {
         self.org_dal.count_organizations(ctx).await
     }
 }

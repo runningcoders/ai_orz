@@ -11,7 +11,7 @@ use std::sync::{Arc, OnceLock};
 use common::enums::{ChannelStatus, ChannelType};
 use serde::Serialize;
 
-use crate::error::{AppError, Result};
+use common::error::{err, bail_err, Result};
 use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;
@@ -43,6 +43,8 @@ pub fn new(
     message_channel_dao: Arc<dyn MessageChannelDao + Send + Sync>,
 ) -> Arc<dyn MessageChannelDal> {
     use crate::service::dao::{email, lark, slack, webhook, wechat};
+use common::err;
+use common::bail_err;
 
     Arc::new(MessageChannelDalImpl {
         message_channel_dao,
@@ -199,7 +201,7 @@ impl MessageChannelDal for MessageChannelDalImpl {
         let channel = self
             .get_channel(ctx.clone(), channel_id)
             .await?
-            .ok_or_else(|| AppError::NotFound(format!("渠道不存在: {}", channel_id)))?;
+            .ok_or_else(|| bail_err!(ResourceNotFound, "渠道不存在: {}", channel_id))?;
 
         // 🎯 核心：纯 match 分发！无 trait！无工厂！
         match channel.channel_type() {
@@ -209,7 +211,7 @@ impl MessageChannelDal for MessageChannelDalImpl {
             ChannelType::Email => self.email_dao.test_connection(ctx, &channel).await,
             ChannelType::Webhook => self.webhook_dao.test_connection(ctx, &channel).await,
         }
-        .map_err(|e| AppError::ChannelPushError(e))
+        .map_err(|e| err!(ChannelPushFailed, "push failed: {e}"))
     }
 
     // ---------- 消息分发 ----------
@@ -271,7 +273,7 @@ impl MessageChannelDalImpl {
         ctx: RequestContext,
         message: &Message,
         channel: &MessageChannel,
-    ) -> std::result::Result<(), String> {
+    ) -> std::result::Result<(), common::error::Error> {
         match channel.channel_type() {
             ChannelType::Lark => self.lark_dao.push(ctx, message, channel).await,
             ChannelType::Wechat => self.wechat_dao.push(ctx, message, channel).await,
@@ -286,7 +288,7 @@ impl MessageChannelDalImpl {
         &self,
         ctx: RequestContext,
         channel: &MessageChannel,
-        result: &std::result::Result<(), String>,
+        result: &std::result::Result<(), common::error::Error>,
     ) -> Result<()> {
         match result {
             Ok(_) => {

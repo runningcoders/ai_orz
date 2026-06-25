@@ -4,12 +4,13 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CreateMcpServerRequest, CreateMcpServerResponse};
 use uuid::Uuid;
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::models::mcp_server::McpServer;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
 use super::response::{to_detail, to_model_config, to_model_transport};
+use common::bail_err;
 
 /// Create a new MCP Server configuration for MCP tool discovery and invocation.
 #[register_handler_tool(
@@ -22,7 +23,7 @@ use super::response::{to_detail, to_model_config, to_model_transport};
 pub async fn create_mcp_server(
     ctx: RequestContext,
     params: CreateMcpServerRequest,
-) -> Result<CreateMcpServerResponse, AppError> {
+) -> Result<CreateMcpServerResponse> {
     let server = McpServer::new(
         Uuid::now_v7().to_string(),
         params.name,

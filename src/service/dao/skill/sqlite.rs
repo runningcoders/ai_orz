@@ -10,6 +10,10 @@ use crate::service::dao::skill::{SkillDao, SkillQuery, SkillSearch};
 use async_trait::async_trait;
 use common::enums::SkillStatus;
 use common::enums::skill::SkillAuthorType;
+use common::{err, bail_err};
+use common::error::Result;
+use common::err;
+use common::bail_err;
 
 // ==================== 单例模式 ====================
 
@@ -50,7 +54,7 @@ struct SkillDaoSqliteImpl {
 
 #[async_trait]
 impl SkillDao for SkillDaoSqliteImpl {
-    async fn insert(&self, ctx: RequestContext, skill: &SkillPo) -> Result<(), AppError> {
+    async fn insert(&self, ctx: RequestContext, skill: &SkillPo) -> Result<()> {
         let status_i32 = skill.status.to_i32();
         let author_type_i32 = skill.author_type.to_i32();
         sqlx::query!(
@@ -79,7 +83,7 @@ INSERT INTO skills (
         Ok(())
     }
 
-    async fn update(&self, ctx: RequestContext, skill: &SkillPo) -> Result<(), AppError> {
+    async fn update(&self, ctx: RequestContext, skill: &SkillPo) -> Result<()> {
         let now = chrono::Utc::now().timestamp_millis();
         let status_i32 = skill.status.to_i32();
         let author_type_i32 = skill.author_type.to_i32();
@@ -108,7 +112,7 @@ WHERE id = ?
         Ok(())
     }
 
-    async fn delete_by_id(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
+    async fn delete_by_id(&self, ctx: RequestContext, id: &str) -> Result<()> {
         let now = chrono::Utc::now().timestamp_millis();
         let deleted_status = SkillStatus::Expired.to_i32();
         sqlx::query!(
@@ -122,7 +126,7 @@ WHERE id = ?
         Ok(())
     }
 
-    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<SkillPo>, AppError> {
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<SkillPo>> {
         let skill = sqlx::query_as!(
             SkillPo,
             r#"
@@ -142,7 +146,7 @@ FROM skills WHERE id = ?
         &self,
         ctx: RequestContext,
         query: SkillQuery,
-    ) -> Result<Vec<SkillPo>, AppError> {
+    ) -> Result<Vec<SkillPo>> {
         let mut builder = sqlx::QueryBuilder::new(
             r#"SELECT id, name, description, tags, category, parent_skill_id, author_id, author_type, modifier_id, status, created_at, updated_at, content_path FROM skills WHERE 1=1"#,
         );
@@ -212,7 +216,7 @@ FROM skills WHERE id = ?
         &self,
         ctx: RequestContext,
         status: SkillStatus,
-    ) -> Result<Vec<SkillPo>, AppError> {
+    ) -> Result<Vec<SkillPo>> {
         let status_i32 = status.to_i32();
         let skills = sqlx::query_as!(
             SkillPo,
@@ -234,7 +238,7 @@ ORDER BY updated_at DESC
         &self,
         ctx: RequestContext,
         category: &str,
-    ) -> Result<Vec<SkillPo>, AppError> {
+    ) -> Result<Vec<SkillPo>> {
         let skills = sqlx::query_as!(
             SkillPo,
             r#"
@@ -255,7 +259,7 @@ ORDER BY updated_at DESC
         &self,
         ctx: RequestContext,
         author_id: &str,
-    ) -> Result<Vec<SkillPo>, AppError> {
+    ) -> Result<Vec<SkillPo>> {
         let skills = sqlx::query_as!(
             SkillPo,
             r#"
@@ -277,13 +281,10 @@ ORDER BY updated_at DESC
         ctx: RequestContext,
         source_skill: &SkillPo,
         target_agent_id: &str,
-    ) -> Result<SkillPo, AppError> {
+    ) -> Result<SkillPo> {
         // Source skill must be Published (shared) to be installed
         if source_skill.status != SkillStatus::Published {
-            return Err(AppError::BadRequest(format!(
-                "Only published skills can be installed, current status is {:?}",
-                source_skill.status
-            )));
+            bail_err!(InvalidRequest, "Only published skills can be installed, current status is {:?}", source_skill.status);
         }
 
         // Generate new unique skill id internally (using v7 uuid for time ordering)
@@ -320,7 +321,7 @@ ORDER BY updated_at DESC
         &self,
         ctx: RequestContext,
         search: SkillSearch,
-    ) -> Result<Vec<SkillPo>, AppError> {
+    ) -> Result<Vec<SkillPo>> {
         // ✅ 只做参数转换，直接转发到 query（DAO 层不碰向量搜索）
         let mut query = search.filters;
 
@@ -338,7 +339,7 @@ ORDER BY updated_at DESC
 
     // ========== 文件操作 ==========
 
-    fn read_main_content(&self, skill: &SkillPo) -> Result<String, AppError> {
+    fn read_main_content(&self, skill: &SkillPo) -> Result<String> {
         let path = self.main_content_path(skill);
         if !path.exists() {
             return Ok(String::new());
@@ -347,7 +348,7 @@ ORDER BY updated_at DESC
         Ok(content)
     }
 
-    fn write_main_content(&self, skill: &SkillPo, content: &str) -> Result<(), AppError> {
+    fn write_main_content(&self, skill: &SkillPo, content: &str) -> Result<()> {
         let dir = self.skill_dir(skill);
         std::fs::create_dir_all(&dir)?;
         let path = self.main_content_path(skill);
@@ -355,7 +356,7 @@ ORDER BY updated_at DESC
         Ok(())
     }
 
-    fn list_files(&self, skill: &SkillPo) -> Result<Vec<SkillFile>, AppError> {
+    fn list_files(&self, skill: &SkillPo) -> Result<Vec<SkillFile>> {
         const SMALL_FILE_THRESHOLD: u64 = 64 * 1024; // 64KB 以下的文件直接预读内容
         let dir = self.skill_dir(skill);
         if !dir.exists() {
@@ -370,16 +371,16 @@ ORDER BY updated_at DESC
         Ok(files)
     }
 
-    fn read_file(&self, skill: &SkillPo, filename: &str) -> Result<String, AppError> {
+    fn read_file(&self, skill: &SkillPo, filename: &str) -> Result<String> {
         let path = self.file_path(skill, filename);
         if !path.exists() {
-            return Err(AppError::NotFound(format!("File not found: {}", filename)));
+            bail_err!(ResourceNotFound, "File not found: {}", filename);
         }
         let content = std::fs::read_to_string(path)?;
         Ok(content)
     }
 
-    fn write_file(&self, skill: &SkillPo, filename: &str, content: &str) -> Result<(), AppError> {
+    fn write_file(&self, skill: &SkillPo, filename: &str, content: &str) -> Result<()> {
         self.write_file_bytes(skill, filename, content.as_bytes())
     }
 
@@ -388,7 +389,7 @@ ORDER BY updated_at DESC
         skill: &SkillPo,
         filename: &str,
         bytes: &[u8],
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let path = self.file_path(skill, filename);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -397,7 +398,7 @@ ORDER BY updated_at DESC
         Ok(())
     }
 
-    fn delete_skill_dir(&self, skill: &SkillPo) -> Result<(), AppError> {
+    fn delete_skill_dir(&self, skill: &SkillPo) -> Result<()> {
         let dir = self.skill_dir(skill);
         if dir.exists() {
             std::fs::remove_dir_all(&dir)?;
@@ -433,7 +434,7 @@ impl SkillDaoSqliteImpl {
         current_dir: &Path,
         files: &mut Vec<SkillFile>,
         small_file_threshold: u64,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         for entry in std::fs::read_dir(current_dir)? {
             let entry = entry?;
             let file_type = entry.file_type()?;
@@ -449,7 +450,7 @@ impl SkillDaoSqliteImpl {
 
             let filename = path
                 .strip_prefix(base_dir)
-                .map_err(|e| AppError::Internal(format!("计算技能文件相对路径失败: {}", e)))?
+                .map_err(|e| err!(Internal, "计算技能文件相对路径失败: {e}").with_source(e))?
                 .to_string_lossy()
                 .replace('\\', "/");
             let metadata = entry.metadata()?;
@@ -473,8 +474,8 @@ impl SkillDaoSqliteImpl {
     }
 
     /// 递归拷贝技能目录（用于 install_to_agent）
-    fn copy_skill_dir(&self, source: &SkillPo, target: &SkillPo) -> Result<(), AppError> {
-        let source_dir = self.skill_dir(source);
+    fn copy_skill_dir(&self, src: &SkillPo, target: &SkillPo) -> Result<()> {
+        let source_dir = self.skill_dir(src);
         let target_dir = self.skill_dir(target);
 
         // 如果源目录不存在，创建空的目标目录即可（新建技能可能还没有文件）

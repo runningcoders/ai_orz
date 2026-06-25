@@ -6,6 +6,8 @@ use crate::error::Result;
 use crate::models::vector::{VectorIndexParams, VectorRow, VectorSearchHit};
 use crate::pkg::storage::InMemoryVectorStore;
 use async_trait::async_trait;
+use common::error::Result;
+use common::bail_err;
 
 /// HNSW 向量存储（当前为 InMemory 的别名）
 /// TODO: 替换为真正的 HNSW 实现

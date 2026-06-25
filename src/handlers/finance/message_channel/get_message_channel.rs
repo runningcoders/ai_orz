@@ -1,12 +1,14 @@
 //! Handler: GET /api/v1/message-channels/{id} - Get message channel detailed information
 
-use crate::error::AppError;
+use common::bail_err;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetMessageChannelRequest, GetMessageChannelResponse, MessageChannelDetail};
 
 use super::response::to_detail;
+use common::error::Result;
+use common::err;
 
 /// Get detailed information about a specific message channel
 #[register_handler_tool(
@@ -19,27 +21,24 @@ use super::response::to_detail;
 pub async fn get_message_channel(
     ctx: RequestContext,
     params: GetMessageChannelRequest,
-) -> Result<GetMessageChannelResponse, AppError> {
+) -> Result<GetMessageChannelResponse> {
     let org_id = ctx
         .organization_id
         .clone()
-        .ok_or_else(|| AppError::BadRequest("当前请求缺少组织上下文".to_string()))?;
+        .ok_or_else(|| err!(InvalidRequest, "当前请求缺少组织上下文"))?;
     let user_id = ctx.uid();
     if user_id.is_empty() {
-        return Err(AppError::BadRequest("当前请求缺少用户上下文".to_string()));
+        bail_err!(InvalidRequest, "当前请求缺少用户上下文");
     }
 
     let channel = domain()
         .message_channel_manage()
         .get_message_channel(ctx.clone(), &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("MessageChannel {} not found", params.id)))?;
+        .ok_or_else(|| err!(NotFound, "MessageChannel {} not found", params.id))?;
 
     if channel.po.org_id != org_id || channel.po.user_id != user_id {
-        return Err(AppError::NotFound(format!(
-            "MessageChannel {} not found",
-            params.id
-        )));
+        bail_err!(NotFound, "MessageChannel {} not found", params.id);
     }
 
     Ok(to_detail(&channel))

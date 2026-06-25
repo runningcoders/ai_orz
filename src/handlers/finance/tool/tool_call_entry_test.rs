@@ -9,6 +9,7 @@ use crate::pkg::tool_tracing::logger::ToolCallLogger;
 
 use super::get_tool_call_entry::get_tool_call_entry;
 use super::query_tool_call_entries::query_tool_call_entries;
+use common::bail_err;
 
 fn init_test_singletons() {
     static INIT: Once = Once::new();
@@ -131,5 +132,5 @@ async fn query_tool_call_entries_handler_rejects_scope_without_context_scope() {
     .await
     .expect_err("handler must not trust request-supplied scope alone");
 
-    assert!(matches!(error, crate::error::AppError::BadRequest(_)));
+    assert!(matches!(error, common::error::Error::bad_request(_)));
 }

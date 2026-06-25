@@ -1,12 +1,13 @@
+
 //! 邮件渠道 DAO 模块
-//!
 //! 负责邮件渠道的消息推送和连接测试。
 //! 对 SMTP/邮件网关 API 的封装，支持后续协议版本适配。
 
-use crate::error::Result;
+use common::error::Result;
 use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;
+use common::bail_err;
 
 /// 邮件渠道 DAO 接口
 #[async_trait::async_trait]
@@ -26,7 +27,7 @@ pub trait EmailDao: Send + Sync {
         ctx: RequestContext,
         message: &Message,
         channel: &MessageChannel,
-    ) -> std::result::Result<(), String>;
+    ) -> std::result::Result<(), common::error::Error>;
 
     /// 测试邮件渠道连接
     ///
@@ -41,7 +42,7 @@ pub trait EmailDao: Send + Sync {
         &self,
         ctx: RequestContext,
         channel: &MessageChannel,
-    ) -> std::result::Result<(), String>;
+    ) -> std::result::Result<(), common::error::Error>;
 }
 
 pub mod smtp;

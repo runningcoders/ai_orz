@@ -7,8 +7,25 @@ edition = "2024"
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
+anyhow = "1.0"
 chrono = { version = "0.4", default-features = false, features = ["serde", "std", "clock"] }
 schemars = { version = "0.8", features = ["derive"] }
 sqlx = { version = "0.8.6", features = ["macros"], default-features = false, optional = true }
+rig-core = { version = "0.34", optional = true }
+jsonwebtoken = { version = "9", optional = true }
+base64 = { version = "0.21", optional = true }
+reqwest = { version = "0.11", optional = true }
+toml = { version = "0.8", optional = true }
+tokio = { version = "1", features = ["full"] }
 ai-orz-macros = { path = "../ai-orz-macros" }
+axum = { version = "0.7", optional = true }
 
+[features]
+default = []
+sqlx = ["dep:sqlx"]
+axum-integration = ["dep:axum"]
+rig-integration = ["dep:rig-core"]
+jwt-integration = ["dep:jsonwebtoken"]
+base64-integration = ["dep:base64"]
+reqwest-integration = ["dep:reqwest"]
+toml-integration = ["dep:toml"]

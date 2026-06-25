@@ -1,12 +1,13 @@
 //! Model Provider DAL 模块
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
 use crate::service::dao::model_provider;
 use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderQuery};
 use common::enums::ModelProviderStatus;
 use std::sync::{Arc, OnceLock};
+use common::bail_err;
 // ==================== 单例管理 ====================
 
 static MODEL_PROVIDER_DAL: OnceLock<Arc<dyn ModelProviderDal>> = OnceLock::new();
@@ -34,30 +35,30 @@ pub fn new(
 #[async_trait::async_trait]
 pub trait ModelProviderDal: Send + Sync {
     /// 创建 Model Provider
-    async fn create(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError>;
+    async fn create(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<()>;
 
     /// 根据 ID 查询 Model Provider
     async fn find_by_id(
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<ModelProvider>, AppError>;
+    ) -> Result<Option<ModelProvider>>;
 
     /// 查询所有 Model Provider
-    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<ModelProvider>, AppError>;
+    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<ModelProvider>>;
 
     /// 通用综合查询
     async fn query(
         &self,
         ctx: RequestContext,
         query: ModelProviderQuery,
-    ) -> Result<Vec<ModelProvider>, AppError>;
+    ) -> Result<Vec<ModelProvider>>;
 
     /// 更新 Model Provider
-    async fn update(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError>;
+    async fn update(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<()>;
 
     /// 删除 Model Provider
-    async fn delete(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError>;
+    async fn delete(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<()>;
 }
 
 /// Model Provider DAL 实现
@@ -74,7 +75,7 @@ impl ModelProviderDalImpl {
 
 #[async_trait::async_trait]
 impl ModelProviderDal for ModelProviderDalImpl {
-    async fn create(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError> {
+    async fn create(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<()> {
         self.model_provider_dao.insert(ctx, &provider.po).await
     }
 
@@ -82,12 +83,12 @@ impl ModelProviderDal for ModelProviderDalImpl {
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<ModelProvider>, AppError> {
+    ) -> Result<Option<ModelProvider>> {
         let opt = self.model_provider_dao.find_by_id(ctx, id).await?;
         Ok(opt.map(ModelProvider::from_po))
     }
 
-    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<ModelProvider>, AppError> {
+    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<ModelProvider>> {
         self.query(
             ctx,
             ModelProviderQuery {
@@ -102,16 +103,16 @@ impl ModelProviderDal for ModelProviderDalImpl {
         &self,
         ctx: RequestContext,
         query: ModelProviderQuery,
-    ) -> Result<Vec<ModelProvider>, AppError> {
+    ) -> Result<Vec<ModelProvider>> {
         let providers = self.model_provider_dao.query(ctx, query).await?;
         Ok(providers.into_iter().map(ModelProvider::from_po).collect())
     }
 
-    async fn update(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError> {
+    async fn update(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<()> {
         self.model_provider_dao.update(ctx, &provider.po).await
     }
 
-    async fn delete(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<(), AppError> {
+    async fn delete(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<()> {
         self.model_provider_dao.delete(ctx, &provider.po).await
     }
 }

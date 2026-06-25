@@ -11,6 +11,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use std::boxed::Box;
+use common::error::Result;
+use common::bail_err;
 
 pub mod r#impl;
 pub mod mcp;
@@ -40,5 +42,5 @@ pub trait ToolCallDao: Send + Sync {
         ctx: RequestContext,
         tool: &Tool,
         args: serde_json::Value,
-    ) -> Result<(serde_json::Value, ToolCallEntry), ToolExecutionError>;
+    ) -> Result<serde_json::Value>;
 }

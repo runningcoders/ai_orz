@@ -11,6 +11,8 @@ resolver = "2"
 name = "ai_orz"
 version = "0.1.0"
 edition = "2024"
+autoexamples = false
+autobenches = false
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
@@ -36,7 +38,7 @@ cookie = "0.18"
 uuid = { version = "1.23.0", features = ["v7", "serde"] }
 dyn-clone = "1.0.14"
 futures-util = "0.3.32"
-common = { path = "./common", features = ["sqlx"] }
+common = { path = "./common", features = ["sqlx", "axum-integration"] }
 once_cell = "1.21.4"
 thiserror = "1.0"
 derive_builder = "0.20"

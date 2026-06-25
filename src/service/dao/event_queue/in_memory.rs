@@ -1,5 +1,4 @@
 //! 内存事件队列实现
-//!
 //! 纯内存实现，支持：
 //! - 按优先级全局排序
 //! - 相同 order_key 保证顺序消费
@@ -12,11 +11,13 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::OnceLock;
 
-use crate::error::AppError;
+use common::error::{err, bail_err, Result};
 use crate::models::event::{Event, EventRef};
 use crate::models::message::Message;
 use crate::pkg::RequestContext;
 use crate::service::dao::event_queue::EventQueueDao;
+use common::err;
+use common::bail_err;
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -64,7 +65,7 @@ pub struct EventQueueDaoInMemoryImpl<E: Event + Clone> {
     /// 全局优先级堆（就绪事件）
     global_heap: UnsafeCell<BinaryHeap<EventRef>>,
     /// 当前正在处理的事件：event_id -> (event_ref, order_key)
-    in_progress: UnsafeCell<HashMap<String, (EventRef, String)>>, // (event_ref, order_key)
+    in_progress: UnsafeCell<HashMap<String, (EventRef, String)>>,
     /// 该 order_key 有活跃消息（不在子队列：在全局堆 或 在处理中）
     has_active_message: UnsafeCell<HashMap<String, bool>>,
     /// 互斥锁保护并发访问
@@ -90,11 +91,10 @@ impl<E: Event + Clone> EventQueueDaoInMemoryImpl<E> {
 }
 
 impl<E: Event + Clone> EventQueueDao<E> for EventQueueDaoInMemoryImpl<E> {
-    fn enqueue(&self, _ctx: RequestContext, event: Box<E>) -> Result<(), AppError> {
+    fn enqueue(&self, _ctx: RequestContext, event: Box<E>) -> Result<()> {
         let _guard = self
-            .lock
             .lock()
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+            .map_err(|e| err!(Internal, "failed to acquire event queue lock" source: e))?;
 
         let events = unsafe { &mut *self.events.get() };
         let queues = unsafe { &mut *self.queues.get() };
@@ -138,18 +138,17 @@ impl<E: Event + Clone> EventQueueDao<E> for EventQueueDaoInMemoryImpl<E> {
         Ok(())
     }
 
-    fn enqueue_batch(&self, ctx: RequestContext, events: Vec<Box<E>>) -> Result<(), AppError> {
+    fn enqueue_batch(&self, ctx: RequestContext, events: Vec<Box<E>>) -> Result<()> {
         for event in events {
             self.enqueue(ctx.clone(), event)?;
         }
         Ok(())
     }
 
-    fn dequeue_next(&self, _ctx: RequestContext) -> Result<Option<Box<E>>, AppError> {
+    fn dequeue_next(&self, _ctx: RequestContext) -> Result<Option<Box<E>>> {
         let _guard = self
-            .lock
             .lock()
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+            .map_err(|e| err!(Internal, "failed to acquire event queue lock" source: e))?;
 
         let events = unsafe { &mut *self.events.get() };
         let queues = unsafe { &mut *self.queues.get() };
@@ -190,11 +189,10 @@ impl<E: Event + Clone> EventQueueDao<E> for EventQueueDaoInMemoryImpl<E> {
         }
     }
 
-    fn ack(&self, _ctx: RequestContext, event_id: &str) -> Result<(), AppError> {
+    fn ack(&self, _ctx: RequestContext, event_id: &str) -> Result<()> {
         let _guard = self
-            .lock
             .lock()
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+            .map_err(|e| err!(Internal, "failed to acquire event queue lock" source: e))?;
 
         let events = unsafe { &mut *self.events.get() };
         let queues = unsafe { &mut *self.queues.get() };
@@ -239,11 +237,10 @@ impl<E: Event + Clone> EventQueueDao<E> for EventQueueDaoInMemoryImpl<E> {
         Ok(())
     }
 
-    fn nack(&self, _ctx: RequestContext, event_id: &str) -> Result<(), AppError> {
+    fn nack(&self, _ctx: RequestContext, event_id: &str) -> Result<()> {
         let _guard = self
-            .lock
             .lock()
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+            .map_err(|e| err!(Internal, "failed to acquire event queue lock" source: e))?;
 
         let global_heap = unsafe { &mut *self.global_heap.get() };
         let in_progress = unsafe { &mut *self.in_progress.get() };
@@ -266,30 +263,30 @@ impl<E: Event + Clone> EventQueueDao<E> for EventQueueDaoInMemoryImpl<E> {
     }
 
     fn len(&self) -> usize {
-        let _guard = self.lock.lock().ok();
+        let _guard = self.lock().lock().ok();
         let events = unsafe { &*self.events.get() };
         events.len()
     }
 
     fn is_empty(&self) -> bool {
-        let _guard = self.lock.lock().ok();
+        let _guard = self.lock().lock().ok();
         let events = unsafe { &*self.events.get() };
         events.is_empty()
     }
 
     fn in_progress_count(&self) -> usize {
-        let _guard = self.lock.lock().ok();
+        let _guard = self.lock().lock().ok();
         let in_progress = unsafe { &*self.in_progress.get() };
         in_progress.len()
     }
 
-    fn recover(&self, _ctx: RequestContext) -> Result<usize, AppError> {
+    fn recover(&self, _ctx: RequestContext) -> Result<usize> {
         // 内存版本不需要从持久化恢复，恢复由上层调用者结合数据库完成
         Ok(0)
     }
 
     fn clear(&self) {
-        let _guard = self.lock.lock().ok();
+        let _guard = self.lock().lock().ok();
         let events = unsafe { &mut *self.events.get() };
         let queues = unsafe { &mut *self.queues.get() };
         let global_heap = unsafe { &mut *self.global_heap.get() };

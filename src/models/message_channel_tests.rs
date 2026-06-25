@@ -1,6 +1,7 @@
 use super::*;
 use common::enums::{ChannelStatus, ChannelType};
 use sqlx::types::Json;
+use common::bail_err;
 
 fn test_channel_with_status(status: ChannelStatus) -> MessageChannel {
     let po = MessageChannelPoBuilder::default()

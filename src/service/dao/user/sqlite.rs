@@ -7,6 +7,8 @@ use crate::service::dao::user::{UserDao, UserQuery};
 use chrono::Utc;
 use common::enums::{UserRole, UserStatus};
 use std::sync::{Arc, OnceLock};
+use common::error::Result;
+use common::bail_err;
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -39,7 +41,7 @@ impl UserDaoSqliteImpl {
 
 #[async_trait::async_trait]
 impl UserDao for UserDaoSqliteImpl {
-    async fn insert(&self, ctx: RequestContext, user: &UserPo) -> Result<(), AppError> {
+    async fn insert(&self, ctx: RequestContext, user: &UserPo) -> Result<()> {
         let role = user.role as i32;
         let status = user.status as i32;
         sqlx::query!(
@@ -63,7 +65,7 @@ impl UserDao for UserDaoSqliteImpl {
         Ok(())
     }
 
-    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<UserPo>, AppError> {
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<UserPo>> {
         let user = sqlx::query_as!(
             UserPo,
             r#"
@@ -83,7 +85,7 @@ FROM users WHERE id = ? AND status != 0
         &self,
         ctx: RequestContext,
         username: &str,
-    ) -> Result<Option<UserPo>, AppError> {
+    ) -> Result<Option<UserPo>> {
         let user = sqlx::query_as!(
             UserPo,
             r#"
@@ -99,7 +101,7 @@ FROM users WHERE username = ? AND status != 0
         Ok(user)
     }
 
-    async fn query(&self, ctx: RequestContext, query: UserQuery) -> Result<Vec<UserPo>, AppError> {
+    async fn query(&self, ctx: RequestContext, query: UserQuery) -> Result<Vec<UserPo>> {
         let pool = ctx.db_pool();
         let mut builder = sqlx::QueryBuilder::new(
             r#"SELECT id, organization_id, username, display_name, email, password_hash, role, status, created_by, modified_by, created_at, updated_at FROM users WHERE status != 0"#,
@@ -127,7 +129,7 @@ FROM users WHERE username = ? AND status != 0
         &self,
         ctx: RequestContext,
         org_id: &str,
-    ) -> Result<Vec<UserPo>, AppError> {
+    ) -> Result<Vec<UserPo>> {
         // 语法糖：调用通用查询
         self.query(
             ctx,
@@ -139,7 +141,7 @@ FROM users WHERE username = ? AND status != 0
         .await
     }
 
-    async fn update(&self, ctx: RequestContext, user: &UserPo) -> Result<(), AppError> {
+    async fn update(&self, ctx: RequestContext, user: &UserPo) -> Result<()> {
         let current_timestamp = Utc::now().timestamp();
         let uid = ctx.uid().to_string();
         let role = user.role as i32;
@@ -168,7 +170,7 @@ WHERE id = ?
         Ok(())
     }
 
-    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
+    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()> {
         let current_timestamp = Utc::now().timestamp();
         let uid = ctx.uid().to_string();
         sqlx::query!(
@@ -189,7 +191,7 @@ UPDATE users SET status = 0, modified_by = ?, updated_at = ? WHERE id = ?
         &self,
         ctx: RequestContext,
         username: &str,
-    ) -> Result<bool, AppError> {
+    ) -> Result<bool> {
         let count = sqlx::query!(
             "SELECT COUNT(*) as count FROM users WHERE username = ?",
             username
@@ -204,7 +206,7 @@ UPDATE users SET status = 0, modified_by = ?, updated_at = ? WHERE id = ?
         &self,
         ctx: RequestContext,
         org_id: &str,
-    ) -> Result<u64, AppError> {
+    ) -> Result<u64> {
         let count = sqlx::query!(
             "SELECT COUNT(*) as count FROM users WHERE organization_id = ? AND status != 0",
             org_id

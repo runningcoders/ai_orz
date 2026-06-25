@@ -1,6 +1,6 @@
 //! 用户登录
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::middleware::jwt_auth::JWT_COOKIE_NAME;
 use crate::pkg::RequestContext;
 use crate::pkg::jwt;
@@ -14,13 +14,14 @@ use common::api::ApiResponse;
 use common::api::{LoginRequest, LoginResponse};
 use cookie::time;
 use cookie::{Cookie, SameSite};
+use common::bail_err;
 
 /// 用户登录
 /// POST /organization/auth/login
 pub async fn login(
     Extension(ctx): Extension<RequestContext>,
     Json(req): Json<LoginRequest>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<impl IntoResponse> {
     let domain = domain();
 
     // 验证用户名密码

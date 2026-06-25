@@ -2,7 +2,8 @@
 //!
 //! 负责任务的创建、查询、状态流转
 
-use crate::error::AppError;
+use common::bail_err;
+use common::error::{err, Result};
 use crate::models::task::Task;
 use crate::pkg::RequestContext;
 use common::constants::utils;
@@ -10,6 +11,7 @@ use common::enums::{AssigneeType, TaskStatus};
 use uuid::Uuid;
 
 use super::ProjectDomainImpl;
+use common::err;
 
 #[async_trait::async_trait]
 impl super::TaskManage for ProjectDomainImpl {
@@ -26,7 +28,7 @@ impl super::TaskManage for ProjectDomainImpl {
         assignee_id: String,
         project_id: Option<String>,
         created_by: String,
-    ) -> Result<Task, AppError> {
+    ) -> Result<Task> {
         self.create_with_options(
             ctx,
             title,
@@ -59,7 +61,7 @@ impl super::TaskManage for ProjectDomainImpl {
         due_at: Option<i64>,
         dependencies: Vec<String>,
         created_by: String,
-    ) -> Result<Task, AppError> {
+    ) -> Result<Task> {
         let task_id = Uuid::now_v7().to_string();
 
         let task = Task::new(
@@ -84,7 +86,7 @@ impl super::TaskManage for ProjectDomainImpl {
     }
 
     /// 根据 ID 获取任务
-    async fn get(&self, ctx: RequestContext, id: &str) -> Result<Option<Task>, AppError> {
+    async fn get(&self, ctx: RequestContext, id: &str) -> Result<Option<Task>> {
         self.task_dal.find_by_id(ctx, id).await
     }
 
@@ -93,7 +95,7 @@ impl super::TaskManage for ProjectDomainImpl {
         &self,
         ctx: RequestContext,
         project_id: &str,
-    ) -> Result<Vec<Task>, AppError> {
+    ) -> Result<Vec<Task>> {
         self.task_dal.list_by_project(ctx, project_id, None).await
     }
 
@@ -102,7 +104,7 @@ impl super::TaskManage for ProjectDomainImpl {
         &self,
         ctx: RequestContext,
         agent_id: &str,
-    ) -> Result<Vec<Task>, AppError> {
+    ) -> Result<Vec<Task>> {
         self.list(
             ctx,
             None,
@@ -123,7 +125,7 @@ impl super::TaskManage for ProjectDomainImpl {
         assignee_id: Option<&str>,
         status: Option<TaskStatus>,
         limit: Option<usize>,
-    ) -> Result<Vec<Task>, AppError> {
+    ) -> Result<Vec<Task>> {
         self.task_dal
             .query(
                 ctx,
@@ -149,9 +151,9 @@ impl super::TaskManage for ProjectDomainImpl {
         tags: Option<Vec<String>>,
         due_at: Option<i64>,
         dependencies: Option<Vec<String>>,
-    ) -> Result<Task, AppError> {
+    ) -> Result<Task> {
         let Some(mut task) = self.task_dal.find_by_id(ctx.clone(), task_id).await? else {
-            return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
+            bail_err!(NotFound, "Task not found: {}", task_id);
         };
 
         if let Some(title) = title {
@@ -188,9 +190,9 @@ impl super::TaskManage for ProjectDomainImpl {
         ctx: RequestContext,
         task_id: &str,
         modified_by: String,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let Some(mut task) = self.task_dal.find_by_id(ctx.clone(), task_id).await? else {
-            return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
+            bail_err!(NotFound, "Task not found: {}", task_id);
         };
         task.start();
         task.po.modified_by = modified_by;
@@ -204,9 +206,9 @@ impl super::TaskManage for ProjectDomainImpl {
         ctx: RequestContext,
         task_id: &str,
         modified_by: String,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let Some(mut task) = self.task_dal.find_by_id(ctx.clone(), task_id).await? else {
-            return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
+            bail_err!(NotFound, "Task not found: {}", task_id);
         };
         task.complete();
         task.po.modified_by = modified_by;
@@ -220,9 +222,9 @@ impl super::TaskManage for ProjectDomainImpl {
         ctx: RequestContext,
         task_id: &str,
         modified_by: String,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let Some(mut task) = self.task_dal.find_by_id(ctx.clone(), task_id).await? else {
-            return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
+            bail_err!(NotFound, "Task not found: {}", task_id);
         };
         task.cancel();
         task.po.modified_by = modified_by;
@@ -236,13 +238,11 @@ impl super::TaskManage for ProjectDomainImpl {
         ctx: RequestContext,
         task: &mut Task,
         target_status: TaskStatus,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let current_status = task.po.status;
 
         if target_status == TaskStatus::Cancelled {
-            return Err(AppError::BadRequest(
-                "Task 取消不允许通过状态接口执行，请使用取消/删除 action".to_string(),
-            ));
+            bail_err!(InvalidRequest, "Task 取消不允许通过状态接口执行，请使用取消/删除 action");
         }
 
         let is_valid_transition = match (current_status, target_status) {
@@ -259,10 +259,7 @@ impl super::TaskManage for ProjectDomainImpl {
         };
 
         if !is_valid_transition {
-            return Err(AppError::BadRequest(format!(
-                "非法任务状态流转：{:?} → {:?}",
-                current_status, target_status
-            )));
+            bail_err!(InvalidRequest, "非法任务状态流转：{:?} → {:?}", current_status, target_status);
         }
 
         if current_status == target_status {

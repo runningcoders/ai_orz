@@ -1,11 +1,13 @@
 //! Handler: POST /api/v1/agents - 创建新 Agent
 
-use crate::error::AppError;
+use common::bail_err;
 use crate::models::agent::{Agent, AgentPo};
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CreateAgentRequest, CreateAgentResponse};
+use common::error::Result;
+use common::err;
 
 /// Create a new AI agent
 #[register_handler_tool(
@@ -18,10 +20,10 @@ use common::api::{CreateAgentRequest, CreateAgentResponse};
 pub async fn create_agent(
     ctx: RequestContext,
     params: CreateAgentRequest,
-) -> Result<CreateAgentResponse, AppError> {
+) -> Result<CreateAgentResponse> {
     let user_id = ctx.uid();
     if user_id.is_empty() {
-        return Err(AppError::BadRequest("当前请求缺少用户上下文".to_string()));
+        bail_err!(InvalidRequest, "当前请求缺少用户上下文");
     }
 
     let agent_po = AgentPo::new(
@@ -44,7 +46,7 @@ pub async fn create_agent(
         .agent_manage()
         .get_agent(ctx, agent.id())
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Agent {} not found", agent.id())))?;
+        .ok_or_else(|| err!(NotFound, "Agent {} not found", agent.id()))?;
 
     Ok(CreateAgentResponse {
         id: created.id().to_string(),

@@ -290,6 +290,7 @@ mod tests {
         use crate::models::tool::{Tool, ToolPo};
         use common::enums::{ControlMode, ToolProtocol, ToolStatus};
         use serde_json::json;
+use common::bail_err;
 
         let agent_po = AgentPo::new(
             "工具助手".to_string(),

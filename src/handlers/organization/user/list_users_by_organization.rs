@@ -1,10 +1,11 @@
 //! Handler: GET /api/v1/organizations/{id}/users - List all users by organization ID
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListUsersByOrganizationRequest, ListUsersResponse, UserListItem};
+use common::bail_err;
 
 /// List all users belonging to a specific organization by organization ID
 #[register_handler_tool(
@@ -17,7 +18,7 @@ use common::api::{ListUsersByOrganizationRequest, ListUsersResponse, UserListIte
 pub async fn list_users_by_organization(
     ctx: RequestContext,
     params: ListUsersByOrganizationRequest,
-) -> Result<ListUsersResponse, AppError> {
+) -> Result<ListUsersResponse> {
     let domain = organization::domain();
     let users = domain
         .user_manage()

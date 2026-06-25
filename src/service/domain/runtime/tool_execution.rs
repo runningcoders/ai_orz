@@ -1,6 +1,6 @@
 //! Runtime Tool Execution 具体实现
 
-use crate::error::AppError;
+use common::error::{err, bail_err, Error, Result};
 use crate::models::tool::{Tool, ToolExecutionError, ToolExecutionResult};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
@@ -9,6 +9,8 @@ use crate::service::domain::runtime::{RuntimeDomainImpl, RuntimeToolExecution};
 use common::enums::{ControlMode, ToolProtocol, ToolStatus};
 use rig::tool::ToolError;
 use serde_json::Value;
+use common::err;
+use common::bail_err;
 
 #[async_trait::async_trait]
 impl RuntimeToolExecution for RuntimeDomainImpl {
@@ -17,7 +19,7 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
         ctx: RequestContext,
         tool_id: String,
         args: Value,
-    ) -> Result<ToolExecutionResult, ToolExecutionError> {
+    ) -> Result<ToolExecutionResult> {
         let tool = self
             .tool_dal
             .get_by_id(ctx.clone(), tool_id.clone())
@@ -39,10 +41,9 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
         ctx: RequestContext,
         tool: &Tool,
         args: Value,
-    ) -> Result<ToolExecutionResult, ToolExecutionError> {
+    ) -> Result<ToolExecutionResult> {
         let tool_id = tool.po.id.clone();
-        ensure_tool_enabled(&tool_id, &tool.po.status)
-            .map_err(ToolExecutionError::without_trace)?;
+        ensure_tool_enabled(&tool_id, &tool.po.status)?;
 
         let execution = match tool.po.protocol {
             ToolProtocol::Mcp => self.mcp_tool_dal.call_tool(ctx, tool, args).await,
@@ -53,15 +54,13 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
 
         let (result, entry) = match execution {
             Ok((result, entry)) => (result, entry),
-            Err(error) => {
+            Err(mut error) => {
                 let mapped_error = match tool.po.protocol {
-                    ToolProtocol::Mcp => map_mcp_tool_error(&tool_id, error.error),
-                    ToolProtocol::Builtin | ToolProtocol::Http => error.error,
+                    ToolProtocol::Mcp => map_mcp_tool_error(&tool_id, &error.error),
+                    ToolProtocol::Builtin | ToolProtocol::Http => error.to_string(),
                 };
-                return Err(ToolExecutionError {
-                    error: mapped_error,
-                    trace_ref: error.trace_ref,
-                });
+                let err = err!(ToolExecutionFailed, mapped_error);
+                return Err(err);
             }
         };
 
@@ -78,7 +77,7 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
         agent_id: String,
         tool_id: String,
         args: Value,
-    ) -> Result<ToolExecutionResult, ToolExecutionError> {
+    ) -> Result<ToolExecutionResult> {
         let bound_tools = self
             .tool_dal
             .list_tools_for_agent_full(ctx.clone(), &agent_id)
@@ -101,13 +100,11 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
             })?;
 
         if tool.po.control_mode != ControlMode::Manual {
-            return Err(ToolExecutionError::without_trace(ToolError::ToolCallError(
-                format!(
-                    "Manual tool call denied: tool {} has control mode {:?}",
-                    tool_id, tool.po.control_mode
-                )
-                .into(),
-            )));
+            let msg = format!(
+                "Manual tool call denied: tool {} has control mode {:?}",
+                tool_id, tool.po.control_mode
+            );
+            bail_err!(ToolExecutionFailed, msg.as_str());
         }
 
         self.call_tool(ctx, tool, args).await
@@ -117,42 +114,34 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
         &self,
         ctx: RequestContext,
         query: ToolCallQuery,
-    ) -> Result<Vec<ToolCallEntry>, AppError> {
+    ) -> Result<Vec<ToolCallEntry>> {
         let query = super::tool_call_query::with_context_scope(ctx, query)?;
-        ToolCallLogger::get()
-            .query_calls(query)
-            .map_err(AppError::from)
+        Ok(ToolCallLogger::get()
+            .query_calls(query)?)
     }
 
     async fn get_tool_call_entry_by_id(
         &self,
         ctx: RequestContext,
         query: ToolCallQuery,
-    ) -> Result<Option<ToolCallEntry>, AppError> {
+    ) -> Result<Option<ToolCallEntry>> {
         super::tool_call_query::ensure_call_id_present(&query)?;
         let query = super::tool_call_query::with_context_scope(ctx, query)?;
         let mut entries = ToolCallLogger::get()
-            .query_calls(query)
-            .map_err(AppError::from)?;
+            .query_calls(query)?;
         Ok(entries.pop())
     }
 }
 
-fn ensure_tool_enabled(tool_id: &str, status: &ToolStatus) -> Result<(), ToolError> {
+fn ensure_tool_enabled(tool_id: &str, status: &ToolStatus) -> Result<()> {
     if *status != ToolStatus::Enabled {
-        return Err(ToolError::ToolCallError(
-            format!(
-                "Tool execution denied: tool {} has status {:?}",
-                tool_id, status
-            )
-            .into(),
-        ));
+        bail_err!(ToolExecutionFailed, "Tool execution denied: tool {} has status {:?}", tool_id, status);
     }
 
     Ok(())
 }
 
-fn map_mcp_tool_error(tool_id: &str, error: ToolError) -> ToolError {
+fn map_mcp_tool_error(tool_id: &str, error: &ToolError) -> String {
     let message = error.to_string();
     let normalized = message.to_lowercase();
     let safe_message = if normalized.contains("timed out") || normalized.contains("timeout") {
@@ -169,5 +158,5 @@ fn map_mcp_tool_error(tool_id: &str, error: ToolError) -> ToolError {
         format!("MCP tool call failed for tool_id: {}", tool_id)
     };
 
-    ToolError::ToolCallError(safe_message.into())
+    safe_message
 }

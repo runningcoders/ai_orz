@@ -1,6 +1,7 @@
 use common::api::ArtifactDetail;
 
 use crate::models::artifact::Artifact;
+use common::bail_err;
 
 pub(super) fn to_detail(artifact: &Artifact) -> ArtifactDetail {
     ArtifactDetail {

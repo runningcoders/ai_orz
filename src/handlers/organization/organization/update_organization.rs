@@ -1,6 +1,6 @@
 //! Handler: PUT /api/v1/organizations/{id} - Update organization information (admin)
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
@@ -9,6 +9,7 @@ use common::api::{
     UpdateOrganizationResponse,
 };
 use common::constants::utils;
+use common::bail_err;
 
 /// Update organization information (admin only)
 #[register_handler_tool(
@@ -21,14 +22,14 @@ use common::constants::utils;
 pub async fn update_organization(
     ctx: RequestContext,
     params: UpdateOrganizationRequest,
-) -> Result<UpdateOrganizationResponse, AppError> {
+) -> Result<UpdateOrganizationResponse> {
     let domain = organization::domain();
 
     let mut org = domain
         .organization_manage()
         .get_by_id(ctx.clone(), &params.organization_id)
         .await?
-        .ok_or_else(|| AppError::NotFound("组织不存在".to_string()))?;
+        .ok_or_else(|| common::error::Error::not_found("组织不存在".to_string()))?;
 
     // 更新字段
     if let Some(name) = params.name {

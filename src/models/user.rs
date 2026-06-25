@@ -6,6 +6,7 @@ use common::constants::utils;
 use common::enums::{UserRole, UserStatus};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use common::bail_err;
 
 /// UserPo 持久化对象
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]

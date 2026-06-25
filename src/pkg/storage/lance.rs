@@ -6,7 +6,7 @@
 //! - 持久化到磁盘，支持元数据过滤
 //! - 单文件存储，跨平台完美支持
 
-use crate::error::{AppError, Result};
+use common::error::{Error, Result};
 use crate::models::vector::{VectorIndexParams, VectorMeta, VectorRow, VectorSearchHit};
 use arrow_array::types::Float32Type;
 use arrow_array::{
@@ -22,6 +22,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::Arc as StdArc;
 use tokio::sync::RwLock;
+use common::bail_err;
 
 /// LanceDB 向量存储
 ///
@@ -53,7 +54,7 @@ impl LanceVectorStore {
                 connect(path_str).execute().await
             })
         })
-        .map_err(|e| AppError::Internal(format!("LanceDB connect error: {}", e)))?;
+        .map_err(|e| common::error::Error::internal(format!("LanceDB connect error: {}", e)))?;
 
         Ok(Self {
             db,
@@ -77,7 +78,7 @@ impl LanceVectorStore {
             .table_names()
             .execute()
             .await
-            .map_err(|e| AppError::Internal(format!("LanceDB table names error: {}", e)))?;
+            .map_err(|e| common::error::Error::internal(format!("LanceDB table names error: {}", e)))?;
 
         let table = if table_names.contains(&collection.to_string()) {
             // 打开已存在的表
@@ -85,7 +86,7 @@ impl LanceVectorStore {
                 .open_table(collection)
                 .execute()
                 .await
-                .map_err(|e| AppError::Internal(format!("LanceDB open table error: {}", e)))?
+                .map_err(|e| common::error::Error::internal(format!("LanceDB open table error: {}", e)))?
         } else {
             // 创建新表 schema - 使用 FixedSizeListArray 替代 ListArray
             let schema = StdArc::new(Schema::new(vec![
@@ -109,7 +110,7 @@ impl LanceVectorStore {
                 .create_empty_table(collection, schema.clone())
                 .execute()
                 .await
-                .map_err(|e| AppError::Internal(format!("LanceDB create table error: {}", e)))?
+                .map_err(|e| common::error::Error::internal(format!("LanceDB create table error: {}", e)))?
         };
 
         let table_arc = Arc::new(table);
@@ -140,7 +141,7 @@ impl super::VectorStore for LanceVectorStore {
         table
             .delete(&format!("id = '{}'", id))
             .await
-            .map_err(|e| AppError::Internal(format!("LanceDB delete error: {}", e)))?;
+            .map_err(|e| common::error::Error::internal(format!("LanceDB delete error: {}", e)))?;
 
         // 创建 Arrow 记录批 - 使用 FixedSizeListArray 存储向量
         // FixedSizeListArray 需要 Vec<Option<f32>> 格式
@@ -184,7 +185,7 @@ impl super::VectorStore for LanceVectorStore {
                 StdArc::new(expire_at_array),
             ],
         )
-        .map_err(|e| AppError::Internal(format!("Arrow record batch error: {}", e)))?;
+        .map_err(|e| common::error::Error::internal(format!("Arrow record batch error: {}", e)))?;
 
         let batches = RecordBatchIterator::new(vec![Ok(batch)], schema);
 
@@ -192,7 +193,7 @@ impl super::VectorStore for LanceVectorStore {
             .add(batches)
             .execute()
             .await
-            .map_err(|e| AppError::Internal(format!("LanceDB add error: {}", e)))?;
+            .map_err(|e| common::error::Error::internal(format!("LanceDB add error: {}", e)))?;
 
         Ok(())
     }
@@ -210,16 +211,16 @@ impl super::VectorStore for LanceVectorStore {
         // 执行向量搜索 - 0.26 API 使用 vector_search
         let stream = table
             .vector_search(query_vector)
-            .map_err(|e| AppError::Internal(format!("LanceDB vector_search error: {}", e)))?
+            .map_err(|e| common::error::Error::internal(format!("LanceDB vector_search error: {}", e)))?
             .limit(top_k as usize)
             .execute()
             .await
-            .map_err(|e| AppError::Internal(format!("LanceDB execute error: {}", e)))?;
+            .map_err(|e| common::error::Error::internal(format!("LanceDB execute error: {}", e)))?;
 
         let results: Vec<RecordBatch> = stream
             .try_collect()
             .await
-            .map_err(|e| AppError::Internal(format!("LanceDB collect results error: {}", e)))?;
+            .map_err(|e| common::error::Error::internal(format!("LanceDB collect results error: {}", e)))?;
 
         let mut output = Vec::new();
 
@@ -289,12 +290,12 @@ impl super::VectorStore for LanceVectorStore {
             .limit(1)
             .execute()
             .await
-            .map_err(|e| AppError::Internal(format!("LanceDB execute error: {}", e)))?;
+            .map_err(|e| common::error::Error::internal(format!("LanceDB execute error: {}", e)))?;
 
         let results: Vec<RecordBatch> = stream
             .try_collect()
             .await
-            .map_err(|e| AppError::Internal(format!("LanceDB collect results error: {}", e)))?;
+            .map_err(|e| common::error::Error::internal(format!("LanceDB collect results error: {}", e)))?;
 
         for batch in results {
             if batch.num_rows() > 0 {
@@ -345,7 +346,7 @@ impl super::VectorStore for LanceVectorStore {
         table
             .delete(&format!("id = '{}'", id))
             .await
-            .map_err(|e| AppError::Internal(format!("LanceDB delete error: {}", e)))?;
+            .map_err(|e| common::error::Error::internal(format!("LanceDB delete error: {}", e)))?;
         Ok(())
     }
 }

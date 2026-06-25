@@ -38,7 +38,7 @@ impl ModelProviderDao for ModelProviderDaoSqliteImpl {
         &self,
         ctx: RequestContext,
         provider: &ModelProviderPo,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let provider_type = provider.provider_type as i32;
         let capability = provider.capability as i32;
         let status = provider.status as i32;
@@ -70,7 +70,7 @@ impl ModelProviderDao for ModelProviderDaoSqliteImpl {
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<ModelProviderPo>, AppError> {
+    ) -> Result<Option<ModelProviderPo>> {
         let pool = ctx.db_pool();
         let provider = QueryBuilder::new(
             r#"
@@ -92,7 +92,7 @@ FROM model_providers WHERE id =
         &self,
         ctx: RequestContext,
         query: ModelProviderQuery,
-    ) -> Result<Vec<ModelProviderPo>, AppError> {
+    ) -> Result<Vec<ModelProviderPo>> {
         let pool = ctx.db_pool();
         let mut builder = QueryBuilder::new(
             r#"
@@ -133,7 +133,7 @@ FROM model_providers WHERE 1=1
         Ok(providers)
     }
 
-    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<ModelProviderPo>, AppError> {
+    async fn find_all(&self, ctx: RequestContext) -> Result<Vec<ModelProviderPo>> {
         self.query(
             ctx,
             ModelProviderQuery {
@@ -148,7 +148,7 @@ FROM model_providers WHERE 1=1
         &self,
         ctx: RequestContext,
         provider: &ModelProviderPo,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let current_timestamp = Utc::now().timestamp();
         let provider_type = provider.provider_type as i32;
         let capability = provider.capability as i32;
@@ -183,7 +183,7 @@ WHERE id = ?
         &self,
         ctx: RequestContext,
         provider: &ModelProviderPo,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let current_timestamp = Utc::now().timestamp();
         let uid = ctx.uid().to_string();
         let pool = ctx.db_pool();
@@ -204,7 +204,7 @@ UPDATE model_providers SET status = 0, modified_by = ?, updated_at = ? WHERE id 
     async fn get_default_embedding_provider(
         &self,
         ctx: RequestContext,
-    ) -> Result<Option<ModelProviderPo>, AppError> {
+    ) -> Result<Option<ModelProviderPo>> {
         let providers = self
             .query(
                 ctx,
@@ -222,6 +222,8 @@ UPDATE model_providers SET status = 0, modified_by = ?, updated_at = ? WHERE id 
 
 fn current_timestamp() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
+use common::error::Result;
+use common::bail_err;
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()

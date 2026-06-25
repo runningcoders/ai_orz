@@ -7,6 +7,7 @@ use crate::error::Result;
 use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;
+use common::bail_err;
 
 /// 通用 Webhook 渠道 DAO 接口
 #[async_trait::async_trait]
@@ -26,7 +27,7 @@ pub trait WebhookDao: Send + Sync {
         ctx: RequestContext,
         message: &Message,
         channel: &MessageChannel,
-    ) -> std::result::Result<(), String>;
+    ) -> std::result::Result<(), common::error::Error>;
 
     /// 测试通用 Webhook 渠道连接
     ///
@@ -41,7 +42,7 @@ pub trait WebhookDao: Send + Sync {
         &self,
         ctx: RequestContext,
         channel: &MessageChannel,
-    ) -> std::result::Result<(), String>;
+    ) -> std::result::Result<(), common::error::Error>;
 }
 
 pub mod http;

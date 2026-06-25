@@ -1,11 +1,12 @@
 //! Artifact DAO layer
 //! Artifacts are task outputs (reports, audio, video, etc.).
 
-use crate::error::Result;
+use common::error::Result;
 use crate::models::artifact::ArtifactPo;
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
 use common::enums::{ArtifactSourceType, FileType};
+use common::bail_err;
 
 /// Artifact 查询参数
 #[derive(Debug, Clone, Default)]

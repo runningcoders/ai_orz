@@ -128,6 +128,8 @@ fn registry_uses_injected_http_protocol_factory() {
     use rig::tool::ToolError;
     use serde_json::Value;
     use std::sync::{Arc, Mutex};
+use common::error::Result;
+use common::bail_err;
 
     #[derive(Clone)]
     struct DummyHttpTool {
@@ -140,7 +142,7 @@ fn registry_uses_injected_http_protocol_factory() {
             &self,
             _ctx: crate::pkg::RequestContext,
             _args: Value,
-        ) -> Result<Value, ToolError> {
+        ) -> Result<Value> {
             Ok(json!({ "ok": true }))
         }
 

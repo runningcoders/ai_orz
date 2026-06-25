@@ -12,7 +12,7 @@
 
 pub mod macros;
 
-use crate::error::AppError;
+use common::error::{Error, Result};
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use async_trait::async_trait;
@@ -28,14 +28,14 @@ use std::pin::Pin;
 ///
 /// This trait is implemented for handler functions that:
 /// - Take `RequestContext` + parsed parameters
-/// - Return `Result<T, AppError>`
+/// - Return `Result<T>`
 /// - `T` is `Serialize` for JSON response
 #[async_trait]
 pub trait HandlerFn<Params>: Send + Sync + DynClone
 where
     Params: for<'de> Deserialize<'de> + Serialize + Send + Sync + Clone + 'static,
 {
-    async fn call(&self, ctx: RequestContext, params: Params) -> Result<Value, AppError>;
+    async fn call(&self, ctx: RequestContext, params: Params) -> Result<Value>;
 }
 
 // Clone implementation for boxed HandlerFn
@@ -45,7 +45,7 @@ dyn_clone::clone_trait_object!(<Params> HandlerFn<Params> where Params: for<'de>
 #[derive(Clone)]
 pub struct GenericHandlerFn<Params, F>
 where
-    F: Fn(RequestContext, Params) -> Pin<Box<dyn Future<Output = Result<Value, AppError>> + Send>>
+    F: Fn(RequestContext, Params) -> Pin<Box<dyn Future<Output = Result<Value>> + Send>>
         + Send
         + Sync
         + Clone
@@ -58,7 +58,7 @@ where
 
 impl<Params, F> GenericHandlerFn<Params, F>
 where
-    F: Fn(RequestContext, Params) -> Pin<Box<dyn Future<Output = Result<Value, AppError>> + Send>>
+    F: Fn(RequestContext, Params) -> Pin<Box<dyn Future<Output = Result<Value>> + Send>>
         + Send
         + Sync
         + Clone
@@ -76,14 +76,14 @@ where
 #[async_trait]
 impl<Params, F> HandlerFn<Params> for GenericHandlerFn<Params, F>
 where
-    F: Fn(RequestContext, Params) -> Pin<Box<dyn Future<Output = Result<Value, AppError>> + Send>>
+    F: Fn(RequestContext, Params) -> Pin<Box<dyn Future<Output = Result<Value>> + Send>>
         + Send
         + Sync
         + Clone
         + 'static,
     Params: for<'de> Deserialize<'de> + Serialize + Send + Sync + Clone + 'static,
 {
-    async fn call(&self, ctx: RequestContext, params: Params) -> Result<Value, AppError> {
+    async fn call(&self, ctx: RequestContext, params: Params) -> Result<Value> {
         (self.f)(ctx, params).await
     }
 }
@@ -93,7 +93,7 @@ where
 #[derive(Clone)]
 pub struct GenericTypedHandlerFn<Params, Output, F>
 where
-    F: Fn(RequestContext, Params) -> Pin<Box<dyn Future<Output = Result<Output, AppError>> + Send>>
+    F: Fn(RequestContext, Params) -> Pin<Box<dyn Future<Output = Result<Output>> + Send>>
         + Send
         + Sync
         + Clone
@@ -107,7 +107,7 @@ where
 
 impl<Params, Output, F> GenericTypedHandlerFn<Params, Output, F>
 where
-    F: Fn(RequestContext, Params) -> Pin<Box<dyn Future<Output = Result<Output, AppError>> + Send>>
+    F: Fn(RequestContext, Params) -> Pin<Box<dyn Future<Output = Result<Output>> + Send>>
         + Send
         + Sync
         + Clone
@@ -126,7 +126,7 @@ where
 #[async_trait]
 impl<Params, Output, F> HandlerFn<Params> for GenericTypedHandlerFn<Params, Output, F>
 where
-    F: Fn(RequestContext, Params) -> Pin<Box<dyn Future<Output = Result<Output, AppError>> + Send>>
+    F: Fn(RequestContext, Params) -> Pin<Box<dyn Future<Output = Result<Output>> + Send>>
         + Send
         + Sync
         + Clone
@@ -134,7 +134,7 @@ where
     Params: for<'de> Deserialize<'de> + Serialize + Send + Sync + Clone + 'static,
     Output: Serialize + Send + Sync + Clone + 'static,
 {
-    async fn call(&self, ctx: RequestContext, params: Params) -> Result<Value, AppError> {
+    async fn call(&self, ctx: RequestContext, params: Params) -> Result<Value> {
         let output = (self.f)(ctx, params).await?;
         let value = serde_json::to_value(output)?;
         Ok(value)
@@ -179,7 +179,7 @@ impl<Params> CoreTool for HandlerToolAdapter<Params>
 where
     Params: for<'de> Deserialize<'de> + Serialize + Send + Sync + Clone + 'static,
 {
-    async fn call(&self, mut ctx: RequestContext, args: Value) -> Result<Value, ToolError> {
+    async fn call(&self, mut ctx: RequestContext, args: Value) -> Result<Value> {
         // Parse JSON args to Params type
         let params: Params = match serde_json::from_value(args) {
             Ok(p) => p,
@@ -235,7 +235,7 @@ impl HandlerToolBuilder {
         F: Fn(
                 RequestContext,
                 Params,
-            ) -> Pin<Box<dyn Future<Output = Result<Value, AppError>> + Send>>
+            ) -> Pin<Box<dyn Future<Output = Result<Value>> + Send>>
             + Send
             + Sync
             + Clone
@@ -243,6 +243,8 @@ impl HandlerToolBuilder {
         Params: for<'de> Deserialize<'de> + Serialize + Send + Sync + Clone + 'static,
     {
         use common::enums::tool::{ControlMode, ToolProtocol, ToolStatus};
+use common::error::Result;
+use common::bail_err;
 
         let mut po = ToolPo::new(
             self.id.clone(),
@@ -263,8 +265,8 @@ impl HandlerToolBuilder {
     }
 }
 
-/// Helper: convert AppError to ToolError
-pub fn app_error_to_tool_error(e: AppError) -> ToolError {
+/// Helper: convert common::error::Error to ToolError
+pub fn app_error_to_tool_error(e: common::error::Error) -> ToolError {
     ToolError::ToolCallError(e.to_string().into())
 }
 

@@ -4,7 +4,7 @@
 //! persistence of `McpServerPo`; this DAL exposes the `McpServer` business entity
 //! to upper layers and performs minimal configuration validation.
 
-use crate::error::AppError;
+use common::error::{err, bail_err, Result};
 use crate::models::mcp_server::{
     McpServer, McpServerPo, McpServerQuery, McpServerStatus, McpTransport,
 };
@@ -25,6 +25,8 @@ pub fn dal() -> Arc<dyn McpServerDal + Send + Sync> {
 /// Initialize global MCP Server DAL using global DAO singletons.
 pub fn init() {
     use crate::service::dao::mcp_server;
+use common::err;
+use common::bail_err;
     let _ = MCP_SERVER_DAL.set(new(mcp_server::dao(), tool_call::mcp_dao()));
 }
 
@@ -41,30 +43,30 @@ pub fn new(
 
 #[async_trait]
 pub trait McpServerDal: Send + Sync {
-    async fn create(&self, ctx: RequestContext, server: &McpServer) -> Result<(), AppError>;
+    async fn create(&self, ctx: RequestContext, server: &McpServer) -> Result<()>;
 
     async fn find_by_id(
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<McpServer>, AppError>;
+    ) -> Result<Option<McpServer>>;
 
     async fn query(
         &self,
         ctx: RequestContext,
         query: McpServerQuery,
-    ) -> Result<PagedResult<McpServer>, AppError>;
+    ) -> Result<PagedResult<McpServer>>;
 
-    async fn update(&self, ctx: RequestContext, server: &McpServer) -> Result<(), AppError>;
+    async fn update(&self, ctx: RequestContext, server: &McpServer) -> Result<()>;
 
     async fn set_status(
         &self,
         ctx: RequestContext,
         id: &str,
         status: McpServerStatus,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
-    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()>;
 }
 
 pub struct McpServerDalImpl {
@@ -74,7 +76,7 @@ pub struct McpServerDalImpl {
 
 #[async_trait]
 impl McpServerDal for McpServerDalImpl {
-    async fn create(&self, ctx: RequestContext, server: &McpServer) -> Result<(), AppError> {
+    async fn create(&self, ctx: RequestContext, server: &McpServer) -> Result<()> {
         validate_mcp_server_po(&server.po)?;
         let mut po = server.po.clone();
         let now = common::constants::utils::current_timestamp();
@@ -90,7 +92,7 @@ impl McpServerDal for McpServerDalImpl {
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<McpServer>, AppError> {
+    ) -> Result<Option<McpServer>> {
         Ok(self
             .mcp_server_dao
             .find_by_id(ctx, id)
@@ -102,7 +104,7 @@ impl McpServerDal for McpServerDalImpl {
         &self,
         ctx: RequestContext,
         query: McpServerQuery,
-    ) -> Result<PagedResult<McpServer>, AppError> {
+    ) -> Result<PagedResult<McpServer>> {
         Ok(self
             .mcp_server_dao
             .query(ctx, query)
@@ -110,7 +112,7 @@ impl McpServerDal for McpServerDalImpl {
             .map(McpServer::from_po))
     }
 
-    async fn update(&self, ctx: RequestContext, server: &McpServer) -> Result<(), AppError> {
+    async fn update(&self, ctx: RequestContext, server: &McpServer) -> Result<()> {
         validate_mcp_server_po(&server.po)?;
         let mut po = server.po.clone();
         po.touch(Some(ctx.uid()));
@@ -124,20 +126,20 @@ impl McpServerDal for McpServerDalImpl {
         ctx: RequestContext,
         id: &str,
         status: McpServerStatus,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         self.mcp_server_dao.set_status(ctx, id, status).await?;
         self.mcp_tool_call_dao.invalidate_mcp_server(id);
         Ok(())
     }
 
-    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<(), AppError> {
+    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()> {
         self.mcp_server_dao.delete(ctx, id).await?;
         self.mcp_tool_call_dao.invalidate_mcp_server(id);
         Ok(())
     }
 }
 
-fn validate_mcp_server_po(po: &McpServerPo) -> Result<(), AppError> {
+fn validate_mcp_server_po(po: &McpServerPo) -> Result<()> {
     let config = po.config();
     match po.transport {
         McpTransport::Stdio => {
@@ -148,17 +150,11 @@ fn validate_mcp_server_po(po: &McpServerPo) -> Result<(), AppError> {
                 .trim()
                 .is_empty()
             {
-                return Err(AppError::BadRequest(format!(
-                    "MCP stdio server {} requires command",
-                    po.id
-                )));
+                bail_err!(InvalidRequest, "MCP stdio server {} requires command", po.id);
             }
         }
         McpTransport::StreamableHttp => {
-            return Err(AppError::BadRequest(
-                "MCP streamable_http server management is not available until HTTP security policy is implemented"
-                    .to_string(),
-            ));
+            bail_err!(InvalidRequest, "MCP streamable_http server management is not available until HTTP security policy is implemented");
         }
     }
 

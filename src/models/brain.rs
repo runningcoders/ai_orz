@@ -12,6 +12,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use common::enums::ModelCapability;
 use dyn_clone::DynClone;
+use common::error::Result;
+use common::bail_err;
 
 /// 统一的 CortexTrait - 大脑皮层 trait，定义推理接口
 #[async_trait]

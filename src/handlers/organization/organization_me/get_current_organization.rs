@@ -1,10 +1,11 @@
 //! Handler: GET /api/v1/organization/me - Get current authenticated user's organization information
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{
+use common::bail_err;
     GetCurrentOrganizationRequest, GetCurrentOrganizationResponse, OrganizationInfoResponse,
 };
 
@@ -19,12 +20,12 @@ use common::api::{
 pub async fn get_current_organization(
     ctx: RequestContext,
     _params: GetCurrentOrganizationRequest,
-) -> Result<GetCurrentOrganizationResponse, AppError> {
+) -> Result<GetCurrentOrganizationResponse> {
     // 从 RequestContext 获取当前组织 ID
     let org_id = ctx
         .organization_id
         .clone()
-        .ok_or_else(|| AppError::BadRequest("未找到组织信息".to_string()))?;
+        .ok_or_else(|| common::error::Error::bad_request("未找到组织信息".to_string()))?;
 
     let domain = organization::domain();
     // 获取组织完整信息
@@ -32,7 +33,7 @@ pub async fn get_current_organization(
         .organization_manage()
         .get_by_id(ctx, &org_id)
         .await?
-        .ok_or_else(|| AppError::NotFound("组织不存在".to_string()))?;
+        .ok_or_else(|| common::error::Error::not_found("组织不存在".to_string()))?;
 
     // 转换为响应格式
     let data = OrganizationInfoResponse {

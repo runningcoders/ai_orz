@@ -1,17 +1,18 @@
 //! Runtime Tool Call 查询辅助逻辑
 
-use crate::error::AppError;
+use common::error::{Error, Result};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_tracing::entry::ToolCallStatus;
 use crate::pkg::tool_tracing::logger::{MAX_TOOL_CALL_QUERY_LIMIT, ToolCallQuery};
+use common::bail_err;
 
 /// Merge explicit query scope with RequestContext scope and fail closed when no scope exists.
 pub(crate) fn with_context_scope(
     ctx: RequestContext,
     mut query: ToolCallQuery,
-) -> Result<ToolCallQuery, AppError> {
+) -> Result<ToolCallQuery> {
     if ctx.agent_id.is_none() && ctx.project_id.is_none() && ctx.task_id.is_none() {
-        return Err(AppError::BadRequest(
+        return Err(common::error::Error::bad_request(
             "tool call query requires scoped request context".to_string(),
         ));
     }
@@ -30,7 +31,7 @@ pub(crate) fn with_context_scope(
 
     if let Some(limit) = query.limit {
         if limit > MAX_TOOL_CALL_QUERY_LIMIT {
-            return Err(AppError::BadRequest(format!(
+            return Err(common::error::Error::bad_request(format!(
                 "tool call query limit must be <= {MAX_TOOL_CALL_QUERY_LIMIT}"
             )));
         }
@@ -49,10 +50,10 @@ pub(crate) fn with_context_scope(
     Ok(query)
 }
 
-pub(crate) fn ensure_call_id_present(query: &ToolCallQuery) -> Result<(), AppError> {
+pub(crate) fn ensure_call_id_present(query: &ToolCallQuery) -> Result<()> {
     match query.call_id.as_deref() {
         Some(call_id) if !call_id.trim().is_empty() => Ok(()),
-        _ => Err(AppError::BadRequest(
+        _ => Err(common::error::Error::bad_request(
             "tool call detail lookup requires call_id".to_string(),
         )),
     }
@@ -62,14 +63,14 @@ fn ensure_scope_does_not_conflict(
     field: &str,
     context_value: Option<&str>,
     query_value: Option<&str>,
-) -> Result<(), AppError> {
+) -> Result<()> {
     match (context_value, query_value) {
         (Some(context_value), Some(query_value)) if context_value != query_value => {
-            Err(AppError::BadRequest(format!(
+            Err(common::error::Error::bad_request(format!(
                 "tool call query {field} conflicts with request context"
             )))
         }
-        (None, Some(_)) => Err(AppError::BadRequest(format!(
+        (None, Some(_)) => Err(common::error::Error::bad_request(format!(
             "tool call query {field} requires matching request context scope"
         ))),
         _ => Ok(()),

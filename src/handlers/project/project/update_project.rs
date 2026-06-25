@@ -1,11 +1,12 @@
 //! Handler: PUT /api/v1/projects/{id} - Update project basic information
 
 use super::response;
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateProjectRequest, UpdateProjectResponse};
+use common::bail_err;
 
 /// Update project basic information
 #[register_handler_tool(
@@ -18,7 +19,7 @@ use common::api::{UpdateProjectRequest, UpdateProjectResponse};
 pub async fn update_project(
     ctx: RequestContext,
     params: UpdateProjectRequest,
-) -> Result<UpdateProjectResponse, AppError> {
+) -> Result<UpdateProjectResponse> {
     let modified_by = ctx.uid();
     let project = domain()
         .project_manage()

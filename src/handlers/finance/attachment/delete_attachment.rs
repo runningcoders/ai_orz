@@ -6,30 +6,32 @@ use axum::{
 };
 use common::api::{ApiResponse, EmptyResponse};
 
-use crate::error::AppError;
+use common::error::{err, bail_err, Result};
 use crate::models::attachment::AttachmentGetOptions;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
+use common::err;
+use common::bail_err;
 
 /// 删除 Attachment
 /// DELETE /attachments/{id}
 pub async fn delete_attachment(
     Extension(ctx): Extension<RequestContext>,
     Path(id): Path<String>,
-) -> Result<Json<ApiResponse<EmptyResponse>>, AppError> {
+) -> Result<Json<ApiResponse<EmptyResponse>>> {
     let user_id = ctx.uid();
     if user_id.is_empty() {
-        return Err(AppError::BadRequest("当前请求缺少用户上下文".to_string()));
+        bail_err!(InvalidRequest, "当前请求缺少用户上下文");
     }
 
     let attachment = domain()
         .attachment_manage()
         .get_attachment(ctx.clone(), &id, AttachmentGetOptions::default())
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Attachment {} not found", id)))?;
+        .ok_or_else(|| err!(NotFound, "Attachment {} not found", id))?;
 
     if attachment.po.root_user_id != user_id {
-        return Err(AppError::NotFound(format!("Attachment {} not found", id)));
+        bail_err!(NotFound, "Attachment {} not found", id);
     }
 
     domain()

@@ -4,6 +4,7 @@
 mod tests {
     use super::*;
     use ::fastembed::{TextEmbedding, InitOptions};
+use common::bail_err;
 
     #[tokio::test]
     async fn test_fastembed_basic() {

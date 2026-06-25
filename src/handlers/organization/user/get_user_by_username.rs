@@ -1,11 +1,12 @@
 //! Handler: GET /api/v1/organizations/users/by-username/{username} - Get user by username
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetUserByUsernameRequest, GetUserByUsernameResponse};
+use common::bail_err;
 
 /// Find a user by username (used for login authentication)
 #[register_handler_tool(
@@ -18,7 +19,7 @@ use common::api::{GetUserByUsernameRequest, GetUserByUsernameResponse};
 pub async fn get_user_by_username(
     ctx: RequestContext,
     params: GetUserByUsernameRequest,
-) -> Result<GetUserByUsernameResponse, AppError> {
+) -> Result<GetUserByUsernameResponse> {
     let domain = organization::domain();
     let user = domain
         .user_manage()

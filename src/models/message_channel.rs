@@ -13,6 +13,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use sqlx::types::Json;
 use std::collections::HashMap;
+use common::error::Result;
+use common::bail_err;
 
 /// MessageChannel 业务实体
 #[derive(Debug, Clone)]
@@ -87,7 +89,7 @@ impl MessageChannel {
         &mut self,
         target: ChannelStatus,
         modified_by: impl Into<String>,
-    ) -> Result<(), String> {
+    ) -> Result<()> {
         if !self.can_transition_to(target) {
             return Err(format!(
                 "MessageChannel {} cannot transition from {:?} to {:?}",

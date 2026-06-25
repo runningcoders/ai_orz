@@ -15,6 +15,8 @@ use super::logger::ToolCallLogger;
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use common::constants::utils::current_timestamp_ms;
+use common::error::Result;
+use common::bail_err;
 
 /// Logging decorator that wraps a Tool instance and automatically logs all calls
 #[derive(Clone)]
@@ -40,7 +42,7 @@ impl LoggingDecorator {
         &self,
         ctx: RequestContext,
         args: Value,
-    ) -> (Result<Value, ToolError>, ToolCallEntry) {
+    ) -> (Result<Value>, ToolCallEntry) {
         let call_id = Uuid::now_v7().to_string();
         let started_at = current_timestamp_ms();
         let po = self.inner.po();
@@ -109,7 +111,7 @@ fn redact_trace_values_for_tool(
 
 #[async_trait]
 impl CoreTool for LoggingDecorator {
-    async fn call(&self, ctx: RequestContext, args: Value) -> Result<Value, ToolError> {
+    async fn call(&self, ctx: RequestContext, args: Value) -> Result<Value> {
         let (result, entry) = self.call_with_entry(ctx, args).await;
         // Log the entry immediately
         let tool_id = entry.tool_id.clone();

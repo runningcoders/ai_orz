@@ -1,12 +1,14 @@
 //! SQLite implementation of Attachment DAO
 
 use super::{AttachmentDao, AttachmentQuery};
-use crate::error::{AppError, Result};
+use common::error::{err, bail_err, Error, Result};
 use crate::models::attachment::AttachmentPo;
 use crate::pkg::RequestContext;
 use sqlx::SqlitePool;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, OnceLock};
+use common::err;
+use common::bail_err;
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -49,17 +51,17 @@ impl AttachmentDaoSqliteImpl {
 
     fn resolve_relative_path(&self, relative_path: &str) -> Result<PathBuf> {
         if relative_path.trim().is_empty() {
-            return Err(AppError::BadRequest("附件相对路径不能为空".to_string()));
+            bail_err!(InvalidRequest, "附件相对路径不能为空");
         }
         let path = Path::new(relative_path);
         if path.is_absolute() {
-            return Err(AppError::BadRequest("附件路径不能是绝对路径".to_string()));
+            bail_err!(InvalidRequest, "附件路径不能是绝对路径");
         }
         for component in path.components() {
             match component {
                 Component::Normal(_) => {}
                 _ => {
-                    return Err(AppError::BadRequest("附件路径包含非法路径片段".to_string()));
+                    bail_err!(InvalidRequest, "附件路径包含非法路径片段");
                 }
             }
         }

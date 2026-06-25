@@ -13,6 +13,8 @@ use tempfile::tempdir;
 use super::entry::{ToolCallEntry, ToolCallStatus};
 use super::logger::ToolCallLogger;
 use super::tool_call_logger::LoggingDecorator;
+use common::error::Result;
+use common::bail_err;
 
 #[test]
 fn test_logger_creates_correct_directory_structure() {
@@ -299,7 +301,7 @@ struct FakeCoreTool {
 
 #[async_trait]
 impl CoreTool for FakeCoreTool {
-    async fn call(&self, _ctx: RequestContext, _args: Value) -> Result<Value, ToolError> {
+    async fn call(&self, _ctx: RequestContext, _args: Value) -> Result<Value> {
         Ok(self.result.clone())
     }
 
@@ -340,7 +342,7 @@ struct FailingFakeCoreTool {
 
 #[async_trait]
 impl CoreTool for FailingFakeCoreTool {
-    async fn call(&self, _ctx: RequestContext, _args: Value) -> Result<Value, ToolError> {
+    async fn call(&self, _ctx: RequestContext, _args: Value) -> Result<Value> {
         Err(ToolError::ToolCallError(
             "http request failed for https://api.example.invalid/search?access_token=placeholder-value"
                 .into(),

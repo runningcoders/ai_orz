@@ -1,10 +1,11 @@
 //! Handler: DELETE /api/v1/organizations/{id} - Delete an organization
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{DeleteOrganizationRequest, DeleteOrganizationResponse};
+use common::bail_err;
 
 /// Delete an organization (requires admin privileges)
 #[register_handler_tool(
@@ -17,7 +18,7 @@ use common::api::{DeleteOrganizationRequest, DeleteOrganizationResponse};
 pub async fn delete_organization(
     ctx: RequestContext,
     params: DeleteOrganizationRequest,
-) -> Result<DeleteOrganizationResponse, AppError> {
+) -> Result<DeleteOrganizationResponse> {
     let domain = organization::domain();
     domain
         .organization_manage()

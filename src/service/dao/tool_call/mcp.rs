@@ -16,6 +16,8 @@ use common::enums::ToolProtocol;
 use rig::tool::ToolDyn;
 use serde_json::Value;
 use std::sync::Arc;
+use common::error::Result;
+use common::bail_err;
 
 /// MCP-specific ToolCall DAO contract.
 ///
@@ -94,7 +96,7 @@ impl ToolCallDao for McpToolCallDaoImpl {
         ctx: RequestContext,
         tool: &Tool,
         args: Value,
-    ) -> std::result::Result<(Value, ToolCallEntry), ToolExecutionError> {
+    ) -> Result<Value> {
         self.base.call_manual(ctx, tool, args).await
     }
 }

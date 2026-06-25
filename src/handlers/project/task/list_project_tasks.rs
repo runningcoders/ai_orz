@@ -1,11 +1,12 @@
 //! Handler: GET /api/v1/projects/{project_id}/tasks - List tasks under a project
 
 use super::response;
-use crate::error::AppError;
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListProjectTasksRequest, TaskListItem};
+use common::bail_err;
 
 /// List all tasks under a specific project, with optional status filtering
 #[register_handler_tool(
@@ -18,7 +19,7 @@ use common::api::{ListProjectTasksRequest, TaskListItem};
 pub async fn list_project_tasks(
     ctx: RequestContext,
     params: ListProjectTasksRequest,
-) -> Result<Vec<TaskListItem>, AppError> {
+) -> Result<Vec<TaskListItem>> {
     let tasks = domain()
         .task_manage()
         .list(

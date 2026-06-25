@@ -17,6 +17,8 @@ use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::time::Duration;
 use tokio::net::lookup_host;
+use common::error::Result;
+use common::bail_err;
 
 /// Protocol-level HTTP tool factory.
 ///
@@ -100,7 +102,7 @@ impl HttpCoreTool {
 
 #[async_trait]
 impl CoreTool for HttpCoreTool {
-    async fn call(&self, _ctx: RequestContext, args: Value) -> Result<Value, ToolError> {
+    async fn call(&self, _ctx: RequestContext, args: Value) -> Result<Value> {
         execute_http_call(&self.config, self.po.parameters_schema.as_ref(), args)
             .await
             .map_err(|e| ToolError::ToolCallError(e.to_string().into()))
@@ -519,7 +521,7 @@ fn render_value_template(value: &Value, args: &Value) -> Result<Value> {
         Value::Object(object) => object
             .iter()
             .map(|(key, value)| Ok((key.clone(), render_value_template(value, args)?)))
-            .collect::<Result<Map<String, Value>>>()
+            .collect::<Result<Map<String>>>()
             .map(Value::Object),
         value => Ok(value.clone()),
     }

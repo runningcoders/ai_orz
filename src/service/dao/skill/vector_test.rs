@@ -1,12 +1,14 @@
 //! Skill Vector DAO 单元测试
 //! 使用 InMemoryVectorStore（纯 Rust 实现，零系统依赖）
 
-use crate::error::AppError;
+use common::error::Error;
 use crate::models::vector::VectorIndexParams;
 use crate::pkg::RequestContext;
 use crate::service::dao::skill::{self, SkillVectorDao};
 use sqlx::SqlitePool;
 use std::sync::Arc;
+use common::error::Result;
+use common::bail_err;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     RequestContext::new_simple(user_id, pool)
@@ -38,7 +40,7 @@ fn create_test_vector_params(skill_id: &str, dimension: usize) -> VectorIndexPar
 
 /// 测试插入向量索引并搜索
 #[sqlx::test]
-async fn test_upsert_and_search_vector(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_upsert_and_search_vector(pool: SqlitePool) -> Result<()> {
     let ctx = new_ctx("test_user", pool.clone());
     let vector_dao = init_test_env();
 
@@ -67,7 +69,7 @@ async fn test_upsert_and_search_vector(pool: SqlitePool) -> Result<(), AppError>
 
 /// 测试 upsert 可以更新已有向量
 #[sqlx::test]
-async fn test_upsert_update_existing(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_upsert_update_existing(pool: SqlitePool) -> Result<()> {
     let ctx = new_ctx("test_user", pool.clone());
     let vector_dao = init_test_env();
 
@@ -101,7 +103,7 @@ async fn test_upsert_update_existing(pool: SqlitePool) -> Result<(), AppError> {
 
 /// 测试获取 content_hash
 #[sqlx::test]
-async fn test_get_content_hash(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_get_content_hash(pool: SqlitePool) -> Result<()> {
     let ctx = new_ctx("test_user", pool.clone());
     let vector_dao = init_test_env();
 
@@ -121,7 +123,7 @@ async fn test_get_content_hash(pool: SqlitePool) -> Result<(), AppError> {
 
 /// 测试获取不存在的 content_hash 返回 None
 #[sqlx::test]
-async fn test_get_content_hash_not_found(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_get_content_hash_not_found(pool: SqlitePool) -> Result<()> {
     let ctx = new_ctx("test_user", pool.clone());
     let vector_dao = init_test_env();
 
@@ -136,7 +138,7 @@ async fn test_get_content_hash_not_found(pool: SqlitePool) -> Result<(), AppErro
 
 /// 测试搜索时 top_k 限制生效
 #[sqlx::test]
-async fn test_search_vector_top_k_limit(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_search_vector_top_k_limit(pool: SqlitePool) -> Result<()> {
     let ctx = new_ctx("test_user", pool.clone());
     let vector_dao = init_test_env();
 
@@ -162,7 +164,7 @@ async fn test_search_vector_top_k_limit(pool: SqlitePool) -> Result<(), AppError
 
 /// 测试空集合搜索返回空
 #[sqlx::test]
-async fn test_search_vector_empty(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_search_vector_empty(pool: SqlitePool) -> Result<()> {
     let ctx = new_ctx("test_user", pool.clone());
     let vector_dao = init_test_env();
 

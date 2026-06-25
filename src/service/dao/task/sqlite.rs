@@ -7,6 +7,8 @@ use crate::pkg::RequestContext;
 use common::enums::{AssigneeType, TaskStatus};
 use std::sync::Arc;
 use std::sync::OnceLock;
+use common::error::Result;
+use common::bail_err;
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -48,7 +50,7 @@ impl TaskDaoSqliteImpl {
 
 #[async_trait::async_trait]
 impl TaskDao for TaskDaoSqliteImpl {
-    async fn insert(&self, ctx: RequestContext, task: &TaskPo) -> Result<(), AppError> {
+    async fn insert(&self, ctx: RequestContext, task: &TaskPo) -> Result<()> {
         let pool = ctx.db_pool();
         let status_i32 = task.status as i32;
         let assignee_type_i32 = task.assignee_type as i32;
@@ -82,7 +84,7 @@ impl TaskDao for TaskDaoSqliteImpl {
         Ok(())
     }
 
-    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<TaskPo>, AppError> {
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<TaskPo>> {
         let pool = ctx.db_pool();
         let task = sqlx::query_as!(
             TaskPo,
@@ -99,7 +101,7 @@ FROM tasks WHERE id = ? AND "status" != 0
         Ok(task)
     }
 
-    async fn query(&self, ctx: RequestContext, query: TaskQuery) -> Result<Vec<TaskPo>, AppError> {
+    async fn query(&self, ctx: RequestContext, query: TaskQuery) -> Result<Vec<TaskPo>> {
         let mut builder = sqlx::QueryBuilder::new(
             r#"SELECT id, title, description, "status", priority, tags, due_at, start_at, end_at, dependencies, root_user_id, "assignee_type", assignee_id, project_id, thinking_depth, created_by, modified_by, created_at, updated_at FROM tasks WHERE 1=1"#,
         );
@@ -155,7 +157,7 @@ FROM tasks WHERE id = ? AND "status" != 0
         assignee_type: Option<AssigneeType>,
         assignee_id: &str,
         limit: Option<usize>,
-    ) -> Result<Vec<TaskPo>, AppError> {
+    ) -> Result<Vec<TaskPo>> {
         // 语法糖：调用通用查询
         self.query(
             ctx,
@@ -176,7 +178,7 @@ FROM tasks WHERE id = ? AND "status" != 0
         assignee_id: &str,
         status: Vec<TaskStatus>,
         limit: Option<usize>,
-    ) -> Result<Vec<TaskPo>, AppError> {
+    ) -> Result<Vec<TaskPo>> {
         // 语法糖：调用通用查询
         self.query(
             ctx,
@@ -191,7 +193,7 @@ FROM tasks WHERE id = ? AND "status" != 0
         .await
     }
 
-    async fn update(&self, ctx: RequestContext, task: &TaskPo) -> Result<(), AppError> {
+    async fn update(&self, ctx: RequestContext, task: &TaskPo) -> Result<()> {
         let pool = ctx.db_pool();
         let ctx_user_id = ctx.user_id.clone().unwrap_or_default();
         let now = common::constants::utils::current_timestamp();
@@ -246,7 +248,7 @@ WHERE id = ?
         id: &str,
         status: TaskStatus,
         modified_by: &str,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         let pool = ctx.db_pool();
         let now = common::constants::utils::current_timestamp();
         let status_i32 = status as i32;
@@ -268,7 +270,7 @@ UPDATE tasks SET "status" = ?, modified_by = ?, updated_at = ? WHERE id = ?
         &self,
         ctx: RequestContext,
         assignee_id: &str,
-    ) -> Result<u64, AppError> {
+    ) -> Result<u64> {
         let pool = ctx.db_pool();
         let row = sqlx::query!(
             "SELECT COUNT(*) as \"count: i64\" FROM tasks WHERE assignee_id = ? AND \"status\" != 0",
@@ -284,7 +286,7 @@ UPDATE tasks SET "status" = ?, modified_by = ?, updated_at = ? WHERE id = ?
         ctx: RequestContext,
         assignee_id: &str,
         status: TaskStatus,
-    ) -> Result<u64, AppError> {
+    ) -> Result<u64> {
         let pool = ctx.db_pool();
         let status_i32 = status as i32;
         let row = sqlx::query!(

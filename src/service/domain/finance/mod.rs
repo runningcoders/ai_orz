@@ -27,7 +27,7 @@ mod mcp_server_test;
 #[cfg(test)]
 mod tool_provider_test;
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::models::attachment::{
     Attachment, AttachmentGetOptions, AttachmentReadResult, AttachmentTextContent,
     AttachmentUpload, TextAttachmentCreate, TextContentUpdate,
@@ -43,6 +43,7 @@ use crate::service::dal::model_provider::ModelProviderDal;
 use crate::service::dal::tool::ToolDal;
 use async_trait::async_trait;
 use std::sync::{Arc, OnceLock};
+use common::bail_err;
 
 // ==================== 单例管理 ====================
 
@@ -124,41 +125,41 @@ pub trait ModelProviderManage: Send + Sync {
         &self,
         ctx: RequestContext,
         provider: &ModelProvider,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 获取 Model Provider
     async fn get_model_provider(
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<ModelProvider>, AppError>;
+    ) -> Result<Option<ModelProvider>>;
 
     /// 通用综合查询
     async fn query(
         &self,
         ctx: RequestContext,
         query: crate::service::dao::model_provider::ModelProviderQuery,
-    ) -> Result<Vec<ModelProvider>, AppError>;
+    ) -> Result<Vec<ModelProvider>>;
 
     /// 列出所有 Model Provider
     async fn list_model_providers(
         &self,
         ctx: RequestContext,
-    ) -> Result<Vec<ModelProvider>, AppError>;
+    ) -> Result<Vec<ModelProvider>>;
 
     /// 更新 Model Provider
     async fn update_model_provider(
         &self,
         ctx: RequestContext,
         provider: &ModelProvider,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 删除 Model Provider
     async fn delete_model_provider(
         &self,
         ctx: RequestContext,
         provider: &ModelProvider,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 测试 Model Provider 连接
     async fn test_connection(
@@ -166,7 +167,7 @@ pub trait ModelProviderManage: Send + Sync {
         ctx: RequestContext,
         provider: &ModelProvider,
         prompt: &str,
-    ) -> Result<String, AppError>;
+    ) -> Result<String>;
 }
 
 /// Message Channel 管理 trait
@@ -179,48 +180,48 @@ pub trait MessageChannelManage: Send + Sync {
         &self,
         ctx: RequestContext,
         channel: &crate::models::message_channel::MessageChannel,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 获取 Message Channel
     async fn get_message_channel(
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<crate::models::message_channel::MessageChannel>, AppError>;
+    ) -> Result<Option<crate::models::message_channel::MessageChannel>>;
 
     /// 通用综合查询
     async fn query_channels(
         &self,
         ctx: RequestContext,
         query: crate::service::dao::message_channel::MessageChannelQuery,
-    ) -> Result<Vec<crate::models::message_channel::MessageChannel>, AppError>;
+    ) -> Result<Vec<crate::models::message_channel::MessageChannel>>;
 
     /// 列出所有 Message Channel
     async fn list_message_channels(
         &self,
         ctx: RequestContext,
-    ) -> Result<Vec<crate::models::message_channel::MessageChannel>, AppError>;
+    ) -> Result<Vec<crate::models::message_channel::MessageChannel>>;
 
     /// 更新 Message Channel
     async fn update_message_channel(
         &self,
         ctx: RequestContext,
         channel: &crate::models::message_channel::MessageChannel,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 删除 Message Channel
     async fn delete_message_channel(
         &self,
         ctx: RequestContext,
         channel: &crate::models::message_channel::MessageChannel,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 测试 Message Channel 连通性
     async fn test_message_channel(
         &self,
         ctx: RequestContext,
         channel: &crate::models::message_channel::MessageChannel,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 }
 
 /// Attachment 管理 trait
@@ -233,14 +234,14 @@ pub trait AttachmentManage: Send + Sync {
         &self,
         ctx: RequestContext,
         upload: AttachmentUpload,
-    ) -> Result<Attachment, AppError>;
+    ) -> Result<Attachment>;
 
     /// 创建小型 UTF-8 文本 Attachment。
     async fn create_text_attachment(
         &self,
         ctx: RequestContext,
         create: TextAttachmentCreate,
-    ) -> Result<Attachment, AppError>;
+    ) -> Result<Attachment>;
 
     /// 获取上传文件资产。
     async fn get_attachment(
@@ -248,14 +249,14 @@ pub trait AttachmentManage: Send + Sync {
         ctx: RequestContext,
         id: &str,
         options: AttachmentGetOptions,
-    ) -> Result<Option<Attachment>, AppError>;
+    ) -> Result<Option<Attachment>>;
 
     /// 读取 Attachment UTF-8 文本内容。
     async fn get_attachment_text_content(
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<AttachmentTextContent>, AppError>;
+    ) -> Result<Option<AttachmentTextContent>>;
 
     /// 全量替换 Attachment UTF-8 文本内容。
     async fn update_attachment_text_content(
@@ -263,17 +264,17 @@ pub trait AttachmentManage: Send + Sync {
         ctx: RequestContext,
         id: &str,
         update: TextContentUpdate,
-    ) -> Result<Option<AttachmentTextContent>, AppError>;
+    ) -> Result<Option<AttachmentTextContent>>;
 
     /// 查询上传文件资产。
     async fn query_attachments(
         &self,
         ctx: RequestContext,
         query: crate::service::dao::attachment::AttachmentQuery,
-    ) -> Result<Vec<Attachment>, AppError>;
+    ) -> Result<Vec<Attachment>>;
 
     /// 删除上传文件资产。
-    async fn delete_attachment(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+    async fn delete_attachment(&self, ctx: RequestContext, id: &str) -> Result<()>;
 }
 
 /// MCP Server 管理 trait
@@ -286,34 +287,34 @@ pub trait McpServerManage: Send + Sync {
         &self,
         ctx: RequestContext,
         server: &crate::models::mcp_server::McpServer,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 获取 MCP Server
     async fn get_mcp_server(
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> Result<Option<crate::models::mcp_server::McpServer>, AppError>;
+    ) -> Result<Option<crate::models::mcp_server::McpServer>>;
 
     /// 通用综合查询
     async fn query_mcp_servers(
         &self,
         ctx: RequestContext,
         query: crate::models::mcp_server::McpServerQuery,
-    ) -> Result<common::api::PagedResult<crate::models::mcp_server::McpServer>, AppError>;
+    ) -> Result<common::api::PagedResult<crate::models::mcp_server::McpServer>>;
 
     /// 列出所有 MCP Server
     async fn list_mcp_servers(
         &self,
         ctx: RequestContext,
-    ) -> Result<Vec<crate::models::mcp_server::McpServer>, AppError>;
+    ) -> Result<Vec<crate::models::mcp_server::McpServer>>;
 
     /// 更新 MCP Server
     async fn update_mcp_server(
         &self,
         ctx: RequestContext,
         server: &crate::models::mcp_server::McpServer,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 更新 MCP Server 状态
     async fn update_mcp_server_status(
@@ -321,10 +322,10 @@ pub trait McpServerManage: Send + Sync {
         ctx: RequestContext,
         id: &str,
         status: crate::models::mcp_server::McpServerStatus,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 删除 MCP Server
-    async fn delete_mcp_server(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+    async fn delete_mcp_server(&self, ctx: RequestContext, id: &str) -> Result<()>;
 }
 
 /// MCP Tool 管理 trait
@@ -334,14 +335,14 @@ pub trait McpServerManage: Send + Sync {
 pub trait McpToolManage: Send + Sync {
     /// 从指定 MCP Server 同步远端 tools/list 到本地 Tool 记录。
     async fn sync_mcp_tools(&self, ctx: RequestContext, server_id: &str)
-    -> Result<usize, AppError>;
+    -> Result<usize>;
 
     /// 查询指定 MCP Server 绑定的本地 MCP Tool 记录。
     async fn list_mcp_tools_by_server(
         &self,
         ctx: RequestContext,
         params: common::api::ListMcpToolsByServerRequest,
-    ) -> Result<common::api::PagedResult<crate::models::tool::Tool>, AppError>;
+    ) -> Result<common::api::PagedResult<crate::models::tool::Tool>>;
 }
 
 /// Tool Provider 管理 trait
@@ -354,41 +355,41 @@ pub trait ToolProviderManage: Send + Sync {
         &self,
         ctx: RequestContext,
         tool: &crate::models::tool::Tool,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 获取 Tool
     async fn get_tool(
         &self,
         ctx: RequestContext,
         tool_id: &str,
-    ) -> Result<Option<crate::models::tool::Tool>, AppError>;
+    ) -> Result<Option<crate::models::tool::Tool>>;
 
     /// 通用综合查询
     async fn query_tools(
         &self,
         ctx: RequestContext,
         query: crate::service::dao::tool::ToolQuery,
-    ) -> Result<Vec<crate::models::tool::Tool>, AppError>;
+    ) -> Result<Vec<crate::models::tool::Tool>>;
 
     /// 列出所有 Tool
     async fn list_tools(
         &self,
         ctx: RequestContext,
-    ) -> Result<Vec<crate::models::tool::Tool>, AppError>;
+    ) -> Result<Vec<crate::models::tool::Tool>>;
 
     /// 更新 Tool
     async fn update_tool(
         &self,
         ctx: RequestContext,
         tool: &crate::models::tool::Tool,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 删除 Tool
     async fn delete_tool(
         &self,
         ctx: RequestContext,
         tool: &crate::models::tool::Tool,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// ===== 工具借用（绑定）管理 =====
     /// Agent 借用工具（绑定）
@@ -397,7 +398,7 @@ pub trait ToolProviderManage: Send + Sync {
         ctx: RequestContext,
         agent_id: &str,
         tool_id: &str,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// Agent 归还工具（解绑）
     async fn unbind_tool_from_agent(
@@ -405,21 +406,21 @@ pub trait ToolProviderManage: Send + Sync {
         ctx: RequestContext,
         agent_id: &str,
         tool_id: &str,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 获取 Agent 借用的所有工具 ID
     async fn get_agent_bound_tool_ids(
         &self,
         ctx: RequestContext,
         agent_id: &str,
-    ) -> Result<Vec<String>, AppError>;
+    ) -> Result<Vec<String>>;
 
     /// 获取 Agent 借用的所有工具
     async fn list_agent_tools(
         &self,
         ctx: RequestContext,
         agent_id: &str,
-    ) -> Result<Vec<crate::models::tool::Tool>, AppError>;
+    ) -> Result<Vec<crate::models::tool::Tool>>;
 
     /// 搜索工具（向量 + 关键词混合搜索）
     ///
@@ -428,7 +429,7 @@ pub trait ToolProviderManage: Send + Sync {
         &self,
         ctx: RequestContext,
         params: crate::service::dao::tool::ToolSearch,
-    ) -> Result<Vec<crate::models::tool::Tool>, AppError>;
+    ) -> Result<Vec<crate::models::tool::Tool>>;
 }
 
 // ==================== 实现 ====================

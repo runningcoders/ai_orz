@@ -15,6 +15,8 @@ use common::enums::{ControlMode, ToolProtocol, ToolStatus};
 use serde_json::json;
 use sqlx::SqlitePool;
 use std::sync::{Arc, Once};
+use common::error::Result;
+use common::bail_err;
 
 fn mcp_tool_po(server_id: &str, tool_name: &str) -> ToolPo {
     ToolPo::new(

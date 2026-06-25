@@ -1,10 +1,12 @@
 //! Handler: PUT /api/v1/project/artifacts/{id}/content - Update artifact text content
 
-use crate::error::AppError;
+use common::bail_err;
 use crate::handlers::project::artifact::response;
 use crate::pkg::RequestContext;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::artifact::{ArtifactDetail, UpdateArtifactContentRequest};
+use common::error::Result;
+use common::err;
 
 /// Update the full text content of a generated-content artifact (full replace)
 #[register_handler_tool(
@@ -17,15 +19,13 @@ use common::api::artifact::{ArtifactDetail, UpdateArtifactContentRequest};
 pub async fn update_artifact_content(
     ctx: RequestContext,
     params: UpdateArtifactContentRequest,
-) -> Result<ArtifactDetail, AppError> {
+) -> Result<ArtifactDetail> {
     let domain = crate::service::domain::project::domain();
     // Convert String content to bytes
     let content_bytes = params.content.into_bytes();
     // Validate content size (max 1MB for text)
     if content_bytes.len() > 1024 * 1024 {
-        return Err(AppError::BadRequest(
-            "Text content exceeds maximum size of 1MB".to_string(),
-        ));
+        bail_err!(InvalidRequest, "Text content exceeds maximum size of 1MB");
     }
 
     let updated_artifact = domain

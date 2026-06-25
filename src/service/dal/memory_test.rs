@@ -1,6 +1,6 @@
 //! Memory DAL 单元测试
 
-use crate::error::AppError;
+use common::error::Error;
 use crate::models::brain::CortexTrait;
 use crate::models::memory::{
     KnowledgeNodeRelationPo, KnowledgeReferencePo, LongTermKnowledgeNodePo, Memory,
@@ -18,6 +18,8 @@ use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderQuery};
 use common::enums::MemoryStatus;
 use sqlx::SqlitePool;
 use std::sync::Arc;
+use common::error::Result;
+use common::bail_err;
 
 // ========== Mock 实现 ==========
 
@@ -30,44 +32,44 @@ impl ModelProviderDao for MockModelProviderDao {
         &self,
         _ctx: RequestContext,
         _provider: &ModelProviderPo,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         Ok(())
     }
     async fn find_by_id(
         &self,
         _ctx: RequestContext,
         _id: &str,
-    ) -> Result<Option<ModelProviderPo>, AppError> {
+    ) -> Result<Option<ModelProviderPo>> {
         Ok(None)
     }
     async fn query(
         &self,
         _ctx: RequestContext,
         _query: ModelProviderQuery,
-    ) -> Result<Vec<ModelProviderPo>, AppError> {
+    ) -> Result<Vec<ModelProviderPo>> {
         Ok(Vec::new())
     }
-    async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<ModelProviderPo>, AppError> {
+    async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<ModelProviderPo>> {
         Ok(Vec::new())
     }
     async fn update(
         &self,
         _ctx: RequestContext,
         _provider: &ModelProviderPo,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         Ok(())
     }
     async fn delete(
         &self,
         _ctx: RequestContext,
         _provider: &ModelProviderPo,
-    ) -> Result<(), AppError> {
+    ) -> Result<()> {
         Ok(())
     }
     async fn get_default_embedding_provider(
         &self,
         _ctx: RequestContext,
-    ) -> Result<Option<ModelProviderPo>, AppError> {
+    ) -> Result<Option<ModelProviderPo>> {
         Ok(None)
     }
 }
@@ -222,7 +224,7 @@ async fn init_test_tables(pool: &SqlitePool) {
 // ========== 测试用例 ==========
 
 #[sqlx::test]
-async fn test_query_short_term(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_query_short_term(pool: SqlitePool) -> Result<()> {
     init_test_tables(&pool).await;
     let dal = init_test(pool.clone()).await;
     let ctx = create_test_ctx(pool);
@@ -272,7 +274,7 @@ async fn test_query_short_term(pool: SqlitePool) -> Result<(), AppError> {
 }
 
 #[sqlx::test]
-async fn test_query_with_status_filter(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_query_with_status_filter(pool: SqlitePool) -> Result<()> {
     init_test_tables(&pool).await;
     let dal = init_test(pool.clone()).await;
     let ctx = create_test_ctx(pool.clone());
@@ -362,7 +364,7 @@ async fn test_query_with_status_filter(pool: SqlitePool) -> Result<(), AppError>
 }
 
 #[sqlx::test]
-async fn test_query_empty_result(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_query_empty_result(pool: SqlitePool) -> Result<()> {
     init_test_tables(&pool).await;
     let dal = init_test(pool.clone()).await;
     let ctx = create_test_ctx(pool);
@@ -382,7 +384,7 @@ async fn test_query_empty_result(pool: SqlitePool) -> Result<(), AppError> {
 // ========== create 方法测试 ==========
 
 #[sqlx::test]
-async fn test_create_append_traces(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_create_append_traces(pool: SqlitePool) -> Result<()> {
     init_test_tables(&pool).await;
     let dal = init_test(pool.clone()).await;
     let ctx = create_test_ctx(pool);
@@ -416,7 +418,7 @@ async fn test_create_append_traces(pool: SqlitePool) -> Result<(), AppError> {
 }
 
 #[sqlx::test]
-async fn test_create_short_term(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_create_short_term(pool: SqlitePool) -> Result<()> {
     init_test_tables(&pool).await;
     let dal = init_test(pool.clone()).await;
     let ctx = create_test_ctx(pool.clone());
@@ -463,7 +465,7 @@ async fn test_create_short_term(pool: SqlitePool) -> Result<(), AppError> {
 }
 
 #[sqlx::test]
-async fn test_create_knowledge_node(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_create_knowledge_node(pool: SqlitePool) -> Result<()> {
     init_test_tables(&pool).await;
     let dal = init_test(pool.clone()).await;
     let ctx = create_test_ctx(pool.clone());
@@ -505,7 +507,7 @@ async fn test_create_knowledge_node(pool: SqlitePool) -> Result<(), AppError> {
 }
 
 #[sqlx::test]
-async fn test_create_relations(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_create_relations(pool: SqlitePool) -> Result<()> {
     init_test_tables(&pool).await;
     let dal = init_test(pool.clone()).await;
     let ctx = create_test_ctx(pool.clone());
@@ -584,7 +586,7 @@ async fn test_create_relations(pool: SqlitePool) -> Result<(), AppError> {
 // ========== delete 方法测试 ==========
 
 #[sqlx::test]
-async fn test_delete_short_term(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_delete_short_term(pool: SqlitePool) -> Result<()> {
     init_test_tables(&pool).await;
     let dal = init_test(pool.clone()).await;
     let ctx = create_test_ctx(pool.clone());
@@ -628,7 +630,7 @@ async fn test_delete_short_term(pool: SqlitePool) -> Result<(), AppError> {
 }
 
 #[sqlx::test]
-async fn test_delete_knowledge_node(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_delete_knowledge_node(pool: SqlitePool) -> Result<()> {
     init_test_tables(&pool).await;
     let dal = init_test(pool.clone()).await;
     let ctx = create_test_ctx(pool.clone());
@@ -670,7 +672,7 @@ async fn test_delete_knowledge_node(pool: SqlitePool) -> Result<(), AppError> {
 }
 
 #[sqlx::test]
-async fn test_delete_trace_unsupported(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_delete_trace_unsupported(pool: SqlitePool) -> Result<()> {
     init_test_tables(&pool).await;
     let dal = init_test(pool.clone()).await;
     let ctx = create_test_ctx(pool);
@@ -696,7 +698,7 @@ async fn test_delete_trace_unsupported(pool: SqlitePool) -> Result<(), AppError>
 }
 
 #[sqlx::test]
-async fn test_search_short_term(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_search_short_term(pool: SqlitePool) -> Result<()> {
     init_test_tables(&pool).await;
     let dal = init_test(pool.clone()).await;
     let ctx = create_test_ctx(pool.clone());
@@ -811,7 +813,7 @@ async fn test_search_short_term(pool: SqlitePool) -> Result<(), AppError> {
 }
 
 #[sqlx::test]
-async fn test_search_knowledge_nodes(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_search_knowledge_nodes(pool: SqlitePool) -> Result<()> {
     init_test_tables(&pool).await;
     let dal = init_test(pool.clone()).await;
     let ctx = create_test_ctx(pool.clone());
@@ -941,7 +943,7 @@ async fn test_search_knowledge_nodes(pool: SqlitePool) -> Result<(), AppError> {
 }
 
 #[sqlx::test]
-async fn test_update_short_term(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_update_short_term(pool: SqlitePool) -> Result<()> {
     init_test_tables(&pool).await;
     let dal = init_test(pool.clone()).await;
     let ctx = create_test_ctx(pool.clone());
@@ -1008,7 +1010,7 @@ async fn test_update_short_term(pool: SqlitePool) -> Result<(), AppError> {
 }
 
 #[sqlx::test]
-async fn test_update_knowledge_node(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_update_knowledge_node(pool: SqlitePool) -> Result<()> {
     init_test_tables(&pool).await;
     let dal = init_test(pool.clone()).await;
     let ctx = create_test_ctx(pool.clone());
@@ -1078,7 +1080,7 @@ async fn test_update_knowledge_node(pool: SqlitePool) -> Result<(), AppError> {
 }
 
 #[sqlx::test]
-async fn test_update_trace_unsupported(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_update_trace_unsupported(pool: SqlitePool) -> Result<()> {
     init_test_tables(&pool).await;
     let dal = init_test(pool.clone()).await;
     let ctx = create_test_ctx(pool);
@@ -1104,7 +1106,7 @@ async fn test_update_trace_unsupported(pool: SqlitePool) -> Result<(), AppError>
 }
 
 #[sqlx::test]
-async fn test_update_relation_unsupported(pool: SqlitePool) -> Result<(), AppError> {
+async fn test_update_relation_unsupported(pool: SqlitePool) -> Result<()> {
     init_test_tables(&pool).await;
     let dal = init_test(pool.clone()).await;
     let ctx = create_test_ctx(pool);

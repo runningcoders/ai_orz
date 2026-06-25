@@ -5,6 +5,7 @@ use serde_json::{Map, Value};
 
 use crate::models::tool::Tool;
 use crate::pkg::tool_tracing::entry::{ToolCallEntry, ToolCallStatus};
+use common::bail_err;
 
 pub(crate) fn to_list_item(tool: &Tool) -> ToolListItem {
     ToolListItem {

@@ -209,6 +209,7 @@ fn rand_u32() -> u32 {
 
 fn current_timestamp() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
+use common::bail_err;
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()

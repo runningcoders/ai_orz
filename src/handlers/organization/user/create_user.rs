@@ -1,6 +1,6 @@
 //! Handler: POST /api/v1/organizations/users - Create a new user in current organization
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
@@ -8,6 +8,7 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CreateUserRequest, CreateUserResponse};
 use common::enums::UserRole;
 use rand::Rng;
+use common::bail_err;
 
 /// Create a new user within the current authenticated user's organization
 #[register_handler_tool(
@@ -20,12 +21,12 @@ use rand::Rng;
 pub async fn create_user(
     ctx: RequestContext,
     params: CreateUserRequest,
-) -> Result<CreateUserResponse, AppError> {
+) -> Result<CreateUserResponse> {
     // 从 RequestContext 获取当前组织 ID
     let organization_id = ctx
         .organization_id
         .clone()
-        .ok_or_else(|| AppError::BadRequest("未找到组织信息".to_string()))?;
+        .ok_or_else(|| common::error::Error::bad_request("未找到组织信息".to_string()))?;
 
     let domain = organization::domain();
 

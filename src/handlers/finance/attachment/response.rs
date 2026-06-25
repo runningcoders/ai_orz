@@ -1,5 +1,6 @@
 use crate::models::attachment::{Attachment, AttachmentTextContent};
 use common::api::{AttachmentContentResponse, AttachmentDetail, TextContentResponse};
+use common::bail_err;
 
 pub(super) fn to_detail(attachment: &Attachment) -> AttachmentDetail {
     AttachmentDetail {

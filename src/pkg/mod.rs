@@ -9,6 +9,7 @@ pub mod tool_registry;
 pub mod tool_tracing;
 
 use common::config::AppConfig;
+use common::bail_err;
 
 pub use request_context::*;
 

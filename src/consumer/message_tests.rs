@@ -2,7 +2,7 @@
 
 use super::MessageHandler;
 use super::message::*;
-use crate::error::{AppError, Result};
+use crate::error::{common::error::Error, Result};
 use crate::models::agent::Agent;
 use crate::models::file::FileMeta;
 use crate::models::memory::{Memory, MemoryTrace};
@@ -98,7 +98,7 @@ async fn init_storage_for_test() {
 struct RecordingRuntimeDomain {
     calls: Mutex<Vec<(String, Value)>>,
     manual_calls: Mutex<Vec<(String, String, Value)>>,
-    result: Mutex<std::result::Result<ToolExecutionResult, String>>,
+    result: Mutex<std::result::Result<ToolExecutionResult, common::error::Error>>,
 }
 
 impl RecordingRuntimeDomain {
@@ -185,7 +185,7 @@ impl RuntimeMemory for RecordingRuntimeDomain {
         _agent_id: &str,
         _task_id: Option<&str>,
         _limit: usize,
-    ) -> std::result::Result<Vec<Memory>, AppError> {
+    ) -> std::result::Result<Vec<Memory, common::error::Error>> {
         unimplemented!("not needed by message consumer tests")
     }
 
@@ -193,7 +193,7 @@ impl RuntimeMemory for RecordingRuntimeDomain {
         &self,
         _ctx: RequestContext,
         _trace: MemoryTrace,
-    ) -> std::result::Result<Memory, AppError> {
+    ) -> std::result::Result<Memory, common::error::Error> {
         unimplemented!("not needed by message consumer tests")
     }
 }
@@ -205,7 +205,7 @@ impl RuntimeAwakening for RecordingRuntimeDomain {
         _ctx: RequestContext,
         _agent: &Agent,
         _message: &Message,
-    ) -> std::result::Result<AwakeningResult, AppError> {
+    ) -> std::result::Result<AwakeningResult, common::error::Error> {
         unimplemented!("not needed by message consumer tests")
     }
 }
@@ -217,7 +217,7 @@ impl RuntimeToolExecution for RecordingRuntimeDomain {
         _ctx: RequestContext,
         tool_id: String,
         args: Value,
-    ) -> std::result::Result<ToolExecutionResult, ToolExecutionError> {
+    ) -> std::result::Result<ToolExecutionResult, common::error::Error> {
         self.calls.lock().unwrap().push((tool_id, args));
         match self.result.lock().unwrap().clone() {
             Ok(result) => Ok(result),
@@ -230,7 +230,7 @@ impl RuntimeToolExecution for RecordingRuntimeDomain {
         _ctx: RequestContext,
         tool: &Tool,
         args: Value,
-    ) -> std::result::Result<ToolExecutionResult, ToolExecutionError> {
+    ) -> std::result::Result<ToolExecutionResult, common::error::Error> {
         self.calls.lock().unwrap().push((tool.po.id.clone(), args));
         match self.result.lock().unwrap().clone() {
             Ok(result) => Ok(result),
@@ -244,7 +244,7 @@ impl RuntimeToolExecution for RecordingRuntimeDomain {
         agent_id: String,
         tool_id: String,
         args: Value,
-    ) -> std::result::Result<ToolExecutionResult, ToolExecutionError> {
+    ) -> std::result::Result<ToolExecutionResult, common::error::Error> {
         self.manual_calls
             .lock()
             .unwrap()
@@ -259,7 +259,7 @@ impl RuntimeToolExecution for RecordingRuntimeDomain {
         &self,
         _ctx: RequestContext,
         _query: crate::pkg::tool_tracing::logger::ToolCallQuery,
-    ) -> std::result::Result<Vec<crate::pkg::tool_tracing::entry::ToolCallEntry>, AppError> {
+    ) -> std::result::Result<Vec<crate::pkg::tool_tracing::entry::ToolCallEntry, common::error::Error>> {
         unimplemented!("not needed by message consumer tests")
     }
 
@@ -267,7 +267,7 @@ impl RuntimeToolExecution for RecordingRuntimeDomain {
         &self,
         _ctx: RequestContext,
         _query: crate::pkg::tool_tracing::logger::ToolCallQuery,
-    ) -> std::result::Result<Option<crate::pkg::tool_tracing::entry::ToolCallEntry>, AppError> {
+    ) -> std::result::Result<Option<crate::pkg::tool_tracing::entry::ToolCallEntry, common::error::Error>> {
         unimplemented!("not needed by message consumer tests")
     }
 }
@@ -308,7 +308,7 @@ impl MessageDelivery for RecordingMessageDomain {
         &self,
         _ctx: RequestContext,
         _cmd: SendToAgentCommand<'_>,
-    ) -> std::result::Result<Message, AppError> {
+    ) -> std::result::Result<Message, common::error::Error> {
         unimplemented!("not needed by message consumer tests")
     }
 
@@ -316,7 +316,7 @@ impl MessageDelivery for RecordingMessageDomain {
         &self,
         _ctx: RequestContext,
         _cmd: SendToUserCommand<'_>,
-    ) -> std::result::Result<Message, AppError> {
+    ) -> std::result::Result<Message, common::error::Error> {
         unimplemented!("not needed by message consumer tests")
     }
 
@@ -324,7 +324,7 @@ impl MessageDelivery for RecordingMessageDomain {
         &self,
         _ctx: RequestContext,
         _cmd: SendToolCallRequestCommand<'_>,
-    ) -> std::result::Result<Message, AppError> {
+    ) -> std::result::Result<Message, common::error::Error> {
         unimplemented!("not needed by message consumer tests")
     }
 
@@ -332,7 +332,7 @@ impl MessageDelivery for RecordingMessageDomain {
         &self,
         _ctx: RequestContext,
         cmd: SendToolCallResultCommand<'_>,
-    ) -> std::result::Result<Message, AppError> {
+    ) -> std::result::Result<Message, common::error::Error> {
         self.sent_results
             .lock()
             .unwrap()
@@ -343,7 +343,7 @@ impl MessageDelivery for RecordingMessageDomain {
     async fn dequeue_next(
         &self,
         _ctx: RequestContext,
-    ) -> std::result::Result<Option<Message>, AppError> {
+    ) -> std::result::Result<Option<Message, common::error::Error>> {
         unimplemented!("not needed by message consumer tests")
     }
 
@@ -351,7 +351,7 @@ impl MessageDelivery for RecordingMessageDomain {
         &self,
         _ctx: RequestContext,
         _message_id: &str,
-    ) -> std::result::Result<(), AppError> {
+    ) -> std::result::Result<(), common::error::Error> {
         unimplemented!("not needed by message consumer tests")
     }
 
@@ -359,7 +359,7 @@ impl MessageDelivery for RecordingMessageDomain {
         &self,
         _ctx: RequestContext,
         _message_id: &str,
-    ) -> std::result::Result<(), AppError> {
+    ) -> std::result::Result<(), common::error::Error> {
         unimplemented!("not needed by message consumer tests")
     }
 
@@ -367,7 +367,7 @@ impl MessageDelivery for RecordingMessageDomain {
         &self,
         _ctx: RequestContext,
         _cmd: DeliverMessageCommand<'_>,
-    ) -> std::result::Result<DeliveryResult, AppError> {
+    ) -> std::result::Result<DeliveryResult, common::error::Error> {
         unimplemented!("not needed by message consumer tests")
     }
 }
@@ -378,7 +378,7 @@ impl MessageManagement for RecordingMessageDomain {
         &self,
         _ctx: RequestContext,
         _query: MessageQuery,
-    ) -> std::result::Result<Vec<Message>, AppError> {
+    ) -> std::result::Result<Vec<Message, common::error::Error>> {
         unimplemented!("not needed by message consumer tests")
     }
 
@@ -386,7 +386,7 @@ impl MessageManagement for RecordingMessageDomain {
         &self,
         _ctx: RequestContext,
         _task_id: &str,
-    ) -> std::result::Result<Vec<Message>, AppError> {
+    ) -> std::result::Result<Vec<Message, common::error::Error>> {
         unimplemented!("not needed by message consumer tests")
     }
 
@@ -394,7 +394,7 @@ impl MessageManagement for RecordingMessageDomain {
         &self,
         _ctx: RequestContext,
         _project_id: &str,
-    ) -> std::result::Result<Vec<Message>, AppError> {
+    ) -> std::result::Result<Vec<Message, common::error::Error>> {
         unimplemented!("not needed by message consumer tests")
     }
 
@@ -402,7 +402,7 @@ impl MessageManagement for RecordingMessageDomain {
         &self,
         _ctx: RequestContext,
         _message_id: &str,
-    ) -> std::result::Result<Option<Message>, AppError> {
+    ) -> std::result::Result<Option<Message, common::error::Error>> {
         unimplemented!("not needed by message consumer tests")
     }
 
@@ -411,7 +411,7 @@ impl MessageManagement for RecordingMessageDomain {
         _ctx: RequestContext,
         _message_id: &str,
         _status: MessageStatus,
-    ) -> std::result::Result<(), AppError> {
+    ) -> std::result::Result<(), common::error::Error> {
         unimplemented!("not needed by message consumer tests")
     }
 
@@ -419,7 +419,7 @@ impl MessageManagement for RecordingMessageDomain {
         &self,
         _ctx: RequestContext,
         _message_id: &str,
-    ) -> std::result::Result<(), AppError> {
+    ) -> std::result::Result<(), common::error::Error> {
         unimplemented!("not needed by message consumer tests")
     }
 
@@ -427,7 +427,7 @@ impl MessageManagement for RecordingMessageDomain {
         &self,
         _ctx: RequestContext,
         _task_id: &str,
-    ) -> std::result::Result<(), AppError> {
+    ) -> std::result::Result<(), common::error::Error> {
         unimplemented!("not needed by message consumer tests")
     }
 }
@@ -734,6 +734,7 @@ mod tool_call_request_tests {
 #[cfg(test)]
 mod singleton_tests {
     use super::*;
+use common::bail_err;
 
     #[test]
     fn test_get_consumer_does_not_panic() {

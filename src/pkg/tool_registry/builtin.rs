@@ -3,6 +3,7 @@
 use crate::models::tool::{CoreTool, ToolPo};
 use dyn_clone::DynClone;
 use dyn_clone::clone_trait_object;
+use common::bail_err;
 
 /// Built-in tool factory - creates tool instance from given ToolPo
 ///

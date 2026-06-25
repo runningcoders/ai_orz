@@ -1,6 +1,6 @@
 //! MessageChannel DAO SQLite 实现
 
-use crate::error::Result;
+use common::error::Result;
 use crate::models::message_channel::MessageChannelPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::message_channel::{MessageChannelDao, MessageChannelQuery};
@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use common::enums::ChannelStatus;
 use std::sync::{Arc, OnceLock};
+use common::bail_err;
 
 /// MessageChannel DAO SQLite 实现
 #[derive(Debug, Clone, Default)]

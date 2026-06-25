@@ -8,6 +8,7 @@ use crate::models::tool::ToolPo;
 use crate::service::dao::tool_call::{self, McpToolCallDao, ToolCallDao};
 use common::enums::ToolProtocol;
 use serde_json::json;
+use common::bail_err;
 
 fn mcp_tool_po(server_id: &str, tool_name: &str) -> ToolPo {
     ToolPo::new(

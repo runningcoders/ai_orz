@@ -1,12 +1,14 @@
 //! Handler: POST /api/v1/tasks - Create a new task
 
 use super::response;
-use crate::error::AppError;
+use common::bail_err;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CreateTaskRequest, CreateTaskResponse};
 use common::enums::AssigneeType;
+use common::error::Result;
+use common::err;
 
 /// Create a new task
 #[register_handler_tool(
@@ -19,16 +21,16 @@ use common::enums::AssigneeType;
 pub async fn create_task(
     ctx: RequestContext,
     params: CreateTaskRequest,
-) -> Result<CreateTaskResponse, AppError> {
+) -> Result<CreateTaskResponse> {
     let current_user_id = ctx.uid();
     if current_user_id.is_empty() {
-        return Err(AppError::BadRequest("当前用户不能为空".to_string()));
+        bail_err!(InvalidRequest, "当前请求缺少用户上下文");
     }
     if params.title.trim().is_empty() {
-        return Err(AppError::BadRequest("任务标题不能为空".to_string()));
+        bail_err!(InvalidRequest, "task title 不能为空");
     }
     if params.assignee_id.trim().is_empty() {
-        return Err(AppError::BadRequest("assignee_id 不能为空".to_string()));
+        bail_err!(InvalidRequest, "assignee_id 不能为空");
     }
 
     let task = domain()

@@ -13,7 +13,7 @@ mod agent_test;
 #[cfg(test)]
 mod skill_test;
 
-use crate::error::AppError;
+use common::error::Result;
 use crate::models::agent::Agent;
 use crate::models::skill::Skill;
 use crate::pkg::RequestContext;
@@ -26,6 +26,7 @@ use crate::service::dal::tool::ToolDal;
 use crate::service::dao::skill::{SkillQuery, SkillSearch};
 use common::enums::{AgentStatus, SkillStatus};
 use std::sync::{Arc, OnceLock};
+use common::bail_err;
 
 // ==================== 单例 ====================
 
@@ -103,10 +104,10 @@ pub trait HrDomain: Send + Sync {
 #[async_trait::async_trait]
 pub trait AgentManage: Send + Sync {
     /// 创建 Agent
-    async fn create_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
+    async fn create_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<()>;
 
     /// 获取 Agent
-    async fn get_agent(&self, ctx: RequestContext, id: &str) -> Result<Option<Agent>, AppError>;
+    async fn get_agent(&self, ctx: RequestContext, id: &str) -> Result<Option<Agent>>;
 
     /// 通用综合查询
     ///
@@ -115,16 +116,16 @@ pub trait AgentManage: Send + Sync {
         &self,
         ctx: RequestContext,
         query: crate::service::dao::agent::AgentQuery,
-    ) -> Result<Vec<Agent>, AppError>;
+    ) -> Result<Vec<Agent>>;
 
     /// 列出所有 Agent
-    async fn list_agents(&self, ctx: RequestContext) -> Result<Vec<Agent>, AppError>;
+    async fn list_agents(&self, ctx: RequestContext) -> Result<Vec<Agent>>;
 
     /// 更新 Agent
-    async fn update_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
+    async fn update_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<()>;
 
     /// 删除 Agent
-    async fn delete_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<(), AppError>;
+    async fn delete_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<()>;
 
     /// 状态流转
     ///
@@ -134,7 +135,7 @@ pub trait AgentManage: Send + Sync {
         ctx: RequestContext,
         agent: &mut Agent,
         target_status: AgentStatus,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 
     /// 校验入职就绪状态
     ///
@@ -143,7 +144,7 @@ pub trait AgentManage: Send + Sync {
         &self,
         ctx: RequestContext,
         agent: &Agent,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 }
 
 /// Skill 附加文件导入数据。
@@ -176,46 +177,46 @@ pub struct UpdateSkillParams<'a> {
 #[async_trait::async_trait]
 pub trait SkillManage: Send + Sync {
     // A. 技能基础管理（CRUD）
-    async fn create_skill(&self, ctx: RequestContext, skill: &Skill) -> Result<(), AppError>;
-    async fn get_skill(&self, ctx: RequestContext, id: &str) -> Result<Option<Skill>, AppError>;
+    async fn create_skill(&self, ctx: RequestContext, skill: &Skill) -> Result<()>;
+    async fn get_skill(&self, ctx: RequestContext, id: &str) -> Result<Option<Skill>>;
     async fn update_skill(
         &self,
         ctx: RequestContext,
         params: UpdateSkillParams<'_>,
-    ) -> Result<(), AppError>;
-    async fn delete_skill(&self, ctx: RequestContext, id: &str) -> Result<(), AppError>;
+    ) -> Result<()>;
+    async fn delete_skill(&self, ctx: RequestContext, id: &str) -> Result<()>;
 
     // B. 技能查询与搜索
     async fn query_skills(
         &self,
         ctx: RequestContext,
         query: SkillQuery,
-    ) -> Result<Vec<Skill>, AppError>;
+    ) -> Result<Vec<Skill>>;
     async fn list_by_status(
         &self,
         ctx: RequestContext,
         status: SkillStatus,
-    ) -> Result<Vec<Skill>, AppError>;
+    ) -> Result<Vec<Skill>>;
     async fn list_by_category(
         &self,
         ctx: RequestContext,
         category: &str,
-    ) -> Result<Vec<Skill>, AppError>;
+    ) -> Result<Vec<Skill>>;
     async fn list_by_author(
         &self,
         ctx: RequestContext,
         author_id: &str,
-    ) -> Result<Vec<Skill>, AppError>;
+    ) -> Result<Vec<Skill>>;
     async fn list_for_agent(
         &self,
         ctx: RequestContext,
         agent_id: &str,
-    ) -> Result<Vec<Skill>, AppError>;
+    ) -> Result<Vec<Skill>>;
     async fn search_skills(
         &self,
         ctx: RequestContext,
         search: SkillSearch,
-    ) -> Result<Vec<Skill>, AppError>;
+    ) -> Result<Vec<Skill>>;
 
     // C. Agent 技能安装
     async fn install_to_agent(
@@ -223,7 +224,7 @@ pub trait SkillManage: Send + Sync {
         ctx: RequestContext,
         source_skill_id: &str,
         agent_id: &str,
-    ) -> Result<Skill, AppError>;
+    ) -> Result<Skill>;
 
     // D. Skill 文件独立操作
     /// 列出 Skill 所有文件，返回文件列表摘要
@@ -231,7 +232,7 @@ pub trait SkillManage: Send + Sync {
         &self,
         ctx: RequestContext,
         skill_id: &str,
-    ) -> Result<Option<Vec<crate::models::skill::SkillFile>>, AppError>;
+    ) -> Result<Option<Vec<crate::models::skill::SkillFile>>>;
 
     /// 读取 Skill 指定文件内容，返回 UTF-8 文本
     async fn get_skill_file_content(
@@ -239,7 +240,7 @@ pub trait SkillManage: Send + Sync {
         ctx: RequestContext,
         skill_id: &str,
         filename: &str,
-    ) -> Result<Option<String>, AppError>;
+    ) -> Result<Option<String>>;
 
     /// 创建或更新 Skill 指定文件内容
     /// 如果 skill 不存在返回 NotFound，如果乐观锁不匹配返回 Conflict
@@ -250,5 +251,5 @@ pub trait SkillManage: Send + Sync {
         filename: &str,
         content: &str,
         expected_updated_at: Option<i64>,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
 }

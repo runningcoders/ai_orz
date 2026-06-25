@@ -7,6 +7,8 @@ use common::enums::{FileType, TaskStatus};
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use uuid::Uuid;
+use common::error::Result;
+use common::bail_err;
 
 /// 初始化测试环境
 fn init_test_env(pool: SqlitePool) -> (Arc<dyn ArtifactDao + Send + Sync>, RequestContext) {

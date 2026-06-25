@@ -4,11 +4,13 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateToolRequest, UpdateToolResponse};
 use common::enums::{ToolProtocol, ToolStatus};
 
-use crate::error::AppError;
+use common::bail_err;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
 use super::response::to_detail;
+use common::error::Result;
+use common::err;
 
 /// Update an existing custom tool's configuration (name, description, credentials, etc.)
 #[register_handler_tool(
@@ -21,27 +23,23 @@ use super::response::to_detail;
 pub async fn update_tool(
     ctx: RequestContext,
     params: UpdateToolRequest,
-) -> Result<UpdateToolResponse, AppError> {
+) -> Result<UpdateToolResponse> {
     let user_id = ctx.uid();
     if user_id.is_empty() {
-        return Err(AppError::BadRequest("当前请求缺少用户上下文".to_string()));
+        bail_err!(InvalidRequest, "当前请求缺少用户上下文");
     }
 
     let mut tool = domain()
         .tool_provider_manage()
         .get_tool(ctx.clone(), &params.id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Tool {} not found", params.id)))?;
+        .ok_or_else(|| err!(NotFound, "Tool {} not found", params.id))?;
 
     if matches!(tool.po.protocol, ToolProtocol::Builtin) {
-        return Err(AppError::BadRequest(
-            "内置 Tool 不允许通过管理接口修改".to_string(),
-        ));
+        bail_err!(InvalidRequest, "内置 Tool 不允许通过管理接口修改");
     }
     if matches!(params.protocol, Some(ToolProtocol::Builtin)) {
-        return Err(AppError::BadRequest(
-            "非内置 Tool 不允许被修改为内置协议".to_string(),
-        ));
+        bail_err!(InvalidRequest, "非内置 Tool 不允许被修改为内置协议");
     }
 
     if let Some(name) = params.name {
@@ -72,7 +70,7 @@ pub async fn update_tool(
             ToolStatus::Disabled
         };
         tool.transition_status(target_status, user_id.clone())
-            .map_err(AppError::BadRequest)?;
+            .map_err(|e| err!(InvalidRequest, "{}", e))?;
     }
     tool.po.touch(Some(user_id));
 
