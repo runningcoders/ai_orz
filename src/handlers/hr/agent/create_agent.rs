@@ -1,13 +1,11 @@
 //! Handler: POST /api/v1/agents - 创建新 Agent
 
-use common::bail_err;
 use crate::models::agent::{Agent, AgentPo};
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CreateAgentRequest, CreateAgentResponse};
-use common::error::Result;
-use common::err;
+use common::error::{Result, err, bail_err};
 
 /// Create a new AI agent
 #[register_handler_tool(

@@ -5,7 +5,6 @@ use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::DeleteSkillRequest;
-use common::bail_err;
 
 /// Delete an existing skill by ID. This operation cannot be undone.
 #[register_handler_tool(

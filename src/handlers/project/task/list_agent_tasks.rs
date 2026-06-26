@@ -7,7 +7,6 @@ use crate::service::domain::project::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListAgentTasksRequest, TaskListItem};
 use common::enums::AssigneeType;
-use common::bail_err;
 
 /// List tasks assigned to a specific agent
 #[register_handler_tool(

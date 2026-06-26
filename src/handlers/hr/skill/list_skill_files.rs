@@ -1,12 +1,10 @@
 //! Handler: GET /api/v1/skills/{skill_id}/files - 列出 Skill 所有文件
 
-use common::bail_err;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListSkillFilesRequest, ListSkillFilesResponse};
-use common::error::Result;
-use common::err;
+use common::error::{Result, err, bail_err};
 
 /// List all files in a skill with their metadata (filename, size)
 #[register_handler_tool(

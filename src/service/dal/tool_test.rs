@@ -14,7 +14,6 @@ use sqlx::SqlitePool;
 use std::sync::Arc;
 use uuid::Uuid;
 use common::error::Result;
-use common::bail_err;
 
 // 测试用的简单工具工厂
 #[derive(Clone)]

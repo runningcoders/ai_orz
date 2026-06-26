@@ -4,7 +4,6 @@
 mod tests {
     use crate::models::model_provider::{ModelProvider, ModelProviderPo};
     use common::enums::{ModelCapability, ProviderType};
-use common::bail_err;
 
     #[test]
     fn test_create_model_provider_po() {

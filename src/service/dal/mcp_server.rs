@@ -25,8 +25,6 @@ pub fn dal() -> Arc<dyn McpServerDal + Send + Sync> {
 /// Initialize global MCP Server DAL using global DAO singletons.
 pub fn init() {
     use crate::service::dao::mcp_server;
-use common::err;
-use common::bail_err;
     let _ = MCP_SERVER_DAL.set(new(mcp_server::dao(), tool_call::mcp_dao()));
 }
 

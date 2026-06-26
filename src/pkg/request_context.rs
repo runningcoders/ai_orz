@@ -241,7 +241,6 @@ fn rand_simple() -> u32 {
     use std::collections::hash_map::RandomState;
     use std::hash::{BuildHasher, Hash, Hasher};
     use std::time::{SystemTime, UNIX_EPOCH};
-use common::bail_err;
     let state = RandomState::new();
     let mut hasher = state.build_hasher();
     SystemTime::now().hash(&mut hasher);

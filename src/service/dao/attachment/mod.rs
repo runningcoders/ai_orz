@@ -7,7 +7,6 @@ use crate::models::attachment::AttachmentPo;
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
 use common::enums::FileType;
-use common::bail_err;
 
 /// Attachment 查询参数。
 #[derive(Debug, Clone, Default)]

@@ -9,9 +9,10 @@
 use crate::models::mcp_server::{McpServerConfig, McpServerPo, McpTransport};
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
-use anyhow::{Result, anyhow};
+use anyhow::anyhow;
 use async_trait::async_trait;
 use common::enums::ToolProtocol;
+use common::error::{err, Result};
 use rig::tool::ToolError;
 use rmcp::{
     RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService,
@@ -24,8 +25,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::process::Command;
-use common::error::Result;
-use common::bail_err;
 
 /// MCP tool binding configuration stored in `ToolPo.config`.
 ///
@@ -81,7 +80,7 @@ impl McpClientRuntime {
             McpTransport::Stdio => self.call_stdio_tool(server, tool_name, args).await,
             McpTransport::StreamableHttp => Err(anyhow!(
                 "MCP streamable HTTP runtime is not implemented yet"
-            )),
+            ).into()),
         };
         if result.is_ok() {
             self.clear_invalidated_server(&server.id);
@@ -94,7 +93,7 @@ impl McpClientRuntime {
             McpTransport::Stdio => self.list_stdio_tools(server).await,
             McpTransport::StreamableHttp => Err(anyhow!(
                 "MCP streamable HTTP runtime is not implemented yet"
-            )),
+            ).into()),
         };
         if result.is_ok() {
             self.clear_invalidated_server(&server.id);
@@ -127,7 +126,7 @@ impl McpClientRuntime {
             return Err(anyhow!(mcp_stdio_session_close_failed_message(
                 &server.id,
                 "tools/list",
-            )));
+            )).into());
         }
 
         Ok(tools
@@ -149,7 +148,7 @@ impl McpClientRuntime {
         let arguments = match args {
             Value::Object(map) => map,
             _other => {
-                return Err(anyhow!("MCP tool arguments must be a JSON object"));
+                return Err(anyhow!("MCP tool arguments must be a JSON object").into());
             }
         };
 
@@ -184,11 +183,11 @@ impl McpClientRuntime {
             return Err(anyhow!(mcp_stdio_session_close_failed_message(
                 &server.id,
                 &format!("tool call {}", tool_name),
-            )));
+            )).into());
         }
 
         serde_json::to_value(result)
-            .map_err(|e| anyhow!("failed to serialize MCP tool result: {}", e))
+            .map_err(|e| anyhow!("failed to serialize MCP tool result: {}", e).into())
     }
 
     #[cfg(test)]
@@ -200,7 +199,7 @@ impl McpClientRuntime {
 async fn connect_stdio_client(
     server: &McpServerPo,
     config: &McpServerConfig,
-) -> Result<RunningService<RoleClient>> {
+) -> common::error::Result<RunningService<RoleClient, ()>> {
     let command = config
         .command
         .as_deref()
@@ -217,7 +216,7 @@ async fn connect_stdio_client(
 
     let transport = TokioChildProcess::new(process)
         .map_err(|_e| anyhow!("failed to spawn MCP stdio server {}", server.id))?;
-    tokio::time::timeout(
+    let service = tokio::time::timeout(
         Duration::from_millis(config.connect_timeout_ms),
         ().serve(transport),
     )
@@ -234,7 +233,9 @@ async fn connect_stdio_client(
             "failed to initialize MCP stdio server {} session",
             server.id
         )
-    })
+    })?;
+
+    Ok(service)
 }
 
 fn mcp_stdio_session_close_failed_message(server_id: &str, operation: &str) -> String {
@@ -250,8 +251,8 @@ fn resolve_command_path(command: &str) -> Result<PathBuf> {
         return Ok(path);
     }
 
-    let paths = std::env::var_os("PATH").ok_or_else(|| {
-        anyhow!("PATH is required to resolve MCP stdio command; use an absolute path instead")
+    let paths = std::env::var_os("PATH").ok_or_else(|| -> common::error::Error {
+        anyhow!("PATH is required to resolve MCP stdio command; use an absolute path instead").into()
     })?;
 
     for dir in std::env::split_paths(&paths) {
@@ -263,7 +264,7 @@ fn resolve_command_path(command: &str) -> Result<PathBuf> {
 
     Err(anyhow!(
         "MCP stdio command was not found in PATH; use an absolute path instead"
-    ))
+    ).into())
 }
 
 /// Runtime dependencies needed to build an executable MCP CoreTool.
@@ -302,7 +303,7 @@ impl McpCoreTool {
                 "mcp tool server_id {} does not match MCP server {}",
                 config.server_id,
                 deps.server.id
-            ));
+            ).into());
         }
 
         Ok(Self {
@@ -331,19 +332,20 @@ impl CoreTool for McpCoreTool {
             )
         })?;
         let client_runtime = self.client_runtime.as_ref().ok_or_else(|| {
-            ToolError::ToolCallError(
-                format!(
-                    "MCP tool {} on server {} is not executable: MCP runtime is not enabled",
-                    self.config.tool_name, self.config.server_id
-                )
-                .into(),
+            err!(
+                ToolExecutionFailed,
+                "MCP tool {} on server {} is not executable: MCP runtime is not enabled",
+                self.config.tool_name, self.config.server_id
             )
         })?;
 
         client_runtime
             .call_tool(server, &self.config.tool_name, args)
             .await
-            .map_err(|e| ToolError::ToolCallError(e.to_string().into()))
+            .map_err(|e| {
+                let msg: String = e.to_string();
+                common::error::Error::new(common::error::ErrorCode::ToolExecutionFailed, msg)
+            })
     }
 
     fn po(&self) -> &ToolPo {
@@ -368,22 +370,23 @@ pub fn validate_tool_po_config(po: &ToolPo) -> Result<()> {
 
 fn parse_and_validate_config(po: &ToolPo) -> Result<McpToolConfig> {
     if po.protocol != ToolProtocol::Mcp {
-        return Err(anyhow!("mcp tool factory only accepts ToolProtocol::Mcp"));
+        return Err(anyhow!("mcp tool factory only accepts ToolProtocol::Mcp").into());
     }
 
     let config: McpToolConfig = serde_json::from_value(po.config.clone())
-        .map_err(|e| anyhow!("invalid mcp tool config for {}: {}", po.id, e))?;
+        .map_err(|e| anyhow!("invalid mcp tool config for {}: {}", po.id, e))
+        .map_err(Into::<common::error::Error>::into)?;
     validate_config(&config)?;
     Ok(config)
 }
 
 fn validate_config(config: &McpToolConfig) -> Result<()> {
     if config.server_id.trim().is_empty() {
-        return Err(anyhow!("mcp tool server_id is required"));
+        return Err(anyhow!("mcp tool server_id is required").into());
     }
 
     if config.tool_name.trim().is_empty() {
-        return Err(anyhow!("mcp tool tool_name is required"));
+        return Err(anyhow!("mcp tool tool_name is required").into());
     }
 
     Ok(())

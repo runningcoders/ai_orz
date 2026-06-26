@@ -7,7 +7,6 @@
 //! - InMemoryVectorStore: 纯 Rust 内存实现（推荐，零系统依赖）
 //! - HnswStore: HNSW 高性能近似最近邻索引（V2 优化）
 
-use crate::error::Result;
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
 use std::sync::Arc;
 
@@ -72,7 +71,7 @@ impl Storage {
             .await?;
 
         // 运行所有 migrations，自动建表/升级
-        sqlx::migrate!("./migrations").run(&sqlite).await?;
+        sqlx::migrate!("./migrations").run(&sqlite).await.map_err(Into::<common::error::Error>::into)?;
 
         // 根据配置选择向量存储后端
         let vector: Arc<dyn VectorStore> = match db_config.vector_store_type {
@@ -135,7 +134,6 @@ impl Storage {
 use std::path::Path;
 use std::sync::OnceLock;
 use common::error::Result;
-use common::bail_err;
 
 /// 全局 Storage 单例（向后兼容）
 static STORAGE_INSTANCE: OnceLock<Storage> = OnceLock::new();

@@ -32,8 +32,6 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         // Step 3: 预先构造 MemoryTrace 拿到 trace_id
         // 调用方负责组装 trace，RuntimeMemory 负责写入和补全信息
         use common::enums::MemoryRole;
-use common::err;
-use common::bail_err;
         let mut trace = MemoryTrace::new(
             agent.po.id.clone(),
             ctx.log_id.clone(),

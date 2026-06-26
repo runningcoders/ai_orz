@@ -4,7 +4,6 @@ use crate::pkg::daily_jsonl::DailyJsonlWriter;
 use serde::{Deserialize, Serialize};
 use tempfile::tempdir;
 use common::error::Result;
-use common::bail_err;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 struct TestLogEntry {

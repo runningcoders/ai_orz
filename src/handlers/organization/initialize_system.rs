@@ -12,12 +12,11 @@ use axum::{
 };
 use common::api::ApiResponse;
 use common::api::{InitializeSystemRequest, InitializeSystemResponse};
-use common::bail_err;
 
 /// 检查系统是否已经初始化
 pub async fn check_initialized(
     Extension(ctx): Extension<RequestContext>,
-) -> std::result::Result<(StatusCode, Json<ApiResponse<bool, common::error::Error>>)> {
+) -> std::result::Result<(StatusCode, Json<ApiResponse<bool>>), common::error::Error> {
     let domain = organization::domain();
     let initialized = domain.organization_manage().check_initialized(ctx).await?;
 

@@ -6,7 +6,6 @@ use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetUserByUsernameRequest, GetUserByUsernameResponse};
-use common::bail_err;
 
 /// Find a user by username (used for login authentication)
 #[register_handler_tool(

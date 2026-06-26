@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Type};
 use std::collections::BTreeMap;
 use uuid::Uuid;
-use common::bail_err;
 
 pub const REDACTED_CONFIG_VALUE: &str = "[REDACTED]";
 

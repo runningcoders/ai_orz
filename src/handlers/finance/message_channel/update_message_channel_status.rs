@@ -1,6 +1,5 @@
 //! Handler: PUT /api/v1/message-channels/{id}/status - Update message channel status (active/disabled)
 
-use common::bail_err;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
@@ -9,8 +8,7 @@ use common::api::{
 };
 
 use super::response::to_detail;
-use common::error::Result;
-use common::err;
+use common::error::{Result, err, bail_err};
 
 /// Update the status of a message channel (enable/disable it)
 #[register_handler_tool(

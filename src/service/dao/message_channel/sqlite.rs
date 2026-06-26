@@ -8,7 +8,6 @@ use async_trait::async_trait;
 use chrono::Utc;
 use common::enums::ChannelStatus;
 use std::sync::{Arc, OnceLock};
-use common::bail_err;
 
 /// MessageChannel DAO SQLite 实现
 #[derive(Debug, Clone, Default)]

@@ -2,7 +2,6 @@
 //!
 //! 负责项目的创建、查询、状态流转
 
-use common::bail_err;
 use crate::models::project::Project;
 use crate::pkg::RequestContext;
 use common::constants::utils;
@@ -10,8 +9,7 @@ use common::enums::project::ProjectStatus;
 use uuid::Uuid;
 
 use super::ProjectDomainImpl;
-use common::error::Result;
-use common::err;
+use common::error::{Result, err, bail_err};
 
 #[async_trait::async_trait]
 impl super::ProjectManage for ProjectDomainImpl {

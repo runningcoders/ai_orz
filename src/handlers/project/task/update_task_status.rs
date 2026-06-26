@@ -6,7 +6,6 @@ use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateTaskStatusRequest, UpdateTaskStatusResponse};
-use common::bail_err;
 
 /// Update task status with state transition validation
 #[register_handler_tool(

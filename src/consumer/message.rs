@@ -1,11 +1,10 @@
 //! Message Topic 消费者
-//!
-//! 负责消费所有类型的消息（用户消息、Agent 间消息、工具调用等）
+//!\n//! 负责消费所有类型的消息（用户消息、Agent 间消息、工具调用等）
 
 use super::{GenericConsumer, MessageFetcher, MessageHandler};
 use common::error::{Error, Result};
 use crate::models::message::{Message, ToolCallMessage};
-use crate::models::tool::ToolExecutionError;
+use crate::models::tool::ToolCallTraceRef;
 use crate::service::domain::message::{
     MessageDomain, SendToolCallResultCommand, ToolCallExecutionOutcome,
 };
@@ -15,7 +14,6 @@ use common::config::TopicConsumerConfig;
 use common::enums::{MessageRole, MessageType};
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
-use common::bail_err;
 
 // ==================== 单例 ====================
 
@@ -185,9 +183,12 @@ impl MessageHandlerImpl {
                 result_file_meta: None,
                 trace_ref: Some(execution_result.trace_ref),
             },
-            Err(err) => ToolCallExecutionOutcome::Failure {
-                error_message: tool_error_message(&err),
-                trace_ref: err.trace_ref,
+            Err(err) => {
+                let trace_ref = err.field().and_then(|f| f.trace_ref.clone());
+                ToolCallExecutionOutcome::Failure {
+                    error_message: tool_error_message(&err),
+                    trace_ref,
+                }
             },
         };
 
@@ -218,8 +219,8 @@ fn parse_tool_call_request(message: &Message) -> Result<ToolCallMessage> {
         .map_err(|err| common::error::Error::bad_request(format!("invalid ToolCallRequest content: {}", err)))
 }
 
-fn tool_error_message(err: &ToolExecutionError) -> String {
-    let message = err.error.to_string();
+fn tool_error_message(err: &Error) -> String {
+    let message = err.to_string();
     message
         .strip_prefix("ToolCallError: ")
         .unwrap_or(&message)

@@ -9,7 +9,6 @@ use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
 use super::response::{to_list_item, to_model_status, to_model_transport};
-use common::bail_err;
 
 /// List management-safe MCP Servers with optional filters.
 #[register_handler_tool(

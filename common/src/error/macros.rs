@@ -90,7 +90,7 @@ macro_rules! err {
     ($variant:ident, $msg:expr $(,)?) => {
         $crate::error::Error::new(
             $crate::error::ErrorCode::$variant,
-            $msg.into(),
+            Into::<String>::into($msg),
         )
     };
     // 2. Variant + error_type + message (format args)
@@ -106,7 +106,7 @@ macro_rules! err {
         $crate::error::Error::typed(
             $crate::error::ErrorCode::$variant,
             $crate::error::ErrorType::$error_type,
-            $msg.into(),
+            Into::<String>::into($msg),
         )
     };
 }

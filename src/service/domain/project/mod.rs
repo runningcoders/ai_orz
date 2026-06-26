@@ -20,7 +20,6 @@ use crate::models::project::Project;
 use crate::models::task::Task;
 use crate::pkg::RequestContext;
 use common::enums::{AssigneeType, FileType, ProjectStatus, TaskStatus};
-use common::bail_err;
 
 mod artifact;
 mod project;
@@ -344,7 +343,14 @@ pub trait ArtifactManage: Send + Sync {
         &self,
         ctx: RequestContext,
         id: &str,
-    ) -> std::result::Result<Option<(Artifact)>, common::error::Error>;
+    ) -> std::result::Result<Option<Artifact>, common::error::Error>;
+
+    /// Read artifact content bytes from storage (only for generated-content artifacts).
+    async fn read_content(
+        &self,
+        ctx: RequestContext,
+        artifact: &Artifact,
+    ) -> Result<Vec<u8>>;
 
     /// Update artifact content (full replace, only for generated-content artifacts).
     /// Returns the updated artifact.

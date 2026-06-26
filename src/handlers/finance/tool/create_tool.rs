@@ -4,12 +4,10 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CreateToolRequest, CreateToolResponse};
 use common::enums::ToolProtocol;
 
-use common::bail_err;
 use crate::models::tool::Tool;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
-use common::error::Result;
-use common::err;
+use common::error::{Result, err, bail_err};
 
 /// Create a new custom tool (HTTP/MCP). Built-in tools cannot be created via this API.
 #[register_handler_tool(

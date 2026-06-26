@@ -4,7 +4,6 @@
 use common::error::{Error, Result};
 use crate::models::event::Event;
 use crate::pkg::RequestContext;
-use common::bail_err;
 
 /// 事件队列 DAO 接口
 ///

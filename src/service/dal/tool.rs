@@ -4,7 +4,7 @@
 //! 负责组合 DAO 完成业务级数据操作
 
 use common::error::{Result};
-use crate::models::tool::{CoreTool, Tool, ToolExecutionError, ToolPo};
+use crate::models::tool::{CoreTool, Tool, ToolPo};
 use crate::models::vector::{MatchType, SearchMatchInfo};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
@@ -29,7 +29,6 @@ pub fn dal() -> Arc<dyn ToolDal> {
 /// 初始化 Tool DAL（使用全局单例 DAO）
 pub fn init() {
     use crate::service::dao::{cortex, model_provider, tool};
-use common::bail_err;
     let _ = TOOL_DAL.set(new(
         tool::dao(),
         tool_call::dao(),
@@ -288,7 +287,7 @@ impl ToolDal for ToolDalImpl {
 
     async fn call_tool_by_id(
         &self,
-        ctx: RequestContext,
+        mut ctx: RequestContext,
         tool_id: String,
         args: Value,
     ) -> Result<Value> {
@@ -297,15 +296,11 @@ impl ToolDal for ToolDalImpl {
             .get_by_id(ctx.clone(), tool_id.clone())
             .await
             .map_err(|e| {
-                ToolExecutionError::without_trace(rig::tool::ToolError::ToolCallError(
-                    e.to_string().into(),
-                ))
+                    common::error::Error::tool_call_failed(e.to_string()).with_source(e)
             })?;
 
         let tool = tool.ok_or_else(|| {
-            ToolExecutionError::without_trace(rig::tool::ToolError::ToolCallError(
-                format!("Tool not found: {}", tool_id).into(),
-            ))
+            common::error::Error::tool_call_failed(format!("Tool not found: {}", tool_id))
         })?;
 
         // 执行工具
@@ -447,7 +442,7 @@ impl ToolDal for ToolDalImpl {
         tool: &Tool,
         args: Value,
     ) -> Result<Value> {
-        self.tool_call_dao.call_manual(ctx, tool, args).await
+        self.tool_call_dao.call_manual(ctx, tool, args).await.map_err(Into::into)
     }
 
     fn wrap_for_rig(

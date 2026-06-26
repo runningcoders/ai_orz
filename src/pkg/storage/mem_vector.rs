@@ -5,7 +5,6 @@
 //! - 懒加载持久化到文件系统
 //! - 支持热插拔替换 SqliteVssStore
 
-use crate::error::Result;
 use crate::models::vector::{
     VectorCollection, VectorIndexParams, VectorMeta, VectorRow, VectorSearchHit,
 };
@@ -15,7 +14,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use common::error::Result;
-use common::bail_err;
 
 /// 内存向量存储
 ///
@@ -65,7 +63,8 @@ impl InMemoryVectorStore {
 
         let bytes = tokio::fs::read(path).await?;
         let collection_data: VectorCollection =
-            bincode::decode_from_slice(&bytes, bincode::config::standard())?.0;
+            bincode::decode_from_slice(&bytes, bincode::config::standard())
+                .map_err(Into::<common::error::Error>::into)?.0;
 
         Ok(Some(collection_data))
     }
@@ -73,7 +72,8 @@ impl InMemoryVectorStore {
     /// 保存集合到磁盘
     async fn save_collection(&self, collection: &str, data: &VectorCollection) -> Result<()> {
         let path = self.collection_path(collection);
-        let bytes = bincode::encode_to_vec(data, bincode::config::standard())?;
+        let bytes = bincode::encode_to_vec(data, bincode::config::standard())
+            .map_err(Into::<common::error::Error>::into)?;
         tokio::fs::write(path, bytes).await?;
         Ok(())
     }

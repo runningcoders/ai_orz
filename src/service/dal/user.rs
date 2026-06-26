@@ -9,7 +9,6 @@ use crate::service::dao::user;
 use crate::service::dao::user::{UserDao, UserQuery};
 use common::enums::UserStatus;
 use std::sync::{Arc, OnceLock};
-use common::bail_err;
 
 // ==================== 单例管理 ====================
 

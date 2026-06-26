@@ -14,7 +14,6 @@ use crate::models::vector::VectorIndexParams;
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
 use common::enums::SkillStatus;
-use common::bail_err;
 
 /// Skill 查询参数
 #[derive(Debug, Clone, Default)]

@@ -6,13 +6,11 @@ use axum::{
 };
 use common::api::{ApiResponse, AttachmentContentResponse};
 
-use common::bail_err;
-use common::err;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
 use super::response::to_content_response;
-use common::error::Result;
+use common::error::{Result, err, bail_err};
 
 /// 读取 Attachment UTF-8 文本内容
 /// GET /attachments/{id}/content

@@ -1,12 +1,10 @@
 use common::error::Result;
-use common::bail_err;
 // 导入 lib crate 的所有宏
 #[macro_use]
 extern crate ai_orz;
 
 mod config;
 mod consumer;
-mod error;
 mod handlers;
 mod middleware;
 mod models;
@@ -19,7 +17,7 @@ fn get_env_or_default(env_key: &str, default: &str) -> String {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     config::init()?;
     let config = config::get();
 

@@ -9,8 +9,6 @@ use sqlx::types::Json;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::OnceLock;
-use common::err;
-use common::bail_err;
 
 // ==================== 工厂方法 + 单例 ====================
 

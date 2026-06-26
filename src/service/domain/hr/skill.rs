@@ -1,6 +1,5 @@
 //! Skill 管理具体方法实现
 
-use common::bail_err;
 use crate::models::skill::Skill;
 use crate::pkg::RequestContext;
 use crate::service::dao::skill::{SkillQuery, SkillSearch};
@@ -8,8 +7,7 @@ use crate::service::domain::hr::{HrDomainImpl, SkillManage, UpdateSkillParams};
 use common::constants::utils::current_timestamp;
 use common::enums::SkillStatus;
 use std::path::{Component, Path};
-use common::error::Result;
-use common::err;
+use common::error::{Result, err, bail_err};
 
 #[async_trait::async_trait]
 impl SkillManage for HrDomainImpl {

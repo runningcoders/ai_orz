@@ -7,8 +7,6 @@ use crate::pkg::RequestContext;
 use crate::service::dao::skill::SkillVectorDao;
 use async_trait::async_trait;
 use std::sync::{Arc, OnceLock};
-use common::err;
-use common::bail_err;
 
 // ==================== 工厂方法 + 单例 ====================
 

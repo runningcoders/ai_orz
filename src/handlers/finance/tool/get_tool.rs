@@ -7,7 +7,6 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetToolRequest, GetToolResponse};
 
 use super::response::to_detail;
-use common::bail_err;
 
 /// Get detailed information about a specific tool including configuration
 #[register_handler_tool(

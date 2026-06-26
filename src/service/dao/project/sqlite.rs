@@ -4,12 +4,10 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 
 use super::{ProjectDao, ProjectQuery};
-use crate::error::AppError;
+use common::error::{Error, Result};
 use crate::models::project::ProjectPo;
 use crate::pkg::RequestContext;
 use common::enums::project::ProjectStatus;
-use common::error::Result;
-use common::bail_err;
 
 // ==================== 工厂方法 + 单例 ====================
 

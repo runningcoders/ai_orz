@@ -1,11 +1,5 @@
 //! Memory DAO - 记忆系统数据访问
-//!
-//! 负责：
-//! - 短期记忆索引的增删查改（SQLite）
-//! - 长期知识图谱节点的增删查改（SQLite）
-//! - 记忆追踪文件的写入（每日文件追加）
-//! - 原始记忆不可修改不可删除，只能追加，符合设计原则
-
+//!\n//! 负责：\n//! - 短期记忆索引的增删查改（SQLite）\n//! - 长期知识图谱节点的增删查改（SQLite）\n//! - 记忆追踪文件的写入（每日文件追加）\n//! - 原始记忆不可修改不可删除，只能追加，符合设计原则\n\nuse async_trait::async_trait;
 use common::error::{err, bail_err, Error, Result};
 use crate::models::memory::{
     KnowledgeNodeRelationPo, KnowledgeReferencePo, LongTermKnowledgeNodePo, MemoryTrace,
@@ -15,7 +9,6 @@ use crate::models::vector::{VectorIndexParams, VectorSearchHit};
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
 use common::enums::{KnowledgeRelationType, MemoryStatus, MemoryType};
-use common::bail_err;
 
 // ==================== 查询参数结构体 ====================
 
@@ -471,6 +464,7 @@ pub trait MemoryDao: Send + Sync {
 pub use vector::*;
 
 /// ✅ Memory Vector DAO trait - 仅负责记忆向量索引的 CRUD，与基础记忆数据完全解耦
+#[async_trait::async_trait]
 pub trait MemoryVectorDao: Send + Sync {
     /// 索引短期记忆向量（summary 字段）
     async fn upsert_short_term_vector(

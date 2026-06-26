@@ -6,7 +6,6 @@ use crate::pkg::RequestContext;
 use crate::service::domain::project;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetArtifactRequest, GetArtifactResponse};
-use common::bail_err;
 
 /// Get artifact detailed information by ID
 #[register_handler_tool(

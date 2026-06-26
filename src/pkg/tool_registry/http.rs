@@ -6,7 +6,7 @@
 
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow};
 use async_trait::async_trait;
 use reqwest::header::{HeaderName, HeaderValue};
 use reqwest::{Method, Url, redirect};
@@ -18,7 +18,7 @@ use std::str::FromStr;
 use std::time::Duration;
 use tokio::net::lookup_host;
 use common::error::Result;
-use common::bail_err;
+use common::{bail_err, err};
 
 /// Protocol-level HTTP tool factory.
 ///
@@ -105,7 +105,7 @@ impl CoreTool for HttpCoreTool {
     async fn call(&self, _ctx: RequestContext, args: Value) -> Result<Value> {
         execute_http_call(&self.config, self.po.parameters_schema.as_ref(), args)
             .await
-            .map_err(|e| ToolError::ToolCallError(e.to_string().into()))
+            .map_err(|e| err!(ToolExecutionFailed, e.to_string()))
     }
 
     fn po(&self) -> &ToolPo {
@@ -142,14 +142,21 @@ async fn execute_http_call(
 
     let host = url
         .host_str()
-        .ok_or_else(|| anyhow!("http url host is required"))?
-        .to_string();
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_millis(timeout_ms(config)?))
-        .redirect(redirect::Policy::none())
-        .no_proxy()
-        .resolve_to_addrs(&host, &pinned_addresses)
-        .build()?;
+        .ok_or_else(|| anyhow!("http url host is required"))
+        .map_err(Into::<common::error::Error>::into)
+        .map(|s| s.to_string())?;
+      let client = reqwest::Client::builder()
+            .timeout(Duration::from_millis(timeout_ms(config)?))
+            .redirect(redirect::Policy::none())
+            .no_proxy()
+            .resolve_to_addrs(&host, &pinned_addresses)
+            .build()
+            .map_err(|e| {
+                common::error::Error::new(
+                    common::error::ErrorCode::NetworkError,
+                    e.to_string()
+                )
+            })?;
 
     let mut request = client.request(method.clone(), url);
 
@@ -183,7 +190,7 @@ async fn execute_http_call(
         .clone()
         .unwrap_or_else(|| vec![200, 201, 202, 204]);
     if !allowed.contains(&status) {
-        return Err(anyhow!("unexpected http status code: {}", status));
+        return Err(anyhow!("unexpected http status code: {}", status)).map_err(Into::into);
     }
 
     let max_bytes = response_max_bytes(config)?;
@@ -200,7 +207,8 @@ async fn execute_http_call(
     let body = if let Some(pointer) = &config.response_json_pointer {
         body.pointer(pointer)
             .cloned()
-            .ok_or_else(|| anyhow!("response json pointer not found"))?
+            .ok_or_else(|| anyhow!("response json pointer not found"))
+            .map_err(Into::<common::error::Error>::into)?
     } else {
         body
     };
@@ -223,7 +231,7 @@ async fn read_limited_response_body(
                 "http response too large: {} bytes exceeds limit {}",
                 content_length,
                 max_bytes
-            ));
+            )).map_err(Into::into);
         }
     }
 
@@ -237,7 +245,7 @@ async fn read_limited_response_body(
             return Err(anyhow!(
                 "http response too large: exceeds limit {} bytes",
                 max_bytes
-            ));
+            )).map_err(Into::into);
         }
         bytes.extend_from_slice(&chunk);
     }
@@ -274,7 +282,7 @@ fn parse_supported_method(method: &str) -> Result<Method> {
     match method.to_ascii_uppercase().as_str() {
         "GET" => Ok(Method::GET),
         "POST" => Ok(Method::POST),
-        other => Err(anyhow!("unsupported http method: {}", other)),
+        other => Err(anyhow!("unsupported http method: {}", other).into()),
     }
 }
 
@@ -285,13 +293,13 @@ fn validate_args_schema(parameters_schema: Option<&Value>, args: &Value) -> Resu
 
     let args_object = args
         .as_object()
-        .ok_or_else(|| anyhow!("http tool args must be a JSON object"))?;
+        .ok_or_else(|| -> common::error::Error { anyhow!("http tool args must be a JSON object").into() })?;
 
     if let Some(Value::Array(required)) = schema.get("required") {
         for name in required.iter().filter_map(Value::as_str) {
-            if !args_object.contains_key(name) {
-                return Err(anyhow!("missing required tool argument: {}", name));
-            }
+                if !args_object.contains_key(name) {
+                    return Err(anyhow!("unknown tool argument: {}", name).into());
+                }
         }
     }
 
@@ -299,7 +307,7 @@ fn validate_args_schema(parameters_schema: Option<&Value>, args: &Value) -> Resu
         if let Some(Value::Object(properties)) = schema.get("properties") {
             for name in args_object.keys() {
                 if !properties.contains_key(name) {
-                    return Err(anyhow!("unknown tool argument: {}", name));
+                    return Err(anyhow!("unknown tool argument: {}", name).into());
                 }
             }
         }
@@ -321,7 +329,7 @@ fn validate_args_schema(parameters_schema: Option<&Value>, args: &Value) -> Resu
 fn validate_arg_value(name: &str, value: &Value, property_schema: &Value) -> Result<()> {
     if let Some(Value::Array(allowed_values)) = property_schema.get("enum") {
         if !allowed_values.iter().any(|allowed| allowed == value) {
-            return Err(anyhow!("invalid enum value for tool argument {}", name));
+            return Err(anyhow!("invalid enum value for tool argument {}", name).into());
         }
     }
 
@@ -345,7 +353,7 @@ fn validate_arg_value(name: &str, value: &Value, property_schema: &Value) -> Res
             "invalid type for tool argument {}: expected {}",
             name,
             expected_type
-        ));
+        ).into());
     }
 
     Ok(())
@@ -354,16 +362,17 @@ fn validate_arg_value(name: &str, value: &Value, property_schema: &Value) -> Res
 async fn validate_target_url(config: &HttpToolConfig, url: &Url) -> Result<Vec<SocketAddr>> {
     let scheme = url.scheme();
     if scheme != "http" && scheme != "https" {
-        return Err(anyhow!("unsupported http url scheme: {}", scheme));
+        return Err(anyhow!("unsupported http url scheme: {}", scheme)).map_err(Into::<common::error::Error>::into);
     }
 
     let host = normalize_domain(
         url.host_str()
-            .ok_or_else(|| anyhow!("http url host is required"))?,
+            .ok_or_else(|| -> common::error::Error { anyhow!("http url host is required").into() })
+            .map_err(Into::<common::error::Error>::into)?,
     );
 
     if host.is_empty() {
-        return Err(anyhow!("http url host is required"));
+        return Err(anyhow!("http url host is required")).map_err(Into::into);
     }
 
     if let Some(blocked_domains) = &config.blocked_domains {
@@ -371,14 +380,14 @@ async fn validate_target_url(config: &HttpToolConfig, url: &Url) -> Result<Vec<S
             .iter()
             .any(|domain| domain_matches(&host, domain))
         {
-            return Err(anyhow!("blocked http domain"));
+            return Err(anyhow!("blocked http domain")).map_err(Into::into);
         }
     }
 
     if is_local_network_host(&host) && config.allow_local_network != Some(true) {
         return Err(anyhow!(
             "local network http target requires allow_local_network=true"
-        ));
+        )).map_err(Into::into);
     }
 
     if let Some(allowed_domains) = &config.allowed_domains {
@@ -386,7 +395,7 @@ async fn validate_target_url(config: &HttpToolConfig, url: &Url) -> Result<Vec<S
             .iter()
             .any(|domain| domain_matches(&host, domain))
         {
-            return Err(anyhow!("http domain is not allowed"));
+            return Err(anyhow!("http domain is not allowed")).map_err(Into::into);
         }
     }
 
@@ -407,7 +416,8 @@ async fn validate_resolved_addresses(
     let lookup_host_name = host.trim_matches(['[', ']']);
     let addresses: Vec<SocketAddr> = lookup_host((lookup_host_name, port))
         .await
-        .map_err(|_| anyhow!("failed to resolve http target host"))?
+        .map_err(|_| anyhow!("failed to resolve http target host"))
+        .map_err(Into::<common::error::Error>::into)?
         .collect();
 
     if config.allow_local_network != Some(true) {
@@ -417,7 +427,7 @@ async fn validate_resolved_addresses(
         {
             return Err(anyhow!(
                 "resolved local network http target requires allow_local_network=true"
-            ));
+            )).map_err(Into::into);
         }
     }
 
@@ -521,7 +531,7 @@ fn render_value_template(value: &Value, args: &Value) -> Result<Value> {
         Value::Object(object) => object
             .iter()
             .map(|(key, value)| Ok((key.clone(), render_value_template(value, args)?)))
-            .collect::<Result<Map<String>>>()
+            .collect::<Result<Map<String, Value>>>()
             .map(Value::Object),
         value => Ok(value.clone()),
     }
@@ -533,7 +543,7 @@ fn render_scalar_template(value: &Value, args: &Value) -> Result<String> {
         Value::Number(number) => Ok(number.to_string()),
         Value::Bool(value) => Ok(value.to_string()),
         Value::Null => Ok(String::new()),
-        _ => Err(anyhow!("http query/header template must render to scalar")),
+        _ => Err(anyhow!("http query/header template must render to scalar").into()),
     }
 }
 
@@ -556,7 +566,7 @@ fn render_string_template(template: &str, args: &Value) -> Result<String> {
     if rendered.contains("{{") {
         return Err(anyhow!(
             "unresolved or unsupported http template placeholder"
-        ));
+        ).into());
     }
 
     Ok(rendered)
@@ -564,13 +574,13 @@ fn render_string_template(template: &str, args: &Value) -> Result<String> {
 
 fn validate_config(config: &HttpToolConfig) -> Result<()> {
     if config.method.trim().is_empty() {
-        return Err(anyhow!("http tool method is required"));
+        return Err(anyhow!("http tool method is required").into());
     }
 
     parse_supported_method(&config.method)?;
 
     if config.url.trim().is_empty() {
-        return Err(anyhow!("http tool url is required"));
+        return Err(anyhow!("http tool url is required").into());
     }
 
     validate_url_template_boundary(&config.url)?;
@@ -605,7 +615,7 @@ fn validate_body_template(template: Option<&Value>) -> Result<()> {
                 if key.contains("{{") {
                     return Err(anyhow!(
                         "http body template keys must not contain placeholders"
-                    ));
+                    ).into());
                 }
                 validate_body_template(Some(value))?;
             }
@@ -620,12 +630,12 @@ fn validate_allowed_status_codes(codes: Option<&Vec<u16>>) -> Result<()> {
         return Ok(());
     };
     if codes.is_empty() {
-        return Err(anyhow!("http allowed_status_codes must not be empty"));
+        return Err(anyhow!("http allowed_status_codes must not be empty").into());
     }
     if codes.iter().any(|code| !(100..=599).contains(code)) {
         return Err(anyhow!(
             "http allowed_status_codes must be valid HTTP status codes"
-        ));
+        ).into());
     }
     Ok(())
 }
@@ -637,7 +647,7 @@ fn validate_response_json_pointer(pointer: Option<&str>) -> Result<()> {
     if !pointer.is_empty() && !pointer.starts_with('/') {
         return Err(anyhow!(
             "http response_json_pointer must be a valid JSON pointer"
-        ));
+        ).into());
     }
     Ok(())
 }
@@ -656,7 +666,7 @@ fn validate_fixed_target_policy(config: &HttpToolConfig) -> Result<()> {
             .iter()
             .any(|domain| domain_matches(&host, domain))
         {
-            return Err(anyhow!("blocked http domain"));
+            return Err(anyhow!("blocked http domain").into());
         }
     }
 
@@ -665,14 +675,14 @@ fn validate_fixed_target_policy(config: &HttpToolConfig) -> Result<()> {
             .iter()
             .any(|domain| domain_matches(&host, domain))
         {
-            return Err(anyhow!("http domain is not allowed"));
+            return Err(anyhow!("http domain is not allowed").into());
         }
     }
 
     if is_local_network_host(&host) && config.allow_local_network != Some(true) {
         return Err(anyhow!(
             "local network http target requires allow_local_network=true"
-        ));
+        ).into());
     }
 
     Ok(())
@@ -687,7 +697,7 @@ fn url_template_with_placeholder_sentinels(url_template: &str) -> Result<String>
         let Some(end) = after_start.find("}}") else {
             return Err(anyhow!(
                 "unresolved or unsupported http template placeholder"
-            ));
+            ).into());
         };
         output.push_str("placeholder");
         rest = &after_start[end + 2..];
@@ -705,7 +715,7 @@ fn validate_scalar_template_object(field_name: &str, template: Option<&Value>) -
         if template.is_null() {
             return Ok(());
         }
-        return Err(anyhow!("http {} template must be an object", field_name));
+        return Err(anyhow!("http {} template must be an object", field_name).into());
     };
 
     for (key, value) in object {
@@ -713,17 +723,18 @@ fn validate_scalar_template_object(field_name: &str, template: Option<&Value>) -
             return Err(anyhow!(
                 "http {} template keys must not contain placeholders",
                 field_name
-            ));
+            ).into());
         }
         if field_name == "headers" {
-            HeaderName::from_str(key).map_err(|_| anyhow!("invalid http header name"))?;
+            HeaderName::from_str(key)
+                .map_err(|_| -> common::error::Error { anyhow!("invalid http header name").into() })?;
         }
         match value {
             Value::String(template) => {
                 validate_supported_placeholders(template)?;
                 if field_name == "headers" && !template.contains("{{") {
                     HeaderValue::from_str(template)
-                        .map_err(|_| anyhow!("invalid http header value"))?;
+                        .map_err(|_| -> common::error::Error { anyhow!("invalid http header value").into() })?;
                 }
             }
             Value::Number(_) | Value::Bool(_) | Value::Null => {}
@@ -731,7 +742,7 @@ fn validate_scalar_template_object(field_name: &str, template: Option<&Value>) -
                 return Err(anyhow!(
                     "http {} template values must be scalar",
                     field_name
-                ));
+                ).into());
             }
         }
     }
@@ -746,7 +757,7 @@ fn validate_supported_placeholders(template: &str) -> Result<()> {
         let Some(end) = after_start.find("}}") else {
             return Err(anyhow!(
                 "unresolved or unsupported http template placeholder"
-            ));
+            ).into());
         };
         let placeholder = &after_start[..end];
         if placeholder.trim() != placeholder
@@ -755,7 +766,7 @@ fn validate_supported_placeholders(template: &str) -> Result<()> {
         {
             return Err(anyhow!(
                 "unresolved or unsupported http template placeholder"
-            ));
+            ).into());
         }
         rest = &after_start[end + 2..];
     }
@@ -763,7 +774,7 @@ fn validate_supported_placeholders(template: &str) -> Result<()> {
     if rest.contains("}}") {
         return Err(anyhow!(
             "unresolved or unsupported http template placeholder"
-        ));
+        ).into());
     }
 
     Ok(())
@@ -776,7 +787,7 @@ fn timeout_ms(config: &HttpToolConfig) -> Result<u64> {
             "invalid http timeout_ms: {} (must be 1..={})",
             timeout_ms,
             HARD_TIMEOUT_MS
-        ));
+        ).into());
     }
 
     Ok(timeout_ms)
@@ -791,7 +802,7 @@ fn response_max_bytes(config: &HttpToolConfig) -> Result<usize> {
             "invalid http response_max_bytes: {} (must be 1..={})",
             max_bytes,
             HARD_RESPONSE_MAX_BYTES
-        ));
+        ).into());
     }
 
     Ok(max_bytes)
@@ -800,17 +811,17 @@ fn response_max_bytes(config: &HttpToolConfig) -> Result<usize> {
 fn validate_url_template_boundary(url_template: &str) -> Result<()> {
     let trimmed = url_template.trim();
     let Some(scheme_end) = trimmed.find("://") else {
-        return Err(anyhow!("http tool url must include http/https scheme"));
+        return Err(anyhow!("http tool url must include http/https scheme").into());
     };
 
     let scheme = &trimmed[..scheme_end];
     if scheme.contains("{{") {
         return Err(anyhow!(
             "http url scheme must be fixed and must not contain template placeholders"
-        ));
+        ).into());
     }
     if scheme != "http" && scheme != "https" {
-        return Err(anyhow!("unsupported http url scheme"));
+        return Err(anyhow!("unsupported http url scheme").into());
     }
 
     let after_scheme = &trimmed[scheme_end + 3..];
@@ -819,15 +830,15 @@ fn validate_url_template_boundary(url_template: &str) -> Result<()> {
         .unwrap_or(after_scheme.len());
     let authority = &after_scheme[..authority_end];
     if authority.is_empty() {
-        return Err(anyhow!("http url host is required"));
+        return Err(anyhow!("http url host is required").into());
     }
     if authority.contains("{{") {
         return Err(anyhow!(
             "http url host must be fixed and must not contain template placeholders"
-        ));
+        ).into());
     }
     if authority.contains('@') {
-        return Err(anyhow!("http url must not contain userinfo credentials"));
+        return Err(anyhow!("http url must not contain userinfo credentials").into());
     }
 
     Ok(())

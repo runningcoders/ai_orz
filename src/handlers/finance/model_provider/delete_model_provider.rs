@@ -5,7 +5,6 @@ use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{DeleteModelProviderRequest, DeleteModelProviderResponse};
-use common::bail_err;
 
 /// Delete an existing model provider configuration
 #[register_handler_tool(

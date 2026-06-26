@@ -8,7 +8,6 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{QueryToolCallEntriesRequest, QueryToolCallEntriesResponse};
 
 use super::response::to_tool_call_entry_detail;
-use common::bail_err;
 
 /// Query tool call trace entries with common filters.
 #[register_handler_tool(

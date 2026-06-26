@@ -3,7 +3,6 @@
 //! 所有可放入事件总线的事件基础类型定义
 
 use std::cmp::Ordering;
-use common::bail_err;
 
 /// 事件主题（Topic）枚举
 ///

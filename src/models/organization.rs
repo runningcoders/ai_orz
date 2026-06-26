@@ -6,7 +6,6 @@ use common::constants::utils;
 use common::enums::{OrganizationScope, OrganizationStatus};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-use common::bail_err;
 
 /// OrganizationPo 持久化对象
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]

@@ -44,6 +44,11 @@ define_error_codes! {
             http: 413,
             code: "payload_too_large",
         }
+        InvalidToken {
+            type: Auth,
+            http: 401,
+            code: "invalid_token",
+        }
         DbQueryFailed {
             type: Db,
             http: 500,
@@ -84,6 +89,11 @@ define_error_codes! {
             http: 500,
             code: "tool_execution_failed",
         }
+        NetworkError {
+            type: Network,
+            http: 503,
+            code: "network_error",
+        }
         RuntimeAwakenFailed {
             type: Runtime,
             http: 500,
@@ -121,3 +131,5 @@ define_error_codes! {
         }
     }
 }
+
+pub use generated::ErrorCode;

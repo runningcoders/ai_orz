@@ -7,7 +7,6 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{InstallSkillToAgentRequest, InstallSkillToAgentResponse};
 
 use super::response::to_detail;
-use common::bail_err;
 
 /// Install an existing public skill to your agent. Creates a private copy of the skill for your agent.
 #[register_handler_tool(

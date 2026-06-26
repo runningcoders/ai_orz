@@ -8,7 +8,6 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListToolsRequest, ListToolsResponse, ToolListItem};
 
 use super::response::to_list_item;
-use common::bail_err;
 
 /// List all tools with optional filtering by agent, keyword, and enabled status
 #[register_handler_tool(

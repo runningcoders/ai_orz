@@ -13,7 +13,6 @@ use sqlx::types::Json;
 use uuid::Uuid;
 
 use crate::models::file::FileMeta;
-use common::bail_err;
 
 /// ArtifactPo 持久化对象
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]

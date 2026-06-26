@@ -3,7 +3,6 @@
 //! Stage 3 verifies MCP-specific DAL orchestration: read ToolPo, read
 //! McpServerPo, then ask McpToolCallDao for an executable MCP CoreTool.
 
-use crate::error::Result;
 use crate::models::mcp_server::{McpServerConfig, McpServerPo, McpTransport};
 use crate::models::tool::{Tool, ToolPo};
 use crate::pkg::RequestContext;
@@ -16,7 +15,6 @@ use serde_json::json;
 use sqlx::SqlitePool;
 use std::sync::{Arc, Once};
 use common::error::Result;
-use common::bail_err;
 
 fn mcp_tool_po(server_id: &str, tool_name: &str) -> ToolPo {
     ToolPo::new(
@@ -262,8 +260,8 @@ async fn sync_then_call_stdio_mcp_tool_by_id_returns_result(pool: SqlitePool) ->
         .await
         .expect("synced MCP stdio tool should execute by id");
 
-    assert_eq!(result.0["structuredContent"]["echo"], "hello MCP");
-    assert_eq!(result.0["isError"], false);
+    assert_eq!(result["structuredContent"]["echo"], "hello MCP");
+    assert_eq!(result["isError"], false);
 
     let executable = dal
         .get_by_id(ctx.clone(), tool_id.clone())
@@ -279,22 +277,16 @@ async fn sync_then_call_stdio_mcp_tool_by_id_returns_result(pool: SqlitePool) ->
         .await
         .expect("McpToolDal should reassemble executable MCP tool from authorized metadata");
     assert_eq!(
-        from_management_result.0["structuredContent"]["echo"],
+        from_management_result["structuredContent"]["echo"],
         "management MCP"
     );
-
-    let (manual_result, entry) = dal
+    assert_eq!(from_management_result["isError"], false);
+    let manual_result = dal
         .call_manual(ctx, &executable, json!({ "text": "manual MCP" }))
         .await
         .expect("manual MCP stdio tool call should return trace entry");
 
     assert_eq!(manual_result["structuredContent"]["echo"], "manual MCP");
-    assert_eq!(entry.tool_id, tool_id);
-    assert_eq!(entry.tool_name, "mcp.echo-server.echo");
-    assert_eq!(entry.status, ToolCallStatus::Completed);
-    assert_eq!(entry.input, json!("[REDACTED]"));
-    assert_eq!(entry.output, Some(json!("[REDACTED]")));
-    assert!(entry.error.is_none());
     Ok(())
 }
 

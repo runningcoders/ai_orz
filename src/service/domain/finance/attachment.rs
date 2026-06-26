@@ -2,7 +2,6 @@
 //!
 //! 通用上传文件资产管理，归属 Finance Domain。
 
-use common::bail_err;
 use crate::models::attachment::{
     Attachment, AttachmentGetOptions, AttachmentReadResult, AttachmentTextContent,
     AttachmentUpload, TextAttachmentCreate, TextContentUpdate,
@@ -11,8 +10,7 @@ use crate::pkg::RequestContext;
 use crate::service::dao::attachment::AttachmentQuery;
 use crate::service::domain::finance::{AttachmentManage, FinanceDomainImpl};
 use std::path::{Component, Path};
-use common::error::Result;
-use common::err;
+use common::error::{Result, err, bail_err};
 
 const MAX_TEXT_CONTENT_BYTES: usize = 64 * 1024;
 
@@ -143,10 +141,10 @@ fn attachment_to_text_content(attachment: Attachment) -> Result<AttachmentTextCo
     let read_result = attachment
         .read_results
         .first()
-        .ok_or_else(|| bail_err!(Internal, "Attachment 文件内容未装配"))?;
+        .ok_or_else(|| err!(Internal, "Attachment 文件内容未装配"))?;
     validate_text_size(read_result.bytes.len())?;
     let content = std::str::from_utf8(&read_result.bytes)
-        .map_err(|_| bail_err!(InvalidRequest, "Attachment 内容不是 UTF-8 文本"))?
+        .map_err(|_| err!(InvalidRequest, "Attachment 内容不是 UTF-8 文本"))?
         .to_string();
     validate_text_content(&content)?;
     Ok(AttachmentTextContent {

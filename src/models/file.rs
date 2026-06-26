@@ -2,7 +2,6 @@
 //! Used by both artifacts and messages to store file information.
 
 use serde::{Deserialize, Serialize};
-use common::bail_err;
 
 /// Shared file metadata structure.
 /// Stored as JSON in database `file_meta` column.

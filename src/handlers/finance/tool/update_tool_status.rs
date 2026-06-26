@@ -1,14 +1,12 @@
 //! Handler: PUT /api/v1/tools/{id}/status - Update tool status (enable/disable)
 
-use common::bail_err;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateToolStatusRequest, UpdateToolStatusResponse};
 
 use super::response::to_detail;
-use common::error::Result;
-use common::err;
+use common::error::{Result, err, bail_err};
 
 /// Update the status of a tool (enable/disable it)
 #[register_handler_tool(

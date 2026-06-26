@@ -7,7 +7,6 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetSkillRequest, GetSkillResponse};
 
 use super::response::to_detail;
-use common::bail_err;
 
 /// Get detailed information about a specific skill including metadata and file list
 #[register_handler_tool(

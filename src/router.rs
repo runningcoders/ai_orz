@@ -157,7 +157,6 @@ fn organization_protected_routes() -> Router {
     use crate::handlers::organization::organization;
     use crate::handlers::organization::organization_me;
     use crate::handlers::organization::user;
-use common::bail_err;
 
     Router::new()
         // Get/update current user's organization info

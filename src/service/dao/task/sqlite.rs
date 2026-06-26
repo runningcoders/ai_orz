@@ -1,14 +1,12 @@
 //! SQLite implementation of Task DAO
 
 use super::{TaskDao, TaskQuery};
-use crate::error::AppError;
+use common::error::{Error, Result};
 use crate::models::task::TaskPo;
 use crate::pkg::RequestContext;
 use common::enums::{AssigneeType, TaskStatus};
 use std::sync::Arc;
 use std::sync::OnceLock;
-use common::error::Result;
-use common::bail_err;
 
 // ==================== 工厂方法 + 单例 ====================
 

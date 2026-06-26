@@ -5,7 +5,6 @@ use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateSkillFileContentRequest, UpdateSkillFileContentResponse};
-use common::bail_err;
 
 /// Create a new file or update the content of an existing text file in a skill. If the file doesn't exist, it will be created. If it exists, it will be overwritten.
 #[register_handler_tool(

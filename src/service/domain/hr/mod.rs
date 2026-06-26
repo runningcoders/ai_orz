@@ -26,7 +26,6 @@ use crate::service::dal::tool::ToolDal;
 use crate::service::dao::skill::{SkillQuery, SkillSearch};
 use common::enums::{AgentStatus, SkillStatus};
 use std::sync::{Arc, OnceLock};
-use common::bail_err;
 
 // ==================== 单例 ====================
 

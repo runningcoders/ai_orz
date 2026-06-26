@@ -2,7 +2,6 @@ use common::api::{McpServerConfigDto, McpServerDetail, McpServerListItem};
 use common::enums as api_enums;
 
 use crate::models::mcp_server::{McpServer, McpServerConfig, McpServerStatus, McpTransport};
-use common::bail_err;
 
 pub(super) fn to_list_item(server: &McpServer) -> McpServerListItem {
     McpServerListItem {

@@ -1,6 +1,5 @@
 //! Handler: POST /api/v1/skills - 创建新 Skill
 
-use common::bail_err;
 use crate::models::skill::{Skill, SkillFile, SkillPo};
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
@@ -9,8 +8,7 @@ use common::api::{CreateSkillRequest, CreateSkillResponse};
 use common::enums::skill::SkillAuthorType;
 
 use super::response::to_detail;
-use common::error::Result;
-use common::err;
+use common::error::{Result, err, bail_err};
 
 /// Create a new empty skill with optional initial content and files. Returns the created skill detail.
 #[register_handler_tool(

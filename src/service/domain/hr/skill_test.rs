@@ -7,7 +7,6 @@ use common::enums::SkillStatus;
 use common::enums::skill::SkillAuthorType;
 use sqlx::SqlitePool;
 use tempfile::TempDir;
-use common::bail_err;
 
 fn new_ctx(user_id: &str, pool: sqlx::SqlitePool) -> RequestContext {
     RequestContext::new_simple(user_id, pool)

@@ -3,7 +3,6 @@
 use common::error::{Error, Result};
 use crate::models::organization::OrganizationPo;
 use crate::pkg::RequestContext;
-use common::bail_err;
 
 /// Organization 查询参数
 #[derive(Debug, Clone, Default)]

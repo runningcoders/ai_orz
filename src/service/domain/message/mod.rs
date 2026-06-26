@@ -25,7 +25,6 @@ use crate::service::dao::message::MessageQuery;
 use common::enums::{MessageRole, MessageStatus};
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
-use common::bail_err;
 
 // ==================== 单例 ====================
 

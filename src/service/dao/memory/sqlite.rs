@@ -7,7 +7,7 @@
 //! - 原始记忆不可修改不可删除，只能追加
 
 use crate::config;
-use common::error::Error;
+use common::error::{Error, Result, bail_err};
 use crate::models::memory::{
     KnowledgeNodeRelationPo, KnowledgeReferencePo, LongTermKnowledgeNodePo, MemoryTrace,
     MemoryTracePosition, ShortTermMemoryIndexPo,
@@ -680,8 +680,6 @@ LIMIT ?
         use common::enums::MemoryStatus;
 use common::{err, bail_err};
 use common::error::Result;
-use common::err;
-use common::bail_err;
         let pool = self.pool(ctx);
         let now = chrono::Utc::now().timestamp();
         let status_i32 = MemoryStatus::Forgotten as i32;

@@ -8,7 +8,6 @@ use common::constants::utils;
 use common::enums::project::ProjectStatus;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-use common::bail_err;
 
 /// ProjectPo 项目持久化对象
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]

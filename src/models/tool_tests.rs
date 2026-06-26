@@ -1,7 +1,6 @@
 use super::{Tool, ToolPo};
 use common::enums::{ControlMode, ToolProtocol, ToolStatus};
 use serde_json::json;
-use common::bail_err;
 
 fn test_tool_with_status(status: ToolStatus) -> Tool {
     let mut po = ToolPo::new(
@@ -55,13 +54,13 @@ fn stale_tool_is_sync_owned_and_cannot_be_manually_enabled_or_disabled() {
     let enabled_err = tool
         .transition_status(ToolStatus::Enabled, "editor")
         .expect_err("stale tool cannot be manually enabled; MCP sync must restore it");
-    assert!(enabled_err.contains("cannot transition"));
+    assert!(enabled_err.msg.contains("cannot transition"));
     assert_eq!(tool.po.status, ToolStatus::Stale);
 
     let disabled_err = tool
         .transition_status(ToolStatus::Disabled, "editor")
-        .expect_err("stale tool cannot be manually disabled and later re-enabled");
-    assert!(disabled_err.contains("cannot transition"));
+        .expect_err("stale tool cannot be manually disabled");
+    assert!(disabled_err.msg.contains("cannot transition"));
     assert_eq!(tool.po.status, ToolStatus::Stale);
 }
 

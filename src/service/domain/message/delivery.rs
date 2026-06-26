@@ -12,8 +12,6 @@ use crate::service::domain::message::{
 };
 use common::enums::{MessageRole, MessageStatus, MessageType};
 use serde_json::json;
-use common::err;
-use common::bail_err;
 
 const TOOL_CALL_RESULT_INLINE_CONTENT_LIMIT: usize = 8 * 1024;
 

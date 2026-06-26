@@ -1,4 +1,3 @@
-use crate::error::Result;
 use crate::models::artifact::ArtifactPo;
 use crate::models::file::FileMeta;
 use crate::pkg::request_context::RequestContext;
@@ -8,7 +7,6 @@ use sqlx::SqlitePool;
 use std::sync::Arc;
 use uuid::Uuid;
 use common::error::Result;
-use common::bail_err;
 
 /// 初始化测试环境
 fn init_test_env(pool: SqlitePool) -> (Arc<dyn ArtifactDao + Send + Sync>, RequestContext) {

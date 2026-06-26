@@ -11,7 +11,6 @@ use crate::service::dao::event_queue::{self, EventQueueDao};
 use crate::service::dao::message::{self, MessageDao, MessageQuery};
 use common::enums::MessageStatus;
 use std::sync::{Arc, OnceLock};
-use common::bail_err;
 
 // ==================== 单例管理 ====================
 

@@ -9,7 +9,6 @@ use crate::pkg::RequestContext;
 use crate::service::dao::tool;
 
 use super::update_tool::update_tool;
-use common::bail_err;
 
 fn init_test_singletons() {
     let _ = crate::config::init();
@@ -57,7 +56,7 @@ async fn update_tool_enabled_cannot_manually_restore_stale_tool(pool: SqlitePool
     .await
     .expect_err("generic update must not restore Stale tools");
 
-    assert!(matches!(err, common::error::Error::bad_request(_)));
+    assert!(err.code_enum() == common::error::ErrorCode::InvalidRequest);
     let persisted = tool::new_tool_dao()
         .get_by_id(ctx, stale_tool.id)
         .await

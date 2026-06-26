@@ -1,6 +1,6 @@
 //! Default implementation of ToolCallDao
 
-use crate::models::tool::{CoreTool, RigToolAdapter, Tool, ToolExecutionError, ToolPo};
+use crate::models::tool::{CoreTool, RigToolAdapter, Tool, ToolCallTraceRef, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::get_registry;
 use crate::pkg::tool_tracing::ToolCallLoggingDecorator;
@@ -14,8 +14,6 @@ use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 
 use super::ToolCallDao;
-use common::error::Result;
-use common::bail_err;
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -124,12 +122,25 @@ impl ToolCallDao for ToolCallDaoImpl {
         }
 
         match result {
-            Ok(value) => Ok((value, entry)),
-            Err(error) => Err(ToolExecutionError::with_trace(
-                error,
-                entry.tool_id,
-                entry.call_id,
-            )),
+            Ok(value) => {
+                Ok(value)
+            }
+            Err(error) => {
+                use common::error::{ErrorCode, ErrorType};
+                let mut err = common::error::Error::typed(
+                    ErrorCode::ToolExecutionFailed,
+                    ErrorType::Tool,
+                    error.to_string(),
+                ).with_source(error);
+                let trace_ref = ToolCallTraceRef {
+                    tool_id: entry.tool_id,
+                    call_id: entry.call_id,
+                };
+                let mut field = common::error::ErrorField::new();
+                field.set_trace_ref(trace_ref);
+                err = err.with_field(field);
+                Err(err.into())
+            },
         }
     }
 }

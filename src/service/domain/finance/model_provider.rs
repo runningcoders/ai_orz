@@ -4,7 +4,6 @@ use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::{FinanceDomainImpl, ModelProviderManage};
 use common::error::Result;
-use common::bail_err;
 
 #[async_trait::async_trait]
 impl ModelProviderManage for FinanceDomainImpl {

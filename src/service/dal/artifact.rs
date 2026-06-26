@@ -9,7 +9,6 @@ use crate::service::dao::artifact;
 use crate::service::dao::artifact::ArtifactDao;
 use common::enums::{ArtifactSourceType, FileType};
 use std::sync::{Arc, OnceLock};
-use common::bail_err;
 
 /// Artifact DAL 查询参数。
 ///

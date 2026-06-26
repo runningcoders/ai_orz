@@ -10,16 +10,16 @@ fn returns_common_result() -> Result<()> {
 fn error_code_exposes_stable_metadata() {
     let code = ErrorCode::ToolAutoModeNotSupported;
 
-    assert_eq!(code.code(), "tool_auto_mode_not_supported");
+    assert_eq!(code.code_str(), "tool_auto_mode_not_supported");
     assert_eq!(code.error_type(), ErrorType::Tool);
-    assert_eq!(code.http_status_code(), 400);
+    assert_eq!(code.http_status(), 400);
 }
 
 #[test]
 fn err_macro_builds_typed_error() {
     let error = err!(ResourceNotFound, "tool not found: {}", "tool-1");
 
-    assert_eq!(error.code.code(), "resource_not_found");
+    assert_eq!(error.code.code_str(), "resource_not_found");
     assert_eq!(error.msg, "tool not found: tool-1");
     assert!(matches!(error.code, ErrorCode::ResourceNotFound));
 }
@@ -42,9 +42,9 @@ fn ensure_err_macro_keeps_success_and_bails_on_failure() {
     assert_eq!(validate(1).expect("positive value should pass"), 1);
 
     let error = validate(0).expect_err("zero should fail validation");
-    assert_eq!(error.code.code(), "invalid_request");
+    assert_eq!(error.code.code_str(), "invalid_request");
     assert_eq!(error.code.error_type(), ErrorType::Validation);
-    assert_eq!(error.code.http_status_code(), 400);
+    assert_eq!(error.code.http_status(), 400);
 }
 
 #[test]
@@ -55,7 +55,7 @@ fn error_with_field_data_works() {
     
     let error = err!(InvalidRequest, "field validation failed").with_field(field);
 
-    assert_eq!(error.code.code(), "invalid_request");
+    assert_eq!(error.code.code_str(), "invalid_request");
     assert!(error.field.is_some());
     let field = error.field.as_ref().unwrap();
     assert_eq!(field.get("field_name").and_then(|v| v.as_str()), Some("username"));
@@ -67,6 +67,6 @@ fn error_with_source_keeps_source() {
     let io_err = std::io::Error::other("file not found");
     let error = err!(IoError, "failed to read config").with_source(io_err);
 
+    assert_eq!(error.code.code_str(), "io_error");
     assert!(error.source.is_some());
-    assert_eq!(error.code.code(), "io_error");
 }

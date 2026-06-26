@@ -6,7 +6,6 @@ use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetTaskRequest, GetTaskResponse};
-use common::bail_err;
 
 /// Get task detailed information by ID
 #[register_handler_tool(

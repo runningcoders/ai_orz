@@ -3,11 +3,10 @@
 //! 负责通用 Webhook 渠道的消息推送和连接测试。
 //! 对通用 Webhook HTTP 回调的封装，支持后续协议版本适配。
 
-use crate::error::Result;
+use common::error::{Error, Result};
 use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;
-use common::bail_err;
 
 /// 通用 Webhook 渠道 DAO 接口
 #[async_trait::async_trait]

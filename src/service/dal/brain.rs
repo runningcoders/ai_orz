@@ -15,8 +15,6 @@ use crate::service::dao::tool_call::ToolCallDao;
 use async_trait::async_trait;
 use rig::tool::ToolDyn;
 use std::sync::{Arc, OnceLock};
-use common::err;
-use common::bail_err;
 // ==================== 单例管理 ====================
 
 static BRAIN_DAL: OnceLock<Arc<dyn BrainDal>> = OnceLock::new();
@@ -122,7 +120,7 @@ impl BrainDal for BrainDalImpl {
         let cortex_trait = self
             .cortex_dao
             .create_cortex_trait(_ctx, &provider.po, rig_tools)
-            .map_err(|e| err!(Internal, "failed to create cortex: {e}").with_source(e))?;
+            .map_err(|e: anyhow::Error| err!(Internal, "failed to create cortex: {e}").with_source::<common::error::Error>(e.into()))?;
 
         // 2. 创建 Cortex 实体
         let cortex = Cortex::new(provider.clone(), cortex_trait);
@@ -143,7 +141,7 @@ impl BrainDal for BrainDalImpl {
         let cortex_trait = self
             .cortex_dao
             .create_cortex_trait(ctx.clone(), &provider.po, Vec::new())
-            .map_err(|e| err!(Internal, "failed to create cortex: {e}").with_source(e))?;
+            .map_err(|e: anyhow::Error| err!(Internal, "failed to create cortex: {e}").with_source::<common::error::Error>(e.into()))?;
 
         // 2. 创建临时 Brain 用于测试
         let temp_brain = Brain::new(Cortex::new(provider.clone(), cortex_trait), Vec::new());
@@ -173,7 +171,7 @@ impl BrainDal for BrainDalImpl {
             .cortex_dao
             .prompt(ctx.clone(), brain.cortex_trait(), prompt)
             .await
-            .map_err(|e| err!(Internal, "brain think failed: {e}").with_source(e));
+            .map_err(|e: anyhow::Error| err!(Internal, "brain think failed: {e}").with_source::<common::error::Error>(e.into()));
 
         log_debug!(
             ctx.clone(),

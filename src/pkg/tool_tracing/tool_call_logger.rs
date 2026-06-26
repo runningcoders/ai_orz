@@ -1,9 +1,10 @@
 //! Logging decorator for our core Tool trait (with explicit RequestContext)
-//!
+//! Logging decorator for our core Tool trait (with explicit RequestContext)
 //! Wraps tools that are called through our manual built-in call chain
 //! to automatically log invocations the same way.
 
-use anyhow::Result;
+use anyhow::anyhow;
+use common::error::Result;
 use async_trait::async_trait;
 use common::enums::ToolProtocol;
 use rig::tool::ToolError;
@@ -15,8 +16,6 @@ use super::logger::ToolCallLogger;
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use common::constants::utils::current_timestamp_ms;
-use common::error::Result;
-use common::bail_err;
 
 /// Logging decorator that wraps a Tool instance and automatically logs all calls
 #[derive(Clone)]

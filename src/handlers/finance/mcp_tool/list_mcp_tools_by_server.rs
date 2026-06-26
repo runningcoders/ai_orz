@@ -7,7 +7,6 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListMcpToolsByServerRequest, ListMcpToolsByServerResponse, ToolListItem};
 
 use super::super::tool::response::to_list_item;
-use common::bail_err;
 
 /// List local MCP Tool records bound to one MCP Server.
 #[register_handler_tool(

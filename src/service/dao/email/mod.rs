@@ -7,7 +7,6 @@ use common::error::Result;
 use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;
-use common::bail_err;
 
 /// 邮件渠道 DAO 接口
 #[async_trait::async_trait]

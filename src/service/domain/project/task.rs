@@ -2,8 +2,7 @@
 //!
 //! 负责任务的创建、查询、状态流转
 
-use common::bail_err;
-use common::error::{err, Result};
+use common::error::{err, Result, bail_err};
 use crate::models::task::Task;
 use crate::pkg::RequestContext;
 use common::constants::utils;
@@ -11,7 +10,6 @@ use common::enums::{AssigneeType, TaskStatus};
 use uuid::Uuid;
 
 use super::ProjectDomainImpl;
-use common::err;
 
 #[async_trait::async_trait]
 impl super::TaskManage for ProjectDomainImpl {

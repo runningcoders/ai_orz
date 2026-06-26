@@ -586,7 +586,6 @@ async fn test_query_and_delete_knowledge_nodes(pool: SqlitePool) {
     // 测试 search_knowledge_nodes 关键词搜索 - 注意：需要 FTS 虚拟表支持
     // 当前 SQLite 表未启用 FTS，跳过此测试
     use crate::service::dao::memory::MemorySearch;
-use common::bail_err;
     // let search = MemorySearch {
     //     keyword: Some("Rust".to_string()),
     //     filters: MemoryQuery {

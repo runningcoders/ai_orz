@@ -4,7 +4,6 @@ use common::error::{Error, Result};
 use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::RequestContext;
 use common::enums::{ModelCapability, ModelProviderStatus, ProviderType};
-use common::bail_err;
 
 /// ModelProvider 查询参数
 #[derive(Debug, Clone, Default)]

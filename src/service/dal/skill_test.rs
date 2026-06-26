@@ -1,6 +1,6 @@
 //! Skill DAL 单元测试
 
-use common::error::Error;
+use common::error::{Error, Result};
 use crate::models::brain::CortexTrait;
 use crate::models::model_provider::ModelProviderPo;
 use crate::models::skill::{Skill, SkillFile, SkillPo};
@@ -10,7 +10,7 @@ use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::skill::{self, SkillSearch};
 use ::rig::tool::ToolDyn;
-use anyhow::Result;
+use anyhow;
 use common::enums::skill::SkillAuthorType;
 use common::enums::skill::SkillStatus;
 use dyn_clone::DynClone;
@@ -47,11 +47,11 @@ impl CortexTrait for MockCortex {
         &self.model_name
     }
 
-    async fn prompt(&self, _prompt: &str) -> Result<String> {
+    async fn prompt(&self, _prompt: &str) -> anyhow::Result<String> {
         Ok("Mock response".to_string())
     }
 
-    async fn embeddings(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
+    async fn embeddings(&self, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
         // 统一使用 embed_text 的逻辑，保持向量生成一致性
         let mut result = Vec::with_capacity(texts.len());
         for text in texts {
@@ -81,7 +81,7 @@ impl CortexDao for MockCortexDao {
         _ctx: RequestContext,
         _provider: &ModelProviderPo,
         _rig_tools: Vec<Box<dyn ToolDyn>>,
-    ) -> Result<Box<dyn CortexTrait + Send + Sync>> {
+    ) -> anyhow::Result<Box<dyn CortexTrait + Send + Sync>> {
         Ok(Box::new(MockCortex::new()))
     }
 
@@ -90,7 +90,7 @@ impl CortexDao for MockCortexDao {
         _ctx: RequestContext,
         _cortex: &dyn CortexTrait,
         _prompt: &str,
-    ) -> Result<String> {
+    ) -> anyhow::Result<String> {
         Ok("Mock response".to_string())
     }
 
@@ -99,7 +99,7 @@ impl CortexDao for MockCortexDao {
         _ctx: RequestContext,
         _cortex: &dyn CortexTrait,
         text: &str,
-    ) -> Result<Vec<f32>> {
+    ) -> anyhow::Result<Vec<f32>> {
         // 极端化向量差异：让 nonexistent 关键词的向量与其他向量距离 > 0.8
         // 余弦距离 > 0.8 意味着相似度 < 0.2
         let mut vec = vec![0.0; 3];
@@ -124,7 +124,7 @@ impl CortexDao for MockCortexDao {
         ctx: RequestContext,
         cortex: &dyn CortexTrait,
         entity: &dyn crate::models::vector::Vectorizable,
-    ) -> Result<crate::models::vector::VectorIndexParams> {
+    ) -> anyhow::Result<crate::models::vector::VectorIndexParams> {
         // 复用 embed_text_raw 的逻辑，包装成 VectorIndexParams
         let content = entity.vectorize_text();
         let embedding = self.embed_text_raw(ctx, cortex, &content).await?;
@@ -141,7 +141,7 @@ impl CortexDao for MockCortexDao {
         _ctx: RequestContext,
         _cortex: &dyn CortexTrait,
         text: &str,
-    ) -> Result<crate::models::vector::VectorIndexParams> {
+    ) -> anyhow::Result<crate::models::vector::VectorIndexParams> {
         // 复用 embed_text_raw 的逻辑，包装成 VectorIndexParams
         let embedding = self.embed_text_raw(_ctx, _cortex, text).await?;
         Ok(crate::models::vector::VectorIndexParams::new(
@@ -353,8 +353,6 @@ async fn test_query_skills(pool: SqlitePool) -> Result<()> {
 
     // 查询全部
     use crate::service::dao::skill::SkillQuery;
-use common::error::Result;
-use common::bail_err;
     let all = skill_dal.query(ctx.clone(), SkillQuery::default()).await?;
     assert_eq!(all.len(), 3);
 

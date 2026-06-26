@@ -5,7 +5,6 @@ use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CallModelRequest, CallModelResponse};
-use common::bail_err;
 
 /// Call a configured model provider to generate text completion with a given prompt
 #[register_handler_tool(

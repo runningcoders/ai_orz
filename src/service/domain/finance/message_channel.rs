@@ -7,7 +7,6 @@ use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::FinanceDomainImpl;
 use async_trait::async_trait;
-use common::bail_err;
 
 /// 为 FinanceDomainImpl 实现 MessageChannelManage
 #[async_trait]

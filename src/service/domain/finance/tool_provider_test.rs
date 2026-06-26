@@ -10,7 +10,6 @@ mod tests {
     use common::enums::{ControlMode, ToolProtocol};
     use serde_json::{Value, json};
     use sqlx::SqlitePool;
-use common::bail_err;
 
     fn valid_http_config() -> Value {
         json!({

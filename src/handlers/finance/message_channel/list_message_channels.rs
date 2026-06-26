@@ -1,6 +1,5 @@
 //! Handler: GET /api/v1/message-channels - List message channels with filtering
 
-use common::bail_err;
 use crate::pkg::RequestContext;
 use crate::service::dao::message_channel::MessageChannelQuery;
 use crate::service::domain::finance::domain;
@@ -10,8 +9,7 @@ use common::api::{
 };
 
 use super::response::to_list_item;
-use common::error::Result;
-use common::err;
+use common::error::{Result, err, bail_err};
 
 /// List message channels with optional filtering by user, agent, channel type, enabled status
 #[register_handler_tool(

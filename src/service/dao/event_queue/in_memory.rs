@@ -16,8 +16,6 @@ use crate::models::event::{Event, EventRef};
 use crate::models::message::Message;
 use crate::pkg::RequestContext;
 use crate::service::dao::event_queue::EventQueueDao;
-use common::err;
-use common::bail_err;
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -93,8 +91,8 @@ impl<E: Event + Clone> EventQueueDaoInMemoryImpl<E> {
 impl<E: Event + Clone> EventQueueDao<E> for EventQueueDaoInMemoryImpl<E> {
     fn enqueue(&self, _ctx: RequestContext, event: Box<E>) -> Result<()> {
         let _guard = self
-            .lock()
-            .map_err(|e| err!(Internal, "failed to acquire event queue lock" source: e))?;
+            .lock.lock()
+            .map_err(|e| err!(Internal, "failed to acquire event queue lock: {}", e))?;
 
         let events = unsafe { &mut *self.events.get() };
         let queues = unsafe { &mut *self.queues.get() };
@@ -147,8 +145,9 @@ impl<E: Event + Clone> EventQueueDao<E> for EventQueueDaoInMemoryImpl<E> {
 
     fn dequeue_next(&self, _ctx: RequestContext) -> Result<Option<Box<E>>> {
         let _guard = self
+            .lock
             .lock()
-            .map_err(|e| err!(Internal, "failed to acquire event queue lock" source: e))?;
+            .map_err(|e| err!(Internal, "failed to acquire event queue lock: {}", e))?;
 
         let events = unsafe { &mut *self.events.get() };
         let queues = unsafe { &mut *self.queues.get() };
@@ -191,8 +190,9 @@ impl<E: Event + Clone> EventQueueDao<E> for EventQueueDaoInMemoryImpl<E> {
 
     fn ack(&self, _ctx: RequestContext, event_id: &str) -> Result<()> {
         let _guard = self
+            .lock
             .lock()
-            .map_err(|e| err!(Internal, "failed to acquire event queue lock" source: e))?;
+            .map_err(|e| err!(Internal, "failed to acquire event queue lock: {}", e))?;
 
         let events = unsafe { &mut *self.events.get() };
         let queues = unsafe { &mut *self.queues.get() };
@@ -239,8 +239,9 @@ impl<E: Event + Clone> EventQueueDao<E> for EventQueueDaoInMemoryImpl<E> {
 
     fn nack(&self, _ctx: RequestContext, event_id: &str) -> Result<()> {
         let _guard = self
+            .lock
             .lock()
-            .map_err(|e| err!(Internal, "failed to acquire event queue lock" source: e))?;
+            .map_err(|e| err!(Internal, "failed to acquire event queue lock: {}", e))?;
 
         let global_heap = unsafe { &mut *self.global_heap.get() };
         let in_progress = unsafe { &mut *self.in_progress.get() };
@@ -263,19 +264,19 @@ impl<E: Event + Clone> EventQueueDao<E> for EventQueueDaoInMemoryImpl<E> {
     }
 
     fn len(&self) -> usize {
-        let _guard = self.lock().lock().ok();
+        let _guard = self.lock.lock().ok();
         let events = unsafe { &*self.events.get() };
         events.len()
     }
 
     fn is_empty(&self) -> bool {
-        let _guard = self.lock().lock().ok();
+        let _guard = self.lock.lock().ok();
         let events = unsafe { &*self.events.get() };
         events.is_empty()
     }
 
     fn in_progress_count(&self) -> usize {
-        let _guard = self.lock().lock().ok();
+        let _guard = self.lock.lock().ok();
         let in_progress = unsafe { &*self.in_progress.get() };
         in_progress.len()
     }
@@ -286,7 +287,7 @@ impl<E: Event + Clone> EventQueueDao<E> for EventQueueDaoInMemoryImpl<E> {
     }
 
     fn clear(&self) {
-        let _guard = self.lock().lock().ok();
+        let _guard = self.lock.lock().ok();
         let events = unsafe { &mut *self.events.get() };
         let queues = unsafe { &mut *self.queues.get() };
         let global_heap = unsafe { &mut *self.global_heap.get() };

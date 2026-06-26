@@ -10,8 +10,6 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use serde::Serialize;
-use common::error::Result;
-use common::bail_err;
 
 /// A generic writer for daily JSONL files
 ///

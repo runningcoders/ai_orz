@@ -1,6 +1,6 @@
 //! ModelProviderDao SQLite 实现
 
-use crate::error::AppError;
+use common::error::{Error, Result};
 use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderQuery};
@@ -223,7 +223,6 @@ UPDATE model_providers SET status = 0, modified_by = ?, updated_at = ? WHERE id 
 fn current_timestamp() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
 use common::error::Result;
-use common::bail_err;
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()

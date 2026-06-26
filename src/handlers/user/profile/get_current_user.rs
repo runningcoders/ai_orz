@@ -6,7 +6,6 @@ use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetCurrentUserRequest, GetCurrentUserResponse, UserInfoResponse};
 use common::enums::UserRole;
-use common::bail_err;
 
 /// Get current authenticated user information from request context
 #[register_handler_tool(

@@ -9,7 +9,6 @@ use crate::service::dao::project;
 use crate::service::dao::project::{ProjectDao, ProjectQuery};
 use common::enums::ProjectStatus;
 use std::sync::{Arc, OnceLock};
-use common::bail_err;
 
 // ==================== 单例管理 ====================
 

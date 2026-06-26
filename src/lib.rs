@@ -133,7 +133,6 @@ pub mod pkg;
 
 pub mod config;
 pub mod consumer;
-pub mod error;
 pub mod handlers;
 pub mod middleware;
 pub mod models;

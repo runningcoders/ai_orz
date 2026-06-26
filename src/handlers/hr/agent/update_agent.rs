@@ -6,7 +6,6 @@ use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateAgentRequest, UpdateAgentResponse};
 use std::time::{SystemTime, UNIX_EPOCH};
-use common::bail_err;
 
 /// Update the metadata and configuration of an existing AI agent
 #[register_handler_tool(

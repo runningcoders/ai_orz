@@ -6,7 +6,7 @@
 
 use super::ToolCallDao;
 use crate::models::mcp_server::McpServerPo;
-use crate::models::tool::{CoreTool, Tool, ToolExecutionError, ToolPo};
+use crate::models::tool::{CoreTool, Tool, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::mcp::{self, McpClientRuntime, McpToolDeps, RemoteMcpTool};
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
@@ -16,8 +16,6 @@ use common::enums::ToolProtocol;
 use rig::tool::ToolDyn;
 use serde_json::Value;
 use std::sync::Arc;
-use common::error::Result;
-use common::bail_err;
 
 /// MCP-specific ToolCall DAO contract.
 ///
@@ -121,7 +119,7 @@ impl McpToolCallDao for McpToolCallDaoImpl {
     }
 
     async fn list_mcp_tools(&self, server: &McpServerPo) -> Result<Vec<RemoteMcpTool>> {
-        self.client_runtime.list_tools(server).await
+        self.client_runtime.list_tools(server).await.map_err(Into::into)
     }
 
     #[cfg(test)]

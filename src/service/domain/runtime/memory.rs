@@ -1,6 +1,6 @@
 //! Runtime Memory 具体实现
 
-use common::error::{Error, Result};
+use common::error::{Error, Result, err};
 use crate::models::memory::{Memory, MemoryTrace};
 use crate::pkg::request_context::RequestContext;
 use crate::service::dao::memory::MemoryQuery;
@@ -40,8 +40,6 @@ impl RuntimeMemory for RuntimeDomainImpl {
     ) -> Result<Memory> {
         use crate::models::memory::MemoryCreateParams;
         use crate::service::dal::memory::dal;
-use common::err;
-use common::bail_err;
 
         // 可选：内部统一补充信息（如果缺失）
         if trace.log_id.is_empty() {

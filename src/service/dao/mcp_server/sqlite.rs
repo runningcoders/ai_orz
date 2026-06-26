@@ -10,7 +10,6 @@ use std::sync::{Arc, OnceLock};
 
 use super::McpServerDao;
 use crate::models::mcp_server::McpServerQuery;
-use common::bail_err;
 
 static MCP_SERVER_DAO: OnceLock<Arc<dyn McpServerDao + Send + Sync>> = OnceLock::new();
 

@@ -1,7 +1,9 @@
 //! Shared error types.
 
 use std::fmt;
+use std::sync::Arc;
 
+use anyhow::{self, Error as AnyhowError};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -27,6 +29,9 @@ pub enum ErrorType {
     Tool,
     /// Runtime orchestration failure.
     Runtime,
+    /// Network request failure.
+    Network,
+
     /// Configuration failure.
     Config,
     /// System internal error.
@@ -34,23 +39,39 @@ pub enum ErrorType {
 }
 
 /// A single error field (structured context).
+///
+/// Supports both known structured fields and generic dynamic map for extension.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ErrorField(pub Map<String, Value>);
+pub struct ErrorField {
+    /// Tool execution trace reference (if available).
+    pub trace_ref: Option<crate::models::ToolCallTraceRef>,
+    /// Generic dynamic fields for extension.
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
 
 impl ErrorField {
     /// Create a new empty ErrorField.
     pub fn new() -> Self {
-        Self(Map::new())
+        Self {
+            trace_ref: None,
+            extra: Map::new(),
+        }
     }
     
-    /// Insert a key-value pair.
+    /// Insert a key-value pair into the generic extra map.
     pub fn insert(&mut self, key: String, value: Value) {
-        self.0.insert(key, value);
+        self.extra.insert(key, value);
     }
     
-    /// Get a value by key.
+    /// Get a value by key from the generic extra map.
     pub fn get(&self, key: &str) -> Option<&Value> {
-        self.0.get(key)
+        self.extra.get(key)
+    }
+
+    /// Set the trace_ref field.
+    pub fn set_trace_ref(&mut self, trace_ref: crate::models::ToolCallTraceRef) {
+        self.trace_ref = Some(trace_ref);
     }
 }
 
@@ -64,13 +85,13 @@ impl std::ops::Deref for ErrorField {
     type Target = Map<String, Value>;
     
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.extra
     }
 }
 
 impl std::ops::DerefMut for ErrorField {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        &mut self.extra
     }
 }
 
@@ -82,7 +103,7 @@ impl std::ops::DerefMut for ErrorField {
 /// - Optional structured fields for extra context
 /// - Optional source error for chain
 /// - Serializable by default (source is not serialized)
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Error {
     /// Error code (stable, machine-readable).
     pub code: crate::error::ErrorCode,
@@ -95,7 +116,7 @@ pub struct Error {
     /// Underlying source error (not serialized, not deserialized).
     #[serde(skip_serializing)]
     #[serde(skip_deserializing)]
-    pub source: Option<anyhow::Error>,
+    pub source: Option<Arc<AnyhowError>>,
 }
 
 impl Error {
@@ -151,6 +172,21 @@ impl Error {
         Self::new(crate::error::ErrorCode::ResourceNotFound, msg)
     }
 
+    /// Shortcut: conflict (409).
+    pub fn conflict(msg: impl Into<String>) -> Self {
+        Self::new(crate::error::ErrorCode::Conflict, msg)
+    }
+
+    /// Shortcut: payload too large (413).
+    pub fn payload_too_large(msg: impl Into<String>) -> Self {
+        Self::new(crate::error::ErrorCode::PayloadTooLarge, msg)
+    }
+
+    /// Shortcut: tool execution failed (500).
+    pub fn tool_call_failed(msg: impl Into<String>) -> Self {
+        Self::new(crate::error::ErrorCode::ToolExecutionFailed, msg)
+    }
+
     /// Shortcut: unauthorized (401).
     pub fn unauthorized(msg: impl Into<String>) -> Self {
         Self::new(crate::error::ErrorCode::Unauthorized, msg)
@@ -172,7 +208,7 @@ impl Error {
     where
         E: std::error::Error + Send + Sync + 'static,
     {
-        self.source = Some(anyhow::Error::new(source));
+        self.source = Some(Arc::new(AnyhowError::new(source)));
         self
     }
 
@@ -181,9 +217,21 @@ impl Error {
         self.code.code_str()
     }
 
+    /// Get the structured error code enum.
+    pub fn code_enum(&self) -> crate::error::ErrorCode {
+        self.code
+    }
+
     /// Default HTTP status code for HTTP adapters.
     pub fn http_status(&self) -> u16 {
         self.code.http_status()
+    }
+
+    /// Attach tool call trace reference to this error.
+    pub fn set_tool_trace(&mut self, trace_ref: serde_json::Value) {
+        let mut field = ErrorField::default();
+        field.insert("trace_ref".into(), trace_ref);
+        self.field = Some(field);
     }
 
     /// Get reference to structured fields.
@@ -192,8 +240,8 @@ impl Error {
     }
 
     /// Get source error.
-    pub fn source(&self) -> Option<&anyhow::Error> {
-        self.source.as_ref()
+    pub fn source(&self) -> Option<&AnyhowError> {
+        self.source.as_ref().map(|v| v.as_ref())
     }
 }
 
@@ -205,7 +253,7 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.source.as_ref().map(|e| e.as_ref() as &dyn std::error::Error)
+        None
     }
 }
 
@@ -225,22 +273,69 @@ impl From<std::io::Error> for Error {
 }
 
 /// Convert anyhow::Error to our Error (maps to SystemError)
-impl From<anyhow::Error> for Error {
-    fn from(err: anyhow::Error) -> Self {
+impl From<AnyhowError> for Error {
+    fn from(err: AnyhowError) -> Self {
         use crate::error::{ErrorCode, ErrorType};
-        let mut e = Error::typed(
+        let mut e = Error::typed(ErrorCode::Internal, ErrorType::System, err.to_string());
+        e.source = Some(Arc::new(err));
+        e
+    }
+}
+
+/// Convert tokio::task::JoinError to our Error (maps to Internal)
+impl From<tokio::task::JoinError> for Error {
+    fn from(err: tokio::task::JoinError) -> Self {
+        use crate::error::{ErrorCode, ErrorType};
+        Error::typed(
             ErrorCode::Internal,
             ErrorType::System,
             err.to_string(),
-        );
-        e.source = Some(err.into());
-        e
+        ).with_source(err)
+    }
+}
+
+#[cfg(feature = "reqwest-integration")]
+/// Convert reqwest::Error to our Error (maps to Network)
+use reqwest::Error as ReqwestError;
+#[cfg(feature = "reqwest-integration")]
+impl From<ReqwestError> for Error {
+    fn from(err: ReqwestError) -> Self {
+        Error::new(crate::error::ErrorCode::NetworkError, err.to_string()).with_source(err)
     }
 }
 
 /// Convert serde_json::Error to our Error (maps to Internal)
 impl From<serde_json::Error> for Error {
     fn from(err: serde_json::Error) -> Self {
+        Error::internal(err.to_string()).with_source(err)
+    }
+}
+
+/// Convert sqlx::migrate::MigrateError to our Error (maps to Db)
+#[cfg(feature = "sqlx")]
+impl From<sqlx::migrate::MigrateError> for Error {
+    fn from(err: sqlx::migrate::MigrateError) -> Self {
+        use crate::error::{ErrorCode, ErrorType};
+        Error::typed(
+            ErrorCode::DbMigrationFailed,
+            ErrorType::Db,
+            err.to_string(),
+        ).with_source(err)
+    }
+}
+
+/// Convert bincode::DecodeError to our Error (maps to Internal)
+#[cfg(feature = "bincode-integration")]
+impl From<bincode::error::DecodeError> for Error {
+    fn from(err: bincode::error::DecodeError) -> Self {
+        Error::internal(err.to_string()).with_source(err)
+    }
+}
+
+/// Convert bincode::EncodeError to our Error (maps to Internal)
+#[cfg(feature = "bincode-integration")]
+impl From<bincode::error::EncodeError> for Error {
+    fn from(err: bincode::error::EncodeError) -> Self {
         Error::internal(err.to_string()).with_source(err)
     }
 }
@@ -269,27 +364,14 @@ impl From<base64::EncodeError> for Error {
     }
 }
 
-/// Convert sqlx::migrate::MigrateError to our Error (maps to Db error)
-#[cfg(feature = "sqlx")]
-impl From<sqlx::migrate::MigrateError> for Error {
-    fn from(err: sqlx::migrate::MigrateError) -> Self {
-        Error::db_error(err.to_string()).with_source(err)
-    }
-}
-
-/// Convert reqwest::Error to our Error (maps to Third-party error)
-#[cfg(feature = "reqwest-integration")]
-impl From<reqwest::Error> for Error {
-    fn from(err: reqwest::Error) -> Self {
-        Error::new(crate::error::ErrorCode::ThirdPartyError, err.to_string()).with_source(err)
-    }
-}
-
-/// Convert toml::de::Error to our Error (maps to Config error)
 #[cfg(feature = "toml-integration")]
-impl From<toml::de::Error> for Error {
-    fn from(err: toml::de::Error) -> Self {
-        Error::new(crate::error::ErrorCode::ConfigError, err.to_string()).with_source(err)
+/// Convert toml::de::Error to our Error (maps to Config error)
+use toml::de::Error as TomlDeError;
+#[cfg(feature = "toml-integration")]
+impl From<TomlDeError> for Error {
+    fn from(err: TomlDeError) -> Self {
+        Error::new(crate::error::ErrorCode::ConfigInvalid, err.to_string())
+            .with_source(err)
     }
 }
 
@@ -297,32 +379,10 @@ impl From<toml::de::Error> for Error {
 #[cfg(feature = "rig-integration")]
 impl From<rig::tool::ToolError> for Error {
     fn from(err: rig::tool::ToolError) -> Self {
-        Error::new(crate::error::ErrorCode::ToolExecutionFailed, err.to_string()).with_source(err)
+        Error::new(
+            crate::error::ErrorCode::ToolExecutionFailed,
+            err.to_string(),
+        )
+        .with_source(err)
     }
 }
-
-/// Convert tokio::task::JoinError to our Error
-impl From<tokio::task::JoinError> for Error {
-    fn from(err: tokio::task::JoinError) -> Self {
-        Error::internal(err.to_string()).with_source(err)
-    }
-}
-
-/// Convert rig::ToolExecutionError to our Error
-#[cfg(feature = "rig-integration")]
-impl From<rig::tool::ToolExecutionError> for Error {
-    fn from(err: rig::tool::ToolExecutionError) -> Self {
-        Error::new(crate::error::ErrorCode::ToolExecutionFailed, err.to_string()).with_source(err)
-    }
-}
-
-/// Convert rig::ToolError to our Error
-#[cfg(feature = "rig-integration")]
-impl From<rig::tool::ToolError> for Error {
-    fn from(err: rig::tool::ToolError) -> Self {
-        Error::tool_execution_failed(err.to_string()).with_source(err)
-    }
-}
-
-/// Shared result type for ai_orz.
-pub type Result<T> = std::result::Result<T, Error>;

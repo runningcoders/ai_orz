@@ -1,12 +1,10 @@
 //! Handler: PUT /api/v1/project/artifacts/{id}/content - Update artifact text content
 
-use common::bail_err;
 use crate::handlers::project::artifact::response;
 use crate::pkg::RequestContext;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::artifact::{ArtifactDetail, UpdateArtifactContentRequest};
-use common::error::Result;
-use common::err;
+use common::error::{Result, err, bail_err};
 
 /// Update the full text content of a generated-content artifact (full replace)
 #[register_handler_tool(

@@ -8,7 +8,6 @@ use crate::models::mcp_server::{
 };
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::{FinanceDomainImpl, McpServerManage};
-use common::bail_err;
 
 #[async_trait::async_trait]
 impl McpServerManage for FinanceDomainImpl {

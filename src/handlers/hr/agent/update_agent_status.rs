@@ -5,7 +5,6 @@ use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateAgentStatusRequest, UpdateAgentStatusResponse};
-use common::bail_err;
 
 /// Update the status of an AI agent (active/disabled)
 #[register_handler_tool(

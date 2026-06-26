@@ -6,14 +6,12 @@ use axum::{
 };
 use common::api::{ApiResponse, GetAttachmentResponse};
 
-use common::bail_err;
-use common::err;
 use crate::models::attachment::AttachmentGetOptions;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
 use super::response::to_detail;
-use common::error::Result;
+use common::error::{Result, err, bail_err};
 
 /// 获取 Attachment
 /// GET /attachments/{id}

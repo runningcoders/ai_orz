@@ -9,7 +9,6 @@ use sqlx::SqlitePool;
 use std::sync::Arc;
 use uuid::Uuid;
 use common::error::Result;
-use common::bail_err;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     RequestContext::new_simple(user_id, pool)

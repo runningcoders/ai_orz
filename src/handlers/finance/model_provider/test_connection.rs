@@ -5,7 +5,6 @@ use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{TestConnectionResponse, TestModelProviderConnectionRequest};
-use common::bail_err;
 
 /// Test connectivity and authentication to a model provider with a sample prompt
 #[register_handler_tool(

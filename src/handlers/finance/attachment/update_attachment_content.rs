@@ -6,14 +6,12 @@ use axum::{
 };
 use common::api::{ApiResponse, AttachmentContentResponse, UpdateTextContentRequest};
 
-use common::bail_err;
 use crate::models::attachment::TextContentUpdate;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
 use super::response::to_content_response;
-use common::error::Result;
-use common::err;
+use common::error::{Result, err, bail_err};
 
 /// 全量替换 Attachment UTF-8 文本内容
 /// PUT /attachments/{id}/content

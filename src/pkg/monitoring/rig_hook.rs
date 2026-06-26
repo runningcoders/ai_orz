@@ -11,7 +11,6 @@ use rig::agent::{HookAction, PromptHook, ToolCallHookAction};
 use rig::completion::{CompletionModel, CompletionResponse, Message};
 use rig::wasm_compat::WasmCompatSend;
 use tracing::{debug, info};
-use common::bail_err;
 
 /// Runtime Monitoring Hook
 /// 接入 rig 的 hook 机制，实现运行时监控

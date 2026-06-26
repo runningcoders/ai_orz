@@ -5,7 +5,6 @@
 use common::enums::FileType;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-use common::bail_err;
 
 /// AttachmentPo 持久化对象。
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]

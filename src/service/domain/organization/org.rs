@@ -10,7 +10,6 @@ use crate::service::dao::organization::OrganizationQuery;
 use async_trait::async_trait;
 use common::enums::OrganizationStatus;
 use rand::Rng;
-use common::bail_err;
 
 /// 生成组织 ID（12 位大写字母 + 数字）
 fn generate_org_id() -> String {
@@ -58,7 +57,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
         password_hash: String,
         display_name: Option<String>,
         email: Option<String>,
-    ) -> Result<String> {
+    ) -> Result<(String, String)> {
         // 1. 创建组织
         let org_id = generate_org_id();
         let org = OrganizationPo::new(

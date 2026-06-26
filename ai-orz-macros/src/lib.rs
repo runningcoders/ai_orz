@@ -20,7 +20,7 @@ pub fn derive_params(input: TokenStream) -> TokenStream {
 /// use ai_orz_macros::register_handler_tool;
 /// use common::api::ListSkillFilesParams;
 ///
-/// async fn list_skill_files_handler(ctx: RequestContext, params: ListSkillFilesParams) -> Result<Value, AppError> {
+/// async fn list_skill_files_handler(ctx: RequestContext, params: ListSkillFilesParams) -> ::std::result::Result<Value, AppError> {
 ///     // implementation...
 /// }
 ///
@@ -30,7 +30,7 @@ pub fn derive_params(input: TokenStream) -> TokenStream {
 ///     description = "List all files in a skill",
 ///     params = "common::api::ListSkillFilesParams",
 /// )]
-/// async fn list_skill_files_handler(ctx: RequestContext, params: ListSkillFilesParams) -> Result<Value, AppError> {
+/// async fn list_skill_files_handler(ctx: RequestContext, params: ListSkillFilesParams) -> ::std::result::Result<Value, AppError> {
 ///     // implementation...
 /// }
 /// ```
@@ -199,7 +199,7 @@ pub fn register_handler_tool(args: TokenStream, input: TokenStream) -> TokenStre
 }
 
 fn extract_output_type(ty: &Type) -> &Type {
-    // We expect: Result<Output, AppError>
+    // We expect: Result<Output, AppError> (old) or Result<Output> (new with common::error::Result type alias)
     match ty {
         Type::Path(type_path) => {
             if let Some(last_segment) = type_path.path.segments.last() {
@@ -208,6 +208,8 @@ fn extract_output_type(ty: &Type) -> &Type {
                         args,
                         ..
                     }) => {
+                        // If 1 argument: it's Result<Output> -> return the only argument
+                        // If 2 arguments: it's Result<Output, AppError> -> return the first argument
                         if let Some(syn::GenericArgument::Type(output)) = args.first() {
                             return output;
                         }
@@ -218,7 +220,7 @@ fn extract_output_type(ty: &Type) -> &Type {
         }
         _ => {}
     }
-    panic!("Expected return type to be Result<Output, AppError>");
+    panic!("Expected return type to be Result<Output> or Result<Output, AppError>");
 }
 
 fn is_value_output(ty: &Type) -> bool {
@@ -257,7 +259,7 @@ fn is_value_output(ty: &Type) -> bool {
 /// pub async fn list_skill_files(
 ///     ctx: RequestContext,
 ///     params: ListSkillFilesParams,
-/// ) -> Result<ListSkillFilesResponse, AppError> {
+/// ) -> ::std::result::Result<ListSkillFilesResponse, AppError> {
 ///     // implementation...
 /// }
 /// ```
@@ -282,7 +284,7 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
         }
     } else {
         panic!(
-            "Expected function signature: async fn name(ctx: RequestContext, params: Params) -> Result<Output, AppError>"
+            "Expected function signature: async fn name(ctx: RequestContext, params: Params) -> ::std::result::Result<Output, AppError>"
         );
     };
 
@@ -337,7 +339,7 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
                     axum::extract::Path(#path_tuple): axum::extract::Path<#path_ty_tuple>,
                     axum::extract::Query(query): axum::extract::Query<#params_ty>,
                     axum::Json(mut params): axum::Json<#params_ty>,
-                ) -> Result<axum::Json<common::api::ApiResponse<#output_ty>>, common::error::Error> {
+                ) -> ::std::result::Result<axum::Json<common::api::ApiResponse<#output_ty>>, common::error::Error> {
                     // Priority: path > query > body, so assign in that order
                     #assign_queries
                     #assign_paths
@@ -366,7 +368,7 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
                     axum::extract::Extension(ctx): axum::extract::Extension<RequestContext>,
                     axum::extract::Path(#path_tuple): axum::extract::Path<#path_ty_tuple>,
                     axum::Json(mut params): axum::Json<#params_ty>,
-                ) -> Result<axum::Json<common::api::ApiResponse<#output_ty>>, common::error::Error> {
+                ) -> ::std::result::Result<axum::Json<common::api::ApiResponse<#output_ty>>, common::error::Error> {
                     #assign_paths
                     let result = #core_ident(ctx, params).await?;
                     Ok(axum::Json(common::api::ApiResponse::success(result)))
@@ -380,7 +382,7 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
                 pub async fn #handler_ident(
                     axum::extract::Extension(ctx): axum::extract::Extension<RequestContext>,
                     axum::extract::Query(params): axum::extract::Query<#params_ty>,
-                ) -> Result<axum::Json<common::api::ApiResponse<#output_ty>>, common::error::Error> {
+                ) -> ::std::result::Result<axum::Json<common::api::ApiResponse<#output_ty>>, common::error::Error> {
                     let result = #core_ident(ctx, params).await?;
                     Ok(axum::Json(common::api::ApiResponse::success(result)))
                 }
@@ -394,7 +396,7 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
                 pub async fn #handler_ident(
                     axum::extract::Extension(ctx): axum::extract::Extension<RequestContext>,
                     axum::Json(params): axum::Json<#params_ty>,
-                ) -> Result<axum::Json<common::api::ApiResponse<#output_ty>>, common::error::Error> {
+                ) -> ::std::result::Result<axum::Json<common::api::ApiResponse<#output_ty>>, common::error::Error> {
                     let result = #core_ident(ctx, params).await?;
                     Ok(axum::Json(common::api::ApiResponse::success(result)))
                 }

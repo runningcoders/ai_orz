@@ -367,7 +367,6 @@ UPDATE messages SET "status" = ?, updated_at = ?, modified_by = ? WHERE id = ?
     ) -> Result<MessagePo> {
         use common::enums::{MessageRole, MessageType};
         use rand::Rng;
-use common::bail_err;
 
         /// 生成随机 ID（和项目风格一致）
         fn generate_id() -> String {

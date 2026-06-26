@@ -3,7 +3,7 @@
 //! Batch 1 verifies that upper layers use the `McpServer` business entity while
 //! DAO remains a pure `McpServerPo` persistence boundary.
 
-use crate::error::{common::error::Error, Result};
+use common::error::{Error, Result};
 use crate::models::mcp_server::{McpServer, McpServerConfig, McpServerStatus, McpTransport};
 use crate::pkg::RequestContext;
 use crate::service::dal::mcp_server::{self, McpServerDal};
@@ -11,8 +11,6 @@ use crate::service::dao::tool_call::McpToolCallDao;
 use crate::service::dao::{mcp_server as mcp_server_dao, tool_call};
 use sqlx::SqlitePool;
 use std::sync::Arc;
-use common::error::Result;
-use common::bail_err;
 
 fn stdio_server(name: &str, creator: &str) -> McpServer {
     McpServer::new(
@@ -138,7 +136,9 @@ async fn mcp_server_dal_create_rejects_stdio_without_command_and_does_not_persis
 
     let result = dal.create(ctx.clone(), &server).await;
 
-    assert!(matches!(result, Err(common::error::Error::bad_request(_))));
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert_eq!(err.code_enum(), common::error::ErrorCode::InvalidRequest);
     assert!(
         dal.find_by_id(ctx.clone(), "invalid-stdio-server")
             .await?
@@ -156,7 +156,9 @@ async fn mcp_server_dal_create_rejects_streamable_http_until_security_policy_exi
 
     let result = dal.create(ctx.clone(), &server).await;
 
-    assert!(matches!(result, Err(common::error::Error::bad_request(_))));
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert_eq!(err.code_enum(), common::error::ErrorCode::InvalidRequest);
     assert!(
         dal.find_by_id(ctx.clone(), "pending-http-server")
             .await?

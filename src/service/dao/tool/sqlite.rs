@@ -8,7 +8,6 @@ use sqlx::SqlitePool;
 use std::sync::{Arc, OnceLock};
 
 use super::{ToolDao, ToolQuery, ToolSearch};
-use common::bail_err;
 
 // ==================== 工厂方法 + 单例 ====================
 

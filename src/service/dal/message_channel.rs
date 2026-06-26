@@ -43,8 +43,6 @@ pub fn new(
     message_channel_dao: Arc<dyn MessageChannelDao + Send + Sync>,
 ) -> Arc<dyn MessageChannelDal> {
     use crate::service::dao::{email, lark, slack, webhook, wechat};
-use common::err;
-use common::bail_err;
 
     Arc::new(MessageChannelDalImpl {
         message_channel_dao,
@@ -201,7 +199,7 @@ impl MessageChannelDal for MessageChannelDalImpl {
         let channel = self
             .get_channel(ctx.clone(), channel_id)
             .await?
-            .ok_or_else(|| bail_err!(ResourceNotFound, "渠道不存在: {}", channel_id))?;
+            .ok_or_else(|| err!(ResourceNotFound, "渠道不存在: {}", channel_id))?;
 
         // 🎯 核心：纯 match 分发！无 trait！无工厂！
         match channel.channel_type() {
@@ -249,7 +247,7 @@ impl MessageChannelDal for MessageChannelDalImpl {
                 channel_type: channel.channel_type(),
                 channel_name: channel.po.channel_name.clone(),
                 success: result.is_ok(),
-                error: result.err(),
+                error: result.err().map(|e| e.to_string()),
             });
         }
 
@@ -297,8 +295,9 @@ impl MessageChannelDalImpl {
                     .await
             }
             Err(e) => {
+                let err_msg = e.to_string();
                 self.message_channel_dao
-                    .mark_push_failed(ctx.clone(), channel.id(), e)
+                    .mark_push_failed(ctx.clone(), channel.id(), &err_msg)
                     .await
             }
         }

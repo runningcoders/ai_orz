@@ -184,13 +184,13 @@ where
         let params: Params = match serde_json::from_value(args) {
             Ok(p) => p,
             Err(e) => {
-                return Err(ToolError::JsonError(e));
+                return Err(ToolError::JsonError(e).into());
             }
         };
 
         match self.inner.call(ctx, params).await {
             Ok(result) => Ok(result),
-            Err(app_error) => Err(ToolError::ToolCallError(app_error.to_string().into())),
+            Err(app_error) => Err(ToolError::ToolCallError(Box::new(app_error)).into()),
         }
     }
 
@@ -244,7 +244,6 @@ impl HandlerToolBuilder {
     {
         use common::enums::tool::{ControlMode, ToolProtocol, ToolStatus};
 use common::error::Result;
-use common::bail_err;
 
         let mut po = ToolPo::new(
             self.id.clone(),

@@ -8,7 +8,6 @@ use common::api::{
     OrganizationInfoResponse, UpdateCurrentOrganizationRequest, UpdateCurrentOrganizationResponse,
 };
 use common::constants::utils;
-use common::bail_err;
 
 /// Update information for the currently authenticated user's organization (admin only)
 #[register_handler_tool(

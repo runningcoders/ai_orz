@@ -2,7 +2,7 @@
 //!
 //! 用于用户登录认证，签发和验证 JWT token
 
-use common::error::Result;
+use common::error::{Result, err};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
@@ -82,14 +82,15 @@ impl JwtConfig {
             &claims,
             &EncodingKey::from_secret(&self.secret),
         )
+        .map_err(|e| err!(InvalidToken, e.to_string()))
     }
 
-    /// 验证并解码 JWT token
     pub fn decode(&self, token: &str) -> Result<Claims> {
         let validation = Validation::new(Algorithm::HS256);
 
         decode::<Claims>(token, &DecodingKey::from_secret(&self.secret), &validation)
             .map(|data| data.claims)
+            .map_err(|e| err!(InvalidToken, e.to_string()))
     }
 
     /// 获取默认过期时间（秒）
@@ -130,7 +131,6 @@ pub fn decode_jwt(token: &str) -> Result<Claims> {
 #[cfg(test)]
 mod tests {
     use super::*;
-use common::bail_err;
 
     #[test]
     fn test_jwt_encode_decode() {

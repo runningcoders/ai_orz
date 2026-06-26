@@ -8,7 +8,6 @@ use crate::service::dao::memory::{self, MemoryVectorDao};
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use common::error::Result;
-use common::bail_err;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     RequestContext::new_simple(user_id, pool)

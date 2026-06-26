@@ -1,5 +1,4 @@
 use super::{McpServerConfig, REDACTED_CONFIG_VALUE};
-use common::bail_err;
 
 #[test]
 fn redacted_for_management_redacts_url_userinfo_and_query() {

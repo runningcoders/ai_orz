@@ -1,4 +1,3 @@
-use crate::error::Result;
 use crate::models::attachment::AttachmentPo;
 use crate::pkg::request_context::RequestContext;
 use crate::service::dao::attachment::{AttachmentDao, AttachmentQuery, new_with_attachments_dir};
@@ -6,7 +5,6 @@ use common::enums::FileType;
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use common::error::Result;
-use common::bail_err;
 
 /// 初始化测试环境
 fn init_test_env(

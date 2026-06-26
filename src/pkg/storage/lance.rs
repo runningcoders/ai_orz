@@ -22,7 +22,6 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::Arc as StdArc;
 use tokio::sync::RwLock;
-use common::bail_err;
 
 /// LanceDB 向量存储
 ///

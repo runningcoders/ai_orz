@@ -8,7 +8,6 @@ use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
 use super::response::to_detail;
-use common::bail_err;
 
 /// Get a management-safe MCP Server detail by ID.
 #[register_handler_tool(

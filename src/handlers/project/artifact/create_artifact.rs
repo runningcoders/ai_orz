@@ -9,8 +9,6 @@ use crate::service::domain::{finance, project};
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CreateArtifactRequest, CreateArtifactResponse};
 use common::enums::ArtifactSourceType;
-use common::err;
-use common::bail_err;
 
 /// Create a new artifact (from existing attachment or generated content)
 #[register_handler_tool(

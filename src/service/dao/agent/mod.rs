@@ -4,7 +4,6 @@ use common::error::Result;
 use crate::models::agent::AgentPo;
 use crate::pkg::RequestContext;
 use common::enums::AgentStatus;
-use common::bail_err;
 
 /// Agent 查询参数
 #[derive(Debug, Clone, Default)]

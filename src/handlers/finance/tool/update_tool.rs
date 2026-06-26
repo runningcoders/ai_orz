@@ -4,13 +4,11 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateToolRequest, UpdateToolResponse};
 use common::enums::{ToolProtocol, ToolStatus};
 
-use common::bail_err;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
 use super::response::to_detail;
-use common::error::Result;
-use common::err;
+use common::error::{Result, err, bail_err};
 
 /// Update an existing custom tool's configuration (name, description, credentials, etc.)
 #[register_handler_tool(

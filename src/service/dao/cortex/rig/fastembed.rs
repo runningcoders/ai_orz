@@ -2,13 +2,12 @@
 
 use super::*;
 use ::fastembed::{InitOptions, TextEmbedding};
-use anyhow::{Result, anyhow};
+use anyhow::anyhow;
 use async_trait::async_trait;
 use common::enums::ModelCapability;
 use std::sync::Arc;
 use std::sync::Mutex;
 use common::error::Result;
-use common::bail_err;
 
 /// FastEmbed Cortex 实现
 pub struct FastEmbedCortex {
@@ -58,11 +57,11 @@ impl FastEmbedCortex {
 
 #[async_trait]
 impl CortexTrait for FastEmbedCortex {
-    async fn prompt(&self, _prompt: &str) -> Result<String> {
+    async fn prompt(&self, _prompt: &str) -> anyhow::Result<String> {
         Err(anyhow!("FastEmbed 仅支持向量化，不支持 prompt 功能"))
     }
 
-    async fn embeddings(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
+    async fn embeddings(&self, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
         // fastembed 的 embed 是同步的，用 spawn_blocking 包装
         let texts = texts.to_vec();
         let embedding = self.embedding.clone();

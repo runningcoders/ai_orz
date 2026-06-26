@@ -10,8 +10,6 @@ use crate::service::dao::attachment::{AttachmentDao, AttachmentQuery};
 use common::enums::FileType;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
-use common::err;
-use common::bail_err;
 
 // ==================== 单例管理 ====================
 

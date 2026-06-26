@@ -6,7 +6,6 @@ use crate::models::artifact::ArtifactPo;
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
 use common::enums::{ArtifactSourceType, FileType};
-use common::bail_err;
 
 /// Artifact 查询参数
 #[derive(Debug, Clone, Default)]

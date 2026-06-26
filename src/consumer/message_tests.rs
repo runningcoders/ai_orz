@@ -2,12 +2,12 @@
 
 use super::MessageHandler;
 use super::message::*;
-use crate::error::{common::error::Error, Result};
+use common::error::{Error, Result};
 use crate::models::agent::Agent;
 use crate::models::file::FileMeta;
 use crate::models::memory::{Memory, MemoryTrace};
 use crate::models::message::{Message, ToolCallMessage};
-use crate::models::tool::{Tool, ToolCallTraceRef, ToolExecutionError, ToolExecutionResult};
+use crate::models::tool::{Tool, ToolCallTraceRef, ToolExecutionResult};
 use crate::pkg::RequestContext;
 use crate::service::dao::message::MessageQuery;
 use crate::service::domain::message::{
@@ -118,7 +118,7 @@ impl RecordingRuntimeDomain {
         Arc::new(Self {
             calls: Mutex::new(Vec::new()),
             manual_calls: Mutex::new(Vec::new()),
-            result: Mutex::new(Err(error_message.to_string())),
+            result: Mutex::new(Err(Error::tool_call_failed(error_message.to_string()))),
         })
     }
 
@@ -126,7 +126,7 @@ impl RecordingRuntimeDomain {
         Arc::new(Self {
             calls: Mutex::new(Vec::new()),
             manual_calls: Mutex::new(Vec::new()),
-            result: Mutex::new(Err(format!("{}|{}|{}", error_message, tool_id, call_id))),
+            result: Mutex::new(Err(Error::tool_call_failed(format!("{}|{}|{}", error_message, tool_id, call_id)))),
         })
     }
 
@@ -150,16 +150,18 @@ impl fmt::Debug for RecordingRuntimeDomain {
     }
 }
 
-fn recorded_error_to_tool_execution_error(error_message: String) -> ToolExecutionError {
+fn recorded_error_to_tool_execution_error(error_message: String) -> Error {
     let parts = error_message.split('|').collect::<Vec<_>>();
     if parts.len() == 3 {
-        ToolExecutionError::with_trace(
-            ToolError::ToolCallError(parts[0].to_string().into()),
+        let trace_ref = ToolCallTraceRef::new(
             parts[1].to_string(),
             parts[2].to_string(),
-        )
+        );
+        let mut err = Error::tool_call_failed(parts[0].to_string());
+        err.set_tool_trace(serde_json::json!(trace_ref));
+        err
     } else {
-        ToolExecutionError::without_trace(ToolError::ToolCallError(error_message.into()))
+        Error::tool_call_failed(error_message)
     }
 }
 
@@ -185,7 +187,7 @@ impl RuntimeMemory for RecordingRuntimeDomain {
         _agent_id: &str,
         _task_id: Option<&str>,
         _limit: usize,
-    ) -> std::result::Result<Vec<Memory, common::error::Error>> {
+    ) -> std::result::Result<Vec<Memory>, common::error::Error> {
         unimplemented!("not needed by message consumer tests")
     }
 
@@ -221,7 +223,7 @@ impl RuntimeToolExecution for RecordingRuntimeDomain {
         self.calls.lock().unwrap().push((tool_id, args));
         match self.result.lock().unwrap().clone() {
             Ok(result) => Ok(result),
-            Err(error_message) => Err(recorded_error_to_tool_execution_error(error_message)),
+            Err(error_message) => Err(recorded_error_to_tool_execution_error(error_message.to_string())),
         }
     }
 
@@ -234,7 +236,7 @@ impl RuntimeToolExecution for RecordingRuntimeDomain {
         self.calls.lock().unwrap().push((tool.po.id.clone(), args));
         match self.result.lock().unwrap().clone() {
             Ok(result) => Ok(result),
-            Err(error_message) => Err(recorded_error_to_tool_execution_error(error_message)),
+            Err(error_message) => Err(recorded_error_to_tool_execution_error(error_message.to_string())),
         }
     }
 
@@ -251,7 +253,7 @@ impl RuntimeToolExecution for RecordingRuntimeDomain {
             .push((agent_id, tool_id, args));
         match self.result.lock().unwrap().clone() {
             Ok(result) => Ok(result),
-            Err(error_message) => Err(recorded_error_to_tool_execution_error(error_message)),
+            Err(error_message) => Err(recorded_error_to_tool_execution_error(error_message.to_string())),
         }
     }
 
@@ -259,7 +261,7 @@ impl RuntimeToolExecution for RecordingRuntimeDomain {
         &self,
         _ctx: RequestContext,
         _query: crate::pkg::tool_tracing::logger::ToolCallQuery,
-    ) -> std::result::Result<Vec<crate::pkg::tool_tracing::entry::ToolCallEntry, common::error::Error>> {
+    ) -> std::result::Result<Vec<crate::pkg::tool_tracing::entry::ToolCallEntry>, common::error::Error> {
         unimplemented!("not needed by message consumer tests")
     }
 
@@ -267,7 +269,7 @@ impl RuntimeToolExecution for RecordingRuntimeDomain {
         &self,
         _ctx: RequestContext,
         _query: crate::pkg::tool_tracing::logger::ToolCallQuery,
-    ) -> std::result::Result<Option<crate::pkg::tool_tracing::entry::ToolCallEntry, common::error::Error>> {
+    ) -> std::result::Result<Option<crate::pkg::tool_tracing::entry::ToolCallEntry>, common::error::Error> {
         unimplemented!("not needed by message consumer tests")
     }
 }
@@ -343,7 +345,7 @@ impl MessageDelivery for RecordingMessageDomain {
     async fn dequeue_next(
         &self,
         _ctx: RequestContext,
-    ) -> std::result::Result<Option<Message, common::error::Error>> {
+    ) -> std::result::Result<Option<Message>, common::error::Error> {
         unimplemented!("not needed by message consumer tests")
     }
 
@@ -378,7 +380,7 @@ impl MessageManagement for RecordingMessageDomain {
         &self,
         _ctx: RequestContext,
         _query: MessageQuery,
-    ) -> std::result::Result<Vec<Message, common::error::Error>> {
+    ) -> std::result::Result<Vec<Message>, common::error::Error> {
         unimplemented!("not needed by message consumer tests")
     }
 
@@ -386,7 +388,7 @@ impl MessageManagement for RecordingMessageDomain {
         &self,
         _ctx: RequestContext,
         _task_id: &str,
-    ) -> std::result::Result<Vec<Message, common::error::Error>> {
+    ) -> std::result::Result<Vec<Message>, common::error::Error> {
         unimplemented!("not needed by message consumer tests")
     }
 
@@ -394,7 +396,7 @@ impl MessageManagement for RecordingMessageDomain {
         &self,
         _ctx: RequestContext,
         _project_id: &str,
-    ) -> std::result::Result<Vec<Message, common::error::Error>> {
+    ) -> std::result::Result<Vec<Message>, common::error::Error> {
         unimplemented!("not needed by message consumer tests")
     }
 
@@ -402,7 +404,7 @@ impl MessageManagement for RecordingMessageDomain {
         &self,
         _ctx: RequestContext,
         _message_id: &str,
-    ) -> std::result::Result<Option<Message, common::error::Error>> {
+    ) -> std::result::Result<Option<Message>, common::error::Error> {
         unimplemented!("not needed by message consumer tests")
     }
 

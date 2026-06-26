@@ -8,7 +8,6 @@ use crate::pkg::RequestContext;
 use async_trait::async_trait;
 use common::api::PagedResult;
 use std::sync::Arc;
-use common::bail_err;
 
 /// MCP Server DAO 接口。
 #[async_trait]

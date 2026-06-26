@@ -1,13 +1,11 @@
 //! Handler: GET /api/v1/projects/{project_id}/artifacts - List artifacts under a project
 
 use super::response;
-use common::bail_err;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::{self, ListArtifactsParams};
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListArtifactsRequest, ListArtifactsResponse};
-use common::error::Result;
-use common::err;
+use common::error::{Result, err, bail_err};
 
 const DEFAULT_MAX_LIMIT: usize = 100;
 

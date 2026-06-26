@@ -43,7 +43,6 @@ use crate::service::dal::model_provider::ModelProviderDal;
 use crate::service::dal::tool::ToolDal;
 use async_trait::async_trait;
 use std::sync::{Arc, OnceLock};
-use common::bail_err;
 
 // ==================== 单例管理 ====================
 

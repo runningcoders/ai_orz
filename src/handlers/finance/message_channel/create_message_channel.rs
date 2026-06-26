@@ -6,14 +6,12 @@ use common::api::{
 };
 use uuid::Uuid;
 
-use common::bail_err;
 use crate::models::message_channel::{ChannelConfig, MessageChannel, MessageChannelPo};
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
 use super::response::to_detail;
-use common::error::Result;
-use common::err;
+use common::error::{Result, err, bail_err};
 
 /// Create a new message channel for sending notifications to external services/users
 #[register_handler_tool(

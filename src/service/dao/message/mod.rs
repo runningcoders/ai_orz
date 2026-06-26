@@ -6,7 +6,6 @@ use common::error::Result;
 use crate::models::message::{MessagePo, ToolCallMessage};
 use crate::pkg::RequestContext;
 use common::enums::MessageStatus;
-use common::bail_err;
 
 /// 消息通用查询条件
 ///

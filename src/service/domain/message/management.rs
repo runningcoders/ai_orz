@@ -7,7 +7,6 @@ use crate::service::dao::message::MessageQuery;
 use crate::service::domain::message::MessageDomainImpl;
 use crate::service::domain::message::MessageManagement;
 use common::enums::MessageStatus;
-use common::bail_err;
 
 #[async_trait::async_trait]
 impl MessageManagement for MessageDomainImpl {

@@ -6,7 +6,6 @@ use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateProjectStatusRequest, UpdateProjectStatusResponse};
-use common::bail_err;
 
 /// Update project status
 #[register_handler_tool(

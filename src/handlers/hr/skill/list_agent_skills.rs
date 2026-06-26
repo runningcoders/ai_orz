@@ -7,7 +7,6 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListAgentSkillsRequest, ListAgentSkillsResponse, SkillListItem};
 
 use super::response::to_list_item;
-use common::bail_err;
 
 /// List all skills that are currently installed in the specified agent. Returns basic information for each skill.
 #[register_handler_tool(

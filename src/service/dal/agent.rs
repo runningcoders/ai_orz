@@ -8,7 +8,6 @@ use crate::service::dao::agent;
 use crate::service::dao::agent::{AgentDao, AgentQuery};
 use common::enums::AgentStatus;
 use std::sync::{Arc, OnceLock};
-use common::bail_err;
 // ==================== 单例管理 ====================
 
 static AGENT_DAL: OnceLock<Arc<dyn AgentDal>> = OnceLock::new();

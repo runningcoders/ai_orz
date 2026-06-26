@@ -9,7 +9,6 @@ use crate::pkg::RequestContext;
 use crate::service::dao::organization;
 use crate::service::dao::organization::{OrganizationDao, OrganizationQuery};
 use std::sync::{Arc, OnceLock};
-use common::bail_err;
 
 // ==================== 单例管理 ====================
 

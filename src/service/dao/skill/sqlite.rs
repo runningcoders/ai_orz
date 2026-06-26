@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::error::AppError;
+use common::error::{Error, Result};
 use crate::models::skill::{SkillFile, SkillPo};
 use crate::pkg::RequestContext;
 use crate::service::dao::skill::{SkillDao, SkillQuery, SkillSearch};
@@ -11,9 +11,6 @@ use async_trait::async_trait;
 use common::enums::SkillStatus;
 use common::enums::skill::SkillAuthorType;
 use common::{err, bail_err};
-use common::error::Result;
-use common::err;
-use common::bail_err;
 
 // ==================== 单例模式 ====================
 

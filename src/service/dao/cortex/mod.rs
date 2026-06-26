@@ -8,8 +8,6 @@ use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::request_context::RequestContext;
 use ::rig::tool::ToolDyn;
 use anyhow::Result;
-use common::error::Result;
-use common::bail_err;
 
 /// Cortex DAO 工厂 trait
 ///

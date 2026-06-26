@@ -6,7 +6,6 @@ use common::api::{DeleteMcpServerRequest, DeleteMcpServerResponse};
 use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
-use common::bail_err;
 
 /// Soft-delete an MCP Server by ID.
 #[register_handler_tool(

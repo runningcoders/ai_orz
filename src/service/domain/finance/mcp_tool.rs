@@ -8,7 +8,6 @@ use crate::models::tool::Tool;
 use crate::pkg::RequestContext;
 
 use super::{FinanceDomainImpl, McpToolManage};
-use common::bail_err;
 
 #[async_trait]
 impl McpToolManage for FinanceDomainImpl {

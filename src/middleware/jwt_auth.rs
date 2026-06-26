@@ -13,7 +13,6 @@ use axum::{
 };
 use common::constants::http_header;
 use common::error::Result;
-use common::bail_err;
 
 /// JWT cookie 名称
 pub const JWT_COOKIE_NAME: &str = "ai_orz_jwt";

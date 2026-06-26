@@ -1,7 +1,6 @@
 //! Tool call tracing entry definition
 
 use serde::{Deserialize, Serialize};
-use common::bail_err;
 
 /// Status of a tool call
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

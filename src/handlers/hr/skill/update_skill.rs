@@ -9,8 +9,6 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateSkillRequest, UpdateSkillResponse};
 
 use super::response::to_detail;
-use common::err;
-use common::bail_err;
 
 /// Update an existing skill's metadata, main content, and add new attached files from uploads.
 #[register_handler_tool(

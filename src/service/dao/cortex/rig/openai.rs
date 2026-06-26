@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::pkg::monitoring::rig_hook::RuntimeMonitoringHook;
-use anyhow::{Result, anyhow};
+use anyhow::anyhow;
 use async_trait::async_trait;
 use common::enums::ModelCapability;
 use rig::agent::Agent;
@@ -13,7 +13,6 @@ use rig::providers::openai;
 use rig::providers::openai::responses_api::ResponsesCompletionModel;
 use rig::tool::ToolDyn;
 use common::error::Result;
-use common::bail_err;
 
 /// OpenAI 原生 Cortex - Agent 类型，支持对话和向量
 #[derive(Clone)]
@@ -82,12 +81,12 @@ impl CortexTrait for OpenAiCortex {
         &self.model_name
     }
 
-    async fn prompt(&self, prompt: &str) -> Result<String> {
-        let response: Result<String> = self.agent.prompt(prompt).await;
+    async fn prompt(&self, prompt: &str) -> anyhow::Result<String> {
+        let response = self.agent.prompt(prompt).await;
         response.map_err(|e| anyhow!("OpenAI prompt failed: {}", e))
     }
 
-    async fn embeddings(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
+    async fn embeddings(&self, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
         let embedding_model = self.client.embedding_model(&self.embedding_model);
         let embeddings = embedding_model
             .embed_texts(texts.to_vec())

@@ -8,7 +8,6 @@ use crate::service::domain::finance::domain;
 
 use super::list_mcp_servers::list_mcp_servers;
 use common::error::Result;
-use common::bail_err;
 
 fn stdio_server(name: &str, creator: &str) -> McpServer {
     McpServer::new(

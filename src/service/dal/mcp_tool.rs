@@ -5,7 +5,7 @@
 
 use common::error::{err, bail_err, Result};
 use crate::models::mcp_server::McpServerStatus;
-use crate::models::tool::{Tool, ToolExecutionError, ToolPo};
+use crate::models::tool::{Tool, ToolPo};
 use crate::pkg::RequestContext;
 use crate::pkg::tool_registry::mcp::{McpToolConfig, RemoteMcpTool};
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
@@ -30,8 +30,6 @@ pub fn dal() -> Arc<dyn McpToolDal + Send + Sync> {
 /// Initialize global MCP Tool DAL using global DAO singletons.
 pub fn init() {
     use crate::service::dao::{mcp_server, tool};
-use common::err;
-use common::bail_err;
     let _ = MCP_TOOL_DAL.set(new(tool::dao(), mcp_server::dao(), tool_call::mcp_dao()));
 }
 
@@ -261,12 +259,10 @@ impl McpToolDal for McpToolDalImpl {
             .get_by_id(ctx.clone(), tool_id.clone())
             .await
             .map_err(|e| {
-                ToolExecutionError::without_trace(ToolError::ToolCallError(e.to_string().into()))
+                common::error::Error::tool_call_failed(e.to_string()).with_source(e)
             })?
             .ok_or_else(|| {
-                ToolExecutionError::without_trace(ToolError::ToolCallError(
-                    format!("Tool not found: {tool_id}").into(),
-                ))
+                common::error::Error::tool_call_failed(format!("Tool not found: {tool_id}"))
             })?;
 
         self.call_tool(ctx, &tool, args).await
@@ -291,11 +287,12 @@ impl McpToolDal for McpToolDalImpl {
             .assemble_executable_tool(ctx.clone(), &tool.po)
             .await
             .map_err(|e| {
-                ToolExecutionError::without_trace(ToolError::ToolCallError(e.to_string().into()))
+                common::error::Error::tool_call_failed(e.to_string()).with_source(e)
             })?;
         self.mcp_tool_call_dao
             .call_manual(ctx, &executable, args)
             .await
+            .map_err(Into::into)
     }
 
     fn invalidate_server(&self, server_id: &str) {
@@ -324,8 +321,7 @@ impl McpToolDalImpl {
 
         let Some(our_tool) = self
             .mcp_tool_call_dao
-            .assemble_mcp_core_tool(po, &server)
-            .await?
+            .assemble_mcp_core_tool(po, &server)?
         else {
             bail_err!(InvalidRequest, "MCP tool is not executable: {}", po.id);
         };
@@ -415,5 +411,5 @@ fn ensure_sync_target_matches(existing: &ToolPo, synced: &ToolPo) -> Result<()> 
 fn parse_mcp_tool_config(po: &ToolPo) -> Result<McpToolConfig> {
     let config: AnyhowResult<McpToolConfig> = serde_json::from_value(po.config.clone())
         .map_err(|e| anyhow::anyhow!("invalid mcp tool config for {}: {}", po.id, e));
-    config.map_err(|e| err!(InvalidRequest, "invalid mcp tool config for {}: {}", po.id, e).with_source(e))
+        config.map_err(|e| err!(InvalidRequest, "invalid mcp tool config for {}: {}", po.id, e).with_source::<common::error::Error>(e.into()))
 }

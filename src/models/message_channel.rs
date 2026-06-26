@@ -5,16 +5,15 @@
 //! 消息渠道配置：
 //! - 支持为用户绑定多个推送渠道
 //! - 支持为特定 Agent 绑定专用渠道
-//! - 各渠道配置统一存储在 config_json 字段中（JSON 格式）
+//! MessageChannel 持久化对象和完整实体
 
+use std::collections::HashMap;
 use common::constants::utils;
 use common::enums::{ChannelStatus, ChannelType};
+use common::error::{err, Result};
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
 use sqlx::types::Json;
-use std::collections::HashMap;
-use common::error::Result;
-use common::bail_err;
+use sqlx::FromRow;
 
 /// MessageChannel 业务实体
 #[derive(Debug, Clone)]
@@ -91,7 +90,8 @@ impl MessageChannel {
         modified_by: impl Into<String>,
     ) -> Result<()> {
         if !self.can_transition_to(target) {
-            return Err(format!(
+            return Err(err!(
+                InvalidRequest,
                 "MessageChannel {} cannot transition from {:?} to {:?}",
                 self.po.id, self.po.status, target
             ));

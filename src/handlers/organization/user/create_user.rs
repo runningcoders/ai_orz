@@ -8,7 +8,6 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CreateUserRequest, CreateUserResponse};
 use common::enums::UserRole;
 use rand::Rng;
-use common::bail_err;
 
 /// Create a new user within the current authenticated user's organization
 #[register_handler_tool(

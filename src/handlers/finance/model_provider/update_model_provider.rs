@@ -5,7 +5,6 @@ use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateModelProviderRequest, UpdateModelProviderResponse};
-use common::bail_err;
 
 /// Get current timestamp
 fn current_timestamp() -> i64 {

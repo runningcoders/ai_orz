@@ -8,14 +8,12 @@
 //! - 本模块 = 通用向量索引层（纯底层，无业务逻辑）
 //! - 各业务 DAO = 决定"向量化什么、什么时候、用什么模型"
 
-use crate::error::Result;
 use crate::models::vector::{VectorIndexParams, VectorMeta, VectorRow, VectorSearchHit};
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::Arc;
 use common::error::Result;
-use common::bail_err;
 
 /// 向量存储抽象 Trait
 ///

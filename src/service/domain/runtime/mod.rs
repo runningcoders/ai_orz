@@ -234,7 +234,6 @@ impl RuntimeDomain for RuntimeDomainImpl {
 // ==================== 单例 ====================
 
 use std::sync::OnceLock;
-use common::bail_err;
 
 static RUNTIME_DOMAIN: OnceLock<Arc<dyn RuntimeDomain>> = OnceLock::new();
 

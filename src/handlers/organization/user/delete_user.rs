@@ -5,7 +5,6 @@ use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{DeleteUserRequest, DeleteUserResponse};
-use common::bail_err;
 
 /// Delete an existing user by ID (requires admin permissions)
 #[register_handler_tool(

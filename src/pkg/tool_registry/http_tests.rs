@@ -123,13 +123,12 @@ fn registry_creates_manual_http_core_tool_from_tool_po_config() {
 fn registry_uses_injected_http_protocol_factory() {
     use crate::models::tool::CoreTool;
     use crate::pkg::tool_registry::HttpToolFactory;
-    use anyhow::Result;
+    use common::error::{Error, Result};
+    use anyhow::anyhow;
     use async_trait::async_trait;
     use rig::tool::ToolError;
     use serde_json::Value;
     use std::sync::{Arc, Mutex};
-use common::error::Result;
-use common::bail_err;
 
     #[derive(Clone)]
     struct DummyHttpTool {

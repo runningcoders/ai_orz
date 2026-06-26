@@ -7,8 +7,6 @@ use crate::pkg::RequestContext;
 use sqlx::SqlitePool;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, OnceLock};
-use common::err;
-use common::bail_err;
 
 // ==================== 工厂方法 + 单例 ====================
 

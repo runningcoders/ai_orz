@@ -7,7 +7,6 @@ use crate::pkg::request_context::RequestContext;
 use async_trait::async_trait;
 use common::enums::{ToolProtocol, ToolStatus};
 use std::sync::Arc;
-use common::bail_err;
 
 pub mod sqlite;
 pub mod vector;

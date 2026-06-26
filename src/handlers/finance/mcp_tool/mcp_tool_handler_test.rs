@@ -13,7 +13,6 @@ use crate::service::domain::finance::domain;
 use super::list_mcp_tools_by_server::list_mcp_tools_by_server;
 use super::sync_mcp_tools::sync_mcp_tools;
 use common::error::Result;
-use common::bail_err;
 
 fn init_test_singletons() {
     let _ = crate::config::init();

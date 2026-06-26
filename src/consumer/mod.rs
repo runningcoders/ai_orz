@@ -3,14 +3,12 @@
 //! 与 handlers 同级，负责从队列消费消息并执行业务逻辑。
 //! 调用链路: consumer → domain → dal → dao
 
-use crate::error::Result;
 use crate::models::event::Event;
 use async_trait::async_trait;
 use common::config::TopicConsumerConfig;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use common::error::Result;
-use common::bail_err;
 
 pub mod message;
 

@@ -1,14 +1,12 @@
 //! Agent 管理具体方法实现
 
-use common::bail_err;
 use crate::models::agent::Agent;
 use crate::pkg::RequestContext;
 use crate::service::dal::agent::AgentDal;
 use crate::service::dao::agent::AgentQuery;
 use crate::service::domain::hr::{AgentManage, HrDomainImpl};
 use common::enums::AgentStatus;
-use common::error::Result;
-use common::err;
+use common::error::{Result, err, bail_err};
 
 #[async_trait::async_trait]
 impl AgentManage for HrDomainImpl {

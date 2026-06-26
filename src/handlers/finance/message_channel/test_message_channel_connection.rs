@@ -1,12 +1,10 @@
 //! Handler: POST /api/v1/message-channels/{id}/test - Test message channel connectivity
 
-use common::bail_err;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{TestMessageChannelConnectionRequest, TestMessageChannelConnectionResponse};
-use common::error::Result;
-use common::err;
+use common::error::{Result, err, bail_err};
 
 /// Test connectivity to a message channel by sending a test notification
 #[register_handler_tool(

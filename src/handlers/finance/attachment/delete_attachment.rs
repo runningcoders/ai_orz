@@ -10,8 +10,6 @@ use common::error::{err, bail_err, Result};
 use crate::models::attachment::AttachmentGetOptions;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
-use common::err;
-use common::bail_err;
 
 /// 删除 Attachment
 /// DELETE /attachments/{id}

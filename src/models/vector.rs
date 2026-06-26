@@ -4,7 +4,6 @@
 
 use bincode::{Decode, Encode};
 use common::error::Result;
-use common::bail_err;
 
 // ==================== 向量存储通用数据结构 ====================
 

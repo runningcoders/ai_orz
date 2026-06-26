@@ -20,8 +20,6 @@ use async_trait::async_trait;
 use common::enums::MemoryType;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use common::err;
-use common::bail_err;
 
 // ==================== Factory + Singleton ====================
 

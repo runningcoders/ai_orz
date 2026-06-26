@@ -2,7 +2,6 @@
 //!
 //! 负责产物的创建、查询、管理
 
-use common::bail_err;
 use crate::models::artifact::Artifact;
 use crate::models::file::FileMeta;
 use crate::pkg::RequestContext;
@@ -10,8 +9,7 @@ use crate::service::dal::artifact::ArtifactQuery;
 use common::enums::{ArtifactSourceType, FileType};
 
 use super::ProjectDomainImpl;
-use common::error::Result;
-use common::err;
+use common::error::{Result, err, bail_err};
 
 /// Artifact 列表查询参数。
 #[derive(Debug, Clone)]
@@ -214,7 +212,27 @@ impl super::ArtifactManage for ProjectDomainImpl {
         }
 
         let content = self.artifact_dal.read_content(ctx, &artifact).await?;
-        Ok(content.map(|c| (artifact, c)))
+        // Content is handled by the handler separately, return artifact metadata only
+        Ok(Some(artifact))
+    }
+
+    async fn read_content(
+        &self,
+        ctx: RequestContext,
+        artifact: &Artifact,
+    ) -> Result<Vec<u8>> {
+        // Validate user has access to this artifact via project ownership
+        self.validate_project_access(ctx.clone(), &artifact.po.project_id)
+            .await?;
+
+        if artifact.po.source_type != common::enums::ArtifactSourceType::GeneratedContent {
+            bail_err!(InvalidRequest, "Cannot read content directly from artifact source type {:?}, only GeneratedContent artifacts support direct content access.", artifact.po.source_type);
+        }
+
+        self.artifact_dal.read_content(ctx, artifact).await?
+            .ok_or_else(|| -> common::error::Error { 
+                err!(NotFound, "Artifact content not found: {}", artifact.id()) 
+            })
     }
 
     /// Update artifact content (full replacement) for generated-content artifacts.

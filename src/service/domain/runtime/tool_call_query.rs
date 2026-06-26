@@ -4,7 +4,6 @@ use common::error::{Error, Result};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_tracing::entry::ToolCallStatus;
 use crate::pkg::tool_tracing::logger::{MAX_TOOL_CALL_QUERY_LIMIT, ToolCallQuery};
-use common::bail_err;
 
 /// Merge explicit query scope with RequestContext scope and fail closed when no scope exists.
 pub(crate) fn with_context_scope(

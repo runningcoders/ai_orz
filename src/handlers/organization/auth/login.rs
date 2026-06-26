@@ -14,7 +14,6 @@ use common::api::ApiResponse;
 use common::api::{LoginRequest, LoginResponse};
 use cookie::time;
 use cookie::{Cookie, SameSite};
-use common::bail_err;
 
 /// 用户登录
 /// POST /organization/auth/login

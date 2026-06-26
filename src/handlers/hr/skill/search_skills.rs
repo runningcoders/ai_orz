@@ -9,7 +9,6 @@ use common::api::{SearchSkillsRequest, SearchSkillsResponse, SkillListItem};
 use common::enums::SkillStatus;
 
 use super::response::to_list_item;
-use common::bail_err;
 
 /// Search public skills by keyword with optional filtering. Returns matching skills sorted by relevance.
 #[register_handler_tool(

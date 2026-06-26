@@ -7,7 +7,6 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateUserRequest, UpdateUserResponse};
 use common::enums::{UserRole, UserStatus};
 use std::time::{SystemTime, UNIX_EPOCH};
-use common::bail_err;
 
 /// Get current timestamp
 fn current_timestamp() -> i64 {

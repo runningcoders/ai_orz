@@ -1,6 +1,5 @@
 //! MessageChannel DAO SQLite 单元测试
 
-use crate::error::Result;
 use crate::models::message_channel::{ChannelConfig, MessageChannelPo};
 use crate::pkg::RequestContext;
 use crate::service::dao::message_channel::{self, MessageChannelDao, MessageChannelQuery};
@@ -9,7 +8,6 @@ use sqlx::SqlitePool;
 use std::sync::Arc;
 use uuid::Uuid;
 use common::error::Result;
-use common::bail_err;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     RequestContext::new_simple(user_id, pool)

@@ -8,7 +8,6 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetToolCallEntryRequest, GetToolCallEntryResponse};
 
 use super::response::to_tool_call_entry_detail;
-use common::bail_err;
 
 /// Get one tool call trace entry by call ID.
 #[register_handler_tool(

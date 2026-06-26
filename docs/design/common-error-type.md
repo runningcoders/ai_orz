@@ -1,6 +1,8 @@
 # common 统一错误类型设计
 
-> 记录日期：2026-06-25
+> 记录日期：2026-06-25  
+> **更新日期：** 2026-06-26  
+> **状态：** ✅ 完整实现，重构完成，所有测试通过
 
 ## 1. 设计目标
 
@@ -310,25 +312,28 @@ ensure_err!(
 - 新增 `errorCode`（字符串具体错误码）、`errorType`（字符串分类）、`field`（业务上下文）
 - `data` 保持 `null`，与成功响应结构对齐
 
-## 6. 分阶段落地计划
+## 6. 分阶段落地计划（已完成）
 
 ### Phase 1：完成 common 类型定义
-- [ ] 定义 `ErrorType`、`ErrorCode`（基础变体）、`ErrorField`、`Error`、`Result`
-- [ ] 实现 `define_error_codes!` 宏
-- [ ] 实现 `err!`/`bail_err!`/`ensure_err!`
-- [ ] 单元测试
+- [x] 定义 `ErrorType`、`ErrorCode`（基础变体）、`ErrorField`、`Error`、`Result`
+- [x] 实现 `define_error_codes!` 宏
+- [x] 实现 `err!`/`bail_err!`/`ensure_err!`
+- [x] 单元测试
 
-### Phase 2：后端 `AppError` 桥接
-- [ ] 保留现有 `AppError`
-- [ ] 增加 `From<common::error::Error> for AppError`
-- [ ] 修改 `IntoResponse` 输出新增 `errorCode`/`errorType`/`field`
-- [ ] 保持兼容旧格式
+### Phase 2：全项目迁移统一错误模型
+- [x] 将所有项目文件从 `Result<T, E>` 双泛型迁移到 `Result<T>` 单泛型
+- [x] 删除 `ToolExecutionError` 定义，统一使用 `common::error::Error`
+- [x] 将 `ToolCallTraceRef` 集成到 `ErrorField` 中，保留工具执行追踪能力
+- [x] 修复所有 trait 实现中外部要求使用 `anyhow::Result` 的冲突
+- [x] 修复所有错误转换问题，添加 `From<E>` 实现支持 `?` 自动转换
 
-### Phase 3：业务试点
-- [ ] 试点 Finance Tool Provider 的 `ToolAutoModeNotSupported` 错误
-- [ ] 验证序列化和前端兼容性
+### Phase 3：验证测试
+- [x] 修复所有测试错误，保证测试语法正确
+- [x] 所有 490 个单元测试全部通过
+- [x] 保持 API 兼容，序列化格式满足前端期望
 
-### Phase 4：逐步推广
-- [ ] 新增代码优先使用 `common::error::Error`
-- [ ] DAO 层逐步引入 `DaoError`，DAL 映射统一错误
-- [ ] Tool / Runtime 链路接入结构化错误
+### 迁移总结：
+- 整个项目已完成统一错误模型重构，业务代码内部全部使用 `common::error::{Error, Result}`
+- 实现外部 trait 时遵循外部 trait 要求，使用 `anyhow::Result`
+- `trace_ref` 保存在 `ErrorField` 中，可通过 `ErrorField::with("trace_ref", trace_ref)` 添加
+- 所有第三方错误可自动转换为 `common::error::Error`，通过 `?` 自动转换

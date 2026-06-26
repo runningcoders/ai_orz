@@ -4,8 +4,8 @@ use super::EmailDao;
 use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;
+use common::error::err;
 use std::sync::{Arc, OnceLock};
-use common::bail_err;
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -45,7 +45,7 @@ impl EmailDao for EmailDaoSmtpImpl {
         _channel: &MessageChannel,
     ) -> std::result::Result<(), common::error::Error> {
         // TODO: 实现邮件推送逻辑
-        Err("邮件推送功能尚未实现".to_string())
+        Err(err!(UnsupportedOperation, "邮件推送功能尚未实现"))
     }
 
     async fn test_connection(
@@ -54,6 +54,6 @@ impl EmailDao for EmailDaoSmtpImpl {
         _channel: &MessageChannel,
     ) -> std::result::Result<(), common::error::Error> {
         // TODO: 实现邮件连接测试逻辑
-        Err("邮件连接测试功能尚未实现".to_string())
+        Err(err!(UnsupportedOperation, "邮件连接测试功能尚未实现"))
     }
 }

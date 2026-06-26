@@ -8,8 +8,6 @@ use crate::pkg::RequestContext;
 use crate::service::dao::user::UserQuery;
 use async_trait::async_trait;
 use common::enums::UserStatus;
-use common::err;
-use common::bail_err;
 
 #[async_trait]
 impl super::UserManage for super::OrganizationDomainImpl {

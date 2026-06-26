@@ -9,7 +9,6 @@ use common::api::{ListSkillsRequest, ListSkillsResponse, SkillListItem};
 use common::enums::SkillStatus;
 
 use super::response::to_list_item;
-use common::bail_err;
 
 /// List public skills with optional filtering by status, category, author, and keyword.
 #[register_handler_tool(

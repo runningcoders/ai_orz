@@ -1,7 +1,6 @@
 use common::api::{GetTaskResponse, TaskListItem};
 
 use crate::models::task::Task;
-use common::bail_err;
 
 pub(super) fn to_list_item(task: &Task) -> TaskListItem {
     TaskListItem {

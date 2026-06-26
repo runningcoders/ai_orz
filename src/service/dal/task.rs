@@ -9,7 +9,6 @@ use crate::service::dao::task;
 use crate::service::dao::task::{TaskDao, TaskQuery};
 use common::enums::{AssigneeType, TaskStatus};
 use std::sync::{Arc, OnceLock};
-use common::bail_err;
 
 // ==================== 单例管理 ====================
 

@@ -1,14 +1,12 @@
 //! User DAO SQLite 实现
 
-use crate::error::AppError;
+use common::error::{Error, Result};
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::user::{UserDao, UserQuery};
 use chrono::Utc;
 use common::enums::{UserRole, UserStatus};
 use std::sync::{Arc, OnceLock};
-use common::error::Result;
-use common::bail_err;
 
 // ==================== 工厂方法 + 单例 ====================
 

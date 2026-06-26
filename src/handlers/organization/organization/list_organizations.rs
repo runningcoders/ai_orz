@@ -6,7 +6,6 @@ use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListOrganizationsRequest, ListOrganizationsResponse, OrganizationListItem};
-use common::bail_err;
 
 /// List all organizations available to the current user
 #[register_handler_tool(

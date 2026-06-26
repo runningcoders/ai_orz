@@ -93,7 +93,6 @@ async fn test_query(pool: sqlx::SqlitePool) {
 
     use crate::service::dao::model_provider::ModelProviderQuery;
     use common::enums::ModelProviderStatus;
-use common::bail_err;
 
     // 测试空查询
     let query = ModelProviderQuery::default();

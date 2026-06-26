@@ -8,7 +8,6 @@ use std::fs;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 use common::error::Result;
-use common::bail_err;
 // ==================== 单例管理 ====================
 
 static CONFIG: OnceLock<Arc<AppConfig>> = OnceLock::new();
@@ -19,7 +18,7 @@ pub fn get() -> Arc<AppConfig> {
 }
 
 /// 初始化 Agent DAL
-pub fn init() -> Result<(), Box<dyn std::error::Error>> {
+pub fn init() -> Result<()> {
     // 加载配置（默认配置嵌入在二进制中，不存在就自动生成）
     let _ = CONFIG.set(Arc::new(load_config()?));
     Ok(())
@@ -31,7 +30,7 @@ pub fn init() -> Result<(), Box<dyn std::error::Error>> {
 /// 1. `.ai_orz` 是固定的基础数据目录，永远不变
 /// 2. 如果 `.ai_orz/ai_orz.toml` 不存在，从编译嵌入的默认配置写出到文件
 /// 3. 读取解析配置文件，确保所有需要的目录都存在
-pub fn load_config() -> Result<AppConfig, Box<dyn std::error::Error>> {
+pub fn load_config() -> Result<AppConfig> {
     // 先从环境变量获取 base_data_path
     let base_data_path = if let Ok(path) = std::env::var(common::config::BASE_DATA_PATH_ENV) {
         std::path::PathBuf::from(path)
@@ -55,7 +54,13 @@ pub fn load_config() -> Result<AppConfig, Box<dyn std::error::Error>> {
 
     // 读取配置文件
     let content = std::fs::read_to_string(&config_path)?;
-    let config: AppConfig = toml::from_str(&content)?;
+    let config: AppConfig = toml::from_str(&content)
+        .map_err(|e: toml::de::Error| {
+            common::error::Error::new(
+                common::error::ErrorCode::ConfigInvalid,
+                e.to_string(),
+            )
+        })?;
 
     // 确保日志目录存在
     let log_dir = config.log_dir();

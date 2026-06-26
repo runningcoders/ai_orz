@@ -6,14 +6,12 @@ use axum::{
 };
 use common::api::{ApiResponse, AttachmentDetail, AttachmentListQuery};
 
-use common::bail_err;
 use crate::pkg::RequestContext;
 use crate::service::dao::attachment::AttachmentQuery;
 use crate::service::domain::finance::domain;
 
 use super::response::to_detail;
-use common::error::Result;
-use common::err;
+use common::error::{Result, err, bail_err};
 
 /// 列出 Attachment
 /// GET /attachments

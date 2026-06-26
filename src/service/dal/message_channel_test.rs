@@ -291,7 +291,6 @@ async fn test_deliver_message_skeleton(pool: SqlitePool) {
     use crate::models::file::FileMeta;
     use crate::models::message::{Message, MessagePo};
     use common::enums::{MessageRole, MessageType};
-use common::bail_err;
 
     let message_po = MessagePo::new(
         "test-msg".to_string(),

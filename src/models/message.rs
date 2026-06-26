@@ -457,7 +457,6 @@ impl ToolCallMessage {
 mod tests {
     use super::*;
     use common::enums::{MessageRole, MessageStatus, MessageType};
-use common::bail_err;
 
     #[test]
     fn test_message_po_builder() {

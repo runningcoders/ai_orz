@@ -3,7 +3,7 @@
 //! 技能数据访问层，提供技能查询和管理能力
 //! 负责组合 DAO 完成业务级数据操作，组装完整 Skill 实体（PO + 文件）
 
-use common::error::{Result};
+use common::error::{Result, err};
 use crate::models::skill::{Skill, SkillFile, SkillPo};
 use crate::models::vector::{MatchType, SearchMatchInfo, Vectorizable};
 use crate::pkg::request_context::RequestContext;
@@ -12,8 +12,6 @@ use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::skill::{self, SkillDao, SkillQuery, SkillSearch, SkillVectorDao};
 use common::enums::{ModelCapability, ModelProviderStatus};
 use std::sync::{Arc, OnceLock};
-use common::err;
-use common::bail_err;
 
 // ==================== 单例管理 ====================
 

@@ -7,7 +7,6 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateCurrentUserRequest, UpdateCurrentUserResponse, UserInfoResponse};
 use common::constants::utils;
 use common::enums::UserRole;
-use common::bail_err;
 
 /// Update current user's own information (display name, email, password)
 #[register_handler_tool(

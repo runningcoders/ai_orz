@@ -11,7 +11,6 @@ use crate::service::dao::event_queue::in_memory::EventQueueDaoInMemoryImpl;
 use common::enums::{FileType, MessageRole, MessageType};
 use sqlx::SqlitePool;
 use std::time::{SystemTime, UNIX_EPOCH};
-use common::bail_err;
 
 /// 测试空队列基本操作
 #[tokio::test]

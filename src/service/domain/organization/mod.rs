@@ -14,7 +14,6 @@ use crate::service::dal::organization;
 use crate::service::dal::user as user_dal;
 use async_trait::async_trait;
 use std::sync::{Arc, OnceLock};
-use common::bail_err;
 // ==================== 单例 ====================
 
 static ORGANIZATION_DOMAIN: OnceLock<Arc<dyn OrganizationDomain>> = OnceLock::new();
@@ -95,7 +94,7 @@ pub trait OrganizationManage: Send + Sync {
         password_hash: String,
         display_name: Option<String>,
         email: Option<String>,
-    ) -> Result<String>;
+    ) -> Result<(String, String)>;
 
     /// 获取组织信息
     async fn get_by_id(

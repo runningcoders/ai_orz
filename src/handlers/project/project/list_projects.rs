@@ -1,13 +1,11 @@
 //! Handler: GET /api/v1/projects - List all projects for a user with optional filtering
 
 use super::response;
-use common::bail_err;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListProjectsRequest, ProjectListItem};
-use common::error::Result;
-use common::err;
+use common::error::{Result, err, bail_err};
 
 /// List all projects for a user with optional filtering
 #[register_handler_tool(

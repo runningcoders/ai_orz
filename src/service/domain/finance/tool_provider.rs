@@ -3,14 +3,12 @@
 //! 工具提供商配置管理 + Agent 工具借用（绑定）关系
 //! 注意：这属于财务管理（计费相关）
 
-use common::bail_err;
 use crate::models::tool::Tool;
 use crate::pkg::RequestContext;
 use crate::pkg::tool_registry::http;
 use crate::service::domain::finance::{FinanceDomainImpl, ToolProviderManage};
 use common::enums::{ControlMode, ToolProtocol};
-use common::error::Result;
-use common::err;
+use common::error::{Result, err, bail_err};
 
 #[async_trait::async_trait]
 impl ToolProviderManage for FinanceDomainImpl {

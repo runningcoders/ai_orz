@@ -3,7 +3,6 @@
 use common::error::{Error, Result};
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
-use common::bail_err;
 
 /// User 查询参数
 #[derive(Debug, Clone, Default)]

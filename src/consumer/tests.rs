@@ -102,16 +102,16 @@ impl MockFetcher {
 
 #[async_trait]
 impl super::MessageFetcher<MockEvent> for MockFetcher {
-    async fn dequeue_next(&self) -> crate::error::Result<Option<MockEvent>> {
+    async fn dequeue_next(&self) -> common::error::Result<Option<MockEvent>> {
         Ok(self.events.lock().unwrap().pop())
     }
 
-    async fn ack(&self, event_id: &str) -> crate::error::Result<()> {
+    async fn ack(&self, event_id: &str) -> common::error::Result<()> {
         self.ack_called.lock().unwrap().push(event_id.to_string());
         Ok(())
     }
 
-    async fn nack(&self, event_id: &str) -> crate::error::Result<()> {
+    async fn nack(&self, event_id: &str) -> common::error::Result<()> {
         self.nack_called.lock().unwrap().push(event_id.to_string());
         Ok(())
     }
@@ -145,7 +145,7 @@ impl MockHandler {
 
 #[async_trait]
 impl MessageHandler<MockEvent> for MockHandler {
-    async fn handle(&self, event: &MockEvent) -> crate::error::Result<()> {
+    async fn handle(&self, event: &MockEvent) -> common::error::Result<()> {
         self.handled_events.lock().unwrap().push(event.id.clone());
         if self.should_fail {
             Err(common::error::Error::internal(
@@ -171,10 +171,9 @@ mod consumer_behavior_tests {
     use super::*;
     use common::config::TopicConsumerConfig;
 use common::error::Result;
-use common::bail_err;
 
     #[tokio::test]
-    async fn test_empty_queue_returns_false() -> crate::error::Result<()> {
+    async fn test_empty_queue_returns_false() -> common::error::Result<()> {
         // 空队列
         let fetcher = MockFetcher::new(vec![]);
         let handler = MockHandler::new(false);
@@ -195,7 +194,7 @@ use common::bail_err;
     }
 
     #[tokio::test]
-    async fn test_successful_consumption_returns_true() -> crate::error::Result<()> {
+    async fn test_successful_consumption_returns_true() -> common::error::Result<()> {
         // 准备一个消息
         let event = create_mock_event("test message");
         let event_id = event.id.clone();
@@ -229,7 +228,7 @@ use common::bail_err;
     }
 
     #[tokio::test]
-    async fn test_consumed_message_removed_from_queue() -> crate::error::Result<()> {
+    async fn test_consumed_message_removed_from_queue() -> common::error::Result<()> {
         // 准备1条消息
         let event = create_mock_event("test message");
         let fetcher = MockFetcher::new(vec![event]);
@@ -255,7 +254,7 @@ use common::bail_err;
     }
 
     #[tokio::test]
-    async fn test_multiple_messages_consumed_sequentially() -> crate::error::Result<()> {
+    async fn test_multiple_messages_consumed_sequentially() -> common::error::Result<()> {
         // 准备3条消息
         let event1 = create_mock_event("msg 1");
         let event2 = create_mock_event("msg 2");
@@ -290,7 +289,7 @@ use common::bail_err;
     }
 
     #[tokio::test]
-    async fn test_handle_failure_calls_nack() -> crate::error::Result<()> {
+    async fn test_handle_failure_calls_nack() -> common::error::Result<()> {
         // 准备1条消息
         let event = create_mock_event("test message");
         let event_id = event.id.clone();
@@ -323,7 +322,7 @@ use common::bail_err;
     }
 
     #[tokio::test]
-    async fn test_concurrent_add_and_consume() -> crate::error::Result<()> {
+    async fn test_concurrent_add_and_consume() -> common::error::Result<()> {
         // 初始空队列
         let fetcher = MockFetcher::new(vec![]);
         let handler = MockHandler::new(false);

@@ -7,7 +7,6 @@ use crate::service::dao::model_provider;
 use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderQuery};
 use common::enums::ModelProviderStatus;
 use std::sync::{Arc, OnceLock};
-use common::bail_err;
 // ==================== 单例管理 ====================
 
 static MODEL_PROVIDER_DAL: OnceLock<Arc<dyn ModelProviderDal>> = OnceLock::new();

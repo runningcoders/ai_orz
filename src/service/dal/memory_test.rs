@@ -19,7 +19,6 @@ use common::enums::MemoryStatus;
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use common::error::Result;
-use common::bail_err;
 
 // ========== Mock 实现 ==========
 

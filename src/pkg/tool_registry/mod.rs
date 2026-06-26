@@ -11,7 +11,6 @@ pub mod http;
 pub mod mcp;
 
 use crate::models::tool::{CoreTool, ToolPo};
-use common::bail_err;
 pub use builtin::BuiltinToolFactory;
 pub use handler_adapter::register_handler_tool;
 pub use http::{DefaultHttpToolFactory, HttpToolFactory};

@@ -10,7 +10,6 @@ use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
 use super::response::{to_detail, to_model_config, to_model_transport};
-use common::bail_err;
 
 /// Create a new MCP Server configuration for MCP tool discovery and invocation.
 #[register_handler_tool(

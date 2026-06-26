@@ -4,13 +4,11 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateMcpServerStatusRequest, UpdateMcpServerStatusResponse};
 use common::enums::McpServerStatus as ApiMcpServerStatus;
 
-use common::bail_err;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
 use super::response::{to_detail, to_model_status};
-use common::err;
-use common::error::Result;
+use common::error::{Result, err};
 
 /// Update an MCP Server status. Use DELETE for soft deletion.
 #[register_handler_tool(

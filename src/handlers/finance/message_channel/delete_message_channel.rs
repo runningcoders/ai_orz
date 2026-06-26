@@ -1,12 +1,10 @@
 //! Handler: DELETE /api/v1/message-channels/{id} - Delete a message channel
 
-use common::bail_err;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{DeleteMessageChannelRequest, EmptyResponse};
-use common::error::Result;
-use common::err;
+use common::error::{Result, err, bail_err};
 
 /// Delete an existing message channel (soft delete)
 #[register_handler_tool(
