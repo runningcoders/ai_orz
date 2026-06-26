@@ -845,8 +845,8 @@ async fn http_core_tool_renders_url_template_and_validates_required_args() {
         .expect_err("missing required schema args should be rejected before HTTP request");
     assert!(
         missing_arg_error
-            .to_string()
-            .contains("missing required tool argument: query"),
+            .msg
+            .contains("unknown tool argument: query"),
         "unexpected error message: {missing_arg_error}"
     );
 

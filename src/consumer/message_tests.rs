@@ -2,7 +2,7 @@
 
 use super::MessageHandler;
 use super::message::*;
-use common::error::{Error, Result};
+use common::error::{Error, ErrorField, Result};
 use crate::models::agent::Agent;
 use crate::models::file::FileMeta;
 use crate::models::memory::{Memory, MemoryTrace};
@@ -123,10 +123,18 @@ impl RecordingRuntimeDomain {
     }
 
     fn failure_with_trace(error_message: &str, tool_id: &str, call_id: &str) -> Arc<Self> {
+        let trace_ref = ToolCallTraceRef {
+            tool_id: tool_id.to_string(),
+            call_id: call_id.to_string(),
+        };
+        let mut field = ErrorField::new();
+        field.set_trace_ref(trace_ref);
+        let err = Error::tool_call_failed(error_message.to_string())
+            .with_field(field);
         Arc::new(Self {
             calls: Mutex::new(Vec::new()),
             manual_calls: Mutex::new(Vec::new()),
-            result: Mutex::new(Err(Error::tool_call_failed(format!("{}|{}|{}", error_message, tool_id, call_id)))),
+            result: Mutex::new(Err(err)),
         })
     }
 
@@ -211,7 +219,6 @@ impl RuntimeAwakening for RecordingRuntimeDomain {
         unimplemented!("not needed by message consumer tests")
     }
 }
-
 #[async_trait]
 impl RuntimeToolExecution for RecordingRuntimeDomain {
     async fn call_tool_by_id(
@@ -223,7 +230,26 @@ impl RuntimeToolExecution for RecordingRuntimeDomain {
         self.calls.lock().unwrap().push((tool_id, args));
         match self.result.lock().unwrap().clone() {
             Ok(result) => Ok(result),
-            Err(error_message) => Err(recorded_error_to_tool_execution_error(error_message.to_string())),
+            Err(mut err) => {
+                // If msg contains |tool_id|call_id format, parse it and set trace_ref to error field
+                let msg = err.msg.clone();
+                let parts: Vec<_> = msg.split('|').collect();
+                if parts.len() == 3 {
+                    let trace_ref = crate::models::tool::ToolCallTraceRef::new(
+                        parts[1].to_string(),
+                        parts[2].to_string(),
+                    );
+                    if let Some(field) = err.field.as_mut() {
+                        field.set_trace_ref(trace_ref);
+                    } else {
+                        let mut field = ErrorField::default();
+                        field.set_trace_ref(trace_ref);
+                        err.field = Some(field);
+                    }
+                    err.msg = parts[0].to_string();
+                }
+                Err(err)
+            },
         }
     }
 
@@ -236,7 +262,26 @@ impl RuntimeToolExecution for RecordingRuntimeDomain {
         self.calls.lock().unwrap().push((tool.po.id.clone(), args));
         match self.result.lock().unwrap().clone() {
             Ok(result) => Ok(result),
-            Err(error_message) => Err(recorded_error_to_tool_execution_error(error_message.to_string())),
+            Err(mut err) => {
+                // If msg contains |tool_id|call_id format, parse it and set trace_ref to error field
+                let msg = err.msg.clone();
+                let parts: Vec<_> = msg.split('|').collect();
+                if parts.len() == 3 {
+                    let trace_ref = crate::models::tool::ToolCallTraceRef::new(
+                        parts[1].to_string(),
+                        parts[2].to_string(),
+                    );
+                    if let Some(field) = err.field.as_mut() {
+                        field.set_trace_ref(trace_ref);
+                    } else {
+                        let mut field = ErrorField::default();
+                        field.set_trace_ref(trace_ref);
+                        err.field = Some(field);
+                    }
+                    err.msg = parts[0].to_string();
+                }
+                Err(err)
+            },
         }
     }
 
@@ -247,13 +292,29 @@ impl RuntimeToolExecution for RecordingRuntimeDomain {
         tool_id: String,
         args: Value,
     ) -> std::result::Result<ToolExecutionResult, common::error::Error> {
-        self.manual_calls
-            .lock()
-            .unwrap()
-            .push((agent_id, tool_id, args));
+        self.manual_calls.lock().unwrap().push((agent_id, tool_id, args));
         match self.result.lock().unwrap().clone() {
             Ok(result) => Ok(result),
-            Err(error_message) => Err(recorded_error_to_tool_execution_error(error_message.to_string())),
+            Err(mut err) => {
+                // If msg contains |tool_id|call_id format, parse it and set trace_ref to error field
+                let msg = err.msg.clone();
+                let parts: Vec<_> = msg.split('|').collect();
+                if parts.len() == 3 {
+                    let trace_ref = crate::models::tool::ToolCallTraceRef::new(
+                        parts[1].to_string(),
+                        parts[2].to_string(),
+                    );
+                    if let Some(field) = err.field.as_mut() {
+                        field.set_trace_ref(trace_ref);
+                    } else {
+                        let mut field = ErrorField::default();
+                        field.set_trace_ref(trace_ref);
+                        err.field = Some(field);
+                    }
+                    err.msg = parts[0].to_string();
+                }
+                Err(err)
+            },
         }
     }
 

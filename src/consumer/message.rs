@@ -220,11 +220,9 @@ fn parse_tool_call_request(message: &Message) -> Result<ToolCallMessage> {
 }
 
 fn tool_error_message(err: &Error) -> String {
-    let message = err.to_string();
-    message
-        .strip_prefix("ToolCallError: ")
-        .unwrap_or(&message)
-        .to_string()
+    // err.msg is already the pure message without [code] prefix
+    // No need to strip prefix because we avoid duplicate error wrapping at the source
+    err.msg.clone()
 }
 
 // ==================== 初始化与单例访问 ====================
