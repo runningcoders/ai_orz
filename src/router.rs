@@ -43,11 +43,6 @@ fn public_routes() -> Router {
         // Login/logout - login issues new JWT token
         .route("/organization/auth/login", post(auth::login::login))
         .route("/organization/auth/logout", post(auth::logout::logout))
-        // Get organization basic info - public query (no login required)
-        .route(
-            "/organization/{organization_id}",
-            get(organization::get_organization_handler),
-        )
         // List all organizations - public query (for login page selection, no login required)
         .route(
             "/organization/list",
