@@ -8,7 +8,11 @@ use std::sync::{Arc, Mutex};
 pub mod builtin;
 pub mod handler_adapter;
 pub mod http;
+pub mod http_fetch;
+pub mod fs_read;
+pub mod fs_write;
 pub mod mcp;
+pub mod tool_security;
 
 use crate::models::tool::{CoreTool, ToolPo};
 pub use builtin::BuiltinToolFactory;

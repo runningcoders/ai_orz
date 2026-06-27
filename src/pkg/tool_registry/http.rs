@@ -1,11 +1,14 @@
 //! HTTP Tool Runtime.
-//!
+//! HTTP Tool Runtime.
+//! HTTP Tool Runtime.
+//! 
 //! HTTP tools are database-registered tools. `ToolPo.config` stores a JSON
 //! serialized `HttpToolConfig`, and the registry turns that persistent metadata
 //! into an executable `HttpCoreTool`.
 
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
+use crate::pkg::tool_registry::tool_security::*;
 use anyhow::{anyhow};
 use async_trait::async_trait;
 use reqwest::header::{HeaderName, HeaderValue};
@@ -37,11 +40,6 @@ impl HttpToolFactory for DefaultHttpToolFactory {
         create_tool(po)
     }
 }
-
-const DEFAULT_RESPONSE_MAX_BYTES: usize = 1024 * 1024;
-const HARD_RESPONSE_MAX_BYTES: usize = 10 * 1024 * 1024;
-const DEFAULT_TIMEOUT_MS: u64 = 30_000;
-const HARD_TIMEOUT_MS: u64 = 600_000;
 
 /// HTTP tool configuration stored in `ToolPo.config`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -138,7 +136,12 @@ async fn execute_http_call(
     let method = parse_supported_method(&config.method)?;
     let rendered_url = render_string_template(&config.url, &args)?;
     let url = Url::parse(&rendered_url).map_err(|e| anyhow!("invalid rendered http url: {}", e))?;
-    let pinned_addresses = validate_target_url(config, &url).await?;
+    let pinned_addresses = validate_target_url(
+        config.allow_local_network,
+        config.allowed_domains.as_ref(),
+        config.blocked_domains.as_ref(),
+        &url,
+    ).await?;
 
     let host = url
         .host_str()
@@ -221,63 +224,6 @@ async fn execute_http_call(
     }))
 }
 
-async fn read_limited_response_body(
-    response: &mut reqwest::Response,
-    max_bytes: usize,
-) -> Result<Vec<u8>> {
-    if let Some(content_length) = response.content_length() {
-        if content_length > max_bytes as u64 {
-            return Err(anyhow!(
-                "http response too large: {} bytes exceeds limit {}",
-                content_length,
-                max_bytes
-            )).map_err(Into::into);
-        }
-    }
-
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|_| anyhow!("http response read failed"))?
-    {
-        if bytes.len() + chunk.len() > max_bytes {
-            return Err(anyhow!(
-                "http response too large: exceeds limit {} bytes",
-                max_bytes
-            )).map_err(Into::into);
-        }
-        bytes.extend_from_slice(&chunk);
-    }
-
-    Ok(bytes)
-}
-
-fn sanitize_response_headers(headers: &reqwest::header::HeaderMap) -> Value {
-    let mut sanitized = Map::new();
-    for (name, value) in headers {
-        let key = name.as_str().to_string();
-        let value = if is_sensitive_header(name.as_str()) {
-            Value::String("[REDACTED]".to_string())
-        } else {
-            Value::String(value.to_str().unwrap_or("<non-utf8>").to_string())
-        };
-        sanitized.insert(key, value);
-    }
-    Value::Object(sanitized)
-}
-
-fn is_sensitive_header(name: &str) -> bool {
-    let normalized = name.to_ascii_lowercase();
-    normalized == "authorization"
-        || normalized == "cookie"
-        || normalized == "set-cookie"
-        || normalized.contains("api-key")
-        || normalized.contains("token")
-        || normalized.contains("secret")
-        || normalized.contains("password")
-}
-
 fn parse_supported_method(method: &str) -> Result<Method> {
     match method.to_ascii_uppercase().as_str() {
         "GET" => Ok(Method::GET),
@@ -329,7 +275,10 @@ fn validate_args_schema(parameters_schema: Option<&Value>, args: &Value) -> Resu
 fn validate_arg_value(name: &str, value: &Value, property_schema: &Value) -> Result<()> {
     if let Some(Value::Array(allowed_values)) = property_schema.get("enum") {
         if !allowed_values.iter().any(|allowed| allowed == value) {
-            return Err(anyhow!("invalid enum value for tool argument {}", name).into());
+            return Err(anyhow!(
+                "invalid enum value for tool argument {}",
+                name
+            ).into());
         }
     }
 
@@ -358,152 +307,6 @@ fn validate_arg_value(name: &str, value: &Value, property_schema: &Value) -> Res
 
     Ok(())
 }
-
-async fn validate_target_url(config: &HttpToolConfig, url: &Url) -> Result<Vec<SocketAddr>> {
-    let scheme = url.scheme();
-    if scheme != "http" && scheme != "https" {
-        return Err(anyhow!("unsupported http url scheme: {}", scheme)).map_err(Into::<common::error::Error>::into);
-    }
-
-    let host = normalize_domain(
-        url.host_str()
-            .ok_or_else(|| -> common::error::Error { anyhow!("http url host is required").into() })
-            .map_err(Into::<common::error::Error>::into)?,
-    );
-
-    if host.is_empty() {
-        return Err(anyhow!("http url host is required")).map_err(Into::into);
-    }
-
-    if let Some(blocked_domains) = &config.blocked_domains {
-        if blocked_domains
-            .iter()
-            .any(|domain| domain_matches(&host, domain))
-        {
-            return Err(anyhow!("blocked http domain")).map_err(Into::into);
-        }
-    }
-
-    if is_local_network_host(&host) && config.allow_local_network != Some(true) {
-        return Err(anyhow!(
-            "local network http target requires allow_local_network=true"
-        )).map_err(Into::into);
-    }
-
-    if let Some(allowed_domains) = &config.allowed_domains {
-        if !allowed_domains
-            .iter()
-            .any(|domain| domain_matches(&host, domain))
-        {
-            return Err(anyhow!("http domain is not allowed")).map_err(Into::into);
-        }
-    }
-
-    let addresses = validate_resolved_addresses(&host, url.port_or_known_default(), config).await?;
-
-    Ok(addresses)
-}
-
-async fn validate_resolved_addresses(
-    host: &str,
-    port: Option<u16>,
-    config: &HttpToolConfig,
-) -> Result<Vec<SocketAddr>> {
-    let Some(port) = port else {
-        return Ok(Vec::new());
-    };
-
-    let lookup_host_name = host.trim_matches(['[', ']']);
-    let addresses: Vec<SocketAddr> = lookup_host((lookup_host_name, port))
-        .await
-        .map_err(|_| anyhow!("failed to resolve http target host"))
-        .map_err(Into::<common::error::Error>::into)?
-        .collect();
-
-    if config.allow_local_network != Some(true) {
-        if addresses
-            .iter()
-            .any(|address| is_local_network_ip(address.ip()))
-        {
-            return Err(anyhow!(
-                "resolved local network http target requires allow_local_network=true"
-            )).map_err(Into::into);
-        }
-    }
-
-    Ok(addresses)
-}
-
-fn domain_matches(host: &str, configured_domain: &str) -> bool {
-    let host = normalize_domain(host);
-    let configured_domain = normalize_domain(configured_domain);
-    if configured_domain.is_empty() {
-        return false;
-    }
-
-    host == configured_domain || host.ends_with(&format!(".{}", configured_domain))
-}
-
-fn normalize_domain(domain: &str) -> String {
-    domain
-        .trim()
-        .trim_matches(['[', ']'])
-        .trim_end_matches('.')
-        .to_ascii_lowercase()
-}
-
-fn is_local_network_host(host: &str) -> bool {
-    let normalized = normalize_domain(host);
-    if normalized == "localhost" {
-        return true;
-    }
-
-    normalized.parse::<IpAddr>().is_ok_and(is_local_network_ip)
-}
-
-fn is_local_network_ip(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(ip) => {
-            let octets = ip.octets();
-            ip.is_loopback()
-                || ip.is_private()
-                || ip.is_link_local()
-                || ip.is_broadcast()
-                || ip.is_unspecified()
-                || octets[0] == 0
-                || (octets[0] == 100 && (octets[1] & 0b1100_0000) == 64)
-                || (octets[0] == 169 && octets[1] == 254)
-                || (octets[0] == 192 && octets[1] == 0 && octets[2] == 0)
-                || (octets[0] == 192 && octets[1] == 0 && octets[2] == 2)
-                || (octets[0] == 198 && (octets[1] == 18 || octets[1] == 19))
-                || (octets[0] == 198 && octets[1] == 51 && octets[2] == 100)
-                || (octets[0] == 203 && octets[1] == 0 && octets[2] == 113)
-                || octets[0] >= 224
-        }
-        IpAddr::V6(ip) => {
-            if let Some(mapped) = ip.to_ipv4_mapped() {
-                return is_local_network_ip(IpAddr::V4(mapped));
-            }
-
-            let segments = ip.segments();
-            let is_nat64_well_known = segments[0] == 0x0064 && segments[1] == 0xff9b;
-            let is_teredo = segments[0] == 0x2001 && segments[1] == 0x0000;
-            let is_6to4 = segments[0] == 0x2002;
-
-            ip.is_loopback()
-                || ip.is_unspecified()
-                || (segments[0] & 0xff00) == 0xff00
-                || (segments[0] & 0xfe00) == 0xfc00
-                || (segments[0] & 0xffc0) == 0xfe80
-                || (segments[0] & 0xffc0) == 0xfec0
-                || (segments[0] == 0x2001 && segments[1] == 0x0db8)
-                || is_nat64_well_known
-                || is_teredo
-                || is_6to4
-        }
-    }
-}
-
 fn render_object_template(
     template: Option<&Value>,
     args: &Value,
@@ -808,41 +611,13 @@ fn response_max_bytes(config: &HttpToolConfig) -> Result<usize> {
     Ok(max_bytes)
 }
 
-fn validate_url_template_boundary(url_template: &str) -> Result<()> {
-    let trimmed = url_template.trim();
-    let Some(scheme_end) = trimmed.find("://") else {
-        return Err(anyhow!("http tool url must include http/https scheme").into());
-    };
-
-    let scheme = &trimmed[..scheme_end];
-    if scheme.contains("{{") {
-        return Err(anyhow!(
-            "http url scheme must be fixed and must not contain template placeholders"
-        ).into());
-    }
-    if scheme != "http" && scheme != "https" {
-        return Err(anyhow!("unsupported http url scheme").into());
-    }
-
-    let after_scheme = &trimmed[scheme_end + 3..];
-    let authority_end = after_scheme
-        .find(['/', '?', '#'])
-        .unwrap_or(after_scheme.len());
-    let authority = &after_scheme[..authority_end];
-    if authority.is_empty() {
-        return Err(anyhow!("http url host is required").into());
-    }
-    if authority.contains("{{") {
-        return Err(anyhow!(
-            "http url host must be fixed and must not contain template placeholders"
-        ).into());
-    }
-    if authority.contains('@') {
-        return Err(anyhow!("http url must not contain userinfo credentials").into());
-    }
-
-    Ok(())
-}
+// Re-export common constants for backward compatibility
+pub use crate::pkg::tool_registry::tool_security::{
+    DEFAULT_RESPONSE_MAX_BYTES,
+    HARD_RESPONSE_MAX_BYTES,
+    DEFAULT_TIMEOUT_MS,
+    HARD_TIMEOUT_MS,
+};
 
 #[cfg(test)]
 #[path = "http_tests.rs"]

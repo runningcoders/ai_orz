@@ -30,6 +30,10 @@ pub async fn init_all(config: &AppConfig) {
         .unwrap_or(168);
     jwt::init_jwt(&jwt_secret, jwt_expiry_hours);
 
+    // Register all generic builtin tools to the global registry
+    tool_registry::builtin::register_all(tool_registry::get_registry());
+    sys_info!("Registered {} generic builtin tools", tool_registry::builtin::GENERIC_BUILTIN_TOOLS.len());
+
     // Initialize tool call tracing logger (singleton factory)
     tool_tracing::logger::ToolCallLogger::init(config.base_data_path());
 

@@ -135,7 +135,7 @@ impl ToolDyn for RigToolAdapter {
 /// Tool 持久化对象
 ///
 /// 对应 SQL 建表语句：`migrations/20260420000000_initial.sql`
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, Default)]
 pub struct ToolPo {
     /// 工具 ID
     pub id: String,
