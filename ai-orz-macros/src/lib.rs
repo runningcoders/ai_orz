@@ -3,6 +3,9 @@ use quote::quote;
 use syn::{AngleBracketedGenericArguments, parse_macro_input};
 use syn::{Ident, ItemFn, Lit, LitStr, Meta, MetaNameValue, Type};
 
+mod stats_event;
+use stats_event::derive_stats_event as stats_event_derive;
+
 /// Derive macro to mark HTTP params and their source locations.
 /// This is used together with #[generate_http_handler] to automatically
 /// collect which fields come from path/query/body.
@@ -11,6 +14,31 @@ pub fn derive_params(input: TokenStream) -> TokenStream {
     // This derive doesn't generate any code, it just holds the #[param] attributes
     // for #[generate_http_handler] to read.
     TokenStream::new()
+}
+
+/// Derive macro to automatically implement StatEvent trait.
+///
+/// # Usage
+/// ```rust
+/// use ai_orz_macros::StatsEvent;
+///
+/// #[derive(Debug, Clone, StatsEvent)]
+/// pub struct ModelCallEvent {
+///     #[timestamp]
+///     pub timestamp: i64,
+///     #[tag]
+///     pub model_provider_id: String,
+///     #[tag]
+///     pub agent_id: Option<String>,
+///     #[metric]
+///     pub tokens_input: i64,
+///     #[metric]
+///     pub tokens_output: i64,
+/// }
+/// ```
+#[proc_macro_derive(StatsEvent, attributes(timestamp, tag, metric))]
+pub fn derive_stats_event(input: TokenStream) -> TokenStream {
+    stats_event_derive(input)
 }
 
 /// Register a handler function as a built-in tool

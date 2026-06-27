@@ -29,6 +29,10 @@ pub struct AppConfig {
     #[serde(default)]
     pub database: DatabaseConfig,
 
+    /// 统计数据库配置
+    #[serde(default)]
+    pub stats: StatsConfig,
+
     /// 前端配置
     #[serde(default)]
     pub frontend: FrontendConfig,
@@ -104,6 +108,35 @@ pub enum VectorStoreType {
 
     /// SQLite VSS 向量扩展（需要系统依赖）
     SqliteVss,
+}
+
+/// 统计数据库配置
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct StatsConfig {
+    /// Stats DuckDB 文件路径（相对于 base_data_path）
+    #[serde(default = "default_stats_db_file_name")]
+    pub db_file_name: String,
+
+    /// 批量写入缓冲大小
+    #[serde(default = "default_stats_batch_size")]
+    pub batch_size: usize,
+}
+
+impl Default for StatsConfig {
+    fn default() -> Self {
+        Self {
+            db_file_name: default_stats_db_file_name(),
+            batch_size: default_stats_batch_size(),
+        }
+    }
+}
+
+fn default_stats_db_file_name() -> String {
+    "stats.duckdb".to_string()
+}
+
+fn default_stats_batch_size() -> usize {
+    100
 }
 
 /// 前端配置

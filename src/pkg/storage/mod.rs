@@ -9,6 +9,9 @@
 
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
 use std::sync::Arc;
+use once_cell::sync::OnceCell;
+
+use crate::pkg::stats::Stats;
 
 /// 向量存储抽象 Trait
 pub mod vector;
@@ -36,6 +39,7 @@ pub struct Storage {
 struct StorageInner {
     sqlite: SqlitePool,
     vector: Arc<dyn VectorStore>,
+    stats: OnceCell<Stats>,
 }
 
 impl Storage {
@@ -48,7 +52,11 @@ impl Storage {
             InMemoryVectorStore::with_path(temp_dir.path()).expect("创建测试向量存储失败"),
         );
         Self {
-            inner: Arc::new(StorageInner { sqlite, vector }),
+            inner: Arc::new(StorageInner {
+                sqlite,
+                vector,
+                stats: OnceCell::new(),
+            }),
         }
     }
 
@@ -61,9 +69,10 @@ impl Storage {
     pub async fn new(
         base_data_path: &Path,
         db_config: &common::config::DatabaseConfig,
+        stats_config: &common::config::StatsConfig,
     ) -> Result<Self> {
         let db_path = base_data_path.join(&db_config.db_file_name);
-        let connection_url = format!("sqlite:{}", db_path.display());
+        let connection_url = format!("sqlite://{}", db_path.display());
 
         let sqlite = SqlitePoolOptions::new()
             .max_connections(5) // SQLite 单文件写并发有限，不需要太多连接
@@ -90,8 +99,24 @@ impl Storage {
             }
         };
 
+        // 初始化 Stats DuckDB
+        let stats_db_path = base_data_path.join(&stats_config.db_file_name);
+        let mut stats = Stats::open(
+            stats_db_path.to_str().unwrap_or_default(),
+            stats_config.batch_size,
+        ).await?;
+        Stats::initialize_default(&mut stats)?;
+
+        let mut inner = StorageInner {
+            sqlite,
+            vector,
+            stats: OnceCell::new(),
+        };
+        // Safety: we just created it, so set is ok
+        inner.stats.set(stats).expect("stats already initialized");
+
         Ok(Self {
-            inner: Arc::new(StorageInner { sqlite, vector }),
+            inner: Arc::new(inner),
         })
     }
 
@@ -99,10 +124,11 @@ impl Storage {
     pub async fn with_sqlite_vss(
         base_data_path: &Path,
         db_config: &common::config::DatabaseConfig,
+        stats_config: &common::config::StatsConfig,
     ) -> Result<Self> {
         let mut db_config = db_config.clone();
         db_config.vector_store_type = common::config::VectorStoreType::SqliteVss;
-        Self::new(base_data_path, &db_config).await
+        Self::new(base_data_path, &db_config, stats_config).await
     }
 
     /// 获取 SQLite 连接池
@@ -129,6 +155,11 @@ impl Storage {
     pub fn vector_store(&self) -> &Arc<dyn VectorStore> {
         &self.inner.vector
     }
+
+    /// 获取 Stats 统计模块
+    pub fn stats(&self) -> &Stats {
+        self.inner.stats.get().expect("Stats not initialized")
+    }
 }
 
 use std::path::Path;
@@ -146,9 +177,13 @@ pub fn get() -> &'static Storage {
 }
 
 /// 初始化全局 Storage（由 main.rs 调用，只调用一次）
-pub async fn init(base_data_path: &Path, db_config: &common::config::DatabaseConfig) {
+pub async fn init(
+    base_data_path: &Path,
+    db_config: &common::config::DatabaseConfig,
+    stats_config: &common::config::StatsConfig,
+) {
     if STORAGE_INSTANCE.get().is_none() {
-        let storage = Storage::new(base_data_path, db_config)
+        let storage = Storage::new(base_data_path, db_config, stats_config)
             .await
             .expect("初始化 Storage 失败");
         let _ = STORAGE_INSTANCE.set(storage);

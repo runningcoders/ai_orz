@@ -48,6 +48,7 @@ proc-macro2 = "1.0"
 quote = "1.0"
 syn = { version = "2.0", features = ["full", "parsing"] }
 ctor = "0.2"
+duckdb = { version = "1.4.0", features = ["bundled"] }
 schemars = { version = "0.8", features = ["derive"] }
 lazy_static = "1.4.0"
 ai-orz-macros = { path = "./ai-orz-macros" }

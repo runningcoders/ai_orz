@@ -4,6 +4,7 @@ pub mod jwt;
 pub mod logging;
 pub mod monitoring;
 pub mod request_context;
+pub mod stats;
 pub mod storage;
 pub mod tool_registry;
 pub mod tool_tracing;
@@ -19,7 +20,7 @@ pub async fn init_all(config: &AppConfig) {
     logging::init(config);
 
     // Initialize database storage
-    storage::init(config.base_data_path().as_path(), &config.database).await;
+    storage::init(config.base_data_path().as_path(), &config.database, &config.stats).await;
 
     // Initialize JWT
     let jwt_secret = std::env::var("JWT_SECRET")

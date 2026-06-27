@@ -178,6 +178,11 @@ impl RequestContext {
     pub fn storage(&self) -> &Storage {
         &self.storage
     }
+
+    /// 获取统计模块
+    pub fn stats(&self) -> &crate::pkg::stats::Stats {
+        self.storage.stats()
+    }
 }
 
 /// 格式化时间戳为 YYYYMMDDHHmmss
