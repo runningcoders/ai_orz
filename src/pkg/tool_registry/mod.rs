@@ -11,11 +11,14 @@ pub mod http;
 pub mod http_fetch;
 pub mod fs_read;
 pub mod fs_write;
+pub mod shell_exec;
 pub mod mcp;
 pub mod tool_security;
 
 #[cfg(test)]
 mod fs_tests;
+#[cfg(test)]
+mod shell_tests;
 
 use crate::models::tool::{CoreTool, ToolPo};
 pub use builtin::BuiltinToolFactory;

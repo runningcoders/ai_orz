@@ -4,6 +4,7 @@ use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::tool_registry::fs_read::FsReadToolFactory;
 use crate::pkg::tool_registry::fs_write::FsWriteToolFactory;
 use crate::pkg::tool_registry::http_fetch::HttpFetchToolFactory;
+use crate::pkg::tool_registry::shell_exec::ShellExecToolFactory;
 use crate::pkg::tool_registry::ToolRegistry;
 use dyn_clone::DynClone;
 use dyn_clone::clone_trait_object;
@@ -28,6 +29,7 @@ pub static GENERIC_BUILTIN_TOOLS: Lazy<Vec<(String, Box<dyn BuiltinToolFactory>)
         ("http_fetch".to_string(), Box::new(HttpFetchToolFactory::default())),
         ("fs_read".to_string(), Box::new(FsReadToolFactory::default())),
         ("fs_write".to_string(), Box::new(FsWriteToolFactory::default())),
+        ("shell_exec".to_string(), Box::new(ShellExecToolFactory::default())),
     ]);
 
 /// Register all generic built-in tools to the global registry
