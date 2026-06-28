@@ -1395,3 +1395,156 @@ test result: ok. 63 passed; 0 failed; 0 ignored
 所有安全检查（敏感文件过滤、符号链接检查）仍然生效。
 
 ---
+
+## `shell_exec` 异步 Shell 执行工具（设计中）
+
+### 目标
+提供 Agent 异步执行 Shell 命令的能力，支持短命令同步等待和长命令后台运行，完整的输出日志存储和进程追踪，满足项目构建、脚本执行、系统任务等需求。
+
+### 核心设计决策
+
+#### 执行模型
+- **协议/模式**：`protocol = Builtin`，`control_mode = Manual`
+- 不走 Rig Auto 同步调用，走自建 `ToolCallRequest` / `ToolCallResult` 消息链路异步执行
+- 消费者负责实际执行，完成后唤醒 Agent
+
+#### 存储结构（完全遵循现有约定）
+
+| 内容 | 路径 | 获取方法 |
+|------|------|----------|
+| 调用追踪元信息 | `{base_data_path}/tools/shell_exec/call_trace/{YYYYMMDD}.jsonl` | `config.tool_call_trace_dir("shell_exec")` |
+| 命令输出日志 | `{base_data_path}/tools/shell_exec/logs/{call_id}.log` | `config.tool_logs_dir("shell_exec")` |
+
+元信息（`pid`, `background`, `exit_code`, `started_at`, `finished_at`）存储在 `ToolCallEntry.metadata`，不单独重复存储。
+
+#### 配置结构（`ToolPo.config`）
+
+```json
+{
+  "additional_allowed_paths": ["list", "of", "extra", "allowed", "working", "directories"],
+  "allowed_env": ["PATH", "RUSTFLAGS", ...],
+  "default_timeout_ms": 300000,
+  "default_max_output_size_bytes": 10485760
+}
+```
+
+- `additional_allowed_paths`：额外允许的工作目录，默认只允许 `base_data_path` 内
+- `allowed_env`：允许从进程环境继承的环境变量白名单
+- `default_timeout_ms`：默认超时（5 分钟），Agent 单次调用可覆盖
+- `default_max_output_size_bytes`：默认最大输出（10MB），超过截断
+
+#### 调用参数（Agent 发起请求）
+
+```json
+{
+  "command": "string (required) - shell command to execute",
+  "working_dir": "string (optional) - working directory, must be allowed",
+  "timeout_ms": "integer (optional) - override default timeout",
+  "max_output_size_bytes": "integer (optional) - truncate output after this size",
+  "background": "boolean (optional, default false) - run in background",
+  "env": {"KEY": "value", ...}  // extra environment variables
+}
+```
+
+#### 安全设计
+
+1. **工作目录限制**：
+   - 工作目录必须在 `base_data_path` 或 `additional_allowed_paths` 范围内
+   - 复用 `tool_security.rs` 的路径校验逻辑（敏感文件检测、符号链接拒绝）
+
+2. **环境变量过滤**：
+   - 只继承白名单 `allowed_env` 中的环境变量
+   - Agent 传入的额外 `env` 全部允许
+   - 自动过滤 `HOME`, `USER`, `SSH_*`, `GITHUB_*` 等敏感变量
+
+3. **不做命令语法分析**：假设调用由 Agent 发起，Agent 已做决策，安全由目录沙箱保证
+
+#### 执行流程
+
+```
+Agent 发起 ToolCallRequest(shell_exec)
+  ↓
+ToolCallLogger 记录 ToolCallEntry (status=Started) → call_trace JSONL
+  ↓
+Message Consumer 处理
+  ↓
+1. 校验工作目录是否允许（复用 tool_security）
+2. 组装环境变量（过滤继承 + 追加 Agent 传入）
+3. 启动 shell 子进程，拿到 pid
+4. 更新 ToolCallEntry.metadata = { pid, background, started_at, log_path }
+5. 异步读取 stdout + stderr → 持续追加到 .../logs/{call_id}.log
+  ↓
+┌─────────────────────────┐
+│ 短命令 (background=false)│
+└─────────────────────────┘
+  ↓
+  等待子进程退出
+  ↓
+  获取 exit_code + finished_at
+  ↓
+  更新 ToolCallEntry.metadata + status=Completed
+  ↓
+  创建附件（日志文件）
+  ↓
+  ToolCallResult 返回摘要：
+  {
+    "success": true,
+    "exit_code": 0,
+    "duration_ms": 1234,
+    "log_size_bytes": 12450,
+    "log_lines": 256,
+    "attachment_id": "...",
+    "truncated": false,
+    "call_id": "..."
+  }
+  ↓
+  唤醒 Agent
+
+┌─────────────────────────┐
+│ 长命令 (background=true) │
+└─────────────────────────┘
+  ↓
+  启动后立即返回，不等待退出
+  ↓
+  更新 ToolCallEntry status=Running
+  ↓
+  ToolCallResult 返回：
+  {
+    "success": true,
+    "background": true,
+    "pid": 12345,
+    "started_at": 1234567890,
+    "log_attachment_id": "...",
+    "call_id": "..."
+  }
+  ↓
+  唤醒 Agent（Agent 可后续读取日志）
+  ↓
+  子进程输出继续追加到日志文件
+```
+
+#### 长进程状态查询
+
+Agent 可通过读取 `ToolCallEntry` 获取 `metadata.pid`，然后查询进程是否运行：
+
+- **Linux/macOS**：检查 `/proc/{pid}` 是否存在
+- 状态变化后更新 `ToolCallEntry.metadata.exit_code` + `finished_at`
+
+后续可扩展 `shell_status` / `shell_kill` 辅助工具方便 Agent 操作。
+
+#### 目录结构
+
+```diff
+ai_orz/common/src/config.rs
++├── tool_logs_dir() method - 获取工具日志目录
+
+ai_orz/src/pkg/tool_registry/
++├── shell_exec.rs      # shell_exec 工具实现
+```
+
+复用现有：
+- `tool_security.rs` → 路径安全校验
+- `ToolCallLogger` → 调用追踪
+- `attachment` → 附件关联
+
+---

@@ -391,6 +391,15 @@ impl AppConfig {
             .join(tool_id)
             .join("call_trace")
     }
+
+    /// 获取指定工具的运行日志输出目录
+    /// 路径: {base_data_path}/tools/{tool_id}/logs
+    pub fn tool_logs_dir(&self, tool_id: &str) -> PathBuf {
+        self.base_data_path()
+            .join("tools")
+            .join(tool_id)
+            .join("logs")
+    }
 }
 
 // ==================== 消费者配置 ====================
