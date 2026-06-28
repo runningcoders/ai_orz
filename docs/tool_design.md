@@ -1243,8 +1243,155 @@ ToolCallResult 写回消息链路
 | `eac393b` | 全链路改为 String ID，去掉 Uuid 强依赖，统一所有 DAO 导出 |
 | `d29a8f1` | 完成 Agent 工具绑定架构，符合分层规范，测试全过 |
 | `...` | ... |
-| `6039c39` | 完成混合模式命名对齐：CoreTool trait + Tool 实体，完整重构，测试全过 |
-| `bc41fd8` | 修复 HR 测试缺失 DAO 初始化问题 |
-| `05ef2f0` | 简化内置工具机制并添加 Builtin 保护 |
+  1246|| `6039c39` | 完成混合模式命名对齐：CoreTool trait + Tool 实体，完整重构，测试全过 |
+  1247|| `bc41fd8` | 修复 HR 测试缺失 DAO 初始化问题 |
+  1248|| `05ef2f0` | 简化内置工具机制并添加 Builtin 保护 |
+  1249|| `[NEW]` | 新增三个通用内置工具 `http_fetch`/`fs_read`/`fs_write`，完整安全防护，测试全过 |
+  1250|---
+
+## 通用内置工具（2026-06-28 新增）
+
+### 目标
+提供三个开箱即用的通用内置工具，满足 Agent 自主处理文件和网络请求的需求：
+- `http_fetch` - 获取 HTTPS 网页/API 内容
+- `fs_read` - 读取本地文件（支持范围读取/grep搜索）
+- `fs_write` - 修改本地文件（支持多种编辑模式，原子操作）
+
+所有工具都启用 `ControlMode::Auto`，可以被 Rig 自动调用。
+
+### 安全设计
+
+**HTTP 安全（SSRF 防护）**：
+- 强制仅允许 HTTPS 方案，拒绝 HTTP
+- 默认拒绝本地网络/私有 IP 访问（需要显式配置 `allow_local_network=true` 开启）
+- 支持域名白名单/黑名单
+- DNS 解析结果进行二次校验，DNS pinning 防止劫持
+- 默认响应大小限制 1MB，硬限制 10MB，防止 OOM
+
+**文件系统安全（沙箱隔离）**：
+- 默认仅允许访问 `base_data_path` 范围内的文件
+- 支持通过 `additional_allowed_paths` 配置额外允许路径
+- 敏感文件名直接拒绝（`.env`, `.pem`, `.key`, `.p12`, `id_rsa`, `password`, `secret` 等）
+- 拒绝符号链接，防止 `..` 路径穿越攻击
+- 路径规范化解析，杜绝绕过检测
+
+### 功能说明
+
+#### 1. `http_fetch` (ID: `http_fetch`, name: `fetch_url`)
+
+**参数**：
+```json
+{
+  "url": "string (required) - HTTPS URL to fetch"
+}
+```
+
+**返回**：
+```json
+{
+  "status": "u16",
+  "headers": "object",
+  "content_length": "usize",
+  "body": "JSON | string"
+}
+```
+
+**测试覆盖**：4 个单元测试全部通过。
+
+---
+
+#### 2. `fs_read` (ID: `fs_read`, name: `read_file`)
+
+**参数**：
+```json
+{
+  "path": "string (required) - Path relative to base_data_path",
+  "start_line": "integer (optional) - Start reading from this line (1-indexed)",
+  "end_line": "integer (optional) - Stop reading at this line (inclusive)",
+  "grep": "string (optional) - Only return lines matching this pattern with context",
+  "context_lines": "integer (optional, default 2) - Context lines before/after each match"
+}
+```
+
+**配置** (`ToolPo.config`)：
+```json
+{
+  "additional_allowed_paths": ["optional", "list", "of", "extra", "paths"]
+}
+```
+
+**返回**：
+- 正常读取：返回带行号的内容 + 元信息
+- grep 模式：返回匹配列表 + 上下文
+- 需要确认：`{success: false, require_confirmation: true, message: "..."}`
+
+---
+
+#### 3. `fs_write` (ID: `fs_write`, name: `write_file`)
+
+**参数**：
+```json
+{
+  "path": "string (required) - Path relative to base_data_path",
+  "mode": "string (required) - one of: overwrite | append | insert_after | delete_range | replace_range",
+  "content": "string (required for: overwrite, append, insert_after, replace_range)",
+  "after_line": "usize (required for: insert_after)",
+  "start_line": "usize (required for: delete_range, replace_range)",
+  "end_line": "usize (required for: delete_range, replace_range)"
+}
+```
+
+**支持的模式**：
+| 模式 | 说明 |
+|------|------|
+| `overwrite` | 完全覆盖文件（不存在则创建） |
+| `append` | 追加内容到文件末尾 |
+| `insert_after` | 在指定行后插入新内容 |
+| `delete_range` | 删除 `[start_line, end_line]` 范围内的行 |
+| `replace_range` | 将 `[start_line, end_line]` 替换为新内容 |
+
+**原子性保证**：
+- 先读取现有文件到内存，在内存完成修改，最后一次性写入磁盘
+- 要么完全成功，要么文件不改变，避免部分写入损坏文件
+
+**配置**：同 `fs_read`，支持 `additional_allowed_paths` 扩展允许路径。
+
+### 目录结构
+
+```diff
+ai_orz/src/pkg/tool_registry/
++├── tool_security.rs       # 通用安全工具函数（SSRF + 文件沙箱）
++├── http_fetch.rs         # http_fetch 工具实现 + 单元测试
++├── fs_read.rs            # fs_read 工具实现
++├── fs_write.rs           # fs_write 工具实现 + 单元测试
++├── fs_tests.rs           # 文件安全模块单元测试
+```
+
+### 测试结果
+
+所有相关测试全部通过：
+```
+test result: ok. 63 passed; 0 failed; 0 ignored
+```
+
+包括：
+- http_fetch 安全测试（拒绝 HTTP/localhost/私有IP）
+- 文件安全测试（敏感文件检测、路径验证）
+- fs_write 参数校验单元测试
+
+### 自定义扩展路径
+
+管理员可以在数据库中修改 `fs_read` / `fs_write` 工具的 `config` JSON，添加 `additional_allowed_paths` 来允许访问项目外的指定路径：
+
+```json
+{
+  "additional_allowed_paths": [
+    "/absolute/path/to/project",
+    "relative/path/from/base_data_path"
+  ]
+}
+```
+
+所有安全检查（敏感文件过滤、符号链接检查）仍然生效。
 
 ---

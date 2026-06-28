@@ -14,6 +14,9 @@ pub mod fs_write;
 pub mod mcp;
 pub mod tool_security;
 
+#[cfg(test)]
+mod fs_tests;
+
 use crate::models::tool::{CoreTool, ToolPo};
 pub use builtin::BuiltinToolFactory;
 pub use handler_adapter::register_handler_tool;
