@@ -26,7 +26,15 @@ mod default;
 mod stats;
 
 pub use self::default::{DefaultStatEvent, DefaultStatTable};
-pub use self::stats::Stats;
+pub use self::stats::{
+    Stats,
+    StatFilter,
+    StatAggregation,
+    AggregationRow,
+    StatsInterval,
+    TimeSeriesPoint,
+    TokenSumResult,
+};
 pub use self::traits::{StatEvent, StatTable};
 
 // Re-export the derive macro
