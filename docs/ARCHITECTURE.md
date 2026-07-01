@@ -14,16 +14,20 @@ ai_orz/
 │   ├── src/api/              # 所有前后端共用 API DTO（按功能分组）
 │   ├── src/constants/        # 公共常量、基础类型
 │   ├── src/enums/            # 公共枚举（UserRole 等）
-│   └── src/error.rs          # 规划新增：前后端/工具调用共享错误类型（ErrorCode + Error）
+│   └── src/error.rs          # 前后端/工具调用共享错误类型（ErrorCode + Error）
+│
+├── **ai-orz-macros** 自定义宏 crate
+│   └── src/lib.rs            # 日志宏、统计事件宏
 │
 ├── **src** 后端服务
-│   ├── models/               # 持久化实体 PO
+│   ├── models/               # 持久化实体 PO + 业务实体
 │   ├── handlers/             # HTTP 接口层（按业务域/功能分组，每个方法对应一个用户 Action）
 │   ├── service/
 │   │   ├── dao/              # 数据访问层 DAO（单一数据源操作）
 │   │   ├── dal/              # 业务数据访问层 DAL（组合 DAO 提供业务级数据操作）
 │   │   └── domain/           # 领域层（核心业务逻辑）
 │   ├── middleware/           # Axum 中间件（JWT认证、RequestContext注入）
+│   ├── consumer/             # 异步消费者系统（通用消费者框架 + Message Topic 三层分发）
 │   └── pkg/                  # 公共工具包
 │
 └── **frontend** 前端 Dioxus 应用
@@ -37,7 +41,7 @@ ai_orz/
 - ✅ 所有前后端共用的 request/response DTO 都放在 `common/src/api/`，消除重复定义
 - ✅ 通用响应包装 `ApiResponse<T>` 也只保留在 `common::api`，Handler 不再定义本地响应包装
 - ✅ 所有公共枚举都放在 common，保证前后端类型一致
-- ✅ 规划新增统一错误类型：`common::error::{ErrorCode, Error, Result}` 作为前后端、HTTP handler 宏、LLM 工具调用共享错误契约；详见 `docs/design/common-error-type.md`
+- ✅ 统一错误类型：`common::error::{ErrorCode, Error, Result}` 作为前后端、HTTP handler 宏、LLM 工具调用共享错误契约；详见 `docs/design/common-error-type.md`
 - ✅ PO 实体保持在后端 `models/`，不移动到 common（只需要前端看到 DTO）
 - ✅ 后端数据库枚举字段直接使用 common 中的枚举类型，实现编译期类型安全
 
@@ -236,16 +240,17 @@ Project + Task + Artifact 聚合
 
 ---
 
-## 最新架构完成状态（2026-05-16 更新）
+## 最新架构完成状态（2026-07-01 更新）
 
-### 总体完成度：**~80%** 🎯
+### 总体完成度：**~92%** 🎯
 
 | 层级 | 完成度 | 状态 | 关键进展 |
 |------|--------|------|---------|
-| **DAO 层** | 100% ✅ | 完成 | 20 个 DAO 全部实现并被使用，零闲置 |
-| **DAL 层** | 100% ✅ | 完成 | 13 个 DAL 全部接入业务，无闲置 |
-| **Domain 层** | 80% ✅ | 大部分完成 | 7 个领域，5 个完整实现 + 2 个待补 Handler |
-| **Handler 层** | 50% ⚠️ | 进行中 | 3 个领域 API 已上线，3 个待补充 |
+| **DAO 层** | 100% ✅ | 完成 | 22 个 DAO 全部实现并被使用，零闲置（17 核心 DAO + 5 渠道 DAO） |
+| **DAL 层** | 100% ✅ | 完成 | 16 个 DAL 全部接入业务，零闲置 |
+| **Domain 层** | 100% ✅ | 完成 | 6 个领域全部完整实现（organization/hr/finance/message/runtime/project） |
+| **Handler 层** | ~95% ✅ | 大部分完成 | 6 大业务域 API 全部上线（organization/hr/finance/project/user/health） |
+| **Consumer 层** | 100% ✅ | 完成 | 通用消费者框架 + Message Topic 三层分发 |
 
 ---
 
@@ -515,7 +520,12 @@ async fn find_by_id(&self, id: &str) -> Result<Option<TaskPo>> {
 | `organizations` | `OrganizationPo` |
 | `users` | `UserPo` |
 | `messages` | `MessagePo` (事件总线消息) |
-| `tasks` | `Task` |
+| `tasks` | `TaskPo` |
+| `projects` | `ProjectPo` |
+| `artifacts` | `ArtifactPo` |
+| `attachments` | `AttachmentPo` |
+| `mcp_servers` | `McpServerPo` |
+| `message_channels` | `MessageChannelPo` |
 | `short_term_memory_index` | `ShortTermMemoryIndexPo` |
 | `long_term_knowledge_node` | `LongTermKnowledgeNodePo` |
 | `knowledge_reference` | `KnowledgeReferencePo` |
@@ -529,7 +539,7 @@ async fn find_by_id(&self, id: &str) -> Result<Option<TaskPo>> {
 - 每个单元测试独立，使用随机临时 SQLite 文件，互不干扰
 - 每个测试在执行前重新初始化 storage，保证干净环境
 - 所有建表使用定义好的常量，不重复写 SQL
-- 当前项目总测试数：**158 个** → **全部通过** ✅
+- 当前项目总测试数：**516 个** → **全部通过** ✅
 
 ### 测试设计要点
 

@@ -57,7 +57,7 @@
 |------|------|--------|
 | [README.md](./README.md) | 项目概览、快速开始、功能列表、文档索引 | ⭐⭐⭐ |
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | **最新**完整架构说明、核心概念解释、实体关系、完成状态 | ⭐⭐⭐ |
-| [docs/architecture_status_20260515.md](./docs/architecture_status_20260515.md) | 分层架构现状快照、金字塔结构、各层状态统计 | ⭐⭐⭐ |
+| [docs/architecture_status_20260701.md](./docs/architecture_status_20260701.md) | 分层架构现状快照、金字塔结构、各层状态统计 | ⭐⭐⭐ |
 
 ### 分层架构与最佳实践
 | 文档 | 内容 | 优先级 |
