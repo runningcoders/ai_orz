@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-05-15
+> 最后更新：2026-07-01
 
 ---
 
@@ -14,7 +14,7 @@
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + rig-core 0.34
 - **前端**：Dioxus 0.7 (WebAssembly)
-- **技术特色**：严格分层架构、类型安全、450 个测试 100% 通过率
+- **技术特色**：严格分层架构、类型安全、516 个测试 100% 通过率
 
 ### 1.2 已实现核心功能
 
@@ -29,20 +29,22 @@
 | 📚 技能库系统 | ✅ | 可复用技能和工作流，支持搜索和分类 |
 | 📋 任务 + 项目管理 | ✅ | 任务状态机，项目聚合对话上下文，DAL + Domain 层完整实现 |
 | 📎 统一附件存储 | ✅ | 消息附件 + 项目产物，FileMeta + 日期分层路径 |
+| 🔌 MCP 服务器集成 | ✅ | MCP 服务器管理、工具同步、MCP 工具调用执行 |
 | 🚀 异步消费者系统 | ✅ | 通用消费者框架 + Message Topic 三层分发 |
+| 📝 结构化日志系统 | ✅ | JSON 格式、自动上下文关联、日志自动清理 |
 | 🔍 向量搜索 | ✅ | SQLite VSS 扩展 + 语义索引 + 可平滑升级 |
 
-### 1.3 整体完成度与测试统计（2026-05-15 更新）
+### 1.3 整体完成度与测试统计（2026-07-01 更新）
 
 | 指标 | 数值 | 说明 |
 |------|------|------|
-| **总测试数** | **450+** | DAO + DAL + Domain 三层完整覆盖 |
+| **总测试数** | **516** | DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
 | **通过率** | **100%** | ✅ 全部测试通过 |
-| DAO 模块数 | 20 个 | 全部实现并被使用，零闲置 |
-| DAL 模块数 | 13 个 | 11 个完整业务承载，2 个待接入 |
-| Domain 领域数 | 6 个 | 4 个完整实现，2 个待补 Handler |
-| Handler API 领域数 | 3 个上线 | organization, hr, finance |
-| **整体架构完成度** | **~78%** | 从下往上扎实推进 |
+| DAO 模块数 | 22 个 | 全部实现并被使用，零闲置（17 核心 DAO + 5 渠道 DAO） |
+| DAL 模块数 | 16 个 | 全部完整业务承载，零闲置 |
+| Domain 领域数 | 6 个 | 全部完整实现 |
+| Handler API 领域数 | 6 个上线 | organization, hr, finance, project, user, health |
+| **整体架构完成度** | **~92%** | 从下往上扎实推进 |
 
 ---
 
@@ -134,7 +136,10 @@ ai_orz/
 ├── common/                     # 公共共享 crate（前后端共用）
 │   ├── src/api/               # API 请求响应 DTO 按功能分组
 │   ├── src/constants/         # 公共常量、基础类型
-│   └── src/enums/            # 公共枚举（UserRole、TaskStatus 等）
+│   ├── src/enums/            # 公共枚举（UserRole、TaskStatus 等）
+│   └── src/error/            # 统一错误类型
+│
+├── ai-orz-macros/             # 自定义宏 crate（日志宏、统计事件宏）
 │
 ├── src/                        # 后端服务
 │   ├── handlers/              # HTTP 接口层（按业务域分组，每个方法一个文件）
@@ -142,8 +147,9 @@ ai_orz/
 │   │   ├── dao/               # 数据访问层 DAO
 │   │   ├── dal/               # 业务数据访问层 DAL
 │   │   └── domain/            # 领域层 Domain
-│   ├── models/                # PO 持久化实体
+│   ├── models/                # PO 持久化实体 + 业务实体
 │   ├── middleware/            # Axum 中间件
+│   ├── consumer/              # 异步消费者系统
 │   └── pkg/                   # 公共工具包
 │
 ├── frontend/                   # Dioxus 前端
@@ -413,6 +419,38 @@ Agent
 ---
 
 ## 六、工作流与开发记录
+
+### 2026-07-01 里程碑
+**✅ 附件存储系统 + MCP 服务器集成完整落地**
+- **附件系统上线**：通用 Attachment 上传 API，支持文件上传和文本创建两种模式，统一存储在日期分层目录
+- **MCP 服务器完整支持**：MCP 服务器 CRUD、状态管理、工具同步、MCP 工具调用执行全链路打通
+- **项目产物扩展**：Artifact 增加 `source_type` 字段，支持引用 attachment_id 创建产物
+- **Finance Domain 完善**：新增 Attachment Domain、McpServer Domain、McpTool Domain、ToolProvider Domain
+- **Handler API 全面覆盖**：6 大业务域 API 全部上线（organization/hr/finance/project/user/health）
+- **DAO 层扩展**：从 20 个增加到 22 个（新增 attachment + mcp_server 核心 DAO）
+- **DAL 层扩展**：从 13 个增加到 16 个（新增 attachment + mcp_server + mcp_tool）
+- **测试统计**：516 个测试 100% 通过
+- **整体架构完成度**：~92%
+
+### 2026-06-23 里程碑
+**✅ MCP 服务器与工具集成**
+- 新增 MCP 服务器管理：创建、查询、更新、删除、状态切换
+- MCP 工具同步：从 MCP 服务器拉取工具列表并持久化
+- MCP 工具执行：通过 rmcp 客户端调用 MCP 工具
+- 新增数据库迁移：`20260623000000_mcp_servers.sql`
+
+### 2026-06-18 里程碑
+**✅ 产物来源类型扩展**
+- Artifact 增加 `source_type` 字段，支持区分不同来源的产物
+- 支持引用 Finance 模块的 `attachment_id` 创建项目产物
+- 新增数据库迁移：`20260618000000_artifact_add_source_type.sql`
+
+### 2026-06-17 里程碑
+**✅ 统一附件存储系统上线**
+- 通用 Attachment 模块：上传、创建文本、查询、删除、内容更新
+- FileMeta + 日期分层路径存储结构
+- 支持 multipart 文件上传和纯文本创建两种模式
+- 新增数据库迁移：`20260617000000_attachments.sql`
 
 ### 2026-05-15 里程碑
 **✅ 日志系统完全宏化重构完成**
