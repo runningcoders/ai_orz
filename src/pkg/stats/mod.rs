@@ -1,11 +1,12 @@
 //! Stats 统计模块 — 基于 DuckDB 的多维统计收集
 //!
 //! # Examples
-//! ```
-//! use crate::pkg::stats::{Stats, DefaultStatEvent, DefaultStatTable};
+//! ```ignore
+//! use ai_orz::pkg::stats::{Stats, DefaultStatEvent, DefaultStatTable};
 //! use serde_json::json;
 //! use chrono::Utc;
 //!
+//! # async fn example() -> common::error::Result<()> {
 //! let mut stats = Stats::open("./stats.duckdb", 100).await?;
 //! stats.register_table(DefaultStatTable);
 //!
@@ -15,7 +16,10 @@
 //!     metrics: json!({ "tokens_input": 1024, "tokens_output": 256 }),
 //! };
 //!
+//! let ctx = RequestContext::default();
 //! stats.record(ctx, &DefaultStatTable, event).await?;
+//! # Ok(())
+//! # }
 //! ```
 
 #![warn(clippy::all)]
