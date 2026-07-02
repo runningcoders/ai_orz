@@ -113,6 +113,14 @@ pub struct AgentStatsQuery {
 }
 
 pub trait AgentStatsDao: Send + Sync {
+    /// 绑定的事件类型，用于从 Stats 注册表获取表名
+    type Event: StatEvent + 'static + Send + Sync;
+
+    /// 获取绑定的表名（从 Stats 注册表中查询，默认实现）
+    fn table_name<'a>(&self, stats: &'a Stats) -> Option<&'a str> {
+        stats.get_table_name::<Self::Event>()
+    }
+
     /// 通用查询（聚合 / 过滤 / 分组）
     async fn query(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<JsonValue>>;
 
@@ -127,6 +135,8 @@ pub trait AgentStatsDao: Send + Sync {
 **设计要点：**
 - 使用统一 `AgentStatsQuery` 结构体，通过 `interval` 字段区分时序查询 vs 聚合查询
 - `sum_tokens` 内部自动设置 `aggregations = [Sum("tokens_input"), Sum("tokens_output"), Count]`
+- **关联类型 `Event`**：绑定事件类型，trait 提供默认 `table_name()` 方法从 Stats 注册表获取表名
+- **事件与表名映射**：写入时通过 `record_event!(ctx, Event)` 自动路由到对应表，查询时通过 `self.table_name(&stats)` 获取相同表名，保证一致性
 - `query_time_series` 内部要求 `interval` 字段，自动调用 `Stats::query_time_series`
 - 所有方法自动将 `agent_id` 添加到过滤条件，调用者不需要重复添加
 
@@ -284,3 +294,4 @@ record_event!(ctx, DefaultStatEvent {
 | v1.0 | 2026-06-28 | 讨论确定 | 初始设计 |
 | v1.1 | 2026-07-02 | 实现迭代 | Agent Stats DAO 实现完成；统计模型迁移到 common/src/models；接口从三个独立结构体改为统一 AgentStatsQuery；补充实现踩坑记录 |
 | v1.2 | 2026-07-02 | 全实体覆盖 | 新增 Project/Task/ModelProvider 三个 Stats DAO；每个 DAO 4 个单元测试（sum_tokens/time_series/aggregation/filter_isolation）；共 16 个 stats 测试 |
+| v1.3 | 2026-07-02 | 事件关联优化 | Stats 新增 get_table_name<E> 方法；查询方法新增 table_name 参数；DAO trait 使用关联类型绑定事件类型，提供默认 table_name 方法；实现写入和查询的事件→表名一致性 |

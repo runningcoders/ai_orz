@@ -4,7 +4,7 @@ use common::error::{Error, Result};
 use common::models::{StatsInterval, TimeSeriesPoint, TokenSumResult};
 use crate::models::project::ProjectPo;
 use crate::pkg::RequestContext;
-use crate::pkg::stats::{StatFilter, StatAggregation, AggregationRow};
+use crate::pkg::stats::{StatFilter, StatAggregation, AggregationRow, StatEvent, Stats};
 use common::enums::ProjectStatus;
 use serde_json::Value as JsonValue;
 
@@ -93,6 +93,14 @@ pub struct ProjectStatsQuery {
 /// Project 统计 DAO 接口
 #[async_trait::async_trait]
 pub trait ProjectStatsDao: Send + Sync {
+    /// 绑定的事件类型，用于从 Stats 注册表获取表名
+    type Event: StatEvent + 'static + Send + Sync;
+
+    /// 获取绑定的表名（从 Stats 注册表中查询）
+    fn table_name<'a>(&self, stats: &'a Stats) -> Option<&'a str> {
+        stats.get_table_name::<Self::Event>()
+    }
+
     /// 通用查询方法
     async fn query(&self, ctx: RequestContext, query: ProjectStatsQuery) -> Result<Vec<JsonValue>>;
 

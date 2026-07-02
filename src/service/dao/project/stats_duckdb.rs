@@ -2,40 +2,32 @@
 
 use common::error::{Error, Result};
 use crate::pkg::RequestContext;
-use crate::pkg::stats::{StatFilter, StatAggregation, StatsInterval};
+use crate::pkg::stats::{StatFilter, StatAggregation, StatsInterval, DefaultStatEvent};
 use crate::service::dao::project::{ProjectStatsDao, ProjectStatsQuery};
 use serde_json::Value as JsonValue;
 use std::sync::{Arc, OnceLock};
 
-// ==================== 工厂方法 + 单例 ====================
+static PROJECT_STATS_DAO: OnceLock<Arc<dyn ProjectStatsDao<Event = DefaultStatEvent>>> = OnceLock::new();
 
-static PROJECT_STATS_DAO: OnceLock<Arc<dyn ProjectStatsDao>> = OnceLock::new();
-
-/// 创建一个全新的 Project Stats DAO 实例（用于测试）
-pub fn stats_new() -> Arc<dyn ProjectStatsDao> {
+pub fn stats_new() -> Arc<dyn ProjectStatsDao<Event = DefaultStatEvent>> {
     Arc::new(ProjectStatsDaoDuckDbImpl)
 }
 
-/// 获取 ProjectStatsDao 单例
-pub fn stats_dao() -> Arc<dyn ProjectStatsDao> {
+pub fn stats_dao() -> Arc<dyn ProjectStatsDao<Event = DefaultStatEvent>> {
     PROJECT_STATS_DAO.get().cloned().unwrap()
 }
 
-/// 初始化单例
 pub fn stats_init() {
     let _ = PROJECT_STATS_DAO.set(stats_new());
 }
 
-// ==================== 实现 ====================
-
-/// Project 统计 DAO DuckDB 实现（空结构体，每次从 ctx.stats() 获取连接）
 struct ProjectStatsDaoDuckDbImpl;
 
 #[async_trait::async_trait]
 impl ProjectStatsDao for ProjectStatsDaoDuckDbImpl {
-    /// 通用查询方法：根据 query 参数自动选择查询模式
+    type Event = DefaultStatEvent;
+
     async fn query(&self, ctx: RequestContext, mut query: ProjectStatsQuery) -> Result<Vec<JsonValue>> {
-        // 自动注入 project_id 过滤条件
         let project_filter = StatFilter::Equals {
             key: "project_id".to_string(),
             value: JsonValue::String(query.project_id.clone()),
@@ -43,6 +35,7 @@ impl ProjectStatsDao for ProjectStatsDaoDuckDbImpl {
         query.filters.insert(0, project_filter);
 
         let stats = ctx.stats();
+        let table_name = self.table_name(stats);
 
         if query.interval.is_some() {
             let interval = query.interval.unwrap_or(StatsInterval::Daily);
@@ -52,6 +45,7 @@ impl ProjectStatsDao for ProjectStatsDaoDuckDbImpl {
 
             let points = stats.query_time_series(
                 ctx.clone(),
+                table_name,
                 &query.filters,
                 interval,
                 time_range,
@@ -63,6 +57,7 @@ impl ProjectStatsDao for ProjectStatsDaoDuckDbImpl {
         } else if !query.aggregations.is_empty() || !query.group_by.is_empty() {
             let rows = stats.query_aggregation(
                 ctx.clone(),
+                table_name,
                 &query.filters,
                 &query.group_by.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                 &query.aggregations,
@@ -88,6 +83,7 @@ impl ProjectStatsDao for ProjectStatsDaoDuckDbImpl {
 
             let rows = stats.query_aggregation(
                 ctx.clone(),
+                table_name,
                 &query.filters,
                 &[],
                 &default_aggregations,

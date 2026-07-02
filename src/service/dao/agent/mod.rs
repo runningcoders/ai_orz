@@ -5,7 +5,7 @@ use common::models::{StatsInterval, TimeSeriesPoint, TokenSumResult};
 use crate::models::agent::AgentPo;
 use crate::pkg::RequestContext;
 use common::enums::AgentStatus;
-use crate::pkg::stats::{StatFilter, StatAggregation, AggregationRow};
+use crate::pkg::stats::{StatFilter, StatAggregation, AggregationRow, StatEvent, Stats};
 use serde_json::Value as JsonValue;
 
 /// Agent 查询参数
@@ -52,6 +52,14 @@ pub trait AgentDao: Send + Sync {
 /// Agent 统计 DAO 接口
 #[async_trait::async_trait]
 pub trait AgentStatsDao: Send + Sync {
+    /// 绑定的事件类型，用于从 Stats 注册表获取表名
+    type Event: StatEvent + 'static + Send + Sync;
+
+    /// 获取绑定的表名（从 Stats 注册表中查询）
+    fn table_name<'a>(&self, stats: &'a Stats) -> Option<&'a str> {
+        stats.get_table_name::<Self::Event>()
+    }
+
     /// 通用查询方法：根据 query 中填写的字段自动选择查询模式
     /// - 填了 aggregations → 执行聚合查询，返回 AggregationRow
     /// - 填了 interval → 执行时序查询，返回 TimeSeriesPoint

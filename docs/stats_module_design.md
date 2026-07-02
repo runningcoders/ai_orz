@@ -517,12 +517,23 @@ record_event!(ctx, DefaultStatEvent {
 
 在通用 `Stats` 上提供高层查询方法，底层使用 DuckDB SQL，上层返回结构化结果：
 
+### `get_table_name<E>` — 通过事件类型获取表名
+
+```rust
+pub fn get_table_name<E>(&self) -> Option<&str>
+where
+    E: StatEvent + 'static + Send + Sync,
+```
+
+从 Stats 注册表中获取指定事件类型对应的表名。DAO 层通过关联类型绑定事件类型后，调用此方法获取表名，保证写入和查询使用相同的表。
+
 ### `query_aggregation` — 通用聚合查询
 
 ```rust
 pub async fn query_aggregation(
     &self,
     ctx: RequestContext,
+    table_name: Option<&str>,  // 新增：None 默认为 "default_events"
     filters: &[StatFilter],
     group_by: &[&str],
     aggregations: &[StatAggregation],
@@ -541,6 +552,7 @@ pub async fn query_aggregation(
 pub async fn query_time_series(
     &self,
     ctx: RequestContext,
+    table_name: Option<&str>,  // 新增：None 默认为 "default_events"
     filters: &[StatFilter],
     interval: StatsInterval,
     time_range: (i64, i64),

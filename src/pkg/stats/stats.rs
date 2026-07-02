@@ -132,6 +132,17 @@ impl Stats {
         Ok(())
     }
 
+    /// Get the registered table name for a specific event type
+    ///
+    /// Returns None if no table is registered for this event type.
+    pub fn get_table_name<E>(&self) -> Option<&str>
+    where
+        E: StatEvent + 'static + Send + Sync,
+    {
+        let type_id = TypeId::of::<E>();
+        self.tables.get(&type_id).map(|(name, _, _)| name.as_str())
+    }
+
     /// Record a statistic event
     ///
     /// Automatically looks up the table registered for this event type.
@@ -233,18 +244,20 @@ impl Stats {
 
     /// Generic aggregation query with filters, grouping, and aggregations
     ///
-    /// Works on the default_events table where all model call events are stored
+    /// Works on the specified table where all model call events are stored
     /// with tags and metrics in JSON columns.
+    /// If table_name is None, defaults to "default_events".
     pub async fn query_aggregation(
         &self,
         ctx: RequestContext,
+        table_name: Option<&str>,
         filters: &[StatFilter],
         group_by: &[&str],
         aggregations: &[StatAggregation],
         time_range: Option<(i64, i64)>,
     ) -> Result<Vec<AggregationRow>> {
-        // Build SQL query
-        let (sql, params) = self.build_aggregation_query(filters, group_by, aggregations, time_range);
+        let table = table_name.unwrap_or("default_events");
+        let (sql, params) = self.build_aggregation_query(table, filters, group_by, aggregations, time_range);
         
         let json_rows = self.query(ctx, &sql, &params).await?;
         
@@ -284,6 +297,7 @@ impl Stats {
     /// Build SQL query string and parameters from filters/grouping/aggregations
     fn build_aggregation_query(
         &self,
+        table_name: &str,
         filters: &[StatFilter],
         group_by: &[&str],
         aggregations: &[StatAggregation],
@@ -330,7 +344,7 @@ impl Stats {
         }
         
         // FROM clause
-        sql.push_str(" FROM default_events WHERE 1=1");
+        sql.push_str(&format!(" FROM {} WHERE 1=1", table_name));
         
         // Add time range filter if provided
         if let Some((start, end)) = time_range {
@@ -390,29 +404,32 @@ impl Stats {
     }
 
     /// Query time series data with specified interval
+    ///
+    /// If table_name is None, defaults to "default_events".
     pub async fn query_time_series(
         &self,
         ctx: RequestContext,
+        table_name: Option<&str>,
         filters: &[StatFilter],
         interval: StatsInterval,
         time_range: (i64, i64),
     ) -> Result<Vec<TimeSeriesPoint>> {
-        // Truncate timestamp to interval boundary
+        let table = table_name.unwrap_or("default_events");
+        
         let truncate_func = match interval {
-            StatsInterval::Hourly => "(timestamp / 3600000) * 3600000", // millis -> hour -> millis
-            StatsInterval::Daily => "(timestamp / 86400000) * 86400000", // millis -> day -> millis
+            StatsInterval::Hourly => "(timestamp / 3600000) * 3600000",
+            StatsInterval::Daily => "(timestamp / 86400000) * 86400000",
         };
         
-        // We group by truncated timestamp and aggregate
         let sql = format!(
             "SELECT
                 {} AS interval_start,
                 COALESCE(SUM(CAST(json_extract(metrics, '$.tokens_input') AS DOUBLE)), 0) AS tokens_input,
                 COALESCE(SUM(CAST(json_extract(metrics, '$.tokens_output') AS DOUBLE)), 0) AS tokens_output,
                 COUNT(*) AS call_count
-             FROM default_events
+             FROM {}
              WHERE timestamp >= ? AND timestamp <= ?",
-            truncate_func
+            truncate_func, table
         );
         
         let mut params: Vec<StatParam> = vec![
