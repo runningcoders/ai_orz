@@ -513,6 +513,57 @@ record_event!(ctx, DefaultStatEvent {
 8. **多维聚合**：DuckDB 原生支持任意维度 SQL 聚合查询，满足统计分析需求
 9. **线程安全**：内部用 `Mutex` 保护连接和缓冲，支持多线程并发写入
 
+## 统计查询 API
+
+在通用 `Stats` 上提供高层查询方法，底层使用 DuckDB SQL，上层返回结构化结果：
+
+### `query_aggregation` — 通用聚合查询
+
+```rust
+pub async fn query_aggregation(
+    &self,
+    ctx: RequestContext,
+    filters: &[StatFilter],
+    group_by: &[&str],
+    aggregations: &[StatAggregation],
+    time_range: Option<(i64, i64)>,
+) -> Result<Vec<AggregationRow>>
+```
+
+**实现细节：**
+- `group_by` 字段使用 `json_extract_string(tags, '$.field')` 提取，避免字符串值带引号
+- 聚合函数支持 `Count`、`Sum(metric)`、`Avg(metric)`
+- 返回 `AggregationRow { groups, aggregations }`，其中 groups 按 group_by 字段名组织
+
+### `query_time_series` — 时序查询
+
+```rust
+pub async fn query_time_series(
+    &self,
+    ctx: RequestContext,
+    filters: &[StatFilter],
+    interval: StatsInterval,
+    time_range: (i64, i64),
+) -> Result<Vec<TimeSeriesPoint>>
+```
+
+**实现细节：**
+- 时间戳按 interval 截断：`timestamp / interval_ms * interval_ms`
+- 自动聚合 `tokens_input`、`tokens_output`、`call_count`
+- 返回结构化 `TimeSeriesPoint` 数组
+
+### `StatParam` — 类型安全的 SQL 参数
+
+```rust
+pub enum StatParam {
+    Int(i64),
+    Double(f64),
+    Str(String),
+}
+```
+
+替代 `dyn ToSql`，解决 `Send + Sync` 问题，在 `query()` 内部转换为 `&dyn ToSql`。
+
 ## 当前已实现
 
 - [x] duckdb-rs 1.4 升级适配，解决所有 API 不兼容问题
@@ -520,6 +571,10 @@ record_event!(ctx, DefaultStatEvent {
 - [x] `Stats` 自动缓冲，批量写入，每个事件类型独立缓冲
 - [x] `record_event!` 宏简化调用，自动推断表，自动填充 timestamp
 - [x] `#[derive(StatsEvent)]` 过程宏自动实现 trait
+- [x] `query_aggregation` 通用聚合查询（支持过滤、分组、聚合）
+- [x] `query_time_series` 时序查询（支持 Hourly/Daily）
+- [x] `StatParam` 类型安全参数枚举（解决 `dyn ToSql` 的 `Send` 问题）
+- [x] 统计结果模型迁移到 `common/src/models/stats.rs`（`StatsInterval`、`TimeSeriesPoint`、`TokenSumResult`）
 - [x] 所有单元测试通过 ✅
 
 ## 开放性问题
