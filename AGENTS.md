@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-07-01
+> 最后更新：2026-07-02
 
 ---
 
@@ -14,7 +14,7 @@
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + rig-core 0.34
 - **前端**：Dioxus 0.7 (WebAssembly)
-- **技术特色**：严格分层架构、类型安全、516 个测试 100% 通过率
+- **技术特色**：严格分层架构、类型安全、526 个测试 100% 通过率
 
 ### 1.2 已实现核心功能
 
@@ -33,18 +33,19 @@
 | 🚀 异步消费者系统 | ✅ | 通用消费者框架 + Message Topic 三层分发 |
 | 📝 结构化日志系统 | ✅ | JSON 格式、自动上下文关联、日志自动清理 |
 | 🔍 向量搜索 | ✅ | SQLite VSS 扩展 + 语义索引 + 可平滑升级 |
+| 📊 Agent 统计系统 | ✅ | DuckDB 多维统计、Token 汇总、时序查询、聚合分析 |
 
-### 1.3 整体完成度与测试统计（2026-07-01 更新）
+### 1.3 整体完成度与测试统计（2026-07-02 更新）
 
 | 指标 | 数值 | 说明 |
 |------|------|------|
-| **总测试数** | **516** | DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
+| **总测试数** | **526** | DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
 | **通过率** | **100%** | ✅ 全部测试通过 |
-| DAO 模块数 | 22 个 | 全部实现并被使用，零闲置（17 核心 DAO + 5 渠道 DAO） |
+| DAO 模块数 | 23 个 | 全部实现并被使用，零闲置（18 核心 DAO + 5 渠道 DAO） |
 | DAL 模块数 | 16 个 | 全部完整业务承载，零闲置 |
 | Domain 领域数 | 6 个 | 全部完整实现 |
 | Handler API 领域数 | 6 个上线 | organization, hr, finance, project, user, health |
-| **整体架构完成度** | **~92%** | 从下往上扎实推进 |
+| **整体架构完成度** | **~93%** | 从下往上扎实推进 |
 
 ---
 
@@ -137,20 +138,23 @@ ai_orz/
 │   ├── src/api/               # API 请求响应 DTO 按功能分组
 │   ├── src/constants/         # 公共常量、基础类型
 │   ├── src/enums/            # 公共枚举（UserRole、TaskStatus 等）
-│   └── src/error/            # 统一错误类型
+│   ├── src/error/            # 统一错误类型
+│   └── src/models/           # 跨层共享模型（ToolCallTraceRef、StatsInterval 等）
 │
 ├── ai-orz-macros/             # 自定义宏 crate（日志宏、统计事件宏）
 │
 ├── src/                        # 后端服务
 │   ├── handlers/              # HTTP 接口层（按业务域分组，每个方法一个文件）
 │   ├── service/
-│   │   ├── dao/               # 数据访问层 DAO
+│   │   ├── dao/               # 数据访问层 DAO（含 stats_duckdb 统计 DAO）
 │   │   ├── dal/               # 业务数据访问层 DAL
 │   │   └── domain/            # 领域层 Domain
 │   ├── models/                # PO 持久化实体 + 业务实体
 │   ├── middleware/            # Axum 中间件
 │   ├── consumer/              # 异步消费者系统
 │   └── pkg/                   # 公共工具包
+│       ├── stats/            # DuckDB 统计模块（record_event! 宏、查询 API）
+│       └── *test_support.rs  # 测试支持文件（request_context、storage）
 │
 ├── frontend/                   # Dioxus 前端
 │   ├── src/api/               # API 客户端
@@ -206,6 +210,7 @@ ai_orz/
 | 对象类型 | 定义位置 | 用途 |
 |----------|----------|------|
 | **API DTO** | `common/src/api/**` | HTTP 请求/响应，前后端复用；通用响应包装使用 `common::api::ApiResponse<T>` |
+| **跨层共享模型** | `common/src/models/**` | DAO/DAL/Domain/API 共用的结果结构体（StatsInterval、TimeSeriesPoint、TokenSumResult 等） |
 | **Command/Query** | `src/service/domain/*/mod.rs` | Domain 层输入，表达业务意图 |
 | **业务实体** | `src/models/*.rs` | 核心业务对象，包含行为和状态 |
 | **PO (持久化对象)** | `src/models/*.rs` | 数据库映射，1:1 对应表结构 |
@@ -419,6 +424,19 @@ Agent
 ---
 
 ## 六、工作流与开发记录
+
+### 2026-07-02 里程碑
+**✅ Agent 统计 DAO 层建设完成 + 统计模型迁移**
+- **Agent Stats DAO 接口定义**：`AgentStatsDao` trait，包含 `query`、`sum_tokens`、`query_time_series` 三个核心方法
+- **DuckDB 实现**：`stats_duckdb.rs` 基于通用 Stats 模块实现，支持聚合查询、时序查询、过滤
+- **统计模型迁移**：`StatsInterval`、`TimeSeriesPoint`、`TokenSumResult` 从 pkg/stats 迁移到 `common/src/models/stats.rs`，实现跨层共享
+- **Bug 修复**：
+  - 聚合查询 JSON 返回格式不统一（展平 groups/aggregations）
+  - `json_extract` 返回字符串带引号（改用 `json_extract_string`）
+- **测试支持**：新增 `request_context_test_support.rs`、`storage/test_support.rs`，测试代码拆分隔离
+- **DAO 层扩展**：从 22 个增加到 23 个（新增 stats_duckdb）
+- **测试统计**：526 个测试 100% 通过（+10）
+- **整体架构完成度**：~93%
 
 ### 2026-07-01 里程碑
 **✅ 附件存储系统 + MCP 服务器集成完整落地**
