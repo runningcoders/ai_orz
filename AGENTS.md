@@ -14,7 +14,7 @@
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + rig-core 0.34
 - **前端**：Dioxus 0.7 (WebAssembly)
-- **技术特色**：严格分层架构、类型安全、526 个测试 100% 通过率
+- **技术特色**：严格分层架构、类型安全、538 个测试 100% 通过率
 
 ### 1.2 已实现核心功能
 
@@ -33,19 +33,19 @@
 | 🚀 异步消费者系统 | ✅ | 通用消费者框架 + Message Topic 三层分发 |
 | 📝 结构化日志系统 | ✅ | JSON 格式、自动上下文关联、日志自动清理 |
 | 🔍 向量搜索 | ✅ | SQLite VSS 扩展 + 语义索引 + 可平滑升级 |
-| 📊 Agent 统计系统 | ✅ | DuckDB 多维统计、Token 汇总、时序查询、聚合分析 |
+| 📊 Agent 统计系统 | ✅ | DuckDB 多维统计、Agent/Project/Task/ModelProvider 四维度覆盖 |
 
 ### 1.3 整体完成度与测试统计（2026-07-02 更新）
 
 | 指标 | 数值 | 说明 |
 |------|------|------|
-| **总测试数** | **526** | DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
+| **总测试数** | **538** | DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
 | **通过率** | **100%** | ✅ 全部测试通过 |
-| DAO 模块数 | 23 个 | 全部实现并被使用，零闲置（18 核心 DAO + 5 渠道 DAO） |
+| DAO 模块数 | 26 个 | 全部实现并被使用，零闲置（21 核心 DAO + 5 渠道 DAO） |
 | DAL 模块数 | 16 个 | 全部完整业务承载，零闲置 |
 | Domain 领域数 | 6 个 | 全部完整实现 |
 | Handler API 领域数 | 6 个上线 | organization, hr, finance, project, user, health |
-| **整体架构完成度** | **~93%** | 从下往上扎实推进 |
+| **整体架构完成度** | **~94%** | 从下往上扎实推进 |
 
 ---
 
@@ -426,17 +426,19 @@ Agent
 ## 六、工作流与开发记录
 
 ### 2026-07-02 里程碑
-**✅ Agent 统计 DAO 层建设完成 + 统计模型迁移**
-- **Agent Stats DAO 接口定义**：`AgentStatsDao` trait，包含 `query`、`sum_tokens`、`query_time_series` 三个核心方法
-- **DuckDB 实现**：`stats_duckdb.rs` 基于通用 Stats 模块实现，支持聚合查询、时序查询、过滤
-- **统计模型迁移**：`StatsInterval`、`TimeSeriesPoint`、`TokenSumResult` 从 pkg/stats 迁移到 `common/src/models/stats.rs`，实现跨层共享
+**✅ 全实体 Stats DAO 层建设完成**
+- **Agent Stats DAO 接口定义 + DuckDB 实现**：`AgentStatsDao` trait，含 `query`/`sum_tokens`/`query_time_series`
+- **Project Stats DAO**：按 `project_id` 过滤，4 个单元测试
+- **Task Stats DAO**：按 `task_id` 过滤，4 个单元测试
+- **ModelProvider Stats DAO**：按 `model_provider_id` 过滤，4 个单元测试
+- **统计模型迁移**：`StatsInterval`/`TimeSeriesPoint`/`TokenSumResult` 迁移到 `common/src/models/stats.rs`
 - **Bug 修复**：
   - 聚合查询 JSON 返回格式不统一（展平 groups/aggregations）
   - `json_extract` 返回字符串带引号（改用 `json_extract_string`）
-- **测试支持**：新增 `request_context_test_support.rs`、`storage/test_support.rs`，测试代码拆分隔离
-- **DAO 层扩展**：从 22 个增加到 23 个（新增 stats_duckdb）
-- **测试统计**：526 个测试 100% 通过（+10）
-- **整体架构完成度**：~93%
+- **测试支持**：新增 `request_context_test_support.rs`、`storage/test_support.rs`
+- **DAO 层扩展**：从 22 个增加到 26 个（+4 个 stats duckdb dao）
+- **测试统计**：538 个测试 100% 通过（+12）
+- **整体架构完成度**：~94%
 
 ### 2026-07-01 里程碑
 **✅ 附件存储系统 + MCP 服务器集成完整落地**

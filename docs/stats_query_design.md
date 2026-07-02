@@ -20,6 +20,7 @@
 | **DAO - Agent** | `service/dao/agent/stats_duckdb.rs` | `AgentStatsDao` trait + DuckDB 实现，自动添加 `agent_id` 过滤 |
 | **DAO - Project** | `service/dao/project/stats_duckdb.rs` | `ProjectStatsDao` trait + DuckDB 实现，自动添加 `project_id` 过滤 |
 | **DAO - Task** | `service/dao/task/stats_duckdb.rs` | `TaskStatsDao` trait + DuckDB 实现，自动添加 `task_id` 过滤 |
+| **DAO - ModelProvider** | `service/dao/model_provider/stats_duckdb.rs` | `ModelProviderStatsDao` trait + DuckDB 实现，自动添加 `model_provider_id` 过滤 |
 | **DAL** | 对应实体 DAL | 新增统计查询方法，依赖 stats DAO |
 | **Domain** | 现有 Domain | 新增统计查询接口，调用 DAL 获取结果 |
 | **Handler** | `handlers/...` | 独立 handler 文件，HTTP 接口返回 JSON |
@@ -282,3 +283,4 @@ record_event!(ctx, DefaultStatEvent {
 |------|------|------|------|
 | v1.0 | 2026-06-28 | 讨论确定 | 初始设计 |
 | v1.1 | 2026-07-02 | 实现迭代 | Agent Stats DAO 实现完成；统计模型迁移到 common/src/models；接口从三个独立结构体改为统一 AgentStatsQuery；补充实现踩坑记录 |
+| v1.2 | 2026-07-02 | 全实体覆盖 | 新增 Project/Task/ModelProvider 三个 Stats DAO；每个 DAO 4 个单元测试（sum_tokens/time_series/aggregation/filter_isolation）；共 16 个 stats 测试 |
