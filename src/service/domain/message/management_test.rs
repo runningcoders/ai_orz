@@ -9,7 +9,7 @@ use sqlx::SqlitePool;
 use uuid::Uuid;
 
 fn new_ctx(user_id: &str, pool: sqlx::SqlitePool) -> RequestContext {
-    RequestContext::new_simple(user_id, pool)
+    crate::pkg::request_context_test_support::new_test_ctx(user_id, pool)
 }
 
 /// 初始化所有渠道 DAO 单例

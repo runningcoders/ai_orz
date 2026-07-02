@@ -17,7 +17,7 @@ async fn init_test_env(pool: SqlitePool) -> (Arc<dyn BrainDal + Send + Sync>, Re
     let cortex_dao = cortex::dao();
     let tool_call_dao = crate::service::dao::tool_call::dao();
     let brain_dal = crate::service::dal::brain::new(cortex_dao, tool_call_dao);
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
     (brain_dal, ctx)
 }
 

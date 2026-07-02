@@ -50,3 +50,5 @@ mod daily_jsonl_test;
 mod logging_test;
 #[cfg(test)]
 mod request_context_test;
+#[cfg(test)]
+pub mod request_context_test_support;

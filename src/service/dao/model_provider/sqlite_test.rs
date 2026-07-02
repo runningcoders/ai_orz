@@ -11,7 +11,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
-    RequestContext::new_simple(user_id, pool)
+    crate::pkg::request_context_test_support::new_test_ctx(user_id, pool)
 }
 
 /// 初始化测试环境
@@ -89,7 +89,7 @@ async fn test_find_all_model_provider(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_query(pool: sqlx::SqlitePool) {
     let dao = init_test_env();
-    let ctx = crate::pkg::RequestContext::new_simple("admin", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
 
     use crate::service::dao::model_provider::ModelProviderQuery;
     use common::enums::ModelProviderStatus;

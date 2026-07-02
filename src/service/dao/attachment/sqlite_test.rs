@@ -17,7 +17,7 @@ fn init_test_env(
     let temp_dir = tempfile::tempdir().unwrap();
     let attachments_dir = temp_dir.path().join("attachments");
     let dao = new_with_attachments_dir(attachments_dir);
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
     (temp_dir, dao, ctx)
 }
 

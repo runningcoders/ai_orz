@@ -38,7 +38,7 @@ async fn list_mcp_servers_returns_total_matching_query_not_page_size(
     pool: SqlitePool,
 ) -> Result<()> {
     init_test_singletons();
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     for name in ["page-a", "page-b", "page-c"] {
         let server = stdio_server(name, "test-user");

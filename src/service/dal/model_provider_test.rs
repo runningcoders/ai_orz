@@ -15,7 +15,7 @@ async fn init_test_env(
     crate::service::dao::model_provider::init();
     crate::service::dal::model_provider::init();
     let dal = crate::service::dal::model_provider::dal();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
     (dal, ctx)
 }
 
@@ -92,7 +92,7 @@ async fn test_update(pool: SqlitePool) {
     updated.po.model_name = "gpt-4o".to_string();
     updated.touch("editor");
 
-    dal.update(RequestContext::new_simple("editor", pool), &updated)
+    dal.update(crate::pkg::request_context_test_support::new_test_ctx("editor", pool), &updated)
         .await
         .unwrap();
 

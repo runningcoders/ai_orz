@@ -410,7 +410,7 @@ mod tests {
 
         fn test_ctx() -> RequestContext {
         let pool = sqlx::SqlitePool::connect_lazy("sqlite::memory:").unwrap();
-        RequestContext::new_simple("test-user", pool)
+        crate::pkg::request_context_test_support::new_test_ctx("test-user", pool)
                     }
 
         fn init_test_tool_call_logger() {

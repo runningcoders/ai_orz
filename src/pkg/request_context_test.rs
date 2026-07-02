@@ -8,8 +8,8 @@ fn create_test_pool() -> SqlitePool {
     crate::config::init().unwrap();
     let rt = Runtime::new().unwrap();
     rt.block_on(async {
-        crate::pkg::storage::init_for_test().await;
-        crate::pkg::storage::get().pool_owned()
+        crate::pkg::storage::test_support::init_for_test().await;
+        crate::pkg::storage::get().sqlite_pool().clone()
     })
 }
 
@@ -18,7 +18,7 @@ fn test_request_context() {
     crate::config::init().unwrap();
     // 创建一个内存数据库用于测试
     let pool = create_test_pool();
-    let ctx = RequestContext::new_simple("user1", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("user1", pool);
     assert!(!ctx.log_id.is_empty());
     assert_eq!(ctx.uid(), "user1");
 }
@@ -26,7 +26,7 @@ fn test_request_context() {
 #[test]
 fn test_log_id_format() {
     let pool = create_test_pool();
-    let ctx = RequestContext::new_simple("", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("", pool);
     let log_id = &ctx.log_id;
     assert_eq!(log_id.len(), 20, "log_id 长度应为20位");
     assert!(
@@ -38,8 +38,8 @@ fn test_log_id_format() {
 #[test]
 fn test_log_id_uniqueness() {
     let pool = create_test_pool();
-    let ctx1 = RequestContext::new_simple("", pool.clone());
-    let ctx2 = RequestContext::new_simple("", pool);
+    let ctx1 = crate::pkg::request_context_test_support::new_test_ctx("", pool.clone());
+    let ctx2 = crate::pkg::request_context_test_support::new_test_ctx("", pool);
     println!("ctx1: {}, ctx2: {}", ctx1.log_id, ctx2.log_id);
     assert_ne!(ctx1.log_id, ctx2.log_id);
 }
@@ -86,10 +86,10 @@ fn test_log_id_auto_generate_when_missing() {
 #[test]
 fn test_context_uid_helper() {
     let pool = create_test_pool();
-    let ctx_with_user = RequestContext::new_simple("test_user", pool.clone());
+    let ctx_with_user = crate::pkg::request_context_test_support::new_test_ctx("test_user", pool.clone());
     assert_eq!(ctx_with_user.uid(), "test_user");
 
-    let ctx_without_user = RequestContext::new_simple("", pool);
+    let ctx_without_user = crate::pkg::request_context_test_support::new_test_ctx("", pool);
     assert_eq!(ctx_without_user.uid(), "");
 }
 
@@ -109,7 +109,7 @@ fn test_context_uname_helper() {
 
     // new_simple 测试 username 为空
     let storage2 = create_test_pool();
-    let ctx2 = RequestContext::new_simple("user_id", storage2);
+    let ctx2 = crate::pkg::request_context_test_support::new_test_ctx("user_id", storage2);
     assert_eq!(ctx2.uname(), "");
 }
 
@@ -129,7 +129,7 @@ fn test_format_timestamp() {
 fn test_generate_log_id() {
     // 测试 log_id 生成的格式
     let storage = create_test_pool();
-    let ctx = RequestContext::new_simple("", storage);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("", storage);
     let log_id = ctx.log_id;
 
     // 格式: yyyyMMddHHmmss + 6位随机数 = 20位
@@ -147,7 +147,7 @@ fn test_generate_log_id() {
 #[test]
 fn test_clone_context() {
     let storage = create_test_pool();
-    let ctx1 = RequestContext::new_simple("user1", storage);
+    let ctx1 = crate::pkg::request_context_test_support::new_test_ctx("user1", storage);
     let ctx2 = ctx1.clone();
 
     assert_eq!(ctx1.log_id, ctx2.log_id);
@@ -158,7 +158,7 @@ fn test_clone_context() {
 #[test]
 fn test_context_agent_id_setter() {
     let storage = create_test_pool();
-    let mut ctx = RequestContext::new_simple("user1", storage);
+    let mut ctx = crate::pkg::request_context_test_support::new_test_ctx("user1", storage);
     ctx.set_agent_id("agent_001");
     assert_eq!(ctx.agent_id, Some("agent_001".to_string()));
 }
@@ -166,7 +166,7 @@ fn test_context_agent_id_setter() {
 #[test]
 fn test_context_task_id_setter() {
     let storage = create_test_pool();
-    let mut ctx = RequestContext::new_simple("user1", storage);
+    let mut ctx = crate::pkg::request_context_test_support::new_test_ctx("user1", storage);
     ctx.set_task_id("task_001");
     assert_eq!(ctx.task_id, Some("task_001".to_string()));
 }
@@ -174,7 +174,7 @@ fn test_context_task_id_setter() {
 #[test]
 fn test_context_project_id_setter() {
     let storage = create_test_pool();
-    let mut ctx = RequestContext::new_simple("user1", storage);
+    let mut ctx = crate::pkg::request_context_test_support::new_test_ctx("user1", storage);
     ctx.set_project_id("project_001");
     assert_eq!(ctx.project_id, Some("project_001".to_string()));
 }

@@ -10,7 +10,7 @@ use common::error::Result;
 
 /// 初始化测试环境
 fn init_test_env(pool: SqlitePool) -> (Arc<dyn ArtifactDao + Send + Sync>, RequestContext) {
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
     let dao = new();
     (dao, ctx)
 }

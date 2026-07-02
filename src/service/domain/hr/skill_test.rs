@@ -9,7 +9,7 @@ use sqlx::SqlitePool;
 use tempfile::TempDir;
 
 fn new_ctx(user_id: &str, pool: sqlx::SqlitePool) -> RequestContext {
-    RequestContext::new_simple(user_id, pool)
+    crate::pkg::request_context_test_support::new_test_ctx(user_id, pool)
 }
 
 /// 初始化 HR Domain 所有依赖

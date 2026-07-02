@@ -16,7 +16,7 @@ async fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDal + Send + Sync>, 
     let message_dao = message::sqlite::new();
     let event_queue = event_queue::in_memory::new();
     let dal = crate::service::dal::message::new(message_dao, event_queue);
-    let ctx = RequestContext::new_simple("admin", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
     (dal, ctx)
 }
 

@@ -54,7 +54,7 @@ fn init_test_env(
         crate::service::dal::brain::dal(),
         attachment_dal,
     );
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
     (temp_dir, domain, ctx)
 }
 
@@ -155,7 +155,7 @@ async fn test_get_attachment_hides_cross_root_user_assets(pool: SqlitePool) -> R
         .attachment_manage()
         .create_attachment(owner_ctx, create_upload())
         .await?;
-    let other_ctx = RequestContext::new_simple("other-user", pool);
+    let other_ctx = crate::pkg::request_context_test_support::new_test_ctx("other-user", pool);
 
     let found = domain
         .attachment_manage()

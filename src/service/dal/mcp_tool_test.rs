@@ -140,7 +140,7 @@ fn init_test_env(pool: SqlitePool) -> (Arc<dyn McpToolDal + Send + Sync>, Reques
         mcp_server::new_mcp_server_dao(),
         mcp_tool_call_dao,
     );
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
     (dal, ctx)
 }
 

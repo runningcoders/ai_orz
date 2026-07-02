@@ -18,7 +18,7 @@ async fn init_test_env(
     agent_dao_init();
     init();
     let dal = dal();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
     (dal, ctx)
 }
 
@@ -70,7 +70,7 @@ async fn test_update(pool: SqlitePool) {
 
     let mut updated = agent.clone();
     updated.po.name = "Updated".to_string();
-    dal.update(RequestContext::new_simple("editor", pool), &updated)
+    dal.update(crate::pkg::request_context_test_support::new_test_ctx("editor", pool), &updated)
         .await
         .unwrap();
 

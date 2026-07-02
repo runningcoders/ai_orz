@@ -147,7 +147,7 @@ mod tests {
 
     // Initialize storage before running tests
     async fn init() {
-        crate::pkg::storage::init_for_test().await;
+        crate::pkg::storage::test_support::init_for_test().await;
     }
 
     #[tokio::test]

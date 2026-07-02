@@ -157,7 +157,7 @@ async fn init_test(_pool: SqlitePool) -> Arc<dyn MemoryDal> {
 
 /// 创建测试用的 RequestContext
 fn create_test_ctx(pool: SqlitePool) -> RequestContext {
-    RequestContext::new_simple("test-user", pool)
+    crate::pkg::request_context_test_support::new_test_ctx("test-user", pool)
 }
 
 /// 初始化数据库表结构

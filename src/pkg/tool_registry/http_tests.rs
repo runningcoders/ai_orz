@@ -579,7 +579,7 @@ async fn http_core_tool_rejects_domain_that_resolves_to_local_network_by_default
         .connect("sqlite::memory:")
         .await
         .expect("test sqlite pool should be created");
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     let error = tool
         .call(ctx, json!({ "query": "rust" }))
@@ -647,7 +647,7 @@ async fn http_core_tool_rejects_schema_type_mismatch_before_network_request() {
         .connect("sqlite::memory:")
         .await
         .expect("test sqlite pool should be created");
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     let error = tool
         .call(ctx, json!({ "query": "rust", "limit": "3" }))
@@ -681,7 +681,7 @@ async fn http_core_tool_rejects_unresolved_template_placeholder() {
         .connect("sqlite::memory:")
         .await
         .expect("test sqlite pool should be created");
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     let error = tool
         .call(ctx, json!({ "query": "rust" }))
@@ -741,7 +741,7 @@ async fn http_core_tool_does_not_follow_redirects_by_default() {
         .connect("sqlite::memory:")
         .await
         .expect("test sqlite pool should be created");
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     let error = tool
         .call(ctx, json!({ "query": "rust" }))
@@ -792,7 +792,7 @@ async fn http_core_tool_executes_get_request_against_registered_endpoint() {
         .connect("sqlite::memory:")
         .await
         .expect("test sqlite pool should be created");
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     let result = tool
         .call(ctx, json!({ "query": "rust", "limit": 3 }))
@@ -837,7 +837,7 @@ async fn http_core_tool_renders_url_template_and_validates_required_args() {
         .connect("sqlite::memory:")
         .await
         .expect("test sqlite pool should be created");
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     let missing_arg_error = tool
         .call(ctx.clone(), json!({ "owner": "openai" }))
@@ -897,7 +897,7 @@ async fn http_core_tool_stops_reading_response_when_size_limit_is_exceeded() {
         .connect("sqlite::memory:")
         .await
         .expect("test sqlite pool should be created");
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     let error = tool
         .call(ctx, json!({ "query": "rust" }))
@@ -938,7 +938,7 @@ async fn http_core_tool_redacts_rendered_url_from_request_errors() {
         .connect("sqlite::memory:")
         .await
         .expect("test sqlite pool should be created");
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     let error = tool
         .call(ctx, json!({ "query": "rust", "token": sensitive_value }))
@@ -989,7 +989,7 @@ async fn http_core_tool_redacts_template_derived_header_value_from_errors() {
         .connect("sqlite::memory:")
         .await
         .expect("test sqlite pool should be created");
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     let error = tool
         .call(
@@ -1039,7 +1039,7 @@ short",
         .connect("sqlite::memory:")
         .await
         .expect("test sqlite pool should be created");
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
     let sensitive_value = "placeholder-value";
 
     let error = tool

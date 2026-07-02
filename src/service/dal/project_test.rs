@@ -14,7 +14,7 @@ async fn init_test_env(pool: SqlitePool) -> (Arc<dyn ProjectDal + Send + Sync>, 
     crate::service::dao::project::init();
     crate::service::dal::project::init();
     let dal = crate::service::dal::project::dal();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
     (dal, ctx)
 }
 

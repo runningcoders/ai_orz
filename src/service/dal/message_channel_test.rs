@@ -30,7 +30,7 @@ async fn init_test_env(
 ) -> (Arc<dyn MessageChannelDal + Send + Sync>, RequestContext) {
     init_all_test_daos();
     let dal = dal();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
     (dal, ctx)
 }
 
@@ -167,7 +167,7 @@ async fn test_update_channel(pool: SqlitePool) {
 
     // 更新渠道名称
     channel.po.channel_name = "更新后名称".to_string();
-    dal.update_channel(RequestContext::new_simple("editor", pool), &channel)
+    dal.update_channel(crate::pkg::request_context_test_support::new_test_ctx("editor", pool), &channel)
         .await
         .unwrap();
 
@@ -220,7 +220,7 @@ async fn test_delete_and_set_status(pool: SqlitePool) {
 
     // 应该找不到了
     let found = dal
-        .get_channel(RequestContext::new_simple("admin", pool), &channel_id)
+        .get_channel(crate::pkg::request_context_test_support::new_test_ctx("admin", pool), &channel_id)
         .await
         .unwrap();
     // 因为是软删除，状态变成 Deleted，查询时默认过滤掉

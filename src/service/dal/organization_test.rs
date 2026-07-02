@@ -15,7 +15,7 @@ async fn init_test_env(
     crate::service::dao::organization::init();
     crate::service::dal::organization::init();
     let dal = crate::service::dal::organization::dal();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
     (dal, ctx)
 }
 

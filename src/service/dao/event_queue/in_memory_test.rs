@@ -18,7 +18,7 @@ async fn test_event_queue_empty() {
     // 创建一个空池用于测试（实际不使用）
     // InMemoryEventQueue 不碰数据库，只是占位
     let pool = sqlx::SqlitePool::connect_lazy("sqlite::memory:").unwrap();
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
     let queue = EventQueueDaoInMemoryImpl::<Message>::new();
 
     assert!(queue.is_empty());
@@ -35,7 +35,7 @@ async fn test_event_queue_empty() {
 #[tokio::test]
 async fn test_single_event_enqueue_dequeue_ack() {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
     let queue = EventQueueDaoInMemoryImpl::<Message>::new();
 
     // 创建一个测试消息
@@ -81,7 +81,7 @@ async fn test_single_event_enqueue_dequeue_ack() {
 #[tokio::test]
 async fn test_priority_ordering() {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     // 创建三个不同优先级的事件，优先级低的先入队
     #[derive(Debug, Clone)]
@@ -173,7 +173,7 @@ async fn test_priority_ordering() {
 #[tokio::test]
 async fn test_same_time_priority_ordering() {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     #[derive(Debug, Clone)]
     struct TestEvent {
@@ -241,7 +241,7 @@ async fn test_same_time_priority_ordering() {
 #[tokio::test]
 async fn test_same_priority_time_ordering() {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     #[derive(Debug, Clone)]
     struct TestEvent {
@@ -308,7 +308,7 @@ async fn test_same_priority_time_ordering() {
 #[tokio::test]
 async fn test_same_order_key_sequential() {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     #[derive(Debug, Clone)]
     struct TestEvent {
@@ -397,7 +397,7 @@ async fn test_same_order_key_sequential() {
 #[tokio::test]
 async fn test_nack_retry() {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
     let queue = EventQueueDaoInMemoryImpl::<Message>::new();
 
     let empty_file_meta = FileMeta::new("".to_string(), "".to_string(), 0);
@@ -441,7 +441,7 @@ async fn test_nack_retry() {
 #[tokio::test]
 async fn test_same_order_key_while_processing() {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     #[derive(Debug, Clone)]
     struct TestEvent {
@@ -528,7 +528,7 @@ async fn test_same_order_key_while_processing() {
 #[tokio::test]
 async fn test_order_key_nack_strict_ordering() {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     #[derive(Debug, Clone)]
     struct TestEvent {
@@ -633,7 +633,7 @@ async fn test_order_key_nack_strict_ordering() {
 #[tokio::test]
 async fn test_batch_enqueue() {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
     let queue = EventQueueDaoInMemoryImpl::<Message>::new();
 
     let mut events: Vec<Box<Message>> = Vec::new();
@@ -674,7 +674,7 @@ async fn test_batch_enqueue() {
 #[tokio::test]
 async fn test_mixed_order_groups() {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     // task1: 3个事件，顺序消费
     // task2: 2个事件，顺序消费

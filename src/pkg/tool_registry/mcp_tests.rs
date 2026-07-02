@@ -307,7 +307,7 @@ async fn mcp_core_tool_calls_stdio_server_through_rmcp_runtime() {
         .connect("sqlite::memory:")
         .await
         .expect("test sqlite pool should be created");
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     let result = tool
         .call(ctx, json!({ "text": "hello MCP" }))

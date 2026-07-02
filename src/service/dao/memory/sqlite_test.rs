@@ -18,7 +18,7 @@ async fn test_append_trace_and_create_short_term_index(pool: SqlitePool) {
     crate::config::init().unwrap();
     // 自动迁移已经由 sqlx::test 执行
     let dao = MemoryDaoSqliteImpl::new();
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     let trace = MemoryTrace::new(
         "test-agent-1".to_string(),
@@ -59,7 +59,7 @@ async fn test_create_knowledge_node(pool: SqlitePool) {
     crate::config::init().unwrap();
     // 自动迁移已经由 sqlx::test 执行
     let dao = MemoryDaoSqliteImpl::new();
-    let ctx = RequestContext::new_simple("test-user", pool.clone());
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool.clone());
 
     // 测试插入知识节点 SQL 语法正确
     let node = LongTermKnowledgeNodePo {
@@ -79,7 +79,7 @@ async fn test_create_knowledge_node(pool: SqlitePool) {
 
     // 查询验证插入成功
     let dao = MemoryDaoSqliteImpl::new();
-    let ctx2 = RequestContext::new_simple("test-user", pool);
+    let ctx2 = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
     let fetched = dao.get_knowledge_node(ctx2, "node-1").await;
     assert!(fetched.is_ok());
     let fetched = fetched.unwrap();
@@ -94,7 +94,7 @@ async fn test_add_knowledge_relation(pool: SqlitePool) {
     // 初始化配置
     crate::config::init().unwrap();
     let dao = MemoryDaoSqliteImpl::new();
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     // 先创建两个节点
     let node1 = LongTermKnowledgeNodePo {
@@ -151,7 +151,7 @@ async fn test_add_knowledge_reference(pool: SqlitePool) {
     // 初始化配置
     crate::config::init().unwrap();
     let dao = MemoryDaoSqliteImpl::new();
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     // 先创建节点
     let node = LongTermKnowledgeNodePo {
@@ -239,7 +239,7 @@ async fn test_batch_append_traces(pool: SqlitePool) {
     // 初始化配置
     crate::config::init().unwrap();
     let dao = MemoryDaoSqliteImpl::new();
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     let traces = vec![
         MemoryTrace::new(
@@ -285,7 +285,7 @@ async fn test_get_and_update_short_term_index(pool: SqlitePool) {
     // 初始化配置
     crate::config::init().unwrap();
     let dao = MemoryDaoSqliteImpl::new();
-    let ctx = RequestContext::new_simple("test-user", pool.clone());
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool.clone());
 
     let now = chrono::Utc::now().timestamp();
     let index = ShortTermMemoryIndexPo {
@@ -345,7 +345,7 @@ async fn test_list_and_query_short_term(pool: SqlitePool) {
     // 初始化配置
     crate::config::init().unwrap();
     let dao = MemoryDaoSqliteImpl::new();
-    let ctx = RequestContext::new_simple("test-user", pool.clone());
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool.clone());
 
     let now = chrono::Utc::now().timestamp();
 
@@ -408,7 +408,7 @@ async fn test_forget_short_term_index(pool: SqlitePool) {
     // 初始化配置
     crate::config::init().unwrap();
     let dao = MemoryDaoSqliteImpl::new();
-    let ctx = RequestContext::new_simple("test-user", pool.clone());
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool.clone());
 
     let now = chrono::Utc::now().timestamp();
     let index = ShortTermMemoryIndexPo {
@@ -460,7 +460,7 @@ async fn test_forget_short_term_index(pool: SqlitePool) {
 async fn test_update_and_list_knowledge_nodes(pool: SqlitePool) {
     crate::config::init().unwrap();
     let dao = MemoryDaoSqliteImpl::new();
-    let ctx = RequestContext::new_simple("test-user", pool.clone());
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool.clone());
 
     let now = chrono::Utc::now().timestamp();
     let node = LongTermKnowledgeNodePo {
@@ -531,7 +531,7 @@ async fn test_update_and_list_knowledge_nodes(pool: SqlitePool) {
 async fn test_query_and_delete_knowledge_nodes(pool: SqlitePool) {
     crate::config::init().unwrap();
     let dao = MemoryDaoSqliteImpl::new();
-    let ctx = RequestContext::new_simple("test-user", pool.clone());
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool.clone());
 
     let now = chrono::Utc::now().timestamp();
     // 创建几个节点
@@ -612,7 +612,7 @@ async fn test_query_and_delete_knowledge_nodes(pool: SqlitePool) {
 async fn test_knowledge_relations(pool: SqlitePool) {
     crate::config::init().unwrap();
     let dao = MemoryDaoSqliteImpl::new();
-    let ctx = RequestContext::new_simple("test-user", pool.clone());
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool.clone());
 
     let now = chrono::Utc::now().timestamp();
     // 创建节点
@@ -688,7 +688,7 @@ async fn test_knowledge_relations(pool: SqlitePool) {
 async fn test_knowledge_references(pool: SqlitePool) {
     crate::config::init().unwrap();
     let dao = MemoryDaoSqliteImpl::new();
-    let ctx = RequestContext::new_simple("test-user", pool.clone());
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool.clone());
 
     let now = chrono::Utc::now().timestamp();
     // 创建节点

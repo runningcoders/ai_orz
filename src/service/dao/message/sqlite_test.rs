@@ -11,7 +11,7 @@ use uuid::Uuid;
 use common::error::Result;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
-    RequestContext::new_simple(user_id, pool)
+    crate::pkg::request_context_test_support::new_test_ctx(user_id, pool)
 }
 
 /// 测试插入消息和按 ID 查询

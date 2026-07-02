@@ -90,7 +90,7 @@ fn test_handler(
 }
 
 async fn init_storage_for_test() {
-    crate::pkg::storage::init_for_test().await;
+    crate::pkg::storage::test_support::init_for_test().await;
 }
 
 // ==================== Mock Domain ====================

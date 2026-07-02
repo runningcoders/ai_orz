@@ -81,8 +81,8 @@ impl RequestContext {
         }
     }
 
-    /// 创建简化上下文（测试专用，保证数据隔离）
-    pub fn new_simple(user_id: &str, pool: SqlitePool) -> RequestContext {
+    /// 从指定 Storage 创建上下文（测试辅助，由 test_support 调用）
+    pub fn from_storage(user_id: &str, storage: Storage) -> Self {
         Self {
             log_id: Self::generate_log_id(),
             user_id: Some(user_id.to_string()),
@@ -91,7 +91,7 @@ impl RequestContext {
             agent_id: None,
             task_id: None,
             project_id: None,
-            storage: Storage::with_sqlite_pool(pool),
+            storage,
         }
     }
 

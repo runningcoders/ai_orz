@@ -74,7 +74,7 @@ fn init_test_env(
         mcp_server_dao::new_mcp_server_dao(),
         mcp_tool_call_dao.clone(),
     );
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
     (dal, mcp_tool_call_dao, ctx)
 }
 

@@ -30,7 +30,7 @@ fn init_test_singletons() {
 
 fn scoped_ctx() -> RequestContext {
     let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
-    let mut ctx = RequestContext::new_simple("handler-test-user", pool);
+    let mut ctx = crate::pkg::request_context_test_support::new_test_ctx("handler-test-user", pool);
     ctx.set_agent_id("handler-agent-1");
     ctx.set_project_id("handler-project-1");
     ctx.set_task_id("handler-task-1");

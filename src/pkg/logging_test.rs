@@ -8,19 +8,19 @@ fn create_test_pool() -> SqlitePool {
     crate::config::init().unwrap();
     let rt = Runtime::new().unwrap();
     rt.block_on(async {
-        crate::pkg::storage::init_for_test().await;
-        crate::pkg::storage::get().pool_owned()
+        crate::pkg::storage::test_support::init_for_test().await;
+        crate::pkg::storage::get().sqlite_pool().clone()
     })
 }
 
 fn new_ctx() -> RequestContext {
     let pool = create_test_pool();
-    RequestContext::new_simple("", pool)
+    crate::pkg::request_context_test_support::new_test_ctx("", pool)
 }
 
 fn new_ctx_with_user(user_id: &str) -> RequestContext {
     let pool = create_test_pool();
-    RequestContext::new_simple(user_id, pool)
+    crate::pkg::request_context_test_support::new_test_ctx(user_id, pool)
 }
 
 #[test]

@@ -11,7 +11,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 fn new_ctx(user_id: &str, pool: sqlx::SqlitePool) -> RequestContext {
-    RequestContext::new_simple(user_id, pool)
+    crate::pkg::request_context_test_support::new_test_ctx(user_id, pool)
 }
 
 fn init_test_env(pool: SqlitePool) -> (Arc<dyn ProjectDomain>, RequestContext) {

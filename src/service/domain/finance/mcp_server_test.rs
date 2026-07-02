@@ -73,7 +73,7 @@ mod tests {
             crate::service::dal::attachment::dal(),
         );
 
-        let ctx = RequestContext::new_simple("test-user", pool);
+        let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
         (domain, ctx)
     }
 

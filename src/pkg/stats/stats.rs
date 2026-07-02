@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use std::any::TypeId;
 
 use common::error::{Error, Result};
+use common::models::{StatsInterval, TimeSeriesPoint, TokenSumResult};
 use duckdb::{Connection, ToSql};
 use duckdb::types::Value;
 use serde_json::{self, Value as JsonValue};
@@ -13,6 +14,30 @@ use crate::pkg::request_context::RequestContext;
 use super::erased::{ErasedBuffer, ErasedStatTable, ErasedWrapper};
 use super::traits::{StatEvent, StatTable};
 use super::default::{DefaultStatEvent, DefaultStatTable};
+
+/// 类型安全的 SQL 参数枚举（Send + Sync，替代 `dyn ToSql`）
+///
+/// 用于解决 `dyn ToSql` 不是 `Send`/`Sync` 导致 async Future 无法跨线程的问题。
+/// 在 `query()` 内部转换为 `&dyn ToSql` 传给 duckdb。
+#[derive(Debug, Clone)]
+pub enum StatParam {
+    /// 整数参数（时间戳等）
+    Int(i64),
+    /// 浮点数参数（范围过滤的 min/max）
+    Double(f64),
+    /// 字符串参数（JSON 值的字符串表示）
+    Str(String),
+}
+
+impl ToSql for StatParam {
+    fn to_sql(&self) -> duckdb::Result<duckdb::types::ToSqlOutput<'_>> {
+        match self {
+            StatParam::Int(v) => v.to_sql(),
+            StatParam::Double(v) => v.to_sql(),
+            StatParam::Str(v) => v.to_sql(),
+        }
+    }
+}
 
 /// Filter condition for querying statistics
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -41,39 +66,6 @@ pub struct AggregationRow {
     pub groups: HashMap<String, JsonValue>,
     /// Aggregation results
     pub aggregations: HashMap<String, f64>,
-}
-
-/// Time series interval for grouping data
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
-pub enum StatsInterval {
-    /// Group by hour
-    Hourly,
-    /// Group by day
-    Daily,
-}
-
-/// Time series data point
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct TimeSeriesPoint {
-    /// Start timestamp of this interval (millis)
-    pub interval_start: i64,
-    /// Total input tokens
-    pub tokens_input: u64,
-    /// Total output tokens
-    pub tokens_output: u64,
-    /// Number of calls
-    pub call_count: u64,
-}
-
-/// Total token sum result
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct TokenSumResult {
-    /// Total input tokens
-    pub total_tokens_input: u64,
-    /// Total output tokens
-    pub total_tokens_output: u64,
-    /// Total number of calls
-    pub total_calls: u64,
 }
 
 /// Top-level Stats instance
@@ -254,9 +246,7 @@ impl Stats {
         // Build SQL query
         let (sql, params) = self.build_aggregation_query(filters, group_by, aggregations, time_range);
         
-        // Execute query using existing query method - convert Vec<Box<dyn ToSql>> to &[&dyn ToSql]
-        let mut param_refs: Vec<&dyn ToSql> = params.iter().map(|p| p.as_ref()).collect();
-        let json_rows = self.query(ctx, &sql, &param_refs).await?;
+        let json_rows = self.query(ctx, &sql, &params).await?;
         
         // Convert JSON rows to AggregationRow
         let mut result = Vec::with_capacity(json_rows.len());
@@ -298,17 +288,16 @@ impl Stats {
         group_by: &[&str],
         aggregations: &[StatAggregation],
         time_range: Option<(i64, i64)>,
-    ) -> (String, Vec<Box<dyn ToSql>>) {
+    ) -> (String, Vec<StatParam>) {
         let mut sql = String::from("SELECT ");
-        let mut params: Vec<Box<dyn ToSql>> = Vec::new();
+        let mut params: Vec<StatParam> = Vec::new();
         
         // Add group by columns
         for (i, col) in group_by.iter().enumerate() {
             if i > 0 {
                 sql.push_str(", ");
             }
-            // All group by columns are from tags -> extract from JSON
-            sql.push_str(&format!("json_extract(tags, '$.{}') AS {}", col, col));
+            sql.push_str(&format!("json_extract_string(tags, '$.{}') AS {}", col, col));
         }
         
         // Add aggregations
@@ -346,8 +335,8 @@ impl Stats {
         // Add time range filter if provided
         if let Some((start, end)) = time_range {
             sql.push_str(" AND timestamp >= ? AND timestamp <= ?");
-            params.push(Box::new(start));
-            params.push(Box::new(end));
+            params.push(StatParam::Int(start));
+            params.push(StatParam::Int(end));
         }
         
         // Add other filters
@@ -361,7 +350,7 @@ impl Stats {
                     ));
                     // DuckDB needs string literal for JSON comparison
                     let json_str = value.to_string();
-                    params.push(Box::new(json_str));
+                    params.push(StatParam::Str(json_str));
                 }
                 StatFilter::Range { key, min, max } => {
                     // Range comparison on JSON field
@@ -370,14 +359,14 @@ impl Stats {
                             " AND CAST(json_extract(tags, '$.{}') AS DOUBLE) >= ?",
                             key
                         ));
-                        params.push(Box::new(min.unwrap()));
+                        params.push(StatParam::Double(min.unwrap()));
                     }
                     if max.is_some() {
                         sql.push_str(&format!(
                             " AND CAST(json_extract(tags, '$.{}') AS DOUBLE) <= ?",
                             key
                         ));
-                        params.push(Box::new(max.unwrap()));
+                        params.push(StatParam::Double(max.unwrap()));
                     }
                 }
             }
@@ -426,20 +415,18 @@ impl Stats {
             truncate_func
         );
         
-        let mut params: Vec<Box<dyn ToSql>> = vec![
-            Box::new(time_range.0),
-            Box::new(time_range.1),
+        let mut params: Vec<StatParam> = vec![
+            StatParam::Int(time_range.0),
+            StatParam::Int(time_range.1),
         ];
         
         // Add additional filters
         let sql = self.append_filters(sql, filters, &mut params);
-        
+
         // Group by interval
         let sql = format!("{} GROUP BY interval_start ORDER BY interval_start", sql);
-        
-        // Convert Vec<Box<dyn ToSql>> to &[&dyn ToSql]
-        let mut param_refs: Vec<&dyn ToSql> = params.iter().map(|p| p.as_ref()).collect();
-        let json_rows = self.query(ctx, &sql, &param_refs).await?;
+
+        let json_rows = self.query(ctx, &sql, &params).await?;
         
         let mut result = Vec::with_capacity(json_rows.len());
         for json_row in json_rows {
@@ -477,7 +464,7 @@ impl Stats {
         &self,
         mut sql: String,
         filters: &[StatFilter],
-        params: &mut Vec<Box<dyn ToSql>>,
+        params: &mut Vec<StatParam>,
     ) -> String {
         for filter in filters {
             match filter {
@@ -487,7 +474,7 @@ impl Stats {
                         key
                     ));
                     let json_str = value.to_string();
-                    params.push(Box::new(json_str));
+                    params.push(StatParam::Str(json_str));
                 }
                 StatFilter::Range { key, min, max } => {
                     if min.is_some() {
@@ -495,14 +482,14 @@ impl Stats {
                             " AND CAST(json_extract(tags, '$.{}') AS DOUBLE) >= ?",
                             key
                         ));
-                        params.push(Box::new(min.unwrap()));
+                        params.push(StatParam::Double(min.unwrap()));
                     }
                     if max.is_some() {
                         sql.push_str(&format!(
                             " AND CAST(json_extract(tags, '$.{}') AS DOUBLE) <= ?",
                             key
                         ));
-                        params.push(Box::new(max.unwrap()));
+                        params.push(StatParam::Double(max.unwrap()));
                     }
                 }
             }
@@ -515,8 +502,12 @@ impl Stats {
         &self,
         _ctx: RequestContext,
         sql: &str,
-        params: &[&dyn ToSql],
+        params: &[StatParam],
     ) -> Result<Vec<JsonValue>> {
+        // 将类型安全的 StatParam 转换为 duckdb 需要的 &dyn ToSql
+        // 此转换在同步作用域内完成，避免 dyn ToSql（非 Send）跨 .await 边界
+        let param_refs: Vec<&dyn ToSql> = params.iter().map(|p| p as &dyn ToSql).collect();
+
         let mut conn_guard = self.conn.lock().map_err(|e| {
             Error::internal(format!("Failed to lock connection: {}", e))
         })?;
@@ -527,7 +518,7 @@ impl Stats {
         // duckdb-rs 1.4: need to execute first before getting column info
         // collect rows in a block to drop rows before accessing column_count
         let raw_rows: Result<Vec<Vec<Option<Value>>>> = {
-            let mut rows = match stmt.query(params) {
+            let mut rows = match stmt.query(param_refs.as_slice()) {
                 Ok(r) => r,
                 Err(e) => return Err(Error::internal(format!("Failed to execute query: {}", e))),
             };

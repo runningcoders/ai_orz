@@ -12,7 +12,7 @@ use sqlx::SqlitePool;
 
 #[sqlx::test]
 async fn test_create_openai_cortex(pool: SqlitePool) {
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     let provider_po = ModelProviderPo {
         id: "test-id".to_string(),
@@ -41,7 +41,7 @@ async fn test_create_openai_cortex(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_create_deepseek_cortex(pool: SqlitePool) {
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     let provider_po = ModelProviderPo {
         id: "test-id".to_string(),
@@ -69,7 +69,7 @@ async fn test_create_deepseek_cortex(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_create_qwen_cortex(pool: SqlitePool) {
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     let provider_po = ModelProviderPo {
         id: "test-id".to_string(),
@@ -97,7 +97,7 @@ async fn test_create_qwen_cortex(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_create_doubao_cortex(pool: SqlitePool) {
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     let provider_po = ModelProviderPo {
         id: "test-id".to_string(),
@@ -125,7 +125,7 @@ async fn test_create_doubao_cortex(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_create_ollama_cortex(pool: SqlitePool) {
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     let provider_po = ModelProviderPo {
         id: "test-id".to_string(),
@@ -153,7 +153,7 @@ async fn test_create_ollama_cortex(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_create_openai_compatible_custom_base_url(pool: SqlitePool) {
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     let provider_po = ModelProviderPo {
         id: "test-id".to_string(),

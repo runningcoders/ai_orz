@@ -43,23 +43,6 @@ struct StorageInner {
 }
 
 impl Storage {
-    /// 从已有的 SQLite pool 创建 Storage（测试专用，保证隔离性）
-    /// 使用纯 Rust 内存向量存储，使用 tempdir 隔离数据
-    pub fn with_sqlite_pool(sqlite: SqlitePool) -> Self {
-        // 测试场景使用内存向量存储，基于临时目录
-        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
-        let vector = Arc::new(
-            InMemoryVectorStore::with_path(temp_dir.path()).expect("创建测试向量存储失败"),
-        );
-        Self {
-            inner: Arc::new(StorageInner {
-                sqlite,
-                vector,
-                stats: OnceCell::new(),
-            }),
-        }
-    }
-
     /// 创建存储实例，初始化连接池，自动运行 migrations
     /// 根据配置自动选择向量存储后端
     ///
@@ -141,11 +124,6 @@ impl Storage {
         &self.inner.sqlite
     }
 
-    /// 获取 owned SQLite 连接池（测试专用，向后兼容）
-    pub fn pool_owned(&self) -> SqlitePool {
-        self.inner.sqlite.clone()
-    }
-
     /// 获取向量存储
     pub fn vector(&self) -> &Arc<dyn VectorStore> {
         &self.inner.vector
@@ -159,6 +137,14 @@ impl Storage {
     /// 获取 Stats 统计模块
     pub fn stats(&self) -> &Stats {
         self.inner.stats.get().expect("Stats not initialized")
+    }
+
+    /// 初始化 Stats（首次设置，不可重复）
+    /// 生产代码由 `Storage::new()` 内部调用，测试代码可通过此方法注入
+    pub fn init_stats(&self, stats: Stats) -> common::error::Result<()> {
+        self.inner.stats.set(stats).map_err(|_| {
+            common::error::Error::internal("Stats already initialized")
+        })
     }
 }
 
@@ -190,22 +176,6 @@ pub async fn init(
     }
 }
 
-/// 测试专用：初始化空数据库（使用内存数据库）
-pub async fn init_for_test() {
-    if STORAGE_INSTANCE.get().is_none() {
-        // 测试场景使用内存数据库
-        let sqlite = SqlitePoolOptions::new()
-            .connect("sqlite::memory:")
-            .await
-            .expect("创建测试内存数据库失败");
-
-        // 运行 migrations
-        sqlx::migrate!("./migrations")
-            .run(&sqlite)
-            .await
-            .expect("运行 migrations 失败");
-
-        let storage = Storage::with_sqlite_pool(sqlite);
-        let _ = STORAGE_INSTANCE.set(storage);
-    }
-}
+/// 测试辅助工具（仅在 test 编译时可用）
+#[cfg(test)]
+pub mod test_support;

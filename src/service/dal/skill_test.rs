@@ -244,7 +244,7 @@ impl ModelProviderDao for MockModelProviderDao {
 
 /// 创建测试 RequestContext（使用测试 pool 注入）
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
-    RequestContext::new_simple(user_id, pool)
+    crate::pkg::request_context_test_support::new_test_ctx(user_id, pool)
 }
 
 /// 初始化测试依赖（使用 Mock Dao 避免依赖真实 LLM）

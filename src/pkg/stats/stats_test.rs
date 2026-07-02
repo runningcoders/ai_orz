@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 #[tokio::test]
 async fn test_open_and_create_default_table() -> Result<()> {
-    crate::pkg::storage::init_for_test().await;
+    crate::pkg::storage::test_support::init_for_test().await;
 
     let dir = tempdir()?;
     let db_path = dir.path().join("stats.db");
@@ -29,7 +29,7 @@ async fn test_open_and_create_default_table() -> Result<()> {
 
 #[tokio::test]
 async fn test_record_single_event() -> Result<()> {
-    crate::pkg::storage::init_for_test().await;
+    crate::pkg::storage::test_support::init_for_test().await;
 
     let dir = tempdir()?;
     let db_path = dir.path().join("stats.db");
@@ -53,7 +53,7 @@ async fn test_record_single_event() -> Result<()> {
 
 #[tokio::test]
 async fn test_manual_flush() -> Result<()> {
-    crate::pkg::storage::init_for_test().await;
+    crate::pkg::storage::test_support::init_for_test().await;
 
     let dir = tempdir()?;
     let db_path = dir.path().join("stats.db");
@@ -90,7 +90,7 @@ async fn test_manual_flush() -> Result<()> {
 
 #[tokio::test]
 async fn test_batch_flush() -> Result<()> {
-    crate::pkg::storage::init_for_test().await;
+    crate::pkg::storage::test_support::init_for_test().await;
 
     let dir = tempdir()?;
     let db_path = dir.path().join("stats.db");
@@ -255,7 +255,7 @@ impl StatTable<AgentExecutionEvent> for AgentExecutionTable {
 
 #[tokio::test]
 async fn test_custom_event() -> Result<()> {
-    crate::pkg::storage::init_for_test().await;
+    crate::pkg::storage::test_support::init_for_test().await;
 
     let dir = tempdir()?;
     let db_path = dir.path().join("stats.db");

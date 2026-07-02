@@ -38,7 +38,7 @@ fn test_mcp_tool_po(id: &str, status: ToolStatus) -> ToolPo {
 #[sqlx::test(migrations = "./migrations")]
 async fn update_tool_enabled_cannot_manually_restore_stale_tool(pool: SqlitePool) {
     init_test_singletons();
-    let ctx = RequestContext::new_simple("editor", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("editor", pool);
     let stale_tool = test_mcp_tool_po("stale-mcp-tool", ToolStatus::Stale);
     tool::new_tool_dao()
         .create_tool(ctx.clone(), &stale_tool)
@@ -68,7 +68,7 @@ async fn update_tool_enabled_cannot_manually_restore_stale_tool(pool: SqlitePool
 #[sqlx::test(migrations = "./migrations")]
 async fn update_tool_enabled_can_toggle_non_stale_tool_through_status_machine(pool: SqlitePool) {
     init_test_singletons();
-    let ctx = RequestContext::new_simple("editor", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("editor", pool);
     let enabled_tool = test_mcp_tool_po("enabled-mcp-tool", ToolStatus::Enabled);
     tool::new_tool_dao()
         .create_tool(ctx.clone(), &enabled_tool)

@@ -107,7 +107,7 @@ async fn list_mcp_tools_by_server_returns_only_bound_mcp_tools_with_total(
     pool: SqlitePool,
 ) -> Result<()> {
     init_test_singletons();
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
     domain()
         .mcp_server_manage()
         .create_mcp_server(ctx.clone(), &stdio_server("server-a"))
@@ -157,7 +157,7 @@ async fn list_mcp_tools_by_server_returns_only_bound_mcp_tools_with_total(
 #[sqlx::test(migrations = "./migrations")]
 async fn sync_mcp_tools_handler_syncs_remote_tools(pool: SqlitePool) -> Result<()> {
     init_test_singletons();
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
     let script = write_echo_mcp_server_script();
     let server = McpServer::new(
         "echo-server".to_string(),

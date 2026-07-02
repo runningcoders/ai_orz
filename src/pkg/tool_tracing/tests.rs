@@ -366,7 +366,7 @@ async fn http_tool_logging_decorator_redacts_error() {
         .connect("sqlite::memory:")
         .await
         .expect("test sqlite pool should be created");
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     let (_result, entry) = decorated
         .call_with_entry(ctx, json!({ "access_token": "placeholder-value" }))
@@ -404,7 +404,7 @@ async fn http_tool_logging_decorator_redacts_input_and_output() {
         .connect("sqlite::memory:")
         .await
         .expect("test sqlite pool should be created");
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     let (_result, entry) = decorated
         .call_with_entry(
@@ -441,7 +441,7 @@ async fn mcp_tool_logging_decorator_redacts_error() {
         .connect("sqlite::memory:")
         .await
         .expect("test sqlite pool should be created");
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     let (_result, entry) = decorated
         .call_with_entry(ctx, json!({ "access_token": "placeholder-value" }))
@@ -479,7 +479,7 @@ async fn mcp_tool_logging_decorator_redacts_input_and_output() {
         .connect("sqlite::memory:")
         .await
         .expect("test sqlite pool should be created");
-    let ctx = RequestContext::new_simple("test-user", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
 
     let (_result, entry) = decorated
         .call_with_entry(

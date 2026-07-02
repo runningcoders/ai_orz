@@ -9,7 +9,7 @@ use sqlx::SqlitePool;
 use std::sync::Arc;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
-    RequestContext::new_simple(user_id, pool)
+    crate::pkg::request_context_test_support::new_test_ctx(user_id, pool)
 }
 
 /// 初始化测试环境
@@ -35,7 +35,7 @@ fn create_test_tool(name: &str, description: &str) -> ToolPo {
 #[sqlx::test]
 async fn test_create_and_get_tool_full(pool: SqlitePool) {
     let tool_dao = init_test_env();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
 
     // ========== 测试: 创建工具并查询完整实体
     let tool_po = ToolPo::new(
@@ -64,7 +64,7 @@ async fn test_create_and_get_tool_full(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_add_tool_to_agent_and_list(pool: SqlitePool) {
     let tool_dao = init_test_env();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
 
     // 创建两个工具
     let tool1 = ToolPo::new(
@@ -123,7 +123,7 @@ async fn test_add_tool_to_agent_and_list(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_list_tools_for_agent_preserves_stale_bindings_for_management(pool: SqlitePool) {
     let tool_dao = init_test_env();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
 
     let enabled = ToolPo::new(
         "tool-agent-enabled".to_string(),
@@ -182,7 +182,7 @@ async fn test_list_tools_for_agent_preserves_stale_bindings_for_management(pool:
 #[sqlx::test]
 async fn test_remove_tool_from_agent(pool: SqlitePool) {
     let tool_dao = init_test_env();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
 
     // 创建工具并绑定
     let tool = ToolPo::new(
@@ -230,7 +230,7 @@ async fn test_remove_tool_from_agent(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_list_enabled(pool: SqlitePool) {
     let tool_dao = init_test_env();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
 
     // 创建一个启用，一个禁用
     let mut enabled = ToolPo::new(
@@ -266,7 +266,7 @@ async fn test_list_enabled(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_get_by_name(pool: SqlitePool) {
     let tool_dao = init_test_env();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
 
     let tool = ToolPo::new(
         "".to_string(),
@@ -298,7 +298,7 @@ async fn test_get_by_name(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_update_tool(pool: SqlitePool) {
     let tool_dao = init_test_env();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
 
     // 创建非内置工具
     let mut tool = ToolPo::new(
@@ -341,7 +341,7 @@ async fn test_update_tool(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_update_builtin_tool_protected(pool: SqlitePool) {
     let tool_dao = init_test_env();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
 
     // 创建内置工具
     let mut tool = ToolPo::new(
@@ -373,7 +373,7 @@ async fn test_update_builtin_tool_protected(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_delete_builtin_tool_protected(pool: SqlitePool) {
     let tool_dao = init_test_env();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
 
     // 创建内置工具
     let mut tool = ToolPo::new(
@@ -396,7 +396,7 @@ async fn test_delete_builtin_tool_protected(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_find_not_exists(pool: SqlitePool) {
     let tool_dao = init_test_env();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
 
     let found = tool_dao
         .get_by_id(ctx.clone(), "not-exist-id".to_string())
@@ -410,7 +410,7 @@ async fn test_sync_builtin_tools_to_db(pool: SqlitePool) {
     // 不依赖实际的内置工具注册，这个测试主要验证实现的幂等性
     // 实际的内置工具同步在集成测试中验证
     let tool_dao = init_test_env();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
 
     // 直接测试 sync 不会 panic 即可
     let inserted_count = tool_dao
@@ -424,7 +424,7 @@ async fn test_sync_builtin_tools_to_db(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_tool_query(pool: SqlitePool) {
     let tool_dao = init_test_env();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
 
     // 创建几个测试工具
     let tool1 = ToolPo::new(
@@ -489,7 +489,7 @@ async fn test_tool_query(pool: SqlitePool) {
 #[sqlx::test]
 async fn test_tool_query_can_exclude_stale_and_allows_explicit_stale_status(pool: SqlitePool) {
     let tool_dao = init_test_env();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
 
     let enabled = ToolPo::new(
         "query-enabled".to_string(),
@@ -563,7 +563,7 @@ async fn test_tool_query_can_exclude_stale_and_allows_explicit_stale_status(pool
 #[sqlx::test]
 async fn test_tool_search(pool: SqlitePool) {
     let tool_dao = init_test_env();
-    let ctx = RequestContext::new_simple("admin", pool);
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
 
     // 创建几个测试工具
     let tool1 = ToolPo::new(
