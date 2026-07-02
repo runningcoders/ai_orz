@@ -28,9 +28,13 @@ mod traits;
 mod erased;
 mod default;
 mod stats;
+mod model_call;
+mod tool_call;
 
 pub use common::models::{StatsInterval, TimeSeriesPoint, TokenSumResult};
 pub use self::default::{DefaultStatEvent, DefaultStatTable};
+pub use self::model_call::{ModelCallEvent, ModelCallStatTable};
+pub use self::tool_call::{ToolCallEvent, ToolCallStatTable};
 pub use self::stats::{
     Stats,
     StatParam,
@@ -77,14 +81,14 @@ macro_rules! record_event {
         async {
             // 检查是否已有 timestamp 字段
             let event = $crate::pkg::stats::record_event_helper!($event_type, $($tt)*);
-            $ctx.stats_mut().record($ctx, event).await
+            $ctx.stats().record($ctx.clone(), event).await
         }.await
     };
 
     // 情况 2: ctx + event 结构体表达式 → 不用构造，直接传
     ($ctx:expr, $event:expr) => {
         async {
-            $ctx.stats_mut().record($ctx, $event).await
+            $ctx.stats().record($ctx.clone(), $event).await
         }.await
     };
 
@@ -93,7 +97,7 @@ macro_rules! record_event {
         async {
             // 检查是否已有 timestamp 字段
             let event = $crate::pkg::stats::record_event_helper!($event_type, $($tt)*);
-            $ctx.stats_mut().record_with_table($ctx, $table, event).await
+            $ctx.stats().record_with_table($ctx.clone(), $table, event).await
         }.await
     };
 }

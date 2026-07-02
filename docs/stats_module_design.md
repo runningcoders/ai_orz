@@ -133,6 +133,38 @@ CREATE TABLE IF NOT EXISTS default_events (
 
 **支持任何实现了 `StatEvent` 的类型存入默认表**，所以"自定义 Event + 默认表"场景开箱即用。
 
+## 专用统计事件
+
+针对确定的业务场景，项目内置了两个专用事件类型，各自绑定独立表，与默认表分离：
+
+| 事件类型 | 表名 | 文件 | 用途 |
+|----------|------|------|------|
+| `ModelCallEvent` | `model_call_events` | `pkg/stats/model_call.rs` | LLM 模型调用统计（token 用量、调用次数） |
+| `ToolCallEvent` | `tool_call_events` | `pkg/stats/tool_call.rs` | 工具调用统计（调用次数、参数/结果大小） |
+
+**设计原则：**
+- 默认表（`default_events`）保留给灵活场景使用，默认 event 仍走默认表处理
+- 专用事件数据只写入各自的专用表，互不干扰
+- 每个专用事件独立一个文件，方便后续查阅和扩展
+
+`initialize_default()` 同时注册三张表：
+
+```rust
+pub fn initialize_default(&self) -> Result<()> {
+    self.register_table(DefaultStatTable)?;
+    self.register_table(ModelCallStatTable)?;
+    self.register_table(ToolCallStatTable)?;
+    Ok(())
+}
+```
+
+### rig hook 自动采集
+
+`RuntimeMonitoringHook`（`pkg/monitoring/rig_hook.rs`）在 rig 运行时回调中自动发送专用事件：
+
+- `on_completion_response` → 发送 `ModelCallEvent`，tags 包含 agent_id/task_id/project_id/model_provider_id 等，metrics 包含 tokens_input/tokens_output/total_tokens
+- `on_tool_result` → 发送 `ToolCallEvent`，tags 包含 tool_name + 上下文信息，metrics 包含 call_count/args_len/result_len
+
 ## 顶层 Stats 结构
 
 ```rust
@@ -587,6 +619,8 @@ pub enum StatParam {
 - [x] `query_time_series` 时序查询（支持 Hourly/Daily）
 - [x] `StatParam` 类型安全参数枚举（解决 `dyn ToSql` 的 `Send` 问题）
 - [x] 统计结果模型迁移到 `common/src/models/stats.rs`（`StatsInterval`、`TimeSeriesPoint`、`TokenSumResult`）
+- [x] 专用事件 `ModelCallEvent` / `ToolCallEvent` 独立文件，各自绑定专用表
+- [x] rig hook 自动采集模型调用和工具调用统计
 - [x] 所有单元测试通过 ✅
 
 ## 开放性问题

@@ -14,6 +14,8 @@ use crate::pkg::request_context::RequestContext;
 use super::erased::{ErasedBuffer, ErasedStatTable, ErasedWrapper};
 use super::traits::{StatEvent, StatTable};
 use super::default::{DefaultStatEvent, DefaultStatTable};
+use super::model_call::{ModelCallEvent, ModelCallStatTable};
+use super::tool_call::{ToolCallEvent, ToolCallStatTable};
 
 /// 类型安全的 SQL 参数枚举（Send + Sync，替代 `dyn ToSql`）
 ///
@@ -72,6 +74,10 @@ pub struct AggregationRow {
 ///
 /// Manages multiple statistic tables, provides automatic batching and flushing.
 /// Each event type is bound to exactly one table.
+///
+/// 所有写操作通过内部可变性（`Mutex<HashMap>`）实现，
+/// 因此 `record` / `register_table` / `flush_*` 等方法均只需 `&self`，
+/// 可直接通过 `RequestContext::stats()` 返回的不可变引用调用。
 #[derive(Debug)]
 pub struct Stats {
     /// DuckDB connection
@@ -79,7 +85,7 @@ pub struct Stats {
     /// Batch size for automatic flush
     batch_size: usize,
     /// Registered tables: event TypeId → (table name, erased table, erased buffer)
-    tables: HashMap<TypeId, (String, Box<dyn ErasedStatTable>, ErasedBuffer)>,
+    tables: Mutex<HashMap<TypeId, (String, Box<dyn ErasedStatTable>, ErasedBuffer)>>,
 }
 
 impl Stats {
@@ -91,14 +97,19 @@ impl Stats {
         Ok(Self {
             conn: Mutex::new(conn),
             batch_size,
-            tables: HashMap::new(),
+            tables: Mutex::new(HashMap::new()),
         })
     }
 
-    /// Initialize default table for DefaultStatEvent
-    pub fn initialize_default(&mut self) -> Result<()> {
-        let table = DefaultStatTable;
-        self.register_table(table)?;
+    /// Initialize default tables for DefaultStatEvent, ModelCallEvent, and ToolCallEvent
+    ///
+    /// - default_events: 通用事件表，保留给灵活场景使用
+    /// - model_call_events: 模型调用专用表
+    /// - tool_call_events: 工具调用专用表
+    pub fn initialize_default(&self) -> Result<()> {
+        self.register_table(DefaultStatTable)?;
+        self.register_table(ModelCallStatTable)?;
+        self.register_table(ToolCallStatTable)?;
         Ok(())
     }
 
@@ -106,7 +117,7 @@ impl Stats {
     ///
     /// Each event type can be registered to exactly one table.
     /// If registered before, it will be replaced.
-    pub fn register_table<E, T>(&mut self, table: T) -> Result<()>
+    pub fn register_table<E, T>(&self, table: T) -> Result<()>
     where
         E: StatEvent + 'static + Send + Sync,
         T: StatTable<E> + 'static,
@@ -124,7 +135,10 @@ impl Stats {
         })?;
         erased.create_table(&mut conn_guard)?;
 
-        self.tables.insert(
+        let mut tables = self.tables.lock().map_err(|e| {
+            Error::internal(format!("Failed to lock tables: {}", e))
+        })?;
+        tables.insert(
             type_id,
             (table_name, Box::new(erased), ErasedBuffer::new())
         );
@@ -135,12 +149,13 @@ impl Stats {
     /// Get the registered table name for a specific event type
     ///
     /// Returns None if no table is registered for this event type.
-    pub fn get_table_name<E>(&self) -> Option<&str>
+    pub fn get_table_name<E>(&self) -> Option<String>
     where
         E: StatEvent + 'static + Send + Sync,
     {
         let type_id = TypeId::of::<E>();
-        self.tables.get(&type_id).map(|(name, _, _)| name.as_str())
+        let tables = self.tables.lock().ok()?;
+        tables.get(&type_id).map(|(name, _, _)| name.clone())
     }
 
     /// Record a statistic event
@@ -149,7 +164,7 @@ impl Stats {
     /// If no custom table registered, uses DefaultStatTable.
     /// Automatically flushes when buffer reaches batch_size.
     pub async fn record<E>(
-        &mut self,
+        &self,
         _ctx: RequestContext,
         event: E,
     ) -> Result<()>
@@ -157,13 +172,19 @@ impl Stats {
         E: StatEvent + 'static + Send + Sync,
     {
         let type_id = TypeId::of::<E>();
-        let (_, _, buffer) = self.tables.get_mut(&type_id)
-            .ok_or_else(|| Error::internal(format!("No table registered for event type {:?}", std::any::type_name::<E>())))?;
+        let need_flush = {
+            let mut tables = self.tables.lock().map_err(|e| {
+                Error::internal(format!("Failed to lock tables: {}", e))
+            })?;
+            let (_, _, buffer) = tables.get_mut(&type_id)
+                .ok_or_else(|| Error::internal(format!("No table registered for event type {:?}", std::any::type_name::<E>())))?;
 
-        buffer.push(event);
+            buffer.push(event);
+            buffer.len() >= self.batch_size
+        };
 
         // Check if we need to flush
-        if buffer.len() >= self.batch_size {
+        if need_flush {
             self.flush_event_type::<E>()?;
         }
 
@@ -172,7 +193,7 @@ impl Stats {
 
     /// Record with explicit table (backward compatibility / explicit override)
     pub async fn record_with_table<E, T>(
-        &mut self,
+        &self,
         _ctx: RequestContext,
         _table: &T,
         event: E,
@@ -186,11 +207,16 @@ impl Stats {
 
     /// Flush all pending events in all tables
     pub async fn flush_all(
-        &mut self,
+        &self,
         _ctx: RequestContext,
     ) -> Result<()> {
         // Get all type_ids first to avoid borrowing issue
-        let type_ids: Vec<TypeId> = self.tables.keys().cloned().collect();
+        let type_ids: Vec<TypeId> = {
+            let tables = self.tables.lock().map_err(|e| {
+                Error::internal(format!("Failed to lock tables: {}", e))
+            })?;
+            tables.keys().cloned().collect()
+        };
         for type_id in type_ids {
             self.flush_type_id(type_id)?;
         }
@@ -198,7 +224,7 @@ impl Stats {
     }
 
     /// Flush pending events for a specific event type
-    fn flush_event_type<E>(&mut self) -> Result<()>
+    fn flush_event_type<E>(&self) -> Result<()>
     where
         E: StatEvent + 'static,
     {
@@ -207,8 +233,13 @@ impl Stats {
     }
 
     /// Flush by type_id
-    fn flush_type_id(&mut self, type_id: TypeId) -> Result<()> {
-        let (_, erased, buffer) = self.tables.get_mut(&type_id)
+    fn flush_type_id(&self, type_id: TypeId) -> Result<()> {
+        // 持有 tables 锁期间完成 take events + 锁 conn + 批量插入。
+        // 锁顺序固定为 tables → conn，避免死锁。
+        let mut tables = self.tables.lock().map_err(|e| {
+            Error::internal(format!("Failed to lock tables: {}", e))
+        })?;
+        let (_, erased, buffer) = tables.get_mut(&type_id)
             .ok_or_else(|| Error::internal(format!("No table registered for type id {:?}", type_id)))?;
 
         if buffer.is_empty() {
@@ -232,14 +263,17 @@ impl Stats {
         E: StatEvent + 'static,
     {
         let type_id = TypeId::of::<E>();
-        self.tables.get(&type_id)
-            .map(|(_, _, buf)| buf.len())
+        self.tables.lock()
+            .ok()
+            .and_then(|tables| tables.get(&type_id).map(|(_, _, buf)| buf.len()))
             .unwrap_or(0)
     }
 
     /// Get number of registered event types (tables)
     pub fn registered_table_count(&self) -> usize {
-        self.tables.len()
+        self.tables.lock()
+            .map(|tables| tables.len())
+            .unwrap_or(0)
     }
 
     /// Generic aggregation query with filters, grouping, and aggregations

@@ -84,11 +84,11 @@ impl Storage {
 
         // 初始化 Stats DuckDB
         let stats_db_path = base_data_path.join(&stats_config.db_file_name);
-        let mut stats = Stats::open(
+        let stats = Stats::open(
             stats_db_path.to_str().unwrap_or_default(),
             stats_config.batch_size,
         ).await?;
-        Stats::initialize_default(&mut stats)?;
+        stats.initialize_default()?;
 
         let mut inner = StorageInner {
             sqlite,

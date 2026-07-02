@@ -13,12 +13,12 @@ use tempfile::tempdir;
 async fn setup_test_env(
     model_provider_id: &str,
     event_count: usize,
-) -> Result<(crate::pkg::RequestContext, std::sync::Arc<dyn ModelProviderStatsDao<Event = DefaultStatEvent>>)> {
+) -> Result<(crate::pkg::RequestContext, std::sync::Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent, ToolCallEvent = ToolCallEvent>>)> {
     let dir = tempdir()?;
     let db_path = dir.path().join("stats.db");
     let db_path_str = db_path.to_str().unwrap();
 
-    let mut stats = Stats::open(db_path_str, 100).await?;
+    let stats = Stats::open(db_path_str, 100).await?;
     stats.initialize_default()?;
 
     let pool = SqlitePool::connect("sqlite::memory:").await?;
@@ -26,7 +26,7 @@ async fn setup_test_env(
 
     let now = Utc::now().timestamp();
     for i in 0..event_count {
-        let event = DefaultStatEvent::new(now + i as i64 * 1000)
+        let event = ModelCallEvent::new(now + i as i64 * 1000)
             .with_tags(json!({
                 "model_provider_id": model_provider_id,
                 "agent_id": "agent-test",
@@ -46,11 +46,11 @@ async fn setup_test_env(
 
 #[tokio::test]
 async fn test_sum_tokens_basic() -> Result<()> {
-    let provider_id = "provider-sum-test";
-    let (ctx, dao) = setup_test_env(provider_id, 5).await?;
+    let model_provider_id = "provider-sum-test";
+    let (ctx, dao) = setup_test_env(model_provider_id, 5).await?;
 
     let query = ModelProviderStatsQuery {
-        model_provider_id: provider_id.to_string(),
+        model_provider_id: model_provider_id.to_string(),
         ..Default::default()
     };
 
@@ -64,19 +64,19 @@ async fn test_sum_tokens_basic() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_query_time_series() -> Result<()> {
-    let provider_id = "provider-ts-test";
-    let (ctx, dao) = setup_test_env(provider_id, 3).await?;
+async fn test_query_model_call_time_series() -> Result<()> {
+    let model_provider_id = "provider-ts-test";
+    let (ctx, dao) = setup_test_env(model_provider_id, 3).await?;
 
     let now = Utc::now().timestamp();
     let query = ModelProviderStatsQuery {
-        model_provider_id: provider_id.to_string(),
+        model_provider_id: model_provider_id.to_string(),
         time_range: Some((now - 10000, now + 10000)),
         interval: Some(StatsInterval::Hourly),
         ..Default::default()
     };
 
-    let points = dao.query_time_series(ctx, query).await?;
+    let points = dao.query_model_call_time_series(ctx, query).await?;
 
     assert!(!points.is_empty());
     let total_calls: u64 = points.iter().map(|p| p.call_count).sum();
@@ -86,12 +86,12 @@ async fn test_query_time_series() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_query_aggregation_with_group_by() -> Result<()> {
-    let provider_id = "provider-agg-test";
-    let (ctx, dao) = setup_test_env(provider_id, 4).await?;
+async fn test_query_model_call_aggregation_with_group_by() -> Result<()> {
+    let model_provider_id = "provider-agg-test";
+    let (ctx, dao) = setup_test_env(model_provider_id, 4).await?;
 
     let query = ModelProviderStatsQuery {
-        model_provider_id: provider_id.to_string(),
+        model_provider_id: model_provider_id.to_string(),
         group_by: vec!["agent_id".to_string()],
         aggregations: vec![
             StatAggregation::Count,
@@ -100,13 +100,19 @@ async fn test_query_aggregation_with_group_by() -> Result<()> {
         ..Default::default()
     };
 
-    let rows = dao.query_aggregation(ctx, query).await?;
+    let rows = dao.query_model_call_aggregation(ctx, query).await?;
 
     assert_eq!(rows.len(), 1);
     let row = &rows[0];
-    assert_eq!(row.groups.get("agent_id"), Some(&json!("agent-test")));
+    assert_eq!(
+        row.groups.get("agent_id"),
+        Some(&json!("agent-test"))
+    );
     assert_eq!(row.aggregations.get("count"), Some(&4.0));
-    assert_eq!(row.aggregations.get("tokens_input"), Some(&(100.0 + 110.0 + 120.0 + 130.0)));
+    assert_eq!(
+        row.aggregations.get("tokens_input"),
+        Some(&(100.0 + 110.0 + 120.0 + 130.0))
+    );
 
     Ok(())
 }
@@ -120,7 +126,7 @@ async fn test_filter_by_different_provider() -> Result<()> {
     let db_path = dir.path().join("stats.db");
     let db_path_str = db_path.to_str().unwrap();
 
-    let mut stats = Stats::open(db_path_str, 100).await?;
+    let stats = Stats::open(db_path_str, 100).await?;
     stats.initialize_default()?;
 
     let pool = SqlitePool::connect("sqlite::memory:").await?;
@@ -129,7 +135,7 @@ async fn test_filter_by_different_provider() -> Result<()> {
     let now = Utc::now().timestamp();
 
     for i in 0..3 {
-        let event = DefaultStatEvent::new(now + i as i64 * 1000)
+        let event = ModelCallEvent::new(now + i as i64 * 1000)
             .with_tags(json!({
                 "model_provider_id": provider_a,
                 "agent_id": "agent-test",
@@ -142,7 +148,7 @@ async fn test_filter_by_different_provider() -> Result<()> {
     }
 
     for i in 0..2 {
-        let event = DefaultStatEvent::new(now + i as i64 * 1000)
+        let event = ModelCallEvent::new(now + i as i64 * 1000)
             .with_tags(json!({
                 "model_provider_id": provider_b,
                 "agent_id": "agent-test",

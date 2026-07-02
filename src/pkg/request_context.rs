@@ -23,6 +23,10 @@ pub struct RequestContext {
     pub task_id: Option<String>,
     /// 当前 Project ID（可选，Project 上下文时有值）
     pub project_id: Option<String>,
+    /// 当前 Model Provider ID（可选，Cortex 创建时有值）
+    pub model_provider_id: Option<String>,
+    /// 当前 Model 名称（可选，Cortex 创建时有值）
+    pub model_name: Option<String>,
 
     /// 统一存储门面（SQLite + Vector）
     storage: Storage,
@@ -63,6 +67,8 @@ impl RequestContext {
             agent_id: None,
             task_id: None,
             project_id: None,
+            model_provider_id: None,
+            model_name: None,
             storage: storage::get().clone(),
         }
     }
@@ -77,6 +83,8 @@ impl RequestContext {
             agent_id: None,
             task_id: None,
             project_id: None,
+            model_provider_id: None,
+            model_name: None,
             storage: storage::get().clone(),
         }
     }
@@ -91,6 +99,8 @@ impl RequestContext {
             agent_id: None,
             task_id: None,
             project_id: None,
+            model_provider_id: None,
+            model_name: None,
             storage,
         }
     }
@@ -118,6 +128,16 @@ impl RequestContext {
     /// 设置 Project ID
     pub fn set_project_id(&mut self, project_id: impl Into<String>) {
         self.project_id = Some(project_id.into());
+    }
+
+    /// 设置 Model Provider ID
+    pub fn set_model_provider_id(&mut self, model_provider_id: impl Into<String>) {
+        self.model_provider_id = Some(model_provider_id.into());
+    }
+
+    /// 设置 Model 名称
+    pub fn set_model_name(&mut self, model_name: impl Into<String>) {
+        self.model_name = Some(model_name.into());
     }
 
     /// 生成新的 log_id
@@ -161,6 +181,16 @@ impl RequestContext {
     /// 获取当前 Project ID
     pub fn project_id(&self) -> Option<&String> {
         self.project_id.as_ref()
+    }
+
+    /// 获取当前 Model Provider ID
+    pub fn model_provider_id(&self) -> Option<&String> {
+        self.model_provider_id.as_ref()
+    }
+
+    /// 获取当前 Model 名称
+    pub fn model_name(&self) -> Option<&String> {
+        self.model_name.as_ref()
     }
 
     /// 获取 DB pool

@@ -52,25 +52,34 @@ pub trait AgentDao: Send + Sync {
 /// Agent 统计 DAO 接口
 #[async_trait::async_trait]
 pub trait AgentStatsDao: Send + Sync {
-    /// 绑定的事件类型，用于从 Stats 注册表获取表名
-    type Event: StatEvent + 'static + Send + Sync;
+    /// 模型调用事件类型
+    type ModelCallEvent: StatEvent + 'static + Send + Sync;
+    /// 工具调用事件类型
+    type ToolCallEvent: StatEvent + 'static + Send + Sync;
 
-    /// 获取绑定的表名（从 Stats 注册表中查询）
-    fn table_name<'a>(&self, stats: &'a Stats) -> Option<&'a str> {
-        stats.get_table_name::<Self::Event>()
+    /// 获取模型调用表名（从 Stats 注册表中查询）
+    fn model_call_table_name(&self, stats: &Stats) -> Option<String> {
+        stats.get_table_name::<Self::ModelCallEvent>()
     }
 
-    /// 通用查询方法：根据 query 中填写的字段自动选择查询模式
+    /// 获取工具调用表名（从 Stats 注册表中查询）
+    fn tool_call_table_name(&self, stats: &Stats) -> Option<String> {
+        stats.get_table_name::<Self::ToolCallEvent>()
+    }
+
+    /// 模型调用通用查询：根据 query 中填写的字段自动选择查询模式
     /// - 填了 aggregations → 执行聚合查询，返回 AggregationRow
     /// - 填了 interval → 执行时序查询，返回 TimeSeriesPoint
     /// - 都没填 → 执行默认聚合（sum tokens + count），返回 AggregationRow
-    async fn query(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<JsonValue>>;
+    async fn query_model_calls(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<JsonValue>>;
 
-    /// 语法糖：聚合查询（返回结构化 AggregationRow）
-    async fn query_aggregation(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<AggregationRow>> {
+    /// 工具调用通用查询
+    async fn query_tool_calls(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<JsonValue>>;
+
+    /// 语法糖：模型调用聚合查询（返回结构化 AggregationRow）
+    async fn query_model_call_aggregation(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<AggregationRow>> {
         let group_by = query.group_by.clone();
-        let rows = self.query(ctx, query).await?;
-        // 解析 JSON 为 AggregationRow
+        let rows = self.query_model_calls(ctx, query).await?;
         let mut result = Vec::with_capacity(rows.len());
         for row in rows {
             result.push(parse_aggregation_row(&row, &group_by));
@@ -78,14 +87,12 @@ pub trait AgentStatsDao: Send + Sync {
         Ok(result)
     }
 
-    /// 语法糖：时序查询（返回结构化 TimeSeriesPoint）
-    async fn query_time_series(&self, ctx: RequestContext, mut query: AgentStatsQuery) -> Result<Vec<TimeSeriesPoint>> {
-        // 确保设置了 interval
+    /// 语法糖：模型调用时序查询（返回结构化 TimeSeriesPoint）
+    async fn query_model_call_time_series(&self, ctx: RequestContext, mut query: AgentStatsQuery) -> Result<Vec<TimeSeriesPoint>> {
         if query.interval.is_none() {
             query.interval = Some(StatsInterval::Daily);
         }
-        let rows = self.query(ctx, query).await?;
-        // 解析 JSON 为 TimeSeriesPoint
+        let rows = self.query_model_calls(ctx, query).await?;
         let mut result = Vec::with_capacity(rows.len());
         for row in rows {
             result.push(parse_time_series_point(&row));
@@ -95,7 +102,6 @@ pub trait AgentStatsDao: Send + Sync {
 
     /// 语法糖：Token 汇总（返回 TokenSumResult）
     async fn sum_tokens(&self, ctx: RequestContext, mut query: AgentStatsQuery) -> Result<TokenSumResult> {
-        // 强制设置聚合维度
         query.group_by = vec![];
         query.aggregations = vec![
             StatAggregation::Sum("tokens_input".into()),
@@ -103,8 +109,7 @@ pub trait AgentStatsDao: Send + Sync {
             StatAggregation::Count,
         ];
         query.interval = None;
-        let rows = self.query(ctx, query).await?;
-        // 从第一行解析 TokenSumResult
+        let rows = self.query_model_calls(ctx, query).await?;
         if rows.is_empty() {
             return Ok(TokenSumResult {
                 total_tokens_input: 0,
@@ -118,6 +123,32 @@ pub trait AgentStatsDao: Send + Sync {
             total_tokens_output: row.get("tokens_output").and_then(|v| v.as_f64()).unwrap_or(0.0) as u64,
             total_calls: row.get("count").and_then(|v| v.as_f64()).unwrap_or(0.0) as u64,
         })
+    }
+
+    /// 语法糖：工具调用次数汇总
+    async fn sum_tool_calls(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<u64> {
+        let mut query = query;
+        query.group_by = vec![];
+        query.aggregations = vec![StatAggregation::Count];
+        query.interval = None;
+        let rows = self.query_tool_calls(ctx, query).await?;
+        if rows.is_empty() {
+            return Ok(0);
+        }
+        Ok(rows[0].get("count").and_then(|v| v.as_f64()).unwrap_or(0.0) as u64)
+    }
+
+    /// 语法糖：工具调用时序查询（返回结构化 TimeSeriesPoint）
+    async fn query_tool_call_time_series(&self, ctx: RequestContext, mut query: AgentStatsQuery) -> Result<Vec<TimeSeriesPoint>> {
+        if query.interval.is_none() {
+            query.interval = Some(StatsInterval::Daily);
+        }
+        let rows = self.query_tool_calls(ctx, query).await?;
+        let mut result = Vec::with_capacity(rows.len());
+        for row in rows {
+            result.push(parse_time_series_point(&row));
+        }
+        Ok(result)
     }
 }
 

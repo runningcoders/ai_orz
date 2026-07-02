@@ -13,12 +13,12 @@ use tempfile::tempdir;
 async fn setup_test_env(
     task_id: &str,
     event_count: usize,
-) -> Result<(crate::pkg::RequestContext, std::sync::Arc<dyn TaskStatsDao<Event = DefaultStatEvent>>)> {
+) -> Result<(crate::pkg::RequestContext, std::sync::Arc<dyn TaskStatsDao<ModelCallEvent = ModelCallEvent, ToolCallEvent = ToolCallEvent>>)> {
     let dir = tempdir()?;
     let db_path = dir.path().join("stats.db");
     let db_path_str = db_path.to_str().unwrap();
 
-    let mut stats = Stats::open(db_path_str, 100).await?;
+    let stats = Stats::open(db_path_str, 100).await?;
     stats.initialize_default()?;
 
     let pool = SqlitePool::connect("sqlite::memory:").await?;
@@ -26,10 +26,10 @@ async fn setup_test_env(
 
     let now = Utc::now().timestamp();
     for i in 0..event_count {
-        let event = DefaultStatEvent::new(now + i as i64 * 1000)
+        let event = ModelCallEvent::new(now + i as i64 * 1000)
             .with_tags(json!({
                 "task_id": task_id,
-                "agent_id": "agent-test",
+                "project_id": "project-test",
             }))
             .with_metrics(json!({
                 "tokens_input": 100 + i * 10,
@@ -64,7 +64,7 @@ async fn test_sum_tokens_basic() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_query_time_series() -> Result<()> {
+async fn test_query_model_call_time_series() -> Result<()> {
     let task_id = "task-ts-test";
     let (ctx, dao) = setup_test_env(task_id, 3).await?;
 
@@ -76,7 +76,7 @@ async fn test_query_time_series() -> Result<()> {
         ..Default::default()
     };
 
-    let points = dao.query_time_series(ctx, query).await?;
+    let points = dao.query_model_call_time_series(ctx, query).await?;
 
     assert!(!points.is_empty());
     let total_calls: u64 = points.iter().map(|p| p.call_count).sum();
@@ -86,13 +86,13 @@ async fn test_query_time_series() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_query_aggregation_with_group_by() -> Result<()> {
+async fn test_query_model_call_aggregation_with_group_by() -> Result<()> {
     let task_id = "task-agg-test";
     let (ctx, dao) = setup_test_env(task_id, 4).await?;
 
     let query = TaskStatsQuery {
         task_id: task_id.to_string(),
-        group_by: vec!["agent_id".to_string()],
+        group_by: vec!["project_id".to_string()],
         aggregations: vec![
             StatAggregation::Count,
             StatAggregation::Sum("tokens_input".to_string()),
@@ -100,13 +100,19 @@ async fn test_query_aggregation_with_group_by() -> Result<()> {
         ..Default::default()
     };
 
-    let rows = dao.query_aggregation(ctx, query).await?;
+    let rows = dao.query_model_call_aggregation(ctx, query).await?;
 
     assert_eq!(rows.len(), 1);
     let row = &rows[0];
-    assert_eq!(row.groups.get("agent_id"), Some(&json!("agent-test")));
+    assert_eq!(
+        row.groups.get("project_id"),
+        Some(&json!("project-test"))
+    );
     assert_eq!(row.aggregations.get("count"), Some(&4.0));
-    assert_eq!(row.aggregations.get("tokens_input"), Some(&(100.0 + 110.0 + 120.0 + 130.0)));
+    assert_eq!(
+        row.aggregations.get("tokens_input"),
+        Some(&(100.0 + 110.0 + 120.0 + 130.0))
+    );
 
     Ok(())
 }
@@ -120,7 +126,7 @@ async fn test_filter_by_different_task() -> Result<()> {
     let db_path = dir.path().join("stats.db");
     let db_path_str = db_path.to_str().unwrap();
 
-    let mut stats = Stats::open(db_path_str, 100).await?;
+    let stats = Stats::open(db_path_str, 100).await?;
     stats.initialize_default()?;
 
     let pool = SqlitePool::connect("sqlite::memory:").await?;
@@ -129,10 +135,10 @@ async fn test_filter_by_different_task() -> Result<()> {
     let now = Utc::now().timestamp();
 
     for i in 0..3 {
-        let event = DefaultStatEvent::new(now + i as i64 * 1000)
+        let event = ModelCallEvent::new(now + i as i64 * 1000)
             .with_tags(json!({
                 "task_id": task_a,
-                "agent_id": "agent-test",
+                "project_id": "project-test",
             }))
             .with_metrics(json!({
                 "tokens_input": 100 + i * 10,
@@ -142,10 +148,10 @@ async fn test_filter_by_different_task() -> Result<()> {
     }
 
     for i in 0..2 {
-        let event = DefaultStatEvent::new(now + i as i64 * 1000)
+        let event = ModelCallEvent::new(now + i as i64 * 1000)
             .with_tags(json!({
                 "task_id": task_b,
-                "agent_id": "agent-test",
+                "project_id": "project-test",
             }))
             .with_metrics(json!({
                 "tokens_input": 200 + i * 10,

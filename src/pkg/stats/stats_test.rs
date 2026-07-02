@@ -19,10 +19,10 @@ async fn test_open_and_create_default_table() -> Result<()> {
     let db_path = dir.path().join("stats.db");
     let db_path_str = db_path.to_str().unwrap();
 
-    let mut stats = Stats::open(db_path_str, 100).await?;
+    let stats = Stats::open(db_path_str, 100).await?;
     stats.initialize_default()?;
 
-    assert_eq!(stats.registered_table_count(), 1);
+    assert_eq!(stats.registered_table_count(), 3);
 
     Ok(())
 }
@@ -35,7 +35,7 @@ async fn test_record_single_event() -> Result<()> {
     let db_path = dir.path().join("stats.db");
     let db_path_str = db_path.to_str().unwrap();
 
-    let mut stats = Stats::open(db_path_str, 100).await?;
+    let stats = Stats::open(db_path_str, 100).await?;
     stats.initialize_default()?;
 
     let ctx = RequestContext::new(None, None);
@@ -59,7 +59,7 @@ async fn test_manual_flush() -> Result<()> {
     let db_path = dir.path().join("stats.db");
     let db_path_str = db_path.to_str().unwrap();
 
-    let mut stats = Stats::open(db_path_str, 100).await?;
+    let stats = Stats::open(db_path_str, 100).await?;
     stats.initialize_default()?;
 
     let ctx = RequestContext::new(None, None);
@@ -97,7 +97,7 @@ async fn test_batch_flush() -> Result<()> {
     let db_path_str = db_path.to_str().unwrap();
 
     // batch size = 5
-    let mut stats = Stats::open(db_path_str, 5).await?;
+    let stats = Stats::open(db_path_str, 5).await?;
     stats.initialize_default()?;
 
     let ctx = RequestContext::new(None, None);
@@ -261,11 +261,11 @@ async fn test_custom_event() -> Result<()> {
     let db_path = dir.path().join("stats.db");
     let db_path_str = db_path.to_str().unwrap();
 
-    let mut stats = Stats::open(db_path_str, 100).await?;
+    let stats = Stats::open(db_path_str, 100).await?;
     stats.initialize_default()?;
     stats.register_table(AgentExecutionTable)?;
 
-    assert_eq!(stats.registered_table_count(), 2);
+    assert_eq!(stats.registered_table_count(), 4);
 
     let ctx = RequestContext::new(None, None);
     let now = Utc::now().timestamp();

@@ -113,31 +113,45 @@ pub struct AgentStatsQuery {
 }
 
 pub trait AgentStatsDao: Send + Sync {
-    /// 绑定的事件类型，用于从 Stats 注册表获取表名
-    type Event: StatEvent + 'static + Send + Sync;
+    /// 模型调用事件类型，用于从 Stats 注册表获取表名
+    type ModelCallEvent: StatEvent + 'static + Send + Sync;
+    /// 工具调用事件类型，用于从 Stats 注册表获取表名
+    type ToolCallEvent: StatEvent + 'static + Send + Sync;
 
-    /// 获取绑定的表名（从 Stats 注册表中查询，默认实现）
-    fn table_name<'a>(&self, stats: &'a Stats) -> Option<&'a str> {
-        stats.get_table_name::<Self::Event>()
+    /// 获取模型调用表名（从 Stats 注册表中查询，默认实现）
+    fn model_call_table_name(&self, stats: &Stats) -> Option<String> {
+        stats.get_table_name::<Self::ModelCallEvent>()
     }
 
-    /// 通用查询（聚合 / 过滤 / 分组）
-    async fn query(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<JsonValue>>;
+    /// 获取工具调用表名（从 Stats 注册表中查询，默认实现）
+    fn tool_call_table_name(&self, stats: &Stats) -> Option<String> {
+        stats.get_table_name::<Self::ToolCallEvent>()
+    }
 
-    /// 语法糖：时序查询（返回结构化 TimeSeriesPoint）
-    async fn query_time_series(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<TimeSeriesPoint>>;
+    /// 模型调用通用查询（聚合 / 过滤 / 分组 / 时序）
+    async fn query_model_calls(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<JsonValue>>;
+    /// 工具调用通用查询（聚合 / 过滤 / 分组 / 时序）
+    async fn query_tool_calls(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<JsonValue>>;
 
-    /// 语法糖：Token 汇总（返回 TokenSumResult）
+    /// 语法糖：模型调用时序查询（返回结构化 TimeSeriesPoint）
+    async fn query_model_call_time_series(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<TimeSeriesPoint>>;
+    /// 语法糖：模型调用聚合查询（返回 AggregationRow）
+    async fn query_model_call_aggregation(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<AggregationRow>>;
+
+    /// 语法糖：Token 汇总（从模型调用表查询，返回 TokenSumResult）
     async fn sum_tokens(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<TokenSumResult>;
+    /// 语法糖：工具调用次数汇总（从工具调用表查询，返回总次数）
+    async fn sum_tool_calls(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<u64>;
 }
 ```
 
 **设计要点：**
 - 使用统一 `AgentStatsQuery` 结构体，通过 `interval` 字段区分时序查询 vs 聚合查询
 - `sum_tokens` 内部自动设置 `aggregations = [Sum("tokens_input"), Sum("tokens_output"), Count]`
-- **关联类型 `Event`**：绑定事件类型，trait 提供默认 `table_name()` 方法从 Stats 注册表获取表名
-- **事件与表名映射**：写入时通过 `record_event!(ctx, Event)` 自动路由到对应表，查询时通过 `self.table_name(&stats)` 获取相同表名，保证一致性
-- `query_time_series` 内部要求 `interval` 字段，自动调用 `Stats::query_time_series`
+- **多关联类型**：`type ModelCallEvent` 和 `type ToolCallEvent` 分别绑定模型调用和工具调用事件类型，trait 提供默认 `model_call_table_name()` / `tool_call_table_name()` 方法从 Stats 注册表获取表名
+- **事件与表名映射**：写入时通过 `record_event!(ctx, Event)` 自动路由到对应表，查询时通过关联类型获取相同表名，保证一致性
+- **查询分离**：`query_model_calls` 查询 `model_call_events` 表，`query_tool_calls` 查询 `tool_call_events` 表
+- `query_model_call_time_series` 内部要求 `interval` 字段，自动调用 `Stats::query_time_series`
 - 所有方法自动将 `agent_id` 添加到过滤条件，调用者不需要重复添加
 
 ---
@@ -261,29 +275,59 @@ impl AgentDal {
 
 ## 记录事件规范
 
-在 `brain_dal.think()` 中记录模型调用事件时，自动从 `RequestContext` 提取标签：
+### 模型调用统计
+
+在 rig hook `on_completion_response` 中自动发送 `ModelCallEvent`，tags 从 `RequestContext` 提取，metrics 包含 token 用量：
 
 ```rust
-let tags = json!({
-    "agent_id": agent_id,
-    "task_id": task_id,
-    "project_id": project_id,
-    "model_provider_id": model_provider_id,
-});
+let event = ModelCallEvent::new(timestamp)
+    .with_tags(json!({
+        "agent_id": agent_id,
+        "task_id": task_id,
+        "project_id": project_id,
+        "model_provider_id": model_provider_id,
+        "model_name": model_name,
+    }))
+    .with_metrics(json!({
+        "call_count": 1,
+        "tokens_input": usage.input_tokens,
+        "tokens_output": usage.output_tokens,
+        "total_tokens": usage.total_tokens,
+    }));
 
-let metrics = json!({
-    "tokens_input": tokens_input,
-    "tokens_output": tokens_output,
-    "latency_ms": latency_ms,
-});
-
-record_event!(ctx, DefaultStatEvent {
-    tags,
-    metrics,
-});
+ctx.stats().record(ctx.clone(), event).await?;
 ```
 
-这样所有维度都能正确记录，支持任意维度组合查询。
+### 工具调用统计
+
+在 rig hook `on_tool_result` 中自动发送 `ToolCallEvent`，记录工具调用次数和参数/结果大小：
+
+```rust
+let event = ToolCallEvent::new(timestamp)
+    .with_tags(json!({
+        "agent_id": agent_id,
+        "tool_name": tool_name,
+        // ... 其他上下文
+    }))
+    .with_metrics(json!({
+        "call_count": 1,
+        "args_len": args_len,
+        "result_len": result_len,
+    }));
+
+ctx.stats().record(ctx.clone(), event).await?;
+```
+
+### 默认事件（灵活场景）
+
+对于未确定专用表的灵活打点场景，仍可使用 `DefaultStatEvent` 写入 `default_events` 表：
+
+```rust
+record_event!(ctx, DefaultStatEvent {
+    tags: json!({ "event": "custom_metric" }),
+    metrics: json!({ "value": 42 }),
+}).await?;
+```
 
 ---
 
@@ -295,3 +339,4 @@ record_event!(ctx, DefaultStatEvent {
 | v1.1 | 2026-07-02 | 实现迭代 | Agent Stats DAO 实现完成；统计模型迁移到 common/src/models；接口从三个独立结构体改为统一 AgentStatsQuery；补充实现踩坑记录 |
 | v1.2 | 2026-07-02 | 全实体覆盖 | 新增 Project/Task/ModelProvider 三个 Stats DAO；每个 DAO 4 个单元测试（sum_tokens/time_series/aggregation/filter_isolation）；共 16 个 stats 测试 |
 | v1.3 | 2026-07-02 | 事件关联优化 | Stats 新增 get_table_name<E> 方法；查询方法新增 table_name 参数；DAO trait 使用关联类型绑定事件类型，提供默认 table_name 方法；实现写入和查询的事件→表名一致性 |
+| v1.4 | 2026-07-03 | 专用事件拆分 | DAO trait 拆分为 ModelCallEvent / ToolCallEvent 双关联类型；query_model_calls / query_tool_calls 分别查询专用表；专用事件独立文件（model_call.rs / tool_call.rs）；rig hook 自动采集模型调用和工具调用统计 |
