@@ -121,6 +121,8 @@ fn record_tool_call_stat(ctx: RequestContext, entry: &ToolCallEntry, args: &Valu
         .with_agent_id(entry.agent_id.clone())
         .with_project_id(entry.project_id.clone())
         .with_task_id(entry.task_id.clone())
+        .with_organization_id(ctx.organization_id().cloned())
+        .with_user_id(ctx.user_id().cloned())
         .with_args_len(args_len)
         .with_result_len(result_len)
         .with_duration_ms(entry.duration_ms)

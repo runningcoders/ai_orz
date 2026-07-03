@@ -333,3 +333,60 @@ record_event!(ctx, DefaultStatEvent {
 | v1.3 | 2026-07-02 | 事件关联优化 | Stats 新增 get_table_name<E> 方法；查询方法新增 table_name 参数；DAO trait 使用关联类型绑定事件类型，提供默认 table_name 方法；实现写入和查询的事件→表名一致性 |
 | v1.4 | 2026-07-03 | 专用事件拆分 | DAO trait 拆分为 ModelCallEvent / ToolCallEvent 双关联类型；query_model_calls / query_tool_calls 分别查询专用表；专用事件独立文件（model_call.rs / tool_call.rs）；rig hook 自动采集模型调用和工具调用统计 |
 | v1.5 | 2026-07-03 | 表自描述重构 | StatTable trait 新增 is_dedicated_table / column_sql / metric_sql / filter_equals_sql / filter_range_sql；专用表改用独立字段结构（VARCHAR/BIGINT）；查询构建逻辑下放到表实现，消除硬编码表结构判断；Stats 新增 tables_by_name 反向索引；ToolCallLoggingDecorator 统一采集工具调用统计；RequestContext::stats_opt() 安全获取 |
+| v1.6 | 2026-07-03 | 监控链路字段补充 | ModelCallEvent 补充 model_provider_id / model_name（rig_hook）；ToolCallEvent 新增 organization_id / user_id 字段；异步场景上下文缺口调研 |
+
+---
+
+## 监控链路字段调研（2026-07-03）
+
+### 调研背景
+
+统计事件的上下文信息依赖 `RequestContext` 传递。本次调研梳理了从 HTTP 请求 → Agent 唤醒 → 模型调用 / 工具调用的完整链路中，上下文字段的设置情况，识别出需要补充的字段和位置。
+
+### RequestContext 上下文注入点
+
+| 字段 | 设置位置 | 链路覆盖情况 |
+|------|----------|-------------|
+| `log_id` | 初始化自动生成 | ✅ 全覆盖 |
+| `user_id` / `username` | HTTP header / JWT | HTTP 链路有值；consumer 异步链路缺失 |
+| `organization_id` | HTTP header / JWT | HTTP 链路有值；consumer 异步链路缺失 |
+| `agent_id` | consumer/message.rs、handler | 部分链路缺失，取决于上层调用者 |
+| `project_id` | consumer/message.rs、handler | 部分链路缺失 |
+| `task_id` | consumer/message.rs、handler | 部分链路缺失 |
+| `model_provider_id` | cortex/rig.rs 创建 cortex 时 | ✅ cortex 创建时设置 |
+| `model_name` | cortex/rig.rs 创建 cortex 时 | ✅ cortex 创建时设置 |
+
+### ModelCallEvent 字段缺口
+
+| 字段 | 表结构 | ctx 中有值 | event 中设置 | 状态 |
+|------|--------|-----------|-------------|------|
+| `model_provider_id` | ✅ | ✅ | **❌** | **P0：rig_hook 遗漏设置** |
+| `model_name` | ✅ | ✅ | **❌** | **P0：rig_hook 遗漏设置** |
+| 其他字段 | ✅ | ✅ | ✅ | 无缺口 |
+
+**修复位置**：`pkg/monitoring/rig_hook.rs` 的 `on_completion_response`
+
+### ToolCallEvent 字段缺口
+
+| 字段 | 表结构 | ctx 中有值 | event 中设置 | 状态 |
+|------|--------|-----------|-------------|------|
+| `organization_id` | **❌** | ✅（HTTP 链路） | - | **P1：表和 event 结构都缺失** |
+| `user_id` | **❌** | ✅（HTTP 链路） | - | **P1：表和 event 结构都缺失** |
+| 其他字段 | ✅ | ✅ | ✅ | 无缺口 |
+
+**修复位置**：`pkg/stats/tool_call.rs`（新增字段 + 建表 SQL）、`pkg/tool_tracing/tool_call_logger.rs`（从 ctx 提取）
+
+### 异步场景上下文缺口（后续统一处理）
+
+**问题**：consumer 异步处理消息时，`RequestContext::new(None, None)` 创建的 ctx 完全没有组织和用户信息。
+
+**当前状态**：consumer/message.rs 中处理工具调用时：
+- `user_id = None`
+- `organization_id = None`
+
+**候选方案**（待讨论）：
+- 方案 A：从 message 元数据中携带 organization_id / user_id
+- 方案 B：通过 agent_id 反查所属组织和用户
+- 方案 C：暂时不补，接受异步场景下这些维度为空
+
+**决策**：本次先不处理，后续统一调研异步链路上下文传递方案。

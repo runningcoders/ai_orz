@@ -17,6 +17,8 @@ pub struct ToolCallEvent {
     agent_id: Option<String>,
     project_id: Option<String>,
     task_id: Option<String>,
+    organization_id: Option<String>,
+    user_id: Option<String>,
     args_len: u64,
     result_len: u64,
     duration_ms: u64,
@@ -32,6 +34,8 @@ impl ToolCallEvent {
             agent_id: None,
             project_id: None,
             task_id: None,
+            organization_id: None,
+            user_id: None,
             args_len: 0,
             result_len: 0,
             duration_ms: 0,
@@ -61,6 +65,16 @@ impl ToolCallEvent {
 
     pub fn with_task_id(mut self, v: Option<String>) -> Self {
         self.task_id = v;
+        self
+    }
+
+    pub fn with_organization_id(mut self, v: Option<String>) -> Self {
+        self.organization_id = v;
+        self
+    }
+
+    pub fn with_user_id(mut self, v: Option<String>) -> Self {
+        self.user_id = v;
         self
     }
 
@@ -107,6 +121,12 @@ impl StatEvent for ToolCallEvent {
         if let Some(v) = &self.task_id {
             map.insert("task_id".into(), Value::String(v.clone()));
         }
+        if let Some(v) = &self.organization_id {
+            map.insert("organization_id".into(), Value::String(v.clone()));
+        }
+        if let Some(v) = &self.user_id {
+            map.insert("user_id".into(), Value::String(v.clone()));
+        }
         Some(Value::Object(map))
     }
 
@@ -143,6 +163,8 @@ impl StatTable<ToolCallEvent> for ToolCallStatTable {
                 agent_id VARCHAR,
                 project_id VARCHAR,
                 task_id VARCHAR,
+                organization_id VARCHAR,
+                user_id VARCHAR,
                 args_len BIGINT,
                 result_len BIGINT,
                 duration_ms BIGINT,
@@ -159,8 +181,9 @@ impl StatTable<ToolCallEvent> for ToolCallStatTable {
         let sql = r#"
             INSERT INTO tool_call_events (
                 id, timestamp, tool_id, tool_name, agent_id,
-                project_id, task_id, args_len, result_len, duration_ms, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                project_id, task_id, organization_id, user_id,
+                args_len, result_len, duration_ms, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         "#;
         conn.execute(sql, [
             &id.to_string() as &dyn ToSql,
@@ -170,6 +193,8 @@ impl StatTable<ToolCallEvent> for ToolCallStatTable {
             &event.agent_id as &dyn ToSql,
             &event.project_id as &dyn ToSql,
             &event.task_id as &dyn ToSql,
+            &event.organization_id as &dyn ToSql,
+            &event.user_id as &dyn ToSql,
             &event.args_len as &dyn ToSql,
             &event.result_len as &dyn ToSql,
             &event.duration_ms as &dyn ToSql,
@@ -185,8 +210,9 @@ impl StatTable<ToolCallEvent> for ToolCallStatTable {
             let sql = r#"
                 INSERT INTO tool_call_events (
                     id, timestamp, tool_id, tool_name, agent_id,
-                    project_id, task_id, args_len, result_len, duration_ms, status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    project_id, task_id, organization_id, user_id,
+                    args_len, result_len, duration_ms, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             "#;
             conn.execute(sql, [
                 &id.to_string() as &dyn ToSql,
@@ -196,6 +222,8 @@ impl StatTable<ToolCallEvent> for ToolCallStatTable {
                 &event.agent_id as &dyn ToSql,
                 &event.project_id as &dyn ToSql,
                 &event.task_id as &dyn ToSql,
+                &event.organization_id as &dyn ToSql,
+                &event.user_id as &dyn ToSql,
                 &event.args_len as &dyn ToSql,
                 &event.result_len as &dyn ToSql,
                 &event.duration_ms as &dyn ToSql,

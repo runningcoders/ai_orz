@@ -104,6 +104,8 @@ where
         let agent_id = self.ctx.agent_id().cloned();
         let project_id = self.ctx.project_id().cloned();
         let task_id = self.ctx.task_id().cloned();
+        let model_provider_id = self.ctx.model_provider_id().cloned();
+        let model_name = self.ctx.model_name().cloned();
         let organization_id = self.ctx.organization_id().cloned();
         let user_id = self.ctx.user_id().cloned();
 
@@ -116,6 +118,8 @@ where
                 .with_agent_id(agent_id)
                 .with_project_id(project_id)
                 .with_task_id(task_id)
+                .with_model_provider_id(model_provider_id)
+                .with_model_name(model_name)
                 .with_organization_id(organization_id)
                 .with_user_id(user_id)
                 .with_tokens_input(usage.input_tokens)
