@@ -305,6 +305,8 @@ async fn test_deliver_message_skeleton(pool: SqlitePool) {
         None,
         FileMeta::default(),
         None,
+        None,              // root_id
+        None,              // organization_id
         "admin".to_string(),
     );
     let message = Message::from_po(message_po);

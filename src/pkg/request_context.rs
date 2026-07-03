@@ -115,6 +115,11 @@ impl RequestContext {
         self.organization_id = Some(organization_id.into());
     }
 
+    /// 设置用户 ID
+    pub fn set_user_id(&mut self, user_id: impl Into<String>) {
+        self.user_id = Some(user_id.into());
+    }
+
     /// 设置 Agent ID
     pub fn set_agent_id(&mut self, agent_id: impl Into<String>) {
         self.agent_id = Some(agent_id.into());

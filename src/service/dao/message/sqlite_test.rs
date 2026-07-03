@@ -40,6 +40,8 @@ fn create_test_message(task_id: &str, from_id: &str, content: &str) -> MessagePo
         None,
         empty_file_meta,
         None,
+        None, // root_id
+        None, // organization_id
         "test-user".to_string(),
     )
 }
@@ -63,6 +65,8 @@ async fn test_insert_and_find_by_id(pool: SqlitePool) -> Result<()> {
         None,
         empty_file_meta,
         None,
+        None, // root_id
+        None, // organization_id
         "test-user".to_string(),
     );
     message_dao.insert(ctx.clone(), &msg).await?;
@@ -104,6 +108,8 @@ async fn test_list_by_task_id(pool: SqlitePool) -> Result<()> {
         None,
         empty_file_meta.clone(),
         None,
+        None, // root_id
+        None, // organization_id
         "test-user".to_string(),
     );
     message_dao.insert(ctx.clone(), &msg0).await?;
@@ -122,6 +128,8 @@ async fn test_list_by_task_id(pool: SqlitePool) -> Result<()> {
         None,
         empty_file_meta.clone(),
         None,
+        None, // root_id
+        None, // organization_id
         "test-user".to_string(),
     );
     let msg2 = MessagePo::new(
@@ -137,6 +145,8 @@ async fn test_list_by_task_id(pool: SqlitePool) -> Result<()> {
         None,
         empty_file_meta.clone(),
         None,
+        None, // root_id
+        None, // organization_id
         "test-user".to_string(),
     );
     let msg3 = MessagePo::new(
@@ -152,6 +162,8 @@ async fn test_list_by_task_id(pool: SqlitePool) -> Result<()> {
         None,
         empty_file_meta,
         None,
+        None, // root_id
+        None, // organization_id
         "test-user".to_string(),
     );
     message_dao.insert(ctx.clone(), &msg1).await?;
@@ -195,6 +207,8 @@ async fn test_list_by_task_id_with_limit(pool: SqlitePool) -> Result<()> {
             None,
             empty_file_meta.clone(),
             None,
+            None, // root_id
+            None, // organization_id
             "test-user".to_string(),
         );
         message_dao.insert(ctx.clone(), &msg).await?;
@@ -229,6 +243,8 @@ async fn test_list_by_from_id(pool: SqlitePool) -> Result<()> {
         None,
         empty_file_meta.clone(),
         None,
+        None, // root_id
+        None, // organization_id
         "test-user".to_string(),
     );
     let msg2 = MessagePo::new(
@@ -244,6 +260,8 @@ async fn test_list_by_from_id(pool: SqlitePool) -> Result<()> {
         None,
         empty_file_meta.clone(),
         None,
+        None, // root_id
+        None, // organization_id
         "test-user".to_string(),
     );
     let msg3 = MessagePo::new(
@@ -259,6 +277,8 @@ async fn test_list_by_from_id(pool: SqlitePool) -> Result<()> {
         None,
         empty_file_meta,
         None,
+        None, // root_id
+        None, // organization_id
         "test-user".to_string(),
     );
     message_dao.insert(ctx.clone(), &msg1).await?;
@@ -293,6 +313,8 @@ async fn test_list_by_to_id(pool: SqlitePool) -> Result<()> {
         None,
         empty_file_meta.clone(),
         None,
+        None, // root_id
+        None, // organization_id
         "test-user".to_string(),
     );
     let msg2 = MessagePo::new(
@@ -308,6 +330,8 @@ async fn test_list_by_to_id(pool: SqlitePool) -> Result<()> {
         None,
         empty_file_meta,
         None,
+        None, // root_id
+        None, // organization_id
         "test-user".to_string(),
     );
     message_dao.insert(ctx.clone(), &msg1).await?;
@@ -344,6 +368,8 @@ async fn test_count_by_task_id(pool: SqlitePool) -> Result<()> {
             None,
             empty_file_meta.clone(),
             None,
+            None, // root_id
+            None, // organization_id
             "test-user".to_string(),
         );
         message_dao.insert(ctx.clone(), &msg).await?;
@@ -362,6 +388,8 @@ async fn test_count_by_task_id(pool: SqlitePool) -> Result<()> {
         None,
         empty_file_meta,
         None,
+        None, // root_id
+        None, // organization_id
         "test-user".to_string(),
     );
     message_dao.insert(ctx.clone(), &msg).await?;
@@ -402,6 +430,8 @@ async fn test_delete_message(pool: SqlitePool) -> Result<()> {
         None,
         empty_file_meta,
         None,
+        None, // root_id
+        None, // organization_id
         "test-user".to_string(),
     );
     message_dao.insert(ctx.clone(), &msg_to_delete).await?;
@@ -449,6 +479,8 @@ async fn test_delete_by_task_id(pool: SqlitePool) -> Result<()> {
             None,
             empty_file_meta.clone(),
             None,
+            None, // root_id
+            None, // organization_id
             "test-user".to_string(),
         );
         message_dao.insert(ctx.clone(), &msg).await?;
@@ -493,6 +525,8 @@ async fn test_update_status(pool: SqlitePool) -> Result<()> {
         None,
         empty_file_meta,
         None,
+        None, // root_id
+        None, // organization_id
         "test-user".to_string(),
     );
     message_dao.insert(ctx.clone(), &msg).await?;
@@ -537,6 +571,8 @@ async fn test_image_message_with_metadata(pool: SqlitePool) -> Result<()> {
         Some(FileType::Image),
         file_meta,
         None,
+        None, // root_id
+        None, // organization_id
         "test-user".to_string(),
     );
 
@@ -583,6 +619,8 @@ async fn test_list_by_status(pool: SqlitePool) -> Result<()> {
             None,
             empty_file_meta.clone(),
             None,
+            None, // root_id
+            None, // organization_id
             "test-user".to_string(),
         );
         message_dao.insert(ctx.clone(), &msg).await?;
@@ -794,6 +832,8 @@ async fn test_list_by_project_id(pool: SqlitePool) -> Result<()> {
         None,
         FileMeta::default(),
         None,
+        None, // root_id
+        None, // organization_id
         "test-user".to_string(),
     );
     let _m1 = message_dao.insert(ctx.clone(), &m1).await?;
@@ -812,6 +852,8 @@ async fn test_list_by_project_id(pool: SqlitePool) -> Result<()> {
         None,
         FileMeta::default(),
         None,
+        None, // root_id
+        None, // organization_id
         "test-user".to_string(),
     );
     let _m2 = message_dao.insert(ctx.clone(), &m2).await?;
@@ -830,6 +872,8 @@ async fn test_list_by_project_id(pool: SqlitePool) -> Result<()> {
         None,
         FileMeta::default(),
         None,
+        None, // root_id
+        None, // organization_id
         "test-user".to_string(),
     );
     let _m3 = message_dao.insert(ctx.clone(), &m3).await?;
@@ -849,6 +893,8 @@ async fn test_list_by_project_id(pool: SqlitePool) -> Result<()> {
         None,
         FileMeta::default(),
         None,
+        None, // root_id
+        None, // organization_id
         "test-user".to_string(),
     );
     let _m4 = message_dao.insert(ctx.clone(), &m4).await?;

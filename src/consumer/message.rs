@@ -165,6 +165,14 @@ impl MessageHandlerImpl {
         if let Some(task_id) = &tool_call.task_id {
             ctx.set_task_id(task_id.clone());
         }
+        // 从消息中重建组织和用户上下文
+        if let Some(org_id) = &message.po.organization_id {
+            ctx.set_organization_id(org_id.clone());
+        }
+        // 用户消息的 from_id 即为 user_id
+        if message.from_role() == MessageRole::User {
+            ctx.set_user_id(message.po.from_id.clone());
+        }
 
         let execution = self
             .runtime_domain

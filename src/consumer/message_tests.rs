@@ -48,6 +48,8 @@ fn create_test_message(
         None,
         FileMeta::default(),
         None,
+        None, // root_id
+        None, // organization_id
         "test".to_string(),
     )
 }
@@ -78,6 +80,8 @@ fn create_tool_call_request_message() -> Message {
         None,
         FileMeta::default(),
         payload.reply_to_id.clone(),
+        None, // root_id
+        None, // organization_id
         "agent-001".to_string(),
     )
 }

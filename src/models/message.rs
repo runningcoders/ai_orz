@@ -84,6 +84,8 @@ impl Message {
         file_type: Option<FileType>,
         file_meta: FileMeta,
         reply_to_id: Option<String>,
+        root_id: Option<String>,
+        organization_id: Option<String>,
         created_by: String,
     ) -> Self {
         let po = MessagePo::new(
@@ -99,6 +101,8 @@ impl Message {
             file_type,
             file_meta,
             reply_to_id,
+            root_id,
+            organization_id,
             created_by,
         );
         Self::from_po(po)
@@ -131,6 +135,8 @@ impl Message {
             content,
             file_type,
             file_meta,
+            None,
+            None,
             None,
             created_by,
         )
@@ -219,6 +225,12 @@ pub struct MessagePo {
     /// - 工具调用结果关联请求消息时使用
     /// - Agent 思考过程关联上下文时使用
     pub reply_to_id: Option<String>,
+    /// 消息链根消息 ID（方便按链拉取）
+    /// - 新消息链的首条消息 root_id = 自身 id
+    /// - 后续消息继承父消息的 root_id
+    pub root_id: Option<String>,
+    /// 组织 ID（用于异步消费时重建上下文）
+    pub organization_id: Option<String>,
     /// 创建人 ID
     pub created_by: String,
     /// 最后修改人 ID
@@ -286,6 +298,8 @@ impl MessagePo {
         file_type: Option<FileType>,
         file_meta: FileMeta,
         reply_to_id: Option<String>,
+        root_id: Option<String>,
+        organization_id: Option<String>,
         created_by: String,
     ) -> Self {
         let now = utils::current_timestamp_ms();
@@ -303,6 +317,8 @@ impl MessagePo {
             content,
             file_meta: Json(file_meta),
             reply_to_id,
+            root_id,
+            organization_id,
             created_by: created_by.clone(),
             modified_by: created_by,
             created_at: now,
@@ -475,6 +491,8 @@ mod tests {
             .content("Hello, Builder!".to_string())
             .file_meta(Json(FileMeta::default()))
             .reply_to_id(None)
+            .root_id(Some("msg_001".to_string()))
+            .organization_id(Some("org_001".to_string()))
             .created_by("tester".to_string())
             .modified_by("tester".to_string())
             .created_at(1234567890)

@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, project_id, task_id, from_id, to_id, from_role as \"from_role: MessageRole\", to_role as \"to_role: MessageRole\", message_type as \"message_type: MessageType\", file_type as \"file_type: FileType\", \"status\" as \"status: MessageStatus\", content, file_meta as \"file_meta: Json<FileMeta>\", reply_to_id, created_by, modified_by, created_at, updated_at\nFROM messages WHERE id = ? AND \"status\" != 0\n            ",
+  "query": "\nSELECT id, project_id, task_id, from_id, to_id, from_role as \"from_role: MessageRole\", to_role as \"to_role: MessageRole\", message_type as \"message_type: MessageType\", file_type as \"file_type: FileType\", \"status\" as \"status: MessageStatus\", content, file_meta as \"file_meta: Json<FileMeta>\", reply_to_id, root_id, organization_id, created_by, modified_by, created_at, updated_at\nFROM messages WHERE id = ? AND \"status\" != 0\n            ",
   "describe": {
     "columns": [
       {
@@ -69,23 +69,33 @@
         "type_info": "Text"
       },
       {
-        "name": "created_by",
+        "name": "root_id",
         "ordinal": 13,
         "type_info": "Text"
       },
       {
-        "name": "modified_by",
+        "name": "organization_id",
         "ordinal": 14,
         "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "created_by",
         "ordinal": 15,
+        "type_info": "Text"
+      },
+      {
+        "name": "modified_by",
+        "ordinal": 16,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 17,
         "type_info": "Integer"
       },
       {
         "name": "updated_at",
-        "ordinal": 16,
+        "ordinal": 18,
         "type_info": "Integer"
       }
     ],
@@ -106,11 +116,13 @@
       false,
       false,
       true,
+      true,
+      true,
       false,
       false,
       false,
       false
     ]
   },
-  "hash": "858b17484b738eb1ad448933a366e695e7bc0a67a6e56e81942cc2968efcb7a8"
+  "hash": "bc6878009e318f2b8986791cf507995607682553fd48c91a2625ac177e21b6e5"
 }

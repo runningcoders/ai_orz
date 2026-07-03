@@ -44,6 +44,8 @@ fn create_test_message(
         None,
         file_meta,
         None,
+        None,              // root_id
+        None,              // organization_id
         from_id.to_string(),
     )
 }

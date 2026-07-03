@@ -48,7 +48,7 @@ impl MessageDao for MessageDaoSqliteImpl {
         let file_type = message.file_type.map(|ft| ft as i32);
 
         sqlx::query!(
-            "INSERT INTO messages (id, project_id, task_id, from_id, to_id, from_role, to_role, message_type, file_type, status, content, file_meta, reply_to_id, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO messages (id, project_id, task_id, from_id, to_id, from_role, to_role, message_type, file_type, status, content, file_meta, reply_to_id, root_id, organization_id, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             message.id,
             message.project_id,
             message.task_id,
@@ -62,6 +62,8 @@ impl MessageDao for MessageDaoSqliteImpl {
             message.content,
             message.file_meta,
             message.reply_to_id,
+            message.root_id,
+            message.organization_id,
             message.created_by,
             message.modified_by,
             message.created_at,
@@ -136,7 +138,7 @@ impl MessageDao for MessageDaoSqliteImpl {
         let message = sqlx::query_as!(
             MessagePo,
             r#"
-SELECT id, project_id, task_id, from_id, to_id, from_role as "from_role: MessageRole", to_role as "to_role: MessageRole", message_type as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", reply_to_id, created_by, modified_by, created_at, updated_at
+SELECT id, project_id, task_id, from_id, to_id, from_role as "from_role: MessageRole", to_role as "to_role: MessageRole", message_type as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", reply_to_id, root_id, organization_id, created_by, modified_by, created_at, updated_at
 FROM messages WHERE id = ? AND "status" != 0
             "#,
             id
@@ -351,7 +353,9 @@ UPDATE messages SET "status" = ?, updated_at = ?, modified_by = ? WHERE id = ?
             None, // file_type 保持 None，这是结构化消息不是文件附件
             file_meta,
             req.reply_to_id.clone(),
-            ctx.uid().to_string(),
+            None, // root_id
+            ctx.organization_id().cloned(),
+            ctx.uid(),
         );
 
         // 插入数据库
@@ -402,7 +406,9 @@ UPDATE messages SET "status" = ?, updated_at = ?, modified_by = ? WHERE id = ?
             None, // file_type 保持 None，大结果通过 file_meta 附件机制存储
             file_meta,
             res.reply_to_id.clone(),
-            ctx.uid().to_string(),
+            None, // root_id
+            ctx.organization_id().cloned(),
+            ctx.uid(),
         );
 
         // 插入数据库

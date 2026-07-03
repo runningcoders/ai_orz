@@ -319,6 +319,8 @@ async fn test_send_tool_call_result_success_reuses_request_context(pool: SqliteP
         None,
         Default::default(),
         request.reply_to_id.clone(),
+        None, // root_id
+        None, // organization_id
         request.from_id.clone(),
     );
 
@@ -414,6 +416,8 @@ async fn test_send_tool_call_result_failure_reuses_request_context(pool: SqliteP
         None,
         Default::default(),
         request.reply_to_id.clone(),
+        None, // root_id
+        None, // organization_id
         request.from_id.clone(),
     );
 
@@ -486,6 +490,8 @@ async fn test_send_tool_call_result_failure_can_include_trace_ref(pool: SqlitePo
         None,
         Default::default(),
         request.reply_to_id.clone(),
+        None, // root_id
+        None, // organization_id
         request.from_id.clone(),
     );
 
@@ -564,6 +570,8 @@ async fn test_send_tool_call_result_failure_does_not_leak_request_args(pool: Sql
         None,
         Default::default(),
         request.reply_to_id.clone(),
+        None, // root_id
+        None, // organization_id
         request.from_id.clone(),
     );
 
@@ -623,6 +631,8 @@ async fn test_send_tool_call_result_large_success_uses_safe_inline_marker(pool: 
         None,
         Default::default(),
         request.reply_to_id.clone(),
+        None, // root_id
+        None, // organization_id
         request.from_id.clone(),
     );
 

@@ -37,9 +37,10 @@ impl MessageDelivery for MessageDomainImpl {
         ctx: RequestContext,
         cmd: SendToAgentCommand<'_>,
     ) -> Result<Message> {
+        let id = generate_id();
         // 创建消息 PO - 使用 Builder 模式或直接 new
         let po = MessagePo::new(
-            generate_id(),
+            id.clone(),
             cmd.project_id.map(|s| s.to_string()),
             cmd.task_id.map(|s| s.to_string()),
             cmd.from_id.to_string(),
@@ -51,6 +52,8 @@ impl MessageDelivery for MessageDomainImpl {
             None,               // file_type
             Default::default(), // file_meta - 需要 FileMeta 类型，用 Default
             cmd.reply_to_id.map(|s| s.to_string()),
+            Some(id),           // root_id: 新消息链根消息
+            ctx.organization_id().cloned(),
             cmd.from_id.to_string(), // created_by
         );
 
@@ -65,9 +68,10 @@ impl MessageDelivery for MessageDomainImpl {
         ctx: RequestContext,
         cmd: SendToUserCommand<'_>,
     ) -> Result<Message> {
+        let id = generate_id();
         // Agent 发送给用户，发送者角色固定为 Agent，接收者角色固定为 User
         let po = MessagePo::new(
-            generate_id(),
+            id.clone(),
             cmd.project_id.map(|s| s.to_string()),
             cmd.task_id.map(|s| s.to_string()),
             cmd.from_agent_id.to_string(),
@@ -79,6 +83,8 @@ impl MessageDelivery for MessageDomainImpl {
             None,               // file_type
             Default::default(), // file_meta
             cmd.reply_to_id.map(|s| s.to_string()),
+            Some(id),           // root_id: 新消息链根消息
+            ctx.organization_id().cloned(),
             cmd.from_agent_id.to_string(), // created_by
         );
 
@@ -93,6 +99,7 @@ impl MessageDelivery for MessageDomainImpl {
         ctx: RequestContext,
         cmd: SendToolCallRequestCommand<'_>,
     ) -> Result<Message> {
+        let id = generate_id();
         let payload = ToolCallMessage::new_request(
             cmd.request_id.to_string(),
             cmd.tool_id.to_string(),
@@ -109,7 +116,7 @@ impl MessageDelivery for MessageDomainImpl {
             .map_err(|e| err!(Internal, "failed to serialize tool call request").with_source(e))?;
 
         let po = MessagePo::new(
-            generate_id(),
+            id.clone(),
             payload.project_id.clone(),
             payload.task_id.clone(),
             payload.from_id.clone(),
@@ -121,6 +128,8 @@ impl MessageDelivery for MessageDomainImpl {
             None,
             Default::default(),
             payload.reply_to_id.clone(),
+            Some(id), // root_id
+            ctx.organization_id().cloned(),
             payload.from_id.clone(),
         );
 
@@ -163,8 +172,9 @@ impl MessageDelivery for MessageDomainImpl {
          let content = serde_json::to_string(&result_payload)
             .map_err(|e| err!(Internal, "failed to serialize tool call result").with_source(e))?;
 
+        let id = generate_id();
         let po = MessagePo::new(
-            generate_id(),
+            id.clone(),
             result_payload.project_id.clone(),
             result_payload.task_id.clone(),
             result_payload.from_id.clone(),
@@ -176,6 +186,8 @@ impl MessageDelivery for MessageDomainImpl {
             None,
             Default::default(),
             Some(cmd.request_message.id().to_string()),
+            cmd.request_message.po.root_id.clone().or(Some(id)),
+            cmd.request_message.po.organization_id.clone(),
             result_payload.from_id.clone(),
         );
 
