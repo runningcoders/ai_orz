@@ -275,50 +275,42 @@ impl AgentDal {
 
 ## 记录事件规范
 
-### 模型调用统计
+#### 模型调用统计
 
-在 rig hook `on_completion_response` 中自动发送 `ModelCallEvent`，tags 从 `RequestContext` 提取，metrics 包含 token 用量：
+在 rig hook `on_completion_response` 中自动发送 `ModelCallEvent`，使用专用字段 API：
 
 ```rust
 let event = ModelCallEvent::new(timestamp)
-    .with_tags(json!({
-        "agent_id": agent_id,
-        "task_id": task_id,
-        "project_id": project_id,
-        "model_provider_id": model_provider_id,
-        "model_name": model_name,
-    }))
-    .with_metrics(json!({
-        "call_count": 1,
-        "tokens_input": usage.input_tokens,
-        "tokens_output": usage.output_tokens,
-        "total_tokens": usage.total_tokens,
-    }));
+    .with_agent_id(agent_id)
+    .with_project_id(project_id)
+    .with_model_provider_id(model_provider_id)
+    .with_tokens_input(usage.input_tokens)
+    .with_tokens_output(usage.output_tokens)
+    .with_total_tokens(usage.total_tokens);
 
 ctx.stats().record(ctx.clone(), event).await?;
 ```
 
-### 工具调用统计
+#### 工具调用统计
 
-在 rig hook `on_tool_result` 中自动发送 `ToolCallEvent`，记录工具调用次数和参数/结果大小：
+在 `ToolCallLoggingDecorator` 中统一发送 `ToolCallEvent`，覆盖 manual + auto 模式：
 
 ```rust
 let event = ToolCallEvent::new(timestamp)
-    .with_tags(json!({
-        "agent_id": agent_id,
-        "tool_name": tool_name,
-        // ... 其他上下文
-    }))
-    .with_metrics(json!({
-        "call_count": 1,
-        "args_len": args_len,
-        "result_len": result_len,
-    }));
+    .with_tool_id(tool_id)
+    .with_tool_name(tool_name)
+    .with_agent_id(agent_id)
+    .with_args_len(args_len)
+    .with_result_len(result_len)
+    .with_duration_ms(duration_ms)
+    .with_status(status);
 
-ctx.stats().record(ctx.clone(), event).await?;
+if let Some(stats) = ctx.stats_opt() {
+    let _ = stats.record(ctx_clone, event);
+}
 ```
 
-### 默认事件（灵活场景）
+#### 默认事件（灵活场景）
 
 对于未确定专用表的灵活打点场景，仍可使用 `DefaultStatEvent` 写入 `default_events` 表：
 
@@ -340,3 +332,4 @@ record_event!(ctx, DefaultStatEvent {
 | v1.2 | 2026-07-02 | 全实体覆盖 | 新增 Project/Task/ModelProvider 三个 Stats DAO；每个 DAO 4 个单元测试（sum_tokens/time_series/aggregation/filter_isolation）；共 16 个 stats 测试 |
 | v1.3 | 2026-07-02 | 事件关联优化 | Stats 新增 get_table_name<E> 方法；查询方法新增 table_name 参数；DAO trait 使用关联类型绑定事件类型，提供默认 table_name 方法；实现写入和查询的事件→表名一致性 |
 | v1.4 | 2026-07-03 | 专用事件拆分 | DAO trait 拆分为 ModelCallEvent / ToolCallEvent 双关联类型；query_model_calls / query_tool_calls 分别查询专用表；专用事件独立文件（model_call.rs / tool_call.rs）；rig hook 自动采集模型调用和工具调用统计 |
+| v1.5 | 2026-07-03 | 表自描述重构 | StatTable trait 新增 is_dedicated_table / column_sql / metric_sql / filter_equals_sql / filter_range_sql；专用表改用独立字段结构（VARCHAR/BIGINT）；查询构建逻辑下放到表实现，消除硬编码表结构判断；Stats 新增 tables_by_name 反向索引；ToolCallLoggingDecorator 统一采集工具调用统计；RequestContext::stats_opt() 安全获取 |

@@ -67,23 +67,36 @@ pub trait StatTable<E: StatEvent>: Send + Sync + Debug {
     fn table_name(&self) -> &str;
 
     /// 创建表（如果不存在），初始化 schema
-    async fn create_table(&self, conn: &mut duckdb::Connection) -> Result<()>;
+    fn create_table(&self, conn: &mut duckdb::Connection) -> Result<()>;
 
     /// 插入单个事件
-    async fn insert_event(
-        &self,
-        conn: &mut duckdb::Connection,
-        event: &E,
-    ) -> Result<()>;
+    fn insert_event(&self, conn: &mut duckdb::Connection, event: &E) -> Result<()>;
 
     /// 批量插入事件
-    async fn bulk_insert_events(
-        &self,
-        conn: &mut duckdb::Connection,
-        events: &[E],
-    ) -> Result<()>;
+    fn bulk_insert_events(&self, conn: &mut duckdb::Connection, events: &[E]) -> Result<()>;
+
+    /// 是否是专用表结构（有独立字段，而非 tags/metrics JSON）
+    fn is_dedicated_table(&self) -> bool { false }
+
+    /// 获取标签/维度列的 SQL 引用方式
+    /// 默认表：json_extract_string(tags, '$.column')
+    /// 专用表：直接字段名
+    fn column_sql(&self, column: &str) -> String { ... }
+
+    /// 获取指标列的 SQL 引用方式
+    /// 默认表：json_extract(metrics, '$.metric')
+    /// 专用表：直接字段名
+    fn metric_sql(&self, metric: &str) -> String { ... }
+
+    /// 获取过滤条件（等于匹配）的 SQL 列引用方式
+    fn filter_equals_sql(&self, column: &str) -> String { ... }
+
+    /// 获取过滤条件（范围匹配）的 SQL 列引用方式
+    fn filter_range_sql(&self, column: &str) -> String { ... }
 }
 ```
+
+**表自描述设计：** 查询构建方法（`build_aggregation_query`、`query_time_series`、`append_filters`）不再硬编码判断表结构，而是通过 `StatTable` 的元数据方法（`column_sql`、`metric_sql`、`filter_equals_sql`、`filter_range_sql`）获取 SQL 生成策略，让每种表实现与自身表结构紧密绑定。新增专用表时只需覆盖 `is_dedicated_table()` 返回 `true`，默认方法自动切换为直接字段引用。
 
 ## 支持四种组合场景
 
@@ -146,6 +159,29 @@ CREATE TABLE IF NOT EXISTS default_events (
 - 默认表（`default_events`）保留给灵活场景使用，默认 event 仍走默认表处理
 - 专用事件数据只写入各自的专用表，互不干扰
 - 每个专用事件独立一个文件，方便后续查阅和扩展
+- 专用表使用独立字段（VARCHAR/BIGINT）而非 JSON tags/metrics，查询性能更优
+
+**专用表结构（以 `model_call_events` 为例）：**
+
+```sql
+CREATE TABLE IF NOT EXISTS model_call_events (
+    timestamp BIGINT,
+    agent_id VARCHAR,
+    project_id VARCHAR,
+    task_id VARCHAR,
+    model_provider_id VARCHAR,
+    model_name VARCHAR,
+    organization_id VARCHAR,
+    user_id VARCHAR,
+    tokens_input BIGINT,
+    tokens_output BIGINT,
+    total_tokens BIGINT
+);
+```
+
+**专用表的 `StatTable` 实现：**
+
+覆盖 `is_dedicated_table()` 返回 `true`，继承的 `column_sql()`、`metric_sql()`、`filter_equals_sql()`、`filter_range_sql()` 自动切换为直接字段引用模式，无需额外代码。
 
 `initialize_default()` 同时注册三张表：
 
@@ -162,15 +198,19 @@ pub fn initialize_default(&self) -> Result<()> {
 
 `RuntimeMonitoringHook`（`pkg/monitoring/rig_hook.rs`）在 rig 运行时回调中自动发送专用事件：
 
-- `on_completion_response` → 发送 `ModelCallEvent`，tags 包含 agent_id/task_id/project_id/model_provider_id 等，metrics 包含 tokens_input/tokens_output/total_tokens
-- `on_tool_result` → 发送 `ToolCallEvent`，tags 包含 tool_name + 上下文信息，metrics 包含 call_count/args_len/result_len
+- `on_completion_response` → 发送 `ModelCallEvent`，使用专用字段 API（`with_agent_id`、`with_tokens_input` 等）
+
+### 工具调用统一采集
+
+`ToolCallLoggingDecorator`（`pkg/tool_tracing/tool_call_logger.rs`）包装所有工具调用（manual + auto 模式），在调用完成后发送 `ToolCallEvent`，使用专用字段 API。使用 `stats_opt()` 安全获取 Stats，未初始化时优雅跳过。
 
 ## 顶层 Stats 结构
 
 ```rust
 pub struct Stats {
     conn: Mutex<Connection>,
-    tables: HashMap<TypeId, (String, Box<dyn ErasedStatTable>, ErasedBuffer)>,
+    tables: Mutex<HashMap<TypeId, (String, Arc<dyn ErasedStatTable>, ErasedBuffer)>>,
+    tables_by_name: Mutex<HashMap<String, Arc<dyn ErasedStatTable>>>,
     batch_size: usize,
 }
 
@@ -178,45 +218,55 @@ impl Stats {
     /// 打开数据库并初始化
     pub async fn open(path: &str, batch_size: usize) -> Result<Self>;
 
-    /// 初始化默认表（for DefaultStatEvent）
-    pub fn initialize_default(&mut self) -> Result<()>;
+    /// 初始化默认表（DefaultStatTable + ModelCallStatTable + ToolCallStatTable）
+    pub fn initialize_default(&self) -> Result<()>;
 
     /// 注册自定义表，自动按事件类型绑定
     pub fn register_table<E: StatEvent + 'static + Send + Sync, T: StatTable<E> + 'static>(
-        &mut self,
+        &self,
         table: T,
     ) -> Result<()>;
 
+    /// 按事件类型获取表名
+    pub fn get_table_name<E>(&self) -> Option<String>;
+
+    /// 按表名获取 ErasedStatTable 元数据（用于查询构建）
+    pub fn get_table_by_name(&self, name: &str) -> Option<Arc<dyn ErasedStatTable>>;
+
     /// 记录事件（自动按事件类型找到注册的表）
-    /// 遵循项目约定：第一个参数就是 ctx
     pub async fn record<E: StatEvent + 'static + Send + Sync>(
-        &mut self,
+        &self,
         ctx: RequestContext,
         event: E,
     ) -> Result<()>;
 
     /// 强制刷新所有缓冲
-    pub async fn flush_all(&mut self, ctx: RequestContext) -> Result<()>;
+    pub async fn flush_all(&self, ctx: RequestContext) -> Result<()>;
+
+    /// 通用聚合查询（通过 ErasedStatTable 元数据构建 SQL）
+    pub async fn query_aggregation(
+        &self, ctx: RequestContext, table_name: Option<&str>,
+        filters: &[StatFilter], group_by: &[&str],
+        aggregations: &[StatAggregation], time_range: Option<(i64, i64)>,
+    ) -> Result<Vec<AggregationRow>>;
+
+    /// 时序查询（通过 ErasedStatTable 元数据构建 SQL）
+    pub async fn query_time_series(
+        &self, ctx: RequestContext, table_name: Option<&str>,
+        filters: &[StatFilter], interval: StatsInterval, time_range: (i64, i64),
+    ) -> Result<Vec<TimeSeriesPoint>>;
 
     /// 执行查询 SQL，返回 JSON 结果
     pub async fn query(
-        &self,
-        ctx: RequestContext,
-        sql: &str,
-        params: &[&dyn duckdb::ToSql],
+        &self, ctx: RequestContext, sql: &str, params: &[StatParam],
     ) -> Result<Vec<serde_json::Value>>;
-
-    /// 获取指定事件类型待缓冲长度
-    pub fn pending_buffer_len<E: StatEvent + 'static>(&self) -> usize;
-
-    /// 获取注册的表数量
-    pub fn registered_table_count(&self) -> usize;
 }
 ```
 
-**核心设计变化：每个事件类型自动绑定唯一一张表**，注册之后用户不需要每次调用都指定表，直接 `record(event)` 就行，更简洁。
-
-**内部用类型擦除支持不同表不同事件类型，对用户透明。**
+**核心设计变化：**
+- **表自描述**：查询构建方法不再硬编码判断表结构，而是通过 `get_table_by_name()` 获取 `ErasedStatTable`，调用其 `column_sql()`/`metric_sql()`/`filter_equals_sql()`/`filter_range_sql()` 生成 SQL
+- **反向索引**：`tables_by_name` 支持按表名查找表元数据，`register_table` 时同步写入
+- **每个事件类型自动绑定唯一一张表**，注册之后用户不需要每次调用都指定表，直接 `record(event)` 就行
 
 **遵循项目统一约定：**
 - 所有操作方法第一个参数必须是 `ctx: RequestContext`
@@ -614,13 +664,18 @@ pub enum StatParam {
 - [x] 核心设计：按事件类型自动绑定表，每个事件类型对应唯一表
 - [x] `Stats` 自动缓冲，批量写入，每个事件类型独立缓冲
 - [x] `record_event!` 宏简化调用，自动推断表，自动填充 timestamp
-- [x] `#[derive(StatsEvent)]` 过程宏自动实现 trait
 - [x] `query_aggregation` 通用聚合查询（支持过滤、分组、聚合）
 - [x] `query_time_series` 时序查询（支持 Hourly/Daily）
 - [x] `StatParam` 类型安全参数枚举（解决 `dyn ToSql` 的 `Send` 问题）
 - [x] 统计结果模型迁移到 `common/src/models/stats.rs`（`StatsInterval`、`TimeSeriesPoint`、`TokenSumResult`）
 - [x] 专用事件 `ModelCallEvent` / `ToolCallEvent` 独立文件，各自绑定专用表
-- [x] rig hook 自动采集模型调用和工具调用统计
+- [x] 专用表使用独立字段结构（VARCHAR/BIGINT），查询性能更优
+- [x] `StatTable` trait 表自描述：`is_dedicated_table()`、`column_sql()`、`metric_sql()`、`filter_equals_sql()`、`filter_range_sql()`
+- [x] 查询构建逻辑下放到表实现，消除硬编码表结构判断
+- [x] `Stats` 反向索引 `tables_by_name`，支持按表名查找 `ErasedStatTable` 元数据
+- [x] rig hook 自动采集模型调用统计（`ModelCallEvent`）
+- [x] `ToolCallLoggingDecorator` 统一采集工具调用统计（`ToolCallEvent`，覆盖 manual + auto）
+- [x] `RequestContext::stats_opt()` 安全获取 Stats
 - [x] 所有单元测试通过 ✅
 
 ## 开放性问题
