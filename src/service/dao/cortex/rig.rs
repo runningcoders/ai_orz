@@ -32,17 +32,18 @@ impl RigCortexDao {
 impl super::CortexDao for RigCortexDao {
     fn create_cortex_trait(
         &self,
-        mut ctx: RequestContext,
+        ctx: RequestContext,
         provider: &ModelProviderPo,
         rig_tools: Vec<Box<dyn ToolDyn>>,
     ) -> Result<Box<dyn CortexTrait + Send + Sync>> {
         let api_key = provider.api_key.clone();
         let model = provider.model_name.clone();
 
-        // ✅ 在关键串联点位补充上下文：注入 model_provider_id 和 model_name
-        // 这样下游 hook / stats 记录可以直接从 ctx 获取这些信息
-        ctx.set_model_provider_id(provider.id.clone());
-        ctx.set_model_name(model.clone());
+        let ctx = ctx
+            .to_builder()
+            .model_provider_id(provider.id.clone())
+            .model_name(model.clone())
+            .build();
 
         // ✅ 根据 ModelCapability 构建对应的 Cortex
         // 职责边界清晰：ModelProvider 决定能力类型，Cortex 实现具体能力

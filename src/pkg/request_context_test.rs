@@ -158,23 +158,23 @@ fn test_clone_context() {
 #[test]
 fn test_context_agent_id_setter() {
     let storage = create_test_pool();
-    let mut ctx = crate::pkg::request_context_test_support::new_test_ctx("user1", storage);
-    ctx.set_agent_id("agent_001");
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("user1", storage);
+    let ctx = ctx.to_builder().agent_id("agent_001").build();
     assert_eq!(ctx.agent_id, Some("agent_001".to_string()));
 }
 
 #[test]
 fn test_context_task_id_setter() {
     let storage = create_test_pool();
-    let mut ctx = crate::pkg::request_context_test_support::new_test_ctx("user1", storage);
-    ctx.set_task_id("task_001");
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("user1", storage);
+    let ctx = ctx.to_builder().task_id("task_001").build();
     assert_eq!(ctx.task_id, Some("task_001".to_string()));
 }
 
 #[test]
 fn test_context_project_id_setter() {
     let storage = create_test_pool();
-    let mut ctx = crate::pkg::request_context_test_support::new_test_ctx("user1", storage);
-    ctx.set_project_id("project_001");
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("user1", storage);
+    let ctx = ctx.to_builder().project_id("project_001").build();
     assert_eq!(ctx.project_id, Some("project_001".to_string()));
 }

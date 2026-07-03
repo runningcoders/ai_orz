@@ -427,12 +427,13 @@ mod tests {
                     }
 
         fn scoped_test_ctx(agent_id: &str, project_id: &str, task_id: &str) -> RequestContext {
-        let mut ctx = test_ctx();
-        ctx.set_agent_id(agent_id);
-        ctx.set_project_id(project_id);
-        ctx.set_task_id(task_id);
-        ctx
-                }
+            test_ctx()
+                .to_builder()
+                .agent_id(agent_id)
+                .project_id(project_id)
+                .task_id(task_id)
+                .build()
+        }
 
         fn test_tool_call_entry(
         call_id: &str,

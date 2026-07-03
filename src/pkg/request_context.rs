@@ -6,6 +6,17 @@ use sqlx::sqlite::SqlitePool;
 use std::sync::Arc;
 
 /// 请求上下文
+///
+/// 【不可变约定】构建完成后即为不可变对象。
+/// 如需修改，通过 `ctx.to_builder()` 克隆并重建。
+///
+/// 【字段分类】
+/// - 追踪标识：log_id
+/// - 用户身份：user_id, username
+/// - 组织维度：organization_id
+/// - 业务维度：agent_id, project_id, task_id
+/// - 模型维度：model_provider_id, model_name
+/// - 基础设施：storage（SQLite + Vector + Stats）
 #[derive(Debug, Clone)]
 pub struct RequestContext {
     /// 日志追踪 ID
@@ -32,15 +43,157 @@ pub struct RequestContext {
     storage: Storage,
 }
 
+// ==================== Builder ====================
+
+/// RequestContext 构建器
+///
+/// 【使用方式】
+/// ```ignore
+/// // 从零构建
+/// let ctx = RequestContext::builder()
+///     .user_id("user-001")
+///     .organization_id("org-001")
+///     .build();
+///
+/// // 从现有上下文扩展
+/// let new_ctx = ctx.to_builder()
+///     .agent_id("agent-001")
+///     .project_id("proj-001")
+///     .build();
+/// ```
+#[derive(Debug)]
+pub struct RequestContextBuilder {
+    log_id: Option<String>,
+    user_id: Option<String>,
+    username: Option<String>,
+    organization_id: Option<String>,
+    agent_id: Option<String>,
+    task_id: Option<String>,
+    project_id: Option<String>,
+    model_provider_id: Option<String>,
+    model_name: Option<String>,
+    storage: Option<Storage>,
+}
+
+impl RequestContextBuilder {
+    pub fn new() -> Self {
+        Self {
+            log_id: None,
+            user_id: None,
+            username: None,
+            organization_id: None,
+            agent_id: None,
+            task_id: None,
+            project_id: None,
+            model_provider_id: None,
+            model_name: None,
+            storage: None,
+        }
+    }
+
+    pub fn log_id(mut self, log_id: impl Into<String>) -> Self {
+        self.log_id = Some(log_id.into());
+        self
+    }
+
+    pub fn user_id(mut self, user_id: impl Into<String>) -> Self {
+        self.user_id = Some(user_id.into());
+        self
+    }
+
+    pub fn username(mut self, username: impl Into<String>) -> Self {
+        self.username = Some(username.into());
+        self
+    }
+
+    pub fn organization_id(mut self, organization_id: impl Into<String>) -> Self {
+        self.organization_id = Some(organization_id.into());
+        self
+    }
+
+    pub fn agent_id(mut self, agent_id: impl Into<String>) -> Self {
+        self.agent_id = Some(agent_id.into());
+        self
+    }
+
+    pub fn task_id(mut self, task_id: impl Into<String>) -> Self {
+        self.task_id = Some(task_id.into());
+        self
+    }
+
+    pub fn project_id(mut self, project_id: impl Into<String>) -> Self {
+        self.project_id = Some(project_id.into());
+        self
+    }
+
+    pub fn model_provider_id(mut self, model_provider_id: impl Into<String>) -> Self {
+        self.model_provider_id = Some(model_provider_id.into());
+        self
+    }
+
+    pub fn model_name(mut self, model_name: impl Into<String>) -> Self {
+        self.model_name = Some(model_name.into());
+        self
+    }
+
+    pub fn storage(mut self, storage: Storage) -> Self {
+        self.storage = Some(storage);
+        self
+    }
+
+    pub fn build(self) -> RequestContext {
+        RequestContext {
+            log_id: self
+                .log_id
+                .unwrap_or_else(|| RequestContext::generate_log_id()),
+            user_id: self.user_id,
+            username: self.username,
+            organization_id: self.organization_id,
+            agent_id: self.agent_id,
+            task_id: self.task_id,
+            project_id: self.project_id,
+            model_provider_id: self.model_provider_id,
+            model_name: self.model_name,
+            storage: self.storage.unwrap_or_else(|| storage::get().clone()),
+        }
+    }
+}
+
+impl Default for RequestContextBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RequestContext {
+    /// 创建一个新的 Builder（从零构建）
+    pub fn builder() -> RequestContextBuilder {
+        RequestContextBuilder::new()
+    }
+
+    /// 从当前上下文克隆后创建 Builder（扩展已有上下文）
+    pub fn to_builder(&self) -> RequestContextBuilder {
+        RequestContextBuilder {
+            log_id: Some(self.log_id.clone()),
+            user_id: self.user_id.clone(),
+            username: self.username.clone(),
+            organization_id: self.organization_id.clone(),
+            agent_id: self.agent_id.clone(),
+            task_id: self.task_id.clone(),
+            project_id: self.project_id.clone(),
+            model_provider_id: self.model_provider_id.clone(),
+            model_name: self.model_name.clone(),
+            storage: Some(self.storage.clone()),
+        }
+    }
+
     /// 从 header 中提取上下文
     pub fn from_headers(headers: &http::HeaderMap) -> Self {
         // 1. 优先从 header 获取 log_id
         let log_id = headers
             .get(http_header::LOG_ID)
             .and_then(|v: &http::HeaderValue| v.to_str().ok())
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| Self::generate_log_id());
+            .map(|s| s.to_string());
 
         // 2. 从 header 获取用户信息
         let user_id = headers
@@ -59,90 +212,40 @@ impl RequestContext {
             .and_then(|v: &http::HeaderValue| v.to_str().ok())
             .map(|s| s.to_string());
 
-        Self {
-            log_id,
-            user_id,
-            username,
-            organization_id,
-            agent_id: None,
-            task_id: None,
-            project_id: None,
-            model_provider_id: None,
-            model_name: None,
-            storage: storage::get().clone(),
+        let mut builder = Self::builder();
+        if let Some(id) = log_id {
+            builder = builder.log_id(id);
         }
+        if let Some(id) = user_id {
+            builder = builder.user_id(id);
+        }
+        if let Some(name) = username {
+            builder = builder.username(name);
+        }
+        if let Some(id) = organization_id {
+            builder = builder.organization_id(id);
+        }
+        builder.build()
     }
 
     /// 生成新的上下文（带自动生成的 log_id）
     pub fn new(user_id: Option<String>, username: Option<String>) -> Self {
-        Self {
-            log_id: Self::generate_log_id(),
-            user_id,
-            username,
-            organization_id: None,
-            agent_id: None,
-            task_id: None,
-            project_id: None,
-            model_provider_id: None,
-            model_name: None,
-            storage: storage::get().clone(),
+        let mut builder = Self::builder();
+        if let Some(id) = user_id {
+            builder = builder.user_id(id);
         }
+        if let Some(name) = username {
+            builder = builder.username(name);
+        }
+        builder.build()
     }
 
     /// 从指定 Storage 创建上下文（测试辅助，由 test_support 调用）
     pub fn from_storage(user_id: &str, storage: Storage) -> Self {
-        Self {
-            log_id: Self::generate_log_id(),
-            user_id: Some(user_id.to_string()),
-            username: None,
-            organization_id: None,
-            agent_id: None,
-            task_id: None,
-            project_id: None,
-            model_provider_id: None,
-            model_name: None,
-            storage,
-        }
-    }
-
-    /// 设置 log_id（用于中间件处理时覆盖自动生成的 log_id）
-    pub fn set_log_id(&mut self, log_id: String) {
-        self.log_id = log_id;
-    }
-
-    /// 设置组织 ID
-    pub fn set_organization_id(&mut self, organization_id: impl Into<String>) {
-        self.organization_id = Some(organization_id.into());
-    }
-
-    /// 设置用户 ID
-    pub fn set_user_id(&mut self, user_id: impl Into<String>) {
-        self.user_id = Some(user_id.into());
-    }
-
-    /// 设置 Agent ID
-    pub fn set_agent_id(&mut self, agent_id: impl Into<String>) {
-        self.agent_id = Some(agent_id.into());
-    }
-
-    /// 设置 Task ID
-    pub fn set_task_id(&mut self, task_id: impl Into<String>) {
-        self.task_id = Some(task_id.into());
-    }
-
-    /// 设置 Project ID
-    pub fn set_project_id(&mut self, project_id: impl Into<String>) {
-        self.project_id = Some(project_id.into());
-    }
-
-    /// 设置 Model Provider ID
-    pub fn set_model_provider_id(&mut self, model_provider_id: impl Into<String>) {
-        self.model_provider_id = Some(model_provider_id.into());
-    }
-
-    /// 设置 Model 名称
-    pub fn set_model_name(&mut self, model_name: impl Into<String>) {
-        self.model_name = Some(model_name.into());
+        Self::builder()
+            .user_id(user_id.to_string())
+            .storage(storage)
+            .build()
     }
 
     /// 生成新的 log_id
