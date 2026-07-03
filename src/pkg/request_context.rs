@@ -183,6 +183,16 @@ impl RequestContext {
         self.project_id.as_ref()
     }
 
+    /// 获取当前 Organization ID
+    pub fn organization_id(&self) -> Option<&String> {
+        self.organization_id.as_ref()
+    }
+
+    /// 获取当前 User ID
+    pub fn user_id(&self) -> Option<&String> {
+        self.user_id.as_ref()
+    }
+
     /// 获取当前 Model Provider ID
     pub fn model_provider_id(&self) -> Option<&String> {
         self.model_provider_id.as_ref()
@@ -212,6 +222,11 @@ impl RequestContext {
     /// 获取统计模块
     pub fn stats(&self) -> &crate::pkg::stats::Stats {
         self.storage.stats()
+    }
+
+    /// 安全获取统计模块（返回 Option，避免未初始化时 panic）
+    pub fn stats_opt(&self) -> Option<&crate::pkg::stats::Stats> {
+        self.storage.stats_opt()
     }
 }
 

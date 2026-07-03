@@ -71,4 +71,57 @@ pub trait StatTable<E: StatEvent>: Send + Sync + Debug {
         conn: &mut duckdb::Connection,
         events: &[E],
     ) -> Result<()>;
+
+    /// 是否是专用表结构（有独立字段，而非 tags/metrics JSON）
+    ///
+    /// 默认表（如 default_events）使用 JSON 列存储 tags 和 metrics，
+    /// 专用表（如 model_call_events）使用独立字段。
+    fn is_dedicated_table(&self) -> bool {
+        false
+    }
+
+    /// 获取标签/维度列的 SQL 引用方式
+    ///
+    /// 默认表：json_extract(tags, '$.column')
+    /// 专用表：直接字段名
+    fn column_sql(&self, column: &str) -> String {
+        if self.is_dedicated_table() {
+            column.to_string()
+        } else {
+            format!("json_extract_string(tags, '${}')", column)
+        }
+    }
+
+    /// 获取指标列的 SQL 引用方式
+    ///
+    /// 默认表：json_extract(metrics, '$.metric')
+    /// 专用表：直接字段名
+    fn metric_sql(&self, metric: &str) -> String {
+        if self.is_dedicated_table() {
+            metric.to_string()
+        } else {
+            format!("json_extract(metrics, '${}')", metric)
+        }
+    }
+
+    /// 获取过滤条件（等于匹配）的 SQL 列引用方式
+    ///
+    /// 默认实现使用 `column_sql`，适用于大多数场景。
+    /// 默认表：json_extract_string(tags, '$.column')
+    /// 专用表：直接字段名
+    fn filter_equals_sql(&self, column: &str) -> String {
+        self.column_sql(column)
+    }
+
+    /// 获取过滤条件（范围匹配）的 SQL 列引用方式
+    ///
+    /// 默认表：json_extract(tags, '$.column')（返回 JSON 值，便于 CAST 成数值）
+    /// 专用表：直接字段名
+    fn filter_range_sql(&self, column: &str) -> String {
+        if self.is_dedicated_table() {
+            column.to_string()
+        } else {
+            format!("json_extract(tags, '${}')", column)
+        }
+    }
 }

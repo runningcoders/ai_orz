@@ -8,13 +8,14 @@ use common::error::Result;
 use async_trait::async_trait;
 use common::enums::ToolProtocol;
 use rig::tool::ToolError;
-use serde_json::Value;
+use serde_json::{json, Map, Value};
 use uuid::Uuid;
 
 use super::entry::{ToolCallEntry, ToolCallStatus};
 use super::logger::ToolCallLogger;
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
+use crate::pkg::stats::ToolCallEvent;
 use common::constants::utils::current_timestamp_ms;
 
 /// Logging decorator that wraps a Tool instance and automatically logs all calls
@@ -50,6 +51,8 @@ impl LoggingDecorator {
         let result = self.inner.call(ctx.clone(), args.clone()).await;
         let finished_at = current_timestamp_ms();
         let duration_ms = finished_at - started_at;
+
+        let args_cloned = args.clone();
 
         // Parse result for logging
         let output_json: Option<Value> = match &result {
@@ -87,7 +90,45 @@ impl LoggingDecorator {
         // Write the log entry - ignore logging errors, don't fail the actual call
         let _ = ToolCallLogger::get().log_call(&po.id, entry.clone());
 
+        // Record tool call stat event for metrics aggregation
+        // This covers ALL tool calls (manual + auto), ensuring complete stats coverage
+        let _ = record_tool_call_stat(ctx.clone(), &entry, &args_cloned);
+
         (result, entry)
+    }
+}
+
+fn record_tool_call_stat(ctx: RequestContext, entry: &ToolCallEntry, args: &Value) {
+    let args_len = serde_json::to_string(args)
+        .map(|s| s.len() as u64)
+        .unwrap_or(0);
+    let result_len = entry.output
+        .as_ref()
+        .and_then(|v| serde_json::to_string(v).ok())
+        .map(|s| s.len() as u64)
+        .unwrap_or(0);
+
+    let status = if matches!(entry.status, ToolCallStatus::Completed) {
+        "success".to_string()
+    } else {
+        "failed".to_string()
+    };
+
+    let timestamp = entry.finished_at as i64;
+    let event = ToolCallEvent::new(timestamp)
+        .with_tool_id(entry.tool_id.clone())
+        .with_tool_name(entry.tool_name.clone())
+        .with_agent_id(entry.agent_id.clone())
+        .with_project_id(entry.project_id.clone())
+        .with_task_id(entry.task_id.clone())
+        .with_args_len(args_len)
+        .with_result_len(result_len)
+        .with_duration_ms(entry.duration_ms)
+        .with_status(status);
+
+    if let Some(stats) = ctx.stats_opt() {
+        let ctx_clone = ctx.clone();
+        let _ = stats.record(ctx_clone, event);
     }
 }
 

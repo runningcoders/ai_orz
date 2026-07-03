@@ -139,6 +139,11 @@ impl Storage {
         self.inner.stats.get().expect("Stats not initialized")
     }
 
+    /// 安全获取 Stats 统计模块（返回 Option，避免未初始化时 panic）
+    pub fn stats_opt(&self) -> Option<&Stats> {
+        self.inner.stats.get()
+    }
+
     /// 初始化 Stats（首次设置，不可重复）
     /// 生产代码由 `Storage::new()` 内部调用，测试代码可通过此方法注入
     pub fn init_stats(&self, stats: Stats) -> common::error::Result<()> {

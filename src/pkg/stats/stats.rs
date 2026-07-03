@@ -1,7 +1,7 @@
 //! Top-level Stats struct implementation
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::any::TypeId;
 
 use common::error::{Error, Result};
@@ -85,7 +85,9 @@ pub struct Stats {
     /// Batch size for automatic flush
     batch_size: usize,
     /// Registered tables: event TypeId → (table name, erased table, erased buffer)
-    tables: Mutex<HashMap<TypeId, (String, Box<dyn ErasedStatTable>, ErasedBuffer)>>,
+    tables: Mutex<HashMap<TypeId, (String, Arc<dyn ErasedStatTable>, ErasedBuffer)>>,
+    /// Registered tables by name: table name → erased table
+    tables_by_name: Mutex<HashMap<String, Arc<dyn ErasedStatTable>>>,
 }
 
 impl Stats {
@@ -98,6 +100,7 @@ impl Stats {
             conn: Mutex::new(conn),
             batch_size,
             tables: Mutex::new(HashMap::new()),
+            tables_by_name: Mutex::new(HashMap::new()),
         })
     }
 
@@ -124,10 +127,10 @@ impl Stats {
     {
         let type_id = TypeId::of::<E>();
         let table_name = table.table_name().to_string();
-        let erased = ErasedWrapper {
+        let erased: Arc<dyn ErasedStatTable> = Arc::new(ErasedWrapper {
             table,
             _marker: std::marker::PhantomData,
-        };
+        });
 
         // Create table if not exists
         let mut conn_guard = self.conn.lock().map_err(|e| {
@@ -140,8 +143,13 @@ impl Stats {
         })?;
         tables.insert(
             type_id,
-            (table_name, Box::new(erased), ErasedBuffer::new())
+            (table_name.clone(), erased.clone(), ErasedBuffer::new())
         );
+
+        let mut tables_by_name = self.tables_by_name.lock().map_err(|e| {
+            Error::internal(format!("Failed to lock tables_by_name: {}", e))
+        })?;
+        tables_by_name.insert(table_name, erased);
 
         Ok(())
     }
@@ -156,6 +164,14 @@ impl Stats {
         let type_id = TypeId::of::<E>();
         let tables = self.tables.lock().ok()?;
         tables.get(&type_id).map(|(name, _, _)| name.clone())
+    }
+
+    /// Get the registered table by table name
+    ///
+    /// Returns None if no table is registered with this name.
+    pub fn get_table_by_name(&self, name: &str) -> Option<Arc<dyn ErasedStatTable>> {
+        let tables_by_name = self.tables_by_name.lock().ok()?;
+        tables_by_name.get(name).cloned()
     }
 
     /// Record a statistic event
@@ -291,8 +307,8 @@ impl Stats {
         time_range: Option<(i64, i64)>,
     ) -> Result<Vec<AggregationRow>> {
         let table = table_name.unwrap_or("default_events");
-        let (sql, params) = self.build_aggregation_query(table, filters, group_by, aggregations, time_range);
-        
+        let (sql, params) = self.build_aggregation_query(table, filters, group_by, aggregations, time_range)?;
+
         let json_rows = self.query(ctx, &sql, &params).await?;
         
         // Convert JSON rows to AggregationRow
@@ -336,18 +352,20 @@ impl Stats {
         group_by: &[&str],
         aggregations: &[StatAggregation],
         time_range: Option<(i64, i64)>,
-    ) -> (String, Vec<StatParam>) {
+    ) -> Result<(String, Vec<StatParam>)> {
+        let table = self.get_table_by_name(table_name)
+            .ok_or_else(|| Error::internal(format!("Table not found: {}", table_name)))?;
         let mut sql = String::from("SELECT ");
         let mut params: Vec<StatParam> = Vec::new();
-        
+
         // Add group by columns
         for (i, col) in group_by.iter().enumerate() {
             if i > 0 {
                 sql.push_str(", ");
             }
-            sql.push_str(&format!("json_extract_string(tags, '$.{}') AS {}", col, col));
+            sql.push_str(&format!("{} AS {}", table.column_sql(col), col));
         }
-        
+
         // Add aggregations
         if !group_by.is_empty() || !aggregations.is_empty() {
             if !group_by.is_empty() {
@@ -364,62 +382,32 @@ impl Stats {
                 }
                 StatAggregation::Sum(metric) => {
                     sql.push_str(&format!(
-                        "COALESCE(SUM(CAST(json_extract(metrics, '$.{}') AS DOUBLE)), 0) AS {}",
-                        metric, metric
+                        "COALESCE(SUM(CAST({} AS DOUBLE)), 0) AS {}",
+                        table.metric_sql(metric), metric
                     ));
                 }
                 StatAggregation::Avg(metric) => {
                     sql.push_str(&format!(
-                        "COALESCE(AVG(CAST(json_extract(metrics, '$.{}') AS DOUBLE)), 0) AS {}",
-                        metric, metric
+                        "COALESCE(AVG(CAST({} AS DOUBLE)), 0) AS {}",
+                        table.metric_sql(metric), metric
                     ));
                 }
             }
         }
-        
+
         // FROM clause
         sql.push_str(&format!(" FROM {} WHERE 1=1", table_name));
-        
+
         // Add time range filter if provided
         if let Some((start, end)) = time_range {
             sql.push_str(" AND timestamp >= ? AND timestamp <= ?");
             params.push(StatParam::Int(start));
             params.push(StatParam::Int(end));
         }
-        
+
         // Add other filters
-        for filter in filters {
-            match filter {
-                StatFilter::Equals { key, value } => {
-                    // For equality on JSON field
-                    sql.push_str(&format!(
-                        " AND json_extract(tags, '$.{}') = ?",
-                        key
-                    ));
-                    // DuckDB needs string literal for JSON comparison
-                    let json_str = value.to_string();
-                    params.push(StatParam::Str(json_str));
-                }
-                StatFilter::Range { key, min, max } => {
-                    // Range comparison on JSON field
-                    if min.is_some() {
-                        sql.push_str(&format!(
-                            " AND CAST(json_extract(tags, '$.{}') AS DOUBLE) >= ?",
-                            key
-                        ));
-                        params.push(StatParam::Double(min.unwrap()));
-                    }
-                    if max.is_some() {
-                        sql.push_str(&format!(
-                            " AND CAST(json_extract(tags, '$.{}') AS DOUBLE) <= ?",
-                            key
-                        ));
-                        params.push(StatParam::Double(max.unwrap()));
-                    }
-                }
-            }
-        }
-        
+        let mut sql = self.append_filters(sql, filters, &mut params, table.as_ref());
+
         // Add GROUP BY if needed
         if !group_by.is_empty() {
             sql.push_str(" GROUP BY ");
@@ -430,11 +418,10 @@ impl Stats {
                 sql.push_str(col);
             }
             sql.push_str(" ORDER BY ");
-            // Order by first group column
             sql.push_str(group_by[0]);
         }
-        
-        (sql, params)
+
+        Ok((sql, params))
     }
 
     /// Query time series data with specified interval
@@ -449,30 +436,35 @@ impl Stats {
         time_range: (i64, i64),
     ) -> Result<Vec<TimeSeriesPoint>> {
         let table = table_name.unwrap_or("default_events");
-        
+        let table_meta = self.get_table_by_name(table)
+            .ok_or_else(|| Error::internal(format!("Table not found: {}", table)))?;
+
         let truncate_func = match interval {
             StatsInterval::Hourly => "(timestamp / 3600000) * 3600000",
             StatsInterval::Daily => "(timestamp / 86400000) * 86400000",
         };
-        
+
+        let tokens_input_col = table_meta.metric_sql("tokens_input");
+        let tokens_output_col = table_meta.metric_sql("tokens_output");
+
         let sql = format!(
             "SELECT
                 {} AS interval_start,
-                COALESCE(SUM(CAST(json_extract(metrics, '$.tokens_input') AS DOUBLE)), 0) AS tokens_input,
-                COALESCE(SUM(CAST(json_extract(metrics, '$.tokens_output') AS DOUBLE)), 0) AS tokens_output,
+                COALESCE(SUM(CAST({} AS DOUBLE)), 0) AS tokens_input,
+                COALESCE(SUM(CAST({} AS DOUBLE)), 0) AS tokens_output,
                 COUNT(*) AS call_count
              FROM {}
              WHERE timestamp >= ? AND timestamp <= ?",
-            truncate_func, table
+            truncate_func, tokens_input_col, tokens_output_col, table
         );
-        
+
         let mut params: Vec<StatParam> = vec![
             StatParam::Int(time_range.0),
             StatParam::Int(time_range.1),
         ];
-        
+
         // Add additional filters
-        let sql = self.append_filters(sql, filters, &mut params);
+        let sql = self.append_filters(sql, filters, &mut params, table_meta.as_ref());
 
         // Group by interval
         let sql = format!("{} GROUP BY interval_start ORDER BY interval_start", sql);
@@ -516,31 +508,32 @@ impl Stats {
         mut sql: String,
         filters: &[StatFilter],
         params: &mut Vec<StatParam>,
+        table: &dyn ErasedStatTable,
     ) -> String {
         for filter in filters {
             match filter {
                 StatFilter::Equals { key, value } => {
-                    sql.push_str(&format!(
-                        " AND json_extract(tags, '$.{}') = ?",
-                        key
-                    ));
-                    let json_str = value.to_string();
-                    params.push(StatParam::Str(json_str));
+                    sql.push_str(&format!(" AND {} = ?", table.filter_equals_sql(key)));
+                    let s = match value {
+                        JsonValue::String(s) => s.clone(),
+                        _ => value.to_string(),
+                    };
+                    params.push(StatParam::Str(s));
                 }
                 StatFilter::Range { key, min, max } => {
-                    if min.is_some() {
+                    if let Some(min_val) = min {
                         sql.push_str(&format!(
-                            " AND CAST(json_extract(tags, '$.{}') AS DOUBLE) >= ?",
-                            key
+                            " AND CAST({} AS DOUBLE) >= ?",
+                            table.filter_range_sql(key)
                         ));
-                        params.push(StatParam::Double(min.unwrap()));
+                        params.push(StatParam::Double(*min_val));
                     }
-                    if max.is_some() {
+                    if let Some(max_val) = max {
                         sql.push_str(&format!(
-                            " AND CAST(json_extract(tags, '$.{}') AS DOUBLE) <= ?",
-                            key
+                            " AND CAST({} AS DOUBLE) <= ?",
+                            table.filter_range_sql(key)
                         ));
-                        params.push(StatParam::Double(max.unwrap()));
+                        params.push(StatParam::Double(*max_val));
                     }
                 }
             }

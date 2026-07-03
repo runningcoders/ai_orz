@@ -7,7 +7,7 @@
 //! - 工具调用审计
 
 use crate::pkg::request_context::RequestContext;
-use crate::pkg::stats::{ModelCallEvent, ToolCallEvent};
+use crate::pkg::stats::ModelCallEvent;
 use rig::agent::{HookAction, PromptHook, ToolCallHookAction};
 use rig::completion::{CompletionModel, CompletionResponse, Message};
 use rig::wasm_compat::WasmCompatSend;
@@ -101,15 +101,11 @@ where
         );
 
         let ctx = self.ctx.clone();
-        let tags = self.build_tags();
-        let mut tags_map = tags;
-        tags_map.insert("event_type".into(), json!("completion"));
-        let metrics = json!({
-            "call_count": 1,
-            "tokens_input": usage.input_tokens,
-            "tokens_output": usage.output_tokens,
-            "total_tokens": usage.total_tokens,
-        });
+        let agent_id = self.ctx.agent_id().cloned();
+        let project_id = self.ctx.project_id().cloned();
+        let task_id = self.ctx.task_id().cloned();
+        let organization_id = self.ctx.organization_id().cloned();
+        let user_id = self.ctx.user_id().cloned();
 
         Box::pin(async move {
             let timestamp = std::time::SystemTime::now()
@@ -117,8 +113,14 @@ where
                 .map(|d| d.as_millis() as i64)
                 .unwrap_or(0);
             let event = ModelCallEvent::new(timestamp)
-                .with_tags(serde_json::Value::Object(tags_map))
-                .with_metrics(metrics);
+                .with_agent_id(agent_id)
+                .with_project_id(project_id)
+                .with_task_id(task_id)
+                .with_organization_id(organization_id)
+                .with_user_id(user_id)
+                .with_tokens_input(usage.input_tokens)
+                .with_tokens_output(usage.output_tokens)
+                .with_total_tokens(usage.total_tokens);
 
             if let Err(e) = ctx.stats().record(ctx.clone(), event).await {
                 warn!(
@@ -153,7 +155,8 @@ where
 
     /// Called after a tool call has been executed.
     ///
-    /// 自动记录工具调用到 Stats，便于后续统计工具调用次数、QPS 等。
+    /// 工具调用统计已在 ToolCallLoggingDecorator 中统一记录，
+    /// 此处仅保留日志记录用于调试。
     fn on_tool_result(
         &self,
         tool_name: &str,
@@ -172,37 +175,6 @@ where
             "Tool call completed"
         );
 
-        let ctx = self.ctx.clone();
-        let tool_name = tool_name.to_string();
-        let args_len = args.len() as u64;
-        let result_len = result.len() as u64;
-        let mut tags = self.build_tags();
-        tags.insert("event_type".into(), json!("tool_call"));
-        tags.insert("tool_name".into(), json!(tool_name));
-
-        let metrics = json!({
-            "call_count": 1,
-            "args_len": args_len,
-            "result_len": result_len,
-        });
-
-        Box::pin(async move {
-            let timestamp = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as i64)
-                .unwrap_or(0);
-            let event = ToolCallEvent::new(timestamp)
-                .with_tags(serde_json::Value::Object(tags))
-                .with_metrics(metrics);
-
-            if let Err(e) = ctx.stats().record(ctx.clone(), event).await {
-                warn!(
-                    log_id = ctx.log_id,
-                    error = %e,
-                    "Failed to record stats event for tool call"
-                );
-            }
-            HookAction::cont()
-        })
+        Box::pin(async move { HookAction::cont() })
     }
 }

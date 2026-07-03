@@ -24,17 +24,14 @@ async fn setup_test_env(
     let pool = SqlitePool::connect("sqlite::memory:").await?;
     let tmp_ctx = request_context_test_support::new_test_ctx("tmp-user", pool.clone());
 
-    let now = Utc::now().timestamp();
+    let now = Utc::now().timestamp_millis();
     for i in 0..event_count {
         let event = ModelCallEvent::new(now + i as i64 * 1000)
-            .with_tags(json!({
-                "project_id": project_id,
-                "agent_id": "agent-test",
-            }))
-            .with_metrics(json!({
-                "tokens_input": 100 + i * 10,
-                "tokens_output": 50 + i * 5,
-            }));
+            .with_project_id(Some(project_id.to_string()))
+            .with_agent_id(Some("agent-test".to_string()))
+            .with_tokens_input((100 + i * 10) as u64)
+            .with_tokens_output((50 + i * 5) as u64)
+            .with_total_tokens((150 + i * 15) as u64);
         stats.record(tmp_ctx.clone(), event).await?;
     }
     stats.flush_all(tmp_ctx).await?;
@@ -68,10 +65,10 @@ async fn test_query_model_call_time_series() -> Result<()> {
     let project_id = "project-ts-test";
     let (ctx, dao) = setup_test_env(project_id, 3).await?;
 
-    let now = Utc::now().timestamp();
+    let now = Utc::now().timestamp_millis();
     let query = ProjectStatsQuery {
         project_id: project_id.to_string(),
-        time_range: Some((now - 10000, now + 10000)),
+        time_range: Some((now - 10000000, now + 10000000)),
         interval: Some(StatsInterval::Hourly),
         ..Default::default()
     };
@@ -132,31 +129,25 @@ async fn test_filter_by_different_project() -> Result<()> {
     let pool = SqlitePool::connect("sqlite::memory:").await?;
     let tmp_ctx = request_context_test_support::new_test_ctx("tmp-user", pool.clone());
 
-    let now = Utc::now().timestamp();
+    let now = Utc::now().timestamp_millis();
 
     for i in 0..3 {
         let event = ModelCallEvent::new(now + i as i64 * 1000)
-            .with_tags(json!({
-                "project_id": project_a,
-                "agent_id": "agent-test",
-            }))
-            .with_metrics(json!({
-                "tokens_input": 100 + i * 10,
-                "tokens_output": 50 + i * 5,
-            }));
+            .with_project_id(Some(project_a.to_string()))
+            .with_agent_id(Some("agent-test".to_string()))
+            .with_tokens_input((100 + i * 10) as u64)
+            .with_tokens_output((50 + i * 5) as u64)
+            .with_total_tokens((150 + i * 15) as u64);
         stats.record(tmp_ctx.clone(), event).await?;
     }
 
     for i in 0..2 {
         let event = ModelCallEvent::new(now + i as i64 * 1000)
-            .with_tags(json!({
-                "project_id": project_b,
-                "agent_id": "agent-test",
-            }))
-            .with_metrics(json!({
-                "tokens_input": 200 + i * 10,
-                "tokens_output": 100 + i * 5,
-            }));
+            .with_project_id(Some(project_b.to_string()))
+            .with_agent_id(Some("agent-test".to_string()))
+            .with_tokens_input((200 + i * 10) as u64)
+            .with_tokens_output((100 + i * 5) as u64)
+            .with_total_tokens((300 + i * 15) as u64);
         stats.record(tmp_ctx.clone(), event).await?;
     }
 

@@ -15,6 +15,16 @@ pub(crate) trait ErasedStatTable: Send + Sync + Debug {
     fn create_table(&self, conn: &mut Connection) -> Result<()>;
     /// 批量擦除事件插入，向下转换为具体类型后调用 table.bulk_insert_events
     fn bulk_insert_erased(&self, conn: &mut Connection, events: Vec<Box<dyn Any + Send + Sync>>) -> Result<()>;
+    /// 是否是专用表结构
+    fn is_dedicated_table(&self) -> bool;
+    /// 获取标签/维度列的 SQL 引用方式
+    fn column_sql(&self, column: &str) -> String;
+    /// 获取指标列的 SQL 引用方式
+    fn metric_sql(&self, metric: &str) -> String;
+    /// 获取过滤条件（等于匹配）的 SQL 列引用方式
+    fn filter_equals_sql(&self, column: &str) -> String;
+    /// 获取过滤条件（范围匹配）的 SQL 列引用方式
+    fn filter_range_sql(&self, column: &str) -> String;
 }
 
 // Instead of generic impl on T, wrap T in a newtype that holds the marker
@@ -49,6 +59,26 @@ where
             }
         }
         self.table.bulk_insert_events(conn, &concrete_events)
+    }
+
+    fn is_dedicated_table(&self) -> bool {
+        self.table.is_dedicated_table()
+    }
+
+    fn column_sql(&self, column: &str) -> String {
+        self.table.column_sql(column)
+    }
+
+    fn metric_sql(&self, metric: &str) -> String {
+        self.table.metric_sql(metric)
+    }
+
+    fn filter_equals_sql(&self, column: &str) -> String {
+        self.table.filter_equals_sql(column)
+    }
+
+    fn filter_range_sql(&self, column: &str) -> String {
+        self.table.filter_range_sql(column)
     }
 }
 
