@@ -11,6 +11,8 @@ use uuid::Uuid;
 use super::ProjectDomainImpl;
 use common::error::{Result, err, bail_err};
 
+use crate::enrich_ctx;
+
 #[async_trait::async_trait]
 impl super::ProjectManage for ProjectDomainImpl {
     /// 创建新项目
@@ -91,6 +93,10 @@ impl super::ProjectManage for ProjectDomainImpl {
         let Some(mut project) = self.project_dal.find_by_id(ctx.clone(), project_id).await? else {
             bail_err!(NotFound, "Project not found: {}", project_id);
         };
+
+        // 补充 Project 上下文到 ctx
+        let ctx = enrich_ctx!(&ctx, &project);
+
         project.start();
         project.po.modified_by = modified_by;
         self.project_dal.update(ctx, &project).await?;
@@ -107,6 +113,9 @@ impl super::ProjectManage for ProjectDomainImpl {
         let Some(mut project) = self.project_dal.find_by_id(ctx.clone(), project_id).await? else {
             bail_err!(NotFound, "Project not found: {}", project_id);
         };
+
+        let ctx = enrich_ctx!(&ctx, &project);
+
         project.complete();
         project.po.modified_by = modified_by;
         self.project_dal.update(ctx, &project).await?;
@@ -123,6 +132,9 @@ impl super::ProjectManage for ProjectDomainImpl {
         let Some(mut project) = self.project_dal.find_by_id(ctx.clone(), project_id).await? else {
             bail_err!(NotFound, "Project not found: {}", project_id);
         };
+
+        let ctx = enrich_ctx!(&ctx, &project);
+
         project.po.status = ProjectStatus::Archived;
         project.po.modified_by = modified_by;
         self.project_dal.update(ctx, &project).await?;
@@ -143,6 +155,8 @@ impl super::ProjectManage for ProjectDomainImpl {
         let Some(mut project) = self.project_dal.find_by_id(ctx.clone(), project_id).await? else {
             bail_err!(NotFound, "Project not found: {}", project_id);
         };
+
+        let ctx = enrich_ctx!(&ctx, &project);
 
         if let Some(name) = name {
             project.po.name = name;
@@ -169,6 +183,9 @@ impl super::ProjectManage for ProjectDomainImpl {
         project: &mut Project,
         target_status: ProjectStatus,
     ) -> Result<()> {
+        // 补充 Project 上下文
+        let ctx = enrich_ctx!(&ctx, &*project);
+
         let current_status = project.po.status;
 
         if target_status == ProjectStatus::Deleted {

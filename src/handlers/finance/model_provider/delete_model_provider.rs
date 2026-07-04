@@ -6,6 +6,8 @@ use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{DeleteModelProviderRequest, DeleteModelProviderResponse};
 
+use crate::enrich_ctx;
+
 /// Delete an existing model provider configuration
 #[register_handler_tool(
     id = "delete_model_provider",
@@ -23,6 +25,8 @@ pub async fn delete_model_provider(
         .get_model_provider(ctx.clone(), &params.id)
         .await?
         .ok_or_else(|| common::error::Error::not_found(format!("ModelProvider {} not found", params.id)))?;
+
+    let ctx = enrich_ctx!(&ctx, &provider);
 
     domain()
         .model_provider_manage()

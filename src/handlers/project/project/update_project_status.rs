@@ -7,6 +7,8 @@ use crate::service::domain::project::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateProjectStatusRequest, UpdateProjectStatusResponse};
 
+use crate::enrich_ctx;
+
 /// Update project status
 #[register_handler_tool(
     id = "update_project_status",
@@ -19,11 +21,14 @@ pub async fn update_project_status(
     ctx: RequestContext,
     params: UpdateProjectStatusRequest,
 ) -> Result<UpdateProjectStatusResponse> {
-    let mut project = domain()
+    let project = domain()
         .project_manage()
         .get(ctx.clone(), &params.id)
         .await?
         .ok_or_else(|| common::error::Error::not_found(format!("Project {} not found", params.id)))?;
+
+    let ctx = enrich_ctx!(&ctx, &project);
+    let mut project = project;
 
     domain()
         .project_manage()

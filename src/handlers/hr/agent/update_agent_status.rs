@@ -6,6 +6,8 @@ use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateAgentStatusRequest, UpdateAgentStatusResponse};
 
+use crate::enrich_ctx;
+
 /// Update the status of an AI agent (active/disabled)
 #[register_handler_tool(
     id = "update_agent_status",
@@ -18,11 +20,14 @@ pub async fn update_agent_status(
     ctx: RequestContext,
     params: UpdateAgentStatusRequest,
 ) -> Result<UpdateAgentStatusResponse> {
-    let mut agent = domain()
+    let agent = domain()
         .agent_manage()
         .get_agent(ctx.clone(), &params.id)
         .await?
         .ok_or_else(|| common::error::Error::not_found(format!("Agent {} not found", params.id)))?;
+
+    let ctx = enrich_ctx!(&ctx, &agent);
+    let mut agent = agent;
 
     domain()
         .agent_manage()

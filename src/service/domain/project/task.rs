@@ -11,6 +11,8 @@ use uuid::Uuid;
 
 use super::ProjectDomainImpl;
 
+use crate::enrich_ctx;
+
 #[async_trait::async_trait]
 impl super::TaskManage for ProjectDomainImpl {
     /// 创建新任务
@@ -154,6 +156,8 @@ impl super::TaskManage for ProjectDomainImpl {
             bail_err!(NotFound, "Task not found: {}", task_id);
         };
 
+        let ctx = enrich_ctx!(&ctx, &task);
+
         if let Some(title) = title {
             task.po.title = title;
         }
@@ -192,6 +196,9 @@ impl super::TaskManage for ProjectDomainImpl {
         let Some(mut task) = self.task_dal.find_by_id(ctx.clone(), task_id).await? else {
             bail_err!(NotFound, "Task not found: {}", task_id);
         };
+
+        let ctx = enrich_ctx!(&ctx, &task);
+
         task.start();
         task.po.modified_by = modified_by;
         self.task_dal.update(ctx, &task).await?;
@@ -208,6 +215,9 @@ impl super::TaskManage for ProjectDomainImpl {
         let Some(mut task) = self.task_dal.find_by_id(ctx.clone(), task_id).await? else {
             bail_err!(NotFound, "Task not found: {}", task_id);
         };
+
+        let ctx = enrich_ctx!(&ctx, &task);
+
         task.complete();
         task.po.modified_by = modified_by;
         self.task_dal.update(ctx, &task).await?;
@@ -224,6 +234,9 @@ impl super::TaskManage for ProjectDomainImpl {
         let Some(mut task) = self.task_dal.find_by_id(ctx.clone(), task_id).await? else {
             bail_err!(NotFound, "Task not found: {}", task_id);
         };
+
+        let ctx = enrich_ctx!(&ctx, &task);
+
         task.cancel();
         task.po.modified_by = modified_by;
         self.task_dal.update(ctx, &task).await?;
@@ -237,6 +250,9 @@ impl super::TaskManage for ProjectDomainImpl {
         task: &mut Task,
         target_status: TaskStatus,
     ) -> Result<()> {
+        // 补充 Task 上下文
+        let ctx = enrich_ctx!(&ctx, &*task);
+
         let current_status = task.po.status;
 
         if target_status == TaskStatus::Cancelled {

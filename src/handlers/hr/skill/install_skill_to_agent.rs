@@ -6,6 +6,8 @@ use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{InstallSkillToAgentRequest, InstallSkillToAgentResponse};
 
+use crate::enrich_ctx;
+
 use super::response::to_detail;
 
 /// Install an existing public skill to your agent. Creates a private copy of the skill for your agent.
@@ -20,6 +22,8 @@ pub async fn install_skill_to_agent(
     ctx: RequestContext,
     params: InstallSkillToAgentRequest,
 ) -> Result<InstallSkillToAgentResponse> {
+    let ctx = ctx.to_builder().agent_id(&params.agent_id).build();
+
     let skill = domain()
         .skill_manage()
         .install_to_agent(ctx, &params.skill_id, &params.agent_id)

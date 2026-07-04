@@ -7,6 +7,8 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateAgentRequest, UpdateAgentResponse};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::enrich_ctx;
+
 /// Update the metadata and configuration of an existing AI agent
 #[register_handler_tool(
     id = "update_agent",
@@ -31,6 +33,8 @@ pub async fn update_agent(
         .get_agent(ctx.clone(), &params.id)
         .await?
         .ok_or_else(|| common::error::Error::not_found(format!("Agent {} not found", params.id)))?;
+
+    let ctx = enrich_ctx!(&ctx, &agent);
 
     // Update fields
     if let Some(name) = params.name {

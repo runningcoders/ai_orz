@@ -8,6 +8,8 @@ use common::api::{CreateTaskRequest, CreateTaskResponse};
 use common::enums::AssigneeType;
 use common::error::{Result, err, bail_err};
 
+use crate::enrich_ctx;
+
 /// Create a new task
 #[register_handler_tool(
     id = "create_task",
@@ -30,6 +32,8 @@ pub async fn create_task(
     if params.assignee_id.trim().is_empty() {
         bail_err!(InvalidRequest, "assignee_id 不能为空");
     }
+
+    let ctx = ctx.to_builder().try_project_id(params.project_id.as_deref()).build();
 
     let task = domain()
         .task_manage()

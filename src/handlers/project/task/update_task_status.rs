@@ -7,6 +7,8 @@ use crate::service::domain::project::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateTaskStatusRequest, UpdateTaskStatusResponse};
 
+use crate::enrich_ctx;
+
 /// Update task status with state transition validation
 #[register_handler_tool(
     id = "update_task_status",
@@ -19,11 +21,14 @@ pub async fn update_task_status(
     ctx: RequestContext,
     params: UpdateTaskStatusRequest,
 ) -> Result<UpdateTaskStatusResponse> {
-    let mut task = domain()
+    let task = domain()
         .task_manage()
         .get(ctx.clone(), &params.id)
         .await?
         .ok_or_else(|| common::error::Error::not_found(format!("Task {} not found", params.id)))?;
+
+    let ctx = enrich_ctx!(&ctx, &task);
+    let mut task = task;
 
     domain()
         .task_manage()

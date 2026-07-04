@@ -6,6 +6,8 @@ use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{DeleteAgentRequest, DeleteAgentResponse};
 
+use crate::enrich_ctx;
+
 /// Delete an existing AI agent
 #[register_handler_tool(
     id = "delete_agent",
@@ -23,6 +25,8 @@ pub async fn delete_agent(
         .get_agent(ctx.clone(), &params.id)
         .await?
         .ok_or_else(|| common::error::Error::not_found(format!("Agent {} not found", params.id)))?;
+
+    let ctx = enrich_ctx!(&ctx, &agent);
 
     domain().agent_manage().delete_agent(ctx, &agent).await?;
 

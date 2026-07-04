@@ -6,6 +6,8 @@ use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateModelProviderRequest, UpdateModelProviderResponse};
 
+use crate::enrich_ctx;
+
 /// Get current timestamp
 fn current_timestamp() -> i64 {
     std::time::SystemTime::now()
@@ -31,6 +33,8 @@ pub async fn update_model_provider(
         .get_model_provider(ctx.clone(), &params.id)
         .await?
         .ok_or_else(|| common::error::Error::not_found(format!("ModelProvider {} not found", params.id)))?;
+
+    let ctx = enrich_ctx!(&ctx, &provider);
 
     // Update fields
     if let Some(name) = params.name {

@@ -6,6 +6,8 @@ use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CallModelRequest, CallModelResponse};
 
+use crate::enrich_ctx;
+
 /// Call a configured model provider to generate text completion with a given prompt
 #[register_handler_tool(
     id = "call_model",
@@ -24,6 +26,8 @@ pub async fn call_model(
         .get_model_provider(ctx.clone(), &params.id)
         .await?
         .ok_or_else(|| common::error::Error::not_found(format!("ModelProvider {} not found", params.id)))?;
+
+    let ctx = enrich_ctx!(&ctx, &provider);
 
     // 2. Call the model to generate result
     let result = domain()

@@ -8,6 +8,8 @@ use crate::service::domain::hr::{AgentManage, HrDomainImpl};
 use common::enums::AgentStatus;
 use common::error::{Result, err, bail_err};
 
+use crate::enrich_ctx;
+
 #[async_trait::async_trait]
 impl AgentManage for HrDomainImpl {
     /// 创建 Agent
@@ -79,6 +81,9 @@ impl AgentManage for HrDomainImpl {
         agent: &mut Agent,
         target_status: AgentStatus,
     ) -> Result<()> {
+        // 补充 Agent 上下文
+        let ctx = enrich_ctx!(&ctx, &*agent);
+
         let current_status = agent.po.status.clone();
 
         // 状态机校验：定义合法的流转路径
@@ -129,6 +134,9 @@ impl AgentManage for HrDomainImpl {
         if agent.po.status != AgentStatus::PendingOnboard {
             bail_err!(InvalidRequest, "Agent 状态必须是 PendingOnboard 才能入职，当前状态：{:?}", agent.po.status);
         }
+
+        // 补充 Agent 上下文到 ctx，后续调用链可复用
+        let ctx = enrich_ctx!(&ctx, agent);
 
         // 2. 校验至少绑定了 1 个工具
         let tools = self

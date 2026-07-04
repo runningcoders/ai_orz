@@ -11,6 +11,8 @@ use crate::service::domain::runtime::{
 
 use super::context_assembly::PromptBuilder;
 
+use crate::enrich_ctx;
+
 #[async_trait::async_trait]
 impl RuntimeAwakening for RuntimeDomainImpl {
     async fn awaken(
@@ -19,6 +21,9 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         agent: &Agent,
         message: &Message,
     ) -> Result<AwakeningResult> {
+        // 补充 Agent 上下文到 ctx，后续调用链可复用
+        let ctx = enrich_ctx!(&ctx, agent);
+
         // Step 1: 读取最近短期记忆
         let recent_memories = self
             .memory()

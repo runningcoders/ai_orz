@@ -6,6 +6,8 @@ use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{BindToolToAgentRequest, BindToolToAgentResponse};
 
+use crate::enrich_ctx;
+
 /// Bind an existing tool to an agent so the agent can use it for tool calling
 #[register_handler_tool(
     id = "bind_tool_to_agent",
@@ -23,6 +25,8 @@ pub async fn bind_tool_to_agent(
         .get_tool(ctx.clone(), &params.tool_id)
         .await?
         .ok_or_else(|| common::error::Error::not_found(format!("Tool {} not found", params.tool_id)))?;
+
+    let ctx = ctx.to_builder().agent_id(&params.agent_id).build();
 
     domain()
         .tool_provider_manage()
