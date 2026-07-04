@@ -6,6 +6,9 @@ use syn::{Ident, ItemFn, Lit, LitStr, Meta, MetaNameValue, Type};
 mod stats_event;
 use stats_event::derive_stats_event as stats_event_derive;
 
+mod log_fields;
+use log_fields::derive_log_fields as log_fields_derive;
+
 /// Derive macro to mark HTTP params and their source locations.
 /// This is used together with #[generate_http_handler] to automatically
 /// collect which fields come from path/query/body.
@@ -36,7 +39,7 @@ pub fn derive_params(input: TokenStream) -> TokenStream {
 ///     pub tokens_output: i64,
 /// }
 /// ```
-#[proc_macro_derive(StatsEvent, attributes(timestamp, tag, metric))]
+#[proc_macro_derive(StatsEvent, attributes(timestamp, tag, metric, event_type))]
 pub fn derive_stats_event(input: TokenStream) -> TokenStream {
     stats_event_derive(input)
 }
@@ -530,4 +533,25 @@ fn to_snake_case(s: &str) -> String {
         }
     }
     result
+}
+
+/// Derive macro to automatically implement LogFields trait.
+///
+/// Marks fields with `#[log_field]` to include them in tracing spans.
+///
+/// # Usage
+/// ```rust
+/// use ai_orz_macros::LogFields;
+///
+/// #[derive(Debug, Clone, LogFields)]
+/// pub struct RequestContext {
+///     #[log_field]
+///     pub log_id: String,
+///     #[log_field]
+///     pub user_id: Option<String>,
+/// }
+/// ```
+#[proc_macro_derive(LogFields, attributes(log_field))]
+pub fn derive_log_fields(input: TokenStream) -> TokenStream {
+    log_fields_derive(input)
 }

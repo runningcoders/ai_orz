@@ -4,23 +4,37 @@
 //! 用于记录 LLM 模型调用的 token 用量、调用次数等指标。
 
 use super::*;
+use ai_orz_macros::StatsEvent;
 use uuid::Uuid;
 use duckdb::{Connection, ToSql};
 use common::error::Result;
-use serde_json::{json, Value};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, StatsEvent)]
+#[event_type = "model_call"]
 pub struct ModelCallEvent {
+    #[timestamp]
     timestamp: i64,
+    #[tag]
     agent_id: Option<String>,
+    #[tag]
     project_id: Option<String>,
+    #[tag]
     task_id: Option<String>,
+    #[tag]
     model_provider_id: Option<String>,
+    #[tag]
     model_name: Option<String>,
+    #[tag]
     organization_id: Option<String>,
+    #[tag]
     user_id: Option<String>,
+    #[metric]
+    call_count: u64,
+    #[metric]
     tokens_input: u64,
+    #[metric]
     tokens_output: u64,
+    #[metric]
     total_tokens: u64,
 }
 
@@ -35,6 +49,7 @@ impl ModelCallEvent {
             model_name: None,
             organization_id: None,
             user_id: None,
+            call_count: 1,
             tokens_input: 0,
             tokens_output: 0,
             total_tokens: 0,
@@ -92,55 +107,6 @@ impl ModelCallEvent {
     }
 }
 
-impl StatEvent for ModelCallEvent {
-    fn timestamp(&self) -> i64 {
-        self.timestamp
-    }
-
-    fn event_type(&self) -> &str {
-        "model_call"
-    }
-
-    fn tags_json(&self) -> Option<Value> {
-        let mut map = serde_json::Map::new();
-        if let Some(v) = &self.agent_id {
-            map.insert("agent_id".into(), Value::String(v.clone()));
-        }
-        if let Some(v) = &self.project_id {
-            map.insert("project_id".into(), Value::String(v.clone()));
-        }
-        if let Some(v) = &self.task_id {
-            map.insert("task_id".into(), Value::String(v.clone()));
-        }
-        if let Some(v) = &self.model_provider_id {
-            map.insert("model_provider_id".into(), Value::String(v.clone()));
-        }
-        if let Some(v) = &self.model_name {
-            map.insert("model_name".into(), Value::String(v.clone()));
-        }
-        if let Some(v) = &self.organization_id {
-            map.insert("organization_id".into(), Value::String(v.clone()));
-        }
-        if let Some(v) = &self.user_id {
-            map.insert("user_id".into(), Value::String(v.clone()));
-        }
-        if !map.is_empty() {
-            Some(Value::Object(map))
-        } else {
-            None
-        }
-    }
-
-    fn metrics_json(&self) -> Option<Value> {
-        Some(json!({
-            "call_count": 1,
-            "tokens_input": self.tokens_input,
-            "tokens_output": self.tokens_output,
-            "total_tokens": self.total_tokens,
-        }))
-    }
-}
-
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ModelCallStatTable;
 
@@ -165,6 +131,7 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
                 model_name VARCHAR,
                 organization_id VARCHAR,
                 user_id VARCHAR,
+                call_count BIGINT,
                 tokens_input BIGINT,
                 tokens_output BIGINT,
                 total_tokens BIGINT
@@ -181,8 +148,8 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
             INSERT INTO model_call_events (
                 id, timestamp, agent_id, project_id, task_id,
                 model_provider_id, model_name, organization_id, user_id,
-                tokens_input, tokens_output, total_tokens
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                call_count, tokens_input, tokens_output, total_tokens
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         "#;
         conn.execute(sql, [
             &id.to_string() as &dyn ToSql,
@@ -194,6 +161,7 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
             &event.model_name as &dyn ToSql,
             &event.organization_id as &dyn ToSql,
             &event.user_id as &dyn ToSql,
+            &event.call_count as &dyn ToSql,
             &event.tokens_input as &dyn ToSql,
             &event.tokens_output as &dyn ToSql,
             &event.total_tokens as &dyn ToSql,
@@ -209,8 +177,8 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
                 INSERT INTO model_call_events (
                     id, timestamp, agent_id, project_id, task_id,
                     model_provider_id, model_name, organization_id, user_id,
-                    tokens_input, tokens_output, total_tokens
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    call_count, tokens_input, tokens_output, total_tokens
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             "#;
             conn.execute(sql, [
                 &id.to_string() as &dyn ToSql,
@@ -222,6 +190,7 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
                 &event.model_name as &dyn ToSql,
                 &event.organization_id as &dyn ToSql,
                 &event.user_id as &dyn ToSql,
+                &event.call_count as &dyn ToSql,
                 &event.tokens_input as &dyn ToSql,
                 &event.tokens_output as &dyn ToSql,
                 &event.total_tokens as &dyn ToSql,

@@ -5,6 +5,8 @@
 //!
 //! - 带 ctx:  log_info!(&ctx, "operation", "message {}", var)
 //! - 无 ctx:  log_info!("message {}", var)
+//!
+//! 字段注入通过 `#[derive(LogFields)]` 自动生成，新增上下文字段只需在 RequestContext 上加 `#[log_field]`。
 
 /// info 日志
 #[macro_export]
@@ -16,17 +18,8 @@ macro_rules! log_info {
 
     // 带上下文: 第一个参数非字符串（ctx 或 &ctx），第二个参数是字符串字面量（operation）
     ($ctx:expr, $op:literal, $($fields:tt)*) => {{
-        let span = tracing::info_span!(
-            "request",
-            log_id = %$ctx.log_id,
-            user_id = %$ctx.user_id.as_deref().unwrap_or(""),
-            username = %$ctx.username.as_deref().unwrap_or(""),
-            organization_id = %$ctx.organization_id.as_deref().unwrap_or(""),
-            agent_id = %$ctx.agent_id.as_deref().unwrap_or(""),
-            task_id = %$ctx.task_id.as_deref().unwrap_or(""),
-            project_id = %$ctx.project_id.as_deref().unwrap_or(""),
-            operation = %$op
-        );
+        use $crate::pkg::logging::LogFields;
+        let span = ($ctx).create_log_span($op, tracing::Level::INFO);
         let _guard = span.enter();
         tracing::info!($($fields)*);
     }};
@@ -42,17 +35,8 @@ macro_rules! log_warn {
 
     // 带上下文: 第一个参数非字符串（ctx 或 &ctx），第二个参数是字符串字面量（operation）
     ($ctx:expr, $op:literal, $($fields:tt)*) => {{
-        let span = tracing::warn_span!(
-            "request",
-            log_id = %$ctx.log_id,
-            user_id = %$ctx.user_id.as_deref().unwrap_or(""),
-            username = %$ctx.username.as_deref().unwrap_or(""),
-            organization_id = %$ctx.organization_id.as_deref().unwrap_or(""),
-            agent_id = %$ctx.agent_id.as_deref().unwrap_or(""),
-            task_id = %$ctx.task_id.as_deref().unwrap_or(""),
-            project_id = %$ctx.project_id.as_deref().unwrap_or(""),
-            operation = %$op
-        );
+        use $crate::pkg::logging::LogFields;
+        let span = ($ctx).create_log_span($op, tracing::Level::WARN);
         let _guard = span.enter();
         tracing::warn!($($fields)*);
     }};
@@ -68,17 +52,8 @@ macro_rules! log_error {
 
     // 带上下文: 第一个参数非字符串（ctx 或 &ctx），第二个参数是字符串字面量（operation）
     ($ctx:expr, $op:literal, $($fields:tt)*) => {{
-        let span = tracing::error_span!(
-            "request",
-            log_id = %$ctx.log_id,
-            user_id = %$ctx.user_id.as_deref().unwrap_or(""),
-            username = %$ctx.username.as_deref().unwrap_or(""),
-            organization_id = %$ctx.organization_id.as_deref().unwrap_or(""),
-            agent_id = %$ctx.agent_id.as_deref().unwrap_or(""),
-            task_id = %$ctx.task_id.as_deref().unwrap_or(""),
-            project_id = %$ctx.project_id.as_deref().unwrap_or(""),
-            operation = %$op
-        );
+        use $crate::pkg::logging::LogFields;
+        let span = ($ctx).create_log_span($op, tracing::Level::ERROR);
         let _guard = span.enter();
         tracing::error!($($fields)*);
     }};
@@ -94,17 +69,8 @@ macro_rules! log_debug {
 
     // 带上下文: 第一个参数非字符串（ctx 或 &ctx），第二个参数是字符串字面量（operation）
     ($ctx:expr, $op:literal, $($fields:tt)*) => {{
-        let span = tracing::debug_span!(
-            "request",
-            log_id = %$ctx.log_id,
-            user_id = %$ctx.user_id.as_deref().unwrap_or(""),
-            username = %$ctx.username.as_deref().unwrap_or(""),
-            organization_id = %$ctx.organization_id.as_deref().unwrap_or(""),
-            agent_id = %$ctx.agent_id.as_deref().unwrap_or(""),
-            task_id = %$ctx.task_id.as_deref().unwrap_or(""),
-            project_id = %$ctx.project_id.as_deref().unwrap_or(""),
-            operation = %$op
-        );
+        use $crate::pkg::logging::LogFields;
+        let span = ($ctx).create_log_span($op, tracing::Level::DEBUG);
         let _guard = span.enter();
         tracing::debug!($($fields)*);
     }};
@@ -138,3 +104,47 @@ pub mod middleware;
 pub mod models;
 pub mod router;
 pub mod service;
+
+/// 应用程序入口函数
+///
+/// bin target (main.rs) 通过 `ai_orz::run()` 调用此函数，
+/// 避免在 bin target 中重新声明 mod 导致代码被编译两次。
+pub async fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    config::init()?;
+    let config = config::get();
+
+    // 初始化所有 pkg 模块
+    pkg::init_all(&config).await;
+    sys_info!(
+        "Logging & storage & JWT & tool registry initialized, base data path: {}",
+        config.base_data_path().display()
+    );
+
+    // 初始化 service 层
+    service::init();
+    sys_info!("Service layer initialized");
+
+    // 初始化并启动所有消费者
+    consumer::init(&config.consumer).await?;
+    sys_info!("All consumers started");
+
+    // 前端静态文件目录从配置读取，环境变量可覆盖
+    let dist_dir =
+        std::env::var("FRONTEND_DIST_DIR").unwrap_or_else(|_| config.frontend.dist_dir.clone());
+
+    // 服务器监听地址从配置读取
+    let server_addr = &config.server.listen_addr;
+
+    // 启动服务器
+    let app = router::create_router(&dist_dir, config.clone());
+    let listener = tokio::net::TcpListener::bind(&server_addr).await?;
+    sys_info!(
+        "Server listening on {}, static files from {}",
+        server_addr,
+        dist_dir
+    );
+
+    axum::serve(listener, app).await?;
+
+    Ok(())
+}

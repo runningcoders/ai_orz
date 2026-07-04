@@ -38,23 +38,30 @@ impl MessageDelivery for MessageDomainImpl {
         cmd: SendToAgentCommand<'_>,
     ) -> Result<Message> {
         let id = generate_id();
-        // 创建消息 PO - 使用 Builder 模式或直接 new
+        let project_id = cmd
+            .project_id
+            .or_else(|| ctx.project_id().map(|s| s.as_str()))
+            .map(|s| s.to_string());
+        let task_id = cmd
+            .task_id
+            .or_else(|| ctx.task_id().map(|s| s.as_str()))
+            .map(|s| s.to_string());
         let po = MessagePo::new(
             id.clone(),
-            cmd.project_id.map(|s| s.to_string()),
-            cmd.task_id.map(|s| s.to_string()),
+            project_id,
+            task_id,
             cmd.from_id.to_string(),
             cmd.to_agent_id.to_string(),
             cmd.from_role,
             MessageRole::Agent,
             MessageType::Text,
             cmd.content.to_string(),
-            None,               // file_type
-            Default::default(), // file_meta - 需要 FileMeta 类型，用 Default
+            None,
+            Default::default(),
             cmd.reply_to_id.map(|s| s.to_string()),
-            Some(id),           // root_id: 新消息链根消息
+            Some(id),
             ctx.organization_id().cloned(),
-            cmd.from_id.to_string(), // created_by
+            cmd.from_id.to_string(),
         );
 
         let message = Message::from_po(po);
@@ -69,23 +76,30 @@ impl MessageDelivery for MessageDomainImpl {
         cmd: SendToUserCommand<'_>,
     ) -> Result<Message> {
         let id = generate_id();
-        // Agent 发送给用户，发送者角色固定为 Agent，接收者角色固定为 User
+        let project_id = cmd
+            .project_id
+            .or_else(|| ctx.project_id().map(|s| s.as_str()))
+            .map(|s| s.to_string());
+        let task_id = cmd
+            .task_id
+            .or_else(|| ctx.task_id().map(|s| s.as_str()))
+            .map(|s| s.to_string());
         let po = MessagePo::new(
             id.clone(),
-            cmd.project_id.map(|s| s.to_string()),
-            cmd.task_id.map(|s| s.to_string()),
+            project_id,
+            task_id,
             cmd.from_agent_id.to_string(),
             cmd.to_user_id.to_string(),
             MessageRole::Agent,
             MessageRole::User,
             MessageType::Text,
             cmd.content.to_string(),
-            None,               // file_type
-            Default::default(), // file_meta
+            None,
+            Default::default(),
             cmd.reply_to_id.map(|s| s.to_string()),
-            Some(id),           // root_id: 新消息链根消息
+            Some(id),
             ctx.organization_id().cloned(),
-            cmd.from_agent_id.to_string(), // created_by
+            cmd.from_agent_id.to_string(),
         );
 
         let message = Message::from_po(po);
@@ -100,12 +114,20 @@ impl MessageDelivery for MessageDomainImpl {
         cmd: SendToolCallRequestCommand<'_>,
     ) -> Result<Message> {
         let id = generate_id();
+        let project_id = cmd
+            .project_id
+            .or_else(|| ctx.project_id().map(|s| s.as_str()))
+            .map(|s| s.to_string());
+        let task_id = cmd
+            .task_id
+            .or_else(|| ctx.task_id().map(|s| s.as_str()))
+            .map(|s| s.to_string());
         let payload = ToolCallMessage::new_request(
             cmd.request_id.to_string(),
             cmd.tool_id.to_string(),
             cmd.tool_name.to_string(),
-            cmd.project_id.map(|s| s.to_string()),
-            cmd.task_id.map(|s| s.to_string()),
+            project_id,
+            task_id,
             cmd.from_agent_id.to_string(),
             cmd.to_executor_id.to_string(),
             cmd.reply_to_id.map(|s| s.to_string()),

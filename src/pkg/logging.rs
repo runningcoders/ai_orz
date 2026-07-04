@@ -16,7 +16,6 @@ use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::rolling;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::pkg::RequestContext;
 use common::error::Result;
 
 /// 全局持有 tracing non-blocking writer 的 guard
@@ -164,28 +163,15 @@ fn cleanup_old_logs(logs_dir: &std::path::Path, retention: Duration) -> std::io:
     Ok(deleted_count)
 }
 
-/// 创建带完整上下文信息的 span（供日志宏使用）
+/// 日志字段注入 trait
 ///
-/// 包含 RequestContext 中的所有字段：
-/// - log_id: 日志追踪 ID
-/// - user_id: 用户 ID
-/// - username: 用户名
-/// - organization_id: 组织 ID
-/// - agent_id: Agent ID
-/// - task_id: 任务 ID
-/// - project_id: 项目 ID
-/// - operation: 当前操作名称
-#[doc(hidden)]
-pub fn create_span(operation: &str, ctx: &RequestContext) -> tracing::Span {
-    tracing::info_span!(
-        "request",
-        log_id = %ctx.log_id,
-        user_id = %ctx.user_id.as_deref().unwrap_or(""),
-        username = %ctx.username.as_deref().unwrap_or(""),
-        organization_id = %ctx.organization_id.as_deref().unwrap_or(""),
-        agent_id = %ctx.agent_id.as_deref().unwrap_or(""),
-        task_id = %ctx.task_id.as_deref().unwrap_or(""),
-        project_id = %ctx.project_id.as_deref().unwrap_or(""),
-        operation = %operation
-    )
+/// 通过 `#[derive(LogFields)]` 自动实现，标注 `#[log_field]` 的字段
+/// 会被自动注入到 tracing span 中。
+///
+/// 字段列表是单一数据源：只在 struct 定义处维护，新增字段加 `#[log_field]` 即可。
+pub trait LogFields {
+    /// 创建包含所有标注字段的 tracing span
+    ///
+    /// 日志宏内部调用此方法，传入日志级别和操作名称
+    fn create_log_span(&self, operation: &str, level: tracing::Level) -> tracing::Span;
 }

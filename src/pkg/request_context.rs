@@ -1,5 +1,6 @@
 use crate::pkg::storage::{self, Storage, VectorStore};
 /// 请求上下文（贯穿整个请求生命周期）
+use ai_orz_macros::LogFields;
 use axum::http;
 use common::constants::http_header;
 use sqlx::sqlite::SqlitePool;
@@ -17,26 +18,35 @@ use std::sync::Arc;
 /// - 业务维度：agent_id, project_id, task_id
 /// - 模型维度：model_provider_id, model_name
 /// - 基础设施：storage（SQLite + Vector + Stats）
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, LogFields)]
 pub struct RequestContext {
     /// 日志追踪 ID
+    #[log_field]
     pub log_id: String,
     /// 当前用户 ID
+    #[log_field]
     pub user_id: Option<String>,
     /// 当前用户名
+    #[log_field]
     pub username: Option<String>,
     /// 当前组织 ID
+    #[log_field]
     pub organization_id: Option<String>,
 
     /// 当前 Agent ID（可选，Agent 执行时有值）
+    #[log_field]
     pub agent_id: Option<String>,
     /// 当前 Task ID（可选，Task 执行时有值）
+    #[log_field]
     pub task_id: Option<String>,
     /// 当前 Project ID（可选，Project 上下文时有值）
+    #[log_field]
     pub project_id: Option<String>,
     /// 当前 Model Provider ID（可选，Cortex 创建时有值）
+    #[log_field]
     pub model_provider_id: Option<String>,
     /// 当前 Model 名称（可选，Cortex 创建时有值）
+    #[log_field]
     pub model_name: Option<String>,
 
     /// 统一存储门面（SQLite + Vector）

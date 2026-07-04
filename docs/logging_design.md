@@ -105,22 +105,63 @@ log_error!(ctx.clone(), "update_project", "db error: {:?}", err);
 
 ### 3. 上下文包含字段
 
-当使用带上下文模式时，`create_span` 自动将以下字段添加到日志 span：
+当使用带上下文模式时，日志宏通过 `LogFields` trait 自动将 RequestContext 的所有业务字段添加到 tracing span：
 
-| 字段 | 说明 |
-|------|------|
-| `log_id` | 请求唯一标识 UUID |
-| `user_id` | 当前用户 ID |
-| `operation` | 操作名称（传入的第二个参数） |
+| 字段 | 说明 | 来源 |
+|------|------|------|
+| `log_id` | 请求唯一标识 | RequestContext |
+| `user_id` | 当前用户 ID | RequestContext |
+| `username` | 当前用户名 | RequestContext |
+| `organization_id` | 当前组织 ID | RequestContext |
+| `agent_id` | 当前 Agent ID | RequestContext |
+| `task_id` | 当前任务 ID | RequestContext |
+| `project_id` | 当前项目 ID | RequestContext |
+| `model_provider_id` | 模型提供商 ID | RequestContext |
+| `model_name` | 模型名称 | RequestContext |
+| `operation` | 操作名称（传入的第二个参数） | 宏参数 |
 
 **输出示例**：
 ```
-INFO create_project: ai_orz::dal::project: created project id=123 user_id=456 log_id=abc-xyz
+INFO create_project: ai_orz::dal::project: created project id=123 log_id=abc-xyz user_id=456 organization_id=org-1
 ```
 
 ---
 
 ## 核心实现机制
+
+### LogFields Derive 宏设计
+
+日志字段注入通过 `#[derive(LogFields)]` 过程宏实现，字段列表是单一数据源：只在 struct 定义处维护，新增字段加 `#[log_field]` 注解即可。
+
+**使用方式**：
+```rust
+use ai_orz_macros::LogFields;
+
+#[derive(Debug, Clone, LogFields)]
+pub struct RequestContext {
+    #[log_field]
+    pub log_id: String,
+    #[log_field]
+    pub user_id: Option<String>,
+    #[log_field]
+    pub model_provider_id: Option<String>,
+    // ...
+}
+```
+
+**类型处理规则**：
+- `String` → 直接输出字符串值
+- `Option<String>` → 为 `Some` 时输出值，为 `None` 时输出空串
+- 其他类型 → 用 `%` 格式化（依赖 `Display` trait）
+
+**实现原理**：
+- derive 宏扫描所有标注 `#[log_field]` 的字段
+- 生成 `impl crate::pkg::logging::LogFields for Xxx` 代码
+- 5 个 level 分支（ERROR/WARN/INFO/DEBUG/TRACE）各自生成对应级别的 `tracing::xxx_span!` 调用
+
+**前置依赖**：
+- 项目必须只有一份编译产物（main.rs 不能重新声明 mod）
+- 否则 `crate::` 路径在 lib/bin 两个 target 下解析到不同实例，trait 不匹配
 
 ### 宏定义结构（以 `log_info!` 为例）
 
@@ -130,11 +171,11 @@ macro_rules! log_info {
     ($msg:literal $(, $($fields:tt)*)?) => {{
         tracing::info!($msg $(, $($fields)*)?);
     }};
-    
+
     // 分支 2: 带上下文模式（兜底匹配）
     ($ctx:expr, $op:literal, $($fields:tt)*) => {{
-        use $crate::pkg::logging::create_span;
-        let span = create_span($op, $ctx);
+        use $crate::pkg::logging::LogFields;
+        let span = ($ctx).create_log_span($op, tracing::Level::INFO);
         let _guard = span.enter();
         tracing::info!($($fields)*);
     }};
@@ -154,6 +195,16 @@ macro_rules! log_info {
 #### 3. `tt` 匹配器
 
 `$($fields:tt)*` 匹配剩余的所有 token 树，完整透传给 tracing 宏，支持所有 tracing 语法。
+
+#### 4. 方法调用语法
+
+`($ctx).create_log_span(...)` 使用方法调用语法，Rust 自动处理借用/解引用：
+- `$ctx = ctx`（owned）→ 自动借用 `&ctx`
+- `$ctx = &ctx`（引用）→ 自动解引用后借用
+
+#### 5. bin target 优化
+
+main.rs 不再重新声明 `mod`，而是通过 `ai_orz::run()` 调用 lib 的入口函数。这避免了代码被编译两次导致的 "multiple versions" 问题。
 
 ---
 
@@ -187,16 +238,17 @@ log_info!(ctx.clone(), "operation", "message {}", x);  // ✅ 带上下文（必
 
 ### 所有权问题
 
-**重要**：`create_span` 只接受 `RequestContext` 引用，不接受所有权转移。
+**重要**：日志宏通过方法调用 `($ctx).create_log_span(...)` 接收 `&self`，不会移动 ctx。
 
 ✅ **正确**：
 ```rust
+log_info!(&ctx, "operation", "message");
 log_info!(ctx.clone(), "operation", "message");
 ```
 
-❌ **错误**（编译错误）：
+❌ **不需要 clone**（虽然不会报错，但多余）：
 ```rust
-log_info!(ctx.clone(), "operation", "message");  // 传值而非引用
+log_info!(ctx.clone(), "operation", "message");  // clone 多余，&ctx 即可
 ```
 
 ---

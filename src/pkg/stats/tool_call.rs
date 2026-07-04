@@ -4,24 +4,39 @@
 //! 用于记录工具调用的次数、耗时、参数/结果大小等指标。
 
 use super::*;
+use ai_orz_macros::StatsEvent;
 use uuid::Uuid;
 use duckdb::{Connection, ToSql};
 use common::error::Result;
-use serde_json::{json, Value};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, StatsEvent)]
+#[event_type = "tool_call"]
 pub struct ToolCallEvent {
+    #[timestamp]
     timestamp: i64,
+    #[tag]
     tool_id: String,
+    #[tag]
     tool_name: String,
+    #[tag]
     agent_id: Option<String>,
+    #[tag]
     project_id: Option<String>,
+    #[tag]
     task_id: Option<String>,
+    #[tag]
     organization_id: Option<String>,
+    #[tag]
     user_id: Option<String>,
+    #[metric]
+    call_count: u64,
+    #[metric]
     args_len: u64,
+    #[metric]
     result_len: u64,
+    #[metric]
     duration_ms: u64,
+    #[metric]
     status: String,
 }
 
@@ -36,6 +51,7 @@ impl ToolCallEvent {
             task_id: None,
             organization_id: None,
             user_id: None,
+            call_count: 1,
             args_len: 0,
             result_len: 0,
             duration_ms: 0,
@@ -96,48 +112,6 @@ impl ToolCallEvent {
     pub fn with_status(mut self, v: String) -> Self {
         self.status = v;
         self
-    }
-}
-
-impl StatEvent for ToolCallEvent {
-    fn timestamp(&self) -> i64 {
-        self.timestamp
-    }
-
-    fn event_type(&self) -> &str {
-        "tool_call"
-    }
-
-    fn tags_json(&self) -> Option<Value> {
-        let mut map = serde_json::Map::new();
-        map.insert("tool_id".into(), Value::String(self.tool_id.clone()));
-        map.insert("tool_name".into(), Value::String(self.tool_name.clone()));
-        if let Some(v) = &self.agent_id {
-            map.insert("agent_id".into(), Value::String(v.clone()));
-        }
-        if let Some(v) = &self.project_id {
-            map.insert("project_id".into(), Value::String(v.clone()));
-        }
-        if let Some(v) = &self.task_id {
-            map.insert("task_id".into(), Value::String(v.clone()));
-        }
-        if let Some(v) = &self.organization_id {
-            map.insert("organization_id".into(), Value::String(v.clone()));
-        }
-        if let Some(v) = &self.user_id {
-            map.insert("user_id".into(), Value::String(v.clone()));
-        }
-        Some(Value::Object(map))
-    }
-
-    fn metrics_json(&self) -> Option<Value> {
-        Some(json!({
-            "call_count": 1,
-            "args_len": self.args_len,
-            "result_len": self.result_len,
-            "duration_ms": self.duration_ms,
-            "status": self.status,
-        }))
     }
 }
 

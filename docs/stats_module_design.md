@@ -57,6 +57,51 @@ pub trait StatEvent: Send + Sync + Debug {
 
 **默认方法**让用户只需要实现必须的部分。
 
+### `#[derive(StatsEvent)]` 宏
+
+推荐使用 `ai_orz_macros::StatsEvent` derive 宏自动实现 `StatEvent` trait，通过字段注解声明标签和指标，零样板代码。
+
+**使用示例**：
+```rust
+use ai_orz_macros::StatsEvent;
+
+#[derive(Debug, Clone, StatsEvent)]
+#[event_type = "tool_call"]
+pub struct ToolCallEvent {
+    #[timestamp]
+    timestamp: i64,
+    #[tag]
+    tool_id: String,
+    #[tag]
+    agent_id: Option<String>,
+    #[metric]
+    duration_ms: u64,
+    #[metric]
+    status: String,
+}
+```
+
+**结构体级注解**：
+| 注解 | 说明 |
+|------|------|
+| `#[event_type = "xxx"]` | 自定义事件类型名称，不写则用 type_name |
+
+**字段级注解**：
+| 注解 | 说明 | 支持类型 |
+|------|------|----------|
+| `#[timestamp]` | 时间戳字段（必须且只能一个） | `i64` |
+| `#[tag]` | 标签维度字段（可多个） | `String` / `Option<String>` |
+| `#[metric]` | 指标字段（可多个） | 数值 / `String` |
+
+**类型处理**：
+- `Option<String>` tag：为 `None` 时自动跳过，不插入空值
+- `String` tag/metric：直接转换为 JSON String
+- 数值 metric：直接转换为 JSON Number
+
+**已使用的事件**：
+- `ModelCallEvent` — 模型调用统计
+- `ToolCallEvent` — 工具调用统计
+
 ### StatTable - 统计表 trait
 
 每个统计表实现这个 trait，对应 DuckDB 中的一张表：

@@ -1,6 +1,6 @@
 # RequestContext 设计文档
 
-> 最后更新：2026-07-03
+> 最后更新：2026-07-04
 
 ## 一、定位与核心原则
 
@@ -14,7 +14,53 @@
 
 ---
 
-## 二、字段分类
+## 二、树形扩散模型
+
+### 2.1 核心思想
+
+上下文在分层架构中沿调用链**向下传递时越来越丰富**，不同分支互不干扰，上层不受下层影响。
+
+```
+[Handler 层 ctx]         user_id, organization_id
+    │
+    ├─ 查 Agent 实体 → 注入 agent_id → 新 ctx 往下传
+    │     │
+    │     ├─ 调用 Project Domain
+    │     │    │
+    │     │    └─ 查 Project → 注入 project_id → 新 ctx 继续往下
+    │     │           │
+    │     │           └─ 发消息（delivery 层）
+    │     │                 ↓
+    │     │            ctx 里已有 project_id，
+    │     │            cmd 没传也没关系，ctx 兜底
+    │     │
+    │     └─ 调用 Brain Domain
+    │          └─ 注入 model_provider_id → 新 ctx
+    │
+    └─ 另一条分支...
+        （ctx 不受上面那条分支的影响）
+```
+
+### 2.2 关键性质
+
+| 性质 | 说明 |
+|------|------|
+| **不可变 + 写时复制** | 每层基于上层 ctx 克隆后注入新维度，生成新 ctx 往下传，上层 ctx 不受影响 |
+| **越往下越具体** | 调用链越深，ctx 携带的维度信息越丰富 |
+| **分支互不干扰** | 不同业务分支的 ctx 是独立的，不会互相污染 |
+| **下游防御兜底** | delivery 等底层模块，cmd 参数优先，ctx 兜底，确保上下文不丢失 |
+
+### 2.3 优先级规则
+
+越靠近具体业务逻辑层的信息时效性越高，优先级越高：
+
+1. **Command 参数**（最高优先级）—— 调用方显式指定的参数
+2. **当前层实体信息** —— 当前逻辑层查到的实体信息，通过 `to_builder()` 注入
+3. **上层传递的 ctx**（兜底优先级）—— 上游已经有的上下文信息
+
+---
+
+## 三、字段分类
 
 | 分类 | 字段 | 来源 | 说明 |
 |------|------|------|------|
@@ -30,9 +76,9 @@
 
 ---
 
-## 三、Builder 模式设计
+## 四、Builder 模式设计
 
-### 3.1 类型关系
+### 4.1 类型关系
 
 ```
 RequestContext            (不可变，只有 getter)
@@ -46,7 +92,7 @@ RequestContextBuilder     (可变，有 with_* 方法)
           └─ .build()             →  RequestContext（新的不可变实例）
 ```
 
-### 3.2 RequestContextBuilder API
+### 4.2 RequestContextBuilder API
 
 ```rust
 // 构建器（可变阶段）
@@ -70,7 +116,7 @@ impl RequestContextBuilder {
 - `storage` 未设置时使用全局单例
 - 其他字段默认为 `None`
 
-### 3.3 RequestContext 上的构造入口
+### 4.3 RequestContext 上的构造入口
 
 ```rust
 // 从零构建
@@ -82,9 +128,9 @@ pub fn to_builder(&self) -> RequestContextBuilder;
 
 ---
 
-## 四、典型使用场景
+## 五、典型使用场景
 
-### 4.1 HTTP 请求入口（from_headers）
+### 5.1 HTTP 请求入口（from_headers）
 
 ```rust
 // 中间件中从 Header 构建初始上下文
@@ -96,24 +142,21 @@ let ctx = RequestContext::builder()
     .build();
 ```
 
-### 4.2 业务层扩展上下文
+### 5.2 业务层扩展上下文（查到实体后回填）
 
-**旧方式（set_*，可变）**：
 ```rust
-let mut ctx = ctx.clone();
-ctx.set_agent_id(agent.id.clone());
-ctx.set_project_id(project.id.clone());
-```
-
-**新方式（builder，不可变）**：
-```rust
+// 查到 Agent 实体后，回填到 ctx
+let agent = self.agent_dal.find_by_id(ctx.clone(), agent_id).await?;
 let ctx = ctx.to_builder()
     .agent_id(&agent.po.id)
-    .project_id(&project.po.id)
+    .organization_id(&agent.po.organization_id)
     .build();
+
+// 继续往下传递新的 ctx
+self.brain_domain.think(ctx, ...).await?;
 ```
 
-### 4.3 Consumer 异步场景重建上下文
+### 5.3 Consumer 异步场景重建上下文
 
 ```rust
 // 从 message 元数据重建完整上下文
@@ -125,7 +168,7 @@ let ctx = RequestContext::builder()
     .build();
 ```
 
-### 4.4 Cortex 创建时注入模型维度
+### 5.4 Cortex 创建时注入模型维度
 
 ```rust
 let ctx = ctx.to_builder()
@@ -134,17 +177,27 @@ let ctx = ctx.to_builder()
     .build();
 ```
 
+### 5.5 Delivery 层 ctx 兜底（下游防御）
+
+在 `send_to_agent` / `send_to_user` / `send_tool_call_request` 中：
+
+- `project_id`：cmd 传了用 cmd 的，没传用 ctx 里的
+- `task_id`：cmd 传了用 cmd 的，没传用 ctx 里的
+- `organization_id`：直接从 ctx 取（之前已实现）
+
+这样即使调用方忘了在 cmd 里传，只要 ctx 里有，消息也不会丢维度。
+
 ---
 
-## 五、与旧 API 的兼容与迁移
+## 六、与旧 API 的兼容与迁移
 
-### 5.1 过渡期策略
+### 6.1 迁移状态
 
-- **第一阶段**：新增 Builder API，保留所有 `set_*` 方法
-- **第二阶段**：逐步将各模块的 `set_*` 调用迁移到 builder 模式
-- **第三阶段**：确认无遗漏后，删除 `set_*` 方法，彻底锁死不可变性
+- ✅ **已完成**：Builder API 上线
+- ✅ **已完成**：全部 `set_*` 方法删除，彻底锁死不可变性
+- ✅ **已完成**：生产代码和测试代码全部迁移
 
-### 5.2 保留的构造方法（向后兼容）
+### 6.2 保留的构造方法（向后兼容）
 
 - `RequestContext::new(user_id, username)` — 内部委托给 builder
 - `RequestContext::from_headers(headers)` — 内部委托给 builder
@@ -152,9 +205,9 @@ let ctx = ctx.to_builder()
 
 ---
 
-## 六、设计决策
+## 七、设计决策
 
-### 6.1 为什么不用 with_* 直接在 RequestContext 上？
+### 7.1 为什么不用 with_* 直接在 RequestContext 上？
 
 `ctx.clone().with_agent_id(...).with_project_id(...)` 也能工作，但有以下问题：
 
@@ -162,13 +215,13 @@ let ctx = ctx.to_builder()
 - `with_*` 方法会让 RequestContext 本身的 API 面膨胀
 - builder 作为独立类型，语义更清晰："正在构建中" vs "已经构建好"
 
-### 6.2 为什么用 owned 而不是引用？
+### 7.2 为什么用 owned 而不是引用？
 
 - 上下文对象是要被移动和克隆的，所有字段用 owned（String 而非 &str）
 - `with_*` 方法参数用 `impl Into<String>`，调用方可以传 `&str` 或 `String`
 - 内部 `Arc<Storage>` 天然支持浅克隆
 
-### 6.3 build() 时的校验（预留）
+### 7.3 build() 时的校验（预留）
 
 当前版本 `build()` 不做强校验，但预留了扩展位。未来可根据需要增加：
 
@@ -176,9 +229,15 @@ let ctx = ctx.to_builder()
 - `task_id` 设置时必须有 `project_id`
 - 等等...
 
+### 7.4 为什么 delivery 层要做 ctx 兜底？
+
+- **防御式设计**：上游可能忘记传维度，兜底确保数据完整性
+- **减少重复传参**：ctx 里已经有的信息，调用方不需要在 cmd 里再传一遍
+- **消费端可重建**：消息里存的维度越全，异步消费时重建的 ctx 越完整
+
 ---
 
-## 七、改动影响范围
+## 八、改动影响范围
 
 ### 不需要改的
 
@@ -186,10 +245,11 @@ let ctx = ctx.to_builder()
 - `clone()` 行为不变
 - `db_pool()`, `storage()`, `stats()` 等基础设施访问方法不变
 
-### 需要逐步迁移的
+### 已完成迁移的
 
-- `set_*` 方法 → `to_builder().with_*().build()`
-- 所有显式构造 `RequestContext { ... }` 结构体字面量的地方
+- 所有 `set_*` 方法 → `to_builder().with_*().build()`
+- 生产代码：cortex/rig.rs、consumer/message.rs
+- 测试代码：request_context_test.rs、tool_call_entry_test.rs、tool_execution_test.rs
 
 ### 新增的
 
