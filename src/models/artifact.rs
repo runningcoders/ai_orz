@@ -311,3 +311,16 @@ impl ArtifactPo {
         self.updated_at = common::constants::utils::current_timestamp_ms();
     }
 }
+
+// ==================== EnrichContext 实现 ====================
+
+impl crate::pkg::request_context::EnrichContext for Artifact {
+    fn enrich(
+        &self,
+        builder: crate::pkg::request_context::RequestContextBuilder,
+    ) -> crate::pkg::request_context::RequestContextBuilder {
+        builder
+            .project_id(&self.po.project_id)
+            .try_task_id(self.po.task_id.as_deref())
+    }
+}

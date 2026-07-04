@@ -11,6 +11,8 @@ use common::enums::{ArtifactSourceType, FileType};
 use super::ProjectDomainImpl;
 use common::error::{Result, err, bail_err};
 
+use crate::enrich_ctx;
+
 /// Artifact 列表查询参数。
 #[derive(Debug, Clone)]
 pub struct ListArtifactsParams {
@@ -37,6 +39,11 @@ impl super::ArtifactManage for ProjectDomainImpl {
         tags: Vec<String>,
         created_by: String,
     ) -> Result<Artifact> {
+        let ctx = ctx
+            .to_builder()
+            .project_id(&project_id)
+            .try_task_id(task_id.as_deref())
+            .build();
         self.validate_project_and_task(ctx.clone(), &project_id, task_id.as_deref())
             .await?;
 
@@ -78,6 +85,7 @@ impl super::ArtifactManage for ProjectDomainImpl {
         file_meta: FileMeta,
         created_by: String,
     ) -> Result<Artifact> {
+        let ctx = ctx.to_builder().project_id(&project_id).build();
         self.validate_project_access(ctx.clone(), &project_id)
             .await?;
         let artifact = Artifact::new_project(
@@ -104,6 +112,11 @@ impl super::ArtifactManage for ProjectDomainImpl {
         file_meta: FileMeta,
         created_by: String,
     ) -> Result<Artifact> {
+        let ctx = ctx
+            .to_builder()
+            .project_id(&project_id)
+            .task_id(&task_id)
+            .build();
         self.validate_project_and_task(ctx.clone(), &project_id, Some(&task_id))
             .await?;
         let artifact = Artifact::new_task(
@@ -124,6 +137,7 @@ impl super::ArtifactManage for ProjectDomainImpl {
         let Some(artifact) = self.artifact_dal.find_by_id(ctx.clone(), id).await? else {
             return Ok(None);
         };
+        let ctx = enrich_ctx!(&ctx, &artifact);
         self.validate_project_access(ctx, &artifact.po.project_id)
             .await?;
         Ok(Some(artifact))
@@ -152,6 +166,7 @@ impl super::ArtifactManage for ProjectDomainImpl {
         let Some(project_id) = task.po.project_id.as_deref() else {
             bail_err!(InvalidRequest, "Task {} does not belong to a project", task_id);
         };
+        let ctx = enrich_ctx!(&ctx, &task);
         self.validate_project_access(ctx.clone(), project_id)
             .await?;
         self.artifact_dal.list_by_task(ctx, task_id).await
@@ -189,6 +204,7 @@ impl super::ArtifactManage for ProjectDomainImpl {
         let Some(artifact) = self.artifact_dal.find_by_id(ctx.clone(), id).await? else {
             bail_err!(NotFound, "Artifact not found: {}", id);
         };
+        let ctx = enrich_ctx!(&ctx, &artifact);
         self.validate_project_access(ctx.clone(), &artifact.po.project_id)
             .await?;
         self.artifact_dal.delete(ctx, id).await
@@ -203,6 +219,7 @@ impl super::ArtifactManage for ProjectDomainImpl {
         let Some(artifact) = self.artifact_dal.find_by_id(ctx.clone(), id).await? else {
             return Ok(None);
         };
+        let ctx = enrich_ctx!(&ctx, &artifact);
         // Validate user has access to this artifact via project ownership
         self.validate_project_access(ctx.clone(), &artifact.po.project_id)
             .await?;
@@ -221,6 +238,7 @@ impl super::ArtifactManage for ProjectDomainImpl {
         ctx: RequestContext,
         artifact: &Artifact,
     ) -> Result<Vec<u8>> {
+        let ctx = enrich_ctx!(&ctx, artifact);
         // Validate user has access to this artifact via project ownership
         self.validate_project_access(ctx.clone(), &artifact.po.project_id)
             .await?;
@@ -230,8 +248,8 @@ impl super::ArtifactManage for ProjectDomainImpl {
         }
 
         self.artifact_dal.read_content(ctx, artifact).await?
-            .ok_or_else(|| -> common::error::Error { 
-                err!(NotFound, "Artifact content not found: {}", artifact.id()) 
+            .ok_or_else(|| -> common::error::Error {
+                err!(NotFound, "Artifact content not found: {}", artifact.id())
             })
     }
 
@@ -246,6 +264,7 @@ impl super::ArtifactManage for ProjectDomainImpl {
         let Some(mut artifact) = self.artifact_dal.find_by_id(ctx.clone(), id).await? else {
             bail_err!(NotFound, "Artifact not found: {}", id);
         };
+        let ctx = enrich_ctx!(&ctx, &artifact);
         // Validate user has access to this artifact via project ownership
         self.validate_project_access(ctx.clone(), &artifact.po.project_id)
             .await?;

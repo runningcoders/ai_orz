@@ -27,6 +27,7 @@ impl MessageManagement for MessageDomainImpl {
         ctx: RequestContext,
         task_id: &str,
     ) -> Result<Vec<Message>> {
+        let ctx = ctx.to_builder().task_id(task_id).build();
         // 语法糖：调用通用查询，默认不限制条数
         self.query(
             ctx,
@@ -44,6 +45,7 @@ impl MessageManagement for MessageDomainImpl {
         ctx: RequestContext,
         project_id: &str,
     ) -> Result<Vec<Message>> {
+        let ctx = ctx.to_builder().project_id(project_id).build();
         // 语法糖：调用通用查询，默认不限制条数
         self.query(
             ctx,

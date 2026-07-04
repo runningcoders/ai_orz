@@ -96,6 +96,7 @@ impl super::TaskManage for ProjectDomainImpl {
         ctx: RequestContext,
         project_id: &str,
     ) -> Result<Vec<Task>> {
+        let ctx = ctx.to_builder().project_id(project_id).build();
         self.task_dal.list_by_project(ctx, project_id, None).await
     }
 
@@ -105,6 +106,7 @@ impl super::TaskManage for ProjectDomainImpl {
         ctx: RequestContext,
         agent_id: &str,
     ) -> Result<Vec<Task>> {
+        let ctx = ctx.to_builder().agent_id(agent_id).build();
         self.list(
             ctx,
             None,

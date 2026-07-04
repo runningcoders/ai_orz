@@ -133,6 +133,7 @@ impl SkillManage for HrDomainImpl {
         ctx: RequestContext,
         agent_id: &str,
     ) -> Result<Vec<Skill>> {
+        let ctx = ctx.to_builder().agent_id(agent_id).build();
         self.skill_dal.list_for_agent(ctx, agent_id).await
     }
 
@@ -152,6 +153,7 @@ impl SkillManage for HrDomainImpl {
         source_skill_id: &str,
         agent_id: &str,
     ) -> Result<Skill> {
+        let ctx = ctx.to_builder().agent_id(agent_id).build();
         self.skill_dal
             .install_to_agent(ctx, source_skill_id, agent_id)
             .await

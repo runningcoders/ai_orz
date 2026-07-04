@@ -58,6 +58,7 @@ impl ToolProviderManage for FinanceDomainImpl {
         agent_id: &str,
         tool_id: &str,
     ) -> Result<()> {
+        let ctx = ctx.to_builder().agent_id(agent_id).build();
         let created_by = ctx.uid();
         self.tool_dal
             .add_tool_to_agent(ctx.clone(), agent_id, tool_id, Some(created_by))
@@ -71,6 +72,7 @@ impl ToolProviderManage for FinanceDomainImpl {
         agent_id: &str,
         tool_id: &str,
     ) -> Result<()> {
+        let ctx = ctx.to_builder().agent_id(agent_id).build();
         self.tool_dal
             .remove_tool_from_agent(ctx.clone(), agent_id, tool_id)
             .await
@@ -82,6 +84,7 @@ impl ToolProviderManage for FinanceDomainImpl {
         ctx: RequestContext,
         agent_id: &str,
     ) -> Result<Vec<String>> {
+        let ctx = ctx.to_builder().agent_id(agent_id).build();
         let tools = self
             .tool_dal
             .list_tools_for_agent_full(ctx.clone(), agent_id)
@@ -95,6 +98,7 @@ impl ToolProviderManage for FinanceDomainImpl {
         ctx: RequestContext,
         agent_id: &str,
     ) -> Result<Vec<Tool>> {
+        let ctx = ctx.to_builder().agent_id(agent_id).build();
         self.tool_dal
             .list_tools_for_agent_full(ctx.clone(), agent_id)
             .await

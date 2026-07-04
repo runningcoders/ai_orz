@@ -15,6 +15,11 @@ impl RuntimeMemory for RuntimeDomainImpl {
         task_id: Option<&str>,
         limit: usize,
     ) -> Result<Vec<Memory>> {
+        let ctx = ctx
+            .to_builder()
+            .agent_id(agent_id)
+            .try_task_id(task_id)
+            .build();
         use crate::service::dal::memory::dal;
         dal()
             .query(

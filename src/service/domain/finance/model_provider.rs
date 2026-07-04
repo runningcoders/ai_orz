@@ -5,6 +5,8 @@ use crate::pkg::RequestContext;
 use crate::service::domain::finance::{FinanceDomainImpl, ModelProviderManage};
 use common::error::Result;
 
+use crate::enrich_ctx;
+
 #[async_trait::async_trait]
 impl ModelProviderManage for FinanceDomainImpl {
     async fn create_model_provider(
@@ -12,6 +14,7 @@ impl ModelProviderManage for FinanceDomainImpl {
         ctx: RequestContext,
         provider: &ModelProvider,
     ) -> Result<()> {
+        let ctx = enrich_ctx!(&ctx, provider);
         self.model_provider_dal.create(ctx, provider).await
     }
 
@@ -43,6 +46,7 @@ impl ModelProviderManage for FinanceDomainImpl {
         ctx: RequestContext,
         provider: &ModelProvider,
     ) -> Result<()> {
+        let ctx = enrich_ctx!(&ctx, provider);
         self.model_provider_dal.update(ctx, provider).await
     }
 
@@ -51,6 +55,7 @@ impl ModelProviderManage for FinanceDomainImpl {
         ctx: RequestContext,
         provider: &ModelProvider,
     ) -> Result<()> {
+        let ctx = enrich_ctx!(&ctx, provider);
         self.model_provider_dal.delete(ctx, provider).await
     }
 
@@ -60,6 +65,7 @@ impl ModelProviderManage for FinanceDomainImpl {
         provider: &ModelProvider,
         prompt: &str,
     ) -> Result<String> {
+        let ctx = enrich_ctx!(&ctx, provider);
         self.brain_dal.test_connection(ctx, provider, prompt).await
     }
 }

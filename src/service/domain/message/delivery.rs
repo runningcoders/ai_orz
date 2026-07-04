@@ -46,6 +46,13 @@ impl MessageDelivery for MessageDomainImpl {
             .task_id
             .or_else(|| ctx.task_id().map(|s| s.as_str()))
             .map(|s| s.to_string());
+
+        let ctx = ctx
+            .to_builder()
+            .agent_id(cmd.to_agent_id)
+            .try_project_id(project_id.as_deref())
+            .try_task_id(task_id.as_deref())
+            .build();
         let po = MessagePo::new(
             id.clone(),
             project_id,
@@ -84,6 +91,13 @@ impl MessageDelivery for MessageDomainImpl {
             .task_id
             .or_else(|| ctx.task_id().map(|s| s.as_str()))
             .map(|s| s.to_string());
+
+        let ctx = ctx
+            .to_builder()
+            .agent_id(cmd.from_agent_id)
+            .try_project_id(project_id.as_deref())
+            .try_task_id(task_id.as_deref())
+            .build();
         let po = MessagePo::new(
             id.clone(),
             project_id,
@@ -122,6 +136,13 @@ impl MessageDelivery for MessageDomainImpl {
             .task_id
             .or_else(|| ctx.task_id().map(|s| s.as_str()))
             .map(|s| s.to_string());
+
+        let ctx = ctx
+            .to_builder()
+            .agent_id(cmd.from_agent_id)
+            .try_project_id(project_id.as_deref())
+            .try_task_id(task_id.as_deref())
+            .build();
         let payload = ToolCallMessage::new_request(
             cmd.request_id.to_string(),
             cmd.tool_id.to_string(),
@@ -172,6 +193,13 @@ impl MessageDelivery for MessageDomainImpl {
 
          let request: ToolCallMessage = serde_json::from_str(&cmd.request_message.po.content)
             .map_err(|e| err!(InvalidRequest, "invalid tool call request message").with_source(e))?;
+
+        let ctx = ctx
+            .to_builder()
+            .agent_id(&request.from_id)
+            .try_project_id(request.project_id.as_deref())
+            .try_task_id(request.task_id.as_deref())
+            .build();
 
         let (mut result_payload, trace_ref) = match cmd.outcome {
             ToolCallExecutionOutcome::Success {

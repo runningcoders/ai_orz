@@ -78,6 +78,8 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
         tool_id: String,
         args: Value,
     ) -> Result<ToolExecutionResult> {
+        let ctx = ctx.to_builder().agent_id(&agent_id).build();
+
         let bound_tools = self
             .tool_dal
             .list_tools_for_agent_full(ctx.clone(), &agent_id)

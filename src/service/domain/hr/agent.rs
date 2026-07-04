@@ -62,6 +62,7 @@ impl AgentManage for HrDomainImpl {
     ///
     /// 基础操作：更新 Agent 信息
     async fn update_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<()> {
+        let ctx = enrich_ctx!(&ctx, agent);
         self.agent_dal.update(ctx, agent).await
     }
 
@@ -69,6 +70,7 @@ impl AgentManage for HrDomainImpl {
     ///
     /// 基础操作：软删除 Agent（标记为已删除）
     async fn delete_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<()> {
+        let ctx = enrich_ctx!(&ctx, agent);
         self.agent_dal.delete(ctx, agent).await
     }
 
