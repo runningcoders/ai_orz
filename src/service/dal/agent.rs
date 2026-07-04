@@ -8,6 +8,8 @@ use crate::service::dao::agent;
 use crate::service::dao::agent::{AgentDao, AgentQuery};
 use common::enums::AgentStatus;
 use std::sync::{Arc, OnceLock};
+
+use crate::enrich_ctx;
 // ==================== 单例管理 ====================
 
 static AGENT_DAL: OnceLock<Arc<dyn AgentDal>> = OnceLock::new();
@@ -82,6 +84,7 @@ impl AgentDalImpl {
 #[async_trait::async_trait]
 impl AgentDal for AgentDalImpl {
     async fn create(&self, ctx: RequestContext, agent: &Agent) -> Result<()> {
+        let ctx = enrich_ctx!(&ctx, agent);
         self.agent_dao.insert(ctx, &agent.po).await
     }
 
@@ -107,10 +110,12 @@ impl AgentDal for AgentDalImpl {
     }
 
     async fn update(&self, ctx: RequestContext, agent: &Agent) -> Result<()> {
+        let ctx = enrich_ctx!(&ctx, agent);
         self.agent_dao.update(ctx, &agent.po).await
     }
 
     async fn delete(&self, ctx: RequestContext, agent: &Agent) -> Result<()> {
+        let ctx = enrich_ctx!(&ctx, agent);
         self.agent_dao.delete(ctx, &agent.po).await
     }
 
@@ -134,6 +139,7 @@ impl AgentDal for AgentDalImpl {
 
         // 4. 如果我们更新了 model_provider_id，需要更新数据库
         if need_update {
+            let ctx = enrich_ctx!(&ctx, &*agent);
             self.update(ctx, agent).await?;
         }
 

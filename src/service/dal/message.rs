@@ -305,6 +305,7 @@ impl MessageDal for MessageDalImpl {
     }
 
     async fn delete_by_task_id(&self, ctx: RequestContext, task_id: &str) -> Result<()> {
+        let ctx = ctx.to_builder().task_id(task_id).build();
         self.message_dao.delete_by_task_id(ctx, task_id).await
     }
 

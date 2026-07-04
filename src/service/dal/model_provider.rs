@@ -7,6 +7,8 @@ use crate::service::dao::model_provider;
 use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderQuery};
 use common::enums::ModelProviderStatus;
 use std::sync::{Arc, OnceLock};
+
+use crate::enrich_ctx;
 // ==================== 单例管理 ====================
 
 static MODEL_PROVIDER_DAL: OnceLock<Arc<dyn ModelProviderDal>> = OnceLock::new();
@@ -75,6 +77,7 @@ impl ModelProviderDalImpl {
 #[async_trait::async_trait]
 impl ModelProviderDal for ModelProviderDalImpl {
     async fn create(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<()> {
+        let ctx = enrich_ctx!(&ctx, provider);
         self.model_provider_dao.insert(ctx, &provider.po).await
     }
 
@@ -108,10 +111,12 @@ impl ModelProviderDal for ModelProviderDalImpl {
     }
 
     async fn update(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<()> {
+        let ctx = enrich_ctx!(&ctx, provider);
         self.model_provider_dao.update(ctx, &provider.po).await
     }
 
     async fn delete(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<()> {
+        let ctx = enrich_ctx!(&ctx, provider);
         self.model_provider_dao.delete(ctx, &provider.po).await
     }
 }

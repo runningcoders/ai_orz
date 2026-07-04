@@ -10,6 +10,8 @@ use crate::service::dao::task::{TaskDao, TaskQuery};
 use common::enums::{AssigneeType, TaskStatus};
 use std::sync::{Arc, OnceLock};
 
+use crate::enrich_ctx;
+
 // ==================== 单例管理 ====================
 
 static TASK_DAL: OnceLock<Arc<dyn TaskDal + Send + Sync>> = OnceLock::new();
@@ -116,6 +118,7 @@ struct TaskDalImpl {
 #[async_trait::async_trait]
 impl TaskDal for TaskDalImpl {
     async fn create(&self, ctx: RequestContext, task: &Task) -> Result<()> {
+        let ctx = enrich_ctx!(&ctx, task);
         self.task_dao.insert(ctx, &task.po).await
     }
 
@@ -177,6 +180,7 @@ impl TaskDal for TaskDalImpl {
     }
 
     async fn update(&self, ctx: RequestContext, task: &Task) -> Result<()> {
+        let ctx = enrich_ctx!(&ctx, task);
         self.task_dao.update(ctx, &task.po).await
     }
 
@@ -187,6 +191,7 @@ impl TaskDal for TaskDalImpl {
         status: TaskStatus,
         modified_by: &str,
     ) -> Result<()> {
+        let ctx = ctx.to_builder().task_id(id).build();
         self.task_dao
             .update_status(ctx, id, status, modified_by)
             .await
@@ -198,6 +203,7 @@ impl TaskDal for TaskDalImpl {
         id: &str,
         modified_by: &str,
     ) -> Result<()> {
+        let ctx = ctx.to_builder().task_id(id).build();
         self.task_dao
             .update_status(ctx, id, TaskStatus::Cancelled, modified_by)
             .await

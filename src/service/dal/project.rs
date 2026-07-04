@@ -10,6 +10,8 @@ use crate::service::dao::project::{ProjectDao, ProjectQuery};
 use common::enums::ProjectStatus;
 use std::sync::{Arc, OnceLock};
 
+use crate::enrich_ctx;
+
 // ==================== 单例管理 ====================
 
 static PROJECT_DAL: OnceLock<Arc<dyn ProjectDal + Send + Sync>> = OnceLock::new();
@@ -110,6 +112,7 @@ struct ProjectDalImpl {
 #[async_trait::async_trait]
 impl ProjectDal for ProjectDalImpl {
     async fn create(&self, ctx: RequestContext, project: &Project) -> Result<()> {
+        let ctx = enrich_ctx!(&ctx, project);
         self.project_dao.insert(ctx, &project.po).await
     }
 
@@ -155,6 +158,7 @@ impl ProjectDal for ProjectDalImpl {
     }
 
     async fn update(&self, ctx: RequestContext, project: &Project) -> Result<()> {
+        let ctx = enrich_ctx!(&ctx, project);
         self.project_dao.update(ctx, &project.po).await
     }
 
@@ -165,6 +169,7 @@ impl ProjectDal for ProjectDalImpl {
         status: ProjectStatus,
         modified_by: &str,
     ) -> Result<()> {
+        let ctx = ctx.to_builder().project_id(id).build();
         self.project_dao
             .update_status(ctx, id, status, modified_by)
             .await
@@ -176,6 +181,7 @@ impl ProjectDal for ProjectDalImpl {
         id: &str,
         modified_by: &str,
     ) -> Result<()> {
+        let ctx = ctx.to_builder().project_id(id).build();
         self.project_dao
             .update_status(ctx, id, ProjectStatus::Archived, modified_by)
             .await

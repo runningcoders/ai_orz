@@ -15,6 +15,8 @@ use crate::service::dao::tool_call::ToolCallDao;
 use async_trait::async_trait;
 use rig::tool::ToolDyn;
 use std::sync::{Arc, OnceLock};
+
+use crate::enrich_ctx;
 // ==================== 单例管理 ====================
 
 static BRAIN_DAL: OnceLock<Arc<dyn BrainDal>> = OnceLock::new();
@@ -114,12 +116,13 @@ impl BrainDal for BrainDalImpl {
         memories: Vec<crate::models::memory::Memory>,
         tools: Vec<Tool>,
     ) -> Result<Brain> {
+        let ctx = enrich_ctx!(&_ctx, provider);
         // 1. 创建 CortexTrait，传入工具列表
-        let rig_tools = self.tool_call_dao.wrap_for_rig(&tools, _ctx.clone());
+        let rig_tools = self.tool_call_dao.wrap_for_rig(&tools, ctx.clone());
 
         let cortex_trait = self
             .cortex_dao
-            .create_cortex_trait(_ctx, &provider.po, rig_tools)
+            .create_cortex_trait(ctx, &provider.po, rig_tools)
             .map_err(|e: anyhow::Error| err!(Internal, "failed to create cortex: {e}").with_source::<common::error::Error>(e.into()))?;
 
         // 2. 创建 Cortex 实体
@@ -137,6 +140,7 @@ impl BrainDal for BrainDalImpl {
         provider: &ModelProvider,
         prompt: &str,
     ) -> Result<String> {
+        let ctx = enrich_ctx!(&ctx, provider);
         // 1. 创建临时 Cortex，测试连接不需要工具
         let cortex_trait = self
             .cortex_dao
@@ -156,6 +160,8 @@ impl BrainDal for BrainDalImpl {
         brain: &Brain,
         prompt: &str,
     ) -> Result<String> {
+        // Brain 持有 Cortex，Cortex 持有 ModelProvider，从中补充 model_provider_id + model_name
+        let ctx = enrich_ctx!(&ctx, &brain.cortex.model_provider);
         let start = std::time::Instant::now();
 
         log_debug!(

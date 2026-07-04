@@ -10,6 +10,8 @@ use crate::service::dao::artifact::ArtifactDao;
 use common::enums::{ArtifactSourceType, FileType};
 use std::sync::{Arc, OnceLock};
 
+use crate::enrich_ctx;
+
 /// Artifact DAL 查询参数。
 ///
 /// Domain 层只依赖 DAL 的查询对象，不暴露 DAO 查询结构。
@@ -124,6 +126,7 @@ struct ArtifactDalImpl {
 #[async_trait::async_trait]
 impl ArtifactDal for ArtifactDalImpl {
     async fn create(&self, ctx: RequestContext, artifact: &Artifact) -> Result<()> {
+        let ctx = enrich_ctx!(&ctx, artifact);
         self.artifact_dao.insert(ctx, &artifact.po).await
     }
 
@@ -207,6 +210,7 @@ impl ArtifactDal for ArtifactDalImpl {
     }
 
     async fn update(&self, ctx: RequestContext, artifact: &Artifact) -> Result<()> {
+        let ctx = enrich_ctx!(&ctx, artifact);
         self.artifact_dao.update(ctx, &artifact.po).await
     }
 
@@ -224,6 +228,7 @@ impl ArtifactDal for ArtifactDalImpl {
         artifact: &Artifact,
         content: &[u8],
     ) -> Result<()> {
+        let ctx = enrich_ctx!(&ctx, artifact);
         self.artifact_dao
             .write_content(ctx, &artifact.po, content)
             .await

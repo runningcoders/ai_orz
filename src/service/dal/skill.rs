@@ -513,6 +513,7 @@ impl SkillDal for SkillDalImpl {
         source_skill_id: &str,
         agent_id: &str,
     ) -> Result<Skill> {
+        let ctx = ctx.to_builder().agent_id(agent_id).build();
         // 先获取源技能 PO
         let source_skill = self
             .skill_dao

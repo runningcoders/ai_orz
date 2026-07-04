@@ -263,6 +263,7 @@ impl ToolDal for ToolDalImpl {
         tool_id: &str,
         created_by: Option<String>,
     ) -> Result<()> {
+        let ctx = ctx.to_builder().agent_id(agent_id).build();
         Ok(self
             .tool_dao
             .add_tool_to_agent(ctx, agent_id, tool_id, created_by)
@@ -275,6 +276,7 @@ impl ToolDal for ToolDalImpl {
         agent_id: &str,
         tool_id: &str,
     ) -> Result<()> {
+        let ctx = ctx.to_builder().agent_id(agent_id).build();
         Ok(self
             .tool_dao
             .remove_tool_from_agent(ctx, agent_id, tool_id)
