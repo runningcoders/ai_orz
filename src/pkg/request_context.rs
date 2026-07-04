@@ -503,12 +503,12 @@ pub trait EnrichContext {
 /// 最后生成新的 RequestContext。
 ///
 /// 【用法】
-/// ```rust,ignore
+/// ```text
 /// let new_ctx = enrich_ctx!(&ctx, &agent, &project, &task);
 /// ```
 ///
 /// 等价于：
-/// ```rust,ignore
+/// ```text
 /// let mut builder = ctx.to_builder();
 /// builder = agent.enrich(builder);
 /// builder = project.enrich(builder);
