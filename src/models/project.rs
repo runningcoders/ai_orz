@@ -4,6 +4,7 @@
 //! - ProjectPo - 持久化对象（只在 DAO/DAL 层使用）
 //! - Project - 业务实体（Domain 层使用，包含聚合关系和业务方法）
 
+use crate::pkg::request_context::{EnrichContext, RequestContextBuilder};
 use common::constants::utils;
 use common::enums::project::ProjectStatus;
 use serde::{Deserialize, Serialize};
@@ -191,5 +192,13 @@ impl ProjectPo {
     /// 反序列化得到标签列表
     pub fn get_tags(&self) -> Vec<String> {
         serde_json::from_str(&self.tags).unwrap_or_default()
+    }
+}
+
+impl EnrichContext for Project {
+    fn enrich(&self, builder: RequestContextBuilder) -> RequestContextBuilder {
+        builder
+            .project_id(self.po.id.clone())
+            .try_agent_id(self.po.owner_agent_id.clone())
     }
 }

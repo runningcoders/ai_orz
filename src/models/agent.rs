@@ -2,6 +2,7 @@
 
 use crate::models::brain::{Brain, Cortex, CortexTrait};
 use crate::models::tool::Tool;
+use crate::pkg::request_context::{EnrichContext, RequestContextBuilder};
 use common::enums::AgentStatus;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
@@ -308,4 +309,12 @@ fn current_timestamp() -> i64 {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64
+}
+
+impl EnrichContext for Agent {
+    fn enrich(&self, builder: RequestContextBuilder) -> RequestContextBuilder {
+        builder
+            .agent_id(self.po.id.clone())
+            .model_provider_id(self.po.model_provider_id.clone())
+    }
 }

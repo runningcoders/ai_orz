@@ -97,6 +97,7 @@ RequestContextBuilder     (可变，有 with_* 方法)
 ```rust
 // 构建器（可变阶段）
 impl RequestContextBuilder {
+    // 必填方法：直接设置值
     pub fn log_id(mut self, log_id: impl Into<String>) -> Self;
     pub fn user_id(mut self, user_id: impl Into<String>) -> Self;
     pub fn username(mut self, username: impl Into<String>) -> Self;
@@ -107,6 +108,17 @@ impl RequestContextBuilder {
     pub fn model_provider_id(mut self, id: impl Into<String>) -> Self;
     pub fn model_name(mut self, name: impl Into<String>) -> Self;
     pub fn storage(mut self, storage: Storage) -> Self;
+
+    // try_* 方法：Some 时覆盖，None 时跳过（保留已有值）
+    pub fn try_user_id(mut self, user_id: Option<impl Into<String>>) -> Self;
+    pub fn try_username(mut self, username: Option<impl Into<String>>) -> Self;
+    pub fn try_organization_id(mut self, org_id: Option<impl Into<String>>) -> Self;
+    pub fn try_agent_id(mut self, agent_id: Option<impl Into<String>>) -> Self;
+    pub fn try_project_id(mut self, project_id: Option<impl Into<String>>) -> Self;
+    pub fn try_task_id(mut self, task_id: Option<impl Into<String>>) -> Self;
+    pub fn try_model_provider_id(mut self, id: Option<impl Into<String>>) -> Self;
+    pub fn try_model_name(mut self, name: Option<impl Into<String>>) -> Self;
+
     pub fn build(self) -> RequestContext;
 }
 ```
@@ -115,6 +127,8 @@ impl RequestContextBuilder {
 - 如果 `log_id` 未设置，自动生成
 - `storage` 未设置时使用全局单例
 - 其他字段默认为 `None`
+
+**`try_*` 方法用途**：实体字段为 `Option<String>` 时，无需手动判空，直接传给 `try_*` 方法。有值则覆盖，None 则跳过，保留 builder 中已有的值。典型场景是 `EnrichContext` 实现。
 
 ### 4.3 RequestContext 上的构造入口
 
@@ -144,16 +158,35 @@ let ctx = RequestContext::builder()
 
 ### 5.2 业务层扩展上下文（查到实体后回填）
 
+**手动方式**（适合单实体、字段明确的场景）：
+
 ```rust
 // 查到 Agent 实体后，回填到 ctx
 let agent = self.agent_dal.find_by_id(ctx.clone(), agent_id).await?;
 let ctx = ctx.to_builder()
     .agent_id(&agent.po.id)
-    .organization_id(&agent.po.organization_id)
+    .model_provider_id(&agent.po.model_provider_id)
     .build();
 
 // 继续往下传递新的 ctx
 self.brain_domain.think(ctx, ...).await?;
+```
+
+**EnrichContext 方式**（适合多实体串联、字段映射集中的场景）：
+
+```rust
+// 一行代码完成多实体上下文补充
+let ctx = enrich_ctx!(&ctx, &agent, &project, &task);
+```
+
+等价于：
+
+```rust
+let mut builder = ctx.to_builder();
+builder = agent.enrich(builder);   // 注入 agent_id, model_provider_id
+builder = project.enrich(builder); // 注入 project_id, try agent_id
+builder = task.enrich(builder);    // 注入 task_id, try project_id
+let ctx = builder.build();
 ```
 
 ### 5.3 Consumer 异步场景重建上下文
@@ -205,9 +238,57 @@ let ctx = ctx.to_builder()
 
 ---
 
-## 七、设计决策
+## 七、EnrichContext：实体到上下文的自动映射
 
-### 7.1 为什么不用 with_* 直接在 RequestContext 上？
+### 7.1 设计动机
+
+业务层扩展上下文时，经常需要把查到的实体字段回填到 ctx。如果每次都手写 `to_builder().xxx_id().build()`，会产生大量重复代码，且字段映射规则散落各处。
+
+`EnrichContext` trait 让实体自己声明如何注入上下文，字段映射规则集中在实体定义处，调用方通过 `enrich_ctx!` 宏串联多个实体。
+
+### 7.2 EnrichContext trait
+
+```rust
+/// 定义在 src/pkg/request_context.rs
+pub trait EnrichContext {
+    fn enrich(&self, builder: RequestContextBuilder) -> RequestContextBuilder;
+}
+```
+
+**覆盖规则**（符合树形扩散模型）：
+- 实体字段有值（Some）时，覆盖 builder 中已有的值
+- 实体字段为 None 时，跳过，保留 builder 中已有值
+
+### 7.3 enrich_ctx! 宏
+
+```rust
+let new_ctx = enrich_ctx!(&ctx, &agent, &project, &task);
+```
+
+依次调用每个实体的 `enrich` 方法，最后 `build()` 生成新的不可变 `RequestContext`。
+
+### 7.4 已实现的实体
+
+| 实体 | 注入字段 | 说明 |
+|------|----------|------|
+| `Agent` | `agent_id`, `model_provider_id` | 必填字段直接注入 |
+| `Project` | `project_id`, `try_agent_id` | owner_agent_id 可选，用 try_* |
+| `Task` | `task_id`, `try_project_id` | project_id 可选，用 try_* |
+| `ModelProvider` | `model_provider_id`, `model_name` | 必填字段直接注入 |
+
+### 7.5 设计约束
+
+> **上下文只存简单信息（ID、名称等），业务实体通过方法参数显式传递。**
+
+- `RequestContext` 永远不依赖 `models` 模块，只持有 String 类型的简单信息
+- `EnrichContext` trait 定义在 `request_context.rs` 中，实体在自己的文件中实现
+- 依赖方向单向：`models/*` → `pkg/request_context`，无循环引用风险
+
+---
+
+## 八、设计决策
+
+### 8.1 为什么不用 with_* 直接在 RequestContext 上？
 
 `ctx.clone().with_agent_id(...).with_project_id(...)` 也能工作，但有以下问题：
 
@@ -215,13 +296,13 @@ let ctx = ctx.to_builder()
 - `with_*` 方法会让 RequestContext 本身的 API 面膨胀
 - builder 作为独立类型，语义更清晰："正在构建中" vs "已经构建好"
 
-### 7.2 为什么用 owned 而不是引用？
+### 8.2 为什么用 owned 而不是引用？
 
 - 上下文对象是要被移动和克隆的，所有字段用 owned（String 而非 &str）
 - `with_*` 方法参数用 `impl Into<String>`，调用方可以传 `&str` 或 `String`
 - 内部 `Arc<Storage>` 天然支持浅克隆
 
-### 7.3 build() 时的校验（预留）
+### 8.3 build() 时的校验（预留）
 
 当前版本 `build()` 不做强校验，但预留了扩展位。未来可根据需要增加：
 
@@ -229,7 +310,7 @@ let ctx = ctx.to_builder()
 - `task_id` 设置时必须有 `project_id`
 - 等等...
 
-### 7.4 为什么 delivery 层要做 ctx 兜底？
+### 8.4 为什么 delivery 层要做 ctx 兜底？
 
 - **防御式设计**：上游可能忘记传维度，兜底确保数据完整性
 - **减少重复传参**：ctx 里已经有的信息，调用方不需要在 cmd 里再传一遍
@@ -256,3 +337,6 @@ let ctx = ctx.to_builder()
 - `RequestContextBuilder` 结构体
 - `RequestContext::builder()` 静态方法
 - `RequestContext::to_builder()` 实例方法
+- `try_*` 系列 Builder 方法（8 个），支持 Option 字段的条件覆盖
+- `EnrichContext` trait + `enrich_ctx!` 宏，实体到上下文的自动映射
+- 四个核心实体已实现 `EnrichContext`：Agent、Project、Task、ModelProvider

@@ -4,6 +4,7 @@
 //! - TaskPo - 持久化对象（只在 DAO/DAL 层使用）
 //! - Task - 业务实体（Domain 层使用，包含聚合关系和业务方法）
 
+use crate::pkg::request_context::{EnrichContext, RequestContextBuilder};
 use common::constants::utils;
 use common::enums::{AssigneeType, TaskStatus};
 use serde::{Deserialize, Serialize};
@@ -246,5 +247,13 @@ impl TaskPo {
     pub fn reset_thinking_depth(&mut self) {
         self.thinking_depth = 0;
         self.updated_at = utils::current_timestamp();
+    }
+}
+
+impl EnrichContext for Task {
+    fn enrich(&self, builder: RequestContextBuilder) -> RequestContextBuilder {
+        builder
+            .task_id(self.po.id.clone())
+            .try_project_id(self.po.project_id.clone())
     }
 }

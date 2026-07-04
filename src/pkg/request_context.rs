@@ -146,6 +146,62 @@ impl RequestContextBuilder {
         self
     }
 
+    pub fn try_user_id(mut self, user_id: Option<impl Into<String>>) -> Self {
+        if let Some(v) = user_id {
+            self.user_id = Some(v.into());
+        }
+        self
+    }
+
+    pub fn try_username(mut self, username: Option<impl Into<String>>) -> Self {
+        if let Some(v) = username {
+            self.username = Some(v.into());
+        }
+        self
+    }
+
+    pub fn try_organization_id(mut self, organization_id: Option<impl Into<String>>) -> Self {
+        if let Some(v) = organization_id {
+            self.organization_id = Some(v.into());
+        }
+        self
+    }
+
+    pub fn try_agent_id(mut self, agent_id: Option<impl Into<String>>) -> Self {
+        if let Some(v) = agent_id {
+            self.agent_id = Some(v.into());
+        }
+        self
+    }
+
+    pub fn try_task_id(mut self, task_id: Option<impl Into<String>>) -> Self {
+        if let Some(v) = task_id {
+            self.task_id = Some(v.into());
+        }
+        self
+    }
+
+    pub fn try_project_id(mut self, project_id: Option<impl Into<String>>) -> Self {
+        if let Some(v) = project_id {
+            self.project_id = Some(v.into());
+        }
+        self
+    }
+
+    pub fn try_model_provider_id(mut self, model_provider_id: Option<impl Into<String>>) -> Self {
+        if let Some(v) = model_provider_id {
+            self.model_provider_id = Some(v.into());
+        }
+        self
+    }
+
+    pub fn try_model_name(mut self, model_name: Option<impl Into<String>>) -> Self {
+        if let Some(v) = model_name {
+            self.model_name = Some(v.into());
+        }
+        self
+    }
+
     pub fn storage(mut self, storage: Storage) -> Self {
         self.storage = Some(storage);
         self
@@ -418,4 +474,55 @@ fn rand_simple() -> u32 {
         .unwrap()
         .as_nanos() as u32;
     time2.wrapping_add(hasher.finish() as u32)
+}
+
+// ==================== 上下文增强 ====================
+
+/// 上下文增强 trait
+///
+/// 实体自己声明如何把字段注入到 RequestContextBuilder。
+/// 字段映射规则集中在实体定义处，调用方通过 `enrich_ctx!` 宏串联。
+///
+/// 【覆盖规则】
+/// - 实体字段有值（Some）时，覆盖 builder 中已有的值
+/// - 实体字段为 None 时，跳过，保留 builder 中已有值
+///
+/// 符合树形扩散模型：越靠近数据层的信息优先级越高。
+///
+/// 【设计约束】
+/// 上下文只存简单信息（ID、名称等），业务实体通过方法参数显式传递。
+/// RequestContext 永远不依赖 models 模块，避免循环引用。
+pub trait EnrichContext {
+    /// 将实体字段注入 builder，返回新的 builder
+    fn enrich(&self, builder: RequestContextBuilder) -> RequestContextBuilder;
+}
+
+/// 上下文增强宏
+///
+/// 接受一个 ctx 和多个实体，依次调用每个实体的 `enrich` 方法，
+/// 最后生成新的 RequestContext。
+///
+/// 【用法】
+/// ```rust
+/// let new_ctx = enrich_ctx!(&ctx, &agent, &project, &task);
+/// ```
+///
+/// 等价于：
+/// ```rust
+/// let mut builder = ctx.to_builder();
+/// builder = agent.enrich(builder);
+/// builder = project.enrich(builder);
+/// builder = task.enrich(builder);
+/// let new_ctx = builder.build();
+/// ```
+#[macro_export]
+macro_rules! enrich_ctx {
+    ($ctx:expr, $($entity:expr),* $(,)?) => {{
+        use $crate::pkg::request_context::EnrichContext;
+        let mut builder = ($ctx).to_builder();
+        $(
+            builder = ($entity).enrich(builder);
+        )*
+        builder.build()
+    }};
 }

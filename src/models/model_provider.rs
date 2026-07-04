@@ -1,5 +1,6 @@
 //! 模型提供商实体
 
+use crate::pkg::request_context::{EnrichContext, RequestContextBuilder};
 use common::enums::{ModelCapability, ModelProviderStatus, ProviderType};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
@@ -213,4 +214,12 @@ fn current_timestamp() -> i64 {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64
+}
+
+impl EnrichContext for ModelProvider {
+    fn enrich(&self, builder: RequestContextBuilder) -> RequestContextBuilder {
+        builder
+            .model_provider_id(self.po.id.clone())
+            .model_name(self.po.model_name.clone())
+    }
 }
