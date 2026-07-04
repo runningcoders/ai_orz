@@ -195,10 +195,19 @@ impl ProjectPo {
     }
 }
 
+impl crate::pkg::request_context::EnrichContext for ProjectPo {
+    fn enrich(
+        &self,
+        builder: crate::pkg::request_context::RequestContextBuilder,
+    ) -> crate::pkg::request_context::RequestContextBuilder {
+        builder
+            .project_id(self.id.clone())
+            .try_agent_id(self.owner_agent_id.clone())
+    }
+}
+
 impl EnrichContext for Project {
     fn enrich(&self, builder: RequestContextBuilder) -> RequestContextBuilder {
-        builder
-            .project_id(self.po.id.clone())
-            .try_agent_id(self.po.owner_agent_id.clone())
+        self.po.enrich(builder)
     }
 }

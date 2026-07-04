@@ -314,13 +314,22 @@ impl ArtifactPo {
 
 // ==================== EnrichContext 实现 ====================
 
-impl crate::pkg::request_context::EnrichContext for Artifact {
+impl crate::pkg::request_context::EnrichContext for ArtifactPo {
     fn enrich(
         &self,
         builder: crate::pkg::request_context::RequestContextBuilder,
     ) -> crate::pkg::request_context::RequestContextBuilder {
         builder
-            .project_id(&self.po.project_id)
-            .try_task_id(self.po.task_id.as_deref())
+            .project_id(&self.project_id)
+            .try_task_id(self.task_id.as_deref())
+    }
+}
+
+impl crate::pkg::request_context::EnrichContext for Artifact {
+    fn enrich(
+        &self,
+        builder: crate::pkg::request_context::RequestContextBuilder,
+    ) -> crate::pkg::request_context::RequestContextBuilder {
+        self.po.enrich(builder)
     }
 }

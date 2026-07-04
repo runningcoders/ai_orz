@@ -1,6 +1,6 @@
 # RequestContext 设计文档
 
-> 最后更新：2026-07-04
+> 最后更新：2026-07-04（PO 迁移 + delivery/artifact 复用 EnrichContext）
 
 ## 一、定位与核心原则
 
@@ -204,19 +204,18 @@ let ctx = RequestContext::builder()
 ### 5.4 Cortex 创建时注入模型维度
 
 ```rust
-let ctx = ctx.to_builder()
-    .model_provider_id(&provider.po.id)
-    .model_name(&provider.po.model_name)
-    .build();
+// 复用 ModelProvider 的 EnrichContext 实现
+let ctx = enrich_ctx!(&ctx, provider);
 ```
 
 ### 5.5 Delivery 层 ctx 兜底（下游防御）
 
-在 `send_to_agent` / `send_to_user` / `send_tool_call_request` 中：
+在 `send_to_agent` / `send_to_user` / `send_tool_call_request` / `send_tool_call_result` 中：
 
 - `project_id`：cmd 传了用 cmd 的，没传用 ctx 里的
 - `task_id`：cmd 传了用 cmd 的，没传用 ctx 里的
 - `organization_id`：直接从 ctx 取（之前已实现）
+- 创建 Message 实体后，通过 `enrich_ctx!(&ctx, &message)` 复用 `MessagePo` 的 EnrichContext 实现补充上下文
 
 这样即使调用方忘了在 cmd 里传，只要 ctx 里有，消息也不会丢维度。
 
@@ -269,12 +268,18 @@ let new_ctx = enrich_ctx!(&ctx, &agent, &project, &task);
 
 ### 7.4 已实现的实体
 
-| 实体 | 注入字段 | 说明 |
-|------|----------|------|
-| `Agent` | `agent_id`, `model_provider_id` | 必填字段直接注入 |
-| `Project` | `project_id`, `try_agent_id` | owner_agent_id 可选，用 try_* |
-| `Task` | `task_id`, `try_project_id` | project_id 可选，用 try_* |
-| `ModelProvider` | `model_provider_id`, `model_name` | 必填字段直接注入 |
+**实现位置：PO 优先，业务实体委托**
+
+EnrichContext 的字段映射逻辑统一实现在 PO 上（`XxxPo`），业务实体通过 `self.po.enrich(builder)` 委托。这样 DAL 层只有 PO 时也能直接用 `enrich_ctx!` 补充上下文，无需先包装成业务实体。
+
+| PO 实现 | 业务实体委托 | 注入字段 | 说明 |
+|---------|-------------|----------|------|
+| `AgentPo` | `Agent` | `agent_id`, `model_provider_id` | 必填字段直接注入 |
+| `ProjectPo` | `Project` | `project_id`, `try_agent_id` | owner_agent_id 可选，用 try_* |
+| `TaskPo` | `Task` | `task_id`, `try_project_id` | project_id 可选，用 try_* |
+| `ModelProviderPo` | `ModelProvider` | `model_provider_id`, `model_name` | 必填字段直接注入 |
+| `ArtifactPo` | `Artifact` | `try_project_id`, `try_task_id` | 均为可选字段，用 try_* |
+| `MessagePo` | `Message` | `try_project_id`, `try_task_id`, `try_agent_id` | agent_id 根据 from_role/to_role 推断 |
 
 ### 7.5 设计约束
 
@@ -283,6 +288,15 @@ let new_ctx = enrich_ctx!(&ctx, &agent, &project, &task);
 - `RequestContext` 永远不依赖 `models` 模块，只持有 String 类型的简单信息
 - `EnrichContext` trait 定义在 `request_context.rs` 中，实体在自己的文件中实现
 - 依赖方向单向：`models/*` → `pkg/request_context`，无循环引用风险
+
+### 7.6 上下文补充的边界原则
+
+> **上下文补充是"顺便"的，不是业务逻辑。**
+
+- **只用当前已有的信息**：业务逻辑中已经查到的实体、已经创建的对象，顺便 enrich 到上下文
+- **不为此专门查询**：不会为了补充上下文而去做一次数据库查询，否则补充上下文就变成了业务逻辑本身
+- **例外情况**：只有当下游确实需要额外上下文、且补充上下文本身就是业务逻辑的一部分时，才会专门查询
+- **只有 ID 时用 to_builder()**：方法参数只有 ID（没有实体）时，直接用 `ctx.to_builder().xxx_id(id).build()` 即可
 
 ---
 
@@ -329,8 +343,11 @@ let new_ctx = enrich_ctx!(&ctx, &agent, &project, &task);
 ### 已完成迁移的
 
 - 所有 `set_*` 方法 → `to_builder().with_*().build()`
-- 生产代码：cortex/rig.rs、consumer/message.rs
+- 生产代码：cortex/rig.rs、consumer/message.rs、brain.rs
 - 测试代码：request_context_test.rs、tool_call_entry_test.rs、tool_execution_test.rs
+- **EnrichContext 实现迁移到 PO**：AgentPo/ProjectPo/TaskPo/ArtifactPo/ModelProviderPo/MessagePo 均已实现，业务实体委托
+- **delivery 层复用 EnrichContext**：send_to_agent/send_to_user/send_tool_call_request/send_tool_call_result 改用 `enrich_ctx!(&ctx, &message)`
+- **artifact 创建复用 EnrichContext**：create_attachment_artifact/create_project_artifact/create_task_artifact 改用 `enrich_ctx!(&ctx, &artifact)`
 
 ### 新增的
 
@@ -339,4 +356,4 @@ let new_ctx = enrich_ctx!(&ctx, &agent, &project, &task);
 - `RequestContext::to_builder()` 实例方法
 - `try_*` 系列 Builder 方法（8 个），支持 Option 字段的条件覆盖
 - `EnrichContext` trait + `enrich_ctx!` 宏，实体到上下文的自动映射
-- 四个核心实体已实现 `EnrichContext`：Agent、Project、Task、ModelProvider
+- 六个核心实体已实现 `EnrichContext`（PO 层）：Agent、Project、Task、ModelProvider、Artifact、Message

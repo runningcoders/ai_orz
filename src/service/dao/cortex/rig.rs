@@ -1,5 +1,6 @@
 //! Rig 驱动的 Cortex 实现
 
+use crate::enrich_ctx;
 use crate::models::{brain::*, model_provider::ModelProviderPo, vector::VectorIndexParams};
 use crate::pkg::request_context::RequestContext;
 use anyhow::Result;
@@ -39,11 +40,7 @@ impl super::CortexDao for RigCortexDao {
         let api_key = provider.api_key.clone();
         let model = provider.model_name.clone();
 
-        let ctx = ctx
-            .to_builder()
-            .model_provider_id(provider.id.clone())
-            .model_name(model.clone())
-            .build();
+        let ctx = enrich_ctx!(&ctx, provider);
 
         // ✅ 根据 ModelCapability 构建对应的 Cortex
         // 职责边界清晰：ModelProvider 决定能力类型，Cortex 实现具体能力

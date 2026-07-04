@@ -250,10 +250,19 @@ impl TaskPo {
     }
 }
 
+impl crate::pkg::request_context::EnrichContext for TaskPo {
+    fn enrich(
+        &self,
+        builder: crate::pkg::request_context::RequestContextBuilder,
+    ) -> crate::pkg::request_context::RequestContextBuilder {
+        builder
+            .task_id(self.id.clone())
+            .try_project_id(self.project_id.clone())
+    }
+}
+
 impl EnrichContext for Task {
     fn enrich(&self, builder: RequestContextBuilder) -> RequestContextBuilder {
-        builder
-            .task_id(self.po.id.clone())
-            .try_project_id(self.po.project_id.clone())
+        self.po.enrich(builder)
     }
 }

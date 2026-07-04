@@ -12,6 +12,7 @@ use common::enums::{ChannelStatus, ChannelType};
 use serde::Serialize;
 
 use common::error::{err, bail_err, Result};
+use crate::enrich_ctx;
 use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;
@@ -220,6 +221,7 @@ impl MessageChannelDal for MessageChannelDalImpl {
         message: &Message,
         user_id: &str,
     ) -> Result<DeliveryResult> {
+        let ctx = enrich_ctx!(&ctx, message);
         // 1. 查询用户的所有活跃渠道
         let channels = self
             .message_channel_dao

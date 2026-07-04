@@ -469,6 +469,32 @@ impl ToolCallMessage {
     }
 }
 
+impl crate::pkg::request_context::EnrichContext for MessagePo {
+    fn enrich(
+        &self,
+        builder: crate::pkg::request_context::RequestContextBuilder,
+    ) -> crate::pkg::request_context::RequestContextBuilder {
+        let agent_id = match (self.from_role, self.to_role) {
+            (MessageRole::Agent, _) => Some(self.from_id.as_str()),
+            (_, MessageRole::Agent) => Some(self.to_id.as_str()),
+            _ => None,
+        };
+        builder
+            .try_project_id(self.project_id.as_deref())
+            .try_task_id(self.task_id.as_deref())
+            .try_agent_id(agent_id)
+    }
+}
+
+impl crate::pkg::request_context::EnrichContext for Message {
+    fn enrich(
+        &self,
+        builder: crate::pkg::request_context::RequestContextBuilder,
+    ) -> crate::pkg::request_context::RequestContextBuilder {
+        self.po.enrich(builder)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

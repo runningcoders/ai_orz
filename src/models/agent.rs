@@ -311,10 +311,19 @@ fn current_timestamp() -> i64 {
         .as_secs() as i64
 }
 
+impl crate::pkg::request_context::EnrichContext for AgentPo {
+    fn enrich(
+        &self,
+        builder: crate::pkg::request_context::RequestContextBuilder,
+    ) -> crate::pkg::request_context::RequestContextBuilder {
+        builder
+            .agent_id(self.id.clone())
+            .model_provider_id(self.model_provider_id.clone())
+    }
+}
+
 impl EnrichContext for Agent {
     fn enrich(&self, builder: RequestContextBuilder) -> RequestContextBuilder {
-        builder
-            .agent_id(self.po.id.clone())
-            .model_provider_id(self.po.model_provider_id.clone())
+        self.po.enrich(builder)
     }
 }

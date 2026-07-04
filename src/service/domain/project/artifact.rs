@@ -39,11 +39,6 @@ impl super::ArtifactManage for ProjectDomainImpl {
         tags: Vec<String>,
         created_by: String,
     ) -> Result<Artifact> {
-        let ctx = ctx
-            .to_builder()
-            .project_id(&project_id)
-            .try_task_id(task_id.as_deref())
-            .build();
         self.validate_project_and_task(ctx.clone(), &project_id, task_id.as_deref())
             .await?;
 
@@ -70,6 +65,7 @@ impl super::ArtifactManage for ProjectDomainImpl {
             )
         };
         artifact.po.set_tags(tags, created_by);
+        let ctx = enrich_ctx!(&ctx, &artifact);
         self.artifact_dal.create(ctx, &artifact).await?;
         Ok(artifact)
     }
@@ -85,7 +81,6 @@ impl super::ArtifactManage for ProjectDomainImpl {
         file_meta: FileMeta,
         created_by: String,
     ) -> Result<Artifact> {
-        let ctx = ctx.to_builder().project_id(&project_id).build();
         self.validate_project_access(ctx.clone(), &project_id)
             .await?;
         let artifact = Artifact::new_project(
@@ -96,6 +91,7 @@ impl super::ArtifactManage for ProjectDomainImpl {
             file_meta,
             created_by,
         );
+        let ctx = enrich_ctx!(&ctx, &artifact);
         self.artifact_dal.create(ctx.clone(), &artifact).await?;
         Ok(artifact)
     }
@@ -112,11 +108,6 @@ impl super::ArtifactManage for ProjectDomainImpl {
         file_meta: FileMeta,
         created_by: String,
     ) -> Result<Artifact> {
-        let ctx = ctx
-            .to_builder()
-            .project_id(&project_id)
-            .task_id(&task_id)
-            .build();
         self.validate_project_and_task(ctx.clone(), &project_id, Some(&task_id))
             .await?;
         let artifact = Artifact::new_task(
@@ -128,6 +119,7 @@ impl super::ArtifactManage for ProjectDomainImpl {
             file_meta,
             created_by,
         );
+        let ctx = enrich_ctx!(&ctx, &artifact);
         self.artifact_dal.create(ctx.clone(), &artifact).await?;
         Ok(artifact)
     }
