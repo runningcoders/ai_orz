@@ -430,6 +430,178 @@ let event = AgentAwakeEvent::new(timestamp)
 record_event!(ctx, event);
 ```
 
+#### Project 业务事件
+
+在 `ProjectDomain` 的状态变更方法中记录 `ProjectEvent`，用于追踪项目生命周期和关键业务动作。
+
+**事件类型枚举：**
+
+| 事件类型 | 触发时机 | 说明 |
+|----------|----------|------|
+| `created` | 项目创建时 | 记录项目创建人和初始状态 |
+| `started` | 项目启动时 | 记录项目从非活跃状态进入进行中 |
+| `completed` | 项目完成时 | 记录项目完成，可统计耗时 |
+| `archived` | 项目归档时 | 记录项目归档 |
+| `status_changed` | 状态流转时 | 通用状态变更记录（transition_status 调用） |
+
+**事件字段设计：**
+
+```rust
+pub struct ProjectEvent {
+    #[timestamp]
+    pub timestamp: i64,
+    #[tag]
+    pub project_id: String,
+    #[tag]
+    pub event_type: String,       // created / started / completed / archived / status_changed
+    #[tag]
+    pub organization_id: Option<String>,
+    #[tag]
+    pub operator_type: Option<String>,  // 操作者类型：user / agent
+    #[tag]
+    pub operator_id: Option<String>,    // 操作者 ID
+    #[tag]
+    pub root_user_id: Option<String>,
+    #[tag]
+    pub owner_type: Option<String>,     // 项目负责人类型：user / agent
+    #[tag]
+    pub owner_id: Option<String>,       // 项目负责人 ID
+    #[tag]
+    pub from_status: Option<String>,    // 变更前状态
+    #[tag]
+    pub to_status: Option<String>,      // 变更后状态
+    #[metric]
+    pub duration_ms: Option<u64>,       // 操作耗时
+    #[metric]
+    pub priority: i32,
+}
+```
+
+**记录位置：**
+- `ProjectManage::create()` → `created` 事件
+- `ProjectManage::start()` → `started` 事件
+- `ProjectManage::complete()` → `completed` 事件
+- `ProjectManage::archive()` → `archived` 事件
+- `ProjectManage::transition_status()` → `status_changed` 事件（内部统一调用，上面三个也会经过）
+
+#### Task 业务事件
+
+在 `TaskManage` 的状态变更方法中记录 `TaskEvent`，用于追踪任务生命周期和关键业务动作。
+
+**事件类型枚举：**
+
+| 事件类型 | 触发时机 | 说明 |
+|----------|----------|------|
+| `created` | 任务创建时 | 记录任务创建人和初始状态 |
+| `started` | 任务开始时 | 记录任务从待办进入进行中 |
+| `completed` | 任务完成时 | 记录任务完成，可统计耗时 |
+| `cancelled` | 任务取消时 | 记录任务取消 |
+| `assigned` | 任务分配/重新分配时 | 记录负责人变更 |
+| `status_changed` | 状态流转时 | 通用状态变更记录 |
+
+**事件字段设计：**
+
+```rust
+pub struct TaskEvent {
+    #[timestamp]
+    pub timestamp: i64,
+    #[tag]
+    pub task_id: String,
+    #[tag]
+    pub project_id: Option<String>,   // 必须有，任务归属项目
+    #[tag]
+    pub event_type: String,           // created / started / completed / cancelled / assigned / status_changed
+    #[tag]
+    pub organization_id: Option<String>,
+    #[tag]
+    pub operator_type: Option<String>,  // 操作者类型：user / agent
+    #[tag]
+    pub operator_id: Option<String>,    // 操作者 ID
+    #[tag]
+    pub root_user_id: Option<String>,
+    #[tag]
+    pub assignee_type: Option<String>,  // 任务负责人类型：user / agent
+    #[tag]
+    pub assignee_id: Option<String>,    // 当前负责人 ID
+    #[tag]
+    pub from_assignee_id: Option<String>,  // 变更前负责人（assigned 事件用）
+    #[tag]
+    pub from_status: Option<String>,    // 变更前状态
+    #[tag]
+    pub to_status: Option<String>,      // 变更后状态
+    #[metric]
+    pub duration_ms: Option<u64>,       // 操作耗时
+    #[metric]
+    pub priority: i32,
+}
+```
+
+**记录位置：**
+- `TaskManage::create()` / `create_with_options()` → `created` 事件
+- `TaskManage::start()` → `started` 事件
+- `TaskManage::complete()` → `completed` 事件
+- `TaskManage::cancel()` → `cancelled` 事件
+- `TaskManage::transition_status()` → `status_changed` 事件
+
+#### ToolCallEvent 多维度字段说明
+
+`ToolCallEvent` 已内置 `project_id` 和 `task_id` 字段，支持按项目/任务维度统计工具调用。在调用工具时，如果上下文中包含 project_id 或 task_id，会自动填充到事件中。
+
+---
+
+## 事件记录原则与方法清单
+
+### 记录原则
+
+1. **状态变更必记录**：所有业务实体的状态流转都需要记录事件
+2. **创建/删除必记录**：实体的创建和删除（归档/取消）需要记录
+3. **关键动作记录**：如分配、重新分配等业务意义明确的动作
+4. **只读操作不记录**：查询、列表等只读操作不记录统计事件
+5. **上下文自动携带**：事件记录时自动从 `RequestContext` 提取 organization_id、user_id 等信息
+
+### 需要记录事件的方法清单
+
+#### Project Domain
+
+| 方法 | 事件类型 | 说明 |
+|------|----------|------|
+| `ProjectManage::create()` | `created` | 项目创建 |
+| `ProjectManage::start()` | `started` | 项目启动 |
+| `ProjectManage::complete()` | `completed` | 项目完成 |
+| `ProjectManage::archive()` | `archived` | 项目归档 |
+| `ProjectManage::transition_status()` | `status_changed` | 状态流转（内部统一入口） |
+
+> **设计说明**：`start/complete/archive` 和 `transition_status` 是并列的 API 入口，互不调用。每个入口记录对应语义的事件：
+> - `create()` → `created`
+> - `start()` → `started`
+> - `complete()` → `completed`
+> - `archive()` → `archived`
+> - `transition_status()` → `status_changed`
+>
+> 这样设计的好处是事件类型直接对应用户的操作意图，统计时可以按不同维度聚合。
+
+#### Task Domain
+
+| 方法 | 事件类型 | 说明 |
+|------|----------|------|
+| `TaskManage::create()` | `created` | 任务创建 |
+| `TaskManage::start()` | `started` | 任务开始 |
+| `TaskManage::complete()` | `completed` | 任务完成 |
+| `TaskManage::cancel()` | `cancelled` | 任务取消 |
+| `TaskManage::transition_status()` | `status_changed` | 状态流转（内部统一入口） |
+
+> **注意**：当前 Task Domain 中没有单独的 `assign`/`reassign` 方法，分配信息在创建时设置。未来如果增加独立的分配方法，需要补充 `assigned` 事件。
+
+### 已实现事件清单
+
+| 事件类型 | 结构体 | 表名 | 记录位置 | 状态 |
+|----------|--------|------|----------|------|
+| 模型调用 | `ModelCallEvent` | `model_call_events` | rig hook `on_completion_response` | ✅ 已实现 |
+| 工具调用 | `ToolCallEvent` | `tool_call_events` | `ToolCallLoggingDecorator` | ✅ 已实现 |
+| Agent 唤醒 | `AgentAwakeEvent` | `agent_awake_events` | `RuntimeDomain.awaken()` | ✅ 已实现 |
+| Project 业务 | `ProjectEvent` | `project_events` | `ProjectManage` 状态方法 | ✅ 已实现 |
+| Task 业务 | `TaskEvent` | `task_events` | `TaskManage` 状态方法 | ✅ 已实现 |
+
 ---
 
 ## 版本信息
@@ -445,3 +617,4 @@ record_event!(ctx, event);
 | v1.6 | 2026-07-03 | 监控链路字段补充 | ModelCallEvent 补充 model_provider_id / model_name；ToolCallEvent 新增 organization_id / user_id |
 | v1.7 | 2026-07-05 | 领域拆分重构 | **核心改造**：按领域划分职责，Agent/Project/Task StatsDao 只负责自身维度的 call_summary；ModelProviderStatsDao 升级为模型调用领域 DAO；新增 ModelCallStats 通用结构体；DAL 层组装跨领域统计结果；接口精简为 get_stats(id, options) + get_model_call_stats(id, options) |
 | v1.8 | 2026-07-05 | Agent 唤醒事件 + 数据源切换 | 新增 `AgentAwakeEvent` 统计事件和 `agent_awake_events` 表；在 RuntimeDomain.awaken() 中记录唤醒事件；AgentStatsDao 数据源从 model_call_events 切换到 agent_awake_events，统计内容从"模型调用次数"变为"Agent 唤醒次数" |
+| v1.9 | 2026-07-06 | Project/Task 业务事件落地 | 新增 `ProjectEvent` 和 `TaskEvent` 两个业务事件结构体和表；在 ProjectDomain 和 TaskDomain 的状态变更方法中集成事件记录；`record_event!` 宏改用 `stats_opt()` 避免未初始化时 panic；544 个测试 100% 通过 |

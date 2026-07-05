@@ -5,6 +5,7 @@
 use common::error::{err, Result, bail_err};
 use crate::models::task::Task;
 use crate::pkg::RequestContext;
+use crate::pkg::stats::TaskEvent;
 use common::constants::utils;
 use common::enums::{AssigneeType, TaskStatus};
 use uuid::Uuid;
@@ -12,6 +13,7 @@ use uuid::Uuid;
 use super::ProjectDomainImpl;
 
 use crate::enrich_ctx;
+use crate::record_event;
 
 #[async_trait::async_trait]
 impl super::TaskManage for ProjectDomainImpl {
@@ -82,6 +84,24 @@ impl super::TaskManage for ProjectDomainImpl {
         );
 
         self.task_dal.create(ctx.clone(), &task).await?;
+
+        let _ = record_event!(ctx.clone(), TaskEvent {
+            task_id: task.po.id.clone(),
+            project_id: task.po.project_id.clone(),
+            event_type: "created".to_string(),
+            organization_id: ctx.organization_id.clone(),
+            operator_type: Some(if ctx.agent_id().is_some() { "agent".to_string() } else { "user".to_string() }),
+            operator_id: ctx.agent_id().cloned().or_else(|| ctx.user_id().cloned()),
+            root_user_id: Some(task.po.root_user_id.clone()),
+            assignee_type: Some(format!("{:?}", task.po.assignee_type)),
+            assignee_id: Some(task.po.assignee_id.clone()),
+            from_assignee_id: None,
+            from_status: None,
+            to_status: Some(format!("{:?}", task.po.status)),
+            duration_ms: None,
+            priority: task.po.priority,
+        });
+
         Ok(task)
     }
 
@@ -201,9 +221,28 @@ impl super::TaskManage for ProjectDomainImpl {
 
         let ctx = enrich_ctx!(&ctx, &task);
 
+        let from_status = format!("{:?}", task.po.status);
         task.start();
         task.po.modified_by = modified_by;
-        self.task_dal.update(ctx, &task).await?;
+        self.task_dal.update(ctx.clone(), &task).await?;
+
+        let _ = record_event!(ctx.clone(), TaskEvent {
+            task_id: task.po.id.clone(),
+            project_id: task.po.project_id.clone(),
+            event_type: "started".to_string(),
+            organization_id: ctx.organization_id.clone(),
+            operator_type: Some(if ctx.agent_id().is_some() { "agent".to_string() } else { "user".to_string() }),
+            operator_id: ctx.agent_id().cloned().or_else(|| ctx.user_id().cloned()),
+            root_user_id: Some(task.po.root_user_id.clone()),
+            assignee_type: Some(format!("{:?}", task.po.assignee_type)),
+            assignee_id: Some(task.po.assignee_id.clone()),
+            from_assignee_id: None,
+            from_status: Some(from_status),
+            to_status: Some(format!("{:?}", task.po.status)),
+            duration_ms: None,
+            priority: task.po.priority,
+        });
+
         Ok(())
     }
 
@@ -220,9 +259,28 @@ impl super::TaskManage for ProjectDomainImpl {
 
         let ctx = enrich_ctx!(&ctx, &task);
 
+        let from_status = format!("{:?}", task.po.status);
         task.complete();
         task.po.modified_by = modified_by;
-        self.task_dal.update(ctx, &task).await?;
+        self.task_dal.update(ctx.clone(), &task).await?;
+
+        let _ = record_event!(ctx.clone(), TaskEvent {
+            task_id: task.po.id.clone(),
+            project_id: task.po.project_id.clone(),
+            event_type: "completed".to_string(),
+            organization_id: ctx.organization_id.clone(),
+            operator_type: Some(if ctx.agent_id().is_some() { "agent".to_string() } else { "user".to_string() }),
+            operator_id: ctx.agent_id().cloned().or_else(|| ctx.user_id().cloned()),
+            root_user_id: Some(task.po.root_user_id.clone()),
+            assignee_type: Some(format!("{:?}", task.po.assignee_type)),
+            assignee_id: Some(task.po.assignee_id.clone()),
+            from_assignee_id: None,
+            from_status: Some(from_status),
+            to_status: Some(format!("{:?}", task.po.status)),
+            duration_ms: None,
+            priority: task.po.priority,
+        });
+
         Ok(())
     }
 
@@ -239,9 +297,28 @@ impl super::TaskManage for ProjectDomainImpl {
 
         let ctx = enrich_ctx!(&ctx, &task);
 
+        let from_status = format!("{:?}", task.po.status);
         task.cancel();
         task.po.modified_by = modified_by;
-        self.task_dal.update(ctx, &task).await?;
+        self.task_dal.update(ctx.clone(), &task).await?;
+
+        let _ = record_event!(ctx.clone(), TaskEvent {
+            task_id: task.po.id.clone(),
+            project_id: task.po.project_id.clone(),
+            event_type: "cancelled".to_string(),
+            organization_id: ctx.organization_id.clone(),
+            operator_type: Some(if ctx.agent_id().is_some() { "agent".to_string() } else { "user".to_string() }),
+            operator_id: ctx.agent_id().cloned().or_else(|| ctx.user_id().cloned()),
+            root_user_id: Some(task.po.root_user_id.clone()),
+            assignee_type: Some(format!("{:?}", task.po.assignee_type)),
+            assignee_id: Some(task.po.assignee_id.clone()),
+            from_assignee_id: None,
+            from_status: Some(from_status),
+            to_status: Some(format!("{:?}", task.po.status)),
+            duration_ms: None,
+            priority: task.po.priority,
+        });
+
         Ok(())
     }
 
@@ -282,6 +359,8 @@ impl super::TaskManage for ProjectDomainImpl {
             return Ok(());
         }
 
+        let from_status = format!("{:?}", current_status);
+
         match target_status {
             TaskStatus::InProgress => {
                 task.po.status = TaskStatus::InProgress;
@@ -300,6 +379,25 @@ impl super::TaskManage for ProjectDomainImpl {
         }
         task.po.modified_by = ctx.uid();
 
-        self.task_dal.update(ctx, task).await
+        self.task_dal.update(ctx.clone(), task).await?;
+
+        let _ = record_event!(ctx.clone(), TaskEvent {
+            task_id: task.po.id.clone(),
+            project_id: task.po.project_id.clone(),
+            event_type: "status_changed".to_string(),
+            organization_id: ctx.organization_id.clone(),
+            operator_type: Some(if ctx.agent_id().is_some() { "agent".to_string() } else { "user".to_string() }),
+            operator_id: ctx.agent_id().cloned().or_else(|| ctx.user_id().cloned()),
+            root_user_id: Some(task.po.root_user_id.clone()),
+            assignee_type: Some(format!("{:?}", task.po.assignee_type)),
+            assignee_id: Some(task.po.assignee_id.clone()),
+            from_assignee_id: None,
+            from_status: Some(from_status),
+            to_status: Some(format!("{:?}", task.po.status)),
+            duration_ms: None,
+            priority: task.po.priority,
+        });
+
+        Ok(())
     }
 }

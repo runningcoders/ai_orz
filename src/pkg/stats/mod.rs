@@ -31,12 +31,16 @@ mod stats;
 mod model_call;
 mod tool_call;
 mod agent_awake;
+mod project_event;
+mod task_event;
 
 pub use common::models::{StatsInterval, TimeSeriesPoint, TokenSumResult};
 pub use self::default::{DefaultStatEvent, DefaultStatTable};
 pub use self::model_call::{ModelCallEvent, ModelCallStatTable};
 pub use self::tool_call::{ToolCallEvent, ToolCallStatTable};
 pub use self::agent_awake::{AgentAwakeEvent, AgentAwakeStatTable};
+pub use self::project_event::{ProjectEvent, ProjectStatTable};
+pub use self::task_event::{TaskEvent, TaskStatTable};
 pub use self::stats::{
     Stats,
     StatParam,
@@ -81,25 +85,35 @@ macro_rules! record_event {
     // 情况 1: 只有 ctx 和 event → 自动根据事件类型找到注册的表，直接记录，最简！
     ($ctx:expr, $event_type:ident { $($tt:tt)* }) => {
         async {
-            // 检查是否已有 timestamp 字段
             let event = $crate::pkg::stats::record_event_helper!($event_type, $($tt)*);
-            $ctx.stats().record($ctx.clone(), event).await
+            if let Some(stats) = $ctx.stats_opt() {
+                stats.record($ctx.clone(), event).await
+            } else {
+                Ok(())
+            }
         }.await
     };
 
     // 情况 2: ctx + event 结构体表达式 → 不用构造，直接传
     ($ctx:expr, $event:expr) => {
         async {
-            $ctx.stats().record($ctx.clone(), $event).await
+            if let Some(stats) = $ctx.stats_opt() {
+                stats.record($ctx.clone(), $event).await
+            } else {
+                Ok(())
+            }
         }.await
     };
 
     // 情况 3: 显式指定表（兼容旧代码，依然支持）
     ($ctx:expr, $table:expr, $event_type:ident { $($tt:tt)* }) => {
         async {
-            // 检查是否已有 timestamp 字段
             let event = $crate::pkg::stats::record_event_helper!($event_type, $($tt)*);
-            $ctx.stats().record_with_table($ctx.clone(), $table, event).await
+            if let Some(stats) = $ctx.stats_opt() {
+                stats.record_with_table($ctx.clone(), $table, event).await
+            } else {
+                Ok(())
+            }
         }.await
     };
 }

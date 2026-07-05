@@ -4,6 +4,7 @@
 
 use crate::models::project::Project;
 use crate::pkg::RequestContext;
+use crate::pkg::stats::ProjectEvent;
 use common::constants::utils;
 use common::enums::project::ProjectStatus;
 use uuid::Uuid;
@@ -12,6 +13,7 @@ use super::ProjectDomainImpl;
 use common::error::{Result, err, bail_err};
 
 use crate::enrich_ctx;
+use crate::record_event;
 
 #[async_trait::async_trait]
 impl super::ProjectManage for ProjectDomainImpl {
@@ -45,6 +47,22 @@ impl super::ProjectManage for ProjectDomainImpl {
         );
 
         self.project_dal.create(ctx.clone(), &project).await?;
+
+        let _ = record_event!(ctx.clone(), ProjectEvent {
+            project_id: project.po.id.clone(),
+            event_type: "created".to_string(),
+            organization_id: ctx.organization_id.clone(),
+            operator_type: Some(if ctx.agent_id().is_some() { "agent".to_string() } else { "user".to_string() }),
+            operator_id: ctx.agent_id().cloned().or_else(|| ctx.user_id().cloned()),
+            root_user_id: Some(project.po.root_user_id.clone()),
+            owner_type: project.po.owner_agent_id.as_ref().map(|_| "agent".to_string()),
+            owner_id: project.po.owner_agent_id.clone(),
+            from_status: None,
+            to_status: Some(format!("{:?}", project.po.status)),
+            duration_ms: None,
+            priority: project.po.priority,
+        });
+
         Ok(project)
     }
 
@@ -97,9 +115,26 @@ impl super::ProjectManage for ProjectDomainImpl {
         // 补充 Project 上下文到 ctx
         let ctx = enrich_ctx!(&ctx, &project);
 
+        let from_status = format!("{:?}", project.po.status);
         project.start();
         project.po.modified_by = modified_by;
-        self.project_dal.update(ctx, &project).await?;
+        self.project_dal.update(ctx.clone(), &project).await?;
+
+        let _ = record_event!(ctx.clone(), ProjectEvent {
+            project_id: project.po.id.clone(),
+            event_type: "started".to_string(),
+            organization_id: ctx.organization_id.clone(),
+            operator_type: Some(if ctx.agent_id().is_some() { "agent".to_string() } else { "user".to_string() }),
+            operator_id: ctx.agent_id().cloned().or_else(|| ctx.user_id().cloned()),
+            root_user_id: Some(project.po.root_user_id.clone()),
+            owner_type: project.po.owner_agent_id.as_ref().map(|_| "agent".to_string()),
+            owner_id: project.po.owner_agent_id.clone(),
+            from_status: Some(from_status),
+            to_status: Some(format!("{:?}", project.po.status)),
+            duration_ms: None,
+            priority: project.po.priority,
+        });
+
         Ok(())
     }
 
@@ -116,9 +151,26 @@ impl super::ProjectManage for ProjectDomainImpl {
 
         let ctx = enrich_ctx!(&ctx, &project);
 
+        let from_status = format!("{:?}", project.po.status);
         project.complete();
         project.po.modified_by = modified_by;
-        self.project_dal.update(ctx, &project).await?;
+        self.project_dal.update(ctx.clone(), &project).await?;
+
+        let _ = record_event!(ctx.clone(), ProjectEvent {
+            project_id: project.po.id.clone(),
+            event_type: "completed".to_string(),
+            organization_id: ctx.organization_id.clone(),
+            operator_type: Some(if ctx.agent_id().is_some() { "agent".to_string() } else { "user".to_string() }),
+            operator_id: ctx.agent_id().cloned().or_else(|| ctx.user_id().cloned()),
+            root_user_id: Some(project.po.root_user_id.clone()),
+            owner_type: project.po.owner_agent_id.as_ref().map(|_| "agent".to_string()),
+            owner_id: project.po.owner_agent_id.clone(),
+            from_status: Some(from_status),
+            to_status: Some(format!("{:?}", project.po.status)),
+            duration_ms: None,
+            priority: project.po.priority,
+        });
+
         Ok(())
     }
 
@@ -135,9 +187,26 @@ impl super::ProjectManage for ProjectDomainImpl {
 
         let ctx = enrich_ctx!(&ctx, &project);
 
+        let from_status = format!("{:?}", project.po.status);
         project.po.status = ProjectStatus::Archived;
         project.po.modified_by = modified_by;
-        self.project_dal.update(ctx, &project).await?;
+        self.project_dal.update(ctx.clone(), &project).await?;
+
+        let _ = record_event!(ctx.clone(), ProjectEvent {
+            project_id: project.po.id.clone(),
+            event_type: "archived".to_string(),
+            organization_id: ctx.organization_id.clone(),
+            operator_type: Some(if ctx.agent_id().is_some() { "agent".to_string() } else { "user".to_string() }),
+            operator_id: ctx.agent_id().cloned().or_else(|| ctx.user_id().cloned()),
+            root_user_id: Some(project.po.root_user_id.clone()),
+            owner_type: project.po.owner_agent_id.as_ref().map(|_| "agent".to_string()),
+            owner_id: project.po.owner_agent_id.clone(),
+            from_status: Some(from_status),
+            to_status: Some(format!("{:?}", project.po.status)),
+            duration_ms: None,
+            priority: project.po.priority,
+        });
+
         Ok(())
     }
 
@@ -214,6 +283,8 @@ impl super::ProjectManage for ProjectDomainImpl {
             return Ok(());
         }
 
+        let from_status = format!("{:?}", current_status);
+
         match target_status {
             ProjectStatus::InProgress => {
                 project.po.status = ProjectStatus::InProgress;
@@ -232,6 +303,23 @@ impl super::ProjectManage for ProjectDomainImpl {
         }
         project.po.modified_by = ctx.uid();
 
-        self.project_dal.update(ctx, project).await
+        self.project_dal.update(ctx.clone(), project).await?;
+
+        let _ = record_event!(ctx.clone(), ProjectEvent {
+            project_id: project.po.id.clone(),
+            event_type: "status_changed".to_string(),
+            organization_id: ctx.organization_id.clone(),
+            operator_type: Some(if ctx.agent_id().is_some() { "agent".to_string() } else { "user".to_string() }),
+            operator_id: ctx.agent_id().cloned().or_else(|| ctx.user_id().cloned()),
+            root_user_id: Some(project.po.root_user_id.clone()),
+            owner_type: project.po.owner_agent_id.as_ref().map(|_| "agent".to_string()),
+            owner_id: project.po.owner_agent_id.clone(),
+            from_status: Some(from_status),
+            to_status: Some(format!("{:?}", project.po.status)),
+            duration_ms: None,
+            priority: project.po.priority,
+        });
+
+        Ok(())
     }
 }

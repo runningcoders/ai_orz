@@ -425,6 +425,17 @@ Agent
 
 ## 六、工作流与开发记录
 
+### 2026-07-06 里程碑
+**✅ Project/Task 业务事件完整落地**
+- **ProjectEvent**：新增项目生命周期事件表 `project_events`，含 `created`/`started`/`completed`/`archived`/`status_changed` 五种事件类型
+- **TaskEvent**：新增任务生命周期事件表 `task_events`，含 `created`/`started`/`completed`/`cancelled`/`status_changed` 五种事件类型
+- **操作者字段对齐**：统一使用 `operator_type` + `operator_id` 区分操作者类型（user/agent），支持 Agent 自动操作场景
+- **归属人字段**：Project 用 `owner_type` + `owner_id`，Task 用 `assignee_type` + `assignee_id`，各自语义明确
+- **Domain 层集成**：Project/Task Domain 层的 10 个状态变更方法全部接入事件记录（create/start/complete/archive/cancel/transition_status）
+- **record_event! 宏优化**：改用 `stats_opt()` 替代 `stats()`，stats 未初始化时静默跳过而非 panic，测试更友好
+- **事件记录原则**：状态变更必记录、创建删除必记录、关键动作记录、只读操作不记录
+- **测试统计**：544 个测试 100% 通过
+
 ### 2026-07-05 里程碑
 **✅ Agent 唤醒统计事件落地 + Stats DAO 数据源切换**
 - **AgentAwakeEvent**：新增 `agent_awake_events` 表，记录 Agent 唤醒事件（唤醒次数、耗时、状态、关联消息等）
