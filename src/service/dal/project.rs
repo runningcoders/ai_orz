@@ -3,12 +3,13 @@
 //! 职责：Project 领域的数据访问层，封装 ProjectDao 提供统一的查询接口
 
 use common::error::Result;
-use common::models::{ProjectStats, StatsFetchOptions, TimeSeriesPoint, TokenSumResult};
-use crate::models::project::{Project, ProjectPo};
+use common::models::{ModelCallStats, ProjectStats, StatsFetchOptions};
+use crate::models::project::Project;
 use crate::pkg::RequestContext;
-use crate::pkg::stats::{AggregationRow, ModelCallEvent};
+use crate::pkg::stats::ModelCallEvent;
 use crate::service::dao::project;
 use crate::service::dao::project::{ProjectDao, ProjectQuery, ProjectStatsDao, ProjectStatsQuery};
+use crate::service::dao::model_provider::{ModelProviderStatsDao, ModelProviderStatsQuery};
 use common::enums::ProjectStatus;
 use std::sync::{Arc, OnceLock};
 
@@ -26,15 +27,21 @@ pub fn dal() -> Arc<dyn ProjectDal + Send + Sync> {
 /// 初始化 Project DAL
 pub fn init() {
     project::stats_init();
-    let _ = PROJECT_DAL.set(new(project::dao(), project::stats_dao()));
+    crate::service::dao::model_provider::stats_init();
+    let _ = PROJECT_DAL.set(new(
+        project::dao(),
+        project::stats_dao(),
+        crate::service::dao::model_provider::stats_dao(),
+    ));
 }
 
 /// 创建 Project DAL（返回 trait 对象）
 pub fn new(
     project_dao: Arc<dyn ProjectDao + Send + Sync>,
     project_stats_dao: Arc<dyn ProjectStatsDao<ModelCallEvent = ModelCallEvent>>,
+    model_provider_stats_dao: Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>,
 ) -> Arc<dyn ProjectDal + Send + Sync> {
-    Arc::new(ProjectDalImpl { project_dao, project_stats_dao })
+    Arc::new(ProjectDalImpl { project_dao, project_stats_dao, model_provider_stats_dao })
 }
 
 // ==================== DAL 接口 ====================
@@ -109,20 +116,14 @@ pub trait ProjectDal: Send + Sync {
 
     // ==================== 统计查询 ====================
 
-    /// Token 汇总
-    async fn sum_tokens(&self, ctx: RequestContext, query: ProjectStatsQuery) -> Result<TokenSumResult>;
-
-    /// 模型调用次数汇总
-    async fn sum_calls(&self, ctx: RequestContext, query: ProjectStatsQuery) -> Result<u64>;
-
-    /// 模型调用时序查询
-    async fn query_model_call_time_series(&self, ctx: RequestContext, query: ProjectStatsQuery) -> Result<Vec<TimeSeriesPoint>>;
-
-    /// 模型调用聚合查询
-    async fn query_model_call_aggregation(&self, ctx: RequestContext, query: ProjectStatsQuery) -> Result<Vec<AggregationRow>>;
-
     /// 获取 Project 统计数据（按 options 控制返回哪些维度）
-    async fn get_stats(&self, ctx: RequestContext, query: ProjectStatsQuery, options: StatsFetchOptions) -> Result<ProjectStats>;
+    async fn get_stats(&self, ctx: RequestContext, project_id: &str, options: StatsFetchOptions) -> Result<ProjectStats>;
+
+    /// 获取 Project 维度的模型调用统计
+    ///
+    /// 由 ModelProviderStatsDao（模型调用领域）负责计算，
+    /// 按 project_id 过滤后返回 ModelCallStats。
+    async fn get_model_call_stats(&self, ctx: RequestContext, project_id: &str, options: StatsFetchOptions) -> Result<ModelCallStats>;
 }
 
 // ==================== DAL 实现 ====================
@@ -131,6 +132,7 @@ pub trait ProjectDal: Send + Sync {
 struct ProjectDalImpl {
     project_dao: Arc<dyn ProjectDao + Send + Sync>,
     project_stats_dao: Arc<dyn ProjectStatsDao<ModelCallEvent = ModelCallEvent>>,
+    model_provider_stats_dao: Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>,
 }
 
 #[async_trait::async_trait]
@@ -232,23 +234,22 @@ impl ProjectDal for ProjectDalImpl {
 
     // ==================== 统计查询 ====================
 
-    async fn sum_tokens(&self, ctx: RequestContext, query: ProjectStatsQuery) -> Result<TokenSumResult> {
-        self.project_stats_dao.sum_tokens(ctx, query).await
-    }
-
-    async fn sum_calls(&self, ctx: RequestContext, query: ProjectStatsQuery) -> Result<u64> {
-        self.project_stats_dao.sum_calls(ctx, query).await
-    }
-
-    async fn query_model_call_time_series(&self, ctx: RequestContext, query: ProjectStatsQuery) -> Result<Vec<TimeSeriesPoint>> {
-        self.project_stats_dao.query_model_call_time_series(ctx, query).await
-    }
-
-    async fn query_model_call_aggregation(&self, ctx: RequestContext, query: ProjectStatsQuery) -> Result<Vec<AggregationRow>> {
-        self.project_stats_dao.query_model_call_aggregation(ctx, query).await
-    }
-
-    async fn get_stats(&self, ctx: RequestContext, query: ProjectStatsQuery, options: StatsFetchOptions) -> Result<ProjectStats> {
+    async fn get_stats(&self, ctx: RequestContext, project_id: &str, options: StatsFetchOptions) -> Result<ProjectStats> {
+        let query = ProjectStatsQuery {
+            project_id: project_id.to_string(),
+            time_range: options.time_range,
+            ..Default::default()
+        };
         self.project_stats_dao.get_stats(ctx, query, options).await
+    }
+
+    async fn get_model_call_stats(&self, ctx: RequestContext, project_id: &str, options: StatsFetchOptions) -> Result<ModelCallStats> {
+        let query = ModelProviderStatsQuery {
+            project_id: Some(project_id.to_string()),
+            time_range: options.time_range,
+            interval: options.interval,
+            ..Default::default()
+        };
+        self.model_provider_stats_dao.get_stats(ctx, query, options).await
     }
 }

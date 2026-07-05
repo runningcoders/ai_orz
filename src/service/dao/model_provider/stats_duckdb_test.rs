@@ -47,7 +47,7 @@ async fn test_sum_tokens_basic() -> Result<()> {
     let (ctx, dao) = setup_test_env(model_provider_id, 5).await?;
 
     let query = ModelProviderStatsQuery {
-        model_provider_id: model_provider_id.to_string(),
+        model_provider_id: Some(model_provider_id.to_string()),
         ..Default::default()
     };
 
@@ -67,7 +67,7 @@ async fn test_query_model_call_time_series() -> Result<()> {
 
     let now = Utc::now().timestamp_millis();
     let query = ModelProviderStatsQuery {
-        model_provider_id: model_provider_id.to_string(),
+        model_provider_id: Some(model_provider_id.to_string()),
         time_range: Some((now - 10000000, now + 10000000)),
         interval: Some(StatsInterval::Hourly),
         ..Default::default()
@@ -88,7 +88,7 @@ async fn test_query_model_call_aggregation_with_group_by() -> Result<()> {
     let (ctx, dao) = setup_test_env(model_provider_id, 4).await?;
 
     let query = ModelProviderStatsQuery {
-        model_provider_id: model_provider_id.to_string(),
+        model_provider_id: Some(model_provider_id.to_string()),
         group_by: vec!["agent_id".to_string()],
         aggregations: vec![
             StatAggregation::Count,
@@ -157,14 +157,14 @@ async fn test_filter_by_different_provider() -> Result<()> {
     let dao = stats_new();
 
     let query_a = ModelProviderStatsQuery {
-        model_provider_id: provider_a.to_string(),
+        model_provider_id: Some(provider_a.to_string()),
         ..Default::default()
     };
     let result_a = dao.sum_tokens(ctx.clone(), query_a).await?;
     assert_eq!(result_a.total_calls, 3);
 
     let query_b = ModelProviderStatsQuery {
-        model_provider_id: provider_b.to_string(),
+        model_provider_id: Some(provider_b.to_string()),
         ..Default::default()
     };
     let result_b = dao.sum_tokens(ctx, query_b).await?;

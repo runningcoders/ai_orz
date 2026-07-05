@@ -425,6 +425,16 @@ Agent
 
 ## 六、工作流与开发记录
 
+### 2026-07-05 里程碑
+**✅ Stats DAO 领域拆分重构完成**
+- **领域划分**：按领域而非实体划分职责，Agent/Project/Task StatsDao 只负责自身维度的 call_summary；ModelProviderStatsDao 升级为模型调用领域 DAO
+- **通用结构体**：新增 `ModelCallStats` 通用结构体（call_summary + token_summary + model_call_time_series），所有实体复用
+- **多维过滤**：ModelProviderStatsQuery 增加 agent_id/project_id/task_id 可选字段，支持多维度查询
+- **DAL 层组装**：Agent/Project/Task DAL 注入 ModelProviderStatsDao，新增 `get_model_call_stats` 方法组装跨领域统计结果
+- **接口精简**：DAL 层统计接口统一为 `get_stats(id, options)` + `get_model_call_stats(id, options)`，删除冗余语法糖方法
+- **演进路径**：领域先行，未来实体有了专属统计表时只需替换 DAO 实现，上层无感知
+- **测试统计**：544 个测试 100% 通过（+6）
+
 ### 2026-07-02 里程碑
 **✅ 全实体 Stats DAO 层建设完成**
 - **Agent Stats DAO 接口定义 + DuckDB 实现**：`AgentStatsDao` trait，含 `query`/`sum_tokens`/`query_time_series`

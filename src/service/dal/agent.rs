@@ -1,13 +1,14 @@
 //! Agent DAL 模块
 
 use common::error::Result;
-use common::models::{AgentStats, StatsFetchOptions, TimeSeriesPoint, TokenSumResult};
+use common::models::{AgentStats, ModelCallStats, StatsFetchOptions};
 use crate::models::agent::Agent;
 use crate::models::brain::Brain;
 use crate::pkg::RequestContext;
-use crate::pkg::stats::{AggregationRow, ModelCallEvent};
+use crate::pkg::stats::ModelCallEvent;
 use crate::service::dao::agent;
 use crate::service::dao::agent::{AgentDao, AgentQuery, AgentStatsDao, AgentStatsQuery};
+use crate::service::dao::model_provider::{ModelProviderStatsDao, ModelProviderStatsQuery};
 use common::enums::AgentStatus;
 use std::sync::{Arc, OnceLock};
 
@@ -24,15 +25,21 @@ pub fn dal() -> Arc<dyn AgentDal> {
 /// 初始化 Agent DAL
 pub fn init() {
     agent::stats_init();
-    let _ = AGENT_DAL.set(new(agent::dao(), agent::stats_dao()));
+    crate::service::dao::model_provider::stats_init();
+    let _ = AGENT_DAL.set(new(
+        agent::dao(),
+        agent::stats_dao(),
+        crate::service::dao::model_provider::stats_dao(),
+    ));
 }
 
 /// 创建 Agent DAL（返回 trait 对象）
 pub fn new(
     agent_dao: Arc<dyn AgentDao + Send + Sync>,
     agent_stats_dao: Arc<dyn AgentStatsDao<ModelCallEvent = ModelCallEvent>>,
+    model_provider_stats_dao: Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>,
 ) -> Arc<dyn AgentDal> {
-    Arc::new(AgentDalImpl { agent_dao, agent_stats_dao })
+    Arc::new(AgentDalImpl { agent_dao, agent_stats_dao, model_provider_stats_dao })
 }
 
 // ==================== DAL 接口 ====================
@@ -76,26 +83,21 @@ pub trait AgentDal: Send + Sync {
 
     // ==================== 统计查询 ====================
 
-    /// Token 汇总
-    async fn sum_tokens(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<TokenSumResult>;
+    /// 获取 Agent 自身统计数据
+    async fn get_stats(&self, ctx: RequestContext, agent_id: &str, options: StatsFetchOptions) -> Result<AgentStats>;
 
-    /// 模型调用次数汇总
-    async fn sum_calls(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<u64>;
-
-    /// 模型调用时序查询
-    async fn query_model_call_time_series(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<TimeSeriesPoint>>;
-
-    /// 模型调用聚合查询
-    async fn query_model_call_aggregation(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<AggregationRow>>;
-
-    /// 获取 Agent 统计数据（按 options 控制返回哪些维度）
-    async fn get_stats(&self, ctx: RequestContext, query: AgentStatsQuery, options: StatsFetchOptions) -> Result<AgentStats>;
+    /// 获取 Agent 维度的模型调用统计
+    ///
+    /// 由 ModelProviderStatsDao（模型调用领域）负责计算，
+    /// 按 agent_id 过滤后返回 ModelCallStats。
+    async fn get_model_call_stats(&self, ctx: RequestContext, agent_id: &str, options: StatsFetchOptions) -> Result<ModelCallStats>;
 }
 
 /// Agent DAL 实现
 struct AgentDalImpl {
     agent_dao: Arc<dyn AgentDao>,
     agent_stats_dao: Arc<dyn AgentStatsDao<ModelCallEvent = ModelCallEvent>>,
+    model_provider_stats_dao: Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>,
 }
 
 #[async_trait::async_trait]
@@ -165,23 +167,22 @@ impl AgentDal for AgentDalImpl {
 
     // ==================== 统计查询 ====================
 
-    async fn sum_tokens(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<TokenSumResult> {
-        self.agent_stats_dao.sum_tokens(ctx, query).await
-    }
-
-    async fn sum_calls(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<u64> {
-        self.agent_stats_dao.sum_calls(ctx, query).await
-    }
-
-    async fn query_model_call_time_series(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<TimeSeriesPoint>> {
-        self.agent_stats_dao.query_model_call_time_series(ctx, query).await
-    }
-
-    async fn query_model_call_aggregation(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<AggregationRow>> {
-        self.agent_stats_dao.query_model_call_aggregation(ctx, query).await
-    }
-
-    async fn get_stats(&self, ctx: RequestContext, query: AgentStatsQuery, options: StatsFetchOptions) -> Result<AgentStats> {
+    async fn get_stats(&self, ctx: RequestContext, agent_id: &str, options: StatsFetchOptions) -> Result<AgentStats> {
+        let query = AgentStatsQuery {
+            agent_id: agent_id.to_string(),
+            time_range: options.time_range,
+            ..Default::default()
+        };
         self.agent_stats_dao.get_stats(ctx, query, options).await
+    }
+
+    async fn get_model_call_stats(&self, ctx: RequestContext, agent_id: &str, options: StatsFetchOptions) -> Result<ModelCallStats> {
+        let query = ModelProviderStatsQuery {
+            agent_id: Some(agent_id.to_string()),
+            time_range: options.time_range,
+            interval: options.interval,
+            ..Default::default()
+        };
+        self.model_provider_stats_dao.get_stats(ctx, query, options).await
     }
 }

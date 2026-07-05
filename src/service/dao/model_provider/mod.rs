@@ -1,7 +1,7 @@
 //! Model Provider DAO 模块
 
 use common::error::{Error, Result};
-use common::models::{StatsInterval, TimeSeriesPoint, TokenSumResult, ModelProviderStats, CallSummary, StatsFetchOptions};
+use common::models::{StatsInterval, TimeSeriesPoint, TokenSumResult, ModelCallStats, CallSummary, StatsFetchOptions};
 use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::RequestContext;
 use crate::pkg::stats::{StatFilter, StatAggregation, AggregationRow, StatEvent, Stats};
@@ -50,10 +50,18 @@ pub trait ModelProviderDao: Send + Sync {
 }
 
 /// ModelProvider 统计查询参数（统一结构体，覆盖所有查询场景）
+///
+/// 支持按多个维度过滤，所有维度都是可选的，可以组合使用。
 #[derive(Debug, Clone, Default)]
 pub struct ModelProviderStatsQuery {
-    /// ModelProvider ID（必填）
-    pub model_provider_id: String,
+    /// ModelProvider ID（可选）
+    pub model_provider_id: Option<String>,
+    /// Agent ID（可选，按 Agent 维度过滤）
+    pub agent_id: Option<String>,
+    /// Project ID（可选，按 Project 维度过滤）
+    pub project_id: Option<String>,
+    /// Task ID（可选，按 Task 维度过滤）
+    pub task_id: Option<String>,
     /// 额外过滤条件
     pub filters: Vec<StatFilter>,
     /// 时间范围（毫秒，None 表示不限）
@@ -123,8 +131,8 @@ pub trait ModelProviderStatsDao: Send + Sync {
         })
     }
 
-    async fn get_stats(&self, ctx: RequestContext, query: ModelProviderStatsQuery, options: StatsFetchOptions) -> Result<ModelProviderStats> {
-        let mut stats = ModelProviderStats {
+    async fn get_stats(&self, ctx: RequestContext, query: ModelProviderStatsQuery, options: StatsFetchOptions) -> Result<ModelCallStats> {
+        let mut stats = ModelCallStats {
             call_summary: None,
             token_summary: None,
             model_call_time_series: None,

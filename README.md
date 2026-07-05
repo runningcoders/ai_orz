@@ -5,7 +5,7 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 ![GitHub last commit](https://img.shields.io/github/last-commit/runningcoders/ai_orz)
 ![GitHub license](https://img.shields.io/github/license/runningcoders/ai_orz)
 ![Rust](https://img.shields.io/badge/Rust-1.85+-000000?logo=rust)
-![Tests](https://img.shields.io/badge/tests-516%20%E2%9C%94-brightgreen)
+![Tests](https://img.shields.io/badge/tests-544%20%E2%9C%94-brightgreen)
 [![GitHub stars](https://img.shields.io/github/stars/runningcoders/ai_orz?style=social)](https://github.com/runningcoders/ai_orz)
 
 ---
@@ -37,7 +37,7 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 | 🚀 异步消费者系统 | ✅ | 通用消费者框架 + Message Topic 三层分发（Agent/User/System） |
 | 📝 结构化日志系统 | ✅ | JSON 格式，自动上下文关联，日志自动清理 |
 | 🏗️ 严格分层架构 | ✅ | DAO/DAL/Domain/Handler/Consumer 五层职责清晰 |
-| 🔍 单元测试覆盖 | ✅ | 数据层 + 领域层 100% 测试覆盖 |
+| 📊 Agent 统计系统 | ✅ | DuckDB 多维统计、按领域划分职责、多维度过滤查询 |
 
 > 📝 **开发规范与详细架构** 请查看 [AGENTS.md](./AGENTS.md) - AI 助手专属快速入门手册
 
@@ -90,6 +90,7 @@ ai_orz/
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | 完整架构说明、核心概念解释、实体关系 | ⭐⭐⭐ |
 | [docs/LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md) | **开发记录** - 分层架构落地、反模式、避坑指南、经验总结 | ⭐⭐⭐ |
 | [docs/sqlx_guide.md](./docs/sqlx_guide.md) | SQLx 0.8 + SQLite 开发规范、枚举映射、测试隔离 | ⭐⭐⭐ |
+| [docs/stats_query_design.md](./docs/stats_query_design.md) | 统计查询模块设计、领域划分、多维度过滤 | ⭐⭐⭐ |
 | [docs/tool_design.md](./docs/tool_design.md) | 混合模式工具调用、工具注册表、调用追踪 | ⭐⭐ |
 | [docs/message_interaction_design.md](./docs/message_interaction_design.md) | 消息交互架构、工具调用复用消息表 | ⭐⭐ |
 | [docs/consumer_architecture.md](./docs/consumer_architecture.md) | 异步消费者框架、按 to_role 分层分发 | ⭐⭐ |
@@ -192,7 +193,7 @@ retention_days = 30       # 日志保留天数，0 表示不清理
 cargo test
 ```
 
-**测试状态：** **490 个测试全部通过 ✅**
+**测试状态：** **544 个测试全部通过 ✅**
 
 ---
 

@@ -28,11 +28,37 @@ impl ModelProviderStatsDao for ModelProviderStatsDaoDuckDbImpl {
     type ModelCallEvent = ModelCallEvent;
 
     async fn query_model_calls(&self, ctx: RequestContext, mut query: ModelProviderStatsQuery) -> Result<Vec<JsonValue>> {
-        let provider_filter = StatFilter::Equals {
-            key: "model_provider_id".to_string(),
-            value: JsonValue::String(query.model_provider_id.clone()),
-        };
-        query.filters.insert(0, provider_filter);
+        if let Some(ref provider_id) = query.model_provider_id {
+            let provider_filter = StatFilter::Equals {
+                key: "model_provider_id".to_string(),
+                value: JsonValue::String(provider_id.clone()),
+            };
+            query.filters.insert(0, provider_filter);
+        }
+
+        if let Some(ref agent_id) = query.agent_id {
+            let agent_filter = StatFilter::Equals {
+                key: "agent_id".to_string(),
+                value: JsonValue::String(agent_id.clone()),
+            };
+            query.filters.insert(0, agent_filter);
+        }
+
+        if let Some(ref project_id) = query.project_id {
+            let project_filter = StatFilter::Equals {
+                key: "project_id".to_string(),
+                value: JsonValue::String(project_id.clone()),
+            };
+            query.filters.insert(0, project_filter);
+        }
+
+        if let Some(ref task_id) = query.task_id {
+            let task_filter = StatFilter::Equals {
+                key: "task_id".to_string(),
+                value: JsonValue::String(task_id.clone()),
+            };
+            query.filters.insert(0, task_filter);
+        }
 
         let stats = ctx.stats();
         let table_name = self.model_call_table_name(stats);

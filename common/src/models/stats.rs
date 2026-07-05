@@ -70,52 +70,44 @@ pub struct StatsFetchOptions {
     pub interval: Option<StatsInterval>,
 }
 
-// ==================== 实体特定统计结构体 ====================
+// ==================== 领域统计结构体 ====================
 //
-// 每个实体的统计结构体只关注自己的维度：
-// - AgentStats: Agent 维度的模型调用统计
-// - ProjectStats: Project 维度的模型调用统计
-// - TaskStats: Task 维度的模型调用统计
-// - ModelProviderStats: ModelProvider 维度的模型调用统计
+// 按领域划分，不同领域的统计结构体职责单一，互不交叉：
 //
-// 工具调用统计由独立的 ToolStatsDao 负责，不混入这些结构体。
+// - 实体自身统计（AgentStats/ProjectStats/TaskStats）：只关注实体自身维度
+//   目前只有 call_summary，未来有了专属统计表可以扩展更多字段
+//
+// - 模型调用统计（ModelCallStats）：模型调用领域的通用统计结构体
+//   所有实体（Agent/Project/Task/ModelProvider）的模型调用统计都用这个结构体
+//   由 ModelProviderStatsDao 负责计算，各实体 DAL 层按需组装
 
-/// Agent 统计数据
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// Agent 自身统计数据
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct AgentStats {
     /// 调用次数汇总（次数 + QPS）
     pub call_summary: Option<CallSummary>,
-    /// Token 汇总（模型调用特有）
-    pub token_summary: Option<TokenSumResult>,
-    /// 模型调用时序趋势
-    pub model_call_time_series: Option<Vec<TimeSeriesPoint>>,
 }
 
-/// Project 统计数据
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// Project 自身统计数据
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct ProjectStats {
     /// 调用次数汇总（次数 + QPS）
     pub call_summary: Option<CallSummary>,
-    /// Token 汇总（模型调用特有）
-    pub token_summary: Option<TokenSumResult>,
-    /// 模型调用时序趋势
-    pub model_call_time_series: Option<Vec<TimeSeriesPoint>>,
 }
 
-/// Task 统计数据
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// Task 自身统计数据
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct TaskStats {
     /// 调用次数汇总（次数 + QPS）
     pub call_summary: Option<CallSummary>,
-    /// Token 汇总（模型调用特有）
-    pub token_summary: Option<TokenSumResult>,
-    /// 模型调用时序趋势
-    pub model_call_time_series: Option<Vec<TimeSeriesPoint>>,
 }
 
-/// ModelProvider 统计数据
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ModelProviderStats {
+/// 模型调用统计（通用，所有实体共用）
+///
+/// 由 ModelProviderStatsDao 负责计算，
+/// 支持按 agent_id / project_id / task_id / model_provider_id 过滤。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct ModelCallStats {
     /// 调用次数汇总（次数 + QPS）
     pub call_summary: Option<CallSummary>,
     /// Token 汇总（模型调用特有）

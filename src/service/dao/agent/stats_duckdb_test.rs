@@ -5,8 +5,8 @@ use crate::pkg::request_context_test_support;
 use crate::service::dao::agent::{AgentStatsDao, AgentStatsQuery};
 use crate::service::dao::agent::stats_duckdb::stats_new;
 use common::error::Result;
+use common::models::StatsFetchOptions;
 use chrono::Utc;
-use serde_json::json;
 use sqlx::SqlitePool;
 use tempfile::tempdir;
 
@@ -42,7 +42,7 @@ async fn setup_test_env(
 }
 
 #[tokio::test]
-async fn test_sum_tokens_basic() -> Result<()> {
+async fn test_sum_calls_basic() -> Result<()> {
     let agent_id = "agent-sum-test";
     let (ctx, dao) = setup_test_env(agent_id, 5).await?;
 
@@ -51,65 +51,106 @@ async fn test_sum_tokens_basic() -> Result<()> {
         ..Default::default()
     };
 
-    let result = dao.sum_tokens(ctx, query).await?;
+    let result = dao.sum_calls(ctx, query).await?;
 
-    assert_eq!(result.total_calls, 5);
-    assert_eq!(result.total_tokens_input, 100 + 110 + 120 + 130 + 140);
-    assert_eq!(result.total_tokens_output, 50 + 55 + 60 + 65 + 70);
+    assert_eq!(result, 5);
 
     Ok(())
 }
 
 #[tokio::test]
-async fn test_query_model_call_time_series() -> Result<()> {
-    let agent_id = "agent-ts-test";
-    let (ctx, dao) = setup_test_env(agent_id, 3).await?;
+async fn test_sum_calls_zero() -> Result<()> {
+    let agent_id = "agent-zero-test";
+    let (ctx, dao) = setup_test_env(agent_id, 0).await?;
+
+    let query = AgentStatsQuery {
+        agent_id: agent_id.to_string(),
+        ..Default::default()
+    };
+
+    let result = dao.sum_calls(ctx, query).await?;
+
+    assert_eq!(result, 0);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_sum_calls_with_time_range() -> Result<()> {
+    let agent_id = "agent-time-range-test";
+    let (ctx, dao) = setup_test_env(agent_id, 5).await?;
 
     let now = Utc::now().timestamp_millis();
-    let query = AgentStatsQuery {
+
+    let query_all = AgentStatsQuery {
         agent_id: agent_id.to_string(),
-        time_range: Some((now - 10000000, now + 10000000)),
-        interval: Some(StatsInterval::Hourly),
+        time_range: Some((now - 100000, now + 100000)),
         ..Default::default()
     };
+    let result_all = dao.sum_calls(ctx.clone(), query_all).await?;
+    assert_eq!(result_all, 5);
 
-    let points = dao.query_model_call_time_series(ctx, query).await?;
-
-    assert!(!points.is_empty());
-    let total_calls: u64 = points.iter().map(|p| p.call_count).sum();
-    assert_eq!(total_calls, 3);
+    let query_none = AgentStatsQuery {
+        agent_id: agent_id.to_string(),
+        time_range: Some((now - 1000000, now - 500000)),
+        ..Default::default()
+    };
+    let result_none = dao.sum_calls(ctx, query_none).await?;
+    assert_eq!(result_none, 0);
 
     Ok(())
 }
 
 #[tokio::test]
-async fn test_query_model_call_aggregation_with_group_by() -> Result<()> {
-    let agent_id = "agent-agg-test";
-    let (ctx, dao) = setup_test_env(agent_id, 4).await?;
+async fn test_get_stats_with_call_summary() -> Result<()> {
+    let agent_id = "agent-get-stats-test";
+    let (ctx, dao) = setup_test_env(agent_id, 3).await?;
 
     let query = AgentStatsQuery {
         agent_id: agent_id.to_string(),
-        group_by: vec!["model_provider_id".to_string()],
-        aggregations: vec![
-            StatAggregation::Count,
-            StatAggregation::Sum("tokens_input".to_string()),
-        ],
         ..Default::default()
     };
 
-    let rows = dao.query_model_call_aggregation(ctx, query).await?;
+    let options = StatsFetchOptions {
+        with_call_summary: true,
+        with_token_summary: false,
+        with_time_series: false,
+        time_range: None,
+        interval: None,
+    };
 
-    assert_eq!(rows.len(), 1);
-    let row = &rows[0];
-    assert_eq!(
-        row.groups.get("model_provider_id"),
-        Some(&json!("provider-test"))
-    );
-    assert_eq!(row.aggregations.get("count"), Some(&4.0));
-    assert_eq!(
-        row.aggregations.get("tokens_input"),
-        Some(&(100.0 + 110.0 + 120.0 + 130.0))
-    );
+    let stats = dao.get_stats(ctx, query, options).await?;
+
+    assert!(stats.call_summary.is_some());
+    let call_summary = stats.call_summary.unwrap();
+    assert_eq!(call_summary.total_calls, 3);
+    assert!(call_summary.instant_qps >= 0.0);
+    assert!(call_summary.avg_qps.is_none());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_stats_without_call_summary() -> Result<()> {
+    let agent_id = "agent-no-summary-test";
+    let (ctx, dao) = setup_test_env(agent_id, 3).await?;
+
+    let query = AgentStatsQuery {
+        agent_id: agent_id.to_string(),
+        ..Default::default()
+    };
+
+    let options = StatsFetchOptions {
+        with_call_summary: false,
+        with_token_summary: false,
+        with_time_series: false,
+        time_range: None,
+        interval: None,
+    };
+
+    let stats = dao.get_stats(ctx, query, options).await?;
+
+    assert!(stats.call_summary.is_none());
 
     Ok(())
 }
@@ -160,16 +201,15 @@ async fn test_filter_by_different_agent() -> Result<()> {
         agent_id: agent_a.to_string(),
         ..Default::default()
     };
-    let result_a = dao.sum_tokens(ctx.clone(), query_a).await?;
-    assert_eq!(result_a.total_calls, 3);
+    let result_a = dao.sum_calls(ctx.clone(), query_a).await?;
+    assert_eq!(result_a, 3);
 
     let query_b = AgentStatsQuery {
         agent_id: agent_b.to_string(),
         ..Default::default()
     };
-    let result_b = dao.sum_tokens(ctx, query_b).await?;
-    assert_eq!(result_b.total_calls, 2);
-    assert_eq!(result_b.total_tokens_input, 200 + 210);
+    let result_b = dao.sum_calls(ctx, query_b).await?;
+    assert_eq!(result_b, 2);
 
     Ok(())
 }
