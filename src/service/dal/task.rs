@@ -3,10 +3,12 @@
 //! 职责：Task 领域的数据访问层，封装 TaskDao 提供统一的查询接口
 
 use common::error::Result;
+use common::models::{StatsFetchOptions, TaskStats, TimeSeriesPoint, TokenSumResult};
 use crate::models::task::{Task, TaskPo};
 use crate::pkg::RequestContext;
+use crate::pkg::stats::{AggregationRow, ModelCallEvent};
 use crate::service::dao::task;
-use crate::service::dao::task::{TaskDao, TaskQuery};
+use crate::service::dao::task::{TaskDao, TaskQuery, TaskStatsDao, TaskStatsQuery};
 use common::enums::{AssigneeType, TaskStatus};
 use std::sync::{Arc, OnceLock};
 
@@ -23,12 +25,16 @@ pub fn dal() -> Arc<dyn TaskDal + Send + Sync> {
 
 /// 初始化 Task DAL
 pub fn init() {
-    let _ = TASK_DAL.set(new(task::dao()));
+    task::stats_init();
+    let _ = TASK_DAL.set(new(task::dao(), task::stats_dao()));
 }
 
 /// 创建 Task DAL（返回 trait 对象）
-pub fn new(task_dao: Arc<dyn TaskDao + Send + Sync>) -> Arc<dyn TaskDal + Send + Sync> {
-    Arc::new(TaskDalImpl { task_dao })
+pub fn new(
+    task_dao: Arc<dyn TaskDao + Send + Sync>,
+    task_stats_dao: Arc<dyn TaskStatsDao<ModelCallEvent = ModelCallEvent>>,
+) -> Arc<dyn TaskDal + Send + Sync> {
+    Arc::new(TaskDalImpl { task_dao, task_stats_dao })
 }
 
 // ==================== DAL 接口 ====================
@@ -106,6 +112,23 @@ pub trait TaskDal: Send + Sync {
         assignee_id: &str,
         status: TaskStatus,
     ) -> Result<u64>;
+
+    // ==================== 统计查询 ====================
+
+    /// Token 汇总
+    async fn sum_tokens(&self, ctx: RequestContext, query: TaskStatsQuery) -> Result<TokenSumResult>;
+
+    /// 模型调用次数汇总
+    async fn sum_calls(&self, ctx: RequestContext, query: TaskStatsQuery) -> Result<u64>;
+
+    /// 模型调用时序查询
+    async fn query_model_call_time_series(&self, ctx: RequestContext, query: TaskStatsQuery) -> Result<Vec<TimeSeriesPoint>>;
+
+    /// 模型调用聚合查询
+    async fn query_model_call_aggregation(&self, ctx: RequestContext, query: TaskStatsQuery) -> Result<Vec<AggregationRow>>;
+
+    /// 获取 Task 统计数据（按 options 控制返回哪些维度）
+    async fn get_stats(&self, ctx: RequestContext, query: TaskStatsQuery, options: StatsFetchOptions) -> Result<TaskStats>;
 }
 
 // ==================== DAL 实现 ====================
@@ -113,6 +136,7 @@ pub trait TaskDal: Send + Sync {
 /// Task DAL 实现
 struct TaskDalImpl {
     task_dao: Arc<dyn TaskDao + Send + Sync>,
+    task_stats_dao: Arc<dyn TaskStatsDao<ModelCallEvent = ModelCallEvent>>,
 }
 
 #[async_trait::async_trait]
@@ -226,5 +250,27 @@ impl TaskDal for TaskDalImpl {
         self.task_dao
             .count_by_assignee_and_status(ctx, assignee_id, status)
             .await
+    }
+
+    // ==================== 统计查询 ====================
+
+    async fn sum_tokens(&self, ctx: RequestContext, query: TaskStatsQuery) -> Result<TokenSumResult> {
+        self.task_stats_dao.sum_tokens(ctx, query).await
+    }
+
+    async fn sum_calls(&self, ctx: RequestContext, query: TaskStatsQuery) -> Result<u64> {
+        self.task_stats_dao.sum_calls(ctx, query).await
+    }
+
+    async fn query_model_call_time_series(&self, ctx: RequestContext, query: TaskStatsQuery) -> Result<Vec<TimeSeriesPoint>> {
+        self.task_stats_dao.query_model_call_time_series(ctx, query).await
+    }
+
+    async fn query_model_call_aggregation(&self, ctx: RequestContext, query: TaskStatsQuery) -> Result<Vec<AggregationRow>> {
+        self.task_stats_dao.query_model_call_aggregation(ctx, query).await
+    }
+
+    async fn get_stats(&self, ctx: RequestContext, query: TaskStatsQuery, options: StatsFetchOptions) -> Result<TaskStats> {
+        self.task_stats_dao.get_stats(ctx, query, options).await
     }
 }

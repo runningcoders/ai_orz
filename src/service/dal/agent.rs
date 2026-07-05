@@ -1,11 +1,13 @@
 //! Agent DAL 模块
 
 use common::error::Result;
+use common::models::{AgentStats, StatsFetchOptions, TimeSeriesPoint, TokenSumResult};
 use crate::models::agent::Agent;
 use crate::models::brain::Brain;
 use crate::pkg::RequestContext;
+use crate::pkg::stats::{AggregationRow, ModelCallEvent};
 use crate::service::dao::agent;
-use crate::service::dao::agent::{AgentDao, AgentQuery};
+use crate::service::dao::agent::{AgentDao, AgentQuery, AgentStatsDao, AgentStatsQuery};
 use common::enums::AgentStatus;
 use std::sync::{Arc, OnceLock};
 
@@ -21,12 +23,16 @@ pub fn dal() -> Arc<dyn AgentDal> {
 
 /// 初始化 Agent DAL
 pub fn init() {
-    let _ = AGENT_DAL.set(new(agent::dao()));
+    agent::stats_init();
+    let _ = AGENT_DAL.set(new(agent::dao(), agent::stats_dao()));
 }
 
 /// 创建 Agent DAL（返回 trait 对象）
-pub fn new(agent_dao: Arc<dyn AgentDao + Send + Sync>) -> Arc<dyn AgentDal> {
-    Arc::new(AgentDalImpl { agent_dao })
+pub fn new(
+    agent_dao: Arc<dyn AgentDao + Send + Sync>,
+    agent_stats_dao: Arc<dyn AgentStatsDao<ModelCallEvent = ModelCallEvent>>,
+) -> Arc<dyn AgentDal> {
+    Arc::new(AgentDalImpl { agent_dao, agent_stats_dao })
 }
 
 // ==================== DAL 接口 ====================
@@ -67,18 +73,29 @@ pub trait AgentDal: Send + Sync {
         agent: &mut Agent,
         brain: Brain,
     ) -> Result<()>;
+
+    // ==================== 统计查询 ====================
+
+    /// Token 汇总
+    async fn sum_tokens(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<TokenSumResult>;
+
+    /// 模型调用次数汇总
+    async fn sum_calls(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<u64>;
+
+    /// 模型调用时序查询
+    async fn query_model_call_time_series(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<TimeSeriesPoint>>;
+
+    /// 模型调用聚合查询
+    async fn query_model_call_aggregation(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<AggregationRow>>;
+
+    /// 获取 Agent 统计数据（按 options 控制返回哪些维度）
+    async fn get_stats(&self, ctx: RequestContext, query: AgentStatsQuery, options: StatsFetchOptions) -> Result<AgentStats>;
 }
 
 /// Agent DAL 实现
 struct AgentDalImpl {
     agent_dao: Arc<dyn AgentDao>,
-}
-
-impl AgentDalImpl {
-    /// 创建 DAL 实例
-    fn new(agent_dao: Arc<dyn AgentDao>) -> Self {
-        Self { agent_dao }
-    }
+    agent_stats_dao: Arc<dyn AgentStatsDao<ModelCallEvent = ModelCallEvent>>,
 }
 
 #[async_trait::async_trait]
@@ -144,5 +161,27 @@ impl AgentDal for AgentDalImpl {
         }
 
         Ok(())
+    }
+
+    // ==================== 统计查询 ====================
+
+    async fn sum_tokens(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<TokenSumResult> {
+        self.agent_stats_dao.sum_tokens(ctx, query).await
+    }
+
+    async fn sum_calls(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<u64> {
+        self.agent_stats_dao.sum_calls(ctx, query).await
+    }
+
+    async fn query_model_call_time_series(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<TimeSeriesPoint>> {
+        self.agent_stats_dao.query_model_call_time_series(ctx, query).await
+    }
+
+    async fn query_model_call_aggregation(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<AggregationRow>> {
+        self.agent_stats_dao.query_model_call_aggregation(ctx, query).await
+    }
+
+    async fn get_stats(&self, ctx: RequestContext, query: AgentStatsQuery, options: StatsFetchOptions) -> Result<AgentStats> {
+        self.agent_stats_dao.get_stats(ctx, query, options).await
     }
 }

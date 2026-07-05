@@ -13,7 +13,7 @@ use tempfile::tempdir;
 async fn setup_test_env(
     project_id: &str,
     event_count: usize,
-) -> Result<(crate::pkg::RequestContext, std::sync::Arc<dyn ProjectStatsDao<ModelCallEvent = ModelCallEvent, ToolCallEvent = ToolCallEvent>>)> {
+) -> Result<(crate::pkg::RequestContext, std::sync::Arc<dyn ProjectStatsDao<ModelCallEvent = ModelCallEvent>>)> {
     let dir = tempdir()?;
     let db_path = dir.path().join("stats.db");
     let db_path_str = db_path.to_str().unwrap();

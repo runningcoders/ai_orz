@@ -1,7 +1,7 @@
 //! Task DAO 模块
 
 use common::error::{Error, Result};
-use common::models::{StatsInterval, TimeSeriesPoint, TokenSumResult};
+use common::models::{StatsInterval, TimeSeriesPoint, TokenSumResult, TaskStats, CallSummary, StatsFetchOptions};
 use crate::models::task::TaskPo;
 use crate::pkg::RequestContext;
 use crate::pkg::stats::{StatFilter, StatAggregation, AggregationRow, StatEvent, Stats};
@@ -91,19 +91,12 @@ pub struct TaskStatsQuery {
 #[async_trait::async_trait]
 pub trait TaskStatsDao: Send + Sync {
     type ModelCallEvent: StatEvent + 'static + Send + Sync;
-    type ToolCallEvent: StatEvent + 'static + Send + Sync;
 
     fn model_call_table_name(&self, stats: &Stats) -> Option<String> {
         stats.get_table_name::<Self::ModelCallEvent>()
     }
 
-    fn tool_call_table_name(&self, stats: &Stats) -> Option<String> {
-        stats.get_table_name::<Self::ToolCallEvent>()
-    }
-
     async fn query_model_calls(&self, ctx: RequestContext, query: TaskStatsQuery) -> Result<Vec<JsonValue>>;
-
-    async fn query_tool_calls(&self, ctx: RequestContext, query: TaskStatsQuery) -> Result<Vec<JsonValue>>;
 
     async fn query_model_call_aggregation(&self, ctx: RequestContext, query: TaskStatsQuery) -> Result<Vec<AggregationRow>> {
         let group_by = query.group_by.clone();
@@ -151,28 +144,65 @@ pub trait TaskStatsDao: Send + Sync {
         })
     }
 
-    async fn sum_tool_calls(&self, ctx: RequestContext, query: TaskStatsQuery) -> Result<u64> {
-        let mut query = query;
+    async fn get_stats(&self, ctx: RequestContext, query: TaskStatsQuery, options: StatsFetchOptions) -> Result<TaskStats> {
+        let mut stats = TaskStats {
+            call_summary: None,
+            token_summary: None,
+            model_call_time_series: None,
+        };
+
+        if options.with_call_summary {
+            let total_calls = self.sum_calls(ctx.clone(), query.clone()).await?;
+            let now = chrono::Utc::now().timestamp_millis();
+            let instant_query = TaskStatsQuery {
+                time_range: Some((now - 1000, now)),
+                ..query.clone()
+            };
+            let instant_calls = self.sum_calls(ctx.clone(), instant_query).await?;
+            let instant_qps = instant_calls as f64;
+
+            let avg_qps = if let Some((start, end)) = options.time_range {
+                let range_query = TaskStatsQuery {
+                    time_range: Some((start, end)),
+                    ..query.clone()
+                };
+                let range_calls = self.sum_calls(ctx.clone(), range_query).await?;
+                let duration_secs = (end - start) as f64 / 1000.0;
+                if duration_secs > 0.0 { Some(range_calls as f64 / duration_secs) } else { None }
+            } else {
+                None
+            };
+
+            stats.call_summary = Some(CallSummary {
+                total_calls,
+                avg_qps,
+                instant_qps,
+            });
+        }
+
+        if options.with_token_summary {
+            stats.token_summary = Some(self.sum_tokens(ctx.clone(), query.clone()).await?);
+        }
+
+        if options.with_time_series {
+            let mut ts_query = query;
+            ts_query.time_range = options.time_range;
+            ts_query.interval = options.interval.or(Some(StatsInterval::Daily));
+            stats.model_call_time_series = Some(self.query_model_call_time_series(ctx, ts_query).await?);
+        }
+
+        Ok(stats)
+    }
+
+    async fn sum_calls(&self, ctx: RequestContext, mut query: TaskStatsQuery) -> Result<u64> {
         query.group_by = vec![];
         query.aggregations = vec![StatAggregation::Count];
         query.interval = None;
-        let rows = self.query_tool_calls(ctx, query).await?;
+        let rows = self.query_model_calls(ctx, query).await?;
         if rows.is_empty() {
             return Ok(0);
         }
         Ok(rows[0].get("count").and_then(|v| v.as_f64()).unwrap_or(0.0) as u64)
-    }
-
-    async fn query_tool_call_time_series(&self, ctx: RequestContext, mut query: TaskStatsQuery) -> Result<Vec<TimeSeriesPoint>> {
-        if query.interval.is_none() {
-            query.interval = Some(StatsInterval::Daily);
-        }
-        let rows = self.query_tool_calls(ctx, query).await?;
-        let mut result = Vec::with_capacity(rows.len());
-        for row in rows {
-            result.push(parse_time_series_point(&row));
-        }
-        Ok(result)
     }
 }
 

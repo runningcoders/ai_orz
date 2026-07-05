@@ -1,7 +1,7 @@
 //! Agent DAO 模块
 
 use common::error::Result;
-use common::models::{StatsInterval, TimeSeriesPoint, TokenSumResult};
+use common::models::{AgentStats, CallSummary, StatsFetchOptions, StatsInterval, TimeSeriesPoint, TokenSumResult};
 use crate::models::agent::AgentPo;
 use crate::pkg::RequestContext;
 use common::enums::AgentStatus;
@@ -54,27 +54,17 @@ pub trait AgentDao: Send + Sync {
 pub trait AgentStatsDao: Send + Sync {
     /// 模型调用事件类型
     type ModelCallEvent: StatEvent + 'static + Send + Sync;
-    /// 工具调用事件类型
-    type ToolCallEvent: StatEvent + 'static + Send + Sync;
 
     /// 获取模型调用表名（从 Stats 注册表中查询）
     fn model_call_table_name(&self, stats: &Stats) -> Option<String> {
         stats.get_table_name::<Self::ModelCallEvent>()
     }
 
-    /// 获取工具调用表名（从 Stats 注册表中查询）
-    fn tool_call_table_name(&self, stats: &Stats) -> Option<String> {
-        stats.get_table_name::<Self::ToolCallEvent>()
-    }
-
-    /// 模型调用通用查询：根据 query 中填写的字段自动选择查询模式
+    /// 底层通用查询：模型调用通用查询，根据 query 中填写的字段自动选择查询模式
     /// - 填了 aggregations → 执行聚合查询，返回 AggregationRow
     /// - 填了 interval → 执行时序查询，返回 TimeSeriesPoint
     /// - 都没填 → 执行默认聚合（sum tokens + count），返回 AggregationRow
     async fn query_model_calls(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<JsonValue>>;
-
-    /// 工具调用通用查询
-    async fn query_tool_calls(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<JsonValue>>;
 
     /// 语法糖：模型调用聚合查询（返回结构化 AggregationRow）
     async fn query_model_call_aggregation(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<AggregationRow>> {
@@ -125,30 +115,69 @@ pub trait AgentStatsDao: Send + Sync {
         })
     }
 
-    /// 语法糖：工具调用次数汇总
-    async fn sum_tool_calls(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<u64> {
-        let mut query = query;
+    /// 语法糖：模型调用总次数（不带 time_range）
+    async fn sum_calls(&self, ctx: RequestContext, mut query: AgentStatsQuery) -> Result<u64> {
         query.group_by = vec![];
         query.aggregations = vec![StatAggregation::Count];
         query.interval = None;
-        let rows = self.query_tool_calls(ctx, query).await?;
+        let rows = self.query_model_calls(ctx, query).await?;
         if rows.is_empty() {
             return Ok(0);
         }
         Ok(rows[0].get("count").and_then(|v| v.as_f64()).unwrap_or(0.0) as u64)
     }
 
-    /// 语法糖：工具调用时序查询（返回结构化 TimeSeriesPoint）
-    async fn query_tool_call_time_series(&self, ctx: RequestContext, mut query: AgentStatsQuery) -> Result<Vec<TimeSeriesPoint>> {
-        if query.interval.is_none() {
-            query.interval = Some(StatsInterval::Daily);
+    /// 获取 Agent 统计数据（按 options 控制填充维度）
+    async fn get_stats(&self, ctx: RequestContext, query: AgentStatsQuery, options: StatsFetchOptions) -> Result<AgentStats> {
+        let mut stats = AgentStats {
+            call_summary: None,
+            token_summary: None,
+            model_call_time_series: None,
+        };
+
+        if options.with_call_summary {
+            let total_calls = self.sum_calls(ctx.clone(), query.clone()).await?;
+            // 瞬时 QPS：最近 1 秒的调用次数
+            let now = chrono::Utc::now().timestamp_millis();
+            let instant_query = AgentStatsQuery {
+                time_range: Some((now - 1000, now)),
+                ..query.clone()
+            };
+            let instant_calls = self.sum_calls(ctx.clone(), instant_query).await?;
+            let instant_qps = instant_calls as f64;
+
+            // 平均 QPS：需要 time_range
+            let avg_qps = if let Some((start, end)) = options.time_range {
+                let range_query = AgentStatsQuery {
+                    time_range: Some((start, end)),
+                    ..query.clone()
+                };
+                let range_calls = self.sum_calls(ctx.clone(), range_query).await?;
+                let duration_secs = (end - start) as f64 / 1000.0;
+                if duration_secs > 0.0 { Some(range_calls as f64 / duration_secs) } else { None }
+            } else {
+                None
+            };
+
+            stats.call_summary = Some(CallSummary {
+                total_calls,
+                avg_qps,
+                instant_qps,
+            });
         }
-        let rows = self.query_tool_calls(ctx, query).await?;
-        let mut result = Vec::with_capacity(rows.len());
-        for row in rows {
-            result.push(parse_time_series_point(&row));
+
+        if options.with_token_summary {
+            stats.token_summary = Some(self.sum_tokens(ctx.clone(), query.clone()).await?);
         }
-        Ok(result)
+
+        if options.with_time_series {
+            let mut ts_query = query;
+            ts_query.time_range = options.time_range;
+            ts_query.interval = options.interval.or(Some(StatsInterval::Daily));
+            stats.model_call_time_series = Some(self.query_model_call_time_series(ctx, ts_query).await?);
+        }
+
+        Ok(stats)
     }
 }
 

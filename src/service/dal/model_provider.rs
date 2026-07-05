@@ -1,10 +1,12 @@
 //! Model Provider DAL 模块
 
 use common::error::Result;
+use common::models::{ModelProviderStats, StatsFetchOptions, TimeSeriesPoint, TokenSumResult};
 use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
+use crate::pkg::stats::{AggregationRow, ModelCallEvent};
 use crate::service::dao::model_provider;
-use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderQuery};
+use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderQuery, ModelProviderStatsDao, ModelProviderStatsQuery};
 use common::enums::ModelProviderStatus;
 use std::sync::{Arc, OnceLock};
 
@@ -20,14 +22,16 @@ pub fn dal() -> Arc<dyn ModelProviderDal> {
 
 /// 初始化 Model Provider DAL
 pub fn init() {
-    let _ = MODEL_PROVIDER_DAL.set(new(model_provider::dao()));
+    model_provider::stats_init();
+    let _ = MODEL_PROVIDER_DAL.set(new(model_provider::dao(), model_provider::stats_dao()));
 }
 
 /// 创建 Model Provider DAL（返回 trait 对象）
 pub fn new(
     model_provider_dao: Arc<dyn ModelProviderDao + Send + Sync>,
+    model_provider_stats_dao: Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>,
 ) -> Arc<dyn ModelProviderDal> {
-    Arc::new(ModelProviderDalImpl { model_provider_dao })
+    Arc::new(ModelProviderDalImpl { model_provider_dao, model_provider_stats_dao })
 }
 
 // ==================== DAL 实现 ====================
@@ -60,18 +64,29 @@ pub trait ModelProviderDal: Send + Sync {
 
     /// 删除 Model Provider
     async fn delete(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<()>;
+
+    // ==================== 统计查询 ====================
+
+    /// Token 汇总
+    async fn sum_tokens(&self, ctx: RequestContext, query: ModelProviderStatsQuery) -> Result<TokenSumResult>;
+
+    /// 模型调用次数汇总
+    async fn sum_calls(&self, ctx: RequestContext, query: ModelProviderStatsQuery) -> Result<u64>;
+
+    /// 模型调用时序查询
+    async fn query_model_call_time_series(&self, ctx: RequestContext, query: ModelProviderStatsQuery) -> Result<Vec<TimeSeriesPoint>>;
+
+    /// 模型调用聚合查询
+    async fn query_model_call_aggregation(&self, ctx: RequestContext, query: ModelProviderStatsQuery) -> Result<Vec<AggregationRow>>;
+
+    /// 获取 ModelProvider 统计数据（按 options 控制返回哪些维度）
+    async fn get_stats(&self, ctx: RequestContext, query: ModelProviderStatsQuery, options: StatsFetchOptions) -> Result<ModelProviderStats>;
 }
 
 /// Model Provider DAL 实现
 struct ModelProviderDalImpl {
     model_provider_dao: Arc<dyn ModelProviderDao>,
-}
-
-impl ModelProviderDalImpl {
-    /// 创建 DAL 实例
-    fn new(model_provider_dao: Arc<dyn ModelProviderDao>) -> Self {
-        Self { model_provider_dao }
-    }
+    model_provider_stats_dao: Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>,
 }
 
 #[async_trait::async_trait]
@@ -118,5 +133,27 @@ impl ModelProviderDal for ModelProviderDalImpl {
     async fn delete(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<()> {
         let ctx = enrich_ctx!(&ctx, provider);
         self.model_provider_dao.delete(ctx, &provider.po).await
+    }
+
+    // ==================== 统计查询 ====================
+
+    async fn sum_tokens(&self, ctx: RequestContext, query: ModelProviderStatsQuery) -> Result<TokenSumResult> {
+        self.model_provider_stats_dao.sum_tokens(ctx, query).await
+    }
+
+    async fn sum_calls(&self, ctx: RequestContext, query: ModelProviderStatsQuery) -> Result<u64> {
+        self.model_provider_stats_dao.sum_calls(ctx, query).await
+    }
+
+    async fn query_model_call_time_series(&self, ctx: RequestContext, query: ModelProviderStatsQuery) -> Result<Vec<TimeSeriesPoint>> {
+        self.model_provider_stats_dao.query_model_call_time_series(ctx, query).await
+    }
+
+    async fn query_model_call_aggregation(&self, ctx: RequestContext, query: ModelProviderStatsQuery) -> Result<Vec<AggregationRow>> {
+        self.model_provider_stats_dao.query_model_call_aggregation(ctx, query).await
+    }
+
+    async fn get_stats(&self, ctx: RequestContext, query: ModelProviderStatsQuery, options: StatsFetchOptions) -> Result<ModelProviderStats> {
+        self.model_provider_stats_dao.get_stats(ctx, query, options).await
     }
 }

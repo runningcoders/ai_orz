@@ -7,13 +7,13 @@ use crate::service::dao::project::{ProjectStatsDao, ProjectStatsQuery};
 use serde_json::Value as JsonValue;
 use std::sync::{Arc, OnceLock};
 
-static PROJECT_STATS_DAO: OnceLock<Arc<dyn ProjectStatsDao<ModelCallEvent = ModelCallEvent, ToolCallEvent = ToolCallEvent>>> = OnceLock::new();
+static PROJECT_STATS_DAO: OnceLock<Arc<dyn ProjectStatsDao<ModelCallEvent = ModelCallEvent>>> = OnceLock::new();
 
-pub fn stats_new() -> Arc<dyn ProjectStatsDao<ModelCallEvent = ModelCallEvent, ToolCallEvent = ToolCallEvent>> {
+pub fn stats_new() -> Arc<dyn ProjectStatsDao<ModelCallEvent = ModelCallEvent>> {
     Arc::new(ProjectStatsDaoDuckDbImpl)
 }
 
-pub fn stats_dao() -> Arc<dyn ProjectStatsDao<ModelCallEvent = ModelCallEvent, ToolCallEvent = ToolCallEvent>> {
+pub fn stats_dao() -> Arc<dyn ProjectStatsDao<ModelCallEvent = ModelCallEvent>> {
     PROJECT_STATS_DAO.get().cloned().unwrap()
 }
 
@@ -26,7 +26,6 @@ struct ProjectStatsDaoDuckDbImpl;
 #[async_trait::async_trait]
 impl ProjectStatsDao for ProjectStatsDaoDuckDbImpl {
     type ModelCallEvent = ModelCallEvent;
-    type ToolCallEvent = ToolCallEvent;
 
     async fn query_model_calls(&self, ctx: RequestContext, mut query: ProjectStatsQuery) -> Result<Vec<JsonValue>> {
         let project_filter = StatFilter::Equals {
@@ -37,19 +36,6 @@ impl ProjectStatsDao for ProjectStatsDaoDuckDbImpl {
 
         let stats = ctx.stats();
         let table_name = self.model_call_table_name(stats);
-
-        self.do_query(ctx, query, table_name).await
-    }
-
-    async fn query_tool_calls(&self, ctx: RequestContext, mut query: ProjectStatsQuery) -> Result<Vec<JsonValue>> {
-        let project_filter = StatFilter::Equals {
-            key: "project_id".to_string(),
-            value: JsonValue::String(query.project_id.clone()),
-        };
-        query.filters.insert(0, project_filter);
-
-        let stats = ctx.stats();
-        let table_name = self.tool_call_table_name(stats);
 
         self.do_query(ctx, query, table_name).await
     }

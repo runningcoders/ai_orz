@@ -2,18 +2,18 @@
 
 use common::error::{Error, Result};
 use crate::pkg::RequestContext;
-use crate::pkg::stats::{StatFilter, StatAggregation, StatsInterval, ModelCallEvent, ToolCallEvent};
+use crate::pkg::stats::{StatFilter, StatAggregation, StatsInterval, ModelCallEvent};
 use crate::service::dao::agent::{AgentStatsDao, AgentStatsQuery};
 use serde_json::Value as JsonValue;
 use std::sync::{Arc, OnceLock};
 
-static AGENT_STATS_DAO: OnceLock<Arc<dyn AgentStatsDao<ModelCallEvent = ModelCallEvent, ToolCallEvent = ToolCallEvent>>> = OnceLock::new();
+static AGENT_STATS_DAO: OnceLock<Arc<dyn AgentStatsDao<ModelCallEvent = ModelCallEvent>>> = OnceLock::new();
 
-pub fn stats_new() -> Arc<dyn AgentStatsDao<ModelCallEvent = ModelCallEvent, ToolCallEvent = ToolCallEvent>> {
+pub fn stats_new() -> Arc<dyn AgentStatsDao<ModelCallEvent = ModelCallEvent>> {
     Arc::new(AgentStatsDaoDuckDbImpl)
 }
 
-pub fn stats_dao() -> Arc<dyn AgentStatsDao<ModelCallEvent = ModelCallEvent, ToolCallEvent = ToolCallEvent>> {
+pub fn stats_dao() -> Arc<dyn AgentStatsDao<ModelCallEvent = ModelCallEvent>> {
     AGENT_STATS_DAO.get().cloned().unwrap()
 }
 
@@ -26,7 +26,6 @@ struct AgentStatsDaoDuckDbImpl;
 #[async_trait::async_trait]
 impl AgentStatsDao for AgentStatsDaoDuckDbImpl {
     type ModelCallEvent = ModelCallEvent;
-    type ToolCallEvent = ToolCallEvent;
 
     async fn query_model_calls(&self, ctx: RequestContext, mut query: AgentStatsQuery) -> Result<Vec<JsonValue>> {
         let agent_filter = StatFilter::Equals {
@@ -37,19 +36,6 @@ impl AgentStatsDao for AgentStatsDaoDuckDbImpl {
 
         let stats = ctx.stats();
         let table_name = self.model_call_table_name(stats);
-
-        self.do_query(ctx, query, table_name).await
-    }
-
-    async fn query_tool_calls(&self, ctx: RequestContext, mut query: AgentStatsQuery) -> Result<Vec<JsonValue>> {
-        let agent_filter = StatFilter::Equals {
-            key: "agent_id".to_string(),
-            value: JsonValue::String(query.agent_id.clone()),
-        };
-        query.filters.insert(0, agent_filter);
-
-        let stats = ctx.stats();
-        let table_name = self.tool_call_table_name(stats);
 
         self.do_query(ctx, query, table_name).await
     }

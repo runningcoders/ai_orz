@@ -2,18 +2,18 @@
 
 use common::error::{Error, Result};
 use crate::pkg::RequestContext;
-use crate::pkg::stats::{StatFilter, StatAggregation, StatsInterval, ModelCallEvent, ToolCallEvent};
+use crate::pkg::stats::{StatFilter, StatAggregation, StatsInterval, ModelCallEvent};
 use crate::service::dao::model_provider::{ModelProviderStatsDao, ModelProviderStatsQuery};
 use serde_json::Value as JsonValue;
 use std::sync::{Arc, OnceLock};
 
-static MODEL_PROVIDER_STATS_DAO: OnceLock<Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent, ToolCallEvent = ToolCallEvent>>> = OnceLock::new();
+static MODEL_PROVIDER_STATS_DAO: OnceLock<Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>> = OnceLock::new();
 
-pub fn stats_new() -> Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent, ToolCallEvent = ToolCallEvent>> {
+pub fn stats_new() -> Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>> {
     Arc::new(ModelProviderStatsDaoDuckDbImpl)
 }
 
-pub fn stats_dao() -> Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent, ToolCallEvent = ToolCallEvent>> {
+pub fn stats_dao() -> Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>> {
     MODEL_PROVIDER_STATS_DAO.get().cloned().unwrap()
 }
 
@@ -26,7 +26,6 @@ struct ModelProviderStatsDaoDuckDbImpl;
 #[async_trait::async_trait]
 impl ModelProviderStatsDao for ModelProviderStatsDaoDuckDbImpl {
     type ModelCallEvent = ModelCallEvent;
-    type ToolCallEvent = ToolCallEvent;
 
     async fn query_model_calls(&self, ctx: RequestContext, mut query: ModelProviderStatsQuery) -> Result<Vec<JsonValue>> {
         let provider_filter = StatFilter::Equals {
@@ -37,19 +36,6 @@ impl ModelProviderStatsDao for ModelProviderStatsDaoDuckDbImpl {
 
         let stats = ctx.stats();
         let table_name = self.model_call_table_name(stats);
-
-        self.do_query(ctx, query, table_name).await
-    }
-
-    async fn query_tool_calls(&self, ctx: RequestContext, mut query: ModelProviderStatsQuery) -> Result<Vec<JsonValue>> {
-        let provider_filter = StatFilter::Equals {
-            key: "model_provider_id".to_string(),
-            value: JsonValue::String(query.model_provider_id.clone()),
-        };
-        query.filters.insert(0, provider_filter);
-
-        let stats = ctx.stats();
-        let table_name = self.tool_call_table_name(stats);
 
         self.do_query(ctx, query, table_name).await
     }

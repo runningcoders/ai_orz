@@ -2,18 +2,18 @@
 
 use common::error::{Error, Result};
 use crate::pkg::RequestContext;
-use crate::pkg::stats::{StatFilter, StatAggregation, StatsInterval, ModelCallEvent, ToolCallEvent};
+use crate::pkg::stats::{StatFilter, StatAggregation, StatsInterval, ModelCallEvent};
 use crate::service::dao::task::{TaskStatsDao, TaskStatsQuery};
 use serde_json::Value as JsonValue;
 use std::sync::{Arc, OnceLock};
 
-static TASK_STATS_DAO: OnceLock<Arc<dyn TaskStatsDao<ModelCallEvent = ModelCallEvent, ToolCallEvent = ToolCallEvent>>> = OnceLock::new();
+static TASK_STATS_DAO: OnceLock<Arc<dyn TaskStatsDao<ModelCallEvent = ModelCallEvent>>> = OnceLock::new();
 
-pub fn stats_new() -> Arc<dyn TaskStatsDao<ModelCallEvent = ModelCallEvent, ToolCallEvent = ToolCallEvent>> {
+pub fn stats_new() -> Arc<dyn TaskStatsDao<ModelCallEvent = ModelCallEvent>> {
     Arc::new(TaskStatsDaoDuckDbImpl)
 }
 
-pub fn stats_dao() -> Arc<dyn TaskStatsDao<ModelCallEvent = ModelCallEvent, ToolCallEvent = ToolCallEvent>> {
+pub fn stats_dao() -> Arc<dyn TaskStatsDao<ModelCallEvent = ModelCallEvent>> {
     TASK_STATS_DAO.get().cloned().unwrap()
 }
 
@@ -26,7 +26,6 @@ struct TaskStatsDaoDuckDbImpl;
 #[async_trait::async_trait]
 impl TaskStatsDao for TaskStatsDaoDuckDbImpl {
     type ModelCallEvent = ModelCallEvent;
-    type ToolCallEvent = ToolCallEvent;
 
     async fn query_model_calls(&self, ctx: RequestContext, mut query: TaskStatsQuery) -> Result<Vec<JsonValue>> {
         let task_filter = StatFilter::Equals {
@@ -37,19 +36,6 @@ impl TaskStatsDao for TaskStatsDaoDuckDbImpl {
 
         let stats = ctx.stats();
         let table_name = self.model_call_table_name(stats);
-
-        self.do_query(ctx, query, table_name).await
-    }
-
-    async fn query_tool_calls(&self, ctx: RequestContext, mut query: TaskStatsQuery) -> Result<Vec<JsonValue>> {
-        let task_filter = StatFilter::Equals {
-            key: "task_id".to_string(),
-            value: JsonValue::String(query.task_id.clone()),
-        };
-        query.filters.insert(0, task_filter);
-
-        let stats = ctx.stats();
-        let table_name = self.tool_call_table_name(stats);
 
         self.do_query(ctx, query, table_name).await
     }
