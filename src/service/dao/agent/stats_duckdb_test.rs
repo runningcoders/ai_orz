@@ -13,7 +13,7 @@ use tempfile::tempdir;
 async fn setup_test_env(
     agent_id: &str,
     event_count: usize,
-) -> Result<(crate::pkg::RequestContext, std::sync::Arc<dyn AgentStatsDao<ModelCallEvent = ModelCallEvent>>)> {
+) -> Result<(crate::pkg::RequestContext, std::sync::Arc<dyn AgentStatsDao<AwakeEvent = AgentAwakeEvent>>)> {
     let dir = tempdir()?;
     let db_path = dir.path().join("stats.db");
     let db_path_str = db_path.to_str().unwrap();
@@ -26,12 +26,9 @@ async fn setup_test_env(
 
     let now = Utc::now().timestamp_millis();
     for i in 0..event_count {
-        let event = ModelCallEvent::new(now + i as i64 * 1000)
-            .with_agent_id(Some(agent_id.to_string()))
-            .with_model_provider_id(Some("provider-test".to_string()))
-            .with_tokens_input((100 + i * 10) as u64)
-            .with_tokens_output((50 + i * 5) as u64)
-            .with_total_tokens((150 + i * 15) as u64);
+        let event = AgentAwakeEvent::new(now + i as i64 * 1000)
+            .with_agent_id(agent_id.to_string())
+            .with_duration_ms((100 + i * 10) as u64);
         stats.record(tmp_ctx.clone(), event).await?;
     }
     stats.flush_all(tmp_ctx).await?;
@@ -173,22 +170,16 @@ async fn test_filter_by_different_agent() -> Result<()> {
     let now = Utc::now().timestamp_millis();
 
     for i in 0..3 {
-        let event = ModelCallEvent::new(now + i as i64 * 1000)
-            .with_agent_id(Some(agent_a.to_string()))
-            .with_model_provider_id(Some("provider-test".to_string()))
-            .with_tokens_input((100 + i * 10) as u64)
-            .with_tokens_output((50 + i * 5) as u64)
-            .with_total_tokens((150 + i * 15) as u64);
+        let event = AgentAwakeEvent::new(now + i as i64 * 1000)
+            .with_agent_id(agent_a.to_string())
+            .with_duration_ms((100 + i * 10) as u64);
         stats.record(tmp_ctx.clone(), event).await?;
     }
 
     for i in 0..2 {
-        let event = ModelCallEvent::new(now + i as i64 * 1000)
-            .with_agent_id(Some(agent_b.to_string()))
-            .with_model_provider_id(Some("provider-test".to_string()))
-            .with_tokens_input((200 + i * 10) as u64)
-            .with_tokens_output((100 + i * 5) as u64)
-            .with_total_tokens((300 + i * 15) as u64);
+        let event = AgentAwakeEvent::new(now + i as i64 * 1000)
+            .with_agent_id(agent_b.to_string())
+            .with_duration_ms((200 + i * 10) as u64);
         stats.record(tmp_ctx.clone(), event).await?;
     }
 

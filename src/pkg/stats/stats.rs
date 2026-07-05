@@ -16,6 +16,7 @@ use super::traits::{StatEvent, StatTable};
 use super::default::{DefaultStatEvent, DefaultStatTable};
 use super::model_call::{ModelCallEvent, ModelCallStatTable};
 use super::tool_call::{ToolCallEvent, ToolCallStatTable};
+use super::agent_awake::{AgentAwakeEvent, AgentAwakeStatTable};
 
 /// 类型安全的 SQL 参数枚举（Send + Sync，替代 `dyn ToSql`）
 ///
@@ -109,10 +110,12 @@ impl Stats {
     /// - default_events: 通用事件表，保留给灵活场景使用
     /// - model_call_events: 模型调用专用表
     /// - tool_call_events: 工具调用专用表
+    /// - agent_awake_events: Agent 唤醒专用表
     pub fn initialize_default(&self) -> Result<()> {
         self.register_table(DefaultStatTable)?;
         self.register_table(ModelCallStatTable)?;
         self.register_table(ToolCallStatTable)?;
+        self.register_table(AgentAwakeStatTable)?;
         Ok(())
     }
 

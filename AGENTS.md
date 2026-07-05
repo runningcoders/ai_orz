@@ -426,6 +426,14 @@ Agent
 ## 六、工作流与开发记录
 
 ### 2026-07-05 里程碑
+**✅ Agent 唤醒统计事件落地 + Stats DAO 数据源切换**
+- **AgentAwakeEvent**：新增 `agent_awake_events` 表，记录 Agent 唤醒事件（唤醒次数、耗时、状态、关联消息等）
+- **集成位置**：在 `RuntimeDomain.awaken()` 中记录唤醒事件，每次 Agent 唤醒成功后自动上报
+- **数据源切换**：AgentStatsDao 从 `model_call_events` 切换到 `agent_awake_events`，统计内容从"模型调用次数"变为"Agent 唤醒次数"
+- **演进验证**：验证了"领域先行，实现后续演进"的设计思路 — 接口不变，仅替换 DAO 实现，上层无感知
+- **测试统计**：544 个测试 100% 通过
+
+### 2026-07-05 里程碑（早期）
 **✅ Stats DAO 领域拆分重构完成**
 - **领域划分**：按领域而非实体划分职责，Agent/Project/Task StatsDao 只负责自身维度的 call_summary；ModelProviderStatsDao 升级为模型调用领域 DAO
 - **通用结构体**：新增 `ModelCallStats` 通用结构体（call_summary + token_summary + model_call_time_series），所有实体复用

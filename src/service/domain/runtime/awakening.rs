@@ -5,6 +5,7 @@ use crate::models::agent::Agent;
 use crate::models::memory::MemoryTrace;
 use crate::models::message::Message;
 use crate::pkg::request_context::RequestContext;
+use crate::pkg::stats::AgentAwakeEvent;
 use crate::service::domain::runtime::{
     AwakeningResult, RuntimeAwakening, RuntimeDomain, RuntimeDomainImpl,
 };
@@ -12,6 +13,7 @@ use crate::service::domain::runtime::{
 use super::context_assembly::PromptBuilder;
 
 use crate::enrich_ctx;
+use crate::record_event;
 
 #[async_trait::async_trait]
 impl RuntimeAwakening for RuntimeDomainImpl {
@@ -21,6 +23,8 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         agent: &Agent,
         message: &Message,
     ) -> Result<AwakeningResult> {
+        let start_time = std::time::SystemTime::now();
+
         // 补充 Agent 上下文到 ctx，后续调用链可复用
         let ctx = enrich_ctx!(&ctx, agent);
 
@@ -88,7 +92,21 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             .write_thinking_trace(ctx.clone(), trace)
             .await?;
 
-        // Step 8: 返回结果
+        // Step 8: 记录 Agent 唤醒统计事件
+        let duration_ms = start_time.elapsed().map(|d| d.as_millis() as u64).unwrap_or(0);
+        let _ = record_event!(ctx, AgentAwakeEvent {
+            agent_id: agent.po.id.clone(),
+            project_id: ctx.project_id().cloned(),
+            task_id: ctx.task_id().cloned(),
+            organization_id: ctx.organization_id.clone(),
+            user_id: Some(ctx.uid()),
+            message_id: Some(message.po.id.clone()),
+            call_count: 1,
+            duration_ms: duration_ms,
+            status: "success".to_string(),
+        });
+
+        // Step 9: 返回结果
         Ok(AwakeningResult {
             agent_id: agent.po.id.clone(),
             trace_ids: vec![trace_id],

@@ -5,7 +5,7 @@ use common::models::{AgentStats, ModelCallStats, StatsFetchOptions};
 use crate::models::agent::Agent;
 use crate::models::brain::Brain;
 use crate::pkg::RequestContext;
-use crate::pkg::stats::ModelCallEvent;
+use crate::pkg::stats::{ModelCallEvent, AgentAwakeEvent};
 use crate::service::dao::agent;
 use crate::service::dao::agent::{AgentDao, AgentQuery, AgentStatsDao, AgentStatsQuery};
 use crate::service::dao::model_provider::{ModelProviderStatsDao, ModelProviderStatsQuery};
@@ -36,7 +36,7 @@ pub fn init() {
 /// 创建 Agent DAL（返回 trait 对象）
 pub fn new(
     agent_dao: Arc<dyn AgentDao + Send + Sync>,
-    agent_stats_dao: Arc<dyn AgentStatsDao<ModelCallEvent = ModelCallEvent>>,
+    agent_stats_dao: Arc<dyn AgentStatsDao<AwakeEvent = AgentAwakeEvent>>,
     model_provider_stats_dao: Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>,
 ) -> Arc<dyn AgentDal> {
     Arc::new(AgentDalImpl { agent_dao, agent_stats_dao, model_provider_stats_dao })
@@ -96,7 +96,7 @@ pub trait AgentDal: Send + Sync {
 /// Agent DAL 实现
 struct AgentDalImpl {
     agent_dao: Arc<dyn AgentDao>,
-    agent_stats_dao: Arc<dyn AgentStatsDao<ModelCallEvent = ModelCallEvent>>,
+    agent_stats_dao: Arc<dyn AgentStatsDao<AwakeEvent = AgentAwakeEvent>>,
     model_provider_stats_dao: Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>,
 }
 

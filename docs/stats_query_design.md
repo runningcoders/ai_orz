@@ -179,7 +179,9 @@ pub enum StatParam {
 
 ### Agent/Project/Task StatsDao（领域：自身维度）
 
-三个实体的 StatsDao 接口结构相同，只负责自身维度的 call_summary：
+三个实体的 StatsDao 接口结构相同，只负责自身维度的 call_summary。
+
+**AgentStatsDao 实现细节**：数据来自 `agent_awake_events` 表（Agent 唤醒事件），统计 Agent 被唤醒的次数和 QPS。
 
 ```rust
 /// Agent 统计查询参数
@@ -191,17 +193,17 @@ pub struct AgentStatsQuery {
 }
 
 pub trait AgentStatsDao: Send + Sync {
-    type ModelCallEvent: StatEvent + 'static + Send + Sync;
+    type AwakeEvent: StatEvent + 'static + Send + Sync;
 
-    fn model_call_table_name(&self, stats: &Stats) -> Option<String> {
-        stats.get_table_name::<Self::ModelCallEvent>()
+    fn awake_table_name(&self, stats: &Stats) -> Option<String> {
+        stats.get_table_name::<Self::AwakeEvent>()
     }
 
-    async fn query_model_calls(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<JsonValue>>;
+    async fn query_awake_calls(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<JsonValue>>;
 
     async fn sum_calls(&self, ctx: RequestContext, mut query: AgentStatsQuery) -> Result<u64> {
         query.aggregations = vec![StatAggregation::Count];
-        let rows = self.query_model_calls(ctx, query).await?;
+        let rows = self.query_awake_calls(ctx, query).await?;
         if rows.is_empty() { return Ok(0); }
         Ok(rows[0].get("count").and_then(|v| v.as_f64()).unwrap_or(0.0) as u64)
     }
@@ -357,14 +359,16 @@ pub trait ModelProviderDal: Send + Sync {
 
 ### 当前阶段
 
-所有统计数据都来自 `model_call_events` 表，各实体的 StatsDao 通过不同的过滤条件查询。
+- **Agent 自身统计**：数据来自 `agent_awake_events` 表（Agent 唤醒事件），统计 Agent 被唤醒的次数和 QPS
+- **Project/Task 自身统计**：暂时从 `model_call_events` 表按维度过滤获取（未来会切换到各自的专属统计表）
+- **模型调用统计**：统一由 `ModelProviderStatsDao` 负责，数据来自 `model_call_events` 表
 
 ### 未来阶段
 
-当 Agent/Project/Task 有了自己的专属统计表时：
+当 Project/Task 有了自己的专属统计表时：
 
-1. **替换 DAO 实现**：只需修改 `AgentStatsDao` 的 DuckDB 实现，从新的 Agent 专属表查询
-2. **扩展统计结构体**：`AgentStats` 可以增加新字段（如 `task_count`、`active_user_count` 等）
+1. **替换 DAO 实现**：只需修改对应 StatsDao 的 DuckDB 实现，从新的专属表查询
+2. **扩展统计结构体**：各实体 Stats 可以增加新字段（如 `task_count`、`active_user_count` 等）
 3. **上层无感知**：DAL 和 Domain 层的接口完全不变，调用方不需要修改
 
 ---
@@ -408,6 +412,24 @@ if let Some(stats) = ctx.stats_opt() {
 }
 ```
 
+#### Agent 唤醒统计
+
+在 `RuntimeDomain.awaken()` 中记录 `AgentAwakeEvent`：
+
+```rust
+let event = AgentAwakeEvent::new(timestamp)
+    .with_agent_id(agent_id)
+    .with_project_id(project_id)
+    .with_task_id(task_id)
+    .with_organization_id(organization_id)
+    .with_user_id(user_id)
+    .with_message_id(message_id)
+    .with_duration_ms(duration_ms)
+    .with_status("success".to_string());
+
+record_event!(ctx, event);
+```
+
 ---
 
 ## 版本信息
@@ -422,3 +444,4 @@ if let Some(stats) = ctx.stats_opt() {
 | v1.5 | 2026-07-03 | 表自描述重构 | StatTable trait 新增 is_dedicated_table / column_sql / metric_sql / filter_equals_sql / filter_range_sql |
 | v1.6 | 2026-07-03 | 监控链路字段补充 | ModelCallEvent 补充 model_provider_id / model_name；ToolCallEvent 新增 organization_id / user_id |
 | v1.7 | 2026-07-05 | 领域拆分重构 | **核心改造**：按领域划分职责，Agent/Project/Task StatsDao 只负责自身维度的 call_summary；ModelProviderStatsDao 升级为模型调用领域 DAO；新增 ModelCallStats 通用结构体；DAL 层组装跨领域统计结果；接口精简为 get_stats(id, options) + get_model_call_stats(id, options) |
+| v1.8 | 2026-07-05 | Agent 唤醒事件 + 数据源切换 | 新增 `AgentAwakeEvent` 统计事件和 `agent_awake_events` 表；在 RuntimeDomain.awaken() 中记录唤醒事件；AgentStatsDao 数据源从 model_call_events 切换到 agent_awake_events，统计内容从"模型调用次数"变为"Agent 唤醒次数" |

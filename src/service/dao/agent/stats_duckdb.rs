@@ -2,18 +2,18 @@
 
 use common::error::Result;
 use crate::pkg::RequestContext;
-use crate::pkg::stats::{StatFilter, StatAggregation, ModelCallEvent};
+use crate::pkg::stats::{StatFilter, AgentAwakeEvent};
 use crate::service::dao::agent::{AgentStatsDao, AgentStatsQuery};
 use serde_json::Value as JsonValue;
 use std::sync::{Arc, OnceLock};
 
-static AGENT_STATS_DAO: OnceLock<Arc<dyn AgentStatsDao<ModelCallEvent = ModelCallEvent>>> = OnceLock::new();
+static AGENT_STATS_DAO: OnceLock<Arc<dyn AgentStatsDao<AwakeEvent = AgentAwakeEvent>>> = OnceLock::new();
 
-pub fn stats_new() -> Arc<dyn AgentStatsDao<ModelCallEvent = ModelCallEvent>> {
+pub fn stats_new() -> Arc<dyn AgentStatsDao<AwakeEvent = AgentAwakeEvent>> {
     Arc::new(AgentStatsDaoDuckDbImpl)
 }
 
-pub fn stats_dao() -> Arc<dyn AgentStatsDao<ModelCallEvent = ModelCallEvent>> {
+pub fn stats_dao() -> Arc<dyn AgentStatsDao<AwakeEvent = AgentAwakeEvent>> {
     AGENT_STATS_DAO.get().cloned().unwrap()
 }
 
@@ -25,9 +25,9 @@ struct AgentStatsDaoDuckDbImpl;
 
 #[async_trait::async_trait]
 impl AgentStatsDao for AgentStatsDaoDuckDbImpl {
-    type ModelCallEvent = ModelCallEvent;
+    type AwakeEvent = AgentAwakeEvent;
 
-    async fn query_model_calls(&self, ctx: RequestContext, mut query: AgentStatsQuery) -> Result<Vec<JsonValue>> {
+    async fn query_awake_calls(&self, ctx: RequestContext, mut query: AgentStatsQuery) -> Result<Vec<JsonValue>> {
         let agent_filter = StatFilter::Equals {
             key: "agent_id".to_string(),
             value: JsonValue::String(query.agent_id.clone()),
@@ -35,7 +35,7 @@ impl AgentStatsDao for AgentStatsDaoDuckDbImpl {
         query.filters.insert(0, agent_filter);
 
         let stats = ctx.stats();
-        let table_name = self.model_call_table_name(stats);
+        let table_name = self.awake_table_name(stats);
 
         let rows = ctx.stats().query_aggregation(
             ctx.clone(),

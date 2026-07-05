@@ -30,11 +30,13 @@ mod default;
 mod stats;
 mod model_call;
 mod tool_call;
+mod agent_awake;
 
 pub use common::models::{StatsInterval, TimeSeriesPoint, TokenSumResult};
 pub use self::default::{DefaultStatEvent, DefaultStatTable};
 pub use self::model_call::{ModelCallEvent, ModelCallStatTable};
 pub use self::tool_call::{ToolCallEvent, ToolCallStatTable};
+pub use self::agent_awake::{AgentAwakeEvent, AgentAwakeStatTable};
 pub use self::stats::{
     Stats,
     StatParam,

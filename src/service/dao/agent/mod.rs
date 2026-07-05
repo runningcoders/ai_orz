@@ -7,7 +7,6 @@ use crate::pkg::RequestContext;
 use common::enums::AgentStatus;
 use crate::pkg::stats::{StatFilter, StatAggregation, StatEvent, Stats};
 use serde_json::Value as JsonValue;
-
 /// Agent 查询参数
 #[derive(Debug, Clone, Default)]
 pub struct AgentQuery {
@@ -47,25 +46,26 @@ pub trait AgentDao: Send + Sync {
 
 /// Agent 统计 DAO 接口
 ///
-/// 只负责 Agent 自身维度的统计（目前只有调用次数汇总）。
+/// 只负责 Agent 自身维度的统计（目前只有唤醒次数汇总）。
+/// 数据来源：agent_awake_events 表
 /// 模型调用相关的统计（token、时序等）由 ModelProviderStatsDao 负责。
 #[async_trait::async_trait]
 pub trait AgentStatsDao: Send + Sync {
-    /// 模型调用事件类型
-    type ModelCallEvent: StatEvent + 'static + Send + Sync;
+    /// Agent 唤醒事件类型
+    type AwakeEvent: StatEvent + 'static + Send + Sync;
 
-    /// 获取模型调用表名（从 Stats 注册表中查询）
-    fn model_call_table_name(&self, stats: &Stats) -> Option<String> {
-        stats.get_table_name::<Self::ModelCallEvent>()
+    /// 获取唤醒事件表名（从 Stats 注册表中查询）
+    fn awake_table_name(&self, stats: &Stats) -> Option<String> {
+        stats.get_table_name::<Self::AwakeEvent>()
     }
 
     /// 底层通用查询（内部使用，不对外暴露业务语义）
-    async fn query_model_calls(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<JsonValue>>;
+    async fn query_awake_calls(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<JsonValue>>;
 
-    /// 模型调用总次数
+    /// Agent 唤醒总次数
     async fn sum_calls(&self, ctx: RequestContext, mut query: AgentStatsQuery) -> Result<u64> {
         query.aggregations = vec![StatAggregation::Count];
-        let rows = self.query_model_calls(ctx, query).await?;
+        let rows = self.query_awake_calls(ctx, query).await?;
         if rows.is_empty() {
             return Ok(0);
         }
