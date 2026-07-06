@@ -88,25 +88,26 @@ pub struct ProjectStatsQuery {
 
 /// Project 统计 DAO 接口
 ///
-/// 只负责 Project 自身维度的统计（目前只有调用次数汇总）。
+/// 只负责 Project 自身维度的统计（目前只有业务事件次数汇总）。
+/// 数据来源：project_events 表
 /// 模型调用相关的统计（token、时序等）由 ModelProviderStatsDao 负责。
 #[async_trait::async_trait]
 pub trait ProjectStatsDao: Send + Sync {
-    /// 模型调用事件类型
-    type ModelCallEvent: StatEvent + 'static + Send + Sync;
+    /// Project 业务事件类型
+    type ProjectEvent: StatEvent + 'static + Send + Sync;
 
-    /// 获取模型调用表名（从 Stats 注册表中查询）
-    fn model_call_table_name(&self, stats: &Stats) -> Option<String> {
-        stats.get_table_name::<Self::ModelCallEvent>()
+    /// 获取 Project 业务事件表名（从 Stats 注册表中查询）
+    fn project_table_name(&self, stats: &Stats) -> Option<String> {
+        stats.get_table_name::<Self::ProjectEvent>()
     }
 
     /// 底层通用查询（内部使用，不对外暴露业务语义）
-    async fn query_model_calls(&self, ctx: RequestContext, query: ProjectStatsQuery) -> Result<Vec<JsonValue>>;
+    async fn query_project_calls(&self, ctx: RequestContext, query: ProjectStatsQuery) -> Result<Vec<JsonValue>>;
 
-    /// 模型调用总次数
+    /// Project 业务事件总次数
     async fn sum_calls(&self, ctx: RequestContext, mut query: ProjectStatsQuery) -> Result<u64> {
         query.aggregations = vec![StatAggregation::Count];
-        let rows = self.query_model_calls(ctx, query).await?;
+        let rows = self.query_project_calls(ctx, query).await?;
         if rows.is_empty() {
             return Ok(0);
         }

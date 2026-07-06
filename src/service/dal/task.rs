@@ -6,7 +6,7 @@ use common::error::Result;
 use common::models::{ModelCallStats, StatsFetchOptions, TaskStats};
 use crate::models::task::{Task, TaskPo};
 use crate::pkg::RequestContext;
-use crate::pkg::stats::ModelCallEvent;
+use crate::pkg::stats::{ModelCallEvent, TaskEvent};
 use crate::service::dao::task;
 use crate::service::dao::task::{TaskDao, TaskQuery, TaskStatsDao, TaskStatsQuery};
 use crate::service::dao::model_provider::{ModelProviderStatsDao, ModelProviderStatsQuery};
@@ -42,7 +42,7 @@ pub fn init() {
 /// 创建 Task DAL（返回 trait 对象）
 pub fn new(
     task_dao: Arc<dyn TaskDao + Send + Sync>,
-    task_stats_dao: Arc<dyn TaskStatsDao<ModelCallEvent = ModelCallEvent>>,
+    task_stats_dao: Arc<dyn TaskStatsDao<TaskEvent = TaskEvent>>,
     model_provider_dal: Arc<dyn ModelProviderDal>,
     model_provider_stats_dao: Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>,
 ) -> Arc<dyn TaskDal + Send + Sync> {
@@ -142,7 +142,7 @@ pub trait TaskDal: Send + Sync {
 /// Task DAL 实现
 struct TaskDalImpl {
     task_dao: Arc<dyn TaskDao + Send + Sync>,
-    task_stats_dao: Arc<dyn TaskStatsDao<ModelCallEvent = ModelCallEvent>>,
+    task_stats_dao: Arc<dyn TaskStatsDao<TaskEvent = TaskEvent>>,
     model_provider_dal: Arc<dyn ModelProviderDal>,
     model_provider_stats_dao: Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>,
 }

@@ -2,18 +2,18 @@
 
 use common::error::Result;
 use crate::pkg::RequestContext;
-use crate::pkg::stats::{StatFilter, StatAggregation, ModelCallEvent};
+use crate::pkg::stats::{StatFilter, StatAggregation, ProjectEvent};
 use crate::service::dao::project::{ProjectStatsDao, ProjectStatsQuery};
 use serde_json::Value as JsonValue;
 use std::sync::{Arc, OnceLock};
 
-static PROJECT_STATS_DAO: OnceLock<Arc<dyn ProjectStatsDao<ModelCallEvent = ModelCallEvent>>> = OnceLock::new();
+static PROJECT_STATS_DAO: OnceLock<Arc<dyn ProjectStatsDao<ProjectEvent = ProjectEvent>>> = OnceLock::new();
 
-pub fn stats_new() -> Arc<dyn ProjectStatsDao<ModelCallEvent = ModelCallEvent>> {
+pub fn stats_new() -> Arc<dyn ProjectStatsDao<ProjectEvent = ProjectEvent>> {
     Arc::new(ProjectStatsDaoDuckDbImpl)
 }
 
-pub fn stats_dao() -> Arc<dyn ProjectStatsDao<ModelCallEvent = ModelCallEvent>> {
+pub fn stats_dao() -> Arc<dyn ProjectStatsDao<ProjectEvent = ProjectEvent>> {
     PROJECT_STATS_DAO.get().cloned().unwrap()
 }
 
@@ -25,9 +25,9 @@ struct ProjectStatsDaoDuckDbImpl;
 
 #[async_trait::async_trait]
 impl ProjectStatsDao for ProjectStatsDaoDuckDbImpl {
-    type ModelCallEvent = ModelCallEvent;
+    type ProjectEvent = ProjectEvent;
 
-    async fn query_model_calls(&self, ctx: RequestContext, mut query: ProjectStatsQuery) -> Result<Vec<JsonValue>> {
+    async fn query_project_calls(&self, ctx: RequestContext, mut query: ProjectStatsQuery) -> Result<Vec<JsonValue>> {
         let project_filter = StatFilter::Equals {
             key: "project_id".to_string(),
             value: JsonValue::String(query.project_id.clone()),
@@ -35,7 +35,7 @@ impl ProjectStatsDao for ProjectStatsDaoDuckDbImpl {
         query.filters.insert(0, project_filter);
 
         let stats = ctx.stats();
-        let table_name = self.model_call_table_name(stats);
+        let table_name = self.project_table_name(stats);
 
         let rows = ctx.stats().query_aggregation(
             ctx.clone(),

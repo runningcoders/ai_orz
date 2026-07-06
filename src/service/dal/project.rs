@@ -6,7 +6,7 @@ use common::error::Result;
 use common::models::{ModelCallStats, ProjectStats, StatsFetchOptions};
 use crate::models::project::Project;
 use crate::pkg::RequestContext;
-use crate::pkg::stats::ModelCallEvent;
+use crate::pkg::stats::{ModelCallEvent, ProjectEvent};
 use crate::service::dao::project;
 use crate::service::dao::project::{ProjectDao, ProjectQuery, ProjectStatsDao, ProjectStatsQuery};
 use crate::service::dao::model_provider::{ModelProviderStatsDao, ModelProviderStatsQuery};
@@ -38,7 +38,7 @@ pub fn init() {
 /// 创建 Project DAL（返回 trait 对象）
 pub fn new(
     project_dao: Arc<dyn ProjectDao + Send + Sync>,
-    project_stats_dao: Arc<dyn ProjectStatsDao<ModelCallEvent = ModelCallEvent>>,
+    project_stats_dao: Arc<dyn ProjectStatsDao<ProjectEvent = ProjectEvent>>,
     model_provider_stats_dao: Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>,
 ) -> Arc<dyn ProjectDal + Send + Sync> {
     Arc::new(ProjectDalImpl { project_dao, project_stats_dao, model_provider_stats_dao })
@@ -131,7 +131,7 @@ pub trait ProjectDal: Send + Sync {
 /// Project DAL 实现
 struct ProjectDalImpl {
     project_dao: Arc<dyn ProjectDao + Send + Sync>,
-    project_stats_dao: Arc<dyn ProjectStatsDao<ModelCallEvent = ModelCallEvent>>,
+    project_stats_dao: Arc<dyn ProjectStatsDao<ProjectEvent = ProjectEvent>>,
     model_provider_stats_dao: Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>,
 }
 

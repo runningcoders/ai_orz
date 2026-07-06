@@ -13,7 +13,7 @@ use tempfile::tempdir;
 async fn setup_test_env(
     task_id: &str,
     event_count: usize,
-) -> Result<(crate::pkg::RequestContext, std::sync::Arc<dyn TaskStatsDao<ModelCallEvent = ModelCallEvent>>)> {
+) -> Result<(crate::pkg::RequestContext, std::sync::Arc<dyn TaskStatsDao<TaskEvent = TaskEvent>>)> {
     let dir = tempdir()?;
     let db_path = dir.path().join("stats.db");
     let db_path_str = db_path.to_str().unwrap();
@@ -26,12 +26,23 @@ async fn setup_test_env(
 
     let now = Utc::now().timestamp_millis();
     for i in 0..event_count {
-        let event = ModelCallEvent::new(now + i as i64 * 1000)
-            .with_task_id(Some(task_id.to_string()))
-            .with_project_id(Some("project-test".to_string()))
-            .with_tokens_input((100 + i * 10) as u64)
-            .with_tokens_output((50 + i * 5) as u64)
-            .with_total_tokens((150 + i * 15) as u64);
+        let event = TaskEvent {
+            timestamp: now + i as i64 * 1000,
+            task_id: task_id.to_string(),
+            project_id: Some("project-test".to_string()),
+            event_type: "created".to_string(),
+            organization_id: None,
+            operator_type: Some("user".to_string()),
+            operator_id: Some("test-user".to_string()),
+            root_user_id: Some("root-user".to_string()),
+            assignee_type: Some("user".to_string()),
+            assignee_id: Some("assignee-user".to_string()),
+            from_assignee_id: None,
+            from_status: None,
+            to_status: Some("Pending".to_string()),
+            duration_ms: None,
+            priority: 1,
+        };
         stats.record(tmp_ctx.clone(), event).await?;
     }
     stats.flush_all(tmp_ctx).await?;
@@ -157,22 +168,44 @@ async fn test_filter_by_different_task() -> Result<()> {
     let now = Utc::now().timestamp_millis();
 
     for i in 0..3 {
-        let event = ModelCallEvent::new(now + i as i64 * 1000)
-            .with_task_id(Some(task_a.to_string()))
-            .with_project_id(Some("project-test".to_string()))
-            .with_tokens_input((100 + i * 10) as u64)
-            .with_tokens_output((50 + i * 5) as u64)
-            .with_total_tokens((150 + i * 15) as u64);
+        let event = TaskEvent {
+            timestamp: now + i as i64 * 1000,
+            task_id: task_a.to_string(),
+            project_id: Some("project-test".to_string()),
+            event_type: "created".to_string(),
+            organization_id: None,
+            operator_type: Some("user".to_string()),
+            operator_id: Some("test-user".to_string()),
+            root_user_id: Some("root-user".to_string()),
+            assignee_type: Some("user".to_string()),
+            assignee_id: Some("assignee-user".to_string()),
+            from_assignee_id: None,
+            from_status: None,
+            to_status: Some("Pending".to_string()),
+            duration_ms: None,
+            priority: 1,
+        };
         stats.record(tmp_ctx.clone(), event).await?;
     }
 
     for i in 0..2 {
-        let event = ModelCallEvent::new(now + i as i64 * 1000)
-            .with_task_id(Some(task_b.to_string()))
-            .with_project_id(Some("project-test".to_string()))
-            .with_tokens_input((200 + i * 10) as u64)
-            .with_tokens_output((100 + i * 5) as u64)
-            .with_total_tokens((300 + i * 15) as u64);
+        let event = TaskEvent {
+            timestamp: now + i as i64 * 1000,
+            task_id: task_b.to_string(),
+            project_id: Some("project-test".to_string()),
+            event_type: "created".to_string(),
+            organization_id: None,
+            operator_type: Some("user".to_string()),
+            operator_id: Some("test-user".to_string()),
+            root_user_id: Some("root-user".to_string()),
+            assignee_type: Some("user".to_string()),
+            assignee_id: Some("assignee-user".to_string()),
+            from_assignee_id: None,
+            from_status: None,
+            to_status: Some("Pending".to_string()),
+            duration_ms: None,
+            priority: 1,
+        };
         stats.record(tmp_ctx.clone(), event).await?;
     }
 

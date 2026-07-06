@@ -2,18 +2,18 @@
 
 use common::error::Result;
 use crate::pkg::RequestContext;
-use crate::pkg::stats::{StatFilter, ModelCallEvent};
+use crate::pkg::stats::{StatFilter, StatAggregation, TaskEvent};
 use crate::service::dao::task::{TaskStatsDao, TaskStatsQuery};
 use serde_json::Value as JsonValue;
 use std::sync::{Arc, OnceLock};
 
-static TASK_STATS_DAO: OnceLock<Arc<dyn TaskStatsDao<ModelCallEvent = ModelCallEvent>>> = OnceLock::new();
+static TASK_STATS_DAO: OnceLock<Arc<dyn TaskStatsDao<TaskEvent = TaskEvent>>> = OnceLock::new();
 
-pub fn stats_new() -> Arc<dyn TaskStatsDao<ModelCallEvent = ModelCallEvent>> {
+pub fn stats_new() -> Arc<dyn TaskStatsDao<TaskEvent = TaskEvent>> {
     Arc::new(TaskStatsDaoDuckDbImpl)
 }
 
-pub fn stats_dao() -> Arc<dyn TaskStatsDao<ModelCallEvent = ModelCallEvent>> {
+pub fn stats_dao() -> Arc<dyn TaskStatsDao<TaskEvent = TaskEvent>> {
     TASK_STATS_DAO.get().cloned().unwrap()
 }
 
@@ -25,9 +25,9 @@ struct TaskStatsDaoDuckDbImpl;
 
 #[async_trait::async_trait]
 impl TaskStatsDao for TaskStatsDaoDuckDbImpl {
-    type ModelCallEvent = ModelCallEvent;
+    type TaskEvent = TaskEvent;
 
-    async fn query_model_calls(&self, ctx: RequestContext, mut query: TaskStatsQuery) -> Result<Vec<JsonValue>> {
+    async fn query_task_calls(&self, ctx: RequestContext, mut query: TaskStatsQuery) -> Result<Vec<JsonValue>> {
         let task_filter = StatFilter::Equals {
             key: "task_id".to_string(),
             value: JsonValue::String(query.task_id.clone()),
@@ -35,7 +35,7 @@ impl TaskStatsDao for TaskStatsDaoDuckDbImpl {
         query.filters.insert(0, task_filter);
 
         let stats = ctx.stats();
-        let table_name = self.model_call_table_name(stats);
+        let table_name = self.task_table_name(stats);
 
         let rows = ctx.stats().query_aggregation(
             ctx.clone(),
