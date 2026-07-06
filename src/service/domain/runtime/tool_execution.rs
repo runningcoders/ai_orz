@@ -117,7 +117,7 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
         query: ToolCallQuery,
     ) -> Result<Vec<ToolCallEntry>> {
         let query = super::tool_call_query::with_context_scope(ctx, query)?;
-        Ok(ToolCallLogger::get()
+        Ok(self.tool_call_logger
             .query_calls(query)?)
     }
 
@@ -128,7 +128,7 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
     ) -> Result<Option<ToolCallEntry>> {
         super::tool_call_query::ensure_call_id_present(&query)?;
         let query = super::tool_call_query::with_context_scope(ctx, query)?;
-        let mut entries = ToolCallLogger::get()
+        let mut entries = self.tool_call_logger
             .query_calls(query)?;
         Ok(entries.pop())
     }

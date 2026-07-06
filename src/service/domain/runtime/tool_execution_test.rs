@@ -19,8 +19,8 @@ mod tests {
         use rig::tool::{ToolDyn, ToolError};
         use serde_json::{Value, json};
         use std::sync::Arc;
-        use std::sync::Once;
         use std::sync::atomic::{AtomicUsize, Ordering};
+        use tempfile::tempdir;
         use common::error::Result;
 
     struct StubBrainDal;
@@ -413,18 +413,22 @@ mod tests {
         crate::pkg::request_context_test_support::new_test_ctx("test-user", pool)
                     }
 
-        fn init_test_tool_call_logger() {
-        static INIT: Once = Once::new();
-                    INIT.call_once(|| {
-            let base_path = std::env::temp_dir().join(format!(
-                "ai_orz_runtime_tool_call_query_tests_{}",
-                std::process::id()
-            ));
-            std::fs::create_dir_all(&base_path)
-                .expect("runtime tool call query trace base path should be created");
-            ToolCallLogger::init(base_path);
-        });
-                    }
+        fn test_runtime_with_tool_dals(
+            tool_dal: Arc<dyn ToolDal>,
+            mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
+        ) -> (tempfile::TempDir, Arc<dyn crate::service::domain::runtime::RuntimeDomain>) {
+        let temp_dir = tempdir().expect("tempdir should be created");
+        let logger = Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf()));
+        let runtime = crate::service::domain::runtime::new_with_all(
+            Arc::new(StubBrainDal),
+            tool_dal,
+            mcp_tool_dal,
+            logger,
+        );
+        (temp_dir, runtime)
+    }
+
+
 
         fn scoped_test_ctx(agent_id: &str, project_id: &str, task_id: &str) -> RequestContext {
             test_ctx()
@@ -484,11 +488,13 @@ mod tests {
 
         #[tokio::test]
             async fn runtime_query_tool_call_entries_derives_scope_from_context() {
-        init_test_tool_call_logger();
-        let runtime = crate::service::domain::runtime::new_with_tool_dals(
+        let temp_dir = tempdir().expect("tempdir should be created");
+        let logger = Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf()));
+        let runtime = crate::service::domain::runtime::new_with_all(
             Arc::new(StubBrainDal),
             Arc::new(RecordingToolDal::new(ToolProtocol::Builtin)),
             Arc::new(RecordingMcpToolDal::new()),
+            logger.clone(),
         );
         let call_id = format!("runtime-query-{}", uuid::Uuid::now_v7());
         let entry = test_tool_call_entry(
@@ -497,7 +503,7 @@ mod tests {
             "runtime-agent-1",
             "runtime-project-1",
         );
-        ToolCallLogger::get()
+        logger
             .log_call("runtime-query-tool", entry.clone())
             .expect("trace entry should be logged");
 
@@ -520,11 +526,13 @@ mod tests {
 
         #[tokio::test]
                 async fn runtime_tool_call_query_requires_access_scope() {
-        init_test_tool_call_logger();
-        let runtime = crate::service::domain::runtime::new_with_tool_dals(
+        let temp_dir = tempdir().expect("tempdir should be created");
+        let logger = Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf()));
+        let runtime = crate::service::domain::runtime::new_with_all(
             Arc::new(StubBrainDal),
             Arc::new(RecordingToolDal::new(ToolProtocol::Builtin)),
             Arc::new(RecordingMcpToolDal::new()),
+            logger,
         );
 
         let error = runtime
@@ -538,11 +546,13 @@ mod tests {
 
         #[tokio::test]
                 async fn runtime_tool_call_query_rejects_request_scope_without_context_scope() {
-        init_test_tool_call_logger();
-        let runtime = crate::service::domain::runtime::new_with_tool_dals(
+        let temp_dir = tempdir().expect("tempdir should be created");
+        let logger = Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf()));
+        let runtime = crate::service::domain::runtime::new_with_all(
             Arc::new(StubBrainDal),
             Arc::new(RecordingToolDal::new(ToolProtocol::Builtin)),
             Arc::new(RecordingMcpToolDal::new()),
+            logger,
         );
 
         let error = runtime
@@ -562,11 +572,13 @@ mod tests {
 
         #[tokio::test]
                     async fn runtime_tool_call_query_rejects_request_scope_without_matching_context_field() {
-        init_test_tool_call_logger();
-        let runtime = crate::service::domain::runtime::new_with_tool_dals(
+        let temp_dir = tempdir().expect("tempdir should be created");
+        let logger = Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf()));
+        let runtime = crate::service::domain::runtime::new_with_all(
             Arc::new(StubBrainDal),
             Arc::new(RecordingToolDal::new(ToolProtocol::Builtin)),
             Arc::new(RecordingMcpToolDal::new()),
+            logger,
         );
         let mut ctx = test_ctx();
         ctx.agent_id = Some("runtime-agent-only".to_string());
@@ -590,11 +602,13 @@ mod tests {
 
         #[tokio::test]
                         async fn runtime_get_tool_call_entry_by_id_requires_call_id() {
-        init_test_tool_call_logger();
-        let runtime = crate::service::domain::runtime::new_with_tool_dals(
+        let temp_dir = tempdir().expect("tempdir should be created");
+        let logger = Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf()));
+        let runtime = crate::service::domain::runtime::new_with_all(
             Arc::new(StubBrainDal),
             Arc::new(RecordingToolDal::new(ToolProtocol::Builtin)),
             Arc::new(RecordingMcpToolDal::new()),
+            logger,
         );
 
         let error = runtime
@@ -615,11 +629,13 @@ mod tests {
 
         #[tokio::test]
                         async fn runtime_tool_call_query_rejects_over_limit_request() {
-        init_test_tool_call_logger();
-        let runtime = crate::service::domain::runtime::new_with_tool_dals(
+        let temp_dir = tempdir().expect("tempdir should be created");
+        let logger = Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf()));
+        let runtime = crate::service::domain::runtime::new_with_all(
             Arc::new(StubBrainDal),
             Arc::new(RecordingToolDal::new(ToolProtocol::Builtin)),
             Arc::new(RecordingMcpToolDal::new()),
+            logger,
         );
 
         let error = runtime
@@ -643,11 +659,13 @@ mod tests {
 
         #[tokio::test]
                             async fn runtime_tool_call_query_rejects_scope_conflicting_with_request_context() {
-        init_test_tool_call_logger();
-        let runtime = crate::service::domain::runtime::new_with_tool_dals(
+        let temp_dir = tempdir().expect("tempdir should be created");
+        let logger = Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf()));
+        let runtime = crate::service::domain::runtime::new_with_all(
             Arc::new(StubBrainDal),
             Arc::new(RecordingToolDal::new(ToolProtocol::Builtin)),
             Arc::new(RecordingMcpToolDal::new()),
+            logger,
         );
 
         let error = runtime
@@ -667,11 +685,13 @@ mod tests {
 
         #[tokio::test]
                                 async fn runtime_get_tool_call_entry_by_id_filters_by_request_scope() {
-        init_test_tool_call_logger();
-        let runtime = crate::service::domain::runtime::new_with_tool_dals(
+        let temp_dir = tempdir().expect("tempdir should be created");
+        let logger = Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf()));
+        let runtime = crate::service::domain::runtime::new_with_all(
             Arc::new(StubBrainDal),
             Arc::new(RecordingToolDal::new(ToolProtocol::Builtin)),
             Arc::new(RecordingMcpToolDal::new()),
+            logger.clone(),
         );
         let call_id = format!("runtime-get-{}", uuid::Uuid::now_v7());
         let entry = test_tool_call_entry(
@@ -680,7 +700,7 @@ mod tests {
             "runtime-agent-2",
             "runtime-project-2",
         );
-        ToolCallLogger::get()
+        logger
             .log_call("runtime-get-tool", entry)
             .expect("trace entry should be logged");
 
@@ -719,8 +739,7 @@ mod tests {
                                         async fn runtime_routes_mcp_tool_calls_to_mcp_tool_dal() {
         let tool_dal = Arc::new(RecordingToolDal::new(ToolProtocol::Mcp));
         let mcp_tool_dal = Arc::new(RecordingMcpToolDal::new());
-        let runtime = crate::service::domain::runtime::new_with_tool_dals(
-            Arc::new(StubBrainDal),
+        let (_temp_dir, runtime) = test_runtime_with_tool_dals(
             tool_dal.clone(),
             mcp_tool_dal.clone(),
         );
@@ -747,8 +766,7 @@ mod tests {
                                         async fn runtime_routes_already_loaded_mcp_tool_without_second_tool_lookup() {
         let tool_dal = Arc::new(RecordingToolDal::new(ToolProtocol::Mcp));
         let mcp_tool_dal = Arc::new(RecordingMcpToolDal::new());
-        let runtime = crate::service::domain::runtime::new_with_tool_dals(
-            Arc::new(StubBrainDal),
+        let (_temp_dir, runtime) = test_runtime_with_tool_dals(
             tool_dal.clone(),
             mcp_tool_dal.clone(),
         );
@@ -772,8 +790,7 @@ mod tests {
                                         async fn runtime_denies_manual_tool_call_when_tool_is_not_bound_to_agent() {
         let tool_dal = Arc::new(RecordingToolDal::with_bound_tools(vec![]));
         let mcp_tool_dal = Arc::new(RecordingMcpToolDal::new());
-        let runtime = crate::service::domain::runtime::new_with_tool_dals(
-            Arc::new(StubBrainDal),
+        let (_temp_dir, runtime) = test_runtime_with_tool_dals(
             tool_dal.clone(),
             mcp_tool_dal.clone(),
         );
@@ -809,8 +826,7 @@ mod tests {
             ControlMode::Auto,
         )]));
         let mcp_tool_dal = Arc::new(RecordingMcpToolDal::new());
-        let runtime = crate::service::domain::runtime::new_with_tool_dals(
-            Arc::new(StubBrainDal),
+        let (_temp_dir, runtime) = test_runtime_with_tool_dals(
             tool_dal.clone(),
             mcp_tool_dal.clone(),
         );
@@ -847,8 +863,7 @@ mod tests {
             ToolStatus::Stale,
         )]));
         let mcp_tool_dal = Arc::new(RecordingMcpToolDal::new());
-        let runtime = crate::service::domain::runtime::new_with_tool_dals(
-            Arc::new(StubBrainDal),
+        let (_temp_dir, runtime) = test_runtime_with_tool_dals(
             tool_dal.clone(),
             mcp_tool_dal.clone(),
         );
@@ -884,8 +899,7 @@ mod tests {
             ControlMode::Manual,
         )]));
         let mcp_tool_dal = Arc::new(RecordingMcpToolDal::new());
-        let runtime = crate::service::domain::runtime::new_with_tool_dals(
-            Arc::new(StubBrainDal),
+        let (_temp_dir, runtime) = test_runtime_with_tool_dals(
             tool_dal.clone(),
             mcp_tool_dal.clone(),
         );
@@ -918,8 +932,7 @@ mod tests {
             ControlMode::Manual,
         )]));
         let mcp_tool_dal = Arc::new(RecordingMcpToolDal::new());
-        let runtime = crate::service::domain::runtime::new_with_tool_dals(
-            Arc::new(StubBrainDal),
+        let (_temp_dir, runtime) = test_runtime_with_tool_dals(
             tool_dal.clone(),
             mcp_tool_dal.clone(),
         );
@@ -960,8 +973,7 @@ mod tests {
         let tool_dal = Arc::new(RecordingToolDal::new(ToolProtocol::Mcp));
         let sensitive_error = "failed to spawn command /opt/private/mcp-server with env API_TOKEN=placeholder-value and url https://example.invalid/mcp?credential=placeholder-value";
         let mcp_tool_dal = Arc::new(RecordingMcpToolDal::failing(sensitive_error));
-        let runtime = crate::service::domain::runtime::new_with_tool_dals(
-            Arc::new(StubBrainDal),
+        let (_temp_dir, runtime) = test_runtime_with_tool_dals(
             tool_dal.clone(),
             mcp_tool_dal.clone(),
         );
@@ -1042,8 +1054,7 @@ mod tests {
             "mcp-tool-1",
             "real-mcp-call-777",
         ));
-        let runtime = crate::service::domain::runtime::new_with_tool_dals(
-            Arc::new(StubBrainDal),
+        let (_temp_dir, runtime) = test_runtime_with_tool_dals(
             tool_dal.clone(),
             mcp_tool_dal.clone(),
         );
@@ -1079,8 +1090,7 @@ mod tests {
                                             ) {
         let tool_dal = Arc::new(RecordingToolDal::new(protocol));
         let mcp_tool_dal = Arc::new(RecordingMcpToolDal::new());
-        let runtime = crate::service::domain::runtime::new_with_tool_dals(
-            Arc::new(StubBrainDal),
+        let (_temp_dir, runtime) = test_runtime_with_tool_dals(
             tool_dal.clone(),
             mcp_tool_dal.clone(),
         );
@@ -1102,8 +1112,7 @@ mod tests {
                                             async fn assert_mcp_lower_error_maps_to_safe_message(lower_error: &str, expected: &str) {
         let tool_dal = Arc::new(RecordingToolDal::new(ToolProtocol::Mcp));
         let mcp_tool_dal = Arc::new(RecordingMcpToolDal::failing(lower_error));
-        let runtime = crate::service::domain::runtime::new_with_tool_dals(
-            Arc::new(StubBrainDal),
+        let (_temp_dir, runtime) = test_runtime_with_tool_dals(
             tool_dal.clone(),
             mcp_tool_dal.clone(),
         );

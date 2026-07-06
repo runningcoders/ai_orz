@@ -17,6 +17,7 @@ use crate::models::agent::Agent;
 use crate::models::memory::{Memory, MemoryTrace};
 use crate::models::message::Message;
 use crate::pkg::request_context::RequestContext;
+use crate::pkg::tool_tracing::logger::ToolCallLogger;
 use crate::service::dal::brain::BrainDal;
 use crate::service::dal::mcp_tool::McpToolDal;
 use crate::service::dal::tool::ToolDal;
@@ -165,6 +166,7 @@ struct RuntimeDomainImpl {
     brain_dal: Arc<dyn BrainDal>,
     tool_dal: Arc<dyn ToolDal>,
     mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
+    tool_call_logger: Arc<ToolCallLogger>,
 }
 
 impl std::fmt::Debug for RuntimeDomainImpl {
@@ -173,6 +175,7 @@ impl std::fmt::Debug for RuntimeDomainImpl {
             .field("brain_dal", &"<BrainDal>")
             .field("tool_dal", &"<ToolDal>")
             .field("mcp_tool_dal", &"<McpToolDal>")
+            .field("tool_call_logger", &"<ToolCallLogger>")
             .finish()
     }
 }
@@ -183,17 +186,18 @@ impl Clone for RuntimeDomainImpl {
             brain_dal: self.brain_dal.clone(),
             tool_dal: self.tool_dal.clone(),
             mcp_tool_dal: self.mcp_tool_dal.clone(),
+            tool_call_logger: self.tool_call_logger.clone(),
         }
     }
 }
 
 impl RuntimeDomainImpl {
-    /// 创建 Domain 实例
     fn new(brain_dal: Arc<dyn BrainDal>) -> Self {
         Self {
             brain_dal,
             tool_dal: crate::service::dal::tool::dal(),
             mcp_tool_dal: crate::service::dal::mcp_tool::dal(),
+            tool_call_logger: Arc::new(ToolCallLogger::get().clone()),
         }
     }
 
@@ -210,6 +214,23 @@ impl RuntimeDomainImpl {
             brain_dal,
             tool_dal,
             mcp_tool_dal,
+            tool_call_logger: Arc::new(ToolCallLogger::get().clone()),
+        }
+    }
+
+    /// 创建带显式所有依赖的 Domain 实例（测试用）。
+    #[cfg(test)]
+    fn new_with_all(
+        brain_dal: Arc<dyn BrainDal>,
+        tool_dal: Arc<dyn ToolDal>,
+        mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
+        tool_call_logger: Arc<ToolCallLogger>,
+    ) -> Self {
+        Self {
+            brain_dal,
+            tool_dal,
+            mcp_tool_dal,
+            tool_call_logger,
         }
     }
 
@@ -256,6 +277,18 @@ pub fn new_with_tool_dals(
     mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
 ) -> Arc<dyn RuntimeDomain> {
     let domain = RuntimeDomainImpl::new_with_tool_dals(brain_dal, tool_dal, mcp_tool_dal);
+    Arc::new(domain)
+}
+
+/// 创建新的 Runtime Domain 实例并注入所有依赖（用于测试）。
+#[cfg(test)]
+pub fn new_with_all(
+    brain_dal: Arc<dyn BrainDal>,
+    tool_dal: Arc<dyn ToolDal>,
+    mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
+    tool_call_logger: Arc<ToolCallLogger>,
+) -> Arc<dyn RuntimeDomain> {
+    let domain = RuntimeDomainImpl::new_with_all(brain_dal, tool_dal, mcp_tool_dal, tool_call_logger);
     Arc::new(domain)
 }
 

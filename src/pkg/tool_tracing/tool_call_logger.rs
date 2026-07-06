@@ -10,6 +10,7 @@ use common::enums::ToolProtocol;
 use rig::tool::ToolError;
 use serde_json::{json, Map, Value};
 use uuid::Uuid;
+use std::sync::Arc;
 
 use super::entry::{ToolCallEntry, ToolCallStatus};
 use super::logger::ToolCallLogger;
@@ -23,12 +24,24 @@ use common::constants::utils::current_timestamp_ms;
 pub struct LoggingDecorator {
     /// The inner tool that actually does the work
     inner: Box<dyn CoreTool + Send + Sync>,
+    /// Logger instance for storing call traces
+    logger: Arc<ToolCallLogger>,
 }
 
 impl LoggingDecorator {
     /// Create a new logging decorator wrapping an existing tool
+    /// Uses the global ToolCallLogger singleton
     pub fn new(inner: Box<dyn CoreTool + Send + Sync>) -> Self {
-        Self { inner }
+        Self {
+            inner,
+            logger: Arc::new(ToolCallLogger::get().clone()),
+        }
+    }
+
+    /// Create a new logging decorator with a custom logger instance
+    /// Useful for testing with isolated storage
+    pub fn new_with_logger(inner: Box<dyn CoreTool + Send + Sync>, logger: Arc<ToolCallLogger>) -> Self {
+        Self { inner, logger }
     }
 
     /// Get the inner tool (unwrapped) for re-decorating
@@ -88,7 +101,7 @@ impl LoggingDecorator {
         };
 
         // Write the log entry - ignore logging errors, don't fail the actual call
-        let _ = ToolCallLogger::get().log_call(&po.id, entry.clone());
+        let _ = self.logger.log_call(&po.id, entry.clone());
 
         // Record tool call stat event for metrics aggregation
         // This covers ALL tool calls (manual + auto), ensuring complete stats coverage
@@ -157,7 +170,7 @@ impl CoreTool for LoggingDecorator {
         let (result, entry) = self.call_with_entry(ctx, args).await;
         // Log the entry immediately
         let tool_id = entry.tool_id.clone();
-        let _ = ToolCallLogger::get().log_call(&tool_id, entry);
+        let _ = self.logger.log_call(&tool_id, entry);
         result
     }
 
