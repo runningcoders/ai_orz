@@ -5,7 +5,6 @@ use crate::models::message::Message;
 use crate::models::message::MessagePo;
 use crate::models::message::ToolCallMessage;
 use crate::pkg::RequestContext;
-use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
 use crate::service::domain::message::MessageDomainImpl;
 use crate::service::domain::message::{
     DeliverMessageCommand, MessageDelivery, SendToAgentCommand, SendToUserCommand,
@@ -40,10 +39,6 @@ impl MessageDelivery for MessageDomainImpl {
         ctx: RequestContext,
         cmd: SendToAgentCommand<'_>,
     ) -> Result<Message> {
-        if AgentRuntimeStateManager::global().is_unavailable(cmd.to_agent_id) {
-            bail_err!(Conflict, "Agent is busy or resting, cannot accept new messages");
-        }
-
         let id = generate_id();
         let project_id = cmd
             .project_id

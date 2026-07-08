@@ -1,10 +1,12 @@
 //! Message Topic 消费者
-//!\n//! 负责消费所有类型的消息（用户消息、Agent 间消息、工具调用等）
+//!
+//! 负责消费所有类型的消息（用户消息、Agent 间消息、工具调用等）
 
 use super::{GenericConsumer, MessageFetcher, MessageHandler};
 use common::error::{Error, Result};
 use crate::models::message::{Message, ToolCallMessage};
 use crate::models::tool::ToolCallTraceRef;
+use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
 use crate::service::domain::message::{
     MessageDomain, SendToolCallResultCommand, ToolCallExecutionOutcome,
 };
@@ -123,11 +125,17 @@ impl MessageHandlerImpl {
     }
 
     /// Agent 消息处理：调用 Brain 思考
-    async fn handle_agent_message(&self, _message: &Message) -> Result<()> {
-        // TODO: 调用 BrainDomain.process_message
-        // 1. 获取 Agent 上下文
-        // 2. Brain 思考、生成回复
-        // 3. 可能生成新的工具调用（to_role = System）
+    async fn handle_agent_message(&self, message: &Message) -> Result<()> {
+        // 消费前检查 Agent 是否可用（空闲）
+        // 如果 Agent 忙碌或休息，返回错误触发 Nack，消息重新入队等待
+        let agent_id = &message.po.to_id;
+        if AgentRuntimeStateManager::global().is_unavailable(agent_id) {
+            return Err(Error::conflict(format!(
+                "Agent {} is busy or resting, message will be retried",
+                agent_id
+            )));
+        }
+
         sys_debug!("agent message processed by brain");
         Ok(())
     }
