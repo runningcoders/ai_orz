@@ -1,5 +1,6 @@
 //! Handler: GET /api/v1/agents/{id} - Get agent detailed information
 
+use common::enums::AgentRuntimeState;
 use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
@@ -27,6 +28,12 @@ pub async fn get_agent(
     let capabilities: Vec<String> = agent.po.get_capabilities();
     let roles: Vec<String> = agent.po.get_roles();
 
+    // 从 runtime_info 读取运行时状态
+    let (runtime_state, current_message_id) = match &agent.runtime_info {
+        Some(info) => (info.state as i32, info.current_message_id.clone()),
+        None => (AgentRuntimeState::Idle as i32, None),
+    };
+
     Ok(GetAgentResponse {
         id: agent.id().to_string(),
         name: agent.name().to_string(),
@@ -50,5 +57,7 @@ pub async fn get_agent(
         status: agent.po.status as i32,
         created_at: agent.po.created_at,
         updated_at: agent.po.updated_at,
+        runtime_state,
+        current_message_id,
     })
 }

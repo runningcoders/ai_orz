@@ -1,5 +1,6 @@
 //! Handler: PUT /api/v1/agents/{id}/status - Update agent status
 
+use common::enums::AgentRuntimeState;
 use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
@@ -35,23 +36,26 @@ pub async fn update_agent_status(
         .await?;
 
     let capabilities: Vec<String> = agent.po.get_capabilities();
+    let roles: Vec<String> = agent.po.get_roles();
+
+    let (runtime_state, current_message_id) = match &agent.runtime_info {
+        Some(info) => (info.state as i32, info.current_message_id.clone()),
+        None => (AgentRuntimeState::Idle as i32, None),
+    };
 
     Ok(UpdateAgentStatusResponse {
         id: agent.id().to_string(),
         name: agent.name().to_string(),
-        roles: agent.po.get_roles(),
+        roles,
         description: if agent.po.description.is_empty() {
             None
         } else {
             Some(agent.po.description.clone())
         },
-        capabilities: {
-            let capabilities = agent.po.get_capabilities();
-            if capabilities.is_empty() {
-                None
-            } else {
-                Some(capabilities)
-            }
+        capabilities: if capabilities.is_empty() {
+            None
+        } else {
+            Some(capabilities)
         },
         soul: if agent.po.soul.is_empty() {
             None
@@ -62,5 +66,7 @@ pub async fn update_agent_status(
         status: agent.po.status as i32,
         created_at: agent.po.created_at,
         updated_at: agent.po.updated_at,
+        runtime_state,
+        current_message_id,
     })
 }

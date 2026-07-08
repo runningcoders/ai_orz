@@ -19,7 +19,7 @@ use crate::service::domain::runtime::{
     AwakeningResult, RuntimeAwakening, RuntimeDomain, RuntimeMemory, RuntimeToolExecution,
 };
 use async_trait::async_trait;
-use common::enums::{MessageRole, MessageStatus, MessageType};
+use common::enums::{AgentRuntimeState, MessageRole, MessageStatus, MessageType};
 use rig::tool::ToolError;
 use serde_json::{Value, json};
 use std::fmt;
@@ -188,6 +188,14 @@ impl RuntimeDomain for RecordingRuntimeDomain {
 
     fn tool_execution(&self) -> &dyn RuntimeToolExecution {
         self
+    }
+
+    fn agent_runtime_state(&self, _agent_id: &str) -> AgentRuntimeState {
+        AgentRuntimeState::Idle
+    }
+
+    fn is_agent_unavailable(&self, _agent_id: &str) -> bool {
+        false
     }
 }
 

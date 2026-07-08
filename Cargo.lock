@@ -80,6 +80,7 @@ dependencies = [
  "common",
  "cookie",
  "ctor",
+ "dashmap",
  "derive_builder",
  "duckdb",
  "dyn-clone",
