@@ -15,7 +15,7 @@ pub mod task;
 pub mod tool;
 pub mod user;
 
-pub use agent::{AgentStatus, ModelProviderStatus};
+pub use agent::{AgentRuntimeState, AgentStatus, ModelProviderStatus};
 pub use artifact::ArtifactSourceType;
 pub use file::FileType;
 pub use mcp_server::{McpServerStatus, McpTransport};

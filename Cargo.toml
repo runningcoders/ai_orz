@@ -52,6 +52,7 @@ duckdb = { version = "1.4.0", features = ["bundled"] }
 schemars = { version = "0.8", features = ["derive"] }
 lazy_static = "1.4.0"
 ai-orz-macros = { path = "./ai-orz-macros" }
+dashmap = "6.1"
 
 # 向量搜索相关
 fastembed = "5.13"  # 纯本地向量化（纯 Rust candle 后端，零系统依赖）
