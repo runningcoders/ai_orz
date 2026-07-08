@@ -1,6 +1,6 @@
 //! Agent (AI智能体) related API request/response DTOs - shared between backend and frontend
 
-use crate::enums::AgentStatus;
+use crate::enums::{AgentRuntimeState, AgentStatus};
 use ai_orz_macros::Params;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -52,6 +52,8 @@ pub struct AgentListItem {
     pub status: i32,
     /// 创建时间戳
     pub created_at: i64,
+    /// 运行时状态（内存状态）
+    pub runtime_state: i32,
 }
 
 /// 获取 Agent 请求
@@ -85,6 +87,10 @@ pub struct GetAgentResponse {
     pub created_at: i64,
     /// 更新时间戳
     pub updated_at: i64,
+    /// 运行时状态（内存状态，服务重启后重置）
+    pub runtime_state: i32,
+    /// 当前处理的消息 ID（仅忙碌时有效）
+    pub current_message_id: Option<String>,
 }
 
 /// 更新 Agent 请求
