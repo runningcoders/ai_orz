@@ -4,6 +4,7 @@ use common::error::Result;
 use common::models::{AgentStats, ModelCallStats, StatsFetchOptions};
 use crate::models::agent::Agent;
 use crate::models::brain::Brain;
+use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
 use crate::pkg::RequestContext;
 use crate::pkg::stats::{ModelCallEvent, AgentAwakeEvent};
 use crate::service::dao::agent;
@@ -100,6 +101,18 @@ struct AgentDalImpl {
     model_provider_stats_dao: Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>,
 }
 
+impl AgentDalImpl {
+    /// 注入运行时状态到 Agent 实体
+    fn inject_runtime_state(agent: Agent) -> Agent {
+        let runtime_info = AgentRuntimeStateManager::global()
+            .get(&agent.po.id);
+        Agent {
+            runtime_info,
+            ..agent
+        }
+    }
+}
+
 #[async_trait::async_trait]
 impl AgentDal for AgentDalImpl {
     async fn create(&self, ctx: RequestContext, agent: &Agent) -> Result<()> {
@@ -109,12 +122,12 @@ impl AgentDal for AgentDalImpl {
 
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Agent>> {
         let opt = self.agent_dao.find_by_id(ctx, id).await?;
-        Ok(opt.map(Agent::from_po))
+        Ok(opt.map(Agent::from_po).map(Self::inject_runtime_state))
     }
 
     async fn query(&self, ctx: RequestContext, query: AgentQuery) -> Result<Vec<Agent>> {
         let agents = self.agent_dao.query(ctx, query).await?;
-        Ok(agents.into_iter().map(Agent::from_po).collect())
+        Ok(agents.into_iter().map(Agent::from_po).map(Self::inject_runtime_state).collect())
     }
 
     async fn find_all(&self, ctx: RequestContext) -> Result<Vec<Agent>> {
