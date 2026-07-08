@@ -61,6 +61,55 @@ impl From<i64> for AgentStatus {
     }
 }
 
+/// Agent 运行时状态（纯内存，不持久化）
+///
+/// 服务重启后自动重置，业务链路通过 Project/Task/Message 表可追溯。
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, JsonSchema)]
+pub enum AgentRuntimeState {
+    /// 空闲，可以接受新消息
+    #[default]
+    Idle = 0,
+    /// 休息中，不接受新消息
+    /// 用于恢复精力、压缩上下文、构建知识突触等
+    Resting = 1,
+    /// 忙碌，正在处理消息
+    Busy = 2,
+}
+
+impl AgentRuntimeState {
+    /// Convert from i32
+    pub fn from_i32(v: i32) -> Self {
+        match v {
+            1 => Self::Resting,
+            2 => Self::Busy,
+            _ => Self::Idle,
+        }
+    }
+
+    /// Convert to i32
+    pub fn to_i32(&self) -> i32 {
+        *self as i32
+    }
+
+    /// 是否处于忙碌或休息状态（不可接受新消息）
+    pub fn is_unavailable(&self) -> bool {
+        matches!(self, Self::Busy | Self::Resting)
+    }
+}
+
+impl From<i32> for AgentRuntimeState {
+    fn from(v: i32) -> Self {
+        Self::from_i32(v)
+    }
+}
+
+impl From<i64> for AgentRuntimeState {
+    fn from(v: i64) -> Self {
+        (v as i32).into()
+    }
+}
+
 /// ModelProvider status (for soft delete)
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, JsonSchema)]
