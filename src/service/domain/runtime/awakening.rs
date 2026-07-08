@@ -4,6 +4,7 @@ use common::error::{err, bail_err, Result};
 use crate::models::agent::Agent;
 use crate::models::memory::MemoryTrace;
 use crate::models::message::Message;
+use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::stats::AgentAwakeEvent;
 use crate::service::domain::runtime::{
@@ -24,6 +25,10 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         message: &Message,
     ) -> Result<AwakeningResult> {
         let start_time = std::time::SystemTime::now();
+
+        // 设置 Agent 为忙碌状态
+        AgentRuntimeStateManager::global()
+            .set_busy(&agent.po.id, &message.po.id);
 
         // 补充 Agent 上下文到 ctx，后续调用链可复用
         let ctx = enrich_ctx!(&ctx, agent);
@@ -80,7 +85,15 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             .as_ref()
             .ok_or_else(|| err!(Internal, "Agent 大脑未唤醒，请先调用 wake_brain()"))?;
 
-        let raw_output = self.brain_dal().think(ctx.clone(), brain, &prompt).await?;
+        // 调用 think，先捕获结果（不立即 ?）
+        let think_result = self.brain_dal().think(ctx.clone(), brain, &prompt).await;
+
+        // 无论成功失败，最后都设置为 Idle
+        AgentRuntimeStateManager::global()
+            .set_idle(&agent.po.id);
+
+        // 展开 Result
+        let raw_output = think_result?;
 
         // Step 6: 回填 input 和 output，一次性写入完整 Trace
         trace.input = prompt.clone();
