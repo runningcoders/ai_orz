@@ -2,6 +2,7 @@
 
 use crate::models::brain::{Brain, Cortex, CortexTrait};
 use crate::models::tool::Tool;
+use crate::pkg::agent_runtime_state::AgentRuntimeInfo;
 use crate::pkg::request_context::{EnrichContext, RequestContextBuilder};
 use common::enums::AgentStatus;
 use serde::{Deserialize, Serialize};
@@ -88,6 +89,10 @@ pub struct Agent {
     ///
     /// 每个工具包含元数据 + 可执行的 trait 对象
     pub tools: Vec<Tool>,
+    /// 运行时状态信息（由 DAL 层从内存注入）
+    ///
+    /// None 表示未注入（如刚创建还未查询）
+    pub runtime_info: Option<AgentRuntimeInfo>,
     // 后续扩展字段：
     // pub execution_env: ExecutionEnv,
     // pub permissions: Vec<Permission>,
@@ -100,6 +105,7 @@ impl fmt::Debug for Agent {
             .field("po", &self.po)
             .field("brain", &"[Brain]")
             .field("tools", &format_args!("[{} tools]", self.tools.len()))
+            .field("runtime_info", &self.runtime_info)
             .finish()
     }
 }
@@ -111,6 +117,7 @@ impl Agent {
             po,
             brain: None,
             tools: Vec::new(),
+            runtime_info: None,
         }
     }
 
@@ -120,6 +127,7 @@ impl Agent {
             po,
             brain: None,
             tools,
+            runtime_info: None,
         }
     }
 
