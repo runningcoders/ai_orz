@@ -1665,4 +1665,139 @@ async fn write_thinking_trace(
 4. **streamable HTTP MCP runtime**（P2，继承 HTTP Tool SSRF/header/redirect 安全策略后再做）
 5. **技能动态注入策略**（P2，Agent 能力扩展）
 
+---
+
+## 十九、Agent 运行时状态管理
+
+> 📌 **设计状态**：已实现（2026-07-08）
+>
+> **核心思想**：用纯内存状态机管理 Agent 的实时运行状态，区分空闲/休息/忙碌三种状态，确保同一 Agent 不会并发处理多条消息。
+
+### 19.1 状态定义
+
+| 状态 | 值 | 含义 | 是否可接收消息 |
+|------|-----|------|--------------|
+| **Idle** | 0 | 空闲，可接受新消息 | ✅ 是 |
+| **Resting** | 1 | 休息中（恢复精力、压缩上下文、构建知识突触） | ❌ 否 |
+| **Busy** | 2 | 忙碌，正在处理消息 | ❌ 否 |
+
+**枚举定义**（前后端共享，位于 `common/src/enums/agent.rs`）：
+
+```rust
+#[repr(i32)]
+pub enum AgentRuntimeState {
+    #[default]
+    Idle = 0,
+    Resting = 1,
+    Busy = 2,
+}
+```
+
+### 19.2 状态生命周期
+
+```
+消息入队 → 消费者取出消息 → 检查状态
+    │                          │
+    │                          ├── Idle → 设置 Busy → 执行 awaken() → 设置 Idle
+    │                          │
+    │                          └── Busy/Resting → Nack → 消息重新入队等待
+    │
+    ↓
+消息持久化（无论 Agent 状态如何）
+```
+
+**关键规则：**
+- **入队时不做拦截**：消息始终入队并持久化，保证业务可追溯
+- **消费时校验**：消费者检查状态，不可用时返回错误触发 Nack，消息重新入队
+- **生命周期自动管理**：`awaken()` 开始时设置 Busy，结束（成功/失败）时设置 Idle，RAII 风格
+
+### 19.3 状态管理器架构
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    AgentRuntimeStateManager             │
+│  ┌─────────────────────────────────────────────────────┐ │
+│  │  DashMap<String, AgentRuntimeInfo>                  │ │
+│  │  ┌─────────────────────────────────────────────────┐│ │
+│  │  │ agent_id: String                                ││ │
+│  │  │ state: AgentRuntimeState (Idle/Resting/Busy)    ││ │
+│  │  │ current_message_id: Option<String>              ││ │
+│  │  │ last_active_at: u64                             ││ │
+│  │  └─────────────────────────────────────────────────┘│ │
+│  └─────────────────────────────────────────────────────┘ │
+│                           │                              │
+│         ┌─────────────────┼─────────────────┐            │
+│         ▼                 ▼                 ▼            │
+│    set_state()      is_unavailable()    get_info()       │
+│         │                 │                 │            │
+└─────────┼─────────────────┼─────────────────┼────────────┘
+          ▼                 ▼                 ▼
+┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
+│   Awakening      │ │  Message Consumer│ │    AgentDal      │
+│  (设置 Busy/Idle)│ │ (校验状态 Nack)   │ │ (注入到实体)     │
+└──────────────────┘ └──────────────────┘ └──────────────────┘
+```
+
+### 19.4 分层注入机制
+
+遵循分层架构原则，状态信息通过 DAL 层注入到 Agent 实体：
+
+| 层级 | 职责 | 实现方式 |
+|------|------|---------|
+| **状态管理器** | 维护纯内存状态 | `AgentRuntimeStateManager::global()` 单例 |
+| **DAL 层** | 查询状态并注入实体 | `AgentDal.find_by_id()` / `query()` 中调用状态管理器 |
+| **Domain 层** | 业务逻辑中使用状态 | 从 Agent 实体的 `runtime_info` 字段读取 |
+| **Handler 层** | 构建响应 DTO | 从 Agent 实体的 `runtime_info` 字段读取 |
+
+**核心代码位置：**
+- `src/pkg/agent_runtime_state.rs` - 状态管理器实现
+- `src/service/dal/agent.rs` - DAL 层注入逻辑
+- `src/service/domain/runtime/awakening.rs` - 唤醒时状态切换
+
+### 19.5 与消息消费的协作
+
+**当前行为：**
+1. 用户发消息 → `send_to_agent()` → 直接入队并持久化（不检查状态）
+2. 消费者取出消息 → `handle_agent_message()` → 检查 Agent 状态
+3. 如果 Agent 忙碌/休息 → 返回 `Conflict` 错误 → 触发 Nack → 消息重新入队
+4. 如果 Agent 空闲 → 正常处理
+
+**后续优化方向（已记录，暂不实现）：**
+
+| 优化项 | 描述 | 优先级 |
+|--------|------|--------|
+| **特殊消息强制中断** | 高优先级消息可以打断当前执行 | 中 |
+| **消息优先级** | 在 `MessagePo` 中增加 `priority` 字段 | 中 |
+| **延迟入队** | 不可用时延迟 N 秒后重新入队，避免 busy loop | 低 |
+| **重试上限** | 设置最大重试次数，超过后转入死信队列 | 低 |
+
+### 19.6 代码清单
+
+| 文件 | 类型 | 改动内容 |
+|------|------|---------|
+| `common/src/enums/agent.rs` | 新增 | `AgentRuntimeState` 枚举定义 |
+| `common/src/api/agent.rs` | 修改 | DTO 新增 `runtime_state` / `current_message_id` 字段 |
+| `src/pkg/agent_runtime_state.rs` | 新增 | `AgentRuntimeStateManager` + `AgentRuntimeInfo` |
+| `src/models/agent.rs` | 修改 | `Agent` 实体新增 `runtime_info` 字段 |
+| `src/service/dal/agent.rs` | 修改 | `find_by_id` / `query` 注入运行时状态 |
+| `src/service/domain/runtime/awakening.rs` | 修改 | awaken 生命周期状态切换 |
+| `src/service/domain/runtime/mod.rs` | 修改 | `RuntimeDomain` trait 新增状态查询方法 |
+| `src/consumer/message.rs` | 修改 | 消费时检查 Agent 状态 |
+| `src/handlers/hr/agent/*.rs` | 修改 | 从实体读取运行时状态 |
+
+---
+
+## 二十、变更记录
+
+| 日期 | 版本 | 变更 |
+|------|------|------|
+| 2026-07-08 | v0.8 | 新增第十九章：Agent 运行时状态管理完整设计；纯内存状态机、DashMap 并发安全、消费时校验、分层注入机制 |
+| 2026-05-28 | v0.7 | 新增第十八章：记忆 Trace 闭环架构 + PO 自格式化重构完成；BrainDal 统一思考入口；简化 Trace 写入避免二次 IO；统一 Runtime 域内 Trace 写入路径；整体进度 ~93% |
+| 2026-05-26 | v0.6 | 新增第十七章：架构重构 + 角色分工完成；对齐标准 Domain trait 组织方式；新增用户画像功能（客服专用）；消息链 ID 暴露给 Agent 自主读取；整体进度 ~86% |
+| 2026-05-25 | v0.5 | 新增第十六章：简易版实现完成；核心逻辑全部可编译：Runtime Memory + Context Assembly (Builder) + Awakening 主流程 |
+| 2026-05-25 | v0.4 | 新增第十二章：Runtime Memory 子模块行为对齐 + 第十三章：统一分页设计（独立需求） + 第十四章：第一阶段最终确认 |
+| 2026-05-25 | v0.3 | 新增第十一章：可执行落地方案（第一阶段最小可用唤醒），包含能力盘点、6 步流程、4 个模块修改清单、开发顺序 |
+| 2026-05-25 | v0.2 | 新增第九章：唤醒 Agent 操作的具体执行流程（12 步）、神经工具执行机制、ContextAssembly 拼装逻辑、AwakenOutcome 设计哲学 |
+| 2026-05-25 | v0.1 | 初版草案，覆盖设计总纲与待拍板点 |
+
 
