@@ -12,6 +12,7 @@ use async_trait::async_trait;
 use std::fmt::Debug;
 use std::sync::Arc;
 
+use common::enums::AgentRuntimeState;
 use common::error::Result;
 use crate::models::agent::Agent;
 use crate::models::memory::{Memory, MemoryTrace};
@@ -34,6 +35,12 @@ pub trait RuntimeDomain: Send + Sync + Debug {
     fn awakening(&self) -> &dyn RuntimeAwakening;
     /// 工具执行能力
     fn tool_execution(&self) -> &dyn RuntimeToolExecution;
+
+    /// 查询 Agent 运行时状态
+    fn agent_runtime_state(&self, agent_id: &str) -> AgentRuntimeState;
+
+    /// Agent 是否处于不可用状态（忙碌或休息）
+    fn is_agent_unavailable(&self, agent_id: &str) -> bool;
 }
 
 /// 记忆管理 trait
@@ -249,6 +256,16 @@ impl RuntimeDomain for RuntimeDomainImpl {
     }
     fn tool_execution(&self) -> &dyn RuntimeToolExecution {
         self
+    }
+
+    fn agent_runtime_state(&self, agent_id: &str) -> AgentRuntimeState {
+        crate::pkg::agent_runtime_state::AgentRuntimeStateManager::global()
+            .get_state(agent_id)
+    }
+
+    fn is_agent_unavailable(&self, agent_id: &str) -> bool {
+        crate::pkg::agent_runtime_state::AgentRuntimeStateManager::global()
+            .is_unavailable(agent_id)
     }
 }
 
