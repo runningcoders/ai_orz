@@ -31,6 +31,7 @@ pub struct MessageFetcherImpl;
 pub struct MessageHandlerImpl {
     runtime_domain: Arc<dyn RuntimeDomain>,
     message_domain: Arc<dyn MessageDomain>,
+    hr_domain: Arc<dyn crate::service::domain::hr::HrDomain>,
 }
 
 /// Message 消费者具体类型
@@ -109,6 +110,7 @@ impl MessageHandlerImpl {
         Self {
             runtime_domain: crate::service::domain::runtime::domain(),
             message_domain: crate::service::domain::message::domain(),
+            hr_domain: crate::service::domain::hr::domain(),
         }
     }
 
@@ -117,10 +119,12 @@ impl MessageHandlerImpl {
     pub fn new_for_test(
         runtime_domain: Arc<dyn RuntimeDomain>,
         message_domain: Arc<dyn MessageDomain>,
+        hr_domain: Arc<dyn crate::service::domain::hr::HrDomain>,
     ) -> Self {
         Self {
             runtime_domain,
             message_domain,
+            hr_domain,
         }
     }
 
