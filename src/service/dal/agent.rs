@@ -45,6 +45,17 @@ pub fn new(
 
 // ==================== DAL 接口 ====================
 
+/// Agent 附带信息获取选项
+#[derive(Debug, Clone, Default)]
+pub struct AgentFetchOptions {
+    /// 是否加载运行时状态（默认 true）
+    pub with_runtime_state: Option<bool>,
+    /// 是否加载统计信息
+    pub with_stats: Option<bool>,
+    /// 统计过滤条件（with_stats=true 时生效，按任务 ID 过滤）
+    pub stats_task_id: Option<String>,
+}
+
 /// Agent DAL 接口
 #[async_trait::async_trait]
 pub trait AgentDal: Send + Sync {
@@ -53,6 +64,9 @@ pub trait AgentDal: Send + Sync {
 
     /// 根据 ID 查询 Agent
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Agent>>;
+
+    /// 根据 ID 查询 Agent（带附带信息选项）
+    async fn get_agent(&self, ctx: RequestContext, id: &str, options: AgentFetchOptions) -> Result<Option<Agent>>;
 
     /// 通用综合查询
     ///
@@ -123,6 +137,38 @@ impl AgentDal for AgentDalImpl {
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Agent>> {
         let opt = self.agent_dao.find_by_id(ctx, id).await?;
         Ok(opt.map(Agent::from_po).map(Self::inject_runtime_state))
+    }
+
+    async fn get_agent(&self, ctx: RequestContext, id: &str, options: AgentFetchOptions) -> Result<Option<Agent>> {
+        let opt = self.agent_dao.find_by_id(ctx.clone(), id).await?;
+        let Some(mut agent) = opt.map(Agent::from_po) else {
+            return Ok(None);
+        };
+
+        let with_runtime = options.with_runtime_state.unwrap_or(true);
+        if with_runtime {
+            agent = Self::inject_runtime_state(agent);
+        }
+
+        if options.with_stats.unwrap_or(false) {
+            let stats_options = StatsFetchOptions {
+                with_call_summary: true,
+                with_token_summary: false,
+                with_time_series: false,
+                time_range: None,
+                interval: None,
+            };
+            let query = AgentStatsQuery {
+                agent_id: id.to_string(),
+                task_id: options.stats_task_id.clone(),
+                time_range: stats_options.time_range,
+                ..Default::default()
+            };
+            let stats = self.agent_stats_dao.get_stats(ctx.clone(), query, stats_options).await?;
+            agent.stats = Some(stats);
+        }
+
+        Ok(Some(agent))
     }
 
     async fn query(&self, ctx: RequestContext, query: AgentQuery) -> Result<Vec<Agent>> {

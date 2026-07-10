@@ -3,6 +3,7 @@
 #[cfg(test)]
 mod tests {
         use common::error::Error;
+        use common::models::{ToolStats, StatsFetchOptions};
         use crate::models::brain::Brain;
         use crate::models::memory::Memory;
         use crate::models::model_provider::ModelProvider;
@@ -263,6 +264,10 @@ mod tests {
             }
 
         fn wrap_for_rig(&self, _tools: &[Tool], _ctx: RequestContext) -> Vec<Box<dyn ToolDyn>> {
+            unimplemented!("not needed by tool execution routing tests")
+        }
+
+        async fn get_stats(&self, _ctx: RequestContext, _tool_id: &str, _options: StatsFetchOptions) -> Result<ToolStats> {
             unimplemented!("not needed by tool execution routing tests")
         }
     }

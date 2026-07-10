@@ -42,7 +42,7 @@ pub async fn create_agent(
 
     let created = domain()
         .agent_manage()
-        .get_agent(ctx, agent.id())
+        .get_agent(ctx, agent.id(), Default::default())
         .await?
         .ok_or_else(|| err!(NotFound, "Agent {} not found", agent.id()))?;
 

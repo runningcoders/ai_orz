@@ -130,6 +130,118 @@ impl ToolRegistry {
 - ✅ 解耦工具定义和实例化
 - ✅ 支持热插拔和扩展
 
+### 3. 附带信息模式（Fetch Options）
+
+**问题**：业务实体（如 Agent、Project、Task）除了核心 PO 数据外，还经常需要补充各种"附带信息"——运行时状态、统计数据、绑定的工具/技能等。如果每种附带信息都写一个单独的查询方法，接口会爆炸；如果每次都全量加载，性能又不好。
+
+**解决方案**：在 DAL 层引入 `XxxFetchOptions` 结构体，通过布尔标志控制是否加载某项附带信息，由调用方按需选择。
+
+```
+调用方（Handler / Domain / 消费者）
+    │
+    ▼
+DAL 层：find_by_id(id, fetch_options)
+    │
+    ├── 主查询：加载核心 PO（必选）
+    ├── with_runtime_state → 从 AgentRuntimeStateManager 注入
+    ├── with_stats → 调用 StatsDao 查询统计数据
+    ├── with_skills → 调用 SkillDao 查询绑定技能
+    └── ...（未来扩展）
+```
+
+#### 各层职责划分
+
+| 层级 | 查询结构体 | 职责 |
+|------|-----------|------|
+| **DAO 层** | `XxxQuery` / `XxxStatsQuery` | 单一数据源的查询参数，只针对一张表 |
+| **DAL 层** | `XxxFetchOptions` | 复合选项，控制从哪些 DAO 加载什么附带信息 |
+| **Domain 层** | Command / Query | 表达业务意图，不直接操作查询参数 |
+
+#### 设计原则
+
+1. **按需加载**：所有附带信息默认不加载（None 表示 false），调用方显式开启
+2. **单一入口**：所有附带信息的开关都在同一个 `XxxFetchOptions` 结构体里
+3. **过滤条件下传**：附带信息的过滤条件（如统计的 task_id 过滤）作为 options 的子字段下传到对应 DAO
+4. **可扩展**：新增附带信息只需加一个 `with_xxx: Option<bool>` 字段，不破坏现有接口
+
+#### 代码示例
+
+```rust
+// ✅ DAL 层：复合选项结构体
+#[derive(Debug, Clone, Default)]
+pub struct AgentFetchOptions {
+    /// 是否加载运行时状态
+    pub with_runtime_state: Option<bool>,
+    /// 是否加载统计信息
+    pub with_stats: Option<bool>,
+    /// 统计过滤条件（with_stats=true 时生效）
+    pub stats_filter: Option<AgentStatsFilter>,
+    // 未来扩展：
+    // pub with_skills: Option<bool>,
+    // pub with_tools: Option<bool>,
+}
+
+// ✅ DAL 层：实现按需注入
+impl AgentDal for AgentDalImpl {
+    async fn find_by_id(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        options: AgentFetchOptions,
+    ) -> Result<Option<Agent>> {
+        let opt = self.agent_dao.find_by_id(ctx.clone(), id).await?;
+        let Some(mut agent) = opt.map(Agent::from_po) else {
+            return Ok(None);
+        };
+
+        // 按需注入运行时状态
+        if options.with_runtime_state.unwrap_or(true) {
+            agent = Self::inject_runtime_state(agent);
+        }
+
+        // 按需注入统计信息
+        if options.with_stats.unwrap_or(false) {
+            let stats = self.agent_stats_dao.get_stats(
+                ctx,
+                AgentStatsQuery {
+                    agent_id: agent.po.id.clone(),
+                    filters: options.stats_filter.unwrap_or_default().into_filters(),
+                    ..Default::default()
+                },
+                StatsFetchOptions {
+                    with_call_summary: true,
+                    ..Default::default()
+                },
+            ).await?;
+            agent.stats = stats;
+        }
+
+        Ok(Some(agent))
+    }
+}
+```
+
+#### 两种使用方式
+
+```rust
+// 方式 1：只需要统计 → 直接调用统计方法
+let stats = agent_dal.get_stats(ctx, &agent_id, options).await?;
+
+// 方式 2：已经在获取实体 → 通过 options 带回去
+let agent = agent_dal.find_by_id(
+    ctx,
+    &agent_id,
+    AgentFetchOptions {
+        with_stats: Some(true),
+        stats_filter: Some(AgentStatsFilter {
+            task_id: Some(task_id.to_string()),
+            ..Default::default()
+        }),
+        ..Default::default()
+    },
+).await?;
+```
+
 ---
 
 ## 🧪 测试最佳实践

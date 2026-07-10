@@ -4,13 +4,14 @@
 //! 负责组合 DAO 完成业务级数据操作
 
 use common::error::{Result};
+use common::models::{ToolStats, StatsFetchOptions};
 use crate::models::tool::{CoreTool, Tool, ToolPo};
 use crate::models::vector::{MatchType, SearchMatchInfo};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::ModelProviderDao;
-use crate::service::dao::tool::{self, ToolDao, ToolQuery, ToolVectorDao};
+use crate::service::dao::tool::{self, ToolDao, ToolQuery, ToolStatsDao, ToolStatsQuery, ToolVectorDao};
 use crate::service::dao::tool_call::{self, ToolCallDao};
 use anyhow::Result as AnyhowResult;
 use common::enums::ToolStatus;
@@ -35,6 +36,7 @@ pub fn init() {
         tool::vector_dao(),
         model_provider::dao(),
         cortex::dao(),
+        tool::stats_dao(),
     ));
 }
 
@@ -45,6 +47,7 @@ pub fn new(
     tool_vector_dao: Arc<dyn ToolVectorDao + Send + Sync>,
     model_provider_dao: Arc<dyn ModelProviderDao + Send + Sync>,
     cortex_dao: Arc<dyn CortexDao + Send + Sync>,
+    tool_stats_dao: Arc<dyn ToolStatsDao<ToolCallEvent = crate::pkg::stats::ToolCallEvent>>,
 ) -> Arc<dyn ToolDal> {
     Arc::new(ToolDalImpl {
         tool_dao,
@@ -52,6 +55,7 @@ pub fn new(
         tool_vector_dao,
         model_provider_dao,
         cortex_dao,
+        tool_stats_dao,
     })
 }
 
@@ -149,6 +153,11 @@ pub trait ToolDal: Send + Sync {
     /// Wrap tools for Rig to use (convert to Box<dyn ToolDyn>)
     fn wrap_for_rig(&self, tools: &[Tool], ctx: RequestContext)
     -> Vec<Box<dyn rig::tool::ToolDyn>>;
+
+    // ==================== 统计查询 ====================
+
+    /// 获取工具统计数据
+    async fn get_stats(&self, ctx: RequestContext, tool_id: &str, options: StatsFetchOptions) -> Result<ToolStats>;
 }
 
 // ==================== DAL 实现 ====================
@@ -160,6 +169,7 @@ pub struct ToolDalImpl {
     tool_vector_dao: Arc<dyn ToolVectorDao + Send + Sync>,
     model_provider_dao: Arc<dyn ModelProviderDao + Send + Sync>,
     cortex_dao: Arc<dyn CortexDao + Send + Sync>,
+    tool_stats_dao: Arc<dyn ToolStatsDao<ToolCallEvent = crate::pkg::stats::ToolCallEvent>>,
 }
 
 #[async_trait::async_trait]
@@ -453,6 +463,14 @@ impl ToolDal for ToolDalImpl {
         ctx: RequestContext,
     ) -> Vec<Box<dyn rig::tool::ToolDyn>> {
         self.tool_call_dao.wrap_for_rig(tools, ctx)
+    }
+
+    async fn get_stats(&self, ctx: RequestContext, tool_id: &str, options: StatsFetchOptions) -> Result<ToolStats> {
+        let query = ToolStatsQuery {
+            tool_id: tool_id.to_string(),
+            ..Default::default()
+        };
+        Ok(self.tool_stats_dao.get_stats(ctx, query, options).await?)
     }
 }
 

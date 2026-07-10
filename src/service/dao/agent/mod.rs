@@ -23,6 +23,8 @@ pub struct AgentQuery {
 pub struct AgentStatsQuery {
     /// Agent ID（必填）
     pub agent_id: String,
+    /// 任务 ID（可选过滤）
+    pub task_id: Option<String>,
     /// 额外过滤条件
     pub filters: Vec<StatFilter>,
     /// 时间范围（毫秒，None 表示不限）

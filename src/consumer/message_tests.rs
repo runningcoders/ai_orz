@@ -95,7 +95,7 @@ fn test_handler(
     message_domain: Arc<dyn MessageDomain>,
     hr_domain: Arc<dyn HrDomain>,
 ) -> MessageHandlerImpl {
-    MessageHandlerImpl::new_for_test(runtime_domain, message_domain, hr_domain)
+    MessageHandlerImpl::new_for_test(runtime_domain, message_domain, hr_domain, Arc::new(MockProjectDomain))
 }
 
 async fn init_storage_for_test() {
@@ -286,13 +286,340 @@ impl HrDomain for RecordingHrDomain {
     }
 }
 
+// ==================== Mock Project Domain ====================
+
+struct MockProjectDomain;
+
+impl crate::service::domain::project::ProjectDomain for MockProjectDomain {
+    fn project_manage(&self) -> &dyn crate::service::domain::project::ProjectManage {
+        self
+    }
+
+    fn task_manage(&self) -> &dyn crate::service::domain::project::TaskManage {
+        self
+    }
+
+    fn artifact_manage(&self) -> &dyn crate::service::domain::project::ArtifactManage {
+        self
+    }
+}
+
+#[async_trait]
+impl crate::service::domain::project::ProjectManage for MockProjectDomain {
+    async fn create(
+        &self,
+        _ctx: RequestContext,
+        _name: String,
+        _description: String,
+        _priority: i32,
+        _tags: Vec<String>,
+        _root_user_id: String,
+        _created_by: String,
+    ) -> Result<crate::models::project::Project> {
+        unimplemented!()
+    }
+
+    async fn get(&self, _ctx: RequestContext, _id: &str) -> Result<Option<crate::models::project::Project>> {
+        unimplemented!()
+    }
+
+    async fn list_by_user(
+        &self,
+        _ctx: RequestContext,
+        _root_user_id: &str,
+    ) -> Result<Vec<crate::models::project::Project>> {
+        unimplemented!()
+    }
+
+    async fn list(
+        &self,
+        _ctx: RequestContext,
+        _root_user_id: &str,
+        _status: Option<common::enums::ProjectStatus>,
+        _limit: Option<usize>,
+    ) -> Result<Vec<crate::models::project::Project>> {
+        unimplemented!()
+    }
+
+    async fn start(
+        &self,
+        _ctx: RequestContext,
+        _project_id: &str,
+        _modified_by: String,
+    ) -> Result<()> {
+        unimplemented!()
+    }
+
+    async fn complete(
+        &self,
+        _ctx: RequestContext,
+        _project_id: &str,
+        _modified_by: String,
+    ) -> Result<()> {
+        unimplemented!()
+    }
+
+    async fn archive(
+        &self,
+        _ctx: RequestContext,
+        _project_id: &str,
+        _modified_by: String,
+    ) -> Result<()> {
+        unimplemented!()
+    }
+
+    async fn update_basic(
+        &self,
+        _ctx: RequestContext,
+        _project_id: &str,
+        _name: Option<String>,
+        _description: Option<String>,
+        _priority: Option<i32>,
+        _tags: Option<Vec<String>>,
+        _modified_by: String,
+    ) -> Result<crate::models::project::Project> {
+        unimplemented!()
+    }
+
+    async fn transition_status(
+        &self,
+        _ctx: RequestContext,
+        _project: &mut crate::models::project::Project,
+        _target_status: common::enums::ProjectStatus,
+    ) -> Result<()> {
+        unimplemented!()
+    }
+}
+
+#[async_trait]
+impl crate::service::domain::project::TaskManage for MockProjectDomain {
+    async fn create(
+        &self,
+        _ctx: RequestContext,
+        _title: String,
+        _description: String,
+        _priority: i32,
+        _tags: Vec<String>,
+        _root_user_id: String,
+        _assignee_type: common::enums::AssigneeType,
+        _assignee_id: String,
+        _project_id: Option<String>,
+        _created_by: String,
+    ) -> Result<crate::models::task::Task> {
+        unimplemented!()
+    }
+
+    async fn create_with_options(
+        &self,
+        _ctx: RequestContext,
+        _title: String,
+        _description: String,
+        _priority: i32,
+        _tags: Vec<String>,
+        _root_user_id: String,
+        _assignee_type: common::enums::AssigneeType,
+        _assignee_id: String,
+        _project_id: Option<String>,
+        _due_at: Option<i64>,
+        _dependencies: Vec<String>,
+        _created_by: String,
+    ) -> Result<crate::models::task::Task> {
+        unimplemented!()
+    }
+
+    async fn get(&self, _ctx: RequestContext, _id: &str) -> Result<Option<crate::models::task::Task>> {
+        Ok(None)
+    }
+
+    async fn list_by_project(
+        &self,
+        _ctx: RequestContext,
+        _project_id: &str,
+    ) -> Result<Vec<crate::models::task::Task>> {
+        unimplemented!()
+    }
+
+    async fn list_by_agent(
+        &self,
+        _ctx: RequestContext,
+        _agent_id: &str,
+    ) -> Result<Vec<crate::models::task::Task>> {
+        unimplemented!()
+    }
+
+    async fn list(
+        &self,
+        _ctx: RequestContext,
+        _project_id: Option<&str>,
+        _assignee_type: Option<common::enums::AssigneeType>,
+        _assignee_id: Option<&str>,
+        _status: Option<common::enums::TaskStatus>,
+        _limit: Option<usize>,
+    ) -> Result<Vec<crate::models::task::Task>> {
+        unimplemented!()
+    }
+
+    async fn update_basic(
+        &self,
+        _ctx: RequestContext,
+        _task_id: &str,
+        _title: Option<String>,
+        _description: Option<String>,
+        _priority: Option<i32>,
+        _tags: Option<Vec<String>>,
+        _due_at: Option<i64>,
+        _dependencies: Option<Vec<String>>,
+    ) -> Result<crate::models::task::Task> {
+        unimplemented!()
+    }
+
+    async fn start(
+        &self,
+        _ctx: RequestContext,
+        _task_id: &str,
+        _modified_by: String,
+    ) -> Result<()> {
+        unimplemented!()
+    }
+
+    async fn complete(
+        &self,
+        _ctx: RequestContext,
+        _task_id: &str,
+        _modified_by: String,
+    ) -> Result<()> {
+        unimplemented!()
+    }
+
+    async fn cancel(
+        &self,
+        _ctx: RequestContext,
+        _task_id: &str,
+        _modified_by: String,
+    ) -> Result<()> {
+        unimplemented!()
+    }
+
+    async fn transition_status(
+        &self,
+        _ctx: RequestContext,
+        _task: &mut crate::models::task::Task,
+        _target_status: common::enums::TaskStatus,
+    ) -> Result<()> {
+        unimplemented!()
+    }
+}
+
+#[async_trait]
+impl crate::service::domain::project::ArtifactManage for MockProjectDomain {
+    async fn create_attachment_artifact(
+        &self,
+        _ctx: RequestContext,
+        _project_id: String,
+        _task_id: Option<String>,
+        _name: String,
+        _description: String,
+        _file_type: common::enums::FileType,
+        _file_meta: crate::models::file::FileMeta,
+        _tags: Vec<String>,
+        _created_by: String,
+    ) -> Result<crate::models::artifact::Artifact> {
+        unimplemented!()
+    }
+
+    async fn create_project_artifact(
+        &self,
+        _ctx: RequestContext,
+        _project_id: String,
+        _name: String,
+        _description: String,
+        _file_type: common::enums::FileType,
+        _file_meta: crate::models::file::FileMeta,
+        _created_by: String,
+    ) -> Result<crate::models::artifact::Artifact> {
+        unimplemented!()
+    }
+
+    async fn create_task_artifact(
+        &self,
+        _ctx: RequestContext,
+        _project_id: String,
+        _task_id: String,
+        _name: String,
+        _description: String,
+        _file_type: common::enums::FileType,
+        _file_meta: crate::models::file::FileMeta,
+        _created_by: String,
+    ) -> Result<crate::models::artifact::Artifact> {
+        unimplemented!()
+    }
+
+    async fn get(&self, _ctx: RequestContext, _id: &str) -> Result<Option<crate::models::artifact::Artifact>> {
+        unimplemented!()
+    }
+
+    async fn list_by_project(
+        &self,
+        _ctx: RequestContext,
+        _project_id: &str,
+    ) -> Result<Vec<crate::models::artifact::Artifact>> {
+        unimplemented!()
+    }
+
+    async fn list_by_task(
+        &self,
+        _ctx: RequestContext,
+        _task_id: &str,
+    ) -> Result<Vec<crate::models::artifact::Artifact>> {
+        unimplemented!()
+    }
+
+    async fn list(
+        &self,
+        _ctx: RequestContext,
+        _params: crate::service::domain::project::ListArtifactsParams,
+    ) -> Result<Vec<crate::models::artifact::Artifact>> {
+        unimplemented!()
+    }
+
+    async fn delete(&self, _ctx: RequestContext, _id: &str) -> Result<()> {
+        unimplemented!()
+    }
+
+    async fn get_artifact_content(
+        &self,
+        _ctx: RequestContext,
+        _id: &str,
+    ) -> Result<Option<crate::models::artifact::Artifact>> {
+        unimplemented!()
+    }
+
+    async fn read_content(
+        &self,
+        _ctx: RequestContext,
+        _artifact: &crate::models::artifact::Artifact,
+    ) -> Result<Vec<u8>> {
+        unimplemented!()
+    }
+
+    async fn update_artifact_content(
+        &self,
+        _ctx: RequestContext,
+        _id: &str,
+        _content: Vec<u8>,
+        _expected_updated_at: Option<i64>,
+    ) -> Result<crate::models::artifact::Artifact> {
+        unimplemented!()
+    }
+}
+
 #[async_trait]
 impl AgentManage for RecordingHrDomain {
     async fn create_agent(&self, _ctx: RequestContext, _agent: &Agent) -> Result<()> {
         unimplemented!("not needed by message consumer tests")
     }
 
-    async fn get_agent(&self, _ctx: RequestContext, id: &str) -> Result<Option<Agent>> {
+    async fn get_agent(&self, _ctx: RequestContext, id: &str, _options: crate::service::dal::agent::AgentFetchOptions) -> Result<Option<Agent>> {
         Ok(Some(self.create_test_agent(id)))
     }
 
@@ -1134,7 +1461,7 @@ mod handle_agent_message_tests {
         async fn create_agent(&self, _ctx: RequestContext, _agent: &Agent) -> Result<()> {
             unimplemented!()
         }
-        async fn get_agent(&self, _ctx: RequestContext, _id: &str) -> Result<Option<Agent>> {
+        async fn get_agent(&self, _ctx: RequestContext, _id: &str, _options: crate::service::dal::agent::AgentFetchOptions) -> Result<Option<Agent>> {
             Ok(None)
         }
         async fn query(
@@ -1282,7 +1609,7 @@ mod handle_agent_message_tests {
         async fn create_agent(&self, _ctx: RequestContext, _agent: &Agent) -> Result<()> {
             unimplemented!()
         }
-        async fn get_agent(&self, _ctx: RequestContext, id: &str) -> Result<Option<Agent>> {
+        async fn get_agent(&self, _ctx: RequestContext, id: &str, _options: crate::service::dal::agent::AgentFetchOptions) -> Result<Option<Agent>> {
             let mut po = AgentPo::new(
                 "NoBrain Agent".to_string(),
                 vec!["assistant".to_string()],

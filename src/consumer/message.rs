@@ -2,6 +2,7 @@
 //!
 //! 负责消费所有类型的消息（用户消息、Agent 间消息、工具调用等）
 
+use crate::service::dal::agent::AgentFetchOptions;
 use super::{GenericConsumer, MessageFetcher, MessageHandler};
 use common::error::{Error, Result};
 use crate::models::message::{Message, ToolCallMessage};
@@ -32,6 +33,7 @@ pub struct MessageHandlerImpl {
     runtime_domain: Arc<dyn RuntimeDomain>,
     message_domain: Arc<dyn MessageDomain>,
     hr_domain: Arc<dyn crate::service::domain::hr::HrDomain>,
+    project_domain: Arc<dyn crate::service::domain::project::ProjectDomain>,
 }
 
 /// Message 消费者具体类型
@@ -111,6 +113,7 @@ impl MessageHandlerImpl {
             runtime_domain: crate::service::domain::runtime::domain(),
             message_domain: crate::service::domain::message::domain(),
             hr_domain: crate::service::domain::hr::domain(),
+            project_domain: crate::service::domain::project::domain(),
         }
     }
 
@@ -120,11 +123,13 @@ impl MessageHandlerImpl {
         runtime_domain: Arc<dyn RuntimeDomain>,
         message_domain: Arc<dyn MessageDomain>,
         hr_domain: Arc<dyn crate::service::domain::hr::HrDomain>,
+        project_domain: Arc<dyn crate::service::domain::project::ProjectDomain>,
     ) -> Self {
         Self {
             runtime_domain,
             message_domain,
             hr_domain,
+            project_domain,
         }
     }
 
@@ -175,13 +180,72 @@ impl MessageHandlerImpl {
         // 重建上下文
         let ctx = self.rebuild_context(message);
 
-        // 加载 Agent 实体（包含 Brain 配置）
+        // 加载 Agent 实体（包含统计信息）
+        let fetch_options = AgentFetchOptions {
+            with_stats: Some(message.po.task_id.is_some()),
+            stats_task_id: message.po.task_id.clone(),
+            ..Default::default()
+        };
         let agent = self
             .hr_domain
             .agent_manage()
-            .get_agent(ctx.clone(), agent_id)
+            .get_agent(ctx.clone(), agent_id, fetch_options)
             .await?
             .ok_or_else(|| Error::not_found(format!("Agent {} not found", agent_id)))?;
+
+        // 检查轮次限制：如果有 task_id，检查是否超过最大思考深度
+        if let (Some(_task_id), Some(stats)) = (&message.po.task_id, &agent.stats) {
+            if let Some(call_summary) = &stats.call_summary {
+                let runtime_config = agent.po.get_runtime_config();
+                let max_depth = runtime_config.max_thinking_depth as u64;
+                if call_summary.total_calls >= max_depth {
+                    log_warn!(
+                        &ctx,
+                        "handle_agent_message",
+                        "Agent {} reached max thinking depth ({}), stopping loop",
+                        agent_id,
+                        max_depth
+                    );
+
+                    // 发送提示消息给用户
+                    let _ = self.message_domain
+                        .delivery()
+                        .send_to_user(
+                            ctx.clone(),
+                            crate::service::domain::message::SendToUserCommand {
+                                from_agent_id: agent_id,
+                                to_user_id: &message.po.from_id,
+                                content: &format!(
+                                    "Agent has reached the maximum thinking depth ({} turns). The task has been stopped to prevent infinite loops.",
+                                    max_depth
+                                ),
+                                project_id: message.po.project_id.as_deref(),
+                                task_id: message.po.task_id.as_deref(),
+                                reply_to_id: None,
+                            },
+                        )
+                        .await;
+
+                    return Ok(());
+                }
+            }
+        }
+
+        // 检查任务完成状态：如果任务已完成，不再唤醒 Agent
+        if let Some(task_id) = &message.po.task_id {
+            if let Ok(Some(task)) = self.project_domain.task_manage().get(ctx.clone(), task_id).await {
+                if matches!(task.po.status, common::enums::TaskStatus::Completed | common::enums::TaskStatus::Cancelled | common::enums::TaskStatus::Archived) {
+                    log_info!(
+                        &ctx,
+                        "handle_agent_message",
+                        "Task {} is in {:?} state, skipping agent wake",
+                        task_id,
+                        task.po.status
+                    );
+                    return Ok(());
+                }
+            }
+        }
 
         // 确保 Agent 有 Brain（已唤醒）
         if agent.brain.is_none() {

@@ -5,7 +5,7 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 ![GitHub last commit](https://img.shields.io/github/last-commit/runningcoders/ai_orz)
 ![GitHub license](https://img.shields.io/github/license/runningcoders/ai_orz)
 ![Rust](https://img.shields.io/badge/Rust-1.85+-000000?logo=rust)
-![Tests](https://img.shields.io/badge/tests-544%20%E2%9C%94-brightgreen)
+![Tests](https://img.shields.io/badge/tests-554%20%E2%9C%94-brightgreen)
 [![GitHub stars](https://img.shields.io/github/stars/runningcoders/ai_orz?style=social)](https://github.com/runningcoders/ai_orz)
 
 ---
@@ -38,6 +38,7 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 | 📝 结构化日志系统 | ✅ | JSON 格式，自动上下文关联，日志自动清理 |
 | 🏗️ 严格分层架构 | ✅ | DAO/DAL/Domain/Handler/Consumer 五层职责清晰 |
 | 📊 Agent 统计系统 | ✅ | DuckDB 多维统计、按领域划分职责、多维度过滤查询 |
+| 🔄 多回合循环控制 | ✅ | 轮次限制检查、任务完成检测、Prompt 上下文差异化、工具失败计数注入 |
 
 > 📝 **开发规范与详细架构** 请查看 [AGENTS.md](./AGENTS.md) - AI 助手专属快速入门手册
 

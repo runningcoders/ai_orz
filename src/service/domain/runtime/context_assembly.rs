@@ -38,6 +38,8 @@ pub struct PromptBuilder {
     skills: Vec<String>,
     /// （预留）工具说明
     tools: Vec<String>,
+    /// 工具失败统计：(工具名称, 失败次数)
+    tool_failures: Vec<(String, u64)>,
 }
 
 impl PromptBuilder {
@@ -95,7 +97,14 @@ impl PromptBuilder {
     /// 调用 Message::to_prompt() 生成标准格式的消息内容
     /// 所有消息格式化逻辑都内聚在 MessagePo 内部
     pub fn current_message(mut self, message: &Message) -> Self {
-        self.current_message = Some(message.to_prompt());
+        let label = match message.po.message_type {
+            common::enums::MessageType::ToolCallResult => "【工具执行结果】",
+            common::enums::MessageType::ToolCallRequest => "【工具调用请求】",
+            common::enums::MessageType::ConfirmRequest => "【确认请求】",
+            common::enums::MessageType::ConfirmResponse => "【确认回复】",
+            _ => "【当前消息】",
+        };
+        self.current_message = Some(format!("{}\n{}", label, message.to_prompt()));
         self
     }
 
@@ -103,7 +112,7 @@ impl PromptBuilder {
     ///
     /// 用于测试或简单场景，不需要完整 Message 结构
     pub fn current_message_content(mut self, content: &str) -> Self {
-        self.current_message = Some(format!("【消息内容】\n{}", content));
+        self.current_message = Some(format!("【当前消息】\n【消息内容】\n{}", content));
         self
     }
 
@@ -116,6 +125,15 @@ impl PromptBuilder {
     /// （预留）添加工具说明
     pub fn tools(mut self, tools: &[String]) -> Self {
         self.tools.extend(tools.iter().cloned());
+        self
+    }
+
+    /// 添加工具失败统计，用于提示 Agent 谨慎调用
+    ///
+    /// 当某个工具失败次数较多时，会在 Prompt 中添加警告，
+    /// 提醒 Agent 谨慎使用该工具或考虑替代方案。
+    pub fn tool_failures(mut self, failures: &[(String, u64)]) -> Self {
+        self.tool_failures.extend_from_slice(failures);
         self
     }
 
@@ -219,9 +237,18 @@ impl PromptBuilder {
             result.push_str("\n");
         }
 
+        // 6.5 工具失败警告（有失败工具时才显示）
+        if !self.tool_failures.is_empty() {
+            result.push_str("【工具失败警告】\n");
+            result.push_str("以下工具近期失败次数较多，请谨慎使用或考虑替代方案：\n");
+            for (tool_name, fail_count) in &self.tool_failures {
+                result.push_str(&format!("- {}：失败 {} 次\n", tool_name, fail_count));
+            }
+            result.push_str("\n");
+        }
+
         // 7. 当前用户消息
         if let Some(msg) = &self.current_message {
-            result.push_str("【当前消息】\n");
             result.push_str(msg);
             result.push_str("\n\n请回复：");
         }

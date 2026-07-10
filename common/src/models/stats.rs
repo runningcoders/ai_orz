@@ -102,6 +102,15 @@ pub struct TaskStats {
     pub call_summary: Option<CallSummary>,
 }
 
+/// 工具自身统计数据
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct ToolStats {
+    /// 调用次数汇总（次数 + QPS）
+    pub call_summary: Option<CallSummary>,
+    /// 失败次数
+    pub failed_count: Option<u64>,
+}
+
 /// 模型调用统计（通用，所有实体共用）
 ///
 /// 由 ModelProviderStatsDao 负责计算，

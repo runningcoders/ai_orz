@@ -171,32 +171,44 @@ Phase 5: 多 Agent 协作
 
 > **目标**：工具调用结果自动触发下一次思考，形成完整的思考→行动→再思考循环
 >
-> **核心交付**：ToolCallResult 自动触发 awaken，有轮次限制和终止条件
+> **核心交付**：ToolCallResult 自动触发 awaken，有轮次限制和终止条件，有错误重试策略
 >
-> **预估工作量**：中
+> **预估工作量**：中-大
 
 ### 任务清单
 
-| # | 任务 | 说明 | 优先级 |
-|---|------|------|--------|
-| 3.1 | ToolCallResult 触发唤醒 | 工具执行完成后，结果消息自动触发下一次思考 | P0 |
-| 3.2 | 唤醒轮次限制 | 每次对话有最大轮次，超过则暂停 | P0 |
-| 3.3 | 任务完成检测 | 检测到 mark_done 调用后，不再继续唤醒 | P0 |
-| 3.4 | 统计模块联动 | 轮次预算、进度等从统计模块读取 | P1 |
-| 3.5 | 错误重试机制 | 工具调用失败时的重试策略 | P2 |
+| # | 任务 | 所在层 | 说明 | 优先级 |
+|---|------|--------|------|--------|
+| 3.1 | ToolStatsDao 建设 | DAO + DAL | 补齐工具统计 DAO + ToolDal 统计接口，风格与其他 StatsDao 一致 | P0 |
+| 3.2 | Agent 附带信息扩展 | DAL | AgentQuery 增加 with_stats 等选项，find_by_id/query 按需注入统计信息 | P0 |
+| 3.3 | Agent 唤醒次数按 task 过滤 | DAO + DAL | AgentStatsQuery 增加 task_id 可选字段，支持按任务维度查唤醒次数 | P0 |
+| 3.4 | 唤醒轮次限制 | 消费者 | handle_agent_message 中通过 Agent 附带信息获取轮次，超限则不唤醒 + 提示用户 | P0 |
+| 3.5 | mark_done 终止检测 | 消费者 | handle_agent_message 中检查 task 状态，已 Completed 则直接 ack 不处理 | P0 |
+| 3.6 | Prompt 上下文区分 | Runtime | PromptBuilder 按 message_type 调整 current_message 呈现方式 | P1 |
+| 3.7 | 工具失败计数注入 Prompt | Runtime | awakening 里通过 ToolDal 查工具失败次数，注入 Prompt 提示 Agent | P2 |
+| 3.8 | 唤醒失败事件补全 | Runtime | awakening.rs 失败时也记录 AgentAwakeEvent，status="failed" | P2 |
 
 ### 关键设计点
 
-- **触发方式**：ToolCallResult 消息走 to_role=Agent 路径，复用 handle_agent_message
-- **轮次限制的位置**：在消费者层面判断，还是在 awaken 内部判断？
-  - 倾向：消费者层面判断，Runtime Domain 只负责单次唤醒
-- **暂停后的恢复**：用户发新消息时自动恢复
+- **ToolCallResult 触发链路已通**：ToolCallResult → to_role=Agent → handle_agent_message → awaken()，无需额外开发
+- **轮次限制位置**：消费者层面判断，Runtime Domain 只负责单次唤醒
+- **轮次计数方案**：通过统计模块查询（agent_awake_events 表，按 agent_id + task_id 过滤）
+- **附带信息模式**：Agent 实体支持 with_stats 等选项，获取实体时按需注入统计信息，不用单独再查
+- **两种使用方式**：
+  - 只需要统计 → 直接调用 DAL 层标准统计方法（get_stats 等）
+  - 已经在获取实体 → 通过 with_xxx 选项，把统计作为附带信息一起带回
+- **mark_done 终止**：直接查 task 状态，不走统计模块，简单可靠
+- **工具失败计数**：通过 ToolStatsDao 查询 `tool_call_events` 表，按 tool_id + agent_id + status="failed" 过滤
+- **会话标识**：有 task_id 按 task_id 统计，没有 task_id 的后续再优化
 
 ### 验收标准
 
+- [ ] 单元测试：ToolStatsDao 各查询方法正确
+- [ ] 单元测试：Agent 附带信息（with_stats）正确注入
+- [ ] 单元测试：Agent 唤醒次数按 task_id 过滤正确
 - [ ] 集成测试：Agent 调用工具 → 工具执行 → 结果触发再次思考
 - [ ] 集成测试：达到最大轮次后停止，用户发新消息恢复
-- [ ] 集成测试：调用 mark_done 后停止
+- [ ] 集成测试：调用 mark_done 后任务完成，后续消息不触发唤醒
 - [ ] 所有现有测试通过
 
 **执行方案**：待在 `docs/superpowers/plans/` 下创建具体实现方案

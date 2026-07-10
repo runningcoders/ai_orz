@@ -5,6 +5,7 @@ use crate::models::tool::Tool;
 use crate::pkg::agent_runtime_state::AgentRuntimeInfo;
 use crate::pkg::request_context::{EnrichContext, RequestContextBuilder};
 use common::enums::AgentStatus;
+use common::models::AgentStats;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use std::fmt;
@@ -93,6 +94,10 @@ pub struct Agent {
     ///
     /// None 表示未注入（如刚创建还未查询）
     pub runtime_info: Option<AgentRuntimeInfo>,
+    /// 统计数据（由 DAL 层按需注入）
+    ///
+    /// None 表示未查询
+    pub stats: Option<AgentStats>,
     // 后续扩展字段：
     // pub execution_env: ExecutionEnv,
     // pub permissions: Vec<Permission>,
@@ -106,6 +111,7 @@ impl fmt::Debug for Agent {
             .field("brain", &"[Brain]")
             .field("tools", &format_args!("[{} tools]", self.tools.len()))
             .field("runtime_info", &self.runtime_info)
+            .field("stats", &self.stats)
             .finish()
     }
 }
@@ -118,6 +124,7 @@ impl Agent {
             brain: None,
             tools: Vec::new(),
             runtime_info: None,
+            stats: None,
         }
     }
 
@@ -128,6 +135,7 @@ impl Agent {
             brain: None,
             tools,
             runtime_info: None,
+            stats: None,
         }
     }
 

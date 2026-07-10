@@ -100,8 +100,26 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         AgentRuntimeStateManager::global()
             .set_idle(&agent.po.id);
 
-        // 展开 Result
-        let raw_output = think_result?;
+        // 展开 Result，失败时也记录事件
+        let raw_output = match think_result {
+            Ok(output) => output,
+            Err(e) => {
+                // 记录唤醒失败事件
+                let duration_ms = start_time.elapsed().map(|d| d.as_millis() as u64).unwrap_or(0);
+                let _ = record_event!(ctx, AgentAwakeEvent {
+                    agent_id: agent.po.id.clone(),
+                    project_id: ctx.project_id().cloned(),
+                    task_id: ctx.task_id().cloned(),
+                    organization_id: ctx.organization_id.clone(),
+                    user_id: Some(ctx.uid()),
+                    message_id: Some(message.po.id.clone()),
+                    call_count: 1,
+                    duration_ms: duration_ms,
+                    status: format!("failed: {}", e),
+                });
+                return Err(e);
+            }
+        };
 
         // Step 6: 回填 input 和 output，一次性写入完整 Trace
         trace.input = prompt.clone();

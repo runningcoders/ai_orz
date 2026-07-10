@@ -254,17 +254,28 @@ impl MessagePo {
             _ => "未知",
         };
 
-        let msg_type = match self.message_type {
-            MessageType::Text => "文本",
-            MessageType::File => "文件",
-            MessageType::Image => "图片",
-            _ => "其他",
+        let msg_type_label = match self.message_type {
+            MessageType::Text => "文本消息",
+            MessageType::Image => "图片消息",
+            MessageType::File => "文件消息",
+            MessageType::Audio => "音频消息",
+            MessageType::Video => "视频消息",
+            MessageType::ToolCallRequest => "工具调用请求",
+            MessageType::ToolCallResult => "工具执行结果",
+            MessageType::ConfirmRequest => "确认请求",
+            MessageType::ConfirmResponse => "确认回复",
+        };
+
+        let content_label = match self.message_type {
+            MessageType::ToolCallResult => "执行结果",
+            MessageType::ToolCallRequest => "调用详情",
+            _ => "消息内容",
         };
 
         let mut msg_parts = vec![
             format!("【消息 ID】{}", self.id),
             format!("【发送者】{}", role_name),
-            format!("【消息类型】{}", msg_type),
+            format!("【消息类型】{}", msg_type_label),
         ];
 
         if let Some(reply_to) = &self.reply_to_id {
@@ -279,7 +290,7 @@ impl MessagePo {
             msg_parts.push(format!("【关联项目】{}", project_id));
         }
 
-        msg_parts.push(format!("\n【消息内容】\n{}", self.content));
+        msg_parts.push(format!("\n【{}】\n{}", content_label, self.content));
 
         msg_parts.join("\n")
     }

@@ -21,7 +21,7 @@ pub async fn get_agent(
 ) -> Result<GetAgentResponse> {
     let agent = domain()
         .agent_manage()
-        .get_agent(ctx, &params.id)
+        .get_agent(ctx, &params.id, Default::default())
         .await?
         .ok_or_else(|| common::error::Error::not_found(format!("Agent {} not found", params.id)))?;
 

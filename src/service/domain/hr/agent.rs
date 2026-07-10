@@ -33,8 +33,8 @@ impl AgentManage for HrDomainImpl {
     /// 获取 Agent
     ///
     /// 基础操作：根据 ID 查询 Agent
-    async fn get_agent(&self, ctx: RequestContext, id: &str) -> Result<Option<Agent>> {
-        self.agent_dal.find_by_id(ctx, id).await
+    async fn get_agent(&self, ctx: RequestContext, id: &str, options: crate::service::dal::agent::AgentFetchOptions) -> Result<Option<Agent>> {
+        self.agent_dal.get_agent(ctx, id, options).await
     }
 
     /// 通用综合查询

@@ -81,6 +81,7 @@ async fn init_test_env(
         tool::vector_dao(),
         crate::service::dao::model_provider::dao(),
         crate::service::dao::cortex::dao(),
+        tool::stats_dao(),
     );
     let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
     (tool_dal, ctx)

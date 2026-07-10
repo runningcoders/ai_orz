@@ -64,7 +64,7 @@ async fn test_create_and_find_by_id(pool: SqlitePool) {
 
     let found: Option<Agent> = domain
         .agent_manage()
-        .get_agent(ctx, &agent.id())
+        .get_agent(ctx, &agent.id(), Default::default())
         .await
         .unwrap();
     assert_eq!(found.unwrap().name(), "TestAgent");
@@ -108,7 +108,7 @@ async fn test_update_agent(pool: SqlitePool) {
 
     let found: Option<Agent> = domain
         .agent_manage()
-        .get_agent(ctx, &updated.id())
+        .get_agent(ctx, &updated.id(), Default::default())
         .await
         .unwrap();
     assert_eq!(found.unwrap().name(), "Updated");
@@ -132,7 +132,7 @@ async fn test_delete_agent(pool: SqlitePool) {
         .unwrap();
     let found: Option<Agent> = domain
         .agent_manage()
-        .get_agent(ctx, &agent.id())
+        .get_agent(ctx, &agent.id(), Default::default())
         .await
         .unwrap();
     assert!(found.is_none());
@@ -159,7 +159,7 @@ async fn test_transition_status_persists_valid_agent_lifecycle(pool: SqlitePool)
 
     let found = domain
         .agent_manage()
-        .get_agent(ctx, agent.id())
+        .get_agent(ctx, agent.id(), Default::default())
         .await
         .unwrap()
         .expect("transitioned agent should be readable");
@@ -188,7 +188,7 @@ async fn test_transition_status_rejects_invalid_agent_lifecycle(pool: SqlitePool
 
     let found = domain
         .agent_manage()
-        .get_agent(ctx, agent.id())
+        .get_agent(ctx, agent.id(), Default::default())
         .await
         .unwrap()
         .expect("rejected transition should keep agent readable");

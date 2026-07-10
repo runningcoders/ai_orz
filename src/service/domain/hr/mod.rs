@@ -106,7 +106,7 @@ pub trait AgentManage: Send + Sync {
     async fn create_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<()>;
 
     /// 获取 Agent
-    async fn get_agent(&self, ctx: RequestContext, id: &str) -> Result<Option<Agent>>;
+    async fn get_agent(&self, ctx: RequestContext, id: &str, options: crate::service::dal::agent::AgentFetchOptions) -> Result<Option<Agent>>;
 
     /// 通用综合查询
     ///

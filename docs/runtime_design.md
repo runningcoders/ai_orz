@@ -3,9 +3,10 @@
 > 🎯 **本文档定位**：Runtime Domain（运行时领域）的整体设计大纲与逻辑思路
 >
 > 范围：只覆盖**总纲与核心理念**，不下沉到具体工具实现与代码细节
-> 状态：v1.0（2026-07-10）
+> 状态：v2.0（2026-07-10）
 >
 > **更新记录**：
+> - v2.0 (2026-07-10): Phase 3 多回合循环控制落地，轮次限制、任务完成检测、Prompt 差异化、工具失败注入
 > - v1.0 (2026-07-10): Phase 2 神经工具集落地，8 个神经工具全部实现，自动回复移除，548 测试通过
 > 关联文档：
 > - [ARCHITECTURE.md](./ARCHITECTURE.md) - 项目整体架构
@@ -1814,6 +1815,8 @@ pub enum AgentRuntimeState {
 
 | 日期 | 版本 | 变更 |
 |------|------|------|
+| 2026-07-10 | v2.0 | 新增第二十一章：多回合循环控制设计；轮次限制、任务完成检测、Prompt 上下文差异化、工具失败计数注入、唤醒失败事件记录 |
+| 2026-07-10 | v1.0 | Phase 2 神经工具集完整落地：8 个神经工具全部实现，自动回复移除，548 测试通过 |
 | 2026-07-08 | v0.8 | 新增第十九章：Agent 运行时状态管理完整设计；纯内存状态机、DashMap 并发安全、消费时校验、分层注入机制 |
 | 2026-05-28 | v0.7 | 新增第十八章：记忆 Trace 闭环架构 + PO 自格式化重构完成；BrainDal 统一思考入口；简化 Trace 写入避免二次 IO；统一 Runtime 域内 Trace 写入路径；整体进度 ~93% |
 | 2026-05-26 | v0.6 | 新增第十七章：架构重构 + 角色分工完成；对齐标准 Domain trait 组织方式；新增用户画像功能（客服专用）；消息链 ID 暴露给 Agent 自主读取；整体进度 ~86% |
@@ -1822,5 +1825,230 @@ pub enum AgentRuntimeState {
 | 2026-05-25 | v0.3 | 新增第十一章：可执行落地方案（第一阶段最小可用唤醒），包含能力盘点、6 步流程、4 个模块修改清单、开发顺序 |
 | 2026-05-25 | v0.2 | 新增第九章：唤醒 Agent 操作的具体执行流程（12 步）、神经工具执行机制、ContextAssembly 拼装逻辑、AwakenOutcome 设计哲学 |
 | 2026-05-25 | v0.1 | 初版草案，覆盖设计总纲与待拍板点 |
+
+---
+
+## 二十一、多回合循环控制设计（Phase 3）
+
+> 📌 **本章定位**：Runtime Domain Phase 3 的完整设计文档，涵盖多回合循环的控制机制、统计数据注入、Prompt 差异化等核心能力。
+>
+> **完成状态**：✅ 已全部实现（2026-07-10），554 个测试 100% 通过
+
+### 21.1 设计目标
+
+Phase 3 的核心目标是让 Agent 在多回合对话中能够：
+1. **自主控制循环**：通过 `mark_done` 神经工具显式标记任务完成
+2. **遵守轮次限制**：不陷入无限思考循环
+3. **感知任务状态**：任务完成后自动停止唤醒
+4. **差异化理解上下文**：根据消息类型调整行为
+5. **规避失败工具**：对高失败率工具保持谨慎
+
+### 21.2 核心机制
+
+#### 21.2.1 轮次限制检查
+
+**设计原则**：轮次限制在消费者层实现，利用统计模块查询当前任务的唤醒次数，与 Agent 配置的 `max_thinking_depth` 对比。
+
+**执行流程**：
+```
+消息消费者收到 Agent 消息
+    │
+    ├── 查询 Agent（含统计信息）
+    │       └── AgentFetchOptions { with_stats: true, stats_task_id: Some(task_id) }
+    │
+    ├── 检查轮次限制
+    │       └── 如果 call_summary.total_calls >= max_thinking_depth
+    │               └── 发送提示消息，终止唤醒
+    │
+    └── 正常唤醒 Agent
+```
+
+**关键代码位置**：`src/consumer/message.rs` → `handle_agent_message()`
+
+**设计要点**：
+- 统计数据通过 `AgentFetchOptions` 参数按需加载，避免每次查询都获取统计信息
+- 使用 `agent.po.get_runtime_config()` 解析运行时配置（JSON 格式）
+- 超限后发送系统提示消息，告知用户"思考深度已达上限"
+
+#### 21.2.2 任务完成状态检测
+
+**设计原则**：唤醒前检查关联任务的状态，已完成/已取消/已归档的任务不再唤醒 Agent。
+
+**执行流程**：
+```
+消息消费者收到 Agent 消息
+    │
+    ├── 检查任务状态（如果消息关联了 task_id）
+    │       └── ProjectDomain.task_manage().get(ctx, task_id)
+    │               └── 如果任务状态 == Completed/Cancelled/Archived
+    │                       └── 记录日志，跳过唤醒
+    │
+    └── 正常唤醒 Agent
+```
+
+**关键代码位置**：`src/consumer/message.rs` → `handle_agent_message()`
+
+**设计要点**：
+- 通过 `ProjectDomain` 查询任务状态，保持分层架构
+- 三种终止状态：`Completed`（已完成）、`Cancelled`（已取消）、`Archived`（已归档）
+
+#### 21.2.3 Prompt 上下文差异化
+
+**设计原则**：不同类型的消息在 Prompt 中使用不同的标签，让 Agent 清楚理解当前触发的原因。
+
+**消息类型与标签对应关系**：
+
+| 消息类型 | Prompt 标签 | 说明 |
+|----------|------------|------|
+| `Text`（用户文本） | 【当前消息】 | 常规用户输入 |
+| `ToolCallResult`（工具结果） | 【工具执行结果】 | 工具调用返回的结果 |
+| `ToolCallRequest`（工具请求） | 【工具调用请求】 | Agent 发起的工具调用 |
+| `ConfirmRequest`（确认请求） | 【确认请求】 | 需要用户确认的操作 |
+| `ConfirmResponse`（确认回复） | 【确认回复】 | 用户的确认结果 |
+| `Image/File/Audio/Video` | 【当前消息】 | 媒体类消息 |
+
+**关键代码位置**：
+- `src/models/message.rs` → `MessagePo::to_prompt()` - 消息内容格式化
+- `src/service/domain/runtime/context_assembly.rs` → `PromptBuilder::current_message()` - 标签选择
+
+**设计要点**：
+- `to_prompt()` 方法根据消息类型调整内容标签（【消息内容】/【执行结果】/【调用详情】）
+- `PromptBuilder` 根据消息类型选择外层标签
+
+#### 21.2.4 工具失败计数注入
+
+**设计原则**：在 Prompt 中注入工具失败统计，提醒 Agent 谨慎使用高失败率工具。
+
+**执行流程**：
+```
+PromptBuilder.build()
+    │
+    ├── 工具说明（【可用 Manual 工具】）
+    │
+    ├── 工具失败警告（【工具失败警告】）← 有失败时才显示
+    │       └── 列出失败次数 > 0 的工具
+    │
+    └── 当前消息
+```
+
+**关键代码位置**：`src/service/domain/runtime/context_assembly.rs` → `PromptBuilder`
+
+**设计要点**：
+- `tool_failures` 字段存储 `(工具名称, 失败次数)` 元组列表
+- 只有存在失败工具时才显示警告区块
+- 警告格式："以下工具近期失败次数较多，请谨慎使用或考虑替代方案"
+
+#### 21.2.5 唤醒失败事件记录
+
+**设计原则**：唤醒失败时也记录统计事件，便于后续分析和排查问题。
+
+**执行流程**：
+```
+Awakening.awaken()
+    │
+    ├── 调用大脑思考
+    │       └── BrainDal.think()
+    │               ├── 成功 → 记录 status="success"
+    │               └── 失败 → 记录 status="failed: {error}"
+    │
+    └── 返回结果
+```
+
+**关键代码位置**：`src/service/domain/runtime/awakening.rs` → `awaken()`
+
+**设计要点**：
+- 使用 `match think_result` 捕获成功/失败两种情况
+- 失败时记录错误信息到 `status` 字段
+- 无论成功失败，都记录耗时 `duration_ms`
+
+### 21.3 附带信息模式（Fetch Options）
+
+**设计原则**：通过 `XxxFetchOptions` 结构体控制实体查询时是否加载额外信息，避免接口膨胀。
+
+**AgentFetchOptions 结构**：
+```rust
+pub struct AgentFetchOptions {
+    pub with_runtime_state: Option<bool>,    // 是否加载运行时状态（默认 true）
+    pub with_stats: Option<bool>,            // 是否加载统计信息
+    pub stats_task_id: Option<String>,       // 统计过滤条件（with_stats=true 时生效）
+}
+```
+
+**使用示例**：
+```rust
+// 获取 Agent，同时加载统计信息
+let agent = hr_domain.agent_manage().get_agent(
+    ctx,
+    agent_id,
+    AgentFetchOptions {
+        with_stats: Some(true),
+        stats_task_id: Some(task_id),
+        ..Default::default()
+    },
+).await?;
+```
+
+**设计要点**：
+- 参数全部可选，使用 `Option<bool>` 而非 `bool`，便于区分"未指定"和"明确指定"
+- 默认 `with_runtime_state` 为 `None`（内部处理为 `true`）
+- `stats_task_id` 仅在 `with_stats` 为 `Some(true)` 时生效
+
+### 21.4 统计 DAO 扩展
+
+**设计原则**：为工具调用统计新增专用 DAO，与现有的 Agent/Project/Task/ModelProvider 统计 DAO 保持一致的设计模式。
+
+**ToolStatsDao 接口**：
+```rust
+pub trait ToolStatsDao: Send + Sync {
+    async fn query_tool_calls(&self, ctx, query) -> Result<Vec<JsonValue>>;
+    async fn sum_calls(&self, ctx, query) -> Result<u64>;
+    async fn sum_failed_calls(&self, ctx, query) -> Result<u64>;
+    async fn get_stats(&self, ctx, query, options) -> Result<ToolStats>;
+}
+```
+
+**ToolStats 结构**：
+```rust
+pub struct ToolStats {
+    pub call_summary: Option<CallSummary>,    // 调用次数汇总
+    pub failed_count: Option<u64>,           // 失败次数
+}
+```
+
+**关键代码位置**：`src/service/dao/tool/stats_duckdb.rs`
+
+### 21.5 代码清单
+
+| 文件 | 类型 | 改动内容 |
+|------|------|---------|
+| `common/src/models/stats.rs` | 修改 | 新增 `ToolStats` 结构体 |
+| `src/service/dao/tool/mod.rs` | 修改 | 新增 `ToolStatsDao` trait |
+| `src/service/dao/tool/stats_duckdb.rs` | 新增 | ToolStatsDao 的 DuckDB 实现 |
+| `src/service/dal/tool.rs` | 修改 | 新增 `get_stats` 方法 |
+| `src/service/dal/agent.rs` | 修改 | 新增 `AgentFetchOptions` + 统计注入 |
+| `src/pkg/stats/mod.rs` | 修改 | `AgentAwakeEvent` 新增 `task_id` 字段 |
+| `src/consumer/message.rs` | 修改 | 轮次限制检查 + 任务完成检测 |
+| `src/models/message.rs` | 修改 | `to_prompt()` 按消息类型差异化 |
+| `src/service/domain/runtime/context_assembly.rs` | 修改 | `PromptBuilder` 新增工具失败警告 |
+| `src/service/domain/runtime/awakening.rs` | 修改 | 唤醒失败时记录事件 |
+| `src/consumer/message_tests.rs` | 修改 | 新增 MockProjectDomain |
+
+### 21.6 测试统计
+
+| 指标 | 数值 | 说明 |
+|------|------|------|
+| 总测试数 | 554 | 比 Phase 2 增加 6 个 |
+| 通过率 | 100% | ✅ 全部通过 |
+| 新增测试文件 | 1 个 | `src/service/dao/tool/stats_duckdb_test.rs` |
+| 修改测试文件 | 1 个 | `src/consumer/message_tests.rs`（新增 MockProjectDomain） |
+
+### 21.7 不在本期范围
+
+| 功能 | 说明 | 计划阶段 |
+|------|------|---------|
+| 工具失败率实时计算 | 目前仅记录失败次数，未计算失败率 | Phase 4 |
+| 记忆中轮次状态追踪 | 轮次信息未写入记忆系统 | Phase 4 |
+| 多任务并发限制 | 当前仅按单任务轮次限制 | Phase 5 |
+| 动态调整思考深度 | 根据任务复杂度动态调整 | Phase 5 |
 
 

@@ -34,6 +34,14 @@ impl AgentStatsDao for AgentStatsDaoDuckDbImpl {
         };
         query.filters.insert(0, agent_filter);
 
+        if let Some(task_id) = &query.task_id {
+            let task_filter = StatFilter::Equals {
+                key: "task_id".to_string(),
+                value: JsonValue::String(task_id.clone()),
+            };
+            query.filters.insert(1, task_filter);
+        }
+
         let stats = ctx.stats();
         let table_name = self.awake_table_name(stats);
 
