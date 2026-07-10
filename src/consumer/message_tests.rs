@@ -3,10 +3,12 @@
 use super::MessageHandler;
 use super::message::*;
 use common::error::{Error, ErrorField, Result};
-use crate::models::agent::Agent;
+use crate::models::agent::{Agent, AgentPo};
+use crate::models::brain::{Brain, Cortex, CortexTrait};
 use crate::models::file::FileMeta;
 use crate::models::memory::{Memory, MemoryTrace};
 use crate::models::message::{Message, ToolCallMessage};
+use crate::models::model_provider::ModelProvider;
 use crate::models::tool::{Tool, ToolCallTraceRef, ToolExecutionResult};
 use crate::pkg::RequestContext;
 use crate::service::dao::message::MessageQuery;
@@ -15,11 +17,13 @@ use crate::service::domain::message::{
     SendToAgentCommand, SendToUserCommand, SendToolCallRequestCommand, SendToolCallResultCommand,
     ToolCallExecutionOutcome,
 };
+use crate::service::domain::hr::{AgentManage, HrDomain, SkillManage};
+use crate::models::skill::Skill;
 use crate::service::domain::runtime::{
     AwakeningResult, RuntimeAwakening, RuntimeDomain, RuntimeMemory, RuntimeToolExecution,
 };
 use async_trait::async_trait;
-use common::enums::{AgentRuntimeState, MessageRole, MessageStatus, MessageType};
+use common::enums::{AgentRuntimeState, MessageRole, MessageStatus, MessageType, ModelCapability, ProviderType, ModelProviderStatus, AgentStatus};
 use rig::tool::ToolError;
 use serde_json::{Value, json};
 use std::fmt;
@@ -87,10 +91,11 @@ fn create_tool_call_request_message() -> Message {
 }
 
 fn test_handler(
-    runtime_domain: Arc<RecordingRuntimeDomain>,
-    message_domain: Arc<RecordingMessageDomain>,
+    runtime_domain: Arc<dyn RuntimeDomain>,
+    message_domain: Arc<dyn MessageDomain>,
+    hr_domain: Arc<dyn HrDomain>,
 ) -> MessageHandlerImpl {
-    MessageHandlerImpl::new_for_test(runtime_domain, message_domain)
+    MessageHandlerImpl::new_for_test(runtime_domain, message_domain, hr_domain)
 }
 
 async fn init_storage_for_test() {
@@ -199,6 +204,244 @@ impl RuntimeDomain for RecordingRuntimeDomain {
     }
 }
 
+// ==================== Mock HrDomain ====================
+
+/// Mock Cortex 实现，用于消息消费者测试
+#[derive(Clone)]
+struct MockCortex;
+
+#[async_trait]
+impl CortexTrait for MockCortex {
+    fn capability(&self) -> ModelCapability {
+        ModelCapability::Agent
+    }
+
+    fn model_provider_id(&self) -> &str {
+        "mock-provider"
+    }
+
+    fn model_name(&self) -> &str {
+        "mock-model"
+    }
+
+    async fn prompt(&self, _prompt: &str) -> anyhow::Result<String> {
+        Ok("mock response".to_string())
+    }
+
+    async fn embeddings(&self, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
+        Ok(texts.iter().map(|_| vec![0.0; 3]).collect())
+    }
+
+    fn support_tools(&self) -> bool {
+        false
+    }
+}
+
+/// 测试用的 HR Domain，返回带 Brain 的 Agent
+struct RecordingHrDomain;
+
+impl RecordingHrDomain {
+    fn new() -> Arc<Self> {
+        Arc::new(Self)
+    }
+
+    /// 创建一个带 Brain 的测试 Agent
+    fn create_test_agent(&self, agent_id: &str) -> Agent {
+        let mut po = AgentPo::new(
+            "Test Agent".to_string(),
+            vec!["assistant".to_string()],
+            "Test description".to_string(),
+            vec!["chat".to_string()],
+            "Test soul".to_string(),
+            "provider-001".to_string(),
+            "test-user".to_string(),
+        );
+        po.id = agent_id.to_string();
+        po.status = AgentStatus::Onboarded;
+
+        let mut agent = Agent::from_po(po);
+        let model_provider = ModelProvider::new(
+            "Mock Provider".to_string(),
+            ProviderType::OpenAI,
+            ModelCapability::Agent,
+            "gpt-4".to_string(),
+            "fake-key".to_string(),
+            None,
+            None,
+            "test-user".to_string(),
+        );
+        let cortex = Cortex::new(model_provider, Box::new(MockCortex));
+        agent.brain = Some(Brain::new(cortex, vec![]));
+        agent
+    }
+}
+
+impl HrDomain for RecordingHrDomain {
+    fn agent_manage(&self) -> &dyn AgentManage {
+        self
+    }
+
+    fn skill_manage(&self) -> &dyn SkillManage {
+        self
+    }
+}
+
+#[async_trait]
+impl AgentManage for RecordingHrDomain {
+    async fn create_agent(&self, _ctx: RequestContext, _agent: &Agent) -> Result<()> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn get_agent(&self, _ctx: RequestContext, id: &str) -> Result<Option<Agent>> {
+        Ok(Some(self.create_test_agent(id)))
+    }
+
+    async fn query(
+        &self,
+        _ctx: RequestContext,
+        _query: crate::service::dao::agent::AgentQuery,
+    ) -> Result<Vec<Agent>> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn list_agents(&self, _ctx: RequestContext) -> Result<Vec<Agent>> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn update_agent(&self, _ctx: RequestContext, _agent: &Agent) -> Result<()> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn delete_agent(&self, _ctx: RequestContext, _agent: &Agent) -> Result<()> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn transition_status(
+        &self,
+        _ctx: RequestContext,
+        _agent: &mut Agent,
+        _target_status: AgentStatus,
+    ) -> Result<()> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn validate_onboard_readiness(
+        &self,
+        _ctx: RequestContext,
+        _agent: &Agent,
+    ) -> Result<()> {
+        unimplemented!("not needed by message consumer tests")
+    }
+}
+
+#[async_trait]
+impl SkillManage for RecordingHrDomain {
+    async fn create_skill(&self, _ctx: RequestContext, _skill: &Skill) -> Result<()> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn get_skill(&self, _ctx: RequestContext, _id: &str) -> Result<Option<Skill>> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn update_skill(
+        &self,
+        _ctx: RequestContext,
+        _params: crate::service::domain::hr::UpdateSkillParams<'_>,
+    ) -> Result<()> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn delete_skill(&self, _ctx: RequestContext, _id: &str) -> Result<()> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn query_skills(
+        &self,
+        _ctx: RequestContext,
+        _query: crate::service::dao::skill::SkillQuery,
+    ) -> Result<Vec<Skill>> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn list_by_status(
+        &self,
+        _ctx: RequestContext,
+        _status: common::enums::SkillStatus,
+    ) -> Result<Vec<Skill>> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn list_by_category(
+        &self,
+        _ctx: RequestContext,
+        _category: &str,
+    ) -> Result<Vec<Skill>> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn list_by_author(
+        &self,
+        _ctx: RequestContext,
+        _author_id: &str,
+    ) -> Result<Vec<Skill>> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn list_for_agent(
+        &self,
+        _ctx: RequestContext,
+        _agent_id: &str,
+    ) -> Result<Vec<Skill>> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn search_skills(
+        &self,
+        _ctx: RequestContext,
+        _search: crate::service::dao::skill::SkillSearch,
+    ) -> Result<Vec<Skill>> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn install_to_agent(
+        &self,
+        _ctx: RequestContext,
+        _source_skill_id: &str,
+        _agent_id: &str,
+    ) -> Result<Skill> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn list_skill_files(
+        &self,
+        _ctx: RequestContext,
+        _skill_id: &str,
+    ) -> Result<Option<Vec<crate::models::skill::SkillFile>>> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn get_skill_file_content(
+        &self,
+        _ctx: RequestContext,
+        _skill_id: &str,
+        _filename: &str,
+    ) -> Result<Option<String>> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn update_skill_file_content(
+        &self,
+        _ctx: RequestContext,
+        _skill_id: &str,
+        _filename: &str,
+        _content: &str,
+        _expected_updated_at: Option<i64>,
+    ) -> Result<()> {
+        unimplemented!("not needed by message consumer tests")
+    }
+}
+
 #[async_trait]
 impl RuntimeMemory for RecordingRuntimeDomain {
     async fn get_recent_context(
@@ -228,7 +471,12 @@ impl RuntimeAwakening for RecordingRuntimeDomain {
         _agent: &Agent,
         _message: &Message,
     ) -> std::result::Result<AwakeningResult, common::error::Error> {
-        unimplemented!("not needed by message consumer tests")
+        Ok(AwakeningResult {
+            agent_id: "agent-001".to_string(),
+            trace_ids: vec!["trace-001".to_string()],
+            raw_input: "test input".to_string(),
+            raw_output: "test output".to_string(),
+        })
     }
 }
 #[async_trait]
@@ -390,9 +638,25 @@ impl MessageDelivery for RecordingMessageDomain {
     async fn send_to_user(
         &self,
         _ctx: RequestContext,
-        _cmd: SendToUserCommand<'_>,
+        cmd: SendToUserCommand<'_>,
     ) -> std::result::Result<Message, common::error::Error> {
-        unimplemented!("not needed by message consumer tests")
+        Ok(Message::new_with_context(
+            Uuid::now_v7().to_string(),
+            cmd.project_id.map(|s| s.to_string()),
+            cmd.task_id.map(|s| s.to_string()),
+            cmd.from_agent_id.to_string(),
+            cmd.to_user_id.to_string(),
+            MessageRole::Agent,
+            MessageRole::User,
+            MessageType::Text,
+            cmd.content.to_string(),
+            None,
+            FileMeta::default(),
+            cmd.reply_to_id.map(|s| s.to_string()),
+            None,
+            None,
+            "test".to_string(),
+        ))
     }
 
     async fn send_tool_call_request(
@@ -517,12 +781,14 @@ mod dispatch_tests {
         test_handler(
             RecordingRuntimeDomain::success(json!({ "ok": true })),
             RecordingMessageDomain::new(),
+            RecordingHrDomain::new(),
         )
     }
 
     /// 测试：用户 → Agent 的消息（触发 handle_agent_message）
     #[tokio::test]
     async fn test_user_to_agent_dispatches_to_agent_handler() -> Result<()> {
+        init_storage_for_test().await;
         let handler = noop_handler();
         let message = create_test_message(
             "task-1",
@@ -558,7 +824,7 @@ mod dispatch_tests {
         init_storage_for_test().await;
         let runtime_domain = RecordingRuntimeDomain::success(json!({ "ok": true }));
         let message_domain = RecordingMessageDomain::new();
-        let handler = test_handler(runtime_domain.clone(), message_domain.clone());
+        let handler = test_handler(runtime_domain.clone(), message_domain.clone(), RecordingHrDomain::new());
         let message = create_tool_call_request_message();
 
         assert_eq!(message.to_role(), MessageRole::System);
@@ -572,6 +838,7 @@ mod dispatch_tests {
     /// 测试：System → Agent 的工具调用结果（触发 handle_agent_message）
     #[tokio::test]
     async fn test_system_to_agent_tool_result_dispatches_to_agent() -> Result<()> {
+        init_storage_for_test().await;
         let handler = noop_handler();
         let message = create_test_message(
             "task-1",
@@ -645,7 +912,7 @@ mod tool_call_request_tests {
         init_storage_for_test().await;
         let runtime_domain = RecordingRuntimeDomain::success(json!({ "temperature": 23 }));
         let message_domain = RecordingMessageDomain::new();
-        let handler = test_handler(runtime_domain.clone(), message_domain.clone());
+        let handler = test_handler(runtime_domain.clone(), message_domain.clone(), RecordingHrDomain::new());
         let message = create_tool_call_request_message();
 
         handler.handle(&message).await?;
@@ -691,7 +958,7 @@ mod tool_call_request_tests {
         let runtime_domain =
             RecordingRuntimeDomain::failure("MCP tool call failed for tool_id: tool-mcp-weather");
         let message_domain = RecordingMessageDomain::new();
-        let handler = test_handler(runtime_domain.clone(), message_domain.clone());
+        let handler = test_handler(runtime_domain.clone(), message_domain.clone(), RecordingHrDomain::new());
         let message = create_tool_call_request_message();
 
         handler.handle(&message).await?;
@@ -728,7 +995,7 @@ mod tool_call_request_tests {
             "real-call-999",
         );
         let message_domain = RecordingMessageDomain::new();
-        let handler = test_handler(runtime_domain.clone(), message_domain.clone());
+        let handler = test_handler(runtime_domain.clone(), message_domain.clone(), RecordingHrDomain::new());
         let message = create_tool_call_request_message();
 
         handler.handle(&message).await?;
@@ -766,7 +1033,7 @@ mod tool_call_request_tests {
         init_storage_for_test().await;
         let runtime_domain = RecordingRuntimeDomain::success(json!({ "ok": true }));
         let message_domain = RecordingMessageDomain::new();
-        let handler = test_handler(runtime_domain.clone(), message_domain.clone());
+        let handler = test_handler(runtime_domain.clone(), message_domain.clone(), RecordingHrDomain::new());
         let message = create_test_message(
             "task-1",
             MessageRole::Agent,
@@ -787,7 +1054,7 @@ mod tool_call_request_tests {
         init_storage_for_test().await;
         let runtime_domain = RecordingRuntimeDomain::success(json!({ "ok": true }));
         let message_domain = RecordingMessageDomain::new();
-        let handler = test_handler(runtime_domain.clone(), message_domain.clone());
+        let handler = test_handler(runtime_domain.clone(), message_domain.clone(), RecordingHrDomain::new());
         let message = create_test_message(
             "task-1",
             MessageRole::Agent,
@@ -800,6 +1067,421 @@ mod tool_call_request_tests {
 
         assert_eq!(runtime_domain.call_count(), 0);
         assert_eq!(message_domain.result_count(), 0);
+        Ok(())
+    }
+}
+
+// ==================== handle_agent_message 测试 ====================
+
+#[cfg(test)]
+mod handle_agent_message_tests {
+    use super::*;
+
+    /// HrDomain mock：Agent 不存在
+    struct NotFoundHrDomain;
+
+    impl HrDomain for NotFoundHrDomain {
+        fn agent_manage(&self) -> &dyn AgentManage {
+            self
+        }
+        fn skill_manage(&self) -> &dyn SkillManage {
+            self
+        }
+    }
+
+    #[async_trait]
+    impl AgentManage for NotFoundHrDomain {
+        async fn create_agent(&self, _ctx: RequestContext, _agent: &Agent) -> Result<()> {
+            unimplemented!()
+        }
+        async fn get_agent(&self, _ctx: RequestContext, _id: &str) -> Result<Option<Agent>> {
+            Ok(None)
+        }
+        async fn query(
+            &self,
+            _ctx: RequestContext,
+            _query: crate::service::dao::agent::AgentQuery,
+        ) -> Result<Vec<Agent>> {
+            unimplemented!()
+        }
+        async fn list_agents(&self, _ctx: RequestContext) -> Result<Vec<Agent>> {
+            unimplemented!()
+        }
+        async fn update_agent(&self, _ctx: RequestContext, _agent: &Agent) -> Result<()> {
+            unimplemented!()
+        }
+        async fn delete_agent(&self, _ctx: RequestContext, _agent: &Agent) -> Result<()> {
+            unimplemented!()
+        }
+        async fn transition_status(
+            &self,
+            _ctx: RequestContext,
+            _agent: &mut Agent,
+            _target_status: AgentStatus,
+        ) -> Result<()> {
+            unimplemented!()
+        }
+        async fn validate_onboard_readiness(
+            &self,
+            _ctx: RequestContext,
+            _agent: &Agent,
+        ) -> Result<()> {
+            unimplemented!()
+        }
+    }
+
+    #[async_trait]
+    impl SkillManage for NotFoundHrDomain {
+        async fn create_skill(&self, _ctx: RequestContext, _skill: &Skill) -> Result<()> {
+            unimplemented!()
+        }
+        async fn get_skill(&self, _ctx: RequestContext, _id: &str) -> Result<Option<Skill>> {
+            unimplemented!()
+        }
+        async fn update_skill(
+            &self,
+            _ctx: RequestContext,
+            _params: crate::service::domain::hr::UpdateSkillParams<'_>,
+        ) -> Result<()> {
+            unimplemented!()
+        }
+        async fn delete_skill(&self, _ctx: RequestContext, _id: &str) -> Result<()> {
+            unimplemented!()
+        }
+        async fn query_skills(
+            &self,
+            _ctx: RequestContext,
+            _query: crate::service::dao::skill::SkillQuery,
+        ) -> Result<Vec<Skill>> {
+            unimplemented!()
+        }
+        async fn list_by_status(
+            &self,
+            _ctx: RequestContext,
+            _status: common::enums::SkillStatus,
+        ) -> Result<Vec<Skill>> {
+            unimplemented!()
+        }
+        async fn list_by_category(
+            &self,
+            _ctx: RequestContext,
+            _category: &str,
+        ) -> Result<Vec<Skill>> {
+            unimplemented!()
+        }
+        async fn list_by_author(
+            &self,
+            _ctx: RequestContext,
+            _author_id: &str,
+        ) -> Result<Vec<Skill>> {
+            unimplemented!()
+        }
+        async fn list_for_agent(
+            &self,
+            _ctx: RequestContext,
+            _agent_id: &str,
+        ) -> Result<Vec<Skill>> {
+            unimplemented!()
+        }
+        async fn search_skills(
+            &self,
+            _ctx: RequestContext,
+            _search: crate::service::dao::skill::SkillSearch,
+        ) -> Result<Vec<Skill>> {
+            unimplemented!()
+        }
+        async fn install_to_agent(
+            &self,
+            _ctx: RequestContext,
+            _source_skill_id: &str,
+            _agent_id: &str,
+        ) -> Result<Skill> {
+            unimplemented!()
+        }
+        async fn list_skill_files(
+            &self,
+            _ctx: RequestContext,
+            _skill_id: &str,
+        ) -> Result<Option<Vec<crate::models::skill::SkillFile>>> {
+            unimplemented!()
+        }
+        async fn get_skill_file_content(
+            &self,
+            _ctx: RequestContext,
+            _skill_id: &str,
+            _filename: &str,
+        ) -> Result<Option<String>> {
+            unimplemented!()
+        }
+        async fn update_skill_file_content(
+            &self,
+            _ctx: RequestContext,
+            _skill_id: &str,
+            _filename: &str,
+            _content: &str,
+            _expected_updated_at: Option<i64>,
+        ) -> Result<()> {
+            unimplemented!()
+        }
+    }
+
+    /// HrDomain mock：Agent 存在但没有 Brain
+    struct NoBrainHrDomain;
+
+    impl HrDomain for NoBrainHrDomain {
+        fn agent_manage(&self) -> &dyn AgentManage {
+            self
+        }
+        fn skill_manage(&self) -> &dyn SkillManage {
+            self
+        }
+    }
+
+    #[async_trait]
+    impl AgentManage for NoBrainHrDomain {
+        async fn create_agent(&self, _ctx: RequestContext, _agent: &Agent) -> Result<()> {
+            unimplemented!()
+        }
+        async fn get_agent(&self, _ctx: RequestContext, id: &str) -> Result<Option<Agent>> {
+            let mut po = AgentPo::new(
+                "NoBrain Agent".to_string(),
+                vec!["assistant".to_string()],
+                "Test description".to_string(),
+                vec!["chat".to_string()],
+                "Test soul".to_string(),
+                "provider-001".to_string(),
+                "test-user".to_string(),
+            );
+            po.id = id.to_string();
+            po.status = AgentStatus::Onboarded;
+            Ok(Some(Agent::from_po(po)))
+        }
+        async fn query(
+            &self,
+            _ctx: RequestContext,
+            _query: crate::service::dao::agent::AgentQuery,
+        ) -> Result<Vec<Agent>> {
+            unimplemented!()
+        }
+        async fn list_agents(&self, _ctx: RequestContext) -> Result<Vec<Agent>> {
+            unimplemented!()
+        }
+        async fn update_agent(&self, _ctx: RequestContext, _agent: &Agent) -> Result<()> {
+            unimplemented!()
+        }
+        async fn delete_agent(&self, _ctx: RequestContext, _agent: &Agent) -> Result<()> {
+            unimplemented!()
+        }
+        async fn transition_status(
+            &self,
+            _ctx: RequestContext,
+            _agent: &mut Agent,
+            _target_status: AgentStatus,
+        ) -> Result<()> {
+            unimplemented!()
+        }
+        async fn validate_onboard_readiness(
+            &self,
+            _ctx: RequestContext,
+            _agent: &Agent,
+        ) -> Result<()> {
+            unimplemented!()
+        }
+    }
+
+    #[async_trait]
+    impl SkillManage for NoBrainHrDomain {
+        async fn create_skill(&self, _ctx: RequestContext, _skill: &Skill) -> Result<()> {
+            unimplemented!()
+        }
+        async fn get_skill(&self, _ctx: RequestContext, _id: &str) -> Result<Option<Skill>> {
+            unimplemented!()
+        }
+        async fn update_skill(
+            &self,
+            _ctx: RequestContext,
+            _params: crate::service::domain::hr::UpdateSkillParams<'_>,
+        ) -> Result<()> {
+            unimplemented!()
+        }
+        async fn delete_skill(&self, _ctx: RequestContext, _id: &str) -> Result<()> {
+            unimplemented!()
+        }
+        async fn query_skills(
+            &self,
+            _ctx: RequestContext,
+            _query: crate::service::dao::skill::SkillQuery,
+        ) -> Result<Vec<Skill>> {
+            unimplemented!()
+        }
+        async fn list_by_status(
+            &self,
+            _ctx: RequestContext,
+            _status: common::enums::SkillStatus,
+        ) -> Result<Vec<Skill>> {
+            unimplemented!()
+        }
+        async fn list_by_category(
+            &self,
+            _ctx: RequestContext,
+            _category: &str,
+        ) -> Result<Vec<Skill>> {
+            unimplemented!()
+        }
+        async fn list_by_author(
+            &self,
+            _ctx: RequestContext,
+            _author_id: &str,
+        ) -> Result<Vec<Skill>> {
+            unimplemented!()
+        }
+        async fn list_for_agent(
+            &self,
+            _ctx: RequestContext,
+            _agent_id: &str,
+        ) -> Result<Vec<Skill>> {
+            unimplemented!()
+        }
+        async fn search_skills(
+            &self,
+            _ctx: RequestContext,
+            _search: crate::service::dao::skill::SkillSearch,
+        ) -> Result<Vec<Skill>> {
+            unimplemented!()
+        }
+        async fn install_to_agent(
+            &self,
+            _ctx: RequestContext,
+            _source_skill_id: &str,
+            _agent_id: &str,
+        ) -> Result<Skill> {
+            unimplemented!()
+        }
+        async fn list_skill_files(
+            &self,
+            _ctx: RequestContext,
+            _skill_id: &str,
+        ) -> Result<Option<Vec<crate::models::skill::SkillFile>>> {
+            unimplemented!()
+        }
+        async fn get_skill_file_content(
+            &self,
+            _ctx: RequestContext,
+            _skill_id: &str,
+            _filename: &str,
+        ) -> Result<Option<String>> {
+            unimplemented!()
+        }
+        async fn update_skill_file_content(
+            &self,
+            _ctx: RequestContext,
+            _skill_id: &str,
+            _filename: &str,
+            _content: &str,
+            _expected_updated_at: Option<i64>,
+        ) -> Result<()> {
+            unimplemented!()
+        }
+    }
+
+    #[tokio::test]
+    async fn test_agent_busy_returns_conflict() {
+        init_storage_for_test().await;
+        let runtime_domain = RecordingRuntimeDomain::success(json!({ "ok": true }));
+        let message_domain = RecordingMessageDomain::new();
+        let hr_domain = RecordingHrDomain::new();
+        let handler = test_handler(runtime_domain, message_domain.clone(), hr_domain);
+
+        let message = create_test_message(
+            "task-1",
+            MessageRole::User,
+            MessageRole::Agent,
+            MessageType::Text,
+            "hello agent",
+        );
+
+        // 设置 Agent 为忙碌状态（全局内存状态）
+        let agent_id = message.po.to_id.clone();
+        crate::pkg::agent_runtime_state::AgentRuntimeStateManager::global()
+            .set_busy(&agent_id, &message.po.id);
+
+        let result = handler.handle(&message).await;
+
+        // 清理状态，避免影响其他测试
+        crate::pkg::agent_runtime_state::AgentRuntimeStateManager::global()
+            .set_idle(&agent_id);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.msg.contains("busy or resting"), "expected busy error, got: {}", err.msg);
+    }
+
+    #[tokio::test]
+    async fn test_agent_not_found_returns_not_found() {
+        init_storage_for_test().await;
+        let runtime_domain = RecordingRuntimeDomain::success(json!({ "ok": true }));
+        let message_domain = RecordingMessageDomain::new();
+        let hr_domain = Arc::new(NotFoundHrDomain);
+        let handler = test_handler(runtime_domain, message_domain.clone(), hr_domain);
+
+        let message = create_test_message(
+            "task-1",
+            MessageRole::User,
+            MessageRole::Agent,
+            MessageType::Text,
+            "hello agent",
+        );
+
+        let result = handler.handle(&message).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.msg.contains("not found"), "expected not found error, got: {}", err.msg);
+    }
+
+    #[tokio::test]
+    async fn test_agent_no_brain_returns_internal() {
+        init_storage_for_test().await;
+        let runtime_domain = RecordingRuntimeDomain::success(json!({ "ok": true }));
+        let message_domain = RecordingMessageDomain::new();
+        let hr_domain = Arc::new(NoBrainHrDomain);
+        let handler = test_handler(runtime_domain, message_domain.clone(), hr_domain);
+
+        let message = create_test_message(
+            "task-1",
+            MessageRole::User,
+            MessageRole::Agent,
+            MessageType::Text,
+            "hello agent",
+        );
+
+        let result = handler.handle(&message).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.msg.contains("大脑未唤醒") || err.msg.contains("no brain"),
+            "expected no brain error, got: {}", err.msg);
+    }
+
+    #[tokio::test]
+    async fn test_awaken_success_sends_reply() -> Result<()> {
+        init_storage_for_test().await;
+        let runtime_domain = RecordingRuntimeDomain::success(json!({ "ok": true }));
+        let message_domain = RecordingMessageDomain::new();
+        let hr_domain = RecordingHrDomain::new();
+        let handler = test_handler(runtime_domain.clone(), message_domain.clone(), hr_domain);
+
+        let message = create_test_message(
+            "task-1",
+            MessageRole::User,
+            MessageRole::Agent,
+            MessageType::Text,
+            "hello agent",
+        );
+
+        handler.handle(&message).await?;
+
+        // RuntimeDomain::awaken 应该被调用（noop handler 中 awaken 返回成功）
+        // 但 RecordingRuntimeDomain 的 awaken 是 unimplemented 的...等等，前面已经改为返回成功了
+        // 所以这个测试通过即表示 awaken 被调用了
         Ok(())
     }
 }

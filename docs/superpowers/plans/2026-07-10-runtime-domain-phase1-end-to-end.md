@@ -1,6 +1,6 @@
 # Runtime Domain Phase 1: End-to-End Message Flow Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Implement end-to-end message flow: user sends message → Agent thinks → Agent replies to user
 
@@ -41,7 +41,7 @@ async fn send_to_user(&self, ctx: RequestContext, cmd: SendToUserCommand<'_>) ->
 
 **Context:** MessageHandlerImpl needs HrDomain to load Agent entities with Brain configuration.
 
-- [ ] **Step 1: Add hr_domain field to MessageHandlerImpl struct**
+- [x] **Step 1: Add hr_domain field to MessageHandlerImpl struct**
 
 ```rust
 /// Message 处理器：业务逻辑
@@ -52,7 +52,7 @@ pub struct MessageHandlerImpl {
 }
 ```
 
-- [ ] **Step 2: Update new() constructor to inject HrDomain**
+- [x] **Step 2: Update new() constructor to inject HrDomain**
 
 ```rust
 /// 创建生产处理器（使用全局 Domain 单例）
@@ -65,7 +65,7 @@ pub fn new() -> Self {
 }
 ```
 
-- [ ] **Step 3: Update new_for_test() constructor to accept HrDomain parameter**
+- [x] **Step 3: Update new_for_test() constructor to accept HrDomain parameter**
 
 ```rust
 /// 创建测试处理器（显式注入 Domain，避免绑定全局单例）
@@ -83,12 +83,12 @@ pub fn new_for_test(
 }
 ```
 
-- [ ] **Step 4: Run cargo check to verify struct compiles**
+- [x] **Step 4: Run cargo check to verify struct compiles**
 
 Run: `cargo check --lib 2>&1 | grep -E "^error" | head -5`
 Expected: No errors (or errors about unused field, which is expected)
 
-- [ ] **Step 5: Commit struct changes**
+- [x] **Step 5: Commit struct changes**
 
 ```bash
 git add src/consumer/message.rs
@@ -104,7 +104,7 @@ git commit -m "feat(consumer): add hr_domain field to MessageHandlerImpl"
 
 **Context:** Need to rebuild RequestContext from MessagePo fields before calling Domain methods.
 
-- [ ] **Step 1: Create helper method to rebuild RequestContext from Message**
+- [x] **Step 1: Create helper method to rebuild RequestContext from Message**
 
 Add this method to `impl MessageHandlerImpl` block (after line 141):
 
@@ -147,12 +147,12 @@ fn rebuild_context(&self, message: &Message) -> crate::pkg::RequestContext {
 }
 ```
 
-- [ ] **Step 2: Run cargo check to verify method compiles**
+- [x] **Step 2: Run cargo check to verify method compiles**
 
 Run: `cargo check --lib 2>&1 | grep -E "^error" | head -5`
 Expected: No errors
 
-- [ ] **Step 3: Commit helper method**
+- [x] **Step 3: Commit helper method**
 
 ```bash
 git add src/consumer/message.rs
@@ -168,7 +168,7 @@ git commit -m "feat(consumer): add rebuild_context helper to reconstruct Request
 
 **Context:** Replace placeholder implementation with actual Agent loading and awakening logic.
 
-- [ ] **Step 1: Replace handle_agent_message implementation with full logic**
+- [x] **Step 1: Replace handle_agent_message implementation with full logic**
 
 Replace lines 128-141 with:
 
@@ -253,17 +253,17 @@ Replace lines 128-141 with:
     }
 ```
 
-- [ ] **Step 2: Run cargo check to verify full implementation compiles**
+- [x] **Step 2: Run cargo check to verify full implementation compiles**
 
 Run: `cargo check --lib 2>&1 | grep -E "^error" | head -10`
 Expected: No errors
 
-- [ ] **Step 3: Run all tests to ensure no regressions**
+- [x] **Step 3: Run all tests to ensure no regressions**
 
 Run: `cargo test --lib 2>&1 | tail -20`
 Expected: All 544+ tests pass
 
-- [ ] **Step 4: Commit full implementation**
+- [x] **Step 4: Commit full implementation**
 
 ```bash
 git add src/consumer/message.rs
@@ -285,7 +285,7 @@ git commit -m "feat(consumer): implement actual awaken() call in handle_agent_me
 
 **Context:** Need unit test to verify end-to-end flow works correctly.
 
-- [ ] **Step 1: Add test module at end of message.rs**
+- [x] **Step 1: Add test module at end of message.rs**
 
 Add at the very end of `src/consumer/message.rs`:
 
@@ -432,17 +432,17 @@ mod handle_agent_message_test {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it compiles and passes**
+- [x] **Step 2: Run test to verify it compiles and passes**
 
 Run: `cargo test --lib handle_agent_message_test::test_handle_agent_message_success 2>&1 | tail -20`
 Expected: Test passes
 
-- [ ] **Step 3: Run all tests to ensure no regressions**
+- [x] **Step 3: Run all tests to ensure no regressions**
 
 Run: `cargo test --lib 2>&1 | tail -10`
 Expected: All 544+ tests pass
 
-- [ ] **Step 4: Commit test**
+- [x] **Step 4: Commit test**
 
 ```bash
 git add src/consumer/message.rs
@@ -462,7 +462,7 @@ git commit -m "test(consumer): add unit test for handle_agent_message
 
 **Context:** Integration test to verify complete message flow from user to agent and back.
 
-- [ ] **Step 1: Create integration test file**
+- [x] **Step 1: Create integration test file**
 
 Create `src/consumer/message_integration_test.rs`:
 
@@ -555,7 +555,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Add test file to consumer module**
+- [x] **Step 2: Add test file to consumer module**
 
 Add to `src/consumer/mod.rs` (after other test module declarations):
 
@@ -564,12 +564,12 @@ Add to `src/consumer/mod.rs` (after other test module declarations):
 mod message_integration_test;
 ```
 
-- [ ] **Step 3: Run integration test**
+- [x] **Step 3: Run integration test**
 
 Run: `cargo test --lib message_integration_test::tests::test_end_to_end_message_flow 2>&1 | tail -20`
 Expected: Test passes
 
-- [ ] **Step 4: Commit integration test**
+- [x] **Step 4: Commit integration test**
 
 ```bash
 git add src/consumer/message_integration_test.rs src/consumer/mod.rs
@@ -589,7 +589,7 @@ git commit -m "test(consumer): add integration test for end-to-end message flow
 
 **Context:** Update roadmap to mark Phase 1 Task 1.1-1.6 as completed.
 
-- [ ] **Step 1: Update Phase 1 task checklist**
+- [x] **Step 1: Update Phase 1 task checklist**
 
 In `docs/runtime-domain-roadmap.md`, update the Phase 1 section:
 
@@ -606,7 +606,7 @@ In `docs/runtime-domain-roadmap.md`, update the Phase 1 section:
 | 1.6 | 唤醒失败的状态清理 | awaken 抛异常时确保 Agent 状态回到 Idle | P1 | ✅ 完成（awaken内部已实现） |
 ```
 
-- [ ] **Step 2: Update verification checklist**
+- [x] **Step 2: Update verification checklist**
 
 ```markdown
 ### 验收标准
@@ -616,7 +616,7 @@ In `docs/runtime-domain-roadmap.md`, update the Phase 1 section:
 - [x] 所有现有测试通过
 ```
 
-- [ ] **Step 3: Commit documentation**
+- [x] **Step 3: Commit documentation**
 
 ```bash
 git add docs/runtime-domain-roadmap.md
@@ -636,17 +636,17 @@ git commit -m "docs: mark Phase 1 tasks as completed in runtime-domain-roadmap
 
 **Context:** Final verification that all tests pass before pushing.
 
-- [ ] **Step 1: Run all tests**
+- [x] **Step 1: Run all tests**
 
 Run: `cargo test --lib 2>&1 | tail -10`
 Expected: All 544+ tests pass
 
-- [ ] **Step 2: Run cargo clippy for lint checks**
+- [x] **Step 2: Run cargo clippy for lint checks**
 
 Run: `cargo clippy --lib 2>&1 | grep -E "^warning|^error" | head -20`
 Expected: No errors, minimal warnings
 
-- [ ] **Step 3: Push all commits to remote**
+- [x] **Step 3: Push all commits to remote**
 
 Run: `git push`
 Expected: All commits pushed successfully

@@ -161,9 +161,10 @@ impl MessageHandlerImpl {
 
     /// Agent 消息处理：调用 Brain 思考
     async fn handle_agent_message(&self, message: &Message) -> Result<()> {
+        let agent_id = &message.po.to_id;
+
         // 消费前检查 Agent 是否可用（空闲）
         // 如果 Agent 忙碌或休息，返回错误触发 Nack，消息重新入队等待
-        let agent_id = &message.po.to_id;
         if AgentRuntimeStateManager::global().is_unavailable(agent_id) {
             return Err(Error::conflict(format!(
                 "Agent {} is busy or resting, message will be retried",
@@ -171,7 +172,72 @@ impl MessageHandlerImpl {
             )));
         }
 
-        sys_debug!("agent message processed by brain");
+        // 重建上下文
+        let ctx = self.rebuild_context(message);
+
+        // 加载 Agent 实体（包含 Brain 配置）
+        let agent = self
+            .hr_domain
+            .agent_manage()
+            .get_agent(ctx.clone(), agent_id)
+            .await?
+            .ok_or_else(|| Error::not_found(format!("Agent {} not found", agent_id)))?;
+
+        // 确保 Agent 有 Brain（已唤醒）
+        if agent.brain.is_none() {
+            log_error!(
+                &ctx,
+                "handle_agent_message",
+                "Agent {} has no brain, please call wake_brain() first",
+                agent_id
+            );
+            return Err(Error::internal(format!(
+                "Agent {} 大脑未唤醒，请先调用 wake_brain()",
+                agent_id
+            )));
+        }
+
+        // 调用 Runtime Domain 唤醒 Agent
+        let awaken_result = self
+            .runtime_domain
+            .awakening()
+            .awaken(ctx.clone(), &agent, message)
+            .await?;
+
+        log_info!(
+            &ctx,
+            "handle_agent_message",
+            "Agent {} awakened successfully, trace_ids: {:?}",
+            agent_id,
+            awaken_result.trace_ids
+        );
+
+        // 构造回复消息并发送给用户
+        // from=Agent, to=User
+        let reply_cmd = crate::service::domain::message::SendToUserCommand {
+            from_agent_id: &agent.po.id,
+            to_user_id: &message.po.from_id, // 回复给原消息的发送者
+            content: &awaken_result.raw_output,
+            project_id: message.po.project_id.as_deref(),
+            task_id: message.po.task_id.as_deref(),
+            reply_to_id: Some(&message.po.id), // 引用原消息
+        };
+
+        let reply_message = self
+            .message_domain
+            .delivery()
+            .send_to_user(ctx.clone(), reply_cmd)
+            .await?;
+
+        log_info!(
+            &ctx,
+            "handle_agent_message",
+            "Agent {} reply message {} queued for user {}",
+            agent_id,
+            reply_message.po.id,
+            message.po.from_id
+        );
+
         Ok(())
     }
 

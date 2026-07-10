@@ -2,8 +2,8 @@
 
 > 🎯 **目标**：按阶段推进 Runtime Domain 的完整实现，从"能唤醒"到"能做事"到"能协作"
 >
-> **当前版本**：v0.8（2026-07-08）
-> **状态**：核心骨架完成，待打通端到端链路
+> **当前版本**：v0.9（2026-07-10）
+> **状态**：Phase 1 完成，端到端链路已打通
 >
 > **文档定位**：总体规划 + 各阶段入口，每个阶段开始前在 `docs/superpowers/plans/` 下细化具体执行方案
 
@@ -30,8 +30,8 @@
 - Agent 运行时状态可以被查询（空闲/忙碌/休息）
 
 **不能做的：**
-- ❌ 消息消费者没有实际调用 awaken()（只是占位符）
-- ❌ Agent 回复的消息不会自动发送给用户
+- ✅ 消息消费者已实际调用 awaken()（Phase 1 完成）
+- ✅ Agent 回复的消息自动发送给用户（Phase 1 完成）
 - ❌ 工具调用结果不会触发下一次思考
 - ❌ Agent 没有"神经工具"（search_memory、send_message 等）
 - ❌ 没有唤醒轮次限制（会无限循环？）
@@ -71,14 +71,14 @@ Phase 5: 多 Agent 协作
 
 ### 任务清单
 
-| # | 任务 | 说明 | 优先级 |
-|---|------|------|--------|
-| 1.1 | 消息消费者加载 Agent 实体 | handle_agent_message 中通过 Finance Domain 加载 Agent（含 Brain） | P0 |
-| 1.2 | 调用 runtime_domain.awaken() | 真正调用唤醒方法，不再是占位符 | P0 |
-| 1.3 | 唤醒结果处理 | 成功：继续下一步；失败：错误日志 + Nack 重试 | P0 |
-| 1.4 | Agent 回复消息入队 | 模型输出 → 构造 Message → send_to_user 入队 | P0 |
-| 1.5 | 消费者上下文重建 | 从 MessagePo 重建 RequestContext（org_id、user_id 等） | P0 |
-| 1.6 | 唤醒失败的状态清理 | awaken 抛异常时确保 Agent 状态回到 Idle | P1 |
+| # | 任务 | 说明 | 优先级 | 状态 |
+|---|------|------|--------|------|
+| 1.1 | 消息消费者加载 Agent 实体 | handle_agent_message 中通过 HrDomain 加载 Agent（含 Brain） | P0 | ✅ 完成 |
+| 1.2 | 调用 runtime_domain.awaken() | 真正调用唤醒方法，不再是占位符 | P0 | ✅ 完成 |
+| 1.3 | 唤醒结果处理 | 成功：继续下一步；失败：错误日志 + Nack 重试 | P0 | ✅ 完成 |
+| 1.4 | Agent 回复消息入队 | 模型输出 → 构造 Message → send_to_user 入队 | P0 | ✅ 完成 |
+| 1.5 | 消费者上下文重建 | 从 MessagePo 重建 RequestContext（org_id、user_id 等） | P0 | ✅ 完成 |
+| 1.6 | 唤醒失败的状态清理 | awaken 抛异常时确保 Agent 状态回到 Idle | P1 | ✅ 完成（awaken 内部已实现） |
 
 ### 关键设计点
 
@@ -89,11 +89,11 @@ Phase 5: 多 Agent 协作
 
 ### 验收标准
 
-- [ ] 单元测试：消费者处理一条用户消息，能成功调用 awaken 并返回
-- [ ] 集成测试：发消息 → 唤醒 → 回复消息入队，完整链路走通
-- [ ] 所有现有测试通过
+- [x] 单元测试：消费者处理一条用户消息，能成功调用 awaken 并返回
+- [x] 集成测试：发消息 → 唤醒 → 回复消息入队，完整链路走通
+- [x] 所有现有测试通过（548 个测试 100% 通过）
 
-**执行方案**：待在 `docs/superpowers/plans/` 下创建具体实现方案
+**执行方案**：[`docs/superpowers/plans/2026-07-10-runtime-domain-phase1-end-to-end.md`](./superpowers/plans/2026-07-10-runtime-domain-phase1-end-to-end.md)
 
 ---
 
@@ -279,11 +279,11 @@ Handler → Domain → DAL → DAO → Models
 
 ## 四、当前阶段
 
-**当前阶段**：Phase 1 - 打通端到端链路
+**当前阶段**：Phase 2 - 神经工具集（Agent 能做事）
 
-**开始时间**：待启动
+**Phase 1 完成时间**：2026-07-10
 
-**下一步**：在 `docs/superpowers/plans/` 下创建 Phase 1 的具体执行方案
+**下一步**：在 `docs/superpowers/plans/` 下创建 Phase 2 的具体执行方案
 
 ---
 
@@ -292,3 +292,4 @@ Handler → Domain → DAL → DAO → Models
 | 日期 | 版本 | 变更 |
 |------|------|------|
 | 2026-07-10 | v0.1 | 初始版本，定义 5 个阶段的总体路线图 |
+| 2026-07-10 | v0.9 | Phase 1 完成，更新任务清单和验收标准，进入 Phase 2 |
