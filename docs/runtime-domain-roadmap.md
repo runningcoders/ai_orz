@@ -5,7 +5,7 @@
 > **当前版本**：v0.8（2026-07-08）
 > **状态**：核心骨架完成，待打通端到端链路
 >
-> **文档定位**：总体规划 + 各阶段入口，每个阶段开始前细化具体执行方案
+> **文档定位**：总体规划 + 各阶段入口，每个阶段开始前在 `docs/superpowers/plans/` 下细化具体执行方案
 
 ---
 
@@ -93,6 +93,8 @@ Phase 5: 多 Agent 协作
 - [ ] 集成测试：发消息 → 唤醒 → 回复消息入队，完整链路走通
 - [ ] 所有现有测试通过
 
+**执行方案**：待在 `docs/superpowers/plans/` 下创建具体实现方案
+
 ---
 
 ## Phase 2：神经工具集（Agent 能做事）
@@ -132,6 +134,8 @@ Phase 5: 多 Agent 协作
 - [ ] 集成测试：Agent 自主决定调用 send_message 回复用户
 - [ ] 所有现有测试通过
 
+**执行方案**：待在 `docs/superpowers/plans/` 下创建具体实现方案
+
 ---
 
 ## Phase 3：多回合循环控制
@@ -166,6 +170,8 @@ Phase 5: 多 Agent 协作
 - [ ] 集成测试：调用 mark_done 后停止
 - [ ] 所有现有测试通过
 
+**执行方案**：待在 `docs/superpowers/plans/` 下创建具体实现方案
+
 ---
 
 ## Phase 4：技能与记忆增强
@@ -199,6 +205,8 @@ Phase 5: 多 Agent 协作
 - [ ] 集成测试：Agent 能调用 read_skill 学习新技能
 - [ ] 所有现有测试通过
 
+**执行方案**：待在 `docs/superpowers/plans/` 下创建具体实现方案
+
 ---
 
 ## Phase 5：多 Agent 协作
@@ -231,6 +239,8 @@ Phase 5: 多 Agent 协作
 - [ ] 集成测试：主 Agent 分发任务，子 Agent 完成后回传结果
 - [ ] 所有现有测试通过
 
+**执行方案**：待在 `docs/superpowers/plans/` 下创建具体实现方案
+
 ---
 
 ## 三、开发原则
@@ -250,8 +260,8 @@ Phase 5: 多 Agent 协作
 
 ### 3.3 文档同步
 
-- 每个阶段开始前：细化执行方案（写在本文档对应章节）
-- 每个阶段完成后：更新 runtime_design.md 对应章节
+- 每个阶段开始前：在 `docs/superpowers/plans/` 下创建具体执行方案
+- 每个阶段完成后：更新 `docs/runtime_design.md` 对应章节
 - 关键设计决策记录在案
 
 ### 3.4 架构约束
@@ -273,7 +283,7 @@ Handler → Domain → DAL → DAO → Models
 
 **开始时间**：待启动
 
-**下一步**：细化 Phase 1 的具体执行方案，开始实现
+**下一步**：在 `docs/superpowers/plans/` 下创建 Phase 1 的具体执行方案
 
 ---
 
