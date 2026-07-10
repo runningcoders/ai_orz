@@ -1,13 +1,15 @@
 //! Runtime Memory 具体实现
 
 use common::error::{Error, Result, err};
-use crate::models::memory::{Memory, MemoryTrace};
+use crate::models::memory::{Memory, MemoryCreateParams, MemoryTrace};
 use crate::pkg::request_context::RequestContext;
-use crate::service::dao::memory::MemoryQuery;
+use crate::service::dao::memory::{MemoryQuery, MemorySearch};
 use crate::service::domain::runtime::{RuntimeDomainImpl, RuntimeMemory};
 
 #[async_trait::async_trait]
 impl RuntimeMemory for RuntimeDomainImpl {
+    // === 内部使用方法 ===
+
     async fn get_recent_context(
         &self,
         ctx: RequestContext,
@@ -43,7 +45,6 @@ impl RuntimeMemory for RuntimeDomainImpl {
         ctx: RequestContext,
         mut trace: MemoryTrace,
     ) -> Result<Memory> {
-        use crate::models::memory::MemoryCreateParams;
         use crate::service::dal::memory::dal;
 
         // 可选：内部统一补充信息（如果缺失）
@@ -67,5 +68,52 @@ impl RuntimeMemory for RuntimeDomainImpl {
         results
             .pop()
             .ok_or_else(|| err!(Internal, "Write trace failed, no memory returned"))
+    }
+
+    // === 公开方法（供 Handler/神经工具调用） ===
+
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: MemorySearch,
+    ) -> Result<Vec<Memory>> {
+        use crate::service::dal::memory::dal;
+        dal().search(ctx, search).await
+    }
+
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: MemoryQuery,
+    ) -> Result<Vec<Memory>> {
+        use crate::service::dal::memory::dal;
+        dal().query(ctx, query).await
+    }
+
+    async fn create(
+        &self,
+        ctx: RequestContext,
+        params: MemoryCreateParams,
+    ) -> Result<Vec<Memory>> {
+        use crate::service::dal::memory::dal;
+        dal().create(ctx, params).await
+    }
+
+    async fn update(
+        &self,
+        ctx: RequestContext,
+        memory: Memory,
+    ) -> Result<Memory> {
+        use crate::service::dal::memory::dal;
+        dal().update(ctx, memory).await
+    }
+
+    async fn delete(
+        &self,
+        ctx: RequestContext,
+        memory: Memory,
+    ) -> Result<()> {
+        use crate::service::dal::memory::dal;
+        dal().delete(ctx, memory).await
     }
 }

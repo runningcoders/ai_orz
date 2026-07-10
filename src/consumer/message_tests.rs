@@ -461,6 +461,46 @@ impl RuntimeMemory for RecordingRuntimeDomain {
     ) -> std::result::Result<Memory, common::error::Error> {
         unimplemented!("not needed by message consumer tests")
     }
+
+    async fn search(
+        &self,
+        _ctx: RequestContext,
+        _search: crate::service::dao::memory::MemorySearch,
+    ) -> std::result::Result<Vec<Memory>, common::error::Error> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn query(
+        &self,
+        _ctx: RequestContext,
+        _query: crate::service::dao::memory::MemoryQuery,
+    ) -> std::result::Result<Vec<Memory>, common::error::Error> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn create(
+        &self,
+        _ctx: RequestContext,
+        _params: crate::models::memory::MemoryCreateParams,
+    ) -> std::result::Result<Vec<Memory>, common::error::Error> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn update(
+        &self,
+        _ctx: RequestContext,
+        _memory: Memory,
+    ) -> std::result::Result<Memory, common::error::Error> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn delete(
+        &self,
+        _ctx: RequestContext,
+        _memory: Memory,
+    ) -> std::result::Result<(), common::error::Error> {
+        unimplemented!("not needed by message consumer tests")
+    }
 }
 
 #[async_trait]

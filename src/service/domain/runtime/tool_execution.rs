@@ -80,20 +80,44 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
     ) -> Result<ToolExecutionResult> {
         let ctx = ctx.to_builder().agent_id(&agent_id).build();
 
+        // 先从绑定工具中查找
         let bound_tools = self
             .tool_dal
             .list_tools_for_agent_full(ctx.clone(), &agent_id)
             .await?;
 
-        let tool = bound_tools
-            .iter()
-            .find(|tool| tool.po.id == tool_id)
-            .ok_or_else(|| {
-                common::error::Error::tool_call_failed(format!(
-                    "Manual tool call denied: tool {} is not bound to agent {}",
-                    tool_id, agent_id
-                ))
-            })?;
+        let bound_tool = bound_tools
+            .into_iter()
+            .find(|tool| tool.po.id == tool_id);
+
+        // 如果绑定工具中没有，检查是否是神经工具
+        let tool = match bound_tool {
+            Some(tool) => tool,
+            None => {
+                let all_tools = self
+                    .tool_dal
+                    .query(
+                        ctx.clone(),
+                        crate::service::dao::tool::ToolQuery {
+                            enabled_only: Some(true),
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
+
+                all_tools
+                    .into_iter()
+                    .find(|t| {
+                        t.po.id == tool_id && t.po.get_tags().contains(&"neural".to_string())
+                    })
+                    .ok_or_else(|| {
+                        common::error::Error::tool_call_failed(format!(
+                            "Manual tool call denied: tool {} is not bound to agent {} and is not a neural tool",
+                            tool_id, agent_id
+                        ))
+                    })?
+            }
+        };
 
         if tool.po.control_mode != ControlMode::Manual {
             let msg: String = format!(
@@ -108,7 +132,7 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
 
         }
 
-        self.call_tool(ctx, tool, args).await
+        self.call_tool(ctx, &tool, args).await
     }
 
     async fn query_tool_call_entries(

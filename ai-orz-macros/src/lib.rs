@@ -76,6 +76,8 @@ pub fn register_handler_tool(args: TokenStream, input: TokenStream) -> TokenStre
     let mut description = None;
     let mut params_type = None;
     let mut handler_ident: Option<Ident> = None;
+    let mut neural = false;
+    let mut extra_tags: Vec<String> = Vec::new();
 
     let parser = syn::meta::parser(|meta| {
         if meta.path.is_ident("id") {
@@ -91,6 +93,14 @@ pub fn register_handler_tool(args: TokenStream, input: TokenStream) -> TokenStre
             let s = meta.value()?.parse::<LitStr>()?;
             let ty: Type = syn::parse_str(&s.value()).unwrap();
             params_type = Some(ty);
+            Ok(())
+        } else if meta.path.is_ident("neural") {
+            neural = true;
+            Ok(())
+        } else if meta.path.is_ident("tags") {
+            let s = meta.value()?.parse::<LitStr>()?.value();
+            let tags: Vec<String> = s.split(',').map(|s| s.trim().to_string()).collect();
+            extra_tags.extend(tags);
             Ok(())
         } else {
             Err(meta.error("unexpected argument"))
@@ -187,6 +197,11 @@ pub fn register_handler_tool(args: TokenStream, input: TokenStream) -> TokenStre
                 use common::enums::tool::{ControlMode, ToolProtocol, ToolStatus};
                 let schema = schemars::schema_for!(#params_type);
                 let schema_json = serde_json::to_value(&schema).unwrap();
+                let mut tags_vec = Vec::new();
+                if #neural {
+                    tags_vec.push("neural".to_string());
+                }
+                #(tags_vec.push(#extra_tags.to_string());)*
                 let mut po = ToolPo::new(
                     #id.to_string(),
                     #name.to_string(),
@@ -194,7 +209,7 @@ pub fn register_handler_tool(args: TokenStream, input: TokenStream) -> TokenStre
                     ToolProtocol::Builtin,
                     schema_json,
                     None,
-                    vec![],
+                    tags_vec,
                     None,
                 );
                 po.status = ToolStatus::Enabled;

@@ -15,10 +15,11 @@ use std::sync::Arc;
 use common::enums::AgentRuntimeState;
 use common::error::Result;
 use crate::models::agent::Agent;
-use crate::models::memory::{Memory, MemoryTrace};
+use crate::models::memory::{Memory, MemoryCreateParams, MemoryTrace};
 use crate::models::message::Message;
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_tracing::logger::ToolCallLogger;
+use crate::service::dao::memory::{MemoryQuery, MemorySearch};
 use crate::service::dal::brain::BrainDal;
 use crate::service::dal::mcp_tool::McpToolDal;
 use crate::service::dal::tool::ToolDal;
@@ -48,6 +49,8 @@ pub trait RuntimeDomain: Send + Sync + Debug {
 /// 定义记忆读取、思考 Trace 写入等接口
 #[async_trait]
 pub trait RuntimeMemory: Send + Sync {
+    // === 内部使用方法（保持不变） ===
+
     /// 读取最近短期记忆
     async fn get_recent_context(
         &self,
@@ -65,6 +68,43 @@ pub trait RuntimeMemory: Send + Sync {
         ctx: RequestContext,
         trace: MemoryTrace,
     ) -> Result<Memory>;
+
+    // === 公开方法（供 Handler/神经工具调用） ===
+
+    /// 混合搜索记忆（关键词 + 向量语义）
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: MemorySearch,
+    ) -> Result<Vec<Memory>>;
+
+    /// 通用关系型查询
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: MemoryQuery,
+    ) -> Result<Vec<Memory>>;
+
+    /// 创建记忆
+    async fn create(
+        &self,
+        ctx: RequestContext,
+        params: MemoryCreateParams,
+    ) -> Result<Vec<Memory>>;
+
+    /// 更新记忆
+    async fn update(
+        &self,
+        ctx: RequestContext,
+        memory: Memory,
+    ) -> Result<Memory>;
+
+    /// 删除记忆
+    async fn delete(
+        &self,
+        ctx: RequestContext,
+        memory: Memory,
+    ) -> Result<()>;
 }
 
 /// 唤醒能力 trait

@@ -425,6 +425,21 @@ Agent
 
 ## 六、工作流与开发记录
 
+### 2026-07-10 里程碑
+**✅ Runtime Domain Phase 2 - 神经工具集完整落地**
+- **宏扩展**：`register_handler_tool` 宏新增 `neural` flag 和 `tags` 参数，神经工具自动打 "neural" tag
+- **RuntimeMemory 扩展**：新增 search/query/create/update/delete 5 个公开方法，统一记忆操作接口
+- **8 个神经工具全部实现**：
+  - 记忆类（5个）：search_memory、query_memory、create_memory、update_memory、delete_memory
+  - 消息类（1个）：send_message
+  - 工具类（2个）：request_tool_call、list_tools（标记为神经工具）
+  - 任务类（1个）：mark_done
+- **唤醒流程优化**：唤醒时自动筛选带 "neural" tag 的工具注入 Prompt
+- **神经工具免绑定**：调用 Manual 工具时，神经工具无需绑定校验，Agent 天生具备
+- **移除自动回复**：消息消费者不再自动生成回复，Agent 通过 `send_message` 神经工具主动发送
+- **分层架构严格遵守**：所有 Handler 仅调用 Domain 层，无直接 DAL 调用
+- **测试统计**：548 个测试 100% 通过
+
 ### 2026-07-06 里程碑
 **✅ Project/Task 业务事件完整落地**
 - **ProjectEvent**：新增项目生命周期事件表 `project_events`，含 `created`/`started`/`completed`/`archived`/`status_changed` 五种事件类型

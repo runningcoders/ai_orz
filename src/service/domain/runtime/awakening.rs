@@ -57,12 +57,20 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         );
         let trace_id = trace.id.clone();
 
+        // Step 3.5: 加载神经工具（Agent 天生具备的能力）
+        let neural_tools = self.load_neural_tools(ctx.clone()).await?;
+        let neural_tool_prompts: Vec<String> = neural_tools
+            .iter()
+            .map(|tool| tool.po.to_tool_prompt())
+            .collect();
+
         // Step 4: 拼装 Prompt（注入 trace_id 到头部，模型可见）
         let builder = PromptBuilder::new()
             .current_trace_id(&trace_id)
             .trace_ids(&trace_ids)
             .agent_system(agent)
             .agent_tools(agent)
+            .tools(&neural_tool_prompts)
             .history(&recent_memories)
             .current_message(message);
 
@@ -126,5 +134,40 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             raw_input: prompt,
             raw_output,
         })
+    }
+}
+
+impl RuntimeDomainImpl {
+    /// 加载所有神经工具（带 "neural" tag 且启用的工具）
+    ///
+    /// 神经工具是 Agent 天生具备的能力，不需要显式绑定。
+    async fn load_neural_tools(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<Vec<crate::models::tool::Tool>> {
+        use crate::service::dao::tool::ToolQuery;
+        use common::enums::ToolStatus;
+
+        let all_tools = self
+            .tool_dal
+            .query(
+                ctx,
+                ToolQuery {
+                    enabled_only: Some(true),
+                    status: Some(ToolStatus::Enabled),
+                    ..Default::default()
+                },
+            )
+            .await?;
+
+        let neural_tools = all_tools
+            .into_iter()
+            .filter(|tool| {
+                let tags = tool.po.get_tags();
+                tags.contains(&"neural".to_string())
+            })
+            .collect();
+
+        Ok(neural_tools)
     }
 }

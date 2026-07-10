@@ -98,6 +98,7 @@ mod mcp_server_test;
 pub mod mcp_tool;
 pub mod message_channel;
 pub mod model_provider;
+pub mod neural_tools;
 pub mod organization;
 pub mod project;
 #[cfg(test)]
@@ -123,6 +124,7 @@ pub use mcp_server::*;
 pub use mcp_tool::*;
 pub use message_channel::*;
 pub use model_provider::*;
+pub use neural_tools::*;
 pub use organization::*;
 pub use project::*;
 pub use skill::*;

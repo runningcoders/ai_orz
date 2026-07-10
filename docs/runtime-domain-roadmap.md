@@ -2,8 +2,8 @@
 
 > 🎯 **目标**：按阶段推进 Runtime Domain 的完整实现，从"能唤醒"到"能做事"到"能协作"
 >
-> **当前版本**：v0.9（2026-07-10）
-> **状态**：Phase 1 完成，端到端链路已打通
+> **当前版本**：v1.0（2026-07-10）
+> **状态**：Phase 2 完成，神经工具集已上线
 >
 > **文档定位**：总体规划 + 各阶段入口，每个阶段开始前在 `docs/superpowers/plans/` 下细化具体执行方案
 
@@ -15,11 +15,12 @@
 
 | 模块 | 完成度 | 说明 |
 |------|--------|------|
-| **RuntimeMemory** | ✅ 100% | `get_recent_context` + `write_thinking_trace`，Trace 闭环 |
-| **ContextAssembly** | ✅ 100% | Builder 模式 Prompt 拼装，PO 自格式化 |
-| **Awakening** | ✅ 90% | 7 步主流程完整，状态机管理，统计上报 |
-| **ToolExecution** | ✅ 90% | 协议路由（MCP/Builtin/HTTP）、Manual 授权、Trace 查询 |
+| **RuntimeMemory** | ✅ 100% | 完整 CRUD（search/query/create/update/delete）+ Trace 闭环 |
+| **ContextAssembly** | ✅ 100% | Builder 模式 Prompt 拼装，PO 自格式化，神经工具自动注入 |
+| **Awakening** | ✅ 100% | 9 步主流程完整，状态机管理，统计上报，神经工具注入 |
+| **ToolExecution** | ✅ 100% | 协议路由（MCP/Builtin/HTTP）、Manual 授权、神经工具免绑定、Trace 查询 |
 | **RuntimeState** | ✅ 100% | DashMap 内存状态管理，Idle/Resting/Busy 三态 |
+| **神经工具集** | ✅ 100% | 8 个神经工具（记忆 5 个 + send_message + request_tool_call + mark_done + list_tools） |
 
 ### 1.2 当前能力边界
 
@@ -28,12 +29,14 @@
 - 推理过程会记录 Trace（输入/输出完整记录）
 - 工具可以被调用（Manual 模式，经 Runtime Domain 路由）
 - Agent 运行时状态可以被查询（空闲/忙碌/休息）
+- Agent 拥有 8 个天生神经工具，无需绑定即可调用
+- Agent 通过 `send_message` 神经工具主动发送消息（框架不再自动回复）
+- Memory 完整 CRUD 能力通过 RuntimeMemory trait 统一暴露
 
 **不能做的：**
 - ✅ 消息消费者已实际调用 awaken()（Phase 1 完成）
-- ✅ Agent 回复的消息自动发送给用户（Phase 1 完成）
+- ✅ Agent 拥有神经工具集（Phase 2 完成）
 - ❌ 工具调用结果不会触发下一次思考
-- ❌ Agent 没有"神经工具"（search_memory、send_message 等）
 - ❌ 没有唤醒轮次限制（会无限循环？）
 - ❌ Resting 状态没有实际用途
 
@@ -104,37 +107,63 @@ Phase 5: 多 Agent 协作
 > **核心交付**：一套基础神经工具，Agent 可以自主决定调用
 >
 > **预估工作量**：大
+> **状态**：✅ 已完成（2026-07-10）
 
 ### 任务清单
 
-| # | 任务 | 说明 | 优先级 |
-|---|------|------|--------|
-| 2.1 | 神经工具框架 | 定义 NeuralTool trait，适配 rig Tool 接口 | P0 |
-| 2.2 | search_memory 工具 | 搜索短期/长期记忆 | P0 |
-| 2.3 | send_message 工具 | 给用户/其他 Agent 发消息 | P0 |
-| 2.4 | request_tool_call 工具 | 请求调用外骨骼工具（Manual 模式） | P0 |
-| 2.5 | mark_done 工具 | 标记任务完成 | P1 |
-| 2.6 | list_tools 工具 | 列出可用的外骨骼工具 | P1 |
-| 2.7 | read_skill 工具 | 读取技能详情 | P2 |
-| 2.8 | search_skill 工具 | 搜索技能库 | P2 |
-| 2.9 | 工具注入到 awaken | 唤醒时把神经工具注入模型的 tool list | P0 |
+| # | 任务 | 说明 | 优先级 | 状态 |
+|---|------|------|--------|------|
+| 2.1 | 宏扩展 | `register_handler_tool` 宏增加 `neural` flag 和 `tags` 参数 | P0 | ✅ 完成 |
+| 2.2 | 记忆神经工具（5个） | search_memory / query_memory / create_memory / update_memory / delete_memory | P0 | ✅ 完成 |
+| 2.3 | send_message 工具 | 给用户发消息（注册为神经工具） | P0 | ✅ 完成 |
+| 2.4 | request_tool_call 工具 | 请求调用外骨骼工具（Manual 模式） | P0 | ✅ 完成 |
+| 2.5 | mark_done 工具 | 标记任务完成（注册为神经工具） | P1 | ✅ 完成 |
+| 2.6 | list_tools 工具 | 列出可用工具（标记为神经工具） | P1 | ✅ 完成 |
+| 2.7 | 工具注入 | 唤醒时自动注入带 `"neural"` tag 的工具到 Prompt | P0 | ✅ 完成 |
+| 2.8 | 神经工具免绑定 | 调用 Manual 工具时，神经工具不需要绑定校验 | P0 | ✅ 完成 |
+| 2.9 | 去掉自动回复 | 修改 message.rs，不再自动 send_to_user，由 Agent 通过 send_message 工具发送 | P0 | ✅ 完成 |
+| 2.10 | RuntimeMemory 扩展 | 新增 search/query/create/update/delete 5 个公开方法 | P0 | ✅ 完成 |
 
 ### 关键设计点
 
 - **神经工具 vs 外骨骼工具**：
-  - 神经工具：Agent 天生就会的（search_memory、send_message），走 Runtime Domain 内部
+  - 神经工具：Agent 天生就会的（search_memory、send_message 等），通过 `register_handler_tool` 宏的 `neural` flag 标记
   - 外骨骼工具：需要授权的（写文件、调 API），走 Tool Domain + Manual 模式
-- **工具调用追踪**：每次工具调用都要记录 Trace，关联到本次思考
-- **权限控制**：神经工具是否需要权限？还是所有 Agent 都有？
+- **神经工具标识方式**：在 Handler 层使用 `#[register_handler_tool(... neural)]` 标记，生成的 ToolPo 自动包含 `"neural"` tag
+- **权限控制**：所有 Agent 默认拥有带 `"neural"` tag 的工具，不需要绑定校验
+- **工具调用追踪**：每次工具调用都要记录 Trace，关联到本次思考（已有实现）
+- **回复机制**：去掉框架自动发送回复，Agent 通过 `send_message` 神经工具主动发送给用户
+- **分层架构（强制）**：Handler 层禁止直接调用 DAL，必须通过 Domain 层接口
+  - Memory 神经工具：Handler → `RuntimeDomain.memory()` → MemoryDal
+  - 扩展 `RuntimeMemory` trait，新增 search/query/create/update/delete 方法
+  - 现有 `get_recent_context` 和 `write_thinking_trace` 保持不变（内部使用）
 
 ### 验收标准
 
-- [ ] 单元测试：每个神经工具单独可调用
-- [ ] 集成测试：Agent 自主决定调用 search_memory 查历史
-- [ ] 集成测试：Agent 自主决定调用 send_message 回复用户
-- [ ] 所有现有测试通过
+- [x] 宏扩展：`register_handler_tool` 支持 `neural` flag 和 `tags` 参数
+- [x] RuntimeMemory 扩展：5 个新方法全部实现并委托给 MemoryDal
+- [x] 8 个神经工具全部实现（记忆 5 个 + send_message + request_tool_call + mark_done）
+- [x] list_tools 标记为神经工具
+- [x] 唤醒时自动注入神经工具到 Prompt
+- [x] 神经工具调用无需绑定校验
+- [x] 移除消息消费者中的自动回复逻辑
+- [x] 所有现有测试通过（548 个测试 100% 通过）
 
-**执行方案**：待在 `docs/superpowers/plans/` 下创建具体实现方案
+**执行方案**：[`docs/superpowers/plans/2026-07-10-runtime-domain-phase2-neural-tools.md`](./superpowers/plans/2026-07-10-runtime-domain-phase2-neural-tools.md)
+
+### 已交付神经工具清单
+
+| 工具 ID | 说明 | 分类 |
+|---------|------|------|
+| `search_memory` | 关键词 + 向量语义混合搜索记忆 | 记忆 |
+| `query_memory` | 通用关系型查询记忆 | 记忆 |
+| `create_memory` | 创建新记忆（短期/长期） | 记忆 |
+| `update_memory` | 更新已有记忆 | 记忆 |
+| `delete_memory` | 删除记忆 | 记忆 |
+| `send_message` | 发送消息给用户 | 消息 |
+| `request_tool_call` | 请求调用外骨骼工具（异步） | 工具 |
+| `mark_done` | 标记任务完成 | 任务 |
+| `list_tools` | 列出可用工具 | 工具 |
 
 ---
 

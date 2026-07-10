@@ -3,7 +3,10 @@
 > 🎯 **本文档定位**：Runtime Domain（运行时领域）的整体设计大纲与逻辑思路
 >
 > 范围：只覆盖**总纲与核心理念**，不下沉到具体工具实现与代码细节
-> 状态：v0.8（2026-07-08）
+> 状态：v1.0（2026-07-10）
+>
+> **更新记录**：
+> - v1.0 (2026-07-10): Phase 2 神经工具集落地，8 个神经工具全部实现，自动回复移除，548 测试通过
 > 关联文档：
 > - [ARCHITECTURE.md](./ARCHITECTURE.md) - 项目整体架构
 > - [memory_design.md](./memory_design.md) - 记忆系统
@@ -215,24 +218,40 @@ pub struct AssembledContext {
 
 ### 4.2 神经工具最小集
 
-每项都是 rig 原生 `Tool`，模型推理回合内可直接同步调用：
+每项都是 rig 原生 `Tool`，模型推理回合内可直接同步调用。神经工具通过 `register_handler_tool` 宏的 `neural` flag 标记，所有 Agent 默认拥有，不需要权限校验。
 
-| 工具名 | 作用 | 委托给 |
-|--------|------|--------|
-| `search_skill` | "想起"有哪些相关技能 | `SkillDal` |
-| `read_skill` | 取出某个技能的具体内容 | `SkillDal` |
-| `search_memory` | 混合搜索长期/短期记忆 | `RuntimeMemory.search` |
-| `write_memory` | 沉淀新记忆 | `RuntimeMemory.write` |
-| `list_tools` | "想起"有哪些外骨骼工具可用（仅返回名字+一句话） | `ToolDal` |
-| `read_tool_spec` | 展开某个工具的完整 schema | `ToolDal` |
-| `send_message` | 给 user / agent / channel 发消息 | `MessageDomain.delivery` |
-| `request_tool_call` | 异步发起一次外骨骼工具调用 | `tool_execution` |
-| `mark_done` | 显式标记本任务完成 | Runtime 内部 |
+| 工具名 | 作用 | 委托给 | 优先级 |
+|--------|------|--------|--------|
+| `search_memory` | 混合搜索长期/短期记忆 | `RuntimeMemory.search` | P0 |
+| `send_message` | 给 user / agent / channel 发消息 | `MessageDomain.delivery` | P0 |
+| `request_tool_call` | 异步发起一次外骨骼工具调用 | `tool_execution` | P0 |
+| `mark_done` | 显式标记本任务完成 | Runtime 内部 | P1 |
+| `list_tools` | "想起"有哪些外骨骼工具可用（仅返回名字+一句话） | `ToolDal` | P1 |
+| `search_skill` | "想起"有哪些相关技能 | `SkillDal` | P2 |
+| `read_skill` | 取出某个技能的具体内容 | `SkillDal` | P2 |
+| `read_tool_spec` | 展开某个工具的完整 schema | `ToolDal` | P2 |
+| `write_memory` | 沉淀新记忆 | `RuntimeMemory.write` | P2 |
 
 **设计要点**：
 - `list_*` 系列只返回**摘要**（名字+一句话），不含完整 schema，避免 prompt 膨胀
 - 真正要用某项能力时，模型主动调 `read_*` 系列展开
 - 这正是"想起来"的过程——模型先看到目录，再决定翻哪一页
+- 神经工具通过 `#[register_handler_tool(... neural)]` 标记，生成的 ToolPo 自动包含 `"neural"` tag
+- 唤醒时只注入带 `"neural"` tag 的工具给模型
+
+**注册示例**：
+```rust
+#[register_handler_tool(
+    id = "send_message",
+    name = "send_message",
+    description = "Send a message to user",
+    params = "common::api::SendMessageParams",
+    neural,  // ← 标记为神经工具
+)]
+async fn send_message(ctx: RequestContext, params: SendMessageParams) -> Result<Value> {
+    // ...
+}
+```
 
 ### 4.3 神经 vs 外骨骼的关系图
 

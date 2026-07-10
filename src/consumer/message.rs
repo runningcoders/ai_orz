@@ -212,32 +212,6 @@ impl MessageHandlerImpl {
             awaken_result.trace_ids
         );
 
-        // 构造回复消息并发送给用户
-        // from=Agent, to=User
-        let reply_cmd = crate::service::domain::message::SendToUserCommand {
-            from_agent_id: &agent.po.id,
-            to_user_id: &message.po.from_id, // 回复给原消息的发送者
-            content: &awaken_result.raw_output,
-            project_id: message.po.project_id.as_deref(),
-            task_id: message.po.task_id.as_deref(),
-            reply_to_id: Some(&message.po.id), // 引用原消息
-        };
-
-        let reply_message = self
-            .message_domain
-            .delivery()
-            .send_to_user(ctx.clone(), reply_cmd)
-            .await?;
-
-        log_info!(
-            &ctx,
-            "handle_agent_message",
-            "Agent {} reply message {} queued for user {}",
-            agent_id,
-            reply_message.po.id,
-            message.po.from_id
-        );
-
         Ok(())
     }
 

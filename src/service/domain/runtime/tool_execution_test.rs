@@ -61,6 +61,7 @@ mod tests {
         bound_tools: Vec<(String, ToolProtocol, ControlMode, ToolStatus)>,
         get_by_id_count: AtomicUsize,
         list_for_agent_count: AtomicUsize,
+        query_count: AtomicUsize,
         call_by_id_count: AtomicUsize,
         call_tool_count: AtomicUsize,
     }
@@ -72,6 +73,7 @@ mod tests {
                 bound_tools: Vec::new(),
                 get_by_id_count: AtomicUsize::new(0),
                 list_for_agent_count: AtomicUsize::new(0),
+                query_count: AtomicUsize::new(0),
                 call_by_id_count: AtomicUsize::new(0),
                 call_tool_count: AtomicUsize::new(0),
             }
@@ -95,6 +97,7 @@ mod tests {
                 bound_tools,
                 get_by_id_count: AtomicUsize::new(0),
                 list_for_agent_count: AtomicUsize::new(0),
+                query_count: AtomicUsize::new(0),
                 call_by_id_count: AtomicUsize::new(0),
                 call_tool_count: AtomicUsize::new(0),
             }
@@ -106,6 +109,10 @@ mod tests {
 
         fn list_for_agent_calls(&self) -> usize {
             self.list_for_agent_count.load(Ordering::SeqCst)
+        }
+
+        fn query_calls(&self) -> usize {
+            self.query_count.load(Ordering::SeqCst)
         }
 
         fn call_by_id_calls(&self) -> usize {
@@ -168,7 +175,8 @@ mod tests {
             _ctx: RequestContext,
             _query: ToolQuery,
         ) -> Result<Vec<Tool>> {
-            unimplemented!("not needed by tool execution routing tests")
+            self.query_count.fetch_add(1, Ordering::SeqCst);
+            Ok(vec![])
         }
 
         async fn list_enabled(&self, _ctx: RequestContext) -> Result<Vec<Tool>> {
@@ -811,6 +819,7 @@ mod tests {
         assert!(message.contains("tool-1"));
         assert!(message.contains("agent-1"));
         assert_eq!(tool_dal.list_for_agent_calls(), 1);
+        assert_eq!(tool_dal.query_calls(), 1);
         assert_eq!(tool_dal.get_by_id_calls(), 0);
         assert_eq!(tool_dal.call_tool_calls(), 0);
         assert_eq!(tool_dal.call_by_id_calls(), 0);
