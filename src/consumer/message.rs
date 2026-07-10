@@ -128,6 +128,37 @@ impl MessageHandlerImpl {
         }
     }
 
+    /// 从 MessagePo 重建 RequestContext
+    fn rebuild_context(&self, message: &Message) -> crate::pkg::RequestContext {
+        let mut builder = crate::pkg::RequestContext::builder();
+
+        // organization_id
+        if let Some(org_id) = &message.po.organization_id {
+            builder = builder.organization_id(org_id.clone());
+        }
+
+        // user_id: from from_id based on from_role
+        // If from_role is User, from_id is the user_id
+        if message.from_role() == MessageRole::User {
+            builder = builder.user_id(message.po.from_id.clone());
+        }
+
+        // project_id
+        if let Some(project_id) = &message.po.project_id {
+            builder = builder.project_id(project_id.clone());
+        }
+
+        // task_id
+        if let Some(task_id) = &message.po.task_id {
+            builder = builder.task_id(task_id.clone());
+        }
+
+        // agent_id: the receiving agent
+        builder = builder.agent_id(message.po.to_id.clone());
+
+        builder.build()
+    }
+
     /// Agent 消息处理：调用 Brain 思考
     async fn handle_agent_message(&self, message: &Message) -> Result<()> {
         // 消费前检查 Agent 是否可用（空闲）
