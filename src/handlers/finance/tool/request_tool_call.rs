@@ -1,18 +1,15 @@
-//! Handler: 请求工具调用（异步）
+//! Handler: 请求工具调用（同步，HTTP API 专用）
 
 use crate::pkg::RequestContext;
 use crate::service::domain::runtime;
-use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use ai_orz_macros::generate_http_handler;
 use common::api::{RequestToolCallParams, RequestToolCallResponse};
 use common::error::Result;
 
-/// 请求工具调用
-#[register_handler_tool(
-    id = "request_tool_call",
-    name = "request_tool_call",
-    description = "Request a manual tool call for the agent",
-    params = "common::api::RequestToolCallParams"
-)]
+/// 请求工具调用（同步）
+///
+/// 注意：此 Handler 不注册为 Agent 工具。
+/// Agent 异步调用工具应使用 `send_tool_call_message` 神经工具。
 #[generate_http_handler]
 pub async fn request_tool_call(
     ctx: RequestContext,

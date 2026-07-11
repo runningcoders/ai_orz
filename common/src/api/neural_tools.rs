@@ -153,6 +153,32 @@ pub struct RequestToolCallResponse {
     pub status: String,
 }
 
+/// 发送工具调用消息参数（异步）。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct SendToolCallMessageParams {
+    /// 工具 ID。
+    pub tool_id: String,
+    /// 工具名称。
+    pub tool_name: String,
+    /// 工具调用参数。
+    pub params: serde_json::Value,
+    /// 关联项目 ID。
+    pub project_id: Option<String>,
+    /// 关联任务 ID。
+    pub task_id: Option<String>,
+}
+
+/// 发送工具调用消息响应。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct SendToolCallMessageResponse {
+    /// 请求 ID。
+    pub request_id: String,
+    /// 消息 ID。
+    pub message_id: String,
+    /// 派发状态。
+    pub status: String,
+}
+
 /// 标记完成请求参数。
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct MarkDoneParams {

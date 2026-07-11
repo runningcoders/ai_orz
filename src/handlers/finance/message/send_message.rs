@@ -11,7 +11,8 @@ use common::error::Result;
     id = "send_message",
     name = "send_message",
     description = "Send a message to a user",
-    params = "common::api::SendMessageParams"
+    params = "common::api::SendMessageParams",
+    neural
 )]
 #[generate_http_handler]
 pub async fn send_message(
