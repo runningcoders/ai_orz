@@ -2,8 +2,8 @@
 
 > 🎯 **目标**：按阶段推进 Runtime Domain 的完整实现，从"能唤醒"到"能做事"到"能协作"
 >
-> **当前版本**：v3.0（2026-07-11）
-> **状态**：Phase 4A 完成，工具包机制 + 任务执行闭环已上线
+> **当前版本**：v3.1（2026-07-11）
+> **状态**：Phase 4A + 4B 完成，工具包机制 + 任务执行闭环 + 记忆沉淀机制已上线
 >
 > **文档定位**：总体规划 + 各阶段入口，每个阶段开始前在 `docs/superpowers/plans/` 下细化具体执行方案
 
@@ -26,6 +26,7 @@
 | **AgentFetchOptions** | ✅ 100% | 附带信息获取选项，按需注入统计数据 |
 | **工具包机制** | ✅ 100% | tag 分组、Agent 入职自动安装、免绑定三层校验、安装/卸载 API |
 | **TaskAssignment 消息** | ✅ 100% | TaskAssignment 消息类型、投递方法、神经工具、Handler 编排、PromptBuilder 差异化 |
+| **记忆沉淀机制** | ✅ 100% | MemoryStatus::Settled 状态、settle_short_term_to_long_term、rest_and_settle、settle_memory 神经工具、定时触发 |
 
 ### 1.2 当前能力边界
 
@@ -554,16 +555,17 @@ Handler → Domain → DAL → DAO → Models
 
 ## 四、当前阶段
 
-**当前阶段**：Phase 4A 已完成，准备进入 Phase 4B/4C 或 Phase 5
+**当前阶段**：Phase 4A + 4B 已完成，准备进入 Phase 4C 或 Phase 5
 
 **Phase 1-3 完成时间**：2026-07-10
 **Phase 4A 完成时间**：2026-07-11
+**Phase 4B 完成时间**：2026-07-11
 
 **下一步可选方向**：
-1. **Phase 4B：记忆增强** — 短期记忆摘要、长期记忆沉淀、语义向量搜索落地
-2. **Phase 4C：技能增强** — 技能动态注入、Resting 状态实现、用户画像构建
-3. **Phase 4A 后续任务** — 子任务分解、任务进度追踪、任务失败/重试机制
-4. **Phase 5：多 Agent 协作** — Agent 间消息传递、任务分发、结果汇总
+1. **Phase 4C：技能增强** — 技能动态注入、用户画像构建
+2. **Phase 4A 后续任务** — 子任务分解、任务进度追踪、任务失败/重试机制
+3. **Phase 5：多 Agent 协作** — Agent 间消息传递、任务分发、结果汇总
+4. **Phase 6：前端完善** — 任务看板、对话界面、统计仪表盘
 
 ---
 
