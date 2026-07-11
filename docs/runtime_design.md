@@ -3,9 +3,10 @@
 > 🎯 **本文档定位**：Runtime Domain（运行时领域）的整体设计大纲与逻辑思路
 >
 > 范围：只覆盖**总纲与核心理念**，不下沉到具体工具实现与代码细节
-> 状态：v2.1（2026-07-11）
+> 状态：v3.0（2026-07-11）
 >
 > **更新记录**：
+> - v3.0 (2026-07-11): Phase 4A 工具包机制 + 任务执行闭环，tag 分组、免绑定三层校验、TaskAssignment 消息、569 测试通过
 > - v2.1 (2026-07-11): 架构修正——同步/异步工具调用分离，send_tool_call_message 替代 request_tool_call 作为神经工具
 > - v2.0 (2026-07-10): Phase 3 多回合循环控制落地，轮次限制、任务完成检测、Prompt 差异化、工具失败注入
 > - v1.0 (2026-07-10): Phase 2 神经工具集落地，8 个神经工具全部实现，自动回复移除，548 测试通过
@@ -2076,5 +2077,129 @@ pub struct ToolStats {
 | 记忆中轮次状态追踪 | 轮次信息未写入记忆系统 | Phase 4 |
 | 多任务并发限制 | 当前仅按单任务轮次限制 | Phase 5 |
 | 动态调整思考深度 | 根据任务复杂度动态调整 | Phase 5 |
+
+---
+
+## 二十二、工具包机制 + 任务执行闭环（Phase 4A）
+
+### 22.1 设计目标
+
+Phase 4A 解决两个核心问题：
+1. **工具能力批量授予**：Agent 入职后不应逐个绑定工具，应通过"工具包"批量授予能力
+2. **任务执行闭环通知**：任务分配给 Agent 后，应通过消息自动通知 Agent 开始执行
+
+### 22.2 能力分层两维度模型
+
+```
+Agent 能力
+├── 工具（Tool）
+│   ├── 神经工具（Neural）：天生具备，tags 含 "neural"
+│   ├── 工具包（ToolPack）：按 tag 分组，入职培训获得
+│   └── 外骨骼工具（Exoskeleton）：显式绑定获得
+└── Skill（技能）
+    ├── 天生技能：Agent 创建时配置
+    └── 入职培训技能：后续沉淀
+```
+
+### 22.3 工具包 tag 机制
+
+**核心字段**：
+- `ToolPo.tags: Vec<String>` — 工具所属的标签列表
+- `AgentRuntimeConfig.installed_tags: Vec<String>` — Agent 已安装的工具包 tags
+
+**12 个项目管理工具统一打 "project_management" tag**：
+- create_project / update_project / update_project_status / get_project / list_projects
+- create_task / update_task / update_task_status / get_task / list_tasks / assign_task / list_task_artifacts
+
+### 22.4 免绑定校验三层逻辑
+
+```
+Manual 工具调用校验：
+1. 绑定工具？ → Agent.tools 中是否包含该 tool_id
+2. 神经工具？ → tool.tags 是否包含 "neural"
+3. 已安装工具包？ → tool.tags 与 agent.installed_tags 是否有交集
+```
+
+三层任一通过即允许调用，否则拒绝。
+
+### 22.5 Agent 入职自动安装
+
+当 Agent 状态流转到 `Onboarded` 时，自动安装 "project_management" 工具包：
+```rust
+if target_status == AgentStatus::Onboarded {
+    agent.po.install_tag("project_management");
+}
+```
+
+### 22.6 唤醒时加载内置工具
+
+`load_builtin_tools` 方法在唤醒时加载：
+- 神经工具（tags 含 "neural"）
+- 已安装工具包工具（tags 与 installed_tags 有交集）
+
+提取 `filter_builtin_tools` 纯函数便于单元测试。
+
+### 22.7 三种角色定位
+
+| 角色 | 注册为工具 | 调用方式 | 示例 |
+|------|----------|---------|------|
+| 神经工具 Handler | ✅ `#[register_handler_tool(neural)]` | Agent 通过 rig auto 调用 | send_message, send_tool_call_message |
+| 普通 HTTP Handler | ❌ 不注册 | HTTP API 直接调用 | request_tool_call |
+| Consumer | — | 直接调 Domain | handle_tool_call_request |
+
+### 22.8 TaskAssignment 消息机制
+
+**消息类型**：`MessageType::TaskAssignment = 9`
+
+**Payload 结构**：
+```rust
+pub struct TaskAssignmentMessage {
+    pub task_id: String,
+    pub task_title: String,
+    pub task_description: Option<String>,
+    pub project_id: Option<String>,
+    pub from_id: String,
+    pub to_agent_id: String,
+}
+```
+
+**投递方法**：`MessageDelivery::send_task_assignment()`
+
+**神经工具**：`send_task_assignment_message`（Agent 间任务分配）
+
+**Handler 编排**：
+- `create_task` 创建任务后自动发送 TaskAssignment 消息
+- Project Domain 只管持久化，Message Domain 管通知，Handler 层编排
+
+**PromptBuilder 差异化**：
+- `【任务分配通知】` 标签，Agent 唤醒时明确感知任务分配
+
+### 22.9 架构职责分离
+
+```
+Handler 层（编排）
+├── create_task Handler
+│   ├── 调用 Project Domain 创建任务（持久化）
+│   └── 调用 Message Domain 发送 TaskAssignment 消息（通知）
+└── send_task_assignment_message 神经工具
+    └── 调用 Message Domain 投递方法（通知）
+
+Domain 层
+├── Project Domain：只管数据持久化
+└── Message Domain：管通知能力（send_task_assignment）
+
+Consumer 层
+└── handle_agent_message：to_role=Agent 天然触发 awaken
+```
+
+### 22.10 测试统计
+
+| 指标 | 数值 | 说明 |
+|------|------|------|
+| 总测试数 | 569 | 比 Phase 3 增加 15 个 |
+| 通过率 | 100% | ✅ 全部通过 |
+| 新增 API | 3 个 | install/uninstall/list installed tool packs |
+| 新增消息类型 | 1 个 | TaskAssignment |
+| 新增神经工具 | 1 个 | send_task_assignment_message |
 
 

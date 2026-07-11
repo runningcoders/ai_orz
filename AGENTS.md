@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-07-10
+> 最后更新：2026-07-11
 
 ---
 
@@ -14,7 +14,7 @@
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + rig-core 0.34
 - **前端**：Dioxus 0.7 (WebAssembly)
-- **技术特色**：严格分层架构、类型安全、538 个测试 100% 通过率
+- **技术特色**：严格分层架构、类型安全、569 个测试 100% 通过率
 
 ### 1.2 已实现核心功能
 
@@ -35,18 +35,20 @@
 | 🔍 向量搜索 | ✅ | SQLite VSS 扩展 + 语义索引 + 可平滑升级 |
 | 📊 Agent 统计系统 | ✅ | DuckDB 多维统计、Agent/Project/Task/ModelProvider/Tool 五维度覆盖 |
 | 🔄 多回合循环控制 | ✅ | 轮次限制检查、任务完成检测、Prompt 上下文差异化、工具失败计数注入 |
+| 🎒 工具包机制 | ✅ | tag 分组工具、Agent 入职自动安装、免绑定校验三层逻辑 |
+| 📨 任务分配消息 | ✅ | TaskAssignment 消息类型、自动通知 Agent、神经工具封装 |
 
-### 1.3 整体完成度与测试统计（2026-07-10 更新）
+### 1.3 整体完成度与测试统计（2026-07-11 更新）
 
 | 指标 | 数值 | 说明 |
 |------|------|------|
-| **总测试数** | **554** | DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
+| **总测试数** | **569** | DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
 | **通过率** | **100%** | ✅ 全部测试通过 |
 | DAO 模块数 | 27 个 | 全部实现并被使用，零闲置（21 核心 DAO + 5 渠道 DAO + 1 统计 DAO） |
 | DAL 模块数 | 16 个 | 全部完整业务承载，零闲置 |
 | Domain 领域数 | 6 个 | 全部完整实现 |
 | Handler API 领域数 | 6 个上线 | organization, hr, finance, project, user, health |
-| **整体架构完成度** | **~96%** | 从下往上扎实推进 |
+| **整体架构完成度** | **~97%** | 从下往上扎实推进 |
 
 ---
 
@@ -425,6 +427,22 @@ Agent
 ---
 
 ## 六、工作流与开发记录
+
+### 2026-07-11 里程碑
+**✅ Runtime Domain Phase 4A - 工具包机制 + 任务执行闭环**
+- **工具包 tag 机制**：通过 `tags` 字段分组工具，Agent 入职时自动安装指定 tag 工具包
+- **AgentRuntimeConfig 扩展**：新增 `installed_tags: Vec<String>` 字段，记录 Agent 已安装工具包
+- **免绑定校验三层逻辑**：绑定工具 → 神经工具（tags 含 "neural"）→ 已安装工具包（tags 与 installed_tags 有交集）
+- **唤醒时加载内置工具**：`load_builtin_tools` 重命名扩展，支持神经工具 + 已安装工具包工具
+- **Agent 入职自动安装**：状态流转到 Onboarded 时自动安装 "project_management" 工具包
+- **工具包管理 API**：3 个新 Handler（install/uninstall/list installed tool packs）
+- **TaskAssignment 消息类型**：`MessageType::TaskAssignment = 9` + `TaskAssignmentMessage` payload
+- **send_task_assignment_message 神经工具**：Agent 间任务分配通知，封装 Message Domain 投递方法
+- **任务创建 Handler 编排**：`create_task` 创建任务后自动发送 TaskAssignment 消息给 Agent
+- **PromptBuilder 差异化**：`【任务分配通知】` 标签，Agent 唤醒时明确感知任务分配
+- **三种角色定位明确**：神经工具 Handler（注册为工具）/ 普通 HTTP Handler（不注册）/ Consumer（直接调 Domain）
+- **架构职责分离**：Project Domain 只管持久化，Message Domain 管通知，Handler 层编排
+- **测试统计**：569 个测试 100% 通过（+15）
 
 ### 2026-07-10 里程碑
 **✅ Runtime Domain Phase 2 - 神经工具集完整落地**
