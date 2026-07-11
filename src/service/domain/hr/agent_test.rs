@@ -195,3 +195,72 @@ async fn test_transition_status_rejects_invalid_agent_lifecycle(pool: SqlitePool
 
     assert_eq!(found.po.status, AgentStatus::Interviewing);
 }
+
+#[sqlx::test]
+async fn test_onboard_installs_project_management_tag(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool.clone());
+
+    let mut agent = create_test_agent("OnboardAgent");
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+
+    // Interviewing → PendingOnboard → Onboarded
+    domain
+        .agent_manage()
+        .transition_status(ctx.clone(), &mut agent, AgentStatus::PendingOnboard)
+        .await
+        .unwrap();
+    domain
+        .agent_manage()
+        .transition_status(ctx.clone(), &mut agent, AgentStatus::Onboarded)
+        .await
+        .unwrap();
+
+    // Verify installed_tags contains "project_management"
+    assert!(agent.po.get_installed_tags().contains(&"project_management".to_string()));
+
+    // Verify persisted
+    let found = domain
+        .agent_manage()
+        .get_agent(ctx, agent.id(), Default::default())
+        .await
+        .unwrap()
+        .expect("onboarded agent should be readable");
+
+    assert!(found.po.get_installed_tags().contains(&"project_management".to_string()));
+}
+
+#[sqlx::test]
+async fn test_non_onboard_transition_does_not_install_tag(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool.clone());
+
+    let mut agent = create_test_agent("NonOnboardAgent");
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+
+    // Interviewing → PendingOnboard (NOT Onboarded)
+    domain
+        .agent_manage()
+        .transition_status(ctx.clone(), &mut agent, AgentStatus::PendingOnboard)
+        .await
+        .unwrap();
+
+    // Verify installed_tags is empty
+    assert!(agent.po.get_installed_tags().is_empty());
+
+    // Verify persisted
+    let found = domain
+        .agent_manage()
+        .get_agent(ctx, agent.id(), Default::default())
+        .await
+        .unwrap()
+        .expect("agent should be readable");
+
+    assert!(found.po.get_installed_tags().is_empty());
+}

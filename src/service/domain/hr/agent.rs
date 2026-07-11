@@ -118,6 +118,12 @@ impl AgentManage for HrDomainImpl {
         // 更新状态
         agent.po.status = target_status;
 
+        // 入职时自动安装 project_management 工具包
+        // Agent 入职后天生具备项目管理能力，无需逐个绑定工具
+        if target_status == AgentStatus::Onboarded {
+            agent.po.install_tag("project_management");
+        }
+
         // 持久化
         self.agent_dal.update(ctx, agent).await
     }
