@@ -179,6 +179,25 @@ pub struct SendToolCallResultCommand<'a> {
     pub outcome: ToolCallExecutionOutcome,
 }
 
+/// 发送任务分配消息的命令参数
+#[derive(Debug, Clone)]
+pub struct SendTaskAssignmentCommand<'a> {
+    /// 任务 ID
+    pub task_id: &'a str,
+    /// 任务标题
+    pub task_title: &'a str,
+    /// 任务描述（可选）
+    pub task_description: Option<&'a str>,
+    /// 分配者 ID
+    pub from_id: &'a str,
+    /// 分配者角色
+    pub from_role: MessageRole,
+    /// 接收 Agent ID
+    pub to_agent_id: &'a str,
+    /// 关联项目 ID（可选）
+    pub project_id: Option<&'a str>,
+}
+
 /// 分发消息到用户所有可用渠道的命令参数
 #[derive(Debug, Clone)]
 pub struct DeliverMessageCommand<'a> {
@@ -229,6 +248,13 @@ pub trait MessageDelivery: Send + Sync {
         &self,
         ctx: RequestContext,
         cmd: SendToolCallResultCommand<'_>,
+    ) -> Result<Message>;
+
+    /// 发送任务分配消息
+    async fn send_task_assignment(
+        &self,
+        ctx: RequestContext,
+        cmd: SendTaskAssignmentCommand<'_>,
     ) -> Result<Message>;
 
     /// 从队列取出下一条待处理消息

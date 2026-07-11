@@ -1,12 +1,12 @@
 //! Message Delivery 单元测试
 
 use super::domain;
-use crate::models::message::{Message, ToolCallMessage};
+use crate::models::message::{Message, TaskAssignmentMessage, ToolCallMessage};
 use crate::pkg::RequestContext;
 use crate::service::domain::message::{
-    DeliverMessageCommand, MessageDomain, SendToAgentCommand, SendToUserCommand,
-    SendToolCallRequestCommand, SendToolCallResultCommand, ToolCallExecutionOutcome,
-    ToolCallTraceRef,
+    DeliverMessageCommand, MessageDomain, SendTaskAssignmentCommand, SendToAgentCommand,
+    SendToUserCommand, SendToolCallRequestCommand, SendToolCallResultCommand,
+    ToolCallExecutionOutcome, ToolCallTraceRef,
 };
 use common::enums::{MessageRole, MessageStatus, MessageType};
 use serde_json::json;
@@ -738,4 +738,91 @@ async fn test_deliver_message_to_channels(pool: SqlitePool) {
     // 这是预期行为：渠道存在但配置无效会导致 failed
     assert_eq!(result.success, 0);
     assert_eq!(result.failed, 2);
+}
+
+#[sqlx::test]
+async fn test_send_task_assignment(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+
+    let task_message = domain
+        .delivery()
+        .send_task_assignment(
+            ctx.clone(),
+            SendTaskAssignmentCommand {
+                task_id: "task-001",
+                task_title: "完成项目文档",
+                task_description: Some("编写项目技术文档和 API 文档"),
+                from_id: "agent-manager",
+                from_role: MessageRole::Agent,
+                to_agent_id: "agent-worker",
+                project_id: Some("project-001"),
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(task_message.po.message_type, MessageType::TaskAssignment);
+    assert_eq!(task_message.po.from_id, "agent-manager");
+    assert_eq!(task_message.po.to_id, "agent-worker");
+    assert_eq!(task_message.po.from_role, MessageRole::Agent);
+    assert_eq!(task_message.po.to_role, MessageRole::Agent);
+    assert_eq!(task_message.po.project_id.as_deref(), Some("project-001"));
+    assert_eq!(task_message.po.task_id.as_deref(), Some("task-001"));
+    assert_eq!(task_message.po.status, MessageStatus::Pending);
+
+    let payload: TaskAssignmentMessage = serde_json::from_str(&task_message.po.content).unwrap();
+    assert_eq!(payload.task_id, "task-001");
+    assert_eq!(payload.task_title, "完成项目文档");
+    assert_eq!(
+        payload.task_description.as_deref(),
+        Some("编写项目技术文档和 API 文档")
+    );
+    assert_eq!(payload.project_id.as_deref(), Some("project-001"));
+    assert_eq!(payload.from_id, "agent-manager");
+    assert_eq!(payload.to_agent_id, "agent-worker");
+
+    let found = domain
+        .management()
+        .get_by_id(ctx, task_message.id())
+        .await
+        .unwrap();
+    assert!(found.is_some());
+}
+
+#[sqlx::test]
+async fn test_send_task_assignment_from_user(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+
+    let task_message = domain
+        .delivery()
+        .send_task_assignment(
+            ctx.clone(),
+            SendTaskAssignmentCommand {
+                task_id: "task-user-assign",
+                task_title: "用户分配的任务",
+                task_description: None,
+                from_id: "user-admin",
+                from_role: MessageRole::User,
+                to_agent_id: "agent-worker",
+                project_id: None,
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(task_message.po.message_type, MessageType::TaskAssignment);
+    assert_eq!(task_message.po.from_id, "user-admin");
+    assert_eq!(task_message.po.to_id, "agent-worker");
+    assert_eq!(task_message.po.from_role, MessageRole::User);
+    assert_eq!(task_message.po.to_role, MessageRole::Agent);
+    assert_eq!(task_message.po.project_id, None);
+    assert_eq!(task_message.po.task_id.as_deref(), Some("task-user-assign"));
+
+    let payload: TaskAssignmentMessage = serde_json::from_str(&task_message.po.content).unwrap();
+    assert_eq!(payload.task_id, "task-user-assign");
+    assert_eq!(payload.task_title, "用户分配的任务");
+    assert_eq!(payload.task_description, None);
+    assert_eq!(payload.project_id, None);
+    assert_eq!(payload.from_id, "user-admin");
+    assert_eq!(payload.to_agent_id, "agent-worker");
 }

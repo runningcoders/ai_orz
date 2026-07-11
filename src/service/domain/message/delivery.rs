@@ -3,12 +3,14 @@
 use common::error::{err, bail_err, Result};
 use crate::models::message::Message;
 use crate::models::message::MessagePo;
+use crate::models::message::TaskAssignmentMessage;
 use crate::models::message::ToolCallMessage;
 use crate::pkg::RequestContext;
 use crate::service::domain::message::MessageDomainImpl;
 use crate::service::domain::message::{
-    DeliverMessageCommand, MessageDelivery, SendToAgentCommand, SendToUserCommand,
-    SendToolCallRequestCommand, SendToolCallResultCommand, ToolCallExecutionOutcome,
+    DeliverMessageCommand, MessageDelivery, SendTaskAssignmentCommand, SendToAgentCommand,
+    SendToUserCommand, SendToolCallRequestCommand, SendToolCallResultCommand,
+    ToolCallExecutionOutcome,
 };
 use common::enums::{MessageRole, MessageStatus, MessageType};
 use serde_json::json;
@@ -219,6 +221,54 @@ impl MessageDelivery for MessageDomainImpl {
             cmd.request_message.po.root_id.clone().or(Some(id)),
             cmd.request_message.po.organization_id.clone(),
             result_payload.from_id.clone(),
+        );
+
+        let message = Message::from_po(po);
+        let ctx = enrich_ctx!(&ctx, &message);
+        self.message_dal.save_message(ctx.clone(), &message).await?;
+
+        Ok(message)
+    }
+
+    async fn send_task_assignment(
+        &self,
+        ctx: RequestContext,
+        cmd: SendTaskAssignmentCommand<'_>,
+    ) -> Result<Message> {
+        let id = generate_id();
+        let project_id = cmd
+            .project_id
+            .or_else(|| ctx.project_id().map(|s| s.as_str()))
+            .map(|s| s.to_string());
+
+        let payload = TaskAssignmentMessage::new(
+            cmd.task_id.to_string(),
+            cmd.task_title.to_string(),
+            cmd.task_description.map(|s| s.to_string()),
+            project_id.clone(),
+            cmd.from_id.to_string(),
+            cmd.to_agent_id.to_string(),
+        );
+
+        let content = serde_json::to_string(&payload)
+            .map_err(|e| err!(Internal, "failed to serialize task assignment message").with_source(e))?;
+
+        let po = MessagePo::new(
+            id.clone(),
+            project_id,
+            Some(cmd.task_id.to_string()),
+            cmd.from_id.to_string(),
+            cmd.to_agent_id.to_string(),
+            cmd.from_role,
+            MessageRole::Agent,
+            MessageType::TaskAssignment,
+            content,
+            None,
+            Default::default(),
+            None,
+            Some(id),
+            ctx.organization_id().cloned(),
+            cmd.from_id.to_string(),
         );
 
         let message = Message::from_po(po);

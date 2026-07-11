@@ -14,7 +14,7 @@ use crate::pkg::RequestContext;
 use crate::service::dao::message::MessageQuery;
 use crate::service::domain::message::{
     DeliverMessageCommand, DeliveryResult, MessageDelivery, MessageDomain, MessageManagement,
-    SendToAgentCommand, SendToUserCommand, SendToolCallRequestCommand, SendToolCallResultCommand,
+    SendTaskAssignmentCommand, SendToAgentCommand, SendToUserCommand, SendToolCallRequestCommand, SendToolCallResultCommand,
     ToolCallExecutionOutcome,
 };
 use crate::service::domain::hr::{AgentManage, HrDomain, SkillManage};
@@ -1070,6 +1070,14 @@ impl MessageDelivery for RecordingMessageDomain {
             .unwrap()
             .push((cmd.request_message.id().to_string(), cmd.outcome));
         Ok(cmd.request_message.clone())
+    }
+
+    async fn send_task_assignment(
+        &self,
+        _ctx: RequestContext,
+        _cmd: SendTaskAssignmentCommand<'_>,
+    ) -> std::result::Result<Message, common::error::Error> {
+        unimplemented!("not needed by message consumer tests")
     }
 
     async fn dequeue_next(

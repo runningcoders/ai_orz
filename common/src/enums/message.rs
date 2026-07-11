@@ -79,6 +79,8 @@ pub enum MessageType {
     ConfirmRequest = 7,
     /// ConfirmResponse (用户确认回复，User→Agent)
     ConfirmResponse = 8,
+    /// TaskAssignment (任务分配通知，System/User/Agent→Agent)
+    TaskAssignment = 9,
 }
 
 impl From<i32> for MessageType {
@@ -93,6 +95,7 @@ impl From<i32> for MessageType {
             6 => MessageType::ToolCallResult,
             7 => MessageType::ConfirmRequest,
             8 => MessageType::ConfirmResponse,
+            9 => MessageType::TaskAssignment,
             _ => MessageType::default(),
         }
     }

@@ -264,6 +264,7 @@ impl MessagePo {
             MessageType::ToolCallResult => "工具执行结果",
             MessageType::ConfirmRequest => "确认请求",
             MessageType::ConfirmResponse => "确认回复",
+            MessageType::TaskAssignment => "任务分配通知",
         };
 
         let content_label = match self.message_type {
@@ -476,6 +477,47 @@ impl ToolCallMessage {
             error_message: Some(error_message),
             result_file_meta: None,
             trace_ref: None,
+        }
+    }
+}
+
+/// 任务分配消息内容
+///
+/// 存储在 message.content 中，对应 MessageType::TaskAssignment
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskAssignmentMessage {
+    /// 任务 ID
+    pub task_id: String,
+    /// 任务标题
+    pub task_title: String,
+    /// 任务描述（可选）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_description: Option<String>,
+    /// 关联项目 ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+    /// 分配者 ID
+    pub from_id: String,
+    /// 接收 Agent ID
+    pub to_agent_id: String,
+}
+
+impl TaskAssignmentMessage {
+    pub fn new(
+        task_id: String,
+        task_title: String,
+        task_description: Option<String>,
+        project_id: Option<String>,
+        from_id: String,
+        to_agent_id: String,
+    ) -> Self {
+        Self {
+            task_id,
+            task_title,
+            task_description,
+            project_id,
+            from_id,
+            to_agent_id,
         }
     }
 }
