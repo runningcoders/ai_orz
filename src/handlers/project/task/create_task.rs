@@ -3,9 +3,10 @@
 use super::response;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
+use crate::service::domain::message::{self, SendTaskAssignmentCommand};
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CreateTaskRequest, CreateTaskResponse};
-use common::enums::AssigneeType;
+use common::enums::{AssigneeType, MessageRole};
 use common::error::{Result, err, bail_err};
 
 use crate::enrich_ctx;
@@ -36,25 +37,48 @@ pub async fn create_task(
 
     let ctx = ctx.to_builder().try_project_id(params.project_id.as_deref()).build();
 
+    let assignee_type = params.assignee_type.unwrap_or(AssigneeType::Agent);
+    let assignee_id = params.assignee_id.clone();
+    let task_description = params.description.clone();
+
     let task = domain()
         .task_manage()
         .create_with_options(
-            ctx,
-            params.title,
-            params.description.unwrap_or_default(),
+            ctx.clone(),
+            params.title.clone(),
+            task_description.clone().unwrap_or_default(),
             params.priority.unwrap_or_default(),
             params.tags.unwrap_or_default(),
             params
                 .root_user_id
                 .unwrap_or_else(|| current_user_id.clone()),
-            params.assignee_type.unwrap_or(AssigneeType::Agent),
-            params.assignee_id,
-            params.project_id,
+            assignee_type,
+            assignee_id.clone(),
+            params.project_id.clone(),
             params.due_at,
             params.dependencies.unwrap_or_default(),
-            current_user_id,
+            current_user_id.clone(),
         )
         .await?;
+
+    // 如果分配给 Agent，发送任务分配通知消息
+    // Project Domain 只负责数据持久化，通知由 Message Domain 负责
+    if assignee_type == AssigneeType::Agent {
+        let cmd = SendTaskAssignmentCommand {
+            task_id: &task.id(),
+            task_title: &task.po.title,
+            task_description: task_description.as_deref(),
+            from_id: &current_user_id,
+            from_role: MessageRole::User,
+            to_agent_id: &assignee_id,
+            project_id: params.project_id.as_deref(),
+        };
+
+        let _ = message::domain()
+            .delivery()
+            .send_task_assignment(ctx, cmd)
+            .await;
+    }
 
     Ok(response::to_detail(&task))
 }

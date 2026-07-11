@@ -102,6 +102,7 @@ impl PromptBuilder {
             common::enums::MessageType::ToolCallRequest => "【工具调用请求】",
             common::enums::MessageType::ConfirmRequest => "【确认请求】",
             common::enums::MessageType::ConfirmResponse => "【确认回复】",
+            common::enums::MessageType::TaskAssignment => "【任务分配通知】",
             _ => "【当前消息】",
         };
         self.current_message = Some(format!("{}\n{}", label, message.to_prompt()));
