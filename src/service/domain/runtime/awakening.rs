@@ -57,9 +57,9 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         );
         let trace_id = trace.id.clone();
 
-        // Step 3.5: 加载神经工具（Agent 天生具备的能力）
-        let neural_tools = self.load_neural_tools(ctx.clone()).await?;
-        let neural_tool_prompts: Vec<String> = neural_tools
+        // Step 3.5: 加载内置工具（神经工具 + 已安装工具包）
+        let builtin_tools = self.load_builtin_tools(ctx.clone(), agent).await?;
+        let builtin_tool_prompts: Vec<String> = builtin_tools
             .iter()
             .map(|tool| tool.po.to_tool_prompt())
             .collect();
@@ -70,7 +70,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             .trace_ids(&trace_ids)
             .agent_system(agent)
             .agent_tools(agent)
-            .tools(&neural_tool_prompts)
+            .tools(&builtin_tool_prompts)
             .history(&recent_memories)
             .current_message(message);
 
@@ -156,12 +156,15 @@ impl RuntimeAwakening for RuntimeDomainImpl {
 }
 
 impl RuntimeDomainImpl {
-    /// 加载所有神经工具（带 "neural" tag 且启用的工具）
+    /// 加载所有内置工具（神经工具 + 已安装工具包工具）
     ///
-    /// 神经工具是 Agent 天生具备的能力，不需要显式绑定。
-    async fn load_neural_tools(
+    /// 内置工具是 Agent 天生具备或入职培训获得的能力，不需要显式绑定：
+    /// - 神经工具：tags 包含 "neural"，所有 Agent 天生拥有
+    /// - 已安装工具包工具：tags 与 agent.installed_tags 有交集
+    async fn load_builtin_tools(
         &self,
         ctx: RequestContext,
+        agent: &Agent,
     ) -> Result<Vec<crate::models::tool::Tool>> {
         use crate::service::dao::tool::ToolQuery;
         use common::enums::ToolStatus;
@@ -178,14 +181,113 @@ impl RuntimeDomainImpl {
             )
             .await?;
 
-        let neural_tools = all_tools
-            .into_iter()
-            .filter(|tool| {
-                let tags = tool.po.get_tags();
-                tags.contains(&"neural".to_string())
-            })
-            .collect();
+        Ok(filter_builtin_tools(all_tools, &agent.po.get_installed_tags()))
+    }
+}
 
-        Ok(neural_tools)
+/// 从全部工具中筛选内置工具（神经工具 + 已安装工具包工具）
+///
+/// 筛选规则：
+/// 1. 神经工具：tags 包含 "neural"，所有 Agent 天生拥有
+/// 2. 已安装工具包工具：tags 与 installed_tags 有交集
+fn filter_builtin_tools(
+    all_tools: Vec<crate::models::tool::Tool>,
+    installed_tags: &[String],
+) -> Vec<crate::models::tool::Tool> {
+    all_tools
+        .into_iter()
+        .filter(|tool| {
+            let tags = tool.po.get_tags();
+            if tags.contains(&"neural".to_string()) {
+                return true;
+            }
+            installed_tags.iter().any(|installed| tags.contains(installed))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::filter_builtin_tools;
+    use crate::models::tool::{Tool, ToolPo};
+    use common::enums::ToolProtocol;
+    use serde_json::json;
+
+    fn make_tool(tool_id: &str, tags: Vec<&str>) -> Tool {
+        let po = ToolPo::new(
+            tool_id.to_string(),
+            tool_id.to_string(),
+            "test tool".to_string(),
+            ToolProtocol::Builtin,
+            json!({}),
+            Some(json!({ "type": "object" })),
+            tags.into_iter().map(String::from).collect(),
+            Some("test-user".to_string()),
+        );
+        Tool::from_po_for_management(po)
+    }
+
+    fn make_tags(tags: Vec<&str>) -> Vec<String> {
+        tags.into_iter().map(String::from).collect()
+    }
+
+    #[test]
+    fn filter_includes_neural_tools_regardless_of_installed_tags() {
+        let tools = vec![
+            make_tool("neural-1", vec!["neural"]),
+            make_tool("external-1", vec!["external"]),
+        ];
+        let installed = make_tags(vec![]);
+
+        let result = filter_builtin_tools(tools, &installed);
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].po.id, "neural-1");
+    }
+
+    #[test]
+    fn filter_includes_installed_tool_pack_tools() {
+        let tools = vec![
+            make_tool("neural-1", vec!["neural"]),
+            make_tool("pm-1", vec!["project_management"]),
+            make_tool("da-1", vec!["data_analysis"]),
+            make_tool("external-1", vec!["external"]),
+        ];
+        let installed = make_tags(vec!["project_management"]);
+
+        let result = filter_builtin_tools(tools, &installed);
+
+        assert_eq!(result.len(), 2);
+        let ids: Vec<&str> = result.iter().map(|t| t.po.id.as_str()).collect();
+        assert!(ids.contains(&"neural-1"));
+        assert!(ids.contains(&"pm-1"));
+    }
+
+    #[test]
+    fn filter_excludes_tools_when_no_tags_installed() {
+        let tools = vec![
+            make_tool("neural-1", vec!["neural"]),
+            make_tool("pm-1", vec!["project_management"]),
+        ];
+        let installed = make_tags(vec![]);
+
+        let result = filter_builtin_tools(tools, &installed);
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].po.id, "neural-1");
+    }
+
+    #[test]
+    fn filter_includes_tool_with_multiple_tags_when_one_matches() {
+        let tools = vec![
+            // Tool has both "project_management" and "advanced" tags
+            make_tool("multi-1", vec!["project_management", "advanced"]),
+        ];
+        let installed = make_tags(vec!["project_management"]);
+
+        let result = filter_builtin_tools(tools, &installed);
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].po.id, "multi-1");
     }
 }
