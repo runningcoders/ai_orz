@@ -168,4 +168,81 @@ impl AgentManage for HrDomainImpl {
 
         Ok(())
     }
+
+    /// 安装工具包（按 tag）
+    ///
+    /// 将指定 tag 的工具包安装到 Agent 的 runtime_config.installed_tags 中。
+    /// 幂等：已安装则跳过。
+    async fn install_tool_pack(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        tag: &str,
+    ) -> Result<()> {
+        let mut agent = self
+            .agent_dal
+            .find_by_id(ctx.clone(), agent_id)
+            .await?
+            .ok_or_else(|| err!(NotFound, "Agent {} 不存在", agent_id))?;
+
+        let ctx = enrich_ctx!(&ctx, &agent);
+
+        // 幂等：已安装则跳过
+        if agent.po.get_runtime_config().has_tag(tag) {
+            log_info!(ctx, "install_tool_pack", "agent_id={}, tag={} 已安装，跳过", agent_id, tag);
+            return Ok(());
+        }
+
+        agent.po.install_tag(tag);
+        self.agent_dal.update(ctx.clone(), &agent).await?;
+
+        log_info!(ctx, "install_tool_pack", "agent_id={}, tag={} 安装成功", agent_id, tag);
+        Ok(())
+    }
+
+    /// 卸载工具包（按 tag）
+    ///
+    /// 从 Agent 的 runtime_config.installed_tags 中移除指定 tag。
+    /// 幂等：未安装则跳过。
+    async fn uninstall_tool_pack(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        tag: &str,
+    ) -> Result<()> {
+        let mut agent = self
+            .agent_dal
+            .find_by_id(ctx.clone(), agent_id)
+            .await?
+            .ok_or_else(|| err!(NotFound, "Agent {} 不存在", agent_id))?;
+
+        let ctx = enrich_ctx!(&ctx, &agent);
+
+        // 幂等：未安装则跳过
+        if !agent.po.get_runtime_config().has_tag(tag) {
+            log_info!(ctx, "uninstall_tool_pack", "agent_id={}, tag={} 未安装，跳过", agent_id, tag);
+            return Ok(());
+        }
+
+        agent.po.uninstall_tag(tag);
+        self.agent_dal.update(ctx.clone(), &agent).await?;
+
+        log_info!(ctx, "uninstall_tool_pack", "agent_id={}, tag={} 卸载成功", agent_id, tag);
+        Ok(())
+    }
+
+    /// 列出已安装的工具包 tags
+    async fn list_installed_tool_packs(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+    ) -> Result<Vec<String>> {
+        let agent = self
+            .agent_dal
+            .find_by_id(ctx, agent_id)
+            .await?
+            .ok_or_else(|| err!(NotFound, "Agent {} 不存在", agent_id))?;
+
+        Ok(agent.po.get_installed_tags())
+    }
 }

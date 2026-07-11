@@ -178,3 +178,62 @@ pub struct ListAgentsResponse {
 
 /// 更新 Agent 状态响应
 pub type UpdateAgentStatusResponse = GetAgentResponse;
+
+/// 安装工具包请求
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct InstallToolPackRequest {
+    /// Agent ID
+    #[param(source = "path")]
+    pub agent_id: String,
+
+    /// 工具包 tag（如 "project_management"）
+    #[param(source = "path")]
+    pub tag: String,
+}
+
+/// 安装工具包响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct InstallToolPackResponse {
+    /// Agent ID
+    pub agent_id: String,
+    /// 已安装的工具包 tags
+    pub installed_tags: Vec<String>,
+}
+
+/// 卸载工具包请求
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct UninstallToolPackRequest {
+    /// Agent ID
+    #[param(source = "path")]
+    pub agent_id: String,
+
+    /// 工具包 tag
+    #[param(source = "path")]
+    pub tag: String,
+}
+
+/// 卸载工具包响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct UninstallToolPackResponse {
+    /// Agent ID
+    pub agent_id: String,
+    /// 剩余已安装的工具包 tags
+    pub installed_tags: Vec<String>,
+}
+
+/// 列出已安装工具包请求
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ListInstalledToolPacksRequest {
+    /// Agent ID
+    #[param(source = "path")]
+    pub agent_id: String,
+}
+
+/// 列出已安装工具包响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ListInstalledToolPacksResponse {
+    /// Agent ID
+    pub agent_id: String,
+    /// 已安装的工具包 tags
+    pub installed_tags: Vec<String>,
+}

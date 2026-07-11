@@ -659,6 +659,32 @@ impl AgentManage for RecordingHrDomain {
     ) -> Result<()> {
         unimplemented!("not needed by message consumer tests")
     }
+
+    async fn install_tool_pack(
+        &self,
+        _ctx: RequestContext,
+        _agent_id: &str,
+        _tag: &str,
+    ) -> Result<()> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn uninstall_tool_pack(
+        &self,
+        _ctx: RequestContext,
+        _agent_id: &str,
+        _tag: &str,
+    ) -> Result<()> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn list_installed_tool_packs(
+        &self,
+        _ctx: RequestContext,
+        _agent_id: &str,
+    ) -> Result<Vec<String>> {
+        unimplemented!("not needed by message consumer tests")
+    }
 }
 
 #[async_trait]
@@ -1495,6 +1521,29 @@ mod handle_agent_message_tests {
         ) -> Result<()> {
             unimplemented!()
         }
+        async fn install_tool_pack(
+            &self,
+            _ctx: RequestContext,
+            _agent_id: &str,
+            _tag: &str,
+        ) -> Result<()> {
+            unimplemented!()
+        }
+        async fn uninstall_tool_pack(
+            &self,
+            _ctx: RequestContext,
+            _agent_id: &str,
+            _tag: &str,
+        ) -> Result<()> {
+            unimplemented!()
+        }
+        async fn list_installed_tool_packs(
+            &self,
+            _ctx: RequestContext,
+            _agent_id: &str,
+        ) -> Result<Vec<String>> {
+            unimplemented!()
+        }
     }
 
     #[async_trait]
@@ -1652,6 +1701,29 @@ mod handle_agent_message_tests {
             _ctx: RequestContext,
             _agent: &Agent,
         ) -> Result<()> {
+            unimplemented!()
+        }
+        async fn install_tool_pack(
+            &self,
+            _ctx: RequestContext,
+            _agent_id: &str,
+            _tag: &str,
+        ) -> Result<()> {
+            unimplemented!()
+        }
+        async fn uninstall_tool_pack(
+            &self,
+            _ctx: RequestContext,
+            _agent_id: &str,
+            _tag: &str,
+        ) -> Result<()> {
+            unimplemented!()
+        }
+        async fn list_installed_tool_packs(
+            &self,
+            _ctx: RequestContext,
+            _agent_id: &str,
+        ) -> Result<Vec<String>> {
             unimplemented!()
         }
     }

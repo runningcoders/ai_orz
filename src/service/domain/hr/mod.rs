@@ -144,6 +144,35 @@ pub trait AgentManage: Send + Sync {
         ctx: RequestContext,
         agent: &Agent,
     ) -> Result<()>;
+
+    /// 安装工具包（按 tag）
+    ///
+    /// 将指定 tag 的工具包安装到 Agent 的 runtime_config.installed_tags 中。
+    /// 幂等：已安装则跳过。
+    async fn install_tool_pack(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        tag: &str,
+    ) -> Result<()>;
+
+    /// 卸载工具包（按 tag）
+    ///
+    /// 从 Agent 的 runtime_config.installed_tags 中移除指定 tag。
+    /// 幂等：未安装则跳过。
+    async fn uninstall_tool_pack(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        tag: &str,
+    ) -> Result<()>;
+
+    /// 列出已安装的工具包 tags
+    async fn list_installed_tool_packs(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+    ) -> Result<Vec<String>>;
 }
 
 /// Skill 附加文件导入数据。

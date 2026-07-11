@@ -264,3 +264,163 @@ async fn test_non_onboard_transition_does_not_install_tag(pool: SqlitePool) {
 
     assert!(found.po.get_installed_tags().is_empty());
 }
+
+#[sqlx::test]
+async fn test_install_tool_pack_installs_tag_idempotently(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool.clone());
+
+    let agent = create_test_agent("ToolPackAgent");
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+
+    // Install once
+    domain
+        .agent_manage()
+        .install_tool_pack(ctx.clone(), agent.id(), "data_analysis")
+        .await
+        .unwrap();
+
+    // Install same tag again (idempotent)
+    domain
+        .agent_manage()
+        .install_tool_pack(ctx.clone(), agent.id(), "data_analysis")
+        .await
+        .unwrap();
+
+    // Verify installed_tags contains exactly one "data_analysis"
+    let installed = domain
+        .agent_manage()
+        .list_installed_tool_packs(ctx.clone(), agent.id())
+        .await
+        .unwrap();
+
+    assert_eq!(installed.len(), 1);
+    assert_eq!(installed[0], "data_analysis");
+
+    // Verify persisted
+    let found = domain
+        .agent_manage()
+        .get_agent(ctx, agent.id(), Default::default())
+        .await
+        .unwrap()
+        .expect("agent should be readable");
+
+    assert_eq!(found.po.get_installed_tags().len(), 1);
+    assert_eq!(found.po.get_installed_tags()[0], "data_analysis");
+}
+
+#[sqlx::test]
+async fn test_uninstall_tool_pack_removes_tag_idempotently(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool.clone());
+
+    let agent = create_test_agent("UninstallAgent");
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+
+    // Install two tags
+    domain
+        .agent_manage()
+        .install_tool_pack(ctx.clone(), agent.id(), "data_analysis")
+        .await
+        .unwrap();
+    domain
+        .agent_manage()
+        .install_tool_pack(ctx.clone(), agent.id(), "project_management")
+        .await
+        .unwrap();
+
+    // Uninstall one
+    domain
+        .agent_manage()
+        .uninstall_tool_pack(ctx.clone(), agent.id(), "data_analysis")
+        .await
+        .unwrap();
+
+    let installed = domain
+        .agent_manage()
+        .list_installed_tool_packs(ctx.clone(), agent.id())
+        .await
+        .unwrap();
+    assert_eq!(installed.len(), 1);
+    assert_eq!(installed[0], "project_management");
+
+    // Uninstall same tag again (idempotent - no error, no change)
+    domain
+        .agent_manage()
+        .uninstall_tool_pack(ctx.clone(), agent.id(), "data_analysis")
+        .await
+        .unwrap();
+
+    let installed = domain
+        .agent_manage()
+        .list_installed_tool_packs(ctx, agent.id())
+        .await
+        .unwrap();
+    assert_eq!(installed.len(), 1);
+    assert_eq!(installed[0], "project_management");
+}
+
+#[sqlx::test]
+async fn test_list_installed_tool_packs_returns_all_tags(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool.clone());
+
+    let agent = create_test_agent("ListPacksAgent");
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+
+    // Initially empty
+    let installed = domain
+        .agent_manage()
+        .list_installed_tool_packs(ctx.clone(), agent.id())
+        .await
+        .unwrap();
+    assert!(installed.is_empty());
+
+    // Install multiple tags
+    domain
+        .agent_manage()
+        .install_tool_pack(ctx.clone(), agent.id(), "data_analysis")
+        .await
+        .unwrap();
+    domain
+        .agent_manage()
+        .install_tool_pack(ctx.clone(), agent.id(), "project_management")
+        .await
+        .unwrap();
+    domain
+        .agent_manage()
+        .install_tool_pack(ctx.clone(), agent.id(), "coding")
+        .await
+        .unwrap();
+
+    let installed = domain
+        .agent_manage()
+        .list_installed_tool_packs(ctx, agent.id())
+        .await
+        .unwrap();
+    assert_eq!(installed.len(), 3);
+    assert!(installed.contains(&"data_analysis".to_string()));
+    assert!(installed.contains(&"project_management".to_string()));
+    assert!(installed.contains(&"coding".to_string()));
+}
+
+#[sqlx::test]
+async fn test_install_tool_pack_returns_error_for_nonexistent_agent(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+
+    let result = domain
+        .agent_manage()
+        .install_tool_pack(ctx, "nonexistent-agent-id", "data_analysis")
+        .await;
+
+    assert!(result.is_err());
+}
