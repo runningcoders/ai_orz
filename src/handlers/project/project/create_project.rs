@@ -12,7 +12,8 @@ use common::error::{Result, err, bail_err};
     id = "create_project",
     name = "create_project",
     description = "Create a new project",
-    params = "common::api::CreateProjectRequest"
+    params = "common::api::CreateProjectRequest",
+    tags = "project_management"
 )]
 #[generate_http_handler]
 pub async fn create_project(

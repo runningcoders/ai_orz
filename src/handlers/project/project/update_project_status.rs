@@ -14,7 +14,8 @@ use crate::enrich_ctx;
     id = "update_project_status",
     name = "update_project_status",
     description = "Update project status (transition to next state)",
-    params = "common::api::UpdateProjectStatusRequest"
+    params = "common::api::UpdateProjectStatusRequest",
+    tags = "project_management"
 )]
 #[generate_http_handler]
 pub async fn update_project_status(

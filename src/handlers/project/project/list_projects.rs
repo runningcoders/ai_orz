@@ -12,7 +12,8 @@ use common::error::{Result, err, bail_err};
     id = "list_projects",
     name = "list_projects",
     description = "List all projects for a user with optional status filtering",
-    params = "common::api::ListProjectsRequest"
+    params = "common::api::ListProjectsRequest",
+    tags = "project_management"
 )]
 #[generate_http_handler]
 pub async fn list_projects(

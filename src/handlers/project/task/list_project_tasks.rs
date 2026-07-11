@@ -12,7 +12,8 @@ use common::api::{ListProjectTasksRequest, TaskListItem};
     id = "list_project_tasks",
     name = "list_project_tasks",
     description = "List all tasks under a specific project, with optional status filtering",
-    params = "common::api::ListProjectTasksRequest"
+    params = "common::api::ListProjectTasksRequest",
+    tags = "project_management"
 )]
 #[generate_http_handler]
 pub async fn list_project_tasks(

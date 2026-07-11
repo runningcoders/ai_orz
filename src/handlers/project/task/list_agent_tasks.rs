@@ -13,7 +13,8 @@ use common::enums::AssigneeType;
     id = "list_agent_tasks",
     name = "list_agent_tasks",
     description = "List all tasks assigned to a specific agent, with optional status filtering",
-    params = "common::api::ListAgentTasksRequest"
+    params = "common::api::ListAgentTasksRequest",
+    tags = "project_management"
 )]
 #[generate_http_handler]
 pub async fn list_agent_tasks(

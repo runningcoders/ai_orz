@@ -15,7 +15,8 @@ use crate::enrich_ctx;
     id = "create_task",
     name = "create_task",
     description = "Create a new task with specified title, description, assignee, etc.",
-    params = "common::api::CreateTaskRequest"
+    params = "common::api::CreateTaskRequest",
+    tags = "project_management"
 )]
 #[generate_http_handler]
 pub async fn create_task(

@@ -12,7 +12,8 @@ use common::api::{GetProjectRequest, GetProjectResponse};
     id = "get_project",
     name = "get_project",
     description = "Get project detailed information by ID",
-    params = "common::api::GetProjectRequest"
+    params = "common::api::GetProjectRequest",
+    tags = "project_management"
 )]
 #[generate_http_handler]
 pub async fn get_project(

@@ -12,7 +12,8 @@ use common::api::{UpdateProjectRequest, UpdateProjectResponse};
     id = "update_project",
     name = "update_project",
     description = "Update project basic information (name, description, tags, priority)",
-    params = "common::api::UpdateProjectRequest"
+    params = "common::api::UpdateProjectRequest",
+    tags = "project_management"
 )]
 #[generate_http_handler]
 pub async fn update_project(

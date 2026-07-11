@@ -12,7 +12,8 @@ use common::api::{GetTaskRequest, GetTaskResponse};
     id = "get_task",
     name = "get_task",
     description = "Get detailed information about a specific task by its ID",
-    params = "common::api::GetTaskRequest"
+    params = "common::api::GetTaskRequest",
+    tags = "project_management"
 )]
 #[generate_http_handler]
 pub async fn get_task(

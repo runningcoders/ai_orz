@@ -14,7 +14,8 @@ use crate::enrich_ctx;
     id = "update_task_status",
     name = "update_task_status",
     description = "Update the status of a task with proper state transition validation",
-    params = "common::api::UpdateTaskStatusRequest"
+    params = "common::api::UpdateTaskStatusRequest",
+    tags = "project_management"
 )]
 #[generate_http_handler]
 pub async fn update_task_status(

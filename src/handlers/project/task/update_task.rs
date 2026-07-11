@@ -12,7 +12,8 @@ use common::api::{UpdateTaskRequest, UpdateTaskResponse};
     id = "update_task",
     name = "update_task",
     description = "Update basic information of an existing task",
-    params = "common::api::UpdateTaskRequest"
+    params = "common::api::UpdateTaskRequest",
+    tags = "project_management"
 )]
 #[generate_http_handler]
 pub async fn update_task(

@@ -11,7 +11,8 @@ use common::error::Result;
     id = "mark_done",
     name = "mark_done",
     description = "Mark a task as completed",
-    params = "common::api::MarkDoneParams"
+    params = "common::api::MarkDoneParams",
+    tags = "project_management"
 )]
 #[generate_http_handler]
 pub async fn mark_done(
