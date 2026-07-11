@@ -5,7 +5,7 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 ![GitHub last commit](https://img.shields.io/github/last-commit/runningcoders/ai_orz)
 ![GitHub license](https://img.shields.io/github/license/runningcoders/ai_orz)
 ![Rust](https://img.shields.io/badge/Rust-1.85+-000000?logo=rust)
-![Tests](https://img.shields.io/badge/tests-554%20%E2%9C%94-brightgreen)
+![Tests](https://img.shields.io/badge/tests-576%20%E2%9C%94-brightgreen)
 [![GitHub stars](https://img.shields.io/github/stars/runningcoders/ai_orz?style=social)](https://github.com/runningcoders/ai_orz)
 
 ---
@@ -39,6 +39,10 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 | 🏗️ 严格分层架构 | ✅ | DAO/DAL/Domain/Handler/Consumer 五层职责清晰 |
 | 📊 Agent 统计系统 | ✅ | DuckDB 多维统计、按领域划分职责、多维度过滤查询 |
 | 🔄 多回合循环控制 | ✅ | 轮次限制检查、任务完成检测、Prompt 上下文差异化、工具失败计数注入 |
+| 🎒 工具包机制 | ✅ | tag 分组工具、Agent 入职自动安装、免绑定校验三层逻辑 |
+| 📨 任务分配消息 | ✅ | TaskAssignment 消息类型、自动通知 Agent、神经工具封装 |
+| ⏰ 定时触发器系统 | ✅ | Cron Trigger 管理、后台扫描、事件投递、系统领域基础设施 |
+| 🏛️ 记忆沉淀机制 | ✅ | Agent 休息与沉淀、短期记忆→长期知识图谱、定时触发沉淀 |
 
 > 📝 **开发规范与详细架构** 请查看 [AGENTS.md](./AGENTS.md) - AI 助手专属快速入门手册
 
@@ -194,7 +198,7 @@ retention_days = 30       # 日志保留天数，0 表示不清理
 cargo test
 ```
 
-**测试状态：** **544 个测试全部通过 ✅**
+**测试状态：** **576 个测试全部通过 ✅**
 
 ---
 
@@ -299,6 +303,7 @@ system_info("服务启动成功");
 | 消息渠道 | `/api/v1/finance/message-channels` | 消息渠道 CRUD、状态更新、连接测试 |
 | 技能库 | `/api/v1/hr/skills`, `/api/v1/hr/agents/{agent_id}/skills` | Skill CRUD、搜索、Agent 技能列表/安装 |
 | 工具管理 | `/api/v1/finance/tools` | 工具 CRUD、状态更新、Agent 绑定/解绑工具 |
+| 定时触发器 | `/api/v1/system/cron-triggers` | Cron Trigger CRUD、启停、列表查询 |
 
 ---
 
