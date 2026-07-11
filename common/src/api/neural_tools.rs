@@ -196,3 +196,25 @@ pub struct MarkDoneResponse {
     /// 任务状态。
     pub status: String,
 }
+
+/// 发送任务分配消息参数。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct SendTaskAssignmentMessageParams {
+    /// 任务 ID。
+    pub task_id: String,
+    /// 任务标题。
+    pub task_title: String,
+    /// 任务描述。
+    pub task_description: Option<String>,
+    /// 接收 Agent ID。
+    pub to_agent_id: String,
+    /// 关联项目 ID。
+    pub project_id: Option<String>,
+}
+
+/// 发送任务分配消息响应。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct SendTaskAssignmentMessageResponse {
+    /// 消息 ID。
+    pub message_id: String,
+}
