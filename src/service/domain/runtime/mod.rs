@@ -20,6 +20,7 @@ use crate::models::message::Message;
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_tracing::logger::ToolCallLogger;
 use crate::service::dao::memory::{MemoryQuery, MemorySearch};
+use crate::service::dal::agent::AgentDal;
 use crate::service::dal::brain::BrainDal;
 use crate::service::dal::mcp_tool::McpToolDal;
 use crate::service::dal::tool::ToolDal;
@@ -213,6 +214,7 @@ struct RuntimeDomainImpl {
     brain_dal: Arc<dyn BrainDal>,
     tool_dal: Arc<dyn ToolDal>,
     mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
+    agent_dal: Arc<dyn AgentDal>,
     tool_call_logger: Arc<ToolCallLogger>,
 }
 
@@ -222,6 +224,7 @@ impl std::fmt::Debug for RuntimeDomainImpl {
             .field("brain_dal", &"<BrainDal>")
             .field("tool_dal", &"<ToolDal>")
             .field("mcp_tool_dal", &"<McpToolDal>")
+            .field("agent_dal", &"<AgentDal>")
             .field("tool_call_logger", &"<ToolCallLogger>")
             .finish()
     }
@@ -233,6 +236,7 @@ impl Clone for RuntimeDomainImpl {
             brain_dal: self.brain_dal.clone(),
             tool_dal: self.tool_dal.clone(),
             mcp_tool_dal: self.mcp_tool_dal.clone(),
+            agent_dal: self.agent_dal.clone(),
             tool_call_logger: self.tool_call_logger.clone(),
         }
     }
@@ -244,6 +248,7 @@ impl RuntimeDomainImpl {
             brain_dal,
             tool_dal: crate::service::dal::tool::dal(),
             mcp_tool_dal: crate::service::dal::mcp_tool::dal(),
+            agent_dal: crate::service::dal::agent::dal(),
             tool_call_logger: Arc::new(ToolCallLogger::get().clone()),
         }
     }
@@ -256,11 +261,13 @@ impl RuntimeDomainImpl {
         brain_dal: Arc<dyn BrainDal>,
         tool_dal: Arc<dyn ToolDal>,
         mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
+        agent_dal: Arc<dyn AgentDal>,
     ) -> Self {
         Self {
             brain_dal,
             tool_dal,
             mcp_tool_dal,
+            agent_dal,
             tool_call_logger: Arc::new(ToolCallLogger::get().clone()),
         }
     }
@@ -271,12 +278,14 @@ impl RuntimeDomainImpl {
         brain_dal: Arc<dyn BrainDal>,
         tool_dal: Arc<dyn ToolDal>,
         mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
+        agent_dal: Arc<dyn AgentDal>,
         tool_call_logger: Arc<ToolCallLogger>,
     ) -> Self {
         Self {
             brain_dal,
             tool_dal,
             mcp_tool_dal,
+            agent_dal,
             tool_call_logger,
         }
     }
@@ -332,8 +341,9 @@ pub fn new_with_tool_dals(
     brain_dal: Arc<dyn BrainDal>,
     tool_dal: Arc<dyn ToolDal>,
     mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
+    agent_dal: Arc<dyn AgentDal>,
 ) -> Arc<dyn RuntimeDomain> {
-    let domain = RuntimeDomainImpl::new_with_tool_dals(brain_dal, tool_dal, mcp_tool_dal);
+    let domain = RuntimeDomainImpl::new_with_tool_dals(brain_dal, tool_dal, mcp_tool_dal, agent_dal);
     Arc::new(domain)
 }
 
@@ -343,9 +353,10 @@ pub fn new_with_all(
     brain_dal: Arc<dyn BrainDal>,
     tool_dal: Arc<dyn ToolDal>,
     mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
+    agent_dal: Arc<dyn AgentDal>,
     tool_call_logger: Arc<ToolCallLogger>,
 ) -> Arc<dyn RuntimeDomain> {
-    let domain = RuntimeDomainImpl::new_with_all(brain_dal, tool_dal, mcp_tool_dal, tool_call_logger);
+    let domain = RuntimeDomainImpl::new_with_all(brain_dal, tool_dal, mcp_tool_dal, agent_dal, tool_call_logger);
     Arc::new(domain)
 }
 

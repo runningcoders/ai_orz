@@ -90,7 +90,7 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
             .into_iter()
             .find(|tool| tool.po.id == tool_id);
 
-        // 如果绑定工具中没有，检查是否是神经工具
+        // 如果绑定工具中没有，检查是否是神经工具或已安装工具包
         let tool = match bound_tool {
             Some(tool) => tool,
             None => {
@@ -105,17 +105,45 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
                     )
                     .await?;
 
-                all_tools
-                    .into_iter()
-                    .find(|t| {
-                        t.po.id == tool_id && t.po.get_tags().contains(&"neural".to_string())
-                    })
-                    .ok_or_else(|| {
-                        common::error::Error::tool_call_failed(format!(
-                            "Manual tool call denied: tool {} is not bound to agent {} and is not a neural tool",
+                // 先尝试匹配神经工具
+                let neural_tool = all_tools.iter().find(|t| {
+                    t.po.id == tool_id && t.po.get_tags().contains(&"neural".to_string())
+                }).cloned();
+
+                if let Some(tool) = neural_tool {
+                    tool
+                } else {
+                    // 再尝试匹配已安装工具包（tool 的 tags 与 agent 的 installed_tags 有交集）
+                    let installed_tags = self
+                        .agent_dal
+                        .find_by_id(ctx.clone(), &agent_id)
+                        .await?
+                        .map(|agent| agent.po.get_installed_tags())
+                        .unwrap_or_default();
+
+                    if installed_tags.is_empty() {
+                        return Err(common::error::Error::tool_call_failed(format!(
+                            "Manual tool call denied: tool {} is not bound to agent {}, not a neural tool, and agent has no installed tool packs",
                             tool_id, agent_id
-                        ))
-                    })?
+                        )));
+                    }
+
+                    all_tools
+                        .into_iter()
+                        .find(|t| {
+                            if t.po.id != tool_id {
+                                return false;
+                            }
+                            let tool_tags = t.po.get_tags();
+                            installed_tags.iter().any(|installed| tool_tags.contains(installed))
+                        })
+                        .ok_or_else(|| {
+                            common::error::Error::tool_call_failed(format!(
+                                "Manual tool call denied: tool {} is not bound to agent {}, not a neural tool, and does not belong to any installed tool pack (installed: {:?})",
+                                tool_id, agent_id, installed_tags
+                            ))
+                        })?
+                }
             }
         };
 

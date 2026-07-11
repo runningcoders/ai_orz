@@ -3,26 +3,29 @@
 #[cfg(test)]
 mod tests {
         use common::error::Error;
-        use common::models::{ToolStats, StatsFetchOptions};
-        use crate::models::brain::Brain;
-        use crate::models::memory::Memory;
-        use crate::models::model_provider::ModelProvider;
-        use crate::models::tool::{Tool, ToolCallTraceRef, ToolPo};
-        use crate::pkg::RequestContext;
-        use crate::pkg::tool_tracing::entry::{ToolCallEntry, ToolCallStatus};
-        use crate::pkg::tool_tracing::logger::{ToolCallLogger, ToolCallQuery};
-        use crate::service::dal::brain::BrainDal;
-        use crate::service::dal::mcp_tool::McpToolDal;
-        use crate::service::dal::tool::ToolDal;
-        use crate::service::dao::tool::{ToolQuery, ToolSearch};
-        use async_trait::async_trait;
-        use common::enums::{ControlMode, ToolProtocol, ToolStatus};
-        use rig::tool::{ToolDyn, ToolError};
-        use serde_json::{Value, json};
-        use std::sync::Arc;
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        use tempfile::tempdir;
-        use common::error::Result;
+    use common::models::{AgentStats, ModelCallStats, StatsFetchOptions, ToolStats};
+    use crate::models::agent::Agent;
+    use crate::models::brain::Brain;
+    use crate::models::memory::Memory;
+    use crate::models::model_provider::ModelProvider;
+    use crate::models::tool::{Tool, ToolCallTraceRef, ToolPo};
+    use crate::pkg::RequestContext;
+    use crate::pkg::tool_tracing::entry::{ToolCallEntry, ToolCallStatus};
+    use crate::pkg::tool_tracing::logger::{ToolCallLogger, ToolCallQuery};
+    use crate::service::dal::agent::{AgentDal, AgentFetchOptions};
+    use crate::service::dal::brain::BrainDal;
+    use crate::service::dal::mcp_tool::McpToolDal;
+    use crate::service::dal::tool::ToolDal;
+    use crate::service::dao::agent::AgentQuery;
+    use crate::service::dao::tool::{ToolQuery, ToolSearch};
+    use async_trait::async_trait;
+    use common::enums::{AgentStatus, ControlMode, ToolProtocol, ToolStatus};
+    use rig::tool::{ToolDyn, ToolError};
+    use serde_json::{Value, json};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tempfile::tempdir;
+    use common::error::Result;
 
     struct StubBrainDal;
 
@@ -57,9 +60,91 @@ mod tests {
         }
     }
 
+    /// Stub AgentDal for tool execution tests.
+    ///
+    /// Returns a configurable Agent (or None) from find_by_id,
+    /// so tests can verify installed_tags-based authorization.
+    struct StubAgentDal {
+        agent: Option<Agent>,
+    }
+
+    impl StubAgentDal {
+        fn new() -> Self {
+            Self { agent: None }
+        }
+
+        fn with_agent(agent: Agent) -> Self {
+            Self { agent: Some(agent) }
+        }
+    }
+
+    #[async_trait]
+    impl AgentDal for StubAgentDal {
+        async fn create(&self, _ctx: RequestContext, _agent: &Agent) -> Result<()> {
+            unimplemented!("not needed by tool execution routing tests")
+        }
+
+        async fn find_by_id(&self, _ctx: RequestContext, _id: &str) -> Result<Option<Agent>> {
+            Ok(self.agent.clone())
+        }
+
+        async fn get_agent(
+            &self,
+            _ctx: RequestContext,
+            _id: &str,
+            _options: AgentFetchOptions,
+        ) -> Result<Option<Agent>> {
+            Ok(self.agent.clone())
+        }
+
+        async fn query(&self, _ctx: RequestContext, _query: AgentQuery) -> Result<Vec<Agent>> {
+            Ok(self.agent.iter().cloned().collect())
+        }
+
+        async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<Agent>> {
+            Ok(self.agent.iter().cloned().collect())
+        }
+
+        async fn update(&self, _ctx: RequestContext, _agent: &Agent) -> Result<()> {
+            unimplemented!("not needed by tool execution routing tests")
+        }
+
+        async fn delete(&self, _ctx: RequestContext, _agent: &Agent) -> Result<()> {
+            unimplemented!("not needed by tool execution routing tests")
+        }
+
+        async fn wake_brain(
+            &self,
+            _ctx: RequestContext,
+            _agent: &mut Agent,
+            _brain: Brain,
+        ) -> Result<()> {
+            unimplemented!("not needed by tool execution routing tests")
+        }
+
+        async fn get_stats(
+            &self,
+            _ctx: RequestContext,
+            _agent_id: &str,
+            _options: StatsFetchOptions,
+        ) -> Result<AgentStats> {
+            unimplemented!("not needed by tool execution routing tests")
+        }
+
+        async fn get_model_call_stats(
+            &self,
+            _ctx: RequestContext,
+            _agent_id: &str,
+            _options: StatsFetchOptions,
+        ) -> Result<ModelCallStats> {
+            unimplemented!("not needed by tool execution routing tests")
+        }
+    }
+
     struct RecordingToolDal {
         protocol: ToolProtocol,
         bound_tools: Vec<(String, ToolProtocol, ControlMode, ToolStatus)>,
+        all_tools: Vec<ToolPo>,
         get_by_id_count: AtomicUsize,
         list_for_agent_count: AtomicUsize,
         query_count: AtomicUsize,
@@ -72,6 +157,7 @@ mod tests {
             Self {
                 protocol,
                 bound_tools: Vec::new(),
+                all_tools: Vec::new(),
                 get_by_id_count: AtomicUsize::new(0),
                 list_for_agent_count: AtomicUsize::new(0),
                 query_count: AtomicUsize::new(0),
@@ -96,12 +182,18 @@ mod tests {
             Self {
                 protocol: ToolProtocol::Builtin,
                 bound_tools,
+                all_tools: Vec::new(),
                 get_by_id_count: AtomicUsize::new(0),
                 list_for_agent_count: AtomicUsize::new(0),
                 query_count: AtomicUsize::new(0),
                 call_by_id_count: AtomicUsize::new(0),
                 call_tool_count: AtomicUsize::new(0),
             }
+        }
+
+        fn with_all_tools(mut self, all_tools: Vec<ToolPo>) -> Self {
+            self.all_tools = all_tools;
+            self
         }
 
         fn get_by_id_calls(&self) -> usize {
@@ -177,7 +269,7 @@ mod tests {
             _query: ToolQuery,
         ) -> Result<Vec<Tool>> {
             self.query_count.fetch_add(1, Ordering::SeqCst);
-            Ok(vec![])
+            Ok(self.all_tools.iter().map(|po| Tool::from_po_for_management(po.clone())).collect())
         }
 
         async fn list_enabled(&self, _ctx: RequestContext) -> Result<Vec<Tool>> {
@@ -427,15 +519,24 @@ mod tests {
                     }
 
         fn test_runtime_with_tool_dals(
-            tool_dal: Arc<dyn ToolDal>,
-            mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
-        ) -> (tempfile::TempDir, Arc<dyn crate::service::domain::runtime::RuntimeDomain>) {
+        tool_dal: Arc<dyn ToolDal>,
+        mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
+    ) -> (tempfile::TempDir, Arc<dyn crate::service::domain::runtime::RuntimeDomain>) {
+        test_runtime_with_all(tool_dal, mcp_tool_dal, Arc::new(StubAgentDal::new()))
+    }
+
+    fn test_runtime_with_all(
+        tool_dal: Arc<dyn ToolDal>,
+        mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
+        agent_dal: Arc<dyn AgentDal>,
+    ) -> (tempfile::TempDir, Arc<dyn crate::service::domain::runtime::RuntimeDomain>) {
         let temp_dir = tempdir().expect("tempdir should be created");
         let logger = Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf()));
         let runtime = crate::service::domain::runtime::new_with_all(
             Arc::new(StubBrainDal),
             tool_dal,
             mcp_tool_dal,
+            agent_dal,
             logger,
         );
         (temp_dir, runtime)
@@ -499,6 +600,43 @@ mod tests {
         po
             }
 
+    fn test_tool_po_with_tags(
+        tool_id: &str,
+        protocol: ToolProtocol,
+        control_mode: ControlMode,
+        tags: Vec<&str>,
+    ) -> ToolPo {
+        let mut po = ToolPo::new(
+            tool_id.to_string(),
+            tool_id.to_string(),
+            "test tool".to_string(),
+            protocol,
+            json!({}),
+            Some(json!({ "type": "object" })),
+            tags.into_iter().map(String::from).collect(),
+            Some("test-user".to_string()),
+        );
+        po.control_mode = control_mode;
+        po
+    }
+
+    fn test_agent_with_installed_tags(agent_id: &str, tags: Vec<&str>) -> Agent {
+        let mut po = crate::models::agent::AgentPo::new(
+            "test-agent".to_string(),
+            vec!["worker".to_string()],
+            "test agent".to_string(),
+            vec![],
+            "test soul".to_string(),
+            "test-provider".to_string(),
+            "test-user".to_string(),
+        );
+        po.id = agent_id.to_string();
+        for tag in tags {
+            po.install_tag(tag);
+        }
+        Agent::from_po(po)
+    }
+
         #[tokio::test]
             async fn runtime_query_tool_call_entries_derives_scope_from_context() {
         let temp_dir = tempdir().expect("tempdir should be created");
@@ -507,6 +645,7 @@ mod tests {
             Arc::new(StubBrainDal),
             Arc::new(RecordingToolDal::new(ToolProtocol::Builtin)),
             Arc::new(RecordingMcpToolDal::new()),
+            Arc::new(StubAgentDal::new()),
             logger.clone(),
         );
         let call_id = format!("runtime-query-{}", uuid::Uuid::now_v7());
@@ -545,6 +684,7 @@ mod tests {
             Arc::new(StubBrainDal),
             Arc::new(RecordingToolDal::new(ToolProtocol::Builtin)),
             Arc::new(RecordingMcpToolDal::new()),
+            Arc::new(StubAgentDal::new()),
             logger,
         );
 
@@ -565,6 +705,7 @@ mod tests {
             Arc::new(StubBrainDal),
             Arc::new(RecordingToolDal::new(ToolProtocol::Builtin)),
             Arc::new(RecordingMcpToolDal::new()),
+            Arc::new(StubAgentDal::new()),
             logger,
         );
 
@@ -591,6 +732,7 @@ mod tests {
             Arc::new(StubBrainDal),
             Arc::new(RecordingToolDal::new(ToolProtocol::Builtin)),
             Arc::new(RecordingMcpToolDal::new()),
+            Arc::new(StubAgentDal::new()),
             logger,
         );
         let mut ctx = test_ctx();
@@ -621,6 +763,7 @@ mod tests {
             Arc::new(StubBrainDal),
             Arc::new(RecordingToolDal::new(ToolProtocol::Builtin)),
             Arc::new(RecordingMcpToolDal::new()),
+            Arc::new(StubAgentDal::new()),
             logger,
         );
 
@@ -648,6 +791,7 @@ mod tests {
             Arc::new(StubBrainDal),
             Arc::new(RecordingToolDal::new(ToolProtocol::Builtin)),
             Arc::new(RecordingMcpToolDal::new()),
+            Arc::new(StubAgentDal::new()),
             logger,
         );
 
@@ -678,6 +822,7 @@ mod tests {
             Arc::new(StubBrainDal),
             Arc::new(RecordingToolDal::new(ToolProtocol::Builtin)),
             Arc::new(RecordingMcpToolDal::new()),
+            Arc::new(StubAgentDal::new()),
             logger,
         );
 
@@ -704,6 +849,7 @@ mod tests {
             Arc::new(StubBrainDal),
             Arc::new(RecordingToolDal::new(ToolProtocol::Builtin)),
             Arc::new(RecordingMcpToolDal::new()),
+            Arc::new(StubAgentDal::new()),
             logger.clone(),
         );
         let call_id = format!("runtime-get-{}", uuid::Uuid::now_v7());
@@ -1156,5 +1302,132 @@ mod tests {
         assert_eq!(tool_dal.call_tool_calls(), 0);
         assert_eq!(tool_dal.call_by_id_calls(), 0);
                                             }
+
+    #[tokio::test]
+    async fn runtime_allows_manual_tool_call_when_tool_pack_tag_is_installed() {
+        // Tool with "project_management" tag, not bound to agent
+        let tool_po = test_tool_po_with_tags(
+            "pm-tool-1",
+            ToolProtocol::Builtin,
+            ControlMode::Manual,
+            vec!["project_management"],
+        );
+        let tool_dal = Arc::new(
+            RecordingToolDal::with_bound_tools(vec![])
+                .with_all_tools(vec![tool_po]),
+        );
+        let mcp_tool_dal = Arc::new(RecordingMcpToolDal::new());
+        let agent_dal = Arc::new(StubAgentDal::with_agent(test_agent_with_installed_tags(
+            "agent-1",
+            vec!["project_management"],
+        )));
+        let (_temp_dir, runtime) = test_runtime_with_all(
+            tool_dal.clone(),
+            mcp_tool_dal.clone(),
+            agent_dal,
+        );
+
+        let result = runtime
+            .tool_execution()
+            .call_manual_tool_for_agent(
+                test_ctx(),
+                "agent-1".to_string(),
+                "pm-tool-1".to_string(),
+                json!({ "text": "hi" }),
+            )
+            .await
+            .expect("tool with installed tag should be allowed");
+
+        assert_eq!(result.result["called_by"], "tool_dal");
+        assert_eq!(tool_dal.list_for_agent_calls(), 1);
+        assert_eq!(tool_dal.query_calls(), 1);
+        assert_eq!(tool_dal.call_tool_calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn runtime_denies_manual_tool_call_when_tool_pack_tag_not_installed() {
+        // Tool with "data_analysis" tag, but agent only has "project_management"
+        let tool_po = test_tool_po_with_tags(
+            "da-tool-1",
+            ToolProtocol::Builtin,
+            ControlMode::Manual,
+            vec!["data_analysis"],
+        );
+        let tool_dal = Arc::new(
+            RecordingToolDal::with_bound_tools(vec![])
+                .with_all_tools(vec![tool_po]),
+        );
+        let mcp_tool_dal = Arc::new(RecordingMcpToolDal::new());
+        let agent_dal = Arc::new(StubAgentDal::with_agent(test_agent_with_installed_tags(
+            "agent-1",
+            vec!["project_management"],
+        )));
+        let (_temp_dir, runtime) = test_runtime_with_all(
+            tool_dal.clone(),
+            mcp_tool_dal.clone(),
+            agent_dal,
+        );
+
+        let error = runtime
+            .tool_execution()
+            .call_manual_tool_for_agent(
+                test_ctx(),
+                "agent-1".to_string(),
+                "da-tool-1".to_string(),
+                json!({ "text": "hi" }),
+            )
+            .await
+            .expect_err("tool with non-installed tag should be denied");
+
+        let message = error.to_string();
+        assert!(message.contains("Manual tool call denied"));
+        assert!(message.contains("da-tool-1"));
+        assert!(message.contains("agent-1"));
+        assert_eq!(tool_dal.list_for_agent_calls(), 1);
+        assert_eq!(tool_dal.query_calls(), 1);
+        assert_eq!(tool_dal.call_tool_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn runtime_denies_manual_tool_call_when_agent_has_no_installed_tags() {
+        // Tool with "project_management" tag, but agent has no installed_tags
+        let tool_po = test_tool_po_with_tags(
+            "pm-tool-1",
+            ToolProtocol::Builtin,
+            ControlMode::Manual,
+            vec!["project_management"],
+        );
+        let tool_dal = Arc::new(
+            RecordingToolDal::with_bound_tools(vec![])
+                .with_all_tools(vec![tool_po]),
+        );
+        let mcp_tool_dal = Arc::new(RecordingMcpToolDal::new());
+        // StubAgentDal::new() returns None for find_by_id → no installed tags
+        let agent_dal = Arc::new(StubAgentDal::new());
+        let (_temp_dir, runtime) = test_runtime_with_all(
+            tool_dal.clone(),
+            mcp_tool_dal.clone(),
+            agent_dal,
+        );
+
+        let error = runtime
+            .tool_execution()
+            .call_manual_tool_for_agent(
+                test_ctx(),
+                "agent-1".to_string(),
+                "pm-tool-1".to_string(),
+                json!({ "text": "hi" }),
+            )
+            .await
+            .expect_err("tool should be denied when agent has no installed tags");
+
+        let message = error.to_string();
+        assert!(message.contains("Manual tool call denied"));
+        assert!(message.contains("pm-tool-1"));
+        assert!(message.contains("no installed tool packs"));
+        assert_eq!(tool_dal.list_for_agent_calls(), 1);
+        assert_eq!(tool_dal.query_calls(), 1);
+        assert_eq!(tool_dal.call_tool_calls(), 0);
+    }
 
                                         }
