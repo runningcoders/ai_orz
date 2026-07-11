@@ -2,8 +2,8 @@
 
 > 🎯 **目标**：按阶段推进 Runtime Domain 的完整实现，从"能唤醒"到"能做事"到"能协作"
 >
-> **当前版本**：v1.0（2026-07-10）
-> **状态**：Phase 2 完成，神经工具集已上线
+> **当前版本**：v2.0（2026-07-10）
+> **状态**：Phase 3 完成，多回合循环控制已上线
 >
 > **文档定位**：总体规划 + 各阶段入口，每个阶段开始前在 `docs/superpowers/plans/` 下细化具体执行方案
 
@@ -16,11 +16,14 @@
 | 模块 | 完成度 | 说明 |
 |------|--------|------|
 | **RuntimeMemory** | ✅ 100% | 完整 CRUD（search/query/create/update/delete）+ Trace 闭环 |
-| **ContextAssembly** | ✅ 100% | Builder 模式 Prompt 拼装，PO 自格式化，神经工具自动注入 |
-| **Awakening** | ✅ 100% | 9 步主流程完整，状态机管理，统计上报，神经工具注入 |
+| **ContextAssembly** | ✅ 100% | Builder 模式 Prompt 拼装，PO 自格式化，神经工具自动注入，消息类型差异化 |
+| **Awakening** | ✅ 100% | 9 步主流程完整，状态机管理，统计上报，神经工具注入，失败事件记录 |
 | **ToolExecution** | ✅ 100% | 协议路由（MCP/Builtin/HTTP）、Manual 授权、神经工具免绑定、Trace 查询 |
 | **RuntimeState** | ✅ 100% | DashMap 内存状态管理，Idle/Resting/Busy 三态 |
-| **神经工具集** | ✅ 100% | 8 个神经工具（记忆 5 个 + send_message + request_tool_call + mark_done + list_tools） |
+| **神经工具集** | ✅ 100% | 9 个神经工具（记忆 5 个 + send_message + request_tool_call + mark_done + list_tools） |
+| **多回合循环控制** | ✅ 100% | 轮次限制检查、任务完成检测、Prompt 上下文差异化、工具失败计数注入 |
+| **ToolStatsDao** | ✅ 100% | 工具调用统计 DAO（DuckDB），支持调用次数/失败次数查询 |
+| **AgentFetchOptions** | ✅ 100% | 附带信息获取选项，按需注入统计数据 |
 
 ### 1.2 当前能力边界
 
@@ -29,16 +32,18 @@
 - 推理过程会记录 Trace（输入/输出完整记录）
 - 工具可以被调用（Manual 模式，经 Runtime Domain 路由）
 - Agent 运行时状态可以被查询（空闲/忙碌/休息）
-- Agent 拥有 8 个天生神经工具，无需绑定即可调用
+- Agent 拥有 9 个天生神经工具，无需绑定即可调用
 - Agent 通过 `send_message` 神经工具主动发送消息（框架不再自动回复）
 - Memory 完整 CRUD 能力通过 RuntimeMemory trait 统一暴露
+- 多回合循环控制：轮次限制、任务完成检测、工具失败警告
+- 唤醒失败也记录统计事件，便于排查
 
 **不能做的：**
-- ✅ 消息消费者已实际调用 awaken()（Phase 1 完成）
-- ✅ Agent 拥有神经工具集（Phase 2 完成）
-- ❌ 工具调用结果不会触发下一次思考
-- ❌ 没有唤醒轮次限制（会无限循环？）
-- ❌ Resting 状态没有实际用途
+- ❌ 神经工具的 neural 标记不完整（mark_done/send_message/request_tool_call 缺少标记）
+- ❌ 工具失败率未实时计算（仅记录失败次数）
+- ❌ 记忆中轮次状态追踪（轮次信息未写入记忆系统）
+- ❌ 多任务并发限制（当前仅按单任务轮次限制）
+- ❌ 技能动态注入（Agent 不能根据场景自动加载相关技能）
 
 ---
 
@@ -203,50 +208,245 @@ Phase 5: 多 Agent 协作
 
 ### 验收标准
 
-- [ ] 单元测试：ToolStatsDao 各查询方法正确
-- [ ] 单元测试：Agent 附带信息（with_stats）正确注入
-- [ ] 单元测试：Agent 唤醒次数按 task_id 过滤正确
-- [ ] 集成测试：Agent 调用工具 → 工具执行 → 结果触发再次思考
-- [ ] 集成测试：达到最大轮次后停止，用户发新消息恢复
-- [ ] 集成测试：调用 mark_done 后任务完成，后续消息不触发唤醒
-- [ ] 所有现有测试通过
+- [x] 单元测试：ToolStatsDao 各查询方法正确
+- [x] 单元测试：Agent 附带信息（with_stats）正确注入
+- [x] 单元测试：Agent 唤醒次数按 task_id 过滤正确
+- [x] 集成测试：轮次限制检查达到上限后停止唤醒
+- [x] 集成测试：调用 mark_done 后任务完成，后续消息不触发唤醒
+- [x] 所有现有测试通过（554 个测试 100% 通过）
 
-**执行方案**：待在 `docs/superpowers/plans/` 下创建具体实现方案
+**执行方案**：[`docs/superpowers/plans/2026-07-10-runtime-domain-phase3-multi-turn-loop.md`](./superpowers/plans/2026-07-10-runtime-domain-phase3-multi-turn-loop.md)
 
 ---
 
-## Phase 4：技能与记忆增强
+## Phase 4：任务执行闭环 + 技能与记忆增强
 
-> **目标**：Agent 能利用技能库和长期记忆，变得更"聪明"
+> **目标**：Agent 能自主执行完整任务，并利用技能库和长期记忆变得更"聪明"
 >
-> **核心交付**：技能动态注入、记忆压缩、知识突触构建
+> **核心交付**：工具包机制、任务自动执行闭环、技能动态注入、记忆压缩、知识突触构建
 >
-> **预估工作量**：中-大
+> **预估工作量**：大
+> **状态**：规划中
 
-### 任务清单
+### 方向 A：工具包机制 + 任务执行闭环
+
+#### 设计理念
+
+**Agent 能力分层模型**：
+
+能力不仅包含工具，也包含 skill（技能）。天生的不只有工具，也有天生的 skill；入职培训的也不只有工具，也有培训教的 skill。
+
+| 层级 | 来源 | 获取方式 | 工具 | Skill |
+|------|------|---------|------|-------|
+| 神经能力 | 天生认知 | 自动拥有，免绑定 | 神经工具（search_memory、send_message 等） | 天生 skill（后续讨论） |
+| 工具包 | 后天培训 | 入职时统一安装 | project_management 等工具包 | 入职培训 skill（后续讨论） |
+| 外骨骼 | 外部授权 | 按需绑定 | 外骨骼工具（写文件、调 API 等） | — |
+
+> **关于 Skill**：本阶段聚焦工具包机制（工具维度）。天生的 skill 和入职培训的 skill 涉及技能注入和 Prompt 组装机制，复杂度较高，后续单独讨论。
+
+**核心决策：项目/任务工具不是神经工具**
+
+Agent "认为做完" ≠ 任务真的完成。任务进度是外部系统的真实数据，Agent 对任务的感知应该通过 memory 系统完成（工作记忆/短期记忆），而不是天生的工具。操作任务系统就像人在 Todoist 上打勾一样，是使用外部系统的行为。
+
+但项目管理能力是 Agent 执行任务的基础能力，应该在入职阶段统一培训安装，不需要逐个绑定。入职时除了安装工具包，后续也会安装相关 skill（如项目管理方法论、任务分解技巧等），本阶段先完成工具包机制。
+
+#### 子阶段拆分
+
+方向 A 拆分为两个子阶段，逐步推进：
+
+**4A-1: 工具调用消息改造**（不引入新消息类型）
+- 同步/异步工具调用链路分离
+- 新增 `send_tool_call_message` 神经工具（封装 `send_tool_call_request`）
+- `request_tool_call` 从神经工具移除，保留为普通 HTTP Handler
+- 工具包 tag 机制、项目管理工具包标记
+- Agent 入职自动安装、工具包 API
+
+**子阶段拆分**：
+
+| 子阶段 | 包含 Task | 主题 | 依赖关系 |
+|--------|----------|------|---------|
+| 4A-1a: 基础设施 | Task 1 (installed_tags) + Task 2 (神经工具修正) | 数据模型 + 工具标记 | 无依赖，可并行 |
+| 4A-1b: 工具包机制 | Task 3 (tag 标记) + Task 4 (免绑定校验) + Task 5 (唤醒注入) | 核心工具包逻辑 | 依赖 4A-1a |
+| 4A-1c: 入职 + API | Task 6 (入职安装) + Task 7 (安装/卸载 API) + Task 8 (验证) | 业务层接入 | 依赖 4A-1b |
+
+**4A-2: TaskAssignment 消息**（引入新消息类型）
+- 新增 `MessageType::TaskAssignment`
+- Message Domain 新增 `send_task_assignment` 投递方法
+- 新增 `send_task_assignment_message` 神经工具（供 Agent 间分配任务）
+- 任务创建 Handler 编排 + PromptBuilder 差异化提示
+
+#### 工具调用两种模式
+
+| 模式 | 适用场景 | 执行方式 | Agent 感知 |
+|------|---------|---------|-----------|
+| **同步（auto）** | 神经工具、工具包工具 | rig 框架直接调用 Handler 函数 | 一次 awaken 内拿到结果 |
+| **异步（manual）** | 外骨骼工具 | Agent 调用 `send_tool_call_message` 神经工具发消息 → 消费者执行 → ToolCallResult 消息回 Agent | 跨 awaken 轮次 |
+
+#### 三种角色定位
+
+| 角色 | 职责 | 示例 |
+|------|------|------|
+| **神经工具 Handler** | 封装 Message Domain 的投递方法，注册为神经工具供 Agent 调用 | `send_tool_call_message`、`send_message`、`send_task_assignment_message` |
+| **普通 HTTP Handler** | 直接调用 Domain 完成业务，不注册为工具 | `request_tool_call`（同步调用工具，供 HTTP API 或后续复杂架构使用） |
+| **Consumer** | 同服务内直接通过 Domain 执行真实业务逻辑 | `handle_tool_call_request` → `call_manual_tool_for_agent()` + `send_tool_call_result()` |
+
+#### 任务清单
+
+**4A-1: 工具调用消息改造**
 
 | # | 任务 | 说明 | 优先级 |
 |---|------|------|--------|
-| 4.1 | 技能动态注入 | 根据 Agent 绑定的技能，自动注入到 Prompt | P0 |
-| 4.2 | Resting 状态实现 | 连续工作 N 轮后自动休息，休息期间压缩上下文 | P1 |
-| 4.3 | 短期记忆摘要 | 把多轮对话压缩成摘要，存入短期记忆 | P1 |
-| 4.4 | 长期记忆沉淀 | 重要信息沉淀为长期记忆（知识突触） | P2 |
-| 4.5 | 用户画像构建 | 客服类 Agent 构建用户画像，个性化回复 | P2 |
+| 4.A.1 | 工具包 tag 机制 | AgentRuntimeConfig 新增 `installed_tags` 字段，记录已安装工具包 | P0 |
+| 4.A.2 | 神经工具标记修正 | send_message 补齐 `neural` flag；新增 `send_tool_call_message` 神经工具；`request_tool_call` 从神经工具移除 | P0 |
+| 4.A.3 | 项目管理工具包标记 | 所有 project/task 工具加 `tags = "project_management"` | P0 |
+| 4.A.4 | 免绑定校验扩展 | tool_execution 中不仅 "neural" 免绑定，已安装 tag 的工具也免绑定 | P0 |
+| 4.A.5 | 唤醒时注入工具包工具 | load_neural_tools 扩展为 load_builtin_tools，加载神经工具 + 已安装工具包 | P0 |
+| 4.A.6 | 工具包安装/卸载 API | HrDomain 新增 install_tool_pack/uninstall_tool_pack/list_installed_tool_packs | P0 |
+| 4.A.7 | Agent 入职默认安装 | Agent 状态变为 Onboarded 时自动安装 "project_management" 工具包 | P0 |
+
+**4A-2: TaskAssignment 消息**
+
+| # | 任务 | 说明 | 优先级 |
+|---|------|------|--------|
+| 4.A.8 | TaskAssignment 消息类型 | 新增 MessageType::TaskAssignment + payload + 投递方法 | P0 |
+| 4.A.9 | send_task_assignment_message 神经工具 | 封装 send_task_assignment，供 Agent 间分配任务 | P0 |
+| 4.A.10 | 任务创建自动通知 | create_task Handler 编排：创建任务后发 TaskAssignment 消息 + PromptBuilder 差异化提示 | P0 |
+
+**后续任务**
+
+| # | 任务 | 说明 | 优先级 |
+|---|------|------|--------|
+| 4.A.11 | 子任务分解能力 | Agent 可以通过项目管理工具包创建子任务，形成任务树 | P1 |
+| 4.A.12 | 任务进度追踪 | 百分比、当前步骤、执行历史 | P1 |
+| 4.A.13 | 任务失败/重试机制 | 任务执行失败后自动重试或转人工 | P2 |
+| 4.A.14 | 任务产物管理 | 执行结果、附件、中间产物 | P2 |
+
+#### 神经工具标记现状
+
+| 工具 ID | 应为神经工具 | 当前标记 | 需修复 |
+|---------|-------------|---------|--------|
+| `search_memory` | ✅ 是 | ✅ 有 neural | 无需修改 |
+| `query_memory` | ✅ 是 | ✅ 有 neural | 无需修改 |
+| `create_memory` | ✅ 是 | ✅ 有 neural | 无需修改 |
+| `update_memory` | ✅ 是 | ✅ 有 neural | 无需修改 |
+| `delete_memory` | ✅ 是 | ✅ 有 neural | 无需修改 |
+| `list_tools` | ✅ 是 | ✅ 有 neural | 无需修改 |
+| `send_message` | ✅ 是 | ❌ 缺失 neural | **需补齐** |
+| `send_tool_call_message` | ✅ 是（新增） | — | **新增** |
+| `request_tool_call` | ❌ 否（同步 HTTP API） | 有 register_handler_tool | **需移除** |
+| `mark_done` | ❌ 否（属于工具包） | 无 neural（正确） | 需加 `project_management` tag |
+
+#### 工具包清单：project_management
+
+| 工具 ID | 说明 | 当前状态 |
+|---------|------|---------|
+| `mark_done` | 在任务系统上标记完成 | 已实现，需加 `project_management` tag |
+| `create_task` | 在系统中创建新任务 | 已实现，需加 tag |
+| `create_subtask` | 创建子任务（待新增） | 待实现 |
+| `update_task` | 修改任务信息 | 已实现，需加 tag |
+| `get_task` | 查看任务详情 | 已实现，需加 tag |
+| `list_project_tasks` | 查看项目下任务列表 | 已实现，需加 tag |
+| `list_agent_tasks` | 查看 Agent 分配的任务列表 | 已实现，需加 tag |
+| `get_project` | 查看项目信息 | 已实现，需加 tag |
+| `list_projects` | 查看项目列表 | 已实现，需加 tag |
+| `update_project` | 更新项目信息 | 已实现，需加 tag |
+| `update_task_status` | 更新任务状态 | 已实现，需加 tag |
+| `update_project_status` | 更新项目状态 | 已实现，需加 tag |
+
+#### 免绑定校验逻辑变更
+
+```
+Agent 调用 Manual 工具
+    │
+    ├── 先在 agent 绑定工具中查找
+    │
+    ├── 找不到？检查是否是神经工具（tags 含 "neural"）
+    │       └─ 是 → 免绑定放行
+    │
+    ├── 还找不到？检查是否属于已安装的工具包
+    │       └─ Agent 已安装该 tag → 免绑定放行
+    │
+    └── 都不是 → 拒绝：工具未绑定且不属于已安装工具包
+```
+
+#### 唤醒时工具注入逻辑变更
+
+```
+load_builtin_tools(ctx, agent)
+    │
+    ├── 加载神经工具（tags 含 "neural"）
+    │       └─ 所有 Agent 天生拥有
+    │
+    └── 加载已安装工具包工具
+            └─ 查 Agent 已安装的 tags 列表
+            └─ 按 tags 过滤所有启用工具
+```
+
+#### 关键设计点
+
+- **工具包 tag 存储**：Agent 的 `runtime_config` 中新增 `installed_tags` 字段，记录已安装的工具包
+- **入职安装时机**：Agent 状态从 PendingOnboard → Onboarded 时，自动安装 "project_management" tag
+- **mark_done 循环终止**：Agent 入职后自动拥有 project_management 工具包，mark_done 可用，循环终止问题自然解决
+- **工具包可卸载**：后续支持卸载某个工具包（如 Agent 不需要项目管理能力）
+- **工具包可扩展**：未来可以新增其他工具包（如 "data_analysis"、"code_execution" 等）
+- **入职内容分两维度**：入职时安装的不只是工具包（工具维度），后续也会安装相关 skill（技能维度），如项目管理方法论、任务分解技巧等。本阶段先完成工具包机制，skill 维度后续讨论
+- **天生能力也分两维度**：天生的不只有神经工具（工具维度），也有天生的 skill（技能维度）。天生 skill 涉及 Prompt 组装机制，复杂度较高，后续单独讨论
+- **同步/异步工具调用分离**：auto 工具走 rig 同步调用，manual 工具走 `dispatch_tool_call` 神经工具发消息异步执行
+- **神经工具 Handler vs 普通 HTTP Handler**：神经工具 Handler 封装 Message Domain 投递方法并注册为工具；普通 HTTP Handler 直接调用 Domain，不注册为工具
+- **消费者直接通过 Domain 执行业务**：同服务内消费者不经过 Handler，直接调用 Domain 完成工具执行、结果回写等
+- **TaskAssignment 消息机制**：Project Domain 只管数据持久化，Message Domain 负责通知，Handler 层编排两个 Domain
+
+### 方向 B：记忆增强
+
+| # | 任务 | 说明 | 优先级 |
+|---|------|------|--------|
+| 4.B.1 | 短期记忆摘要 | 把多轮对话压缩成摘要，存入短期记忆 | P1 |
+| 4.B.2 | 长期记忆沉淀 | 重要信息沉淀为长期记忆（知识突触） | P2 |
+| 4.B.3 | 语义向量搜索落地 | 当前 SQLite VSS 扩展已支持，需要在记忆搜索中实际使用 | P1 |
+| 4.B.4 | 任务相关记忆自动关联 | 执行任务时自动关联相关记忆 | P2 |
+| 4.B.5 | Agent 自我反思记忆 | 每次执行后总结经验，沉淀为记忆 | P2 |
+| 4.B.6 | 工具失败率实时计算 | 基于失败次数计算失败率，动态调整 Prompt 警告 | P2 |
+
+### 方向 C：技能增强
+
+| # | 任务 | 说明 | 优先级 |
+|---|------|------|--------|
+| 4.C.1 | 技能动态注入 | 根据 Agent 绑定的技能，自动注入到 Prompt | P0 |
+| 4.C.2 | Resting 状态实现 | 连续工作 N 轮后自动休息，休息期间压缩上下文 | P1 |
+| 4.C.3 | 用户画像构建 | 客服类 Agent 构建用户画像，个性化回复 | P2 |
 
 ### 关键设计点
 
-- **休息触发条件**：连续工作轮数？还是 token 消耗量？
+- **任务自动执行**：任务创建后如何触发 Agent？通过消息系统还是直接调用 awaken()？
 - **记忆压缩时机**：休息期间做，还是每轮都做增量？
 - **技能注入方式**：Prompt 里加技能说明，还是作为 tool 让 Agent 主动调用？
+- **能力分层两维度**：天生的不仅有工具（神经工具），也有天生的 skill；入职培训的不仅有工具包，也有培训 skill。本阶段先完成工具包机制，skill 维度后续讨论
 
 ### 验收标准
 
-- [ ] 单元测试：技能注入到 Prompt 正确
-- [ ] 集成测试：Agent 休息后上下文被压缩
-- [ ] 集成测试：Agent 能调用 read_skill 学习新技能
+**4A-1: 工具调用消息改造**
+
+- [ ] AgentRuntimeConfig.installed_tags 字段完整实现
+- [ ] send_message 补齐 neural flag
+- [ ] send_tool_call_message 神经工具新增
+- [ ] request_tool_call 从神经工具移除
+- [ ] project_management 工具包所有工具正确标记 tag
+- [ ] Agent 入职时自动安装 project_management 工具包
+- [ ] 免绑定校验支持神经工具 + 已安装工具包
+- [ ] 唤醒时注入神经工具 + 已安装工具包工具
+- [ ] 工具包安装/卸载/查询 API 可用
 - [ ] 所有现有测试通过
 
-**执行方案**：待在 `docs/superpowers/plans/` 下创建具体实现方案
+**4A-2: TaskAssignment 消息**
+
+- [ ] MessageType::TaskAssignment 定义
+- [ ] send_task_assignment 投递方法实现
+- [ ] send_task_assignment_message 神经工具
+- [ ] 任务创建后自动发送 TaskAssignment 消息
+- [ ] PromptBuilder 支持 TaskAssignment 差异化提示
+- [ ] 所有现有测试通过
+
+**执行方案**：[`docs/superpowers/plans/2026-07-11-runtime-domain-phase4a-tool-pack.md`](./superpowers/plans/2026-07-11-runtime-domain-phase4a-tool-pack.md)
 
 ---
 
@@ -284,6 +484,33 @@ Phase 5: 多 Agent 协作
 
 ---
 
+## Phase 6：前端完善
+
+> **目标**：把当前后端能力在前端 UI 中完整展现
+>
+> **核心交付**：任务看板、对话界面、统计仪表盘、执行进度可视化
+>
+> **预估工作量**：中
+> **状态**：规划中
+
+### 任务清单
+
+| # | 任务 | 说明 | 优先级 |
+|---|------|------|--------|
+| 6.1 | 任务看板/列表视图 | 展示任务状态、进度、分配关系 | P0 |
+| 6.2 | Agent 对话界面优化 | 工具调用可视化、消息类型区分展示 | P0 |
+| 6.3 | 统计仪表盘 | 调用次数、成功率、Token 消耗、唤醒次数 | P1 |
+| 6.4 | 任务执行进度实时展示 | 当前轮次、思考深度、工具调用历史 | P1 |
+| 6.5 | Agent 管理界面 | Agent 配置、工具绑定、技能绑定 | P2 |
+
+### 关键设计点
+
+- **实时更新方式**：WebSocket 推送 vs 轮询？
+- **工具调用可视化**：展示调用参数、返回结果、耗时
+- **统计图表**：使用什么图表库？D3.js？Chart.js？
+
+---
+
 ## 三、开发原则
 
 ### 3.1 小步推进
@@ -297,7 +524,7 @@ Phase 5: 多 Agent 协作
 
 - 核心业务逻辑必须有单元测试
 - 每个阶段完成后有集成测试验证
-- 所有改动必须通过现有 544+ 测试
+- 所有改动必须通过现有 554+ 测试
 
 ### 3.3 文档同步
 
@@ -320,11 +547,11 @@ Handler → Domain → DAL → DAO → Models
 
 ## 四、当前阶段
 
-**当前阶段**：Phase 2 - 神经工具集（Agent 能做事）
+**当前阶段**：Phase 4 方向 A - 工具包机制 + 任务执行闭环
 
-**Phase 1 完成时间**：2026-07-10
+**Phase 1-3 完成时间**：2026-07-10
 
-**下一步**：在 `docs/superpowers/plans/` 下创建 Phase 2 的具体执行方案
+**下一步**：按 [Phase 4A 执行方案](./superpowers/plans/2026-07-11-runtime-domain-phase4a-tool-pack.md) 实施
 
 ---
 
@@ -332,5 +559,9 @@ Handler → Domain → DAL → DAO → Models
 
 | 日期 | 版本 | 变更 |
 |------|------|------|
+| 2026-07-11 | v2.3 | 命名修正：dispatch_tool_call → send_tool_call_message，dispatch_task_assignment → send_task_assignment_message；4A-1 进一步拆分为 4A-1a/1b/1c 三个子阶段 |
+| 2026-07-11 | v2.2 | Phase 4A 拆分为 4A-1（工具调用消息改造）和 4A-2（TaskAssignment 消息）两个子阶段；架构修正：同步/异步工具调用分离，新增 dispatch_tool_call 神经工具，request_tool_call 从神经工具移除 |
+| 2026-07-11 | v2.1 | Phase 4 方向 A 细化：工具包机制 + 任务执行闭环，补充能力分层两维度说明 |
+| 2026-07-10 | v2.0 | Phase 3 完成，多回合循环控制上线，554 测试通过 |
 | 2026-07-10 | v0.1 | 初始版本，定义 5 个阶段的总体路线图 |
 | 2026-07-10 | v0.9 | Phase 1 完成，更新任务清单和验收标准，进入 Phase 2 |

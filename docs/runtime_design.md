@@ -3,9 +3,10 @@
 > 🎯 **本文档定位**：Runtime Domain（运行时领域）的整体设计大纲与逻辑思路
 >
 > 范围：只覆盖**总纲与核心理念**，不下沉到具体工具实现与代码细节
-> 状态：v2.0（2026-07-10）
+> 状态：v2.1（2026-07-11）
 >
 > **更新记录**：
+> - v2.1 (2026-07-11): 架构修正——同步/异步工具调用分离，send_tool_call_message 替代 request_tool_call 作为神经工具
 > - v2.0 (2026-07-10): Phase 3 多回合循环控制落地，轮次限制、任务完成检测、Prompt 差异化、工具失败注入
 > - v1.0 (2026-07-10): Phase 2 神经工具集落地，8 个神经工具全部实现，自动回复移除，548 测试通过
 > 关联文档：
@@ -225,13 +226,15 @@ pub struct AssembledContext {
 |--------|------|--------|--------|
 | `search_memory` | 混合搜索长期/短期记忆 | `RuntimeMemory.search` | P0 |
 | `send_message` | 给 user / agent / channel 发消息 | `MessageDomain.delivery` | P0 |
-| `request_tool_call` | 异步发起一次外骨骼工具调用 | `tool_execution` | P0 |
-| `mark_done` | 显式标记本任务完成 | Runtime 内部 | P1 |
+| `send_tool_call_message` | 发送工具调用消息（异步，manual 工具入口） | `MessageDomain.delivery.send_tool_call_request` | P0 |
+| `mark_done` | 显式标记本任务完成（project_management 工具包） | Runtime 内部 | P1 |
 | `list_tools` | "想起"有哪些外骨骼工具可用（仅返回名字+一句话） | `ToolDal` | P1 |
 | `search_skill` | "想起"有哪些相关技能 | `SkillDal` | P2 |
 | `read_skill` | 取出某个技能的具体内容 | `SkillDal` | P2 |
 | `read_tool_spec` | 展开某个工具的完整 schema | `ToolDal` | P2 |
 | `write_memory` | 沉淀新记忆 | `RuntimeMemory.write` | P2 |
+
+> **注意**：`request_tool_call` 不再是神经工具。它是同步直接调用 `call_manual_tool_for_agent()` 的普通 HTTP Handler，供 HTTP API 或后续复杂架构使用。Agent 异步调用 manual 工具应使用 `send_tool_call_message` 神经工具，通过消息系统完成异步调用链路。
 
 **设计要点**：
 - `list_*` 系列只返回**摘要**（名字+一句话），不含完整 schema，避免 prompt 膨胀
@@ -239,6 +242,14 @@ pub struct AssembledContext {
 - 这正是"想起来"的过程——模型先看到目录，再决定翻哪一页
 - 神经工具通过 `#[register_handler_tool(... neural)]` 标记，生成的 ToolPo 自动包含 `"neural"` tag
 - 唤醒时只注入带 `"neural"` tag 的工具给模型
+
+**三种角色定位**：
+
+| 角色 | 职责 | 示例 |
+|------|------|------|
+| **神经工具 Handler** | 封装 Message Domain 的投递方法，注册为神经工具供 Agent 调用 | `send_tool_call_message`、`send_message` |
+| **普通 HTTP Handler** | 直接调用 Domain 完成业务，不注册为工具 | `request_tool_call`（同步调用工具，供 HTTP API 使用） |
+| **Consumer** | 同服务内直接通过 Domain 执行真实业务逻辑 | `handle_tool_call_request` → `call_manual_tool_for_agent()` + `send_tool_call_result()` |
 
 **注册示例**：
 ```rust
@@ -266,14 +277,28 @@ async fn send_message(ctx: RequestContext, params: SendMessageParams) -> Result<
     │      ├── list_tools    ───► ToolDal
     │      └── send_message  ───► MessageDomain
     │
-    └── request_tool_call (神经工具，但触发异步)
+    └── send_tool_call_message (神经工具，发送工具调用消息)
            │
            ▼
-        tool_execution ──► 落"待执行"消息 ──► 消息消费者异步执行
+        MessageDomain.delivery.send_tool_call_request() ──► 消息入队
+           │
+           └── 立即返回"已提交"，awaken 结束
                                                       │
                                                       ▼
-                                              结果消息触发下一次 awaken()
+        Consumer 收到 ToolCallRequest 消息（to_role=System）
+           │
+           ├── tool_execution.call_manual_tool_for_agent()  ← 直接通过 Domain
+           │   └── 三层免绑定校验：绑定 → 神经 → 已安装 tag
+           │
+           └── MessageDomain.delivery.send_tool_call_result() ──► 结果消息
+                                                      │
+                                                      ▼
+        Consumer 收到 ToolCallResult 消息（to_role=Agent）
+           │
+           └── 触发下一次 awaken()
 ```
+
+> **关键区别**：`request_tool_call`（普通 HTTP Handler）是同步直接调用 `call_manual_tool_for_agent()`，不经过消息系统，供 HTTP API 使用。`send_tool_call_message`（神经工具）通过消息系统异步执行，是 Agent 调用 manual 工具的入口。
 
 ---
 
@@ -1815,6 +1840,7 @@ pub enum AgentRuntimeState {
 
 | 日期 | 版本 | 变更 |
 |------|------|------|
+| 2026-07-11 | v2.1 | 架构修正：同步/异步工具调用分离；`request_tool_call` 从神经工具移除，改为普通 HTTP Handler；新增 `send_tool_call_message` 神经工具作为 manual 工具异步调用入口；新增三种角色定位说明 |
 | 2026-07-10 | v2.0 | 新增第二十一章：多回合循环控制设计；轮次限制、任务完成检测、Prompt 上下文差异化、工具失败计数注入、唤醒失败事件记录 |
 | 2026-07-10 | v1.0 | Phase 2 神经工具集完整落地：8 个神经工具全部实现，自动回复移除，548 测试通过 |
 | 2026-07-08 | v0.8 | 新增第十九章：Agent 运行时状态管理完整设计；纯内存状态机、DashMap 并发安全、消费时校验、分层注入机制 |
