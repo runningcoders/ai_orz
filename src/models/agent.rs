@@ -35,6 +35,14 @@ pub struct AgentRuntimeConfig {
     /// 是否启用用户确认机制
     #[serde(default = "default_true")]
     pub require_user_confirm: bool,
+
+    /// 已安装的工具包 tag 列表
+    ///
+    /// 记录 Agent 通过入职培训等方式安装的工具包。
+    /// 唤醒时，这些 tag 对应的工具会自动注入到 Prompt 中（免绑定）。
+    /// 典型值："project_management"、"data_analysis" 等
+    #[serde(default)]
+    pub installed_tags: Vec<String>,
 }
 
 impl Default for AgentRuntimeConfig {
@@ -45,6 +53,7 @@ impl Default for AgentRuntimeConfig {
             max_tool_calls_per_step: default_max_tool_calls_per_step(),
             enable_reflection: false,
             require_user_confirm: true,
+            installed_tags: Vec::new(),
         }
     }
 }
@@ -58,6 +67,23 @@ impl AgentRuntimeConfig {
     /// 序列化为 JSON 字符串
     pub fn to_json(&self) -> String {
         serde_json::to_string(self).unwrap_or_else(|_| "{}".to_string())
+    }
+
+    /// 安装工具包 tag（幂等：已安装则跳过）
+    pub fn install_tag(&mut self, tag: &str) {
+        if !self.installed_tags.iter().any(|t| t == tag) {
+            self.installed_tags.push(tag.to_string());
+        }
+    }
+
+    /// 卸载工具包 tag
+    pub fn uninstall_tag(&mut self, tag: &str) {
+        self.installed_tags.retain(|t| t != tag);
+    }
+
+    /// 检查是否已安装某个 tag
+    pub fn has_tag(&self, tag: &str) -> bool {
+        self.installed_tags.iter().any(|t| t == tag)
     }
 }
 
@@ -291,6 +317,25 @@ impl AgentPo {
     pub fn set_runtime_config(&mut self, config: &AgentRuntimeConfig) {
         self.runtime_config = config.to_json();
         self.updated_at = current_timestamp();
+    }
+
+    /// 获取已安装的工具包 tags
+    pub fn get_installed_tags(&self) -> Vec<String> {
+        self.get_runtime_config().installed_tags
+    }
+
+    /// 安装工具包 tag 并更新 runtime_config
+    pub fn install_tag(&mut self, tag: &str) {
+        let mut config = self.get_runtime_config();
+        config.install_tag(tag);
+        self.set_runtime_config(&config);
+    }
+
+    /// 卸载工具包 tag 并更新 runtime_config
+    pub fn uninstall_tag(&mut self, tag: &str) {
+        let mut config = self.get_runtime_config();
+        config.uninstall_tag(tag);
+        self.set_runtime_config(&config);
     }
 }
 
