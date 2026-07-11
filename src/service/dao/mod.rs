@@ -2,6 +2,7 @@ pub mod agent;
 pub mod artifact;
 pub mod attachment;
 pub mod cortex;
+pub mod cron_trigger;
 pub mod event_queue;
 pub mod mcp_server;
 pub mod memory;
@@ -28,7 +29,9 @@ pub fn init_all() {
     artifact::init();
     attachment::init();
     cortex::init();
+    cron_trigger::init();
     event_queue::init_message();
+    event_queue::init_cron_trigger();
     message::init();
     message_channel::init();
     mcp_server::init();

@@ -22,6 +22,7 @@ use crate::pkg::tool_tracing::logger::ToolCallLogger;
 use crate::service::dao::memory::{MemoryQuery, MemorySearch};
 use crate::service::dal::agent::AgentDal;
 use crate::service::dal::brain::BrainDal;
+use crate::service::dal::memory::TraversalStrategy;
 use crate::service::dal::mcp_tool::McpToolDal;
 use crate::service::dal::tool::ToolDal;
 
@@ -43,6 +44,22 @@ pub trait RuntimeDomain: Send + Sync + Debug {
 
     /// Agent 是否处于不可用状态（忙碌或休息）
     fn is_agent_unavailable(&self, agent_id: &str) -> bool;
+
+    /// 让 Agent 进入休息状态并执行记忆沉淀
+    ///
+    /// 流程：
+    /// 1. 将 Agent 状态设置为休息中
+    /// 2. 将未沉淀的短期记忆总结并沉淀为长期知识
+    /// 3. 将 Agent 状态恢复为空闲
+    ///
+    /// # 参数
+    /// - ctx: 请求上下文
+    /// - agent_id: Agent ID
+    /// - settle_limit: 每次处理的短期记忆数量上限
+    ///
+    /// # 返回
+    /// - 成功返回创建的知识节点数量
+    fn rest_and_settle(&self, ctx: RequestContext, agent_id: &str, settle_limit: usize) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<usize>> + Send + '_>>;
 }
 
 /// 记忆管理 trait
@@ -106,6 +123,32 @@ pub trait RuntimeMemory: Send + Sync {
         ctx: RequestContext,
         memory: Memory,
     ) -> Result<()>;
+
+    /// 知识图谱遍历
+    async fn traverse_graph(
+        &self,
+        ctx: RequestContext,
+        seed_node_ids: &[String],
+        max_depth: i32,
+        max_breadth: i32,
+        strategy: TraversalStrategy,
+    ) -> Result<Vec<Memory>>;
+
+    /// 将未沉淀的短期记忆总结并沉淀为长期知识
+    ///
+    /// # 参数
+    /// - ctx: 请求上下文
+    /// - agent_id: Agent ID
+    /// - limit: 每次处理的短期记忆数量上限
+    ///
+    /// # 返回
+    /// - 成功返回创建的知识节点列表
+    async fn settle(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        limit: usize,
+    ) -> Result<Vec<Memory>>;
 }
 
 /// 唤醒能力 trait
@@ -315,6 +358,25 @@ impl RuntimeDomain for RuntimeDomainImpl {
     fn is_agent_unavailable(&self, agent_id: &str) -> bool {
         crate::pkg::agent_runtime_state::AgentRuntimeStateManager::global()
             .is_unavailable(agent_id)
+    }
+
+    fn rest_and_settle(&self, ctx: RequestContext, agent_id: &str, settle_limit: usize) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<usize>> + Send + '_>> {
+        let state_manager = crate::pkg::agent_runtime_state::AgentRuntimeStateManager::global();
+        state_manager.set_resting(agent_id);
+
+        let ctx_clone = ctx.clone();
+        let agent_id_clone = agent_id.to_string();
+        log_info!(ctx, "rest_and_settle", "agent_id={}, 开始休息并执行记忆沉淀", agent_id);
+
+        let self_clone = self.clone();
+        Box::pin(async move {
+            let nodes = self_clone.memory().settle(ctx_clone.clone(), &agent_id_clone, settle_limit).await?;
+
+            state_manager.set_idle(&agent_id_clone);
+
+            log_info!(ctx_clone, "rest_and_settle", "agent_id={}, 休息结束，沉淀了 {} 个知识节点", agent_id_clone, nodes.len());
+            Ok(nodes.len())
+        })
     }
 }
 

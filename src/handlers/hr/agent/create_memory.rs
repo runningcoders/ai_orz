@@ -1,4 +1,4 @@
-//! Handler: 创建记忆 - Neural Tool
+//! Handler: 创建记忆
 
 use crate::models::memory::{
     LongTermKnowledgeNodePo, MemoryCreateParams, MemoryPo, ShortTermMemoryIndexPo,
@@ -15,8 +15,7 @@ use serde_json;
     id = "create_memory",
     name = "create_memory",
     description = "Create a new memory entry, supports short_term and knowledge_node types",
-    params = "common::api::CreateMemoryParams",
-    neural
+    params = "common::api::CreateMemoryParams"
 )]
 #[generate_http_handler]
 pub async fn create_memory(

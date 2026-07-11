@@ -4,6 +4,7 @@ use common::error::{Error, Result, err};
 use crate::models::memory::{Memory, MemoryCreateParams, MemoryTrace};
 use crate::pkg::request_context::RequestContext;
 use crate::service::dao::memory::{MemoryQuery, MemorySearch};
+use crate::service::dal::memory::TraversalStrategy;
 use crate::service::domain::runtime::{RuntimeDomainImpl, RuntimeMemory};
 
 #[async_trait::async_trait]
@@ -115,5 +116,29 @@ impl RuntimeMemory for RuntimeDomainImpl {
     ) -> Result<()> {
         use crate::service::dal::memory::dal;
         dal().delete(ctx, memory).await
+    }
+
+    async fn traverse_graph(
+        &self,
+        ctx: RequestContext,
+        seed_node_ids: &[String],
+        max_depth: i32,
+        max_breadth: i32,
+        strategy: TraversalStrategy,
+    ) -> Result<Vec<Memory>> {
+        use crate::service::dal::memory::dal;
+        dal()
+            .traverse_knowledge_graph(ctx, seed_node_ids, max_depth, max_breadth, strategy)
+            .await
+    }
+
+    async fn settle(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        limit: usize,
+    ) -> Result<Vec<Memory>> {
+        use crate::service::dal::memory::dal;
+        dal().settle_short_term_to_long_term(ctx, agent_id, limit).await
     }
 }

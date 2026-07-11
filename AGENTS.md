@@ -14,7 +14,7 @@
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + rig-core 0.34
 - **前端**：Dioxus 0.7 (WebAssembly)
-- **技术特色**：严格分层架构、类型安全、569 个测试 100% 通过率
+- **技术特色**：严格分层架构、类型安全、576 个测试 100% 通过率
 
 ### 1.2 已实现核心功能
 
@@ -37,17 +37,19 @@
 | 🔄 多回合循环控制 | ✅ | 轮次限制检查、任务完成检测、Prompt 上下文差异化、工具失败计数注入 |
 | 🎒 工具包机制 | ✅ | tag 分组工具、Agent 入职自动安装、免绑定校验三层逻辑 |
 | 📨 任务分配消息 | ✅ | TaskAssignment 消息类型、自动通知 Agent、神经工具封装 |
+| ⏰ 定时触发器系统 | ✅ | Cron Trigger 管理、后台扫描、事件投递、系统领域基础设施 |
+| 🏛️ 记忆沉淀机制 | ✅ | Agent 休息与沉淀、短期记忆→长期知识图谱、定时触发沉淀 |
 
 ### 1.3 整体完成度与测试统计（2026-07-11 更新）
 
 | 指标 | 数值 | 说明 |
 |------|------|------|
-| **总测试数** | **569** | DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
+| **总测试数** | **576** | DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
 | **通过率** | **100%** | ✅ 全部测试通过 |
-| DAO 模块数 | 27 个 | 全部实现并被使用，零闲置（21 核心 DAO + 5 渠道 DAO + 1 统计 DAO） |
-| DAL 模块数 | 16 个 | 全部完整业务承载，零闲置 |
-| Domain 领域数 | 6 个 | 全部完整实现 |
-| Handler API 领域数 | 6 个上线 | organization, hr, finance, project, user, health |
+| DAO 模块数 | 28 个 | 全部实现并被使用，零闲置（21 核心 DAO + 5 渠道 DAO + 1 统计 DAO + 1 触发器 DAO） |
+| DAL 模块数 | 17 个 | 全部完整业务承载，零闲置 |
+| Domain 领域数 | 7 个 | 全部完整实现（新增 SystemDomain） |
+| Handler API 领域数 | 7 个上线 | organization, hr, finance, project, user, health, system |
 | **整体架构完成度** | **~97%** | 从下往上扎实推进 |
 
 ---
@@ -443,6 +445,25 @@ Agent
 - **三种角色定位明确**：神经工具 Handler（注册为工具）/ 普通 HTTP Handler（不注册）/ Consumer（直接调 Domain）
 - **架构职责分离**：Project Domain 只管持久化，Message Domain 管通知，Handler 层编排
 - **测试统计**：569 个测试 100% 通过（+15）
+
+**✅ Runtime Domain Phase 4B - 记忆模块增强（定时触发器 + 休息与沉淀）**
+- **4B-2 定时触发器系统**：
+  - CronTriggerPo/Entity 定义、DAO/DAL/Domain 三层完整实现
+  - 系统领域 API：创建/查询/更新/删除/启停触发器、列表查询
+  - CronScheduler 后台扫描器：每 5 秒扫描 next_run_at <= now 的触发器
+  - CronTriggerEvent 事件投递到 event_queue，CronTriggerConsumer 消费处理
+  - 触发器 payload 设计：action + extra 通用结构，支持 agent_rest 等动作
+- **4B-3 休息与沉淀机制**：
+  - MemoryStatus 新增 Settled(2) 状态，标记已沉淀的短期记忆
+  - MemoryDal.settle_short_term_to_long_term()：查询活跃短期记忆 → 创建知识节点 → 标记已沉淀
+  - RuntimeMemory.settle() 领域层接口，RuntimeDomain.rest_and_settle() 完整休息流程
+  - settle_memory 神经工具：Agent 可主动调用触发记忆沉淀
+  - 状态流转：Idle → Resting → 沉淀 → Idle
+- **4B-4 定时触发记忆沉淀**：
+  - AgentRestPayload 结构体定义（agent_id + settle_limit）
+  - handle_agent_rest 实现：解析 payload → 调用 RuntimeDomain.rest_and_settle()
+  - 完整链路：CronScheduler 扫描 → 投递事件 → 消费者处理 → Agent 休息沉淀
+- **测试统计**：576 个测试 100% 通过（+7）
 
 ### 2026-07-10 里程碑
 **✅ Runtime Domain Phase 2 - 神经工具集完整落地**

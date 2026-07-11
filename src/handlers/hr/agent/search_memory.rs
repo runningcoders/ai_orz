@@ -1,8 +1,11 @@
 //! Handler: 搜索记忆 - Neural Tool
 
+use std::collections::HashSet;
+
 use crate::models::memory::{Memory, MemoryPo};
 use crate::pkg::RequestContext;
 use crate::service::dao::memory::MemorySearch;
+use crate::service::dal::memory::TraversalStrategy;
 use crate::service::domain::runtime::domain as runtime_domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{MemoryResult, SearchMemoryParams, SearchMemoryResponse};
@@ -39,21 +42,105 @@ pub async fn search_memory(
         })
         .unwrap_or(MemoryType::All);
 
-    let search = MemorySearch {
-        keyword: Some(params.query.clone()),
-        top_k: params.max_results,
-        filters: crate::service::dao::memory::MemoryQuery {
-            memory_type: Some(memory_type),
-            limit: params.max_results.map(|l| l as usize),
-            ..Default::default()
-        },
-        ..Default::default()
+    let traversal_depth = params.traversal_depth.unwrap_or(0);
+    let traversal_breadth = params.traversal_breadth.unwrap_or(0);
+    let traversal_strategy = match params.traversal_strategy.as_deref() {
+        Some("depth_first") => TraversalStrategy::DepthFirst,
+        _ => TraversalStrategy::BreadthFirst,
     };
+    let seed_node_ids = params.seed_node_ids.clone().unwrap_or_default();
 
-    let memories = runtime_domain().memory().search(ctx, search).await?;
-    let results = memories_to_results(memories);
+    let has_seeds = !seed_node_ids.is_empty();
+    let do_traversal = traversal_depth > 0;
+
+    let mut all_memories: Vec<Memory> = Vec::new();
+
+    if has_seeds && do_traversal {
+        let traversed = runtime_domain()
+            .memory()
+            .traverse_graph(
+                ctx.clone(),
+                &seed_node_ids,
+                traversal_depth,
+                traversal_breadth,
+                traversal_strategy,
+            )
+            .await?;
+        all_memories.extend(traversed);
+    } else if !has_seeds && do_traversal {
+        let search = MemorySearch {
+            keyword: Some(params.query.clone()),
+            top_k: params.max_results,
+            filters: crate::service::dao::memory::MemoryQuery {
+                memory_type: Some(MemoryType::KnowledgeNode),
+                limit: params.max_results.map(|l| l as usize),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let search_results = runtime_domain().memory().search(ctx.clone(), search).await?;
+
+        let seed_ids: Vec<String> = search_results
+            .iter()
+            .filter_map(|m| match &m.po {
+                MemoryPo::KnowledgeNode(kn) => Some(kn.id.clone()),
+                _ => None,
+            })
+            .collect();
+
+        all_memories.extend(search_results);
+
+        if !seed_ids.is_empty() {
+            let traversed = runtime_domain()
+                .memory()
+                .traverse_graph(
+                    ctx.clone(),
+                    &seed_ids,
+                    traversal_depth,
+                    traversal_breadth,
+                    traversal_strategy,
+                )
+                .await?;
+            all_memories.extend(traversed);
+        }
+    } else {
+        let search = MemorySearch {
+            keyword: Some(params.query.clone()),
+            top_k: params.max_results,
+            filters: crate::service::dao::memory::MemoryQuery {
+                memory_type: Some(memory_type),
+                limit: params.max_results.map(|l| l as usize),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let search_results = runtime_domain().memory().search(ctx, search).await?;
+        all_memories.extend(search_results);
+    }
+
+    let mut seen = HashSet::new();
+    let mut unique_memories = Vec::new();
+    for memory in all_memories {
+        let id = memory_id(&memory);
+        if seen.insert(id) {
+            unique_memories.push(memory);
+        }
+    }
+
+    let results = memories_to_results(unique_memories);
 
     Ok(SearchMemoryResponse { results })
+}
+
+fn memory_id(memory: &Memory) -> String {
+    match &memory.po {
+        MemoryPo::Trace(t) => t.id.clone(),
+        MemoryPo::ShortTerm(st) => st.id.clone(),
+        MemoryPo::KnowledgeNode(kn) => kn.id.clone(),
+        MemoryPo::Relation(rel) => rel.id.clone(),
+    }
 }
 
 fn memories_to_results(memories: Vec<Memory>) -> Vec<MemoryResult> {

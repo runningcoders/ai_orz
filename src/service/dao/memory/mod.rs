@@ -415,6 +415,21 @@ pub trait MemoryDao: Send + Sync {
         node_id: &str,
     ) -> Result<Vec<KnowledgeNodeRelationPo>>;
 
+    /// 批量获取多个节点的所有关系（出入边都包含）
+    ///
+    /// 相当于对每个 node_id 调用 list_all_relations_for_node，然后合并去重。
+    ///
+    /// # 参数
+    /// - ctx: 请求上下文
+    /// - node_ids: 节点 ID 列表
+    /// # 返回
+    /// - 关系列表
+    async fn list_relations_batch(
+        &self,
+        ctx: RequestContext,
+        node_ids: &[String],
+    ) -> Result<Vec<KnowledgeNodeRelationPo>>;
+
     /// 删除指定关系
     ///
     /// # 参数

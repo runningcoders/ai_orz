@@ -5,4 +5,5 @@ pub mod health;
 pub mod hr;
 pub mod organization;
 pub mod project;
+pub mod system;
 pub mod user;

@@ -7,6 +7,7 @@
 //! - message → 消息领域（消息投递和管理）
 //! - runtime → 运行时领域（工具执行等运行时逻辑）
 //! - project → 项目领域（项目管理和执行）
+//! - system → 系统领域（定时触发器等系统功能）
 
 pub mod finance;
 pub mod hr;
@@ -14,6 +15,7 @@ pub mod message;
 pub mod organization;
 pub mod project;
 pub mod runtime;
+pub mod system;
 
 // Tests are located in subdirectories
 // No need to declare them here because mod rs already declared in subdirectories
@@ -26,4 +28,5 @@ pub fn init_all() {
     message::init();
     runtime::init();
     project::init();
+    system::init();
 }

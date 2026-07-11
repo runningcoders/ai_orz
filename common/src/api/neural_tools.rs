@@ -13,6 +13,14 @@ pub struct SearchMemoryParams {
     pub max_results: Option<i32>,
     /// 记忆类型筛选。
     pub memory_type: Option<String>,
+    /// 图谱遍历深度，默认0=不遍历。
+    pub traversal_depth: Option<i32>,
+    /// 每层展开广度，默认0=不限制。
+    pub traversal_breadth: Option<i32>,
+    /// 遍历策略：breadth_first / depth_first。
+    pub traversal_strategy: Option<String>,
+    /// 种子节点ID列表，跳过语义搜索直接遍历。
+    pub seed_node_ids: Option<Vec<String>>,
 }
 
 /// 搜索记忆响应。
@@ -217,4 +225,77 @@ pub struct SendTaskAssignmentMessageParams {
 pub struct SendTaskAssignmentMessageResponse {
     /// 消息 ID。
     pub message_id: String,
+}
+
+/// 知识图谱关联关系参数。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct KnowledgeRelationParam {
+    /// 源节点 ID。
+    pub source_node_id: String,
+    /// 目标节点 ID。
+    pub target_node_id: String,
+    /// 关系类型。
+    pub relation_type: String,
+}
+
+/// 保存短期记忆请求参数。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct SaveShortTermMemoryParams {
+    /// 记忆摘要。
+    pub summary: String,
+    /// 标签列表。
+    pub tags: Option<Vec<String>>,
+    /// 关联任务 ID。
+    pub task_id: Option<String>,
+    /// 详细内容，可选。
+    pub content: Option<String>,
+}
+
+/// 保存短期记忆响应。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct SaveShortTermMemoryResponse {
+    /// 记忆 ID。
+    pub memory_id: String,
+}
+
+/// 保存长期记忆请求参数。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct SaveLongTermMemoryParams {
+    /// 节点名称。
+    pub node_name: String,
+    /// 节点描述。
+    pub node_description: String,
+    /// 节点类型，如 concept/fact/skill/pattern。
+    pub node_type: String,
+    /// 节点摘要。
+    pub summary: Option<String>,
+    /// 关联关系列表。
+    pub relations: Option<Vec<KnowledgeRelationParam>>,
+    /// 关联任务 ID。
+    pub task_id: Option<String>,
+}
+
+/// 保存长期记忆响应。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct SaveLongTermMemoryResponse {
+    /// 节点 ID。
+    pub node_id: String,
+    /// 创建的关系 ID 列表，可能为空。
+    pub relation_ids: Vec<String>,
+}
+
+/// 沉淀记忆请求参数。
+///
+/// 将未沉淀的短期记忆总结并沉淀为长期知识图谱。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct SettleMemoryParams {
+    /// 每次处理的短期记忆数量上限，默认 10。
+    pub limit: Option<usize>,
+}
+
+/// 沉淀记忆响应。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct SettleMemoryResponse {
+    /// 沉淀创建的知识节点数量。
+    pub settled_count: usize,
 }

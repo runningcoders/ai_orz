@@ -18,8 +18,15 @@ use crate::service::dao::memory::{MemoryDao, MemoryQuery, MemorySearch, MemoryVe
 use crate::service::dao::model_provider::ModelProviderDao;
 use async_trait::async_trait;
 use common::enums::MemoryType;
-use std::collections::{HashMap, HashSet};
+use common::enums::MemoryStatus;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TraversalStrategy {
+    BreadthFirst,
+    DepthFirst,
+}
 
 // ==================== Factory + Singleton ====================
 
@@ -100,6 +107,51 @@ pub trait MemoryDal: Send + Sync {
     /// - `KnowledgeNode` → 级联：删入边/出边关系 + 删引用 + 删节点 + 删向量
     /// - `Trace` / `Relation` → 返回 `common::error::Error::Unsupported`
     async fn delete(&self, ctx: RequestContext, memory: Memory) -> Result<()>;
+
+    /// 🌐 知识图谱遍历
+    ///
+    /// 从种子节点出发，按指定策略遍历知识图谱
+    ///
+    /// # 参数
+    /// - ctx: 请求上下文
+    /// - seed_node_ids: 种子节点 ID 列表
+    /// - max_depth: 最大遍历深度（0=不遍历，直接返回种子节点）
+    /// - max_breadth: 每层最大展开数（0=不限制）
+    /// - strategy: 遍历策略
+    ///
+    /// # 返回
+    /// - 遍历到的所有 Memory（KnowledgeNode 和 Relation）
+    async fn traverse_knowledge_graph(
+        &self,
+        ctx: RequestContext,
+        seed_node_ids: &[String],
+        max_depth: i32,
+        max_breadth: i32,
+        strategy: TraversalStrategy,
+    ) -> Result<Vec<Memory>>;
+
+    /// 🏛️ 将未沉淀的短期记忆总结并沉淀为长期知识
+    ///
+    /// 流程：
+    /// 1. 查询 Agent 的活跃短期记忆（status = Active）
+    /// 2. 按时间/主题分组聚合
+    /// 3. 创建知识节点（summary 作为节点描述）
+    /// 4. 创建引用关系（关联原始短期记忆）
+    /// 5. 标记短期记忆为已沉淀（status = Settled）
+    ///
+    /// # 参数
+    /// - ctx: 请求上下文
+    /// - agent_id: Agent ID
+    /// - limit: 每次处理的短期记忆数量上限
+    ///
+    /// # 返回
+    /// - 成功返回创建的知识节点列表
+    async fn settle_short_term_to_long_term(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        limit: usize,
+    ) -> Result<Vec<Memory>>;
 }
 
 // ==================== Implementation ====================
@@ -357,11 +409,309 @@ impl MemoryDal for MemoryDalImpl {
             }
         }
     }
+
+    async fn traverse_knowledge_graph(
+        &self,
+        ctx: RequestContext,
+        seed_node_ids: &[String],
+        max_depth: i32,
+        max_breadth: i32,
+        strategy: TraversalStrategy,
+    ) -> Result<Vec<Memory>> {
+        if seed_node_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut visited_nodes: HashSet<String> = HashSet::new();
+        let mut visited_relations: HashSet<String> = HashSet::new();
+        let mut result_relations: Vec<KnowledgeNodeRelationPo> = Vec::new();
+
+        for id in seed_node_ids {
+            visited_nodes.insert(id.clone());
+        }
+
+        if max_depth <= 0 {
+            let nodes = self.fetch_nodes_by_ids(ctx.clone(), &visited_nodes).await?;
+            return Ok(self.build_memories(nodes, result_relations));
+        }
+
+        match strategy {
+            TraversalStrategy::BreadthFirst => {
+                self.traverse_bfs(
+                    ctx.clone(),
+                    seed_node_ids,
+                    max_depth,
+                    max_breadth,
+                    &mut visited_nodes,
+                    &mut visited_relations,
+                    &mut result_relations,
+                )
+                .await?;
+            }
+            TraversalStrategy::DepthFirst => {
+                self.traverse_dfs(
+                    ctx.clone(),
+                    seed_node_ids,
+                    max_depth,
+                    max_breadth,
+                    &mut visited_nodes,
+                    &mut visited_relations,
+                    &mut result_relations,
+                )
+                .await?;
+            }
+        }
+
+        let nodes = self.fetch_nodes_by_ids(ctx.clone(), &visited_nodes).await?;
+        Ok(self.build_memories(nodes, result_relations))
+    }
+
+    async fn settle_short_term_to_long_term(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        limit: usize,
+    ) -> Result<Vec<Memory>> {
+        let short_term_indexes = self
+            .memory_dao
+            .query_short_term(
+                ctx.clone(),
+                MemoryQuery {
+                    agent_id: Some(agent_id.to_string()),
+                    status: Some(MemoryStatus::Active),
+                    memory_type: Some(MemoryType::ShortTerm),
+                    limit: Some(limit),
+                    ..Default::default()
+                },
+            )
+            .await?;
+
+        if short_term_indexes.is_empty() {
+            log_info!(ctx, "settle_memory", "agent_id={}, 无未沉淀的短期记忆", agent_id);
+            return Ok(Vec::new());
+        }
+
+        let mut created_nodes: Vec<Memory> = Vec::new();
+
+        for index in &short_term_indexes {
+            let node = LongTermKnowledgeNodePo {
+                id: uuid::Uuid::now_v7().to_string(),
+                agent_id: agent_id.to_string(),
+                node_name: index.summary.clone(),
+                node_description: index.summary.clone(),
+                node_type: "summary".to_string(),
+                summary: index.summary.clone(),
+                status: MemoryStatus::Active,
+                created_at: common::constants::utils::current_timestamp(),
+                updated_at: common::constants::utils::current_timestamp(),
+            };
+
+            let mut results = self
+                .create_knowledge_node(ctx.clone(), node, vec![])
+                .await?;
+            created_nodes.append(&mut results);
+        }
+
+        for index in &short_term_indexes {
+            let mut index_to_update = index.clone();
+            index_to_update.status = MemoryStatus::Settled;
+            if let Err(e) = self
+                .memory_dao
+                .update_short_term_index(ctx.clone(), index_to_update)
+                .await
+            {
+                log_warn!(ctx, "settle_memory", memory_id= %index.id, error = ?e, "标记短期记忆为已沉淀失败");
+            }
+        }
+
+        log_info!(ctx, "settle_memory", "agent_id={}, 成功沉淀 {} 条短期记忆为 {} 个知识节点", agent_id, short_term_indexes.len(), created_nodes.len());
+        Ok(created_nodes)
+    }
 }
 
 // ==================== Internal Helper Methods ====================
 
 impl MemoryDalImpl {
+    async fn traverse_bfs(
+        &self,
+        ctx: RequestContext,
+        seed_node_ids: &[String],
+        max_depth: i32,
+        max_breadth: i32,
+        visited_nodes: &mut HashSet<String>,
+        visited_relations: &mut HashSet<String>,
+        result_relations: &mut Vec<KnowledgeNodeRelationPo>,
+    ) -> Result<()> {
+        let mut queue: VecDeque<(String, i32)> = VecDeque::new();
+        for id in seed_node_ids {
+            queue.push_back((id.clone(), 0));
+        }
+
+        let mut current_depth = 0;
+        while current_depth < max_depth && !queue.is_empty() {
+            let mut current_level_nodes: Vec<String> = Vec::new();
+            while let Some((node_id, depth)) = queue.front() {
+                if *depth != current_depth {
+                    break;
+                }
+                current_level_nodes.push(node_id.clone());
+                queue.pop_front();
+            }
+
+            if current_level_nodes.is_empty() {
+                break;
+            }
+
+            let all_relations = self
+                .memory_dao
+                .list_relations_batch(ctx.clone(), &current_level_nodes)
+                .await?;
+
+            let mut relations_by_node: HashMap<String, Vec<KnowledgeNodeRelationPo>> =
+                HashMap::new();
+            for rel in &all_relations {
+                relations_by_node
+                    .entry(rel.source_node_id.clone())
+                    .or_default()
+                    .push(rel.clone());
+                relations_by_node
+                    .entry(rel.target_node_id.clone())
+                    .or_default()
+                    .push(rel.clone());
+            }
+
+            for node_id in &current_level_nodes {
+                let node_relations = relations_by_node.get(node_id).cloned().unwrap_or_default();
+                let limited_relations = if max_breadth > 0 {
+                    node_relations
+                        .into_iter()
+                        .take(max_breadth as usize)
+                        .collect::<Vec<_>>()
+                } else {
+                    node_relations
+                };
+
+                for rel in limited_relations {
+                    if !visited_relations.insert(rel.id.clone()) {
+                        continue;
+                    }
+                    result_relations.push(rel.clone());
+
+                    let neighbor_id = if rel.source_node_id == *node_id {
+                        rel.target_node_id.clone()
+                    } else {
+                        rel.source_node_id.clone()
+                    };
+
+                    if visited_nodes.insert(neighbor_id.clone()) {
+                        queue.push_back((neighbor_id, current_depth + 1));
+                    }
+                }
+            }
+
+            current_depth += 1;
+        }
+
+        Ok(())
+    }
+
+    async fn traverse_dfs(
+        &self,
+        ctx: RequestContext,
+        seed_node_ids: &[String],
+        max_depth: i32,
+        max_breadth: i32,
+        visited_nodes: &mut HashSet<String>,
+        visited_relations: &mut HashSet<String>,
+        result_relations: &mut Vec<KnowledgeNodeRelationPo>,
+    ) -> Result<()> {
+        let mut stack: Vec<(String, i32)> = Vec::new();
+        for id in seed_node_ids.iter().rev() {
+            stack.push((id.clone(), 0));
+        }
+
+        while let Some((node_id, depth)) = stack.pop() {
+            if depth >= max_depth {
+                continue;
+            }
+
+            let all_relations = self
+                .memory_dao
+                .list_all_relations_for_node(ctx.clone(), &node_id)
+                .await?;
+
+            let limited_relations: Vec<KnowledgeNodeRelationPo> = if max_breadth > 0 {
+                all_relations
+                    .into_iter()
+                    .take(max_breadth as usize)
+                    .collect()
+            } else {
+                all_relations
+            };
+
+            let mut neighbors: Vec<(String, KnowledgeNodeRelationPo)> = Vec::new();
+            for rel in limited_relations {
+                if !visited_relations.insert(rel.id.clone()) {
+                    continue;
+                }
+
+                let neighbor_id = if rel.source_node_id == node_id {
+                    rel.target_node_id.clone()
+                } else {
+                    rel.source_node_id.clone()
+                };
+
+                neighbors.push((neighbor_id, rel));
+            }
+
+            for (neighbor_id, rel) in neighbors.iter().rev() {
+                result_relations.push(rel.clone());
+                if visited_nodes.insert(neighbor_id.clone()) {
+                    stack.push((neighbor_id.clone(), depth + 1));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn fetch_nodes_by_ids(
+        &self,
+        ctx: RequestContext,
+        node_ids: &HashSet<String>,
+    ) -> Result<Vec<LongTermKnowledgeNodePo>> {
+        if node_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let ids: Vec<String> = node_ids.iter().cloned().collect();
+        let query = MemoryQuery {
+            ids: Some(ids),
+            ..Default::default()
+        };
+        self.memory_dao.query_knowledge_nodes(ctx, query).await
+    }
+
+    fn build_memories(
+        &self,
+        nodes: Vec<LongTermKnowledgeNodePo>,
+        relations: Vec<KnowledgeNodeRelationPo>,
+    ) -> Vec<Memory> {
+        let mut memories = Vec::with_capacity(nodes.len() + relations.len());
+        for node in nodes {
+            memories.push(Memory {
+                po: MemoryPo::KnowledgeNode(node),
+                search_match: None,
+            });
+        }
+        for rel in relations {
+            memories.push(Memory {
+                po: MemoryPo::Relation(rel),
+                search_match: None,
+            });
+        }
+        memories
+    }
+
     /// 搜索短期记忆（内部实现）
     async fn search_short_term_internal(
         &self,

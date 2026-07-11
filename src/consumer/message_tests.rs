@@ -202,6 +202,10 @@ impl RuntimeDomain for RecordingRuntimeDomain {
     fn is_agent_unavailable(&self, _agent_id: &str) -> bool {
         false
     }
+
+    fn rest_and_settle(&self, _ctx: RequestContext, _agent_id: &str, _settle_limit: usize) -> std::pin::Pin<Box<dyn std::future::Future<Output = std::result::Result<usize, common::error::Error>> + Send + '_>> {
+        Box::pin(async { unimplemented!("not needed by message consumer tests") })
+    }
 }
 
 // ==================== Mock HrDomain ====================
@@ -852,6 +856,26 @@ impl RuntimeMemory for RecordingRuntimeDomain {
         _ctx: RequestContext,
         _memory: Memory,
     ) -> std::result::Result<(), common::error::Error> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn traverse_graph(
+        &self,
+        _ctx: RequestContext,
+        _seed_node_ids: &[String],
+        _max_depth: i32,
+        _max_breadth: i32,
+        _strategy: crate::service::dal::memory::TraversalStrategy,
+    ) -> std::result::Result<Vec<Memory>, common::error::Error> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn settle(
+        &self,
+        _ctx: RequestContext,
+        _agent_id: &str,
+        _limit: usize,
+    ) -> std::result::Result<Vec<Memory>, common::error::Error> {
         unimplemented!("not needed by message consumer tests")
     }
 }

@@ -103,6 +103,7 @@ pub mod handlers;
 pub mod middleware;
 pub mod models;
 pub mod router;
+pub mod scheduler;
 pub mod service;
 
 /// 应用程序入口函数
@@ -127,6 +128,10 @@ pub async fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // 初始化并启动所有消费者
     consumer::init(&config.consumer).await?;
     sys_info!("All consumers started");
+
+    // 初始化并启动 CronScheduler
+    scheduler::init(None);
+    sys_info!("Cron scheduler started");
 
     // 前端静态文件目录从配置读取，环境变量可覆盖
     let dist_dir =

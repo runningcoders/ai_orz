@@ -15,12 +15,16 @@ use common::error::{err, bail_err, Result};
 use crate::models::event::{Event, EventRef};
 use crate::models::message::Message;
 use crate::pkg::RequestContext;
+use crate::scheduler::CronTriggerEvent;
 use crate::service::dao::event_queue::EventQueueDao;
 
 // ==================== 工厂方法 + 单例 ====================
 
 /// Message topic 的全局单例
 static EVENT_QUEUE_MESSAGE: OnceLock<Arc<dyn EventQueueDao<Message>>> = OnceLock::new();
+
+/// CronTrigger topic 的全局单例
+static EVENT_QUEUE_CRON_TRIGGER: OnceLock<Arc<dyn EventQueueDao<CronTriggerEvent>>> = OnceLock::new();
 
 /// 创建一个全新的内存事件队列实例（用于测试或自定义 topic）
 ///
@@ -37,6 +41,16 @@ pub fn message_dao() -> Arc<dyn EventQueueDao<Message>> {
 /// 初始化 Message topic 全局事件队列
 pub fn init_message() {
     let _ = EVENT_QUEUE_MESSAGE.set(new());
+}
+
+/// 获取 CronTrigger topic 的全局事件队列单例
+pub fn cron_trigger_dao() -> Arc<dyn EventQueueDao<CronTriggerEvent>> {
+    EVENT_QUEUE_CRON_TRIGGER.get().unwrap().clone()
+}
+
+/// 初始化 CronTrigger topic 全局事件队列
+pub fn init_cron_trigger() {
+    let _ = EVENT_QUEUE_CRON_TRIGGER.set(new());
 }
 
 // ==================== 实现 ====================

@@ -976,6 +976,60 @@ ORDER BY created_at ASC
         Ok(result)
     }
 
+    async fn list_relations_batch(
+        &self,
+        ctx: RequestContext,
+        node_ids: &[String],
+    ) -> Result<Vec<KnowledgeNodeRelationPo>> {
+        use sqlx::{QueryBuilder, Row};
+
+        if node_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let pool = self.pool(ctx);
+        let mut builder = QueryBuilder::new(
+            r#"SELECT id, source_node_id, target_node_id, relation_type, created_at, updated_at
+FROM knowledge_node_relation
+WHERE source_node_id IN ("#,
+        );
+
+        let mut separated = builder.separated(", ");
+        for id in node_ids {
+            separated.push_bind(id);
+        }
+        separated.push_unseparated(") OR target_node_id IN (");
+
+        let mut separated = builder.separated(", ");
+        for id in node_ids {
+            separated.push_bind(id);
+        }
+        separated.push_unseparated(") ORDER BY created_at ASC");
+
+        let rows = builder.build().fetch_all(&pool).await?;
+
+        let mut result = Vec::new();
+        for row in rows {
+            let id: String = row.get("id");
+            let source_node_id: String = row.get("source_node_id");
+            let target_node_id: String = row.get("target_node_id");
+            let relation_type_str: String = row.get("relation_type");
+            let created_at: i64 = row.get("created_at");
+            let updated_at: i64 = row.get("updated_at");
+            let relation_type = KnowledgeRelationType::from(relation_type_str);
+            result.push(KnowledgeNodeRelationPo {
+                id,
+                source_node_id,
+                target_node_id,
+                relation_type,
+                created_at,
+                updated_at,
+            });
+        }
+
+        Ok(result)
+    }
+
     async fn delete_knowledge_relation(
         &self,
         ctx: RequestContext,

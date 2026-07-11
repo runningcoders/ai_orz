@@ -11,6 +11,7 @@ use std::sync::Arc;
 use common::error::Result;
 
 pub mod message;
+pub mod scheduler;
 
 // ==================== Trait 定义 ====================
 
@@ -174,7 +175,8 @@ pub async fn init(config: &common::config::ConsumerConfig) -> Result<()> {
     // 初始化 message topic 消费者
     message::init(&config.for_topic("message")).await?;
 
-    // 未来其他 topic 消费者在这里初始化...
+    // 初始化 cron_trigger topic 消费者
+    scheduler::init(&config.for_topic("cron_trigger")).await?;
 
     sys_info!("all consumers initialized and started");
     Ok(())

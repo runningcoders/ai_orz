@@ -58,6 +58,8 @@ fn protected_routes() -> Router {
         .nest("/hr", hr_routes())
         // Finance (模型管理) routes
         .nest("/finance", finance_routes())
+        // System (系统管理) routes
+        .nest("/system", system_routes())
         // Organization (组织管理) routes (protected)
         .nest("/organization", organization_protected_routes())
         // Project routes
@@ -406,4 +408,36 @@ fn finance_routes() -> Router {
             delete(handlers::finance::tool::unbind_tool_from_agent::unbind_tool_from_agent_handler),
         )
         .route("/tools/{id}", delete(handlers::finance::tool::delete_tool::delete_tool_handler))
+}
+
+fn system_routes() -> Router {
+    Router::new()
+        .route(
+            "/cron-triggers",
+            post(handlers::system::cron_trigger::create_cron_trigger_handler),
+        )
+        .route(
+            "/cron-triggers",
+            get(handlers::system::cron_trigger::list_cron_triggers_handler),
+        )
+        .route(
+            "/cron-triggers/{trigger_id}",
+            get(handlers::system::cron_trigger::get_cron_trigger_handler),
+        )
+        .route(
+            "/cron-triggers/{trigger_id}",
+            put(handlers::system::cron_trigger::update_cron_trigger_handler),
+        )
+        .route(
+            "/cron-triggers/{trigger_id}",
+            delete(handlers::system::cron_trigger::delete_cron_trigger_handler),
+        )
+        .route(
+            "/cron-triggers/{trigger_id}/pause",
+            post(handlers::system::cron_trigger::pause_cron_trigger_handler),
+        )
+        .route(
+            "/cron-triggers/{trigger_id}/resume",
+            post(handlers::system::cron_trigger::resume_cron_trigger_handler),
+        )
 }

@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 /// 用于短期记忆索引和长期知识节点的状态管理：
 /// - `Forgotten` = 0：已遗忘（归档，默认不参与检索，降低信息过载）
 /// - `Active` = 1：活跃（正常可检索，参与问答和搜索）
+/// - `Settled` = 2：已沉淀（短期记忆已总结为长期知识，默认不参与检索）
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
@@ -23,6 +24,8 @@ pub enum MemoryStatus {
     Forgotten = 0,
     /// 活跃 - 1，正常可检索
     Active = 1,
+    /// 已沉淀 - 2，短期记忆已总结为长期知识
+    Settled = 2,
 }
 
 impl Default for MemoryStatus {
@@ -36,6 +39,7 @@ impl From<i32> for MemoryStatus {
         match v {
             0 => MemoryStatus::Forgotten,
             1 => MemoryStatus::Active,
+            2 => MemoryStatus::Settled,
             _ => MemoryStatus::default(),
         }
     }

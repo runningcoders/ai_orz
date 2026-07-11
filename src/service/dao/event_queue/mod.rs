@@ -51,3 +51,5 @@ pub mod in_memory;
 
 pub use in_memory::message_dao;
 pub use in_memory::init_message;
+pub use in_memory::cron_trigger_dao;
+pub use in_memory::init_cron_trigger;

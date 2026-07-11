@@ -14,6 +14,8 @@ pub enum EventTopic {
     Message,
     /// 任务状态变更事件主题
     TaskChange,
+    /// Cron 触发器事件主题
+    CronTrigger,
     /// 自定义扩展主题
     Custom(u16),
 }
