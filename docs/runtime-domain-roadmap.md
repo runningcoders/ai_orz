@@ -2,8 +2,8 @@
 
 > 🎯 **目标**：按阶段推进 Runtime Domain 的完整实现，从"能唤醒"到"能做事"到"能协作"
 >
-> **当前版本**：v2.0（2026-07-10）
-> **状态**：Phase 3 完成，多回合循环控制已上线
+> **当前版本**：v3.0（2026-07-11）
+> **状态**：Phase 4A 完成，工具包机制 + 任务执行闭环已上线
 >
 > **文档定位**：总体规划 + 各阶段入口，每个阶段开始前在 `docs/superpowers/plans/` 下细化具体执行方案
 
@@ -18,12 +18,14 @@
 | **RuntimeMemory** | ✅ 100% | 完整 CRUD（search/query/create/update/delete）+ Trace 闭环 |
 | **ContextAssembly** | ✅ 100% | Builder 模式 Prompt 拼装，PO 自格式化，神经工具自动注入，消息类型差异化 |
 | **Awakening** | ✅ 100% | 9 步主流程完整，状态机管理，统计上报，神经工具注入，失败事件记录 |
-| **ToolExecution** | ✅ 100% | 协议路由（MCP/Builtin/HTTP）、Manual 授权、神经工具免绑定、Trace 查询 |
+| **ToolExecution** | ✅ 100% | 协议路由（MCP/Builtin/HTTP）、Manual 授权、神经工具免绑定、工具包免绑定、Trace 查询 |
 | **RuntimeState** | ✅ 100% | DashMap 内存状态管理，Idle/Resting/Busy 三态 |
-| **神经工具集** | ✅ 100% | 9 个神经工具（记忆 5 个 + send_message + request_tool_call + mark_done + list_tools） |
+| **神经工具集** | ✅ 100% | 10 个神经工具（记忆 5 个 + send_message + send_tool_call_message + send_task_assignment_message + mark_done + list_tools） |
 | **多回合循环控制** | ✅ 100% | 轮次限制检查、任务完成检测、Prompt 上下文差异化、工具失败计数注入 |
 | **ToolStatsDao** | ✅ 100% | 工具调用统计 DAO（DuckDB），支持调用次数/失败次数查询 |
 | **AgentFetchOptions** | ✅ 100% | 附带信息获取选项，按需注入统计数据 |
+| **工具包机制** | ✅ 100% | tag 分组、Agent 入职自动安装、免绑定三层校验、安装/卸载 API |
+| **TaskAssignment 消息** | ✅ 100% | TaskAssignment 消息类型、投递方法、神经工具、Handler 编排、PromptBuilder 差异化 |
 
 ### 1.2 当前能力边界
 
@@ -32,18 +34,23 @@
 - 推理过程会记录 Trace（输入/输出完整记录）
 - 工具可以被调用（Manual 模式，经 Runtime Domain 路由）
 - Agent 运行时状态可以被查询（空闲/忙碌/休息）
-- Agent 拥有 9 个天生神经工具，无需绑定即可调用
+- Agent 拥有 10 个天生神经工具，无需绑定即可调用
 - Agent 通过 `send_message` 神经工具主动发送消息（框架不再自动回复）
 - Memory 完整 CRUD 能力通过 RuntimeMemory trait 统一暴露
 - 多回合循环控制：轮次限制、任务完成检测、工具失败警告
 - 唤醒失败也记录统计事件，便于排查
+- Agent 入职后自动拥有项目管理能力（工具包机制）
+- 工具包可按需安装/卸载（API 支持）
+- 任务创建后自动通知 Agent（TaskAssignment 消息）
+- Agent 间可通过神经工具分配任务（send_task_assignment_message）
 
 **不能做的：**
-- ❌ 神经工具的 neural 标记不完整（mark_done/send_message/request_tool_call 缺少标记）
 - ❌ 工具失败率未实时计算（仅记录失败次数）
 - ❌ 记忆中轮次状态追踪（轮次信息未写入记忆系统）
 - ❌ 多任务并发限制（当前仅按单任务轮次限制）
 - ❌ 技能动态注入（Agent 不能根据场景自动加载相关技能）
+- ❌ 子任务分解能力（Agent 不能创建子任务形成任务树）
+- ❌ 任务进度追踪（百分比、当前步骤、执行历史）
 
 ---
 
@@ -426,25 +433,25 @@ load_builtin_tools(ctx, agent)
 
 **4A-1: 工具调用消息改造**
 
-- [ ] AgentRuntimeConfig.installed_tags 字段完整实现
-- [ ] send_message 补齐 neural flag
-- [ ] send_tool_call_message 神经工具新增
-- [ ] request_tool_call 从神经工具移除
-- [ ] project_management 工具包所有工具正确标记 tag
-- [ ] Agent 入职时自动安装 project_management 工具包
-- [ ] 免绑定校验支持神经工具 + 已安装工具包
-- [ ] 唤醒时注入神经工具 + 已安装工具包工具
-- [ ] 工具包安装/卸载/查询 API 可用
-- [ ] 所有现有测试通过
+- [x] AgentRuntimeConfig.installed_tags 字段完整实现
+- [x] send_message 补齐 neural flag
+- [x] send_tool_call_message 神经工具新增
+- [x] request_tool_call 从神经工具移除
+- [x] project_management 工具包所有工具正确标记 tag
+- [x] Agent 入职时自动安装 project_management 工具包
+- [x] 免绑定校验支持神经工具 + 已安装工具包
+- [x] 唤醒时注入神经工具 + 已安装工具包工具
+- [x] 工具包安装/卸载/查询 API 可用
+- [x] 所有现有测试通过（569 个测试 100% 通过）
 
 **4A-2: TaskAssignment 消息**
 
-- [ ] MessageType::TaskAssignment 定义
-- [ ] send_task_assignment 投递方法实现
-- [ ] send_task_assignment_message 神经工具
-- [ ] 任务创建后自动发送 TaskAssignment 消息
-- [ ] PromptBuilder 支持 TaskAssignment 差异化提示
-- [ ] 所有现有测试通过
+- [x] MessageType::TaskAssignment 定义
+- [x] send_task_assignment 投递方法实现
+- [x] send_task_assignment_message 神经工具
+- [x] 任务创建后自动发送 TaskAssignment 消息
+- [x] PromptBuilder 支持 TaskAssignment 差异化提示
+- [x] 所有现有测试通过（569 个测试 100% 通过）
 
 **执行方案**：[`docs/superpowers/plans/2026-07-11-runtime-domain-phase4a-tool-pack.md`](./superpowers/plans/2026-07-11-runtime-domain-phase4a-tool-pack.md)
 
@@ -547,11 +554,16 @@ Handler → Domain → DAL → DAO → Models
 
 ## 四、当前阶段
 
-**当前阶段**：Phase 4 方向 A - 工具包机制 + 任务执行闭环
+**当前阶段**：Phase 4A 已完成，准备进入 Phase 4B/4C 或 Phase 5
 
 **Phase 1-3 完成时间**：2026-07-10
+**Phase 4A 完成时间**：2026-07-11
 
-**下一步**：按 [Phase 4A 执行方案](./superpowers/plans/2026-07-11-runtime-domain-phase4a-tool-pack.md) 实施
+**下一步可选方向**：
+1. **Phase 4B：记忆增强** — 短期记忆摘要、长期记忆沉淀、语义向量搜索落地
+2. **Phase 4C：技能增强** — 技能动态注入、Resting 状态实现、用户画像构建
+3. **Phase 4A 后续任务** — 子任务分解、任务进度追踪、任务失败/重试机制
+4. **Phase 5：多 Agent 协作** — Agent 间消息传递、任务分发、结果汇总
 
 ---
 
@@ -559,6 +571,7 @@ Handler → Domain → DAL → DAO → Models
 
 | 日期 | 版本 | 变更 |
 |------|------|------|
+| 2026-07-11 | v3.0 | Phase 4A 完成，工具包机制 + TaskAssignment 消息上线，569 测试通过 |
 | 2026-07-11 | v2.3 | 命名修正：dispatch_tool_call → send_tool_call_message，dispatch_task_assignment → send_task_assignment_message；4A-1 进一步拆分为 4A-1a/1b/1c 三个子阶段 |
 | 2026-07-11 | v2.2 | Phase 4A 拆分为 4A-1（工具调用消息改造）和 4A-2（TaskAssignment 消息）两个子阶段；架构修正：同步/异步工具调用分离，新增 dispatch_tool_call 神经工具，request_tool_call 从神经工具移除 |
 | 2026-07-11 | v2.1 | Phase 4 方向 A 细化：工具包机制 + 任务执行闭环，补充能力分层两维度说明 |
