@@ -13,6 +13,7 @@ use crate::models::memory::{
     MemoryTracePosition, ShortTermMemoryIndexPo,
 };
 use crate::pkg::RequestContext;
+use crate::pkg::storage::escape_fts5_keyword;
 use crate::service::dao::memory::{MemoryDao, MemoryQuery, MemorySearch};
 use async_trait::async_trait;
 use common::enums::{KnowledgeRelationType, MemoryStatus, MemoryType};
@@ -20,23 +21,6 @@ use serde_json;
 use sqlx::{FromRow, SqlitePool};
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
-
-// ==================== FTS5 辅助 ====================
-
-/// 转义 FTS5 关键词中的特殊字符
-///
-/// FTS5 语法字符：* " ( ) : ^ { } 等。转义策略：将关键词用双引号包裹，
-/// 内部双引号变成两个双引号。这样 FTS5 会将其作为短语匹配（phrase query），
-/// 不会把空格解释为 AND 操作符。
-///
-/// 例如：`hello"world` -> `"hello""world"`
-pub fn escape_fts5_keyword(keyword: &str) -> String {
-    if keyword.trim().is_empty() {
-        return String::new();
-    }
-    let escaped = keyword.replace('"', "\"\"");
-    format!("\"{}\"", escaped)
-}
 
 /// 短期记忆搜索行（PO + fts_rank）
 #[derive(FromRow)]

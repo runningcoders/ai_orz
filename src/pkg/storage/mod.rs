@@ -13,6 +13,10 @@ use once_cell::sync::OnceCell;
 
 use crate::pkg::stats::Stats;
 
+/// FTS5 全文搜索工具
+pub mod fts5;
+pub use fts5::escape_fts5_keyword;
+
 /// 向量存储抽象 Trait
 pub mod vector;
 pub use vector::{SqliteVssStore, VectorStore};

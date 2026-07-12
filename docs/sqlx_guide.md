@@ -11,6 +11,7 @@
 - [SQL 关键字转义](#sql-关键字转义)
 - [测试隔离最佳实践](#测试隔离最佳实践)
 - [软删除查询约定](#软删除查询约定)
+- [FTS5 全文搜索规范](#fts5-全文搜索规范)
 - [离线查询缓存](#离线查询缓存)
 - [常见坑点排查](#常见坑点排查)
 
@@ -213,6 +214,125 @@ async fn test_insert_project(pool: SqlitePool) -> Result<(), AppError> {
 - 例外：专门按状态查询的函数（如 `list_by_status`）不需要添加，由调用方处理
 
 **错误案例：** 漏掉过滤会导致删除后仍然能查到数据，测试断言失败。
+
+## FTS5 全文搜索规范
+
+### 1. 概述
+
+项目使用 SQLite 内置 FTS5 扩展实现全文搜索，搭配 `trigram` 分词器支持中文搜索（3 字符以上）。所有实体的关键词搜索统一走 FTS5 MATCH + BM25 相关性排序，**禁止使用 LIKE 进行关键词搜索**。
+
+### 2. 表结构设计
+
+每个需要全文搜索的实体对应一张 FTS5 虚拟表，命名约定：`{实体名}_fts`。
+
+```sql
+-- ✅ 正确：使用 trigram 分词器，content 指定源表
+CREATE VIRTUAL TABLE IF NOT EXISTS skills_fts USING fts5(
+    name,
+    description,
+    tags,
+    content='skills',
+    content_rowid='rowid',
+    tokenize='trigram'
+);
+```
+
+**设计要点：**
+- 使用 `tokenize='trigram'` 支持中文搜索（需 SQLite 3.34+）
+- `content='源表名'` + `content_rowid='rowid'` 建立外部内容模式，数据不重复存储
+- 索引字段选择：name、description、tags 等用户可见的文本字段
+
+### 3. 触发器自动同步
+
+使用 INSERT/UPDATE/DELETE 触发器自动维护 FTS 索引，应用层无感知。
+
+```sql
+-- INSERT 触发器
+CREATE TRIGGER IF NOT EXISTS skills_fts_insert AFTER INSERT ON skills
+BEGIN
+    INSERT INTO skills_fts(rowid, name, description, tags)
+    VALUES (new.rowid, new.name, new.description, new.tags);
+END;
+
+-- UPDATE 触发器（先 DELETE 再 INSERT）
+CREATE TRIGGER IF NOT EXISTS skills_fts_update AFTER UPDATE ON skills
+BEGIN
+    INSERT INTO skills_fts(skills_fts, rowid, name, description, tags)
+    VALUES ('delete', old.rowid, old.name, old.description, old.tags);
+    INSERT INTO skills_fts(rowid, name, description, tags)
+    VALUES (new.rowid, new.name, new.description, new.tags);
+END;
+
+-- DELETE 触发器
+CREATE TRIGGER IF NOT EXISTS skills_fts_delete AFTER DELETE ON skills
+BEGIN
+    INSERT INTO skills_fts(skills_fts, rowid, name, description, tags)
+    VALUES ('delete', old.rowid, old.name, old.description, old.tags);
+END;
+```
+
+### 4. 存量数据回填
+
+迁移中必须包含存量数据回填：
+
+```sql
+-- 回填存量数据到 FTS 索引
+INSERT INTO skills_fts(rowid, name, description, tags)
+SELECT rowid, name, description, tags FROM skills;
+```
+
+### 5. 关键词转义（重要！）
+
+**禁止直接拼接用户输入到 MATCH 查询中**，必须使用 `escape_fts5_keyword` 函数转义。
+
+该函数定义在 `src/pkg/storage/fts5.rs`，属于存储层公共工具，所有 DAO 统一从这里导入复用。
+
+```rust
+// ✅ 正确：从 storage 层导入公共工具
+use crate::pkg::storage::escape_fts5_keyword;
+
+let escaped = escape_fts5_keyword(&keyword);
+```
+
+**转义策略：** 将用户输入用双引号包裹作为短语匹配（phrase query），内部双引号双写转义。这样 FTS5 不会把空格解释为 AND 操作符，搜索精度更高。
+
+```
+"hello world"  →  短语匹配，按顺序匹配 "hello world"
+hello AND world  →  同时包含两个词，顺序无关（不使用）
+```
+
+**错误案例：**
+- ❌ 直接拼接：`format!("{keyword}")` —— 特殊字符会引发 FTS5 语法错误
+- ❌ 从其他 DAO 导入：`use crate::service::dao::memory::sqlite::escape_fts5_keyword` —— 造成 DAO 间依赖
+
+### 6. MATCH 查询写法
+
+```rust
+// 标准写法：FTS5 MATCH + JOIN 主表 + BM25 排序
+let sql = r#"
+    SELECT t.*, rank as fts_rank
+    FROM skills_fts f
+    JOIN skills t ON t.rowid = f.rowid
+    WHERE skills_fts MATCH ?
+    ORDER BY rank
+    LIMIT ?
+"#;
+```
+
+**注意事项：**
+- MATCH 左侧必须使用**完整表名**（非别名），否则 SQLite 会将别名解释为列名
+- BM25 rank 越小越相关，默认升序排列
+- 使用 `rank as fts_rank` 返回相关性评分，供上层混合排序使用
+
+### 7. 中文搜索限制
+
+trigram 分词器基于 3 字符滑动窗口，**少于 3 个字符的关键词无法命中**。这是已知限制，不需要特殊处理。
+
+测试中使用 4+ 字符关键词验证 FTS5 搜索功能。
+
+### 8. 与向量搜索的关系
+
+FTS5 关键词搜索和向量语义搜索是互补关系，在 DAL 层组合为**混合搜索**，具体架构见 [vector_search_architecture.md](./vector_search_architecture.md)。
 
 ## 离线查询缓存
 

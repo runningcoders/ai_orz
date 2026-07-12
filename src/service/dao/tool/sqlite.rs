@@ -2,6 +2,7 @@
 
 use crate::models::tool::ToolPo;
 use crate::pkg::request_context::RequestContext;
+use crate::pkg::storage::escape_fts5_keyword;
 use common::error::Result;
 use async_trait::async_trait;
 use sqlx::{FromRow, SqlitePool};
@@ -486,8 +487,7 @@ impl ToolDao for ToolDaoSqliteImpl {
             return Ok(Vec::new());
         }
 
-        // 转义关键词为 FTS5 短语匹配（复用 memory 模块的公共函数）
-        let escaped_keyword = crate::service::dao::memory::sqlite::escape_fts5_keyword(&keyword);
+        let escaped_keyword = escape_fts5_keyword(&keyword);
 
         // FTS5 MATCH + JOIN 主表 + BM25 排序
         // 注意：MATCH 左侧必须使用完整表名（非别名），否则 SQLite 会将别名解释为列名

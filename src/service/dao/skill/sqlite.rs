@@ -6,7 +6,7 @@ use std::sync::Arc;
 use common::error::{Error, Result};
 use crate::models::skill::{SkillFile, SkillPo};
 use crate::pkg::RequestContext;
-use crate::service::dao::memory::sqlite::escape_fts5_keyword;
+use crate::pkg::storage::escape_fts5_keyword;
 use crate::service::dao::skill::{SkillDao, SkillQuery, SkillSearch};
 use async_trait::async_trait;
 use common::enums::SkillStatus;

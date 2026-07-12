@@ -4,7 +4,7 @@ use common::error::{Error, Result};
 use crate::models::agent::AgentPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::agent::{AgentDao, AgentQuery, AgentSearch};
-use crate::service::dao::memory::sqlite::escape_fts5_keyword;
+use crate::pkg::storage::escape_fts5_keyword;
 use chrono::Utc;
 use common::enums::AgentStatus;
 use sqlx::FromRow;

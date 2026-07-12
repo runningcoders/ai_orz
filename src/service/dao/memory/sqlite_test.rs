@@ -8,7 +8,7 @@ use crate::models::memory::{
     ShortTermMemoryIndexPo,
 };
 use crate::pkg::RequestContext;
-use crate::service::dao::memory::sqlite::{MemoryDaoSqliteImpl, escape_fts5_keyword};
+use crate::service::dao::memory::sqlite::MemoryDaoSqliteImpl;
 use common::enums::{KnowledgeRelationType, MemoryRole, MemoryStatus};
 use sqlx::{Row, SqlitePool};
 
@@ -985,27 +985,6 @@ async fn test_knowledge_node_fts5_trigger_insert_sync(pool: SqlitePool) {
 }
 
 // ==================== FTS5 MATCH 搜索测试（DAO 层） ====================
-
-#[test]
-fn test_escape_fts5_keyword() {
-    // 空字符串
-    assert_eq!(escape_fts5_keyword(""), "");
-    assert_eq!(escape_fts5_keyword("   "), "");
-
-    // 普通关键词
-    assert_eq!(escape_fts5_keyword("hello"), "\"hello\"");
-    assert_eq!(escape_fts5_keyword("rust"), "\"rust\"");
-
-    // 含双引号的关键词：内部双引号双写
-    assert_eq!(escape_fts5_keyword("hello\"world"), "\"hello\"\"world\"");
-
-    // 含空格的关键词：作为短语匹配，空格不解释为 AND
-    assert_eq!(escape_fts5_keyword("hello world"), "\"hello world\"");
-
-    // 含 FTS5 特殊字符的关键词
-    assert_eq!(escape_fts5_keyword("test*"), "\"test*\"");
-    assert_eq!(escape_fts5_keyword("a(b)c"), "\"a(b)c\"");
-}
 
 #[sqlx::test]
 async fn test_search_short_term_fts5(pool: SqlitePool) {

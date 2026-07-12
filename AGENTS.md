@@ -86,13 +86,13 @@
 | [docs/task_scheduler_design.md](./docs/task_scheduler_design.md) | 任务调度器设计、Cron 表达式、定时任务执行 | ⭐⭐ |
 | [docs/event_design.md](./docs/event_design.md) | 泛型 topic 事件队列、类型安全隔离 | ⭐⭐ |
 | [docs/skill_design.md](./docs/skill_design.md) | 技能库系统、Agent 自进化沉淀技能 | ⭐⭐ |
-| [docs/vector_search_architecture.md](./docs/vector_search_architecture.md) | 向量搜索架构、SQLite VSS 扩展集成 | ⭐⭐ |
+| [docs/vector_search_architecture.md](./docs/vector_search_architecture.md) | 混合搜索架构：FTS5 关键词 + 向量语义 + 三态匹配 | ⭐⭐ |
 
 ### 基础设施与规范
 | 文档 | 内容 | 优先级 |
 |------|------|--------|
 | [docs/logging_design.md](./docs/logging_design.md) | **日志系统设计**：统一宏使用规范、上下文检测机制、tracing 语法速查 | ⭐⭐⭐ |
-| [docs/sqlx_guide.md](./docs/sqlx_guide.md) | SQLx 0.8 + SQLite 开发规范、枚举映射、STRICT 模式、测试隔离 | ⭐⭐⭐ |
+| [docs/sqlx_guide.md](./docs/sqlx_guide.md) | SQLx 0.8 + SQLite 开发规范、枚举映射、STRICT 模式、FTS5 全文搜索、测试隔离 | ⭐⭐⭐ |
 | [docs/task_design.md](./docs/task_design.md) | 任务系统设计、状态机、分配与进度追踪 | ⭐ |
 | [docs/project_design.md](./docs/project_design.md) | 项目系统设计、聚合对话上下文 | ⭐ |
 | [docs/organization_design.md](./docs/organization_design.md) | 组织用户权限体系设计 | ⭐ |
@@ -170,6 +170,28 @@ ai_orz/
 │
 └── docs/                       # 详细设计文档
 ```
+
+#### 3.1.1 基础设施公共工具位置约定（2026-07-12 新增，强制执行）
+
+**核心原则：通用工具函数必须放在基础设施层，禁止散落在业务 DAO 中造成跨 DAO 依赖。**
+
+| 工具类型 | 存放位置 | 示例 |
+|----------|----------|------|
+| **FTS5 全文搜索工具** | `src/pkg/storage/fts5.rs` | `escape_fts5_keyword` |
+| **向量存储抽象** | `src/pkg/storage/vector.rs` | `VectorStore` trait |
+| **日志宏** | `src/pkg/logging.rs` + `ai-orz-macros` | `log_info!`, `log_error!` |
+| **统计事件宏** | `src/pkg/stats/` + `ai-orz-macros` | `record_event!` |
+| **JWT 工具** | `src/pkg/jwt.rs` | `encode_token`, `decode_token` |
+
+**反模式（禁止）：**
+- ❌ 在某个业务 DAO 中定义通用工具函数，其他 DAO 直接 import（造成 DAO → DAO 依赖）
+- ❌ 为了复用在每个 DAO 中复制粘贴相同代码
+- ❌ 把业务逻辑相关的工具放到 pkg 层（pkg 层必须无业务感知）
+
+**正确模式：**
+- ✅ 跨模块复用的通用工具 → 放到 `src/pkg/` 对应子模块
+- ✅ 模块内部辅助函数 → 模块内部私有，不对外导出
+- ✅ 单个文件使用的小工具 → 文件内定义，不上升到模块级
 
 ### 3.2 命名规范
 

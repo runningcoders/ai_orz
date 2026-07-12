@@ -13,11 +13,7 @@ use std::sync::{Arc, OnceLock};
 
 // ==================== FTS5 辅助 ====================
 
-/// 转义 FTS5 关键词中的特殊字符（复用 memory 模块的实现）
-///
-/// 将关键词用双引号包裹，内部双引号变成两个双引号，
-/// 这样 FTS5 会将其作为短语匹配（phrase query）。
-use crate::service::dao::memory::sqlite::escape_fts5_keyword;
+use crate::pkg::storage::escape_fts5_keyword;
 
 /// 消息搜索行（PO + fts_rank）
 #[derive(FromRow)]

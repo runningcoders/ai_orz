@@ -11,8 +11,7 @@ use std::sync::OnceLock;
 
 // ==================== FTS5 辅助 ====================
 
-/// 复用 memory 模块的 FTS5 关键词转义函数
-use crate::service::dao::memory::sqlite::escape_fts5_keyword;
+use crate::pkg::storage::escape_fts5_keyword;
 
 /// 任务搜索行（PO + fts_rank）
 #[derive(FromRow)]

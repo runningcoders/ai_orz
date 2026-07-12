@@ -7,6 +7,7 @@ use super::{ProjectDao, ProjectQuery, ProjectSearch};
 use common::error::{Error, Result};
 use crate::models::project::ProjectPo;
 use crate::pkg::RequestContext;
+use crate::pkg::storage::escape_fts5_keyword;
 use common::enums::project::ProjectStatus;
 use sqlx::FromRow;
 
@@ -279,9 +280,7 @@ impl ProjectDao for ProjectDaoSqliteImpl {
             return Ok(Vec::new());
         }
 
-        // 转义关键词为 FTS5 短语匹配（复用 memory 模块的工具函数）
-        let escaped_keyword =
-            crate::service::dao::memory::sqlite::escape_fts5_keyword(&keyword);
+        let escaped_keyword = escape_fts5_keyword(&keyword);
 
         // FTS5 MATCH + JOIN + BM25 排序
         // 注意：MATCH 左侧必须使用完整表名（非别名），否则 SQLite 会将别名解释为列名
