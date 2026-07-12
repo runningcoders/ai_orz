@@ -1,28 +1,33 @@
 //! 项目列表
 
 use dioxus::prelude::*;
+use std::collections::HashMap;
 
-use crate::api::project::{create_project, list_projects};
+use crate::api::project::{create_project, list_project_tasks, list_projects};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, ErrorAlert, Loading};
 use common::api::{CreateProjectRequest, ListProjectsResponseItem};
 
 fn status_badge(status: i32) -> &'static str {
     match status {
-        0 => "badge badge-error",
-        1 => "badge badge-info",
-        2 => "badge badge-success",
-        3 => "badge badge-neutral",
+        0 => "badge badge-error",       // 已删除
+        1 => "badge badge-info",        // 活跃
+        2 => "badge badge-warning",     // 待审核
+        3 => "badge badge-primary",     // 进行中
+        4 => "badge badge-success",     // 已完成
+        5 => "badge badge-neutral",     // 已归档
         _ => "badge badge-neutral",
     }
 }
 
 fn status_text(status: i32) -> &'static str {
     match status {
-        0 => "已归档",
-        1 => "进行中",
-        2 => "已完成",
-        3 => "已暂停",
+        0 => "已删除",
+        1 => "活跃",
+        2 => "待审核",
+        3 => "进行中",
+        4 => "已完成",
+        5 => "已归档",
         _ => "未知",
     }
 }
@@ -30,6 +35,7 @@ fn status_text(status: i32) -> &'static str {
 #[component]
 pub fn ProjectList() -> Element {
     let mut projects = use_signal(Vec::<ListProjectsResponseItem>::new);
+    let mut task_counts = use_signal(HashMap::<String, usize>::new);
     let mut loading = use_signal(|| true);
     let mut error = use_signal(String::new);
     let mut show_modal = use_signal(|| false);
@@ -41,7 +47,17 @@ pub fn ProjectList() -> Element {
         loading.set(true);
         spawn(async move {
             match list_projects().await {
-                Ok(list) => projects.set(list.projects),
+                Ok(list) => {
+                    let items = list.projects.clone();
+                    projects.set(list.projects);
+                    let mut counts = HashMap::new();
+                    for p in &items {
+                        if let Ok(tasks_resp) = list_project_tasks(&p.id).await {
+                            counts.insert(p.id.clone(), tasks_resp.tasks.len());
+                        }
+                    }
+                    task_counts.set(counts);
+                }
                 Err(e) => error.set(e),
             }
             loading.set(false);
@@ -117,7 +133,13 @@ pub fn ProjectList() -> Element {
                                             }
                                         }
                                         td { span { class: "{status_badge(pstatus)}", "{status_text(pstatus)}" } }
-                                        td { class: "text-secondary", "-" }
+                                        td { class: "text-secondary",
+                                            if let Some(count) = task_counts.read().get(&id) {
+                                                "{count}"
+                                            } else {
+                                                "-"
+                                            }
+                                        }
                                         td { class: "text-mono text-muted", "{pcreated}" }
                                     }
                                 }

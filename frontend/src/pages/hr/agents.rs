@@ -2,14 +2,16 @@
 
 use dioxus::prelude::*;
 
+use crate::api::finance::list_model_providers;
 use crate::api::hr::{create_agent, delete_agent, list_agents};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, ErrorAlert, Loading};
-use common::api::{CreateAgentRequest, ListAgentsResponseItem};
+use common::api::{CreateAgentRequest, ListAgentsResponseItem, ListModelProvidersResponseItem};
 
 #[component]
 pub fn HrAgents() -> Element {
     let mut agents = use_signal(Vec::<ListAgentsResponseItem>::new);
+    let mut model_providers = use_signal(Vec::<ListModelProvidersResponseItem>::new);
     let mut loading = use_signal(|| true);
     let mut error = use_signal(String::new);
     let mut show_add_modal = use_signal(|| false);
@@ -26,6 +28,11 @@ pub fn HrAgents() -> Element {
             match list_agents().await {
                 Ok(list) => agents.set(list.agents),
                 Err(e) => error.set(e),
+            }
+            // 加载模型提供商列表用于下拉选择
+            match list_model_providers().await {
+                Ok(resp) => model_providers.set(resp.providers),
+                Err(_) => {} // 静默失败，不影响主流程
             }
             loading.set(false);
         });
@@ -162,9 +169,20 @@ pub fn HrAgents() -> Element {
                         oninput: move |e| new_roles.set(e.value()), placeholder: "如：代码助手" }
                 }
                 div { class: "form-group",
-                    label { class: "form-label", "模型提供商 ID *" }
-                    input { class: "form-input", value: "{new_model_provider_id}",
-                        oninput: move |e| new_model_provider_id.set(e.value()), placeholder: "已配置的模型提供商 ID" }
+                    label { class: "form-label", "模型提供商 *" }
+                    if model_providers.read().is_empty() {
+                        input { class: "form-input", value: "{new_model_provider_id}",
+                            oninput: move |e| new_model_provider_id.set(e.value()),
+                            placeholder: "请先在财务管理中配置模型提供商" }
+                    } else {
+                        select { class: "form-select", value: "{new_model_provider_id}",
+                            onchange: move |e| new_model_provider_id.set(e.value()),
+                            option { value: "", "-- 请选择 --" }
+                            for mp in model_providers.read().iter() {
+                                option { value: "{mp.id}", "{mp.name} ({mp.model_name})" }
+                            }
+                        }
+                    }
                 }
                 div { class: "form-group",
                     label { class: "form-label", "描述" }
