@@ -59,13 +59,13 @@
 | 21 | user | 用户管理 | ✅ dal_user |
 | 22 | webhook, wechat | Webhook/微信渠道 | ✅ dal_message_channel |
 
-**总计**: 22 个 DAO 模块（17 核心 DAO + 5 渠道 DAO），全部被 DAL 层使用
+**总计**: 28 个 DAO 模块（21 核心 DAO + 5 渠道 DAO + 1 统计 DAO + 1 触发器 DAO），全部被 DAL 层使用
 
 ---
 
 ## ✅ 第二层：DAL 层（100% 完成）
 
-**状态**: 🎉 16/16 个模块全部被 Domain 使用，零闲置
+**状态**: 🎉 17/17 个模块全部被 Domain 使用，零闲置
 
 | 序号 | DAL 模块 | 状态 | 被 Domain 使用 | 备注 |
 |------|----------|------|----------------|------|
@@ -90,7 +90,7 @@
 
 ## ✅ 第三层：Domain 层（100% 完成）
 
-**状态**: 🎉 6/6 个领域全部完整实现
+**状态**: 🎉 7/7 个领域全部完整实现
 
 | 序号 | 业务领域 | 状态 | API 覆盖 | 内部实现程度 | 备注 |
 |------|----------|------|----------|--------------|------|
@@ -100,6 +100,7 @@
 | 4 | message | ✅ | ✅ 完整 | ✅ 完整 | 消息管理 + 8 个渠道管理 + 多渠道投递 |
 | 5 | project | ✅ | ✅ 完整 | ✅ 完整 | 项目/任务/产物管理 |
 | 6 | runtime | ✅ | 内部调用 | ✅ 完整 | Agent 唤醒、工具执行、记忆读写 |
+| 7 | system | ✅ | ✅ 完整 | ✅ 完整 | Cron Trigger 管理、后台扫描、事件投递 |
 
 ---
 
@@ -118,11 +119,12 @@
 
 **已上线 API 领域**:
 - ✅ organization: 组织管理、用户管理、系统初始化、个人资料
-- ✅ hr: Agent CRUD、Agent 状态更新、Skill 管理
+- ✅ hr: Agent CRUD、Agent 状态更新、Skill 管理、工具包管理、技能包管理
 - ✅ finance: Model Provider、MessageChannel、Tool、Attachment、MCP Server、MCP Tool 管理
-- ✅ project: Project CRUD、Task CRUD、Artifact 管理、统一状态更新
+- ✅ project: Project CRUD、Task CRUD、Artifact 管理、统一状态更新、任务进度追踪
 - ✅ user: 个人资料查看/修改
 - ✅ health: 健康检查
+- ✅ system: Cron Trigger 管理
 
 ---
 
@@ -142,8 +144,8 @@
 ### ✅ 做得好的地方
 1. **严格分层执行到位**: 所有 Handler 都通过 Domain 层调用，**没有直接调用 DAL/DAO**
 2. **依赖方向正确**: 上层依赖下层，没有循环依赖
-3. **DAO 层覆盖率 100%**: 22 个 DAO 全部有对应的 DAL 使用者
-4. **DAL 层覆盖率 100%**: 16 个 DAL 全部有对应的 Domain 使用者
+3. **DAO 层覆盖率 100%**: 28 个 DAO 全部有对应的 DAL 使用者
+4. **DAL 层覆盖率 100%**: 17 个 DAL 全部有对应的 Domain 使用者
 5. **依赖注入规范**: Domain 层通过 `Arc<dyn Trait>` 注入 DAL，符合 DIP 原则
 6. **PO 边界严格**: PO 仅在 DAO/DAL 层内部使用，Domain 层及以上零 PO 依赖
 

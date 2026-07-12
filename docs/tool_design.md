@@ -1,9 +1,14 @@
 # ai_orz 工具模块设计与开发总结
 
-## 开发时间线（2026-04-17）
+## 开发时间线（2026-04-17 / 2026-07-12 更新）
 
 ### 目标
 基于 Rig 框架，设计并实现工具模块基础架构，支持多种协议（builtin/http/mcp），符合项目现有代码规范。
+
+### 2026-07-12 更新内容
+- **工具包机制**：tag 分组工具、Agent 入职自动安装、免绑定三层校验
+- **协作工具**：search_agents、send_message_to_agent、list_agents、get_agent（tag: collaboration）
+- **神经工具免绑定**：带 "neural" tag 的工具无需绑定即可调用
 
 ---
 

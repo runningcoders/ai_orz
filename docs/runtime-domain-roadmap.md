@@ -2,8 +2,8 @@
 
 > 🎯 **目标**：按阶段推进 Runtime Domain 的完整实现，从"能唤醒"到"能做事"到"能协作"
 >
-> **当前版本**：v3.1（2026-07-11）
-> **状态**：Phase 4A + 4B 完成，工具包机制 + 任务执行闭环 + 记忆沉淀机制已上线
+> **当前版本**：v3.2（2026-07-12）
+> **状态**：Phase 4A + 4B + 4C 完成，工具包机制 + 任务执行闭环 + 记忆沉淀 + 技能系统增强 + 协作工具已上线
 >
 > **文档定位**：总体规划 + 各阶段入口，每个阶段开始前在 `docs/superpowers/plans/` 下细化具体执行方案
 
@@ -27,6 +27,9 @@
 | **工具包机制** | ✅ 100% | tag 分组、Agent 入职自动安装、免绑定三层校验、安装/卸载 API |
 | **TaskAssignment 消息** | ✅ 100% | TaskAssignment 消息类型、投递方法、神经工具、Handler 编排、PromptBuilder 差异化 |
 | **记忆沉淀机制** | ✅ 100% | MemoryStatus::Settled 状态、settle_short_term_to_long_term、rest_and_settle、settle_memory 神经工具、定时触发 |
+| **技能系统增强** | ✅ 100% | SkillQuery/ToolQuery tag 过滤、技能包安装/卸载/重装、唤醒时技能摘要注入、search_skill 神经工具 |
+| **任务进度追踪** | ✅ 100% | progress 字段（0-100）、update_task_progress 神经工具、complete 自动设 100、progress_updated 事件 |
+| **Agent 协作工具** | ✅ 100% | search_agents 搜索、send_message_to_agent 消息、list_agents/get_agent、collaboration tag 分组 |
 
 ### 1.2 当前能力边界
 
@@ -35,7 +38,7 @@
 - 推理过程会记录 Trace（输入/输出完整记录）
 - 工具可以被调用（Manual 模式，经 Runtime Domain 路由）
 - Agent 运行时状态可以被查询（空闲/忙碌/休息）
-- Agent 拥有 10 个天生神经工具，无需绑定即可调用
+- Agent 拥有 10+ 个天生神经工具，无需绑定即可调用
 - Agent 通过 `send_message` 神经工具主动发送消息（框架不再自动回复）
 - Memory 完整 CRUD 能力通过 RuntimeMemory trait 统一暴露
 - 多回合循环控制：轮次限制、任务完成检测、工具失败警告
@@ -44,6 +47,9 @@
 - 工具包可按需安装/卸载（API 支持）
 - 任务创建后自动通知 Agent（TaskAssignment 消息）
 - Agent 间可通过神经工具分配任务（send_task_assignment_message）
+- 技能包机制：tag 分组技能、批量安装/卸载/重装、唤醒时技能摘要注入
+- 任务进度追踪：progress 字段（0-100）、update_task_progress 神经工具
+- Agent 协作：search_agents 搜索、send_message_to_agent 消息、list_agents/get_agent
 
 **不能做的：**
 - ❌ 工具失败率未实时计算（仅记录失败次数）
@@ -51,7 +57,6 @@
 - ❌ 多任务并发限制（当前仅按单任务轮次限制）
 - ❌ 技能动态注入（Agent 不能根据场景自动加载相关技能）
 - ❌ 子任务分解能力（Agent 不能创建子任务形成任务树）
-- ❌ 任务进度追踪（百分比、当前步骤、执行历史）
 
 ---
 
@@ -60,19 +65,22 @@
 分为 5 个大阶段，每个阶段有明确的交付目标：
 
 ```
-Phase 1: 打通端到端链路
+Phase 1: 打通端到端链路 ✅
     │
     ▼
-Phase 2: 神经工具集（Agent 能做事）
+Phase 2: 神经工具集（Agent 能做事）✅
     │
     ▼
-Phase 3: 多回合循环控制
+Phase 3: 多回合循环控制 ✅
     │
     ▼
 Phase 4: 技能与记忆增强
+    ├─ 4A: 工具包机制 + 任务执行闭环 ✅
+    ├─ 4B: 定时触发器 + 记忆沉淀 ✅
+    └─ 4C: 技能系统增强 ✅
     │
     ▼
-Phase 5: 多 Agent 协作
+Phase 5: 多 Agent 协作 ✅
 ```
 
 ---
