@@ -1,6 +1,40 @@
+//! 健康检查
+
 use dioxus::prelude::*;
+
+use crate::api::system::check_health;
+use crate::components::state::{ErrorAlert, Loading, SuccessAlert};
 
 #[component]
 pub fn SystemHealth() -> Element {
-    rsx! { div { class: "card", "健康检查 - 待实现" } }
+    let mut loading = use_signal(|| false);
+    let mut error = use_signal(String::new);
+    let mut success = use_signal(String::new);
+
+    let check = move |_| {
+        loading.set(true);
+        error.set(String::new());
+        success.set(String::new());
+        spawn(async move {
+            match check_health().await {
+                Ok(msg) => success.set(format!("服务正常: {}", msg)),
+                Err(e) => error.set(format!("健康检查失败: {}", e)),
+            }
+            loading.set(false);
+        });
+    };
+
+    rsx! {
+        div { class: "card",
+            ErrorAlert { message: error() }
+            SuccessAlert { message: success() }
+            div { class: "card-header",
+                h2 { class: "card-title", "健康检查" }
+            }
+            p { class: "text-secondary mb-6", "检查后端服务运行状态" }
+            button { class: "btn btn-accent", disabled: loading(), onclick: check,
+                if loading() { "检查中..." } else { "执行检查" }
+            }
+        }
+    }
 }
