@@ -2,15 +2,23 @@
 
 use dioxus::prelude::*;
 
-use crate::api::hr::{delete_skill, list_skills};
+use crate::api::hr::{create_skill, delete_skill, list_skills};
+use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, ErrorAlert, Loading};
-use common::api::ListSkillsResponseItem;
+use common::api::{CreateSkillRequest, ListSkillsResponseItem};
 
 #[component]
 pub fn HrSkills() -> Element {
     let mut skills = use_signal(Vec::<ListSkillsResponseItem>::new);
     let mut loading = use_signal(|| true);
     let mut error = use_signal(String::new);
+    let mut show_add_modal = use_signal(|| false);
+    let mut new_name = use_signal(String::new);
+    let mut new_description = use_signal(String::new);
+    let mut new_tags = use_signal(String::new);
+    let mut new_category = use_signal(String::new);
+    let mut new_content = use_signal(String::new);
+    let mut creating = use_signal(|| false);
 
     use_effect(move || {
         loading.set(true);
@@ -23,6 +31,54 @@ pub fn HrSkills() -> Element {
         });
     });
 
+    let handle_create = move |_| {
+        spawn(async move {
+            if new_name().trim().is_empty() || new_description().trim().is_empty() {
+                error.set("技能名称和描述不能为空".to_string());
+                return;
+            }
+            creating.set(true);
+            let tags: Vec<String> = new_tags()
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            let req = CreateSkillRequest {
+                name: new_name().trim().to_string(),
+                description: new_description().trim().to_string(),
+                tags,
+                category: if new_category().trim().is_empty() {
+                    None
+                } else {
+                    Some(new_category().trim().to_string())
+                },
+                status: None,
+                content: if new_content().is_empty() {
+                    None
+                } else {
+                    Some(new_content())
+                },
+                initial_files: None,
+            };
+            match create_skill(req).await {
+                Ok(_) => {
+                    show_add_modal.set(false);
+                    new_name.set(String::new());
+                    new_description.set(String::new());
+                    new_tags.set(String::new());
+                    new_category.set(String::new());
+                    new_content.set(String::new());
+                    match list_skills().await {
+                        Ok(list) => skills.set(list.skills),
+                        Err(e) => error.set(e),
+                    }
+                }
+                Err(e) => error.set(format!("创建失败: {}", e)),
+            }
+            creating.set(false);
+        });
+    };
+
     let skills_list = skills.read().clone();
 
     rsx! {
@@ -30,6 +86,7 @@ pub fn HrSkills() -> Element {
             ErrorAlert { message: error() }
             div { class: "card-header",
                 h2 { class: "card-title", "技能库" }
+                button { class: "btn btn-accent", onclick: move |_| show_add_modal.set(true), "+ 创建技能" }
             }
             if loading() {
                 Loading {}
@@ -76,6 +133,54 @@ pub fn HrSkills() -> Element {
                             }
                         }
                     }
+                }
+            }
+        }
+
+        // 创建技能弹窗
+        Modal {
+            title: "创建新技能".to_string(),
+            show: show_add_modal(),
+            on_close: move |_| {
+                show_add_modal.set(false);
+                new_name.set(String::new());
+                new_description.set(String::new());
+                new_tags.set(String::new());
+                new_category.set(String::new());
+                new_content.set(String::new());
+            },
+            footer: rsx! {
+                button { class: "btn btn-ghost", onclick: move |_| show_add_modal.set(false), "取消" }
+                button { class: "btn btn-accent", disabled: creating(), onclick: handle_create,
+                    if creating() { "创建中..." } else { "创建" }
+                }
+            },
+            div {
+                div { class: "form-group",
+                    label { class: "form-label", "技能名称 *" }
+                    input { class: "form-input", value: "{new_name}",
+                        oninput: move |e| new_name.set(e.value()), placeholder: "请输入技能名称" }
+                }
+                div { class: "form-group",
+                    label { class: "form-label", "技能描述 *" }
+                    textarea { class: "form-textarea", value: "{new_description}",
+                        oninput: move |e| new_description.set(e.value()), placeholder: "请输入技能描述" }
+                }
+                div { class: "form-group",
+                    label { class: "form-label", "标签" }
+                    input { class: "form-input", value: "{new_tags}",
+                        oninput: move |e| new_tags.set(e.value()), placeholder: "coding, backend" }
+                }
+                div { class: "form-group",
+                    label { class: "form-label", "分类" }
+                    input { class: "form-input", value: "{new_category}",
+                        oninput: move |e| new_category.set(e.value()), placeholder: "development" }
+                }
+                div { class: "form-group",
+                    label { class: "form-label", "技能内容" }
+                    textarea { class: "form-textarea", value: "{new_content}",
+                        oninput: move |e| new_content.set(e.value()),
+                        placeholder: "技能的 Markdown 内容，将写入 skill.md" }
                 }
             }
         }
