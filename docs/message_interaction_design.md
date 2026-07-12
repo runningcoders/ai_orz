@@ -229,11 +229,10 @@ Agent 生成回复，保存到 messages 表（role = Agent，status = Processed�
 
 ```
 src/
-  handlers/chat/                ← HTTP 接口层
-    ├─ send_message.rs
-    ├─ pull_messages.rs
-    ├─ get_history.rs
-    ├─ list_conversations.rs
+  handlers/finance/message/    ← HTTP 接口层
+    ├─ send_message.rs           ← Agent 发送消息给用户
+    ├─ send_message_to_agent.rs  ← Agent 发送消息给 Agent（协作）
+    ├─ send_task_assignment_message.rs  ← 发送任务分配通知
     └─ mod.rs
 
 src/service/
@@ -241,11 +240,11 @@ src/service/
   │  ├─ mod.rs                 ← trait 定义
   │  ├─ sqlite.rs              ← SQLite 实现
   │  └─ sqlite_test.rs         ← 单元测试
-  ├─ dal/chat.rs               ← DAL：组合 DAO
+  ├─ dal/message.rs            ← DAL：组合 DAO
   └─ domain/message/           ← DOMAIN：核心业务逻辑
       ├─ mod.rs
-      ├─ receive_message.rs    ← 接收用户消息 → 保存 → 发布事件
-      └─ process_message.rs    ← 处理消息 → 唤醒 Agent → 保存回复
+      ├─ delivery.rs           ← 消息投递（send_to_agent/send_to_user）
+      └─ consumer.rs           ← 消息消费者（接收消息 → 唤醒 Agent）
 ```
 
 优点：

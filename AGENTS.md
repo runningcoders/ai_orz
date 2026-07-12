@@ -43,7 +43,7 @@
 | 🎒 技能包机制 | ✅ | tag 分组技能、批量安装、安装即复制、卸载保留副本 |
 | 🔎 综合搜索 | ✅ | FTS5 关键词 + 向量语义 + 图谱关系 三位一体混合搜索，Hybrid/Vector/Keyword 三态匹配 |
 | 📊 任务进度追踪 | ✅ | Task progress 字段（0-100）、Agent 神经工具更新进度、complete 自动设 100、progress_updated 事件 |
-| 🤝 Agent 协作工具 | ✅ | search_agents/search_agents 搜索、send_message_to_agent Agent 间消息、collaboration tag 分组 |
+| 🤝 Agent 协作工具 | ✅ | search_agents 搜索、send_message_to_agent Agent 间消息、collaboration tag 分组工具 |
 
 ### 1.3 整体完成度与测试统计（2026-07-12 更新）
 
