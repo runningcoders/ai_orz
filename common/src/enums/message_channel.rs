@@ -4,6 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "sqlx")]
 use sqlx::Type;
+use std::fmt;
 
 /// Channel type (推送渠道类型)
 #[repr(i32)]
@@ -68,6 +69,12 @@ impl ChannelType {
     }
 }
 
+impl fmt::Display for ChannelType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 /// 渠道状态
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -101,5 +108,15 @@ impl From<i32> for ChannelStatus {
 impl From<ChannelStatus> for i32 {
     fn from(r: ChannelStatus) -> i32 {
         r as i32
+    }
+}
+
+impl fmt::Display for ChannelStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ChannelStatus::Deleted => write!(f, "deleted"),
+            ChannelStatus::Active => write!(f, "active"),
+            ChannelStatus::Disabled => write!(f, "disabled"),
+        }
     }
 }

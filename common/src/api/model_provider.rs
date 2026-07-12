@@ -194,11 +194,14 @@ pub struct ListModelProvidersRequest {
 }
 
 /// List Model Providers response
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct ListModelProvidersResponse {
     /// List of all model providers
     pub providers: Vec<ModelProviderListItem>,
 }
+
+/// Model Provider list item response alias (frontend compatibility)
+pub type ListModelProvidersResponseItem = ModelProviderListItem;
 
 /// Test Model Provider connectivity response (alias for frontend compatibility)
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

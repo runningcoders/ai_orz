@@ -1,9 +1,10 @@
 //! 组织管理 API
 
 use common::api::{
-    CreateOrganizationUserRequest, CreateOrganizationUserResponse, GetOrganizationResponse,
-    ListOrganizationsResponse, ListUsersResponse, UpdateOrganizationRequest,
-    UpdateOrganizationResponse, UpdateUserRequest, UpdateUserResponse,
+    CreateOrganizationUserRequest, CreateOrganizationUserResponse, GetCurrentOrganizationResponse,
+    GetCurrentUserResponse, ListOrganizationsResponse, ListUsersResponse,
+    UpdateCurrentOrganizationRequest, UpdateCurrentOrganizationResponse, UpdateUserRequest,
+    UpdateUserResponse,
 };
 
 use super::{api_get, api_get_or_default, api_post, api_put};
@@ -14,12 +15,12 @@ pub async fn list_organizations_public() -> Result<ListOrganizationsResponse, St
 }
 
 /// 获取当前组织信息
-pub async fn get_current_organization() -> Result<GetOrganizationResponse, String> {
+pub async fn get_current_organization() -> Result<GetCurrentOrganizationResponse, String> {
     api_get("/api/v1/organization/me").await
 }
 
 /// 更新当前组织信息
-pub async fn update_current_organization(req: UpdateOrganizationRequest) -> Result<UpdateOrganizationResponse, String> {
+pub async fn update_current_organization(req: UpdateCurrentOrganizationRequest) -> Result<UpdateCurrentOrganizationResponse, String> {
     api_put("/api/v1/organization/me", &req).await
 }
 
@@ -41,4 +42,9 @@ pub async fn update_user(req: UpdateUserRequest) -> Result<UpdateUserResponse, S
 /// 删除用户
 pub async fn delete_user(user_id: &str) -> Result<(), String> {
     super::api_delete(&format!("/api/v1/organization/user/id/{}", user_id)).await
+}
+
+/// 获取当前用户信息
+pub async fn get_current_user_info() -> Result<GetCurrentUserResponse, String> {
+    api_get("/api/v1/user/me").await
 }

@@ -12,14 +12,15 @@ pub fn UserProfile() -> Element {
     let mut success = use_signal(String::new);
     let mut username = use_signal(String::new);
     let mut display_name = use_signal(String::new);
-    let mut email = use_signal(String::new());
-    let mut role = use_signal(1i32);
+    let mut email = use_signal(|| String::new());
+    let mut role = use_signal(|| 1i32);
     let mut saving = use_signal(|| false);
 
     use_effect(move || {
         spawn(async move {
             match get_current_user_info().await {
-                Ok(user) => {
+                Ok(resp) => {
+                    let user = resp.data;
                     username.set(user.username);
                     display_name.set(user.display_name.unwrap_or_default());
                     email.set(user.email.unwrap_or_default());
@@ -30,6 +31,12 @@ pub fn UserProfile() -> Element {
             loading.set(false);
         });
     });
+
+    let role_text = match role() {
+        3 => "超级管理员".to_string(),
+        2 => "管理员".to_string(),
+        _ => "成员".to_string(),
+    };
 
     rsx! {
         div { class: "card",
@@ -50,7 +57,7 @@ pub fn UserProfile() -> Element {
                 div { class: "form-group",
                     label { class: "form-label", "角色" }
                     input { class: "form-input", disabled: true,
-                        value: "{match role() { 3 => \"超级管理员\", 2 => \"管理员\", _ => \"成员\" }}" }
+                        value: "{role_text}" }
                 }
                 div { class: "form-group",
                     label { class: "form-label", "显示名称" }

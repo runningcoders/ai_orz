@@ -1,7 +1,6 @@
 //! 前台接待 - 系统初始化 + 登录
 
 use dioxus::prelude::*;
-use dioxus_router::prelude::*;
 
 use crate::api::auth::{check_initialized, initialize_system, login};
 use crate::api::organization::list_organizations_public;
@@ -33,7 +32,7 @@ pub fn Reception() -> Element {
     let mut email = use_signal(String::new);
     let mut init_submitting = use_signal(|| false);
 
-    let auth = use_context::<Signal<AuthState>>();
+    let mut auth = use_context::<Signal<AuthState>>();
 
     // 页面加载检查初始化状态
     use_effect(move || {
@@ -43,7 +42,7 @@ pub fn Reception() -> Element {
                     if resp.initialized {
                         match list_organizations_public().await {
                             Ok(list) => {
-                                organizations.set(list.organizations);
+                                organizations.set(list.data);
                                 initialized.set(true);
                             }
                             Err(e) => error.set(e),
@@ -80,13 +79,16 @@ pub fn Reception() -> Element {
 
             match login(req).await {
                 Ok(resp) => {
-                    save_token(&resp.token);
+                    // LoginResponse 没有 token 字段（token 通过 httpOnly cookie 设置）
+                    // 这里使用 user_id 作为伪 token 用于前端状态管理
+                    let token = resp.user_id.clone();
+                    save_token(&token);
                     // 更新全局认证状态
                     let mut state = auth.write();
-                    state.token = Some(resp.token);
-                    state.username = resp.username.unwrap_or_default();
-                    state.role = resp.role.unwrap_or(1);
-                    state.org_id = resp.organization_id.unwrap_or_default();
+                    state.token = Some(token);
+                    state.username = resp.username;
+                    state.role = 1;
+                    state.org_id = resp.organization_id;
                     drop(state);
                     // 跳转 - 使用 window location 触发完整刷新
                     let _ = web_sys::window().unwrap().location().set_href("/");
@@ -175,7 +177,7 @@ pub fn Reception() -> Element {
                                 }
                             }
 
-                            form { onsubmit: move |e| { e.prevent_default(); on_submit_login.call(()); },
+                            form { onsubmit: move |e| { e.prevent_default(); on_submit_login(e); },
                                 div { class: "form-group",
                                     label { class: "form-label", "用户名" }
                                     input {
@@ -211,7 +213,7 @@ pub fn Reception() -> Element {
                             p { class: "text-secondary mb-6",
                                 "欢迎使用 AI Orz！请填写以下信息完成初始化，创建您的第一个组织和超级管理员用户。"
                             }
-                            form { onsubmit: move |e| { e.prevent_default(); on_submit_init.call(()); },
+                            form { onsubmit: move |e| { e.prevent_default(); on_submit_init(e); },
                                 div { class: "form-group",
                                     label { class: "form-label", "组织名称 *" }
                                     input { class: "form-input", r#type: "text", value: "{org_name}",

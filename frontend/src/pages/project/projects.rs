@@ -1,7 +1,6 @@
 //! 项目列表
 
 use dioxus::prelude::*;
-use dioxus_router::prelude::*;
 
 use crate::api::project::{create_project, list_projects};
 use crate::components::modal::Modal;
@@ -38,7 +37,7 @@ pub fn ProjectList() -> Element {
     let mut new_description = use_signal(String::new);
     let mut creating = use_signal(|| false);
 
-    let load = move || {
+    use_effect(move || {
         loading.set(true);
         spawn(async move {
             match list_projects().await {
@@ -47,9 +46,7 @@ pub fn ProjectList() -> Element {
             }
             loading.set(false);
         });
-    };
-
-    use_effect(move || { load(); });
+    });
 
     let handle_create = move |_| {
         spawn(async move {
@@ -61,15 +58,19 @@ pub fn ProjectList() -> Element {
             let req = CreateProjectRequest {
                 name: new_name(),
                 description: if new_description().is_empty() { None } else { Some(new_description()) },
-                assignee_id: None,
-                assignee_type: None,
+                priority: None,
+                tags: None,
             };
             match create_project(req).await {
                 Ok(_) => {
                     show_modal.set(false);
                     new_name.set(String::new());
                     new_description.set(String::new());
-                    load();
+                    // Reload
+                    match list_projects().await {
+                        Ok(list) => projects.set(list.projects),
+                        Err(e) => error.set(e),
+                    }
                 }
                 Err(e) => error.set(format!("创建失败: {}", e)),
             }
@@ -104,17 +105,20 @@ pub fn ProjectList() -> Element {
                         for p in projects_list.iter() {
                             {
                                 let id = p.id.clone();
+                                let pname = p.name.clone();
+                                let pstatus = p.status;
+                                let pcreated = p.created_at.clone();
                                 rsx! {
                                     tr { key: "{id}",
                                         td {
                                             Link { to: crate::pages::Route::ProjectDetail { id: id.clone() },
                                                 style: "color: var(--color-mistral-orange); text-decoration: none; font-weight: 500;",
-                                                "{p.name}"
+                                                "{pname}"
                                             }
                                         }
-                                        td { span { class: "{status_badge(p.status)}", "{status_text(p.status)}" } }
-                                        td { class: "text-secondary", "{p.task_count.unwrap_or(0)}" }
-                                        td { class: "text-mono text-muted", "{p.created_at}" }
+                                        td { span { class: "{status_badge(pstatus)}", "{status_text(pstatus)}" } }
+                                        td { class: "text-secondary", "-" }
+                                        td { class: "text-mono text-muted", "{pcreated}" }
                                     }
                                 }
                             }
@@ -132,6 +136,12 @@ pub fn ProjectList() -> Element {
                 new_name.set(String::new());
                 new_description.set(String::new());
             },
+            footer: rsx! {
+                button { class: "btn btn-ghost", onclick: move |_| show_modal.set(false), "取消" }
+                button { class: "btn btn-accent", disabled: creating(), onclick: handle_create,
+                    if creating() { "创建中..." } else { "创建" }
+                }
+            },
             div {
                 div { class: "form-group",
                     label { class: "form-label", "项目名称 *" }
@@ -142,12 +152,6 @@ pub fn ProjectList() -> Element {
                     label { class: "form-label", "描述" }
                     textarea { class: "form-textarea", value: "{new_description}",
                         oninput: move |e| new_description.set(e.value()), placeholder: "项目描述（可选）" }
-                }
-            },
-            footer: rsx! {
-                button { class: "btn btn-ghost", onclick: move |_| show_modal.set(false), "取消" }
-                button { class: "btn btn-accent", disabled: creating(), onclick: handle_create,
-                    if creating() { "创建中..." } else { "创建" }
                 }
             }
         }

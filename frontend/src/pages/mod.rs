@@ -10,7 +10,25 @@ pub mod settings;
 pub mod system;
 pub mod user;
 
-use dioxus_router::prelude::*;
+use dioxus::prelude::*;
+
+// 导入路由组件函数到当前作用域，供 Routable 宏使用
+use crate::pages::finance::message_channels::FinanceMessageChannels;
+use crate::pages::finance::model_providers::FinanceModelProviders;
+use crate::pages::finance::tools::FinanceTools;
+use crate::pages::hr::agent_detail::HrAgentDetail;
+use crate::pages::hr::agents::HrAgents;
+use crate::pages::hr::skills::HrSkills;
+use crate::pages::message::chat::MessageChat;
+use crate::pages::organization::info::OrganizationInfo;
+use crate::pages::organization::users::OrganizationUsers;
+use crate::pages::project::project_detail::ProjectDetail;
+use crate::pages::project::projects::ProjectList;
+use crate::pages::reception::Reception;
+use crate::pages::settings::Settings;
+use crate::pages::system::health::SystemHealth;
+use crate::pages::system::triggers::SystemTriggers;
+use crate::pages::user::profile::UserProfile;
 
 /// 全局路由枚举
 #[derive(Clone, Routable, Debug, PartialEq)]

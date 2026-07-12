@@ -4,6 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "sqlx")]
 use sqlx::Type;
+use std::fmt;
 
 /// Model provider type
 #[repr(i32)]
@@ -68,6 +69,20 @@ impl ProviderType {
     }
 }
 
+impl fmt::Display for ProviderType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ProviderType::OpenAI => write!(f, "openai"),
+            ProviderType::DeepSeek => write!(f, "deepseek"),
+            ProviderType::Qwen => write!(f, "qwen"),
+            ProviderType::Doubao => write!(f, "doubao"),
+            ProviderType::Ollama => write!(f, "ollama"),
+            ProviderType::Custom => write!(f, "custom"),
+            ProviderType::FastEmbed => write!(f, "fastembed"),
+        }
+    }
+}
+
 impl From<ProviderType> for i32 {
     fn from(t: ProviderType) -> i32 {
         t as i32
@@ -109,6 +124,15 @@ impl ModelCapability {
     /// Check if it's Embedding capability
     pub fn is_embedding(&self) -> bool {
         matches!(self, ModelCapability::Embedding)
+    }
+}
+
+impl fmt::Display for ModelCapability {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ModelCapability::Agent => write!(f, "agent"),
+            ModelCapability::Embedding => write!(f, "embedding"),
+        }
     }
 }
 

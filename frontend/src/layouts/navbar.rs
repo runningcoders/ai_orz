@@ -1,7 +1,6 @@
 //! 顶部导航栏
 
 use dioxus::prelude::*;
-use dioxus_router::prelude::*;
 
 use crate::pages::Route;
 use crate::store::auth::use_auth_state;
@@ -15,7 +14,7 @@ pub fn Navbar() -> Element {
     let mut user_menu_open = use_signal(|| false);
     let auth = use_auth_state();
 
-    let close_all = move || {
+    let mut close_all = move || {
         hr_menu_open.set(false);
         finance_menu_open.set(false);
         project_menu_open.set(false);
@@ -34,7 +33,7 @@ pub fn Navbar() -> Element {
         nav { class: "navbar",
             // 左侧：品牌 + 导航
             div { class: "navbar-section",
-                Link { to: Route::Reception, class: "navbar-brand", "AI Orz" }
+                Link { to: Route::Reception {}, class: "navbar-brand", "AI Orz" }
 
                 // 人力资源
                 div { style: "position: relative;",
@@ -46,11 +45,11 @@ pub fn Navbar() -> Element {
                     }
                     if hr_menu_open() {
                         div { class: "navbar-dropdown",
-                            Link { to: Route::HrAgents, class: "navbar-dropdown-item",
+                            Link { to: Route::HrAgents {}, class: "navbar-dropdown-item",
                                 onclick: move |_| close_all(),
                                 "Agent 管理"
                             }
-                            Link { to: Route::HrSkills, class: "navbar-dropdown-item",
+                            Link { to: Route::HrSkills {}, class: "navbar-dropdown-item",
                                 onclick: move |_| close_all(),
                                 "技能库"
                             }
@@ -68,15 +67,15 @@ pub fn Navbar() -> Element {
                     }
                     if finance_menu_open() {
                         div { class: "navbar-dropdown",
-                            Link { to: Route::FinanceModelProviders, class: "navbar-dropdown-item",
+                            Link { to: Route::FinanceModelProviders {}, class: "navbar-dropdown-item",
                                 onclick: move |_| close_all(),
                                 "模型提供商"
                             }
-                            Link { to: Route::FinanceTools, class: "navbar-dropdown-item",
+                            Link { to: Route::FinanceTools {}, class: "navbar-dropdown-item",
                                 onclick: move |_| close_all(),
                                 "工具管理"
                             }
-                            Link { to: Route::FinanceMessageChannels, class: "navbar-dropdown-item",
+                            Link { to: Route::FinanceMessageChannels {}, class: "navbar-dropdown-item",
                                 onclick: move |_| close_all(),
                                 "消息渠道"
                             }
@@ -94,7 +93,7 @@ pub fn Navbar() -> Element {
                     }
                     if project_menu_open() {
                         div { class: "navbar-dropdown",
-                            Link { to: Route::ProjectList, class: "navbar-dropdown-item",
+                            Link { to: Route::ProjectList {}, class: "navbar-dropdown-item",
                                 onclick: move |_| close_all(),
                                 "项目列表"
                             }
@@ -112,11 +111,11 @@ pub fn Navbar() -> Element {
                     }
                     if system_menu_open() {
                         div { class: "navbar-dropdown",
-                            Link { to: Route::SystemTriggers, class: "navbar-dropdown-item",
+                            Link { to: Route::SystemTriggers {}, class: "navbar-dropdown-item",
                                 onclick: move |_| close_all(),
                                 "定时触发器"
                             }
-                            Link { to: Route::SystemHealth, class: "navbar-dropdown-item",
+                            Link { to: Route::SystemHealth {}, class: "navbar-dropdown-item",
                                 onclick: move |_| close_all(),
                                 "健康检查"
                             }
@@ -139,26 +138,26 @@ pub fn Navbar() -> Element {
                     }
                     if user_menu_open() {
                         div { class: "navbar-dropdown", style: "right: 0; left: auto;",
-                            Link { to: Route::UserProfile, class: "navbar-dropdown-item",
+                            Link { to: Route::UserProfile {}, class: "navbar-dropdown-item",
                                 onclick: move |_| close_all(),
                                 "👤 个人信息"
                             }
                             if is_admin {
-                                Link { to: Route::OrganizationInfo, class: "navbar-dropdown-item",
+                                Link { to: Route::OrganizationInfo {}, class: "navbar-dropdown-item",
                                     onclick: move |_| close_all(),
                                     "🏢 组织信息"
                                 }
-                                Link { to: Route::OrganizationUsers, class: "navbar-dropdown-item",
+                                Link { to: Route::OrganizationUsers {}, class: "navbar-dropdown-item",
                                     onclick: move |_| close_all(),
                                     "👥 用户管理"
                                 }
                             }
                             div { style: "border-top: 1px solid var(--color-border-light);" }
-                            Link { to: Route::Settings, class: "navbar-dropdown-item",
+                            Link { to: Route::Settings {}, class: "navbar-dropdown-item",
                                 onclick: move |_| close_all(),
                                 "⚙️ 设置"
                             }
-                            Link { to: Route::Reception, class: "navbar-dropdown-item",
+                            Link { to: Route::Reception {}, class: "navbar-dropdown-item",
                                 onclick: move |_| {
                                     close_all();
                                     crate::store::auth::clear_token();

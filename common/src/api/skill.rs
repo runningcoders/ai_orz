@@ -287,11 +287,14 @@ pub struct ListSkillsRequest {
 }
 
 /// Skill 列表查询响应。
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct ListSkillsResponse {
     /// Skill 列表。
     pub skills: Vec<SkillListItem>,
 }
+
+/// Skill 列表项响应别名（前端兼容）
+pub type ListSkillsResponseItem = SkillListItem;
 
 /// Skill 搜索请求。
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
@@ -406,8 +409,18 @@ pub struct ListInstalledSkillPacksRequest {
 }
 
 /// 列出已安装技能包响应。
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct ListSkillPacksResponse {
     /// 已安装的技能包 tags。
     pub skill_packs: Vec<String>,
+}
+
+/// 列出已安装技能包响应别名（前端兼容）
+pub type ListInstalledSkillPacksResponse = ListSkillPacksResponse;
+
+/// 删除 Skill 响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct DeleteSkillResponse {
+    /// 是否删除成功
+    pub success: bool,
 }

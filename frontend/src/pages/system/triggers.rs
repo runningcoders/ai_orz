@@ -12,7 +12,7 @@ pub fn SystemTriggers() -> Element {
     let mut loading = use_signal(|| true);
     let mut error = use_signal(String::new);
 
-    let load = move || {
+    use_effect(move || {
         loading.set(true);
         spawn(async move {
             match list_cron_triggers().await {
@@ -21,9 +21,7 @@ pub fn SystemTriggers() -> Element {
             }
             loading.set(false);
         });
-    };
-
-    use_effect(move || { load(); });
+    });
 
     let triggers_list = triggers.read().clone();
 
@@ -43,42 +41,67 @@ pub fn SystemTriggers() -> Element {
                     tbody {
                         for t in triggers_list.iter() {
                             {
-                                let id = t.trigger_id.clone();
-                                let status = t.status;
+                                let id = t.id.clone();
+                                let name = t.name.clone();
+                                let cron_expr = t.cron_expression.clone().unwrap_or_default();
+                                let is_enabled = t.is_enabled;
+                                let id_pause = id.clone();
+                                let id_resume = id.clone();
+                                let id_delete = id.clone();
                                 rsx! {
                                     tr { key: "{id}",
-                                        td { style: "font-weight: 500;", "{t.name}" }
-                                        td { class: "text-mono", "{t.cron_expression}" }
+                                        td { style: "font-weight: 500;", "{name}" }
+                                        td { class: "text-mono", "{cron_expr}" }
                                         td {
-                                            if status == 1 { span { class: "badge badge-success", "运行中" } }
-                                            else if status == 0 { span { class: "badge badge-neutral", "暂停" } }
-                                            else { span { class: "badge badge-error", "已禁用" } }
+                                            if is_enabled { span { class: "badge badge-success", "运行中" } }
+                                            else { span { class: "badge badge-neutral", "暂停" } }
                                         }
                                         td {
-                                            if status == 1 {
+                                            if is_enabled {
                                                 button { class: "btn btn-ghost btn-sm",
                                                     onclick: move |_| {
-                                                        let id = id.clone();
+                                                        let id_pause = id_pause.clone();
                                                         spawn(async move {
-                                                            if let Err(e) = pause_cron_trigger(&id).await { error.set(e); } else { load(); }
+                                                            if let Err(e) = pause_cron_trigger(&id_pause).await {
+                                                                error.set(e);
+                                                            } else {
+                                                                match list_cron_triggers().await {
+                                                                    Ok(list) => triggers.set(list.triggers),
+                                                                    Err(e) => error.set(e),
+                                                                }
+                                                            }
                                                         });
                                                     }, "暂停"
                                                 }
                                             } else {
                                                 button { class: "btn btn-ghost btn-sm",
                                                     onclick: move |_| {
-                                                        let id = id.clone();
+                                                        let id_resume = id_resume.clone();
                                                         spawn(async move {
-                                                            if let Err(e) = resume_cron_trigger(&id).await { error.set(e); } else { load(); }
+                                                            if let Err(e) = resume_cron_trigger(&id_resume).await {
+                                                                error.set(e);
+                                                            } else {
+                                                                match list_cron_triggers().await {
+                                                                    Ok(list) => triggers.set(list.triggers),
+                                                                    Err(e) => error.set(e),
+                                                                }
+                                                            }
                                                         });
                                                     }, "恢复"
                                                 }
                                             }
                                             button { class: "btn btn-danger btn-sm",
                                                 onclick: move |_| {
-                                                    let id = id.clone();
+                                                    let id_delete = id_delete.clone();
                                                     spawn(async move {
-                                                        if let Err(e) = delete_cron_trigger(&id).await { error.set(format!("删除失败: {}", e)); } else { load(); }
+                                                        if let Err(e) = delete_cron_trigger(&id_delete).await {
+                                                            error.set(format!("删除失败: {}", e));
+                                                        } else {
+                                                            match list_cron_triggers().await {
+                                                                Ok(list) => triggers.set(list.triggers),
+                                                                Err(e) => error.set(e),
+                                                            }
+                                                        }
                                                     });
                                                 }, "删除"
                                             }

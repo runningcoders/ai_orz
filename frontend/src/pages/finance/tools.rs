@@ -5,6 +5,7 @@ use dioxus::prelude::*;
 use crate::api::finance::{delete_tool, list_tools, update_tool_status};
 use crate::components::state::{EmptyState, ErrorAlert, Loading};
 use common::api::ListToolsResponseItem;
+use common::enums::ToolStatus;
 
 #[component]
 pub fn FinanceTools() -> Element {
@@ -12,7 +13,7 @@ pub fn FinanceTools() -> Element {
     let mut loading = use_signal(|| true);
     let mut error = use_signal(String::new);
 
-    let load = move || {
+    use_effect(move || {
         loading.set(true);
         spawn(async move {
             match list_tools().await {
@@ -21,9 +22,7 @@ pub fn FinanceTools() -> Element {
             }
             loading.set(false);
         });
-    };
-
-    use_effect(move || { load(); });
+    });
 
     let tools_list = tools.read().clone();
 
@@ -51,27 +50,38 @@ pub fn FinanceTools() -> Element {
                         for t in tools_list.iter() {
                             {
                                 let id = t.id.clone();
+                                let name = t.name.clone();
+                                let protocol = t.protocol;
                                 let status = t.status;
+                                let is_enabled = status == ToolStatus::Enabled;
+                                let id_disable = id.clone();
+                                let id_enable = id.clone();
+                                let id_delete = id.clone();
                                 rsx! {
                                     tr { key: "{id}",
-                                        td { style: "font-weight: 500;", "{t.name}" }
-                                        td { span { class: "badge badge-neutral", "{t.protocol}" } }
+                                        td { style: "font-weight: 500;", "{name}" }
+                                        td { span { class: "badge badge-neutral", "{protocol}" } }
                                         td {
-                                            if status == 1 {
+                                            if is_enabled {
                                                 span { class: "badge badge-success", "启用" }
                                             } else {
                                                 span { class: "badge badge-error", "禁用" }
                                             }
                                         }
                                         td {
-                                            if status == 1 {
+                                            if is_enabled {
                                                 button { class: "btn btn-ghost btn-sm",
                                                     onclick: move |_| {
-                                                        let id = id.clone();
+                                                        let id_disable = id_disable.clone();
                                                         spawn(async move {
-                                                            if let Err(e) = update_tool_status(&id, 0).await {
+                                                            if let Err(e) = update_tool_status(&id_disable, 0).await {
                                                                 error.set(e);
-                                                            } else { load(); }
+                                                            } else {
+                                                                match list_tools().await {
+                                                                    Ok(list) => tools.set(list.tools),
+                                                                    Err(e) => error.set(e),
+                                                                }
+                                                            }
                                                         });
                                                     },
                                                     "禁用"
@@ -79,11 +89,16 @@ pub fn FinanceTools() -> Element {
                                             } else {
                                                 button { class: "btn btn-ghost btn-sm",
                                                     onclick: move |_| {
-                                                        let id = id.clone();
+                                                        let id_enable = id_enable.clone();
                                                         spawn(async move {
-                                                            if let Err(e) = update_tool_status(&id, 1).await {
+                                                            if let Err(e) = update_tool_status(&id_enable, 1).await {
                                                                 error.set(e);
-                                                            } else { load(); }
+                                                            } else {
+                                                                match list_tools().await {
+                                                                    Ok(list) => tools.set(list.tools),
+                                                                    Err(e) => error.set(e),
+                                                                }
+                                                            }
                                                         });
                                                     },
                                                     "启用"
@@ -91,11 +106,16 @@ pub fn FinanceTools() -> Element {
                                             }
                                             button { class: "btn btn-danger btn-sm",
                                                 onclick: move |_| {
-                                                    let id = id.clone();
+                                                    let id_delete = id_delete.clone();
                                                     spawn(async move {
-                                                        if let Err(e) = delete_tool(&id).await {
+                                                        if let Err(e) = delete_tool(&id_delete).await {
                                                             error.set(format!("删除失败: {}", e));
-                                                        } else { load(); }
+                                                        } else {
+                                                            match list_tools().await {
+                                                                Ok(list) => tools.set(list.tools),
+                                                                Err(e) => error.set(e),
+                                                            }
+                                                        }
                                                     });
                                                 },
                                                 "删除"

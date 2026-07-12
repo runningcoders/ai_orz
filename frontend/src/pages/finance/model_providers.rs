@@ -6,6 +6,7 @@ use crate::api::finance::{create_model_provider, delete_model_provider, list_mod
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, ErrorAlert, Loading, SuccessAlert};
 use common::api::{CreateModelProviderRequest, ListModelProvidersResponseItem};
+use common::enums::{ModelCapability, ProviderType};
 
 #[component]
 pub fn FinanceModelProviders() -> Element {
@@ -17,14 +18,14 @@ pub fn FinanceModelProviders() -> Element {
 
     // 表单状态
     let mut name = use_signal(String::new);
-    let mut provider_type = use_signal("openai".to_string());
+    let mut provider_type = use_signal(|| ProviderType::OpenAI);
     let mut model_name = use_signal(String::new);
     let mut api_key = use_signal(String::new);
-    let mut base_url = use_signal(String::new());
+    let mut base_url = use_signal(|| String::new());
     let mut description = use_signal(String::new);
     let mut creating = use_signal(|| false);
 
-    let load = move || {
+    use_effect(move || {
         loading.set(true);
         spawn(async move {
             match list_model_providers().await {
@@ -33,9 +34,7 @@ pub fn FinanceModelProviders() -> Element {
             }
             loading.set(false);
         });
-    };
-
-    use_effect(move || { load(); });
+    });
 
     let handle_create = move |_| {
         spawn(async move {
@@ -47,8 +46,9 @@ pub fn FinanceModelProviders() -> Element {
             let req = CreateModelProviderRequest {
                 name: name(),
                 provider_type: provider_type(),
+                capability: ModelCapability::Agent,
                 model_name: model_name(),
-                api_key: if api_key().is_empty() { None } else { Some(api_key()) },
+                api_key: api_key(),
                 base_url: if base_url().is_empty() { None } else { Some(base_url()) },
                 description: if description().is_empty() { None } else { Some(description()) },
             };
@@ -61,7 +61,11 @@ pub fn FinanceModelProviders() -> Element {
                     base_url.set(String::new());
                     description.set(String::new());
                     success.set("创建成功".to_string());
-                    load();
+                    // Reload
+                    match list_model_providers().await {
+                        Ok(list) => providers.set(list.providers),
+                        Err(e) => error.set(e),
+                    }
                     // 自动测试连接
                     spawn(async move {
                         match test_model_provider_connection(&resp.id).await {
@@ -77,6 +81,8 @@ pub fn FinanceModelProviders() -> Element {
     };
 
     let providers_list = providers.read().clone();
+
+    let provider_type_str = provider_type().to_string();
 
     rsx! {
         div { class: "card",
@@ -104,21 +110,28 @@ pub fn FinanceModelProviders() -> Element {
                         for p in providers_list.iter() {
                             {
                                 let id = p.id.clone();
+                                let pname = p.name.clone();
+                                let pmodel = p.model_name.clone();
+                                let ptype_str = p.provider_type.to_string();
+                                let id_delete = id.clone();
                                 rsx! {
                                     tr { key: "{id}",
-                                        td { style: "font-weight: 500;", "{p.name}" }
-                                        td { span { class: "badge badge-info", "{p.provider_type}" } }
-                                        td { class: "text-mono", "{p.model_name}" }
+                                        td { style: "font-weight: 500;", "{pname}" }
+                                        td { span { class: "badge badge-info", "{ptype_str}" } }
+                                        td { class: "text-mono", "{pmodel}" }
                                         td {
                                             button { class: "btn btn-danger btn-sm",
                                                 onclick: move |_| {
-                                                    let id = id.clone();
+                                                    let id_delete = id_delete.clone();
                                                     spawn(async move {
-                                                        if let Err(e) = delete_model_provider(&id).await {
+                                                        if let Err(e) = delete_model_provider(&id_delete).await {
                                                             error.set(format!("删除失败: {}", e));
                                                         } else {
                                                             success.set("已删除".to_string());
-                                                            load();
+                                                            match list_model_providers().await {
+                                                                Ok(list) => providers.set(list.providers),
+                                                                Err(e) => error.set(e),
+                                                            }
                                                         }
                                                     });
                                                 },
@@ -138,6 +151,12 @@ pub fn FinanceModelProviders() -> Element {
             title: "添加模型提供商".to_string(),
             show: show_modal(),
             on_close: move |_| show_modal.set(false),
+            footer: rsx! {
+                button { class: "btn btn-ghost", onclick: move |_| show_modal.set(false), "取消" }
+                button { class: "btn btn-accent", disabled: creating(), onclick: handle_create,
+                    if creating() { "创建中..." } else { "创建" }
+                }
+            },
             div {
                 div { class: "form-group",
                     label { class: "form-label", "名称 *" }
@@ -146,10 +165,19 @@ pub fn FinanceModelProviders() -> Element {
                 }
                 div { class: "form-group",
                     label { class: "form-label", "类型" }
-                    select { class: "form-select", value: "{provider_type}",
-                        onchange: move |e| provider_type.set(e.value()),
+                    select { class: "form-select", value: "{provider_type_str}",
+                        onchange: move |e| {
+                            provider_type.set(match e.value().as_str() {
+                                "deepseek" => ProviderType::DeepSeek,
+                                "qwen" => ProviderType::Qwen,
+                                "doubao" => ProviderType::Doubao,
+                                "ollama" => ProviderType::Ollama,
+                                "custom" => ProviderType::Custom,
+                                _ => ProviderType::OpenAI,
+                            });
+                        },
                         option { value: "openai", "OpenAI" }
-                        option { value: "openai_compatible", "OpenAI 兼容" }
+                        option { value: "custom", "OpenAI 兼容" }
                         option { value: "deepseek", "DeepSeek" }
                         option { value: "doubao", "豆包" }
                         option { value: "qwen", "通义千问" }
@@ -175,12 +203,6 @@ pub fn FinanceModelProviders() -> Element {
                     label { class: "form-label", "描述" }
                     input { class: "form-input", value: "{description}",
                         oninput: move |e| description.set(e.value()), placeholder: "可选" }
-                }
-            },
-            footer: rsx! {
-                button { class: "btn btn-ghost", onclick: move |_| show_modal.set(false), "取消" }
-                button { class: "btn btn-accent", disabled: creating(), onclick: handle_create,
-                    if creating() { "创建中..." } else { "创建" }
                 }
             }
         }

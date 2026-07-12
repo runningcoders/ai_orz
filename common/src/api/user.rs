@@ -103,13 +103,22 @@ pub struct ListUsersByOrganizationRequest {
 pub struct ListUsersByCurrentOrganizationRequest {}
 
 /// 列出用户响应
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct ListUsersResponse {
     /// 组织内用户列表
     pub data: Vec<UserListItem>,
     /// 用户总数
     pub total: u64,
 }
+
+/// User list item alias (frontend compatibility)
+pub type ListUsersResponseItem = UserListItem;
+
+/// Create organization user request alias (frontend compatibility)
+pub type CreateOrganizationUserRequest = CreateUserRequest;
+
+/// Create organization user response alias (frontend compatibility)
+pub type CreateOrganizationUserResponse = CreateUserResponse;
 
 /// 创建新用户请求
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]

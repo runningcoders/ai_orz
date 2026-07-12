@@ -25,7 +25,7 @@ pub fn load_token() -> Option<String> {
 /// 清除 token
 pub fn clear_token() {
     if let Some(storage) = get_storage() {
-        let _ = storage.remove(TOKEN_KEY);
+        let _ = storage.remove_item(TOKEN_KEY);
     }
 }
 

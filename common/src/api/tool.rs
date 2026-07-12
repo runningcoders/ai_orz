@@ -114,11 +114,14 @@ pub struct ListToolsRequest {
 }
 
 /// List tools response
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct ListToolsResponse {
     /// List of all built-in tools
     pub tools: Vec<ToolListItem>,
 }
+
+/// Tool list item alias (frontend compatibility)
+pub type ListToolsResponseItem = ToolListItem;
 
 /// Tool list item
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

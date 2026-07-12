@@ -197,3 +197,13 @@ pub struct UpdateTaskProgressRequest {
 
 /// 更新 Task 进度响应
 pub type UpdateTaskProgressResponse = GetTaskResponse;
+
+/// 获取 Task 列表响应
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct ListTasksResponse {
+    /// Task 列表
+    pub tasks: Vec<TaskListItem>,
+}
+
+/// Task 列表项响应别名（前端兼容）
+pub type ListTasksResponseItem = TaskListItem;

@@ -92,13 +92,16 @@ pub struct ListMessageChannelsRequest {
 }
 
 /// List Message Channels response
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct ListMessageChannelsResponse {
     /// List of message channels
     pub channels: Vec<MessageChannelListItem>,
     /// Total count matching query
     pub total: usize,
 }
+
+/// Message Channel list item alias (frontend compatibility)
+pub type ListMessageChannelsResponseItem = MessageChannelListItem;
 
 /// Update Message Channel request
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]

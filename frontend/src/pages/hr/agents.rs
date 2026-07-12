@@ -1,7 +1,6 @@
 //! Agent 管理列表
 
 use dioxus::prelude::*;
-use dioxus_router::prelude::*;
 
 use crate::api::hr::{create_agent, delete_agent, list_agents};
 use crate::components::modal::Modal;
@@ -20,7 +19,7 @@ pub fn HrAgents() -> Element {
     let mut new_description = use_signal(String::new);
     let mut creating = use_signal(|| false);
 
-    let load_agents = move || {
+    use_effect(move || {
         loading.set(true);
         error.set(String::new());
         spawn(async move {
@@ -30,9 +29,7 @@ pub fn HrAgents() -> Element {
             }
             loading.set(false);
         });
-    };
-
-    use_effect(move || { load_agents(); });
+    });
 
     let handle_create = move |_| {
         spawn(async move {
@@ -56,7 +53,11 @@ pub fn HrAgents() -> Element {
                     new_roles.set(String::new());
                     new_model_provider_id.set(String::new());
                     new_description.set(String::new());
-                    load_agents();
+                    // Reload
+                    match list_agents().await {
+                        Ok(list) => agents.set(list.agents),
+                        Err(e) => error.set(e),
+                    }
                 }
                 Err(e) => error.set(format!("创建失败: {}", e)),
             }
@@ -91,25 +92,32 @@ pub fn HrAgents() -> Element {
                         for agent in agents_list.iter() {
                             {
                                 let id = agent.id.clone();
+                                let aname = agent.name.clone();
+                                let aroles = agent.roles.join(", ");
+                                let amp = agent.model_provider_id.clone();
+                                let id_delete = id.clone();
                                 rsx! {
                                     tr { key: "{id}",
                                         td {
                                             Link { to: crate::pages::Route::HrAgentDetail { id: id.clone() },
                                                 style: "color: var(--color-mistral-orange); text-decoration: none; font-weight: 500;",
-                                                "{agent.name}"
+                                                "{aname}"
                                             }
                                         }
-                                        td { class: "text-secondary", "{agent.roles.join(", ")}" }
-                                        td { class: "text-mono", "{agent.model_provider_id}" }
+                                        td { class: "text-secondary", "{aroles}" }
+                                        td { class: "text-mono", "{amp}" }
                                         td {
                                             button { class: "btn btn-danger btn-sm",
                                                 onclick: move |_| {
-                                                    let id = id.clone();
+                                                    let id_delete = id_delete.clone();
                                                     spawn(async move {
-                                                        if let Err(e) = delete_agent(&id).await {
+                                                        if let Err(e) = delete_agent(&id_delete).await {
                                                             error.set(format!("删除失败: {}", e));
                                                         } else {
-                                                            load_agents();
+                                                            match list_agents().await {
+                                                                Ok(list) => agents.set(list.agents),
+                                                                Err(e) => error.set(e),
+                                                            }
                                                         }
                                                     });
                                                 },
@@ -136,6 +144,12 @@ pub fn HrAgents() -> Element {
                 new_model_provider_id.set(String::new());
                 new_description.set(String::new());
             },
+            footer: rsx! {
+                button { class: "btn btn-ghost", onclick: move |_| show_add_modal.set(false), "取消" }
+                button { class: "btn btn-accent", disabled: creating(), onclick: handle_create,
+                    if creating() { "创建中..." } else { "创建" }
+                }
+            },
             div {
                 div { class: "form-group",
                     label { class: "form-label", "Agent 名称 *" }
@@ -156,12 +170,6 @@ pub fn HrAgents() -> Element {
                     label { class: "form-label", "描述" }
                     textarea { class: "form-textarea", value: "{new_description}",
                         oninput: move |e| new_description.set(e.value()), placeholder: "Agent 描述（可选）" }
-                }
-            },
-            footer: rsx! {
-                button { class: "btn btn-ghost", onclick: move |_| show_add_modal.set(false), "取消" }
-                button { class: "btn btn-accent", disabled: creating(), onclick: handle_create,
-                    if creating() { "创建中..." } else { "创建" }
                 }
             }
         }

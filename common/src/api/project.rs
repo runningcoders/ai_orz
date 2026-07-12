@@ -136,3 +136,13 @@ pub struct UpdateProjectStatusRequest {
 
 /// 更新 Project 状态响应
 pub type UpdateProjectStatusResponse = GetProjectResponse;
+
+/// 获取 Project 列表响应
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct ListProjectsResponse {
+    /// Project 列表
+    pub projects: Vec<ProjectListItem>,
+}
+
+/// Project 列表项响应别名（前端兼容）
+pub type ListProjectsResponseItem = ProjectListItem;

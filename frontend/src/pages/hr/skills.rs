@@ -12,7 +12,7 @@ pub fn HrSkills() -> Element {
     let mut loading = use_signal(|| true);
     let mut error = use_signal(String::new);
 
-    let load = move || {
+    use_effect(move || {
         loading.set(true);
         spawn(async move {
             match list_skills().await {
@@ -21,9 +21,7 @@ pub fn HrSkills() -> Element {
             }
             loading.set(false);
         });
-    };
-
-    use_effect(move || { load(); });
+    });
 
     let skills_list = skills.read().clone();
 
@@ -43,13 +41,16 @@ pub fn HrSkills() -> Element {
                     tbody {
                         for s in skills_list.iter() {
                             {
-                                let id = s.skill_id.clone();
+                                let id = s.id.clone();
+                                let name = s.name.clone();
+                                let description = s.description.clone();
+                                let tags = s.tags.clone();
                                 rsx! {
                                     tr { key: "{id}",
-                                        td { style: "font-weight: 500;", "{s.name}" }
-                                        td { class: "text-secondary", "{s.description}" }
+                                        td { style: "font-weight: 500;", "{name}" }
+                                        td { class: "text-secondary", "{description}" }
                                         td {
-                                            for tag in &s.tags {
+                                            for tag in &tags {
                                                 span { class: "badge badge-neutral", style: "margin-right: 4px;", "{tag}" }
                                             }
                                         }
@@ -58,7 +59,14 @@ pub fn HrSkills() -> Element {
                                                 onclick: move |_| {
                                                     let id = id.clone();
                                                     spawn(async move {
-                                                        if let Err(e) = delete_skill(&id).await { error.set(format!("删除失败: {}", e)); } else { load(); }
+                                                        if let Err(e) = delete_skill(&id).await {
+                                                            error.set(format!("删除失败: {}", e));
+                                                        } else {
+                                                            match list_skills().await {
+                                                                Ok(list) => skills.set(list.skills),
+                                                                Err(e) => error.set(e),
+                                                            }
+                                                        }
                                                     });
                                                 }, "删除"
                                             }

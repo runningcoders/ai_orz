@@ -5,6 +5,7 @@ use dioxus::prelude::*;
 use crate::api::finance::{delete_message_channel, list_message_channels, update_message_channel_status};
 use crate::components::state::{EmptyState, ErrorAlert, Loading};
 use common::api::ListMessageChannelsResponseItem;
+use common::enums::ChannelStatus;
 
 #[component]
 pub fn FinanceMessageChannels() -> Element {
@@ -12,7 +13,7 @@ pub fn FinanceMessageChannels() -> Element {
     let mut loading = use_signal(|| true);
     let mut error = use_signal(String::new);
 
-    let load = move || {
+    use_effect(move || {
         loading.set(true);
         spawn(async move {
             match list_message_channels().await {
@@ -21,9 +22,7 @@ pub fn FinanceMessageChannels() -> Element {
             }
             loading.set(false);
         });
-    };
-
-    use_effect(move || { load(); });
+    });
 
     let channels_list = channels.read().clone();
 
@@ -45,39 +44,66 @@ pub fn FinanceMessageChannels() -> Element {
                             {
                                 let id = c.id.clone();
                                 let status = c.status;
+                                let is_active = status == ChannelStatus::Active;
+                                let channel_name = c.channel_name.clone();
+                                let channel_type = c.channel_type;
+                                let id_disable = id.clone();
+                                let id_enable = id.clone();
+                                let id_delete = id.clone();
                                 rsx! {
                                     tr { key: "{id}",
-                                        td { style: "font-weight: 500;", "{c.name}" }
-                                        td { span { class: "badge badge-info", "{c.channel_type}" } }
+                                        td { style: "font-weight: 500;", "{channel_name}" }
+                                        td { span { class: "badge badge-info", "{channel_type}" } }
                                         td {
-                                            if status == 1 { span { class: "badge badge-success", "启用" } }
+                                            if is_active { span { class: "badge badge-success", "启用" } }
                                             else { span { class: "badge badge-error", "禁用" } }
                                         }
                                         td {
-                                            if status == 1 {
+                                            if is_active {
                                                 button { class: "btn btn-ghost btn-sm",
                                                     onclick: move |_| {
-                                                        let id = id.clone();
+                                                        let id_disable = id_disable.clone();
                                                         spawn(async move {
-                                                            if let Err(e) = update_message_channel_status(&id, 0).await { error.set(e); } else { load(); }
+                                                            if let Err(e) = update_message_channel_status(&id_disable, 2).await {
+                                                                error.set(e);
+                                                            } else {
+                                                                match list_message_channels().await {
+                                                                    Ok(list) => channels.set(list.channels),
+                                                                    Err(e) => error.set(e),
+                                                                }
+                                                            }
                                                         });
                                                     }, "禁用"
                                                 }
                                             } else {
                                                 button { class: "btn btn-ghost btn-sm",
                                                     onclick: move |_| {
-                                                        let id = id.clone();
+                                                        let id_enable = id_enable.clone();
                                                         spawn(async move {
-                                                            if let Err(e) = update_message_channel_status(&id, 1).await { error.set(e); } else { load(); }
+                                                            if let Err(e) = update_message_channel_status(&id_enable, 1).await {
+                                                                error.set(e);
+                                                            } else {
+                                                                match list_message_channels().await {
+                                                                    Ok(list) => channels.set(list.channels),
+                                                                    Err(e) => error.set(e),
+                                                                }
+                                                            }
                                                         });
                                                     }, "启用"
                                                 }
                                             }
                                             button { class: "btn btn-danger btn-sm",
                                                 onclick: move |_| {
-                                                    let id = id.clone();
+                                                    let id_delete = id_delete.clone();
                                                     spawn(async move {
-                                                        if let Err(e) = delete_message_channel(&id).await { error.set(format!("删除失败: {}", e)); } else { load(); }
+                                                        if let Err(e) = delete_message_channel(&id_delete).await {
+                                                            error.set(format!("删除失败: {}", e));
+                                                        } else {
+                                                            match list_message_channels().await {
+                                                                Ok(list) => channels.set(list.channels),
+                                                                Err(e) => error.set(e),
+                                                            }
+                                                        }
                                                     });
                                                 }, "删除"
                                             }

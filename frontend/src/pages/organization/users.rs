@@ -30,24 +30,22 @@ pub fn OrganizationUsers() -> Element {
     let mut error = use_signal(String::new);
     let mut show_modal = use_signal(|| false);
     let mut new_username = use_signal(String::new);
-    let mut new_display_name = use_signal(String::new());
+    let mut new_display_name = use_signal(|| String::new());
     let mut new_email = use_signal(String::new);
     let mut new_password = use_signal(String::new);
-    let mut new_role = use_signal(1i32);
+    let mut new_role = use_signal(|| 1i32);
     let mut creating = use_signal(|| false);
 
-    let load = move || {
+    use_effect(move || {
         loading.set(true);
         spawn(async move {
             match list_users().await {
-                Ok(list) => users.set(list.users),
+                Ok(list) => users.set(list.data),
                 Err(e) => error.set(e),
             }
             loading.set(false);
         });
-    };
-
-    use_effect(move || { load(); });
+    });
 
     let handle_create = move |_| {
         spawn(async move {
@@ -71,7 +69,11 @@ pub fn OrganizationUsers() -> Element {
                     new_email.set(String::new());
                     new_password.set(String::new());
                     new_role.set(1);
-                    load();
+                    // Reload
+                    match list_users().await {
+                        Ok(list) => users.set(list.data),
+                        Err(e) => error.set(e),
+                    }
                 }
                 Err(e) => error.set(format!("创建失败: {}", e)),
             }
@@ -107,21 +109,29 @@ pub fn OrganizationUsers() -> Element {
                         for u in users_list.iter() {
                             {
                                 let uid = u.user_id.clone();
+                                let uname = u.username.clone();
+                                let udisplay = u.display_name.clone().unwrap_or_default();
+                                let uemail = u.email.clone().unwrap_or_default();
+                                let urole = u.role;
+                                let uid_delete = uid.clone();
                                 rsx! {
                                     tr { key: "{uid}",
-                                        td { style: "font-weight: 500;", "{u.username}" }
-                                        td { class: "text-secondary", "{u.display_name.unwrap_or_default()}" }
-                                        td { class: "text-mono text-muted", "{u.email.unwrap_or_default()}" }
-                                        td { span { class: "{role_badge(u.role)}", "{role_text(u.role)}" } }
+                                        td { style: "font-weight: 500;", "{uname}" }
+                                        td { class: "text-secondary", "{udisplay}" }
+                                        td { class: "text-mono text-muted", "{uemail}" }
+                                        td { span { class: "{role_badge(urole)}", "{role_text(urole)}" } }
                                         td {
                                             button { class: "btn btn-danger btn-sm",
                                                 onclick: move |_| {
-                                                    let uid = uid.clone();
+                                                    let uid_delete = uid_delete.clone();
                                                     spawn(async move {
-                                                        if let Err(e) = delete_user(&uid).await {
+                                                        if let Err(e) = delete_user(&uid_delete).await {
                                                             error.set(format!("删除失败: {}", e));
                                                         } else {
-                                                            load();
+                                                            match list_users().await {
+                                                                Ok(list) => users.set(list.data),
+                                                                Err(e) => error.set(e),
+                                                            }
                                                         }
                                                     });
                                                 },
@@ -141,6 +151,12 @@ pub fn OrganizationUsers() -> Element {
             title: "添加用户".to_string(),
             show: show_modal(),
             on_close: move |_| show_modal.set(false),
+            footer: rsx! {
+                button { class: "btn btn-ghost", onclick: move |_| show_modal.set(false), "取消" }
+                button { class: "btn btn-accent", disabled: creating(), onclick: handle_create,
+                    if creating() { "创建中..." } else { "创建" }
+                }
+            },
             div {
                 div { class: "form-group",
                     label { class: "form-label", "用户名 *" }
@@ -170,12 +186,6 @@ pub fn OrganizationUsers() -> Element {
                         option { value: "2", "管理员" }
                         option { value: "3", "超级管理员" }
                     }
-                }
-            },
-            footer: rsx! {
-                button { class: "btn btn-ghost", onclick: move |_| show_modal.set(false), "取消" }
-                button { class: "btn btn-accent", disabled: creating(), onclick: handle_create,
-                    if creating() { "创建中..." } else { "创建" }
                 }
             }
         }

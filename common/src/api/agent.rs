@@ -170,11 +170,14 @@ pub struct ListAgentsRequest {
 }
 
 /// 获取 Agent 列表响应
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct ListAgentsResponse {
     /// Agent 列表
     pub agents: Vec<AgentListItem>,
 }
+
+/// Agent 列表项响应别名（前端兼容）
+pub type ListAgentsResponseItem = AgentListItem;
 
 /// 搜索 Agent 请求
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
@@ -248,7 +251,7 @@ pub struct ListInstalledToolPacksRequest {
 }
 
 /// 列出已安装工具包响应
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct ListInstalledToolPacksResponse {
     /// Agent ID
     pub agent_id: String,

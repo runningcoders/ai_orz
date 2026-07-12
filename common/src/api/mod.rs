@@ -92,6 +92,7 @@ pub mod attachment;
 #[cfg(test)]
 mod attachment_test;
 pub mod auth;
+pub mod cron_trigger;
 pub mod mcp_server;
 #[cfg(test)]
 mod mcp_server_test;
@@ -120,6 +121,7 @@ pub use agent::*;
 pub use artifact::*;
 pub use attachment::*;
 pub use auth::*;
+pub use cron_trigger::*;
 pub use mcp_server::*;
 pub use mcp_tool::*;
 pub use message_channel::*;

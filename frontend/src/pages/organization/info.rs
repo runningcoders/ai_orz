@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 
 use crate::api::organization::{get_current_organization, update_current_organization};
 use crate::components::state::{ErrorAlert, Loading, SuccessAlert};
-use common::api::{UpdateOrganizationRequest};
+use common::api::UpdateCurrentOrganizationRequest;
 
 #[component]
 pub fn OrganizationInfo() -> Element {
@@ -20,9 +20,9 @@ pub fn OrganizationInfo() -> Element {
         spawn(async move {
             match get_current_organization().await {
                 Ok(org) => {
-                    name.set(org.name);
-                    description.set(org.description.unwrap_or_default());
-                    org_id.set(org.organization_id);
+                    name.set(org.data.name);
+                    description.set(org.data.description.unwrap_or_default());
+                    org_id.set(org.data.organization_id);
                 }
                 Err(e) => error.set(e),
             }
@@ -33,9 +33,10 @@ pub fn OrganizationInfo() -> Element {
     let handle_save = move |_| {
         spawn(async move {
             saving.set(true);
-            let req = UpdateOrganizationRequest {
+            let req = UpdateCurrentOrganizationRequest {
                 name: Some(name()),
                 description: if description().is_empty() { None } else { Some(description()) },
+                base_url: None,
             };
             match update_current_organization(req).await {
                 Ok(_) => success.set("保存成功".to_string()),
