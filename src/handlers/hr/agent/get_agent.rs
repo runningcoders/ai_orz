@@ -12,7 +12,8 @@ use common::api::{GetAgentRequest, GetAgentResponse};
     id = "get_agent",
     name = "get_agent",
     description = "Get detailed information about an AI agent by ID",
-    params = "common::api::GetAgentRequest"
+    params = "common::api::GetAgentRequest",
+    tags = "collaboration"
 )]
 #[generate_http_handler]
 pub async fn get_agent(

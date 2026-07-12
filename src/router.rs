@@ -207,7 +207,9 @@ fn hr_routes() -> Router {
     Router::new()
         .route("/agents", post(handlers::hr::agent::create_agent_handler))
         .route("/agents", get(handlers::hr::agent::list_agents_handler))
+        .route("/agents/search", get(handlers::hr::agent::search_agents_handler))
         .route("/agents/{id}", get(handlers::hr::agent::get_agent_handler))
+        .route("/agents/{id}/message", post(handlers::hr::agent::send_message_to_agent_handler))
         .route(
             "/agents/{id}",
             put(handlers::hr::agent::update_agent_handler),

@@ -176,6 +176,24 @@ pub struct ListAgentsResponse {
     pub agents: Vec<AgentListItem>,
 }
 
+/// 搜索 Agent 请求
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct SearchAgentsRequest {
+    /// 搜索关键词（支持 FTS5 全文搜索）
+    #[param(source = "query")]
+    pub keyword: Option<String>,
+    /// 返回结果数量限制
+    #[param(source = "query")]
+    pub limit: Option<usize>,
+}
+
+/// 搜索 Agent 响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SearchAgentsResponse {
+    /// Agent 列表
+    pub agents: Vec<AgentListItem>,
+}
+
 /// 更新 Agent 状态响应
 pub type UpdateAgentStatusResponse = GetAgentResponse;
 

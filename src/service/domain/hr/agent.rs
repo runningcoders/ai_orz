@@ -105,6 +105,14 @@ impl AgentManage for HrDomainImpl {
         .await
     }
 
+    async fn search_agents(
+        &self,
+        ctx: RequestContext,
+        search: crate::service::dao::agent::AgentSearch,
+    ) -> Result<Vec<Agent>> {
+        self.agent_dal.search(ctx, search).await
+    }
+
     /// 更新 Agent
     ///
     /// 基础操作：更新 Agent 信息

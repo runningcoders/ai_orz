@@ -648,6 +648,14 @@ impl AgentManage for RecordingHrDomain {
         unimplemented!("not needed by message consumer tests")
     }
 
+    async fn search_agents(
+        &self,
+        _ctx: RequestContext,
+        _search: crate::service::dao::agent::AgentSearch,
+    ) -> Result<Vec<Agent>> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
     async fn update_agent(&self, _ctx: RequestContext, _agent: &Agent) -> Result<()> {
         unimplemented!("not needed by message consumer tests")
     }
@@ -1576,6 +1584,13 @@ mod handle_agent_message_tests {
         async fn list_agents(&self, _ctx: RequestContext) -> Result<Vec<Agent>> {
             unimplemented!()
         }
+        async fn search_agents(
+            &self,
+            _ctx: RequestContext,
+            _search: crate::service::dao::agent::AgentSearch,
+        ) -> Result<Vec<Agent>> {
+            unimplemented!()
+        }
         async fn update_agent(&self, _ctx: RequestContext, _agent: &Agent) -> Result<()> {
             unimplemented!()
         }
@@ -1787,6 +1802,13 @@ mod handle_agent_message_tests {
             unimplemented!()
         }
         async fn list_agents(&self, _ctx: RequestContext) -> Result<Vec<Agent>> {
+            unimplemented!()
+        }
+        async fn search_agents(
+            &self,
+            _ctx: RequestContext,
+            _search: crate::service::dao::agent::AgentSearch,
+        ) -> Result<Vec<Agent>> {
             unimplemented!()
         }
         async fn update_agent(&self, _ctx: RequestContext, _agent: &Agent) -> Result<()> {

@@ -1,38 +1,39 @@
-//! Handler: GET /api/v1/agents - List all agents with optional status filtering
+//! Handler: GET /api/v1/agents/search - Search agents by keyword
 
 use common::enums::AgentRuntimeState;
 use common::error::Result;
 use crate::pkg::RequestContext;
-use crate::service::dao::agent::AgentQuery;
+use crate::service::dao::agent::{AgentQuery, AgentSearch};
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::{AgentListItem, ListAgentsRequest, ListAgentsResponse};
+use common::api::{AgentListItem, SearchAgentsRequest, SearchAgentsResponse};
 
-/// List all AI agents with optional status filtering
+/// Search AI agents by keyword (FTS5 full-text search + vector semantic search)
 #[register_handler_tool(
-    id = "list_agents",
-    name = "list_agents",
-    description = "List all AI agents with optional status filtering",
-    params = "common::api::ListAgentsRequest",
+    id = "search_agents",
+    name = "search_agents",
+    description = "Search AI agents by keyword. Supports FTS5 full-text search and vector semantic search.",
+    params = "common::api::SearchAgentsRequest",
     tags = "collaboration"
 )]
 #[generate_http_handler]
-pub async fn list_agents(
+pub async fn search_agents(
     ctx: RequestContext,
-    params: ListAgentsRequest,
-) -> Result<ListAgentsResponse> {
-    let agents = domain().agent_manage().list_agents(ctx).await?;
+    params: SearchAgentsRequest,
+) -> Result<SearchAgentsResponse> {
+    let search = AgentSearch {
+        keyword: params.keyword,
+        filters: AgentQuery {
+            limit: params.limit,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let agents = domain().agent_manage().search_agents(ctx, search).await?;
     let agents: Vec<AgentListItem> = agents
         .iter()
-        .filter(|agent| {
-            if let Some(status) = params.status {
-                agent.po.status == status
-            } else {
-                true
-            }
-        })
         .map(|agent| {
-            // 从 runtime_info 读取运行时状态
             let runtime_state = match &agent.runtime_info {
                 Some(info) => info.state as i32,
                 None => AgentRuntimeState::Idle as i32,
@@ -55,5 +56,5 @@ pub async fn list_agents(
         })
         .collect();
 
-    Ok(ListAgentsResponse { agents })
+    Ok(SearchAgentsResponse { agents })
 }

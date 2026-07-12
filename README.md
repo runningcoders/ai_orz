@@ -45,6 +45,8 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 | 🏛️ 记忆沉淀机制 | ✅ | Agent 休息与沉淀、短期记忆→长期知识图谱、定时触发沉淀 |
 | 🎒 技能包机制 | ✅ | tag 分组技能、批量安装、安装即复制、卸载保留副本 |
 | 🔎 综合搜索 | ✅ | FTS5 关键词 + 向量语义 + 图谱关系 三位一体混合搜索，支持中文 |
+| 📊 任务进度追踪 | ✅ | Task progress 字段（0-100）、Agent 神经工具更新进度、progress_updated 事件 |
+| 🤝 Agent 协作 | ✅ | search_agents 搜索、send_message_to_agent 消息、collaboration tag 分组工具 |
 
 > 📝 **开发规范与详细架构** 请查看 [AGENTS.md](./AGENTS.md) - AI 助手专属快速入门手册
 

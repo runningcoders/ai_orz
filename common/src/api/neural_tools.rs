@@ -141,6 +141,29 @@ pub struct SendMessageResponse {
     pub message_id: String,
 }
 
+/// 发送消息给 Agent 请求参数。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct SendMessageToAgentParams {
+    /// 接收 Agent ID。
+    #[param(source = "path")]
+    pub to_agent_id: String,
+    /// 消息内容。
+    pub content: String,
+    /// 关联项目 ID。
+    pub project_id: Option<String>,
+    /// 关联任务 ID。
+    pub task_id: Option<String>,
+    /// 回复的消息 ID。
+    pub reply_to_id: Option<String>,
+}
+
+/// 发送消息给 Agent 响应。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct SendMessageToAgentResponse {
+    /// 消息 ID。
+    pub message_id: String,
+}
+
 /// 请求工具调用参数。
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct RequestToolCallParams {
