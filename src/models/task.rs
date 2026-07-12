@@ -4,6 +4,7 @@
 //! - TaskPo - 持久化对象（只在 DAO/DAL 层使用）
 //! - Task - 业务实体（Domain 层使用，包含聚合关系和业务方法）
 
+use crate::models::vector::{SearchMatchInfo, Vectorizable};
 use crate::pkg::request_context::{EnrichContext, RequestContextBuilder};
 use common::constants::utils;
 use common::enums::{AssigneeType, TaskStatus};
@@ -61,12 +62,17 @@ pub struct TaskPo {
 pub struct Task {
     /// 底层持久化对象
     pub po: TaskPo,
+    /// 搜索匹配元信息（搜索场景下由 DAL 层填充）
+    pub search_match: Option<SearchMatchInfo>,
 }
 
 impl Task {
     /// 从 PO 创建 Task
     pub fn from_po(po: TaskPo) -> Self {
-        Self { po }
+        Self {
+            po,
+            search_match: None,
+        }
     }
 
     /// 创建新的 Task
@@ -103,6 +109,7 @@ impl Task {
                 project_id,
                 created_by,
             ),
+            search_match: None,
         }
     }
 
@@ -264,5 +271,15 @@ impl crate::pkg::request_context::EnrichContext for TaskPo {
 impl EnrichContext for Task {
     fn enrich(&self, builder: RequestContextBuilder) -> RequestContextBuilder {
         self.po.enrich(builder)
+    }
+}
+
+impl Vectorizable for TaskPo {
+    fn vectorize_text(&self) -> String {
+        format!("{}\n{}", self.title, self.description)
+    }
+
+    fn vector_collection() -> &'static str {
+        "tasks"
     }
 }

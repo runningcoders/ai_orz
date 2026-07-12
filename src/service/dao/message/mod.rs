@@ -1,9 +1,8 @@
 //! Message DAO 模块
 
-//! Message DAO 模块
-
 use common::error::Result;
 use crate::models::message::{MessagePo, ToolCallMessage};
+use crate::models::vector::VectorIndexParams;
 use crate::pkg::RequestContext;
 use common::enums::MessageStatus;
 
@@ -16,6 +15,8 @@ use common::enums::MessageStatus;
 pub struct MessageQuery {
     /// 按消息 ID 查询（通常返回单条）
     pub id: Option<String>,
+    /// 按多个消息 ID 批量查询（用于向量搜索结果回填）
+    pub ids: Option<Vec<String>>,
     /// 按任务 ID 查询
     pub task_id: Option<String>,
     /// 按项目 ID 查询
@@ -32,6 +33,21 @@ pub struct MessageQuery {
     pub offset: Option<usize>,
     /// 排序规则，如 "created_at ASC", "created_at DESC"
     pub order_by: Option<String>,
+    /// 关键词搜索（用于 FTS5 全文检索，由 search_messages 方法使用）
+    pub keyword: Option<String>,
+}
+
+/// ✅ 消息搜索统一入参（关键词搜索 + 向量语义搜索共用）
+#[derive(Debug, Clone, Default)]
+pub struct MessageSearch {
+    /// 关键词搜索查询（用于 FTS5 全文检索）
+    pub keyword: Option<String>,
+    /// 查询向量（用于向量语义搜索，DAL 层填充）
+    pub query_vector: Option<Vec<f32>>,
+    /// 返回 Top K 结果（向量搜索专用）
+    pub top_k: Option<i32>,
+    /// ✅ 业务过滤条件（直接复用 MessageQuery）
+    pub filters: MessageQuery,
 }
 
 // ==================== 接口 ====================
@@ -133,10 +149,68 @@ pub trait MessageDao: Send + Sync {
         ctx: RequestContext,
         res: ToolCallMessage,
     ) -> Result<MessagePo>;
+
+    /// 全文检索消息
+    ///
+    /// 使用 FTS5 MATCH + BM25 排序，返回匹配的消息及 FTS 相关性评分。
+    ///
+    /// # 参数
+    /// - ctx: 请求上下文
+    /// - search: 统一搜索参数（关键词 + 业务过滤）
+    /// # 返回
+    /// - 匹配的消息列表（按 BM25 相关性排序），每条携带 `fts_rank`（越小越相关）
+    async fn search_messages(
+        &self,
+        ctx: RequestContext,
+        search: MessageSearch,
+    ) -> Result<Vec<(MessagePo, Option<f32>)>>;
+}
+
+// ==================== MessageVectorDao Trait ====================
+
+/// ✅ Message Vector DAO trait - 仅负责消息向量索引的 CRUD，与基础消息数据完全解耦
+#[async_trait::async_trait]
+pub trait MessageVectorDao: Send + Sync {
+    /// 插入或更新消息的向量索引
+    async fn upsert_vector(
+        &self,
+        ctx: RequestContext,
+        message_id: &str,
+        vector_params: &VectorIndexParams,
+    ) -> Result<()>;
+
+    /// 纯向量语义搜索，返回完整的向量行数据 + 相似度距离
+    async fn search_vector(
+        &self,
+        ctx: RequestContext,
+        query_vector: &[f32],
+        top_k: i32,
+    ) -> Result<Vec<crate::models::vector::VectorSearchHit>>;
+
+    /// 获取指定消息的完整向量行数据（包含元信息）
+    async fn get_vector_row(
+        &self,
+        ctx: RequestContext,
+        message_id: &str,
+    ) -> Result<Option<crate::models::vector::VectorRow>>;
+
+    /// 删除消息的向量索引
+    async fn delete_vector(&self, ctx: RequestContext, message_id: &str) -> Result<()>;
 }
 
 pub mod sqlite;
-pub use self::sqlite::{dao, init, new};
+pub mod vector;
+
+pub use self::sqlite::{dao, init as init_base, new};
+pub use self::vector::{dao as vector_dao, init as init_vector, new as new_message_vector_dao};
+
+/// 统一初始化所有 Message DAO 单例
+pub fn init() {
+    init_base();
+    init_vector();
+}
 
 #[cfg(test)]
 mod sqlite_test;
+#[cfg(test)]
+mod vector_test;

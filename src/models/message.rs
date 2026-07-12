@@ -22,12 +22,17 @@ use sqlx::types::Json;
 pub struct Message {
     /// 底层持久化对象
     pub po: MessagePo,
+    /// 搜索匹配元信息（搜索时填充，普通查询为 None）
+    pub search_match: Option<crate::models::vector::SearchMatchInfo>,
 }
 
 impl Message {
     /// 从 Po 创建 Message
     pub fn from_po(po: MessagePo) -> Self {
-        Self { po }
+        Self {
+            po,
+            search_match: None,
+        }
     }
 
     /// 转换为 Po
@@ -545,6 +550,19 @@ impl crate::pkg::request_context::EnrichContext for Message {
         builder: crate::pkg::request_context::RequestContextBuilder,
     ) -> crate::pkg::request_context::RequestContextBuilder {
         self.po.enrich(builder)
+    }
+}
+
+/// ✅ MessagePo 实现 Vectorizable trait，支持向量索引
+///
+/// 向量化文本使用 `content` 字段，对应 FTS5 索引的 content 列。
+impl crate::models::vector::Vectorizable for MessagePo {
+    fn vectorize_text(&self) -> String {
+        self.content.clone()
+    }
+
+    fn vector_collection() -> &'static str {
+        "messages"
     }
 }
 

@@ -3,11 +3,37 @@
 use std::sync::Arc;
 use std::sync::OnceLock;
 
-use super::{ProjectDao, ProjectQuery};
+use super::{ProjectDao, ProjectQuery, ProjectSearch};
 use common::error::{Error, Result};
 use crate::models::project::ProjectPo;
 use crate::pkg::RequestContext;
 use common::enums::project::ProjectStatus;
+use sqlx::FromRow;
+
+// ==================== FTS5 搜索辅助 ====================
+
+/// Project 搜索行（PO + fts_rank）
+#[derive(FromRow)]
+struct ProjectSearchRow {
+    id: String,
+    name: String,
+    description: String,
+    workflow: Option<String>,
+    guidance: Option<String>,
+    status: i32,
+    priority: i32,
+    tags: String,
+    root_user_id: String,
+    owner_agent_id: Option<String>,
+    start_at: Option<i64>,
+    due_at: Option<i64>,
+    end_at: Option<i64>,
+    created_by: String,
+    modified_by: String,
+    created_at: i64,
+    updated_at: i64,
+    fts_rank: Option<f32>,
+}
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -84,6 +110,19 @@ impl ProjectDao for ProjectDaoSqliteImpl {
 
         // 默认软删除过滤
         builder.push(" AND \"status\" != 0");
+
+        // 按 ID 批量查询
+        if let Some(ids) = &query.ids {
+            if !ids.is_empty() {
+                builder.push(" AND id IN (");
+                let mut separated = builder.separated(", ");
+                for id in ids {
+                    separated.push_bind(id);
+                }
+                drop(separated);
+                builder.push(")");
+            }
+        }
 
         // 逐个添加查询条件
         if let Some(root_user_id) = &query.root_user_id {
@@ -222,5 +261,76 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         .fetch_one(pool)
         .await?;
         Ok(count.cnt as u64)
+    }
+
+    async fn search_projects(
+        &self,
+        ctx: RequestContext,
+        search: ProjectSearch,
+    ) -> Result<Vec<(ProjectPo, Option<f32>)>> {
+        let pool = ctx.db_pool();
+
+        // 从 ProjectSearch 提取参数
+        let keyword = search.keyword.unwrap_or_default();
+        let limit_i64 = search.filters.limit.unwrap_or(50) as i64;
+
+        // 空关键词直接返回空结果（FTS5 MATCH 空字符串会报错）
+        if keyword.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // 转义关键词为 FTS5 短语匹配（复用 memory 模块的工具函数）
+        let escaped_keyword =
+            crate::service::dao::memory::sqlite::escape_fts5_keyword(&keyword);
+
+        // FTS5 MATCH + JOIN + BM25 排序
+        // 注意：MATCH 左侧必须使用完整表名（非别名），否则 SQLite 会将别名解释为列名
+        let rows: Vec<ProjectSearchRow> = sqlx::query_as(
+            r#"
+SELECT p.id, p.name, p.description, p.workflow, p.guidance, p."status" as status,
+       p.priority, p.tags, p.root_user_id, p.owner_agent_id,
+       p.start_at, p.due_at, p.end_at, p.created_by, p.modified_by,
+       p.created_at, p.updated_at,
+       projects_fts.rank as fts_rank
+FROM projects_fts
+JOIN projects p ON projects_fts.rowid = p.rowid
+WHERE projects_fts MATCH ?
+  AND p."status" != 0
+ORDER BY projects_fts.rank
+LIMIT ?
+"#,
+        )
+        .bind(escaped_keyword)
+        .bind(limit_i64)
+        .fetch_all(pool)
+        .await?;
+
+        let results = rows
+            .into_iter()
+            .map(|row| {
+                let po = ProjectPo {
+                    id: row.id,
+                    name: row.name,
+                    description: row.description,
+                    workflow: row.workflow,
+                    guidance: row.guidance,
+                    status: ProjectStatus::from(row.status),
+                    priority: row.priority,
+                    tags: row.tags,
+                    root_user_id: row.root_user_id,
+                    owner_agent_id: row.owner_agent_id,
+                    start_at: row.start_at,
+                    due_at: row.due_at,
+                    end_at: row.end_at,
+                    created_by: row.created_by,
+                    modified_by: row.modified_by,
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                };
+                (po, row.fts_rank)
+            })
+            .collect();
+
+        Ok(results)
     }
 }

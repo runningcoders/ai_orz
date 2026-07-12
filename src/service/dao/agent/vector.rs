@@ -1,0 +1,82 @@
+//! Agent Vector DAO implementation
+//! 负责 Agent 向量索引的 CRUD 操作，与基础 Agent 数据完全解耦
+
+use common::error::{err, Result};
+use crate::models::vector::{VectorIndexParams, VectorRow, VectorSearchHit};
+use crate::pkg::RequestContext;
+use crate::service::dao::agent::AgentVectorDao;
+use async_trait::async_trait;
+use std::sync::{Arc, OnceLock};
+
+// ==================== 工厂方法 + 单例 ====================
+
+static AGENT_VECTOR_DAO: OnceLock<Arc<dyn AgentVectorDao>> = OnceLock::new();
+
+/// 创建一个全新的 Agent Vector DAO 实例（用于测试）
+pub fn new() -> Arc<dyn AgentVectorDao> {
+    Arc::new(AgentVectorDaoImpl)
+}
+
+/// 获取 Agent Vector DAO 单例
+pub fn dao() -> Arc<dyn AgentVectorDao> {
+    AGENT_VECTOR_DAO.get().cloned().unwrap()
+}
+
+/// 初始化单例
+pub fn init() {
+    let _ = AGENT_VECTOR_DAO.set(new());
+}
+
+// ==================== 实现 ====================
+/// Agent 向量 DAO 实现
+/// 基于存储层通用 VectorStore trait，不绑定具体数据库
+#[derive(Debug, Clone)]
+pub struct AgentVectorDaoImpl;
+
+#[async_trait]
+impl AgentVectorDao for AgentVectorDaoImpl {
+    async fn upsert_vector(
+        &self,
+        _ctx: RequestContext,
+        agent_id: &str,
+        vector_params: &VectorIndexParams,
+    ) -> Result<()> {
+        let vector_store = _ctx.vector_store();
+        vector_store
+            .upsert("agents", agent_id, vector_params)
+            .await?;
+        Ok(())
+    }
+
+    async fn search_vector(
+        &self,
+        _ctx: RequestContext,
+        query_vector: &[f32],
+        top_k: i32,
+    ) -> Result<Vec<VectorSearchHit>> {
+        let vector_store = _ctx.vector_store();
+        let results = vector_store.search("agents", query_vector, top_k).await?;
+        Ok(results)
+    }
+
+    async fn get_vector_row(
+        &self,
+        _ctx: RequestContext,
+        agent_id: &str,
+    ) -> Result<Option<VectorRow>> {
+        _ctx.vector_store()
+            .get("agents", agent_id)
+            .await
+            .map_err(|e| err!(Internal, "Vector store error: {e}").with_source(e))
+    }
+
+    async fn delete_vector(
+        &self,
+        _ctx: RequestContext,
+        agent_id: &str,
+    ) -> Result<()> {
+        let vector_store = _ctx.vector_store();
+        vector_store.delete("agents", agent_id).await?;
+        Ok(())
+    }
+}

@@ -357,3 +357,236 @@ async fn test_deleted_not_found(pool: SqlitePool) -> Result<()> {
     assert!(found.is_none());
     Ok(())
 }
+
+// ==================== FTS5 搜索测试 ====================
+
+use crate::service::dao::project::ProjectSearch;
+
+/// 创建带完整字段的测试 ProjectPo（用于搜索测试）
+fn create_searchable_project(
+    name: &str,
+    description: &str,
+    workflow: Option<&str>,
+    guidance: Option<&str>,
+    root_user_id: &str,
+) -> ProjectPo {
+    ProjectPo::new(
+        Uuid::now_v7().to_string(),
+        name.to_string(),
+        description.to_string(),
+        workflow.map(|s| s.to_string()),
+        guidance.map(|s| s.to_string()),
+        0,
+        vec![],
+        root_user_id.to_string(),
+        None,
+        None,
+        None,
+        None,
+        "test-user".to_string(),
+    )
+}
+
+/// 测试 FTS5 英文关键词搜索（按 name 匹配）
+#[sqlx::test]
+async fn test_search_projects_english_keyword(pool: SqlitePool) -> Result<()> {
+    let dao = init_test_env();
+    let ctx = new_ctx("test-user", pool);
+
+    let p1 = create_searchable_project(
+        "Alpha Project",
+        "Machine learning research",
+        None,
+        None,
+        "user1",
+    );
+    let p2 = create_searchable_project(
+        "Beta Task",
+        "Data pipeline",
+        None,
+        None,
+        "user1",
+    );
+    dao.insert(ctx.clone(), &p1).await?;
+    dao.insert(ctx.clone(), &p2).await?;
+
+    // 按名称关键词搜索
+    let results = dao
+        .search_projects(
+            ctx,
+            ProjectSearch {
+                keyword: Some("Alpha".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].0.name, "Alpha Project");
+    // fts_rank 应该有值（BM25 评分）
+    assert!(results[0].1.is_some());
+    Ok(())
+}
+
+/// 测试 FTS5 中文关键词搜索（trigram 分词器支持中文）
+#[sqlx::test]
+async fn test_search_projects_chinese_keyword(pool: SqlitePool) -> Result<()> {
+    let dao = init_test_env();
+    let ctx = new_ctx("test-user", pool);
+
+    let p1 = create_searchable_project(
+        "智能助手项目",
+        "基于大语言模型的对话系统",
+        None,
+        None,
+        "user1",
+    );
+    let p2 = create_searchable_project(
+        "数据分析平台",
+        "实时数据流处理",
+        None,
+        None,
+        "user1",
+    );
+    dao.insert(ctx.clone(), &p1).await?;
+    dao.insert(ctx.clone(), &p2).await?;
+
+    // 中文关键词搜索：按名称匹配
+    let results = dao
+        .search_projects(
+            ctx.clone(),
+            ProjectSearch {
+                keyword: Some("智能助手".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].0.name, "智能助手项目");
+
+    // 中文关键词搜索：按描述匹配
+    let results2 = dao
+        .search_projects(
+            ctx,
+            ProjectSearch {
+                keyword: Some("数据流".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(results2.len(), 1);
+    assert_eq!(results2[0].0.name, "数据分析平台");
+    Ok(())
+}
+
+/// 测试 FTS5 搜索无匹配返回空结果
+#[sqlx::test]
+async fn test_search_projects_no_match(pool: SqlitePool) -> Result<()> {
+    let dao = init_test_env();
+    let ctx = new_ctx("test-user", pool);
+
+    let p1 = create_searchable_project(
+        "Existing Project",
+        "Some description",
+        None,
+        None,
+        "user1",
+    );
+    dao.insert(ctx.clone(), &p1).await?;
+
+    let results = dao
+        .search_projects(
+            ctx,
+            ProjectSearch {
+                keyword: Some("nonexistent".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(results.len(), 0);
+    Ok(())
+}
+
+/// 测试 FTS5 搜索过滤软删除项目（status = 0）
+#[sqlx::test]
+async fn test_search_projects_filters_soft_deleted(pool: SqlitePool) -> Result<()> {
+    let dao = init_test_env();
+    let ctx = new_ctx("test-user", pool);
+
+    // 创建一个正常项目
+    let p1 = create_searchable_project(
+        "Active Searchable",
+        "visible content",
+        None,
+        None,
+        "user1",
+    );
+    dao.insert(ctx.clone(), &p1).await?;
+
+    // 创建一个软删除项目（status = Deleted = 0）
+    let mut p2 = create_searchable_project(
+        "Deleted Searchable",
+        "hidden content",
+        None,
+        None,
+        "user1",
+    );
+    p2.status = ProjectStatus::Deleted;
+    dao.insert(ctx.clone(), &p2).await?;
+
+    // 搜索 "Searchable" 关键词：应只返回未删除的项目
+    let results = dao
+        .search_projects(
+            ctx,
+            ProjectSearch {
+                keyword: Some("Searchable".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].0.name, "Active Searchable");
+    Ok(())
+}
+
+/// 测试 FTS5 搜索 workflow 和 guidance 字段
+#[sqlx::test]
+async fn test_search_projects_workflow_guidance(pool: SqlitePool) -> Result<()> {
+    let dao = init_test_env();
+    let ctx = new_ctx("test-user", pool);
+
+    let p1 = create_searchable_project(
+        "Project With Workflow",
+        "desc",
+        Some("agile development process"),
+        Some("follow coding standards"),
+        "user1",
+    );
+    dao.insert(ctx.clone(), &p1).await?;
+
+    // 按 workflow 内容搜索
+    let results = dao
+        .search_projects(
+            ctx.clone(),
+            ProjectSearch {
+                keyword: Some("agile".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].0.name, "Project With Workflow");
+
+    // 按 guidance 内容搜索
+    let results2 = dao
+        .search_projects(
+            ctx,
+            ProjectSearch {
+                keyword: Some("coding standards".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(results2.len(), 1);
+    Ok(())
+}

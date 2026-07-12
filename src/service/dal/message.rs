@@ -1,15 +1,19 @@
 //! Message DAL 模块
 //!
 //! 基础消息数据访问层，提供消息保存和查询能力
-//! 所有保存的消息都会自动入队事件队列
+//! 所有保存的消息都会自动入队事件队列，并自动维护向量索引
 
 use common::error::Result;
 use crate::models::event::Event;
-use crate::models::message::Message;
+use crate::models::message::{Message, MessagePo};
+use crate::models::vector::{MatchType, SearchMatchInfo, VectorIndexParams, Vectorizable};
 use crate::pkg::RequestContext;
+use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::event_queue::{self, EventQueueDao};
-use crate::service::dao::message::{self, MessageDao, MessageQuery};
+use crate::service::dao::message::{self, MessageDao, MessageQuery, MessageSearch, MessageVectorDao};
+use crate::service::dao::model_provider::ModelProviderDao;
 use common::enums::MessageStatus;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例管理 ====================
@@ -23,17 +27,29 @@ pub fn dal() -> Arc<dyn MessageDal> {
 
 /// 初始化 Message DAL（使用全局单例 DAO）
 pub fn init() {
-    let _ = MESSAGE_DAL.set(new(message::dao(), event_queue::message_dao()));
+    let _ = MESSAGE_DAL.set(new(
+        message::dao(),
+        message::vector_dao(),
+        event_queue::message_dao(),
+        crate::service::dao::cortex::dao(),
+        crate::service::dao::model_provider::dao(),
+    ));
 }
 
 /// 创建 Message DAL（返回 trait 对象）
 pub fn new(
     message_dao: Arc<dyn MessageDao + Send + Sync>,
+    message_vector_dao: Arc<dyn MessageVectorDao + Send + Sync>,
     event_queue_dao: Arc<dyn EventQueueDao<Message> + Send + Sync>,
+    cortex_dao: Arc<dyn CortexDao + Send + Sync>,
+    model_provider_dao: Arc<dyn ModelProviderDao + Send + Sync>,
 ) -> Arc<dyn MessageDal> {
     Arc::new(MessageDalImpl {
         message_dao,
+        message_vector_dao,
         event_queue_dao,
+        cortex_dao,
+        model_provider_dao,
     })
 }
 
@@ -142,6 +158,18 @@ pub trait MessageDal: Send + Sync {
 
     /// 标记消息处理失败，重新放回队列等待重试
     async fn nack_message(&self, ctx: RequestContext, message_id: &str) -> Result<()>;
+
+    /// 🔍 统一混合搜索（关键词 + 向量语义）
+    ///
+    /// 自动根据参数选择搜索策略：
+    /// - keyword 存在 → 走 FTS5 全文检索
+    /// - query_vector 存在 → 走向量语义搜索
+    /// - 两者都有 → 混合搜索，合并结果
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: MessageSearch,
+    ) -> Result<Vec<Message>>;
 }
 
 // ==================== DAL 实现 ====================
@@ -149,20 +177,10 @@ pub trait MessageDal: Send + Sync {
 /// Message DAL 实现
 struct MessageDalImpl {
     message_dao: Arc<dyn MessageDao>,
+    message_vector_dao: Arc<dyn MessageVectorDao>,
     event_queue_dao: Arc<dyn EventQueueDao<Message>>,
-}
-
-impl MessageDalImpl {
-    /// 创建 DAL 实例
-    fn new(
-        message_dao: Arc<dyn MessageDao>,
-        event_queue_dao: Arc<dyn EventQueueDao<Message>>,
-    ) -> Self {
-        Self {
-            message_dao,
-            event_queue_dao,
-        }
-    }
+    cortex_dao: Arc<dyn CortexDao>,
+    model_provider_dao: Arc<dyn ModelProviderDao>,
 }
 
 #[async_trait::async_trait]
@@ -175,6 +193,49 @@ impl MessageDal for MessageDalImpl {
         // Message 已经实现了 Event trait
         let event: Box<Message> = Box::new(message.clone());
         self.event_queue_dao.enqueue(ctx.clone(), event)?;
+
+        // 3. 自动维护向量索引（失败仅 warn 降级，不影响主流程）
+        match try_build_vector_params_for_entity(
+            ctx.clone(),
+            &self.cortex_dao,
+            &self.model_provider_dao,
+            &message.po,
+        )
+        .await
+        {
+            Ok(Some(vec_params)) => {
+                if let Err(e) = self
+                    .message_vector_dao
+                    .upsert_vector(ctx.clone(), &message.po.id, &vec_params)
+                    .await
+                {
+                    log_warn!(
+                        &ctx,
+                        "vector_index",
+                        message_id = %message.po.id,
+                        error = ?e,
+                        "消息向量索引写入失败，已降级"
+                    );
+                }
+            }
+            Ok(None) => {
+                log_debug!(
+                    &ctx,
+                    "vector_index",
+                    message_id = %message.po.id,
+                    "无可用 Embedding Provider，跳过向量索引"
+                );
+            }
+            Err(e) => {
+                log_warn!(
+                    &ctx,
+                    "vector_index",
+                    message_id = %message.po.id,
+                    error = ?e,
+                    "消息向量化失败，已降级"
+                );
+            }
+        }
 
         Ok(())
     }
@@ -301,7 +362,19 @@ impl MessageDal for MessageDalImpl {
     }
 
     async fn delete_message(&self, ctx: RequestContext, id: &str) -> Result<()> {
-        self.message_dao.delete(ctx, id).await
+        // 1. 软删除消息（更新状态为 Recalled）
+        self.message_dao.delete(ctx.clone(), id).await?;
+        // 2. 删除向量索引（失败仅 warn 降级，不影响主流程）
+        if let Err(e) = self.message_vector_dao.delete_vector(ctx.clone(), id).await {
+            log_warn!(
+                &ctx,
+                "vector_index",
+                message_id = %id,
+                error = ?e,
+                "消息向量索引删除失败，已降级"
+            );
+        }
+        Ok(())
     }
 
     async fn delete_by_task_id(&self, ctx: RequestContext, task_id: &str) -> Result<()> {
@@ -354,4 +427,278 @@ impl MessageDal for MessageDalImpl {
     async fn nack_message(&self, _ctx: RequestContext, message_id: &str) -> Result<()> {
         self.event_queue_dao.nack(_ctx.clone(), message_id)
     }
+
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: MessageSearch,
+    ) -> Result<Vec<Message>> {
+        // 向量距离阈值（默认 0.8，越小越相似）
+        let vector_distance_threshold = 0.8_f32;
+        let top_k = search.top_k.unwrap_or(50);
+
+        // Step 1: 准备向量搜索结果容器
+        let mut vector_scores: HashMap<String, f32> = HashMap::new();
+        let mut vector_ids: HashSet<String> = HashSet::new();
+
+        // Step 2: 如果有关键词或 query_vector，执行向量搜索
+        // 参照 memory 模式：有关键词时用关键词生成 query_vector（如果未显式提供）
+        let has_keyword = search
+            .keyword
+            .as_deref()
+            .map(|k| !k.trim().is_empty())
+            .unwrap_or(false);
+        let has_query_vector = search
+            .query_vector
+            .as_ref()
+            .map(|v| !v.is_empty())
+            .unwrap_or(false);
+
+        if has_keyword || has_query_vector {
+            // 优先使用显式传入的 query_vector，否则用关键词生成
+            let vec_params_opt = if has_query_vector {
+                // 直接使用传入的 query_vector
+                Some(crate::models::vector::VectorIndexParams {
+                    vector: search.query_vector.clone().unwrap(),
+                    content_hash: String::new(),
+                    model_provider_id: String::new(),
+                    embedding_model: String::new(),
+                    expire_at: None,
+                })
+            } else {
+                // 用关键词生成 query_vector
+                match try_build_vector_params_for_search(
+                    ctx.clone(),
+                    &self.cortex_dao,
+                    &self.model_provider_dao,
+                    search.keyword.as_deref().unwrap_or(""),
+                )
+                .await
+                {
+                    Ok(params) => params,
+                    Err(e) => {
+                        log_warn!(
+                            &ctx,
+                            "vector_search",
+                            error = ?e,
+                            "消息向量化失败，降级到关键词搜索"
+                        );
+                        None
+                    }
+                }
+            };
+
+            if let Some(vec_params) = vec_params_opt {
+                match self
+                    .message_vector_dao
+                    .search_vector(ctx.clone(), &vec_params.vector, top_k)
+                    .await
+                {
+                    Ok(vector_results) => {
+                        // 过滤距离小于阈值的结果
+                        let filtered_results: Vec<(String, f32)> = vector_results
+                            .into_iter()
+                            .filter(|hit| hit.distance < vector_distance_threshold)
+                            .map(|hit| (hit.row.id, hit.distance))
+                            .collect();
+                        vector_ids =
+                            filtered_results.iter().map(|(id, _)| id.clone()).collect();
+                        vector_scores = filtered_results.into_iter().collect();
+                    }
+                    Err(e) => {
+                        log_warn!(
+                            &ctx,
+                            "vector_search",
+                            "消息向量搜索失败，降级到关键词搜索: {}",
+                            e
+                        );
+                    }
+                }
+            }
+        }
+
+        // Step 3: 执行关键词搜索（DAO 返回 Vec<(Po, fts_rank)>）
+        let keyword_results = if has_keyword {
+            self.message_dao
+                .search_messages(ctx.clone(), search.clone())
+                .await?
+        } else {
+            Vec::new()
+        };
+
+        // 提取 fts_rank 并转换为 Vec<Po> 便于聚合
+        let mut fts_ranks: HashMap<String, f32> = HashMap::new();
+        let keyword_pos: Vec<MessagePo> = keyword_results
+            .into_iter()
+            .map(|(po, rank)| {
+                if let Some(r) = rank {
+                    fts_ranks.insert(po.id.clone(), r);
+                }
+                po
+            })
+            .collect();
+
+        // Step 4: 聚合结果（如果有向量结果，用通用 query 批量获取，避免 N+1）
+        let mut all_pos = keyword_pos.clone();
+
+        if !vector_ids.is_empty() {
+            let ids_to_fetch: Vec<String> = vector_ids
+                .into_iter()
+                .filter(|id| !keyword_pos.iter().any(|po| po.id == *id))
+                .collect();
+
+            if !ids_to_fetch.is_empty() {
+                // 用通用 query 批量获取 ids_to_fetch 的结果
+                let mut query_for_ids = search.filters.clone();
+                query_for_ids.ids = Some(ids_to_fetch);
+                let vector_pos = self.message_dao.query(ctx.clone(), query_for_ids).await?;
+                all_pos.extend(vector_pos);
+            }
+        }
+
+        // Step 5: 去重
+        all_pos.sort_by(|a, b| a.id.cmp(&b.id));
+        all_pos.dedup_by(|a, b| a.id == b.id);
+
+        // Step 6: 构建业务对象，附加三态匹配信息
+        let mut messages = Vec::with_capacity(all_pos.len());
+        for po in all_pos {
+            let has_vector = vector_scores.contains_key(&po.id);
+            let has_keyword = fts_ranks.contains_key(&po.id);
+            let match_info = if has_vector && has_keyword {
+                // 双命中：向量 + 关键词
+                Some(SearchMatchInfo {
+                    match_type: MatchType::Hybrid,
+                    vector_distance: vector_scores.get(&po.id).copied(),
+                    fts_rank: fts_ranks.get(&po.id).copied(),
+                    ..Default::default()
+                })
+            } else if has_vector {
+                // 仅向量命中
+                Some(SearchMatchInfo {
+                    match_type: MatchType::Vector,
+                    vector_distance: vector_scores.get(&po.id).copied(),
+                    ..Default::default()
+                })
+            } else if has_keyword {
+                // 仅关键词命中
+                Some(SearchMatchInfo {
+                    match_type: MatchType::Keyword,
+                    fts_rank: fts_ranks.get(&po.id).copied(),
+                    ..Default::default()
+                })
+            } else {
+                None
+            };
+            messages.push(Message {
+                po,
+                search_match: match_info,
+            });
+        }
+
+        // Step 7: 综合排序：Hybrid 优先 → Vector 次之 → Keyword 最后
+        //    组内排序：Hybrid/Vector 按向量距离升序，Keyword 按 fts_rank 升序（BM25 越小越相关）
+        messages.sort_by(|a, b| {
+            let a_type = a.search_match.as_ref().map(|m| m.match_type);
+            let b_type = b.search_match.as_ref().map(|m| m.match_type);
+            let order_a = match a_type {
+                Some(MatchType::Hybrid) => 0,
+                Some(MatchType::Vector) => 1,
+                _ => 2,
+            };
+            let order_b = match b_type {
+                Some(MatchType::Hybrid) => 0,
+                Some(MatchType::Vector) => 1,
+                _ => 2,
+            };
+            order_a.cmp(&order_b).then_with(|| {
+                match (a_type, b_type) {
+                    (Some(MatchType::Hybrid), Some(MatchType::Hybrid))
+                    | (Some(MatchType::Vector), Some(MatchType::Vector)) => {
+                        let a_dist = a
+                            .search_match
+                            .as_ref()
+                            .and_then(|m| m.vector_distance)
+                            .unwrap_or(f32::MAX);
+                        let b_dist = b
+                            .search_match
+                            .as_ref()
+                            .and_then(|m| m.vector_distance)
+                            .unwrap_or(f32::MAX);
+                        a_dist.partial_cmp(&b_dist).unwrap_or(std::cmp::Ordering::Equal)
+                    }
+                    _ => {
+                        let a_rank = a
+                            .search_match
+                            .as_ref()
+                            .and_then(|m| m.fts_rank)
+                            .unwrap_or(f32::MAX);
+                        let b_rank = b
+                            .search_match
+                            .as_ref()
+                            .and_then(|m| m.fts_rank)
+                            .unwrap_or(f32::MAX);
+                        a_rank.partial_cmp(&b_rank).unwrap_or(std::cmp::Ordering::Equal)
+                    }
+                }
+            })
+        });
+
+        // Step 8: 应用 limit
+        if let Some(limit) = search.filters.limit {
+            messages.truncate(limit);
+        }
+
+        Ok(messages)
+    }
+}
+
+// ==================== Helpers ====================
+
+/// 尝试为查询文本构建向量索引参数（用于搜索场景）
+///
+/// 任何中间步骤失败都会向上抛错；调用方决定是否 warn 降级。
+/// 返回 `Ok(None)` 表示无 Embedding Provider 配置（合法场景）。
+async fn try_build_vector_params_for_search(
+    ctx: RequestContext,
+    cortex_dao: &Arc<dyn CortexDao>,
+    model_provider_dao: &Arc<dyn ModelProviderDao>,
+    text: &str,
+) -> Result<Option<VectorIndexParams>> {
+    let Some(provider) = model_provider_dao
+        .get_default_embedding_provider(ctx.clone())
+        .await?
+    else {
+        return Ok(None);
+    };
+
+    let cortex = cortex_dao.create_cortex_trait(ctx.clone(), &provider, vec![])?;
+    let params = cortex_dao
+        .embed_text_for_search(ctx, cortex.as_ref(), text)
+        .await?;
+    Ok(Some(params))
+}
+
+/// 尝试为实体构建向量索引参数（用于索引场景）
+///
+/// 任何中间步骤失败都会向上抛错；调用方决定是否 warn 降级。
+/// 返回 `Ok(None)` 表示无 Embedding Provider 配置（合法场景）。
+async fn try_build_vector_params_for_entity(
+    ctx: RequestContext,
+    cortex_dao: &Arc<dyn CortexDao>,
+    model_provider_dao: &Arc<dyn ModelProviderDao>,
+    entity: &dyn Vectorizable,
+) -> Result<Option<VectorIndexParams>> {
+    let Some(provider) = model_provider_dao
+        .get_default_embedding_provider(ctx.clone())
+        .await?
+    else {
+        return Ok(None);
+    };
+
+    let cortex = cortex_dao.create_cortex_trait(ctx.clone(), &provider, vec![])?;
+    let params = cortex_dao
+        .embed_entity(ctx, cortex.as_ref(), entity)
+        .await?;
+    Ok(Some(params))
 }

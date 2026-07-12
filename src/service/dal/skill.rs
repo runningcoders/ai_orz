@@ -316,13 +316,16 @@ impl SkillDal for SkillDalImpl {
         ctx: RequestContext,
         search: SkillSearch,
     ) -> Result<Vec<Skill>> {
-        // Step 1: 查询是否有可用的 Embedding Provider（用便捷方法）
+        // 向量距离阈值（可配置，默认 0.8）
+        let vector_distance_threshold = search.vector_distance_threshold.unwrap_or(0.8);
+
+        // Step 1: 准备向量搜索结果容器
         let mut vector_scores: std::collections::HashMap<String, f32> =
             std::collections::HashMap::new();
         let mut vector_skill_ids: std::collections::HashSet<String> =
             std::collections::HashSet::new();
 
-        // 如果有关键词，尝试向量搜索
+        // Step 2: 如果有关键词，尝试向量搜索
         if search.keyword.is_some() {
             if let Some(provider) = self
                 .model_provider_dao
@@ -350,11 +353,10 @@ impl SkillDal for SkillDalImpl {
                         .await
                     {
                         Ok(vector_results) => {
-                            // 距离阈值：只保留足够相似的结果（0.8 是比较宽松的阈值）
-                            const VECTOR_DISTANCE_THRESHOLD: f32 = 0.8;
+                            // 过滤距离小于阈值的结果
                             let filtered_results: Vec<(String, f32)> = vector_results
                                 .into_iter()
-                                .filter(|hit| hit.distance < VECTOR_DISTANCE_THRESHOLD)
+                                .filter(|hit| hit.distance < vector_distance_threshold)
                                 .map(|hit| (hit.row.id, hit.distance))
                                 .collect();
 
@@ -367,7 +369,7 @@ impl SkillDal for SkillDalImpl {
                             log_warn!(
                                 &ctx,
                                 "vector_search",
-                                "向量搜索失败，降级到关键词搜索: {}",
+                                "技能向量搜索失败，降级到关键词搜索: {}",
                                 e
                             );
                         }
@@ -376,20 +378,34 @@ impl SkillDal for SkillDalImpl {
             }
         }
 
-        // Step 3: 执行关键词搜索（用 DAO 新 search 方法，filters 自动透传）
-        let keyword_pos = self.skill_dao.search(ctx.clone(), search.clone()).await?;
+        // Step 3: 执行 FTS5 关键词搜索（DAO 返回 Vec<(Po, fts_rank)>）
+        let keyword_results = self.skill_dao.search(ctx.clone(), search.clone()).await?;
 
-        // Step 4: 如果有向量搜索，获取向量匹配的完整 PO
+        // 提取 fts_rank 并转换为 Vec<Po> 便于聚合
+        let mut fts_ranks: std::collections::HashMap<String, f32> =
+            std::collections::HashMap::new();
+        let keyword_pos: Vec<SkillPo> = keyword_results
+            .into_iter()
+            .map(|(po, rank)| {
+                if let Some(r) = rank {
+                    fts_ranks.insert(po.id.clone(), r);
+                }
+                po
+            })
+            .collect();
+
+        // Step 4: 聚合结果（如果有向量结果，用通用 query 批量获取，避免 N+1）
         let mut all_pos = keyword_pos.clone();
+
         if !vector_skill_ids.is_empty() {
-            // 关键词搜索可能没覆盖到向量匹配的结果，需要额外获取
-            let mut ids_to_fetch: Vec<String> = vector_skill_ids
+            let ids_to_fetch: Vec<String> = vector_skill_ids
                 .into_iter()
                 .filter(|id| !keyword_pos.iter().any(|po| po.id == *id))
                 .collect();
 
             if !ids_to_fetch.is_empty() {
                 // 分批获取（避免 SQL 太长）
+                let mut ids_to_fetch = ids_to_fetch;
                 ids_to_fetch.sort();
                 ids_to_fetch.dedup();
 
@@ -409,46 +425,95 @@ impl SkillDal for SkillDalImpl {
         all_pos.sort_by(|a, b| a.id.cmp(&b.id));
         all_pos.dedup_by(|a, b| a.id == b.id);
 
-        // Step 6: 构建 Skill 对象并排序
+        // Step 6: 构建 Skill 对象，附加 SearchMatchInfo（三态匹配）
         let mut skills = Vec::with_capacity(all_pos.len());
         for po in all_pos {
             let files = self.skill_dao.list_files(&po)?;
-            let match_info = if let Some(distance) = vector_scores.get(&po.id) {
-                SearchMatchInfo {
+            let has_vector = vector_scores.contains_key(&po.id);
+            let has_keyword = fts_ranks.contains_key(&po.id);
+            let match_info = if has_vector && has_keyword {
+                // 双命中：向量 + 关键词
+                Some(SearchMatchInfo {
                     match_type: MatchType::Hybrid,
-                    vector_distance: Some(*distance),
+                    vector_distance: vector_scores.get(&po.id).copied(),
+                    fts_rank: fts_ranks.get(&po.id).copied(),
                     ..Default::default()
-                }
-            } else {
-                SearchMatchInfo {
+                })
+            } else if has_vector {
+                // 仅向量命中
+                Some(SearchMatchInfo {
+                    match_type: MatchType::Vector,
+                    vector_distance: vector_scores.get(&po.id).copied(),
+                    ..Default::default()
+                })
+            } else if has_keyword {
+                // 仅关键词命中
+                Some(SearchMatchInfo {
                     match_type: MatchType::Keyword,
+                    fts_rank: fts_ranks.get(&po.id).copied(),
                     ..Default::default()
-                }
+                })
+            } else {
+                None
             };
             skills.push(Skill {
                 po,
                 files,
-                search_match: Some(match_info),
+                search_match: match_info,
             });
         }
 
-        // Step 7: 排序（向量距离优先，距离越小越好；纯关键词按原有顺序）
-        if !vector_scores.is_empty() {
-            skills.sort_by(|a, b| {
-                let dist_a = a
-                    .search_match
-                    .as_ref()
-                    .and_then(|m| m.vector_distance)
-                    .unwrap_or(f32::MAX);
-                let dist_b = b
-                    .search_match
-                    .as_ref()
-                    .and_then(|m| m.vector_distance)
-                    .unwrap_or(f32::MAX);
-                dist_a
-                    .partial_cmp(&dist_b)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
+        // Step 7: 综合排序（Hybrid 优先 → Vector 次之 → Keyword/None 最后）
+        //    组内排序：Hybrid/Vector 按向量距离升序，Keyword 按 fts_rank 升序（BM25 越小越相关）
+        skills.sort_by(|a, b| {
+            let a_type = a.search_match.as_ref().map(|m| m.match_type);
+            let b_type = b.search_match.as_ref().map(|m| m.match_type);
+            let order_a = match a_type {
+                Some(MatchType::Hybrid) => 0,
+                Some(MatchType::Vector) => 1,
+                _ => 2,
+            };
+            let order_b = match b_type {
+                Some(MatchType::Hybrid) => 0,
+                Some(MatchType::Vector) => 1,
+                _ => 2,
+            };
+            order_a.cmp(&order_b).then_with(|| {
+                match (a_type, b_type) {
+                    (Some(MatchType::Hybrid), Some(MatchType::Hybrid))
+                    | (Some(MatchType::Vector), Some(MatchType::Vector)) => {
+                        let a_dist = a
+                            .search_match
+                            .as_ref()
+                            .and_then(|m| m.vector_distance)
+                            .unwrap_or(f32::MAX);
+                        let b_dist = b
+                            .search_match
+                            .as_ref()
+                            .and_then(|m| m.vector_distance)
+                            .unwrap_or(f32::MAX);
+                        a_dist.partial_cmp(&b_dist).unwrap_or(std::cmp::Ordering::Equal)
+                    }
+                    _ => {
+                        let a_rank = a
+                            .search_match
+                            .as_ref()
+                            .and_then(|m| m.fts_rank)
+                            .unwrap_or(f32::MAX);
+                        let b_rank = b
+                            .search_match
+                            .as_ref()
+                            .and_then(|m| m.fts_rank)
+                            .unwrap_or(f32::MAX);
+                        a_rank.partial_cmp(&b_rank).unwrap_or(std::cmp::Ordering::Equal)
+                    }
+                }
+            })
+        });
+
+        // Step 8: 应用 limit
+        if let Some(limit) = search.filters.limit {
+            skills.truncate(limit);
         }
 
         Ok(skills)

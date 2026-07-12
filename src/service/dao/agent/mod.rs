@@ -3,19 +3,39 @@
 use common::error::Result;
 use common::models::{AgentStats, CallSummary, StatsFetchOptions};
 use crate::models::agent::AgentPo;
+use crate::models::vector::{VectorIndexParams, VectorRow, VectorSearchHit};
 use crate::pkg::RequestContext;
 use common::enums::AgentStatus;
 use crate::pkg::stats::{StatFilter, StatAggregation, StatEvent, Stats};
 use serde_json::Value as JsonValue;
+
 /// Agent 查询参数
 #[derive(Debug, Clone, Default)]
 pub struct AgentQuery {
-    pub name: Option<String>,
+    /// 按 ID 批量查询（向量搜索的核心过滤）
+    pub ids: Option<Vec<String>>,
+    /// 关键词搜索（仅用于 search 方法，query 方法中已废弃）
+    pub keyword: Option<String>,
     pub status: Option<AgentStatus>,
     pub exclude_status: Option<AgentStatus>,
     pub created_by: Option<String>,
     pub model_provider_id: Option<String>,
     pub limit: Option<usize>,
+}
+
+/// ✅ Agent 搜索统一入参（关键词搜索 + 向量语义搜索共用）
+#[derive(Debug, Clone, Default)]
+pub struct AgentSearch {
+    /// 关键词搜索查询（用于 FTS5 全文匹配）
+    pub keyword: Option<String>,
+    /// 查询向量（用于向量语义搜索，DAL 层填充）
+    pub query_vector: Option<Vec<f32>>,
+    /// 返回 Top K 结果（向量搜索专用）
+    pub top_k: Option<i32>,
+    /// 向量距离阈值，超过此值的结果被过滤。None 表示使用默认值 0.8
+    pub vector_distance_threshold: Option<f32>,
+    /// ✅ 业务过滤条件（直接复用 AgentQuery）
+    pub filters: AgentQuery,
 }
 
 /// Agent 统计查询参数
@@ -44,6 +64,53 @@ pub trait AgentDao: Send + Sync {
     async fn find_all(&self, ctx: RequestContext) -> Result<Vec<AgentPo>>;
     async fn update(&self, ctx: RequestContext, agent: &AgentPo) -> Result<()>;
     async fn delete(&self, ctx: RequestContext, agent: &AgentPo) -> Result<()>;
+
+    /// 统一搜索入口（FTS5 关键词 + 业务过滤，向量搜索由 AgentVectorDao 单独处理）
+    ///
+    /// 返回 `(AgentPo, fts_rank)` 元组，`fts_rank` 为 FTS5 BM25 相关性评分
+    /// （越小越相关，仅关键词命中时有值，无关键词搜索时为 None）。
+    async fn search_agents(
+        &self,
+        ctx: RequestContext,
+        search: AgentSearch,
+    ) -> Result<Vec<(AgentPo, Option<f32>)>>;
+}
+
+// ==================== AgentVectorDao Trait ====================
+
+/// Agent Vector DAO trait - 仅负责 Agent 向量索引的 CRUD，与基础 Agent 数据解耦
+/// 所有方法返回完整的行级结构体，与底层 VectorStore trait 保持一致
+#[async_trait::async_trait]
+pub trait AgentVectorDao: Send + Sync {
+    /// 插入或更新 Agent 的向量索引
+    async fn upsert_vector(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        vector_params: &VectorIndexParams,
+    ) -> Result<()>;
+
+    /// 纯向量语义搜索，返回完整的向量行数据 + 相似度距离
+    async fn search_vector(
+        &self,
+        ctx: RequestContext,
+        query_vector: &[f32],
+        top_k: i32,
+    ) -> Result<Vec<VectorSearchHit>>;
+
+    /// 获取指定 Agent 的完整向量行数据（包含元信息）
+    async fn get_vector_row(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+    ) -> Result<Option<VectorRow>>;
+
+    /// 删除 Agent 的向量索引
+    async fn delete_vector(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+    ) -> Result<()>;
 }
 
 /// Agent 统计 DAO 接口
@@ -112,13 +179,34 @@ pub trait AgentStatsDao: Send + Sync {
 }
 
 pub mod sqlite;
-pub use self::sqlite::{dao, init, new};
+pub use self::sqlite::{dao as base_dao, init as init_base, new as new_agent_dao};
+
+pub mod vector;
+pub use self::vector::{dao as vector_dao, init as init_vector, new as new_agent_vector_dao};
 
 pub mod stats_duckdb;
 pub use self::stats_duckdb::{stats_dao, stats_init, stats_new};
 
+/// 统一初始化所有 Agent DAO 单例
+pub fn init() {
+    init_base();
+    init_vector();
+}
+
+// ========== 向后兼容：旧代码继续使用 `agent::new()` / `agent::dao()` ==========
+pub fn new() -> std::sync::Arc<dyn AgentDao> {
+    new_agent_dao()
+}
+
+pub fn dao() -> std::sync::Arc<dyn AgentDao> {
+    base_dao()
+}
+
 #[cfg(test)]
 mod sqlite_test;
+
+#[cfg(test)]
+mod vector_test;
 
 #[cfg(test)]
 mod stats_duckdb_test;

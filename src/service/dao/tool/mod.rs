@@ -206,8 +206,21 @@ pub trait ToolDao: Send + Sync {
     /// Returns number of newly inserted tools
     async fn sync_builtin_tools_to_db(&self, ctx: RequestContext) -> Result<usize>;
 
-    /// 关键词搜索工具（使用 query 方法的关键词查询实现）
-    async fn search(&self, ctx: RequestContext, params: ToolSearch) -> Result<Vec<ToolPo>>;
+    /// 关键词搜索工具（向后兼容：调用 search_tools 并丢弃 fts_rank）
+    async fn search(&self, ctx: RequestContext, params: ToolSearch) -> Result<Vec<ToolPo>> {
+        let results = self.search_tools(ctx, params).await?;
+        Ok(results.into_iter().map(|(po, _)| po).collect())
+    }
+
+    /// 🔍 FTS5 全文搜索工具（MATCH + BM25 排序）
+    ///
+    /// 返回 `(ToolPo, Option<fts_rank>)` 元组，fts_rank 为 BM25 相关性评分
+    /// （越小越相关，仅 MATCH 命中时有值）。
+    async fn search_tools(
+        &self,
+        ctx: RequestContext,
+        params: ToolSearch,
+    ) -> Result<Vec<(ToolPo, Option<f32>)>>;
 }
 
 // ==================== ToolVectorDao Trait ====================
@@ -237,6 +250,9 @@ pub trait ToolVectorDao: Send + Sync {
         ctx: RequestContext,
         tool_id: &str,
     ) -> Result<Option<crate::models::vector::VectorRow>>;
+
+    /// 删除工具的向量索引
+    async fn delete_vector(&self, ctx: RequestContext, tool_id: &str) -> Result<()>;
 }
 
 // ==================== 统一导出 ====================

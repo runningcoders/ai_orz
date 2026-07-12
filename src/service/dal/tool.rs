@@ -6,7 +6,7 @@
 use common::error::{Result};
 use common::models::{ToolStats, StatsFetchOptions};
 use crate::models::tool::{CoreTool, Tool, ToolPo};
-use crate::models::vector::{MatchType, SearchMatchInfo};
+use crate::models::vector::{MatchType, SearchMatchInfo, Vectorizable};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use crate::service::dao::cortex::CortexDao;
@@ -175,15 +175,119 @@ pub struct ToolDalImpl {
 #[async_trait::async_trait]
 impl ToolDal for ToolDalImpl {
     async fn create_tool(&self, ctx: RequestContext, po: &ToolPo) -> Result<()> {
-        Ok(self.tool_dao.create_tool(ctx, po).await?)
+        self.tool_dao.create_tool(ctx.clone(), po).await?;
+
+        // 向量索引自动维护（失败仅 warn 降级，不影响主流程）
+        match try_build_vector_params_for_entity(
+            ctx.clone(),
+            &self.cortex_dao,
+            &self.model_provider_dao,
+            po as &dyn Vectorizable,
+        )
+        .await
+        {
+            Ok(Some(vec_params)) => {
+                if let Err(e) = self
+                    .tool_vector_dao
+                    .upsert_vector(ctx.clone(), &po.id, &vec_params)
+                    .await
+                {
+                    log_warn!(
+                        &ctx,
+                        "vector_index",
+                        tool_id = %po.id,
+                        error = ?e,
+                        "工具向量索引写入失败，已降级"
+                    );
+                }
+            }
+            Ok(None) => {
+                log_debug!(
+                    &ctx,
+                    "vector_index",
+                    tool_id = %po.id,
+                    "无可用 Embedding Provider，跳过工具向量索引"
+                );
+            }
+            Err(e) => {
+                log_warn!(
+                    &ctx,
+                    "vector_index",
+                    tool_id = %po.id,
+                    error = ?e,
+                    "工具向量化失败，已降级"
+                );
+            }
+        }
+
+        Ok(())
     }
 
     async fn update_tool(&self, ctx: RequestContext, tool: &Tool) -> Result<()> {
-        Ok(self.tool_dao.update_tool(ctx, &tool.po).await?)
+        self.tool_dao.update_tool(ctx.clone(), &tool.po).await?;
+
+        // 向量索引自动维护：内容变化时重新索引
+        let old_hash = self
+            .tool_vector_dao
+            .get_vector_row(ctx.clone(), &tool.po.id)
+            .await?
+            .map(|r| r.meta.content_hash);
+        let new_hash = tool.po.vector_content_hash();
+
+        if old_hash.as_deref() != Some(&new_hash) {
+            match try_build_vector_params_for_entity(
+                ctx.clone(),
+                &self.cortex_dao,
+                &self.model_provider_dao,
+                &tool.po as &dyn Vectorizable,
+            )
+            .await
+            {
+                Ok(Some(vec_params)) => {
+                    if let Err(e) = self
+                        .tool_vector_dao
+                        .upsert_vector(ctx.clone(), &tool.po.id, &vec_params)
+                        .await
+                    {
+                        log_warn!(
+                            &ctx,
+                            "vector_index",
+                            tool_id = %tool.po.id,
+                            error = ?e,
+                            "工具向量索引更新失败，已降级"
+                        );
+                    }
+                }
+                Ok(None) => {
+                    log_debug!(
+                        &ctx,
+                        "vector_index",
+                        tool_id = %tool.po.id,
+                        "无可用 Embedding Provider，跳过工具向量索引更新"
+                    );
+                }
+                Err(e) => {
+                    log_warn!(
+                        &ctx,
+                        "vector_index",
+                        tool_id = %tool.po.id,
+                        error = ?e,
+                        "工具向量化失败，跳过向量索引更新"
+                    );
+                }
+            }
+        }
+
+        Ok(())
     }
 
     async fn delete_tool(&self, ctx: RequestContext, tool_id: &str) -> Result<()> {
-        Ok(self.tool_dao.delete_tool(ctx, tool_id).await?)
+        self.tool_dao.delete_tool(ctx.clone(), tool_id).await?;
+
+        // 删除时清理向量索引
+        let _ = self.tool_vector_dao.delete_vector(ctx, tool_id).await;
+
+        Ok(())
     }
 
     async fn get_by_id(&self, ctx: RequestContext, id: String) -> Result<Option<Tool>> {
@@ -324,24 +428,26 @@ impl ToolDal for ToolDalImpl {
         ctx: RequestContext,
         params: crate::service::dao::tool::ToolSearch,
     ) -> Result<Vec<Tool>> {
+        // 向量距离阈值（固定常量，与历史实现保持一致）
+        const VECTOR_DISTANCE_THRESHOLD: f32 = 0.8;
+
+        // Step 1: 准备向量搜索结果容器
         let mut vector_scores: std::collections::HashMap<String, f32> =
             std::collections::HashMap::new();
-        let mut vector_tool_ids: std::collections::HashSet<String> =
+        let mut vector_ids: std::collections::HashSet<String> =
             std::collections::HashSet::new();
 
-        // 如果有关键词，尝试向量搜索
+        // Step 2: 如果有关键词，尝试向量搜索（用关键词生成 query vector）
         if params.keyword.is_some() {
             if let Some(provider) = self
                 .model_provider_dao
                 .get_default_embedding_provider(ctx.clone())
                 .await?
             {
-                // 创建 Cortex
                 let cortex = self
                     .cortex_dao
                     .create_cortex_trait(ctx.clone(), &provider, vec![])?;
 
-                // 生成查询向量（使用便捷方法）
                 if let Some(keyword) = &params.keyword {
                     let query_vector_params = self
                         .cortex_dao
@@ -349,27 +455,23 @@ impl ToolDal for ToolDalImpl {
                         .await?;
                     let query_vector = query_vector_params.vector;
 
-                    // 向量搜索（前 50 条）
                     match self
                         .tool_vector_dao
                         .search_vector(ctx.clone(), &query_vector, 50)
                         .await
                     {
                         Ok(vector_results) => {
-                            // 距离阈值：只保留足够相似的结果
-                            const VECTOR_DISTANCE_THRESHOLD: f32 = 0.8;
                             let filtered_results: Vec<(String, f32)> = vector_results
                                 .into_iter()
                                 .filter(|hit| hit.distance < VECTOR_DISTANCE_THRESHOLD)
                                 .map(|hit| (hit.row.id, hit.distance))
                                 .collect();
 
-                            vector_tool_ids =
+                            vector_ids =
                                 filtered_results.iter().map(|(id, _)| id.clone()).collect();
                             vector_scores = filtered_results.into_iter().collect();
                         }
                         Err(e) => {
-                            // 向量搜索失败，降级到纯关键词搜索
                             log_warn!(
                                 ctx.clone(),
                                 "vector_search",
@@ -382,59 +484,135 @@ impl ToolDal for ToolDalImpl {
             }
         }
 
-        // Step 2: 关键词搜索（统一使用 Dao 的 search 方法）
-        let pos = self.tool_dao.search(ctx.clone(), params).await?;
+        // Step 3: FTS5 关键词搜索（DAO 返回 Vec<(ToolPo, fts_rank)>）
+        let fts_results = self.tool_dao.search_tools(ctx.clone(), params).await?;
 
-        // Step 3: 合并结果（向量匹配 + 关键词匹配）
-        let mut tool_ids: std::collections::HashSet<String> = vector_tool_ids;
-        for po in &pos {
-            tool_ids.insert(po.id.clone());
-        }
+        // 提取 fts_rank 并转换为 Vec<ToolPo> 便于聚合
+        let mut fts_ranks: std::collections::HashMap<String, f32> =
+            std::collections::HashMap::new();
+        let keyword_pos: Vec<ToolPo> = fts_results
+            .into_iter()
+            .map(|(po, rank)| {
+                if let Some(r) = rank {
+                    fts_ranks.insert(po.id.clone(), r);
+                }
+                po
+            })
+            .collect();
 
-        // Step 4: 查询完整信息并组装排序
-        let query = crate::service::dao::tool::ToolQuery {
-            ids: if tool_ids.is_empty() {
-                None
-            } else {
-                Some(tool_ids.into_iter().collect())
-            },
-            exclude_status: Some(ToolStatus::Stale),
-            ..Default::default()
-        };
-        let all_pos = self.tool_dao.query(ctx, query).await?;
+        // Step 4: 聚合结果（如果有向量结果但不在关键词结果中，用通用 query 批量获取）
+        let mut all_pos = keyword_pos.clone();
 
-        let mut tools = Vec::new();
-        for po in all_pos {
-            if let Some(our_tool) = self.tool_call_dao.assemble_core_tool(&po)? {
-                let search_match =
-                    vector_scores
-                        .get(&po.id)
-                        .copied()
-                        .map(|score| SearchMatchInfo {
-                            vector_distance: Some(score),
-                            ..Default::default()
-                        });
-                tools.push(Tool {
-                    po,
-                    our_tool,
-                    search_match,
-                });
+        if !vector_ids.is_empty() {
+            let ids_to_fetch: Vec<String> = vector_ids
+                .into_iter()
+                .filter(|id| !keyword_pos.iter().any(|po| po.id == *id))
+                .collect();
+
+            if !ids_to_fetch.is_empty() {
+                let query = crate::service::dao::tool::ToolQuery {
+                    ids: Some(ids_to_fetch),
+                    exclude_status: Some(ToolStatus::Stale),
+                    ..Default::default()
+                };
+                let vector_pos = self.tool_dao.query(ctx.clone(), query).await?;
+                all_pos.extend(vector_pos);
             }
         }
 
-        // 按向量距离排序（距离越小越相似排前面），没有向量分数的排后面
-        tools.sort_by(
-            |a, b| match (a.search_match.as_ref(), b.search_match.as_ref()) {
-                (Some(sa), Some(sb)) => sa
-                    .vector_distance
-                    .unwrap_or(f32::MAX)
-                    .partial_cmp(&sb.vector_distance.unwrap_or(f32::MAX))
-                    .unwrap_or(std::cmp::Ordering::Equal),
-                (Some(_), None) => std::cmp::Ordering::Less,
-                (None, Some(_)) => std::cmp::Ordering::Greater,
-                (None, None) => std::cmp::Ordering::Equal,
-            },
-        );
+        // Step 5: 去重
+        all_pos.sort_by(|a, b| a.id.cmp(&b.id));
+        all_pos.dedup_by(|a, b| a.id == b.id);
+
+        // Step 6: 构建业务对象（三态匹配：Hybrid / Vector / Keyword）
+        let mut tools = Vec::with_capacity(all_pos.len());
+        for po in all_pos {
+            let Some(our_tool) = self.tool_call_dao.assemble_core_tool(&po)? else {
+                continue;
+            };
+
+            let has_vector = vector_scores.contains_key(&po.id);
+            let has_keyword = fts_ranks.contains_key(&po.id);
+            let match_info = if has_vector && has_keyword {
+                // 双命中：向量 + 关键词
+                Some(SearchMatchInfo {
+                    match_type: MatchType::Hybrid,
+                    vector_distance: vector_scores.get(&po.id).copied(),
+                    fts_rank: fts_ranks.get(&po.id).copied(),
+                    ..Default::default()
+                })
+            } else if has_vector {
+                // 仅向量命中
+                Some(SearchMatchInfo {
+                    match_type: MatchType::Vector,
+                    vector_distance: vector_scores.get(&po.id).copied(),
+                    ..Default::default()
+                })
+            } else if has_keyword {
+                // 仅关键词命中
+                Some(SearchMatchInfo {
+                    match_type: MatchType::Keyword,
+                    fts_rank: fts_ranks.get(&po.id).copied(),
+                    ..Default::default()
+                })
+            } else {
+                None
+            };
+
+            tools.push(Tool {
+                po,
+                our_tool,
+                search_match: match_info,
+            });
+        }
+
+        // Step 7: 统一排序：Hybrid 优先 → Vector 次之 → Keyword/None 最后
+        //    组内排序：Hybrid/Vector 按向量距离升序，Keyword 按 fts_rank 升序（BM25 越小越相关）
+        tools.sort_by(|a, b| {
+            let a_type = a.search_match.as_ref().map(|m| m.match_type);
+            let b_type = b.search_match.as_ref().map(|m| m.match_type);
+            let order_a = match a_type {
+                Some(MatchType::Hybrid) => 0,
+                Some(MatchType::Vector) => 1,
+                _ => 2,
+            };
+            let order_b = match b_type {
+                Some(MatchType::Hybrid) => 0,
+                Some(MatchType::Vector) => 1,
+                _ => 2,
+            };
+            order_a.cmp(&order_b).then_with(|| {
+                match (a_type, b_type) {
+                    (Some(MatchType::Hybrid), Some(MatchType::Hybrid))
+                    | (Some(MatchType::Vector), Some(MatchType::Vector)) => {
+                        let a_dist = a
+                            .search_match
+                            .as_ref()
+                            .and_then(|m| m.vector_distance)
+                            .unwrap_or(f32::MAX);
+                        let b_dist = b
+                            .search_match
+                            .as_ref()
+                            .and_then(|m| m.vector_distance)
+                            .unwrap_or(f32::MAX);
+                        a_dist.partial_cmp(&b_dist).unwrap_or(std::cmp::Ordering::Equal)
+                    }
+                    _ => {
+                        let a_rank = a
+                            .search_match
+                            .as_ref()
+                            .and_then(|m| m.fts_rank)
+                            .unwrap_or(f32::MAX);
+                        let b_rank = b
+                            .search_match
+                            .as_ref()
+                            .and_then(|m| m.fts_rank)
+                            .unwrap_or(f32::MAX);
+                        a_rank.partial_cmp(&b_rank).unwrap_or(std::cmp::Ordering::Equal)
+                    }
+                }
+            })
+        });
 
         Ok(tools)
     }
@@ -479,4 +657,28 @@ fn exclude_stale_by_default(mut query: ToolQuery) -> ToolQuery {
         query.exclude_status = Some(ToolStatus::Stale);
     }
     query
+}
+
+/// 尝试为实体构建向量索引参数（用于索引场景）
+///
+/// 任何中间步骤失败都会向上抛错；调用方决定是否 warn 降级。
+/// 返回 `Ok(None)` 表示无 Embedding Provider 配置（合法场景）。
+async fn try_build_vector_params_for_entity(
+    ctx: RequestContext,
+    cortex_dao: &Arc<dyn CortexDao + Send + Sync>,
+    model_provider_dao: &Arc<dyn ModelProviderDao + Send + Sync>,
+    entity: &dyn Vectorizable,
+) -> Result<Option<crate::models::vector::VectorIndexParams>> {
+    let Some(provider) = model_provider_dao
+        .get_default_embedding_provider(ctx.clone())
+        .await?
+    else {
+        return Ok(None);
+    };
+
+    let cortex = cortex_dao.create_cortex_trait(ctx.clone(), &provider, vec![])?;
+    let params = cortex_dao
+        .embed_entity(ctx, cortex.as_ref(), entity)
+        .await?;
+    Ok(Some(params))
 }

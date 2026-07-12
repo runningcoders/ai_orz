@@ -157,6 +157,7 @@ impl super::TaskManage for ProjectDomainImpl {
                     project_id: project_id.map(str::to_string),
                     status_in: status.map(|status| vec![status]),
                     limit,
+                    ..Default::default()
                 },
             )
             .await

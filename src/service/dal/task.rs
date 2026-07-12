@@ -1,18 +1,23 @@
 //! Task DAL 模块
 //!
 //! 职责：Task 领域的数据访问层，封装 TaskDao 提供统一的查询接口
+//! - 混合搜索（FTS5 关键词 + 向量语义）
+//! - 向量索引自动维护（create/update/delete）
 
 use common::error::Result;
 use common::models::{ModelCallStats, StatsFetchOptions, TaskStats};
 use crate::models::task::{Task, TaskPo};
+use crate::models::vector::{MatchType, SearchMatchInfo, VectorIndexParams, Vectorizable};
 use crate::pkg::RequestContext;
 use crate::pkg::stats::{ModelCallEvent, TaskEvent};
 use crate::service::dao::task;
-use crate::service::dao::task::{TaskDao, TaskQuery, TaskStatsDao, TaskStatsQuery};
-use crate::service::dao::model_provider::{ModelProviderStatsDao, ModelProviderStatsQuery};
+use crate::service::dao::task::{TaskDao, TaskQuery, TaskSearch, TaskStatsDao, TaskStatsQuery, TaskVectorDao};
+use crate::service::dao::cortex::CortexDao;
+use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderStatsDao, ModelProviderStatsQuery};
 use crate::service::dal::model_provider;
 use crate::service::dal::model_provider::ModelProviderDal;
 use common::enums::{AssigneeType, TaskStatus};
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock};
 
 use crate::enrich_ctx;
@@ -28,25 +33,32 @@ pub fn dal() -> Arc<dyn TaskDal + Send + Sync> {
 
 /// 初始化 Task DAL
 pub fn init() {
+    task::init_vector();
     task::stats_init();
     model_provider::init();
     crate::service::dao::model_provider::stats_init();
     let _ = TASK_DAL.set(new(
         task::dao(),
+        task::vector_dao(),
         task::stats_dao(),
         model_provider::dal(),
         crate::service::dao::model_provider::stats_dao(),
+        crate::service::dao::cortex::dao(),
+        crate::service::dao::model_provider::dao(),
     ));
 }
 
 /// 创建 Task DAL（返回 trait 对象）
 pub fn new(
     task_dao: Arc<dyn TaskDao + Send + Sync>,
+    task_vector_dao: Arc<dyn TaskVectorDao>,
     task_stats_dao: Arc<dyn TaskStatsDao<TaskEvent = TaskEvent>>,
     model_provider_dal: Arc<dyn ModelProviderDal>,
     model_provider_stats_dao: Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>,
+    cortex_dao: Arc<dyn CortexDao>,
+    model_provider_dao: Arc<dyn ModelProviderDao>,
 ) -> Arc<dyn TaskDal + Send + Sync> {
-    Arc::new(TaskDalImpl { task_dao, task_stats_dao, model_provider_dal, model_provider_stats_dao })
+    Arc::new(TaskDalImpl { task_dao, task_vector_dao, task_stats_dao, model_provider_dal, model_provider_stats_dao, cortex_dao, model_provider_dao })
 }
 
 // ==================== DAL 接口 ====================
@@ -89,6 +101,14 @@ pub trait TaskDal: Send + Sync {
 
     /// 通用综合查询
     async fn query(&self, ctx: RequestContext, query: TaskQuery) -> Result<Vec<Task>>;
+
+    /// 🔍 统一混合搜索（FTS5 关键词 + 向量语义）
+    ///
+    /// 自动根据参数选择搜索策略：
+    /// - keyword 存在 → FTS5 全文检索
+    /// - query_vector 存在 → 向量语义搜索
+    /// - 两者都有 → 混合搜索，合并结果
+    async fn search(&self, ctx: RequestContext, search: TaskSearch) -> Result<Vec<Task>>;
 
     /// 更新任务信息
     async fn update(&self, ctx: RequestContext, task: &Task) -> Result<()>;
@@ -142,16 +162,48 @@ pub trait TaskDal: Send + Sync {
 /// Task DAL 实现
 struct TaskDalImpl {
     task_dao: Arc<dyn TaskDao + Send + Sync>,
+    task_vector_dao: Arc<dyn TaskVectorDao>,
     task_stats_dao: Arc<dyn TaskStatsDao<TaskEvent = TaskEvent>>,
     model_provider_dal: Arc<dyn ModelProviderDal>,
     model_provider_stats_dao: Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>,
+    cortex_dao: Arc<dyn CortexDao>,
+    model_provider_dao: Arc<dyn ModelProviderDao>,
 }
 
 #[async_trait::async_trait]
 impl TaskDal for TaskDalImpl {
     async fn create(&self, ctx: RequestContext, task: &Task) -> Result<()> {
         let ctx = enrich_ctx!(&ctx, task);
-        self.task_dao.insert(ctx, &task.po).await
+        // 1. 写入 SQLite
+        self.task_dao.insert(ctx.clone(), &task.po).await?;
+
+        // 2. 向量化（title + description 拼接，失败 warn 降级，不影响主流程）
+        match try_build_vector_params_for_entity(
+            ctx.clone(),
+            &self.cortex_dao,
+            &self.model_provider_dao,
+            &task.po,
+        )
+        .await
+        {
+            Ok(Some(vec_params)) => {
+                if let Err(e) = self
+                    .task_vector_dao
+                    .upsert_vector(ctx.clone(), &task.po.id, &vec_params)
+                    .await
+                {
+                    log_warn!(ctx, "vector_index", task_id = %task.po.id, error = ?e, "任务向量索引写入失败，已降级");
+                }
+            }
+            Ok(None) => {
+                log_debug!(ctx, "vector_index", task_id = %task.po.id, "无可用 Embedding Provider，跳过向量索引");
+            }
+            Err(e) => {
+                log_warn!(ctx, "vector_index", task_id = %task.po.id, error = ?e, "任务向量化失败，已降级");
+            }
+        }
+
+        Ok(())
     }
 
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Task>> {
@@ -200,6 +252,7 @@ impl TaskDal for TaskDalImpl {
                     project_id: Some(project_id.to_string()),
                     status_in: None,
                     limit,
+                    ..Default::default()
                 },
             )
             .await?;
@@ -211,9 +264,234 @@ impl TaskDal for TaskDalImpl {
         Ok(list.into_iter().map(Task::from_po).collect())
     }
 
+    async fn search(&self, ctx: RequestContext, search: TaskSearch) -> Result<Vec<Task>> {
+        // 向量距离阈值（默认 0.8）
+        const VECTOR_DISTANCE_THRESHOLD: f32 = 0.8;
+
+        // Step 1: 准备向量搜索结果容器
+        let mut vector_scores: HashMap<String, f32> = HashMap::new();
+        let mut vector_ids: HashSet<String> = HashSet::new();
+
+        // Step 2: 如果有关键词，执行向量搜索（用关键词生成查询向量）
+        if search.keyword.is_some() {
+            if let Some(keyword) = &search.keyword {
+                match try_build_vector_params_for_search(
+                    ctx.clone(),
+                    &self.cortex_dao,
+                    &self.model_provider_dao,
+                    keyword,
+                )
+                .await
+                {
+                    Ok(Some(vec_params)) => {
+                        // 向量搜索（前 50 条）
+                        match self
+                            .task_vector_dao
+                            .search_vector(ctx.clone(), &vec_params.vector, 50)
+                            .await
+                        {
+                            Ok(vector_results) => {
+                                // 过滤距离小于阈值的结果
+                                let filtered_results: Vec<(String, f32)> = vector_results
+                                    .into_iter()
+                                    .filter(|hit| hit.distance < VECTOR_DISTANCE_THRESHOLD)
+                                    .map(|hit| (hit.row.id, hit.distance))
+                                    .collect();
+
+                                vector_ids =
+                                    filtered_results.iter().map(|(id, _)| id.clone()).collect();
+                                vector_scores = filtered_results.into_iter().collect();
+                            }
+                            Err(e) => {
+                                // 向量搜索失败，降级到纯关键词搜索
+                                log_warn!(
+                                    ctx,
+                                    "vector_search",
+                                    "任务向量搜索失败，降级到关键词搜索: {}",
+                                    e
+                                );
+                            }
+                        }
+                    }
+                    Ok(None) => {
+                        log_debug!(
+                            ctx,
+                            "vector_search",
+                            "无可用 Embedding Provider，跳过向量搜索"
+                        );
+                    }
+                    Err(e) => {
+                        log_warn!(ctx, "vector_search", error = ?e, "任务向量化失败，跳过向量搜索");
+                    }
+                }
+            }
+        }
+
+        // Step 3: 执行 FTS5 关键词搜索（DAO 返回 Vec<(Po, fts_rank)>）
+        let keyword_results = self
+            .task_dao
+            .search_tasks(ctx.clone(), search.clone())
+            .await?;
+
+        // 提取 fts_rank 并转换为 Vec<Po> 便于聚合
+        let mut fts_ranks: HashMap<String, f32> = HashMap::new();
+        let keyword_pos: Vec<TaskPo> = keyword_results
+            .into_iter()
+            .map(|(po, rank)| {
+                if let Some(r) = rank {
+                    fts_ranks.insert(po.id.clone(), r);
+                }
+                po
+            })
+            .collect();
+
+        // Step 4: 聚合结果（如果有向量结果但不在关键词结果中，用通用 query 批量获取）
+        let mut all_pos = keyword_pos.clone();
+
+        if !vector_ids.is_empty() {
+            let ids_to_fetch: Vec<String> = vector_ids
+                .into_iter()
+                .filter(|id| !keyword_pos.iter().any(|po| po.id == *id))
+                .collect();
+
+            if !ids_to_fetch.is_empty() {
+                let query_for_ids = TaskQuery {
+                    ids: Some(ids_to_fetch),
+                    ..search.filters.clone()
+                };
+                let vector_pos = self.task_dao.query(ctx.clone(), query_for_ids).await?;
+                all_pos.extend(vector_pos);
+            }
+        }
+
+        // Step 5: 去重
+        all_pos.sort_by(|a, b| a.id.cmp(&b.id));
+        all_pos.dedup_by(|a, b| a.id == b.id);
+
+        // Step 6: 构建业务对象 + 匹配信息
+        let mut tasks = Vec::with_capacity(all_pos.len());
+        for po in all_pos {
+            let has_vector = vector_scores.contains_key(&po.id);
+            let has_keyword = fts_ranks.contains_key(&po.id);
+            let match_info = if has_vector && has_keyword {
+                // 双命中：向量 + 关键词
+                Some(SearchMatchInfo {
+                    match_type: MatchType::Hybrid,
+                    vector_distance: vector_scores.get(&po.id).copied(),
+                    fts_rank: fts_ranks.get(&po.id).copied(),
+                    ..Default::default()
+                })
+            } else if has_vector {
+                // 仅向量命中
+                Some(SearchMatchInfo {
+                    match_type: MatchType::Vector,
+                    vector_distance: vector_scores.get(&po.id).copied(),
+                    ..Default::default()
+                })
+            } else if has_keyword {
+                // 仅关键词命中
+                Some(SearchMatchInfo {
+                    match_type: MatchType::Keyword,
+                    fts_rank: fts_ranks.get(&po.id).copied(),
+                    ..Default::default()
+                })
+            } else {
+                None
+            };
+            tasks.push(Task {
+                po,
+                search_match: match_info,
+            });
+        }
+
+        // Step 7: 排序：Hybrid 优先 → Vector 次之 → Keyword 最后
+        //    组内排序：Hybrid/Vector 按向量距离升序，Keyword 按 fts_rank 升序（BM25 越小越相关）
+        tasks.sort_by(|a, b| {
+            let a_type = a.search_match.as_ref().map(|m| m.match_type);
+            let b_type = b.search_match.as_ref().map(|m| m.match_type);
+            let order_a = match a_type {
+                Some(MatchType::Hybrid) => 0,
+                Some(MatchType::Vector) => 1,
+                _ => 2,
+            };
+            let order_b = match b_type {
+                Some(MatchType::Hybrid) => 0,
+                Some(MatchType::Vector) => 1,
+                _ => 2,
+            };
+            order_a.cmp(&order_b).then_with(|| {
+                match (a_type, b_type) {
+                    (Some(MatchType::Hybrid), Some(MatchType::Hybrid))
+                    | (Some(MatchType::Vector), Some(MatchType::Vector)) => {
+                        let a_dist = a
+                            .search_match
+                            .as_ref()
+                            .and_then(|m| m.vector_distance)
+                            .unwrap_or(f32::MAX);
+                        let b_dist = b
+                            .search_match
+                            .as_ref()
+                            .and_then(|m| m.vector_distance)
+                            .unwrap_or(f32::MAX);
+                        a_dist.partial_cmp(&b_dist).unwrap_or(std::cmp::Ordering::Equal)
+                    }
+                    _ => {
+                        let a_rank = a
+                            .search_match
+                            .as_ref()
+                            .and_then(|m| m.fts_rank)
+                            .unwrap_or(f32::MAX);
+                        let b_rank = b
+                            .search_match
+                            .as_ref()
+                            .and_then(|m| m.fts_rank)
+                            .unwrap_or(f32::MAX);
+                        a_rank.partial_cmp(&b_rank).unwrap_or(std::cmp::Ordering::Equal)
+                    }
+                }
+            })
+        });
+
+        // Step 8: 应用 limit
+        if let Some(limit) = search.filters.limit {
+            tasks.truncate(limit);
+        }
+
+        Ok(tasks)
+    }
+
     async fn update(&self, ctx: RequestContext, task: &Task) -> Result<()> {
         let ctx = enrich_ctx!(&ctx, task);
-        self.task_dao.update(ctx, &task.po).await
+        // 1. 更新 SQLite
+        self.task_dao.update(ctx.clone(), &task.po).await?;
+
+        // 2. 重新向量化（title + description 拼接，失败 warn 降级）
+        match try_build_vector_params_for_entity(
+            ctx.clone(),
+            &self.cortex_dao,
+            &self.model_provider_dao,
+            &task.po,
+        )
+        .await
+        {
+            Ok(Some(vec_params)) => {
+                if let Err(e) = self
+                    .task_vector_dao
+                    .upsert_vector(ctx.clone(), &task.po.id, &vec_params)
+                    .await
+                {
+                    log_warn!(ctx, "vector_index", task_id = %task.po.id, error = ?e, "任务向量索引更新失败，已降级");
+                }
+            }
+            Ok(None) => {
+                log_debug!(ctx, "vector_index", task_id = %task.po.id, "无可用 Embedding Provider，跳过向量索引更新");
+            }
+            Err(e) => {
+                log_warn!(ctx, "vector_index", task_id = %task.po.id, error = ?e, "任务向量化失败，跳过向量索引更新");
+            }
+        }
+
+        Ok(())
     }
 
     async fn update_status(
@@ -236,9 +514,17 @@ impl TaskDal for TaskDalImpl {
         modified_by: &str,
     ) -> Result<()> {
         let ctx = ctx.to_builder().task_id(id).build();
+        // 1. 软删除（status = Cancelled = 0）
         self.task_dao
-            .update_status(ctx, id, TaskStatus::Cancelled, modified_by)
-            .await
+            .update_status(ctx.clone(), id, TaskStatus::Cancelled, modified_by)
+            .await?;
+
+        // 2. 清理向量索引（忽略失败，不影响主流程）
+        if let Err(e) = self.task_vector_dao.delete_vector(ctx.clone(), id).await {
+            log_warn!(ctx, "vector_index", task_id = %id, error = ?e, "任务向量索引删除失败，已降级");
+        }
+
+        Ok(())
     }
 
     async fn count_by_assignee(
@@ -280,4 +566,54 @@ impl TaskDal for TaskDalImpl {
         };
         self.model_provider_stats_dao.get_stats(ctx, query, options).await
     }
+}
+
+// ==================== Helpers ====================
+
+/// 尝试为实体构建向量索引参数（用于索引场景）
+///
+/// 任何中间步骤失败都会向上抛错；调用方决定是否 warn 降级。
+/// 返回 `Ok(None)` 表示无 Embedding Provider 配置（合法场景）。
+async fn try_build_vector_params_for_entity(
+    ctx: RequestContext,
+    cortex_dao: &Arc<dyn CortexDao>,
+    model_provider_dao: &Arc<dyn ModelProviderDao>,
+    entity: &dyn Vectorizable,
+) -> Result<Option<VectorIndexParams>> {
+    let Some(provider) = model_provider_dao
+        .get_default_embedding_provider(ctx.clone())
+        .await?
+    else {
+        return Ok(None);
+    };
+
+    let cortex = cortex_dao.create_cortex_trait(ctx.clone(), &provider, vec![])?;
+    let params = cortex_dao
+        .embed_entity(ctx, cortex.as_ref(), entity)
+        .await?;
+    Ok(Some(params))
+}
+
+/// 尝试为查询文本构建向量索引参数（用于搜索场景）
+///
+/// 任何中间步骤失败都会向上抛错；调用方决定是否 warn 降级。
+/// 返回 `Ok(None)` 表示无 Embedding Provider 配置（合法场景）。
+async fn try_build_vector_params_for_search(
+    ctx: RequestContext,
+    cortex_dao: &Arc<dyn CortexDao>,
+    model_provider_dao: &Arc<dyn ModelProviderDao>,
+    text: &str,
+) -> Result<Option<VectorIndexParams>> {
+    let Some(provider) = model_provider_dao
+        .get_default_embedding_provider(ctx.clone())
+        .await?
+    else {
+        return Ok(None);
+    };
+
+    let cortex = cortex_dao.create_cortex_trait(ctx.clone(), &provider, vec![])?;
+    let params = cortex_dao
+        .embed_text_for_search(ctx, cortex.as_ref(), text)
+        .await?;
+    Ok(Some(params))
 }

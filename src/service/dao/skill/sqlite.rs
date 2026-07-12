@@ -6,11 +6,34 @@ use std::sync::Arc;
 use common::error::{Error, Result};
 use crate::models::skill::{SkillFile, SkillPo};
 use crate::pkg::RequestContext;
+use crate::service::dao::memory::sqlite::escape_fts5_keyword;
 use crate::service::dao::skill::{SkillDao, SkillQuery, SkillSearch};
 use async_trait::async_trait;
 use common::enums::SkillStatus;
 use common::enums::skill::SkillAuthorType;
 use common::{err, bail_err};
+use sqlx::FromRow;
+
+// ==================== FTS5 辅助 ====================
+
+/// 技能搜索行（PO + fts_rank）
+#[derive(FromRow)]
+struct SkillSearchRow {
+    id: String,
+    name: String,
+    description: String,
+    tags: String,
+    category: String,
+    parent_skill_id: String,
+    author_id: String,
+    author_type: SkillAuthorType,
+    modifier_id: String,
+    status: SkillStatus,
+    created_at: i64,
+    updated_at: i64,
+    content_path: String,
+    fts_rank: Option<f32>,
+}
 
 // ==================== 单例模式 ====================
 
@@ -199,18 +222,12 @@ FROM skills WHERE id = ?
             }
         }
 
-        // 关键词搜索 (name / description / tags)
+        // 关键词搜索已迁移到 FTS5 全文索引（search 方法）
+        // query 方法的 keyword 字段已废弃，仅记录 warn 日志
         if let Some(keyword) = &query.keyword {
-            let like_pattern = format!("%{}%", keyword);
-            builder
-                .push(" AND (name LIKE ")
-                .push_bind(like_pattern.clone());
-            builder
-                .push(" OR description LIKE ")
-                .push_bind(like_pattern.clone())
-                .push(" OR tags LIKE ")
-                .push_bind(like_pattern)
-                .push(")");
+            if !keyword.is_empty() {
+                log_warn!("keyword in skill query is deprecated, use search_skills for FTS5 full-text search; keyword ignored");
+            }
         }
 
         // 排序
@@ -339,20 +356,111 @@ ORDER BY updated_at DESC
         &self,
         ctx: RequestContext,
         search: SkillSearch,
-    ) -> Result<Vec<SkillPo>> {
-        // ✅ 只做参数转换，直接转发到 query（DAO 层不碰向量搜索）
-        let mut query = search.filters;
+    ) -> Result<Vec<(SkillPo, Option<f32>)>> {
+        use sqlx::QueryBuilder;
 
-        // 如果 search 有关键词，补充到 query
-        if search.keyword.is_some() {
-            query.keyword = search.keyword;
+        let keyword = search.keyword.unwrap_or_default();
+
+        // 空关键词直接返回空结果（FTS5 MATCH 空字符串会报错）
+        if keyword.trim().is_empty() {
+            return Ok(Vec::new());
         }
 
-        // 向量搜索相关的 query_vector/top_k：DAO 层直接忽略
-        // （向量搜索由 DAL 层调 SkillVectorDao 单独处理）
+        // 转义关键词为 FTS5 短语匹配
+        let escaped_keyword = escape_fts5_keyword(&keyword);
+        let filters = search.filters;
 
-        // 转发到已有的 query 方法
-        self.query(ctx, query).await
+        // FTS5 MATCH + JOIN + BM25 排序
+        // 注意：MATCH 左侧必须使用完整表名（非别名），否则 SQLite 会将别名解释为列名
+        let mut builder = QueryBuilder::new(
+            r#"SELECT m.id, m.name, m.description, m.tags, m.category, m.parent_skill_id,
+                      m.author_id, m.author_type, m.modifier_id, m.status, m.created_at, m.updated_at, m.content_path,
+                      skills_fts.rank as fts_rank
+               FROM skills_fts
+               JOIN skills m ON skills_fts.rowid = m.rowid
+               WHERE skills_fts MATCH "#,
+        );
+        builder.push_bind(escaped_keyword);
+
+        // 应用业务过滤条件
+        if let Some(ids) = &filters.ids {
+            builder.push(" AND m.id IN (");
+            let mut separated = builder.separated(", ");
+            for id in ids {
+                separated.push_bind(id);
+            }
+            separated.push_unseparated(")");
+        }
+
+        if let Some(status) = &filters.status {
+            builder.push(" AND m.status = ").push_bind(*status as i32);
+        }
+
+        if let Some(exclude_status) = &filters.exclude_status {
+            builder
+                .push(" AND m.status != ")
+                .push_bind(*exclude_status as i32);
+        }
+
+        if let Some(category) = &filters.category {
+            builder.push(" AND m.category = ").push_bind(category);
+        }
+
+        if let Some(author_id) = &filters.author_id {
+            builder.push(" AND m.author_id = ").push_bind(author_id);
+        }
+
+        if let Some(parent_skill_id) = &filters.parent_skill_id {
+            builder
+                .push(" AND m.parent_skill_id = ")
+                .push_bind(parent_skill_id);
+        }
+
+        if let Some(tags) = &filters.tags {
+            if !tags.is_empty() {
+                builder.push(" AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE json_each.value IN (");
+                let mut separated = builder.separated(", ");
+                for tag in tags {
+                    separated.push_bind(tag);
+                }
+                separated.push_unseparated("))");
+            }
+        }
+
+        builder.push(" ORDER BY skills_fts.rank");
+
+        if let Some(limit) = filters.limit {
+            builder.push(" LIMIT ").push_bind(limit as i64);
+        }
+
+        let rows: Vec<SkillSearchRow> = builder
+            .build_query_as::<SkillSearchRow>()
+            .fetch_all(ctx.db_pool())
+            .await?;
+
+        let results = rows
+            .into_iter()
+            .map(|row| {
+                let po = SkillPo {
+                    id: row.id,
+                    name: row.name,
+                    description: row.description,
+                    tags: row.tags,
+                    category: row.category,
+                    parent_skill_id: row.parent_skill_id,
+                    author_id: row.author_id,
+                    author_type: row.author_type,
+                    modifier_id: row.modifier_id,
+                    status: row.status,
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                    content_path: row.content_path,
+                };
+                (po, row.fts_rank)
+            })
+            .collect();
+
+        Ok(results)
     }
 
     // ========== 文件操作 ==========

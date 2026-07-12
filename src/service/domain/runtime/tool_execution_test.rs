@@ -16,7 +16,7 @@ mod tests {
     use crate::service::dal::brain::BrainDal;
     use crate::service::dal::mcp_tool::McpToolDal;
     use crate::service::dal::tool::ToolDal;
-    use crate::service::dao::agent::AgentQuery;
+    use crate::service::dao::agent::{AgentQuery, AgentSearch};
     use crate::service::dao::tool::{ToolQuery, ToolSearch};
     use async_trait::async_trait;
     use common::enums::{AgentStatus, ControlMode, ToolProtocol, ToolStatus};
@@ -103,6 +103,10 @@ mod tests {
 
         async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<Agent>> {
             Ok(self.agent.iter().cloned().collect())
+        }
+
+        async fn search(&self, _ctx: RequestContext, _search: AgentSearch) -> Result<Vec<Agent>> {
+            unimplemented!("not needed by tool execution routing tests")
         }
 
         async fn update(&self, _ctx: RequestContext, _agent: &Agent) -> Result<()> {

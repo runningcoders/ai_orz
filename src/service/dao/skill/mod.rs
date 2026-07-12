@@ -32,12 +32,14 @@ pub struct SkillQuery {
 /// ✅ 技能搜索统一入参（关键词搜索 + 向量语义搜索共用）
 #[derive(Debug, Clone, Default)]
 pub struct SkillSearch {
-    /// 关键词搜索查询（用于传统 LIKE 匹配）
+    /// 关键词搜索查询（用于 FTS5 全文匹配）
     pub keyword: Option<String>,
     /// 查询向量（用于向量语义搜索，DAL 层填充）
     pub query_vector: Option<Vec<f32>>,
     /// 返回 Top K 结果（向量搜索专用）
     pub top_k: Option<i32>,
+    /// 向量距离阈值，超过此值的结果被过滤。None 表示使用默认值 0.8
+    pub vector_distance_threshold: Option<f32>,
     /// ✅ 业务过滤条件（直接复用 SkillQuery）
     pub filters: SkillQuery,
 }
@@ -96,12 +98,15 @@ pub trait SkillDao: Send + Sync {
         target_agent_id: &str,
     ) -> Result<SkillPo>;
 
-    /// 统一搜索入口（关键词 + 业务过滤，向量搜索由 SkillVectorDao 单独处理）
+    /// 统一搜索入口（FTS5 关键词 + 业务过滤，向量搜索由 SkillVectorDao 单独处理）
+    ///
+    /// 返回 `(SkillPo, fts_rank)` 元组，`fts_rank` 为 FTS5 BM25 相关性评分
+    /// （越小越相关，仅关键词命中时有值，无关键词搜索时为 None）。
     async fn search(
         &self,
         ctx: RequestContext,
         search: SkillSearch,
-    ) -> Result<Vec<SkillPo>>;
+    ) -> Result<Vec<(SkillPo, Option<f32>)>>;
 
     // ========== 文件操作 ==========
 

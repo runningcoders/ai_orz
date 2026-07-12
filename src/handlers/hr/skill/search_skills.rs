@@ -30,6 +30,7 @@ pub async fn search_skills(
                 keyword: params.keyword,
                 query_vector: None,
                 top_k: params.limit.map(|limit| limit as i32),
+                vector_distance_threshold: None,
                 filters: SkillQuery {
                     status: params.status,
                     exclude_status: params.status.is_none().then_some(SkillStatus::Expired),

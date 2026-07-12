@@ -1,14 +1,21 @@
 //! Tool DAL 单元测试
 //! 测试 Tool DAL 的基础功能
 
+use crate::models::brain::CortexTrait;
+use crate::models::model_provider::ModelProviderPo;
 use crate::models::tool::{CoreTool, Tool, ToolPo};
+use crate::models::vector::MatchType;
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::{self, BuiltinToolFactory, get_registry};
 use crate::service::dal::tool::ToolDal;
+use crate::service::dao::cortex::CortexDao;
+use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::tool;
+use crate::service::dao::tool::ToolSearch;
+use crate::service::dao::tool_call::ToolCallDao;
 use async_trait::async_trait;
 use common::enums::{ControlMode, ToolProtocol, ToolStatus};
-use rig::tool::ToolError;
+use rig::tool::{ToolDyn, ToolError};
 use serde_json::Value;
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -493,4 +500,417 @@ async fn test_sync_builtin_tools_to_db(pool: SqlitePool) {
         .await
         .unwrap();
     assert!(found.is_some(), "test_tool should exist after sync");
+}
+
+// ========== Mock for Search Tests（三态匹配测试） ==========
+//
+// MockCortexDao 的向量生成策略：
+// - 包含 "nonexistent" 的文本 → 向量 [1.0, 0.0, 0.0]
+// - 其他文本 → 向量 [0.0, 1.0, 1.0]
+// 两向量余弦距离 = 1.0（完全正交），大于 0.8 阈值，不会同时命中。
+
+/// Mock Cortex 实现（不依赖真实 LLM）
+#[derive(Clone, Debug)]
+struct MockCortex {
+    model_name: String,
+}
+
+impl MockCortex {
+    fn new() -> Self {
+        Self {
+            model_name: "mock-embedding-v1".to_string(),
+        }
+    }
+}
+
+#[async_trait]
+impl CortexTrait for MockCortex {
+    fn capability(&self) -> common::enums::ModelCapability {
+        common::enums::ModelCapability::Embedding
+    }
+    fn model_provider_id(&self) -> &str {
+        "mock-provider"
+    }
+    fn model_name(&self) -> &str {
+        &self.model_name
+    }
+    async fn prompt(&self, _prompt: &str) -> anyhow::Result<String> {
+        Ok("Mock response".to_string())
+    }
+    async fn embeddings(&self, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
+        Ok(texts
+            .iter()
+            .map(|t| {
+                if t.contains("nonexistent") {
+                    vec![1.0, 0.0, 0.0]
+                } else {
+                    vec![0.0, 1.0, 1.0]
+                }
+            })
+            .collect())
+    }
+    fn support_tools(&self) -> bool {
+        false
+    }
+}
+
+/// Mock CortexDao
+#[derive(Clone, Debug)]
+struct MockCortexDao;
+
+#[async_trait]
+impl CortexDao for MockCortexDao {
+    fn create_cortex_trait(
+        &self,
+        _ctx: RequestContext,
+        _provider: &ModelProviderPo,
+        _rig_tools: Vec<Box<dyn ToolDyn>>,
+    ) -> anyhow::Result<Box<dyn CortexTrait + Send + Sync>> {
+        Ok(Box::new(MockCortex::new()))
+    }
+
+    async fn prompt(
+        &self,
+        _ctx: RequestContext,
+        _cortex: &dyn CortexTrait,
+        _prompt: &str,
+    ) -> anyhow::Result<String> {
+        Ok("Mock response".to_string())
+    }
+
+    async fn embed_text_raw(
+        &self,
+        _ctx: RequestContext,
+        _cortex: &dyn CortexTrait,
+        text: &str,
+    ) -> anyhow::Result<Vec<f32>> {
+        Ok(if text.contains("nonexistent") {
+            vec![1.0, 0.0, 0.0]
+        } else {
+            vec![0.0, 1.0, 1.0]
+        })
+    }
+
+    async fn embed_entity(
+        &self,
+        ctx: RequestContext,
+        cortex: &dyn CortexTrait,
+        entity: &dyn crate::models::vector::Vectorizable,
+    ) -> anyhow::Result<crate::models::vector::VectorIndexParams> {
+        let content = entity.vectorize_text();
+        let embedding = self.embed_text_raw(ctx, cortex, &content).await?;
+        Ok(crate::models::vector::VectorIndexParams::new(
+            &content,
+            embedding,
+            "mock-provider".to_string(),
+            "mock-embedding-v1".to_string(),
+        ))
+    }
+
+    async fn embed_text_for_search(
+        &self,
+        _ctx: RequestContext,
+        _cortex: &dyn CortexTrait,
+        text: &str,
+    ) -> anyhow::Result<crate::models::vector::VectorIndexParams> {
+        let embedding = self.embed_text_raw(_ctx, _cortex, text).await?;
+        Ok(crate::models::vector::VectorIndexParams::new(
+            text,
+            embedding,
+            "mock-provider".to_string(),
+            "mock-embedding-v1".to_string(),
+        ))
+    }
+}
+
+/// Mock ModelProviderDao，返回支持 Embedding 的测试 Provider
+#[derive(Clone, Debug)]
+struct MockModelProviderDao;
+
+#[async_trait]
+impl ModelProviderDao for MockModelProviderDao {
+    async fn insert(
+        &self,
+        _ctx: RequestContext,
+        _provider: &ModelProviderPo,
+    ) -> common::error::Result<()> {
+        Ok(())
+    }
+
+    async fn find_by_id(
+        &self,
+        _ctx: RequestContext,
+        _id: &str,
+    ) -> common::error::Result<Option<ModelProviderPo>> {
+        Ok(None)
+    }
+
+    async fn query(
+        &self,
+        _ctx: RequestContext,
+        _query: crate::service::dao::model_provider::ModelProviderQuery,
+    ) -> common::error::Result<Vec<ModelProviderPo>> {
+        Ok(vec![mock_provider()])
+    }
+
+    async fn find_all(&self, _ctx: RequestContext) -> common::error::Result<Vec<ModelProviderPo>> {
+        Ok(vec![])
+    }
+
+    async fn update(
+        &self,
+        _ctx: RequestContext,
+        _provider: &ModelProviderPo,
+    ) -> common::error::Result<()> {
+        Ok(())
+    }
+
+    async fn delete(
+        &self,
+        _ctx: RequestContext,
+        _provider: &ModelProviderPo,
+    ) -> common::error::Result<()> {
+        Ok(())
+    }
+
+    async fn get_default_embedding_provider(
+        &self,
+        _ctx: RequestContext,
+    ) -> common::error::Result<Option<ModelProviderPo>> {
+        Ok(Some(mock_provider()))
+    }
+}
+
+fn mock_provider() -> ModelProviderPo {
+    ModelProviderPo {
+        id: "mock-provider".to_string(),
+        name: "Mock Provider".to_string(),
+        provider_type: common::enums::ProviderType::Ollama,
+        model_name: "mock-embedding".to_string(),
+        capability: common::enums::ModelCapability::Embedding,
+        api_key: "".to_string(),
+        base_url: Some("http://localhost:11434".to_string()),
+        description: None,
+        config: "{}".to_string(),
+        status: common::enums::ModelProviderStatus::Normal,
+        created_by: "system".to_string(),
+        modified_by: "system".to_string(),
+        created_at: chrono::Utc::now().timestamp(),
+        updated_at: chrono::Utc::now().timestamp(),
+    }
+}
+
+/// Mock ToolCallDao，让 assemble_core_tool 对任意 ToolPo 返回 TestTool
+#[derive(Clone, Debug)]
+struct MockToolCallDao;
+
+#[async_trait]
+impl ToolCallDao for MockToolCallDao {
+    fn assemble_core_tool(
+        &self,
+        po: &ToolPo,
+    ) -> anyhow::Result<Option<Box<dyn CoreTool + Send + Sync>>> {
+        Ok(Some(Box::new(TestTool { po: po.clone() })))
+    }
+
+    fn wrap_for_rig(
+        &self,
+        _tools: &[Tool],
+        _ctx: RequestContext,
+    ) -> Vec<Box<dyn ToolDyn>> {
+        vec![]
+    }
+
+    async fn call_manual(
+        &self,
+        _ctx: RequestContext,
+        _tool: &Tool,
+        _args: Value,
+    ) -> anyhow::Result<Value> {
+        Ok(Value::Null)
+    }
+}
+
+/// 初始化带 Mock 的测试环境（用于搜索三态匹配测试）
+async fn init_test_with_mock(pool: SqlitePool) -> (Arc<dyn ToolDal>, RequestContext) {
+    tool::init();
+
+    // 创建向量元数据表（和生产环境 schema 一致）
+    let _ = sqlx::query(
+        "CREATE TABLE IF NOT EXISTS vector_metadata (
+            collection TEXT NOT NULL,
+            source_id TEXT NOT NULL,
+            content_hash TEXT,
+            model TEXT,
+            dimensions INTEGER,
+            indexed_at INTEGER NOT NULL DEFAULT (unixepoch()),
+            expire_at INTEGER,
+            PRIMARY KEY (collection, source_id)
+        );",
+    )
+    .execute(&pool)
+    .await;
+
+    // 创建 vss_tools 表（测试环境无 vss0 扩展，用普通表模拟）
+    let _ = sqlx::query(
+        "CREATE TABLE IF NOT EXISTS vss_tools (
+            rowid INTEGER PRIMARY KEY AUTOINCREMENT,
+            embedding TEXT NOT NULL
+        );",
+    )
+    .execute(&pool)
+    .await;
+
+    let tool_dal = crate::service::dal::tool::new(
+        tool::dao(),
+        Arc::new(MockToolCallDao),
+        tool::vector_dao(),
+        Arc::new(MockModelProviderDao),
+        Arc::new(MockCortexDao),
+        tool::stats_dao(),
+    );
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
+    (tool_dal, ctx)
+}
+
+/// 测试 Tool DAL search 的三态匹配（Hybrid / Vector / Keyword）
+///
+/// 场景设计：
+/// - tool_matching：name 含 "debug"，向量 [0.0, 1.0, 1.0]
+/// - tool_vector_only：name 不含 "debug"，向量 [0.0, 1.0, 1.0]
+/// - 搜索关键词 "debug"：查询向量 [0.0, 1.0, 1.0]
+/// - tool_matching：FTS5 命中 + 向量距离 0.0 → Hybrid
+/// - tool_vector_only：FTS5 未命中 + 向量距离 0.0 → Vector
+#[sqlx::test]
+async fn test_search_three_state_matching(pool: SqlitePool) -> Result<()> {
+    let (tool_dal, ctx) = init_test_with_mock(pool).await;
+
+    // 1. 创建 name 含 "debug" 的工具（会同时被 FTS5 和向量命中 → Hybrid）
+    let po_matching = create_test_tool_po("", "debug-helper", "Helps with debugging");
+    tool_dal.create_tool(ctx.clone(), &po_matching).await?;
+
+    // 2. 创建 name 不含 "debug" 的工具（只被向量命中 → Vector）
+    let po_vector_only = create_test_tool_po("", "python-utility", "A python utility tool");
+    tool_dal.create_tool(ctx.clone(), &po_vector_only).await?;
+
+    // 3. 搜索 "debug"（trigram 需要 3+ 字符，"debug" 是 5 字符，OK）
+    let results = tool_dal
+        .search(
+            ctx.clone(),
+            ToolSearch {
+                keyword: Some("debug".to_string()),
+                limit: 10,
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    // 应返回 2 条结果（Hybrid + Vector）
+    assert_eq!(results.len(), 2, "应返回 Hybrid + Vector 共 2 条结果");
+
+    // 第一条应是 Hybrid（优先级最高）
+    assert_eq!(results[0].po.id, po_matching.id);
+    assert_eq!(
+        results[0].search_match.as_ref().unwrap().match_type,
+        MatchType::Hybrid,
+        "tool_matching 应是 Hybrid 匹配"
+    );
+    assert!(results[0]
+        .search_match
+        .as_ref()
+        .unwrap()
+        .vector_distance
+        .is_some());
+    assert!(results[0]
+        .search_match
+        .as_ref()
+        .unwrap()
+        .fts_rank
+        .is_some());
+
+    // 第二条应是 Vector（仅向量命中）
+    assert_eq!(results[1].po.id, po_vector_only.id);
+    assert_eq!(
+        results[1].search_match.as_ref().unwrap().match_type,
+        MatchType::Vector,
+        "tool_vector_only 应是 Vector 匹配"
+    );
+    assert!(results[1]
+        .search_match
+        .as_ref()
+        .unwrap()
+        .vector_distance
+        .is_some());
+    assert!(results[1]
+        .search_match
+        .as_ref()
+        .unwrap()
+        .fts_rank
+        .is_none());
+
+    Ok(())
+}
+
+/// 测试 Tool DAL search 的 Keyword-only 匹配
+///
+/// 当工具内容含 "nonexistent" 时，向量 [1.0, 0.0, 0.0]
+/// 搜索 "nonexistent" 时查询向量也是 [1.0, 0.0, 0.0]（含 "nonexistent"）
+/// 向量距离 = 0.0 < 0.8 → 向量命中
+///
+/// 为了测试纯 Keyword 匹配，需要向量不命中的场景：
+/// - 工具含 "nonexistent" → 向量 [1.0, 0.0, 0.0]
+/// - 搜索 "nonexistent-debug" → 不含 "nonexistent"... 等等，含
+///
+/// 换个策略：搜索不含 "nonexistent" 的关键词，但工具含 "nonexistent"
+/// - 工具 name = "nonexistent-debug-tool" → 向量 [1.0, 0.0, 0.0]（含 "nonexistent"）
+/// - 搜索 "debug" → 查询向量 [0.0, 1.0, 1.0]（不含 "nonexistent"）
+/// - 向量距离 = 1.0 > 0.8 → 向量不命中
+/// - FTS5 命中 "debug" → Keyword-only
+#[sqlx::test]
+async fn test_search_keyword_only_match(pool: SqlitePool) -> Result<()> {
+    let (tool_dal, ctx) = init_test_with_mock(pool).await;
+
+    // 创建 name 含 "nonexistent" 和 "debug" 的工具
+    let po = create_test_tool_po(
+        "",
+        "nonexistent-debug-tool",
+        "A tool for nonexistent debugging",
+    );
+    tool_dal.create_tool(ctx.clone(), &po).await?;
+
+    // 搜索 "debug"（查询向量 [0.0, 1.0, 1.0]，工具向量 [1.0, 0.0, 0.0]，距离 1.0 > 0.8）
+    let results = tool_dal
+        .search(
+            ctx.clone(),
+            ToolSearch {
+                keyword: Some("debug".to_string()),
+                limit: 10,
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    // 应返回 1 条结果（Keyword-only）
+    assert_eq!(results.len(), 1, "应返回 1 条 Keyword 匹配结果");
+
+    assert_eq!(results[0].po.id, po.id);
+    assert_eq!(
+        results[0].search_match.as_ref().unwrap().match_type,
+        MatchType::Keyword,
+        "应是 Keyword 匹配（向量距离 > 阈值）"
+    );
+    assert!(results[0]
+        .search_match
+        .as_ref()
+        .unwrap()
+        .fts_rank
+        .is_some());
+    assert!(results[0]
+        .search_match
+        .as_ref()
+        .unwrap()
+        .vector_distance
+        .is_none());
+
+    Ok(())
 }

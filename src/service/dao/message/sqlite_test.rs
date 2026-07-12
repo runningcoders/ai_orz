@@ -5,7 +5,7 @@ use crate::models::message::{MessagePo, ToolCallMessage};
 use crate::pkg::RequestContext;
 use crate::service::dao::message::{self, MessageDao};
 use common::enums::{FileType, MessageRole, MessageStatus, MessageType};
-use sqlx::SqlitePool;
+use sqlx::{Row, SqlitePool};
 use std::sync::Arc;
 use uuid::Uuid;
 use common::error::Result;
@@ -932,6 +932,155 @@ async fn test_list_by_project_id(pool: SqlitePool) -> Result<()> {
         .list_by_project_id(ctx.clone(), "project-1", Some(2))
         .await?;
     assert_eq!(list.len(), 2);
+
+    Ok(())
+}
+
+// ==================== FTS5 触发器同步测试 ====================
+// 注意：trigram 分词器对 CJK 字符基于三字符子串匹配，MATCH 搜索使用英文关键词验证。
+// 中文内容同步通过直接 SELECT FTS 表验证。
+// 注意：Message DAO 的 delete() 是软删除（UPDATE status），不会触发 AFTER DELETE 触发器。
+// UPDATE/DELETE 触发器测试使用原始 SQL 直接操作主表。
+
+/// 测试 messages AFTER INSERT 触发器同步到 messages_fts
+#[sqlx::test]
+async fn test_message_fts5_trigger_insert_sync(pool: SqlitePool) -> Result<()> {
+    let (message_dao, ctx) = init_test_env(pool.clone());
+
+    let msg = create_test_message("task-fts-ins", "user-fts", "Rust ownership system memory safety");
+
+    message_dao.insert(ctx, &msg).await?;
+
+    // 1. FTS 表应该有 1 条记录
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages_fts")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 1, "INSERT 后 FTS 表应有 1 条记录");
+
+    // 2. 直接查询 FTS 表验证内容同步
+    let row = sqlx::query("SELECT rowid, content FROM messages_fts")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let content: String = row.get("content");
+    let rowid: i64 = row.get("rowid");
+    assert!(content.contains("Rust"));
+    assert!(content.contains("memory safety"));
+    assert!(rowid > 0);
+
+    // 3. 通过 content MATCH 搜索英文关键词
+    let match_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM messages_fts WHERE content MATCH ?")
+            .bind("rust")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(match_count, 1, "content MATCH rust 应命中");
+
+    let match_count2: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM messages_fts WHERE content MATCH ?")
+            .bind("ownership")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(match_count2, 1, "content MATCH ownership 应命中");
+
+    Ok(())
+}
+
+/// 测试 messages AFTER UPDATE 触发器同步到 messages_fts（先删旧条目再插新条目）
+#[sqlx::test]
+async fn test_message_fts5_trigger_update_sync(pool: SqlitePool) -> Result<()> {
+    let (message_dao, ctx) = init_test_env(pool.clone());
+
+    let msg = create_test_message("task-fts-upd", "user-fts", "Rust programming language guide");
+    let msg_id = msg.id.clone();
+    message_dao.insert(ctx, &msg).await?;
+
+    // 确认初始 FTS 已有 1 条记录，且 rust 可搜到
+    let before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages_fts")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(before, 1);
+
+    // 用原始 SQL 更新 content：Rust -> Python（AFTER UPDATE 触发器先删旧 FTS 条目再插新条目）
+    // Message DAO 没有 update content 的方法，直接用 SQL
+    sqlx::query("UPDATE messages SET content = ? WHERE id = ?")
+        .bind("Python programming language guide")
+        .bind(&msg_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // FTS 表仍应只有 1 条记录（update 触发器先删后插，不是新增）
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages_fts")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 1, "UPDATE 后 FTS 表仍应只有 1 条记录");
+
+    // 新关键词 python 应能搜到
+    let new_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM messages_fts WHERE content MATCH ?")
+            .bind("python")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(new_count, 1, "更新后应能搜到新关键词 python");
+
+    // 旧关键词 rust 应搜不到（旧 FTS 条目已被触发器删除）
+    let old_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM messages_fts WHERE content MATCH ?")
+            .bind("rust")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(old_count, 0, "更新后旧关键词 rust 应已从 FTS 移除");
+
+    Ok(())
+}
+
+/// 测试 messages AFTER DELETE 触发器同步到 messages_fts
+#[sqlx::test]
+async fn test_message_fts5_trigger_delete_sync(pool: SqlitePool) -> Result<()> {
+    let (message_dao, ctx) = init_test_env(pool.clone());
+
+    let msg = create_test_message("task-fts-del", "user-fts", "Rust deletable message content");
+    let msg_id = msg.id.clone();
+    message_dao.insert(ctx, &msg).await?;
+
+    // 确认 FTS 已有 1 条记录
+    let before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages_fts")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(before, 1);
+
+    // 硬删除（注意：DAO 的 delete() 是软删除=UPDATE status，不会触发 AFTER DELETE）
+    // 这里用原始 SQL 触发 AFTER DELETE 触发器
+    sqlx::query("DELETE FROM messages WHERE id = ?")
+        .bind(&msg_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // FTS 表中对应记录应已被触发器删除
+    let after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages_fts")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(after, 0, "硬删除后 FTS 表应为空");
+
+    // MATCH 搜索应搜不到
+    let search: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM messages_fts WHERE content MATCH ?")
+            .bind("rust")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(search, 0, "删除后 MATCH 搜索应无结果");
 
     Ok(())
 }

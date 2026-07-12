@@ -30,7 +30,7 @@ use std::sync::{Arc, OnceLock};
 /// 不会把空格解释为 AND 操作符。
 ///
 /// 例如：`hello"world` -> `"hello""world"`
-pub(crate) fn escape_fts5_keyword(keyword: &str) -> String {
+pub fn escape_fts5_keyword(keyword: &str) -> String {
     if keyword.trim().is_empty() {
         return String::new();
     }

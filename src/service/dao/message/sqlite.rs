@@ -4,11 +4,45 @@ use common::error::Result;
 use crate::models::file::FileMeta;
 use crate::models::message::MessagePo;
 use crate::pkg::RequestContext;
-use crate::service::dao::message::{MessageDao, MessageQuery};
+use crate::service::dao::message::{MessageDao, MessageQuery, MessageSearch};
 use chrono::Utc;
 use common::enums::{FileType, MessageRole, MessageStatus, MessageType};
 use sqlx::types::Json;
+use sqlx::FromRow;
 use std::sync::{Arc, OnceLock};
+
+// ==================== FTS5 辅助 ====================
+
+/// 转义 FTS5 关键词中的特殊字符（复用 memory 模块的实现）
+///
+/// 将关键词用双引号包裹，内部双引号变成两个双引号，
+/// 这样 FTS5 会将其作为短语匹配（phrase query）。
+use crate::service::dao::memory::sqlite::escape_fts5_keyword;
+
+/// 消息搜索行（PO + fts_rank）
+#[derive(FromRow)]
+struct MessageSearchRow {
+    id: String,
+    project_id: Option<String>,
+    task_id: Option<String>,
+    from_id: String,
+    to_id: String,
+    from_role: MessageRole,
+    to_role: MessageRole,
+    message_type: MessageType,
+    file_type: Option<FileType>,
+    status: MessageStatus,
+    content: String,
+    file_meta: Json<FileMeta>,
+    reply_to_id: Option<String>,
+    root_id: Option<String>,
+    organization_id: Option<String>,
+    created_by: String,
+    modified_by: String,
+    created_at: i64,
+    updated_at: i64,
+    fts_rank: Option<f32>,
+}
 // ==================== 工厂方法 + 单例管理 ====================
 
 static MESSAGE_DAO: OnceLock<Arc<dyn MessageDao>> = OnceLock::new();
@@ -88,6 +122,16 @@ impl MessageDao for MessageDaoSqliteImpl {
         // 逐个添加查询条件
         if let Some(id) = &query.id {
             builder.push(" AND id = ").push_bind(id);
+        }
+        if let Some(ids) = &query.ids {
+            if !ids.is_empty() {
+                builder.push(" AND id IN (");
+                let mut separated = builder.separated(", ");
+                for id in ids {
+                    separated.push_bind(id);
+                }
+                separated.push_unseparated(")");
+            }
         }
         if let Some(task_id) = &query.task_id {
             builder.push(" AND task_id = ").push_bind(task_id);
@@ -415,5 +459,105 @@ UPDATE messages SET "status" = ?, updated_at = ?, modified_by = ? WHERE id = ?
         self.insert(ctx, &message).await?;
 
         Ok(message)
+    }
+
+    async fn search_messages(
+        &self,
+        ctx: RequestContext,
+        search: MessageSearch,
+    ) -> Result<Vec<(MessagePo, Option<f32>)>> {
+        use sqlx::QueryBuilder;
+
+        let pool = ctx.db_pool().clone();
+        let keyword = search.keyword.unwrap_or_default();
+        let filters = search.filters;
+
+        // 空关键词直接返回空结果（FTS5 MATCH 空字符串会报错）
+        if keyword.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // 转义关键词为 FTS5 短语匹配
+        let escaped_keyword = escape_fts5_keyword(&keyword);
+        let limit_i64 = filters.limit.unwrap_or(50) as i64;
+
+        // FTS5 MATCH + JOIN + BM25 排序
+        // 注意：MATCH 左侧必须使用完整表名（非别名），否则 SQLite 会将别名解释为列名
+        let mut builder = QueryBuilder::new(
+            r#"SELECT m.id, m.project_id, m.task_id, m.from_id, m.to_id, m.from_role, m.to_role, m.message_type, m.file_type, m."status", m.content, m.file_meta, m.reply_to_id, m.root_id, m.organization_id, m.created_by, m.modified_by, m.created_at, m.updated_at, messages_fts.rank as fts_rank
+FROM messages_fts
+JOIN messages m ON messages_fts.rowid = m.rowid
+WHERE messages_fts MATCH "#,
+        );
+        builder.push_bind(escaped_keyword);
+        builder.push(r#" AND m."status" != 0"#);
+
+        // 动态添加业务过滤条件
+        if let Some(task_id) = &filters.task_id {
+            builder.push(" AND m.task_id = ");
+            builder.push_bind(task_id);
+        }
+        if let Some(project_id) = &filters.project_id {
+            builder.push(" AND m.project_id = ");
+            builder.push_bind(project_id);
+        }
+        if let Some(from_id) = &filters.from_id {
+            builder.push(" AND m.from_id = ");
+            builder.push_bind(from_id);
+        }
+        if let Some(to_id) = &filters.to_id {
+            builder.push(" AND m.to_id = ");
+            builder.push_bind(to_id);
+        }
+        if let Some(id) = &filters.id {
+            builder.push(" AND m.id = ");
+            builder.push_bind(id);
+        }
+        if let Some(status_in) = &filters.status_in {
+            if !status_in.is_empty() {
+                builder.push(" AND m.\"status\" IN (");
+                let mut separated = builder.separated(", ");
+                for s in status_in {
+                    separated.push_bind(*s as i32);
+                }
+                separated.push_unseparated(")");
+            }
+        }
+
+        builder.push(" ORDER BY messages_fts.rank");
+        builder.push(" LIMIT ");
+        builder.push_bind(limit_i64);
+
+        let rows: Vec<MessageSearchRow> = builder.build_query_as().fetch_all(&pool).await?;
+
+        let results = rows
+            .into_iter()
+            .map(|row| {
+                let po = MessagePo {
+                    id: row.id,
+                    project_id: row.project_id,
+                    task_id: row.task_id,
+                    from_id: row.from_id,
+                    to_id: row.to_id,
+                    from_role: row.from_role,
+                    to_role: row.to_role,
+                    message_type: row.message_type,
+                    file_type: row.file_type,
+                    status: row.status,
+                    content: row.content,
+                    file_meta: row.file_meta,
+                    reply_to_id: row.reply_to_id,
+                    root_id: row.root_id,
+                    organization_id: row.organization_id,
+                    created_by: row.created_by,
+                    modified_by: row.modified_by,
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                };
+                (po, row.fts_rank)
+            })
+            .collect();
+
+        Ok(results)
     }
 }

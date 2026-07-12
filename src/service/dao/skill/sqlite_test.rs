@@ -6,7 +6,7 @@ use crate::pkg::RequestContext;
 use crate::service::dao::skill::{self, SkillDao, SkillQuery, SkillSearch};
 use common::enums::SkillStatus;
 use common::enums::skill::SkillAuthorType;
-use sqlx::SqlitePool;
+use sqlx::{Row, SqlitePool};
 use std::sync::Arc;
 use uuid::Uuid;
 use common::error::Result;
@@ -193,7 +193,7 @@ async fn test_list_by_category(pool: SqlitePool) -> Result<()> {
     Ok(())
 }
 
-/// 测试关键词搜索
+/// 测试 FTS5 关键词搜索（DAO 层返回 (SkillPo, fts_rank) 元组）
 #[sqlx::test]
 async fn test_search(pool: SqlitePool) -> Result<()> {
     let skill_dao = init_test_env();
@@ -224,7 +224,12 @@ async fn test_search(pool: SqlitePool) -> Result<()> {
             },
         )
         .await?;
-    assert!(result.iter().any(|s| s.id == skill_id));
+    // 返回类型为 Vec<(SkillPo, Option<f32>)>
+    assert!(result.iter().any(|(s, _)| s.id == skill_id));
+    // FTS5 命中时 fts_rank 应有值
+    assert!(result
+        .iter()
+        .any(|(_, rank)| rank.is_some()));
 
     let ctx = new_ctx("test-user", pool);
     let result = skill_dao
@@ -236,7 +241,7 @@ async fn test_search(pool: SqlitePool) -> Result<()> {
             },
         )
         .await?;
-    assert!(result.iter().any(|s| s.id == skill_id));
+    assert!(result.iter().any(|(s, _)| s.id == skill_id));
 
     Ok(())
 }
@@ -854,7 +859,7 @@ async fn test_query_without_tags(pool: SqlitePool) -> Result<()> {
     Ok(())
 }
 
-/// 测试关键词搜索可以匹配 tags 字段
+/// 测试 FTS5 搜索可以匹配 tags 字段（trigram 分词器对 tags JSON 字符串建立索引）
 #[sqlx::test]
 async fn test_keyword_search_matches_tags(pool: SqlitePool) -> Result<()> {
     let skill_dao = init_test_env();
@@ -876,12 +881,12 @@ async fn test_keyword_search_matches_tags(pool: SqlitePool) -> Result<()> {
     let ctx = new_ctx("test-user", pool.clone());
     skill_dao.insert(ctx, &skill).await?;
 
-    // 用 tag 内容作为关键词搜索，应能命中
+    // 用 tag 内容作为 FTS5 关键词搜索，应能命中（trigram 对 tags JSON 字符串建索引）
     let ctx = new_ctx("test-user", pool);
     let result = skill_dao
-        .query(
+        .search(
             ctx,
-            SkillQuery {
+            SkillSearch {
                 keyword: Some("unique_tag_xyz".to_string()),
                 ..Default::default()
             },
@@ -889,7 +894,513 @@ async fn test_keyword_search_matches_tags(pool: SqlitePool) -> Result<()> {
         .await?;
 
     assert_eq!(result.len(), 1);
-    assert_eq!(result[0].id, skill_id);
+    assert_eq!(result[0].0.id, skill_id);
+
+    Ok(())
+}
+
+// ==================== FTS5 触发器同步测试 ====================
+// 注意：trigram 分词器对 CJK 字符基于三字符子串匹配，MATCH 搜索使用英文关键词验证。
+// 中文内容同步通过直接 SELECT FTS 表验证。
+
+/// 测试 skills AFTER INSERT 触发器同步到 skills_fts
+#[sqlx::test]
+async fn test_skill_fts5_trigger_insert_sync(pool: SqlitePool) -> Result<()> {
+    let skill_dao = init_test_env();
+
+    let skill_id = Uuid::now_v7().to_string();
+    let skill = SkillPo::new(
+        skill_id.clone(),
+        "Rust ownership skill".to_string(),
+        "A skill about Rust memory safety".to_string(),
+        vec!["rust".to_string(), "memory".to_string()],
+        "testing".to_string(),
+        "".to_string(),
+        "test-user".to_string(),
+        SkillAuthorType::User,
+        format!("skills/pending/{skill_id}"),
+    );
+
+    let ctx = new_ctx("test-user", pool.clone());
+    skill_dao.insert(ctx, &skill).await?;
+
+    // 1. FTS 表应该有 1 条记录
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM skills_fts")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 1, "INSERT 后 FTS 表应有 1 条记录");
+
+    // 2. 直接查询 FTS 表验证内容同步（含字段对齐）
+    let row = sqlx::query("SELECT rowid, name, description, tags FROM skills_fts")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let name: String = row.get("name");
+    let description: String = row.get("description");
+    let tags: String = row.get("tags");
+    let rowid: i64 = row.get("rowid");
+    assert!(name.contains("Rust"));
+    assert!(description.contains("memory safety"));
+    assert!(tags.contains("rust"));
+    assert!(rowid > 0);
+
+    // 3. 通过 name MATCH 搜索英文关键词
+    let name_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM skills_fts WHERE name MATCH ?")
+            .bind("rust")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(name_count, 1, "name MATCH rust 应命中");
+
+    // 4. 通过 description MATCH 搜索英文关键词
+    let desc_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM skills_fts WHERE description MATCH ?")
+            .bind("memory")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(desc_count, 1, "description MATCH memory 应命中");
+
+    // 5. 通过 tags MATCH 搜索英文关键词
+    let tags_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM skills_fts WHERE tags MATCH ?")
+            .bind("rust")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(tags_count, 1, "tags MATCH rust 应命中");
+
+    Ok(())
+}
+
+/// 测试 skills AFTER UPDATE 触发器同步到 skills_fts（先删旧条目再插新条目）
+#[sqlx::test]
+async fn test_skill_fts5_trigger_update_sync(pool: SqlitePool) -> Result<()> {
+    let skill_dao = init_test_env();
+
+    let skill_id = Uuid::now_v7().to_string();
+    let mut skill = SkillPo::new(
+        skill_id.clone(),
+        "Rust programming skill".to_string(),
+        "Original description about rust".to_string(),
+        vec!["rust".to_string()],
+        "testing".to_string(),
+        "".to_string(),
+        "test-user".to_string(),
+        SkillAuthorType::User,
+        format!("skills/pending/{skill_id}"),
+    );
+
+    let ctx = new_ctx("test-user", pool.clone());
+    skill_dao.insert(ctx.clone(), &skill).await?;
+
+    // 更新 name/description/tags：rust -> python（AFTER UPDATE 触发器先删旧 FTS 条目再插新条目）
+    skill.name = "Python programming skill".to_string();
+    skill.description = "Updated description about python".to_string();
+    skill.tags = serde_json::to_string(&vec!["python".to_string()]).unwrap();
+    skill_dao.update(ctx, &skill).await?;
+
+    // FTS 表仍应只有 1 条记录（update 触发器先删后插，不是新增）
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM skills_fts")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 1, "UPDATE 后 FTS 表仍应只有 1 条记录");
+
+    // 新关键词 python 应能搜到
+    let new_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM skills_fts WHERE name MATCH ?")
+            .bind("python")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(new_count, 1, "更新后应能搜到新关键词 python");
+
+    // 旧关键词 rust 应搜不到（旧 FTS 条目已被触发器删除）
+    let old_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM skills_fts WHERE name MATCH ?")
+            .bind("rust")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(old_count, 0, "更新后旧关键词 rust 应已从 FTS 移除");
+
+    Ok(())
+}
+
+/// 测试 skills AFTER DELETE 触发器同步到 skills_fts
+#[sqlx::test]
+async fn test_skill_fts5_trigger_delete_sync(pool: SqlitePool) -> Result<()> {
+    let skill_dao = init_test_env();
+
+    let skill_id = Uuid::now_v7().to_string();
+    let skill = SkillPo::new(
+        skill_id.clone(),
+        "Rust deletable skill".to_string(),
+        "A skill that will be hard deleted".to_string(),
+        vec!["rust".to_string()],
+        "testing".to_string(),
+        "".to_string(),
+        "test-user".to_string(),
+        SkillAuthorType::User,
+        format!("skills/pending/{skill_id}"),
+    );
+
+    let ctx = new_ctx("test-user", pool.clone());
+    skill_dao.insert(ctx, &skill).await?;
+
+    // 确认 FTS 已有 1 条记录
+    let before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM skills_fts")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(before, 1);
+
+    // 硬删除（注意：DAO 的 delete_by_id 是软删除=UPDATE status，不会触发 AFTER DELETE）
+    // 这里用原始 SQL 触发 AFTER DELETE 触发器
+    sqlx::query("DELETE FROM skills WHERE id = ?")
+        .bind(&skill_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // FTS 表中对应记录应已被触发器删除
+    let after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM skills_fts")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(after, 0, "硬删除后 FTS 表应为空");
+
+    // MATCH 搜索应搜不到
+    let search: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM skills_fts WHERE name MATCH ?")
+            .bind("rust")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(search, 0, "删除后 MATCH 搜索应无结果");
+
+    Ok(())
+}
+
+// ==================== FTS5 DAO search 方法测试 ====================
+
+/// 测试 FTS5 search 方法返回 (SkillPo, fts_rank) 元组，并按 BM25 相关性排序
+#[sqlx::test]
+async fn test_search_returns_fts_rank_and_bm25_order(pool: SqlitePool) -> Result<()> {
+    let skill_dao = init_test_env();
+
+    // 创建 3 个技能：都包含关键词 "rust"，但在不同字段中（影响 BM25 评分）
+    let id1 = Uuid::now_v7().to_string();
+    let skill1 = SkillPo::new(
+        id1.clone(),
+        "Rust Rust Rust".to_string(), // name 中多次出现
+        "A skill about rust programming".to_string(),
+        vec!["rust".to_string()],
+        "testing".to_string(),
+        "".to_string(),
+        "test-user".to_string(),
+        SkillAuthorType::User,
+        format!("skills/pending/{id1}"),
+    );
+
+    let id2 = Uuid::now_v7().to_string();
+    let skill2 = SkillPo::new(
+        id2.clone(),
+        "Programming skill".to_string(),
+        "Rust rust rust rust rust".to_string(), // description 中多次出现
+        vec!["rust".to_string()],
+        "testing".to_string(),
+        "".to_string(),
+        "test-user".to_string(),
+        SkillAuthorType::User,
+        format!("skills/pending/{id2}"),
+    );
+
+    let id3 = Uuid::now_v7().to_string();
+    let skill3 = SkillPo::new(
+        id3.clone(),
+        "Generic Tool".to_string(),
+        "A generic tool".to_string(),
+        vec!["rust".to_string()], // 仅 tags 含
+        "testing".to_string(),
+        "".to_string(),
+        "test-user".to_string(),
+        SkillAuthorType::User,
+        format!("skills/pending/{id3}"),
+    );
+
+    let ctx = new_ctx("test-user", pool.clone());
+    skill_dao.insert(ctx.clone(), &skill1).await?;
+    skill_dao.insert(ctx.clone(), &skill2).await?;
+    skill_dao.insert(ctx, &skill3).await?;
+
+    // 搜索 "rust"，应返回 3 条结果，每条都带 fts_rank
+    let ctx = new_ctx("test-user", pool);
+    let result = skill_dao
+        .search(
+            ctx,
+            SkillSearch {
+                keyword: Some("rust".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    assert_eq!(result.len(), 3, "应返回 3 条匹配结果");
+
+    // 所有结果都应有 fts_rank 值
+    for (po, rank) in &result {
+        assert!(rank.is_some(), "skill {} 的 fts_rank 不应为 None", po.id);
+    }
+
+    // 结果应按 BM25 相关性排序（rank 越小越相关）
+    let ranks: Vec<f32> = result.iter().filter_map(|(_, r)| *r).collect();
+    for i in 0..ranks.len() - 1 {
+        assert!(
+            ranks[i] <= ranks[i + 1],
+            "BM25 排序错误：rank[{}]={} 应 <= rank[{}]={}",
+            i,
+            ranks[i],
+            i + 1,
+            ranks[i + 1]
+        );
+    }
+
+    Ok(())
+}
+
+/// 测试 FTS5 search 方法支持中文关键词（trigram 分词器）
+#[sqlx::test]
+async fn test_search_chinese_keyword(pool: SqlitePool) -> Result<()> {
+    let skill_dao = init_test_env();
+
+    let skill_id = Uuid::now_v7().to_string();
+    let skill = SkillPo::new(
+        skill_id.clone(),
+        "代码审查技能".to_string(),
+        "用于审查 Rust 代码质量的技能".to_string(),
+        vec!["审查".to_string()],
+        "testing".to_string(),
+        "".to_string(),
+        "test-user".to_string(),
+        SkillAuthorType::User,
+        format!("skills/pending/{skill_id}"),
+    );
+
+    let ctx = new_ctx("test-user", pool.clone());
+    skill_dao.insert(ctx, &skill).await?;
+
+    // trigram 分词器对中文基于三字符子串匹配
+    // "代码审查" 是 4 个字符，包含 "代码审" 和 "码审查" 两个 trigram
+    let ctx = new_ctx("test-user", pool.clone());
+    let result = skill_dao
+        .search(
+            ctx,
+            SkillSearch {
+                keyword: Some("代码审查".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].0.id, skill_id);
+    assert!(result[0].1.is_some(), "fts_rank 应有值");
+
+    // 搜索 description 中的中文内容
+    let ctx = new_ctx("test-user", pool);
+    let result = skill_dao
+        .search(
+            ctx,
+            SkillSearch {
+                keyword: Some("代码质量".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(result.len(), 1, "应通过 description 中的中文内容命中");
+
+    Ok(())
+}
+
+/// 测试 FTS5 search 方法空关键词返回空结果
+#[sqlx::test]
+async fn test_search_empty_keyword_returns_empty(pool: SqlitePool) -> Result<()> {
+    let skill_dao = init_test_env();
+
+    let skill_id = Uuid::now_v7().to_string();
+    let skill_dir = format!("skills/pending/{skill_id}");
+    let skill = SkillPo::new(
+        skill_id,
+        "Test Skill".to_string(),
+        "Description".to_string(),
+        vec![],
+        "testing".to_string(),
+        "".to_string(),
+        "test-user".to_string(),
+        SkillAuthorType::User,
+        skill_dir,
+    );
+
+    let ctx = new_ctx("test-user", pool.clone());
+    skill_dao.insert(ctx, &skill).await?;
+
+    // 空关键词应返回空结果（FTS5 MATCH 空字符串会报错，所以直接返回空）
+    let ctx = new_ctx("test-user", pool.clone());
+    let result = skill_dao
+        .search(
+            ctx,
+            SkillSearch {
+                keyword: Some("".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(result.len(), 0);
+
+    // None 关键词也应返回空结果
+    let ctx = new_ctx("test-user", pool);
+    let result = skill_dao
+        .search(
+            ctx,
+            SkillSearch {
+                keyword: None,
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(result.len(), 0);
+
+    Ok(())
+}
+
+/// 测试 FTS5 search 方法结合业务过滤条件（status 过滤）
+#[sqlx::test]
+async fn test_search_with_status_filter(pool: SqlitePool) -> Result<()> {
+    let skill_dao = init_test_env();
+
+    // 创建一个 Published 技能和一个 Draft 技能，都包含 "rust" 关键词
+    let id1 = Uuid::now_v7().to_string();
+    let mut skill1 = SkillPo::new(
+        id1.clone(),
+        "Rust Published".to_string(),
+        "Published rust skill".to_string(),
+        vec!["rust".to_string()],
+        "testing".to_string(),
+        "".to_string(),
+        "test-user".to_string(),
+        SkillAuthorType::User,
+        format!("skills/pending/{id1}"),
+    );
+    skill1.status = SkillStatus::Published;
+
+    let id2 = Uuid::now_v7().to_string();
+    let skill2 = SkillPo::new(
+        id2.clone(),
+        "Rust Draft".to_string(),
+        "Draft rust skill".to_string(),
+        vec!["rust".to_string()],
+        "testing".to_string(),
+        "".to_string(),
+        "test-user".to_string(),
+        SkillAuthorType::User,
+        format!("skills/pending/{id2}"),
+    );
+    // skill2 默认是 Draft
+
+    let ctx = new_ctx("test-user", pool.clone());
+    skill_dao.insert(ctx.clone(), &skill1).await?;
+    skill_dao.insert(ctx, &skill2).await?;
+
+    // 不加过滤：应返回 2 条
+    let ctx = new_ctx("test-user", pool.clone());
+    let result = skill_dao
+        .search(
+            ctx,
+            SkillSearch {
+                keyword: Some("rust".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(result.len(), 2);
+
+    // 过滤只看 Published：应返回 1 条
+    let ctx = new_ctx("test-user", pool);
+    let result = skill_dao
+        .search(
+            ctx,
+            SkillSearch {
+                keyword: Some("rust".to_string()),
+                filters: SkillQuery {
+                    status: Some(SkillStatus::Published),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].0.id, id1);
+
+    Ok(())
+}
+
+/// 测试 query 方法中 keyword 被忽略（已迁移到 FTS5 search 方法）
+#[sqlx::test]
+async fn test_query_keyword_is_ignored(pool: SqlitePool) -> Result<()> {
+    let skill_dao = init_test_env();
+
+    let id1 = Uuid::now_v7().to_string();
+    let skill1 = SkillPo::new(
+        id1.clone(),
+        "Rust Programming".to_string(),
+        "A rust skill".to_string(),
+        vec!["rust".to_string()],
+        "testing".to_string(),
+        "".to_string(),
+        "test-user".to_string(),
+        SkillAuthorType::User,
+        format!("skills/pending/{id1}"),
+    );
+
+    let id2 = Uuid::now_v7().to_string();
+    let skill2 = SkillPo::new(
+        id2.clone(),
+        "Python Programming".to_string(),
+        "A python skill".to_string(),
+        vec!["python".to_string()],
+        "testing".to_string(),
+        "".to_string(),
+        "test-user".to_string(),
+        SkillAuthorType::User,
+        format!("skills/pending/{id2}"),
+    );
+
+    let ctx = new_ctx("test-user", pool.clone());
+    skill_dao.insert(ctx.clone(), &skill1).await?;
+    skill_dao.insert(ctx, &skill2).await?;
+
+    // query 方法带 keyword：keyword 会被忽略，返回全部结果（不按关键词过滤）
+    let ctx = new_ctx("test-user", pool);
+    let result = skill_dao
+        .query(
+            ctx,
+            SkillQuery {
+                keyword: Some("rust".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    // keyword 被忽略，应返回全部 2 条（而不是只返回包含 "rust" 的 1 条）
+    assert_eq!(
+        result.len(),
+        2,
+        "query 方法的 keyword 应被忽略，返回全部结果"
+    );
 
     Ok(())
 }

@@ -3,6 +3,7 @@
 use common::error::Result;
 use common::models::{ProjectStats, CallSummary, StatsFetchOptions};
 use crate::models::project::ProjectPo;
+use crate::models::vector::{VectorIndexParams, VectorRow, VectorSearchHit};
 use crate::pkg::RequestContext;
 use crate::pkg::stats::{StatFilter, StatAggregation, StatEvent, Stats};
 use common::enums::ProjectStatus;
@@ -14,6 +15,23 @@ pub struct ProjectQuery {
     pub root_user_id: Option<String>,
     pub status_in: Option<Vec<ProjectStatus>>,
     pub limit: Option<usize>,
+    /// 按 ID 批量查询（向量搜索结果回填用）
+    pub ids: Option<Vec<String>>,
+    /// 关键词搜索（用于 FTS5 全文检索，query 方法忽略此字段，由 search_projects 处理）
+    pub keyword: Option<String>,
+}
+
+/// ✅ Project 搜索统一入参（关键词搜索 + 向量语义搜索共用）
+#[derive(Debug, Clone, Default)]
+pub struct ProjectSearch {
+    /// 关键词搜索查询（用于 FTS5 全文检索）
+    pub keyword: Option<String>,
+    /// 查询向量（用于向量语义搜索，DAL 层填充）
+    pub query_vector: Option<Vec<f32>>,
+    /// 返回 Top K 结果（向量搜索专用）
+    pub top_k: Option<i32>,
+    /// ✅ 业务过滤条件（直接复用 ProjectQuery）
+    pub filters: ProjectQuery,
 }
 
 /// Project DAO 接口
@@ -71,6 +89,58 @@ pub trait ProjectDao: Send + Sync + std::fmt::Debug {
         root_user_id: &str,
         status: ProjectStatus,
     ) -> Result<u64>;
+
+    /// 全文检索项目
+    ///
+    /// 使用 FTS5 MATCH + BM25 排序，返回匹配的项目及 FTS 相关性评分。
+    ///
+    /// # 参数
+    /// - ctx: 请求上下文
+    /// - search: 统一搜索参数（关键词 + 业务过滤）
+    /// # 返回
+    /// - 匹配的项目列表（按 BM25 相关性排序），每条携带 `fts_rank`（越小越相关）
+    async fn search_projects(
+        &self,
+        ctx: RequestContext,
+        search: ProjectSearch,
+    ) -> Result<Vec<(ProjectPo, Option<f32>)>>;
+}
+
+// ==================== ProjectVectorDao Trait ====================
+
+/// ✅ Project Vector DAO trait - 仅负责项目向量索引的 CRUD，与基础项目数据解耦
+/// 所有方法返回完整的行级结构体，与底层 VectorStore trait 保持一致
+#[async_trait::async_trait]
+pub trait ProjectVectorDao: Send + Sync {
+    /// 插入或更新项目的向量索引
+    async fn upsert_vector(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+        vector_params: &VectorIndexParams,
+    ) -> Result<()>;
+
+    /// 纯向量语义搜索，返回完整的向量行数据 + 相似度距离
+    async fn search_vector(
+        &self,
+        ctx: RequestContext,
+        query_vector: &[f32],
+        top_k: i32,
+    ) -> Result<Vec<VectorSearchHit>>;
+
+    /// 获取指定项目的完整向量行数据（包含元信息）
+    async fn get_vector_row(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+    ) -> Result<Option<VectorRow>>;
+
+    /// 删除项目的向量索引
+    async fn delete_vector(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+    ) -> Result<()>;
 }
 
 /// Project 统计查询参数
@@ -152,10 +222,19 @@ pub trait ProjectStatsDao: Send + Sync {
 }
 
 pub mod sqlite;
-pub use self::sqlite::{dao, init, new};
+pub mod vector;
+
+pub use self::sqlite::{dao, new};
+pub use self::vector::{dao as vector_dao, new as new_project_vector_dao};
 
 pub mod stats_duckdb;
 pub use self::stats_duckdb::{stats_dao, stats_init, stats_new};
+
+/// 统一初始化所有 Project DAO 单例（基础 DAO + 向量 DAO）
+pub fn init() {
+    sqlite::init();
+    vector::init();
+}
 
 #[cfg(test)]
 mod sqlite_test;

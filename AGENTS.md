@@ -14,7 +14,7 @@
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + rig-core 0.34
 - **前端**：Dioxus 0.7 (WebAssembly)
-- **技术特色**：严格分层架构、类型安全、615 个测试 100% 通过率
+- **技术特色**：严格分层架构、类型安全、693 个测试 100% 通过率
 
 ### 1.2 已实现核心功能
 
@@ -41,7 +41,7 @@
 | ⏰ 定时触发器系统 | ✅ | Cron Trigger 管理、后台扫描、事件投递、系统领域基础设施 |
 | 🏛️ 记忆沉淀机制 | ✅ | Agent 休息与沉淀、短期记忆→长期知识图谱、定时触发沉淀 |
 | 🎒 技能包机制 | ✅ | tag 分组技能、批量安装、安装即复制、卸载保留副本 |
-| 🔎 综合搜索 | ✅ | FTS5 关键词 + 向量语义 + 图谱关系 三位一体混合搜索 |
+| 🔎 综合搜索 | ✅ | FTS5 关键词 + 向量语义 + 图谱关系 三位一体混合搜索，Hybrid/Vector/Keyword 三态匹配 |
 
 ### 1.3 整体完成度与测试统计（2026-07-12 更新）
 
@@ -459,6 +459,16 @@ Agent
 - **综合搜索三级排序**：Hybrid 优先 → Vector → Keyword，组内分别按 vector_distance / fts_rank 排序
 - **关系关键词搜索补全**：`search_relations_internal` 通过 knowledge_node_fts 搜索节点 → 查关联关系 → 返回节点和关系
 - **测试统计**：615 个测试 100% 通过（+14）
+
+**✅ 全实体 FTS5 全文搜索改造**
+- **统一搜索标准**：为 Skill/Tool/Message/Task/Project/Agent 6 大实体建立统一的混合搜索模式（FTS5 关键词 + 向量语义 + 三态匹配），全面弃用 LIKE
+- **FTS5 迁移文件**：`20260712000001_entity_fts5.sql`，6 个 FTS5 虚拟表（trigram 分词器）+ 18 个触发器（INSERT/UPDATE/DELETE × 6 表）+ 6 条存量回填
+- **三态匹配模式**：Hybrid（向量+关键词双命中）/ Vector（仅向量）/ Keyword（仅关键词），每种附加 SearchMatchInfo（vector_distance + fts_rank）
+- **综合搜索三级排序**：Hybrid 优先 → Vector 次之 → Keyword 最后，组内按 vector_distance / fts_rank 升序
+- **向量索引自动维护**：所有实体 create/update 时自动 upsert 向量索引，delete/archive 时自动清理
+- **ToolVectorDao 补全**：新增 `delete_vector` 方法，完善 Tool 向量索引生命周期管理
+- **Tool DAL 向量索引维护**：create_tool/update_tool/delete_tool 补全向量索引自动维护逻辑
+- **测试统计**：693 个测试 100% 通过（+78，含 6 实体搜索三态匹配测试）
 
 ### 2026-07-11 里程碑
 **✅ Runtime Domain Phase 4A - 工具包机制 + 任务执行闭环**

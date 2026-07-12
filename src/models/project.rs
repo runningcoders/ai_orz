@@ -57,12 +57,14 @@ pub struct ProjectPo {
 pub struct Project {
     /// 底层持久化对象
     pub po: ProjectPo,
+    /// 搜索匹配元信息（搜索场景下由 DAL 层填充）
+    pub search_match: Option<crate::models::vector::SearchMatchInfo>,
 }
 
 impl Project {
     /// 从 PO 创建 Project
     pub fn from_po(po: ProjectPo) -> Self {
-        Self { po }
+        Self { po, search_match: None }
     }
 
     /// 创建新的 Project
@@ -97,6 +99,7 @@ impl Project {
                 end_at,
                 created_by,
             ),
+            search_match: None,
         }
     }
 
@@ -209,5 +212,40 @@ impl crate::pkg::request_context::EnrichContext for ProjectPo {
 impl EnrichContext for Project {
     fn enrich(&self, builder: RequestContextBuilder) -> RequestContextBuilder {
         self.po.enrich(builder)
+    }
+}
+
+// ==================== Vectorizable 实现 ====================
+
+impl crate::models::vector::Vectorizable for ProjectPo {
+    fn vectorize_text(&self) -> String {
+        // ProjectPo 向量化：name + description + workflow + guidance
+        // workflow 和 guidance 可能为 NULL/空，跳过空值避免多余换行
+        let mut parts: Vec<&str> = vec![&self.name, &self.description];
+        if let Some(w) = &self.workflow {
+            if !w.trim().is_empty() {
+                parts.push(w.as_str());
+            }
+        }
+        if let Some(g) = &self.guidance {
+            if !g.trim().is_empty() {
+                parts.push(g.as_str());
+            }
+        }
+        parts.join("\n")
+    }
+
+    fn vector_collection() -> &'static str {
+        "projects"
+    }
+}
+
+impl crate::models::vector::Vectorizable for Project {
+    fn vectorize_text(&self) -> String {
+        self.po.vectorize_text()
+    }
+
+    fn vector_collection() -> &'static str {
+        "projects"
     }
 }

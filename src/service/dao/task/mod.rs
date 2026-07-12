@@ -3,6 +3,7 @@
 use common::error::Result;
 use common::models::{TaskStats, CallSummary, StatsFetchOptions};
 use crate::models::task::TaskPo;
+use crate::models::vector::{VectorIndexParams, VectorRow, VectorSearchHit};
 use crate::pkg::RequestContext;
 use crate::pkg::stats::{StatFilter, StatAggregation, StatEvent, Stats};
 use common::enums::AssigneeType;
@@ -16,7 +17,24 @@ pub struct TaskQuery {
     pub assignee_id: Option<String>,
     pub project_id: Option<String>,
     pub status_in: Option<Vec<TaskStatus>>,
+    /// 按 ID 批量查询（向量搜索结果回填用）
+    pub ids: Option<Vec<String>>,
+    /// 关键词搜索（已在 search 方法中通过 FTS5 实现，query 方法中忽略）
+    pub keyword: Option<String>,
     pub limit: Option<usize>,
+}
+
+/// ✅ Task 搜索统一入参（关键词搜索 + 向量语义搜索共用）
+#[derive(Debug, Clone, Default)]
+pub struct TaskSearch {
+    /// 关键词搜索查询（用于 FTS5 全文检索）
+    pub keyword: Option<String>,
+    /// 查询向量（用于向量语义搜索，DAL 层填充）
+    pub query_vector: Option<Vec<f32>>,
+    /// 返回 Top K 结果（向量搜索专用）
+    pub top_k: Option<i32>,
+    /// ✅ 业务过滤条件（直接复用 TaskQuery）
+    pub filters: TaskQuery,
 }
 
 /// Task DAO 接口
@@ -28,6 +46,21 @@ pub trait TaskDao: Send + Sync + std::fmt::Debug {
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<TaskPo>>;
     /// 通用查询
     async fn query(&self, ctx: RequestContext, query: TaskQuery) -> Result<Vec<TaskPo>>;
+
+    /// 全文检索任务（FTS5 MATCH + BM25 排序）
+    ///
+    /// 使用 tasks_fts 虚拟表进行全文检索，返回匹配的任务及 FTS 相关性评分。
+    ///
+    /// # 参数
+    /// - ctx: 请求上下文
+    /// - search: 统一搜索参数（关键词 + 业务过滤）
+    /// # 返回
+    /// - 匹配的任务列表（按 BM25 相关性排序），每条携带 `fts_rank`（越小越相关）
+    async fn search_tasks(
+        &self,
+        ctx: RequestContext,
+        search: TaskSearch,
+    ) -> Result<Vec<(TaskPo, Option<f32>)>>;
     /// 根据分配对象查询任务列表
     async fn list_by_assignee(
         &self,
@@ -68,6 +101,38 @@ pub trait TaskDao: Send + Sync + std::fmt::Debug {
         assignee_id: &str,
         status: TaskStatus,
     ) -> Result<u64>;
+}
+
+// ==================== TaskVectorDao Trait ====================
+
+/// ✅ Task Vector DAO trait - 仅负责任务向量索引的 CRUD，与基础任务数据完全解耦
+#[async_trait::async_trait]
+pub trait TaskVectorDao: Send + Sync {
+    /// 索引任务向量（title + description 拼接）
+    async fn upsert_vector(
+        &self,
+        ctx: RequestContext,
+        task_id: &str,
+        vector_params: &VectorIndexParams,
+    ) -> Result<()>;
+
+    /// 语义搜索任务，返回完整的向量行数据 + 相似度距离
+    async fn search_vector(
+        &self,
+        ctx: RequestContext,
+        query_vector: &[f32],
+        top_k: i32,
+    ) -> Result<Vec<VectorSearchHit>>;
+
+    /// 获取指定任务的完整向量行数据（包含元信息）
+    async fn get_vector_row(
+        &self,
+        ctx: RequestContext,
+        task_id: &str,
+    ) -> Result<Option<VectorRow>>;
+
+    /// 删除任务的向量索引
+    async fn delete_vector(&self, ctx: RequestContext, task_id: &str) -> Result<()>;
 }
 
 /// Task 统计查询参数
@@ -151,11 +216,17 @@ pub trait TaskStatsDao: Send + Sync {
 pub mod sqlite;
 pub use self::sqlite::{dao, get_dao, init, new};
 
+pub mod vector;
+pub use self::vector::{dao as vector_dao, init as init_vector, new as new_task_vector_dao};
+
 pub mod stats_duckdb;
 pub use self::stats_duckdb::{stats_dao, stats_init, stats_new};
 
 #[cfg(test)]
 mod sqlite_test;
+
+#[cfg(test)]
+mod vector_test;
 
 #[cfg(test)]
 mod stats_duckdb_test;

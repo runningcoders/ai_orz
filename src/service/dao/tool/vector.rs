@@ -67,4 +67,11 @@ impl ToolVectorDao for ToolVectorDaoImpl {
             .await
             .map_err(|e| err!(Internal, "Vector store error: {e}").with_source(e))
     }
+
+    async fn delete_vector(&self, _ctx: RequestContext, tool_id: &str) -> Result<()> {
+        _ctx.vector_store()
+            .delete("tools", tool_id)
+            .await
+            .map_err(|e| err!(Internal, "Vector store error: {e}").with_source(e))
+    }
 }

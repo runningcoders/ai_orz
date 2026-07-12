@@ -1,16 +1,25 @@
 //! Project DAL 模块
 //!
 //! 职责：Project 领域的数据访问层，封装 ProjectDao 提供统一的查询接口
+//! - 基础 CRUD（委托 ProjectDao）
+//! - 向量索引自动维护（create/update 时调用 ProjectVectorDao）
+//! - 混合搜索（FTS5 关键词 + 向量语义）
 
 use common::error::Result;
 use common::models::{ModelCallStats, ProjectStats, StatsFetchOptions};
 use crate::models::project::Project;
+use crate::models::vector::{MatchType, SearchMatchInfo, Vectorizable};
 use crate::pkg::RequestContext;
 use crate::pkg::stats::{ModelCallEvent, ProjectEvent};
+use crate::service::dao::cortex::CortexDao;
+use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::project;
-use crate::service::dao::project::{ProjectDao, ProjectQuery, ProjectStatsDao, ProjectStatsQuery};
+use crate::service::dao::project::{
+    ProjectDao, ProjectQuery, ProjectSearch, ProjectStatsDao, ProjectStatsQuery, ProjectVectorDao,
+};
 use crate::service::dao::model_provider::{ModelProviderStatsDao, ModelProviderStatsQuery};
 use common::enums::ProjectStatus;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock};
 
 use crate::enrich_ctx;
@@ -30,18 +39,31 @@ pub fn init() {
     crate::service::dao::model_provider::stats_init();
     let _ = PROJECT_DAL.set(new(
         project::dao(),
+        project::vector_dao(),
         project::stats_dao(),
         crate::service::dao::model_provider::stats_dao(),
+        crate::service::dao::cortex::dao(),
+        crate::service::dao::model_provider::dao(),
     ));
 }
 
 /// 创建 Project DAL（返回 trait 对象）
 pub fn new(
     project_dao: Arc<dyn ProjectDao + Send + Sync>,
+    project_vector_dao: Arc<dyn ProjectVectorDao + Send + Sync>,
     project_stats_dao: Arc<dyn ProjectStatsDao<ProjectEvent = ProjectEvent>>,
     model_provider_stats_dao: Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>,
+    cortex_dao: Arc<dyn CortexDao + Send + Sync>,
+    model_provider_dao: Arc<dyn ModelProviderDao + Send + Sync>,
 ) -> Arc<dyn ProjectDal + Send + Sync> {
-    Arc::new(ProjectDalImpl { project_dao, project_stats_dao, model_provider_stats_dao })
+    Arc::new(ProjectDalImpl {
+        project_dao,
+        project_vector_dao,
+        project_stats_dao,
+        model_provider_stats_dao,
+        cortex_dao,
+        model_provider_dao,
+    })
 }
 
 // ==================== DAL 接口 ====================
@@ -114,6 +136,21 @@ pub trait ProjectDal: Send + Sync {
         status: ProjectStatus,
     ) -> Result<u64>;
 
+    // ==================== 搜索 ====================
+
+    /// 🔍 统一混合搜索（关键词 + 向量语义）
+    ///
+    /// 自动根据参数选择搜索策略：
+    /// - keyword 存在 → 走 FTS5 全文检索
+    /// - keyword 存在且 Embedding Provider 可用 → 同时走向量语义搜索，合并结果
+    /// - 仅 query_vector 存在 → 走纯向量搜索
+    /// - filters 透传业务过滤条件（root_user_id / status_in / limit）
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: ProjectSearch,
+    ) -> Result<Vec<Project>>;
+
     // ==================== 统计查询 ====================
 
     /// 获取 Project 统计数据（按 options 控制返回哪些维度）
@@ -131,15 +168,64 @@ pub trait ProjectDal: Send + Sync {
 /// Project DAL 实现
 struct ProjectDalImpl {
     project_dao: Arc<dyn ProjectDao + Send + Sync>,
+    project_vector_dao: Arc<dyn ProjectVectorDao + Send + Sync>,
     project_stats_dao: Arc<dyn ProjectStatsDao<ProjectEvent = ProjectEvent>>,
     model_provider_stats_dao: Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>,
+    cortex_dao: Arc<dyn CortexDao + Send + Sync>,
+    model_provider_dao: Arc<dyn ModelProviderDao + Send + Sync>,
 }
 
 #[async_trait::async_trait]
 impl ProjectDal for ProjectDalImpl {
     async fn create(&self, ctx: RequestContext, project: &Project) -> Result<()> {
         let ctx = enrich_ctx!(&ctx, project);
-        self.project_dao.insert(ctx, &project.po).await
+        // 1. 写入数据库
+        self.project_dao.insert(ctx.clone(), &project.po).await?;
+
+        // 2. 向量索引自动维护（失败仅 warn 降级，不影响主流程）
+        match try_build_vector_params_for_entity(
+            ctx.clone(),
+            &self.cortex_dao,
+            &self.model_provider_dao,
+            &project.po,
+        )
+        .await
+        {
+            Ok(Some(vec_params)) => {
+                if let Err(e) = self
+                    .project_vector_dao
+                    .upsert_vector(ctx.clone(), &project.po.id, &vec_params)
+                    .await
+                {
+                    log_warn!(
+                        &ctx,
+                        "vector_index",
+                        project_id = %project.po.id,
+                        error = ?e,
+                        "项目向量索引写入失败，已降级"
+                    );
+                }
+            }
+            Ok(None) => {
+                log_debug!(
+                    &ctx,
+                    "vector_index",
+                    project_id = %project.po.id,
+                    "无可用 Embedding Provider，跳过项目向量索引"
+                );
+            }
+            Err(e) => {
+                log_warn!(
+                    &ctx,
+                    "vector_index",
+                    project_id = %project.po.id,
+                    error = ?e,
+                    "项目向量化失败，已降级"
+                );
+            }
+        }
+
+        Ok(())
     }
 
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Project>> {
@@ -185,7 +271,63 @@ impl ProjectDal for ProjectDalImpl {
 
     async fn update(&self, ctx: RequestContext, project: &Project) -> Result<()> {
         let ctx = enrich_ctx!(&ctx, project);
-        self.project_dao.update(ctx, &project.po).await
+        // 1. 更新数据库
+        self.project_dao.update(ctx.clone(), &project.po).await?;
+
+        // 2. 向量索引自动维护：内容变化时重新索引（失败仅 warn 降级）
+        // 先检查内容哈希是否变化，避免不必要的重索引
+        let old_hash = self
+            .project_vector_dao
+            .get_vector_row(ctx.clone(), &project.po.id)
+            .await?
+            .map(|r| r.meta.content_hash);
+        let new_hash = project.po.vector_content_hash();
+
+        if old_hash.as_deref() != Some(&new_hash) {
+            match try_build_vector_params_for_entity(
+                ctx.clone(),
+                &self.cortex_dao,
+                &self.model_provider_dao,
+                &project.po,
+            )
+            .await
+            {
+                Ok(Some(vec_params)) => {
+                    if let Err(e) = self
+                        .project_vector_dao
+                        .upsert_vector(ctx.clone(), &project.po.id, &vec_params)
+                        .await
+                    {
+                        log_warn!(
+                            &ctx,
+                            "vector_index",
+                            project_id = %project.po.id,
+                            error = ?e,
+                            "项目向量索引更新失败，已降级"
+                        );
+                    }
+                }
+                Ok(None) => {
+                    log_debug!(
+                        &ctx,
+                        "vector_index",
+                        project_id = %project.po.id,
+                        "无可用 Embedding Provider，跳过项目向量索引更新"
+                    );
+                }
+                Err(e) => {
+                    log_warn!(
+                        &ctx,
+                        "vector_index",
+                        project_id = %project.po.id,
+                        error = ?e,
+                        "项目向量化失败，跳过向量索引更新"
+                    );
+                }
+            }
+        }
+
+        Ok(())
     }
 
     async fn update_status(
@@ -209,8 +351,11 @@ impl ProjectDal for ProjectDalImpl {
     ) -> Result<()> {
         let ctx = ctx.to_builder().project_id(id).build();
         self.project_dao
-            .update_status(ctx, id, ProjectStatus::Archived, modified_by)
-            .await
+            .update_status(ctx.clone(), id, ProjectStatus::Archived, modified_by)
+            .await?;
+        // 归档时清理向量索引
+        let _ = self.project_vector_dao.delete_vector(ctx, id).await;
+        Ok(())
     }
 
     async fn count_by_root_user(
@@ -230,6 +375,212 @@ impl ProjectDal for ProjectDalImpl {
         self.project_dao
             .count_by_root_user_and_status(ctx, root_user_id, status)
             .await
+    }
+
+    // ==================== 搜索 ====================
+
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: ProjectSearch,
+    ) -> Result<Vec<Project>> {
+        // 向量距离阈值（默认 0.8，余弦距离 0-2，0 完全相同）
+        const VECTOR_DISTANCE_THRESHOLD: f32 = 0.8;
+
+        // Step 1: 准备向量搜索结果容器
+        let mut vector_scores: HashMap<String, f32> = HashMap::new();
+        let mut vector_ids: HashSet<String> = HashSet::new();
+
+        // Step 2: 如果有关键词，尝试向量搜索（用关键词生成查询向量）
+        if search.keyword.is_some() {
+            match try_build_vector_params_for_search(
+                ctx.clone(),
+                &self.cortex_dao,
+                &self.model_provider_dao,
+                search.keyword.as_deref().unwrap_or(""),
+            )
+            .await
+            {
+                Ok(Some(vec_params)) => {
+                    // 向量搜索（前 50 条）
+                    match self
+                        .project_vector_dao
+                        .search_vector(ctx.clone(), &vec_params.vector, 50)
+                        .await
+                    {
+                        Ok(vector_results) => {
+                            // 过滤距离小于阈值的结果
+                            let filtered_results: Vec<(String, f32)> = vector_results
+                                .into_iter()
+                                .filter(|hit| hit.distance < VECTOR_DISTANCE_THRESHOLD)
+                                .map(|hit| (hit.row.id, hit.distance))
+                                .collect();
+
+                            vector_ids =
+                                filtered_results.iter().map(|(id, _)| id.clone()).collect();
+                            vector_scores = filtered_results.into_iter().collect();
+                        }
+                        Err(e) => {
+                            // 向量搜索失败，降级到纯关键词搜索
+                            log_warn!(
+                                &ctx,
+                                "vector_search",
+                                "项目向量搜索失败，降级到关键词搜索: {}",
+                                e
+                            );
+                        }
+                    }
+                }
+                Ok(None) => {
+                    log_debug!(
+                        &ctx,
+                        "vector_search",
+                        "无可用 Embedding Provider，跳过项目向量搜索"
+                    );
+                }
+                Err(e) => {
+                    log_warn!(
+                        &ctx,
+                        "vector_search",
+                        error = ?e,
+                        "项目向量化失败，跳过向量搜索"
+                    );
+                }
+            }
+        }
+
+        // Step 3: 执行关键词搜索（DAO 返回 Vec<(Po, fts_rank)>）
+        let keyword_results = self
+            .project_dao
+            .search_projects(ctx.clone(), search.clone())
+            .await?;
+
+        // 提取 fts_rank 并转换为 Vec<Po> 便于聚合
+        let mut fts_ranks: HashMap<String, f32> = HashMap::new();
+        let keyword_pos: Vec<crate::models::project::ProjectPo> = keyword_results
+            .into_iter()
+            .map(|(po, rank)| {
+                if let Some(r) = rank {
+                    fts_ranks.insert(po.id.clone(), r);
+                }
+                po
+            })
+            .collect();
+
+        // Step 4: 聚合结果（如果有向量结果但不在关键词结果中，用通用 query 批量获取）
+        let mut all_pos = keyword_pos.clone();
+
+        if !vector_ids.is_empty() {
+            let ids_to_fetch: Vec<String> = vector_ids
+                .into_iter()
+                .filter(|id| !keyword_pos.iter().any(|po| po.id == *id))
+                .collect();
+
+            if !ids_to_fetch.is_empty() {
+                // 用通用 query 批量获取 ids_to_fetch 的结果
+                let query_for_ids = ProjectQuery {
+                    ids: Some(ids_to_fetch),
+                    ..search.filters.clone()
+                };
+                let vector_pos = self.project_dao.query(ctx.clone(), query_for_ids).await?;
+                all_pos.extend(vector_pos);
+            }
+        }
+
+        // Step 5: 去重
+        all_pos.sort_by(|a, b| a.id.cmp(&b.id));
+        all_pos.dedup_by(|a, b| a.id == b.id);
+
+        // Step 6: 构建业务对象（三态匹配：Hybrid / Vector / Keyword）
+        let mut projects = Vec::with_capacity(all_pos.len());
+        for po in all_pos {
+            let has_vector = vector_scores.contains_key(&po.id);
+            let has_keyword = fts_ranks.contains_key(&po.id);
+            let match_info = if has_vector && has_keyword {
+                // 双命中：向量 + 关键词
+                Some(SearchMatchInfo {
+                    match_type: MatchType::Hybrid,
+                    vector_distance: vector_scores.get(&po.id).copied(),
+                    fts_rank: fts_ranks.get(&po.id).copied(),
+                    ..Default::default()
+                })
+            } else if has_vector {
+                // 仅向量命中
+                Some(SearchMatchInfo {
+                    match_type: MatchType::Vector,
+                    vector_distance: vector_scores.get(&po.id).copied(),
+                    ..Default::default()
+                })
+            } else if has_keyword {
+                // 仅关键词命中
+                Some(SearchMatchInfo {
+                    match_type: MatchType::Keyword,
+                    fts_rank: fts_ranks.get(&po.id).copied(),
+                    ..Default::default()
+                })
+            } else {
+                None
+            };
+            projects.push(Project {
+                po,
+                search_match: match_info,
+            });
+        }
+
+        // Step 7: 统一排序：Hybrid 优先 → Vector 次之 → Keyword 最后
+        //    组内排序：Hybrid/Vector 按向量距离升序，Keyword 按 fts_rank 升序（BM25 越小越相关）
+        projects.sort_by(|a, b| {
+            let a_type = a.search_match.as_ref().map(|m| m.match_type);
+            let b_type = b.search_match.as_ref().map(|m| m.match_type);
+            let order_a = match a_type {
+                Some(MatchType::Hybrid) => 0,
+                Some(MatchType::Vector) => 1,
+                _ => 2,
+            };
+            let order_b = match b_type {
+                Some(MatchType::Hybrid) => 0,
+                Some(MatchType::Vector) => 1,
+                _ => 2,
+            };
+            order_a.cmp(&order_b).then_with(|| {
+                match (a_type, b_type) {
+                    (Some(MatchType::Hybrid), Some(MatchType::Hybrid))
+                    | (Some(MatchType::Vector), Some(MatchType::Vector)) => {
+                        let a_dist = a
+                            .search_match
+                            .as_ref()
+                            .and_then(|m| m.vector_distance)
+                            .unwrap_or(f32::MAX);
+                        let b_dist = b
+                            .search_match
+                            .as_ref()
+                            .and_then(|m| m.vector_distance)
+                            .unwrap_or(f32::MAX);
+                        a_dist.partial_cmp(&b_dist).unwrap_or(std::cmp::Ordering::Equal)
+                    }
+                    _ => {
+                        let a_rank = a
+                            .search_match
+                            .as_ref()
+                            .and_then(|m| m.fts_rank)
+                            .unwrap_or(f32::MAX);
+                        let b_rank = b
+                            .search_match
+                            .as_ref()
+                            .and_then(|m| m.fts_rank)
+                            .unwrap_or(f32::MAX);
+                        a_rank.partial_cmp(&b_rank).unwrap_or(std::cmp::Ordering::Equal)
+                    }
+                }
+            })
+        });
+
+        // Step 8: 应用 limit
+        if let Some(limit) = search.filters.limit {
+            projects.truncate(limit);
+        }
+
+        Ok(projects)
     }
 
     // ==================== 统计查询 ====================
@@ -252,4 +603,54 @@ impl ProjectDal for ProjectDalImpl {
         };
         self.model_provider_stats_dao.get_stats(ctx, query, options).await
     }
+}
+
+// ==================== Helpers ====================
+
+/// 尝试为实体构建向量索引参数（用于索引场景）
+///
+/// 任何中间步骤失败都会向上抛错；调用方决定是否 warn 降级。
+/// 返回 `Ok(None)` 表示无 Embedding Provider 配置（合法场景）。
+async fn try_build_vector_params_for_entity(
+    ctx: RequestContext,
+    cortex_dao: &Arc<dyn CortexDao + Send + Sync>,
+    model_provider_dao: &Arc<dyn ModelProviderDao + Send + Sync>,
+    entity: &dyn Vectorizable,
+) -> Result<Option<crate::models::vector::VectorIndexParams>> {
+    let Some(provider) = model_provider_dao
+        .get_default_embedding_provider(ctx.clone())
+        .await?
+    else {
+        return Ok(None);
+    };
+
+    let cortex = cortex_dao.create_cortex_trait(ctx.clone(), &provider, vec![])?;
+    let params = cortex_dao
+        .embed_entity(ctx, cortex.as_ref(), entity)
+        .await?;
+    Ok(Some(params))
+}
+
+/// 尝试为查询文本构建向量索引参数（用于搜索场景）
+///
+/// 任何中间步骤失败都会向上抛错；调用方决定是否 warn 降级。
+/// 返回 `Ok(None)` 表示无 Embedding Provider 配置（合法场景）。
+async fn try_build_vector_params_for_search(
+    ctx: RequestContext,
+    cortex_dao: &Arc<dyn CortexDao + Send + Sync>,
+    model_provider_dao: &Arc<dyn ModelProviderDao + Send + Sync>,
+    text: &str,
+) -> Result<Option<crate::models::vector::VectorIndexParams>> {
+    let Some(provider) = model_provider_dao
+        .get_default_embedding_provider(ctx.clone())
+        .await?
+    else {
+        return Ok(None);
+    };
+
+    let cortex = cortex_dao.create_cortex_trait(ctx.clone(), &provider, vec![])?;
+    let params = cortex_dao
+        .embed_text_for_search(ctx.clone(), cortex.as_ref(), text)
+        .await?;
+    Ok(Some(params))
 }

@@ -1,17 +1,123 @@
 //! Message Delivery 单元测试
 
 use super::domain;
+use crate::models::brain::CortexTrait;
 use crate::models::message::{Message, TaskAssignmentMessage, ToolCallMessage};
+use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::RequestContext;
+use crate::service::dao::cortex::CortexDao;
+use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderQuery};
 use crate::service::domain::message::{
     DeliverMessageCommand, MessageDomain, SendTaskAssignmentCommand, SendToAgentCommand,
     SendToUserCommand, SendToolCallRequestCommand, SendToolCallResultCommand,
     ToolCallExecutionOutcome, ToolCallTraceRef,
 };
 use common::enums::{MessageRole, MessageStatus, MessageType};
+use common::error::Result;
 use serde_json::json;
 use sqlx::SqlitePool;
+use std::sync::Arc;
 use uuid::Uuid;
+
+// ========== Mock 实现（跳过向量依赖）==========
+
+/// Mock ModelProviderDao（返回 None，跳过向量搜索）
+struct MockModelProviderDao;
+
+#[async_trait::async_trait]
+impl ModelProviderDao for MockModelProviderDao {
+    async fn insert(&self, _ctx: RequestContext, _provider: &ModelProviderPo) -> Result<()> {
+        Ok(())
+    }
+    async fn find_by_id(
+        &self,
+        _ctx: RequestContext,
+        _id: &str,
+    ) -> Result<Option<ModelProviderPo>> {
+        Ok(None)
+    }
+    async fn query(
+        &self,
+        _ctx: RequestContext,
+        _query: ModelProviderQuery,
+    ) -> Result<Vec<ModelProviderPo>> {
+        Ok(Vec::new())
+    }
+    async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<ModelProviderPo>> {
+        Ok(Vec::new())
+    }
+    async fn update(&self, _ctx: RequestContext, _provider: &ModelProviderPo) -> Result<()> {
+        Ok(())
+    }
+    async fn delete(&self, _ctx: RequestContext, _provider: &ModelProviderPo) -> Result<()> {
+        Ok(())
+    }
+    async fn get_default_embedding_provider(
+        &self,
+        _ctx: RequestContext,
+    ) -> Result<Option<ModelProviderPo>> {
+        Ok(None)
+    }
+}
+
+/// Mock CortexDao（跳过向量搜索）
+struct MockCortexDao;
+
+#[async_trait::async_trait]
+impl CortexDao for MockCortexDao {
+    fn create_cortex_trait(
+        &self,
+        _ctx: RequestContext,
+        _provider: &ModelProviderPo,
+        _rig_tools: Vec<Box<dyn ::rig::tool::ToolDyn>>,
+    ) -> anyhow::Result<Box<dyn CortexTrait + Send + Sync>> {
+        panic!("MockCortexDao::create_cortex_trait not implemented for tests");
+    }
+    async fn prompt(
+        &self,
+        _ctx: RequestContext,
+        _cortex: &dyn CortexTrait,
+        _prompt: &str,
+    ) -> anyhow::Result<String> {
+        Ok("".to_string())
+    }
+    async fn embed_text_raw(
+        &self,
+        _ctx: RequestContext,
+        _cortex: &dyn CortexTrait,
+        _text: &str,
+    ) -> anyhow::Result<Vec<f32>> {
+        Ok(Vec::new())
+    }
+    async fn embed_entity(
+        &self,
+        _ctx: RequestContext,
+        _cortex: &dyn CortexTrait,
+        _entity: &dyn crate::models::vector::Vectorizable,
+    ) -> anyhow::Result<crate::models::vector::VectorIndexParams> {
+        Ok(crate::models::vector::VectorIndexParams {
+            vector: Vec::new(),
+            content_hash: "".to_string(),
+            model_provider_id: "".to_string(),
+            embedding_model: "".to_string(),
+            expire_at: None,
+        })
+    }
+    async fn embed_text_for_search(
+        &self,
+        _ctx: RequestContext,
+        _cortex: &dyn CortexTrait,
+        _text: &str,
+    ) -> anyhow::Result<crate::models::vector::VectorIndexParams> {
+        Ok(crate::models::vector::VectorIndexParams {
+            vector: Vec::new(),
+            content_hash: "".to_string(),
+            model_provider_id: "".to_string(),
+            embedding_model: "".to_string(),
+            expire_at: None,
+        })
+    }
+}
 
 fn new_ctx(user_id: &str, pool: sqlx::SqlitePool) -> RequestContext {
     crate::pkg::request_context_test_support::new_test_ctx(user_id, pool)
@@ -27,10 +133,19 @@ fn init_all_channel_daos() {
 }
 
 /// 初始化测试环境（每个测试新建独立实例，保证测试隔离）
-fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn MessageDomain>, RequestContext) {
+fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDomain>, RequestContext) {
     let message_dao = crate::service::dao::message::new();
+    let message_vector_dao = crate::service::dao::message::vector::new();
     let event_queue = crate::service::dao::event_queue::in_memory::new();
-    let message_dal = crate::service::dal::message::new(message_dao, event_queue);
+    let cortex_dao: Arc<dyn CortexDao> = Arc::new(MockCortexDao);
+    let model_provider_dao: Arc<dyn ModelProviderDao> = Arc::new(MockModelProviderDao);
+    let message_dal = crate::service::dal::message::new(
+        message_dao,
+        message_vector_dao,
+        event_queue,
+        cortex_dao,
+        model_provider_dao,
+    );
     crate::service::dao::message_channel::init();
     let message_channel_dao = crate::service::dao::message_channel::new();
     init_all_channel_daos(); // 初始化所有渠道 DAO 单例

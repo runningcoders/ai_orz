@@ -2,6 +2,7 @@
 
 use crate::models::brain::{Brain, Cortex, CortexTrait};
 use crate::models::tool::Tool;
+use crate::models::vector::{SearchMatchInfo, Vectorizable};
 use crate::pkg::agent_runtime_state::AgentRuntimeInfo;
 use crate::pkg::request_context::{EnrichContext, RequestContextBuilder};
 use common::enums::AgentStatus;
@@ -148,6 +149,8 @@ pub struct Agent {
     ///
     /// None 表示未查询
     pub stats: Option<AgentStats>,
+    /// 搜索匹配元信息（搜索场景下由 DAL 层填充）
+    pub search_match: Option<SearchMatchInfo>,
     // 后续扩展字段：
     // pub execution_env: ExecutionEnv,
     // pub permissions: Vec<Permission>,
@@ -175,6 +178,7 @@ impl Agent {
             tools: Vec::new(),
             runtime_info: None,
             stats: None,
+            search_match: None,
         }
     }
 
@@ -186,6 +190,7 @@ impl Agent {
             tools,
             runtime_info: None,
             stats: None,
+            search_match: None,
         }
     }
 
@@ -429,6 +434,33 @@ impl crate::pkg::request_context::EnrichContext for AgentPo {
 impl EnrichContext for Agent {
     fn enrich(&self, builder: RequestContextBuilder) -> RequestContextBuilder {
         self.po.enrich(builder)
+    }
+}
+
+// ==================== Vectorizable 实现 ====================
+
+impl Vectorizable for AgentPo {
+    fn vectorize_text(&self) -> String {
+        // AgentPo 向量化文本：name + role + description + capabilities
+        // 注意：role 和 capabilities 是 JSON 字符串数组（如 ["worker"]），直接拼接原始字符串即可
+        // trigram 分词器会自动处理子串匹配
+        // soul 字段不参与向量化（灵魂设定不适合搜索）
+        let parts: Vec<&str> = vec![
+            &self.name,
+            &self.role,
+            &self.description,
+            &self.capabilities,
+        ];
+        // 过滤掉空字符串，用换行符拼接
+        parts
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn vector_collection() -> &'static str {
+        "agents"
     }
 }
 

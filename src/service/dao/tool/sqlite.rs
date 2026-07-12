@@ -4,10 +4,55 @@ use crate::models::tool::ToolPo;
 use crate::pkg::request_context::RequestContext;
 use common::error::Result;
 use async_trait::async_trait;
-use sqlx::SqlitePool;
+use sqlx::{FromRow, SqlitePool};
 use std::sync::{Arc, OnceLock};
 
 use super::{ToolDao, ToolQuery, ToolSearch};
+
+// ==================== FTS5 辅助 ====================
+
+/// 工具搜索行（PO + fts_rank）
+///
+/// 用于 FTS5 MATCH 查询结果，包含 ToolPo 所有字段 + BM25 rank。
+#[derive(FromRow)]
+struct ToolSearchRow {
+    id: String,
+    name: String,
+    description: String,
+    protocol: common::enums::ToolProtocol,
+    control_mode: common::enums::ControlMode,
+    config: serde_json::Value,
+    parameters_schema: Option<serde_json::Value>,
+    tags: String,
+    status: common::enums::ToolStatus,
+    created_at: i64,
+    updated_at: i64,
+    created_by: Option<String>,
+    updated_by: Option<String>,
+    fts_rank: Option<f32>,
+}
+
+impl ToolSearchRow {
+    /// 将搜索行转换为 (ToolPo, fts_rank) 元组
+    fn into_po_with_rank(self) -> (ToolPo, Option<f32>) {
+        let po = ToolPo {
+            id: self.id,
+            name: self.name,
+            description: self.description,
+            protocol: self.protocol,
+            control_mode: self.control_mode,
+            config: self.config,
+            parameters_schema: self.parameters_schema,
+            tags: self.tags,
+            status: self.status,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            created_by: self.created_by,
+            updated_by: self.updated_by,
+        };
+        (po, self.fts_rank)
+    }
+}
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -195,24 +240,13 @@ impl ToolDao for ToolDaoSqliteImpl {
             }
         }
 
-        // 关键词搜索
+        // 关键词搜索：已废弃 LIKE 分支，改为忽略并 warn
+        // 关键词全文搜索请使用 search_tools 方法（FTS5 MATCH + BM25）
         if let Some(keyword) = &query.keyword {
             if !keyword.is_empty() {
-                if has_where {
-                    builder.push(" AND");
-                } else {
-                    builder.push(" WHERE");
-                }
-                let like_pattern = format!("%{}%", keyword);
-                builder
-                    .push(" (t.name LIKE ")
-                    .push_bind(like_pattern.clone())
-                    .push(" OR t.description LIKE ")
-                    .push_bind(like_pattern.clone())
-                    .push(" OR t.tags LIKE ")
-                    .push_bind(like_pattern)
-                    .push(")");
-                has_where = true;
+                log_warn!(
+                    "keyword in ToolDao::query is deprecated, use search_tools for FTS5 full-text search; keyword ignored"
+                );
             }
         }
 
@@ -438,15 +472,66 @@ impl ToolDao for ToolDaoSqliteImpl {
         Ok(inserted)
     }
 
-    async fn search(&self, ctx: RequestContext, params: ToolSearch) -> Result<Vec<ToolPo>> {
-        // 参数转换后转发到 query，避免重复实现
-        let query = ToolQuery {
-            keyword: params.keyword.clone(),
-            agent_id: params.agent_id.clone(),
-            enabled_only: Some(params.enabled_only),
-            limit: Some(params.limit),
-            ..Default::default()
-        };
-        self.query(ctx.clone(), query).await
+    async fn search_tools(
+        &self,
+        ctx: RequestContext,
+        params: ToolSearch,
+    ) -> Result<Vec<(ToolPo, Option<f32>)>> {
+        let pool = ctx.db_pool();
+        let keyword = params.keyword.unwrap_or_default();
+        let limit_i64 = params.limit as i64;
+
+        // 空关键词直接返回空结果（FTS5 MATCH 空字符串会报错）
+        if keyword.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // 转义关键词为 FTS5 短语匹配（复用 memory 模块的公共函数）
+        let escaped_keyword = crate::service::dao::memory::sqlite::escape_fts5_keyword(&keyword);
+
+        // FTS5 MATCH + JOIN 主表 + BM25 排序
+        // 注意：MATCH 左侧必须使用完整表名（非别名），否则 SQLite 会将别名解释为列名
+        let mut builder = sqlx::QueryBuilder::new(
+            r#"SELECT t.id, t.name, t.description, t.protocol, t.control_mode, t.config,
+                      t.parameters_schema, t.tags, t.status, t.created_at, t.updated_at,
+                      t.created_by, t.updated_by, tools_fts.rank as fts_rank
+               FROM tools_fts
+               JOIN tools t ON tools_fts.rowid = t.rowid
+               WHERE tools_fts MATCH "#,
+        );
+        builder.push_bind(escaped_keyword);
+
+        // 始终排除 Stale 状态（远端已消失的工具不应出现在搜索结果中）
+        builder.push(" AND t.status != 2");
+
+        // enabled_only 过滤：只返回 Enabled (1) 状态的工具
+        if params.enabled_only {
+            builder.push(" AND t.status = 1");
+        }
+
+        // Agent 过滤：通过 EXISTS 子查询检查 agent_tools 关联表
+        if let Some(agent_id) = &params.agent_id {
+            builder.push(
+                " AND EXISTS (SELECT 1 FROM agent_tools at WHERE at.tool_id = t.id AND at.agent_id = ",
+            );
+            builder.push_bind(agent_id);
+            builder.push(")");
+        }
+
+        // BM25 排序（rank 越小越相关）+ 分页
+        builder.push(" ORDER BY tools_fts.rank LIMIT ");
+        builder.push_bind(limit_i64);
+
+        let rows: Vec<ToolSearchRow> = builder
+            .build_query_as::<ToolSearchRow>()
+            .fetch_all(pool)
+            .await?;
+
+        let results = rows
+            .into_iter()
+            .map(|row| row.into_po_with_rank())
+            .collect();
+
+        Ok(results)
     }
 }
