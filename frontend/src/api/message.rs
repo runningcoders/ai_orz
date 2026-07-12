@@ -9,7 +9,7 @@ use super::{api_get, api_post};
 pub async fn send_message_to_agent(
     req: SendMessageToAgentParams,
 ) -> Result<SendMessageToAgentResponse, String> {
-    api_post("/api/v1/messages/agents", &req).await
+    api_post("/api/v1/finance/messages/agents", &req).await
 }
 
 pub async fn load_latest_messages(
@@ -24,7 +24,7 @@ pub async fn load_latest_messages(
         params.push(format!("limit={}", l));
     }
     let query = if params.is_empty() { String::new() } else { format!("?{}", params.join("&")) };
-    api_get(&format!("/api/v1/messages{}", query)).await
+    api_get(&format!("/api/v1/finance/messages{}", query)).await
 }
 
 pub async fn load_older_messages(
@@ -50,7 +50,7 @@ pub async fn poll_new_messages(
     if let Some(pid) = project_id {
         params.push(format!("project_id={}", url_encode(pid)));
     }
-    api_get(&format!("/api/v1/messages?{}", params.join("&"))).await
+    api_get(&format!("/api/v1/finance/messages?{}", params.join("&"))).await
 }
 
 fn url_encode(s: &str) -> String {
