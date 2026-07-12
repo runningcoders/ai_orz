@@ -145,7 +145,6 @@ pub struct SendMessageResponse {
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct SendMessageToAgentParams {
     /// 接收 Agent ID。
-    #[param(source = "path")]
     pub to_agent_id: String,
     /// 消息内容。
     pub content: String,

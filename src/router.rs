@@ -209,7 +209,6 @@ fn hr_routes() -> Router {
         .route("/agents", get(handlers::hr::agent::list_agents_handler))
         .route("/agents/search", get(handlers::hr::agent::search_agents_handler))
         .route("/agents/{id}", get(handlers::hr::agent::get_agent_handler))
-        .route("/agents/{id}/message", post(handlers::hr::agent::send_message_to_agent_handler))
         .route(
             "/agents/{id}",
             put(handlers::hr::agent::update_agent_handler),
@@ -340,6 +339,10 @@ fn finance_routes() -> Router {
         .route(
             "/model-providers/{id}",
             delete(handlers::finance::model_provider::delete_model_provider::delete_model_provider_handler),
+        )
+        .route(
+            "/messages/agents",
+            post(handlers::finance::message::send_message_to_agent_handler),
         )
         .route(
             "/message-channels",
