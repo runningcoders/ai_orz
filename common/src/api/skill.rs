@@ -357,3 +357,57 @@ pub struct DeleteSkillRequest {
     #[param(source = "path")]
     pub skill_id: String,
 }
+
+/// 安装技能包请求。
+///
+/// 按 tag 批量安装已发布技能到 Agent 目录。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct InstallSkillPackRequest {
+    /// Agent ID。
+    #[param(source = "path")]
+    pub agent_id: String,
+
+    /// 技能包 tag（如 "project_management"）。
+    #[param(source = "path")]
+    pub tag: String,
+}
+
+/// 安装技能包响应。
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct InstallSkillPackResponse {
+    /// 成功安装的技能数量。
+    pub installed_count: usize,
+}
+
+/// 卸载技能包请求。
+///
+/// 从 Agent 的 installed_skill_packs 中移除指定 tag，保留技能副本。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct UninstallSkillPackRequest {
+    /// Agent ID。
+    #[param(source = "path")]
+    pub agent_id: String,
+
+    /// 技能包 tag。
+    #[param(source = "path")]
+    pub tag: String,
+}
+
+/// 卸载技能包响应。
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct UninstallSkillPackResponse {}
+
+/// 列出已安装技能包请求。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ListInstalledSkillPacksRequest {
+    /// Agent ID。
+    #[param(source = "path")]
+    pub agent_id: String,
+}
+
+/// 列出已安装技能包响应。
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ListSkillPacksResponse {
+    /// 已安装的技能包 tags。
+    pub skill_packs: Vec<String>,
+}

@@ -1,6 +1,7 @@
 //! Agent 管理具体方法实现
 
 use crate::models::agent::Agent;
+use crate::models::skill::Skill;
 use crate::pkg::RequestContext;
 use crate::service::dal::agent::AgentDal;
 use crate::service::dao::agent::AgentQuery;
@@ -9,6 +10,52 @@ use common::enums::AgentStatus;
 use common::error::{Result, err, bail_err};
 
 use crate::enrich_ctx;
+
+impl HrDomainImpl {
+    /// 用源技能的最新内容覆盖 Agent 已有的技能副本
+    ///
+    /// 覆盖策略：
+    /// - 将源技能的所有文件写入副本目录（覆盖同名文件）
+    /// - 更新副本的 SkillPo 元数据（name/description/tags）
+    /// - 持久化更新
+    async fn overwrite_skill_copy(
+        &self,
+        ctx: RequestContext,
+        source: &Skill,
+        copy: &Skill,
+    ) -> Result<()> {
+        // 1. 将源技能的所有文件写入副本目录
+        for file in &source.files {
+            if let Some(content) = &file.content {
+                self.skill_dal
+                    .write_file(&copy.po, &file.filename, content)?;
+            } else {
+                // 大文件按需读取后写入
+                let bytes = self.skill_dal.read_file(&source.po, &file.filename)?;
+                self.skill_dal
+                    .write_file(&copy.po, &file.filename, &bytes)?;
+            }
+        }
+
+        // 2. 更新副本的 SkillPo 元数据
+        let mut updated_po = copy.po.clone();
+        updated_po.name = source.po.name.clone();
+        updated_po.description = source.po.description.clone();
+        updated_po.tags = source.po.tags.clone();
+
+        // 3. 持久化更新
+        self.skill_dal
+            .update(
+                ctx,
+                &Skill {
+                    po: updated_po,
+                    files: Vec::new(),
+                    search_match: None,
+                },
+            )
+            .await
+    }
+}
 
 #[async_trait::async_trait]
 impl AgentManage for HrDomainImpl {
@@ -244,5 +291,221 @@ impl AgentManage for HrDomainImpl {
             .ok_or_else(|| err!(NotFound, "Agent {} 不存在", agent_id))?;
 
         Ok(agent.po.get_installed_tags())
+    }
+
+    /// 安装技能包（按 tag）
+    ///
+    /// 查询指定 tag 的已发布技能，批量安装到 Agent 目录。
+    /// 幂等：tag 已安装则跳过，返回 0。
+    /// 返回成功安装的技能数量。
+    async fn install_skill_pack(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        tag: &str,
+    ) -> Result<usize> {
+        let mut agent = self
+            .agent_dal
+            .find_by_id(ctx.clone(), agent_id)
+            .await?
+            .ok_or_else(|| err!(NotFound, "Agent {} 不存在", agent_id))?;
+
+        let ctx = enrich_ctx!(&ctx, &agent);
+
+        // 幂等：tag 已安装则跳过
+        if agent.po.get_runtime_config().has_skill_pack_tag(tag) {
+            log_info!(
+                ctx,
+                "install_skill_pack",
+                "agent_id={}, tag={} 已安装，跳过",
+                agent_id,
+                tag
+            );
+            return Ok(0);
+        }
+
+        // 查询该 tag 的已发布技能
+        let skills = self.skill_dal.list_published_by_tag(ctx.clone(), tag).await?;
+
+        if skills.is_empty() {
+            log_warn!(
+                ctx,
+                "install_skill_pack",
+                "agent_id={}, tag={} 没有已发布技能",
+                agent_id,
+                tag
+            );
+        }
+
+        let mut success_count = 0usize;
+        let mut fail_count = 0usize;
+        for skill in &skills {
+            match self
+                .skill_dal
+                .install_to_agent(ctx.clone(), &skill.po.id, agent_id)
+                .await
+            {
+                Ok(_) => success_count += 1,
+                Err(e) => {
+                    fail_count += 1;
+                    log_warn!(
+                        ctx.clone(),
+                        "install_skill_pack",
+                        "安装技能失败: skill_id={}, agent_id={}, tag={}, err={}",
+                        skill.po.id,
+                        agent_id,
+                        tag,
+                        e
+                    );
+                }
+            }
+        }
+
+        // 记录 tag 到 Agent 的 installed_skill_packs
+        agent.po.install_skill_pack_tag(tag);
+        self.agent_dal.update(ctx.clone(), &agent).await?;
+
+        log_info!(
+            ctx,
+            "install_skill_pack",
+            "agent_id={}, tag={} 安装完成: 成功={}, 失败={}",
+            agent_id,
+            tag,
+            success_count,
+            fail_count
+        );
+        Ok(success_count)
+    }
+
+    /// 卸载技能包（按 tag）
+    ///
+    /// 从 Agent 的 runtime_config.installed_skill_packs 中移除指定 tag。
+    /// 不删除已安装的技能副本。
+    /// 幂等：未安装则跳过。
+    async fn uninstall_skill_pack(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        tag: &str,
+    ) -> Result<()> {
+        let mut agent = self
+            .agent_dal
+            .find_by_id(ctx.clone(), agent_id)
+            .await?
+            .ok_or_else(|| err!(NotFound, "Agent {} 不存在", agent_id))?;
+
+        let ctx = enrich_ctx!(&ctx, &agent);
+
+        // 幂等：未安装则跳过
+        if !agent.po.get_runtime_config().has_skill_pack_tag(tag) {
+            log_info!(
+                ctx,
+                "uninstall_skill_pack",
+                "agent_id={}, tag={} 未安装，跳过",
+                agent_id,
+                tag
+            );
+            return Ok(());
+        }
+
+        agent.po.uninstall_skill_pack_tag(tag);
+        self.agent_dal.update(ctx.clone(), &agent).await?;
+
+        log_info!(
+            ctx,
+            "uninstall_skill_pack",
+            "agent_id={}, tag={} 卸载成功（技能副本保留）",
+            agent_id,
+            tag
+        );
+        Ok(())
+    }
+
+    /// 重新安装技能包（按 tag）
+    ///
+    /// 获取最新 Published 技能列表，覆盖已有副本（更新文件 + 元数据），
+    /// 没有副本的则新建安装。返回处理的技能数量。
+    async fn reinstall_skill_pack(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        tag: &str,
+    ) -> Result<usize> {
+        let agent = self
+            .agent_dal
+            .find_by_id(ctx.clone(), agent_id)
+            .await?
+            .ok_or_else(|| err!(NotFound, "Agent {} 不存在", agent_id))?;
+
+        let ctx = enrich_ctx!(&ctx, &agent);
+
+        // 查询该 tag 的最新已发布技能
+        let source_skills = self.skill_dal.list_published_by_tag(ctx.clone(), tag).await?;
+
+        if source_skills.is_empty() {
+            log_warn!(
+                ctx,
+                "reinstall_skill_pack",
+                "agent_id={}, tag={} 没有已发布技能",
+                agent_id,
+                tag
+            );
+            return Ok(0);
+        }
+
+        // 收集 parent_skill_ids，查询 Agent 已有副本
+        let parent_ids: Vec<String> =
+            source_skills.iter().map(|s| s.po.id.clone()).collect();
+        let existing_copies = self
+            .skill_dal
+            .find_agent_skill_copies(ctx.clone(), agent_id, &parent_ids)
+            .await?;
+
+        // 构建 parent_skill_id → 已有副本 的映射
+        let copy_map: std::collections::HashMap<String, crate::models::skill::Skill> =
+            existing_copies
+                .into_iter()
+                .map(|s| (s.po.parent_skill_id.clone(), s))
+                .collect();
+
+        let mut processed_count = 0usize;
+        for source in &source_skills {
+            if let Some(copy) = copy_map.get(&source.po.id) {
+                // 已有副本：用源技能内容覆盖副本
+                self.overwrite_skill_copy(ctx.clone(), source, copy)
+                    .await?;
+            } else {
+                // 无副本：创建新安装
+                self.skill_dal
+                    .install_to_agent(ctx.clone(), &source.po.id, agent_id)
+                    .await?;
+            }
+            processed_count += 1;
+        }
+
+        log_info!(
+            ctx,
+            "reinstall_skill_pack",
+            "agent_id={}, tag={} 重装完成: 处理={}",
+            agent_id,
+            tag,
+            processed_count
+        );
+        Ok(processed_count)
+    }
+
+    /// 列出已安装的技能包 tags
+    async fn list_installed_skill_packs(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+    ) -> Result<Vec<String>> {
+        let agent = self
+            .agent_dal
+            .find_by_id(ctx, agent_id)
+            .await?
+            .ok_or_else(|| err!(NotFound, "Agent {} 不存在", agent_id))?;
+
+        Ok(agent.po.get_installed_skill_packs())
     }
 }

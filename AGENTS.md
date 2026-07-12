@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-07-11
+> 最后更新：2026-07-12
 
 ---
 
@@ -14,7 +14,7 @@
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + rig-core 0.34
 - **前端**：Dioxus 0.7 (WebAssembly)
-- **技术特色**：严格分层架构、类型安全、576 个测试 100% 通过率
+- **技术特色**：严格分层架构、类型安全、615 个测试 100% 通过率
 
 ### 1.2 已实现核心功能
 
@@ -26,31 +26,34 @@
 | 💬 消息对话系统 | ✅ | 用户 ↔ Agent 双向对话，支持项目上下文 |
 | 📨 消息渠道系统 | ✅ | 多渠道消息接入，支持启用/禁用/测试 |
 | 🛠️ 混合模式工具调用 | ✅ | 简单工具走 rig auto，关键工具走自建 manual 可控链路 |
-| 📚 技能库系统 | ✅ | 可复用技能和工作流，支持搜索和分类 |
+| 📚 技能库系统 | ✅ | 可复用技能和工作流，支持搜索和分类，tag 技能包安装，唤醒时注入 Prompt |
 | 📋 任务 + 项目管理 | ✅ | 任务状态机，项目聚合对话上下文，DAL + Domain 层完整实现 |
 | 📎 统一附件存储 | ✅ | 消息附件 + 项目产物，FileMeta + 日期分层路径 |
 | 🔌 MCP 服务器集成 | ✅ | MCP 服务器管理、工具同步、MCP 工具调用执行 |
 | 🚀 异步消费者系统 | ✅ | 通用消费者框架 + Message Topic 三层分发 |
 | 📝 结构化日志系统 | ✅ | JSON 格式、自动上下文关联、日志自动清理 |
 | 🔍 向量搜索 | ✅ | SQLite VSS 扩展 + 语义索引 + 可平滑升级 |
+| 🔎 全文搜索 | ✅ | FTS5 + trigram 分词器，支持中文全文搜索、BM25 相关性排序 |
 | 📊 Agent 统计系统 | ✅ | DuckDB 多维统计、Agent/Project/Task/ModelProvider/Tool 五维度覆盖 |
 | 🔄 多回合循环控制 | ✅ | 轮次限制检查、任务完成检测、Prompt 上下文差异化、工具失败计数注入 |
 | 🎒 工具包机制 | ✅ | tag 分组工具、Agent 入职自动安装、免绑定校验三层逻辑 |
 | 📨 任务分配消息 | ✅ | TaskAssignment 消息类型、自动通知 Agent、神经工具封装 |
 | ⏰ 定时触发器系统 | ✅ | Cron Trigger 管理、后台扫描、事件投递、系统领域基础设施 |
 | 🏛️ 记忆沉淀机制 | ✅ | Agent 休息与沉淀、短期记忆→长期知识图谱、定时触发沉淀 |
+| 🎒 技能包机制 | ✅ | tag 分组技能、批量安装、安装即复制、卸载保留副本 |
+| 🔎 综合搜索 | ✅ | FTS5 关键词 + 向量语义 + 图谱关系 三位一体混合搜索 |
 
-### 1.3 整体完成度与测试统计（2026-07-11 更新）
+### 1.3 整体完成度与测试统计（2026-07-12 更新）
 
 | 指标 | 数值 | 说明 |
 |------|------|------|
-| **总测试数** | **576** | DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
+| **总测试数** | **615** | DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
 | **通过率** | **100%** | ✅ 全部测试通过 |
 | DAO 模块数 | 28 个 | 全部实现并被使用，零闲置（21 核心 DAO + 5 渠道 DAO + 1 统计 DAO + 1 触发器 DAO） |
 | DAL 模块数 | 17 个 | 全部完整业务承载，零闲置 |
 | Domain 领域数 | 7 个 | 全部完整实现（新增 SystemDomain） |
 | Handler API 领域数 | 7 个上线 | organization, hr, finance, project, user, health, system |
-| **整体架构完成度** | **~97%** | 从下往上扎实推进 |
+| **整体架构完成度** | **~98%** | 从下往上扎实推进 |
 
 ---
 
@@ -429,6 +432,33 @@ Agent
 ---
 
 ## 六、工作流与开发记录
+
+### 2026-07-12 里程碑
+**✅ Runtime Domain Phase 4C - 技能系统增强**
+- **DAO 层 tag 过滤**：SkillQuery/ToolQuery 新增 tags 字段，使用 `json_each` 在 SQL 层精确匹配（OR 语义），关键词搜索扩展到 tags 字段
+- **AgentRuntimeConfig 扩展**：新增 `installed_skill_packs: Vec<String>` 字段，记录 Agent 已安装技能包
+- **install_to_agent 幂等性**：安装前检查 parent_skill_id + author_id 是否已有副本，已存在则跳过
+- **技能包完整生命周期**：
+  - `install_skill_pack`：按 tag 查询 Published 技能 → 批量 install_to_agent → 记录 tag
+  - `uninstall_skill_pack`：移除 tag 关联，保留技能副本（不丢失 Agent 经验）
+  - `reinstall_skill_pack`：覆盖式重装，用源技能最新内容更新 Agent 副本
+  - `list_installed_skill_packs`：返回已安装技能包 tag 列表
+- **技能包管理 API**：3 个新 Handler（install/uninstall/list），路由 `/api/v1/hr/agents/{agent_id}/skill-packs`
+- **唤醒时技能注入**：`load_agent_skills` 方法，Agent 唤醒时自动加载技能摘要到 Prompt 的"【可用技能】"部分
+- **search_skill 神经工具**：Agent 可按关键词/tag 搜索技能库，返回精简摘要
+- **Tool tag 过滤优化**：`load_builtin_tools` 和 `call_manual_tool_for_agent` 从内存过滤改为 SQL 层 `json_each` 过滤
+- **测试统计**：601 个测试 100% 通过（+25）
+
+**✅ 记忆搜索 FTS5 增强与综合搜索**
+- **FTS5 全文索引**：创建 `short_term_memory_fts` 和 `knowledge_node_fts` 虚拟表，使用 `trigram` 分词器（支持中文全文搜索）
+- **触发器自动同步**：6 个触发器（INSERT/UPDATE/DELETE × 2 表）自动维护 FTS 索引，应用层无感知
+- **DAO 层搜索改造**：LIKE → FTS5 MATCH + BM25 相关性排序，新增 `escape_fts5_keyword` 转义工具函数
+- **死代码清理**：移除 `query_short_term` 和 `query_knowledge_nodes` 中的 MATCH 死代码分支，关键词搜索统一走 search 方法
+- **MatchType 三态完善**：Hybrid（双命中）/ Vector（仅向量）/ Keyword（仅关键词），每种命中都附加 `SearchMatchInfo`
+- **向量距离阈值可配置**：从硬编码 0.8 改为 `MemorySearch.vector_distance_threshold` 可选参数
+- **综合搜索三级排序**：Hybrid 优先 → Vector → Keyword，组内分别按 vector_distance / fts_rank 排序
+- **关系关键词搜索补全**：`search_relations_internal` 通过 knowledge_node_fts 搜索节点 → 查关联关系 → 返回节点和关系
+- **测试统计**：615 个测试 100% 通过（+14）
 
 ### 2026-07-11 里程碑
 **✅ Runtime Domain Phase 4A - 工具包机制 + 任务执行闭环**

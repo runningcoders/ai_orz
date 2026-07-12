@@ -7,15 +7,15 @@ use crate::models::memory::{
     MemoryCreateParams, MemoryPo, MemoryTrace, ShortTermMemoryIndexPo,
 };
 use crate::models::model_provider::ModelProviderPo;
-use crate::models::vector::VectorIndexParams;
+use crate::models::vector::{MatchType, VectorIndexParams, VectorMeta, VectorRow, VectorSearchHit};
 use crate::pkg::request_context::RequestContext;
 use crate::service::dal::memory::{MemoryDal, new};
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::memory::{
-    MemoryQuery, MemorySearch, new_memory_dao, new_memory_vector_dao,
+    MemoryQuery, MemorySearch, MemoryVectorDao, new_memory_dao, new_memory_vector_dao,
 };
 use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderQuery};
-use common::enums::MemoryStatus;
+use common::enums::{MemoryStatus, ModelCapability, ModelProviderStatus, ProviderType};
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use common::error::Result;
@@ -759,6 +759,7 @@ async fn test_search_short_term(pool: SqlitePool) -> Result<()> {
                 keyword: Some("Rust".to_string()),
                 query_vector: None,
                 top_k: None,
+                vector_distance_threshold: None,
                 filters: MemoryQuery {
                     agent_id: Some("agent-001".to_string()),
                     memory_type: Some(common::enums::MemoryType::ShortTerm),
@@ -778,6 +779,7 @@ async fn test_search_short_term(pool: SqlitePool) -> Result<()> {
                 keyword: Some("Python".to_string()),
                 query_vector: None,
                 top_k: None,
+                vector_distance_threshold: None,
                 filters: MemoryQuery {
                     agent_id: Some("agent-001".to_string()),
                     memory_type: Some(common::enums::MemoryType::ShortTerm),
@@ -797,6 +799,7 @@ async fn test_search_short_term(pool: SqlitePool) -> Result<()> {
                 keyword: Some("nonexistent-keyword".to_string()),
                 query_vector: None,
                 top_k: None,
+                vector_distance_threshold: None,
                 filters: MemoryQuery {
                     agent_id: Some("agent-001".to_string()),
                     memory_type: Some(common::enums::MemoryType::ShortTerm),
@@ -835,10 +838,10 @@ async fn test_search_knowledge_nodes(pool: SqlitePool) -> Result<()> {
     let node2 = LongTermKnowledgeNodePo {
         id: "kn-search-002".to_string(),
         agent_id: "agent-001".to_string(),
-        node_name: "Python 装饰器详解".to_string(),
-        node_description: "Python 高级特性：函数装饰器原理与应用".to_string(),
+        node_name: "Python decorator 详解".to_string(),
+        node_description: "Python 高级特性：函数 decorator 原理与应用".to_string(),
         node_type: "concept".to_string(),
-        summary: "Python 装饰器是一种强大的元编程工具".to_string(),
+        summary: "Python decorator 装饰器是一种强大的元编程工具".to_string(),
         status: MemoryStatus::Active,
         created_at: now,
         updated_at: now,
@@ -889,6 +892,7 @@ async fn test_search_knowledge_nodes(pool: SqlitePool) -> Result<()> {
                 keyword: Some("Rust".to_string()),
                 query_vector: None,
                 top_k: None,
+                vector_distance_threshold: None,
                 filters: MemoryQuery {
                     agent_id: Some("agent-001".to_string()),
                     memory_type: Some(common::enums::MemoryType::KnowledgeNode),
@@ -900,7 +904,7 @@ async fn test_search_knowledge_nodes(pool: SqlitePool) -> Result<()> {
         .await?;
     assert_eq!(results.len(), 1);
 
-    // 搜索：按 summary 匹配 "装饰器"
+    // 搜索：按 summary 匹配 "装饰器"（trigram 分词器支持中文搜索）
     let results2 = dal
         .search(
             ctx.clone(),
@@ -908,6 +912,7 @@ async fn test_search_knowledge_nodes(pool: SqlitePool) -> Result<()> {
                 keyword: Some("装饰器".to_string()),
                 query_vector: None,
                 top_k: None,
+                vector_distance_threshold: None,
                 filters: MemoryQuery {
                     agent_id: Some("agent-001".to_string()),
                     memory_type: Some(common::enums::MemoryType::KnowledgeNode),
@@ -927,6 +932,7 @@ async fn test_search_knowledge_nodes(pool: SqlitePool) -> Result<()> {
                 keyword: Some("nonexistent-keyword".to_string()),
                 query_vector: None,
                 top_k: None,
+                vector_distance_threshold: None,
                 filters: MemoryQuery {
                     agent_id: Some("agent-001".to_string()),
                     memory_type: Some(common::enums::MemoryType::KnowledgeNode),
@@ -1126,6 +1132,647 @@ async fn test_update_relation_unsupported(pool: SqlitePool) -> Result<()> {
     let result = dal.update(ctx, memory).await;
     assert!(result.is_err());
     assert!(format!("{:?}", result.unwrap_err()).contains("记忆 Relation 不可修改，需删除后重建"));
+
+    Ok(())
+}
+
+// ========== 向量搜索 Mock 实现 ==========
+
+/// Mock CortexTrait（返回固定 dummy 向量，用于向量搜索链路）
+#[derive(Clone)]
+struct MockCortexTrait;
+
+#[async_trait::async_trait]
+impl CortexTrait for MockCortexTrait {
+    fn capability(&self) -> ModelCapability {
+        ModelCapability::Embedding
+    }
+    fn model_provider_id(&self) -> &str {
+        "mock-embedding-provider"
+    }
+    fn model_name(&self) -> &str {
+        "mock-embedding-model"
+    }
+    async fn prompt(&self, _prompt: &str) -> anyhow::Result<String> {
+        Ok(String::new())
+    }
+    async fn embeddings(&self, _texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
+        Ok(vec![vec![0.1, 0.2, 0.3]])
+    }
+    fn support_tools(&self) -> bool {
+        false
+    }
+}
+
+/// Mock ModelProviderDao（返回 dummy embedding provider，触发向量搜索链路）
+struct MockVectorProviderDao;
+
+#[async_trait::async_trait]
+impl ModelProviderDao for MockVectorProviderDao {
+    async fn insert(
+        &self,
+        _ctx: RequestContext,
+        _provider: &ModelProviderPo,
+    ) -> Result<()> {
+        Ok(())
+    }
+    async fn find_by_id(
+        &self,
+        _ctx: RequestContext,
+        _id: &str,
+    ) -> Result<Option<ModelProviderPo>> {
+        Ok(None)
+    }
+    async fn query(
+        &self,
+        _ctx: RequestContext,
+        _query: ModelProviderQuery,
+    ) -> Result<Vec<ModelProviderPo>> {
+        Ok(Vec::new())
+    }
+    async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<ModelProviderPo>> {
+        Ok(Vec::new())
+    }
+    async fn update(
+        &self,
+        _ctx: RequestContext,
+        _provider: &ModelProviderPo,
+    ) -> Result<()> {
+        Ok(())
+    }
+    async fn delete(
+        &self,
+        _ctx: RequestContext,
+        _provider: &ModelProviderPo,
+    ) -> Result<()> {
+        Ok(())
+    }
+    async fn get_default_embedding_provider(
+        &self,
+        _ctx: RequestContext,
+    ) -> Result<Option<ModelProviderPo>> {
+        Ok(Some(ModelProviderPo {
+            id: "mock-embedding-provider".to_string(),
+            name: "Mock Embedding Provider".to_string(),
+            provider_type: ProviderType::OpenAI,
+            model_name: "mock-embedding-model".to_string(),
+            capability: ModelCapability::Embedding,
+            api_key: "mock-key".to_string(),
+            base_url: None,
+            description: None,
+            config: "{}".to_string(),
+            status: ModelProviderStatus::Normal,
+            created_by: "test".to_string(),
+            modified_by: "test".to_string(),
+            created_at: 0,
+            updated_at: 0,
+        }))
+    }
+}
+
+/// Mock CortexDao（返回 MockCortexTrait，不 panic）
+struct MockCortexVectorDao;
+
+#[async_trait::async_trait]
+impl CortexDao for MockCortexVectorDao {
+    fn create_cortex_trait(
+        &self,
+        _ctx: RequestContext,
+        _provider: &ModelProviderPo,
+        _rig_tools: Vec<Box<dyn ::rig::tool::ToolDyn>>,
+    ) -> anyhow::Result<Box<dyn CortexTrait + Send + Sync>> {
+        Ok(Box::new(MockCortexTrait))
+    }
+    async fn prompt(
+        &self,
+        _ctx: RequestContext,
+        _cortex: &dyn CortexTrait,
+        _prompt: &str,
+    ) -> anyhow::Result<String> {
+        Ok("".to_string())
+    }
+    async fn embed_text_raw(
+        &self,
+        _ctx: RequestContext,
+        _cortex: &dyn CortexTrait,
+        _text: &str,
+    ) -> anyhow::Result<Vec<f32>> {
+        Ok(vec![0.1, 0.2, 0.3])
+    }
+    async fn embed_entity(
+        &self,
+        _ctx: RequestContext,
+        _cortex: &dyn CortexTrait,
+        _entity: &dyn crate::models::vector::Vectorizable,
+    ) -> anyhow::Result<crate::models::vector::VectorIndexParams> {
+        Ok(crate::models::vector::VectorIndexParams {
+            vector: vec![0.1, 0.2, 0.3],
+            content_hash: "".to_string(),
+            model_provider_id: "".to_string(),
+            embedding_model: "".to_string(),
+            expire_at: None,
+        })
+    }
+    async fn embed_text_for_search(
+        &self,
+        _ctx: RequestContext,
+        _cortex: &dyn CortexTrait,
+        _text: &str,
+    ) -> anyhow::Result<crate::models::vector::VectorIndexParams> {
+        Ok(crate::models::vector::VectorIndexParams {
+            vector: vec![0.1, 0.2, 0.3],
+            content_hash: "".to_string(),
+            model_provider_id: "".to_string(),
+            embedding_model: "".to_string(),
+            expire_at: None,
+        })
+    }
+}
+
+/// Mock MemoryVectorDao（返回预设的向量搜索结果）
+struct MockMemoryVectorDao {
+    short_term_hits: Vec<(String, f32)>,
+    knowledge_node_hits: Vec<(String, f32)>,
+}
+
+fn build_vector_search_hits(hits: &[(String, f32)]) -> Vec<VectorSearchHit> {
+    hits.iter()
+        .map(|(id, dist)| VectorSearchHit {
+            row: VectorRow {
+                id: id.clone(),
+                vector: vec![0.1, 0.2, 0.3],
+                meta: VectorMeta {
+                    content_hash: "mock".to_string(),
+                    embedding_model: "mock".to_string(),
+                    indexed_at: 0,
+                    expire_at: None,
+                },
+            },
+            distance: *dist,
+        })
+        .collect()
+}
+
+#[async_trait::async_trait]
+impl MemoryVectorDao for MockMemoryVectorDao {
+    async fn upsert_short_term_vector(
+        &self,
+        _ctx: RequestContext,
+        _memory_id: &str,
+        _vector_params: &VectorIndexParams,
+    ) -> Result<()> {
+        Ok(())
+    }
+    async fn upsert_knowledge_node_vector(
+        &self,
+        _ctx: RequestContext,
+        _knowledge_id: &str,
+        _vector_params: &VectorIndexParams,
+    ) -> Result<()> {
+        Ok(())
+    }
+    async fn search_short_term_vector(
+        &self,
+        _ctx: RequestContext,
+        _query_vector: &[f32],
+        _top_k: i32,
+    ) -> Result<Vec<VectorSearchHit>> {
+        Ok(build_vector_search_hits(&self.short_term_hits))
+    }
+    async fn search_knowledge_node_vector(
+        &self,
+        _ctx: RequestContext,
+        _query_vector: &[f32],
+        _top_k: i32,
+    ) -> Result<Vec<VectorSearchHit>> {
+        Ok(build_vector_search_hits(&self.knowledge_node_hits))
+    }
+    async fn get_short_term_vector_row(
+        &self,
+        _ctx: RequestContext,
+        _memory_id: &str,
+    ) -> Result<Option<VectorRow>> {
+        Ok(None)
+    }
+    async fn get_knowledge_node_vector_row(
+        &self,
+        _ctx: RequestContext,
+        _knowledge_id: &str,
+    ) -> Result<Option<VectorRow>> {
+        Ok(None)
+    }
+    async fn delete_short_term_vector(
+        &self,
+        _ctx: RequestContext,
+        _memory_id: &str,
+    ) -> Result<()> {
+        Ok(())
+    }
+    async fn delete_knowledge_node_vector(
+        &self,
+        _ctx: RequestContext,
+        _knowledge_id: &str,
+    ) -> Result<()> {
+        Ok(())
+    }
+}
+
+/// 初始化测试依赖（带向量搜索 Mock，可配置预设向量命中）
+async fn init_test_with_vector(
+    pool: SqlitePool,
+    short_term_hits: Vec<(String, f32)>,
+    knowledge_node_hits: Vec<(String, f32)>,
+) -> Arc<dyn MemoryDal> {
+    let _ = crate::config::init();
+    let memory_dao = new_memory_dao();
+    let memory_vector_dao: Arc<dyn MemoryVectorDao> = Arc::new(MockMemoryVectorDao {
+        short_term_hits,
+        knowledge_node_hits,
+    });
+    let model_provider_dao: Arc<dyn ModelProviderDao> = Arc::new(MockVectorProviderDao);
+    let cortex_dao: Arc<dyn CortexDao> = Arc::new(MockCortexVectorDao);
+    new(memory_dao, memory_vector_dao, model_provider_dao, cortex_dao)
+}
+
+// ========== 混合搜索测试 ==========
+
+#[sqlx::test]
+async fn test_search_keyword_match_info(pool: SqlitePool) -> Result<()> {
+    init_test_tables(&pool).await;
+    let dal = init_test(pool.clone()).await;
+    let ctx = create_test_ctx(pool);
+
+    // 创建短期记忆
+    let now = chrono::Utc::now().timestamp();
+    let index = ShortTermMemoryIndexPo {
+        id: "st-kw-match-001".to_string(),
+        agent_id: "agent-001".to_string(),
+        task_id: None,
+        role: "user".to_string(),
+        summary: "Rust 编程语言入门教程".to_string(),
+        tags: "[]".to_string(),
+        trace_ids: "[]".to_string(),
+        status: MemoryStatus::Active,
+        created_at: now,
+        updated_at: now,
+    };
+    dal.create(ctx.clone(), MemoryCreateParams::CreateShortTerm(index))
+        .await?;
+
+    // 纯关键词搜索（无向量，MockModelProviderDao 返回 None）
+    let results = dal
+        .search(
+            ctx,
+            MemorySearch {
+                keyword: Some("Rust".to_string()),
+                query_vector: None,
+                top_k: None,
+                vector_distance_threshold: None,
+                filters: MemoryQuery {
+                    agent_id: Some("agent-001".to_string()),
+                    memory_type: Some(common::enums::MemoryType::ShortTerm),
+                    limit: Some(10),
+                    ..Default::default()
+                },
+            },
+        )
+        .await?;
+
+    assert_eq!(results.len(), 1);
+    let match_info = results[0]
+        .search_match
+        .as_ref()
+        .expect("should have search_match");
+    assert_eq!(match_info.match_type, MatchType::Keyword);
+    assert!(
+        match_info.fts_rank.is_some(),
+        "fts_rank should be Some for keyword match"
+    );
+    assert!(
+        match_info.vector_distance.is_none(),
+        "vector_distance should be None for keyword-only match"
+    );
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn test_search_hybrid_ranking(pool: SqlitePool) -> Result<()> {
+    init_test_tables(&pool).await;
+
+    // Mock 向量搜索返回 st-hybrid-001 的命中（distance=0.5）
+    let dal = init_test_with_vector(
+        pool.clone(),
+        vec![("st-hybrid-001".to_string(), 0.5)],
+        vec![],
+    )
+    .await;
+    let ctx = create_test_ctx(pool);
+
+    let now = chrono::Utc::now().timestamp();
+
+    // 创建两条短期记忆（都匹配关键词 "Rust"）
+    let index1 = ShortTermMemoryIndexPo {
+        id: "st-hybrid-001".to_string(),
+        agent_id: "agent-001".to_string(),
+        task_id: None,
+        role: "user".to_string(),
+        summary: "Rust 编程语言教程".to_string(),
+        tags: "[]".to_string(),
+        trace_ids: "[]".to_string(),
+        status: MemoryStatus::Active,
+        created_at: now,
+        updated_at: now,
+    };
+    let index2 = ShortTermMemoryIndexPo {
+        id: "st-hybrid-002".to_string(),
+        agent_id: "agent-001".to_string(),
+        task_id: None,
+        role: "assistant".to_string(),
+        summary: "Rust 并发编程指南".to_string(),
+        tags: "[]".to_string(),
+        trace_ids: "[]".to_string(),
+        status: MemoryStatus::Active,
+        created_at: now + 1,
+        updated_at: now + 1,
+    };
+    dal.create(ctx.clone(), MemoryCreateParams::CreateShortTerm(index1))
+        .await?;
+    dal.create(ctx.clone(), MemoryCreateParams::CreateShortTerm(index2))
+        .await?;
+
+    // 搜索 "Rust"：两条都匹配关键词，但只有 st-hybrid-001 在向量结果中
+    let results = dal
+        .search(
+            ctx,
+            MemorySearch {
+                keyword: Some("Rust".to_string()),
+                query_vector: None,
+                top_k: None,
+                vector_distance_threshold: None,
+                filters: MemoryQuery {
+                    agent_id: Some("agent-001".to_string()),
+                    memory_type: Some(common::enums::MemoryType::ShortTerm),
+                    limit: Some(10),
+                    ..Default::default()
+                },
+            },
+        )
+        .await?;
+
+    assert_eq!(results.len(), 2, "should return 2 results");
+
+    // Hybrid 应排在第一位
+    let first = &results[0];
+    let first_match = first.search_match.as_ref().expect("should have match");
+    assert_eq!(
+        first_match.match_type,
+        MatchType::Hybrid,
+        "first result should be Hybrid"
+    );
+    assert!(
+        first_match.vector_distance.is_some(),
+        "Hybrid should have vector_distance"
+    );
+    assert!(
+        first_match.fts_rank.is_some(),
+        "Hybrid should have fts_rank"
+    );
+    match &first.po {
+        MemoryPo::ShortTerm(st) => assert_eq!(st.id, "st-hybrid-001"),
+        _ => panic!("Expected ShortTerm"),
+    }
+
+    // Keyword 应排在第二位
+    let second = &results[1];
+    let second_match = second.search_match.as_ref().expect("should have match");
+    assert_eq!(
+        second_match.match_type,
+        MatchType::Keyword,
+        "second result should be Keyword"
+    );
+    assert!(
+        second_match.vector_distance.is_none(),
+        "Keyword-only should not have vector_distance"
+    );
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn test_search_vector_distance_threshold(pool: SqlitePool) -> Result<()> {
+    init_test_tables(&pool).await;
+
+    // Mock 向量搜索返回 distance=0.9（超过默认阈值 0.8）
+    let dal = init_test_with_vector(
+        pool.clone(),
+        vec![("st-threshold-001".to_string(), 0.9)],
+        vec![],
+    )
+    .await;
+    let ctx = create_test_ctx(pool.clone());
+
+    let now = chrono::Utc::now().timestamp();
+    let index = ShortTermMemoryIndexPo {
+        id: "st-threshold-001".to_string(),
+        agent_id: "agent-001".to_string(),
+        task_id: None,
+        role: "user".to_string(),
+        summary: "Rust 内存安全机制".to_string(),
+        tags: "[]".to_string(),
+        trace_ids: "[]".to_string(),
+        status: MemoryStatus::Active,
+        created_at: now,
+        updated_at: now,
+    };
+    dal.create(ctx.clone(), MemoryCreateParams::CreateShortTerm(index))
+        .await?;
+
+    // 默认阈值 0.8：向量结果（distance=0.9）被过滤，只有关键词命中
+    let results_default = dal
+        .search(
+            ctx.clone(),
+            MemorySearch {
+                keyword: Some("Rust".to_string()),
+                query_vector: None,
+                top_k: None,
+                vector_distance_threshold: None, // 默认 0.8
+                filters: MemoryQuery {
+                    agent_id: Some("agent-001".to_string()),
+                    memory_type: Some(common::enums::MemoryType::ShortTerm),
+                    limit: Some(10),
+                    ..Default::default()
+                },
+            },
+        )
+        .await?;
+    assert_eq!(results_default.len(), 1);
+    let default_match = results_default[0]
+        .search_match
+        .as_ref()
+        .expect("should have match");
+    assert_eq!(
+        default_match.match_type,
+        MatchType::Keyword,
+        "with default threshold 0.8, distance 0.9 should be filtered → Keyword only"
+    );
+
+    // 自定义阈值 1.0：向量结果保留 → Hybrid
+    let results_custom = dal
+        .search(
+            ctx,
+            MemorySearch {
+                keyword: Some("Rust".to_string()),
+                query_vector: None,
+                top_k: None,
+                vector_distance_threshold: Some(1.0),
+                filters: MemoryQuery {
+                    agent_id: Some("agent-001".to_string()),
+                    memory_type: Some(common::enums::MemoryType::ShortTerm),
+                    limit: Some(10),
+                    ..Default::default()
+                },
+            },
+        )
+        .await?;
+    assert_eq!(results_custom.len(), 1);
+    let custom_match = results_custom[0]
+        .search_match
+        .as_ref()
+        .expect("should have match");
+    assert_eq!(
+        custom_match.match_type,
+        MatchType::Hybrid,
+        "with threshold 1.0, distance 0.9 should be kept → Hybrid"
+    );
+    assert!(
+        custom_match.vector_distance.is_some(),
+        "Hybrid should have vector_distance"
+    );
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn test_search_relations(pool: SqlitePool) -> Result<()> {
+    init_test_tables(&pool).await;
+    let dal = init_test(pool.clone()).await;
+    let ctx = create_test_ctx(pool.clone());
+
+    let now = chrono::Utc::now().timestamp();
+
+    // 创建两个知识节点（描述包含 "Rust"）
+    let node1 = LongTermKnowledgeNodePo {
+        id: "kn-rel-001".to_string(),
+        agent_id: "agent-001".to_string(),
+        node_name: "Rust 所有权机制".to_string(),
+        node_description: "Rust 所有权、借用和生命周期".to_string(),
+        node_type: "concept".to_string(),
+        summary: "Rust 内存安全核心特性".to_string(),
+        status: MemoryStatus::Active,
+        created_at: now,
+        updated_at: now,
+    };
+    let node2 = LongTermKnowledgeNodePo {
+        id: "kn-rel-002".to_string(),
+        agent_id: "agent-001".to_string(),
+        node_name: "Rust 借用检查器".to_string(),
+        node_description: "Rust 编译期借用检查".to_string(),
+        node_type: "concept".to_string(),
+        summary: "Rust 借用规则与检查".to_string(),
+        status: MemoryStatus::Active,
+        created_at: now,
+        updated_at: now,
+    };
+    dal.create(
+        ctx.clone(),
+        MemoryCreateParams::CreateKnowledgeNode {
+            node: node1,
+            references: vec![],
+        },
+    )
+    .await?;
+    dal.create(
+        ctx.clone(),
+        MemoryCreateParams::CreateKnowledgeNode {
+            node: node2,
+            references: vec![],
+        },
+    )
+    .await?;
+
+    // 创建关系
+    let relation = KnowledgeNodeRelationPo {
+        id: "rel-search-001".to_string(),
+        source_node_id: "kn-rel-001".to_string(),
+        target_node_id: "kn-rel-002".to_string(),
+        relation_type: common::enums::KnowledgeRelationType::Related,
+        created_at: now,
+        updated_at: now,
+    };
+    dal.create(
+        ctx.clone(),
+        MemoryCreateParams::CreateRelations(vec![relation]),
+    )
+    .await?;
+
+    // 搜索关系（memory_type=Relation，触发 search_relations_internal）
+    let results = dal
+        .search(
+            ctx,
+            MemorySearch {
+                keyword: Some("Rust".to_string()),
+                query_vector: None,
+                top_k: None,
+                vector_distance_threshold: None,
+                filters: MemoryQuery {
+                    agent_id: Some("agent-001".to_string()),
+                    memory_type: Some(common::enums::MemoryType::Relation),
+                    limit: Some(20),
+                    ..Default::default()
+                },
+            },
+        )
+        .await?;
+
+    // 应返回知识节点（2 个）+ 关系（1 条）
+    assert!(
+        results.len() >= 3,
+        "should return at least 2 nodes + 1 relation, got {}",
+        results.len()
+    );
+
+    // 验证包含 KnowledgeNode 和 Relation 类型
+    let has_node = results
+        .iter()
+        .any(|m| matches!(m.po, MemoryPo::KnowledgeNode(_)));
+    let has_relation = results
+        .iter()
+        .any(|m| matches!(m.po, MemoryPo::Relation(_)));
+    assert!(has_node, "should contain KnowledgeNode");
+    assert!(has_relation, "should contain Relation");
+
+    // 验证关系连接正确
+    let rel = results
+        .iter()
+        .find_map(|m| match &m.po {
+            MemoryPo::Relation(r) => Some(r),
+            _ => None,
+        })
+        .expect("should find a Relation");
+    assert_eq!(rel.source_node_id, "kn-rel-001");
+    assert_eq!(rel.target_node_id, "kn-rel-002");
+
+    // 验证知识节点的 search_match 为 Keyword
+    let node_with_match = results
+        .iter()
+        .find_map(|m| match (&m.po, &m.search_match) {
+            (MemoryPo::KnowledgeNode(_), Some(sm)) => Some(sm),
+            _ => None,
+        })
+        .expect("should find a KnowledgeNode with search_match");
+    assert_eq!(node_with_match.match_type, MatchType::Keyword);
+    assert!(node_with_match.fts_rank.is_some());
 
     Ok(())
 }

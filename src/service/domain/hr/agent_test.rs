@@ -2,9 +2,13 @@
 
 use super::{HrDomain, domain};
 use crate::models::agent::{Agent, AgentPo};
+use crate::models::skill::{Skill, SkillPo};
 use crate::pkg::RequestContext;
 use common::enums::AgentStatus;
+use common::enums::SkillStatus;
+use common::enums::skill::SkillAuthorType;
 use sqlx::SqlitePool;
+use tempfile::TempDir;
 use uuid::Uuid;
 
 fn new_ctx(user_id: &str, pool: sqlx::SqlitePool) -> RequestContext {
@@ -423,4 +427,360 @@ async fn test_install_tool_pack_returns_error_for_nonexistent_agent(pool: Sqlite
         .await;
 
     assert!(result.is_err());
+}
+
+// ==================== 技能包安装/卸载/列表测试 ====================
+
+/// 初始化测试环境（带文件系统支持，用于技能包安装测试）
+fn init_test_env_with_fs(pool: SqlitePool) -> (std::sync::Arc<dyn HrDomain>, RequestContext, TempDir) {
+    let temp_dir = TempDir::new().unwrap();
+    let base_path = temp_dir.path().to_path_buf();
+
+    unsafe {
+        std::env::set_var("AI_ORZ_BASE_PATH", base_path.to_str().unwrap());
+    }
+
+    crate::config::init().unwrap();
+
+    // 初始化所有 DAO
+    crate::service::dao::agent::init();
+    crate::service::dao::tool::init();
+    crate::service::dao::skill::init_vector();
+    crate::service::dao::tool_call::init();
+    crate::service::dao::model_provider::init();
+    crate::service::dao::cortex::init();
+
+    // 初始化所有 DAL
+    crate::service::dal::agent::init();
+    crate::service::dal::tool::init();
+    crate::service::dal::model_provider::init();
+    let skill_dal = crate::service::dal::skill::new(
+        crate::service::dao::skill::new_skill_dao_with_base_path(base_path),
+        crate::service::dao::skill::vector_dao(),
+        crate::service::dao::cortex::dao(),
+        crate::service::dao::model_provider::dao(),
+    );
+
+    let domain = super::new(
+        crate::service::dal::agent::dal(),
+        crate::service::dal::tool::dal(),
+        skill_dal,
+    );
+    let ctx = new_ctx("admin", pool);
+    (domain, ctx, temp_dir)
+}
+
+/// 创建已发布技能（带指定 tag）
+fn create_published_skill_with_tag(name: &str, tag: &str) -> Skill {
+    let skill_po = SkillPo::new(
+        format!(
+            "{}--{}",
+            name.to_lowercase().replace(" ", "-"),
+            Uuid::new_v4()
+        ),
+        name.to_string(),
+        format!("A test skill for {}", tag),
+        vec![tag.to_string()],
+        "coding".to_string(),
+        String::new(),
+        "admin".to_string(),
+        SkillAuthorType::User,
+        format!("skills/{}", name.to_lowercase().replace(" ", "-")),
+    );
+    let mut skill = Skill::from_po(skill_po);
+    skill.po.status = SkillStatus::Published;
+    skill
+}
+
+#[sqlx::test]
+async fn test_install_skill_pack(pool: SqlitePool) {
+    let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool);
+
+    // 创建 Agent
+    let agent = create_test_agent("SkillPackAgent");
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+
+    // 创建 2 个带 "coding" tag 的已发布技能
+    let skill1 = create_published_skill_with_tag("CodingSkill1", "coding");
+    let skill2 = create_published_skill_with_tag("CodingSkill2", "coding");
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), &skill1)
+        .await
+        .unwrap();
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), &skill2)
+        .await
+        .unwrap();
+
+    // 安装技能包
+    let count = domain
+        .agent_manage()
+        .install_skill_pack(ctx.clone(), agent.id(), "coding")
+        .await
+        .unwrap();
+
+    // 验证返回成功安装数量
+    assert_eq!(count, 2);
+
+    // 验证 tag 已记录
+    let packs = domain
+        .agent_manage()
+        .list_installed_skill_packs(ctx.clone(), agent.id())
+        .await
+        .unwrap();
+    assert_eq!(packs.len(), 1);
+    assert_eq!(packs[0], "coding");
+
+    // 验证技能副本已创建
+    let agent_skills = domain
+        .skill_manage()
+        .list_for_agent(ctx, agent.id())
+        .await
+        .unwrap();
+    assert_eq!(agent_skills.len(), 2);
+}
+
+#[sqlx::test]
+async fn test_install_skill_pack_idempotent(pool: SqlitePool) {
+    let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool);
+
+    let agent = create_test_agent("IdempotentAgent");
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+
+    let skill = create_published_skill_with_tag("UniqueSkill", "writing");
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), &skill)
+        .await
+        .unwrap();
+
+    // 第一次安装
+    let count1 = domain
+        .agent_manage()
+        .install_skill_pack(ctx.clone(), agent.id(), "writing")
+        .await
+        .unwrap();
+    assert_eq!(count1, 1);
+
+    // 第二次安装同一 tag（幂等跳过）
+    let count2 = domain
+        .agent_manage()
+        .install_skill_pack(ctx.clone(), agent.id(), "writing")
+        .await
+        .unwrap();
+    assert_eq!(count2, 0);
+
+    // 验证 tag 只记录一次
+    let packs = domain
+        .agent_manage()
+        .list_installed_skill_packs(ctx.clone(), agent.id())
+        .await
+        .unwrap();
+    assert_eq!(packs.len(), 1);
+
+    // 验证技能副本只有 1 个（install_to_agent 幂等）
+    let agent_skills = domain
+        .skill_manage()
+        .list_for_agent(ctx, agent.id())
+        .await
+        .unwrap();
+    assert_eq!(agent_skills.len(), 1);
+}
+
+#[sqlx::test]
+async fn test_uninstall_skill_pack(pool: SqlitePool) {
+    let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool);
+
+    let agent = create_test_agent("UninstallSkillPackAgent");
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+
+    let skill = create_published_skill_with_tag("PersistSkill", "analysis");
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), &skill)
+        .await
+        .unwrap();
+
+    // 安装技能包
+    domain
+        .agent_manage()
+        .install_skill_pack(ctx.clone(), agent.id(), "analysis")
+        .await
+        .unwrap();
+
+    // 验证已安装
+    let packs = domain
+        .agent_manage()
+        .list_installed_skill_packs(ctx.clone(), agent.id())
+        .await
+        .unwrap();
+    assert_eq!(packs.len(), 1);
+
+    // 卸载技能包
+    domain
+        .agent_manage()
+        .uninstall_skill_pack(ctx.clone(), agent.id(), "analysis")
+        .await
+        .unwrap();
+
+    // 验证 tag 已移除
+    let packs = domain
+        .agent_manage()
+        .list_installed_skill_packs(ctx.clone(), agent.id())
+        .await
+        .unwrap();
+    assert!(packs.is_empty());
+
+    // 验证技能副本保留
+    let agent_skills = domain
+        .skill_manage()
+        .list_for_agent(ctx, agent.id())
+        .await
+        .unwrap();
+    assert_eq!(agent_skills.len(), 1);
+}
+
+#[sqlx::test]
+async fn test_list_installed_skill_packs(pool: SqlitePool) {
+    let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool);
+
+    let agent = create_test_agent("ListSkillPacksAgent");
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+
+    // 初始为空
+    let packs = domain
+        .agent_manage()
+        .list_installed_skill_packs(ctx.clone(), agent.id())
+        .await
+        .unwrap();
+    assert!(packs.is_empty());
+
+    // 创建不同 tag 的已发布技能
+    let skill1 = create_published_skill_with_tag("Skill1", "coding");
+    let skill2 = create_published_skill_with_tag("Skill2", "writing");
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), &skill1)
+        .await
+        .unwrap();
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), &skill2)
+        .await
+        .unwrap();
+
+    // 安装多个技能包
+    domain
+        .agent_manage()
+        .install_skill_pack(ctx.clone(), agent.id(), "coding")
+        .await
+        .unwrap();
+    domain
+        .agent_manage()
+        .install_skill_pack(ctx.clone(), agent.id(), "writing")
+        .await
+        .unwrap();
+
+    // 验证列表
+    let packs = domain
+        .agent_manage()
+        .list_installed_skill_packs(ctx, agent.id())
+        .await
+        .unwrap();
+    assert_eq!(packs.len(), 2);
+    assert!(packs.contains(&"coding".to_string()));
+    assert!(packs.contains(&"writing".to_string()));
+}
+
+#[sqlx::test]
+async fn test_reinstall_skill_pack_updates_existing_copy(pool: SqlitePool) {
+    let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool);
+
+    let agent = create_test_agent("ReinstallAgent");
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+
+    // 创建已发布技能并安装
+    let skill = create_published_skill_with_tag("ReinstallSkill", "coding");
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), &skill)
+        .await
+        .unwrap();
+    domain
+        .agent_manage()
+        .install_skill_pack(ctx.clone(), agent.id(), "coding")
+        .await
+        .unwrap();
+
+    // 验证初始安装
+    let agent_skills = domain
+        .skill_manage()
+        .list_for_agent(ctx.clone(), agent.id())
+        .await
+        .unwrap();
+    assert_eq!(agent_skills.len(), 1);
+    let original_name = agent_skills[0].po.name.clone();
+
+    // 更新源技能名称
+    let mut updated_source = skill.clone();
+    updated_source.po.name = "UpdatedReinstallSkill".to_string();
+    domain
+        .skill_manage()
+        .update_skill(
+            ctx.clone(),
+            super::UpdateSkillParams {
+                skill: &updated_source,
+                file_writes: Vec::new(),
+                file_deletes: Vec::new(),
+                file_imports: Vec::new(),
+            },
+        )
+        .await
+        .unwrap();
+
+    // 重新安装技能包
+    let count = domain
+        .agent_manage()
+        .reinstall_skill_pack(ctx.clone(), agent.id(), "coding")
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+
+    // 验证副本名称已更新（而非创建新副本）
+    let agent_skills = domain
+        .skill_manage()
+        .list_for_agent(ctx, agent.id())
+        .await
+        .unwrap();
+    assert_eq!(agent_skills.len(), 1, "重装不应创建新副本");
+    assert_eq!(
+        agent_skills[0].po.name, "UpdatedReinstallSkill",
+        "副本名称应已更新"
+    );
+    assert_ne!(
+        agent_skills[0].po.name, original_name,
+        "名称应已变化"
+    );
 }

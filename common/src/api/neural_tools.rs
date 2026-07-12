@@ -299,3 +299,36 @@ pub struct SettleMemoryResponse {
     /// 沉淀创建的知识节点数量。
     pub settled_count: usize,
 }
+
+/// 搜索技能请求参数。
+///
+/// 按关键词或标签搜索技能库，返回技能摘要列表（不含完整内容）。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct SearchSkillParams {
+    /// 搜索关键词（匹配技能名称、描述、tags）。
+    pub keyword: Option<String>,
+    /// 按 tag 过滤（OR 语义，命中任一即可）。
+    pub tags: Option<Vec<String>>,
+    /// 返回数量限制，默认 10。
+    pub limit: Option<usize>,
+}
+
+/// 搜索技能响应。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct SearchSkillResponse {
+    /// 搜索结果列表。
+    pub skills: Vec<SkillSummary>,
+}
+
+/// 技能摘要（不含完整内容，用于搜索/列表展示）。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct SkillSummary {
+    /// 技能 ID。
+    pub skill_id: String,
+    /// 技能名称。
+    pub name: String,
+    /// 技能描述。
+    pub description: String,
+    /// 标签列表。
+    pub tags: Vec<String>,
+}

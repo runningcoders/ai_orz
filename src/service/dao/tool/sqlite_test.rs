@@ -610,3 +610,165 @@ async fn test_tool_search(pool: SqlitePool) {
     let results = tool_dao.search(ctx.clone(), search).await.unwrap();
     assert_eq!(results.len(), 1);
 }
+
+#[sqlx::test]
+async fn test_query_by_tag(pool: SqlitePool) {
+    let tool_dao = init_test_env();
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
+
+    // 创建带不同 tag 的工具
+    let tool1 = ToolPo::new(
+        "tag-tool-1".to_string(),
+        "python-tool".to_string(),
+        "A python tool".to_string(),
+        ToolProtocol::Http,
+        serde_json::Value::Null,
+        None,
+        vec!["python".to_string(), "automation".to_string()],
+        Some("admin".to_string()),
+    );
+    let tool2 = ToolPo::new(
+        "tag-tool-2".to_string(),
+        "rust-tool".to_string(),
+        "A rust tool".to_string(),
+        ToolProtocol::Http,
+        serde_json::Value::Null,
+        None,
+        vec!["rust".to_string(), "systems".to_string()],
+        Some("admin".to_string()),
+    );
+
+    tool_dao.create_tool(ctx.clone(), &tool1).await.unwrap();
+    tool_dao.create_tool(ctx.clone(), &tool2).await.unwrap();
+
+    // 按 python tag 查询，应只返回 tool1
+    let query = crate::service::dao::tool::ToolQuery {
+        tags: Some(vec!["python".to_string()]),
+        ..Default::default()
+    };
+    let results = tool_dao.query(ctx.clone(), query).await.unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].id, "tag-tool-1");
+}
+
+#[sqlx::test]
+async fn test_query_by_multiple_tags(pool: SqlitePool) {
+    let tool_dao = init_test_env();
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
+
+    let tool1 = ToolPo::new(
+        "multi-tag-1".to_string(),
+        "python-tool".to_string(),
+        "Python".to_string(),
+        ToolProtocol::Http,
+        serde_json::Value::Null,
+        None,
+        vec!["python".to_string()],
+        Some("admin".to_string()),
+    );
+    let tool2 = ToolPo::new(
+        "multi-tag-2".to_string(),
+        "rust-tool".to_string(),
+        "Rust".to_string(),
+        ToolProtocol::Http,
+        serde_json::Value::Null,
+        None,
+        vec!["rust".to_string()],
+        Some("admin".to_string()),
+    );
+    let tool3 = ToolPo::new(
+        "multi-tag-3".to_string(),
+        "js-tool".to_string(),
+        "JavaScript".to_string(),
+        ToolProtocol::Http,
+        serde_json::Value::Null,
+        None,
+        vec!["javascript".to_string()],
+        Some("admin".to_string()),
+    );
+
+    tool_dao.create_tool(ctx.clone(), &tool1).await.unwrap();
+    tool_dao.create_tool(ctx.clone(), &tool2).await.unwrap();
+    tool_dao.create_tool(ctx.clone(), &tool3).await.unwrap();
+
+    // 查询 python 或 rust tag（OR 语义），应返回 tool1 和 tool2，不含 tool3
+    let query = crate::service::dao::tool::ToolQuery {
+        tags: Some(vec!["python".to_string(), "rust".to_string()]),
+        ..Default::default()
+    };
+    let results = tool_dao.query(ctx.clone(), query).await.unwrap();
+    assert_eq!(results.len(), 2);
+    let ids: Vec<String> = results.iter().map(|t| t.id.clone()).collect();
+    assert!(ids.contains(&"multi-tag-1".to_string()));
+    assert!(ids.contains(&"multi-tag-2".to_string()));
+    assert!(!ids.contains(&"multi-tag-3".to_string()));
+}
+
+#[sqlx::test]
+async fn test_query_without_tags(pool: SqlitePool) {
+    let tool_dao = init_test_env();
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
+
+    let tool1 = ToolPo::new(
+        "no-tag-1".to_string(),
+        "alpha-tool".to_string(),
+        "Alpha".to_string(),
+        ToolProtocol::Http,
+        serde_json::Value::Null,
+        None,
+        vec!["alpha".to_string()],
+        Some("admin".to_string()),
+    );
+    let tool2 = ToolPo::new(
+        "no-tag-2".to_string(),
+        "beta-tool".to_string(),
+        "Beta".to_string(),
+        ToolProtocol::Http,
+        serde_json::Value::Null,
+        None,
+        vec!["beta".to_string()],
+        Some("admin".to_string()),
+    );
+
+    tool_dao.create_tool(ctx.clone(), &tool1).await.unwrap();
+    tool_dao.create_tool(ctx.clone(), &tool2).await.unwrap();
+
+    // tags = None 时，不过滤 tag，应返回全部
+    let query = crate::service::dao::tool::ToolQuery {
+        tags: None,
+        ..Default::default()
+    };
+    let results = tool_dao.query(ctx.clone(), query).await.unwrap();
+    assert_eq!(results.len(), 2);
+    let ids: Vec<String> = results.iter().map(|t| t.id.clone()).collect();
+    assert!(ids.contains(&"no-tag-1".to_string()));
+    assert!(ids.contains(&"no-tag-2".to_string()));
+}
+
+#[sqlx::test]
+async fn test_keyword_search_matches_tags(pool: SqlitePool) {
+    let tool_dao = init_test_env();
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
+
+    // name 和 description 都不含 "unique_tool_tag"，只有 tags 含
+    let tool = ToolPo::new(
+        "keyword-tag-tool".to_string(),
+        "generic-tool".to_string(),
+        "A generic tool".to_string(),
+        ToolProtocol::Http,
+        serde_json::Value::Null,
+        None,
+        vec!["unique_tool_tag".to_string()],
+        Some("admin".to_string()),
+    );
+    tool_dao.create_tool(ctx.clone(), &tool).await.unwrap();
+
+    // 用 tag 内容作为关键词搜索，应能命中
+    let query = crate::service::dao::tool::ToolQuery {
+        keyword: Some("unique_tool_tag".to_string()),
+        ..Default::default()
+    };
+    let results = tool_dao.query(ctx.clone(), query).await.unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].id, "keyword-tag-tool");
+}

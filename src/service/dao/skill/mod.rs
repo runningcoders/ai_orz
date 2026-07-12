@@ -23,6 +23,8 @@ pub struct SkillQuery {
     pub exclude_status: Option<SkillStatus>,
     pub category: Option<String>,
     pub author_id: Option<String>,
+    pub parent_skill_id: Option<String>, // 按父技能 ID 过滤（用于幂等检查已安装副本）
+    pub tags: Option<Vec<String>>, // 按 tag 过滤（OR 语义，命中任一即可）
     pub keyword: Option<String>,
     pub limit: Option<usize>,
 }

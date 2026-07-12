@@ -10,7 +10,7 @@ use crate::pkg::request_context::RequestContext;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::skill::{self, SkillDao, SkillQuery, SkillSearch, SkillVectorDao};
-use common::enums::{ModelCapability, ModelProviderStatus};
+use common::enums::{ModelCapability, ModelProviderStatus, SkillStatus};
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例管理 ====================
@@ -148,6 +148,22 @@ pub trait SkillDal: Send + Sync {
         ctx: RequestContext,
         skill_id: &str,
     ) -> Result<Option<String>>;
+
+    /// 按 tag 查询已发布技能（用于技能包安装）
+    async fn list_published_by_tag(
+        &self,
+        ctx: RequestContext,
+        tag: &str,
+    ) -> Result<Vec<Skill>>;
+
+    /// 查询指定 Agent 已有的技能副本（通过 author_id 和 parent_skill_id 列表）
+    /// 如果 parent_skill_ids 为空，返回空 Vec
+    async fn find_agent_skill_copies(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        parent_skill_ids: &[String],
+    ) -> Result<Vec<Skill>>;
 }
 
 // ==================== DAL 实现 ====================
@@ -520,7 +536,40 @@ impl SkillDal for SkillDalImpl {
             .find_by_id(ctx.clone(), source_skill_id)
             .await?
             .ok_or_else(|| err!(ResourceNotFound, "Skill not found"))?;
-        // 调用 DAO 原子安装，DAO 只返回持久化对象
+
+        // 幂等检查：查询是否已存在该 Agent 安装该源技能的副本
+        // （author_id = agent_id AND parent_skill_id = source_skill_id）
+        let existing = self
+            .skill_dao
+            .query(
+                ctx.clone(),
+                SkillQuery {
+                    author_id: Some(agent_id.to_string()),
+                    parent_skill_id: Some(source_skill_id.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await?;
+
+        // 如果已有副本，跳过安装，直接返回已有技能（加载文件后返回完整 Skill 业务实体）
+        if let Some(existing_po) = existing.into_iter().next() {
+            log_info!(
+                &ctx,
+                "install_to_agent",
+                "技能已安装到 agent，跳过创建新副本: source_skill_id={}, agent_id={}, existing_id={}",
+                source_skill_id,
+                agent_id,
+                existing_po.id
+            );
+            let files = self.skill_dao.list_files(&existing_po)?;
+            return Ok(Skill {
+                po: existing_po,
+                files,
+                search_match: None,
+            });
+        }
+
+        // 无副本，调用 DAO 原子安装，DAO 只返回持久化对象
         let installed_po = self
             .skill_dao
             .install_to_agent(ctx, &source_skill, agent_id)
@@ -571,5 +620,47 @@ impl SkillDal for SkillDalImpl {
     ) -> Result<Option<String>> {
         let row = self.skill_vector_dao.get_vector_row(ctx, skill_id).await?;
         Ok(row.map(|r| r.meta.content_hash))
+    }
+
+    async fn list_published_by_tag(
+        &self,
+        ctx: RequestContext,
+        tag: &str,
+    ) -> Result<Vec<Skill>> {
+        self.query(
+            ctx,
+            SkillQuery {
+                tags: Some(vec![tag.to_string()]),
+                status: Some(SkillStatus::Published),
+                ..Default::default()
+            },
+        )
+        .await
+    }
+
+    async fn find_agent_skill_copies(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        parent_skill_ids: &[String],
+    ) -> Result<Vec<Skill>> {
+        if parent_skill_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // 查询 Agent 的所有技能副本，按 parent_skill_id 列表过滤
+        let mut skills = self
+            .query(
+                ctx,
+                SkillQuery {
+                    author_id: Some(agent_id.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await?;
+
+        let id_set: std::collections::HashSet<&String> = parent_skill_ids.iter().collect();
+        skills.retain(|s| id_set.contains(&s.po.parent_skill_id));
+        Ok(skills)
     }
 }

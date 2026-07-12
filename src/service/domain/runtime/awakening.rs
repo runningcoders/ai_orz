@@ -4,6 +4,7 @@ use common::error::{err, bail_err, Result};
 use crate::models::agent::Agent;
 use crate::models::memory::MemoryTrace;
 use crate::models::message::Message;
+use crate::models::skill::SkillPo;
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::stats::AgentAwakeEvent;
@@ -64,6 +65,9 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             .map(|tool| tool.po.to_tool_prompt())
             .collect();
 
+        // Step 3.6: 加载 Agent 技能副本用于 Prompt 注入
+        let skills = self.load_agent_skills(ctx.clone(), &agent.po.id).await?;
+
         // Step 4: 拼装 Prompt（注入 trace_id 到头部，模型可见）
         let builder = PromptBuilder::new()
             .current_trace_id(&trace_id)
@@ -71,6 +75,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             .agent_system(agent)
             .agent_tools(agent)
             .tools(&builtin_tool_prompts)
+            .agent_skills(&skills)
             .history(&recent_memories)
             .current_message(message);
 
@@ -161,6 +166,8 @@ impl RuntimeDomainImpl {
     /// 内置工具是 Agent 天生具备或入职培训获得的能力，不需要显式绑定：
     /// - 神经工具：tags 包含 "neural"，所有 Agent 天生拥有
     /// - 已安装工具包工具：tags 与 agent.installed_tags 有交集
+    ///
+    /// 通过 SQL 层 tag 过滤（OR 语义）直接查询命中的工具，避免全量加载到内存。
     async fn load_builtin_tools(
         &self,
         ctx: RequestContext,
@@ -169,19 +176,37 @@ impl RuntimeDomainImpl {
         use crate::service::dao::tool::ToolQuery;
         use common::enums::ToolStatus;
 
-        let all_tools = self
-            .tool_dal
+        // 构建 tag 过滤列表：neural + agent 的 installed_tags
+        // SQL 层使用 OR 语义，命中任一 tag 的工具都会被返回
+        let mut tag_filter = vec!["neural".to_string()];
+        tag_filter.extend(agent.po.get_installed_tags());
+
+        self.tool_dal
             .query(
                 ctx,
                 ToolQuery {
+                    tags: Some(tag_filter),
                     enabled_only: Some(true),
                     status: Some(ToolStatus::Enabled),
                     ..Default::default()
                 },
             )
-            .await?;
+            .await
+    }
 
-        Ok(filter_builtin_tools(all_tools, &agent.po.get_installed_tags()))
+    /// 加载 Agent 的技能副本用于 Prompt 注入
+    ///
+    /// 通过 SkillDal 全局单例查询 Agent 的技能副本（author_id = agent_id），
+    /// 返回 SkillPo 列表供 PromptBuilder.agent_skills() 注入"【可用技能】"部分。
+    /// 与 memory 模块一样使用全局 DAL 单例，保持运行时数据加载的一致性。
+    async fn load_agent_skills(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+    ) -> Result<Vec<SkillPo>> {
+        use crate::service::dal::skill::dal as skill_dal;
+        let skills = skill_dal().list_for_agent(ctx, agent_id).await?;
+        Ok(skills.into_iter().map(|s| s.po).collect())
     }
 }
 
@@ -190,6 +215,9 @@ impl RuntimeDomainImpl {
 /// 筛选规则：
 /// 1. 神经工具：tags 包含 "neural"，所有 Agent 天生拥有
 /// 2. 已安装工具包工具：tags 与 installed_tags 有交集
+///
+/// 保留用于单元测试和可能的回退；生产路径已改为 SQL 层 tag 过滤。
+#[allow(dead_code)]
 fn filter_builtin_tools(
     all_tools: Vec<crate::models::tool::Tool>,
     installed_tags: &[String],
@@ -289,5 +317,436 @@ mod tests {
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].po.id, "multi-1");
+    }
+
+    /// 模拟 SQL 层 tag 过滤（OR 语义），与 ToolDao sqlite 实现的 json_each IN 逻辑一致
+    ///
+    /// 给定 tag_filter 列表，保留 tags 与 tag_filter 有任一交集的工具
+    fn simulate_sql_tag_filter(
+        tools: Vec<Tool>,
+        tag_filter: &[String],
+    ) -> Vec<Tool> {
+        tools
+            .into_iter()
+            .filter(|tool| {
+                let tags = tool.po.get_tags();
+                tag_filter.iter().any(|tag| tags.contains(tag))
+            })
+            .collect()
+    }
+
+    /// 构建 load_builtin_tools 使用的 tag_filter：neural + installed_tags
+    fn build_tag_filter(installed_tags: &[String]) -> Vec<String> {
+        let mut tag_filter = vec!["neural".to_string()];
+        tag_filter.extend(installed_tags.iter().cloned());
+        tag_filter
+    }
+
+    /// 工具规格（id + tags），用于批量构建工具集（Tool 不可 clone，需要独立创建两份）
+    fn make_tools_from_spec(spec: &[(&str, Vec<&str>)]) -> Vec<Tool> {
+        spec.iter().map(|(id, tags)| make_tool(id, tags.clone())).collect()
+    }
+
+    #[test]
+    fn sql_filter_equivalent_to_memory_filter_for_neural_only() {
+        let spec: &[(&str, Vec<&str>)] = &[
+            ("neural-1", vec!["neural"]),
+            ("external-1", vec!["external"]),
+            ("external-2", vec!["other"]),
+        ];
+        let installed = make_tags(vec![]);
+        let tag_filter = build_tag_filter(&installed);
+
+        let memory_result = filter_builtin_tools(make_tools_from_spec(spec), &installed);
+        let sql_result = simulate_sql_tag_filter(make_tools_from_spec(spec), &tag_filter);
+
+        let memory_ids: Vec<&str> = memory_result.iter().map(|t| t.po.id.as_str()).collect();
+        let sql_ids: Vec<&str> = sql_result.iter().map(|t| t.po.id.as_str()).collect();
+        assert_eq!(memory_ids, sql_ids);
+        assert_eq!(sql_ids, vec!["neural-1"]);
+    }
+
+    #[test]
+    fn sql_filter_equivalent_to_memory_filter_with_installed_tags() {
+        let spec: &[(&str, Vec<&str>)] = &[
+            ("neural-1", vec!["neural"]),
+            ("pm-1", vec!["project_management"]),
+            ("da-1", vec!["data_analysis"]),
+            ("external-1", vec!["external"]),
+            ("multi-1", vec!["project_management", "advanced"]),
+        ];
+        let installed = make_tags(vec!["project_management"]);
+        let tag_filter = build_tag_filter(&installed);
+
+        let memory_result = filter_builtin_tools(make_tools_from_spec(spec), &installed);
+        let sql_result = simulate_sql_tag_filter(make_tools_from_spec(spec), &tag_filter);
+
+        let mut memory_ids: Vec<&str> = memory_result.iter().map(|t| t.po.id.as_str()).collect();
+        memory_ids.sort();
+        let mut sql_ids: Vec<&str> = sql_result.iter().map(|t| t.po.id.as_str()).collect();
+        sql_ids.sort();
+        assert_eq!(memory_ids, sql_ids);
+        assert!(sql_ids.contains(&"neural-1"));
+        assert!(sql_ids.contains(&"pm-1"));
+        assert!(sql_ids.contains(&"multi-1"));
+        assert!(!sql_ids.contains(&"da-1"));
+        assert!(!sql_ids.contains(&"external-1"));
+    }
+
+    #[test]
+    fn sql_filter_equivalent_to_memory_filter_with_multiple_installed_tags() {
+        let spec: &[(&str, Vec<&str>)] = &[
+            ("neural-1", vec!["neural"]),
+            ("pm-1", vec!["project_management"]),
+            ("da-1", vec!["data_analysis"]),
+            ("cross-1", vec!["project_management", "data_analysis"]),
+            ("external-1", vec!["external"]),
+        ];
+        let installed = make_tags(vec!["project_management", "data_analysis"]);
+        let tag_filter = build_tag_filter(&installed);
+
+        let memory_result = filter_builtin_tools(make_tools_from_spec(spec), &installed);
+        let sql_result = simulate_sql_tag_filter(make_tools_from_spec(spec), &tag_filter);
+
+        let mut memory_ids: Vec<&str> = memory_result.iter().map(|t| t.po.id.as_str()).collect();
+        memory_ids.sort();
+        let mut sql_ids: Vec<&str> = sql_result.iter().map(|t| t.po.id.as_str()).collect();
+        sql_ids.sort();
+        assert_eq!(memory_ids, sql_ids);
+        assert_eq!(sql_ids, vec!["cross-1", "da-1", "neural-1", "pm-1"]);
+    }
+
+    #[test]
+    fn sql_filter_equivalent_to_memory_filter_empty_tools() {
+        let spec: &[(&str, Vec<&str>)] = &[];
+        let installed = make_tags(vec!["project_management"]);
+        let tag_filter = build_tag_filter(&installed);
+
+        let memory_result = filter_builtin_tools(make_tools_from_spec(spec), &installed);
+        let sql_result = simulate_sql_tag_filter(make_tools_from_spec(spec), &tag_filter);
+
+        assert_eq!(memory_result.len(), 0);
+        assert_eq!(sql_result.len(), 0);
+    }
+
+    #[test]
+    fn sql_filter_equivalent_to_memory_filter_tool_with_no_tags() {
+        let spec: &[(&str, Vec<&str>)] = &[
+            ("neural-1", vec!["neural"]),
+            ("no-tags-1", vec![]),
+        ];
+        let installed = make_tags(vec!["project_management"]);
+        let tag_filter = build_tag_filter(&installed);
+
+        let memory_result = filter_builtin_tools(make_tools_from_spec(spec), &installed);
+        let sql_result = simulate_sql_tag_filter(make_tools_from_spec(spec), &tag_filter);
+
+        let memory_ids: Vec<&str> = memory_result.iter().map(|t| t.po.id.as_str()).collect();
+        let sql_ids: Vec<&str> = sql_result.iter().map(|t| t.po.id.as_str()).collect();
+        assert_eq!(memory_ids, sql_ids);
+        assert_eq!(sql_ids, vec!["neural-1"]);
+    }
+
+    // ==================== awaken 集成测试 ====================
+
+    use crate::models::agent::{Agent, AgentPo};
+    use crate::models::brain::{Brain, Cortex, CortexTrait};
+    use crate::models::file::FileMeta;
+    use crate::models::message::Message;
+    use crate::models::model_provider::ModelProvider;
+    use crate::models::skill::SkillPo;
+    use crate::pkg::RequestContext;
+    use crate::pkg::tool_tracing::logger::ToolCallLogger;
+    use crate::service::dal::brain::BrainDal;
+    use async_trait::async_trait;
+    use common::enums::{
+        AgentStatus, MessageRole, MessageType, ModelCapability, ProviderType,
+    };
+    use common::enums::skill::SkillAuthorType;
+    use sqlx::SqlitePool;
+    use std::sync::{Arc, Mutex};
+    use tempfile::tempdir;
+    use uuid::Uuid;
+
+    /// 捕获 Prompt 的 BrainDal Stub
+    ///
+    /// 在 think() 调用时捕获传入的 prompt，返回固定响应
+    struct CapturingBrainDal {
+        captured_prompt: Arc<Mutex<Option<String>>>,
+    }
+
+    impl CapturingBrainDal {
+        fn new(captured_prompt: Arc<Mutex<Option<String>>>) -> Self {
+            Self { captured_prompt }
+        }
+    }
+
+    #[async_trait]
+    impl BrainDal for CapturingBrainDal {
+        fn wake_brain(
+            &self,
+            _ctx: RequestContext,
+            _provider: &ModelProvider,
+            _memories: Vec<crate::models::memory::Memory>,
+            _tools: Vec<crate::models::tool::Tool>,
+        ) -> common::error::Result<Brain> {
+            unimplemented!("not needed by awaken skill tests")
+        }
+
+        async fn test_connection(
+            &self,
+            _ctx: RequestContext,
+            _provider: &ModelProvider,
+            _prompt: &str,
+        ) -> common::error::Result<String> {
+            unimplemented!("not needed by awaken skill tests")
+        }
+
+        async fn think(
+            &self,
+            _ctx: RequestContext,
+            _brain: &Brain,
+            prompt: &str,
+        ) -> common::error::Result<String> {
+            *self.captured_prompt.lock().unwrap() = Some(prompt.to_string());
+            Ok("mock response".to_string())
+        }
+    }
+
+    /// Mock Cortex，仅用于构造 Brain（BrainDal 已 stub，Cortex 不会被实际调用）
+    #[derive(Clone)]
+    struct MockCortex;
+
+    #[async_trait]
+    impl CortexTrait for MockCortex {
+        fn capability(&self) -> ModelCapability {
+            ModelCapability::Agent
+        }
+        fn model_provider_id(&self) -> &str {
+            "mock-provider"
+        }
+        fn model_name(&self) -> &str {
+            "mock-model"
+        }
+        async fn prompt(&self, _prompt: &str) -> anyhow::Result<String> {
+            Ok("mock response".to_string())
+        }
+        async fn embeddings(&self, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
+            Ok(texts.iter().map(|_| vec![0.0; 3]).collect())
+        }
+        fn support_tools(&self) -> bool {
+            false
+        }
+    }
+
+    /// 初始化测试环境：所有 DAO + DAL 单例
+    fn init_awaken_test_env(pool: SqlitePool) -> RequestContext {
+        // 必须先初始化 config（文件操作需要 base_data_path）
+        let _ = crate::config::init();
+
+        // 初始化所有 DAO
+        crate::service::dao::agent::init();
+        crate::service::dao::tool::init();
+        crate::service::dao::skill::init();
+        crate::service::dao::tool_call::init();
+        crate::service::dao::model_provider::init();
+        crate::service::dao::cortex::init();
+        crate::service::dao::memory::init();
+        crate::service::dao::mcp_server::init();
+
+        // 初始化所有 DAL
+        crate::service::dal::agent::init();
+        crate::service::dal::tool::init();
+        crate::service::dal::skill::init();
+        crate::service::dal::model_provider::init();
+        crate::service::dal::memory::init();
+        crate::service::dal::mcp_tool::init();
+        crate::service::dal::brain::init();
+
+        crate::pkg::request_context_test_support::new_test_ctx("test-user", pool)
+    }
+
+    /// 创建带 Brain 的测试 Agent
+    fn make_test_agent(agent_id: &str) -> Agent {
+        let mut po = AgentPo::new(
+            "Test Agent".to_string(),
+            vec!["assistant".to_string()],
+            "Test description".to_string(),
+            vec!["chat".to_string()],
+            "Test soul".to_string(),
+            "provider-001".to_string(),
+            "test-user".to_string(),
+        );
+        po.id = agent_id.to_string();
+        po.status = AgentStatus::Onboarded;
+
+        let mut agent = Agent::from_po(po);
+        let model_provider = ModelProvider::new(
+            "Mock Provider".to_string(),
+            ProviderType::OpenAI,
+            ModelCapability::Agent,
+            "gpt-4".to_string(),
+            "fake-key".to_string(),
+            None,
+            None,
+            "test-user".to_string(),
+        );
+        let cortex = Cortex::new(model_provider, Box::new(MockCortex));
+        agent.brain = Some(Brain::new(cortex, vec![]));
+        agent
+    }
+
+    /// 创建测试文本消息
+    fn make_test_message(content: &str) -> Message {
+        Message::new_with_context(
+            Uuid::now_v7().to_string(),
+            None,
+            None,
+            "test-user".to_string(),
+            "test-agent".to_string(),
+            MessageRole::User,
+            MessageRole::Agent,
+            MessageType::Text,
+            content.to_string(),
+            None,
+            FileMeta::default(),
+            None,
+            None,
+            None,
+            "test-user".to_string(),
+        )
+    }
+
+    /// 在数据库中为 Agent 创建技能副本
+    async fn create_skill_for_agent(ctx: RequestContext, agent_id: &str, name: &str, description: &str) {
+        let skill_po = SkillPo::new(
+            format!("skill-{}--{}", name.to_lowercase(), Uuid::new_v4()),
+            name.to_string(),
+            description.to_string(),
+            vec!["test".to_string()],
+            "test".to_string(),
+            String::new(),
+            agent_id.to_string(),
+            SkillAuthorType::Agent,
+            format!("skills/{}", name.to_lowercase()),
+        );
+        crate::service::dal::skill::dal()
+            .create(ctx, &skill_po)
+            .await
+            .expect("创建测试技能失败");
+    }
+
+    #[sqlx::test]
+    async fn test_awaken_with_skills(pool: SqlitePool) {
+        let ctx = init_awaken_test_env(pool);
+
+        let agent_id = format!("agent-with-skills-{}", Uuid::now_v7());
+        let agent = make_test_agent(&agent_id);
+
+        // 为 Agent 创建 2 个技能副本
+        create_skill_for_agent(
+            ctx.clone(),
+            &agent_id,
+            "CodeReview",
+            "审查代码质量并给出改进建议",
+        )
+        .await;
+        create_skill_for_agent(
+            ctx.clone(),
+            &agent_id,
+            "DocWriting",
+            "编写清晰的技术文档",
+        )
+        .await;
+
+        let message = make_test_message("请帮我审查这段代码");
+
+        let captured_prompt = Arc::new(Mutex::new(None));
+        let temp_dir = tempdir().expect("tempdir should be created");
+        let runtime = crate::service::domain::runtime::new_with_all(
+            Arc::new(CapturingBrainDal::new(captured_prompt.clone())),
+            crate::service::dal::tool::dal(),
+            crate::service::dal::mcp_tool::dal(),
+            crate::service::dal::agent::dal(),
+            Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf())),
+        );
+
+        let result = runtime
+            .awakening()
+            .awaken(ctx.clone(), &agent, &message)
+            .await
+            .expect("awaken 应该成功");
+
+        let prompt = captured_prompt.lock().unwrap().clone().expect("应该捕获到 prompt");
+
+        // 验证 Prompt 包含"【可用技能】"部分
+        assert!(
+            prompt.contains("【可用技能】"),
+            "Prompt 应该包含【可用技能】部分，实际: {}",
+            prompt
+        );
+        // 验证两个技能都出现在 Prompt 中
+        assert!(
+            prompt.contains("CodeReview"),
+            "Prompt 应该包含技能 CodeReview"
+        );
+        assert!(
+            prompt.contains("审查代码质量并给出改进建议"),
+            "Prompt 应该包含 CodeReview 的描述"
+        );
+        assert!(
+            prompt.contains("DocWriting"),
+            "Prompt 应该包含技能 DocWriting"
+        );
+        assert!(
+            prompt.contains("编写清晰的技术文档"),
+            "Prompt 应该包含 DocWriting 的描述"
+        );
+
+        // 验证返回结果
+        assert_eq!(result.agent_id, agent_id);
+        assert!(!result.raw_input.is_empty());
+        assert_eq!(result.raw_output, "mock response");
+    }
+
+    #[sqlx::test]
+    async fn test_awaken_without_skills(pool: SqlitePool) {
+        let ctx = init_awaken_test_env(pool);
+
+        let agent_id = format!("agent-no-skills-{}", Uuid::now_v7());
+        let agent = make_test_agent(&agent_id);
+
+        // 不为 Agent 创建任何技能
+        let message = make_test_message("你好");
+
+        let captured_prompt = Arc::new(Mutex::new(None));
+        let temp_dir = tempdir().expect("tempdir should be created");
+        let runtime = crate::service::domain::runtime::new_with_all(
+            Arc::new(CapturingBrainDal::new(captured_prompt.clone())),
+            crate::service::dal::tool::dal(),
+            crate::service::dal::mcp_tool::dal(),
+            crate::service::dal::agent::dal(),
+            Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf())),
+        );
+
+        let result = runtime
+            .awakening()
+            .awaken(ctx.clone(), &agent, &message)
+            .await
+            .expect("awaken 应该成功");
+
+        let prompt = captured_prompt.lock().unwrap().clone().expect("应该捕获到 prompt");
+
+        // 验证 Prompt 不包含"【可用技能】"部分
+        assert!(
+            !prompt.contains("【可用技能】"),
+            "Prompt 不应该包含【可用技能】部分（Agent 无技能），实际: {}",
+            prompt
+        );
+
+        // 验证返回结果仍然正常
+        assert_eq!(result.agent_id, agent_id);
+        assert!(!result.raw_input.is_empty());
+        assert_eq!(result.raw_output, "mock response");
     }
 }

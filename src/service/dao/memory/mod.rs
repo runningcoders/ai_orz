@@ -40,6 +40,8 @@ pub struct MemorySearch {
     pub query_vector: Option<Vec<f32>>,
     /// 返回 Top K 结果（向量搜索专用）
     pub top_k: Option<i32>,
+    /// 向量距离阈值，超过此值的结果被过滤。None 表示使用默认值 0.8
+    pub vector_distance_threshold: Option<f32>,
     /// ✅ 业务过滤条件（直接复用 MemoryQuery）
     pub filters: MemoryQuery,
 }
@@ -155,16 +157,18 @@ pub trait MemoryDao: Send + Sync {
 
     /// 全文检索短期记忆索引
     ///
+    /// 使用 FTS5 MATCH + BM25 排序，返回匹配的索引及 FTS 相关性评分。
+    ///
     /// # 参数
     /// - ctx: 请求上下文
     /// - search: 统一搜索参数（关键词 + 业务过滤）
     /// # 返回
-    /// - 匹配的索引列表（按相关性排序）
+    /// - 匹配的索引列表（按 BM25 相关性排序），每条携带 `fts_rank`（越小越相关）
     async fn search_short_term(
         &self,
         ctx: RequestContext,
         search: MemorySearch,
-    ) -> Result<Vec<ShortTermMemoryIndexPo>>;
+    ) -> Result<Vec<(ShortTermMemoryIndexPo, Option<f32>)>>;
 
     /// 读取记忆追踪完整内容
     ///
@@ -270,16 +274,18 @@ pub trait MemoryDao: Send + Sync {
 
     /// 全文检索知识节点
     ///
+    /// 使用 FTS5 MATCH + BM25 排序，返回匹配的节点及 FTS 相关性评分。
+    ///
     /// # 参数
     /// - ctx: 请求上下文
     /// - search: 统一搜索参数（关键词 + 业务过滤）
     /// # 返回
-    /// - 匹配的节点列表（按相关性排序）
+    /// - 匹配的节点列表（按 BM25 相关性排序），每条携带 `fts_rank`（越小越相关）
     async fn search_knowledge_nodes(
         &self,
         ctx: RequestContext,
         search: MemorySearch,
-    ) -> Result<Vec<LongTermKnowledgeNodePo>>;
+    ) -> Result<Vec<(LongTermKnowledgeNodePo, Option<f32>)>>;
 
     /// 删除知识节点
     ///

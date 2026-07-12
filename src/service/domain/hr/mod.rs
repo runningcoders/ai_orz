@@ -173,6 +173,48 @@ pub trait AgentManage: Send + Sync {
         ctx: RequestContext,
         agent_id: &str,
     ) -> Result<Vec<String>>;
+
+    /// 安装技能包（按 tag）
+    ///
+    /// 查询指定 tag 的已发布技能，批量安装到 Agent 目录。
+    /// 幂等：tag 已安装则跳过，返回 0。
+    /// 返回成功安装的技能数量。
+    async fn install_skill_pack(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        tag: &str,
+    ) -> Result<usize>;
+
+    /// 卸载技能包（按 tag）
+    ///
+    /// 从 Agent 的 runtime_config.installed_skill_packs 中移除指定 tag。
+    /// 不删除已安装的技能副本。
+    /// 幂等：未安装则跳过。
+    async fn uninstall_skill_pack(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        tag: &str,
+    ) -> Result<()>;
+
+    /// 重新安装技能包（按 tag）
+    ///
+    /// 获取最新 Published 技能列表，覆盖已有副本（更新文件 + 元数据），
+    /// 没有副本的则新建安装。返回处理的技能数量。
+    async fn reinstall_skill_pack(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        tag: &str,
+    ) -> Result<usize>;
+
+    /// 列出已安装的技能包 tags
+    async fn list_installed_skill_packs(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+    ) -> Result<Vec<String>>;
 }
 
 /// Skill 附加文件导入数据。

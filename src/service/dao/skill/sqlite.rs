@@ -180,7 +180,26 @@ FROM skills WHERE id = ?
             builder.push(" AND author_id = ").push_bind(author_id);
         }
 
-        // 关键词搜索 (name 或 description)
+        // 父技能 ID 过滤（用于幂等检查已安装副本）
+        if let Some(parent_skill_id) = &query.parent_skill_id {
+            builder
+                .push(" AND parent_skill_id = ")
+                .push_bind(parent_skill_id);
+        }
+
+        // tag 过滤（OR 语义：包含任一 tag 即可命中）
+        if let Some(tags) = &query.tags {
+            if !tags.is_empty() {
+                builder.push(" AND EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value IN (");
+                let mut separated = builder.separated(", ");
+                for tag in tags {
+                    separated.push_bind(tag);
+                }
+                separated.push_unseparated("))");
+            }
+        }
+
+        // 关键词搜索 (name / description / tags)
         if let Some(keyword) = &query.keyword {
             let like_pattern = format!("%{}%", keyword);
             builder
@@ -188,6 +207,8 @@ FROM skills WHERE id = ?
                 .push_bind(like_pattern.clone());
             builder
                 .push(" OR description LIKE ")
+                .push_bind(like_pattern.clone())
+                .push(" OR tags LIKE ")
                 .push_bind(like_pattern)
                 .push(")");
         }

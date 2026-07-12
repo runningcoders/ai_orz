@@ -126,6 +126,8 @@ pub struct SearchMatchInfo {
     pub indexed_at: Option<i64>,
     /// 内容哈希（用于判断是否过时）
     pub content_hash: Option<String>,
+    /// FTS5 BM25 相关性评分（越小越相关，仅关键词命中时有值）
+    pub fts_rank: Option<f32>,
 }
 
 // ==================== 向量搜索结果包装器 ====================\n\n/// 搜索结果包装器（通用，所有 DAO 复用）
@@ -168,5 +170,28 @@ pub trait Vectorizable: Send + Sync {
     /// 判断内容是否变化，是否需要重索引
     fn needs_reindex(&self, existing_hash: &str) -> bool {
         self.vector_content_hash() != existing_hash
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_search_match_info_with_fts_rank() {
+        let info = SearchMatchInfo {
+            match_type: MatchType::Keyword,
+            fts_rank: Some(-1.5),
+            ..Default::default()
+        };
+        assert_eq!(info.match_type, MatchType::Keyword);
+        assert_eq!(info.fts_rank, Some(-1.5));
+        assert!(info.vector_distance.is_none());
+    }
+
+    #[test]
+    fn test_search_match_info_default_fts_rank_is_none() {
+        let info = SearchMatchInfo::default();
+        assert!(info.fts_rank.is_none());
     }
 }

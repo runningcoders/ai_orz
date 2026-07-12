@@ -689,6 +689,41 @@ impl AgentManage for RecordingHrDomain {
     ) -> Result<Vec<String>> {
         unimplemented!("not needed by message consumer tests")
     }
+
+    async fn install_skill_pack(
+        &self,
+        _ctx: RequestContext,
+        _agent_id: &str,
+        _tag: &str,
+    ) -> Result<usize> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn uninstall_skill_pack(
+        &self,
+        _ctx: RequestContext,
+        _agent_id: &str,
+        _tag: &str,
+    ) -> Result<()> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn reinstall_skill_pack(
+        &self,
+        _ctx: RequestContext,
+        _agent_id: &str,
+        _tag: &str,
+    ) -> Result<usize> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn list_installed_skill_packs(
+        &self,
+        _ctx: RequestContext,
+        _agent_id: &str,
+    ) -> Result<Vec<String>> {
+        unimplemented!("not needed by message consumer tests")
+    }
 }
 
 #[async_trait]
@@ -1576,6 +1611,37 @@ mod handle_agent_message_tests {
         ) -> Result<Vec<String>> {
             unimplemented!()
         }
+        async fn install_skill_pack(
+            &self,
+            _ctx: RequestContext,
+            _agent_id: &str,
+            _tag: &str,
+        ) -> Result<usize> {
+            unimplemented!()
+        }
+        async fn uninstall_skill_pack(
+            &self,
+            _ctx: RequestContext,
+            _agent_id: &str,
+            _tag: &str,
+        ) -> Result<()> {
+            unimplemented!()
+        }
+        async fn reinstall_skill_pack(
+            &self,
+            _ctx: RequestContext,
+            _agent_id: &str,
+            _tag: &str,
+        ) -> Result<usize> {
+            unimplemented!()
+        }
+        async fn list_installed_skill_packs(
+            &self,
+            _ctx: RequestContext,
+            _agent_id: &str,
+        ) -> Result<Vec<String>> {
+            unimplemented!()
+        }
     }
 
     #[async_trait]
@@ -1752,6 +1818,37 @@ mod handle_agent_message_tests {
             unimplemented!()
         }
         async fn list_installed_tool_packs(
+            &self,
+            _ctx: RequestContext,
+            _agent_id: &str,
+        ) -> Result<Vec<String>> {
+            unimplemented!()
+        }
+        async fn install_skill_pack(
+            &self,
+            _ctx: RequestContext,
+            _agent_id: &str,
+            _tag: &str,
+        ) -> Result<usize> {
+            unimplemented!()
+        }
+        async fn uninstall_skill_pack(
+            &self,
+            _ctx: RequestContext,
+            _agent_id: &str,
+            _tag: &str,
+        ) -> Result<()> {
+            unimplemented!()
+        }
+        async fn reinstall_skill_pack(
+            &self,
+            _ctx: RequestContext,
+            _agent_id: &str,
+            _tag: &str,
+        ) -> Result<usize> {
+            unimplemented!()
+        }
+        async fn list_installed_skill_packs(
             &self,
             _ctx: RequestContext,
             _agent_id: &str,

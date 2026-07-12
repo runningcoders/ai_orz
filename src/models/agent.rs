@@ -43,6 +43,12 @@ pub struct AgentRuntimeConfig {
     /// 典型值："project_management"、"data_analysis" 等
     #[serde(default)]
     pub installed_tags: Vec<String>,
+
+    /// 已安装的技能包 tag 列表
+    /// 记录 Agent 通过入职或手动安装的技能包。
+    /// 安装时会将技能复制到 Agent 目录，卸载时仅移除 tag 关联（保留副本）。
+    #[serde(default)]
+    pub installed_skill_packs: Vec<String>,
 }
 
 impl Default for AgentRuntimeConfig {
@@ -54,6 +60,7 @@ impl Default for AgentRuntimeConfig {
             enable_reflection: false,
             require_user_confirm: true,
             installed_tags: Vec::new(),
+            installed_skill_packs: Vec::new(),
         }
     }
 }
@@ -84,6 +91,23 @@ impl AgentRuntimeConfig {
     /// 检查是否已安装某个 tag
     pub fn has_tag(&self, tag: &str) -> bool {
         self.installed_tags.iter().any(|t| t == tag)
+    }
+
+    /// 安装技能包 tag（幂等：已安装则跳过）
+    pub fn install_skill_pack_tag(&mut self, tag: &str) {
+        if !self.installed_skill_packs.iter().any(|t| t == tag) {
+            self.installed_skill_packs.push(tag.to_string());
+        }
+    }
+
+    /// 卸载技能包 tag
+    pub fn uninstall_skill_pack_tag(&mut self, tag: &str) {
+        self.installed_skill_packs.retain(|t| t != tag);
+    }
+
+    /// 检查是否已安装某个技能包 tag
+    pub fn has_skill_pack_tag(&self, tag: &str) -> bool {
+        self.installed_skill_packs.iter().any(|t| t == tag)
     }
 }
 
@@ -337,6 +361,25 @@ impl AgentPo {
         config.uninstall_tag(tag);
         self.set_runtime_config(&config);
     }
+
+    /// 获取已安装的技能包 tags
+    pub fn get_installed_skill_packs(&self) -> Vec<String> {
+        self.get_runtime_config().installed_skill_packs
+    }
+
+    /// 安装技能包 tag 并更新 runtime_config
+    pub fn install_skill_pack_tag(&mut self, tag: &str) {
+        let mut config = self.get_runtime_config();
+        config.install_skill_pack_tag(tag);
+        self.set_runtime_config(&config);
+    }
+
+    /// 卸载技能包 tag 并更新 runtime_config
+    pub fn uninstall_skill_pack_tag(&mut self, tag: &str) {
+        let mut config = self.get_runtime_config();
+        config.uninstall_skill_pack_tag(tag);
+        self.set_runtime_config(&config);
+    }
 }
 
 fn generate_id() -> String {
@@ -386,5 +429,63 @@ impl crate::pkg::request_context::EnrichContext for AgentPo {
 impl EnrichContext for Agent {
     fn enrich(&self, builder: RequestContextBuilder) -> RequestContextBuilder {
         self.po.enrich(builder)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_install_skill_pack_tag() {
+        let mut config = AgentRuntimeConfig::default();
+        assert!(config.installed_skill_packs.is_empty());
+
+        config.install_skill_pack_tag("coding");
+        assert_eq!(config.installed_skill_packs, vec!["coding".to_string()]);
+        assert!(config.has_skill_pack_tag("coding"));
+    }
+
+    #[test]
+    fn test_install_skill_pack_tag_idempotent() {
+        let mut config = AgentRuntimeConfig::default();
+
+        config.install_skill_pack_tag("coding");
+        config.install_skill_pack_tag("coding");
+        config.install_skill_pack_tag("coding");
+
+        assert_eq!(config.installed_skill_packs.len(), 1);
+        assert_eq!(config.installed_skill_packs, vec!["coding".to_string()]);
+    }
+
+    #[test]
+    fn test_uninstall_skill_pack_tag() {
+        let mut config = AgentRuntimeConfig::default();
+        config.install_skill_pack_tag("coding");
+        config.install_skill_pack_tag("writing");
+        assert_eq!(config.installed_skill_packs.len(), 2);
+
+        config.uninstall_skill_pack_tag("coding");
+        assert_eq!(config.installed_skill_packs, vec!["writing".to_string()]);
+        assert!(!config.has_skill_pack_tag("coding"));
+        assert!(config.has_skill_pack_tag("writing"));
+
+        // 卸载不存在的 tag 不报错
+        config.uninstall_skill_pack_tag("not_exists");
+        assert_eq!(config.installed_skill_packs, vec!["writing".to_string()]);
+    }
+
+    #[test]
+    fn test_has_skill_pack_tag() {
+        let mut config = AgentRuntimeConfig::default();
+
+        assert!(!config.has_skill_pack_tag("coding"));
+
+        config.install_skill_pack_tag("coding");
+        assert!(config.has_skill_pack_tag("coding"));
+        assert!(!config.has_skill_pack_tag("writing"));
+
+        config.uninstall_skill_pack_tag("coding");
+        assert!(!config.has_skill_pack_tag("coding"));
     }
 }

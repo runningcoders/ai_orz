@@ -208,8 +208,28 @@ impl ToolDao for ToolDaoSqliteImpl {
                     .push(" (t.name LIKE ")
                     .push_bind(like_pattern.clone())
                     .push(" OR t.description LIKE ")
+                    .push_bind(like_pattern.clone())
+                    .push(" OR t.tags LIKE ")
                     .push_bind(like_pattern)
                     .push(")");
+                has_where = true;
+            }
+        }
+
+        // tag 过滤（OR 语义：包含任一 tag 即可命中）
+        if let Some(tags) = &query.tags {
+            if !tags.is_empty() {
+                if has_where {
+                    builder.push(" AND");
+                } else {
+                    builder.push(" WHERE");
+                }
+                builder.push(" EXISTS (SELECT 1 FROM json_each(t.tags) WHERE json_each.value IN (");
+                let mut separated = builder.separated(", ");
+                for tag in tags {
+                    separated.push_bind(tag);
+                }
+                separated.push_unseparated("))");
                 has_where = true;
             }
         }

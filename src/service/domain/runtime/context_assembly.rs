@@ -7,6 +7,7 @@
 use crate::models::agent::Agent;
 use crate::models::memory::{Memory, MemoryPo};
 use crate::models::message::Message;
+use crate::models::skill::SkillPo;
 use crate::models::user::UserPo;
 use common::enums::{ControlMode, ToolStatus};
 
@@ -34,7 +35,7 @@ pub struct PromptBuilder {
     history: Vec<String>,
     /// 当前用户消息
     current_message: Option<String>,
-    /// （预留）技能说明
+    /// 技能说明（每条已是完整行，含 "- " 前缀）
     skills: Vec<String>,
     /// （预留）工具说明
     tools: Vec<String>,
@@ -117,9 +118,22 @@ impl PromptBuilder {
         self
     }
 
-    /// （预留）添加技能说明
+    /// 添加技能说明（原始字符串，自动补 "- " 前缀）
     pub fn skills(mut self, skills: &[String]) -> Self {
-        self.skills.extend(skills.iter().cloned());
+        for s in skills {
+            self.skills.push(format!("- {}", s));
+        }
+        self
+    }
+
+    /// 添加 Agent 可用技能
+    ///
+    /// 调用 SkillPo::to_prompt_summary() 生成标准格式的技能摘要
+    /// 所有技能格式化逻辑都内聚在 SkillPo 内部
+    pub fn agent_skills(mut self, skills: &[SkillPo]) -> Self {
+        for skill in skills {
+            self.skills.push(skill.to_prompt_summary());
+        }
         self
     }
 
@@ -217,11 +231,12 @@ impl PromptBuilder {
             result.push_str("\n");
         }
 
-        // 5. （预留）技能说明
+        // 5. 技能说明
         if !self.skills.is_empty() {
             result.push_str("【可用技能】\n");
             for s in &self.skills {
-                result.push_str(&format!("- {}\n", s));
+                result.push_str(s);
+                result.push_str("\n");
             }
             result.push_str("\n");
         }

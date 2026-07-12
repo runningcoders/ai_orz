@@ -266,10 +266,33 @@ mod tests {
         async fn query(
             &self,
             _ctx: RequestContext,
-            _query: ToolQuery,
+            query: ToolQuery,
         ) -> Result<Vec<Tool>> {
             self.query_count.fetch_add(1, Ordering::SeqCst);
-            Ok(self.all_tools.iter().map(|po| Tool::from_po_for_management(po.clone())).collect())
+            let tools: Vec<Tool> = self
+                .all_tools
+                .iter()
+                .map(|po| Tool::from_po_for_management(po.clone()))
+                .collect();
+
+            // 模拟 SQL 层 tag 过滤（OR 语义：命中任一 tag 即保留）
+            let tools = if let Some(tags) = &query.tags {
+                if tags.is_empty() {
+                    tools
+                } else {
+                    tools
+                        .into_iter()
+                        .filter(|tool| {
+                            let tool_tags = tool.po.get_tags();
+                            tags.iter().any(|tag| tool_tags.contains(tag))
+                        })
+                        .collect()
+                }
+            } else {
+                tools
+            };
+
+            Ok(tools)
         }
 
         async fn list_enabled(&self, _ctx: RequestContext) -> Result<Vec<Tool>> {

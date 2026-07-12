@@ -15,11 +15,59 @@ use crate::models::memory::{
 use crate::pkg::RequestContext;
 use crate::service::dao::memory::{MemoryDao, MemoryQuery, MemorySearch};
 use async_trait::async_trait;
-use common::enums::{KnowledgeRelationType, MemoryType};
+use common::enums::{KnowledgeRelationType, MemoryStatus, MemoryType};
 use serde_json;
-use sqlx::SqlitePool;
+use sqlx::{FromRow, SqlitePool};
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
+
+// ==================== FTS5 辅助 ====================
+
+/// 转义 FTS5 关键词中的特殊字符
+///
+/// FTS5 语法字符：* " ( ) : ^ { } 等。转义策略：将关键词用双引号包裹，
+/// 内部双引号变成两个双引号。这样 FTS5 会将其作为短语匹配（phrase query），
+/// 不会把空格解释为 AND 操作符。
+///
+/// 例如：`hello"world` -> `"hello""world"`
+pub(crate) fn escape_fts5_keyword(keyword: &str) -> String {
+    if keyword.trim().is_empty() {
+        return String::new();
+    }
+    let escaped = keyword.replace('"', "\"\"");
+    format!("\"{}\"", escaped)
+}
+
+/// 短期记忆搜索行（PO + fts_rank）
+#[derive(FromRow)]
+struct ShortTermSearchRow {
+    id: String,
+    agent_id: String,
+    task_id: Option<String>,
+    role: String,
+    summary: String,
+    tags: String,
+    trace_ids: String,
+    status: MemoryStatus,
+    created_at: i64,
+    updated_at: i64,
+    fts_rank: Option<f32>,
+}
+
+/// 知识节点搜索行（PO + fts_rank）
+#[derive(FromRow)]
+struct KnowledgeNodeSearchRow {
+    id: String,
+    agent_id: String,
+    node_name: String,
+    node_description: String,
+    node_type: String,
+    summary: String,
+    status: MemoryStatus,
+    created_at: i64,
+    updated_at: i64,
+    fts_rank: Option<f32>,
+}
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -295,8 +343,11 @@ FROM short_term_memory_index WHERE 1=1"#,
         }
 
         if let Some(keyword) = &query.keyword {
-            builder.push(" AND summary MATCH ");
-            builder.push_bind(keyword);
+            if !keyword.is_empty() {
+                log_warn!(
+                    "keyword in query_short_term is deprecated, use search_short_term for FTS5 full-text search; keyword ignored"
+                );
+            }
         }
 
         builder.push(" ORDER BY created_at DESC");
@@ -318,8 +369,7 @@ FROM short_term_memory_index WHERE 1=1"#,
         &self,
         ctx: RequestContext,
         search: MemorySearch,
-    ) -> Result<Vec<ShortTermMemoryIndexPo>> {
-        use common::enums::MemoryStatus;
+    ) -> Result<Vec<(ShortTermMemoryIndexPo, Option<f32>)>> {
         let pool = self.pool(ctx);
 
         // 从 MemorySearch 提取参数
@@ -327,25 +377,56 @@ FROM short_term_memory_index WHERE 1=1"#,
         let keyword = search.keyword.unwrap_or_default();
         let limit_i64 = search.filters.limit.unwrap_or(50) as i64;
 
-        // 使用 LIKE 做关键词匹配（普通表不支持 MATCH）
-        let like_pattern = format!("%{}%", keyword);
+        // 空关键词直接返回空结果（FTS5 MATCH 空字符串会报错）
+        if keyword.trim().is_empty() {
+            return Ok(Vec::new());
+        }
 
-        let indexes = sqlx::query_as!(
-            ShortTermMemoryIndexPo,
+        // 转义关键词为 FTS5 短语匹配
+        let escaped_keyword = escape_fts5_keyword(&keyword);
+
+        // FTS5 MATCH + JOIN + BM25 排序
+        // 注意：MATCH 左侧必须使用完整表名（非别名），否则 SQLite 会将别名解释为列名
+        let rows: Vec<ShortTermSearchRow> = sqlx::query_as(
             r#"
-SELECT id, agent_id, task_id, role, summary, tags, trace_ids, status AS "status: MemoryStatus", created_at, updated_at
-FROM short_term_memory_index
-WHERE agent_id = ? AND summary LIKE ? AND status != 0
+SELECT m.id, m.agent_id, m.task_id, m.role, m.summary, m.tags, m.trace_ids,
+       m.status, m.created_at, m.updated_at,
+       short_term_memory_fts.rank as fts_rank
+FROM short_term_memory_fts
+JOIN short_term_memory_index m ON short_term_memory_fts.rowid = m.rowid
+WHERE short_term_memory_fts MATCH ?
+  AND m.agent_id = ?
+  AND m.status != 0
+ORDER BY short_term_memory_fts.rank
 LIMIT ?
 "#,
-            agent_id,
-            like_pattern,
-            limit_i64
         )
+        .bind(escaped_keyword)
+        .bind(agent_id)
+        .bind(limit_i64)
         .fetch_all(&pool)
         .await?;
 
-        Ok(indexes)
+        let results = rows
+            .into_iter()
+            .map(|row| {
+                let po = ShortTermMemoryIndexPo {
+                    id: row.id,
+                    agent_id: row.agent_id,
+                    task_id: row.task_id,
+                    role: row.role,
+                    summary: row.summary,
+                    tags: row.tags,
+                    trace_ids: row.trace_ids,
+                    status: row.status,
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                };
+                (po, row.fts_rank)
+            })
+            .collect();
+
+        Ok(results)
     }
 
     fn read_memory_content(&self, _index: &ShortTermMemoryIndexPo) -> Result<String> {
@@ -618,11 +699,11 @@ FROM long_term_knowledge_node WHERE 1=1"#,
         }
 
         if let Some(keyword) = &query.keyword {
-            builder.push(" AND (node_name MATCH ");
-            builder.push_bind(keyword);
-            builder.push(" OR summary MATCH ");
-            builder.push_bind(keyword);
-            builder.push(")");
+            if !keyword.is_empty() {
+                log_warn!(
+                    "keyword in query_knowledge_nodes is deprecated, use search_knowledge_nodes for FTS5 full-text search; keyword ignored"
+                );
+            }
         }
 
         builder.push(" ORDER BY updated_at DESC");
@@ -644,8 +725,7 @@ FROM long_term_knowledge_node WHERE 1=1"#,
         &self,
         ctx: RequestContext,
         search: MemorySearch,
-    ) -> Result<Vec<LongTermKnowledgeNodePo>> {
-        use common::enums::MemoryStatus;
+    ) -> Result<Vec<(LongTermKnowledgeNodePo, Option<f32>)>> {
         let pool = self.pool(ctx);
 
         // 从 MemorySearch 提取参数
@@ -653,27 +733,55 @@ FROM long_term_knowledge_node WHERE 1=1"#,
         let keyword = search.keyword.unwrap_or_default();
         let limit_i64 = search.filters.limit.unwrap_or(50) as i64;
 
-        // 使用 LIKE 做关键词匹配（普通表不支持 MATCH）
-        let like_pattern = format!("%{}%", keyword);
-        let like_pattern2 = like_pattern.clone();
+        // 空关键词直接返回空结果（FTS5 MATCH 空字符串会报错）
+        if keyword.trim().is_empty() {
+            return Ok(Vec::new());
+        }
 
-        let nodes = sqlx::query_as!(
-            LongTermKnowledgeNodePo,
+        // 转义关键词为 FTS5 短语匹配
+        let escaped_keyword = escape_fts5_keyword(&keyword);
+
+        // FTS5 MATCH + JOIN + BM25 排序
+        // 注意：MATCH 左侧必须使用完整表名（非别名），否则 SQLite 会将别名解释为列名
+        let rows: Vec<KnowledgeNodeSearchRow> = sqlx::query_as(
             r#"
-SELECT id, agent_id, node_name, node_description, node_type, summary, status AS "status: MemoryStatus", created_at, updated_at
-FROM long_term_knowledge_node
-WHERE agent_id = ? AND (node_name LIKE ? OR summary LIKE ?) AND status != 0
+SELECT m.id, m.agent_id, m.node_name, m.node_description, m.node_type, m.summary,
+       m.status, m.created_at, m.updated_at,
+       knowledge_node_fts.rank as fts_rank
+FROM knowledge_node_fts
+JOIN long_term_knowledge_node m ON knowledge_node_fts.rowid = m.rowid
+WHERE knowledge_node_fts MATCH ?
+  AND m.agent_id = ?
+  AND m.status != 0
+ORDER BY knowledge_node_fts.rank
 LIMIT ?
 "#,
-            agent_id,
-            like_pattern,
-            like_pattern2,
-            limit_i64
         )
+        .bind(escaped_keyword)
+        .bind(agent_id)
+        .bind(limit_i64)
         .fetch_all(&pool)
         .await?;
 
-        Ok(nodes)
+        let results = rows
+            .into_iter()
+            .map(|row| {
+                let po = LongTermKnowledgeNodePo {
+                    id: row.id,
+                    agent_id: row.agent_id,
+                    node_name: row.node_name,
+                    node_description: row.node_description,
+                    node_type: row.node_type,
+                    summary: row.summary,
+                    status: row.status,
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                };
+                (po, row.fts_rank)
+            })
+            .collect();
+
+        Ok(results)
     }
 
     async fn delete_knowledge_node(&self, ctx: RequestContext, id: &str) -> Result<()> {

@@ -522,6 +522,86 @@ async fn test_install_to_agent(pool: SqlitePool) -> Result<()> {
     Ok(())
 }
 
+/// 测试安装技能到 Agent 的幂等性：同一技能安装两次，第二次不创建新副本
+#[sqlx::test]
+async fn test_install_to_agent_idempotent(pool: SqlitePool) -> Result<()> {
+    let skill_dal = init_test(pool.clone()).await;
+    let ctx = new_ctx("test-user", pool);
+
+    // 创建一个 Published 的源技能（共享库技能）
+    let source_id = uuid::Uuid::now_v7().to_string();
+    let content_path = format!("skills/{}/", source_id);
+    let mut source_po = SkillPo::new(
+        source_id.clone(),
+        "shared-skill-idempotent".to_string(),
+        "A shared skill for idempotent install test".to_string(),
+        vec!["AI Agent".to_string()],
+        "shared".to_string(),
+        "".to_string(),
+        "system-author".to_string(),
+        SkillAuthorType::User,
+        content_path,
+    );
+    source_po.status = SkillStatus::Published;
+    skill_dal.create(ctx.clone(), &source_po).await?;
+
+    // 写一点主内容
+    skill_dal.write_main_content(&source_po, "# Shared Skill Idempotent\n\nFor all agents.")?;
+
+    let agent_id = "agent-idempotent";
+
+    // 第一次安装
+    let installed_first = skill_dal
+        .install_to_agent(ctx.clone(), &source_id, agent_id)
+        .await?;
+    let first_installed_id = installed_first.po.id.clone();
+
+    // 验证第一次安装成功
+    assert_ne!(first_installed_id, source_id);
+    assert_eq!(installed_first.po.author_id, agent_id);
+    assert_eq!(installed_first.po.parent_skill_id, source_id);
+    assert_eq!(installed_first.po.status, SkillStatus::Draft);
+
+    // 第二次安装同一技能到同一 Agent：应跳过创建，返回已有副本
+    let installed_second = skill_dal
+        .install_to_agent(ctx.clone(), &source_id, agent_id)
+        .await?;
+
+    // 验证：返回的是同一个副本（ID 相同），没有创建新副本
+    assert_eq!(installed_second.po.id, first_installed_id);
+    assert_eq!(installed_second.po.author_id, agent_id);
+    assert_eq!(installed_second.po.parent_skill_id, source_id);
+    assert_eq!(installed_second.po.status, SkillStatus::Draft);
+
+    // 验证：DAL 仍然返回完整 Skill 实体（含文件列表）
+    assert!(!installed_second.files.is_empty());
+
+    // 验证：Agent 名下 parent_skill_id = source_id 的技能只有 1 条
+    use crate::service::dao::skill::SkillQuery;
+    let agent_skills = skill_dal
+        .query(
+            ctx.clone(),
+            SkillQuery {
+                author_id: Some(agent_id.to_string()),
+                parent_skill_id: Some(source_id.clone()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(agent_skills.len(), 1, "重复安装不应创建新副本");
+    assert_eq!(agent_skills[0].po.id, first_installed_id);
+
+    // 额外验证：另一个 Agent 安装同一源技能仍然会创建新副本（不同 Agent 互不影响）
+    let other_agent_id = "agent-other";
+    let installed_other = skill_dal
+        .install_to_agent(ctx.clone(), &source_id, other_agent_id)
+        .await?;
+    assert_ne!(installed_other.po.id, first_installed_id);
+    assert_eq!(installed_other.po.author_id, other_agent_id);
+
+    Ok(())
+}
+
 /// 测试删除技能（软删除 + 目录删除）
 #[sqlx::test]
 async fn test_delete_skill(pool: SqlitePool) -> Result<()> {

@@ -11,7 +11,7 @@ use crate::models::memory::{
     KnowledgeNodeRelationPo, KnowledgeReferencePo, LongTermKnowledgeNodePo, Memory,
     MemoryCreateParams, MemoryPo, MemoryTrace, ShortTermMemoryIndexPo,
 };
-use crate::models::vector::{SearchMatchInfo, VectorIndexParams, Vectorizable};
+use crate::models::vector::{MatchType, SearchMatchInfo, VectorIndexParams, Vectorizable};
 use crate::pkg::RequestContext;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::memory::{MemoryDao, MemoryQuery, MemorySearch, MemoryVectorDao};
@@ -199,21 +199,52 @@ impl MemoryDal for MemoryDalImpl {
             results.extend(relation_results);
         }
 
-        // 4. 统一排序：按向量距离排序（有距离的在前），然后按创建时间倒序
+        // 4. 统一排序：Hybrid 优先 → Vector 次之 → Keyword/None 最后
+        //    组内排序：Hybrid/Vector 按向量距离升序，Keyword 按 fts_rank 升序（BM25 越小越相关）
         results.sort_by(|a, b| {
-            let dist_a = a
-                .search_match
-                .as_ref()
-                .and_then(|m| m.vector_distance)
-                .unwrap_or(f32::MAX);
-            let dist_b = b
-                .search_match
-                .as_ref()
-                .and_then(|m| m.vector_distance)
-                .unwrap_or(f32::MAX);
-            dist_a
-                .partial_cmp(&dist_b)
-                .unwrap_or(std::cmp::Ordering::Equal)
+            let a_type = a.search_match.as_ref().map(|m| m.match_type);
+            let b_type = b.search_match.as_ref().map(|m| m.match_type);
+            let order_a = match a_type {
+                Some(MatchType::Hybrid) => 0,
+                Some(MatchType::Vector) => 1,
+                _ => 2,
+            };
+            let order_b = match b_type {
+                Some(MatchType::Hybrid) => 0,
+                Some(MatchType::Vector) => 1,
+                _ => 2,
+            };
+            order_a.cmp(&order_b).then_with(|| {
+                match (a_type, b_type) {
+                    (Some(MatchType::Hybrid), Some(MatchType::Hybrid))
+                    | (Some(MatchType::Vector), Some(MatchType::Vector)) => {
+                        let a_dist = a
+                            .search_match
+                            .as_ref()
+                            .and_then(|m| m.vector_distance)
+                            .unwrap_or(f32::MAX);
+                        let b_dist = b
+                            .search_match
+                            .as_ref()
+                            .and_then(|m| m.vector_distance)
+                            .unwrap_or(f32::MAX);
+                        a_dist.partial_cmp(&b_dist).unwrap_or(std::cmp::Ordering::Equal)
+                    }
+                    _ => {
+                        let a_rank = a
+                            .search_match
+                            .as_ref()
+                            .and_then(|m| m.fts_rank)
+                            .unwrap_or(f32::MAX);
+                        let b_rank = b
+                            .search_match
+                            .as_ref()
+                            .and_then(|m| m.fts_rank)
+                            .unwrap_or(f32::MAX);
+                        a_rank.partial_cmp(&b_rank).unwrap_or(std::cmp::Ordering::Equal)
+                    }
+                }
+            })
         });
 
         // 5. 应用 limit
@@ -718,6 +749,9 @@ impl MemoryDalImpl {
         ctx: RequestContext,
         search: MemorySearch,
     ) -> Result<Vec<Memory>> {
+        // 向量距离阈值（可配置，默认 0.8）
+        let vector_distance_threshold = search.vector_distance_threshold.unwrap_or(0.8);
+
         // Step 1: 准备向量搜索结果容器
         let mut vector_scores: HashMap<String, f32> = HashMap::new();
         let mut vector_ids: HashSet<String> = HashSet::new();
@@ -735,7 +769,6 @@ impl MemoryDalImpl {
                 {
                     Ok(Some(vec_params)) => {
                         // 向量搜索（前 50 条）
-                        const VECTOR_DISTANCE_THRESHOLD: f32 = 0.8;
                         match self
                             .memory_vector_dao
                             .search_short_term_vector(ctx.clone(), &vec_params.vector, 50)
@@ -745,7 +778,7 @@ impl MemoryDalImpl {
                                 // 过滤距离小于阈值的结果
                                 let filtered_results: Vec<(String, f32)> = vector_results
                                     .into_iter()
-                                    .filter(|hit| hit.distance < VECTOR_DISTANCE_THRESHOLD)
+                                    .filter(|hit| hit.distance < vector_distance_threshold)
                                     .map(|hit| (hit.row.id, hit.distance))
                                     .collect();
 
@@ -778,11 +811,23 @@ impl MemoryDalImpl {
             }
         }
 
-        // Step 3: 执行关键词搜索
-        let keyword_pos = self
+        // Step 3: 执行关键词搜索（DAO 返回 Vec<(Po, fts_rank)>）
+        let keyword_results = self
             .memory_dao
             .search_short_term(ctx.clone(), search.clone())
             .await?;
+
+        // 提取 fts_rank 并转换为 Vec<Po> 便于聚合
+        let mut fts_ranks: HashMap<String, f32> = HashMap::new();
+        let keyword_pos: Vec<ShortTermMemoryIndexPo> = keyword_results
+            .into_iter()
+            .map(|(po, rank)| {
+                if let Some(r) = rank {
+                    fts_ranks.insert(po.id.clone(), r);
+                }
+                po
+            })
+            .collect();
 
         // Step 4: 聚合结果（如果有向量结果，用通用 query 批量获取，避免 N+1）
         let mut all_pos = keyword_pos.clone();
@@ -812,10 +857,28 @@ impl MemoryDalImpl {
         // Step 6: 构建业务对象
         let mut memories = Vec::with_capacity(all_pos.len());
         for po in all_pos {
-            let match_info = if let Some(distance) = vector_scores.get(&po.id) {
+            let has_vector = vector_scores.contains_key(&po.id);
+            let has_keyword = fts_ranks.contains_key(&po.id);
+            let match_info = if has_vector && has_keyword {
+                // 双命中：向量 + 关键词
                 Some(SearchMatchInfo {
-                    match_type: crate::models::vector::MatchType::Hybrid,
-                    vector_distance: Some(*distance),
+                    match_type: MatchType::Hybrid,
+                    vector_distance: vector_scores.get(&po.id).copied(),
+                    fts_rank: fts_ranks.get(&po.id).copied(),
+                    ..Default::default()
+                })
+            } else if has_vector {
+                // 仅向量命中
+                Some(SearchMatchInfo {
+                    match_type: MatchType::Vector,
+                    vector_distance: vector_scores.get(&po.id).copied(),
+                    ..Default::default()
+                })
+            } else if has_keyword {
+                // 仅关键词命中
+                Some(SearchMatchInfo {
+                    match_type: MatchType::Keyword,
+                    fts_rank: fts_ranks.get(&po.id).copied(),
                     ..Default::default()
                 })
             } else {
@@ -836,6 +899,9 @@ impl MemoryDalImpl {
         ctx: RequestContext,
         search: MemorySearch,
     ) -> Result<Vec<Memory>> {
+        // 向量距离阈值（可配置，默认 0.8）
+        let vector_distance_threshold = search.vector_distance_threshold.unwrap_or(0.8);
+
         // Step 1: 准备向量搜索结果容器
         let mut vector_scores: HashMap<String, f32> = HashMap::new();
         let mut vector_ids: HashSet<String> = HashSet::new();
@@ -853,7 +919,6 @@ impl MemoryDalImpl {
                 {
                     Ok(Some(vec_params)) => {
                         // 向量搜索（前 50 条）
-                        const VECTOR_DISTANCE_THRESHOLD: f32 = 0.8;
                         match self
                             .memory_vector_dao
                             .search_knowledge_node_vector(ctx.clone(), &vec_params.vector, 50)
@@ -863,7 +928,7 @@ impl MemoryDalImpl {
                                 // 过滤距离小于阈值的结果
                                 let filtered_results: Vec<(String, f32)> = vector_results
                                     .into_iter()
-                                    .filter(|hit| hit.distance < VECTOR_DISTANCE_THRESHOLD)
+                                    .filter(|hit| hit.distance < vector_distance_threshold)
                                     .map(|hit| (hit.row.id, hit.distance))
                                     .collect();
 
@@ -896,11 +961,23 @@ impl MemoryDalImpl {
             }
         }
 
-        // Step 3: 执行关键词搜索
-        let keyword_pos = self
+        // Step 3: 执行关键词搜索（DAO 返回 Vec<(Po, fts_rank)>）
+        let keyword_results = self
             .memory_dao
             .search_knowledge_nodes(ctx.clone(), search.clone())
             .await?;
+
+        // 提取 fts_rank 并转换为 Vec<Po> 便于聚合
+        let mut fts_ranks: HashMap<String, f32> = HashMap::new();
+        let keyword_pos: Vec<LongTermKnowledgeNodePo> = keyword_results
+            .into_iter()
+            .map(|(po, rank)| {
+                if let Some(r) = rank {
+                    fts_ranks.insert(po.id.clone(), r);
+                }
+                po
+            })
+            .collect();
 
         // Step 4: 聚合结果（如果有向量结果，用通用 query 批量获取，避免 N+1）
         let mut all_pos = keyword_pos.clone();
@@ -930,10 +1007,28 @@ impl MemoryDalImpl {
         // Step 6: 构建业务对象
         let mut nodes = Vec::with_capacity(all_pos.len());
         for po in all_pos {
-            let match_info = if let Some(distance) = vector_scores.get(&po.id) {
+            let has_vector = vector_scores.contains_key(&po.id);
+            let has_keyword = fts_ranks.contains_key(&po.id);
+            let match_info = if has_vector && has_keyword {
+                // 双命中：向量 + 关键词
                 Some(SearchMatchInfo {
-                    match_type: crate::models::vector::MatchType::Hybrid,
-                    vector_distance: Some(*distance),
+                    match_type: MatchType::Hybrid,
+                    vector_distance: vector_scores.get(&po.id).copied(),
+                    fts_rank: fts_ranks.get(&po.id).copied(),
+                    ..Default::default()
+                })
+            } else if has_vector {
+                // 仅向量命中
+                Some(SearchMatchInfo {
+                    match_type: MatchType::Vector,
+                    vector_distance: vector_scores.get(&po.id).copied(),
+                    ..Default::default()
+                })
+            } else if has_keyword {
+                // 仅关键词命中
+                Some(SearchMatchInfo {
+                    match_type: MatchType::Keyword,
+                    fts_rank: fts_ranks.get(&po.id).copied(),
                     ..Default::default()
                 })
             } else {
@@ -948,14 +1043,57 @@ impl MemoryDalImpl {
         Ok(nodes)
     }
 
-    /// 搜索关系（仅关键词搜索）
+    /// 搜索关系（通过知识节点 FTS5 间接搜索关系）
+    ///
+    /// 关系表无独立 FTS 索引，因此先搜索匹配的知识节点，
+    /// 再查询这些节点关联的所有关系（出入边），一并返回。
     async fn search_relations_internal(
         &self,
-        _ctx: RequestContext,
-        _search: MemorySearch,
+        ctx: RequestContext,
+        search: MemorySearch,
     ) -> Result<Vec<Memory>> {
-        // TODO: DAO 层目前没有关系搜索方法，后续补充
-        Ok(Vec::new())
+        let keyword = search.keyword.as_deref().unwrap_or("");
+        if keyword.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // 1. 用 FTS5 搜索匹配的知识节点
+        let nodes = self
+            .memory_dao
+            .search_knowledge_nodes(ctx.clone(), search.clone())
+            .await?;
+        let node_ids: Vec<String> = nodes.iter().map(|(n, _)| n.id.clone()).collect();
+
+        if node_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // 2. 查询这些节点的所有关系（出入边）
+        let relations = self
+            .memory_dao
+            .list_relations_batch(ctx.clone(), &node_ids)
+            .await?;
+
+        // 3. 构建 Memory 列表（KnowledgeNode + Relation）
+        let mut memories = Vec::with_capacity(nodes.len() + relations.len());
+        for (node, fts_rank) in nodes {
+            memories.push(Memory {
+                po: MemoryPo::KnowledgeNode(node),
+                search_match: Some(SearchMatchInfo {
+                    match_type: MatchType::Keyword,
+                    fts_rank,
+                    ..Default::default()
+                }),
+            });
+        }
+        for rel in relations {
+            memories.push(Memory {
+                po: MemoryPo::Relation(rel),
+                search_match: None,
+            });
+        }
+
+        Ok(memories)
     }
 
     // ==================== Create Internal Helpers ====================

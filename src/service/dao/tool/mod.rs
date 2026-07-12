@@ -39,6 +39,7 @@ pub struct ToolQuery {
     pub agent_id: Option<String>,
     pub ids: Option<Vec<String>>, // 按 ID 批量查询
     pub keyword: Option<String>,  // 关键词搜索
+    pub tags: Option<Vec<String>>, // 按 tag 过滤（OR 语义，命中任一即可）
     pub protocol: Option<ToolProtocol>,
     pub status: Option<ToolStatus>,
     pub exclude_status: Option<ToolStatus>,

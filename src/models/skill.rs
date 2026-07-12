@@ -83,6 +83,12 @@ impl SkillPo {
     pub fn parse_tags(&self) -> Vec<String> {
         serde_json::from_str(&self.tags).unwrap_or_default()
     }
+
+    /// 格式化技能摘要用于 Prompt 注入
+    /// 只输出名称和描述，不包含完整 skill.md 内容，避免 Token 膨胀
+    pub fn to_prompt_summary(&self) -> String {
+        format!("- {}：{}", self.name, self.description)
+    }
 }
 
 // ==================== Skill 业务聚合实体 ====================

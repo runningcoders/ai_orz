@@ -3,7 +3,7 @@
 use common::error::Error;
 use crate::models::skill::SkillPo;
 use crate::pkg::RequestContext;
-use crate::service::dao::skill::{self, SkillDao, SkillSearch};
+use crate::service::dao::skill::{self, SkillDao, SkillQuery, SkillSearch};
 use common::enums::SkillStatus;
 use common::enums::skill::SkillAuthorType;
 use sqlx::SqlitePool;
@@ -671,6 +671,225 @@ async fn test_install_to_agent_copies_all_files(pool: SqlitePool) -> Result<()> 
 
     let usage_content = skill_dao.read_file(&installed, "usage.md")?;
     assert_eq!(usage_content, "# Usage\n\nHow to use this skill.");
+
+    Ok(())
+}
+
+/// 测试按 tag 过滤查询
+#[sqlx::test]
+async fn test_query_by_tag(pool: SqlitePool) -> Result<()> {
+    let skill_dao = init_test_env();
+
+    // 创建带不同 tag 的技能
+    let skill1_id = Uuid::now_v7().to_string();
+    let skill1 = SkillPo::new(
+        skill1_id.clone(),
+        "Python Automation".to_string(),
+        "".to_string(),
+        vec!["python".to_string(), "automation".to_string()],
+        "testing".to_string(),
+        "".to_string(),
+        "test-user".to_string(),
+        SkillAuthorType::User,
+        format!("skills/pending/{}", skill1_id),
+    );
+
+    let skill2_id = Uuid::now_v7().to_string();
+    let skill2 = SkillPo::new(
+        skill2_id.clone(),
+        "Rust Systems".to_string(),
+        "".to_string(),
+        vec!["rust".to_string(), "systems".to_string()],
+        "testing".to_string(),
+        "".to_string(),
+        "test-user".to_string(),
+        SkillAuthorType::User,
+        format!("skills/pending/{}", skill2_id),
+    );
+
+    let ctx = new_ctx("test-user", pool.clone());
+    skill_dao.insert(ctx.clone(), &skill1).await?;
+    skill_dao.insert(ctx, &skill2).await?;
+
+    // 按 python tag 查询，应只返回 skill1
+    let ctx = new_ctx("test-user", pool);
+    let result = skill_dao
+        .query(
+            ctx,
+            SkillQuery {
+                tags: Some(vec!["python".to_string()]),
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].id, skill1_id);
+
+    Ok(())
+}
+
+/// 测试多 tag OR 语义查询
+#[sqlx::test]
+async fn test_query_by_multiple_tags(pool: SqlitePool) -> Result<()> {
+    let skill_dao = init_test_env();
+
+    let skill1_id = Uuid::now_v7().to_string();
+    let skill1 = SkillPo::new(
+        skill1_id.clone(),
+        "Python Tool".to_string(),
+        "".to_string(),
+        vec!["python".to_string()],
+        "testing".to_string(),
+        "".to_string(),
+        "test-user".to_string(),
+        SkillAuthorType::User,
+        format!("skills/pending/{}", skill1_id),
+    );
+
+    let skill2_id = Uuid::now_v7().to_string();
+    let skill2 = SkillPo::new(
+        skill2_id.clone(),
+        "Rust Tool".to_string(),
+        "".to_string(),
+        vec!["rust".to_string()],
+        "testing".to_string(),
+        "".to_string(),
+        "test-user".to_string(),
+        SkillAuthorType::User,
+        format!("skills/pending/{}", skill2_id),
+    );
+
+    let skill3_id = Uuid::now_v7().to_string();
+    let skill3 = SkillPo::new(
+        skill3_id.clone(),
+        "JavaScript Tool".to_string(),
+        "".to_string(),
+        vec!["javascript".to_string()],
+        "testing".to_string(),
+        "".to_string(),
+        "test-user".to_string(),
+        SkillAuthorType::User,
+        format!("skills/pending/{}", skill3_id),
+    );
+
+    let ctx = new_ctx("test-user", pool.clone());
+    skill_dao.insert(ctx.clone(), &skill1).await?;
+    skill_dao.insert(ctx.clone(), &skill2).await?;
+    skill_dao.insert(ctx, &skill3).await?;
+
+    // 查询 python 或 rust tag，应返回 skill1 和 skill2（OR 语义），不含 skill3
+    let ctx = new_ctx("test-user", pool);
+    let result = skill_dao
+        .query(
+            ctx,
+            SkillQuery {
+                tags: Some(vec!["python".to_string(), "rust".to_string()]),
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    assert_eq!(result.len(), 2);
+    let ids: Vec<String> = result.iter().map(|s| s.id.clone()).collect();
+    assert!(ids.contains(&skill1_id));
+    assert!(ids.contains(&skill2_id));
+    assert!(!ids.contains(&skill3_id));
+
+    Ok(())
+}
+
+/// 测试不传 tags 时保持现有行为（返回全部）
+#[sqlx::test]
+async fn test_query_without_tags(pool: SqlitePool) -> Result<()> {
+    let skill_dao = init_test_env();
+
+    let skill1_id = Uuid::now_v7().to_string();
+    let skill1 = SkillPo::new(
+        skill1_id.clone(),
+        "Tagged Skill A".to_string(),
+        "".to_string(),
+        vec!["alpha".to_string()],
+        "testing".to_string(),
+        "".to_string(),
+        "test-user".to_string(),
+        SkillAuthorType::User,
+        format!("skills/pending/{}", skill1_id),
+    );
+
+    let skill2_id = Uuid::now_v7().to_string();
+    let skill2 = SkillPo::new(
+        skill2_id.clone(),
+        "Tagged Skill B".to_string(),
+        "".to_string(),
+        vec!["beta".to_string()],
+        "testing".to_string(),
+        "".to_string(),
+        "test-user".to_string(),
+        SkillAuthorType::User,
+        format!("skills/pending/{}", skill2_id),
+    );
+
+    let ctx = new_ctx("test-user", pool.clone());
+    skill_dao.insert(ctx.clone(), &skill1).await?;
+    skill_dao.insert(ctx, &skill2).await?;
+
+    // tags = None 时，不过滤 tag，应返回全部
+    let ctx = new_ctx("test-user", pool);
+    let result = skill_dao
+        .query(
+            ctx,
+            SkillQuery {
+                tags: None,
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    assert_eq!(result.len(), 2);
+    let ids: Vec<String> = result.iter().map(|s| s.id.clone()).collect();
+    assert!(ids.contains(&skill1_id));
+    assert!(ids.contains(&skill2_id));
+
+    Ok(())
+}
+
+/// 测试关键词搜索可以匹配 tags 字段
+#[sqlx::test]
+async fn test_keyword_search_matches_tags(pool: SqlitePool) -> Result<()> {
+    let skill_dao = init_test_env();
+
+    // name 和 description 都不含 "unique_tag_xyz"，只有 tags 含
+    let skill_id = Uuid::now_v7().to_string();
+    let skill = SkillPo::new(
+        skill_id.clone(),
+        "Generic Skill".to_string(),
+        "A generic description".to_string(),
+        vec!["unique_tag_xyz".to_string()],
+        "testing".to_string(),
+        "".to_string(),
+        "test-user".to_string(),
+        SkillAuthorType::User,
+        format!("skills/pending/{}", skill_id),
+    );
+
+    let ctx = new_ctx("test-user", pool.clone());
+    skill_dao.insert(ctx, &skill).await?;
+
+    // 用 tag 内容作为关键词搜索，应能命中
+    let ctx = new_ctx("test-user", pool);
+    let result = skill_dao
+        .query(
+            ctx,
+            SkillQuery {
+                keyword: Some("unique_tag_xyz".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].id, skill_id);
 
     Ok(())
 }
