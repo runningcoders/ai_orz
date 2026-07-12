@@ -1,0 +1,60 @@
+//! Project 域 API - 项目管理、任务管理
+
+use common::api::{
+    CreateProjectRequest, CreateProjectResponse, CreateTaskRequest, CreateTaskResponse,
+    GetProjectResponse, GetTaskResponse, ListProjectsResponse, ListTasksResponse,
+    UpdateProjectRequest, UpdateProjectResponse, UpdateTaskRequest, UpdateTaskResponse,
+};
+
+use super::{api_get, api_get_or_default, api_post, api_put, api_put_empty};
+
+// ===== 项目管理 =====
+
+pub async fn list_projects() -> Result<ListProjectsResponse, String> {
+    api_get_or_default("/api/v1/projects").await
+}
+
+pub async fn get_project(id: &str) -> Result<GetProjectResponse, String> {
+    api_get(&format!("/api/v1/projects/{}", id)).await
+}
+
+pub async fn create_project(req: CreateProjectRequest) -> Result<CreateProjectResponse, String> {
+    api_post("/api/v1/projects", &req).await
+}
+
+pub async fn update_project(id: &str, req: UpdateProjectRequest) -> Result<UpdateProjectResponse, String> {
+    api_put(&format!("/api/v1/projects/{}", id), &req).await
+}
+
+pub async fn update_project_status(id: &str, status: i32) -> Result<(), String> {
+    let body = serde_json::json!({ "status": status });
+    api_put_empty(&format!("/api/v1/projects/{}/status", id), &body).await
+}
+
+// ===== 任务管理 =====
+
+pub async fn list_project_tasks(project_id: &str) -> Result<ListTasksResponse, String> {
+    api_get_or_default(&format!("/api/v1/projects/{}/tasks", project_id)).await
+}
+
+pub async fn get_task(id: &str) -> Result<GetTaskResponse, String> {
+    api_get(&format!("/api/v1/tasks/{}", id)).await
+}
+
+pub async fn create_task(req: CreateTaskRequest) -> Result<CreateTaskResponse, String> {
+    api_post("/api/v1/tasks", &req).await
+}
+
+pub async fn update_task(id: &str, req: UpdateTaskRequest) -> Result<UpdateTaskResponse, String> {
+    api_put(&format!("/api/v1/tasks/{}", id), &req).await
+}
+
+pub async fn update_task_status(id: &str, status: i32) -> Result<(), String> {
+    let body = serde_json::json!({ "status": status });
+    api_put_empty(&format!("/api/v1/tasks/{}/status", id), &body).await
+}
+
+pub async fn update_task_progress(id: &str, progress: i32) -> Result<GetTaskResponse, String> {
+    let body = serde_json::json!({ "id": id, "progress": progress });
+    api_put(&format!("/api/v1/tasks/{}/progress", id), &body).await
+}

@@ -1,325 +1,44 @@
-//! Organization API client
-//! All DTOs are imported from common crate shared with backend
+//! 组织管理 API
 
-use crate::config::current_config;
 use common::api::{
-    ApiResponse, CheckInitializedResponse, CreateUserRequest, EmptyResponse,
-    GetCurrentOrganizationResponse, GetCurrentUserResponse, InitializeSystemRequest,
-    ListOrganizationsResponse, ListUsersResponse, LoginRequest, LoginResponse, LogoutRequest,
-    LogoutResponse, OrganizationInfoResponse, OrganizationListItem,
-    UpdateCurrentOrganizationRequest, UpdateCurrentUserRequest, UserInfoResponse, UserListItem,
+    CreateOrganizationUserRequest, CreateOrganizationUserResponse, GetOrganizationResponse,
+    ListOrganizationsResponse, ListUsersResponse, UpdateOrganizationRequest,
+    UpdateOrganizationResponse, UpdateUserRequest, UpdateUserResponse,
 };
-use reqwest::Client;
 
-/// Check if system has been initialized
-pub async fn check_initialized() -> Result<bool, String> {
-    let config = current_config();
-    let url = config.api_url("/api/v1/organization/initialize/check");
-    let client = Client::new();
+use super::{api_get, api_get_or_default, api_post, api_put};
 
-    let response = match client.get(&url).send().await {
-        Ok(res) => res,
-        Err(e) => return Err(e.to_string()),
-    };
-
-    if !response.status().is_success() {
-        return Err(format!("HTTP 错误: {}", response.status()));
-    }
-
-    let api_resp: ApiResponse<CheckInitializedResponse> = match response.json().await {
-        Ok(json) => json,
-        Err(e) => return Err(e.to_string()),
-    };
-
-    if !api_resp.is_success() {
-        return Err(api_resp.message);
-    }
-
-    Ok(api_resp
-        .data
-        .unwrap_or_else(|| CheckInitializedResponse { initialized: false })
-        .initialized)
+/// 公开获取组织列表（无需登录，登录页用）
+pub async fn list_organizations_public() -> Result<ListOrganizationsResponse, String> {
+    api_get("/api/v1/organization/list").await
 }
 
-/// List all organizations (for login page selection)
-pub async fn list_organizations() -> Result<Vec<OrganizationListItem>, String> {
-    let config = current_config();
-    let url = config.api_url("/api/v1/organization/list");
-    let client = Client::new();
-
-    let response = match client.get(&url).send().await {
-        Ok(res) => res,
-        Err(e) => return Err(e.to_string()),
-    };
-
-    if !response.status().is_success() {
-        return Err(format!("HTTP 错误: {}", response.status()));
-    }
-
-    let api_resp: ApiResponse<ListOrganizationsResponse> = match response.json().await {
-        Ok(json) => json,
-        Err(e) => return Err(e.to_string()),
-    };
-
-    if !api_resp.is_success() {
-        return Err(api_resp.message);
-    }
-
-    Ok(api_resp
-        .data
-        .unwrap_or_else(|| ListOrganizationsResponse {
-            data: Vec::new(),
-            total: 0,
-        })
-        .data)
+/// 获取当前组织信息
+pub async fn get_current_organization() -> Result<GetOrganizationResponse, String> {
+    api_get("/api/v1/organization/me").await
 }
 
-/// Initialize system (create first organization and super admin)
-pub async fn initialize_system(req: InitializeSystemRequest) -> Result<(), String> {
-    let config = current_config();
-    let url = config.api_url("/api/v1/organization/initialize");
-    let client = Client::new();
-
-    let response = match client.post(&url).json(&req).send().await {
-        Ok(res) => res,
-        Err(e) => return Err(e.to_string()),
-    };
-
-    if !response.status().is_success() {
-        return Err(format!("HTTP 错误: {}", response.status()));
-    }
-
-    let api_resp: ApiResponse<EmptyResponse> = match response.json().await {
-        Ok(json) => json,
-        Err(e) => return Err(e.to_string()),
-    };
-
-    if !api_resp.is_success() {
-        return Err(api_resp.message);
-    }
-
-    Ok(())
+/// 更新当前组织信息
+pub async fn update_current_organization(req: UpdateOrganizationRequest) -> Result<UpdateOrganizationResponse, String> {
+    api_put("/api/v1/organization/me", &req).await
 }
 
-/// User login
-pub async fn login(req: LoginRequest) -> Result<LoginResponse, String> {
-    let config = current_config();
-    let url = config.api_url("/api/v1/organization/auth/login");
-    let client = Client::new();
-
-    let response = match client.post(&url).json(&req).send().await {
-        Ok(res) => res,
-        Err(e) => return Err(e.to_string()),
-    };
-
-    if !response.status().is_success() {
-        return Err(format!("HTTP 错误: {}", response.status()));
-    }
-
-    let api_resp: ApiResponse<LoginResponse> = match response.json().await {
-        Ok(json) => json,
-        Err(e) => return Err(e.to_string()),
-    };
-
-    if !api_resp.is_success() {
-        return Err(api_resp.message);
-    }
-
-    api_resp.data.ok_or("响应为空".to_string())
+/// 获取当前组织用户列表
+pub async fn list_users() -> Result<ListUsersResponse, String> {
+    api_get_or_default("/api/v1/organization/user/me/list").await
 }
 
-/// User logout
-pub async fn logout() -> Result<LogoutResponse, String> {
-    let config = current_config();
-    let url = config.api_url("/api/v1/organization/auth/logout");
-    let client = Client::new();
-
-    let response = match client.post(&url).json(&LogoutRequest {}).send().await {
-        Ok(res) => res,
-        Err(e) => return Err(e.to_string()),
-    };
-
-    if !response.status().is_success() {
-        return Err(format!("HTTP 错误: {}", response.status()));
-    }
-
-    let api_resp: ApiResponse<LogoutResponse> = match response.json().await {
-        Ok(json) => json,
-        Err(e) => return Err(e.to_string()),
-    };
-
-    if !api_resp.is_success() {
-        return Err(api_resp.message);
-    }
-
-    api_resp.data.ok_or("响应为空".to_string())
+/// 创建用户
+pub async fn create_user(req: CreateOrganizationUserRequest) -> Result<CreateOrganizationUserResponse, String> {
+    api_post("/api/v1/organization/user/", &req).await
 }
 
-/// Get current logged-in user information
-pub async fn get_current_user_info() -> Result<UserInfoResponse, String> {
-    let config = current_config();
-    let url = config.api_url("/api/v1/user/me");
-    let client = Client::new();
-
-    let response = match client.get(&url).send().await {
-        Ok(res) => res,
-        Err(e) => return Err(e.to_string()),
-    };
-
-    if !response.status().is_success() {
-        return Err(format!("HTTP 错误: {}", response.status()));
-    }
-
-    let api_resp: ApiResponse<GetCurrentUserResponse> = match response.json().await {
-        Ok(json) => json,
-        Err(e) => return Err(e.to_string()),
-    };
-
-    if !api_resp.is_success() {
-        return Err(api_resp.message);
-    }
-
-    Ok(api_resp.data.ok_or("响应为空".to_string())?.data)
+/// 更新用户
+pub async fn update_user(req: UpdateUserRequest) -> Result<UpdateUserResponse, String> {
+    api_put("/api/v1/organization/user/update", &req).await
 }
 
-/// Update current logged-in user information
-pub async fn update_current_user_info(req: UpdateCurrentUserRequest) -> Result<(), String> {
-    let config = current_config();
-    let url = config.api_url("/api/v1/user/me");
-    let client = Client::new();
-
-    let response = match client.put(&url).json(&req).send().await {
-        Ok(res) => res,
-        Err(e) => return Err(e.to_string()),
-    };
-
-    if !response.status().is_success() {
-        return Err(format!("HTTP 错误: {}", response.status()));
-    }
-
-    let api_resp: ApiResponse<EmptyResponse> = match response.json().await {
-        Ok(json) => json,
-        Err(e) => return Err(e.to_string()),
-    };
-
-    if !api_resp.is_success() {
-        return Err(api_resp.message);
-    }
-
-    Ok(())
-}
-
-/// Get current user's organization information
-pub async fn get_organization_info() -> Result<OrganizationInfoResponse, String> {
-    let config = current_config();
-    let url = config.api_url("/api/v1/organization/me");
-    let client = Client::new();
-
-    let response = match client.get(&url).send().await {
-        Ok(res) => res,
-        Err(e) => return Err(e.to_string()),
-    };
-
-    if !response.status().is_success() {
-        return Err(format!("HTTP 错误: {}", response.status()));
-    }
-
-    let api_resp: ApiResponse<GetCurrentOrganizationResponse> = match response.json().await {
-        Ok(json) => json,
-        Err(e) => return Err(e.to_string()),
-    };
-
-    if !api_resp.is_success() {
-        return Err(api_resp.message);
-    }
-
-    Ok(api_resp.data.ok_or("响应为空".to_string())?.data)
-}
-
-/// Update current user's organization information
-pub async fn update_organization_info(req: UpdateCurrentOrganizationRequest) -> Result<(), String> {
-    let config = current_config();
-    let url = config.api_url("/api/v1/organization/me");
-    let client = Client::new();
-
-    let response = match client.put(&url).json(&req).send().await {
-        Ok(res) => res,
-        Err(e) => return Err(e.to_string()),
-    };
-
-    if !response.status().is_success() {
-        return Err(format!("HTTP 错误: {}", response.status()));
-    }
-
-    let api_resp: ApiResponse<EmptyResponse> = match response.json().await {
-        Ok(json) => json,
-        Err(e) => return Err(e.to_string()),
-    };
-
-    if !api_resp.is_success() {
-        return Err(api_resp.message);
-    }
-
-    Ok(())
-}
-
-/// List all users in current organization
-pub async fn list_users_by_current_organization() -> Result<Vec<UserListItem>, String> {
-    // organization_id is extracted from JWT by backend, no need to send from frontend
-    let config = current_config();
-    let url = config.api_url("/api/v1/organization/user/me/list");
-    let client = Client::new();
-
-    let response = match client.get(&url).send().await {
-        Ok(res) => res,
-        Err(e) => return Err(e.to_string()),
-    };
-
-    if !response.status().is_success() {
-        return Err(format!("HTTP 错误: {}", response.status()));
-    }
-
-    let api_resp: ApiResponse<ListUsersResponse> = match response.json().await {
-        Ok(json) => json,
-        Err(e) => return Err(e.to_string()),
-    };
-
-    if !api_resp.is_success() {
-        return Err(api_resp.message);
-    }
-
-    Ok(api_resp
-        .data
-        .unwrap_or_else(|| ListUsersResponse {
-            data: Vec::new(),
-            total: 0,
-        })
-        .data)
-}
-
-/// Create new user in current organization
-pub async fn create_user(req: CreateUserRequest) -> Result<(), String> {
-    let config = current_config();
-    let url = config.api_url("/api/v1/organization/user/");
-    let client = Client::new();
-
-    let response = match client.post(&url).json(&req).send().await {
-        Ok(res) => res,
-        Err(e) => return Err(e.to_string()),
-    };
-
-    if !response.status().is_success() {
-        return Err(format!("HTTP 错误: {}", response.status()));
-    }
-
-    let api_resp: ApiResponse<EmptyResponse> = match response.json().await {
-        Ok(json) => json,
-        Err(e) => return Err(e.to_string()),
-    };
-
-    if !api_resp.is_success() {
-        return Err(api_resp.message);
-    }
-
-    Ok(())
+/// 删除用户
+pub async fn delete_user(user_id: &str) -> Result<(), String> {
+    super::api_delete(&format!("/api/v1/organization/user/id/{}", user_id)).await
 }
