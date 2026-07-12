@@ -44,6 +44,7 @@
 | 🔎 综合搜索 | ✅ | FTS5 关键词 + 向量语义 + 图谱关系 三位一体混合搜索，Hybrid/Vector/Keyword 三态匹配 |
 | 📊 任务进度追踪 | ✅ | Task progress 字段（0-100）、Agent 神经工具更新进度、complete 自动设 100、progress_updated 事件 |
 | 🤝 Agent 协作工具 | ✅ | search_agents 搜索、send_message_to_agent Agent 间消息、collaboration tag 分组工具 |
+| 🎨 前端架构重构 | ✅ | Dioxus Router 15 路由 + Mistral CSS 设计系统 + 统一 API 客户端 + 13 CRUD 页面 |
 
 ### 1.3 整体完成度与测试统计（2026-07-12 更新）
 
@@ -103,7 +104,8 @@
 ### 前端与 UI
 | 文档 | 内容 | 优先级 |
 |------|------|--------|
-| [docs/ui_design_system.md](./docs/ui_design_system.md) | UI 设计系统、配色、排版、组件规范 | ⭐ |
+| [docs/frontend_architecture.md](./docs/frontend_architecture.md) | **前端架构设计**：Router/CSS 设计系统/API 客户端/状态管理/页面模块 | ⭐⭐⭐ |
+| [docs/ui_design_system.md](./docs/ui_design_system.md) | UI 设计系统、配色、排版、组件规范、实现状态 | ⭐⭐ |
 
 ---
 
@@ -458,6 +460,20 @@ Agent
 ## 六、工作流与开发记录
 
 ### 2026-07-12 里程碑
+**✅ 前端架构重构**
+- **Dioxus Router 引入**：15 条路由替代 use_signal 状态机，支持 URL 路由 + Link 组件导航
+- **Mistral CSS 设计系统**：CSS 变量 + 组件类注入 index.html，替代内联样式（暖色调，与 ui_design_system.md 对齐）
+- **统一 API 客户端**：OnceLock 全局单例 + JWT bearer 自动注入 + api_get/api_post/api_put/api_delete 类型化 helper
+- **全局认证状态管理**：AuthState + use_context_provider + token localStorage 持久化 + 登录闭环
+- **7 业务域 API 客户端**：auth/organization/hr/finance/project/message/system，与后端 Handler 域对齐
+- **基础 UI 组件库**：Button（5 variant）/ Modal / Loading / EmptyState / ErrorAlert / SuccessAlert
+- **布局组件**：Navbar（5 个下拉菜单 + Router Link）+ AppLayout
+- **13 个 CRUD 页面**：Reception 登录 / 组织信息 / 用户管理 / Agent 管理 / 技能库 / 模型提供商 / 工具 / 消息渠道 / 项目管理 / 定时触发器 / 健康检查 / 个人信息 / 设置
+- **页面模块化**：pages/ 按 organization/hr/finance/project/message/system/user 分组，与后端 Handler 域对齐
+- **common crate 扩展**：补充缺失 DTO 类型、Default derive、ProviderType Display 实现
+- **测试统计**：693 个后端测试 100% 通过，前端 cargo check 0 错误
+- **文档更新**：新增 [docs/frontend_architecture.md](./docs/frontend_architecture.md)，更新 README/AGENTS/ARCHITECTURE/architecture_status/ui_design_system
+
 **✅ Task 进度追踪 + FTS5 公共工具重构**
 - **Task progress 字段**：新增 `progress: i32`（0-100），自动 clamp 防越界，`complete()` 时自动设 100
 - **update_progress Domain 方法**：TaskManage trait 新增 `update_progress(ctx, task_id, progress)` 方法

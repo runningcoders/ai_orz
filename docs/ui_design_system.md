@@ -1,5 +1,61 @@
 # Design System Inspired by Mistral AI
 
+---
+
+## 📌 实现状态（2026-07-12 更新）
+
+> ✅ **本设计系统已落地实现**，从规范文档转化为可执行的 CSS 代码。
+
+### 实现位置
+
+**实现文件**: `frontend/index.html`
+
+设计系统已在该文件中通过 **CSS 变量 + 组件类** 的方式完整落地，作为 Dioxus 0.7 前端的样式基础。
+
+### 实现内容
+
+#### 1. CSS 变量（`:root` 作用域）
+
+所有设计令牌（design tokens）已定义为 CSS 自定义属性，便于全局复用与主题切换：
+
+| 变量类别 | 说明 |
+|----------|------|
+| **Brand 颜色** | Mistral Orange / Flame / Block Orange 等品牌色 |
+| **Surface 颜色** | Warm Ivory / Cream / Pure White 等背景色 |
+| **Semantic 颜色** | success / warning / error / info 状态色 |
+| **Text 颜色** | Mistral Black 及多级文本色阶 |
+| **Border 颜色** | 边框与分割线色 |
+| **Typography** | 字体族、字号阶、行高、字重 |
+| **Spacing** | 8px 基础单位的间距阶 |
+| **Border Radius** | 圆角阶（遵循 Mistral 近零圆角原则） |
+| **Shadows** | 暖金色多层阴影系统 |
+
+#### 2. 组件类
+
+通用 UI 组件已封装为可复用的 CSS 类，与 Dioxus 组件直接配合：
+
+| 组件类 | 说明 |
+|--------|------|
+| `navbar` | 顶部导航栏，集成 Dioxus Router Link |
+| `button`（5 variants） | primary / secondary / ghost / outline / danger 五种按钮变体 |
+| `card` | 卡片容器，应用暖金色多层阴影 |
+| `table` | 数据表格样式 |
+| `form` | 表单与输入控件样式 |
+| `badge` | 状态标签 |
+| `modal` | 模态弹窗 |
+| `alert` | 提示信息 |
+| `state indicators` | 状态指示器（loading / success / error 等） |
+
+### 相关文档
+
+- **架构文档**: `docs/frontend_architecture.md` — 前端整体架构说明
+- **架构现状**: `docs/architecture_status_20260701.md` — 含前端层完成度跟踪
+- **本文档下方**: 保持原始 Mistral 设计系统规范，作为设计决策的权威参考
+
+> 下方内容为原始设计系统规范，作为设计决策与样式扩展的参考依据。
+
+---
+
 ## 1. Visual Theme & Atmosphere
 
 Mistral AI's interface is a sun-drenched landscape rendered in code — a warm, bold, unapologetically European design that trades the typical blue-screen AI aesthetic for golden amber, burnt orange, and the feeling of late-afternoon light in southern France. Every surface glows with warmth: backgrounds fade from pale cream to deep amber, shadows carry golden undertones (`rgba(127, 99, 21, ...)`), and the brand's signature orange (`#fa520f`) burns through the page like a signal fire.

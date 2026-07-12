@@ -31,10 +31,16 @@ ai_orz/
 │   └── pkg/                  # 公共工具包
 │
 └── **frontend** 前端 Dioxus 应用
+    ├── index.html              # 全局 CSS 设计系统（Mistral 暖色调变量 + 组件类）
     ├── src/
-    │   ├── api/              # API 客户端（调用后端接口，所有 DTO 从 common 导入）
-    │   └── components/        # UI 组件（每个页面一个组件）
+    │   ├── api/                # 统一 API 客户端（OnceLock 单例 + JWT 注入 + 7 个业务域）
+    │   ├── components/         # 基础 UI 组件库（Button/Modal/State alerts）
+    │   ├── config.rs           # 前端运行时配置管理（localStorage 读写）
+    │   ├── layouts/            # 布局组件（Navbar with Router Link + AppLayout）
+    │   ├── pages/              # 页面模块（按 organization/hr/finance/project/message/system/user 分组）
+    │   └── store/              # 全局状态管理（AuthState + token 持久化）
     └── ...
+    > 前端详细架构请查看 [docs/frontend_architecture.md](./frontend_architecture.md)
 ```
 
 **common crate 设计原则：**

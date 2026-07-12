@@ -13,7 +13,7 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 ## 技术栈
 
 - **后端**: Rust + Axum + SQLite + [rig-core](https://docs.rs/rig-core/latest/rig/) (LLM 调用框架)
-- **前端**: Dioxus 0.7 (WebAssembly)
+- **前端**: Dioxus 0.7 (WebAssembly) + Dioxus Router + 全局 CSS 设计系统（Mistral 暖色调）
 - **common**: 独立 crate，存放前后端共享的 DTO、枚举、常量（API 契约统一）
 - **构建**: dioxus-cli + cargo workspace
 
@@ -77,9 +77,14 @@ ai_orz/
 │
 ├── frontend/            # Dioxus 前端源码
 │   ├── build.rs        # 编译时读取配置嵌入前端
+│   ├── index.html      # 全局 CSS 设计系统（Mistral 暖色调）
 │   └── src/
+│       ├── api/        # 统一 API 客户端（7 个业务域 + JWT 注入）
+│       ├── components/ # 基础 UI 组件库（Button/Modal/State）
 │       ├── config.rs   # 前端运行时配置管理（支持 localStorage 读写）
-│       └── components/  # UI 组件
+│       ├── layouts/    # 布局组件（Navbar + AppLayout）
+│       ├── pages/      # 页面模块（按 organization/hr/finance/project/message/system/user 分组）
+│       └── store/      # 全局状态管理（AuthState）
 │
 ├── dist/               # 前端静态文件（生产构建输出）
 ├── docs/               # 详细设计文档
@@ -275,21 +280,33 @@ system_info("服务启动成功");
 
 ## 前端已实现功能
 
-- ✅ 顶部导航栏（权限控制下拉菜单）
+**架构重构（2026-07-12）：** 引入 Dioxus Router、全局 CSS 设计系统（Mistral 暖色调）、统一 API 客户端（JWT 注入）、全局认证状态管理，按业务域组织页面模块。
+
+- ✅ **Dioxus Router 路由系统**（15 条路由，URL 路由 + Link 导航）
+- ✅ **Mistral CSS 设计系统**（CSS 变量 + 组件类，替代内联样式）
+- ✅ **统一 API 客户端**（OnceLock 单例 + JWT 自动注入 + 类型化 helper 函数）
+- ✅ **全局认证状态管理**（AuthState + token localStorage 持久化）
+- ✅ 顶部导航栏（5 个下拉菜单，权限控制 + Router Link）
   - 前台接待
-  - 人力资源 → Agent 管理
-  - 财务管理 → 模型管理
+  - 人力资源 → Agent 管理、技能库
+  - 财务管理 → 模型提供商、工具、消息渠道
   - 项目管理 → 项目列表
-  - 任务管理 → 任务列表
-- ✅ 前台接待/登录流程（系统初始化检测 + 组织选择）
-- ✅ 个人信息页（查看修改）
-- ✅ 组织信息页（仅管理员）
+  - 系统管理 → 定时触发器、健康检查
+- ✅ 前台接待/登录流程（系统初始化检测 + 组织选择 + token 保存 + 跳转）
+- ✅ Agent 管理列表（创建 Modal + 删除 + 详情页跳转）
+- ✅ Model Provider 管理列表（创建 + 删除 + 自动测试连通性）
+- ✅ 项目管理列表（创建 + 状态徽章）
+- ✅ 技能库管理（列表 + 标签展示 + 删除）
+- ✅ 工具管理（列表 + 启用/禁用 + 删除）
+- ✅ 消息渠道管理（列表 + 启用/禁用 + 删除）
+- ✅ 定时触发器管理（列表 + 暂停/恢复 + 删除）
+- ✅ 用户管理页（列表 + 创建 + 删除 + 角色徽章）
+- ✅ 组织信息页（表单加载 + 保存）
+- ✅ 个人信息页（只读加载 + 简化保存）
+- ✅ 健康检查页（按钮触发检查）
 - ✅ ⚙️ 设置页（运行时修改 API 地址，保存到 localStorage）
-- ✅ 用户管理页（仅管理员）
-- ✅ Agent 管理列表
-- ✅ Model Provider 管理列表（自动测试连通性）
-- ✅ 项目管理列表
-- ✅ 任务管理列表（状态更新）
+
+> 详细前端架构说明请查看 [docs/frontend_architecture.md](./docs/frontend_architecture.md)
 
 ---
 

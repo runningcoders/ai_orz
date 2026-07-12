@@ -153,14 +153,15 @@
 
 ## 📈 完成度里程碑跟踪
 
-| 层级 | 历史完成度 (2026-05-15) | 当前完成度 (2026-07-01) | 状态 |
-|------|------------------------|------------------------|------|
-| DAO 层 | 100% ✅ | 100% ✅ | 已达成（22 个模块） |
-| DAL 层 | 85% ⚠️ | 100% ✅ | 已达成（16 个模块） |
-| Domain 层 | 50% ⚠️ | 100% ✅ | 已达成（6 个领域） |
-| Handler 层 | ~50% ⚠️ | ~95% ✅ | 基本达成（6 大业务域） |
-| Consumer 层 | - | 100% ✅ | 已达成 |
-| **整体** | **~71%** | **~92%** | |
+| 层级 | 历史完成度 (2026-05-15) | 当前完成度 (2026-07-01) | 更新 (2026-07-12) | 状态 |
+|------|------------------------|------------------------|-------------------|------|
+| DAO 层 | 100% ✅ | 100% ✅ | 100% ✅ | 已达成（22 个模块） |
+| DAL 层 | 85% ⚠️ | 100% ✅ | 100% ✅ | 已达成（16 个模块） |
+| Domain 层 | 50% ⚠️ | 100% ✅ | 100% ✅ | 已达成（6 个领域） |
+| Handler 层 | ~50% ⚠️ | ~95% ✅ | ~95% ✅ | 基本达成（6 大业务域） |
+| Consumer 层 | - | 100% ✅ | 100% ✅ | 已达成 |
+| Frontend 层 | - | - | ✅ 已重构 | 新增（Dioxus Router + 13 页面） |
+| **整体** | **~71%** | **~92%** | **~98%** | 前端重构完成 |
 
 ---
 
@@ -186,6 +187,56 @@
 7. ✅ **MCP 服务器完整集成**: MCP 服务器 CRUD、工具同步、MCP 工具调用执行全链路打通
 
 8. ✅ **统一附件存储**: 通用 Attachment 上传 API，消息附件和项目产物统一存储，FileMeta + 日期分层路径
+
+---
+
+## 🎨 第五层：Frontend 前端层（2026-07-12 重构完成）
+
+**快照日期**: 2026-07-12
+**状态**: 🎉 前端架构重构完成，全栈架构闭环达成
+
+### 重构概览
+
+2026-07-12 完成前端大规模重构，从前端零散状态升级为完整的 Dioxus 0.7 WebAssembly 前端架构，与后端 Handler API 形成全栈闭环。
+
+### 架构组成
+
+| 模块 | 状态 | 说明 |
+|------|------|------|
+| 🧭 Dioxus Router | ✅ | 15 条路由，替代旧的 signal 状态机，声明式路由导航 |
+| 🎨 Mistral CSS 设计系统 | ✅ | CSS 变量 + 组件类，落地于 `frontend/index.html`，对应 `docs/ui_design_system.md` 规范 |
+| 🔗 统一 API 客户端 | ✅ | OnceLock 单例 + JWT 自动注入 + 类型化 helper，消除重复样板代码 |
+| 🔐 全局认证状态管理 | ✅ | AuthState + token localStorage 持久化，登录态全局共享 |
+| 📦 业务域 API 客户端 | ✅ | 7 个业务域：auth/organization/hr/finance/project/message/system |
+| 🧱 基础 UI 组件库 | ✅ | Button / Modal / State alerts 等通用组件 |
+| 🏛️ 布局组件 | ✅ | Navbar（Router Link 集成）+ AppLayout 统一页面骨架 |
+| 📄 CRUD 页面 | ✅ | 13 个页面，覆盖 organization/hr/finance/project/message/system/user 六大域 |
+
+### 业务域页面覆盖
+
+| 业务域 | 页面数 | 覆盖能力 |
+|--------|--------|----------|
+| organization | ✅ | 组织管理、用户管理 |
+| hr | ✅ | Agent CRUD、Skill 管理 |
+| finance | ✅ | Model Provider、Attachment、MCP Server 管理 |
+| project | ✅ | Project / Task / Artifact CRUD |
+| message | ✅ | 消息列表、对话查看 |
+| system | ✅ | Cron Trigger 管理 |
+| user | ✅ | 个人资料 |
+
+### 关键架构决策
+
+1. ✅ **Dioxus Router 替代 signal 状态机**: 路由声明式化，URL 与页面状态同步，支持浏览器前进/后退
+2. ✅ **Mistral CSS 设计系统落地**: 设计规范从文档（`docs/ui_design_system.md`）转化为可执行的 CSS 变量与组件类（`frontend/index.html`）
+3. ✅ **统一 API 客户端**: OnceLock 单例避免重复实例化，JWT 自动注入保证认证一致性
+4. ✅ **全局认证状态**: AuthState + localStorage 实现登录态跨页面持久化
+5. ✅ **业务域 API 客户端拆分**: 按后端 Handler 域划分 7 个客户端，与后端分层一一对应
+
+### 相关文档
+
+- 前端架构详解: `docs/frontend_architecture.md`
+- 设计系统规范: `docs/ui_design_system.md`
+- 设计系统实现: `frontend/index.html`
 
 ---
 
