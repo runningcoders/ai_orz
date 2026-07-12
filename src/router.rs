@@ -345,6 +345,10 @@ fn finance_routes() -> Router {
             post(handlers::finance::message::send_message_to_agent_handler),
         )
         .route(
+            "/messages",
+            get(handlers::finance::message::list_messages_handler),
+        )
+        .route(
             "/message-channels",
             post(handlers::finance::message_channel::create_message_channel::create_message_channel_handler),
         )
