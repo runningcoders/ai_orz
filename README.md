@@ -5,7 +5,7 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 ![GitHub last commit](https://img.shields.io/github/last-commit/runningcoders/ai_orz)
 ![GitHub license](https://img.shields.io/github/license/runningcoders/ai_orz)
 ![Rust](https://img.shields.io/badge/Rust-1.85+-000000?logo=rust)
-![Tests](https://img.shields.io/badge/tests-615%20%E2%9C%94-brightgreen)
+![Tests](https://img.shields.io/badge/tests-693%20%E2%9C%94-brightgreen)
 [![GitHub stars](https://img.shields.io/github/stars/runningcoders/ai_orz?style=social)](https://github.com/runningcoders/ai_orz)
 
 ---
@@ -31,7 +31,7 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 | 📨 消息渠道系统 | ✅ | 多渠道消息接入，支持启用/禁用/连接测试 |
 | 🛠️ 混合模式工具调用 | ✅ | 简单工具走 rig 原生 auto，关键工具走自建 manual 可控链路 |
 | 📚 技能库 | ✅ | 可复用技能和工作流管理，支持搜索和分类，tag 技能包安装，唤醒时注入 Prompt |
-| 📋 任务项目管理 | ✅ | 项目聚合对话，项目管理面 API，任务跟踪进度、思考深度、优先级 |
+| 📋 任务项目管理 | ✅ | 项目聚合对话，任务进度追踪（0-100）、状态机、思考深度、优先级 |
 | 📎 统一附件存储 | ✅ | 通用 Attachment 上传 API，消息附件和项目产物统一存储 |
 | 🔌 MCP 服务器集成 | ✅ | MCP 服务器管理、工具同步、MCP 工具调用执行 |
 | 🚀 异步消费者系统 | ✅ | 通用消费者框架 + Message Topic 三层分发（Agent/User/System） |

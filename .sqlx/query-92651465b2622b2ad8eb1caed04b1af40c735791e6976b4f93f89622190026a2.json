@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, title, description, \"status\" as \"status: TaskStatus\", priority as \"priority: i32\", tags, due_at, start_at, end_at, dependencies, root_user_id,\n       \"assignee_type\" as \"assignee_type: AssigneeType\", assignee_id, project_id, thinking_depth,\n       created_by, modified_by, created_at, updated_at\nFROM tasks WHERE id = ? AND \"status\" != 0\n",
+  "query": "\nSELECT id, title, description, \"status\" as \"status: TaskStatus\", priority as \"priority: i32\", tags, due_at, start_at, end_at, dependencies, root_user_id,\n       \"assignee_type\" as \"assignee_type: AssigneeType\", assignee_id, project_id, thinking_depth, progress as \"progress: i32\",\n       created_by, modified_by, created_at, updated_at\nFROM tasks WHERE id = ? AND \"status\" != 0\n",
   "describe": {
     "columns": [
       {
@@ -79,23 +79,28 @@
         "type_info": "Integer"
       },
       {
-        "name": "created_by",
+        "name": "progress: i32",
         "ordinal": 15,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "modified_by",
+        "name": "created_by",
         "ordinal": 16,
         "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "modified_by",
         "ordinal": 17,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 18,
         "type_info": "Integer"
       },
       {
         "name": "updated_at",
-        "ordinal": 18,
+        "ordinal": 19,
         "type_info": "Integer"
       }
     ],
@@ -121,8 +126,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "a60ca674c77436c794565ee81ff1fde687f7fb7d3a431f1c8f1b74d944798850"
+  "hash": "92651465b2622b2ad8eb1caed04b1af40c735791e6976b4f93f89622190026a2"
 }

@@ -401,4 +401,43 @@ impl super::TaskManage for ProjectDomainImpl {
 
         Ok(())
     }
+
+    async fn update_progress(
+        &self,
+        ctx: RequestContext,
+        task_id: &str,
+        progress: i32,
+    ) -> Result<Task> {
+        let mut task = self
+            .task_dal
+            .find_by_id(ctx.clone(), task_id)
+            .await?
+            .ok_or_else(|| err!(NotFound, "Task not found: {}", task_id))?;
+
+        let ctx = enrich_ctx!(&ctx, &task);
+
+        task.set_progress(progress);
+        task.po.modified_by = ctx.uid();
+
+        self.task_dal.update(ctx.clone(), &task).await?;
+
+        let _ = record_event!(ctx.clone(), TaskEvent {
+            task_id: task.po.id.clone(),
+            project_id: task.po.project_id.clone(),
+            event_type: "progress_updated".to_string(),
+            organization_id: ctx.organization_id.clone(),
+            operator_type: Some(if ctx.agent_id().is_some() { "agent".to_string() } else { "user".to_string() }),
+            operator_id: ctx.agent_id().cloned().or_else(|| ctx.user_id().cloned()),
+            root_user_id: Some(task.po.root_user_id.clone()),
+            assignee_type: Some(format!("{:?}", task.po.assignee_type)),
+            assignee_id: Some(task.po.assignee_id.clone()),
+            from_assignee_id: None,
+            from_status: None,
+            to_status: None,
+            duration_ms: None,
+            priority: task.po.priority,
+        });
+
+        Ok(task)
+    }
 }

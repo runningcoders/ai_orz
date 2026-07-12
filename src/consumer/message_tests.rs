@@ -512,6 +512,15 @@ impl crate::service::domain::project::TaskManage for MockProjectDomain {
     ) -> Result<()> {
         unimplemented!()
     }
+
+    async fn update_progress(
+        &self,
+        _ctx: RequestContext,
+        _task_id: &str,
+        _progress: i32,
+    ) -> Result<crate::models::task::Task> {
+        unimplemented!()
+    }
 }
 
 #[async_trait]

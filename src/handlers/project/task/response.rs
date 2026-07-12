@@ -15,6 +15,7 @@ pub(super) fn to_list_item(task: &Task) -> TaskListItem {
         assignee_id: task.po.assignee_id.clone(),
         project_id: task.po.project_id.clone(),
         thinking_depth: task.po.thinking_depth,
+        progress: task.po.progress,
         created_at: task.po.created_at,
         updated_at: task.po.updated_at,
     }
@@ -37,6 +38,7 @@ pub(super) fn to_detail(task: &Task) -> GetTaskResponse {
         assignee_id: task.po.assignee_id.clone(),
         project_id: task.po.project_id.clone(),
         thinking_depth: task.po.thinking_depth,
+        progress: task.po.progress,
         created_by: task.po.created_by.clone(),
         modified_by: task.po.modified_by.clone(),
         created_at: task.po.created_at,

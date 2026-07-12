@@ -8,6 +8,7 @@ mod list_project_tasks;
 mod mark_done;
 mod response;
 mod update_task;
+mod update_task_progress;
 mod update_task_status;
 
 pub use create_task::create_task_handler;
@@ -16,4 +17,5 @@ pub use list_agent_tasks::list_agent_tasks_handler;
 pub use list_project_tasks::list_project_tasks_handler;
 pub use mark_done::mark_done_handler;
 pub use update_task::update_task_handler;
+pub use update_task_progress::update_task_progress_handler;
 pub use update_task_status::update_task_status_handler;

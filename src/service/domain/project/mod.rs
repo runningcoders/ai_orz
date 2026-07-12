@@ -264,6 +264,14 @@ pub trait TaskManage: Send + Sync {
         task: &mut Task,
         target_status: TaskStatus,
     ) -> Result<()>;
+
+    /// 更新任务进度（0-100）
+    async fn update_progress(
+        &self,
+        ctx: RequestContext,
+        task_id: &str,
+        progress: i32,
+    ) -> Result<Task>;
 }
 
 /// Artifact 管理 trait

@@ -42,12 +42,13 @@
 | 🏛️ 记忆沉淀机制 | ✅ | Agent 休息与沉淀、短期记忆→长期知识图谱、定时触发沉淀 |
 | 🎒 技能包机制 | ✅ | tag 分组技能、批量安装、安装即复制、卸载保留副本 |
 | 🔎 综合搜索 | ✅ | FTS5 关键词 + 向量语义 + 图谱关系 三位一体混合搜索，Hybrid/Vector/Keyword 三态匹配 |
+| 📊 任务进度追踪 | ✅ | Task progress 字段（0-100）、Agent 神经工具更新进度、complete 自动设 100、progress_updated 事件 |
 
 ### 1.3 整体完成度与测试统计（2026-07-12 更新）
 
 | 指标 | 数值 | 说明 |
 |------|------|------|
-| **总测试数** | **615** | DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
+| **总测试数** | **693** | DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
 | **通过率** | **100%** | ✅ 全部测试通过 |
 | DAO 模块数 | 28 个 | 全部实现并被使用，零闲置（21 核心 DAO + 5 渠道 DAO + 1 统计 DAO + 1 触发器 DAO） |
 | DAL 模块数 | 17 个 | 全部完整业务承载，零闲置 |
@@ -456,6 +457,15 @@ Agent
 ## 六、工作流与开发记录
 
 ### 2026-07-12 里程碑
+**✅ Task 进度追踪 + FTS5 公共工具重构**
+- **Task progress 字段**：新增 `progress: i32`（0-100），自动 clamp 防越界，`complete()` 时自动设 100
+- **update_progress Domain 方法**：TaskManage trait 新增 `update_progress(ctx, task_id, progress)` 方法
+- **progress_updated 事件**：进度更新时自动记录 `progress_updated` 类型的 TaskEvent
+- **update_task_progress 神经工具**：注册为 project_management 工具包，Agent 可随时更新任务进度
+- **API 路由**：`PUT /api/v1/projects/tasks/{id}/progress`，HTTP + 神经工具双模式
+- **escape_fts5_keyword 重构**：从 `dao/memory/sqlite.rs` 提升到 `pkg/storage/fts5.rs`，消除 DAO→DAO 依赖
+- **测试统计**：693 个测试 100% 通过
+
 **✅ Runtime Domain Phase 4C - 技能系统增强**
 - **DAO 层 tag 过滤**：SkillQuery/ToolQuery 新增 tags 字段，使用 `json_each` 在 SQL 层精确匹配（OR 语义），关键词搜索扩展到 tags 字段
 - **AgentRuntimeConfig 扩展**：新增 `installed_skill_packs: Vec<String>` 字段，记录 Agent 已安装技能包

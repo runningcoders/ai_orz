@@ -205,6 +205,24 @@ pub struct MarkDoneResponse {
     pub status: String,
 }
 
+/// 更新任务进度请求参数。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct UpdateTaskProgressParams {
+    /// 任务 ID。
+    pub task_id: String,
+    /// 进度值（0-100）。
+    pub progress: i32,
+}
+
+/// 更新任务进度响应。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct UpdateTaskProgressResponse {
+    /// 任务 ID。
+    pub task_id: String,
+    /// 当前进度（0-100）。
+    pub progress: i32,
+}
+
 /// 发送任务分配消息参数。
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct SendTaskAssignmentMessageParams {

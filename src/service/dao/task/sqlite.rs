@@ -31,6 +31,7 @@ struct TaskSearchRow {
     assignee_id: String,
     project_id: Option<String>,
     thinking_depth: i64,
+    progress: i32,
     created_by: String,
     modified_by: String,
     created_at: i64,
@@ -85,9 +86,9 @@ impl TaskDao for TaskDaoSqliteImpl {
         sqlx::query!(
             r#"INSERT INTO tasks(
                 id, title, description, "status", priority, tags, due_at, start_at, end_at, dependencies, root_user_id,
-                "assignee_type", assignee_id, project_id, thinking_depth, created_by, modified_by, created_at, updated_at
+                "assignee_type", assignee_id, project_id, thinking_depth, progress, created_by, modified_by, created_at, updated_at
             ) VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             )"#,
             task.id,
             task.title,
@@ -104,6 +105,7 @@ impl TaskDao for TaskDaoSqliteImpl {
             task.assignee_id,
             task.project_id,
             task.thinking_depth,
+            task.progress,
             task.created_by,
             task.modified_by,
             task.created_at,
@@ -118,7 +120,7 @@ impl TaskDao for TaskDaoSqliteImpl {
             TaskPo,
             r#"
 SELECT id, title, description, "status" as "status: TaskStatus", priority as "priority: i32", tags, due_at, start_at, end_at, dependencies, root_user_id,
-       "assignee_type" as "assignee_type: AssigneeType", assignee_id, project_id, thinking_depth,
+       "assignee_type" as "assignee_type: AssigneeType", assignee_id, project_id, thinking_depth, progress as "progress: i32",
        created_by, modified_by, created_at, updated_at
 FROM tasks WHERE id = ? AND "status" != 0
 "#,
@@ -131,7 +133,7 @@ FROM tasks WHERE id = ? AND "status" != 0
 
     async fn query(&self, ctx: RequestContext, query: TaskQuery) -> Result<Vec<TaskPo>> {
         let mut builder = sqlx::QueryBuilder::new(
-            r#"SELECT id, title, description, "status", priority, tags, due_at, start_at, end_at, dependencies, root_user_id, "assignee_type", assignee_id, project_id, thinking_depth, created_by, modified_by, created_at, updated_at FROM tasks WHERE 1=1"#,
+            r#"SELECT id, title, description, "status", priority, tags, due_at, start_at, end_at, dependencies, root_user_id, "assignee_type", assignee_id, project_id, thinking_depth, progress, created_by, modified_by, created_at, updated_at FROM tasks WHERE 1=1"#,
         );
 
         // 默认软删除过滤
@@ -213,7 +215,7 @@ FROM tasks WHERE id = ? AND "status" != 0
         // FTS5 MATCH + JOIN + BM25 排序
         // 注意：MATCH 左侧必须使用完整表名（非别名），否则 SQLite 会将别名解释为列名
         let mut builder = sqlx::QueryBuilder::new(
-            r#"SELECT t.id, t.title, t.description, t."status", t.priority, t.tags, t.due_at, t.start_at, t.end_at, t.dependencies, t.root_user_id, t."assignee_type", t.assignee_id, t.project_id, t.thinking_depth, t.created_by, t.modified_by, t.created_at, t.updated_at, tasks_fts.rank as fts_rank
+            r#"SELECT t.id, t.title, t.description, t."status", t.priority, t.tags, t.due_at, t.start_at, t.end_at, t.dependencies, t.root_user_id, t."assignee_type", t.assignee_id, t.project_id, t.thinking_depth, t.progress, t.created_by, t.modified_by, t.created_at, t.updated_at, tasks_fts.rank as fts_rank
 FROM tasks_fts
 JOIN tasks t ON tasks_fts.rowid = t.rowid
 WHERE tasks_fts MATCH "#,
@@ -273,6 +275,7 @@ WHERE tasks_fts MATCH "#,
                     assignee_id: row.assignee_id,
                     project_id: row.project_id,
                     thinking_depth: row.thinking_depth,
+                    progress: row.progress,
                     created_by: row.created_by,
                     modified_by: row.modified_by,
                     created_at: row.created_at,
@@ -350,6 +353,7 @@ UPDATE tasks SET
     assignee_id = ?,
     project_id = ?,
     thinking_depth = ?,
+    progress = ?,
     modified_by = ?,
     updated_at = ?
 WHERE id = ?
@@ -367,6 +371,7 @@ WHERE id = ?
             task.assignee_id,
             task.project_id,
             task.thinking_depth,
+            task.progress,
             ctx_user_id,
             now,
             task.id

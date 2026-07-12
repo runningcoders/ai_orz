@@ -94,6 +94,8 @@ pub struct TaskListItem {
     pub project_id: Option<String>,
     /// 当前思考深度
     pub thinking_depth: i64,
+    /// 任务进度（0-100）
+    pub progress: i32,
     /// 创建时间戳
     pub created_at: i64,
     /// 更新时间戳
@@ -133,6 +135,8 @@ pub struct GetTaskResponse {
     pub project_id: Option<String>,
     /// 当前思考深度
     pub thinking_depth: i64,
+    /// 任务进度（0-100）
+    pub progress: i32,
     /// 创建者用户 ID
     pub created_by: String,
     /// 最后修改者用户 ID
@@ -180,3 +184,16 @@ pub struct UpdateTaskStatusRequest {
 
 /// 更新 Task 状态响应
 pub type UpdateTaskStatusResponse = GetTaskResponse;
+
+/// 更新 Task 进度请求
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct UpdateTaskProgressRequest {
+    /// Task ID
+    #[param(source = "path")]
+    pub id: String,
+    /// 任务进度（0-100）
+    pub progress: i32,
+}
+
+/// 更新 Task 进度响应
+pub type UpdateTaskProgressResponse = GetTaskResponse;

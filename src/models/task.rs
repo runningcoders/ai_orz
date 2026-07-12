@@ -44,6 +44,8 @@ pub struct TaskPo {
     pub project_id: Option<String>,
     /// 当前思考深度（轮次）
     pub thinking_depth: i64,
+    /// 任务进度（0-100）
+    pub progress: i32,
     /// 创建者用户 ID（可能是 Agent 创建）
     pub created_by: String,
     /// 最后修改者用户 ID
@@ -157,6 +159,7 @@ impl Task {
     /// 完成任务
     pub fn complete(&mut self) {
         self.po.status = TaskStatus::Completed;
+        self.po.progress = 100;
         self.po.end_at = Some(utils::current_timestamp());
     }
 
@@ -178,6 +181,17 @@ impl Task {
     /// 获取当前思考深度
     pub fn thinking_depth(&self) -> i64 {
         self.po.thinking_depth
+    }
+
+    /// 获取任务进度
+    pub fn progress(&self) -> i32 {
+        self.po.progress
+    }
+
+    /// 设置任务进度（0-100，超出范围会被截断）
+    pub fn set_progress(&mut self, progress: i32) {
+        self.po.progress = progress.clamp(0, 100);
+        self.po.updated_at = utils::current_timestamp();
     }
 }
 
@@ -224,6 +238,7 @@ impl TaskPo {
             assignee_id,
             project_id,
             thinking_depth: 0,
+            progress: 0,
             created_by: created_by.clone(),
             modified_by: created_by,
             created_at: now,

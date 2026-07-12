@@ -121,6 +121,10 @@ fn task_routes() -> Router {
             put(handlers::project::task::update_task_status_handler),
         )
         .route(
+            "/tasks/{id}/progress",
+            put(handlers::project::task::update_task_progress_handler),
+        )
+        .route(
             "/projects/{project_id}/tasks",
             get(handlers::project::task::list_project_tasks_handler),
         )
