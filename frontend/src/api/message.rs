@@ -1,10 +1,64 @@
-//! Message 域 API - 消息发送
+//! Message 域 API - 消息发送和列表查询
 
-use common::api::SendMessageToAgentParams;
+use common::api::{
+    ListMessagesResponse, SendMessageToAgentParams, SendMessageToAgentResponse,
+};
 
-use super::api_post;
+use super::{api_get, api_post};
 
-/// 用户向 Agent 发送消息
-pub async fn send_message_to_agent(params: SendMessageToAgentParams) -> Result<common::api::SendMessageToAgentResponse, String> {
-    api_post("/api/v1/finance/messages/agents", &params).await
+pub async fn send_message_to_agent(
+    req: SendMessageToAgentParams,
+) -> Result<SendMessageToAgentResponse, String> {
+    api_post("/api/v1/messages/agents", &req).await
+}
+
+pub async fn load_latest_messages(
+    project_id: Option<&str>,
+    limit: Option<usize>,
+) -> Result<ListMessagesResponse, String> {
+    let mut params = Vec::new();
+    if let Some(pid) = project_id {
+        params.push(format!("project_id={}", url_encode(pid)));
+    }
+    if let Some(l) = limit {
+        params.push(format!("limit={}", l));
+    }
+    let query = if params.is_empty() { String::new() } else { format!("?{}", params.join("&")) };
+    api_get(&format!("/api/v1/messages{}", query)).await
+}
+
+pub async fn load_older_messages(
+    project_id: Option<&str>,
+    before_timestamp: i64,
+    limit: Option<usize>,
+) -> Result<ListMessagesResponse, String> {
+    let mut params = vec![format!("before_timestamp={}", before_timestamp)];
+    if let Some(pid) = project_id {
+        params.push(format!("project_id={}", url_encode(pid)));
+    }
+    if let Some(l) = limit {
+        params.push(format!("limit={}", l));
+    }
+    api_get(&format!("/api/v1/messages?{}", params.join("&"))).await
+}
+
+pub async fn poll_new_messages(
+    project_id: Option<&str>,
+    after_timestamp: i64,
+) -> Result<ListMessagesResponse, String> {
+    let mut params = vec![format!("after_timestamp={}", after_timestamp)];
+    if let Some(pid) = project_id {
+        params.push(format!("project_id={}", url_encode(pid)));
+    }
+    api_get(&format!("/api/v1/messages?{}", params.join("&"))).await
+}
+
+fn url_encode(s: &str) -> String {
+    s.replace('%', "%25")
+        .replace(' ', "%20")
+        .replace('&', "%26")
+        .replace('=', "%3D")
+        .replace('+', "%2B")
+        .replace('#', "%23")
+        .replace('?', "%3F")
 }
