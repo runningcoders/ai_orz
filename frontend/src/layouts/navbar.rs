@@ -33,7 +33,9 @@ pub fn Navbar() -> Element {
         nav { class: "navbar",
             // 左侧：品牌 + 导航
             div { class: "navbar-section",
-                Link { to: Route::Reception {}, class: "navbar-brand", "AI Orz" }
+                Link { to: Route::MessageChat {}, class: "navbar-brand", "AI Orz" }
+
+                Link { to: Route::MessageChat {}, class: "navbar-item", "💬 对话" }
 
                 // 人力资源
                 div { style: "position: relative;",
