@@ -20,15 +20,13 @@ pub async fn send_message_to_agent(
     ctx: RequestContext,
     params: SendMessageToAgentParams,
 ) -> Result<SendMessageToAgentResponse> {
-    let from_id = ctx
-        .agent_id()
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| "system".to_string());
-
-    let from_role = if ctx.agent_id().is_some() {
-        MessageRole::Agent
+    // 判断发送者身份：优先 Agent，其次 User，最后 System
+    let (from_id, from_role) = if let Some(aid) = ctx.agent_id() {
+        (aid.to_string(), MessageRole::Agent)
+    } else if !ctx.uid().is_empty() {
+        (ctx.uid(), MessageRole::User)
     } else {
-        MessageRole::System
+        ("system".to_string(), MessageRole::System)
     };
 
     let cmd = SendToAgentCommand {
