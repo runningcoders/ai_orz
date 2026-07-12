@@ -3,8 +3,8 @@
 use common::api::{
     CreateOrganizationUserRequest, CreateOrganizationUserResponse, GetCurrentOrganizationResponse,
     GetCurrentUserResponse, ListOrganizationsResponse, ListUsersResponse,
-    UpdateCurrentOrganizationRequest, UpdateCurrentOrganizationResponse, UpdateUserRequest,
-    UpdateUserResponse,
+    UpdateCurrentOrganizationRequest, UpdateCurrentOrganizationResponse, UpdateCurrentUserRequest,
+    UpdateCurrentUserResponse, UpdateUserRequest, UpdateUserResponse,
 };
 
 use super::{api_get, api_get_or_default, api_post, api_put};
@@ -47,4 +47,9 @@ pub async fn delete_user(user_id: &str) -> Result<(), String> {
 /// 获取当前用户信息
 pub async fn get_current_user_info() -> Result<GetCurrentUserResponse, String> {
     api_get("/api/v1/user/me").await
+}
+
+/// 更新当前用户信息
+pub async fn update_current_user(req: UpdateCurrentUserRequest) -> Result<UpdateCurrentUserResponse, String> {
+    api_put("/api/v1/user/me", &req).await
 }

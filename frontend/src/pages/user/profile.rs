@@ -2,7 +2,9 @@
 
 use dioxus::prelude::*;
 
-use crate::api::organization::get_current_user_info;
+use common::api::UpdateCurrentUserRequest;
+
+use crate::api::organization::{get_current_user_info, update_current_user};
 use crate::components::state::{ErrorAlert, Loading, SuccessAlert};
 
 #[component]
@@ -13,7 +15,7 @@ pub fn UserProfile() -> Element {
     let mut username = use_signal(String::new);
     let mut display_name = use_signal(String::new);
     let mut email = use_signal(|| String::new());
-    let mut role = use_signal(|| 1i32);
+    let mut role_name = use_signal(String::new);
     let mut saving = use_signal(|| false);
 
     use_effect(move || {
@@ -24,19 +26,13 @@ pub fn UserProfile() -> Element {
                     username.set(user.username);
                     display_name.set(user.display_name.unwrap_or_default());
                     email.set(user.email.unwrap_or_default());
-                    role.set(user.role);
+                    role_name.set(user.role_name);
                 }
                 Err(e) => error.set(e),
             }
             loading.set(false);
         });
     });
-
-    let role_text = match role() {
-        3 => "超级管理员".to_string(),
-        2 => "管理员".to_string(),
-        _ => "成员".to_string(),
-    };
 
     rsx! {
         div { class: "card",
@@ -57,7 +53,7 @@ pub fn UserProfile() -> Element {
                 div { class: "form-group",
                     label { class: "form-label", "角色" }
                     input { class: "form-input", disabled: true,
-                        value: "{role_text}" }
+                        value: "{role_name}" }
                 }
                 div { class: "form-group",
                     label { class: "form-label", "显示名称" }
@@ -69,9 +65,31 @@ pub fn UserProfile() -> Element {
                     input { class: "form-input", r#type: "email", value: "{email}",
                         oninput: move |e| email.set(e.value()) }
                 }
-                // 注意：更新用户信息需要后端 UpdateUserRequest，此处简化
                 button { class: "btn btn-accent", disabled: saving(),
-                    onclick: move |_| success.set("功能开发中".to_string()),
+                    onclick: move |_| {
+                        success.set(String::new());
+                        error.set(String::new());
+                        saving.set(true);
+                        let display_name_val = display_name();
+                        let email_val = email();
+                        spawn(async move {
+                            let req = UpdateCurrentUserRequest {
+                                display_name: Some(display_name_val),
+                                email: Some(email_val),
+                                password_hash: None,
+                            };
+                            match update_current_user(req).await {
+                                Ok(resp) => {
+                                    let user = resp.data;
+                                    display_name.set(user.display_name.unwrap_or_default());
+                                    email.set(user.email.unwrap_or_default());
+                                    success.set("个人信息保存成功".to_string());
+                                }
+                                Err(e) => error.set(e),
+                            }
+                            saving.set(false);
+                        });
+                    },
                     if saving() { "保存中..." } else { "保存" }
                 }
             }
