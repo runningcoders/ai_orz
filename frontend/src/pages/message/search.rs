@@ -1,0 +1,120 @@
+use dioxus::prelude::{Key, *};
+use chrono::{DateTime, Utc};
+
+use crate::api::message::search_messages;
+use crate::components::button::Button;
+use crate::components::state::{EmptyState, Loading};
+use crate::layouts::app_layout::AppLayout;
+use common::api::MessageSearchResult;
+
+fn format_role(role: i32) -> &'static str {
+    match role {
+        1 => "Agent",
+        0 => "User",
+        _ => "System",
+    }
+}
+
+fn format_timestamp(ts: i64) -> String {
+    let dt = DateTime::from_timestamp(ts / 1000, 0).unwrap_or(Utc::now());
+    dt.format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
+#[component]
+pub fn MessageSearch() -> Element {
+    let mut keyword = use_signal(String::new);
+    let mut results = use_signal(Vec::<MessageSearchResult>::new);
+    let mut loading = use_signal(|| false);
+    let mut error = use_signal(String::new);
+
+    let mut handle_search = move |_| {
+        loading.set(true);
+        error.set(String::new());
+        let kw = keyword().clone();
+        spawn(async move {
+            match search_messages(&kw, None).await {
+                Ok(data) => {
+                    let msgs = data.messages;
+                    results.set(msgs.clone());
+                    if msgs.is_empty() {
+                        error.set("未找到匹配的消息".to_string());
+                    }
+                }
+                Err(e) => error.set(e),
+            }
+            loading.set(false);
+        });
+    };
+
+    rsx! {
+        AppLayout {
+            div { class: "card",
+                h2 { class: "card-title", "消息搜索" }
+                div { class: "space-y-4",
+                    div { class: "flex gap-2",
+                        input {
+                            class: "form-input flex-1",
+                            value: "{keyword}",
+                            oninput: move |e| keyword.set(e.value()),
+                            placeholder: "输入关键词搜索消息...",
+                            onkeydown: move |evt| {
+                                if evt.key() == Key::Enter {
+                                    spawn(async move {
+                                        handle_search(());
+                                    });
+                                }
+                            }
+                        }
+                        Button {
+                            onclick: move |_| handle_search(()),
+                            "搜索"
+                        }
+                    }
+                }
+            }
+
+            if loading() {
+                Loading {}
+            } else if !error().is_empty() {
+                EmptyState { message: "{error()}" }
+            } else if results().is_empty() {
+                EmptyState { message: "开始搜索".to_string() }
+            } else {
+                div { class: "card",
+                    h3 { class: "card-title", "搜索结果 ({results().len()})" }
+                    table { class: "table w-full",
+                        thead {
+                            tr {
+                                th { "内容" }
+                                th { "发送方" }
+                                th { "类型" }
+                                th { "匹配" }
+                                th { "时间" }
+                            }
+                        }
+                        tbody {
+                            for msg in &results() {
+                                tr { key: "{msg.message_id}",
+                                    td { "{msg.content.chars().take(100).collect::<String>()}" }
+                                    td {
+                                        span { class: if msg.from_role == 1 { "badge badge-accent" } else { "badge badge-primary" },
+                                            "{format_role(msg.from_role)}"
+                                        }
+                                    }
+                                    td { "{msg.message_type}" }
+                                    td {
+                                        span { class: "text-sm text-muted", "{msg.match_type.as_deref().unwrap_or_default()}" }
+                                        if msg.vector_distance.is_some() {
+                                            span { class: "text-sm text-accent ml-2", "d={msg.vector_distance.unwrap():.4}" }
+                                        }
+                                    }
+                                    td { "{format_timestamp(msg.created_at)}" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

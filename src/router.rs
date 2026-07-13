@@ -288,6 +288,14 @@ fn hr_routes() -> Router {
             "/skills/{skill_id}/files/{*filename}",
             put(handlers::hr::skill::update_skill_file_content_handler),
         )
+        .route(
+            "/agents/search_memory",
+            post(handlers::hr::agent::search_memory_handler),
+        )
+        .route(
+            "/agents/query_memory",
+            post(handlers::hr::agent::query_memory_handler),
+        )
 }
 
 fn finance_routes() -> Router {
@@ -355,6 +363,10 @@ fn finance_routes() -> Router {
         .route(
             "/messages",
             get(handlers::finance::message::list_messages_handler),
+        )
+        .route(
+            "/messages/search",
+            post(handlers::finance::message::search_messages_handler),
         )
         .route(
             "/message-channels",

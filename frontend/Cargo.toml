@@ -19,3 +19,4 @@ tracing = "0.1"
 common = { path = "../common" }
 futures-channel = "0.3"
 wasm-bindgen-futures = "0.4"
+chrono = "0.4.45"

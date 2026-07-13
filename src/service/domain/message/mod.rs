@@ -21,7 +21,7 @@ pub use crate::models::tool::ToolCallTraceRef;
 use crate::pkg::RequestContext;
 use crate::service::dal::message::MessageDal;
 pub use crate::service::dal::message_channel::{DeliveryResult, MessageChannelDal};
-use crate::service::dao::message::MessageQuery;
+use crate::service::dao::message::{MessageQuery, MessageSearch};
 use common::enums::{MessageRole, MessageStatus};
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
@@ -328,4 +328,16 @@ pub trait MessageManagement: Send + Sync {
         ctx: RequestContext,
         task_id: &str,
     ) -> Result<()>;
+
+    /// 🔍 消息混合搜索（关键词 + 向量语义）
+    ///
+    /// 自动选择搜索策略：
+    /// - keyword 存在 → FTS5 全文检索
+    /// - query_vector 存在 → 向量语义搜索
+    /// - 两者都有 → 混合搜索，合并结果
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: MessageSearch,
+    ) -> Result<Vec<Message>>;
 }

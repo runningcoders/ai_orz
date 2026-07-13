@@ -48,6 +48,9 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 | 📊 任务进度追踪 | ✅ | Task progress 字段（0-100）、Agent 神经工具更新进度、progress_updated 事件 |
 | 🤝 Agent 协作 | ✅ | search_agents 搜索、send_message_to_agent 消息、collaboration tag 分组工具 |
 | 💬 对话功能 MVP | ✅ | 左右分栏布局（项目列表 + 对话区）、双向分页、3秒短轮询、消息气泡展示 |
+| 🔍 消息搜索 | ✅ | FTS5 + 向量混合搜索、匹配类型展示、向量距离显示 |
+| 🧠 记忆搜索 | ✅ | 关键词 + 类型筛选、短期记忆/知识节点/关系搜索 |
+| 🗺️ 知识图谱可视化 | ✅ | SVG 图谱组件、圆形布局、搜索初始节点 |
 
 > 📝 **开发规范与详细架构** 请查看 [AGENTS.md](./AGENTS.md) - AI 助手专属快速入门手册
 

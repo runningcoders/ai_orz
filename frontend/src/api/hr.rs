@@ -4,7 +4,8 @@ use common::api::{
     CreateAgentRequest, CreateAgentResponse, CreateSkillRequest, CreateSkillResponse,
     DeleteSkillResponse, GetAgentResponse, GetSkillResponse, ListAgentsResponse,
     ListInstalledSkillPacksResponse, ListInstalledToolPacksResponse, ListSkillsResponse,
-    ListToolsResponse, UpdateAgentRequest, UpdateAgentResponse, UpdateSkillRequest,
+    ListToolsResponse, QueryMemoryParams, QueryMemoryResponse, SearchMemoryParams, SearchMemoryResponse,
+    UpdateAgentRequest, UpdateAgentResponse, UpdateSkillRequest,
     UpdateSkillResponse,
 };
 
@@ -126,6 +127,43 @@ pub async fn unbind_tool_from_agent(agent_id: &str, tool_id: &str) -> Result<(),
 
 pub async fn list_tools() -> Result<ListToolsResponse, String> {
     api_get_or_default("/api/v1/finance/tools").await
+}
+
+// ===== 记忆搜索 =====
+
+pub async fn search_memory(query: &str, memory_type: Option<&str>) -> Result<SearchMemoryResponse, String> {
+    let params = SearchMemoryParams {
+        query: query.to_string(),
+        max_results: Some(20),
+        memory_type: memory_type.map(|s| s.to_string()),
+        traversal_depth: None,
+        traversal_breadth: None,
+        traversal_strategy: None,
+        seed_node_ids: None,
+    };
+    api_post("/api/v1/hr/agents/search_memory", &params).await
+}
+
+pub async fn query_memory(agent_id: Option<&str>, memory_type: Option<&str>) -> Result<QueryMemoryResponse, String> {
+    let params = QueryMemoryParams {
+        agent_id: agent_id.map(|s| s.to_string()),
+        memory_type: memory_type.map(|s| s.to_string()),
+        limit: Some(20),
+    };
+    api_post("/api/v1/hr/agents/query_memory", &params).await
+}
+
+pub async fn search_memory_with_traversal(query: &str, seed_node_ids: &[String], depth: i32) -> Result<SearchMemoryResponse, String> {
+    let params = SearchMemoryParams {
+        query: query.to_string(),
+        max_results: Some(50),
+        memory_type: None,
+        traversal_depth: Some(depth),
+        traversal_breadth: Some(10),
+        traversal_strategy: Some("breadth_first".to_string()),
+        seed_node_ids: Some(seed_node_ids.to_vec()),
+    };
+    api_post("/api/v1/hr/agents/search_memory", &params).await
 }
 
 fn get_token_bearer(req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {

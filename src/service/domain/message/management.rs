@@ -3,7 +3,7 @@
 use common::error::Result;
 use crate::models::message::Message;
 use crate::pkg::RequestContext;
-use crate::service::dao::message::MessageQuery;
+use crate::service::dao::message::{MessageQuery, MessageSearch};
 use crate::service::domain::message::MessageDomainImpl;
 use crate::service::domain::message::MessageManagement;
 use common::enums::MessageStatus;
@@ -88,5 +88,13 @@ impl MessageManagement for MessageDomainImpl {
     ) -> Result<()> {
         // DAL delete_by_task_id 直接完成删除
         self.message_dal.delete_by_task_id(ctx, task_id).await
+    }
+
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: MessageSearch,
+    ) -> Result<Vec<Message>> {
+        self.message_dal.search(ctx, search).await
     }
 }

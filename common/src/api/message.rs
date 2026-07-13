@@ -76,3 +76,73 @@ pub struct ListMessagesResponse {
     /// 总数（当前页条数）
     pub total: usize,
 }
+
+/// 消息搜索请求（POST body）
+///
+/// 支持混合搜索：关键词搜索 + 向量语义搜索 + 业务过滤
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct SearchMessagesRequest {
+    /// 搜索关键词（FTS5 全文检索）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub keyword: Option<String>,
+    /// 按项目 ID 过滤
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+    /// 按任务 ID 过滤
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
+    /// 按发送方 ID 过滤
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_id: Option<String>,
+    /// 按接收方 ID 过滤
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to_id: Option<String>,
+    /// 返回数量限制（默认 20）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+}
+
+/// 消息搜索响应
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct SearchMessagesResponse {
+    /// 搜索结果列表（按相关性排序）
+    pub messages: Vec<MessageSearchResult>,
+    /// 总匹配数
+    pub total: usize,
+}
+
+/// 消息搜索结果项（包含匹配信息）
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MessageSearchResult {
+    /// 消息 ID
+    pub message_id: String,
+    /// 关联项目 ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+    /// 关联任务 ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
+    /// 发送方 ID
+    pub from_id: String,
+    /// 发送方角色
+    pub from_role: i32,
+    /// 接收方 ID
+    pub to_id: String,
+    /// 接收方角色
+    pub to_role: i32,
+    /// 消息类型
+    pub message_type: i32,
+    /// 消息内容（截断显示）
+    pub content: String,
+    /// 创建时间戳
+    pub created_at: i64,
+    /// 匹配类型：hybrid/vector/keyword
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub match_type: Option<String>,
+    /// FTS5 相关性分数（越小越相关）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fts_rank: Option<f32>,
+    /// 向量相似度距离（越小越相似）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vector_distance: Option<f32>,
+}

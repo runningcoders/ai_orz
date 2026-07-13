@@ -20,8 +20,11 @@ use crate::pages::finance::model_providers::FinanceModelProviders;
 use crate::pages::finance::tools::FinanceTools;
 use crate::pages::hr::agent_detail::HrAgentDetail;
 use crate::pages::hr::agents::HrAgents;
+use crate::pages::hr::knowledge_graph::HrKnowledgeGraph;
+use crate::pages::hr::memory_search::HrMemorySearch;
 use crate::pages::hr::skills::HrSkills;
 use crate::pages::message::chat::MessageChat;
+use crate::pages::message::search::MessageSearch;
 use crate::pages::organization::info::OrganizationInfo;
 use crate::pages::organization::users::OrganizationUsers;
 use crate::pages::project::artifacts::ProjectArtifacts;
@@ -43,6 +46,8 @@ pub enum Route {
     // 对话首页
     #[route("/")]
     MessageChat {},
+    #[route("/messages/search")]
+    MessageSearch {},
 
     // 组织模块
     #[route("/organization")]
@@ -57,6 +62,10 @@ pub enum Route {
     HrAgentDetail { id: String },
     #[route("/hr/skills")]
     HrSkills {},
+    #[route("/hr/memory-search")]
+    HrMemorySearch {},
+    #[route("/hr/knowledge-graph")]
+    HrKnowledgeGraph {},
 
     // Finance 模块
     #[route("/finance/model-providers")]

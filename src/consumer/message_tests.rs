@@ -1246,6 +1246,14 @@ impl MessageManagement for RecordingMessageDomain {
     ) -> std::result::Result<(), common::error::Error> {
         unimplemented!("not needed by message consumer tests")
     }
+
+    async fn search(
+        &self,
+        _ctx: RequestContext,
+        _search: crate::service::dao::message::MessageSearch,
+    ) -> std::result::Result<Vec<Message>, common::error::Error> {
+        unimplemented!("not needed by message consumer tests")
+    }
 }
 
 // ==================== 分发逻辑测试 ====================

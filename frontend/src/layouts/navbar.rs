@@ -36,6 +36,7 @@ pub fn Navbar() -> Element {
                 Link { to: Route::MessageChat {}, class: "navbar-brand", "AI Orz" }
 
                 Link { to: Route::MessageChat {}, class: "navbar-item", "💬 对话" }
+                Link { to: Route::MessageSearch {}, class: "navbar-item", "🔍 消息搜索" }
 
                 // 人力资源
                 div { style: "position: relative;",
@@ -54,6 +55,14 @@ pub fn Navbar() -> Element {
                             Link { to: Route::HrSkills {}, class: "navbar-dropdown-item",
                                 onclick: move |_| close_all(),
                                 "技能库"
+                            }
+                            Link { to: Route::HrMemorySearch {}, class: "navbar-dropdown-item",
+                                onclick: move |_| close_all(),
+                                "记忆搜索"
+                            }
+                            Link { to: Route::HrKnowledgeGraph {}, class: "navbar-dropdown-item",
+                                onclick: move |_| close_all(),
+                                "知识图谱"
                             }
                         }
                     }

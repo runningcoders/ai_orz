@@ -1,7 +1,7 @@
 //! Message 域 API - 消息发送和列表查询
 
 use common::api::{
-    ListMessagesResponse, SendMessageToAgentParams, SendMessageToAgentResponse,
+    ListMessagesResponse, SearchMessagesRequest, SearchMessagesResponse, SendMessageToAgentParams, SendMessageToAgentResponse,
 };
 
 use super::{api_get, api_post};
@@ -51,6 +51,18 @@ pub async fn poll_new_messages(
         params.push(format!("project_id={}", url_encode(pid)));
     }
     api_get(&format!("/api/v1/finance/messages?{}", params.join("&"))).await
+}
+
+pub async fn search_messages(keyword: &str, project_id: Option<&str>) -> Result<SearchMessagesResponse, String> {
+    let params = SearchMessagesRequest {
+        keyword: if keyword.is_empty() { None } else { Some(keyword.to_string()) },
+        project_id: project_id.map(|s| s.to_string()),
+        task_id: None,
+        from_id: None,
+        to_id: None,
+        limit: Some(20),
+    };
+    api_post("/api/v1/finance/messages/search", &params).await
 }
 
 fn url_encode(s: &str) -> String {
