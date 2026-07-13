@@ -151,6 +151,9 @@ impl MessageDao for MessageDaoSqliteImpl {
                 separated.push_unseparated(")");
             }
         }
+        if let Some(org_id) = &query.organization_id {
+            builder.push(" AND organization_id = ").push_bind(org_id);
+        }
 
         // 添加排序
         if let Some(order_by) = &query.order_by {

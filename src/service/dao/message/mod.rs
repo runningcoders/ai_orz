@@ -35,6 +35,8 @@ pub struct MessageQuery {
     pub order_by: Option<String>,
     /// 关键词搜索（用于 FTS5 全文检索，由 search_messages 方法使用）
     pub keyword: Option<String>,
+    /// 按组织 ID 查询（多租户隔离）
+    pub organization_id: Option<String>,
 }
 
 /// ✅ 消息搜索统一入参（关键词搜索 + 向量语义搜索共用）

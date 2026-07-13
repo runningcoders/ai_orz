@@ -31,6 +31,8 @@ fn update_agent_status_response_uses_agent_detail_contract() {
         status: AgentStatus::PendingOnboard as i32,
         created_at: 1,
         updated_at: 2,
+        runtime_state: 0,
+        current_message_id: None,
     });
 
     assert!(response.is_success());

@@ -40,6 +40,7 @@ fn task_requests_and_responses_serialize_contract() {
         assignee_id: "agent-1".to_string(),
         project_id: Some("project-1".to_string()),
         thinking_depth: 0,
+        progress: 0,
         created_at: 1,
         updated_at: 2,
     };
@@ -81,6 +82,7 @@ fn update_task_status_response_uses_task_detail_contract() {
         assignee_id: "agent-1".to_string(),
         project_id: Some("project-1".to_string()),
         thinking_depth: 1,
+        progress: 100,
         created_by: "user-1".to_string(),
         modified_by: "user-1".to_string(),
         created_at: 1,

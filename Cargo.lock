@@ -3535,11 +3535,14 @@ version = "0.1.0"
 dependencies = [
  "common",
  "dioxus",
+ "futures-channel",
  "reqwest 0.13.2",
  "serde",
  "serde_json",
  "toml 0.8.23",
  "tracing",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
  "web-sys",
 ]
 
