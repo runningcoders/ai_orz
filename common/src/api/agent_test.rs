@@ -33,6 +33,7 @@ fn update_agent_status_response_uses_agent_detail_contract() {
         updated_at: 2,
         runtime_state: 0,
         current_message_id: None,
+        tools: vec![],
     });
 
     assert!(response.is_success());

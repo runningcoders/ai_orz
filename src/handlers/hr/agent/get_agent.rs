@@ -3,7 +3,7 @@
 use common::enums::AgentRuntimeState;
 use common::error::Result;
 use crate::pkg::RequestContext;
-use crate::service::domain::hr::domain;
+use crate::service::domain::{finance::domain as finance_domain, hr::domain};
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetAgentRequest, GetAgentResponse};
 
@@ -22,7 +22,7 @@ pub async fn get_agent(
 ) -> Result<GetAgentResponse> {
     let agent = domain()
         .agent_manage()
-        .get_agent(ctx, &params.id, Default::default())
+        .get_agent(ctx.clone(), &params.id, Default::default())
         .await?
         .ok_or_else(|| common::error::Error::not_found(format!("Agent {} not found", params.id)))?;
 
@@ -34,6 +34,13 @@ pub async fn get_agent(
         Some(info) => (info.state as i32, info.current_message_id.clone()),
         None => (AgentRuntimeState::Idle as i32, None),
     };
+
+    // 获取已绑定的工具 ID 列表
+    let tools = finance_domain()
+        .tool_provider_manage()
+        .get_agent_bound_tool_ids(ctx, &params.id)
+        .await
+        .unwrap_or_default();
 
     Ok(GetAgentResponse {
         id: agent.id().to_string(),
@@ -60,5 +67,6 @@ pub async fn get_agent(
         updated_at: agent.po.updated_at,
         runtime_state,
         current_message_id,
+        tools,
     })
 }

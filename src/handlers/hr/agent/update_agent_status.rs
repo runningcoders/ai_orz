@@ -3,7 +3,7 @@
 use common::enums::AgentRuntimeState;
 use common::error::Result;
 use crate::pkg::RequestContext;
-use crate::service::domain::hr::domain;
+use crate::service::domain::{finance::domain as finance_domain, hr::domain};
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateAgentStatusRequest, UpdateAgentStatusResponse};
 
@@ -32,7 +32,7 @@ pub async fn update_agent_status(
 
     domain()
         .agent_manage()
-        .transition_status(ctx, &mut agent, params.status)
+        .transition_status(ctx.clone(), &mut agent, params.status)
         .await?;
 
     let capabilities: Vec<String> = agent.po.get_capabilities();
@@ -42,6 +42,12 @@ pub async fn update_agent_status(
         Some(info) => (info.state as i32, info.current_message_id.clone()),
         None => (AgentRuntimeState::Idle as i32, None),
     };
+
+    let tools = finance_domain()
+        .tool_provider_manage()
+        .get_agent_bound_tool_ids(ctx, &params.id)
+        .await
+        .unwrap_or_default();
 
     Ok(UpdateAgentStatusResponse {
         id: agent.id().to_string(),
@@ -68,5 +74,6 @@ pub async fn update_agent_status(
         updated_at: agent.po.updated_at,
         runtime_state,
         current_message_id,
+        tools,
     })
 }

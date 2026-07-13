@@ -2,7 +2,7 @@
 
 use dioxus::prelude::*;
 
-use crate::api::finance::{create_model_provider, delete_model_provider, list_model_providers, test_model_provider_connection};
+use crate::api::finance::{call_model_provider, create_model_provider, delete_model_provider, list_model_providers, test_model_provider_connection};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, ErrorAlert, Loading, SuccessAlert};
 use common::api::{CreateModelProviderRequest, ListModelProvidersResponseItem};
@@ -24,6 +24,13 @@ pub fn FinanceModelProviders() -> Element {
     let mut base_url = use_signal(|| String::new());
     let mut description = use_signal(String::new);
     let mut creating = use_signal(|| false);
+
+    // 调用测试状态
+    let mut show_test_modal = use_signal(|| false);
+    let mut test_provider_id = use_signal(String::new);
+    let mut test_prompt = use_signal(|| "你好，请介绍一下自己".to_string());
+    let mut test_response = use_signal(String::new);
+    let mut test_loading = use_signal(|| false);
 
     use_effect(move || {
         loading.set(true);
@@ -80,6 +87,17 @@ pub fn FinanceModelProviders() -> Element {
         });
     };
 
+    let handle_test_send = move |_| {
+        spawn(async move {
+            test_loading.set(true);
+            match call_model_provider(&test_provider_id(), &test_prompt()).await {
+                Ok(resp) => test_response.set(resp.result),
+                Err(e) => error.set(format!("调用测试失败: {}", e)),
+            }
+            test_loading.set(false);
+        });
+    };
+
     let providers_list = providers.read().clone();
 
     let provider_type_str = provider_type().to_string();
@@ -114,12 +132,22 @@ pub fn FinanceModelProviders() -> Element {
                                 let pmodel = p.model_name.clone();
                                 let ptype_str = p.provider_type.to_string();
                                 let id_delete = id.clone();
+                                let id_test = id.clone();
                                 rsx! {
                                     tr { key: "{id}",
                                         td { style: "font-weight: 500;", "{pname}" }
                                         td { span { class: "badge badge-info", "{ptype_str}" } }
                                         td { class: "text-mono", "{pmodel}" }
                                         td {
+                                            button { class: "btn btn-sm btn-accent",
+                                                onclick: move |_| {
+                                                    test_provider_id.set(id_test.clone());
+                                                    test_prompt.set("你好，请介绍一下自己".to_string());
+                                                    test_response.set(String::new());
+                                                    show_test_modal.set(true);
+                                                },
+                                                "调用测试"
+                                            }
                                             button { class: "btn btn-danger btn-sm",
                                                 onclick: move |_| {
                                                     let id_delete = id_delete.clone();
@@ -203,6 +231,31 @@ pub fn FinanceModelProviders() -> Element {
                     label { class: "form-label", "描述" }
                     input { class: "form-input", value: "{description}",
                         oninput: move |e| description.set(e.value()), placeholder: "可选" }
+                }
+            }
+        }
+
+        Modal {
+            title: "调用测试".to_string(),
+            show: show_test_modal(),
+            on_close: move |_| show_test_modal.set(false),
+            footer: rsx! {
+                button { class: "btn btn-ghost", onclick: move |_| show_test_modal.set(false), "关闭" }
+                button { class: "btn btn-accent", disabled: test_loading(), onclick: handle_test_send,
+                    if test_loading() { "发送中..." } else { "发送" }
+                }
+            },
+            div {
+                div { class: "form-group",
+                    label { class: "form-label", "Prompt" }
+                    textarea { class: "form-textarea", rows: "4", value: "{test_prompt}",
+                        oninput: move |e| test_prompt.set(e.value()) }
+                }
+                if !test_response().is_empty() {
+                    div { class: "form-group",
+                        label { class: "form-label", "响应" }
+                        textarea { class: "form-textarea", rows: "6", readonly: true, value: "{test_response}" }
+                    }
                 }
             }
         }

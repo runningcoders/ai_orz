@@ -1,12 +1,13 @@
 //! Project 域 API - 项目管理、任务管理
 
 use common::api::{
-    CreateProjectRequest, CreateProjectResponse, CreateTaskRequest, CreateTaskResponse,
-    GetProjectResponse, GetTaskResponse, ListProjectsResponse, ListTasksResponse,
-    UpdateProjectRequest, UpdateProjectResponse, UpdateTaskRequest, UpdateTaskResponse,
+    ArtifactDetail, CreateArtifactRequest, CreateProjectRequest, CreateProjectResponse,
+    CreateTaskRequest, CreateTaskResponse, GetProjectResponse, GetTaskResponse,
+    ListProjectsResponse, ListTasksResponse, UpdateProjectRequest, UpdateProjectResponse,
+    UpdateTaskRequest, UpdateTaskResponse,
 };
 
-use super::{api_get, api_get_or_default, api_post, api_put, api_put_empty};
+use super::{api_delete, api_get, api_get_or_default, api_post, api_put, api_put_empty};
 
 // ===== 项目管理 =====
 
@@ -57,4 +58,18 @@ pub async fn update_task_status(id: &str, status: i32) -> Result<(), String> {
 pub async fn update_task_progress(id: &str, progress: i32) -> Result<GetTaskResponse, String> {
     let body = serde_json::json!({ "id": id, "progress": progress });
     api_put(&format!("/api/v1/tasks/{}/progress", id), &body).await
+}
+
+// ===== 产物管理 =====
+
+pub async fn list_artifacts(project_id: &str) -> Result<Vec<ArtifactDetail>, String> {
+    api_get_or_default(&format!("/api/v1/project/artifacts?project_id={}", project_id)).await
+}
+
+pub async fn create_artifact(req: CreateArtifactRequest) -> Result<ArtifactDetail, String> {
+    api_post("/api/v1/project/artifacts", &req).await
+}
+
+pub async fn delete_artifact(id: &str) -> Result<(), String> {
+    api_delete(&format!("/api/v1/project/artifacts/{}", id)).await
 }

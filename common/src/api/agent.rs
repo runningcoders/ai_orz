@@ -91,6 +91,8 @@ pub struct GetAgentResponse {
     pub runtime_state: i32,
     /// 当前处理的消息 ID（仅忙碌时有效）
     pub current_message_id: Option<String>,
+    /// 已绑定的工具 ID 列表
+    pub tools: Vec<String>,
 }
 
 /// 更新 Agent 请求

@@ -13,7 +13,9 @@ pub mod user;
 use dioxus::prelude::*;
 
 // 导入路由组件函数到当前作用域，供 Routable 宏使用
+use crate::pages::finance::attachments::FinanceAttachments;
 use crate::pages::finance::message_channels::FinanceMessageChannels;
+use crate::pages::finance::mcp_servers::FinanceMcpServers;
 use crate::pages::finance::model_providers::FinanceModelProviders;
 use crate::pages::finance::tools::FinanceTools;
 use crate::pages::hr::agent_detail::HrAgentDetail;
@@ -22,6 +24,7 @@ use crate::pages::hr::skills::HrSkills;
 use crate::pages::message::chat::MessageChat;
 use crate::pages::organization::info::OrganizationInfo;
 use crate::pages::organization::users::OrganizationUsers;
+use crate::pages::project::artifacts::ProjectArtifacts;
 use crate::pages::project::project_detail::ProjectDetail;
 use crate::pages::project::projects::ProjectList;
 use crate::pages::reception::Reception;
@@ -62,12 +65,18 @@ pub enum Route {
     FinanceTools {},
     #[route("/finance/message-channels")]
     FinanceMessageChannels {},
+    #[route("/finance/mcp-servers")]
+    FinanceMcpServers {},
+    #[route("/finance/attachments")]
+    FinanceAttachments {},
 
     // Project 模块
     #[route("/projects")]
     ProjectList {},
     #[route("/projects/:id")]
     ProjectDetail { id: String },
+    #[route("/projects/artifacts")]
+    ProjectArtifacts {},
 
     // System 模块
     #[route("/system/triggers")]

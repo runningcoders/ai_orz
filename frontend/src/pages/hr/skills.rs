@@ -2,7 +2,7 @@
 
 use dioxus::prelude::*;
 
-use crate::api::hr::{create_skill, delete_skill, list_skills};
+use crate::api::hr::{create_skill, delete_skill, list_skills, search_skills};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, ErrorAlert, Loading};
 use common::api::{CreateSkillRequest, ListSkillsResponseItem};
@@ -19,9 +19,11 @@ pub fn HrSkills() -> Element {
     let mut new_category = use_signal(String::new);
     let mut new_content = use_signal(String::new);
     let mut creating = use_signal(|| false);
+    let mut search_keyword = use_signal(String::new);
 
     use_effect(move || {
         loading.set(true);
+        error.set(String::new());
         spawn(async move {
             match list_skills().await {
                 Ok(list) => skills.set(list.skills),
@@ -68,7 +70,13 @@ pub fn HrSkills() -> Element {
                     new_tags.set(String::new());
                     new_category.set(String::new());
                     new_content.set(String::new());
-                    match list_skills().await {
+                    let keyword = search_keyword();
+                    let result = if keyword.trim().is_empty() {
+                        list_skills().await
+                    } else {
+                        search_skills(&keyword).await
+                    };
+                    match result {
                         Ok(list) => skills.set(list.skills),
                         Err(e) => error.set(e),
                     }
@@ -86,7 +94,47 @@ pub fn HrSkills() -> Element {
             ErrorAlert { message: error() }
             div { class: "card-header",
                 h2 { class: "card-title", "技能库" }
-                button { class: "btn btn-accent", onclick: move |_| show_add_modal.set(true), "+ 创建技能" }
+                div { class: "flex gap-2",
+                    input { class: "form-input", value: "{search_keyword}",
+                        oninput: move |e| {
+                            let keyword = e.value();
+                            search_keyword.set(keyword.clone());
+                            spawn(async move {
+                                loading.set(true);
+                                error.set(String::new());
+                                let result = if keyword.trim().is_empty() {
+                                    list_skills().await
+                                } else {
+                                    search_skills(&keyword).await
+                                };
+                                match result {
+                                    Ok(list) => skills.set(list.skills),
+                                    Err(e) => error.set(e),
+                                }
+                                loading.set(false);
+                            });
+                        },
+                        placeholder: "搜索技能..."
+                    }
+                    if !search_keyword().is_empty() {
+                        button { class: "btn btn-ghost",
+                            onclick: move |_| {
+                                search_keyword.set(String::new());
+                                spawn(async move {
+                                    loading.set(true);
+                                    error.set(String::new());
+                                    match list_skills().await {
+                                        Ok(list) => skills.set(list.skills),
+                                        Err(e) => error.set(e),
+                                    }
+                                    loading.set(false);
+                                });
+                            },
+                            "重置"
+                        }
+                    }
+                    button { class: "btn btn-accent", onclick: move |_| show_add_modal.set(true), "+ 创建技能" }
+                }
             }
             if loading() {
                 Loading {}
@@ -119,7 +167,13 @@ pub fn HrSkills() -> Element {
                                                         if let Err(e) = delete_skill(&id).await {
                                                             error.set(format!("删除失败: {}", e));
                                                         } else {
-                                                            match list_skills().await {
+                                                            let keyword = search_keyword();
+                                                            let result = if keyword.trim().is_empty() {
+                                                                list_skills().await
+                                                            } else {
+                                                                search_skills(&keyword).await
+                                                            };
+                                                            match result {
                                                                 Ok(list) => skills.set(list.skills),
                                                                 Err(e) => error.set(e),
                                                             }

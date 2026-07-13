@@ -245,6 +245,14 @@ fn hr_routes() -> Router {
             "/agents/{agent_id}/skill-packs/{tag}",
             delete(handlers::hr::agent::uninstall_skill_pack_handler),
         )
+        .route(
+            "/agents/{agent_id}/tools/{tool_id}/bind",
+            post(handlers::finance::tool::bind_tool_to_agent::bind_tool_to_agent_handler),
+        )
+        .route(
+            "/agents/{agent_id}/tools/{tool_id}/bind",
+            delete(handlers::finance::tool::unbind_tool_from_agent::unbind_tool_from_agent_handler),
+        )
         .route("/skills", post(handlers::hr::skill::create_skill_handler))
         .route("/skills", get(handlers::hr::skill::list_skills_handler))
         .route(

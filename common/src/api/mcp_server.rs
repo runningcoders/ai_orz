@@ -104,7 +104,7 @@ pub struct UpdateMcpServerStatusRequest {
 }
 
 /// MCP Server list response.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct ListMcpServersResponse {
     /// List of MCP Servers.
     pub servers: Vec<McpServerListItem>,

@@ -3,11 +3,12 @@
 use dioxus::prelude::*;
 
 use crate::api::hr::{
-    get_agent, install_skill_pack, install_tool_pack, list_installed_skill_packs,
-    list_installed_tool_packs, uninstall_skill_pack, uninstall_tool_pack, update_agent_status,
+    bind_tool_to_agent, get_agent, install_skill_pack, install_tool_pack,
+    list_installed_skill_packs, list_installed_tool_packs, list_tools, uninstall_skill_pack,
+    uninstall_tool_pack, unbind_tool_from_agent, update_agent_status,
 };
 use crate::components::state::{EmptyState, ErrorAlert, Loading, SuccessAlert};
-use common::api::GetAgentResponse;
+use common::api::{GetAgentResponse, ToolListItem};
 
 // ===== 枚举映射 =====
 
@@ -53,6 +54,22 @@ fn runtime_state_badge_class(state: i32) -> &'static str {
     }
 }
 
+fn tool_status_label(status: &common::enums::ToolStatus) -> &'static str {
+    match status {
+        common::enums::ToolStatus::Enabled => "启用",
+        common::enums::ToolStatus::Disabled => "禁用",
+        common::enums::ToolStatus::Stale => "异常",
+    }
+}
+
+fn tool_status_badge_class(status: &common::enums::ToolStatus) -> &'static str {
+    match status {
+        common::enums::ToolStatus::Enabled => "badge badge-success",
+        common::enums::ToolStatus::Disabled => "badge badge-neutral",
+        common::enums::ToolStatus::Stale => "badge badge-error",
+    }
+}
+
 // 可切换的生命周期状态（不含 Deleted=0，删除走列表页）
 const STATUS_OPTIONS: &[(i32, &str)] = &[
     (1, "面试中"),
@@ -67,13 +84,14 @@ pub fn HrAgentDetail(id: String) -> Element {
     let mut agent_data = use_signal(|| None::<GetAgentResponse>);
     let mut tool_packs = use_signal(Vec::<String>::new);
     let mut skill_packs = use_signal(Vec::<String>::new);
+    let mut all_tools = use_signal(Vec::<ToolListItem>::new);
     let mut loading = use_signal(|| true);
     let mut error = use_signal(String::new);
     let mut success = use_signal(String::new);
     let mut new_tool_tag = use_signal(String::new);
     let mut new_skill_tag = use_signal(String::new);
 
-    // 初始加载：先 get_agent，再加载工具包和技能包
+    // 初始加载：先 get_agent，再加载工具包、技能包和工具列表
     use_effect({
         let id = id.clone();
         move || {
@@ -93,6 +111,10 @@ pub fn HrAgentDetail(id: String) -> Element {
                             Ok(resp) => skill_packs.set(resp.skill_packs),
                             Err(e) => error.set(format!("加载技能包失败: {}", e)),
                         }
+                        match list_tools().await {
+                            Ok(resp) => all_tools.set(resp.tools),
+                            Err(e) => error.set(format!("加载工具列表失败: {}", e)),
+                        }
                     }
                     Err(e) => {
                         agent_data.set(None);
@@ -107,6 +129,7 @@ pub fn HrAgentDetail(id: String) -> Element {
     let agent = agent_data.read().clone();
     let tool_packs_list = tool_packs.read().clone();
     let skill_packs_list = skill_packs.read().clone();
+    let all_tools_list = all_tools.read().clone();
 
     rsx! {
         div { class: "card",
@@ -393,6 +416,94 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                         });
                                                     },
                                                     "×"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 5. 工具绑定区域
+                div { style: "margin-bottom: var(--space-6);",
+                    h3 { style: "font-size: 16px; font-weight: 600; margin-bottom: var(--space-3); color: var(--color-text-primary);", "绑定工具" }
+                    div { style: "margin-top: var(--space-3);",
+                        div { class: "text-secondary", style: "margin-bottom: var(--space-2);", "可用工具（{all_tools_list.len()}）" }
+                        if all_tools_list.is_empty() {
+                            EmptyState { icon: "🛠️".to_string(), message: "暂无可用工具".to_string() }
+                        } else {
+                            div { style: "display: flex; flex-direction: column; gap: var(--space-2);",
+                                for tool in all_tools_list.iter() {
+                                    {
+                                        let tool_clone = tool.clone();
+                                        let agent_id = id.clone();
+                                        let is_bound = a.tools.contains(&tool.id);
+                                        rsx! {
+                                            div { style: "display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md);",
+                                                div { style: "flex: 1; min-width: 0;",
+                                                    div { style: "display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-1);",
+                                                        span { style: "font-weight: 600; color: var(--color-text-primary);", "{tool_clone.name}" }
+                                                        span { class: "{tool_status_badge_class(&tool_clone.status)}", "{tool_status_label(&tool_clone.status)}" }
+                                                    }
+                                                    if let Some(desc) = &tool_clone.description {
+                                                        if !desc.is_empty() {
+                                                            div { style: "font-size: 13px; color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;", "{desc}" }
+                                                        }
+                                                    }
+                                                }
+                                                {
+                                                    let tool_id = tool_clone.id.clone();
+                                                    if is_bound {
+                                                        rsx! {
+                                                            button {
+                                                                class: "btn btn-danger btn-sm",
+                                                                onclick: move |_| {
+                                                                    let agent_id = agent_id.clone();
+                                                                    let tool_id = tool_id.clone();
+                                                                    spawn(async move {
+                                                                        match unbind_tool_from_agent(&agent_id, &tool_id).await {
+                                                                            Ok(_) => {
+                                                                                success.set("工具解绑成功".to_string());
+                                                                                error.set(String::new());
+                                                                                match get_agent(&agent_id).await {
+                                                                                    Ok(a) => agent_data.set(Some(a)),
+                                                                                    Err(e) => error.set(format!("刷新 Agent 失败: {}", e)),
+                                                                                }
+                                                                            }
+                                                                            Err(e) => error.set(format!("解绑失败: {}", e)),
+                                                                        }
+                                                                    });
+                                                                },
+                                                                "解绑"
+                                                            }
+                                                        }
+                                                    } else {
+                                                        rsx! {
+                                                            button {
+                                                                class: "btn btn-accent btn-sm",
+                                                                onclick: move |_| {
+                                                                    let agent_id = agent_id.clone();
+                                                                    let tool_id = tool_id.clone();
+                                                                    spawn(async move {
+                                                                        match bind_tool_to_agent(&agent_id, &tool_id).await {
+                                                                            Ok(_) => {
+                                                                                success.set("工具绑定成功".to_string());
+                                                                                error.set(String::new());
+                                                                                match get_agent(&agent_id).await {
+                                                                                    Ok(a) => agent_data.set(Some(a)),
+                                                                                    Err(e) => error.set(format!("刷新 Agent 失败: {}", e)),
+                                                                                }
+                                                                            }
+                                                                            Err(e) => error.set(format!("绑定失败: {}", e)),
+                                                                        }
+                                                                    });
+                                                                },
+                                                                "绑定"
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }

@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 
 use crate::api::finance::{
     create_message_channel, delete_message_channel, list_message_channels,
-    update_message_channel_status,
+    test_message_channel, update_message_channel_status,
 };
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, ErrorAlert, Loading, SuccessAlert};
@@ -122,6 +122,7 @@ pub fn FinanceMessageChannels() -> Element {
                                 let id_disable = id.clone();
                                 let id_enable = id.clone();
                                 let id_delete = id.clone();
+                                let id_test = id.clone();
                                 rsx! {
                                     tr { key: "{id}",
                                         td { style: "font-weight: 500;", "{channel_name}" }
@@ -163,6 +164,23 @@ pub fn FinanceMessageChannels() -> Element {
                                                         });
                                                     }, "启用"
                                                 }
+                                            }
+                                            button { class: "btn btn-sm btn-accent",
+                                                onclick: move |_| {
+                                                    let id_test = id_test.clone();
+                                                    spawn(async move {
+                                                        match test_message_channel(&id_test).await {
+                                                            Ok(resp) => {
+                                                                if resp.success {
+                                                                    success.set("连接测试通过".to_string());
+                                                                } else {
+                                                                    error.set(format!("连接测试失败: {}", resp.error.unwrap_or_default()));
+                                                                }
+                                                            }
+                                                            Err(e) => error.set(format!("连接测试失败: {}", e)),
+                                                        }
+                                                    });
+                                                }, "连接测试"
                                             }
                                             button { class: "btn btn-danger btn-sm",
                                                 onclick: move |_| {

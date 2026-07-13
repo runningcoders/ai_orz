@@ -3,7 +3,7 @@
 use dioxus::prelude::*;
 
 use crate::api::finance::list_model_providers;
-use crate::api::hr::{create_agent, delete_agent, list_agents};
+use crate::api::hr::{create_agent, delete_agent, list_agents, search_agents};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, ErrorAlert, Loading};
 use common::api::{CreateAgentRequest, ListAgentsResponseItem, ListModelProvidersResponseItem};
@@ -20,6 +20,7 @@ pub fn HrAgents() -> Element {
     let mut new_model_provider_id = use_signal(String::new);
     let mut new_description = use_signal(String::new);
     let mut creating = use_signal(|| false);
+    let mut search_keyword = use_signal(String::new);
 
     use_effect(move || {
         loading.set(true);
@@ -61,7 +62,13 @@ pub fn HrAgents() -> Element {
                     new_model_provider_id.set(String::new());
                     new_description.set(String::new());
                     // Reload
-                    match list_agents().await {
+                    let keyword = search_keyword();
+                    let result = if keyword.trim().is_empty() {
+                        list_agents().await
+                    } else {
+                        search_agents(&keyword).await
+                    };
+                    match result {
                         Ok(list) => agents.set(list.agents),
                         Err(e) => error.set(e),
                     }
@@ -80,7 +87,47 @@ pub fn HrAgents() -> Element {
 
             div { class: "card-header",
                 h2 { class: "card-title", "Agent 管理" }
-                button { class: "btn btn-accent", onclick: move |_| show_add_modal.set(true), "+ 创建 Agent" }
+                div { class: "flex gap-2",
+                    input { class: "form-input", value: "{search_keyword}",
+                        oninput: move |e| {
+                            let keyword = e.value();
+                            search_keyword.set(keyword.clone());
+                            spawn(async move {
+                                loading.set(true);
+                                error.set(String::new());
+                                let result = if keyword.trim().is_empty() {
+                                    list_agents().await
+                                } else {
+                                    search_agents(&keyword).await
+                                };
+                                match result {
+                                    Ok(list) => agents.set(list.agents),
+                                    Err(e) => error.set(e),
+                                }
+                                loading.set(false);
+                            });
+                        },
+                        placeholder: "搜索 Agent..."
+                    }
+                    if !search_keyword().is_empty() {
+                        button { class: "btn btn-ghost",
+                            onclick: move |_| {
+                                search_keyword.set(String::new());
+                                spawn(async move {
+                                    loading.set(true);
+                                    error.set(String::new());
+                                    match list_agents().await {
+                                        Ok(list) => agents.set(list.agents),
+                                        Err(e) => error.set(e),
+                                    }
+                                    loading.set(false);
+                                });
+                            },
+                            "重置"
+                        }
+                    }
+                    button { class: "btn btn-accent", onclick: move |_| show_add_modal.set(true), "+ 创建 Agent" }
+                }
             }
 
             if loading() {
@@ -121,7 +168,13 @@ pub fn HrAgents() -> Element {
                                                         if let Err(e) = delete_agent(&id_delete).await {
                                                             error.set(format!("删除失败: {}", e));
                                                         } else {
-                                                            match list_agents().await {
+                                                            let keyword = search_keyword();
+                                                            let result = if keyword.trim().is_empty() {
+                                                                list_agents().await
+                                                            } else {
+                                                                search_agents(&keyword).await
+                                                            };
+                                                            match result {
                                                                 Ok(list) => agents.set(list.agents),
                                                                 Err(e) => error.set(e),
                                                             }

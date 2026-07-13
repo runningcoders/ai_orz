@@ -81,6 +81,14 @@ pub fn Navbar() -> Element {
                                 onclick: move |_| close_all(),
                                 "消息渠道"
                             }
+                            Link { to: Route::FinanceAttachments {}, class: "navbar-dropdown-item",
+                                onclick: move |_| close_all(),
+                                "附件管理"
+                            }
+                            Link { to: Route::FinanceMcpServers {}, class: "navbar-dropdown-item",
+                                onclick: move |_| close_all(),
+                                "MCP 服务器"
+                            }
                         }
                     }
                 }
@@ -98,6 +106,10 @@ pub fn Navbar() -> Element {
                             Link { to: Route::ProjectList {}, class: "navbar-dropdown-item",
                                 onclick: move |_| close_all(),
                                 "项目列表"
+                            }
+                            Link { to: Route::ProjectArtifacts {}, class: "navbar-dropdown-item",
+                                onclick: move |_| close_all(),
+                                "项目产物"
                             }
                         }
                     }

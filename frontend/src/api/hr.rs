@@ -4,15 +4,20 @@ use common::api::{
     CreateAgentRequest, CreateAgentResponse, CreateSkillRequest, CreateSkillResponse,
     DeleteSkillResponse, GetAgentResponse, GetSkillResponse, ListAgentsResponse,
     ListInstalledSkillPacksResponse, ListInstalledToolPacksResponse, ListSkillsResponse,
-    UpdateAgentRequest, UpdateAgentResponse, UpdateSkillRequest, UpdateSkillResponse,
+    ListToolsResponse, UpdateAgentRequest, UpdateAgentResponse, UpdateSkillRequest,
+    UpdateSkillResponse,
 };
 
-use super::{api_delete, api_get, api_get_or_default, api_post, api_put};
+use super::{api_delete, api_get, api_get_or_default, api_post, api_post_empty, api_put};
 
 // ===== Agent 管理 =====
 
 pub async fn list_agents() -> Result<ListAgentsResponse, String> {
     api_get_or_default("/api/v1/hr/agents").await
+}
+
+pub async fn search_agents(keyword: &str) -> Result<ListAgentsResponse, String> {
+    api_get_or_default(&format!("/api/v1/hr/agents/search?keyword={}", keyword)).await
 }
 
 pub async fn get_agent(id: &str) -> Result<GetAgentResponse, String> {
@@ -72,6 +77,10 @@ pub async fn list_skills() -> Result<ListSkillsResponse, String> {
     api_get_or_default("/api/v1/hr/skills").await
 }
 
+pub async fn search_skills(keyword: &str) -> Result<ListSkillsResponse, String> {
+    api_get_or_default(&format!("/api/v1/hr/skills/search?keyword={}", keyword)).await
+}
+
 pub async fn get_skill(id: &str) -> Result<GetSkillResponse, String> {
     api_get(&format!("/api/v1/hr/skills/{}", id)).await
 }
@@ -100,6 +109,23 @@ pub async fn delete_skill(id: &str) -> Result<DeleteSkillResponse, String> {
         return Err(api_resp.message);
     }
     api_resp.data.ok_or_else(|| "响应数据为空".to_string())
+}
+
+// ===== Agent 工具绑定 =====
+
+pub async fn bind_tool_to_agent(agent_id: &str, tool_id: &str) -> Result<(), String> {
+    let body = serde_json::json!({});
+    api_post_empty(&format!("/api/v1/hr/agents/{}/tools/{}/bind", agent_id, tool_id), &body).await
+}
+
+pub async fn unbind_tool_from_agent(agent_id: &str, tool_id: &str) -> Result<(), String> {
+    api_delete(&format!("/api/v1/hr/agents/{}/tools/{}/bind", agent_id, tool_id)).await
+}
+
+// ===== 工具列表（从 Finance 域重导出） =====
+
+pub async fn list_tools() -> Result<ListToolsResponse, String> {
+    api_get_or_default("/api/v1/finance/tools").await
 }
 
 fn get_token_bearer(req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {

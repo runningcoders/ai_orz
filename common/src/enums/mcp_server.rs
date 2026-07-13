@@ -2,6 +2,7 @@
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// MCP Server transport type.
 #[repr(i32)]
@@ -16,6 +17,15 @@ pub enum McpTransport {
 impl Default for McpTransport {
     fn default() -> Self {
         Self::Stdio
+    }
+}
+
+impl fmt::Display for McpTransport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            McpTransport::Stdio => write!(f, "stdio"),
+            McpTransport::StreamableHttp => write!(f, "streamable_http"),
+        }
     }
 }
 
@@ -34,5 +44,15 @@ pub enum McpServerStatus {
 impl Default for McpServerStatus {
     fn default() -> Self {
         Self::Enabled
+    }
+}
+
+impl fmt::Display for McpServerStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            McpServerStatus::Deleted => write!(f, "deleted"),
+            McpServerStatus::Enabled => write!(f, "enabled"),
+            McpServerStatus::Disabled => write!(f, "disabled"),
+        }
     }
 }
