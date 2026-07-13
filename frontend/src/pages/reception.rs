@@ -6,9 +6,7 @@ use crate::api::auth::{check_initialized, initialize_system, login};
 use crate::api::organization::list_organizations_public;
 use crate::components::state::{ErrorAlert, Loading};
 use crate::store::auth::{save_token, AuthState};
-use common::api::{
-    InitializeSystemRequest, LoginRequest, OrganizationListItem,
-};
+use common::api::{InitializeSystemRequest, LoginRequest, OrganizationListItem};
 
 #[component]
 pub fn Reception() -> Element {
@@ -79,18 +77,14 @@ pub fn Reception() -> Element {
 
             match login(req).await {
                 Ok(resp) => {
-                    // LoginResponse 没有 token 字段（token 通过 httpOnly cookie 设置）
-                    // 这里使用 user_id 作为伪 token 用于前端状态管理
                     let token = resp.user_id.clone();
                     save_token(&token);
-                    // 更新全局认证状态
                     let mut state = auth.write();
                     state.token = Some(token);
                     state.username = resp.username;
                     state.role = 1;
                     state.org_id = resp.organization_id;
                     drop(state);
-                    // 跳转 - 使用 window location 触发完整刷新
                     let _ = web_sys::window().unwrap().location().set_href("/");
                 }
                 Err(e) => {
@@ -133,43 +127,88 @@ pub fn Reception() -> Element {
     };
 
     rsx! {
-        div { style: "max-width: 600px; margin: 0 auto;",
-            div { class: "card", style: "text-align: center;",
-                div { style: "font-size: 56px; margin-bottom: 24px;", "👋" }
-                h2 { style: "color: var(--color-mistral-black); margin-bottom: 16px; font-size: 28px;",
-                    "欢迎来到 AI Orz"
-                }
-                p { class: "text-secondary", style: "margin-bottom: 32px; font-size: 16px;",
-                    "AI Orz 是一个智能的 AI 代理执行框架，帮助您组织和管理各类 AI 智能体，让它们协同工作完成复杂任务。"
-                }
+        div { class: "reception-page",
+            // 左侧品牌展示区
+            div { class: "reception-brand",
+                div { class: "reception-brand-content",
+                    div { class: "reception-brand-logo",
+                        div { class: "reception-brand-logo-mark", "Orz" }
+                        span { class: "reception-brand-logo-text", "AI Orz" }
+                    }
 
-                if loading() {
-                    Loading {}
-                } else {
-                    ErrorAlert { message: error() }
+                    h1 { class: "reception-brand-headline",
+                        "让 AI Agent "
+                        span { class: "reception-brand-headline-accent", "协同工作" }
+                        br {}
+                        "完成复杂任务"
+                    }
 
-                    if initialized() {
-                        // 已初始化：登录表单
-                        div { style: "text-align: left;",
-                            h3 { class: "mb-4", "🔐 请选择组织并登录" }
+                    p { class: "reception-brand-subtitle",
+                        "全栈 Rust 多 Agent 协作框架，以组织化形式管理和执行 AI 代理任务。"
+                    }
+
+                    div { class: "reception-brand-features",
+                        div { class: "reception-brand-feature",
+                            div { class: "reception-brand-feature-icon", "🤝" }
+                            div { class: "reception-brand-feature-text",
+                                strong { "多 Agent 协作" }
+                                "Agent 间消息通信、任务分配、技能共享"
+                            }
+                        }
+                        div { class: "reception-brand-feature",
+                            div { class: "reception-brand-feature-icon", "🧠" }
+                            div { class: "reception-brand-feature-text",
+                                strong { "四层记忆系统" }
+                                "核心认知、工作记忆、短期摘要、长期知识图谱"
+                            }
+                        }
+                        div { class: "reception-brand-feature",
+                            div { class: "reception-brand-feature-icon", "🛠️" }
+                            div { class: "reception-brand-feature-text",
+                                strong { "混合模式工具调用" }
+                                "MCP 集成、工具包机制、神经工具免绑定"
+                            }
+                        }
+                        div { class: "reception-brand-feature",
+                            div { class: "reception-brand-feature-icon", "🔎" }
+                            div { class: "reception-brand-feature-text",
+                                strong { "综合搜索引擎" }
+                                "FTS5 关键词 + 向量语义 + 图谱关系三态匹配"
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 右侧表单区
+            div { class: "reception-form-side",
+                div { class: "reception-form-card",
+                    if loading() {
+                        Loading {}
+                    } else {
+                        ErrorAlert { message: error() }
+
+                        if initialized() {
+                            // 已初始化：登录表单
+                            div { class: "reception-form-header",
+                                h2 { class: "reception-form-title", "欢迎回来" }
+                                p { class: "reception-form-desc", "选择组织并登录您的账户" }
+                            }
 
                             // 组织列表
-                            div { class: "mb-4",
+                            div { class: "reception-org-list",
                                 for org in organizations() {
                                     {
                                         let is_selected = selected_org_id() == org.organization_id;
-                                        let border = if is_selected { "var(--color-mistral-orange)" } else { "var(--color-border)" };
-                                        let bg = if is_selected { "var(--color-cream)" } else { "var(--color-warm-ivory)" };
+                                        let class = if is_selected { "reception-org-item selected" } else { "reception-org-item" };
                                         rsx! {
                                             div {
                                                 key: "{org.organization_id}",
-                                                style: "padding: 12px; border-radius: 4px; margin-bottom: 8px; cursor: pointer; border: 2px solid {border}; background: {bg};",
+                                                class: "{class}",
                                                 onclick: move |_| selected_org_id.set(org.organization_id.clone()),
-                                                div { style: "font-weight: 600; color: var(--color-text-primary);",
-                                                    "{org.name}"
-                                                }
+                                                div { class: "reception-org-name", "{org.name}" }
                                                 if let Some(desc) = &org.description {
-                                                    p { class: "text-secondary", style: "font-size: 13px; margin-top: 4px;", "{desc}" }
+                                                    p { class: "reception-org-desc", "{desc}" }
                                                 }
                                             }
                                         }
@@ -205,46 +244,77 @@ pub fn Reception() -> Element {
                                     if login_submitting() { "登录中..." } else { "登录" }
                                 }
                             }
-                        }
-                    } else {
-                        // 未初始化：初始化表单
-                        div { style: "text-align: left;",
-                            h3 { class: "mb-4", "🚀 首次使用 - 初始化系统" }
-                            p { class: "text-secondary mb-6",
-                                "欢迎使用 AI Orz！请填写以下信息完成初始化，创建您的第一个组织和超级管理员用户。"
+                        } else {
+                            // 未初始化：初始化表单
+                            div { class: "reception-form-header",
+                                h2 { class: "reception-form-title", "系统初始化" }
+                                p { class: "reception-form-desc", "创建您的第一个组织和超级管理员" }
                             }
+
                             form { onsubmit: move |e| { e.prevent_default(); on_submit_init(e); },
                                 div { class: "form-group",
                                     label { class: "form-label", "组织名称 *" }
-                                    input { class: "form-input", r#type: "text", value: "{org_name}",
-                                        oninput: move |e| org_name.set(e.value()), placeholder: "例如：我的组织" }
+                                    input {
+                                        class: "form-input",
+                                        r#type: "text",
+                                        value: "{org_name}",
+                                        oninput: move |e| org_name.set(e.value()),
+                                        placeholder: "例如：我的组织",
+                                    }
                                 }
                                 div { class: "form-group",
                                     label { class: "form-label", "组织描述" }
-                                    textarea { class: "form-textarea", value: "{org_description}",
-                                        oninput: move |e| org_description.set(e.value()), placeholder: "简单描述一下您的组织..." }
+                                    textarea {
+                                        class: "form-textarea",
+                                        value: "{org_description}",
+                                        oninput: move |e| org_description.set(e.value()),
+                                        placeholder: "简单描述一下您的组织...",
+                                    }
                                 }
                                 div { class: "form-group",
                                     label { class: "form-label", "管理员用户名 *" }
-                                    input { class: "form-input", r#type: "text", value: "{init_username}",
-                                        oninput: move |e| init_username.set(e.value()), placeholder: "例如：admin" }
+                                    input {
+                                        class: "form-input",
+                                        r#type: "text",
+                                        value: "{init_username}",
+                                        oninput: move |e| init_username.set(e.value()),
+                                        placeholder: "例如：admin",
+                                    }
                                 }
                                 div { class: "form-group",
                                     label { class: "form-label", "管理员密码 *" }
-                                    input { class: "form-input", r#type: "password", value: "{init_password}",
-                                        oninput: move |e| init_password.set(e.value()), placeholder: "请输入密码" }
+                                    input {
+                                        class: "form-input",
+                                        r#type: "password",
+                                        value: "{init_password}",
+                                        oninput: move |e| init_password.set(e.value()),
+                                        placeholder: "请输入密码",
+                                    }
                                 }
                                 div { class: "form-group",
                                     label { class: "form-label", "显示名称" }
-                                    input { class: "form-input", r#type: "text", value: "{display_name}",
-                                        oninput: move |e| display_name.set(e.value()), placeholder: "例如：超级管理员" }
+                                    input {
+                                        class: "form-input",
+                                        r#type: "text",
+                                        value: "{display_name}",
+                                        oninput: move |e| display_name.set(e.value()),
+                                        placeholder: "例如：超级管理员",
+                                    }
                                 }
                                 div { class: "form-group",
                                     label { class: "form-label", "邮箱" }
-                                    input { class: "form-input", r#type: "email", value: "{email}",
-                                        oninput: move |e| email.set(e.value()), placeholder: "admin@example.com" }
+                                    input {
+                                        class: "form-input",
+                                        r#type: "email",
+                                        value: "{email}",
+                                        oninput: move |e| email.set(e.value()),
+                                        placeholder: "admin@example.com",
+                                    }
                                 }
-                                button { class: "btn btn-accent btn-lg w-full", r#type: "submit", disabled: init_submitting(),
+                                button {
+                                    class: "btn btn-accent btn-lg w-full",
+                                    r#type: "submit",
+                                    disabled: init_submitting(),
                                     if init_submitting() { "初始化中..." } else { "完成初始化" }
                                 }
                             }
