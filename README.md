@@ -47,6 +47,7 @@ AI 代理执行框架 - Full-stack Rust + Dioxus
 | 🔎 综合搜索 | ✅ | FTS5 关键词 + 向量语义 + 图谱关系 三位一体混合搜索，支持中文 |
 | 📊 任务进度追踪 | ✅ | Task progress 字段（0-100）、Agent 神经工具更新进度、progress_updated 事件 |
 | 🤝 Agent 协作 | ✅ | search_agents 搜索、send_message_to_agent 消息、collaboration tag 分组工具 |
+| 💬 对话功能 MVP | ✅ | 左右分栏布局（项目列表 + 对话区）、双向分页、3秒短轮询、消息气泡展示 |
 
 > 📝 **开发规范与详细架构** 请查看 [AGENTS.md](./AGENTS.md) - AI 助手专属快速入门手册
 
@@ -286,23 +287,29 @@ system_info("服务启动成功");
 - ✅ **Mistral CSS 设计系统**（CSS 变量 + 组件类，替代内联样式）
 - ✅ **统一 API 客户端**（OnceLock 单例 + JWT 自动注入 + 类型化 helper 函数）
 - ✅ **全局认证状态管理**（AuthState + token localStorage 持久化）
+- ✅ **对话功能 MVP**（首页即对话页，左右分栏布局，项目列表 + 对话区）
+  - 消息气泡展示（区分 User/Agent/System 角色）
+  - 双向分页（上拉加载历史，下拉轮询新消息）
+  - 3 秒短轮询机制，支持实时消息更新
+- ✅ **Agent 详情页**（基本信息、状态管理、工具包管理、技能包管理）
+- ✅ **项目详情页**（基本信息、状态管理、任务列表）
+- ✅ **技能库管理**（列表 + 标签展示 + 创建 Modal + 删除）
+- ✅ **定时触发器管理**（列表 + 暂停/恢复 + 创建 Modal + 删除）
+- ✅ **消息渠道管理**（列表 + 启用/禁用 + 创建 Modal + 删除）
 - ✅ 顶部导航栏（5 个下拉菜单，权限控制 + Router Link）
-  - 前台接待
+  - 💬 对话
   - 人力资源 → Agent 管理、技能库
   - 财务管理 → 模型提供商、工具、消息渠道
   - 项目管理 → 项目列表
   - 系统管理 → 定时触发器、健康检查
 - ✅ 前台接待/登录流程（系统初始化检测 + 组织选择 + token 保存 + 跳转）
-- ✅ Agent 管理列表（创建 Modal + 删除 + 详情页跳转）
+- ✅ Agent 管理列表（创建 Modal + 删除 + 详情页跳转，模型提供商下拉选择）
 - ✅ Model Provider 管理列表（创建 + 删除 + 自动测试连通性）
-- ✅ 项目管理列表（创建 + 状态徽章）
-- ✅ 技能库管理（列表 + 标签展示 + 删除）
+- ✅ 项目管理列表（创建 + 状态徽章 + 任务数统计）
 - ✅ 工具管理（列表 + 启用/禁用 + 删除）
-- ✅ 消息渠道管理（列表 + 启用/禁用 + 删除）
-- ✅ 定时触发器管理（列表 + 暂停/恢复 + 删除）
 - ✅ 用户管理页（列表 + 创建 + 删除 + 角色徽章）
 - ✅ 组织信息页（表单加载 + 保存）
-- ✅ 个人信息页（只读加载 + 简化保存）
+- ✅ 个人信息页（表单加载 + 保存按钮接通 API）
 - ✅ 健康检查页（按钮触发检查）
 - ✅ ⚙️ 设置页（运行时修改 API 地址，保存到 localStorage）
 
@@ -320,7 +327,7 @@ system_info("服务启动成功");
 | 项目管理 | `/api/v1/projects` | Project 创建、列表、详情、基础更新、状态更新 |
 | 任务管理 | `/api/v1/tasks`, `/api/v1/projects/{project_id}/tasks`, `/api/v1/agents/{agent_id}/tasks` | Task 创建、详情、按 Project/Agent 列表、基础更新、状态更新 |
 | 产物管理 | `/api/v1/project/artifacts` | Artifact 独立资源 API；创建/查询通过 `project_id` 定界，可选 `task_id`；已支持引用 Finance `attachment_id` 创建、列表过滤查询、详情查询和软删除，Agent 直接写入文本类产物后续扩展 |
-| 消息对话 | `/api/v1/projects/{id}/messages` | 发送消息、接收回复、触发 Agent 执行 |
+| 消息对话 | `/api/v1/messages`, `/api/v1/messages/agents` | 消息列表查询（双向分页）、发送消息给 Agent |
 | 消息渠道 | `/api/v1/finance/message-channels` | 消息渠道 CRUD、状态更新、连接测试 |
 | 技能库 | `/api/v1/hr/skills`, `/api/v1/hr/agents/{agent_id}/skills` | Skill CRUD、搜索、Agent 技能列表/安装 |
 | 工具管理 | `/api/v1/finance/tools` | 工具 CRUD、状态更新、Agent 绑定/解绑工具 |

@@ -1,6 +1,6 @@
 # 前端架构设计
 
-> 最后更新：2026-07-12
+> 最后更新：2026-07-13
 
 ## 概述
 
@@ -263,6 +263,7 @@ pub struct AuthState {
 | ProjectDetail | `/api/v1/projects/:id` | project |
 | SystemTriggers | `/api/v1/system/cron-triggers` | system |
 | SystemHealth | `/api/v1/health` | health |
+| MessageChat | `/api/v1/finance/messages`, `/api/v1/finance/messages/agents` | message |
 | UserProfile | `/api/v1/user/profile` | user |
 | Settings | （纯前端，无 API） | - |
 
@@ -319,9 +320,8 @@ pub struct AuthState {
 
 ## 已知限制与未来规划
 
-- **消息对话页面**：MessageChat 页面为占位状态，待实现完整对话交互
-- **Agent 详情页**：HrAgentDetail 页面为占位状态，待实现 Agent 配置详情
-- **项目详情页**：ProjectDetail 页面为占位状态，待实现项目详情和任务管理
+- **消息实时推送**：当前使用 3 秒短轮询，后续可引入 SSE/WebSocket 实现实时推送
 - **表单验证**：当前表单验证较简单，后续可引入更完善的校验机制
 - **错误处理**：API 错误以字符串形式返回，后续可考虑结构化错误类型
 - **国际化**：当前文案为硬编码中文，后续可引入 i18n 支持
+- **数据导出**：管理页面暂不支持数据导出功能，后续可添加 CSV/JSON 导出

@@ -1,5 +1,5 @@
 # 🏗️ 分层架构现状报告
-**快照日期**: 2026-07-01
+**快照日期**: 2026-07-13
 **优化原则**: 从下往上逐步完善，像盖楼房一样打牢每一层
 
 ---
@@ -217,12 +217,26 @@
 | 业务域 | 页面数 | 覆盖能力 |
 |--------|--------|----------|
 | organization | ✅ | 组织管理、用户管理 |
-| hr | ✅ | Agent CRUD、Skill 管理 |
-| finance | ✅ | Model Provider、Attachment、MCP Server 管理 |
-| project | ✅ | Project / Task / Artifact CRUD |
-| message | ✅ | 消息列表、对话查看 |
+| hr | ✅ | Agent CRUD、Skill 管理、工具包/技能包管理 |
+| finance | ✅ | Model Provider、Tool、Message Channel 管理 |
+| project | ✅ | Project / Task CRUD、项目详情、任务列表 |
+| message | ✅ | **对话功能 MVP**（左右分栏、消息气泡、双向分页、3秒轮询） |
 | system | ✅ | Cron Trigger 管理 |
-| user | ✅ | 个人资料 |
+| user | ✅ | 个人资料（表单加载 + 保存） |
+
+### 前端页面功能完成度（2026-07-13 更新）
+
+| 页面 | 功能 | 状态 |
+|------|------|------|
+| **MessageChat** | 左右分栏布局、消息气泡展示、双向分页、3秒短轮询 | ✅ 完整 |
+| **HrAgentDetail** | Agent 基本信息、状态管理、工具包管理、技能包管理 | ✅ 完整 |
+| **ProjectDetail** | 项目基本信息、状态管理、任务列表 | ✅ 完整 |
+| **HrSkills** | 技能列表、标签展示、创建 Modal、删除 | ✅ 完整 |
+| **SystemTriggers** | 触发器列表、暂停/恢复、创建 Modal、删除 | ✅ 完整 |
+| **FinanceMessageChannels** | 渠道列表、启用/禁用、创建 Modal、删除 | ✅ 完整 |
+| **HrAgents** | Agent 列表、创建 Modal、模型提供商下拉选择 | ✅ 完整 |
+| **ProjectList** | 项目列表、状态徽章、任务数统计 | ✅ 完整 |
+| **UserProfile** | 个人信息表单、保存按钮接通 API | ✅ 完整 |
 
 ### 关键架构决策
 
