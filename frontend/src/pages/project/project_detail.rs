@@ -226,7 +226,7 @@ pub fn ProjectDetail(id: String) -> Element {
                 div { class: "card-header",
                     h2 { class: "card-title", "{p.name}" }
                 }
-                div { style: "padding: 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;",
+                div { class: "detail-grid",
                     div {
                         label { class: "form-label", "描述" }
                         if let Some(desc) = &p.description {
@@ -252,8 +252,10 @@ pub fn ProjectDetail(id: String) -> Element {
                         if p.tags.is_empty() {
                             span { class: "text-muted", "无标签" }
                         } else {
-                            for tag in p.tags.iter() {
-                                span { class: "badge badge-neutral", style: "margin-right: 4px;", "{tag}" }
+                            div { class: "tag-list",
+                                for tag in p.tags.iter() {
+                                    span { class: "badge badge-neutral tag-item", "{tag}" }
+                                }
                             }
                         }
                     }
@@ -269,7 +271,7 @@ pub fn ProjectDetail(id: String) -> Element {
                 div { class: "card-header",
                     h2 { class: "card-title", "状态管理" }
                 }
-                div { style: "padding: 16px; display: flex; gap: 8px; flex-wrap: wrap;",
+                div { class: "detail-action-row",
                     if p.status != 3 {
                         button { class: "btn btn-primary", onclick: start_project, "启动项目" }
                     }
@@ -316,15 +318,15 @@ pub fn ProjectDetail(id: String) -> Element {
                                             td { span { class: "{task_status_badge(task_status)}", "{task_status_text(task_status)}" } }
                                             td { "{task_priority}" }
                                             td {
-                                                div { style: "display: flex; align-items: center; gap: 6px;",
-                                                    div { style: "width: 100px; height: 8px; background: var(--color-border-light); border-radius: 3px; overflow: hidden;",
-                                                        div { style: "width: {task_progress}%; height: 100%; background: var(--color-mistral-orange); border-radius: 3px;" }
+                                                div { class: "progress-cell",
+                                                    div { class: "progress-bar",
+                                                        div { class: "progress-bar-fill", style: "width: {task_progress}%;" }
                                                     }
-                                                    span { class: "text-muted text-mono", style: "font-size: 12px;", "{task_progress}%" }
+                                                    span { class: "text-muted text-mono progress-text", "{task_progress}%" }
                                                 }
                                             }
                                             td {
-                                                div { style: "display: flex; gap: 6px;",
+                                                div { class: "action-group",
                                                     if task_status != 3 {
                                                         button { class: "btn btn-secondary btn-sm",
                                                             onclick: move |_| {
@@ -383,8 +385,8 @@ pub fn ProjectDetail(id: String) -> Element {
                 div { class: "card-header",
                     h2 { class: "card-title", "项目产物" }
                 }
-                div { style: "padding: 16px;",
-                    div { style: "margin-bottom: 12px;",
+                div { class: "detail-card-body",
+                    div { class: "detail-toolbar",
                         button { class: "btn btn-primary", onclick: open_artifact_modal, "+ 新增产物" }
                     }
                     if artifacts_list.is_empty() {
@@ -460,12 +462,12 @@ pub fn ProjectDetail(id: String) -> Element {
                 show: show_artifact_modal(),
                 on_close: close_artifact_modal,
                 footer: Some(rsx! {
-                    div { style: "display: flex; gap: 8px; justify-content: flex-end;",
+                    div { class: "modal-footer-actions",
                         button { class: "btn btn-secondary", onclick: move |_| { show_artifact_modal.set(false); }, "取消" }
                         button { class: "btn btn-primary", onclick: submit_artifact, "创建" }
                     }
                 }),
-                div { style: "padding: 16px; display: flex; flex-direction: column; gap: 12px;",
+                div { class: "modal-body-stack",
                     div {
                         label { class: "form-label", "名称" }
                         input {

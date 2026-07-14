@@ -135,7 +135,7 @@ pub fn FinanceModelProviders() -> Element {
                                 let id_test = id.clone();
                                 rsx! {
                                     tr { key: "{id}",
-                                        td { style: "font-weight: 500;", "{pname}" }
+                                        td { class: "detail-table-value-bold", "{pname}" }
                                         td { span { class: "badge badge-info", "{ptype_str}" } }
                                         td { class: "text-mono", "{pmodel}" }
                                         td {

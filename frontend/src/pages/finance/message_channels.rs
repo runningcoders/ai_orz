@@ -125,7 +125,7 @@ pub fn FinanceMessageChannels() -> Element {
                                 let id_test = id.clone();
                                 rsx! {
                                     tr { key: "{id}",
-                                        td { style: "font-weight: 500;", "{channel_name}" }
+                                        td { class: "detail-table-value-bold", "{channel_name}" }
                                         td { span { class: "badge badge-info", "{channel_type}" } }
                                         td {
                                             if is_active { span { class: "badge badge-success", "启用" } }

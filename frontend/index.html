@@ -838,6 +838,233 @@
         margin-top: 2px;
       }
 
+      /* ============ 详情页通用样式 ============ */
+      .detail-back-link {
+        color: var(--color-mistral-orange);
+        text-decoration: none;
+        font-weight: 500;
+      }
+
+      .detail-section {
+        margin-bottom: var(--space-6);
+      }
+
+      .detail-section-title {
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: var(--space-3);
+        color: var(--color-text-primary);
+      }
+
+      .detail-section-gap {
+        margin-top: var(--space-3);
+      }
+
+      .detail-grid {
+        padding: var(--space-4);
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: var(--space-3);
+      }
+
+      .detail-card-body {
+        padding: var(--space-4);
+      }
+
+      .detail-toolbar {
+        margin-bottom: var(--space-3);
+      }
+
+      .detail-action-row {
+        padding: var(--space-4);
+        display: flex;
+        gap: var(--space-2);
+        flex-wrap: wrap;
+      }
+
+      .detail-count-title {
+        margin-bottom: var(--space-2);
+      }
+
+      .detail-table-label {
+        width: 160px;
+      }
+
+      .detail-table-value-bold {
+        font-weight: 500;
+      }
+
+      /* ============ 标签列表 ============ */
+      .tag-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-1);
+      }
+
+      .tag-item {
+        margin-right: 4px;
+      }
+
+      /* ============ 进度条 ============ */
+      .progress-cell {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+      }
+
+      .progress-bar {
+        width: 100px;
+        height: 8px;
+        background: var(--color-border-light);
+        border-radius: 3px;
+        overflow: hidden;
+      }
+
+      .progress-bar-fill {
+        height: 100%;
+        background: var(--color-mistral-orange);
+        border-radius: 3px;
+      }
+
+      .progress-text {
+        font-size: 12px;
+      }
+
+      /* ============ 操作按钮组 ============ */
+      .action-group {
+        display: flex;
+        gap: var(--space-2);
+      }
+
+      /* ============ 状态切换按钮组 ============ */
+      .status-action-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+      }
+
+      /* ============ 输入框+按钮组合 ============ */
+      .input-with-button {
+        display: flex;
+        gap: var(--space-2);
+      }
+
+      .input-with-button .form-input {
+        flex: 1;
+      }
+
+      /* ============ 标签卡片（工具包/技能包） ============ */
+      .tag-card-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+      }
+
+      .tag-card {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-2);
+        padding: var(--space-2) var(--space-3);
+      }
+
+      .tag-card-remove {
+        padding: 0 var(--space-2);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      /* ============ 工具列表项 ============ */
+      .tool-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+      }
+
+      .tool-item {
+        display: flex;
+        align-items: center;
+        gap: var(--space-3);
+        padding: var(--space-3);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+      }
+
+      .tool-item-main {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .tool-item-header {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        margin-bottom: var(--space-1);
+      }
+
+      .tool-item-name {
+        font-weight: 600;
+        color: var(--color-text-primary);
+      }
+
+      .tool-item-desc {
+        font-size: 13px;
+        color: var(--color-text-secondary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      /* ============ 灵魂提示词展示 ============ */
+      .soul-prompt {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        margin: 0;
+        font-family: inherit;
+        max-height: 240px;
+        overflow: auto;
+      }
+
+      /* ============ Modal 内部布局 ============ */
+      .modal-footer-actions {
+        display: flex;
+        gap: var(--space-2);
+        justify-content: flex-end;
+      }
+
+      .modal-body-stack {
+        padding: var(--space-4);
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-3);
+      }
+
+      /* ============ 导航栏扩展 ============ */
+      .navbar-dropdown-container {
+        position: relative;
+      }
+
+      .navbar-dropdown-right {
+        right: 0;
+        left: auto;
+      }
+
+      .navbar-avatar {
+        background: var(--color-mistral-orange);
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: bold;
+        font-size: 13px;
+      }
+
+      .navbar-divider {
+        border-top: 1px solid var(--color-border-light);
+      }
+
       @media (max-width: 768px) {
         .reception-page { flex-direction: column; }
         .reception-brand { padding: 2rem; min-height: auto; }

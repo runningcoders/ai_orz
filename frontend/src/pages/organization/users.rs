@@ -116,7 +116,7 @@ pub fn OrganizationUsers() -> Element {
                                 let uid_delete = uid.clone();
                                 rsx! {
                                     tr { key: "{uid}",
-                                        td { style: "font-weight: 500;", "{uname}" }
+                                        td { class: "detail-table-value-bold", "{uname}" }
                                         td { class: "text-secondary", "{udisplay}" }
                                         td { class: "text-mono text-muted", "{uemail}" }
                                         td { span { class: "{role_badge(urole)}", "{role_text(urole)}" } }

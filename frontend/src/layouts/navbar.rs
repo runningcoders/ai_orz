@@ -39,7 +39,7 @@ pub fn Navbar() -> Element {
                 Link { to: Route::MessageSearch {}, class: "navbar-item", "🔍 消息搜索" }
 
                 // 人力资源
-                div { style: "position: relative;",
+                div { class: "navbar-dropdown-container",
                     button {
                         class: "navbar-item",
                         onclick: move |_| { close_all(); hr_menu_open.set(!hr_menu_open()); },
@@ -69,7 +69,7 @@ pub fn Navbar() -> Element {
                 }
 
                 // 财务管理
-                div { style: "position: relative;",
+                div { class: "navbar-dropdown-container",
                     button {
                         class: "navbar-item",
                         onclick: move |_| { close_all(); finance_menu_open.set(!finance_menu_open()); },
@@ -103,7 +103,7 @@ pub fn Navbar() -> Element {
                 }
 
                 // 项目管理
-                div { style: "position: relative;",
+                div { class: "navbar-dropdown-container",
                     button {
                         class: "navbar-item",
                         onclick: move |_| { close_all(); project_menu_open.set(!project_menu_open()); },
@@ -125,7 +125,7 @@ pub fn Navbar() -> Element {
                 }
 
                 // 系统管理
-                div { style: "position: relative;",
+                div { class: "navbar-dropdown-container",
                     button {
                         class: "navbar-item",
                         onclick: move |_| { close_all(); system_menu_open.set(!system_menu_open()); },
@@ -149,18 +149,18 @@ pub fn Navbar() -> Element {
 
             // 右侧：用户菜单
             div { class: "navbar-section",
-                div { style: "position: relative;",
+                div { class: "navbar-dropdown-container",
                     button {
                         class: "navbar-item",
                         onclick: move |_| { close_all(); user_menu_open.set(!user_menu_open()); },
-                        span { style: "background: var(--color-mistral-orange); width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 13px;",
+                        span { class: "navbar-avatar",
                             "{username.chars().next().unwrap_or('U')}"
                         }
                         span { "{username}" }
                         span { " ▾" }
                     }
                     if user_menu_open() {
-                        div { class: "navbar-dropdown", style: "right: 0; left: auto;",
+                        div { class: "navbar-dropdown navbar-dropdown-right",
                             Link { to: Route::UserProfile {}, class: "navbar-dropdown-item",
                                 onclick: move |_| close_all(),
                                 "👤 个人信息"
@@ -175,7 +175,7 @@ pub fn Navbar() -> Element {
                                     "👥 用户管理"
                                 }
                             }
-                            div { style: "border-top: 1px solid var(--color-border-light);" }
+                            div { class: "navbar-divider" }
                             Link { to: Route::Settings {}, class: "navbar-dropdown-item",
                                 onclick: move |_| close_all(),
                                 "⚙️ 设置"

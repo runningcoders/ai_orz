@@ -154,7 +154,7 @@ pub fn FinanceMcpServers() -> Element {
                                 };
                                 rsx! {
                                     tr { key: "{id}",
-                                        td { style: "font-weight: 500;", "{name}" }
+                                        td { class: "detail-table-value-bold", "{name}" }
                                         td { span { class: "badge badge-info", "{transport}" } }
                                         td { span { class: "text-sm text-muted", "{config_display}" } }
                                         td {

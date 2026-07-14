@@ -141,7 +141,7 @@ pub fn FinanceAttachments() -> Element {
                                 let id_delete = id.clone();
                                 rsx! {
                                     tr { key: "{id}",
-                                        td { style: "font-weight: 500;", "{original_name}" }
+                                        td { class: "detail-table-value-bold", "{original_name}" }
                                         td { "{size}" }
                                         td { span { class: "badge badge-info", "{purpose}" } }
                                         td { "{created_at}" }

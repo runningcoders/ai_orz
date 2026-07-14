@@ -152,11 +152,11 @@ pub fn HrSkills() -> Element {
                                 let tags = s.tags.clone();
                                 rsx! {
                                     tr { key: "{id}",
-                                        td { style: "font-weight: 500;", "{name}" }
+                                        td { class: "detail-table-value-bold", "{name}" }
                                         td { class: "text-secondary", "{description}" }
                                         td {
                                             for tag in &tags {
-                                                span { class: "badge badge-neutral", style: "margin-right: 4px;", "{tag}" }
+                                                span { class: "badge badge-neutral tag-item", "{tag}" }
                                             }
                                         }
                                         td {

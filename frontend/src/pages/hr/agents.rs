@@ -154,7 +154,7 @@ pub fn HrAgents() -> Element {
                                     tr { key: "{id}",
                                         td {
                                             Link { to: crate::pages::Route::HrAgentDetail { id: id.clone() },
-                                                style: "color: var(--color-mistral-orange); text-decoration: none; font-weight: 500;",
+                                                class: "detail-back-link",
                                                 "{aname}"
                                             }
                                         }

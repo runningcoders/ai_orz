@@ -139,7 +139,7 @@ pub fn HrAgentDetail(id: String) -> Element {
             div { class: "card-header",
                 h2 { class: "card-title", "Agent 详情" }
                 Link { to: crate::pages::Route::HrAgents {},
-                    style: "color: var(--color-mistral-orange); text-decoration: none; font-weight: 500;",
+                    class: "detail-back-link",
                     "← 返回列表"
                 }
             }
@@ -148,12 +148,12 @@ pub fn HrAgentDetail(id: String) -> Element {
                 Loading {}
             } else if let Some(a) = &agent {
                 // 1. 基本信息卡片
-                div { style: "margin-bottom: var(--space-6);",
-                    h3 { style: "font-size: 16px; font-weight: 600; margin-bottom: var(--space-3); color: var(--color-text-primary);", "基本信息" }
+                div { class: "detail-section",
+                    h3 { class: "detail-section-title", "基本信息" }
                     table { class: "table",
                         tbody {
-                            tr { td { class: "text-secondary", style: "width: 160px;", "名称" },
-                                td { style: "font-weight: 500;", "{a.name}" } }
+                            tr { td { class: "text-secondary detail-table-label", "名称" },
+                                td { class: "detail-table-value-bold", "{a.name}" } }
                             tr { td { class: "text-secondary", "角色" },
                                 td { "{a.roles.join(\", \")}" } }
                             tr { td { class: "text-secondary", "模型提供商" },
@@ -184,10 +184,10 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         if caps.is_empty() {
                                             span { class: "text-secondary", "—" }
                                         } else {
-                                            for cap in caps.iter() {
-                                                span { class: "badge badge-info",
-                                                    style: "margin-right: var(--space-2); margin-bottom: var(--space-1);",
-                                                    "{cap}" }
+                                            div { class: "tag-list",
+                                                for cap in caps.iter() {
+                                                    span { class: "badge badge-info tag-item", "{cap}" }
+                                                }
                                             }
                                         }
                                     } else {
@@ -200,7 +200,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         if soul.is_empty() {
                                             span { class: "text-secondary", "—" }
                                         } else {
-                                            pre { style: "white-space: pre-wrap; word-wrap: break-word; margin: 0; font-family: inherit; max-height: 240px; overflow: auto;", "{soul}" }
+                                            pre { class: "soul-prompt", "{soul}" }
                                         }
                                     } else {
                                         span { class: "text-secondary", "—" }
@@ -211,9 +211,9 @@ pub fn HrAgentDetail(id: String) -> Element {
                 }
 
                 // 2. 状态管理区域
-                div { style: "margin-bottom: var(--space-6);",
-                    h3 { style: "font-size: 16px; font-weight: 600; margin-bottom: var(--space-3); color: var(--color-text-primary);", "状态管理" }
-                    div { style: "display: flex; flex-wrap: wrap; gap: var(--space-2);",
+                div { class: "detail-section",
+                    h3 { class: "detail-section-title", "状态管理" }
+                    div { class: "status-action-row",
                         for (status, label) in STATUS_OPTIONS.iter() {
                             {
                                 let is_current = a.status == *status;
@@ -249,15 +249,14 @@ pub fn HrAgentDetail(id: String) -> Element {
                 }
 
                 // 3. 工具包管理区域
-                div { style: "margin-bottom: var(--space-6);",
-                    h3 { style: "font-size: 16px; font-weight: 600; margin-bottom: var(--space-3); color: var(--color-text-primary);", "工具包管理" }
+                div { class: "detail-section",
+                    h3 { class: "detail-section-title", "工具包管理" }
                     div { class: "form-group",
                         label { class: "form-label", "安装新工具包" }
-                        div { style: "display: flex; gap: var(--space-2);",
+                        div { class: "input-with-button",
                             input { class: "form-input", value: "{new_tool_tag}",
                                 oninput: move |e| new_tool_tag.set(e.value()),
-                                placeholder: "输入工具包 tag，如 project_management",
-                                style: "flex: 1;" }
+                                placeholder: "输入工具包 tag，如 project_management" }
                             {
                                 let agent_id = id.clone();
                                 rsx! {
@@ -292,23 +291,21 @@ pub fn HrAgentDetail(id: String) -> Element {
                             }
                         }
                     }
-                    div { style: "margin-top: var(--space-3);",
-                        div { class: "text-secondary", style: "margin-bottom: var(--space-2);", "已安装工具包（{tool_packs_list.len()}）" }
+                    div { class: "detail-section-gap",
+                        div { class: "text-secondary detail-count-title", "已安装工具包（{tool_packs_list.len()}）" }
                         if tool_packs_list.is_empty() {
                             EmptyState { icon: "🎒".to_string(), message: "暂无已安装工具包".to_string() }
                         } else {
-                            div { style: "display: flex; flex-wrap: wrap; gap: var(--space-2);",
+                            div { class: "tag-card-list",
                                 for tag in tool_packs_list.iter() {
                                     {
                                         let tag_clone = tag.clone();
                                         let agent_id = id.clone();
                                         rsx! {
-                                            span { class: "badge badge-neutral",
-                                                style: "display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3);",
+                                            span { class: "badge badge-neutral tag-card",
                                                 span { class: "text-mono", "{tag}" }
                                                 button {
-                                                    class: "btn btn-danger btn-sm",
-                                                    style: "padding: 0 var(--space-2); font-size: 12px; line-height: 1.4;",
+                                                    class: "btn btn-danger btn-sm tag-card-remove",
                                                     onclick: move |_| {
                                                         let agent_id = agent_id.clone();
                                                         let tag_clone = tag_clone.clone();
@@ -339,14 +336,13 @@ pub fn HrAgentDetail(id: String) -> Element {
 
                 // 4. 技能包管理区域
                 div {
-                    h3 { style: "font-size: 16px; font-weight: 600; margin-bottom: var(--space-3); color: var(--color-text-primary);", "技能包管理" }
+                    h3 { class: "detail-section-title", "技能包管理" }
                     div { class: "form-group",
                         label { class: "form-label", "安装新技能包" }
-                        div { style: "display: flex; gap: var(--space-2);",
+                        div { class: "input-with-button",
                             input { class: "form-input", value: "{new_skill_tag}",
                                 oninput: move |e| new_skill_tag.set(e.value()),
-                                placeholder: "输入技能包 tag",
-                                style: "flex: 1;" }
+                                placeholder: "输入技能包 tag" }
                             {
                                 let agent_id = id.clone();
                                 rsx! {
@@ -381,23 +377,21 @@ pub fn HrAgentDetail(id: String) -> Element {
                             }
                         }
                     }
-                    div { style: "margin-top: var(--space-3);",
-                        div { class: "text-secondary", style: "margin-bottom: var(--space-2);", "已安装技能包（{skill_packs_list.len()}）" }
+                    div { class: "detail-section-gap",
+                        div { class: "text-secondary detail-count-title", "已安装技能包（{skill_packs_list.len()}）" }
                         if skill_packs_list.is_empty() {
                             EmptyState { icon: "📚".to_string(), message: "暂无已安装技能包".to_string() }
                         } else {
-                            div { style: "display: flex; flex-wrap: wrap; gap: var(--space-2);",
+                            div { class: "tag-card-list",
                                 for tag in skill_packs_list.iter() {
                                     {
                                         let tag_clone = tag.clone();
                                         let agent_id = id.clone();
                                         rsx! {
-                                            span { class: "badge badge-neutral",
-                                                style: "display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3);",
+                                            span { class: "badge badge-neutral tag-card",
                                                 span { class: "text-mono", "{tag}" }
                                                 button {
-                                                    class: "btn btn-danger btn-sm",
-                                                    style: "padding: 0 var(--space-2); font-size: 12px; line-height: 1.4;",
+                                                    class: "btn btn-danger btn-sm tag-card-remove",
                                                     onclick: move |_| {
                                                         let agent_id = agent_id.clone();
                                                         let tag_clone = tag_clone.clone();
@@ -427,29 +421,29 @@ pub fn HrAgentDetail(id: String) -> Element {
                 }
 
                 // 5. 工具绑定区域
-                div { style: "margin-bottom: var(--space-6);",
-                    h3 { style: "font-size: 16px; font-weight: 600; margin-bottom: var(--space-3); color: var(--color-text-primary);", "绑定工具" }
-                    div { style: "margin-top: var(--space-3);",
-                        div { class: "text-secondary", style: "margin-bottom: var(--space-2);", "可用工具（{all_tools_list.len()}）" }
+                div { class: "detail-section",
+                    h3 { class: "detail-section-title", "绑定工具" }
+                    div { class: "detail-section-gap",
+                        div { class: "text-secondary detail-count-title", "可用工具（{all_tools_list.len()}）" }
                         if all_tools_list.is_empty() {
                             EmptyState { icon: "🛠️".to_string(), message: "暂无可用工具".to_string() }
                         } else {
-                            div { style: "display: flex; flex-direction: column; gap: var(--space-2);",
+                            div { class: "tool-list",
                                 for tool in all_tools_list.iter() {
                                     {
                                         let tool_clone = tool.clone();
                                         let agent_id = id.clone();
                                         let is_bound = a.tools.contains(&tool.id);
                                         rsx! {
-                                            div { style: "display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md);",
-                                                div { style: "flex: 1; min-width: 0;",
-                                                    div { style: "display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-1);",
-                                                        span { style: "font-weight: 600; color: var(--color-text-primary);", "{tool_clone.name}" }
+                                            div { class: "tool-item",
+                                                div { class: "tool-item-main",
+                                                    div { class: "tool-item-header",
+                                                        span { class: "tool-item-name", "{tool_clone.name}" }
                                                         span { class: "{tool_status_badge_class(&tool_clone.status)}", "{tool_status_label(&tool_clone.status)}" }
                                                     }
                                                     if let Some(desc) = &tool_clone.description {
                                                         if !desc.is_empty() {
-                                                            div { style: "font-size: 13px; color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;", "{desc}" }
+                                                            div { class: "tool-item-desc", "{desc}" }
                                                         }
                                                     }
                                                 }
