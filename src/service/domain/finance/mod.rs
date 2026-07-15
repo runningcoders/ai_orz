@@ -133,6 +133,14 @@ pub trait ModelProviderManage: Send + Sync {
         id: &str,
     ) -> Result<Option<ModelProvider>>;
 
+    /// 获取 Model Provider（带附带信息选项）
+    async fn get_model_provider_with_options(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        options: crate::service::dal::model_provider::ModelProviderFetchOptions,
+    ) -> Result<Option<ModelProvider>>;
+
     /// 通用综合查询
     async fn query(
         &self,

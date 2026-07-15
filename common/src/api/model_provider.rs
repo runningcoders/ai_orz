@@ -64,6 +64,18 @@ pub struct GetModelProviderRequest {
     /// Provider ID
     #[param(source = "path")]
     pub id: String,
+    /// 是否附带模型调用统计
+    #[param(source = "query")]
+    pub with_model_call_stats: Option<bool>,
+    /// 统计时间范围起始（毫秒），需与 end_time 配对使用
+    #[param(source = "query")]
+    pub stats_start_time: Option<i64>,
+    /// 统计时间范围结束（毫秒），需与 start_time 配对使用
+    #[param(source = "query")]
+    pub stats_end_time: Option<i64>,
+    /// 统计时序查询粒度：Hourly / Daily
+    #[param(source = "query")]
+    pub stats_interval: Option<String>,
 }
 
 /// Get Model Provider response
@@ -85,6 +97,8 @@ pub struct GetModelProviderResponse {
     pub created_at: i64,
     /// Updated timestamp
     pub updated_at: i64,
+    /// 模型调用统计（可选）
+    pub stats: Option<crate::models::ModelCallStats>,
 }
 
 /// Update Model Provider request

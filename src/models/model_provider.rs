@@ -56,12 +56,17 @@ pub struct ModelProviderPo {
 #[derive(Clone)]
 pub struct ModelProvider {
     pub po: ModelProviderPo,
+    /// ✅ 模型调用统计（可选）
+    /// - 普通查询返回：None
+    /// - with_model_call_stats=true 时返回：Some(ModelCallStats)
+    pub stats: Option<common::models::ModelCallStats>,
 }
 
 impl fmt::Debug for ModelProvider {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ModelProvider")
             .field("po", &self.po)
+            .field("stats", &self.stats)
             .finish()
     }
 }
@@ -89,12 +94,13 @@ impl ModelProvider {
                 description,
                 creator,
             ),
+            stats: None,
         }
     }
 
     /// 从 PO 创建业务对象
     pub fn from_po(po: ModelProviderPo) -> Self {
-        Self { po }
+        Self { po, stats: None }
     }
 
     /// 获取 ID

@@ -26,6 +26,15 @@ impl ModelProviderManage for FinanceDomainImpl {
         self.model_provider_dal.find_by_id(ctx, id).await
     }
 
+    async fn get_model_provider_with_options(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        options: crate::service::dal::model_provider::ModelProviderFetchOptions,
+    ) -> Result<Option<ModelProvider>> {
+        self.model_provider_dal.get_model_provider(ctx, id, options).await
+    }
+
     async fn query(
         &self,
         ctx: RequestContext,

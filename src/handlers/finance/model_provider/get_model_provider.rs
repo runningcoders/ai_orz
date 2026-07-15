@@ -3,8 +3,10 @@
 use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
+use crate::service::dal::model_provider::ModelProviderFetchOptions;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetModelProviderRequest, GetModelProviderResponse};
+use common::models::StatsInterval;
 
 /// Get detailed information about a specific model provider configuration
 #[register_handler_tool(
@@ -18,9 +20,20 @@ pub async fn get_model_provider(
     ctx: RequestContext,
     params: GetModelProviderRequest,
 ) -> Result<GetModelProviderResponse> {
+    // 构建 FetchOptions
+    let options = ModelProviderFetchOptions {
+        with_model_call_stats: params.with_model_call_stats,
+        stats_time_range: params.stats_start_time.zip(params.stats_end_time),
+        stats_interval: params.stats_interval.and_then(|s| match s.as_str() {
+            "Hourly" | "hourly" => Some(StatsInterval::Hourly),
+            "Daily" | "daily" => Some(StatsInterval::Daily),
+            _ => None,
+        }),
+    };
+
     let provider = domain()
         .model_provider_manage()
-        .get_model_provider(ctx, &params.id)
+        .get_model_provider_with_options(ctx, &params.id, options)
         .await?
         .ok_or_else(|| common::error::Error::not_found(format!("ModelProvider {} not found", params.id)))?;
 
@@ -46,5 +59,6 @@ pub async fn get_model_provider(
         },
         created_at: provider.po.created_at,
         updated_at: provider.po.updated_at,
+        stats: provider.stats,
     })
 }

@@ -34,7 +34,18 @@ pub fn new(
     Arc::new(ModelProviderDalImpl { model_provider_dao, model_provider_stats_dao })
 }
 
-// ==================== DAL 实现 ====================
+// ==================== DAL 接口 ====================
+
+/// Model Provider 附带信息获取选项
+#[derive(Debug, Clone, Default)]
+pub struct ModelProviderFetchOptions {
+    /// 是否加载模型调用统计（ModelCallStats）
+    pub with_model_call_stats: Option<bool>,
+    /// 统计时间范围（毫秒），None 表示全部历史
+    pub stats_time_range: Option<(i64, i64)>,
+    /// 时序查询粒度，None 时默认 Daily
+    pub stats_interval: Option<common::models::StatsInterval>,
+}
 
 /// Model Provider DAL 接口
 #[async_trait::async_trait]
@@ -47,6 +58,14 @@ pub trait ModelProviderDal: Send + Sync {
         &self,
         ctx: RequestContext,
         id: &str,
+    ) -> Result<Option<ModelProvider>>;
+
+    /// 根据 ID 查询 Model Provider（带附带信息选项）
+    async fn get_model_provider(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        options: ModelProviderFetchOptions,
     ) -> Result<Option<ModelProvider>>;
 
     /// 查询所有 Model Provider
@@ -91,6 +110,40 @@ impl ModelProviderDal for ModelProviderDalImpl {
     ) -> Result<Option<ModelProvider>> {
         let opt = self.model_provider_dao.find_by_id(ctx, id).await?;
         Ok(opt.map(ModelProvider::from_po))
+    }
+
+    async fn get_model_provider(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        options: ModelProviderFetchOptions,
+    ) -> Result<Option<ModelProvider>> {
+        // Step 1: 获取基础 ModelProvider 实体
+        let mut provider = self.find_by_id(ctx.clone(), id).await?;
+
+        if let Some(ref mut provider) = provider {
+            // Step 2: 按 options 注入 model_call_stats
+            if options.with_model_call_stats.unwrap_or(false) {
+                let stats_options = StatsFetchOptions {
+                    with_call_summary: true,
+                    with_token_summary: true,
+                    with_time_series: true,
+                    time_range: options.stats_time_range,
+                    interval: options.stats_interval,
+                };
+
+                match self.get_stats(ctx.clone(), id, stats_options).await {
+                    Ok(stats) => {
+                        provider.stats = Some(stats);
+                    }
+                    Err(e) => {
+                        log_warn!(&ctx, "get_model_provider", model_provider_id = %id, error = ?e, "模型调用统计注入失败，已降级");
+                    }
+                }
+            }
+        }
+
+        Ok(provider)
     }
 
     async fn find_all(&self, ctx: RequestContext) -> Result<Vec<ModelProvider>> {
