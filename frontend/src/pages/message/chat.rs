@@ -97,6 +97,10 @@ pub fn MessageChat() -> Element {
     let mut uploading = use_signal(|| false);
     let toast = use_toast();
 
+    // 快捷指令菜单状态
+    let mut show_slash_menu = use_signal(|| false);
+    let mut selected_slash_index = use_signal(|| 0);
+
     let mut load_projects = move || {
         loading_projects.set(true);
         spawn(async move {
@@ -222,11 +226,56 @@ pub fn MessageChat() -> Element {
         });
     });
 
+    let slash_commands = [
+        ("/clear", "清空对话"),
+        ("/help", "显示帮助"),
+    ];
+
+    let mut handle_input = {
+        let mut input_text = input_text;
+        let mut show_slash_menu = show_slash_menu;
+        let mut selected_slash_index = selected_slash_index;
+        move |value: String| {
+            input_text.set(value.clone());
+            let trimmed = value.trim_start();
+            if trimmed.starts_with('/') && !trimmed.contains(' ') {
+                show_slash_menu.set(true);
+                selected_slash_index.set(0);
+            } else {
+                show_slash_menu.set(false);
+            }
+        }
+    };
+
     let handle_send = use_callback(move |_: ()| {
         let text = input_text().trim().to_string();
         let attachments = pending_attachments();
         if text.is_empty() && attachments.is_empty() {
             return;
+        }
+        if show_slash_menu() {
+            let filtered: Vec<&str> = slash_commands
+                .iter()
+                .filter(|(cmd, _)| cmd.starts_with(&input_text().trim_start().to_lowercase()))
+                .map(|(cmd, _)| *cmd)
+                .collect();
+            if !filtered.is_empty() {
+                let idx = selected_slash_index().min(filtered.len() as i32 - 1) as usize;
+                match filtered[idx] {
+                    "/clear" => {
+                        messages.set(Vec::new());
+                        input_text.set(String::new());
+                        show_slash_menu.set(false);
+                        toast.info("对话已清空");
+                    }
+                    "/help" => {
+                        show_slash_menu.set(false);
+                        toast.info("可用指令: /clear - 清空对话, /help - 显示帮助");
+                    }
+                    _ => {}
+                }
+                return;
+            }
         }
         let project_id = match selected_project() {
             Some(id) => id,
@@ -427,7 +476,7 @@ pub fn MessageChat() -> Element {
                                                                 tool_expanded.write().insert(mid.clone());
                                                             }
                                                         }
-                                                    })
+                                                    }, toast.clone())
                                                 }
                                             }
                                         }
@@ -450,6 +499,67 @@ pub fn MessageChat() -> Element {
             }
 
             div { class: "chat-input-area",
+                if show_slash_menu() {
+                    {
+                        let filtered: Vec<(&str, &str)> = slash_commands
+                            .iter()
+                            .filter(|(cmd, _)| cmd.starts_with(&input_text().trim_start().to_lowercase()))
+                            .copied()
+                            .collect();
+                        if !filtered.is_empty() {
+                            let selected = selected_slash_index().min(filtered.len() as i32 - 1).max(0) as usize;
+                            let mut input_text = input_text;
+                            let mut messages = messages;
+                            let mut show_slash_menu = show_slash_menu;
+                            let toast = toast;
+                            let mut selected_slash_index = selected_slash_index;
+                            rsx! {
+                                div { class: "slash-menu",
+                                    for (i, (cmd, desc)) in filtered.iter().enumerate() {
+                                        {
+                                            let cmd = cmd.to_string();
+                                            let cmd_clone = cmd.clone();
+                                            let desc = *desc;
+                                            let is_selected = i == selected;
+                                            let mut input_text = input_text;
+                                            let mut messages = messages;
+                                            let mut show_slash_menu = show_slash_menu;
+                                            let toast = toast;
+                                            let mut selected_slash_index = selected_slash_index;
+                                            rsx! {
+                                                div {
+                                                    class: if is_selected { "slash-menu-item selected" } else { "slash-menu-item" },
+                                                    onclick: move |_| {
+                                                        match cmd_clone.as_str() {
+                                                            "/clear" => {
+                                                                messages.set(Vec::new());
+                                                                input_text.set(String::new());
+                                                                show_slash_menu.set(false);
+                                                                toast.info("对话已清空");
+                                                            }
+                                                            "/help" => {
+                                                                show_slash_menu.set(false);
+                                                                toast.info("可用指令: /clear - 清空对话, /help - 显示帮助");
+                                                            }
+                                                            _ => {}
+                                                        }
+                                                    },
+                                                    onmouseenter: move |_| {
+                                                        selected_slash_index.set(i as i32);
+                                                    },
+                                                    span { class: "slash-cmd", "{cmd}" }
+                                                    span { class: "slash-desc", "{desc}" }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            rsx! {}
+                        }
+                    }
+                }
                 // 待发送附件列表
                 if !pending_attachments().is_empty() {
                     div { class: "chat-pending-attachments",
@@ -504,8 +614,52 @@ pub fn MessageChat() -> Element {
                         class: "chat-input",
                         value: "{input_text}",
                         placeholder: "输入消息...",
-                        oninput: move |e| input_text.set(e.value()),
+                        oninput: move |e| handle_input(e.value()),
                         onkeydown: move |e| {
+                            if show_slash_menu() {
+                                let filtered: Vec<(&str, &str)> = slash_commands
+                                    .iter()
+                                    .filter(|(cmd, _)| cmd.starts_with(&input_text().trim_start().to_lowercase()))
+                                    .copied()
+                                    .collect();
+                                if !filtered.is_empty() {
+                                    if e.key() == Key::ArrowDown {
+                                        e.prevent_default();
+                                        let next = (selected_slash_index() + 1).min(filtered.len() as i32 - 1);
+                                        selected_slash_index.set(next);
+                                        return;
+                                    }
+                                    if e.key() == Key::ArrowUp {
+                                        e.prevent_default();
+                                        let prev = (selected_slash_index() - 1).max(0);
+                                        selected_slash_index.set(prev);
+                                        return;
+                                    }
+                                    if e.key() == Key::Enter && !e.modifiers().contains(Modifiers::SHIFT) {
+                                        e.prevent_default();
+                                        let idx = selected_slash_index().min(filtered.len() as i32 - 1).max(0) as usize;
+                                        match filtered[idx].0 {
+                                            "/clear" => {
+                                                messages.set(Vec::new());
+                                                input_text.set(String::new());
+                                                show_slash_menu.set(false);
+                                                toast.info("对话已清空");
+                                            }
+                                            "/help" => {
+                                                show_slash_menu.set(false);
+                                                toast.info("可用指令: /clear - 清空对话, /help - 显示帮助");
+                                            }
+                                            _ => {}
+                                        }
+                                        return;
+                                    }
+                                    if e.key() == Key::Escape {
+                                        e.prevent_default();
+                                        show_slash_menu.set(false);
+                                        return;
+                                    }
+                                }
+                            }
                             if e.key() == Key::Enter && !e.modifiers().contains(Modifiers::SHIFT) {
                                 e.prevent_default();
                                 handle_send(());
@@ -569,13 +723,35 @@ pub fn MessageChat() -> Element {
     }
 }
 
+fn copy_to_clipboard(content: &str, toast: &crate::store::toast::ToastState) {
+    if let Some(window) = web_sys::window() {
+        let navigator = window.navigator();
+        let clipboard = navigator.clipboard();
+        let promise = clipboard.write_text(content);
+        let toast = *toast;
+        let content = content.to_string();
+        wasm_bindgen_futures::spawn_local(async move {
+            match wasm_bindgen_futures::JsFuture::from(promise).await {
+                Ok(_) => {
+                    toast.info("已复制到剪贴板");
+                }
+                Err(_) => {
+                    toast.error("复制失败");
+                }
+            }
+        });
+    } else {
+        toast.error("剪贴板不可用");
+    }
+}
+
 /// 根据消息类型渲染不同内容
 fn render_message_content(
     msg: &MessageListItem,
     expanded: bool,
     toggle_expand: impl FnMut() + 'static,
+    toast: crate::store::toast::ToastState,
 ) -> Element {
-    // 附件消息（Image/File/Audio/Video）
     if is_attachment_message(msg.message_type) {
         return render_attachment_message(msg);
     }
@@ -586,6 +762,21 @@ fn render_message_content(
         }
         MSG_TASK_ASSIGNMENT => {
             render_task_card(&msg.content, msg.created_at)
+        }
+        MSG_TEXT => {
+            let content = msg.content.clone();
+            let toast_copy = toast;
+            rsx! {
+                div { class: "message-content-wrapper",
+                    div { class: "message-bubble", "{msg.content}" }
+                    button {
+                        class: "message-action-btn",
+                        onclick: move |_| copy_to_clipboard(&content, &toast_copy),
+                        "复制"
+                    }
+                }
+                div { class: "message-time", "{format_time(msg.created_at)}" }
+            }
         }
         _ => rsx! {
             div { class: "message-bubble", "{msg.content}" }
