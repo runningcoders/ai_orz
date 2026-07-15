@@ -5,6 +5,7 @@ use crate::api::hr::{
 };
 use crate::api::message::{load_latest_messages, send_message_to_agent};
 use crate::components::state::{EmptyState, ErrorAlert, Loading, SuccessAlert};
+use crate::store::toast::use_toast;
 use common::api::{GetAgentResponse, MessageListItem, SendMessageToAgentParams, ToolListItem};
 use dioxus::prelude::*;
 use dioxus_router::Link;
@@ -155,6 +156,7 @@ pub fn HrAgentDetail(id: String) -> Element {
     let mut input_message = use_signal(String::new);
     let mut error = use_signal(String::new);
     let mut success = use_signal(String::new);
+    let toast = use_toast();
     let mut tool_packs = use_signal(Vec::<String>::new);
     let mut skill_packs = use_signal(Vec::<String>::new);
     let mut all_tools = use_signal(Vec::<ToolListItem>::new);
@@ -339,14 +341,13 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                     spawn(async move {
                                                         match update_agent_status(&agent_id, target_status_val).await {
                                                             Ok(_) => {
-                                                                success.set(format!("状态已更新为：{}", label_clone));
-                                                                error.set(String::new());
+                                                                toast.success(&format!("状态已更新为：{}", label_clone));
                                                                 match get_agent(&agent_id).await {
                                                                     Ok(a) => agent_data.set(Some(a)),
-                                                                    Err(e) => error.set(format!("刷新 Agent 失败: {}", e)),
+                                                                    Err(e) => toast.error(&format!("刷新 Agent 失败: {}", e)),
                                                                 }
                                                             }
-                                                            Err(e) => error.set(format!("状态更新失败: {}", e)),
+                                                            Err(e) => toast.error(&format!("状态更新失败: {}", e)),
                                                         }
                                                     });
                                                 },
@@ -379,14 +380,13 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         spawn(async move {
                                             match install_tool_pack(&aid, &tag).await {
                                                 Ok(_) => {
-                                                    success.set(format!("工具包 [{}] 已安装", tag));
-                                                    error.set(String::new());
+                                                    toast.success(&format!("工具包 [{}] 已安装", tag));
                                                     match list_installed_tool_packs(&aid).await {
                                                         Ok(resp) => tool_packs.set(resp.installed_tags),
-                                                        Err(e) => error.set(format!("刷新工具包列表失败: {}", e)),
+                                                        Err(e) => toast.error(&format!("刷新工具包列表失败: {}", e)),
                                                     }
                                                 }
-                                                Err(e) => error.set(format!("安装工具包失败: {}", e)),
+                                                Err(e) => toast.error(&format!("安装工具包失败: {}", e)),
                                             }
                                         });
                                     },
