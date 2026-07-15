@@ -41,6 +41,7 @@ pub(super) fn to_detail(tool: &Tool) -> ToolDetail {
         updated_by: tool.po.updated_by.clone(),
         created_at: tool.po.created_at,
         updated_at: tool.po.updated_at,
+        stats: tool.stats.clone(),
     }
 }
 

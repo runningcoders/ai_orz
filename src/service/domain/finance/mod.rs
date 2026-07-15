@@ -363,6 +363,14 @@ pub trait ToolProviderManage: Send + Sync {
         tool_id: &str,
     ) -> Result<Option<crate::models::tool::Tool>>;
 
+    /// 获取 Tool（带附带信息选项）
+    async fn get_tool_with_options(
+        &self,
+        ctx: RequestContext,
+        tool_id: &str,
+        options: crate::service::dal::tool::ToolFetchOptions,
+    ) -> Result<Option<crate::models::tool::Tool>>;
+
     /// 通用综合查询
     async fn query_tools(
         &self,

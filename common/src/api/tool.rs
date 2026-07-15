@@ -47,6 +47,18 @@ pub struct GetToolRequest {
     /// Tool ID
     #[param(source = "path")]
     pub id: String,
+    /// 是否加载统计信息（调用次数 + 失败次数）
+    #[param(source = "query")]
+    pub with_stats: Option<bool>,
+    /// 统计时间范围起始（毫秒时间戳）
+    #[param(source = "query")]
+    pub stats_time_start: Option<i64>,
+    /// 统计时间范围结束（毫秒时间戳）
+    #[param(source = "query")]
+    pub stats_time_end: Option<i64>,
+    /// 时序查询粒度：hourly / daily
+    #[param(source = "query")]
+    pub stats_interval: Option<String>,
 }
 
 /// Get tool response (alias for tool detail)
@@ -85,6 +97,8 @@ pub struct GetToolResponse {
     pub created_at: i64,
     /// Updated timestamp
     pub updated_at: i64,
+    /// 统计数据（调用次数 + 失败次数）
+    pub stats: Option<crate::models::ToolStats>,
 }
 
 /// Delete tool request

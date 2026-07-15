@@ -25,6 +25,18 @@ impl ToolProviderManage for FinanceDomainImpl {
             .await
     }
 
+    /// 获取 Tool（带附带信息选项）
+    async fn get_tool_with_options(
+        &self,
+        ctx: RequestContext,
+        tool_id: &str,
+        options: crate::service::dal::tool::ToolFetchOptions,
+    ) -> Result<Option<Tool>> {
+        self.tool_dal
+            .get_tool(ctx.clone(), tool_id, options)
+            .await
+    }
+
     /// 通用综合查询
     async fn query_tools(
         &self,

@@ -3,6 +3,8 @@
 use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
+use crate::service::dal::tool::ToolFetchOptions;
+use common::models::StatsInterval;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetToolRequest, GetToolResponse};
 
@@ -20,9 +22,23 @@ pub async fn get_tool(
     ctx: RequestContext,
     params: GetToolRequest,
 ) -> Result<GetToolResponse> {
+    // 构建 FetchOptions
+    let options = ToolFetchOptions {
+        with_stats: params.with_stats,
+        stats_time_range: match (params.stats_time_start, params.stats_time_end) {
+            (Some(start), Some(end)) => Some((start, end)),
+            _ => None,
+        },
+        stats_interval: params.stats_interval.and_then(|s| match s.to_lowercase().as_str() {
+            "hourly" => Some(StatsInterval::Hourly),
+            "daily" => Some(StatsInterval::Daily),
+            _ => None,
+        }),
+    };
+
     let tool = domain()
         .tool_provider_manage()
-        .get_tool(ctx, &params.id)
+        .get_tool_with_options(ctx, &params.id, options)
         .await?
         .ok_or_else(|| common::error::Error::not_found(format!("Tool {} not found", params.id)))?;
 

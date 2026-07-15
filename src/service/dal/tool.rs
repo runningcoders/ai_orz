@@ -4,7 +4,7 @@
 //! 负责组合 DAO 完成业务级数据操作
 
 use common::error::{Result};
-use common::models::{ToolStats, StatsFetchOptions};
+use common::models::{ToolStats, StatsFetchOptions, StatsInterval};
 use crate::models::tool::{CoreTool, Tool, ToolPo};
 use crate::models::vector::{MatchType, SearchMatchInfo, Vectorizable};
 use crate::pkg::request_context::RequestContext;
@@ -61,6 +61,19 @@ pub fn new(
 
 // ==================== DAL 接口 ====================
 
+/// Tool 附带信息获取选项
+#[derive(Debug, Clone, Default)]
+pub struct ToolFetchOptions {
+    /// 是否加载统计信息（ToolStats: 调用次数 + 失败次数）
+    pub with_stats: Option<bool>,
+    /// 统计时间范围（毫秒），None 表示全部历史
+    pub stats_time_range: Option<(i64, i64)>,
+    /// 时序查询粒度，None 时默认 Daily
+    pub stats_interval: Option<StatsInterval>,
+}
+
+// ==================== DAL 接口 ====================
+
 /// Tool DAL 接口
 #[async_trait::async_trait]
 pub trait ToolDal: Send + Sync {
@@ -75,6 +88,9 @@ pub trait ToolDal: Send + Sync {
 
     /// 根据 ID 获取完整工具（PO + CoreTool 实例）
     async fn get_by_id(&self, ctx: RequestContext, id: String) -> Result<Option<Tool>>;
+
+    /// 根据 ID 获取工具（带附带信息选项）
+    async fn get_tool(&self, ctx: RequestContext, id: &str, options: ToolFetchOptions) -> Result<Option<Tool>>;
 
     /// 根据名称获取完整工具
     async fn get_by_name(&self, ctx: RequestContext, name: &str) -> Result<Option<Tool>>;
@@ -304,7 +320,35 @@ impl ToolDal for ToolDalImpl {
             po,
             our_tool,
             search_match: None,
+            stats: None,
         }))
+    }
+
+    async fn get_tool(&self, ctx: RequestContext, id: &str, options: ToolFetchOptions) -> Result<Option<Tool>> {
+        // Step 1: 获取基础 Tool 实体
+        let mut tool = self.get_by_id(ctx.clone(), id.to_string()).await?;
+
+        if let Some(ref mut tool) = tool {
+            // Step 2: 按 options 注入 stats
+            if options.with_stats.unwrap_or(false) {
+                let stats_options = StatsFetchOptions {
+                    with_call_summary: true,
+                    time_range: options.stats_time_range,
+                    ..Default::default()
+                };
+
+                match self.get_stats(ctx.clone(), id, stats_options).await {
+                    Ok(stats) => {
+                        tool.stats = Some(stats);
+                    }
+                    Err(e) => {
+                        log_warn!(&ctx, "get_tool", tool_id = %id, error = ?e, "工具统计注入失败，已降级");
+                    }
+                }
+            }
+        }
+
+        Ok(tool)
     }
 
     async fn get_by_name(&self, ctx: RequestContext, name: &str) -> Result<Option<Tool>> {
@@ -321,6 +365,7 @@ impl ToolDal for ToolDalImpl {
             po,
             our_tool,
             search_match: None,
+            stats: None,
         }))
     }
 
@@ -334,6 +379,7 @@ impl ToolDal for ToolDalImpl {
                     po,
                     our_tool,
                     search_match: None,
+                    stats: None,
                 });
                 continue;
             }
@@ -563,6 +609,7 @@ impl ToolDal for ToolDalImpl {
                 po,
                 our_tool,
                 search_match: match_info,
+                stats: None,
             });
         }
 

@@ -177,6 +177,10 @@ pub struct Tool {
     /// - 普通查询返回：None
     /// - 搜索返回：Some(包含匹配类型、距离、命中等元信息)
     pub search_match: Option<crate::models::vector::SearchMatchInfo>,
+    /// ✅ 统计数据（可选）
+    /// - 普通查询返回：None
+    /// - with_stats=true 时返回：Some(ToolStats)
+    pub stats: Option<common::models::ToolStats>,
 }
 
 // Manual Debug implementation - skip the dyn fields
@@ -230,6 +234,7 @@ impl Tool {
             our_tool: Box::new(ManagementOnlyTool { po: po.clone() }),
             po,
             search_match: None,
+            stats: None,
         }
     }
 

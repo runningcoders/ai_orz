@@ -259,6 +259,15 @@ mod tests {
             Ok(Some(self.tool(&id)))
         }
 
+        async fn get_tool(
+            &self,
+            ctx: RequestContext,
+            id: &str,
+            _options: crate::service::dal::tool::ToolFetchOptions,
+        ) -> Result<Option<Tool>> {
+            self.get_by_id(ctx, id.to_string()).await
+        }
+
         async fn get_by_name(
             &self,
             _ctx: RequestContext,

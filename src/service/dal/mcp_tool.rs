@@ -330,6 +330,7 @@ impl McpToolDalImpl {
             po: po.clone(),
             our_tool,
             search_match: None,
+            stats: None,
         })
     }
 }
