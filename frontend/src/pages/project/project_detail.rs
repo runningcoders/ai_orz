@@ -1,6 +1,7 @@
 //! 项目详情页 - 基本信息、状态管理、任务列表、产物列表
 
 use dioxus::prelude::*;
+use dioxus_router::use_navigator;
 
 use crate::api::project::{
     create_artifact, delete_artifact, get_project, list_artifacts, list_project_tasks,
@@ -8,6 +9,7 @@ use crate::api::project::{
 };
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
+use crate::pages::project::task_edit_modal::{TaskEditMode, TaskEditModal};
 use crate::store::toast::use_toast;
 use common::api::{ArtifactDetail, CreateArtifactRequest, GetProjectResponse, TaskListItem};
 use common::enums::ArtifactSourceType;
@@ -90,6 +92,10 @@ pub fn ProjectDetail(id: String) -> Element {
     let mut new_artifact_name = use_signal(String::new);
     let mut new_artifact_description = use_signal(String::new);
     let toast = use_toast();
+
+    // 任务创建 Modal 状态
+    let mut show_task_modal = use_signal(|| false);
+    let navigator = use_navigator();
 
     // 初始加载：先取项目，再取任务列表和产物列表
     let id_for_load = id.clone();
@@ -342,7 +348,14 @@ pub fn ProjectDetail(id: String) -> Element {
             // 区域 3：任务列表
             div { class: "card",
                 div { class: "card-header",
-                    h2 { class: "card-title", "任务列表" }
+                    div { class: "card-header-row",
+                        h2 { class: "card-title", "任务列表" }
+                        button {
+                            class: "btn btn-primary btn-sm",
+                            onclick: move |_| show_task_modal.set(true),
+                            "+ 新建任务"
+                        }
+                    }
                 }
                 if tasks_list.is_empty() {
                     EmptyState { icon: "📋".to_string(), message: "暂无任务".to_string() }
@@ -368,7 +381,15 @@ pub fn ProjectDetail(id: String) -> Element {
                                     let pid_start = id.clone();
                                     let pid_complete = id.clone();
                                     rsx! {
-                                        tr { key: "{task_id}",
+                                        tr {
+                                            key: "{task_id}",
+                                            class: "table-row-clickable",
+                                            onclick: {
+                                                let tid = task_id.clone();
+                                                move |_| {
+                                                    navigator.push(format!("/tasks/{}", tid));
+                                                }
+                                            },
                                             td { "{task_title}" }
                                             td { span { class: "{task_status_badge(task_status)}", "{task_status_text(task_status)}" } }
                                             td { "{task_priority}" }
@@ -544,6 +565,23 @@ pub fn ProjectDetail(id: String) -> Element {
                         }
                     }
                 }
+            }
+
+            // 新建任务 Modal
+            TaskEditModal {
+                mode: TaskEditMode::Create { project_id: Some(id.clone()) },
+                show: show_task_modal(),
+                on_close: move |_| show_task_modal.set(false),
+                on_success: move |_| {
+                    show_task_modal.set(false);
+                    // 刷新任务列表
+                    let pid = id.clone();
+                    spawn(async move {
+                        if let Ok(resp) = list_project_tasks(&pid).await {
+                            tasks.set(resp.tasks);
+                        }
+                    });
+                },
             }
         } else {
             div { class: "card", EmptyState { icon: "📁".to_string(), message: "项目不存在".to_string() } }

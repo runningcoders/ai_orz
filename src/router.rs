@@ -117,6 +117,7 @@ fn project_routes() -> Router {
 fn task_routes() -> Router {
     Router::new()
         .route("/tasks", post(handlers::project::task::create_task_handler))
+        .route("/tasks", get(handlers::project::task::list_tasks_handler))
         .route(
             "/tasks/{id}",
             get(handlers::project::task::get_task_handler),

@@ -1741,6 +1741,173 @@
         color: var(--color-info);
       }
       .toast-info .toast-icon { background-color: var(--color-info); }
+
+      /* ===== 卡片头部行布局（标题 + 操作按钮） ===== */
+      .card-header-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: var(--space-3);
+      }
+
+      /* ===== 可点击行 ===== */
+      .table-row-clickable {
+        cursor: pointer;
+        transition: background-color 0.15s;
+      }
+
+      .table-row-clickable:hover {
+        background-color: var(--color-warm-ivory);
+      }
+
+      /* ===== 进度展示区域 ===== */
+      .progress-section {
+        margin-bottom: var(--space-4);
+      }
+
+      /* ===== 依赖列表 ===== */
+      .dependency-list {
+        list-style: disc;
+        padding-left: var(--space-6);
+        margin: 0;
+      }
+
+      .dependency-list li {
+        padding: var(--space-1) 0;
+        color: var(--color-text-secondary);
+      }
+
+      /* ===== 页面头部（返回按钮） ===== */
+      .page-header {
+        margin-bottom: var(--space-4);
+        display: flex;
+        align-items: center;
+        gap: var(--space-3);
+      }
+
+      /* ===== 页面头部操作区 ===== */
+      .page-header-actions {
+        display: flex;
+        gap: var(--space-2);
+      }
+
+      /* ===== 筛选行 ===== */
+      .filter-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-4);
+        padding: var(--space-4);
+      }
+
+      .filter-item {
+        min-width: 150px;
+        flex: 1;
+        max-width: 250px;
+      }
+
+      /* ===== 看板视图 ===== */
+      .kanban-board {
+        display: flex;
+        gap: var(--space-4);
+        overflow-x: auto;
+        padding: var(--space-4) 0;
+      }
+
+      .kanban-column {
+        flex: 0 0 300px;
+        background-color: var(--color-cream);
+        border-radius: var(--radius-lg);
+        display: flex;
+        flex-direction: column;
+      }
+
+      .kanban-column-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: var(--space-3);
+        border-bottom: 1px solid var(--color-border);
+      }
+
+      .kanban-column-count {
+        background-color: var(--color-mistral-orange);
+        color: white;
+        font-size: 12px;
+        font-weight: bold;
+        padding: 2px 8px;
+        border-radius: 9999px;
+      }
+
+      .kanban-column-content {
+        flex: 1;
+        padding: var(--space-3);
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-3);
+        overflow-y: auto;
+      }
+
+      .kanban-card {
+        background-color: var(--color-pure-white);
+        border-radius: var(--radius-md);
+        padding: var(--space-3);
+        cursor: pointer;
+        transition: box-shadow 0.15s, transform 0.15s;
+        border: 1px solid var(--color-border);
+      }
+
+      .kanban-card:hover {
+        box-shadow: var(--shadow-md);
+        transform: translateY(-2px);
+      }
+
+      .kanban-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: var(--space-2);
+        margin-bottom: var(--space-2);
+      }
+
+      .kanban-card-title {
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--color-text-primary);
+        margin: 0;
+        flex: 1;
+        line-height: 1.4;
+      }
+
+      .kanban-card-meta {
+        flex-shrink: 0;
+      }
+
+      .kanban-card-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-1);
+        margin-bottom: var(--space-2);
+      }
+
+      .kanban-card-progress {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+      }
+
+      .kanban-card-progress .progress-bar {
+        flex: 1;
+        height: 6px;
+        border-radius: 9999px;
+        background-color: var(--color-border);
+        overflow: hidden;
+      }
+
+      .kanban-card-progress .progress-bar > div {
+        height: 100%;
+        border-radius: 9999px;
+        transition: width 0.3s;
+      }
     </style>
   </head>
   <body>

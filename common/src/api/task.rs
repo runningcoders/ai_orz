@@ -69,6 +69,26 @@ pub struct ListProjectTasksRequest {
     pub limit: Option<usize>,
 }
 
+/// 获取 Task 列表（全局）请求
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ListTasksRequest {
+    /// 可选项目 ID 筛选
+    #[param(source = "query")]
+    pub project_id: Option<String>,
+    /// 可选状态筛选（i32）
+    #[param(source = "query")]
+    pub status: Option<i32>,
+    /// 可选分配对象 ID 筛选
+    #[param(source = "query")]
+    pub assignee_id: Option<String>,
+    /// 可选分配对象类型（i32: 0=User, 1=Agent）
+    #[param(source = "query")]
+    pub assignee_type: Option<i32>,
+    /// 返回数量限制
+    #[param(source = "query")]
+    pub limit: Option<usize>,
+}
+
 /// Task 列表项响应
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct TaskListItem {

@@ -30,6 +30,8 @@ use crate::pages::organization::users::OrganizationUsers;
 use crate::pages::project::artifacts::ProjectArtifacts;
 use crate::pages::project::project_detail::ProjectDetail;
 use crate::pages::project::projects::ProjectList;
+use crate::pages::project::task_detail::TaskDetail;
+use crate::pages::project::tasks::TaskList;
 use crate::pages::reception::Reception;
 use crate::pages::settings::Settings;
 use crate::pages::system::health::SystemHealth;
@@ -86,6 +88,10 @@ pub enum Route {
     ProjectDetail { id: String },
     #[route("/projects/artifacts")]
     ProjectArtifacts {},
+    #[route("/tasks")]
+    TaskList {},
+    #[route("/tasks/:id")]
+    TaskDetail { id: String },
 
     // System 模块
     #[route("/system/triggers")]

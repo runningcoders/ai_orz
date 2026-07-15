@@ -38,6 +38,33 @@ pub async fn list_project_tasks(project_id: &str) -> Result<ListTasksResponse, S
     api_get_or_default(&format!("/api/v1/projects/{}/tasks", project_id)).await
 }
 
+pub async fn list_tasks(
+    project_id: Option<&str>,
+    status: Option<i32>,
+    assignee_id: Option<&str>,
+    assignee_type: Option<i32>,
+) -> Result<ListTasksResponse, String> {
+    let mut url = "/api/v1/tasks".to_string();
+    let mut params = Vec::new();
+    if let Some(pid) = project_id {
+        params.push(format!("project_id={}", pid));
+    }
+    if let Some(s) = status {
+        params.push(format!("status={}", s));
+    }
+    if let Some(aid) = assignee_id {
+        params.push(format!("assignee_id={}", aid));
+    }
+    if let Some(at) = assignee_type {
+        params.push(format!("assignee_type={}", at));
+    }
+    if !params.is_empty() {
+        url.push('?');
+        url.push_str(&params.join("&"));
+    }
+    api_get(&url).await
+}
+
 pub async fn get_task(id: &str) -> Result<GetTaskResponse, String> {
     api_get(&format!("/api/v1/tasks/{}", id)).await
 }
