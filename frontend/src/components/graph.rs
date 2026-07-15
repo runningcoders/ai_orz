@@ -22,6 +22,7 @@ pub struct GraphProps {
     pub nodes: Vec<GraphNode>,
     pub edges: Vec<GraphEdge>,
     pub selected_node_id: Option<String>,
+    pub highlighted_node_ids: Option<Vec<String>>,
     on_node_click: EventHandler<String>,
 }
 
@@ -46,6 +47,20 @@ fn get_node_stroke_width(is_selected: bool) -> &'static str {
     if is_selected { "3" } else { "2" }
 }
 
+fn get_node_opacity(is_highlighted: bool, is_selected: bool) -> &'static str {
+    if is_selected || is_highlighted { "1" } else { "0.4" }
+}
+
+fn get_node_glow(is_highlighted: bool, is_selected: bool) -> String {
+    if is_selected {
+        "filter: drop-shadow(0 0 8px rgba(249, 115, 22, 0.6));".to_string()
+    } else if is_highlighted {
+        "filter: drop-shadow(0 0 6px rgba(59, 130, 246, 0.5));".to_string()
+    } else {
+        "".to_string()
+    }
+}
+
 /// 节点半径
 fn get_node_radius(node_type: &str) -> f64 {
     match node_type {
@@ -57,15 +72,59 @@ fn get_node_radius(node_type: &str) -> f64 {
     }
 }
 
+/// 边颜色（根据关系类型）
+fn get_edge_color(relation_type: &str) -> &'static str {
+    match relation_type {
+        "属于" => "#ef4444",
+        "引用" => "#3b82f6",
+        "包含" => "#10b981",
+        "关联" => "#f59e0b",
+        "派生" => "#8b5cf6",
+        "依赖" => "#ec4899",
+        _ => "#9ca3af",
+    }
+}
+
+/// 边虚线样式（根据关系类型）
+fn get_edge_dash(relation_type: &str) -> &'static str {
+    match relation_type {
+        "引用" | "依赖" => "5,5",
+        _ => "none",
+    }
+}
+
+fn calculate_edge_angle(sx: f64, sy: f64, tx: f64, ty: f64) -> f64 {
+    let dx = tx - sx;
+    let dy = ty - sy;
+    dy.atan2(dx) * 180.0 / std::f64::consts::PI
+}
+
+fn get_label_transform(sx: f64, sy: f64, tx: f64, ty: f64) -> String {
+    let mid_x = (sx + tx) / 2.0;
+    let mid_y = (sy + ty) / 2.0;
+    let angle = calculate_edge_angle(sx, sy, tx, ty);
+    format!("translate({}, {}) rotate({})", mid_x, mid_y - 8.0, angle)
+}
+
 #[component]
 pub fn Graph(props: GraphProps) -> Element {
-    let node_positions = use_signal(|| {
+    let initial_nodes = props.nodes.clone();
+    let mut node_positions = use_signal(|| {
         let mut pos = HashMap::new();
-        for node in &props.nodes {
+        for node in &initial_nodes {
             pos.insert(node.id.clone(), (node.x, node.y));
         }
         pos
     });
+
+    let mut is_dragging = use_signal(|| false);
+    let mut dragged_node_id = use_signal(|| None::<String>);
+    let mut drag_start = use_signal(|| (0.0, 0.0));
+    let mut drag_node_start = use_signal(|| (0.0, 0.0));
+
+    let mut view_transform = use_signal(|| (0.0, 0.0, 1.0));
+    let mut is_panning = use_signal(|| false);
+    let mut pan_start = use_signal(|| (0.0, 0.0));
 
     let svg_width = 800;
     let svg_height = 600;
@@ -85,15 +144,103 @@ pub fn Graph(props: GraphProps) -> Element {
 
     let selected_id = props.selected_node_id.clone();
 
+    let mut handle_node_drag_start = move |node_id: String| {
+        is_dragging.set(true);
+        dragged_node_id.set(Some(node_id.clone()));
+        if let Some(&pos) = node_positions.read().get(&node_id) {
+            drag_node_start.set(pos);
+        }
+    };
+
+    let mut handle_mouse_move = move |e: MouseEvent| {
+        if is_dragging() {
+            let node_id = dragged_node_id.read().clone();
+            if let Some(node_id) = node_id {
+                let (start_x, start_y) = drag_start.read().clone();
+                let (node_start_x, node_start_y) = drag_node_start.read().clone();
+                let client_pos = e.client_coordinates();
+                let dx = client_pos.x - start_x;
+                let dy = client_pos.y - start_y;
+                node_positions.write().insert(node_id, (node_start_x + dx, node_start_y + dy));
+            }
+        }
+    };
+
+    let mut handle_node_drag_start_with_event = move |e: MouseEvent, node_id: String| {
+        is_dragging.set(true);
+        dragged_node_id.set(Some(node_id.clone()));
+        let client_pos = e.client_coordinates();
+        drag_start.set((client_pos.x, client_pos.y));
+        if let Some(&pos) = node_positions.read().get(&node_id) {
+            drag_node_start.set(pos);
+        }
+    };
+
+    let handle_mouse_up = move |_| {
+        is_dragging.set(false);
+        dragged_node_id.set(None);
+        is_panning.set(false);
+    };
+
+    let handle_wheel = move |e: WheelEvent| {
+        e.prevent_default();
+        let (tx, ty, scale) = view_transform.read().clone();
+        let delta_y = e.delta().strip_units().y;
+        let delta = if delta_y > 0.0 { 0.9 } else { 1.1 };
+        let new_scale = ((scale * delta) as f64).max(0.5).min(2.0);
+        view_transform.set((tx, ty, new_scale));
+    };
+
+    let handle_context_menu = move |e: MouseEvent| {
+        e.prevent_default();
+    };
+
+    let handle_pan_start = move |e: MouseEvent| {
+        if e.held_buttons().len() == 1 {
+            is_panning.set(true);
+            pan_start.set((e.client_coordinates().x, e.client_coordinates().y));
+        }
+    };
+
+    let mut handle_pan_move = move |e: MouseEvent| {
+        if is_panning() {
+            let (tx, ty, scale) = view_transform.read().clone();
+            let (start_x, start_y) = pan_start.read().clone();
+            let dx = (e.client_coordinates().x - start_x) / scale;
+            let dy = (e.client_coordinates().y - start_y) / scale;
+            view_transform.set((tx + dx, ty + dy, scale));
+            pan_start.set((e.client_coordinates().x, e.client_coordinates().y));
+        }
+    };
+
+    let (tx, ty, scale) = view_transform.read().clone();
+    let render_nodes = props.nodes.clone();
+    let render_edges = props.edges.clone();
+    let highlighted_ids = props.highlighted_node_ids.clone();
+    let on_click = props.on_node_click.clone();
+
     rsx! {
         svg {
             width: "{svg_width}",
             height: "{svg_height}",
             view_box: "0 0 {svg_width} {svg_height}",
             style: "border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-card);",
+            onmousemove: move |e: MouseEvent| {
+                let e2 = e.clone();
+                handle_mouse_move(e);
+                handle_pan_move(e2);
+            },
+            onmouseup: handle_mouse_up,
+            onmouseleave: handle_mouse_up,
+            onwheel: handle_wheel,
+            oncontextmenu: handle_context_menu,
+            onmousedown: handle_pan_start,
 
-            // 箭头标记定义
-            defs {
+            g {
+                transform: "translate({tx}, {ty}) scale({scale})",
+
+                // 箭头标记定义
+                defs {
                 marker {
                     id: "arrowhead",
                     marker_width: "10",
@@ -109,54 +256,89 @@ pub fn Graph(props: GraphProps) -> Element {
             }
 
             // 边
-            for (edge, (sx, sy), (tx, ty)) in &valid_edges {
-                line {
-                    x1: "{sx}",
-                    y1: "{sy}",
-                    x2: "{tx}",
-                    y2: "{ty}",
-                    stroke: "#9ca3af",
-                    stroke_width: "1.5",
-                    marker_end: "url(#arrowhead)",
-                }
-                if !edge.label.is_empty() {
-                    text {
-                        x: "{(sx + tx) / 2.0}",
-                        y: "{(sy + ty) / 2.0 - 8.0}",
-                        text_anchor: "middle",
-                        font_size: "11",
-                        fill: "#6b7280",
-                        "{edge.label.chars().take(12).collect::<String>()}"
+            for (edge, (sx, sy), (tx, ty)) in valid_edges.into_iter() {
+                {
+                    let edge_color = get_edge_color(&edge.label);
+                    let edge_dash = get_edge_dash(&edge.label);
+                    let label_text = if !edge.label.is_empty() {
+                        Some(edge.label.chars().take(10).collect::<String>())
+                    } else {
+                        None
+                    };
+                    rsx! {
+                        line {
+                            x1: "{sx}",
+                            y1: "{sy}",
+                            x2: "{tx}",
+                            y2: "{ty}",
+                            stroke: "{edge_color}",
+                            stroke_width: "2",
+                            stroke_dasharray: "{edge_dash}",
+                            marker_end: "url(#arrowhead)",
+                        }
+                        if let Some(ref label) = label_text {
+                            g {
+                                transform: "{get_label_transform(sx, sy, tx, ty)}",
+                                rect {
+                                    x: "-{label.len() as f64 * 3.5}",
+                                    y: "-7",
+                                    width: "{label.len() as f64 * 7.0 + 4.0}",
+                                    height: "14",
+                                    rx: "2",
+                                    fill: "rgba(255, 255, 255, 0.9)",
+                                    stroke: "#e5e7eb",
+                                    stroke_width: "1",
+                                }
+                                text {
+                                    x: "0",
+                                    y: "2",
+                                    text_anchor: "middle",
+                                    font_size: "10",
+                                    fill: "#374151",
+                                    font_weight: "500",
+                                    "{label}"
+                                }
+                            }
+                        }
                     }
                 }
             }
 
             // 节点
-            for node in &props.nodes {
+            for node in render_nodes.into_iter() {
                 {
                     let is_selected = selected_id.as_deref() == Some(&node.id);
+                    let is_highlighted = highlighted_ids.as_ref()
+                        .map(|ids| ids.contains(&node.id))
+                        .unwrap_or(false);
                     let node_id_for_click = node.id.clone();
                     let fill = get_node_fill(&node.node_type).to_string();
                     let stroke = get_node_stroke(is_selected).to_string();
                     let stroke_width = get_node_stroke_width(is_selected).to_string();
                     let radius = get_node_radius(&node.node_type);
+                    let (nx, ny) = node_positions.read().get(&node.id).copied().unwrap_or((node.x, node.y));
+                    let opacity = get_node_opacity(is_highlighted, is_selected);
+                    let glow = get_node_glow(is_highlighted, is_selected);
                     rsx! {
                         g {
-                            cursor: "pointer",
-                            onclick: move |_| {
-                                props.on_node_click.call(node_id_for_click.clone());
+                            cursor: "move",
+                            style: "{glow}",
+                            opacity: "{opacity}",
+                            onmousedown: move |e: MouseEvent| {
+                                handle_node_drag_start_with_event(e, node.id.clone());
+                                on_click.call(node_id_for_click.clone());
                             },
                             circle {
-                                cx: "{node.x}",
-                                cy: "{node.y}",
+                                cx: "{nx}",
+                                cy: "{ny}",
                                 r: "{radius}",
                                 fill: "{fill}",
                                 stroke: "{stroke}",
                                 stroke_width: "{stroke_width}",
                             }
                             text {
-                                x: "{node.x}",
-                                y: "{node.y}",
+                                x: "{nx}",
+                                y: "{ny}",
                                 text_anchor: "middle",
                                 dominant_baseline: "middle",
                                 font_size: "10",
@@ -167,6 +349,7 @@ pub fn Graph(props: GraphProps) -> Element {
                         }
                     }
                 }
+            }
             }
         }
     }

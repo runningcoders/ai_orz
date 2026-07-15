@@ -1549,6 +1549,17 @@
         word-break: break-word;
       }
 
+      .graph-detail-panel .detail-content-box {
+        font-size: 0.9rem;
+        line-height: 1.6;
+        word-break: break-word;
+        padding: var(--space-3);
+        background-color: var(--color-warm-ivory);
+        border-radius: var(--radius-md);
+        max-height: 180px;
+        overflow-y: auto;
+      }
+
       .graph-legend-item {
         display: inline-flex;
         align-items: center;
@@ -1562,6 +1573,40 @@
         width: 10px;
         height: 10px;
         border-radius: 50%;
+      }
+
+      .graph-legend-section {
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid var(--color-border-light);
+      }
+
+      .graph-legend-title {
+        font-size: 12px;
+        color: var(--color-text-muted);
+        margin-bottom: 4px;
+        font-weight: 500;
+      }
+
+      .graph-legend-line {
+        display: inline-block;
+        width: 24px;
+        height: 3px;
+        border-radius: 2px;
+        margin-right: 4px;
+        vertical-align: middle;
+      }
+
+      .graph-legend-line.dashed {
+        background-image: repeating-linear-gradient(
+          to right,
+          currentColor 0,
+          currentColor 5px,
+          transparent 5px,
+          transparent 10px
+        );
+        background-color: transparent;
+        color: inherit;
       }
 
       @media (max-width: 768px) {

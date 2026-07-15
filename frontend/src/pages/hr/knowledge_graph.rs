@@ -95,6 +95,8 @@ pub fn HrKnowledgeGraph() -> Element {
     let mut expanded_nodes = use_signal(HashSet::<String>::new);
     let mut selected_node_id = use_signal(|| None::<String>);
     let mut selected_node_data = use_signal(|| None::<MemoryResult>);
+    let mut search_history = use_signal(Vec::<String>::new);
+    let mut highlighted_node_ids = use_signal(Vec::<String>::new);
     // 缓存搜索结果的 detail map，用于侧边栏展示
     let mut detail_map = use_signal(|| std::collections::HashMap::<String, MemoryResult>::new());
 
@@ -108,16 +110,29 @@ pub fn HrKnowledgeGraph() -> Element {
         expanded_nodes.set(HashSet::new());
         selected_node_id.set(None);
         selected_node_data.set(None);
+
+        let mut history = search_history.read().clone();
+        if !history.contains(&kw) {
+            history.insert(0, kw.clone());
+            if history.len() > 10 {
+                history.pop();
+            }
+            search_history.set(history);
+        }
+
         spawn(async move {
             match search_memory_with_traversal(&kw, &[], 1).await {
                 Ok(data) => {
                     let mut map = std::collections::HashMap::new();
+                    let mut highlights = Vec::new();
                     for item in &data.results {
                         if item.memory_type != "relation" {
                             map.insert(item.id.clone(), item.clone());
+                            highlights.push(item.id.clone());
                         }
                     }
                     detail_map.set(map);
+                    highlighted_node_ids.set(highlights);
 
                     let (new_nodes, new_edges) = build_graph_from_results(&data.results);
                     if new_nodes.is_empty() {
@@ -224,21 +239,73 @@ pub fn HrKnowledgeGraph() -> Element {
                             "搜索"
                         }
                     }
-                    div { class: "flex items-center gap-4 text-sm",
-                        span { class: "text-muted", "点击节点展开关联知识" }
-                        // 图例
-                        div { class: "flex items-center gap-3",
-                            span { class: "graph-legend-item",
-                                span { class: "graph-legend-dot", style: "background: #3b82f6;" }
-                                "知识节点"
+                    if !search_history().is_empty() {
+                        {
+                            let history_list = search_history().clone();
+                            rsx! {
+                                div { class: "flex flex-wrap gap-2",
+                                    span { class: "text-xs text-muted", "搜索历史:" }
+                                    for kw in history_list.into_iter() {
+                                        button {
+                                            class: "btn btn-xs btn-ghost",
+                                            onclick: move |_| {
+                                                keyword.set(kw.clone());
+                                                handle_search(());
+                                            },
+                                            "{kw}"
+                                        }
+                                    }
+                                }
                             }
-                            span { class: "graph-legend-item",
-                                span { class: "graph-legend-dot", style: "background: #10b981;" }
-                                "短期记忆"
+                        }
+                    }
+                    div { class: "space-y-2",
+                        div { class: "flex items-center gap-4 text-sm",
+                            span { class: "text-muted", "点击节点展开关联知识" }
+                            // 节点类型图例
+                            div { class: "flex items-center gap-3",
+                                span { class: "graph-legend-item",
+                                    span { class: "graph-legend-dot", style: "background: #3b82f6;" }
+                                    "知识节点"
+                                }
+                                span { class: "graph-legend-item",
+                                    span { class: "graph-legend-dot", style: "background: #10b981;" }
+                                    "短期记忆"
+                                }
+                                span { class: "graph-legend-item",
+                                    span { class: "graph-legend-dot", style: "background: #f59e0b;" }
+                                    "调用记录"
+                                }
                             }
-                            span { class: "graph-legend-item",
-                                span { class: "graph-legend-dot", style: "background: #f59e0b;" }
-                                "调用记录"
+                        }
+                        // 关系类型图例
+                        div { class: "graph-legend-section",
+                            h4 { class: "graph-legend-title", "关系类型" }
+                            div { class: "flex flex-wrap gap-3",
+                                span { class: "graph-legend-item",
+                                    span { class: "graph-legend-line", style: "background: #ef4444;" }
+                                    "属于"
+                                }
+                                span { class: "graph-legend-item",
+                                    span { class: "graph-legend-line dashed", style: "background: #3b82f6;" }
+                                    "引用"
+                                }
+                                span { class: "graph-legend-item",
+                                    span { class: "graph-legend-line", style: "background: #10b981;" }
+                                    "包含"
+                                }
+                                span { class: "graph-legend-item",
+                                    span { class: "graph-legend-line", style: "background: #f59e0b;" }
+                                    "关联"
+                                }
+                                span { class: "graph-legend-item",
+                                    span { class: "graph-legend-line", style: "background: #8b5cf6;" }
+                                    "派生"
+                                }
+                                span { class: "graph-legend-item",
+                                    span { class: "graph-legend-line dashed", style: "background: #ec4899;" }
+                                    "依赖"
+                                }
                             }
                         }
                     }
@@ -261,6 +328,7 @@ pub fn HrKnowledgeGraph() -> Element {
                                 nodes: current_nodes,
                                 edges: current_edges,
                                 selected_node_id: selected_id,
+                                highlighted_node_ids: Some(highlighted_node_ids()),
                                 on_node_click: handle_node_click,
                             }
                         }
@@ -281,30 +349,75 @@ pub fn HrKnowledgeGraph() -> Element {
                                         "✕"
                                     }
                                 }
-                                div { class: "detail-grid",
-                                    div {
-                                        label { class: "form-label", "类型" }
-                                        span { class: "{type_badge_class(&detail.memory_type)}", "{type_label(&detail.memory_type)}" }
+                                div { class: "space-y-4",
+                                    div { class: "detail-grid",
+                                        div {
+                                            label { class: "form-label", "类型" }
+                                            span { class: "{type_badge_class(&detail.memory_type)}", "{type_label(&detail.memory_type)}" }
+                                        }
+                                        div {
+                                            label { class: "form-label", "匹配分数" }
+                                            if let Some(score) = detail.score {
+                                                span { class: "text-mono", "{score:.4}" }
+                                            } else {
+                                                span { class: "text-muted", "N/A" }
+                                            }
+                                        }
                                     }
+
                                     div {
                                         label { class: "form-label", "内容" }
-                                        p { class: "detail-content", "{detail.content}" }
+                                        div { class: "detail-content-box",
+                                            p { "{detail.content}" }
+                                        }
                                     }
+
                                     if let Some(summary) = &detail.summary {
                                         div {
                                             label { class: "form-label", "摘要" }
-                                            p { class: "detail-content text-muted", "{summary}" }
+                                            div { class: "detail-content-box text-muted",
+                                                p { "{summary}" }
+                                            }
                                         }
                                     }
-                                    if let Some(score) = detail.score {
-                                        div {
-                                            label { class: "form-label", "匹配分数" }
-                                            span { class: "text-mono text-muted", "{score:.4}" }
+
+                                    if detail.memory_type == "relation" {
+                                        div { class: "detail-grid",
+                                            if let Some(source) = &detail.source_node_id {
+                                                div {
+                                                    label { class: "form-label", "源节点" }
+                                                    span { class: "text-mono text-sm", "{source}" }
+                                                }
+                                            }
+                                            if let Some(target) = &detail.target_node_id {
+                                                div {
+                                                    label { class: "form-label", "目标节点" }
+                                                    span { class: "text-mono text-sm", "{target}" }
+                                                }
+                                            }
+                                            if let Some(rel_type) = &detail.relation_type {
+                                                div {
+                                                    label { class: "form-label", "关系类型" }
+                                                    span { class: "text-mono", "{rel_type}" }
+                                                }
+                                            }
                                         }
                                     }
-                                    div {
+
+                                    div { class: "border-t pt-4",
                                         label { class: "form-label", "ID" }
-                                        span { class: "text-mono text-muted text-sm", "{detail.id}" }
+                                        span { class: "text-mono text-muted text-sm break-all", "{detail.id}" }
+                                    }
+
+                                    div { class: "flex gap-2",
+                                        button {
+                                            class: "btn btn-sm btn-outline",
+                                            onclick: move |_| {
+                                                selected_node_id.set(None);
+                                                selected_node_data.set(None);
+                                            },
+                                            "关闭"
+                                        }
                                     }
                                 }
                             }
