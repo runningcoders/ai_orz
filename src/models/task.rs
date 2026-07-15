@@ -8,6 +8,7 @@ use crate::models::vector::{SearchMatchInfo, Vectorizable};
 use crate::pkg::request_context::{EnrichContext, RequestContextBuilder};
 use common::constants::utils;
 use common::enums::{AssigneeType, TaskStatus};
+use common::models::{ModelCallStats, TaskStats};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
@@ -66,6 +67,10 @@ pub struct Task {
     pub po: TaskPo,
     /// 搜索匹配元信息（搜索场景下由 DAL 层填充）
     pub search_match: Option<SearchMatchInfo>,
+    /// 统计数据（由 DAL 层按需注入）
+    pub stats: Option<TaskStats>,
+    /// 模型调用统计数据（由 DAL 层按需注入）
+    pub model_call_stats: Option<ModelCallStats>,
 }
 
 impl Task {
@@ -74,6 +79,8 @@ impl Task {
         Self {
             po,
             search_match: None,
+            stats: None,
+            model_call_stats: None,
         }
     }
 
@@ -112,6 +119,8 @@ impl Task {
                 created_by,
             ),
             search_match: None,
+            stats: None,
+            model_call_stats: None,
         }
     }
 

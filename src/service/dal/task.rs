@@ -5,7 +5,7 @@
 //! - 向量索引自动维护（create/update/delete）
 
 use common::error::Result;
-use common::models::{ModelCallStats, StatsFetchOptions, TaskStats};
+use common::models::{ModelCallStats, StatsFetchOptions, StatsInterval, TaskStats};
 use crate::models::task::{Task, TaskPo};
 use crate::models::vector::{MatchType, SearchMatchInfo, VectorIndexParams, Vectorizable};
 use crate::pkg::RequestContext;
@@ -63,6 +63,19 @@ pub fn new(
 
 // ==================== DAL 接口 ====================
 
+/// Task 附带信息获取选项
+#[derive(Debug, Clone, Default)]
+pub struct TaskFetchOptions {
+    /// 是否加载统计信息（TaskStats: 事件次数汇总）
+    pub with_stats: Option<bool>,
+    /// 是否加载模型调用统计（ModelCallStats: token + 时序）
+    pub with_model_call_stats: Option<bool>,
+    /// 统计时间范围（毫秒），None 表示全部历史
+    pub stats_time_range: Option<(i64, i64)>,
+    /// 时序查询粒度，None 时默认 Daily
+    pub stats_interval: Option<StatsInterval>,
+}
+
 /// Task DAL 接口
 #[async_trait::async_trait]
 pub trait TaskDal: Send + Sync {
@@ -71,6 +84,9 @@ pub trait TaskDal: Send + Sync {
 
     /// 根据 ID 获取任务
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Task>>;
+
+    /// 根据 ID 获取任务（带附带信息选项）
+    async fn get_task(&self, ctx: RequestContext, id: &str, options: TaskFetchOptions) -> Result<Option<Task>>;
 
     /// 获取分配对象下的所有任务
     async fn list_by_assignee(
@@ -209,6 +225,39 @@ impl TaskDal for TaskDalImpl {
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Task>> {
         let opt = self.task_dao.find_by_id(ctx, id).await?;
         Ok(opt.map(Task::from_po))
+    }
+
+    async fn get_task(&self, ctx: RequestContext, id: &str, options: TaskFetchOptions) -> Result<Option<Task>> {
+        let opt = self.task_dao.find_by_id(ctx.clone(), id).await?;
+        let Some(mut task) = opt.map(Task::from_po) else {
+            return Ok(None);
+        };
+
+        if options.with_stats.unwrap_or(false) {
+            let stats_options = StatsFetchOptions {
+                with_call_summary: true,
+                with_token_summary: false,
+                with_time_series: false,
+                time_range: options.stats_time_range,
+                interval: options.stats_interval,
+            };
+            let stats = self.get_stats(ctx.clone(), id, stats_options).await?;
+            task.stats = Some(stats);
+        }
+
+        if options.with_model_call_stats.unwrap_or(false) {
+            let stats_options = StatsFetchOptions {
+                with_call_summary: true,
+                with_token_summary: true,
+                with_time_series: true,
+                time_range: options.stats_time_range,
+                interval: options.stats_interval,
+            };
+            let model_call_stats = self.get_model_call_stats(ctx.clone(), id, stats_options).await?;
+            task.model_call_stats = Some(model_call_stats);
+        }
+
+        Ok(Some(task))
     }
 
     async fn list_by_assignee(
@@ -401,6 +450,8 @@ impl TaskDal for TaskDalImpl {
             tasks.push(Task {
                 po,
                 search_match: match_info,
+                stats: None,
+                model_call_stats: None,
             });
         }
 

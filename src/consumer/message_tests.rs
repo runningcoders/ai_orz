@@ -444,6 +444,15 @@ impl crate::service::domain::project::TaskManage for MockProjectDomain {
         Ok(None)
     }
 
+    async fn get_task(
+        &self,
+        _ctx: RequestContext,
+        _id: &str,
+        _options: crate::service::dal::task::TaskFetchOptions,
+    ) -> Result<Option<crate::models::task::Task>> {
+        Ok(None)
+    }
+
     async fn list_by_project(
         &self,
         _ctx: RequestContext,

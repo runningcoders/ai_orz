@@ -110,6 +110,16 @@ impl super::TaskManage for ProjectDomainImpl {
         self.task_dal.find_by_id(ctx, id).await
     }
 
+    /// 根据 ID 获取任务（带附带信息选项）
+    async fn get_task(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        options: crate::service::dal::task::TaskFetchOptions,
+    ) -> Result<Option<Task>> {
+        self.task_dal.get_task(ctx, id, options).await
+    }
+
     /// 获取项目下的所有任务
     async fn list_by_project(
         &self,

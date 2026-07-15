@@ -203,6 +203,14 @@ pub trait TaskManage: Send + Sync {
     /// 根据 ID 获取任务
     async fn get(&self, ctx: RequestContext, id: &str) -> Result<Option<Task>>;
 
+    /// 根据 ID 获取任务（带附带信息选项）
+    async fn get_task(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        options: crate::service::dal::task::TaskFetchOptions,
+    ) -> Result<Option<Task>>;
+
     /// 获取项目下的所有任务
     async fn list_by_project(
         &self,

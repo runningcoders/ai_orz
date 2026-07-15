@@ -43,6 +43,8 @@ pub(super) fn to_detail(task: &Task) -> GetTaskResponse {
         modified_by: task.po.modified_by.clone(),
         created_at: task.po.created_at,
         updated_at: task.po.updated_at,
+        stats: task.stats.clone(),
+        model_call_stats: task.model_call_stats.clone(),
     }
 }
 

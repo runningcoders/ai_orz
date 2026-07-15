@@ -2,7 +2,9 @@
 
 use super::response;
 use common::error::Result;
+use common::models::StatsInterval;
 use crate::pkg::RequestContext;
+use crate::service::dal::task::TaskFetchOptions;
 use crate::service::domain::project::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetTaskRequest, GetTaskResponse};
@@ -20,9 +22,23 @@ pub async fn get_task(
     ctx: RequestContext,
     params: GetTaskRequest,
 ) -> Result<GetTaskResponse> {
+    let options = TaskFetchOptions {
+        with_stats: params.with_stats,
+        with_model_call_stats: params.with_model_call_stats,
+        stats_time_range: match (params.stats_time_start, params.stats_time_end) {
+            (Some(start), Some(end)) => Some((start, end)),
+            _ => None,
+        },
+        stats_interval: params.stats_interval.as_deref().and_then(|s| match s.to_lowercase().as_str() {
+            "hourly" => Some(StatsInterval::Hourly),
+            "daily" => Some(StatsInterval::Daily),
+            _ => None,
+        }),
+    };
+
     let task = domain()
         .task_manage()
-        .get(ctx, &params.id)
+        .get_task(ctx, &params.id, options)
         .await?
         .ok_or_else(|| common::error::Error::not_found(format!("Task {} not found", params.id)))?;
 
