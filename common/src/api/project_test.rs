@@ -75,6 +75,8 @@ fn update_project_status_response_uses_project_detail_contract() {
             end_at: Some(2),
             created_at: 1,
             updated_at: 2,
+            stats: None,
+            model_call_stats: None,
         });
 
     assert!(response.is_success());

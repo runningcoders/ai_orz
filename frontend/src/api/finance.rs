@@ -18,8 +18,9 @@ pub async fn list_model_providers() -> Result<ListModelProvidersResponse, String
     api_get_or_default("/api/v1/finance/model-providers").await
 }
 
-pub async fn get_model_provider(id: &str) -> Result<GetModelProviderResponse, String> {
-    api_get(&format!("/api/v1/finance/model-providers/{}", id)).await
+pub async fn get_model_provider(id: &str, stats_options: Option<&super::StatsOptions>) -> Result<GetModelProviderResponse, String> {
+    let url = super::build_url_with_stats(&format!("/api/v1/finance/model-providers/{}", id), stats_options);
+    api_get(&url).await
 }
 
 pub async fn create_model_provider(req: CreateModelProviderRequest) -> Result<CreateModelProviderResponse, String> {
@@ -50,8 +51,9 @@ pub async fn list_tools() -> Result<ListToolsResponse, String> {
     api_get_or_default("/api/v1/finance/tools").await
 }
 
-pub async fn get_tool(id: &str) -> Result<GetToolResponse, String> {
-    api_get(&format!("/api/v1/finance/tools/{}", id)).await
+pub async fn get_tool(id: &str, stats_options: Option<&super::StatsOptions>) -> Result<GetToolResponse, String> {
+    let url = super::build_url_with_stats(&format!("/api/v1/finance/tools/{}", id), stats_options);
+    api_get(&url).await
 }
 
 pub async fn create_tool(req: CreateToolRequest) -> Result<CreateToolResponse, String> {

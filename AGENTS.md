@@ -642,6 +642,15 @@ Agent
 - **严格分层**：Handler → Domain → DAL → DAO 单向调用，无跨层，DAL 层内部组合多个 DAO
 - **测试统计**：697 个测试 100% 通过
 
+**✅ 前端统计数据集成**
+- **通用统计选项**：新增 `StatsOptions` 结构体和 `build_url_with_stats` 函数，统一处理统计参数 URL 拼接
+- **API 客户端扩展**：`get_agent`/`get_project`/`get_task`/`get_tool`/`get_model_provider` 全部支持 `stats_options` 参数
+- **统计面板组件**：`StatsCard` 通用卡片 + `AgentStatsPanel`/`ProjectStatsPanel`/`TaskStatsPanel` 三个实体面板
+- **详情页集成**：Agent/Project/Task 详情页按需展示统计面板（有统计数据时自动渲染）
+- **Dioxus 组件设计**：使用 owned 值（clone）而非引用，规避 Dioxus 组件不支持生命周期参数的限制
+- **CSS 样式**：`.stats-panel`/`.stats-grid`/`.stats-card` 等样式类，响应式网格布局
+- **测试统计**：697 个测试 100% 通过，前端 `cargo check` 0 错误
+
 ### 2026-07-13 里程碑
 **✅ 管理页面补全**
 - **消息 API 路径修复**：前端 API 客户端添加 `/finance` 前缀，修复与后端路由不匹配问题

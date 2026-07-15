@@ -1,11 +1,8 @@
-use crate::api::hr::{
-    bind_tool_to_agent, get_agent, install_skill_pack, install_tool_pack,
-    list_installed_skill_packs, list_installed_tool_packs, list_tools, uninstall_skill_pack,
-    uninstall_tool_pack, unbind_tool_from_agent, update_agent_status,
-};
+use crate::api::{hr::*, StatsOptions};
 use crate::pages::hr::agent_memory_panel::AgentMemoryPanel;
 use crate::api::message::{load_latest_messages, send_message_to_agent};
 use crate::components::state::{EmptyState, Loading};
+use crate::components::stats::AgentStatsPanel;
 use crate::store::toast::use_toast;
 use common::api::{GetAgentResponse, MessageListItem, SendMessageToAgentParams, ToolListItem};
 use dioxus::prelude::*;
@@ -174,7 +171,12 @@ pub fn HrAgentDetail(id: String) -> Element {
     let mut load_data = move || {
         let aid = id_for_load.clone();
         spawn(async move {
-            match get_agent(&aid).await {
+            let stats_options = StatsOptions {
+                with_stats: true,
+                with_model_call_stats: true,
+                stats_interval: Some("daily".to_string()),
+            };
+            match get_agent(&aid, Some(&stats_options)).await {
                 Ok(a) => agent_data.set(Some(a)),
                 Err(e) => toast.error(&format!("获取 Agent 失败: {}", e)),
             }
@@ -338,7 +340,12 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                         match update_agent_status(&agent_id, target_status_val).await {
                                                             Ok(_) => {
                                                                 toast.success(&format!("状态已更新为：{}", label_clone));
-                                                                match get_agent(&agent_id).await {
+                                                                let stats_options = StatsOptions {
+                                                                    with_stats: true,
+                                                                    with_model_call_stats: true,
+                                                                    stats_interval: Some("daily".to_string()),
+                                                                };
+                                                                match get_agent(&agent_id, Some(&stats_options)).await {
                                                                     Ok(a) => agent_data.set(Some(a)),
                                                                     Err(e) => toast.error(&format!("刷新 Agent 失败: {}", e)),
                                                                 }
@@ -550,7 +557,12 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                         match result {
                                                                             Ok(_) => {
                                                                                 toast.success(&format!("工具 {} {}", tname, if ib { "已解绑" } else { "已绑定" }));
-                                                                                match get_agent(&agent_id).await {
+                                                                                let stats_options = StatsOptions {
+                                                                                    with_stats: true,
+                                                                                    with_model_call_stats: true,
+                                                                                    stats_interval: Some("daily".to_string()),
+                                                                                };
+                                                                                match get_agent(&agent_id, Some(&stats_options)).await {
                                                                                     Ok(a) => agent_data.set(Some(a)),
                                                                                     Err(e) => toast.error(&format!("刷新 Agent 失败: {}", e)),
                                                                                 }
@@ -604,6 +616,13 @@ pub fn HrAgentDetail(id: String) -> Element {
                         div { class: "detail-section",
                             h3 { class: "detail-section-title", "记忆" }
                             AgentMemoryPanel { agent_id: Some(id.clone()) }
+                        }
+
+                        if a.stats.is_some() || a.model_call_stats.is_some() {
+                            AgentStatsPanel {
+                                stats: a.stats.clone(),
+                                model_call_stats: a.model_call_stats.clone(),
+                            }
                         }
                     }
 

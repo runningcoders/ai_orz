@@ -15,8 +15,9 @@ pub async fn list_projects() -> Result<ListProjectsResponse, String> {
     api_get_or_default("/api/v1/projects").await
 }
 
-pub async fn get_project(id: &str) -> Result<GetProjectResponse, String> {
-    api_get(&format!("/api/v1/projects/{}", id)).await
+pub async fn get_project(id: &str, stats_options: Option<&super::StatsOptions>) -> Result<GetProjectResponse, String> {
+    let url = super::build_url_with_stats(&format!("/api/v1/projects/{}", id), stats_options);
+    api_get(&url).await
 }
 
 pub async fn create_project(req: CreateProjectRequest) -> Result<CreateProjectResponse, String> {
@@ -65,8 +66,9 @@ pub async fn list_tasks(
     api_get(&url).await
 }
 
-pub async fn get_task(id: &str) -> Result<GetTaskResponse, String> {
-    api_get(&format!("/api/v1/tasks/{}", id)).await
+pub async fn get_task(id: &str, stats_options: Option<&super::StatsOptions>) -> Result<GetTaskResponse, String> {
+    let url = super::build_url_with_stats(&format!("/api/v1/tasks/{}", id), stats_options);
+    api_get(&url).await
 }
 
 pub async fn create_task(req: CreateTaskRequest) -> Result<CreateTaskResponse, String> {

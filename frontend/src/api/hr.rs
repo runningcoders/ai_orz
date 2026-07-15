@@ -21,8 +21,9 @@ pub async fn search_agents(keyword: &str) -> Result<ListAgentsResponse, String> 
     api_get_or_default(&format!("/api/v1/hr/agents/search?keyword={}", keyword)).await
 }
 
-pub async fn get_agent(id: &str) -> Result<GetAgentResponse, String> {
-    api_get(&format!("/api/v1/hr/agents/{}", id)).await
+pub async fn get_agent(id: &str, stats_options: Option<&super::StatsOptions>) -> Result<GetAgentResponse, String> {
+    let url = super::build_url_with_stats(&format!("/api/v1/hr/agents/{}", id), stats_options);
+    api_get(&url).await
 }
 
 pub async fn create_agent(req: CreateAgentRequest) -> Result<CreateAgentResponse, String> {

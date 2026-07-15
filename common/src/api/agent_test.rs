@@ -34,6 +34,8 @@ fn update_agent_status_response_uses_agent_detail_contract() {
         runtime_state: 0,
         current_message_id: None,
         tools: vec![],
+        stats: None,
+        model_call_stats: None,
     });
 
     assert!(response.is_success());

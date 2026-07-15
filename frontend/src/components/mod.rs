@@ -4,4 +4,5 @@ pub mod button;
 pub mod graph;
 pub mod modal;
 pub mod state;
+pub mod stats;
 pub mod toast;

@@ -1,6 +1,6 @@
 # 前端架构设计
 
-> 最后更新：2026-07-13
+> 最后更新：2026-07-15
 
 ## 概述
 
@@ -51,7 +51,10 @@ frontend/
     │   ├── mod.rs
     │   ├── button.rs         # Button 组件（5 种 variant: Primary/Accent/Secondary/Danger/Ghost）
     │   ├── modal.rs          # Modal 对话框组件
-    │   └── state.rs          # 状态展示组件（Loading/EmptyState/ErrorAlert/SuccessAlert）
+    │   ├── state.rs          # 状态展示组件（Loading/EmptyState/ErrorAlert/SuccessAlert）
+    │   ├── stats.rs          # 统计面板组件（StatsCard/AgentStatsPanel/ProjectStatsPanel/TaskStatsPanel）
+    │   ├── toast.rs          # Toast 通知组件
+    │   └── graph.rs          # 知识图谱 SVG 可视化组件
     │
     ├── layouts/              # 布局组件
     │   ├── mod.rs
@@ -186,11 +189,13 @@ pub fn client() -> &'static Client {
 |------|---------|
 | `api/auth.rs` | check_initialized、initialize_system、login、logout |
 | `api/organization.rs` | 组织 CRUD、用户管理、组织信息查询 |
-| `api/hr.rs` | Agent CRUD、工具包/技能包管理、技能库 |
-| `api/finance.rs` | 模型提供商、工具、消息渠道 |
-| `api/project.rs` | 项目、任务管理 |
+| `api/hr.rs` | Agent CRUD（支持统计参数）、工具包/技能包管理、技能库 |
+| `api/finance.rs` | 模型提供商（支持统计参数）、工具（支持统计参数）、消息渠道 |
+| `api/project.rs` | 项目（支持统计参数）、任务管理（支持统计参数） |
 | `api/message.rs` | 消息发送 |
 | `api/system.rs` | 健康检查、定时触发器 |
+
+**统计参数支持**：`StatsOptions` 结构体统一封装统计查询参数（`with_stats`/`with_model_call_stats`/`stats_interval`），通过 `build_url_with_stats` 函数拼接 URL，各实体详情 API 函数通过 `stats_options: Option<&StatsOptions>` 参数按需传入。
 
 ### 4. 全局认证状态管理
 
@@ -220,6 +225,10 @@ pub struct AuthState {
 | EmptyState | `components/state.rs` | 空数据状态 |
 | ErrorAlert | `components/state.rs` | 错误提示 |
 | SuccessAlert | `components/state.rs` | 成功提示 |
+| StatsCard | `components/stats.rs` | 统计卡片（图标 + 标题 + 数值 + 副标题） |
+| AgentStatsPanel | `components/stats.rs` | Agent 统计面板（唤醒次数、QPS、模型调用、Token） |
+| ProjectStatsPanel | `components/stats.rs` | 项目统计面板（事件次数、QPS、模型调用、Token） |
+| TaskStatsPanel | `components/stats.rs` | 任务统计面板（事件次数、QPS、模型调用、Token） |
 
 ### 6. 布局组件
 

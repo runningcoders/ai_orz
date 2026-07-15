@@ -7,8 +7,7 @@
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
-use crate::api::hr::list_agents;
-use crate::api::project::{create_task, get_task, list_projects, update_task};
+use crate::api::{hr::list_agents, project::*, StatsOptions};
 use crate::components::modal::Modal;
 use crate::store::toast::use_toast;
 use common::api::{
@@ -112,7 +111,12 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
 
             // 编辑模式：加载任务详情
             if let TaskEditMode::Edit { task_id } = &mode_for_async {
-                match get_task(task_id).await {
+                let stats_options = StatsOptions {
+                    with_stats: true,
+                    with_model_call_stats: true,
+                    stats_interval: Some("daily".to_string()),
+                };
+                match get_task(task_id, Some(&stats_options)).await {
                     Ok(t) => {
                         title.set(t.title);
                         description.set(t.description.unwrap_or_default());

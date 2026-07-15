@@ -3,12 +3,10 @@
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
-use crate::api::project::{
-    create_artifact, delete_artifact, get_project, list_artifacts, list_project_tasks,
-    update_project_status, update_task_status,
-};
+use crate::api::{project::*, StatsOptions};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
+use crate::components::stats::ProjectStatsPanel;
 use crate::pages::project::task_edit_modal::{TaskEditMode, TaskEditModal};
 use crate::store::toast::use_toast;
 use common::api::{ArtifactDetail, CreateArtifactRequest, GetProjectResponse, TaskListItem};
@@ -103,7 +101,12 @@ pub fn ProjectDetail(id: String) -> Element {
         loading.set(true);
         let id_clone = id_for_load.clone();
         spawn(async move {
-            match get_project(&id_clone).await {
+            let stats_options = StatsOptions {
+                with_stats: true,
+                with_model_call_stats: true,
+                stats_interval: Some("daily".to_string()),
+            };
+            match get_project(&id_clone, Some(&stats_options)).await {
                 Ok(p) => project.set(Some(p)),
                 Err(e) => toast.error(&e),
             }
@@ -127,7 +130,12 @@ pub fn ProjectDetail(id: String) -> Element {
             match update_project_status(&id_clone, 3).await {
                 Ok(_) => {
                     toast.success("项目已启动");
-                    match get_project(&id_clone).await {
+                    let stats_options = StatsOptions {
+                        with_stats: true,
+                        with_model_call_stats: true,
+                        stats_interval: Some("daily".to_string()),
+                    };
+                    match get_project(&id_clone, Some(&stats_options)).await {
                         Ok(p) => project.set(Some(p)),
                         Err(e) => toast.error(&e),
                     }
@@ -145,7 +153,12 @@ pub fn ProjectDetail(id: String) -> Element {
             match update_project_status(&id_clone, 4).await {
                 Ok(_) => {
                     toast.success("项目已完成");
-                    match get_project(&id_clone).await {
+                    let stats_options = StatsOptions {
+                        with_stats: true,
+                        with_model_call_stats: true,
+                        stats_interval: Some("daily".to_string()),
+                    };
+                    match get_project(&id_clone, Some(&stats_options)).await {
                         Ok(p) => project.set(Some(p)),
                         Err(e) => toast.error(&e),
                     }
@@ -163,7 +176,12 @@ pub fn ProjectDetail(id: String) -> Element {
             match update_project_status(&id_clone, 5).await {
                 Ok(_) => {
                     toast.success("项目已归档");
-                    match get_project(&id_clone).await {
+                    let stats_options = StatsOptions {
+                        with_stats: true,
+                        with_model_call_stats: true,
+                        stats_interval: Some("daily".to_string()),
+                    };
+                    match get_project(&id_clone, Some(&stats_options)).await {
                         Ok(p) => project.set(Some(p)),
                         Err(e) => toast.error(&e),
                     }
@@ -342,6 +360,13 @@ pub fn ProjectDetail(id: String) -> Element {
                     if p.status != 5 {
                         button { class: "btn btn-secondary", onclick: archive_project, "归档项目" }
                     }
+                }
+            }
+
+            if p.stats.is_some() || p.model_call_stats.is_some() {
+                ProjectStatsPanel {
+                    stats: p.stats.clone(),
+                    model_call_stats: p.model_call_stats.clone(),
                 }
             }
 
