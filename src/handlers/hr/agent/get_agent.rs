@@ -2,7 +2,9 @@
 
 use common::enums::AgentRuntimeState;
 use common::error::Result;
+use common::models::StatsInterval;
 use crate::pkg::RequestContext;
+use crate::service::dal::agent::AgentFetchOptions;
 use crate::service::domain::{finance::domain as finance_domain, hr::domain};
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetAgentRequest, GetAgentResponse};
@@ -20,9 +22,24 @@ pub async fn get_agent(
     ctx: RequestContext,
     params: GetAgentRequest,
 ) -> Result<GetAgentResponse> {
+    let options = AgentFetchOptions {
+        with_stats: params.with_stats,
+        with_model_call_stats: params.with_model_call_stats,
+        stats_time_range: match (params.stats_time_start, params.stats_time_end) {
+            (Some(start), Some(end)) => Some((start, end)),
+            _ => None,
+        },
+        stats_interval: params.stats_interval.as_deref().and_then(|s| match s.to_lowercase().as_str() {
+            "hourly" => Some(StatsInterval::Hourly),
+            "daily" => Some(StatsInterval::Daily),
+            _ => None,
+        }),
+        ..Default::default()
+    };
+
     let agent = domain()
         .agent_manage()
-        .get_agent(ctx.clone(), &params.id, Default::default())
+        .get_agent(ctx.clone(), &params.id, options)
         .await?
         .ok_or_else(|| common::error::Error::not_found(format!("Agent {} not found", params.id)))?;
 
@@ -68,5 +85,7 @@ pub async fn get_agent(
         runtime_state,
         current_message_id,
         tools,
+        stats: agent.stats,
+        model_call_stats: agent.model_call_stats,
     })
 }

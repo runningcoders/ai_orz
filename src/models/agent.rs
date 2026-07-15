@@ -6,7 +6,7 @@ use crate::models::vector::{SearchMatchInfo, Vectorizable};
 use crate::pkg::agent_runtime_state::AgentRuntimeInfo;
 use crate::pkg::request_context::{EnrichContext, RequestContextBuilder};
 use common::enums::AgentStatus;
-use common::models::AgentStats;
+use common::models::{AgentStats, ModelCallStats};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use std::fmt;
@@ -149,6 +149,10 @@ pub struct Agent {
     ///
     /// None 表示未查询
     pub stats: Option<AgentStats>,
+    /// 模型调用统计数据（由 DAL 层按需注入）
+    ///
+    /// None 表示未查询
+    pub model_call_stats: Option<ModelCallStats>,
     /// 搜索匹配元信息（搜索场景下由 DAL 层填充）
     pub search_match: Option<SearchMatchInfo>,
     // 后续扩展字段：
@@ -165,6 +169,7 @@ impl fmt::Debug for Agent {
             .field("tools", &format_args!("[{} tools]", self.tools.len()))
             .field("runtime_info", &self.runtime_info)
             .field("stats", &self.stats)
+            .field("model_call_stats", &self.model_call_stats)
             .finish()
     }
 }
@@ -178,6 +183,7 @@ impl Agent {
             tools: Vec::new(),
             runtime_info: None,
             stats: None,
+            model_call_stats: None,
             search_match: None,
         }
     }
@@ -190,6 +196,7 @@ impl Agent {
             tools,
             runtime_info: None,
             stats: None,
+            model_call_stats: None,
             search_match: None,
         }
     }

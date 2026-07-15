@@ -75,5 +75,7 @@ pub async fn update_agent_status(
         runtime_state,
         current_message_id,
         tools,
+        stats: None,
+        model_call_stats: None,
     })
 }

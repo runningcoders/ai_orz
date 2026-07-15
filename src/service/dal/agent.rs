@@ -1,7 +1,7 @@
 //! Agent DAL 模块
 
 use common::error::{Result, err};
-use common::models::{AgentStats, ModelCallStats, StatsFetchOptions};
+use common::models::{AgentStats, ModelCallStats, StatsFetchOptions, StatsInterval};
 use crate::models::agent::{Agent, AgentPo};
 use crate::models::brain::Brain;
 use crate::models::vector::{MatchType, SearchMatchInfo, Vectorizable};
@@ -64,10 +64,16 @@ pub fn new(
 pub struct AgentFetchOptions {
     /// 是否加载运行时状态（默认 true）
     pub with_runtime_state: Option<bool>,
-    /// 是否加载统计信息
+    /// 是否加载统计信息（AgentStats: 唤醒次数汇总）
     pub with_stats: Option<bool>,
+    /// 是否加载模型调用统计（ModelCallStats: token + 时序）
+    pub with_model_call_stats: Option<bool>,
     /// 统计过滤条件（with_stats=true 时生效，按任务 ID 过滤）
     pub stats_task_id: Option<String>,
+    /// 统计时间范围（毫秒），None 表示全部历史
+    pub stats_time_range: Option<(i64, i64)>,
+    /// 时序查询粒度，None 时默认 Daily
+    pub stats_interval: Option<StatsInterval>,
 }
 
 /// Agent DAL 接口
@@ -301,8 +307,8 @@ impl AgentDal for AgentDalImpl {
                 with_call_summary: true,
                 with_token_summary: false,
                 with_time_series: false,
-                time_range: None,
-                interval: None,
+                time_range: options.stats_time_range,
+                interval: options.stats_interval,
             };
             let query = AgentStatsQuery {
                 agent_id: id.to_string(),
@@ -312,6 +318,18 @@ impl AgentDal for AgentDalImpl {
             };
             let stats = self.agent_stats_dao.get_stats(ctx.clone(), query, stats_options).await?;
             agent.stats = Some(stats);
+        }
+
+        if options.with_model_call_stats.unwrap_or(false) {
+            let stats_options = StatsFetchOptions {
+                with_call_summary: true,
+                with_token_summary: true,
+                with_time_series: true,
+                time_range: options.stats_time_range,
+                interval: options.stats_interval,
+            };
+            let model_call_stats = self.get_model_call_stats(ctx.clone(), id, stats_options).await?;
+            agent.model_call_stats = Some(model_call_stats);
         }
 
         Ok(Some(agent))
