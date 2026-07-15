@@ -13,7 +13,7 @@
 | 一、知识图谱交互完善 | P0 | ✅ 100% | 已全部完成 |
 | 二、对话功能补全 | P1 | ✅ 98% | 消息编辑/删除（可选） |
 | 三、任务管理可视化 | P2 | ✅ 95% | 任务完成率饼图（可选） |
-| 四、Agent 详情页增强 | P3 | ✅ 95% | 统计面板（需后端 API 支持） |
+| 四、Agent 详情页增强 | P3 | ⏳ 80% | 统计面板 UI（后端 API 已就绪） |
 
 ---
 
@@ -117,8 +117,13 @@
 - 搜索和列表展示
 - 关系类型显示源节点和目标节点
 
-### 4.3 统计面板（待定）
+### 4.3 统计面板（⏳ 后端 API 已就绪，待前端实现）
 - 唤醒次数、任务完成数、工具调用次数
 - 时间趋势图（最近 7 天/30 天）
 - 常用工具排行
-- 需后端新增统计 HTTP Handler
+- **后端 API 状态**：✅ 已就绪，通过实体详情接口 query 参数 `with_stats`/`with_model_call_stats` 按需返回
+  - `GET /api/v1/agents/{id}?with_stats=true&with_model_call_stats=true&stats_interval=daily`
+  - `GET /api/v1/projects/{id}?with_stats=true&with_model_call_stats=true`
+  - `GET /api/v1/tasks/{id}?with_stats=true&with_model_call_stats=true`
+  - `GET /api/v1/tools/{id}?with_stats=true`
+  - `GET /api/v1/model-providers/{id}?with_model_call_stats=true`

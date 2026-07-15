@@ -14,7 +14,7 @@
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + rig-core 0.34
 - **前端**：Dioxus 0.7 (WebAssembly)
-- **技术特色**：严格分层架构、类型安全、696 个测试 100% 通过率
+- **技术特色**：严格分层架构、类型安全、697 个测试 100% 通过率
 
 ### 1.2 已实现核心功能
 
@@ -34,7 +34,7 @@
 | 📝 结构化日志系统 | ✅ | JSON 格式、自动上下文关联、日志自动清理 |
 | 🔍 向量搜索 | ✅ | SQLite VSS 扩展 + 语义索引 + 可平滑升级 |
 | 🔎 全文搜索 | ✅ | FTS5 + trigram 分词器，支持中文全文搜索、BM25 相关性排序 |
-| 📊 Agent 统计系统 | ✅ | DuckDB 多维统计、Agent/Project/Task/ModelProvider/Tool 五维度覆盖 |
+| 📊 Agent 统计系统 | ✅ | DuckDB 多维统计、Agent/Project/Task/ModelProvider/Tool 五维度覆盖、实体详情页按需动态注入 |
 | 🔄 多回合循环控制 | ✅ | 轮次限制检查、任务完成检测、Prompt 上下文差异化、工具失败计数注入 |
 | 🎒 工具包机制 | ✅ | tag 分组工具、Agent 入职自动安装、免绑定校验三层逻辑 |
 | 📨 任务分配消息 | ✅ | TaskAssignment 消息类型、自动通知 Agent、神经工具封装 |
@@ -632,6 +632,14 @@ Agent
 - **键盘导航**：↑↓ 选择菜单项、Enter 执行、Esc 关闭、实时过滤匹配指令
 - **CSS 样式**：12 个新 class（消息操作按钮、快捷指令菜单、代码块高亮、代码块复制按钮）
 - **web-sys 扩展**：`Cargo.toml` 添加 `Clipboard` 和 `Navigator` features
+- **测试统计**：697 个测试 100% 通过
+
+**✅ 实体统计数据动态注入**
+- **FetchOptions 模式**：为 Project/Task/Tool/ModelProvider 补齐 FetchOptions + get_xxx(ctx, id, options) 方法，Agent 扩展增加 model_call_stats
+- **按需注入**：通过 query 参数 `with_stats`/`with_model_call_stats` 控制是否返回统计数据，响应字段 None 时自动省略
+- **时间范围与粒度**：支持 `stats_time_start`/`stats_time_end` 时间范围过滤，`stats_interval` 控制时序聚合粒度（hourly/daily）
+- **后端 API**：5 个实体 GET 详情接口全部扩展支持统计参数，一次请求拿到实体+统计
+- **严格分层**：Handler → Domain → DAL → DAO 单向调用，无跨层，DAL 层内部组合多个 DAO
 - **测试统计**：697 个测试 100% 通过
 
 ### 2026-07-13 里程碑
