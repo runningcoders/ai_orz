@@ -2,10 +2,11 @@
 //!
 //! These types are shared across all layers (DAO/DAL/Domain/API) for stats query results.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Time series interval for grouping data
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 pub enum StatsInterval {
     /// Group by hour
     Hourly,
@@ -14,7 +15,7 @@ pub enum StatsInterval {
 }
 
 /// Time series data point
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct TimeSeriesPoint {
     /// Start timestamp of this interval (millis)
     pub interval_start: i64,
@@ -27,7 +28,7 @@ pub struct TimeSeriesPoint {
 }
 
 /// Total token sum result
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct TokenSumResult {
     /// Total input tokens
     pub total_tokens_input: u64,
@@ -43,7 +44,7 @@ pub struct TokenSumResult {
 /// QPS 分为两种：
 /// - `avg_qps`: 平均 QPS，需要传入 time_range 才能计算
 /// - `instant_qps`: 瞬时 QPS，按最近 1 秒调用次数统计
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct CallSummary {
     /// 总调用次数
     pub total_calls: u64,
@@ -82,28 +83,28 @@ pub struct StatsFetchOptions {
 //   由 ModelProviderStatsDao 负责计算，各实体 DAL 层按需组装
 
 /// Agent 自身统计数据
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, JsonSchema)]
 pub struct AgentStats {
     /// 调用次数汇总（次数 + QPS）
     pub call_summary: Option<CallSummary>,
 }
 
 /// Project 自身统计数据
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, JsonSchema)]
 pub struct ProjectStats {
     /// 调用次数汇总（次数 + QPS）
     pub call_summary: Option<CallSummary>,
 }
 
 /// Task 自身统计数据
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, JsonSchema)]
 pub struct TaskStats {
     /// 调用次数汇总（次数 + QPS）
     pub call_summary: Option<CallSummary>,
 }
 
 /// 工具自身统计数据
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, JsonSchema)]
 pub struct ToolStats {
     /// 调用次数汇总（次数 + QPS）
     pub call_summary: Option<CallSummary>,
@@ -115,7 +116,7 @@ pub struct ToolStats {
 ///
 /// 由 ModelProviderStatsDao 负责计算，
 /// 支持按 agent_id / project_id / task_id / model_provider_id 过滤。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, JsonSchema)]
 pub struct ModelCallStats {
     /// 调用次数汇总（次数 + QPS）
     pub call_summary: Option<CallSummary>,
