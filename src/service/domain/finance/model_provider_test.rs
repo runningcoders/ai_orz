@@ -4,6 +4,7 @@
 mod tests {
     use crate::models::model_provider::{ModelProvider, ModelProviderPo};
     use common::enums::{ModelCapability, ProviderType};
+    use std::assert_matches;
 
     #[test]
     fn test_create_model_provider_po() {
@@ -20,8 +21,8 @@ mod tests {
         );
 
         assert_eq!(provider.name, "测试OpenAI".to_string());
-        assert!(matches!(provider.provider_type, ProviderType::OpenAI));
-        assert!(matches!(provider.capability, ModelCapability::Agent));
+        assert_matches!(provider.provider_type, ProviderType::OpenAI);
+        assert_matches!(provider.capability, ModelCapability::Agent);
         assert_eq!(provider.model_name, "gpt-3.5-turbo".to_string());
         assert_eq!(provider.api_key, "***".to_string());
         assert_eq!(provider.base_url, None);
@@ -48,7 +49,7 @@ mod tests {
 
         let model = ModelProvider::from_po(po);
         assert_eq!(model.po.name, "测试DeepSeek".to_string());
-        assert!(matches!(model.po.provider_type, ProviderType::DeepSeek));
+        assert_matches!(model.po.provider_type, ProviderType::DeepSeek);
     }
 
     #[test]

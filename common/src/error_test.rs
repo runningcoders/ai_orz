@@ -1,6 +1,7 @@
 //! Contract tests for the shared error model.
 
 use crate::error::{bail_err, ensure_err, err, Error, ErrorCode, ErrorType, ErrorField, Result};
+use std::assert_matches;
 
 fn returns_common_result() -> Result<()> {
     bail_err!(ToolAutoModeNotSupported, "{} Tool only supports Manual control mode", "HTTP");
@@ -21,14 +22,14 @@ fn err_macro_builds_typed_error() {
 
     assert_eq!(error.code.code_str(), "resource_not_found");
     assert_eq!(error.msg, "tool not found: tool-1");
-    assert!(matches!(error.code, ErrorCode::ResourceNotFound));
+    assert_matches!(error.code, ErrorCode::ResourceNotFound);
 }
 
 #[test]
 fn bail_err_macro_returns_common_result() {
     let error = returns_common_result().expect_err("expected typed error");
 
-    assert!(matches!(error.code, ErrorCode::ToolAutoModeNotSupported));
+    assert_matches!(error.code, ErrorCode::ToolAutoModeNotSupported);
     assert_eq!(error.msg, "HTTP Tool only supports Manual control mode");
 }
 
