@@ -20,7 +20,16 @@ jobs:
     
     - name: Install protoc (for lancedb dependency)
       run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      
+
+    - name: Install wasm32 target (for frontend)
+      run: rustup target add wasm32-unknown-unknown
+
+    - name: Check backend
+      run: cargo check --lib --verbose
+
+    - name: Check frontend
+      run: cd frontend && cargo check --verbose
+
     - name: Build
       run: cargo build --verbose
       
