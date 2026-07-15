@@ -327,6 +327,15 @@ impl crate::service::domain::project::ProjectManage for MockProjectDomain {
         unimplemented!()
     }
 
+    async fn get_project(
+        &self,
+        _ctx: RequestContext,
+        _id: &str,
+        _options: crate::service::dal::project::ProjectFetchOptions,
+    ) -> Result<Option<crate::models::project::Project>> {
+        unimplemented!()
+    }
+
     async fn list_by_user(
         &self,
         _ctx: RequestContext,

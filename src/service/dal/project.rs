@@ -6,7 +6,7 @@
 //! - 混合搜索（FTS5 关键词 + 向量语义）
 
 use common::error::Result;
-use common::models::{ModelCallStats, ProjectStats, StatsFetchOptions};
+use common::models::{ModelCallStats, ProjectStats, StatsFetchOptions, StatsInterval};
 use crate::models::project::Project;
 use crate::models::vector::{MatchType, SearchMatchInfo, Vectorizable};
 use crate::pkg::RequestContext;
@@ -68,6 +68,19 @@ pub fn new(
 
 // ==================== DAL 接口 ====================
 
+/// Project 附带信息获取选项
+#[derive(Debug, Clone, Default)]
+pub struct ProjectFetchOptions {
+    /// 是否加载统计信息（ProjectStats: 事件次数汇总）
+    pub with_stats: Option<bool>,
+    /// 是否加载模型调用统计（ModelCallStats: token + 时序）
+    pub with_model_call_stats: Option<bool>,
+    /// 统计时间范围（毫秒），None 表示全部历史
+    pub stats_time_range: Option<(i64, i64)>,
+    /// 时序查询粒度，None 时默认 Daily
+    pub stats_interval: Option<StatsInterval>,
+}
+
 /// Project DAL 接口
 #[async_trait::async_trait]
 pub trait ProjectDal: Send + Sync {
@@ -76,6 +89,9 @@ pub trait ProjectDal: Send + Sync {
 
     /// 根据 ID 获取项目
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Project>>;
+
+    /// 根据 ID 获取项目（带附带信息选项）
+    async fn get_project(&self, ctx: RequestContext, id: &str, options: ProjectFetchOptions) -> Result<Option<Project>>;
 
     /// 获取根用户下的所有项目
     async fn list_by_root_user(
@@ -231,6 +247,39 @@ impl ProjectDal for ProjectDalImpl {
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Project>> {
         let opt = self.project_dao.find_by_id(ctx, id).await?;
         Ok(opt.map(Project::from_po))
+    }
+
+    async fn get_project(&self, ctx: RequestContext, id: &str, options: ProjectFetchOptions) -> Result<Option<Project>> {
+        let opt = self.project_dao.find_by_id(ctx.clone(), id).await?;
+        let Some(mut project) = opt.map(Project::from_po) else {
+            return Ok(None);
+        };
+
+        if options.with_stats.unwrap_or(false) {
+            let stats_options = StatsFetchOptions {
+                with_call_summary: true,
+                with_token_summary: false,
+                with_time_series: false,
+                time_range: options.stats_time_range,
+                interval: options.stats_interval,
+            };
+            let stats = self.get_stats(ctx.clone(), id, stats_options).await?;
+            project.stats = Some(stats);
+        }
+
+        if options.with_model_call_stats.unwrap_or(false) {
+            let stats_options = StatsFetchOptions {
+                with_call_summary: true,
+                with_token_summary: true,
+                with_time_series: true,
+                time_range: options.stats_time_range,
+                interval: options.stats_interval,
+            };
+            let model_call_stats = self.get_model_call_stats(ctx.clone(), id, stats_options).await?;
+            project.model_call_stats = Some(model_call_stats);
+        }
+
+        Ok(Some(project))
     }
 
     async fn list_by_root_user(
@@ -524,6 +573,8 @@ impl ProjectDal for ProjectDalImpl {
             projects.push(Project {
                 po,
                 search_match: match_info,
+                stats: None,
+                model_call_stats: None,
             });
         }
 

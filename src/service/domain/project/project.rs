@@ -71,6 +71,16 @@ impl super::ProjectManage for ProjectDomainImpl {
         self.project_dal.find_by_id(ctx, id).await
     }
 
+    /// 根据 ID 获取项目（带附带信息选项）
+    async fn get_project(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        options: crate::service::dal::project::ProjectFetchOptions,
+    ) -> Result<Option<Project>> {
+        self.project_dal.get_project(ctx, id, options).await
+    }
+
     /// 获取用户的所有项目
     async fn list_by_user(
         &self,

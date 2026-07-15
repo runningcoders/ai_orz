@@ -34,6 +34,8 @@ pub(super) fn to_detail(project: &Project) -> GetProjectResponse {
         end_at: project.po.end_at,
         created_at: project.po.created_at,
         updated_at: project.po.updated_at,
+        stats: project.stats.clone(),
+        model_call_stats: project.model_call_stats.clone(),
     }
 }
 

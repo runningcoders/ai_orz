@@ -27,6 +27,21 @@ pub struct GetProjectRequest {
     /// Project ID
     #[param(source = "path")]
     pub id: String,
+    /// 是否加载统计信息（事件次数汇总）
+    #[param(source = "query")]
+    pub with_stats: Option<bool>,
+    /// 是否加载模型调用统计（token + 时序趋势）
+    #[param(source = "query")]
+    pub with_model_call_stats: Option<bool>,
+    /// 统计时间范围起始（毫秒时间戳）
+    #[param(source = "query")]
+    pub stats_time_start: Option<i64>,
+    /// 统计时间范围结束（毫秒时间戳）
+    #[param(source = "query")]
+    pub stats_time_end: Option<i64>,
+    /// 时序查询粒度：hourly / daily
+    #[param(source = "query")]
+    pub stats_interval: Option<String>,
 }
 
 /// 获取 Project 列表请求
@@ -101,6 +116,12 @@ pub struct GetProjectResponse {
     pub created_at: i64,
     /// 更新时间戳
     pub updated_at: i64,
+    /// 项目统计数据（按需返回）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stats: Option<crate::models::ProjectStats>,
+    /// 模型调用统计数据（按需返回）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_call_stats: Option<crate::models::ModelCallStats>,
 }
 
 /// 更新 Project 请求

@@ -7,6 +7,7 @@
 use crate::pkg::request_context::{EnrichContext, RequestContextBuilder};
 use common::constants::utils;
 use common::enums::project::ProjectStatus;
+use common::models::{ModelCallStats, ProjectStats};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
@@ -59,12 +60,16 @@ pub struct Project {
     pub po: ProjectPo,
     /// 搜索匹配元信息（搜索场景下由 DAL 层填充）
     pub search_match: Option<crate::models::vector::SearchMatchInfo>,
+    /// 统计数据（由 DAL 层按需注入）
+    pub stats: Option<ProjectStats>,
+    /// 模型调用统计数据（由 DAL 层按需注入）
+    pub model_call_stats: Option<ModelCallStats>,
 }
 
 impl Project {
     /// 从 PO 创建 Project
     pub fn from_po(po: ProjectPo) -> Self {
-        Self { po, search_match: None }
+        Self { po, search_match: None, stats: None, model_call_stats: None }
     }
 
     /// 创建新的 Project
@@ -100,6 +105,8 @@ impl Project {
                 created_by,
             ),
             search_match: None,
+            stats: None,
+            model_call_stats: None,
         }
     }
 
