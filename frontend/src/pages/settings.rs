@@ -2,20 +2,19 @@
 
 use dioxus::prelude::*;
 
-use crate::components::state::{ErrorAlert, SuccessAlert};
 use crate::config::FrontendConfig;
+use crate::store::toast::use_toast;
 
 #[component]
 pub fn Settings() -> Element {
     let mut config = use_signal(FrontendConfig::load);
-    let mut error = use_signal(String::new);
-    let mut success = use_signal(String::new);
+    let toast = use_toast();
 
     let handle_save = move |_| {
         let cfg = config.read().clone();
         match cfg.save() {
-            Ok(_) => success.set("配置已保存".to_string()),
-            Err(e) => error.set(e),
+            Ok(_) => toast.success("配置已保存"),
+            Err(e) => toast.error(&e),
         }
     };
 
@@ -23,15 +22,13 @@ pub fn Settings() -> Element {
         let mut cfg = config.write();
         cfg.reset_to_default();
         drop(cfg);
-        success.set("已重置为默认配置".to_string());
+        toast.success("已重置为默认配置");
     };
 
     let current = config.read().clone();
 
     rsx! {
         div { class: "card",
-            ErrorAlert { message: error() }
-            SuccessAlert { message: success() }
             div { class: "card-header",
                 h2 { class: "card-title", "系统设置" }
             }

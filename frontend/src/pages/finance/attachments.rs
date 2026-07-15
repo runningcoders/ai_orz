@@ -4,7 +4,8 @@ use dioxus::prelude::*;
 
 use crate::api::finance::{create_text_attachment, delete_attachment, list_attachments};
 use crate::components::modal::Modal;
-use crate::components::state::{EmptyState, ErrorAlert, Loading, SuccessAlert};
+use crate::components::state::{EmptyState, Loading};
+use crate::store::toast::use_toast;
 use common::api::{AttachmentDetail, CreateTextAttachmentRequest};
 
 fn format_size(size: u64) -> String {
@@ -59,8 +60,7 @@ fn format_timestamp(ts: i64) -> String {
 pub fn FinanceAttachments() -> Element {
     let mut attachments = use_signal(Vec::<AttachmentDetail>::new);
     let mut loading = use_signal(|| true);
-    let mut error = use_signal(String::new);
-    let mut success = use_signal(String::new);
+    let toast = use_toast();
     let mut show_add_modal = use_signal(|| false);
 
     // 创建表单状态
@@ -73,7 +73,7 @@ pub fn FinanceAttachments() -> Element {
         spawn(async move {
             match list_attachments().await {
                 Ok(list) => attachments.set(list),
-                Err(e) => error.set(e),
+                Err(e) => toast.error(&e),
             }
             loading.set(false);
         });
@@ -82,11 +82,11 @@ pub fn FinanceAttachments() -> Element {
     let handle_create = move |_| {
         spawn(async move {
             if new_file_name().is_empty() {
-                error.set("文件名不能为空".to_string());
+                toast.error("文件名不能为空");
                 return;
             }
             if new_content().is_empty() {
-                error.set("内容不能为空".to_string());
+                toast.error("内容不能为空");
                 return;
             }
             creating.set(true);
@@ -101,13 +101,13 @@ pub fn FinanceAttachments() -> Element {
                     show_add_modal.set(false);
                     new_file_name.set(String::new());
                     new_content.set(String::new());
-                    success.set("创建成功".to_string());
+                    toast.success("创建成功");
                     match list_attachments().await {
                         Ok(list) => attachments.set(list),
-                        Err(e) => error.set(e),
+                        Err(e) => toast.error(&e),
                     }
                 }
-                Err(e) => error.set(format!("创建失败: {}", e)),
+                Err(e) => toast.error(&format!("创建失败: {}", e)),
             }
             creating.set(false);
         });
@@ -117,8 +117,6 @@ pub fn FinanceAttachments() -> Element {
 
     rsx! {
         div { class: "card",
-            ErrorAlert { message: error() }
-            SuccessAlert { message: success() }
             div { class: "card-header",
                 h2 { class: "card-title", "附件管理" }
                 button { class: "btn btn-accent", onclick: move |_| show_add_modal.set(true), "+ 创建文本附件" }
@@ -151,11 +149,11 @@ pub fn FinanceAttachments() -> Element {
                                                     let id_delete = id_delete.clone();
                                                     spawn(async move {
                                                         if let Err(e) = delete_attachment(&id_delete).await {
-                                                            error.set(format!("删除失败: {}", e));
+                                                            toast.error(&format!("删除失败: {}", e));
                                                         } else {
                                                             match list_attachments().await {
                                                                 Ok(list) => attachments.set(list),
-                                                                Err(e) => error.set(e),
+                                                                Err(e) => toast.error(&e),
                                                             }
                                                         }
                                                     });

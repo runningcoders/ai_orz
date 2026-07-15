@@ -4,7 +4,8 @@ use dioxus::prelude::*;
 
 use crate::api::finance::{call_model_provider, create_model_provider, delete_model_provider, list_model_providers, test_model_provider_connection};
 use crate::components::modal::Modal;
-use crate::components::state::{EmptyState, ErrorAlert, Loading, SuccessAlert};
+use crate::components::state::{EmptyState, Loading};
+use crate::store::toast::use_toast;
 use common::api::{CreateModelProviderRequest, ListModelProvidersResponseItem};
 use common::enums::{ModelCapability, ProviderType};
 
@@ -12,8 +13,7 @@ use common::enums::{ModelCapability, ProviderType};
 pub fn FinanceModelProviders() -> Element {
     let mut providers = use_signal(Vec::<ListModelProvidersResponseItem>::new);
     let mut loading = use_signal(|| true);
-    let mut error = use_signal(String::new);
-    let mut success = use_signal(String::new);
+    let toast = use_toast();
     let mut show_modal = use_signal(|| false);
 
     // 表单状态
@@ -37,7 +37,7 @@ pub fn FinanceModelProviders() -> Element {
         spawn(async move {
             match list_model_providers().await {
                 Ok(list) => providers.set(list.providers),
-                Err(e) => error.set(e),
+                Err(e) => toast.error(&e),
             }
             loading.set(false);
         });
@@ -46,7 +46,7 @@ pub fn FinanceModelProviders() -> Element {
     let handle_create = move |_| {
         spawn(async move {
             if name().is_empty() || model_name().is_empty() {
-                error.set("名称和模型名称不能为空".to_string());
+                toast.error("名称和模型名称不能为空");
                 return;
             }
             creating.set(true);
@@ -67,21 +67,21 @@ pub fn FinanceModelProviders() -> Element {
                     api_key.set(String::new());
                     base_url.set(String::new());
                     description.set(String::new());
-                    success.set("创建成功".to_string());
+                    toast.success("创建成功");
                     // Reload
                     match list_model_providers().await {
                         Ok(list) => providers.set(list.providers),
-                        Err(e) => error.set(e),
+                        Err(e) => toast.error(&e),
                     }
                     // 自动测试连接
                     spawn(async move {
                         match test_model_provider_connection(&resp.id).await {
-                            Ok(_) => success.set("创建成功，连接测试通过".to_string()),
-                            Err(e) => error.set(format!("创建成功但测试失败: {}", e)),
+                            Ok(_) => toast.success("创建成功，连接测试通过"),
+                            Err(e) => toast.error(&format!("创建成功但测试失败: {}", e)),
                         }
                     });
                 }
-                Err(e) => error.set(format!("创建失败: {}", e)),
+                Err(e) => toast.error(&format!("创建失败: {}", e)),
             }
             creating.set(false);
         });
@@ -92,7 +92,7 @@ pub fn FinanceModelProviders() -> Element {
             test_loading.set(true);
             match call_model_provider(&test_provider_id(), &test_prompt()).await {
                 Ok(resp) => test_response.set(resp.result),
-                Err(e) => error.set(format!("调用测试失败: {}", e)),
+                Err(e) => toast.error(&format!("调用测试失败: {}", e)),
             }
             test_loading.set(false);
         });
@@ -104,9 +104,6 @@ pub fn FinanceModelProviders() -> Element {
 
     rsx! {
         div { class: "card",
-            ErrorAlert { message: error() }
-            SuccessAlert { message: success() }
-
             div { class: "card-header",
                 h2 { class: "card-title", "模型提供商管理" }
                 button { class: "btn btn-accent", onclick: move |_| show_modal.set(true), "+ 添加提供商" }
@@ -153,12 +150,12 @@ pub fn FinanceModelProviders() -> Element {
                                                     let id_delete = id_delete.clone();
                                                     spawn(async move {
                                                         if let Err(e) = delete_model_provider(&id_delete).await {
-                                                            error.set(format!("删除失败: {}", e));
+                                                            toast.error(&format!("删除失败: {}", e));
                                                         } else {
-                                                            success.set("已删除".to_string());
+                                                            toast.success("已删除");
                                                             match list_model_providers().await {
                                                                 Ok(list) => providers.set(list.providers),
-                                                                Err(e) => error.set(e),
+                                                                Err(e) => toast.error(&e),
                                                             }
                                                         }
                                                     });

@@ -5,18 +5,18 @@ use dioxus::prelude::*;
 use common::api::UpdateCurrentUserRequest;
 
 use crate::api::organization::{get_current_user_info, update_current_user};
-use crate::components::state::{ErrorAlert, Loading, SuccessAlert};
+use crate::components::state::Loading;
+use crate::store::toast::use_toast;
 
 #[component]
 pub fn UserProfile() -> Element {
     let mut loading = use_signal(|| true);
-    let mut error = use_signal(String::new);
-    let mut success = use_signal(String::new);
     let mut username = use_signal(String::new);
     let mut display_name = use_signal(String::new);
     let mut email = use_signal(|| String::new());
     let mut role_name = use_signal(String::new);
     let mut saving = use_signal(|| false);
+    let toast = use_toast();
 
     use_effect(move || {
         spawn(async move {
@@ -28,7 +28,7 @@ pub fn UserProfile() -> Element {
                     email.set(user.email.unwrap_or_default());
                     role_name.set(user.role_name);
                 }
-                Err(e) => error.set(e),
+                Err(e) => toast.error(&e),
             }
             loading.set(false);
         });
@@ -36,9 +36,6 @@ pub fn UserProfile() -> Element {
 
     rsx! {
         div { class: "card",
-            ErrorAlert { message: error() }
-            SuccessAlert { message: success() }
-
             div { class: "card-header",
                 h2 { class: "card-title", "个人信息" }
             }
@@ -67,8 +64,6 @@ pub fn UserProfile() -> Element {
                 }
                 button { class: "btn btn-accent", disabled: saving(),
                     onclick: move |_| {
-                        success.set(String::new());
-                        error.set(String::new());
                         saving.set(true);
                         let display_name_val = display_name();
                         let email_val = email();
@@ -83,9 +78,9 @@ pub fn UserProfile() -> Element {
                                     let user = resp.data;
                                     display_name.set(user.display_name.unwrap_or_default());
                                     email.set(user.email.unwrap_or_default());
-                                    success.set("个人信息保存成功".to_string());
+                                    toast.success("个人信息保存成功");
                                 }
-                                Err(e) => error.set(e),
+                                Err(e) => toast.error(&e),
                             }
                             saving.set(false);
                         });

@@ -5,6 +5,7 @@ use wasm_bindgen::{closure::Closure, JsCast};
 use crate::api::finance::upload_attachment;
 use crate::api::message::{load_latest_messages, load_older_messages, send_message_to_agent};
 use crate::api::project::list_projects;
+use crate::store::toast::use_toast;
 use common::api::{ListProjectsResponseItem, MessageListItem, SendMessageToAgentParams};
 
 fn now_ms() -> i64 {
@@ -94,6 +95,7 @@ pub fn MessageChat() -> Element {
     // 附件上传状态
     let mut pending_attachments = use_signal(Vec::<PendingAttachment>::new);
     let mut uploading = use_signal(|| false);
+    let toast = use_toast();
 
     let mut load_projects = move || {
         loading_projects.set(true);
@@ -106,7 +108,7 @@ pub fn MessageChat() -> Element {
                     }
                 }
                 Err(e) => {
-                    error.set(format!("加载项目列表失败: {}", e));
+                    toast.error(&format!("加载项目列表失败: {}", e));
                 }
             }
             loading_projects.set(false);
@@ -124,7 +126,7 @@ pub fn MessageChat() -> Element {
                     has_more.set(!is_empty);
                 }
                 Err(e) => {
-                    error.set(format!("加载消息失败: {}", e));
+                    toast.error(&format!("加载消息失败: {}", e));
                 }
             }
             loading_messages.set(false);
@@ -157,7 +159,7 @@ pub fn MessageChat() -> Element {
                     }
                 }
                 Err(e) => {
-                    error.set(format!("加载更多消息失败: {}", e));
+                    toast.error(&format!("加载更多消息失败: {}", e));
                 }
             }
             loading_messages.set(false);
@@ -239,7 +241,7 @@ pub fn MessageChat() -> Element {
         let to_agent_id = match to_agent_id {
             Some(id) => id,
             None => {
-                error.set("该项目未分配 Agent，无法发送消息".to_string());
+                toast.error("该项目未分配 Agent，无法发送消息");
                 return;
             }
         };
@@ -287,7 +289,7 @@ pub fn MessageChat() -> Element {
                     current.push(user_msg);
                 }
                 Err(e) => {
-                    error.set(format!("发送消息失败: {}", e));
+                    toast.error(&format!("发送消息失败: {}", e));
                     is_typing.set(false);
                     return;
                 }
@@ -310,7 +312,7 @@ pub fn MessageChat() -> Element {
                 let bytes = match fd.read_bytes().await {
                     Ok(b) => b,
                     Err(e) => {
-                        error.set(format!("读取文件 {} 失败: {:?}", file_name, e));
+                        toast.error(&format!("读取文件 {} 失败: {:?}", file_name, e));
                         uploading.set(false);
                         return;
                     }
@@ -342,7 +344,7 @@ pub fn MessageChat() -> Element {
                         });
                     }
                     Err(e) => {
-                        error.set(format!("上传文件 {} 失败: {}", file_name, e));
+                        toast.error(&format!("上传文件 {} 失败: {}", file_name, e));
                     }
                 }
             }

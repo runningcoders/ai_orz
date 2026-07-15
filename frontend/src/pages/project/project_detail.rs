@@ -7,7 +7,8 @@ use crate::api::project::{
     update_project_status, update_task_status,
 };
 use crate::components::modal::Modal;
-use crate::components::state::{EmptyState, ErrorAlert, Loading, SuccessAlert};
+use crate::components::state::{EmptyState, Loading};
+use crate::store::toast::use_toast;
 use common::api::{ArtifactDetail, CreateArtifactRequest, GetProjectResponse, TaskListItem};
 use common::enums::ArtifactSourceType;
 
@@ -83,32 +84,30 @@ pub fn ProjectDetail(id: String) -> Element {
     let mut tasks = use_signal(Vec::<TaskListItem>::new);
     let mut artifacts = use_signal(Vec::<ArtifactDetail>::new);
     let mut loading = use_signal(|| true);
-    let mut error = use_signal(String::new);
-    let mut success = use_signal(String::new);
 
     // 产物新增 Modal 状态
     let mut show_artifact_modal = use_signal(|| false);
     let mut new_artifact_name = use_signal(String::new);
     let mut new_artifact_description = use_signal(String::new);
+    let toast = use_toast();
 
     // 初始加载：先取项目，再取任务列表和产物列表
     let id_for_load = id.clone();
     use_effect(move || {
         loading.set(true);
-        error.set(String::new());
         let id_clone = id_for_load.clone();
         spawn(async move {
             match get_project(&id_clone).await {
                 Ok(p) => project.set(Some(p)),
-                Err(e) => error.set(e),
+                Err(e) => toast.error(&e),
             }
             match list_project_tasks(&id_clone).await {
                 Ok(resp) => tasks.set(resp.tasks),
-                Err(e) => error.set(e),
+                Err(e) => toast.error(&e),
             }
             match list_artifacts(&id_clone).await {
                 Ok(list) => artifacts.set(list),
-                Err(e) => error.set(e),
+                Err(e) => toast.error(&e),
             }
             loading.set(false);
         });
@@ -121,13 +120,13 @@ pub fn ProjectDetail(id: String) -> Element {
         spawn(async move {
             match update_project_status(&id_clone, 3).await {
                 Ok(_) => {
-                    success.set("项目已启动".to_string());
+                    toast.success("项目已启动");
                     match get_project(&id_clone).await {
                         Ok(p) => project.set(Some(p)),
-                        Err(e) => error.set(e),
+                        Err(e) => toast.error(&e),
                     }
                 }
-                Err(e) => error.set(format!("启动失败: {}", e)),
+                Err(e) => toast.error(&format!("启动失败: {}", e)),
             }
         });
     };
@@ -139,13 +138,13 @@ pub fn ProjectDetail(id: String) -> Element {
         spawn(async move {
             match update_project_status(&id_clone, 4).await {
                 Ok(_) => {
-                    success.set("项目已完成".to_string());
+                    toast.success("项目已完成");
                     match get_project(&id_clone).await {
                         Ok(p) => project.set(Some(p)),
-                        Err(e) => error.set(e),
+                        Err(e) => toast.error(&e),
                     }
                 }
-                Err(e) => error.set(format!("完成失败: {}", e)),
+                Err(e) => toast.error(&format!("完成失败: {}", e)),
             }
         });
     };
@@ -157,13 +156,13 @@ pub fn ProjectDetail(id: String) -> Element {
         spawn(async move {
             match update_project_status(&id_clone, 5).await {
                 Ok(_) => {
-                    success.set("项目已归档".to_string());
+                    toast.success("项目已归档");
                     match get_project(&id_clone).await {
                         Ok(p) => project.set(Some(p)),
-                        Err(e) => error.set(e),
+                        Err(e) => toast.error(&e),
                     }
                 }
-                Err(e) => error.set(format!("归档失败: {}", e)),
+                Err(e) => toast.error(&format!("归档失败: {}", e)),
             }
         });
     };
@@ -187,7 +186,7 @@ pub fn ProjectDetail(id: String) -> Element {
         let name = new_artifact_name.read().clone();
         let description = new_artifact_description.read().clone();
         if name.trim().is_empty() {
-            error.set("产物名称不能为空".to_string());
+            toast.error("产物名称不能为空");
             return;
         }
         spawn(async move {
@@ -206,16 +205,16 @@ pub fn ProjectDetail(id: String) -> Element {
             };
             match create_artifact(req).await {
                 Ok(_) => {
-                    success.set("产物已创建".to_string());
+                    toast.success("产物已创建");
                     show_artifact_modal.set(false);
                     new_artifact_name.set(String::new());
                     new_artifact_description.set(String::new());
                     match list_artifacts(&pid).await {
                         Ok(list) => artifacts.set(list),
-                        Err(e) => error.set(e),
+                        Err(e) => toast.error(&e),
                     }
                 }
-                Err(e) => error.set(format!("创建产物失败: {}", e)),
+                Err(e) => toast.error(&format!("创建产物失败: {}", e)),
             }
         });
     };
@@ -235,9 +234,6 @@ pub fn ProjectDetail(id: String) -> Element {
     let task_pending = tasks_list.iter().filter(|t| t.status != 3 && t.status != 4 && t.status != 0 && t.status != 5).count();
 
     rsx! {
-        ErrorAlert { message: error() }
-        SuccessAlert { message: success() }
-
         if loading() {
             div { class: "card", Loading {} }
         } else if let Some(p) = &project_data {
@@ -394,13 +390,13 @@ pub fn ProjectDetail(id: String) -> Element {
                                                                 spawn(async move {
                                                                     match update_task_status(&tid, 3).await {
                                                                         Ok(_) => {
-                                                                            success.set("任务已开始".to_string());
+                                                                            toast.success("任务已开始");
                                                                             match list_project_tasks(&pid).await {
                                                                                 Ok(resp) => tasks.set(resp.tasks),
-                                                                                Err(e) => error.set(e),
+                                                                                Err(e) => toast.error(&e),
                                                                             }
                                                                         }
-                                                                        Err(e) => error.set(format!("操作失败: {}", e)),
+                                                                        Err(e) => toast.error(&format!("操作失败: {}", e)),
                                                                     }
                                                                 });
                                                             },
@@ -415,13 +411,13 @@ pub fn ProjectDetail(id: String) -> Element {
                                                                 spawn(async move {
                                                                     match update_task_status(&tid, 4).await {
                                                                         Ok(_) => {
-                                                                            success.set("任务已完成".to_string());
+                                                                            toast.success("任务已完成");
                                                                             match list_project_tasks(&pid).await {
                                                                                 Ok(resp) => tasks.set(resp.tasks),
-                                                                                Err(e) => error.set(e),
+                                                                                Err(e) => toast.error(&e),
                                                                             }
                                                                         }
-                                                                        Err(e) => error.set(format!("操作失败: {}", e)),
+                                                                        Err(e) => toast.error(&format!("操作失败: {}", e)),
                                                                     }
                                                                 });
                                                             },
@@ -492,13 +488,13 @@ pub fn ProjectDetail(id: String) -> Element {
                                                             spawn(async move {
                                                                 match delete_artifact(&aid).await {
                                                                     Ok(_) => {
-                                                                        success.set("产物已删除".to_string());
+                                                                        toast.success("产物已删除");
                                                                         match list_artifacts(&pid).await {
                                                                             Ok(list) => artifacts.set(list),
-                                                                            Err(e) => error.set(e),
+                                                                            Err(e) => toast.error(&e),
                                                                         }
                                                                     }
-                                                                    Err(e) => error.set(format!("删除失败: {}", e)),
+                                                                    Err(e) => toast.error(&format!("删除失败: {}", e)),
                                                                 }
                                                             });
                                                         },

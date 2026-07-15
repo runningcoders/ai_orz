@@ -4,8 +4,9 @@ use dioxus::prelude::*;
 
 use crate::api::auth::{check_initialized, initialize_system, login};
 use crate::api::organization::list_organizations_public;
-use crate::components::state::{ErrorAlert, Loading};
+use crate::components::state::Loading;
 use crate::store::auth::{mark_logged_in, AuthState};
+use crate::store::toast::use_toast;
 use common::api::{InitializeSystemRequest, LoginRequest, OrganizationListItem};
 
 #[component]
@@ -13,7 +14,7 @@ pub fn Reception() -> Element {
     let mut loading = use_signal(|| true);
     let mut initialized = use_signal(|| false);
     let mut organizations = use_signal(Vec::<OrganizationListItem>::new);
-    let mut error = use_signal(String::new);
+    let toast = use_toast();
 
     // 登录表单
     let mut selected_org_id = use_signal(String::new);
@@ -43,13 +44,13 @@ pub fn Reception() -> Element {
                                 organizations.set(list.data);
                                 initialized.set(true);
                             }
-                            Err(e) => error.set(e),
+                            Err(e) => toast.error(&e),
                         }
                     } else {
                         initialized.set(false);
                     }
                 }
-                Err(e) => error.set(e),
+                Err(e) => toast.error(&e),
             }
             loading.set(false);
         });
@@ -59,15 +60,14 @@ pub fn Reception() -> Element {
     let on_submit_login = move |_| {
         spawn(async move {
             if selected_org_id().is_empty() {
-                error.set("请先选择一个组织".to_string());
+                toast.error("请先选择一个组织");
                 return;
             }
             if login_username().is_empty() || login_password().is_empty() {
-                error.set("用户名和密码不能为空".to_string());
+                toast.error("用户名和密码不能为空");
                 return;
             }
             login_submitting.set(true);
-            error.set(String::new());
 
             let req = LoginRequest {
                 organization_id: selected_org_id(),
@@ -87,7 +87,7 @@ pub fn Reception() -> Element {
                     let _ = web_sys::window().unwrap().location().set_href("/");
                 }
                 Err(e) => {
-                    error.set(e);
+                    toast.error(&e);
                     login_submitting.set(false);
                 }
             }
@@ -98,11 +98,10 @@ pub fn Reception() -> Element {
     let on_submit_init = move |_| {
         spawn(async move {
             if org_name().is_empty() || init_username().is_empty() || init_password().is_empty() {
-                error.set("组织名称、用户名、密码不能为空".to_string());
+                toast.error("组织名称、用户名、密码不能为空");
                 return;
             }
             init_submitting.set(true);
-            error.set(String::new());
 
             let req = InitializeSystemRequest {
                 organization_name: org_name(),
@@ -118,7 +117,7 @@ pub fn Reception() -> Element {
                     let _ = web_sys::window().unwrap().location().reload();
                 }
                 Err(e) => {
-                    error.set(e);
+                    toast.error(&e);
                     init_submitting.set(false);
                 }
             }
@@ -185,8 +184,6 @@ pub fn Reception() -> Element {
                     if loading() {
                         Loading {}
                     } else {
-                        ErrorAlert { message: error() }
-
                         if initialized() {
                             // 已初始化：登录表单
                             div { class: "reception-form-header",

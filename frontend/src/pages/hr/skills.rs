@@ -4,14 +4,15 @@ use dioxus::prelude::*;
 
 use crate::api::hr::{create_skill, delete_skill, list_skills, search_skills};
 use crate::components::modal::Modal;
-use crate::components::state::{EmptyState, ErrorAlert, Loading};
+use crate::components::state::{EmptyState, Loading};
+use crate::store::toast::use_toast;
 use common::api::{CreateSkillRequest, ListSkillsResponseItem};
 
 #[component]
 pub fn HrSkills() -> Element {
     let mut skills = use_signal(Vec::<ListSkillsResponseItem>::new);
     let mut loading = use_signal(|| true);
-    let mut error = use_signal(String::new);
+    let toast = use_toast();
     let mut show_add_modal = use_signal(|| false);
     let mut new_name = use_signal(String::new);
     let mut new_description = use_signal(String::new);
@@ -23,11 +24,10 @@ pub fn HrSkills() -> Element {
 
     use_effect(move || {
         loading.set(true);
-        error.set(String::new());
         spawn(async move {
             match list_skills().await {
                 Ok(list) => skills.set(list.skills),
-                Err(e) => error.set(e),
+                Err(e) => toast.error(&e),
             }
             loading.set(false);
         });
@@ -36,7 +36,7 @@ pub fn HrSkills() -> Element {
     let handle_create = move |_| {
         spawn(async move {
             if new_name().trim().is_empty() || new_description().trim().is_empty() {
-                error.set("技能名称和描述不能为空".to_string());
+                toast.error("技能名称和描述不能为空");
                 return;
             }
             creating.set(true);
@@ -78,10 +78,10 @@ pub fn HrSkills() -> Element {
                     };
                     match result {
                         Ok(list) => skills.set(list.skills),
-                        Err(e) => error.set(e),
+                        Err(e) => toast.error(&e),
                     }
                 }
-                Err(e) => error.set(format!("创建失败: {}", e)),
+                Err(e) => toast.error(&format!("创建失败: {}", e)),
             }
             creating.set(false);
         });
@@ -91,7 +91,6 @@ pub fn HrSkills() -> Element {
 
     rsx! {
         div { class: "card",
-            ErrorAlert { message: error() }
             div { class: "card-header",
                 h2 { class: "card-title", "技能库" }
                 div { class: "flex gap-2",
@@ -101,7 +100,6 @@ pub fn HrSkills() -> Element {
                             search_keyword.set(keyword.clone());
                             spawn(async move {
                                 loading.set(true);
-                                error.set(String::new());
                                 let result = if keyword.trim().is_empty() {
                                     list_skills().await
                                 } else {
@@ -109,7 +107,7 @@ pub fn HrSkills() -> Element {
                                 };
                                 match result {
                                     Ok(list) => skills.set(list.skills),
-                                    Err(e) => error.set(e),
+                                    Err(e) => toast.error(&e),
                                 }
                                 loading.set(false);
                             });
@@ -122,10 +120,9 @@ pub fn HrSkills() -> Element {
                                 search_keyword.set(String::new());
                                 spawn(async move {
                                     loading.set(true);
-                                    error.set(String::new());
                                     match list_skills().await {
                                         Ok(list) => skills.set(list.skills),
-                                        Err(e) => error.set(e),
+                                        Err(e) => toast.error(&e),
                                     }
                                     loading.set(false);
                                 });
@@ -165,7 +162,7 @@ pub fn HrSkills() -> Element {
                                                     let id = id.clone();
                                                     spawn(async move {
                                                         if let Err(e) = delete_skill(&id).await {
-                                                            error.set(format!("删除失败: {}", e));
+                                                            toast.error(&format!("删除失败: {}", e));
                                                         } else {
                                                             let keyword = search_keyword();
                                                             let result = if keyword.trim().is_empty() {
@@ -175,7 +172,7 @@ pub fn HrSkills() -> Element {
                                                             };
                                                             match result {
                                                                 Ok(list) => skills.set(list.skills),
-                                                                Err(e) => error.set(e),
+                                                                Err(e) => toast.error(&e),
                                                             }
                                                         }
                                                     });

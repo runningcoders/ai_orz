@@ -3,22 +3,20 @@
 use dioxus::prelude::*;
 
 use crate::api::system::check_health;
-use crate::components::state::{ErrorAlert, Loading, SuccessAlert};
+use crate::components::state::Loading;
+use crate::store::toast::use_toast;
 
 #[component]
 pub fn SystemHealth() -> Element {
     let mut loading = use_signal(|| false);
-    let mut error = use_signal(String::new);
-    let mut success = use_signal(String::new);
+    let toast = use_toast();
 
     let check = move |_| {
         loading.set(true);
-        error.set(String::new());
-        success.set(String::new());
         spawn(async move {
             match check_health().await {
-                Ok(msg) => success.set(format!("服务正常: {}", msg)),
-                Err(e) => error.set(format!("健康检查失败: {}", e)),
+                Ok(msg) => toast.success(&format!("服务正常: {}", msg)),
+                Err(e) => toast.error(&format!("健康检查失败: {}", e)),
             }
             loading.set(false);
         });
@@ -26,8 +24,6 @@ pub fn SystemHealth() -> Element {
 
     rsx! {
         div { class: "card",
-            ErrorAlert { message: error() }
-            SuccessAlert { message: success() }
             div { class: "card-header",
                 h2 { class: "card-title", "健康检查" }
             }

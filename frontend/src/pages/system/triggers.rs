@@ -8,7 +8,8 @@ use crate::api::system::{
     resume_cron_trigger,
 };
 use crate::components::modal::Modal;
-use crate::components::state::{EmptyState, ErrorAlert, Loading};
+use crate::components::state::{EmptyState, Loading};
+use crate::store::toast::use_toast;
 use common::api::{CreateCronTriggerRequest, ListCronTriggersResponseItem};
 use common::enums::TriggerType;
 
@@ -16,20 +17,20 @@ use common::enums::TriggerType;
 pub fn SystemTriggers() -> Element {
     let mut triggers = use_signal(Vec::<ListCronTriggersResponseItem>::new);
     let mut loading = use_signal(|| true);
-    let mut error = use_signal(String::new);
     let mut show_add_modal = use_signal(|| false);
     let mut new_name = use_signal(String::new);
     let mut new_type = use_signal(|| "interval".to_string());
     let mut new_interval = use_signal(|| "300".to_string());
     let mut new_payload = use_signal(String::new);
     let mut creating = use_signal(|| false);
+    let toast = use_toast();
 
     use_effect(move || {
         loading.set(true);
         spawn(async move {
             match list_cron_triggers().await {
                 Ok(list) => triggers.set(list.triggers),
-                Err(e) => error.set(e),
+                Err(e) => toast.error(&e),
             }
             loading.set(false);
         });
@@ -38,7 +39,7 @@ pub fn SystemTriggers() -> Element {
     let handle_create = move |_| {
         spawn(async move {
             if new_name().is_empty() || new_payload().is_empty() {
-                error.set("名称和 Payload 不能为空".to_string());
+                toast.error("名称和 Payload 不能为空");
                 return;
             }
             creating.set(true);
@@ -75,10 +76,10 @@ pub fn SystemTriggers() -> Element {
                     new_payload.set(String::new());
                     match list_cron_triggers().await {
                         Ok(list) => triggers.set(list.triggers),
-                        Err(e) => error.set(e),
+                        Err(e) => toast.error(&e),
                     }
                 }
-                Err(e) => error.set(format!("创建失败: {}", e)),
+                Err(e) => toast.error(&format!("创建失败: {}", e)),
             }
             creating.set(false);
         });
@@ -90,7 +91,6 @@ pub fn SystemTriggers() -> Element {
 
     rsx! {
         div { class: "card",
-            ErrorAlert { message: error() }
             div { class: "card-header",
                 h2 { class: "card-title", "定时触发器" }
                 button { class: "btn btn-accent", onclick: move |_| show_add_modal.set(true), "+ 创建触发器" }
@@ -127,11 +127,11 @@ pub fn SystemTriggers() -> Element {
                                                         let id_pause = id_pause.clone();
                                                         spawn(async move {
                                                             if let Err(e) = pause_cron_trigger(&id_pause).await {
-                                                                error.set(e);
+                                                                toast.error(&e);
                                                             } else {
                                                                 match list_cron_triggers().await {
                                                                     Ok(list) => triggers.set(list.triggers),
-                                                                    Err(e) => error.set(e),
+                                                                    Err(e) => toast.error(&e),
                                                                 }
                                                             }
                                                         });
@@ -143,11 +143,11 @@ pub fn SystemTriggers() -> Element {
                                                         let id_resume = id_resume.clone();
                                                         spawn(async move {
                                                             if let Err(e) = resume_cron_trigger(&id_resume).await {
-                                                                error.set(e);
+                                                                toast.error(&e);
                                                             } else {
                                                                 match list_cron_triggers().await {
                                                                     Ok(list) => triggers.set(list.triggers),
-                                                                    Err(e) => error.set(e),
+                                                                    Err(e) => toast.error(&e),
                                                                 }
                                                             }
                                                         });
@@ -159,11 +159,11 @@ pub fn SystemTriggers() -> Element {
                                                     let id_delete = id_delete.clone();
                                                     spawn(async move {
                                                         if let Err(e) = delete_cron_trigger(&id_delete).await {
-                                                            error.set(format!("删除失败: {}", e));
+                                                            toast.error(&format!("删除失败: {}", e));
                                                         } else {
                                                             match list_cron_triggers().await {
                                                                 Ok(list) => triggers.set(list.triggers),
-                                                                Err(e) => error.set(e),
+                                                                Err(e) => toast.error(&e),
                                                             }
                                                         }
                                                     });

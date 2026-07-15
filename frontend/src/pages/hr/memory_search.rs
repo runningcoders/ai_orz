@@ -4,6 +4,7 @@ use crate::api::hr::search_memory;
 use crate::components::button::Button;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
+use crate::store::toast::use_toast;
 use common::api::MemoryResult;
 
 #[component]
@@ -12,11 +13,10 @@ pub fn HrMemorySearch() -> Element {
     let mut memory_type = use_signal(String::new);
     let mut results = use_signal(Vec::<MemoryResult>::new);
     let mut loading = use_signal(|| false);
-    let mut error = use_signal(String::new);
+    let toast = use_toast();
 
     let mut handle_search = move |_| {
         loading.set(true);
-        error.set(String::new());
         let kw = keyword().clone();
         let mt = memory_type().clone();
         spawn(async move {
@@ -26,10 +26,10 @@ pub fn HrMemorySearch() -> Element {
                     let mem_results = data.results;
                     results.set(mem_results.clone());
                     if mem_results.is_empty() {
-                        error.set("未找到匹配的记忆".to_string());
+                        toast.error("未找到匹配的记忆");
                     }
                 }
-                Err(e) => error.set(e),
+                Err(e) => toast.error(&e),
             }
             loading.set(false);
         });
@@ -74,8 +74,6 @@ pub fn HrMemorySearch() -> Element {
 
             if loading() {
                 Loading {}
-            } else if !error().is_empty() {
-                EmptyState { message: "{error()}" }
             } else if results().is_empty() {
                 EmptyState { message: "开始搜索".to_string() }
             } else {

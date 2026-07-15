@@ -4,7 +4,7 @@ use crate::api::hr::{
     uninstall_tool_pack, unbind_tool_from_agent, update_agent_status,
 };
 use crate::api::message::{load_latest_messages, send_message_to_agent};
-use crate::components::state::{EmptyState, ErrorAlert, Loading, SuccessAlert};
+use crate::components::state::{EmptyState, Loading};
 use crate::store::toast::use_toast;
 use common::api::{GetAgentResponse, MessageListItem, SendMessageToAgentParams, ToolListItem};
 use dioxus::prelude::*;
@@ -154,8 +154,6 @@ pub fn HrAgentDetail(id: String) -> Element {
     let mut messages = use_signal(Vec::<MessageListItem>::new);
     let mut is_typing = use_signal(|| false);
     let mut input_message = use_signal(String::new);
-    let mut error = use_signal(String::new);
-    let mut success = use_signal(String::new);
     let toast = use_toast();
     let mut tool_packs = use_signal(Vec::<String>::new);
     let mut skill_packs = use_signal(Vec::<String>::new);
@@ -177,23 +175,23 @@ pub fn HrAgentDetail(id: String) -> Element {
         spawn(async move {
             match get_agent(&aid).await {
                 Ok(a) => agent_data.set(Some(a)),
-                Err(e) => error.set(format!("获取 Agent 失败: {}", e)),
+                Err(e) => toast.error(&format!("获取 Agent 失败: {}", e)),
             }
             match list_installed_tool_packs(&aid).await {
                 Ok(resp) => tool_packs.set(resp.installed_tags),
-                Err(e) => error.set(format!("获取工具包失败: {}", e)),
+                Err(e) => toast.error(&format!("获取工具包失败: {}", e)),
             }
             match list_installed_skill_packs(&aid).await {
                 Ok(resp) => skill_packs.set(resp.skill_packs),
-                Err(e) => error.set(format!("获取技能包失败: {}", e)),
+                Err(e) => toast.error(&format!("获取技能包失败: {}", e)),
             }
             match list_tools().await {
                 Ok(resp) => all_tools.set(resp.tools),
-                Err(e) => error.set(format!("获取工具列表失败: {}", e)),
+                Err(e) => toast.error(&format!("获取工具列表失败: {}", e)),
             }
             match load_latest_messages(None, Some(20)).await {
                 Ok(resp) => messages.set(resp.messages),
-                Err(e) => error.set(format!("加载消息失败: {}", e)),
+                Err(e) => toast.error(&format!("加载消息失败: {}", e)),
             }
         });
     };
@@ -258,7 +256,7 @@ pub fn HrAgentDetail(id: String) -> Element {
             match send_message_to_agent(req).await {
                 Ok(_) => {}
                 Err(e) => {
-                    error.set(format!("发送消息失败: {}", e));
+                    toast.error(&format!("发送消息失败: {}", e));
                     is_typing.set(false);
                 }
             }
@@ -274,9 +272,6 @@ pub fn HrAgentDetail(id: String) -> Element {
 
             rsx! {
                 div { class: "card",
-                    ErrorAlert { message: error() }
-                    SuccessAlert { message: success() }
-
                     div { class: "card-header",
                         h2 { class: "card-title", "{a.name}" }
                         p { class: "card-subtitle", "{desc}" }
@@ -411,14 +406,13 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                             spawn(async move {
                                                                 match uninstall_tool_pack(&agent_id, &t).await {
                                                                     Ok(_) => {
-                                                                        success.set(format!("工具包 [{}] 已卸载", t));
-                                                                        error.set(String::new());
+                                                                        toast.success(&format!("工具包 [{}] 已卸载", t));
                                                                         match list_installed_tool_packs(&agent_id).await {
                                                                             Ok(resp) => tool_packs.set(resp.installed_tags),
-                                                                            Err(e) => error.set(format!("刷新工具包列表失败: {}", e)),
+                                                                            Err(e) => toast.error(&format!("刷新工具包列表失败: {}", e)),
                                                                         }
                                                                     }
-                                                                    Err(e) => error.set(format!("卸载工具包失败: {}", e)),
+                                                                    Err(e) => toast.error(&format!("卸载工具包失败: {}", e)),
                                                                 }
                                                             });
                                                         },
@@ -453,14 +447,13 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         spawn(async move {
                                             match install_skill_pack(&aid, &tag).await {
                                                 Ok(_) => {
-                                                    success.set(format!("技能包 [{}] 已安装", tag));
-                                                    error.set(String::new());
+                                                    toast.success(&format!("技能包 [{}] 已安装", tag));
                                                     match list_installed_skill_packs(&aid).await {
                                                         Ok(resp) => skill_packs.set(resp.skill_packs),
-                                                        Err(e) => error.set(format!("刷新技能包列表失败: {}", e)),
+                                                        Err(e) => toast.error(&format!("刷新技能包列表失败: {}", e)),
                                                     }
                                                 }
-                                                Err(e) => error.set(format!("安装技能包失败: {}", e)),
+                                                Err(e) => toast.error(&format!("安装技能包失败: {}", e)),
                                             }
                                         });
                                     },
@@ -485,14 +478,13 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                             spawn(async move {
                                                                 match uninstall_skill_pack(&agent_id, &t).await {
                                                                     Ok(_) => {
-                                                                        success.set(format!("技能包 [{}] 已卸载", t));
-                                                                        error.set(String::new());
+                                                                        toast.success(&format!("技能包 [{}] 已卸载", t));
                                                                         match list_installed_skill_packs(&agent_id).await {
                                                                             Ok(resp) => skill_packs.set(resp.skill_packs),
-                                                                            Err(e) => error.set(format!("刷新技能包列表失败: {}", e)),
+                                                                            Err(e) => toast.error(&format!("刷新技能包列表失败: {}", e)),
                                                                         }
                                                                     }
-                                                                    Err(e) => error.set(format!("卸载技能包失败: {}", e)),
+                                                                    Err(e) => toast.error(&format!("卸载技能包失败: {}", e)),
                                                                 }
                                                             });
                                                         },
@@ -556,14 +548,13 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                         };
                                                                         match result {
                                                                             Ok(_) => {
-                                                                                success.set(format!("工具 {} {}", tname, if ib { "已解绑" } else { "已绑定" }));
-                                                                                error.set(String::new());
+                                                                                toast.success(&format!("工具 {} {}", tname, if ib { "已解绑" } else { "已绑定" }));
                                                                                 match get_agent(&agent_id).await {
                                                                                     Ok(a) => agent_data.set(Some(a)),
-                                                                                    Err(e) => error.set(format!("刷新 Agent 失败: {}", e)),
+                                                                                    Err(e) => toast.error(&format!("刷新 Agent 失败: {}", e)),
                                                                                 }
                                                                             }
-                                                                            Err(e) => error.set(format!("操作失败: {}", e)),
+                                                                            Err(e) => toast.error(&format!("操作失败: {}", e)),
                                                                         }
                                                                     });
                                                                 },

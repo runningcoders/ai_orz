@@ -4,7 +4,8 @@ use dioxus::prelude::*;
 
 use crate::api::project::{create_artifact, delete_artifact, list_artifacts, list_projects};
 use crate::components::modal::Modal;
-use crate::components::state::{EmptyState, ErrorAlert, Loading, SuccessAlert};
+use crate::components::state::{EmptyState, Loading};
+use crate::store::toast::use_toast;
 use common::api::{ArtifactDetail, CreateArtifactRequest, ListProjectsResponseItem};
 use common::enums::ArtifactSourceType;
 
@@ -33,8 +34,6 @@ pub fn ProjectArtifacts() -> Element {
     let mut projects = use_signal(Vec::<ListProjectsResponseItem>::new);
     let mut artifacts = use_signal(Vec::<ArtifactDetail>::new);
     let mut loading = use_signal(|| true);
-    let mut error = use_signal(String::new);
-    let mut success = use_signal(String::new);
     let mut show_add_modal = use_signal(|| false);
     let mut selected_project_id = use_signal(String::new);
 
@@ -42,6 +41,7 @@ pub fn ProjectArtifacts() -> Element {
     let mut new_name = use_signal(String::new);
     let mut new_description = use_signal(String::new);
     let mut creating = use_signal(|| false);
+    let toast = use_toast();
 
     // 初始加载项目列表
     use_effect(move || {
@@ -55,12 +55,12 @@ pub fn ProjectArtifacts() -> Element {
                         selected_project_id.set(first_id.clone());
                         match list_artifacts(&first_id).await {
                             Ok(list) => artifacts.set(list),
-                            Err(e) => error.set(e),
+                            Err(e) => toast.error(&e),
                         }
                     }
                     projects.set(items);
                 }
-                Err(e) => error.set(e),
+                Err(e) => toast.error(&e),
             }
             loading.set(false);
         });
@@ -76,7 +76,7 @@ pub fn ProjectArtifacts() -> Element {
         spawn(async move {
             match list_artifacts(&pid).await {
                 Ok(list) => artifacts.set(list),
-                Err(e) => error.set(e),
+                Err(e) => toast.error(&e),
             }
             loading.set(false);
         });
@@ -85,12 +85,12 @@ pub fn ProjectArtifacts() -> Element {
     let handle_create = move |_| {
         let pid = selected_project_id();
         if pid.is_empty() {
-            error.set("请先选择一个项目".to_string());
+            toast.error("请先选择一个项目");
             return;
         }
         spawn(async move {
             if new_name().is_empty() {
-                error.set("产物名称不能为空".to_string());
+                toast.error("产物名称不能为空");
                 return;
             }
             creating.set(true);
@@ -116,16 +116,16 @@ pub fn ProjectArtifacts() -> Element {
                     show_add_modal.set(false);
                     new_name.set(String::new());
                     new_description.set(String::new());
-                    success.set("创建成功".to_string());
+                    toast.success("创建成功");
                     let pid = selected_project_id();
                     if !pid.is_empty() {
                         match list_artifacts(&pid).await {
                             Ok(list) => artifacts.set(list),
-                            Err(e) => error.set(e),
+                            Err(e) => toast.error(&e),
                         }
                     }
                 }
-                Err(e) => error.set(format!("创建失败: {}", e)),
+                Err(e) => toast.error(&format!("创建失败: {}", e)),
             }
             creating.set(false);
         });
@@ -136,9 +136,6 @@ pub fn ProjectArtifacts() -> Element {
 
     rsx! {
         div { class: "card",
-            ErrorAlert { message: error() }
-            SuccessAlert { message: success() }
-
             div { class: "card-header",
                 h2 { class: "card-title", "项目产物管理" }
                 button { class: "btn btn-accent", onclick: move |_| show_add_modal.set(true), "+ 创建产物" }
@@ -203,13 +200,13 @@ pub fn ProjectArtifacts() -> Element {
                                                     let id_delete = id_delete.clone();
                                                     spawn(async move {
                                                         if let Err(e) = delete_artifact(&id_delete).await {
-                                                            error.set(format!("删除失败: {}", e));
+                                                            toast.error(&format!("删除失败: {}", e));
                                                         } else {
                                                             let pid = selected_project_id();
                                                             if !pid.is_empty() {
                                                                 match list_artifacts(&pid).await {
                                                                     Ok(list) => artifacts.set(list),
-                                                                    Err(e) => error.set(e),
+                                                                    Err(e) => toast.error(&e),
                                                                 }
                                                             }
                                                         }

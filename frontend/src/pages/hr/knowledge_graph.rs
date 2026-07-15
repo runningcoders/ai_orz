@@ -6,6 +6,7 @@ use crate::components::button::Button;
 use crate::components::graph::{calculate_layout, expand_layout, Graph, GraphEdge, GraphNode};
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
+use crate::store::toast::use_toast;
 use common::api::MemoryResult;
 
 /// 从搜索结果构建图谱节点和边
@@ -91,7 +92,7 @@ pub fn HrKnowledgeGraph() -> Element {
     let mut nodes = use_signal(Vec::<GraphNode>::new);
     let mut edges = use_signal(Vec::<GraphEdge>::new);
     let mut loading = use_signal(|| false);
-    let mut error = use_signal(String::new);
+    let toast = use_toast();
     let mut expanded_nodes = use_signal(HashSet::<String>::new);
     let mut selected_node_id = use_signal(|| None::<String>);
     let mut selected_node_data = use_signal(|| None::<MemoryResult>);
@@ -106,7 +107,6 @@ pub fn HrKnowledgeGraph() -> Element {
             return;
         }
         loading.set(true);
-        error.set(String::new());
         expanded_nodes.set(HashSet::new());
         selected_node_id.set(None);
         selected_node_data.set(None);
@@ -136,7 +136,7 @@ pub fn HrKnowledgeGraph() -> Element {
 
                     let (new_nodes, new_edges) = build_graph_from_results(&data.results);
                     if new_nodes.is_empty() {
-                        error.set("未找到匹配的知识节点".to_string());
+                        toast.error("未找到匹配的知识节点");
                         nodes.set(Vec::new());
                         edges.set(Vec::new());
                     } else {
@@ -145,7 +145,7 @@ pub fn HrKnowledgeGraph() -> Element {
                         edges.set(new_edges);
                     }
                 }
-                Err(e) => error.set(e),
+                Err(e) => toast.error(&e),
             }
             loading.set(false);
         });
@@ -314,8 +314,6 @@ pub fn HrKnowledgeGraph() -> Element {
 
             if loading() {
                 Loading {}
-            } else if !error().is_empty() && current_nodes.is_empty() {
-                EmptyState { message: "{error()}" }
             } else if current_nodes.is_empty() {
                 EmptyState { message: "开始搜索知识节点".to_string() }
             } else {

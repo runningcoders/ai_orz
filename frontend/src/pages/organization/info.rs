@@ -3,18 +3,18 @@
 use dioxus::prelude::*;
 
 use crate::api::organization::{get_current_organization, update_current_organization};
-use crate::components::state::{ErrorAlert, Loading, SuccessAlert};
+use crate::components::state::Loading;
+use crate::store::toast::use_toast;
 use common::api::UpdateCurrentOrganizationRequest;
 
 #[component]
 pub fn OrganizationInfo() -> Element {
     let mut loading = use_signal(|| true);
-    let mut error = use_signal(String::new);
-    let mut success = use_signal(String::new);
     let mut name = use_signal(String::new);
     let mut description = use_signal(String::new);
     let mut org_id = use_signal(String::new);
     let mut saving = use_signal(|| false);
+    let toast = use_toast();
 
     use_effect(move || {
         spawn(async move {
@@ -24,7 +24,7 @@ pub fn OrganizationInfo() -> Element {
                     description.set(org.data.description.unwrap_or_default());
                     org_id.set(org.data.organization_id);
                 }
-                Err(e) => error.set(e),
+                Err(e) => toast.error(&e),
             }
             loading.set(false);
         });
@@ -39,8 +39,8 @@ pub fn OrganizationInfo() -> Element {
                 base_url: None,
             };
             match update_current_organization(req).await {
-                Ok(_) => success.set("保存成功".to_string()),
-                Err(e) => error.set(e),
+                Ok(_) => toast.success("保存成功"),
+                Err(e) => toast.error(&e),
             }
             saving.set(false);
         });
@@ -48,9 +48,6 @@ pub fn OrganizationInfo() -> Element {
 
     rsx! {
         div { class: "card",
-            ErrorAlert { message: error() }
-            SuccessAlert { message: success() }
-
             div { class: "card-header",
                 h2 { class: "card-title", "组织信息" }
             }

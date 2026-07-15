@@ -4,7 +4,8 @@ use dioxus::prelude::*;
 
 use crate::api::organization::{create_user, delete_user, list_users};
 use crate::components::modal::Modal;
-use crate::components::state::{EmptyState, ErrorAlert, Loading};
+use crate::components::state::{EmptyState, Loading};
+use crate::store::toast::use_toast;
 use common::api::{CreateOrganizationUserRequest, ListUsersResponseItem};
 
 fn role_badge(role: i32) -> &'static str {
@@ -27,7 +28,6 @@ fn role_text(role: i32) -> &'static str {
 pub fn OrganizationUsers() -> Element {
     let mut users = use_signal(Vec::<ListUsersResponseItem>::new);
     let mut loading = use_signal(|| true);
-    let mut error = use_signal(String::new);
     let mut show_modal = use_signal(|| false);
     let mut new_username = use_signal(String::new);
     let mut new_display_name = use_signal(|| String::new());
@@ -35,13 +35,14 @@ pub fn OrganizationUsers() -> Element {
     let mut new_password = use_signal(String::new);
     let mut new_role = use_signal(|| 1i32);
     let mut creating = use_signal(|| false);
+    let toast = use_toast();
 
     use_effect(move || {
         loading.set(true);
         spawn(async move {
             match list_users().await {
                 Ok(list) => users.set(list.data),
-                Err(e) => error.set(e),
+                Err(e) => toast.error(&e),
             }
             loading.set(false);
         });
@@ -50,7 +51,7 @@ pub fn OrganizationUsers() -> Element {
     let handle_create = move |_| {
         spawn(async move {
             if new_username().is_empty() || new_password().is_empty() {
-                error.set("用户名和密码不能为空".to_string());
+                toast.error("用户名和密码不能为空");
                 return;
             }
             creating.set(true);
@@ -72,10 +73,10 @@ pub fn OrganizationUsers() -> Element {
                     // Reload
                     match list_users().await {
                         Ok(list) => users.set(list.data),
-                        Err(e) => error.set(e),
+                        Err(e) => toast.error(&e),
                     }
                 }
-                Err(e) => error.set(format!("创建失败: {}", e)),
+                Err(e) => toast.error(&format!("创建失败: {}", e)),
             }
             creating.set(false);
         });
@@ -85,8 +86,6 @@ pub fn OrganizationUsers() -> Element {
 
     rsx! {
         div { class: "card",
-            ErrorAlert { message: error() }
-
             div { class: "card-header",
                 h2 { class: "card-title", "用户管理" }
                 button { class: "btn btn-accent", onclick: move |_| show_modal.set(true), "+ 添加用户" }
@@ -126,11 +125,11 @@ pub fn OrganizationUsers() -> Element {
                                                     let uid_delete = uid_delete.clone();
                                                     spawn(async move {
                                                         if let Err(e) = delete_user(&uid_delete).await {
-                                                            error.set(format!("删除失败: {}", e));
+                                                            toast.error(&format!("删除失败: {}", e));
                                                         } else {
                                                             match list_users().await {
                                                                 Ok(list) => users.set(list.data),
-                                                                Err(e) => error.set(e),
+                                                                Err(e) => toast.error(&e),
                                                             }
                                                         }
                                                     });

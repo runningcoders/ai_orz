@@ -7,7 +7,8 @@ use crate::api::finance::{
     update_mcp_server_status,
 };
 use crate::components::modal::Modal;
-use crate::components::state::{EmptyState, ErrorAlert, Loading, SuccessAlert};
+use crate::components::state::{EmptyState, Loading};
+use crate::store::toast::use_toast;
 use common::api::{CreateMcpServerRequest, McpServerConfigDto, McpServerListItem};
 use common::enums::{McpServerStatus, McpTransport};
 
@@ -24,8 +25,7 @@ fn format_timestamp(ts: i64) -> String {
 pub fn FinanceMcpServers() -> Element {
     let mut servers = use_signal(Vec::<McpServerListItem>::new);
     let mut loading = use_signal(|| true);
-    let mut error = use_signal(String::new);
-    let mut success = use_signal(String::new);
+    let toast = use_toast();
     let mut show_add_modal = use_signal(|| false);
 
     // 创建表单状态
@@ -39,7 +39,7 @@ pub fn FinanceMcpServers() -> Element {
         spawn(async move {
             match list_mcp_servers().await {
                 Ok(list) => servers.set(list.servers),
-                Err(e) => error.set(e),
+                Err(e) => toast.error(&e),
             }
             loading.set(false);
         });
@@ -48,7 +48,7 @@ pub fn FinanceMcpServers() -> Element {
     let handle_create = move |_| {
         spawn(async move {
             if new_name().is_empty() {
-                error.set("服务器名称不能为空".to_string());
+                toast.error("服务器名称不能为空");
                 return;
             }
             creating.set(true);
@@ -86,13 +86,13 @@ pub fn FinanceMcpServers() -> Element {
                     new_name.set(String::new());
                     new_transport.set("0".to_string());
                     new_config_value.set(String::new());
-                    success.set("创建成功".to_string());
+                    toast.success("创建成功");
                     match list_mcp_servers().await {
                         Ok(list) => servers.set(list.servers),
-                        Err(e) => error.set(e),
+                        Err(e) => toast.error(&e),
                     }
                 }
-                Err(e) => error.set(format!("创建失败: {}", e)),
+                Err(e) => toast.error(&format!("创建失败: {}", e)),
             }
             creating.set(false);
         });
@@ -113,8 +113,6 @@ pub fn FinanceMcpServers() -> Element {
 
     rsx! {
         div { class: "card",
-            ErrorAlert { message: error() }
-            SuccessAlert { message: success() }
             div { class: "card-header",
                 h2 { class: "card-title", "MCP 服务器管理" }
                 button { class: "btn btn-accent", onclick: move |_| show_add_modal.set(true), "+ 添加服务器" }
@@ -172,11 +170,11 @@ pub fn FinanceMcpServers() -> Element {
                                                         let id_disable = id_disable.clone();
                                                         spawn(async move {
                                                             if let Err(e) = update_mcp_server_status(&id_disable, 2).await {
-                                                                error.set(e);
+                                                                toast.error(&e);
                                                             } else {
                                                                 match list_mcp_servers().await {
                                                                     Ok(list) => servers.set(list.servers),
-                                                                    Err(e) => error.set(e),
+                                                                    Err(e) => toast.error(&e),
                                                                 }
                                                             }
                                                         });
@@ -188,11 +186,11 @@ pub fn FinanceMcpServers() -> Element {
                                                         let id_enable = id_enable.clone();
                                                         spawn(async move {
                                                             if let Err(e) = update_mcp_server_status(&id_enable, 1).await {
-                                                                error.set(e);
+                                                                toast.error(&e);
                                                             } else {
                                                                 match list_mcp_servers().await {
                                                                     Ok(list) => servers.set(list.servers),
-                                                                    Err(e) => error.set(e),
+                                                                    Err(e) => toast.error(&e),
                                                                 }
                                                             }
                                                         });
@@ -204,12 +202,12 @@ pub fn FinanceMcpServers() -> Element {
                                                     let id_sync = id_sync.clone();
                                                     spawn(async move {
                                                         if let Err(e) = sync_mcp_tools(&id_sync).await {
-                                                            error.set(format!("同步失败: {}", e));
+                                                            toast.error(&format!("同步失败: {}", e));
                                                         } else {
-                                                            success.set("工具同步成功".to_string());
+                                                            toast.success("工具同步成功");
                                                             match list_mcp_servers().await {
                                                                 Ok(list) => servers.set(list.servers),
-                                                                Err(e) => error.set(e),
+                                                                Err(e) => toast.error(&e),
                                                             }
                                                         }
                                                     });
@@ -220,11 +218,11 @@ pub fn FinanceMcpServers() -> Element {
                                                     let id_delete = id_delete.clone();
                                                     spawn(async move {
                                                         if let Err(e) = delete_mcp_server(&id_delete).await {
-                                                            error.set(format!("删除失败: {}", e));
+                                                            toast.error(&format!("删除失败: {}", e));
                                                         } else {
                                                             match list_mcp_servers().await {
                                                                 Ok(list) => servers.set(list.servers),
-                                                                Err(e) => error.set(e),
+                                                                Err(e) => toast.error(&e),
                                                             }
                                                         }
                                                     });

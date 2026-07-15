@@ -5,6 +5,7 @@ use crate::api::message::search_messages;
 use crate::components::button::Button;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
+use crate::store::toast::use_toast;
 use common::api::MessageSearchResult;
 
 fn format_role(role: i32) -> &'static str {
@@ -26,10 +27,10 @@ pub fn MessageSearch() -> Element {
     let mut results = use_signal(Vec::<MessageSearchResult>::new);
     let mut loading = use_signal(|| false);
     let mut error = use_signal(String::new);
+    let toast = use_toast();
 
     let mut handle_search = move |_| {
         loading.set(true);
-        error.set(String::new());
         let kw = keyword().clone();
         spawn(async move {
             match search_messages(&kw, None).await {
@@ -37,10 +38,10 @@ pub fn MessageSearch() -> Element {
                     let msgs = data.messages;
                     results.set(msgs.clone());
                     if msgs.is_empty() {
-                        error.set("未找到匹配的消息".to_string());
+                        toast.error("未找到匹配的消息");
                     }
                 }
-                Err(e) => error.set(e),
+                Err(e) => toast.error(&e),
             }
             loading.set(false);
         });

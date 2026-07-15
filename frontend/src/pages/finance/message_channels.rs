@@ -7,7 +7,8 @@ use crate::api::finance::{
     test_message_channel, update_message_channel_status,
 };
 use crate::components::modal::Modal;
-use crate::components::state::{EmptyState, ErrorAlert, Loading, SuccessAlert};
+use crate::components::state::{EmptyState, Loading};
+use crate::store::toast::use_toast;
 use common::api::{CreateMessageChannelRequest, ListMessageChannelsResponseItem};
 use common::enums::{ChannelStatus, ChannelType};
 
@@ -15,8 +16,7 @@ use common::enums::{ChannelStatus, ChannelType};
 pub fn FinanceMessageChannels() -> Element {
     let mut channels = use_signal(Vec::<ListMessageChannelsResponseItem>::new);
     let mut loading = use_signal(|| true);
-    let mut error = use_signal(String::new);
-    let mut success = use_signal(String::new);
+    let toast = use_toast();
     let mut show_add_modal = use_signal(|| false);
 
     // 创建表单状态
@@ -30,7 +30,7 @@ pub fn FinanceMessageChannels() -> Element {
         spawn(async move {
             match list_message_channels().await {
                 Ok(list) => channels.set(list.channels),
-                Err(e) => error.set(e),
+                Err(e) => toast.error(&e),
             }
             loading.set(false);
         });
@@ -39,7 +39,7 @@ pub fn FinanceMessageChannels() -> Element {
     let handle_create = move |_| {
         spawn(async move {
             if new_name().is_empty() {
-                error.set("渠道名称不能为空".to_string());
+                toast.error("渠道名称不能为空");
                 return;
             }
             creating.set(true);
@@ -80,13 +80,13 @@ pub fn FinanceMessageChannels() -> Element {
                     new_name.set(String::new());
                     new_type.set("0".to_string());
                     new_webhook_url.set(String::new());
-                    success.set("创建成功".to_string());
+                    toast.success("创建成功");
                     match list_message_channels().await {
                         Ok(list) => channels.set(list.channels),
-                        Err(e) => error.set(e),
+                        Err(e) => toast.error(&e),
                     }
                 }
-                Err(e) => error.set(format!("创建失败: {}", e)),
+                Err(e) => toast.error(&format!("创建失败: {}", e)),
             }
             creating.set(false);
         });
@@ -98,8 +98,6 @@ pub fn FinanceMessageChannels() -> Element {
 
     rsx! {
         div { class: "card",
-            ErrorAlert { message: error() }
-            SuccessAlert { message: success() }
             div { class: "card-header",
                 h2 { class: "card-title", "消息渠道管理" }
                 button { class: "btn btn-accent", onclick: move |_| show_add_modal.set(true), "+ 创建渠道" }
@@ -138,11 +136,11 @@ pub fn FinanceMessageChannels() -> Element {
                                                         let id_disable = id_disable.clone();
                                                         spawn(async move {
                                                             if let Err(e) = update_message_channel_status(&id_disable, 2).await {
-                                                                error.set(e);
+                                                                toast.error(&e);
                                                             } else {
                                                                 match list_message_channels().await {
                                                                     Ok(list) => channels.set(list.channels),
-                                                                    Err(e) => error.set(e),
+                                                                    Err(e) => toast.error(&e),
                                                                 }
                                                             }
                                                         });
@@ -154,11 +152,11 @@ pub fn FinanceMessageChannels() -> Element {
                                                         let id_enable = id_enable.clone();
                                                         spawn(async move {
                                                             if let Err(e) = update_message_channel_status(&id_enable, 1).await {
-                                                                error.set(e);
+                                                                toast.error(&e);
                                                             } else {
                                                                 match list_message_channels().await {
                                                                     Ok(list) => channels.set(list.channels),
-                                                                    Err(e) => error.set(e),
+                                                                    Err(e) => toast.error(&e),
                                                                 }
                                                             }
                                                         });
@@ -172,12 +170,12 @@ pub fn FinanceMessageChannels() -> Element {
                                                         match test_message_channel(&id_test).await {
                                                             Ok(resp) => {
                                                                 if resp.success {
-                                                                    success.set("连接测试通过".to_string());
+                                                                    toast.success("连接测试通过");
                                                                 } else {
-                                                                    error.set(format!("连接测试失败: {}", resp.error.unwrap_or_default()));
+                                                                    toast.error(&format!("连接测试失败: {}", resp.error.unwrap_or_default()));
                                                                 }
                                                             }
-                                                            Err(e) => error.set(format!("连接测试失败: {}", e)),
+                                                            Err(e) => toast.error(&format!("连接测试失败: {}", e)),
                                                         }
                                                     });
                                                 }, "连接测试"
@@ -187,11 +185,11 @@ pub fn FinanceMessageChannels() -> Element {
                                                     let id_delete = id_delete.clone();
                                                     spawn(async move {
                                                         if let Err(e) = delete_message_channel(&id_delete).await {
-                                                            error.set(format!("删除失败: {}", e));
+                                                            toast.error(&format!("删除失败: {}", e));
                                                         } else {
                                                             match list_message_channels().await {
                                                                 Ok(list) => channels.set(list.channels),
-                                                                Err(e) => error.set(e),
+                                                                Err(e) => toast.error(&e),
                                                             }
                                                         }
                                                     });

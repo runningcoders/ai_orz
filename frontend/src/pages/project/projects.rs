@@ -5,7 +5,8 @@ use std::collections::HashMap;
 
 use crate::api::project::{create_project, list_project_tasks, list_projects};
 use crate::components::modal::Modal;
-use crate::components::state::{EmptyState, ErrorAlert, Loading};
+use crate::components::state::{EmptyState, Loading};
+use crate::store::toast::use_toast;
 use common::api::{CreateProjectRequest, ListProjectsResponseItem};
 
 fn status_badge(status: i32) -> &'static str {
@@ -37,11 +38,11 @@ pub fn ProjectList() -> Element {
     let mut projects = use_signal(Vec::<ListProjectsResponseItem>::new);
     let mut task_counts = use_signal(HashMap::<String, usize>::new);
     let mut loading = use_signal(|| true);
-    let mut error = use_signal(String::new);
     let mut show_modal = use_signal(|| false);
     let mut new_name = use_signal(String::new);
     let mut new_description = use_signal(String::new);
     let mut creating = use_signal(|| false);
+    let toast = use_toast();
 
     use_effect(move || {
         loading.set(true);
@@ -58,7 +59,7 @@ pub fn ProjectList() -> Element {
                     }
                     task_counts.set(counts);
                 }
-                Err(e) => error.set(e),
+                Err(e) => toast.error(&e),
             }
             loading.set(false);
         });
@@ -67,7 +68,7 @@ pub fn ProjectList() -> Element {
     let handle_create = move |_| {
         spawn(async move {
             if new_name().is_empty() {
-                error.set("项目名称不能为空".to_string());
+                toast.error("项目名称不能为空");
                 return;
             }
             creating.set(true);
@@ -85,10 +86,10 @@ pub fn ProjectList() -> Element {
                     // Reload
                     match list_projects().await {
                         Ok(list) => projects.set(list.projects),
-                        Err(e) => error.set(e),
+                        Err(e) => toast.error(&e),
                     }
                 }
-                Err(e) => error.set(format!("创建失败: {}", e)),
+                Err(e) => toast.error(&format!("创建失败: {}", e)),
             }
             creating.set(false);
         });
@@ -98,8 +99,6 @@ pub fn ProjectList() -> Element {
 
     rsx! {
         div { class: "card",
-            ErrorAlert { message: error() }
-
             div { class: "card-header",
                 h2 { class: "card-title", "项目管理" }
                 button { class: "btn btn-accent", onclick: move |_| show_modal.set(true), "+ 创建项目" }

@@ -3,7 +3,8 @@
 use dioxus::prelude::*;
 
 use crate::api::finance::{delete_tool, list_tools, update_tool_status};
-use crate::components::state::{EmptyState, ErrorAlert, Loading};
+use crate::components::state::{EmptyState, Loading};
+use crate::store::toast::use_toast;
 use common::api::ListToolsResponseItem;
 use common::enums::ToolStatus;
 
@@ -11,14 +12,14 @@ use common::enums::ToolStatus;
 pub fn FinanceTools() -> Element {
     let mut tools = use_signal(Vec::<ListToolsResponseItem>::new);
     let mut loading = use_signal(|| true);
-    let mut error = use_signal(String::new);
+    let toast = use_toast();
 
     use_effect(move || {
         loading.set(true);
         spawn(async move {
             match list_tools().await {
                 Ok(list) => tools.set(list.tools),
-                Err(e) => error.set(e),
+                Err(e) => toast.error(&e),
             }
             loading.set(false);
         });
@@ -28,8 +29,6 @@ pub fn FinanceTools() -> Element {
 
     rsx! {
         div { class: "card",
-            ErrorAlert { message: error() }
-
             div { class: "card-header",
                 h2 { class: "card-title", "工具管理" }
             }
@@ -75,11 +74,11 @@ pub fn FinanceTools() -> Element {
                                                         let id_disable = id_disable.clone();
                                                         spawn(async move {
                                                             if let Err(e) = update_tool_status(&id_disable, 0).await {
-                                                                error.set(e);
+                                                                toast.error(&e);
                                                             } else {
                                                                 match list_tools().await {
                                                                     Ok(list) => tools.set(list.tools),
-                                                                    Err(e) => error.set(e),
+                                                                    Err(e) => toast.error(&e),
                                                                 }
                                                             }
                                                         });
@@ -92,11 +91,11 @@ pub fn FinanceTools() -> Element {
                                                         let id_enable = id_enable.clone();
                                                         spawn(async move {
                                                             if let Err(e) = update_tool_status(&id_enable, 1).await {
-                                                                error.set(e);
+                                                                toast.error(&e);
                                                             } else {
                                                                 match list_tools().await {
                                                                     Ok(list) => tools.set(list.tools),
-                                                                    Err(e) => error.set(e),
+                                                                    Err(e) => toast.error(&e),
                                                                 }
                                                             }
                                                         });
@@ -109,11 +108,11 @@ pub fn FinanceTools() -> Element {
                                                     let id_delete = id_delete.clone();
                                                     spawn(async move {
                                                         if let Err(e) = delete_tool(&id_delete).await {
-                                                            error.set(format!("删除失败: {}", e));
+                                                            toast.error(&format!("删除失败: {}", e));
                                                         } else {
                                                             match list_tools().await {
                                                                 Ok(list) => tools.set(list.tools),
-                                                                Err(e) => error.set(e),
+                                                                Err(e) => toast.error(&e),
                                                             }
                                                         }
                                                     });

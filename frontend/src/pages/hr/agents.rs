@@ -5,7 +5,8 @@ use dioxus::prelude::*;
 use crate::api::finance::list_model_providers;
 use crate::api::hr::{create_agent, delete_agent, list_agents, search_agents};
 use crate::components::modal::Modal;
-use crate::components::state::{EmptyState, ErrorAlert, Loading};
+use crate::components::state::{EmptyState, Loading};
+use crate::store::toast::use_toast;
 use common::api::{CreateAgentRequest, ListAgentsResponseItem, ListModelProvidersResponseItem};
 
 #[component]
@@ -13,7 +14,7 @@ pub fn HrAgents() -> Element {
     let mut agents = use_signal(Vec::<ListAgentsResponseItem>::new);
     let mut model_providers = use_signal(Vec::<ListModelProvidersResponseItem>::new);
     let mut loading = use_signal(|| true);
-    let mut error = use_signal(String::new);
+    let toast = use_toast();
     let mut show_add_modal = use_signal(|| false);
     let mut new_name = use_signal(String::new);
     let mut new_roles = use_signal(String::new);
@@ -24,11 +25,10 @@ pub fn HrAgents() -> Element {
 
     use_effect(move || {
         loading.set(true);
-        error.set(String::new());
         spawn(async move {
             match list_agents().await {
                 Ok(list) => agents.set(list.agents),
-                Err(e) => error.set(e),
+                Err(e) => toast.error(&e),
             }
             // 加载模型提供商列表用于下拉选择
             match list_model_providers().await {
@@ -42,7 +42,7 @@ pub fn HrAgents() -> Element {
     let handle_create = move |_| {
         spawn(async move {
             if new_name().is_empty() || new_model_provider_id().is_empty() {
-                error.set("名称和模型提供商 ID 不能为空".to_string());
+                toast.error("名称和模型提供商 ID 不能为空");
                 return;
             }
             creating.set(true);
@@ -70,10 +70,10 @@ pub fn HrAgents() -> Element {
                     };
                     match result {
                         Ok(list) => agents.set(list.agents),
-                        Err(e) => error.set(e),
+                        Err(e) => toast.error(&e),
                     }
                 }
-                Err(e) => error.set(format!("创建失败: {}", e)),
+                Err(e) => toast.error(&format!("创建失败: {}", e)),
             }
             creating.set(false);
         });
@@ -83,8 +83,6 @@ pub fn HrAgents() -> Element {
 
     rsx! {
         div { class: "card",
-            ErrorAlert { message: error() }
-
             div { class: "card-header",
                 h2 { class: "card-title", "Agent 管理" }
                 div { class: "flex gap-2",
@@ -94,7 +92,6 @@ pub fn HrAgents() -> Element {
                             search_keyword.set(keyword.clone());
                             spawn(async move {
                                 loading.set(true);
-                                error.set(String::new());
                                 let result = if keyword.trim().is_empty() {
                                     list_agents().await
                                 } else {
@@ -102,7 +99,7 @@ pub fn HrAgents() -> Element {
                                 };
                                 match result {
                                     Ok(list) => agents.set(list.agents),
-                                    Err(e) => error.set(e),
+                                    Err(e) => toast.error(&e),
                                 }
                                 loading.set(false);
                             });
@@ -115,10 +112,9 @@ pub fn HrAgents() -> Element {
                                 search_keyword.set(String::new());
                                 spawn(async move {
                                     loading.set(true);
-                                    error.set(String::new());
                                     match list_agents().await {
                                         Ok(list) => agents.set(list.agents),
-                                        Err(e) => error.set(e),
+                                        Err(e) => toast.error(&e),
                                     }
                                     loading.set(false);
                                 });
@@ -166,7 +162,7 @@ pub fn HrAgents() -> Element {
                                                     let id_delete = id_delete.clone();
                                                     spawn(async move {
                                                         if let Err(e) = delete_agent(&id_delete).await {
-                                                            error.set(format!("删除失败: {}", e));
+                                                            toast.error(&format!("删除失败: {}", e));
                                                         } else {
                                                             let keyword = search_keyword();
                                                             let result = if keyword.trim().is_empty() {
@@ -176,7 +172,7 @@ pub fn HrAgents() -> Element {
                                                             };
                                                             match result {
                                                                 Ok(list) => agents.set(list.agents),
-                                                                Err(e) => error.set(e),
+                                                                Err(e) => toast.error(&e),
                                                             }
                                                         }
                                                     });
