@@ -67,6 +67,16 @@ fn artifact_source_type_text(source_type: ArtifactSourceType) -> &'static str {
     }
 }
 
+fn progress_bar_class(progress: i32) -> &'static str {
+    match progress {
+        0..=25 => "overview-progress-fill warning",
+        26..=50 => "overview-progress-fill primary",
+        51..=75 => "overview-progress-fill accent",
+        76..=100 => "overview-progress-fill success",
+        _ => "overview-progress-fill",
+    }
+}
+
 #[component]
 pub fn ProjectDetail(id: String) -> Element {
     let mut project = use_signal(|| None::<GetProjectResponse>);
@@ -214,6 +224,16 @@ pub fn ProjectDetail(id: String) -> Element {
     let tasks_list = tasks.read().clone();
     let artifacts_list = artifacts.read().clone();
 
+    let overall_progress = if tasks_list.is_empty() {
+        0
+    } else {
+        tasks_list.iter().map(|t| t.progress).sum::<i32>() / tasks_list.len() as i32
+    };
+    let task_total = tasks_list.len();
+    let task_completed = tasks_list.iter().filter(|t| t.status == 4).count();
+    let task_in_progress = tasks_list.iter().filter(|t| t.status == 3).count();
+    let task_pending = tasks_list.iter().filter(|t| t.status != 3 && t.status != 4 && t.status != 0 && t.status != 5).count();
+
     rsx! {
         ErrorAlert { message: error() }
         SuccessAlert { message: success() }
@@ -266,7 +286,46 @@ pub fn ProjectDetail(id: String) -> Element {
                 }
             }
 
-            // 区域 2：状态管理
+            // 区域 2：项目概览统计
+            div { class: "card",
+                div { class: "card-header",
+                    h2 { class: "card-title", "项目概览" }
+                }
+                div { class: "overview-grid",
+                    div { class: "overview-item",
+                        div { class: "overview-label", "整体进度" }
+                        div { class: "overview-progress",
+                            div { class: "overview-progress-bar",
+                                div { class: "{progress_bar_class(overall_progress)}", style: "width: {overall_progress}%;" }
+                            }
+                            span { class: "overview-progress-text", "{overall_progress}%" }
+                        }
+                    }
+                    div { class: "overview-item",
+                        div { class: "overview-label", "任务统计" }
+                        div { class: "overview-stats",
+                            div { class: "overview-stat-item",
+                                span { class: "overview-stat-value", "{task_total}" }
+                                span { class: "overview-stat-label", "总数" }
+                            }
+                            div { class: "overview-stat-item",
+                                span { class: "overview-stat-value success", "{task_completed}" }
+                                span { class: "overview-stat-label", "完成" }
+                            }
+                            div { class: "overview-stat-item",
+                                span { class: "overview-stat-value primary", "{task_in_progress}" }
+                                span { class: "overview-stat-label", "进行中" }
+                            }
+                            div { class: "overview-stat-item",
+                                span { class: "overview-stat-value warning", "{task_pending}" }
+                                span { class: "overview-stat-label", "待处理" }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 区域 3：状态管理
             div { class: "card",
                 div { class: "card-header",
                     h2 { class: "card-title", "状态管理" }

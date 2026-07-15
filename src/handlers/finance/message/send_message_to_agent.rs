@@ -37,6 +37,7 @@ pub async fn send_message_to_agent(
         project_id: params.project_id.as_deref(),
         task_id: params.task_id.as_deref(),
         reply_to_id: params.reply_to_id.as_deref(),
+        attachment_ids: params.attachment_ids.as_deref(),
     };
 
     let message = message::domain().delivery().send_to_agent(ctx, cmd).await?;

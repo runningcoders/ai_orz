@@ -58,6 +58,7 @@ async fn test_list_by_project_id(pool: SqlitePool) {
                 project_id: Some(&project_id_1),
                 task_id: Some(&task_id_1),
                 reply_to_id: None,
+                attachment_ids: None,
             },
         )
         .await
@@ -93,6 +94,7 @@ async fn test_list_by_project_id(pool: SqlitePool) {
                 project_id: Some(&project_id_2),
                 task_id: Some(&task_id_2),
                 reply_to_id: None,
+                attachment_ids: None,
             },
         )
         .await
@@ -145,6 +147,7 @@ async fn test_get_by_id_and_update_status(pool: SqlitePool) {
                 project_id: Some(&project_id),
                 task_id: Some(&task_id),
                 reply_to_id: None,
+                attachment_ids: None,
             },
         )
         .await
@@ -204,6 +207,7 @@ async fn test_delete_by_id_and_cleanup_conversation(pool: SqlitePool) {
                     project_id: Some(&project_id),
                     task_id: Some(&task_id),
                     reply_to_id: None,
+                    attachment_ids: None,
                 },
             )
             .await

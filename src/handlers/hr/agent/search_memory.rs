@@ -161,6 +161,9 @@ fn memory_to_result(memory: &Memory) -> MemoryResult {
                 .as_ref()
                 .and_then(|m| m.vector_distance),
             summary: None,
+            source_node_id: None,
+            target_node_id: None,
+            relation_type: None,
         },
         MemoryPo::ShortTerm(st) => MemoryResult {
             id: st.id.clone(),
@@ -171,6 +174,9 @@ fn memory_to_result(memory: &Memory) -> MemoryResult {
                 .as_ref()
                 .and_then(|m| m.vector_distance),
             summary: Some(st.summary.clone()),
+            source_node_id: None,
+            target_node_id: None,
+            relation_type: None,
         },
         MemoryPo::KnowledgeNode(kn) => MemoryResult {
             id: kn.id.clone(),
@@ -181,6 +187,9 @@ fn memory_to_result(memory: &Memory) -> MemoryResult {
                 .as_ref()
                 .and_then(|m| m.vector_distance),
             summary: Some(kn.summary.clone()),
+            source_node_id: None,
+            target_node_id: None,
+            relation_type: None,
         },
         MemoryPo::Relation(rel) => MemoryResult {
             id: rel.id.clone(),
@@ -191,6 +200,9 @@ fn memory_to_result(memory: &Memory) -> MemoryResult {
                 .as_ref()
                 .and_then(|m| m.vector_distance),
             summary: None,
+            source_node_id: Some(rel.source_node_id.clone()),
+            target_node_id: Some(rel.target_node_id.clone()),
+            relation_type: Some(format!("{:?}", rel.relation_type)),
         },
     }
 }

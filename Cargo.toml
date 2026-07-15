@@ -38,6 +38,7 @@ cookie = "0.18"
 uuid = { version = "1.23.0", features = ["v7", "serde"] }
 dyn-clone = "1.0.14"
 futures-util = "0.3.32"
+tokio-stream = { version = "0.1", features = ["sync"] }
 common = { path = "./common", features = ["sqlx", "axum-integration", "bincode-integration", "rig-integration", "toml-integration", "reqwest-integration"] }
 once_cell = "1.21.4"
 thiserror = "1.0"

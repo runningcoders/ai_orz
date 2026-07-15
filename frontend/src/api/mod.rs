@@ -11,6 +11,9 @@ pub mod system;
 use common::api::ApiResponse;
 use reqwest::{Client, Method, RequestBuilder};
 use std::sync::OnceLock;
+use wasm_bindgen::JsCast;
+use wasm_bindgen_futures::JsFuture;
+use web_sys::{FormData, Request, RequestInit, Response};
 
 use crate::config::current_config;
 
@@ -22,21 +25,10 @@ pub fn client() -> &'static Client {
     HTTP_CLIENT.get_or_init(|| Client::new())
 }
 
-/// 从 localStorage 获取 JWT token
-fn get_token() -> Option<String> {
-    let window = web_sys::window()?;
-    let storage = window.local_storage().ok()??;
-    storage.get("ai_orz_token").ok()?
-}
-
-/// 构建带 JWT 的请求
+/// 构建请求（同源请求自动携带 Cookie）
 fn build_request(method: Method, path: &str) -> RequestBuilder {
     let url = current_config().api_url(path);
-    let req = client().request(method, &url);
-    match get_token() {
-        Some(token) if !token.is_empty() => req.bearer_auth(&token),
-        _ => req,
-    }
+    client().request(method, &url)
 }
 
 /// 发送 GET 请求并解析 ApiResponse<T>
@@ -138,4 +130,54 @@ pub async fn api_get_text(path: &str) -> Result<String, String> {
         return Err(format!("HTTP {}", resp.status()));
     }
     resp.text().await.map_err(|e| e.to_string())
+}
+
+/// 发送 multipart/form-data 上传请求（仅在 wasm32 目标下使用）
+///
+/// wasm32 目标下，reqwest 的 Body 不支持直接传入 FormData，
+/// 因此使用浏览器原生 fetch API（同源请求自动携带 Cookie）。
+pub async fn api_post_multipart<T: serde::de::DeserializeOwned>(
+    path: &str,
+    form: FormData,
+) -> Result<T, String> {
+    let url = current_config().api_url(path);
+
+    // 构造 RequestInit，body 直接传 FormData（浏览器 fetch 会自动识别 multipart 并设置 boundary）
+    let mut opts = RequestInit::new();
+    opts.method("POST");
+    opts.body(Some(form.unchecked_ref()));
+    // 同源请求自动携带 Cookie
+    opts.credentials(web_sys::RequestCredentials::SameOrigin);
+
+    let request = Request::new_with_str_and_init(&url, &opts)
+        .map_err(|e| format!("构造 Request 失败: {:?}", e))?;
+
+    let window = web_sys::window().ok_or_else(|| "未找到 window 对象".to_string())?;
+    let resp_value = JsFuture::from(window.fetch_with_request(&request))
+        .await
+        .map_err(|e| format!("fetch 失败: {:?}", e))?;
+
+    let resp: Response = resp_value
+        .dyn_into()
+        .map_err(|e| format!("Response 转换失败: {:?}", e))?;
+
+    if !resp.ok() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+
+    let json_promise = resp
+        .json()
+        .map_err(|e| format!("json() 失败: {:?}", e))?;
+    let json_value = JsFuture::from(json_promise)
+        .await
+        .map_err(|e| format!("JSON 解析失败: {:?}", e))?;
+
+    // 用 serde_wasm_bindgen 反序列化 JsValue 到 ApiResponse<T>
+    let api_resp: ApiResponse<T> = serde_wasm_bindgen::from_value(json_value)
+        .map_err(|e| format!("反序列化 ApiResponse 失败: {}", e))?;
+
+    if !api_resp.is_success() {
+        return Err(api_resp.message);
+    }
+    api_resp.data.ok_or_else(|| "响应数据为空".to_string())
 }

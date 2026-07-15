@@ -183,7 +183,7 @@ pub fn Navbar() -> Element {
                             Link { to: Route::Reception {}, class: "navbar-dropdown-item",
                                 onclick: move |_| {
                                     close_all();
-                                    crate::store::auth::clear_token();
+                                    crate::store::auth::clear_login_state();
                                 },
                                 "🚪 退出登录"
                             }

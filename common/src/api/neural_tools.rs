@@ -43,6 +43,15 @@ pub struct MemoryResult {
     pub score: Option<f32>,
     /// 记忆摘要。
     pub summary: Option<String>,
+    /// 关系类型：源节点 ID（仅 relation 类型有值）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_node_id: Option<String>,
+    /// 关系类型：目标节点 ID（仅 relation 类型有值）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_node_id: Option<String>,
+    /// 关系类型名称（仅 relation 类型有值）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relation_type: Option<String>,
 }
 
 /// 查询记忆请求参数。
@@ -154,6 +163,12 @@ pub struct SendMessageToAgentParams {
     pub task_id: Option<String>,
     /// 回复的消息 ID。
     pub reply_to_id: Option<String>,
+    /// 附件 ID 列表。
+    /// 发送方已经上传到 Attachment 模块的附件 ID 列表，
+    /// 后端会为每个附件创建一条附件消息（Image/File/Audio/Video），
+    /// 紧跟在文本消息之前（按数组顺序排列）。
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub attachment_ids: Option<Vec<String>>,
 }
 
 /// 发送消息给 Agent 响应。

@@ -5,7 +5,7 @@ use dioxus::prelude::*;
 use crate::api::auth::{check_initialized, initialize_system, login};
 use crate::api::organization::list_organizations_public;
 use crate::components::state::{ErrorAlert, Loading};
-use crate::store::auth::{save_token, AuthState};
+use crate::store::auth::{mark_logged_in, AuthState};
 use common::api::{InitializeSystemRequest, LoginRequest, OrganizationListItem};
 
 #[component]
@@ -77,10 +77,9 @@ pub fn Reception() -> Element {
 
             match login(req).await {
                 Ok(resp) => {
-                    let token = resp.user_id.clone();
-                    save_token(&token);
+                    mark_logged_in();
                     let mut state = auth.write();
-                    state.token = Some(token);
+                    state.logged_in = true;
                     state.username = resp.username;
                     state.role = 1;
                     state.org_id = resp.organization_id;

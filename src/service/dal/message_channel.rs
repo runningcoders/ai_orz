@@ -319,6 +319,8 @@ pub struct DeliveryResult {
     pub failed: usize,
     /// 各渠道的推送详情
     pub details: Vec<ChannelDeliveryDetail>,
+    /// SSE 成功推送的连接数
+    pub sse_delivered: usize,
 }
 
 impl DeliveryResult {
@@ -329,6 +331,7 @@ impl DeliveryResult {
             success: 0,
             failed: 0,
             details: vec![],
+            sse_delivered: 0,
         }
     }
 
@@ -343,6 +346,7 @@ impl DeliveryResult {
             success,
             failed,
             details,
+            sse_delivered: 0,
         }
     }
 

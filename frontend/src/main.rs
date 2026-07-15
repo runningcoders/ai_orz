@@ -11,7 +11,7 @@ include!(concat!(env!("OUT_DIR"), "/compiled_config.rs"));
 use dioxus::prelude::*;
 
 #[allow(unused_imports)]
-use store::auth::{save_token, AuthState};
+use store::auth::AuthState;
 
 use crate::pages::Route;
 

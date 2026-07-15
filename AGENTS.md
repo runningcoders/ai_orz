@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-07-13
+> 最后更新：2026-07-15
 
 ---
 
@@ -14,13 +14,13 @@
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + rig-core 0.34
 - **前端**：Dioxus 0.7 (WebAssembly)
-- **技术特色**：严格分层架构、类型安全、693 个测试 100% 通过率
+- **技术特色**：严格分层架构、类型安全、696 个测试 100% 通过率
 
 ### 1.2 已实现核心功能
 
 | 模块 | 状态 | 说明 |
 |------|------|------|
-| 👥 组织用户权限 | ✅ | 多级组织、用户角色、JWT 认证 |
+| 👥 组织用户权限 | ✅ | 多级组织、用户角色、JWT Cookie 认证 |
 | 🤖 Agent 全生命周期 | ✅ | 创建、配置、工具绑定、唤醒执行 |
 | 🧠 四层记忆系统 | ✅ | Core/Working/Short-term/Long-term |
 | 💬 消息对话系统 | ✅ | 用户 ↔ Agent 双向对话，支持项目上下文 |
@@ -46,18 +46,24 @@
 | 🤝 Agent 协作工具 | ✅ | search_agents 搜索、send_message_to_agent Agent 间消息、collaboration tag 分组工具 |
 | 🎨 前端架构重构 | ✅ | Dioxus Router 15 路由 + Mistral CSS 设计系统 + 统一 API 客户端 + 13 CRUD 页面 |
 | 💬 对话功能 MVP | ✅ | 左右分栏布局（项目列表 + 对话区）、双向分页、3秒短轮询、消息气泡展示 |
+| 📎 对话附件上传 | ✅ | 多文件上传、图片内联展示、文件下载、消息时间分组 |
 | 🔍 消息搜索 | ✅ | FTS5 + 向量混合搜索、搜索结果展示匹配类型和向量距离 |
 | 🧠 记忆搜索 | ✅ | 关键词 + 类型筛选、短期记忆/知识节点/关系搜索 |
 | 🗺️ 知识图谱可视化 | ✅ | SVG 图谱组件、圆形布局、节点连接线、搜索初始节点 |
+| 📡 SSE 消息推送 | ✅ | Server-Sent Events 长连接、订阅者模式、DAO 层连接管理、broadcast 广播 |
+| 🔐 Cookie 认证统一 | ✅ | 前后端统一 HttpOnly Cookie + JWT、中间件顺序优化、localStorage 标志位 |
+| 🔑 双模式认证 | ✅ | Cookie（浏览器）+ Bearer token（API 工具/代码调用），非浏览器请求返回 401 JSON |
+| 📊 任务进度可视化 | ✅ | 项目概览卡片、动态进度条、任务状态分布统计 |
+| 🤖 Agent 详情页对话 | ✅ | Agent 详情页集成对话功能、SSE 实时消息、历史消息加载 |
 
-### 1.3 整体完成度与测试统计（2026-07-13 更新）
+### 1.3 整体完成度与测试统计（2026-07-15 更新）
 
 | 指标 | 数值 | 说明 |
 |------|------|------|
-| **总测试数** | **693** | DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
+| **总测试数** | **697** | DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
 | **通过率** | **100%** | ✅ 全部测试通过 |
-| DAO 模块数 | 28 个 | 全部实现并被使用，零闲置（21 核心 DAO + 5 渠道 DAO + 1 统计 DAO + 1 触发器 DAO） |
-| DAL 模块数 | 17 个 | 全部完整业务承载，零闲置 |
+| DAO 模块数 | 29 个 | 全部实现并被使用，零闲置（21 核心 DAO + 5 渠道 DAO + 1 统计 DAO + 1 触发器 DAO + 1 消息推送 DAO） |
+| DAL 模块数 | 18 个 | 全部完整业务承载，零闲置 |
 | Domain 领域数 | 7 个 | 全部完整实现（新增 SystemDomain） |
 | Handler API 领域数 | 7 个上线 | organization, hr, finance, project, user, health, system |
 | **整体架构完成度** | **~98%** | 从下往上扎实推进 |
@@ -522,6 +528,56 @@ Agent
 - **ToolVectorDao 补全**：新增 `delete_vector` 方法，完善 Tool 向量索引生命周期管理
 - **Tool DAL 向量索引维护**：create_tool/update_tool/delete_tool 补全向量索引自动维护逻辑
 - **测试统计**：693 个测试 100% 通过（+78，含 6 实体搜索三态匹配测试）
+
+### 2026-07-15 里程碑
+**✅ SSE 消息推送系统**
+- **SSE 长连接推送**：基于 Server-Sent Events 实现服务器到客户端的单向实时推送
+- **订阅者模式**：Handler → Domain → DAL → DAO 分层调用，DAL 负责消息加工，DAO 管理 SSE 连接
+- **DAO 层连接管理**：`SsePushDao` 使用 `tokio::sync::RwLock` + `broadcast` 通道管理多个 SSE 连接和消息分发
+- **MessageDelivery 扩展**：新增 `subscribe`/`unsubscribe` 方法，`deliver_message` 自动通过 SSE 推送
+- **SSE 订阅端点**：`GET /api/v1/finance/messages/sse/{user_id}`，与 finance/message 模块路由对齐
+- **消费者集成**：消息消费者处理消息时自动调用 `deliver_message`，通过 SSE 推送到前端
+
+**✅ 前后端认证机制统一**
+- **Cookie 认证统一**：前端从 `Authorization: Bearer` 改为 HttpOnly Cookie，浏览器自动携带
+- **中间件顺序优化**：调换 `jwt_auth_middleware`（外层先执行）和 `request_context_middleware`（内层后执行）顺序
+  - JWT 中间件验证 Cookie 中的 token → 将用户信息写入请求头
+  - RequestContext 中间件从请求头（已含用户信息）创建 RequestContext
+  - 消除了 JWT 中间件中"克隆并更新 ctx"的冗余逻辑
+- **前端认证简化**：移除 token 管理，使用 localStorage 标志位判断登录状态
+- **SSE 兼容**：EventSource 自动携带 Cookie，无需额外处理认证
+- **测试统计**：696 个测试 100% 通过（+3）
+
+**✅ 双模式认证（Cookie + Bearer）**
+- **双模式 JWT 提取**：中间件优先从 Cookie 提取 token，Cookie 不存在时 fallback 到 `Authorization: Bearer` 头
+- **智能响应区分**：
+  - 浏览器请求（有 Cookie 头或 Accept: text/html）→ 302 重定向到登录页
+  - API 调用请求（Bearer 模式）→ 401 JSON 错误响应
+- **LoginResponse 扩展**：登录响应新增 `token` 字段，API 调用者可直接获取 JWT 用于后续 Bearer 调用
+- **使用场景**：curl/Postman/代码调用均可通过 Bearer token 访问所有受保护 API
+- **测试统计**：696 个测试 100% 通过
+
+**✅ 对话功能补全（附件上传 + 时间分组）**
+- **附件上传 API 客户端**：使用 web_sys 原生 fetch API + FormData 实现 WASM 环境下的文件上传
+- **SendMessageToAgentParams 扩展**：新增 `attachment_ids` 字段支持发送带附件的消息
+- **后端附件消息创建**：`delivery.rs` 中根据 attachment_ids 批量创建附件消息，`reply_to_id` 指向根文本消息
+- **附件上传 UI**：📎 按钮触发文件选择，支持多文件，上传中显示加载状态
+- **附件消息展示**：图片消息内联展示，其他类型文件显示文件名+大小+下载链接
+- **消息时间分组**：按日期分组显示（今天/昨天/YYYY-MM-DD），日期分隔符样式
+- **测试统计**：697 个测试 100% 通过（+1）
+
+**✅ 任务管理可视化**
+- **项目概览统计卡片**：项目总数、进行中任务数、已完成任务数、整体进度
+- **动态进度条**：进度 0-25% 橙色警告、26-50% 蓝色主色、51-75% 紫色强调、76-100% 绿色成功
+- **任务状态分布**：Pending/InProgress/Completed/Cancelled/Archived 五状态统计卡片
+- **项目详情页集成**：在项目详情页顶部展示概览面板，任务列表紧随其后
+
+**✅ Agent 详情页对话集成**
+- **消息列表渲染**：复用对话页面的消息气泡组件，支持文本+附件消息展示
+- **输入框与发送**：Enter 发送、Shift+Enter 换行，发送中显示 typing 指示器
+- **SSE 实时消息接收**：监听全局 SSE 通道，自动过滤当前 Agent 相关消息
+- **历史消息加载**：页面加载时拉取最近 20 条消息作为初始上下文
+- **无侵入式集成**：对话区域作为 Agent 详情页的第六个 section，与其他管理功能共存
 
 ### 2026-07-13 里程碑
 **✅ 管理页面补全**

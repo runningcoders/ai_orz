@@ -16,6 +16,7 @@ pub mod task;
 pub mod tool;
 pub mod tool_call;
 pub mod user;
+pub mod message_push;
 
 // 消息推送渠道 DAO（无状态，不需要 init）
 pub mod email;

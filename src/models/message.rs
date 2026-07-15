@@ -68,6 +68,57 @@ impl Message {
         self.po.to_role
     }
 
+    /// 获取来源 ID
+    pub fn from_id(&self) -> &str {
+        &self.po.from_id
+    }
+
+    /// 获取目标 ID
+    pub fn to_id(&self) -> &str {
+        &self.po.to_id
+    }
+
+    /// 获取消息内容
+    pub fn content(&self) -> &str {
+        &self.po.content
+    }
+
+    /// 获取创建时间（毫秒时间戳）
+    pub fn created_at(&self) -> i64 {
+        self.po.created_at
+    }
+
+    /// 获取根消息 ID（消息链标识）
+    pub fn root_id(&self) -> Option<&str> {
+        self.po.root_id.as_deref()
+    }
+
+    /// 获取消息状态
+    pub fn status(&self) -> MessageStatus {
+        self.po.status
+    }
+
+    /// 获取回复的消息 ID
+    pub fn reply_to_id(&self) -> Option<&str> {
+        self.po.reply_to_id.as_deref()
+    }
+
+    /// 获取文件类型（附件消息才有值）
+    pub fn file_type(&self) -> Option<common::enums::FileType> {
+        self.po.file_type
+    }
+
+    /// 获取文件元数据（附件消息才有值）
+    /// 只有当 file_type 有值时才返回 Some
+    pub fn file_meta(&self) -> Option<&crate::models::file::FileMeta> {
+        // file_type 存在时才视为附件消息
+        if self.po.file_type.is_some() {
+            Some(&self.po.file_meta.0)
+        } else {
+            None
+        }
+    }
+
     /// 将消息格式化为 Prompt 可读的字符串
     ///
     /// 委托给 MessagePo::to_prompt()

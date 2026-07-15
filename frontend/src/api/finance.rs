@@ -8,8 +8,9 @@ use common::api::{
     ListToolsResponse, TestConnectionResponse, TestMessageChannelConnectionResponse,
     UpdateModelProviderRequest, UpdateModelProviderResponse, UpdateToolRequest, UpdateToolResponse,
 };
+use web_sys::FormData;
 
-use super::{api_delete, api_get, api_get_or_default, api_post, api_post_empty, api_put, api_put_empty};
+use super::{api_delete, api_get, api_get_or_default, api_post, api_post_empty, api_post_multipart, api_put, api_put_empty};
 
 // ===== 模型提供商 =====
 
@@ -126,6 +127,16 @@ pub async fn list_attachments() -> Result<Vec<AttachmentDetail>, String> {
 
 pub async fn create_text_attachment(req: CreateTextAttachmentRequest) -> Result<AttachmentDetail, String> {
     api_post("/api/v1/finance/attachments/text", &req).await
+}
+
+/// 上传文件附件（multipart/form-data）
+/// 需要传入已经构造好的 FormData（含 `file` 字段和 `purpose` 字段）
+pub async fn upload_attachment(form: FormData) -> Result<AttachmentDetail, String> {
+    api_post_multipart("/api/v1/finance/attachments/upload", form).await
+}
+
+pub async fn get_attachment(id: &str) -> Result<AttachmentDetail, String> {
+    api_get(&format!("/api/v1/finance/attachments/{}", id)).await
 }
 
 pub async fn delete_attachment(id: &str) -> Result<(), String> {

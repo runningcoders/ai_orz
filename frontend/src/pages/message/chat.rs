@@ -2,7 +2,8 @@ use dioxus::prelude::*;
 use std::time::{SystemTime, UNIX_EPOCH};
 use wasm_bindgen::{closure::Closure, JsCast};
 
-use crate::api::message::{load_latest_messages, load_older_messages, poll_new_messages, send_message_to_agent};
+use crate::api::finance::upload_attachment;
+use crate::api::message::{load_latest_messages, load_older_messages, send_message_to_agent};
 use crate::api::project::list_projects;
 use common::api::{ListProjectsResponseItem, MessageListItem, SendMessageToAgentParams};
 
@@ -50,6 +51,30 @@ fn role_avatar(role: i32) -> &'static str {
     }
 }
 
+/// 消息类型常量
+const MSG_TEXT: i32 = 0;
+const MSG_IMAGE: i32 = 1;
+const MSG_FILE: i32 = 2;
+const MSG_AUDIO: i32 = 3;
+const MSG_VIDEO: i32 = 4;
+const MSG_TOOL_CALL_REQUEST: i32 = 5;
+const MSG_TOOL_CALL_RESULT: i32 = 6;
+const MSG_TASK_ASSIGNMENT: i32 = 9;
+
+/// 判断是否为附件消息
+fn is_attachment_message(msg_type: i32) -> bool {
+    matches!(msg_type, MSG_IMAGE | MSG_FILE | MSG_AUDIO | MSG_VIDEO)
+}
+
+/// 待发送的附件信息（仅用于 UI 展示，发送后清空）
+#[derive(Debug, Clone, PartialEq)]
+struct PendingAttachment {
+    /// 附件 ID（已上传到服务器）
+    id: String,
+    /// 文件名（仅展示）
+    name: String,
+}
+
 #[component]
 pub fn MessageChat() -> Element {
     let mut projects = use_signal(Vec::<ListProjectsResponseItem>::new);
@@ -61,6 +86,14 @@ pub fn MessageChat() -> Element {
     let mut loading_projects = use_signal(|| true);
     let mut has_more = use_signal(|| true);
     let mut loading_messages = use_signal(|| false);
+    let mut sse_connected = use_signal(|| false);
+
+    // 工具卡片展开状态（message_id -> expanded）
+    let mut tool_expanded = use_signal(|| std::collections::HashSet::<String>::new());
+
+    // 附件上传状态
+    let mut pending_attachments = use_signal(Vec::<PendingAttachment>::new);
+    let mut uploading = use_signal(|| false);
 
     let mut load_projects = move || {
         loading_projects.set(true);
@@ -131,28 +164,66 @@ pub fn MessageChat() -> Element {
         });
     };
 
-    let poll_new = move || {
-        let project_id = match selected_project() {
-            Some(id) => id,
-            None => return,
+    let mut handle_sse_message = move |data: String| {
+        let msg: MessageListItem = match serde_json::from_str(&data) {
+            Ok(m) => m,
+            Err(_) => return,
         };
-        let last_ts = messages.read().last().map(|m| m.created_at).unwrap_or(0);
-        spawn(async move {
-            match poll_new_messages(Some(&project_id), last_ts).await {
-                Ok(resp) => {
-                    if !resp.messages.is_empty() {
-                        let mut current = messages.write();
-                        current.extend(resp.messages);
-                    }
+        let cur_project = selected_project();
+        if let Some(proj_id) = &msg.project_id {
+            if cur_project.as_deref() == Some(proj_id.as_str()) {
+                let mut current = messages.write();
+                if current.iter().any(|m| m.message_id == msg.message_id) {
+                    return;
                 }
-                Err(_) => {}
+                current.push(msg);
+                is_typing.set(false);
             }
-        });
+        }
     };
+
+    use_effect(move || {
+        load_projects();
+    });
+
+    use_effect(move || {
+        if let Some(proj_id) = selected_project() {
+            load_messages(&proj_id);
+        }
+    });
+
+    use_effect(move || {
+        let event_source = web_sys::EventSource::new("/api/v1/finance/messages/sse").unwrap();
+        sse_connected.set(true);
+
+        let on_message = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
+            let data = event.data().as_string().unwrap_or_default();
+            handle_sse_message(data);
+        }) as Box<dyn FnMut(web_sys::MessageEvent)>);
+        event_source.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
+        on_message.forget();
+
+        let on_open = Closure::wrap(Box::new(move |_: web_sys::Event| {
+            sse_connected.set(true);
+        }) as Box<dyn FnMut(web_sys::Event)>);
+        event_source.set_onopen(Some(on_open.as_ref().unchecked_ref()));
+        on_open.forget();
+
+        let on_error = Closure::wrap(Box::new(move |_: web_sys::Event| {
+            sse_connected.set(false);
+        }) as Box<dyn FnMut(web_sys::Event)>);
+        event_source.set_onerror(Some(on_error.as_ref().unchecked_ref()));
+        on_error.forget();
+
+        use_drop(move || {
+            event_source.close();
+        });
+    });
 
     let handle_send = use_callback(move |_: ()| {
         let text = input_text().trim().to_string();
-        if text.is_empty() {
+        let attachments = pending_attachments();
+        if text.is_empty() && attachments.is_empty() {
             return;
         }
         let project_id = match selected_project() {
@@ -160,7 +231,6 @@ pub fn MessageChat() -> Element {
             None => return,
         };
 
-        // 获取项目的 owner_agent_id 作为消息接收者
         let to_agent_id = projects
             .read()
             .iter()
@@ -174,7 +244,15 @@ pub fn MessageChat() -> Element {
             }
         };
 
+        let attachment_ids: Vec<String> = attachments.iter().map(|a| a.id.clone()).collect();
+        let attachment_ids_opt = if attachment_ids.is_empty() {
+            None
+        } else {
+            Some(attachment_ids)
+        };
+
         input_text.set(String::new());
+        pending_attachments.set(Vec::new());
         is_typing.set(true);
 
         spawn(async move {
@@ -184,6 +262,7 @@ pub fn MessageChat() -> Element {
                 project_id: Some(project_id.clone()),
                 task_id: None,
                 reply_to_id: None,
+                attachment_ids: attachment_ids_opt,
             };
 
             match send_message_to_agent(req).await {
@@ -201,6 +280,8 @@ pub fn MessageChat() -> Element {
                         content: text,
                         reply_to_id: None,
                         created_at: now_ms(),
+                        file_type: None,
+                        file_meta: None,
                     };
                     let mut current = messages.write();
                     current.push(user_msg);
@@ -211,43 +292,63 @@ pub fn MessageChat() -> Element {
                     return;
                 }
             }
-
-            let mut attempts = 0;
-            while attempts < 30 {
-                let (tx, rx) = futures_channel::oneshot::channel();
-                let window = web_sys::window().unwrap();
-                let mut tx = Some(tx);
-                let timeout_closure = Closure::wrap(Box::new(move || {
-                    if let Some(tx) = tx.take() {
-                        let _ = tx.send(());
-                    }
-                }) as Box<dyn FnMut()>);
-                let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                    timeout_closure.as_ref().unchecked_ref(),
-                    1000,
-                );
-                timeout_closure.forget();
-                let _ = rx.await;
-                let last_ts = messages.read().last().map(|m| m.created_at).unwrap_or(0);
-                match poll_new_messages(Some(&project_id), last_ts).await {
-                    Ok(resp) => {
-                        if !resp.messages.is_empty() {
-                            let mut current = messages.write();
-                            current.extend(resp.messages);
-                            is_typing.set(false);
-                            break;
-                        }
-                    }
-                    Err(_) => {}
-                }
-                attempts += 1;
-            }
-
-            if attempts >= 30 {
-                is_typing.set(false);
-            }
         });
     });
+
+    // 处理文件选择：上传到附件服务，把 ID 加入待发送列表
+    let mut handle_file_select = move |files: Vec<dioxus::html::FileData>| {
+        if uploading() {
+            return;
+        }
+        if files.is_empty() {
+            return;
+        }
+        uploading.set(true);
+        spawn(async move {
+            for fd in files {
+                let file_name = fd.name();
+                let bytes = match fd.read_bytes().await {
+                    Ok(b) => b,
+                    Err(e) => {
+                        error.set(format!("读取文件 {} 失败: {:?}", file_name, e));
+                        uploading.set(false);
+                        return;
+                    }
+                };
+
+                // 构造 Blob 与 FormData
+                let blob_parts: js_sys::Array = js_sys::Array::new();
+                let uint8_array = js_sys::Uint8Array::new_with_length(bytes.len() as u32);
+                uint8_array.copy_from(&bytes);
+                blob_parts.push(&uint8_array);
+                let blob = web_sys::Blob::new_with_str_sequence_and_options(
+                    &blob_parts,
+                    web_sys::BlobPropertyBag::new().type_("application/octet-stream"),
+                )
+                .ok();
+
+                let form = web_sys::FormData::new().unwrap();
+                let _ = form.append_with_str("purpose", "message");
+                if let Some(blob) = blob {
+                    let _ = form.append_with_blob_and_filename("file", &blob, &file_name);
+                }
+
+                match upload_attachment(form).await {
+                    Ok(detail) => {
+                        let mut current = pending_attachments.write();
+                        current.push(PendingAttachment {
+                            id: detail.id,
+                            name: detail.original_name,
+                        });
+                    }
+                    Err(e) => {
+                        error.set(format!("上传文件 {} 失败: {}", file_name, e));
+                    }
+                }
+            }
+            uploading.set(false);
+        });
+    };
 
     let mut handle_project_click = move |project_id: String| {
         selected_project.set(Some(project_id.clone()));
@@ -255,33 +356,6 @@ pub fn MessageChat() -> Element {
         has_more.set(true);
         load_messages(&project_id);
     };
-
-    use_effect(move || {
-        load_projects();
-    });
-
-    use_effect(move || {
-        if selected_project().is_some() {
-            let interval_id = {
-                let window = web_sys::window().unwrap();
-                let closure = Closure::wrap(Box::new(move || {
-                    if !is_typing() {
-                        poll_new();
-                    }
-                }) as Box<dyn FnMut()>);
-                let id = window.set_interval_with_callback_and_timeout_and_arguments_0(
-                    closure.as_ref().unchecked_ref(),
-                    3000,
-                ).unwrap();
-                closure.forget();
-                id
-            };
-            use_drop(move || {
-                let window = web_sys::window().unwrap();
-                window.clear_interval_with_handle(interval_id);
-            });
-        }
-    });
 
     let current_project = projects
         .read()
@@ -296,6 +370,11 @@ pub fn MessageChat() -> Element {
         rsx! {
             div { class: "chat-header",
                 h2 { class: "chat-header-title", "{project_name}" }
+                if sse_connected() {
+                    span { class: "chat-status connected", "● 实时" }
+                } else {
+                    span { class: "chat-status disconnected", "○ 连接中..." }
+                }
             }
 
             div { class: "chat-messages",
@@ -315,23 +394,43 @@ pub fn MessageChat() -> Element {
                                 load_older();
                             }
                         },
-                        for msg in messages().iter() {
-                            {
-                                let msg_id = msg.message_id.clone();
-                                let msg_content = msg.content.clone();
-                                let msg_role = msg.from_role;
-                                let msg_time = msg.created_at;
-                                rsx! {
-                                    div {
-                                        class: "message-item {role_class(msg_role)}",
-                                        key: "{msg_id}",
-                                        div { class: "message-avatar", "{role_avatar(msg_role)}" }
-                                        div {
-                                            div { class: "message-bubble", "{msg_content}" }
-                                            div { class: "message-time", "{format_time(msg_time)}" }
+                        for entry in group_messages_by_date(&messages()) {
+                            match entry {
+                                MessageListEntry::DateDivider(label) => rsx! {
+                                    div { class: "chat-date-divider",
+                                        key: "divider-{label}-{messages().len()}",
+                                        span { class: "chat-date-line" }
+                                        span { class: "chat-date-label", "{label}" }
+                                        span { class: "chat-date-line" }
+                                    }
+                                },
+                                MessageListEntry::Message(msg) => rsx! {
+                                    {
+                                        let msg_id = msg.message_id.clone();
+                                        let msg_role = msg.from_role;
+                                        let msg_clone = msg.clone();
+                                        let expanded = tool_expanded.read().contains(&msg_id);
+                                        rsx! {
+                                            div {
+                                                class: "message-item {role_class(msg_role)}",
+                                                key: "{msg_id}",
+                                                div { class: "message-avatar", "{role_avatar(msg_role)}" }
+                                                {
+                                                    render_message_content(&msg_clone, expanded, {
+                                                        let mid = msg_id.clone();
+                                                        move || {
+                                                            if tool_expanded.read().contains(&mid) {
+                                                                tool_expanded.write().remove(&mid);
+                                                            } else {
+                                                                tool_expanded.write().insert(mid.clone());
+                                                            }
+                                                        }
+                                                    })
+                                                }
+                                            }
                                         }
                                     }
-                                }
+                                },
                             }
                         }
                         if is_typing() {
@@ -349,7 +448,56 @@ pub fn MessageChat() -> Element {
             }
 
             div { class: "chat-input-area",
+                // 待发送附件列表
+                if !pending_attachments().is_empty() {
+                    div { class: "chat-pending-attachments",
+                        for att in pending_attachments().iter() {
+                            div { class: "chat-pending-attachment",
+                                key: "{att.id}",
+                                span { class: "chat-pending-icon", "📎" }
+                                span { class: "chat-pending-name", "{att.name}" }
+                                button {
+                                    class: "chat-pending-remove",
+                                    onclick: {
+                                        let id = att.id.clone();
+                                        move |_| {
+                                            let mut current = pending_attachments.write();
+                                            current.retain(|a| a.id != id);
+                                        }
+                                    },
+                                    "×"
+                                }
+                            }
+                        }
+                    }
+                }
                 div { class: "chat-input-container",
+                    // 隐藏的文件选择 input
+                    input {
+                        r#type: "file",
+                        multiple: "true",
+                        class: "chat-file-input",
+                        id: "chat-file-input",
+                        onchange: move |e| {
+                            handle_file_select(e.files());
+                        },
+                    }
+                    // 📎 按钮触发文件选择
+                    button {
+                        class: "chat-attach-btn",
+                        r#type: "button",
+                        disabled: uploading(),
+                        onclick: move |_| {
+                            if let Some(window) = web_sys::window() {
+                                if let Some(doc) = window.document() {
+                                    if let Some(el) = doc.get_element_by_id("chat-file-input") {
+                                        let _ = el.dyn_into::<web_sys::HtmlElement>().map(|h| h.click());
+                                    }
+                                }
+                            }
+                        },
+                        if uploading() { "⏳" } else { "📎" }
+                    }
                     textarea {
                         class: "chat-input",
                         value: "{input_text}",
@@ -365,7 +513,7 @@ pub fn MessageChat() -> Element {
                     button {
                         class: "chat-send-btn",
                         onclick: move |_| handle_send(()),
-                        disabled: input_text().trim().is_empty(),
+                        disabled: input_text().trim().is_empty() && pending_attachments().is_empty(),
                         "发送"
                     }
                 }
@@ -417,4 +565,305 @@ pub fn MessageChat() -> Element {
             }
         }
     }
+}
+
+/// 根据消息类型渲染不同内容
+fn render_message_content(
+    msg: &MessageListItem,
+    expanded: bool,
+    toggle_expand: impl FnMut() + 'static,
+) -> Element {
+    // 附件消息（Image/File/Audio/Video）
+    if is_attachment_message(msg.message_type) {
+        return render_attachment_message(msg);
+    }
+
+    match msg.message_type {
+        MSG_TOOL_CALL_REQUEST | MSG_TOOL_CALL_RESULT => {
+            render_tool_call_card(&msg.content, msg.message_type == MSG_TOOL_CALL_RESULT, expanded, toggle_expand, msg.created_at)
+        }
+        MSG_TASK_ASSIGNMENT => {
+            render_task_card(&msg.content, msg.created_at)
+        }
+        _ => rsx! {
+            div { class: "message-bubble", "{msg.content}" }
+            div { class: "message-time", "{format_time(msg.created_at)}" }
+        },
+    }
+}
+
+/// 渲染附件消息
+fn render_attachment_message(msg: &MessageListItem) -> Element {
+    let file_meta = match &msg.file_meta {
+        Some(fm) => fm,
+        None => {
+            // 没有文件元数据，显示原始 content
+            return rsx! {
+                div { class: "message-bubble", "{msg.content}" }
+                div { class: "message-time", "{format_time(msg.created_at)}" }
+            };
+        }
+    };
+
+    // content 存储的是文件相对路径
+    let file_path = &msg.content;
+    // 使用 attachment ID 构建下载 URL（假设 content 存储 attachment ID）
+    let file_url = format!("/api/v1/finance/attachments/{}/content", file_path);
+
+    match msg.message_type {
+        MSG_IMAGE => rsx! {
+            div { class: "message-attachment message-attachment-image",
+                img {
+                    src: "{file_url}",
+                    class: "message-image",
+                    loading: "lazy",
+                }
+            }
+            div { class: "message-time", "{format_time(msg.created_at)}" }
+        },
+        MSG_VIDEO => rsx! {
+            div { class: "message-attachment message-attachment-video",
+                video {
+                    src: "{file_url}",
+                    controls: "true",
+                    class: "message-video",
+                    preload: "metadata",
+                    "您的浏览器不支持视频播放"
+                }
+                div { class: "attachment-info",
+                    span { class: "attachment-name", "{file_meta.name}" }
+                    span { class: "attachment-size", "{format_file_size(file_meta.size)}" }
+                }
+            }
+            div { class: "message-time", "{format_time(msg.created_at)}" }
+        },
+        MSG_AUDIO => rsx! {
+            div { class: "message-attachment message-attachment-audio",
+                div { class: "audio-icon", "🎵" }
+                div { class: "audio-info",
+                    span { class: "attachment-name", "{file_meta.name}" }
+                    span { class: "attachment-size", "{format_file_size(file_meta.size)}" }
+                }
+                audio {
+                    src: "{file_url}",
+                    controls: "true",
+                    class: "message-audio",
+                    preload: "metadata",
+                }
+            }
+            div { class: "message-time", "{format_time(msg.created_at)}" }
+        },
+        _ => rsx! {
+            // File 或其他类型
+            div { class: "message-attachment message-attachment-file",
+                a {
+                    href: "{file_url}",
+                    class: "attachment-download",
+                    div { class: "file-icon", "📄" }
+                    div { class: "file-info",
+                        span { class: "attachment-name", "{file_meta.name}" }
+                        span { class: "attachment-size", "{format_file_size(file_meta.size)}" }
+                    }
+                }
+            }
+            div { class: "message-time", "{format_time(msg.created_at)}" }
+        },
+    }
+}
+
+/// 格式化文件大小
+fn format_file_size(size: u64) -> String {
+    if size < 1024 {
+        format!("{} B", size)
+    } else if size < 1024 * 1024 {
+        format!("{:.1} KB", size as f64 / 1024.0)
+    } else if size < 1024 * 1024 * 1024 {
+        format!("{:.1} MB", size as f64 / (1024.0 * 1024.0))
+    } else {
+        format!("{:.1} GB", size as f64 / (1024.0 * 1024.0 * 1024.0))
+    }
+}
+
+/// 渲染工具调用卡片
+fn render_tool_call_card(
+    content: &str,
+    is_result: bool,
+    expanded: bool,
+    mut toggle_expand: impl FnMut() + 'static,
+    time: i64,
+) -> Element {
+    // 尝试解析 JSON
+    let parsed: Result<serde_json::Value, _> = serde_json::from_str(content);
+
+    match parsed {
+        Ok(json) => {
+            let tool_name = json.get("tool_name").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
+            let status_class = if is_result {
+                match json.get("is_success").and_then(|v| v.as_bool()) {
+                    Some(true) => "tool-card tool-card-success",
+                    Some(false) => "tool-card tool-card-error",
+                    None => "tool-card tool-card-result",
+                }
+            } else {
+                "tool-card tool-card-request"
+            };
+
+            let header_icon = if is_result { "⚙️" } else { "🔧" };
+            let status_label = if is_result {
+                match json.get("is_success").and_then(|v| v.as_bool()) {
+                    Some(true) => "执行成功",
+                    Some(false) => "执行失败",
+                    None => "已执行",
+                }
+            } else {
+                "调用请求"
+            };
+
+            let args_str = json.get("args").and_then(|v| serde_json::to_string_pretty(v).ok());
+            let result_str = json.get("result").and_then(|v| serde_json::to_string_pretty(v).ok());
+            let error_msg = json.get("error_message").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+            rsx! {
+                div { class: "{status_class}",
+                    div { class: "tool-card-header",
+                        onclick: move |_| toggle_expand(),
+                        span { class: "tool-card-icon", "{header_icon}" }
+                        span { class: "tool-card-title", "{tool_name}" }
+                        span { class: "tool-card-status", "{status_label}" }
+                        span { class: "tool-card-expand",
+                            if expanded { "▼" } else { "▶" }
+                        }
+                    }
+                    if expanded {
+                        div { class: "tool-card-body",
+                            if let Some(args) = &args_str {
+                                div { class: "tool-card-section",
+                                    div { class: "tool-card-label", "参数" }
+                                    pre { class: "tool-card-json", "{args}" }
+                                }
+                            }
+                            if is_result {
+                                if let Some(result) = &result_str {
+                                    div { class: "tool-card-section",
+                                        div { class: "tool-card-label", "结果" }
+                                        pre { class: "tool-card-json", "{result}" }
+                                    }
+                                }
+                                if let Some(err) = &error_msg {
+                                    div { class: "tool-card-section tool-card-error-msg",
+                                        div { class: "tool-card-label", "错误" }
+                                        "{err}"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    div { class: "message-time", "{format_time(time)}" }
+                }
+            }
+        }
+        Err(_) => rsx! {
+            // 解析失败，回退纯文本
+            div { class: "message-bubble", "{content}" }
+            div { class: "message-time", "{format_time(time)}" }
+        },
+    }
+}
+
+/// 渲染任务分配卡片
+fn render_task_card(content: &str, time: i64) -> Element {
+    let parsed: Result<serde_json::Value, _> = serde_json::from_str(content);
+
+    match parsed {
+        Ok(json) => {
+            let title = json.get("task_title").and_then(|v| v.as_str()).unwrap_or("未知任务").to_string();
+            let description = json.get("task_description").and_then(|v| v.as_str());
+
+            rsx! {
+                div { class: "task-card",
+                    div { class: "task-card-header",
+                        span { class: "task-card-icon", "📋" }
+                        span { class: "task-card-title", "任务分配" }
+                    }
+                    div { class: "task-card-body",
+                        div { class: "task-card-name", "{title}" }
+                        if let Some(desc) = description {
+                            if !desc.is_empty() {
+                                div { class: "task-card-desc", "{desc}" }
+                            }
+                        }
+                    }
+                    div { class: "message-time", "{format_time(time)}" }
+                }
+            }
+        }
+        Err(_) => rsx! {
+            div { class: "message-bubble", "{content}" }
+            div { class: "message-time", "{format_time(time)}" }
+        },
+    }
+}
+
+/// 消息项：可能是普通消息，也可能是日期分隔条
+enum MessageListEntry {
+    /// 日期分隔条
+    DateDivider(String),
+    /// 普通消息
+    Message(MessageListItem),
+}
+
+/// 将消息按日期分组，生成带日期分隔条的列表
+fn group_messages_by_date(messages: &[MessageListItem]) -> Vec<MessageListEntry> {
+    let mut entries: Vec<MessageListEntry> = Vec::new();
+    let mut current_date = String::new();
+    for msg in messages {
+        let label = format_date_group_label(msg.created_at);
+        if label != current_date {
+            entries.push(MessageListEntry::DateDivider(label.clone()));
+            current_date = label;
+        }
+        entries.push(MessageListEntry::Message(msg.clone()));
+    }
+    entries
+}
+
+/// 格式化毫秒时间戳为日期分组标签 (今天 / 昨天 / YYYY-MM-DD)
+fn format_date_group_label(ts_ms: i64) -> String {
+    use chrono::{DateTime, Utc};
+    let secs = (ts_ms / 1000) as i64;
+    let dt: DateTime<Utc> = DateTime::<Utc>::from_timestamp(secs, 0)
+        .unwrap_or_else(|| DateTime::<Utc>::from_timestamp(0, 0).unwrap());
+
+    let now: DateTime<Utc> = DateTime::<Utc>::from_timestamp(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0),
+        0,
+    )
+    .unwrap_or_else(|| DateTime::<Utc>::from_timestamp(0, 0).unwrap());
+
+    let today = today_key(now);
+    let key = today_key(dt);
+    if key == today {
+        return "今天".to_string();
+    }
+    let yesterday = today_pred(today, -1);
+    if key == yesterday {
+        return "昨天".to_string();
+    }
+    format!("{:04}-{:02}-{:02}", key.0, key.1, key.2)
+}
+
+fn today_key(dt: chrono::DateTime<chrono::Utc>) -> (i32, u32, u32) {
+    use chrono::Datelike;
+    (dt.year(), dt.month(), dt.day())
+}
+
+/// 计算给定日期前后 offset 天
+fn today_pred((y, m, d): (i32, u32, u32), offset: i32) -> (i32, u32, u32) {
+    use chrono::{Datelike, Duration, NaiveDate};
+    let date = NaiveDate::from_ymd_opt(y, m, d).unwrap();
+    let new_date = date + Duration::days(offset as i64);
+    (new_date.year(), new_date.month(), new_date.day())
 }

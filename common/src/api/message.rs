@@ -66,6 +66,23 @@ pub struct MessageListItem {
     pub reply_to_id: Option<String>,
     /// 创建时间戳（毫秒）
     pub created_at: i64,
+    /// 文件类型（附件消息才有值）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_type: Option<i32>,
+    /// 文件元数据（附件消息才有值）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_meta: Option<FileMetaInfo>,
+}
+
+/// 文件元数据信息（用于消息附件展示）
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct FileMetaInfo {
+    /// 文件名
+    pub name: String,
+    /// MIME 类型
+    pub mime_type: String,
+    /// 文件大小（字节）
+    pub size: u64,
 }
 
 /// 消息列表响应
@@ -145,4 +162,66 @@ pub struct MessageSearchResult {
     /// 向量相似度距离（越小越相似）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vector_distance: Option<f32>,
+}
+
+// ==================== 工具调用消息结构 ====================
+
+/// 工具调用消息内容
+///
+/// 对应 MessageType::ToolCallRequest 或 MessageType::ToolCallResult
+/// 存储在 message.content 字段中的 JSON 结构
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ToolCallMessagePayload {
+    /// 工具调用请求 ID
+    pub request_id: String,
+    /// 工具 ID
+    pub tool_id: String,
+    /// 工具名称
+    pub tool_name: String,
+    /// 关联项目 ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+    /// 关联任务 ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
+    /// 发起方 ID
+    pub from_id: String,
+    /// 目标执行方 ID
+    pub to_id: String,
+    /// 调用参数（请求时有效）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub args: Option<serde_json::Value>,
+    /// 调用结果（完成后有效）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<serde_json::Value>,
+    /// 是否执行成功（结果时有效）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_success: Option<bool>,
+    /// 错误信息
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_message: Option<String>,
+}
+
+// ==================== 任务分配消息结构 ====================
+
+/// 任务分配消息内容
+///
+/// 对应 MessageType::TaskAssignment
+/// 存储在 message.content 字段中的 JSON 结构
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TaskAssignmentMessagePayload {
+    /// 任务 ID
+    pub task_id: String,
+    /// 任务标题
+    pub task_title: String,
+    /// 任务描述
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_description: Option<String>,
+    /// 关联项目 ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+    /// 分配者 ID
+    pub from_id: String,
+    /// 接收 Agent ID
+    pub to_agent_id: String,
 }

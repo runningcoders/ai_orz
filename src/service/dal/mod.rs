@@ -37,6 +37,7 @@ pub mod mcp_tool;
 pub mod memory;
 pub mod message;
 pub mod message_channel;
+pub mod message_push;
 pub mod model_provider;
 pub mod organization;
 pub mod project;

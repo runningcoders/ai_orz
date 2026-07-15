@@ -19,8 +19,10 @@ use crate::models::file::FileMeta;
 use crate::models::message::Message;
 pub use crate::models::tool::ToolCallTraceRef;
 use crate::pkg::RequestContext;
+use crate::service::dal::attachment::AttachmentDal;
 use crate::service::dal::message::MessageDal;
 pub use crate::service::dal::message_channel::{DeliveryResult, MessageChannelDal};
+use crate::service::dal::message_push::MessagePushDal;
 use crate::service::dao::message::{MessageQuery, MessageSearch};
 use common::enums::{MessageRole, MessageStatus};
 use serde_json::Value;
@@ -39,8 +41,10 @@ pub fn domain() -> Arc<dyn MessageDomain> {
 pub fn new(
     message_dal: Arc<dyn MessageDal>,
     message_channel_dal: Arc<dyn MessageChannelDal>,
+    message_push_dal: Arc<dyn MessagePushDal>,
+    attachment_dal: Arc<dyn AttachmentDal>,
 ) -> Arc<dyn MessageDomain> {
-    let domain = MessageDomainImpl::new(message_dal, message_channel_dal);
+    let domain = MessageDomainImpl::new(message_dal, message_channel_dal, message_push_dal, attachment_dal);
     Arc::new(domain)
 }
 
@@ -49,6 +53,8 @@ pub fn init() {
     let message_domain = MessageDomainImpl::new(
         crate::service::dal::message::dal(),
         crate::service::dal::message_channel::dal(),
+        crate::service::dal::message_push::dal(),
+        crate::service::dal::attachment::dal(),
     );
     let _ = MESSAGE_DOMAIN.set(Arc::new(message_domain));
 }
@@ -61,6 +67,9 @@ pub fn init() {
 struct MessageDomainImpl {
     message_dal: Arc<dyn MessageDal>,
     message_channel_dal: Arc<dyn MessageChannelDal>, // 仅用于投递，不用于配置管理
+    message_push_dal: Arc<dyn MessagePushDal>,
+    /// 用于在发送消息时按 ID 查找附件
+    attachment_dal: Arc<dyn AttachmentDal>,
 }
 
 impl MessageDomainImpl {
@@ -68,10 +77,14 @@ impl MessageDomainImpl {
     fn new(
         message_dal: Arc<dyn MessageDal>,
         message_channel_dal: Arc<dyn MessageChannelDal>,
+        message_push_dal: Arc<dyn MessagePushDal>,
+        attachment_dal: Arc<dyn AttachmentDal>,
     ) -> Self {
         Self {
             message_dal,
             message_channel_dal,
+            message_push_dal,
+            attachment_dal,
         }
     }
 }
@@ -104,6 +117,9 @@ pub struct SendToAgentCommand<'a> {
     pub task_id: Option<&'a str>,
     /// 引用的父消息 ID（可选，支持消息链）
     pub reply_to_id: Option<&'a str>,
+    /// 附件 ID 列表（可选）
+    /// 如果提供，会为每个附件创建一条附件消息，按顺序排列在文本消息之前
+    pub attachment_ids: Option<&'a [String]>,
 }
 
 /// 发送消息给用户的命令参数
@@ -207,6 +223,15 @@ pub struct DeliverMessageCommand<'a> {
     pub user_id: &'a str,
 }
 
+use tokio::sync::broadcast;
+
+/// 订阅结果
+#[derive(Debug)]
+pub struct SubscribeResult {
+    pub connection_id: String,
+    pub receiver: broadcast::Receiver<String>,
+}
+
 /// Message Domain 总 trait
 ///
 /// 聚合消息领域所有子功能 trait
@@ -274,6 +299,20 @@ pub trait MessageDelivery: Send + Sync {
         ctx: RequestContext,
         cmd: DeliverMessageCommand<'_>,
     ) -> Result<DeliveryResult>;
+
+    /// 订阅 SSE 消息推送
+    async fn subscribe_sse(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+    ) -> Result<SubscribeResult>;
+
+    /// 取消订阅 SSE 消息推送
+    async fn unsubscribe_sse(
+        &self,
+        ctx: RequestContext,
+        connection_id: &str,
+    ) -> Result<()>;
 }
 
 /// 消息管理 trait

@@ -1,44 +1,45 @@
-//! 认证状态管理 - token 持久化、用户信息全局共享
+//! 认证状态管理 - 登录状态持久化、用户信息全局共享
+//!
+//! 认证基于 HttpOnly Cookie（JWT），前端不直接持有 token
+//! 仅在 localStorage 保存登录状态标志位，用于 UI 判断
 
 use dioxus::prelude::*;
 use web_sys::Storage;
 
-const TOKEN_KEY: &str = "ai_orz_token";
+const LOGGED_IN_KEY: &str = "ai_orz_logged_in";
 
 /// 获取 localStorage
 fn get_storage() -> Option<Storage> {
     web_sys::window()?.local_storage().ok()?
 }
 
-/// 保存 token 到 localStorage
-pub fn save_token(token: &str) {
+/// 标记已登录
+pub fn mark_logged_in() {
     if let Some(storage) = get_storage() {
-        let _ = storage.set(TOKEN_KEY, token);
+        let _ = storage.set(LOGGED_IN_KEY, "true");
     }
 }
 
-/// 从 localStorage 读取 token
-pub fn load_token() -> Option<String> {
-    get_storage()?.get(TOKEN_KEY).ok()?
-}
-
-/// 清除 token
-pub fn clear_token() {
+/// 清除登录状态
+pub fn clear_login_state() {
     if let Some(storage) = get_storage() {
-        let _ = storage.remove_item(TOKEN_KEY);
+        let _ = storage.remove_item(LOGGED_IN_KEY);
     }
 }
 
-/// 判断是否已登录
+/// 判断是否已登录（基于 localStorage 标志位）
 pub fn is_logged_in() -> bool {
-    load_token().is_some()
+    get_storage()
+        .and_then(|s| s.get(LOGGED_IN_KEY).ok()?)
+        .map(|v| v == "true")
+        .unwrap_or(false)
 }
 
 /// 全局认证状态 Signal
 /// 在 App 根组件中通过 use_context_provider 初始化
 #[derive(Clone, Debug, Default)]
 pub struct AuthState {
-    pub token: Option<String>,
+    pub logged_in: bool,
     pub username: String,
     pub role: i32,
     pub org_id: String,
@@ -49,13 +50,13 @@ impl AuthState {
     /// 从 localStorage 恢复状态
     pub fn restore() -> Self {
         Self {
-            token: load_token(),
+            logged_in: is_logged_in(),
             ..Default::default()
         }
     }
 
     pub fn is_logged_in(&self) -> bool {
-        self.token.is_some()
+        self.logged_in
     }
 
     pub fn is_admin(&self) -> bool {

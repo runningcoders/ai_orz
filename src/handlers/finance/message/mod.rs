@@ -6,9 +6,11 @@ pub mod search_messages;
 pub mod send_message;
 pub mod send_message_to_agent;
 pub mod send_task_assignment_message;
+pub mod subscribe_sse;
 
 pub use list_messages::list_messages_handler;
 pub use search_messages::search_messages_handler;
 pub use send_message::send_message_handler;
 pub use send_message_to_agent::send_message_to_agent_handler;
 pub use send_task_assignment_message::send_task_assignment_message_handler;
+pub use subscribe_sse::subscribe_sse_handler;

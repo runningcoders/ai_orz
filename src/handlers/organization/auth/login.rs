@@ -36,8 +36,8 @@ pub async fn login(
         &req.organization_id,
     )?;
 
-    // 创建 Cookie
-    let cookie = Cookie::build((JWT_COOKIE_NAME, token))
+    // 创建 Cookie（浏览器场景自动携带）
+    let cookie = Cookie::build((JWT_COOKIE_NAME, token.clone()))
         .path("/")
         .http_only(true)
         .same_site(SameSite::Lax)
@@ -60,6 +60,7 @@ pub async fn login(
                 user_id: user.id.clone(),
                 username: user.username.clone(),
                 organization_id: req.organization_id,
+                token,
             })),
         ),
     ))

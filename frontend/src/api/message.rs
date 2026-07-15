@@ -39,7 +39,7 @@ pub async fn load_older_messages(
     if let Some(l) = limit {
         params.push(format!("limit={}", l));
     }
-    api_get(&format!("/api/v1/messages?{}", params.join("&"))).await
+    api_get(&format!("/api/v1/finance/messages?{}", params.join("&"))).await
 }
 
 pub async fn poll_new_messages(

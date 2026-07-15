@@ -25,6 +25,14 @@ pub fn init() {
     let _ = ATTACHMENT_DAL.set(new(attachment::dao()));
 }
 
+/// 测试专用：设置一个全新的 Attachment DAL 单例（绕过 init 流程，便于测试隔离）
+pub fn set_for_test(dal: Arc<dyn AttachmentDal + Send + Sync>) {
+    // OnceLock 不支持覆盖，所以使用一个独立的"测试模式"标志
+    // 这里直接 set，如果已设置会忽略，便于每个测试用临时 DAL
+    // 注意：OnceLock::set 返回 Result，如果已初始化则忽略新值
+    let _ = ATTACHMENT_DAL.set(dal);
+}
+
 /// 创建 Attachment DAL（返回 trait 对象）。
 pub fn new(
     attachment_dao: Arc<dyn AttachmentDao + Send + Sync>,

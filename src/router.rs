@@ -11,21 +11,16 @@ use tower_http::services::ServeDir;
 pub fn create_router(frontend_dist_dir: &str, config: Arc<AppConfig>) -> Router {
     Router::new()
         // Public routes - no JWT authentication required
-        .nest("/api/v1", public_routes())
+        .nest("/api/v1", public_routes(config.clone()))
         // Protected routes - require valid JWT token
-        .nest("/api/v1", protected_routes())
+        .nest("/api/v1", protected_routes(config.clone()))
         .route("/health", get(handlers::health::health))
-        // RequestContext 提取必须在 JWT 认证之前运行
-        // JWT 认证会验证 token 后更新 RequestContext 中的用户信息
-        .layer(axum::middleware::from_fn(move |req, next| {
-            request_context_middleware(config.clone(), req, next)
-        }))
         .fallback_service(ServeDir::new(frontend_dist_dir))
 }
 
 /// Public routes - do NOT require JWT authentication
 /// These are for initialization, login, etc.
-fn public_routes() -> Router {
+fn public_routes(config: Arc<AppConfig>) -> Router {
     use crate::handlers::organization::auth;
     use crate::handlers::organization::initialize_system;
     use crate::handlers::organization::organization;
@@ -48,11 +43,20 @@ fn public_routes() -> Router {
             "/organization/list",
             get(organization::list_organizations_handler),
         )
+        // RequestContext 提取中间件（公开路由也需要 log_id 等上下文）
+        .layer(axum::middleware::from_fn(move |req, next| {
+            request_context_middleware(config.clone(), req, next)
+        }))
 }
 
 /// Protected routes - require valid JWT authentication
 /// All requests without valid token will be redirected to / (login page)
-fn protected_routes() -> Router {
+///
+/// 中间件执行顺序（洋葱模型）：
+/// 1. jwt_auth_middleware（外层）- 验证 JWT，将用户信息写入请求头
+/// 2. request_context_middleware（内层）- 从请求头提取信息创建 RequestContext
+/// 这样 RequestContext 就能包含 JWT 注入的用户信息
+fn protected_routes(config: Arc<AppConfig>) -> Router {
     Router::new()
         // HR (Human Resources) routes
         .nest("/hr", hr_routes())
@@ -70,8 +74,13 @@ fn protected_routes() -> Router {
         .merge(task_routes())
         // Current user routes - for user profile
         .nest("/user", user_routes())
-        // Add JWT authentication middleware to all protected routes
+        // JWT 认证中间件（外层，先执行）
         .layer(axum::middleware::from_fn(jwt_auth_middleware))
+        // RequestContext 提取中间件（内层，后执行）
+        // 从请求头（包含 JWT 注入的用户信息）创建 RequestContext
+        .layer(axum::middleware::from_fn(move |req, next| {
+            request_context_middleware(config.clone(), req, next)
+        }))
 }
 
 fn user_routes() -> Router {
@@ -367,6 +376,10 @@ fn finance_routes() -> Router {
         .route(
             "/messages/search",
             post(handlers::finance::message::search_messages_handler),
+        )
+        .route(
+            "/messages/sse",
+            get(handlers::finance::message::subscribe_sse_handler),
         )
         .route(
             "/message-channels",

@@ -1184,6 +1184,22 @@ impl MessageDelivery for RecordingMessageDomain {
         _ctx: RequestContext,
         _cmd: DeliverMessageCommand<'_>,
     ) -> std::result::Result<DeliveryResult, common::error::Error> {
+        Ok(DeliveryResult::empty())
+    }
+
+    async fn subscribe_sse(
+        &self,
+        _ctx: RequestContext,
+        _user_id: &str,
+    ) -> std::result::Result<crate::service::domain::message::SubscribeResult, common::error::Error> {
+        unimplemented!("not needed by message consumer tests")
+    }
+
+    async fn unsubscribe_sse(
+        &self,
+        _ctx: RequestContext,
+        _connection_id: &str,
+    ) -> std::result::Result<(), common::error::Error> {
         unimplemented!("not needed by message consumer tests")
     }
 }
@@ -1290,6 +1306,7 @@ mod dispatch_tests {
     /// 测试：Agent → User 的消息（触发 handle_user_message）
     #[tokio::test]
     async fn test_agent_to_user_dispatches_to_user_handler() -> Result<()> {
+        init_storage_for_test().await;
         let handler = noop_handler();
         let message = create_test_message(
             "task-1",
@@ -1340,6 +1357,7 @@ mod dispatch_tests {
     /// 测试：Agent → User 的图片消息（触发 handle_user_message）
     #[tokio::test]
     async fn test_agent_image_to_user_dispatches_to_user() -> Result<()> {
+        init_storage_for_test().await;
         let handler = noop_handler();
         let message = create_test_message(
             "task-1",
@@ -1356,6 +1374,7 @@ mod dispatch_tests {
     /// 测试：Agent → User 的文件消息（触发 handle_user_message）
     #[tokio::test]
     async fn test_agent_file_to_user_dispatches_to_user() -> Result<()> {
+        init_storage_for_test().await;
         let handler = noop_handler();
         let message = create_test_message(
             "task-1",
@@ -1372,6 +1391,7 @@ mod dispatch_tests {
     /// 测试：System → User 的系统通知（触发 handle_user_message）
     #[tokio::test]
     async fn test_system_to_user_notification_dispatches_to_user() -> Result<()> {
+        init_storage_for_test().await;
         let handler = noop_handler();
         let message = create_test_message(
             "task-1",

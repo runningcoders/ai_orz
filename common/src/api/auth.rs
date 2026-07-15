@@ -22,6 +22,8 @@ pub struct LoginResponse {
     pub username: String,
     /// 组织 ID
     pub organization_id: String,
+    /// JWT token（供 API 工具/代码调用使用，浏览器场景通过 Cookie 自动携带）
+    pub token: String,
 }
 
 /// 登出请求

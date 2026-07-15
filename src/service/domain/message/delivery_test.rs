@@ -137,6 +137,12 @@ fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDomain>, RequestContext) {
     let message_dao = crate::service::dao::message::new();
     let message_vector_dao = crate::service::dao::message::vector::new();
     let event_queue = crate::service::dao::event_queue::in_memory::new();
+    // 初始化 Attachment DAO/DAL（每个测试独立临时目录）
+    let tmp_dir = std::env::temp_dir().join(format!("ai_orz_test_{}", uuid::Uuid::now_v7()));
+    let attachment_dao =
+        crate::service::dao::attachment::new_with_attachments_dir(tmp_dir);
+    let attachment_dal = crate::service::dal::attachment::new(attachment_dao);
+    crate::service::dal::attachment::set_for_test(attachment_dal.clone());
     let cortex_dao: Arc<dyn CortexDao> = Arc::new(MockCortexDao);
     let model_provider_dao: Arc<dyn ModelProviderDao> = Arc::new(MockModelProviderDao);
     let message_dal = crate::service::dal::message::new(
@@ -152,7 +158,15 @@ fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDomain>, RequestContext) {
     let message_channel_dal = crate::service::dal::message_channel::new(message_channel_dao);
     // 初始化 MessageChannel DAL 单例（用于测试中创建渠道）
     crate::service::dal::message_channel::init();
-    let domain = crate::service::domain::message::new(message_dal, message_channel_dal);
+    let message_push_dal = crate::service::dal::message_push::dal();
+    // 注入 Attachment DAL（测试中如果用不到附件，可保持真实 DAL 即可，因为它只会在 attachment_ids 非空时调用）
+    let attachment_dal = crate::service::dal::attachment::dal();
+    let domain = crate::service::domain::message::new(
+        message_dal,
+        message_channel_dal,
+        message_push_dal,
+        attachment_dal,
+    );
     let ctx = new_ctx("admin", pool);
     (domain, ctx)
 }
@@ -177,6 +191,7 @@ async fn test_send_to_agent_and_send_to_user(pool: SqlitePool) {
                 project_id: Some(&project_id),
                 task_id: Some(&task_id),
                 reply_to_id: None,
+                attachment_ids: None,
             },
         )
         .await
@@ -238,6 +253,7 @@ async fn test_dequeue_ack_nack(pool: SqlitePool) {
                 project_id: None,
                 task_id: None,
                 reply_to_id: None,
+                attachment_ids: None,
             },
         )
         .await
@@ -322,6 +338,7 @@ async fn test_send_without_project_and_task(pool: SqlitePool) {
                 project_id: None,
                 task_id: None,
                 reply_to_id: None,
+                attachment_ids: None,
             },
         )
         .await
@@ -338,6 +355,97 @@ async fn test_send_without_project_and_task(pool: SqlitePool) {
         .await
         .unwrap();
     assert!(found.is_some());
+}
+
+#[sqlx::test]
+async fn test_send_to_agent_with_attachments_creates_attachment_messages(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+
+    // 先创建两个附件（属于当前用户 admin）
+    let att_dal = crate::service::dal::attachment::dal();
+    let att1 = att_dal
+        .create_from_text(
+            ctx.clone(),
+            crate::models::attachment::TextAttachmentCreate {
+                file_name: "document.txt".to_string(),
+                content: "test text content".to_string(),
+                mime_type: None,
+                purpose: Some("test".to_string()),
+            },
+        )
+        .await
+        .unwrap();
+    let att2 = att_dal
+        .create_from_upload(
+            ctx.clone(),
+            crate::models::attachment::AttachmentUpload {
+                original_name: "image.png".to_string(),
+                mime_type: "image/png".to_string(),
+                purpose: "test".to_string(),
+                bytes: b"fake-image-bytes".to_vec(),
+            },
+        )
+        .await
+        .unwrap();
+
+    // 发送带附件的消息
+    let att_ids = vec![att1.po.id.clone(), att2.po.id.clone()];
+    let sent = domain
+        .delivery()
+        .send_to_agent(
+            ctx.clone(),
+            SendToAgentCommand {
+                from_id: "admin",
+                from_role: MessageRole::User,
+                to_agent_id: "agent-1",
+                content: "看这两份资料",
+                project_id: None,
+                task_id: None,
+                reply_to_id: None,
+                attachment_ids: Some(&att_ids),
+            },
+        )
+        .await
+        .unwrap();
+
+    // 文本消息是 root
+    assert_eq!(sent.po.message_type, MessageType::Text);
+    assert_eq!(sent.po.content, "看这两份资料");
+    let root_id = sent.po.id.clone();
+
+    // 找到 2 条附件消息
+    let msgs = domain
+        .management()
+        .query(
+            ctx.clone(),
+            crate::service::dao::message::MessageQuery {
+                from_id: Some("admin".to_string()),
+                to_id: Some("agent-1".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert!(msgs.len() >= 3, "应至少有 3 条消息，实际 {}", msgs.len());
+
+    // 找到 2 条附件消息
+    let image_msg = msgs
+        .iter()
+        .find(|m| m.po.message_type == MessageType::Image)
+        .expect("应有一条图片附件消息");
+    let file_msg = msgs
+        .iter()
+        .find(|m| m.po.message_type == MessageType::File)
+        .expect("应有一条文件附件消息");
+    // 附件消息的 reply_to_id 应指向文本消息
+    assert_eq!(image_msg.po.reply_to_id.as_ref(), Some(&root_id));
+    assert_eq!(file_msg.po.reply_to_id.as_ref(), Some(&root_id));
+    // 附件消息的 root_id 应指向文本消息
+    assert_eq!(image_msg.po.root_id.as_ref(), Some(&root_id));
+    assert_eq!(file_msg.po.root_id.as_ref(), Some(&root_id));
+    // 附件消息的 content 应为附件 ID
+    assert_eq!(image_msg.po.content, att2.po.id);
+    assert_eq!(file_msg.po.content, att1.po.id);
 }
 
 #[sqlx::test]

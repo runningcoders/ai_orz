@@ -9,7 +9,7 @@ use crate::models::message::{Message, ToolCallMessage};
 use crate::models::tool::ToolCallTraceRef;
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
 use crate::service::domain::message::{
-    MessageDomain, SendToolCallResultCommand, ToolCallExecutionOutcome,
+    DeliverMessageCommand, MessageDomain, SendToolCallResultCommand, ToolCallExecutionOutcome,
 };
 use crate::service::domain::runtime::RuntimeDomain;
 use async_trait::async_trait;
@@ -280,11 +280,22 @@ impl MessageHandlerImpl {
     }
 
     /// 用户消息处理：通过消息网关推送给前端
-    async fn handle_user_message(&self, _message: &Message) -> Result<()> {
-        // TODO: 调用 MessageGateway.push_to_user
-        // 1. SSE/WebSocket 推送
-        // 2. 在线状态检查
-        sys_debug!("user message pushed to frontend");
+    async fn handle_user_message(&self, message: &Message) -> Result<()> {
+        let ctx = self.rebuild_context(message);
+        let cmd = DeliverMessageCommand {
+            message,
+            user_id: &message.po.to_id,
+        };
+        let result = self.message_domain
+            .delivery()
+            .deliver_message(ctx, cmd)
+            .await?;
+        sys_debug!(
+            "user message delivered: sse={}, channels={}/{}",
+            result.sse_delivered,
+            result.success,
+            result.total
+        );
         Ok(())
     }
 

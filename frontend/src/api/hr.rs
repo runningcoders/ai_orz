@@ -95,13 +95,11 @@ pub async fn update_skill(id: &str, req: UpdateSkillRequest) -> Result<UpdateSki
 }
 
 pub async fn delete_skill(id: &str) -> Result<DeleteSkillResponse, String> {
-    // DELETE 返回 ApiResponse<DeleteSkillResponse>，需要走 json 解析
     let resp = super::client()
-        .delete(&crate::config::current_config().api_url(&format!("/api/v1/hr/skills/{}", id)));
-    let resp = match get_token_bearer(resp).send().await {
-        Ok(r) => r,
-        Err(e) => return Err(e.to_string()),
-    };
+        .delete(&crate::config::current_config().api_url(&format!("/api/v1/hr/skills/{}", id)))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {}", resp.status()));
     }
@@ -164,12 +162,4 @@ pub async fn search_memory_with_traversal(query: &str, seed_node_ids: &[String],
         seed_node_ids: Some(seed_node_ids.to_vec()),
     };
     api_post("/api/v1/hr/agents/search_memory", &params).await
-}
-
-fn get_token_bearer(req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-    if let Some(token) = crate::store::auth::load_token() {
-        req.bearer_auth(&token)
-    } else {
-        req
-    }
 }

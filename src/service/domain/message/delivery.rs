@@ -1,6 +1,7 @@
 //! Message Delivery 具体实现
 
-use common::error::{err, bail_err, Result};
+use common::error::{bail_err, err, Result};
+use crate::models::file::FileMeta;
 use crate::models::message::Message;
 use crate::models::message::MessagePo;
 use crate::models::message::TaskAssignmentMessage;
@@ -12,7 +13,7 @@ use crate::service::domain::message::{
     SendToUserCommand, SendToolCallRequestCommand, SendToolCallResultCommand,
     ToolCallExecutionOutcome,
 };
-use common::enums::{MessageRole, MessageStatus, MessageType};
+use common::enums::{FileType, MessageRole, MessageStatus, MessageType};
 use serde_json::json;
 
 use crate::enrich_ctx;
@@ -34,6 +35,17 @@ fn generate_id() -> String {
     uuid::Uuid::now_v7().to_string()
 }
 
+/// 将 Attachment FileType 映射到对应的 MessageType
+fn map_file_type_to_message_type(file_type: FileType) -> MessageType {
+    match file_type {
+        FileType::Image => MessageType::Image,
+        FileType::Audio => MessageType::Audio,
+        FileType::Video => MessageType::Video,
+        // 文档与二进制文件统一归类为 File
+        FileType::Document | FileType::Binary => MessageType::File,
+    }
+}
+
 #[async_trait::async_trait]
 impl MessageDelivery for MessageDomainImpl {
     async fn send_to_agent(
@@ -41,7 +53,6 @@ impl MessageDelivery for MessageDomainImpl {
         ctx: RequestContext,
         cmd: SendToAgentCommand<'_>,
     ) -> Result<Message> {
-        let id = generate_id();
         let project_id = cmd
             .project_id
             .or_else(|| ctx.project_id().map(|s| s.as_str()))
@@ -51,8 +62,58 @@ impl MessageDelivery for MessageDomainImpl {
             .or_else(|| ctx.task_id().map(|s| s.as_str()))
             .map(|s| s.to_string());
 
+        // 先生成根消息 ID（文本消息的 ID），附件消息使用 reply_to_id 链回根
+        let root_msg_id = generate_id();
+
+        // 1. 处理附件消息：按数组顺序创建 N 条附件消息
+        if let Some(att_ids) = cmd.attachment_ids {
+            for att_id in att_ids {
+                let attachment = self
+                    .attachment_dal
+                    .get_by_id(ctx.clone(), att_id)
+                    .await?
+                    .ok_or_else(|| err!(ResourceNotFound, "Attachment {} not found", att_id))?;
+
+                // 校验归属：附件必须属于当前用户
+                if !cmd.from_id.is_empty() && attachment.po.root_user_id != cmd.from_id && ctx.uid() != attachment.po.root_user_id {
+                    bail_err!(InvalidRequest, "Attachment {} 不属于当前用户", att_id);
+                }
+
+                let att_msg_id = generate_id();
+                let file_type = map_file_type_to_message_type(attachment.po.file_type);
+                let file_meta = FileMeta::new(
+                    attachment.po.relative_path.clone(),
+                    attachment.po.mime_type.clone(),
+                    attachment.po.size as u64,
+                );
+
+                let att_po = MessagePo::new(
+                    att_msg_id.clone(),
+                    project_id.clone(),
+                    task_id.clone(),
+                    cmd.from_id.to_string(),
+                    cmd.to_agent_id.to_string(),
+                    cmd.from_role,
+                    MessageRole::Agent,
+                    file_type,
+                    attachment.po.id.clone(),
+                    Some(attachment.po.file_type),
+                    file_meta,
+                    Some(root_msg_id.clone()),
+                    Some(root_msg_id.clone()),
+                    ctx.organization_id().cloned(),
+                    cmd.from_id.to_string(),
+                );
+
+                let att_message = Message::from_po(att_po);
+                let att_ctx = enrich_ctx!(&ctx, &att_message);
+                self.message_dal.save_message(att_ctx.clone(), &att_message).await?;
+            }
+        }
+
+        // 2. 创建文本消息（root_id = 自身 id）
         let po = MessagePo::new(
-            id.clone(),
+            root_msg_id.clone(),
             project_id,
             task_id,
             cmd.from_id.to_string(),
@@ -62,9 +123,9 @@ impl MessageDelivery for MessageDomainImpl {
             MessageType::Text,
             cmd.content.to_string(),
             None,
-            Default::default(),
+            FileMeta::default(),
             cmd.reply_to_id.map(|s| s.to_string()),
-            Some(id),
+            Some(root_msg_id.clone()),
             ctx.organization_id().cloned(),
             cmd.from_id.to_string(),
         );
@@ -322,8 +383,72 @@ impl MessageDelivery for MessageDomainImpl {
         ctx: RequestContext,
         cmd: DeliverMessageCommand<'_>,
     ) -> Result<crate::service::dal::message_channel::DeliveryResult> {
-        self.message_channel_dal
-            .deliver_message(ctx, cmd.message, cmd.user_id)
-            .await
+        // 1. 投递到已配置的消息渠道（飞书/微信/钉钉等）
+        let channel_result = self.message_channel_dal
+            .deliver_message(ctx.clone(), cmd.message, cmd.user_id)
+            .await?;
+
+        // 2. 投递到 SSE 长连接（如果用户有在线连接）
+        let file_meta = cmd.message.file_meta().map(|fm| {
+            let name = fm.file_path.rsplit('/').next().unwrap_or(&fm.file_path).to_string();
+            common::api::message::FileMetaInfo {
+                name,
+                mime_type: fm.mime_type.clone(),
+                size: fm.file_size,
+            }
+        });
+        let sse_payload = crate::service::dal::message_push::SsePushPayload {
+            message_id: cmd.message.id().to_string(),
+            project_id: cmd.message.project_id().map(|s| s.to_string()),
+            task_id: cmd.message.task_id().map(|s| s.to_string()),
+            from_id: cmd.message.from_id().to_string(),
+            from_role: cmd.message.from_role() as i32,
+            to_id: cmd.message.to_id().to_string(),
+            to_role: cmd.message.to_role() as i32,
+            message_type: cmd.message.message_type() as i32,
+            status: cmd.message.status() as i32,
+            content: cmd.message.content().to_string(),
+            reply_to_id: cmd.message.reply_to_id().map(|s| s.to_string()),
+            created_at: cmd.message.created_at(),
+            file_type: cmd.message.file_type().map(|ft| ft as i32),
+            file_meta,
+        };
+        let sse_result = self.message_push_dal
+            .push_to_sse(ctx, cmd.user_id, &sse_payload)
+            .await;
+
+        let sse_delivered = sse_result.map(|r| r.delivered_count).unwrap_or(0);
+
+        Ok(crate::service::dal::message_channel::DeliveryResult {
+            total: channel_result.total,
+            success: channel_result.success,
+            failed: channel_result.failed,
+            details: channel_result.details,
+            sse_delivered,
+        })
+    }
+
+    async fn subscribe_sse(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+    ) -> Result<super::SubscribeResult> {
+        let connection_id = uuid::Uuid::now_v7().to_string();
+        let receiver = self.message_push_dal
+            .subscribe_sse(ctx, user_id, &connection_id)
+            .await;
+        Ok(super::SubscribeResult {
+            connection_id,
+            receiver,
+        })
+    }
+
+    async fn unsubscribe_sse(
+        &self,
+        ctx: RequestContext,
+        connection_id: &str,
+    ) -> Result<()> {
+        self.message_push_dal.unsubscribe_sse(ctx, connection_id).await;
+        Ok(())
     }
 }
