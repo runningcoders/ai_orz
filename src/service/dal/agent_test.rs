@@ -230,6 +230,13 @@ impl ModelProviderDao for MockModelProviderDao {
     ) -> Result<Option<ModelProviderPo>> {
         Ok(Some(mock_provider()))
     }
+
+    async fn find_enabled_embedding_provider(
+        &self,
+        _ctx: RequestContext,
+    ) -> Result<Option<ModelProviderPo>> {
+        Ok(None)
+    }
 }
 
 fn mock_provider() -> ModelProviderPo {

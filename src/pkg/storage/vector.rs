@@ -47,6 +47,9 @@ pub trait VectorStore: Send + Sync + std::fmt::Debug {
 
     /// 删除向量
     async fn delete(&self, collection: &str, id: &str) -> Result<()>;
+
+    /// 清空向量集合
+    async fn clear_collection(&self, collection: &str) -> Result<()>;
 }
 
 /// SQLite VSS 向量存储
@@ -193,6 +196,18 @@ impl VectorStore for SqliteVssStore {
                 .execute(&*self.pool)
                 .await?;
         }
+
+        Ok(())
+    }
+
+    async fn clear_collection(&self, collection: &str) -> Result<()> {
+        let sql = format!("DELETE FROM vss_{};", collection);
+        sqlx::query(&sql).execute(&*self.pool).await?;
+
+        sqlx::query("DELETE FROM vector_metadata WHERE collection = ?")
+            .bind(collection)
+            .execute(&*self.pool)
+            .await?;
 
         Ok(())
     }

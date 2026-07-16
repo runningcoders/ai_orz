@@ -218,6 +218,24 @@ UPDATE model_providers SET status = 0, modified_by = ?, updated_at = ? WHERE id 
             .await?;
         Ok(providers.into_iter().next())
     }
+
+    async fn find_enabled_embedding_provider(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<Option<ModelProviderPo>> {
+        let providers = self
+            .query(
+                ctx,
+                ModelProviderQuery {
+                    capability: Some(ModelCapability::Embedding),
+                    status: Some(ModelProviderStatus::Normal),
+                    limit: Some(1),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(providers.into_iter().next())
+    }
 }
 
 fn current_timestamp() -> i64 {

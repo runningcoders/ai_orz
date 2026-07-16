@@ -227,3 +227,28 @@ pub struct TestModelProviderConnectionResponse {
     /// Model result (on success)
     pub result: Option<String>,
 }
+
+/// Switch Embedding Provider request
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct SwitchEmbeddingProviderRequest {
+    /// Provider ID
+    #[param(source = "path")]
+    pub id: String,
+    /// User confirmation flag (must be true)
+    pub confirm: bool,
+}
+
+/// Switch Embedding Provider response
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SwitchEmbeddingProviderResponse {
+    /// New provider ID
+    pub id: String,
+    /// New provider name
+    pub name: String,
+    /// Previous provider ID (if existed)
+    pub previous_provider_id: Option<String>,
+    /// Previous provider name (if existed)
+    pub previous_provider_name: Option<String>,
+    /// Rebuild status
+    pub rebuild_status: String,
+}

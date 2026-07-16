@@ -180,6 +180,10 @@ impl ModelProviderDao for MockModelProviderDao {
     async fn get_default_embedding_provider(&self, _ctx: RequestContext) -> common::error::Result<Option<ModelProviderPo>> {
         Ok(Some(mock_provider()))
     }
+
+    async fn find_enabled_embedding_provider(&self, _ctx: RequestContext) -> common::error::Result<Option<ModelProviderPo>> {
+        Ok(None)
+    }
 }
 
 /// 构造测试用 ModelProviderPo

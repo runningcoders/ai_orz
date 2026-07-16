@@ -58,6 +58,7 @@ dashmap = "6.1"
 # 向量搜索相关
 fastembed = "5.13"  # 纯本地向量化（纯 Rust candle 后端，零系统依赖）
 lancedb = "0.26"   # 嵌入式向量数据库
+instant-distance = "0.6.1"  # 纯 Rust HNSW 索引（零系统依赖）
 arrow-array = "57.3.0"
 arrow-schema = "57.3.0"
 futures = "0.3.32"

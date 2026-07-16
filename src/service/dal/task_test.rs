@@ -210,6 +210,13 @@ impl ModelProviderDao for MockModelProviderDao {
             updated_at: chrono::Utc::now().timestamp(),
         }))
     }
+
+    async fn find_enabled_embedding_provider(
+        &self,
+        _ctx: RequestContext,
+    ) -> Result<Option<ModelProviderPo>> {
+        Ok(None)
+    }
 }
 
 /// 初始化搜索测试环境（注入 MockCortexDao + MockModelProviderDao）

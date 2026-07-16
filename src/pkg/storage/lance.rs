@@ -348,4 +348,17 @@ impl super::VectorStore for LanceVectorStore {
             .map_err(|e| common::error::Error::internal(format!("LanceDB delete error: {}", e)))?;
         Ok(())
     }
+
+    async fn clear_collection(&self, collection: &str) -> Result<()> {
+        let table = self.get_or_create_table(collection, 0).await?;
+        table
+            .delete("TRUE")
+            .await
+            .map_err(|e| common::error::Error::internal(format!("LanceDB clear error: {}", e)))?;
+
+        let mut tables = self.tables.write().await;
+        tables.remove(collection);
+
+        Ok(())
+    }
 }

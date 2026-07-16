@@ -251,4 +251,24 @@ impl super::VectorStore for InMemoryVectorStore {
 
         Ok(())
     }
+
+    async fn clear_collection(&self, collection: &str) -> Result<()> {
+        let mut collections = self.collections.write().await;
+
+        if let Some(coll) = collections.get_mut(collection) {
+            let dimensions = coll.dimensions;
+            *coll = VectorCollection::new(dimensions);
+
+            let coll_clone = coll.clone();
+            let store_clone = self.clone();
+            let collection_name = collection.to_string();
+            tokio::spawn(async move {
+                let _ = store_clone
+                    .save_collection(&collection_name, &coll_clone)
+                    .await;
+            });
+        }
+
+        Ok(())
+    }
 }

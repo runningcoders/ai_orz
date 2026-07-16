@@ -84,6 +84,9 @@ pub trait ModelProviderDal: Send + Sync {
     /// 删除 Model Provider
     async fn delete(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<()>;
 
+    /// 获取当前启用的 Embedding Provider（用于唯一性校验）
+    async fn find_enabled_embedding_provider(&self, ctx: RequestContext) -> Result<Option<ModelProvider>>;
+
     // ==================== 统计查询 ====================
 
     /// 获取 ModelProvider 统计数据（按 options 控制返回哪些维度）
@@ -174,6 +177,13 @@ impl ModelProviderDal for ModelProviderDalImpl {
     async fn delete(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<()> {
         let ctx = enrich_ctx!(&ctx, provider);
         self.model_provider_dao.delete(ctx, &provider.po).await
+    }
+
+    async fn find_enabled_embedding_provider(&self, ctx: RequestContext) -> Result<Option<ModelProvider>> {
+        match self.model_provider_dao.find_enabled_embedding_provider(ctx).await? {
+            Some(po) => Ok(Some(ModelProvider { po, stats: None })),
+            None => Ok(None),
+        }
     }
 
     // ==================== 统计查询 ====================

@@ -359,6 +359,10 @@ fn finance_routes() -> Router {
             post(handlers::finance::model_provider::test_connection::test_model_provider_connection_handler),
         )
         .route(
+            "/model-providers/{id}/switch",
+            post(handlers::finance::model_provider::switch_embedding::switch_embedding_provider_handler),
+        )
+        .route(
             "/model-providers/{id}/call",
             post(handlers::finance::model_provider::call_model::call_model_handler),
         )

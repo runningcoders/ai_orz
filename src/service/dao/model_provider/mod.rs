@@ -47,6 +47,12 @@ pub trait ModelProviderDao: Send + Sync {
         &self,
         ctx: RequestContext,
     ) -> Result<Option<ModelProviderPo>>;
+
+    /// 获取当前启用的 Embedding Provider（用于唯一性校验）
+    async fn find_enabled_embedding_provider(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<Option<ModelProviderPo>>;
 }
 
 /// ModelProvider 统计查询参数（统一结构体，覆盖所有查询场景）

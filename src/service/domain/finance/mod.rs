@@ -175,6 +175,13 @@ pub trait ModelProviderManage: Send + Sync {
         provider: &ModelProvider,
         prompt: &str,
     ) -> Result<String>;
+
+    /// 切换 Embedding Provider（原子操作：禁用旧 → 启用新 → 重建索引）
+    async fn switch_embedding_provider(
+        &self,
+        ctx: RequestContext,
+        new_provider_id: &str,
+    ) -> Result<Option<ModelProvider>>;
 }
 
 /// Message Channel 管理 trait

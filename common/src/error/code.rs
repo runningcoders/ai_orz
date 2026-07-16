@@ -124,6 +124,11 @@ define_error_codes! {
             http: 401,
             code: "jwt_invalid",
         }
+        EmbeddingProviderSwitchRequired {
+            type: Biz,
+            http: 409,
+            code: "embedding_provider_switch_required",
+        }
         Internal {
             type: System,
             http: 500,

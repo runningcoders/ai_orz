@@ -241,6 +241,13 @@ impl ModelProviderDao for MockModelProviderDao {
             updated_at: chrono::Utc::now().timestamp(),
         }))
     }
+
+    async fn find_enabled_embedding_provider(
+        &self,
+        _ctx: RequestContext,
+    ) -> Result<Option<ModelProviderPo>> {
+        Ok(None)
+    }
 }
 
 /// 创建测试 RequestContext（使用测试 pool 注入）
