@@ -7,24 +7,19 @@ use axum::{
 };
 use serde_json::json;
 
-use crate::error::{Error, ErrorCode};
+use crate::error::Error;
 
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
-        let (status, code, message) = match self.code {
-            // 基础错误码映射 HTTP 状态码
-            ErrorCode::ResourceNotFound => (StatusCode::NOT_FOUND, 404, self.msg.clone()),
-            ErrorCode::InvalidRequest | ErrorCode::UnsupportedOperation => (StatusCode::BAD_REQUEST, 400, self.msg.clone()),
-            ErrorCode::ResourceConflict => (StatusCode::CONFLICT, 409, self.msg.clone()),
-            ErrorCode::PayloadTooLarge => (StatusCode::PAYLOAD_TOO_LARGE, 413, self.msg.clone()),
-            ErrorCode::Internal | ErrorCode::DbQueryFailed | ErrorCode::IoError => (StatusCode::INTERNAL_SERVER_ERROR, 500, self.msg.clone()),
-            ErrorCode::ChannelPushFailed => (StatusCode::INTERNAL_SERVER_ERROR, 500, self.msg.clone()),
-            // 默认情况
-            _ => (StatusCode::INTERNAL_SERVER_ERROR, 500, self.msg.clone()),
-        };
+        let http_status = self.code.http_status();
+        let status = StatusCode::from_u16(http_status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        let code_i32 = http_status as i32;
+        let error_code_str = self.code.code_str();
+        let message = self.msg.clone();
 
         let body = Json(json!({
-            "code": code,
+            "code": code_i32,
+            "error_code": error_code_str,
             "message": message,
             "data": null
         }));

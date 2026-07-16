@@ -41,6 +41,7 @@ pub async fn get_model_provider(
         id: provider.po.id.clone(),
         name: provider.po.name.clone(),
         provider_type: provider.po.provider_type,
+        capability: provider.po.capability,
         model_name: provider.po.model_name.clone(),
         base_url: if provider.po.base_url.as_ref().map_or(true, |d| d.is_empty()) {
             None
@@ -57,6 +58,7 @@ pub async fn get_model_provider(
         } else {
             provider.po.description.clone()
         },
+        status: provider.po.status as i32,
         created_at: provider.po.created_at,
         updated_at: provider.po.updated_at,
         stats: provider.stats,

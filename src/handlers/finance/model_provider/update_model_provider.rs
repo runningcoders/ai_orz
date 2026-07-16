@@ -5,6 +5,7 @@ use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateModelProviderRequest, UpdateModelProviderResponse};
+use common::enums::ModelProviderStatus;
 
 use crate::enrich_ctx;
 
@@ -55,6 +56,9 @@ pub async fn update_model_provider(
     if let Some(description) = params.description {
         provider.po.description = Some(description);
     }
+    if let Some(status) = params.status {
+        provider.po.status = ModelProviderStatus::from_i32(status);
+    }
     // Update modified_by and updated_at
     provider.po.modified_by = ctx.uid();
     provider.po.updated_at = current_timestamp();
@@ -68,6 +72,7 @@ pub async fn update_model_provider(
         id: provider.po.id.clone(),
         name: provider.po.name.clone(),
         provider_type: provider.po.provider_type,
+        capability: provider.po.capability,
         model_name: provider.po.model_name.clone(),
         base_url: if provider.po.base_url.as_ref().map_or(true, |d| d.is_empty()) {
             None
@@ -84,6 +89,7 @@ pub async fn update_model_provider(
         } else {
             provider.po.description.clone()
         },
+        status: provider.po.status as i32,
         updated_at: provider.po.updated_at,
     })
 }

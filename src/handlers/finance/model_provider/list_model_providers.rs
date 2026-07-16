@@ -28,6 +28,7 @@ pub async fn list_model_providers(
             id: provider.po.id.clone(),
             name: provider.po.name.clone(),
             provider_type: provider.po.provider_type,
+            capability: provider.po.capability,
             model_name: provider.po.model_name.clone(),
             description: if provider
                 .po
@@ -39,6 +40,7 @@ pub async fn list_model_providers(
             } else {
                 provider.po.description.clone()
             },
+            status: provider.po.status as i32,
             created_at: provider.po.created_at,
         })
         .collect();

@@ -50,10 +50,14 @@ pub struct ModelProviderListItem {
     pub name: String,
     /// Provider type
     pub provider_type: ProviderType,
+    /// Model capability
+    pub capability: ModelCapability,
     /// Model name
     pub model_name: String,
     /// Description
     pub description: Option<String>,
+    /// Provider status (0=deleted, 1=normal)
+    pub status: i32,
     /// Created timestamp
     pub created_at: i64,
 }
@@ -87,12 +91,16 @@ pub struct GetModelProviderResponse {
     pub name: String,
     /// Provider type
     pub provider_type: ProviderType,
+    /// Model capability
+    pub capability: ModelCapability,
     /// Model name
     pub model_name: String,
     /// Custom Base URL
     pub base_url: Option<String>,
     /// Description
     pub description: Option<String>,
+    /// Provider status (0=deleted, 1=normal)
+    pub status: i32,
     /// Created timestamp
     pub created_at: i64,
     /// Updated timestamp
@@ -120,6 +128,8 @@ pub struct UpdateModelProviderRequest {
     pub base_url: Option<String>,
     /// New description
     pub description: Option<String>,
+    /// New status (0=deleted/disabled, 1=normal/enabled)
+    pub status: Option<i32>,
 }
 
 /// Update Model Provider response
@@ -131,12 +141,16 @@ pub struct UpdateModelProviderResponse {
     pub name: String,
     /// Provider type
     pub provider_type: ProviderType,
+    /// Model capability
+    pub capability: ModelCapability,
     /// Model name
     pub model_name: String,
     /// Custom Base URL
     pub base_url: Option<String>,
     /// Description
     pub description: Option<String>,
+    /// Provider status (0=deleted/disabled, 1=normal/enabled)
+    pub status: i32,
     /// Updated timestamp
     pub updated_at: i64,
 }

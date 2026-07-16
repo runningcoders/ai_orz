@@ -165,12 +165,12 @@ async fn rebuild_all_vector_indexes(&self, ctx: RequestContext) -> Result<()> {
 }
 ```
 
-**分层说明**（严格遵守单向依赖）：
+**分层说明**（严格遵守单向依赖，实际实现以 DAL 层编排为主）：
 | 层级 | 职责 |
 |------|------|
-| **Domain** | 编排：依次调用各 DAL 的 `rebuild_vectors()` |
-| **DAL** | 透传：调用对应 DAO 的 `rebuild_vectors()` |
-| **DAO** | 实现：清空集合 → 查询全量 PO → 生成 embedding → 批量 upsert |
+| **Domain** | 编排：通过全局 DAL 单例调用各 DAL 的 `rebuild_vectors()` |
+| **DAL** | 核心实现：组合 vector_dao（清空集合）+ 主 DAO（查全量 PO）+ cortex_dao（生成 embedding），逐条 upsert |
+| **VectorDao** | 透传：`clear_collection()` 调用底层 VectorStore |
 | **VectorStore** | 底层：`clear_collection()` + `upsert()` |
 
 **文件**: `src/handlers/finance/model_provider/switch_embedding.rs`（新建）
@@ -214,24 +214,25 @@ pub struct SwitchEmbeddingProviderResponse {
 | `src/pkg/storage/vector.rs` | 编辑 | 新增 `clear_collection` trait 方法 |
 | `src/service/dao/model_provider/mod.rs` | 编辑 | 新增 `find_enabled_embedding_provider` trait 方法 |
 | `src/service/dao/model_provider/sqlite.rs` | 编辑 | 实现 `find_enabled_embedding_provider` |
-| `src/service/dao/memory/mod.rs` | 编辑 | 新增 `rebuild_vectors` trait 方法 |
-| `src/service/dao/memory/sqlite.rs` | 编辑 | 实现 `rebuild_vectors` |
-| `src/service/dao/skill/mod.rs` | 编辑 | 新增 `rebuild_vectors` trait 方法 |
-| `src/service/dao/skill/sqlite.rs` | 编辑 | 实现 `rebuild_vectors` |
-| `src/service/dao/message/mod.rs` | 编辑 | 新增 `rebuild_vectors` trait 方法 |
-| `src/service/dao/message/sqlite.rs` | 编辑 | 实现 `rebuild_vectors` |
-| `src/service/dao/task/mod.rs` | 编辑 | 新增 `rebuild_vectors` trait 方法 |
-| `src/service/dao/task/sqlite.rs` | 编辑 | 实现 `rebuild_vectors` |
-| `src/service/dao/project/mod.rs` | 编辑 | 新增 `rebuild_vectors` trait 方法 |
-| `src/service/dao/project/sqlite.rs` | 编辑 | 实现 `rebuild_vectors` |
-| `src/service/dao/agent/mod.rs` | 编辑 | 新增 `rebuild_vectors` trait 方法 |
-| `src/service/dao/agent/sqlite.rs` | 编辑 | 实现 `rebuild_vectors` |
-| `src/service/dal/memory.rs` | 编辑 | 新增 `rebuild_vectors` 方法（透传 DAO） |
-| `src/service/dal/skill.rs` | 编辑 | 新增 `rebuild_vectors` 方法（透传 DAO） |
-| `src/service/dal/message.rs` | 编辑 | 新增 `rebuild_vectors` 方法（透传 DAO） |
-| `src/service/dal/task.rs` | 编辑 | 新增 `rebuild_vectors` 方法（透传 DAO） |
-| `src/service/dal/project.rs` | 编辑 | 新增 `rebuild_vectors` 方法（透传 DAO） |
-| `src/service/dal/agent.rs` | 编辑 | 新增 `rebuild_vectors` 方法（透传 DAO） |
+| `src/service/dao/memory/mod.rs` | 编辑 | 新增 `clear_collection` trait 方法 |
+| `src/service/dao/memory/vector.rs` | 编辑 | 实现 `clear_collection` |
+| `src/service/dao/skill/mod.rs` | 编辑 | 新增 `clear_collection` trait 方法 |
+| `src/service/dao/skill/vector.rs` | 编辑 | 实现 `clear_collection` |
+| `src/service/dao/message/mod.rs` | 编辑 | 新增 `clear_collection` trait 方法 |
+| `src/service/dao/message/vector.rs` | 编辑 | 实现 `clear_collection` |
+| `src/service/dao/task/mod.rs` | 编辑 | 新增 `clear_collection` trait 方法 |
+| `src/service/dao/task/vector.rs` | 编辑 | 实现 `clear_collection` |
+| `src/service/dao/project/mod.rs` | 编辑 | 新增 `clear_collection` trait 方法 |
+| `src/service/dao/project/vector.rs` | 编辑 | 实现 `clear_collection` |
+| `src/service/dao/agent/mod.rs` | 编辑 | 新增 `clear_collection` trait 方法 |
+| `src/service/dao/agent/vector.rs` | 编辑 | 实现 `clear_collection` |
+| `src/service/dal/memory.rs` | 编辑 | 新增 `rebuild_vectors` 方法（核心实现） |
+| `src/service/dal/skill.rs` | 编辑 | 新增 `rebuild_vectors` 方法（核心实现） |
+| `src/service/dal/message.rs` | 编辑 | 新增 `rebuild_vectors` 方法（核心实现） |
+| `src/service/dal/task.rs` | 编辑 | 新增 `rebuild_vectors` 方法（核心实现） |
+| `src/service/dal/project.rs` | 编辑 | 新增 `rebuild_vectors` 方法（核心实现） |
+| `src/service/dal/agent.rs` | 编辑 | 新增 `rebuild_vectors` 方法（核心实现） |
+| `src/service/dal/tool.rs` | 编辑 | 新增 `rebuild_vectors` 方法（核心实现） |
 | `src/service/domain/finance/mod.rs` | 编辑 | 新增 `switch_embedding_provider` + `rebuild_all_vector_indexes` |
 | `src/service/domain/finance/model_provider.rs` | 编辑 | 添加唯一性校验 + switch 实现 |
 | `common/src/error/code.rs` | 编辑 | 新增 `EmbeddingProviderSwitchRequired` 错误码 |
@@ -306,5 +307,5 @@ pub struct SwitchEmbeddingProviderResponse {
 - ✅ Task 1: HNSW 向量存储（instant-distance 0.6.1，lazy rebuild 策略）
 - ✅ Task 2: Embedding Provider 唯一性约束（Domain 层校验 + 409 错误码）
 - ✅ Task 3: Switch 接口（POST /api/v1/finance/model-providers/:id/switch）
+- ✅ 索引重建全链路：VectorDao clear_collection + DAL rebuild_vectors + Domain 编排
 - ✅ 测试验证：697 个测试全部通过
-- ⏳ 索引重建逻辑（rebuild_vectors 各 DAO/DAL/Domain 实现）进行中

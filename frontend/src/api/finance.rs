@@ -5,12 +5,13 @@ use common::api::{
     CreateModelProviderRequest, CreateModelProviderResponse, CreateTextAttachmentRequest,
     CreateToolRequest, CreateToolResponse, DeleteModelProviderResponse, DeleteToolResponse,
     GetModelProviderResponse, GetToolResponse, ListMcpServersResponse, ListModelProvidersResponse,
-    ListToolsResponse, TestConnectionResponse, TestMessageChannelConnectionResponse,
+    ListToolsResponse, SwitchEmbeddingProviderRequest, SwitchEmbeddingProviderResponse,
+    TestConnectionResponse, TestMessageChannelConnectionResponse,
     UpdateModelProviderRequest, UpdateModelProviderResponse, UpdateToolRequest, UpdateToolResponse,
 };
 use web_sys::FormData;
 
-use super::{api_delete, api_get, api_get_or_default, api_post, api_post_empty, api_post_multipart, api_put, api_put_empty};
+use super::{api_delete, api_get, api_get_or_default, api_post, api_post_empty, api_post_multipart, api_post_with_error, api_put, api_put_empty, api_put_with_error, ApiError};
 
 // ===== 模型提供商 =====
 
@@ -31,6 +32,13 @@ pub async fn update_model_provider(id: &str, req: UpdateModelProviderRequest) ->
     api_put(&format!("/api/v1/finance/model-providers/{}", id), &req).await
 }
 
+/// 启用/禁用模型提供商
+/// 启用 Embedding Provider 时可能返回 409（需切换），前端需检测 ApiError
+pub async fn toggle_model_provider(id: &str, status: i32) -> Result<(), ApiError> {
+    let body = serde_json::json!({ "status": status });
+    super::api_put_with_error(&format!("/api/v1/finance/model-providers/{}", id), &body).await
+}
+
 pub async fn delete_model_provider(id: &str) -> Result<(), String> {
     api_delete(&format!("/api/v1/finance/model-providers/{}", id)).await
 }
@@ -43,6 +51,16 @@ pub async fn test_model_provider_connection(id: &str) -> Result<TestConnectionRe
 pub async fn call_model_provider(id: &str, prompt: &str) -> Result<CallModelResponse, String> {
     let body = serde_json::json!({ "prompt": prompt });
     api_post(&format!("/api/v1/finance/model-providers/{}/call", id), &body).await
+}
+
+/// 切换 Embedding Provider（需用户确认）
+/// 返回 ApiError 以便前端检测 409 embedding_provider_switch_required 错误
+pub async fn switch_embedding_provider(id: &str) -> Result<SwitchEmbeddingProviderResponse, ApiError> {
+    let body = SwitchEmbeddingProviderRequest {
+        id: id.to_string(),
+        confirm: true,
+    };
+    api_post_with_error(&format!("/api/v1/finance/model-providers/{}/switch", id), &body).await
 }
 
 // ===== 工具管理 =====
