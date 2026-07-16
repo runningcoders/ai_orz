@@ -1,6 +1,6 @@
 # 前端架构设计
 
-> 最后更新：2026-07-15
+> 最后更新：2026-07-16
 
 ## 概述
 
@@ -88,7 +88,7 @@ frontend/
         │   └── chat.rs       # 消息对话
         │
         ├── system/           # System 模块
-        │   ├── triggers.rs   # 定时触发器管理
+        │   ├── triggers.rs   # 定时触发器管理（列表+创建/编辑弹窗+Action模板+Cron预设）
         │   └── health.rs     # 健康检查
         │
         └── user/             # 用户模块
@@ -336,3 +336,25 @@ pub struct AuthState {
 - **错误处理**：API 错误以字符串形式返回，后续可考虑结构化错误类型
 - **国际化**：当前文案为硬编码中文，后续可引入 i18n 支持
 - **数据导出**：管理页面暂不支持数据导出功能，后续可添加 CSV/JSON 导出
+
+---
+
+## 更新记录
+
+### 2026-07-16 定时触发器前端体验优化
+
+对 `pages/system/triggers.rs` 进行完整重写，6 项体验优化：
+
+| 优化项 | 实现细节 |
+|--------|----------|
+| **列表信息增强** | 7 列展示（名称/类型徽章/调度信息/状态/下次执行/上次执行/操作），使用 `chrono` 格式化时间戳 |
+| **Action 模板化** | `agent_rest` 模板（Agent ID + 沉淀数量字段）+ 自定义 JSON 选项 + `validate_json` 实时校验 |
+| **Cron 表达式类型** | 支持 `TriggerType::Cron` + 6 个常用预设按钮（每分钟/每小时/每天 0 点/每天 9 点/每周一/每月 1 号） |
+| **编辑功能** | 复用创建弹窗（`TriggerEditMode` 枚举区分 Create/Edit），`parse_payload` 自动回填模板参数 |
+| **刷新优化** | 提取 `load_triggers` 闭包 + 手动刷新按钮 + 所有操作 toast 提示 |
+| **CSS 样式** | 新增 4 个类：`cron-presets`/`cron-preset-btn`/`json-error`/`trigger-type-badge` |
+
+关键设计：
+- **模板/JSON 双模式**：选择 Action 模板时显示字段表单，选择自定义时显示 JSON textarea + 实时校验
+- **编辑回填**：`parse_payload` 解析 JSON payload，识别 `action` 字段自动选择对应模板，回填 `extra` 参数
+- **后端零改动**：全部复用已有 API（list/get/create/update/delete/pause/resume）
