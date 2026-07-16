@@ -90,6 +90,10 @@ pub struct DatabaseConfig {
     /// 向量存储后端类型
     #[serde(default)]
     pub vector_store_type: VectorStoreType,
+
+    /// HNSW 索引持久化目录（相对于 base_data_path，仅使用 Hnsw 后端时生效）
+    #[serde(default = "default_hnsw_index_dir")]
+    pub hnsw_index_dir: String,
 }
 
 /// 向量存储后端类型
@@ -180,6 +184,10 @@ fn default_vector_db_file_name() -> String {
     "ai_orz_vector.db".to_string()
 }
 
+fn default_hnsw_index_dir() -> String {
+    "hnsw_index".to_string()
+}
+
 fn default_dist_dir() -> String {
     "dist".to_string()
 }
@@ -190,6 +198,7 @@ impl Default for DatabaseConfig {
             db_file_name: default_db_file_name(),
             vector_db_file_name: default_vector_db_file_name(),
             vector_store_type: VectorStoreType::default(),
+            hnsw_index_dir: default_hnsw_index_dir(),
         }
     }
 }
@@ -262,6 +271,11 @@ impl AppConfig {
     pub fn vector_db_path(&self) -> PathBuf {
         self.base_data_path()
             .join(&self.database.vector_db_file_name)
+    }
+
+    /// 获取 HNSW 索引持久化目录路径（仅 Hnsw 后端使用）
+    pub fn hnsw_index_dir(&self) -> PathBuf {
+        self.base_data_path().join(&self.database.hnsw_index_dir)
     }
 
     /// 获取产物/附件存储根目录路径（消息附件、Agent 生成文件等）
