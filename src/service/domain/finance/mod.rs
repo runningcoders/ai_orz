@@ -27,6 +27,7 @@ mod mcp_server_test;
 #[cfg(test)]
 mod tool_provider_test;
 
+use common::api::RebuildStatus;
 use common::error::Result;
 use crate::models::attachment::{
     Attachment, AttachmentGetOptions, AttachmentReadResult, AttachmentTextContent,
@@ -43,6 +44,36 @@ use crate::service::dal::model_provider::ModelProviderDal;
 use crate::service::dal::tool::ToolDal;
 use async_trait::async_trait;
 use std::sync::{Arc, OnceLock};
+
+// ==================== 重建任务相关 ====================
+
+/// 向量索引重建任务状态（运行时内存态）
+///
+/// 不实现 Clone，因为 `task_handle`（JoinHandle）不可 Clone。
+pub struct RebuildTask {
+    /// 任务 ID
+    pub task_id: String,
+    /// 重建状态
+    pub status: RebuildStatus,
+    /// 当前正在重建的实体名
+    pub current_entity: Option<String>,
+    /// 当前实体索引（0..total_entities）
+    pub current_entity_index: usize,
+    /// 实体总数
+    pub total_entities: usize,
+    /// 当前实体已处理记录数
+    pub processed_records: usize,
+    /// 当前实体总记录数
+    pub total_records: usize,
+    /// 开始时间戳（ms）
+    pub started_at: i64,
+    /// 结束时间戳（ms）
+    pub finished_at: Option<i64>,
+    /// 错误信息（失败时）
+    pub error: Option<String>,
+    /// 后台任务句柄
+    pub task_handle: tokio::task::JoinHandle<()>,
+}
 
 // ==================== 单例管理 ====================
 
@@ -176,12 +207,21 @@ pub trait ModelProviderManage: Send + Sync {
         prompt: &str,
     ) -> Result<String>;
 
-    /// 切换 Embedding Provider（原子操作：禁用旧 → 启用新 → 重建索引）
+    /// 切换 Embedding Provider（原子操作：禁用旧 → 启用新 → 异步重建索引）
+    ///
+    /// 返回 (旧 Provider, task_id)。task_id 为空表示无需重建（同一 provider）。
     async fn switch_embedding_provider(
         &self,
         ctx: RequestContext,
         new_provider_id: &str,
-    ) -> Result<Option<ModelProvider>>;
+    ) -> Result<(Option<ModelProvider>, String)>;
+
+    /// 查询向量索引重建进度
+    async fn get_rebuild_progress(
+        &self,
+        ctx: RequestContext,
+        task_id: &str,
+    ) -> Result<Option<common::api::RebuildProgressResponse>>;
 }
 
 /// Message Channel 管理 trait
@@ -467,6 +507,7 @@ pub struct FinanceDomainImpl {
     pub tool_dal: Arc<dyn ToolDal>,
     pub brain_dal: Arc<dyn BrainDal>,
     pub attachment_dal: Arc<dyn AttachmentDal + Send + Sync>,
+    pub rebuild_task: Arc<tokio::sync::RwLock<Option<RebuildTask>>>,
 }
 
 impl FinanceDomainImpl {
@@ -488,6 +529,7 @@ impl FinanceDomainImpl {
             tool_dal,
             brain_dal,
             attachment_dal,
+            rebuild_task: Arc::new(tokio::sync::RwLock::new(None)),
         }
     }
 }

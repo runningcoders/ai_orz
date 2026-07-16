@@ -16,7 +16,7 @@ pub async fn switch_embedding_provider(
         return Err(Error::bad_request("Confirmation required - set confirm: true to proceed"));
     }
 
-    let previous_provider = domain()
+    let (previous_provider, task_id) = domain()
         .model_provider_manage()
         .switch_embedding_provider(ctx.clone(), &params.id)
         .await?;
@@ -27,12 +27,18 @@ pub async fn switch_embedding_provider(
         .await?
         .ok_or_else(|| Error::not_found(format!("ModelProvider {} not found", params.id)))?;
 
+    let rebuild_status = if task_id.is_empty() {
+        "completed".to_string()
+    } else {
+        "running".to_string()
+    };
+
     Ok(SwitchEmbeddingProviderResponse {
         id: new_provider.po.id.clone(),
         name: new_provider.po.name.clone(),
         previous_provider_id: previous_provider.as_ref().map(|p| p.po.id.clone()),
         previous_provider_name: previous_provider.as_ref().map(|p| p.po.name.clone()),
-        rebuild_status: "completed".to_string(),
-        task_id: String::new(),
+        rebuild_status,
+        task_id,
     })
 }
