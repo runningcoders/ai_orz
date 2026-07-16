@@ -549,6 +549,20 @@ Agent
 - **错误响应通用化**：axum 错误响应使用通用 http_status/code_str，409 正确返回 error_code 字段
 - **测试统计**：697 个测试 100% 通过
 
+**✅ HNSW 索引持久化**
+- **配置项**：`database.hnsw_index_dir`（默认 `hnsw_index`，相对于 `base_data_path`）
+- **存储格式**：bincode 2.0 序列化，每个 collection 一个文件（`<collection>.bincode`）
+- **落盘策略**：后台 60s 定时扫描 dirty flag 落盘 + `Drop` 时同步兜底落盘
+- **冷启动**：`HnswStore::new()` 扫描目录加载已有索引，避免冷启动 lazy rebuild
+- **VectorStore trait**：新增 `flush()` 方法（默认空实现，HnswStore 覆写）
+
+**✅ 索引重建异步化**
+- **switch 接口**：立即返回 `task_id`，后台 spawn tokio 任务执行重建
+- **进度查询**：`GET /api/v1/finance/model-providers/rebuild-progress?task_id=xxx`
+- **并发控制**：同一时刻仅允许一个重建任务，已有任务运行时新 switch 返回 `409 RebuildInProgress`
+- **进度结构**：当前实体、实体索引、已处理/总记录数、状态（Pending/Running/Completed/Failed）、错误信息
+- **容错**：单个实体重建失败仅记日志，不中断整体流程
+
 ### 2026-07-15 里程碑
 **✅ SSE 消息推送系统**
 - **SSE 长连接推送**：基于 Server-Sent Events 实现服务器到客户端的单向实时推送
