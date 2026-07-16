@@ -50,6 +50,11 @@ pub trait VectorStore: Send + Sync + std::fmt::Debug {
 
     /// 清空向量集合
     async fn clear_collection(&self, collection: &str) -> Result<()>;
+
+    /// 刷新所有脏数据到持久化存储（仅 Hnsw 后端有实际操作）
+    async fn flush(&self) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// SQLite VSS 向量存储

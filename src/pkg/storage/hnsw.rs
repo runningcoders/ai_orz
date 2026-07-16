@@ -5,17 +5,20 @@
 //! - 支持余弦距离搜索
 //! - 每个 collection 独立 HNSW 索引
 //! - 增量写入时标记 dirty，搜索时按需重建索引
+//! - 持久化：bincode 序列化每个 collection 到独立文件，后台 60s 定时落盘 + Drop 兜底
 
 use crate::models::vector::{VectorIndexParams, VectorMeta, VectorRow, VectorSearchHit};
 use async_trait::async_trait;
+use bincode::{Decode, Encode};
 use instant_distance::{Builder, HnswMap, Point, Search};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::RwLock;
 
 /// 余弦距离的浮点向量点
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Encode, Decode)]
 struct FloatPoint(Vec<f32>);
 
 impl Point for FloatPoint {
@@ -39,9 +42,44 @@ struct CollectionData {
     /// 维度
     dimensions: i32,
     /// 缓存的 HNSW 索引（dirty 时为 None，搜索时按需重建）
+    /// 不参与序列化，加载后按需重建
     cached_index: Option<HnswMap<FloatPoint, String>>,
     /// 索引是否需要重建
     dirty: bool,
+}
+
+/// 可序列化的 collection 数据（不含 HNSW 索引缓存）
+#[derive(Encode, Decode)]
+struct CollectionDataPersist {
+    /// 所有向量（id → (点, 行数据)）
+    vectors: HashMap<String, (FloatPoint, VectorRow)>,
+    /// 已删除的 id（标记删除）
+    deleted: HashSet<String>,
+    /// 维度
+    dimensions: i32,
+    /// 索引是否需要重建
+    dirty: bool,
+}
+
+impl CollectionDataPersist {
+    fn from_collection(data: &CollectionData) -> Self {
+        Self {
+            vectors: data.vectors.clone(),
+            deleted: data.deleted.clone(),
+            dimensions: data.dimensions,
+            dirty: data.dirty,
+        }
+    }
+
+    fn into_collection(self) -> CollectionData {
+        CollectionData {
+            vectors: self.vectors,
+            deleted: self.deleted,
+            dimensions: self.dimensions,
+            cached_index: None,
+            dirty: true, // 加载后总是需要重建索引
+        }
+    }
 }
 
 impl std::fmt::Debug for CollectionData {
@@ -87,32 +125,165 @@ impl CollectionData {
 }
 
 /// HNSW 向量存储
-#[derive(Clone, Debug)]
+///
+/// 持久化策略：
+/// - 每个 collection 序列化为独立 `.bincode` 文件
+/// - 后台 60s 定时扫描 dirty flag 落盘
+/// - Drop 时同步落盘所有 dirty collection（兜底）
+/// - 冷启动时扫描目录加载已有索引
 pub struct HnswStore {
     base_path: PathBuf,
     collections: Arc<RwLock<HashMap<String, CollectionData>>>,
+    /// 后台定时落盘任务句柄（Clone 时设为 None，仅原始实例持有）
+    flush_task: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl Clone for HnswStore {
+    fn clone(&self) -> Self {
+        Self {
+            base_path: self.base_path.clone(),
+            collections: self.collections.clone(),
+            flush_task: None,
+        }
+    }
+}
+
+impl std::fmt::Debug for HnswStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HnswStore")
+            .field("base_path", &self.base_path)
+            .field("has_flush_task", &self.flush_task.is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 impl HnswStore {
+    /// 创建新的 HNSW 向量存储（使用配置的 hnsw_index_dir）
     pub fn new() -> common::error::Result<Self> {
-        let config = crate::config::get();
-        let base_path = config.base_data_path().join("hnsw");
-        std::fs::create_dir_all(&base_path)?;
-
-        Ok(Self {
-            base_path,
-            collections: Arc::new(RwLock::new(HashMap::new())),
-        })
+        let base_path = crate::config::get().hnsw_index_dir();
+        Self::with_path(base_path)
     }
 
+    /// 使用指定路径创建（测试专用，也支持持久化）
     pub fn with_path<P: AsRef<std::path::Path>>(base_path: P) -> common::error::Result<Self> {
         let base_path = base_path.as_ref().to_path_buf();
         std::fs::create_dir_all(&base_path)?;
 
-        Ok(Self {
+        let mut store = Self {
             base_path,
             collections: Arc::new(RwLock::new(HashMap::new())),
-        })
+            flush_task: None,
+        };
+
+        // 冷启动：加载已有索引
+        store.load_all_collections()?;
+
+        // 启动后台定时落盘任务
+        store.start_flush_task();
+
+        Ok(store)
+    }
+
+    /// 从磁盘加载所有 collection（冷启动）
+    fn load_all_collections(&mut self) -> common::error::Result<()> {
+        let entries = match std::fs::read_dir(&self.base_path) {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::warn!("Failed to read hnsw index dir {:?}: {:?}", self.base_path, e);
+                return Ok(());
+            }
+        };
+
+        for entry in entries {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(e) => {
+                    tracing::warn!("Failed to read dir entry: {:?}", e);
+                    continue;
+                }
+            };
+
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("bincode") {
+                continue;
+            }
+
+            let name = match path.file_stem().and_then(|s| s.to_str()) {
+                Some(n) => n.to_string(),
+                None => continue,
+            };
+
+            match Self::load_collection_from_file(&path) {
+                Ok(data) => {
+                    // 此时 store 尚未被共享，try_write 必定成功
+                    if let Ok(mut collections) = self.collections.try_write() {
+                        tracing::info!("Loaded hnsw collection '{}' ({} vectors)", name, data.vectors.len());
+                        collections.insert(name, data);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to load collection from {:?}: {:?}", path, e);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 从文件加载单个 collection
+    fn load_collection_from_file(
+        path: &std::path::Path,
+    ) -> common::error::Result<CollectionData> {
+        let file = std::fs::File::open(path)?;
+        let mut reader = std::io::BufReader::new(file);
+        let persist_data: CollectionDataPersist =
+            bincode::decode_from_std_read(&mut reader, bincode::config::standard())?;
+        Ok(persist_data.into_collection())
+    }
+
+    /// 保存单个 collection 到磁盘（同步）
+    fn save_collection_to_file(
+        base_path: &std::path::Path,
+        collection: &str,
+        data: &CollectionData,
+    ) -> common::error::Result<()> {
+        let path = base_path.join(format!("{}.bincode", collection));
+        let file = std::fs::File::create(&path)?;
+        let mut writer = std::io::BufWriter::new(file);
+        let persist_data = CollectionDataPersist::from_collection(data);
+        bincode::encode_into_std_write(&persist_data, &mut writer, bincode::config::standard())?;
+        Ok(())
+    }
+
+    /// 刷新所有 dirty collection 到磁盘
+    async fn flush_all_dirty(&self) -> common::error::Result<()> {
+        let mut collections = self.collections.write().await;
+        for (name, data) in collections.iter_mut() {
+            if data.dirty {
+                match Self::save_collection_to_file(&self.base_path, name, data) {
+                    Ok(()) => {
+                        data.dirty = false;
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to save collection '{}': {:?}", name, e);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// 启动后台定时落盘任务（60s 扫描 dirty flag）
+    fn start_flush_task(&mut self) {
+        let store = self.clone();
+        self.flush_task = Some(tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(60)).await;
+                if let Err(e) = store.flush_all_dirty().await {
+                    tracing::warn!("Background flush failed: {:?}", e);
+                }
+            }
+        }));
     }
 
     async fn ensure_collection(&self, collection: &str, dimensions: i32) -> common::error::Result<()> {
@@ -121,6 +292,27 @@ impl HnswStore {
             collections.insert(collection.to_string(), CollectionData::new(dimensions));
         }
         Ok(())
+    }
+}
+
+impl Drop for HnswStore {
+    fn drop(&mut self) {
+        // 终止后台定时任务
+        if let Some(task) = self.flush_task.take() {
+            task.abort();
+        }
+
+        // 同步落盘所有 dirty collection（兜底）
+        // 使用 try_read 避免阻塞（如果锁被占用则跳过）
+        if let Ok(collections) = self.collections.try_read() {
+            for (name, data) in collections.iter() {
+                if data.dirty {
+                    if let Err(e) = Self::save_collection_to_file(&self.base_path, name, data) {
+                        tracing::warn!("Failed to flush collection '{}' on drop: {:?}", name, e);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -243,5 +435,9 @@ impl super::VectorStore for HnswStore {
             *coll = CollectionData::new(dimensions);
         }
         Ok(())
+    }
+
+    async fn flush(&self) -> common::error::Result<()> {
+        self.flush_all_dirty().await
     }
 }
