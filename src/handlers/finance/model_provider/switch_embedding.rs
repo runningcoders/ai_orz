@@ -33,5 +33,6 @@ pub async fn switch_embedding_provider(
         previous_provider_id: previous_provider.as_ref().map(|p| p.po.id.clone()),
         previous_provider_name: previous_provider.as_ref().map(|p| p.po.name.clone()),
         rebuild_status: "completed".to_string(),
+        task_id: String::new(),
     })
 }

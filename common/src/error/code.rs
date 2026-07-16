@@ -129,6 +129,11 @@ define_error_codes! {
             http: 409,
             code: "embedding_provider_switch_required",
         }
+        RebuildInProgress {
+            type: Biz,
+            http: 409,
+            code: "rebuild_in_progress",
+        }
         Internal {
             type: System,
             http: 500,

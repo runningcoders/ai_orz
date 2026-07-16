@@ -265,4 +265,53 @@ pub struct SwitchEmbeddingProviderResponse {
     pub previous_provider_name: Option<String>,
     /// Rebuild status
     pub rebuild_status: String,
+    /// Rebuild task ID (empty if rebuild completed synchronously)
+    pub task_id: String,
+}
+
+/// Rebuild status
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RebuildStatus {
+    /// Rebuild is queued but not started yet
+    Pending,
+    /// Rebuild is currently running
+    Running,
+    /// Rebuild finished successfully
+    Completed,
+    /// Rebuild failed with an error
+    Failed,
+}
+
+/// Rebuild progress response
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RebuildProgressResponse {
+    /// Task ID
+    pub task_id: String,
+    /// Rebuild status
+    pub status: RebuildStatus,
+    /// Current entity being processed (e.g., "memory", "skill")
+    pub current_entity: Option<String>,
+    /// Current entity index (0..total_entities)
+    pub current_entity_index: usize,
+    /// Total entities to rebuild
+    pub total_entities: usize,
+    /// Number of records processed in current entity
+    pub processed_records: usize,
+    /// Total records in current entity
+    pub total_records: usize,
+    /// Start timestamp (ms)
+    pub started_at: i64,
+    /// Finish timestamp (ms, optional)
+    pub finished_at: Option<i64>,
+    /// Error message (if failed)
+    pub error: Option<String>,
+}
+
+/// Get rebuild progress request
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct GetRebuildProgressRequest {
+    /// Task ID to query
+    #[param(source = "query")]
+    pub task_id: String,
 }
