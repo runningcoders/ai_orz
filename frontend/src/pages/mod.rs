@@ -16,7 +16,9 @@ use dioxus::prelude::*;
 use crate::pages::finance::attachments::FinanceAttachments;
 use crate::pages::finance::message_channels::FinanceMessageChannels;
 use crate::pages::finance::mcp_servers::FinanceMcpServers;
+use crate::pages::finance::model_provider_detail::FinanceModelProviderDetail;
 use crate::pages::finance::model_providers::FinanceModelProviders;
+use crate::pages::finance::tool_detail::FinanceToolDetail;
 use crate::pages::finance::tools::FinanceTools;
 use crate::pages::hr::agent_detail::HrAgentDetail;
 use crate::pages::hr::agents::HrAgents;
@@ -72,8 +74,12 @@ pub enum Route {
     // Finance 模块
     #[route("/finance/model-providers")]
     FinanceModelProviders {},
+    #[route("/finance/model-providers/:id")]
+    FinanceModelProviderDetail { id: String },
     #[route("/finance/tools")]
     FinanceTools {},
+    #[route("/finance/tools/:id")]
+    FinanceToolDetail { id: String },
     #[route("/finance/message-channels")]
     FinanceMessageChannels {},
     #[route("/finance/mcp-servers")]

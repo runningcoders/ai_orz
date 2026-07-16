@@ -266,7 +266,9 @@ pub struct AuthState {
 | HrAgentDetail | `/api/v1/hr/agents/:id` | hr |
 | HrSkills | `/api/v1/hr/skills` | hr |
 | FinanceModelProviders | `/api/v1/finance/model-providers` | finance |
+| FinanceModelProviderDetail | `/api/v1/finance/model-providers/:id` | finance |
 | FinanceTools | `/api/v1/finance/tools` | finance |
+| FinanceToolDetail | `/api/v1/finance/tools/:id` | finance |
 | FinanceMessageChannels | `/api/v1/finance/message-channels` | finance |
 | ProjectList | `/api/v1/projects` | project |
 | ProjectDetail | `/api/v1/projects/:id` | project |

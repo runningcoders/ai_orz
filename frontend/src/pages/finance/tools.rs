@@ -7,6 +7,7 @@ use crate::components::state::{EmptyState, Loading};
 use crate::store::toast::use_toast;
 use common::api::ListToolsResponseItem;
 use common::enums::ToolStatus;
+use dioxus_router::Link;
 
 #[component]
 pub fn FinanceTools() -> Element {
@@ -56,9 +57,12 @@ pub fn FinanceTools() -> Element {
                                 let id_disable = id.clone();
                                 let id_enable = id.clone();
                                 let id_delete = id.clone();
+                                let id_detail = id.clone();
                                 rsx! {
                                     tr { key: "{id}",
-                                        td { class: "detail-table-value-bold", "{name}" }
+                                        td { class: "detail-table-value-bold",
+                                            Link { to: crate::pages::Route::FinanceToolDetail { id: id_detail.clone() }, "{name}" }
+                                        }
                                         td { span { class: "badge badge-neutral", "{protocol}" } }
                                         td {
                                             if is_enabled {

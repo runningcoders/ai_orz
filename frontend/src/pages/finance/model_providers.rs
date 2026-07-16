@@ -8,6 +8,7 @@ use crate::components::state::{EmptyState, Loading};
 use crate::store::toast::use_toast;
 use common::api::{CreateModelProviderRequest, ListModelProvidersResponseItem};
 use common::enums::{ModelCapability, ProviderType};
+use dioxus_router::Link;
 
 #[component]
 pub fn FinanceModelProviders() -> Element {
@@ -130,9 +131,12 @@ pub fn FinanceModelProviders() -> Element {
                                 let ptype_str = p.provider_type.to_string();
                                 let id_delete = id.clone();
                                 let id_test = id.clone();
+                                let id_detail = id.clone();
                                 rsx! {
                                     tr { key: "{id}",
-                                        td { class: "detail-table-value-bold", "{pname}" }
+                                        td { class: "detail-table-value-bold",
+                                            Link { to: crate::pages::Route::FinanceModelProviderDetail { id: id_detail.clone() }, "{pname}" }
+                                        }
                                         td { span { class: "badge badge-info", "{ptype_str}" } }
                                         td { class: "text-mono", "{pmodel}" }
                                         td {

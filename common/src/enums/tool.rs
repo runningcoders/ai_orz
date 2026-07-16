@@ -127,6 +127,15 @@ pub enum ControlMode {
     Manual = 1,
 }
 
+impl fmt::Display for ControlMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ControlMode::Auto => write!(f, "auto"),
+            ControlMode::Manual => write!(f, "manual"),
+        }
+    }
+}
+
 impl From<i32> for ControlMode {
     fn from(v: i32) -> Self {
         match v {
