@@ -289,10 +289,22 @@ pub struct SwitchEmbeddingProviderResponse {
 - 索引重建是耗时操作，但 MVP 阶段同步执行即可，后续可改为异步任务
 - 删除操作通过标记删除实现（instant-distance HNSW 不支持物理删除）
 
+### 不需要新建 vector_index_metadata 表
+
+早期讨论中曾考虑新建 `vector_index_metadata` 表来记录 `current_embedding_provider_id` / `vector_dimension` / `last_rebuild_time`，但经过分析确认**完全没必要**：
+
+| 字段 | 不需要的原因 |
+|------|-------------|
+| `current_embedding_provider_id` | 直接查 `model_providers` 表 `status = Normal AND capability = Embedding` 即可 |
+| `vector_dimension` | 由当前 Embedding Provider 的模型决定，不需要单独存储 |
+| `last_rebuild_time` | 重建时记录日志即可，无需专用表持久化 |
+
+**设计原则**：所有需要的信息都已存在于 `model_providers` 表中，不需要冗余存储。
+
 ## 实现状态
 
 - ✅ Task 1: HNSW 向量存储（instant-distance 0.6.1，lazy rebuild 策略）
 - ✅ Task 2: Embedding Provider 唯一性约束（Domain 层校验 + 409 错误码）
 - ✅ Task 3: Switch 接口（POST /api/v1/finance/model-providers/:id/switch）
 - ✅ 测试验证：697 个测试全部通过
-- ⏳ 索引重建逻辑（rebuild_vectors 各 DAO 实现）待后续补充
+- ⏳ 索引重建逻辑（rebuild_vectors 各 DAO/DAL/Domain 实现）进行中

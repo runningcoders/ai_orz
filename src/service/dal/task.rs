@@ -171,6 +171,12 @@ pub trait TaskDal: Send + Sync {
     /// 由 ModelProviderStatsDao（模型调用领域）负责计算，
     /// 按 task_id 过滤后返回 ModelCallStats。
     async fn get_model_call_stats(&self, ctx: RequestContext, task_id: &str, options: StatsFetchOptions) -> Result<ModelCallStats>;
+
+    /// 🔄 重建所有任务的向量索引
+    ///
+    /// 清空向量集合后，查询全量任务，逐条重新生成 embedding 并 upsert。
+    /// 单条失败不影响整体，用 log_warn! 记录。
+    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()>;
 }
 
 // ==================== DAL 实现 ====================
@@ -616,6 +622,61 @@ impl TaskDal for TaskDalImpl {
             ..Default::default()
         };
         self.model_provider_stats_dao.get_stats(ctx, query, options).await
+    }
+
+    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()> {
+        // 1. 清空向量集合
+        self.task_vector_dao.clear_collection(ctx.clone()).await?;
+
+        // 2. 查全量任务
+        let tasks = self.query(ctx.clone(), TaskQuery::default()).await?;
+
+        // 3. 逐条重新索引
+        for task in &tasks {
+            match try_build_vector_params_for_entity(
+                ctx.clone(),
+                &self.cortex_dao,
+                &self.model_provider_dao,
+                &task.po,
+            )
+            .await
+            {
+                Ok(Some(vec_params)) => {
+                    if let Err(e) = self
+                        .task_vector_dao
+                        .upsert_vector(ctx.clone(), &task.po.id, &vec_params)
+                        .await
+                    {
+                        log_warn!(
+                            &ctx,
+                            "rebuild_vectors",
+                            task_id = %task.po.id,
+                            error = ?e,
+                            "任务向量索引重建失败"
+                        );
+                    }
+                }
+                Ok(None) => {
+                    log_debug!(
+                        &ctx,
+                        "rebuild_vectors",
+                        task_id = %task.po.id,
+                        "无可用 Embedding Provider，跳过向量索引"
+                    );
+                }
+                Err(e) => {
+                    log_warn!(
+                        &ctx,
+                        "rebuild_vectors",
+                        task_id = %task.po.id,
+                        error = ?e,
+                        "任务向量化失败，跳过"
+                    );
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 

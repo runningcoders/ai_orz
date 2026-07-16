@@ -143,6 +143,10 @@ mod tests {
         ) -> Result<ModelCallStats> {
             unimplemented!("not needed by tool execution routing tests")
         }
+
+        async fn rebuild_vectors(&self, _ctx: RequestContext) -> Result<()> {
+            unimplemented!("not needed by tool execution routing tests")
+        }
     }
 
     struct RecordingToolDal {
@@ -396,6 +400,10 @@ mod tests {
         }
 
         async fn get_stats(&self, _ctx: RequestContext, _tool_id: &str, _options: StatsFetchOptions) -> Result<ToolStats> {
+            unimplemented!("not needed by tool execution routing tests")
+        }
+
+        async fn rebuild_vectors(&self, _ctx: RequestContext) -> Result<()> {
             unimplemented!("not needed by tool execution routing tests")
         }
     }

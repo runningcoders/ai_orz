@@ -119,8 +119,46 @@ impl ModelProviderManage for FinanceDomainImpl {
 
         let mut new_provider_to_enable = new_provider.clone();
         new_provider_to_enable.po.status = ModelProviderStatus::Normal;
-        self.update_model_provider(ctx, &new_provider_to_enable).await?;
+        self.update_model_provider(ctx.clone(), &new_provider_to_enable).await?;
+
+        // 重建所有向量索引
+        self.rebuild_all_vector_indexes(ctx).await?;
 
         Ok(current_provider)
+    }
+}
+
+impl FinanceDomainImpl {
+    /// 重建所有向量索引（切换 Embedding Provider 后调用）
+    async fn rebuild_all_vector_indexes(&self, ctx: RequestContext) -> Result<()> {
+        use crate::service::dal;
+
+        log_info!(&ctx, "rebuild_vectors", "开始重建所有向量索引");
+
+        // 依次调用各业务 DAL 的 rebuild_vectors
+        if let Err(e) = dal::agent::dal().rebuild_vectors(ctx.clone()).await {
+            log_warn!(&ctx, "rebuild_vectors", error = ?e, "Agent 向量重建失败");
+        }
+        if let Err(e) = dal::memory::dal().rebuild_vectors(ctx.clone()).await {
+            log_warn!(&ctx, "rebuild_vectors", error = ?e, "Memory 向量重建失败");
+        }
+        if let Err(e) = dal::skill::dal().rebuild_vectors(ctx.clone()).await {
+            log_warn!(&ctx, "rebuild_vectors", error = ?e, "Skill 向量重建失败");
+        }
+        if let Err(e) = dal::task::dal().rebuild_vectors(ctx.clone()).await {
+            log_warn!(&ctx, "rebuild_vectors", error = ?e, "Task 向量重建失败");
+        }
+        if let Err(e) = dal::project::dal().rebuild_vectors(ctx.clone()).await {
+            log_warn!(&ctx, "rebuild_vectors", error = ?e, "Project 向量重建失败");
+        }
+        if let Err(e) = dal::message::dal().rebuild_vectors(ctx.clone()).await {
+            log_warn!(&ctx, "rebuild_vectors", error = ?e, "Message 向量重建失败");
+        }
+        if let Err(e) = dal::tool::dal().rebuild_vectors(ctx.clone()).await {
+            log_warn!(&ctx, "rebuild_vectors", error = ?e, "Tool 向量重建失败");
+        }
+
+        log_info!(&ctx, "rebuild_vectors", "所有向量索引重建完成");
+        Ok(())
     }
 }

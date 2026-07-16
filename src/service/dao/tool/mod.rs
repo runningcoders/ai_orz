@@ -253,6 +253,9 @@ pub trait ToolVectorDao: Send + Sync {
 
     /// 删除工具的向量索引
     async fn delete_vector(&self, ctx: RequestContext, tool_id: &str) -> Result<()>;
+
+    /// 清空所有向量索引
+    async fn clear_collection(&self, ctx: RequestContext) -> Result<()>;
 }
 
 // ==================== 统一导出 ====================

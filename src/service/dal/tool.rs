@@ -174,6 +174,12 @@ pub trait ToolDal: Send + Sync {
 
     /// 获取工具统计数据
     async fn get_stats(&self, ctx: RequestContext, tool_id: &str, options: StatsFetchOptions) -> Result<ToolStats>;
+
+    /// 🔄 重建所有工具的向量索引
+    ///
+    /// 清空向量集合后，查询全量工具，逐条重新生成 embedding 并 upsert。
+    /// 单条失败不影响整体，用 log_warn! 记录。
+    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()>;
 }
 
 // ==================== DAL 实现 ====================
@@ -696,6 +702,70 @@ impl ToolDal for ToolDalImpl {
             ..Default::default()
         };
         Ok(self.tool_stats_dao.get_stats(ctx, query, options).await?)
+    }
+
+    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()> {
+        // 1. 清空向量集合
+        self.tool_vector_dao.clear_collection(ctx.clone()).await?;
+
+        // 2. 查全量工具 PO（排除 Stale 状态）
+        let pos = self
+            .tool_dao
+            .query(
+                ctx.clone(),
+                ToolQuery {
+                    exclude_status: Some(ToolStatus::Stale),
+                    ..Default::default()
+                },
+            )
+            .await?;
+
+        // 3. 逐条重新索引
+        for po in &pos {
+            match try_build_vector_params_for_entity(
+                ctx.clone(),
+                &self.cortex_dao,
+                &self.model_provider_dao,
+                po as &dyn Vectorizable,
+            )
+            .await
+            {
+                Ok(Some(vec_params)) => {
+                    if let Err(e) = self
+                        .tool_vector_dao
+                        .upsert_vector(ctx.clone(), &po.id, &vec_params)
+                        .await
+                    {
+                        log_warn!(
+                            &ctx,
+                            "rebuild_vectors",
+                            tool_id = %po.id,
+                            error = ?e,
+                            "工具向量索引重建失败"
+                        );
+                    }
+                }
+                Ok(None) => {
+                    log_debug!(
+                        &ctx,
+                        "rebuild_vectors",
+                        tool_id = %po.id,
+                        "无可用 Embedding Provider，跳过向量索引"
+                    );
+                }
+                Err(e) => {
+                    log_warn!(
+                        &ctx,
+                        "rebuild_vectors",
+                        tool_id = %po.id,
+                        error = ?e,
+                        "工具向量化失败，跳过"
+                    );
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 

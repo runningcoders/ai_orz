@@ -546,6 +546,9 @@ pub trait MemoryVectorDao: Send + Sync {
         ctx: RequestContext,
         knowledge_id: &str,
     ) -> Result<()>;
+
+    /// 清空所有记忆向量索引
+    async fn clear_collection(&self, ctx: RequestContext) -> Result<()>;
 }
 
 // ==================== SQLite 实现 ====================

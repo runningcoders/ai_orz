@@ -69,4 +69,9 @@ impl SkillVectorDao for SkillVectorDaoImpl {
             .await
             .map_err(|e| err!(Internal, "Vector store error: {e}").with_source(e))
     }
+
+    async fn clear_collection(&self, _ctx: RequestContext) -> Result<()> {
+        _ctx.vector_store().clear_collection("skills").await?;
+        Ok(())
+    }
 }

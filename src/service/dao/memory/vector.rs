@@ -139,4 +139,11 @@ impl MemoryVectorDao for MemoryVectorDaoImpl {
             .await?;
         Ok(())
     }
+
+    async fn clear_collection(&self, _ctx: RequestContext) -> Result<()> {
+        let vector_store = _ctx.vector_store();
+        vector_store.clear_collection("memory:short_term").await?;
+        vector_store.clear_collection("memory:knowledge_node").await?;
+        Ok(())
+    }
 }

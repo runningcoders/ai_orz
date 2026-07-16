@@ -164,6 +164,12 @@ pub trait SkillDal: Send + Sync {
         agent_id: &str,
         parent_skill_ids: &[String],
     ) -> Result<Vec<Skill>>;
+
+    /// 🔄 重建所有技能的向量索引
+    ///
+    /// 清空向量集合后，查询全量技能，逐条重新生成 embedding 并 upsert。
+    /// 单条失败不影响整体，用 log_warn! 记录。
+    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()>;
 }
 
 // ==================== DAL 实现 ====================
@@ -727,5 +733,68 @@ impl SkillDal for SkillDalImpl {
         let id_set: std::collections::HashSet<&String> = parent_skill_ids.iter().collect();
         skills.retain(|s| id_set.contains(&s.po.parent_skill_id));
         Ok(skills)
+    }
+
+    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()> {
+        // 1. 清空向量集合
+        self.skill_vector_dao.clear_collection(ctx.clone()).await?;
+
+        // 2. 取 Embedding Provider（无则跳过，合法场景）
+        let Some(provider) = self
+            .model_provider_dao
+            .get_default_embedding_provider(ctx.clone())
+            .await?
+        else {
+            log_debug!(
+                &ctx,
+                "rebuild_vectors",
+                "无可用 Embedding Provider，跳过向量索引"
+            );
+            return Ok(());
+        };
+
+        // 3. 创建 Cortex
+        let cortex = self
+            .cortex_dao
+            .create_cortex_trait(ctx.clone(), &provider, vec![])?;
+
+        // 4. 查全量技能
+        let skills = self.query(ctx.clone(), SkillQuery::default()).await?;
+
+        // 5. 逐条重新索引
+        for skill in &skills {
+            match self
+                .cortex_dao
+                .embed_entity(ctx.clone(), cortex.as_ref(), &skill.po)
+                .await
+            {
+                Ok(vec_params) => {
+                    if let Err(e) = self
+                        .skill_vector_dao
+                        .upsert_vector(ctx.clone(), &skill.po.id, &vec_params)
+                        .await
+                    {
+                        log_warn!(
+                            &ctx,
+                            "rebuild_vectors",
+                            skill_id = %skill.po.id,
+                            error = ?e,
+                            "技能向量索引重建失败"
+                        );
+                    }
+                }
+                Err(e) => {
+                    log_warn!(
+                        &ctx,
+                        "rebuild_vectors",
+                        skill_id = %skill.po.id,
+                        error = ?e,
+                        "技能向量化失败，跳过"
+                    );
+                }
+            }
+        }
+
+        Ok(())
     }
 }

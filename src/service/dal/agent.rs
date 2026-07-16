@@ -134,6 +134,12 @@ pub trait AgentDal: Send + Sync {
     /// 由 ModelProviderStatsDao（模型调用领域）负责计算，
     /// 按 agent_id 过滤后返回 ModelCallStats。
     async fn get_model_call_stats(&self, ctx: RequestContext, agent_id: &str, options: StatsFetchOptions) -> Result<ModelCallStats>;
+
+    /// 🔄 重建所有 Agent 的向量索引
+    ///
+    /// 清空向量集合后，查询全量 Agent，逐条重新生成 embedding 并 upsert。
+    /// 单条失败不影响整体，用 log_warn! 记录。
+    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()>;
 }
 
 /// Agent DAL 实现
@@ -637,5 +643,20 @@ impl AgentDal for AgentDalImpl {
             ..Default::default()
         };
         self.model_provider_stats_dao.get_stats(ctx, query, options).await
+    }
+
+    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()> {
+        // 1. 清空向量集合
+        self.agent_vector_dao.clear_collection(ctx.clone()).await?;
+
+        // 2. 查全量 Agent
+        let agents = self.find_all(ctx.clone()).await?;
+
+        // 3. 逐条重新索引
+        for agent in &agents {
+            self.upsert_vector_index(ctx.clone(), &agent.po).await;
+        }
+
+        Ok(())
     }
 }

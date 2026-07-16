@@ -111,6 +111,9 @@ pub trait AgentVectorDao: Send + Sync {
         ctx: RequestContext,
         agent_id: &str,
     ) -> Result<()>;
+
+    /// 清空所有向量索引
+    async fn clear_collection(&self, ctx: RequestContext) -> Result<()>;
 }
 
 /// Agent 统计 DAO 接口

@@ -177,6 +177,12 @@ pub trait ProjectDal: Send + Sync {
     /// 由 ModelProviderStatsDao（模型调用领域）负责计算，
     /// 按 project_id 过滤后返回 ModelCallStats。
     async fn get_model_call_stats(&self, ctx: RequestContext, project_id: &str, options: StatsFetchOptions) -> Result<ModelCallStats>;
+
+    /// 🔄 重建所有项目的向量索引
+    ///
+    /// 清空向量集合后，查询全量项目，逐条重新生成 embedding 并 upsert。
+    /// 单条失败不影响整体，用 log_warn! 记录。
+    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()>;
 }
 
 // ==================== DAL 实现 ====================
@@ -653,6 +659,61 @@ impl ProjectDal for ProjectDalImpl {
             ..Default::default()
         };
         self.model_provider_stats_dao.get_stats(ctx, query, options).await
+    }
+
+    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()> {
+        // 1. 清空向量集合
+        self.project_vector_dao.clear_collection(ctx.clone()).await?;
+
+        // 2. 查全量项目
+        let projects = self.query(ctx.clone(), ProjectQuery::default()).await?;
+
+        // 3. 逐条重新索引
+        for project in &projects {
+            match try_build_vector_params_for_entity(
+                ctx.clone(),
+                &self.cortex_dao,
+                &self.model_provider_dao,
+                &project.po,
+            )
+            .await
+            {
+                Ok(Some(vec_params)) => {
+                    if let Err(e) = self
+                        .project_vector_dao
+                        .upsert_vector(ctx.clone(), &project.po.id, &vec_params)
+                        .await
+                    {
+                        log_warn!(
+                            &ctx,
+                            "rebuild_vectors",
+                            project_id = %project.po.id,
+                            error = ?e,
+                            "项目向量索引重建失败"
+                        );
+                    }
+                }
+                Ok(None) => {
+                    log_debug!(
+                        &ctx,
+                        "rebuild_vectors",
+                        project_id = %project.po.id,
+                        "无可用 Embedding Provider，跳过向量索引"
+                    );
+                }
+                Err(e) => {
+                    log_warn!(
+                        &ctx,
+                        "rebuild_vectors",
+                        project_id = %project.po.id,
+                        error = ?e,
+                        "项目向量化失败，跳过"
+                    );
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 

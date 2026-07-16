@@ -85,4 +85,9 @@ impl ProjectVectorDao for ProjectVectorDaoImpl {
         vector_store.delete("projects", project_id).await?;
         Ok(())
     }
+
+    async fn clear_collection(&self, _ctx: RequestContext) -> Result<()> {
+        _ctx.vector_store().clear_collection("projects").await?;
+        Ok(())
+    }
 }

@@ -198,6 +198,9 @@ pub trait MessageVectorDao: Send + Sync {
 
     /// 删除消息的向量索引
     async fn delete_vector(&self, ctx: RequestContext, message_id: &str) -> Result<()>;
+
+    /// 清空所有向量索引
+    async fn clear_collection(&self, ctx: RequestContext) -> Result<()>;
 }
 
 pub mod sqlite;

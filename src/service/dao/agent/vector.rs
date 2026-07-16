@@ -79,4 +79,9 @@ impl AgentVectorDao for AgentVectorDaoImpl {
         vector_store.delete("agents", agent_id).await?;
         Ok(())
     }
+
+    async fn clear_collection(&self, _ctx: RequestContext) -> Result<()> {
+        _ctx.vector_store().clear_collection("agents").await?;
+        Ok(())
+    }
 }

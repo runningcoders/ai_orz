@@ -133,6 +133,9 @@ pub trait TaskVectorDao: Send + Sync {
 
     /// 删除任务的向量索引
     async fn delete_vector(&self, ctx: RequestContext, task_id: &str) -> Result<()>;
+
+    /// 清空所有向量索引
+    async fn clear_collection(&self, ctx: RequestContext) -> Result<()>;
 }
 
 /// Task 统计查询参数

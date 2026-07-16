@@ -76,4 +76,9 @@ impl TaskVectorDao for TaskVectorDaoImpl {
         vector_store.delete("tasks", task_id).await?;
         Ok(())
     }
+
+    async fn clear_collection(&self, _ctx: RequestContext) -> Result<()> {
+        _ctx.vector_store().clear_collection("tasks").await?;
+        Ok(())
+    }
 }

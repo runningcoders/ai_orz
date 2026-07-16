@@ -170,6 +170,12 @@ pub trait MessageDal: Send + Sync {
         ctx: RequestContext,
         search: MessageSearch,
     ) -> Result<Vec<Message>>;
+
+    /// 🔄 重建所有消息的向量索引
+    ///
+    /// 清空向量集合后，查询全量消息，逐条重新生成 embedding 并 upsert。
+    /// 单条失败不影响整体，用 log_warn! 记录。
+    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()>;
 }
 
 // ==================== DAL 实现 ====================
@@ -650,6 +656,61 @@ impl MessageDal for MessageDalImpl {
         }
 
         Ok(messages)
+    }
+
+    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()> {
+        // 1. 清空向量集合
+        self.message_vector_dao.clear_collection(ctx.clone()).await?;
+
+        // 2. 查全量消息
+        let messages = self.query(ctx.clone(), MessageQuery::default()).await?;
+
+        // 3. 逐条重新索引
+        for message in &messages {
+            match try_build_vector_params_for_entity(
+                ctx.clone(),
+                &self.cortex_dao,
+                &self.model_provider_dao,
+                &message.po,
+            )
+            .await
+            {
+                Ok(Some(vec_params)) => {
+                    if let Err(e) = self
+                        .message_vector_dao
+                        .upsert_vector(ctx.clone(), &message.po.id, &vec_params)
+                        .await
+                    {
+                        log_warn!(
+                            &ctx,
+                            "rebuild_vectors",
+                            message_id = %message.po.id,
+                            error = ?e,
+                            "消息向量索引重建失败"
+                        );
+                    }
+                }
+                Ok(None) => {
+                    log_debug!(
+                        &ctx,
+                        "rebuild_vectors",
+                        message_id = %message.po.id,
+                        "无可用 Embedding Provider，跳过向量索引"
+                    );
+                }
+                Err(e) => {
+                    log_warn!(
+                        &ctx,
+                        "rebuild_vectors",
+                        message_id = %message.po.id,
+                        error = ?e,
+                        "消息向量化失败，跳过"
+                    );
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 

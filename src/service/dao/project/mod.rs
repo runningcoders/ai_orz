@@ -141,6 +141,9 @@ pub trait ProjectVectorDao: Send + Sync {
         ctx: RequestContext,
         project_id: &str,
     ) -> Result<()>;
+
+    /// 清空所有向量索引
+    async fn clear_collection(&self, ctx: RequestContext) -> Result<()>;
 }
 
 /// Project 统计查询参数

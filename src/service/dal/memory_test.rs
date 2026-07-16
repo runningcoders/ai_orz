@@ -1389,6 +1389,9 @@ impl MemoryVectorDao for MockMemoryVectorDao {
     ) -> Result<()> {
         Ok(())
     }
+    async fn clear_collection(&self, _ctx: RequestContext) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// 初始化测试依赖（带向量搜索 Mock，可配置预设向量命中）

@@ -77,4 +77,9 @@ impl MessageVectorDao for MessageVectorDaoImpl {
         vector_store.delete("messages", message_id).await?;
         Ok(())
     }
+
+    async fn clear_collection(&self, _ctx: RequestContext) -> Result<()> {
+        _ctx.vector_store().clear_collection("messages").await?;
+        Ok(())
+    }
 }

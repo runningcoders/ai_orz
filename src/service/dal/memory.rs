@@ -152,6 +152,13 @@ pub trait MemoryDal: Send + Sync {
         agent_id: &str,
         limit: usize,
     ) -> Result<Vec<Memory>>;
+
+    /// 🔄 重建所有记忆的向量索引
+    ///
+    /// 清空 short_term 和 knowledge_node 两个向量集合后，
+    /// 查询全量短期记忆和知识节点，逐条重新生成 embedding 并 upsert。
+    /// 单条失败不影响整体，用 log_warn! 记录。
+    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()>;
 }
 
 // ==================== Implementation ====================
@@ -557,6 +564,109 @@ impl MemoryDal for MemoryDalImpl {
 
         log_info!(ctx, "settle_memory", "agent_id={}, 成功沉淀 {} 条短期记忆为 {} 个知识节点", agent_id, short_term_indexes.len(), created_nodes.len());
         Ok(created_nodes)
+    }
+
+    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()> {
+        // 1. 清空两个向量集合（short_term + knowledge_node）
+        self.memory_vector_dao.clear_collection(ctx.clone()).await?;
+
+        // 2. 取 Embedding Provider（无则跳过，合法场景）
+        let Some(provider) = self
+            .model_provider_dao
+            .get_default_embedding_provider(ctx.clone())
+            .await?
+        else {
+            log_debug!(
+                &ctx,
+                "rebuild_vectors",
+                "无可用 Embedding Provider，跳过向量索引"
+            );
+            return Ok(());
+        };
+
+        // 3. 创建 Cortex
+        let cortex = self
+            .cortex_dao
+            .create_cortex_trait(ctx.clone(), &provider, vec![])?;
+
+        // 4. 重建短期记忆向量索引
+        let short_terms = self
+            .memory_dao
+            .query_short_term(ctx.clone(), MemoryQuery::default())
+            .await?;
+        for index in &short_terms {
+            match self
+                .cortex_dao
+                .embed_text_for_search(ctx.clone(), cortex.as_ref(), &index.summary)
+                .await
+            {
+                Ok(vec_params) => {
+                    if let Err(e) = self
+                        .memory_vector_dao
+                        .upsert_short_term_vector(ctx.clone(), &index.id, &vec_params)
+                        .await
+                    {
+                        log_warn!(
+                            &ctx,
+                            "rebuild_vectors",
+                            memory_id = %index.id,
+                            error = ?e,
+                            "短期记忆向量索引重建失败"
+                        );
+                    }
+                }
+                Err(e) => {
+                    log_warn!(
+                        &ctx,
+                        "rebuild_vectors",
+                        memory_id = %index.id,
+                        error = ?e,
+                        "短期记忆向量化失败，跳过"
+                    );
+                }
+            }
+        }
+
+        // 5. 重建知识节点向量索引
+        let nodes = self
+            .memory_dao
+            .query_knowledge_nodes(ctx.clone(), MemoryQuery::default())
+            .await?;
+        for node in &nodes {
+            let text_for_embedding = format!("{}\n{}", node.node_description, node.summary);
+            match self
+                .cortex_dao
+                .embed_text_for_search(ctx.clone(), cortex.as_ref(), &text_for_embedding)
+                .await
+            {
+                Ok(vec_params) => {
+                    if let Err(e) = self
+                        .memory_vector_dao
+                        .upsert_knowledge_node_vector(ctx.clone(), &node.id, &vec_params)
+                        .await
+                    {
+                        log_warn!(
+                            &ctx,
+                            "rebuild_vectors",
+                            knowledge_id = %node.id,
+                            error = ?e,
+                            "知识节点向量索引重建失败"
+                        );
+                    }
+                }
+                Err(e) => {
+                    log_warn!(
+                        &ctx,
+                        "rebuild_vectors",
+                        knowledge_id = %node.id,
+                        error = ?e,
+                        "知识节点向量化失败，跳过"
+                    );
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
