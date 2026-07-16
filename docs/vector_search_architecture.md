@@ -393,7 +393,73 @@ struct Storage;
 | `0dc9f59` | refactor: 重命名 skill vector dao 文件与结构体，移除 sqlite 前缀 |
 | `391faec` | feat: Phase 4C 技能系统增强 + 记忆 FTS5 搜索 |
 | `30b78d6` | feat: 全实体 FTS5 搜索改造 - 6 实体混合搜索 + 三态匹配 |
+| `5f7694b` | feat: 向量搜索增强 - HNSW 索引 + Embedding Provider 唯一性 + Switch 接口 |
+| `0102853` | feat: 索引重建全链路 - VectorDao clear_collection + DAL rebuild_vectors + Domain 编排 |
+| `7e472d5` | feat: 前端 Switch Embedding Provider 适配 + 错误响应通用化 |
 
 ---
 
-*最后更新：2026-07-12*
+## 2026-07-16 增强内容
+
+### HNSW 向量存储后端
+
+新增 `HnswStore` 向量存储后端，基于 `instant-distance` 0.6.1 库：
+
+- 纯 Rust 实现，零系统依赖
+- lazy rebuild 策略（写入时标记 dirty，搜索时按需重建）
+- 支持余弦距离（`1 - cos(θ)`）
+- 内存驻留，重启后需重建（或后续添加持久化）
+
+**注意**：`instant-distance` 0.6.1 不支持增量插入，因此采用 lazy rebuild 策略。
+
+### Embedding Provider 唯一性约束
+
+同一时刻只能有一个 Embedding 类型的 Provider 处于启用状态：
+
+- Domain 层校验：`update_model_provider` 时检测冲突
+- 冲突时返回 `409 Conflict` + 当前 Provider 信息
+- 前端弹出确认对话框，用户二次确认后调用 switch 接口
+
+### Switch Embedding Provider 接口
+
+`POST /api/v1/finance/model-providers/:id/switch`
+
+- 原子操作：禁用旧 Provider → 启用新 Provider → 重建所有向量索引
+- 索引重建：清空 7 个 collection → 查全量 PO → 逐条 embed + upsert
+- 前端适配：API 客户端 + 列表页/详情页确认对话框
+
+### 分层架构
+
+```
+Domain: rebuild_all_vector_indexes()
+    → 通过全局 DAL 单例调用各 DAL
+
+DAL: rebuild_vectors(ctx)
+    → vector_dao.clear_collection()
+    → 主 DAO.query() 查全量 PO
+    → cortex_dao.embed_entity() 生成 embedding
+    → vector_dao.upsert_vector() 写入向量
+
+VectorDao: clear_collection()
+    → VectorStore.clear_collection()
+
+VectorStore: clear_collection() + upsert()
+```
+
+### 配置变更
+
+`VectorStoreType` 枚举扩展：
+
+```rust
+pub enum VectorStoreType {
+    #[default]
+    LanceDb,     // 默认，生产级
+    InMemory,    // 零依赖，用于测试
+    Hnsw,        // 纯 Rust HNSW 索引
+    SqliteVss,   // SQLite VSS 扩展
+}
+```
+
+---
+
+*最后更新：2026-07-16*

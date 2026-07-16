@@ -32,7 +32,7 @@
 | 🔌 MCP 服务器集成 | ✅ | MCP 服务器管理、工具同步、MCP 工具调用执行 |
 | 🚀 异步消费者系统 | ✅ | 通用消费者框架 + Message Topic 三层分发 |
 | 📝 结构化日志系统 | ✅ | JSON 格式、自动上下文关联、日志自动清理 |
-| 🔍 向量搜索 | ✅ | SQLite VSS 扩展 + 语义索引 + 可平滑升级 |
+| 🔍 向量搜索 | ✅ | LanceDB 默认 + HNSW/inMemory/SqliteVss 多后端、Embedding Provider 唯一性、Switch 接口 |
 | 🔎 全文搜索 | ✅ | FTS5 + trigram 分词器，支持中文全文搜索、BM25 相关性排序 |
 | 📊 Agent 统计系统 | ✅ | DuckDB 多维统计、Agent/Project/Task/ModelProvider/Tool 五维度覆盖、实体详情页按需动态注入 |
 | 🔄 多回合循环控制 | ✅ | 轮次限制检查、任务完成检测、Prompt 上下文差异化、工具失败计数注入 |
@@ -535,6 +535,19 @@ Agent
 - **ToolVectorDao 补全**：新增 `delete_vector` 方法，完善 Tool 向量索引生命周期管理
 - **Tool DAL 向量索引维护**：create_tool/update_tool/delete_tool 补全向量索引自动维护逻辑
 - **测试统计**：693 个测试 100% 通过（+78，含 6 实体搜索三态匹配测试）
+
+### 2026-07-16 里程碑
+**✅ 向量搜索增强**
+- **HNSW 向量存储**：基于 instant-distance 0.6.1 的纯 Rust HNSW 索引实现，lazy rebuild 策略
+- **Embedding Provider 唯一性**：同一时刻仅一个 Embedding Provider 启用，冲突返回 409 + 当前 Provider 信息
+- **Switch 接口**：`POST /api/v1/finance/model-providers/:id/switch`，二次确认后原子切换 + 索引重建
+- **索引重建全链路**：VectorDao clear_collection（7个）+ DAL rebuild_vectors（7个）+ Domain 编排
+
+**✅ 前端 Switch 适配**
+- **API 客户端**：switch_embedding_provider + toggle_model_provider，api_post_with_error 支持 ApiError
+- **列表页/详情页**：启用 Embedding Provider 检测 409 → 确认对话框 → switch 调用
+- **错误响应通用化**：axum 错误响应使用通用 http_status/code_str，409 正确返回 error_code 字段
+- **测试统计**：697 个测试 100% 通过
 
 ### 2026-07-15 里程碑
 **✅ SSE 消息推送系统**
