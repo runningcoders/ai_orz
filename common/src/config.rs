@@ -48,6 +48,10 @@ pub struct AppConfig {
     /// 消费者配置
     #[serde(default)]
     pub consumer: ConsumerConfig,
+
+    /// 飞书配置
+    #[serde(default)]
+    pub lark: LarkConfig,
 }
 
 /// JWT 配置
@@ -486,4 +490,36 @@ fn default_consumer_empty_sleep() -> u64 {
 
 fn default_consumer_error_sleep() -> u64 {
     1000
+}
+
+// ==================== 飞书配置 ====================
+
+/// 飞书应用配置（全局共享，应用级凭证）
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct LarkConfig {
+    /// 是否启用飞书渠道
+    #[serde(default)]
+    pub enabled: bool,
+    /// 飞书 App ID
+    #[serde(default)]
+    pub app_id: String,
+    /// 飞书 App Secret
+    #[serde(default)]
+    pub app_secret: String,
+    /// 飞书加密密钥（可选，事件订阅加密用）
+    pub encrypt_key: Option<String>,
+    /// 飞书验证令牌（可选，事件订阅校验用）
+    pub verification_token: Option<String>,
+}
+
+impl Default for LarkConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            app_id: String::new(),
+            app_secret: String::new(),
+            encrypt_key: None,
+            verification_token: None,
+        }
+    }
 }

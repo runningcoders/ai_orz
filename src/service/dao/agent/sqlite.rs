@@ -150,6 +150,19 @@ FROM agents WHERE id = ? AND status <> 0
                 .push_bind(model_provider_id);
         }
 
+        // 角色标签过滤（OR 语义，使用 json_each 精确匹配）
+        // role 字段是 JSON 字符串数组（如 ["feishu_reception","worker"]）
+        if let Some(roles) = &query.roles {
+            if !roles.is_empty() {
+                builder.push(" AND EXISTS (SELECT 1 FROM json_each(agents.role) WHERE json_each.value IN (");
+                let mut separated = builder.separated(", ");
+                for role in roles {
+                    separated.push_bind(role);
+                }
+                separated.push_unseparated("))");
+            }
+        }
+
         // 关键词搜索已迁移到 FTS5 全文索引（search_agents 方法）
         // query 方法的 keyword 字段已废弃，仅记录 warn 日志
         if let Some(keyword) = &query.keyword {
@@ -233,6 +246,18 @@ FROM agents WHERE id = ? AND status <> 0
             builder
                 .push(" AND m.model_provider_id = ")
                 .push_bind(model_provider_id);
+        }
+
+        // 角色标签过滤（OR 语义，使用 json_each 精确匹配）
+        if let Some(roles) = &filters.roles {
+            if !roles.is_empty() {
+                builder.push(" AND EXISTS (SELECT 1 FROM json_each(m.role) WHERE json_each.value IN (");
+                let mut separated = builder.separated(", ");
+                for role in roles {
+                    separated.push_bind(role);
+                }
+                separated.push_unseparated("))");
+            }
         }
 
         builder.push(" ORDER BY agents_fts.rank");

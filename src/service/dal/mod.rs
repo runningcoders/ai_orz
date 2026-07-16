@@ -32,6 +32,7 @@ pub mod artifact;
 pub mod attachment;
 pub mod brain;
 pub mod cron_trigger;
+pub mod lark;
 pub mod mcp_server;
 pub mod mcp_tool;
 pub mod memory;
@@ -64,6 +65,8 @@ pub fn init_all() {
     mcp_server::init();
     mcp_tool::init();
     user::init();
+    // lark dal 依赖 message_channel + agent dal，最后初始化
+    lark::init();
 }
 
 #[cfg(test)]

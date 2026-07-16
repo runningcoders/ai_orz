@@ -199,6 +199,13 @@ pub struct ChannelConfig {
     pub lark_encrypt_key: Option<String>,
     /// 飞书验证令牌
     pub lark_verification_token: Option<String>,
+    /// 飞书用户 Open ID（渠道归属用户的飞书标识）
+    ///
+    /// 用于私信接入场景：管理员预先创建 User + MessageChannel，
+    /// 将用户的飞书 open_id 绑定到渠道，事件到达时按 open_id 查找渠道与归属用户。
+    pub lark_open_id: Option<String>,
+    /// 飞书用户名称（便于日志和展示，可选）
+    pub lark_user_name: Option<String>,
 
     // 微信配置
     /// 微信 App ID

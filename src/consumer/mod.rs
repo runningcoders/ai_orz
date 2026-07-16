@@ -10,6 +10,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 use common::error::Result;
 
+pub mod adapter;
 pub mod message;
 pub mod scheduler;
 
@@ -177,6 +178,9 @@ pub async fn init(config: &common::config::ConsumerConfig) -> Result<()> {
 
     // 初始化 cron_trigger topic 消费者
     scheduler::init(&config.for_topic("cron_trigger")).await?;
+
+    // 初始化外部消息适配层（飞书等外部渠道事件监听）
+    adapter::init(&crate::config::get()).await?;
 
     sys_info!("all consumers initialized and started");
     Ok(())

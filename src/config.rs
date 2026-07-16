@@ -17,6 +17,13 @@ pub fn get() -> Arc<AppConfig> {
     CONFIG.get().cloned().unwrap()
 }
 
+/// 尝试获取配置单例（未初始化时返回 None）
+///
+/// 用于测试环境或可选功能初始化场景，避免 panic。
+pub fn try_get() -> Option<Arc<AppConfig>> {
+    CONFIG.get().cloned()
+}
+
 /// 初始化 Agent DAL
 pub fn init() -> Result<()> {
     // 加载配置（默认配置嵌入在二进制中，不存在就自动生成）

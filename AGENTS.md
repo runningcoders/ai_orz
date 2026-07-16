@@ -14,7 +14,7 @@
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + rig-core 0.34
 - **前端**：Dioxus 0.7 (WebAssembly)
-- **技术特色**：严格分层架构、类型安全、697 个测试 100% 通过率
+- **技术特色**：严格分层架构、类型安全、708 个测试 100% 通过率
 
 ### 1.2 已实现核心功能
 
@@ -24,7 +24,7 @@
 | 🤖 Agent 全生命周期 | ✅ | 创建、配置、工具绑定、唤醒执行 |
 | 🧠 四层记忆系统 | ✅ | Core/Working/Short-term/Long-term |
 | 💬 消息对话系统 | ✅ | 用户 ↔ Agent 双向对话，支持项目上下文 |
-| 📨 消息渠道系统 | ✅ | 多渠道消息接入，支持启用/禁用/测试 |
+| 📨 消息渠道系统 | ✅ | 多渠道消息接入（飞书/微信/Slack/邮件/Webhook），飞书 P2P 私信 + WebSocket 长连接，启用/禁用/测试 |
 | 🛠️ 混合模式工具调用 | ✅ | 简单工具走 rig auto，关键工具走自建 manual 可控链路 |
 | 📚 技能库系统 | ✅ | 可复用技能和工作流，支持搜索和分类，tag 技能包安装，唤醒时注入 Prompt |
 | 📋 任务 + 项目管理 | ✅ | 任务状态机，项目聚合对话上下文，DAL + Domain 层完整实现 |
@@ -63,17 +63,17 @@
 | 🛠️ Tool/ModelProvider 详情页 | ✅ | 工具和模型提供商详情页、统计面板、调用测试、连接测试 |
 | 💬 对话体验打磨 | ✅ | 消息复制（hover 显示按钮）、快捷指令（/clear、/help）、键盘导航 |
 
-### 1.3 整体完成度与测试统计（2026-07-15 更新）
+### 1.3 整体完成度与测试统计（2026-07-17 更新）
 
 | 指标 | 数值 | 说明 |
 |------|------|------|
-| **总测试数** | **697** | DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
+| **总测试数** | **708** | DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
 | **通过率** | **100%** | ✅ 全部测试通过 |
 | DAO 模块数 | 29 个 | 全部实现并被使用，零闲置（21 核心 DAO + 5 渠道 DAO + 1 统计 DAO + 1 触发器 DAO + 1 消息推送 DAO） |
-| DAL 模块数 | 18 个 | 全部完整业务承载，零闲置 |
+| DAL 模块数 | 19 个 | 全部完整业务承载，零闲置（+ lark 飞书渠道专属 DAL） |
 | Domain 领域数 | 7 个 | 全部完整实现（新增 SystemDomain） |
 | Handler API 领域数 | 7 个上线 | organization, hr, finance, project, user, health, system |
-| **整体架构完成度** | **~98%** | 从下往上扎实推进 |
+| **整体架构完成度** | **~99%** | 从下往上扎实推进 |
 
 ---
 
@@ -535,6 +535,21 @@ Agent
 - **ToolVectorDao 补全**：新增 `delete_vector` 方法，完善 Tool 向量索引生命周期管理
 - **Tool DAL 向量索引维护**：create_tool/update_tool/delete_tool 补全向量索引自动维护逻辑
 - **测试统计**：693 个测试 100% 通过（+78，含 6 实体搜索三态匹配测试）
+
+### 2026-07-17 里程碑
+**✅ 飞书私信（P2P）消息接入（v3 架构）**
+- **DAO 层封装**：LarkDao trait + HTTP 实现 + WebSocket 长连接，飞书 SDK 全部封装在 DAO 层
+- **Token 缓存**：tenant_access_token 缓存 + 提前 5 分钟自动刷新 + 双重检查锁防并发
+- **出站推送**：`/open-apis/im/v1/messages` 文本消息推送，`push_to_channel` 五渠道统一调度
+- **入站消息**：WebSocket 长连接 + `im.message.receive_v1` 事件订阅，30 秒心跳 + 自动重连
+- **LarkMessageChannelDal**：飞书专属 DAL，`find_channel_by_lark_open_id` + `adapt_lark` 事件转换
+- **v3 架构调整**：Agent 路由从 DAL 上移到 consumer 层，DAL 不依赖其他 DAL，严格分层
+- **Agent 路由策略**：渠道绑定 agent_id 优先 → feishu_reception 角色 Agent → 任意 Onboarded Agent
+- **consumer/adapter 编排层**：LarkEventDispatcher 协调适配+路由+投递，业务逻辑在 consumer 层
+- **pkg/adapter 注册中心**：通用适配者注册，`Arc<dyn Any + Send + Sync>` 无业务依赖
+- **全局配置**：`[lark]` 配置段，`enabled` 开关控制启停，默认禁用不影响现有功能
+- **前端完善**：消息渠道管理页飞书专属字段（lark_open_id / lark_user_name / agent_id）
+- **测试统计**：708 个测试 100% 通过（+11）
 
 ### 2026-07-16 里程碑
 **✅ 向量搜索增强**

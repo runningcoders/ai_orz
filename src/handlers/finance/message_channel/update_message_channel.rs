@@ -76,6 +76,12 @@ pub async fn update_message_channel(
     if let Some(value) = params.lark_verification_token {
         config.lark_verification_token = Some(value);
     }
+    if let Some(value) = params.lark_open_id {
+        config.lark_open_id = Some(value);
+    }
+    if let Some(value) = params.lark_user_name {
+        config.lark_user_name = Some(value);
+    }
     if let Some(value) = params.wechat_app_id {
         config.wechat_app_id = Some(value);
     }

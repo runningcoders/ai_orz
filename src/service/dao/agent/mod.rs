@@ -20,6 +20,11 @@ pub struct AgentQuery {
     pub exclude_status: Option<AgentStatus>,
     pub created_by: Option<String>,
     pub model_provider_id: Option<String>,
+    /// 按角色标签过滤（OR 语义，匹配任一 role 即命中）
+    ///
+    /// `role` 字段是 JSON 字符串数组（如 `["feishu_reception","worker"]`），
+    /// DAO 层使用 `json_each` 在 SQL 层精确匹配。
+    pub roles: Option<Vec<String>>,
     pub limit: Option<usize>,
 }
 

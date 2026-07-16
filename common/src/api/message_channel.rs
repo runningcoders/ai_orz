@@ -30,6 +30,10 @@ pub struct CreateMessageChannelRequest {
     pub lark_encrypt_key: Option<String>,
     /// Lark verification token (only in request, not returned in response)
     pub lark_verification_token: Option<String>,
+    /// Lark user Open ID (for P2P message binding)
+    pub lark_open_id: Option<String>,
+    /// Lark user display name (for display, optional)
+    pub lark_user_name: Option<String>,
     /// WeChat App ID
     pub wechat_app_id: Option<String>,
     /// WeChat App Secret (only in request, not returned in response)
@@ -132,6 +136,10 @@ pub struct UpdateMessageChannelRequest {
     pub lark_encrypt_key: Option<String>,
     /// Lark verification token (only in request, not returned in response)
     pub lark_verification_token: Option<String>,
+    /// Lark user Open ID (for P2P message binding)
+    pub lark_open_id: Option<String>,
+    /// Lark user display name (for display, optional)
+    pub lark_user_name: Option<String>,
     /// WeChat App ID
     pub wechat_app_id: Option<String>,
     /// WeChat App Secret (only in request, not returned in response)

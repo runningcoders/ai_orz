@@ -23,6 +23,9 @@ pub fn FinanceMessageChannels() -> Element {
     let mut new_name = use_signal(String::new);
     let mut new_type = use_signal(|| "0".to_string());
     let mut new_webhook_url = use_signal(String::new);
+    let mut new_lark_open_id = use_signal(String::new);
+    let mut new_lark_user_name = use_signal(String::new);
+    let mut new_agent_id = use_signal(String::new);
     let mut creating = use_signal(|| false);
 
     use_effect(move || {
@@ -46,7 +49,7 @@ pub fn FinanceMessageChannels() -> Element {
             let channel_type = ChannelType::from_i32(new_type().parse::<i32>().unwrap_or(0));
             let req = CreateMessageChannelRequest {
                 user_id: None,
-                agent_id: None,
+                agent_id: if new_agent_id().is_empty() { None } else { Some(new_agent_id()) },
                 channel_type,
                 channel_name: new_name(),
                 webhook_url: if new_webhook_url().is_empty() {
@@ -60,6 +63,16 @@ pub fn FinanceMessageChannels() -> Element {
                 lark_app_secret: None,
                 lark_encrypt_key: None,
                 lark_verification_token: None,
+                lark_open_id: if new_lark_open_id().is_empty() {
+                    None
+                } else {
+                    Some(new_lark_open_id())
+                },
+                lark_user_name: if new_lark_user_name().is_empty() {
+                    None
+                } else {
+                    Some(new_lark_user_name())
+                },
                 wechat_app_id: None,
                 wechat_app_secret: None,
                 wechat_open_id: None,
@@ -80,6 +93,9 @@ pub fn FinanceMessageChannels() -> Element {
                     new_name.set(String::new());
                     new_type.set("0".to_string());
                     new_webhook_url.set(String::new());
+                    new_lark_open_id.set(String::new());
+                    new_lark_user_name.set(String::new());
+                    new_agent_id.set(String::new());
                     toast.success("创建成功");
                     match list_message_channels().await {
                         Ok(list) => channels.set(list.channels),
@@ -219,7 +235,7 @@ pub fn FinanceMessageChannels() -> Element {
                 div { class: "form-group",
                     label { class: "form-label", "渠道名称 *" }
                     input { class: "form-input", value: "{new_name}",
-                        oninput: move |e| new_name.set(e.value()), placeholder: "如：飞书通知群" }
+                        oninput: move |e| new_name.set(e.value()), placeholder: "如：飞书接待渠道" }
                 }
                 div { class: "form-group",
                     label { class: "form-label", "渠道类型" }
@@ -233,10 +249,32 @@ pub fn FinanceMessageChannels() -> Element {
                     }
                 }
                 div { class: "form-group",
-                    label { class: "form-label", "Webhook URL" }
-                    input { class: "form-input", value: "{new_webhook_url}",
-                        oninput: move |e| new_webhook_url.set(e.value()),
-                        placeholder: "https://..." }
+                    label { class: "form-label", "绑定 Agent ID" }
+                    input { class: "form-input", value: "{new_agent_id}",
+                        oninput: move |e| new_agent_id.set(e.value()),
+                        placeholder: "可选，绑定后消息自动路由到该 Agent" }
+                }
+                if new_type_value == "0" {
+                    div { class: "form-group",
+                        label { class: "form-label", "飞书用户 Open ID" }
+                        input { class: "form-input", value: "{new_lark_open_id}",
+                            oninput: move |e| new_lark_open_id.set(e.value()),
+                            placeholder: "ou_xxx，飞书用户的唯一标识" }
+                    }
+                    div { class: "form-group",
+                        label { class: "form-label", "飞书用户昵称" }
+                        input { class: "form-input", value: "{new_lark_user_name}",
+                            oninput: move |e| new_lark_user_name.set(e.value()),
+                            placeholder: "可选，用于展示" }
+                    }
+                }
+                if new_type_value == "4" {
+                    div { class: "form-group",
+                        label { class: "form-label", "Webhook URL" }
+                        input { class: "form-input", value: "{new_webhook_url}",
+                            oninput: move |e| new_webhook_url.set(e.value()),
+                            placeholder: "https://..." }
+                    }
                 }
             }
         }

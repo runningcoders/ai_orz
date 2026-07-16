@@ -63,6 +63,8 @@ pub async fn create_message_channel(
             webhook_method: params.webhook_method.clone(),
             webhook_headers: None,
             webhook_body_template: params.webhook_body_template.clone(),
+            lark_open_id: params.lark_open_id.clone(),
+            lark_user_name: params.lark_user_name.clone(),
             extra: None,
         },
         ctx.uid(),
