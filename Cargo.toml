@@ -56,7 +56,7 @@ ai-orz-macros = { path = "./ai-orz-macros" }
 dashmap = "6.1"
 
 # 向量搜索相关
-fastembed = { version = "5.13", default-features = false, features = ["ort-load-dynamic", "hf-hub-native-tls", "image-models"] }  # 纯本地向量化，ort-load-dynamic 避免 CI 构建时下载二进制
+fastembed = "5.13"  # 纯本地向量化（纯 Rust candle 后端，零系统依赖）
 lancedb = "0.26"   # 嵌入式向量数据库
 arrow-array = "57.3.0"
 arrow-schema = "57.3.0"
