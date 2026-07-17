@@ -50,6 +50,53 @@ impl UserRole {
             UserRole::Member => "普通成员",
         }
     }
+
+    /// 获取上级角色（权限更高一级）
+    ///
+    /// 并查集角色继承体系：
+    /// Member → Admin → SuperAdmin（根）
+    ///
+    /// 上级角色拥有下级角色的所有权限
+    pub fn parent(&self) -> Option<UserRole> {
+        match self {
+            UserRole::SuperAdmin => None,    // 根节点，没有上级
+            UserRole::Admin => Some(UserRole::SuperAdmin),
+            UserRole::Member => Some(UserRole::Admin),
+        }
+    }
+
+    /// 查找权限根（并查集 find 操作，带路径压缩语义）
+    ///
+    /// 最终都会回到 SuperAdmin
+    pub fn find_root(&self) -> UserRole {
+        match self.parent() {
+            Some(parent) => parent.find_root(),
+            None => *self,
+        }
+    }
+
+    /// 判断当前用户角色是否满足要求的最低角色权限
+    ///
+    /// 核心逻辑：从 min_role 向上遍历祖先链，如果路径上包含 user_role，则满足。
+    /// 因为上级角色 = 下级角色权限 + 额外权限，所以上级总是满足下级的要求。
+    ///
+    /// # 示例
+    /// user=Admin, min_role=Member → Member→Admin ✅ 满足
+    /// user=SuperAdmin, min_role=Member → Member→Admin→SuperAdmin ✅ 满足
+    /// user=Member, min_role=Admin → Admin→SuperAdmin ❌ 不满足
+    /// user=Member, min_role=SuperAdmin → SuperAdmin ❌ 不满足
+    pub fn has_permission(user_role: UserRole, min_role: UserRole) -> bool {
+        let mut current = min_role;
+        loop {
+            if current == user_role {
+                return true;
+            }
+            match current.parent() {
+                Some(parent) => current = parent,
+                None => return false,
+            }
+        }
+    }
 }
 
 impl From<UserRole> for i32 {
