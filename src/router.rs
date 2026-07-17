@@ -1,10 +1,11 @@
 use crate::handlers;
-use crate::middleware::{jwt_auth_middleware, request_context_middleware};
+use crate::middleware::{jwt_auth_middleware, request_context_middleware, require_role_middleware};
 use axum::{
     Router,
     routing::{delete, get, post, put},
 };
 use common::config::AppConfig;
+use common::enums::UserRole;
 use std::sync::Arc;
 use tower_http::services::ServeDir;
 
@@ -62,8 +63,14 @@ fn protected_routes(config: Arc<AppConfig>) -> Router {
         .nest("/hr", hr_routes())
         // Finance (模型管理) routes
         .nest("/finance", finance_routes())
-        // System (系统管理) routes
-        .nest("/system", system_routes())
+        // System (系统管理) routes - 整体要求 Admin 权限（Admin 和 SuperAdmin 可访问）
+        // 备份创建/删除/恢复等高危操作在 handler 内部二次校验 SuperAdmin
+        .nest(
+            "/system",
+            system_routes().layer(axum::middleware::from_fn(|req, next| {
+                require_role_middleware(UserRole::Admin, req, next)
+            })),
+        )
         // Organization (组织管理) routes (protected)
         .nest("/organization", organization_protected_routes())
         // Project routes
@@ -506,5 +513,19 @@ fn system_routes() -> Router {
         .route(
             "/cron-triggers/{trigger_id}/resume",
             post(handlers::system::cron_trigger::resume_cron_trigger_handler),
+        )
+        // Backup routes - 创建/列出/删除/恢复脚本
+        .route(
+            "/backups",
+            post(handlers::system::backup::create_backup_handler)
+                .get(handlers::system::backup::list_backups_handler),
+        )
+        .route(
+            "/backups/{version}",
+            delete(handlers::system::backup::delete_backup_handler),
+        )
+        .route(
+            "/backups/{version}/restore",
+            post(handlers::system::backup::restore_backup_handler),
         )
 }
