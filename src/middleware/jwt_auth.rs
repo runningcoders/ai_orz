@@ -72,6 +72,11 @@ pub async fn jwt_auth_middleware(mut req: Request, next: Next) -> Result<Respons
                 .insert(http_header::ORGANIZATION_ID, header_value);
         }
     }
+    if let Some(role) = claims.role {
+        if let Ok(header_value) = HeaderValue::from_str(&role.to_string()) {
+            req.headers_mut().insert(http_header::USER_ROLE, header_value);
+        }
+    }
 
     // 4. JWT 验证通过，继续处理请求
     Ok(next.run(req).await)

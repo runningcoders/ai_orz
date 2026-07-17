@@ -11,3 +11,6 @@ pub const USERNAME: &str = "X-Username";
 
 /// 当前组织 ID
 pub const ORGANIZATION_ID: &str = "X-Organization-Id";
+
+/// 当前用户角色（UserRole 数值）
+pub const USER_ROLE: &str = "X-User-Role";
