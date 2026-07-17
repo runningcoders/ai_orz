@@ -139,13 +139,13 @@ pub fn FinanceMessageChannels() -> Element {
                                 let id_test = id.clone();
                                 rsx! {
                                     tr { key: "{id}",
-                                        td { class: "detail-table-value-bold", "{channel_name}" }
-                                        td { span { class: "badge badge-info", "{channel_type}" } }
-                                        td {
+                                        td { class: "detail-table-value-bold", "data-label": "名称", "{channel_name}" }
+                                        td { "data-label": "类型", span { class: "badge badge-info", "{channel_type}" } }
+                                        td { "data-label": "状态",
                                             if is_active { span { class: "badge badge-success", "启用" } }
                                             else { span { class: "badge badge-error", "禁用" } }
                                         }
-                                        td {
+                                        td { "data-label": "操作",
                                             if is_active {
                                                 button { class: "btn btn-ghost btn-sm",
                                                     onclick: move |_| {

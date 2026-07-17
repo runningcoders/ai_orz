@@ -183,18 +183,18 @@ pub fn ProjectArtifacts() -> Element {
                                 let id_delete = id.clone();
                                 rsx! {
                                     tr { key: "{id}",
-                                        td { class: "detail-table-value-bold", "{name}" }
-                                        td {
+                                        td { class: "detail-table-value-bold", "data-label": "名称", "{name}" }
+                                        td { "data-label": "描述",
                                             if description.is_empty() {
                                                 span { class: "text-muted", "无描述" }
                                             } else {
                                                 "{description}"
                                             }
                                         }
-                                        td { span { class: "badge badge-info", "{source_type_text(source_type)}" } }
-                                        td { class: "text-mono text-muted", "{format_file_size(file_size)}" }
-                                        td { class: "text-mono text-muted", "{created_at}" }
-                                        td {
+                                        td { "data-label": "来源类型", span { class: "badge badge-info", "{source_type_text(source_type)}" } }
+                                        td { class: "text-mono text-muted", "data-label": "文件大小", "{format_file_size(file_size)}" }
+                                        td { class: "text-mono text-muted", "data-label": "创建时间", "{created_at}" }
+                                        td { "data-label": "操作",
                                             button { class: "btn btn-danger btn-sm",
                                                 onclick: move |_| {
                                                     let id_delete = id_delete.clone();

@@ -60,18 +60,18 @@ pub fn FinanceTools() -> Element {
                                 let id_detail = id.clone();
                                 rsx! {
                                     tr { key: "{id}",
-                                        td { class: "detail-table-value-bold",
+                                        td { class: "detail-table-value-bold", "data-label": "名称",
                                             Link { to: crate::pages::Route::FinanceToolDetail { id: id_detail.clone() }, "{name}" }
                                         }
-                                        td { span { class: "badge badge-neutral", "{protocol}" } }
-                                        td {
+                                        td { "data-label": "协议", span { class: "badge badge-neutral", "{protocol}" } }
+                                        td { "data-label": "状态",
                                             if is_enabled {
                                                 span { class: "badge badge-success", "启用" }
                                             } else {
                                                 span { class: "badge badge-error", "禁用" }
                                             }
                                         }
-                                        td {
+                                        td { "data-label": "操作",
                                             if is_enabled {
                                                 button { class: "btn btn-ghost btn-sm",
                                                     onclick: move |_| {

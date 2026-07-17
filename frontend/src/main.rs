@@ -1,6 +1,7 @@
 mod api;
 mod components;
 mod config;
+mod hooks;
 mod layouts;
 mod pages;
 mod store;

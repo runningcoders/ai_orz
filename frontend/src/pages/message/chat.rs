@@ -101,6 +101,10 @@ pub fn MessageChat() -> Element {
     let mut show_slash_menu = use_signal(|| false);
     let mut selected_slash_index = use_signal(|| 0);
 
+    // 移动端 sidebar 抽屉状态
+    let mut sidebar_open = use_signal(|| false);
+    let is_mobile = crate::hooks::use_breakpoint();
+
     let mut load_projects = move || {
         loading_projects.set(true);
         spawn(async move {
@@ -406,6 +410,9 @@ pub fn MessageChat() -> Element {
         messages.set(Vec::new());
         has_more.set(true);
         load_messages(&project_id);
+        if is_mobile() {
+            sidebar_open.set(false);
+        }
     };
 
     let current_project = projects
@@ -420,6 +427,13 @@ pub fn MessageChat() -> Element {
         let project_name = project.name.clone();
         rsx! {
             div { class: "chat-header",
+                if is_mobile() {
+                    button {
+                        class: "chat-mobile-back",
+                        onclick: move |_| sidebar_open.set(true),
+                        "←"
+                    }
+                }
                 h2 { class: "chat-header-title", "{project_name}" }
                 if sse_connected() {
                     span { class: "chat-status connected", "● 实时" }
@@ -685,9 +699,24 @@ pub fn MessageChat() -> Element {
         }
     };
 
+    // 移动端 sidebar 显示条件：未选项目（默认显示）或 用户主动打开（返回按钮）
+    // 桌面端 sidebar 始终显示（CSS 无 transform）
+    let sidebar_visible_on_mobile = selected_project().is_none() || sidebar_open();
+    let sidebar_class = if is_mobile() && !sidebar_visible_on_mobile {
+        "chat-sidebar"
+    } else if is_mobile() && sidebar_visible_on_mobile {
+        "chat-sidebar open"
+    } else {
+        "chat-sidebar"
+    };
+
+    // 移动端：未选项目时只显示 sidebar；选了项目且未打开抽屉时只显示 main
+    // 桌面端：始终双栏并列
+    let show_main = !is_mobile() || (selected_project().is_some() && !sidebar_open());
+
     rsx! {
         div { class: "chat-container",
-            div { class: "chat-sidebar",
+            div { class: "{sidebar_class}",
                 div { class: "chat-sidebar-header",
                     h2 { class: "chat-sidebar-title", "项目列表" }
                 }
@@ -716,8 +745,10 @@ pub fn MessageChat() -> Element {
                 }
             }
 
-            div { class: "chat-main",
-                {chat_content}
+            if show_main {
+                div { class: "chat-main",
+                    {chat_content}
+                }
             }
         }
     }

@@ -242,22 +242,22 @@ pub fn SystemBackup() -> Element {
 
                                     rsx! {
                                         tr { key: "{version}",
-                                            td {
+                                            td { "data-label": "版本",
                                                 span { class: "badge badge-info", "v{version}" }
                                             }
-                                            td { class: "text-mono text-muted", style: "white-space: nowrap;",
+                                            td { class: "text-mono text-muted", style: "white-space: nowrap;", "data-label": "时间",
                                                 "{format_timestamp(&timestamp)}"
                                             }
-                                            td { class: "text-mono", "{file_name}" }
-                                            td { "{size}" }
-                                            td {
+                                            td { class: "text-mono", "data-label": "文件名", "{file_name}" }
+                                            td { "data-label": "大小", "{size}" }
+                                            td { "data-label": "MD5",
                                                 span {
                                                     class: "text-mono text-muted",
                                                     title: "{md5_full}",
                                                     "{md5_short}"
                                                 }
                                             }
-                                            td {
+                                            td { "data-label": "操作",
                                                 button {
                                                     class: "btn btn-secondary btn-sm",
                                                     onclick: move |_| on_click_restore(version),

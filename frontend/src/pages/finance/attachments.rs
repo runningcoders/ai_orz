@@ -139,11 +139,11 @@ pub fn FinanceAttachments() -> Element {
                                 let id_delete = id.clone();
                                 rsx! {
                                     tr { key: "{id}",
-                                        td { class: "detail-table-value-bold", "{original_name}" }
-                                        td { "{size}" }
-                                        td { span { class: "badge badge-info", "{purpose}" } }
-                                        td { "{created_at}" }
-                                        td {
+                                        td { class: "detail-table-value-bold", "data-label": "文件名", "{original_name}" }
+                                        td { "data-label": "大小", "{size}" }
+                                        td { "data-label": "用途", span { class: "badge badge-info", "{purpose}" } }
+                                        td { "data-label": "创建时间", "{created_at}" }
+                                        td { "data-label": "操作",
                                             button { class: "btn btn-danger btn-sm",
                                                 onclick: move |_| {
                                                     let id_delete = id_delete.clone();

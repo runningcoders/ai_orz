@@ -1,6 +1,6 @@
 # 前端架构设计
 
-> 最后更新：2026-07-16
+> 最后更新：2026-07-17
 
 ## 概述
 
@@ -27,7 +27,7 @@ AI Orz 前端基于 **Dioxus 0.7 (Rust WebAssembly)** 构建，采用全局 CSS 
 ```
 frontend/
 ├── Cargo.toml                # 依赖配置（dioxus 0.7 + router feature）
-├── index.html                # 全局 CSS 设计系统（Mistral 暖色调变量 + 组件类）
+├── index.html                # 全局 CSS 设计系统（Mistral 暖色调变量 + 组件类 + 移动端适配）
 ├── build.rs                  # 编译时配置嵌入（保持不变）
 └── src/
     ├── main.rs               # 入口：Router 配置 + 路由组件渲染入口
@@ -42,6 +42,9 @@ frontend/
     │   ├── project.rs        # Project 域 API（project/task）
     │   ├── message.rs        # Message 域 API（消息发送）
     │   └── system.rs         # System 域 API（health/cron_trigger）
+    │
+    ├── hooks/                # 自定义 Hooks
+    │   └── mod.rs            # use_breakpoint：基于 matchMedia 监听移动端（≤768px）
     │
     ├── store/                # 全局状态管理
     │   ├── mod.rs
@@ -58,12 +61,12 @@ frontend/
     │
     ├── layouts/              # 布局组件
     │   ├── mod.rs
-    │   ├── navbar.rs         # 顶部导航栏（5 个下拉菜单 + Router Link）
+    │   ├── navbar.rs         # 顶部导航栏（桌面 5 下拉菜单 / 移动端汉堡抽屉）
     │   └── app_layout.rs     # 应用布局（Navbar + 内容区）
     │
     └── pages/                # 页面模块（按业务域分组）
-        ├── mod.rs            # Route 枚举定义（15 条路由）
-        ├── reception.rs      # 前台接待（登录/初始化闭环）
+        ├── mod.rs            # Route 枚举定义（21 条路由）
+        ├── reception.rs      # 前台接待（登录/初始化闭环，375px 极小屏适配）
         ├── settings.rs       # 系统设置（API 地址配置）
         │
         ├── organization/     # 组织模块
@@ -73,23 +76,32 @@ frontend/
         ├── hr/               # HR 模块
         │   ├── agents.rs     # Agent 管理列表
         │   ├── agent_detail.rs  # Agent 详情
-        │   └── skills.rs     # 技能库管理
+        │   ├── skills.rs     # 技能库管理
+        │   ├── memory_search.rs  # 记忆搜索
+        │   └── knowledge_graph.rs # 知识图谱
         │
         ├── finance/          # Finance 模块
         │   ├── model_providers.rs  # 模型提供商管理
         │   ├── tools.rs      # 工具管理
-        │   └── message_channels.rs  # 消息渠道管理
+        │   ├── message_channels.rs  # 消息渠道管理
+        │   ├── attachments.rs # 附件管理
+        │   └── mcp_servers.rs # MCP 服务器管理
         │
         ├── project/          # Project 模块
         │   ├── projects.rs   # 项目列表
-        │   └── project_detail.rs  # 项目详情
+        │   ├── project_detail.rs  # 项目详情
+        │   ├── tasks.rs      # 任务管理（看板/列表双视图）
+        │   └── artifacts.rs  # 项目产物
         │
         ├── message/          # Message 模块
-        │   └── chat.rs       # 消息对话
+        │   ├── chat.rs       # 消息对话（桌面双栏 / 移动端单栏覆盖式 sidebar）
+        │   └── search.rs     # 消息搜索
         │
         ├── system/           # System 模块
         │   ├── triggers.rs   # 定时触发器管理（列表+创建/编辑弹窗+Action模板+Cron预设）
-        │   └── health.rs     # 健康检查
+        │   ├── health.rs     # 健康检查
+        │   ├── logs.rs       # 日志查询
+        │   └── backup.rs     # 备份管理
         │
         └── user/             # 用户模块
             └── profile.rs    # 个人信息
@@ -148,10 +160,13 @@ CSS 变量和组件类注入 `index.html` 的 `<style>` 标签，全局可用。
 - **圆角**：radius-sm/md/lg/xl
 - **阴影**：shadow-sm/md/lg/xl（暖金色阴影系统）
 - **布局**：navbar-height、max-width
+- **响应式断点**：`--breakpoint-sm` (640px)、`--breakpoint-md` (768px，移动/桌面分界点)、`--breakpoint-lg` (1024px)
 
 **组件类清单：**
 - 布局工具：`.app-container`、`.content-area`、`.flex`、`.flex-col`、`.items-center`、`.justify-between`、`.gap-*`、`.w-full`
 - Navbar：`.navbar`、`.navbar-brand`、`.navbar-section`、`.navbar-item`、`.navbar-dropdown`、`.navbar-dropdown-item`
+  - 移动端新增：`.navbar-mobile-toggle`（汉堡按钮）、`.navbar-desktop-only`（桌面端专属容器）、`.navbar-drawer` / `.navbar-drawer.open`（左侧抽屉）、`.navbar-overlay`（遮罩）、`.navbar-drawer-item`、`.navbar-drawer-section`、`.navbar-drawer-divider`
+  - Chat 移动端：`.chat-sidebar.open`、`.chat-mobile-back`（chat-header 左侧返回按钮，桌面端隐藏）
 - Button：`.btn` + 5 种 variant（`.btn-primary`/`.btn-accent`/`.btn-secondary`/`.btn-danger`/`.btn-ghost`）+ 尺寸（`.btn-sm`/`.btn-lg`）
 - Card：`.card`、`.card-header`、`.card-title`
 - Table：`.table`、`.table th`、`.table td`
@@ -232,8 +247,46 @@ pub struct AuthState {
 
 ### 6. 布局组件
 
-- **Navbar**：顶部导航栏，5 个下拉菜单（人力资源/财务管理/项目管理/系统管理/用户菜单），使用 `Link<Route>` 导航
+- **Navbar**：顶部导航栏
+  - **桌面端（≥769px）**：5 个下拉菜单（人力资源/财务管理/项目管理/系统管理/用户菜单），使用 `Link<Route>` 导航
+  - **移动端（≤768px）**：隐藏桌面菜单，显示汉堡按钮；点击展开左侧抽屉（`.navbar-drawer`）+ 半透明遮罩（`.navbar-overlay`），按"导航/人力资源/财务管理/项目管理/系统/账户"分组垂直排列所有路由项；点击任意导航项后自动关闭抽屉，点击遮罩同样关闭
+  - 响应式切换由 `use_breakpoint()` Hook（基于 `window.matchMedia("(max-width: 768px)")`）驱动
 - **AppLayout**：应用布局包装器，组合 Navbar + children 内容区
+
+### 7. 响应式与移动端适配
+
+**断点系统**：所有 `@media` 查询统一使用 `:root` 的 `--breakpoint-*` 变量，避免硬编码：
+- `--breakpoint-sm: 640px`：表格卡片化分界点
+- `--breakpoint-md: 768px`：移动端 / 桌面端主分界点
+- `--breakpoint-lg: 1024px`：大屏分界点
+
+**`use_breakpoint` Hook**（`hooks/mod.rs`）：
+- 基于 `window.matchMedia("(max-width: 768px)")` 监听，窗口尺寸变化时自动更新
+- 通过 `use_context_provider` 在根组件注入，全局共享同一信号与监听器
+- 仅在需要切换组件结构时使用（Navbar 抽屉、Chat 单栏），其余适配全部由 CSS 接管
+
+**移动端适配策略**（CSS 优先，零 JS）：
+
+| 适配项 | 实现方式 | 触发断点 |
+|--------|----------|----------|
+| Navbar 汉堡菜单 + 抽屉 | `use_breakpoint` + 抽屉组件 | ≤768px |
+| Chat 单栏覆盖式 sidebar | `use_breakpoint` + `sidebar_open` 信号 + CSS transform | ≤768px |
+| 表格 → 卡片列表 | CSS `@media`：thead 隐藏、tr 转卡片、td 转 flex 行、`::before` 显示 `data-label` | ≤640px |
+| Modal 全屏化 | CSS：`.modal-content` 100vw/100vh、圆角 0、底部按钮纵向 | ≤640px |
+| Toast 横向占满 | CSS：`.toast-container` left/right 12px | ≤640px |
+| 网格降列 | CSS：`.overview-stats` 4→2→1 列、`.detail-grid`/`.stats-grid` 1 列 | ≤768px / ≤480px |
+| 看板纵向堆叠 | CSS：`.kanban-board` flex-direction column | ≤768px |
+| 筛选行/卡片头部纵向 | CSS：`.filter-row`、`.card-header` column | ≤768px |
+| 触摸优化 | CSS：按钮最小 40px、navbar 44px、`-webkit-tap-highlight-color` | ≤768px |
+| 输入框防 iOS 放大 | CSS：`.form-input`/`.chat-input` font-size 16px | ≤768px |
+| hover 降级 | CSS：`.message-item .message-actions` opacity 1 | ≤768px |
+
+**data-label 属性**：所有表格 `<td>` 元素添加 `data-label="字段名"` 属性（与 `<th>` 文本一致），桌面端无视觉影响，移动端通过 CSS `::before` 显示为卡片字段名标签。涉及 13 处表格共 75 个 td。
+
+**双端兼容红线**：
+- 桌面端（≥769px）所有样式与交互保持原状，新增 CSS 类与 `data-label` 属性不影响桌面渲染
+- 移动端专属元素（汉堡按钮、返回按钮、抽屉）通过 `is_mobile()` 条件渲染，桌面端不渲染
+- `use_breakpoint` 使用 `use_context_provider` 全局共享，避免多个组件重复监听
 
 ---
 
@@ -336,10 +389,31 @@ pub struct AuthState {
 - **错误处理**：API 错误以字符串形式返回，后续可考虑结构化错误类型
 - **国际化**：当前文案为硬编码中文，后续可引入 i18n 支持
 - **数据导出**：管理页面暂不支持数据导出功能，后续可添加 CSV/JSON 导出
+- **WASM 包体优化**：移动端首屏 WASM 加载较慢，后续可考虑代码分割或骨架屏
 
 ---
 
 ## 更新记录
+
+### 2026-07-17 移动端适配（响应式双端兼容）
+
+在不破坏桌面端（≥769px）现有功能的前提下，完成全前端 375px~768px 移动端可用性适配。
+
+| 适配项 | 实现细节 |
+|--------|----------|
+| **响应式基础设施** | `:root` 新增 `--breakpoint-sm/md/lg` 三个断点变量；新增 Mobile Adaptation CSS 区块（全局触摸优化、字号 padding、iOS 输入框 16px、hover 降级） |
+| **`use_breakpoint` Hook** | 新增 `hooks/mod.rs`，基于 `window.matchMedia("(max-width: 768px)")` 监听，`use_context_provider` 全局共享；web-sys features 补充 `MediaQueryList`/`MediaQueryListEvent` |
+| **Navbar 汉堡菜单** | 重写 `layouts/navbar.rs`：桌面端 `navbar-desktop-only` 容器封装原菜单；移动端汉堡按钮 + 左侧抽屉（`.navbar-drawer`）+ 半透明遮罩；点击导航项或遮罩自动关闭；admin 角色项条件渲染 |
+| **Chat 单栏** | `pages/message/chat.rs` 新增 `sidebar_open` 信号与 `is_mobile` 切换；移动端 sidebar CSS transform 滑入滑出；chat-header 左侧"←"返回按钮；未选项目时仅显示 sidebar，已选时仅显示 main |
+| **表格卡片化** | CSS `@media (max-width: 640px)` thead 隐藏、tr 转卡片、td 转 flex 行、`::before` 显示 `data-label`；13 处表格共 75 个 td 添加 `data-label` 属性 |
+| **Modal 全屏化** | CSS `@media (max-width: 640px)` `.modal-content` 100vw/100vh、圆角 0、`.modal-footer` 纵向、按钮 100% 宽 |
+| **Toast 适配** | CSS `.toast-container` left/right 12px、`.toast` 100% 宽 |
+| **网格响应式** | CSS `.overview-stats` 4→2→1 列、`.overview-grid`/`.detail-grid`/`.stats-grid` 1 列 |
+| **看板/筛选/卡片头部** | CSS `.kanban-board` 纵向、`.filter-row` 纵向、`.card-header` 纵向、`.page-header`/`.action-group` 允许换行 |
+| **触摸优化** | CSS 按钮最小 40px、`.navbar-dropdown-item`/`.navbar-drawer-item` 44px、`-webkit-tap-highlight-color` 全局透明 |
+| **Reception 375px** | CSS `@media (max-width: 375px)` headline 1.5rem、form-side padding 1rem、form-card max-width 100% |
+
+**双端兼容保证**：所有新增 CSS 通过 `@media` 限定作用域；移动端专属组件通过 `is_mobile()` 条件渲染；`data-label` 是 HTML data 属性不影响桌面渲染。编译验证：前端 `cargo check` 通过、WASM release 构建成功、后端 732 测试全过。
 
 ### 2026-07-16 定时触发器前端体验优化
 

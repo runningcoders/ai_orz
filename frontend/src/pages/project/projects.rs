@@ -125,21 +125,21 @@ pub fn ProjectList() -> Element {
                                 let pcreated = p.created_at.clone();
                                 rsx! {
                                     tr { key: "{id}",
-                                        td {
+                                        td { "data-label": "项目名称",
                                             Link { to: crate::pages::Route::ProjectDetail { id: id.clone() },
                                                 class: "detail-back-link",
                                                 "{pname}"
                                             }
                                         }
-                                        td { span { class: "{status_badge(pstatus)}", "{status_text(pstatus)}" } }
-                                        td { class: "text-secondary",
+                                        td { "data-label": "状态", span { class: "{status_badge(pstatus)}", "{status_text(pstatus)}" } }
+                                        td { class: "text-secondary", "data-label": "任务数",
                                             if let Some(count) = task_counts.read().get(&id) {
                                                 "{count}"
                                             } else {
                                                 "-"
                                             }
                                         }
-                                        td { class: "text-mono text-muted", "{pcreated}" }
+                                        td { class: "text-mono text-muted", "data-label": "创建时间", "{pcreated}" }
                                     }
                                 }
                             }

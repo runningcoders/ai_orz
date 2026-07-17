@@ -340,13 +340,13 @@ pub fn SystemLogs() -> Element {
 
                                         rsx! {
                                             tr { key: "{idx}",
-                                                td { class: "text-mono text-muted", style: "white-space: nowrap;",
+                                                td { class: "text-mono text-muted", style: "white-space: nowrap;", "data-label": "时间",
                                                     "{format_timestamp(&ts)}"
                                                 }
-                                                td {
+                                                td { "data-label": "级别",
                                                     span { class: "{level_badge_class(&level)}", "{level}" }
                                                 }
-                                                td {
+                                                td { "data-label": "Log ID",
                                                     match log_id.as_deref() {
                                                         Some(id) if !id.is_empty() => rsx! {
                                                             span {
@@ -362,14 +362,14 @@ pub fn SystemLogs() -> Element {
                                                         _ => rsx! { span { class: "text-muted", "-" } },
                                                     }
                                                 }
-                                                td { class: "text-mono",
+                                                td { class: "text-mono", "data-label": "操作",
                                                     if operation.is_empty() {
                                                         span { class: "text-muted", "-" }
                                                     } else {
                                                         "{operation}"
                                                     }
                                                 }
-                                                td {
+                                                td { "data-label": "消息",
                                                     div {
                                                         style: "cursor: pointer; max-width: 480px; word-break: break-word;",
                                                         onclick: move |_| {

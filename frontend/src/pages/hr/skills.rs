@@ -149,14 +149,14 @@ pub fn HrSkills() -> Element {
                                 let tags = s.tags.clone();
                                 rsx! {
                                     tr { key: "{id}",
-                                        td { class: "detail-table-value-bold", "{name}" }
-                                        td { class: "text-secondary", "{description}" }
-                                        td {
+                                        td { class: "detail-table-value-bold", "data-label": "名称", "{name}" }
+                                        td { class: "text-secondary", "data-label": "描述", "{description}" }
+                                        td { "data-label": "标签",
                                             for tag in &tags {
                                                 span { class: "badge badge-neutral tag-item", "{tag}" }
                                             }
                                         }
-                                        td {
+                                        td { "data-label": "操作",
                                             button { class: "btn btn-danger btn-sm",
                                                 onclick: move |_| {
                                                     let id = id.clone();

@@ -270,10 +270,10 @@ pub fn TaskList() -> Element {
                                         onclick: move |_| {
                                             let _ = navigator.push(format!("/tasks/{}", tid));
                                         },
-                                        td { "{t_title}" }
-                                        td { span { class: "{task_status_badge(t_status)}", "{task_status_text(t_status)}" } }
-                                        td { "{t_priority}" }
-                                        td {
+                                        td { "data-label": "标题", "{t_title}" }
+                                        td { "data-label": "状态", span { class: "{task_status_badge(t_status)}", "{task_status_text(t_status)}" } }
+                                        td { "data-label": "优先级", "{t_priority}" }
+                                        td { "data-label": "进度",
                                             div { class: "progress-cell",
                                                 div { class: "progress-bar",
                                                     div { class: "progress-bar-fill", style: "width: {t_progress}%;" }
@@ -281,20 +281,20 @@ pub fn TaskList() -> Element {
                                                 span { class: "text-muted text-mono progress-text", "{t_progress}%" }
                                             }
                                         }
-                                        td {
+                                        td { "data-label": "负责人",
                                             {
                                                 let assignee_type_text = if t_assignee_type == 0 { "用户" } else { "Agent" };
                                                 rsx! { "{assignee_type_text}: {t_assignee_id}" }
                                             }
                                         }
-                                        td {
+                                        td { "data-label": "项目",
                                             if let Some(pid) = &t_project_id {
                                                 span { class: "text-mono", "{pid}" }
                                             } else {
                                                 span { class: "text-muted", "无" }
                                             }
                                         }
-                                        td { span { class: "text-mono text-muted", "{format_time(t_updated_at)}" } }
+                                        td { "data-label": "更新时间", span { class: "text-mono text-muted", "{format_time(t_updated_at)}" } }
                                     }
                                 }
                             }

@@ -378,27 +378,27 @@ pub fn SystemTriggers() -> Element {
                                 let id_edit = id.clone();
                                 rsx! {
                                     tr { key: "{id}",
-                                        td { class: "detail-table-value-bold", "{name}" }
-                                        td {
+                                        td { class: "detail-table-value-bold", "data-label": "名称", "{name}" }
+                                        td { "data-label": "类型",
                                             span {
                                                 class: "badge trigger-type-badge {trigger_type_badge_class(trigger_type)}",
                                                 "{trigger_type_text(trigger_type)}"
                                             }
                                         }
-                                        td {
+                                        td { "data-label": "调度信息",
                                             span { class: "text-mono",
                                                 "{schedule_text(trigger_type, &cron_expr, interval_seconds, run_at)}"
                                             }
                                         }
-                                        td {
+                                        td { "data-label": "状态",
                                             if is_enabled {
                                                 span { class: "badge badge-success", "运行中" }
                                             } else {
                                                 span { class: "badge badge-neutral", "暂停" }
                                             }
                                         }
-                                        td { span { class: "text-mono text-muted", "{format_time(next_run_at)}" } }
-                                        td {
+                                        td { "data-label": "下次执行", span { class: "text-mono text-muted", "{format_time(next_run_at)}" } }
+                                        td { "data-label": "上次执行",
                                             match last_run_at {
                                                 Some(ts) => rsx! {
                                                     span { class: "text-mono text-muted", "{format_time(ts)}" }
@@ -408,7 +408,7 @@ pub fn SystemTriggers() -> Element {
                                                 },
                                             }
                                         }
-                                        td {
+                                        td { "data-label": "操作",
                                             button {
                                                 class: "btn btn-ghost btn-sm",
                                                 onclick: move |_| {

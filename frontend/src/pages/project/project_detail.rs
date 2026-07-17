@@ -415,10 +415,10 @@ pub fn ProjectDetail(id: String) -> Element {
                                                     navigator.push(format!("/tasks/{}", tid));
                                                 }
                                             },
-                                            td { "{task_title}" }
-                                            td { span { class: "{task_status_badge(task_status)}", "{task_status_text(task_status)}" } }
-                                            td { "{task_priority}" }
-                                            td {
+                                            td { "data-label": "标题", "{task_title}" }
+                                            td { "data-label": "状态", span { class: "{task_status_badge(task_status)}", "{task_status_text(task_status)}" } }
+                                            td { "data-label": "优先级", "{task_priority}" }
+                                            td { "data-label": "进度",
                                                 div { class: "progress-cell",
                                                     div { class: "progress-bar",
                                                         div { class: "progress-bar-fill", style: "width: {task_progress}%;" }
@@ -426,7 +426,7 @@ pub fn ProjectDetail(id: String) -> Element {
                                                     span { class: "text-muted text-mono progress-text", "{task_progress}%" }
                                                 }
                                             }
-                                            td {
+                                            td { "data-label": "操作",
                                                 div { class: "action-group",
                                                     if task_status != 3 {
                                                         button { class: "btn btn-secondary btn-sm",
@@ -515,18 +515,18 @@ pub fn ProjectDetail(id: String) -> Element {
                                         let pid_refresh = id.clone();
                                         rsx! {
                                             tr { key: "{artifact_id}",
-                                                td { "{artifact_name}" }
-                                                td {
+                                                td { "data-label": "名称", "{artifact_name}" }
+                                                td { "data-label": "描述",
                                                     if artifact_description.is_empty() {
                                                         span { class: "text-muted", "暂无描述" }
                                                     } else {
                                                         "{artifact_description}"
                                                     }
                                                 }
-                                                td { span { class: "badge badge-neutral", "{artifact_source_type_text(artifact_source_type)}" } }
-                                                td { "{artifact_file_size}" }
-                                                td { span { class: "text-mono text-muted", "{artifact_created_at}" } }
-                                                td {
+                                                td { "data-label": "来源类型", span { class: "badge badge-neutral", "{artifact_source_type_text(artifact_source_type)}" } }
+                                                td { "data-label": "文件大小", "{artifact_file_size}" }
+                                                td { "data-label": "创建时间", span { class: "text-mono text-muted", "{artifact_created_at}" } }
+                                                td { "data-label": "操作",
                                                     button { class: "btn btn-error btn-sm",
                                                         onclick: move |_| {
                                                             let aid = aid_delete.clone();

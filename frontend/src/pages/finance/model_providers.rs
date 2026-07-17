@@ -171,26 +171,26 @@ pub fn FinanceModelProviders() -> Element {
 
                                 rsx! {
                                     tr { key: "{id}",
-                                        td { class: "detail-table-value-bold",
+                                        td { class: "detail-table-value-bold", "data-label": "名称",
                                             Link { to: crate::pages::Route::FinanceModelProviderDetail { id: id_detail.clone() }, "{pname}" }
                                         }
-                                        td { span { class: "badge badge-info", "{ptype_str}" } }
-                                        td {
+                                        td { "data-label": "类型", span { class: "badge badge-info", "{ptype_str}" } }
+                                        td { "data-label": "能力",
                                             if is_embedding {
                                                 span { class: "badge badge-warning", "embedding" }
                                             } else {
                                                 span { class: "badge badge-success", "agent" }
                                             }
                                         }
-                                        td { class: "text-mono", "{pmodel}" }
-                                        td {
+                                        td { class: "text-mono", "data-label": "模型", "{pmodel}" }
+                                        td { "data-label": "状态",
                                             if is_enabled {
                                                 span { class: "badge badge-success", "启用" }
                                             } else {
                                                 span { class: "badge badge-secondary", "禁用" }
                                             }
                                         }
-                                        td {
+                                        td { "data-label": "操作",
                                             if is_enabled {
                                                 button { class: "btn btn-secondary btn-sm",
                                                     onclick: {

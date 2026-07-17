@@ -115,11 +115,11 @@ pub fn OrganizationUsers() -> Element {
                                 let uid_delete = uid.clone();
                                 rsx! {
                                     tr { key: "{uid}",
-                                        td { class: "detail-table-value-bold", "{uname}" }
-                                        td { class: "text-secondary", "{udisplay}" }
-                                        td { class: "text-mono text-muted", "{uemail}" }
-                                        td { span { class: "{role_badge(urole)}", "{role_text(urole)}" } }
-                                        td {
+                                        td { class: "detail-table-value-bold", "data-label": "用户名", "{uname}" }
+                                        td { class: "text-secondary", "data-label": "显示名称", "{udisplay}" }
+                                        td { class: "text-mono text-muted", "data-label": "邮箱", "{uemail}" }
+                                        td { "data-label": "角色", span { class: "{role_badge(urole)}", "{role_text(urole)}" } }
+                                        td { "data-label": "操作",
                                             button { class: "btn btn-danger btn-sm",
                                                 onclick: move |_| {
                                                     let uid_delete = uid_delete.clone();

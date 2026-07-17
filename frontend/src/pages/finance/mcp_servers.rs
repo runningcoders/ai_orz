@@ -152,18 +152,18 @@ pub fn FinanceMcpServers() -> Element {
                                 };
                                 rsx! {
                                     tr { key: "{id}",
-                                        td { class: "detail-table-value-bold", "{name}" }
-                                        td { span { class: "badge badge-info", "{transport}" } }
-                                        td { span { class: "text-sm text-muted", "{config_display}" } }
-                                        td {
+                                        td { class: "detail-table-value-bold", "data-label": "名称", "{name}" }
+                                        td { "data-label": "传输方式", span { class: "badge badge-info", "{transport}" } }
+                                        td { "data-label": "配置", span { class: "text-sm text-muted", "{config_display}" } }
+                                        td { "data-label": "状态",
                                             if is_enabled {
                                                 span { class: "badge badge-success", "启用" }
                                             } else {
                                                 span { class: "badge badge-error", "禁用" }
                                             }
                                         }
-                                        td { span { class: "text-sm text-muted", "{format_timestamp(created_at)}" } }
-                                        td {
+                                        td { "data-label": "创建时间", span { class: "text-sm text-muted", "{format_timestamp(created_at)}" } }
+                                        td { "data-label": "操作",
                                             if is_enabled {
                                                 button { class: "btn btn-ghost btn-sm",
                                                     onclick: move |_| {

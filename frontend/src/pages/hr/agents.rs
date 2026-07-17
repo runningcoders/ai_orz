@@ -148,15 +148,15 @@ pub fn HrAgents() -> Element {
                                 let id_delete = id.clone();
                                 rsx! {
                                     tr { key: "{id}",
-                                        td {
+                                        td { "data-label": "名称",
                                             Link { to: crate::pages::Route::HrAgentDetail { id: id.clone() },
                                                 class: "detail-back-link",
                                                 "{aname}"
                                             }
                                         }
-                                        td { class: "text-secondary", "{aroles}" }
-                                        td { class: "text-mono", "{amp}" }
-                                        td {
+                                        td { class: "text-secondary", "data-label": "角色", "{aroles}" }
+                                        td { class: "text-mono", "data-label": "模型提供商", "{amp}" }
+                                        td { "data-label": "操作",
                                             button { class: "btn btn-danger btn-sm",
                                                 onclick: move |_| {
                                                     let id_delete = id_delete.clone();
