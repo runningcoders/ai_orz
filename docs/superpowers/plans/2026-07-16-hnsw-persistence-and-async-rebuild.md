@@ -7,6 +7,7 @@
 **Architecture:** 
 - HNSW 持久化：`DatabaseConfig` 新增 `hnsw_index_dir` 配置，`HnswStore` 使用 bincode 序列化每个 collection 到独立文件，后台 60s 定时扫描 dirty flag 落盘 + `Drop` 时兜底，冷启动时扫描目录加载已有索引
 - 索引重建异步化：Domain 层持有 `Arc<RwLock<Option<RebuildTask>>>`，switch 时 spawn 后台 task，前端通过 task_id 轮询进度，同一时刻仅允许一个重建任务
+- 增量重建：HnswStore 维护每个集合的 `CollectionMeta`（model_provider_id / dimensions / vector_count / updated_at），重建时对比当前启用的 embedding provider，一致则跳过，从源头避免数据不一致
 
 **Tech Stack:** Rust + bincode + tokio::sync + chrono
 
@@ -938,4 +939,61 @@ git push
 
 ---
 
-*最后更新：2026-07-16*
+*最后更新：2026-07-17（新增增量重建：集合级 model_provider_id 元数据标记）*
+
+---
+
+## 增量重建（元数据标记方案）
+
+### 设计动机
+
+之前 switch embedding provider 时，7 个实体的向量集合会被无条件全部清空 + 重建。当数据量大时：
+
+- 重复刷数据：embedding API 调用耗时巨大
+- 数据不一致风险：重建过程中如果进程崩溃，部分集合是新 embedding，部分是旧 embedding
+- 进度无意义：即便进度条 100%，也无法保证新数据可用
+
+### 解决方案
+
+在 HnswStore 中为每个 collection 维护 `CollectionMeta`：
+
+```rust
+struct CollectionMeta {
+    pub model_provider_id: String,   // 生成该集合向量的 ModelProvider ID
+    pub dimensions: i32,
+    pub vector_count: usize,
+    pub updated_at: i64,
+}
+```
+
+集合元数据持久化到 `collections_meta.bincode` 单文件，与 collection 数据文件并列。
+
+**重建流程（7 个 DAL 全部统一）：**
+
+1. 获取当前启用的 Embedding Provider ID
+2. 调用 `vector_store.get_collection_model_provider_id(collection)` 读取存储的元数据
+3. 一致 → 直接返回，跳过重建（不调用任何 embedding API）
+4. 不一致 → 清空 + 重建 + 写回元数据
+
+### 关键不变量
+
+- **元数据是事实上的进度说明**：只要元数据写入，集合内容就保证来自对应 provider
+- **从源头避免数据不一致**：未写入元数据的集合一定不会被消费者访问
+- **进程崩溃安全**：部分集合已重建 + 部分未重建时，未重建的集合仍保留旧 provider 元数据（下次启动一致则不重建，不一致才重建）
+
+### 实施细节
+
+- `VectorStore` trait 新增默认方法（其他后端无需实现）：
+  - `get_collection_model_provider_id(&self, collection: &str) -> Result<Option<String>>`
+  - `set_collection_model_provider_id(&self, collection: &str, model_provider_id: &str) -> Result<()>`
+- 仅 `HnswStore` 覆写这两个方法
+- Memory DAL 由于有两个集合（`memory:short_term` + `memory:knowledge_node`），需要分别检查和重建
+- 集合名约定：
+  - `agents` / `skills` / `tasks` / `projects` / `messages` / `tools`
+  - `memory:short_term` / `memory:knowledge_node`
+
+### 验证
+
+```bash
+cargo test --lib  # 708 个测试 100% 通过
+```

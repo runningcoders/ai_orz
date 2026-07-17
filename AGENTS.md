@@ -537,6 +537,14 @@ Agent
 - **测试统计**：693 个测试 100% 通过（+78，含 6 实体搜索三态匹配测试）
 
 ### 2026-07-17 里程碑
+**✅ 向量索引增量重建（集合级元数据标记）**
+- **HnswStore 集合元数据持久化**：新增 `CollectionMeta` 结构（`model_provider_id` / `dimensions` / `vector_count` / `updated_at`），持久化到 `collections_meta.bincode` 单文件
+- **VectorStore trait 扩展**：新增默认方法 `get_collection_model_provider_id` / `set_collection_model_provider_id`，仅 `HnswStore` 覆写
+- **重建流程统一化**：7 个 DAL（agent/memory/skill/task/project/message/tool）的 `rebuild_vectors` 全部改为「先查元数据 → 一致则跳过 → 不一致则重建 → 写回元数据」模式
+- **源头避免数据不一致**：未写入元数据的集合不会被消费者访问，进程崩溃后下次启动自动恢复
+- **元数据作为事实进度说明**：保证持久化的集合内容一定来自对应 provider，无需额外的进度持久化
+- **Memory 双集合独立判断**：`memory:short_term` 和 `memory:knowledge_node` 分别检查，仅重建不匹配的部分
+
 **✅ 飞书私信（P2P）消息接入 + AOP 消息适配中台（v4 架构）**
 - **DAO 层封装**：LarkDao trait + HTTP 实现 + WebSocket 长连接，飞书 SDK 全部封装在 DAO 层
 - **Token 缓存**：tenant_access_token 缓存 + 提前 5 分钟自动刷新 + 双重检查锁防并发
