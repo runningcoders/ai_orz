@@ -17,7 +17,7 @@ jsonwebtoken = { version = "9", optional = true }
 base64 = { version = "0.21", optional = true }
 reqwest = { version = "0.11", optional = true }
 toml = { version = "0.8", optional = true }
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["full"], optional = true }
 ai-orz-macros = { path = "../ai-orz-macros" }
 axum = { version = "0.8", optional = true }
 
@@ -32,3 +32,4 @@ base64-integration = ["dep:base64"]
 reqwest-integration = ["dep:reqwest"]
 toml-integration = ["dep:toml"]
 bincode-integration = []
+tokio-integration = ["dep:tokio"]

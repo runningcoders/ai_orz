@@ -282,6 +282,7 @@ impl From<AnyhowError> for Error {
     }
 }
 
+#[cfg(feature = "tokio-integration")]
 /// Convert tokio::task::JoinError to our Error (maps to Internal)
 impl From<tokio::task::JoinError> for Error {
     fn from(err: tokio::task::JoinError) -> Self {

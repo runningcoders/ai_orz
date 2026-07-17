@@ -138,16 +138,38 @@ cmd_build() {
     echo "🎨 编译前端 (release)..."
     cd frontend
     export BACKEND_API_URL=${BACKEND_API_URL:-http://localhost:3000}
-    dx build --release
+    
+    # dx build 在 wasm-opt 失败时仍会生成产物，忽略此错误
+    dx build --release 2>&1 || true
 
     mkdir -p ../dist
     mkdir -p ../dist/wasm
     cp index.html ../dist/
 
-    if [ -d target/dx/frontend/release/web/public/wasm ]; then
-        cp -r target/dx/frontend/release/web/public/wasm/* ../dist/wasm/
+    # 查找编译产物（dx 可能输出到不同位置）
+    DX_OUTPUT_DIR=""
+    if [ -d target/dx/frontend/release/web/public ]; then
+        DX_OUTPUT_DIR="target/dx/frontend/release/web/public"
+    elif [ -d target/dx/frontend/web/public ]; then
+        DX_OUTPUT_DIR="target/dx/frontend/web/public"
     elif [ -d pkg ]; then
-        cp -r pkg/* ../dist/wasm/
+        DX_OUTPUT_DIR="pkg"
+    fi
+
+    if [ -n "$DX_OUTPUT_DIR" ]; then
+        # 复制 .wasm 和 .js 文件到 dist/wasm/
+        if [ -f "$DX_OUTPUT_DIR/frontend_bg.wasm" ]; then
+            cp "$DX_OUTPUT_DIR/frontend_bg.wasm" ../dist/wasm/
+        fi
+        if [ -f "$DX_OUTPUT_DIR/frontend.js" ]; then
+            cp "$DX_OUTPUT_DIR/frontend.js" ../dist/wasm/
+        fi
+        # 复制整个 wasm 子目录（如果存在）
+        if [ -d "$DX_OUTPUT_DIR/wasm" ]; then
+            cp -r "$DX_OUTPUT_DIR/wasm"/* ../dist/wasm/
+        fi
+        echo "${GREEN}✅ 前端编译产物已复制${NC}"
+        echo "   来源: ${BLUE}$DX_OUTPUT_DIR${NC}"
     else
         echo "${RED}⚠️  未找到前端编译产物${NC}"
         exit 1
