@@ -528,4 +528,6 @@ fn system_routes() -> Router {
             "/backups/{version}/restore",
             post(handlers::system::backup::restore_backup_handler),
         )
+        // Log query route - 查询应用日志（Admin/SuperAdmin 可访问）
+        .route("/logs", get(handlers::system::logs::query_logs::handler))
 }

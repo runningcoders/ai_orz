@@ -2,3 +2,4 @@
 
 pub mod backup;
 pub mod cron_trigger;
+pub mod logs;

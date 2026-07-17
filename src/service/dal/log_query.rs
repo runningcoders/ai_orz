@@ -69,6 +69,7 @@ pub struct LogQuery {
 }
 
 /// 分页结果
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct LogPageResult {
     /// 匹配总数（最多 MAX_SCAN_ENTRIES）
     pub total: usize,
