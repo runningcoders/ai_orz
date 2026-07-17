@@ -49,7 +49,19 @@ pub fn dal() -> Arc<LarkMessageChannelDal> {
 }
 
 /// 初始化 LarkMessageChannelDal 并注册到消息适配中台
+///
+/// 若 `[lark] enabled = false`，跳过注册（飞书功能不可用但不影响其他模块）。
 pub fn init() {
+    // 检查飞书配置是否启用
+    let enabled = crate::config::try_get()
+        .map(|c| c.lark.enabled)
+        .unwrap_or(false);
+
+    if !enabled {
+        sys_info!("lark disabled by config, skip adapter registration");
+        return;
+    }
+
     let instance = new(
         crate::service::dal::message_channel::dal(),
         crate::service::dao::lark::dao(),
@@ -59,6 +71,7 @@ pub fn init() {
         log_warn!("lark message adapter register skipped: {}", e);
     }
     let _ = LARK_DAL.set(instance);
+    sys_info!("lark message adapter registered to AOP registry");
 }
 
 /// 创建 LarkMessageChannelDal 实例（测试可注入隔离依赖）

@@ -180,7 +180,7 @@ pub async fn init(config: &common::config::ConsumerConfig) -> Result<()> {
     scheduler::init(&config.for_topic("cron_trigger")).await?;
 
     // 初始化外部消息适配层（飞书等外部渠道事件监听）
-    adapter::init(&crate::config::get()).await?;
+    adapter::init().await?;
 
     sys_info!("all consumers initialized and started");
     Ok(())

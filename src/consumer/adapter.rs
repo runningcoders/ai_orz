@@ -10,7 +10,6 @@
 //! 本模块不直接依赖任何具体渠道 DAL，
 //! 新增渠道只需 DAL 层注册适配器，consumer 零改动。
 
-use common::config::AppConfig;
 use common::enums::{AgentStatus, MessageRole};
 use common::error::{err, Result};
 use std::sync::Arc;
@@ -133,8 +132,8 @@ impl ConsumerMessageCallback {
 /// 初始化外部消息适配层
 ///
 /// 通过 `pkg/aop/message_adapter` 中台统一启动所有已注册的渠道适配器。
-/// 各渠道 DAL 在 init 阶段已注册到中台，这里只负责统一启动。
-pub async fn init(config: &AppConfig) -> Result<()> {
+/// 各渠道 DAL 在 init 阶段已按自身配置决定是否注册，这里只负责统一启动。
+pub async fn init() -> Result<()> {
     let registry = crate::pkg::aop::message_adapter::registry();
 
     if registry.is_empty() {
