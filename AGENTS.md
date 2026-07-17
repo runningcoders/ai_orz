@@ -537,16 +537,17 @@ Agent
 - **测试统计**：693 个测试 100% 通过（+78，含 6 实体搜索三态匹配测试）
 
 ### 2026-07-17 里程碑
-**✅ 飞书私信（P2P）消息接入（v3 架构）**
+**✅ 飞书私信（P2P）消息接入 + AOP 消息适配中台（v4 架构）**
 - **DAO 层封装**：LarkDao trait + HTTP 实现 + WebSocket 长连接，飞书 SDK 全部封装在 DAO 层
 - **Token 缓存**：tenant_access_token 缓存 + 提前 5 分钟自动刷新 + 双重检查锁防并发
 - **出站推送**：`/open-apis/im/v1/messages` 文本消息推送，`push_to_channel` 五渠道统一调度
 - **入站消息**：WebSocket 长连接 + `im.message.receive_v1` 事件订阅，30 秒心跳 + 自动重连
 - **LarkMessageChannelDal**：飞书专属 DAL，`find_channel_by_lark_open_id` + `adapt_lark` 事件转换
-- **v3 架构调整**：Agent 路由从 DAL 上移到 consumer 层，DAL 不依赖其他 DAL，严格分层
+- **v4 AOP 架构升级**：`pkg/aop/message_adapter` 通用消息入站适配中台，consumer 不直接依赖 DAL
+- **通用 trait**：`MessageInboundAdapter`（渠道适配器）+ `MessageAdapterCallback`（消息回调）
+- **注册中心**：DAL 层注册适配器，consumer 通过 `start_all / stop_all` 统一管理所有渠道
+- **新增渠道零 consumer 改动**：新渠道只需 DAL 注册，consumer 自动获得入站消息
 - **Agent 路由策略**：渠道绑定 agent_id 优先 → feishu_reception 角色 Agent → 任意 Onboarded Agent
-- **consumer/adapter 编排层**：LarkEventDispatcher 协调适配+路由+投递，业务逻辑在 consumer 层
-- **pkg/adapter 注册中心**：通用适配者注册，`Arc<dyn Any + Send + Sync>` 无业务依赖
 - **全局配置**：`[lark]` 配置段，`enabled` 开关控制启停，默认禁用不影响现有功能
 - **前端完善**：消息渠道管理页飞书专属字段（lark_open_id / lark_user_name / agent_id）
 - **测试统计**：708 个测试 100% 通过（+11）

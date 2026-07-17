@@ -1,5 +1,6 @@
 pub mod agent_runtime_state;
 pub mod adapter;
+pub mod aop;
 pub mod daily_jsonl;
 pub mod external;
 pub mod jwt;

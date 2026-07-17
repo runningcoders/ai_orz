@@ -21,16 +21,19 @@
 //!
 //! 这样设计遵循 DAL 层不跨 DAL 依赖的约束，业务编排由上层 consumer 完成。
 
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
 use common::enums::ChannelType;
-use common::error::Result;
+use common::error::{err, Result};
 
 use crate::models::message_channel::MessageChannel;
 use crate::pkg::adapter::AdaptedMessage;
+use crate::pkg::aop::message_adapter::{
+    MessageAdapterCallback, MessageInboundAdapter,
+};
 use crate::pkg::RequestContext;
 use crate::service::dal::message_channel::MessageChannelDal;
-use crate::service::dao::lark::event::LarkMessageEvent;
+use crate::service::dao::lark::{LarkDao, LarkEventHandler, LarkMessageEvent};
 use crate::service::dao::message_channel::MessageChannelQuery;
 
 // ==================== 单例管理 ====================
@@ -45,30 +48,46 @@ pub fn dal() -> Arc<LarkMessageChannelDal> {
         .expect("LarkMessageChannelDal not initialized, call init() first")
 }
 
-/// 初始化 LarkMessageChannelDal 并注册到 pkg/adapter
+/// 初始化 LarkMessageChannelDal 并注册到消息适配中台
 pub fn init() {
-    let instance = new(crate::service::dal::message_channel::dal());
-    // 注册到适配者注册中心，供 consumer 层按渠道获取
-    if let Err(e) = crate::pkg::adapter::registry().register(ChannelType::Lark, instance.clone()) {
-        log_warn!("lark adapter register skipped: {}", e);
+    let instance = new(
+        crate::service::dal::message_channel::dal(),
+        crate::service::dao::lark::dao(),
+    );
+    // 注册到消息入站适配中台（AOP 风格）
+    if let Err(e) = crate::pkg::aop::message_adapter::registry().register(instance.clone()) {
+        log_warn!("lark message adapter register skipped: {}", e);
     }
     let _ = LARK_DAL.set(instance);
 }
 
 /// 创建 LarkMessageChannelDal 实例（测试可注入隔离依赖）
-pub fn new(message_channel_dal: Arc<dyn MessageChannelDal>) -> Arc<LarkMessageChannelDal> {
-    Arc::new(LarkMessageChannelDal { message_channel_dal })
+pub fn new(
+    message_channel_dal: Arc<dyn MessageChannelDal>,
+    lark_dao: Arc<dyn LarkDao>,
+) -> Arc<LarkMessageChannelDal> {
+    Arc::new(LarkMessageChannelDal {
+        message_channel_dal,
+        lark_dao,
+        running: RwLock::new(false),
+    })
 }
 
 // ==================== 实现 ====================
 
 /// 飞书消息渠道 DAL
 ///
-/// 组合基础 MessageChannelDal，提供飞书私信接入所需的特有数据访问与消息转换能力。
-/// 不依赖 AgentDal（Agent 路由由 consumer 层通过 HrDomain 完成）。
+/// 组合基础 MessageChannelDal + LarkDao，提供飞书私信接入所需的
+/// 数据访问、消息转换、以及入站监听生命周期管理。
+///
+/// 实现 `MessageInboundAdapter` trait，向中台注册后由 consumer 统一启停。
 pub struct LarkMessageChannelDal {
     /// 基础消息渠道 DAL（渠道配置 + 消息分发）
     message_channel_dal: Arc<dyn MessageChannelDal>,
+    /// 飞书 DAO（HTTP API + WebSocket 长连接）
+    lark_dao: Arc<dyn LarkDao>,
+    /// 监听运行状态标记
+    running: RwLock<bool>,
 }
 
 impl LarkMessageChannelDal {
@@ -207,6 +226,90 @@ impl LarkMessageChannelDal {
     }
 }
 
+// ==================== MessageInboundAdapter 实现 ====================
+//
+// 实现消息入站适配器 trait，向中台注册后由 consumer 统一启停。
+// 内部通过 LarkAdapterHandler 桥接 LarkEventHandler → MessageAdapterCallback。
+
+#[async_trait::async_trait]
+impl MessageInboundAdapter for LarkMessageChannelDal {
+    fn channel_type(&self) -> ChannelType {
+        ChannelType::Lark
+    }
+
+    async fn start(&self, callback: Arc<dyn MessageAdapterCallback>) -> Result<()> {
+        {
+            let mut running = self.running.write().map_err(|e| {
+                err!(Internal, "lark adapter running lock poisoned: {}", e)
+            })?;
+            if *running {
+                return Err(err!(Conflict, "lark message adapter already running"));
+            }
+            *running = true;
+        }
+
+        let handler = Arc::new(LarkAdapterHandler::new(self, callback));
+
+        self.lark_dao.start_event_listener(handler).await?;
+        Ok(())
+    }
+
+    async fn stop(&self) -> Result<()> {
+        {
+            let mut running = self.running.write().map_err(|e| {
+                err!(Internal, "lark adapter running lock poisoned: {}", e)
+            })?;
+            if !*running {
+                return Ok(());
+            }
+            *running = false;
+        }
+
+        self.lark_dao.stop_event_listener().await?;
+        Ok(())
+    }
+
+    fn is_running(&self) -> bool {
+        self.running.read().map(|r| *r).unwrap_or(false)
+    }
+}
+
+/// LarkEventHandler → MessageAdapterCallback 桥接
+///
+/// 实现 `LarkEventHandler` trait，接收飞书原始事件，
+/// 调用 `LarkMessageChannelDal.adapt_lark` 转换为 `AdaptedMessage`，
+/// 再通过 `MessageAdapterCallback` 投递到上层。
+struct LarkAdapterHandler {
+    lark_dal: Arc<LarkMessageChannelDal>,
+    callback: Arc<dyn MessageAdapterCallback>,
+}
+
+impl LarkAdapterHandler {
+    fn new(lark_dal: &LarkMessageChannelDal, callback: Arc<dyn MessageAdapterCallback>) -> Self {
+        // 用 Weak 不行，因为我们需要 handler 持有 Arc 保证 lark_dal 存活
+        // 但 lark_dal 本身是全局单例，不会被释放，所以直接 clone Arc 没问题
+        // 这里用 unsafe 或其他方式都可以，直接用 dal() 获取单例更简单
+        let lark_dal = dal();
+        Self { lark_dal, callback }
+    }
+}
+
+#[async_trait::async_trait]
+impl LarkEventHandler for LarkAdapterHandler {
+    async fn handle_message_event(&self, event: LarkMessageEvent) -> Result<()> {
+        let ctx = RequestContext::new(None, None);
+        let adapted = self
+            .lark_dal
+            .adapt_lark(ctx.clone(), &event)
+            .await?;
+
+        if let Some(msg) = adapted {
+            self.callback.on_message(msg).await?;
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 pub mod test_support {
     //! 测试支持：构造可注入隔离依赖的 LarkMessageChannelDal
@@ -214,7 +317,10 @@ pub mod test_support {
     use super::*;
 
     /// 创建测试用 LarkMessageChannelDal（不注册到全局 registry）
-    pub fn new_for_test(message_channel_dal: Arc<dyn MessageChannelDal>) -> Arc<LarkMessageChannelDal> {
-        new(message_channel_dal)
+    pub fn new_for_test(
+        message_channel_dal: Arc<dyn MessageChannelDal>,
+        lark_dao: Arc<dyn LarkDao>,
+    ) -> Arc<LarkMessageChannelDal> {
+        new(message_channel_dal, lark_dao)
     }
 }

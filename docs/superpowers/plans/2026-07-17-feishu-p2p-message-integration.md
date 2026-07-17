@@ -1418,3 +1418,68 @@ MessageConsumer（消费者层，唤醒 Agent）
 - [x] AdaptedMessage.to_agent_id 改为 Option：渠道未绑定时返回 None
 - [x] pkg/adapter 注册中心无业务依赖：Arc<dyn Any + Send + Sync> 通用注册
 - [x] 前端飞书字段完善：创建渠道时可配置 lark_open_id / lark_user_name / agent_id
+
+### v4 架构升级：AOP 消息适配中台（2026-07-17）
+
+#### 背景
+
+v3 架构中 consumer/adapter/lark.rs 直接依赖 LarkMessageChannelDal，
+违反了"consumer → domain → dal → dao"的分层约束（consumer 直接调 DAL）。
+
+虽然 v3 解决了"DAL 不调 DAL"的问题，但 consumer 直接依赖具体 DAL 仍然
+是一个架构坏味道——每新增一个渠道，consumer 都要加一个分支和依赖。
+
+#### 解决方案：AOP 风格的消息适配中台
+
+在 `pkg/aop/message_adapter` 定义通用的消息入站适配抽象，consumer 只
+跟中台打交道，不碰具体渠道 DAL。
+
+#### 核心抽象
+
+```text
+┌─────────────────────────────────────────────┐
+│              consumer 层                    │
+│  （只依赖中台，实现 MessageAdapterCallback） │
+└───────────────────┬─────────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────────┐
+│    pkg/aop/message_adapter（中台）          │
+│  - MessageInboundAdapter trait              │
+│  - MessageAdapterCallback trait             │
+│  - 注册中心：start_all / stop_all           │
+└───────────────────▲─────────────────────────┘
+                    │
+                    │ 各渠道 DAL 实现 trait 并注册
+                    │
+┌─────────────┬─────┴───────┬─────────────┐
+│  Lark DAL   │  Wechat DAL  │  Slack DAL  │
+│  (已实现)   │  (未来接入)  │  (未来接入)  │
+└─────────────┴──────────────┴─────────────┘
+```
+
+#### 关键 trait
+
+- **`MessageInboundAdapter`**：渠道适配器接口
+  - `channel_type() -> ChannelType`
+  - `start(callback) -> Result<()>`：启动入站监听
+  - `stop() -> Result<()>`：停止监听
+  - `is_running() -> bool`
+
+- **`MessageAdapterCallback`**：消息回调接口（consumer 实现）
+  - `on_message(msg: AdaptedMessage) -> Result<()>`
+
+#### 新增渠道的步骤（零 consumer 改动）
+
+1. DAL 层实现 `MessageInboundAdapter` trait
+2. DAL init 时调用 `registry().register(adapter)`
+3. consumer 自动获得该渠道入站消息，无需任何改动
+
+#### 验证
+
+- [x] consumer/adapter 不再依赖任何具体渠道 DAL
+- [x] consumer/adapter.rs 仅依赖 pkg/aop/message_adapter 中台（从文件夹降级为单文件）
+- [x] LarkMessageChannelDal 实现 MessageInboundAdapter trait
+- [x] DAL init 时自动注册到中台
+- [x] 708 个测试 100% 通过
+
