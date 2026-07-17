@@ -13,7 +13,7 @@ use std::sync::Arc;
 ///
 /// 【字段分类】
 /// - 追踪标识：log_id
-/// - 用户身份：user_id, username
+/// - 用户身份：user_id, username, user_role
 /// - 组织维度：organization_id
 /// - 业务维度：agent_id, project_id, task_id
 /// - 模型维度：model_provider_id, model_name
@@ -32,6 +32,9 @@ pub struct RequestContext {
     /// 当前组织 ID
     #[log_field]
     pub organization_id: Option<String>,
+    /// 当前用户角色（数值，对应 UserRole 枚举）
+    #[log_field]
+    pub user_role: Option<i32>,
 
     /// 当前 Agent ID（可选，Agent 执行时有值）
     #[log_field]
@@ -77,6 +80,7 @@ pub struct RequestContextBuilder {
     user_id: Option<String>,
     username: Option<String>,
     organization_id: Option<String>,
+    user_role: Option<i32>,
     agent_id: Option<String>,
     task_id: Option<String>,
     project_id: Option<String>,
@@ -92,6 +96,7 @@ impl RequestContextBuilder {
             user_id: None,
             username: None,
             organization_id: None,
+            user_role: None,
             agent_id: None,
             task_id: None,
             project_id: None,
@@ -118,6 +123,11 @@ impl RequestContextBuilder {
 
     pub fn organization_id(mut self, organization_id: impl Into<String>) -> Self {
         self.organization_id = Some(organization_id.into());
+        self
+    }
+
+    pub fn user_role(mut self, role: i32) -> Self {
+        self.user_role = Some(role);
         self
     }
 
@@ -163,6 +173,13 @@ impl RequestContextBuilder {
     pub fn try_organization_id(mut self, organization_id: Option<impl Into<String>>) -> Self {
         if let Some(v) = organization_id {
             self.organization_id = Some(v.into());
+        }
+        self
+    }
+
+    pub fn try_user_role(mut self, user_role: Option<i32>) -> Self {
+        if let Some(v) = user_role {
+            self.user_role = Some(v);
         }
         self
     }
@@ -215,6 +232,7 @@ impl RequestContextBuilder {
             user_id: self.user_id,
             username: self.username,
             organization_id: self.organization_id,
+            user_role: self.user_role,
             agent_id: self.agent_id,
             task_id: self.task_id,
             project_id: self.project_id,
@@ -244,6 +262,7 @@ impl RequestContext {
             user_id: self.user_id.clone(),
             username: self.username.clone(),
             organization_id: self.organization_id.clone(),
+            user_role: self.user_role,
             agent_id: self.agent_id.clone(),
             task_id: self.task_id.clone(),
             project_id: self.project_id.clone(),
@@ -278,6 +297,12 @@ impl RequestContext {
             .and_then(|v: &http::HeaderValue| v.to_str().ok())
             .map(|s| s.to_string());
 
+        // 4. 从 header 获取用户角色（JWT 中间件注入的 X-User-Role 数值）
+        let user_role = headers
+            .get(http_header::USER_ROLE)
+            .and_then(|v: &http::HeaderValue| v.to_str().ok())
+            .and_then(|s| s.parse::<i32>().ok());
+
         let mut builder = Self::builder();
         if let Some(id) = log_id {
             builder = builder.log_id(id);
@@ -290,6 +315,9 @@ impl RequestContext {
         }
         if let Some(id) = organization_id {
             builder = builder.organization_id(id);
+        }
+        if let Some(role) = user_role {
+            builder = builder.user_role(role);
         }
         builder.build()
     }
@@ -360,6 +388,11 @@ impl RequestContext {
     /// 获取当前 Organization ID
     pub fn organization_id(&self) -> Option<&String> {
         self.organization_id.as_ref()
+    }
+
+    /// 获取当前 User Role（数值，对应 UserRole 枚举）
+    pub fn user_role(&self) -> Option<i32> {
+        self.user_role
     }
 
     /// 获取当前 User ID

@@ -4,20 +4,36 @@
 //! 生成的 `create_log_span` 方法会创建包含所有标注字段的 tracing span。
 //!
 //! 类型处理：
-//! - `Option<String>` → `self.field.as_deref().unwrap_or("")`
-//! - `String` → `self.field.as_str()`
-//! - 其他 → `&self.field`（依赖 Display trait）
+//! - `Option<String>` → `self.field.as_deref().unwrap_or("")`（Display）
+//! - `String` → `self.field.as_str()`（Display）
+//! - `Option<T>`（非 String）→ `?self.field`（Debug，因为 Option<T> 未实现 Display）
+//! - 其他 → `%self.field`（依赖 Display trait）
 
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput};
+
+/// 判断字段类型是否是 `Option<T>`（任意 T）
+fn is_option_type(ty: &syn::Type) -> bool {
+    if let syn::Type::Path(type_path) = ty {
+        if let Some(seg) = type_path.path.segments.last() {
+            return seg.ident == "Option";
+        }
+    }
+    false
+}
 
 /// 判断字段类型是否是 `Option<String>`
 fn is_option_string(ty: &syn::Type) -> bool {
     if let syn::Type::Path(type_path) = ty {
         if let Some(seg) = type_path.path.segments.last() {
             if seg.ident == "Option" {
-                return true;
+                // 提取 Option<T> 的泛型参数 T，判断是否为 String
+                if let syn::PathArguments::AngleBracketed(args) = &seg.arguments {
+                    if let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first() {
+                        return is_string(inner_ty);
+                    }
+                }
             }
         }
     }
@@ -57,6 +73,11 @@ pub fn derive_log_fields(input: TokenStream) -> TokenStream {
                 } else if is_string(ty) {
                     span_fields.push(quote! {
                         #field_name = %self.#ident.as_str()
+                    });
+                } else if is_option_type(ty) {
+                    // Option<T>（非 String）未实现 Display，使用 Debug 输出
+                    span_fields.push(quote! {
+                        #field_name = ?self.#ident
                     });
                 } else {
                     span_fields.push(quote! {
