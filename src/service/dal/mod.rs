@@ -34,6 +34,7 @@ pub mod backup;
 pub mod brain;
 pub mod cron_trigger;
 pub mod lark;
+pub mod log_query;
 pub mod mcp_server;
 pub mod mcp_tool;
 pub mod memory;
@@ -55,6 +56,7 @@ pub fn init_all() {
     backup::init();
     brain::init();
     cron_trigger::init();
+    log_query::init();
     memory::init();
     message::init();
     message_channel::init();

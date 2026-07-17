@@ -11,6 +11,8 @@ use crate::service::dal::backup as backup_dal;
 use crate::service::dal::backup::{BackupDal, BackupInfo};
 use crate::service::dal::cron_trigger as cron_trigger_dal;
 use crate::service::dal::cron_trigger::CronTriggerDal;
+use crate::service::dal::log_query as log_query_dal;
+use crate::service::dal::log_query::{LogQuery as LogQueryParam, LogPageResult, LogQueryDal};
 use crate::service::dao::cron_trigger::CronTriggerQuery;
 use std::sync::{Arc, OnceLock};
 
@@ -28,6 +30,7 @@ pub fn init() {
     let _ = SYSTEM_DOMAIN.set(new(
         cron_trigger_dal::dal(),
         backup_dal::dal(),
+        log_query_dal::dal(),
     ));
 }
 
@@ -35,8 +38,13 @@ pub fn init() {
 pub fn new(
     cron_trigger_dal: Arc<dyn CronTriggerDal>,
     backup_dal: Arc<dyn BackupDal + Send + Sync>,
+    log_query_dal: Arc<dyn LogQueryDal + Send + Sync>,
 ) -> Arc<dyn SystemDomain> {
-    Arc::new(SystemDomainImpl::new(cron_trigger_dal, backup_dal))
+    Arc::new(SystemDomainImpl::new(
+        cron_trigger_dal,
+        backup_dal,
+        log_query_dal,
+    ))
 }
 
 // ==================== 实现 ====================
@@ -47,6 +55,7 @@ pub fn new(
 struct SystemDomainImpl {
     cron_trigger_dal: Arc<dyn CronTriggerDal>,
     backup_dal: Arc<dyn BackupDal + Send + Sync>,
+    log_query_dal: Arc<dyn LogQueryDal + Send + Sync>,
 }
 
 impl SystemDomainImpl {
@@ -54,10 +63,12 @@ impl SystemDomainImpl {
     fn new(
         cron_trigger_dal: Arc<dyn CronTriggerDal>,
         backup_dal: Arc<dyn BackupDal + Send + Sync>,
+        log_query_dal: Arc<dyn LogQueryDal + Send + Sync>,
     ) -> Self {
         Self {
             cron_trigger_dal,
             backup_dal,
+            log_query_dal,
         }
     }
 }
@@ -68,6 +79,10 @@ impl SystemDomain for SystemDomainImpl {
     }
 
     fn backup_manager(&self) -> &dyn BackupManager {
+        self
+    }
+
+    fn log_query(&self) -> &dyn LogQuery {
         self
     }
 }
@@ -83,6 +98,9 @@ pub trait SystemDomain: Send + Sync {
 
     /// Backup 管理能力
     fn backup_manager(&self) -> &dyn BackupManager;
+
+    /// 日志查询能力
+    fn log_query(&self) -> &dyn LogQuery;
 }
 
 /// Cron 管理 trait
@@ -134,6 +152,15 @@ pub trait BackupManager: Send + Sync {
 
     /// 生成指定版本的恢复脚本（bash）
     async fn generate_restore_script(&self, ctx: RequestContext, version: u64) -> Result<String>;
+}
+
+/// 日志查询 trait
+///
+/// 定义日志查询相关的业务接口
+#[async_trait::async_trait]
+pub trait LogQuery: Send + Sync {
+    /// 查询日志，返回分页结果（按时间倒序，最新的在前）
+    async fn query_logs(&self, ctx: RequestContext, query: LogQueryParam) -> Result<LogPageResult>;
 }
 
 #[async_trait::async_trait]
@@ -191,5 +218,16 @@ impl BackupManager for SystemDomainImpl {
 
     async fn generate_restore_script(&self, ctx: RequestContext, version: u64) -> Result<String> {
         self.backup_dal.generate_restore_script(ctx, version).await
+    }
+}
+
+#[async_trait::async_trait]
+impl LogQuery for SystemDomainImpl {
+    async fn query_logs(
+        &self,
+        ctx: RequestContext,
+        query: LogQueryParam,
+    ) -> Result<LogPageResult> {
+        self.log_query_dal.query_logs(ctx, query).await
     }
 }
