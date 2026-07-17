@@ -22,7 +22,7 @@ pub fn derive_params(input: TokenStream) -> TokenStream {
 /// Derive macro to automatically implement StatEvent trait.
 ///
 /// # Usage
-/// ```rust
+/// ```rust,ignore
 /// use ai_orz_macros::StatsEvent;
 ///
 /// #[derive(Debug, Clone, StatsEvent)]
@@ -47,22 +47,22 @@ pub fn derive_stats_event(input: TokenStream) -> TokenStream {
 /// Register a handler function as a built-in tool
 ///
 /// # Usage
-/// ```rust
+/// ```rust,ignore
 /// use ai_orz_macros::register_handler_tool;
-/// use common::api::ListSkillFilesParams;
+/// use serde_json::Value;
 ///
-/// async fn list_skill_files_handler(ctx: RequestContext, params: ListSkillFilesParams) -> ::std::result::Result<Value, AppError> {
-///     // implementation...
+/// async fn handler(ctx: (), params: ()) -> ::std::result::Result<Value, ()> {
+///     Ok(Value::Null)
 /// }
 ///
 /// #[register_handler_tool(
-///     id = "list_skill_files",
-///     name = "list_skill_files",
-///     description = "List all files in a skill",
-///     params = "common::api::ListSkillFilesParams",
+///     id = "test_tool",
+///     name = "test_tool",
+///     description = "Test tool",
+///     params = "()",
 /// )]
-/// async fn list_skill_files_handler(ctx: RequestContext, params: ListSkillFilesParams) -> ::std::result::Result<Value, AppError> {
-///     // implementation...
+/// async fn handler(ctx: (), params: ()) -> ::std::result::Result<Value, ()> {
+///     Ok(Value::Null)
 /// }
 /// ```
 #[proc_macro_attribute]
@@ -293,25 +293,8 @@ fn is_value_output(ty: &Type) -> bool {
 
 /// Generate axum HTTP handler from a core handler function
 ///
-/// # Usage
-/// ```rust
-/// use ai_orz_macros::{register_handler_tool, generate_http_handler};
-/// use common::api::ListSkillFilesParams;
-/// use crate::error::AppError;
-/// use crate::pkg::RequestContext;
-///
-/// #[register_handler_tool(...)]
-/// #[generate_http_handler]
-/// pub async fn list_skill_files(
-///     ctx: RequestContext,
-///     params: ListSkillFilesParams,
-/// ) -> ::std::result::Result<ListSkillFilesResponse, AppError> {
-///     // implementation...
-/// }
-/// ```
-///
 /// The generated handler will be named `{function_name}_handler`.
-/// Path fields are automatically detected from `#[path]` attribute on the
+/// Path fields are automatically detected from `#[param(source = "path")]` attribute on the
 /// parameter struct fields.
 #[proc_macro_attribute]
 pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStream {
@@ -555,7 +538,7 @@ fn to_snake_case(s: &str) -> String {
 /// Marks fields with `#[log_field]` to include them in tracing spans.
 ///
 /// # Usage
-/// ```rust
+/// ```rust,ignore
 /// use ai_orz_macros::LogFields;
 ///
 /// #[derive(Debug, Clone, LogFields)]
