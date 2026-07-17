@@ -56,6 +56,11 @@ ai-orz-macros = { path = "./ai-orz-macros" }
 dashmap = "6.1"
 tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
 
+# 备份相关
+tar = "0.4"
+flate2 = "1.0"
+md-5 = "0.10"
+
 # 向量搜索相关
 fastembed = "5.13"  # 纯本地向量化（纯 Rust candle 后端，零系统依赖）
 lancedb = "0.26"   # 嵌入式向量数据库

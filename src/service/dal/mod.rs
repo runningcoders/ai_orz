@@ -30,6 +30,7 @@ impl SearchParams {
 pub mod agent;
 pub mod artifact;
 pub mod attachment;
+pub mod backup;
 pub mod brain;
 pub mod cron_trigger;
 pub mod lark;
@@ -51,6 +52,7 @@ pub fn init_all() {
     agent::init();
     artifact::init();
     attachment::init();
+    backup::init();
     brain::init();
     cron_trigger::init();
     memory::init();
