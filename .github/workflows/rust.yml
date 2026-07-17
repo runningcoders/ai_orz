@@ -44,8 +44,11 @@ jobs:
     - name: Check backend
       run: cargo check --lib --verbose
 
+    - name: Install wasm32 target
+      run: rustup target add wasm32-unknown-unknown
+
     - name: Check frontend
-      run: cd frontend && cargo check --verbose
+      run: cd frontend && cargo check --target wasm32-unknown-unknown --verbose
 
     - name: Build
       run: cargo build --verbose
