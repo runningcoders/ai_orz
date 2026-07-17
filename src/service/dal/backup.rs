@@ -542,8 +542,9 @@ mod tests {
     /// 验证排除顶层 `backups/` 与 `logs/` 子目录的行为。
     #[test]
     fn test_append_dir_recursive_excludes_top_level_dirs() {
-        let dir = tempfile::tempdir().expect("create temp dir");
-        let root = dir.path();
+        let data_dir = tempfile::tempdir().expect("create data dir");
+        let root = data_dir.path();
+        let out_dir = tempfile::tempdir().expect("create output dir");
 
         // 在根目录下创建若干文件和子目录
         std::fs::write(root.join("keep.txt"), b"keep").expect("write keep.txt");
@@ -556,8 +557,8 @@ mod tests {
         std::fs::create_dir_all(root.join(LOGS_DIR_NAME)).expect("mkdir logs");
         std::fs::write(root.join(LOGS_DIR_NAME).join("ai_orz.log.2026-07-17"), b"log").expect("write log");
 
-        // 构建 tar.gz
-        let archive_path = root.join("output.tar.gz");
+        // 构建 tar.gz（输出文件放在遍历目录外，避免遍历时读到正在写入的归档文件导致 flaky）
+        let archive_path = out_dir.path().join("output.tar.gz");
         let file = std::fs::File::create(&archive_path).expect("create archive");
         let encoder = GzEncoder::new(file, Compression::default());
         let mut builder = Builder::new(encoder);
