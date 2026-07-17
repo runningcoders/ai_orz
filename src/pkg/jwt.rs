@@ -17,6 +17,8 @@ pub struct Claims {
     pub username: String,
     /// 组织 ID
     pub organization_id: String,
+    /// 用户角色 (UserRole 数值，None 表示未设置，兼容旧 token)
+    pub role: Option<i32>,
     /// 过期时间 (Unix timestamp)
     pub exp: i64,
     /// 签发时间
@@ -29,6 +31,7 @@ impl Claims {
         user_id: String,
         username: String,
         organization_id: String,
+        role: Option<i32>,
         expires_in: Duration,
     ) -> Self {
         let now = Utc::now();
@@ -39,6 +42,7 @@ impl Claims {
             user_id,
             username,
             organization_id,
+            role,
             exp,
             iat,
         }
@@ -69,11 +73,13 @@ impl JwtConfig {
         user_id: &str,
         username: &str,
         organization_id: &str,
+        role: Option<i32>,
     ) -> Result<String> {
         let claims = Claims::new(
             user_id.to_string(),
             username.to_string(),
             organization_id.to_string(),
+            role,
             self.default_expiry,
         );
 
@@ -119,8 +125,9 @@ pub fn encode_jwt(
     user_id: &str,
     username: &str,
     organization_id: &str,
+    role: Option<i32>,
 ) -> Result<String> {
-    jwt_config().encode(user_id, username, organization_id)
+    jwt_config().encode(user_id, username, organization_id, role)
 }
 
 /// 验证并解码 JWT token 使用全局配置
@@ -136,7 +143,7 @@ mod tests {
     fn test_jwt_encode_decode() {
         let config = JwtConfig::new("test-secret-key-very-long-for-security", 24);
         let token = config
-            .encode("user-123", "testuser", "org-456")
+            .encode("user-123", "testuser", "org-456", Some(2))
             .expect("encode should succeed");
 
         println!("Generated token: {}", token);
@@ -145,6 +152,7 @@ mod tests {
         assert_eq!(claims.user_id, "user-123");
         assert_eq!(claims.username, "testuser");
         assert_eq!(claims.organization_id, "org-456");
+        assert_eq!(claims.role, Some(2));
         assert!(claims.exp > claims.iat);
     }
 }

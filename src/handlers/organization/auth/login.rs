@@ -34,6 +34,7 @@ pub async fn login(
         user.id.as_str(),
         user.username.as_str(),
         &req.organization_id,
+        Some(user.role.to_i32()),
     )?;
 
     // 创建 Cookie（浏览器场景自动携带）
