@@ -142,6 +142,17 @@ pub fn Navbar() -> Element {
                                 onclick: move |_| close_all(),
                                 "健康检查"
                             }
+                            if is_admin {
+                                div { class: "navbar-divider" }
+                                Link { to: Route::SystemLogs {}, class: "navbar-dropdown-item",
+                                    onclick: move |_| close_all(),
+                                    "日志查询"
+                                }
+                                Link { to: Route::SystemBackup {}, class: "navbar-dropdown-item",
+                                    onclick: move |_| close_all(),
+                                    "备份管理"
+                                }
+                            }
                         }
                     }
                 }

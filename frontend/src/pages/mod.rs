@@ -36,7 +36,9 @@ use crate::pages::project::task_detail::TaskDetail;
 use crate::pages::project::tasks::TaskList;
 use crate::pages::reception::Reception;
 use crate::pages::settings::Settings;
+use crate::pages::system::backup::SystemBackup;
 use crate::pages::system::health::SystemHealth;
+use crate::pages::system::logs::SystemLogs;
 use crate::pages::system::triggers::SystemTriggers;
 use crate::pages::user::profile::UserProfile;
 
@@ -104,6 +106,10 @@ pub enum Route {
     SystemTriggers {},
     #[route("/system/health")]
     SystemHealth {},
+    #[route("/system/logs")]
+    SystemLogs {},
+    #[route("/system/backup")]
+    SystemBackup {},
 
     // 用户
     #[route("/user/profile")]
