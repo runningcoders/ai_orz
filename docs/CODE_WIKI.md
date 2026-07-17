@@ -924,12 +924,22 @@ concurrency = 3           # Message Topic 消费者并发数
 **一键启动脚本：**
 
 ```bash
-./start-dev.sh
+./start.sh dev
 ```
 
 **启动内容：**
 - 后端服务: http://localhost:3000
 - 前端开发服务器 (热重载): http://localhost:8080
+
+**更多模式：**
+
+```bash
+./start.sh backend   # 只启动后端（cargo run）
+./start.sh frontend  # 只启动前端（dx serve）
+./start.sh build     # 仅编译（前端 release + 后端 release）
+./start.sh prod      # 生产模式：编译 + 运行 release 二进制
+./start.sh help      # 查看帮助
+```
 
 **手动启动：**
 
@@ -947,7 +957,7 @@ dx serve
 **全量构建脚本：**
 
 ```bash
-./build-full.sh
+./start.sh build
 ```
 
 **输出：**

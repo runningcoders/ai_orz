@@ -51,13 +51,10 @@
 ## 快速开始
 
 ```bash
-# 克隆并构建
+# 克隆并启动
 git clone https://github.com/runningcoders/ai_orz
 cd ai_orz
-./build-full.sh
-
-# 启动服务
-./target/release/ai_orz
+./start.sh prod     # 生产模式：自动编译 + 启动
 ```
 
 服务监听 `0.0.0.0:3000`，浏览器打开 `http://localhost:3000` 即可使用。
@@ -65,9 +62,18 @@ cd ai_orz
 **开发模式**（前端热重载）：
 
 ```bash
-./start-dev.sh
+./start.sh dev      # 同时启动后端 cargo run + 前端 dx serve
 # 后端: http://localhost:3000
-# 前端 dev server: http://localhost:8080
+# 前端: http://localhost:8080
+```
+
+**更多用法**：
+
+```bash
+./start.sh help     # 查看所有模式
+./start.sh build    # 仅编译（前端 release + 后端 release）
+./start.sh backend  # 只启动后端
+./start.sh frontend # 只启动前端
 ```
 
 首次启动会自动生成默认配置文件 `ai_orz.toml`，可按需修改。
