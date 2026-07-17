@@ -659,13 +659,43 @@ impl MessageDal for MessageDalImpl {
     }
 
     async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()> {
-        // 1. 清空向量集合
+        // 1. 获取当前启用的 Embedding Provider
+        let Some(provider) = self
+            .model_provider_dao
+            .get_default_embedding_provider(ctx.clone())
+            .await?
+        else {
+            log_debug!(
+                &ctx,
+                "rebuild_vectors",
+                "无可用 Embedding Provider，跳过向量索引"
+            );
+            return Ok(());
+        };
+        let current_provider_id = provider.id.clone();
+
+        // 2. 检查集合元数据：model_provider_id 一致则跳过重建
+        let collection_name = "messages";
+        let stored_id = ctx
+            .vector_store()
+            .get_collection_model_provider_id(collection_name)
+            .await?;
+        if stored_id.as_ref() == Some(&current_provider_id) {
+            log_info!(
+                &ctx,
+                "rebuild_vectors",
+                collection = %collection_name,
+                provider_id = %current_provider_id,
+                "向量索引 model_provider_id 一致，跳过重建"
+            );
+            return Ok(());
+        }
+
+        // 3. 清空向量集合并重建
         self.message_vector_dao.clear_collection(ctx.clone()).await?;
 
-        // 2. 查全量消息
+        // 4. 查全量消息并逐条重新索引
         let messages = self.query(ctx.clone(), MessageQuery::default()).await?;
-
-        // 3. 逐条重新索引
         for message in &messages {
             match try_build_vector_params_for_entity(
                 ctx.clone(),
@@ -709,6 +739,11 @@ impl MessageDal for MessageDalImpl {
                 }
             }
         }
+
+        // 5. 更新元数据
+        ctx.vector_store()
+            .set_collection_model_provider_id(collection_name, &current_provider_id)
+            .await?;
 
         Ok(())
     }

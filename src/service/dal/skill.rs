@@ -736,10 +736,7 @@ impl SkillDal for SkillDalImpl {
     }
 
     async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()> {
-        // 1. 清空向量集合
-        self.skill_vector_dao.clear_collection(ctx.clone()).await?;
-
-        // 2. 取 Embedding Provider（无则跳过，合法场景）
+        // 1. 获取当前启用的 Embedding Provider
         let Some(provider) = self
             .model_provider_dao
             .get_default_embedding_provider(ctx.clone())
@@ -752,16 +749,35 @@ impl SkillDal for SkillDalImpl {
             );
             return Ok(());
         };
+        let current_provider_id = provider.id.clone();
 
-        // 3. 创建 Cortex
+        // 2. 检查集合元数据：model_provider_id 一致则跳过重建
+        let collection_name = "skills";
+        let stored_id = ctx
+            .vector_store()
+            .get_collection_model_provider_id(collection_name)
+            .await?;
+        if stored_id.as_ref() == Some(&current_provider_id) {
+            log_info!(
+                &ctx,
+                "rebuild_vectors",
+                collection = %collection_name,
+                provider_id = %current_provider_id,
+                "向量索引 model_provider_id 一致，跳过重建"
+            );
+            return Ok(());
+        }
+
+        // 3. 清空向量集合并重建
+        self.skill_vector_dao.clear_collection(ctx.clone()).await?;
+
+        // 4. 创建 Cortex
         let cortex = self
             .cortex_dao
             .create_cortex_trait(ctx.clone(), &provider, vec![])?;
 
-        // 4. 查全量技能
+        // 5. 查全量技能并逐条重新索引
         let skills = self.query(ctx.clone(), SkillQuery::default()).await?;
-
-        // 5. 逐条重新索引
         for skill in &skills {
             match self
                 .cortex_dao
@@ -794,6 +810,11 @@ impl SkillDal for SkillDalImpl {
                 }
             }
         }
+
+        // 6. 更新元数据
+        ctx.vector_store()
+            .set_collection_model_provider_id(collection_name, &current_provider_id)
+            .await?;
 
         Ok(())
     }

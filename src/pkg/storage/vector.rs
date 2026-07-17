@@ -55,6 +55,25 @@ pub trait VectorStore: Send + Sync + std::fmt::Debug {
     async fn flush(&self) -> Result<()> {
         Ok(())
     }
+
+    /// 获取集合的 model_provider_id（用于判断是否需要重建索引）
+    ///
+    /// 返回 None 表示该集合未记录 model_provider_id（视为需要重建）
+    async fn get_collection_model_provider_id(
+        &self,
+        _collection: &str,
+    ) -> Result<Option<String>> {
+        Ok(None)
+    }
+
+    /// 设置集合的 model_provider_id（重建完成后调用）
+    async fn set_collection_model_provider_id(
+        &self,
+        _collection: &str,
+        _model_provider_id: &str,
+    ) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// SQLite VSS 向量存储

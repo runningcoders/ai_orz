@@ -124,16 +124,52 @@ impl CollectionData {
     }
 }
 
+/// 集合级元数据（持久化到独立文件）
+#[derive(Debug, Clone, Encode, Decode)]
+struct CollectionMeta {
+    /// 生成该集合向量的 ModelProvider ID
+    pub model_provider_id: String,
+    /// 向量维度
+    pub dimensions: i32,
+    /// 记录数
+    pub vector_count: usize,
+    /// 最后更新时间
+    pub updated_at: i64,
+}
+
+/// 所有集合的元数据（持久化到单个文件）
+#[derive(Debug, Clone, Encode, Decode)]
+struct CollectionsMetaFile {
+    /// 版本号（用于未来扩展）
+    pub version: u32,
+    /// collection name → meta
+    pub collections: HashMap<String, CollectionMeta>,
+}
+
+impl CollectionsMetaFile {
+    fn new() -> Self {
+        Self {
+            version: 1,
+            collections: HashMap::new(),
+        }
+    }
+}
+
 /// HNSW 向量存储
 ///
 /// 持久化策略：
 /// - 每个 collection 序列化为独立 `.bincode` 文件
+/// - 集合元数据持久化到 `collections_meta.bincode`
 /// - 后台 60s 定时扫描 dirty flag 落盘
 /// - Drop 时同步落盘所有 dirty collection（兜底）
 /// - 冷启动时扫描目录加载已有索引
 pub struct HnswStore {
     base_path: PathBuf,
     collections: Arc<RwLock<HashMap<String, CollectionData>>>,
+    /// 集合级元数据（collection name → meta）
+    collections_meta: Arc<RwLock<HashMap<String, CollectionMeta>>>,
+    /// 元数据是否需要落盘
+    meta_dirty: Arc<RwLock<bool>>,
     /// 后台定时落盘任务句柄（Clone 时设为 None，仅原始实例持有）
     flush_task: Option<tokio::task::JoinHandle<()>>,
 }
@@ -143,6 +179,8 @@ impl Clone for HnswStore {
         Self {
             base_path: self.base_path.clone(),
             collections: self.collections.clone(),
+            collections_meta: self.collections_meta.clone(),
+            meta_dirty: self.meta_dirty.clone(),
             flush_task: None,
         }
     }
@@ -170,10 +208,15 @@ impl HnswStore {
         std::fs::create_dir_all(&base_path)?;
 
         let mut store = Self {
-            base_path,
+            base_path: base_path.clone(),
             collections: Arc::new(RwLock::new(HashMap::new())),
+            collections_meta: Arc::new(RwLock::new(HashMap::new())),
+            meta_dirty: Arc::new(RwLock::new(false)),
             flush_task: None,
         };
+
+        // 冷启动：加载集合元数据
+        store.load_collections_meta()?;
 
         // 冷启动：加载已有索引
         store.load_all_collections()?;
@@ -213,6 +256,11 @@ impl HnswStore {
                 None => continue,
             };
 
+            // 跳过元数据文件
+            if name == "collections_meta" {
+                continue;
+            }
+
             match Self::load_collection_from_file(&path) {
                 Ok(data) => {
                     // 此时 store 尚未被共享，try_write 必定成功
@@ -227,6 +275,47 @@ impl HnswStore {
             }
         }
 
+        Ok(())
+    }
+
+    /// 加载集合元数据文件
+    fn load_collections_meta(&mut self) -> common::error::Result<()> {
+        let path = self.base_path.join("collections_meta.bincode");
+        if !path.exists() {
+            return Ok(());
+        }
+
+        let file = std::fs::File::open(&path)?;
+        let mut reader = std::io::BufReader::new(file);
+        let meta_file: CollectionsMetaFile =
+            bincode::decode_from_std_read(&mut reader, bincode::config::standard())?;
+
+        if let Ok(mut collections_meta) = self.collections_meta.try_write() {
+            *collections_meta = meta_file.collections;
+            tracing::info!(
+                "Loaded hnsw collections meta ({} collections)",
+                collections_meta.len()
+            );
+        }
+
+        Ok(())
+    }
+
+    /// 保存集合元数据文件
+    fn save_collections_meta(&self) -> common::error::Result<()> {
+        let path = self.base_path.join("collections_meta.bincode");
+        let file = std::fs::File::create(&path)?;
+        let mut writer = std::io::BufWriter::new(file);
+
+        let meta_file = {
+            let collections_meta = self.collections_meta.blocking_read();
+            CollectionsMetaFile {
+                version: 1,
+                collections: collections_meta.clone(),
+            }
+        };
+
+        bincode::encode_into_std_write(&meta_file, &mut writer, bincode::config::standard())?;
         Ok(())
     }
 
@@ -270,6 +359,21 @@ impl HnswStore {
                 }
             }
         }
+
+        // 保存元数据（如果有变更）
+        let should_save_meta = {
+            let meta_dirty = self.meta_dirty.read().await;
+            *meta_dirty
+        };
+        if should_save_meta {
+            if let Err(e) = self.save_collections_meta() {
+                tracing::warn!("Failed to save collections meta: {:?}", e);
+            } else {
+                let mut meta_dirty = self.meta_dirty.write().await;
+                *meta_dirty = false;
+            }
+        }
+
         Ok(())
     }
 
@@ -313,6 +417,15 @@ impl Drop for HnswStore {
                 }
             }
         }
+
+        // 同步落盘元数据
+        if let Ok(meta_dirty) = self.meta_dirty.try_read() {
+            if *meta_dirty {
+                if let Err(e) = self.save_collections_meta() {
+                    tracing::warn!("Failed to flush collections meta on drop: {:?}", e);
+                }
+            }
+        }
     }
 }
 
@@ -350,6 +463,23 @@ impl super::VectorStore for HnswStore {
         coll.deleted.remove(id);
         coll.vectors.insert(id.to_string(), (point, row));
         coll.dirty = true;
+
+        // 更新集合元数据：记录 model_provider_id
+        {
+            let mut meta = self.collections_meta.write().await;
+            let vector_count = coll.vectors.len();
+            meta.insert(
+                collection.to_string(),
+                CollectionMeta {
+                    model_provider_id: params.model_provider_id.clone(),
+                    dimensions,
+                    vector_count,
+                    updated_at: now,
+                },
+            );
+        }
+        let mut meta_dirty = self.meta_dirty.write().await;
+        *meta_dirty = true;
 
         Ok(())
     }
@@ -439,5 +569,44 @@ impl super::VectorStore for HnswStore {
 
     async fn flush(&self) -> common::error::Result<()> {
         self.flush_all_dirty().await
+    }
+
+    async fn get_collection_model_provider_id(
+        &self,
+        collection: &str,
+    ) -> common::error::Result<Option<String>> {
+        let meta = self.collections_meta.read().await;
+        Ok(meta.get(collection).map(|m| m.model_provider_id.clone()))
+    }
+
+    async fn set_collection_model_provider_id(
+        &self,
+        collection: &str,
+        model_provider_id: &str,
+    ) -> common::error::Result<()> {
+        let now = chrono::Utc::now().timestamp();
+        let vector_count = {
+            let collections = self.collections.read().await;
+            collections
+                .get(collection)
+                .map(|c| c.vectors.len())
+                .unwrap_or(0)
+        };
+
+        let mut meta = self.collections_meta.write().await;
+        meta.insert(
+            collection.to_string(),
+            CollectionMeta {
+                model_provider_id: model_provider_id.to_string(),
+                dimensions: 0, // 重建后不需要记录维度，下次 upsert 会更新
+                vector_count,
+                updated_at: now,
+            },
+        );
+
+        let mut meta_dirty = self.meta_dirty.write().await;
+        *meta_dirty = true;
+
+        Ok(())
     }
 }

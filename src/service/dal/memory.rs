@@ -567,10 +567,7 @@ impl MemoryDal for MemoryDalImpl {
     }
 
     async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()> {
-        // 1. 清空两个向量集合（short_term + knowledge_node）
-        self.memory_vector_dao.clear_collection(ctx.clone()).await?;
-
-        // 2. 取 Embedding Provider（无则跳过，合法场景）
+        // 1. 获取当前启用的 Embedding Provider
         let Some(provider) = self
             .model_provider_dao
             .get_default_embedding_provider(ctx.clone())
@@ -583,87 +580,134 @@ impl MemoryDal for MemoryDalImpl {
             );
             return Ok(());
         };
+        let current_provider_id = provider.id.clone();
 
-        // 3. 创建 Cortex
+        // 2. 分别检查两个集合的 model_provider_id
+        let short_term_stored = ctx
+            .vector_store()
+            .get_collection_model_provider_id("memory:short_term")
+            .await?;
+        let knowledge_node_stored = ctx
+            .vector_store()
+            .get_collection_model_provider_id("memory:knowledge_node")
+            .await?;
+
+        let short_term_need_rebuild = short_term_stored.as_ref() != Some(&current_provider_id);
+        let knowledge_node_need_rebuild =
+            knowledge_node_stored.as_ref() != Some(&current_provider_id);
+
+        if !short_term_need_rebuild && !knowledge_node_need_rebuild {
+            log_info!(
+                &ctx,
+                "rebuild_vectors",
+                provider_id = %current_provider_id,
+                "记忆向量索引 model_provider_id 一致，跳过重建"
+            );
+            return Ok(());
+        }
+
+        // 3. 清空需要重建的集合
+        if short_term_need_rebuild {
+            ctx.vector_store()
+                .clear_collection("memory:short_term")
+                .await?;
+        }
+        if knowledge_node_need_rebuild {
+            ctx.vector_store()
+                .clear_collection("memory:knowledge_node")
+                .await?;
+        }
+
+        // 4. 创建 Cortex
         let cortex = self
             .cortex_dao
             .create_cortex_trait(ctx.clone(), &provider, vec![])?;
 
-        // 4. 重建短期记忆向量索引
-        let short_terms = self
-            .memory_dao
-            .query_short_term(ctx.clone(), MemoryQuery::default())
-            .await?;
-        for index in &short_terms {
-            match self
-                .cortex_dao
-                .embed_text_for_search(ctx.clone(), cortex.as_ref(), &index.summary)
-                .await
-            {
-                Ok(vec_params) => {
-                    if let Err(e) = self
-                        .memory_vector_dao
-                        .upsert_short_term_vector(ctx.clone(), &index.id, &vec_params)
-                        .await
-                    {
+        // 5. 重建短期记忆向量索引（如需要）
+        if short_term_need_rebuild {
+            let short_terms = self
+                .memory_dao
+                .query_short_term(ctx.clone(), MemoryQuery::default())
+                .await?;
+            for index in &short_terms {
+                match self
+                    .cortex_dao
+                    .embed_text_for_search(ctx.clone(), cortex.as_ref(), &index.summary)
+                    .await
+                {
+                    Ok(vec_params) => {
+                        if let Err(e) = self
+                            .memory_vector_dao
+                            .upsert_short_term_vector(ctx.clone(), &index.id, &vec_params)
+                            .await
+                        {
+                            log_warn!(
+                                &ctx,
+                                "rebuild_vectors",
+                                memory_id = %index.id,
+                                error = ?e,
+                                "短期记忆向量索引重建失败"
+                            );
+                        }
+                    }
+                    Err(e) => {
                         log_warn!(
                             &ctx,
                             "rebuild_vectors",
                             memory_id = %index.id,
                             error = ?e,
-                            "短期记忆向量索引重建失败"
+                            "短期记忆向量化失败，跳过"
                         );
                     }
                 }
-                Err(e) => {
-                    log_warn!(
-                        &ctx,
-                        "rebuild_vectors",
-                        memory_id = %index.id,
-                        error = ?e,
-                        "短期记忆向量化失败，跳过"
-                    );
-                }
             }
+            ctx.vector_store()
+                .set_collection_model_provider_id("memory:short_term", &current_provider_id)
+                .await?;
         }
 
-        // 5. 重建知识节点向量索引
-        let nodes = self
-            .memory_dao
-            .query_knowledge_nodes(ctx.clone(), MemoryQuery::default())
-            .await?;
-        for node in &nodes {
-            let text_for_embedding = format!("{}\n{}", node.node_description, node.summary);
-            match self
-                .cortex_dao
-                .embed_text_for_search(ctx.clone(), cortex.as_ref(), &text_for_embedding)
-                .await
-            {
-                Ok(vec_params) => {
-                    if let Err(e) = self
-                        .memory_vector_dao
-                        .upsert_knowledge_node_vector(ctx.clone(), &node.id, &vec_params)
-                        .await
-                    {
+        // 6. 重建知识节点向量索引（如需要）
+        if knowledge_node_need_rebuild {
+            let nodes = self
+                .memory_dao
+                .query_knowledge_nodes(ctx.clone(), MemoryQuery::default())
+                .await?;
+            for node in &nodes {
+                let text_for_embedding = format!("{}\n{}", node.node_description, node.summary);
+                match self
+                    .cortex_dao
+                    .embed_text_for_search(ctx.clone(), cortex.as_ref(), &text_for_embedding)
+                    .await
+                {
+                    Ok(vec_params) => {
+                        if let Err(e) = self
+                            .memory_vector_dao
+                            .upsert_knowledge_node_vector(ctx.clone(), &node.id, &vec_params)
+                            .await
+                        {
+                            log_warn!(
+                                &ctx,
+                                "rebuild_vectors",
+                                knowledge_id = %node.id,
+                                error = ?e,
+                                "知识节点向量索引重建失败"
+                            );
+                        }
+                    }
+                    Err(e) => {
                         log_warn!(
                             &ctx,
                             "rebuild_vectors",
                             knowledge_id = %node.id,
                             error = ?e,
-                            "知识节点向量索引重建失败"
+                            "知识节点向量化失败，跳过"
                         );
                     }
                 }
-                Err(e) => {
-                    log_warn!(
-                        &ctx,
-                        "rebuild_vectors",
-                        knowledge_id = %node.id,
-                        error = ?e,
-                        "知识节点向量化失败，跳过"
-                    );
-                }
             }
+            ctx.vector_store()
+                .set_collection_model_provider_id("memory:knowledge_node", &current_provider_id)
+                .await?;
         }
 
         Ok(())
