@@ -157,3 +157,40 @@ impl From<i64> for UserStatus {
         (v as i32).into()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_user_role_has_permission() {
+        // SuperAdmin 满足所有要求
+        assert!(UserRole::has_permission(UserRole::SuperAdmin, UserRole::SuperAdmin));
+        assert!(UserRole::has_permission(UserRole::SuperAdmin, UserRole::Admin));
+        assert!(UserRole::has_permission(UserRole::SuperAdmin, UserRole::Member));
+
+        // Admin 满足 Admin 和 Member 要求，不满足 SuperAdmin
+        assert!(!UserRole::has_permission(UserRole::Admin, UserRole::SuperAdmin));
+        assert!(UserRole::has_permission(UserRole::Admin, UserRole::Admin));
+        assert!(UserRole::has_permission(UserRole::Admin, UserRole::Member));
+
+        // Member 只满足自身
+        assert!(!UserRole::has_permission(UserRole::Member, UserRole::SuperAdmin));
+        assert!(!UserRole::has_permission(UserRole::Member, UserRole::Admin));
+        assert!(UserRole::has_permission(UserRole::Member, UserRole::Member));
+    }
+
+    #[test]
+    fn test_user_role_parent() {
+        assert_eq!(UserRole::SuperAdmin.parent(), None);
+        assert_eq!(UserRole::Admin.parent(), Some(UserRole::SuperAdmin));
+        assert_eq!(UserRole::Member.parent(), Some(UserRole::Admin));
+    }
+
+    #[test]
+    fn test_user_role_find_root() {
+        assert_eq!(UserRole::SuperAdmin.find_root(), UserRole::SuperAdmin);
+        assert_eq!(UserRole::Admin.find_root(), UserRole::SuperAdmin);
+        assert_eq!(UserRole::Member.find_root(), UserRole::SuperAdmin);
+    }
+}
