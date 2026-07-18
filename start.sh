@@ -143,7 +143,7 @@ cmd_build() {
     dx build --release 2>&1 || true
 
     mkdir -p ../dist
-    mkdir -p ../dist/wasm
+    mkdir -p ../dist/pkg
     cp index.html ../dist/
 
     # 查找编译产物（dx 可能输出到不同位置）
@@ -157,16 +157,16 @@ cmd_build() {
     fi
 
     if [ -n "$DX_OUTPUT_DIR" ]; then
-        # 复制 .wasm 和 .js 文件到 dist/wasm/
+        # 复制 .wasm 和 .js 文件到 dist/pkg/
         if [ -f "$DX_OUTPUT_DIR/frontend_bg.wasm" ]; then
-            cp "$DX_OUTPUT_DIR/frontend_bg.wasm" ../dist/wasm/
+            cp "$DX_OUTPUT_DIR/frontend_bg.wasm" ../dist/pkg/
         fi
         if [ -f "$DX_OUTPUT_DIR/frontend.js" ]; then
-            cp "$DX_OUTPUT_DIR/frontend.js" ../dist/wasm/
+            cp "$DX_OUTPUT_DIR/frontend.js" ../dist/pkg/
         fi
-        # 复制整个 wasm 子目录（如果存在）
-        if [ -d "$DX_OUTPUT_DIR/wasm" ]; then
-            cp -r "$DX_OUTPUT_DIR/wasm"/* ../dist/wasm/
+        # 复制整个 snippets 子目录（如果存在）
+        if [ -d "$DX_OUTPUT_DIR/snippets" ]; then
+            cp -r "$DX_OUTPUT_DIR/snippets" ../dist/pkg/
         fi
         echo "${GREEN}✅ 前端编译产物已复制${NC}"
         echo "   来源: ${BLUE}$DX_OUTPUT_DIR${NC}"

@@ -1,32 +1,24 @@
-//! 响应式 Hook
-
 use dioxus::prelude::*;
-use wasm_bindgen::closure::Closure;
-use wasm_bindgen::JsCast;
-use web_sys::MediaQueryListEvent;
+use dioxus_router::use_navigator;
 
-/// 返回当前是否为移动端（≤ 768px）的信号。
-///
-/// 基于 `window.matchMedia("(max-width: 768px)")` 监听，窗口尺寸变化时自动更新。
-/// 通过 `use_context_provider` 在根组件注入，全局共享同一信号与监听器。
+use crate::pages::Route;
+use crate::store::auth::use_auth_state;
+
 pub fn use_breakpoint() -> Signal<bool> {
-    use_context_provider(|| {
-        let mut is_mobile = use_signal(|| false);
-        use_effect(move || {
-            let Some(window) = web_sys::window() else {
-                return;
-            };
-            let Ok(Some(mql)) = window.match_media("(max-width: 768px)") else {
-                return;
-            };
-            is_mobile.set(mql.matches());
-            let cb = Closure::new(move |e: MediaQueryListEvent| {
-                is_mobile.set(e.matches());
-            });
-            let _ = mql.add_event_listener_with_callback("change", cb.as_ref().unchecked_ref());
-            // 监听器随页面生命周期保活；Closure 不回收以避免监听器失效
-            std::mem::forget(cb);
-        });
-        is_mobile
-    })
+    use_context::<Signal<bool>>()
+}
+
+/// 权限守卫：未登录时返回 false 并重定向到登录页
+/// 在需要权限的页面开头调用，如果返回 false 则提前 return
+pub fn use_require_auth() -> bool {
+    let auth = use_auth_state();
+    let navigator = use_navigator();
+
+    use_effect(move || {
+        if !auth.read().logged_in {
+            navigator.replace(Route::Reception {});
+        }
+    });
+
+    auth.read().logged_in
 }

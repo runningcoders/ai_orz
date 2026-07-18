@@ -20,11 +20,13 @@ impl Default for FrontendConfig {
         // 使用编译时嵌入的配置生成默认值
         let compiled_config = crate::get_config();
 
-        // 从编译后的服务器配置生成 API 基础地址
-        // listen_addr 格式: "0.0.0.0:3000" 或者 "localhost:3000"
-        let listen_addr = compiled_config.server.listen_addr.clone();
+        let mut listen_addr = compiled_config.server.listen_addr.clone();
 
-        // 如果 listen_addr 不包含域名，默认用 http 协议
+        // 将 0.0.0.0 替换为 localhost，确保浏览器可访问
+        if listen_addr.starts_with("0.0.0.0:") {
+            listen_addr = listen_addr.replace("0.0.0.0:", "localhost:");
+        }
+
         let api_base_url =
             if listen_addr.starts_with("http://") || listen_addr.starts_with("https://") {
                 listen_addr

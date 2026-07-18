@@ -78,6 +78,15 @@ struct PendingAttachment {
 
 #[component]
 pub fn MessageChat() -> Element {
+    // 权限检查：未登录时重定向到登录页
+    if !crate::hooks::use_require_auth() {
+        return rsx! {
+            div { class: "loading-screen",
+                div { class: "loading-spinner" }
+            }
+        };
+    }
+
     let mut projects = use_signal(Vec::<ListProjectsResponseItem>::new);
     let mut selected_project = use_signal(|| Option::<String>::None);
     let mut messages = use_signal(Vec::<MessageListItem>::new);
