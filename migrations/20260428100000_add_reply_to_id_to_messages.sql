@@ -17,9 +17,7 @@ CREATE TABLE IF NOT EXISTS messages_new (
     status INTEGER NOT NULL DEFAULT 0,
     content TEXT NOT NULL,
     file_meta TEXT NOT NULL DEFAULT '{}',
-    reply_to_id TEXT,
-    root_id TEXT,
-    organization_id TEXT,
+    reply_to_id TEXT,  -- 新增：引用的父消息 ID
     created_by TEXT NOT NULL,
     modified_by TEXT NOT NULL,
     created_at INTEGER NOT NULL,
