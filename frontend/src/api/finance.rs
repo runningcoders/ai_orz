@@ -3,7 +3,7 @@
 use common::api::{
     AttachmentDetail, CallModelResponse, CreateMcpServerRequest, CreateMcpServerResponse,
     CreateModelProviderRequest, CreateModelProviderResponse, CreateTextAttachmentRequest,
-    CreateToolRequest, CreateToolResponse, DeleteModelProviderResponse, DeleteToolResponse,
+    CreateToolRequest, CreateToolResponse,
     GetModelProviderResponse, GetToolResponse, ListMcpServersResponse, ListModelProvidersResponse,
     ListToolsResponse, SwitchEmbeddingProviderRequest, SwitchEmbeddingProviderResponse,
     TestConnectionResponse, TestMessageChannelConnectionResponse,
@@ -11,7 +11,7 @@ use common::api::{
 };
 use web_sys::FormData;
 
-use super::{api_delete, api_get, api_get_or_default, api_post, api_post_empty, api_post_multipart, api_post_with_error, api_put, api_put_empty, api_put_with_error, ApiError};
+use super::{api_delete, api_get, api_get_or_default, api_post, api_post_empty, api_post_multipart, api_post_with_error, api_put, api_put_empty, ApiError};
 
 // ===== 模型提供商 =====
 
@@ -28,6 +28,7 @@ pub async fn create_model_provider(req: CreateModelProviderRequest) -> Result<Cr
     api_post("/api/v1/finance/model-providers", &req).await
 }
 
+#[allow(dead_code)]
 pub async fn update_model_provider(id: &str, req: UpdateModelProviderRequest) -> Result<UpdateModelProviderResponse, String> {
     api_put(&format!("/api/v1/finance/model-providers/{}", id), &req).await
 }
@@ -74,10 +75,12 @@ pub async fn get_tool(id: &str, stats_options: Option<&super::StatsOptions>) -> 
     api_get(&url).await
 }
 
+#[allow(dead_code)]
 pub async fn create_tool(req: CreateToolRequest) -> Result<CreateToolResponse, String> {
     api_post("/api/v1/finance/tools", &req).await
 }
 
+#[allow(dead_code)]
 pub async fn update_tool(id: &str, req: UpdateToolRequest) -> Result<UpdateToolResponse, String> {
     api_put(&format!("/api/v1/finance/tools/{}", id), &req).await
 }
@@ -155,6 +158,7 @@ pub async fn upload_attachment(form: FormData) -> Result<AttachmentDetail, Strin
     api_post_multipart("/api/v1/finance/attachments/upload", form).await
 }
 
+#[allow(dead_code)]
 pub async fn get_attachment(id: &str) -> Result<AttachmentDetail, String> {
     api_get(&format!("/api/v1/finance/attachments/{}", id)).await
 }

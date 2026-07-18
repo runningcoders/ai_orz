@@ -6,7 +6,6 @@ use crate::service::dal::agent::AgentFetchOptions;
 use super::{GenericConsumer, MessageFetcher, MessageHandler};
 use common::error::{Error, Result};
 use crate::models::message::{Message, ToolCallMessage};
-use crate::models::tool::ToolCallTraceRef;
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
 use crate::service::domain::message::{
     DeliverMessageCommand, MessageDomain, SendToolCallResultCommand, ToolCallExecutionOutcome,

@@ -11,7 +11,6 @@ use crate::pkg::stats::ModelCallEvent;
 use rig::agent::{HookAction, PromptHook, ToolCallHookAction};
 use rig::completion::{CompletionModel, CompletionResponse, Message};
 use rig::wasm_compat::WasmCompatSend;
-use serde_json::{json, Map};
 use tracing::{debug, info, warn};
 
 /// Runtime Monitoring Hook
@@ -29,34 +28,6 @@ pub struct RuntimeMonitoringHook {
 impl RuntimeMonitoringHook {
     pub fn new(ctx: RequestContext) -> Self {
         Self { ctx }
-    }
-
-    /// 从 RequestContext 构建 stats tags（仅包含有值的字段）
-    fn build_tags(&self) -> Map<String, serde_json::Value> {
-        let mut tags = Map::new();
-        let ctx = &self.ctx;
-        if let Some(v) = ctx.agent_id.as_ref() {
-            tags.insert("agent_id".into(), json!(v));
-        }
-        if let Some(v) = ctx.task_id.as_ref() {
-            tags.insert("task_id".into(), json!(v));
-        }
-        if let Some(v) = ctx.project_id.as_ref() {
-            tags.insert("project_id".into(), json!(v));
-        }
-        if let Some(v) = ctx.model_provider_id.as_ref() {
-            tags.insert("model_provider_id".into(), json!(v));
-        }
-        if let Some(v) = ctx.model_name.as_ref() {
-            tags.insert("model_name".into(), json!(v));
-        }
-        if let Some(v) = ctx.organization_id.as_ref() {
-            tags.insert("organization_id".into(), json!(v));
-        }
-        if let Some(v) = ctx.user_id.as_ref() {
-            tags.insert("user_id".into(), json!(v));
-        }
-        tags
     }
 }
 

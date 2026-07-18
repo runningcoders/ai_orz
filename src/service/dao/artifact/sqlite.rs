@@ -1,12 +1,12 @@
 //! SQLite implementation of Artifact DAO
 
 use super::{ArtifactDao, ArtifactQuery};
-use common::error::{err, bail_err, Error, Result};
+use common::error::{bail_err, Result};
 use crate::models::{artifact::ArtifactPo, file::FileMeta};
 use crate::pkg::RequestContext;
 use common::enums::{ArtifactSourceType, FileType};
 use sqlx::types::Json;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::OnceLock;
 

@@ -5,7 +5,7 @@ use crate::pkg::RequestContext;
 use crate::service::dao::skill::SkillQuery;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::{ListSkillsRequest, ListSkillsResponse, SkillListItem};
+use common::api::{ListSkillsRequest, ListSkillsResponse};
 use common::enums::SkillStatus;
 
 use super::response::to_list_item;

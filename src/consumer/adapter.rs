@@ -10,17 +10,15 @@
 //! 本模块不直接依赖任何具体渠道 DAL，
 //! 新增渠道只需 DAL 层注册适配器，consumer 零改动。
 
-use common::enums::{AgentStatus, MessageRole};
+use common::enums::AgentStatus;
 use common::error::{err, Result};
 use std::sync::Arc;
 
 use crate::pkg::adapter::AdaptedMessage;
-use crate::pkg::aop::message_adapter::{
-    MessageAdapterCallback, MessageInboundAdapter,
-};
+use crate::pkg::aop::message_adapter::MessageAdapterCallback;
 use crate::pkg::RequestContext;
 use crate::service::dao::agent::AgentQuery;
-use crate::service::domain::hr::{AgentManage, HrDomain};
+use crate::service::domain::hr::HrDomain;
 use crate::service::domain::message::{MessageDomain, SendToAgentCommand};
 
 /// 飞书前台 Agent 的角色标签

@@ -7,7 +7,7 @@ use axum::{
 };
 use common::api::{ApiResponse, UploadAttachmentResponse};
 
-use common::error::{err, bail_err, Result};
+use common::error::{err, bail_err};
 use crate::models::attachment::AttachmentUpload;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;

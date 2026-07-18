@@ -30,6 +30,7 @@ pub async fn create_agent(req: CreateAgentRequest) -> Result<CreateAgentResponse
     api_post("/api/v1/hr/agents", &req).await
 }
 
+#[allow(dead_code)]
 pub async fn update_agent(id: &str, req: UpdateAgentRequest) -> Result<UpdateAgentResponse, String> {
     api_put(&format!("/api/v1/hr/agents/{}", id), &req).await
 }
@@ -83,6 +84,7 @@ pub async fn search_skills(keyword: &str) -> Result<ListSkillsResponse, String> 
     api_get_or_default(&format!("/api/v1/hr/skills/search?keyword={}", keyword)).await
 }
 
+#[allow(dead_code)]
 pub async fn get_skill(id: &str) -> Result<GetSkillResponse, String> {
     api_get(&format!("/api/v1/hr/skills/{}", id)).await
 }
@@ -91,6 +93,7 @@ pub async fn create_skill(req: CreateSkillRequest) -> Result<CreateSkillResponse
     api_post("/api/v1/hr/skills", &req).await
 }
 
+#[allow(dead_code)]
 pub async fn update_skill(id: &str, req: UpdateSkillRequest) -> Result<UpdateSkillResponse, String> {
     api_put(&format!("/api/v1/hr/skills/{}", id), &req).await
 }

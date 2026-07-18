@@ -4,7 +4,7 @@ use crate::handlers::project::artifact::response;
 use crate::pkg::RequestContext;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::artifact::{ArtifactDetail, UpdateArtifactContentRequest};
-use common::error::{Result, err, bail_err};
+use common::error::{Result, bail_err};
 
 /// Update the full text content of a generated-content artifact (full replace)
 #[register_handler_tool(

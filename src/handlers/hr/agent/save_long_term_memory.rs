@@ -6,7 +6,7 @@ use crate::models::memory::{
 use crate::pkg::RequestContext;
 use crate::service::domain::runtime::domain as runtime_domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::{KnowledgeRelationParam, SaveLongTermMemoryParams, SaveLongTermMemoryResponse};
+use common::api::{SaveLongTermMemoryParams, SaveLongTermMemoryResponse};
 use common::error::{Result, err};
 
 #[register_handler_tool(

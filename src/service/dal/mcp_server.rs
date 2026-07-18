@@ -4,7 +4,7 @@
 //! persistence of `McpServerPo`; this DAL exposes the `McpServer` business entity
 //! to upper layers and performs minimal configuration validation.
 
-use common::error::{err, bail_err, Result};
+use common::error::{bail_err, Result};
 use crate::models::mcp_server::{
     McpServer, McpServerPo, McpServerQuery, McpServerStatus, McpTransport,
 };

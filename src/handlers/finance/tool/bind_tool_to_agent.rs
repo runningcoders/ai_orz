@@ -6,7 +6,6 @@ use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{BindToolToAgentRequest, BindToolToAgentResponse};
 
-use crate::enrich_ctx;
 
 /// Bind an existing tool to an agent so the agent can use it for tool calling
 #[register_handler_tool(

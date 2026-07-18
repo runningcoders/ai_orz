@@ -13,6 +13,7 @@ use dioxus::prelude::*;
 
 /// Toast 类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum ToastType {
     Success,
     Error,
@@ -82,6 +83,7 @@ impl ToastState {
     }
 
     /// 警告提示（默认 4 秒）
+    #[allow(dead_code)]
     pub fn warning(&self, message: &str) {
         self.show(message.to_string(), ToastType::Warning, 4000);
     }

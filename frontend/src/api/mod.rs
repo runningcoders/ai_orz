@@ -266,11 +266,11 @@ pub async fn api_post_multipart<T: serde::de::DeserializeOwned>(
     let url = current_config().api_url(path);
 
     // 构造 RequestInit，body 直接传 FormData（浏览器 fetch 会自动识别 multipart 并设置 boundary）
-    let mut opts = RequestInit::new();
-    opts.method("POST");
-    opts.body(Some(form.unchecked_ref()));
+    let opts = RequestInit::new();
+    opts.set_method("POST");
+    opts.set_body(form.unchecked_ref());
     // 同源请求自动携带 Cookie
-    opts.credentials(web_sys::RequestCredentials::SameOrigin);
+    opts.set_credentials(web_sys::RequestCredentials::SameOrigin);
 
     let request = Request::new_with_str_and_init(&url, &opts)
         .map_err(|e| format!("构造 Request 失败: {:?}", e))?;

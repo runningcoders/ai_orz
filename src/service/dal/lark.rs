@@ -298,7 +298,7 @@ struct LarkAdapterHandler {
 }
 
 impl LarkAdapterHandler {
-    fn new(lark_dal: &LarkMessageChannelDal, callback: Arc<dyn MessageAdapterCallback>) -> Self {
+    fn new(_lark_dal: &LarkMessageChannelDal, callback: Arc<dyn MessageAdapterCallback>) -> Self {
         // 用 Weak 不行，因为我们需要 handler 持有 Arc 保证 lark_dal 存活
         // 但 lark_dal 本身是全局单例，不会被释放，所以直接 clone Arc 没问题
         // 这里用 unsafe 或其他方式都可以，直接用 dal() 获取单例更简单

@@ -10,7 +10,7 @@ use common::enums::project::ProjectStatus;
 use uuid::Uuid;
 
 use super::ProjectDomainImpl;
-use common::error::{Result, err, bail_err};
+use common::error::{Result, bail_err};
 
 use crate::enrich_ctx;
 use crate::record_event;

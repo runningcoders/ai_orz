@@ -7,7 +7,6 @@ use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::user;
 use crate::service::dao::user::{UserDao, UserQuery};
-use common::enums::UserStatus;
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例管理 ====================

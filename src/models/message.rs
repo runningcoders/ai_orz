@@ -307,7 +307,6 @@ impl MessagePo {
             MessageRole::User => "用户",
             MessageRole::Agent => "Agent",
             MessageRole::System => "系统",
-            _ => "未知",
         };
 
         let msg_type_label = match self.message_type {

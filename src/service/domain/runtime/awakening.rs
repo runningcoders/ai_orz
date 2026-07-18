@@ -1,6 +1,6 @@
 //! Runtime Awakening 具体实现
 
-use common::error::{err, bail_err, Result};
+use common::error::{err, Result};
 use crate::models::agent::Agent;
 use crate::models::memory::MemoryTrace;
 use crate::models::message::Message;

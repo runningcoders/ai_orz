@@ -4,8 +4,8 @@
 //! BrainDal 依赖 CortexDao 创建 CortexTrait，然后组装成完整的 Brain
 //! 合并了原来 CortexDal 的功能，不再重复拆分
 
-use common::error::{err, bail_err, Result};
-use crate::models::brain::{Brain, Cortex, CortexTrait};
+use common::error::{err, Result};
+use crate::models::brain::{Brain, Cortex};
 use crate::models::model_provider::ModelProvider;
 use crate::models::tool::Tool;
 use crate::pkg::RequestContext;
@@ -13,7 +13,6 @@ use crate::service::dao::cortex;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::tool_call::ToolCallDao;
 use async_trait::async_trait;
-use rig::tool::ToolDyn;
 use std::sync::{Arc, OnceLock};
 
 use crate::enrich_ctx;
@@ -92,19 +91,6 @@ pub trait BrainDal: Send + Sync {
 struct BrainDalImpl {
     cortex_dao: Arc<dyn CortexDao + Send + Sync>,
     tool_call_dao: Arc<dyn ToolCallDao + Send + Sync>,
-}
-
-impl BrainDalImpl {
-    /// 创建 DAL 实例
-    fn new(
-        cortex_dao: Arc<dyn CortexDao + Send + Sync>,
-        tool_call_dao: Arc<dyn ToolCallDao + Send + Sync>,
-    ) -> Self {
-        Self {
-            cortex_dao,
-            tool_call_dao,
-        }
-    }
 }
 
 #[async_trait]

@@ -1,7 +1,7 @@
 use crate::api::{hr::*, StatsOptions};
 use crate::pages::hr::agent_memory_panel::AgentMemoryPanel;
 use crate::api::message::{load_latest_messages, send_message_to_agent};
-use crate::components::state::{EmptyState, Loading};
+use crate::components::state::Loading;
 use crate::components::stats::AgentStatsPanel;
 use crate::store::toast::use_toast;
 use common::api::{GetAgentResponse, MessageListItem, SendMessageToAgentParams, ToolListItem};
@@ -9,7 +9,6 @@ use dioxus::prelude::*;
 use dioxus_router::Link;
 use std::collections::HashSet;
 use wasm_bindgen::{closure::Closure, JsCast};
-use web_sys::{MessageEvent, EventSource};
 
 fn format_time(timestamp: i64) -> String {
     use chrono::{Local, TimeZone};
@@ -168,7 +167,7 @@ pub fn HrAgentDetail(id: String) -> Element {
     let all_tools_list = all_tools.read().clone();
 
     let id_for_load = id.clone();
-    let mut load_data = move || {
+    let load_data = move || {
         let aid = id_for_load.clone();
         spawn(async move {
             let stats_options = StatsOptions {

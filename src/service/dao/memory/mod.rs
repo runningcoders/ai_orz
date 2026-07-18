@@ -1,6 +1,6 @@
 //! Memory DAO - 记忆系统数据访问
 //!\n//! 负责：\n//! - 短期记忆索引的增删查改（SQLite）\n//! - 长期知识图谱节点的增删查改（SQLite）\n//! - 记忆追踪文件的写入（每日文件追加）\n//! - 原始记忆不可修改不可删除，只能追加，符合设计原则\n\nuse async_trait::async_trait;
-use common::error::{err, bail_err, Error, Result};
+use common::error::Result;
 use crate::models::memory::{
     KnowledgeNodeRelationPo, KnowledgeReferencePo, LongTermKnowledgeNodePo, MemoryTrace,
     MemoryTracePosition, ShortTermMemoryIndexPo,

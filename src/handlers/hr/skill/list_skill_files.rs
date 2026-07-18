@@ -4,7 +4,7 @@ use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListSkillFilesRequest, ListSkillFilesResponse};
-use common::error::{Result, err, bail_err};
+use common::error::{Result, bail_err};
 
 /// List all files in a skill with their metadata (filename, size)
 #[register_handler_tool(

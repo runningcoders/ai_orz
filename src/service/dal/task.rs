@@ -15,7 +15,6 @@ use crate::service::dao::task::{TaskDao, TaskQuery, TaskSearch, TaskStatsDao, Ta
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderStatsDao, ModelProviderStatsQuery};
 use crate::service::dal::model_provider;
-use crate::service::dal::model_provider::ModelProviderDal;
 use common::enums::{AssigneeType, TaskStatus};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock};
@@ -41,7 +40,6 @@ pub fn init() {
         task::dao(),
         task::vector_dao(),
         task::stats_dao(),
-        model_provider::dal(),
         crate::service::dao::model_provider::stats_dao(),
         crate::service::dao::cortex::dao(),
         crate::service::dao::model_provider::dao(),
@@ -53,12 +51,11 @@ pub fn new(
     task_dao: Arc<dyn TaskDao + Send + Sync>,
     task_vector_dao: Arc<dyn TaskVectorDao>,
     task_stats_dao: Arc<dyn TaskStatsDao<TaskEvent = TaskEvent>>,
-    model_provider_dal: Arc<dyn ModelProviderDal>,
     model_provider_stats_dao: Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>,
     cortex_dao: Arc<dyn CortexDao>,
     model_provider_dao: Arc<dyn ModelProviderDao>,
 ) -> Arc<dyn TaskDal + Send + Sync> {
-    Arc::new(TaskDalImpl { task_dao, task_vector_dao, task_stats_dao, model_provider_dal, model_provider_stats_dao, cortex_dao, model_provider_dao })
+    Arc::new(TaskDalImpl { task_dao, task_vector_dao, task_stats_dao, model_provider_stats_dao, cortex_dao, model_provider_dao })
 }
 
 // ==================== DAL 接口 ====================
@@ -186,7 +183,6 @@ struct TaskDalImpl {
     task_dao: Arc<dyn TaskDao + Send + Sync>,
     task_vector_dao: Arc<dyn TaskVectorDao>,
     task_stats_dao: Arc<dyn TaskStatsDao<TaskEvent = TaskEvent>>,
-    model_provider_dal: Arc<dyn ModelProviderDal>,
     model_provider_stats_dao: Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>,
     cortex_dao: Arc<dyn CortexDao>,
     model_provider_dao: Arc<dyn ModelProviderDao>,

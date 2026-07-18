@@ -1,7 +1,6 @@
 //! Handler: GET /api/v1/message-channels - List message channels with filtering
 
 use crate::pkg::RequestContext;
-use crate::service::dao::message_channel::MessageChannelQuery;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{

@@ -6,7 +6,6 @@ use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UnbindToolFromAgentRequest, UnbindToolFromAgentResponse};
 
-use crate::enrich_ctx;
 
 /// Unbind a tool from an agent so the agent can no longer use it
 #[register_handler_tool(

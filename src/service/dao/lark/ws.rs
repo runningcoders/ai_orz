@@ -165,7 +165,7 @@ pub async fn start_event_loop(
         .map_err(|e| from_ws("connect", e))?;
     log_info!("lark ws connected");
 
-    let (mut write, mut read) = ws_stream.split();
+    let (write, mut read) = ws_stream.split();
     let write = Arc::new(Mutex::new(write));
 
     // 3. 关闭信号

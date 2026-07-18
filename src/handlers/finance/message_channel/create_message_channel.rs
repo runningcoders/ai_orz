@@ -2,7 +2,7 @@
 
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{
-    CreateMessageChannelRequest, CreateMessageChannelResponse, MessageChannelDetail,
+    CreateMessageChannelRequest, CreateMessageChannelResponse,
 };
 use uuid::Uuid;
 

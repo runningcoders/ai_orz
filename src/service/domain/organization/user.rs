@@ -2,12 +2,10 @@
 //!
 //! 定义用户相关业务接口实现
 
-use common::error::{err, bail_err, Result};
+use common::error::{bail_err, Result};
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
-use crate::service::dao::user::UserQuery;
 use async_trait::async_trait;
-use common::enums::UserStatus;
 
 #[async_trait]
 impl super::UserManage for super::OrganizationDomainImpl {

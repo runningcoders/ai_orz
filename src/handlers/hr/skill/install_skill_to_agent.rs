@@ -6,7 +6,6 @@ use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{InstallSkillToAgentRequest, InstallSkillToAgentResponse};
 
-use crate::enrich_ctx;
 
 use super::response::to_detail;
 

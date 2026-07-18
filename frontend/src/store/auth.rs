@@ -43,6 +43,7 @@ pub struct AuthState {
     pub username: String,
     pub role: i32,
     pub org_id: String,
+    #[allow(dead_code)]
     pub org_name: String,
 }
 
@@ -55,6 +56,7 @@ impl AuthState {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_logged_in(&self) -> bool {
         self.logged_in
     }

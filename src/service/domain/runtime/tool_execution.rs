@@ -1,13 +1,12 @@
 //! Runtime Tool Execution 具体实现
 
-use common::error::{err, bail_err, Error, Result};
+use common::error::{bail_err, Error, Result};
 use crate::models::tool::{Tool, ToolExecutionResult};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
-use crate::pkg::tool_tracing::logger::{ToolCallLogger, ToolCallQuery};
+use crate::pkg::tool_tracing::logger::ToolCallQuery;
 use crate::service::domain::runtime::{RuntimeDomainImpl, RuntimeToolExecution};
 use common::enums::{ControlMode, ToolProtocol, ToolStatus};
-use rig::tool::ToolError;
 use serde_json::Value;
 
 #[async_trait::async_trait]

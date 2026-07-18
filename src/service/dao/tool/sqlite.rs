@@ -5,7 +5,7 @@ use crate::pkg::request_context::RequestContext;
 use crate::pkg::storage::escape_fts5_keyword;
 use common::error::Result;
 use async_trait::async_trait;
-use sqlx::{FromRow, SqlitePool};
+use sqlx::FromRow;
 use std::sync::{Arc, OnceLock};
 
 use super::{ToolDao, ToolQuery, ToolSearch};

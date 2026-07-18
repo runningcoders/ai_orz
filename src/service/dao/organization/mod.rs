@@ -1,6 +1,6 @@
 //! Organization DAO 模块
 
-use common::error::{Error, Result};
+use common::error::Result;
 use crate::models::organization::OrganizationPo;
 use crate::pkg::RequestContext;
 

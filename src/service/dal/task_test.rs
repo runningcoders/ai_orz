@@ -230,19 +230,13 @@ async fn init_search_test_env(
     let task_dao = task::new();
     let task_vector_dao = task::new_task_vector_dao();
     let task_stats_dao = task::stats_new();
-    let model_provider_stats_dao = crate::service::dao::model_provider::stats_new();
     let cortex_dao: Arc<dyn CortexDao> = Arc::new(MockCortexDao);
     let model_provider_dao: Arc<dyn ModelProviderDao + Send + Sync> = Arc::new(MockModelProviderDao);
-    let model_provider_dal = crate::service::dal::model_provider::new(
-        model_provider_dao.clone(),
-        model_provider_stats_dao,
-    );
 
     let dal = crate::service::dal::task::new(
         task_dao,
         task_vector_dao.clone(),
         task_stats_dao,
-        model_provider_dal,
         crate::service::dao::model_provider::stats_new(),
         cortex_dao,
         model_provider_dao,

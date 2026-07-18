@@ -144,7 +144,7 @@ pub fn Graph(props: GraphProps) -> Element {
 
     let selected_id = props.selected_node_id.clone();
 
-    let mut handle_node_drag_start = move |node_id: String| {
+    let _handle_node_drag_start = move |node_id: String| {
         is_dragging.set(true);
         dragged_node_id.set(Some(node_id.clone()));
         if let Some(&pos) = node_positions.read().get(&node_id) {
@@ -215,7 +215,7 @@ pub fn Graph(props: GraphProps) -> Element {
 
     let (tx, ty, scale) = view_transform.read().clone();
     let render_nodes = props.nodes.clone();
-    let render_edges = props.edges.clone();
+    let _render_edges = props.edges.clone();
     let highlighted_ids = props.highlighted_node_ids.clone();
     let on_click = props.on_node_click.clone();
 

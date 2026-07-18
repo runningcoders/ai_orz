@@ -26,7 +26,7 @@ pub fn MessageSearch() -> Element {
     let mut keyword = use_signal(String::new);
     let mut results = use_signal(Vec::<MessageSearchResult>::new);
     let mut loading = use_signal(|| false);
-    let mut error = use_signal(String::new);
+    let error = use_signal(String::new);
     let toast = use_toast();
 
     let mut handle_search = move |_| {

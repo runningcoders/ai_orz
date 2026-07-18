@@ -6,8 +6,6 @@ use async_trait::async_trait;
 use common::enums::tool::ControlMode;
 use common::enums::{ToolProtocol, ToolStatus};
 use dyn_clone::DynClone;
-use futures_util::FutureExt;
-use rig::completion::ToolDefinition;
 use rig::tool::{ToolDyn, ToolError};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

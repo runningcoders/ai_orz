@@ -5,7 +5,7 @@ use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{
-    GetOrganizationResponse, OrganizationInfoResponse, UpdateOrganizationRequest,
+    OrganizationInfoResponse, UpdateOrganizationRequest,
     UpdateOrganizationResponse,
 };
 use common::constants::utils;

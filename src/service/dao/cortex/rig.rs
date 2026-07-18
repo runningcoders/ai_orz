@@ -1,7 +1,7 @@
 //! Rig 驱动的 Cortex 实现
 
 use crate::enrich_ctx;
-use crate::models::{brain::*, model_provider::ModelProviderPo, vector::VectorIndexParams};
+use crate::models::{brain::*, model_provider::ModelProviderPo};
 use crate::pkg::request_context::RequestContext;
 use anyhow::Result;
 use common::enums::{ModelCapability, ProviderType};

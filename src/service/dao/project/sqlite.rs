@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 
 use super::{ProjectDao, ProjectQuery, ProjectSearch};
-use common::error::{Error, Result};
+use common::error::Result;
 use crate::models::project::ProjectPo;
 use crate::pkg::RequestContext;
 use crate::pkg::storage::escape_fts5_keyword;

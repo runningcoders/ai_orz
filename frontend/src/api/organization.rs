@@ -35,6 +35,7 @@ pub async fn create_user(req: CreateOrganizationUserRequest) -> Result<CreateOrg
 }
 
 /// 更新用户
+#[allow(dead_code)]
 pub async fn update_user(req: UpdateUserRequest) -> Result<UpdateUserResponse, String> {
     api_put("/api/v1/organization/user/update", &req).await
 }

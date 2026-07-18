@@ -8,7 +8,6 @@ use crate::models::mcp_server::McpServerStatus;
 use crate::models::tool::{Tool, ToolPo};
 use crate::pkg::RequestContext;
 use crate::pkg::tool_registry::mcp::{McpToolConfig, RemoteMcpTool};
-use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use crate::service::dao::mcp_server::McpServerDao;
 use crate::service::dao::tool::{ToolDao, ToolQuery};
 use crate::service::dao::tool_call::{self, McpToolCallDao};
@@ -16,7 +15,6 @@ use anyhow::Result as AnyhowResult;
 use async_trait::async_trait;
 use common::api::{ListMcpToolsByServerRequest, PagedResult};
 use common::enums::{ControlMode, ToolProtocol, ToolStatus};
-use rig::tool::ToolError;
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 

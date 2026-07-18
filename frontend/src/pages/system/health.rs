@@ -3,7 +3,6 @@
 use dioxus::prelude::*;
 
 use crate::api::system::check_health;
-use crate::components::state::Loading;
 use crate::store::toast::use_toast;
 
 #[component]

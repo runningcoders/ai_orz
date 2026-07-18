@@ -3,7 +3,6 @@
 use crate::models::agent::Agent;
 use crate::models::skill::Skill;
 use crate::pkg::RequestContext;
-use crate::service::dal::agent::AgentDal;
 use crate::service::dao::agent::AgentQuery;
 use crate::service::domain::hr::{AgentManage, HrDomainImpl};
 use common::enums::AgentStatus;

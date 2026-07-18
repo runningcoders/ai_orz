@@ -9,10 +9,9 @@ use crate::pkg::request_context::RequestContext;
 use anyhow::anyhow;
 use common::error::Result;
 use common::enums::{ControlMode, ToolProtocol};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::path::Path;
 use std::process::Stdio;
 use tokio::fs::{create_dir_all, OpenOptions};
 use tokio::io::AsyncWriteExt;
@@ -324,7 +323,7 @@ impl CoreTool for ShellExecCoreTool {
             command.stderr(stdio_stderr);
 
             // Detach process
-            let mut child = command.spawn()?;
+            let child = command.spawn()?;
             let pid = child.id();
             let pid_str = match pid {
                 Some(p) => format!("{}", p),

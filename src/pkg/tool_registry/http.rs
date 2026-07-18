@@ -13,15 +13,12 @@ use anyhow::{anyhow};
 use async_trait::async_trait;
 use reqwest::header::{HeaderName, HeaderValue};
 use reqwest::{Method, Url, redirect};
-use rig::tool::ToolError;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
-use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::time::Duration;
-use tokio::net::lookup_host;
 use common::error::Result;
-use common::{bail_err, err};
+use common::err;
 
 /// Protocol-level HTTP tool factory.
 ///

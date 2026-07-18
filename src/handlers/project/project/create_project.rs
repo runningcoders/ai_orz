@@ -5,7 +5,7 @@ use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CreateProjectRequest, CreateProjectResponse};
-use common::error::{Result, err, bail_err};
+use common::error::{Result, bail_err};
 
 /// Create a new project
 #[register_handler_tool(

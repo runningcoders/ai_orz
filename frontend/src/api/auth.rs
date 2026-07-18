@@ -19,6 +19,7 @@ pub async fn login(req: LoginRequest) -> Result<LoginResponse, String> {
     api_post("/api/v1/organization/auth/login", &req).await
 }
 
+#[allow(dead_code)]
 pub async fn logout() -> Result<(), String> {
     // logout 不需要返回数据，但后端返回 ApiResponse<EmptyResponse>
     let req = serde_json::json!({});

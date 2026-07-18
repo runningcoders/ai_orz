@@ -1,7 +1,7 @@
 //! SQLite implementation of Attachment DAO
 
 use super::{AttachmentDao, AttachmentQuery};
-use common::error::{err, bail_err, Error, Result};
+use common::error::{bail_err, Result};
 use crate::models::attachment::AttachmentPo;
 use crate::pkg::RequestContext;
 use sqlx::SqlitePool;

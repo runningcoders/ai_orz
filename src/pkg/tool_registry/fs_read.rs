@@ -3,7 +3,6 @@
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::tool_security::fs::{resolve_and_validate_path, ValidationResult, sanitize_error};
-use anyhow::{anyhow};
 use common::error::Result;
 use common::enums::{ControlMode, ToolProtocol};
 use serde::{Deserialize, Serialize};
@@ -123,7 +122,7 @@ impl FsReadCoreTool {
 
 #[async_trait::async_trait]
 impl CoreTool for FsReadCoreTool {
-    async fn call(&self, ctx: RequestContext, args: Value) -> Result<Value> {
+    async fn call(&self, _ctx: RequestContext, args: Value) -> Result<Value> {
         // Parse arguments
         let args: ReadFileArgs = serde_json::from_value(args)
             .map_err(|e| anyhow::anyhow!("Invalid arguments: {}", e))

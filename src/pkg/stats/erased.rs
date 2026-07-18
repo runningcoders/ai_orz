@@ -10,13 +10,10 @@ use duckdb::Connection;
 use crate::pkg::stats::traits::{StatEvent, StatTable};
 
 /// 类型擦除的 StatTable
-pub(crate) trait ErasedStatTable: Send + Sync + Debug {
-    fn table_name(&self) -> &str;
+pub trait ErasedStatTable: Send + Sync + Debug {
     fn create_table(&self, conn: &mut Connection) -> Result<()>;
     /// 批量擦除事件插入，向下转换为具体类型后调用 table.bulk_insert_events
     fn bulk_insert_erased(&self, conn: &mut Connection, events: Vec<Box<dyn Any + Send + Sync>>) -> Result<()>;
-    /// 是否是专用表结构
-    fn is_dedicated_table(&self) -> bool;
     /// 获取标签/维度列的 SQL 引用方式
     fn column_sql(&self, column: &str) -> String;
     /// 获取指标列的 SQL 引用方式
@@ -40,10 +37,6 @@ where
     E: StatEvent + 'static,
     T: StatTable<E> + 'static,
 {
-    fn table_name(&self) -> &str {
-        self.table.table_name()
-    }
-
     fn create_table(&self, conn: &mut Connection) -> Result<()> {
         self.table.create_table(conn)
     }
@@ -59,10 +52,6 @@ where
             }
         }
         self.table.bulk_insert_events(conn, &concrete_events)
-    }
-
-    fn is_dedicated_table(&self) -> bool {
-        self.table.is_dedicated_table()
     }
 
     fn column_sql(&self, column: &str) -> String {

@@ -3,7 +3,6 @@
 //! 负责 Slack 渠道的消息推送和连接测试。
 //! 对 Slack Webhook API 的封装，支持后续协议版本适配。
 
-use common::error::Result;
 use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;

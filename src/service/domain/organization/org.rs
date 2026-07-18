@@ -6,9 +6,7 @@ use common::error::Result;
 use crate::models::organization::OrganizationPo;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
-use crate::service::dao::organization::OrganizationQuery;
 use async_trait::async_trait;
-use common::enums::OrganizationStatus;
 use rand::Rng;
 
 /// 生成组织 ID（12 位大写字母 + 数字）

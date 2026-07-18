@@ -2,7 +2,7 @@
 
 use common::error::Result;
 use crate::pkg::RequestContext;
-use crate::pkg::stats::{StatFilter, StatAggregation, TaskEvent};
+use crate::pkg::stats::{StatFilter, TaskEvent};
 use crate::service::dao::task::{TaskStatsDao, TaskStatsQuery};
 use serde_json::Value as JsonValue;
 use std::sync::{Arc, OnceLock};

@@ -11,7 +11,7 @@ use crate::service::dao::attachment::AttachmentQuery;
 use crate::service::domain::finance::domain;
 
 use super::response::to_detail;
-use common::error::{Result, err, bail_err};
+use common::error::{Result, bail_err};
 
 /// 列出 Attachment
 /// GET /attachments

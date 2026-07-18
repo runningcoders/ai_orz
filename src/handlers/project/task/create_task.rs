@@ -7,9 +7,8 @@ use crate::service::domain::message::{self, SendTaskAssignmentCommand};
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CreateTaskRequest, CreateTaskResponse};
 use common::enums::{AssigneeType, MessageRole};
-use common::error::{Result, err, bail_err};
+use common::error::{Result, bail_err};
 
-use crate::enrich_ctx;
 
 /// Create a new task
 #[register_handler_tool(

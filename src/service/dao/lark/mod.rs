@@ -8,7 +8,6 @@
 //! 参考 `SsePushDao` 有状态 DAO 先例，本 DAO 管理 WebSocket 长连接状态。
 
 use common::error::Result;
-use common::config::LarkConfig;
 use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;

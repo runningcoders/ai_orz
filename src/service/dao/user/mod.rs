@@ -1,6 +1,6 @@
 //! User DAO 模块
 
-use common::error::{Error, Result};
+use common::error::Result;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 

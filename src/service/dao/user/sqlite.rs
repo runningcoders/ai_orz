@@ -1,6 +1,6 @@
 //! User DAO SQLite 实现
 
-use common::error::{Error, Result};
+use common::error::Result;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::user::{UserDao, UserQuery};

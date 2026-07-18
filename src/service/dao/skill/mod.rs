@@ -8,7 +8,7 @@ mod sqlite_test;
 #[cfg(test)]
 mod vector_test;
 
-use common::error::{err, bail_err, Error, Result};
+use common::error::Result;
 use crate::models::skill::{SkillFile, SkillPo};
 use crate::models::vector::VectorIndexParams;
 use crate::pkg::RequestContext;

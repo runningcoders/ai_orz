@@ -1,6 +1,6 @@
 //! Agent (AI智能体) related API request/response DTOs - shared between backend and frontend
 
-use crate::enums::{AgentRuntimeState, AgentStatus};
+use crate::enums::AgentStatus;
 use crate::models::{AgentStats, ModelCallStats};
 use ai_orz_macros::Params;
 use schemars::JsonSchema;

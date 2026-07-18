@@ -68,7 +68,7 @@ impl ModelProviderStatsDao for ModelProviderStatsDaoDuckDbImpl {
 }
 
 impl ModelProviderStatsDaoDuckDbImpl {
-    async fn do_query(&self, ctx: RequestContext, mut query: ModelProviderStatsQuery, table_name: Option<String>) -> Result<Vec<JsonValue>> {
+    async fn do_query(&self, ctx: RequestContext, query: ModelProviderStatsQuery, table_name: Option<String>) -> Result<Vec<JsonValue>> {
         if query.interval.is_some() {
             let interval = query.interval.unwrap_or(StatsInterval::Daily);
             let time_range = query.time_range.ok_or_else(|| {

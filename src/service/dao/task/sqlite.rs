@@ -1,7 +1,7 @@
 //! SQLite implementation of Task DAO
 
 use super::{TaskDao, TaskQuery, TaskSearch};
-use common::error::{Error, Result};
+use common::error::Result;
 use crate::models::task::TaskPo;
 use crate::pkg::RequestContext;
 use common::enums::{AssigneeType, TaskStatus};

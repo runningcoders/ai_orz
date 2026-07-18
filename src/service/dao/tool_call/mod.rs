@@ -6,7 +6,6 @@
 
 use crate::models::tool::{CoreTool, Tool, ToolPo};
 use crate::pkg::request_context::RequestContext;
-use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use anyhow::Result;
 use async_trait::async_trait;
 

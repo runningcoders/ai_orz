@@ -4,11 +4,9 @@ use crate::models::tool::{CoreTool, RigToolAdapter, Tool, ToolCallTraceRef, Tool
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::get_registry;
 use crate::pkg::tool_tracing::ToolCallLoggingDecorator;
-use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use anyhow::Result;
 use async_trait::async_trait;
 use common::enums::tool::ControlMode;
-use dyn_clone::DynClone;
 use rig::tool::ToolDyn;
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};

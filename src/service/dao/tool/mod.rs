@@ -1,6 +1,6 @@
 //! Tool DAO trait
 
-use common::error::{err, bail_err, Error, Result};
+use common::error::Result;
 use common::models::{CallSummary, ToolStats, StatsFetchOptions};
 use crate::models::tool::ToolPo;
 use crate::models::vector::VectorIndexParams;

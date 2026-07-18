@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::any::TypeId;
 
 use common::error::{Error, Result};
-use common::models::{StatsInterval, TimeSeriesPoint, TokenSumResult};
+use common::models::{StatsInterval, TimeSeriesPoint};
 use duckdb::{Connection, ToSql};
 use duckdb::types::Value;
 use serde_json::{self, Value as JsonValue};
@@ -13,12 +13,12 @@ use serde_json::{self, Value as JsonValue};
 use crate::pkg::request_context::RequestContext;
 use super::erased::{ErasedBuffer, ErasedStatTable, ErasedWrapper};
 use super::traits::{StatEvent, StatTable};
-use super::default::{DefaultStatEvent, DefaultStatTable};
-use super::model_call::{ModelCallEvent, ModelCallStatTable};
-use super::tool_call::{ToolCallEvent, ToolCallStatTable};
-use super::agent_awake::{AgentAwakeEvent, AgentAwakeStatTable};
-use super::project_event::{ProjectEvent, ProjectStatTable};
-use super::task_event::{TaskEvent, TaskStatTable};
+use super::default::DefaultStatTable;
+use super::model_call::ModelCallStatTable;
+use super::tool_call::ToolCallStatTable;
+use super::agent_awake::AgentAwakeStatTable;
+use super::project_event::ProjectStatTable;
+use super::task_event::TaskStatTable;
 
 /// 类型安全的 SQL 参数枚举（Send + Sync，替代 `dyn ToSql`）
 ///
@@ -561,7 +561,7 @@ impl Stats {
         // 此转换在同步作用域内完成，避免 dyn ToSql（非 Send）跨 .await 边界
         let param_refs: Vec<&dyn ToSql> = params.iter().map(|p| p as &dyn ToSql).collect();
 
-        let mut conn_guard = self.conn.lock().map_err(|e| {
+        let conn_guard = self.conn.lock().map_err(|e| {
             Error::internal(format!("Failed to lock connection: {}", e))
         })?;
 

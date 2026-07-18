@@ -11,7 +11,7 @@ use std::sync::{Arc, OnceLock};
 use common::enums::{ChannelStatus, ChannelType};
 use serde::Serialize;
 
-use common::error::{err, bail_err, Result};
+use common::error::{err, Result};
 use crate::enrich_ctx;
 use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;

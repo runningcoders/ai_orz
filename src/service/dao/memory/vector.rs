@@ -1,7 +1,7 @@
 //! Memory Vector DAO implementation
 //! 负责记忆向量索引的 CRUD 操作，与基础记忆数据完全解耦
 
-use common::error::{err, bail_err, Error, Result};
+use common::error::{err, Result};
 use crate::models::vector::{VectorIndexParams, VectorRow, VectorSearchHit};
 use crate::pkg::RequestContext;
 use crate::service::dao::memory::MemoryVectorDao;

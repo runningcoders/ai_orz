@@ -77,8 +77,8 @@ pub fn SystemLogs() -> Element {
     let mut current_page = use_signal(|| 1usize);
 
     // 结果
-    let mut result = use_signal(|| Option::<LogPageResult>::None);
-    let mut loading = use_signal(|| false);
+    let result = use_signal(|| Option::<LogPageResult>::None);
+    let loading = use_signal(|| false);
 
     // 展开的日志行索引（按 entries 中的位置）
     let mut expanded = use_signal(|| std::collections::HashSet::<usize>::new());

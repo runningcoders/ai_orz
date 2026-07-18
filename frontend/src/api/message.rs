@@ -42,6 +42,7 @@ pub async fn load_older_messages(
     api_get(&format!("/api/v1/finance/messages?{}", params.join("&"))).await
 }
 
+#[allow(dead_code)]
 pub async fn poll_new_messages(
     project_id: Option<&str>,
     after_timestamp: i64,

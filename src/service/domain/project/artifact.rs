@@ -220,7 +220,7 @@ impl super::ArtifactManage for ProjectDomainImpl {
             bail_err!(InvalidRequest, "Cannot read content directly from artifact source type {:?}, only GeneratedContent artifacts support direct content access.", artifact.po.source_type);
         }
 
-        let content = self.artifact_dal.read_content(ctx, &artifact).await?;
+        let _content = self.artifact_dal.read_content(ctx, &artifact).await?;
         // Content is handled by the handler separately, return artifact metadata only
         Ok(Some(artifact))
     }

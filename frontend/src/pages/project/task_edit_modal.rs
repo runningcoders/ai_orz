@@ -18,6 +18,7 @@ use common::enums::AssigneeType;
 
 /// 弹窗模式
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum TaskEditMode {
     /// 在指定项目下创建任务
     Create { project_id: Option<String> },

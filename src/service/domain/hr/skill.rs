@@ -7,7 +7,7 @@ use crate::service::domain::hr::{HrDomainImpl, SkillManage, UpdateSkillParams};
 use common::constants::utils::current_timestamp;
 use common::enums::SkillStatus;
 use std::path::{Component, Path};
-use common::error::{Result, err, bail_err};
+use common::error::{Result, bail_err};
 
 #[async_trait::async_trait]
 impl SkillManage for HrDomainImpl {

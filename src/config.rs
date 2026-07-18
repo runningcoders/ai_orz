@@ -4,8 +4,6 @@
 //! 用户可通过修改外部配置文件自定义程序行为。
 
 use common::config::{AppConfig, BASE_DATA_PATH, CONFIG_FILE_NAME};
-use std::fs;
-use std::path::Path;
 use std::sync::{Arc, OnceLock};
 use common::error::Result;
 // ==================== 单例管理 ====================

@@ -5,7 +5,7 @@
 //! 使用 Builder 模式，支持按需扩展不同的 prompt 部分。
 
 use crate::models::agent::Agent;
-use crate::models::memory::{Memory, MemoryPo};
+use crate::models::memory::Memory;
 use crate::models::message::Message;
 use crate::models::skill::SkillPo;
 use crate::models::user::UserPo;

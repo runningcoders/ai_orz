@@ -1,6 +1,6 @@
 //! Runtime Memory 具体实现
 
-use common::error::{Error, Result, err};
+use common::error::{Result, err};
 use crate::models::memory::{Memory, MemoryCreateParams, MemoryTrace};
 use crate::pkg::request_context::RequestContext;
 use crate::service::dao::memory::{MemoryQuery, MemorySearch};

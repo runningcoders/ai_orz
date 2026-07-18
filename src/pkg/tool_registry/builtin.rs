@@ -34,8 +34,8 @@ pub static GENERIC_BUILTIN_TOOLS: Lazy<Vec<(String, Box<dyn BuiltinToolFactory>)
 
 /// Register all generic built-in tools to the global registry
 pub fn register_all(registry: &ToolRegistry) {
-    for (id, factory) in GENERIC_BUILTIN_TOOLS.iter() {
-        let po = factory.create_po();
+    for (_id, factory) in GENERIC_BUILTIN_TOOLS.iter() {
+        let _po = factory.create_po();
         registry.register_builtin_factory(factory.clone());
     }
 }

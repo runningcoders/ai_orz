@@ -30,7 +30,7 @@ mod tool_provider_test;
 use common::api::RebuildStatus;
 use common::error::Result;
 use crate::models::attachment::{
-    Attachment, AttachmentGetOptions, AttachmentReadResult, AttachmentTextContent,
+    Attachment, AttachmentGetOptions, AttachmentTextContent,
     AttachmentUpload, TextAttachmentCreate, TextContentUpdate,
 };
 use crate::models::model_provider::ModelProvider;

@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::OnceLock;
 
-use common::error::{err, bail_err, Result};
+use common::error::{err, Result};
 use crate::models::event::{Event, EventRef};
 use crate::models::message::Message;
 use crate::pkg::RequestContext;
@@ -164,10 +164,10 @@ impl<E: Event + Clone> EventQueueDao<E> for EventQueueDaoInMemoryImpl<E> {
             .map_err(|e| err!(Internal, "failed to acquire event queue lock: {}", e))?;
 
         let events = unsafe { &mut *self.events.get() };
-        let queues = unsafe { &mut *self.queues.get() };
+        let _queues = unsafe { &mut *self.queues.get() };
         let global_heap = unsafe { &mut *self.global_heap.get() };
         let in_progress = unsafe { &mut *self.in_progress.get() };
-        let has_active_message = unsafe { &mut *self.has_active_message.get() };
+        let _has_active_message = unsafe { &mut *self.has_active_message.get() };
 
         loop {
             let Some(event_ref) = global_heap.pop() else {

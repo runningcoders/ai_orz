@@ -1,6 +1,6 @@
 //! Model Provider DAO 模块
 
-use common::error::{Error, Result};
+use common::error::Result;
 use common::models::{StatsInterval, TimeSeriesPoint, TokenSumResult, ModelCallStats, CallSummary, StatsFetchOptions};
 use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::RequestContext;

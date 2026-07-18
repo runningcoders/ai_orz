@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use common::error::{Error, Result};
+use common::error::Result;
 use crate::models::skill::{SkillFile, SkillPo};
 use crate::pkg::RequestContext;
 use crate::pkg::storage::escape_fts5_keyword;

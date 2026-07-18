@@ -4,7 +4,7 @@ use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::{FinanceDomainImpl, ModelProviderManage, RebuildTask};
 use common::error::{Error, ErrorField, ErrorCode, Result};
-use common::enums::{ModelCapability, ModelProviderStatus};
+use common::enums::ModelProviderStatus;
 use serde_json::json;
 use std::sync::Arc;
 

@@ -15,7 +15,6 @@ pub async fn create_text_attachment(
     Extension(ctx): Extension<RequestContext>,
     Json(req): Json<CreateTextAttachmentRequest>,
 ) -> std::result::Result<(StatusCode, Json<ApiResponse<CreateTextAttachmentResponse>>), common::error::Error> {
-use common::error::err;
 use common::error::bail_err;
     let user_id = ctx.uid();
     if user_id.is_empty() {

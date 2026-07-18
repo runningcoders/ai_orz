@@ -1,7 +1,6 @@
 //! Handler: GET /api/v1/organizations/users/by-username/{username} - Get user by username
 
 use common::error::Result;
-use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};

@@ -6,12 +6,12 @@
 //! - 混合搜索（全文 + 向量）
 //! - 结果聚合排序
 
-use common::error::{err, bail_err, Result};
+use common::error::{bail_err, Result};
 use crate::models::memory::{
     KnowledgeNodeRelationPo, KnowledgeReferencePo, LongTermKnowledgeNodePo, Memory,
     MemoryCreateParams, MemoryPo, MemoryTrace, ShortTermMemoryIndexPo,
 };
-use crate::models::vector::{MatchType, SearchMatchInfo, VectorIndexParams, Vectorizable};
+use crate::models::vector::{MatchType, SearchMatchInfo, VectorIndexParams};
 use crate::pkg::RequestContext;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::memory::{MemoryDao, MemoryQuery, MemorySearch, MemoryVectorDao};
@@ -1423,30 +1423,6 @@ async fn try_build_vector_params_for_search(
     let cortex = cortex_dao.create_cortex_trait(ctx.clone(), &provider, vec![])?;
     let params = cortex_dao
         .embed_text_for_search(ctx.clone(), cortex.as_ref(), text)
-        .await?;
-    Ok(Some(params))
-}
-
-/// 尝试为实体构建向量索引参数（用于索引场景）
-///
-/// 任何中间步骤失败都会向上抛错；调用方决定是否 warn 降级。
-/// 返回 `Ok(None)` 表示无 Embedding Provider 配置（合法场景）。
-async fn try_build_vector_params_for_entity(
-    ctx: RequestContext,
-    cortex_dao: &Arc<dyn CortexDao>,
-    model_provider_dao: &Arc<dyn ModelProviderDao>,
-    entity: &dyn Vectorizable,
-) -> Result<Option<VectorIndexParams>> {
-    let Some(provider) = model_provider_dao
-        .get_default_embedding_provider(ctx.clone())
-        .await?
-    else {
-        return Ok(None);
-    };
-
-    let cortex = cortex_dao.create_cortex_trait(ctx.clone(), &provider, vec![])?;
-    let params = cortex_dao
-        .embed_entity(ctx, cortex.as_ref(), entity)
         .await?;
     Ok(Some(params))
 }

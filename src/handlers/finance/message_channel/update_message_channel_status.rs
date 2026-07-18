@@ -4,7 +4,7 @@ use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{
-    MessageChannelDetail, UpdateMessageChannelStatusRequest, UpdateMessageChannelStatusResponse,
+    UpdateMessageChannelStatusRequest, UpdateMessageChannelStatusResponse,
 };
 
 use super::response::to_detail;

@@ -1,7 +1,7 @@
 //! EventQueue DAO 层
 //! 通用事件队列 DAO 接口定义
 
-use common::error::{Error, Result};
+use common::error::Result;
 use crate::models::event::Event;
 use crate::pkg::RequestContext;
 

@@ -12,7 +12,7 @@
 
 pub mod macros;
 
-use common::error::{Error, Result};
+use common::error::Result;
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use async_trait::async_trait;
@@ -147,7 +147,6 @@ where
 /// ```rust,ignore
 /// let adapter = HandlerToolAdapter::new(
 ///     po,
-///     parameters_schema,
 ///     inner,
 /// );
 /// ```
@@ -157,7 +156,6 @@ where
     Params: for<'de> Deserialize<'de> + Serialize + Send + Sync + Clone + 'static,
 {
     po: ToolPo,
-    parameters_schema: Value,
     inner: Box<dyn HandlerFn<Params>>,
 }
 
@@ -165,10 +163,9 @@ impl<Params> HandlerToolAdapter<Params>
 where
     Params: for<'de> Deserialize<'de> + Serialize + Send + Sync + Clone + 'static,
 {
-    pub fn new(po: ToolPo, parameters_schema: Value, inner: Box<dyn HandlerFn<Params>>) -> Self {
+    pub fn new(po: ToolPo, inner: Box<dyn HandlerFn<Params>>) -> Self {
         Self {
             po,
-            parameters_schema,
             inner,
         }
     }
@@ -179,7 +176,7 @@ impl<Params> CoreTool for HandlerToolAdapter<Params>
 where
     Params: for<'de> Deserialize<'de> + Serialize + Send + Sync + Clone + 'static,
 {
-    async fn call(&self, mut ctx: RequestContext, args: Value) -> Result<Value> {
+    async fn call(&self, ctx: RequestContext, args: Value) -> Result<Value> {
         // Parse JSON args to Params type
         let params: Params = match serde_json::from_value(args) {
             Ok(p) => p,
@@ -243,7 +240,6 @@ impl HandlerToolBuilder {
         Params: for<'de> Deserialize<'de> + Serialize + Send + Sync + Clone + 'static,
     {
         use common::enums::tool::{ControlMode, ToolProtocol, ToolStatus};
-use common::error::Result;
 
         let mut po = ToolPo::new(
             self.id.clone(),

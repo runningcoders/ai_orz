@@ -4,7 +4,7 @@ use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetSkillFileContentRequest, GetSkillFileContentResponse};
-use common::error::{Result, err, bail_err};
+use common::error::{Result, bail_err};
 
 /// Read the text content of a specific file from a skill
 #[register_handler_tool(

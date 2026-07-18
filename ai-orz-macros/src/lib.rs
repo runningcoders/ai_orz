@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{AngleBracketedGenericArguments, parse_macro_input};
+use syn::parse_macro_input;
 use syn::{Ident, ItemFn, Lit, LitStr, Meta, MetaNameValue, Type};
 
 mod stats_event;
@@ -13,7 +13,7 @@ use log_fields::derive_log_fields as log_fields_derive;
 /// This is used together with #[generate_http_handler] to automatically
 /// collect which fields come from path/query/body.
 #[proc_macro_derive(Params, attributes(param))]
-pub fn derive_params(input: TokenStream) -> TokenStream {
+pub fn derive_params(_input: TokenStream) -> TokenStream {
     // This derive doesn't generate any code, it just holds the #[param] attributes
     // for #[generate_http_handler] to read.
     TokenStream::new()
@@ -75,7 +75,7 @@ pub fn register_handler_tool(args: TokenStream, input: TokenStream) -> TokenStre
     let mut name = None;
     let mut description = None;
     let mut params_type = None;
-    let mut handler_ident: Option<Ident> = None;
+    let handler_ident: Option<Ident> = None;
     let mut neural = false;
     let mut extra_tags: Vec<String> = Vec::new();
 
@@ -108,15 +108,6 @@ pub fn register_handler_tool(args: TokenStream, input: TokenStream) -> TokenStre
     });
 
     parser.parse(args).unwrap();
-
-    fn get_lit_str(expr: &syn::Expr) -> Option<&LitStr> {
-        match expr {
-            syn::Expr::Lit(syn::ExprLit {
-                lit: Lit::Str(s), ..
-            }) => Some(s),
-            _ => None,
-        }
-    }
 
     let id = match id {
         Some(id) => id,
@@ -176,6 +167,7 @@ pub fn register_handler_tool(args: TokenStream, input: TokenStream) -> TokenStre
     let expanded = quote! {
         #item_fn
 
+        #[allow(non_camel_case_types)]
         struct #factory_ident;
 
         use crate::models::tool::{CoreTool, ToolPo};
@@ -219,11 +211,8 @@ pub fn register_handler_tool(args: TokenStream, input: TokenStream) -> TokenStre
 
             fn create(&self, po: ToolPo) -> Box<dyn CoreTool> {
                 use crate::pkg::tool_registry::handler_adapter::*;
-                let schema = schemars::schema_for!(#params_type);
-                let json = serde_json::to_value(&schema).unwrap();
                 let adapter = HandlerToolAdapter::<#params_type>::new(
                     po,
-                    json,
                     #factory_expanded,
                 );
                 Box::new(adapter)
@@ -516,21 +505,6 @@ fn collect_path_and_query_fields_from_type(
 
     // If not found, panic
     panic!("Could not find struct type {} in source files", type_name);
-}
-
-fn to_snake_case(s: &str) -> String {
-    let mut result = String::new();
-    for (i, c) in s.chars().enumerate() {
-        if c.is_uppercase() {
-            if i != 0 {
-                result.push('_');
-            }
-            result.push(c.to_lowercase().next().unwrap());
-        } else {
-            result.push(c);
-        }
-    }
-    result
 }
 
 /// Derive macro to automatically implement LogFields trait.

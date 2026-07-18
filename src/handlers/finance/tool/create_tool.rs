@@ -7,7 +7,7 @@ use common::enums::ToolProtocol;
 use crate::models::tool::Tool;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
-use common::error::{Result, err, bail_err};
+use common::error::{Result, bail_err};
 
 /// Create a new custom tool (HTTP/MCP). Built-in tools cannot be created via this API.
 #[register_handler_tool(

@@ -278,6 +278,5 @@ macro_rules! define_error_codes {
                 }
             }
         }
-        pub use generated::*;
     };
 }

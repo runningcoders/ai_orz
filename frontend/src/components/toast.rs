@@ -1,7 +1,7 @@
 //! Toast 通知组件 - 全局容器 + 单条通知
 
 use dioxus::prelude::*;
-use crate::store::toast::{ToastState, ToastType, use_toast};
+use crate::store::toast::{ToastType, use_toast};
 
 /// 全局 Toast 容器（放在根组件中）
 #[component]

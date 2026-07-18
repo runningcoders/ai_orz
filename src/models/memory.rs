@@ -83,7 +83,7 @@ impl MemoryTrace {
         let trace_id = format!(
             "trace-{}-{}",
             agent_id,
-            chrono::Utc::now().timestamp_nanos()
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
         );
         Self {
             id: trace_id,

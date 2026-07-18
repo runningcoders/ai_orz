@@ -1,11 +1,11 @@
 //! ModelProviderDao SQLite 实现
 
-use common::error::{Error, Result};
+use common::error::Result;
 use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderQuery};
 use chrono::Utc;
-use common::enums::{ModelCapability, ModelProviderStatus, ProviderType};
+use common::enums::{ModelCapability, ModelProviderStatus};
 use sqlx::QueryBuilder;
 use std::sync::{Arc, OnceLock};
 // ==================== 单例 ====================
@@ -236,13 +236,4 @@ UPDATE model_providers SET status = 0, modified_by = ?, updated_at = ? WHERE id 
             .await?;
         Ok(providers.into_iter().next())
     }
-}
-
-fn current_timestamp() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-use common::error::Result;
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64
 }

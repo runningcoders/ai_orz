@@ -94,7 +94,7 @@ impl Storage {
         ).await?;
         stats.initialize_default()?;
 
-        let mut inner = StorageInner {
+        let inner = StorageInner {
             sqlite,
             vector,
             stats: OnceCell::new(),

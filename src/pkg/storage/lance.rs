@@ -6,7 +6,7 @@
 //! - 持久化到磁盘，支持元数据过滤
 //! - 单文件存储，跨平台完美支持
 
-use common::error::{Error, Result};
+use common::error::Result;
 use crate::models::vector::{VectorIndexParams, VectorMeta, VectorRow, VectorSearchHit};
 use arrow_array::types::Float32Type;
 use arrow_array::{

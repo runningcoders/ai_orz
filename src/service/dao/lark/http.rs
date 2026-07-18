@@ -5,7 +5,7 @@
 //! - 消息发送（`/open-apis/im/v1/messages`）
 //! - WebSocket 长连接生命周期管理（委托 `ws` 模块）
 
-use super::error::{from_reqwest, from_serde, validate_config, LarkResponse};
+use super::error::{from_reqwest, validate_config, LarkResponse};
 use super::event::LarkMessageEvent;
 use super::token::{SharedTokenCache, TokenCache};
 use super::ws::WsState;

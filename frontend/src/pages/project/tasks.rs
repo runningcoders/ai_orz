@@ -6,7 +6,7 @@ use dioxus_router::use_navigator;
 use crate::api::project::{list_projects, list_tasks};
 use crate::components::state::{EmptyState, Loading};
 use crate::store::toast::use_toast;
-use common::api::{ListProjectsResponseItem, ListTasksResponse, TaskListItem};
+use common::api::{ListProjectsResponseItem, TaskListItem};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ViewMode {

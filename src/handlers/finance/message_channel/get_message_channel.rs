@@ -3,7 +3,7 @@
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::{GetMessageChannelRequest, GetMessageChannelResponse, MessageChannelDetail};
+use common::api::{GetMessageChannelRequest, GetMessageChannelResponse};
 
 use super::response::to_detail;
 use common::error::{Result, err, bail_err};

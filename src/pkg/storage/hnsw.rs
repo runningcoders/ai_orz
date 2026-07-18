@@ -146,15 +146,6 @@ struct CollectionsMetaFile {
     pub collections: HashMap<String, CollectionMeta>,
 }
 
-impl CollectionsMetaFile {
-    fn new() -> Self {
-        Self {
-            version: 1,
-            collections: HashMap::new(),
-        }
-    }
-}
-
 /// HNSW 向量存储
 ///
 /// 持久化策略：

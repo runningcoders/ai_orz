@@ -1,6 +1,6 @@
 //! Agent DAL 模块
 
-use common::error::{Result, err};
+use common::error::Result;
 use common::models::{AgentStats, ModelCallStats, StatsFetchOptions, StatsInterval};
 use crate::models::agent::{Agent, AgentPo};
 use crate::models::brain::Brain;

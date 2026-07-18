@@ -5,15 +5,13 @@
 
 use common::error::{Result};
 use common::models::{ToolStats, StatsFetchOptions, StatsInterval};
-use crate::models::tool::{CoreTool, Tool, ToolPo};
+use crate::models::tool::{Tool, ToolPo};
 use crate::models::vector::{MatchType, SearchMatchInfo, Vectorizable};
 use crate::pkg::request_context::RequestContext;
-use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::ModelProviderDao;
-use crate::service::dao::tool::{self, ToolDao, ToolQuery, ToolStatsDao, ToolStatsQuery, ToolVectorDao};
+use crate::service::dao::tool::{ToolDao, ToolQuery, ToolStatsDao, ToolStatsQuery, ToolVectorDao};
 use crate::service::dao::tool_call::{self, ToolCallDao};
-use anyhow::Result as AnyhowResult;
 use common::enums::ToolStatus;
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
@@ -455,7 +453,7 @@ impl ToolDal for ToolDalImpl {
 
     async fn call_tool_by_id(
         &self,
-        mut ctx: RequestContext,
+        ctx: RequestContext,
         tool_id: String,
         args: Value,
     ) -> Result<Value> {

@@ -64,7 +64,7 @@ pub async fn update_user(
 
     domain.user_manage().update_user(ctx, &user).await?;
 
-    let role_name = user.user_role().display_name().to_string();
+    let _role_name = user.user_role().display_name().to_string();
 
     Ok(UpdateUserResponse {
         user_id: user.id.clone(),

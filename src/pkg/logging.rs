@@ -16,7 +16,6 @@ use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::rolling;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
-use common::error::Result;
 
 /// 全局持有 tracing non-blocking writer 的 guard
 /// 保证程序退出前所有日志都被 flush 到磁盘

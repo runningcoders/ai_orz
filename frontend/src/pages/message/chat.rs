@@ -83,7 +83,7 @@ pub fn MessageChat() -> Element {
     let mut messages = use_signal(Vec::<MessageListItem>::new);
     let mut is_typing = use_signal(|| false);
     let mut input_text = use_signal(String::new);
-    let mut error = use_signal(String::new);
+    let error = use_signal(String::new);
     let mut loading_projects = use_signal(|| true);
     let mut has_more = use_signal(|| true);
     let mut loading_messages = use_signal(|| false);
@@ -376,9 +376,11 @@ pub fn MessageChat() -> Element {
                 let uint8_array = js_sys::Uint8Array::new_with_length(bytes.len() as u32);
                 uint8_array.copy_from(&bytes);
                 blob_parts.push(&uint8_array);
+                let blob_bag = web_sys::BlobPropertyBag::new();
+                blob_bag.set_type("application/octet-stream");
                 let blob = web_sys::Blob::new_with_str_sequence_and_options(
                     &blob_parts,
-                    web_sys::BlobPropertyBag::new().type_("application/octet-stream"),
+                    &blob_bag,
                 )
                 .ok();
 
@@ -522,11 +524,11 @@ pub fn MessageChat() -> Element {
                             .collect();
                         if !filtered.is_empty() {
                             let selected = selected_slash_index().min(filtered.len() as i32 - 1).max(0) as usize;
-                            let mut input_text = input_text;
-                            let mut messages = messages;
-                            let mut show_slash_menu = show_slash_menu;
+                            let input_text = input_text;
+                            let messages = messages;
+                            let show_slash_menu = show_slash_menu;
                             let toast = toast;
-                            let mut selected_slash_index = selected_slash_index;
+                            let selected_slash_index = selected_slash_index;
                             rsx! {
                                 div { class: "slash-menu",
                                     for (i, (cmd, desc)) in filtered.iter().enumerate() {
@@ -760,7 +762,7 @@ fn copy_to_clipboard(content: &str, toast: &crate::store::toast::ToastState) {
         let clipboard = navigator.clipboard();
         let promise = clipboard.write_text(content);
         let toast = *toast;
-        let content = content.to_string();
+        let _content = content.to_string();
         wasm_bindgen_futures::spawn_local(async move {
             match wasm_bindgen_futures::JsFuture::from(promise).await {
                 Ok(_) => {

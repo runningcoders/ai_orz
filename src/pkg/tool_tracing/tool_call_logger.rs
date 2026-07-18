@@ -3,12 +3,10 @@
 //! Wraps tools that are called through our manual built-in call chain
 //! to automatically log invocations the same way.
 
-use anyhow::anyhow;
 use common::error::Result;
 use async_trait::async_trait;
 use common::enums::ToolProtocol;
-use rig::tool::ToolError;
-use serde_json::{json, Map, Value};
+use serde_json::Value;
 use uuid::Uuid;
 use std::sync::Arc;
 

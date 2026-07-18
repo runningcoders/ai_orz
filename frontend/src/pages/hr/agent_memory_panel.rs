@@ -14,6 +14,7 @@ enum MemoryTab {
 }
 
 impl MemoryTab {
+    #[allow(dead_code)]
     fn label(self) -> &'static str {
         match self {
             MemoryTab::ShortTerm => "短期记忆",
@@ -73,8 +74,8 @@ fn fetch_memories(
 pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
     let mut active_tab = use_signal(|| MemoryTab::ShortTerm);
     let mut keyword = use_signal(String::new);
-    let mut results = use_signal(Vec::<MemoryResult>::new);
-    let mut loading = use_signal(|| false);
+    let results = use_signal(Vec::<MemoryResult>::new);
+    let loading = use_signal(|| false);
     let toast = use_toast();
 
     use_effect({

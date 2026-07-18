@@ -47,10 +47,9 @@ impl UserPo {
             UserRole::SuperAdmin => "超级管理员",
             UserRole::Admin => "管理员",
             UserRole::Member => "成员",
-            _ => "未知",
         };
 
-        let mut parts = vec![
+        let parts = vec![
             format!("【用户 ID】{}", self.id),
             format!("【显示名称】{}", self.display_name),
             format!("【用户名】{}", self.username),

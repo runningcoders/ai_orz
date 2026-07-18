@@ -7,7 +7,7 @@
 //! - 原始记忆不可修改不可删除，只能追加
 
 use crate::config;
-use common::error::{Error, Result, bail_err};
+use common::error::{Result, bail_err};
 use crate::models::memory::{
     KnowledgeNodeRelationPo, KnowledgeReferencePo, LongTermKnowledgeNodePo, MemoryTrace,
     MemoryTracePosition, ShortTermMemoryIndexPo,
@@ -288,7 +288,7 @@ WHERE id = ? AND status != 0
         ctx: RequestContext,
         query: MemoryQuery,
     ) -> Result<Vec<ShortTermMemoryIndexPo>> {
-        use common::enums::MemoryStatus;
+        
         use sqlx::QueryBuilder;
 
         let pool = self.pool(ctx);
@@ -639,7 +639,7 @@ WHERE id = ? AND status != 0
         ctx: RequestContext,
         query: MemoryQuery,
     ) -> Result<Vec<LongTermKnowledgeNodePo>> {
-        use common::enums::MemoryStatus;
+        
         use sqlx::QueryBuilder;
 
         let pool = self.pool(ctx);
@@ -770,8 +770,6 @@ LIMIT ?
 
     async fn delete_knowledge_node(&self, ctx: RequestContext, id: &str) -> Result<()> {
         use common::enums::MemoryStatus;
-use common::{err, bail_err};
-use common::error::Result;
         let pool = self.pool(ctx);
         let now = chrono::Utc::now().timestamp();
         let status_i32 = MemoryStatus::Forgotten as i32;

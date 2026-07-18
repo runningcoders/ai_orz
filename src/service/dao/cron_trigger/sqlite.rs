@@ -33,12 +33,6 @@ pub fn init() {
 #[derive(Debug)]
 struct CronTriggerDaoSqliteImpl;
 
-impl CronTriggerDaoSqliteImpl {
-    fn new() -> Self {
-        Self
-    }
-}
-
 #[async_trait::async_trait]
 impl CronTriggerDao for CronTriggerDaoSqliteImpl {
     async fn create(&self, ctx: RequestContext, trigger: &CronTriggerPo) -> Result<()> {

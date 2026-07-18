@@ -4,7 +4,6 @@
 //! 所有保存的消息都会自动入队事件队列，并自动维护向量索引
 
 use common::error::Result;
-use crate::models::event::Event;
 use crate::models::message::{Message, MessagePo};
 use crate::models::vector::{MatchType, SearchMatchInfo, VectorIndexParams, Vectorizable};
 use crate::pkg::RequestContext;
