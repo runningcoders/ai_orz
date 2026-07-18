@@ -7,7 +7,7 @@
 //! - InMemoryVectorStore: 纯 Rust 内存实现（推荐，零系统依赖）
 //! - HnswStore: HNSW 高性能近似最近邻索引（V2 优化）
 
-use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use std::sync::Arc;
 use once_cell::sync::OnceCell;
 
@@ -59,11 +59,14 @@ impl Storage {
         stats_config: &common::config::StatsConfig,
     ) -> Result<Self> {
         let db_path = base_data_path.join(&db_config.db_file_name);
-        let connection_url = format!("sqlite://{}", db_path.display());
-
+        // create_if_missing(true): 数据库文件不存在时自动创建空文件，由后续 migration 建表
+        // 避免用户手动 sqlite3 db "VACUUM;" 才能首次启动
+        let connect_options = SqliteConnectOptions::new()
+            .filename(&db_path)
+            .create_if_missing(true);
         let sqlite = SqlitePoolOptions::new()
             .max_connections(5) // SQLite 单文件写并发有限，不需要太多连接
-            .connect(&connection_url)
+            .connect_with(connect_options)
             .await?;
 
         // 运行所有 migrations，自动建表/升级
