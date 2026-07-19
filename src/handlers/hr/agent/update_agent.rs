@@ -79,6 +79,7 @@ pub async fn update_agent(
         } else {
             Some(agent.po.soul.clone())
         },
+        kind: agent.po.kind.to_string(),
         model_provider_id: agent.po.model_provider_id.clone(),
         updated_at: agent.po.updated_at,
     })

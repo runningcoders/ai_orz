@@ -1,11 +1,12 @@
 //! Handler: PUT /api/v1/agents/{id}/status - Update agent status
 
-use common::enums::AgentRuntimeState;
+use common::enums::{AgentRuntimeState, AgentKind};
 use common::error::Result;
+use crate::models::agent::ExternalAgentConfig;
 use crate::pkg::RequestContext;
 use crate::service::domain::{finance::domain as finance_domain, hr::domain};
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::{UpdateAgentStatusRequest, UpdateAgentStatusResponse};
+use common::api::{AgentCliConfig, AgentExternalConfigInfo, AgentRemoteConfig, UpdateAgentStatusRequest, UpdateAgentStatusResponse};
 
 use crate::enrich_ctx;
 
@@ -37,6 +38,39 @@ pub async fn update_agent_status(
 
     let capabilities: Vec<String> = agent.po.get_capabilities();
     let roles: Vec<String> = agent.po.get_roles();
+    let kind = agent.po.kind;
+
+    let external_config = match kind {
+        AgentKind::Local => None,
+        AgentKind::Cli | AgentKind::Remote => {
+            let runtime_config = agent.po.get_runtime_config();
+            match runtime_config.external_config {
+                Some(ExternalAgentConfig::Cli { command, args, work_dir, env: _, timeout_secs, prompt_template }) => {
+                    Some(AgentExternalConfigInfo {
+                        cli: Some(AgentCliConfig {
+                            command,
+                            args,
+                            work_dir,
+                            timeout_secs,
+                            prompt_template,
+                        }),
+                        remote: None,
+                    })
+                }
+                Some(ExternalAgentConfig::Remote { endpoint, agent_name, auth_token: _, timeout_secs }) => {
+                    Some(AgentExternalConfigInfo {
+                        cli: None,
+                        remote: Some(AgentRemoteConfig {
+                            endpoint,
+                            agent_name,
+                            timeout_secs,
+                        }),
+                    })
+                }
+                None => None,
+            }
+        }
+    };
 
     let (runtime_state, current_message_id) = match &agent.runtime_info {
         Some(info) => (info.state as i32, info.current_message_id.clone()),
@@ -68,7 +102,9 @@ pub async fn update_agent_status(
         } else {
             Some(agent.po.soul.clone())
         },
+        kind: kind.to_string(),
         model_provider_id: agent.po.model_provider_id.clone(),
+        external_config,
         status: agent.po.status as i32,
         created_at: agent.po.created_at,
         updated_at: agent.po.updated_at,

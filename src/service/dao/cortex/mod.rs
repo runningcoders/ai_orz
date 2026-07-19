@@ -56,6 +56,7 @@ pub trait CortexDao: Send + Sync {
 }
 
 mod rig;
+pub mod external;
 
 pub use self::rig::{RigCortexDao, dao, init};
 

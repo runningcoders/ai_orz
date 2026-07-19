@@ -275,7 +275,14 @@ impl RecordingHrDomain {
             "test-user".to_string(),
         );
         let cortex = Cortex::new(model_provider, Box::new(MockCortex));
-        agent.brain = Some(Brain::new(cortex, vec![]));
+        let runtime_config = crate::models::agent::AgentRuntimeConfig::default();
+        agent.brain = Some(Brain::new_local(
+            "test-agent".to_string(),
+            "Test Agent".to_string(),
+            runtime_config,
+            cortex,
+            vec![],
+        ));
         agent
     }
 }
@@ -952,6 +959,17 @@ impl RuntimeMemory for RecordingRuntimeDomain {
 
 #[async_trait]
 impl RuntimeAwakening for RecordingRuntimeDomain {
+    async fn wake_agent_brain(
+        &self,
+        _ctx: RequestContext,
+        agent: &mut Agent,
+    ) -> std::result::Result<(), common::error::Error> {
+        // 测试中不需要真实 brain 装配，标记为已装配即可
+        // brain 字段在测试中通过其他方式设置
+        let _ = agent;
+        Ok(())
+    }
+
     async fn awaken(
         &self,
         _ctx: RequestContext,
@@ -2084,7 +2102,7 @@ mod handle_agent_message_tests {
     }
 
     #[tokio::test]
-    async fn test_agent_no_brain_returns_internal() {
+    async fn test_agent_no_brain_auto_wakes() {
         init_storage_for_test().await;
         let runtime_domain = RecordingRuntimeDomain::success(json!({ "ok": true }));
         let message_domain = RecordingMessageDomain::new();
@@ -2099,11 +2117,10 @@ mod handle_agent_message_tests {
             "hello agent",
         );
 
+        // 新行为：agent 无 brain 时，consumer 自动调用 wake_agent_brain 装配，
+        // 然后正常执行 awaken，不返回错误。
         let result = handler.handle(&message).await;
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.msg.contains("大脑未唤醒") || err.msg.contains("no brain"),
-            "expected no brain error, got: {}", err.msg);
+        assert!(result.is_ok(), "expected auto wake to succeed, got error: {:?}", result.err());
     }
 
     #[tokio::test]

@@ -21,6 +21,8 @@ use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_tracing::logger::ToolCallLogger;
 use crate::service::dao::memory::{MemoryQuery, MemorySearch};
 use crate::service::dal::agent::AgentDal;
+use crate::service::dal::agent_codex::CodexAgentDal;
+use crate::service::dal::agent_a2a::A2aAgentDal;
 use crate::service::dal::brain::BrainDal;
 use crate::service::dal::memory::TraversalStrategy;
 use crate::service::dal::mcp_tool::McpToolDal;
@@ -156,6 +158,19 @@ pub trait RuntimeMemory: Send + Sync {
 /// 定义 Agent 唤醒相关的核心业务接口
 #[async_trait]
 pub trait RuntimeAwakening: Send + Sync {
+    /// 装配 Agent 的 Brain
+    ///
+    /// 对于 Local agent：加载 tools，通过 BrainDal.wake_brain 构造带 Cortex 的 Brain
+    /// 对于 External agent（Cli/Remote）：构造不带 Cortex 的虚拟 Brain
+    ///
+    /// 调用时机：consumer 处理消息前，如果 agent.brain 为 None 则调用此方法装配。
+    /// 幂等：如果 agent.brain 已存在则直接返回。
+    async fn wake_agent_brain(
+        &self,
+        ctx: RequestContext,
+        agent: &mut Agent,
+    ) -> Result<()>;
+
     /// 唤醒 Agent 并执行一次思考
     ///
     /// 【分层原则】
@@ -245,7 +260,7 @@ mod tool_execution;
 #[cfg(test)]
 mod tool_execution_test;
 
-pub use context_assembly::{PromptBuilder, build_conversation_prompt};
+pub use context_assembly::{DefaultPromptBuilder, build_conversation_prompt};
 pub(crate) use tool_call_query::status_from_dto;
 
 // ==================== 实现 ====================
@@ -258,6 +273,10 @@ struct RuntimeDomainImpl {
     tool_dal: Arc<dyn ToolDal>,
     mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
     agent_dal: Arc<dyn AgentDal>,
+    /// CLI 类型外部 Agent Dal（提供 CliPromptBuilder）
+    codex_agent_dal: Arc<CodexAgentDal>,
+    /// A2A 远程类型外部 Agent Dal（提供 RemotePromptBuilder）
+    a2a_agent_dal: Arc<A2aAgentDal>,
     tool_call_logger: Arc<ToolCallLogger>,
 }
 
@@ -268,6 +287,8 @@ impl std::fmt::Debug for RuntimeDomainImpl {
             .field("tool_dal", &"<ToolDal>")
             .field("mcp_tool_dal", &"<McpToolDal>")
             .field("agent_dal", &"<AgentDal>")
+            .field("codex_agent_dal", &"<CodexAgentDal>")
+            .field("a2a_agent_dal", &"<A2aAgentDal>")
             .field("tool_call_logger", &"<ToolCallLogger>")
             .finish()
     }
@@ -280,6 +301,8 @@ impl Clone for RuntimeDomainImpl {
             tool_dal: self.tool_dal.clone(),
             mcp_tool_dal: self.mcp_tool_dal.clone(),
             agent_dal: self.agent_dal.clone(),
+            codex_agent_dal: self.codex_agent_dal.clone(),
+            a2a_agent_dal: self.a2a_agent_dal.clone(),
             tool_call_logger: self.tool_call_logger.clone(),
         }
     }
@@ -287,11 +310,16 @@ impl Clone for RuntimeDomainImpl {
 
 impl RuntimeDomainImpl {
     fn new(brain_dal: Arc<dyn BrainDal>) -> Self {
+        let agent_dal = crate::service::dal::agent::dal();
+        let codex_agent_dal = Arc::new(CodexAgentDal::new(agent_dal.clone()));
+        let a2a_agent_dal = Arc::new(A2aAgentDal::new(agent_dal.clone()));
         Self {
             brain_dal,
             tool_dal: crate::service::dal::tool::dal(),
             mcp_tool_dal: crate::service::dal::mcp_tool::dal(),
-            agent_dal: crate::service::dal::agent::dal(),
+            agent_dal,
+            codex_agent_dal,
+            a2a_agent_dal,
             tool_call_logger: Arc::new(ToolCallLogger::get().clone()),
         }
     }
@@ -306,11 +334,15 @@ impl RuntimeDomainImpl {
         mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
         agent_dal: Arc<dyn AgentDal>,
     ) -> Self {
+        let codex_agent_dal = Arc::new(CodexAgentDal::new(agent_dal.clone()));
+        let a2a_agent_dal = Arc::new(A2aAgentDal::new(agent_dal.clone()));
         Self {
             brain_dal,
             tool_dal,
             mcp_tool_dal,
             agent_dal,
+            codex_agent_dal,
+            a2a_agent_dal,
             tool_call_logger: Arc::new(ToolCallLogger::get().clone()),
         }
     }
@@ -324,11 +356,15 @@ impl RuntimeDomainImpl {
         agent_dal: Arc<dyn AgentDal>,
         tool_call_logger: Arc<ToolCallLogger>,
     ) -> Self {
+        let codex_agent_dal = Arc::new(CodexAgentDal::new(agent_dal.clone()));
+        let a2a_agent_dal = Arc::new(A2aAgentDal::new(agent_dal.clone()));
         Self {
             brain_dal,
             tool_dal,
             mcp_tool_dal,
             agent_dal,
+            codex_agent_dal,
+            a2a_agent_dal,
             tool_call_logger,
         }
     }
@@ -336,6 +372,21 @@ impl RuntimeDomainImpl {
     /// 获取 Brain DAL 引用
     fn brain_dal(&self) -> &dyn BrainDal {
         &*self.brain_dal
+    }
+
+    /// 根据 agent.kind 返回对应的 PromptBuilder
+    ///
+    /// 工厂方法：awakening 组装 prompt 时调用此方法获取 builder。
+    /// Local → 基础 AgentDal 的 DefaultPromptBuilder
+    /// Cli   → CodexAgentDal 的专属 builder
+    /// Remote → A2aAgentDal 的专属 builder
+    fn prompt_builder(&self, agent: &Agent) -> Box<dyn crate::models::prompt_builder::PromptBuilder> {
+        use common::enums::AgentKind;
+        match agent.po.kind {
+            AgentKind::Local => self.agent_dal.prompt_builder(),
+            AgentKind::Cli => self.codex_agent_dal.prompt_builder(),
+            AgentKind::Remote => self.a2a_agent_dal.prompt_builder(),
+        }
     }
 }
 

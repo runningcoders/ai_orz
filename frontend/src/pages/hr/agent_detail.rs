@@ -138,6 +138,24 @@ fn agent_status_label(status: i32) -> String {
     }
 }
 
+fn kind_badge_class(kind: &str) -> &'static str {
+    match kind {
+        "local" => "badge badge-info",
+        "cli" => "badge badge-accent",
+        "remote" => "badge badge-success",
+        _ => "badge badge-ghost",
+    }
+}
+
+fn kind_label(kind: &str) -> String {
+    match kind {
+        "local" => "本地 Agent".to_string(),
+        "cli" => "CLI Agent".to_string(),
+        "remote" => "远程 Agent".to_string(),
+        _ => kind.to_string(),
+    }
+}
+
 const STATUS_OPTIONS: &[(i32, &str)] = &[
     (0, "空闲"),
     (1, "思考中"),
@@ -288,14 +306,22 @@ pub fn HrAgentDetail(id: String) -> Element {
                                     span { class: "detail-value", "{a.id}" }
                                 }
                                 div { class: "detail-item",
+                                    span { class: "detail-label", "类型" }
+                                    span { class: "{kind_badge_class(&a.kind)}",
+                                        "{kind_label(&a.kind)}"
+                                    }
+                                }
+                                div { class: "detail-item",
                                     span { class: "detail-label", "状态" }
                                     span { class: "{binding_status_badge_class(a.status != 0)}",
                                         "{agent_status_label(a.status)}"
                                     }
                                 }
-                                div { class: "detail-item",
-                                    span { class: "detail-label", "组织" }
-                                    span { class: "detail-value", "{a.model_provider_id}" }
+                                if a.kind == "local" {
+                                    div { class: "detail-item",
+                                        span { class: "detail-label", "模型提供商" }
+                                        span { class: "detail-value", "{a.model_provider_id}" }
+                                    }
                                 }
                                 div { class: "detail-item",
                                     span { class: "detail-label", "创建时间" }
@@ -314,6 +340,61 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 }
                             } else {
                                 div { class: "text-secondary text-sm", "暂无核心能力" }
+                            }
+                        }
+
+                        // 外部 Agent 运行时配置
+                        if a.kind != "local" {
+                            if let Some(ext_cfg) = &a.external_config {
+                                div { class: "detail-section",
+                                    h3 { class: "detail-section-title", "运行时配置" }
+                                    if let Some(cli_cfg) = &ext_cfg.cli {
+                                        div { class: "detail-grid",
+                                            div { class: "detail-item",
+                                                span { class: "detail-label", "启动命令" }
+                                                span { class: "detail-value text-mono", "{cli_cfg.command}" }
+                                            }
+                                            if !cli_cfg.args.is_empty() {
+                                                div { class: "detail-item detail-item-wide",
+                                                    span { class: "detail-label", "命令参数" }
+                                                    span { class: "detail-value text-mono",
+                                                        "{cli_cfg.args.join(\" \")}"
+                                                    }
+                                                }
+                                            }
+                                            div { class: "detail-item detail-item-wide",
+                                                span { class: "detail-label", "工作目录" }
+                                                span { class: "detail-value text-mono", "{cli_cfg.work_dir}" }
+                                            }
+                                            div { class: "detail-item",
+                                                span { class: "detail-label", "超时时间" }
+                                                span { class: "detail-value", "{cli_cfg.timeout_secs} 秒" }
+                                            }
+                                            if let Some(template) = &cli_cfg.prompt_template {
+                                                div { class: "detail-item detail-item-wide",
+                                                    span { class: "detail-label", "Prompt 模板" }
+                                                    div { class: "prompt-template-box", "{template}" }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if let Some(remote_cfg) = &ext_cfg.remote {
+                                        div { class: "detail-grid",
+                                            div { class: "detail-item detail-item-wide",
+                                                span { class: "detail-label", "A2A Server" }
+                                                span { class: "detail-value text-mono", "{remote_cfg.endpoint}" }
+                                            }
+                                            div { class: "detail-item",
+                                                span { class: "detail-label", "目标 Agent" }
+                                                span { class: "detail-value text-mono", "{remote_cfg.agent_name}" }
+                                            }
+                                            div { class: "detail-item",
+                                                span { class: "detail-label", "超时时间" }
+                                                span { class: "detail-value", "{remote_cfg.timeout_secs} 秒" }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
 

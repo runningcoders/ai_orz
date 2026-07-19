@@ -1,6 +1,7 @@
 //! Shared enumerations used by both backend and frontend
 
 pub mod agent;
+pub mod agent_kind;
 pub mod artifact;
 pub mod cron_trigger;
 pub mod file;
@@ -17,6 +18,7 @@ pub mod tool;
 pub mod user;
 
 pub use agent::{AgentRuntimeState, AgentStatus, ModelProviderStatus};
+pub use agent_kind::AgentKind;
 pub use artifact::ArtifactSourceType;
 pub use cron_trigger::TriggerType;
 pub use file::FileType;

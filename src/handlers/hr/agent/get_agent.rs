@@ -1,13 +1,14 @@
 //! Handler: GET /api/v1/agents/{id} - Get agent detailed information
 
-use common::enums::AgentRuntimeState;
+use common::enums::{AgentRuntimeState, AgentKind};
 use common::error::Result;
 use common::models::StatsInterval;
+use crate::models::agent::ExternalAgentConfig;
 use crate::pkg::RequestContext;
 use crate::service::dal::agent::AgentFetchOptions;
 use crate::service::domain::{finance::domain as finance_domain, hr::domain};
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::{GetAgentRequest, GetAgentResponse};
+use common::api::{AgentCliConfig, AgentExternalConfigInfo, AgentRemoteConfig, GetAgentRequest, GetAgentResponse};
 
 /// Get detailed information about an AI agent
 #[register_handler_tool(
@@ -45,6 +46,40 @@ pub async fn get_agent(
 
     let capabilities: Vec<String> = agent.po.get_capabilities();
     let roles: Vec<String> = agent.po.get_roles();
+    let kind = agent.po.kind;
+
+    // 构造外部配置信息（仅 cli/remote 类型有值）
+    let external_config = match kind {
+        AgentKind::Local => None,
+        AgentKind::Cli | AgentKind::Remote => {
+            let runtime_config = agent.po.get_runtime_config();
+            match runtime_config.external_config {
+                Some(ExternalAgentConfig::Cli { command, args, work_dir, env: _, timeout_secs, prompt_template }) => {
+                    Some(AgentExternalConfigInfo {
+                        cli: Some(AgentCliConfig {
+                            command,
+                            args,
+                            work_dir,
+                            timeout_secs,
+                            prompt_template,
+                        }),
+                        remote: None,
+                    })
+                }
+                Some(ExternalAgentConfig::Remote { endpoint, agent_name, auth_token: _, timeout_secs }) => {
+                    Some(AgentExternalConfigInfo {
+                        cli: None,
+                        remote: Some(AgentRemoteConfig {
+                            endpoint,
+                            agent_name,
+                            timeout_secs,
+                        }),
+                    })
+                }
+                None => None,
+            }
+        }
+    };
 
     // 从 runtime_info 读取运行时状态
     let (runtime_state, current_message_id) = match &agent.runtime_info {
@@ -78,7 +113,9 @@ pub async fn get_agent(
         } else {
             Some(agent.po.soul.clone())
         },
+        kind: kind.to_string(),
         model_provider_id: agent.po.model_provider_id.clone(),
+        external_config,
         status: agent.po.status as i32,
         created_at: agent.po.created_at,
         updated_at: agent.po.updated_at,

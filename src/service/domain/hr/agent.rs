@@ -61,11 +61,14 @@ impl AgentManage for HrDomainImpl {
     /// 创建 Agent
     ///
     /// 基础操作：将 Agent 持久化到存储
-    /// 强制校验：必须指定 model_provider_id，创建后状态固定为 Interviewing
+    /// 强制校验：
+    /// - Local Agent 必须指定 model_provider_id（外部 Agent 不需要）
+    /// - 创建后状态固定为 Interviewing
     async fn create_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<()> {
-        // 强制校验：必须指定 model_provider_id
-        if agent.po.model_provider_id.is_empty() {
-            bail_err!(InvalidRequest, "创建 Agent 必须指定 model_provider_id");
+        // 强制校验：Local agent 必须指定 model_provider_id
+        // 外部 agent（Cli/Remote）使用外部运行时，不需要本地 model provider
+        if agent.po.kind.is_local() && agent.po.model_provider_id.is_empty() {
+            bail_err!(InvalidRequest, "创建 Local Agent 必须指定 model_provider_id");
         }
 
         // 强制校验：状态必须是 Interviewing

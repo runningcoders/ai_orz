@@ -2,6 +2,7 @@
 //! 按方法粒度拆分，每个方法单独一个文件
 
 pub mod create_agent;
+pub mod create_external_agent;
 pub mod create_memory;
 pub mod delete_agent;
 pub mod delete_memory;
@@ -24,6 +25,7 @@ pub mod update_agent_status;
 pub mod update_memory;
 
 pub use create_agent::create_agent_handler;
+pub use create_external_agent::create_external_agent_handler;
 pub use create_memory::create_memory_handler;
 pub use delete_agent::delete_agent_handler;
 pub use delete_memory::delete_memory_handler;

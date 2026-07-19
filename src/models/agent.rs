@@ -50,6 +50,46 @@ pub struct AgentRuntimeConfig {
     /// 安装时会将技能复制到 Agent 目录，卸载时仅移除 tag 关联（保留副本）。
     #[serde(default)]
     pub installed_skill_packs: Vec<String>,
+
+    /// 外部 Agent 执行配置（仅 Cli/Remote kind 时使用）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_config: Option<ExternalAgentConfig>,
+}
+
+/// 外部 Agent 执行配置
+///
+/// 不同类型的外部 Agent（CLI 子进程、A2A 远程等）各自的执行参数。
+/// 通过 `#[serde(tag = "executor")]` 做内部标签，便于 JSON 序列化区分。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "executor", rename_all = "snake_case")]
+pub enum ExternalAgentConfig {
+    /// CLI 子进程执行器配置（如 Codex / Claude Code / Aider）
+    Cli {
+        /// 启动命令（如 "codex"、"claude"、"aider"）
+        command: String,
+        /// 命令参数
+        args: Vec<String>,
+        /// 工作目录（绝对路径）
+        work_dir: String,
+        /// 环境变量（key, value 列表）
+        env: Vec<(String, String)>,
+        /// 超时时间（秒）
+        timeout_secs: u64,
+        /// 自定义 prompt 模板（None 用默认模板）
+        /// 使用 {prompt} 占位符标记 prompt 位置
+        prompt_template: Option<String>,
+    },
+    /// A2A 远程执行器配置
+    Remote {
+        /// A2A Server 的 base URL
+        endpoint: String,
+        /// 目标 Agent 名称（agents/sendTask 的 agent_id 参数）
+        agent_name: String,
+        /// 认证 token（Bearer）
+        auth_token: Option<String>,
+        /// 超时时间（秒）
+        timeout_secs: u64,
+    },
 }
 
 impl Default for AgentRuntimeConfig {
@@ -62,6 +102,7 @@ impl Default for AgentRuntimeConfig {
             require_user_confirm: true,
             installed_tags: Vec::new(),
             installed_skill_packs: Vec::new(),
+            external_config: None,
         }
     }
 }
@@ -233,12 +274,12 @@ impl Agent {
 
     /// 获取 Brain 内部的 Cortex 引用
     pub fn cortex(&self) -> Option<&Cortex> {
-        self.brain.as_ref().map(|b| b.cortex())
+        self.brain.as_ref().and_then(|b| b.cortex())
     }
 
     /// 获取 Brain 内部的 CortexTrait 引用
     pub fn cortex_trait(&self) -> Option<&(dyn CortexTrait + Send + Sync)> {
-        self.brain.as_ref().map(|b| b.cortex_trait())
+        self.brain.as_ref().and_then(|b| b.cortex_trait())
     }
 
     /// 生成 Agent 的 System Prompt 头部
@@ -279,6 +320,8 @@ pub struct AgentPo {
     pub runtime_config: String,
     /// 生命周期状态
     pub status: AgentStatus,
+    /// Agent 类型（Local/Cli/Remote）
+    pub kind: common::enums::AgentKind,
     /// 创建者
     pub created_by: String,
     /// 修改者
@@ -325,6 +368,7 @@ impl AgentPo {
             model_provider_id: model_provider_id,
             runtime_config: runtime_config.to_json(),
             status: AgentStatus::Interviewing,
+            kind: common::enums::AgentKind::Local,
             created_by: creator.clone(),
             modified_by: creator,
             created_at: current_timestamp(),
@@ -392,6 +436,101 @@ impl AgentPo {
         config.uninstall_skill_pack_tag(tag);
         self.set_runtime_config(&config);
     }
+
+    /// 是否为本地 Agent
+    pub fn is_local(&self) -> bool {
+        self.kind.is_local()
+    }
+
+    /// 是否为 CLI Agent
+    pub fn is_cli(&self) -> bool {
+        self.kind.is_cli()
+    }
+
+    /// 是否为远程 Agent
+    pub fn is_remote(&self) -> bool {
+        self.kind.is_remote()
+    }
+
+    /// 是否为外部 Agent（CLI 或远程）
+    pub fn is_external(&self) -> bool {
+        self.kind.is_external()
+    }
+
+    /// 获取外部 Agent 配置（如果是外部 Agent 且配置存在）
+    pub fn get_external_config(&self) -> Option<ExternalAgentConfig> {
+        if !self.kind.is_external() {
+            return None;
+        }
+        self.get_runtime_config().external_config
+    }
+
+    /// 设置外部 Agent 配置
+    pub fn set_external_config(&mut self, config: ExternalAgentConfig) {
+        let mut runtime_config = self.get_runtime_config();
+        runtime_config.external_config = Some(config);
+        self.set_runtime_config(&runtime_config);
+    }
+
+    /// 获取 CLI 配置（仅当 Agent 是 CLI 类型且配置正确时返回拥有所有权的值）
+    pub fn get_cli_config(&self) -> Option<CliAgentConfig> {
+        let config = self.get_runtime_config();
+        match config.external_config? {
+            ExternalAgentConfig::Cli { command, args, work_dir, env, timeout_secs, prompt_template } => {
+                if !self.kind.is_cli() {
+                    return None;
+                }
+                Some(CliAgentConfig {
+                    command,
+                    args,
+                    work_dir,
+                    env,
+                    timeout_secs,
+                    prompt_template,
+                })
+            }
+            _ => None,
+        }
+    }
+
+    /// 获取 A2A 配置（仅当 Agent 是 Remote 类型且配置正确时返回拥有所有权的值）
+    pub fn get_remote_config(&self) -> Option<RemoteAgentConfig> {
+        let config = self.get_runtime_config();
+        match config.external_config? {
+            ExternalAgentConfig::Remote { endpoint, agent_name, auth_token, timeout_secs } => {
+                if !self.kind.is_remote() {
+                    return None;
+                }
+                Some(RemoteAgentConfig {
+                    endpoint,
+                    agent_name,
+                    auth_token,
+                    timeout_secs,
+                })
+            }
+            _ => None,
+        }
+    }
+}
+
+/// CLI Agent 配置（拥有所有权，从 AgentPo 提取）
+#[derive(Debug, Clone)]
+pub struct CliAgentConfig {
+    pub command: String,
+    pub args: Vec<String>,
+    pub work_dir: String,
+    pub env: Vec<(String, String)>,
+    pub timeout_secs: u64,
+    pub prompt_template: Option<String>,
+}
+
+/// 远程 A2A Agent 配置（拥有所有权，从 AgentPo 提取）
+#[derive(Debug, Clone)]
+pub struct RemoteAgentConfig {
+    pub endpoint: String,
+    pub agent_name: String,
+    pub auth_token: Option<String>,
+    pub timeout_secs: u64,
 }
 
 fn generate_id() -> String {

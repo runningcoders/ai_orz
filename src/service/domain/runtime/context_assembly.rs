@@ -3,6 +3,7 @@
 //! 【定位】纯函数模块，负责把各种来源的信息组装成模型能理解的格式。
 //!
 //! 使用 Builder 模式，支持按需扩展不同的 prompt 部分。
+//! DefaultPromptBuilder 实现了 models::prompt_builder::PromptBuilder trait。
 
 use crate::models::agent::Agent;
 use crate::models::memory::Memory;
@@ -11,18 +12,18 @@ use crate::models::skill::SkillPo;
 use crate::models::user::UserPo;
 use common::enums::{ControlMode, ToolStatus};
 
-/// Prompt 构建器
+/// 默认 Prompt 构建器（Local Agent 使用）
 ///
 /// 链式调用，按需组装不同部分：
 /// ```rust, ignore
-/// let prompt = PromptBuilder::new()
+/// let prompt = DefaultPromptBuilder::new()
 ///     .agent_system(&agent)
 ///     .history(&memories)
 ///     .current_message(&message)
 ///     .build();
 /// ```
 #[derive(Debug, Clone, Default)]
-pub struct PromptBuilder {
+pub struct DefaultPromptBuilder {
     /// 本次思考的 Trace ID（模型输出时可引用此 ID）
     current_trace_id: Option<String>,
     /// 关联的 Trace ID 列表（多个 trace 的总结）
@@ -43,47 +44,37 @@ pub struct PromptBuilder {
     tool_failures: Vec<(String, u64)>,
 }
 
-impl PromptBuilder {
+impl DefaultPromptBuilder {
     /// 创建空的 Builder
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// 设置本次思考的 Trace ID
-    ///
-    /// 模型可以在输出中引用此 ID，用于追溯完整思考闭环
+    /// 设置本次思考的 Trace ID（链式）
     pub fn current_trace_id(mut self, trace_id: &str) -> Self {
         self.current_trace_id = Some(trace_id.to_string());
         self
     }
 
-    /// 添加关联 Trace ID
-    ///
-    /// 用于关联本次对话涉及的多个 trace，Agent 在输出总结时引用这些 ID
+    /// 添加关联 Trace ID（链式）
     pub fn add_trace_id(mut self, trace_id: &str) -> Self {
         self.trace_ids.push(trace_id.to_string());
         self
     }
 
-    /// 批量添加关联 Trace ID
+    /// 批量添加关联 Trace ID（链式）
     pub fn trace_ids(mut self, trace_ids: &[String]) -> Self {
         self.trace_ids.extend_from_slice(trace_ids);
         self
     }
 
-    /// 添加 Agent 人设
-    ///
-    /// 调用 Agent::to_system_prompt() 生成标准格式的 System Prompt
-    /// Agent 相关的所有 prompt 格式化逻辑都内聚在 AgentPo 内部
+    /// 添加 Agent 人设（链式）
     pub fn agent_system(mut self, agent: &Agent) -> Self {
         self.system_prompt = Some(agent.to_system_prompt());
         self
     }
 
-    /// 添加历史对话记忆
-    ///
-    /// 调用 Memory::to_prompt_summary() 提取记忆摘要
-    /// 所有记忆格式化逻辑都内聚在 MemoryPo 内部
+    /// 添加历史对话记忆（链式）
     pub fn history(mut self, memories: &[Memory]) -> Self {
         for memory in memories {
             if let Some(summary) = memory.to_prompt_summary() {
@@ -93,10 +84,7 @@ impl PromptBuilder {
         self
     }
 
-    /// 添加当前用户消息
-    ///
-    /// 调用 Message::to_prompt() 生成标准格式的消息内容
-    /// 所有消息格式化逻辑都内聚在 MessagePo 内部
+    /// 添加当前用户消息（链式）
     pub fn current_message(mut self, message: &Message) -> Self {
         let label = match message.po.message_type {
             common::enums::MessageType::ToolCallResult => "【工具执行结果】",
@@ -110,15 +98,13 @@ impl PromptBuilder {
         self
     }
 
-    /// 便捷方法：直接传入消息内容
-    ///
-    /// 用于测试或简单场景，不需要完整 Message 结构
+    /// 便捷方法：直接传入消息内容（链式）
     pub fn current_message_content(mut self, content: &str) -> Self {
         self.current_message = Some(format!("【当前消息】\n【消息内容】\n{}", content));
         self
     }
 
-    /// 添加技能说明（原始字符串，自动补 "- " 前缀）
+    /// 添加技能说明（原始字符串，自动补 "- " 前缀）（链式）
     pub fn skills(mut self, skills: &[String]) -> Self {
         for s in skills {
             self.skills.push(format!("- {}", s));
@@ -126,10 +112,7 @@ impl PromptBuilder {
         self
     }
 
-    /// 添加 Agent 可用技能
-    ///
-    /// 调用 SkillPo::to_prompt_summary() 生成标准格式的技能摘要
-    /// 所有技能格式化逻辑都内聚在 SkillPo 内部
+    /// 添加 Agent 可用技能（链式）
     pub fn agent_skills(mut self, skills: &[SkillPo]) -> Self {
         for skill in skills {
             self.skills.push(skill.to_prompt_summary());
@@ -137,26 +120,19 @@ impl PromptBuilder {
         self
     }
 
-    /// （预留）添加工具说明
+    /// （预留）添加工具说明（链式）
     pub fn tools(mut self, tools: &[String]) -> Self {
         self.tools.extend(tools.iter().cloned());
         self
     }
 
-    /// 添加工具失败统计，用于提示 Agent 谨慎调用
-    ///
-    /// 当某个工具失败次数较多时，会在 Prompt 中添加警告，
-    /// 提醒 Agent 谨慎使用该工具或考虑替代方案。
+    /// 添加工具失败统计（链式）
     pub fn tool_failures(mut self, failures: &[(String, u64)]) -> Self {
         self.tool_failures.extend_from_slice(failures);
         self
     }
 
-    /// 添加 Agent 当前绑定的工具说明。
-    ///
-    /// 工具自身负责格式化 Prompt 内容；Builder 只做组合。
-    /// 注意：`ToolPo::to_tool_prompt()` 不输出协议 config，避免 MCP server
-    /// command/env/url/headers 等敏感配置进入模型上下文。
+    /// 添加 Agent 当前绑定的工具说明（链式）
     pub fn agent_tools(mut self, agent: &Agent) -> Self {
         self.tools.extend(
             agent
@@ -171,28 +147,20 @@ impl PromptBuilder {
         self
     }
 
-    /// 添加用户画像信息
-    ///
-    /// 【使用场景】仅客服类 Agent 需要使用，包含：
-    /// - 用户基础信息
-    /// - 用户喜好/偏好（动态补充）
-    /// - 历史服务记录摘要（动态补充）
-    pub fn user_profile(mut self, user_profile: &str) -> Self {
+    /// 添加用户画像信息（字符串版）（链式）
+    pub fn user_profile_str(mut self, user_profile: &str) -> Self {
         self.user_profile = Some(user_profile.to_string());
         self
     }
 
-    /// 便捷方法：从 UserPo 生成用户基础信息并添加到 Prompt
-    ///
-    /// 调用 UserPo::to_basic_info_prompt() 生成标准格式
-    /// 如果需要额外补充偏好/历史记录，可以继续调用 user_profile() 追加
+    /// 添加用户画像信息（UserPo 版）（链式）
     pub fn user_basic_info(mut self, user: &UserPo) -> Self {
         self.user_profile = Some(user.to_basic_info_prompt());
         self
     }
 
     /// 构建最终的 Prompt 字符串
-    pub fn build(self) -> String {
+    pub fn build(&self) -> String {
         let mut result = String::new();
 
         // 0. 本次思考的 Trace ID（放在最最前面，模型能看到并可引用）
@@ -273,6 +241,76 @@ impl PromptBuilder {
     }
 }
 
+/// 实现 PromptBuilder trait
+impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
+    fn current_trace_id(&mut self, trace_id: &str) {
+        self.current_trace_id = Some(trace_id.to_string());
+    }
+
+    fn trace_ids(&mut self, trace_ids: &[String]) {
+        self.trace_ids.extend_from_slice(trace_ids);
+    }
+
+    fn system_prompt(&mut self, agent: &Agent) {
+        self.system_prompt = Some(agent.to_system_prompt());
+    }
+
+    fn history(&mut self, memories: &[Memory]) {
+        for memory in memories {
+            if let Some(summary) = memory.to_prompt_summary() {
+                self.history.push(summary);
+            }
+        }
+    }
+
+    fn current_message(&mut self, message: &Message) {
+        let label = match message.po.message_type {
+            common::enums::MessageType::ToolCallResult => "【工具执行结果】",
+            common::enums::MessageType::ToolCallRequest => "【工具调用请求】",
+            common::enums::MessageType::ConfirmRequest => "【确认请求】",
+            common::enums::MessageType::ConfirmResponse => "【确认回复】",
+            common::enums::MessageType::TaskAssignment => "【任务分配通知】",
+            _ => "【当前消息】",
+        };
+        self.current_message = Some(format!("{}\n{}", label, message.to_prompt()));
+    }
+
+    fn agent_skills(&mut self, skills: &[SkillPo]) {
+        for skill in skills {
+            self.skills.push(skill.to_prompt_summary());
+        }
+    }
+
+    fn bound_tools(&mut self, agent: &Agent) {
+        self.tools.extend(
+            agent
+                .tools()
+                .iter()
+                .filter(|tool| {
+                    matches!(tool.po.control_mode, ControlMode::Manual)
+                        && matches!(tool.po.status, ToolStatus::Enabled)
+                })
+                .map(|tool| tool.po.to_tool_prompt()),
+        );
+    }
+
+    fn builtin_tools(&mut self, tool_prompts: &[String]) {
+        self.tools.extend(tool_prompts.iter().cloned());
+    }
+
+    fn tool_failures(&mut self, failures: &[(String, u64)]) {
+        self.tool_failures.extend_from_slice(failures);
+    }
+
+    fn user_profile(&mut self, user: &UserPo) {
+        self.user_profile = Some(user.to_basic_info_prompt());
+    }
+
+    fn build(&self) -> String {
+        self.build()
+    }
+}
+
 /// 便捷函数：快速构建 Agent 对话 Prompt
 ///
 /// 封装了最常用的组合：Trace ID 列表 + Agent 人设 + Agent 绑定工具 + 历史记忆 + 当前消息
@@ -282,7 +320,7 @@ pub fn build_conversation_prompt(
     recent_memories: &[Memory],
     current_message: &Message,
 ) -> String {
-    PromptBuilder::new()
+    DefaultPromptBuilder::new()
         .trace_ids(trace_ids)
         .agent_system(agent)
         .agent_tools(agent)
@@ -297,13 +335,12 @@ mod tests {
 
     #[test]
     fn test_builder_empty() {
-        let prompt = PromptBuilder::new().build();
+        let prompt = DefaultPromptBuilder::new().build();
         assert!(prompt.is_empty());
     }
 
     #[test]
     fn test_builder_only_system() {
-        // 创建一个最小的 Agent 用于测试
         use crate::models::agent::AgentPo;
 
         let agent_po = AgentPo::new(
@@ -317,7 +354,7 @@ mod tests {
         );
         let agent = Agent::from_po(agent_po);
 
-        let prompt = PromptBuilder::new().agent_system(&agent).build();
+        let prompt = DefaultPromptBuilder::new().agent_system(&agent).build();
 
         assert!(prompt.contains("【Agent ID】"));
         assert!(prompt.contains("【Agent 名称】"));
@@ -389,7 +426,7 @@ mod tests {
         let stale_tool = Tool::from_po_for_management(stale_tool_po);
         let agent = Agent::from_po_with_tools(agent_po, vec![mcp_tool, auto_tool, stale_tool]);
 
-        let prompt = PromptBuilder::new()
+        let prompt = DefaultPromptBuilder::new()
             .agent_system(&agent)
             .agent_tools(&agent)
             .build();
@@ -414,5 +451,119 @@ mod tests {
         assert!(!prompt.contains("internal.example.test"));
         assert!(!prompt.contains("server_id"));
         assert!(!prompt.contains("tool_name"));
+    }
+
+    /// 验证通过 PromptBuilder trait 调用 builtin_tools 能注入内置工具说明
+    #[test]
+    fn trait_builtin_tools_injects_into_prompt() {
+        use crate::models::agent::AgentPo;
+
+        let agent_po = AgentPo::new(
+            "工具助手".to_string(),
+            vec!["助手".to_string()],
+            "可以使用工具".to_string(),
+            vec!["工具调用".to_string()],
+            "按需使用工具。".to_string(),
+            "provider-001".to_string(),
+            "tester".to_string(),
+        );
+        let agent = Agent::from_po(agent_po);
+
+        let mut builder: Box<dyn crate::models::prompt_builder::PromptBuilder> =
+            Box::new(DefaultPromptBuilder::new());
+        builder.system_prompt(&agent);
+        builder.builtin_tools(&["builtin.search_web: 网页搜索".to_string()]);
+
+        let prompt = builder.build();
+        assert!(prompt.contains("【可用 Manual 工具】"));
+        assert!(prompt.contains("builtin.search_web: 网页搜索"));
+    }
+
+    /// 验证通过 trait 调用 bound_tools 只注入 Manual + Enabled 工具
+    #[test]
+    fn trait_bound_tools_filters_manual_enabled() {
+        use crate::models::agent::AgentPo;
+        use crate::models::tool::{Tool, ToolPo};
+        use common::enums::{ControlMode, ToolProtocol, ToolStatus};
+        use serde_json::json;
+
+        let agent_po = AgentPo::new(
+            "工具助手".to_string(),
+            vec!["助手".to_string()],
+            "可以使用工具".to_string(),
+            vec!["工具调用".to_string()],
+            "按需使用工具。".to_string(),
+            "provider-001".to_string(),
+            "tester".to_string(),
+        );
+        let manual_tool = Tool::from_po_for_management(ToolPo::new(
+            "mcp.echo".to_string(),
+            "mcp.echo".to_string(),
+            "Echo tool".to_string(),
+            ToolProtocol::Mcp,
+            json!({}),
+            Some(json!({"type": "object"})),
+            vec!["mcp".to_string()],
+            Some("creator".to_string()),
+        ));
+        let agent = Agent::from_po_with_tools(agent_po, vec![manual_tool]);
+
+        let mut builder: Box<dyn crate::models::prompt_builder::PromptBuilder> =
+            Box::new(DefaultPromptBuilder::new());
+        builder.bound_tools(&agent);
+
+        let prompt = builder.build();
+        assert!(prompt.contains("mcp.echo"));
+        assert!(prompt.contains("Echo tool"));
+    }
+
+    /// 验证 trait 风格的链式调用：依次调用多个方法后 build() 结果包含所有部分
+    #[test]
+    fn trait_chained_calls_build_complete_prompt() {
+        use crate::models::agent::AgentPo;
+        use crate::models::memory::Memory;
+        use crate::models::message::Message;
+
+        let agent_po = AgentPo::new(
+            "测试助手".to_string(),
+            vec!["助手".to_string()],
+            "测试".to_string(),
+            vec!["能力".to_string()],
+            "灵魂".to_string(),
+            "provider-001".to_string(),
+            "tester".to_string(),
+        );
+        let agent = Agent::from_po(agent_po);
+        let memories: Vec<Memory> = vec![];
+        let message = Message::new_with_context(
+            "msg-1".to_string(),
+            None,
+            Some("task-1".to_string()),
+            "user-1".to_string(),
+            "agent-1".to_string(),
+            common::enums::MessageRole::User,
+            common::enums::MessageRole::Agent,
+            common::enums::MessageType::Text,
+            "你好".to_string(),
+            None,
+            crate::models::file::FileMeta::default(),
+            None,
+            None,
+            None,
+            "test".to_string(),
+        );
+
+        let mut builder: Box<dyn crate::models::prompt_builder::PromptBuilder> =
+            Box::new(DefaultPromptBuilder::new());
+        builder.current_trace_id("trace-001");
+        builder.system_prompt(&agent);
+        builder.history(&memories);
+        builder.current_message(&message);
+
+        let prompt = builder.build();
+        assert!(prompt.contains("trace-001"));
+        assert!(prompt.contains("测试助手"));
+        assert!(prompt.contains("你好"));
+        assert!(prompt.contains("请回复："));
     }
 }

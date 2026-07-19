@@ -1,7 +1,8 @@
 //! HR 域 API - Agent 管理、技能管理、工具包/技能包管理
 
 use common::api::{
-    CreateAgentRequest, CreateAgentResponse, CreateSkillRequest, CreateSkillResponse,
+    CreateAgentRequest, CreateAgentResponse, CreateExternalAgentRequest, CreateExternalAgentResponse,
+    CreateSkillRequest, CreateSkillResponse,
     DeleteSkillResponse, GetAgentResponse, GetSkillResponse, ListAgentsResponse,
     ListInstalledSkillPacksResponse, ListInstalledToolPacksResponse, ListSkillsResponse,
     ListToolsResponse, QueryMemoryParams, QueryMemoryResponse, SearchMemoryParams, SearchMemoryResponse,
@@ -28,6 +29,10 @@ pub async fn get_agent(id: &str, stats_options: Option<&super::StatsOptions>) ->
 
 pub async fn create_agent(req: CreateAgentRequest) -> Result<CreateAgentResponse, String> {
     api_post("/api/v1/hr/agents", &req).await
+}
+
+pub async fn create_external_agent(req: CreateExternalAgentRequest) -> Result<CreateExternalAgentResponse, String> {
+    api_post("/api/v1/hr/agents/external", &req).await
 }
 
 #[allow(dead_code)]

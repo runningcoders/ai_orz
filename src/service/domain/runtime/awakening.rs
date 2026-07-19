@@ -12,13 +12,48 @@ use crate::service::domain::runtime::{
     AwakeningResult, RuntimeAwakening, RuntimeDomain, RuntimeDomainImpl,
 };
 
-use super::context_assembly::PromptBuilder;
-
 use crate::enrich_ctx;
 use crate::record_event;
 
 #[async_trait::async_trait]
 impl RuntimeAwakening for RuntimeDomainImpl {
+    /// 装配 Agent 的 Brain
+    ///
+    /// 根据 agent.kind 构造对应的 Brain：
+    /// - Local: 加载 builtin tools，通过 BrainDal.wake_brain 构造带 Cortex 的 Brain
+    /// - External（Cli/Remote）: 构造不带 Cortex 的虚拟 Brain
+    ///
+    /// 幂等：如果 agent.brain 已存在则直接返回。
+    async fn wake_agent_brain(
+        &self,
+        ctx: RequestContext,
+        agent: &mut Agent,
+    ) -> Result<()> {
+        // 幂等：brain 已装配则跳过
+        if agent.brain.is_some() {
+            return Ok(());
+        }
+
+        let ctx = enrich_ctx!(&ctx, &*agent);
+
+        // Local agent 需要加载 tools 用于 Cortex 创建（rig 工具包装）
+        // External agent 不需要 tools（BrainDal 内部走 new_external 分支）
+        let tools = if agent.po.kind.is_local() {
+            self.load_builtin_tools(ctx.clone(), agent).await?
+        } else {
+            Vec::new()
+        };
+
+        // 通过 BrainDal 构造 Brain（内部按 kind 分发）
+        // memories 传空：awaken 时会独立加载 recent_memories 用于 prompt
+        let brain = self.brain_dal()
+            .wake_brain(ctx, &agent.po, Vec::new(), tools)
+            .await?;
+
+        agent.set_brain(brain);
+        Ok(())
+    }
+
     async fn awaken(
         &self,
         ctx: RequestContext,
@@ -68,16 +103,16 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         // Step 3.6: 加载 Agent 技能副本用于 Prompt 注入
         let skills = self.load_agent_skills(ctx.clone(), &agent.po.id).await?;
 
-        // Step 4: 拼装 Prompt（注入 trace_id 到头部，模型可见）
-        let builder = PromptBuilder::new()
-            .current_trace_id(&trace_id)
-            .trace_ids(&trace_ids)
-            .agent_system(agent)
-            .agent_tools(agent)
-            .tools(&builtin_tool_prompts)
-            .agent_skills(&skills)
-            .history(&recent_memories)
-            .current_message(message);
+        // Step 4: 拼装 Prompt（通过工厂方法获取对应 Agent 类型的 builder）
+        let mut builder = self.prompt_builder(agent);
+        builder.current_trace_id(&trace_id);
+        builder.trace_ids(&trace_ids);
+        builder.system_prompt(agent);
+        builder.bound_tools(agent);
+        builder.builtin_tools(&builtin_tool_prompts);
+        builder.agent_skills(&skills);
+        builder.history(&recent_memories);
+        builder.current_message(message);
 
         // 【角色分工】只有客服类 Agent 才需要拼接用户喜好等信息
         // TODO: 后续从上层 Domain 传入用户画像信息
@@ -86,7 +121,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             || agent_roles.contains(&"客服".to_string())
         {
             // 预留：实际使用时从上层传入用户画像
-            // builder = builder.user_profile(user_profile_str);
+            // builder.user_profile(user_profile_str);
         }
 
         let prompt = builder.build();
@@ -483,10 +518,10 @@ mod tests {
 
     #[async_trait]
     impl BrainDal for CapturingBrainDal {
-        fn wake_brain(
+        async fn wake_brain(
             &self,
             _ctx: RequestContext,
-            _provider: &ModelProvider,
+            _agent: &AgentPo,
             _memories: Vec<crate::models::memory::Memory>,
             _tools: Vec<crate::models::tool::Tool>,
         ) -> common::error::Result<Brain> {
@@ -592,7 +627,14 @@ mod tests {
             "test-user".to_string(),
         );
         let cortex = Cortex::new(model_provider, Box::new(MockCortex));
-        agent.brain = Some(Brain::new(cortex, vec![]));
+        let runtime_config = crate::models::agent::AgentRuntimeConfig::default();
+        agent.brain = Some(Brain::new_local(
+            agent_id.to_string(),
+            "Test Agent".to_string(),
+            runtime_config,
+            cortex,
+            vec![],
+        ));
         agent
     }
 

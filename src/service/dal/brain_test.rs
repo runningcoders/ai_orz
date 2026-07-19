@@ -1,11 +1,11 @@
 //! Brain DAL 单元测试
 //! 测试 Brain DAL 的 wake_brain 和 test_connection 功能
 
-use crate::models::{brain::*, memory::*, model_provider::*, tool::Tool};
+use crate::models::{agent::AgentPo, brain::*, memory::*, model_provider::*, tool::Tool};
 use crate::pkg::request_context::RequestContext;
 use crate::service::dal::brain::BrainDal;
 use crate::service::dao::cortex;
-use common::enums::{ModelCapability, ProviderType};
+use common::enums::{AgentKind, ModelCapability, ProviderType};
 use sqlx::SqlitePool;
 use std::sync::Arc;
 
@@ -13,10 +13,13 @@ use std::sync::Arc;
 async fn init_test_env(pool: SqlitePool) -> (Arc<dyn BrainDal + Send + Sync>, RequestContext) {
     cortex::init();
     crate::service::dao::tool_call::init();
+    crate::service::dao::model_provider::init();
     crate::service::dal::brain::init();
     let cortex_dao = cortex::dao();
     let tool_call_dao = crate::service::dao::tool_call::dao();
-    let brain_dal = crate::service::dal::brain::new(cortex_dao, tool_call_dao);
+    let model_provider_dao = crate::service::dao::model_provider::dao();
+    let http_client = reqwest::Client::new();
+    let brain_dal = crate::service::dal::brain::new(cortex_dao, tool_call_dao, model_provider_dao, http_client);
     let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
     (brain_dal, ctx)
 }
@@ -36,15 +39,36 @@ fn create_test_provider() -> ModelProvider {
     ModelProvider::from_po(provider_po)
 }
 
-/// 测试 Brain DAL 创建 wake_brain 功能
+/// 创建测试 Local AgentPo
+fn create_test_local_agent(provider_id: &str) -> AgentPo {
+    let mut po = AgentPo::new(
+        "Test Agent".to_string(),
+        vec!["assistant".to_string()],
+        "Test description".to_string(),
+        vec!["chat".to_string()],
+        "Test soul".to_string(),
+        provider_id.to_string(),
+        "test-user".to_string(),
+    );
+    po.id = "test-agent".to_string();
+    po.kind = AgentKind::Local;
+    po
+}
+
+/// 测试 Brain DAL 创建 wake_brain 功能（Local agent）
 #[sqlx::test]
-async fn test_wake_brain(pool: SqlitePool) {
+async fn test_wake_brain_local(pool: SqlitePool) {
     let (brain_dal, ctx) = init_test_env(pool).await;
 
-    // ========== 测试: wake_brain ==========
+    // 先插入一个 ModelProvider
     let provider = create_test_provider();
+    crate::service::dao::model_provider::dao()
+        .insert(ctx.clone(), &provider.po)
+        .await
+        .unwrap();
 
-    // 创建 Memory 列表 - 使用新的 Memory 结构
+    let agent = create_test_local_agent(&provider.po.id);
+
     let now = chrono::Utc::now().timestamp();
     let short_term_po = ShortTermMemoryIndexPo {
         id: "test-memory-1".to_string(),
@@ -62,10 +86,14 @@ async fn test_wake_brain(pool: SqlitePool) {
     let memories = vec![memory];
 
     let tools: Vec<Tool> = vec![];
-    let result = brain_dal.wake_brain(ctx.clone(), &provider, memories, tools);
+    let result = brain_dal.wake_brain(ctx.clone(), &agent, memories, tools).await;
 
-    // 应该能成功创建，API key 不正确只会在实际调用时失败，创建本身不会失败
     assert!(result.is_ok());
+    let brain = result.unwrap();
+    assert!(brain.is_local());
+    assert!(brain.cortex().is_some());
+    assert_eq!(brain.agent_id, "test-agent");
+    assert_eq!(brain.agent_name, "Test Agent");
 }
 
 /// 测试 Brain DAL test_connection 功能
@@ -73,12 +101,9 @@ async fn test_wake_brain(pool: SqlitePool) {
 async fn test_test_connection(pool: SqlitePool) {
     let (brain_dal, ctx) = init_test_env(pool).await;
 
-    // ========== 测试: test_connection ==========
     let provider = create_test_provider();
 
-    // 即使 API key 不正确，test_connection 也应该完成路径调用，返回 Err，这是预期的
     let result = brain_dal.test_connection(ctx, &provider, "Hello!").await;
 
-    // 创建 Cortex 成功（我们只验证路径），调用会失败因为 API key 不对，这是预期的
     assert!(result.is_err());
 }

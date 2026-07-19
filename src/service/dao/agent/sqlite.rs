@@ -7,6 +7,7 @@ use crate::service::dao::agent::{AgentDao, AgentQuery, AgentSearch};
 use crate::pkg::storage::escape_fts5_keyword;
 use chrono::Utc;
 use common::enums::AgentStatus;
+use common::enums::AgentKind;
 use sqlx::FromRow;
 use std::sync::{Arc, OnceLock};
 
@@ -24,6 +25,7 @@ struct AgentSearchRow {
     runtime_config: String,
     model_provider_id: String,
     status: AgentStatus,
+    kind: common::enums::AgentKind,
     created_by: String,
     modified_by: String,
     created_at: i64,
@@ -63,8 +65,9 @@ impl AgentDaoSqliteImpl {
 impl AgentDao for AgentDaoSqliteImpl {
     async fn insert(&self, _ctx: RequestContext, agent: &AgentPo) -> Result<()> {
         let status = agent.status as i32;
+        let kind = agent.kind as i32;
         sqlx::query!(
-            "INSERT INTO agents (id, name, role, description, soul, capabilities, model_provider_id, runtime_config, status, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO agents (id, name, role, description, soul, capabilities, model_provider_id, runtime_config, status, kind, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             agent.id,
             agent.name,
             agent.role,
@@ -74,6 +77,7 @@ impl AgentDao for AgentDaoSqliteImpl {
             agent.model_provider_id,
             agent.runtime_config,
             status,
+            kind,
             agent.created_by,
             agent.modified_by,
             agent.created_at,
@@ -94,7 +98,8 @@ impl AgentDao for AgentDaoSqliteImpl {
             AgentPo,
             r#"
 SELECT id, name, role, description, soul, capabilities, runtime_config,
-       model_provider_id, status as 'status: AgentStatus', created_by, modified_by, created_at, updated_at
+       model_provider_id, status as 'status: AgentStatus', kind as 'kind: AgentKind',
+       created_by, modified_by, created_at, updated_at
 FROM agents WHERE id = ? AND status <> 0
             "#,
             id
@@ -111,7 +116,7 @@ FROM agents WHERE id = ? AND status <> 0
         query: AgentQuery,
     ) -> Result<Vec<AgentPo>> {
         let mut builder = sqlx::QueryBuilder::new(
-            r#"SELECT id, name, role, description, soul, capabilities, runtime_config, model_provider_id, status, created_by, modified_by, created_at, updated_at FROM agents WHERE 1=1"#,
+            r#"SELECT id, name, role, description, soul, capabilities, runtime_config, model_provider_id, status, kind, created_by, modified_by, created_at, updated_at FROM agents WHERE 1=1"#,
         );
 
         // ✅ 按 ID 批量查询（向量搜索的核心过滤）
@@ -208,7 +213,7 @@ FROM agents WHERE id = ? AND status <> 0
         // agents 表的 status 字段不是 SQL 关键字，不需要双引号转义
         let mut builder = QueryBuilder::new(
             r#"SELECT m.id, m.name, m.role, m.description, m.soul, m.capabilities, m.runtime_config,
-                      m.model_provider_id, m.status, m.created_by, m.modified_by, m.created_at, m.updated_at,
+                      m.model_provider_id, m.status, m.kind, m.created_by, m.modified_by, m.created_at, m.updated_at,
                       agents_fts.rank as fts_rank
                FROM agents_fts
                JOIN agents m ON agents_fts.rowid = m.rowid
@@ -284,6 +289,7 @@ FROM agents WHERE id = ? AND status <> 0
                     runtime_config: row.runtime_config,
                     model_provider_id: row.model_provider_id,
                     status: row.status,
+                    kind: row.kind,
                     created_by: row.created_by,
                     modified_by: row.modified_by,
                     created_at: row.created_at,
@@ -311,12 +317,13 @@ FROM agents WHERE id = ? AND status <> 0
     async fn update(&self, _ctx: RequestContext, agent: &AgentPo) -> Result<()> {
         let current_timestamp = Utc::now().timestamp();
         let status = agent.status as i32;
+        let kind = agent.kind as i32;
         let uid = _ctx.uid();
         sqlx::query!(
             r#"
 UPDATE agents
 SET name = ?, role = ?, description = ?, soul = ?, capabilities = ?, runtime_config = ?,
-    model_provider_id = ?, status = ?, created_by = ?, modified_by = ?, created_at = ?, updated_at = ?
+    model_provider_id = ?, status = ?, kind = ?, created_by = ?, modified_by = ?, created_at = ?, updated_at = ?
 WHERE id = ?
             "#,
             agent.name,
@@ -327,6 +334,7 @@ WHERE id = ?
             agent.runtime_config,
             agent.model_provider_id,
             status,
+            kind,
             agent.created_by,
             uid,
             agent.created_at,

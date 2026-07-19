@@ -4,7 +4,7 @@
 mod tests {
         use common::error::Error;
     use common::models::{AgentStats, ModelCallStats, StatsFetchOptions, ToolStats};
-    use crate::models::agent::Agent;
+    use crate::models::agent::{Agent, AgentPo};
     use crate::models::brain::Brain;
     use crate::models::memory::Memory;
     use crate::models::model_provider::ModelProvider;
@@ -31,10 +31,10 @@ mod tests {
 
     #[async_trait]
     impl BrainDal for StubBrainDal {
-        fn wake_brain(
+        async fn wake_brain(
             &self,
             _ctx: RequestContext,
-            _provider: &ModelProvider,
+            _agent: &AgentPo,
             _memories: Vec<Memory>,
             _tools: Vec<Tool>,
         ) -> Result<Brain> {

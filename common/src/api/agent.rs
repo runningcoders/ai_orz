@@ -47,7 +47,9 @@ pub struct AgentListItem {
     pub roles: Vec<String>,
     /// Agent 描述
     pub description: Option<String>,
-    /// 关联的模型提供商 ID
+    /// Agent 类型：local / cli / remote
+    pub kind: String,
+    /// 关联的模型提供商 ID（仅 local 类型有值）
     pub model_provider_id: String,
     /// 生命周期状态
     pub status: i32,
@@ -80,6 +82,45 @@ pub struct GetAgentRequest {
     pub stats_interval: Option<String>,
 }
 
+/// 外部 Agent 配置信息（详情页展示用）
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AgentExternalConfigInfo {
+    /// CLI 配置（kind=cli 时有值）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cli: Option<AgentCliConfig>,
+    /// Remote 配置（kind=remote 时有值）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remote: Option<AgentRemoteConfig>,
+}
+
+/// CLI 外部 Agent 配置
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AgentCliConfig {
+    /// 启动命令
+    pub command: String,
+    /// 命令参数
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// 工作目录
+    pub work_dir: String,
+    /// 超时时间（秒）
+    pub timeout_secs: u64,
+    /// 自定义 prompt 模板
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_template: Option<String>,
+}
+
+/// Remote 外部 Agent 配置
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AgentRemoteConfig {
+    /// A2A Server 的 base URL
+    pub endpoint: String,
+    /// 目标 Agent 名称
+    pub agent_name: String,
+    /// 超时时间（秒）
+    pub timeout_secs: u64,
+}
+
 /// 获取 Agent 响应
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GetAgentResponse {
@@ -95,8 +136,13 @@ pub struct GetAgentResponse {
     pub capabilities: Option<Vec<String>>,
     /// 灵魂提示词
     pub soul: Option<String>,
-    /// 关联的模型提供商 ID
+    /// Agent 类型：local / cli / remote
+    pub kind: String,
+    /// 关联的模型提供商 ID（仅 local 类型有值）
     pub model_provider_id: String,
+    /// 外部 Agent 配置（仅 cli/remote 类型有值）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_config: Option<AgentExternalConfigInfo>,
     /// 生命周期状态
     pub status: i32,
     /// 创建时间戳
@@ -172,7 +218,9 @@ pub struct UpdateAgentResponse {
     pub capabilities: Option<Vec<String>>,
     /// 灵魂提示词
     pub soul: Option<String>,
-    /// 关联的模型提供商 ID
+    /// Agent 类型：local / cli / remote
+    pub kind: String,
+    /// 关联的模型提供商 ID（仅 local 类型有值）
     pub model_provider_id: String,
     /// 更新时间戳
     pub updated_at: i64,

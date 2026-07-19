@@ -225,6 +225,10 @@ fn hr_routes() -> Router {
         .route("/agents", post(handlers::hr::agent::create_agent_handler))
         .route("/agents", get(handlers::hr::agent::list_agents_handler))
         .route("/agents/search", get(handlers::hr::agent::search_agents_handler))
+        .route(
+            "/agents/external",
+            post(handlers::hr::agent::create_external_agent_handler),
+        )
         .route("/agents/{id}", get(handlers::hr::agent::get_agent_handler))
         .route(
             "/agents/{id}",

@@ -185,7 +185,7 @@ impl MessageHandlerImpl {
             stats_task_id: message.po.task_id.clone(),
             ..Default::default()
         };
-        let agent = self
+        let mut agent = self
             .hr_domain
             .agent_manage()
             .get_agent(ctx.clone(), agent_id, fetch_options)
@@ -247,17 +247,18 @@ impl MessageHandlerImpl {
         }
 
         // 确保 Agent 有 Brain（已唤醒）
+        // 如果 brain 未装配，通过 RuntimeDomain 自动装配
         if agent.brain.is_none() {
-            log_error!(
+            log_info!(
                 &ctx,
                 "handle_agent_message",
-                "Agent {} has no brain, please call wake_brain() first",
+                "Agent {} brain not initialized, auto waking brain",
                 agent_id
             );
-            return Err(Error::internal(format!(
-                "Agent {} 大脑未唤醒，请先调用 wake_brain()",
-                agent_id
-            )));
+            self.runtime_domain
+                .awakening()
+                .wake_agent_brain(ctx.clone(), &mut agent)
+                .await?;
         }
 
         // 调用 Runtime Domain 唤醒 Agent

@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, name, role, description, soul, capabilities, runtime_config,\n       model_provider_id, status as 'status: AgentStatus', created_by, modified_by, created_at, updated_at\nFROM agents WHERE id = ? AND status <> 0\n            ",
+  "query": "\nSELECT id, name, role, description, soul, capabilities, runtime_config,\n       model_provider_id, status as 'status: AgentStatus', kind as 'kind: AgentKind',\n       created_by, modified_by, created_at, updated_at\nFROM agents WHERE id = ? AND status <> 0\n            ",
   "describe": {
     "columns": [
       {
@@ -49,23 +49,28 @@
         "type_info": "Integer"
       },
       {
-        "name": "created_by",
+        "name": "kind: AgentKind",
         "ordinal": 9,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "modified_by",
+        "name": "created_by",
         "ordinal": 10,
         "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "modified_by",
         "ordinal": 11,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 12,
         "type_info": "Integer"
       },
       {
         "name": "updated_at",
-        "ordinal": 12,
+        "ordinal": 13,
         "type_info": "Integer"
       }
     ],
@@ -85,8 +90,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "e93afce1a0be967893e7f1010321b0fce648c2e76d00afb816535752198d84d2"
+  "hash": "32e1b90772f6030aed389d5cc0a63fa9c849838c87d62bd6edac7bbcc9a779de"
 }

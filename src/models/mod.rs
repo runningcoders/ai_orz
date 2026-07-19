@@ -12,6 +12,7 @@ pub mod message_channel;
 pub mod model_provider;
 pub mod organization;
 pub mod project;
+pub mod prompt_builder;
 pub mod skill;
 pub mod task;
 pub mod tool;

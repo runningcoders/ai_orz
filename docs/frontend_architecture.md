@@ -1,6 +1,6 @@
 # 前端架构设计
 
-> 最后更新：2026-07-17
+> 最后更新：2026-07-19
 
 ## 概述
 
@@ -74,8 +74,8 @@ frontend/
         │   └── users.rs      # 用户管理
         │
         ├── hr/               # HR 模块
-        │   ├── agents.rs     # Agent 管理列表
-        │   ├── agent_detail.rs  # Agent 详情
+        │   ├── agents.rs     # Agent 管理列表（类型徽章 + 本地/外部 Agent 创建入口）
+        │   ├── agent_detail.rs  # Agent 详情（类型标签 + 外部 Agent 运行时配置展示）
         │   ├── skills.rs     # 技能库管理
         │   ├── memory_search.rs  # 记忆搜索
         │   └── knowledge_graph.rs # 知识图谱
@@ -204,7 +204,7 @@ pub fn client() -> &'static Client {
 |------|---------|
 | `api/auth.rs` | check_initialized、initialize_system、login、logout |
 | `api/organization.rs` | 组织 CRUD、用户管理、组织信息查询 |
-| `api/hr.rs` | Agent CRUD（支持统计参数）、工具包/技能包管理、技能库 |
+| `api/hr.rs` | Agent CRUD（支持统计参数）、外部 Agent 创建（CLI/Remote）、工具包/技能包管理、技能库 |
 | `api/finance.rs` | 模型提供商（支持统计参数）、工具（支持统计参数）、消息渠道 |
 | `api/project.rs` | 项目（支持统计参数）、任务管理（支持统计参数） |
 | `api/message.rs` | 消息发送 |

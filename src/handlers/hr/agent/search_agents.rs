@@ -48,6 +48,7 @@ pub async fn search_agents(
                 } else {
                     Some(agent.po.description.clone())
                 },
+                kind: agent.po.kind.to_string(),
                 model_provider_id: agent.po.model_provider_id.clone(),
                 status: agent.po.status as i32,
                 created_at: agent.po.created_at,

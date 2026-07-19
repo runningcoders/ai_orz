@@ -140,6 +140,14 @@ pub trait AgentDal: Send + Sync {
     /// 清空向量集合后，查询全量 Agent，逐条重新生成 embedding 并 upsert。
     /// 单条失败不影响整体，用 log_warn! 记录。
     async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()>;
+
+    /// 返回该 Dal 对应 Agent 类型的 PromptBuilder
+    ///
+    /// 基础实现返回 DefaultPromptBuilder（Local Agent 使用）。
+    /// 派生 Dal（CodexAgentDal/A2aAgentDal）可重写此方法返回专属 builder。
+    fn prompt_builder(&self) -> Box<dyn crate::models::prompt_builder::PromptBuilder> {
+        Box::new(crate::service::domain::runtime::DefaultPromptBuilder::new())
+    }
 }
 
 /// Agent DAL 实现
@@ -603,19 +611,20 @@ impl AgentDal for AgentDalImpl {
         agent: &mut Agent,
         brain: Brain,
     ) -> Result<()> {
-        // 1. 从 Brain 中获取 Cortex，Cortex 持有 ModelProvider，从中获取 model_provider_id
-        let model_provider_id = brain.cortex().model_provider.po.id.clone();
+        let mut need_update = false;
 
-        // 2. 如果 model_provider_id 发生变化，更新 Agent po 中的 model_provider_id
-        let need_update = agent.po.model_provider_id != model_provider_id;
-
-        if need_update {
-            agent.po.model_provider_id = model_provider_id;
+        if brain.is_local() {
+            if let Some(cortex) = brain.cortex() {
+                let model_provider_id = cortex.model_provider.po.id.clone();
+                if agent.po.model_provider_id != model_provider_id {
+                    agent.po.model_provider_id = model_provider_id;
+                    need_update = true;
+                }
+            }
         }
-        // 3. 直接使用传入的 brain 赋值给 Agent
+
         agent.set_brain(brain);
 
-        // 4. 如果我们更新了 model_provider_id，需要更新数据库
         if need_update {
             let ctx = enrich_ctx!(&ctx, &*agent);
             self.update(ctx, agent).await?;
