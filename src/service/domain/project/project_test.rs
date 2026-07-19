@@ -45,6 +45,7 @@ async fn test_project_create_and_get(pool: SqlitePool) {
             "Test Description".to_string(),
             1,
             vec!["test".to_string()],
+            None,
             root_user_id.clone(),
             "admin".to_string(),
         )
@@ -82,6 +83,7 @@ async fn test_project_list_by_user(pool: SqlitePool) {
                 format!("Description {}", i),
                 1,
                 vec!["test".to_string()],
+                None,
                 root_user_id.clone(),
                 "admin".to_string(),
             )
@@ -111,6 +113,7 @@ async fn test_project_transition_status_updates_entity(pool: SqlitePool) {
             "Status Description".to_string(),
             1,
             vec!["status".to_string()],
+            None,
             root_user_id,
             "admin".to_string(),
         )
@@ -155,6 +158,7 @@ async fn test_project_transition_status_rejects_deleted(pool: SqlitePool) {
             "Status Description".to_string(),
             1,
             vec!["status".to_string()],
+            None,
             root_user_id,
             "admin".to_string(),
         )
@@ -263,6 +267,7 @@ async fn test_project_start_complete_archive(pool: SqlitePool) {
             "Test Description".to_string(),
             1,
             vec!["test".to_string()],
+            None,
             root_user_id,
             "admin".to_string(),
         )
@@ -494,6 +499,7 @@ async fn test_artifact_create_project_artifact_and_get(pool: SqlitePool) {
             "Project for artifact".to_string(),
             1,
             vec!["artifact".to_string()],
+            None,
             "admin".to_string(),
             "admin".to_string(),
         )
@@ -548,6 +554,7 @@ async fn test_artifact_create_task_artifact_and_list(pool: SqlitePool) {
             "Project for task artifact".to_string(),
             1,
             vec!["artifact".to_string()],
+            None,
             "admin".to_string(),
             "admin".to_string(),
         )
@@ -627,6 +634,7 @@ async fn test_artifact_create_attachment_artifact_validates_project_and_task(poo
             "Project for artifact".to_string(),
             1,
             vec!["artifact".to_string()],
+            None,
             root_user_id.clone(),
             "admin".to_string(),
         )
@@ -696,6 +704,7 @@ async fn test_artifact_list_filters_by_project_file_type_source_type_and_limit(p
             "Project for artifact list".to_string(),
             1,
             vec!["artifact".to_string()],
+            None,
             root_user_id,
             "admin".to_string(),
         )
@@ -778,6 +787,7 @@ async fn test_artifact_create_attachment_artifact_rejects_task_project_mismatch(
             "Target".to_string(),
             1,
             vec![],
+            None,
             root_user_id.clone(),
             "admin".to_string(),
         )
@@ -792,6 +802,7 @@ async fn test_artifact_create_attachment_artifact_rejects_task_project_mismatch(
             "Other".to_string(),
             1,
             vec![],
+            None,
             root_user_id.clone(),
             "admin".to_string(),
         )
@@ -848,6 +859,7 @@ async fn test_artifact_delete(pool: SqlitePool) {
             "Project for artifact delete".to_string(),
             1,
             vec!["artifact".to_string()],
+            None,
             "admin".to_string(),
             "admin".to_string(),
         )

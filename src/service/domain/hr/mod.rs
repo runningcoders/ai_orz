@@ -23,9 +23,15 @@ use crate::service::dal::skill as skill_dal;
 use crate::service::dal::skill::SkillDal;
 use crate::service::dal::tool as tool_dal;
 use crate::service::dal::tool::ToolDal;
+use crate::service::dao::agent::AgentQuery;
 use crate::service::dao::skill::{SkillQuery, SkillSearch};
 use common::enums::{AgentStatus, SkillStatus};
 use std::sync::{Arc, OnceLock};
+
+// ==================== 常量 ====================
+
+/// 飞书前台 Agent 的角色标签
+pub const FEISHU_RECEPTION_ROLE: &str = "feishu_reception";
 
 // ==================== 单例 ====================
 
@@ -76,12 +82,41 @@ impl HrDomainImpl {
     }
 }
 
+#[async_trait::async_trait]
 impl HrDomain for HrDomainImpl {
     fn agent_manage(&self) -> &dyn AgentManage {
         self
     }
     fn skill_manage(&self) -> &dyn SkillManage {
         self
+    }
+
+    /// 解析当前可用的前台 Agent（统一路由方法）
+    ///
+    /// 路由优先级：
+    /// 1. 带 `feishu_reception` 角色的 Onboarded Agent
+    /// 2. 任意 Onboarded Agent
+    async fn resolve_agent(&self, ctx: RequestContext) -> Result<Option<Agent>> {
+        // 优先按 feishu_reception 角色查找
+        let query = AgentQuery {
+            roles: Some(vec![FEISHU_RECEPTION_ROLE.to_string()]),
+            status: Some(AgentStatus::Onboarded),
+            limit: Some(1),
+            ..Default::default()
+        };
+        let agents = self.agent_dal.query(ctx.clone(), query).await?;
+        if let Some(agent) = agents.into_iter().next() {
+            return Ok(Some(agent));
+        }
+
+        // fallback：任意 Onboarded Agent
+        let query = AgentQuery {
+            status: Some(AgentStatus::Onboarded),
+            limit: Some(1),
+            ..Default::default()
+        };
+        let agents = self.agent_dal.query(ctx, query).await?;
+        Ok(agents.into_iter().next())
     }
 }
 
@@ -90,11 +125,24 @@ impl HrDomain for HrDomainImpl {
 /// HR Domain 总 trait
 ///
 /// 聚合人力资源领域所有子功能 trait
+#[async_trait::async_trait]
 pub trait HrDomain: Send + Sync {
     /// Agent 管理能力
     fn agent_manage(&self) -> &dyn AgentManage;
     /// Skill 管理能力
     fn skill_manage(&self) -> &dyn SkillManage;
+
+    /// 解析当前可用的前台 Agent（统一路由方法）
+    ///
+    /// **只接受 ctx，不感知 project**：agent 与 project 是两个维度，
+    /// 不在 hr domain 中融合，由上层（handler 层）按需组合。
+    ///
+    /// 路由优先级：
+    /// 1. 带 `feishu_reception` 角色的 Onboarded Agent
+    /// 2. 任意 Onboarded Agent
+    ///
+    /// 返回 None 表示无可用前台 Agent。
+    async fn resolve_agent(&self, ctx: RequestContext) -> Result<Option<Agent>>;
 }
 
 /// Agent 管理 trait

@@ -80,6 +80,11 @@ pub trait ProjectDomain: Send + Sync {
 #[async_trait]
 pub trait ProjectManage: Send + Sync {
     /// 创建新项目
+    ///
+    /// `owner_agent_id` 由上层（handler）按需组合传入：
+    /// - A2A tasks/send 场景：handler 调 resolve_agent(ctx) 拿到 agent 后透传
+    /// - 默认对话框场景：不创建 project
+    /// Project domain 不感知 hr domain，只做纯粹持久化。
     async fn create(
         &self,
         ctx: RequestContext,
@@ -87,6 +92,7 @@ pub trait ProjectManage: Send + Sync {
         description: String,
         priority: i32,
         tags: Vec<String>,
+        owner_agent_id: Option<String>,
         root_user_id: String,
         created_by: String,
     ) -> Result<Project>;

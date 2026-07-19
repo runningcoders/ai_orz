@@ -10,11 +10,29 @@ use std::sync::Arc;
 use tower_http::services::ServeDir;
 
 pub fn create_router(frontend_dist_dir: &str, config: Arc<AppConfig>) -> Router {
+    let config_for_card = config.clone();
     Router::new()
         // Public routes - no JWT authentication required
         .nest("/api/v1", public_routes(config.clone()))
         // Protected routes - require valid JWT token
         .nest("/api/v1", protected_routes(config.clone()))
+        // A2A Protocol routes
+        // Agent Card: 公开发现端点（无需 JWT，只需 RequestContext）
+        .route(
+            "/.well-known/agent.json",
+            get(handlers::a2a::agent_card::get_agent_card).layer(axum::middleware::from_fn(
+                move |req, next| request_context_middleware(config_for_card.clone(), req, next),
+            )),
+        )
+        // JSON-RPC: JWT 保护端点
+        .route(
+            "/a2a",
+            post(handlers::a2a::jsonrpc::handle_jsonrpc)
+                .layer(axum::middleware::from_fn(jwt_auth_middleware))
+                .layer(axum::middleware::from_fn(move |req, next| {
+                    request_context_middleware(config.clone(), req, next)
+                })),
+        )
         .route("/health", get(handlers::health::health))
         .fallback_service(ServeDir::new(frontend_dist_dir))
 }
@@ -225,6 +243,10 @@ fn hr_routes() -> Router {
         .route("/agents", post(handlers::hr::agent::create_agent_handler))
         .route("/agents", get(handlers::hr::agent::list_agents_handler))
         .route("/agents/search", get(handlers::hr::agent::search_agents_handler))
+        .route(
+            "/agents/reception",
+            get(handlers::hr::agent::get_reception_agent_handler),
+        )
         .route(
             "/agents/external",
             post(handlers::hr::agent::create_external_agent_handler),

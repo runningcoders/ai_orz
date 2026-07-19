@@ -94,6 +94,9 @@ mod attachment_test;
 pub mod auth;
 pub mod cron_trigger;
 pub mod external_agent;
+pub mod a2a;
+#[cfg(test)]
+mod a2a_test;
 pub mod mcp_server;
 #[cfg(test)]
 mod mcp_server_test;
@@ -125,6 +128,7 @@ pub use attachment::*;
 pub use auth::*;
 pub use cron_trigger::*;
 pub use external_agent::*;
+pub use a2a::*;
 pub use mcp_server::*;
 pub use mcp_tool::*;
 pub use message::*;

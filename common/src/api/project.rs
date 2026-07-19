@@ -16,6 +16,13 @@ pub struct CreateProjectRequest {
     pub priority: Option<i32>,
     /// 标签列表
     pub tags: Option<Vec<String>>,
+    /// 负责人 Agent ID（可选）
+    ///
+    /// 由上层（handler）按需组合：默认对话框场景不创建 project；
+    /// A2A tasks/send 场景由 handler 调 `resolve_agent(ctx)` 拿到 agent 后透传。
+    /// handler 层纯粹透传，不在此处调 resolve_agent。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_agent_id: Option<String>,
 }
 
 /// 创建 Project 响应

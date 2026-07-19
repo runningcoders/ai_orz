@@ -13,6 +13,7 @@ fn project_requests_and_responses_serialize_contract() {
         description: Some("Build the first project".to_string()),
         priority: Some(3),
         tags: Some(vec!["alpha".to_string(), "backend".to_string()]),
+        owner_agent_id: None,
     };
 
     let json = serde_json::to_string(&create).unwrap();

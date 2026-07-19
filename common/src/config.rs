@@ -52,6 +52,10 @@ pub struct AppConfig {
     /// 飞书配置
     #[serde(default)]
     pub lark: LarkConfig,
+
+    /// A2A Server 配置
+    #[serde(default)]
+    pub a2a_server: A2aServerConfig,
 }
 
 /// JWT 配置
@@ -522,4 +526,44 @@ impl Default for LarkConfig {
             verification_token: None,
         }
     }
+}
+
+/// A2A Server 配置
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct A2aServerConfig {
+    /// 是否启用 A2A Server
+    #[serde(default)]
+    pub enabled: bool,
+    /// 协议版本
+    #[serde(default = "default_a2a_protocol_version")]
+    pub protocol_version: String,
+    /// JSON-RPC 端点路径
+    #[serde(default = "default_a2a_endpoint")]
+    pub endpoint: String,
+    /// Agent Card 路径
+    #[serde(default = "default_a2a_card_path")]
+    pub card_path: String,
+}
+
+impl Default for A2aServerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            protocol_version: default_a2a_protocol_version(),
+            endpoint: default_a2a_endpoint(),
+            card_path: default_a2a_card_path(),
+        }
+    }
+}
+
+fn default_a2a_protocol_version() -> String {
+    "0.3.0".to_string()
+}
+
+fn default_a2a_endpoint() -> String {
+    "/a2a".to_string()
+}
+
+fn default_a2a_card_path() -> String {
+    "/.well-known/agent.json".to_string()
 }

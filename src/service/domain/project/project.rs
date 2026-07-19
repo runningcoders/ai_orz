@@ -18,6 +18,8 @@ use crate::record_event;
 #[async_trait::async_trait]
 impl super::ProjectManage for ProjectDomainImpl {
     /// 创建新项目
+    ///
+    /// `owner_agent_id` 由上层（handler）按需组合传入，Project domain 只做纯粹持久化。
     async fn create(
         &self,
         ctx: RequestContext,
@@ -25,6 +27,7 @@ impl super::ProjectManage for ProjectDomainImpl {
         description: String,
         priority: i32,
         tags: Vec<String>,
+        owner_agent_id: Option<String>,
         root_user_id: String,
         created_by: String,
     ) -> Result<Project> {
@@ -39,7 +42,7 @@ impl super::ProjectManage for ProjectDomainImpl {
             priority,
             tags,
             root_user_id,
-            None, // owner_agent_id
+            owner_agent_id, // 由上层 handler 透传
             None, // start_at
             None, // due_at
             None, // end_at

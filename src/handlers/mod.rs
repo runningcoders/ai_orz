@@ -1,5 +1,6 @@
 //! HTTP Handler 层
 
+pub mod a2a;
 pub mod finance;
 pub mod health;
 pub mod hr;

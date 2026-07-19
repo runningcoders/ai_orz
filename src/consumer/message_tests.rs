@@ -287,6 +287,7 @@ impl RecordingHrDomain {
     }
 }
 
+#[async_trait::async_trait]
 impl HrDomain for RecordingHrDomain {
     fn agent_manage(&self) -> &dyn AgentManage {
         self
@@ -294,6 +295,11 @@ impl HrDomain for RecordingHrDomain {
 
     fn skill_manage(&self) -> &dyn SkillManage {
         self
+    }
+
+    async fn resolve_agent(&self, _ctx: RequestContext) -> Result<Option<Agent>> {
+        // 测试 mock：返回 None，测试不走 resolve_agent 路径
+        Ok(None)
     }
 }
 
@@ -324,6 +330,7 @@ impl crate::service::domain::project::ProjectManage for MockProjectDomain {
         _description: String,
         _priority: i32,
         _tags: Vec<String>,
+        _owner_agent_id: Option<String>,
         _root_user_id: String,
         _created_by: String,
     ) -> Result<crate::models::project::Project> {
@@ -1621,12 +1628,16 @@ mod handle_agent_message_tests {
     /// HrDomain mock：Agent 不存在
     struct NotFoundHrDomain;
 
+    #[async_trait::async_trait]
     impl HrDomain for NotFoundHrDomain {
         fn agent_manage(&self) -> &dyn AgentManage {
             self
         }
         fn skill_manage(&self) -> &dyn SkillManage {
             self
+        }
+        async fn resolve_agent(&self, _ctx: RequestContext) -> Result<Option<Agent>> {
+            Ok(None)
         }
     }
 
@@ -1830,12 +1841,16 @@ mod handle_agent_message_tests {
     /// HrDomain mock：Agent 存在但没有 Brain
     struct NoBrainHrDomain;
 
+    #[async_trait::async_trait]
     impl HrDomain for NoBrainHrDomain {
         fn agent_manage(&self) -> &dyn AgentManage {
             self
         }
         fn skill_manage(&self) -> &dyn SkillManage {
             self
+        }
+        async fn resolve_agent(&self, _ctx: RequestContext) -> Result<Option<Agent>> {
+            Ok(None)
         }
     }
 

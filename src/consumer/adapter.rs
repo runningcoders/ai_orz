@@ -4,30 +4,25 @@
 //! 统一管理所有外部渠道的入站消息监听。
 //!
 //! 本模块实现 `MessageAdapterCallback` trait，负责：
-//! 1. Agent 路由（渠道未绑定 agent_id 时，按角色策略路由）
+//! 1. Agent 路由（渠道未绑定 agent_id 时，调 hr domain 的 resolve_agent 兜底）
 //! 2. 调用 MessageDomain 完成内部消息投递
 //!
 //! 本模块不直接依赖任何具体渠道 DAL，
 //! 新增渠道只需 DAL 层注册适配器，consumer 零改动。
 
-use common::enums::AgentStatus;
 use common::error::{err, Result};
 use std::sync::Arc;
 
 use crate::pkg::adapter::AdaptedMessage;
 use crate::pkg::aop::message_adapter::MessageAdapterCallback;
 use crate::pkg::RequestContext;
-use crate::service::dao::agent::AgentQuery;
 use crate::service::domain::hr::HrDomain;
 use crate::service::domain::message::{MessageDomain, SendToAgentCommand};
-
-/// 飞书前台 Agent 的角色标签
-pub const FEISHU_RECEPTION_ROLE: &str = "feishu_reception";
 
 /// 消息适配回调实现（consumer 层编排）
 ///
 /// 收到适配后的 `AdaptedMessage` 后：
-/// 1. 若 `to_agent_id` 为 `None`，通过 HrDomain 查询路由目标 Agent
+/// 1. 若 `to_agent_id` 为 `None`，通过 HrDomain.resolve_agent 兜底路由
 /// 2. 调用 MessageDomain.send_to_agent 投递消息
 struct ConsumerMessageCallback {
     hr_domain: Arc<dyn HrDomain>,
@@ -41,8 +36,8 @@ impl MessageAdapterCallback for ConsumerMessageCallback {
 
         let to_agent_id = match msg.to_agent_id {
             Some(id) => id,
-            None => match self.find_reception_agent_id(ctx.clone()).await? {
-                Some(id) => id,
+            None => match self.hr_domain.resolve_agent(ctx.clone()).await? {
+                Some(agent) => agent.po.id,
                 None => {
                     log_warn!(
                         &ctx,
@@ -91,42 +86,6 @@ impl MessageAdapterCallback for ConsumerMessageCallback {
     }
 }
 
-impl ConsumerMessageCallback {
-    /// 查找路由目标 Agent ID
-    ///
-    /// 优先级：
-    /// 1. 带 `feishu_reception` 角色的 Onboarded Agent
-    /// 2. 任意 Onboarded Agent
-    async fn find_reception_agent_id(&self, ctx: RequestContext) -> Result<Option<String>> {
-        let query = AgentQuery {
-            roles: Some(vec![FEISHU_RECEPTION_ROLE.to_string()]),
-            status: Some(AgentStatus::Onboarded),
-            limit: Some(1),
-            ..Default::default()
-        };
-        let agents = self
-            .hr_domain
-            .agent_manage()
-            .query(ctx.clone(), query)
-            .await?;
-        if let Some(agent) = agents.into_iter().next() {
-            return Ok(Some(agent.po.id));
-        }
-
-        let query = AgentQuery {
-            status: Some(AgentStatus::Onboarded),
-            limit: Some(1),
-            ..Default::default()
-        };
-        let agents = self
-            .hr_domain
-            .agent_manage()
-            .query(ctx, query)
-            .await?;
-        Ok(agents.into_iter().next().map(|a| a.po.id))
-    }
-}
-
 /// 初始化外部消息适配层
 ///
 /// 通过 `pkg/aop/message_adapter` 中台统一启动所有已注册的渠道适配器。
@@ -162,6 +121,3 @@ pub async fn shutdown() -> Result<()> {
     registry.stop_all().await?;
     Ok(())
 }
-
-// 兼容：导出 FEISHU_RECEPTION_ROLE 供其他模块使用
-// （目前无其他模块直接引用 lark 子模块，保留此导出作为文档说明）

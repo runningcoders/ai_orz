@@ -330,3 +330,18 @@ pub struct ListInstalledToolPacksResponse {
     /// 已安装的工具包 tags
     pub installed_tags: Vec<String>,
 }
+
+/// 查询前台 Agent 请求
+///
+/// 无参数 — 后端通过 `HrDomain::resolve_agent(ctx)` 路由到当前可用的前台 Agent。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct GetReceptionAgentRequest {}
+
+/// 查询前台 Agent 响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct GetReceptionAgentResponse {
+    /// 前台 Agent ID
+    pub agent_id: String,
+    /// 前台 Agent 名称
+    pub agent_name: String,
+}

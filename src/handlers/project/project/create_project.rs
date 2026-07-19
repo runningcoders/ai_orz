@@ -8,6 +8,9 @@ use common::api::{CreateProjectRequest, CreateProjectResponse};
 use common::error::{Result, bail_err};
 
 /// Create a new project
+///
+/// handler 纯粹透传 `owner_agent_id`：不调 resolve_agent，不依赖 hr domain。
+/// owner_agent_id 由上层（前端/A2A handler）按需组合传入。
 #[register_handler_tool(
     id = "create_project",
     name = "create_project",
@@ -33,6 +36,7 @@ pub async fn create_project(
             params.description.unwrap_or_default(),
             params.priority.unwrap_or_default(),
             params.tags.unwrap_or_default(),
+            params.owner_agent_id,  // 纯粹透传，不在此处调 resolve_agent
             current_user_id.clone(),
             current_user_id,
         )

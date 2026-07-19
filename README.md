@@ -37,7 +37,7 @@
 核心能力已落地：
 
 - 🤖 **Agent 全生命周期**：创建、入职（自动安装工具包）、绑定工具、唤醒执行
-- 🔌 **外部 Agent 接入**：支持注册 CLI Agent（Codex/Claude Code 等子进程包装）和 Remote Agent（A2A 协议远程调用），与本地 Agent 共享同一调度链路
+- 🔌 **A2A 协议双向支持**：作为 Client 可注册外部 Agent（CLI/Remote），作为 Server 可对外暴露 A2A 协议端点供外部调用
 - 🧠 **四层记忆**：Core / Working / Short-term / Long-term（含知识图谱），支持 FTS5 + 向量混合搜索
 - 🛠️ **混合工具调用**：简单工具走 LLM auto，关键工具走自建 manual 可控链路
 - 📨 **消息渠道系统**：飞书 P2P 私信已上线，多渠道架构就绪（微信/Slack/Webhook 待实现）
@@ -109,6 +109,7 @@ ai_orz/
 - [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — 完整架构说明
 - [docs/runtime_design.md](./docs/runtime_design.md) — Agent 唤醒与神经工具
 - [docs/external_agent_design.md](./docs/external_agent_design.md) — 外部 Agent 接入（CLI/Remote）
+- [docs/a2a_server_design.md](./docs/a2a_server_design.md) — A2A Server 对外协议端点
 - [docs/vector_search_architecture.md](./docs/vector_search_architecture.md) — 混合搜索架构
 - [docs/message_channel_design.md](./docs/message_channel_design.md) — 多渠道消息接入
 

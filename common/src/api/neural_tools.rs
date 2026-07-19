@@ -153,11 +153,16 @@ pub struct SendMessageResponse {
 /// 发送消息给 Agent 请求参数。
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct SendMessageToAgentParams {
-    /// 接收 Agent ID。
-    pub to_agent_id: String,
+    /// 接收 Agent ID（可选）
+    ///
+    /// 协作关系类比：
+    /// - 默认对话框：用户选定 Agent 时传，未选定时为 None（后端走 resolve_agent 兜底）
+    /// - Project 对话框：从 project.owner_agent_id 取；若为 None 也走 resolve_agent 兜底
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_agent_id: Option<String>,
     /// 消息内容。
     pub content: String,
-    /// 关联项目 ID。
+    /// 关联项目 ID（默认对话框场景为 None）。
     pub project_id: Option<String>,
     /// 关联任务 ID。
     pub task_id: Option<String>,
