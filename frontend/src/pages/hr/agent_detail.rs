@@ -265,7 +265,7 @@ pub fn HrAgentDetail(id: String) -> Element {
 
         spawn(async move {
             let req = SendMessageToAgentParams {
-                to_agent_id: aid.clone(),
+                to_agent_id: Some(aid.clone()),
                 content: text.clone(),
                 project_id: None,
                 task_id: None,

@@ -3,7 +3,7 @@
 use common::api::{
     CreateAgentRequest, CreateAgentResponse, CreateExternalAgentRequest, CreateExternalAgentResponse,
     CreateSkillRequest, CreateSkillResponse,
-    DeleteSkillResponse, GetAgentResponse, GetSkillResponse, ListAgentsResponse,
+    DeleteSkillResponse, GetAgentResponse, GetReceptionAgentResponse, GetSkillResponse, ListAgentsResponse,
     ListInstalledSkillPacksResponse, ListInstalledToolPacksResponse, ListSkillsResponse,
     ListToolsResponse, QueryMemoryParams, QueryMemoryResponse, SearchMemoryParams, SearchMemoryResponse,
     UpdateAgentRequest, UpdateAgentResponse, UpdateSkillRequest,
@@ -16,6 +16,11 @@ use super::{api_delete, api_get, api_get_or_default, api_post, api_post_empty, a
 
 pub async fn list_agents() -> Result<ListAgentsResponse, String> {
     api_get_or_default("/api/v1/hr/agents").await
+}
+
+/// 查询当前可用的前台 Agent（供前端显示推荐前台 Agent）
+pub async fn get_reception_agent() -> Result<GetReceptionAgentResponse, String> {
+    api_get("/api/v1/hr/agents/reception").await
 }
 
 pub async fn search_agents(keyword: &str) -> Result<ListAgentsResponse, String> {

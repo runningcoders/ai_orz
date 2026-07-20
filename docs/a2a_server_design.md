@@ -1,6 +1,6 @@
 # A2A Server 设计文档
 
-## 🚀 实现完成状态（2026-07-19）
+## 🚀 实现完成状态（2026-07-20）
 
 ### P0 已完成（后端）
 
@@ -21,12 +21,19 @@
 | send_message_to_agent 两种对话上下文 | ✅ | `src/handlers/finance/message/send_message_to_agent.rs` |
 | 前台 Agent 查询 HTTP API | ✅ | `src/handlers/hr/agent/get_reception_agent.rs` |
 
-### P1 待实现
+### P1 已完成（前端）
+
+| 模块 | 状态 | 文件 |
+|------|------|------|
+| 前端 chat 默认对话框（不创建 project） | ✅ | `frontend/src/pages/message/chat.rs` |
+| 前端 get_reception_agent_api（显示推荐前台 Agent） | ✅ | `frontend/src/api/hr.rs` |
+| 新建项目弹窗 + 自动绑定前台 Agent | ✅ | `frontend/src/pages/message/chat.rs` |
+| 侧边栏固定置顶「默认对话」条目 | ✅ | `frontend/src/pages/message/chat.rs` |
+
+### P2 待实现
 
 | 模块 | 状态 |
 |------|------|
-| 前端 chat 默认对话框（不创建 project） | ⏳ |
-| 前端 get_reception_agent_api（显示推荐前台 Agent） | ⏳ |
 | tasks/sendSubscribe SSE 流式 | ⏳ |
 | 长任务异步模式 | ⏳ |
 
@@ -64,8 +71,10 @@ A2A 协议概念到 ai_orz 内部实体的映射：
 - **`resolve_agent(ctx)`**：只接受 ctx，返回当前可用的前台 Agent，不查询/感知 project
 - **两种对话上下文（协作关系类比）**：
   - **默认对话框**：与前台 Agent 直接沟通（无 project），简单需求直接处理
-  - **Project 对话框**：Agent 识别复杂需求后创建 Project，在 Project 上下文中沟通
-- **Project 创建**：由 Agent 内部决策触发，不在前端显式创建
+  - **Project 对话框**：在 Project 上下文中沟通，可由用户主动创建或由 Agent 内部决策触发
+- **Project 创建**：双通道
+  - 用户在前端主动新建（创建时自动绑定前台 Agent 作为 `owner_agent_id`）
+  - Agent 内部决策触发（A2A `tasks/send` 场景由 handler 创建）
 
 ## 三条核心原则
 

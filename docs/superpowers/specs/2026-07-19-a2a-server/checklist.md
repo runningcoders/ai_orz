@@ -47,12 +47,14 @@
   - `to_agent_id` 未指定 + `project_id` 存在（Project 对话框）：从 `project.owner_agent_id` 取；若为 None 则调 `resolve_agent(ctx)` 兜底
   - `to_agent_id` 未指定 + `project_id=None`（默认对话框）：调 `resolve_agent(ctx)` 兜底
   - **handler 层调 `resolve_agent(ctx)` 是合理的** — resolve_agent 本就是给 handler 用的统一路由方法
-- [x] `frontend/src/api/mod.rs` 新增 `get_reception_agent_api` 函数（可选，用于显示推荐前台 Agent）
+- [x] `frontend/src/api/hr.rs` 新增 `get_reception_agent` 函数（用于显示推荐前台 Agent）
 - [x] `frontend/src/pages/message/chat.rs` chat 默认对话框逻辑：
   - **默认对话框不创建 project**：`project_id` 为 `None`，直接调 `send_message_to_agent`
   - `to_agent_id` 由用户选择决定（用户选定 Agent 时显式传入，未选定时后端走 resolve_agent 兜底）
   - Project 对话框用 `project_id`，`to_agent_id` 可不传（后端从 `project.owner_agent_id` 取）
-  - **不在前端创建默认 project** — Project 创建由 Agent 内部决策触发（不在本次范围）
+  - **侧边栏固定置顶「默认对话」条目**：点击切换到无 project_id 模式
+  - **新建项目弹窗**：用户可主动新建项目，创建时自动绑定前台 Agent 作为 `owner_agent_id`
+  - **默认对话框顶部显示前台 Agent 名称**（调 `get_reception_agent` 获取）
 - [x] `cargo check && cd frontend && cargo check` 编译通过
 - [x] `cargo test --lib handlers::finance::message` 全部 PASS
 - [x] 提交 commit
@@ -221,8 +223,8 @@
 - [x] Handler 层转换：A2A 协议实体 ↔ ai_orz 实体转换全部在 `mapper.rs`
 - [x] 统一路由：Chat / A2A / 飞书 IM 三场景共用 `HrDomain::resolve_agent(ctx)`（只接受 ctx，不耦合 project）
 - [x] **agent 与 project 维度分离**：`resolve_agent` 不查询/感知 project，两个维度由 handler/前端按需组合
-- [x] **协作关系类比**：默认对话框=与前台直接沟通（无 project）；Project 对话框=Agent 识别复杂需求后创建 Project 的上下文沟通
-- [x] **不在前端创建默认 project**：Project 创建由 Agent 内部决策触发，不在本次 A2A Server 范围
+- [x] **协作关系类比**：默认对话框=与前台直接沟通（无 project）；Project 对话框=用户主动新建或 Agent 内部决策触发的上下文沟通
+- [x] **Project 创建双通道**：用户前端主动新建（自动绑定前台 Agent）+ Agent 内部决策触发（A2A tasks/send handler 创建）
 - [x] **to_agent_id 保持 Option**：用户选定 Agent 时前端显式传入，未指定时后端走 `resolve_agent(ctx)` 兜底
 
 ### 文档验证
@@ -231,7 +233,7 @@
 - [x] `README.md` A2A 能力描述准确
 - [x] `docs/superpowers/specs/2026-07-19-a2a-server/` 三件套（spec.md / checklist.md / tasks.md）齐全
 
-## 已知遗留（P1）
+## 已知遗留（P2）
 
 - `tasks/sendSubscribe` SSE 流式 — 设计文档已标注
 - 长任务异步模式 — 设计文档已标注

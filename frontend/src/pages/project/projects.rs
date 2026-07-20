@@ -77,6 +77,7 @@ pub fn ProjectList() -> Element {
                 description: if new_description().is_empty() { None } else { Some(new_description()) },
                 priority: None,
                 tags: None,
+                owner_agent_id: None,
             };
             match create_project(req).await {
                 Ok(_) => {

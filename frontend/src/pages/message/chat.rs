@@ -3,10 +3,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use wasm_bindgen::{closure::Closure, JsCast};
 
 use crate::api::finance::upload_attachment;
+use crate::api::hr::get_reception_agent;
 use crate::api::message::{load_latest_messages, load_older_messages, send_message_to_agent};
-use crate::api::project::list_projects;
+use crate::api::project::{create_project, list_projects};
 use crate::store::toast::use_toast;
-use common::api::{ListProjectsResponseItem, MessageListItem, SendMessageToAgentParams};
+use common::api::{
+    CreateProjectRequest, GetReceptionAgentResponse, ListProjectsResponseItem, MessageListItem,
+    SendMessageToAgentParams,
+};
 
 fn now_ms() -> i64 {
     SystemTime::now()
@@ -98,6 +102,15 @@ pub fn MessageChat() -> Element {
     let mut loading_messages = use_signal(|| false);
     let mut sse_connected = use_signal(|| false);
 
+    // 前台 Agent 信息（默认对话框顶部展示）
+    let mut reception_agent = use_signal(|| Option::<GetReceptionAgentResponse>::None);
+
+    // 新建项目弹窗状态
+    let mut show_create_project = use_signal(|| false);
+    let mut new_project_name = use_signal(String::new);
+    let mut new_project_desc = use_signal(String::new);
+    let mut creating_project = use_signal(|| false);
+
     // 工具卡片展开状态（message_id -> expanded）
     let mut tool_expanded = use_signal(|| std::collections::HashSet::<String>::new());
 
@@ -108,7 +121,7 @@ pub fn MessageChat() -> Element {
 
     // 快捷指令菜单状态
     let mut show_slash_menu = use_signal(|| false);
-    let mut selected_slash_index = use_signal(|| 0);
+    let selected_slash_index = use_signal(|| 0);
 
     // 移动端 sidebar 抽屉状态
     let mut sidebar_open = use_signal(|| false);
@@ -120,15 +133,28 @@ pub fn MessageChat() -> Element {
             match list_projects().await {
                 Ok(resp) => {
                     projects.set(resp.projects);
-                    if let Some(p) = projects.read().first() {
-                        selected_project.set(Some(p.id.clone()));
-                    }
+                    // 不自动选择第一个项目，让用户从「默认对话」开始
                 }
                 Err(e) => {
                     toast.error(&format!("加载项目列表失败: {}", e));
                 }
             }
             loading_projects.set(false);
+        });
+    };
+
+    // 加载前台 Agent 信息（用于默认对话框顶部展示）
+    let load_reception_agent = move || {
+        spawn(async move {
+            match get_reception_agent().await {
+                Ok(resp) => {
+                    reception_agent.set(Some(resp));
+                }
+                Err(_) => {
+                    // 无可用前台 Agent 时静默处理（默认对话框仍可用，发送时后端兜底）
+                    reception_agent.set(None);
+                }
+            }
         });
     };
 
@@ -203,6 +229,7 @@ pub fn MessageChat() -> Element {
 
     use_effect(move || {
         load_projects();
+        load_reception_agent();
     });
 
     use_effect(move || {
@@ -244,7 +271,7 @@ pub fn MessageChat() -> Element {
         ("/help", "显示帮助"),
     ];
 
-    let mut handle_input = {
+    let handle_input = {
         let mut input_text = input_text;
         let mut show_slash_menu = show_slash_menu;
         let mut selected_slash_index = selected_slash_index;
@@ -290,22 +317,20 @@ pub fn MessageChat() -> Element {
                 return;
             }
         }
-        let project_id = match selected_project() {
-            Some(id) => id,
-            None => return,
-        };
+        let project_id = selected_project();
 
-        let to_agent_id = projects
-            .read()
-            .iter()
-            .find(|p| p.id == project_id)
-            .and_then(|p| p.owner_agent_id.clone());
-        let to_agent_id = match to_agent_id {
-            Some(id) => id,
-            None => {
-                toast.error("该项目未分配 Agent，无法发送消息");
-                return;
-            }
+        // to_agent_id 路由优先级：
+        // 1. Project 对话框：从 project.owner_agent_id 取（若为 None 则不传，后端走 resolve_agent 兜底）
+        // 2. 默认对话框：不传 to_agent_id，后端走 resolve_agent(ctx) 兜底
+        let to_agent_id = if let Some(ref pid) = project_id {
+            projects
+                .read()
+                .iter()
+                .find(|p| &p.id == pid)
+                .and_then(|p| p.owner_agent_id.clone())
+        } else {
+            // 默认对话框：使用已加载的前台 Agent（若有）
+            reception_agent().map(|a| a.agent_id)
         };
 
         let attachment_ids: Vec<String> = attachments.iter().map(|a| a.id.clone()).collect();
@@ -323,7 +348,7 @@ pub fn MessageChat() -> Element {
             let req = SendMessageToAgentParams {
                 to_agent_id,
                 content: text.clone(),
-                project_id: Some(project_id.clone()),
+                project_id: project_id.clone(),
                 task_id: None,
                 reply_to_id: None,
                 attachment_ids: attachment_ids_opt,
@@ -333,7 +358,7 @@ pub fn MessageChat() -> Element {
                 Ok(_) => {
                     let user_msg = MessageListItem {
                         message_id: format!("tmp_{}", now_ms()),
-                        project_id: Some(project_id.clone()),
+                        project_id: project_id.clone(),
                         task_id: None,
                         from_id: "user".to_string(),
                         from_role: 0,
@@ -360,7 +385,7 @@ pub fn MessageChat() -> Element {
     });
 
     // 处理文件选择：上传到附件服务，把 ID 加入待发送列表
-    let mut handle_file_select = move |files: Vec<dioxus::html::FileData>| {
+    let handle_file_select = move |files: Vec<dioxus::html::FileData>| {
         if uploading() {
             return;
         }
@@ -424,6 +449,68 @@ pub fn MessageChat() -> Element {
         if is_mobile() {
             sidebar_open.set(false);
         }
+    };
+
+    // 点击「默认对话」条目：清空选中项目，清空消息
+    let handle_default_chat_click = move |_| {
+        selected_project.set(None);
+        messages.set(Vec::new());
+        has_more.set(true);
+        if is_mobile() {
+            sidebar_open.set(false);
+        }
+    };
+
+    // 提交新建项目：自动绑定前台 Agent 作为 owner_agent_id
+    let handle_create_project_submit = move |_| {
+        let name = new_project_name().trim().to_string();
+        if name.is_empty() {
+            toast.error("项目名称不能为空");
+            return;
+        }
+        let desc = new_project_desc().trim().to_string();
+        let owner_agent_id = reception_agent().map(|a| a.agent_id);
+
+        creating_project.set(true);
+        spawn(async move {
+            let req = CreateProjectRequest {
+                name: name.clone(),
+                description: if desc.is_empty() { None } else { Some(desc) },
+                priority: None,
+                tags: None,
+                owner_agent_id,
+            };
+            match create_project(req).await {
+                Ok(resp) => {
+                    // CreateProjectResponse = GetProjectResponse，字段直接在响应上
+                    let new_project = ListProjectsResponseItem {
+                        id: resp.id.clone(),
+                        name: resp.name.clone(),
+                        description: resp.description,
+                        status: resp.status,
+                        priority: resp.priority,
+                        tags: resp.tags,
+                        root_user_id: resp.root_user_id,
+                        owner_agent_id: resp.owner_agent_id,
+                        created_at: resp.created_at,
+                        updated_at: resp.updated_at,
+                    };
+                    selected_project.set(Some(new_project.id.clone()));
+                    projects.write().push(new_project.clone());
+                    messages.set(Vec::new());
+                    has_more.set(true);
+                    load_messages(&new_project.id);
+                    show_create_project.set(false);
+                    new_project_name.set(String::new());
+                    new_project_desc.set(String::new());
+                    toast.info(&format!("项目「{}」已创建", name));
+                }
+                Err(e) => {
+                    toast.error(&format!("创建项目失败: {}", e));
+                }
+            }
+            creating_project.set(false);
+        });
     };
 
     let current_project = projects
@@ -523,190 +610,121 @@ pub fn MessageChat() -> Element {
                 }
             }
 
-            div { class: "chat-input-area",
-                if show_slash_menu() {
-                    {
-                        let filtered: Vec<(&str, &str)> = slash_commands
-                            .iter()
-                            .filter(|(cmd, _)| cmd.starts_with(&input_text().trim_start().to_lowercase()))
-                            .copied()
-                            .collect();
-                        if !filtered.is_empty() {
-                            let selected = selected_slash_index().min(filtered.len() as i32 - 1).max(0) as usize;
-                            let input_text = input_text;
-                            let messages = messages;
-                            let show_slash_menu = show_slash_menu;
-                            let toast = toast;
-                            let selected_slash_index = selected_slash_index;
-                            rsx! {
-                                div { class: "slash-menu",
-                                    for (i, (cmd, desc)) in filtered.iter().enumerate() {
-                                        {
-                                            let cmd = cmd.to_string();
-                                            let cmd_clone = cmd.clone();
-                                            let desc = *desc;
-                                            let is_selected = i == selected;
-                                            let mut input_text = input_text;
-                                            let mut messages = messages;
-                                            let mut show_slash_menu = show_slash_menu;
-                                            let toast = toast;
-                                            let mut selected_slash_index = selected_slash_index;
-                                            rsx! {
-                                                div {
-                                                    class: if is_selected { "slash-menu-item selected" } else { "slash-menu-item" },
-                                                    onclick: move |_| {
-                                                        match cmd_clone.as_str() {
-                                                            "/clear" => {
-                                                                messages.set(Vec::new());
-                                                                input_text.set(String::new());
-                                                                show_slash_menu.set(false);
-                                                                toast.info("对话已清空");
+            {chat_input_area(
+                is_mobile(),
+                input_text,
+                show_slash_menu,
+                selected_slash_index,
+                slash_commands,
+                handle_input,
+                handle_send,
+                uploading,
+                pending_attachments,
+                handle_file_select,
+                toast,
+                messages,
+            )}
+        }
+    } else {
+        // 默认对话框（无 project_id，后端走 resolve_agent 兜底路由前台 Agent）
+        let reception_name = reception_agent()
+            .map(|a| a.agent_name)
+            .unwrap_or_else(|| "前台 Agent".to_string());
+        rsx! {
+            div { class: "chat-header",
+                if is_mobile() {
+                    button {
+                        class: "chat-mobile-back",
+                        onclick: move |_| sidebar_open.set(true),
+                        "←"
+                    }
+                }
+                h2 { class: "chat-header-title", "默认对话" }
+                span { class: "chat-header-agent", "当前前台：{reception_name}" }
+                if sse_connected() {
+                    span { class: "chat-status connected", "● 实时" }
+                } else {
+                    span { class: "chat-status disconnected", "○ 连接中..." }
+                }
+            }
+
+            div { class: "chat-messages",
+                if messages().is_empty() {
+                    div { class: "state-empty",
+                        div { class: "state-empty-icon", "💬" }
+                        div { "与前台 Agent 直接沟通，复杂需求可新建项目组织" }
+                    }
+                } else {
+                    div {
+                        class: "message-list",
+                        style: "min-height: 100%;",
+                        for entry in group_messages_by_date(&messages()) {
+                            match entry {
+                                MessageListEntry::DateDivider(label) => rsx! {
+                                    div { class: "chat-date-divider",
+                                        key: "divider-{label}-{messages().len()}",
+                                        span { class: "chat-date-line" }
+                                        span { class: "chat-date-label", "{label}" }
+                                        span { class: "chat-date-line" }
+                                    }
+                                },
+                                MessageListEntry::Message(msg) => rsx! {
+                                    {
+                                        let msg_id = msg.message_id.clone();
+                                        let msg_role = msg.from_role;
+                                        let msg_clone = msg.clone();
+                                        let expanded = tool_expanded.read().contains(&msg_id);
+                                        rsx! {
+                                            div {
+                                                class: "message-item {role_class(msg_role)}",
+                                                key: "{msg_id}",
+                                                div { class: "message-avatar", "{role_avatar(msg_role)}" }
+                                                {
+                                                    render_message_content(&msg_clone, expanded, {
+                                                        let mid = msg_id.clone();
+                                                        move || {
+                                                            if tool_expanded.read().contains(&mid) {
+                                                                tool_expanded.write().remove(&mid);
+                                                            } else {
+                                                                tool_expanded.write().insert(mid.clone());
                                                             }
-                                                            "/help" => {
-                                                                show_slash_menu.set(false);
-                                                                toast.info("可用指令: /clear - 清空对话, /help - 显示帮助");
-                                                            }
-                                                            _ => {}
                                                         }
-                                                    },
-                                                    onmouseenter: move |_| {
-                                                        selected_slash_index.set(i as i32);
-                                                    },
-                                                    span { class: "slash-cmd", "{cmd}" }
-                                                    span { class: "slash-desc", "{desc}" }
+                                                    }, toast.clone())
                                                 }
                                             }
                                         }
                                     }
-                                }
+                                },
                             }
-                        } else {
-                            rsx! {}
                         }
-                    }
-                }
-                // 待发送附件列表
-                if !pending_attachments().is_empty() {
-                    div { class: "chat-pending-attachments",
-                        for att in pending_attachments().iter() {
-                            div { class: "chat-pending-attachment",
-                                key: "{att.id}",
-                                span { class: "chat-pending-icon", "📎" }
-                                span { class: "chat-pending-name", "{att.name}" }
-                                button {
-                                    class: "chat-pending-remove",
-                                    onclick: {
-                                        let id = att.id.clone();
-                                        move |_| {
-                                            let mut current = pending_attachments.write();
-                                            current.retain(|a| a.id != id);
-                                        }
-                                    },
-                                    "×"
+                        if is_typing() {
+                            div { class: "message-item agent",
+                                div { class: "message-avatar", "A" }
+                                div { class: "typing-indicator",
+                                    div { class: "typing-dot" }
+                                    div { class: "typing-dot" }
+                                    div { class: "typing-dot" }
                                 }
                             }
                         }
                     }
                 }
-                div { class: "chat-input-container",
-                    // 隐藏的文件选择 input
-                    input {
-                        r#type: "file",
-                        multiple: "true",
-                        class: "chat-file-input",
-                        id: "chat-file-input",
-                        onchange: move |e| {
-                            handle_file_select(e.files());
-                        },
-                    }
-                    // 📎 按钮触发文件选择
-                    button {
-                        class: "chat-attach-btn",
-                        r#type: "button",
-                        disabled: uploading(),
-                        onclick: move |_| {
-                            if let Some(window) = web_sys::window() {
-                                if let Some(doc) = window.document() {
-                                    if let Some(el) = doc.get_element_by_id("chat-file-input") {
-                                        let _ = el.dyn_into::<web_sys::HtmlElement>().map(|h| h.click());
-                                    }
-                                }
-                            }
-                        },
-                        if uploading() { "⏳" } else { "📎" }
-                    }
-                    textarea {
-                        class: "chat-input",
-                        value: "{input_text}",
-                        placeholder: "输入消息...",
-                        oninput: move |e| handle_input(e.value()),
-                        onkeydown: move |e| {
-                            if show_slash_menu() {
-                                let filtered: Vec<(&str, &str)> = slash_commands
-                                    .iter()
-                                    .filter(|(cmd, _)| cmd.starts_with(&input_text().trim_start().to_lowercase()))
-                                    .copied()
-                                    .collect();
-                                if !filtered.is_empty() {
-                                    if e.key() == Key::ArrowDown {
-                                        e.prevent_default();
-                                        let next = (selected_slash_index() + 1).min(filtered.len() as i32 - 1);
-                                        selected_slash_index.set(next);
-                                        return;
-                                    }
-                                    if e.key() == Key::ArrowUp {
-                                        e.prevent_default();
-                                        let prev = (selected_slash_index() - 1).max(0);
-                                        selected_slash_index.set(prev);
-                                        return;
-                                    }
-                                    if e.key() == Key::Enter && !e.modifiers().contains(Modifiers::SHIFT) {
-                                        e.prevent_default();
-                                        let idx = selected_slash_index().min(filtered.len() as i32 - 1).max(0) as usize;
-                                        match filtered[idx].0 {
-                                            "/clear" => {
-                                                messages.set(Vec::new());
-                                                input_text.set(String::new());
-                                                show_slash_menu.set(false);
-                                                toast.info("对话已清空");
-                                            }
-                                            "/help" => {
-                                                show_slash_menu.set(false);
-                                                toast.info("可用指令: /clear - 清空对话, /help - 显示帮助");
-                                            }
-                                            _ => {}
-                                        }
-                                        return;
-                                    }
-                                    if e.key() == Key::Escape {
-                                        e.prevent_default();
-                                        show_slash_menu.set(false);
-                                        return;
-                                    }
-                                }
-                            }
-                            if e.key() == Key::Enter && !e.modifiers().contains(Modifiers::SHIFT) {
-                                e.prevent_default();
-                                handle_send(());
-                            }
-                        },
-                    }
-                    button {
-                        class: "chat-send-btn",
-                        onclick: move |_| handle_send(()),
-                        disabled: input_text().trim().is_empty() && pending_attachments().is_empty(),
-                        "发送"
-                    }
-                }
             }
-        }
-    } else {
-        rsx! {
-            div { class: "chat-empty",
-                div { class: "chat-empty-icon", "📋" }
-                div { class: "chat-empty-title", "选择项目" }
-                div { class: "chat-empty-desc", "从左侧列表选择一个项目开始对话" }
-            }
+
+            {chat_input_area(
+                is_mobile(),
+                input_text,
+                show_slash_menu,
+                selected_slash_index,
+                slash_commands,
+                handle_input,
+                handle_send,
+                uploading,
+                pending_attachments,
+                handle_file_select,
+                toast,
+                messages,
+            )}
         }
     };
 
@@ -730,8 +748,27 @@ pub fn MessageChat() -> Element {
             div { class: "{sidebar_class}",
                 div { class: "chat-sidebar-header",
                     h2 { class: "chat-sidebar-title", "项目列表" }
+                    button {
+                        class: "chat-sidebar-new-btn",
+                        r#type: "button",
+                        onclick: move |_| show_create_project.set(true),
+                        "+ 新建项目"
+                    }
                 }
                 div { class: "chat-project-list",
+                    // 固定置顶「默认对话」条目
+                    {
+                        let is_active = selected_project().is_none();
+                        let item_class = if is_active { "chat-project-item default-chat active" } else { "chat-project-item default-chat" };
+                        rsx! {
+                            div {
+                                class: "{item_class}",
+                                onclick: handle_default_chat_click,
+                                div { class: "chat-project-name", "💬 默认对话" }
+                                div { class: "chat-project-status", "与前台 Agent 直接沟通" }
+                            }
+                        }
+                    }
                     if loading_projects() {
                         div { class: "state-loading", "加载中..." }
                     } else {
@@ -759,6 +796,260 @@ pub fn MessageChat() -> Element {
             if show_main {
                 div { class: "chat-main",
                     {chat_content}
+                }
+            }
+
+            // 新建项目弹窗
+            if show_create_project() {
+                div { class: "modal-overlay",
+                    onclick: move |_| show_create_project.set(false),
+                    div { class: "modal-content",
+                        onclick: move |e| e.stop_propagation(),
+                        div { class: "modal-header",
+                            h3 { "新建项目" }
+                            button {
+                                class: "modal-close",
+                                onclick: move |_| show_create_project.set(false),
+                                "×"
+                            }
+                        }
+                        div { class: "modal-body",
+                            div { class: "form-group",
+                                label { "项目名称" }
+                                input {
+                                    r#type: "text",
+                                    class: "form-input",
+                                    placeholder: "输入项目名称",
+                                    value: "{new_project_name}",
+                                    oninput: move |e| new_project_name.set(e.value()),
+                                }
+                            }
+                            div { class: "form-group",
+                                label { "项目描述（可选）" }
+                                textarea {
+                                    class: "form-input",
+                                    placeholder: "输入项目描述",
+                                    value: "{new_project_desc}",
+                                    oninput: move |e| new_project_desc.set(e.value()),
+                                }
+                            }
+                            div { class: "form-hint",
+                                "项目将自动绑定当前前台 Agent 作为负责人"
+                            }
+                        }
+                        div { class: "modal-footer",
+                            button {
+                                class: "btn-secondary",
+                                onclick: move |_| show_create_project.set(false),
+                                "取消"
+                            }
+                            button {
+                                class: "btn-primary",
+                                disabled: creating_project() || new_project_name().trim().is_empty(),
+                                onclick: handle_create_project_submit,
+                                if creating_project() { "创建中..." } else { "创建" }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// 渲染聊天输入区域（Project 对话框和默认对话框共用）
+///
+/// 提取为函数避免在两个分支中重复 100+ 行代码。
+/// Dioxus 的 Signal<T> 是 Copy 的，可以直接作为参数传递。
+#[allow(clippy::too_many_arguments)]
+fn chat_input_area(
+    _is_mobile: bool,
+    mut input_text: Signal<String>,
+    mut show_slash_menu: Signal<bool>,
+    mut selected_slash_index: Signal<i32>,
+    slash_commands: [(&'static str, &'static str); 2],
+    mut handle_input: impl FnMut(String) + 'static,
+    handle_send: Callback,
+    uploading: Signal<bool>,
+    mut pending_attachments: Signal<Vec<PendingAttachment>>,
+    mut handle_file_select: impl FnMut(Vec<dioxus::html::FileData>) + 'static,
+    toast: crate::store::toast::ToastState,
+    mut messages: Signal<Vec<MessageListItem>>,
+) -> Element {
+    rsx! {
+        div { class: "chat-input-area",
+            if show_slash_menu() {
+                {
+                    let filtered: Vec<(&str, &str)> = slash_commands
+                        .iter()
+                        .filter(|(cmd, _)| cmd.starts_with(&input_text().trim_start().to_lowercase()))
+                        .copied()
+                        .collect();
+                    if !filtered.is_empty() {
+                        let selected = selected_slash_index().min(filtered.len() as i32 - 1).max(0) as usize;
+                        let input_text = input_text;
+                        let messages = messages;
+                        let show_slash_menu = show_slash_menu;
+                        let toast = toast;
+                        let selected_slash_index = selected_slash_index;
+                        rsx! {
+                            div { class: "slash-menu",
+                                for (i, (cmd, desc)) in filtered.iter().enumerate() {
+                                    {
+                                        let cmd = cmd.to_string();
+                                        let cmd_clone = cmd.clone();
+                                        let desc = *desc;
+                                        let is_selected = i == selected;
+                                        let mut input_text = input_text;
+                                        let mut messages = messages;
+                                        let mut show_slash_menu = show_slash_menu;
+                                        let toast = toast;
+                                        let mut selected_slash_index = selected_slash_index;
+                                        rsx! {
+                                            div {
+                                                class: if is_selected { "slash-menu-item selected" } else { "slash-menu-item" },
+                                                onclick: move |_| {
+                                                    match cmd_clone.as_str() {
+                                                        "/clear" => {
+                                                            messages.set(Vec::new());
+                                                            input_text.set(String::new());
+                                                            show_slash_menu.set(false);
+                                                            toast.info("对话已清空");
+                                                        }
+                                                        "/help" => {
+                                                            show_slash_menu.set(false);
+                                                            toast.info("可用指令: /clear - 清空对话, /help - 显示帮助");
+                                                        }
+                                                        _ => {}
+                                                    }
+                                                },
+                                                onmouseenter: move |_| {
+                                                    selected_slash_index.set(i as i32);
+                                                },
+                                                span { class: "slash-cmd", "{cmd}" }
+                                                span { class: "slash-desc", "{desc}" }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        rsx! {}
+                    }
+                }
+            }
+            // 待发送附件列表
+            if !pending_attachments().is_empty() {
+                div { class: "chat-pending-attachments",
+                    for att in pending_attachments().iter() {
+                        div { class: "chat-pending-attachment",
+                            key: "{att.id}",
+                            span { class: "chat-pending-icon", "📎" }
+                            span { class: "chat-pending-name", "{att.name}" }
+                            button {
+                                class: "chat-pending-remove",
+                                onclick: {
+                                    let id = att.id.clone();
+                                    move |_| {
+                                        let mut current = pending_attachments.write();
+                                        current.retain(|a| a.id != id);
+                                    }
+                                },
+                                "×"
+                            }
+                        }
+                    }
+                }
+            }
+            div { class: "chat-input-container",
+                // 隐藏的文件选择 input
+                input {
+                    r#type: "file",
+                    multiple: "true",
+                    class: "chat-file-input",
+                    id: "chat-file-input",
+                    onchange: move |e| {
+                        handle_file_select(e.files());
+                    },
+                }
+                // 📎 按钮触发文件选择
+                button {
+                    class: "chat-attach-btn",
+                    r#type: "button",
+                    disabled: uploading(),
+                    onclick: move |_| {
+                        if let Some(window) = web_sys::window() {
+                            if let Some(doc) = window.document() {
+                                if let Some(el) = doc.get_element_by_id("chat-file-input") {
+                                    let _ = el.dyn_into::<web_sys::HtmlElement>().map(|h| h.click());
+                                }
+                            }
+                        }
+                    },
+                    if uploading() { "⏳" } else { "📎" }
+                }
+                textarea {
+                    class: "chat-input",
+                    value: "{input_text}",
+                    placeholder: "输入消息...",
+                    oninput: move |e| handle_input(e.value()),
+                    onkeydown: move |e| {
+                        if show_slash_menu() {
+                            let filtered: Vec<(&str, &str)> = slash_commands
+                                .iter()
+                                .filter(|(cmd, _)| cmd.starts_with(&input_text().trim_start().to_lowercase()))
+                                .copied()
+                                .collect();
+                            if !filtered.is_empty() {
+                                if e.key() == Key::ArrowDown {
+                                    e.prevent_default();
+                                    let next = (selected_slash_index() + 1).min(filtered.len() as i32 - 1);
+                                    selected_slash_index.set(next);
+                                    return;
+                                }
+                                if e.key() == Key::ArrowUp {
+                                    e.prevent_default();
+                                    let prev = (selected_slash_index() - 1).max(0);
+                                    selected_slash_index.set(prev);
+                                    return;
+                                }
+                                if e.key() == Key::Enter && !e.modifiers().contains(Modifiers::SHIFT) {
+                                    e.prevent_default();
+                                    let idx = selected_slash_index().min(filtered.len() as i32 - 1).max(0) as usize;
+                                    match filtered[idx].0 {
+                                        "/clear" => {
+                                            messages.set(Vec::new());
+                                            input_text.set(String::new());
+                                            show_slash_menu.set(false);
+                                            toast.info("对话已清空");
+                                        }
+                                        "/help" => {
+                                            show_slash_menu.set(false);
+                                            toast.info("可用指令: /clear - 清空对话, /help - 显示帮助");
+                                        }
+                                        _ => {}
+                                    }
+                                    return;
+                                }
+                                if e.key() == Key::Escape {
+                                    e.prevent_default();
+                                    show_slash_menu.set(false);
+                                    return;
+                                }
+                            }
+                        }
+                        if e.key() == Key::Enter && !e.modifiers().contains(Modifiers::SHIFT) {
+                            e.prevent_default();
+                            handle_send(());
+                        }
+                    },
+                }
+                button {
+                    class: "chat-send-btn",
+                    onclick: move |_| handle_send(()),
+                    disabled: input_text().trim().is_empty() && pending_attachments().is_empty(),
+                    "发送"
                 }
             }
         }

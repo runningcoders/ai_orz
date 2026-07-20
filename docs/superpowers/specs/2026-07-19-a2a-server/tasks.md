@@ -4,13 +4,13 @@
 >
 > **执行说明**：每个 Task 的完整代码和详细步骤见实施计划对应章节。本文档是任务索引和依赖图，便于排期和并行规划。
 >
-> **完成状态（2026-07-19）**：
+> **完成状态（2026-07-20）**：
 >
 > | Task | 状态 | 说明 |
 > |------|------|------|
 > | Task 0.1 | ✅ 已完成 | resolve_agent + 前台 Agent 查询 HTTP API |
 > | Task 0.2 | ✅ 已完成 | CreateProjectRequest 支持 owner_agent_id |
-> | Task 0.3 | ⚠️ 部分完成 | 后端部分完成（send_message_to_agent 两种对话上下文 + resolve_agent 兜底）；前端部分（chat 默认对话框 + get_reception_agent_api）待实现 |
+> | Task 0.3 | ✅ 已完成 | send_message_to_agent 两种对话上下文 + resolve_agent 兜底 + 前端 chat 默认对话框 + get_reception_agent_api + 新建项目弹窗（自动绑定前台 Agent）+ 侧边栏置顶「默认对话」条目 |
 > | Task 1 | ✅ 已完成 | A2A 协议实体定义（6 个测试） |
 > | Task 2 | ✅ 已完成 | A2A Server 配置项 |
 > | Task 4 | ✅ 已完成 | Handler 模块入口 + 映射层（10 个测试） |
@@ -23,7 +23,7 @@
 > | Task 11 | ✅ 已完成 | 端到端集成测试（3 个测试） |
 > | Task 12 | ✅ 已完成 | 文档更新和最终验证 |
 >
-> **遗留项（P1）**：Task 0.3 前端部分（chat 默认对话框不创建 project + get_reception_agent_api）
+> **遗留项（P2）**：tasks/sendSubscribe SSE 流式、长任务异步模式
 
 ## 任务依赖图
 
