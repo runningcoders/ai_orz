@@ -275,6 +275,12 @@ pub struct SendTaskParams {
     /// 元数据
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Value>,
+    /// 推送通知回调 URL（PushNotifications）
+    ///
+    /// 当提供此参数时，服务端会在任务状态变更时向该 URL 发送 HTTP POST 请求，
+    /// 推送 A2A Task 格式的消息。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notification_url: Option<String>,
 }
 
 /// `tasks/get` 请求参数

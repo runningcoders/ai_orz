@@ -22,9 +22,11 @@ use common::error::{bail_err, Result};
 
 use crate::handlers::a2a::mapper::{build_a2a_task, extract_text_from_a2a_message};
 use crate::pkg::RequestContext;
+use crate::service::dal::message_channel;
 use crate::service::domain::hr::domain as hr_domain;
 use crate::service::domain::message::{self, SendToAgentCommand};
 use crate::service::domain::project::domain as project_domain;
+use crate::models::message_channel::{MessageChannel, MessageChannelPo, ChannelConfig};
 
 /// 处理 tasks/send 请求（异步提交）
 pub async fn handle_send_task(
@@ -55,7 +57,7 @@ pub async fn handle_send_task(
         .project_manage()
         .create(
             ctx.clone(),
-            project_name,
+            project_name.clone(),
             format!("A2A 协议任务（session: {:?}）", params.session_id),
             0, // 默认优先级
             vec!["a2a".to_string()],
@@ -89,6 +91,29 @@ pub async fn handle_send_task(
         .delivery()
         .send_to_agent(ctx.clone(), cmd)
         .await?;
+
+    // 4.5 如果提供了 notification_url，创建 A2aCallback 渠道（PushNotifications）
+    //    后续消息推送时，deliver_message 会按 scope_project 过滤并推送到该 URL
+    if let Some(notification_url) = params.notification_url {
+        let channel_po = MessageChannelPo::new(
+            uuid::Uuid::now_v7().to_string(),
+            ctx.organization_id().unwrap_or(&"".to_string()).to_string(),
+            user_id.clone(),
+            None, // 不绑定特定 Agent
+            common::enums::ChannelType::A2aCallback,
+            format!("A2A Callback for {}", project_name),
+            Some(notification_url),
+            None,  // access_token
+            None,  // secret
+            ChannelConfig::default(),
+            user_id.clone(),
+        );
+        let mut channel = MessageChannel::from_po(channel_po);
+        channel.po.scope_project = Some(project_id.clone());
+        message_channel::dal()
+            .create_channel(ctx.clone(), &channel)
+            .await?;
+    }
 
     // 5. 立即返回 working 状态的 A2aTask（不等待 Agent 回复）
     //    客户端通过 tasks/get 轮询，直到状态变为 completed

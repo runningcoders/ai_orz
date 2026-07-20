@@ -9,9 +9,9 @@
 use std::sync::{Arc, OnceLock};
 
 use common::enums::{ChannelStatus, ChannelType};
+use common::error::{err, Result};
 use serde::Serialize;
 
-use common::error::{err, Result};
 use crate::enrich_ctx;
 use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
@@ -22,6 +22,8 @@ use crate::service::dao::message_channel::{MessageChannelDao, MessageChannelQuer
 use crate::service::dao::slack::SlackDao;
 use crate::service::dao::webhook::WebhookDao;
 use crate::service::dao::wechat::WechatDao;
+use crate::service::domain::message;
+use crate::service::domain::project::domain as project_domain;
 
 // ==================== 单例管理 ====================
 
@@ -209,6 +211,11 @@ impl MessageChannelDal for MessageChannelDalImpl {
             ChannelType::Slack => self.slack_dao.test_connection(ctx, &channel).await,
             ChannelType::Email => self.email_dao.test_connection(ctx, &channel).await,
             ChannelType::Webhook => self.webhook_dao.test_connection(ctx, &channel).await,
+            ChannelType::A2aCallback => {
+                // A2A callback 测试直接调用推送逻辑（使用空消息）
+                let msg_po = crate::models::message::MessagePo::default();
+                self.push_a2a_callback(ctx, &crate::models::message::Message::from_po(msg_po), &channel).await
+            }
         }
         .map_err(|e| err!(ChannelPushFailed, "push failed: {e}"))
     }
@@ -232,14 +239,33 @@ impl MessageChannelDal for MessageChannelDalImpl {
             return Ok(DeliveryResult::empty());
         }
 
-        // 2. 逐个渠道推送
-        let mut details = Vec::with_capacity(channels.len());
+        // 2. 按 scope_project 过滤：
+        //    - scope_project 为 NULL：全局渠道，接收所有消息
+        //    - scope_project 非空：项目级渠道，仅接收该项目的消息
+        let project_id = message.po.project_id.as_deref();
+        let filtered_channels: Vec<_> = channels
+            .into_iter()
+            .filter(|po| {
+                if let Some(scope_proj) = &po.scope_project {
+                    project_id == Some(scope_proj.as_str())
+                } else {
+                    true
+                }
+            })
+            .collect();
 
-        for po in channels {
+        if filtered_channels.is_empty() {
+            return Ok(DeliveryResult::empty());
+        }
+
+        // 3. 逐个渠道推送
+        let mut details = Vec::with_capacity(filtered_channels.len());
+
+        for po in filtered_channels {
             let channel = MessageChannel::from_po(po);
             let result = self.push_to_channel(ctx.clone(), message, &channel).await;
 
-            // 3. 更新渠道推送状态
+            // 4. 更新渠道推送状态
             let _ = self
                 .update_channel_push_status(ctx.clone(), &channel, &result)
                 .await;
@@ -280,6 +306,7 @@ impl MessageChannelDalImpl {
             ChannelType::Slack => self.slack_dao.push(ctx, message, channel).await,
             ChannelType::Email => self.email_dao.push(ctx, message, channel).await,
             ChannelType::Webhook => self.webhook_dao.push(ctx, message, channel).await,
+            ChannelType::A2aCallback => self.push_a2a_callback(ctx, message, channel).await,
         }
     }
 
@@ -303,6 +330,95 @@ impl MessageChannelDalImpl {
                     .await
             }
         }
+    }
+
+    /// A2A 回调推送（PushNotifications）
+    ///
+    /// 将消息变更推送到客户端注册的 notification_url，格式为 A2A Task JSON。
+    /// 每次推送都包含完整的任务状态和消息历史。
+    async fn push_a2a_callback(
+        &self,
+        ctx: RequestContext,
+        message: &Message,
+        channel: &MessageChannel,
+    ) -> std::result::Result<(), common::error::Error> {
+        let webhook_url = channel.po.webhook_url.as_ref()
+            .ok_or_else(|| err!(InvalidRequest, "A2A callback 渠道缺少 webhook_url"))?;
+
+        let project_id = channel.po.scope_project.as_ref()
+            .or_else(|| message.po.project_id.as_ref())
+            .ok_or_else(|| err!(InvalidRequest, "A2A callback 渠道缺少 scope_project"))?;
+
+        let project = project_domain()
+            .project_manage()
+            .get(ctx.clone(), project_id)
+            .await?
+            .ok_or_else(|| err!(ResourceNotFound, "项目不存在: {}", project_id))?;
+
+        let messages = message::domain()
+            .management()
+            .list_by_project_id(ctx.clone(), project_id)
+            .await?;
+
+        let a2a_messages = messages
+            .into_iter()
+            .map(|msg| {
+                let role = match msg.po.from_role {
+                    common::enums::MessageRole::User => "user".to_string(),
+                    common::enums::MessageRole::Agent => "agent".to_string(),
+                    common::enums::MessageRole::System => "system".to_string(),
+                };
+                common::api::a2a::A2aMessage {
+                    role,
+                    parts: vec![common::api::a2a::A2aMessagePart::Text {
+                        text: msg.po.content.clone(),
+                    }],
+                    message_id: Some(msg.po.id.clone()),
+                    task_id: Some(project_id.to_string()),
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let task = common::api::a2a::A2aTask {
+            id: project_id.to_string(),
+            session_id: None,
+            status: common::api::a2a::A2aTaskStatus {
+                state: match project.po.status {
+                    common::enums::ProjectStatus::PendingReview => common::api::a2a::A2aTaskState::Submitted,
+                    common::enums::ProjectStatus::InProgress => common::api::a2a::A2aTaskState::Working,
+                    common::enums::ProjectStatus::Completed => common::api::a2a::A2aTaskState::Completed,
+                    common::enums::ProjectStatus::Archived => common::api::a2a::A2aTaskState::Completed,
+                    common::enums::ProjectStatus::Deleted => common::api::a2a::A2aTaskState::Canceled,
+                    _ => common::api::a2a::A2aTaskState::Working,
+                },
+                timestamp: chrono::Utc::now().to_rfc3339(),
+                message: None,
+            },
+            messages: a2a_messages,
+            artifacts: vec![],
+            metadata: serde_json::Value::Object(Default::default()),
+        };
+
+        let body = serde_json::to_string(&task)
+            .map_err(|e| err!(Internal, "序列化 A2A Task 失败: {}", e))?;
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(webhook_url)
+            .header("Content-Type", "application/json")
+            .body(body)
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await
+            .map_err(|e| err!(ChannelPushFailed, "A2A callback 请求失败: {}", e))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(err!(ChannelPushFailed, "A2A callback 返回错误状态码 {}: {}", status, body));
+        }
+
+        Ok(())
     }
 }
 

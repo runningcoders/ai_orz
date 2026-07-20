@@ -23,6 +23,8 @@ pub enum ChannelType {
     Email = 3,
     /// 通用 Webhook
     Webhook = 4,
+    /// A2A 协议回调
+    A2aCallback = 5,
 }
 
 impl From<i32> for ChannelType {
@@ -33,6 +35,7 @@ impl From<i32> for ChannelType {
             2 => ChannelType::Slack,
             3 => ChannelType::Email,
             4 => ChannelType::Webhook,
+            5 => ChannelType::A2aCallback,
             _ => ChannelType::default(),
         }
     }
@@ -65,6 +68,7 @@ impl ChannelType {
             ChannelType::Slack => "slack",
             ChannelType::Email => "email",
             ChannelType::Webhook => "webhook",
+            ChannelType::A2aCallback => "a2a_callback",
         }
     }
 }

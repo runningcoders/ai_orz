@@ -30,11 +30,12 @@
 | 新建项目弹窗 + 自动绑定前台 Agent | ✅ | `frontend/src/pages/message/chat.rs` |
 | 侧边栏固定置顶「默认对话」条目 | ✅ | `frontend/src/pages/message/chat.rs` |
 
-### P2 待实现
+### P2 已完成
 
-| 模块 | 状态 |
-|------|------|
-| PushNotifications 推送通知 | ⏳ |
+| 模块 | 状态 | 文件 |
+|------|------|------|
+| tasks/sendSubscribe SSE 流式 | ✅ | `src/handlers/a2a/send_subscribe.rs` |
+| PushNotifications 推送通知（Webhook 回调） | ✅ | `src/service/dal/message_channel.rs` |
 
 ## 定位
 

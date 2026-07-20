@@ -135,6 +135,8 @@ pub struct MessageChannelPo {
     pub config_json: Json<ChannelConfig>,
     /// 渠道状态
     pub status: ChannelStatus,
+    /// 消息范围：项目 ID（NULL=所有项目，非空=仅该项目）
+    pub scope_project: Option<String>,
     /// 最后成功推送的时间戳（毫秒）
     pub last_pushed_at: Option<i64>,
     /// 最后一次推送的错误信息
@@ -177,6 +179,7 @@ impl MessageChannelPo {
             secret,
             config_json: Json(config),
             status: ChannelStatus::Active,
+            scope_project: None,
             last_pushed_at: None,
             last_error: None,
             created_by: created_by.clone(),
