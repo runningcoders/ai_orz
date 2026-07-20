@@ -29,9 +29,6 @@ async fn init_a2a_test_env(pool: SqlitePool) -> crate::pkg::RequestContext {
     crate::service::dao::message::init();
     crate::service::dao::artifact::init();
     crate::service::dao::attachment::init();
-    // 事件队列初始化（message handler 依赖）
-    crate::service::dao::event_queue::init_message();
-    crate::service::dao::event_queue::init_cron_trigger();
     crate::service::dao::message_channel::init();
     // 消息渠道 DAO 初始化
     crate::service::dao::lark::init();

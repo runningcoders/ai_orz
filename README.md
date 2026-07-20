@@ -45,6 +45,7 @@
 - 🔍 **综合搜索**：FTS5 关键词 + 向量语义 + 知识图谱三合一
 - 📊 **多维统计**：Agent / Project / Task / Tool / ModelProvider 五维度统计，异步重建索引
 - 🛠️ **系统管理**：数据备份与恢复、日志查询、基于角色的权限控制
+- 📡 **AOP 事件中心**：统一生产-消费事件框架，支持同步/异步消费模式，内置内存队列，支持自定义事件、生产者和消费者扩展
 
 > 完整功能列表和开发规范请看 [AGENTS.md](./AGENTS.md)
 
@@ -93,8 +94,12 @@ ai_orz/
 │   │   ├── dao/         # 数据访问
 │   │   ├── dal/         # 业务数据访问
 │   │   └── domain/      # 业务编排
-│   ├── consumer/        # 异步消费者
-│   └── pkg/             # 基础设施（向量存储、消息适配、日志）
+│   ├── producer/        # 事件生产者（AOP Producer 实现）
+│   ├── consumer/        # 事件消费者（AOP Consumer 实现）
+│   └── pkg/
+│       ├── aop/         # 事件中心纯框架（Event/Producer/Consumer/Registry）
+│       ├── adapter/     # 通用适配器基础设施（消息渠道适配）
+│       └── ...          # 其他基础设施（向量存储、日志）
 ├── frontend/            # Dioxus 前端
 └── docs/                # 详细设计文档
 ```

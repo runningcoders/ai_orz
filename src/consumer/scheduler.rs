@@ -1,81 +1,59 @@
-//! CronTrigger 消费者
+//! Cron 触发器消费者（业务层）
 //!
-//! 负责消费 Cron 触发器事件，根据触发器配置执行相应的业务逻辑。
+//! 作为 AOP 事件中心的订阅者，消费 CRON_TRIGGER 事件。
+//! 业务逻辑通过调用 domain 层完成（如 RuntimeDomain.rest_and_settle）。
+//!
+//! 与 AOP 框架解耦：AOP 只负责事件流转，本模块负责业务编排。
 
-use super::{GenericConsumer, MessageFetcher, MessageHandler};
-use crate::models::event::Event;
-use crate::scheduler::CronTriggerEvent;
 use async_trait::async_trait;
-use common::config::TopicConsumerConfig;
-use common::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
-// ==================== 单例 ====================
+use crate::models::events::CronTriggerEvent;
+use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
+use crate::pkg::aop::Event;
+use crate::pkg::RequestContext;
+use crate::service::domain::runtime::{self as runtime_domain, RuntimeDomain};
+use common::error::{Error, Result};
 
-/// CronTrigger 消费者单例
-static CRON_TRIGGER_CONSUMER: OnceLock<Arc<CronTriggerConsumer>> = OnceLock::new();
+// ==================== 消费者实现 ====================
 
-// ==================== 类型定义 ====================
+/// Cron 触发器消费者
+///
+/// 订阅 CRON_TRIGGER 事件，按 payload.action 分发到不同 domain 处理。
+/// 作为 AOP 的 Sync 消费者，事件发布时直接调用 on_event。
+pub struct CronTriggerConsumer {
+    runtime_domain: Arc<dyn RuntimeDomain>,
+}
 
-/// CronTrigger 拉取器：封装 event_queue DAO 调用
-pub struct CronTriggerFetcherImpl;
-
-/// CronTrigger 处理器：业务逻辑
-pub struct CronTriggerHandlerImpl;
-
-/// CronTrigger 消费者具体类型
-pub type CronTriggerConsumer =
-    GenericConsumer<CronTriggerEvent, CronTriggerFetcherImpl, CronTriggerHandlerImpl>;
-
-// ==================== Fetcher 实现（调用 event_queue DAO） ====================
-
-#[async_trait]
-impl MessageFetcher<CronTriggerEvent> for CronTriggerFetcherImpl {
-    async fn dequeue_next(&self) -> Result<Option<CronTriggerEvent>> {
-        let ctx = crate::pkg::RequestContext::new(None, None);
-        let dao = crate::service::dao::event_queue::cron_trigger_dao();
-        match dao.dequeue_next(ctx)? {
-            Some(boxed_event) => Ok(Some(*boxed_event)),
-            None => Ok(None),
+impl CronTriggerConsumer {
+    pub fn new() -> Self {
+        Self {
+            runtime_domain: runtime_domain::domain(),
         }
     }
-
-    async fn ack(&self, event_id: &str) -> Result<()> {
-        let ctx = crate::pkg::RequestContext::new(None, None);
-        let dao = crate::service::dao::event_queue::cron_trigger_dao();
-        dao.ack(ctx, event_id)
-    }
-
-    async fn nack(&self, event_id: &str) -> Result<()> {
-        let ctx = crate::pkg::RequestContext::new(None, None);
-        let dao = crate::service::dao::event_queue::cron_trigger_dao();
-        dao.nack(ctx, event_id)
-    }
-}
-
-// ==================== Handler 实现（业务逻辑） ====================
-
-#[derive(Debug, Serialize, Deserialize)]
-struct CronTriggerPayload {
-    action: String,
-    #[serde(flatten)]
-    extra: Value,
-}
-
-/// Agent 休息沉淀触发器 payload
-#[derive(Debug, Serialize, Deserialize)]
-struct AgentRestPayload {
-    /// Agent ID
-    agent_id: String,
-    /// 每次处理的短期记忆数量上限
-    settle_limit: Option<usize>,
 }
 
 #[async_trait]
-impl MessageHandler<CronTriggerEvent> for CronTriggerHandlerImpl {
-    async fn handle(&self, event: &CronTriggerEvent) -> Result<()> {
+impl Consumer for CronTriggerConsumer {
+    fn name(&self) -> &str {
+        "cron_trigger"
+    }
+
+    fn interested_events(&self) -> Vec<EventKind> {
+        vec![EventKind::new("cron.trigger")]
+    }
+
+    fn consume_mode(&self) -> ConsumeMode {
+        ConsumeMode::Sync
+    }
+
+    async fn on_event(&self, event: serde_json::Value) -> Result<()> {
+        let event: CronTriggerEvent = serde_json::from_value(event).map_err(|e| {
+            Error::internal(format!("failed to deserialize cron trigger event: {}", e))
+        })?;
+
         sys_debug!(
             "received cron trigger event: {} (trigger_id: {}, action to be parsed)",
             event.id(),
@@ -98,7 +76,7 @@ impl MessageHandler<CronTriggerEvent> for CronTriggerHandlerImpl {
 
         match payload.action.as_str() {
             "agent_rest" => {
-                self.handle_agent_rest(event, &payload.extra).await?;
+                self.handle_agent_rest(&event, &payload.extra).await?;
             }
             _ => {
                 sys_warn!(
@@ -114,15 +92,10 @@ impl MessageHandler<CronTriggerEvent> for CronTriggerHandlerImpl {
     }
 }
 
-// ==================== 各处理者逻辑 ====================
+// ==================== 业务编排（调用 domain 层）====================
 
-impl CronTriggerHandlerImpl {
-    /// 创建生产处理器
-    pub fn new() -> Self {
-        Self
-    }
-
-    /// 处理 agent_rest action：Agent 休息沉淀
+impl CronTriggerConsumer {
+    /// agent_rest 动作：调用 RuntimeDomain 执行 Agent 休息与记忆沉淀
     async fn handle_agent_rest(
         &self,
         event: &CronTriggerEvent,
@@ -142,11 +115,11 @@ impl CronTriggerHandlerImpl {
             payload.agent_id
         );
 
-        let ctx = crate::pkg::RequestContext::new(None, None);
+        let ctx = RequestContext::new(None, None);
         let settle_limit = payload.settle_limit.unwrap_or(10);
 
-        let runtime_domain = crate::service::domain::runtime::domain();
-        let settled_count = runtime_domain
+        let settled_count = self
+            .runtime_domain
             .rest_and_settle(ctx, &payload.agent_id, settle_limit)
             .await?;
 
@@ -160,35 +133,17 @@ impl CronTriggerHandlerImpl {
     }
 }
 
-// ==================== 初始化与单例访问 ====================
+// ==================== 辅助类型 ====================
 
-/// 获取 CronTrigger 消费者单例
-///
-/// 用于监控、统计、状态检查等场景
-pub fn get_consumer() -> Option<&'static CronTriggerConsumer> {
-    CRON_TRIGGER_CONSUMER.get().map(|arc| &**arc)
+#[derive(Debug, Serialize, Deserialize)]
+struct CronTriggerPayload {
+    action: String,
+    #[serde(flatten)]
+    extra: Value,
 }
 
-/// 初始化并启动 CronTrigger 消费者
-///
-/// 由 consumer::init 调用
-pub async fn init(config: &TopicConsumerConfig) -> Result<()> {
-    sys_info!("initializing cron trigger consumer...");
-
-    let fetcher = CronTriggerFetcherImpl;
-    let handler = CronTriggerHandlerImpl::new();
-
-    let consumer = CronTriggerConsumer::new("cron_trigger", config.clone(), fetcher, handler);
-
-    let consumer_arc = Arc::new(consumer);
-    CRON_TRIGGER_CONSUMER
-        .set(consumer_arc.clone())
-        .map_err(|_| {
-            Error::internal("cron trigger consumer already initialized".to_string())
-        })?;
-
-    consumer_arc.start().await;
-
-    sys_info!("cron trigger consumer started");
-    Ok(())
+#[derive(Debug, Serialize, Deserialize)]
+struct AgentRestPayload {
+    agent_id: String,
+    settle_limit: Option<usize>,
 }

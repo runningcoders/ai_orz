@@ -2,12 +2,14 @@
 //!
 //! 作为基础设施层，提供统一的适配者注册与获取能力。
 //! 各渠道 DAL（如 `LarkMessageChannelDal`）在 init 时向注册中心注册自己，
-//! consumer 层通过注册中心获取适配者，运行适配得到内部消息后投递。
+//! producer 层通过注册中心获取适配者，运行适配得到内部消息后投递。
 //!
 //! 设计原则：
 //! - pkg/adapter 不依赖任何 DAO/DAL 层类型（纯基础设施）
-//! - 适配者以 `Arc<dyn Any + Send + Sync>` 存储，consumer 按渠道 downcast 取用
-//! - `AdaptedMessage` 为 owned 转换结果，consumer 据此构造 `SendToAgentCommand`
+//! - 适配者以 `Arc<dyn Any + Send + Sync>` 存储，producer 按渠道 downcast 取用
+//! - `AdaptedMessage` 为 owned 转换结果，producer 据此构造 `SendToAgentCommand`
+
+pub mod message;
 
 use common::enums::ChannelType;
 use common::error::{err, Result};

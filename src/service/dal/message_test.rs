@@ -8,7 +8,6 @@ use crate::models::vector::{MatchType, VectorIndexParams};
 use crate::pkg::RequestContext;
 use crate::service::dal::message::MessageDal;
 use crate::service::dao::cortex::CortexDao;
-use crate::service::dao::event_queue;
 use crate::service::dao::message;
 use crate::service::dao::message::{MessageQuery, MessageSearch, MessageVectorDao};
 use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderQuery};
@@ -131,13 +130,11 @@ impl CortexDao for MockCortexDao {
 async fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDal + Send + Sync>, RequestContext) {
     let message_dao = message::sqlite::new();
     let message_vector_dao = message::vector::new();
-    let event_queue = event_queue::in_memory::new();
     let cortex_dao: Arc<dyn CortexDao> = Arc::new(MockCortexDao);
     let model_provider_dao: Arc<dyn ModelProviderDao> = Arc::new(MockModelProviderDao);
     let dal = crate::service::dal::message::new(
         message_dao,
         message_vector_dao,
-        event_queue,
         cortex_dao,
         model_provider_dao,
     );

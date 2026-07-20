@@ -96,14 +96,15 @@ macro_rules! sys_debug {
 
 // pkg 模块必须在宏之后声明，因为 pkg 内部使用 sys_info! 宏
 pub mod pkg;
+use crate::pkg::aop;
 
 pub mod config;
 pub mod consumer;
 pub mod handlers;
 pub mod middleware;
 pub mod models;
+pub mod producer;
 pub mod router;
-pub mod scheduler;
 pub mod service;
 
 /// 应用程序入口函数
@@ -125,13 +126,17 @@ pub async fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
     service::init();
     sys_info!("Service layer initialized");
 
-    // 初始化并启动所有消费者
-    consumer::init(&config.consumer).await?;
-    sys_info!("All consumers started");
+    // 初始化业务生产者（注册到 AOP）
+    producer::init().await?;
+    sys_info!("Business producers registered");
 
-    // 初始化并启动 CronScheduler
-    scheduler::init(None);
-    sys_info!("Cron scheduler started");
+    // 初始化业务消费者（注册到 AOP）
+    consumer::init().await?;
+    sys_info!("Business consumers registered");
+
+    // 启动 AOP 调度器（轮询生产者 + 异步消费者 worker）
+    aop::init_all().await?;
+    sys_info!("AOP scheduler started");
 
     // 前端静态文件目录从配置读取，环境变量可覆盖
     let dist_dir =

@@ -4,6 +4,7 @@ pub mod attachment;
 pub mod brain;
 pub mod cron_trigger;
 pub mod event;
+pub mod events;
 pub mod file;
 pub mod mcp_server;
 pub mod memory;

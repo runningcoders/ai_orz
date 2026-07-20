@@ -52,6 +52,7 @@
 | 🗺️ 知识图谱可视化 | ✅ | SVG 图谱组件、圆形布局、节点连接线、搜索初始节点 |
 | 🗺️ 知识图谱交互完善 | ✅ | 关系类型差异化颜色/样式、边标签防重叠、节点拖拽、缩放平移、搜索高亮与历史、详情侧边栏增强 |
 | 📡 SSE 消息推送 | ✅ | Server-Sent Events 长连接、订阅者模式、DAO 层连接管理、broadcast 广播 |
+| 📡 AOP 事件中心 | ✅ | 纯框架（零业务依赖）、Event/Producer/Consumer/Registry 抽象、同步/异步消费模式、内置内存队列、producer/consumer 业务层完全解耦 |
 | 🔔 Toast 通知系统 | ✅ | 全局状态管理、4 种类型（success/error/warning/info）、滑入滑出动画、进度条倒计时、22 页面统一替换旧式提示 |
 | 🔐 Cookie 认证统一 | ✅ | 前后端统一 HttpOnly Cookie + JWT、中间件顺序优化、localStorage 标志位 |
 | 🔑 双模式认证 | ✅ | Cookie（浏览器）+ Bearer token（API 工具/代码调用），非浏览器请求返回 401 JSON |
@@ -554,10 +555,10 @@ Agent
 - **出站推送**：`/open-apis/im/v1/messages` 文本消息推送，`push_to_channel` 五渠道统一调度
 - **入站消息**：WebSocket 长连接 + `im.message.receive_v1` 事件订阅，30 秒心跳 + 自动重连
 - **LarkMessageChannelDal**：飞书专属 DAL，`find_channel_by_lark_open_id` + `adapt_lark` 事件转换
-- **v4 AOP 架构升级**：`pkg/aop/message_adapter` 通用消息入站适配中台，consumer 不直接依赖 DAL
+- **v4 AOP 架构升级**：`pkg/adapter/message` 通用消息入站适配中台，producer 不直接依赖 DAL
 - **通用 trait**：`MessageInboundAdapter`（渠道适配器）+ `MessageAdapterCallback`（消息回调）
-- **注册中心**：DAL 层注册适配器，consumer 通过 `start_all / stop_all` 统一管理所有渠道
-- **新增渠道零 consumer 改动**：新渠道只需 DAL 注册，consumer 自动获得入站消息
+- **注册中心**：DAL 层注册适配器，producer（`producer/message_channel.rs`）通过 `start_all / stop_all` 统一管理所有渠道
+- **新增渠道零 producer 改动**：新渠道只需 DAL 注册，producer 自动获得入站消息
 - **Agent 路由策略**：渠道绑定 agent_id 优先 → feishu_reception 角色 Agent → 任意 Onboarded Agent
 - **全局配置**：`[lark]` 配置段，`enabled` 开关控制启停，默认禁用不影响现有功能
 - **前端完善**：消息渠道管理页飞书专属字段（lark_open_id / lark_user_name / agent_id）

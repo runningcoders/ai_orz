@@ -1,36 +1,28 @@
-//! 外部消息适配层（consumer/adapter）
-//!
-//! 作为 consumer 层的子模块，通过 `pkg/aop/message_adapter` 中台
-//! 统一管理所有外部渠道的入站消息监听。
-//!
-//! 本模块实现 `MessageAdapterCallback` trait，负责：
-//! 1. Agent 路由（渠道未绑定 agent_id 时，调 hr domain 的 resolve_agent 兜底）
-//! 2. 调用 MessageDomain 完成内部消息投递
-//!
-//! 本模块不直接依赖任何具体渠道 DAL，
-//! 新增渠道只需 DAL 层注册适配器，consumer 零改动。
-
 use common::error::{err, Result};
 use std::sync::Arc;
 
 use crate::pkg::adapter::AdaptedMessage;
-use crate::pkg::aop::message_adapter::MessageAdapterCallback;
+use crate::pkg::adapter::message::MessageAdapterCallback;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::HrDomain;
 use crate::service::domain::message::{MessageDomain, SendToAgentCommand};
 
-/// 消息适配回调实现（consumer 层编排）
-///
-/// 收到适配后的 `AdaptedMessage` 后：
-/// 1. 若 `to_agent_id` 为 `None`，通过 HrDomain.resolve_agent 兜底路由
-/// 2. 调用 MessageDomain.send_to_agent 投递消息
-struct ConsumerMessageCallback {
+struct MessageChannelProducer {
     hr_domain: Arc<dyn HrDomain>,
     message_domain: Arc<dyn MessageDomain>,
 }
 
+impl MessageChannelProducer {
+    pub fn new() -> Self {
+        Self {
+            hr_domain: crate::service::domain::hr::domain(),
+            message_domain: crate::service::domain::message::domain(),
+        }
+    }
+}
+
 #[async_trait::async_trait]
-impl MessageAdapterCallback for ConsumerMessageCallback {
+impl MessageAdapterCallback for MessageChannelProducer {
     async fn on_message(&self, msg: AdaptedMessage) -> Result<()> {
         let ctx = RequestContext::new(None, None);
 
@@ -41,7 +33,7 @@ impl MessageAdapterCallback for ConsumerMessageCallback {
                 None => {
                     log_warn!(
                         &ctx,
-                        "adapter_dispatch",
+                        "message_channel_producer",
                         "no available onboarded agent for routing from_user={}",
                         msg.from_id
                     );
@@ -68,7 +60,7 @@ impl MessageAdapterCallback for ConsumerMessageCallback {
             .map_err(|e| {
                 err!(
                     Internal,
-                    "adapter dispatch send_to_agent failed from={} to_agent={}: {}",
+                    "message channel producer send_to_agent failed from={} to_agent={}: {}",
                     msg.from_id,
                     to_agent_id,
                     e
@@ -77,7 +69,7 @@ impl MessageAdapterCallback for ConsumerMessageCallback {
 
         log_info!(
             &ctx,
-            "adapter_dispatch",
+            "message_channel_producer",
             "message dispatched: from={} to_agent={}",
             msg.from_id,
             to_agent_id
@@ -86,38 +78,26 @@ impl MessageAdapterCallback for ConsumerMessageCallback {
     }
 }
 
-/// 初始化外部消息适配层
-///
-/// 通过 `pkg/aop/message_adapter` 中台统一启动所有已注册的渠道适配器。
-/// 各渠道 DAL 在 init 阶段已按自身配置决定是否注册，这里只负责统一启动。
 pub async fn init() -> Result<()> {
-    let registry = crate::pkg::aop::message_adapter::registry();
+    let registry = crate::pkg::adapter::message::registry();
 
     if registry.is_empty() {
-        sys_info!("no message adapters registered, skip init");
+        sys_info!("no message channel adapters registered, skip init");
         return Ok(());
     }
 
-    let hr_domain = crate::service::domain::hr::domain();
-    let message_domain = crate::service::domain::message::domain();
-
-    let callback = Arc::new(ConsumerMessageCallback {
-        hr_domain,
-        message_domain,
-    });
-
-    registry.start_all(callback).await?;
+    let producer = Arc::new(MessageChannelProducer::new());
+    registry.start_all(producer).await?;
 
     sys_info!(
-        "external message adapters started, total: {}",
+        "message channel producers started, total adapters: {}",
         registry.len()
     );
     Ok(())
 }
 
-/// 关闭外部消息适配层（停止所有事件监听）
 pub async fn shutdown() -> Result<()> {
-    let registry = crate::pkg::aop::message_adapter::registry();
+    let registry = crate::pkg::adapter::message::registry();
     registry.stop_all().await?;
     Ok(())
 }

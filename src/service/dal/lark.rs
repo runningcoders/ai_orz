@@ -28,7 +28,7 @@ use common::error::{err, Result};
 
 use crate::models::message_channel::MessageChannel;
 use crate::pkg::adapter::AdaptedMessage;
-use crate::pkg::aop::message_adapter::{
+use crate::pkg::adapter::message::{
     MessageAdapterCallback, MessageInboundAdapter,
 };
 use crate::pkg::RequestContext;
@@ -66,12 +66,12 @@ pub fn init() {
         crate::service::dal::message_channel::dal(),
         crate::service::dao::lark::dao(),
     );
-    // 注册到消息入站适配中台（AOP 风格）
-    if let Err(e) = crate::pkg::aop::message_adapter::registry().register(instance.clone()) {
+    // 注册到消息入站适配中台
+    if let Err(e) = crate::pkg::adapter::message::registry().register(instance.clone()) {
         log_warn!("lark message adapter register skipped: {}", e);
     }
     let _ = LARK_DAL.set(instance);
-    sys_info!("lark message adapter registered to AOP registry");
+    sys_info!("lark message adapter registered to adapter registry");
 }
 
 /// 创建 LarkMessageChannelDal 实例（测试可注入隔离依赖）

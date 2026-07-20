@@ -1,19 +1,20 @@
-//! 消息入站适配器中台（AOP 风格）
+//! 消息入站适配器注册中心（基础设施层）
 //!
-//! 作为基础设施层，提供统一的消息入站适配能力。
+//! 作为通用适配器基础设施，提供统一的消息入站适配能力。
 //! 各渠道 DAL（如 `LarkMessageChannelDal`）实现 `MessageInboundAdapter` trait，
 //! 在 init 时向 `MessageAdapterRegistry` 注册自己。
 //!
-//! consumer 层通过中台提供的 `start_all` / `stop_all` 统一管理所有渠道监听，
+//! producer 层（`producer/message_channel.rs`）通过中台提供的
+//! `start_all` / `stop_all` 统一管理所有渠道监听，
 //! 收到的消息统一为 `AdaptedMessage` 格式，通过回调投递。
 //!
 //! # 分层解耦
 //!
 //! ```text
-//! consumer 层
+//! producer 层（message_channel）
 //!     │  只依赖中台（基础设施层）
 //!     ▼
-//! pkg/aop/message_adapter （中台）
+//! pkg/adapter/message （中台）
 //!     ▲  ▲
 //!     │  │  各渠道 DAL 实现 trait 并注册
 //! DAL 层（Lark / Wechat / Slack / ...）
@@ -23,21 +24,21 @@
 //!
 //! 1. DAL 层实现 `MessageInboundAdapter` trait
 //! 2. DAL init 时调用 `registry().register(adapter)`
-//! 3. consumer 零改动，自动获得该渠道的入站消息
+//! 3. producer 零改动，自动获得该渠道的入站消息
 
 use common::enums::ChannelType;
 use common::error::{err, Result};
 use once_cell::sync::Lazy;
 use std::sync::{Arc, RwLock};
 
-use crate::pkg::adapter::AdaptedMessage;
+use super::AdaptedMessage;
 
 // ==================== 回调接口 ====================
 
 /// 消息适配回调
 ///
-/// 中台将适配后的 `AdaptedMessage` 通过此回调投递到 consumer 层。
-/// consumer 层实现此 trait，负责消息的最终投递（如调用 MessageDomain）。
+/// 中台将适配后的 `AdaptedMessage` 通过此回调投递到 producer 层。
+/// producer 层实现此 trait，负责消息的最终投递（如调用 MessageDomain）。
 #[async_trait::async_trait]
 pub trait MessageAdapterCallback: Send + Sync {
     async fn on_message(&self, msg: AdaptedMessage) -> Result<()>;

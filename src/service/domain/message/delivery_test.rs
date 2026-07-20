@@ -143,7 +143,6 @@ fn init_all_channel_daos() {
 fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDomain>, RequestContext) {
     let message_dao = crate::service::dao::message::new();
     let message_vector_dao = crate::service::dao::message::vector::new();
-    let event_queue = crate::service::dao::event_queue::in_memory::new();
     // 初始化 Attachment DAO/DAL（每个测试独立临时目录）
     let tmp_dir = std::env::temp_dir().join(format!("ai_orz_test_{}", uuid::Uuid::now_v7()));
     let attachment_dao =
@@ -155,7 +154,6 @@ fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDomain>, RequestContext) {
     let message_dal = crate::service::dal::message::new(
         message_dao,
         message_vector_dao,
-        event_queue,
         cortex_dao,
         model_provider_dao,
     );

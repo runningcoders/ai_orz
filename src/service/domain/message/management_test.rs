@@ -24,7 +24,6 @@ fn init_all_channel_daos() {
 /// 初始化测试环境
 fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn MessageDomain>, RequestContext) {
     crate::service::dao::message::init();
-    crate::service::dao::event_queue::init_message();
     crate::service::dao::message_channel::init();
     init_all_channel_daos(); // 初始化所有渠道 DAO 单例
     crate::service::dal::message::init();
@@ -125,7 +124,6 @@ async fn test_list_by_project_id(pool: SqlitePool) {
 async fn test_get_by_id_and_update_status(pool: SqlitePool) {
     // 初始化依赖
     crate::service::dao::message::init();
-    crate::service::dao::event_queue::init_message();
     crate::service::dal::message::init();
     super::init();
     let domain = domain();
@@ -184,7 +182,6 @@ async fn test_get_by_id_and_update_status(pool: SqlitePool) {
 async fn test_delete_by_id_and_cleanup_conversation(pool: SqlitePool) {
     // 初始化依赖
     crate::service::dao::message::init();
-    crate::service::dao::event_queue::init_message();
     crate::service::dal::message::init();
     super::init();
     let domain = domain();
