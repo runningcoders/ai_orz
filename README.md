@@ -2,7 +2,7 @@
 
 **AI 代理协作框架** — 让多个 AI 代理像团队一样协作完成任务
 
-![Tests](https://img.shields.io/badge/tests-708%20%E2%9C%94-brightgreen)
+![Tests](https://img.shields.io/badge/tests-779%20%E2%9C%94-brightgreen)
 ![Rust](https://img.shields.io/badge/Rust-1.85+-000000?logo=rust)
 ![License](https://img.shields.io/github/license/runningcoders/ai_orz)
 
@@ -31,7 +31,7 @@
 | **后端** | Rust + Axum + SQLite + rig-core，单二进制可部署 |
 | **前端** | Dioxus 0.7 (WASM)，15 条路由，Mistral 暖色设计系统 |
 | **架构** | Handler → Domain → DAL → DAO 四层严格单向依赖 |
-| **测试** | 708 个单元测试，100% 通过 |
+| **测试** | 779 个单元测试，100% 通过 |
 | **实体覆盖** | Agent / Project / Task / Message / Memory / Skill / Tool / ModelProvider 全栈 |
 
 核心能力已落地：
@@ -40,7 +40,7 @@
 - 🔌 **A2A 协议双向支持**：作为 Client 可注册外部 Agent（CLI/Remote），作为 Server 可对外暴露 A2A 协议端点供外部调用
 - 🧠 **四层记忆**：Core / Working / Short-term / Long-term（含知识图谱），支持 FTS5 + 向量混合搜索
 - 🛠️ **混合工具调用**：简单工具走 LLM auto，关键工具走自建 manual 可控链路
-- 📨 **消息渠道系统**：飞书 P2P 私信已上线，多渠道架构就绪（微信/Slack/Webhook 待实现）
+- 📨 **消息渠道系统**：飞书 P2P 私信已上线，A2A Callback 推送已实现，多渠道架构就绪（微信/Slack/Webhook 待实现）
 - 📋 **任务协作**：项目 + 任务 + Agent 间任务分配，状态机、进度追踪、依赖关系
 - 🔍 **综合搜索**：FTS5 关键词 + 向量语义 + 知识图谱三合一
 - 📊 **多维统计**：Agent / Project / Task / Tool / ModelProvider 五维度统计，异步重建索引
