@@ -235,6 +235,4 @@
 
 ## 已知遗留（P2）
 
-- `tasks/sendSubscribe` SSE 流式 — 设计文档已标注
-- 长任务异步模式 — 设计文档已标注
 - PushNotifications 推送通知 — AgentCapabilities 中已预留字段

@@ -23,7 +23,7 @@
 > | Task 11 | ✅ 已完成 | 端到端集成测试（3 个测试） |
 > | Task 12 | ✅ 已完成 | 文档更新和最终验证 |
 >
-> **遗留项（P2）**：tasks/sendSubscribe SSE 流式、长任务异步模式
+> **遗留项（P2）**：PushNotifications 推送通知
 
 ## 任务依赖图
 

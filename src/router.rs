@@ -29,6 +29,18 @@ pub fn create_router(frontend_dist_dir: &str, config: Arc<AppConfig>) -> Router 
             "/a2a",
             post(handlers::a2a::jsonrpc::handle_jsonrpc)
                 .layer(axum::middleware::from_fn(jwt_auth_middleware))
+                .layer(axum::middleware::from_fn({
+                    let config = config.clone();
+                    move |req, next| {
+                        request_context_middleware(config.clone(), req, next)
+                    }
+                })),
+        )
+        // SSE 流式端点: tasks/sendSubscribe
+        .route(
+            "/a2a/subscribe",
+            post(handlers::a2a::send_subscribe::handle_send_subscribe)
+                .layer(axum::middleware::from_fn(jwt_auth_middleware))
                 .layer(axum::middleware::from_fn(move |req, next| {
                     request_context_middleware(config.clone(), req, next)
                 })),

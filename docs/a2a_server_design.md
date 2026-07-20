@@ -34,8 +34,7 @@
 
 | 模块 | 状态 |
 |------|------|
-| tasks/sendSubscribe SSE 流式 | ⏳ |
-| 长任务异步模式 | ⏳ |
+| PushNotifications 推送通知 | ⏳ |
 
 ## 定位
 
@@ -261,10 +260,10 @@ src/handlers/a2a/
 ├── agent_card.rs               # GET /.well-known/agent.json（公开）
 ├── jsonrpc.rs                  # POST /a2a 入口（JSON-RPC 解析 + 分发）
 ├── mapper.rs                   # A2A ↔ ai_orz 实体转换（核心）
-├── send_task.rs                # tasks/send 同步
+├── send_task.rs                # tasks/send 异步提交
+├── send_subscribe.rs           # tasks/sendSubscribe SSE 流式（P2）
 ├── get_task.rs                 # tasks/get
 ├── cancel_task.rs              # tasks/cancel
-└── send_subscribe.rs           # tasks/sendSubscribe SSE 流式（P1）
 ```
 
 ### Agent Card 端点
@@ -298,7 +297,7 @@ src/handlers/a2a/
 | `tasks/send` | `send_task.rs` | 异步提交：创建 project + message → 返回 working task；唤醒由 consumer 异步闭环，客户端轮询 `tasks/get` |
 | `tasks/get` | `get_task.rs` | 查询 project + 关联 message/artifact 状态 |
 | `tasks/cancel` | `cancel_task.rs` | 取消 project |
-| `tasks/sendSubscribe` | `send_subscribe.rs` | SSE 流式（P1） |
+| `tasks/sendSubscribe` | `send_subscribe.rs` | SSE 流式：创建 project + message → 返回 SSE 流，每次消息更新推送完整 A2A Task |
 
 未知的 method 返回 JSON-RPC error（code -32601）。
 
