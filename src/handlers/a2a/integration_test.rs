@@ -39,6 +39,7 @@ async fn init_a2a_test_env(pool: SqlitePool) -> crate::pkg::RequestContext {
     crate::service::dao::slack::init();
     crate::service::dao::email::init();
     crate::service::dao::webhook::init();
+    crate::service::dao::a2a_callback::init();
 
     // 初始化所有 DAL
     crate::service::dal::agent::init();

@@ -20,6 +20,7 @@ pub mod user;
 pub mod message_push;
 
 // 消息推送渠道 DAO（无状态，不需要 init）
+pub mod a2a_callback;
 pub mod email;
 pub mod lark;
 pub mod slack;
@@ -47,6 +48,7 @@ pub fn init_all() {
     tool::init();
     tool_call::init();
     // 消息推送渠道 DAO
+    a2a_callback::init();
     lark::init();
     wechat::init();
     slack::init();

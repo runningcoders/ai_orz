@@ -9,7 +9,7 @@
 | ChannelType 枚举 | ✅ 完成 | - | `common/src/enums/message_channel.rs` |
 | MessageChannel PO | ✅ 完成 | - | `src/models/message_channel.rs` |
 | MessageChannelDao | ✅ 完成 | ✅ 测试通过 | `src/service/dao/message_channel.rs` |
-| 各渠道 DAO | ✅ 完成 | ✅ 测试通过 | `src/service/dao/lark_dao.rs`, `wechat_dao.rs` 等 |
+| 各渠道 DAO | ✅ 完成 | ✅ 测试通过 | `src/service/dao/lark/`, `wechat/`, `slack/`, `email/`, `webhook/`, `a2a_callback/` |
 | MessageChannelDal | ✅ 完成 | ✅ 测试通过 | `src/service/dal/message_channel.rs` |
 | Message Domain | ✅ 完成 | ✅ 测试通过 | `src/service/domain/message/` |
 | Finance Domain 管理面 | ✅ CRUD/query/test 已具备 | `cargo check` 通过 | `src/service/domain/finance/message_channel.rs` |
@@ -412,13 +412,14 @@ MessageChannelDal (统一整合)
             ├── push_to_channel()  纯 match 分发
             └── update_channel_push_status()
 
-DAO 层（6 个完全独立的 DAO）
+DAO 层（7 个完全独立的 DAO）
     ├── MessageChannelDao  ✅ 渠道配置 CRUD
     ├── LarkDao           ✅ 飞书推送
     ├── WechatDao         ✅ 微信推送
     ├── SlackDao          ✅ Slack 推送
     ├── EmailDao          ✅ 邮件推送
-    └── WebhookDao        ✅ Webhook 推送
+    ├── WebhookDao        ✅ Webhook 推送
+    └── A2aCallbackDao    ✅ A2A Callback 推送
 ```
 
 ---
@@ -430,11 +431,12 @@ src/service/
 ├── dao/
 │   ├── mod.rs
 │   ├── message_channel.rs      # 渠道配置 CRUD
-│   ├── lark_dao.rs             # 飞书 DAO
-│   ├── wechat_dao.rs           # 微信 DAO
-│   ├── slack_dao.rs            # Slack DAO
-│   ├── email_dao.rs            # 邮件 DAO
-│   └── webhook_dao.rs          # Webhook DAO
+│   ├── lark/                   # 飞书 DAO（mod.rs + http.rs）
+│   ├── wechat/                 # 微信 DAO（mod.rs + http.rs）
+│   ├── slack/                  # Slack DAO（mod.rs + http.rs）
+│   ├── email/                  # 邮件 DAO（mod.rs + http.rs）
+│   ├── webhook/                # Webhook DAO（mod.rs + http.rs）
+│   └── a2a_callback/           # A2A Callback DAO（mod.rs + http.rs）
 │
 └── dal/
     ├── mod.rs
@@ -493,6 +495,7 @@ pub struct MessageChannelDal {
     slack_dao: Arc<SlackDao>,
     email_dao: Arc<EmailDao>,
     webhook_dao: Arc<WebhookDao>,
+    a2a_callback_dao: Arc<A2aCallbackDao>,
 }
 
 impl MessageChannelDal {
@@ -509,6 +512,7 @@ impl MessageChannelDal {
             ChannelType::Slack => self.slack_dao.test_connection(ctx, &channel).await,
             ChannelType::Email => self.email_dao.test_connection(ctx, &channel).await,
             ChannelType::Webhook => self.webhook_dao.test_connection(ctx, &channel).await,
+            ChannelType::A2aCallback => self.a2a_callback_dao.test_connection(ctx, &channel).await,
         }.map_err(|e| AppError::ChannelPushError(e))
     }
     
@@ -571,6 +575,9 @@ impl MessageChannelDal {
             
             ChannelType::Webhook => 
                 self.webhook_dao.push(ctx, message, channel).await,
+            
+            ChannelType::A2aCallback => 
+                self.a2a_callback_dao.push(ctx, message, channel).await,
         }
     }
 }

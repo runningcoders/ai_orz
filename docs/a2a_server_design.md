@@ -35,7 +35,7 @@
 | 模块 | 状态 | 文件 |
 |------|------|------|
 | tasks/sendSubscribe SSE 流式 | ✅ | `src/handlers/a2a/send_subscribe.rs` |
-| PushNotifications 推送通知（Webhook 回调） | ✅ | `src/service/dal/message_channel.rs` |
+| PushNotifications 推送通知（Webhook 回调） | ✅ | `src/service/dao/a2a_callback/`（独立 DAO 模块） |
 
 ## 定位
 
