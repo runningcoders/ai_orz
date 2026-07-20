@@ -6,10 +6,13 @@
 //! 3. 订阅用户的 SSE channel（复用现有 message_push 机制）
 //! 4. 返回 SSE 流：每次收到消息更新时推送完整 A2A Task
 //!
-//! SSE 推送粒度：完整 A2A Task（包含所有 messages/artifacts），客户端直接使用。
+//! SSE 推送粒度：完整 A2A Task（当前仅包含 messages，artifacts 暂为空）。
 //!
 //! 关键：复用现有 SSE 基础设施（message_push_dal），A2A 客户端和前端页面共享同一个
 //! 用户级 broadcast channel，同一条消息会自动推送给所有订阅者。
+//!
+//! TODO: 后续会拓展统一事件系统，将 task/artifact 等运行时数据变更统一纳入事件流，
+//! 通过消费者分发，届时可推送完整的 task 状态变更。
 
 use axum::response::sse::{Event, Sse};
 use axum::Extension;
@@ -18,7 +21,7 @@ use std::convert::Infallible;
 use std::pin::Pin;
 use tokio_stream::wrappers::BroadcastStream;
 
-use common::api::a2a::{A2aTask, SendTaskParams};
+use common::api::a2a::SendTaskParams;
 use common::error::Result;
 
 use crate::handlers::a2a::mapper::{build_a2a_task, extract_text_from_a2a_message};
@@ -188,16 +191,13 @@ async fn build_task_event(
         .list_by_project_id(ctx.clone(), project_id)
         .await?;
 
-    let artifacts = project_domain()
-        .artifact_manage()
-        .list_by_project(ctx.clone(), project_id)
-        .await?;
-
+    // TODO: 后续统一事件系统会推送 artifact/task 等运行时数据变更
+    // 当前仅推送消息，artifacts 传空数组
     let task = build_a2a_task(
         project_id,
         project.po.status,
         &messages,
-        &artifacts,
+        &[],
         session_id.clone(),
     );
 
