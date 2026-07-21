@@ -1214,18 +1214,116 @@ self.project_dal.create(ctx.clone(), project).await?;
 
 ---
 
-## 🏆 分层架构实践总结（截至 2026-05-15）
+## 🔄 实践 7：系统边界层架构原则（2026-07-21）
+
+> **背景**：飞书 P2P 消息入站、A2A Remote Agent 异步回调/轮询等外部接入场景完成后，明确系统边界层的统一架构原则。
+
+### 🎯 什么是系统边界层？
+
+系统边界层是所有与**外部系统交互**的入口和出口，位于传统四层架构（DAO → DAL → Domain → Handler）的**最外层**，负责把外部协议适配为内部操作，或把内部操作适配为外部协议。
+
+```
+          ┌─────────────────────────────────────────┐
+          │           外部系统（飞书/A2A Agent/...）   │
+          └───────────────┬─────────────────────────┘
+                          │ 外部协议（JSON-RPC/Webhook/WS...）
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│  系统边界层（Boundary Layer）                             │
+│  ├─ 入站：HTTP 回调端点 / AOP Producer / WebSocket 监听  │
+│  ├─ 出站：各渠道 Push DAO（lark_dao.push 等）             │
+│  └─ Adapter：协议转换、ID 映射、校验、幂等检查              │
+└─────────────────────────┬───────────────────────────────┘
+                          │ Domain 方法调用（send_to_user/send_to_agent...）
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│  Handler → Domain → DAL → DAO（传统内部分层）            │
+│  事件中心只流通内部事件（MessageCreatedEvent 等）         │
+└─────────────────────────────────────────────────────────┘
+```
+
+### ✅ 边界层核心原则：外部协议不进入内部
+
+| 原则 | 说明 |
+|------|------|
+| **协议转换在边界完成** | 外部数据结构 → 内部业务命令/操作的映射，全部在边界层完成 |
+| **直接调用 Domain** | 边界层拿到外部数据后，**直接调用 Domain 层方法**执行业务操作，不包装成"外部事件"投递到事件中心 |
+| **内部事件纯内部** | 事件中心里流通的事件（如 `MessageCreatedEvent`）全部由 Domain 方法内部产生，Consumer 不需要感知任何外部协议 |
+| **外部 DAO 封装** | 出站调用外部 API 的逻辑封装在对应 DAO（如 `LarkDao.push`、`A2aRuntimeDao.fetch_task`），不泄漏到 Domain 层 |
+
+### 📋 边界层职责清单
+
+**入站边界（接收外部 → 驱动内部）可以做**：
+- 监听/接收外部事件（HTTP 端点、WebSocket 长连接、定时轮询）
+- 外部协议校验、签名验证、鉴权
+- 幂等检查（如"已在终态则跳过"）
+- ID 映射（外部 ID ↔ 内部 ID，如 `open_id → user_id`、`a2a_task_id → task_id`）
+- 外部数据解析与过滤（如只处理飞书 P2P 文本消息、只处理 A2A agent 角色消息）
+- 直接调用 Domain 方法（`send_to_user()`、`send_to_agent()`、`transition_status()` 等）
+- 记录日志，处理外部渠道特有错误
+
+**入站边界禁止做**：
+- ❌ 直接操作 DAL/DAO（跨层，必须通过 Domain）
+- ❌ 把外部协议原始 JSON 包装成事件投递到事件中心
+- ❌ 把外部协议结构持久化到内部事件队列
+- ❌ 在 Consumer 里解析外部协议数据（到了 Consumer 就应该是纯内部语义了）
+- ❌ 实现核心业务规则（业务规则在 Domain 层）
+
+**出站边界（内部 → 推送外部）**：
+- 统一在对应外部 DAO 层完成（如 `LarkDao.push`、`A2aRuntimeDao.send_task`），由 DAL/Domain 编排调用
+- 出站消息格式转换在外部 DAO 内部完成（如 Markdown → 飞书卡片）
+
+### 🔍 两种入站实现对照
+
+| 外部渠道 | 边界实现 | 协议转换 | 业务动作 |
+|---------|---------|---------|---------|
+| 飞书 P2P 消息 | `src/producer/message_channel.rs` (Producer) + `src/service/dal/lark.rs` (Adapter) | `LarkMessageEvent` → `AdaptedMessage` → `SendToAgentCommand` | `MessageDomain.send_to_agent()` → 内部创建消息、发布 `MessageCreatedEvent`、唤醒 Agent |
+| A2A 回调 | `src/handlers/a2a/callback.rs` (HTTP Handler) | `A2aTask` → 提取消息文本/状态 → `SendToUserCommand` | `MessageDomain.send_to_user()` + `TaskManage.transition_status()` → 内部创建消息、发布 `MessageCreatedEvent`、SSE 推送 |
+| A2A 轮询 | `src/producer/a2a_polling.rs` (AOP Producer) | 同上（fetch_task 获取 A2aTask 后同样处理） | 同上 |
+
+### ❌ 反模式：外部事件包装进事件中心
+
+```rust
+// ❌ 错误：把外部协议 JSON 包装成内部事件投递
+pub struct A2aTaskUpdateEvent {
+    pub task_json: String,  // 直接存外部协议 JSON
+    // ...
+}
+// → 导致 Consumer 需要解析外部 JSON、理解外部协议
+// → 外部协议变更时需要改 Consumer
+// → 事件中心被外部协议污染
+```
+
+```rust
+// ✅ 正确：边界层直接调用 Domain，事件中心只看到内部事件
+// 边界层（handler/producer）:
+let cmd = SendToUserCommand { content: extract_text(&msg.parts), ... };
+message_domain.send_to_user(ctx, cmd).await?;  // 内部会发布 MessageCreatedEvent
+
+// Consumer 只看到 MessageCreatedEvent，完全不需要知道消息来自飞书还是 A2A
+```
+
+### 💡 架构洞见
+
+**Adapter 的意义**：边界层就是 Adapter——把"外部世界的语言"翻译成"内部系统的语言"。翻译完成后，内部链路完全复用，不需要因为接入了新的外部渠道而新增 Consumer 或内部事件类型。
+
+这与 Hexagonal Architecture（端口与适配器架构）的思想一致：内部业务逻辑（Domain）只定义端口（trait/方法签名），边界层作为适配器实现这些端口的对接；外部系统的变化只影响适配器，不影响内部核心。
+
+---
+
+## 🏆 分层架构实践总结（截至 2026-07-21）
 
 ### ✅ 已验证的最佳实践
 
 | 实践 | 验证模块 | 效果 |
 |------|---------|------|
-| **严格单向调用** | 全部 6 个领域 | ✅ 零跨层调用，零反向依赖 |
-| **DAO 职责单一** | 20 个 DAO | ✅ 每个 DAO 仅负责一个数据源 |
+| **严格单向调用** | 全部 6+ 个领域 | ✅ 零跨层调用，零反向依赖 |
+| **DAO 职责单一** | 20+ 个 DAO | ✅ 每个 DAO 仅负责一个数据源 |
 | **纯 match 分发** | Message Channel | ✅ 简单灵活，无 trait 复杂度 |
 | **业务实体持 PO** | Project/Task/Artifact | ✅ 减少转换代码，兼容性好 |
 | **DAL 私有封装 DAO** | 全部 DAL | ✅ 隐藏实现细节，接口清晰 |
 | **Arc<dyn Trait> 注入** | 全部 Domain | ✅ 符合 DIP，测试友好 |
+| **边界层协议转换** | 飞书入站、A2A 回调/轮询 | ✅ 外部协议不污染事件中心 |
 
 ---
 
@@ -1238,8 +1336,9 @@ self.project_dal.create(ctx.clone(), project).await?;
 | PO 暴露到 Domain 层 | 分层边界失效，耦合数据库 | 业务实体包装 PO |
 | 过度使用 trait | 复杂的对象转换，性能损耗 | 固定数量实现用纯 match |
 | Handler 直接调 DAL | 跳过业务逻辑层 | 必须通过 Domain 层 |
+| **外部事件包装进事件中心** | 外部协议污染内部，Consumer 需理解外部协议 | **边界层直接调 Domain，事件中心只流通内部事件** |
 
 ---
 
 **文档维护者**：架构组
-**下次更新**：Message Handler 完成后
+**上次更新**：2026-07-21（新增系统边界层架构原则）

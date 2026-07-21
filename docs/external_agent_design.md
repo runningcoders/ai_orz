@@ -134,22 +134,72 @@ Handler 内按 kind 校验必填字段并构造 `ExternalAgentConfig`，写入 `
   4. 调用远程 A2A Agent 的 `tasks/get` 接口获取最新状态
   5. **直接处理业务逻辑**（新消息 → send_to_user；状态变更 → transition_status）
 
-### 边界层直接处理（架构原则）
+### 边界层直接处理（通用架构原则）
 
-遵循**边界层处理协议转换**的原则：Producer/回调端点作为与外部 A2A 协议交互的边界，在获取到外部 A2aTask 后**直接调用 Domain 层方法完成业务处理**，外部协议数据不进入事件中心：
+这是与飞书入站消息一致的**系统边界架构原则**：所有与外部系统交互的入口（HTTP 回调端点、AOP Producer、WebSocket 监听等）都属于系统**边界层**，在边界层完成外部协议到内部操作的转换后，直接调用 Domain 层方法完成业务处理，**外部协议数据绝不进入事件中心**。
 
-1. **消息投递**：提取 agent/assistant 角色的文本消息，直接调用 `MessageDomain.delivery().send_to_user()` → 该方法内部会创建 MessagePo、持久化、发布内部 `MessageCreatedEvent`、通过 SSE 推送给用户，完全复用现有内部链路
-2. **状态流转**：直接调用 `ProjectDomain.task_manage().transition_status()` 更新任务状态
-3. **消息去重**：通过 tags 中 `a2a_synced_msgs:N` 记录已同步的 agent 消息数量，只发送新消息
-4. **幂等性**：
-   - 回调：已在终态的任务直接返回 ok 跳过
-   - 轮询：每次执行都会重新查询并基于已同步计数判断，天然支持重试（30秒后会再次处理）
-   - 外部回调 HTTP 请求失败时，外部 Agent 可重试推送
+#### 两种入站边界的对照
 
-**状态映射规则**：
-- A2A `Completed` → 本地 `Completed`
-- A2A `Failed/Canceled` → 本地 `Cancelled`
-- A2A `Working/Submitted/InputRequired` → 本地 `Pending` → `InProgress`
+| 外部渠道 | 边界实现 | 协议转换 | 业务动作 |
+|---------|---------|---------|---------|
+| 飞书 P2P 消息 | `src/producer/message_channel.rs` (Producer) + `src/service/dal/lark.rs` (Adapter) | `LarkMessageEvent` → `AdaptedMessage` → `SendToAgentCommand` | `MessageDomain.send_to_agent()`（创建消息→发布 MessageCreatedEvent→唤醒 Agent） |
+| A2A 回调 | `src/handlers/a2a/callback.rs` (HTTP Handler) | `A2aTask` → 提取消息文本/状态 → `SendToUserCommand` | `MessageDomain.send_to_user()`（创建消息→发布 MessageCreatedEvent→SSE 推送用户）+ `TaskManage.transition_status()` |
+| A2A 轮询 | `src/producer/a2a_polling.rs` (AOP Producer) | 同上（fetch_task 获取 A2aTask 后同样处理） | 同上 |
+
+#### 边界层职责边界
+
+边界层**可以做**：
+- 监听/接收外部事件（HTTP 端点、WebSocket、定时轮询）
+- 外部协议校验、签名验证、幂等检查
+- 外部数据结构 → 内部业务概念的映射解析
+- ID 映射（外部 ID ↔ 内部 ID）
+- 调用 Domain 层方法执行业务操作（`send_to_user`、`send_to_agent`、`transition_status` 等）
+- 记录日志，处理外部渠道特有错误
+
+边界层**禁止做**：
+- ❌ 直接操作 DAO/DAL 层（跨层）
+- ❌ 持久化外部协议原始数据到事件中心
+- ❌ 包装外部协议 JSON 作为内部事件投递
+- ❌ 实现核心业务规则（应在 Domain 层）
+- ❌ 在 Consumer 里解析外部协议数据（外部数据到 Consumer 时已经是内部事件了）
+
+#### A2A 边界层处理流程
+
+```
+外部协议数据（A2aTask）进入边界层
+  ├─ Push 回调：POST /a2a/callback/:task_id（handler）
+  └─ Poll 轮询：A2aPollingProducer.poll()（每30秒）
+        │
+        ▼
+  [边界层] 解析与校验
+        ├─ 校验本地 Task 存在且状态活跃
+        ├─ 校验外部 task_id 与本地 tags 中记录一致
+        ├─ 基于 tags 中 a2a_synced_msgs:N 做消息去重
+        └─ 提取 agent/assistant 角色的文本消息
+        │
+        ▼
+  [边界层] 直接调用 Domain 方法
+        ├─ MessageDomain.delivery().send_to_user()  ← 新消息
+        │     └─ 内部：创建 MessagePo → 持久化 → 发布 MessageCreatedEvent → SSE 推送给用户
+        └─ ProjectDomain.task_manage().transition_status()  ← 状态变更
+        │
+        ▼
+  [内部链路] 现有 Consumer 消费 MessageCreatedEvent（无需感知 A2A）
+```
+
+#### 幂等性策略
+
+- **回调**：已在终态的任务直接返回 ok 跳过；外部 Agent HTTP 请求失败时可重试推送
+- **轮询**：每次执行重新查询并基于已同步消息计数判断，天然支持重试（30秒后会再次处理）
+- **消息去重**：通过 Task.tags 中的 `a2a_synced_msgs:N` 记录已同步的 agent 消息数量，只发送 N 之后的新消息
+
+#### 状态映射规则
+
+| A2A Task 状态 | 本地 Task 状态 |
+|--------------|---------------|
+| `Completed` | `Completed` |
+| `Failed` / `Canceled` | `Cancelled` |
+| `Working` / `Submitted` / `InputRequired` | `Pending` → `InProgress` |
 
 ### 相关文件
 
