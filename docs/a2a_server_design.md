@@ -371,12 +371,12 @@ handler 层（tasks/send）：
    (b) 创建 project，将 agent.id 作为 owner_agent_id 绑定
    （agent 与 project 是两个维度，不在 hr domain 中融合）
 4. 启动 project（start → InProgress）
-5. 创建 message（send_to_agent）→ 自动入队 event_queue
+5. 创建 message（send_to_agent）→ 自动发布 `MessageCreatedEvent` 到 AOP
 6. 立即返回 working 状态的 A2aTask（不等待 Agent 回复）
 
-consumer 异步闭环（复用现有链路，无需新代码）：
-7. consumer worker dequeue → handle_agent_message
-8. 内部自动 wake_agent_brain（幂等）+ awaken
+consumer 异步闭环（复用现有 AOP 链路，无需新代码）：
+7. AOP `MessageConsumer` 异步消费 `message.created` 事件
+8. `consumer/message.rs` 内部自动 wake_agent_brain（幂等）+ awaken
 9. Agent 回复 message → 客户端通过 tasks/get 轮询获取结果
 ```
 

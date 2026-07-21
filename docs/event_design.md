@@ -1,4 +1,7 @@
-# 事件总线设计
+# 事件总线设计（已归档）
+
+> ⚠️ **本文档描述的是旧版 `EventQueueDao` 实现，已于 2026-07-20 被 AOP 事件中心取代**。当前架构请阅读 [consumer_architecture.md](./consumer_architecture.md)。
+> 保留本文档仅作为历史设计参考。
 
 ## 设计目标
 

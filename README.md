@@ -2,7 +2,7 @@
 
 **AI 代理协作框架** — 让多个 AI 代理像团队一样协作完成任务
 
-![Tests](https://img.shields.io/badge/tests-779%20%E2%9C%94-brightgreen)
+![Tests](https://img.shields.io/badge/tests-754%20%E2%9C%94-brightgreen)
 ![Rust](https://img.shields.io/badge/Rust-1.85+-000000?logo=rust)
 ![License](https://img.shields.io/github/license/runningcoders/ai_orz)
 
@@ -31,7 +31,7 @@
 | **后端** | Rust + Axum + SQLite + rig-core，单二进制可部署 |
 | **前端** | Dioxus 0.7 (WASM)，15 条路由，Mistral 暖色设计系统 |
 | **架构** | Handler → Domain → DAL → DAO 四层严格单向依赖 |
-| **测试** | 779 个单元测试，100% 通过 |
+| **测试** | 754 个单元测试，100% 通过 |
 | **实体覆盖** | Agent / Project / Task / Message / Memory / Skill / Tool / ModelProvider 全栈 |
 
 核心能力已落地：
@@ -45,7 +45,7 @@
 - 🔍 **综合搜索**：FTS5 关键词 + 向量语义 + 知识图谱三合一
 - 📊 **多维统计**：Agent / Project / Task / Tool / ModelProvider 五维度统计，异步重建索引
 - 🛠️ **系统管理**：数据备份与恢复、日志查询、基于角色的权限控制
-- 📡 **AOP 事件中心**：统一生产-消费事件框架，支持同步/异步消费模式，内置内存队列，支持自定义事件、生产者和消费者扩展
+- 📡 **AOP 事件中心**：统一生产-消费事件框架，支持同步/异步消费模式，内置内存队列；生产者（Producer）与消费者（Consumer）分别注册，完全解耦
 
 > 完整功能列表和开发规范请看 [AGENTS.md](./AGENTS.md)
 

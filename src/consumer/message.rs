@@ -107,7 +107,6 @@ impl Consumer for MessageConsumer {
 
     async fn ack(&self, event_id: &str) -> Result<()> {
         let ctx = RequestContext::new(None, None);
-        message_dal::dal().ack_message(ctx.clone(), event_id).await?;
         message_dal::dal()
             .update_status(ctx, event_id, MessageStatus::Processed)
             .await?;
@@ -116,7 +115,6 @@ impl Consumer for MessageConsumer {
 
     async fn nack(&self, event_id: &str) -> Result<()> {
         let ctx = RequestContext::new(None, None);
-        message_dal::dal().nack_message(ctx.clone(), event_id).await?;
         message_dal::dal()
             .update_status(ctx, event_id, MessageStatus::Pending)
             .await?;

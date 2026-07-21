@@ -14,7 +14,7 @@
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + rig-core 0.34
 - **前端**：Dioxus 0.7 (WebAssembly)
-- **技术特色**：严格分层架构、类型安全、708 个测试 100% 通过率
+- **技术特色**：严格分层架构、类型安全、754 个测试 100% 通过率
 
 ### 1.2 已实现核心功能
 
@@ -67,11 +67,11 @@
 | 📜 日志在线查询 | ✅ | 关键词 + log_id 调用链 + 级别 + 时间范围过滤 |
 | 🛡️ 角色权限中间件 | ✅ | 基于并查集的权限中间件，Member → Admin → SuperAdmin 继承体系 |
 
-### 1.3 整体完成度与测试统计（2026-07-17 更新）
+### 1.3 整体完成度与测试统计（2026-07-21 更新）
 
 | 指标 | 数值 | 说明 |
 |------|------|------|
-| **总测试数** | **708** | DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
+| **总测试数** | **754** | DAO + DAL + Domain + Handler + Pkg 完整覆盖（清理 DAL 冗余队列操作测试后） |
 | **通过率** | **100%** | ✅ 全部测试通过 |
 | DAO 模块数 | 29 个 | 全部实现并被使用，零闲置（21 核心 DAO + 5 渠道 DAO + 1 统计 DAO + 1 触发器 DAO + 1 消息推送 DAO） |
 | DAL 模块数 | 19 个 | 全部完整业务承载，零闲置（+ lark 飞书渠道专属 DAL） |
@@ -184,8 +184,11 @@ ai_orz/
 │   │   └── domain/            # 领域层 Domain
 │   ├── models/                # PO 持久化实体 + 业务实体
 │   ├── middleware/            # Axum 中间件
-│   ├── consumer/              # 异步消费者系统
+│   ├── producer/              # AOP 事件生产者（轮询 + 外部渠道回调）
+│   ├── consumer/              # AOP 事件消费者（订阅事件，调用 domain 层）
 │   └── pkg/                   # 公共工具包
+│       ├── aop/               # AOP 事件中心纯框架（Event/Producer/Consumer/Registry/Queue）
+│       ├── adapter/           # 通用适配器基础设施
 │       ├── stats/            # DuckDB 统计模块（record_event! 宏、查询 API）
 │       └── *test_support.rs  # 测试支持文件（request_context、storage）
 │

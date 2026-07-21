@@ -14,7 +14,6 @@ use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::message::{self, MessageDao, MessageQuery, MessageSearch, MessageVectorDao};
 use crate::service::dao::model_provider::ModelProviderDao;
 use common::enums::MessageStatus;
-use std::collections::HashSet;
 use std::sync::{Arc, OnceLock};
 
 static MESSAGE_DAL: OnceLock<Arc<dyn MessageDal>> = OnceLock::new();
@@ -105,12 +104,6 @@ pub trait MessageDal: Send + Sync {
     async fn delete_message(&self, ctx: RequestContext, id: &str) -> Result<()>;
 
     async fn delete_by_task_id(&self, ctx: RequestContext, task_id: &str) -> Result<()>;
-
-    async fn dequeue_next_message(&self, ctx: RequestContext) -> Result<Option<Message>>;
-
-    async fn ack_message(&self, ctx: RequestContext, message_id: &str) -> Result<()>;
-
-    async fn nack_message(&self, ctx: RequestContext, message_id: &str) -> Result<()>;
 
     async fn search(
         &self,
@@ -325,31 +318,6 @@ impl MessageDal for MessageDalImpl {
         self.message_dao.delete_by_task_id(ctx, task_id).await
     }
 
-    async fn dequeue_next_message(&self, ctx: RequestContext) -> Result<Option<Message>> {
-        // AOP 调度器已自动从队列拉取并消费，此方法仅保留兼容性
-        // 直接从 AOP 队列尝试获取
-        let value = aop::registry().dequeue_for("agent.awakening").await?;
-
-        match value {
-            Some(event_json) => {
-                let event: MessageCreatedEvent = serde_json::from_value(event_json)?;
-                self.update_status(ctx.clone(), event.id(), MessageStatus::Processing)
-                    .await?;
-                let msg = self.find_by_id(ctx, event.id()).await?;
-                Ok(msg)
-            }
-            None => Ok(None),
-        }
-    }
-
-    async fn ack_message(&self, _ctx: RequestContext, message_id: &str) -> Result<()> {
-        aop::registry().ack("agent.awakening", message_id).await
-    }
-
-    async fn nack_message(&self, _ctx: RequestContext, message_id: &str) -> Result<()> {
-        aop::registry().nack("agent.awakening", message_id).await
-    }
-
     async fn search(
         &self,
         ctx: RequestContext,
@@ -446,9 +414,19 @@ async fn do_search(
     ctx: RequestContext,
     search: &MessageSearch,
 ) -> Result<(Vec<Message>, Vec<Message>)> {
+    use crate::models::vector::{MatchType, SearchMatchInfo};
+
     let keyword_matches = if search.keyword.is_some() {
         let results = message_dao.search_messages(ctx.clone(), search.clone()).await?;
-        results.into_iter().map(|(po, _score)| Message::from_po(po)).collect()
+        results.into_iter().map(|(po, fts_rank)| {
+            let mut msg = Message::from_po(po);
+            msg.search_match = Some(SearchMatchInfo {
+                match_type: MatchType::Keyword,
+                fts_rank,
+                ..Default::default()
+            });
+            msg
+        }).collect()
     } else {
         Vec::new()
     };
@@ -458,7 +436,16 @@ async fn do_search(
         let mut matches = Vec::new();
         for hit in results {
             if let Ok(Some(po)) = message_dao.find_by_id(ctx.clone(), &hit.row.id).await {
-                matches.push(Message::from_po(po));
+                let mut msg = Message::from_po(po);
+                msg.search_match = Some(SearchMatchInfo {
+                    match_type: MatchType::Vector,
+                    vector_distance: Some(hit.distance),
+                    embedding_model: Some(hit.row.meta.embedding_model.clone()),
+                    content_hash: Some(hit.row.meta.content_hash.clone()),
+                    indexed_at: Some(hit.row.meta.indexed_at),
+                    ..Default::default()
+                });
+                matches.push(msg);
             }
         }
         matches
@@ -474,7 +461,10 @@ fn merge_search_results(
     vector_matches: Vec<Message>,
     search: &MessageSearch,
 ) -> Vec<Message> {
-    let mut seen = HashSet::new();
+    use crate::models::vector::MatchType;
+    use std::collections::HashMap;
+
+    let mut seen: HashMap<String, usize> = HashMap::new();
 
     let keyword_weight = 0.7;
     let vector_weight = 0.3;
@@ -483,8 +473,10 @@ fn merge_search_results(
 
     let keyword_len = keyword_matches.len() as f64;
     for (i, msg) in keyword_matches.into_iter().enumerate() {
-        if seen.insert(msg.id().to_string()) {
+        let id = msg.id().to_string();
+        if !seen.contains_key(&id) {
             let score = keyword_weight * (1.0 - (i as f64 / keyword_len));
+            seen.insert(id, scored_results.len());
             scored_results.push((score, msg));
         }
     }
@@ -492,16 +484,19 @@ fn merge_search_results(
     let vector_len = vector_matches.len() as f64;
     for (i, msg) in vector_matches.into_iter().enumerate() {
         let id = msg.id().to_string();
-        if seen.insert(id.clone()) {
-            let score = vector_weight * (1.0 - (i as f64 / vector_len));
-            scored_results.push((score, msg));
-        } else {
-            for (score, m) in scored_results.iter_mut() {
-                if m.id() == msg.id() {
-                    *score += vector_weight * (1.0 - (i as f64 / vector_len));
-                    break;
+        let score = vector_weight * (1.0 - (i as f64 / vector_len));
+        if let Some(&idx) = seen.get(&id) {
+            let (ref mut total_score, ref mut existing_msg) = scored_results[idx];
+            *total_score += score;
+            if let Some(ref mut match_info) = existing_msg.search_match {
+                match_info.match_type = MatchType::Hybrid;
+                if let Some(distance) = msg.search_match.as_ref().and_then(|m| m.vector_distance) {
+                    match_info.vector_distance = Some(distance);
                 }
             }
+        } else {
+            seen.insert(id, scored_results.len());
+            scored_results.push((score, msg));
         }
     }
 

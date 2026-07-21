@@ -339,45 +339,6 @@ impl MessageDelivery for MessageDomainImpl {
         Ok(message)
     }
 
-    async fn dequeue_next(
-        &self,
-        ctx: RequestContext,
-    ) -> Result<Option<Message>> {
-        self.message_dal.dequeue_next_message(ctx).await
-    }
-
-    async fn ack(
-        &self,
-        ctx: RequestContext,
-        message_id: &str,
-    ) -> Result<()> {
-        // 先确认出队
-        self.message_dal
-            .ack_message(ctx.clone(), message_id)
-            .await?;
-        // 更新消息状态为 Processed - clone ctx 因为需要用两次
-        self.message_dal
-            .update_status(ctx, message_id, MessageStatus::Processed)
-            .await?;
-        Ok(())
-    }
-
-    async fn nack(
-        &self,
-        ctx: RequestContext,
-        message_id: &str,
-    ) -> Result<()> {
-        // 放回队列
-        self.message_dal
-            .nack_message(ctx.clone(), message_id)
-            .await?;
-        // 更新消息状态回到 Pending - clone ctx 因为需要用两次
-        self.message_dal
-            .update_status(ctx, message_id, MessageStatus::Pending)
-            .await?;
-        Ok(())
-    }
-
     async fn deliver_message(
         &self,
         ctx: RequestContext,

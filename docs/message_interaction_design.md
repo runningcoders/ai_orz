@@ -371,17 +371,19 @@ ToolCallResult 作为消息回到 Agent 队列 → 外部调度侧查询统计�
 
 ---
 
-## 消息投递队列设计
+## 消息投递与消费设计
 
-### 拉取模式消费
+> 2026-07-21 更新：当前系统已迁移到 AOP 事件中心。消息不再由 Agent 主动拉取（`dequeue`），而是由 `MessageConsumer` 订阅 `message.created` 事件，AOP 框架负责异步调度。详见 [consumer_architecture.md](./consumer_architecture.md)。
 
-每个 Agent 有自己的投递队列，使用拉取模式消费：
+### 消费模式
 
-1. Agent 启动后调用 `dequeue` 获取下一个 `Pending` 消息
-2. 更新消息状态为 `Processing`
-3. Agent 处理消息
-4. 处理完成调用 `ack` 更新状态为 `Completed`
-5. 如果处理失败调用 `nack` 改回 `Pending`，下次重新拉取
+消息消费采用 **AOP 推送模式**：
+
+1. `service/dal/message.rs` 保存消息后发布 `MessageCreatedEvent` 到 AOP
+2. AOP `InMemoryEventQueue` 按 `order_key` 维护顺序
+3. `consumer/message.rs` 中的 `MessageConsumer`（Async 模式，并发 4）被 AOP 调度消费事件
+4. AOP 框架自动处理队列的 `ack`/`nack`
+5. 业务 `Consumer::ack`/`nack` 仅更新 DB 消息状态（`Processed`/`Pending`）
 
 ### 领域层接口设计
 
@@ -421,27 +423,6 @@ pub trait DeliveryDomain {
         ctx: RequestContext,
         cmd: DeliverMessageCommand<'_>,
     ) -> Result<DeliveryResult, AppError>;
-
-    /// Agent 拉取下一个待处理消息
-    async fn dequeue(
-        &self,
-        ctx: RequestContext,
-        agent_id: &str,
-    ) -> Result<Option<MessagePo>, AppError>;
-
-    /// 确认消息处理完成
-    async fn ack(
-        &self,
-        ctx: RequestContext,
-        message_id: &str,
-    ) -> Result<(), AppError>;
-
-    /// 消息处理失败，放回队列
-    async fn nack(
-        &self,
-        ctx: RequestContext,
-        message_id: &str,
-    ) -> Result<(), AppError>;
 }
 ```
 

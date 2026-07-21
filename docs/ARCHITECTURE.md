@@ -109,9 +109,10 @@ pub struct CoreMemory {
 ### 7. User（用户）
 - **定义**：登录用户，属于一个组织，有角色和状态
 
-### 8. EventQueue（事件总线）
-- **定义**：轻量级内存事件队列，支持优先级排序和顺序保证
-- **设计文档**：详见 [docs/event_design.md](./event_design.md)
+### 8. AOP Event Center（AOP 事件中心）
+- **定义**：纯框架级事件生产-订阅-调度中心，支持同步/异步消费、轮询生产者、顺序保证
+- **设计文档**：详见 [docs/consumer_architecture.md](./consumer_architecture.md)
+- **关键约束**：AOP 框架零业务依赖，业务事件的生产者（`producer/`）和消费者（`consumer/`）分别注册到 AOP
 
 ---
 

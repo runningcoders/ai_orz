@@ -1,6 +1,7 @@
 # 消费者与生产者架构设计文档
 
 > **2026-07-20 更新**：本文档已全面更新，反映基于 AOP 事件中心的生产-消费架构。
+> **2026-07-21 更新**：清理 Message DAL 中冗余的队列操作接口（`dequeue_next_message`/`ack_message`/`nack_message`）。队列的出队/确认/回退完全由 AOP 框架负责，业务 Consumer 的 `ack`/`nack` 仅更新 DB 消息状态。
 
 ## 📌 设计目标
 
@@ -128,8 +129,7 @@ pub trait Producer: Send + Sync {
 6. aop::init_all()           — 启动 AOP 调度器
    ├─ 为轮询 Producer 启动轮询协程
    └─ 为 Async Consumer 启动 N 个 Worker 协程
-7. scheduler::init()         — Cron 触发器 DB 扫描器（仅扫描，发布事件通过 Producer）
-8. axum::serve(...)          — 启动 HTTP 服务
+7. axum::serve(...)          — 启动 HTTP 服务
 ```
 
 ---
@@ -207,8 +207,22 @@ impl Consumer for MessageConsumer {
         // 2. 从 DB 加载完整 Message
         // 3. 按 to_role 分发：Agent/User/System
     }
+
+    async fn ack(&self, event_id: &str) -> Result<()> {
+        // AOP 框架已从队列中移除该事件
+        // 这里只更新 DB 状态为 Processed
+        message_dal.update_status(event_id, MessageStatus::Processed).await
+    }
+
+    async fn nack(&self, event_id: &str) -> Result<()> {
+        // AOP 框架已将事件放回队列
+        // 这里只更新 DB 状态为 Pending
+        message_dal.update_status(event_id, MessageStatus::Pending).await
+    }
 }
 ```
+
+> **注意**：业务 Consumer 不需要手动操作队列。AOP Registry 在 `on_event` 返回 `Ok` 后自动调用 `ack()` 从队列移除事件，返回 `Err` 后自动调用 `nack()` 将事件回退到队列。业务 `ack`/`nack` 仅负责 DB 状态同步。
 
 ### 2. CronTriggerConsumer（Cron 触发器消费者）
 

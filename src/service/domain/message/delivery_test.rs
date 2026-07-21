@@ -137,6 +137,7 @@ fn init_all_channel_daos() {
     crate::service::dao::slack::init();
     crate::service::dao::email::init();
     crate::service::dao::webhook::init();
+    crate::service::dao::a2a_callback::init();
 }
 
 /// 初始化测试环境（每个测试新建独立实例，保证测试隔离）
@@ -235,95 +236,6 @@ async fn test_send_to_agent_and_send_to_user(pool: SqlitePool) {
     assert_eq!(sent_to_user.po.to_role, MessageRole::User);
     assert_eq!(sent_to_user.po.content, "Agent reply to user");
     assert_eq!(sent_to_user.po.status, MessageStatus::Pending);
-}
-
-#[sqlx::test]
-async fn test_dequeue_ack_nack(pool: SqlitePool) {
-    let (domain, ctx) = init_test_env(pool);
-
-    // 队列初始为空
-    let empty = domain.delivery().dequeue_next(ctx.clone()).await.unwrap();
-    assert!(empty.is_none());
-
-    // 发送一条消息入队
-    let sent = domain
-        .delivery()
-        .send_to_agent(
-            ctx.clone(),
-            SendToAgentCommand {
-                from_id: "user-1",
-                from_role: MessageRole::User,
-                to_agent_id: "agent-1",
-                content: "Message for dequeue test",
-                project_id: None,
-                task_id: None,
-                reply_to_id: None,
-                attachment_ids: None,
-            },
-        )
-        .await
-        .unwrap();
-
-    // 出队
-    let dequeued = domain.delivery().dequeue_next(ctx.clone()).await.unwrap();
-    assert!(dequeued.is_some());
-    let dequeued_msg = dequeued.unwrap();
-    assert_eq!(dequeued_msg.po.id, sent.po.id);
-
-    // 出队已经更新数据库状态为 Processing，但返回消息来自内存缓存，状态还是 Pending
-    // 重新查询确认数据库状态已更新
-    let dequeued_msg_reload = domain
-        .management()
-        .get_by_id(ctx.clone(), dequeued_msg.id())
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(dequeued_msg_reload.po.status, MessageStatus::Processing);
-
-    // 再次出队，队列已空
-    let empty_after_dequeue = domain.delivery().dequeue_next(ctx.clone()).await.unwrap();
-    assert!(empty_after_dequeue.is_none());
-
-    // nack - 重新入队
-    domain
-        .delivery()
-        .nack(ctx.clone(), dequeued_msg.id())
-        .await
-        .unwrap();
-
-    // 重新查询确认状态回到 Pending
-    let after_nack = domain
-        .management()
-        .get_by_id(ctx.clone(), dequeued_msg.id())
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(after_nack.po.status, MessageStatus::Pending);
-
-    // 可以再次出队
-    let dequeued_again = domain.delivery().dequeue_next(ctx.clone()).await.unwrap();
-    assert!(dequeued_again.is_some());
-    assert_eq!(dequeued_again.unwrap().po.id, dequeued_msg.id());
-
-    // ack - 确认完成
-    domain
-        .delivery()
-        .ack(ctx.clone(), dequeued_msg.id())
-        .await
-        .unwrap();
-
-    // 确认状态变为 Processed
-    let after_ack = domain
-        .management()
-        .get_by_id(ctx.clone(), dequeued_msg.id())
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(after_ack.po.status, MessageStatus::Processed);
-
-    // 队列再次为空
-    let empty_final = domain.delivery().dequeue_next(ctx.clone()).await.unwrap();
-    assert!(empty_final.is_none());
 }
 
 #[sqlx::test]

@@ -282,15 +282,6 @@ pub trait MessageDelivery: Send + Sync {
         cmd: SendTaskAssignmentCommand<'_>,
     ) -> Result<Message>;
 
-    /// 从队列取出下一条待处理消息
-    async fn dequeue_next(&self, ctx: RequestContext) -> Result<Option<Message>>;
-
-    /// 确认消息处理完成
-    async fn ack(&self, ctx: RequestContext, message_id: &str) -> Result<()>;
-
-    /// 否定确认（消息放回队列重试）
-    async fn nack(&self, ctx: RequestContext, message_id: &str) -> Result<()>;
-
     /// 分发消息到用户所有可用渠道
     ///
     /// 自动查询用户配置的所有活跃渠道，将消息推送到每个渠道
