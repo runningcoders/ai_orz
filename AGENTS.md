@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-07-15
+> 最后更新：2026-07-21（新增 Trait 定义位置规范 + AOP 队列监控功能）
 
 ---
 
@@ -52,7 +52,7 @@
 | 🗺️ 知识图谱可视化 | ✅ | SVG 图谱组件、圆形布局、节点连接线、搜索初始节点 |
 | 🗺️ 知识图谱交互完善 | ✅ | 关系类型差异化颜色/样式、边标签防重叠、节点拖拽、缩放平移、搜索高亮与历史、详情侧边栏增强 |
 | 📡 SSE 消息推送 | ✅ | Server-Sent Events 长连接、订阅者模式、DAO 层连接管理、broadcast 广播 |
-| 📡 AOP 事件中心 | ✅ | 纯框架（零业务依赖）、Event/Producer/Consumer/Registry 抽象、同步/异步消费模式、内置内存队列、producer/consumer 业务层完全解耦 |
+| 📡 AOP 事件中心 | ✅ | 纯框架（零业务依赖）、Event/Producer/Consumer/Registry 抽象、同步/异步消费模式、内置内存队列、producer/consumer 业务层完全解耦、运行时队列状态监控 |
 | 🔔 Toast 通知系统 | ✅ | 全局状态管理、4 种类型（success/error/warning/info）、滑入滑出动画、进度条倒计时、22 页面统一替换旧式提示 |
 | 🔐 Cookie 认证统一 | ✅ | 前后端统一 HttpOnly Cookie + JWT、中间件顺序优化、localStorage 标志位 |
 | 🔑 双模式认证 | ✅ | Cookie（浏览器）+ Bearer token（API 工具/代码调用），非浏览器请求返回 401 JSON |
@@ -66,6 +66,7 @@
 | 💾 数据备份与恢复 | ✅ | _index.json 索引 + tar.gz 压缩 + 恢复脚本 |
 | 📜 日志在线查询 | ✅ | 关键词 + log_id 调用链 + 级别 + 时间范围过滤 |
 | 🛡️ 角色权限中间件 | ✅ | 基于并查集的权限中间件，Member → Admin → SuperAdmin 继承体系 |
+| 📊 AOP 队列监控 | ✅ | System 模块运行时监控、队列统计卡片、事件列表查询、事件详情查看（脱敏） |
 
 ### 1.3 整体完成度与测试统计（2026-07-21 更新）
 
@@ -361,7 +362,20 @@ sqlx::query_as!(
 
 ## 四、关键约定（强制执行）
 
-### 4.1 RequestContext 参数
+### 4.1 Trait 定义位置规范
+
+| 层级 | Trait 定义位置 | 实现位置 | 示例 |
+|------|---------------|---------|------|
+| **DAO** | 子模块目录 `mod.rs`（如 `dao/agent/mod.rs`） | 各存储实现文件（如 `sqlite.rs`、`stats_duckdb.rs`） | `AgentDao` 定义在 `dao/agent/mod.rs`，实现在 `dao/agent/sqlite.rs` |
+| **DAL** | 各自文件中（如 `dal/agent.rs`） | 同文件内 | `AgentDal` trait + impl 都在 `dal/agent.rs` |
+| **Domain** | 主模块 `mod.rs`（如 `domain/message/mod.rs`） | 子模块文件中 | `MessageDelivery` trait 在 `domain/message/mod.rs`，`impl MessageDelivery for MessageDomainImpl` 在 `domain/message/delivery.rs` |
+
+**Domain 层具体约定：**
+- 主模块 `mod.rs` 中定义总 trait（如 `MessageDomain`）和所有子能力 trait（如 `MessageDelivery`、`MessageManagement`）
+- 子模块文件（如 `delivery.rs`、`management.rs`）中写 `impl SubTrait for DomainImpl`，不要在子模块中定义新的 struct 包装器
+- DomainImpl 结构体定义在主模块 `mod.rs` 中，子模块通过 `use super::DomainImpl` 引入
+
+### 4.2 RequestContext 参数
 
 **所有 service 层（DAO/DAL/Domain）公共方法的第一个参数必须是 `ctx: RequestContext`**
 
@@ -373,7 +387,7 @@ fn wake_cortex(&self, ctx: RequestContext, provider: &ModelProvider, prompt: &st
 fn wake_cortex(&self, provider: &ModelProvider, prompt: &str) -> Result<String>;
 ```
 
-### 4.2 枚举类型安全
+### 4.3 枚举类型安全
 
 所有存储在数据库中的枚举状态/角色字段，**必须使用 Rust 枚举类型**，禁止直接使用 `i32` 存储
 
@@ -381,7 +395,7 @@ fn wake_cortex(&self, provider: &ModelProvider, prompt: &str) -> Result<String>;
 - 实现 `From<i64>` 适配 sqlx 类型推断
 - 枚举统一定义在 `common/src/enums/`
 
-### 4.3 SQLite + SQLx 规范
+### 4.4 SQLite + SQLx 规范
 
 - **所有表必须启用 `STRICT` 模式**
 - **SQL 关键字必须转义**：`status` → `"status"`
@@ -390,21 +404,21 @@ fn wake_cortex(&self, provider: &ModelProvider, prompt: &str) -> Result<String>;
 - **`.sqlx` 目录必须纳入版本控制**
 - **测试使用 `#[sqlx::test]`**，每个测试独立内存数据库
 
-### 4.4 Handler 拆分规范
+### 4.5 Handler 拆分规范
 
 - 按业务域分组（hr、finance、organization、user 等）
 - **每个业务方法一个独立文件**，单个文件只放一个 handler 函数
 - `mod.rs` 只保留模块导出，不存放实现
 - 所有 DTO 从 `common/src/api/` 导入；通用响应包装统一使用 `common::api::ApiResponse<T>`，禁止在 `src/handlers` 定义本地 `ApiResponse`
 
-### 4.5 测试隔离原则
+### 4.6 测试隔离原则
 
 - 无状态组件可使用单例（OnceLock）
 - 有状态内存组件必须每次新建实例
 - 测试使用独立数据库，不依赖全局状态
 - 所有测试使用 `#[sqlx::test]` 宏
 
-### 4.6 日志系统规范（强制执行，2026-05-15 新增）
+### 4.7 日志系统规范（强制执行，2026-05-15 新增）
 
 **核心原则：项目内所有代码必须使用统一日志宏，禁止直接调用 tracing::*!**
 
