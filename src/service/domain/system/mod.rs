@@ -11,6 +11,8 @@ use crate::service::dal::log_query::{LogQuery as LogQueryParam, LogPageResult, L
 use crate::service::dao::cron_trigger::CronTriggerQuery;
 use std::sync::{Arc, OnceLock};
 
+mod aop_monitor;
+
 static SYSTEM_DOMAIN: OnceLock<Arc<dyn SystemDomain>> = OnceLock::new();
 
 pub fn domain() -> Arc<dyn SystemDomain> {
@@ -41,7 +43,6 @@ struct SystemDomainImpl {
     cron_trigger_dal: Arc<dyn CronTriggerDal>,
     backup_dal: Arc<dyn BackupDal + Send + Sync>,
     log_query_dal: Arc<dyn LogQueryDal + Send + Sync>,
-    aop_monitor: AopMonitorImpl,
 }
 
 impl SystemDomainImpl {
@@ -54,7 +55,6 @@ impl SystemDomainImpl {
             cron_trigger_dal,
             backup_dal,
             log_query_dal,
-            aop_monitor: AopMonitorImpl,
         }
     }
 }
@@ -73,7 +73,7 @@ impl SystemDomain for SystemDomainImpl {
     }
 
     fn aop_monitor(&self) -> &dyn AopMonitor {
-        &self.aop_monitor
+        self
     }
 }
 
@@ -115,26 +115,6 @@ pub trait AopMonitor: Send + Sync {
     fn queue_stats(&self, consumer_name: &str) -> Option<aop::queue::QueueStats>;
     fn list_events(&self, consumer_name: &str, filter: aop::queue::EventQueryFilter) -> Option<Vec<aop::queue::EventSummary>>;
     fn get_event(&self, consumer_name: &str, event_id: &str) -> Option<aop::queue::EventDetail>;
-}
-
-struct AopMonitorImpl;
-
-impl AopMonitor for AopMonitorImpl {
-    fn all_queue_stats(&self) -> Vec<(String, aop::queue::QueueStats)> {
-        aop::registry().all_queue_stats()
-    }
-
-    fn queue_stats(&self, consumer_name: &str) -> Option<aop::queue::QueueStats> {
-        aop::registry().queue_stats(consumer_name)
-    }
-
-    fn list_events(&self, consumer_name: &str, filter: aop::queue::EventQueryFilter) -> Option<Vec<aop::queue::EventSummary>> {
-        aop::registry().query_events(consumer_name, filter)
-    }
-
-    fn get_event(&self, consumer_name: &str, event_id: &str) -> Option<aop::queue::EventDetail> {
-        aop::registry().get_event(consumer_name, event_id)
-    }
 }
 
 #[async_trait::async_trait]
