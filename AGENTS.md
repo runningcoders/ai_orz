@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-07-21（新增 Trait 定义位置规范 + AOP 队列监控功能）
+> 最后更新：2026-07-21（明确 Handler=Adapter 适配层架构原则 + A2A 异步回调/轮询机制）
 
 ---
 
@@ -24,7 +24,8 @@
 | 🤖 Agent 全生命周期 | ✅ | 创建、配置、工具绑定、唤醒执行 |
 | 🧠 四层记忆系统 | ✅ | Core/Working/Short-term/Long-term |
 | 💬 消息对话系统 | ✅ | 用户 ↔ Agent 双向对话，支持项目上下文 |
-| 📨 消息渠道系统 | ✅ | 多渠道消息接入（飞书/微信/Slack/邮件/Webhook），飞书 P2P 私信 + WebSocket 长连接，启用/禁用/测试 |
+| 📨 消息渠道系统 | ✅ | 多渠道消息出站推送（飞书/微信/Slack/邮件/Webhook），飞书 P2P 私信 WebSocket 入站长连接已上线，适配层架构；微信/Slack/邮件/Webhook 出站骨架就绪，入站待实现 |
+| 🔌 A2A 外部 Agent | ✅ | 完整 A2A 协议支持：Client（注册外部 CLI/Remote Agent 并委派任务）、Server（对外暴露协议端点）、异步结果回传（Push 回调 + 30秒轮询兜底，适配层直接处理，外部协议不污染内部事件中心） |
 | 🛠️ 混合模式工具调用 | ✅ | 简单工具走 rig auto，关键工具走自建 manual 可控链路 |
 | 📚 技能库系统 | ✅ | 可复用技能和工作流，支持搜索和分类，tag 技能包安装，唤醒时注入 Prompt |
 | 📋 任务 + 项目管理 | ✅ | 任务状态机，项目聚合对话上下文，DAL + Domain 层完整实现 |
@@ -72,13 +73,13 @@
 
 | 指标 | 数值 | 说明 |
 |------|------|------|
-| **总测试数** | **754** | DAO + DAL + Domain + Handler + Pkg 完整覆盖（清理 DAL 冗余队列操作测试后） |
+| **总测试数** | **754** | DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
 | **通过率** | **100%** | ✅ 全部测试通过 |
-| DAO 模块数 | 29 个 | 全部实现并被使用，零闲置（21 核心 DAO + 5 渠道 DAO + 1 统计 DAO + 1 触发器 DAO + 1 消息推送 DAO） |
-| DAL 模块数 | 19 个 | 全部完整业务承载，零闲置（+ lark 飞书渠道专属 DAL） |
+| DAO 模块数 | 25 个 | 全部实现并被使用，零闲置（18 核心 DAO + 5 渠道 DAO + a2a 回调 + 1 触发器 + 消息推送） |
+| DAL 模块数 | 23 个 | 全部完整业务承载，零闲置（含 lark 飞书、agent_a2a、agent_codex 专属 DAL） |
 | Domain 领域数 | 7 个 | 全部完整实现（新增 SystemDomain） |
-| Handler API 领域数 | 7 个上线 | organization, hr, finance, project, user, health, system |
-| **整体架构完成度** | **~99%** | 从下往上扎实推进 |
+| Handler API 领域数 | 8 个上线 | organization, hr, finance, project, user, health, system, a2a（公开回调） |
+| **整体架构完成度** | **~99%** | 从下往上扎实推进，适配层架构原则已明确 |
 
 ---
 
@@ -96,8 +97,9 @@
 ### 分层架构与最佳实践
 | 文档 | 内容 | 优先级 |
 |------|------|--------|
-| [docs/LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md) | **开发必读** 6 个完整架构实践、反模式坑、最佳实践总结 | ⭐⭐⭐ |
+| [docs/LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md) | **开发必读** 7 个完整架构实践（含适配层架构原则）、反模式坑、最佳实践总结 | ⭐⭐⭐ |
 | [docs/NAMING_CONVENTION.md](./docs/NAMING_CONVENTION.md) | 全项目统一命名约定、DAO/DAL/Domain 命名规则 | ⭐⭐ |
+| [docs/external_agent_design.md](./docs/external_agent_design.md) | 外部 Agent 接入（CLI/Remote/A2A 异步回调轮询）、适配层处理模式 | ⭐⭐ |
 ### 各模块详细设计
 | 文档 | 内容 | 优先级 |
 |------|------|--------|
@@ -138,17 +140,22 @@
 **严格单向调用，禁止跨层和同层互调**：
 
 ```
-Handler (API 层)
-    │ 只调用 Domain
+Adapter (适配层)
+    ├─ HTTP Handler（用户 API + 外部回调）
+    └─ AOP Producer（轮询 + 外部 WS 事件接入）
+    │
+    │ 只调用 Domain；负责协议解析、校验、ID 映射、DTO↔Command 转换
     ▼
 Domain (领域层)
-    │ 组合多个 DAL，实现业务逻辑
+    │ 组合多个 DAL，实现核心业务逻辑，产生内部事件
     ▼
 DAL (业务数据层)
-    │ 组合多个 DAO，提供业务级数据操作
+    │ 组合多个 DAO，提供业务级数据操作，PO↔Entity 转换
     ▼
 DAO (数据访问层)
-    │ 单一数据源 CRUD，不包含业务逻辑
+    ├─ 本地 DB DAO：单一数据源 CRUD
+    └─ 外部 API DAO：出站外部调用（如 LarkDao.push、A2aRuntimeDao.send_task）
+    │
     ▼
 Models (PO 持久化实体)
 ```
@@ -157,12 +164,14 @@ Models (PO 持久化实体)
 
 | 层级 | 可以做 | 禁止做 |
 |------|--------|--------|
-| **DAO** | 单一数据源 CRUD、SQL 拼接、PO 转换 | ❌ DAO 调 DAO、❌ 业务逻辑、❌ 实体组装 |
-| **DAL** | 依赖多个 DAO、PO → Entity 转换 | ❌ DAL 调 DAL |
-| **Domain** | 依赖多个 DAL、核心业务逻辑编排、跨领域事务 | ❌ Domain 调 Domain、❌ 直接调用 DAO |
-| **Handler** | HTTP 路由、参数校验、DTO ↔ Command/Query 转换、按用户 Action 编排 Domain、响应 DTO 组装 | ❌ 直接调用 DAL/DAO、❌ 承载复杂业务规则、❌ Handler 间互调、❌ 抽象通用 Handler 框架 |
+| **DAO** | 单一/多个数据源访问<br>本地 DB：SQL 拼接、PO 读写<br>外部 API：出站调用、出站格式转换（如 Markdown→飞书卡片） | ❌ DAO 调 DAO、❌ 业务逻辑、❌ 实体组装/装饰 |
+| **DAL** | 依赖多个 DAO、PO ↔ Entity 双向转换、业务级数据操作 | ❌ DAL 调 DAL |
+| **Domain** | 依赖多个 DAL、核心业务逻辑编排、跨领域事务、产生内部事件 | ❌ Domain 调 Domain、❌ 直接调用 DAO（跨层）、❌ 直接调用外部 API |
+| **Adapter（适配层）** | HTTP Handler（用户 API + 公开回调）、AOP Producer（WS/轮询）<br>协议解析、参数校验、鉴权、幂等检查<br>外部 ID ↔ 内部 ID 映射<br>DTO/外部结构 ↔ Command 转换<br>按 Action 编排 Domain 调用<br>组装响应（HTTP Handler） | ❌ 直接调用 DAL/DAO（跨层）、❌ 承载核心业务规则<br>❌ 把外部协议包装成内部事件投递<br>❌ Handler/Producer 之间互调<br>❌ 抽象通用 Adapter 框架 |
 
-**Handler 层设计补充**：Handler 与用户 Action 直接对应，一个接口按需求完成自己的请求级编排即可；复用优先通过组织 Command/Query 参数和调用 Domain 能力完成，不为了复用提前抽象 `BaseHandler` / `GenericActionHandler`。复杂业务规则、状态流转、权限语义必须下沉到 Domain。
+**适配层核心认知**：HTTP Handler 是面向用户/前端的 Adapter，公开回调 Handler 是面向外部系统 HTTP 回调的 Adapter，AOP Producer 是面向外部 WS 事件/定时轮询的 Adapter——三者**同属适配层，职责完全相同**：把外部输入适配成 Domain 方法调用。Consumer 不在适配层（它处理 Domain 产生的内部事件）。出站外部调用统一封装在外部 DAO 中。详见 [docs/LAYERED_ARCHITECTURE_PRACTICE.md - 实践 7](./docs/LAYERED_ARCHITECTURE_PRACTICE.md)。
+
+**Handler 设计补充**：HTTP Handler 与用户 Action 直接对应，一个接口按需求完成自己的请求级编排即可；复用优先通过组织 Command/Query 参数和调用 Domain 能力完成，不为了复用提前抽象 `BaseHandler` / `GenericActionHandler`。复杂业务规则、状态流转、权限语义必须下沉到 Domain。
 
 ### 3.2 目录结构
 
@@ -178,18 +187,19 @@ ai_orz/
 ├── ai-orz-macros/             # 自定义宏 crate（日志宏、统计事件宏）
 │
 ├── src/                        # 后端服务
-│   ├── handlers/              # HTTP 接口层（按业务域分组，每个方法一个文件）
+│   ├── handlers/              # HTTP 接口层（适配层：用户 API + 外部回调，按业务域分组，每个方法一个文件）
+│   │   └── a2a/               #   └─ A2A 公开回调端点（无 JWT 鉴权）
+│   ├── producer/              # AOP 事件生产者（适配层：轮询 + 外部渠道 WS 事件接入）
+│   ├── consumer/              # AOP 事件消费者（内部事件处理，消费 Domain 产生的内部事件）
 │   ├── service/
-│   │   ├── dao/               # 数据访问层 DAO（含 stats_duckdb 统计 DAO）
+│   │   ├── dao/               # 数据访问层 DAO（本地 DB CRUD + 外部 API 出站调用，如 lark/a2a/slack）
 │   │   ├── dal/               # 业务数据访问层 DAL
 │   │   └── domain/            # 领域层 Domain
-│   ├── models/                # PO 持久化实体 + 业务实体
+│   ├── models/                # PO 持久化实体 + 业务实体 + 内部事件定义
 │   ├── middleware/            # Axum 中间件
-│   ├── producer/              # AOP 事件生产者（轮询 + 外部渠道回调）
-│   ├── consumer/              # AOP 事件消费者（订阅事件，调用 domain 层）
 │   └── pkg/                   # 公共工具包
 │       ├── aop/               # AOP 事件中心纯框架（Event/Producer/Consumer/Registry/Queue）
-│       ├── adapter/           # 通用适配器基础设施
+│       ├── adapter/           # 通用适配器基础设施（消息入站适配中台）
 │       ├── stats/            # DuckDB 统计模块（record_event! 宏、查询 API）
 │       └── *test_support.rs  # 测试支持文件（request_context、storage）
 │
@@ -282,10 +292,10 @@ ai_orz/
 
 | 层级 | 可使用对象 | 数据传递方式 | 说明 |
 |------|------------|------------|------|
-| **DAO 层** | 仅 PO | PO ↔ 数据库 | 单一数据源 CRUD，SQL 拼接，无业务逻辑 |
+| **DAO 层** | 仅 PO | PO ↔ 数据库 | 单一数据源 CRUD，SQL 拼接，无业务逻辑；含外部 API 出站调用 |
 | **DAL 层** | 内部：PO，对外：业务实体 | PO ↔ 业务实体 双向转换 | 组合 DAO，完成业务级数据操作 |
-| **Domain 层** | 仅业务实体 | 业务实体 ↔ Command | 核心业务逻辑编排，无 PO 依赖 |
-| **Handler 层** | 业务实体 + DTO | DTO ↔ 业务实体 | HTTP 接口，参数校验 |
+| **Domain 层** | 仅业务实体 | 业务实体 ↔ Command | 核心业务逻辑编排，产生内部事件，无 PO 依赖 |
+| **Adapter 层** | 业务实体 + DTO/外部结构 | DTO/外部结构 ↔ Command | HTTP Handler + AOP Producer，外部协议转换与校验 |
 
 #### 业务实体内部设计
 
@@ -496,6 +506,30 @@ Agent
 ---
 
 ## 六、工作流与开发记录
+
+### 2026-07-21 里程碑
+**✅ A2A Remote Agent 异步结果回传 + 适配层架构认知统一**
+- **A2A 异步回传双通道**：
+  - Push 回调：公开 HTTP 端点 `POST /a2a/callback/:task_id`（无 JWT，适配层直接处理）
+  - Poll 兜底：`A2aPollingProducer` 每 30 秒轮询 Remote Agent 的 InProgress Task
+  - 外部 task_id 通过 Task.tags 存储（格式 `a2a_task_id:xxx`）
+  - 消息去重通过 tags 中 `a2a_synced_msgs:N` 计数
+  - A2aRuntimeDao 新增 `fetch_task()` 调用远程 `tasks/get`
+- **架构重构：外部协议不进入事件中心**：
+  - 初始错误设计：`A2aTaskUpdateEvent` 包装外部 JSON 投递到事件中心，Consumer 解析
+  - 重构后：适配层（回调 Handler / Polling Producer）直接调用 Domain 方法（`send_to_user` + `transition_status`）
+  - 内部事件中心只流通 Domain 产生的内部事件（如 `MessageCreatedEvent`），Consumer 无需感知外部协议
+- **架构认知统一：Handler = Adapter**：
+  - HTTP Handler（用户 API）、公开回调 Handler（外部 HTTP 回调）、AOP Producer（WS/轮询）三者**同属适配层**
+  - 修正分层架构：Adapter → Domain → DAL → DAO（原来的"Handler 层"改名为"适配层"）
+  - DAO 层明确包含外部 API 出站调用（如 LarkDao.push、A2aRuntimeDao.send_task）
+  - Consumer 不在适配层（它消费内部事件）
+  - 与飞书 P2P 消息入站模式完全对齐（`message_channel.rs` Producer 直接调用 `send_to_agent`）
+- **文档更新**：
+  - [LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md) 新增实践 7：适配层架构原则
+  - [external_agent_design.md](./docs/external_agent_design.md) 同步适配层处理流程
+  - README.md / AGENTS.md 更新架构描述和功能列表
+- **测试统计**：754 个测试 100% 通过
 
 ### 2026-07-12 里程碑
 **✅ 前端架构重构**
