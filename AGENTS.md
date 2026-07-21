@@ -531,6 +531,16 @@ Agent
   - README.md / AGENTS.md 更新架构描述和功能列表
 - **测试统计**：754 个测试 100% 通过
 
+**✅ 前端代码质量优化**
+- **Bug 修复**：AOP 监控页面（`pages/system/aop.rs`）模态框使用不存在的 `.modal` CSS 类和无效 Tailwind 风格类名，改为使用公共 Modal 组件 + 有效 CSS 类
+- **CSS 补充**：`index.html` 新增 `.card-hover`（悬停效果）、`.card-selected`（选中高亮）、`.modal-body`（最大高度+滚动）三个样式类
+- **Modal 统一**：`pages/message/chat.rs` 新建项目弹窗改用公共 Modal 组件，消除手写 modal HTML 重复
+- **localStorage 工具提取**：新增 `utils.rs` 提供 `local_storage()` 公共函数，消除 `config.rs` 和 `auth.rs` 中的重复实现
+- **API 层重构**：`api/mod.rs` 提取 `parse_api_error_from_body()`/`parse_error_response()` 辅助函数，消除 `api_post_with_error`/`api_put_with_error` 中重复的错误解析逻辑
+- **use_resource Hook**：新增 `hooks/use_resource.rs`，封装三态资源加载模式（Loading/Ready/Failed），供后续页面使用减少重复代码
+- **文档更新**：[frontend_architecture.md](./docs/frontend_architecture.md) 更新目录结构、CSS 类清单、认证机制描述、Hooks 文档、样式规范（禁止 Tailwind/Bootstrap 类名）、更新记录
+- **测试统计**：前端 wasm32 编译 0 error，后端 754 测试 100% 通过
+
 ### 2026-07-12 里程碑
 **✅ 前端架构重构**
 - **Dioxus Router 引入**：15 条路由替代 use_signal 状态机，支持 URL 路由 + Link 组件导航

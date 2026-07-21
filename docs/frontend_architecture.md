@@ -1,10 +1,10 @@
 # 前端架构设计
 
-> 最后更新：2026-07-19
+> 最后更新：2026-07-21
 
 ## 概述
 
-AI Orz 前端基于 **Dioxus 0.7 (Rust WebAssembly)** 构建，采用全局 CSS 设计系统（Mistral 暖色调）、Dioxus Router 路由、统一 API 客户端（JWT 注入）和全局认证状态管理。前端按业务域组织页面模块，与后端 Handler 域对齐。
+AI Orz 前端基于 **Dioxus 0.7 (Rust WebAssembly)** 构建，采用全局 CSS 设计系统（Mistral 暖色调）、Dioxus Router 路由、统一 API 客户端（HttpOnly Cookie 认证）和全局状态管理。前端按业务域组织页面模块，与后端 Handler 域对齐。
 
 ---
 
@@ -32,23 +32,25 @@ frontend/
 └── src/
     ├── main.rs               # 入口：Router 配置 + 路由组件渲染入口
     ├── config.rs             # 前端运行时配置管理（localStorage 读写）
+    ├── utils.rs              # 通用工具函数（localStorage 访问）
     │
     ├── api/                  # API 客户端层
-    │   ├── mod.rs            # 统一 HTTP 客户端 client()、JWT 注入、api_get/api_post/api_put/api_delete helper
+    │   ├── mod.rs            # 统一 HTTP 客户端 client()、Cookie 认证、api_get/api_post/api_put/api_delete helper、错误解析辅助函数
     │   ├── auth.rs           # 认证 API（check_initialized/initialize_system/login/logout）
     │   ├── organization.rs   # 组织管理 API（组织 CRUD、用户管理）
     │   ├── hr.rs             # HR 域 API（agent/skill/tool-pack/skill-pack）
     │   ├── finance.rs        # Finance 域 API（model_provider/tool/message_channel）
     │   ├── project.rs        # Project 域 API（project/task）
     │   ├── message.rs        # Message 域 API（消息发送）
-    │   └── system.rs         # System 域 API（health/cron_trigger）
+    │   └── system.rs         # System 域 API（health/cron_trigger/aop_stats）
     │
     ├── hooks/                # 自定义 Hooks
-    │   └── mod.rs            # use_breakpoint：基于 matchMedia 监听移动端（≤768px）
+    │   ├── mod.rs            # use_breakpoint（移动端监听）、use_require_auth（权限守卫）、ResourceState/use_resource（资源加载）
+    │   └── use_resource.rs   # use_resource hook：三态资源加载（Loading/Ready/Failed）
     │
     ├── store/                # 全局状态管理
     │   ├── mod.rs
-    │   └── auth.rs           # 认证状态（AuthState + token localStorage 持久化）
+    │   └── auth.rs           # 认证状态（AuthState + localStorage 登录标志位，基于 HttpOnly Cookie）
     │
     ├── components/           # 基础 UI 组件库
     │   ├── mod.rs
@@ -101,7 +103,8 @@ frontend/
         │   ├── triggers.rs   # 定时触发器管理（列表+创建/编辑弹窗+Action模板+Cron预设）
         │   ├── health.rs     # 健康检查
         │   ├── logs.rs       # 日志查询
-        │   └── backup.rs     # 备份管理
+        │   ├── backup.rs     # 备份管理
+        │   └── aop.rs        # AOP 事件队列监控
         │
         └── user/             # 用户模块
             └── profile.rs    # 个人信息
@@ -168,11 +171,11 @@ CSS 变量和组件类注入 `index.html` 的 `<style>` 标签，全局可用。
   - 移动端新增：`.navbar-mobile-toggle`（汉堡按钮）、`.navbar-desktop-only`（桌面端专属容器）、`.navbar-drawer` / `.navbar-drawer.open`（左侧抽屉）、`.navbar-overlay`（遮罩）、`.navbar-drawer-item`、`.navbar-drawer-section`、`.navbar-drawer-divider`
   - Chat 移动端：`.chat-sidebar.open`、`.chat-mobile-back`（chat-header 左侧返回按钮，桌面端隐藏）
 - Button：`.btn` + 5 种 variant（`.btn-primary`/`.btn-accent`/`.btn-secondary`/`.btn-danger`/`.btn-ghost`）+ 尺寸（`.btn-sm`/`.btn-lg`）
-- Card：`.card`、`.card-header`、`.card-title`
-- Table：`.table`、`.table th`、`.table td`
-- Form：`.form-group`、`.form-label`、`.form-input`/`.form-textarea`/`.form-select`、`.form-hint`
+- Card：`.card`、`.card-header`、`.card-title`、`.card-hover`（悬停效果）、`.card-selected`（选中高亮）
+- Table：`.table`、`.table th`、`.table td`、`.table-row-clickable`（可点击行）、`.table-sm`（紧凑表格）
+- Form：`.form-group`、`.form-label`、`.form-input`/`.form-textarea`/`.form-select`/`.form-select-sm`、`.form-hint`
 - Badge：`.badge` + 5 种语义（`.badge-success`/`.badge-warning`/`.badge-error`/`.badge-info`/`.badge-neutral`）
-- Modal：`.modal-overlay`、`.modal-content`、`.modal-header`、`.modal-title`、`.modal-close`、`.modal-footer`
+- Modal：`.modal-overlay`、`.modal-content`、`.modal-header`、`.modal-title`、`.modal-close`、`.modal-body`（最大高度+滚动）、`.modal-footer`
 - Alert：`.alert` + 4 种语义（`.alert-error`/`.alert-success`/`.alert-warning`/`.alert-info`）
 - 状态指示：`.state-loading`、`.state-empty`、`.state-empty-icon`
 
@@ -187,7 +190,7 @@ pub fn client() -> &'static Client {
 }
 ```
 
-**JWT 自动注入**：从 localStorage 读取 token，通过 `bearer_auth` 自动注入到所有请求。
+**Cookie 认证**：基于 HttpOnly Cookie（JWT），同源请求浏览器自动携带，前端无需手动管理 token。
 
 **类型化 helper 函数**：
 - `api_get<T>(path)` - GET 请求，返回 `ApiResponse<T>`
@@ -198,6 +201,13 @@ pub fn client() -> &'static Client {
 - `api_put_empty<B>(path, body)` - PUT 请求，无响应体
 - `api_delete(path)` - DELETE 请求
 - `api_get_text(path)` - GET 请求，返回纯文本（用于 /health）
+- `api_post_multipart<T>(path, form)` - multipart/form-data 上传（浏览器原生 fetch）
+
+**带错误码的 API 调用**（用于需要检测特定 error_code 的场景）：
+- `api_post_with_error<T, B>(path, body)` - 返回 `Result<T, ApiError>`
+- `api_put_with_error<B>(path, body)` - 返回 `Result<(), ApiError>`
+- `ApiError` 包含 `http_status`、`error_code`（Option<String>）、`message` 三个字段
+- 错误解析逻辑提取为 `parse_api_error_from_body()` 和 `parse_error_response()` 辅助函数，消除重复代码
 
 **业务域 API 客户端**（7 个域）：
 | 模块 | 覆盖功能 |
@@ -208,7 +218,7 @@ pub fn client() -> &'static Client {
 | `api/finance.rs` | 模型提供商（支持统计参数）、工具（支持统计参数）、消息渠道 |
 | `api/project.rs` | 项目（支持统计参数）、任务管理（支持统计参数） |
 | `api/message.rs` | 消息发送 |
-| `api/system.rs` | 健康检查、定时触发器 |
+| `api/system.rs` | 健康检查、定时触发器、AOP 事件队列统计、备份管理、日志查询 |
 
 **统计参数支持**：`StatsOptions` 结构体统一封装统计查询参数（`with_stats`/`with_model_call_stats`/`stats_interval`），通过 `build_url_with_stats` 函数拼接 URL，各实体详情 API 函数通过 `stats_options: Option<&StatsOptions>` 参数按需传入。
 
@@ -217,7 +227,7 @@ pub fn client() -> &'static Client {
 ```rust
 #[derive(Clone, Debug, Default)]
 pub struct AuthState {
-    pub token: Option<String>,
+    pub logged_in: bool,
     pub username: String,
     pub role: i32,
     pub org_id: String,
@@ -225,10 +235,11 @@ pub struct AuthState {
 }
 ```
 
+- **认证机制**：基于 HttpOnly Cookie（JWT），浏览器同源请求自动携带，前端不直接持有 token
+- **状态标志**：仅在 localStorage 保存 `ai_orz_logged_in=true` 标志位，用于 UI 判断登录状态
 - **初始化**：在 App 根组件通过 `use_context_provider` 注入
-- **Token 持久化**：保存到 localStorage（key: `ai_orz_token`）
-- **状态恢复**：页面刷新时从 localStorage 恢复 token
-- **登录闭环**：Reception 页面登录成功 → `save_token()` → 更新 AuthState → 跳转首页
+- **登录闭环**：Reception 页面登录成功 → `mark_logged_in()` 设置 localStorage 标志 → 更新 AuthState → 跳转首页
+- **登出闭环**：调用 logout API → `clear_login_state()` 清除标志 → 跳转登录页
 
 ### 5. 基础 UI 组件库
 
@@ -264,6 +275,20 @@ pub struct AuthState {
 - 基于 `window.matchMedia("(max-width: 768px)")` 监听，窗口尺寸变化时自动更新
 - 通过 `use_context_provider` 在根组件注入，全局共享同一信号与监听器
 - 仅在需要切换组件结构时使用（Navbar 抽屉、Chat 单栏），其余适配全部由 CSS 接管
+
+**`use_require_auth` Hook**（`hooks/mod.rs`）：
+- 权限守卫 Hook，在需要登录的页面开头调用
+- 未登录时自动重定向到 Reception 页面
+- 返回 `bool` 表示是否已登录，返回 false 时页面应提前 return
+
+**`use_resource` Hook**（`hooks/use_resource.rs`）：
+- 封装高频的"加载列表/详情数据"三态模式：`Loading` → `Ready(T)` / `Failed(String)`
+- 组件挂载时自动触发首次加载，返回 `(state_signal, reload_fn)`
+- 使用示例：
+  ```rust
+  let (stats, reload_stats) = use_resource(|| get_all_queue_stats());
+  // stats().map_or_else(|_| "加载失败", |data| format!("{} 个队列", data.len()))
+  ```
 
 **移动端适配策略**（CSS 优先，零 JS）：
 
@@ -376,9 +401,11 @@ pub struct AuthState {
 ### 样式使用规范
 
 - **优先使用组件类**：`.card`、`.btn`、`.table`、`.form-input` 等
+- **禁止引入外部 CSS 框架类名**：项目使用纯手写 CSS（无 Tailwind/Bootstrap），不要使用 `flex`、`gap-4`、`ring-2`、`text-xl` 等 Tailwind 风格类名或 `btn btn-primary` 等 Bootstrap 类名，这些类在 CSS 中不存在不会生效
 - **避免内联样式**：除动态计算的样式外，统一使用 CSS 类
 - **新增样式**：在 `index.html` 的 `<style>` 标签中添加，遵循命名规范（`.component-name`、`.component-variant`）
 - **CSS 变量**：颜色、间距、圆角、阴影统一使用 CSS 变量（`var(--color-*)`、`var(--space-*)`）
+- **可交互元素**：可点击卡片使用 `.card-hover`，选中状态使用 `.card-selected`，可点击表格行使用 `.table-row-clickable`
 
 ---
 
@@ -394,6 +421,22 @@ pub struct AuthState {
 ---
 
 ## 更新记录
+
+### 2026-07-21 前端代码质量优化
+
+代码审查发现并修复了多个问题，提升了代码一致性和可维护性。
+
+| 优化项 | 实现细节 |
+|--------|----------|
+| **Bug 修复：AOP 页面模态框** | `pages/system/aop.rs` 使用了不存在的 `.modal` CSS 类和无效 Tailwind 风格类名（`card-hover`/`ring-2`/`ring-accent`），导致模态框样式失效、卡片悬停/选中效果缺失。改为使用公共 Modal 组件 + 有效 CSS 类 |
+| **CSS 类补充** | `index.html` 新增 `.card-hover`（悬停阴影+上移动画）、`.card-selected`（选中边框高亮）、`.modal-body`（最大高度+滚动）三个样式类 |
+| **Modal 组件统一** | `pages/message/chat.rs` 新建项目弹窗改为使用公共 Modal 组件，消除 ~50 行手写 modal HTML 重复代码 |
+| **localStorage 工具提取** | 新增 `utils.rs`，提供 `local_storage()` 公共函数；`config.rs` 和 `store/auth.rs` 中的重复 `get_local_storage()`/`get_storage()` 函数统一调用公共函数 |
+| **API 错误解析重构** | `api/mod.rs` 中 `api_post_with_error` 和 `api_put_with_error` 的非 2xx 响应错误解析逻辑重复 ~20 行，提取为 `parse_api_error_from_body()` 和 `parse_error_response()` 两个辅助函数 |
+| **use_resource Hook** | 新增 `hooks/use_resource.rs`，封装 `Loading → Ready(T)/Failed(String)` 三态资源加载模式，组件挂载时自动加载，返回 `reload` 回调，供后续新页面使用以减少重复代码 |
+| **dead_code 警告清理** | 为预留 API `get_queue_stats` 添加 `#[allow(dead_code)]`，编译警告从 5+ 减少到 2（仅 use_resource 预留警告） |
+
+**验证结果**：前端 wasm32 编译通过（0 error），后端 `cargo check` 通过，后端 754 测试 100% 通过。
 
 ### 2026-07-17 移动端适配（响应式双端兼容）
 
