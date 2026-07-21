@@ -89,13 +89,29 @@ impl Registry {
             return;
         };
 
-        let event_json = match serde_json::to_value(event) {
+        // 在序列化前提取元字段
+        let event_id = event.id().to_string();
+        let event_kind = event.kind().0.to_string();
+        let order_key = event.order_key().to_string();
+        let priority = event.priority();
+        let created_at = event.created_at();
+
+        let mut event_json = match serde_json::to_value(event) {
             Ok(v) => v,
             Err(e) => {
                 sys_error!("event serialize error: {}", e);
                 return;
             }
         };
+
+        // 统一注入元字段到 JSON 顶层，确保队列和监控能读取到一致的元数据
+        if let Some(obj) = event_json.as_object_mut() {
+            obj.entry("event_id").or_insert(serde_json::Value::String(event_id));
+            obj.entry("kind").or_insert(serde_json::Value::String(event_kind));
+            obj.entry("order_key").or_insert(serde_json::Value::String(order_key));
+            obj.entry("priority").or_insert(serde_json::json!(priority));
+            obj.entry("created_at").or_insert(serde_json::json!(created_at));
+        }
 
         for consumer in interested {
             if !consumer.should_consume(&event_json).await {
@@ -234,8 +250,7 @@ impl Registry {
                     loop {
                         match registry_arc.dequeue_for(&consumer_name).await {
                             Ok(Some(event_json)) => {
-                                let event_id = event_json.get("message_id")
-                                    .or_else(|| event_json.get("event_id"))
+                                let event_id = event_json.get("event_id")
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("unknown")
                                     .to_string();

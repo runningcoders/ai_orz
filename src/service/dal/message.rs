@@ -8,7 +8,6 @@ use crate::models::message::{Message, MessagePo};
 use crate::models::vector::{VectorIndexParams, Vectorizable};
 use crate::pkg::RequestContext;
 use crate::pkg::aop;
-use crate::pkg::aop::Event;
 use crate::models::events::MessageCreatedEvent;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::message::{self, MessageDao, MessageQuery, MessageSearch, MessageVectorDao};

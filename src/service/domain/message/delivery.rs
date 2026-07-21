@@ -13,7 +13,7 @@ use crate::service::domain::message::{
     SendToUserCommand, SendToolCallRequestCommand, SendToolCallResultCommand,
     ToolCallExecutionOutcome,
 };
-use common::enums::{FileType, MessageRole, MessageStatus, MessageType};
+use common::enums::{FileType, MessageRole, MessageType};
 use serde_json::json;
 
 use crate::enrich_ctx;

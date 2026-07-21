@@ -63,6 +63,8 @@ impl InMemoryEventQueue {
         }
     }
 
+    /// 收集各 order_key 的待处理数量统计。
+    /// 注意：调用前必须持有 self.lock，否则存在数据竞争。
     fn collect_order_key_stats(&self) -> Vec<super::OrderKeyStats> {
         let queues = unsafe { &*self.queues.get() };
 
@@ -80,6 +82,8 @@ impl InMemoryEventQueue {
         stats
     }
 
+    /// 查找最老事件的年龄（秒）。
+    /// 注意：调用前必须持有 self.lock，否则存在数据竞争。
     fn find_oldest_event_age(&self) -> Option<u64> {
         use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -108,9 +112,8 @@ impl EventQueue for InMemoryEventQueue {
         let global_heap = unsafe { &mut *self.global_heap.get() };
         let has_active_message = unsafe { &mut *self.has_active_message.get() };
 
-        let event_id = event.get("message_id")
+        let event_id = event.get("event_id")
             .and_then(|v| v.as_str())
-            .or_else(|| event.get("id").and_then(|v| v.as_str()))
             .unwrap_or("unknown")
             .to_string();
 
@@ -331,7 +334,6 @@ impl EventQueue for InMemoryEventQueue {
 
             let event_kind = event.get("kind")
                 .and_then(|v| v.as_str())
-                .or_else(|| event.get("message_id").map(|_| "message.created"))
                 .unwrap_or("unknown")
                 .to_string();
 
