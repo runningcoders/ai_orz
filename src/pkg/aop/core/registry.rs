@@ -322,6 +322,44 @@ impl Registry {
         }
         0
     }
+
+    /// 获取所有队列的聚合统计
+    pub fn all_queue_stats(&self) -> Vec<(String, crate::pkg::aop::queue::QueueStats)> {
+        let queues = match self.queues.read() {
+            Ok(q) => q,
+            Err(_) => return Vec::new(),
+        };
+
+        let mut result = Vec::new();
+        for (name, queue) in queues.iter() {
+            result.push((name.clone(), queue.stats()));
+        }
+
+        // 按队列名排序
+        result.sort_by(|a, b| a.0.cmp(&b.0));
+        result
+    }
+
+    /// 获取指定消费者的队列统计
+    pub fn queue_stats(&self, consumer_name: &str) -> Option<crate::pkg::aop::queue::QueueStats> {
+        let queues = self.queues.read().ok()?;
+        let queue = queues.get(consumer_name)?;
+        Some(queue.stats())
+    }
+
+    /// 查询指定消费者队列中的事件
+    pub fn query_events(&self, consumer_name: &str, filter: crate::pkg::aop::queue::EventQueryFilter) -> Option<Vec<crate::pkg::aop::queue::EventSummary>> {
+        let queues = self.queues.read().ok()?;
+        let queue = queues.get(consumer_name)?;
+        Some(queue.query_events(filter))
+    }
+
+    /// 获取指定消费者队列中的事件详情
+    pub fn get_event(&self, consumer_name: &str, event_id: &str) -> Option<crate::pkg::aop::queue::EventDetail> {
+        let queues = self.queues.read().ok()?;
+        let queue = queues.get(consumer_name)?;
+        queue.get_event(event_id)
+    }
 }
 
 impl Default for Registry {

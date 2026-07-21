@@ -62,6 +62,39 @@ impl InMemoryEventQueue {
             lock: Mutex::new(()),
         }
     }
+
+    fn collect_order_key_stats(&self) -> Vec<super::OrderKeyStats> {
+        let queues = unsafe { &*self.queues.get() };
+
+        let mut stats = Vec::new();
+        for (order_key, queue) in queues.iter() {
+            let pending = queue.len();
+            if pending > 0 {
+                stats.push(super::OrderKeyStats {
+                    order_key: order_key.clone(),
+                    pending_count: pending,
+                });
+            }
+        }
+        stats.sort_by(|a, b| b.pending_count.cmp(&a.pending_count));
+        stats
+    }
+
+    fn find_oldest_event_age(&self) -> Option<u64> {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let events = unsafe { &*self.events.get() };
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        events
+            .values()
+            .filter_map(|e| e.get("created_at").and_then(|v| v.as_i64()))
+            .min()
+            .map(|oldest| (now - oldest) as u64)
+    }
 }
 
 #[async_trait]
@@ -245,5 +278,145 @@ impl EventQueue for InMemoryEventQueue {
         global_heap.clear();
         in_progress.clear();
         has_active_message.clear();
+    }
+
+    fn stats(&self) -> super::QueueStats {
+        let _guard = self.lock.lock().ok();
+
+        let events = unsafe { &*self.events.get() };
+        let in_progress = unsafe { &*self.in_progress.get() };
+
+        super::QueueStats {
+            pending_count: events.len() - in_progress.len(),
+            in_progress_count: in_progress.len(),
+            order_keys: self.collect_order_key_stats(),
+            oldest_event_age_secs: self.find_oldest_event_age(),
+        }
+    }
+
+    fn query_events(&self, filter: super::EventQueryFilter) -> Vec<super::EventSummary> {
+        let _guard = self.lock.lock().ok();
+
+        let events = unsafe { &*self.events.get() };
+        let in_progress = unsafe { &*self.in_progress.get() };
+
+        let mut results: Vec<super::EventSummary> = Vec::new();
+
+        // 收集所有事件
+        for (event_id, event) in events.iter() {
+            let order_key = event.get("order_key")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            // 应用 order_key 过滤
+            if let Some(ref ok) = filter.order_key {
+                if &order_key != ok {
+                    continue;
+                }
+            }
+
+            let status = if in_progress.contains_key(event_id) {
+                super::EventStatus::Processing
+            } else {
+                super::EventStatus::Pending
+            };
+
+            // 应用 status 过滤
+            if let Some(ref s) = filter.status {
+                if *s != status {
+                    continue;
+                }
+            }
+
+            let event_kind = event.get("kind")
+                .and_then(|v| v.as_str())
+                .or_else(|| event.get("message_id").map(|_| "message.created"))
+                .unwrap_or("unknown")
+                .to_string();
+
+            let priority = event.get("priority")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as u8;
+
+            let created_at = event.get("created_at")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+
+            results.push(super::EventSummary {
+                event_id: event_id.clone(),
+                event_kind,
+                order_key,
+                priority,
+                created_at,
+                status,
+            });
+        }
+
+        // 按 created_at 降序排序（最新的在前）
+        results.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+
+        // 应用分页
+        results.into_iter()
+            .skip(filter.offset)
+            .take(filter.limit)
+            .collect()
+    }
+
+    fn get_event(&self, event_id: &str) -> Option<super::EventDetail> {
+        let _guard = self.lock.lock().ok();
+
+        let events = unsafe { &*self.events.get() };
+        let in_progress = unsafe { &*self.in_progress.get() };
+
+        let event = events.get(event_id)?;
+        let event_json = event.clone();
+
+        let order_key = event_json.get("order_key")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        let status = if in_progress.contains_key(event_id) {
+            super::EventStatus::Processing
+        } else {
+            super::EventStatus::Pending
+        };
+
+        let event_kind = event_json.get("kind")
+            .and_then(|v| v.as_str())
+            .or_else(|| event_json.get("message_id").map(|_| "message.created"))
+            .unwrap_or("unknown")
+            .to_string();
+
+        let priority = event_json.get("priority")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u8;
+
+        let created_at = event_json.get("created_at")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+
+        // 脱敏处理：截取前 200 字符
+        let payload_preview = {
+            let json_str = serde_json::to_string(&event_json).unwrap_or_default();
+            if json_str.len() > 200 {
+                format!("{}... (truncated, total {} bytes)", &json_str[..200], json_str.len())
+            } else {
+                json_str
+            }
+        };
+
+        Some(super::EventDetail {
+            summary: super::EventSummary {
+                event_id: event_id.to_string(),
+                event_kind,
+                order_key,
+                priority,
+                created_at,
+                status,
+            },
+            payload_preview,
+        })
     }
 }

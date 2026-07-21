@@ -197,6 +197,83 @@ pub async fn query_logs(params: &LogQueryParams) -> Result<LogPageResult, String
     api_get(&path).await
 }
 
+// ===== AOP 队列监控 =====
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrderKeyInfo {
+    pub order_key: String,
+    pub pending_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueueStatsResponse {
+    pub consumer_name: String,
+    pub pending_count: usize,
+    pub in_progress_count: usize,
+    pub order_keys: Vec<OrderKeyInfo>,
+    pub oldest_event_age_secs: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EventSummaryResponse {
+    pub event_id: String,
+    pub event_kind: String,
+    pub order_key: String,
+    pub priority: u8,
+    pub created_at: i64,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EventDetailResponse {
+    pub event_id: String,
+    pub event_kind: String,
+    pub order_key: String,
+    pub priority: u8,
+    pub created_at: i64,
+    pub status: String,
+    pub payload_preview: String,
+}
+
+/// 获取所有队列统计
+pub async fn get_all_queue_stats() -> Result<Vec<QueueStatsResponse>, String> {
+    api_get_or_default("/api/v1/system/aop/stats").await
+}
+
+/// 获取指定消费者队列统计
+pub async fn get_queue_stats(consumer: &str) -> Result<QueueStatsResponse, String> {
+    api_get(&format!("/api/v1/system/aop/{}/stats", consumer)).await
+}
+
+/// 查询事件列表
+pub async fn list_events(consumer: &str, order_key: Option<&str>, status: Option<&str>, limit: usize, offset: usize) -> Result<Vec<EventSummaryResponse>, String> {
+    let mut params = Vec::new();
+    if let Some(ok) = order_key {
+        params.push(format!("order_key={}", url_encode(ok)));
+    }
+    if let Some(s) = status {
+        params.push(format!("status={}", url_encode(s)));
+    }
+    if limit > 0 {
+        params.push(format!("limit={}", limit));
+    }
+    if offset > 0 {
+        params.push(format!("offset={}", offset));
+    }
+    let qs = params.join("&");
+    let path = if qs.is_empty() {
+        format!("/api/v1/system/aop/{}/events", consumer)
+    } else {
+        format!("/api/v1/system/aop/{}/events?{}", consumer, qs)
+    };
+    api_get_or_default(&path).await
+}
+
+/// 获取事件详情
+pub async fn get_event(consumer: &str, event_id: &str) -> Result<EventDetailResponse, String> {
+    api_get(&format!("/api/v1/system/aop/{}/events/{}", consumer, event_id)).await
+}
+
 /// 简单的 URL 编码（与 api/message.rs 中的实现一致）
 fn url_encode(s: &str) -> String {
     s.replace('%', "%25")

@@ -36,6 +36,7 @@ use crate::pages::project::task_detail::TaskDetail;
 use crate::pages::project::tasks::TaskList;
 use crate::pages::reception::Reception;
 use crate::pages::settings::Settings;
+use crate::pages::system::aop::SystemAop;
 use crate::pages::system::backup::SystemBackup;
 use crate::pages::system::health::SystemHealth;
 use crate::pages::system::logs::SystemLogs;
@@ -110,6 +111,8 @@ pub enum Route {
     SystemLogs {},
     #[route("/system/backup")]
     SystemBackup {},
+    #[route("/system/aop")]
+    SystemAop {},
 
     // 用户
     #[route("/user/profile")]

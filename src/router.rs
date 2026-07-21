@@ -568,4 +568,18 @@ fn system_routes() -> Router {
         )
         // Log query route - 查询应用日志（Admin/SuperAdmin 可访问）
         .route("/logs", get(handlers::system::logs::query_logs::handler))
+        // AOP queue monitoring routes
+        .route("/aop/stats", get(handlers::system::aop::get_all_queue_stats))
+        .route(
+            "/aop/{consumer}/stats",
+            get(handlers::system::aop::get_queue_stats),
+        )
+        .route(
+            "/aop/{consumer}/events",
+            get(handlers::system::aop::list_events),
+        )
+        .route(
+            "/aop/{consumer}/events/{event_id}",
+            get(handlers::system::aop::get_event),
+        )
 }

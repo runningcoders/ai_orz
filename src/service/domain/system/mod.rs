@@ -10,6 +10,9 @@ use crate::service::dal::log_query::{LogQuery as LogQueryParam, LogPageResult, L
 use crate::service::dao::cron_trigger::CronTriggerQuery;
 use std::sync::{Arc, OnceLock};
 
+mod aop_monitor;
+pub use aop_monitor::{AopMonitor, AopMonitorImpl};
+
 static SYSTEM_DOMAIN: OnceLock<Arc<dyn SystemDomain>> = OnceLock::new();
 
 pub fn domain() -> Arc<dyn SystemDomain> {
@@ -40,6 +43,7 @@ struct SystemDomainImpl {
     cron_trigger_dal: Arc<dyn CronTriggerDal>,
     backup_dal: Arc<dyn BackupDal + Send + Sync>,
     log_query_dal: Arc<dyn LogQueryDal + Send + Sync>,
+    aop_monitor: AopMonitorImpl,
 }
 
 impl SystemDomainImpl {
@@ -52,6 +56,7 @@ impl SystemDomainImpl {
             cron_trigger_dal,
             backup_dal,
             log_query_dal,
+            aop_monitor: AopMonitorImpl,
         }
     }
 }
@@ -68,12 +73,17 @@ impl SystemDomain for SystemDomainImpl {
     fn log_query(&self) -> &dyn LogQuery {
         self
     }
+
+    fn aop_monitor(&self) -> &dyn AopMonitor {
+        &self.aop_monitor
+    }
 }
 
 pub trait SystemDomain: Send + Sync {
     fn cron_manager(&self) -> &dyn CronManager;
     fn backup_manager(&self) -> &dyn BackupManager;
     fn log_query(&self) -> &dyn LogQuery;
+    fn aop_monitor(&self) -> &dyn AopMonitor;
 }
 
 #[async_trait::async_trait]

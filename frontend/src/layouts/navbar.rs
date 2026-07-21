@@ -152,6 +152,10 @@ pub fn Navbar() -> Element {
                                 onclick: move |_| close_all(),
                                 "备份管理"
                             }
+                            Link { to: Route::SystemAop {}, class: "navbar-dropdown-item",
+                                onclick: move |_| close_all(),
+                                "AOP 监控"
+                            }
                         }
                     }
                 }
@@ -284,6 +288,8 @@ pub fn Navbar() -> Element {
                         onclick: move |_| drawer_open.set(false), "日志查询" }
                     Link { to: Route::SystemBackup {}, class: "navbar-drawer-item",
                         onclick: move |_| drawer_open.set(false), "备份管理" }
+                    Link { to: Route::SystemAop {}, class: "navbar-drawer-item",
+                        onclick: move |_| drawer_open.set(false), "AOP 监控" }
                 }
 
                 div { class: "navbar-drawer-divider" }
