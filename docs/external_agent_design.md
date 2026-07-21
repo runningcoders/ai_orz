@@ -123,7 +123,7 @@ Handler 内按 kind 校验必填字段并构造 `ExternalAgentConfig`，写入 `
 - 公开端点：`POST /a2a/callback/:task_id`（无需 JWT）
 - 外部 Agent 完成任务或有新消息时向此 URL 推送 A2aTask
 - URL 中 `:task_id` 是本地 Task ID（调用 tasks/send 时构造 notification_url 传入）
-- 校验流程：任务存在 → 状态活跃 → 外部 task_id 与本地记录一致 → 发布事件
+- 校验流程：任务存在 → 状态活跃 → 外部 task_id 与本地记录一致 → **直接处理业务逻辑**
 
 **2. Poll 轮询（兜底）**
 - `A2aPollingProducer` 注册到 AOP 事件中心，每 30 秒执行一次
@@ -132,48 +132,35 @@ Handler 内按 kind 校验必填字段并构造 `ExternalAgentConfig`，写入 `
   2. 对每个 Agent，通过 `project_domain().task_manage().list()` 查询分配给它的 `InProgress` Task（`assignee_type=Agent, assignee_id=agent_id, status=InProgress`）
   3. 从 Task.tags 解析外部 a2a_task_id
   4. 调用远程 A2A Agent 的 `tasks/get` 接口获取最新状态
-  5. 有新消息或状态变更时发布事件
+  5. **直接处理业务逻辑**（新消息 → send_to_user；状态变更 → transition_status）
 
-### 事件驱动处理
+### 边界层直接处理（架构原则）
 
-两种通道最终都发布统一的 `A2aTaskUpdateEvent` 事件：
+遵循**边界层处理协议转换**的原则：Producer/回调端点作为与外部 A2A 协议交互的边界，在获取到外部 A2aTask 后**直接调用 Domain 层方法完成业务处理**，外部协议数据不进入事件中心：
 
-```rust
-pub struct A2aTaskUpdateEvent {
-    pub event_id: String,
-    pub local_task_id: String,       // 本地 Task ID
-    pub remote_agent_id: String,     // 外部 Agent ID
-    pub remote_task_id: String,      // 外部 A2A Task ID
-    pub source: A2aUpdateSource,     // Callback 或 Polling
-    pub task_json: String,           // 完整 A2aTask JSON
-    pub created_at: i64,
-}
-```
+1. **消息投递**：提取 agent/assistant 角色的文本消息，直接调用 `MessageDomain.delivery().send_to_user()` → 该方法内部会创建 MessagePo、持久化、发布内部 `MessageCreatedEvent`、通过 SSE 推送给用户，完全复用现有内部链路
+2. **状态流转**：直接调用 `ProjectDomain.task_manage().transition_status()` 更新任务状态
+3. **消息去重**：通过 tags 中 `a2a_synced_msgs:N` 记录已同步的 agent 消息数量，只发送新消息
+4. **幂等性**：
+   - 回调：已在终态的任务直接返回 ok 跳过
+   - 轮询：每次执行都会重新查询并基于已同步计数判断，天然支持重试（30秒后会再次处理）
+   - 外部回调 HTTP 请求失败时，外部 Agent 可重试推送
 
-- **order_key** 使用 `local_task_id`，保证同一任务的事件按顺序处理
-- **priority**：统一为 5（回调与轮询同优先级）
-
-`A2aTaskUpdateConsumer` 消费事件，处理：
-
-1. **消息去重与投递**：通过 tags 中 `a2a_synced_msgs:N` 记录已同步的 agent 消息数量，只发送新消息；提取 agent/assistant 角色的文本消息，通过 `MessageDomain.delivery().send_to_user()` 发送给任务创建者（root_user_id）
-2. **状态流转**：
-   - A2A `Completed` → 本地 `Completed`
-   - A2A `Failed/Canceled` → 本地 `Cancelled`
-   - A2A `Working/Submitted/InputRequired` → 本地 `Pending` → `InProgress`
-3. **幂等性**：已在终态的任务跳过处理；通过已同步消息计数避免重复发送
+**状态映射规则**：
+- A2A `Completed` → 本地 `Completed`
+- A2A `Failed/Canceled` → 本地 `Cancelled`
+- A2A `Working/Submitted/InputRequired` → 本地 `Pending` → `InProgress`
 
 ### 相关文件
 
 | 文件 | 说明 |
 |------|------|
-| `src/models/events/a2a_task_update.rs` | A2aTaskUpdateEvent 定义 + tags 工具函数 |
-| `src/handlers/a2a/callback.rs` | 回调端点 `POST /a2a/callback/:task_id` |
-| `src/producer/a2a_polling.rs` | A2aPollingProducer（30秒轮询） |
-| `src/consumer/a2a_task_update.rs` | A2aTaskUpdateConsumer（消息投递 + 状态流转） |
+| `src/models/events/a2a_task_update.rs` | A2A tags 工具函数（a2a_task_id 提取/构造、消息计数、文本提取） |
+| `src/handlers/a2a/callback.rs` | 回调端点 `POST /a2a/callback/:task_id`（边界层，直接处理业务） |
+| `src/producer/a2a_polling.rs` | A2aPollingProducer（30秒轮询，边界层，直接处理业务） |
 | `src/service/dao/agent_runtime/a2a.rs` | A2aRuntimeDao.fetch_task()（调用远程 tasks/get） |
 | `src/router.rs` | 注册回调路由 |
 | `src/producer/mod.rs` | 注册 A2aPollingProducer |
-| `src/consumer/mod.rs` | 注册 A2aTaskUpdateConsumer |
 
 ### 后续迭代计划
 

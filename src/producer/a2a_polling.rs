@@ -1,14 +1,17 @@
 use common::enums::{AssigneeType, TaskStatus};
 use common::error::Result;
 use crate::models::agent::AgentPo;
-use crate::models::events::{A2aTaskUpdateEvent, A2aUpdateSource};
+use crate::models::events::{
+    extract_a2a_task_id, extract_text_from_parts, get_synced_msg_count, make_synced_msg_tag,
+    A2A_SYNCED_MSG_COUNT_PREFIX,
+};
 use crate::pkg::RequestContext;
 use crate::pkg::aop::{Producer, Registry};
 use crate::service::dao::agent_runtime::a2a::{A2aRuntimeConfig, A2aRuntimeDao};
 use crate::service::domain::hr as hr_domain;
+use crate::service::domain::message::{self as message_domain, SendToUserCommand};
 use crate::service::domain::project as project_domain;
 use std::sync::{Arc, RwLock};
-use uuid::Uuid;
 
 pub struct A2aPollingProducer {
     registry: RwLock<Option<Arc<Registry>>>,
@@ -49,15 +52,6 @@ impl Producer for A2aPollingProducer {
     }
 
     async fn poll(&self) -> Result<()> {
-        let registry = {
-            let reg = self.registry.read().unwrap();
-            reg.clone()
-        };
-
-        let Some(registry) = registry else {
-            return Err(common::error::err!(Internal, "registry not registered"));
-        };
-
         let ctx = RequestContext::new(None, None);
 
         let all_agents = hr_domain::domain()
@@ -76,7 +70,7 @@ impl Producer for A2aPollingProducer {
 
         log_debug!("a2a polling: found {} remote agents", remote_agents.len());
 
-        let mut published_count = 0usize;
+        let mut processed_count = 0usize;
 
         for agent in &remote_agents {
             let tasks = project_domain::domain()
@@ -107,28 +101,12 @@ impl Producer for A2aPollingProducer {
 
             for task in &tasks {
                 let tags = task.po.get_tags();
-                let Some(remote_task_id) = A2aTaskUpdateEvent::extract_a2a_task_id(&tags) else {
+                let Some(remote_task_id) = extract_a2a_task_id(&tags) else {
                     continue;
                 };
 
-                match a2a_dao.fetch_task(&remote_task_id).await {
-                    Ok(remote_task) => {
-                        let task_json = serde_json::to_string(&remote_task)
-                            .unwrap_or_default();
-
-                        let event = A2aTaskUpdateEvent {
-                            event_id: Uuid::now_v7().to_string(),
-                            local_task_id: task.po.id.clone(),
-                            remote_agent_id: agent.po.id.clone(),
-                            remote_task_id: remote_task_id.clone(),
-                            source: A2aUpdateSource::Polling,
-                            task_json,
-                            created_at: common::constants::utils::current_timestamp(),
-                        };
-
-                        registry.publish(event).await;
-                        published_count += 1;
-                    }
+                let remote_task = match a2a_dao.fetch_task(&remote_task_id).await {
+                    Ok(t) => t,
                     Err(e) => {
                         log_warn!(
                             &ctx,
@@ -139,13 +117,134 @@ impl Producer for A2aPollingProducer {
                             agent.po.id,
                             e
                         );
+                        continue;
+                    }
+                };
+
+                let mut task_ctx_builder = RequestContext::builder();
+                task_ctx_builder = task_ctx_builder.agent_id(agent.po.id.clone());
+                task_ctx_builder = task_ctx_builder.task_id(task.po.id.clone());
+                if let Some(pid) = &task.po.project_id {
+                    task_ctx_builder = task_ctx_builder.project_id(pid.clone());
+                }
+                let task_ctx = task_ctx_builder.build();
+
+                let already_synced = get_synced_msg_count(&tags);
+                let agent_messages: Vec<_> = remote_task.messages.iter()
+                    .filter(|msg| msg.role == "agent" || msg.role == "assistant")
+                    .collect();
+                let total_agent_msgs = agent_messages.len();
+                let mut new_sent = 0usize;
+
+                if total_agent_msgs > already_synced {
+                    let new_messages = &agent_messages[already_synced..];
+                    for msg in new_messages {
+                        let text = extract_text_from_parts(&msg.parts);
+                        if text.is_empty() {
+                            continue;
+                        }
+
+                        let cmd = SendToUserCommand {
+                            from_agent_id: &agent.po.id,
+                            to_user_id: &task.po.root_user_id,
+                            content: &text,
+                            project_id: task.po.project_id.as_deref(),
+                            task_id: Some(&task.po.id),
+                            reply_to_id: None,
+                        };
+
+                        if let Err(e) = message_domain::domain().delivery().send_to_user(task_ctx.clone(), cmd).await {
+                            log_warn!(
+                                &task_ctx,
+                                "a2a_polling",
+                                "Failed to send message for task {}: {}",
+                                task.po.id,
+                                e
+                            );
+                        } else {
+                            new_sent += 1;
+                        }
                     }
                 }
+
+                if new_sent > 0 {
+                    let new_total = already_synced + new_sent;
+                    let mut new_tags: Vec<String> = tags
+                        .iter()
+                        .filter(|t| !t.starts_with(A2A_SYNCED_MSG_COUNT_PREFIX))
+                        .cloned()
+                        .collect();
+                    new_tags.push(make_synced_msg_tag(new_total));
+
+                    if let Err(e) = project_domain::domain().task_manage().update_basic(
+                        task_ctx.clone(),
+                        &task.po.id,
+                        None,
+                        None,
+                        None,
+                        Some(new_tags),
+                        None,
+                        None,
+                    ).await {
+                        log_warn!(
+                            &task_ctx,
+                            "a2a_polling",
+                            "Failed to update synced msg count for task {}: {}",
+                            task.po.id,
+                            e
+                        );
+                    }
+                }
+
+                let mut local_task = task.clone();
+                let target_status = match remote_task.status.state {
+                    common::api::a2a::A2aTaskState::Completed => Some(TaskStatus::Completed),
+                    common::api::a2a::A2aTaskState::Failed => Some(TaskStatus::Cancelled),
+                    common::api::a2a::A2aTaskState::Canceled => Some(TaskStatus::Cancelled),
+                    common::api::a2a::A2aTaskState::Working
+                    | common::api::a2a::A2aTaskState::Submitted
+                    | common::api::a2a::A2aTaskState::InputRequired => {
+                        if local_task.po.status == TaskStatus::Pending {
+                            Some(TaskStatus::InProgress)
+                        } else {
+                            None
+                        }
+                    }
+                };
+
+                if let Some(target) = target_status {
+                    if local_task.po.status != target {
+                        if let Err(e) = project_domain::domain().task_manage().transition_status(
+                            task_ctx.clone(),
+                            &mut local_task,
+                            target,
+                        ).await {
+                            log_warn!(
+                                &task_ctx,
+                                "a2a_polling",
+                                "Failed to transition task {} to {:?}: {}",
+                                task.po.id,
+                                target,
+                                e
+                            );
+                        } else {
+                            log_info!(
+                                &task_ctx,
+                                "a2a_polling",
+                                "Task {} transitioned to {:?}",
+                                task.po.id,
+                                target
+                            );
+                        }
+                    }
+                }
+
+                processed_count += 1;
             }
         }
 
-        if published_count > 0 {
-            log_info!("a2a polling published {} task update events", published_count);
+        if processed_count > 0 {
+            log_info!("a2a polling processed {} tasks", processed_count);
         }
 
         Ok(())
