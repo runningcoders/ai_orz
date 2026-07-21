@@ -34,28 +34,29 @@ impl CortexDao for CortexDaoSqliteImpl {
 **单向依赖 + 逐层调用 + 单一职责**
 
 ```
-Handler (API 层)
-    │
+Adapter (适配层：HTTP Handler + AOP Producer)
+    │  所有外部输入的入口：用户 HTTP API、外部系统回调、WS 事件、定时轮询
+    │  职责：协议解析、校验、ID 映射 → 直接调用 Domain 方法
     ▼
-Domain (领域层) → 组合多个 DAL，实现业务逻辑
+Domain (领域层) → 组合多个 DAL，实现业务逻辑，产生内部事件
     │
     ▼
 DAL (业务数据层) → 组合多个 DAO，提供业务级数据操作
     │
     ▼
-DAO (数据访问层) → 单一数据源操作，只做 CRUD
+DAO (数据访问层) → 单一数据源操作（本地 DB CRUD + 外部 API 出站调用）
 ```
 
 ### 各层职责边界
 
 | 层级 | 可以做 | 禁止做 |
 |------|--------|--------|
-| **DAO** | 单一/多个数据源的 CRUD 操作<br>SQL 拼接<br>数据库实体 PO 转换 | ❌ **同层 DAO 互调**<br>❌ 向上调用 DAL/Domain<br>❌ 业务逻辑<br>❌ 实体组装/装饰 |
-| **DAL** | ✅ **依赖多个 DAO**（业务决定）<br>提供业务级数据接口<br>PO → Entity 转换 | ❌ **同层 DAL 互调**<br>❌ 向上调用 Domain |
-| **Domain** | ✅ **依赖多个 DAL**（业务决定）<br>核心业务逻辑编排<br>跨领域事务 | ❌ **同层 Domain 互调**<br>❌ 直接调用 DAO（跨层） |
-| **Handler** | HTTP 路由<br>参数校验<br>DTO ↔ Command/Query 转换<br>按用户 Action 编排 Domain 调用<br>组装响应 DTO | ❌ 直接调用 DAL/DAO（跨层）<br>❌ 承载复杂业务规则<br>❌ 抽象通用 Handler 框架 |
+| **DAO** | 单一数据源的数据访问<br>本地 DB：SQL 拼接、PO 读写<br>外部 API：出站调用、出站格式转换（如 Markdown→飞书卡片） | ❌ **同层 DAO 互调**<br>❌ 向上调用 DAL/Domain<br>❌ 业务逻辑<br>❌ 实体组装/装饰 |
+| **DAL** | ✅ **依赖多个 DAO**（业务决定）<br>提供业务级数据接口<br>PO ↔ Entity 转换 | ❌ **同层 DAL 互调**<br>❌ 向上调用 Domain |
+| **Domain** | ✅ **依赖多个 DAL**（业务决定）<br>核心业务逻辑编排<br>跨领域事务<br>产生内部事件（如 MessageCreatedEvent） | ❌ **同层 Domain 互调**<br>❌ 直接调用 DAO（跨层）<br>❌ 直接调用外部 API（应通过外部 DAO） |
+| **Adapter（适配层）** | 外部输入适配：HTTP Handler（用户 API）、公开回调 Handler、AOP Producer（WS/轮询）<br>协议解析、参数校验、鉴权<br>DTO/外部结构 ↔ Command 转换<br>外部 ID ↔ 内部 ID 映射<br>幂等检查<br>按 Action 编排 Domain 调用<br>组装响应（HTTP Handler） | ❌ 直接调用 DAL/DAO（跨层）<br>❌ 承载核心业务规则<br>❌ 把外部协议包装成内部事件投递<br>❌ Handler/Producer 之间互调<br>❌ 抽象通用 Adapter 框架 |
 
-> 💡 **设计哲学**：调用限制只有一个 —— **逐层单向调用**。DAL/Domain 内依赖多少个下一层组件，完全由业务内聚性决定。Handler 层面向用户 Action，不追求通用抽象；每个接口按需求完成自己的请求级编排，复用优先通过组织 Command/Query 参数和调用 Domain 能力完成。
+> 💡 **设计哲学**：Handler（面向用户 HTTP API）、公开回调 Handler（面向外部系统 HTTP 回调）、AOP Producer（面向外部 WS 事件/定时轮询）三者**同属适配层（Adapter）**，职责完全相同——把外部世界的输入适配成内部 Domain 方法调用。它们的区别仅在于对接的外部对象不同、触发方式不同。出站外部调用统一封装在外部 DAO 中，由 DAL 组合、Domain 编排。详见「实践 7：适配层架构原则」。
 
 ---
 
@@ -1214,72 +1215,118 @@ self.project_dal.create(ctx.clone(), project).await?;
 
 ---
 
-## 🔄 实践 7：系统边界层架构原则（2026-07-21）
+## 🔄 实践 7：适配层（Handler/Adapter）架构原则（2026-07-21）
 
-> **背景**：飞书 P2P 消息入站、A2A Remote Agent 异步回调/轮询等外部接入场景完成后，明确系统边界层的统一架构原则。
+> **背景**：飞书 P2P 消息入站、A2A Remote Agent 异步回调/轮询等外部接入场景完成后，重新审视分层架构，明确 Handler 本质上也是 Adapter——所有外部输入入口都是同层的适配器。
 
-### 🎯 什么是系统边界层？
+### 🎯 核心认知：Handler = Adapter
 
-系统边界层是所有与**外部系统交互**的入口和出口，位于传统四层架构（DAO → DAL → Domain → Handler）的**最外层**，负责把外部协议适配为内部操作，或把内部操作适配为外部协议。
+传统上我们把"Handler 层"单独列一层，但本质上 **Handler 就是面向用户/前端 HTTP API 的 Adapter**，和面向飞书、A2A Agent 等外部系统的 Adapter 是**同级别、同职责**的组件——它们都是把外部世界的输入适配成内部 Domain 方法调用。
+
+因此正确的分层不是"边界层在 Handler 之外"，而是**原来的 Handler 层改名为适配层（Adapter 层）**，它包含了所有外部输入的适配器：
 
 ```
-          ┌─────────────────────────────────────────┐
-          │           外部系统（飞书/A2A Agent/...）   │
-          └───────────────┬─────────────────────────┘
-                          │ 外部协议（JSON-RPC/Webhook/WS...）
-                          ▼
-┌─────────────────────────────────────────────────────────┐
-│  系统边界层（Boundary Layer）                             │
-│  ├─ 入站：HTTP 回调端点 / AOP Producer / WebSocket 监听  │
-│  ├─ 出站：各渠道 Push DAO（lark_dao.push 等）             │
-│  └─ Adapter：协议转换、ID 映射、校验、幂等检查              │
-└─────────────────────────┬───────────────────────────────┘
-                          │ Domain 方法调用（send_to_user/send_to_agent...）
-                          ▼
-┌─────────────────────────────────────────────────────────┐
-│  Handler → Domain → DAL → DAO（传统内部分层）            │
-│  事件中心只流通内部事件（MessageCreatedEvent 等）         │
-└─────────────────────────────────────────────────────────┘
+                          ┌──────────────────────┐
+                          │      外部世界         │
+                          └──────────┬───────────┘
+                                     │
+           ┌─────────────────────────┼─────────────────────────┐
+           │                         │                         │
+           ▼                         ▼                         ▼
+  ┌─────────────────┐     ┌─────────────────────┐    ┌─────────────────────┐
+  │ 用户/前端        │     │ 外部系统（飞书等）   │    │ 外部系统（A2A等）   │
+  │ HTTP API 调用   │     │ WebSocket 事件推送  │    │ HTTP 回调 / 定时轮询│
+  └────────┬────────┘     └──────────┬──────────┘    └──────────┬──────────┘
+           │                         │                         │
+           ▼                         ▼                         ▼
+  ┌─────────────────┐     ┌─────────────────────┐    ┌─────────────────────┐
+  │ HTTP Handler    │     │ AOP Producer        │    │ HTTP Callback Handler│
+  │ (API Adapter)   │     │ (WS/轮询 Adapter)   │    │ (回调 Adapter)      │
+  └────────┬────────┘     └──────────┬──────────┘    └──────────┬──────────┘
+           │                         │                         │
+           └─────────────────────────┼─────────────────────────┘
+                                     │
+                        ┌────────────▼────────────┐
+                        │   适配层（Adapter 层）    │
+                        │  统一职责：协议转换+校验  │
+                        │  → 直接调用 Domain 方法  │
+                        └────────────┬────────────┘
+                                     │ Domain 方法调用
+                                     ▼
+                        ┌─────────────────────────┐
+                        │      Domain 层           │
+                        │  核心业务逻辑             │
+                        │  内部事件在这里产生       │
+                        └────────────┬────────────┘
+                                     │
+                                     ▼
+                        ┌─────────────────────────┐
+                        │        DAL 层            │
+                        │  组合 DAO，PO↔Entity 转换 │
+                        └────────────┬────────────┘
+                                     │
+                        ┌────────────▼────────────┐
+                        │        DAO 层            │
+                        │  ├─ 本地数据库 CRUD      │
+                        │  └─ 外部 API 出站调用    │
+                        │     （LarkDao.push 等） │
+                        └─────────────────────────┘
 ```
 
-### ✅ 边界层核心原则：外部协议不进入内部
+### 📋 适配层包含哪些组件？
+
+| 组件类型 | 对接对象 | 触发方式 | 示例 |
+|---------|---------|---------|------|
+| **HTTP Handler** | 用户/前端 | HTTP 请求（需要 JWT 鉴权） | `create_agent`、`send_message` 等所有 `/api/v1/...` 接口 |
+| **公开 HTTP Handler** | 外部系统回调 | HTTP 回调（无 JWT，需自身校验） | `POST /a2a/callback/:task_id` |
+| **AOP Producer** | 外部系统事件/定时轮询 | AOP 框架定时触发/事件监听 | `A2aPollingProducer`（30秒轮询）、`MessageChannelProducer`（飞书 WS） |
+| **Consumer** | 内部事件 | 事件中心内部事件（`MessageCreatedEvent` 等） | `MessageConsumer`（注意：Consumer 处理的是**内部**事件，不是外部输入） |
+
+> **注意**：Consumer 不在适配层——它消费的是 Domain 产生的内部事件，是内部链路的一部分，已经完全脱离外部协议。
+
+### ✅ 适配层核心原则：外部协议不进入内部
 
 | 原则 | 说明 |
 |------|------|
-| **协议转换在边界完成** | 外部数据结构 → 内部业务命令/操作的映射，全部在边界层完成 |
-| **直接调用 Domain** | 边界层拿到外部数据后，**直接调用 Domain 层方法**执行业务操作，不包装成"外部事件"投递到事件中心 |
-| **内部事件纯内部** | 事件中心里流通的事件（如 `MessageCreatedEvent`）全部由 Domain 方法内部产生，Consumer 不需要感知任何外部协议 |
-| **外部 DAO 封装** | 出站调用外部 API 的逻辑封装在对应 DAO（如 `LarkDao.push`、`A2aRuntimeDao.fetch_task`），不泄漏到 Domain 层 |
+| **协议转换在适配层完成** | 外部数据结构（HTTP JSON、飞书事件、A2A JSON-RPC）→ 内部业务 Command/方法参数 的映射，全部在适配层完成 |
+| **直接调用 Domain** | 适配层拿到外部数据后，**直接调用 Domain 层方法**执行业务操作，不包装成"外部事件"投递到事件中心 |
+| **内部事件纯内部** | 事件中心里流通的事件（如 `MessageCreatedEvent`、`CronTriggerEvent`）全部由 Domain 方法内部产生，Consumer 不需要感知任何外部协议 |
+| **出站调用在 DAO** | 推送到外部系统的逻辑（如发飞书消息、调用 A2A tasks/send）封装在外部 DAO 中（如 `LarkDao.push`、`A2aRuntimeDao.send_task`），由 DAL 组合、Domain 编排 |
 
-### 📋 边界层职责清单
+### 📋 适配层职责清单
 
-**入站边界（接收外部 → 驱动内部）可以做**：
-- 监听/接收外部事件（HTTP 端点、WebSocket 长连接、定时轮询）
-- 外部协议校验、签名验证、鉴权
-- 幂等检查（如"已在终态则跳过"）
+**入站适配器（所有类型的 Handler/Producer）可以做**：
+- 接收/监听外部触发（HTTP 请求、WebSocket 事件、定时轮询）
+- 外部协议校验、签名验证、鉴权（JWT、签名、token 等）
+- 幂等检查（如"任务已在终态则跳过"）
 - ID 映射（外部 ID ↔ 内部 ID，如 `open_id → user_id`、`a2a_task_id → task_id`）
 - 外部数据解析与过滤（如只处理飞书 P2P 文本消息、只处理 A2A agent 角色消息）
+- DTO ↔ Command 转换（HTTP Handler 的标准职责）
 - 直接调用 Domain 方法（`send_to_user()`、`send_to_agent()`、`transition_status()` 等）
 - 记录日志，处理外部渠道特有错误
+- 组装响应（HTTP Handler 返回 JSON，其他类型适配器无需响应）
 
-**入站边界禁止做**：
+**入站适配器禁止做**：
 - ❌ 直接操作 DAL/DAO（跨层，必须通过 Domain）
 - ❌ 把外部协议原始 JSON 包装成事件投递到事件中心
 - ❌ 把外部协议结构持久化到内部事件队列
 - ❌ 在 Consumer 里解析外部协议数据（到了 Consumer 就应该是纯内部语义了）
 - ❌ 实现核心业务规则（业务规则在 Domain 层）
+- ❌ Handler 之间互调（复用逻辑沉到 Domain）
 
-**出站边界（内部 → 推送外部）**：
-- 统一在对应外部 DAO 层完成（如 `LarkDao.push`、`A2aRuntimeDao.send_task`），由 DAL/Domain 编排调用
-- 出站消息格式转换在外部 DAO 内部完成（如 Markdown → 飞书卡片）
+**出站适配器（推送到外部）**：
+- 统一在外部 DAO 层实现（如 `LarkDao.push`、`A2aRuntimeDao.send_task`、`A2aRuntimeDao.fetch_task`）
+- 外部 DAO 由对应 DAL 持有并组合调用
+- 出站消息格式转换在外部 DAO 内部完成（如 Markdown → 飞书卡片、内部消息 → A2A Message）
 
-### 🔍 两种入站实现对照
+### 🔍 入站适配器实现对照
 
-| 外部渠道 | 边界实现 | 协议转换 | 业务动作 |
-|---------|---------|---------|---------|
-| 飞书 P2P 消息 | `src/producer/message_channel.rs` (Producer) + `src/service/dal/lark.rs` (Adapter) | `LarkMessageEvent` → `AdaptedMessage` → `SendToAgentCommand` | `MessageDomain.send_to_agent()` → 内部创建消息、发布 `MessageCreatedEvent`、唤醒 Agent |
-| A2A 回调 | `src/handlers/a2a/callback.rs` (HTTP Handler) | `A2aTask` → 提取消息文本/状态 → `SendToUserCommand` | `MessageDomain.send_to_user()` + `TaskManage.transition_status()` → 内部创建消息、发布 `MessageCreatedEvent`、SSE 推送 |
-| A2A 轮询 | `src/producer/a2a_polling.rs` (AOP Producer) | 同上（fetch_task 获取 A2aTask 后同样处理） | 同上 |
+| 外部输入源 | 适配层组件 | 协议转换 | 业务动作 |
+|-----------|-----------|---------|---------|
+| 用户/前端 HTTP API | `src/handlers/...` 各 handler | API DTO (JSON) → Command | 调用对应 Domain 方法，返回 Response DTO |
+| 飞书 P2P 消息 | `src/producer/message_channel.rs` (Producer) | `LarkMessageEvent` → `AdaptedMessage` → `SendToAgentCommand` | `MessageDomain.send_to_agent()` → 内部创建消息、发布 `MessageCreatedEvent`、唤醒 Agent |
+| A2A 回调推送 | `src/handlers/a2a/callback.rs` (公开 HTTP Handler) | `A2aTask` → 提取消息文本/状态 → `SendToUserCommand` | `MessageDomain.send_to_user()` + `TaskManage.transition_status()` → 内部创建消息、发布 `MessageCreatedEvent`、SSE 推送 |
+| A2A 轮询兜底 | `src/producer/a2a_polling.rs` (AOP Producer) | 同上（fetch_task 获取 A2aTask 后同样处理） | 同上 |
 
 ### ❌ 反模式：外部事件包装进事件中心
 
@@ -1292,22 +1339,41 @@ pub struct A2aTaskUpdateEvent {
 // → 导致 Consumer 需要解析外部 JSON、理解外部协议
 // → 外部协议变更时需要改 Consumer
 // → 事件中心被外部协议污染
+// → 这本质上是"绕过适配层，把协议解析下沉到了 Consumer"
 ```
 
 ```rust
-// ✅ 正确：边界层直接调用 Domain，事件中心只看到内部事件
-// 边界层（handler/producer）:
+// ✅ 正确：适配层直接调用 Domain，事件中心只看到内部事件
+// 适配层（handler/producer）:
 let cmd = SendToUserCommand { content: extract_text(&msg.parts), ... };
 message_domain.send_to_user(ctx, cmd).await?;  // 内部会发布 MessageCreatedEvent
 
-// Consumer 只看到 MessageCreatedEvent，完全不需要知道消息来自飞书还是 A2A
+// Consumer 只看到 MessageCreatedEvent，完全不需要知道消息来自飞书、A2A 还是用户在前端发的
 ```
 
 ### 💡 架构洞见
 
-**Adapter 的意义**：边界层就是 Adapter——把"外部世界的语言"翻译成"内部系统的语言"。翻译完成后，内部链路完全复用，不需要因为接入了新的外部渠道而新增 Consumer 或内部事件类型。
+**为什么 Handler 和 Producer/回调 是同级别？** 因为它们的职责完全一致——都是"外部世界 → 内部系统"的适配器：
+- HTTP Handler 适配来自**用户**的外部输入（HTTP 请求）
+- 飞书 Producer 适配来自**飞书**的外部输入（WebSocket 事件）
+- A2A 回调 Handler 适配来自**外部 A2A Agent**的外部输入（HTTP 回调）
+- A2A 轮询 Producer 适配来自**外部 A2A Agent**的外部输入（主动轮询拉取）
 
-这与 Hexagonal Architecture（端口与适配器架构）的思想一致：内部业务逻辑（Domain）只定义端口（trait/方法签名），边界层作为适配器实现这些端口的对接；外部系统的变化只影响适配器，不影响内部核心。
+区别只在于它们对接的外部世界不同、触发方式不同，但在架构中的**位置和职责完全相同**——把外部语言翻译成内部语言，然后调用 Domain。
+
+这正是 Hexagonal Architecture（端口与适配器架构）的核心思想：
+- **内部（Domain）**：核心业务逻辑，定义端口（trait/方法签名），不依赖任何外部
+- **外部（Adapters）**：各种适配器（HTTP、WS、消息队列、定时任务、外部 API），实现与外部世界的对接，调用内部端口
+- 外部系统的变化只影响适配器，不影响内部核心
+
+### 📐 修正后的分层架构表
+
+| 层级 | 职责 | 组件 | 依赖方向 |
+|------|------|------|---------|
+| **适配层 (Adapter)** | 外部输入适配、协议转换、校验、直接调 Domain | HTTP Handler（含公开回调）、AOP Producer | → Domain |
+| **Domain 层** | 核心业务逻辑、跨 DAL 编排、内部事件产生 | 各 Domain（Message、Project、HR 等） | → DAL |
+| **DAL 层** | 组合 DAO、业务级数据操作、PO↔Entity 转换 | 各 Dal | → DAO |
+| **DAO 层** | 数据访问（本地 DB CRUD + 外部 API 出站调用） | 本地 DB DAO、外部 API DAO（LarkDao、A2aRuntimeDao） | → DB / 外部 API |
 
 ---
 
@@ -1323,7 +1389,8 @@ message_domain.send_to_user(ctx, cmd).await?;  // 内部会发布 MessageCreated
 | **业务实体持 PO** | Project/Task/Artifact | ✅ 减少转换代码，兼容性好 |
 | **DAL 私有封装 DAO** | 全部 DAL | ✅ 隐藏实现细节，接口清晰 |
 | **Arc<dyn Trait> 注入** | 全部 Domain | ✅ 符合 DIP，测试友好 |
-| **边界层协议转换** | 飞书入站、A2A 回调/轮询 | ✅ 外部协议不污染事件中心 |
+| **适配层协议转换** | HTTP Handler、飞书入站、A2A 回调/轮询 | ✅ Handler=Adapter，外部协议不污染事件中心 |
+| **外部 DAO 封装出站** | Lark 推送、A2A 调用 | ✅ 出站外部调用统一在 DAO 层 |
 
 ---
 
@@ -1336,9 +1403,11 @@ message_domain.send_to_user(ctx, cmd).await?;  // 内部会发布 MessageCreated
 | PO 暴露到 Domain 层 | 分层边界失效，耦合数据库 | 业务实体包装 PO |
 | 过度使用 trait | 复杂的对象转换，性能损耗 | 固定数量实现用纯 match |
 | Handler 直接调 DAL | 跳过业务逻辑层 | 必须通过 Domain 层 |
-| **外部事件包装进事件中心** | 外部协议污染内部，Consumer 需理解外部协议 | **边界层直接调 Domain，事件中心只流通内部事件** |
+| Handler 之间互调 | 耦合混乱 | 复用逻辑沉到 Domain |
+| **外部事件包装进事件中心** | 外部协议污染内部，Consumer 需理解外部协议 | **适配层直接调 Domain，事件中心只流通内部事件** |
+| **出站外部调用散落在 Domain** | Domain 耦合外部协议 | **出站调用封装在外部 DAO，由 DAL/Domain 编排** |
 
 ---
 
 **文档维护者**：架构组
-**上次更新**：2026-07-21（新增系统边界层架构原则）
+**上次更新**：2026-07-21（明确 Handler=Adapter，修正架构层级认知）

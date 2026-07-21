@@ -134,51 +134,37 @@ Handler 内按 kind 校验必填字段并构造 `ExternalAgentConfig`，写入 `
   4. 调用远程 A2A Agent 的 `tasks/get` 接口获取最新状态
   5. **直接处理业务逻辑**（新消息 → send_to_user；状态变更 → transition_status）
 
-### 边界层直接处理（通用架构原则）
+### 适配层直接处理（通用架构原则）
 
-这是与飞书入站消息一致的**系统边界架构原则**：所有与外部系统交互的入口（HTTP 回调端点、AOP Producer、WebSocket 监听等）都属于系统**边界层**，在边界层完成外部协议到内部操作的转换后，直接调用 Domain 层方法完成业务处理，**外部协议数据绝不进入事件中心**。
+Handler/回调端点/Producer 同属**适配层（Adapter）**——Handler 是面向用户 HTTP API 的 Adapter，回调端点/Producer 是面向外部系统的 Adapter，它们在架构中处于同一层级，职责完全一致：在适配层完成外部协议到内部操作的转换后，直接调用 Domain 层方法完成业务处理，**外部协议数据绝不进入事件中心**。
 
-#### 两种入站边界的对照
+> 详见 [LAYERED_ARCHITECTURE_PRACTICE.md - 实践 7：适配层架构原则](LAYERED_ARCHITECTURE_PRACTICE.md)
 
-| 外部渠道 | 边界实现 | 协议转换 | 业务动作 |
-|---------|---------|---------|---------|
-| 飞书 P2P 消息 | `src/producer/message_channel.rs` (Producer) + `src/service/dal/lark.rs` (Adapter) | `LarkMessageEvent` → `AdaptedMessage` → `SendToAgentCommand` | `MessageDomain.send_to_agent()`（创建消息→发布 MessageCreatedEvent→唤醒 Agent） |
-| A2A 回调 | `src/handlers/a2a/callback.rs` (HTTP Handler) | `A2aTask` → 提取消息文本/状态 → `SendToUserCommand` | `MessageDomain.send_to_user()`（创建消息→发布 MessageCreatedEvent→SSE 推送用户）+ `TaskManage.transition_status()` |
-| A2A 轮询 | `src/producer/a2a_polling.rs` (AOP Producer) | 同上（fetch_task 获取 A2aTask 后同样处理） | 同上 |
+#### 入站适配器对照
 
-#### 边界层职责边界
+| 外部输入源 | 适配层组件 | 协议转换 | 业务动作 |
+|-----------|-----------|---------|---------|
+| 用户/前端 HTTP API | HTTP Handler（如 `create_agent`、`send_message`） | API DTO (JSON) → Command | 调用对应 Domain 方法，返回 Response DTO |
+| 飞书 P2P 消息 | `src/producer/message_channel.rs` (AOP Producer) | `LarkMessageEvent` → `AdaptedMessage` → `SendToAgentCommand` | `MessageDomain.send_to_agent()`（创建消息→发布 MessageCreatedEvent→唤醒 Agent） |
+| A2A 回调推送 | `src/handlers/a2a/callback.rs` (公开 HTTP Handler) | `A2aTask` → 提取消息文本/状态 → `SendToUserCommand` | `MessageDomain.send_to_user()`（创建消息→发布 MessageCreatedEvent→SSE 推送用户）+ `TaskManage.transition_status()` |
+| A2A 轮询兜底 | `src/producer/a2a_polling.rs` (AOP Producer) | 同上（fetch_task 获取 A2aTask 后同样处理） | 同上 |
 
-边界层**可以做**：
-- 监听/接收外部事件（HTTP 端点、WebSocket、定时轮询）
-- 外部协议校验、签名验证、幂等检查
-- 外部数据结构 → 内部业务概念的映射解析
-- ID 映射（外部 ID ↔ 内部 ID）
-- 调用 Domain 层方法执行业务操作（`send_to_user`、`send_to_agent`、`transition_status` 等）
-- 记录日志，处理外部渠道特有错误
-
-边界层**禁止做**：
-- ❌ 直接操作 DAO/DAL 层（跨层）
-- ❌ 持久化外部协议原始数据到事件中心
-- ❌ 包装外部协议 JSON 作为内部事件投递
-- ❌ 实现核心业务规则（应在 Domain 层）
-- ❌ 在 Consumer 里解析外部协议数据（外部数据到 Consumer 时已经是内部事件了）
-
-#### A2A 边界层处理流程
+#### A2A 适配层处理流程
 
 ```
-外部协议数据（A2aTask）进入边界层
-  ├─ Push 回调：POST /a2a/callback/:task_id（handler）
-  └─ Poll 轮询：A2aPollingProducer.poll()（每30秒）
+外部协议数据（A2aTask）进入适配层
+  ├─ Push 回调：POST /a2a/callback/:task_id（公开 HTTP Handler）
+  └─ Poll 轮询：A2aPollingProducer.poll()（每30秒，AOP Producer）
         │
         ▼
-  [边界层] 解析与校验
+  [适配层] 解析与校验
         ├─ 校验本地 Task 存在且状态活跃
         ├─ 校验外部 task_id 与本地 tags 中记录一致
         ├─ 基于 tags 中 a2a_synced_msgs:N 做消息去重
         └─ 提取 agent/assistant 角色的文本消息
         │
         ▼
-  [边界层] 直接调用 Domain 方法
+  [适配层] 直接调用 Domain 方法
         ├─ MessageDomain.delivery().send_to_user()  ← 新消息
         │     └─ 内部：创建 MessagePo → 持久化 → 发布 MessageCreatedEvent → SSE 推送给用户
         └─ ProjectDomain.task_manage().transition_status()  ← 状态变更
@@ -206,9 +192,9 @@ Handler 内按 kind 校验必填字段并构造 `ExternalAgentConfig`，写入 `
 | 文件 | 说明 |
 |------|------|
 | `src/models/events/a2a_task_update.rs` | A2A tags 工具函数（a2a_task_id 提取/构造、消息计数、文本提取） |
-| `src/handlers/a2a/callback.rs` | 回调端点 `POST /a2a/callback/:task_id`（边界层，直接处理业务） |
-| `src/producer/a2a_polling.rs` | A2aPollingProducer（30秒轮询，边界层，直接处理业务） |
-| `src/service/dao/agent_runtime/a2a.rs` | A2aRuntimeDao.fetch_task()（调用远程 tasks/get） |
+| `src/handlers/a2a/callback.rs` | 回调端点 `POST /a2a/callback/:task_id`（适配层，直接处理业务） |
+| `src/producer/a2a_polling.rs` | A2aPollingProducer（30秒轮询，适配层，直接处理业务） |
+| `src/service/dao/agent_runtime/a2a.rs` | A2aRuntimeDao（出站 DAO：send_task/fetch_task 调用远程 A2A 接口） |
 | `src/router.rs` | 注册回调路由 |
 | `src/producer/mod.rs` | 注册 A2aPollingProducer |
 
