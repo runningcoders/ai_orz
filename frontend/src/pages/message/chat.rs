@@ -6,6 +6,7 @@ use crate::api::finance::upload_attachment;
 use crate::api::hr::get_reception_agent;
 use crate::api::message::{load_latest_messages, load_older_messages, send_message_to_agent};
 use crate::api::project::{create_project, list_projects};
+use crate::components::modal::Modal;
 use crate::store::toast::use_toast;
 use common::api::{
     CreateProjectRequest, GetReceptionAgentResponse, ListProjectsResponseItem, MessageListItem,
@@ -800,56 +801,45 @@ pub fn MessageChat() -> Element {
             }
 
             // 新建项目弹窗
-            if show_create_project() {
-                div { class: "modal-overlay",
-                    onclick: move |_| show_create_project.set(false),
-                    div { class: "modal-content",
-                        onclick: move |e| e.stop_propagation(),
-                        div { class: "modal-header",
-                            h3 { "新建项目" }
-                            button {
-                                class: "modal-close",
-                                onclick: move |_| show_create_project.set(false),
-                                "×"
-                            }
+            Modal {
+                show: show_create_project(),
+                title: "新建项目".to_string(),
+                on_close: move |_| show_create_project.set(false),
+                footer: rsx! {
+                    button {
+                        class: "btn-secondary",
+                        onclick: move |_| show_create_project.set(false),
+                        "取消"
+                    }
+                    button {
+                        class: "btn-primary",
+                        disabled: creating_project() || new_project_name().trim().is_empty(),
+                        onclick: handle_create_project_submit,
+                        if creating_project() { "创建中..." } else { "创建" }
+                    }
+                },
+                div { class: "modal-body",
+                    div { class: "form-group",
+                        label { "项目名称" }
+                        input {
+                            r#type: "text",
+                            class: "form-input",
+                            placeholder: "输入项目名称",
+                            value: "{new_project_name}",
+                            oninput: move |e| new_project_name.set(e.value()),
                         }
-                        div { class: "modal-body",
-                            div { class: "form-group",
-                                label { "项目名称" }
-                                input {
-                                    r#type: "text",
-                                    class: "form-input",
-                                    placeholder: "输入项目名称",
-                                    value: "{new_project_name}",
-                                    oninput: move |e| new_project_name.set(e.value()),
-                                }
-                            }
-                            div { class: "form-group",
-                                label { "项目描述（可选）" }
-                                textarea {
-                                    class: "form-input",
-                                    placeholder: "输入项目描述",
-                                    value: "{new_project_desc}",
-                                    oninput: move |e| new_project_desc.set(e.value()),
-                                }
-                            }
-                            div { class: "form-hint",
-                                "项目将自动绑定当前前台 Agent 作为负责人"
-                            }
+                    }
+                    div { class: "form-group",
+                        label { "项目描述（可选）" }
+                        textarea {
+                            class: "form-input",
+                            placeholder: "输入项目描述",
+                            value: "{new_project_desc}",
+                            oninput: move |e| new_project_desc.set(e.value()),
                         }
-                        div { class: "modal-footer",
-                            button {
-                                class: "btn-secondary",
-                                onclick: move |_| show_create_project.set(false),
-                                "取消"
-                            }
-                            button {
-                                class: "btn-primary",
-                                disabled: creating_project() || new_project_name().trim().is_empty(),
-                                onclick: handle_create_project_submit,
-                                if creating_project() { "创建中..." } else { "创建" }
-                            }
-                        }
+                    }
+                    div { class: "form-hint",
+                        "项目将自动绑定当前前台 Agent 作为负责人"
                     }
                 }
             }

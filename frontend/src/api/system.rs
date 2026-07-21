@@ -241,6 +241,7 @@ pub async fn get_all_queue_stats() -> Result<Vec<QueueStatsResponse>, String> {
 }
 
 /// 获取指定消费者队列统计
+#[allow(dead_code)]
 pub async fn get_queue_stats(consumer: &str) -> Result<QueueStatsResponse, String> {
     api_get(&format!("/api/v1/system/aop/{}/stats", consumer)).await
 }

@@ -236,6 +236,16 @@
         border-radius: var(--radius-lg);
         padding: var(--space-6);
         box-shadow: var(--shadow-md);
+        border: 2px solid transparent;
+        transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+      }
+      .card-hover:hover {
+        box-shadow: var(--shadow-lg);
+        transform: translateY(-1px);
+      }
+      .card-selected {
+        border-color: var(--color-accent, #6366f1);
+        box-shadow: 0 0 0 1px var(--color-accent, #6366f1), var(--shadow-lg);
       }
       .card-header {
         display: flex;
@@ -379,6 +389,10 @@
         color: var(--color-text-muted);
         padding: 0;
         line-height: 1;
+      }
+      .modal-body {
+        max-height: 60vh;
+        overflow-y: auto;
       }
       .modal-footer {
         display: flex;

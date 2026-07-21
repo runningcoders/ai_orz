@@ -5,7 +5,8 @@
 //! 2. 编译时嵌入的默认配置（从后端 ai_orz.toml 读取）
 
 use serde::{Deserialize, Serialize};
-use web_sys::Storage;
+
+use crate::utils::local_storage;
 
 /// 前端可配置项
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,9 +40,8 @@ impl Default for FrontendConfig {
 }
 
 impl FrontendConfig {
-    /// 从 localStorage 加载配置，没有则返回默认值
     pub fn load() -> Self {
-        if let Some(storage) = get_local_storage() {
+        if let Some(storage) = local_storage() {
             match storage.get("ai_orz_config") {
                 Ok(json_opt) => {
                     if let Some(json) = json_opt {
@@ -60,9 +60,8 @@ impl FrontendConfig {
         }
     }
 
-    /// 保存配置到 localStorage
     pub fn save(&self) -> Result<(), String> {
-        if let Some(storage) = get_local_storage() {
+        if let Some(storage) = local_storage() {
             let json = serde_json::to_string(self).map_err(|e| e.to_string())?;
             storage
                 .set("ai_orz_config", &json)
@@ -73,29 +72,16 @@ impl FrontendConfig {
         }
     }
 
-    /// 重置为编译时默认配置
     pub fn reset_to_default(&mut self) {
         *self = Self::default();
     }
 
-    /// 获取完整的 API 地址
     pub fn api_url(&self, path: &str) -> String {
-        // path 应该以 / 开头，例如: /api/v1/health
         let base = self.api_base_url.trim_end_matches('/');
         format!("{}{}", base, path)
     }
 }
 
-fn get_local_storage() -> Option<Storage> {
-    let window = web_sys::window()?;
-    match window.local_storage() {
-        Ok(opt) => opt,
-        Err(_) => None,
-    }
-}
-
-/// 获取当前全局配置
-/// 在 Dioxus 组件中使用 use_context 或 use_signal 管理
 pub fn current_config() -> FrontendConfig {
     FrontendConfig::load()
 }

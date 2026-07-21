@@ -6,6 +6,7 @@ use crate::api::system::{
     get_all_queue_stats, get_event, list_events, EventDetailResponse, EventSummaryResponse,
     QueueStatsResponse,
 };
+use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
@@ -62,6 +63,8 @@ pub fn SystemAop() -> Element {
     let detail = selected_event.cloned();
     let status_filter_val = filter_status.cloned();
 
+    let close_modal = move |_| selected_event.set(None);
+
     rsx! {
         AppLayout {
             div { class: "card",
@@ -104,9 +107,14 @@ pub fn SystemAop() -> Element {
                                 let order_keys = s.order_keys.clone();
                                 let is_selected = consumer.as_ref() == Some(&name);
                                 let card_name = name.clone();
+                                let card_class = if is_selected {
+                                    "card card-hover card-selected"
+                                } else {
+                                    "card card-hover"
+                                };
                                 rsx! {
                                     div {
-                                        class: if is_selected { "card card-hover ring-2 ring-accent" } else { "card card-hover" },
+                                        class: "{card_class}",
                                         style: "cursor: pointer;",
                                         onclick: move |_| {
                                             let consumer_name = card_name.clone();
@@ -193,7 +201,7 @@ pub fn SystemAop() -> Element {
                             EmptyState { icon: "📭".to_string(), message: "该队列暂无事件".to_string() }
                         } else {
                             div { style: "overflow-x: auto;",
-                                table { class: "table table-sm",
+                                table { class: "table table-sm table-row-clickable",
                                     thead { tr {
                                         th { "事件 ID" }
                                         th { "类型" }
@@ -214,7 +222,7 @@ pub fn SystemAop() -> Element {
                                                 let cid = consumer_name.clone();
                                                 rsx! {
                                                     tr {
-                                                        style: "cursor: pointer;",
+                                                        class: "table-row-clickable",
                                                         onclick: move |_| {
                                                             let c = cid.clone();
                                                             let eid = event_id.clone();
@@ -256,60 +264,51 @@ pub fn SystemAop() -> Element {
                     }
                 }
 
-                if detail.is_some() {
-                    if let Some(d) = detail {
-                        div { class: "modal-overlay", onclick: move |_| selected_event.set(None),
-                            div { class: "modal", onclick: move |e| e.stop_propagation(),
-                                div { class: "modal-header",
-                                    h3 { class: "modal-title", "事件详情" }
-                                    button {
-                                        class: "btn btn-ghost btn-sm",
-                                        onclick: move |_| selected_event.set(None),
-                                        "✕"
+                if let Some(d) = detail {
+                    Modal {
+                        show: true,
+                        title: "事件详情".to_string(),
+                        on_close: close_modal,
+                        div { class: "modal-body",
+                            if loading_detail() {
+                                div { class: "text-center", Loading {} }
+                            } else {
+                                div { class: "space-y-2",
+                                    div { class: "flex justify-between",
+                                        span { class: "text-muted", "事件 ID" }
+                                        span { class: "text-mono", "{d.event_id}" }
                                     }
-                                }
-                                div { class: "modal-body",
-                                    if loading_detail() {
-                                        Loading {}
-                                    } else {
-                                        div { class: "space-y-2",
-                                            div { class: "flex justify-between",
-                                                span { class: "text-muted", "事件 ID" }
-                                                span { class: "text-mono", "{d.event_id}" }
+                                    div { class: "flex justify-between",
+                                        span { class: "text-muted", "类型" }
+                                        span { "{d.event_kind}" }
+                                    }
+                                    div { class: "flex justify-between",
+                                        span { class: "text-muted", "order_key" }
+                                        span { class: "text-mono",
+                                            if d.order_key.is_empty() {
+                                                "-"
+                                            } else {
+                                                "{d.order_key}"
                                             }
-                                            div { class: "flex justify-between",
-                                                span { class: "text-muted", "类型" }
-                                                span { "{d.event_kind}" }
-                                            }
-                                            div { class: "flex justify-between",
-                                                span { class: "text-muted", "order_key" }
-                                                span { class: "text-mono",
-                                                    if d.order_key.is_empty() {
-                                                        "-"
-                                                    } else {
-                                                        "{d.order_key}"
-                                                    }
-                                                }
-                                            }
-                                            div { class: "flex justify-between",
-                                                span { class: "text-muted", "优先级" }
-                                                span { "{d.priority}" }
-                                            }
-                                            div { class: "flex justify-between",
-                                                span { class: "text-muted", "创建时间" }
-                                                span { "{format_created_at(d.created_at)}" }
-                                            }
-                                            div { class: "flex justify-between",
-                                                span { class: "text-muted", "状态" }
-                                                span { class: "{status_badge_class(&d.status)}", "{d.status}" }
-                                            }
-                                            div { class: "mt-4",
-                                                div { class: "text-muted text-sm mb-1", "内容预览" }
-                                                pre { class: "text-mono text-sm",
-                                                    style: "background: var(--color-warm-ivory); padding: var(--space-3); border-radius: var(--radius-md); max-height: 300px; overflow: auto; white-space: pre-wrap; word-break: break-word;",
-                                                    "{d.payload_preview}"
-                                                }
-                                            }
+                                        }
+                                    }
+                                    div { class: "flex justify-between",
+                                        span { class: "text-muted", "优先级" }
+                                        span { "{d.priority}" }
+                                    }
+                                    div { class: "flex justify-between",
+                                        span { class: "text-muted", "创建时间" }
+                                        span { "{format_created_at(d.created_at)}" }
+                                    }
+                                    div { class: "flex justify-between",
+                                        span { class: "text-muted", "状态" }
+                                        span { class: "{status_badge_class(&d.status)}", "{d.status}" }
+                                    }
+                                    div { class: "mt-4",
+                                        div { class: "text-muted text-sm mb-1", "内容预览" }
+                                        pre { class: "text-mono text-sm",
+                                            style: "background: var(--color-warm-ivory); padding: var(--space-3); border-radius: var(--radius-md); max-height: 300px; overflow: auto; white-space: pre-wrap; word-break: break-word;",
+                                            "{d.payload_preview}"
                                         }
                                     }
                                 }

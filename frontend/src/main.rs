@@ -5,6 +5,7 @@ mod hooks;
 mod layouts;
 mod pages;
 mod store;
+mod utils;
 
 // Include compile-time generated configuration from build.rs
 include!(concat!(env!("OUT_DIR"), "/compiled_config.rs"));
