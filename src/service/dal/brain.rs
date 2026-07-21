@@ -313,15 +313,14 @@ impl BrainDal for BrainDalImpl {
                 let result = match external_config {
                     ExternalAgentConfig::Remote {
                         endpoint,
-                        agent_name: target_agent_name,
+                        agent_name: _target_agent_name,
                         auth_token,
                         timeout_secs: _,
                     } => {
-                        agent_runtime::a2a::execute_a2a(
+                        agent_runtime::a2a::execute_a2a_send(
                             &self.http_client,
                             &brain.agent_id,
                             endpoint,
-                            target_agent_name,
                             auth_token,
                             prompt,
                         )

@@ -1,3 +1,4 @@
+pub mod a2a_polling;
 pub mod cron_trigger;
 pub mod message_channel;
 
@@ -10,6 +11,10 @@ pub async fn init() -> Result<()> {
 
     aop::registry()
         .register_producer(Arc::new(cron_trigger::CronTriggerProducer::new()))
+        .await?;
+
+    aop::registry()
+        .register_producer(Arc::new(a2a_polling::A2aPollingProducer::new()))
         .await?;
 
     sys_info!("all business producers registered");

@@ -104,6 +104,84 @@ Handler 内按 kind 校验必填字段并构造 `ExternalAgentConfig`，写入 `
 - **Brain 统一装配**：外部 Agent 也装配 Brain（cortex 为 None），统一走 `think()` 入口，避免上层区分调用不同方法。
 - **Domain 层通用**：`create_agent`、`awaken` 等方法对 kind 透明，用户行为差异通过不同 Handler 处理。
 
+## A2A Remote Agent 异步处理机制
+
+### 数据模型对应
+
+| A2A 概念 | ai_orz 对应 | 说明 |
+|---------|------------|------|
+| A2A Task | 本地 Task | 委托给外部 Agent 的工作单元（非 Project） |
+| A2A Task.id | Task.tags 中的 `a2a_task_id:xxx` | 外部 task_id 通过 tags 存储，提供工具函数提取/构造 |
+| A2A Task.messages | MessagePo 链 | 外部 Agent 回复的消息通过 `send_to_user` 投递给用户 |
+| A2A Task.status | Task.status | 终态映射：completed→Completed, failed/canceled→Cancelled |
+
+### 异步更新双通道
+
+委托给外部 Remote Agent 的任务通过两种机制获取状态更新：
+
+**1. Push 回调（推荐）**
+- 公开端点：`POST /a2a/callback/:task_id`（无需 JWT）
+- 外部 Agent 完成任务或有新消息时向此 URL 推送 A2aTask
+- URL 中 `:task_id` 是本地 Task ID（调用 tasks/send 时构造 notification_url 传入）
+- 校验流程：任务存在 → 状态活跃 → 外部 task_id 与本地记录一致 → 发布事件
+
+**2. Poll 轮询（兜底）**
+- `A2aPollingProducer` 注册到 AOP 事件中心，每 30 秒执行一次
+- 查询流程：
+  1. 通过 `hr_domain().agent_manage().list_agents()` 获取所有 Remote Agent
+  2. 对每个 Agent，通过 `project_domain().task_manage().list()` 查询分配给它的 `InProgress` Task（`assignee_type=Agent, assignee_id=agent_id, status=InProgress`）
+  3. 从 Task.tags 解析外部 a2a_task_id
+  4. 调用远程 A2A Agent 的 `tasks/get` 接口获取最新状态
+  5. 有新消息或状态变更时发布事件
+
+### 事件驱动处理
+
+两种通道最终都发布统一的 `A2aTaskUpdateEvent` 事件：
+
+```rust
+pub struct A2aTaskUpdateEvent {
+    pub event_id: String,
+    pub local_task_id: String,       // 本地 Task ID
+    pub remote_agent_id: String,     // 外部 Agent ID
+    pub remote_task_id: String,      // 外部 A2A Task ID
+    pub source: A2aUpdateSource,     // Callback 或 Polling
+    pub task_json: String,           // 完整 A2aTask JSON
+    pub created_at: i64,
+}
+```
+
+- **order_key** 使用 `local_task_id`，保证同一任务的事件按顺序处理
+- **priority**：统一为 5（回调与轮询同优先级）
+
+`A2aTaskUpdateConsumer` 消费事件，处理：
+
+1. **消息去重与投递**：通过 tags 中 `a2a_synced_msgs:N` 记录已同步的 agent 消息数量，只发送新消息；提取 agent/assistant 角色的文本消息，通过 `MessageDomain.delivery().send_to_user()` 发送给任务创建者（root_user_id）
+2. **状态流转**：
+   - A2A `Completed` → 本地 `Completed`
+   - A2A `Failed/Canceled` → 本地 `Cancelled`
+   - A2A `Working/Submitted/InputRequired` → 本地 `Pending` → `InProgress`
+3. **幂等性**：已在终态的任务跳过处理；通过已同步消息计数避免重复发送
+
+### 相关文件
+
+| 文件 | 说明 |
+|------|------|
+| `src/models/events/a2a_task_update.rs` | A2aTaskUpdateEvent 定义 + tags 工具函数 |
+| `src/handlers/a2a/callback.rs` | 回调端点 `POST /a2a/callback/:task_id` |
+| `src/producer/a2a_polling.rs` | A2aPollingProducer（30秒轮询） |
+| `src/consumer/a2a_task_update.rs` | A2aTaskUpdateConsumer（消息投递 + 状态流转） |
+| `src/service/dao/agent_runtime/a2a.rs` | A2aRuntimeDao.fetch_task()（调用远程 tasks/get） |
+| `src/router.rs` | 注册回调路由 |
+| `src/producer/mod.rs` | 注册 A2aPollingProducer |
+| `src/consumer/mod.rs` | 注册 A2aTaskUpdateConsumer |
+
+### 后续迭代计划
+
+1. **调用流程改造**：`execute_a2a` 支持异步模式，创建本地 Task、构造含 task_id 的 notification_url
+2. **产物处理**：支持 A2aTask.artifacts 的保存和关联
+3. **轮询性能优化**：批量查询所有 InProgress Agent 类型任务，减少查询次数
+4. **输入请求处理**：支持 A2A `InputRequired` 状态，向用户请求补充输入
+
 ## 前端页面支持
 
 前端通过 `kind` 字段区分三类 Agent，并提供外部 Agent 的注册入口和详情展示。

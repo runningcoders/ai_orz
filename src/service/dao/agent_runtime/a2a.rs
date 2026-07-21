@@ -3,17 +3,28 @@
 //! 通过 HTTP JSON-RPC 2.0 调用支持 A2A 协议的远程 Agent。
 //! 遵循 Google A2A 协议规范（https://github.com/google/A2A）。
 //!
-//! 核心方法：agents/sendTask - 发送任务给远程 Agent 并等待结果
+//! 核心方法：tasks/send - 发送任务给远程 Agent 并等待结果
 
 use async_trait::async_trait;
+use common::api::a2a::{
+    A2aMessagePart, A2aTask, GetTaskParams, JsonRpcRequest, JsonRpcResponse, SendTaskParams,
+};
 use common::error::{err, Result};
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::models::agent::AgentPo;
 use crate::pkg::RequestContext;
 use super::AgentRuntimeDao;
+
+/// JSON-RPC 请求 ID 生成器（单调递增）
+static REQUEST_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+fn next_request_id() -> Value {
+    let id = REQUEST_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
+    Value::Number(id.into())
+}
 
 /// A2A 远程 Agent 执行配置
 #[derive(Debug, Clone)]
@@ -43,58 +54,16 @@ impl A2aRuntimeDao {
             .unwrap_or_else(|_| Client::new());
         Self { config, http }
     }
-}
 
-// ==================== A2A Protocol Types ====================
-
-/// A2A 消息内容部分
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct A2aMessagePart {
-    #[serde(rename = "type")]
-    part_type: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    text: Option<String>,
-    #[serde(flatten, skip_serializing_if = "Value::is_null")]
-    extra: Value,
-}
-
-/// A2A 消息
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct A2aMessage {
-    role: String,
-    parts: Vec<A2aMessagePart>,
-}
-
-/// JSON-RPC 请求
-#[derive(Debug, Serialize)]
-struct JsonRpcRequest {
-    jsonrpc: String,
-    method: String,
-    params: Value,
-    id: u64,
-}
-
-/// JSON-RPC 响应
-#[derive(Debug, Deserialize)]
-struct JsonRpcResponse {
-    #[allow(dead_code)]
-    jsonrpc: Option<String>,
-    #[serde(default)]
-    result: Option<Value>,
-    #[serde(default)]
-    error: Option<JsonRpcError>,
-    #[allow(dead_code)]
-    id: Option<Value>,
-}
-
-/// JSON-RPC 错误
-#[derive(Debug, Deserialize)]
-struct JsonRpcError {
-    code: i64,
-    message: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    data: Option<Value>,
+    /// 调用 tasks/get 获取远程任务状态
+    pub async fn fetch_task(&self, remote_task_id: &str) -> Result<A2aTask> {
+        fetch_a2a_task(
+            &self.http,
+            &self.config.endpoint,
+            &self.config.auth_token,
+            remote_task_id,
+        ).await
+    }
 }
 
 // ==================== Implementation ====================
@@ -102,45 +71,30 @@ struct JsonRpcError {
 #[async_trait]
 impl AgentRuntimeDao for A2aRuntimeDao {
     async fn invoke(&self, _ctx: RequestContext, agent: &AgentPo, prompt: &str) -> Result<String> {
-        execute_a2a(
+        execute_a2a_send(
             &self.http,
             &agent.id,
             &self.config.endpoint,
-            &self.config.agent_name,
             &self.config.auth_token,
             prompt,
         ).await
     }
 }
 
-/// 执行 A2A agents/sendTask 调用
-pub async fn execute_a2a(
+/// 通用 A2A JSON-RPC 调用
+async fn call_a2a_jsonrpc(
     http: &Client,
-    agent_id: &str,
     endpoint: &str,
-    target_agent_name: &str,
     auth_token: &Option<String>,
-    prompt: &str,
-) -> Result<String> {
-    let message = A2aMessage {
-        role: "user".to_string(),
-        parts: vec![A2aMessagePart {
-            part_type: "text".to_string(),
-            text: Some(prompt.to_string()),
-            extra: json!({}),
-        }],
-    };
-
-    let params = json!({
-        "agent_id": target_agent_name,
-        "message": message,
-    });
-
+    method: &str,
+    params: Value,
+    context: &str,
+) -> Result<Value> {
     let request = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
-        method: "agents/sendTask".to_string(),
+        method: method.to_string(),
         params,
-        id: 1,
+        id: next_request_id(),
     };
 
     let mut req_builder = http
@@ -155,74 +109,108 @@ pub async fn execute_a2a(
         .json(&request)
         .send()
         .await
-        .map_err(|e| {
-            err!(
-                Internal,
-                "Agent {}: A2A HTTP request failed: {}",
-                agent_id,
-                e
-            )
-        })?;
+        .map_err(|e| err!(Internal, "{}: A2A HTTP request failed: {}", context, e))?;
 
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(err!(
-            Internal,
-            "Agent {}: A2A HTTP error {}: {}",
-            agent_id,
-            status,
-            body
-        ));
+        return Err(err!(Internal, "{}: A2A HTTP error {}: {}", context, status, body));
     }
 
-    let rpc_response: JsonRpcResponse = response.json().await.map_err(|e| {
-        err!(
-            Internal,
-            "Agent {}: failed to parse A2A JSON-RPC response: {}",
-            agent_id,
-            e
-        )
-    })?;
+    let rpc_response: JsonRpcResponse = response
+        .json()
+        .await
+        .map_err(|e| err!(Internal, "{}: failed to parse A2A JSON-RPC response: {}", context, e))?;
 
     if let Some(rpc_error) = rpc_response.error {
         return Err(err!(
             Internal,
-            "Agent {}: A2A JSON-RPC error {}: {}",
-            agent_id,
+            "{}: A2A JSON-RPC error {}: {}",
+            context,
             rpc_error.code,
             rpc_error.message
         ));
     }
 
-    let result = rpc_response.result.unwrap_or_default();
-    extract_text_from_result(&result)
-        .ok_or_else(|| {
-            err!(
-                Internal,
-                "Agent {}: A2A response has no text content: {}",
-                agent_id,
-                result
-            )
-        })
+    Ok(rpc_response.result.unwrap_or_default())
 }
 
-/// 从 A2A sendTask 结果中提取文本内容
+/// 执行 A2A tasks/send 调用
+pub async fn execute_a2a_send(
+    http: &Client,
+    agent_id: &str,
+    endpoint: &str,
+    auth_token: &Option<String>,
+    prompt: &str,
+) -> Result<String> {
+    let task_id = uuid::Uuid::now_v7().to_string();
+
+    let message = common::api::a2a::A2aMessage {
+        role: "user".to_string(),
+        parts: vec![A2aMessagePart::Text {
+            text: prompt.to_string(),
+        }],
+        message_id: None,
+        task_id: Some(task_id.clone()),
+    };
+
+    let params = SendTaskParams {
+        id: task_id,
+        message,
+        session_id: None,
+        metadata: None,
+        notification_url: None,
+    };
+
+    let params_value = serde_json::to_value(&params)
+        .map_err(|e| err!(Internal, "Agent {}: failed to serialize params: {}", agent_id, e))?;
+
+    let context = format!("Agent {}", agent_id);
+    let result = call_a2a_jsonrpc(http, endpoint, auth_token, "tasks/send", params_value, &context).await?;
+
+    extract_text_from_task_result(&result)
+        .ok_or_else(|| err!(Internal, "Agent {}: A2A response has no text content: {}", agent_id, result))
+}
+
+/// 执行 A2A tasks/get 调用，获取远程任务状态
+pub async fn fetch_a2a_task(
+    http: &Client,
+    endpoint: &str,
+    auth_token: &Option<String>,
+    remote_task_id: &str,
+) -> Result<A2aTask> {
+    let params = GetTaskParams {
+        id: remote_task_id.to_string(),
+        history_length: None,
+    };
+
+    let params_value = serde_json::to_value(&params)
+        .map_err(|e| err!(Internal, "Task {}: failed to serialize params: {}", remote_task_id, e))?;
+
+    let context = format!("Task {}", remote_task_id);
+    let result = call_a2a_jsonrpc(http, endpoint, auth_token, "tasks/get", params_value, &context).await?;
+
+    serde_json::from_value(result)
+        .map_err(|e| err!(Internal, "Task {}: failed to parse A2aTask: {}", remote_task_id, e))
+}
+
+/// 从 A2A tasks/send 结果中提取文本内容
 ///
-/// A2A 协议的 sendTask 返回结果中包含 messages 数组，
+/// A2A 协议的 tasks/send 返回 Task 对象，包含 messages 数组，
 /// 每个 message 有 parts 数组，每个 part 可能是 text 类型。
-/// 我们提取所有 text part 的内容并拼接。
-fn extract_text_from_result(result: &Value) -> Option<String> {
-    let messages = result.get("messages")?.as_array()?;
+/// 我们提取所有 assistant role 的 text part 内容并拼接。
+fn extract_text_from_task_result(result: &Value) -> Option<String> {
+    let task: common::api::a2a::A2aTask = serde_json::from_value(result.clone()).ok()?;
+
     let mut texts = Vec::new();
 
-    for msg in messages {
-        let parts = msg.get("parts")?.as_array()?;
-        for part in parts {
-            if part.get("type").and_then(|t| t.as_str()) == Some("text") {
-                if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
-                    texts.push(text.to_string());
-                }
+    for msg in &task.messages {
+        if msg.role != "assistant" && msg.role != "agent" {
+            continue;
+        }
+        for part in &msg.parts {
+            if let A2aMessagePart::Text { text } = part {
+                texts.push(text.clone());
             }
         }
     }
@@ -237,29 +225,36 @@ fn extract_text_from_result(result: &Value) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
-    fn test_extract_text_from_result_simple() {
+    fn test_extract_text_from_task_result_simple() {
         let result = json!({
+            "id": "task-1",
+            "status": {"state": "completed", "timestamp": "2024-01-01T00:00:00Z"},
             "messages": [
                 {
-                    "role": "assistant",
-                    "parts": [
-                        {"type": "text", "text": "Hello world"}
-                    ]
+                    "role": "user",
+                    "parts": [{"type": "text", "text": "Hello"}]
+                },
+                {
+                    "role": "agent",
+                    "parts": [{"type": "text", "text": "Hello world"}]
                 }
             ]
         });
 
         assert_eq!(
-            extract_text_from_result(&result),
+            extract_text_from_task_result(&result),
             Some("Hello world".to_string())
         );
     }
 
     #[test]
-    fn test_extract_text_from_result_multiple_parts() {
+    fn test_extract_text_from_task_result_multiple_parts() {
         let result = json!({
+            "id": "task-1",
+            "status": {"state": "completed", "timestamp": "2024-01-01T00:00:00Z"},
             "messages": [
                 {
                     "role": "assistant",
@@ -272,121 +267,137 @@ mod tests {
         });
 
         assert_eq!(
-            extract_text_from_result(&result),
+            extract_text_from_task_result(&result),
             Some("Line 1\nLine 2".to_string())
         );
     }
 
     #[test]
-    fn test_extract_text_from_result_multiple_messages() {
+    fn test_extract_text_from_task_result_multiple_messages() {
         let result = json!({
+            "id": "task-1",
+            "status": {"state": "completed", "timestamp": "2024-01-01T00:00:00Z"},
             "messages": [
                 {
                     "role": "assistant",
                     "parts": [{"type": "text", "text": "Part 1"}]
                 },
                 {
-                    "role": "assistant",
+                    "role": "agent",
                     "parts": [{"type": "text", "text": "Part 2"}]
                 }
             ]
         });
 
         assert_eq!(
-            extract_text_from_result(&result),
+            extract_text_from_task_result(&result),
             Some("Part 1\nPart 2".to_string())
         );
     }
 
     #[test]
-    fn test_extract_text_from_result_no_text_parts() {
+    fn test_extract_text_from_task_result_no_text_parts() {
         let result = json!({
+            "id": "task-1",
+            "status": {"state": "completed", "timestamp": "2024-01-01T00:00:00Z"},
             "messages": [
                 {
                     "role": "assistant",
                     "parts": [
-                        {"type": "image", "url": "http://example.com/img.png"}
+                        {"type": "file", "file": {"name": "test.txt"}}
                     ]
                 }
             ]
         });
 
-        assert_eq!(extract_text_from_result(&result), None);
+        assert_eq!(extract_text_from_task_result(&result), None);
     }
 
     #[test]
-    fn test_extract_text_from_result_empty_messages() {
+    fn test_extract_text_from_task_result_empty_messages() {
         let result = json!({
+            "id": "task-1",
+            "status": {"state": "working", "timestamp": "2024-01-01T00:00:00Z"},
             "messages": []
         });
 
-        assert_eq!(extract_text_from_result(&result), None);
+        assert_eq!(extract_text_from_task_result(&result), None);
     }
 
     #[test]
-    fn test_extract_text_from_result_no_messages_field() {
-        assert_eq!(extract_text_from_result(&json!({})), None);
-    }
-
-    #[test]
-    fn test_a2a_message_serialization() {
-        let msg = A2aMessage {
-            role: "user".to_string(),
-            parts: vec![A2aMessagePart {
-                part_type: "text".to_string(),
-                text: Some("hello".to_string()),
-                extra: json!({}),
-            }],
-        };
-
-        let json = serde_json::to_value(&msg).unwrap();
-        assert_eq!(json["role"], "user");
-        assert_eq!(json["parts"][0]["type"], "text");
-        assert_eq!(json["parts"][0]["text"], "hello");
+    fn test_extract_text_from_task_result_no_messages_field() {
+        assert_eq!(extract_text_from_task_result(&json!({})), None);
     }
 
     #[test]
     fn test_json_rpc_request_serialization() {
-        let request = JsonRpcRequest {
-            jsonrpc: "2.0".to_string(),
-            method: "agents/sendTask".to_string(),
-            params: json!({"agent_id": "test"}),
-            id: 42,
+        let params = SendTaskParams {
+            id: "task-1".to_string(),
+            message: common::api::a2a::A2aMessage {
+                role: "user".to_string(),
+                parts: vec![A2aMessagePart::Text { text: "hello".to_string() }],
+                message_id: None,
+                task_id: Some("task-1".to_string()),
+            },
+            session_id: None,
+            metadata: None,
+            notification_url: None,
         };
 
-        let json = serde_json::to_value(&request).unwrap();
-        assert_eq!(json["jsonrpc"], "2.0");
-        assert_eq!(json["method"], "agents/sendTask");
-        assert_eq!(json["params"]["agent_id"], "test");
-        assert_eq!(json["id"], 42);
+        let request = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "tasks/send".to_string(),
+            params: serde_json::to_value(&params).unwrap(),
+            id: Value::Number(42.into()),
+        };
+
+        let json_val = serde_json::to_value(&request).unwrap();
+        assert_eq!(json_val["jsonrpc"], "2.0");
+        assert_eq!(json_val["method"], "tasks/send");
+        assert_eq!(json_val["params"]["id"], "task-1");
+        assert_eq!(json_val["params"]["message"]["role"], "user");
+        assert_eq!(json_val["id"], 42);
     }
 
     #[test]
     fn test_json_rpc_response_deserialization_result() {
-        let json = json!({
+        let json_val = json!({
             "jsonrpc": "2.0",
-            "result": {"messages": []},
+            "result": {
+                "id": "task-1",
+                "status": {"state": "working", "timestamp": "2024-01-01T00:00:00Z"},
+                "messages": []
+            },
             "id": 1
         });
 
-        let resp: JsonRpcResponse = serde_json::from_value(json).unwrap();
+        let resp: JsonRpcResponse = serde_json::from_value(json_val).unwrap();
         assert!(resp.result.is_some());
         assert!(resp.error.is_none());
     }
 
     #[test]
     fn test_json_rpc_response_deserialization_error() {
-        let json = json!({
+        let json_val = json!({
             "jsonrpc": "2.0",
             "error": {"code": -32601, "message": "Method not found"},
             "id": 1
         });
 
-        let resp: JsonRpcResponse = serde_json::from_value(json).unwrap();
+        let resp: JsonRpcResponse = serde_json::from_value(json_val).unwrap();
         assert!(resp.result.is_none());
         assert!(resp.error.is_some());
         let err = resp.error.unwrap();
         assert_eq!(err.code, -32601);
         assert_eq!(err.message, "Method not found");
+    }
+
+    #[test]
+    fn test_next_request_id() {
+        let id1 = next_request_id();
+        let id2 = next_request_id();
+        assert!(id1.is_number());
+        assert!(id2.is_number());
+        assert_ne!(id1, id2);
     }
 }

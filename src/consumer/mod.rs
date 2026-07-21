@@ -1,3 +1,4 @@
+pub mod a2a_task_update;
 pub mod message;
 pub mod scheduler;
 
@@ -14,6 +15,9 @@ pub async fn init() -> Result<()> {
 
     aop::registry()
         .register_consumer(Arc::new(scheduler::CronTriggerConsumer::new()))?;
+
+    aop::registry()
+        .register_consumer(Arc::new(a2a_task_update::A2aTaskUpdateConsumer::new()))?;
 
     sys_info!("all business consumers registered");
     Ok(())

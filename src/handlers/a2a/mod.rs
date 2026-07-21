@@ -12,6 +12,7 @@
 //! - `jsonrpc` — JSON-RPC 入口 + 方法分发（Task 9）
 
 pub mod agent_card;
+pub mod callback;
 pub mod cancel_task;
 pub mod get_task;
 pub mod jsonrpc;

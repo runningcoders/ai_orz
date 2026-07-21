@@ -88,12 +88,11 @@ impl A2aCallbackDao for A2aCallbackDaoHttpImpl {
             session_id: None,
             status: common::api::a2a::A2aTaskStatus {
                 state: match project.po.status {
-                    common::enums::ProjectStatus::PendingReview => common::api::a2a::A2aTaskState::Submitted,
+                    common::enums::ProjectStatus::Active | common::enums::ProjectStatus::PendingReview => common::api::a2a::A2aTaskState::Submitted,
                     common::enums::ProjectStatus::InProgress => common::api::a2a::A2aTaskState::Working,
                     common::enums::ProjectStatus::Completed => common::api::a2a::A2aTaskState::Completed,
-                    common::enums::ProjectStatus::Archived => common::api::a2a::A2aTaskState::Completed,
-                    common::enums::ProjectStatus::Deleted => common::api::a2a::A2aTaskState::Canceled,
-                    _ => common::api::a2a::A2aTaskState::Working,
+                    common::enums::ProjectStatus::Archived => common::api::a2a::A2aTaskState::Canceled,
+                    common::enums::ProjectStatus::Deleted => common::api::a2a::A2aTaskState::Failed,
                 },
                 timestamp: chrono::Utc::now().to_rfc3339(),
                 message: None,

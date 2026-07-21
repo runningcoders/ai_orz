@@ -41,8 +41,22 @@ pub fn create_router(frontend_dist_dir: &str, config: Arc<AppConfig>) -> Router 
             "/a2a/subscribe",
             post(handlers::a2a::send_subscribe::handle_send_subscribe)
                 .layer(axum::middleware::from_fn(jwt_auth_middleware))
-                .layer(axum::middleware::from_fn(move |req, next| {
-                    request_context_middleware(config.clone(), req, next)
+                .layer(axum::middleware::from_fn({
+                    let config = config.clone();
+                    move |req, next| {
+                        request_context_middleware(config.clone(), req, next)
+                    }
+                })),
+        )
+        // A2A 回调端点（公开，外部 Agent 推送任务更新，无需 JWT）
+        .route(
+            "/a2a/callback/:task_id",
+            post(handlers::a2a::callback::handle_a2a_callback)
+                .layer(axum::middleware::from_fn({
+                    let config = config.clone();
+                    move |req, next| {
+                        request_context_middleware(config.clone(), req, next)
+                    }
                 })),
         )
         .route("/health", get(handlers::health::health))

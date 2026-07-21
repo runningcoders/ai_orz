@@ -20,7 +20,7 @@ pub async fn get_agent_card() -> Json<AgentCard> {
         url: config.a2a_server.endpoint.clone(),
         capabilities: AgentCapabilities {
             streaming: false,
-            push_notifications: false,
+            push_notifications: true,
         },
         skills: vec![AgentSkill {
             id: "chat".to_string(),
