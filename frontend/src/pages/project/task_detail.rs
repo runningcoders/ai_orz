@@ -267,16 +267,16 @@ pub fn TaskDetail(id: String) -> Element {
     rsx! {
         div { class: "page-header",
             button {
-                class: "btn btn-secondary btn-sm",
+                class: "btn btn-outline btn-sm",
                 onclick: back_to_project,
                 "← 返回项目"
             }
         }
         if loading() {
-            div { class: "card", Loading {} }
+            div { class: "card bg-base-100 shadow-md", Loading {} }
         } else if let Some(t) = task.read().as_ref() {
             // 区域 1：基本信息
-            div { class: "card",
+            div { class: "card bg-base-100 shadow-md",
                 div { class: "card-header",
                     h2 { class: "card-title", "{t.title}" }
                     span { class: "{status_badge(t.status)}", "{status_text(t.status)}" }
@@ -286,12 +286,12 @@ pub fn TaskDetail(id: String) -> Element {
                         label { class: "form-label", "描述" }
                         if let Some(desc) = &t.description {
                             if desc.is_empty() {
-                                span { class: "text-muted", "暂无描述" }
+                                span { class: "text-base-content/70", "暂无描述" }
                             } else {
                                 "{desc}"
                             }
                         } else {
-                            span { class: "text-muted", "暂无描述" }
+                            span { class: "text-base-content/70", "暂无描述" }
                         }
                     }
                     div {
@@ -309,42 +309,42 @@ pub fn TaskDetail(id: String) -> Element {
                     }
                     div {
                         label { class: "form-label", "根用户" }
-                        span { class: "text-mono", "{t.root_user_id}" }
+                        span { class: "font-mono", "{t.root_user_id}" }
                     }
                     if let Some(pid) = &t.project_id {
                         div {
                             label { class: "form-label", "所属项目" }
-                            span { class: "text-mono", "{pid}" }
+                            span { class: "font-mono", "{pid}" }
                         }
                     }
                     div {
                         label { class: "form-label", "创建者" }
-                        span { class: "text-mono", "{t.created_by}" }
+                        span { class: "font-mono", "{t.created_by}" }
                     }
                     div {
                         label { class: "form-label", "创建时间" }
-                        span { class: "text-mono text-muted", "{format_timestamp(Some(t.created_at))}" }
+                        span { class: "font-mono text-base-content/70", "{format_timestamp(Some(t.created_at))}" }
                     }
                     div {
                         label { class: "form-label", "更新时间" }
-                        span { class: "text-mono text-muted", "{format_timestamp(Some(t.updated_at))}" }
+                        span { class: "font-mono text-base-content/70", "{format_timestamp(Some(t.updated_at))}" }
                     }
                     if let Some(due) = t.due_at {
                         div {
                             label { class: "form-label", "截止时间" }
-                            span { class: "text-mono", "{format_timestamp(Some(due))}" }
+                            span { class: "font-mono", "{format_timestamp(Some(due))}" }
                         }
                     }
                     if let Some(start) = t.start_at {
                         div {
                             label { class: "form-label", "开始时间" }
-                            span { class: "text-mono", "{format_timestamp(Some(start))}" }
+                            span { class: "font-mono", "{format_timestamp(Some(start))}" }
                         }
                     }
                     if let Some(end) = t.end_at {
                         div {
                             label { class: "form-label", "结束时间" }
-                            span { class: "text-mono", "{format_timestamp(Some(end))}" }
+                            span { class: "font-mono", "{format_timestamp(Some(end))}" }
                         }
                     }
                 }
@@ -352,7 +352,7 @@ pub fn TaskDetail(id: String) -> Element {
 
             // 区域 2：标签和依赖
             if !t.tags.is_empty() || !t.dependencies.is_empty() {
-                div { class: "card",
+                div { class: "card bg-base-100 shadow-md",
                     div { class: "card-header",
                         h2 { class: "card-title", "标签与依赖" }
                     }
@@ -372,7 +372,7 @@ pub fn TaskDetail(id: String) -> Element {
                                 label { class: "form-label", "前置任务" }
                                 ul { class: "dependency-list",
                                     for dep in t.dependencies.iter() {
-                                        li { class: "text-mono", "{dep}" }
+                                        li { class: "font-mono", "{dep}" }
                                     }
                                 }
                             }
@@ -389,7 +389,7 @@ pub fn TaskDetail(id: String) -> Element {
             }
 
             // 区域 3：进度管理
-            div { class: "card",
+            div { class: "card bg-base-100 shadow-md",
                 div { class: "card-header",
                     h2 { class: "card-title", "进度管理" }
                 }
@@ -415,7 +415,7 @@ pub fn TaskDetail(id: String) -> Element {
             }
 
             // 区域 4：状态流转
-            div { class: "card",
+            div { class: "card bg-base-100 shadow-md",
                 div { class: "card-header",
                     h2 { class: "card-title", "状态流转" }
                 }
@@ -444,7 +444,7 @@ pub fn TaskDetail(id: String) -> Element {
                         }
                         if t.status != 4 {
                             button {
-                                class: "btn btn-accent",
+                                class: "btn btn-primary",
                                 onclick: on_complete,
                                 "完成"
                             }
@@ -458,7 +458,7 @@ pub fn TaskDetail(id: String) -> Element {
                         }
                         if t.status != 5 {
                             button {
-                                class: "btn btn-secondary",
+                                class: "btn btn-outline",
                                 onclick: on_archive,
                                 "归档"
                             }
@@ -475,7 +475,7 @@ pub fn TaskDetail(id: String) -> Element {
                 footer: Some(rsx! {
                     div { class: "modal-footer-actions",
                         button {
-                            class: "btn btn-secondary",
+                            class: "btn btn-outline",
                             disabled: updating_progress(),
                             onclick: move |_| show_progress_modal.set(false),
                             "取消"
@@ -492,7 +492,7 @@ pub fn TaskDetail(id: String) -> Element {
                     div {
                         label { class: "form-label", "进度（0-100）" }
                         input {
-                            class: "form-input",
+                            class: "input input-bordered w-full",
                             r#type: "number",
                             min: "0",
                             max: "100",
@@ -516,7 +516,7 @@ pub fn TaskDetail(id: String) -> Element {
                 }
             }
         } else {
-            div { class: "card", EmptyState { icon: "❓".to_string(), message: "任务不存在".to_string() } }
+            div { class: "card bg-base-100 shadow-md", EmptyState { icon: "❓".to_string(), message: "任务不存在".to_string() } }
         }
     }
 }

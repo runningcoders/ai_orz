@@ -22,13 +22,13 @@ pub fn SystemHealth() -> Element {
     };
 
     rsx! {
-        div { class: "card",
-            div { class: "card-header",
+        div { class: "card bg-base-100 shadow-md",
+            div { class: "card-body",
                 h2 { class: "card-title", "健康检查" }
-            }
-            p { class: "text-secondary mb-6", "检查后端服务运行状态" }
-            button { class: "btn btn-accent", disabled: loading(), onclick: check,
-                if loading() { "检查中..." } else { "执行检查" }
+                p { class: "text-base-content/70 mb-6", "检查后端服务运行状态" }
+                button { class: "btn btn-primary", disabled: loading(), onclick: check,
+                    if loading() { "检查中..." } else { "执行检查" }
+                }
             }
         }
     }

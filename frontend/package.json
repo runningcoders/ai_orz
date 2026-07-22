@@ -1,0 +1,13 @@
+{
+  "name": "ai-orz-frontend",
+  "private": true,
+  "scripts": {
+    "build:css": "tailwindcss -i ./styles/input.css -o ./public/output.css --minify",
+    "watch:css": "tailwindcss -i ./styles/input.css -o ./public/output.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.0",
+    "daisyui": "^5.0.0",
+    "tailwindcss": "^4.1.0"
+  }
+}

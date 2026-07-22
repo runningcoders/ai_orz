@@ -35,57 +35,67 @@ pub fn UserProfile() -> Element {
     });
 
     rsx! {
-        div { class: "card",
-            div { class: "card-header",
-                h2 { class: "card-title", "个人信息" }
-            }
+        div { class: "card bg-base-100 shadow-md",
+            div { class: "card-body",
+                h2 { class: "card-title mb-4", "个人信息" }
 
-            if loading() {
-                Loading {}
-            } else {
-                div { class: "form-group",
-                    label { class: "form-label", "用户名" }
-                    input { class: "form-input", disabled: true, value: "{username}" }
-                }
-                div { class: "form-group",
-                    label { class: "form-label", "角色" }
-                    input { class: "form-input", disabled: true,
-                        value: "{role_name}" }
-                }
-                div { class: "form-group",
-                    label { class: "form-label", "显示名称" }
-                    input { class: "form-input", value: "{display_name}",
-                        oninput: move |e| display_name.set(e.value()) }
-                }
-                div { class: "form-group",
-                    label { class: "form-label", "邮箱" }
-                    input { class: "form-input", r#type: "email", value: "{email}",
-                        oninput: move |e| email.set(e.value()) }
-                }
-                button { class: "btn btn-accent", disabled: saving(),
-                    onclick: move |_| {
-                        saving.set(true);
-                        let display_name_val = display_name();
-                        let email_val = email();
-                        spawn(async move {
-                            let req = UpdateCurrentUserRequest {
-                                display_name: Some(display_name_val),
-                                email: Some(email_val),
-                                password_hash: None,
-                            };
-                            match update_current_user(req).await {
-                                Ok(resp) => {
-                                    let user = resp.data;
-                                    display_name.set(user.display_name.unwrap_or_default());
-                                    email.set(user.email.unwrap_or_default());
-                                    toast.success("个人信息保存成功");
-                                }
-                                Err(e) => toast.error(&e),
+                if loading() {
+                    Loading {}
+                } else {
+                    div { class: "space-y-4",
+                        div { class: "form-control w-full",
+                            label { class: "label",
+                                span { class: "label-text font-medium", "用户名" }
                             }
-                            saving.set(false);
-                        });
-                    },
-                    if saving() { "保存中..." } else { "保存" }
+                            input { class: "input input-bordered w-full", disabled: true, value: "{username}" }
+                        }
+                        div { class: "form-control w-full",
+                            label { class: "label",
+                                span { class: "label-text font-medium", "角色" }
+                            }
+                            input { class: "input input-bordered w-full", disabled: true,
+                                value: "{role_name}" }
+                        }
+                        div { class: "form-control w-full",
+                            label { class: "label",
+                                span { class: "label-text font-medium", "显示名称" }
+                            }
+                            input { class: "input input-bordered w-full", value: "{display_name}",
+                                oninput: move |e| display_name.set(e.value()) }
+                        }
+                        div { class: "form-control w-full",
+                            label { class: "label",
+                                span { class: "label-text font-medium", "邮箱" }
+                            }
+                            input { class: "input input-bordered w-full", r#type: "email", value: "{email}",
+                                oninput: move |e| email.set(e.value()) }
+                        }
+                        button { class: "btn btn-primary", disabled: saving(),
+                            onclick: move |_| {
+                                saving.set(true);
+                                let display_name_val = display_name();
+                                let email_val = email();
+                                spawn(async move {
+                                    let req = UpdateCurrentUserRequest {
+                                        display_name: Some(display_name_val),
+                                        email: Some(email_val),
+                                        password_hash: None,
+                                    };
+                                    match update_current_user(req).await {
+                                        Ok(resp) => {
+                                            let user = resp.data;
+                                            display_name.set(user.display_name.unwrap_or_default());
+                                            email.set(user.email.unwrap_or_default());
+                                            toast.success("个人信息保存成功");
+                                        }
+                                        Err(e) => toast.error(&e),
+                                    }
+                                    saving.set(false);
+                                });
+                            },
+                            if saving() { "保存中..." } else { "保存" }
+                        }
+                    }
                 }
             }
         }

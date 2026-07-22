@@ -33,10 +33,11 @@ pub fn FinanceToolDetail(id: String) -> Element {
     });
 
     rsx! {
-        div { class: "page-container",
-            // 页面头部
-            div { class: "page-header",
-                h1 { class: "page-title", "工具详情" }
+        div {
+            div { class: "mb-6 flex items-center justify-between",
+                div {
+                    h1 { class: "text-2xl font-bold", "工具详情" }
+                }
                 Link { class: "btn btn-ghost", to: crate::pages::Route::FinanceTools {},
                     "← 返回列表"
                 }
@@ -45,95 +46,98 @@ pub fn FinanceToolDetail(id: String) -> Element {
             if loading() {
                 Loading {}
             } else if let Some(t) = tool_data.read().clone() {
-                // 基本信息卡片
-                div { class: "card",
-                    div { class: "card-header",
-                        h2 { class: "card-title", "{t.name}" }
-                        div { class: "flex gap-2",
-                            if t.enabled {
-                                button { class: "btn btn-secondary btn-sm",
-                                    onclick: {
-                                        let id = t.id.clone();
-                                        move |_| {
-                                            let id = id.clone();
-                                            spawn(async move {
-                                                if let Err(e) = update_tool_status(&id, 0).await {
-                                                    toast.error(&e);
-                                                } else {
-                                                    toast.success("已禁用");
-                                                    // 刷新数据
-                                                    let stats_options = StatsOptions {
-                                                        with_stats: true,
-                                                        with_model_call_stats: false,
-                                                        stats_interval: None,
-                                                    };
-                                                    if let Ok(tool) = get_tool(&id, Some(&stats_options)).await {
-                                                        tool_data.set(Some(tool));
+                div { class: "card bg-base-100 shadow-md",
+                    div { class: "card-body",
+                        div { class: "flex justify-between items-center mb-4",
+                            h2 { class: "card-title", "{t.name}" }
+                            div { class: "flex gap-2",
+                                if t.enabled {
+                                    button { class: "btn btn-outline btn-sm",
+                                        onclick: {
+                                            let id = t.id.clone();
+                                            move |_| {
+                                                let id = id.clone();
+                                                spawn(async move {
+                                                    if let Err(e) = update_tool_status(&id, 0).await {
+                                                        toast.error(&e);
+                                                    } else {
+                                                        toast.success("已禁用");
+                                                        let stats_options = StatsOptions {
+                                                            with_stats: true,
+                                                            with_model_call_stats: false,
+                                                            stats_interval: None,
+                                                        };
+                                                        if let Ok(tool) = get_tool(&id, Some(&stats_options)).await {
+                                                            tool_data.set(Some(tool));
+                                                        }
                                                     }
-                                                }
-                                            });
-                                        }
-                                    },
-                                    "禁用"
-                                }
-                            } else {
-                                button { class: "btn btn-accent btn-sm",
-                                    onclick: {
-                                        let id = t.id.clone();
-                                        move |_| {
-                                            let id = id.clone();
-                                            spawn(async move {
-                                                if let Err(e) = update_tool_status(&id, 1).await {
-                                                    toast.error(&e);
-                                                } else {
-                                                    toast.success("已启用");
-                                                    let stats_options = StatsOptions {
-                                                        with_stats: true,
-                                                        with_model_call_stats: false,
-                                                        stats_interval: None,
-                                                    };
-                                                    if let Ok(tool) = get_tool(&id, Some(&stats_options)).await {
-                                                        tool_data.set(Some(tool));
-                                                    }
-                                                }
-                                            });
-                                        }
-                                    },
-                                    "启用"
-                                }
-                            }
-                            button { class: "btn btn-danger btn-sm",
-                                onclick: {
-                                    let id = t.id.clone();
-                                    move |_| {
-                                        let id = id.clone();
-                                        spawn(async move {
-                                            if let Err(e) = delete_tool(&id).await {
-                                                toast.error(&format!("删除失败: {}", e));
-                                            } else {
-                                                toast.success("已删除");
-                                                // 返回列表页
+                                                });
                                             }
-                                        });
+                                        },
+                                        "禁用"
                                     }
-                                },
-                                "删除"
+                                } else {
+                                    button { class: "btn btn-primary btn-sm",
+                                        onclick: {
+                                            let id = t.id.clone();
+                                            move |_| {
+                                                let id = id.clone();
+                                                spawn(async move {
+                                                    if let Err(e) = update_tool_status(&id, 1).await {
+                                                        toast.error(&e);
+                                                    } else {
+                                                        toast.success("已启用");
+                                                        let stats_options = StatsOptions {
+                                                            with_stats: true,
+                                                            with_model_call_stats: false,
+                                                            stats_interval: None,
+                                                        };
+                                                        if let Ok(tool) = get_tool(&id, Some(&stats_options)).await {
+                                                            tool_data.set(Some(tool));
+                                                        }
+                                                    }
+                                                });
+                                            }
+                                        },
+                                        "启用"
+                                    }
+                                }
+                                button { class: "btn btn-error btn-sm",
+                                    onclick: {
+                                        let id = t.id.clone();
+                                        move |_| {
+                                            let id = id.clone();
+                                            spawn(async move {
+                                                if let Err(e) = delete_tool(&id).await {
+                                                    toast.error(&format!("删除失败: {}", e));
+                                                } else {
+                                                    toast.success("已删除");
+                                                }
+                                            });
+                                        }
+                                    },
+                                    "删除"
+                                }
                             }
                         }
-                    }
-                    div { class: "detail-card-body",
-                        div { class: "detail-grid",
-                            div { class: "detail-section",
-                                label { class: "form-label", "描述" }
-                                div { class: "detail-text", "{t.description}" }
+                        div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
+                            div { class: "md:col-span-2",
+                                label { class: "label",
+                                    span { class: "label-text font-medium", "描述" }
+                                }
+                                div { "{t.description}" }
                             }
-                            div { class: "detail-section",
-                                label { class: "form-label", "协议" }
-                                div { class: "detail-value", span { class: "badge badge-neutral", "{t.protocol}" } }
+                            div {
+                                label { class: "label",
+                                    span { class: "label-text font-medium", "协议" }
+                                }
+                                div { span { class: "badge badge-neutral", "{t.protocol}" } }
                             }
-                            div { class: "detail-section",
-                                label { class: "form-label", "状态" }
-                                div { class: "detail-value",
+                            div {
+                                label { class: "label",
+                                    span { class: "label-text font-medium", "状态" }
+                                }
+                                div {
                                     if t.enabled {
                                         span { class: "badge badge-success", "启用" }
                                     } else {
@@ -141,29 +145,34 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                     }
                                 }
                             }
-                            div { class: "detail-section",
-                                label { class: "form-label", "控制模式" }
-                                div { class: "detail-value", "{t.control_mode}" }
+                            div {
+                                label { class: "label",
+                                    span { class: "label-text font-medium", "控制模式" }
+                                }
+                                div { "{t.control_mode}" }
                             }
                             if !t.tags.is_empty() {
-                                div { class: "detail-section",
-                                    label { class: "form-label", "标签" }
-                                    div { class: "tag-list",
+                                div { class: "md:col-span-2",
+                                    label { class: "label",
+                                        span { class: "label-text font-medium", "标签" }
+                                    }
+                                    div { class: "flex flex-wrap gap-2",
                                         for tag in t.tags.iter() {
-                                            span { class: "badge badge-neutral tag-item", "{tag}" }
+                                            span { class: "badge badge-neutral", "{tag}" }
                                         }
                                     }
                                 }
                             }
-                            div { class: "detail-section",
-                                label { class: "form-label", "工具 ID" }
-                                div { class: "text-mono text-sm", "{t.id}" }
+                            div {
+                                label { class: "label",
+                                    span { class: "label-text font-medium", "工具 ID" }
+                                }
+                                div { class: "font-mono text-sm", "{t.id}" }
                             }
                         }
                     }
                 }
 
-                // 统计面板
                 if t.stats.is_some() {
                     ToolStatsPanel { stats: t.stats.clone() }
                 }

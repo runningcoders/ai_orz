@@ -195,111 +195,115 @@ pub fn HrAgents() -> Element {
     let agents_list = agents.read().clone();
 
     rsx! {
-        div { class: "card",
-            div { class: "card-header",
-                h2 { class: "card-title", "Agent 管理" }
-                div { class: "flex gap-2",
-                    input { class: "form-input", value: "{search_keyword}",
-                        oninput: move |e| {
-                            let keyword = e.value();
-                            search_keyword.set(keyword.clone());
-                            spawn(async move {
-                                loading.set(true);
-                                let result = if keyword.trim().is_empty() {
-                                    list_agents().await
-                                } else {
-                                    search_agents(&keyword).await
-                                };
-                                match result {
-                                    Ok(list) => agents.set(list.agents),
-                                    Err(e) => toast.error(&e),
-                                }
-                                loading.set(false);
-                            });
-                        },
-                        placeholder: "搜索 Agent..."
-                    }
-                    if !search_keyword().is_empty() {
-                        button { class: "btn btn-ghost",
-                            onclick: move |_| {
-                                search_keyword.set(String::new());
+        div { class: "card bg-base-100 shadow-md",
+            div { class: "card-body",
+                div { class: "flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4",
+                    h2 { class: "card-title", "Agent 管理" }
+                    div { class: "flex gap-2 flex-wrap",
+                        input { class: "input input-bordered w-full sm:w-auto", value: "{search_keyword}",
+                            oninput: move |e| {
+                                let keyword = e.value();
+                                search_keyword.set(keyword.clone());
                                 spawn(async move {
                                     loading.set(true);
-                                    match list_agents().await {
+                                    let result = if keyword.trim().is_empty() {
+                                        list_agents().await
+                                    } else {
+                                        search_agents(&keyword).await
+                                    };
+                                    match result {
                                         Ok(list) => agents.set(list.agents),
                                         Err(e) => toast.error(&e),
                                     }
                                     loading.set(false);
                                 });
                             },
-                            "重置"
+                            placeholder: "搜索 Agent..."
+                        }
+                        if !search_keyword().is_empty() {
+                            button { class: "btn btn-ghost",
+                                onclick: move |_| {
+                                    search_keyword.set(String::new());
+                                    spawn(async move {
+                                        loading.set(true);
+                                        match list_agents().await {
+                                            Ok(list) => agents.set(list.agents),
+                                            Err(e) => toast.error(&e),
+                                        }
+                                        loading.set(false);
+                                    });
+                                },
+                                "重置"
+                            }
+                        }
+                        button { class: "btn btn-primary",
+                            onclick: move |_| show_add_modal.set(true),
+                            "+ 本地 Agent"
+                        }
+                        button { class: "btn btn-success",
+                            onclick: move |_| show_external_modal.set(true),
+                            "+ 外部 Agent"
                         }
                     }
-                    button { class: "btn btn-accent",
-                        onclick: move |_| show_add_modal.set(true),
-                        "+ 本地 Agent"
-                    }
-                    button { class: "btn btn-success",
-                        onclick: move |_| show_external_modal.set(true),
-                        "+ 外部 Agent"
-                    }
                 }
-            }
 
-            if loading() {
-                Loading {}
-            } else if agents_list.is_empty() {
-                EmptyState { icon: "🤖".to_string(), message: "暂无 Agent，点击上方按钮创建第一个".to_string() }
-            } else {
-                table { class: "table",
-                    thead { tr {
-                        th { "名称" }
-                        th { "类型" }
-                        th { "角色" }
-                        th { "模型 / 执行器" }
-                        th { "操作" }
-                    }}
-                    tbody {
-                        for agent in agents_list.iter() {
-                            {
-                                let id = agent.id.clone();
-                                let aname = agent.name.clone();
-                                let aroles = agent.roles.join(", ");
-                                let akind = agent.kind.clone();
-                                let amp = agent.model_provider_id.clone();
-                                let id_delete = id.clone();
-                                let display_value = match akind.as_str() {
-                                    "local" => amp.clone(),
-                                    "cli" => "CLI 子进程".to_string(),
-                                    "remote" => "A2A 远程".to_string(),
-                                    _ => amp.clone(),
-                                };
-                                rsx! {
-                                    tr { key: "{id}",
-                                        td { "data-label": "名称",
-                                            Link { to: crate::pages::Route::HrAgentDetail { id: id.clone() },
-                                                class: "detail-back-link",
-                                                "{aname}"
-                                            }
-                                        }
-                                        td { "data-label": "类型",
-                                            span { class: "{kind_badge_class(&akind)}", "{kind_label(&akind)}" }
-                                        }
-                                        td { class: "text-secondary", "data-label": "角色", "{aroles}" }
-                                        td { class: "text-mono", "data-label": "模型/执行器", "{display_value}" }
-                                        td { "data-label": "操作",
-                                            button { class: "btn btn-danger btn-sm",
-                                                onclick: move |_| {
-                                                    let id_delete = id_delete.clone();
-                                                    spawn(async move {
-                                                        if let Err(e) = delete_agent(&id_delete).await {
-                                                            toast.error(&format!("删除失败: {}", e));
-                                                        } else {
-                                                            reload_agents();
-                                                        }
-                                                    });
-                                                },
-                                                "删除"
+                if loading() {
+                    Loading {}
+                } else if agents_list.is_empty() {
+                    EmptyState { icon: "🤖".to_string(), message: "暂无 Agent，点击上方按钮创建第一个".to_string() }
+                } else {
+                    div { class: "overflow-x-auto",
+                        table { class: "table table-zebra table-pin-rows",
+                            thead { tr {
+                                th { "名称" }
+                                th { "类型" }
+                                th { "角色" }
+                                th { "模型 / 执行器" }
+                                th { "操作" }
+                            }}
+                            tbody {
+                                for agent in agents_list.iter() {
+                                    {
+                                        let id = agent.id.clone();
+                                        let aname = agent.name.clone();
+                                        let aroles = agent.roles.join(", ");
+                                        let akind = agent.kind.clone();
+                                        let amp = agent.model_provider_id.clone();
+                                        let id_delete = id.clone();
+                                        let display_value = match akind.as_str() {
+                                            "local" => amp.clone(),
+                                            "cli" => "CLI 子进程".to_string(),
+                                            "remote" => "A2A 远程".to_string(),
+                                            _ => amp.clone(),
+                                        };
+                                        rsx! {
+                                            tr { key: "{id}",
+                                                td { "data-label": "名称",
+                                                    Link { to: crate::pages::Route::HrAgentDetail { id: id.clone() },
+                                                        class: "link link-primary",
+                                                        "{aname}"
+                                                    }
+                                                }
+                                                td { "data-label": "类型",
+                                                    span { class: "{kind_badge_class(&akind)}", "{kind_label(&akind)}" }
+                                                }
+                                                td { class: "text-base-content/70", "data-label": "角色", "{aroles}" }
+                                                td { class: "font-mono text-sm", "data-label": "模型/执行器", "{display_value}" }
+                                                td { "data-label": "操作",
+                                                    button { class: "btn btn-error btn-sm",
+                                                        onclick: move |_| {
+                                                            let id_delete = id_delete.clone();
+                                                            spawn(async move {
+                                                                if let Err(e) = delete_agent(&id_delete).await {
+                                                                    toast.error(&format!("删除失败: {}", e));
+                                                                } else {
+                                                                    reload_agents();
+                                                                }
+                                                            });
+                                                        },
+                                                        "删除"
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -324,29 +328,35 @@ pub fn HrAgents() -> Element {
             },
             footer: rsx! {
                 button { class: "btn btn-ghost", onclick: move |_| show_add_modal.set(false), "取消" }
-                button { class: "btn btn-accent", disabled: creating(), onclick: handle_create,
+                button { class: "btn btn-primary", disabled: creating(), onclick: handle_create,
                     if creating() { "创建中..." } else { "创建" }
                 }
             },
-            div {
-                div { class: "form-group",
-                    label { class: "form-label", "Agent 名称 *" }
-                    input { class: "form-input", value: "{new_name}",
+            div { class: "space-y-4",
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "Agent 名称 *" }
+                    }
+                    input { class: "input input-bordered w-full", value: "{new_name}",
                         oninput: move |e| new_name.set(e.value()), placeholder: "请输入 Agent 名称" }
                 }
-                div { class: "form-group",
-                    label { class: "form-label", "角色描述" }
-                    input { class: "form-input", value: "{new_roles}",
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "角色描述" }
+                    }
+                    input { class: "input input-bordered w-full", value: "{new_roles}",
                         oninput: move |e| new_roles.set(e.value()), placeholder: "如：代码助手" }
                 }
-                div { class: "form-group",
-                    label { class: "form-label", "模型提供商 *" }
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "模型提供商 *" }
+                    }
                     if model_providers.read().is_empty() {
-                        input { class: "form-input", value: "{new_model_provider_id}",
+                        input { class: "input input-bordered w-full", value: "{new_model_provider_id}",
                             oninput: move |e| new_model_provider_id.set(e.value()),
                             placeholder: "请先在财务管理中配置模型提供商" }
                     } else {
-                        select { class: "form-select", value: "{new_model_provider_id}",
+                        select { class: "select select-bordered w-full", value: "{new_model_provider_id}",
                             onchange: move |e| new_model_provider_id.set(e.value()),
                             option { value: "", "-- 请选择 --" }
                             for mp in model_providers.read().iter() {
@@ -355,9 +365,11 @@ pub fn HrAgents() -> Element {
                         }
                     }
                 }
-                div { class: "form-group",
-                    label { class: "form-label", "描述" }
-                    textarea { class: "form-textarea", value: "{new_description}",
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "描述" }
+                    }
+                    textarea { class: "textarea textarea-bordered w-full", value: "{new_description}",
                         oninput: move |e| new_description.set(e.value()), placeholder: "Agent 描述（可选）" }
                 }
             }
@@ -376,60 +388,78 @@ pub fn HrAgents() -> Element {
                     if ext_creating() { "创建中..." } else { "创建" }
                 }
             },
-            div {
-                div { class: "form-group",
-                    label { class: "form-label", "Agent 类型 *" }
-                    select { class: "form-select", value: "{ext_kind}",
+            div { class: "space-y-4",
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "Agent 类型 *" }
+                    }
+                    select { class: "select select-bordered w-full", value: "{ext_kind}",
                         onchange: move |e| ext_kind.set(e.value()),
                         option { value: "cli", "CLI 子进程（Codex / Claude Code / Aider 等）" }
                         option { value: "remote", "远程 A2A Agent" }
                     }
                 }
-                div { class: "form-group",
-                    label { class: "form-label", "Agent 名称 *" }
-                    input { class: "form-input", value: "{ext_name}",
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "Agent 名称 *" }
+                    }
+                    input { class: "input input-bordered w-full", value: "{ext_name}",
                         oninput: move |e| ext_name.set(e.value()), placeholder: "请输入 Agent 名称" }
                 }
-                div { class: "form-group",
-                    label { class: "form-label", "角色描述" }
-                    input { class: "form-input", value: "{ext_roles}",
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "角色描述" }
+                    }
+                    input { class: "input input-bordered w-full", value: "{ext_roles}",
                         oninput: move |e| ext_roles.set(e.value()), placeholder: "如：代码助手" }
                 }
-                div { class: "form-group",
-                    label { class: "form-label", "描述" }
-                    textarea { class: "form-textarea", value: "{ext_description}",
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "描述" }
+                    }
+                    textarea { class: "textarea textarea-bordered w-full", value: "{ext_description}",
                         oninput: move |e| ext_description.set(e.value()), placeholder: "Agent 描述（可选）" }
                 }
 
                 // CLI 配置
                 if ext_kind() == "cli" {
-                    div { class: "form-group",
-                        label { class: "form-label", "启动命令 *" }
-                        input { class: "form-input", value: "{ext_command}",
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium", "启动命令 *" }
+                        }
+                        input { class: "input input-bordered w-full", value: "{ext_command}",
                             oninput: move |e| ext_command.set(e.value()),
                             placeholder: "如：codex、claude、aider" }
                     }
-                    div { class: "form-group",
-                        label { class: "form-label", "命令参数（空格分隔）" }
-                        input { class: "form-input", value: "{ext_args_str}",
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium", "命令参数（空格分隔）" }
+                        }
+                        input { class: "input input-bordered w-full", value: "{ext_args_str}",
                             oninput: move |e| ext_args_str.set(e.value()),
                             placeholder: "如：--auto --yes" }
                     }
-                    div { class: "form-group",
-                        label { class: "form-label", "工作目录 *" }
-                        input { class: "form-input", value: "{ext_work_dir}",
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium", "工作目录 *" }
+                        }
+                        input { class: "input input-bordered w-full", value: "{ext_work_dir}",
                             oninput: move |e| ext_work_dir.set(e.value()),
                             placeholder: "/path/to/workdir" }
                     }
-                    div { class: "form-group",
-                        label { class: "form-label", "超时时间（秒）" }
-                        input { class: "form-input", value: "{ext_timeout}",
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium", "超时时间（秒）" }
+                        }
+                        input { class: "input input-bordered w-full", value: "{ext_timeout}",
                             oninput: move |e| ext_timeout.set(e.value()),
                             r#type: "number", placeholder: "300" }
                     }
-                    div { class: "form-group",
-                        label { class: "form-label", "自定义 Prompt 模板（可选）" }
-                        textarea { class: "form-textarea", value: "{ext_prompt_template}",
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium", "自定义 Prompt 模板（可选）" }
+                        }
+                        textarea { class: "textarea textarea-bordered w-full", value: "{ext_prompt_template}",
                             oninput: move |e| ext_prompt_template.set(e.value()),
                             placeholder: "使用 {{prompt}} 占位符标记 prompt 位置" }
                     }
@@ -437,27 +467,35 @@ pub fn HrAgents() -> Element {
 
                 // Remote 配置
                 if ext_kind() == "remote" {
-                    div { class: "form-group",
-                        label { class: "form-label", "A2A Server 地址 *" }
-                        input { class: "form-input", value: "{ext_endpoint}",
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium", "A2A Server 地址 *" }
+                        }
+                        input { class: "input input-bordered w-full", value: "{ext_endpoint}",
                             oninput: move |e| ext_endpoint.set(e.value()),
                             placeholder: "https://a2a-server.example.com" }
                     }
-                    div { class: "form-group",
-                        label { class: "form-label", "目标 Agent 名称 *" }
-                        input { class: "form-input", value: "{ext_agent_name}",
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium", "目标 Agent 名称 *" }
+                        }
+                        input { class: "input input-bordered w-full", value: "{ext_agent_name}",
                             oninput: move |e| ext_agent_name.set(e.value()),
                             placeholder: "目标 Agent 的 ID / 名称" }
                     }
-                    div { class: "form-group",
-                        label { class: "form-label", "认证 Token（可选）" }
-                        input { class: "form-input", value: "{ext_auth_token}",
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium", "认证 Token（可选）" }
+                        }
+                        input { class: "input input-bordered w-full", value: "{ext_auth_token}",
                             oninput: move |e| ext_auth_token.set(e.value()),
                             placeholder: "Bearer xxx" }
                     }
-                    div { class: "form-group",
-                        label { class: "form-label", "超时时间（秒）" }
-                        input { class: "form-input", value: "{ext_timeout}",
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium", "超时时间（秒）" }
+                        }
+                        input { class: "input input-bordered w-full", value: "{ext_timeout}",
                             oninput: move |e| ext_timeout.set(e.value()),
                             r#type: "number", placeholder: "300" }
                     }

@@ -90,93 +90,99 @@ pub fn HrSkills() -> Element {
     let skills_list = skills.read().clone();
 
     rsx! {
-        div { class: "card",
-            div { class: "card-header",
-                h2 { class: "card-title", "技能库" }
-                div { class: "flex gap-2",
-                    input { class: "form-input", value: "{search_keyword}",
-                        oninput: move |e| {
-                            let keyword = e.value();
-                            search_keyword.set(keyword.clone());
-                            spawn(async move {
-                                loading.set(true);
-                                let result = if keyword.trim().is_empty() {
-                                    list_skills().await
-                                } else {
-                                    search_skills(&keyword).await
-                                };
-                                match result {
-                                    Ok(list) => skills.set(list.skills),
-                                    Err(e) => toast.error(&e),
-                                }
-                                loading.set(false);
-                            });
-                        },
-                        placeholder: "搜索技能..."
-                    }
-                    if !search_keyword().is_empty() {
-                        button { class: "btn btn-ghost",
-                            onclick: move |_| {
-                                search_keyword.set(String::new());
+        div { class: "card bg-base-100 shadow-md",
+            div { class: "card-body",
+                div { class: "flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4",
+                    h2 { class: "card-title", "技能库" }
+                    div { class: "flex gap-2 flex-wrap",
+                        input { class: "input input-bordered w-full sm:w-auto", value: "{search_keyword}",
+                            oninput: move |e| {
+                                let keyword = e.value();
+                                search_keyword.set(keyword.clone());
                                 spawn(async move {
                                     loading.set(true);
-                                    match list_skills().await {
+                                    let result = if keyword.trim().is_empty() {
+                                        list_skills().await
+                                    } else {
+                                        search_skills(&keyword).await
+                                    };
+                                    match result {
                                         Ok(list) => skills.set(list.skills),
                                         Err(e) => toast.error(&e),
                                     }
                                     loading.set(false);
                                 });
                             },
-                            "重置"
+                            placeholder: "搜索技能..."
                         }
-                    }
-                    button { class: "btn btn-accent", onclick: move |_| show_add_modal.set(true), "+ 创建技能" }
-                }
-            }
-            if loading() {
-                Loading {}
-            } else if skills_list.is_empty() {
-                EmptyState { icon: "📚".to_string(), message: "暂无技能".to_string() }
-            } else {
-                table { class: "table",
-                    thead { tr { th { "名称" }, th { "描述" }, th { "标签" }, th { "操作" } }}
-                    tbody {
-                        for s in skills_list.iter() {
-                            {
-                                let id = s.id.clone();
-                                let name = s.name.clone();
-                                let description = s.description.clone();
-                                let tags = s.tags.clone();
-                                rsx! {
-                                    tr { key: "{id}",
-                                        td { class: "detail-table-value-bold", "data-label": "名称", "{name}" }
-                                        td { class: "text-secondary", "data-label": "描述", "{description}" }
-                                        td { "data-label": "标签",
-                                            for tag in &tags {
-                                                span { class: "badge badge-neutral tag-item", "{tag}" }
-                                            }
+                        if !search_keyword().is_empty() {
+                            button { class: "btn btn-ghost",
+                                onclick: move |_| {
+                                    search_keyword.set(String::new());
+                                    spawn(async move {
+                                        loading.set(true);
+                                        match list_skills().await {
+                                            Ok(list) => skills.set(list.skills),
+                                            Err(e) => toast.error(&e),
                                         }
-                                        td { "data-label": "操作",
-                                            button { class: "btn btn-danger btn-sm",
-                                                onclick: move |_| {
-                                                    let id = id.clone();
-                                                    spawn(async move {
-                                                        if let Err(e) = delete_skill(&id).await {
-                                                            toast.error(&format!("删除失败: {}", e));
-                                                        } else {
-                                                            let keyword = search_keyword();
-                                                            let result = if keyword.trim().is_empty() {
-                                                                list_skills().await
-                                                            } else {
-                                                                search_skills(&keyword).await
-                                                            };
-                                                            match result {
-                                                                Ok(list) => skills.set(list.skills),
-                                                                Err(e) => toast.error(&e),
-                                                            }
+                                        loading.set(false);
+                                    });
+                                },
+                                "重置"
+                            }
+                        }
+                        button { class: "btn btn-primary", onclick: move |_| show_add_modal.set(true), "+ 创建技能" }
+                    }
+                }
+                if loading() {
+                    Loading {}
+                } else if skills_list.is_empty() {
+                    EmptyState { icon: "📚".to_string(), message: "暂无技能".to_string() }
+                } else {
+                    div { class: "overflow-x-auto",
+                        table { class: "table table-zebra table-pin-rows",
+                            thead { tr { th { "名称" }, th { "描述" }, th { "标签" }, th { "操作" } }}
+                            tbody {
+                                for s in skills_list.iter() {
+                                    {
+                                        let id = s.id.clone();
+                                        let name = s.name.clone();
+                                        let description = s.description.clone();
+                                        let tags = s.tags.clone();
+                                        rsx! {
+                                            tr { key: "{id}",
+                                                td { class: "font-semibold", "data-label": "名称", "{name}" }
+                                                td { class: "text-base-content/70", "data-label": "描述", "{description}" }
+                                                td { "data-label": "标签",
+                                                    div { class: "flex flex-wrap gap-1",
+                                                        for tag in &tags {
+                                                            span { class: "badge badge-neutral", "{tag}" }
                                                         }
-                                                    });
-                                                }, "删除"
+                                                    }
+                                                }
+                                                td { "data-label": "操作",
+                                                    button { class: "btn btn-error btn-sm",
+                                                        onclick: move |_| {
+                                                            let id = id.clone();
+                                                            spawn(async move {
+                                                                if let Err(e) = delete_skill(&id).await {
+                                                                    toast.error(&format!("删除失败: {}", e));
+                                                                } else {
+                                                                    let keyword = search_keyword();
+                                                                    let result = if keyword.trim().is_empty() {
+                                                                        list_skills().await
+                                                                    } else {
+                                                                        search_skills(&keyword).await
+                                                                    };
+                                                                    match result {
+                                                                        Ok(list) => skills.set(list.skills),
+                                                                        Err(e) => toast.error(&e),
+                                                                    }
+                                                                }
+                                                            });
+                                                        }, "删除"
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -202,34 +208,44 @@ pub fn HrSkills() -> Element {
             },
             footer: rsx! {
                 button { class: "btn btn-ghost", onclick: move |_| show_add_modal.set(false), "取消" }
-                button { class: "btn btn-accent", disabled: creating(), onclick: handle_create,
+                button { class: "btn btn-primary", disabled: creating(), onclick: handle_create,
                     if creating() { "创建中..." } else { "创建" }
                 }
             },
-            div {
-                div { class: "form-group",
-                    label { class: "form-label", "技能名称 *" }
-                    input { class: "form-input", value: "{new_name}",
+            div { class: "space-y-4",
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "技能名称 *" }
+                    }
+                    input { class: "input input-bordered w-full", value: "{new_name}",
                         oninput: move |e| new_name.set(e.value()), placeholder: "请输入技能名称" }
                 }
-                div { class: "form-group",
-                    label { class: "form-label", "技能描述 *" }
-                    textarea { class: "form-textarea", value: "{new_description}",
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "技能描述 *" }
+                    }
+                    textarea { class: "textarea textarea-bordered w-full", value: "{new_description}",
                         oninput: move |e| new_description.set(e.value()), placeholder: "请输入技能描述" }
                 }
-                div { class: "form-group",
-                    label { class: "form-label", "标签" }
-                    input { class: "form-input", value: "{new_tags}",
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "标签" }
+                    }
+                    input { class: "input input-bordered w-full", value: "{new_tags}",
                         oninput: move |e| new_tags.set(e.value()), placeholder: "coding, backend" }
                 }
-                div { class: "form-group",
-                    label { class: "form-label", "分类" }
-                    input { class: "form-input", value: "{new_category}",
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "分类" }
+                    }
+                    input { class: "input input-bordered w-full", value: "{new_category}",
                         oninput: move |e| new_category.set(e.value()), placeholder: "development" }
                 }
-                div { class: "form-group",
-                    label { class: "form-label", "技能内容" }
-                    textarea { class: "form-textarea", value: "{new_content}",
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "技能内容" }
+                    }
+                    textarea { class: "textarea textarea-bordered w-full h-48", value: "{new_content}",
                         oninput: move |e| new_content.set(e.value()),
                         placeholder: "技能的 Markdown 内容，将写入 skill.md" }
                 }

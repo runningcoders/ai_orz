@@ -135,83 +135,89 @@ pub fn ProjectArtifacts() -> Element {
     let projects_list = projects.read().clone();
 
     rsx! {
-        div { class: "card",
-            div { class: "card-header",
-                h2 { class: "card-title", "项目产物管理" }
-                button { class: "btn btn-accent", onclick: move |_| show_add_modal.set(true), "+ 创建产物" }
-            }
+        div { class: "card bg-base-100 shadow-md",
+            div { class: "card-body",
+                div { class: "flex justify-between items-center",
+                    h2 { class: "card-title", "项目产物管理" }
+                    button { class: "btn btn-primary", onclick: move |_| show_add_modal.set(true), "+ 创建产物" }
+                }
 
-            if !projects_list.is_empty() {
-                div { class: "form-group", style: "padding: 0 16px 8px;",
-                    label { class: "form-label", "选择项目" }
-                    select {
-                        class: "form-select",
-                        value: "{selected_project_id}",
-                        onchange: move |e| selected_project_id.set(e.value()),
-                        for p in projects_list.iter() {
-                            option { value: "{p.id}", "{p.name}" }
+                if !projects_list.is_empty() {
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium", "选择项目" }
+                        }
+                        select {
+                            class: "select select-bordered w-full",
+                            value: "{selected_project_id}",
+                            onchange: move |e| selected_project_id.set(e.value()),
+                            for p in projects_list.iter() {
+                                option { value: "{p.id}", "{p.name}" }
+                            }
                         }
                     }
                 }
-            }
 
-            if loading() {
-                Loading {}
-            } else if selected_project_id().is_empty() {
-                EmptyState { icon: "📁".to_string(), message: "请先选择一个项目".to_string() }
-            } else if artifacts_list.is_empty() {
-                EmptyState { icon: "📦".to_string(), message: "暂无产物".to_string() }
-            } else {
-                table { class: "table",
-                    thead { tr {
-                        th { "名称" }
-                        th { "描述" }
-                        th { "来源类型" }
-                        th { "文件大小" }
-                        th { "创建时间" }
-                        th { "操作" }
-                    }}
-                    tbody {
-                        for a in artifacts_list.iter() {
-                            {
-                                let id = a.id.clone();
-                                let name = a.name.clone();
-                                let description = a.description.clone();
-                                let source_type = a.source_type;
-                                let file_size = a.file_size;
-                                let created_at = a.created_at;
-                                let id_delete = id.clone();
-                                rsx! {
-                                    tr { key: "{id}",
-                                        td { class: "detail-table-value-bold", "data-label": "名称", "{name}" }
-                                        td { "data-label": "描述",
-                                            if description.is_empty() {
-                                                span { class: "text-muted", "无描述" }
-                                            } else {
-                                                "{description}"
-                                            }
-                                        }
-                                        td { "data-label": "来源类型", span { class: "badge badge-info", "{source_type_text(source_type)}" } }
-                                        td { class: "text-mono text-muted", "data-label": "文件大小", "{format_file_size(file_size)}" }
-                                        td { class: "text-mono text-muted", "data-label": "创建时间", "{created_at}" }
-                                        td { "data-label": "操作",
-                                            button { class: "btn btn-danger btn-sm",
-                                                onclick: move |_| {
-                                                    let id_delete = id_delete.clone();
-                                                    spawn(async move {
-                                                        if let Err(e) = delete_artifact(&id_delete).await {
-                                                            toast.error(&format!("删除失败: {}", e));
-                                                        } else {
-                                                            let pid = selected_project_id();
-                                                            if !pid.is_empty() {
-                                                                match list_artifacts(&pid).await {
-                                                                    Ok(list) => artifacts.set(list),
-                                                                    Err(e) => toast.error(&e),
+                if loading() {
+                    Loading {}
+                } else if selected_project_id().is_empty() {
+                    EmptyState { icon: "📁".to_string(), message: "请先选择一个项目".to_string() }
+                } else if artifacts_list.is_empty() {
+                    EmptyState { icon: "📦".to_string(), message: "暂无产物".to_string() }
+                } else {
+                    div { class: "overflow-x-auto",
+                        table { class: "table table-zebra",
+                            thead { tr {
+                                th { "名称" }
+                                th { "描述" }
+                                th { "来源类型" }
+                                th { "文件大小" }
+                                th { "创建时间" }
+                                th { "操作" }
+                            }}
+                            tbody {
+                                for a in artifacts_list.iter() {
+                                    {
+                                        let id = a.id.clone();
+                                        let name = a.name.clone();
+                                        let description = a.description.clone();
+                                        let source_type = a.source_type;
+                                        let file_size = a.file_size;
+                                        let created_at = a.created_at;
+                                        let id_delete = id.clone();
+                                        rsx! {
+                                            tr { key: "{id}",
+                                                td { class: "font-semibold", "data-label": "名称", "{name}" }
+                                                td { "data-label": "描述",
+                                                    if description.is_empty() {
+                                                        span { class: "text-base-content/70", "无描述" }
+                                                    } else {
+                                                        "{description}"
+                                                    }
+                                                }
+                                                td { "data-label": "来源类型", span { class: "badge badge-info", "{source_type_text(source_type)}" } }
+                                                td { class: "font-mono text-base-content/70", "data-label": "文件大小", "{format_file_size(file_size)}" }
+                                                td { class: "font-mono text-base-content/70", "data-label": "创建时间", "{created_at}" }
+                                                td { "data-label": "操作",
+                                                    button { class: "btn btn-error btn-sm",
+                                                        onclick: move |_| {
+                                                            let id_delete = id_delete.clone();
+                                                            spawn(async move {
+                                                                if let Err(e) = delete_artifact(&id_delete).await {
+                                                                    toast.error(&format!("删除失败: {}", e));
+                                                                } else {
+                                                                    let pid = selected_project_id();
+                                                                    if !pid.is_empty() {
+                                                                        match list_artifacts(&pid).await {
+                                                                            Ok(list) => artifacts.set(list),
+                                                                            Err(e) => toast.error(&e),
+                                                                        }
+                                                                    }
                                                                 }
-                                                            }
-                                                        }
-                                                    });
-                                                }, "删除"
+                                                            });
+                                                        }, "删除"
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -229,19 +235,23 @@ pub fn ProjectArtifacts() -> Element {
             on_close: move |_| show_add_modal.set(false),
             footer: rsx! {
                 button { class: "btn btn-ghost", onclick: move |_| show_add_modal.set(false), "取消" }
-                button { class: "btn btn-accent", disabled: creating(), onclick: handle_create,
+                button { class: "btn btn-primary", disabled: creating(), onclick: handle_create,
                     if creating() { "创建中..." } else { "创建" }
                 }
             },
-            div {
-                div { class: "form-group",
-                    label { class: "form-label", "产物名称 *" }
-                    input { class: "form-input", value: "{new_name}",
+            div { class: "space-y-4",
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "产物名称 *" }
+                    }
+                    input { class: "input input-bordered w-full", value: "{new_name}",
                         oninput: move |e| new_name.set(e.value()), placeholder: "请输入产物名称" }
                 }
-                div { class: "form-group",
-                    label { class: "form-label", "描述" }
-                    textarea { class: "form-textarea", value: "{new_description}",
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "描述" }
+                    }
+                    textarea { class: "textarea textarea-bordered w-full", value: "{new_description}",
                         oninput: move |e| new_description.set(e.value()), placeholder: "产物描述（可选）" }
                 }
             }

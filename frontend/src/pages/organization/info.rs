@@ -47,30 +47,38 @@ pub fn OrganizationInfo() -> Element {
     };
 
     rsx! {
-        div { class: "card",
-            div { class: "card-header",
-                h2 { class: "card-title", "组织信息" }
-            }
+        div { class: "card bg-base-100 shadow-md",
+            div { class: "card-body",
+                h2 { class: "card-title mb-4", "组织信息" }
 
-            if loading() {
-                Loading {}
-            } else {
-                div { class: "form-group",
-                    label { class: "form-label", "组织 ID" }
-                    input { class: "form-input", disabled: true, value: "{org_id}" }
-                }
-                div { class: "form-group",
-                    label { class: "form-label", "组织名称" }
-                    input { class: "form-input", value: "{name}",
-                        oninput: move |e| name.set(e.value()) }
-                }
-                div { class: "form-group",
-                    label { class: "form-label", "组织描述" }
-                    textarea { class: "form-textarea", value: "{description}",
-                        oninput: move |e| description.set(e.value()) }
-                }
-                button { class: "btn btn-accent", disabled: saving(), onclick: handle_save,
-                    if saving() { "保存中..." } else { "保存" }
+                if loading() {
+                    Loading {}
+                } else {
+                    div { class: "space-y-4",
+                        div { class: "form-control w-full",
+                            label { class: "label",
+                                span { class: "label-text font-medium", "组织 ID" }
+                            }
+                            input { class: "input input-bordered w-full", disabled: true, value: "{org_id}" }
+                        }
+                        div { class: "form-control w-full",
+                            label { class: "label",
+                                span { class: "label-text font-medium", "组织名称" }
+                            }
+                            input { class: "input input-bordered w-full", value: "{name}",
+                                oninput: move |e| name.set(e.value()) }
+                        }
+                        div { class: "form-control w-full",
+                            label { class: "label",
+                                span { class: "label-text font-medium", "组织描述" }
+                            }
+                            textarea { class: "textarea textarea-bordered w-full", value: "{description}",
+                                oninput: move |e| description.set(e.value()) }
+                        }
+                        button { class: "btn btn-primary", disabled: saving(), onclick: handle_save,
+                            if saving() { "保存中..." } else { "保存" }
+                        }
+                    }
                 }
             }
         }

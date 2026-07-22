@@ -49,7 +49,7 @@ pub fn MessageSearch() -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "card",
+            div { class: "card bg-base-100 shadow-md",
                 h2 { class: "card-title", "消息搜索" }
                 div { class: "space-y-4",
                     div { class: "flex gap-2",
@@ -81,7 +81,7 @@ pub fn MessageSearch() -> Element {
             } else if results().is_empty() {
                 EmptyState { message: "开始搜索".to_string() }
             } else {
-                div { class: "card",
+                div { class: "card bg-base-100 shadow-md",
                     h3 { class: "card-title", "搜索结果 ({results().len()})" }
                     table { class: "table w-full",
                         thead {
@@ -104,7 +104,7 @@ pub fn MessageSearch() -> Element {
                                     }
                                     td { "{msg.message_type}" }
                                     td {
-                                        span { class: "text-sm text-muted", "{msg.match_type.as_deref().unwrap_or_default()}" }
+                                        span { class: "text-sm text-base-content/70", "{msg.match_type.as_deref().unwrap_or_default()}" }
                                         if msg.vector_distance.is_some() {
                                             span { class: "text-sm text-accent ml-2", "d={msg.vector_distance.unwrap():.4}" }
                                         }

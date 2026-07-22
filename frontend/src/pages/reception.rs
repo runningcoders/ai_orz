@@ -213,20 +213,20 @@ pub fn Reception() -> Element {
                             }
 
                             form { onsubmit: move |e| { e.prevent_default(); on_submit_login(e); },
-                                div { class: "form-group",
+                                div { class: "form-control w-full",
                                     label { class: "form-label", "用户名" }
                                     input {
-                                        class: "form-input",
+                                        class: "input input-bordered w-full",
                                         r#type: "text",
                                         value: "{login_username}",
                                         oninput: move |e| login_username.set(e.value()),
                                         placeholder: "请输入用户名",
                                     }
                                 }
-                                div { class: "form-group",
+                                div { class: "form-control w-full",
                                     label { class: "form-label", "密码" }
                                     input {
-                                        class: "form-input",
+                                        class: "input input-bordered w-full",
                                         r#type: "password",
                                         value: "{login_password}",
                                         oninput: move |e| login_password.set(e.value()),
@@ -234,7 +234,7 @@ pub fn Reception() -> Element {
                                     }
                                 }
                                 button {
-                                    class: "btn btn-accent btn-lg w-full",
+                                    class: "btn btn-primary btn-lg w-full",
                                     r#type: "submit",
                                     disabled: login_submitting(),
                                     if login_submitting() { "登录中..." } else { "登录" }
@@ -248,59 +248,59 @@ pub fn Reception() -> Element {
                             }
 
                             form { onsubmit: move |e| { e.prevent_default(); on_submit_init(e); },
-                                div { class: "form-group",
+                                div { class: "form-control w-full",
                                     label { class: "form-label", "组织名称 *" }
                                     input {
-                                        class: "form-input",
+                                        class: "input input-bordered w-full",
                                         r#type: "text",
                                         value: "{org_name}",
                                         oninput: move |e| org_name.set(e.value()),
                                         placeholder: "例如：我的组织",
                                     }
                                 }
-                                div { class: "form-group",
+                                div { class: "form-control w-full",
                                     label { class: "form-label", "组织描述" }
                                     textarea {
-                                        class: "form-textarea",
+                                        class: "textarea textarea-bordered w-full",
                                         value: "{org_description}",
                                         oninput: move |e| org_description.set(e.value()),
                                         placeholder: "简单描述一下您的组织...",
                                     }
                                 }
-                                div { class: "form-group",
+                                div { class: "form-control w-full",
                                     label { class: "form-label", "管理员用户名 *" }
                                     input {
-                                        class: "form-input",
+                                        class: "input input-bordered w-full",
                                         r#type: "text",
                                         value: "{init_username}",
                                         oninput: move |e| init_username.set(e.value()),
                                         placeholder: "例如：admin",
                                     }
                                 }
-                                div { class: "form-group",
+                                div { class: "form-control w-full",
                                     label { class: "form-label", "管理员密码 *" }
                                     input {
-                                        class: "form-input",
+                                        class: "input input-bordered w-full",
                                         r#type: "password",
                                         value: "{init_password}",
                                         oninput: move |e| init_password.set(e.value()),
                                         placeholder: "请输入密码",
                                     }
                                 }
-                                div { class: "form-group",
+                                div { class: "form-control w-full",
                                     label { class: "form-label", "显示名称" }
                                     input {
-                                        class: "form-input",
+                                        class: "input input-bordered w-full",
                                         r#type: "text",
                                         value: "{display_name}",
                                         oninput: move |e| display_name.set(e.value()),
                                         placeholder: "例如：超级管理员",
                                     }
                                 }
-                                div { class: "form-group",
+                                div { class: "form-control w-full",
                                     label { class: "form-label", "邮箱" }
                                     input {
-                                        class: "form-input",
+                                        class: "input input-bordered w-full",
                                         r#type: "email",
                                         value: "{email}",
                                         oninput: move |e| email.set(e.value()),
@@ -308,7 +308,7 @@ pub fn Reception() -> Element {
                                     }
                                 }
                                 button {
-                                    class: "btn btn-accent btn-lg w-full",
+                                    class: "btn btn-primary btn-lg w-full",
                                     r#type: "submit",
                                     disabled: init_submitting(),
                                     if init_submitting() { "初始化中..." } else { "完成初始化" }

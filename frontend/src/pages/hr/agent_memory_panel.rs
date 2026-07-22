@@ -95,44 +95,44 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
     let agent_id_5 = agent_id.clone();
 
     rsx! {
-        div { class: "card",
-            div { class: "card-header",
-                h2 { class: "card-title", "记忆面板" }
-                div { class: "tabs",
-                    button {
-                        class: if active_tab() == MemoryTab::ShortTerm { "tab tab-active" } else { "tab" },
-                        onclick: move |_| {
-                            active_tab.set(MemoryTab::ShortTerm);
-                            keyword.set(String::new());
-                            fetch_memories(agent_id_1.clone(), MemoryTab::ShortTerm, String::new(), results, loading, toast);
-                        },
-                        "短期记忆"
-                    }
-                    button {
-                        class: if active_tab() == MemoryTab::KnowledgeNode { "tab tab-active" } else { "tab" },
-                        onclick: move |_| {
-                            active_tab.set(MemoryTab::KnowledgeNode);
-                            keyword.set(String::new());
-                            fetch_memories(agent_id_2.clone(), MemoryTab::KnowledgeNode, String::new(), results, loading, toast);
-                        },
-                        "知识节点"
-                    }
-                    button {
-                        class: if active_tab() == MemoryTab::Relation { "tab tab-active" } else { "tab" },
-                        onclick: move |_| {
-                            active_tab.set(MemoryTab::Relation);
-                            keyword.set(String::new());
-                            fetch_memories(agent_id_3.clone(), MemoryTab::Relation, String::new(), results, loading, toast);
-                        },
-                        "关系"
+        div { class: "card bg-base-100 shadow-md",
+            div { class: "card-body",
+                div { class: "flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4",
+                    h2 { class: "card-title", "记忆面板" }
+                    div { class: "tabs tabs-boxed",
+                        button {
+                            class: if active_tab() == MemoryTab::ShortTerm { "tab tab-active" } else { "tab" },
+                            onclick: move |_| {
+                                active_tab.set(MemoryTab::ShortTerm);
+                                keyword.set(String::new());
+                                fetch_memories(agent_id_1.clone(), MemoryTab::ShortTerm, String::new(), results, loading, toast);
+                            },
+                            "短期记忆"
+                        }
+                        button {
+                            class: if active_tab() == MemoryTab::KnowledgeNode { "tab tab-active" } else { "tab" },
+                            onclick: move |_| {
+                                active_tab.set(MemoryTab::KnowledgeNode);
+                                keyword.set(String::new());
+                                fetch_memories(agent_id_2.clone(), MemoryTab::KnowledgeNode, String::new(), results, loading, toast);
+                            },
+                            "知识节点"
+                        }
+                        button {
+                            class: if active_tab() == MemoryTab::Relation { "tab tab-active" } else { "tab" },
+                            onclick: move |_| {
+                                active_tab.set(MemoryTab::Relation);
+                                keyword.set(String::new());
+                                fetch_memories(agent_id_3.clone(), MemoryTab::Relation, String::new(), results, loading, toast);
+                            },
+                            "关系"
+                        }
                     }
                 }
-            }
 
-            div { class: "card-body",
                 div { class: "flex gap-2 mb-4",
                     input {
-                        class: "form-input flex-1",
+                        class: "input input-bordered flex-1",
                         value: "{keyword}",
                         oninput: move |e| keyword.set(e.value()),
                         placeholder: "输入关键词搜索记忆...",
@@ -184,23 +184,23 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                                 let badge_class = active.badge_class();
 
                                 rsx! {
-                                    div { class: "p-4 border rounded-lg hover:bg-muted transition-colors",
+                                    div { class: "p-4 border border-base-300 rounded-lg hover:bg-base-200 transition-colors",
                                         div { class: "flex justify-between items-start mb-2",
                                             div { class: "flex items-center gap-2",
                                                 span { class: "{badge_class} text-xs", "{mt}" }
                                                 if has_score {
-                                                    span { class: "text-xs text-muted", "相似度: {score_text}" }
+                                                    span { class: "text-xs text-base-content/70", "相似度: {score_text}" }
                                                 }
                                             }
                                         }
                                         div { class: "text-sm mb-2", "{content_preview}..." }
                                         if has_summary {
-                                            div { class: "text-xs text-muted mb-2",
+                                            div { class: "text-xs text-base-content/70 mb-2",
                                                 "摘要: {summary_text}"
                                             }
                                         }
                                         if is_relation {
-                                            div { class: "text-xs text-muted flex flex-wrap gap-2",
+                                            div { class: "text-xs text-base-content/70 flex flex-wrap gap-2",
                                                 if has_src {
                                                     span { "源: {src_node}" }
                                                 }

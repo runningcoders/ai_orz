@@ -4,15 +4,19 @@ use dioxus::prelude::*;
 
 #[component]
 pub fn Loading() -> Element {
-    rsx! { div { class: "state-loading", "加载中..." } }
+    rsx! {
+        div { class: "flex justify-center py-8",
+            span { class: "loading loading-spinner loading-md mx-auto" }
+        }
+    }
 }
 
 #[component]
 pub fn EmptyState(icon: Option<String>, message: String) -> Element {
     let icon = icon.unwrap_or_else(|| "📭".to_string());
     rsx! {
-        div { class: "state-empty",
-            div { class: "state-empty-icon", "{icon}" }
+        div { class: "text-center py-8 text-base-content/60",
+            div { class: "text-4xl mb-3", "{icon}" }
             p { "{message}" }
         }
     }
@@ -23,7 +27,12 @@ pub fn ErrorAlert(message: String) -> Element {
     if message.is_empty() {
         return rsx! {};
     }
-    rsx! { div { class: "alert alert-error", "{message}" } }
+    rsx! {
+        div { class: "alert alert-error flex items-center gap-2",
+            span { "⚠️" }
+            span { "{message}" }
+        }
+    }
 }
 
 #[component]
@@ -31,5 +40,10 @@ pub fn SuccessAlert(message: String) -> Element {
     if message.is_empty() {
         return rsx! {};
     }
-    rsx! { div { class: "alert alert-success", "{message}" } }
+    rsx! {
+        div { class: "alert alert-success flex items-center gap-2",
+            span { "✅" }
+            span { "{message}" }
+        }
+    }
 }

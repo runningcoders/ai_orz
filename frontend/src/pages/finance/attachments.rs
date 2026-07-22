@@ -63,7 +63,6 @@ pub fn FinanceAttachments() -> Element {
     let toast = use_toast();
     let mut show_add_modal = use_signal(|| false);
 
-    // 创建表单状态
     let mut new_file_name = use_signal(String::new);
     let mut new_content = use_signal(String::new);
     let mut creating = use_signal(|| false);
@@ -116,48 +115,52 @@ pub fn FinanceAttachments() -> Element {
     let attachments_list = attachments.read().clone();
 
     rsx! {
-        div { class: "card",
-            div { class: "card-header",
-                h2 { class: "card-title", "附件管理" }
-                button { class: "btn btn-accent", onclick: move |_| show_add_modal.set(true), "+ 创建文本附件" }
-            }
-            if loading() {
-                Loading {}
-            } else if attachments_list.is_empty() {
-                EmptyState { icon: "📎".to_string(), message: "暂无附件".to_string() }
-            } else {
-                table { class: "table",
-                    thead { tr { th { "文件名" }, th { "大小" }, th { "用途" }, th { "创建时间" }, th { "操作" } }}
-                    tbody {
-                        for a in attachments_list.iter() {
-                            {
-                                let id = a.id.clone();
-                                let original_name = a.original_name.clone();
-                                let size = format_size(a.size);
-                                let purpose = a.purpose.clone();
-                                let created_at = format_timestamp(a.created_at);
-                                let id_delete = id.clone();
-                                rsx! {
-                                    tr { key: "{id}",
-                                        td { class: "detail-table-value-bold", "data-label": "文件名", "{original_name}" }
-                                        td { "data-label": "大小", "{size}" }
-                                        td { "data-label": "用途", span { class: "badge badge-info", "{purpose}" } }
-                                        td { "data-label": "创建时间", "{created_at}" }
-                                        td { "data-label": "操作",
-                                            button { class: "btn btn-danger btn-sm",
-                                                onclick: move |_| {
-                                                    let id_delete = id_delete.clone();
-                                                    spawn(async move {
-                                                        if let Err(e) = delete_attachment(&id_delete).await {
-                                                            toast.error(&format!("删除失败: {}", e));
-                                                        } else {
-                                                            match list_attachments().await {
-                                                                Ok(list) => attachments.set(list),
-                                                                Err(e) => toast.error(&e),
-                                                            }
-                                                        }
-                                                    });
-                                                }, "删除"
+        div { class: "card bg-base-100 shadow-md",
+            div { class: "card-body",
+                div { class: "flex justify-between items-center mb-4",
+                    h2 { class: "card-title", "附件管理" }
+                    button { class: "btn btn-primary", onclick: move |_| show_add_modal.set(true), "+ 创建文本附件" }
+                }
+                if loading() {
+                    Loading {}
+                } else if attachments_list.is_empty() {
+                    EmptyState { icon: "📎".to_string(), message: "暂无附件".to_string() }
+                } else {
+                    div { class: "overflow-x-auto",
+                        table { class: "table table-zebra table-pin-rows",
+                            thead { tr { th { "文件名" }, th { "大小" }, th { "用途" }, th { "创建时间" }, th { "操作" } }}
+                            tbody {
+                                for a in attachments_list.iter() {
+                                    {
+                                        let id = a.id.clone();
+                                        let original_name = a.original_name.clone();
+                                        let size = format_size(a.size);
+                                        let purpose = a.purpose.clone();
+                                        let created_at = format_timestamp(a.created_at);
+                                        let id_delete = id.clone();
+                                        rsx! {
+                                            tr { key: "{id}",
+                                                td { class: "font-semibold", "{original_name}" }
+                                                td { "{size}" }
+                                                td { span { class: "badge badge-info", "{purpose}" } }
+                                                td { "{created_at}" }
+                                                td {
+                                                    button { class: "btn btn-error btn-sm",
+                                                        onclick: move |_| {
+                                                            let id_delete = id_delete.clone();
+                                                            spawn(async move {
+                                                                if let Err(e) = delete_attachment(&id_delete).await {
+                                                                    toast.error(&format!("删除失败: {}", e));
+                                                                } else {
+                                                                    match list_attachments().await {
+                                                                        Ok(list) => attachments.set(list),
+                                                                        Err(e) => toast.error(&e),
+                                                                    }
+                                                                }
+                                                            });
+                                                        }, "删除"
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -175,19 +178,23 @@ pub fn FinanceAttachments() -> Element {
             on_close: move |_| show_add_modal.set(false),
             footer: rsx! {
                 button { class: "btn btn-ghost", onclick: move |_| show_add_modal.set(false), "取消" }
-                button { class: "btn btn-accent", disabled: creating(), onclick: handle_create,
+                button { class: "btn btn-primary", disabled: creating(), onclick: handle_create,
                     if creating() { "创建中..." } else { "创建" }
                 }
             },
-            div {
-                div { class: "form-group",
-                    label { class: "form-label", "文件名 *" }
-                    input { class: "form-input", value: "{new_file_name}",
+            div { class: "space-y-4",
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "文件名 *" }
+                    }
+                    input { class: "input input-bordered w-full", value: "{new_file_name}",
                         oninput: move |e| new_file_name.set(e.value()), placeholder: "如: notes.txt" }
                 }
-                div { class: "form-group",
-                    label { class: "form-label", "内容 *" }
-                    textarea { class: "form-input", rows: "10", value: "{new_content}",
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "内容 *" }
+                    }
+                    textarea { class: "textarea textarea-bordered w-full", rows: "10", value: "{new_content}",
                         oninput: move |e| new_content.set(e.value()), placeholder: "输入文本内容..." }
                 }
             }

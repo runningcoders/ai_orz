@@ -18,6 +18,7 @@ use store::auth::AuthState;
 use store::toast::use_provide_toast;
 
 use crate::components::toast::ToastContainer;
+use crate::hooks::use_theme;
 use crate::pages::Route;
 
 fn main() {
@@ -26,10 +27,9 @@ fn main() {
 
 #[component]
 fn App() -> Element {
-    // 初始化全局认证状态
     use_context_provider(|| Signal::new(AuthState::restore()));
-    // 初始化全局 Toast 状态
     let _toast = use_provide_toast();
+    let _theme_ctrl = use_theme();
 
     // 初始化全局断点信号（移动端检测）
     let mut is_mobile = use_signal(|| false);

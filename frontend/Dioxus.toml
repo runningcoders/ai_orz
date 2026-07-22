@@ -1,0 +1,17 @@
+[application]
+out_dir = "dist"
+asset_dir = "public"
+
+[web.wasm_opt]
+level = "4"
+
+[web.app]
+title = "AI Orz - AI 代理执行框架"
+
+[web.watcher]
+index_on_404 = true
+watch_path = ["src", "public", "index.html"]
+
+[bundle]
+identifier = "com.ai-orz.app"
+publisher = "ai-orz"

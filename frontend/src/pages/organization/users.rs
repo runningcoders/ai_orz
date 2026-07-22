@@ -70,7 +70,6 @@ pub fn OrganizationUsers() -> Element {
                     new_email.set(String::new());
                     new_password.set(String::new());
                     new_role.set(1);
-                    // Reload
                     match list_users().await {
                         Ok(list) => users.set(list.data),
                         Err(e) => toast.error(&e),
@@ -85,56 +84,60 @@ pub fn OrganizationUsers() -> Element {
     let users_list = users.read().clone();
 
     rsx! {
-        div { class: "card",
-            div { class: "card-header",
-                h2 { class: "card-title", "用户管理" }
-                button { class: "btn btn-accent", onclick: move |_| show_modal.set(true), "+ 添加用户" }
-            }
+        div { class: "card bg-base-100 shadow-md",
+            div { class: "card-body",
+                div { class: "flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4",
+                    h2 { class: "card-title", "用户管理" }
+                    button { class: "btn btn-primary", onclick: move |_| show_modal.set(true), "+ 添加用户" }
+                }
 
-            if loading() {
-                Loading {}
-            } else if users_list.is_empty() {
-                EmptyState { icon: "👥".to_string(), message: "暂无用户".to_string() }
-            } else {
-                table { class: "table",
-                    thead { tr {
-                        th { "用户名" }
-                        th { "显示名称" }
-                        th { "邮箱" }
-                        th { "角色" }
-                        th { "操作" }
-                    }}
-                    tbody {
-                        for u in users_list.iter() {
-                            {
-                                let uid = u.user_id.clone();
-                                let uname = u.username.clone();
-                                let udisplay = u.display_name.clone().unwrap_or_default();
-                                let uemail = u.email.clone().unwrap_or_default();
-                                let urole = u.role;
-                                let uid_delete = uid.clone();
-                                rsx! {
-                                    tr { key: "{uid}",
-                                        td { class: "detail-table-value-bold", "data-label": "用户名", "{uname}" }
-                                        td { class: "text-secondary", "data-label": "显示名称", "{udisplay}" }
-                                        td { class: "text-mono text-muted", "data-label": "邮箱", "{uemail}" }
-                                        td { "data-label": "角色", span { class: "{role_badge(urole)}", "{role_text(urole)}" } }
-                                        td { "data-label": "操作",
-                                            button { class: "btn btn-danger btn-sm",
-                                                onclick: move |_| {
-                                                    let uid_delete = uid_delete.clone();
-                                                    spawn(async move {
-                                                        if let Err(e) = delete_user(&uid_delete).await {
-                                                            toast.error(&format!("删除失败: {}", e));
-                                                        } else {
-                                                            match list_users().await {
-                                                                Ok(list) => users.set(list.data),
-                                                                Err(e) => toast.error(&e),
-                                                            }
-                                                        }
-                                                    });
-                                                },
-                                                "删除"
+                if loading() {
+                    Loading {}
+                } else if users_list.is_empty() {
+                    EmptyState { icon: "👥".to_string(), message: "暂无用户".to_string() }
+                } else {
+                    div { class: "overflow-x-auto",
+                        table { class: "table table-zebra table-pin-rows",
+                            thead { tr {
+                                th { "用户名" }
+                                th { "显示名称" }
+                                th { "邮箱" }
+                                th { "角色" }
+                                th { "操作" }
+                            }}
+                            tbody {
+                                for u in users_list.iter() {
+                                    {
+                                        let uid = u.user_id.clone();
+                                        let uname = u.username.clone();
+                                        let udisplay = u.display_name.clone().unwrap_or_default();
+                                        let uemail = u.email.clone().unwrap_or_default();
+                                        let urole = u.role;
+                                        let uid_delete = uid.clone();
+                                        rsx! {
+                                            tr { key: "{uid}",
+                                                td { class: "font-semibold", "data-label": "用户名", "{uname}" }
+                                                td { class: "text-base-content/70", "data-label": "显示名称", "{udisplay}" }
+                                                td { class: "font-mono text-sm text-base-content/70", "data-label": "邮箱", "{uemail}" }
+                                                td { "data-label": "角色", span { class: "{role_badge(urole)}", "{role_text(urole)}" } }
+                                                td { "data-label": "操作",
+                                                    button { class: "btn btn-error btn-sm",
+                                                        onclick: move |_| {
+                                                            let uid_delete = uid_delete.clone();
+                                                            spawn(async move {
+                                                                if let Err(e) = delete_user(&uid_delete).await {
+                                                                    toast.error(&format!("删除失败: {}", e));
+                                                                } else {
+                                                                    match list_users().await {
+                                                                        Ok(list) => users.set(list.data),
+                                                                        Err(e) => toast.error(&e),
+                                                                    }
+                                                                }
+                                                            });
+                                                        },
+                                                        "删除"
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -152,34 +155,44 @@ pub fn OrganizationUsers() -> Element {
             on_close: move |_| show_modal.set(false),
             footer: rsx! {
                 button { class: "btn btn-ghost", onclick: move |_| show_modal.set(false), "取消" }
-                button { class: "btn btn-accent", disabled: creating(), onclick: handle_create,
+                button { class: "btn btn-primary", disabled: creating(), onclick: handle_create,
                     if creating() { "创建中..." } else { "创建" }
                 }
             },
-            div {
-                div { class: "form-group",
-                    label { class: "form-label", "用户名 *" }
-                    input { class: "form-input", value: "{new_username}",
+            div { class: "space-y-4",
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "用户名 *" }
+                    }
+                    input { class: "input input-bordered w-full", value: "{new_username}",
                         oninput: move |e| new_username.set(e.value()) }
                 }
-                div { class: "form-group",
-                    label { class: "form-label", "密码 *" }
-                    input { class: "form-input", r#type: "password", value: "{new_password}",
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "密码 *" }
+                    }
+                    input { class: "input input-bordered w-full", r#type: "password", value: "{new_password}",
                         oninput: move |e| new_password.set(e.value()) }
                 }
-                div { class: "form-group",
-                    label { class: "form-label", "显示名称" }
-                    input { class: "form-input", value: "{new_display_name}",
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "显示名称" }
+                    }
+                    input { class: "input input-bordered w-full", value: "{new_display_name}",
                         oninput: move |e| new_display_name.set(e.value()) }
                 }
-                div { class: "form-group",
-                    label { class: "form-label", "邮箱" }
-                    input { class: "form-input", r#type: "email", value: "{new_email}",
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "邮箱" }
+                    }
+                    input { class: "input input-bordered w-full", r#type: "email", value: "{new_email}",
                         oninput: move |e| new_email.set(e.value()) }
                 }
-                div { class: "form-group",
-                    label { class: "form-label", "角色" }
-                    select { class: "form-select", value: "{new_role}",
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "角色" }
+                    }
+                    select { class: "select select-bordered w-full", value: "{new_role}",
                         onchange: move |e| new_role.set(e.value().parse().unwrap_or(1)),
                         option { value: "1", "成员" }
                         option { value: "2", "管理员" }

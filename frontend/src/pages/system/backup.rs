@@ -185,7 +185,7 @@ pub fn SystemBackup() -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "card",
+            div { class: "card bg-base-100 shadow-md",
                 div { class: "card-header",
                     h2 { class: "card-title", "备份管理" }
                     div { class: "page-header-actions",
@@ -195,7 +195,7 @@ pub fn SystemBackup() -> Element {
                             "🔄 刷新"
                         }
                         button {
-                            class: "btn btn-accent",
+                            class: "btn btn-primary",
                             disabled: creating(),
                             onclick: handle_create,
                             if creating() { "创建中..." } else { "+ 创建备份" }
@@ -221,7 +221,7 @@ pub fn SystemBackup() -> Element {
                 } else if backups_list.is_empty() {
                     EmptyState { icon: "💾".to_string(), message: "暂无备份".to_string() }
                 } else {
-                    table { class: "table",
+                    table { class: "table table-zebra",
                         thead { tr {
                             th { "版本" }
                             th { "时间" }
@@ -245,26 +245,26 @@ pub fn SystemBackup() -> Element {
                                             td { "data-label": "版本",
                                                 span { class: "badge badge-info", "v{version}" }
                                             }
-                                            td { class: "text-mono text-muted", style: "white-space: nowrap;", "data-label": "时间",
+                                            td { class: "font-mono text-base-content/70", style: "white-space: nowrap;", "data-label": "时间",
                                                 "{format_timestamp(&timestamp)}"
                                             }
-                                            td { class: "text-mono", "data-label": "文件名", "{file_name}" }
+                                            td { class: "font-mono", "data-label": "文件名", "{file_name}" }
                                             td { "data-label": "大小", "{size}" }
                                             td { "data-label": "MD5",
                                                 span {
-                                                    class: "text-mono text-muted",
+                                                    class: "font-mono text-base-content/70",
                                                     title: "{md5_full}",
                                                     "{md5_short}"
                                                 }
                                             }
                                             td { "data-label": "操作",
                                                 button {
-                                                    class: "btn btn-secondary btn-sm",
+                                                    class: "btn btn-outline btn-sm",
                                                     onclick: move |_| on_click_restore(version),
                                                     "恢复"
                                                 }
                                                 button {
-                                                    class: "btn btn-danger btn-sm",
+                                                    class: "btn btn-error btn-sm",
                                                     onclick: move |_| on_click_delete(version),
                                                     "删除"
                                                 }
@@ -294,7 +294,7 @@ pub fn SystemBackup() -> Element {
                     "关闭"
                 }
                 button {
-                    class: "btn btn-accent",
+                    class: "btn btn-primary",
                     disabled: restore_loading() || restore_script().is_empty(),
                     onclick: handle_copy_script,
                     "📋 复制脚本"
@@ -310,7 +310,7 @@ pub fn SystemBackup() -> Element {
                         "⚠️ 恢复操作将覆盖当前数据，请先停止服务并备份现有数据后再执行。"
                     }
                     pre {
-                        class: "text-mono",
+                        class: "font-mono",
                         style: "white-space: pre-wrap; word-break: break-word; background: var(--color-mistral-black); color: var(--color-text-on-dark); padding: var(--space-4); border-radius: var(--radius-md); max-height: 360px; overflow: auto; font-size: 12px; line-height: 1.5;",
                         "{restore_script()}"
                     }
@@ -331,7 +331,7 @@ pub fn SystemBackup() -> Element {
                     "取消"
                 }
                 button {
-                    class: "btn btn-danger",
+                    class: "btn btn-error",
                     disabled: delete_loading(),
                     onclick: handle_confirm_delete,
                     if delete_loading() { "删除中..." } else { "确认删除" }
@@ -343,7 +343,7 @@ pub fn SystemBackup() -> Element {
                     strong { "v{delete_version().unwrap_or(0)}" }
                     "，此操作不可恢复。"
                 }
-                p { class: "text-muted", style: "font-size: 13px;",
+                p { class: "text-base-content/70", style: "font-size: 13px;",
                     "删除后归档文件将被永久移除，无法找回。"
                 }
             }

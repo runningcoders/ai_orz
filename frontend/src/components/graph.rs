@@ -224,7 +224,7 @@ pub fn Graph(props: GraphProps) -> Element {
             width: "{svg_width}",
             height: "{svg_height}",
             view_box: "0 0 {svg_width} {svg_height}",
-            style: "border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-card);",
+            class: "border border-base-300 rounded-lg bg-base-100",
             onmousemove: move |e: MouseEvent| {
                 let e2 = e.clone();
                 handle_mouse_move(e);

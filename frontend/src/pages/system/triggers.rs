@@ -305,7 +305,7 @@ pub fn SystemTriggers() -> Element {
     let json_placeholder = r#"{"action":"agent_rest","extra":{"agent_id":"xxx","settle_limit":10}}"#;
 
     rsx! {
-        div { class: "card",
+        div { class: "card bg-base-100 shadow-md",
             div { class: "card-header",
                 h2 { class: "card-title", "定时触发器" }
                 div { class: "page-header-actions",
@@ -327,7 +327,7 @@ pub fn SystemTriggers() -> Element {
                         "🔄 刷新"
                     }
                     button {
-                        class: "btn btn-accent",
+                        class: "btn btn-primary",
                         onclick: move |_| {
                             form_name.set(String::new());
                             form_type.set("cron".to_string());
@@ -350,7 +350,7 @@ pub fn SystemTriggers() -> Element {
             } else if triggers_list.is_empty() {
                 EmptyState { icon: "⏰".to_string(), message: "暂无触发器".to_string() }
             } else {
-                table { class: "table",
+                table { class: "table table-zebra",
                     thead { tr {
                         th { "名称" }
                         th { "类型" }
@@ -386,7 +386,7 @@ pub fn SystemTriggers() -> Element {
                                             }
                                         }
                                         td { "data-label": "调度信息",
-                                            span { class: "text-mono",
+                                            span { class: "font-mono",
                                                 "{schedule_text(trigger_type, &cron_expr, interval_seconds, run_at)}"
                                             }
                                         }
@@ -397,14 +397,14 @@ pub fn SystemTriggers() -> Element {
                                                 span { class: "badge badge-neutral", "暂停" }
                                             }
                                         }
-                                        td { "data-label": "下次执行", span { class: "text-mono text-muted", "{format_time(next_run_at)}" } }
+                                        td { "data-label": "下次执行", span { class: "font-mono text-base-content/70", "{format_time(next_run_at)}" } }
                                         td { "data-label": "上次执行",
                                             match last_run_at {
                                                 Some(ts) => rsx! {
-                                                    span { class: "text-mono text-muted", "{format_time(ts)}" }
+                                                    span { class: "font-mono text-base-content/70", "{format_time(ts)}" }
                                                 },
                                                 None => rsx! {
-                                                    span { class: "text-muted", "-" }
+                                                    span { class: "text-base-content/70", "-" }
                                                 },
                                             }
                                         }
@@ -504,7 +504,7 @@ pub fn SystemTriggers() -> Element {
                                                 }
                                             }
                                             button {
-                                                class: "btn btn-danger btn-sm",
+                                                class: "btn btn-error btn-sm",
                                                 onclick: move |_| {
                                                     let did = id_delete.clone();
                                                     spawn(async move {
@@ -539,7 +539,7 @@ pub fn SystemTriggers() -> Element {
             footer: rsx! {
                 button { class: "btn btn-ghost", onclick: move |_| show_modal.set(false), "取消" }
                 button {
-                    class: "btn btn-accent",
+                    class: "btn btn-primary",
                     disabled: submitting() || loading_detail(),
                     onclick: handle_submit,
                     if submitting() {
@@ -555,19 +555,19 @@ pub fn SystemTriggers() -> Element {
                 Loading {}
             } else {
                 div {
-                    div { class: "form-group",
+                    div { class: "form-control w-full",
                         label { class: "form-label", "触发器名称 *" }
                         input {
-                            class: "form-input",
+                            class: "input input-bordered w-full",
                             value: "{form_name}",
                             placeholder: "例：每日 9 点沉淀 Agent 记忆",
                             oninput: move |e| form_name.set(e.value())
                         }
                     }
-                    div { class: "form-group",
+                    div { class: "form-control w-full",
                         label { class: "form-label", "触发类型" }
                         select {
-                            class: "form-select",
+                            class: "select select-bordered w-full",
                             value: "{form_type}",
                             onchange: move |e| form_type.set(e.value()),
                             option { value: "cron", "Cron 表达式" }
@@ -576,10 +576,10 @@ pub fn SystemTriggers() -> Element {
                         }
                     }
                     if form_type() == "cron" {
-                        div { class: "form-group",
+                        div { class: "form-control w-full",
                             label { class: "form-label", "Cron 表达式 *" }
                             input {
-                                class: "form-input text-mono",
+                                class: "form-input font-mono",
                                 value: "{form_cron}",
                                 placeholder: "0 9 * * *（分 时 日 月 周）",
                                 oninput: move |e| form_cron.set(e.value())
@@ -603,10 +603,10 @@ pub fn SystemTriggers() -> Element {
                         }
                     }
                     if form_type() == "interval" {
-                        div { class: "form-group",
+                        div { class: "form-control w-full",
                             label { class: "form-label", "间隔秒数 *" }
                             input {
-                                class: "form-input",
+                                class: "input input-bordered w-full",
                                 r#type: "number",
                                 value: "{form_interval}",
                                 placeholder: "300（即 5 分钟）",
@@ -614,10 +614,10 @@ pub fn SystemTriggers() -> Element {
                             }
                         }
                     }
-                    div { class: "form-group",
+                    div { class: "form-control w-full",
                         label { class: "form-label", "Action 模板" }
                         select {
-                            class: "form-select",
+                            class: "select select-bordered w-full",
                             value: "{form_template}",
                             onchange: move |e| form_template.set(e.value()),
                             option { value: "agent_rest", "agent_rest（Agent 休息与沉淀）" }
@@ -625,19 +625,19 @@ pub fn SystemTriggers() -> Element {
                         }
                     }
                     if form_template() == "agent_rest" {
-                        div { class: "form-group",
+                        div { class: "form-control w-full",
                             label { class: "form-label", "Agent ID *" }
                             input {
-                                class: "form-input",
+                                class: "input input-bordered w-full",
                                 value: "{form_agent_id}",
                                 placeholder: "Agent 的唯一 ID",
                                 oninput: move |e| form_agent_id.set(e.value())
                             }
                         }
-                        div { class: "form-group",
+                        div { class: "form-control w-full",
                             label { class: "form-label", "settle_limit（沉淀上限）" }
                             input {
-                                class: "form-input",
+                                class: "input input-bordered w-full",
                                 r#type: "number",
                                 value: "{form_settle_limit}",
                                 placeholder: "10",
@@ -646,10 +646,10 @@ pub fn SystemTriggers() -> Element {
                             div { class: "form-hint", "单次沉淀的短期记忆条数上限，默认 10" }
                         }
                     } else {
-                        div { class: "form-group",
+                        div { class: "form-control w-full",
                             label { class: "form-label", "Payload JSON *" }
                             textarea {
-                                class: "form-textarea text-mono",
+                                class: "form-textarea font-mono",
                                 style: "min-height: 120px;",
                                 value: "{form_payload}",
                                 placeholder: "{json_placeholder}",

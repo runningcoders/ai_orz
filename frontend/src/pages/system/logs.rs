@@ -218,7 +218,7 @@ pub fn SystemLogs() -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "card",
+            div { class: "card bg-base-100 shadow-md",
                 div { class: "card-header",
                     h2 { class: "card-title", "日志查询" }
                     div { class: "page-header-actions",
@@ -239,7 +239,7 @@ pub fn SystemLogs() -> Element {
                     div { class: "filter-item",
                         label { class: "form-label", "关键词" }
                         input {
-                            class: "form-input",
+                            class: "input input-bordered w-full",
                             value: "{form_keyword}",
                             placeholder: "message 包含的关键词",
                             oninput: move |e| form_keyword.set(e.value()),
@@ -253,7 +253,7 @@ pub fn SystemLogs() -> Element {
                     div { class: "filter-item",
                         label { class: "form-label", "Log ID（调用链）" }
                         input {
-                            class: "form-input text-mono",
+                            class: "form-input font-mono",
                             value: "{form_log_id}",
                             placeholder: "精确匹配 log_id",
                             oninput: move |e| form_log_id.set(e.value()),
@@ -267,7 +267,7 @@ pub fn SystemLogs() -> Element {
                     div { class: "filter-item",
                         label { class: "form-label", "级别" }
                         select {
-                            class: "form-select",
+                            class: "select select-bordered w-full",
                             value: "{form_level}",
                             onchange: move |e| form_level.set(e.value()),
                             option { value: "", "全部" }
@@ -280,7 +280,7 @@ pub fn SystemLogs() -> Element {
                     div { class: "filter-item",
                         label { class: "form-label", "开始时间" }
                         input {
-                            class: "form-input",
+                            class: "input input-bordered w-full",
                             r#type: "datetime-local",
                             value: "{form_start}",
                             oninput: move |e| form_start.set(e.value())
@@ -289,7 +289,7 @@ pub fn SystemLogs() -> Element {
                     div { class: "filter-item",
                         label { class: "form-label", "结束时间" }
                         input {
-                            class: "form-input",
+                            class: "input input-bordered w-full",
                             r#type: "datetime-local",
                             value: "{form_end}",
                             oninput: move |e| form_end.set(e.value())
@@ -299,7 +299,7 @@ pub fn SystemLogs() -> Element {
                 div { class: "filter-row",
                     div { class: "page-header-actions",
                         button {
-                            class: "btn btn-accent",
+                            class: "btn btn-primary",
                             onclick: move |_| handle_search(()),
                             "🔍 查询"
                         }
@@ -318,7 +318,7 @@ pub fn SystemLogs() -> Element {
                     EmptyState { icon: "📋".to_string(), message: "没有匹配的日志".to_string() }
                 } else {
                     div { style: "margin-top: var(--space-4);",
-                        table { class: "table",
+                        table { class: "table table-zebra",
                             thead { tr {
                                 th { "时间" }
                                 th { "级别" }
@@ -340,7 +340,7 @@ pub fn SystemLogs() -> Element {
 
                                         rsx! {
                                             tr { key: "{idx}",
-                                                td { class: "text-mono text-muted", style: "white-space: nowrap;", "data-label": "时间",
+                                                td { class: "font-mono text-base-content/70", style: "white-space: nowrap;", "data-label": "时间",
                                                     "{format_timestamp(&ts)}"
                                                 }
                                                 td { "data-label": "级别",
@@ -350,7 +350,7 @@ pub fn SystemLogs() -> Element {
                                                     match log_id.as_deref() {
                                                         Some(id) if !id.is_empty() => rsx! {
                                                             span {
-                                                                class: "text-mono",
+                                                                class: "font-mono",
                                                                 style: "color: var(--color-mistral-orange); cursor: pointer; text-decoration: underline dotted;",
                                                                 title: "点击按 log_id 查询",
                                                                 onclick: move |_| {
@@ -359,12 +359,12 @@ pub fn SystemLogs() -> Element {
                                                                 "{id}"
                                                             }
                                                         },
-                                                        _ => rsx! { span { class: "text-muted", "-" } },
+                                                        _ => rsx! { span { class: "text-base-content/70", "-" } },
                                                     }
                                                 }
-                                                td { class: "text-mono", "data-label": "操作",
+                                                td { class: "font-mono", "data-label": "操作",
                                                     if operation.is_empty() {
-                                                        span { class: "text-muted", "-" }
+                                                        span { class: "text-base-content/70", "-" }
                                                     } else {
                                                         "{operation}"
                                                     }
@@ -384,7 +384,7 @@ pub fn SystemLogs() -> Element {
                                                     }
                                                     if is_expanded && !raw_pretty.is_empty() {
                                                         pre {
-                                                            class: "text-mono",
+                                                            class: "font-mono",
                                                             style: "margin-top: var(--space-2); padding: var(--space-2); background: var(--color-warm-ivory); border-radius: var(--radius-md); max-height: 240px; overflow: auto; white-space: pre-wrap; word-break: break-word;",
                                                             "{raw_pretty}"
                                                         }
@@ -401,7 +401,7 @@ pub fn SystemLogs() -> Element {
                     // 分页
                     div {
                         style: "display: flex; justify-content: space-between; align-items: center; margin-top: var(--space-4);",
-                        div { class: "text-muted",
+                        div { class: "text-base-content/70",
                             "共 {total} 条 · 第 {cur_page} / {total_pages} 页"
                         }
                         div { class: "page-header-actions",

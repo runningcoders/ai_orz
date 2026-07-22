@@ -18,24 +18,24 @@ pub fn Modal(props: ModalProps) -> Element {
         return rsx! {};
     }
     rsx! {
-        div {
-            class: "modal-overlay",
+        dialog {
+            class: "modal modal-open",
             onclick: move |_| props.on_close.call(()),
             div {
-                class: "modal-content",
+                class: "modal-box",
                 onclick: |e| e.stop_propagation(),
-                div {
-                    class: "modal-header",
-                    h3 { class: "modal-title", "{props.title}" }
+                form {
+                    method: "dialog",
                     button {
-                        class: "modal-close",
+                        class: "btn btn-sm btn-circle btn-ghost absolute right-2 top-2",
                         onclick: move |_| props.on_close.call(()),
-                        "×"
+                        "✕"
                     }
                 }
+                h3 { class: "font-bold text-lg mb-4", "{props.title}" }
                 {props.children}
                 if let Some(footer) = &props.footer {
-                    div { class: "modal-footer", {footer.clone()} }
+                    div { class: "modal-action", {footer.clone()} }
                 }
             }
         }

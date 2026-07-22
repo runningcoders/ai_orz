@@ -12,18 +12,6 @@ pub enum ButtonVariant {
     Ghost,
 }
 
-impl ButtonVariant {
-    fn class(self) -> &'static str {
-        match self {
-            ButtonVariant::Primary => "btn btn-primary",
-            ButtonVariant::Accent => "btn btn-accent",
-            ButtonVariant::Secondary => "btn btn-secondary",
-            ButtonVariant::Danger => "btn btn-danger",
-            ButtonVariant::Ghost => "btn btn-ghost",
-        }
-    }
-}
-
 #[derive(Props, Clone, PartialEq)]
 pub struct ButtonProps {
     #[props(default = ButtonVariant::Primary)]
@@ -38,13 +26,17 @@ pub struct ButtonProps {
 
 #[component]
 pub fn Button(props: ButtonProps) -> Element {
-    let mut class = props.variant.class().to_string();
-    if props.small {
-        class.push_str(" btn-sm");
-    }
+    let variant_class = match props.variant {
+        ButtonVariant::Primary => "btn btn-primary",
+        ButtonVariant::Accent => "btn btn-secondary",
+        ButtonVariant::Secondary => "btn btn-outline",
+        ButtonVariant::Danger => "btn btn-error",
+        ButtonVariant::Ghost => "btn btn-ghost",
+    };
+    let size_class = if props.small { "btn-sm" } else { "" };
     rsx! {
         button {
-            class: "{class}",
+            class: "{variant_class} {size_class}",
             disabled: props.disabled,
             onclick: move |e| {
                 if let Some(handler) = &props.onclick {

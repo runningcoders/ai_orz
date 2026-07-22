@@ -224,33 +224,32 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
             title: title_label.to_string(),
             show: props.show,
             on_close: move |_| on_close.call(()),
-            footer: Some(rsx! {
-                div { class: "modal-footer-actions",
-                    button {
-                        class: "btn btn-secondary",
-                        disabled: submitting(),
-                        onclick: move |_| on_close.call(()),
-                        "取消"
-                    }
-                    button {
-                        class: "btn btn-primary",
-                        disabled: submitting() || loading_data(),
-                        onclick: handle_submit,
-                        if submitting() { "提交中..." } else { if is_create { "创建" } else { "保存" } }
-                    }
+            footer: rsx! {
+                button {
+                    class: "btn btn-ghost",
+                    onclick: move |_| on_close.call(()),
+                    "取消"
                 }
-            }),
+                button {
+                    class: "btn btn-primary",
+                    disabled: submitting() || loading_data(),
+                    onclick: handle_submit,
+                    if submitting() { "提交中..." } else { if is_create { "创建" } else { "保存" } }
+                }
+            },
             if loading_data() {
-                div { class: "modal-body-stack",
-                    p { class: "text-muted", "加载中..." }
+                div { class: "flex justify-center py-8",
+                    span { class: "loading loading-spinner loading-md" }
                 }
             } else {
-                div { class: "modal-body-stack",
+                div { class: "space-y-4",
                     // 标题
-                    div {
-                        label { class: "form-label", "标题 *" }
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium", "标题 *" }
+                        }
                         input {
-                            class: "form-input",
+                            class: "input input-bordered w-full",
                             r#type: "text",
                             placeholder: "请输入任务标题",
                             value: "{title}",
@@ -258,10 +257,12 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
                         }
                     }
                     // 描述
-                    div {
-                        label { class: "form-label", "描述" }
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium", "描述" }
+                        }
                         textarea {
-                            class: "form-input",
+                            class: "textarea textarea-bordered w-full",
                             placeholder: "请输入任务描述（可选）",
                             value: "{description}",
                             oninput: move |e| description.set(e.value().clone()),
@@ -269,10 +270,12 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
                         }
                     }
                     // 优先级
-                    div {
-                        label { class: "form-label", "优先级（0-10）" }
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium", "优先级（0-10）" }
+                        }
                         input {
-                            class: "form-input",
+                            class: "input input-bordered w-full",
                             r#type: "number",
                             min: "0",
                             max: "10",
@@ -285,10 +288,12 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
                         }
                     }
                     // 标签
-                    div {
-                        label { class: "form-label", "标签（逗号分隔）" }
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium", "标签（逗号分隔）" }
+                        }
                         input {
-                            class: "form-input",
+                            class: "input input-bordered w-full",
                             r#type: "text",
                             placeholder: "例如：urgent, frontend, bug",
                             value: "{tags_input}",
@@ -296,10 +301,12 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
                         }
                     }
                     // 截止时间
-                    div {
-                        label { class: "form-label", "截止时间（Unix 毫秒时间戳）" }
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium", "截止时间（Unix 毫秒时间戳）" }
+                        }
                         input {
-                            class: "form-input",
+                            class: "input input-bordered w-full",
                             r#type: "text",
                             placeholder: "例如：1720454400000",
                             value: "{due_at}",
@@ -307,10 +314,12 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
                         }
                     }
                     // 分配对象类型
-                    div {
-                        label { class: "form-label", "分配对象类型" }
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium", "分配对象类型" }
+                        }
                         select {
-                            class: "form-input",
+                            class: "select select-bordered w-full",
                             value: "{assignee_type().to_i32()}",
                             onchange: move |e| {
                                 let v = e.value();
@@ -325,11 +334,13 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
                         }
                     }
                     // 分配对象 ID
-                    div {
-                        label { class: "form-label", "分配对象" }
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium", "分配对象" }
+                        }
                         if matches!(assignee_type(), AssigneeType::Agent) {
                             select {
-                                class: "form-input",
+                                class: "select select-bordered w-full",
                                 value: "{assignee_id}",
                                 onchange: move |e| assignee_id.set(e.value().clone()),
                                 option { value: "", "请选择 Agent" }
@@ -339,7 +350,7 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
                             }
                         } else {
                             input {
-                                class: "form-input",
+                                class: "input input-bordered w-full",
                                 r#type: "text",
                                 placeholder: "请输入用户 ID",
                                 value: "{assignee_id}",
@@ -348,10 +359,12 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
                         }
                     }
                     // 关联项目
-                    div {
-                        label { class: "form-label", "关联项目" }
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium", "关联项目" }
+                        }
                         select {
-                            class: "form-input",
+                            class: "select select-bordered w-full",
                             value: "{project_id}",
                             onchange: move |e| project_id.set(e.value().clone()),
                             option { value: "", "无（独立任务）" }
@@ -361,10 +374,12 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
                         }
                     }
                     // 前置任务
-                    div {
-                        label { class: "form-label", "前置任务 ID（逗号分隔）" }
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium", "前置任务 ID（逗号分隔）" }
+                        }
                         input {
-                            class: "form-input",
+                            class: "input input-bordered w-full",
                             r#type: "text",
                             placeholder: "例如：task_id_1, task_id_2",
                             value: "{dependencies_input}",

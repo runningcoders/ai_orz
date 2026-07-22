@@ -17,298 +17,825 @@ pub fn Navbar() -> Element {
     let is_mobile = use_breakpoint();
     let mut drawer_open = use_signal(|| false);
 
-    let mut close_all = move || {
-        hr_menu_open.set(false);
-        finance_menu_open.set(false);
-        project_menu_open.set(false);
-        system_menu_open.set(false);
-        user_menu_open.set(false);
-    };
-
     let username = if auth().username.is_empty() {
         "用户".to_string()
     } else {
         auth().username.clone()
     };
     let is_admin = auth().is_admin();
-
-    // 桌面端 Navbar（与原实现完全一致，仅在 !is_mobile() 时渲染）
-    let desktop_navbar = rsx! {
-        div { class: "navbar-desktop-only navbar-section",
-            Link { to: Route::MessageChat {}, class: "navbar-item", "💬 对话" }
-            Link { to: Route::MessageSearch {}, class: "navbar-item", "🔍 消息搜索" }
-
-            // 人力资源
-            div { class: "navbar-dropdown-container",
-                button {
-                    class: "navbar-item",
-                    onclick: move |_| { close_all(); hr_menu_open.set(!hr_menu_open()); },
-                    "人力资源"
-                    span { " ▾" }
-                }
-                if hr_menu_open() {
-                    div { class: "navbar-dropdown",
-                        Link { to: Route::HrAgents {}, class: "navbar-dropdown-item",
-                            onclick: move |_| close_all(),
-                            "Agent 管理"
-                        }
-                        Link { to: Route::HrSkills {}, class: "navbar-dropdown-item",
-                            onclick: move |_| close_all(),
-                            "技能库"
-                        }
-                        Link { to: Route::HrMemorySearch {}, class: "navbar-dropdown-item",
-                            onclick: move |_| close_all(),
-                            "记忆搜索"
-                        }
-                        Link { to: Route::HrKnowledgeGraph {}, class: "navbar-dropdown-item",
-                            onclick: move |_| close_all(),
-                            "知识图谱"
-                        }
-                    }
-                }
-            }
-
-            // 财务管理
-            div { class: "navbar-dropdown-container",
-                button {
-                    class: "navbar-item",
-                    onclick: move |_| { close_all(); finance_menu_open.set(!finance_menu_open()); },
-                    "财务管理"
-                    span { " ▾" }
-                }
-                if finance_menu_open() {
-                    div { class: "navbar-dropdown",
-                        Link { to: Route::FinanceModelProviders {}, class: "navbar-dropdown-item",
-                            onclick: move |_| close_all(),
-                            "模型提供商"
-                        }
-                        Link { to: Route::FinanceTools {}, class: "navbar-dropdown-item",
-                            onclick: move |_| close_all(),
-                            "工具管理"
-                        }
-                        Link { to: Route::FinanceMessageChannels {}, class: "navbar-dropdown-item",
-                            onclick: move |_| close_all(),
-                            "消息渠道"
-                        }
-                        Link { to: Route::FinanceAttachments {}, class: "navbar-dropdown-item",
-                            onclick: move |_| close_all(),
-                            "附件管理"
-                        }
-                        Link { to: Route::FinanceMcpServers {}, class: "navbar-dropdown-item",
-                            onclick: move |_| close_all(),
-                            "MCP 服务器"
-                        }
-                    }
-                }
-            }
-
-            // 项目管理
-            div { class: "navbar-dropdown-container",
-                button {
-                    class: "navbar-item",
-                    onclick: move |_| { close_all(); project_menu_open.set(!project_menu_open()); },
-                    "项目管理"
-                    span { " ▾" }
-                }
-                if project_menu_open() {
-                    div { class: "navbar-dropdown",
-                        Link { to: Route::ProjectList {}, class: "navbar-dropdown-item",
-                            onclick: move |_| close_all(),
-                            "项目列表"
-                        }
-                        Link { to: Route::ProjectArtifacts {}, class: "navbar-dropdown-item",
-                            onclick: move |_| close_all(),
-                            "项目产物"
-                        }
-                    }
-                }
-            }
-
-            // 系统管理
-            div { class: "navbar-dropdown-container",
-                button {
-                    class: "navbar-item",
-                    onclick: move |_| { close_all(); system_menu_open.set(!system_menu_open()); },
-                    "系统"
-                    span { " ▾" }
-                }
-                if system_menu_open() {
-                    div { class: "navbar-dropdown",
-                        Link { to: Route::SystemTriggers {}, class: "navbar-dropdown-item",
-                            onclick: move |_| close_all(),
-                            "定时触发器"
-                        }
-                        Link { to: Route::SystemHealth {}, class: "navbar-dropdown-item",
-                            onclick: move |_| close_all(),
-                            "健康检查"
-                        }
-                        if is_admin {
-                            div { class: "navbar-divider" }
-                            Link { to: Route::SystemLogs {}, class: "navbar-dropdown-item",
-                                onclick: move |_| close_all(),
-                                "日志查询"
-                            }
-                            Link { to: Route::SystemBackup {}, class: "navbar-dropdown-item",
-                                onclick: move |_| close_all(),
-                                "备份管理"
-                            }
-                            Link { to: Route::SystemAop {}, class: "navbar-dropdown-item",
-                                onclick: move |_| close_all(),
-                                "AOP 监控"
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    };
-
-    // 桌面端右侧用户菜单（与原实现完全一致）
-    let desktop_user_menu = rsx! {
-        div { class: "navbar-desktop-only navbar-section",
-            div { class: "navbar-dropdown-container",
-                button {
-                    class: "navbar-item",
-                    onclick: move |_| { close_all(); user_menu_open.set(!user_menu_open()); },
-                    span { class: "navbar-avatar",
-                        "{username.chars().next().unwrap_or('U')}"
-                    }
-                    span { "{username}" }
-                    span { " ▾" }
-                }
-                if user_menu_open() {
-                    div { class: "navbar-dropdown navbar-dropdown-right",
-                        Link { to: Route::UserProfile {}, class: "navbar-dropdown-item",
-                            onclick: move |_| close_all(),
-                            "👤 个人信息"
-                        }
-                        if is_admin {
-                            Link { to: Route::OrganizationInfo {}, class: "navbar-dropdown-item",
-                                onclick: move |_| close_all(),
-                                "🏢 组织信息"
-                            }
-                            Link { to: Route::OrganizationUsers {}, class: "navbar-dropdown-item",
-                                onclick: move |_| close_all(),
-                                "👥 用户管理"
-                            }
-                        }
-                        div { class: "navbar-divider" }
-                        Link { to: Route::Settings {}, class: "navbar-dropdown-item",
-                            onclick: move |_| close_all(),
-                            "⚙️ 设置"
-                        }
-                        Link { to: Route::Reception {}, class: "navbar-dropdown-item",
-                            onclick: move |_| {
-                                close_all();
-                                crate::store::auth::clear_login_state();
-                            },
-                            "🚪 退出登录"
-                        }
-                    }
-                }
-            }
-        }
-    };
+    let avatar_char = username.chars().next().unwrap_or('U').to_string().to_uppercase();
 
     rsx! {
-        nav { class: "navbar",
-            // 左侧：品牌 + 桌面导航 + 移动端汉堡按钮
-            div { class: "navbar-section",
-                Link { to: Route::MessageChat {}, class: "navbar-brand", "AI Orz" }
-                {desktop_navbar}
-                if is_mobile() {
-                    button {
-                        class: "navbar-mobile-toggle",
-                        onclick: move |_| drawer_open.set(true),
-                        "☰"
+        nav { class: "navbar bg-neutral text-neutral-content sticky top-0 z-50 shadow-md",
+            // 左侧：品牌
+            div { class: "flex-1",
+                Link { to: Route::MessageChat {}, class: "text-yellow-300 font-bold text-lg tracking-tight cursor-pointer", "AI Orz" }
+            }
+
+            // 中间：桌面导航
+            if !is_mobile() {
+                div { class: "flex-none",
+                    Link { to: Route::MessageChat {}, class: "btn btn-ghost btn-sm text-neutral-content", "💬 对话" }
+                    Link { to: Route::MessageSearch {}, class: "btn btn-ghost btn-sm text-neutral-content", "🔍 消息搜索" }
+
+                    // 人力资源
+                    div { class: "dropdown dropdown-end relative",
+                        div {
+                            tabindex: 0,
+                            role: "button",
+                            class: "btn btn-ghost btn-sm text-neutral-content",
+                            onclick: move |_| {
+                                finance_menu_open.set(false);
+                                project_menu_open.set(false);
+                                system_menu_open.set(false);
+                                user_menu_open.set(false);
+                                hr_menu_open.set(!hr_menu_open());
+                            },
+                            "人力资源",
+                            span { " ▾" }
+                        }
+                        if hr_menu_open() {
+                            ul {
+                                tabindex: 0,
+                                class: "dropdown-content menu absolute top-full right-0 bg-base-100 rounded-box z-[200] w-52 p-2 shadow text-base-content mt-1",
+                                li { class: "menu-title", span { "人力资源" } }
+                                li {
+                                    Link {
+                                        to: Route::HrAgents {},
+                                        onclick: move |_| {
+                                            hr_menu_open.set(false);
+                                            finance_menu_open.set(false);
+                                            project_menu_open.set(false);
+                                            system_menu_open.set(false);
+                                            user_menu_open.set(false);
+                                        },
+                                        "Agent 管理"
+                                    }
+                                }
+                                li {
+                                    Link {
+                                        to: Route::HrSkills {},
+                                        onclick: move |_| {
+                                            hr_menu_open.set(false);
+                                            finance_menu_open.set(false);
+                                            project_menu_open.set(false);
+                                            system_menu_open.set(false);
+                                            user_menu_open.set(false);
+                                        },
+                                        "技能库"
+                                    }
+                                }
+                                li {
+                                    Link {
+                                        to: Route::HrMemorySearch {},
+                                        onclick: move |_| {
+                                            hr_menu_open.set(false);
+                                            finance_menu_open.set(false);
+                                            project_menu_open.set(false);
+                                            system_menu_open.set(false);
+                                            user_menu_open.set(false);
+                                        },
+                                        "记忆搜索"
+                                    }
+                                }
+                                li {
+                                    Link {
+                                        to: Route::HrKnowledgeGraph {},
+                                        onclick: move |_| {
+                                            hr_menu_open.set(false);
+                                            finance_menu_open.set(false);
+                                            project_menu_open.set(false);
+                                            system_menu_open.set(false);
+                                            user_menu_open.set(false);
+                                        },
+                                        "知识图谱"
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 财务管理
+                    div { class: "dropdown dropdown-end relative",
+                        div {
+                            tabindex: 0,
+                            role: "button",
+                            class: "btn btn-ghost btn-sm text-neutral-content",
+                            onclick: move |_| {
+                                hr_menu_open.set(false);
+                                project_menu_open.set(false);
+                                system_menu_open.set(false);
+                                user_menu_open.set(false);
+                                finance_menu_open.set(!finance_menu_open());
+                            },
+                            "财务管理",
+                            span { " ▾" }
+                        }
+                        if finance_menu_open() {
+                            ul {
+                                tabindex: 0,
+                                class: "dropdown-content menu absolute top-full right-0 bg-base-100 rounded-box z-[200] w-52 p-2 shadow text-base-content mt-1",
+                                li { class: "menu-title", span { "财务管理" } }
+                                li {
+                                    Link {
+                                        to: Route::FinanceModelProviders {},
+                                        onclick: move |_| {
+                                            hr_menu_open.set(false);
+                                            finance_menu_open.set(false);
+                                            project_menu_open.set(false);
+                                            system_menu_open.set(false);
+                                            user_menu_open.set(false);
+                                        },
+                                        "模型提供商"
+                                    }
+                                }
+                                li {
+                                    Link {
+                                        to: Route::FinanceTools {},
+                                        onclick: move |_| {
+                                            hr_menu_open.set(false);
+                                            finance_menu_open.set(false);
+                                            project_menu_open.set(false);
+                                            system_menu_open.set(false);
+                                            user_menu_open.set(false);
+                                        },
+                                        "工具管理"
+                                    }
+                                }
+                                li {
+                                    Link {
+                                        to: Route::FinanceMessageChannels {},
+                                        onclick: move |_| {
+                                            hr_menu_open.set(false);
+                                            finance_menu_open.set(false);
+                                            project_menu_open.set(false);
+                                            system_menu_open.set(false);
+                                            user_menu_open.set(false);
+                                        },
+                                        "消息渠道"
+                                    }
+                                }
+                                li {
+                                    Link {
+                                        to: Route::FinanceAttachments {},
+                                        onclick: move |_| {
+                                            hr_menu_open.set(false);
+                                            finance_menu_open.set(false);
+                                            project_menu_open.set(false);
+                                            system_menu_open.set(false);
+                                            user_menu_open.set(false);
+                                        },
+                                        "附件管理"
+                                    }
+                                }
+                                li {
+                                    Link {
+                                        to: Route::FinanceMcpServers {},
+                                        onclick: move |_| {
+                                            hr_menu_open.set(false);
+                                            finance_menu_open.set(false);
+                                            project_menu_open.set(false);
+                                            system_menu_open.set(false);
+                                            user_menu_open.set(false);
+                                        },
+                                        "MCP 服务器"
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 项目管理
+                    div { class: "dropdown dropdown-end relative",
+                        div {
+                            tabindex: 0,
+                            role: "button",
+                            class: "btn btn-ghost btn-sm text-neutral-content",
+                            onclick: move |_| {
+                                hr_menu_open.set(false);
+                                finance_menu_open.set(false);
+                                system_menu_open.set(false);
+                                user_menu_open.set(false);
+                                project_menu_open.set(!project_menu_open());
+                            },
+                            "项目管理",
+                            span { " ▾" }
+                        }
+                        if project_menu_open() {
+                            ul {
+                                tabindex: 0,
+                                class: "dropdown-content menu absolute top-full right-0 bg-base-100 rounded-box z-[200] w-52 p-2 shadow text-base-content mt-1",
+                                li { class: "menu-title", span { "项目管理" } }
+                                li {
+                                    Link {
+                                        to: Route::ProjectList {},
+                                        onclick: move |_| {
+                                            hr_menu_open.set(false);
+                                            finance_menu_open.set(false);
+                                            project_menu_open.set(false);
+                                            system_menu_open.set(false);
+                                            user_menu_open.set(false);
+                                        },
+                                        "项目列表"
+                                    }
+                                }
+                                li {
+                                    Link {
+                                        to: Route::ProjectArtifacts {},
+                                        onclick: move |_| {
+                                            hr_menu_open.set(false);
+                                            finance_menu_open.set(false);
+                                            project_menu_open.set(false);
+                                            system_menu_open.set(false);
+                                            user_menu_open.set(false);
+                                        },
+                                        "项目产物"
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 系统管理
+                    div { class: "dropdown dropdown-end relative",
+                        div {
+                            tabindex: 0,
+                            role: "button",
+                            class: "btn btn-ghost btn-sm text-neutral-content",
+                            onclick: move |_| {
+                                hr_menu_open.set(false);
+                                finance_menu_open.set(false);
+                                project_menu_open.set(false);
+                                user_menu_open.set(false);
+                                system_menu_open.set(!system_menu_open());
+                            },
+                            "系统",
+                            span { " ▾" }
+                        }
+                        if system_menu_open() {
+                            ul {
+                                tabindex: 0,
+                                class: "dropdown-content menu absolute top-full right-0 bg-base-100 rounded-box z-[200] w-52 p-2 shadow text-base-content mt-1",
+                                li { class: "menu-title", span { "系统" } }
+                                li {
+                                    Link {
+                                        to: Route::SystemTriggers {},
+                                        onclick: move |_| {
+                                            hr_menu_open.set(false);
+                                            finance_menu_open.set(false);
+                                            project_menu_open.set(false);
+                                            system_menu_open.set(false);
+                                            user_menu_open.set(false);
+                                        },
+                                        "定时触发器"
+                                    }
+                                }
+                                li {
+                                    Link {
+                                        to: Route::SystemHealth {},
+                                        onclick: move |_| {
+                                            hr_menu_open.set(false);
+                                            finance_menu_open.set(false);
+                                            project_menu_open.set(false);
+                                            system_menu_open.set(false);
+                                            user_menu_open.set(false);
+                                        },
+                                        "健康检查"
+                                    }
+                                }
+                                if is_admin {
+                                    li {
+                                        hr { class: "divider my-0" }
+                                    }
+                                    li {
+                                        Link {
+                                            to: Route::SystemLogs {},
+                                            onclick: move |_| {
+                                                hr_menu_open.set(false);
+                                                finance_menu_open.set(false);
+                                                project_menu_open.set(false);
+                                                system_menu_open.set(false);
+                                                user_menu_open.set(false);
+                                            },
+                                            "日志查询"
+                                        }
+                                    }
+                                    li {
+                                        Link {
+                                            to: Route::SystemBackup {},
+                                            onclick: move |_| {
+                                                hr_menu_open.set(false);
+                                                finance_menu_open.set(false);
+                                                project_menu_open.set(false);
+                                                system_menu_open.set(false);
+                                                user_menu_open.set(false);
+                                            },
+                                            "备份管理"
+                                        }
+                                    }
+                                    li {
+                                        Link {
+                                            to: Route::SystemAop {},
+                                            onclick: move |_| {
+                                                hr_menu_open.set(false);
+                                                finance_menu_open.set(false);
+                                                project_menu_open.set(false);
+                                                system_menu_open.set(false);
+                                                user_menu_open.set(false);
+                                            },
+                                            "AOP 监控"
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
 
-            // 右侧：桌面用户菜单 / 移动端头像（点击打开抽屉）
-            if !is_mobile() {
-                {desktop_user_menu}
-            } else {
-                button {
-                    class: "navbar-mobile-toggle",
-                    onclick: move |_| drawer_open.set(true),
-                    style: "font-size: 20px;",
-                    span { class: "navbar-avatar",
-                        "{username.chars().next().unwrap_or('U')}"
+            // 右侧：桌面用户菜单 / 移动端汉堡按钮
+            div { class: "flex-none",
+                if !is_mobile() {
+                    // 桌面端用户菜单
+                    div { class: "dropdown dropdown-end relative",
+                        div {
+                            tabindex: 0,
+                            role: "button",
+                            class: "btn btn-ghost btn-sm text-neutral-content gap-2",
+                            onclick: move |_| {
+                                hr_menu_open.set(false);
+                                finance_menu_open.set(false);
+                                project_menu_open.set(false);
+                                system_menu_open.set(false);
+                                user_menu_open.set(!user_menu_open());
+                            },
+                            div { class: "avatar",
+                                div { class: "w-8 rounded-full bg-primary text-primary-content flex items-center justify-center text-sm font-bold", "{avatar_char}" }
+                            }
+                            span { "{username}" }
+                            span { " ▾" }
+                        }
+                        if user_menu_open() {
+                            ul {
+                                tabindex: 0,
+                                class: "dropdown-content menu absolute top-full right-0 bg-base-100 rounded-box z-[200] w-52 p-2 shadow text-base-content mt-1",
+                                li { class: "menu-title", span { "账户" } }
+                                li {
+                                    Link {
+                                        to: Route::UserProfile {},
+                                        onclick: move |_| {
+                                            hr_menu_open.set(false);
+                                            finance_menu_open.set(false);
+                                            project_menu_open.set(false);
+                                            system_menu_open.set(false);
+                                            user_menu_open.set(false);
+                                        },
+                                        "👤 个人信息"
+                                    }
+                                }
+                                if is_admin {
+                                    li {
+                                        Link {
+                                            to: Route::OrganizationInfo {},
+                                            onclick: move |_| {
+                                                hr_menu_open.set(false);
+                                                finance_menu_open.set(false);
+                                                project_menu_open.set(false);
+                                                system_menu_open.set(false);
+                                                user_menu_open.set(false);
+                                            },
+                                            "🏢 组织信息"
+                                        }
+                                    }
+                                    li {
+                                        Link {
+                                            to: Route::OrganizationUsers {},
+                                            onclick: move |_| {
+                                                hr_menu_open.set(false);
+                                                finance_menu_open.set(false);
+                                                project_menu_open.set(false);
+                                                system_menu_open.set(false);
+                                                user_menu_open.set(false);
+                                            },
+                                            "👥 用户管理"
+                                        }
+                                    }
+                                }
+                                li {
+                                    hr { class: "divider my-0" }
+                                }
+                                li {
+                                    Link {
+                                        to: Route::Settings {},
+                                        onclick: move |_| {
+                                            hr_menu_open.set(false);
+                                            finance_menu_open.set(false);
+                                            project_menu_open.set(false);
+                                            system_menu_open.set(false);
+                                            user_menu_open.set(false);
+                                        },
+                                        "⚙️ 设置"
+                                    }
+                                }
+                                li {
+                                    Link {
+                                        to: Route::Reception {},
+                                        onclick: move |_| {
+                                            hr_menu_open.set(false);
+                                            finance_menu_open.set(false);
+                                            project_menu_open.set(false);
+                                            system_menu_open.set(false);
+                                            user_menu_open.set(false);
+                                            crate::store::auth::clear_login_state();
+                                        },
+                                        "🚪 退出登录"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // 移动端汉堡按钮
+                    label {
+                        r#for: "mobile-drawer",
+                        class: "btn btn-square btn-ghost text-neutral-content",
+                        onclick: move |_| drawer_open.set(true),
+                        "☰"
                     }
                 }
             }
         }
 
         // 移动端抽屉
-        if is_mobile() && drawer_open() {
-            div { class: "navbar-overlay", onclick: move |_| drawer_open.set(false) }
-            div { class: "navbar-drawer open",
-                div { class: "navbar-drawer-section", "导航" }
-                Link { to: Route::MessageChat {}, class: "navbar-drawer-item",
-                    onclick: move |_| drawer_open.set(false), "💬 对话" }
-                Link { to: Route::MessageSearch {}, class: "navbar-drawer-item",
-                    onclick: move |_| drawer_open.set(false), "🔍 消息搜索" }
-
-                div { class: "navbar-drawer-section", "人力资源" }
-                Link { to: Route::HrAgents {}, class: "navbar-drawer-item",
-                    onclick: move |_| drawer_open.set(false), "Agent 管理" }
-                Link { to: Route::HrSkills {}, class: "navbar-drawer-item",
-                    onclick: move |_| drawer_open.set(false), "技能库" }
-                Link { to: Route::HrMemorySearch {}, class: "navbar-drawer-item",
-                    onclick: move |_| drawer_open.set(false), "记忆搜索" }
-                Link { to: Route::HrKnowledgeGraph {}, class: "navbar-drawer-item",
-                    onclick: move |_| drawer_open.set(false), "知识图谱" }
-
-                div { class: "navbar-drawer-section", "财务管理" }
-                Link { to: Route::FinanceModelProviders {}, class: "navbar-drawer-item",
-                    onclick: move |_| drawer_open.set(false), "模型提供商" }
-                Link { to: Route::FinanceTools {}, class: "navbar-drawer-item",
-                    onclick: move |_| drawer_open.set(false), "工具管理" }
-                Link { to: Route::FinanceMessageChannels {}, class: "navbar-drawer-item",
-                    onclick: move |_| drawer_open.set(false), "消息渠道" }
-                Link { to: Route::FinanceAttachments {}, class: "navbar-drawer-item",
-                    onclick: move |_| drawer_open.set(false), "附件管理" }
-                Link { to: Route::FinanceMcpServers {}, class: "navbar-drawer-item",
-                    onclick: move |_| drawer_open.set(false), "MCP 服务器" }
-
-                div { class: "navbar-drawer-section", "项目管理" }
-                Link { to: Route::ProjectList {}, class: "navbar-drawer-item",
-                    onclick: move |_| drawer_open.set(false), "项目列表" }
-                Link { to: Route::ProjectArtifacts {}, class: "navbar-drawer-item",
-                    onclick: move |_| drawer_open.set(false), "项目产物" }
-
-                div { class: "navbar-drawer-section", "系统" }
-                Link { to: Route::SystemTriggers {}, class: "navbar-drawer-item",
-                    onclick: move |_| drawer_open.set(false), "定时触发器" }
-                Link { to: Route::SystemHealth {}, class: "navbar-drawer-item",
-                    onclick: move |_| drawer_open.set(false), "健康检查" }
-                if is_admin {
-                    Link { to: Route::SystemLogs {}, class: "navbar-drawer-item",
-                        onclick: move |_| drawer_open.set(false), "日志查询" }
-                    Link { to: Route::SystemBackup {}, class: "navbar-drawer-item",
-                        onclick: move |_| drawer_open.set(false), "备份管理" }
-                    Link { to: Route::SystemAop {}, class: "navbar-drawer-item",
-                        onclick: move |_| drawer_open.set(false), "AOP 监控" }
+        if is_mobile() {
+            div { class: "drawer drawer-end",
+                input {
+                    id: "mobile-drawer",
+                    r#type: "checkbox",
+                    class: "drawer-toggle",
+                    checked: drawer_open(),
+                    onchange: move |e| drawer_open.set(e.checked()),
                 }
+                div { class: "drawer-side z-50",
+                    label {
+                        r#for: "mobile-drawer",
+                        class: "drawer-overlay",
+                        onclick: move |_| drawer_open.set(false),
+                    }
+                    ul { class: "menu bg-base-100 text-base-content min-h-full w-80 p-4",
+                        // 用户信息头部
+                        li { class: "mb-4",
+                            div { class: "flex items-center gap-3 py-2",
+                                div { class: "avatar",
+                                    div { class: "w-12 rounded-full bg-primary text-primary-content flex items-center justify-center text-lg font-bold", "{avatar_char}" }
+                                }
+                                div { class: "font-semibold text-lg", "{username}" }
+                            }
+                        }
 
-                div { class: "navbar-drawer-divider" }
-                div { class: "navbar-drawer-section", "账户" }
-                Link { to: Route::UserProfile {}, class: "navbar-drawer-item",
-                    onclick: move |_| drawer_open.set(false), "👤 个人信息" }
-                if is_admin {
-                    Link { to: Route::OrganizationInfo {}, class: "navbar-drawer-item",
-                        onclick: move |_| drawer_open.set(false), "🏢 组织信息" }
-                    Link { to: Route::OrganizationUsers {}, class: "navbar-drawer-item",
-                        onclick: move |_| drawer_open.set(false), "👥 用户管理" }
+                        li { class: "menu-title", span { "导航" } }
+                        li {
+                            Link {
+                                to: Route::MessageChat {},
+                                onclick: move |_| {
+                                    hr_menu_open.set(false);
+                                    finance_menu_open.set(false);
+                                    project_menu_open.set(false);
+                                    system_menu_open.set(false);
+                                    user_menu_open.set(false);
+                                    drawer_open.set(false);
+                                },
+                                "💬 对话"
+                            }
+                        }
+                        li {
+                            Link {
+                                to: Route::MessageSearch {},
+                                onclick: move |_| {
+                                    hr_menu_open.set(false);
+                                    finance_menu_open.set(false);
+                                    project_menu_open.set(false);
+                                    system_menu_open.set(false);
+                                    user_menu_open.set(false);
+                                    drawer_open.set(false);
+                                },
+                                "🔍 消息搜索"
+                            }
+                        }
+
+                        li { class: "menu-title", span { "人力资源" } }
+                        li {
+                            Link {
+                                to: Route::HrAgents {},
+                                onclick: move |_| {
+                                    hr_menu_open.set(false);
+                                    finance_menu_open.set(false);
+                                    project_menu_open.set(false);
+                                    system_menu_open.set(false);
+                                    user_menu_open.set(false);
+                                    drawer_open.set(false);
+                                },
+                                "Agent 管理"
+                            }
+                        }
+                        li {
+                            Link {
+                                to: Route::HrSkills {},
+                                onclick: move |_| {
+                                    hr_menu_open.set(false);
+                                    finance_menu_open.set(false);
+                                    project_menu_open.set(false);
+                                    system_menu_open.set(false);
+                                    user_menu_open.set(false);
+                                    drawer_open.set(false);
+                                },
+                                "技能库"
+                            }
+                        }
+                        li {
+                            Link {
+                                to: Route::HrMemorySearch {},
+                                onclick: move |_| {
+                                    hr_menu_open.set(false);
+                                    finance_menu_open.set(false);
+                                    project_menu_open.set(false);
+                                    system_menu_open.set(false);
+                                    user_menu_open.set(false);
+                                    drawer_open.set(false);
+                                },
+                                "记忆搜索"
+                            }
+                        }
+                        li {
+                            Link {
+                                to: Route::HrKnowledgeGraph {},
+                                onclick: move |_| {
+                                    hr_menu_open.set(false);
+                                    finance_menu_open.set(false);
+                                    project_menu_open.set(false);
+                                    system_menu_open.set(false);
+                                    user_menu_open.set(false);
+                                    drawer_open.set(false);
+                                },
+                                "知识图谱"
+                            }
+                        }
+
+                        li { class: "menu-title", span { "财务管理" } }
+                        li {
+                            Link {
+                                to: Route::FinanceModelProviders {},
+                                onclick: move |_| {
+                                    hr_menu_open.set(false);
+                                    finance_menu_open.set(false);
+                                    project_menu_open.set(false);
+                                    system_menu_open.set(false);
+                                    user_menu_open.set(false);
+                                    drawer_open.set(false);
+                                },
+                                "模型提供商"
+                            }
+                        }
+                        li {
+                            Link {
+                                to: Route::FinanceTools {},
+                                onclick: move |_| {
+                                    hr_menu_open.set(false);
+                                    finance_menu_open.set(false);
+                                    project_menu_open.set(false);
+                                    system_menu_open.set(false);
+                                    user_menu_open.set(false);
+                                    drawer_open.set(false);
+                                },
+                                "工具管理"
+                            }
+                        }
+                        li {
+                            Link {
+                                to: Route::FinanceMessageChannels {},
+                                onclick: move |_| {
+                                    hr_menu_open.set(false);
+                                    finance_menu_open.set(false);
+                                    project_menu_open.set(false);
+                                    system_menu_open.set(false);
+                                    user_menu_open.set(false);
+                                    drawer_open.set(false);
+                                },
+                                "消息渠道"
+                            }
+                        }
+                        li {
+                            Link {
+                                to: Route::FinanceAttachments {},
+                                onclick: move |_| {
+                                    hr_menu_open.set(false);
+                                    finance_menu_open.set(false);
+                                    project_menu_open.set(false);
+                                    system_menu_open.set(false);
+                                    user_menu_open.set(false);
+                                    drawer_open.set(false);
+                                },
+                                "附件管理"
+                            }
+                        }
+                        li {
+                            Link {
+                                to: Route::FinanceMcpServers {},
+                                onclick: move |_| {
+                                    hr_menu_open.set(false);
+                                    finance_menu_open.set(false);
+                                    project_menu_open.set(false);
+                                    system_menu_open.set(false);
+                                    user_menu_open.set(false);
+                                    drawer_open.set(false);
+                                },
+                                "MCP 服务器"
+                            }
+                        }
+
+                        li { class: "menu-title", span { "项目管理" } }
+                        li {
+                            Link {
+                                to: Route::ProjectList {},
+                                onclick: move |_| {
+                                    hr_menu_open.set(false);
+                                    finance_menu_open.set(false);
+                                    project_menu_open.set(false);
+                                    system_menu_open.set(false);
+                                    user_menu_open.set(false);
+                                    drawer_open.set(false);
+                                },
+                                "项目列表"
+                            }
+                        }
+                        li {
+                            Link {
+                                to: Route::ProjectArtifacts {},
+                                onclick: move |_| {
+                                    hr_menu_open.set(false);
+                                    finance_menu_open.set(false);
+                                    project_menu_open.set(false);
+                                    system_menu_open.set(false);
+                                    user_menu_open.set(false);
+                                    drawer_open.set(false);
+                                },
+                                "项目产物"
+                            }
+                        }
+
+                        li { class: "menu-title", span { "系统" } }
+                        li {
+                            Link {
+                                to: Route::SystemTriggers {},
+                                onclick: move |_| {
+                                    hr_menu_open.set(false);
+                                    finance_menu_open.set(false);
+                                    project_menu_open.set(false);
+                                    system_menu_open.set(false);
+                                    user_menu_open.set(false);
+                                    drawer_open.set(false);
+                                },
+                                "定时触发器"
+                            }
+                        }
+                        li {
+                            Link {
+                                to: Route::SystemHealth {},
+                                onclick: move |_| {
+                                    hr_menu_open.set(false);
+                                    finance_menu_open.set(false);
+                                    project_menu_open.set(false);
+                                    system_menu_open.set(false);
+                                    user_menu_open.set(false);
+                                    drawer_open.set(false);
+                                },
+                                "健康检查"
+                            }
+                        }
+                        if is_admin {
+                            li {
+                                Link {
+                                    to: Route::SystemLogs {},
+                                    onclick: move |_| {
+                                        hr_menu_open.set(false);
+                                        finance_menu_open.set(false);
+                                        project_menu_open.set(false);
+                                        system_menu_open.set(false);
+                                        user_menu_open.set(false);
+                                        drawer_open.set(false);
+                                    },
+                                    "日志查询"
+                                }
+                            }
+                            li {
+                                Link {
+                                    to: Route::SystemBackup {},
+                                    onclick: move |_| {
+                                        hr_menu_open.set(false);
+                                        finance_menu_open.set(false);
+                                        project_menu_open.set(false);
+                                        system_menu_open.set(false);
+                                        user_menu_open.set(false);
+                                        drawer_open.set(false);
+                                    },
+                                    "备份管理"
+                                }
+                            }
+                            li {
+                                Link {
+                                    to: Route::SystemAop {},
+                                    onclick: move |_| {
+                                        hr_menu_open.set(false);
+                                        finance_menu_open.set(false);
+                                        project_menu_open.set(false);
+                                        system_menu_open.set(false);
+                                        user_menu_open.set(false);
+                                        drawer_open.set(false);
+                                    },
+                                    "AOP 监控"
+                                }
+                            }
+                        }
+
+                        li {
+                            hr { class: "divider my-0" }
+                        }
+                        li { class: "menu-title", span { "账户" } }
+                        li {
+                            Link {
+                                to: Route::UserProfile {},
+                                onclick: move |_| {
+                                    hr_menu_open.set(false);
+                                    finance_menu_open.set(false);
+                                    project_menu_open.set(false);
+                                    system_menu_open.set(false);
+                                    user_menu_open.set(false);
+                                    drawer_open.set(false);
+                                },
+                                "👤 个人信息"
+                            }
+                        }
+                        if is_admin {
+                            li {
+                                Link {
+                                    to: Route::OrganizationInfo {},
+                                    onclick: move |_| {
+                                        hr_menu_open.set(false);
+                                        finance_menu_open.set(false);
+                                        project_menu_open.set(false);
+                                        system_menu_open.set(false);
+                                        user_menu_open.set(false);
+                                        drawer_open.set(false);
+                                    },
+                                    "🏢 组织信息"
+                                }
+                            }
+                            li {
+                                Link {
+                                    to: Route::OrganizationUsers {},
+                                    onclick: move |_| {
+                                        hr_menu_open.set(false);
+                                        finance_menu_open.set(false);
+                                        project_menu_open.set(false);
+                                        system_menu_open.set(false);
+                                        user_menu_open.set(false);
+                                        drawer_open.set(false);
+                                    },
+                                    "👥 用户管理"
+                                }
+                            }
+                        }
+                        li {
+                            Link {
+                                to: Route::Settings {},
+                                onclick: move |_| {
+                                    hr_menu_open.set(false);
+                                    finance_menu_open.set(false);
+                                    project_menu_open.set(false);
+                                    system_menu_open.set(false);
+                                    user_menu_open.set(false);
+                                    drawer_open.set(false);
+                                },
+                                "⚙️ 设置"
+                            }
+                        }
+                        li {
+                            Link {
+                                to: Route::Reception {},
+                                onclick: move |_| {
+                                    drawer_open.set(false);
+                                    hr_menu_open.set(false);
+                                    finance_menu_open.set(false);
+                                    project_menu_open.set(false);
+                                    system_menu_open.set(false);
+                                    user_menu_open.set(false);
+                                    crate::store::auth::clear_login_state();
+                                },
+                                "🚪 退出登录"
+                            }
+                        }
+                    }
                 }
-                Link { to: Route::Settings {}, class: "navbar-drawer-item",
-                    onclick: move |_| drawer_open.set(false), "⚙️ 设置" }
-                Link { to: Route::Reception {}, class: "navbar-drawer-item",
-                    onclick: move |_| {
-                        drawer_open.set(false);
-                        crate::store::auth::clear_login_state();
-                    }, "🚪 退出登录" }
             }
         }
     }

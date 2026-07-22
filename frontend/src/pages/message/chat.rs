@@ -39,15 +39,6 @@ fn status_text(status: i32) -> &'static str {
     }
 }
 
-fn role_class(role: i32) -> &'static str {
-    match role {
-        0 => "user",
-        1 => "agent",
-        2 => "system",
-        _ => "agent",
-    }
-}
-
 fn role_avatar(role: i32) -> &'static str {
     match role {
         0 => "U",
@@ -86,8 +77,8 @@ pub fn MessageChat() -> Element {
     // 权限检查：未登录时重定向到登录页
     if !crate::hooks::use_require_auth() {
         return rsx! {
-            div { class: "loading-screen",
-                div { class: "loading-spinner" }
+            div { class: "min-h-screen flex items-center justify-center",
+                span { class: "loading loading-spinner loading-lg" }
             }
         };
     }
@@ -525,34 +516,38 @@ pub fn MessageChat() -> Element {
     let chat_content = if let Some(project) = current_project {
         let project_name = project.name.clone();
         rsx! {
-            div { class: "chat-header",
+            div { class: "p-3 border-b border-base-300 flex items-center justify-between bg-base-100 gap-2",
                 if is_mobile() {
                     button {
-                        class: "chat-mobile-back",
+                        class: "btn btn-ghost btn-sm",
                         onclick: move |_| sidebar_open.set(true),
                         "←"
                     }
                 }
-                h2 { class: "chat-header-title", "{project_name}" }
-                if sse_connected() {
-                    span { class: "chat-status connected", "● 实时" }
-                } else {
-                    span { class: "chat-status disconnected", "○ 连接中..." }
+                h2 { class: "font-semibold text-lg truncate", "{project_name}" }
+                div { class: "flex items-center gap-2 ml-auto",
+                    if sse_connected() {
+                        span { class: "text-success text-sm", "● 实时" }
+                    } else {
+                        span { class: "text-base-content/50 text-sm", "○ 连接中..." }
+                    }
                 }
             }
 
-            div { class: "chat-messages",
+            div { class: "flex-1 overflow-y-auto p-4 bg-base-100",
                 if error().is_empty() && loading_messages() && messages().is_empty() {
-                    div { class: "state-loading", "加载消息中..." }
+                    div { class: "flex items-center justify-center py-12",
+                        span { class: "loading loading-spinner loading-md" }
+                        span { class: "ml-2 text-base-content/60", "加载消息中..." }
+                    }
                 } else if error().is_empty() && messages().is_empty() && !loading_messages() {
-                    div { class: "state-empty",
-                        div { class: "state-empty-icon", "💬" }
-                        div { "暂无消息，开始对话吧" }
+                    div { class: "text-center py-12",
+                        div { class: "text-5xl mb-3", "💬" }
+                        div { class: "text-base-content/60", "暂无消息，开始对话吧" }
                     }
                 } else {
                     div {
-                        class: "message-list",
-                        style: "min-height: 100%;",
+                        class: "flex flex-col gap-1 min-h-full",
                         onscroll: move |e| {
                             if e.scroll_top() == 0.0 {
                                 load_older();
@@ -561,12 +556,7 @@ pub fn MessageChat() -> Element {
                         for entry in group_messages_by_date(&messages()) {
                             match entry {
                                 MessageListEntry::DateDivider(label) => rsx! {
-                                    div { class: "chat-date-divider",
-                                        key: "divider-{label}-{messages().len()}",
-                                        span { class: "chat-date-line" }
-                                        span { class: "chat-date-label", "{label}" }
-                                        span { class: "chat-date-line" }
-                                    }
+                                    div { class: "divider my-2", key: "divider-{label}-{messages().len()}", "{label}" }
                                 },
                                 MessageListEntry::Message(msg) => rsx! {
                                     {
@@ -574,13 +564,20 @@ pub fn MessageChat() -> Element {
                                         let msg_role = msg.from_role;
                                         let msg_clone = msg.clone();
                                         let expanded = tool_expanded.read().contains(&msg_id);
+                                        let is_user = msg_role == 0;
+                                        let is_system = msg_role == 2;
                                         rsx! {
                                             div {
-                                                class: "message-item {role_class(msg_role)}",
+                                                class: if is_user { "chat chat-end" } else if is_system { "chat chat-start" } else { "chat chat-start" },
                                                 key: "{msg_id}",
-                                                div { class: "message-avatar", "{role_avatar(msg_role)}" }
+                                                div { class: "chat-image avatar",
+                                                    div {
+                                                        class: if is_user { "w-10 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold" } else if is_system { "w-10 rounded-full bg-info text-info-content flex items-center justify-center font-bold" } else { "w-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center font-bold" },
+                                                        "{role_avatar(msg_role)}"
+                                                    }
+                                                }
                                                 {
-                                                    render_message_content(&msg_clone, expanded, {
+                                                    render_message_content(&msg_clone, expanded, is_user, is_system, {
                                                         let mid = msg_id.clone();
                                                         move || {
                                                             if tool_expanded.read().contains(&mid) {
@@ -598,12 +595,16 @@ pub fn MessageChat() -> Element {
                             }
                         }
                         if is_typing() {
-                            div { class: "message-item agent",
-                                div { class: "message-avatar", "A" }
-                                div { class: "typing-indicator",
-                                    div { class: "typing-dot" }
-                                    div { class: "typing-dot" }
-                                    div { class: "typing-dot" }
+                            div { class: "chat chat-start",
+                                div { class: "chat-image avatar",
+                                    div { class: "w-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center font-bold", "A" }
+                                }
+                                div { class: "chat-bubble chat-bubble-neutral",
+                                    div { class: "typing-indicator flex gap-1",
+                                        div { class: "typing-dot" }
+                                        div { class: "typing-dot" }
+                                        div { class: "typing-dot" }
+                                    }
                                 }
                             }
                         }
@@ -632,42 +633,38 @@ pub fn MessageChat() -> Element {
             .map(|a| a.agent_name)
             .unwrap_or_else(|| "前台 Agent".to_string());
         rsx! {
-            div { class: "chat-header",
+            div { class: "p-3 border-b border-base-300 flex items-center justify-between bg-base-100 gap-2",
                 if is_mobile() {
                     button {
-                        class: "chat-mobile-back",
+                        class: "btn btn-ghost btn-sm",
                         onclick: move |_| sidebar_open.set(true),
                         "←"
                     }
                 }
-                h2 { class: "chat-header-title", "默认对话" }
-                span { class: "chat-header-agent", "当前前台：{reception_name}" }
-                if sse_connected() {
-                    span { class: "chat-status connected", "● 实时" }
-                } else {
-                    span { class: "chat-status disconnected", "○ 连接中..." }
+                h2 { class: "font-semibold text-lg", "默认对话" }
+                span { class: "text-sm text-base-content/60 truncate", "当前前台：{reception_name}" }
+                div { class: "flex items-center gap-2 ml-auto",
+                    if sse_connected() {
+                        span { class: "text-success text-sm", "● 实时" }
+                    } else {
+                        span { class: "text-base-content/50 text-sm", "○ 连接中..." }
+                    }
                 }
             }
 
-            div { class: "chat-messages",
+            div { class: "flex-1 overflow-y-auto p-4 bg-base-100",
                 if messages().is_empty() {
-                    div { class: "state-empty",
-                        div { class: "state-empty-icon", "💬" }
-                        div { "与前台 Agent 直接沟通，复杂需求可新建项目组织" }
+                    div { class: "text-center py-12",
+                        div { class: "text-5xl mb-3", "💬" }
+                        div { class: "text-base-content/60", "与前台 Agent 直接沟通，复杂需求可新建项目组织" }
                     }
                 } else {
                     div {
-                        class: "message-list",
-                        style: "min-height: 100%;",
+                        class: "flex flex-col gap-1 min-h-full",
                         for entry in group_messages_by_date(&messages()) {
                             match entry {
                                 MessageListEntry::DateDivider(label) => rsx! {
-                                    div { class: "chat-date-divider",
-                                        key: "divider-{label}-{messages().len()}",
-                                        span { class: "chat-date-line" }
-                                        span { class: "chat-date-label", "{label}" }
-                                        span { class: "chat-date-line" }
-                                    }
+                                    div { class: "divider my-2", key: "divider-{label}-{messages().len()}", "{label}" }
                                 },
                                 MessageListEntry::Message(msg) => rsx! {
                                     {
@@ -675,13 +672,20 @@ pub fn MessageChat() -> Element {
                                         let msg_role = msg.from_role;
                                         let msg_clone = msg.clone();
                                         let expanded = tool_expanded.read().contains(&msg_id);
+                                        let is_user = msg_role == 0;
+                                        let is_system = msg_role == 2;
                                         rsx! {
                                             div {
-                                                class: "message-item {role_class(msg_role)}",
+                                                class: if is_user { "chat chat-end" } else if is_system { "chat chat-start" } else { "chat chat-start" },
                                                 key: "{msg_id}",
-                                                div { class: "message-avatar", "{role_avatar(msg_role)}" }
+                                                div { class: "chat-image avatar",
+                                                    div {
+                                                        class: if is_user { "w-10 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold" } else if is_system { "w-10 rounded-full bg-info text-info-content flex items-center justify-center font-bold" } else { "w-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center font-bold" },
+                                                        "{role_avatar(msg_role)}"
+                                                    }
+                                                }
                                                 {
-                                                    render_message_content(&msg_clone, expanded, {
+                                                    render_message_content(&msg_clone, expanded, is_user, is_system, {
                                                         let mid = msg_id.clone();
                                                         move || {
                                                             if tool_expanded.read().contains(&mid) {
@@ -699,12 +703,16 @@ pub fn MessageChat() -> Element {
                             }
                         }
                         if is_typing() {
-                            div { class: "message-item agent",
-                                div { class: "message-avatar", "A" }
-                                div { class: "typing-indicator",
-                                    div { class: "typing-dot" }
-                                    div { class: "typing-dot" }
-                                    div { class: "typing-dot" }
+                            div { class: "chat chat-start",
+                                div { class: "chat-image avatar",
+                                    div { class: "w-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center font-bold", "A" }
+                                }
+                                div { class: "chat-bubble chat-bubble-neutral",
+                                    div { class: "typing-indicator flex gap-1",
+                                        div { class: "typing-dot" }
+                                        div { class: "typing-dot" }
+                                        div { class: "typing-dot" }
+                                    }
                                 }
                             }
                         }
@@ -729,49 +737,57 @@ pub fn MessageChat() -> Element {
         }
     };
 
-    // 移动端 sidebar 显示条件：未选项目（默认显示）或 用户主动打开（返回按钮）
-    // 桌面端 sidebar 始终显示（CSS 无 transform）
     let sidebar_visible_on_mobile = selected_project().is_none() || sidebar_open();
-    let sidebar_class = if is_mobile() && !sidebar_visible_on_mobile {
-        "chat-sidebar"
-    } else if is_mobile() && sidebar_visible_on_mobile {
-        "chat-sidebar open"
-    } else {
-        "chat-sidebar"
-    };
-
-    // 移动端：未选项目时只显示 sidebar；选了项目且未打开抽屉时只显示 main
-    // 桌面端：始终双栏并列
-    let show_main = !is_mobile() || (selected_project().is_some() && !sidebar_open());
 
     rsx! {
-        div { class: "chat-container",
-            div { class: "{sidebar_class}",
-                div { class: "chat-sidebar-header",
-                    h2 { class: "chat-sidebar-title", "项目列表" }
+        div { class: "h-[calc(100vh-4rem)] flex flex-col lg:flex-row relative",
+            if is_mobile() && sidebar_visible_on_mobile {
+                div {
+                    class: "fixed inset-0 bg-black/50 z-40 lg:hidden",
+                    onclick: move |_| sidebar_open.set(false),
+                }
+            }
+            div {
+                class: if is_mobile() {
+                    if sidebar_visible_on_mobile {
+                        "fixed inset-y-0 left-0 z-50 w-72 bg-base-200 flex flex-col border-r border-base-300 transition-transform"
+                    } else {
+                        "fixed inset-y-0 left-0 z-50 w-72 bg-base-200 flex flex-col border-r border-base-300 transition-transform -translate-x-full"
+                    }
+                } else {
+                    "w-full lg:w-72 bg-base-200 flex flex-col border-r border-base-300"
+                },
+                div { class: "p-3 border-b border-base-300 flex items-center justify-between",
+                    h2 { class: "font-semibold", "项目列表" }
                     button {
-                        class: "chat-sidebar-new-btn",
+                        class: "btn btn-primary btn-sm",
                         r#type: "button",
                         onclick: move |_| show_create_project.set(true),
                         "+ 新建项目"
                     }
                 }
-                div { class: "chat-project-list",
-                    // 固定置顶「默认对话」条目
+                div { class: "flex-1 overflow-y-auto",
                     {
                         let is_active = selected_project().is_none();
-                        let item_class = if is_active { "chat-project-item default-chat active" } else { "chat-project-item default-chat" };
+                        let item_class = if is_active {
+                            "px-3 py-2 cursor-pointer bg-primary/10 border-l-4 border-primary transition-colors"
+                        } else {
+                            "px-3 py-2 cursor-pointer hover:bg-base-300 transition-colors"
+                        };
                         rsx! {
                             div {
                                 class: "{item_class}",
                                 onclick: handle_default_chat_click,
-                                div { class: "chat-project-name", "💬 默认对话" }
-                                div { class: "chat-project-status", "与前台 Agent 直接沟通" }
+                                div { class: "font-medium", "💬 默认对话" }
+                                div { class: "text-xs text-base-content/60", "与前台 Agent 直接沟通" }
                             }
                         }
                     }
                     if loading_projects() {
-                        div { class: "state-loading", "加载中..." }
+                        div { class: "flex items-center justify-center py-8",
+                            span { class: "loading loading-spinner loading-sm" }
+                            span { class: "ml-2 text-sm text-base-content/60", "加载中..." }
+                        }
                     } else {
                         for project in project_items.iter() {
                             {
@@ -779,13 +795,17 @@ pub fn MessageChat() -> Element {
                                 let name = project.name.clone();
                                 let status = project.status;
                                 let is_active = selected_project() == Some(id.clone());
-                                let item_class = if is_active { "chat-project-item active" } else { "chat-project-item" };
+                                let item_class = if is_active {
+                                    "px-3 py-2 cursor-pointer bg-primary/10 border-l-4 border-primary transition-colors"
+                                } else {
+                                    "px-3 py-2 cursor-pointer hover:bg-base-300 transition-colors"
+                                };
                                 rsx! {
                                     div {
                                         class: "{item_class}",
                                         onclick: move |_| handle_project_click(id.clone()),
-                                        div { class: "chat-project-name", "{name}" }
-                                        div { class: "chat-project-status", "{status_text(status)}" }
+                                        div { class: "font-medium", "{name}" }
+                                        div { class: "text-xs text-base-content/60", "{status_text(status)}" }
                                     }
                                 }
                             }
@@ -794,10 +814,8 @@ pub fn MessageChat() -> Element {
                 }
             }
 
-            if show_main {
-                div { class: "chat-main",
-                    {chat_content}
-                }
+            div { class: "flex-1 flex flex-col min-w-0",
+                {chat_content}
             }
 
             // 新建项目弹窗
@@ -807,38 +825,45 @@ pub fn MessageChat() -> Element {
                 on_close: move |_| show_create_project.set(false),
                 footer: rsx! {
                     button {
-                        class: "btn-secondary",
+                        class: "btn btn-ghost",
                         onclick: move |_| show_create_project.set(false),
                         "取消"
                     }
                     button {
-                        class: "btn-primary",
+                        class: "btn btn-primary",
                         disabled: creating_project() || new_project_name().trim().is_empty(),
                         onclick: handle_create_project_submit,
-                        if creating_project() { "创建中..." } else { "创建" }
+                        if creating_project() {
+                            span { class: "loading loading-spinner loading-sm mr-1" }
+                            "创建中..."
+                        } else { "创建" }
                     }
                 },
-                div { class: "modal-body",
-                    div { class: "form-group",
-                        label { "项目名称" }
+                div { class: "space-y-4",
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text", "项目名称" }
+                        }
                         input {
                             r#type: "text",
-                            class: "form-input",
+                            class: "input input-bordered w-full",
                             placeholder: "输入项目名称",
                             value: "{new_project_name}",
                             oninput: move |e| new_project_name.set(e.value()),
                         }
                     }
-                    div { class: "form-group",
-                        label { "项目描述（可选）" }
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text", "项目描述（可选）" }
+                        }
                         textarea {
-                            class: "form-input",
+                            class: "textarea textarea-bordered w-full",
                             placeholder: "输入项目描述",
                             value: "{new_project_desc}",
                             oninput: move |e| new_project_desc.set(e.value()),
                         }
                     }
-                    div { class: "form-hint",
+                    div { class: "text-sm text-base-content/60",
                         "项目将自动绑定当前前台 Agent 作为负责人"
                     }
                 }
@@ -867,7 +892,7 @@ fn chat_input_area(
     mut messages: Signal<Vec<MessageListItem>>,
 ) -> Element {
     rsx! {
-        div { class: "chat-input-area",
+        div { class: "p-3 border-t border-base-300 bg-base-100 relative",
             if show_slash_menu() {
                 {
                     let filtered: Vec<(&str, &str)> = slash_commands
@@ -883,7 +908,7 @@ fn chat_input_area(
                         let toast = toast;
                         let selected_slash_index = selected_slash_index;
                         rsx! {
-                            div { class: "slash-menu",
+                            div { class: "absolute bottom-full left-3 right-3 mb-1 bg-base-100 rounded-lg shadow-lg border border-base-300 overflow-hidden z-10",
                                 for (i, (cmd, desc)) in filtered.iter().enumerate() {
                                     {
                                         let cmd = cmd.to_string();
@@ -897,7 +922,7 @@ fn chat_input_area(
                                         let mut selected_slash_index = selected_slash_index;
                                         rsx! {
                                             div {
-                                                class: if is_selected { "slash-menu-item selected" } else { "slash-menu-item" },
+                                                class: if is_selected { "px-3 py-2 cursor-pointer bg-primary/10 flex gap-3 items-center" } else { "px-3 py-2 cursor-pointer hover:bg-base-200 flex gap-3 items-center" },
                                                 onclick: move |_| {
                                                     match cmd_clone.as_str() {
                                                         "/clear" => {
@@ -916,8 +941,8 @@ fn chat_input_area(
                                                 onmouseenter: move |_| {
                                                     selected_slash_index.set(i as i32);
                                                 },
-                                                span { class: "slash-cmd", "{cmd}" }
-                                                span { class: "slash-desc", "{desc}" }
+                                                span { class: "font-mono font-semibold text-primary", "{cmd}" }
+                                                span { class: "text-sm text-base-content/60", "{desc}" }
                                             }
                                         }
                                     }
@@ -929,16 +954,16 @@ fn chat_input_area(
                     }
                 }
             }
-            // 待发送附件列表
             if !pending_attachments().is_empty() {
-                div { class: "chat-pending-attachments",
+                div { class: "flex flex-wrap gap-2 mb-2",
                     for att in pending_attachments().iter() {
-                        div { class: "chat-pending-attachment",
+                        div {
+                            class: "badge badge-lg gap-2",
                             key: "{att.id}",
-                            span { class: "chat-pending-icon", "📎" }
-                            span { class: "chat-pending-name", "{att.name}" }
+                            span { "📎" }
+                            span { "{att.name}" }
                             button {
-                                class: "chat-pending-remove",
+                                class: "btn btn-ghost btn-xs btn-circle",
                                 onclick: {
                                     let id = att.id.clone();
                                     move |_| {
@@ -952,20 +977,18 @@ fn chat_input_area(
                     }
                 }
             }
-            div { class: "chat-input-container",
-                // 隐藏的文件选择 input
+            div { class: "flex items-end gap-2",
                 input {
                     r#type: "file",
                     multiple: "true",
-                    class: "chat-file-input",
+                    class: "hidden",
                     id: "chat-file-input",
                     onchange: move |e| {
                         handle_file_select(e.files());
                     },
                 }
-                // 📎 按钮触发文件选择
                 button {
-                    class: "chat-attach-btn",
+                    class: "btn btn-ghost btn-square",
                     r#type: "button",
                     disabled: uploading(),
                     onclick: move |_| {
@@ -977,10 +1000,13 @@ fn chat_input_area(
                             }
                         }
                     },
-                    if uploading() { "⏳" } else { "📎" }
+                    if uploading() {
+                        span { class: "loading loading-spinner loading-sm" }
+                    } else { "📎" }
                 }
                 textarea {
-                    class: "chat-input",
+                    class: "textarea textarea-bordered w-full resize-none",
+                    rows: "2",
                     value: "{input_text}",
                     placeholder: "输入消息...",
                     oninput: move |e| handle_input(e.value()),
@@ -1036,7 +1062,7 @@ fn chat_input_area(
                     },
                 }
                 button {
-                    class: "chat-send-btn",
+                    class: "btn btn-primary",
                     onclick: move |_| handle_send(()),
                     disabled: input_text().trim().is_empty() && pending_attachments().is_empty(),
                     "发送"
@@ -1072,117 +1098,123 @@ fn copy_to_clipboard(content: &str, toast: &crate::store::toast::ToastState) {
 fn render_message_content(
     msg: &MessageListItem,
     expanded: bool,
+    is_user: bool,
+    is_system: bool,
     toggle_expand: impl FnMut() + 'static,
     toast: crate::store::toast::ToastState,
 ) -> Element {
+    let bubble_class = if is_user {
+        "chat-bubble chat-bubble-primary"
+    } else if is_system {
+        "chat-bubble chat-bubble-info/20 text-info-content text-xs"
+    } else {
+        "chat-bubble chat-bubble-neutral"
+    };
+    let time_class = "chat-footer text-xs opacity-50 mt-1";
+
     if is_attachment_message(msg.message_type) {
-        return render_attachment_message(msg);
+        return render_attachment_message(msg, bubble_class, time_class);
     }
 
     match msg.message_type {
         MSG_TOOL_CALL_REQUEST | MSG_TOOL_CALL_RESULT => {
-            render_tool_call_card(&msg.content, msg.message_type == MSG_TOOL_CALL_RESULT, expanded, toggle_expand, msg.created_at)
+            render_tool_call_card(&msg.content, msg.message_type == MSG_TOOL_CALL_RESULT, expanded, toggle_expand, msg.created_at, time_class)
         }
         MSG_TASK_ASSIGNMENT => {
-            render_task_card(&msg.content, msg.created_at)
+            render_task_card(&msg.content, msg.created_at, bubble_class, time_class)
         }
         MSG_TEXT => {
             let content = msg.content.clone();
             let toast_copy = toast;
             rsx! {
-                div { class: "message-content-wrapper",
-                    div { class: "message-bubble", "{msg.content}" }
+                div { class: "group relative",
+                    div { class: "{bubble_class} break-words whitespace-pre-wrap", "{msg.content}" }
                     button {
-                        class: "message-action-btn",
+                        class: "absolute -top-2 -right-2 btn btn-ghost btn-xs opacity-0 group-hover:opacity-100 transition-opacity bg-base-100 shadow",
                         onclick: move |_| copy_to_clipboard(&content, &toast_copy),
                         "复制"
                     }
                 }
-                div { class: "message-time", "{format_time(msg.created_at)}" }
+                div { class: "{time_class}", "{format_time(msg.created_at)}" }
             }
         }
         _ => rsx! {
-            div { class: "message-bubble", "{msg.content}" }
-            div { class: "message-time", "{format_time(msg.created_at)}" }
+            div { class: "{bubble_class} break-words whitespace-pre-wrap", "{msg.content}" }
+            div { class: "{time_class}", "{format_time(msg.created_at)}" }
         },
     }
 }
 
 /// 渲染附件消息
-fn render_attachment_message(msg: &MessageListItem) -> Element {
+fn render_attachment_message(msg: &MessageListItem, bubble_class: &str, time_class: &str) -> Element {
     let file_meta = match &msg.file_meta {
         Some(fm) => fm,
         None => {
-            // 没有文件元数据，显示原始 content
             return rsx! {
-                div { class: "message-bubble", "{msg.content}" }
-                div { class: "message-time", "{format_time(msg.created_at)}" }
+                div { class: "{bubble_class} break-words", "{msg.content}" }
+                div { class: "{time_class}", "{format_time(msg.created_at)}" }
             };
         }
     };
 
-    // content 存储的是文件相对路径
     let file_path = &msg.content;
-    // 使用 attachment ID 构建下载 URL（假设 content 存储 attachment ID）
     let file_url = format!("/api/v1/finance/attachments/{}/content", file_path);
 
     match msg.message_type {
         MSG_IMAGE => rsx! {
-            div { class: "message-attachment message-attachment-image",
+            div { class: "{bubble_class} p-1",
                 img {
                     src: "{file_url}",
-                    class: "message-image",
+                    class: "max-w-xs rounded-lg",
                     loading: "lazy",
                 }
             }
-            div { class: "message-time", "{format_time(msg.created_at)}" }
+            div { class: "{time_class}", "{format_time(msg.created_at)}" }
         },
         MSG_VIDEO => rsx! {
-            div { class: "message-attachment message-attachment-video",
+            div { class: "{bubble_class} p-2 space-y-2",
                 video {
                     src: "{file_url}",
                     controls: "true",
-                    class: "message-video",
+                    class: "max-w-xs rounded-lg",
                     preload: "metadata",
                     "您的浏览器不支持视频播放"
                 }
-                div { class: "attachment-info",
-                    span { class: "attachment-name", "{file_meta.name}" }
-                    span { class: "attachment-size", "{format_file_size(file_meta.size)}" }
+                div { class: "flex items-center gap-2 text-sm opacity-80",
+                    span { "🎬" }
+                    span { "{file_meta.name}" }
+                    span { class: "opacity-60", "{format_file_size(file_meta.size)}" }
                 }
             }
-            div { class: "message-time", "{format_time(msg.created_at)}" }
+            div { class: "{time_class}", "{format_time(msg.created_at)}" }
         },
         MSG_AUDIO => rsx! {
-            div { class: "message-attachment message-attachment-audio",
-                div { class: "audio-icon", "🎵" }
-                div { class: "audio-info",
-                    span { class: "attachment-name", "{file_meta.name}" }
-                    span { class: "attachment-size", "{format_file_size(file_meta.size)}" }
+            div { class: "{bubble_class} p-2 space-y-2 min-w-[200px]",
+                div { class: "flex items-center gap-2 text-sm",
+                    span { "🎵" }
+                    span { "{file_meta.name}" }
                 }
                 audio {
                     src: "{file_url}",
                     controls: "true",
-                    class: "message-audio",
+                    class: "w-full",
                     preload: "metadata",
                 }
+                div { class: "text-xs opacity-60", "{format_file_size(file_meta.size)}" }
             }
-            div { class: "message-time", "{format_time(msg.created_at)}" }
+            div { class: "{time_class}", "{format_time(msg.created_at)}" }
         },
         _ => rsx! {
-            // File 或其他类型
-            div { class: "message-attachment message-attachment-file",
-                a {
-                    href: "{file_url}",
-                    class: "attachment-download",
-                    div { class: "file-icon", "📄" }
-                    div { class: "file-info",
-                        span { class: "attachment-name", "{file_meta.name}" }
-                        span { class: "attachment-size", "{format_file_size(file_meta.size)}" }
-                    }
+            a {
+                href: "{file_url}",
+                class: "{bubble_class} flex items-center gap-3 no-underline hover:opacity-90 transition-opacity",
+                div { class: "text-2xl", "📄" }
+                div { class: "flex flex-col",
+                    span { "{file_meta.name}" }
+                    span { class: "text-xs opacity-60", "{format_file_size(file_meta.size)}" }
                 }
             }
-            div { class: "message-time", "{format_time(msg.created_at)}" }
+            div { class: "{time_class}", "{format_time(msg.created_at)}" }
         },
     }
 }
@@ -1207,21 +1239,21 @@ fn render_tool_call_card(
     expanded: bool,
     mut toggle_expand: impl FnMut() + 'static,
     time: i64,
+    time_class: &str,
 ) -> Element {
-    // 尝试解析 JSON
     let parsed: Result<serde_json::Value, _> = serde_json::from_str(content);
 
     match parsed {
         Ok(json) => {
             let tool_name = json.get("tool_name").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
-            let status_class = if is_result {
+            let (status_badge, header_class) = if is_result {
                 match json.get("is_success").and_then(|v| v.as_bool()) {
-                    Some(true) => "tool-card tool-card-success",
-                    Some(false) => "tool-card tool-card-error",
-                    None => "tool-card tool-card-result",
+                    Some(true) => ("badge badge-success", "flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-base-300/50 transition-colors border-l-4 border-l-success"),
+                    Some(false) => ("badge badge-error", "flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-base-300/50 transition-colors border-l-4 border-l-error"),
+                    None => ("badge badge-info", "flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-base-300/50 transition-colors border-l-4 border-l-info"),
                 }
             } else {
-                "tool-card tool-card-request"
+                ("badge badge-warning", "flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-base-300/50 transition-colors border-l-4 border-l-warning")
             };
 
             let header_icon = if is_result { "⚙️" } else { "🔧" };
@@ -1240,54 +1272,54 @@ fn render_tool_call_card(
             let error_msg = json.get("error_message").and_then(|v| v.as_str()).map(|s| s.to_string());
 
             rsx! {
-                div { class: "{status_class}",
-                    div { class: "tool-card-header",
+                div { class: "chat-bubble chat-bubble-neutral p-0 overflow-hidden max-w-md",
+                    div {
+                        class: "{header_class}",
                         onclick: move |_| toggle_expand(),
-                        span { class: "tool-card-icon", "{header_icon}" }
-                        span { class: "tool-card-title", "{tool_name}" }
-                        span { class: "tool-card-status", "{status_label}" }
-                        span { class: "tool-card-expand",
+                        span { "{header_icon}" }
+                        span { class: "font-medium text-sm", "{tool_name}" }
+                        span { class: "{status_badge} badge-sm", "{status_label}" }
+                        span { class: "ml-auto text-xs opacity-60",
                             if expanded { "▼" } else { "▶" }
                         }
                     }
                     if expanded {
-                        div { class: "tool-card-body",
+                        div { class: "px-3 pb-3 space-y-2 text-sm",
                             if let Some(args) = &args_str {
-                                div { class: "tool-card-section",
-                                    div { class: "tool-card-label", "参数" }
-                                    pre { class: "tool-card-json", "{args}" }
+                                div {
+                                    div { class: "text-xs font-semibold opacity-60 mb-1", "参数" }
+                                    pre { class: "bg-base-200 p-2 rounded text-xs overflow-x-auto", "{args}" }
                                 }
                             }
                             if is_result {
                                 if let Some(result) = &result_str {
-                                    div { class: "tool-card-section",
-                                        div { class: "tool-card-label", "结果" }
-                                        pre { class: "tool-card-json", "{result}" }
+                                    div {
+                                        div { class: "text-xs font-semibold opacity-60 mb-1", "结果" }
+                                        pre { class: "bg-base-200 p-2 rounded text-xs overflow-x-auto", "{result}" }
                                     }
                                 }
                                 if let Some(err) = &error_msg {
-                                    div { class: "tool-card-section tool-card-error-msg",
-                                        div { class: "tool-card-label", "错误" }
-                                        "{err}"
+                                    div {
+                                        div { class: "text-xs font-semibold text-error mb-1", "错误" }
+                                        div { class: "text-error text-sm", "{err}" }
                                     }
                                 }
                             }
                         }
                     }
-                    div { class: "message-time", "{format_time(time)}" }
                 }
+                div { class: "{time_class}", "{format_time(time)}" }
             }
         }
         Err(_) => rsx! {
-            // 解析失败，回退纯文本
-            div { class: "message-bubble", "{content}" }
-            div { class: "message-time", "{format_time(time)}" }
+            div { class: "chat-bubble chat-bubble-neutral break-words", "{content}" }
+            div { class: "{time_class}", "{format_time(time)}" }
         },
     }
 }
 
 /// 渲染任务分配卡片
-fn render_task_card(content: &str, time: i64) -> Element {
+fn render_task_card(content: &str, time: i64, bubble_class: &str, time_class: &str) -> Element {
     let parsed: Result<serde_json::Value, _> = serde_json::from_str(content);
 
     match parsed {
@@ -1296,26 +1328,26 @@ fn render_task_card(content: &str, time: i64) -> Element {
             let description = json.get("task_description").and_then(|v| v.as_str());
 
             rsx! {
-                div { class: "task-card",
-                    div { class: "task-card-header",
-                        span { class: "task-card-icon", "📋" }
-                        span { class: "task-card-title", "任务分配" }
+                div { class: "{bubble_class} p-0 overflow-hidden max-w-md",
+                    div { class: "flex items-center gap-2 px-3 py-2 border-b border-base-300/30",
+                        span { "📋" }
+                        span { class: "font-medium", "任务分配" }
                     }
-                    div { class: "task-card-body",
-                        div { class: "task-card-name", "{title}" }
+                    div { class: "px-3 py-2 space-y-1",
+                        div { class: "font-semibold", "{title}" }
                         if let Some(desc) = description {
                             if !desc.is_empty() {
-                                div { class: "task-card-desc", "{desc}" }
+                                div { class: "text-sm opacity-80", "{desc}" }
                             }
                         }
                     }
-                    div { class: "message-time", "{format_time(time)}" }
                 }
+                div { class: "{time_class}", "{format_time(time)}" }
             }
         }
         Err(_) => rsx! {
-            div { class: "message-bubble", "{content}" }
-            div { class: "message-time", "{format_time(time)}" }
+            div { class: "{bubble_class} break-words", "{content}" }
+            div { class: "{time_class}", "{format_time(time)}" }
         },
     }
 }

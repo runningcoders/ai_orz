@@ -134,12 +134,12 @@ pub fn TaskList() -> Element {
             h1 { class: "page-title", "任务管理" }
             div { class: "page-header-actions",
                 button {
-                    class: if matches!(view_mode(), ViewMode::List) { "btn btn-secondary active" } else { "btn btn-secondary" },
+                    class: if matches!(view_mode(), ViewMode::List) { "btn btn-outline active" } else { "btn btn-outline" },
                     onclick: move |_| view_mode.set(ViewMode::List),
                     "列表视图"
                 }
                 button {
-                    class: if matches!(view_mode(), ViewMode::Board) { "btn btn-secondary active" } else { "btn btn-secondary" },
+                    class: if matches!(view_mode(), ViewMode::Board) { "btn btn-outline active" } else { "btn btn-outline" },
                     onclick: move |_| view_mode.set(ViewMode::Board),
                     "看板视图"
                 }
@@ -147,7 +147,7 @@ pub fn TaskList() -> Element {
         }
 
         // 统计概览
-        div { class: "card",
+        div { class: "card bg-base-100 shadow-md",
             div { class: "card-header",
                 h2 { class: "card-title", "任务概览" }
             }
@@ -172,7 +172,7 @@ pub fn TaskList() -> Element {
         }
 
         // 筛选栏
-        div { class: "card",
+        div { class: "card bg-base-100 shadow-md",
             div { class: "card-header",
                 h2 { class: "card-title", "筛选条件" }
             }
@@ -180,7 +180,7 @@ pub fn TaskList() -> Element {
                 div { class: "filter-item",
                     label { class: "form-label", "项目" }
                     select {
-                        class: "form-input",
+                        class: "input input-bordered w-full",
                         value: "{filter_project_id}",
                         onchange: move |e| {
                             filter_project_id.set(e.value().clone());
@@ -195,7 +195,7 @@ pub fn TaskList() -> Element {
                 div { class: "filter-item",
                     label { class: "form-label", "状态" }
                     select {
-                        class: "form-input",
+                        class: "input input-bordered w-full",
                         value: "{filter_status}",
                         onchange: move |e| {
                             if let Ok(v) = e.value().parse::<i32>() {
@@ -214,7 +214,7 @@ pub fn TaskList() -> Element {
                 div { class: "filter-item",
                     label { class: "form-label", "负责人类型" }
                     select {
-                        class: "form-input",
+                        class: "input input-bordered w-full",
                         value: "{filter_assignee_type}",
                         onchange: move |e| {
                             if let Ok(v) = e.value().parse::<i32>() {
@@ -232,16 +232,16 @@ pub fn TaskList() -> Element {
 
         // 视图内容
         if loading() {
-            div { class: "card", Loading {} }
+            div { class: "card bg-base-100 shadow-md", Loading {} }
         } else if tasks_list.is_empty() {
-            div { class: "card", EmptyState { icon: "📋".to_string(), message: "暂无任务".to_string() } }
+            div { class: "card bg-base-100 shadow-md", EmptyState { icon: "📋".to_string(), message: "暂无任务".to_string() } }
         } else if matches!(view_mode(), ViewMode::List) {
             // 列表视图
-            div { class: "card",
+            div { class: "card bg-base-100 shadow-md",
                 div { class: "card-header",
                     h2 { class: "card-title", "任务列表" }
                 }
-                table { class: "table",
+                table { class: "table table-zebra",
                     thead { tr {
                         th { "标题" }
                         th { "状态" }
@@ -278,7 +278,7 @@ pub fn TaskList() -> Element {
                                                 div { class: "progress-bar",
                                                     div { class: "progress-bar-fill", style: "width: {t_progress}%;" }
                                                 }
-                                                span { class: "text-muted text-mono progress-text", "{t_progress}%" }
+                                                span { class: "text-base-content/70 font-mono progress-text", "{t_progress}%" }
                                             }
                                         }
                                         td { "data-label": "负责人",
@@ -289,12 +289,12 @@ pub fn TaskList() -> Element {
                                         }
                                         td { "data-label": "项目",
                                             if let Some(pid) = &t_project_id {
-                                                span { class: "text-mono", "{pid}" }
+                                                span { class: "font-mono", "{pid}" }
                                             } else {
-                                                span { class: "text-muted", "无" }
+                                                span { class: "text-base-content/70", "无" }
                                             }
                                         }
-                                        td { "data-label": "更新时间", span { class: "text-mono text-muted", "{format_time(t_updated_at)}" } }
+                                        td { "data-label": "更新时间", span { class: "font-mono text-base-content/70", "{format_time(t_updated_at)}" } }
                                     }
                                 }
                             }
@@ -345,7 +345,7 @@ pub fn TaskList() -> Element {
                                                 div { class: "progress-bar",
                                                     div { class: "{progress_bar_class(t_progress)}", style: "width: {t_progress}%;" }
                                                 }
-                                                span { class: "text-muted text-mono", "{t_progress}%" }
+                                                span { class: "text-base-content/70 font-mono", "{t_progress}%" }
                                             }
                                         }
                                     }

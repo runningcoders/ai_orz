@@ -70,9 +70,9 @@ fn render_chat_messages(messages: &[MessageListItem], is_typing: bool) -> Elemen
     if messages.is_empty() && !is_typing {
         rsx! {
             div { class: "agent-chat-messages",
-                div { class: "state-empty",
-                    div { class: "state-empty-icon", "💬" }
-                    div { "暂无对话记录，发送消息开始对话" }
+                div { class: "text-center py-12",
+                    div { class: "text-5xl mb-4 opacity-30", "💬" }
+                    div { class: "text-base-content/70", "暂无对话记录，发送消息开始对话" }
                 }
             }
         }
@@ -220,7 +220,6 @@ pub fn HrAgentDetail(id: String) -> Element {
         load_data();
     });
 
-    // SSE 监听 - 内联处理，克隆需要的信号
     let sse_id = id.clone();
 
     use_effect(move || {
@@ -291,106 +290,105 @@ pub fn HrAgentDetail(id: String) -> Element {
             let agent_id_signal = use_signal(|| id.clone());
 
             rsx! {
-                div { class: "card",
-                    div { class: "card-header",
-                        h2 { class: "card-title", "{a.name}" }
-                        p { class: "card-subtitle", "{desc}" }
-                    }
-
+                div { class: "card bg-base-100 shadow-md",
                     div { class: "card-body",
-                        div { class: "detail-section",
-                            h3 { class: "detail-section-title", "基本信息" }
-                            div { class: "detail-grid",
-                                div { class: "detail-item",
-                                    span { class: "detail-label", "ID" }
-                                    span { class: "detail-value", "{a.id}" }
+                        div { class: "mb-6",
+                            h2 { class: "card-title", "{a.name}" }
+                            p { class: "text-base-content/70 mt-1", "{desc}" }
+                        }
+
+                        div { class: "mb-6",
+                            h3 { class: "text-lg font-semibold mb-3", "基本信息" }
+                            div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
+                                div {
+                                    span { class: "block text-sm text-base-content/70 mb-1", "ID" }
+                                    span { class: "font-mono text-sm", "{a.id}" }
                                 }
-                                div { class: "detail-item",
-                                    span { class: "detail-label", "类型" }
+                                div {
+                                    span { class: "block text-sm text-base-content/70 mb-1", "类型" }
                                     span { class: "{kind_badge_class(&a.kind)}",
                                         "{kind_label(&a.kind)}"
                                     }
                                 }
-                                div { class: "detail-item",
-                                    span { class: "detail-label", "状态" }
+                                div {
+                                    span { class: "block text-sm text-base-content/70 mb-1", "状态" }
                                     span { class: "{binding_status_badge_class(a.status != 0)}",
                                         "{agent_status_label(a.status)}"
                                     }
                                 }
                                 if a.kind == "local" {
-                                    div { class: "detail-item",
-                                        span { class: "detail-label", "模型提供商" }
-                                        span { class: "detail-value", "{a.model_provider_id}" }
+                                    div {
+                                        span { class: "block text-sm text-base-content/70 mb-1", "模型提供商" }
+                                        span { class: "font-mono text-sm", "{a.model_provider_id}" }
                                     }
                                 }
-                                div { class: "detail-item",
-                                    span { class: "detail-label", "创建时间" }
-                                    span { class: "detail-value", "{format_time(a.created_at)}" }
+                                div {
+                                    span { class: "block text-sm text-base-content/70 mb-1", "创建时间" }
+                                    span { class: "text-sm", "{format_time(a.created_at)}" }
                                 }
                             }
                         }
 
-                        div { class: "detail-section",
-                            h3 { class: "detail-section-title", "核心能力" }
+                        div { class: "mb-6",
+                            h3 { class: "text-lg font-semibold mb-3", "核心能力" }
                             if !capabilities.is_empty() {
-                                div { class: "capability-list",
+                                div { class: "flex flex-wrap gap-2",
                                     for cap in capabilities.iter() {
                                         span { class: "badge badge-info", "{cap}" }
                                     }
                                 }
                             } else {
-                                div { class: "text-secondary text-sm", "暂无核心能力" }
+                                div { class: "text-sm text-base-content/70", "暂无核心能力" }
                             }
                         }
 
-                        // 外部 Agent 运行时配置
                         if a.kind != "local" {
                             if let Some(ext_cfg) = &a.external_config {
-                                div { class: "detail-section",
-                                    h3 { class: "detail-section-title", "运行时配置" }
+                                div { class: "mb-6",
+                                    h3 { class: "text-lg font-semibold mb-3", "运行时配置" }
                                     if let Some(cli_cfg) = &ext_cfg.cli {
-                                        div { class: "detail-grid",
-                                            div { class: "detail-item",
-                                                span { class: "detail-label", "启动命令" }
-                                                span { class: "detail-value text-mono", "{cli_cfg.command}" }
+                                        div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
+                                            div {
+                                                span { class: "block text-sm text-base-content/70 mb-1", "启动命令" }
+                                                span { class: "font-mono text-sm", "{cli_cfg.command}" }
                                             }
                                             if !cli_cfg.args.is_empty() {
-                                                div { class: "detail-item detail-item-wide",
-                                                    span { class: "detail-label", "命令参数" }
-                                                    span { class: "detail-value text-mono",
+                                                div { class: "md:col-span-2",
+                                                    span { class: "block text-sm text-base-content/70 mb-1", "命令参数" }
+                                                    span { class: "font-mono text-sm",
                                                         "{cli_cfg.args.join(\" \")}"
                                                     }
                                                 }
                                             }
-                                            div { class: "detail-item detail-item-wide",
-                                                span { class: "detail-label", "工作目录" }
-                                                span { class: "detail-value text-mono", "{cli_cfg.work_dir}" }
+                                            div { class: "md:col-span-2",
+                                                span { class: "block text-sm text-base-content/70 mb-1", "工作目录" }
+                                                span { class: "font-mono text-sm", "{cli_cfg.work_dir}" }
                                             }
-                                            div { class: "detail-item",
-                                                span { class: "detail-label", "超时时间" }
-                                                span { class: "detail-value", "{cli_cfg.timeout_secs} 秒" }
+                                            div {
+                                                span { class: "block text-sm text-base-content/70 mb-1", "超时时间" }
+                                                span { class: "text-sm", "{cli_cfg.timeout_secs} 秒" }
                                             }
                                             if let Some(template) = &cli_cfg.prompt_template {
-                                                div { class: "detail-item detail-item-wide",
-                                                    span { class: "detail-label", "Prompt 模板" }
-                                                    div { class: "prompt-template-box", "{template}" }
+                                                div { class: "md:col-span-2",
+                                                    span { class: "block text-sm text-base-content/70 mb-1", "Prompt 模板" }
+                                                    div { class: "p-3 bg-base-200 rounded-lg font-mono text-sm", "{template}" }
                                                 }
                                             }
                                         }
                                     }
                                     if let Some(remote_cfg) = &ext_cfg.remote {
-                                        div { class: "detail-grid",
-                                            div { class: "detail-item detail-item-wide",
-                                                span { class: "detail-label", "A2A Server" }
-                                                span { class: "detail-value text-mono", "{remote_cfg.endpoint}" }
+                                        div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
+                                            div { class: "md:col-span-2",
+                                                span { class: "block text-sm text-base-content/70 mb-1", "A2A Server" }
+                                                span { class: "font-mono text-sm", "{remote_cfg.endpoint}" }
                                             }
-                                            div { class: "detail-item",
-                                                span { class: "detail-label", "目标 Agent" }
-                                                span { class: "detail-value text-mono", "{remote_cfg.agent_name}" }
+                                            div {
+                                                span { class: "block text-sm text-base-content/70 mb-1", "目标 Agent" }
+                                                span { class: "font-mono text-sm", "{remote_cfg.agent_name}" }
                                             }
-                                            div { class: "detail-item",
-                                                span { class: "detail-label", "超时时间" }
-                                                span { class: "detail-value", "{remote_cfg.timeout_secs} 秒" }
+                                            div {
+                                                span { class: "block text-sm text-base-content/70 mb-1", "超时时间" }
+                                                span { class: "text-sm", "{remote_cfg.timeout_secs} 秒" }
                                             }
                                         }
                                     }
@@ -398,13 +396,13 @@ pub fn HrAgentDetail(id: String) -> Element {
                             }
                         }
 
-                        div { class: "detail-section",
-                            h3 { class: "detail-section-title", "状态切换" }
-                            div { class: "status-buttons",
+                        div { class: "mb-6",
+                            h3 { class: "text-lg font-semibold mb-3", "状态切换" }
+                            div { class: "flex flex-wrap gap-2",
                                 for (status, label) in STATUS_OPTIONS {
                                     {
                                         let is_current = a.status == *status;
-                                        let btn_class = if is_current { "btn btn-accent btn-sm" } else { "btn btn-ghost btn-sm" };
+                                        let btn_class = if is_current { "btn btn-primary btn-sm" } else { "btn btn-ghost btn-sm" };
                                         let target_status_val = *status;
                                         let aid = agent_id_signal();
                                         let label_str = label.to_string();
@@ -442,11 +440,11 @@ pub fn HrAgentDetail(id: String) -> Element {
                             }
                         }
 
-                        div { class: "detail-section",
-                            h3 { class: "detail-section-title", "工具包" }
-                            div { class: "pack-management",
+                        div { class: "mb-6",
+                            h3 { class: "text-lg font-semibold mb-3", "工具包" }
+                            div { class: "flex flex-col sm:flex-row gap-2 mb-4",
                                 input {
-                                    class: "input input-sm",
+                                    class: "input input-sm input-bordered flex-1",
                                     r#type: "text",
                                     placeholder: "输入工具包 tag 名称",
                                     oninput: move |e| input_message.set(e.value().clone()),
@@ -477,14 +475,14 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 }
                             }
                             if !tool_packs_list.is_empty() {
-                                div { class: "pack-tags",
+                                div { class: "flex flex-wrap gap-2",
                                     for tag in tool_packs_list.iter() {
                                         {
                                             let tag_clone = tag.clone();
                                             let aid = agent_id_signal();
                                             rsx! {
                                                 span {
-                                                    class: "badge badge-accent",
+                                                    class: "badge badge-accent gap-1",
                                                     "{tag}"
                                                     button {
                                                         class: "badge-remove",
@@ -514,11 +512,11 @@ pub fn HrAgentDetail(id: String) -> Element {
                             }
                         }
 
-                        div { class: "detail-section",
-                            h3 { class: "detail-section-title", "技能包" }
-                            div { class: "pack-management",
+                        div { class: "mb-6",
+                            h3 { class: "text-lg font-semibold mb-3", "技能包" }
+                            div { class: "flex flex-col sm:flex-row gap-2 mb-4",
                                 input {
-                                    class: "input input-sm",
+                                    class: "input input-sm input-bordered flex-1",
                                     r#type: "text",
                                     placeholder: "输入技能包 tag 名称",
                                     oninput: move |e| input_message.set(e.value().clone()),
@@ -549,14 +547,14 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 }
                             }
                             if !skill_packs_list.is_empty() {
-                                div { class: "pack-tags",
+                                div { class: "flex flex-wrap gap-2",
                                     for tag in skill_packs_list.iter() {
                                         {
                                             let tag_clone = tag.clone();
                                             let aid = agent_id_signal();
                                             rsx! {
                                                 span {
-                                                    class: "badge badge-info",
+                                                    class: "badge badge-info gap-1",
                                                     "{tag}"
                                                     button {
                                                         class: "badge-remove",
@@ -586,43 +584,41 @@ pub fn HrAgentDetail(id: String) -> Element {
                             }
                         }
 
-                        div { class: "detail-section",
-                            h3 { class: "detail-section-title", "工具绑定" }
-                            div { class: "tool-bindings",
-                                if !all_tools_list.is_empty() {
-                                    div { class: "tool-grid",
-                                        for tool in all_tools_list.iter() {
-                                            {
-                                                let tool_clone = tool.clone();
-                                                let is_bound = agent_tool_ids.contains(&tool.id);
-                                                let aid = agent_id_signal();
-                                                let tool_id = tool.id.clone();
-                                                let tool_name = tool.name.clone();
-                                                let desc = tool.description.as_deref().unwrap_or("");
-                                                let tags = tool.tags.clone();
-                                                rsx! {
-                                                    div {
-                                                        class: "tool-card",
-                                                        key: "{tool_id}",
-                                                        div { class: "tool-card-header",
-                                                            span { class: "tool-name", "{tool_name}" }
+                        div { class: "mb-6",
+                            h3 { class: "text-lg font-semibold mb-3", "工具绑定" }
+                            if !all_tools_list.is_empty() {
+                                div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
+                                    for tool in all_tools_list.iter() {
+                                        {
+                                            let tool_clone = tool.clone();
+                                            let is_bound = agent_tool_ids.contains(&tool.id);
+                                            let aid = agent_id_signal();
+                                            let tool_id = tool.id.clone();
+                                            let tool_name = tool.name.clone();
+                                            let desc = tool.description.as_deref().unwrap_or("");
+                                            let tags = tool.tags.clone();
+                                            rsx! {
+                                                div {
+                                                    class: "card bg-base-200",
+                                                    key: "{tool_id}",
+                                                    div { class: "card-body p-4",
+                                                        div { class: "flex justify-between items-start",
+                                                            span { class: "font-medium", "{tool_name}" }
                                                             span { class: "{binding_status_badge_class(is_bound)}",
                                                                 if is_bound { "已绑定" } else { "未绑定" }
                                                             }
                                                         }
-                                                        div { class: "tool-card-body",
-                                                            p { class: "text-sm text-secondary", "{desc}" }
-                                                            if !tags.is_empty() {
-                                                                div { class: "tool-tags",
-                                                                    for tag in tags.iter() {
-                                                                        span { class: "badge badge-ghost", "{tag}" }
-                                                                    }
+                                                        p { class: "text-sm text-base-content/70 mt-2", "{desc}" }
+                                                        if !tags.is_empty() {
+                                                            div { class: "flex flex-wrap gap-1 mt-2",
+                                                                for tag in tags.iter() {
+                                                                    span { class: "badge badge-ghost", "{tag}" }
                                                                 }
                                                             }
                                                         }
-                                                        div { class: "tool-card-footer",
+                                                        div { class: "card-actions justify-end mt-3",
                                                             button {
-                                                                class: if is_bound { "btn btn-danger btn-sm" } else { "btn btn-primary btn-sm" },
+                                                                class: if is_bound { "btn btn-error btn-sm" } else { "btn btn-primary btn-sm" },
                                                                 onclick: move |_| {
                                                                     let agent_id = aid.clone();
                                                                     let tid = tool_clone.id.clone();
@@ -659,21 +655,21 @@ pub fn HrAgentDetail(id: String) -> Element {
                                             }
                                         }
                                     }
-                                } else {
-                                    div { class: "state-empty",
-                                        div { class: "state-empty-icon", "🔧" }
-                                        div { "暂无工具可用" }
-                                    }
+                                }
+                            } else {
+                                div { class: "text-center py-12",
+                                    div { class: "text-5xl mb-4 opacity-30", "🔧" }
+                                    div { class: "text-base-content/70", "暂无工具可用" }
                                 }
                             }
                         }
 
-                        div { class: "detail-section",
-                            h3 { class: "detail-section-title", "对话" }
+                        div { class: "mb-6",
+                            h3 { class: "text-lg font-semibold mb-3", "对话" }
                             {render_chat_messages(&messages(), is_typing())}
-                            div { class: "agent-chat-input",
+                            div { class: "flex gap-2 mt-4",
                                 input {
-                                    class: "input",
+                                    class: "input input-bordered flex-1",
                                     r#type: "text",
                                     placeholder: "输入消息...",
                                     value: input_message,
@@ -693,8 +689,8 @@ pub fn HrAgentDetail(id: String) -> Element {
                             }
                         }
 
-                        div { class: "detail-section",
-                            h3 { class: "detail-section-title", "记忆" }
+                        div { class: "mb-6",
+                            h3 { class: "text-lg font-semibold mb-3", "记忆" }
                             AgentMemoryPanel { agent_id: Some(id.clone()) }
                         }
 
@@ -704,10 +700,10 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 model_call_stats: a.model_call_stats.clone(),
                             }
                         }
-                    }
 
-                    div { class: "card-footer",
-                        Link { to: "/hr/agents", class: "btn btn-ghost", "返回列表" }
+                        div { class: "card-actions mt-6",
+                            Link { to: "/hr/agents", class: "btn btn-ghost", "返回列表" }
+                        }
                     }
                 }
             }

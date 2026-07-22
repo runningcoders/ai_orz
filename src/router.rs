@@ -50,7 +50,7 @@ pub fn create_router(frontend_dist_dir: &str, config: Arc<AppConfig>) -> Router 
         )
         // A2A 回调端点（公开，外部 Agent 推送任务更新，无需 JWT）
         .route(
-            "/a2a/callback/:task_id",
+            "/a2a/callback/{task_id}",
             post(handlers::a2a::callback::handle_a2a_callback)
                 .layer(axum::middleware::from_fn({
                     let config = config.clone();

@@ -37,12 +37,12 @@ pub fn HrMemorySearch() -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "card",
-                h2 { class: "card-title", "记忆搜索" }
-                div { class: "space-y-4",
-                    div { class: "flex gap-2",
+            div { class: "card bg-base-100 shadow-md",
+                div { class: "card-body",
+                    h2 { class: "card-title mb-4", "记忆搜索" }
+                    div { class: "flex flex-col sm:flex-row gap-2",
                         input {
-                            class: "form-input flex-1",
+                            class: "input input-bordered flex-1",
                             value: "{keyword}",
                             oninput: move |e| keyword.set(e.value()),
                             placeholder: "输入关键词搜索记忆...",
@@ -55,7 +55,7 @@ pub fn HrMemorySearch() -> Element {
                             }
                         }
                         select {
-                            class: "form-select",
+                            class: "select select-bordered w-full sm:w-auto",
                             value: "{memory_type}",
                             onchange: move |e| memory_type.set(e.value()),
                             option { value: "", "全部类型" }
@@ -77,24 +77,26 @@ pub fn HrMemorySearch() -> Element {
             } else if results().is_empty() {
                 EmptyState { message: "开始搜索".to_string() }
             } else {
-                div { class: "card",
-                    h3 { class: "card-title", "搜索结果 ({results().len()})" }
-                    div { class: "space-y-2",
-                        for item in &results() {
-                            div { class: "p-3 border rounded hover:bg-muted",
-                                div { class: "flex justify-between items-start",
-                                    div {
-                                        span { class: "font-medium", "{item.content.chars().take(100).collect::<String>()}" }
-                                        if item.summary.is_some() {
-                                            div { class: "text-sm text-muted mt-1",
-                                                "{item.summary.clone().unwrap()}"
+                div { class: "card bg-base-100 shadow-md mt-4",
+                    div { class: "card-body",
+                        h3 { class: "card-title mb-4", "搜索结果 ({results().len()})" }
+                        div { class: "space-y-2",
+                            for item in &results() {
+                                div { class: "p-3 border border-base-300 rounded hover:bg-base-200",
+                                    div { class: "flex flex-col sm:flex-row justify-between items-start gap-2",
+                                        div { class: "flex-1",
+                                            span { class: "font-medium", "{item.content.chars().take(100).collect::<String>()}" }
+                                            if item.summary.is_some() {
+                                                div { class: "text-sm text-base-content/70 mt-1",
+                                                    "{item.summary.clone().unwrap()}"
+                                                }
                                             }
                                         }
-                                    }
-                                    div {
-                                        span { class: "badge badge-accent text-xs", "{item.memory_type}" }
-                                        if item.score.is_some() {
-                                            span { class: "text-xs text-muted ml-2", "score={item.score.unwrap():.4}" }
+                                        div { class: "flex items-center gap-2 shrink-0",
+                                            span { class: "badge badge-accent text-xs", "{item.memory_type}" }
+                                            if item.score.is_some() {
+                                                span { class: "text-xs text-base-content/70", "score={item.score.unwrap():.4}" }
+                                            }
                                         }
                                     }
                                 }

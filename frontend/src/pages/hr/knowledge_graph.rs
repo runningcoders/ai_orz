@@ -32,7 +32,6 @@ fn build_graph_from_results(
             }
             "relation" => {
                 if let (Some(src), Some(tgt)) = (&item.source_node_id, &item.target_node_id) {
-                    // 确保源和目标节点都存在于节点列表中
                     if seen_node_ids.insert(src.clone()) {
                         nodes.push(GraphNode {
                             id: src.clone(),
@@ -98,7 +97,6 @@ pub fn HrKnowledgeGraph() -> Element {
     let mut selected_node_data = use_signal(|| None::<MemoryResult>);
     let mut search_history = use_signal(Vec::<String>::new);
     let mut highlighted_node_ids = use_signal(Vec::<String>::new);
-    // 缓存搜索结果的 detail map，用于侧边栏展示
     let mut detail_map = use_signal(|| std::collections::HashMap::<String, MemoryResult>::new());
 
     let mut handle_search = move |_| {
@@ -152,26 +150,21 @@ pub fn HrKnowledgeGraph() -> Element {
     };
 
     let handle_node_click = move |node_id: String| {
-        // 选中节点
         selected_node_id.set(Some(node_id.clone()));
 
-        // 从缓存中获取详情
         if let Some(detail) = detail_map.read().get(&node_id) {
             selected_node_data.set(Some(detail.clone()));
         }
 
-        // 如果已展开过，跳过
         if expanded_nodes.read().contains(&node_id) {
             return;
         }
 
-        // 展开关联
         loading.set(true);
         let seed_ids = vec![node_id.clone()];
         spawn(async move {
             match search_memory_with_traversal("", &seed_ids, 1).await {
                 Ok(data) => {
-                    // 更新详情缓存
                     let mut map = detail_map.read().clone();
                     for item in &data.results {
                         if item.memory_type != "relation" {
@@ -180,7 +173,6 @@ pub fn HrKnowledgeGraph() -> Element {
                     }
                     detail_map.set(map);
 
-                    // 提取新节点（排除已存在的）
                     let existing_ids: HashSet<String> = nodes.read().iter().map(|n| n.id.clone()).collect();
                     let (mut new_nodes, new_edges) = build_graph_from_results(&data.results);
                     new_nodes.retain(|n| !existing_ids.contains(&n.id));
@@ -190,7 +182,6 @@ pub fn HrKnowledgeGraph() -> Element {
                         let current_edges = edges.read().clone();
                         let updated_nodes = expand_layout(&current_nodes, &new_nodes, &seed_ids[0]);
                         let mut updated_edges = current_edges;
-                        // 去重添加新边
                         let existing_edge_keys: HashSet<(String, String)> = updated_edges.iter()
                             .map(|e| (e.source.clone(), e.target.clone()))
                             .collect();
@@ -219,92 +210,92 @@ pub fn HrKnowledgeGraph() -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "card",
-                h2 { class: "card-title", "知识图谱" }
-                div { class: "space-y-4",
-                    div { class: "flex gap-2",
-                        input {
-                            class: "form-input flex-1",
-                            value: "{keyword}",
-                            oninput: move |e| keyword.set(e.value()),
-                            placeholder: "搜索知识节点...",
-                            onkeydown: move |evt| {
-                                if evt.key() == Key::Enter {
-                                    handle_search(());
+            div { class: "card bg-base-100 shadow-md",
+                div { class: "card-body",
+                    h2 { class: "card-title mb-4", "知识图谱" }
+                    div { class: "space-y-4",
+                        div { class: "flex flex-col sm:flex-row gap-2",
+                            input {
+                                class: "input input-bordered flex-1",
+                                value: "{keyword}",
+                                oninput: move |e| keyword.set(e.value()),
+                                placeholder: "搜索知识节点...",
+                                onkeydown: move |evt| {
+                                    if evt.key() == Key::Enter {
+                                        handle_search(());
+                                    }
                                 }
                             }
+                            Button {
+                                onclick: move |_| handle_search(()),
+                                "搜索"
+                            }
                         }
-                        Button {
-                            onclick: move |_| handle_search(()),
-                            "搜索"
-                        }
-                    }
-                    if !search_history().is_empty() {
-                        {
-                            let history_list = search_history().clone();
-                            rsx! {
-                                div { class: "flex flex-wrap gap-2",
-                                    span { class: "text-xs text-muted", "搜索历史:" }
-                                    for kw in history_list.into_iter() {
-                                        button {
-                                            class: "btn btn-xs btn-ghost",
-                                            onclick: move |_| {
-                                                keyword.set(kw.clone());
-                                                handle_search(());
-                                            },
-                                            "{kw}"
+                        if !search_history().is_empty() {
+                            {
+                                let history_list = search_history().clone();
+                                rsx! {
+                                    div { class: "flex flex-wrap gap-2 items-center",
+                                        span { class: "text-xs text-base-content/70", "搜索历史:" }
+                                        for kw in history_list.into_iter() {
+                                            button {
+                                                class: "btn btn-xs btn-ghost",
+                                                onclick: move |_| {
+                                                    keyword.set(kw.clone());
+                                                    handle_search(());
+                                                },
+                                                "{kw}"
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
-                    }
-                    div { class: "space-y-2",
-                        div { class: "flex items-center gap-4 text-sm",
-                            span { class: "text-muted", "点击节点展开关联知识" }
-                            // 节点类型图例
-                            div { class: "flex items-center gap-3",
-                                span { class: "graph-legend-item",
-                                    span { class: "graph-legend-dot", style: "background: #3b82f6;" }
-                                    "知识节点"
-                                }
-                                span { class: "graph-legend-item",
-                                    span { class: "graph-legend-dot", style: "background: #10b981;" }
-                                    "短期记忆"
-                                }
-                                span { class: "graph-legend-item",
-                                    span { class: "graph-legend-dot", style: "background: #f59e0b;" }
-                                    "调用记录"
+                        div { class: "space-y-2",
+                            div { class: "flex flex-wrap items-center gap-4 text-sm",
+                                span { class: "text-base-content/70", "点击节点展开关联知识" }
+                                div { class: "flex items-center gap-3",
+                                    span { class: "flex items-center gap-1",
+                                        span { class: "w-3 h-3 rounded-full", style: "background: #3b82f6;" }
+                                        "知识节点"
+                                    }
+                                    span { class: "flex items-center gap-1",
+                                        span { class: "w-3 h-3 rounded-full", style: "background: #10b981;" }
+                                        "短期记忆"
+                                    }
+                                    span { class: "flex items-center gap-1",
+                                        span { class: "w-3 h-3 rounded-full", style: "background: #f59e0b;" }
+                                        "调用记录"
+                                    }
                                 }
                             }
-                        }
-                        // 关系类型图例
-                        div { class: "graph-legend-section",
-                            h4 { class: "graph-legend-title", "关系类型" }
-                            div { class: "flex flex-wrap gap-3",
-                                span { class: "graph-legend-item",
-                                    span { class: "graph-legend-line", style: "background: #ef4444;" }
-                                    "属于"
-                                }
-                                span { class: "graph-legend-item",
-                                    span { class: "graph-legend-line dashed", style: "background: #3b82f6;" }
-                                    "引用"
-                                }
-                                span { class: "graph-legend-item",
-                                    span { class: "graph-legend-line", style: "background: #10b981;" }
-                                    "包含"
-                                }
-                                span { class: "graph-legend-item",
-                                    span { class: "graph-legend-line", style: "background: #f59e0b;" }
-                                    "关联"
-                                }
-                                span { class: "graph-legend-item",
-                                    span { class: "graph-legend-line", style: "background: #8b5cf6;" }
-                                    "派生"
-                                }
-                                span { class: "graph-legend-item",
-                                    span { class: "graph-legend-line dashed", style: "background: #ec4899;" }
-                                    "依赖"
+                            div {
+                                h4 { class: "text-sm font-semibold mb-2", "关系类型" }
+                                div { class: "flex flex-wrap gap-3",
+                                    span { class: "flex items-center gap-1",
+                                        span { class: "w-6 h-0.5", style: "background: #ef4444;" }
+                                        "属于"
+                                    }
+                                    span { class: "flex items-center gap-1",
+                                        span { class: "w-6 h-0.5 border-dashed border-t-2", style: "border-color: #3b82f6;" }
+                                        "引用"
+                                    }
+                                    span { class: "flex items-center gap-1",
+                                        span { class: "w-6 h-0.5", style: "background: #10b981;" }
+                                        "包含"
+                                    }
+                                    span { class: "flex items-center gap-1",
+                                        span { class: "w-6 h-0.5", style: "background: #f59e0b;" }
+                                        "关联"
+                                    }
+                                    span { class: "flex items-center gap-1",
+                                        span { class: "w-6 h-0.5", style: "background: #8b5cf6;" }
+                                        "派生"
+                                    }
+                                    span { class: "flex items-center gap-1",
+                                        span { class: "w-6 h-0.5 border-dashed border-t-2", style: "border-color: #ec4899;" }
+                                        "依赖"
+                                    }
                                 }
                             }
                         }
@@ -317,104 +308,122 @@ pub fn HrKnowledgeGraph() -> Element {
             } else if current_nodes.is_empty() {
                 EmptyState { message: "开始搜索知识节点".to_string() }
             } else {
-                div { class: "graph-container",
-                    // 图谱区域
-                    div { class: "graph-main",
-                        div { class: "card",
-                            h3 { class: "card-title", "图谱视图 ({current_nodes.len()} 节点, {current_edges.len()} 关系)" }
-                            Graph {
-                                nodes: current_nodes,
-                                edges: current_edges,
-                                selected_node_id: selected_id,
-                                highlighted_node_ids: Some(highlighted_node_ids()),
-                                on_node_click: handle_node_click,
+                div { class: "flex flex-col lg:flex-row gap-4 mt-4",
+                    div { class: "flex-1 min-h-96",
+                        div { class: "card bg-base-100 shadow-md h-full",
+                            div { class: "card-body",
+                                h3 { class: "card-title mb-4", "图谱视图 ({current_nodes.len()} 节点, {current_edges.len()} 关系)" }
+                                Graph {
+                                    nodes: current_nodes,
+                                    edges: current_edges,
+                                    selected_node_id: selected_id,
+                                    highlighted_node_ids: Some(highlighted_node_ids()),
+                                    on_node_click: handle_node_click,
+                                }
                             }
                         }
                     }
 
-                    // 详情侧边栏
                     if let Some(detail) = &selected_detail {
-                        div { class: "graph-detail-panel",
-                            div { class: "card",
-                                div { class: "card-header",
-                                    h3 { class: "card-title", "节点详情" }
-                                    button {
-                                        class: "btn btn-ghost btn-sm",
-                                        onclick: move |_| {
-                                            selected_node_id.set(None);
-                                            selected_node_data.set(None);
-                                        },
-                                        "✕"
-                                    }
-                                }
-                                div { class: "space-y-4",
-                                    div { class: "detail-grid",
-                                        div {
-                                            label { class: "form-label", "类型" }
-                                            span { class: "{type_badge_class(&detail.memory_type)}", "{type_label(&detail.memory_type)}" }
-                                        }
-                                        div {
-                                            label { class: "form-label", "匹配分数" }
-                                            if let Some(score) = detail.score {
-                                                span { class: "text-mono", "{score:.4}" }
-                                            } else {
-                                                span { class: "text-muted", "N/A" }
-                                            }
-                                        }
-                                    }
-
-                                    div {
-                                        label { class: "form-label", "内容" }
-                                        div { class: "detail-content-box",
-                                            p { "{detail.content}" }
-                                        }
-                                    }
-
-                                    if let Some(summary) = &detail.summary {
-                                        div {
-                                            label { class: "form-label", "摘要" }
-                                            div { class: "detail-content-box text-muted",
-                                                p { "{summary}" }
-                                            }
-                                        }
-                                    }
-
-                                    if detail.memory_type == "relation" {
-                                        div { class: "detail-grid",
-                                            if let Some(source) = &detail.source_node_id {
-                                                div {
-                                                    label { class: "form-label", "源节点" }
-                                                    span { class: "text-mono text-sm", "{source}" }
-                                                }
-                                            }
-                                            if let Some(target) = &detail.target_node_id {
-                                                div {
-                                                    label { class: "form-label", "目标节点" }
-                                                    span { class: "text-mono text-sm", "{target}" }
-                                                }
-                                            }
-                                            if let Some(rel_type) = &detail.relation_type {
-                                                div {
-                                                    label { class: "form-label", "关系类型" }
-                                                    span { class: "text-mono", "{rel_type}" }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    div { class: "border-t pt-4",
-                                        label { class: "form-label", "ID" }
-                                        span { class: "text-mono text-muted text-sm break-all", "{detail.id}" }
-                                    }
-
-                                    div { class: "flex gap-2",
+                        div { class: "w-full lg:w-96",
+                            div { class: "card bg-base-100 shadow-md",
+                                div { class: "card-body",
+                                    div { class: "flex justify-between items-start mb-4",
+                                        h3 { class: "card-title", "节点详情" }
                                         button {
-                                            class: "btn btn-sm btn-outline",
+                                            class: "btn btn-ghost btn-sm btn-circle",
                                             onclick: move |_| {
                                                 selected_node_id.set(None);
                                                 selected_node_data.set(None);
                                             },
-                                            "关闭"
+                                            "✕"
+                                        }
+                                    }
+                                    div { class: "space-y-4",
+                                        div { class: "grid grid-cols-2 gap-4",
+                                            div {
+                                                label { class: "label",
+                                                    span { class: "label-text font-medium", "类型" }
+                                                }
+                                                span { class: "{type_badge_class(&detail.memory_type)}", "{type_label(&detail.memory_type)}" }
+                                            }
+                                            div {
+                                                label { class: "label",
+                                                    span { class: "label-text font-medium", "匹配分数" }
+                                                }
+                                                if let Some(score) = detail.score {
+                                                    span { class: "font-mono text-sm", "{score:.4}" }
+                                                } else {
+                                                    span { class: "text-base-content/70", "N/A" }
+                                                }
+                                            }
+                                        }
+
+                                        div {
+                                            label { class: "label",
+                                                span { class: "label-text font-medium", "内容" }
+                                            }
+                                            div { class: "p-3 bg-base-200 rounded-lg",
+                                                p { class: "text-sm", "{detail.content}" }
+                                            }
+                                        }
+
+                                        if let Some(summary) = &detail.summary {
+                                            div {
+                                                label { class: "label",
+                                                    span { class: "label-text font-medium", "摘要" }
+                                                }
+                                                div { class: "p-3 bg-base-200 rounded-lg text-base-content/70",
+                                                    p { class: "text-sm", "{summary}" }
+                                                }
+                                            }
+                                        }
+
+                                        if detail.memory_type == "relation" {
+                                            div { class: "grid grid-cols-1 gap-2",
+                                                if let Some(source) = &detail.source_node_id {
+                                                    div {
+                                                        label { class: "label",
+                                                            span { class: "label-text font-medium", "源节点" }
+                                                        }
+                                                        span { class: "font-mono text-sm", "{source}" }
+                                                    }
+                                                }
+                                                if let Some(target) = &detail.target_node_id {
+                                                    div {
+                                                        label { class: "label",
+                                                            span { class: "label-text font-medium", "目标节点" }
+                                                        }
+                                                        span { class: "font-mono text-sm", "{target}" }
+                                                    }
+                                                }
+                                                if let Some(rel_type) = &detail.relation_type {
+                                                    div {
+                                                        label { class: "label",
+                                                            span { class: "label-text font-medium", "关系类型" }
+                                                        }
+                                                        span { class: "font-mono", "{rel_type}" }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        div { class: "border-t border-base-300 pt-4",
+                                            label { class: "label",
+                                                span { class: "label-text font-medium", "ID" }
+                                            }
+                                            span { class: "font-mono text-xs text-base-content/70 break-all", "{detail.id}" }
+                                        }
+
+                                        div { class: "flex gap-2",
+                                            button {
+                                                class: "btn btn-outline btn-sm",
+                                                onclick: move |_| {
+                                                    selected_node_id.set(None);
+                                                    selected_node_data.set(None);
+                                                },
+                                                "关闭"
+                                            }
                                         }
                                     }
                                 }

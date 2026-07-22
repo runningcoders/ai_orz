@@ -99,48 +99,52 @@ pub fn ProjectList() -> Element {
     let projects_list = projects.read().clone();
 
     rsx! {
-        div { class: "card",
-            div { class: "card-header",
-                h2 { class: "card-title", "项目管理" }
-                button { class: "btn btn-accent", onclick: move |_| show_modal.set(true), "+ 创建项目" }
-            }
+        div { class: "card bg-base-100 shadow-md",
+            div { class: "card-body",
+                div { class: "flex justify-between items-center",
+                    h2 { class: "card-title", "项目管理" }
+                    button { class: "btn btn-primary", onclick: move |_| show_modal.set(true), "+ 创建项目" }
+                }
 
-            if loading() {
-                Loading {}
-            } else if projects_list.is_empty() {
-                EmptyState { icon: "📁".to_string(), message: "暂无项目".to_string() }
-            } else {
-                table { class: "table",
-                    thead { tr {
-                        th { "项目名称" }
-                        th { "状态" }
-                        th { "任务数" }
-                        th { "创建时间" }
-                    }}
-                    tbody {
-                        for p in projects_list.iter() {
-                            {
-                                let id = p.id.clone();
-                                let pname = p.name.clone();
-                                let pstatus = p.status;
-                                let pcreated = p.created_at.clone();
-                                rsx! {
-                                    tr { key: "{id}",
-                                        td { "data-label": "项目名称",
-                                            Link { to: crate::pages::Route::ProjectDetail { id: id.clone() },
-                                                class: "detail-back-link",
-                                                "{pname}"
+                if loading() {
+                    Loading {}
+                } else if projects_list.is_empty() {
+                    EmptyState { icon: "📁".to_string(), message: "暂无项目".to_string() }
+                } else {
+                    div { class: "overflow-x-auto",
+                        table { class: "table table-zebra",
+                            thead { tr {
+                                th { "项目名称" }
+                                th { "状态" }
+                                th { "任务数" }
+                                th { "创建时间" }
+                            }}
+                            tbody {
+                                for p in projects_list.iter() {
+                                    {
+                                        let id = p.id.clone();
+                                        let pname = p.name.clone();
+                                        let pstatus = p.status;
+                                        let pcreated = p.created_at.clone();
+                                        rsx! {
+                                            tr { key: "{id}",
+                                                td { "data-label": "项目名称",
+                                                    Link { to: crate::pages::Route::ProjectDetail { id: id.clone() },
+                                                        class: "link link-primary",
+                                                        "{pname}"
+                                                    }
+                                                }
+                                                td { "data-label": "状态", span { class: "{status_badge(pstatus)}", "{status_text(pstatus)}" } }
+                                                td { class: "text-base-content/70", "data-label": "任务数",
+                                                    if let Some(count) = task_counts.read().get(&id) {
+                                                        "{count}"
+                                                    } else {
+                                                        "-"
+                                                    }
+                                                }
+                                                td { class: "font-mono text-base-content/70", "data-label": "创建时间", "{pcreated}" }
                                             }
                                         }
-                                        td { "data-label": "状态", span { class: "{status_badge(pstatus)}", "{status_text(pstatus)}" } }
-                                        td { class: "text-secondary", "data-label": "任务数",
-                                            if let Some(count) = task_counts.read().get(&id) {
-                                                "{count}"
-                                            } else {
-                                                "-"
-                                            }
-                                        }
-                                        td { class: "text-mono text-muted", "data-label": "创建时间", "{pcreated}" }
                                     }
                                 }
                             }
@@ -160,19 +164,23 @@ pub fn ProjectList() -> Element {
             },
             footer: rsx! {
                 button { class: "btn btn-ghost", onclick: move |_| show_modal.set(false), "取消" }
-                button { class: "btn btn-accent", disabled: creating(), onclick: handle_create,
+                button { class: "btn btn-primary", disabled: creating(), onclick: handle_create,
                     if creating() { "创建中..." } else { "创建" }
                 }
             },
-            div {
-                div { class: "form-group",
-                    label { class: "form-label", "项目名称 *" }
-                    input { class: "form-input", value: "{new_name}",
+            div { class: "space-y-4",
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "项目名称 *" }
+                    }
+                    input { class: "input input-bordered w-full", value: "{new_name}",
                         oninput: move |e| new_name.set(e.value()), placeholder: "请输入项目名称" }
                 }
-                div { class: "form-group",
-                    label { class: "form-label", "描述" }
-                    textarea { class: "form-textarea", value: "{new_description}",
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "描述" }
+                    }
+                    textarea { class: "textarea textarea-bordered w-full", value: "{new_description}",
                         oninput: move |e| new_description.set(e.value()), placeholder: "项目描述（可选）" }
                 }
             }

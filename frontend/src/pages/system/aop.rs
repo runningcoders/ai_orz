@@ -88,7 +88,7 @@ pub fn SystemAop() -> Element {
                     }
                 }
 
-                p { class: "text-secondary mb-4",
+                p { class: "text-base-content/70 mb-4",
                     "查看 AOP 事件中心各消费者队列的运行状态、事件堆积情况和内容排查。"
                 }
 
@@ -139,10 +139,10 @@ pub fn SystemAop() -> Element {
                                         }
                                         div { class: "mt-2",
                                             div { class: "text-2xl font-bold", "{pending}" }
-                                            div { class: "text-sm text-muted", "待处理事件" }
+                                            div { class: "text-sm text-base-content/70", "待处理事件" }
                                         }
                                         if let Some(age) = oldest {
-                                            div { class: "text-xs text-muted mt-1",
+                                            div { class: "text-xs text-base-content/70 mt-1",
                                                 "最老事件: {age} 秒前"
                                             }
                                         }
@@ -154,7 +154,7 @@ pub fn SystemAop() -> Element {
                                                     }
                                                 }
                                                 if order_keys.len() > 3 {
-                                                    span { class: "text-muted", "+{order_keys.len() - 3} 更多" }
+                                                    span { class: "text-base-content/70", "+{order_keys.len() - 3} 更多" }
                                                 }
                                             }
                                         }
@@ -235,19 +235,19 @@ pub fn SystemAop() -> Element {
                                                                 loading_detail.set(false);
                                                             });
                                                         },
-                                                        td { class: "text-mono text-sm",
+                                                        td { class: "font-mono text-sm",
                                                             "{event_id}"
                                                         }
                                                         td { "{event_kind}" }
-                                                        td { class: "text-mono text-sm",
+                                                        td { class: "font-mono text-sm",
                                                             if order_key.is_empty() {
-                                                                span { class: "text-muted", "-" }
+                                                                span { class: "text-base-content/70", "-" }
                                                             } else {
                                                                 "{order_key}"
                                                             }
                                                         }
                                                         td { "{priority}" }
-                                                        td { class: "text-muted text-sm",
+                                                        td { class: "text-base-content/70 text-sm",
                                                             "{format_created_at(created_at)}"
                                                         }
                                                         td {
@@ -275,16 +275,16 @@ pub fn SystemAop() -> Element {
                             } else {
                                 div { class: "space-y-2",
                                     div { class: "flex justify-between",
-                                        span { class: "text-muted", "事件 ID" }
-                                        span { class: "text-mono", "{d.event_id}" }
+                                        span { class: "text-base-content/70", "事件 ID" }
+                                        span { class: "font-mono", "{d.event_id}" }
                                     }
                                     div { class: "flex justify-between",
-                                        span { class: "text-muted", "类型" }
+                                        span { class: "text-base-content/70", "类型" }
                                         span { "{d.event_kind}" }
                                     }
                                     div { class: "flex justify-between",
-                                        span { class: "text-muted", "order_key" }
-                                        span { class: "text-mono",
+                                        span { class: "text-base-content/70", "order_key" }
+                                        span { class: "font-mono",
                                             if d.order_key.is_empty() {
                                                 "-"
                                             } else {
@@ -293,20 +293,20 @@ pub fn SystemAop() -> Element {
                                         }
                                     }
                                     div { class: "flex justify-between",
-                                        span { class: "text-muted", "优先级" }
+                                        span { class: "text-base-content/70", "优先级" }
                                         span { "{d.priority}" }
                                     }
                                     div { class: "flex justify-between",
-                                        span { class: "text-muted", "创建时间" }
+                                        span { class: "text-base-content/70", "创建时间" }
                                         span { "{format_created_at(d.created_at)}" }
                                     }
                                     div { class: "flex justify-between",
-                                        span { class: "text-muted", "状态" }
+                                        span { class: "text-base-content/70", "状态" }
                                         span { class: "{status_badge_class(&d.status)}", "{d.status}" }
                                     }
                                     div { class: "mt-4",
-                                        div { class: "text-muted text-sm mb-1", "内容预览" }
-                                        pre { class: "text-mono text-sm",
+                                        div { class: "text-base-content/70 text-sm mb-1", "内容预览" }
+                                        pre { class: "font-mono text-sm",
                                             style: "background: var(--color-warm-ivory); padding: var(--space-3); border-radius: var(--radius-md); max-height: 300px; overflow: auto; white-space: pre-wrap; word-break: break-word;",
                                             "{d.payload_preview}"
                                         }

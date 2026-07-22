@@ -10,7 +10,7 @@ pub fn ToastContainer() -> Element {
     let toasts = (toast_state.toasts)();
 
     rsx! {
-        div { class: "toast-container",
+        div { class: "toast toast-top toast-end z-[9999]",
             for item in toasts.into_iter() {
                 ToastItemView {
                     key: "{item.id}",
@@ -31,7 +31,6 @@ fn ToastItemView(id: u64, message: String, toast_type: ToastType, duration_ms: u
     let mut visible = use_signal(|| false);
     let mut leaving = use_signal(|| false);
 
-    // 进入动画延迟（下一帧触发，确保 transition 生效）
     use_effect(move || {
         spawn(async move {
             sleep_ms(10).await;
@@ -39,7 +38,6 @@ fn ToastItemView(id: u64, message: String, toast_type: ToastType, duration_ms: u
         });
     });
 
-    // 自动关闭
     use_effect(move || {
         let toast = toast_state;
         spawn(async move {
@@ -51,10 +49,10 @@ fn ToastItemView(id: u64, message: String, toast_type: ToastType, duration_ms: u
     });
 
     let type_class = match toast_type {
-        ToastType::Success => "toast toast-success",
-        ToastType::Error => "toast toast-error",
-        ToastType::Warning => "toast toast-warning",
-        ToastType::Info => "toast toast-info",
+        ToastType::Success => "alert alert-success",
+        ToastType::Error => "alert alert-error",
+        ToastType::Warning => "alert alert-warning",
+        ToastType::Info => "alert alert-info",
     };
 
     let icon = match toast_type {
@@ -82,10 +80,10 @@ fn ToastItemView(id: u64, message: String, toast_type: ToastType, duration_ms: u
     };
 
     rsx! {
-        div { class: "{type_class} {animation_class}",
-            span { class: "toast-icon", "{icon}" }
-            span { class: "toast-message", "{message}" }
-            button { class: "toast-close", onclick: handle_close, "×" }
+        div { class: "{type_class} {animation_class} shadow-lg min-w-[280px]",
+            span { class: "w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0 bg-current/20", "{icon}" }
+            span { class: "flex-1", "{message}" }
+            button { class: "btn btn-xs btn-ghost btn-circle", onclick: handle_close, "✕" }
             div {
                 class: "toast-progress",
                 style: "animation-duration: {duration_ms}ms;",
@@ -94,7 +92,6 @@ fn ToastItemView(id: u64, message: String, toast_type: ToastType, duration_ms: u
     }
 }
 
-/// 简易 sleep 实现（基于 js_sys Promise + setTimeout）
 async fn sleep_ms(ms: u64) {
     let promise = js_sys::Promise::new(&mut |resolve, _| {
         web_sys::window()

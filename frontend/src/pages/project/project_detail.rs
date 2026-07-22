@@ -259,10 +259,10 @@ pub fn ProjectDetail(id: String) -> Element {
 
     rsx! {
         if loading() {
-            div { class: "card", Loading {} }
+            div { class: "card bg-base-100 shadow-md", Loading {} }
         } else if let Some(p) = &project_data {
             // 区域 1：项目基本信息卡片
-            div { class: "card",
+            div { class: "card bg-base-100 shadow-md",
                 div { class: "card-header",
                     h2 { class: "card-title", "{p.name}" }
                 }
@@ -271,12 +271,12 @@ pub fn ProjectDetail(id: String) -> Element {
                         label { class: "form-label", "描述" }
                         if let Some(desc) = &p.description {
                             if desc.is_empty() {
-                                span { class: "text-muted", "暂无描述" }
+                                span { class: "text-base-content/70", "暂无描述" }
                             } else {
                                 "{desc}"
                             }
                         } else {
-                            span { class: "text-muted", "暂无描述" }
+                            span { class: "text-base-content/70", "暂无描述" }
                         }
                     }
                     div {
@@ -290,7 +290,7 @@ pub fn ProjectDetail(id: String) -> Element {
                     div {
                         label { class: "form-label", "标签" }
                         if p.tags.is_empty() {
-                            span { class: "text-muted", "无标签" }
+                            span { class: "text-base-content/70", "无标签" }
                         } else {
                             div { class: "tag-list",
                                 for tag in p.tags.iter() {
@@ -301,13 +301,13 @@ pub fn ProjectDetail(id: String) -> Element {
                     }
                     div {
                         label { class: "form-label", "创建时间" }
-                        span { class: "text-mono text-muted", "{p.created_at}" }
+                        span { class: "font-mono text-base-content/70", "{p.created_at}" }
                     }
                 }
             }
 
             // 区域 2：项目概览统计
-            div { class: "card",
+            div { class: "card bg-base-100 shadow-md",
                 div { class: "card-header",
                     h2 { class: "card-title", "项目概览" }
                 }
@@ -346,7 +346,7 @@ pub fn ProjectDetail(id: String) -> Element {
             }
 
             // 区域 3：状态管理
-            div { class: "card",
+            div { class: "card bg-base-100 shadow-md",
                 div { class: "card-header",
                     h2 { class: "card-title", "状态管理" }
                 }
@@ -355,10 +355,10 @@ pub fn ProjectDetail(id: String) -> Element {
                         button { class: "btn btn-primary", onclick: start_project, "启动项目" }
                     }
                     if p.status != 4 {
-                        button { class: "btn btn-accent", onclick: complete_project, "完成项目" }
+                        button { class: "btn btn-primary", onclick: complete_project, "完成项目" }
                     }
                     if p.status != 5 {
-                        button { class: "btn btn-secondary", onclick: archive_project, "归档项目" }
+                        button { class: "btn btn-outline", onclick: archive_project, "归档项目" }
                     }
                 }
             }
@@ -371,7 +371,7 @@ pub fn ProjectDetail(id: String) -> Element {
             }
 
             // 区域 3：任务列表
-            div { class: "card",
+            div { class: "card bg-base-100 shadow-md",
                 div { class: "card-header",
                     div { class: "card-header-row",
                         h2 { class: "card-title", "任务列表" }
@@ -385,7 +385,7 @@ pub fn ProjectDetail(id: String) -> Element {
                 if tasks_list.is_empty() {
                     EmptyState { icon: "📋".to_string(), message: "暂无任务".to_string() }
                 } else {
-                    table { class: "table",
+                    table { class: "table table-zebra",
                         thead { tr {
                             th { "标题" }
                             th { "状态" }
@@ -423,13 +423,13 @@ pub fn ProjectDetail(id: String) -> Element {
                                                     div { class: "progress-bar",
                                                         div { class: "progress-bar-fill", style: "width: {task_progress}%;" }
                                                     }
-                                                    span { class: "text-muted text-mono progress-text", "{task_progress}%" }
+                                                    span { class: "text-base-content/70 font-mono progress-text", "{task_progress}%" }
                                                 }
                                             }
                                             td { "data-label": "操作",
                                                 div { class: "action-group",
                                                     if task_status != 3 {
-                                                        button { class: "btn btn-secondary btn-sm",
+                                                        button { class: "btn btn-outline btn-sm",
                                                             onclick: move |_| {
                                                                 let tid = tid_start.clone();
                                                                 let pid = pid_start.clone();
@@ -450,7 +450,7 @@ pub fn ProjectDetail(id: String) -> Element {
                                                         }
                                                     }
                                                     if task_status != 4 {
-                                                        button { class: "btn btn-accent btn-sm",
+                                                        button { class: "btn btn-primary btn-sm",
                                                             onclick: move |_| {
                                                                 let tid = tid_complete.clone();
                                                                 let pid = pid_complete.clone();
@@ -482,7 +482,7 @@ pub fn ProjectDetail(id: String) -> Element {
             }
 
             // 区域 4：产物列表
-            div { class: "card",
+            div { class: "card bg-base-100 shadow-md",
                 div { class: "card-header",
                     h2 { class: "card-title", "项目产物" }
                 }
@@ -493,7 +493,7 @@ pub fn ProjectDetail(id: String) -> Element {
                     if artifacts_list.is_empty() {
                         EmptyState { icon: "📦".to_string(), message: "暂无产物".to_string() }
                     } else {
-                        table { class: "table",
+                        table { class: "table table-zebra",
                             thead { tr {
                                 th { "名称" }
                                 th { "描述" }
@@ -518,14 +518,14 @@ pub fn ProjectDetail(id: String) -> Element {
                                                 td { "data-label": "名称", "{artifact_name}" }
                                                 td { "data-label": "描述",
                                                     if artifact_description.is_empty() {
-                                                        span { class: "text-muted", "暂无描述" }
+                                                        span { class: "text-base-content/70", "暂无描述" }
                                                     } else {
                                                         "{artifact_description}"
                                                     }
                                                 }
                                                 td { "data-label": "来源类型", span { class: "badge badge-neutral", "{artifact_source_type_text(artifact_source_type)}" } }
                                                 td { "data-label": "文件大小", "{artifact_file_size}" }
-                                                td { "data-label": "创建时间", span { class: "text-mono text-muted", "{artifact_created_at}" } }
+                                                td { "data-label": "创建时间", span { class: "font-mono text-base-content/70", "{artifact_created_at}" } }
                                                 td { "data-label": "操作",
                                                     button { class: "btn btn-error btn-sm",
                                                         onclick: move |_| {
@@ -564,7 +564,7 @@ pub fn ProjectDetail(id: String) -> Element {
                 on_close: close_artifact_modal,
                 footer: Some(rsx! {
                     div { class: "modal-footer-actions",
-                        button { class: "btn btn-secondary", onclick: move |_| { show_artifact_modal.set(false); }, "取消" }
+                        button { class: "btn btn-outline", onclick: move |_| { show_artifact_modal.set(false); }, "取消" }
                         button { class: "btn btn-primary", onclick: submit_artifact, "创建" }
                     }
                 }),
@@ -572,7 +572,7 @@ pub fn ProjectDetail(id: String) -> Element {
                     div {
                         label { class: "form-label", "名称" }
                         input {
-                            class: "form-input",
+                            class: "input input-bordered w-full",
                             r#type: "text",
                             placeholder: "请输入产物名称",
                             value: "{new_artifact_name}",
@@ -582,7 +582,7 @@ pub fn ProjectDetail(id: String) -> Element {
                     div {
                         label { class: "form-label", "描述" }
                         textarea {
-                            class: "form-input",
+                            class: "input input-bordered w-full",
                             placeholder: "请输入产物描述（可选）",
                             value: "{new_artifact_description}",
                             oninput: move |e| new_artifact_description.set(e.value().clone()),
@@ -609,7 +609,7 @@ pub fn ProjectDetail(id: String) -> Element {
                 },
             }
         } else {
-            div { class: "card", EmptyState { icon: "📁".to_string(), message: "项目不存在".to_string() } }
+            div { class: "card bg-base-100 shadow-md", EmptyState { icon: "📁".to_string(), message: "项目不存在".to_string() } }
         }
     }
 }
