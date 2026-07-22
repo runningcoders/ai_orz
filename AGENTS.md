@@ -13,8 +13,8 @@
 **AI Orz** - 全栈 Rust 多 Agent 协作框架，以组织化形式管理和执行 AI 代理任务
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + rig-core 0.34
-- **前端**：Dioxus 0.7 (WebAssembly)
-- **技术特色**：严格分层架构、类型安全、754 个测试 100% 通过率
+- **前端**：Dioxus 0.7 (WebAssembly) + Tailwind CSS v4 + DaisyUI v5
+- **技术特色**：严格分层架构、类型安全、754 个测试 100% 通过率、30+ 主题切换
 
 ### 1.2 已实现核心功能
 
@@ -45,7 +45,7 @@
 | 🔎 综合搜索 | ✅ | FTS5 关键词 + 向量语义 + 图谱关系 三位一体混合搜索，Hybrid/Vector/Keyword 三态匹配 |
 | 📊 任务进度追踪 | ✅ | Task progress 字段（0-100）、Agent 神经工具更新进度、complete 自动设 100、progress_updated 事件 |
 | 🤝 Agent 协作工具 | ✅ | search_agents 搜索、send_message_to_agent Agent 间消息、collaboration tag 分组工具 |
-| 🎨 前端架构重构 | ✅ | Dioxus Router 15 路由 + Mistral CSS 设计系统 + 统一 API 客户端 + 13 CRUD 页面 |
+| 🎨 前端架构重构 | ✅ | Dioxus Router 15 路由 + Tailwind CSS v4 + DaisyUI v5 组件库 + 30+ 主题切换 + 统一 API 客户端 + 13 CRUD 页面 |
 | 💬 对话功能 MVP | ✅ | 左右分栏布局（项目列表 + 对话区）、双向分页、3秒短轮询、消息气泡展示 |
 | 📎 对话附件上传 | ✅ | 多文件上传、图片内联展示、文件下载、消息时间分组 |
 | 🔍 消息搜索 | ✅ | FTS5 + 向量混合搜索、搜索结果展示匹配类型和向量距离 |
@@ -203,9 +203,17 @@ ai_orz/
 │       ├── stats/            # DuckDB 统计模块（record_event! 宏、查询 API）
 │       └── *test_support.rs  # 测试支持文件（request_context、storage）
 │
-├── frontend/                   # Dioxus 前端
+├── frontend/                   # Dioxus 前端（Tailwind CSS v4 + DaisyUI v5）
 │   ├── src/api/               # API 客户端
-│   └── src/components/        # UI 组件
+│   ├── src/components/        # UI 组件（Button/Modal/Toast/State/Stats/Graph）
+│   ├── src/hooks/             # 自定义 Hooks（use_resource/use_breakpoint/use_require_auth）
+│   ├── src/layouts/           # 布局组件（AppLayout/Navbar）
+│   ├── src/pages/             # 页面模块（按业务域分组）
+│   ├── src/store/             # 状态管理（auth/toast）
+│   ├── styles/input.css       # Tailwind CSS 入口（主题配置、自定义工具类）
+│   ├── public/output.css      # Tailwind 编译产物（构建时自动生成）
+│   ├── build.rs               # 构建脚本（自动 npm install + Tailwind CSS 编译）
+│   └── package.json           # npm 依赖（tailwindcss/daisyui/@tailwindcss/cli）
 │
 └── docs/                       # 详细设计文档
 ```
@@ -506,6 +514,25 @@ Agent
 ---
 
 ## 六、工作流与开发记录
+
+### 2026-07-22 里程碑
+**✅ Tailwind CSS v4 + DaisyUI v5 集成 + 多主题切换**
+- **构建工具链搭建**：
+  - `package.json` 引入 Tailwind CSS v4.1 + DaisyUI v5 + @tailwindcss/cli
+  - `styles/input.css` 作为 Tailwind 入口，配置 30+ 种 DaisyUI 主题（含自定义 `orz-light` 品牌主题）
+  - `build.rs` 改进：自动执行 `npm install` 确保依赖就绪，自动编译 Tailwind CSS
+  - `.gitignore` 排除 node_modules/output.css/dist
+  - `@source` 指令配置扫描路径（index.html + src/**/*.rs）
+- **UI 组件迁移（DaisyUI 类名）**：
+  - Button → `btn btn-primary/secondary/error/ghost` 等
+  - Modal → `modal modal-open` + `modal-box` dialog 结构
+  - Toast → `toast` + `alert` 组件
+  - Loading/State → DaisyUI loading 类
+- **所有页面迁移**：HR/Finance/Project/System/Message/Organization/User/Settings/Reception 全部迁移到 Tailwind/DaisyUI 样式
+- **主题切换功能**：`use_theme` Hook + `ThemeController` 结构体，支持 30+ 种 DaisyUI 主题，偏好持久化到 localStorage
+- **CSS 清理**：`index.html` 内联样式从 1960+ 行精简到 ~380 行，仅保留动画和 DaisyUI 未覆盖的特殊组件样式
+- **路由修复**：`router.rs` 中 A2A 回调路由旧语法 `:task_id` → axum 0.8 新语法 `{task_id}`
+- **测试统计**：754 个测试 100% 通过，前端 wasm32 编译 0 error
 
 ### 2026-07-21 里程碑
 **✅ A2A Remote Agent 异步结果回传 + 适配层架构认知统一**

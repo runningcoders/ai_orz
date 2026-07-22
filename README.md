@@ -29,7 +29,7 @@
 | 维度 | 现状 |
 |------|------|
 | **后端** | Rust + Axum + SQLite + rig-core，单二进制可部署 |
-| **前端** | Dioxus 0.7 (WASM)，15 条路由，Mistral 暖色设计系统 |
+| **前端** | Dioxus 0.7 (WASM) + Tailwind CSS v4 + DaisyUI v5，15 条路由，30+ 主题切换 |
 | **架构** | Adapter（Handler/Producer）→ Domain → DAL → DAO 四层严格单向依赖 |
 | **测试** | 754 个单元测试，100% 通过 |
 | **实体覆盖** | Agent / Project / Task / Message / Memory / Skill / Tool / ModelProvider 全栈 |
@@ -104,7 +104,10 @@ ai_orz/
 │       ├── aop/         # 事件中心纯框架（Event/Producer/Consumer/Registry）
 │       ├── adapter/     # 通用适配器基础设施（消息渠道适配中台）
 │       └── ...          # 其他基础设施（向量存储、日志）
-├── frontend/            # Dioxus 前端
+├── frontend/            # Dioxus 前端（Tailwind CSS v4 + DaisyUI v5）
+│   ├── src/             # 前端源码
+│   ├── styles/          # Tailwind CSS 入口
+│   └── public/          # 构建产物（output.css）
 └── docs/                # 详细设计文档
 ```
 
