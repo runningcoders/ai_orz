@@ -117,12 +117,22 @@ impl ThemeController {
     }
 }
 
-pub fn use_theme() -> ThemeController {
-    let theme = use_signal(|| get_saved_theme());
+/// 在根组件初始化全局主题状态（与 use_toast 模式一致）
+///
+/// 必须在 App 顶层调用一次，后续子组件通过 `use_theme()` 共享同一份 Signal，
+/// 避免每个组件独立 use_signal 导致主题切换不能跨组件联动
+pub fn use_provide_theme() -> ThemeController {
+    let theme = use_context_provider(|| Signal::new(get_saved_theme()));
 
     use_effect(move || {
         set_html_theme(&(theme)());
     });
 
+    ThemeController { theme }
+}
+
+/// 获取全局主题控制器（子组件中使用）
+pub fn use_theme() -> ThemeController {
+    let theme = use_context::<Signal<String>>();
     ThemeController { theme }
 }
