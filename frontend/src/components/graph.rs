@@ -108,13 +108,28 @@ fn get_label_transform(sx: f64, sy: f64, tx: f64, ty: f64) -> String {
 
 #[component]
 pub fn Graph(props: GraphProps) -> Element {
-    let initial_nodes = props.nodes.clone();
+    // 修复 H4：use_signal 只在首次初始化，后续 props.nodes 变化不会更新。
+    // 用 use_effect 监听 props.nodes，增量同步 node_positions：
+    // - 移除不在新节点列表中的旧位置
+    // - 新增节点用 props 中的 x/y（已有位置保留避免拖拽丢失）
     let mut node_positions = use_signal(|| {
         let mut pos = HashMap::new();
-        for node in &initial_nodes {
+        for node in &props.nodes {
             pos.insert(node.id.clone(), (node.x, node.y));
         }
         pos
+    });
+
+    // 用 spawn 同步更新（避免 use_effect move props 导致后续 clone 失败）
+    let nodes_for_update = props.nodes.clone();
+    spawn(async move {
+        let mut pos = node_positions.write();
+        let new_ids: std::collections::HashSet<String> =
+            nodes_for_update.iter().map(|n| n.id.clone()).collect();
+        pos.retain(|id: &String, _| new_ids.contains(id));
+        for node in &nodes_for_update {
+            pos.entry(node.id.clone()).or_insert((node.x, node.y));
+        }
     });
 
     let mut is_dragging = use_signal(|| false);

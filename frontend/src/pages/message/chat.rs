@@ -207,15 +207,22 @@ pub fn MessageChat() -> Element {
             Err(_) => return,
         };
         let cur_project = selected_project();
-        if let Some(proj_id) = &msg.project_id {
-            if cur_project.as_deref() == Some(proj_id.as_str()) {
-                let mut current = messages.write();
-                if current.iter().any(|m| m.message_id == msg.message_id) {
-                    return;
-                }
-                current.push(msg);
-                is_typing.set(false);
+        // 修复 H1：默认对话框（cur_project=None）应接收 project_id=None 的消息
+        let project_match = match (&cur_project, &msg.project_id) {
+            (Some(cur), Some(proj)) => cur.as_str() == proj.as_str(),
+            (None, None) => true,
+            _ => false,
+        };
+        if project_match {
+            let mut current = messages.write();
+            // 修复 H2：乐观消息用 tmp_ 前缀，真实消息 ID 不同导致重复。
+            // 策略：收到真实消息时移除同 content 的 tmp_ 前缀消息
+            current.retain(|m| !(m.message_id.starts_with("tmp_") && m.content == msg.content));
+            if current.iter().any(|m| m.message_id == msg.message_id) {
+                return;
             }
+            current.push(msg);
+            is_typing.set(false);
         }
     };
 
@@ -231,7 +238,14 @@ pub fn MessageChat() -> Element {
     });
 
     use_effect(move || {
-        let event_source = web_sys::EventSource::new("/api/v1/finance/messages/sse").unwrap();
+        // 修复 H5：EventSource::new 可能失败（浏览器不支持或 URL 无效），不能 unwrap
+        let event_source = match web_sys::EventSource::new("/api/v1/finance/messages/sse") {
+            Ok(es) => es,
+            Err(_) => {
+                toast.error("SSE 连接初始化失败，实时消息将无法接收");
+                return;
+            }
+        };
         sse_connected.set(true);
 
         let on_message = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
@@ -239,21 +253,30 @@ pub fn MessageChat() -> Element {
             handle_sse_message(data);
         }) as Box<dyn FnMut(web_sys::MessageEvent)>);
         event_source.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
-        on_message.forget();
+        // 修复 H7：存储 Closure 避免 forget() 泄漏，在 use_drop 中通过 set_onmessage(None)
+        // 触发 Rust 侧 Closure drop 回收
+        let on_message = Some(on_message);
 
         let on_open = Closure::wrap(Box::new(move |_: web_sys::Event| {
             sse_connected.set(true);
         }) as Box<dyn FnMut(web_sys::Event)>);
         event_source.set_onopen(Some(on_open.as_ref().unchecked_ref()));
-        on_open.forget();
+        let on_open = Some(on_open);
 
         let on_error = Closure::wrap(Box::new(move |_: web_sys::Event| {
             sse_connected.set(false);
         }) as Box<dyn FnMut(web_sys::Event)>);
         event_source.set_onerror(Some(on_error.as_ref().unchecked_ref()));
-        on_error.forget();
+        let on_error = Some(on_error);
 
         use_drop(move || {
+            // 先清除回调引用，使 Closure 自然 drop 回收内存
+            event_source.set_onmessage(None);
+            event_source.set_onopen(None);
+            event_source.set_onerror(None);
+            drop(on_message);
+            drop(on_open);
+            drop(on_error);
             event_source.close();
         });
     });

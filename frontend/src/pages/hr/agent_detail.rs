@@ -168,7 +168,10 @@ pub fn HrAgentDetail(id: String) -> Element {
     let mut agent_data = use_signal(|| Option::<GetAgentResponse>::None);
     let mut messages = use_signal(Vec::<MessageListItem>::new);
     let mut is_typing = use_signal(|| false);
+    // 修复 H3：为聊天、工具包、技能包输入框分离独立 signal，避免状态污染
     let mut input_message = use_signal(String::new);
+    let mut tool_pack_input = use_signal(String::new);
+    let mut skill_pack_input = use_signal(String::new);
     let toast = use_toast();
     let mut tool_packs = use_signal(Vec::<String>::new);
     let mut skill_packs = use_signal(Vec::<String>::new);
@@ -223,7 +226,14 @@ pub fn HrAgentDetail(id: String) -> Element {
     let sse_id = id.clone();
 
     use_effect(move || {
-        let event_source = web_sys::EventSource::new("/api/v1/finance/messages/sse").unwrap();
+        // 修复 H5：EventSource::new 可能失败，不能 unwrap
+        let event_source = match web_sys::EventSource::new("/api/v1/finance/messages/sse") {
+            Ok(es) => es,
+            Err(_) => {
+                toast.error("SSE 连接初始化失败，实时消息将无法接收");
+                return;
+            }
+        };
         let inner_id = sse_id.clone();
         let mut inner_messages = messages.clone();
         let mut inner_is_typing = is_typing.clone();
@@ -236,6 +246,8 @@ pub fn HrAgentDetail(id: String) -> Element {
             };
             if msg.to_id == inner_id || msg.from_id == inner_id {
                 let mut current = inner_messages.write();
+                // 修复 H2：移除同 content 的 tmp_ 前缀乐观消息
+                current.retain(|m| !(m.message_id.starts_with("tmp_") && m.content == msg.content));
                 if current.iter().any(|m| m.message_id == msg.message_id) {
                     return;
                 }
@@ -244,9 +256,12 @@ pub fn HrAgentDetail(id: String) -> Element {
             }
         }) as Box<dyn FnMut(web_sys::MessageEvent)>);
         event_source.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
-        on_message.forget();
+        // 修复 H7：存储 Closure 避免 forget() 泄漏
+        let on_message = Some(on_message);
 
         use_drop(move || {
+            event_source.set_onmessage(None);
+            drop(on_message);
             event_source.close();
         });
     });
@@ -273,7 +288,27 @@ pub fn HrAgentDetail(id: String) -> Element {
             };
 
             match send_message_to_agent(req).await {
-                Ok(_) => {}
+                Ok(_) => {
+                    // 修复 H6：发送成功后立即追加乐观消息，无需等待 SSE 回推
+                    let now_ms = chrono::Utc::now().timestamp_millis();
+                    let user_msg = MessageListItem {
+                        message_id: format!("tmp_{}", now_ms),
+                        project_id: None,
+                        task_id: None,
+                        from_id: "user".to_string(),
+                        from_role: 0,
+                        to_id: aid.clone(),
+                        to_role: 1,
+                        message_type: 0,
+                        status: 3,
+                        content: text.clone(),
+                        reply_to_id: None,
+                        created_at: now_ms,
+                        file_type: None,
+                        file_meta: None,
+                    };
+                    messages.write().push(user_msg);
+                }
                 Err(e) => {
                     toast.error(&format!("发送消息失败: {}", e));
                     is_typing.set(false);
@@ -447,17 +482,17 @@ pub fn HrAgentDetail(id: String) -> Element {
                                     class: "input input-sm input-bordered flex-1",
                                     r#type: "text",
                                     placeholder: "输入工具包 tag 名称",
-                                    oninput: move |e| input_message.set(e.value().clone()),
+                                    oninput: move |e| tool_pack_input.set(e.value().clone()),
                                 }
                                 button {
                                     class: "btn btn-primary btn-sm",
                                     onclick: move |_| {
-                                        let tag = input_message().trim().to_string();
+                                        let tag = tool_pack_input().trim().to_string();
                                         if tag.is_empty() {
                                             return;
                                         }
                                         let aid = agent_id_signal();
-                                        input_message.set(String::new());
+                                        tool_pack_input.set(String::new());
                                         spawn(async move {
                                             match install_tool_pack(&aid, &tag).await {
                                                 Ok(_) => {
@@ -519,17 +554,17 @@ pub fn HrAgentDetail(id: String) -> Element {
                                     class: "input input-sm input-bordered flex-1",
                                     r#type: "text",
                                     placeholder: "输入技能包 tag 名称",
-                                    oninput: move |e| input_message.set(e.value().clone()),
+                                    oninput: move |e| skill_pack_input.set(e.value().clone()),
                                 }
                                 button {
                                     class: "btn btn-primary btn-sm",
                                     onclick: move |_| {
-                                        let tag = input_message().trim().to_string();
+                                        let tag = skill_pack_input().trim().to_string();
                                         if tag.is_empty() {
                                             return;
                                         }
                                         let aid = agent_id_signal();
-                                        input_message.set(String::new());
+                                        skill_pack_input.set(String::new());
                                         spawn(async move {
                                             match install_skill_pack(&aid, &tag).await {
                                                 Ok(_) => {
