@@ -430,7 +430,10 @@ pub fn ProjectDetail(id: String) -> Element {
                                                 div { class: "action-group",
                                                     if task_status != 3 {
                                                         button { class: "btn btn-outline btn-sm",
-                                                            onclick: move |_| {
+                                                            onclick: move |e: Event<MouseData>| {
+                                                                // 修复 HIGH #8：阻止事件冒泡到 <tr> 的 onclick，
+                                                                // 否则点击"开始"会同时触发状态更新和页面跳转
+                                                                e.stop_propagation();
                                                                 let tid = tid_start.clone();
                                                                 let pid = pid_start.clone();
                                                                 spawn(async move {
@@ -451,7 +454,9 @@ pub fn ProjectDetail(id: String) -> Element {
                                                     }
                                                     if task_status != 4 {
                                                         button { class: "btn btn-primary btn-sm",
-                                                            onclick: move |_| {
+                                                            onclick: move |e: Event<MouseData>| {
+                                                                // 修复 HIGH #8：同上，阻止冒泡
+                                                                e.stop_propagation();
                                                                 let tid = tid_complete.clone();
                                                                 let pid = pid_complete.clone();
                                                                 spawn(async move {

@@ -3,8 +3,9 @@ use dioxus_router::use_navigator;
 
 pub mod use_resource;
 
+use crate::api::organization::get_current_user_info;
 use crate::pages::Route;
-use crate::store::auth::use_auth_state;
+use crate::store::auth::{save_role, use_auth_state};
 use crate::utils::local_storage;
 
 #[allow(unused_imports)]
@@ -15,12 +16,36 @@ pub fn use_breakpoint() -> Signal<bool> {
 }
 
 pub fn use_require_auth() -> bool {
-    let auth = use_auth_state();
+    let mut auth = use_auth_state();
     let navigator = use_navigator();
 
     use_effect(move || {
         if !auth.read().logged_in {
             navigator.replace(Route::Reception {});
+        } else {
+            // 修复 HIGH #1 + R-M1：刷新页面后 AuthState.restore() 仅恢复 logged_in 和
+            // 持久化的 role；若 role=0（旧版本未持久化 role 的缓存）或登录时硬编码
+            // role=1 的旧 session，调用 /user/me 回填真实 role，避免管理员菜单消失。
+            // 仅在 role=0 时触发，避免每次渲染都请求。
+            let needs_role_restore = auth.read().role == 0;
+            if needs_role_restore {
+                spawn(async move {
+                    match get_current_user_info().await {
+                        Ok(resp) => {
+                            let mut state = auth.write();
+                            state.role = resp.data.role;
+                            state.username = resp.data.username.clone();
+                            state.org_id = resp.data.organization_id.clone();
+                            // 持久化 role 供下次刷新直接恢复
+                            save_role(resp.data.role);
+                        }
+                        Err(_) => {
+                            // 获取用户信息失败（cookie 可能过期），静默处理
+                            // 后续 API 调用会 401，由各页面自行处理
+                        }
+                    }
+                });
+            }
         }
     });
 

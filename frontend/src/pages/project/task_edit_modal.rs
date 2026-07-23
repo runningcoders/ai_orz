@@ -64,13 +64,24 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
     let _navigator = use_navigator();
 
     // 编辑模式：加载已有任务数据
-    let mode_for_load = props.mode.clone();
-    let show_for_load = props.show;
+    // 修复 HIGH #5：之前 show_for_load = props.show 是普通 bool，
+    // use_effect 在首次挂载执行后不会因 props.show 变化重跑，
+    // 导致弹窗打开后项目/Agent 列表/编辑数据永远加载不出来。
+    // 现在引入 show_signal 跟踪 show 变化，effect 依赖 signal 触发重跑。
+    let mut show_signal = use_signal(|| props.show);
+    let current_mode = props.mode.clone();
+    let current_show = props.show;
     use_effect(move || {
-        if !show_for_load {
+        // 同步 props.show 到 signal（注册依赖，使 show 变化时 effect 重跑）
+        if show_signal() != current_show {
+            show_signal.set(current_show);
+        }
+        if !show_signal() {
             return;
         }
         loading_data.set(true);
+
+        let mode_for_load = current_mode.clone();
 
         // 加载项目下拉数据
         let pid_initial = match &mode_for_load {
@@ -78,7 +89,7 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
             TaskEditMode::Edit { .. } => String::new(),
         };
 
-        // 克隆 mode 供 spawn 闭包使用（use_effect 是 FnMut，不能 move 捕获变量）
+        // 克隆 mode 供 spawn 闭包使用
         let mode_for_async = mode_for_load.clone();
         spawn(async move {
             // 加载项目列表

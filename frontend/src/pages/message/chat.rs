@@ -85,15 +85,9 @@ struct PendingAttachment {
 
 #[component]
 pub fn MessageChat() -> Element {
-    // 权限检查：未登录时重定向到登录页
-    if !crate::hooks::use_require_auth() {
-        return rsx! {
-            div { class: "min-h-screen flex items-center justify-center",
-                span { class: "loading loading-spinner loading-lg" }
-            }
-        };
-    }
-
+    // 修复 HIGH #3：之前 use_require_auth 提前 return 会跳过后续所有 use_signal，
+    // Dioxus 的 hooks 槽位索引会与上一次 render 不一致，触发 panic。
+    // 现在：先注册所有 hooks，再在渲染时根据 auth 状态条件返回。
     let mut projects = use_signal(Vec::<ListProjectsResponseItem>::new);
     let mut selected_project = use_signal(|| Option::<String>::None);
     let mut messages = use_signal(Vec::<MessageListItem>::new);
@@ -132,6 +126,15 @@ pub fn MessageChat() -> Element {
     // 移动端 sidebar 抽屉状态
     let mut sidebar_open = use_signal(|| false);
     let is_mobile = crate::hooks::use_breakpoint();
+
+    // 权限检查：未登录时重定向到登录页（在所有 use_signal 之后调用）
+    if !crate::hooks::use_require_auth() {
+        return rsx! {
+            div { class: "min-h-screen flex items-center justify-center",
+                span { class: "loading loading-spinner loading-lg" }
+            }
+        };
+    }
 
     let mut load_projects = move || {
         loading_projects.set(true);
@@ -851,7 +854,10 @@ pub fn MessageChat() -> Element {
         }
     };
 
-    let sidebar_visible_on_mobile = selected_project().is_none() || sidebar_open();
+    // 修复 HIGH #2：之前 sidebar_visible_on_mobile = selected_project().is_none() || sidebar_open()
+    // 导致默认对话 (selected_project=None) 下遮罩恒显示，点击遮罩后 sidebar_open=false 但表达式仍 true，
+    // 移动端默认对话功能完全不可用。改为仅依赖 sidebar_open。
+    let sidebar_visible_on_mobile = sidebar_open();
 
     rsx! {
         div { class: "h-[calc(100vh-4rem)] flex flex-col lg:flex-row relative",

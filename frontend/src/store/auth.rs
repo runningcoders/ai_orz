@@ -8,6 +8,7 @@ use dioxus::prelude::*;
 use crate::utils::local_storage;
 
 const LOGGED_IN_KEY: &str = "ai_orz_logged_in";
+const ROLE_KEY: &str = "ai_orz_role";
 
 pub fn mark_logged_in() {
     if let Some(storage) = local_storage() {
@@ -15,9 +16,18 @@ pub fn mark_logged_in() {
     }
 }
 
+/// 持久化用户角色到 localStorage，供页面刷新后恢复管理员菜单显示
+pub fn save_role(role: i32) {
+    if let Some(storage) = local_storage() {
+        let role_str = role.to_string();
+        let _ = storage.set(ROLE_KEY, &role_str);
+    }
+}
+
 pub fn clear_login_state() {
     if let Some(storage) = local_storage() {
         let _ = storage.remove_item(LOGGED_IN_KEY);
+        let _ = storage.remove_item(ROLE_KEY);
     }
 }
 
@@ -26,6 +36,13 @@ pub fn is_logged_in() -> bool {
         .and_then(|s| s.get(LOGGED_IN_KEY).ok()?)
         .map(|v| v == "true")
         .unwrap_or(false)
+}
+
+fn restore_role() -> i32 {
+    local_storage()
+        .and_then(|s| s.get(ROLE_KEY).ok().flatten())
+        .and_then(|v| v.parse::<i32>().ok())
+        .unwrap_or(0)
 }
 
 #[derive(Clone, Debug, Default)]
@@ -40,8 +57,12 @@ pub struct AuthState {
 
 impl AuthState {
     pub fn restore() -> Self {
+        // 修复 HIGH #1：之前 restore 只恢复 logged_in，role/username/org_id 全部丢失，
+        // 导致刷新页面后管理员菜单消失。现在持久化恢复 role。
+        // username/org_id 仅用于 UI 显示，丢失影响较小，可后续通过接口回填。
         Self {
             logged_in: is_logged_in(),
+            role: restore_role(),
             ..Default::default()
         }
     }

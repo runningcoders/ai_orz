@@ -359,6 +359,11 @@ pub fn Graph(props: GraphProps) -> Element {
                             style: "{glow}",
                             opacity: "{opacity}",
                             onmousedown: move |e: MouseEvent| {
+                                // 修复 HIGH #7：节点 mousedown 事件冒泡到 svg 的 handle_pan_start，
+                                // 导致拖拽节点时 is_dragging 和 is_panning 同时为 true，
+                                // 节点位移 = 节点移动 + 视图平移，所有节点拖拽都错乱。
+                                // stop_propagation 阻止冒泡，确保拖拽节点时不平移画布。
+                                e.stop_propagation();
                                 handle_node_drag_start_with_event(e, node.id.clone());
                             },
                             circle {

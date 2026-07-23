@@ -3,9 +3,9 @@
 use dioxus::prelude::*;
 
 use crate::api::auth::{check_initialized, initialize_system, login};
-use crate::api::organization::list_organizations_public;
+use crate::api::organization::{get_current_user_info, list_organizations_public};
 use crate::components::state::Loading;
-use crate::store::auth::{mark_logged_in, AuthState};
+use crate::store::auth::{mark_logged_in, save_role, AuthState};
 use crate::store::toast::use_toast;
 use common::api::{InitializeSystemRequest, LoginRequest, OrganizationListItem};
 
@@ -80,10 +80,25 @@ pub fn Reception() -> Element {
                     mark_logged_in();
                     let mut state = auth.write();
                     state.logged_in = true;
-                    state.username = resp.username;
-                    state.role = 1;
-                    state.org_id = resp.organization_id;
+                    state.username = resp.username.clone();
+                    state.org_id = resp.organization_id.clone();
+                    // 修复 R-M1：之前硬编码 role=1 导致管理员登录后看不到管理菜单。
+                    // LoginResponse 不含 role，登录后立即调用 /user/me 获取真实 role。
                     drop(state);
+                    match get_current_user_info().await {
+                        Ok(user_info) => {
+                            let mut state = auth.write();
+                            state.role = user_info.data.role;
+                            state.username = user_info.data.username.clone();
+                            state.org_id = user_info.data.organization_id.clone();
+                            save_role(user_info.data.role);
+                            drop(state);
+                        }
+                        Err(_) => {
+                            // 获取用户信息失败，仍允许登录（role 保持默认 0）
+                            // use_require_auth 会再次尝试回填
+                        }
+                    }
                     // 修复 L_NEW：web_sys::window() 在 non-Window 环境（如 SSR）返回 None，
                     // unwrap 会 panic。改为 if let 安全处理
                     if let Some(window) = web_sys::window() {

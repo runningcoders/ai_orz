@@ -12,13 +12,14 @@ use crate::store::toast::use_toast;
 use common::api::{CreateMcpServerRequest, McpServerConfigDto, McpServerListItem};
 use common::enums::{McpServerStatus, McpTransport};
 
+// 修复 HIGH #6：之前 day = seconds / 86400 是"自纪元以来的天数"（如 20500），
+// 拼成 "20500 12:34:56" 完全无法理解。改用 chrono 本地时区格式化。
 fn format_timestamp(ts: i64) -> String {
-    let seconds = ts / 1000;
-    let day = seconds / 86400;
-    let hour = (seconds % 86400) / 3600;
-    let minute = (seconds % 3600) / 60;
-    let second = seconds % 60;
-    format!("{} {:02}:{:02}:{:02}", day, hour, minute, second)
+    use chrono::{Local, TimeZone};
+    match Local.timestamp_opt(ts / 1000, 0) {
+        chrono::LocalResult::Single(dt) => format!("{}", dt.format("%Y-%m-%d %H:%M:%S")),
+        _ => "-".to_string(),
+    }
 }
 
 #[component]

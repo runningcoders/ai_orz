@@ -228,8 +228,20 @@ pub fn HrAgentDetail(id: String) -> Element {
                 Ok(resp) => all_tools.set(resp.tools),
                 Err(e) => toast.error(&format!("获取工具列表失败: {}", e)),
             }
-            match load_latest_messages(None, Some(20)).await {
-                Ok(resp) => messages.set(resp.messages),
+            match load_latest_messages(None, Some(50)).await {
+                Ok(resp) => {
+                    // 修复 HIGH #4：之前直接 set 全局消息，显示的是其他 Agent/用户的消息。
+                    // 后端 /messages API 不支持 agent_id 过滤，前端按 to_id/from_id 客户端过滤。
+                    // 取较多条数（50）后过滤，确保当前 agent 有足够历史。
+                    let aid_for_filter = aid.clone();
+                    let filtered: Vec<_> = resp
+                        .messages
+                        .into_iter()
+                        .filter(|m| m.to_id == aid_for_filter || m.from_id == aid_for_filter)
+                        .take(20)
+                        .collect();
+                    messages.set(filtered);
+                }
                 Err(e) => toast.error(&format!("加载消息失败: {}", e)),
             }
         });
