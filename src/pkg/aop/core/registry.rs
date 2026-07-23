@@ -277,6 +277,10 @@ impl Registry {
                                         if let Err(e) = registry_arc.nack(&consumer_name, &event_id).await {
                                             sys_error!("[{}] queue.nack error for {}: {}", consumer_name, event_id, e);
                                         }
+                                        // 退避：on_event 失败后添加 sleep，避免紧密自旋
+                                        // 之前 error_sleep 只用于 dequeue_for 失败，不用于 on_event 失败
+                                        // 导致 Agent busy 时 nack 后立即重新入队被取出，形成 CPU 紧密自旋
+                                        tokio::time::sleep(tokio::time::Duration::from_millis(error_sleep)).await;
                                     }
                                 }
                             }
