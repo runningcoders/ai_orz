@@ -10,72 +10,15 @@ use crate::components::stats::ProjectStatsPanel;
 use crate::layouts::app_layout::AppLayout;
 use crate::pages::project::task_edit_modal::{TaskEditMode, TaskEditModal};
 use crate::store::toast::use_toast;
+use crate::utils::{progress_bar_class, project_status_badge, project_status_text, task_status_badge, task_status_text};
 use common::api::{ArtifactDetail, CreateArtifactRequest, GetProjectResponse, TaskListItem};
 use common::enums::ArtifactSourceType;
-
-fn project_status_badge(status: i32) -> &'static str {
-    match status {
-        0 => "badge badge-error",
-        1 => "badge badge-info",
-        2 => "badge badge-warning",
-        3 => "badge badge-primary",
-        4 => "badge badge-success",
-        5 => "badge badge-neutral",
-        _ => "badge badge-neutral",
-    }
-}
-
-fn project_status_text(status: i32) -> &'static str {
-    match status {
-        0 => "已删除",
-        1 => "活跃",
-        2 => "待审核",
-        3 => "进行中",
-        4 => "已完成",
-        5 => "已归档",
-        _ => "未知",
-    }
-}
-
-fn task_status_badge(status: i32) -> &'static str {
-    match status {
-        0 => "badge badge-error",
-        1 => "badge badge-warning",
-        2 => "badge badge-info",
-        3 => "badge badge-primary",
-        4 => "badge badge-success",
-        5 => "badge badge-neutral",
-        _ => "badge badge-neutral",
-    }
-}
-
-fn task_status_text(status: i32) -> &'static str {
-    match status {
-        0 => "已取消",
-        1 => "待审核",
-        2 => "待处理",
-        3 => "进行中",
-        4 => "已完成",
-        5 => "已归档",
-        _ => "未知",
-    }
-}
 
 fn artifact_source_type_text(source_type: ArtifactSourceType) -> &'static str {
     match source_type {
         ArtifactSourceType::Attachment => "附件",
         ArtifactSourceType::GeneratedContent => "生成内容",
         ArtifactSourceType::RemoteUrl => "远程链接",
-    }
-}
-
-fn progress_bar_class(progress: i32) -> &'static str {
-    match progress {
-        0..=25 => "overview-progress-fill warning",
-        26..=50 => "overview-progress-fill primary",
-        51..=75 => "overview-progress-fill accent",
-        76..=100 => "overview-progress-fill success",
-        _ => "overview-progress-fill",
     }
 }
 

@@ -7,55 +7,13 @@ use crate::api::project::{list_projects, list_tasks};
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
+use crate::utils::{format_datetime as format_time, progress_bar_class, task_status_badge, task_status_text};
 use common::api::{ListProjectsResponseItem, TaskListItem};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ViewMode {
     List,
     Board,
-}
-
-fn task_status_badge(status: i32) -> &'static str {
-    match status {
-        0 => "badge badge-error",       // 已取消
-        1 => "badge badge-warning",     // 待审核
-        2 => "badge badge-info",        // 待处理
-        3 => "badge badge-primary",     // 进行中
-        4 => "badge badge-success",     // 已完成
-        5 => "badge badge-neutral",     // 已归档
-        _ => "badge badge-neutral",
-    }
-}
-
-fn task_status_text(status: i32) -> &'static str {
-    match status {
-        0 => "已取消",
-        1 => "待审核",
-        2 => "待处理",
-        3 => "进行中",
-        4 => "已完成",
-        5 => "已归档",
-        _ => "未知",
-    }
-}
-
-fn progress_bar_class(progress: i32) -> &'static str {
-    match progress {
-        0..=25 => "overview-progress-fill warning",
-        26..=50 => "overview-progress-fill primary",
-        51..=75 => "overview-progress-fill accent",
-        76..=100 => "overview-progress-fill success",
-        _ => "overview-progress-fill",
-    }
-}
-
-fn format_time(timestamp: i64) -> String {
-    use chrono::{Local, TimeZone};
-    Local
-        .timestamp_opt(timestamp / 1000, 0)
-        .single()
-        .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
-        .unwrap_or_else(|| timestamp.to_string())
 }
 
 #[component]

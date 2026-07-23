@@ -1,11 +1,11 @@
 use dioxus::prelude::{Key, *};
-use chrono::{DateTime, Utc};
 
 use crate::api::message::search_messages;
 use crate::components::button::Button;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
+use crate::utils::format_datetime_full as format_timestamp;
 use common::api::MessageSearchResult;
 
 fn format_role(role: i32) -> &'static str {
@@ -14,11 +14,6 @@ fn format_role(role: i32) -> &'static str {
         0 => "User",
         _ => "System",
     }
-}
-
-fn format_timestamp(ts: i64) -> String {
-    let dt = DateTime::from_timestamp(ts / 1000, 0).unwrap_or(Utc::now());
-    dt.format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
 #[component]

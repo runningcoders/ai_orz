@@ -5,23 +5,23 @@ use common::api::{
     LoginResponse,
 };
 
-use super::{api_get, api_post};
+use super::{api_get, api_post, api_post_empty, ApiError};
 
-pub async fn check_initialized() -> Result<CheckInitializedResponse, String> {
+pub async fn check_initialized() -> Result<CheckInitializedResponse, ApiError> {
     api_get("/api/v1/organization/initialize/check").await
 }
 
-pub async fn initialize_system(req: InitializeSystemRequest) -> Result<InitializeSystemResponse, String> {
+pub async fn initialize_system(req: InitializeSystemRequest) -> Result<InitializeSystemResponse, ApiError> {
     api_post("/api/v1/organization/initialize", &req).await
 }
 
-pub async fn login(req: LoginRequest) -> Result<LoginResponse, String> {
+pub async fn login(req: LoginRequest) -> Result<LoginResponse, ApiError> {
     api_post("/api/v1/organization/auth/login", &req).await
 }
 
 #[allow(dead_code)]
-pub async fn logout() -> Result<(), String> {
+pub async fn logout() -> Result<(), ApiError> {
     // logout 不需要返回数据，但后端返回 ApiResponse<EmptyResponse>
     let req = serde_json::json!({});
-    super::api_post_empty("/api/v1/organization/auth/logout", &req).await
+    api_post_empty("/api/v1/organization/auth/logout", &req).await
 }

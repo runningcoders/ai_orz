@@ -8,55 +8,8 @@ use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
+use crate::utils::{format_datetime_full as format_timestamp, format_file_size as format_size};
 use common::api::{AttachmentDetail, CreateTextAttachmentRequest};
-
-fn format_size(size: u64) -> String {
-    if size < 1024 {
-        format!("{} B", size)
-    } else if size < 1024 * 1024 {
-        format!("{:.1} KB", size as f64 / 1024.0)
-    } else if size < 1024 * 1024 * 1024 {
-        format!("{:.1} MB", size as f64 / (1024.0 * 1024.0))
-    } else {
-        format!("{:.1} GB", size as f64 / (1024.0 * 1024.0 * 1024.0))
-    }
-}
-
-fn format_timestamp(ts: i64) -> String {
-    let mut sec = ts / 1000;
-    let mut min = sec / 60;
-    sec %= 60;
-    let mut hr = min / 60;
-    min %= 60;
-    let mut days = hr / 24;
-    hr %= 24;
-
-    let mut year = 1970i64;
-    loop {
-        let leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
-        let d = if leap { 366 } else { 365 };
-        if days >= d {
-            days -= d;
-            year += 1;
-        } else {
-            break;
-        }
-    }
-
-    let leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
-    let md = [31u32, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    let mut month = 1u32;
-    let mut day = (days + 1) as u32;
-    for d in md {
-        if day <= d {
-            break;
-        }
-        day -= d;
-        month += 1;
-    }
-
-    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", year, month, day, hr, min, sec)
-}
 
 #[component]
 pub fn FinanceAttachments() -> Element {

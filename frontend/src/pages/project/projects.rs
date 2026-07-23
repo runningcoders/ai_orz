@@ -8,31 +8,8 @@ use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
+use crate::utils::{project_status_badge as status_badge, project_status_text as status_text};
 use common::api::{CreateProjectRequest, ListProjectsResponseItem};
-
-fn status_badge(status: i32) -> &'static str {
-    match status {
-        0 => "badge badge-error",       // 已删除
-        1 => "badge badge-info",        // 活跃
-        2 => "badge badge-warning",     // 待审核
-        3 => "badge badge-primary",     // 进行中
-        4 => "badge badge-success",     // 已完成
-        5 => "badge badge-neutral",     // 已归档
-        _ => "badge badge-neutral",
-    }
-}
-
-fn status_text(status: i32) -> &'static str {
-    match status {
-        0 => "已删除",
-        1 => "活跃",
-        2 => "待审核",
-        3 => "进行中",
-        4 => "已完成",
-        5 => "已归档",
-        _ => "未知",
-    }
-}
 
 #[component]
 pub fn ProjectList() -> Element {

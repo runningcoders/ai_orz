@@ -1,6 +1,7 @@
 use dioxus::prelude::{Key, *};
 
 use crate::api::hr::{query_memory, search_memory};
+use crate::api::ApiError;
 use crate::components::button::Button;
 use crate::components::state::{EmptyState, Loading};
 use crate::store::toast::use_toast;
@@ -55,7 +56,7 @@ fn fetch_memories(
     loading.set(true);
     spawn(async move {
         let mem_type = Some(tab.memory_type());
-        let fetch_result: Result<Vec<MemoryResult>, String> = if kw.trim().is_empty() {
+        let fetch_result: Result<Vec<MemoryResult>, ApiError> = if kw.trim().is_empty() {
             query_memory(agent_id.as_deref(), mem_type)
                 .await
                 .map(|r| r.results)

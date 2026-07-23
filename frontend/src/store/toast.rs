@@ -73,23 +73,23 @@ impl ToastState {
     }
 
     /// 成功提示（默认 3 秒）
-    pub fn success(&self, message: &str) {
+    pub fn success(&self, message: impl std::fmt::Display) {
         self.show(message.to_string(), ToastType::Success, 3000);
     }
 
     /// 错误提示（默认 5 秒）
-    pub fn error(&self, message: &str) {
+    pub fn error(&self, message: impl std::fmt::Display) {
         self.show(message.to_string(), ToastType::Error, 5000);
     }
 
     /// 警告提示（默认 4 秒）
     #[allow(dead_code)]
-    pub fn warning(&self, message: &str) {
+    pub fn warning(&self, message: impl std::fmt::Display) {
         self.show(message.to_string(), ToastType::Warning, 4000);
     }
 
     /// 信息提示（默认 3 秒）
-    pub fn info(&self, message: &str) {
+    pub fn info(&self, message: impl std::fmt::Display) {
         self.show(message.to_string(), ToastType::Info, 3000);
     }
 }

@@ -1,5 +1,4 @@
 use dioxus::prelude::*;
-use std::time::{SystemTime, UNIX_EPOCH};
 use wasm_bindgen::{closure::Closure, JsCast};
 
 use crate::api::finance::upload_attachment;
@@ -8,71 +7,16 @@ use crate::api::message::{load_latest_messages, load_older_messages, send_messag
 use crate::api::project::{create_project, list_projects};
 use crate::components::modal::Modal;
 use crate::store::toast::use_toast;
+use crate::utils::{
+    format_file_size, format_time_hm as format_time, is_attachment_message, now_ms,
+    project_status_text as status_text, role_avatar, tmp_msg_id, MSG_AUDIO,
+    MSG_IMAGE, MSG_TASK_ASSIGNMENT, MSG_TEXT, MSG_TOOL_CALL_REQUEST, MSG_TOOL_CALL_RESULT,
+    MSG_VIDEO,
+};
 use common::api::{
     CreateProjectRequest, GetReceptionAgentResponse, ListProjectsResponseItem, MessageListItem,
     SendMessageToAgentParams,
 };
-
-fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64
-}
-
-/// 生成乐观消息的临时 ID。
-/// 修复 L18：单纯使用毫秒时间戳，同一毫秒内发送两条消息会 ID 碰撞。
-/// 加上 js_sys::Math::random() 随机后缀避免引入 uuid 依赖。
-fn tmp_msg_id() -> String {
-    let random = (js_sys::Math::random() * 1_000_000_000.0) as u32;
-    format!("tmp_{}_{:09}", now_ms(), random)
-}
-
-// 修复 M5：时间显示使用本地时区，之前用 UTC 偏移 8 小时
-fn format_time(ts: i64) -> String {
-    use chrono::Local;
-    use chrono::TimeZone;
-    match Local.timestamp_opt(ts / 1000, 0) {
-        chrono::LocalResult::Single(dt) => format!("{}", dt.format("%H:%M")),
-        _ => "--:--".to_string(),
-    }
-}
-
-fn status_text(status: i32) -> &'static str {
-    match status {
-        0 => "已删除",
-        1 => "活跃",
-        2 => "待审核",
-        3 => "进行中",
-        4 => "已完成",
-        5 => "已归档",
-        _ => "未知",
-    }
-}
-
-fn role_avatar(role: i32) -> &'static str {
-    match role {
-        0 => "U",
-        1 => "A",
-        2 => "S",
-        _ => "?",
-    }
-}
-
-/// 消息类型常量
-const MSG_TEXT: i32 = 0;
-const MSG_IMAGE: i32 = 1;
-const MSG_FILE: i32 = 2;
-const MSG_AUDIO: i32 = 3;
-const MSG_VIDEO: i32 = 4;
-const MSG_TOOL_CALL_REQUEST: i32 = 5;
-const MSG_TOOL_CALL_RESULT: i32 = 6;
-const MSG_TASK_ASSIGNMENT: i32 = 9;
-
-/// 判断是否为附件消息
-fn is_attachment_message(msg_type: i32) -> bool {
-    matches!(msg_type, MSG_IMAGE | MSG_FILE | MSG_AUDIO | MSG_VIDEO)
-}
 
 /// 待发送的附件信息（仅用于 UI 展示，发送后清空）
 #[derive(Debug, Clone, PartialEq)]
@@ -1336,19 +1280,6 @@ fn render_attachment_message(msg: &MessageListItem, bubble_class: &str, time_cla
             }
             div { class: "{time_class}", "{format_time(msg.created_at)}" }
         },
-    }
-}
-
-/// 格式化文件大小
-fn format_file_size(size: u64) -> String {
-    if size < 1024 {
-        format!("{} B", size)
-    } else if size < 1024 * 1024 {
-        format!("{:.1} KB", size as f64 / 1024.0)
-    } else if size < 1024 * 1024 * 1024 {
-        format!("{:.1} MB", size as f64 / (1024.0 * 1024.0))
-    } else {
-        format!("{:.1} GB", size as f64 / (1024.0 * 1024.0 * 1024.0))
     }
 }
 

@@ -7,6 +7,7 @@ use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
+use crate::utils::format_file_size;
 use common::api::{ArtifactDetail, CreateArtifactRequest, ListProjectsResponseItem};
 use common::enums::ArtifactSourceType;
 
@@ -15,18 +16,6 @@ fn source_type_text(source_type: ArtifactSourceType) -> &'static str {
         ArtifactSourceType::Attachment => "附件",
         ArtifactSourceType::GeneratedContent => "生成内容",
         ArtifactSourceType::RemoteUrl => "远程链接",
-    }
-}
-
-fn format_file_size(size: u64) -> String {
-    if size < 1024 {
-        format!("{} B", size)
-    } else if size < 1024 * 1024 {
-        format!("{:.1} KB", size as f64 / 1024.0)
-    } else if size < 1024 * 1024 * 1024 {
-        format!("{:.1} MB", size as f64 / (1024.0 * 1024.0))
-    } else {
-        format!("{:.1} GB", size as f64 / (1024.0 * 1024.0 * 1024.0))
     }
 }
 

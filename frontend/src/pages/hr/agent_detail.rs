@@ -5,49 +5,12 @@ use crate::components::state::Loading;
 use crate::components::stats::AgentStatsPanel;
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
+use crate::utils::{format_file_size, format_time_hm as format_time, is_attachment_message, role_avatar, tmp_msg_id};
 use common::api::{GetAgentResponse, MessageListItem, SendMessageToAgentParams, ToolListItem};
 use dioxus::prelude::*;
 use dioxus_router::Link;
 use std::collections::HashSet;
 use wasm_bindgen::{closure::Closure, JsCast};
-
-fn format_time(timestamp: i64) -> String {
-    // 修复 L_NEW：timestamp_opt 在无效时间戳时返回 None，unwrap 会 panic。
-    // 对齐 chat.rs 的实现：用 match 安全处理
-    use chrono::{Local, TimeZone};
-    match Local.timestamp_opt(timestamp / 1000, 0) {
-        chrono::LocalResult::Single(dt) => format!("{}", dt.format("%H:%M")),
-        _ => "--:--".to_string(),
-    }
-}
-
-/// 生成乐观消息的临时 ID。对齐 chat.rs 的 tmp_msg_id 实现：
-/// 用 now_ms + js_sys::Math::random 避免同毫秒发送两条消息 ID 碰撞
-fn tmp_msg_id() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let now_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64;
-    let random = (js_sys::Math::random() * 1_000_000_000.0) as u32;
-    format!("tmp_{}_{:09}", now_ms, random)
-}
-
-fn is_attachment_message(msg_type: i32) -> bool {
-    matches!(msg_type, 1 | 2 | 3 | 4)
-}
-
-fn format_file_size(bytes: u64) -> String {
-    if bytes < 1024 {
-        format!("{} B", bytes)
-    } else if bytes < 1024 * 1024 {
-        format!("{:.1} KB", bytes as f64 / 1024.0)
-    } else if bytes < 1024 * 1024 * 1024 {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-    } else {
-        format!("{:.1} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
-    }
-}
 
 fn render_message_content(msg: &MessageListItem) -> Element {
     if is_attachment_message(msg.message_type) {
@@ -125,15 +88,6 @@ fn role_class(role: i32) -> &'static str {
         1 => "agent",
         2 => "system",
         _ => "other",
-    }
-}
-
-fn role_avatar(role: i32) -> &'static str {
-    match role {
-        0 => "U",
-        1 => "A",
-        2 => "S",
-        _ => "?",
     }
 }
 

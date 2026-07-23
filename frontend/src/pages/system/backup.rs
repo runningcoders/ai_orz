@@ -9,37 +9,7 @@ use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-
-/// 将字节数格式化为人类可读的 KB/MB/GB
-fn format_size(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = KB * 1024;
-    const GB: u64 = MB * 1024;
-    if bytes >= GB {
-        format!("{:.2} GB", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.2} MB", bytes as f64 / MB as f64)
-    } else if bytes >= KB {
-        format!("{:.2} KB", bytes as f64 / KB as f64)
-    } else {
-        format!("{} B", bytes)
-    }
-}
-
-/// 把 ISO8601 时间戳格式化为 "YYYY-MM-DD HH:MM:SS"（解析失败原样返回）
-fn format_timestamp(ts: &str) -> String {
-    if ts.is_empty() {
-        return "-".to_string();
-    }
-    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(ts) {
-        let local = dt.with_timezone(&chrono::Local);
-        return local.format("%Y-%m-%d %H:%M:%S").to_string();
-    }
-    if ts.len() >= 19 {
-        return ts[..19].replace('T', " ");
-    }
-    ts.to_string()
-}
+use crate::utils::{format_file_size as format_size, format_rfc3339 as format_timestamp};
 
 /// 截断 MD5（取前 16 位并加省略号）
 fn truncate_md5(md5: &str) -> String {

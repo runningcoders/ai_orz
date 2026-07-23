@@ -2,41 +2,41 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{api_delete, api_get, api_get_or_default, api_post, api_post_empty, api_put};
+use super::{api_delete, api_get, api_get_or_default, api_post, api_post_empty, api_put, ApiError};
 
 /// 健康检查（返回纯文本）
-pub async fn check_health() -> Result<String, String> {
+pub async fn check_health() -> Result<String, ApiError> {
     super::api_get_text("/health").await
 }
 
 // ===== 定时触发器 =====
 
-pub async fn list_cron_triggers() -> Result<common::api::ListCronTriggersResponse, String> {
+pub async fn list_cron_triggers() -> Result<common::api::ListCronTriggersResponse, ApiError> {
     api_get_or_default("/api/v1/system/cron-triggers").await
 }
 
-pub async fn get_cron_trigger(id: &str) -> Result<common::api::GetCronTriggerResponse, String> {
+pub async fn get_cron_trigger(id: &str) -> Result<common::api::GetCronTriggerResponse, ApiError> {
     api_get(&format!("/api/v1/system/cron-triggers/{}", id)).await
 }
 
-pub async fn create_cron_trigger(req: common::api::CreateCronTriggerRequest) -> Result<common::api::CreateCronTriggerResponse, String> {
+pub async fn create_cron_trigger(req: common::api::CreateCronTriggerRequest) -> Result<common::api::CreateCronTriggerResponse, ApiError> {
     api_post("/api/v1/system/cron-triggers", &req).await
 }
 
-pub async fn update_cron_trigger(id: &str, req: common::api::UpdateCronTriggerRequest) -> Result<common::api::UpdateCronTriggerResponse, String> {
+pub async fn update_cron_trigger(id: &str, req: common::api::UpdateCronTriggerRequest) -> Result<common::api::UpdateCronTriggerResponse, ApiError> {
     api_put(&format!("/api/v1/system/cron-triggers/{}", id), &req).await
 }
 
-pub async fn delete_cron_trigger(id: &str) -> Result<(), String> {
+pub async fn delete_cron_trigger(id: &str) -> Result<(), ApiError> {
     api_delete(&format!("/api/v1/system/cron-triggers/{}", id)).await
 }
 
-pub async fn pause_cron_trigger(id: &str) -> Result<(), String> {
+pub async fn pause_cron_trigger(id: &str) -> Result<(), ApiError> {
     let body = serde_json::json!({});
     api_post_empty(&format!("/api/v1/system/cron-triggers/{}/pause", id), &body).await
 }
 
-pub async fn resume_cron_trigger(id: &str) -> Result<(), String> {
+pub async fn resume_cron_trigger(id: &str) -> Result<(), ApiError> {
     let body = serde_json::json!({});
     api_post_empty(&format!("/api/v1/system/cron-triggers/{}/resume", id), &body).await
 }
@@ -59,18 +59,18 @@ pub struct BackupInfo {
 }
 
 /// 列出所有备份（按 version 降序）
-pub async fn list_backups() -> Result<Vec<BackupInfo>, String> {
+pub async fn list_backups() -> Result<Vec<BackupInfo>, ApiError> {
     api_get_or_default("/api/v1/system/backups").await
 }
 
 /// 创建新备份，返回其元信息
-pub async fn create_backup() -> Result<BackupInfo, String> {
+pub async fn create_backup() -> Result<BackupInfo, ApiError> {
     let body = serde_json::json!({});
     api_post("/api/v1/system/backups", &body).await
 }
 
 /// 删除指定版本的备份
-pub async fn delete_backup(version: u64) -> Result<(), String> {
+pub async fn delete_backup(version: u64) -> Result<(), ApiError> {
     api_delete(&format!("/api/v1/system/backups/{}", version)).await
 }
 
@@ -78,7 +78,7 @@ pub async fn delete_backup(version: u64) -> Result<(), String> {
 ///
 /// 后端以 text/plain 返回，不经过 ApiResponse 包装，
 /// 因此直接使用底层 reqwest 客户端处理。
-pub async fn get_restore_script(version: u64) -> Result<String, String> {
+pub async fn get_restore_script(version: u64) -> Result<String, ApiError> {
     let path = format!("/api/v1/system/backups/{}/restore", version);
     let url = crate::config::current_config().api_url(&path);
     let body = serde_json::json!({});
@@ -87,11 +87,17 @@ pub async fn get_restore_script(version: u64) -> Result<String, String> {
         .json(&body)
         .send()
         .await
-        .map_err(|e| e.to_string())?;
-    if !resp.status().is_success() {
-        return Err(format!("HTTP {}", resp.status()));
+        .map_err(super::network_err)?;
+    let status = resp.status();
+    if !status.is_success() {
+        super::handle_unauthorized(status.as_u16());
+        return Err(super::parse_error_response(resp).await);
     }
-    resp.text().await.map_err(|e| e.to_string())
+    resp.text().await.map_err(|e| ApiError {
+        http_status: 200,
+        error_code: None,
+        message: e.to_string(),
+    })
 }
 
 // ===== 日志查询 =====
@@ -187,7 +193,7 @@ impl LogQueryParams {
 }
 
 /// 查询日志
-pub async fn query_logs(params: &LogQueryParams) -> Result<LogPageResult, String> {
+pub async fn query_logs(params: &LogQueryParams) -> Result<LogPageResult, ApiError> {
     let qs = params.to_query_string();
     let path = if qs.is_empty() {
         "/api/v1/system/logs".to_string()
@@ -236,18 +242,18 @@ pub struct EventDetailResponse {
 }
 
 /// 获取所有队列统计
-pub async fn get_all_queue_stats() -> Result<Vec<QueueStatsResponse>, String> {
+pub async fn get_all_queue_stats() -> Result<Vec<QueueStatsResponse>, ApiError> {
     api_get_or_default("/api/v1/system/aop/stats").await
 }
 
 /// 获取指定消费者队列统计
 #[allow(dead_code)]
-pub async fn get_queue_stats(consumer: &str) -> Result<QueueStatsResponse, String> {
+pub async fn get_queue_stats(consumer: &str) -> Result<QueueStatsResponse, ApiError> {
     api_get(&format!("/api/v1/system/aop/{}/stats", consumer)).await
 }
 
 /// 查询事件列表
-pub async fn list_events(consumer: &str, order_key: Option<&str>, status: Option<&str>, limit: usize, offset: usize) -> Result<Vec<EventSummaryResponse>, String> {
+pub async fn list_events(consumer: &str, order_key: Option<&str>, status: Option<&str>, limit: usize, offset: usize) -> Result<Vec<EventSummaryResponse>, ApiError> {
     let mut params = Vec::new();
     if let Some(ok) = order_key {
         params.push(format!("order_key={}", url_encode(ok)));
@@ -271,7 +277,7 @@ pub async fn list_events(consumer: &str, order_key: Option<&str>, status: Option
 }
 
 /// 获取事件详情
-pub async fn get_event(consumer: &str, event_id: &str) -> Result<EventDetailResponse, String> {
+pub async fn get_event(consumer: &str, event_id: &str) -> Result<EventDetailResponse, ApiError> {
     api_get(&format!("/api/v1/system/aop/{}/events/{}", consumer, event_id)).await
 }
 

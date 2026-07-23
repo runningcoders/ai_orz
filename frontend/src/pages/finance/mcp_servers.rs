@@ -11,18 +11,9 @@ use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
+use crate::utils::format_datetime_full as format_timestamp;
 use common::api::{CreateMcpServerRequest, McpServerConfigDto, McpServerListItem};
 use common::enums::{McpServerStatus, McpTransport};
-
-// 修复 HIGH #6：之前 day = seconds / 86400 是"自纪元以来的天数"（如 20500），
-// 拼成 "20500 12:34:56" 完全无法理解。改用 chrono 本地时区格式化。
-fn format_timestamp(ts: i64) -> String {
-    use chrono::{Local, TimeZone};
-    match Local.timestamp_opt(ts / 1000, 0) {
-        chrono::LocalResult::Single(dt) => format!("{}", dt.format("%Y-%m-%d %H:%M:%S")),
-        _ => "-".to_string(),
-    }
-}
 
 #[component]
 pub fn FinanceMcpServers() -> Element {

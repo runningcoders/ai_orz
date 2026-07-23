@@ -1,4 +1,7 @@
 //! API 客户端模块 - 统一 HTTP 客户端、JWT 注入、错误处理
+//!
+//! 所有函数统一返回 `Result<T, ApiError>`，错误信息包含 HTTP 状态码、
+//! 后端 error_code（如有）和解析后的 message。
 
 pub mod auth;
 pub mod finance;
@@ -28,17 +31,17 @@ fn build_request(method: Method, path: &str) -> RequestBuilder {
     client().request(method, &url)
 }
 
-/// 修复 HIGH #10：统一 401 处理，cookie 过期时清除登录态并重定向到登录页
-fn handle_unauthorized(status: u16) {
+/// 401 处理：cookie 过期时清除登录态并重定向到登录页
+pub(crate) fn handle_unauthorized(status: u16) {
     if status == 401 {
         crate::store::auth::clear_login_state();
-        // 跳转到登录页（同步执行，避免在 async 中调用 navigator）
         if let Some(window) = web_sys::window() {
             let _ = window.location().set_href("/login");
         }
     }
 }
 
+/// 从 reqwest 响应体解析 ApiError（提取 error_code 和 message）
 fn parse_api_error_from_body(body_text: &str, http_status: u16) -> ApiError {
     let error_code = serde_json::from_str::<serde_json::Value>(body_text)
         .ok()
@@ -55,136 +58,183 @@ fn parse_api_error_from_body(body_text: &str, http_status: u16) -> ApiError {
     }
 }
 
-async fn parse_error_response(resp: reqwest::Response) -> ApiError {
+pub(crate) async fn parse_error_response(resp: reqwest::Response) -> ApiError {
     let http_status = resp.status().as_u16();
     let body_text = resp.text().await.unwrap_or_default();
     parse_api_error_from_body(&body_text, http_status)
 }
 
-pub async fn api_get<T: serde::de::DeserializeOwned>(path: &str) -> Result<T, String> {
-    let resp = build_request(Method::GET, path).send().await.map_err(|e| e.to_string())?;
-    let status = resp.status().as_u16();
-    if !resp.status().is_success() {
-        handle_unauthorized(status);
-        return Err(format!("HTTP {}", resp.status()));
+/// 网络层错误 → ApiError
+pub(crate) fn network_err(e: reqwest::Error) -> ApiError {
+    ApiError {
+        http_status: 0,
+        error_code: None,
+        message: e.to_string(),
     }
-    let api_resp: ApiResponse<T> = resp.json().await.map_err(|e| e.to_string())?;
-    if !api_resp.is_success() {
-        return Err(api_resp.message);
-    }
-    api_resp.data.ok_or_else(|| "响应数据为空".to_string())
 }
 
-pub async fn api_get_or_default<T: serde::de::DeserializeOwned + Default>(path: &str) -> Result<T, String> {
-    let resp = build_request(Method::GET, path).send().await.map_err(|e| e.to_string())?;
-    let status = resp.status().as_u16();
-    if !resp.status().is_success() {
-        handle_unauthorized(status);
-        return Err(format!("HTTP {}", resp.status()));
+pub async fn api_get<T: serde::de::DeserializeOwned>(path: &str) -> Result<T, ApiError> {
+    let resp = build_request(Method::GET, path).send().await.map_err(network_err)?;
+    let status = resp.status();
+    if !status.is_success() {
+        handle_unauthorized(status.as_u16());
+        return Err(parse_error_response(resp).await);
     }
-    let api_resp: ApiResponse<T> = resp.json().await.map_err(|e| e.to_string())?;
+    let api_resp: ApiResponse<T> = resp.json().await.map_err(|e| ApiError {
+        http_status: 200,
+        error_code: None,
+        message: e.to_string(),
+    })?;
     if !api_resp.is_success() {
-        return Err(api_resp.message);
-    }
-    Ok(api_resp.data.unwrap_or_default())
-}
-
-pub async fn api_post<T: serde::de::DeserializeOwned, B: serde::Serialize>(path: &str, body: &B) -> Result<T, String> {
-    let resp = build_request(Method::POST, path).json(body).send().await.map_err(|e| e.to_string())?;
-    let status = resp.status().as_u16();
-    if !resp.status().is_success() {
-        handle_unauthorized(status);
-        return Err(format!("HTTP {}", resp.status()));
-    }
-    let api_resp: ApiResponse<T> = resp.json().await.map_err(|e| e.to_string())?;
-    if !api_resp.is_success() {
-        return Err(api_resp.message);
-    }
-    api_resp.data.ok_or_else(|| "响应数据为空".to_string())
-}
-
-pub async fn api_post_empty<B: serde::Serialize>(path: &str, body: &B) -> Result<(), String> {
-    let resp = build_request(Method::POST, path).json(body).send().await.map_err(|e| e.to_string())?;
-    let status = resp.status().as_u16();
-    if !resp.status().is_success() {
-        handle_unauthorized(status);
-        return Err(format!("HTTP {}", resp.status()));
-    }
-    let api_resp: ApiResponse<common::api::EmptyResponse> = resp.json().await.map_err(|e| e.to_string())?;
-    if !api_resp.is_success() {
-        return Err(api_resp.message);
-    }
-    Ok(())
-}
-
-pub async fn api_put<T: serde::de::DeserializeOwned, B: serde::Serialize>(path: &str, body: &B) -> Result<T, String> {
-    let resp = build_request(Method::PUT, path).json(body).send().await.map_err(|e| e.to_string())?;
-    let status = resp.status().as_u16();
-    if !resp.status().is_success() {
-        handle_unauthorized(status);
-        return Err(format!("HTTP {}", resp.status()));
-    }
-    let api_resp: ApiResponse<T> = resp.json().await.map_err(|e| e.to_string())?;
-    if !api_resp.is_success() {
-        return Err(api_resp.message);
-    }
-    api_resp.data.ok_or_else(|| "响应数据为空".to_string())
-}
-
-pub async fn api_put_empty<B: serde::Serialize>(path: &str, body: &B) -> Result<(), String> {
-    let resp = build_request(Method::PUT, path).json(body).send().await.map_err(|e| e.to_string())?;
-    let status = resp.status().as_u16();
-    if !resp.status().is_success() {
-        handle_unauthorized(status);
-        return Err(format!("HTTP {}", resp.status()));
-    }
-    let api_resp: ApiResponse<common::api::EmptyResponse> = resp.json().await.map_err(|e| e.to_string())?;
-    if !api_resp.is_success() {
-        return Err(api_resp.message);
-    }
-    Ok(())
-}
-
-pub async fn api_put_with_error<B: serde::Serialize>(path: &str, body: &B) -> Result<(), ApiError> {
-    let resp = build_request(Method::PUT, path)
-        .json(body)
-        .send()
-        .await
-        .map_err(|e| ApiError {
-            http_status: 0,
-            error_code: None,
-            message: e.to_string(),
-        })?;
-
-    if resp.status().is_success() {
-        let api_resp: ApiResponse<common::api::EmptyResponse> = resp.json().await.map_err(|e| ApiError {
-            http_status: 200,
-            error_code: None,
-            message: e.to_string(),
-        })?;
-        if api_resp.is_success() {
-            return Ok(());
-        }
         return Err(ApiError {
             http_status: 200,
             error_code: None,
             message: api_resp.message,
         });
     }
-
-    Err(parse_error_response(resp).await)
+    api_resp.data.ok_or_else(|| ApiError {
+        http_status: 200,
+        error_code: None,
+        message: "响应数据为空".to_string(),
+    })
 }
 
-pub async fn api_delete(path: &str) -> Result<(), String> {
-    let resp = build_request(Method::DELETE, path).send().await.map_err(|e| e.to_string())?;
-    let status = resp.status().as_u16();
-    if !resp.status().is_success() {
-        handle_unauthorized(status);
-        return Err(format!("HTTP {}", resp.status()));
+pub async fn api_get_or_default<T: serde::de::DeserializeOwned + Default>(path: &str) -> Result<T, ApiError> {
+    let resp = build_request(Method::GET, path).send().await.map_err(network_err)?;
+    let status = resp.status();
+    if !status.is_success() {
+        handle_unauthorized(status.as_u16());
+        return Err(parse_error_response(resp).await);
     }
-    let api_resp: ApiResponse<common::api::EmptyResponse> = resp.json().await.map_err(|e| e.to_string())?;
+    let api_resp: ApiResponse<T> = resp.json().await.map_err(|e| ApiError {
+        http_status: 200,
+        error_code: None,
+        message: e.to_string(),
+    })?;
     if !api_resp.is_success() {
-        return Err(api_resp.message);
+        return Err(ApiError {
+            http_status: 200,
+            error_code: None,
+            message: api_resp.message,
+        });
+    }
+    Ok(api_resp.data.unwrap_or_default())
+}
+
+pub async fn api_post<T: serde::de::DeserializeOwned, B: serde::Serialize>(path: &str, body: &B) -> Result<T, ApiError> {
+    let resp = build_request(Method::POST, path).json(body).send().await.map_err(network_err)?;
+    let status = resp.status();
+    if !status.is_success() {
+        handle_unauthorized(status.as_u16());
+        return Err(parse_error_response(resp).await);
+    }
+    let api_resp: ApiResponse<T> = resp.json().await.map_err(|e| ApiError {
+        http_status: 200,
+        error_code: None,
+        message: e.to_string(),
+    })?;
+    if !api_resp.is_success() {
+        return Err(ApiError {
+            http_status: 200,
+            error_code: None,
+            message: api_resp.message,
+        });
+    }
+    api_resp.data.ok_or_else(|| ApiError {
+        http_status: 200,
+        error_code: None,
+        message: "响应数据为空".to_string(),
+    })
+}
+
+pub async fn api_post_empty<B: serde::Serialize>(path: &str, body: &B) -> Result<(), ApiError> {
+    let resp = build_request(Method::POST, path).json(body).send().await.map_err(network_err)?;
+    let status = resp.status();
+    if !status.is_success() {
+        handle_unauthorized(status.as_u16());
+        return Err(parse_error_response(resp).await);
+    }
+    let api_resp: ApiResponse<common::api::EmptyResponse> = resp.json().await.map_err(|e| ApiError {
+        http_status: 200,
+        error_code: None,
+        message: e.to_string(),
+    })?;
+    if !api_resp.is_success() {
+        return Err(ApiError {
+            http_status: 200,
+            error_code: None,
+            message: api_resp.message,
+        });
+    }
+    Ok(())
+}
+
+pub async fn api_put<T: serde::de::DeserializeOwned, B: serde::Serialize>(path: &str, body: &B) -> Result<T, ApiError> {
+    let resp = build_request(Method::PUT, path).json(body).send().await.map_err(network_err)?;
+    let status = resp.status();
+    if !status.is_success() {
+        handle_unauthorized(status.as_u16());
+        return Err(parse_error_response(resp).await);
+    }
+    let api_resp: ApiResponse<T> = resp.json().await.map_err(|e| ApiError {
+        http_status: 200,
+        error_code: None,
+        message: e.to_string(),
+    })?;
+    if !api_resp.is_success() {
+        return Err(ApiError {
+            http_status: 200,
+            error_code: None,
+            message: api_resp.message,
+        });
+    }
+    api_resp.data.ok_or_else(|| ApiError {
+        http_status: 200,
+        error_code: None,
+        message: "响应数据为空".to_string(),
+    })
+}
+
+pub async fn api_put_empty<B: serde::Serialize>(path: &str, body: &B) -> Result<(), ApiError> {
+    let resp = build_request(Method::PUT, path).json(body).send().await.map_err(network_err)?;
+    let status = resp.status();
+    if !status.is_success() {
+        handle_unauthorized(status.as_u16());
+        return Err(parse_error_response(resp).await);
+    }
+    let api_resp: ApiResponse<common::api::EmptyResponse> = resp.json().await.map_err(|e| ApiError {
+        http_status: 200,
+        error_code: None,
+        message: e.to_string(),
+    })?;
+    if !api_resp.is_success() {
+        return Err(ApiError {
+            http_status: 200,
+            error_code: None,
+            message: api_resp.message,
+        });
+    }
+    Ok(())
+}
+
+pub async fn api_delete(path: &str) -> Result<(), ApiError> {
+    let resp = build_request(Method::DELETE, path).send().await.map_err(network_err)?;
+    let status = resp.status();
+    if !status.is_success() {
+        handle_unauthorized(status.as_u16());
+        return Err(parse_error_response(resp).await);
+    }
+    let api_resp: ApiResponse<common::api::EmptyResponse> = resp.json().await.map_err(|e| ApiError {
+        http_status: 200,
+        error_code: None,
+        message: e.to_string(),
+    })?;
+    if !api_resp.is_success() {
+        return Err(ApiError {
+            http_status: 200,
+            error_code: None,
+            message: api_resp.message,
+        });
     }
     Ok(())
 }
@@ -205,58 +255,25 @@ impl std::fmt::Display for ApiError {
     }
 }
 
-pub async fn api_post_with_error<T: serde::de::DeserializeOwned, B: serde::Serialize>(
-    path: &str,
-    body: &B,
-) -> Result<T, ApiError> {
-    let resp = build_request(Method::POST, path)
-        .json(body)
-        .send()
-        .await
-        .map_err(|e| ApiError {
-            http_status: 0,
-            error_code: None,
-            message: e.to_string(),
-        })?;
-
-    if resp.status().is_success() {
-        let api_resp: ApiResponse<T> = resp.json().await.map_err(|e| ApiError {
-            http_status: 200,
-            error_code: None,
-            message: e.to_string(),
-        })?;
-        if api_resp.is_success() {
-            return api_resp.data.ok_or_else(|| ApiError {
-                http_status: 200,
-                error_code: None,
-                message: "响应数据为空".to_string(),
-            });
-        }
-        return Err(ApiError {
-            http_status: 200,
-            error_code: None,
-            message: api_resp.message,
-        });
-    }
-
-    Err(parse_error_response(resp).await)
-}
-
-pub async fn api_get_text(path: &str) -> Result<String, String> {
+pub async fn api_get_text(path: &str) -> Result<String, ApiError> {
     let url = current_config().api_url(path);
-    let resp = client().get(&url).send().await.map_err(|e| e.to_string())?;
-    let status = resp.status().as_u16();
-    if !resp.status().is_success() {
-        handle_unauthorized(status);
-        return Err(format!("HTTP {}", resp.status()));
+    let resp = client().get(&url).send().await.map_err(network_err)?;
+    let status = resp.status();
+    if !status.is_success() {
+        handle_unauthorized(status.as_u16());
+        return Err(parse_error_response(resp).await);
     }
-    resp.text().await.map_err(|e| e.to_string())
+    resp.text().await.map_err(|e| ApiError {
+        http_status: 200,
+        error_code: None,
+        message: e.to_string(),
+    })
 }
 
 pub async fn api_post_multipart<T: serde::de::DeserializeOwned>(
     path: &str,
     form: FormData,
-) -> Result<T, String> {
+) -> Result<T, ApiError> {
     let url = current_config().api_url(path);
 
     let opts = RequestInit::new();
@@ -265,35 +282,85 @@ pub async fn api_post_multipart<T: serde::de::DeserializeOwned>(
     opts.set_credentials(web_sys::RequestCredentials::SameOrigin);
 
     let request = Request::new_with_str_and_init(&url, &opts)
-        .map_err(|e| format!("构造 Request 失败: {:?}", e))?;
+        .map_err(|e| ApiError {
+            http_status: 0,
+            error_code: None,
+            message: format!("构造 Request 失败: {:?}", e),
+        })?;
 
-    let window = web_sys::window().ok_or_else(|| "未找到 window 对象".to_string())?;
+    let window = web_sys::window().ok_or_else(|| ApiError {
+        http_status: 0,
+        error_code: None,
+        message: "未找到 window 对象".to_string(),
+    })?;
     let resp_value = JsFuture::from(window.fetch_with_request(&request))
         .await
-        .map_err(|e| format!("fetch 失败: {:?}", e))?;
+        .map_err(|e| ApiError {
+            http_status: 0,
+            error_code: None,
+            message: format!("fetch 失败: {:?}", e),
+        })?;
 
     let resp: Response = resp_value
         .dyn_into()
-        .map_err(|e| format!("Response 转换失败: {:?}", e))?;
+        .map_err(|e| ApiError {
+            http_status: 0,
+            error_code: None,
+            message: format!("Response 转换失败: {:?}", e),
+        })?;
 
+    let status = resp.status();
     if !resp.ok() {
-        return Err(format!("HTTP {}", resp.status()));
+        handle_unauthorized(status);
+        // 尝试读取 body 解析错误信息
+        if let Ok(json_promise) = resp.text() {
+            if let Ok(body_value) = JsFuture::from(json_promise).await {
+                if let Some(body_text) = body_value.as_string() {
+                    return Err(parse_api_error_from_body(&body_text, status));
+                }
+            }
+        }
+        return Err(ApiError {
+            http_status: status,
+            error_code: None,
+            message: format!("HTTP {}", status),
+        });
     }
 
     let json_promise = resp
         .json()
-        .map_err(|e| format!("json() 失败: {:?}", e))?;
+        .map_err(|e| ApiError {
+            http_status: 200,
+            error_code: None,
+            message: format!("json() 失败: {:?}", e),
+        })?;
     let json_value = JsFuture::from(json_promise)
         .await
-        .map_err(|e| format!("JSON 解析失败: {:?}", e))?;
+        .map_err(|e| ApiError {
+            http_status: 200,
+            error_code: None,
+            message: format!("JSON 解析失败: {:?}", e),
+        })?;
 
     let api_resp: ApiResponse<T> = serde_wasm_bindgen::from_value(json_value)
-        .map_err(|e| format!("反序列化 ApiResponse 失败: {}", e))?;
+        .map_err(|e| ApiError {
+            http_status: 200,
+            error_code: None,
+            message: format!("反序列化 ApiResponse 失败: {}", e),
+        })?;
 
     if !api_resp.is_success() {
-        return Err(api_resp.message);
+        return Err(ApiError {
+            http_status: 200,
+            error_code: None,
+            message: api_resp.message,
+        });
     }
-    api_resp.data.ok_or_else(|| "响应数据为空".to_string())
+    api_resp.data.ok_or_else(|| ApiError {
+        http_status: 200,
+        error_code: None,
+        message: "响应数据为空".to_string(),
+    })
 }
 
 #[derive(Debug, Clone)]

@@ -29,31 +29,41 @@ pub fn StatsCard(title: String, icon: String, value: String, subtitle: Option<St
     }
 }
 
+/// 通用统计面板外壳：统一的 card + title + stats 容器，内容由调用方通过 children 传入
 #[component]
-pub fn AgentStatsPanel(stats: Option<AgentStats>, model_call_stats: Option<ModelCallStats>) -> Element {
+pub fn StatsPanel(title: String, children: Element) -> Element {
     rsx! {
         div { class: "card bg-base-100 shadow-md",
             div { class: "card-body",
-                h2 { class: "card-title text-lg mb-2", "📊 Agent 统计" }
+                h2 { class: "card-title text-lg mb-2", "📊 {title}" }
                 div { class: "stats shadow overflow-visible",
-                    if let Some(s) = stats {
-                        if let Some(call) = s.call_summary {
-                            StatsCard { title: "唤醒次数".to_string(), icon: "🔔".to_string(), value: call.total_calls.to_string(), subtitle: None }
-                            if let Some(qps) = call.avg_qps {
-                                StatsCard { title: "平均 QPS".to_string(), icon: "📈".to_string(), value: format_qps(qps), subtitle: None }
-                            }
-                            StatsCard { title: "瞬时 QPS".to_string(), icon: "⚡".to_string(), value: format_qps(call.instant_qps), subtitle: None }
-                        }
+                    {children}
+                }
+            }
+        }
+    }
+}
+
+#[component]
+pub fn AgentStatsPanel(stats: Option<AgentStats>, model_call_stats: Option<ModelCallStats>) -> Element {
+    rsx! {
+        StatsPanel { title: "Agent 统计".to_string(),
+            if let Some(s) = stats {
+                if let Some(call) = s.call_summary {
+                    StatsCard { title: "唤醒次数".to_string(), icon: "🔔".to_string(), value: call.total_calls.to_string(), subtitle: None }
+                    if let Some(qps) = call.avg_qps {
+                        StatsCard { title: "平均 QPS".to_string(), icon: "📈".to_string(), value: format_qps(qps), subtitle: None }
                     }
-                    if let Some(mcs) = model_call_stats {
-                        if let Some(call) = mcs.call_summary {
-                            StatsCard { title: "模型调用".to_string(), icon: "🤖".to_string(), value: call.total_calls.to_string(), subtitle: None }
-                        }
-                        if let Some(token) = mcs.token_summary {
-                            StatsCard { title: "输入 Token".to_string(), icon: "📥".to_string(), value: format_token_count(token.total_tokens_input), subtitle: None }
-                            StatsCard { title: "输出 Token".to_string(), icon: "📤".to_string(), value: format_token_count(token.total_tokens_output), subtitle: None }
-                        }
-                    }
+                    StatsCard { title: "瞬时 QPS".to_string(), icon: "⚡".to_string(), value: format_qps(call.instant_qps), subtitle: None }
+                }
+            }
+            if let Some(mcs) = model_call_stats {
+                if let Some(call) = mcs.call_summary {
+                    StatsCard { title: "模型调用".to_string(), icon: "🤖".to_string(), value: call.total_calls.to_string(), subtitle: None }
+                }
+                if let Some(token) = mcs.token_summary {
+                    StatsCard { title: "输入 Token".to_string(), icon: "📥".to_string(), value: format_token_count(token.total_tokens_input), subtitle: None }
+                    StatsCard { title: "输出 Token".to_string(), icon: "📤".to_string(), value: format_token_count(token.total_tokens_output), subtitle: None }
                 }
             }
         }
@@ -63,27 +73,22 @@ pub fn AgentStatsPanel(stats: Option<AgentStats>, model_call_stats: Option<Model
 #[component]
 pub fn ProjectStatsPanel(stats: Option<common::models::ProjectStats>, model_call_stats: Option<ModelCallStats>) -> Element {
     rsx! {
-        div { class: "card bg-base-100 shadow-md",
-            div { class: "card-body",
-                h2 { class: "card-title text-lg mb-2", "📊 项目统计" }
-                div { class: "stats shadow overflow-visible",
-                    if let Some(s) = stats {
-                        if let Some(call) = s.call_summary {
-                            StatsCard { title: "事件次数".to_string(), icon: "📝".to_string(), value: call.total_calls.to_string(), subtitle: None }
-                            if let Some(qps) = call.avg_qps {
-                                StatsCard { title: "平均 QPS".to_string(), icon: "📈".to_string(), value: format_qps(qps), subtitle: None }
-                            }
-                        }
+        StatsPanel { title: "项目统计".to_string(),
+            if let Some(s) = stats {
+                if let Some(call) = s.call_summary {
+                    StatsCard { title: "事件次数".to_string(), icon: "📝".to_string(), value: call.total_calls.to_string(), subtitle: None }
+                    if let Some(qps) = call.avg_qps {
+                        StatsCard { title: "平均 QPS".to_string(), icon: "📈".to_string(), value: format_qps(qps), subtitle: None }
                     }
-                    if let Some(mcs) = model_call_stats {
-                        if let Some(call) = mcs.call_summary {
-                            StatsCard { title: "模型调用".to_string(), icon: "🤖".to_string(), value: call.total_calls.to_string(), subtitle: None }
-                        }
-                        if let Some(token) = mcs.token_summary {
-                            StatsCard { title: "输入 Token".to_string(), icon: "📥".to_string(), value: format_token_count(token.total_tokens_input), subtitle: None }
-                            StatsCard { title: "输出 Token".to_string(), icon: "📤".to_string(), value: format_token_count(token.total_tokens_output), subtitle: None }
-                        }
-                    }
+                }
+            }
+            if let Some(mcs) = model_call_stats {
+                if let Some(call) = mcs.call_summary {
+                    StatsCard { title: "模型调用".to_string(), icon: "🤖".to_string(), value: call.total_calls.to_string(), subtitle: None }
+                }
+                if let Some(token) = mcs.token_summary {
+                    StatsCard { title: "输入 Token".to_string(), icon: "📥".to_string(), value: format_token_count(token.total_tokens_input), subtitle: None }
+                    StatsCard { title: "输出 Token".to_string(), icon: "📤".to_string(), value: format_token_count(token.total_tokens_output), subtitle: None }
                 }
             }
         }
@@ -93,27 +98,22 @@ pub fn ProjectStatsPanel(stats: Option<common::models::ProjectStats>, model_call
 #[component]
 pub fn TaskStatsPanel(stats: Option<common::models::TaskStats>, model_call_stats: Option<ModelCallStats>) -> Element {
     rsx! {
-        div { class: "card bg-base-100 shadow-md",
-            div { class: "card-body",
-                h2 { class: "card-title text-lg mb-2", "📊 任务统计" }
-                div { class: "stats shadow overflow-visible",
-                    if let Some(s) = stats {
-                        if let Some(call) = s.call_summary {
-                            StatsCard { title: "事件次数".to_string(), icon: "📝".to_string(), value: call.total_calls.to_string(), subtitle: None }
-                            if let Some(qps) = call.avg_qps {
-                                StatsCard { title: "平均 QPS".to_string(), icon: "📈".to_string(), value: format_qps(qps), subtitle: None }
-                            }
-                        }
+        StatsPanel { title: "任务统计".to_string(),
+            if let Some(s) = stats {
+                if let Some(call) = s.call_summary {
+                    StatsCard { title: "事件次数".to_string(), icon: "📝".to_string(), value: call.total_calls.to_string(), subtitle: None }
+                    if let Some(qps) = call.avg_qps {
+                        StatsCard { title: "平均 QPS".to_string(), icon: "📈".to_string(), value: format_qps(qps), subtitle: None }
                     }
-                    if let Some(mcs) = model_call_stats {
-                        if let Some(call) = mcs.call_summary {
-                            StatsCard { title: "模型调用".to_string(), icon: "🤖".to_string(), value: call.total_calls.to_string(), subtitle: None }
-                        }
-                        if let Some(token) = mcs.token_summary {
-                            StatsCard { title: "输入 Token".to_string(), icon: "📥".to_string(), value: format_token_count(token.total_tokens_input), subtitle: None }
-                            StatsCard { title: "输出 Token".to_string(), icon: "📤".to_string(), value: format_token_count(token.total_tokens_output), subtitle: None }
-                        }
-                    }
+                }
+            }
+            if let Some(mcs) = model_call_stats {
+                if let Some(call) = mcs.call_summary {
+                    StatsCard { title: "模型调用".to_string(), icon: "🤖".to_string(), value: call.total_calls.to_string(), subtitle: None }
+                }
+                if let Some(token) = mcs.token_summary {
+                    StatsCard { title: "输入 Token".to_string(), icon: "📥".to_string(), value: format_token_count(token.total_tokens_input), subtitle: None }
+                    StatsCard { title: "输出 Token".to_string(), icon: "📤".to_string(), value: format_token_count(token.total_tokens_output), subtitle: None }
                 }
             }
         }
@@ -123,22 +123,17 @@ pub fn TaskStatsPanel(stats: Option<common::models::TaskStats>, model_call_stats
 #[component]
 pub fn ToolStatsPanel(stats: Option<common::models::ToolStats>) -> Element {
     rsx! {
-        div { class: "card bg-base-100 shadow-md",
-            div { class: "card-body",
-                h2 { class: "card-title text-lg mb-2", "📊 工具统计" }
-                div { class: "stats shadow overflow-visible",
-                    if let Some(s) = stats {
-                        if let Some(call) = s.call_summary {
-                            StatsCard { title: "调用次数".to_string(), icon: "🛠️".to_string(), value: call.total_calls.to_string(), subtitle: None }
-                            if let Some(qps) = call.avg_qps {
-                                StatsCard { title: "平均 QPS".to_string(), icon: "📈".to_string(), value: format_qps(qps), subtitle: None }
-                            }
-                            StatsCard { title: "瞬时 QPS".to_string(), icon: "⚡".to_string(), value: format_qps(call.instant_qps), subtitle: None }
-                        }
-                        if let Some(failed) = s.failed_count {
-                            StatsCard { title: "失败次数".to_string(), icon: "❌".to_string(), value: failed.to_string(), subtitle: None }
-                        }
+        StatsPanel { title: "工具统计".to_string(),
+            if let Some(s) = stats {
+                if let Some(call) = s.call_summary {
+                    StatsCard { title: "调用次数".to_string(), icon: "🛠️".to_string(), value: call.total_calls.to_string(), subtitle: None }
+                    if let Some(qps) = call.avg_qps {
+                        StatsCard { title: "平均 QPS".to_string(), icon: "📈".to_string(), value: format_qps(qps), subtitle: None }
                     }
+                    StatsCard { title: "瞬时 QPS".to_string(), icon: "⚡".to_string(), value: format_qps(call.instant_qps), subtitle: None }
+                }
+                if let Some(failed) = s.failed_count {
+                    StatsCard { title: "失败次数".to_string(), icon: "❌".to_string(), value: failed.to_string(), subtitle: None }
                 }
             }
         }
@@ -148,23 +143,18 @@ pub fn ToolStatsPanel(stats: Option<common::models::ToolStats>) -> Element {
 #[component]
 pub fn ModelProviderStatsPanel(stats: Option<ModelCallStats>) -> Element {
     rsx! {
-        div { class: "card bg-base-100 shadow-md",
-            div { class: "card-body",
-                h2 { class: "card-title text-lg mb-2", "📊 模型提供商统计" }
-                div { class: "stats shadow overflow-visible",
-                    if let Some(s) = stats {
-                        if let Some(call) = s.call_summary {
-                            StatsCard { title: "模型调用".to_string(), icon: "🤖".to_string(), value: call.total_calls.to_string(), subtitle: None }
-                            if let Some(qps) = call.avg_qps {
-                                StatsCard { title: "平均 QPS".to_string(), icon: "📈".to_string(), value: format_qps(qps), subtitle: None }
-                            }
-                            StatsCard { title: "瞬时 QPS".to_string(), icon: "⚡".to_string(), value: format_qps(call.instant_qps), subtitle: None }
-                        }
-                        if let Some(token) = s.token_summary {
-                            StatsCard { title: "输入 Token".to_string(), icon: "📥".to_string(), value: format_token_count(token.total_tokens_input), subtitle: None }
-                            StatsCard { title: "输出 Token".to_string(), icon: "📤".to_string(), value: format_token_count(token.total_tokens_output), subtitle: None }
-                        }
+        StatsPanel { title: "模型提供商统计".to_string(),
+            if let Some(s) = stats {
+                if let Some(call) = s.call_summary {
+                    StatsCard { title: "模型调用".to_string(), icon: "🤖".to_string(), value: call.total_calls.to_string(), subtitle: None }
+                    if let Some(qps) = call.avg_qps {
+                        StatsCard { title: "平均 QPS".to_string(), icon: "📈".to_string(), value: format_qps(qps), subtitle: None }
                     }
+                    StatsCard { title: "瞬时 QPS".to_string(), icon: "⚡".to_string(), value: format_qps(call.instant_qps), subtitle: None }
+                }
+                if let Some(token) = s.token_summary {
+                    StatsCard { title: "输入 Token".to_string(), icon: "📥".to_string(), value: format_token_count(token.total_tokens_input), subtitle: None }
+                    StatsCard { title: "输出 Token".to_string(), icon: "📤".to_string(), value: format_token_count(token.total_tokens_output), subtitle: None }
                 }
             }
         }

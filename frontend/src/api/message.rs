@@ -4,18 +4,18 @@ use common::api::{
     ListMessagesResponse, SearchMessagesRequest, SearchMessagesResponse, SendMessageToAgentParams, SendMessageToAgentResponse,
 };
 
-use super::{api_get, api_post};
+use super::{api_get, api_post, ApiError};
 
 pub async fn send_message_to_agent(
     req: SendMessageToAgentParams,
-) -> Result<SendMessageToAgentResponse, String> {
+) -> Result<SendMessageToAgentResponse, ApiError> {
     api_post("/api/v1/finance/messages/agents", &req).await
 }
 
 pub async fn load_latest_messages(
     project_id: Option<&str>,
     limit: Option<usize>,
-) -> Result<ListMessagesResponse, String> {
+) -> Result<ListMessagesResponse, ApiError> {
     let mut params = Vec::new();
     if let Some(pid) = project_id {
         params.push(format!("project_id={}", url_encode(pid)));
@@ -31,7 +31,7 @@ pub async fn load_older_messages(
     project_id: Option<&str>,
     before_timestamp: i64,
     limit: Option<usize>,
-) -> Result<ListMessagesResponse, String> {
+) -> Result<ListMessagesResponse, ApiError> {
     let mut params = vec![format!("before_timestamp={}", before_timestamp)];
     if let Some(pid) = project_id {
         params.push(format!("project_id={}", url_encode(pid)));
@@ -46,7 +46,7 @@ pub async fn load_older_messages(
 pub async fn poll_new_messages(
     project_id: Option<&str>,
     after_timestamp: i64,
-) -> Result<ListMessagesResponse, String> {
+) -> Result<ListMessagesResponse, ApiError> {
     let mut params = vec![format!("after_timestamp={}", after_timestamp)];
     if let Some(pid) = project_id {
         params.push(format!("project_id={}", url_encode(pid)));
@@ -54,7 +54,7 @@ pub async fn poll_new_messages(
     api_get(&format!("/api/v1/finance/messages?{}", params.join("&"))).await
 }
 
-pub async fn search_messages(keyword: &str, project_id: Option<&str>) -> Result<SearchMessagesResponse, String> {
+pub async fn search_messages(keyword: &str, project_id: Option<&str>) -> Result<SearchMessagesResponse, ApiError> {
     let params = SearchMessagesRequest {
         keyword: if keyword.is_empty() { None } else { Some(keyword.to_string()) },
         project_id: project_id.map(|s| s.to_string()),

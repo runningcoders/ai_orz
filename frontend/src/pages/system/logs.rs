@@ -8,6 +8,7 @@ use crate::api::system::{query_logs, LogEntry, LogPageResult, LogQueryParams};
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
+use crate::utils::format_rfc3339 as format_timestamp;
 
 /// 默认每页条数
 const DEFAULT_PAGE_SIZE: usize = 20;
@@ -22,23 +23,6 @@ fn level_badge_class(level: &str) -> &'static str {
         "TRACE" => "badge badge-secondary",
         _ => "badge badge-neutral",
     }
-}
-
-/// 将 ISO8601 时间戳格式化为 "YYYY-MM-DD HH:MM:SS"（解析失败时原样返回）
-fn format_timestamp(ts: &str) -> String {
-    if ts.is_empty() {
-        return "-".to_string();
-    }
-    // chrono 解析 RFC3339 / ISO8601
-    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(ts) {
-        let local = dt.with_timezone(&Local);
-        return local.format("%Y-%m-%d %H:%M:%S").to_string();
-    }
-    // 退而求其次：尝试直接截断到秒
-    if ts.len() >= 19 {
-        return ts[..19].replace('T', " ");
-    }
-    ts.to_string()
 }
 
 /// 把 datetime-local 输入值（YYYY-MM-DDTHH:MM）解析为 unix 毫秒
