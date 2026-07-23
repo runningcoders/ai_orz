@@ -65,6 +65,21 @@ impl MessageDelivery for MessageDomainImpl {
         // 先生成根消息 ID（文本消息的 ID），附件消息使用 reply_to_id 链回根
         let root_msg_id = generate_id();
 
+        // root_id 继承：如果有 reply_to_id，查询父消息的 root_id 作为链根；
+        // 否则当前消息自身为链根。修复：之前 root_id 始终为自身 ID，多轮对话
+        // 每条消息都是独立 root，无法按 root_id 拉取完整对话链
+        let chain_root_id = match cmd.reply_to_id {
+            Some(parent_id) => {
+                match self.message_dal.find_by_id(ctx.clone(), parent_id).await {
+                    Ok(Some(parent)) => {
+                        parent.po.root_id.unwrap_or_else(|| root_msg_id.clone())
+                    }
+                    _ => root_msg_id.clone(),
+                }
+            }
+            None => root_msg_id.clone(),
+        };
+
         // 1. 处理附件消息：按数组顺序创建 N 条附件消息
         if let Some(att_ids) = cmd.attachment_ids {
             for att_id in att_ids {
@@ -100,7 +115,7 @@ impl MessageDelivery for MessageDomainImpl {
                     Some(attachment.po.file_type),
                     file_meta,
                     Some(root_msg_id.clone()),
-                    Some(root_msg_id.clone()),
+                    Some(chain_root_id.clone()),
                     ctx.organization_id().cloned(),
                     cmd.from_id.to_string(),
                 );
@@ -111,7 +126,7 @@ impl MessageDelivery for MessageDomainImpl {
             }
         }
 
-        // 2. 创建文本消息（root_id = 自身 id）
+        // 2. 创建文本消息（root_id 继承自父消息或自身）
         let po = MessagePo::new(
             root_msg_id.clone(),
             project_id,
@@ -125,7 +140,7 @@ impl MessageDelivery for MessageDomainImpl {
             None,
             FileMeta::default(),
             cmd.reply_to_id.map(|s| s.to_string()),
-            Some(root_msg_id.clone()),
+            Some(chain_root_id.clone()),
             ctx.organization_id().cloned(),
             cmd.from_id.to_string(),
         );
@@ -152,6 +167,17 @@ impl MessageDelivery for MessageDomainImpl {
             .or_else(|| ctx.task_id().map(|s| s.as_str()))
             .map(|s| s.to_string());
 
+        // root_id 继承：如果有 reply_to_id，查询父消息的 root_id；否则自身为 root
+        let root_id = match cmd.reply_to_id {
+            Some(parent_id) => {
+                match self.message_dal.find_by_id(ctx.clone(), parent_id).await {
+                    Ok(Some(parent)) => parent.po.root_id.unwrap_or_else(|| id.clone()),
+                    _ => id.clone(),
+                }
+            }
+            None => id.clone(),
+        };
+
         let po = MessagePo::new(
             id.clone(),
             project_id,
@@ -165,7 +191,7 @@ impl MessageDelivery for MessageDomainImpl {
             None,
             Default::default(),
             cmd.reply_to_id.map(|s| s.to_string()),
-            Some(id),
+            Some(root_id),
             ctx.organization_id().cloned(),
             cmd.from_agent_id.to_string(),
         );
