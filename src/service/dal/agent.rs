@@ -339,8 +339,21 @@ impl AgentDal for AgentDalImpl {
                 time_range: stats_options.time_range,
                 ..Default::default()
             };
-            let stats = self.agent_stats_dao.get_stats(ctx.clone(), query, stats_options).await?;
-            agent.stats = Some(stats);
+            // stats 查询失败不阻塞 agent 加载
+            // 修复：DuckDB 查询失败时整个 get_agent 失败触发 nack 重试，
+            // 但重试也无法修复 stats 问题，反而阻塞消息消费
+            match self.agent_stats_dao.get_stats(ctx.clone(), query, stats_options).await {
+                Ok(stats) => agent.stats = Some(stats),
+                Err(e) => {
+                    log_warn!(
+                        &ctx,
+                        "get_agent",
+                        "stats query failed, skip depth check: {}",
+                        e
+                    );
+                    // stats 保持 None，consumer 的 thinking_depth 检查会跳过
+                }
+            }
         }
 
         if options.with_model_call_stats.unwrap_or(false) {
