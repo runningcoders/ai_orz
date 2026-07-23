@@ -515,6 +515,18 @@ Agent
 
 ## 六、工作流与开发记录
 
+### 2026-07-23 里程碑
+**✅ 唤醒流程重构：移除 built-in tools 概念，Auto/Manual 分流**
+- **PromptBuilder 顺序调整**：从稳定到易变（人设 → 神经工具/技能 → 常用工具/必加载技能 → 用户画像 → 历史 → 工具失败 → Trace ID + 当前消息）
+- **Tag 渐进式加载**：统一查询后 `build()` 时按 tag 分块拼装；`match_keys = agent.roles ∪ installed_tags`
+- **AgentFetchOptions 扩展**：新增 `with_tools` 选项，consumer 加载 Agent 时显式请求工具
+- **工具加载移至 domain 层**：`HrDomainImpl::get_agent(with_tools=true)` 加载绑定工具（enabled_only DB 过滤）+ tag 匹配工具（neural + installed_tags），合并去重写入 `agent.tools`
+- **唤醒时 Auto/Manual 分流**：`wake_agent_brain` 用 `std::mem::take` + `partition` 分离所有权，Auto→Rig / Manual→Prompt
+- **移除 built-in tools 概念**：`load_builtin_tools` 和 `filter_builtin_tools` 死代码删除；区分 Auto/Manual 由 `control_mode` 决定，与工具定义位置无关
+- **ToolPo 替代 Tool**：PromptBuilder 改用可 Clone 的 ToolPo，规避 Tool 含 `dyn Trait` 不可 Clone 的限制
+- **DefaultPromptBuilder 对齐**：Local agent 的 builder 移至 `dal/agent.rs`，与 Cli/Remote 通过各自 Dal 的 `prompt_builder()` 获取对齐
+- **测试统计**：745 个测试 100% 通过
+
 ### 2026-07-22 里程碑
 **✅ Tailwind CSS v4 + DaisyUI v5 集成 + 多主题切换**
 - **构建工具链搭建**：
@@ -604,7 +616,7 @@ Agent
 - **技能包管理 API**：3 个新 Handler（install/uninstall/list），路由 `/api/v1/hr/agents/{agent_id}/skill-packs`
 - **唤醒时技能注入**：`load_agent_skills` 方法，Agent 唤醒时自动加载技能摘要到 Prompt 的"【可用技能】"部分
 - **search_skill 神经工具**：Agent 可按关键词/tag 搜索技能库，返回精简摘要
-- **Tool tag 过滤优化**：`load_builtin_tools` 和 `call_manual_tool_for_agent` 从内存过滤改为 SQL 层 `json_each` 过滤
+- **Tool tag 过滤优化**：工具加载在 SQL 层按 `json_each` OR 匹配 tag，`call_manual_tool_for_agent` 同步优化
 - **测试统计**：601 个测试 100% 通过（+25）
 
 **✅ 记忆搜索 FTS5 增强与综合搜索**
@@ -835,7 +847,7 @@ Agent
 - **工具包 tag 机制**：通过 `tags` 字段分组工具，Agent 入职时自动安装指定 tag 工具包
 - **AgentRuntimeConfig 扩展**：新增 `installed_tags: Vec<String>` 字段，记录 Agent 已安装工具包
 - **免绑定校验三层逻辑**：绑定工具 → 神经工具（tags 含 "neural"）→ 已安装工具包（tags 与 installed_tags 有交集）
-- **唤醒时加载内置工具**：`load_builtin_tools` 重命名扩展，支持神经工具 + 已安装工具包工具
+- **唤醒时工具加载与分流**：`hr_domain.get_agent(with_tools=true)` 统一加载绑定 + tag 匹配工具；`wake_agent_brain` 按 `control_mode` 分流 Auto→Rig / Manual→Prompt
 - **Agent 入职自动安装**：状态流转到 Onboarded 时自动安装 "project_management" 工具包
 - **工具包管理 API**：3 个新 Handler（install/uninstall/list installed tool packs）
 - **TaskAssignment 消息类型**：`MessageType::TaskAssignment = 9` + `TaskAssignmentMessage` payload

@@ -252,7 +252,6 @@ pub trait RuntimeToolExecution: Send + Sync {
 // 注意：子模块必须在 trait 定义之后导入，这样子模块才能看到这些 trait
 
 mod awakening;
-mod context_assembly;
 mod memory;
 mod tool_call_query;
 mod tool_execution;
@@ -260,7 +259,8 @@ mod tool_execution;
 #[cfg(test)]
 mod tool_execution_test;
 
-pub use context_assembly::{DefaultPromptBuilder, build_conversation_prompt};
+// DefaultPromptBuilder 已迁移到 dal/agent.rs，由 AgentDal.prompt_builder() 提供
+pub use crate::service::dal::agent::{DefaultPromptBuilder, build_conversation_prompt};
 pub(crate) use tool_call_query::status_from_dto;
 
 // ==================== 实现 ====================
@@ -377,9 +377,10 @@ impl RuntimeDomainImpl {
     /// 根据 agent.kind 返回对应的 PromptBuilder
     ///
     /// 工厂方法：awakening 组装 prompt 时调用此方法获取 builder。
-    /// Local → 基础 AgentDal 的 DefaultPromptBuilder
-    /// Cli   → CodexAgentDal 的专属 builder
-    /// Remote → A2aAgentDal 的专属 builder
+    /// 三种 Agent 类型都通过各自 Dal 的 prompt_builder() 方法获取，保持对齐：
+    /// Local → AgentDal.prompt_builder() → DefaultPromptBuilder
+    /// Cli   → CodexAgentDal.prompt_builder() → CliPromptBuilder（未来实现）
+    /// Remote → A2aAgentDal.prompt_builder() → RemotePromptBuilder（未来实现）
     fn prompt_builder(&self, agent: &Agent) -> Box<dyn crate::models::prompt_builder::PromptBuilder> {
         use common::enums::AgentKind;
         match agent.po.kind {

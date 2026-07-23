@@ -2132,13 +2132,24 @@ if target_status == AgentStatus::Onboarded {
 }
 ```
 
-### 22.6 唤醒时加载内置工具
+### 22.6 唤醒时工具加载与分流
 
-`load_builtin_tools` 方法在唤醒时加载：
-- 神经工具（tags 含 "neural"）
-- 已安装工具包工具（tags 与 installed_tags 有交集）
+工具加载遵循"domain 层统一加载，唤醒时按控制方式分流"原则：
 
-提取 `filter_builtin_tools` 纯函数便于单元测试。
+**加载阶段**（`HrDomainImpl::get_agent(with_tools=true)`）：
+- 绑定工具：通过 `agent_tools` 关联表查询（`enabled_only` 在 DB 层过滤）
+- tag 匹配工具：tag_filter = `neural` + `agent.installed_tags`，SQL 层 `json_each` OR 匹配
+- 合并去重后写入 `agent.tools`，供后续 wake/awaken 使用
+
+**分流阶段**（`RuntimeDomainImpl::wake_agent_brain`）：
+- 从 `agent.tools` 用 `std::mem::take` + `partition` 按控制方式分离所有权
+- `ControlMode::Auto` 工具注入 Rig（function calling 同步调用）
+- `ControlMode::Manual` 工具保留在 `agent.tools`，供 PromptBuilder 拼装"【神经工具】"/"【常用工具】"区块
+
+**设计要点**：
+- 不再有"built-in tools"概念，Auto/Manual 区分由 `control_mode` 决定，与工具定义位置无关
+- 工具加载在 hr domain 完成（同业务域操作），无需跨 domain 组合
+- ToolPo（Clone-able）供 PromptBuilder 使用；Tool（含 `dyn Trait`，不可 Clone）用于 Rig 注入
 
 ### 22.7 三种角色定位
 

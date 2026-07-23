@@ -20,9 +20,11 @@ impl RuntimeAwakening for RuntimeDomainImpl {
     /// 装配 Agent 的 Brain
     ///
     /// 根据 agent.kind 构造对应的 Brain：
-    /// - Local: 加载 builtin tools，通过 BrainDal.wake_brain 构造带 Cortex 的 Brain
+    /// - Local: 从 agent.tools 分离出 Auto 工具注入 Rig（Manual 工具保留供 Prompt 使用），
+    ///   通过 BrainDal.wake_brain 构造带 Cortex 的 Brain
     /// - External（Cli/Remote）: 构造不带 Cortex 的虚拟 Brain
     ///
+    /// 工具由 hr_domain.get_agent(with_tools=true) 预先加载到 agent.tools。
     /// 幂等：如果 agent.brain 已存在则直接返回。
     async fn wake_agent_brain(
         &self,
@@ -36,10 +38,16 @@ impl RuntimeAwakening for RuntimeDomainImpl {
 
         let ctx = enrich_ctx!(&ctx, &*agent);
 
-        // Local agent 需要加载 tools 用于 Cortex 创建（rig 工具包装）
-        // External agent 不需要 tools（BrainDal 内部走 new_external 分支）
-        let tools = if agent.po.kind.is_local() {
-            self.load_builtin_tools(ctx.clone(), agent).await?
+        // 工具已在 hr_domain.get_agent(with_tools=true) 时加载到 agent.tools
+        // 从 agent.tools 中分离出 Auto 工具用于 Rig 注册，Manual 工具保留供 Prompt 使用
+        // Tool 实体不可 Clone（含 dyn Trait），使用 partition 转移所有权
+        let rig_tools = if agent.po.kind.is_local() {
+            let all_tools = std::mem::take(&mut agent.tools);
+            let (auto, manual): (Vec<_>, Vec<_>) = all_tools
+                .into_iter()
+                .partition(|t| matches!(t.po.control_mode, common::enums::ControlMode::Auto));
+            agent.tools = manual;
+            auto
         } else {
             Vec::new()
         };
@@ -47,7 +55,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         // 通过 BrainDal 构造 Brain（内部按 kind 分发）
         // memories 传空：awaken 时会独立加载 recent_memories 用于 prompt
         let brain = self.brain_dal()
-            .wake_brain(ctx, &agent.po, Vec::new(), tools)
+            .wake_brain(ctx, &agent.po, Vec::new(), rig_tools)
             .await?;
 
         agent.set_brain(brain);
@@ -75,11 +83,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             .get_recent_context(ctx.clone(), &agent.po.id, None, 20)
             .await?;
 
-        // Step 2: 收集关联的 Trace ID 列表
-        // 简易版：暂时为空，后续从 message.metadata 提取
-        let trace_ids: Vec<String> = vec![];
-
-        // Step 3: 预先构造 MemoryTrace 拿到 trace_id
+        // Step 2: 预先构造 MemoryTrace 拿到 trace_id
         // 调用方负责组装 trace，RuntimeMemory 负责写入和补全信息
         use common::enums::MemoryRole;
         let mut trace = MemoryTrace::new(
@@ -93,24 +97,25 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         );
         let trace_id = trace.id.clone();
 
-        // Step 3.5: 加载内置工具（神经工具 + 已安装工具包）
-        let builtin_tools = self.load_builtin_tools(ctx.clone(), agent).await?;
-        let builtin_tool_prompts: Vec<String> = builtin_tools
+        // Step 2.5: 工具已由 hr_domain.get_agent(with_tools=true) 加载到 agent.tools
+        // wake_agent_brain 已将 Auto 工具移出（用于 Rig 注册），agent.tools 仅剩 Manual 工具
+        // 直接提取 ToolPo 列表供 PromptBuilder 使用（builder 会按 tag 自动分块）
+        let all_tools: Vec<crate::models::tool::ToolPo> = agent
+            .tools()
             .iter()
-            .map(|tool| tool.po.to_tool_prompt())
+            .map(|t| t.po.clone())
             .collect();
 
-        // Step 3.6: 加载 Agent 技能副本用于 Prompt 注入
+        // Step 2.6: 加载 Agent 技能副本用于 Prompt 注入（排除 Expired）
         let skills = self.load_agent_skills(ctx.clone(), &agent.po.id).await?;
 
-        // Step 4: 拼装 Prompt（通过工厂方法获取对应 Agent 类型的 builder）
+        // Step 3: 拼装 Prompt（通过工厂方法获取对应 Agent 类型的 builder）
+        // 统一注入，build 时按 tag 自动分块为神经工具/技能 → 常用工具/必加载技能 → 历史 → 当前消息
         let mut builder = self.prompt_builder(agent);
         builder.current_trace_id(&trace_id);
-        builder.trace_ids(&trace_ids);
         builder.system_prompt(agent);
-        builder.bound_tools(agent);
-        builder.builtin_tools(&builtin_tool_prompts);
-        builder.agent_skills(&skills);
+        builder.tools(&all_tools);
+        builder.skills(&skills);
         builder.history(&recent_memories);
         builder.current_message(message);
 
@@ -126,7 +131,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
 
         let prompt = builder.build();
 
-        // Step 5: 调用大脑思考
+        // Step 4: 调用大脑思考
         // 统一走 BrainDal.think() 入口，方便审计、统计、监控
         let brain = agent
             .brain
@@ -161,17 +166,17 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             }
         };
 
-        // Step 6: 回填 input 和 output，一次性写入完整 Trace
+        // Step 5: 回填 input 和 output，一次性写入完整 Trace
         trace.input = prompt.clone();
         trace.complete(raw_output.clone());
 
-        // Step 7: 通过 RuntimeMemory 子模块写入
+        // Step 6: 通过 RuntimeMemory 子模块写入
         // 架构：awakening → RuntimeMemory → MemoryDal → MemoryDao
         self.memory()
             .write_thinking_trace(ctx.clone(), trace)
             .await?;
 
-        // Step 8: 记录 Agent 唤醒统计事件
+        // Step 7: 记录 Agent 唤醒统计事件
         let duration_ms = start_time.elapsed().map(|d| d.as_millis() as u64).unwrap_or(0);
         let _ = record_event!(ctx, AgentAwakeEvent {
             agent_id: agent.po.id.clone(),
@@ -185,7 +190,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             status: "success".to_string(),
         });
 
-        // Step 9: 返回结果
+        // Step 8: 返回结果
         Ok(AwakeningResult {
             agent_id: agent.po.id.clone(),
             trace_ids: vec![trace_id],
@@ -196,39 +201,6 @@ impl RuntimeAwakening for RuntimeDomainImpl {
 }
 
 impl RuntimeDomainImpl {
-    /// 加载所有内置工具（神经工具 + 已安装工具包工具）
-    ///
-    /// 内置工具是 Agent 天生具备或入职培训获得的能力，不需要显式绑定：
-    /// - 神经工具：tags 包含 "neural"，所有 Agent 天生拥有
-    /// - 已安装工具包工具：tags 与 agent.installed_tags 有交集
-    ///
-    /// 通过 SQL 层 tag 过滤（OR 语义）直接查询命中的工具，避免全量加载到内存。
-    async fn load_builtin_tools(
-        &self,
-        ctx: RequestContext,
-        agent: &Agent,
-    ) -> Result<Vec<crate::models::tool::Tool>> {
-        use crate::service::dao::tool::ToolQuery;
-        use common::enums::ToolStatus;
-
-        // 构建 tag 过滤列表：neural + agent 的 installed_tags
-        // SQL 层使用 OR 语义，命中任一 tag 的工具都会被返回
-        let mut tag_filter = vec!["neural".to_string()];
-        tag_filter.extend(agent.po.get_installed_tags());
-
-        self.tool_dal
-            .query(
-                ctx,
-                ToolQuery {
-                    tags: Some(tag_filter),
-                    enabled_only: Some(true),
-                    status: Some(ToolStatus::Enabled),
-                    ..Default::default()
-                },
-            )
-            .await
-    }
-
     /// 加载 Agent 的技能副本用于 Prompt 注入
     ///
     /// 通过 SkillDal 全局单例查询 Agent 的技能副本（author_id = agent_id），
@@ -240,248 +212,25 @@ impl RuntimeDomainImpl {
         agent_id: &str,
     ) -> Result<Vec<SkillPo>> {
         use crate::service::dal::skill::dal as skill_dal;
-        let skills = skill_dal().list_for_agent(ctx, agent_id).await?;
+        use crate::service::dao::skill::SkillQuery;
+        use common::enums::SkillStatus;
+        // 查询 Agent 技能，排除 Expired 状态
+        let skills = skill_dal()
+            .query(
+                ctx,
+                SkillQuery {
+                    author_id: Some(agent_id.to_string()),
+                    exclude_status: Some(SkillStatus::Expired),
+                    ..Default::default()
+                },
+            )
+            .await?;
         Ok(skills.into_iter().map(|s| s.po).collect())
     }
 }
 
-/// 从全部工具中筛选内置工具（神经工具 + 已安装工具包工具）
-///
-/// 筛选规则：
-/// 1. 神经工具：tags 包含 "neural"，所有 Agent 天生拥有
-/// 2. 已安装工具包工具：tags 与 installed_tags 有交集
-///
-/// 保留用于单元测试和可能的回退；生产路径已改为 SQL 层 tag 过滤。
-#[allow(dead_code)]
-fn filter_builtin_tools(
-    all_tools: Vec<crate::models::tool::Tool>,
-    installed_tags: &[String],
-) -> Vec<crate::models::tool::Tool> {
-    all_tools
-        .into_iter()
-        .filter(|tool| {
-            let tags = tool.po.get_tags();
-            if tags.contains(&"neural".to_string()) {
-                return true;
-            }
-            installed_tags.iter().any(|installed| tags.contains(installed))
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
-    use super::filter_builtin_tools;
-    use crate::models::tool::{Tool, ToolPo};
-    use common::enums::ToolProtocol;
-    use serde_json::json;
-
-    fn make_tool(tool_id: &str, tags: Vec<&str>) -> Tool {
-        let po = ToolPo::new(
-            tool_id.to_string(),
-            tool_id.to_string(),
-            "test tool".to_string(),
-            ToolProtocol::Builtin,
-            json!({}),
-            Some(json!({ "type": "object" })),
-            tags.into_iter().map(String::from).collect(),
-            Some("test-user".to_string()),
-        );
-        Tool::from_po_for_management(po)
-    }
-
-    fn make_tags(tags: Vec<&str>) -> Vec<String> {
-        tags.into_iter().map(String::from).collect()
-    }
-
-    #[test]
-    fn filter_includes_neural_tools_regardless_of_installed_tags() {
-        let tools = vec![
-            make_tool("neural-1", vec!["neural"]),
-            make_tool("external-1", vec!["external"]),
-        ];
-        let installed = make_tags(vec![]);
-
-        let result = filter_builtin_tools(tools, &installed);
-
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].po.id, "neural-1");
-    }
-
-    #[test]
-    fn filter_includes_installed_tool_pack_tools() {
-        let tools = vec![
-            make_tool("neural-1", vec!["neural"]),
-            make_tool("pm-1", vec!["project_management"]),
-            make_tool("da-1", vec!["data_analysis"]),
-            make_tool("external-1", vec!["external"]),
-        ];
-        let installed = make_tags(vec!["project_management"]);
-
-        let result = filter_builtin_tools(tools, &installed);
-
-        assert_eq!(result.len(), 2);
-        let ids: Vec<&str> = result.iter().map(|t| t.po.id.as_str()).collect();
-        assert!(ids.contains(&"neural-1"));
-        assert!(ids.contains(&"pm-1"));
-    }
-
-    #[test]
-    fn filter_excludes_tools_when_no_tags_installed() {
-        let tools = vec![
-            make_tool("neural-1", vec!["neural"]),
-            make_tool("pm-1", vec!["project_management"]),
-        ];
-        let installed = make_tags(vec![]);
-
-        let result = filter_builtin_tools(tools, &installed);
-
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].po.id, "neural-1");
-    }
-
-    #[test]
-    fn filter_includes_tool_with_multiple_tags_when_one_matches() {
-        let tools = vec![
-            // Tool has both "project_management" and "advanced" tags
-            make_tool("multi-1", vec!["project_management", "advanced"]),
-        ];
-        let installed = make_tags(vec!["project_management"]);
-
-        let result = filter_builtin_tools(tools, &installed);
-
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].po.id, "multi-1");
-    }
-
-    /// 模拟 SQL 层 tag 过滤（OR 语义），与 ToolDao sqlite 实现的 json_each IN 逻辑一致
-    ///
-    /// 给定 tag_filter 列表，保留 tags 与 tag_filter 有任一交集的工具
-    fn simulate_sql_tag_filter(
-        tools: Vec<Tool>,
-        tag_filter: &[String],
-    ) -> Vec<Tool> {
-        tools
-            .into_iter()
-            .filter(|tool| {
-                let tags = tool.po.get_tags();
-                tag_filter.iter().any(|tag| tags.contains(tag))
-            })
-            .collect()
-    }
-
-    /// 构建 load_builtin_tools 使用的 tag_filter：neural + installed_tags
-    fn build_tag_filter(installed_tags: &[String]) -> Vec<String> {
-        let mut tag_filter = vec!["neural".to_string()];
-        tag_filter.extend(installed_tags.iter().cloned());
-        tag_filter
-    }
-
-    /// 工具规格（id + tags），用于批量构建工具集（Tool 不可 clone，需要独立创建两份）
-    fn make_tools_from_spec(spec: &[(&str, Vec<&str>)]) -> Vec<Tool> {
-        spec.iter().map(|(id, tags)| make_tool(id, tags.clone())).collect()
-    }
-
-    #[test]
-    fn sql_filter_equivalent_to_memory_filter_for_neural_only() {
-        let spec: &[(&str, Vec<&str>)] = &[
-            ("neural-1", vec!["neural"]),
-            ("external-1", vec!["external"]),
-            ("external-2", vec!["other"]),
-        ];
-        let installed = make_tags(vec![]);
-        let tag_filter = build_tag_filter(&installed);
-
-        let memory_result = filter_builtin_tools(make_tools_from_spec(spec), &installed);
-        let sql_result = simulate_sql_tag_filter(make_tools_from_spec(spec), &tag_filter);
-
-        let memory_ids: Vec<&str> = memory_result.iter().map(|t| t.po.id.as_str()).collect();
-        let sql_ids: Vec<&str> = sql_result.iter().map(|t| t.po.id.as_str()).collect();
-        assert_eq!(memory_ids, sql_ids);
-        assert_eq!(sql_ids, vec!["neural-1"]);
-    }
-
-    #[test]
-    fn sql_filter_equivalent_to_memory_filter_with_installed_tags() {
-        let spec: &[(&str, Vec<&str>)] = &[
-            ("neural-1", vec!["neural"]),
-            ("pm-1", vec!["project_management"]),
-            ("da-1", vec!["data_analysis"]),
-            ("external-1", vec!["external"]),
-            ("multi-1", vec!["project_management", "advanced"]),
-        ];
-        let installed = make_tags(vec!["project_management"]);
-        let tag_filter = build_tag_filter(&installed);
-
-        let memory_result = filter_builtin_tools(make_tools_from_spec(spec), &installed);
-        let sql_result = simulate_sql_tag_filter(make_tools_from_spec(spec), &tag_filter);
-
-        let mut memory_ids: Vec<&str> = memory_result.iter().map(|t| t.po.id.as_str()).collect();
-        memory_ids.sort();
-        let mut sql_ids: Vec<&str> = sql_result.iter().map(|t| t.po.id.as_str()).collect();
-        sql_ids.sort();
-        assert_eq!(memory_ids, sql_ids);
-        assert!(sql_ids.contains(&"neural-1"));
-        assert!(sql_ids.contains(&"pm-1"));
-        assert!(sql_ids.contains(&"multi-1"));
-        assert!(!sql_ids.contains(&"da-1"));
-        assert!(!sql_ids.contains(&"external-1"));
-    }
-
-    #[test]
-    fn sql_filter_equivalent_to_memory_filter_with_multiple_installed_tags() {
-        let spec: &[(&str, Vec<&str>)] = &[
-            ("neural-1", vec!["neural"]),
-            ("pm-1", vec!["project_management"]),
-            ("da-1", vec!["data_analysis"]),
-            ("cross-1", vec!["project_management", "data_analysis"]),
-            ("external-1", vec!["external"]),
-        ];
-        let installed = make_tags(vec!["project_management", "data_analysis"]);
-        let tag_filter = build_tag_filter(&installed);
-
-        let memory_result = filter_builtin_tools(make_tools_from_spec(spec), &installed);
-        let sql_result = simulate_sql_tag_filter(make_tools_from_spec(spec), &tag_filter);
-
-        let mut memory_ids: Vec<&str> = memory_result.iter().map(|t| t.po.id.as_str()).collect();
-        memory_ids.sort();
-        let mut sql_ids: Vec<&str> = sql_result.iter().map(|t| t.po.id.as_str()).collect();
-        sql_ids.sort();
-        assert_eq!(memory_ids, sql_ids);
-        assert_eq!(sql_ids, vec!["cross-1", "da-1", "neural-1", "pm-1"]);
-    }
-
-    #[test]
-    fn sql_filter_equivalent_to_memory_filter_empty_tools() {
-        let spec: &[(&str, Vec<&str>)] = &[];
-        let installed = make_tags(vec!["project_management"]);
-        let tag_filter = build_tag_filter(&installed);
-
-        let memory_result = filter_builtin_tools(make_tools_from_spec(spec), &installed);
-        let sql_result = simulate_sql_tag_filter(make_tools_from_spec(spec), &tag_filter);
-
-        assert_eq!(memory_result.len(), 0);
-        assert_eq!(sql_result.len(), 0);
-    }
-
-    #[test]
-    fn sql_filter_equivalent_to_memory_filter_tool_with_no_tags() {
-        let spec: &[(&str, Vec<&str>)] = &[
-            ("neural-1", vec!["neural"]),
-            ("no-tags-1", vec![]),
-        ];
-        let installed = make_tags(vec!["project_management"]);
-        let tag_filter = build_tag_filter(&installed);
-
-        let memory_result = filter_builtin_tools(make_tools_from_spec(spec), &installed);
-        let sql_result = simulate_sql_tag_filter(make_tools_from_spec(spec), &tag_filter);
-
-        let memory_ids: Vec<&str> = memory_result.iter().map(|t| t.po.id.as_str()).collect();
-        let sql_ids: Vec<&str> = sql_result.iter().map(|t| t.po.id.as_str()).collect();
-        assert_eq!(memory_ids, sql_ids);
-        assert_eq!(sql_ids, vec!["neural-1"]);
-    }
-
     // ==================== awaken 集成测试 ====================
 
     use crate::models::agent::{Agent, AgentPo};
@@ -660,12 +409,14 @@ mod tests {
     }
 
     /// 在数据库中为 Agent 创建技能副本
+    ///
+    /// skills tags 包含 "assistant" 以匹配 Agent 的 role，确保出现在"必加载技能"区块
     async fn create_skill_for_agent(ctx: RequestContext, agent_id: &str, name: &str, description: &str) {
         let skill_po = SkillPo::new(
             format!("skill-{}--{}", name.to_lowercase(), Uuid::new_v4()),
             name.to_string(),
             description.to_string(),
-            vec!["test".to_string()],
+            vec!["assistant".to_string()],
             "test".to_string(),
             String::new(),
             agent_id.to_string(),
@@ -721,10 +472,10 @@ mod tests {
 
         let prompt = captured_prompt.lock().unwrap().clone().expect("应该捕获到 prompt");
 
-        // 验证 Prompt 包含"【可用技能】"部分
+        // 验证 Prompt 包含"【必加载技能】"部分（tags 匹配 agent role "assistant"）
         assert!(
-            prompt.contains("【可用技能】"),
-            "Prompt 应该包含【可用技能】部分，实际: {}",
+            prompt.contains("【必加载技能】"),
+            "Prompt 应该包含【必加载技能】部分，实际: {}",
             prompt
         );
         // 验证两个技能都出现在 Prompt 中
@@ -779,10 +530,10 @@ mod tests {
 
         let prompt = captured_prompt.lock().unwrap().clone().expect("应该捕获到 prompt");
 
-        // 验证 Prompt 不包含"【可用技能】"部分
+        // 验证 Prompt 不包含技能相关区块（Agent 无技能）
         assert!(
-            !prompt.contains("【可用技能】"),
-            "Prompt 不应该包含【可用技能】部分（Agent 无技能），实际: {}",
+            !prompt.contains("【必加载技能】") && !prompt.contains("【神经技能】"),
+            "Prompt 不应该包含技能区块（Agent 无技能），实际: {}",
             prompt
         );
 

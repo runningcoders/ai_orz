@@ -2,7 +2,7 @@
 
 **AI 代理协作框架** — 让多个 AI 代理像团队一样协作完成任务
 
-![Tests](https://img.shields.io/badge/tests-754%20%E2%9C%94-brightgreen)
+![Tests](https://img.shields.io/badge/tests-745%20%E2%9C%94-brightgreen)
 ![Rust](https://img.shields.io/badge/Rust-1.85+-000000?logo=rust)
 ![License](https://img.shields.io/github/license/runningcoders/ai_orz)
 
@@ -31,7 +31,7 @@
 | **后端** | Rust + Axum + SQLite + rig-core，单二进制可部署 |
 | **前端** | Dioxus 0.7 (WASM) + Tailwind CSS v4 + DaisyUI v5，15 条路由，30+ 主题切换 |
 | **架构** | Adapter（Handler/Producer）→ Domain → DAL → DAO 四层严格单向依赖 |
-| **测试** | 754 个单元测试，100% 通过 |
+| **测试** | 745 个单元测试，100% 通过 |
 | **实体覆盖** | Agent / Project / Task / Message / Memory / Skill / Tool / ModelProvider 全栈 |
 
 核心能力已落地：

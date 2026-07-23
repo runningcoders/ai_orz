@@ -316,7 +316,7 @@ Agent "认为做完" ≠ 任务真的完成。任务进度是外部系统的真�
 | 4.A.2 | 神经工具标记修正 | send_message 补齐 `neural` flag；新增 `send_tool_call_message` 神经工具；`request_tool_call` 从神经工具移除 | P0 |
 | 4.A.3 | 项目管理工具包标记 | 所有 project/task 工具加 `tags = "project_management"` | P0 |
 | 4.A.4 | 免绑定校验扩展 | tool_execution 中不仅 "neural" 免绑定，已安装 tag 的工具也免绑定 | P0 |
-| 4.A.5 | 唤醒时注入工具包工具 | load_neural_tools 扩展为 load_builtin_tools，加载神经工具 + 已安装工具包 | P0 |
+| 4.A.5 | 唤醒时工具加载与分流 | hr_domain.get_agent(with_tools=true) 加载工具；wake_agent_brain 按 control_mode 分流 Auto→Rig / Manual→Prompt | P0 |
 | 4.A.6 | 工具包安装/卸载 API | HrDomain 新增 install_tool_pack/uninstall_tool_pack/list_installed_tool_packs | P0 |
 | 4.A.7 | Agent 入职默认安装 | Agent 状态变为 Onboarded 时自动安装 "project_management" 工具包 | P0 |
 
@@ -385,17 +385,22 @@ Agent 调用 Manual 工具
     └── 都不是 → 拒绝：工具未绑定且不属于已安装工具包
 ```
 
-#### 唤醒时工具注入逻辑变更
+#### 唤醒时工具加载与分流
+
+工具加载移至 `HrDomainImpl::get_agent(with_tools=true)`，唤醒时仅做 Auto/Manual 分流：
 
 ```
-load_builtin_tools(ctx, agent)
+hr_domain.get_agent(with_tools=true)
     │
-    ├── 加载神经工具（tags 含 "neural"）
-    │       └─ 所有 Agent 天生拥有
+    ├── 绑定工具（agent_tools 关联表，enabled_only 过滤）
+    └── tag 匹配工具（tag_filter = neural + installed_tags，SQL 层 json_each OR 匹配）
+            └─ 合并去重后写入 agent.tools
+
+wake_agent_brain(ctx, agent)
     │
-    └── 加载已安装工具包工具
-            └─ 查 Agent 已安装的 tags 列表
-            └─ 按 tags 过滤所有启用工具
+    └── std::mem::take + partition 分离所有权
+            ├── ControlMode::Auto → 注入 Rig（function calling）
+            └── ControlMode::Manual → 保留供 PromptBuilder 拼装【神经工具】/【常用工具】
 ```
 
 #### 关键设计点

@@ -4,6 +4,10 @@ use common::error::Result;
 use common::models::{AgentStats, ModelCallStats, StatsFetchOptions, StatsInterval};
 use crate::models::agent::{Agent, AgentPo};
 use crate::models::brain::Brain;
+use crate::models::memory::Memory;
+use crate::models::message::Message;
+use crate::models::skill::SkillPo;
+use crate::models::user::UserPo;
 use crate::models::vector::{MatchType, SearchMatchInfo, Vectorizable};
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
 use crate::pkg::RequestContext;
@@ -12,6 +16,7 @@ use crate::service::dao::agent::{self, AgentDao, AgentQuery, AgentSearch, AgentS
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderStatsDao, ModelProviderStatsQuery};
 use common::enums::AgentStatus;
+use common::enums::ControlMode;
 use std::sync::{Arc, OnceLock};
 
 use crate::enrich_ctx;
@@ -64,6 +69,8 @@ pub fn new(
 pub struct AgentFetchOptions {
     /// 是否加载运行时状态（默认 true）
     pub with_runtime_state: Option<bool>,
+    /// 是否加载 Agent 绑定的工具（绑定工具 + tag 匹配的内置工具）
+    pub with_tools: Option<bool>,
     /// 是否加载统计信息（AgentStats: 唤醒次数汇总）
     pub with_stats: Option<bool>,
     /// 是否加载模型调用统计（ModelCallStats: token + 时序）
@@ -146,7 +153,7 @@ pub trait AgentDal: Send + Sync {
     /// 基础实现返回 DefaultPromptBuilder（Local Agent 使用）。
     /// 派生 Dal（CodexAgentDal/A2aAgentDal）可重写此方法返回专属 builder。
     fn prompt_builder(&self) -> Box<dyn crate::models::prompt_builder::PromptBuilder> {
-        Box::new(crate::service::domain::runtime::DefaultPromptBuilder::new())
+        Box::new(DefaultPromptBuilder::new())
     }
 }
 
@@ -701,4 +708,271 @@ impl AgentDal for AgentDalImpl {
 
         Ok(())
     }
+}
+
+// ==================== Prompt Builder（Local Agent 默认实现） ====================
+
+/// neural tag 常量：标记为神经级别的工具/技能，所有 Agent 必加载
+const NEURAL_TAG: &str = "neural";
+
+/// 默认 Prompt 构建器（Local Agent 使用）
+///
+/// 统一注入 tools / skills，build() 时按 tag 自动分块拼装：
+///
+/// 1. 【Agent 人设】        ← 最稳定
+/// 2. 【神经工具】          ← tags 含 "neural"，所有 Agent 必加载
+/// 3. 【神经技能】          ← tags 含 "neural"，所有 Agent 必加载
+/// 4. 【常用工具】          ← tags 不含 "neural" 但与 agent match_keys 有交集
+/// 5. 【必加载技能】        ← tags 不含 "neural" 但与 agent match_keys 有交集
+/// 6. 【用户画像】          ← 随用户变化，对话中相对稳定
+/// 7. 【历史对话】          ← 随对话增长
+/// 8. 【工具失败警告】      ← 实时变化
+/// 9. 【trace_id + 当前消息】← 每次变化
+///
+/// match_keys = agent.roles ∪ agent.installed_tags
+#[derive(Debug, Clone, Default)]
+pub struct DefaultPromptBuilder {
+    /// 本次思考的 Trace ID
+    current_trace_id: Option<String>,
+    /// Agent 人设 / System Prompt
+    system_prompt: Option<String>,
+    /// 匹配键：agent.roles ∪ agent.installed_tags（system_prompt 时缓存）
+    match_keys: Vec<String>,
+    /// 用户画像信息（仅客服类 Agent 使用）
+    user_profile: Option<String>,
+    /// 历史对话记忆
+    history: Vec<String>,
+    /// 当前用户消息
+    current_message: Option<String>,
+    /// 技能（全量，build 时按 tag 分块）
+    skills: Vec<SkillPo>,
+    /// 工具 PO（全量，build 时按 tag 分块）
+    tools: Vec<crate::models::tool::ToolPo>,
+    /// 工具失败统计：(工具名称, 失败次数)
+    tool_failures: Vec<(String, u64)>,
+}
+
+impl DefaultPromptBuilder {
+    /// 创建空的 Builder
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 工具是否为神经工具（tags 含 "neural"）
+    fn is_neural_tool(tool: &crate::models::tool::ToolPo) -> bool {
+        tool.get_tags().iter().any(|t| t == NEURAL_TAG)
+    }
+
+    /// 工具是否适合在 Prompt 中展示（仅 Manual 工具）
+    /// Auto 工具通过 Rig 注册由模型直接调用，不需要在 Prompt 中展示
+    /// Enabled 状态已在 DB 查询时过滤
+    fn is_prompt_visible_tool(tool: &crate::models::tool::ToolPo) -> bool {
+        matches!(tool.control_mode, ControlMode::Manual)
+    }
+
+    /// 技能是否为神经技能（tags 含 "neural"）
+    fn is_neural_skill(skill: &SkillPo) -> bool {
+        skill.parse_tags().iter().any(|t| t == NEURAL_TAG)
+    }
+
+    /// 工具/技能的 tags 是否与 match_keys 有交集
+    fn tags_match(tags: &[String], match_keys: &[String]) -> bool {
+        tags.iter().any(|t| match_keys.contains(t))
+    }
+
+    /// 构建工具区块字符串
+    fn build_tools_section(title: &str, tools: &[&crate::models::tool::ToolPo]) -> String {
+        if tools.is_empty() {
+            return String::new();
+        }
+        let mut s = format!("【{}】\n", title);
+        s.push_str(
+            "以下仅列出需要通过 ai_orz 消息机制调用的 Manual 工具：如需调用，请发送一条工具调用消息。已经注册到 Rig 的 Auto 工具不在此处列出，仍使用模型默认的 Rig/function calling 调用方式。\n",
+        );
+        for t in tools {
+            s.push_str(&format!("- {}\n", t.to_tool_prompt()));
+        }
+        s.push_str("\n");
+        s
+    }
+
+    /// 构建技能区块字符串
+    fn build_skills_section(title: &str, skills: &[&SkillPo]) -> String {
+        if skills.is_empty() {
+            return String::new();
+        }
+        let mut s = format!("【{}】\n", title);
+        for skill in skills {
+            s.push_str(&skill.to_prompt_summary());
+            s.push('\n');
+        }
+        s.push_str("\n");
+        s
+    }
+}
+
+/// 实现 PromptBuilder trait
+impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
+    fn current_trace_id(&mut self, trace_id: &str) {
+        self.current_trace_id = Some(trace_id.to_string());
+    }
+
+    fn system_prompt(&mut self, agent: &Agent) {
+        self.system_prompt = Some(agent.to_system_prompt());
+        // 缓存匹配键：roles ∪ installed_tags
+        let mut keys = agent.po.get_roles();
+        keys.extend(agent.po.get_installed_tags());
+        keys.sort();
+        keys.dedup();
+        self.match_keys = keys;
+    }
+
+    fn history(&mut self, memories: &[Memory]) {
+        for memory in memories {
+            if let Some(summary) = memory.to_prompt_summary() {
+                self.history.push(summary);
+            }
+        }
+    }
+
+    fn current_message(&mut self, message: &Message) {
+        let label = match message.po.message_type {
+            common::enums::MessageType::ToolCallResult => "【工具执行结果】",
+            common::enums::MessageType::ToolCallRequest => "【工具调用请求】",
+            common::enums::MessageType::ConfirmRequest => "【确认请求】",
+            common::enums::MessageType::ConfirmResponse => "【确认回复】",
+            common::enums::MessageType::TaskAssignment => "【任务分配通知】",
+            _ => "【当前消息】",
+        };
+        self.current_message = Some(format!("{}\n{}", label, message.to_prompt()));
+    }
+
+    fn skills(&mut self, skills: &[SkillPo]) {
+        self.skills.extend_from_slice(skills);
+    }
+
+    fn tools(&mut self, tools: &[crate::models::tool::ToolPo]) {
+        self.tools.extend_from_slice(tools);
+    }
+
+    fn tool_failures(&mut self, failures: &[(String, u64)]) {
+        self.tool_failures.extend_from_slice(failures);
+    }
+
+    fn user_profile(&mut self, user: &UserPo) {
+        self.user_profile = Some(user.to_basic_info_prompt());
+    }
+
+    fn build(&self) -> String {
+        let mut result = String::new();
+
+        // 1. System Prompt（Agent 人设）
+        if let Some(system) = &self.system_prompt {
+            result.push_str(system);
+            result.push_str("\n\n");
+        }
+
+        // 预过滤：仅展示 Manual 工具（Auto 工具走 Rig 不在 Prompt 展示，Enabled 已在 DB 层过滤）
+        // 2. 神经工具（tags 含 "neural"，所有 Agent 必加载）
+        let neural_tools: Vec<_> = self
+            .tools
+            .iter()
+            .filter(|t| Self::is_prompt_visible_tool(t) && Self::is_neural_tool(t))
+            .collect();
+        result.push_str(&Self::build_tools_section("神经工具", &neural_tools));
+
+        // 4. 神经技能（tags 含 "neural"，所有 Agent 必加载）
+        let neural_skills: Vec<_> = self.skills.iter().filter(|s| Self::is_neural_skill(s)).collect();
+        result.push_str(&Self::build_skills_section("神经技能", &neural_skills));
+
+        // 5. 常用工具（tags 不含 "neural" 但与 match_keys 有交集）
+        let tagged_tools: Vec<_> = self
+            .tools
+            .iter()
+            .filter(|t| {
+                Self::is_prompt_visible_tool(t)
+                    && {
+                        let tags = t.get_tags();
+                        !tags.iter().any(|tag| tag == NEURAL_TAG)
+                            && Self::tags_match(&tags, &self.match_keys)
+                    }
+            })
+            .collect();
+        result.push_str(&Self::build_tools_section("常用工具", &tagged_tools));
+
+        // 6. 必加载技能（tags 不含 "neural" 但与 match_keys 有交集）
+        let tagged_skills: Vec<_> = self
+            .skills
+            .iter()
+            .filter(|s| {
+                let tags = s.parse_tags();
+                !tags.iter().any(|tag| tag == NEURAL_TAG)
+                    && Self::tags_match(&tags, &self.match_keys)
+            })
+            .collect();
+        result.push_str(&Self::build_skills_section("必加载技能", &tagged_skills));
+
+        // 7. 用户画像信息（随用户变化，但在对话中相对稳定）
+        if let Some(profile) = &self.user_profile {
+            result.push_str("【用户画像】\n");
+            result.push_str(profile);
+            result.push_str("\n\n");
+        }
+
+        // 8. 历史对话记忆
+        if !self.history.is_empty() {
+            result.push_str("【历史对话】\n");
+            for h in &self.history {
+                result.push_str(h);
+                result.push_str("\n");
+            }
+            result.push_str("\n");
+        }
+
+        // 9. 工具失败警告（有失败工具时才显示）
+        if !self.tool_failures.is_empty() {
+            result.push_str("【工具失败警告】\n");
+            result.push_str("以下工具近期失败次数较多，请谨慎使用或考虑替代方案：\n");
+            for (tool_name, fail_count) in &self.tool_failures {
+                result.push_str(&format!("- {}：失败 {} 次\n", tool_name, fail_count));
+            }
+            result.push_str("\n");
+        }
+
+        // 10. 本次思考的 Trace ID + 当前用户消息
+        if let Some(trace_id) = &self.current_trace_id {
+            result.push_str(&format!("【思考 Trace ID】{}\n\n", trace_id));
+        }
+        if let Some(msg) = &self.current_message {
+            result.push_str(msg);
+            result.push_str("\n\n请回复：");
+        }
+
+        result
+    }
+}
+
+/// 便捷函数：快速构建 Agent 对话 Prompt
+///
+/// 封装了最常用的组合：Trace ID + Agent 人设 + Agent 绑定工具 + 历史记忆 + 当前消息
+pub fn build_conversation_prompt(
+    trace_id: &str,
+    agent: &Agent,
+    recent_memories: &[Memory],
+    current_message: &Message,
+) -> String {
+    use crate::models::prompt_builder::PromptBuilder;
+    // 提取 ToolPo 列表（Tool 实体不可 Clone，但 PO 可以）
+    let tool_pos: Vec<crate::models::tool::ToolPo> = agent
+        .tools()
+        .iter()
+        .map(|t| t.po.clone())
+        .collect();
+    let mut builder = DefaultPromptBuilder::new();
+    builder.current_trace_id(trace_id);
+    builder.system_prompt(agent);
+    builder.tools(&tool_pos);
+    builder.history(recent_memories);
+    builder.current_message(current_message);
+    builder.build()
 }

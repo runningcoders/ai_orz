@@ -161,12 +161,39 @@ async fn a2a_agent_dal_delegates_get_agent_to_base() {
 /// 验证未重写 prompt_builder 时走 trait 默认方法返回 DefaultPromptBuilder
 #[test]
 fn a2a_agent_dal_default_prompt_builder_returns_default() {
+    use crate::models::tool::ToolPo;
+    use common::enums::ToolProtocol;
+    use serde_json::json;
+    use crate::models::prompt_builder::PromptBuilder;
+
     let mock = Arc::new(MockAgentDal::new());
     let a2a_dal = A2aAgentDal::new(mock);
 
+    let agent_po = AgentPo::new(
+        "工具助手".to_string(),
+        vec!["test".to_string()],
+        "可以使用工具".to_string(),
+        vec!["工具调用".to_string()],
+        "按需使用工具。".to_string(),
+        "provider-001".to_string(),
+        "tester".to_string(),
+    );
+    let agent = Agent::from_po(agent_po);
+    let tool_po = ToolPo::new(
+        "remote-tool".to_string(),
+        "remote-tool".to_string(),
+        "A2A tool".to_string(),
+        ToolProtocol::Mcp,
+        json!({}),
+        Some(json!({"type": "object"})),
+        vec!["test".to_string()],
+        Some("creator".to_string()),
+    );
+
     let mut builder = a2a_dal.prompt_builder();
-    builder.builtin_tools(&["remote-tool: A2A tool".to_string()]);
+    builder.system_prompt(&agent);
+    builder.tools(&[tool_po]);
     let prompt = builder.build();
-    assert!(prompt.contains("【可用 Manual 工具】"));
-    assert!(prompt.contains("remote-tool: A2A tool"));
+    assert!(prompt.contains("【常用工具】"));
+    assert!(prompt.contains("remote-tool"));
 }

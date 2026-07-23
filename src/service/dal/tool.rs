@@ -414,6 +414,7 @@ impl ToolDal for ToolDalImpl {
             ctx,
             ToolQuery {
                 agent_id: Some(agent_id.to_string()),
+                enabled_only: Some(true),
                 ..Default::default()
             },
         )

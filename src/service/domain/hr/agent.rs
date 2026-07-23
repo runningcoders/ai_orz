@@ -2,6 +2,7 @@
 
 use crate::models::agent::Agent;
 use crate::models::skill::Skill;
+use crate::models::tool::Tool;
 use crate::pkg::RequestContext;
 use crate::service::dao::agent::AgentQuery;
 use crate::service::domain::hr::{AgentManage, HrDomainImpl};
@@ -82,8 +83,46 @@ impl AgentManage for HrDomainImpl {
     /// 获取 Agent
     ///
     /// 基础操作：根据 ID 查询 Agent
+    /// 当 with_tools=true 时，额外加载 Agent 可用的工具（绑定工具 + tag 匹配工具），
+    /// 写入 Agent 实体供后续 wake/awaken 使用。
     async fn get_agent(&self, ctx: RequestContext, id: &str, options: crate::service::dal::agent::AgentFetchOptions) -> Result<Option<Agent>> {
-        self.agent_dal.get_agent(ctx, id, options).await
+        let with_tools = options.with_tools.unwrap_or(false);
+        let mut agent = self.agent_dal.get_agent(ctx.clone(), id, options).await?;
+
+        if let Some(ref mut agent) = agent {
+            if with_tools {
+                // 绑定工具（通过 agent_tools 关联表）
+                let bound_tools = self
+                    .tool_dal
+                    .list_tools_for_agent_full(ctx.clone(), id)
+                    .await?;
+                // tag 匹配工具（neural + installed_tags）
+                let mut tag_filter = vec!["neural".to_string()];
+                tag_filter.extend(agent.po.get_installed_tags());
+                let tag_tools = self
+                    .tool_dal
+                    .query(
+                        ctx.clone(),
+                        crate::service::dao::tool::ToolQuery {
+                            tags: Some(tag_filter),
+                            enabled_only: Some(true),
+                            status: Some(common::enums::ToolStatus::Enabled),
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
+                // 合并去重（绑定工具和 tag 工具可能有交集）
+                let mut seen_ids = std::collections::HashSet::new();
+                let all_tools: Vec<Tool> = bound_tools
+                    .into_iter()
+                    .chain(tag_tools)
+                    .filter(|t| seen_ids.insert(t.po.id.clone()))
+                    .collect();
+                agent.set_tools(all_tools);
+            }
+        }
+
+        Ok(agent)
     }
 
     /// 通用综合查询

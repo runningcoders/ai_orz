@@ -9,14 +9,22 @@
 //! let mut builder = agent_dal.prompt_builder();
 //! builder.current_trace_id(&trace_id);
 //! builder.system_prompt(&agent);
+//! builder.tools(&tools);
+//! builder.skills(&skills);
 //! builder.history(&memories);
+//! builder.current_message(&message);
 //! let prompt = builder.build();
 //! ```
+//!
+//! 【分块拼装】tools 和 skills 统一注入，build() 时按 tag 自动分块：
+//! - neural tag 的工具/技能 → 神经工具/神经技能区块（所有 Agent 必加载）
+//! - 其他工具/技能 → 常用工具/必加载技能区块（按 agent roles ∪ installed_tags 匹配）
 
 use crate::models::agent::Agent;
 use crate::models::memory::Memory;
 use crate::models::message::Message;
 use crate::models::skill::SkillPo;
+use crate::models::tool::ToolPo;
 use crate::models::user::UserPo;
 
 /// Prompt 构建器 trait
@@ -26,10 +34,9 @@ pub trait PromptBuilder: Send + Sync {
     /// 设置本次思考的 Trace ID
     fn current_trace_id(&mut self, trace_id: &str);
 
-    /// 批量设置关联 Trace ID 列表
-    fn trace_ids(&mut self, trace_ids: &[String]);
-
     /// 设置 Agent 人设 / System Prompt
+    ///
+    /// 同时缓存 agent 的 roles + installed_tags 作为后续工具/技能分块的匹配键。
     fn system_prompt(&mut self, agent: &Agent);
 
     /// 设置历史对话记忆
@@ -38,17 +45,13 @@ pub trait PromptBuilder: Send + Sync {
     /// 设置当前用户消息
     fn current_message(&mut self, message: &Message);
 
-    /// 设置 Agent 可用技能
-    fn agent_skills(&mut self, skills: &[SkillPo]);
+    /// 设置 Agent 可用技能（全量注入，build 时按 tag 分块）
+    fn skills(&mut self, skills: &[SkillPo]);
 
-    /// 设置 Agent 绑定的 Manual 工具
-    fn bound_tools(&mut self, agent: &Agent);
-
-    /// 设置内置工具（神经工具 + 已安装工具包）的 prompt 说明
+    /// 设置 Agent 可用工具（全量注入，build 时按 tag 分块）
     ///
-    /// 与 `bound_tools` 互补：bound_tools 注入 Agent 显式绑定的 Manual 工具，
-    /// builtin_tools 注入 Agent 天生拥有或通过工具包安装的内置工具。
-    fn builtin_tools(&mut self, tool_prompts: &[String]);
+    /// 传入 ToolPo 列表（Tool 实体不可 Clone，使用 PO 足够生成 Prompt）。
+    fn tools(&mut self, tools: &[ToolPo]);
 
     /// 设置工具失败统计
     fn tool_failures(&mut self, failures: &[(String, u64)]);
