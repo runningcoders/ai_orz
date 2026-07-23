@@ -76,7 +76,6 @@ pub trait RuntimeMemory: Send + Sync {
         &self,
         ctx: RequestContext,
         agent_id: &str,
-        task_id: Option<&str>,
         limit: usize,
     ) -> Result<Vec<Memory>>;
 

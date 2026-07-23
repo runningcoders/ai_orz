@@ -95,7 +95,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         // Step 1: 读取最近短期记忆
         let recent_memories = self
             .memory()
-            .get_recent_context(ctx.clone(), &agent.po.id, None, 20)
+            .get_recent_context(ctx.clone(), &agent.po.id, 20)
             .await?;
 
         // Step 2: 预先构造 MemoryTrace 拿到 trace_id
@@ -140,16 +140,6 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         builder.history(&recent_memories);
         builder.current_message(message);
 
-        // 【角色分工】只有客服类 Agent 才需要拼接用户喜好等信息
-        // TODO: 后续从上层 Domain 传入用户画像信息
-        let agent_roles = agent.po.get_roles();
-        if agent_roles.contains(&"customer_service".to_string())
-            || agent_roles.contains(&"客服".to_string())
-        {
-            // 预留：实际使用时从上层传入用户画像
-            // builder.user_profile(user_profile_str);
-        }
-
         let prompt = builder.build();
 
         // Step 4: 调用大脑思考
@@ -161,7 +151,17 @@ impl RuntimeAwakening for RuntimeDomainImpl {
 
         // 调用 think，先捕获结果（不立即 ?）
         // set_idle 由 _busy_guard 在函数返回时自动执行（RAII）
-        let think_result = self.brain_dal().think(ctx.clone(), brain, &prompt).await;
+        // 添加超时，避免 LLM API hang 住导致 Agent 永远 Busy
+        // 修复：think 无超时，Local 路径调 HTTP LLM API 若网络 hang 住，
+        // set_idle 永不执行，Agent 永远 Busy
+        const THINK_TIMEOUT_SECS: u64 = 300; // 5 分钟
+        let think_result = match tokio::time::timeout(
+            std::time::Duration::from_secs(THINK_TIMEOUT_SECS),
+            self.brain_dal().think(ctx.clone(), brain, &prompt),
+        ).await {
+            Ok(result) => result,
+            Err(_elapsed) => Err(err!(Internal, "brain think timeout after {}s", THINK_TIMEOUT_SECS)),
+        };
 
         // 展开 Result，失败时也记录事件
         let raw_output = match think_result {
