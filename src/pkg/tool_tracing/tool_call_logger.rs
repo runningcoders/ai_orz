@@ -165,10 +165,10 @@ fn redact_trace_values_for_tool(
 #[async_trait]
 impl CoreTool for LoggingDecorator {
     async fn call(&self, ctx: RequestContext, args: Value) -> Result<Value> {
-        let (result, entry) = self.call_with_entry(ctx, args).await;
-        // Log the entry immediately
-        let tool_id = entry.tool_id.clone();
-        let _ = self.logger.log_call(&tool_id, entry);
+        // call_with_entry 内部已经执行 log_call，这里不再重复写入
+        // 修复：之前 Rig 调用 Auto 工具时，call_with_entry 和 call 各写一次，
+        // 产生两条相同 call_id 的 trace 记录，污染统计和查询
+        let (result, _entry) = self.call_with_entry(ctx, args).await;
         result
     }
 
