@@ -789,7 +789,9 @@ impl DefaultPromptBuilder {
         }
         let mut s = format!("【{}】\n", title);
         s.push_str(
-            "以下仅列出需要通过 ai_orz 消息机制调用的 Manual 工具：如需调用，请发送一条工具调用消息。已经注册到 Rig 的 Auto 工具不在此处列出，仍使用模型默认的 Rig/function calling 调用方式。\n",
+            "以下为 Manual 工具（已注册到 Rig 的 Auto 工具不在此列出，直接通过 function calling 调用）。Manual 工具有两种调用方式，请按场景选择：\n\
+             - 同步调用（request_tool_call）：结果在当前轮立即返回，适合轻量、快速的工具\n\
+             - 异步调用（send_tool_call_message）：结果在下一轮通过 ToolCallResult 消息送达，适合耗时较长的工具\n",
         );
         for t in tools {
             s.push_str(&format!("- {}\n", t.to_tool_prompt()));

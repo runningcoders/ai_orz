@@ -183,24 +183,30 @@ pub struct SendMessageToAgentResponse {
     pub message_id: String,
 }
 
-/// 请求工具调用参数。
+/// 请求工具调用参数（同步）。
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct RequestToolCallParams {
     /// 工具 ID。
     pub tool_id: String,
+    /// 工具名称。
+    pub tool_name: String,
     /// 工具调用参数。
     pub params: serde_json::Value,
+    /// 关联项目 ID。
+    pub project_id: Option<String>,
     /// 关联任务 ID。
     pub task_id: Option<String>,
 }
 
-/// 请求工具调用响应。
+/// 请求工具调用响应（同步）。
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct RequestToolCallResponse {
     /// 工具调用 ID。
     pub tool_call_id: String,
     /// 调用状态。
     pub status: String,
+    /// 工具执行结果。
+    pub result: serde_json::Value,
 }
 
 /// 发送工具调用消息参数（异步）。

@@ -527,6 +527,7 @@ Agent
 - **技能加载对齐工具模式**：`hr_domain.get_agent(with_skills=true)` 加载 Agent 已安装的技能副本（author_id = agent_id，排除 Expired）写入 `agent.skills`（`Vec<Skill>` 业务实体）；awakening 删除 `load_agent_skills`，直接用 `agent.skills()` 提取 SkillPo
 - **技能与工具的策略差异**：技能讲究"安装且自进化"，只在已安装副本范围内查（即便神经技能也需安装到自身目录）；不匹配 match_keys 的技能由 Agent 通过 `search_skill` 神经工具按需渐进式加载
 - **DefaultPromptBuilder 对齐**：Local agent 的 builder 移至 `dal/agent.rs`，与 Cli/Remote 通过各自 Dal 的 `prompt_builder()` 获取对齐
+- **同步 manual 工具调用**：`request_tool_call` 重新注册为同步神经工具，与异步 `send_tool_call_message` 对齐；参数加 `tool_name`/`project_id`，响应加 `result` 字段；Manual 工具区块提示词更新说明两种调用方式及适用场景
 - **测试统计**：745 个测试 100% 通过
 
 ### 2026-07-22 里程碑

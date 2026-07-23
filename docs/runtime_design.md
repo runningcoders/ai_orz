@@ -6,6 +6,7 @@
 > 状态：v3.0（2026-07-11）
 >
 > **更新记录**：
+> - v3.3 (2026-07-23): request_tool_call 重新注册为同步神经工具，与异步 send_tool_call_message 对齐，745 测试通过
 > - v3.2 (2026-07-12): Phase 4C 技能系统增强 + Phase 5 多 Agent 协作工具，693 测试通过
 > - v3.0 (2026-07-11): Phase 4A 工具包机制 + 任务执行闭环，tag 分组、免绑定三层校验、TaskAssignment 消息、569 测试通过
 > - v2.1 (2026-07-11): 架构修正——同步/异步工具调用分离，send_tool_call_message 替代 request_tool_call 作为神经工具
@@ -229,6 +230,7 @@ pub struct AssembledContext {
 | `search_memory` | 混合搜索长期/短期记忆 | `RuntimeMemory.search` | P0 |
 | `send_message` | 给 user / agent / channel 发消息 | `MessageDomain.delivery` | P0 |
 | `send_tool_call_message` | 发送工具调用消息（异步，manual 工具入口） | `MessageDomain.delivery.send_tool_call_request` | P0 |
+| `request_tool_call` | 同步调用 manual 工具，结果立即返回 | `RuntimeDomain.tool_execution.call_manual_tool_for_agent` | P0 |
 | `mark_done` | 显式标记本任务完成（project_management 工具包） | Runtime 内部 | P1 |
 | `list_tools` | "想起"有哪些外骨骼工具可用（仅返回名字+一句话） | `ToolDal` | P1 |
 | `search_skill` | "想起"有哪些相关技能 | `SkillDal` | P2 |
@@ -236,7 +238,7 @@ pub struct AssembledContext {
 | `read_tool_spec` | 展开某个工具的完整 schema | `ToolDal` | P2 |
 | `write_memory` | 沉淀新记忆 | `RuntimeMemory.write` | P2 |
 
-> **注意**：`request_tool_call` 不再是神经工具。它是同步直接调用 `call_manual_tool_for_agent()` 的普通 HTTP Handler，供 HTTP API 或后续复杂架构使用。Agent 异步调用 manual 工具应使用 `send_tool_call_message` 神经工具，通过消息系统完成异步调用链路。
+> **注意**：`request_tool_call`（同步）和 `send_tool_call_message`（异步）都是神经工具，Agent 按需选择。前者直接调用 `call_manual_tool_for_agent()` 在同轮返回结果；后者通过消息系统异步执行，结果在下一轮 awaken 送达。
 
 **设计要点**：
 - `list_*` 系列只返回**摘要**（名字+一句话），不含完整 schema，避免 prompt 膨胀
@@ -249,8 +251,8 @@ pub struct AssembledContext {
 
 | 角色 | 职责 | 示例 |
 |------|------|------|
-| **神经工具 Handler** | 封装 Message Domain 的投递方法，注册为神经工具供 Agent 调用 | `send_tool_call_message`、`send_message` |
-| **普通 HTTP Handler** | 直接调用 Domain 完成业务，不注册为工具 | `request_tool_call`（同步调用工具，供 HTTP API 使用） |
+| **神经工具 Handler** | 封装 Domain 方法，注册为神经工具供 Agent 调用 | `send_tool_call_message`（异步）、`request_tool_call`（同步）、`send_message` |
+| **普通 HTTP Handler** | 直接调用 Domain 完成业务，不注册为工具 | （供 HTTP API 或前端使用） |
 | **Consumer** | 同服务内直接通过 Domain 执行真实业务逻辑 | `handle_tool_call_request` → `call_manual_tool_for_agent()` + `send_tool_call_result()` |
 
 **注册示例**：
@@ -279,7 +281,15 @@ async fn send_message(ctx: RequestContext, params: SendMessageParams) -> Result<
     │      ├── list_tools    ───► ToolDal
     │      └── send_message  ───► MessageDomain
     │
-    └── send_tool_call_message (神经工具，发送工具调用消息)
+    ├── request_tool_call (神经工具，同步调用 manual 工具)
+    │      │
+    │      ▼
+    │   tool_execution.call_manual_tool_for_agent()  ← 直接通过 Domain
+    │      │   └── 三层免绑定校验：绑定 → 神经 → 已安装 tag
+    │      │
+    │      └── 同轮返回执行结果，awaken 继续
+    │
+    └── send_tool_call_message (神经工具，异步调用 manual 工具)
            │
            ▼
         MessageDomain.delivery.send_tool_call_request() ──► 消息入队
@@ -300,7 +310,7 @@ async fn send_message(ctx: RequestContext, params: SendMessageParams) -> Result<
            └── 触发下一次 awaken()
 ```
 
-> **关键区别**：`request_tool_call`（普通 HTTP Handler）是同步直接调用 `call_manual_tool_for_agent()`，不经过消息系统，供 HTTP API 使用。`send_tool_call_message`（神经工具）通过消息系统异步执行，是 Agent 调用 manual 工具的入口。
+> **同步 vs 异步**：`request_tool_call`（同步神经工具）直接调用 `call_manual_tool_for_agent()`，结果在当前轮立即返回，适合轻量快速的工具；`send_tool_call_message`（异步神经工具）通过消息系统异步执行，结果在下一轮 awaken 送达，适合耗时较长的工具。Agent 按场景自行选择。
 
 ---
 
@@ -1842,6 +1852,7 @@ pub enum AgentRuntimeState {
 
 | 日期 | 版本 | 变更 |
 |------|------|------|
+| 2026-07-23 | v2.2 | `request_tool_call` 重新注册为同步神经工具，与异步 `send_tool_call_message` 对齐；参数对齐（加 tool_name/project_id），响应加 result 字段；Manual 工具区块提示词更新说明两种调用方式 |
 | 2026-07-11 | v2.1 | 架构修正：同步/异步工具调用分离；`request_tool_call` 从神经工具移除，改为普通 HTTP Handler；新增 `send_tool_call_message` 神经工具作为 manual 工具异步调用入口；新增三种角色定位说明 |
 | 2026-07-10 | v2.0 | 新增第二十一章：多回合循环控制设计；轮次限制、任务完成检测、Prompt 上下文差异化、工具失败计数注入、唤醒失败事件记录 |
 | 2026-07-10 | v1.0 | Phase 2 神经工具集完整落地：8 个神经工具全部实现，自动回复移除，548 测试通过 |
@@ -2172,8 +2183,8 @@ if target_status == AgentStatus::Onboarded {
 
 | 角色 | 注册为工具 | 调用方式 | 示例 |
 |------|----------|---------|------|
-| 神经工具 Handler | ✅ `#[register_handler_tool(neural)]` | Agent 通过 rig auto 调用 | send_message, send_tool_call_message |
-| 普通 HTTP Handler | ❌ 不注册 | HTTP API 直接调用 | request_tool_call |
+| 神经工具 Handler | ✅ `#[register_handler_tool(neural)]` | Agent 通过 rig auto 调用 | send_message, send_tool_call_message, request_tool_call |
+| 普通 HTTP Handler | ❌ 不注册 | HTTP API 直接调用 | （供前端或外部 API 使用） |
 | Consumer | — | 直接调 Domain | handle_tool_call_request |
 
 ### 22.8 TaskAssignment 消息机制
