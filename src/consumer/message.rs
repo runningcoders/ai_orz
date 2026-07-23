@@ -190,6 +190,41 @@ impl MessageConsumer {
             }
         };
 
+        // 检查任务完成状态（优先于 thinking_depth 检查）
+        // 顺序说明：若任务已 Completed/Cancelled，应直接跳过唤醒，避免向已结束的任务
+        // 发送误导性的"达到最大思考深度"消息
+        if let Some(task_id) = &message.po.task_id {
+            match self.project_domain.task_manage().get(ctx.clone(), task_id).await {
+                Ok(Some(task)) => {
+                    if matches!(task.po.status, common::enums::TaskStatus::Completed | common::enums::TaskStatus::Cancelled | common::enums::TaskStatus::Archived) {
+                        log_info!(
+                            &ctx,
+                            "handle_agent_message",
+                            "Task {} is in {:?} state, skipping agent wake",
+                            task_id,
+                            task.po.status
+                        );
+                        // 释放 Busy 状态（awaken 不会被调用）
+                        AgentRuntimeStateManager::global().set_idle(agent_id);
+                        return Ok(());
+                    }
+                }
+                Ok(None) => {
+                    log_warn!(
+                        &ctx,
+                        "handle_agent_message",
+                        "task {} not found, skip status check",
+                        task_id
+                    );
+                }
+                Err(e) => {
+                    // 查询失败：临时错误，释放 Busy 允许重试
+                    AgentRuntimeStateManager::global().set_idle(agent_id);
+                    return Err(e);
+                }
+            }
+        }
+
         // 检查轮次限制
         if let (Some(_task_id), Some(stats)) = (&message.po.task_id, &agent.stats) {
             if let Some(call_summary) = &stats.call_summary {
@@ -225,39 +260,6 @@ impl MessageConsumer {
                     // 释放 Busy 状态（awaken 不会被调用，BusyGuard 不会创建）
                     AgentRuntimeStateManager::global().set_idle(agent_id);
                     return Ok(());
-                }
-            }
-        }
-
-        // 检查任务完成状态
-        if let Some(task_id) = &message.po.task_id {
-            match self.project_domain.task_manage().get(ctx.clone(), task_id).await {
-                Ok(Some(task)) => {
-                    if matches!(task.po.status, common::enums::TaskStatus::Completed | common::enums::TaskStatus::Cancelled | common::enums::TaskStatus::Archived) {
-                        log_info!(
-                            &ctx,
-                            "handle_agent_message",
-                            "Task {} is in {:?} state, skipping agent wake",
-                            task_id,
-                            task.po.status
-                        );
-                        // 释放 Busy 状态（awaken 不会被调用）
-                        AgentRuntimeStateManager::global().set_idle(agent_id);
-                        return Ok(());
-                    }
-                }
-                Ok(None) => {
-                    log_warn!(
-                        &ctx,
-                        "handle_agent_message",
-                        "task {} not found, skip status check",
-                        task_id
-                    );
-                }
-                Err(e) => {
-                    // 查询失败：临时错误，释放 Busy 允许重试
-                    AgentRuntimeStateManager::global().set_idle(agent_id);
-                    return Err(e);
                 }
             }
         }

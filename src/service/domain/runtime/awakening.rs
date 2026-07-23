@@ -168,8 +168,9 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             Ok(output) => output,
             Err(e) => {
                 // 记录唤醒失败事件
+                // 统计写入失败不应阻塞业务返回，但需记录警告以便排查统计缺失
                 let duration_ms = start_time.elapsed().map(|d| d.as_millis() as u64).unwrap_or(0);
-                let _ = record_event!(ctx, AgentAwakeEvent {
+                if let Err(stats_err) = record_event!(ctx, AgentAwakeEvent {
                     agent_id: agent.po.id.clone(),
                     project_id: ctx.project_id().cloned(),
                     task_id: ctx.task_id().cloned(),
@@ -179,7 +180,14 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                     call_count: 1,
                     duration_ms: duration_ms,
                     status: format!("failed: {}", e),
-                });
+                }) {
+                    log_warn!(
+                        &ctx,
+                        "awaken",
+                        "record_event failed on error path, stats may be incomplete: {:?}",
+                        stats_err
+                    );
+                }
                 return Err(e);
             }
         };
@@ -195,8 +203,9 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             .await?;
 
         // Step 7: 记录 Agent 唤醒统计事件
+        // 统计写入失败不应阻塞业务返回（awaken 已成功），仅记录警告
         let duration_ms = start_time.elapsed().map(|d| d.as_millis() as u64).unwrap_or(0);
-        let _ = record_event!(ctx, AgentAwakeEvent {
+        if let Err(stats_err) = record_event!(ctx, AgentAwakeEvent {
             agent_id: agent.po.id.clone(),
             project_id: ctx.project_id().cloned(),
             task_id: ctx.task_id().cloned(),
@@ -206,7 +215,14 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             call_count: 1,
             duration_ms: duration_ms,
             status: "success".to_string(),
-        });
+        }) {
+            log_warn!(
+                &ctx,
+                "awaken",
+                "record_event failed on success path, stats may be incomplete: {:?}",
+                stats_err
+            );
+        }
 
         // Step 8: 返回结果
         Ok(AwakeningResult {
