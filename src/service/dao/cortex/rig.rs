@@ -145,6 +145,8 @@ impl super::CortexDao for RigCortexDao {
         Ok(cortex)
     }
 
+    // `_ctx` 当前未使用：cortex 构造时已通过 RuntimeMonitoringHook 捕获 ctx 快照。
+    // 保留为扩展点，详见 CortexDao trait 文档（brain 缓存场景需用最新 ctx 刷新）。
     async fn prompt(
         &self,
         _ctx: RequestContext,

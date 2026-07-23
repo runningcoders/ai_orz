@@ -239,7 +239,7 @@ impl MessageConsumer {
                         max_depth
                     );
 
-                    let _ = self.message_domain
+                    let send_result = self.message_domain
                         .delivery()
                         .send_to_user(
                             ctx.clone(),
@@ -256,6 +256,17 @@ impl MessageConsumer {
                             },
                         )
                         .await;
+
+                    // 通知失败仅记录警告，不阻塞 Agent 释放 busy / 返回 Ok
+                    // （thinking depth 是合法停止，通知失败不应触发消息重试）
+                    if let Err(notify_err) = send_result {
+                        log_warn!(
+                            &ctx,
+                            "handle_agent_message",
+                            "通知用户 Agent 已达最大思考深度失败（不阻塞停止流程）: {}",
+                            notify_err
+                        );
+                    }
 
                     // 释放 Busy 状态（awaken 不会被调用，BusyGuard 不会创建）
                     AgentRuntimeStateManager::global().set_idle(agent_id);

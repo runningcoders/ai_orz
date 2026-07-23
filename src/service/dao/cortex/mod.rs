@@ -12,6 +12,11 @@ use anyhow::Result;
 /// Cortex DAO 工厂 trait
 ///
 /// Cortex Dao 负责创建 CortexTrait 和执行推理/向量化，所有方法都传递 ctx
+///
+/// 【扩展点】`ctx` 参数当前在 RigCortexDao 实现中未使用（cortex 构造时已通过
+/// RuntimeMonitoringHook 捕获 ctx 快照），但保留在 trait 签名中作为扩展点：
+/// 若未来引入 brain 缓存（参见 awakening.rs TODO(brain-cache)），cortex 构造时
+/// 捕获的 ctx 会变 stale，此时实现可改用传入的最新 ctx 刷新监控 hook。
 #[async_trait::async_trait]
 pub trait CortexDao: Send + Sync {
     /// ✅ 根据 Model Provider 创建 CortexTrait 实例，绑定已包装的 Rig 工具列表

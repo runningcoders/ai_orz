@@ -68,11 +68,15 @@ impl MessageDelivery for MessageDomainImpl {
         // root_id 继承：如果有 reply_to_id，查询父消息的 root_id 作为链根；
         // 否则当前消息自身为链根。修复：之前 root_id 始终为自身 ID，多轮对话
         // 每条消息都是独立 root，无法按 root_id 拉取完整对话链
+        //
+        // fallback 策略：若父消息 root_id 为 None（历史遗留数据），用父消息 ID
+        // 作为链根而非当前消息 ID，使后续回复都能归到父消息下（父消息自身
+        // root_id 仍为 None 但不影响新消息分组）
         let chain_root_id = match cmd.reply_to_id {
             Some(parent_id) => {
                 match self.message_dal.find_by_id(ctx.clone(), parent_id).await {
                     Ok(Some(parent)) => {
-                        parent.po.root_id.unwrap_or_else(|| root_msg_id.clone())
+                        parent.po.root_id.unwrap_or_else(|| parent_id.to_string())
                     }
                     _ => root_msg_id.clone(),
                 }
@@ -168,10 +172,11 @@ impl MessageDelivery for MessageDomainImpl {
             .map(|s| s.to_string());
 
         // root_id 继承：如果有 reply_to_id，查询父消息的 root_id；否则自身为 root
+        // fallback：若父消息 root_id 为 None（历史遗留数据），用父消息 ID 作为链根
         let root_id = match cmd.reply_to_id {
             Some(parent_id) => {
                 match self.message_dal.find_by_id(ctx.clone(), parent_id).await {
-                    Ok(Some(parent)) => parent.po.root_id.unwrap_or_else(|| id.clone()),
+                    Ok(Some(parent)) => parent.po.root_id.unwrap_or_else(|| parent_id.to_string()),
                     _ => id.clone(),
                 }
             }
