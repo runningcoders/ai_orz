@@ -11,9 +11,25 @@ use std::collections::HashSet;
 use wasm_bindgen::{closure::Closure, JsCast};
 
 fn format_time(timestamp: i64) -> String {
+    // 修复 L_NEW：timestamp_opt 在无效时间戳时返回 None，unwrap 会 panic。
+    // 对齐 chat.rs 的实现：用 match 安全处理
     use chrono::{Local, TimeZone};
-    let dt = Local.timestamp_opt(timestamp / 1000, 0).unwrap();
-    dt.format("%H:%M").to_string()
+    match Local.timestamp_opt(timestamp / 1000, 0) {
+        chrono::LocalResult::Single(dt) => format!("{}", dt.format("%H:%M")),
+        _ => "--:--".to_string(),
+    }
+}
+
+/// 生成乐观消息的临时 ID。对齐 chat.rs 的 tmp_msg_id 实现：
+/// 用 now_ms + js_sys::Math::random 避免同毫秒发送两条消息 ID 碰撞
+fn tmp_msg_id() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+    let random = (js_sys::Math::random() * 1_000_000_000.0) as u32;
+    format!("tmp_{}_{:09}", now_ms, random)
 }
 
 fn is_attachment_message(msg_type: i32) -> bool {
@@ -247,7 +263,13 @@ pub fn HrAgentDetail(id: String) -> Element {
             if msg.to_id == inner_id || msg.from_id == inner_id {
                 let mut current = inner_messages.write();
                 // 修复 H2：移除同 content 的 tmp_ 前缀乐观消息
-                current.retain(|m| !(m.message_id.starts_with("tmp_") && m.content == msg.content));
+                // 修复 H_NEW：retain 会删除所有匹配的 tmp_，连发同内容消息会留下重复。
+                // 改为只删除第一条匹配的 tmp_ 消息
+                if let Some(pos) = current.iter().position(|m| {
+                    m.message_id.starts_with("tmp_") && m.content == msg.content
+                }) {
+                    current.remove(pos);
+                }
                 if current.iter().any(|m| m.message_id == msg.message_id) {
                     return;
                 }
@@ -274,8 +296,16 @@ pub fn HrAgentDetail(id: String) -> Element {
         }
         let aid = id_for_send.clone();
 
+        // 修复 M4（对齐 chat.rs）：保存输入快照，失败时恢复
+        let text_snapshot = text.clone();
         input_message.set(String::new());
         is_typing.set(true);
+
+        // 修复 M6（对齐 chat.rs）：is_typing 超时保护，防止 Agent 失败/SSE 断开时永久卡死
+        spawn(async move {
+            gloo_timers::future::TimeoutFuture::new(60_000).await;
+            is_typing.set(false);
+        });
 
         spawn(async move {
             let req = SendMessageToAgentParams {
@@ -290,9 +320,9 @@ pub fn HrAgentDetail(id: String) -> Element {
             match send_message_to_agent(req).await {
                 Ok(_) => {
                     // 修复 H6：发送成功后立即追加乐观消息，无需等待 SSE 回推
-                    let now_ms = chrono::Utc::now().timestamp_millis();
+                    // 修复 L_NEW（对齐 chat.rs L18）：使用 tmp_msg_id 避免同毫秒 ID 碰撞
                     let user_msg = MessageListItem {
-                        message_id: format!("tmp_{}", now_ms),
+                        message_id: tmp_msg_id(),
                         project_id: None,
                         task_id: None,
                         from_id: "user".to_string(),
@@ -303,13 +333,21 @@ pub fn HrAgentDetail(id: String) -> Element {
                         status: 3,
                         content: text.clone(),
                         reply_to_id: None,
-                        created_at: now_ms,
+                        created_at: {
+                            use std::time::{SystemTime, UNIX_EPOCH};
+                            SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as i64
+                        },
                         file_type: None,
                         file_meta: None,
                     };
                     messages.write().push(user_msg);
                 }
                 Err(e) => {
+                    // 修复 M4：失败时恢复用户输入
+                    input_message.set(text_snapshot);
                     toast.error(&format!("发送消息失败: {}", e));
                     is_typing.set(false);
                 }

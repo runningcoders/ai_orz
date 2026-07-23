@@ -109,9 +109,8 @@ fn get_label_transform(sx: f64, sy: f64, tx: f64, ty: f64) -> String {
 #[component]
 pub fn Graph(props: GraphProps) -> Element {
     // 修复 H4：use_signal 只在首次初始化，后续 props.nodes 变化不会更新。
-    // 用 use_effect 监听 props.nodes，增量同步 node_positions：
-    // - 移除不在新节点列表中的旧位置
-    // - 新增节点用 props 中的 x/y（已有位置保留避免拖拽丢失）
+    // 修复 M_NEW：之前用 spawn 同步更新会有一帧延迟，首帧渲染时 node_positions 为旧状态。
+    // 改为同步代码块直接更新，避免首帧渲染延迟
     let mut node_positions = use_signal(|| {
         let mut pos = HashMap::new();
         for node in &props.nodes {
@@ -120,17 +119,16 @@ pub fn Graph(props: GraphProps) -> Element {
         pos
     });
 
-    // 用 spawn 同步更新（避免 use_effect move props 导致后续 clone 失败）
-    let nodes_for_update = props.nodes.clone();
-    spawn(async move {
+    {
+        // 同步增量同步（无需 spawn）：移除已不存在的节点，新增节点用 props 中的 x/y
         let mut pos = node_positions.write();
         let new_ids: std::collections::HashSet<String> =
-            nodes_for_update.iter().map(|n| n.id.clone()).collect();
+            props.nodes.iter().map(|n| n.id.clone()).collect();
         pos.retain(|id: &String, _| new_ids.contains(id));
-        for node in &nodes_for_update {
+        for node in &props.nodes {
             pos.entry(node.id.clone()).or_insert((node.x, node.y));
         }
-    });
+    }
 
     let mut is_dragging = use_signal(|| false);
     let mut dragged_node_id = use_signal(|| None::<String>);
@@ -249,7 +247,6 @@ pub fn Graph(props: GraphProps) -> Element {
 
     let (tx, ty, scale) = view_transform.read().clone();
     let render_nodes = props.nodes.clone();
-    let _render_edges = props.edges.clone();
     let highlighted_ids = props.highlighted_node_ids.clone();
     // 修复 M8：on_click 已移到 handle_mouse_up，节点 mousedown 不再触发点击
     let reset_view = move |_| {

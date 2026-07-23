@@ -232,8 +232,13 @@ pub fn MessageChat() -> Element {
         if project_match {
             let mut current = messages.write();
             // 修复 H2：乐观消息用 tmp_ 前缀，真实消息 ID 不同导致重复。
-            // 策略：收到真实消息时移除同 content 的 tmp_ 前缀消息
-            current.retain(|m| !(m.message_id.starts_with("tmp_") && m.content == msg.content));
+            // 修复 H_NEW：retain 会删除所有同 content 的 tmp_，连发两条相同内容消息时
+            // 第二条 tmp_ 会被错误留下。改为只删除第一条匹配的 tmp_ 消息。
+            if let Some(pos) = current.iter().position(|m| {
+                m.message_id.starts_with("tmp_") && m.content == msg.content
+            }) {
+                current.remove(pos);
+            }
             if current.iter().any(|m| m.message_id == msg.message_id) {
                 return;
             }
@@ -489,7 +494,16 @@ pub fn MessageChat() -> Element {
                 )
                 .ok();
 
-                let form = web_sys::FormData::new().unwrap();
+                // 修复 L_NEW1：FormData::new() 在极端环境可能失败（如 non-Window context），
+                // 改为 ok() + match 避免 panic
+                let form = match web_sys::FormData::new() {
+                    Ok(f) => f,
+                    Err(_) => {
+                        toast.error(&format!("无法初始化上传表单: {}", file_name));
+                        uploading.set(false);
+                        return;
+                    }
+                };
                 let _ = form.append_with_str("purpose", "message");
                 if let Some(blob) = blob {
                     let _ = form.append_with_blob_and_filename("file", &blob, &file_name);
@@ -644,7 +658,8 @@ pub fn MessageChat() -> Element {
                         for entry in group_messages_by_date(&messages()) {
                             match entry {
                                 MessageListEntry::DateDivider(label) => rsx! {
-                                    div { class: "divider my-2", key: "divider-{label}-{messages().len()}", "{label}" }
+                                    // 修复 L_NEW2：之前 key 含 messages().len()，切换会话时 len 变化导致 key 不稳定
+                                    div { class: "divider my-2", key: "divider-{label}", "{label}" }
                                 },
                                 MessageListEntry::Message(msg) => rsx! {
                                     {
@@ -762,7 +777,8 @@ pub fn MessageChat() -> Element {
                         for entry in group_messages_by_date(&messages()) {
                             match entry {
                                 MessageListEntry::DateDivider(label) => rsx! {
-                                    div { class: "divider my-2", key: "divider-{label}-{messages().len()}", "{label}" }
+                                    // 修复 L_NEW2：之前 key 含 messages().len()，切换会话时 len 变化导致 key 不稳定
+                                    div { class: "divider my-2", key: "divider-{label}", "{label}" }
                                 },
                                 MessageListEntry::Message(msg) => rsx! {
                                     {

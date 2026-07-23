@@ -85,16 +85,17 @@ pub fn HrMemorySearch() -> Element {
                                     div { class: "flex flex-col sm:flex-row justify-between items-start gap-2",
                                         div { class: "flex-1",
                                             span { class: "font-medium", "{item.content.chars().take(100).collect::<String>()}" }
-                                            if item.summary.is_some() {
+                                            // 修复 L_NEW：使用 if let 模式替代 unwrap，避免空值 panic
+                                            if let Some(summary) = &item.summary {
                                                 div { class: "text-sm text-base-content/70 mt-1",
-                                                    "{item.summary.clone().unwrap()}"
+                                                    "{summary}"
                                                 }
                                             }
                                         }
                                         div { class: "flex items-center gap-2 shrink-0",
                                             span { class: "badge badge-accent text-xs", "{item.memory_type}" }
-                                            if item.score.is_some() {
-                                                span { class: "text-xs text-base-content/70", "score={item.score.unwrap():.4}" }
+                                            if let Some(score) = item.score {
+                                                span { class: "text-xs text-base-content/70", "score={score:.4}" }
                                             }
                                         }
                                     }

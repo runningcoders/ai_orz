@@ -84,7 +84,11 @@ pub fn Reception() -> Element {
                     state.role = 1;
                     state.org_id = resp.organization_id;
                     drop(state);
-                    let _ = web_sys::window().unwrap().location().set_href("/");
+                    // 修复 L_NEW：web_sys::window() 在 non-Window 环境（如 SSR）返回 None，
+                    // unwrap 会 panic。改为 if let 安全处理
+                    if let Some(window) = web_sys::window() {
+                        let _ = window.location().set_href("/");
+                    }
                 }
                 Err(e) => {
                     toast.error(&e);
@@ -114,7 +118,10 @@ pub fn Reception() -> Element {
 
             match initialize_system(req).await {
                 Ok(_) => {
-                    let _ = web_sys::window().unwrap().location().reload();
+                    // 修复 L_NEW：同上，window() 可能返回 None
+                    if let Some(window) = web_sys::window() {
+                        let _ = window.location().reload();
+                    }
                 }
                 Err(e) => {
                     toast.error(&e);

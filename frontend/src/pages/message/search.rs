@@ -26,7 +26,7 @@ pub fn MessageSearch() -> Element {
     let mut keyword = use_signal(String::new);
     let mut results = use_signal(Vec::<MessageSearchResult>::new);
     let mut loading = use_signal(|| false);
-    let error = use_signal(String::new);
+    // 修复 L_NEW（对齐 chat.rs L1）：删除未使用的 error signal（从未 set，永远为空）
     let toast = use_toast();
 
     let mut handle_search = move |_| {
@@ -75,8 +75,6 @@ pub fn MessageSearch() -> Element {
 
             if loading() {
                 Loading {}
-            } else if !error().is_empty() {
-                EmptyState { message: "{error()}" }
             } else if results().is_empty() {
                 EmptyState { message: "开始搜索".to_string() }
             } else {
