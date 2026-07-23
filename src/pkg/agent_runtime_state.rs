@@ -73,6 +73,24 @@ impl AgentRuntimeStateManager {
         entry.state_started_at = common::constants::utils::current_timestamp_ms();
     }
 
+    /// 原子地尝试设置 Busy 状态
+    ///
+    /// 如果 Agent 当前是 Idle，设置为 Busy 并返回 true。
+    /// 如果 Agent 当前是 Busy 或 Resting，返回 false（未修改状态）。
+    ///
+    /// 修复 TOCTOU 竞态：consumer 的 is_unavailable 检查与 awaken 的 set_busy 之间
+    /// 会被其他 worker 插入，导致同一 Agent 被并发唤醒。
+    pub fn try_set_busy(&self, agent_id: &str, message_id: &str) -> bool {
+        let mut entry = self.states.entry(agent_id.to_string()).or_default();
+        if entry.state.is_unavailable() {
+            return false;
+        }
+        entry.state = AgentRuntimeState::Busy;
+        entry.current_message_id = Some(message_id.to_string());
+        entry.state_started_at = common::constants::utils::current_timestamp_ms();
+        true
+    }
+
     /// 获取 Agent 运行时信息
     pub fn get(&self, agent_id: &str) -> Option<AgentRuntimeInfo> {
         self.states.get(agent_id).map(|v| v.clone())

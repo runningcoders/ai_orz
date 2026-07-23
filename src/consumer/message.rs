@@ -141,13 +141,20 @@ impl MessageConsumer {
     async fn handle_agent_message(&self, message: &Message) -> Result<()> {
         let agent_id = &message.po.to_id;
 
-        // 消费前检查 Agent 是否可用（空闲）
-        if AgentRuntimeStateManager::global().is_unavailable(agent_id) {
+        // 原子地占用 Agent（修复 TOCTOU 竞态）
+        // 之前 is_unavailable + 后续 awaken 的 set_busy 之间存在窗口，4 个 worker 并发时
+        // 同一 agent 收不同 project 消息会被两个 worker 同时通过检查
+        let acquired = AgentRuntimeStateManager::global()
+            .try_set_busy(agent_id, &message.po.id);
+        if !acquired {
             return Err(Error::conflict(format!(
                 "Agent {} is busy or resting, message will be retried",
                 agent_id
             )));
         }
+        // 注意：此时已 set_busy，后续失败路径必须 set_idle
+        // awaken 内部会创建 BusyGuard 确保清理
+        // 但 awaken 之前的失败（如 get_agent）需要显式清理
 
         let mut ctx = self.rebuild_context(message);
 
@@ -159,12 +166,29 @@ impl MessageConsumer {
             stats_task_id: message.po.task_id.clone(),
             ..Default::default()
         };
-        let mut agent = self
+        let agent_result = self
             .hr_domain
             .agent_manage()
             .get_agent(ctx.clone(), agent_id, fetch_options)
-            .await?
-            .ok_or_else(|| Error::not_found(format!("Agent {} not found", agent_id)))?;
+            .await;
+
+        let mut agent = match agent_result {
+            Ok(Some(a)) => a,
+            Ok(None) => {
+                // Agent 不存在：永久错误，不应无限重试
+                // 释放 Busy 状态并返回非重试错误
+                AgentRuntimeStateManager::global().set_idle(agent_id);
+                return Err(Error::not_found(format!(
+                    "Agent {} not found, message will not be retried",
+                    agent_id
+                )));
+            }
+            Err(e) => {
+                // 查询失败：临时错误，释放 Busy 允许重试
+                AgentRuntimeStateManager::global().set_idle(agent_id);
+                return Err(e);
+            }
+        };
 
         // 检查轮次限制
         if let (Some(_task_id), Some(stats)) = (&message.po.task_id, &agent.stats) {
@@ -198,6 +222,8 @@ impl MessageConsumer {
                         )
                         .await;
 
+                    // 释放 Busy 状态（awaken 不会被调用，BusyGuard 不会创建）
+                    AgentRuntimeStateManager::global().set_idle(agent_id);
                     return Ok(());
                 }
             }
@@ -205,16 +231,33 @@ impl MessageConsumer {
 
         // 检查任务完成状态
         if let Some(task_id) = &message.po.task_id {
-            if let Ok(Some(task)) = self.project_domain.task_manage().get(ctx.clone(), task_id).await {
-                if matches!(task.po.status, common::enums::TaskStatus::Completed | common::enums::TaskStatus::Cancelled | common::enums::TaskStatus::Archived) {
-                    log_info!(
+            match self.project_domain.task_manage().get(ctx.clone(), task_id).await {
+                Ok(Some(task)) => {
+                    if matches!(task.po.status, common::enums::TaskStatus::Completed | common::enums::TaskStatus::Cancelled | common::enums::TaskStatus::Archived) {
+                        log_info!(
+                            &ctx,
+                            "handle_agent_message",
+                            "Task {} is in {:?} state, skipping agent wake",
+                            task_id,
+                            task.po.status
+                        );
+                        // 释放 Busy 状态（awaken 不会被调用）
+                        AgentRuntimeStateManager::global().set_idle(agent_id);
+                        return Ok(());
+                    }
+                }
+                Ok(None) => {
+                    log_warn!(
                         &ctx,
                         "handle_agent_message",
-                        "Task {} is in {:?} state, skipping agent wake",
-                        task_id,
-                        task.po.status
+                        "task {} not found, skip status check",
+                        task_id
                     );
-                    return Ok(());
+                }
+                Err(e) => {
+                    // 查询失败：临时错误，释放 Busy 允许重试
+                    AgentRuntimeStateManager::global().set_idle(agent_id);
+                    return Err(e);
                 }
             }
         }
@@ -233,7 +276,13 @@ impl MessageConsumer {
                 .runtime_domain
                 .awakening()
                 .wake_agent_brain(ctx, &mut agent)
-                .await?;
+                .await
+                .map_err(|e| {
+                    // wake_agent_brain 失败：释放 Busy 允许重试
+                    // （awaken 未被调用，BusyGuard 未创建）
+                    AgentRuntimeStateManager::global().set_idle(agent_id);
+                    e
+                })?;
             ctx = enriched_ctx;
         }
 
