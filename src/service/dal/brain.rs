@@ -119,7 +119,7 @@ struct BrainDalImpl {
 impl BrainDal for BrainDalImpl {
     async fn wake_brain(
         &self,
-        _ctx: RequestContext,
+        ctx: RequestContext,
         agent: &AgentPo,
         memories: Vec<crate::models::memory::Memory>,
         tools: Vec<Tool>,
@@ -128,7 +128,7 @@ impl BrainDal for BrainDalImpl {
             AgentKind::Local => {
                 let provider_po = self
                     .model_provider_dao
-                    .find_by_id(_ctx.clone(), &agent.model_provider_id)
+                    .find_by_id(ctx.clone(), &agent.model_provider_id)
                     .await?
                     .ok_or_else(|| {
                         err!(
@@ -139,7 +139,7 @@ impl BrainDal for BrainDalImpl {
                         )
                     })?;
                 let provider = ModelProvider::from_po(provider_po);
-                let ctx = enrich_ctx!(&_ctx, &provider);
+                let ctx = enrich_ctx!(&ctx, &provider);
 
                 let rig_tools = self.tool_call_dao.wrap_for_rig(&tools, ctx.clone());
 

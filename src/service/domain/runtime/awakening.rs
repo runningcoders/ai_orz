@@ -25,14 +25,18 @@ impl RuntimeAwakening for RuntimeDomainImpl {
     ///
     /// 工具由 hr_domain.get_agent(with_tools=true) 预先加载到 agent.tools。
     /// 幂等：如果 agent.brain 已存在则直接返回。
+    ///
+    /// 返回 enriched ctx：wake_brain 内部查询 ModelProvider 后会补充
+    /// `model_provider_id` / `model_name`，调用方应使用返回的 ctx 替换原 ctx，
+    /// 保证后续 awaken/think 链路的 ctx 字段完整（避免监控日志缺 model_name）。
     async fn wake_agent_brain(
         &self,
         ctx: RequestContext,
         agent: &mut Agent,
-    ) -> Result<()> {
-        // 幂等：brain 已装配则跳过
+    ) -> Result<RequestContext> {
+        // 幂等：brain 已装配则直接返回原 ctx（无需再 enrich provider 字段）
         if agent.brain.is_some() {
-            return Ok(());
+            return Ok(ctx);
         }
 
         let ctx = enrich_ctx!(&ctx, &*agent);
@@ -51,14 +55,22 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             Vec::new()
         };
 
-        // 通过 BrainDal 构造 Brain（内部按 kind 分发）
+        // 通过 BrainDal 构造 Brain（内部按 kind 分发，并对 Local agent enrich ModelProvider）
         // memories 传空：awaken 时会独立加载 recent_memories 用于 prompt
+        //
+        // TODO(brain-cache): 目前每条消息都重新加载 agent 并重建 Brain（含 HTTP client、
+        // Rig agent、tool adapter），存在性能浪费。当前选择此模式是因为恢复手段有限
+        // （Rig 工具捕获 ctx 快照需要每轮刷新，否则会变 stale）。若未来引入 brain 缓存，
+        // 需重新评估 Rig 神经工具 ctx 新鲜度问题（参考 request_tool_call 同步路径依赖
+        // params 显式 enrich 的缓解措施）。
         let brain = self.brain_dal()
-            .wake_brain(ctx, &agent.po, Vec::new(), rig_tools)
+            .wake_brain(ctx.clone(), &agent.po, Vec::new(), rig_tools)
             .await?;
 
         agent.set_brain(brain);
-        Ok(())
+
+        // 返回 enriched ctx（含 ModelProvider 字段：model_provider_id / model_name）
+        Ok(ctx)
     }
 
     async fn awaken(

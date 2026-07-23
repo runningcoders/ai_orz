@@ -165,11 +165,15 @@ pub trait RuntimeAwakening: Send + Sync {
     ///
     /// 调用时机：consumer 处理消息前，如果 agent.brain 为 None 则调用此方法装配。
     /// 幂等：如果 agent.brain 已存在则直接返回。
+    ///
+    /// 返回 enriched ctx：wake_brain 内部查询 ModelProvider 后会补充
+    /// `model_provider_id` / `model_name`，调用方应使用返回的 ctx 替换原 ctx，
+    /// 保证后续 awaken/think 链路的 ctx 字段完整（避免监控日志缺 model_name）。
     async fn wake_agent_brain(
         &self,
         ctx: RequestContext,
         agent: &mut Agent,
-    ) -> Result<()>;
+    ) -> Result<RequestContext>;
 
     /// 唤醒 Agent 并执行一次思考
     ///

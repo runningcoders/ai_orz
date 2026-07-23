@@ -149,7 +149,7 @@ impl MessageConsumer {
             )));
         }
 
-        let ctx = self.rebuild_context(message);
+        let mut ctx = self.rebuild_context(message);
 
         // 加载 Agent 实体（包含工具 + 技能 + 统计信息，供唤醒流程使用）
         let fetch_options = AgentFetchOptions {
@@ -220,6 +220,8 @@ impl MessageConsumer {
         }
 
         // 确保 Agent 有 Brain
+        // wake_agent_brain 内部会查询 ModelProvider 并 enrich ctx
+        // （补充 model_provider_id / model_name 字段），返回的新 ctx 用于后续 awaken
         if agent.brain.is_none() {
             log_info!(
                 &ctx,
@@ -227,10 +229,12 @@ impl MessageConsumer {
                 "Agent {} brain not initialized, auto waking brain",
                 agent_id
             );
-            self.runtime_domain
+            let enriched_ctx = self
+                .runtime_domain
                 .awakening()
-                .wake_agent_brain(ctx.clone(), &mut agent)
+                .wake_agent_brain(ctx, &mut agent)
                 .await?;
+            ctx = enriched_ctx;
         }
 
         // 调用 RuntimeDomain 唤醒 Agent
