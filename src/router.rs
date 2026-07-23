@@ -527,7 +527,10 @@ fn finance_routes() -> Router {
         )
         .route(
             "/tools/{id}/debug-call",
-            post(handlers::finance::tool::debug_call_tool::debug_call_tool_handler),
+            post(handlers::finance::tool::debug_call_tool::debug_call_tool_handler)
+                .layer(axum::middleware::from_fn(|req, next| {
+                    require_role_middleware(common::enums::UserRole::Admin, req, next)
+                })),
         )
         .route(
             "/agents/{agent_id}/tools/{tool_id}/bind",
