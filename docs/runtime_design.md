@@ -3,9 +3,10 @@
 > 🎯 **本文档定位**：Runtime Domain（运行时领域）的整体设计大纲与逻辑思路
 >
 > 范围：只覆盖**总纲与核心理念**，不下沉到具体工具实现与代码细节
-> 状态：v3.0（2026-07-11）
+> 状态：v3.4（2026-07-23）
 >
 > **更新记录**：
+> - v3.4 (2026-07-23): Runtime 执行链路全面修复（16 项），覆盖正确性、用户体验、性能与安全，745 测试通过
 > - v3.3 (2026-07-23): request_tool_call 重新注册为同步神经工具，与异步 send_tool_call_message 对齐，745 测试通过
 > - v3.2 (2026-07-12): Phase 4C 技能系统增强 + Phase 5 多 Agent 协作工具，693 测试通过
 > - v3.0 (2026-07-11): Phase 4A 工具包机制 + 任务执行闭环，tag 分组、免绑定三层校验、TaskAssignment 消息、569 测试通过
@@ -1330,6 +1331,7 @@ pub trait MemoryDal: Send + Sync {
 | 2026-05-25 | v0.3 | 新增第十一章：可执行落地方案（第一阶段最小可用唤醒），包含能力盘点、6 步流程、4 个模块修改清单、开发顺序 |
 | 2026-05-25 | v0.2 | 新增第九章：唤醒 Agent 操作的具体执行流程（12 步）、神经工具执行机制、ContextAssembly 拼装逻辑、AwakenOutcome 设计哲学 |
 | 2026-05-25 | v0.1 | 初版草案，覆盖设计总纲与待拍板点 |
+| 2026-07-23 | v3.4 | Runtime 执行链路全面修复（16 项），详见第二十章 |
 
 
 ---
@@ -2241,5 +2243,95 @@ Consumer 层
 | 新增 API | 3 个 | install/uninstall/list installed tool packs |
 | 新增消息类型 | 1 个 | TaskAssignment |
 | 新增神经工具 | 1 个 | send_task_assignment_message |
+
+---
+
+## 二十三、Runtime 执行链路全面修复（v3.4）
+
+> 📌 **本章定位**：Runtime 执行链路的系统性问题排查与修复，覆盖正确性、用户体验、性能与安全 4 个维度共 16 项修复。
+>
+> **完成状态**：✅ 已全部实现（2026-07-23），745 个测试 100% 通过
+
+### 23.1 修复背景
+
+通过对 Agent 唤醒流程、模型调用链路、ctx 传递机制的深度调查，发现 6 类问题。随后分 5 阶段 18 任务实施修复，完成后再次排查又发现 4 个补充问题，最终全部解决。
+
+### 23.2 修复清单
+
+#### 阶段 1：关键正确性
+
+| # | 问题 | 修复 | 文件 |
+|---|------|------|------|
+| 2.1 | TOCTOU 竞态：`is_unavailable` + `set_busy` 之间存在窗口 | 原子 `try_set_busy` CAS + RAII `BusyGuard` | `awakening.rs`, `busy_guard.rs` |
+| 2.2 | AOP ack/nack 未与 consumer ack/nack 配对 | registry.ack/nack 与 consumer.ack/nack 同时调用 | `consumer/message.rs` |
+| 2.3 | 工具调用 trace 完整性：call_id 伪造 | `call_manual` 返回 `(Value, ToolCallEntry)` 传播真实 call_id | `tool_execution.rs` |
+| 2.4 | `record_event!` 失败静默丢弃；任务状态检查晚于轮次检查 | 改为 `if let Err` + `log_warn!`；任务状态检查优先 | `awakening.rs`, `message.rs` |
+
+#### 阶段 2：用户体验
+
+| # | 问题 | 修复 | 文件 |
+|---|------|------|------|
+| 3.1 | 消息链断裂：root_id 始终为自身 ID | root_id 继承父消息（reply_to_id 查询父消息 root_id） | `delivery.rs` |
+| 3.2 | SSE 内存泄漏：客户端断开未注销 | `CleanupStream` Drop guard 自动注销 | `subscribe_sse.rs` |
+| 3.3 | 投递失败静默：所有渠道失败不触发重试 | 返回 Error 触发 nack | `message.rs` |
+| 3.4 | order_key 按 project 分组导致跨 task 阻塞 | 分层策略：Agent→to_id，非 Agent→task_id→project_id | `events/message.rs` |
+
+#### 阶段 3：中等问题
+
+| # | 问题 | 修复 | 文件 |
+|---|------|------|------|
+| 4.1 | trace_id 并发碰撞 | 加 u16 随机后缀 | `models/memory.rs` |
+| 4.2 | stats 查询失败阻塞 agent 加载 | 改为非致命，log_warn 后跳过 | `dal/agent.rs` |
+| 4.3 | think() 无超时，Agent 可能永久卡住 | 5 分钟 `tokio::time::timeout` | `awakening.rs` |
+| 4.4 | 死代码 + 无效参数 | 移除 user_profile 死代码 + task_id 参数 | `awakening.rs`, `memory.rs` |
+
+#### 阶段 4：优化
+
+| # | 问题 | 修复 | 文件 |
+|---|------|------|------|
+| 5.1 | Builtin/Http 工具错误暴露底层细节 | 脱敏为 `tool {id} execution failed` | `tool_execution.rs` |
+| 5.2 | agent 不存在时静默退化为空 vec | 返回错误 `Agent not found` | `tool_execution.rs` |
+
+#### 补充修复（深度排查后）
+
+| # | 问题 | 严重度 | 修复 | 文件 |
+|---|------|--------|------|------|
+| S1 | wake_agent_brain 返回的 ctx 缺 model_provider 字段 | MEDIUM | 从 brain.cortex 提取 ModelProvider enrich ctx | `awakening.rs` |
+| S2 | RigCortexDao `_ctx` 未使用（代码异味） | LOW | 文档化为 brain 缓存扩展点 | `cortex/mod.rs`, `rig.rs` |
+| S3 | thinking_depth 通知失败被 `let _ =` 静默吞掉 | LOW | 改为 `if let Err` + log_warn | `message.rs` |
+| S4 | root_id fallback 用当前消息 ID 导致父消息孤立 | LOW | 改用父消息 ID 作为链根 | `delivery.rs` |
+
+### 23.3 关键设计决策
+
+#### 23.3.1 order_key 接收者优先策略
+
+**问题**：原 order_key 用 `task_id → project_id`，但 Agent busy 状态是全局的（不区分 task），导致同 agent 不同 task 的消息被不同 worker 并发取走后 `try_set_busy` 失败，进入 nack 重试循环。
+
+**方案**：分层 order_key
+- **接收者是 Agent** → 用 `to_id`（agent_id）：同 agent 消息在队列层串行，把串行点从"失败重试"提前到"队列层"
+- **接收者不是 Agent** → 用 `task_id → project_id → ""`：无状态竞争，保持用户消息按 task 顺序
+
+**收益**：减少无效 IO 和重试开销，与 busy 状态语义一致。
+
+#### 23.3.2 wake_agent_brain ctx 补充
+
+**问题**：doc 注释承诺返回含 `model_provider_id`/`model_name` 的 enriched ctx，但 `wake_brain` 返回 `Result<Brain>`，内部的 `enrich_ctx!(ctx, &provider)` 作用在局部变量上，返回后丢失。
+
+**方案**：`wake_brain` 返回 brain 后，从 `brain.cortex` 提取 `ModelProvider` 重新 enrich ctx（仅 Local agent 有 cortex；外部 agent 无 cortex，ctx 保持原样）。
+
+#### 23.3.3 think 超时保护
+
+**问题**：LLM API hang 会导致 Agent 永久卡在 busy 状态。
+
+**方案**：`tokio::time::timeout(300s, think())` 包装，超时返回 Internal error，触发 BusyGuard 释放 + nack 重试。
+
+### 23.4 测试统计
+
+| 指标 | 数值 | 说明 |
+|------|------|------|
+| 总测试数 | 745 | 修复前后保持一致 |
+| 通过率 | 100% | ✅ 全部通过 |
+| 修复项 | 16 项 | 12 项计划内 + 4 项补充排查 |
+| 提交数 | 11 个 | 分阶段提交，每阶段独立验证 |
 
 

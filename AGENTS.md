@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-07-22（前端集成 Tailwind CSS v4 + DaisyUI v5，支持 30+ 主题切换）
+> 最后更新：2026-07-23（Runtime 执行链路全面修复 v3.4，16 项问题修复）
 
 ---
 
@@ -528,6 +528,15 @@ Agent
 - **技能与工具的策略差异**：技能讲究"安装且自进化"，只在已安装副本范围内查（即便神经技能也需安装到自身目录）；不匹配 match_keys 的技能由 Agent 通过 `search_skill` 神经工具按需渐进式加载
 - **DefaultPromptBuilder 对齐**：Local agent 的 builder 移至 `dal/agent.rs`，与 Cli/Remote 通过各自 Dal 的 `prompt_builder()` 获取对齐
 - **同步 manual 工具调用**：`request_tool_call` 重新注册为同步神经工具，与异步 `send_tool_call_message` 对齐；参数加 `tool_name`/`project_id`，响应加 `result` 字段；Manual 工具区块提示词更新说明两种调用方式及适用场景
+- **测试统计**：745 个测试 100% 通过
+
+**✅ Runtime 执行链路全面修复（v3.4，16 项）**
+- **关键正确性**：TOCTOU 竞态修复（`try_set_busy` CAS + `BusyGuard` RAII）；AOP ack/nack 与 consumer 配对；工具调用 trace 完整性（call_id 不再伪造）；`record_event!` 失败记录警告；任务状态检查优先于轮次检查
+- **用户体验**：root_id 继承父消息修复消息链断裂；SSE 客户端断开自动注销（`CleanupStream` Drop guard）；所有投递渠道失败时返回错误触发重试；`MessageCreatedEvent` order_key 改为接收者优先策略（Agent→to_id，非 Agent→task_id→project_id）
+- **中等问题**：trace_id 加随机后缀避免并发碰撞；stats 查询失败不阻塞 agent 加载；think 添加 5 分钟超时；移除死代码与无效参数
+- **优化项**：Builtin/Http 工具错误信息脱敏；`call_manual_tool_for_agent` 校验 agent 存在
+- **补充修复**：`wake_agent_brain` 返回的 ctx 补充 model_provider 字段（MEDIUM）；RigCortexDao `_ctx` 扩展点文档化（LOW）；thinking_depth 通知失败告警（LOW）；root_id fallback 改用父消息 ID（LOW）
+- **文档更新**：[runtime_design.md](./docs/runtime_design.md) 新增第二十三章：Runtime 执行链路全面修复（v3.4）
 - **测试统计**：745 个测试 100% 通过
 
 ### 2026-07-22 里程碑
