@@ -260,11 +260,22 @@ impl Registry {
                                         if let Err(e) = consumer.ack(&event_id).await {
                                             sys_error!("[{}] ack error for {}: {}", consumer_name, event_id, e);
                                         }
+                                        // 必须调用 queue.ack 从内存队列移除事件
+                                        // 否则事件永远停留在 in_progress + events，
+                                        // 导致同 order_key 后续消息卡死（has_active_message 永远 true）
+                                        if let Err(e) = registry_arc.ack(&consumer_name, &event_id).await {
+                                            sys_error!("[{}] queue.ack error for {}: {}", consumer_name, event_id, e);
+                                        }
                                     }
                                     Err(e) => {
                                         sys_error!("[{}] on_event error for {}: {}", consumer_name, event_id, e);
                                         if let Err(e) = consumer.nack(&event_id).await {
                                             sys_error!("[{}] nack error for {}: {}", consumer_name, event_id, e);
+                                        }
+                                        // 必须调用 queue.nack 让事件重新入队等待重试
+                                        // 否则失败事件永远停留在 in_progress，无法重试
+                                        if let Err(e) = registry_arc.nack(&consumer_name, &event_id).await {
+                                            sys_error!("[{}] queue.nack error for {}: {}", consumer_name, event_id, e);
                                         }
                                     }
                                 }
