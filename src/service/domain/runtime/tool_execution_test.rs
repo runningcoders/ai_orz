@@ -69,8 +69,14 @@ mod tests {
     }
 
     impl StubAgentDal {
+        /// 返回一个默认 Agent（无 installed_tags），而非 None。
+        ///
+        /// 修复 Task 5.2: `call_manual_tool_for_agent` 中 agent 不存在时
+        /// 现在返回错误而非 `unwrap_or_default()` 静默退化为空 vec。
+        /// 此处返回带空 installed_tags 的 Agent，保留 "agent 存在但无安装包"
+        /// 的语义，使相关 denial 测试能进入 installed_tags 检查路径。
         fn new() -> Self {
-            Self { agent: None }
+            Self { agent: Some(test_agent_with_installed_tags("test-agent", vec![])) }
         }
 
         fn with_agent(agent: Agent) -> Self {
@@ -1477,7 +1483,7 @@ mod tests {
                 .with_all_tools(vec![tool_po]),
         );
         let mcp_tool_dal = Arc::new(RecordingMcpToolDal::new());
-        // StubAgentDal::new() returns None for find_by_id → no installed tags
+        // StubAgentDal::new() 返回带空 installed_tags 的 Agent
         let agent_dal = Arc::new(StubAgentDal::new());
         let (_temp_dir, runtime) = test_runtime_with_all(
             tool_dal.clone(),

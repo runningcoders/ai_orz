@@ -50,7 +50,10 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
                 // 修复：保留原 error 的 field（含 trace_ref），不再构造新 Error 丢弃 field
                 let mapped_message: String = match tool.po.protocol {
                     ToolProtocol::Mcp => map_mcp_tool_error(&tool_id, &error),
-                    ToolProtocol::Builtin | ToolProtocol::Http => error.to_string(),
+                    ToolProtocol::Builtin | ToolProtocol::Http => {
+                        // 脱敏：不暴露底层错误细节给 LLM，避免路径/配置泄露
+                        format!("tool {} execution failed", tool_id)
+                    }
                 };
                 let mut new_err = common::error::Error::new(
                     common::error::ErrorCode::ToolExecutionFailed,
@@ -96,12 +99,16 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
             Some(tool) => tool,
             None => {
                 // 获取 agent 的 installed_tags
-                let installed_tags = self
+                // 修复：agent 不存在时返回错误，而非 unwrap_or_default 静默退化为空 vec
+                // 之前只要工具带 neural 标签就能执行，削弱授权语义
+                let agent = self
                     .agent_dal
                     .find_by_id(ctx.clone(), &agent_id)
                     .await?
-                    .map(|agent| agent.po.get_installed_tags())
-                    .unwrap_or_default();
+                    .ok_or_else(|| common::error::Error::tool_call_failed(format!(
+                        "Agent {} not found, cannot authorize tool call", agent_id
+                    )))?;
+                let installed_tags = agent.po.get_installed_tags();
 
                 // 构建 tag 过滤列表：neural + installed_tags（OR 语义）
                 // SQL 层直接过滤，避免全量加载工具到内存
