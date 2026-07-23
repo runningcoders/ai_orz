@@ -4,6 +4,7 @@ use crate::models::tool::{CoreTool, RigToolAdapter, Tool, ToolCallTraceRef, Tool
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::get_registry;
 use crate::pkg::tool_tracing::ToolCallLoggingDecorator;
+use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use anyhow::Result;
 use async_trait::async_trait;
 use common::enums::tool::ControlMode;
@@ -99,7 +100,7 @@ impl ToolCallDao for ToolCallDaoImpl {
         ctx: RequestContext,
         tool: &Tool,
         args: Value,
-    ) -> Result<Value> {
+    ) -> Result<(Value, ToolCallEntry)> {
         // our_tool is always raw (not pre-decorated) - clone and create a new decorator for this call
         // this guarantees we get a fresh entry for this specific invocation
         let cloned: Box<dyn CoreTool + Send + Sync> = dyn_clone::clone_box(&*tool.our_tool);
@@ -121,7 +122,9 @@ impl ToolCallDao for ToolCallDaoImpl {
 
         match result {
             Ok(value) => {
-                Ok(value)
+                // 返回真实 entry（含 LoggingDecorator 生成的 call_id）
+                // 调用方应使用 entry.call_id 构造 ToolExecutionResult，不再伪造
+                Ok((value, entry))
             }
             Err(error) => {
                 use common::error::{ErrorCode, ErrorType};
@@ -130,6 +133,7 @@ impl ToolCallDao for ToolCallDaoImpl {
                     ErrorType::Tool,
                     error.to_string(),
                 ).with_source(error);
+                // 失败时 entry 被 consume 构造 trace_ref，Error 已携带 trace_ref
                 let trace_ref = ToolCallTraceRef {
                     tool_id: entry.tool_id,
                     call_id: entry.call_id,

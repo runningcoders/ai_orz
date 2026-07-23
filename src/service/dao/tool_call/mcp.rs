@@ -9,6 +9,7 @@ use crate::models::mcp_server::McpServerPo;
 use crate::models::tool::{CoreTool, Tool, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::mcp::{self, McpClientRuntime, McpToolDeps, RemoteMcpTool};
+use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use anyhow::Result;
 use async_trait::async_trait;
 use common::enums::ToolProtocol;
@@ -93,7 +94,7 @@ impl ToolCallDao for McpToolCallDaoImpl {
         ctx: RequestContext,
         tool: &Tool,
         args: Value,
-    ) -> Result<Value> {
+    ) -> Result<(Value, ToolCallEntry)> {
         self.base.call_manual(ctx, tool, args).await
     }
 }

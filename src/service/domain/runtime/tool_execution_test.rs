@@ -359,11 +359,17 @@ mod tests {
             _ctx: RequestContext,
             tool_id: String,
             args: Value,
-            ) -> Result<Value> {
+            ) -> Result<(Value, ToolCallEntry)> {
             self.call_by_id_count.fetch_add(1, Ordering::SeqCst);
-            Ok(
-                json!({ "called_by": "tool_dal", "tool_id": tool_id, "args": args })
-            )
+            let entry = ToolCallEntry {
+                tool_id: tool_id.clone(),
+                call_id: "test-call-id".to_string(),
+                ..Default::default()
+            };
+            Ok((
+                json!({ "called_by": "tool_dal", "tool_id": tool_id, "args": args }),
+                entry,
+            ))
             }
 
         async fn call_tool(
@@ -371,11 +377,17 @@ mod tests {
             _ctx: RequestContext,
             tool: &Tool,
             args: Value,
-            ) -> Result<Value> {
+            ) -> Result<(Value, ToolCallEntry)> {
             self.call_tool_count.fetch_add(1, Ordering::SeqCst);
-            Ok(
-                json!({ "called_by": "tool_dal", "tool_id": tool.po.id, "args": args })
-            )
+            let entry = ToolCallEntry {
+                tool_id: tool.po.id.clone(),
+                call_id: "test-call-id".to_string(),
+                ..Default::default()
+            };
+            Ok((
+                json!({ "called_by": "tool_dal", "tool_id": tool.po.id, "args": args }),
+                entry,
+            ))
             }
 
         async fn call_manual(
@@ -383,7 +395,7 @@ mod tests {
             _ctx: RequestContext,
             _tool: &Tool,
             _args: Value,
-            ) -> Result<(Value)> {
+            ) -> Result<(Value, ToolCallEntry)> {
             unimplemented!("not needed by tool execution routing tests")
             }
 
@@ -486,7 +498,7 @@ mod tests {
             _ctx: RequestContext,
             tool_id: String,
             args: Value,
-        ) -> Result<Value> {
+        ) -> Result<(Value, ToolCallEntry)> {
             self.call_by_id_count.fetch_add(1, Ordering::SeqCst);
             if let Some(error_message) = &self.error_message {
                 let error = ToolError::ToolCallError(error_message.clone().into());
@@ -508,7 +520,14 @@ mod tests {
                     },
                 });
                         }
-            Ok(json!({ "called_by": "mcp_tool_dal", "tool_id": tool_id, "args": args }))
+            Ok((
+                json!({ "called_by": "mcp_tool_dal", "tool_id": tool_id, "args": args }),
+                ToolCallEntry {
+                    tool_id: tool_id.clone(),
+                    call_id: "test-call-id".to_string(),
+                    ..Default::default()
+                },
+            ))
                     }
 
         async fn call_tool(
@@ -516,7 +535,7 @@ mod tests {
             _ctx: RequestContext,
             tool: &Tool,
             args: Value,
-                    ) -> Result<Value> {
+                    ) -> Result<(Value, ToolCallEntry)> {
             self.call_tool_count.fetch_add(1, Ordering::SeqCst);
                         if let Some(error_message) = &self.error_message {
                 let error = ToolError::ToolCallError(error_message.clone().into());
@@ -538,7 +557,14 @@ mod tests {
                     },
                 });
                                     }
-            Ok(json!({ "called_by": "mcp_tool_dal", "tool_id": tool.po.id, "args": args }))
+            Ok((
+                json!({ "called_by": "mcp_tool_dal", "tool_id": tool.po.id, "args": args }),
+                ToolCallEntry {
+                    tool_id: tool.po.id.clone(),
+                    call_id: "test-call-id".to_string(),
+                    ..Default::default()
+                },
+            ))
                                 }
 
         async fn call_manual(
@@ -546,10 +572,15 @@ mod tests {
             _ctx: RequestContext,
             tool: &Tool,
             args: Value,
-                                ) -> Result<Value> {
-            Ok(
-                json!({ "called_by": "mcp_tool_dal", "tool_id": tool.po.id, "args": args })
-            )
+                                ) -> Result<(Value, ToolCallEntry)> {
+            Ok((
+                json!({ "called_by": "mcp_tool_dal", "tool_id": tool.po.id, "args": args }),
+                ToolCallEntry {
+                    tool_id: tool.po.id.clone(),
+                    call_id: "test-call-id".to_string(),
+                    ..Default::default()
+                },
+            ))
                                 }
 
         fn invalidate_server(&self, _server_id: &str) {

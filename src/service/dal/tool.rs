@@ -8,6 +8,7 @@ use common::models::{ToolStats, StatsFetchOptions, StatsInterval};
 use crate::models::tool::{Tool, ToolPo};
 use crate::models::vector::{MatchType, SearchMatchInfo, Vectorizable};
 use crate::pkg::request_context::RequestContext;
+use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::tool::{ToolDao, ToolQuery, ToolStatsDao, ToolStatsQuery, ToolVectorDao};
@@ -131,13 +132,14 @@ pub trait ToolDal: Send + Sync {
     async fn sync_builtin_tools_to_db(&self, ctx: RequestContext) -> Result<usize>;
 
     /// 执行工具调用（通过工具 ID）
-    /// 自动获取完整工具实体然后执行
+    /// 自动获取完整工具实体然后执行。
+    /// 成功时返回 (Value, ToolCallEntry)，entry.call_id 为真实 call_id。
     async fn call_tool_by_id(
         &self,
         ctx: RequestContext,
         tool_id: String,
         args: Value,
-    ) -> Result<Value>;
+    ) -> Result<(Value, ToolCallEntry)>;
 
     /// 直接执行已获取的工具
     /// 用于上层已经获取工具的场景（避免重复查询）
@@ -146,7 +148,7 @@ pub trait ToolDal: Send + Sync {
         ctx: RequestContext,
         tool: &Tool,
         args: Value,
-    ) -> Result<Value>;
+    ) -> Result<(Value, ToolCallEntry)>;
 
     /// 手动执行工具并返回完整调用追踪 entry
     /// ToolCallDao 层负责每次调用新建 LoggingDecorator 捕获本次调用信息
@@ -155,7 +157,7 @@ pub trait ToolDal: Send + Sync {
         ctx: RequestContext,
         tool: &Tool,
         args: Value,
-    ) -> Result<Value>;
+    ) -> Result<(Value, ToolCallEntry)>;
 
     /// 搜索工具（向量 + 关键词混合搜索）
     async fn search(
@@ -457,7 +459,7 @@ impl ToolDal for ToolDalImpl {
         ctx: RequestContext,
         tool_id: String,
         args: Value,
-    ) -> Result<Value> {
+    ) -> Result<(Value, ToolCallEntry)> {
         // 获取完整工具
         let tool = self
             .get_by_id(ctx.clone(), tool_id.clone())
@@ -674,7 +676,7 @@ impl ToolDal for ToolDalImpl {
         ctx: RequestContext,
         tool: &Tool,
         args: Value,
-    ) -> Result<Value> {
+    ) -> Result<(Value, ToolCallEntry)> {
         self.call_manual(ctx, tool, args).await
     }
 
@@ -683,7 +685,7 @@ impl ToolDal for ToolDalImpl {
         ctx: RequestContext,
         tool: &Tool,
         args: Value,
-    ) -> Result<Value> {
+    ) -> Result<(Value, ToolCallEntry)> {
         self.tool_call_dao.call_manual(ctx, tool, args).await.map_err(Into::into)
     }
 

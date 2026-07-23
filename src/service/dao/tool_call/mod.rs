@@ -6,6 +6,7 @@
 
 use crate::models::tool::{CoreTool, Tool, ToolPo};
 use crate::pkg::request_context::RequestContext;
+use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use anyhow::Result;
 use async_trait::async_trait;
 
@@ -33,11 +34,15 @@ pub trait ToolCallDao: Send + Sync {
     -> Vec<Box<dyn rig::tool::ToolDyn>>;
 
     /// Call a tool manually (our controlled mode)
-    /// Creates new logging decorator for this call, captures trace entry
+    /// Creates new logging decorator for this call, captures trace entry.
+    ///
+    /// 成功时返回 (Value, ToolCallEntry)，entry.call_id 为 LoggingDecorator
+    /// 生成的真实 call_id，调用方应使用此 call_id 而非现场伪造。
+    /// 失败时返回的 Error 已携带 trace_ref（从 entry 中提取）。
     async fn call_manual(
         &self,
         ctx: RequestContext,
         tool: &Tool,
         args: serde_json::Value,
-    ) -> Result<serde_json::Value>;
+    ) -> Result<(serde_json::Value, ToolCallEntry)>;
 }

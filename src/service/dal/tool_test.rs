@@ -7,6 +7,7 @@ use crate::models::tool::{CoreTool, Tool, ToolPo};
 use crate::models::vector::MatchType;
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::{self, BuiltinToolFactory, get_registry};
+use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use crate::service::dal::tool::ToolDal;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::ModelProviderDao;
@@ -733,8 +734,8 @@ impl ToolCallDao for MockToolCallDao {
         _ctx: RequestContext,
         _tool: &Tool,
         _args: Value,
-    ) -> anyhow::Result<Value> {
-        Ok(Value::Null)
+    ) -> anyhow::Result<(Value, ToolCallEntry)> {
+        Ok((Value::Null, ToolCallEntry::default()))
     }
 }
 

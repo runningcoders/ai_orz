@@ -255,7 +255,7 @@ async fn sync_then_call_stdio_mcp_tool_by_id_returns_result(pool: SqlitePool) ->
         })
     );
 
-    let result = dal
+    let (result, _entry) = dal
         .call_tool_by_id(ctx.clone(), tool_id.clone(), json!({ "text": "hello MCP" }))
         .await
         .expect("synced MCP stdio tool should execute by id");
@@ -268,7 +268,7 @@ async fn sync_then_call_stdio_mcp_tool_by_id_returns_result(pool: SqlitePool) ->
         .await?
         .expect("synced MCP tool should be executable");
     let management_tool = Tool::from_po_for_management(executable.po.clone());
-    let from_management_result = dal
+    let (from_management_result, _entry) = dal
         .call_tool(
             ctx.clone(),
             &management_tool,
@@ -281,7 +281,7 @@ async fn sync_then_call_stdio_mcp_tool_by_id_returns_result(pool: SqlitePool) ->
         "management MCP"
     );
     assert_eq!(from_management_result["isError"], false);
-    let manual_result = dal
+    let (manual_result, _entry) = dal
         .call_manual(ctx, &executable, json!({ "text": "manual MCP" }))
         .await
         .expect("manual MCP stdio tool call should return trace entry");

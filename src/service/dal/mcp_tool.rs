@@ -8,6 +8,7 @@ use crate::models::mcp_server::McpServerStatus;
 use crate::models::tool::{Tool, ToolPo};
 use crate::pkg::RequestContext;
 use crate::pkg::tool_registry::mcp::{McpToolConfig, RemoteMcpTool};
+use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use crate::service::dao::mcp_server::McpServerDao;
 use crate::service::dao::tool::{ToolDao, ToolQuery};
 use crate::service::dao::tool_call::{self, McpToolCallDao};
@@ -68,12 +69,13 @@ pub trait McpToolDal: Send + Sync {
     ) -> Result<PagedResult<Tool>>;
 
     /// Execute an MCP tool by standard ToolPo id.
+    /// 成功时返回 (Value, ToolCallEntry)，entry.call_id 为真实 call_id。
     async fn call_tool_by_id(
         &self,
         ctx: RequestContext,
         tool_id: String,
         args: Value,
-    ) -> Result<Value>;
+    ) -> Result<(Value, ToolCallEntry)>;
 
     /// Execute an already assembled MCP tool.
     ///
@@ -84,7 +86,7 @@ pub trait McpToolDal: Send + Sync {
         ctx: RequestContext,
         tool: &Tool,
         args: Value,
-    ) -> Result<Value>;
+    ) -> Result<(Value, ToolCallEntry)>;
 
     /// Execute an already assembled MCP tool manually and return its trace entry.
     async fn call_manual(
@@ -92,7 +94,7 @@ pub trait McpToolDal: Send + Sync {
         ctx: RequestContext,
         tool: &Tool,
         args: Value,
-    ) -> Result<Value>;
+    ) -> Result<(Value, ToolCallEntry)>;
 
     /// Invalidate cached MCP runtime/session for a server.
     fn invalidate_server(&self, server_id: &str);
@@ -252,7 +254,7 @@ impl McpToolDal for McpToolDalImpl {
         ctx: RequestContext,
         tool_id: String,
         args: Value,
-    ) -> Result<Value> {
+    ) -> Result<(Value, ToolCallEntry)> {
         let tool = self
             .get_by_id(ctx.clone(), tool_id.clone())
             .await
@@ -271,7 +273,7 @@ impl McpToolDal for McpToolDalImpl {
         ctx: RequestContext,
         tool: &Tool,
         args: Value,
-    ) -> Result<Value> {
+    ) -> Result<(Value, ToolCallEntry)> {
         self.call_manual(ctx, tool, args).await
     }
 
@@ -280,7 +282,7 @@ impl McpToolDal for McpToolDalImpl {
         ctx: RequestContext,
         tool: &Tool,
         args: Value,
-    ) -> Result<Value> {
+    ) -> Result<(Value, ToolCallEntry)> {
         let executable = self
             .assemble_executable_tool(ctx.clone(), &tool.po)
             .await
