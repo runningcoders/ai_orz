@@ -3,6 +3,7 @@
 
 pub mod bind_tool_to_agent;
 pub mod create_tool;
+pub mod debug_call_tool;
 pub mod delete_tool;
 pub mod get_tool;
 pub mod get_tool_call_entry;
@@ -25,6 +26,7 @@ mod update_tool_test;
 
 pub use bind_tool_to_agent::bind_tool_to_agent_handler;
 pub use create_tool::create_tool_handler;
+pub use debug_call_tool::debug_call_tool_handler;
 pub use delete_tool::delete_tool_handler;
 pub use get_tool::get_tool_handler;
 pub use get_tool_call_entry::get_tool_call_entry_handler;

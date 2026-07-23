@@ -526,6 +526,10 @@ fn finance_routes() -> Router {
             put(handlers::finance::tool::update_tool_status::update_tool_status_handler),
         )
         .route(
+            "/tools/{id}/debug-call",
+            post(handlers::finance::tool::debug_call_tool::debug_call_tool_handler),
+        )
+        .route(
             "/agents/{agent_id}/tools/{tool_id}/bind",
             post(handlers::finance::tool::bind_tool_to_agent::bind_tool_to_agent_handler),
         )

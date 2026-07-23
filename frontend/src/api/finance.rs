@@ -4,6 +4,7 @@ use common::api::{
     AttachmentDetail, CallModelResponse, CreateMcpServerRequest, CreateMcpServerResponse,
     CreateModelProviderRequest, CreateModelProviderResponse, CreateTextAttachmentRequest,
     CreateToolRequest, CreateToolResponse,
+    DebugCallToolResponse,
     GetModelProviderResponse, GetToolResponse, ListMcpServersResponse, ListModelProvidersResponse,
     ListToolsResponse, SwitchEmbeddingProviderRequest, SwitchEmbeddingProviderResponse,
     TestConnectionResponse, TestMessageChannelConnectionResponse,
@@ -92,6 +93,14 @@ pub async fn update_tool_status(id: &str, status: i32) -> Result<(), String> {
 
 pub async fn delete_tool(id: &str) -> Result<(), String> {
     api_delete(&format!("/api/v1/finance/tools/{}", id)).await
+}
+
+/// 工具调试调用（管理员专用）
+///
+/// 在工具详情页直接调用工具进行调试，返回执行结果 + tool_call_id。
+/// 需 Admin 及以上权限。
+pub async fn debug_call_tool(id: &str, args: &serde_json::Value) -> Result<DebugCallToolResponse, String> {
+    api_post(&format!("/api/v1/finance/tools/{}/debug-call", id), args).await
 }
 
 // ===== 消息渠道 =====

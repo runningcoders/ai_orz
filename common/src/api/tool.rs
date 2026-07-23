@@ -116,6 +116,29 @@ pub struct DeleteToolResponse {
     pub success: bool,
 }
 
+/// Debug call tool request (管理员调试用，跳过 Agent 授权)
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct DebugCallToolRequest {
+    /// Tool ID (from URL path)
+    #[param(source = "path")]
+    pub id: String,
+    /// 工具调用参数 (JSON body)，需符合工具的 parameters_schema
+    pub args: serde_json::Value,
+}
+
+/// Debug call tool response
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct DebugCallToolResponse {
+    /// 调用是否成功
+    pub success: bool,
+    /// 工具业务返回值
+    pub result: serde_json::Value,
+    /// 工具调用 trace ID（可用于查询调用记录）
+    pub tool_call_id: String,
+    /// 执行状态文本
+    pub status: String,
+}
+
 /// List tools request
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct ListToolsRequest {
