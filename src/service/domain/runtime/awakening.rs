@@ -67,6 +67,15 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             .wake_brain(ctx.clone(), &agent.po, Vec::new(), rig_tools)
             .await?;
 
+        // 修复：wake_brain 内部的 enrich_ctx!(ctx, &provider) 作用在局部变量上，
+        // 返回 Brain 后该 ctx 丢失。此处从 brain.cortex 提取 ModelProvider 重新 enrich，
+        // 保证返回的 ctx 含 model_provider_id / model_name（供 awaken 的统计/trace 使用）。
+        // 外部 agent（Cli/Remote）无 cortex，ctx 保持原样。
+        let ctx = match brain.cortex.as_ref() {
+            Some(cortex) => enrich_ctx!(&ctx, &cortex.model_provider),
+            None => ctx,
+        };
+
         agent.set_brain(brain);
 
         // 返回 enriched ctx（含 ModelProvider 字段：model_provider_id / model_name）
