@@ -1,6 +1,7 @@
 //! 技能库管理
 
 use dioxus::prelude::*;
+use dioxus_router::Link;
 
 use crate::api::hr::{create_skill, delete_skill, list_skills, search_skills};
 use crate::components::confirm_dialog::ConfirmDialog;
@@ -179,11 +180,18 @@ pub fn HrSkills() -> Element {
                                                     }
                                                 }
                                                 td { "data-label": "操作",
-                                                    button { class: "btn btn-error btn-sm",
-                                                        onclick: move |_| {
-                                                            pending_delete_id.set(id.clone());
-                                                            show_delete_confirm.set(true);
-                                                        }, "删除"
+                                                    div { class: "flex gap-1",
+                                                        Link {
+                                                            class: "btn btn-ghost btn-sm",
+                                                            to: crate::pages::Route::HrSkillDetail { id: id.clone() },
+                                                            "详情"
+                                                        }
+                                                        button { class: "btn btn-error btn-sm",
+                                                            onclick: move |_| {
+                                                                pending_delete_id.set(id.clone());
+                                                                show_delete_confirm.set(true);
+                                                            }, "删除"
+                                                        }
                                                     }
                                                 }
                                             }

@@ -94,7 +94,6 @@ pub async fn search_skills(keyword: &str) -> Result<ListSkillsResponse, ApiError
     api_get_or_default(&format!("/api/v1/hr/skills/search?keyword={}", keyword)).await
 }
 
-#[allow(dead_code)]
 pub async fn get_skill(id: &str) -> Result<GetSkillResponse, ApiError> {
     api_get(&format!("/api/v1/hr/skills/{}", id)).await
 }
@@ -103,7 +102,6 @@ pub async fn create_skill(req: CreateSkillRequest) -> Result<CreateSkillResponse
     api_post("/api/v1/hr/skills", &req).await
 }
 
-#[allow(dead_code)]
 pub async fn update_skill(id: &str, req: UpdateSkillRequest) -> Result<UpdateSkillResponse, ApiError> {
     api_put(&format!("/api/v1/hr/skills/{}", id), &req).await
 }
@@ -136,6 +134,29 @@ pub async fn delete_skill(id: &str) -> Result<DeleteSkillResponse, ApiError> {
         error_code: None,
         message: "响应数据为空".to_string(),
     })
+}
+
+// ===== Skill 文件管理 =====
+
+/// 列出 Skill 的所有文件
+pub async fn list_skill_files(skill_id: &str) -> Result<common::api::ListSkillFilesResponse, ApiError> {
+    api_get(&format!("/api/v1/hr/skills/{}/files", skill_id)).await
+}
+
+/// 获取 Skill 文件内容（filename 可能含 /，需 URL 编码路径段）
+pub async fn get_skill_file_content(skill_id: &str, filename: &str) -> Result<common::api::GetSkillFileContentResponse, ApiError> {
+    api_get(&format!("/api/v1/hr/skills/{}/files/{}", skill_id, filename)).await
+}
+
+/// 更新 Skill 文件内容（乐观锁字段前端置 None）
+pub async fn update_skill_file_content(skill_id: &str, filename: &str, content: String) -> Result<(), ApiError> {
+    let req = common::api::UpdateSkillFileContentRequest {
+        skill_id: skill_id.to_string(),
+        filename: filename.to_string(),
+        content,
+        expected_updated_at: None,
+    };
+    api_put_empty(&format!("/api/v1/hr/skills/{}/files/{}", skill_id, filename), &req).await
 }
 
 // ===== Agent 工具绑定 =====

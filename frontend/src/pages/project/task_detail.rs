@@ -11,6 +11,7 @@ use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::{format_timestamp_opt as format_timestamp, progress_bar_class, task_status_badge as status_badge, task_status_text as status_text};
 use common::api::GetTaskResponse;
+use crate::pages::project::task_edit_modal::{TaskEditMode, TaskEditModal};
 
 #[component]
 pub fn TaskDetail(id: String) -> Element {
@@ -21,6 +22,8 @@ pub fn TaskDetail(id: String) -> Element {
     let mut show_progress_modal = use_signal(|| false);
     let mut new_progress = use_signal(|| 0i32);
     let mut updating_progress = use_signal(|| false);
+    let mut show_edit_modal = use_signal(|| false);
+    let id_for_edit = id.clone();
 
     let toast = use_toast();
     let navigator = use_navigator();
@@ -227,6 +230,11 @@ pub fn TaskDetail(id: String) -> Element {
                 class: "btn btn-outline btn-sm",
                 onclick: back_to_project,
                 "← 返回项目"
+            }
+            button {
+                class: "btn btn-primary btn-sm",
+                onclick: move |_| show_edit_modal.set(true),
+                "✏️ 编辑"
             }
         }
         if loading() {
@@ -474,6 +482,14 @@ pub fn TaskDetail(id: String) -> Element {
             }
         } else {
             div { class: "card bg-base-100 shadow-md", EmptyState { icon: "❓".to_string(), message: "任务不存在".to_string() } }
+        }
+        TaskEditModal {
+            mode: TaskEditMode::Edit { task_id: id_for_edit.clone() },
+            show: show_edit_modal(),
+            on_close: move |_| show_edit_modal.set(false),
+            on_success: move |t: GetTaskResponse| {
+                task.set(Some(t));
+            },
         }
         }
     }

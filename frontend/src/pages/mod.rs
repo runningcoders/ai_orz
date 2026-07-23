@@ -24,6 +24,7 @@ use crate::pages::hr::agent_detail::HrAgentDetail;
 use crate::pages::hr::agents::HrAgents;
 use crate::pages::hr::knowledge_graph::HrKnowledgeGraph;
 use crate::pages::hr::memory_search::HrMemorySearch;
+use crate::pages::hr::skill_detail::HrSkillDetail;
 use crate::pages::hr::skills::HrSkills;
 use crate::pages::message::chat::MessageChat;
 use crate::pages::message::search::MessageSearch;
@@ -69,6 +70,8 @@ pub enum Route {
     HrAgentDetail { id: String },
     #[route("/hr/skills")]
     HrSkills {},
+    #[route("/hr/skills/:id")]
+    HrSkillDetail { id: String },
     #[route("/hr/memory-search")]
     HrMemorySearch {},
     #[route("/hr/knowledge-graph")]
