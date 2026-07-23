@@ -60,9 +60,8 @@ pub fn MessageSearch() -> Element {
                             placeholder: "输入关键词搜索消息...",
                             onkeydown: move |evt| {
                                 if evt.key() == Key::Enter {
-                                    spawn(async move {
-                                        handle_search(());
-                                    });
+                                    // 修复 L8：handle_search 内部已 spawn，外层 spawn 多余
+                                    handle_search(());
                                 }
                             }
                         }

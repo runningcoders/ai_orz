@@ -136,6 +136,8 @@ pub fn Graph(props: GraphProps) -> Element {
     let mut dragged_node_id = use_signal(|| None::<String>);
     let mut drag_start = use_signal(|| (0.0, 0.0));
     let mut drag_node_start = use_signal(|| (0.0, 0.0));
+    // 修复 M8：drag_moved 标记拖拽是否实际移动超过阈值，用于区分点击与拖拽
+    let mut drag_moved = use_signal(|| false);
 
     let mut view_transform = use_signal(|| (0.0, 0.0, 1.0));
     let mut is_panning = use_signal(|| false);
@@ -159,14 +161,6 @@ pub fn Graph(props: GraphProps) -> Element {
 
     let selected_id = props.selected_node_id.clone();
 
-    let _handle_node_drag_start = move |node_id: String| {
-        is_dragging.set(true);
-        dragged_node_id.set(Some(node_id.clone()));
-        if let Some(&pos) = node_positions.read().get(&node_id) {
-            drag_node_start.set(pos);
-        }
-    };
-
     let mut handle_mouse_move = move |e: MouseEvent| {
         if is_dragging() {
             let node_id = dragged_node_id.read().clone();
@@ -176,6 +170,10 @@ pub fn Graph(props: GraphProps) -> Element {
                 let client_pos = e.client_coordinates();
                 let dx = client_pos.x - start_x;
                 let dy = client_pos.y - start_y;
+                // 修复 M8：拖拽距离 > 3px 时标记为 moved，避免松手时误触发点击
+                if dx.abs() > 3.0 || dy.abs() > 3.0 {
+                    drag_moved.set(true);
+                }
                 node_positions.write().insert(node_id, (node_start_x + dx, node_start_y + dy));
             }
         }
@@ -183,6 +181,7 @@ pub fn Graph(props: GraphProps) -> Element {
 
     let mut handle_node_drag_start_with_event = move |e: MouseEvent, node_id: String| {
         is_dragging.set(true);
+        drag_moved.set(false);
         dragged_node_id.set(Some(node_id.clone()));
         let client_pos = e.client_coordinates();
         drag_start.set((client_pos.x, client_pos.y));
@@ -191,9 +190,28 @@ pub fn Graph(props: GraphProps) -> Element {
         }
     };
 
+    let on_click = props.on_node_click.clone();
+    // 修复 M8：mouseup 时若 drag_moved=false 视为点击，调用 on_click
     let handle_mouse_up = move |_| {
+        let was_dragging = is_dragging();
+        let moved = drag_moved();
+        let node_id = dragged_node_id.read().clone();
         is_dragging.set(false);
         dragged_node_id.set(None);
+        drag_moved.set(false);
+        is_panning.set(false);
+        if was_dragging && !moved {
+            if let Some(node_id) = node_id {
+                on_click.call(node_id);
+            }
+        }
+    };
+
+    // mouseleave 时取消拖拽但不触发点击（用户离开 SVG 视为放弃操作）
+    let handle_mouse_leave = move |_| {
+        is_dragging.set(false);
+        dragged_node_id.set(None);
+        drag_moved.set(false);
         is_panning.set(false);
     };
 
@@ -224,7 +242,8 @@ pub fn Graph(props: GraphProps) -> Element {
             let dx = (e.client_coordinates().x - start_x) / scale;
             let dy = (e.client_coordinates().y - start_y) / scale;
             view_transform.set((tx + dx, ty + dy, scale));
-            pan_start.set((e.client_coordinates().x, e.client_coordinates().y));
+            let client_pos = e.client_coordinates();
+            pan_start.set((client_pos.x, client_pos.y));
         }
     };
 
@@ -232,9 +251,13 @@ pub fn Graph(props: GraphProps) -> Element {
     let render_nodes = props.nodes.clone();
     let _render_edges = props.edges.clone();
     let highlighted_ids = props.highlighted_node_ids.clone();
-    let on_click = props.on_node_click.clone();
+    // 修复 M8：on_click 已移到 handle_mouse_up，节点 mousedown 不再触发点击
+    let reset_view = move |_| {
+        view_transform.set((0.0, 0.0, 1.0));
+    };
 
     rsx! {
+        div { class: "relative",
         svg {
             width: "{svg_width}",
             height: "{svg_height}",
@@ -246,7 +269,7 @@ pub fn Graph(props: GraphProps) -> Element {
                 handle_pan_move(e2);
             },
             onmouseup: handle_mouse_up,
-            onmouseleave: handle_mouse_up,
+            onmouseleave: handle_mouse_leave,
             onwheel: handle_wheel,
             oncontextmenu: handle_context_menu,
             onmousedown: handle_pan_start,
@@ -326,7 +349,6 @@ pub fn Graph(props: GraphProps) -> Element {
                     let is_highlighted = highlighted_ids.as_ref()
                         .map(|ids| ids.contains(&node.id))
                         .unwrap_or(false);
-                    let node_id_for_click = node.id.clone();
                     let fill = get_node_fill(&node.node_type).to_string();
                     let stroke = get_node_stroke(is_selected).to_string();
                     let stroke_width = get_node_stroke_width(is_selected).to_string();
@@ -341,7 +363,6 @@ pub fn Graph(props: GraphProps) -> Element {
                             opacity: "{opacity}",
                             onmousedown: move |e: MouseEvent| {
                                 handle_node_drag_start_with_event(e, node.id.clone());
-                                on_click.call(node_id_for_click.clone());
                             },
                             circle {
                                 cx: "{nx}",
@@ -359,13 +380,23 @@ pub fn Graph(props: GraphProps) -> Element {
                                 font_size: "10",
                                 fill: "white",
                                 font_weight: "500",
-                                "{node.label.chars().take(6).collect::<String>()}"
+                                // 修复 L11：节点 label 截断从 6 改为 8，与边 label（10）保持视觉一致
+                                "{node.label.chars().take(8).collect::<String>()}"
                             }
                         }
                     }
                 }
             }
             }
+        }
+        // 修复 L16：添加重置视图按钮（右上角，重置缩放和平移到初始状态）
+        button {
+            class: "btn btn-xs btn-ghost absolute top-2 right-2 bg-base-100/80 hover:bg-base-100 shadow-sm",
+            r#type: "button",
+            title: "重置视图",
+            onclick: reset_view,
+            "⟲ 重置"
+        }
         }
     }
 }

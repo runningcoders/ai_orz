@@ -20,11 +20,22 @@ fn now_ms() -> i64 {
         .as_millis() as i64
 }
 
+/// 生成乐观消息的临时 ID。
+/// 修复 L18：单纯使用毫秒时间戳，同一毫秒内发送两条消息会 ID 碰撞。
+/// 加上 js_sys::Math::random() 随机后缀避免引入 uuid 依赖。
+fn tmp_msg_id() -> String {
+    let random = (js_sys::Math::random() * 1_000_000_000.0) as u32;
+    format!("tmp_{}_{:09}", now_ms(), random)
+}
+
+// 修复 M5：时间显示使用本地时区，之前用 UTC 偏移 8 小时
 fn format_time(ts: i64) -> String {
-    let seconds = ts / 1000;
-    let hours = seconds / 3600;
-    let minutes = (seconds % 3600) / 60;
-    format!("{:02}:{:02}", hours, minutes)
+    use chrono::Local;
+    use chrono::TimeZone;
+    match Local.timestamp_opt(ts / 1000, 0) {
+        chrono::LocalResult::Single(dt) => format!("{}", dt.format("%H:%M")),
+        _ => "--:--".to_string(),
+    }
 }
 
 fn status_text(status: i32) -> &'static str {
@@ -88,7 +99,7 @@ pub fn MessageChat() -> Element {
     let mut messages = use_signal(Vec::<MessageListItem>::new);
     let mut is_typing = use_signal(|| false);
     let mut input_text = use_signal(String::new);
-    let error = use_signal(String::new);
+    // 修复 L1：删除未使用的 error signal（之前从未 set，is_empty() 永远为 true）
     let mut loading_projects = use_signal(|| true);
     let mut has_more = use_signal(|| true);
     let mut loading_messages = use_signal(|| false);
@@ -105,6 +116,9 @@ pub fn MessageChat() -> Element {
 
     // 工具卡片展开状态（message_id -> expanded）
     let mut tool_expanded = use_signal(|| std::collections::HashSet::<String>::new());
+
+    // 修复 M3：追踪用户是否滚动到底部附近，用于决定新消息是否自动滚动
+    let mut at_bottom = use_signal(|| true);
 
     // 附件上传状态
     let mut pending_attachments = use_signal(Vec::<PendingAttachment>::new);
@@ -150,11 +164,13 @@ pub fn MessageChat() -> Element {
         });
     };
 
-    let mut load_messages = move |project_id: &str| {
-        let project_id = project_id.to_string();
+    let mut load_messages = move |project_id: Option<&str>| {
+        // 转换为 owned：spawn 的 future 需要 'static 生命周期
+        let project_id = project_id.map(|s| s.to_string());
         loading_messages.set(true);
         spawn(async move {
-            match load_latest_messages(Some(&project_id), Some(20)).await {
+            let project_id_ref = project_id.as_deref();
+            match load_latest_messages(project_id_ref, Some(20)).await {
                 Ok(resp) => {
                     let is_empty = resp.messages.is_empty();
                     messages.set(resp.messages);
@@ -231,9 +247,36 @@ pub fn MessageChat() -> Element {
         load_reception_agent();
     });
 
+    // 修复 M3：新消息到来且用户在底部附近时，自动滚动到底部
+    // 不使用 use_memo 缓存 grouped_messages：DTO 未实现 PartialEq，且 N 较小，重算代价可接受
     use_effect(move || {
-        if let Some(proj_id) = selected_project() {
-            load_messages(&proj_id);
+        let msg_count = messages().len();
+        let typing = is_typing();
+        if !at_bottom() {
+            return;
+        }
+        // 用 msg_count + typing 作为依赖触发滚动；不读 messages 内容避免额外 clone
+        let _ = (msg_count, typing);
+        spawn(async move {
+            if let Some(window) = web_sys::window() {
+                if let Some(doc) = window.document() {
+                    if let Some(el) = doc.query_selector("#chat-scroll-container").ok().flatten() {
+                        if let Ok(html_el) = el.dyn_into::<web_sys::HtmlElement>() {
+                            html_el.set_scroll_top(html_el.scroll_height());
+                        }
+                    }
+                }
+            }
+        });
+    });
+
+    // 修复 M1+M2：统一由 use_effect 根据 selected_project 变化加载消息，
+    // 默认对话 (None) 也加载历史。handle_project_click 不再直接调用 load_messages 避免重复请求。
+    use_effect(move || {
+        let proj = selected_project();
+        match &proj {
+            Some(proj_id) => load_messages(Some(proj_id.as_str())),
+            None => load_messages(None),
         }
     });
 
@@ -355,9 +398,18 @@ pub fn MessageChat() -> Element {
             Some(attachment_ids)
         };
 
+        // 修复 M4：保存输入快照，失败时恢复（之前 spawn 前就清空，网络失败导致输入丢失）
+        let text_snapshot = text.clone();
+        let attachments_snapshot = attachments.clone();
         input_text.set(String::new());
         pending_attachments.set(Vec::new());
         is_typing.set(true);
+
+        // 修复 M6：is_typing 超时保护，防止 Agent 失败/SSE 断开时永久卡死
+        spawn(async move {
+            gloo_timers::future::TimeoutFuture::new(60_000).await;
+            is_typing.set(false);
+        });
 
         spawn(async move {
             let req = SendMessageToAgentParams {
@@ -371,8 +423,9 @@ pub fn MessageChat() -> Element {
 
             match send_message_to_agent(req).await {
                 Ok(_) => {
+                    // 修复 L18：tmp_msg_id 用 now_ms+random 避免同毫秒发送两条消息 ID 碰撞
                     let user_msg = MessageListItem {
-                        message_id: format!("tmp_{}", now_ms()),
+                        message_id: tmp_msg_id(),
                         project_id: project_id.clone(),
                         task_id: None,
                         from_id: "user".to_string(),
@@ -391,6 +444,9 @@ pub fn MessageChat() -> Element {
                     current.push(user_msg);
                 }
                 Err(e) => {
+                    // 修复 M4：失败时恢复用户输入
+                    input_text.set(text_snapshot);
+                    pending_attachments.set(attachments_snapshot);
                     toast.error(&format!("发送消息失败: {}", e));
                     is_typing.set(false);
                     return;
@@ -458,19 +514,19 @@ pub fn MessageChat() -> Element {
 
     let mut handle_project_click = move |project_id: String| {
         selected_project.set(Some(project_id.clone()));
-        messages.set(Vec::new());
-        has_more.set(true);
-        load_messages(&project_id);
+        // 修复 M1：不再直接调用 load_messages，由 use_effect 响应 selected_project 变化触发
+        // 修复 L3：切换会话时清理 tool_expanded 状态
+        tool_expanded.set(std::collections::HashSet::new());
         if is_mobile() {
             sidebar_open.set(false);
         }
     };
 
-    // 点击「默认对话」条目：清空选中项目，清空消息
+    // 点击「默认对话」条目：清空选中项目
     let handle_default_chat_click = move |_| {
         selected_project.set(None);
-        messages.set(Vec::new());
-        has_more.set(true);
+        // 修复 L3：切换会话时清理 tool_expanded 状态
+        tool_expanded.set(std::collections::HashSet::new());
         if is_mobile() {
             sidebar_open.set(false);
         }
@@ -514,7 +570,7 @@ pub fn MessageChat() -> Element {
                     projects.write().push(new_project.clone());
                     messages.set(Vec::new());
                     has_more.set(true);
-                    load_messages(&new_project.id);
+                    // 修复 M1：不再显式调用 load_messages，use_effect 监听 selected_project 变化会触发
                     show_create_project.set(false);
                     new_project_name.set(String::new());
                     new_project_desc.set(String::new());
@@ -557,13 +613,13 @@ pub fn MessageChat() -> Element {
                 }
             }
 
-            div { class: "flex-1 overflow-y-auto p-4 bg-base-100",
-                if error().is_empty() && loading_messages() && messages().is_empty() {
+            div { class: "flex-1 overflow-y-auto p-4 bg-base-100", id: "chat-scroll-container",
+                if loading_messages() && messages().is_empty() {
                     div { class: "flex items-center justify-center py-12",
                         span { class: "loading loading-spinner loading-md" }
                         span { class: "ml-2 text-base-content/60", "加载消息中..." }
                     }
-                } else if error().is_empty() && messages().is_empty() && !loading_messages() {
+                } else if messages().is_empty() && !loading_messages() {
                     div { class: "text-center py-12",
                         div { class: "text-5xl mb-3", "💬" }
                         div { class: "text-base-content/60", "暂无消息，开始对话吧" }
@@ -572,6 +628,15 @@ pub fn MessageChat() -> Element {
                     div {
                         class: "flex flex-col gap-1 min-h-full",
                         onscroll: move |e| {
+                            // 修复 M3：通过 web_sys 查询滚动容器尺寸，更新 at_bottom 状态
+                            if let Some(html_el) = web_sys::window()
+                                .and_then(|w| w.document())
+                                .and_then(|d| d.query_selector("#chat-scroll-container").ok().flatten())
+                                .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
+                            {
+                                let max_scroll = html_el.scroll_height() - html_el.client_height();
+                                at_bottom.set(html_el.scroll_top() as f64 >= (max_scroll - 50) as f64);
+                            }
                             if e.scroll_top() == 0.0 {
                                 load_older();
                             }
@@ -675,7 +740,7 @@ pub fn MessageChat() -> Element {
                 }
             }
 
-            div { class: "flex-1 overflow-y-auto p-4 bg-base-100",
+            div { class: "flex-1 overflow-y-auto p-4 bg-base-100", id: "chat-scroll-container",
                 if messages().is_empty() {
                     div { class: "text-center py-12",
                         div { class: "text-5xl mb-3", "💬" }
@@ -684,6 +749,16 @@ pub fn MessageChat() -> Element {
                 } else {
                     div {
                         class: "flex flex-col gap-1 min-h-full",
+                        onscroll: move |_e| {
+                            if let Some(html_el) = web_sys::window()
+                                .and_then(|w| w.document())
+                                .and_then(|d| d.query_selector("#chat-scroll-container").ok().flatten())
+                                .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
+                            {
+                                let max_scroll = html_el.scroll_height() - html_el.client_height();
+                                at_bottom.set(html_el.scroll_top() as f64 >= (max_scroll - 50) as f64);
+                            }
+                        },
                         for entry in group_messages_by_date(&messages()) {
                             match entry {
                                 MessageListEntry::DateDivider(label) => rsx! {
@@ -1399,42 +1474,27 @@ fn group_messages_by_date(messages: &[MessageListItem]) -> Vec<MessageListEntry>
 }
 
 /// 格式化毫秒时间戳为日期分组标签 (今天 / 昨天 / YYYY-MM-DD)
+// 修复 M5：日期分组使用本地时区，之前用 UTC 深夜时段日期分组错乱
 fn format_date_group_label(ts_ms: i64) -> String {
-    use chrono::{DateTime, Utc};
+    use chrono::{Datelike, Local, TimeZone};
     let secs = (ts_ms / 1000) as i64;
-    let dt: DateTime<Utc> = DateTime::<Utc>::from_timestamp(secs, 0)
-        .unwrap_or_else(|| DateTime::<Utc>::from_timestamp(0, 0).unwrap());
+    let dt = match Local.timestamp_opt(secs, 0) {
+        chrono::LocalResult::Single(dt) => dt,
+        _ => return "未知".to_string(),
+    };
 
-    let now: DateTime<Utc> = DateTime::<Utc>::from_timestamp(
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0),
-        0,
-    )
-    .unwrap_or_else(|| DateTime::<Utc>::from_timestamp(0, 0).unwrap());
-
-    let today = today_key(now);
-    let key = today_key(dt);
-    if key == today {
+    let now = Local::now();
+    let today_key = (now.year(), now.month(), now.day());
+    let msg_key = (dt.year(), dt.month(), dt.day());
+    if msg_key == today_key {
         return "今天".to_string();
     }
-    let yesterday = today_pred(today, -1);
-    if key == yesterday {
+    let yesterday = {
+        let y = now - chrono::Duration::days(1);
+        (y.year(), y.month(), y.day())
+    };
+    if msg_key == yesterday {
         return "昨天".to_string();
     }
-    format!("{:04}-{:02}-{:02}", key.0, key.1, key.2)
-}
-
-fn today_key(dt: chrono::DateTime<chrono::Utc>) -> (i32, u32, u32) {
-    use chrono::Datelike;
-    (dt.year(), dt.month(), dt.day())
-}
-
-/// 计算给定日期前后 offset 天
-fn today_pred((y, m, d): (i32, u32, u32), offset: i32) -> (i32, u32, u32) {
-    use chrono::{Datelike, Duration, NaiveDate};
-    let date = NaiveDate::from_ymd_opt(y, m, d).unwrap();
-    let new_date = date + Duration::days(offset as i64);
-    (new_date.year(), new_date.month(), new_date.day())
+    format!("{:04}-{:02}-{:02}", msg_key.0, msg_key.1, msg_key.2)
 }

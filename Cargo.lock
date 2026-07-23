@@ -3589,6 +3589,7 @@ dependencies = [
  "common",
  "dioxus",
  "futures-channel",
+ "gloo-timers",
  "js-sys",
  "reqwest 0.13.4",
  "serde",

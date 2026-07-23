@@ -32,10 +32,13 @@ fn build_graph_from_results(
             }
             "relation" => {
                 if let (Some(src), Some(tgt)) = (&item.source_node_id, &item.target_node_id) {
+                    // 修复 L19：之前用 src.chars().take(8) 作 label（UUID 前 8 字符无意义），
+                    // 改用 relation_type 作 label 更有意义，无 relation_type 时回退到 "节点"
+                    let inferred_label = item.relation_type.clone().unwrap_or_else(|| "节点".to_string());
                     if seen_node_ids.insert(src.clone()) {
                         nodes.push(GraphNode {
                             id: src.clone(),
-                            label: src.chars().take(8).collect::<String>(),
+                            label: inferred_label.clone(),
                             node_type: "knowledge_node".to_string(),
                             x: 0.0,
                             y: 0.0,
@@ -44,7 +47,7 @@ fn build_graph_from_results(
                     if seen_node_ids.insert(tgt.clone()) {
                         nodes.push(GraphNode {
                             id: tgt.clone(),
-                            label: tgt.chars().take(8).collect::<String>(),
+                            label: inferred_label.clone(),
                             node_type: "knowledge_node".to_string(),
                             x: 0.0,
                             y: 0.0,
@@ -98,6 +101,8 @@ pub fn HrKnowledgeGraph() -> Element {
     let mut search_history = use_signal(Vec::<String>::new);
     let mut highlighted_node_ids = use_signal(Vec::<String>::new);
     let mut detail_map = use_signal(|| std::collections::HashMap::<String, MemoryResult>::new());
+    // 修复 M11：节点点击请求 ID，用于取消过期的并发请求结果（用户快速点击多个节点时）
+    let mut click_request_id = use_signal(|| 0u32);
 
     let mut handle_search = move |_| {
         let kw = keyword().clone();
@@ -162,14 +167,27 @@ pub fn HrKnowledgeGraph() -> Element {
 
         loading.set(true);
         let seed_ids = vec![node_id.clone()];
+        // 修复 M11：自增 request_id，捕获当前 ID，结果到达时若不匹配则丢弃
+        let my_request_id = click_request_id() + 1;
+        click_request_id.set(my_request_id);
         spawn(async move {
             match search_memory_with_traversal("", &seed_ids, 1).await {
                 Ok(data) => {
+                    // 修复 M11：检查 request_id 是否仍然是最新的，过期则丢弃结果
+                    if click_request_id() != my_request_id {
+                        loading.set(false);
+                        return;
+                    }
                     let mut map = detail_map.read().clone();
                     for item in &data.results {
                         if item.memory_type != "relation" {
                             map.insert(item.id.clone(), item.clone());
                         }
+                    }
+                    // 修复 L7：限制 detail_map 大小，超过 200 时清理避免无限增长
+                    if map.len() > 200 {
+                        let valid_ids: HashSet<String> = nodes.read().iter().map(|n| n.id.clone()).collect();
+                        map.retain(|id, _| valid_ids.contains(id));
                     }
                     detail_map.set(map);
 
@@ -197,7 +215,10 @@ pub fn HrKnowledgeGraph() -> Element {
 
                     expanded_nodes.write().insert(seed_ids[0].clone());
                 }
-                Err(_) => {}
+                // 修复 L5：之前 Err(_) => {} 静默吞错，改为显示 toast
+                Err(e) => {
+                    toast.error(&format!("加载节点关联失败: {}", e));
+                }
             }
             loading.set(false);
         });

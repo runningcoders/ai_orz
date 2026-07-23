@@ -78,6 +78,8 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
     let loading = use_signal(|| false);
     let toast = use_toast();
 
+    // 修复 M10：use_effect 监听 active_tab 自动 fetch，tab 按钮的 onclick 不再显式调用
+    // fetch_memories（之前会触发双请求：onclick 一次 + use_effect 一次）
     use_effect({
         let agent_id = agent_id.clone();
         move || {
@@ -88,9 +90,6 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
 
     let results_list = results.read().clone();
 
-    let agent_id_1 = agent_id.clone();
-    let agent_id_2 = agent_id.clone();
-    let agent_id_3 = agent_id.clone();
     let agent_id_4 = agent_id.clone();
     let agent_id_5 = agent_id.clone();
 
@@ -105,7 +104,6 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                             onclick: move |_| {
                                 active_tab.set(MemoryTab::ShortTerm);
                                 keyword.set(String::new());
-                                fetch_memories(agent_id_1.clone(), MemoryTab::ShortTerm, String::new(), results, loading, toast);
                             },
                             "短期记忆"
                         }
@@ -114,7 +112,6 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                             onclick: move |_| {
                                 active_tab.set(MemoryTab::KnowledgeNode);
                                 keyword.set(String::new());
-                                fetch_memories(agent_id_2.clone(), MemoryTab::KnowledgeNode, String::new(), results, loading, toast);
                             },
                             "知识节点"
                         }
@@ -123,7 +120,6 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                             onclick: move |_| {
                                 active_tab.set(MemoryTab::Relation);
                                 keyword.set(String::new());
-                                fetch_memories(agent_id_3.clone(), MemoryTab::Relation, String::new(), results, loading, toast);
                             },
                             "关系"
                         }
