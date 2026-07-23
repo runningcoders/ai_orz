@@ -24,7 +24,6 @@ pub async fn create_project(req: CreateProjectRequest) -> Result<CreateProjectRe
     api_post("/api/v1/projects", &req).await
 }
 
-#[allow(dead_code)]
 pub async fn update_project(id: &str, req: UpdateProjectRequest) -> Result<UpdateProjectResponse, ApiError> {
     api_put(&format!("/api/v1/projects/{}", id), &req).await
 }

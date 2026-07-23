@@ -8,7 +8,7 @@ use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-use common::api::{CreateOrganizationUserRequest, ListUsersResponseItem};
+use common::api::{CreateOrganizationUserRequest, ListUsersResponseItem, UpdateUserRequest};
 
 fn role_badge(role: i32) -> &'static str {
     match role {
@@ -42,6 +42,16 @@ pub fn OrganizationUsers() -> Element {
     // ===== 删除确认对话框 =====
     let mut show_delete_confirm = use_signal(|| false);
     let mut pending_delete_id = use_signal(|| String::new());
+
+    // ===== 编辑用户 Modal =====
+    let mut show_edit_modal = use_signal(|| false);
+    let mut edit_user_id = use_signal(String::new);
+    let mut edit_display_name = use_signal(String::new);
+    let mut edit_email = use_signal(String::new);
+    let mut edit_role = use_signal(|| "1".to_string());
+    let mut edit_status = use_signal(|| "1".to_string());
+    let mut edit_password = use_signal(String::new);
+    let mut saving_user = use_signal(|| false);
 
     use_effect(move || {
         loading.set(true);
@@ -120,7 +130,11 @@ pub fn OrganizationUsers() -> Element {
                                         let udisplay = u.display_name.clone().unwrap_or_default();
                                         let uemail = u.email.clone().unwrap_or_default();
                                         let urole = u.role;
+                                        let ustatus = u.status;
                                         let uid_delete = uid.clone();
+                                        let uid_edit = uid.clone();
+                                        let udisplay_edit = udisplay.clone();
+                                        let uemail_edit = uemail.clone();
                                         rsx! {
                                             tr { key: "{uid}",
                                                 td { class: "font-semibold", "data-label": "用户名", "{uname}" }
@@ -128,6 +142,18 @@ pub fn OrganizationUsers() -> Element {
                                                 td { class: "font-mono text-sm text-base-content/70", "data-label": "邮箱", "{uemail}" }
                                                 td { "data-label": "角色", span { class: "{role_badge(urole)}", "{role_text(urole)}" } }
                                                 td { "data-label": "操作",
+                                                    button { class: "btn btn-ghost btn-xs mr-1",
+                                                        onclick: move |_| {
+                                                            edit_user_id.set(uid_edit.clone());
+                                                            edit_display_name.set(udisplay_edit.clone());
+                                                            edit_email.set(uemail_edit.clone());
+                                                            edit_role.set(urole.to_string());
+                                                            edit_status.set(ustatus.to_string());
+                                                            edit_password.set(String::new());
+                                                            show_edit_modal.set(true);
+                                                        },
+                                                        "编辑"
+                                                    }
                                                     button { class: "btn btn-error btn-sm",
                                                         onclick: move |_| {
                                                             pending_delete_id.set(uid_delete.clone());
@@ -196,6 +222,98 @@ pub fn OrganizationUsers() -> Element {
                         option { value: "2", "管理员" }
                         option { value: "3", "超级管理员" }
                     }
+                }
+            }
+        }
+
+        Modal {
+            title: "编辑用户".to_string(),
+            show: show_edit_modal(),
+            on_close: move |_| show_edit_modal.set(false),
+            footer: rsx! {
+                button { class: "btn btn-ghost", onclick: move |_| show_edit_modal.set(false), "取消" }
+                button {
+                    class: "btn btn-primary",
+                    disabled: saving_user(),
+                    onclick: move |_| {
+                        let display_name = if edit_display_name().trim().is_empty() { None } else { Some(edit_display_name()) };
+                        let email = if edit_email().trim().is_empty() { None } else { Some(edit_email()) };
+                        let role: i32 = edit_role().trim().parse().unwrap_or(1);
+                        let status: i32 = edit_status().trim().parse().unwrap_or(1);
+                        let password_hash = if edit_password().is_empty() { None } else { Some(edit_password()) };
+                        let req = UpdateUserRequest {
+                            user_id: edit_user_id(),
+                            display_name,
+                            email,
+                            role: Some(role),
+                            status: Some(status),
+                            password_hash,
+                        };
+                        saving_user.set(true);
+                        spawn(async move {
+                            match crate::api::organization::update_user(req).await {
+                                Ok(_) => {
+                                    toast.success("用户已更新");
+                                    show_edit_modal.set(false);
+                                    match list_users().await {
+                                        Ok(list) => users.set(list.data),
+                                        Err(e) => toast.error(&format!("重新加载失败: {}", e)),
+                                    }
+                                }
+                                Err(e) => toast.error(&format!("更新失败: {}", e)),
+                            }
+                            saving_user.set(false);
+                        });
+                    },
+                    if saving_user() { "保存中..." } else { "保存" }
+                }
+            },
+            div { class: "space-y-4",
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "显示名称" }
+                    }
+                    input { class: "input input-bordered w-full", value: "{edit_display_name}",
+                        oninput: move |e| edit_display_name.set(e.value()) }
+                }
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "邮箱" }
+                    }
+                    input { class: "input input-bordered w-full", r#type: "email", value: "{edit_email}",
+                        oninput: move |e| edit_email.set(e.value()) }
+                }
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "角色" }
+                    }
+                    select {
+                        class: "select select-bordered w-full",
+                        value: "{edit_role}",
+                        onchange: move |e| edit_role.set(e.value()),
+                        option { value: "1", "成员" }
+                        option { value: "2", "管理员" }
+                        option { value: "3", "超级管理员" }
+                    }
+                }
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "状态" }
+                    }
+                    select {
+                        class: "select select-bordered w-full",
+                        value: "{edit_status}",
+                        onchange: move |e| edit_status.set(e.value()),
+                        option { value: "1", "正常" }
+                        option { value: "0", "禁用" }
+                    }
+                }
+                div { class: "form-control w-full",
+                    label { class: "label",
+                        span { class: "label-text font-medium", "新密码（留空不修改）" }
+                    }
+                    input { class: "input input-bordered w-full", r#type: "password", value: "{edit_password}",
+                        oninput: move |e| edit_password.set(e.value()), placeholder: "输入新密码或留空" }
                 }
             }
         }

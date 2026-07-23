@@ -40,7 +40,6 @@ pub async fn create_external_agent(req: CreateExternalAgentRequest) -> Result<Cr
     api_post("/api/v1/hr/agents/external", &req).await
 }
 
-#[allow(dead_code)]
 pub async fn update_agent(id: &str, req: UpdateAgentRequest) -> Result<UpdateAgentResponse, ApiError> {
     api_put(&format!("/api/v1/hr/agents/{}", id), &req).await
 }

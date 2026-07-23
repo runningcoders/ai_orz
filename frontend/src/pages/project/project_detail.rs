@@ -11,7 +11,7 @@ use crate::layouts::app_layout::AppLayout;
 use crate::pages::project::task_edit_modal::{TaskEditMode, TaskEditModal};
 use crate::store::toast::use_toast;
 use crate::utils::{progress_bar_class, project_status_badge, project_status_text, task_status_badge, task_status_text};
-use common::api::{ArtifactDetail, CreateArtifactRequest, GetProjectResponse, TaskListItem};
+use common::api::{ArtifactDetail, CreateArtifactRequest, GetProjectResponse, TaskListItem, UpdateProjectRequest};
 use common::enums::ArtifactSourceType;
 
 fn artifact_source_type_text(source_type: ArtifactSourceType) -> &'static str {
@@ -38,6 +38,15 @@ pub fn ProjectDetail(id: String) -> Element {
     // 任务创建 Modal 状态
     let mut show_task_modal = use_signal(|| false);
     let navigator = use_navigator();
+
+    // 项目编辑 Modal 状态
+    let mut show_edit_modal = use_signal(|| false);
+    let mut edit_name = use_signal(String::new);
+    let mut edit_description = use_signal(String::new);
+    let mut edit_priority = use_signal(|| "0".to_string());
+    let mut edit_tags = use_signal(String::new);
+    let mut saving_meta = use_signal(|| false);
+    let id_for_edit = id.clone();
 
     // 初始加载：先取项目，再取任务列表和产物列表
     let id_for_load = id.clone();
@@ -209,7 +218,22 @@ pub fn ProjectDetail(id: String) -> Element {
             // 区域 1：项目基本信息卡片
             div { class: "card bg-base-100 shadow-md",
                 div { class: "card-header",
-                    h2 { class: "card-title", "{p.name}" }
+                    div { class: "card-header-row",
+                        h2 { class: "card-title", "{p.name}" }
+                        button {
+                            class: "btn btn-ghost btn-sm",
+                            onclick: move |_| {
+                                if let Some(p) = project.read().clone() {
+                                    edit_name.set(p.name.clone());
+                                    edit_description.set(p.description.clone().unwrap_or_default());
+                                    edit_priority.set(p.priority.to_string());
+                                    edit_tags.set(p.tags.join(", "));
+                                    show_edit_modal.set(true);
+                                }
+                            },
+                            "✏️ 编辑"
+                        }
+                    }
                 }
                 div { class: "detail-grid",
                     div {
@@ -560,6 +584,81 @@ pub fn ProjectDetail(id: String) -> Element {
             }
         } else {
             div { class: "card bg-base-100 shadow-md", EmptyState { icon: "📁".to_string(), message: "项目不存在".to_string() } }
+        }
+
+        // 编辑项目 Modal
+        Modal {
+            title: "编辑项目".to_string(),
+            show: show_edit_modal(),
+            on_close: move |_| show_edit_modal.set(false),
+            footer: Some(rsx! {
+                div { class: "modal-footer-actions",
+                    button { class: "btn btn-ghost", onclick: move |_| show_edit_modal.set(false), "取消" }
+                    button {
+                        class: "btn btn-primary",
+                        disabled: saving_meta(),
+                        onclick: move |_| {
+                            let name = edit_name.read().trim().to_string();
+                            if name.is_empty() { toast.error("名称不能为空"); return; }
+                            let priority: i32 = edit_priority.read().trim().parse().unwrap_or(0);
+                            let tags: Vec<String> = edit_tags.read().split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+                            let desc = edit_description.read().clone();
+                            let description = Some(desc).filter(|s| !s.trim().is_empty());
+                            let req = UpdateProjectRequest {
+                                id: id_for_edit.clone(),
+                                name: Some(name),
+                                description,
+                                priority: Some(priority),
+                                tags: Some(tags),
+                            };
+                            saving_meta.set(true);
+                            let id_clone = id_for_edit.clone();
+                            spawn(async move {
+                                match update_project(&id_clone, req).await {
+                                    Ok(_) => {
+                                        toast.success("项目已更新");
+                                        show_edit_modal.set(false);
+                                        let stats_options = StatsOptions {
+                                            with_stats: true,
+                                            with_model_call_stats: true,
+                                            stats_interval: Some("daily".to_string()),
+                                        };
+                                        match get_project(&id_clone, Some(&stats_options)).await {
+                                            Ok(p) => project.set(Some(p)),
+                                            Err(e) => toast.error(&format!("重新加载失败: {}", e)),
+                                        }
+                                    }
+                                    Err(e) => toast.error(&format!("更新失败: {}", e)),
+                                }
+                                saving_meta.set(false);
+                            });
+                        },
+                        if saving_meta() { "保存中..." } else { "保存" }
+                    }
+                }
+            }),
+            div { class: "space-y-4",
+                div { class: "form-control w-full",
+                    label { class: "label", span { class: "label-text font-medium", "名称 *" } }
+                    input { class: "input input-bordered w-full", value: "{edit_name}",
+                        oninput: move |e| edit_name.set(e.value().clone()) }
+                }
+                div { class: "form-control w-full",
+                    label { class: "label", span { class: "label-text font-medium", "描述" } }
+                    textarea { class: "textarea textarea-bordered w-full", value: "{edit_description}",
+                        oninput: move |e| edit_description.set(e.value().clone()) }
+                }
+                div { class: "form-control w-full",
+                    label { class: "label", span { class: "label-text font-medium", "优先级（数字，越大越优先）" } }
+                    input { class: "input input-bordered w-full", r#type: "number", value: "{edit_priority}",
+                        oninput: move |e| edit_priority.set(e.value().clone()) }
+                }
+                div { class: "form-control w-full",
+                    label { class: "label", span { class: "label-text font-medium", "标签（逗号分隔）" } }
+                    input { class: "input input-bordered w-full", value: "{edit_tags}",
+                        oninput: move |e| edit_tags.set(e.value().clone()), placeholder: "tag1, tag2" }
+                }
+            }
         }
         }
     }

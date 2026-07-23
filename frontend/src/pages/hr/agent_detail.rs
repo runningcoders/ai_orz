@@ -1,12 +1,14 @@
+use crate::api::finance::list_model_providers;
 use crate::api::{hr::*, StatsOptions};
 use crate::pages::hr::agent_memory_panel::AgentMemoryPanel;
 use crate::api::message::{load_latest_messages, send_message_to_agent};
+use crate::components::modal::Modal;
 use crate::components::state::Loading;
 use crate::components::stats::AgentStatsPanel;
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::{format_file_size, format_time_hm as format_time, is_attachment_message, role_avatar, tmp_msg_id};
-use common::api::{GetAgentResponse, MessageListItem, SendMessageToAgentParams, ToolListItem};
+use common::api::{GetAgentResponse, ListModelProvidersResponseItem, MessageListItem, SendMessageToAgentParams, ToolListItem, UpdateAgentRequest};
 use dioxus::prelude::*;
 use dioxus_router::Link;
 use std::collections::HashSet;
@@ -147,6 +149,15 @@ pub fn HrAgentDetail(id: String) -> Element {
     let mut tool_packs = use_signal(Vec::<String>::new);
     let mut skill_packs = use_signal(Vec::<String>::new);
     let mut all_tools = use_signal(Vec::<ToolListItem>::new);
+    let mut show_edit_modal = use_signal(|| false);
+    let mut edit_name = use_signal(String::new);
+    let mut edit_roles = use_signal(String::new);
+    let mut edit_description = use_signal(String::new);
+    let mut edit_capabilities = use_signal(String::new);
+    let mut edit_soul = use_signal(String::new);
+    let mut edit_model_provider_id = use_signal(String::new);
+    let mut saving_meta = use_signal(|| false);
+    let mut model_providers = use_signal(Vec::<ListModelProvidersResponseItem>::new);
 
     let agent_tool_ids = agent_data
         .read()
@@ -198,6 +209,10 @@ pub fn HrAgentDetail(id: String) -> Element {
                     messages.set(filtered);
                 }
                 Err(e) => toast.error(&format!("加载消息失败: {}", e)),
+            }
+            match list_model_providers().await {
+                Ok(resp) => model_providers.set(resp.providers),
+                Err(e) => toast.error(&format!("加载模型提供商列表失败: {}", e)),
             }
         });
     };
@@ -334,9 +349,26 @@ pub fn HrAgentDetail(id: String) -> Element {
             rsx! {
                 div { class: "card bg-base-100 shadow-md",
                     div { class: "card-body",
-                        div { class: "mb-6",
-                            h2 { class: "card-title", "{a.name}" }
-                            p { class: "text-base-content/70 mt-1", "{desc}" }
+                        div { class: "mb-6 flex justify-between items-start",
+                            div {
+                                h2 { class: "card-title", "{a.name}" }
+                                p { class: "text-base-content/70 mt-1", "{desc}" }
+                            }
+                            button {
+                                class: "btn btn-ghost btn-sm",
+                                onclick: move |_| {
+                                    if let Some(a) = agent_data.read().as_ref() {
+                                        edit_name.set(a.name.clone());
+                                        edit_roles.set(a.roles.join(", "));
+                                        edit_description.set(a.description.clone().unwrap_or_default());
+                                        edit_capabilities.set(a.capabilities.clone().unwrap_or_default().join(", "));
+                                        edit_soul.set(a.soul.clone().unwrap_or_default());
+                                        edit_model_provider_id.set(a.model_provider_id.clone());
+                                        show_edit_modal.set(true);
+                                    }
+                                },
+                                "✏️ 编辑"
+                            }
                         }
 
                         div { class: "mb-6",
@@ -745,6 +777,111 @@ pub fn HrAgentDetail(id: String) -> Element {
 
                         div { class: "card-actions mt-6",
                             Link { to: "/hr/agents", class: "btn btn-ghost", "返回列表" }
+                        }
+
+                        Modal {
+                            title: "编辑 Agent 基本信息".to_string(),
+                            show: show_edit_modal(),
+                            on_close: move |_| show_edit_modal.set(false),
+                            footer: rsx! {
+                                button { class: "btn btn-ghost", onclick: move |_| show_edit_modal.set(false), "取消" }
+                                button {
+                                    class: "btn btn-primary",
+                                    disabled: saving_meta(),
+                                    onclick: {
+                                        let id_for_submit = id.clone();
+                                        move |_| {
+                                            let name = edit_name().trim().to_string();
+                                            if name.is_empty() {
+                                                toast.error("名称不能为空");
+                                                return;
+                                            }
+                                            let roles: Vec<String> = edit_roles()
+                                                .split(',')
+                                                .map(|s| s.trim().to_string())
+                                                .filter(|s| !s.is_empty())
+                                                .collect();
+                                            let capabilities: Vec<String> = edit_capabilities()
+                                                .split(',')
+                                                .map(|s| s.trim().to_string())
+                                                .filter(|s| !s.is_empty())
+                                                .collect();
+                                            let soul = if edit_soul().trim().is_empty() { None } else { Some(edit_soul()) };
+                                            let mp_id = if edit_model_provider_id().is_empty() { None } else { Some(edit_model_provider_id()) };
+                                            let req = UpdateAgentRequest {
+                                                id: id_for_submit.clone(),
+                                                name: Some(name),
+                                                roles: Some(roles),
+                                                description: Some(edit_description()),
+                                                capabilities: Some(capabilities),
+                                                soul,
+                                                model_provider_id: mp_id,
+                                            };
+                                            saving_meta.set(true);
+                                            let id_clone = id_for_submit.clone();
+                                            spawn(async move {
+                                                match update_agent(&id_clone, req).await {
+                                                    Ok(_) => {
+                                                        toast.success("Agent 信息已更新");
+                                                        show_edit_modal.set(false);
+                                                        let stats_options = StatsOptions {
+                                                            with_stats: true,
+                                                            with_model_call_stats: true,
+                                                            stats_interval: Some("daily".to_string()),
+                                                        };
+                                                        match get_agent(&id_clone, Some(&stats_options)).await {
+                                                            Ok(a) => agent_data.set(Some(a)),
+                                                            Err(e) => toast.error(&format!("重新加载失败: {}", e)),
+                                                        }
+                                                    }
+                                                    Err(e) => toast.error(&format!("更新失败: {}", e)),
+                                                }
+                                                saving_meta.set(false);
+                                            });
+                                        }
+                                    },
+                                    if saving_meta() { "保存中..." } else { "保存" }
+                                }
+                            },
+                            div { class: "space-y-4",
+                                div { class: "form-control w-full",
+                                    label { class: "label", span { class: "label-text font-medium", "名称 *" } }
+                                    input { class: "input input-bordered w-full", value: "{edit_name}",
+                                        oninput: move |e| edit_name.set(e.value()), placeholder: "Agent 名称" }
+                                }
+                                div { class: "form-control w-full",
+                                    label { class: "label", span { class: "label-text font-medium", "描述" } }
+                                    textarea { class: "textarea textarea-bordered w-full", value: "{edit_description}",
+                                        oninput: move |e| edit_description.set(e.value()) }
+                                }
+                                div { class: "form-control w-full",
+                                    label { class: "label", span { class: "label-text font-medium", "角色（逗号分隔）" } }
+                                    input { class: "input input-bordered w-full", value: "{edit_roles}",
+                                        oninput: move |e| edit_roles.set(e.value()), placeholder: "assistant, coder" }
+                                }
+                                div { class: "form-control w-full",
+                                    label { class: "label", span { class: "label-text font-medium", "能力（逗号分隔）" } }
+                                    input { class: "input input-bordered w-full", value: "{edit_capabilities}",
+                                        oninput: move |e| edit_capabilities.set(e.value()), placeholder: "text, vision" }
+                                }
+                                div { class: "form-control w-full",
+                                    label { class: "label", span { class: "label-text font-medium", "灵魂提示词 (Soul)" } }
+                                    textarea { class: "textarea textarea-bordered w-full", value: "{edit_soul}",
+                                        oninput: move |e| edit_soul.set(e.value()), rows: "4" }
+                                }
+                                div { class: "form-control w-full",
+                                    label { class: "label", span { class: "label-text font-medium", "模型提供商" } }
+                                    select {
+                                        class: "select select-bordered w-full",
+                                        value: "{edit_model_provider_id}",
+                                        onchange: move |e| edit_model_provider_id.set(e.value()),
+                                        option { value: "", "（不绑定）" }
+                                        for p in model_providers.read().iter() {
+                                            option { value: "{p.id}", "{p.name}" }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

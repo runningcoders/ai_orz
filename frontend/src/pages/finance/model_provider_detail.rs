@@ -1,6 +1,6 @@
 //! 模型提供商详情页
 
-use crate::api::finance::{call_model_provider, delete_model_provider, get_model_provider, switch_embedding_provider, test_model_provider_connection, toggle_model_provider};
+use crate::api::finance::{call_model_provider, delete_model_provider, get_model_provider, switch_embedding_provider, test_model_provider_connection, toggle_model_provider, update_model_provider};
 use crate::api::StatsOptions;
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
@@ -8,7 +8,8 @@ use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::ModelProviderStatsPanel;
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-use common::api::GetModelProviderResponse;
+use common::api::{GetModelProviderResponse, UpdateModelProviderRequest};
+use common::enums::ProviderType;
 use dioxus::prelude::*;
 use dioxus_router::{use_navigator, Link};
 
@@ -31,6 +32,16 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
     let mut show_switch_modal = use_signal(|| false);
     let mut switch_provider_name = use_signal(String::new);
     let mut switch_loading = use_signal(|| false);
+
+    // ===== 编辑 Modal =====
+    let mut show_edit_modal = use_signal(|| false);
+    let mut edit_name = use_signal(String::new);
+    let mut edit_provider_type = use_signal(String::new);
+    let mut edit_model_name = use_signal(String::new);
+    let mut edit_api_key = use_signal(String::new);
+    let mut edit_base_url = use_signal(String::new);
+    let mut edit_description = use_signal(String::new);
+    let mut saving_meta = use_signal(|| false);
 
     let id_for_effect = id.clone();
     use_effect(move || {
@@ -119,6 +130,11 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                     let provider_id = p.id.clone();
                                     let provider_name = p.name.clone();
                                     let reload_id = id.clone();
+                                    let edit_name_init = p.name.clone();
+                                    let edit_provider_type_init = format!("{:?}", p.provider_type);
+                                    let edit_model_name_init = p.model_name.clone();
+                                    let edit_base_url_init = p.base_url.clone().unwrap_or_default();
+                                    let edit_description_init = p.description.clone().unwrap_or_default();
                                     rsx! {
                                         if is_enabled {
                                             button { class: "btn btn-outline btn-sm",
@@ -208,6 +224,19 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                                 },
                                                 "启用"
                                             }
+                                        }
+                                        button {
+                                            class: "btn btn-ghost btn-sm",
+                                            onclick: move |_| {
+                                                edit_name.set(edit_name_init.clone());
+                                                edit_provider_type.set(edit_provider_type_init.clone());
+                                                edit_model_name.set(edit_model_name_init.clone());
+                                                edit_api_key.set(String::new());
+                                                edit_base_url.set(edit_base_url_init.clone());
+                                                edit_description.set(edit_description_init.clone());
+                                                show_edit_modal.set(true);
+                                            },
+                                            "✏️ 编辑"
                                         }
                                         button { class: "btn btn-outline btn-sm",
                                             onclick: {
@@ -390,6 +419,116 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                 },
                 on_cancel: move |_| {
                     show_delete_confirm.set(false);
+                }
+            }
+
+            Modal {
+                title: "编辑模型提供商".to_string(),
+                show: show_edit_modal(),
+                on_close: move |_| show_edit_modal.set(false),
+                footer: rsx! {
+                    button { class: "btn btn-ghost", onclick: move |_| show_edit_modal.set(false), "取消" }
+                    button {
+                        class: "btn btn-primary",
+                        disabled: saving_meta(),
+                        onclick: {
+                            let id_for_submit = id.clone();
+                            move |_| {
+                                let name = edit_name().trim().to_string();
+                                if name.is_empty() {
+                                    toast.error("名称不能为空");
+                                    return;
+                                }
+                                let provider_type = match edit_provider_type().as_str() {
+                                    "OpenAI" => ProviderType::OpenAI,
+                                    "DeepSeek" => ProviderType::DeepSeek,
+                                    "Qwen" => ProviderType::Qwen,
+                                    "Doubao" => ProviderType::Doubao,
+                                    "Ollama" => ProviderType::Ollama,
+                                    "Custom" => ProviderType::Custom,
+                                    "FastEmbed" => ProviderType::FastEmbed,
+                                    _ => ProviderType::OpenAI,
+                                };
+                                let api_key = if edit_api_key().is_empty() { None } else { Some(edit_api_key()) };
+                                let base_url = if edit_base_url().trim().is_empty() { None } else { Some(edit_base_url()) };
+                                let description = if edit_description().trim().is_empty() { None } else { Some(edit_description()) };
+                                let req = UpdateModelProviderRequest {
+                                    id: id_for_submit.clone(),
+                                    name: Some(name),
+                                    provider_type: Some(provider_type),
+                                    model_name: Some(edit_model_name()),
+                                    api_key,
+                                    base_url,
+                                    description,
+                                    status: None,
+                                };
+                                saving_meta.set(true);
+                                let id_clone = id_for_submit.clone();
+                                spawn(async move {
+                                    match update_model_provider(&id_clone, req).await {
+                                        Ok(_) => {
+                                            toast.success("已更新");
+                                            show_edit_modal.set(false);
+                                            let stats_options = StatsOptions {
+                                                with_stats: false,
+                                                with_model_call_stats: true,
+                                                stats_interval: None,
+                                            };
+                                            match get_model_provider(&id_clone, Some(&stats_options)).await {
+                                                Ok(p) => provider_data.set(Some(p)),
+                                                Err(e) => toast.error(&format!("重新加载失败: {}", e)),
+                                            }
+                                        }
+                                        Err(e) => toast.error(&format!("更新失败: {}", e)),
+                                    }
+                                    saving_meta.set(false);
+                                });
+                            }
+                        },
+                        if saving_meta() { "保存中..." } else { "保存" }
+                    }
+                },
+                div { class: "space-y-4",
+                    div { class: "form-control w-full",
+                        label { class: "label", span { class: "label-text font-medium", "名称 *" } }
+                        input { class: "input input-bordered w-full", value: "{edit_name}",
+                            oninput: move |e| edit_name.set(e.value()) }
+                    }
+                    div { class: "form-control w-full",
+                        label { class: "label", span { class: "label-text font-medium", "提供商类型" } }
+                        select {
+                            class: "select select-bordered w-full",
+                            value: "{edit_provider_type}",
+                            onchange: move |e| edit_provider_type.set(e.value()),
+                            option { value: "OpenAI", "OpenAI" }
+                            option { value: "DeepSeek", "DeepSeek" }
+                            option { value: "Qwen", "通义千问" }
+                            option { value: "Doubao", "豆包" }
+                            option { value: "Ollama", "Ollama" }
+                            option { value: "Custom", "自定义" }
+                            option { value: "FastEmbed", "FastEmbed" }
+                        }
+                    }
+                    div { class: "form-control w-full",
+                        label { class: "label", span { class: "label-text font-medium", "模型名称" } }
+                        input { class: "input input-bordered w-full", value: "{edit_model_name}",
+                            oninput: move |e| edit_model_name.set(e.value()) }
+                    }
+                    div { class: "form-control w-full",
+                        label { class: "label", span { class: "label-text font-medium", "API Key（留空不修改）" } }
+                        input { class: "input input-bordered w-full", r#type: "password", value: "{edit_api_key}",
+                            oninput: move |e| edit_api_key.set(e.value()), placeholder: "输入新 Key 或留空保持不变" }
+                    }
+                    div { class: "form-control w-full",
+                        label { class: "label", span { class: "label-text font-medium", "Base URL" } }
+                        input { class: "input input-bordered w-full", value: "{edit_base_url}",
+                            oninput: move |e| edit_base_url.set(e.value()), placeholder: "https://api.openai.com/v1" }
+                    }
+                    div { class: "form-control w-full",
+                        label { class: "label", span { class: "label-text font-medium", "描述" } }
+                        textarea { class: "textarea textarea-bordered w-full", value: "{edit_description}",
+                            oninput: move |e| edit_description.set(e.value()) }
+                    }
                 }
             }
         }

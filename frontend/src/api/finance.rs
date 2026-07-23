@@ -29,7 +29,6 @@ pub async fn create_model_provider(req: CreateModelProviderRequest) -> Result<Cr
     api_post("/api/v1/finance/model-providers", &req).await
 }
 
-#[allow(dead_code)]
 pub async fn update_model_provider(id: &str, req: UpdateModelProviderRequest) -> Result<UpdateModelProviderResponse, ApiError> {
     api_put(&format!("/api/v1/finance/model-providers/{}", id), &req).await
 }
