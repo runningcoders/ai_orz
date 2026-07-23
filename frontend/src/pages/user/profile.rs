@@ -6,6 +6,7 @@ use common::api::UpdateCurrentUserRequest;
 
 use crate::api::organization::{get_current_user_info, update_current_user};
 use crate::components::state::Loading;
+use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 
 #[component]
@@ -35,6 +36,7 @@ pub fn UserProfile() -> Element {
     });
 
     rsx! {
+        AppLayout {
         div { class: "card bg-base-100 shadow-md",
             div { class: "card-body",
                 h2 { class: "card-title mb-4", "个人信息" }
@@ -98,6 +100,7 @@ pub fn UserProfile() -> Element {
                     }
                 }
             }
+        }
         }
     }
 }

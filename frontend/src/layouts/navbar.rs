@@ -2,9 +2,10 @@
 
 use dioxus::prelude::*;
 
+use crate::api::auth::logout as api_logout;
 use crate::hooks::use_breakpoint;
 use crate::pages::Route;
-use crate::store::auth::use_auth_state;
+use crate::store::auth::{logout, use_auth_state};
 
 #[component]
 pub fn Navbar() -> Element {
@@ -16,6 +17,25 @@ pub fn Navbar() -> Element {
     let auth = use_auth_state();
     let is_mobile = use_breakpoint();
     let mut drawer_open = use_signal(|| false);
+
+    // 修复 HIGH #9 + #8：之前登出仅 clear_login_state()，不更新 AuthState 信号，
+    // 也不调用后端 logout API 使 cookie 失效。现在统一调用 logout() 清内存+localStorage，
+    // 并调用后端 logout 接口清除 HttpOnly cookie。
+    let handle_logout = move |_| {
+        // 关闭所有菜单
+        hr_menu_open.set(false);
+        finance_menu_open.set(false);
+        project_menu_open.set(false);
+        system_menu_open.set(false);
+        user_menu_open.set(false);
+        drawer_open.set(false);
+        // 调用后端 logout 清除 cookie（不阻塞前端跳转）
+        spawn(async move {
+            let _ = api_logout().await;
+        });
+        // 清前端状态（内存信号 + localStorage）
+        logout();
+    };
 
     let username = if auth().username.is_empty() {
         "用户".to_string()
@@ -440,14 +460,7 @@ pub fn Navbar() -> Element {
                                 li {
                                     Link {
                                         to: Route::Reception {},
-                                        onclick: move |_| {
-                                            hr_menu_open.set(false);
-                                            finance_menu_open.set(false);
-                                            project_menu_open.set(false);
-                                            system_menu_open.set(false);
-                                            user_menu_open.set(false);
-                                            crate::store::auth::clear_login_state();
-                                        },
+                                        onclick: handle_logout,
                                         "🚪 退出登录"
                                     }
                                 }
@@ -822,15 +835,7 @@ pub fn Navbar() -> Element {
                         li {
                             Link {
                                 to: Route::Reception {},
-                                onclick: move |_| {
-                                    drawer_open.set(false);
-                                    hr_menu_open.set(false);
-                                    finance_menu_open.set(false);
-                                    project_menu_open.set(false);
-                                    system_menu_open.set(false);
-                                    user_menu_open.set(false);
-                                    crate::store::auth::clear_login_state();
-                                },
+                                onclick: handle_logout,
                                 "🚪 退出登录"
                             }
                         }

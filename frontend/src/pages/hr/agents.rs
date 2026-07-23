@@ -4,8 +4,10 @@ use dioxus::prelude::*;
 
 use crate::api::finance::list_model_providers;
 use crate::api::hr::{create_agent, create_external_agent, delete_agent, list_agents, search_agents};
+use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
+use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{
     CreateAgentRequest, CreateExternalAgentRequest, ListAgentsResponseItem,
@@ -65,6 +67,14 @@ pub fn HrAgents() -> Element {
     let mut ext_auth_token = use_signal(String::new);
     let mut ext_creating = use_signal(|| false);
 
+    // 修复 HIGH #12：搜索输入框每次按键触发请求，无防抖 + race condition。
+    // 引入 search_request_id 机制丢弃过期请求结果。
+    let mut search_request_id = use_signal(|| 0u32);
+
+    // ===== 删除确认对话框 =====
+    let mut show_delete_confirm = use_signal(|| false);
+    let mut pending_delete_id = use_signal(|| String::new());
+
     use_effect(move || {
         loading.set(true);
         spawn(async move {
@@ -80,14 +90,21 @@ pub fn HrAgents() -> Element {
         });
     });
 
-    let reload_agents = move || {
+    let mut reload_agents = move || {
         let keyword = search_keyword();
+        // 修复 HIGH #12：自增 request_id，结果到达时校验是否为最新请求
+        let my_id = search_request_id() + 1;
+        search_request_id.set(my_id);
         spawn(async move {
             let result = if keyword.trim().is_empty() {
                 list_agents().await
             } else {
                 search_agents(&keyword).await
             };
+            // 丢弃过期请求的结果
+            if search_request_id() != my_id {
+                return;
+            }
             match result {
                 Ok(list) => agents.set(list.agents),
                 Err(e) => toast.error(&e),
@@ -195,22 +212,29 @@ pub fn HrAgents() -> Element {
     let agents_list = agents.read().clone();
 
     rsx! {
-        div { class: "card bg-base-100 shadow-md",
-            div { class: "card-body",
-                div { class: "flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4",
-                    h2 { class: "card-title", "Agent 管理" }
+        AppLayout {
+            div { class: "card bg-base-100 shadow-md",
+                div { class: "card-body",
+                    div { class: "flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4",
+                        h2 { class: "card-title", "Agent 管理" }
                     div { class: "flex gap-2 flex-wrap",
                         input { class: "input input-bordered w-full sm:w-auto", value: "{search_keyword}",
                             oninput: move |e| {
-                                let keyword = e.value();
-                                search_keyword.set(keyword.clone());
+                                search_keyword.set(e.value());
+                                // 修复 HIGH #12：防抖 300ms 后触发搜索，request_id 机制丢弃过期结果
+                                let my_id = search_request_id() + 1;
+                                search_request_id.set(my_id);
                                 spawn(async move {
+                                    gloo_timers::future::TimeoutFuture::new(300).await;
+                                    if search_request_id() != my_id { return; }
                                     loading.set(true);
-                                    let result = if keyword.trim().is_empty() {
+                                    let kw = search_keyword();
+                                    let result = if kw.trim().is_empty() {
                                         list_agents().await
                                     } else {
-                                        search_agents(&keyword).await
+                                        search_agents(&kw).await
                                     };
+                                    if search_request_id() != my_id { return; }
                                     match result {
                                         Ok(list) => agents.set(list.agents),
                                         Err(e) => toast.error(&e),
@@ -224,14 +248,7 @@ pub fn HrAgents() -> Element {
                             button { class: "btn btn-ghost",
                                 onclick: move |_| {
                                     search_keyword.set(String::new());
-                                    spawn(async move {
-                                        loading.set(true);
-                                        match list_agents().await {
-                                            Ok(list) => agents.set(list.agents),
-                                            Err(e) => toast.error(&e),
-                                        }
-                                        loading.set(false);
-                                    });
+                                    reload_agents();
                                 },
                                 "重置"
                             }
@@ -292,14 +309,8 @@ pub fn HrAgents() -> Element {
                                                 td { "data-label": "操作",
                                                     button { class: "btn btn-error btn-sm",
                                                         onclick: move |_| {
-                                                            let id_delete = id_delete.clone();
-                                                            spawn(async move {
-                                                                if let Err(e) = delete_agent(&id_delete).await {
-                                                                    toast.error(&format!("删除失败: {}", e));
-                                                                } else {
-                                                                    reload_agents();
-                                                                }
-                                                            });
+                                                            pending_delete_id.set(id_delete.clone());
+                                                            show_delete_confirm.set(true);
                                                         },
                                                         "删除"
                                                     }
@@ -380,7 +391,21 @@ pub fn HrAgents() -> Element {
             title: "创建外部 Agent".to_string(),
             show: show_external_modal(),
             on_close: move |_| {
+                // 修复 HIGH #14：之前 on_close 只关闭弹窗不重置表单，
+                // 导致用户下次打开仍残留上次填写的数据（状态污染）
                 show_external_modal.set(false);
+                ext_kind.set("cli".to_string());
+                ext_name.set(String::new());
+                ext_roles.set(String::new());
+                ext_description.set(String::new());
+                ext_command.set(String::new());
+                ext_args_str.set(String::new());
+                ext_work_dir.set(String::new());
+                ext_timeout.set("300".to_string());
+                ext_prompt_template.set(String::new());
+                ext_endpoint.set(String::new());
+                ext_agent_name.set(String::new());
+                ext_auth_token.set(String::new());
             },
             footer: rsx! {
                 button { class: "btn btn-ghost", onclick: move |_| show_external_modal.set(false), "取消" }
@@ -501,6 +526,27 @@ pub fn HrAgents() -> Element {
                     }
                 }
             }
+        }
+
+        ConfirmDialog {
+            show: show_delete_confirm(),
+            title: "确认删除".to_string(),
+            message: "确定删除此 Agent？此操作不可撤销。".to_string(),
+            on_confirm: move |_| {
+                let id = pending_delete_id();
+                show_delete_confirm.set(false);
+                spawn(async move {
+                    if let Err(e) = delete_agent(&id).await {
+                        toast.error(&format!("删除失败: {}", e));
+                    } else {
+                        reload_agents();
+                    }
+                });
+            },
+            on_cancel: move |_| {
+                show_delete_confirm.set(false);
+            }
+        }
         }
     }
 }

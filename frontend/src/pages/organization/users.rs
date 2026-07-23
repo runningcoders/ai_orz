@@ -3,8 +3,10 @@
 use dioxus::prelude::*;
 
 use crate::api::organization::{create_user, delete_user, list_users};
+use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
+use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{CreateOrganizationUserRequest, ListUsersResponseItem};
 
@@ -36,6 +38,10 @@ pub fn OrganizationUsers() -> Element {
     let mut new_role = use_signal(|| 1i32);
     let mut creating = use_signal(|| false);
     let toast = use_toast();
+
+    // ===== 删除确认对话框 =====
+    let mut show_delete_confirm = use_signal(|| false);
+    let mut pending_delete_id = use_signal(|| String::new());
 
     use_effect(move || {
         loading.set(true);
@@ -84,6 +90,7 @@ pub fn OrganizationUsers() -> Element {
     let users_list = users.read().clone();
 
     rsx! {
+        AppLayout {
         div { class: "card bg-base-100 shadow-md",
             div { class: "card-body",
                 div { class: "flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4",
@@ -123,17 +130,8 @@ pub fn OrganizationUsers() -> Element {
                                                 td { "data-label": "操作",
                                                     button { class: "btn btn-error btn-sm",
                                                         onclick: move |_| {
-                                                            let uid_delete = uid_delete.clone();
-                                                            spawn(async move {
-                                                                if let Err(e) = delete_user(&uid_delete).await {
-                                                                    toast.error(&format!("删除失败: {}", e));
-                                                                } else {
-                                                                    match list_users().await {
-                                                                        Ok(list) => users.set(list.data),
-                                                                        Err(e) => toast.error(&e),
-                                                                    }
-                                                                }
-                                                            });
+                                                            pending_delete_id.set(uid_delete.clone());
+                                                            show_delete_confirm.set(true);
                                                         },
                                                         "删除"
                                                     }
@@ -200,6 +198,30 @@ pub fn OrganizationUsers() -> Element {
                     }
                 }
             }
+        }
+
+        ConfirmDialog {
+            show: show_delete_confirm(),
+            title: "确认删除".to_string(),
+            message: "确定删除此用户？此操作不可撤销。".to_string(),
+            on_confirm: move |_| {
+                let id = pending_delete_id();
+                show_delete_confirm.set(false);
+                spawn(async move {
+                    if let Err(e) = delete_user(&id).await {
+                        toast.error(&format!("删除失败: {}", e));
+                    } else {
+                        match list_users().await {
+                            Ok(list) => users.set(list.data),
+                            Err(e) => toast.error(&e),
+                        }
+                    }
+                });
+            },
+            on_cancel: move |_| {
+                show_delete_confirm.set(false);
+            }
+        }
         }
     }
 }

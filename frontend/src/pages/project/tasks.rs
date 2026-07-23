@@ -5,6 +5,7 @@ use dioxus_router::use_navigator;
 
 use crate::api::project::{list_projects, list_tasks};
 use crate::components::state::{EmptyState, Loading};
+use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{ListProjectsResponseItem, TaskListItem};
 
@@ -130,6 +131,7 @@ pub fn TaskList() -> Element {
         .collect();
 
     rsx! {
+        AppLayout {
         div { class: "page-header",
             h1 { class: "page-title", "任务管理" }
             div { class: "page-header-actions",
@@ -355,6 +357,7 @@ pub fn TaskList() -> Element {
                     }
                 }
             }
+        }
         }
     }
 }

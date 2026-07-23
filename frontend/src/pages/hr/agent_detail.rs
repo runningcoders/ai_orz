@@ -3,6 +3,7 @@ use crate::pages::hr::agent_memory_panel::AgentMemoryPanel;
 use crate::api::message::{load_latest_messages, send_message_to_agent};
 use crate::components::state::Loading;
 use crate::components::stats::AgentStatsPanel;
+use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{GetAgentResponse, MessageListItem, SendMessageToAgentParams, ToolListItem};
 use dioxus::prelude::*;
@@ -367,9 +368,11 @@ pub fn HrAgentDetail(id: String) -> Element {
         });
     });
 
-    match agent_data.read().as_ref() {
-        None => rsx! { Loading {} },
-        Some(a) => {
+    rsx! {
+        AppLayout {
+            {match agent_data.read().as_ref() {
+                None => rsx! { Loading {} },
+                Some(a) => {
             let capabilities = a.capabilities.clone().unwrap_or_default();
             let desc = a.description.as_deref().unwrap_or("");
             let agent_id_signal = use_signal(|| id.clone());
@@ -791,6 +794,9 @@ pub fn HrAgentDetail(id: String) -> Element {
                         }
                     }
                 }
+            }
+        }
+    }
             }
         }
     }

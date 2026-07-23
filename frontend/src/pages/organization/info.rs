@@ -4,6 +4,7 @@ use dioxus::prelude::*;
 
 use crate::api::organization::{get_current_organization, update_current_organization};
 use crate::components::state::Loading;
+use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::UpdateCurrentOrganizationRequest;
 
@@ -47,6 +48,7 @@ pub fn OrganizationInfo() -> Element {
     };
 
     rsx! {
+        AppLayout {
         div { class: "card bg-base-100 shadow-md",
             div { class: "card-body",
                 h2 { class: "card-title mb-4", "组织信息" }
@@ -81,6 +83,7 @@ pub fn OrganizationInfo() -> Element {
                     }
                 }
             }
+        }
         }
     }
 }

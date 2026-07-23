@@ -9,8 +9,10 @@ use crate::api::system::{
     create_cron_trigger, delete_cron_trigger, get_cron_trigger, list_cron_triggers,
     pause_cron_trigger, resume_cron_trigger, update_cron_trigger,
 };
+use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
+use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{CreateCronTriggerRequest, ListCronTriggersResponseItem, UpdateCronTriggerRequest};
 use common::enums::TriggerType;
@@ -148,6 +150,10 @@ pub fn SystemTriggers() -> Element {
     let mut loading_detail = use_signal(|| false);
 
     let toast = use_toast();
+
+    // ===== 删除确认对话框 =====
+    let mut show_delete_confirm = use_signal(|| false);
+    let mut pending_delete_id = use_signal(|| String::new());
 
     // 初始加载
     use_effect(move || {
@@ -305,6 +311,7 @@ pub fn SystemTriggers() -> Element {
     let json_placeholder = r#"{"action":"agent_rest","extra":{"agent_id":"xxx","settle_limit":10}}"#;
 
     rsx! {
+        AppLayout {
         div { class: "card bg-base-100 shadow-md",
             div { class: "card-header",
                 h2 { class: "card-title", "定时触发器" }
@@ -506,19 +513,8 @@ pub fn SystemTriggers() -> Element {
                                             button {
                                                 class: "btn btn-error btn-sm",
                                                 onclick: move |_| {
-                                                    let did = id_delete.clone();
-                                                    spawn(async move {
-                                                        match delete_cron_trigger(&did).await {
-                                                            Ok(_) => {
-                                                                toast.success("删除成功");
-                                                                match list_cron_triggers().await {
-                                                                    Ok(list) => triggers.set(list.triggers),
-                                                                    Err(e) => toast.error(&format!("刷新列表失败: {}", e)),
-                                                                }
-                                                            }
-                                                            Err(e) => toast.error(&format!("删除失败: {}", e)),
-                                                        }
-                                                    });
+                                                    pending_delete_id.set(id_delete.clone());
+                                                    show_delete_confirm.set(true);
                                                 },
                                                 "删除"
                                             }
@@ -673,6 +669,32 @@ pub fn SystemTriggers() -> Element {
                     }
                 }
             }
+        }
+
+        ConfirmDialog {
+            show: show_delete_confirm(),
+            title: "确认删除".to_string(),
+            message: "确定删除此触发器？此操作不可撤销。".to_string(),
+            on_confirm: move |_| {
+                let id = pending_delete_id();
+                show_delete_confirm.set(false);
+                spawn(async move {
+                    match delete_cron_trigger(&id).await {
+                        Ok(_) => {
+                            toast.success("删除成功");
+                            match list_cron_triggers().await {
+                                Ok(list) => triggers.set(list.triggers),
+                                Err(e) => toast.error(&format!("刷新列表失败: {}", e)),
+                            }
+                        }
+                        Err(e) => toast.error(&format!("删除失败: {}", e)),
+                    }
+                });
+            },
+            on_cancel: move |_| {
+                show_delete_confirm.set(false);
+            }
+        }
         }
     }
 }

@@ -6,8 +6,10 @@ use crate::api::finance::{
     create_mcp_server, delete_mcp_server, list_mcp_servers, sync_mcp_tools,
     update_mcp_server_status,
 };
+use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
+use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{CreateMcpServerRequest, McpServerConfigDto, McpServerListItem};
 use common::enums::{McpServerStatus, McpTransport};
@@ -33,6 +35,10 @@ pub fn FinanceMcpServers() -> Element {
     let mut new_transport = use_signal(|| "0".to_string());
     let mut new_config_value = use_signal(String::new);
     let mut creating = use_signal(|| false);
+
+    // ===== 删除确认对话框 =====
+    let mut show_delete_confirm = use_signal(|| false);
+    let mut pending_delete_id = use_signal(|| String::new());
 
     use_effect(move || {
         loading.set(true);
@@ -112,12 +118,13 @@ pub fn FinanceMcpServers() -> Element {
     };
 
     rsx! {
-        div { class: "card bg-base-100 shadow-md",
-            div { class: "card-body",
-                div { class: "flex justify-between items-center mb-4",
-                    h2 { class: "card-title", "MCP 服务器管理" }
-                    button { class: "btn btn-primary", onclick: move |_| show_add_modal.set(true), "+ 添加服务器" }
-                }
+        AppLayout {
+            div { class: "card bg-base-100 shadow-md",
+                div { class: "card-body",
+                    div { class: "flex justify-between items-center mb-4",
+                        h2 { class: "card-title", "MCP 服务器管理" }
+                        button { class: "btn btn-primary", onclick: move |_| show_add_modal.set(true), "+ 添加服务器" }
+                    }
                 if loading() {
                     Loading {}
                 } else if servers_list.is_empty() {
@@ -217,17 +224,8 @@ pub fn FinanceMcpServers() -> Element {
                                                     }
                                                     button { class: "btn btn-error btn-sm",
                                                         onclick: move |_| {
-                                                            let id_delete = id_delete.clone();
-                                                            spawn(async move {
-                                                                if let Err(e) = delete_mcp_server(&id_delete).await {
-                                                                    toast.error(&format!("删除失败: {}", e));
-                                                                } else {
-                                                                    match list_mcp_servers().await {
-                                                                        Ok(list) => servers.set(list.servers),
-                                                                        Err(e) => toast.error(&e),
-                                                                    }
-                                                                }
-                                                            });
+                                                            pending_delete_id.set(id_delete.clone());
+                                                            show_delete_confirm.set(true);
                                                         }, "删除"
                                                     }
                                                 }
@@ -279,6 +277,30 @@ pub fn FinanceMcpServers() -> Element {
                         placeholder: "{config_placeholder}" }
                 }
             }
+        }
+
+        ConfirmDialog {
+            show: show_delete_confirm(),
+            title: "确认删除".to_string(),
+            message: "确定删除此 MCP 服务器？此操作不可撤销。".to_string(),
+            on_confirm: move |_| {
+                let id = pending_delete_id();
+                show_delete_confirm.set(false);
+                spawn(async move {
+                    if let Err(e) = delete_mcp_server(&id).await {
+                        toast.error(&format!("删除失败: {}", e));
+                    } else {
+                        match list_mcp_servers().await {
+                            Ok(list) => servers.set(list.servers),
+                            Err(e) => toast.error(&e),
+                        }
+                    }
+                });
+            },
+            on_cancel: move |_| {
+                show_delete_confirm.set(false);
+            }
+        }
         }
     }
 }

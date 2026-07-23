@@ -3,8 +3,10 @@
 use dioxus::prelude::*;
 
 use crate::api::finance::{call_model_provider, create_model_provider, delete_model_provider, list_model_providers, switch_embedding_provider, test_model_provider_connection, toggle_model_provider};
+use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
+use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{CreateModelProviderRequest, ListModelProvidersResponseItem};
 use common::enums::{ModelCapability, ProviderType};
@@ -35,6 +37,10 @@ pub fn FinanceModelProviders() -> Element {
     let mut switch_provider_id = use_signal(String::new);
     let mut switch_provider_name = use_signal(String::new);
     let mut switch_loading = use_signal(|| false);
+
+    // ===== 删除确认对话框 =====
+    let mut show_delete_confirm = use_signal(|| false);
+    let mut pending_delete_id = use_signal(|| String::new());
 
     use_effect(move || {
         loading.set(true);
@@ -127,12 +133,13 @@ pub fn FinanceModelProviders() -> Element {
     let provider_type_str = provider_type().to_string();
 
     rsx! {
-        div { class: "card bg-base-100 shadow-md",
-            div { class: "card-body",
-                div { class: "flex justify-between items-center mb-4",
-                    h2 { class: "card-title", "模型提供商管理" }
-                    button { class: "btn btn-primary", onclick: move |_| show_modal.set(true), "+ 添加提供商" }
-                }
+        AppLayout {
+            div { class: "card bg-base-100 shadow-md",
+                div { class: "card-body",
+                    div { class: "flex justify-between items-center mb-4",
+                        h2 { class: "card-title", "模型提供商管理" }
+                        button { class: "btn btn-primary", onclick: move |_| show_modal.set(true), "+ 添加提供商" }
+                    }
 
                 if loading() {
                     Loading {}
@@ -268,18 +275,8 @@ pub fn FinanceModelProviders() -> Element {
                                                     }
                                                     button { class: "btn btn-error btn-sm",
                                                         onclick: move |_| {
-                                                            let id_delete = id_delete.clone();
-                                                            spawn(async move {
-                                                                if let Err(e) = delete_model_provider(&id_delete).await {
-                                                                    toast.error(&format!("删除失败: {}", e));
-                                                                } else {
-                                                                    toast.success("已删除");
-                                                                    match list_model_providers().await {
-                                                                        Ok(list) => providers.set(list.providers),
-                                                                        Err(e) => toast.error(&e),
-                                                                    }
-                                                                }
-                                                            });
+                                                            pending_delete_id.set(id_delete.clone());
+                                                            show_delete_confirm.set(true);
                                                         },
                                                         "删除"
                                                     }
@@ -421,6 +418,31 @@ pub fn FinanceModelProviders() -> Element {
                     "⚠️ 重建向量索引可能需要较长时间，期间搜索功能将受影响"
                 }
             }
+        }
+
+        ConfirmDialog {
+            show: show_delete_confirm(),
+            title: "确认删除".to_string(),
+            message: "确定删除此模型提供商？此操作不可撤销。".to_string(),
+            on_confirm: move |_| {
+                let id = pending_delete_id();
+                show_delete_confirm.set(false);
+                spawn(async move {
+                    if let Err(e) = delete_model_provider(&id).await {
+                        toast.error(&format!("删除失败: {}", e));
+                    } else {
+                        toast.success("已删除");
+                        match list_model_providers().await {
+                            Ok(list) => providers.set(list.providers),
+                            Err(e) => toast.error(&e),
+                        }
+                    }
+                });
+            },
+            on_cancel: move |_| {
+                show_delete_confirm.set(false);
+            }
+        }
         }
     }
 }

@@ -3,6 +3,7 @@
 use dioxus::prelude::*;
 
 use crate::api::system::check_health;
+use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 
 #[component]
@@ -22,6 +23,7 @@ pub fn SystemHealth() -> Element {
     };
 
     rsx! {
+        AppLayout {
         div { class: "card bg-base-100 shadow-md",
             div { class: "card-body",
                 h2 { class: "card-title", "健康检查" }
@@ -30,6 +32,7 @@ pub fn SystemHealth() -> Element {
                     if loading() { "检查中..." } else { "执行检查" }
                 }
             }
+        }
         }
     }
 }

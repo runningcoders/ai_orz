@@ -3,8 +3,10 @@
 use dioxus::prelude::*;
 
 use crate::api::hr::{create_skill, delete_skill, list_skills, search_skills};
+use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
+use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{CreateSkillRequest, ListSkillsResponseItem};
 
@@ -21,6 +23,12 @@ pub fn HrSkills() -> Element {
     let mut new_content = use_signal(String::new);
     let mut creating = use_signal(|| false);
     let mut search_keyword = use_signal(String::new);
+    // 修复 HIGH #12：搜索防抖 + race condition 机制
+    let mut search_request_id = use_signal(|| 0u32);
+
+    // ===== 删除确认对话框 =====
+    let mut show_delete_confirm = use_signal(|| false);
+    let mut pending_delete_id = use_signal(|| String::new());
 
     use_effect(move || {
         loading.set(true);
@@ -90,22 +98,29 @@ pub fn HrSkills() -> Element {
     let skills_list = skills.read().clone();
 
     rsx! {
-        div { class: "card bg-base-100 shadow-md",
-            div { class: "card-body",
-                div { class: "flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4",
-                    h2 { class: "card-title", "技能库" }
+        AppLayout {
+            div { class: "card bg-base-100 shadow-md",
+                div { class: "card-body",
+                    div { class: "flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4",
+                        h2 { class: "card-title", "技能库" }
                     div { class: "flex gap-2 flex-wrap",
                         input { class: "input input-bordered w-full sm:w-auto", value: "{search_keyword}",
                             oninput: move |e| {
-                                let keyword = e.value();
-                                search_keyword.set(keyword.clone());
+                                search_keyword.set(e.value());
+                                // 修复 HIGH #12：防抖 300ms + request_id 丢弃过期结果
+                                let my_id = search_request_id() + 1;
+                                search_request_id.set(my_id);
                                 spawn(async move {
+                                    gloo_timers::future::TimeoutFuture::new(300).await;
+                                    if search_request_id() != my_id { return; }
                                     loading.set(true);
-                                    let result = if keyword.trim().is_empty() {
+                                    let kw = search_keyword();
+                                    let result = if kw.trim().is_empty() {
                                         list_skills().await
                                     } else {
-                                        search_skills(&keyword).await
+                                        search_skills(&kw).await
                                     };
+                                    if search_request_id() != my_id { return; }
                                     match result {
                                         Ok(list) => skills.set(list.skills),
                                         Err(e) => toast.error(&e),
@@ -119,7 +134,10 @@ pub fn HrSkills() -> Element {
                             button { class: "btn btn-ghost",
                                 onclick: move |_| {
                                     search_keyword.set(String::new());
+                                    let my_id = search_request_id() + 1;
+                                    search_request_id.set(my_id);
                                     spawn(async move {
+                                        if search_request_id() != my_id { return; }
                                         loading.set(true);
                                         match list_skills().await {
                                             Ok(list) => skills.set(list.skills),
@@ -163,23 +181,8 @@ pub fn HrSkills() -> Element {
                                                 td { "data-label": "操作",
                                                     button { class: "btn btn-error btn-sm",
                                                         onclick: move |_| {
-                                                            let id = id.clone();
-                                                            spawn(async move {
-                                                                if let Err(e) = delete_skill(&id).await {
-                                                                    toast.error(&format!("删除失败: {}", e));
-                                                                } else {
-                                                                    let keyword = search_keyword();
-                                                                    let result = if keyword.trim().is_empty() {
-                                                                        list_skills().await
-                                                                    } else {
-                                                                        search_skills(&keyword).await
-                                                                    };
-                                                                    match result {
-                                                                        Ok(list) => skills.set(list.skills),
-                                                                        Err(e) => toast.error(&e),
-                                                                    }
-                                                                }
-                                                            });
+                                                            pending_delete_id.set(id.clone());
+                                                            show_delete_confirm.set(true);
                                                         }, "删除"
                                                     }
                                                 }
@@ -250,6 +253,36 @@ pub fn HrSkills() -> Element {
                         placeholder: "技能的 Markdown 内容，将写入 skill.md" }
                 }
             }
+        }
+
+        ConfirmDialog {
+            show: show_delete_confirm(),
+            title: "确认删除".to_string(),
+            message: "确定删除此技能？此操作不可撤销。".to_string(),
+            on_confirm: move |_| {
+                let id = pending_delete_id();
+                show_delete_confirm.set(false);
+                spawn(async move {
+                    if let Err(e) = delete_skill(&id).await {
+                        toast.error(&format!("删除失败: {}", e));
+                    } else {
+                        let keyword = search_keyword();
+                        let result = if keyword.trim().is_empty() {
+                            list_skills().await
+                        } else {
+                            search_skills(&keyword).await
+                        };
+                        match result {
+                            Ok(list) => skills.set(list.skills),
+                            Err(e) => toast.error(&e),
+                        }
+                    }
+                });
+            },
+            on_cancel: move |_| {
+                show_delete_confirm.set(false);
+            }
+        }
         }
     }
 }

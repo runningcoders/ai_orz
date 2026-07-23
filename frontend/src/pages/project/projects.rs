@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use crate::api::project::{create_project, list_project_tasks, list_projects};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
+use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{CreateProjectRequest, ListProjectsResponseItem};
 
@@ -99,6 +100,7 @@ pub fn ProjectList() -> Element {
     let projects_list = projects.read().clone();
 
     rsx! {
+        AppLayout {
         div { class: "card bg-base-100 shadow-md",
             div { class: "card-body",
                 div { class: "flex justify-between items-center",
@@ -184,6 +186,7 @@ pub fn ProjectList() -> Element {
                         oninput: move |e| new_description.set(e.value()), placeholder: "项目描述（可选）" }
                 }
             }
+        }
         }
     }
 }

@@ -7,6 +7,7 @@ use crate::api::{project::*, StatsOptions};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::TaskStatsPanel;
+use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::GetTaskResponse;
 
@@ -265,6 +266,7 @@ pub fn TaskDetail(id: String) -> Element {
     };
 
     rsx! {
+        AppLayout {
         div { class: "page-header",
             button {
                 class: "btn btn-outline btn-sm",
@@ -517,6 +519,7 @@ pub fn TaskDetail(id: String) -> Element {
             }
         } else {
             div { class: "card bg-base-100 shadow-md", EmptyState { icon: "❓".to_string(), message: "任务不存在".to_string() } }
+        }
         }
     }
 }

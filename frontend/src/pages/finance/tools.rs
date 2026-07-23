@@ -3,7 +3,9 @@
 use dioxus::prelude::*;
 
 use crate::api::finance::{delete_tool, list_tools, update_tool_status};
+use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::state::{EmptyState, Loading};
+use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::ListToolsResponseItem;
 use common::enums::ToolStatus;
@@ -14,6 +16,10 @@ pub fn FinanceTools() -> Element {
     let mut tools = use_signal(Vec::<ListToolsResponseItem>::new);
     let mut loading = use_signal(|| true);
     let toast = use_toast();
+
+    // ===== 删除确认对话框 =====
+    let mut show_delete_confirm = use_signal(|| false);
+    let mut pending_delete_id = use_signal(|| String::new());
 
     use_effect(move || {
         loading.set(true);
@@ -29,11 +35,12 @@ pub fn FinanceTools() -> Element {
     let tools_list = tools.read().clone();
 
     rsx! {
-        div { class: "card bg-base-100 shadow-md",
-            div { class: "card-body",
-                div { class: "flex justify-between items-center mb-4",
-                    h2 { class: "card-title", "工具管理" }
-                }
+        AppLayout {
+            div { class: "card bg-base-100 shadow-md",
+                div { class: "card-body",
+                    div { class: "flex justify-between items-center mb-4",
+                        h2 { class: "card-title", "工具管理" }
+                    }
 
                 if loading() {
                     Loading {}
@@ -111,17 +118,8 @@ pub fn FinanceTools() -> Element {
                                                     }
                                                     button { class: "btn btn-error btn-sm",
                                                         onclick: move |_| {
-                                                            let id_delete = id_delete.clone();
-                                                            spawn(async move {
-                                                                if let Err(e) = delete_tool(&id_delete).await {
-                                                                    toast.error(&format!("删除失败: {}", e));
-                                                                } else {
-                                                                    match list_tools().await {
-                                                                        Ok(list) => tools.set(list.tools),
-                                                                        Err(e) => toast.error(&e),
-                                                                    }
-                                                                }
-                                                            });
+                                                            pending_delete_id.set(id_delete.clone());
+                                                            show_delete_confirm.set(true);
                                                         },
                                                         "删除"
                                                     }
@@ -135,6 +133,30 @@ pub fn FinanceTools() -> Element {
                     }
                 }
             }
+        }
+
+        ConfirmDialog {
+            show: show_delete_confirm(),
+            title: "确认删除".to_string(),
+            message: "确定删除此工具？此操作不可撤销。".to_string(),
+            on_confirm: move |_| {
+                let id = pending_delete_id();
+                show_delete_confirm.set(false);
+                spawn(async move {
+                    if let Err(e) = delete_tool(&id).await {
+                        toast.error(&format!("删除失败: {}", e));
+                    } else {
+                        match list_tools().await {
+                            Ok(list) => tools.set(list.tools),
+                            Err(e) => toast.error(&e),
+                        }
+                    }
+                });
+            },
+            on_cancel: move |_| {
+                show_delete_confirm.set(false);
+            }
+        }
         }
     }
 }

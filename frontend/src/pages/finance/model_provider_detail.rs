@@ -2,19 +2,26 @@
 
 use crate::api::finance::{call_model_provider, delete_model_provider, get_model_provider, switch_embedding_provider, test_model_provider_connection, toggle_model_provider};
 use crate::api::StatsOptions;
+use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::ModelProviderStatsPanel;
+use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::GetModelProviderResponse;
 use dioxus::prelude::*;
-use dioxus_router::Link;
+use dioxus_router::{use_navigator, Link};
 
 #[component]
 pub fn FinanceModelProviderDetail(id: String) -> Element {
     let mut provider_data = use_signal(|| None::<GetModelProviderResponse>);
     let mut loading = use_signal(|| true);
     let toast = use_toast();
+    let navigator = use_navigator();
+
+    // ===== 删除确认对话框 =====
+    let mut show_delete_confirm = use_signal(|| false);
+    let mut pending_delete_id = use_signal(|| String::new());
 
     let mut show_test_modal = use_signal(|| false);
     let mut test_prompt = use_signal(|| "你好，请介绍一下自己".to_string());
@@ -88,7 +95,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
     };
 
     rsx! {
-        div {
+        AppLayout {
             div { class: "mb-6 flex items-center justify-between",
                 div {
                     h1 { class: "text-2xl font-bold", "模型提供商详情" }
@@ -229,14 +236,8 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                             onclick: {
                                                 let pid = provider_id.clone();
                                                 move |_| {
-                                                    let pid = pid.clone();
-                                                    spawn(async move {
-                                                        if let Err(e) = delete_model_provider(&pid).await {
-                                                            toast.error(&format!("删除失败: {}", e));
-                                                        } else {
-                                                            toast.success("已删除");
-                                                        }
-                                                    });
+                                                    pending_delete_id.set(pid.clone());
+                                                    show_delete_confirm.set(true);
                                                 }
                                             },
                                             "删除"
@@ -369,6 +370,27 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                 }
             } else {
                 EmptyState { icon: "🧠".to_string(), message: "模型提供商不存在或已被删除".to_string() }
+            }
+
+            ConfirmDialog {
+                show: show_delete_confirm(),
+                title: "确认删除".to_string(),
+                message: "确定删除此模型提供商？此操作不可撤销。".to_string(),
+                on_confirm: move |_| {
+                    let id = pending_delete_id();
+                    show_delete_confirm.set(false);
+                    spawn(async move {
+                        if let Err(e) = delete_model_provider(&id).await {
+                            toast.error(&format!("删除失败: {}", e));
+                        } else {
+                            toast.success("已删除");
+                            let _ = navigator.push("/finance/model-providers".to_string());
+                        }
+                    });
+                },
+                on_cancel: move |_| {
+                    show_delete_confirm.set(false);
+                }
             }
         }
     }

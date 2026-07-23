@@ -2,12 +2,14 @@
 
 use crate::api::finance::{debug_call_tool, delete_tool, get_tool, update_tool_status};
 use crate::api::StatsOptions;
+use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::ToolStatsPanel;
+use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::GetToolResponse;
 use dioxus::prelude::*;
-use dioxus_router::Link;
+use dioxus_router::{use_navigator, Link};
 
 /// 从 JSON Schema 生成参数骨架
 ///
@@ -54,6 +56,11 @@ pub fn FinanceToolDetail(id: String) -> Element {
     let mut tool_data = use_signal(|| None::<GetToolResponse>);
     let mut loading = use_signal(|| true);
     let toast = use_toast();
+    let navigator = use_navigator();
+
+    // ===== 删除确认对话框 =====
+    let mut show_delete_confirm = use_signal(|| false);
+    let mut pending_delete_id = use_signal(|| String::new());
 
     // 调试面板状态
     let mut debug_args = use_signal(|| "{}".to_string());
@@ -84,7 +91,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
     });
 
     rsx! {
-        div {
+        AppLayout {
             div { class: "mb-6 flex items-center justify-between",
                 div {
                     h1 { class: "text-2xl font-bold", "工具详情" }
@@ -157,14 +164,8 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                     onclick: {
                                         let id = t.id.clone();
                                         move |_| {
-                                            let id = id.clone();
-                                            spawn(async move {
-                                                if let Err(e) = delete_tool(&id).await {
-                                                    toast.error(&format!("删除失败: {}", e));
-                                                } else {
-                                                    toast.success("已删除");
-                                                }
-                                            });
+                                            pending_delete_id.set(id.clone());
+                                            show_delete_confirm.set(true);
                                         }
                                     },
                                     "删除"
@@ -324,6 +325,27 @@ pub fn FinanceToolDetail(id: String) -> Element {
                 }
             } else {
                 EmptyState { icon: "🔧".to_string(), message: "工具不存在或已被删除".to_string() }
+            }
+
+            ConfirmDialog {
+                show: show_delete_confirm(),
+                title: "确认删除".to_string(),
+                message: "确定删除此工具？此操作不可撤销。".to_string(),
+                on_confirm: move |_| {
+                    let id = pending_delete_id();
+                    show_delete_confirm.set(false);
+                    spawn(async move {
+                        if let Err(e) = delete_tool(&id).await {
+                            toast.error(&format!("删除失败: {}", e));
+                        } else {
+                            toast.success("已删除");
+                            let _ = navigator.push("/finance/tools".to_string());
+                        }
+                    });
+                },
+                on_cancel: move |_| {
+                    show_delete_confirm.set(false);
+                }
             }
         }
     }

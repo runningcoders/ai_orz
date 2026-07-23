@@ -7,6 +7,7 @@ use crate::api::{project::*, StatsOptions};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::ProjectStatsPanel;
+use crate::layouts::app_layout::AppLayout;
 use crate::pages::project::task_edit_modal::{TaskEditMode, TaskEditModal};
 use crate::store::toast::use_toast;
 use common::api::{ArtifactDetail, CreateArtifactRequest, GetProjectResponse, TaskListItem};
@@ -258,6 +259,7 @@ pub fn ProjectDetail(id: String) -> Element {
     let task_pending = tasks_list.iter().filter(|t| t.status != 3 && t.status != 4 && t.status != 0 && t.status != 5).count();
 
     rsx! {
+        AppLayout {
         if loading() {
             div { class: "card bg-base-100 shadow-md", Loading {} }
         } else if let Some(p) = &project_data {
@@ -615,6 +617,7 @@ pub fn ProjectDetail(id: String) -> Element {
             }
         } else {
             div { class: "card bg-base-100 shadow-md", EmptyState { icon: "📁".to_string(), message: "项目不存在".to_string() } }
+        }
         }
     }
 }

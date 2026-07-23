@@ -47,7 +47,11 @@ fn fetch_memories(
     mut results: Signal<Vec<MemoryResult>>,
     mut loading: Signal<bool>,
     toast: crate::store::toast::ToastState,
+    mut fetch_request_id: Signal<u32>,
 ) {
+    // 修复 HIGH #13：自增 request_id，结果到达时校验是否为最新请求
+    let my_id = fetch_request_id() + 1;
+    fetch_request_id.set(my_id);
     loading.set(true);
     spawn(async move {
         let mem_type = Some(tab.memory_type());
@@ -60,6 +64,10 @@ fn fetch_memories(
                 .await
                 .map(|r| r.results)
         };
+        // 丢弃过期请求的结果
+        if fetch_request_id() != my_id {
+            return;
+        }
         match fetch_result {
             Ok(data) => {
                 results.set(data);
@@ -77,6 +85,9 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
     let results = use_signal(Vec::<MemoryResult>::new);
     let loading = use_signal(|| false);
     let toast = use_toast();
+    // 修复 HIGH #13：快速切换 tab 时旧请求慢返回会覆盖新 tab 的数据，
+    // 引入 fetch_request_id 机制丢弃过期请求结果
+    let fetch_request_id = use_signal(|| 0u32);
 
     // 修复 M10：use_effect 监听 active_tab 自动 fetch，tab 按钮的 onclick 不再显式调用
     // fetch_memories（之前会触发双请求：onclick 一次 + use_effect 一次）
@@ -84,7 +95,7 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
         let agent_id = agent_id.clone();
         move || {
             let tab = active_tab();
-            fetch_memories(agent_id.clone(), tab, String::new(), results, loading, toast);
+            fetch_memories(agent_id.clone(), tab, String::new(), results, loading, toast, fetch_request_id);
         }
     });
 
@@ -137,7 +148,7 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                                 let kw = keyword().clone();
                                 let tab = active_tab();
                                 let aid = agent_id_4.clone();
-                                fetch_memories(aid, tab, kw, results, loading, toast);
+                                fetch_memories(aid, tab, kw, results, loading, toast, fetch_request_id);
                             }
                         }
                     }
@@ -146,7 +157,7 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                             let kw = keyword().clone();
                             let tab = active_tab();
                             let aid = agent_id_5.clone();
-                            fetch_memories(aid, tab, kw, results, loading, toast);
+                            fetch_memories(aid, tab, kw, results, loading, toast, fetch_request_id);
                         },
                         "搜索"
                     }

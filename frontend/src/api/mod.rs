@@ -28,6 +28,17 @@ fn build_request(method: Method, path: &str) -> RequestBuilder {
     client().request(method, &url)
 }
 
+/// 修复 HIGH #10：统一 401 处理，cookie 过期时清除登录态并重定向到登录页
+fn handle_unauthorized(status: u16) {
+    if status == 401 {
+        crate::store::auth::clear_login_state();
+        // 跳转到登录页（同步执行，避免在 async 中调用 navigator）
+        if let Some(window) = web_sys::window() {
+            let _ = window.location().set_href("/login");
+        }
+    }
+}
+
 fn parse_api_error_from_body(body_text: &str, http_status: u16) -> ApiError {
     let error_code = serde_json::from_str::<serde_json::Value>(body_text)
         .ok()
@@ -52,7 +63,9 @@ async fn parse_error_response(resp: reqwest::Response) -> ApiError {
 
 pub async fn api_get<T: serde::de::DeserializeOwned>(path: &str) -> Result<T, String> {
     let resp = build_request(Method::GET, path).send().await.map_err(|e| e.to_string())?;
+    let status = resp.status().as_u16();
     if !resp.status().is_success() {
+        handle_unauthorized(status);
         return Err(format!("HTTP {}", resp.status()));
     }
     let api_resp: ApiResponse<T> = resp.json().await.map_err(|e| e.to_string())?;
@@ -64,7 +77,9 @@ pub async fn api_get<T: serde::de::DeserializeOwned>(path: &str) -> Result<T, St
 
 pub async fn api_get_or_default<T: serde::de::DeserializeOwned + Default>(path: &str) -> Result<T, String> {
     let resp = build_request(Method::GET, path).send().await.map_err(|e| e.to_string())?;
+    let status = resp.status().as_u16();
     if !resp.status().is_success() {
+        handle_unauthorized(status);
         return Err(format!("HTTP {}", resp.status()));
     }
     let api_resp: ApiResponse<T> = resp.json().await.map_err(|e| e.to_string())?;
@@ -76,7 +91,9 @@ pub async fn api_get_or_default<T: serde::de::DeserializeOwned + Default>(path: 
 
 pub async fn api_post<T: serde::de::DeserializeOwned, B: serde::Serialize>(path: &str, body: &B) -> Result<T, String> {
     let resp = build_request(Method::POST, path).json(body).send().await.map_err(|e| e.to_string())?;
+    let status = resp.status().as_u16();
     if !resp.status().is_success() {
+        handle_unauthorized(status);
         return Err(format!("HTTP {}", resp.status()));
     }
     let api_resp: ApiResponse<T> = resp.json().await.map_err(|e| e.to_string())?;
@@ -88,7 +105,9 @@ pub async fn api_post<T: serde::de::DeserializeOwned, B: serde::Serialize>(path:
 
 pub async fn api_post_empty<B: serde::Serialize>(path: &str, body: &B) -> Result<(), String> {
     let resp = build_request(Method::POST, path).json(body).send().await.map_err(|e| e.to_string())?;
+    let status = resp.status().as_u16();
     if !resp.status().is_success() {
+        handle_unauthorized(status);
         return Err(format!("HTTP {}", resp.status()));
     }
     let api_resp: ApiResponse<common::api::EmptyResponse> = resp.json().await.map_err(|e| e.to_string())?;
@@ -100,7 +119,9 @@ pub async fn api_post_empty<B: serde::Serialize>(path: &str, body: &B) -> Result
 
 pub async fn api_put<T: serde::de::DeserializeOwned, B: serde::Serialize>(path: &str, body: &B) -> Result<T, String> {
     let resp = build_request(Method::PUT, path).json(body).send().await.map_err(|e| e.to_string())?;
+    let status = resp.status().as_u16();
     if !resp.status().is_success() {
+        handle_unauthorized(status);
         return Err(format!("HTTP {}", resp.status()));
     }
     let api_resp: ApiResponse<T> = resp.json().await.map_err(|e| e.to_string())?;
@@ -112,7 +133,9 @@ pub async fn api_put<T: serde::de::DeserializeOwned, B: serde::Serialize>(path: 
 
 pub async fn api_put_empty<B: serde::Serialize>(path: &str, body: &B) -> Result<(), String> {
     let resp = build_request(Method::PUT, path).json(body).send().await.map_err(|e| e.to_string())?;
+    let status = resp.status().as_u16();
     if !resp.status().is_success() {
+        handle_unauthorized(status);
         return Err(format!("HTTP {}", resp.status()));
     }
     let api_resp: ApiResponse<common::api::EmptyResponse> = resp.json().await.map_err(|e| e.to_string())?;
@@ -154,7 +177,9 @@ pub async fn api_put_with_error<B: serde::Serialize>(path: &str, body: &B) -> Re
 
 pub async fn api_delete(path: &str) -> Result<(), String> {
     let resp = build_request(Method::DELETE, path).send().await.map_err(|e| e.to_string())?;
+    let status = resp.status().as_u16();
     if !resp.status().is_success() {
+        handle_unauthorized(status);
         return Err(format!("HTTP {}", resp.status()));
     }
     let api_resp: ApiResponse<common::api::EmptyResponse> = resp.json().await.map_err(|e| e.to_string())?;
@@ -220,7 +245,9 @@ pub async fn api_post_with_error<T: serde::de::DeserializeOwned, B: serde::Seria
 pub async fn api_get_text(path: &str) -> Result<String, String> {
     let url = current_config().api_url(path);
     let resp = client().get(&url).send().await.map_err(|e| e.to_string())?;
+    let status = resp.status().as_u16();
     if !resp.status().is_success() {
+        handle_unauthorized(status);
         return Err(format!("HTTP {}", resp.status()));
     }
     resp.text().await.map_err(|e| e.to_string())

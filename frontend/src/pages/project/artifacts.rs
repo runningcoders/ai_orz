@@ -5,6 +5,7 @@ use dioxus::prelude::*;
 use crate::api::project::{create_artifact, delete_artifact, list_artifacts, list_projects};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
+use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{ArtifactDetail, CreateArtifactRequest, ListProjectsResponseItem};
 use common::enums::ArtifactSourceType;
@@ -135,6 +136,7 @@ pub fn ProjectArtifacts() -> Element {
     let projects_list = projects.read().clone();
 
     rsx! {
+        AppLayout {
         div { class: "card bg-base-100 shadow-md",
             div { class: "card-body",
                 div { class: "flex justify-between items-center",
@@ -255,6 +257,7 @@ pub fn ProjectArtifacts() -> Element {
                         oninput: move |e| new_description.set(e.value()), placeholder: "产物描述（可选）" }
                 }
             }
+        }
         }
     }
 }
