@@ -79,11 +79,14 @@ impl MemoryTrace {
         input: String,
         task_id: Option<String>,
     ) -> Self {
-        let now = chrono::Utc::now().timestamp();
+        let now = chrono::Utc::now();
+        let created_at = now.timestamp();
+        // 加随机后缀避免同一 agent 并发处理两条消息时 timestamp_nanos 相同导致 trace_id 碰撞
         let trace_id = format!(
-            "trace-{}-{}",
+            "trace-{}-{}-{}",
             agent_id,
-            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+            now.timestamp_nanos_opt().unwrap_or(0),
+            rand::random::<u16>()
         );
         Self {
             id: trace_id,
@@ -95,7 +98,7 @@ impl MemoryTrace {
             role,
             input,
             output: None,
-            created_at: now,
+            created_at,
             completed_at: None,
             metadata: HashMap::new(),
             position: None,
