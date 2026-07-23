@@ -2139,7 +2139,7 @@ if target_status == AgentStatus::Onboarded {
 **加载阶段**（`HrDomainImpl::get_agent(with_tools=true)`）：
 - 绑定工具：通过 `agent_tools` 关联表查询（`enabled_only` 在 DB 层过滤）
 - tag 匹配工具：tag_filter = `neural` + `agent.installed_tags`，SQL 层 `json_each` OR 匹配
-- 合并去重后写入 `agent.tools`，供后续 wake/awaken 使用
+- 合并去重后写入 `agent.tools`（`Vec<Tool>` 业务实体），供后续 wake/awaken 使用
 
 **分流阶段**（`RuntimeDomainImpl::wake_agent_brain`）：
 - 从 `agent.tools` 用 `std::mem::take` + `partition` 按控制方式分离所有权
@@ -2150,6 +2150,23 @@ if target_status == AgentStatus::Onboarded {
 - 不再有"built-in tools"概念，Auto/Manual 区分由 `control_mode` 决定，与工具定义位置无关
 - 工具加载在 hr domain 完成（同业务域操作），无需跨 domain 组合
 - ToolPo（Clone-able）供 PromptBuilder 使用；Tool（含 `dyn Trait`，不可 Clone）用于 Rig 注入
+
+### 22.6.1 唤醒时技能加载
+
+技能加载与工具加载模式对齐，但策略略有不同：
+
+**加载阶段**（`HrDomainImpl::get_agent(with_skills=true)`）：
+- 仅在 Agent 已安装的技能副本范围内查询（`author_id = agent_id`，排除 Expired）
+- 写入 `agent.skills`（`Vec<Skill>` 业务实体）
+
+**注入阶段**（`RuntimeDomainImpl::awaken`）：
+- 从 `agent.skills()` 提取 `SkillPo` 列表供 PromptBuilder 使用（与 ToolPo 提取方式一致）
+- PromptBuilder 按 tag 分块拼装："【神经技能】"（tags 含 neural）+ "【必加载技能】"（tags 匹配 match_keys）
+
+**技能与工具的关键差异**：
+- 工具支持全局 tag 匹配（neural + installed_tags 全局查询），所有 Agent 天生拥有神经工具
+- 技能讲究"安装且自进化"，即便是神经技能也必须安装到自身目录才能使用（只在 `author_id = agent_id` 范围内查）
+- 不匹配 match_keys 的已安装技能不展示在 Prompt，由 Agent 通过 `search_skill` 神经工具按需渐进式加载
 
 ### 22.7 三种角色定位
 

@@ -519,11 +519,13 @@ Agent
 **✅ 唤醒流程重构：移除 built-in tools 概念，Auto/Manual 分流**
 - **PromptBuilder 顺序调整**：从稳定到易变（人设 → 神经工具/技能 → 常用工具/必加载技能 → 用户画像 → 历史 → 工具失败 → Trace ID + 当前消息）
 - **Tag 渐进式加载**：统一查询后 `build()` 时按 tag 分块拼装；`match_keys = agent.roles ∪ installed_tags`
-- **AgentFetchOptions 扩展**：新增 `with_tools` 选项，consumer 加载 Agent 时显式请求工具
+- **AgentFetchOptions 扩展**：新增 `with_tools` + `with_skills` 选项，consumer 加载 Agent 时显式请求
 - **工具加载移至 domain 层**：`HrDomainImpl::get_agent(with_tools=true)` 加载绑定工具（enabled_only DB 过滤）+ tag 匹配工具（neural + installed_tags），合并去重写入 `agent.tools`
 - **唤醒时 Auto/Manual 分流**：`wake_agent_brain` 用 `std::mem::take` + `partition` 分离所有权，Auto→Rig / Manual→Prompt
 - **移除 built-in tools 概念**：`load_builtin_tools` 和 `filter_builtin_tools` 死代码删除；区分 Auto/Manual 由 `control_mode` 决定，与工具定义位置无关
 - **ToolPo 替代 Tool**：PromptBuilder 改用可 Clone 的 ToolPo，规避 Tool 含 `dyn Trait` 不可 Clone 的限制
+- **技能加载对齐工具模式**：`hr_domain.get_agent(with_skills=true)` 加载 Agent 已安装的技能副本（author_id = agent_id，排除 Expired）写入 `agent.skills`（`Vec<Skill>` 业务实体）；awakening 删除 `load_agent_skills`，直接用 `agent.skills()` 提取 SkillPo
+- **技能与工具的策略差异**：技能讲究"安装且自进化"，只在已安装副本范围内查（即便神经技能也需安装到自身目录）；不匹配 match_keys 的技能由 Agent 通过 `search_skill` 神经工具按需渐进式加载
 - **DefaultPromptBuilder 对齐**：Local agent 的 builder 移至 `dal/agent.rs`，与 Cli/Remote 通过各自 Dal 的 `prompt_builder()` 获取对齐
 - **测试统计**：745 个测试 100% 通过
 
@@ -614,7 +616,7 @@ Agent
   - `reinstall_skill_pack`：覆盖式重装，用源技能最新内容更新 Agent 副本
   - `list_installed_skill_packs`：返回已安装技能包 tag 列表
 - **技能包管理 API**：3 个新 Handler（install/uninstall/list），路由 `/api/v1/hr/agents/{agent_id}/skill-packs`
-- **唤醒时技能注入**：`load_agent_skills` 方法，Agent 唤醒时自动加载技能摘要到 Prompt 的"【可用技能】"部分
+- **唤醒时技能注入**：技能由 `hr_domain.get_agent(with_skills=true)` 加载到 `agent.skills`，awaken 提取 SkillPo 注入 Prompt 的"【神经技能】"/"【必加载技能】"区块
 - **search_skill 神经工具**：Agent 可按关键词/tag 搜索技能库，返回精简摘要
 - **Tool tag 过滤优化**：工具加载在 SQL 层按 `json_each` OR 匹配 tag，`call_manual_tool_for_agent` 同步优化
 - **测试统计**：601 个测试 100% 通过（+25）

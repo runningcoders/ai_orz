@@ -1,6 +1,7 @@
 //! Agent 实体
 
 use crate::models::brain::{Brain, Cortex, CortexTrait};
+use crate::models::skill::Skill;
 use crate::models::tool::Tool;
 use crate::models::vector::{SearchMatchInfo, Vectorizable};
 use crate::pkg::agent_runtime_state::AgentRuntimeInfo;
@@ -182,6 +183,8 @@ pub struct Agent {
     ///
     /// 每个工具包含元数据 + 可执行的 trait 对象
     pub tools: Vec<Tool>,
+    /// Agent 已安装的技能副本列表（业务实体，由 hr_domain 加载，供 wake/awaken 使用）
+    pub skills: Vec<Skill>,
     /// 运行时状态信息（由 DAL 层从内存注入）
     ///
     /// None 表示未注入（如刚创建还未查询）
@@ -208,6 +211,7 @@ impl fmt::Debug for Agent {
             .field("po", &self.po)
             .field("brain", &"[Brain]")
             .field("tools", &format_args!("[{} tools]", self.tools.len()))
+            .field("skills", &format_args!("[{} skills]", self.skills.len()))
             .field("runtime_info", &self.runtime_info)
             .field("stats", &self.stats)
             .field("model_call_stats", &self.model_call_stats)
@@ -222,6 +226,7 @@ impl Agent {
             po,
             brain: None,
             tools: Vec::new(),
+            skills: Vec::new(),
             runtime_info: None,
             stats: None,
             model_call_stats: None,
@@ -235,6 +240,7 @@ impl Agent {
             po,
             brain: None,
             tools,
+            skills: Vec::new(),
             runtime_info: None,
             stats: None,
             model_call_stats: None,
@@ -297,6 +303,16 @@ impl Agent {
     /// 设置绑定的工具列表
     pub fn set_tools(&mut self, tools: Vec<Tool>) {
         self.tools = tools;
+    }
+
+    /// 获取已安装的技能副本列表
+    pub fn skills(&self) -> &[Skill] {
+        &self.skills
+    }
+
+    /// 设置已安装的技能副本列表
+    pub fn set_skills(&mut self, skills: Vec<Skill>) {
+        self.skills = skills;
     }
 }
 

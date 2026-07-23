@@ -83,10 +83,12 @@ impl AgentManage for HrDomainImpl {
     /// 获取 Agent
     ///
     /// 基础操作：根据 ID 查询 Agent
-    /// 当 with_tools=true 时，额外加载 Agent 可用的工具（绑定工具 + tag 匹配工具），
+    /// - with_tools=true：加载绑定工具 + tag 匹配工具
+    /// - with_skills=true：加载 Agent 已安装的技能副本（author_id = agent_id，排除 Expired）
     /// 写入 Agent 实体供后续 wake/awaken 使用。
     async fn get_agent(&self, ctx: RequestContext, id: &str, options: crate::service::dal::agent::AgentFetchOptions) -> Result<Option<Agent>> {
         let with_tools = options.with_tools.unwrap_or(false);
+        let with_skills = options.with_skills.unwrap_or(false);
         let mut agent = self.agent_dal.get_agent(ctx.clone(), id, options).await?;
 
         if let Some(ref mut agent) = agent {
@@ -119,6 +121,22 @@ impl AgentManage for HrDomainImpl {
                     .filter(|t| seen_ids.insert(t.po.id.clone()))
                     .collect();
                 agent.set_tools(all_tools);
+            }
+            if with_skills {
+                // 技能只在 Agent 已安装的副本范围内查询（author_id = agent_id）
+                // 技能讲究"安装且自进化"，即便神经技能也需安装到自身目录才能使用
+                let skills = self
+                    .skill_dal
+                    .query(
+                        ctx.clone(),
+                        crate::service::dao::skill::SkillQuery {
+                            author_id: Some(id.to_string()),
+                            exclude_status: Some(common::enums::SkillStatus::Expired),
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
+                agent.set_skills(skills);
             }
         }
 

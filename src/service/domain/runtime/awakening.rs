@@ -4,7 +4,6 @@ use common::error::{err, Result};
 use crate::models::agent::Agent;
 use crate::models::memory::MemoryTrace;
 use crate::models::message::Message;
-use crate::models::skill::SkillPo;
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::stats::AgentAwakeEvent;
@@ -106,8 +105,14 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             .map(|t| t.po.clone())
             .collect();
 
-        // Step 2.6: 加载 Agent 技能副本用于 Prompt 注入（排除 Expired）
-        let skills = self.load_agent_skills(ctx.clone(), &agent.po.id).await?;
+        // Step 2.6: 技能已由 hr_domain.get_agent(with_skills=true) 加载到 agent.skills
+        // 技能只在 Agent 已安装的副本范围内（author_id = agent_id，排除 Expired）
+        // 不匹配 match_keys 的技能不展示在 Prompt，由 Agent 通过 search_skill 神经工具按需加载
+        let skill_pos: Vec<crate::models::skill::SkillPo> = agent
+            .skills()
+            .iter()
+            .map(|s| s.po.clone())
+            .collect();
 
         // Step 3: 拼装 Prompt（通过工厂方法获取对应 Agent 类型的 builder）
         // 统一注入，build 时按 tag 自动分块为神经工具/技能 → 常用工具/必加载技能 → 历史 → 当前消息
@@ -115,7 +120,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         builder.current_trace_id(&trace_id);
         builder.system_prompt(agent);
         builder.tools(&all_tools);
-        builder.skills(&skills);
+        builder.skills(&skill_pos);
         builder.history(&recent_memories);
         builder.current_message(message);
 
@@ -197,35 +202,6 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             raw_input: prompt,
             raw_output,
         })
-    }
-}
-
-impl RuntimeDomainImpl {
-    /// 加载 Agent 的技能副本用于 Prompt 注入
-    ///
-    /// 通过 SkillDal 全局单例查询 Agent 的技能副本（author_id = agent_id），
-    /// 返回 SkillPo 列表供 PromptBuilder.agent_skills() 注入"【可用技能】"部分。
-    /// 与 memory 模块一样使用全局 DAL 单例，保持运行时数据加载的一致性。
-    async fn load_agent_skills(
-        &self,
-        ctx: RequestContext,
-        agent_id: &str,
-    ) -> Result<Vec<SkillPo>> {
-        use crate::service::dal::skill::dal as skill_dal;
-        use crate::service::dao::skill::SkillQuery;
-        use common::enums::SkillStatus;
-        // 查询 Agent 技能，排除 Expired 状态
-        let skills = skill_dal()
-            .query(
-                ctx,
-                SkillQuery {
-                    author_id: Some(agent_id.to_string()),
-                    exclude_status: Some(SkillStatus::Expired),
-                    ..Default::default()
-                },
-            )
-            .await?;
-        Ok(skills.into_iter().map(|s| s.po).collect())
     }
 }
 
@@ -429,12 +405,31 @@ mod tests {
             .expect("创建测试技能失败");
     }
 
+    /// 模拟 hr_domain.get_agent(with_skills=true) 的技能加载
+    ///
+    /// 生产路径由 hr_domain 加载 Skill 业务实体写入 agent.skills，测试中直接查 DB 填充
+    async fn load_skills_to_agent(ctx: RequestContext, agent: &mut Agent) {
+        use common::enums::SkillStatus;
+        let skills = crate::service::dal::skill::dal()
+            .query(
+                ctx,
+                crate::service::dao::skill::SkillQuery {
+                    author_id: Some(agent.po.id.clone()),
+                    exclude_status: Some(SkillStatus::Expired),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("加载技能失败");
+        agent.set_skills(skills);
+    }
+
     #[sqlx::test]
     async fn test_awaken_with_skills(pool: SqlitePool) {
         let ctx = init_awaken_test_env(pool);
 
         let agent_id = format!("agent-with-skills-{}", Uuid::now_v7());
-        let agent = make_test_agent(&agent_id);
+        let mut agent = make_test_agent(&agent_id);
 
         // 为 Agent 创建 2 个技能副本
         create_skill_for_agent(
@@ -451,6 +446,9 @@ mod tests {
             "编写清晰的技术文档",
         )
         .await;
+
+        // 模拟 hr_domain.get_agent(with_skills=true) 加载技能到 agent.skills
+        load_skills_to_agent(ctx.clone(), &mut agent).await;
 
         let message = make_test_message("请帮我审查这段代码");
 

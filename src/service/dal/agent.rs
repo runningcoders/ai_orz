@@ -71,6 +71,8 @@ pub struct AgentFetchOptions {
     pub with_runtime_state: Option<bool>,
     /// 是否加载 Agent 绑定的工具（绑定工具 + tag 匹配的内置工具）
     pub with_tools: Option<bool>,
+    /// 是否加载 Agent 已安装的技能副本（author_id = agent_id，排除 Expired）
+    pub with_skills: Option<bool>,
     /// 是否加载统计信息（AgentStats: 唤醒次数汇总）
     pub with_stats: Option<bool>,
     /// 是否加载模型调用统计（ModelCallStats: token + 时序）

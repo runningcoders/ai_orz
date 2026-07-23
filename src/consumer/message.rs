@@ -151,9 +151,10 @@ impl MessageConsumer {
 
         let ctx = self.rebuild_context(message);
 
-        // 加载 Agent 实体（包含统计信息 + 工具，供唤醒流程使用）
+        // 加载 Agent 实体（包含工具 + 技能 + 统计信息，供唤醒流程使用）
         let fetch_options = AgentFetchOptions {
             with_tools: Some(true),
+            with_skills: Some(true),
             with_stats: Some(message.po.task_id.is_some()),
             stats_task_id: message.po.task_id.clone(),
             ..Default::default()
