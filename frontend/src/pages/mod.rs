@@ -14,10 +14,14 @@ use dioxus::prelude::*;
 
 // 导入路由组件函数到当前作用域，供 Routable 宏使用
 use crate::pages::finance::attachments::FinanceAttachments;
+use crate::pages::finance::attachment_detail::FinanceAttachmentDetail;
+use crate::pages::finance::message_channel_detail::FinanceMessageChannelDetail;
 use crate::pages::finance::message_channels::FinanceMessageChannels;
 use crate::pages::finance::mcp_servers::FinanceMcpServers;
+use crate::pages::finance::mcp_server_detail::FinanceMcpServerDetail;
 use crate::pages::finance::model_provider_detail::FinanceModelProviderDetail;
 use crate::pages::finance::model_providers::FinanceModelProviders;
+use crate::pages::finance::tool_call_entries::FinanceToolCallEntries;
 use crate::pages::finance::tool_detail::FinanceToolDetail;
 use crate::pages::finance::tools::FinanceTools;
 use crate::pages::hr::agent_detail::HrAgentDetail;
@@ -31,6 +35,7 @@ use crate::pages::message::search::MessageSearch;
 use crate::pages::organization::info::OrganizationInfo;
 use crate::pages::organization::users::OrganizationUsers;
 use crate::pages::project::artifacts::ProjectArtifacts;
+use crate::pages::project::artifact_detail::ProjectArtifactDetail;
 use crate::pages::project::project_detail::ProjectDetail;
 use crate::pages::project::projects::ProjectList;
 use crate::pages::project::task_detail::TaskDetail;
@@ -86,12 +91,20 @@ pub enum Route {
     FinanceTools {},
     #[route("/finance/tools/:id")]
     FinanceToolDetail { id: String },
+    #[route("/finance/tool-call-entries")]
+    FinanceToolCallEntries {},
     #[route("/finance/message-channels")]
     FinanceMessageChannels {},
+    #[route("/finance/message-channels/:id")]
+    FinanceMessageChannelDetail { id: String },
     #[route("/finance/mcp-servers")]
     FinanceMcpServers {},
+    #[route("/finance/mcp-servers/:id")]
+    FinanceMcpServerDetail { id: String },
     #[route("/finance/attachments")]
     FinanceAttachments {},
+    #[route("/finance/attachments/:id")]
+    FinanceAttachmentDetail { id: String },
 
     // Project 模块
     #[route("/projects")]
@@ -100,6 +113,8 @@ pub enum Route {
     ProjectDetail { id: String },
     #[route("/projects/artifacts")]
     ProjectArtifacts {},
+    #[route("/projects/artifacts/:id")]
+    ProjectArtifactDetail { id: String },
     #[route("/tasks")]
     TaskList {},
     #[route("/tasks/:id")]

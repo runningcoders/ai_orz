@@ -1,4 +1,5 @@
 pub mod artifacts;
+pub mod artifact_detail;
 pub mod project_detail;
 pub mod projects;
 pub mod task_detail;

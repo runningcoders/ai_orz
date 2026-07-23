@@ -221,6 +221,19 @@ pub fn Navbar() -> Element {
                                         "MCP 服务器"
                                     }
                                 }
+                                li {
+                                    Link {
+                                        to: Route::FinanceToolCallEntries {},
+                                        onclick: move |_| {
+                                            hr_menu_open.set(false);
+                                            finance_menu_open.set(false);
+                                            project_menu_open.set(false);
+                                            system_menu_open.set(false);
+                                            user_menu_open.set(false);
+                                        },
+                                        "📋 工具调用记录"
+                                    }
+                                }
                             }
                         }
                     }
@@ -663,6 +676,20 @@ pub fn Navbar() -> Element {
                                     drawer_open.set(false);
                                 },
                                 "MCP 服务器"
+                            }
+                        }
+                        li {
+                            Link {
+                                to: Route::FinanceToolCallEntries {},
+                                onclick: move |_| {
+                                    hr_menu_open.set(false);
+                                    finance_menu_open.set(false);
+                                    project_menu_open.set(false);
+                                    system_menu_open.set(false);
+                                    user_menu_open.set(false);
+                                    drawer_open.set(false);
+                                },
+                                "📋 工具调用记录"
                             }
                         }
 

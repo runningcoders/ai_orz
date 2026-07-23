@@ -1,6 +1,7 @@
 //! MCP 服务器管理
 
 use dioxus::prelude::*;
+use dioxus_router::Link;
 
 use crate::api::finance::{
     create_mcp_server, delete_mcp_server, list_mcp_servers, sync_mcp_tools,
@@ -164,6 +165,11 @@ pub fn FinanceMcpServers() -> Element {
                                                 }
                                                 td { span { class: "text-sm text-base-content/70 whitespace-nowrap", "{format_timestamp(created_at)}" } }
                                                 td { class: "flex gap-2 items-center",
+                                                    Link {
+                                                        class: "btn btn-ghost btn-sm",
+                                                        to: crate::pages::Route::FinanceMcpServerDetail { id: id.clone() },
+                                                        "详情"
+                                                    }
                                                     if is_enabled {
                                                         button { class: "btn btn-ghost btn-sm",
                                                             onclick: move |_| {

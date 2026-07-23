@@ -102,3 +102,18 @@ pub async fn create_artifact(req: CreateArtifactRequest) -> Result<ArtifactDetai
 pub async fn delete_artifact(id: &str) -> Result<(), ApiError> {
     api_delete(&format!("/api/v1/project/artifacts/{}", id)).await
 }
+
+// ===== Artifact 内容 =====
+
+pub async fn get_artifact_content(id: &str) -> Result<common::api::GetArtifactContentResponse, ApiError> {
+    api_get(&format!("/api/v1/project/artifacts/{}/content", id)).await
+}
+
+pub async fn update_artifact_content(id: &str, content: String) -> Result<ArtifactDetail, ApiError> {
+    let req = common::api::UpdateArtifactContentRequest {
+        artifact_id: id.to_string(),
+        content,
+        expected_updated_at: None,
+    };
+    api_put(&format!("/api/v1/project/artifacts/{}/content", id), &req).await
+}

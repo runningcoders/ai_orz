@@ -1,6 +1,7 @@
 //! 附件管理
 
 use dioxus::prelude::*;
+use dioxus_router::Link;
 
 use crate::api::finance::{create_text_attachment, delete_attachment, list_attachments};
 use crate::components::confirm_dialog::ConfirmDialog;
@@ -105,11 +106,18 @@ pub fn FinanceAttachments() -> Element {
                                                     td { span { class: "badge badge-info", "{purpose}" } }
                                                     td { "{created_at}" }
                                                     td {
-                                                        button { class: "btn btn-error btn-sm",
-                                                            onclick: move |_| {
-                                                                pending_delete_id.set(id_delete.clone());
-                                                                show_delete_confirm.set(true);
-                                                            }, "删除"
+                                                        div { class: "flex gap-1",
+                                                            Link {
+                                                                class: "btn btn-ghost btn-sm",
+                                                                to: crate::pages::Route::FinanceAttachmentDetail { id: id.clone() },
+                                                                "详情"
+                                                            }
+                                                            button { class: "btn btn-error btn-sm",
+                                                                onclick: move |_| {
+                                                                    pending_delete_id.set(id_delete.clone());
+                                                                    show_delete_confirm.set(true);
+                                                                }, "删除"
+                                                            }
                                                         }
                                                     }
                                                 }

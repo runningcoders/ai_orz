@@ -1,6 +1,7 @@
 //! 项目产物管理
 
 use dioxus::prelude::*;
+use dioxus_router::Link;
 
 use crate::api::project::{create_artifact, delete_artifact, list_artifacts, list_projects};
 use crate::components::modal::Modal;
@@ -190,23 +191,30 @@ pub fn ProjectArtifacts() -> Element {
                                                 td { class: "font-mono text-base-content/70", "data-label": "文件大小", "{format_file_size(file_size)}" }
                                                 td { class: "font-mono text-base-content/70", "data-label": "创建时间", "{created_at}" }
                                                 td { "data-label": "操作",
-                                                    button { class: "btn btn-error btn-sm",
-                                                        onclick: move |_| {
-                                                            let id_delete = id_delete.clone();
-                                                            spawn(async move {
-                                                                if let Err(e) = delete_artifact(&id_delete).await {
-                                                                    toast.error(&format!("删除失败: {}", e));
-                                                                } else {
-                                                                    let pid = selected_project_id();
-                                                                    if !pid.is_empty() {
-                                                                        match list_artifacts(&pid).await {
-                                                                            Ok(list) => artifacts.set(list),
-                                                                            Err(e) => toast.error(&e),
+                                                    div { class: "flex gap-1",
+                                                        Link {
+                                                            class: "btn btn-ghost btn-sm",
+                                                            to: crate::pages::Route::ProjectArtifactDetail { id: id.clone() },
+                                                            "详情"
+                                                        }
+                                                        button { class: "btn btn-error btn-sm",
+                                                            onclick: move |_| {
+                                                                let id_delete = id_delete.clone();
+                                                                spawn(async move {
+                                                                    if let Err(e) = delete_artifact(&id_delete).await {
+                                                                        toast.error(&format!("删除失败: {}", e));
+                                                                    } else {
+                                                                        let pid = selected_project_id();
+                                                                        if !pid.is_empty() {
+                                                                            match list_artifacts(&pid).await {
+                                                                                Ok(list) => artifacts.set(list),
+                                                                                Err(e) => toast.error(&e),
+                                                                            }
                                                                         }
                                                                     }
-                                                                }
-                                                            });
-                                                        }, "删除"
+                                                                });
+                                                            }, "删除"
+                                                        }
                                                     }
                                                 }
                                             }

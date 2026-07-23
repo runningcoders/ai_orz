@@ -166,11 +166,68 @@ pub async fn upload_attachment(form: FormData) -> Result<AttachmentDetail, ApiEr
     api_post_multipart("/api/v1/finance/attachments/upload", form).await
 }
 
-#[allow(dead_code)]
 pub async fn get_attachment(id: &str) -> Result<AttachmentDetail, ApiError> {
     api_get(&format!("/api/v1/finance/attachments/{}", id)).await
 }
 
 pub async fn delete_attachment(id: &str) -> Result<(), ApiError> {
     api_delete(&format!("/api/v1/finance/attachments/{}", id)).await
+}
+
+// ===== Attachment 内容 =====
+
+/// 获取附件内容（仅 text 类型附件可获取）
+pub async fn get_attachment_content(id: &str) -> Result<common::api::AttachmentContentResponse, ApiError> {
+    api_get(&format!("/api/v1/finance/attachments/{}/content", id)).await
+}
+
+/// 更新文本附件内容
+pub async fn update_attachment_content(id: &str, content: String) -> Result<common::api::AttachmentContentResponse, ApiError> {
+    let body = common::api::UpdateTextContentRequest {
+        content,
+        expected_updated_at: None,
+    };
+    api_put(&format!("/api/v1/finance/attachments/{}/content", id), &body).await
+}
+
+// ===== MCP Server 详情 =====
+
+pub async fn get_mcp_server(id: &str) -> Result<common::api::GetMcpServerResponse, ApiError> {
+    api_get(&format!("/api/v1/finance/mcp-servers/{}", id)).await
+}
+
+// ===== Message Channel 详情 =====
+
+pub async fn get_message_channel(id: &str) -> Result<common::api::GetMessageChannelResponse, ApiError> {
+    api_get(&format!("/api/v1/finance/message-channels/{}", id)).await
+}
+
+// ===== 工具调用记录 =====
+
+pub async fn query_tool_call_entries(params: &common::api::QueryToolCallEntriesRequest) -> Result<common::api::QueryToolCallEntriesResponse, ApiError> {
+    let mut qs_parts = Vec::new();
+    if let Some(c) = &params.call_id { qs_parts.push(format!("call_id={}", c)); }
+    if let Some(a) = &params.agent_id { qs_parts.push(format!("agent_id={}", a)); }
+    if let Some(p) = &params.project_id { qs_parts.push(format!("project_id={}", p)); }
+    if let Some(t) = &params.task_id { qs_parts.push(format!("task_id={}", t)); }
+    if let Some(t) = &params.tool_id { qs_parts.push(format!("tool_id={}", t)); }
+    if let Some(s) = &params.status {
+        let s_str = match s {
+            common::api::ToolCallStatusDto::Started => "Started",
+            common::api::ToolCallStatusDto::Completed => "Completed",
+            common::api::ToolCallStatusDto::Failed => "Failed",
+        };
+        qs_parts.push(format!("status={}", s_str));
+    }
+    if let Some(t) = params.started_after { qs_parts.push(format!("started_after={}", t)); }
+    if let Some(t) = params.started_before { qs_parts.push(format!("started_before={}", t)); }
+    if let Some(l) = params.limit { qs_parts.push(format!("limit={}", l)); }
+    let qs = qs_parts.join("&");
+    let path = if qs.is_empty() { "/api/v1/finance/tool-call-entries".to_string() }
+               else { format!("/api/v1/finance/tool-call-entries?{}", qs) };
+    api_get_or_default(&path).await
+}
+
+pub async fn get_tool_call_entry(call_id: &str) -> Result<common::api::GetToolCallEntryResponse, ApiError> {
+    api_get(&format!("/api/v1/finance/tool-call-entries/{}", call_id)).await
 }

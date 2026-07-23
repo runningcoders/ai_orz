@@ -1,6 +1,7 @@
 //! 消息渠道管理
 
 use dioxus::prelude::*;
+use dioxus_router::Link;
 
 use crate::api::finance::{
     create_message_channel, delete_message_channel, list_message_channels,
@@ -154,6 +155,11 @@ pub fn FinanceMessageChannels() -> Element {
                                                         else { span { class: "badge badge-error", "禁用" } }
                                                     }
                                                     td { class: "flex gap-2 items-center",
+                                                        Link {
+                                                            class: "btn btn-ghost btn-sm",
+                                                            to: crate::pages::Route::FinanceMessageChannelDetail { id: id.clone() },
+                                                            "详情"
+                                                        }
                                                         if is_active {
                                                             button { class: "btn btn-ghost btn-sm",
                                                                 onclick: move |_| {
