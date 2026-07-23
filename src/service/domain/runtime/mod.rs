@@ -256,6 +256,7 @@ pub trait RuntimeToolExecution: Send + Sync {
 // 注意：子模块必须在 trait 定义之后导入，这样子模块才能看到这些 trait
 
 mod awakening;
+mod busy_guard;
 mod memory;
 mod tool_call_query;
 mod tool_execution;

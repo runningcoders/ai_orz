@@ -82,8 +82,12 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         let start_time = std::time::SystemTime::now();
 
         // 设置 Agent 为忙碌状态
+        // 使用 RAII guard 确保 set_idle 一定被执行
+        // 修复：之前 set_busy 与 set_idle 之间多处 ? 提早返回（get_recent_context、
+        // brain 缺失等）会导致 Agent 永远 Busy，后续消息被 is_unavailable 挡住
         AgentRuntimeStateManager::global()
             .set_busy(&agent.po.id, &message.po.id);
+        let _busy_guard = crate::service::domain::runtime::busy_guard::BusyGuard::new(agent.po.id.clone());
 
         // 补充 Agent 上下文到 ctx，后续调用链可复用
         let ctx = enrich_ctx!(&ctx, agent);
@@ -156,11 +160,8 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             .ok_or_else(|| err!(Internal, "Agent 大脑未唤醒，请先调用 wake_brain()"))?;
 
         // 调用 think，先捕获结果（不立即 ?）
+        // set_idle 由 _busy_guard 在函数返回时自动执行（RAII）
         let think_result = self.brain_dal().think(ctx.clone(), brain, &prompt).await;
-
-        // 无论成功失败，最后都设置为 Idle
-        AgentRuntimeStateManager::global()
-            .set_idle(&agent.po.id);
 
         // 展开 Result，失败时也记录事件
         let raw_output = match think_result {
