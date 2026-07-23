@@ -434,6 +434,18 @@ pub struct ToolCallMessage {
     /// 轻量工具调用追踪引用（结果消息有效），最小包含真实 `{ tool_id, call_id }`。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trace_ref: Option<ToolCallTraceRef>,
+    /// 发起方的 log_id（用于异步路径重建 ctx）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_log_id: Option<String>,
+    /// 发起方的 user_id（用于异步路径重建 ctx）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_user_id: Option<String>,
+    /// 发起方的 model_provider_id（用于异步路径重建 ctx）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_model_provider_id: Option<String>,
+    /// 发起方的 model_name（用于异步路径重建 ctx）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_model_name: Option<String>,
 }
 
 impl ToolCallMessage {
@@ -464,6 +476,10 @@ impl ToolCallMessage {
             error_message: None,
             result_file_meta: None,
             trace_ref: None,
+            from_log_id: None,
+            from_user_id: None,
+            from_model_provider_id: None,
+            from_model_name: None,
         }
     }
 
@@ -488,6 +504,10 @@ impl ToolCallMessage {
             error_message: None,
             result_file_meta,
             trace_ref: None,
+            from_log_id: self.from_log_id.clone(),
+            from_user_id: self.from_user_id.clone(),
+            from_model_provider_id: self.from_model_provider_id.clone(),
+            from_model_name: self.from_model_name.clone(),
         }
     }
 
@@ -508,6 +528,10 @@ impl ToolCallMessage {
             error_message: Some(error_message),
             result_file_meta: None,
             trace_ref: None,
+            from_log_id: self.from_log_id.clone(),
+            from_user_id: self.from_user_id.clone(),
+            from_model_provider_id: self.from_model_provider_id.clone(),
+            from_model_name: self.from_model_name.clone(),
         }
     }
 
@@ -532,6 +556,10 @@ impl ToolCallMessage {
             error_message: Some(error_message),
             result_file_meta: None,
             trace_ref: None,
+            from_log_id: self.from_log_id.clone(),
+            from_user_id: self.from_user_id.clone(),
+            from_model_provider_id: self.from_model_provider_id.clone(),
+            from_model_name: self.from_model_name.clone(),
         }
     }
 }

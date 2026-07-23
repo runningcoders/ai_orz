@@ -192,7 +192,7 @@ impl MessageDelivery for MessageDomainImpl {
             .or_else(|| ctx.task_id().map(|s| s.as_str()))
             .map(|s| s.to_string());
 
-        let payload = ToolCallMessage::new_request(
+        let mut payload = ToolCallMessage::new_request(
             cmd.request_id.to_string(),
             cmd.tool_id.to_string(),
             cmd.tool_name.to_string(),
@@ -203,6 +203,12 @@ impl MessageDelivery for MessageDomainImpl {
             cmd.reply_to_id.map(|s| s.to_string()),
             cmd.args,
         );
+        // 填充 ctx 字段，供 consumer 异步路径重建 ctx
+        // 修复：之前 from_role=Agent 时 user_id 不设置，log_id/model_* 全部丢失
+        payload.from_log_id = Some(ctx.log_id.clone());
+        payload.from_user_id = ctx.user_id().cloned();
+        payload.from_model_provider_id = ctx.model_provider_id().cloned();
+        payload.from_model_name = ctx.model_name().cloned();
 
          let content = serde_json::to_string(&payload)
             .map_err(|e| err!(Internal, "failed to serialize tool call request").with_source(e))?;

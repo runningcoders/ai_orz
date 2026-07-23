@@ -351,8 +351,22 @@ impl MessageConsumer {
         if let Some(org_id) = &message.po.organization_id {
             builder = builder.organization_id(org_id.clone());
         }
-        if message.from_role() == MessageRole::User {
+        // 修复：从 ToolCallMessage 回填 ctx 字段，与同步路径保持一致
+        // 之前 from_role=Agent 时 user_id 永远不会被设置，
+        // log_id 重新生成与触发轮次断链，model_provider_id / model_name 全部丢失
+        if let Some(log_id) = &tool_call.from_log_id {
+            builder = builder.log_id(log_id.clone());
+        }
+        if let Some(user_id) = &tool_call.from_user_id {
+            builder = builder.user_id(user_id.clone());
+        } else if message.from_role() == MessageRole::User {
             builder = builder.user_id(message.po.from_id.clone());
+        }
+        if let Some(model_provider_id) = &tool_call.from_model_provider_id {
+            builder = builder.model_provider_id(model_provider_id.clone());
+        }
+        if let Some(model_name) = &tool_call.from_model_name {
+            builder = builder.model_name(model_name.clone());
         }
         let ctx = builder.build();
 
