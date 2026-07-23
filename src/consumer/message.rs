@@ -317,12 +317,23 @@ impl MessageConsumer {
             .delivery()
             .deliver_message(ctx, cmd)
             .await?;
+
         sys_debug!(
             "user message delivered: sse={}, channels={}/{}",
             result.sse_delivered,
             result.success,
             result.total
         );
+
+        // 修复：所有渠道投递失败时返回错误，触发 nack 重试
+        // 之前即使 success=0 也返回 Ok(())，消息被 ack 标记为 Processed，永远不会重试
+        if result.success == 0 && result.sse_delivered == 0 {
+            return Err(Error::internal(format!(
+                "All delivery channels failed for message {}, will retry",
+                message.po.id
+            )));
+        }
+
         Ok(())
     }
 
