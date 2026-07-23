@@ -25,7 +25,12 @@ impl Event for MessageCreatedEvent {
     }
 
     fn order_key(&self) -> &str {
-        self.project_id.as_deref().unwrap_or("")
+        // 优先按 task_id 分组，避免同 project 不同 task 互相阻塞
+        // 修复：之前按 project_id 分组，同一 project 下不同 task 的消息串行处理，
+        // Agent 处理 task A 时 task B 的用户消息被阻塞
+        self.task_id.as_deref().unwrap_or_else(|| {
+            self.project_id.as_deref().unwrap_or("")
+        })
     }
 
     fn created_at(&self) -> i64 {
