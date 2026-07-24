@@ -25,7 +25,7 @@ pub fn ProjectList() -> Element {
     use_effect(move || {
         loading.set(true);
         spawn(async move {
-            match list_projects().await {
+            match list_projects(None).await {
                 Ok(list) => {
                     let items = list.projects.clone();
                     projects.set(list.projects);
@@ -63,7 +63,7 @@ pub fn ProjectList() -> Element {
                     new_name.set(String::new());
                     new_description.set(String::new());
                     // Reload
-                    match list_projects().await {
+                    match list_projects(None).await {
                         Ok(list) => projects.set(list.projects),
                         Err(e) => toast.error(&e),
                     }

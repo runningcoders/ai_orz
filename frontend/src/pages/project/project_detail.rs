@@ -3,7 +3,7 @@
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
-use crate::api::hr::get_agent;
+use crate::api::hr::list_agents;
 use crate::api::{project::*, StatsOptions};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
@@ -75,18 +75,21 @@ pub fn ProjectDetail(id: String) -> Element {
                 Ok(resp) => {
                     let tasks_vec = resp.tasks;
 
-                    // 按需加载关联 agents（仅加载本项目任务涉及到的 assignee）
-                    let assignee_ids: std::collections::HashSet<String> = tasks_vec.iter()
+                    // 批量加载关联 agents（仅本项目任务涉及到的 assignee），消除 N+1
+                    let assignee_ids: Vec<String> = tasks_vec.iter()
                         .filter(|t| t.assignee_type == 1)
                         .map(|t| t.assignee_id.clone())
+                        .collect::<std::collections::HashSet<_>>()
+                        .into_iter()
                         .collect();
-                    let mut agents = Vec::new();
-                    for aid in assignee_ids {
-                        if let Ok(a) = get_agent(&aid, None).await {
-                            agents.push(AgentListItem::from(&a));
+                    if assignee_ids.is_empty() {
+                        graph_agents.set(Vec::new());
+                    } else {
+                        match list_agents(Some(&assignee_ids)).await {
+                            Ok(resp) => graph_agents.set(resp.agents),
+                            Err(e) => toast.error(&format!("批量获取 Agent 失败: {}", e)),
                         }
                     }
-                    graph_agents.set(agents);
 
                     // graph_projects 从当前 project_data 构造（无需 API 调用）
                     if let Some(p) = project.read().as_ref() {

@@ -66,8 +66,19 @@ pub async fn switch_embedding_provider(id: &str) -> Result<SwitchEmbeddingProvid
 
 // ===== 工具管理 =====
 
-pub async fn list_tools() -> Result<ListToolsResponse, ApiError> {
-    api_get_or_default("/api/v1/finance/tools").await
+pub async fn list_tools(ids: Option<&[String]>) -> Result<ListToolsResponse, ApiError> {
+    let mut url = "/api/v1/finance/tools".to_string();
+    let mut params: Vec<String> = Vec::new();
+    if let Some(ids) = ids {
+        for id in ids {
+            params.push(format!("ids={}", id));
+        }
+    }
+    if !params.is_empty() {
+        url.push('?');
+        url.push_str(&params.join("&"));
+    }
+    api_get_or_default(&url).await
 }
 
 pub async fn get_tool(id: &str, stats_options: Option<&super::StatsOptions>) -> Result<GetToolResponse, ApiError> {

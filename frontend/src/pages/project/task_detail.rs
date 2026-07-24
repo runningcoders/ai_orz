@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
 use crate::api::{project::*, StatsOptions};
-use crate::api::hr::get_agent;
+use crate::api::hr::list_agents;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::TaskStatsPanel;
@@ -67,17 +67,29 @@ pub fn TaskDetail(id: String) -> Element {
                             }
                         }
 
-                        // 2. 按需加载关联 agent（单个）
+                        // 2. 批量加载关联 agent（统一走批量接口，即使只有 1 个）
                         if assignee_type_for_graph == 1 {
-                            if let Ok(a) = get_agent(&assignee_id_for_graph, None).await {
-                                graph_agents.set(vec![AgentListItem::from(&a)]);
+                            let ids = vec![assignee_id_for_graph.clone()];
+                            match list_agents(Some(&ids)).await {
+                                Ok(resp) => {
+                                    if let Some(a) = resp.agents.into_iter().next() {
+                                        graph_agents.set(vec![a]);
+                                    }
+                                }
+                                Err(e) => toast.error(&format!("获取 Agent 失败: {}", e)),
                             }
                         }
 
-                        // 3. 按需加载关联 project（单个）
+                        // 3. 批量加载关联 project（统一走批量接口，即使只有 1 个）
                         if let Some(pid) = &pid_for_graph {
-                            if let Ok(p) = get_project(pid, None).await {
-                                graph_projects.set(vec![ProjectListItem::from(&p)]);
+                            let ids = vec![pid.clone()];
+                            match list_projects(Some(&ids)).await {
+                                Ok(resp) => {
+                                    if let Some(p) = resp.projects.into_iter().next() {
+                                        graph_projects.set(vec![p]);
+                                    }
+                                }
+                                Err(e) => toast.error(&format!("获取 Project 失败: {}", e)),
                             }
                         }
                     });

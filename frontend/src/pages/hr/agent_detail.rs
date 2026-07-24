@@ -1,6 +1,6 @@
 use crate::api::finance::list_model_providers;
 use crate::api::{hr::*, StatsOptions};
-use crate::api::project::{get_project, list_tasks};
+use crate::api::project::{list_projects, list_tasks};
 use crate::pages::hr::agent_memory_panel::AgentMemoryPanel;
 use crate::api::message::{load_latest_messages, send_message_to_agent};
 use crate::components::relation_graph::{RelationGraph, RelationNodeInfo};
@@ -199,7 +199,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                 Ok(resp) => skill_packs.set(resp.skill_packs),
                 Err(e) => toast.error(&format!("获取技能包失败: {}", e)),
             }
-            match list_tools().await {
+            match list_tools(None).await {
                 Ok(resp) => all_tools.set(resp.tools),
                 Err(e) => toast.error(&format!("获取工具列表失败: {}", e)),
             }
@@ -225,23 +225,25 @@ pub fn HrAgentDetail(id: String) -> Element {
             }
             // 按需加载关系图数据（避免全量加载）
             // 1. 按 agent_id 过滤 tasks（assignee_type=1 表示 Agent）
-            match list_tasks(None, None, Some(&aid), Some(1)).await {
+            match list_tasks(None, None, Some(&aid), Some(1), None).await {
                 Ok(resp) => {
                     let tasks = resp.tasks;
-                    // 2. 从 tasks 中收集 unique project_ids
-                    let project_ids: HashSet<String> = tasks.iter()
+                    // 2. 从 tasks 中收集 unique project_ids，批量查询消除 N+1
+                    let project_ids: Vec<String> = tasks.iter()
                         .filter_map(|t| t.project_id.clone())
+                        .collect::<HashSet<_>>()
+                        .into_iter()
                         .collect();
                     graph_tasks.set(tasks);
 
-                    // 逐个加载关联 project
-                    let mut projects = Vec::new();
-                    for pid in project_ids {
-                        if let Ok(p) = get_project(&pid, None).await {
-                            projects.push(ProjectListItem::from(&p));
+                    if project_ids.is_empty() {
+                        graph_projects.set(Vec::new());
+                    } else {
+                        match list_projects(Some(&project_ids)).await {
+                            Ok(resp) => graph_projects.set(resp.projects),
+                            Err(e) => toast.error(&format!("批量获取项目失败: {}", e)),
                         }
                     }
-                    graph_projects.set(projects);
                 }
                 Err(e) => toast.error(&format!("获取任务列表失败: {}", e)),
             }

@@ -11,8 +11,19 @@ use super::{api_delete, api_get, api_get_or_default, api_post, api_put, api_put_
 
 // ===== 项目管理 =====
 
-pub async fn list_projects() -> Result<ListProjectsResponse, ApiError> {
-    api_get_or_default("/api/v1/projects").await
+pub async fn list_projects(ids: Option<&[String]>) -> Result<ListProjectsResponse, ApiError> {
+    let mut url = "/api/v1/projects".to_string();
+    let mut params: Vec<String> = Vec::new();
+    if let Some(ids) = ids {
+        for id in ids {
+            params.push(format!("ids={}", id));
+        }
+    }
+    if !params.is_empty() {
+        url.push('?');
+        url.push_str(&params.join("&"));
+    }
+    api_get_or_default(&url).await
 }
 
 pub async fn get_project(id: &str, stats_options: Option<&super::StatsOptions>) -> Result<GetProjectResponse, ApiError> {
@@ -44,6 +55,7 @@ pub async fn list_tasks(
     status: Option<i32>,
     assignee_id: Option<&str>,
     assignee_type: Option<i32>,
+    ids: Option<&[String]>,
 ) -> Result<ListTasksResponse, ApiError> {
     let mut url = "/api/v1/tasks".to_string();
     let mut params = Vec::new();
@@ -58,6 +70,11 @@ pub async fn list_tasks(
     }
     if let Some(at) = assignee_type {
         params.push(format!("assignee_type={}", at));
+    }
+    if let Some(ids) = ids {
+        for id in ids {
+            params.push(format!("ids={}", id));
+        }
     }
     if !params.is_empty() {
         url.push('?');

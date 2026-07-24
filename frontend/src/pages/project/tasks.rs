@@ -43,11 +43,12 @@ pub fn TaskList() -> Element {
                 status,
                 None,
                 at,
+                None,
             ).await {
                 Ok(resp) => tasks.set(resp.tasks),
                 Err(e) => toast.error(&e),
             }
-            match list_projects().await {
+            match list_projects(None).await {
                 Ok(list) => projects.set(list.projects),
                 Err(e) => toast.error(&e),
             }

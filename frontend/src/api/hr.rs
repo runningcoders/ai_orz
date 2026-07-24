@@ -14,8 +14,19 @@ use super::{api_delete, api_get, api_get_or_default, api_post, api_post_empty, a
 
 // ===== Agent 管理 =====
 
-pub async fn list_agents() -> Result<ListAgentsResponse, ApiError> {
-    api_get_or_default("/api/v1/hr/agents").await
+pub async fn list_agents(ids: Option<&[String]>) -> Result<ListAgentsResponse, ApiError> {
+    let mut url = "/api/v1/hr/agents".to_string();
+    let mut params: Vec<String> = Vec::new();
+    if let Some(ids) = ids {
+        for id in ids {
+            params.push(format!("ids={}", id));
+        }
+    }
+    if !params.is_empty() {
+        url.push('?');
+        url.push_str(&params.join("&"));
+    }
+    api_get_or_default(&url).await
 }
 
 /// 查询当前可用的前台 Agent（供前端显示推荐前台 Agent）
@@ -85,8 +96,19 @@ pub async fn uninstall_skill_pack(agent_id: &str, tag: &str) -> Result<(), ApiEr
 
 // ===== 技能库管理 =====
 
-pub async fn list_skills() -> Result<ListSkillsResponse, ApiError> {
-    api_get_or_default("/api/v1/hr/skills").await
+pub async fn list_skills(ids: Option<&[String]>) -> Result<ListSkillsResponse, ApiError> {
+    let mut url = "/api/v1/hr/skills".to_string();
+    let mut params: Vec<String> = Vec::new();
+    if let Some(ids) = ids {
+        for id in ids {
+            params.push(format!("ids={}", id));
+        }
+    }
+    if !params.is_empty() {
+        url.push('?');
+        url.push_str(&params.join("&"));
+    }
+    api_get_or_default(&url).await
 }
 
 pub async fn search_skills(keyword: &str) -> Result<ListSkillsResponse, ApiError> {
@@ -171,8 +193,19 @@ pub async fn unbind_tool_from_agent(agent_id: &str, tool_id: &str) -> Result<(),
 
 // ===== 工具列表（从 Finance 域重导出） =====
 
-pub async fn list_tools() -> Result<ListToolsResponse, ApiError> {
-    api_get_or_default("/api/v1/finance/tools").await
+pub async fn list_tools(ids: Option<&[String]>) -> Result<ListToolsResponse, ApiError> {
+    let mut url = "/api/v1/finance/tools".to_string();
+    let mut params: Vec<String> = Vec::new();
+    if let Some(ids) = ids {
+        for id in ids {
+            params.push(format!("ids={}", id));
+        }
+    }
+    if !params.is_empty() {
+        url.push('?');
+        url.push_str(&params.join("&"));
+    }
+    api_get_or_default(&url).await
 }
 
 // ===== 记忆搜索 =====

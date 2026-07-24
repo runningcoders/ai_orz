@@ -34,7 +34,7 @@ pub fn HrSkills() -> Element {
     use_effect(move || {
         loading.set(true);
         spawn(async move {
-            match list_skills().await {
+            match list_skills(None).await {
                 Ok(list) => skills.set(list.skills),
                 Err(e) => toast.error(&e),
             }
@@ -81,7 +81,7 @@ pub fn HrSkills() -> Element {
                     new_content.set(String::new());
                     let keyword = search_keyword();
                     let result = if keyword.trim().is_empty() {
-                        list_skills().await
+                        list_skills(None).await
                     } else {
                         search_skills(&keyword).await
                     };
@@ -117,7 +117,7 @@ pub fn HrSkills() -> Element {
                                     loading.set(true);
                                     let kw = search_keyword();
                                     let result = if kw.trim().is_empty() {
-                                        list_skills().await
+                                        list_skills(None).await
                                     } else {
                                         search_skills(&kw).await
                                     };
@@ -140,7 +140,7 @@ pub fn HrSkills() -> Element {
                                     spawn(async move {
                                         if search_request_id() != my_id { return; }
                                         loading.set(true);
-                                        match list_skills().await {
+                                        match list_skills(None).await {
                                             Ok(list) => skills.set(list.skills),
                                             Err(e) => toast.error(&e),
                                         }
@@ -276,7 +276,7 @@ pub fn HrSkills() -> Element {
                     } else {
                         let keyword = search_keyword();
                         let result = if keyword.trim().is_empty() {
-                            list_skills().await
+                            list_skills(None).await
                         } else {
                             search_skills(&keyword).await
                         };

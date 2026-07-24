@@ -78,7 +78,7 @@ pub fn HrAgents() -> Element {
     use_effect(move || {
         loading.set(true);
         spawn(async move {
-            match list_agents().await {
+            match list_agents(None).await {
                 Ok(list) => agents.set(list.agents),
                 Err(e) => toast.error(&e),
             }
@@ -97,7 +97,7 @@ pub fn HrAgents() -> Element {
         search_request_id.set(my_id);
         spawn(async move {
             let result = if keyword.trim().is_empty() {
-                list_agents().await
+                list_agents(None).await
             } else {
                 search_agents(&keyword).await
             };
@@ -230,7 +230,7 @@ pub fn HrAgents() -> Element {
                                     loading.set(true);
                                     let kw = search_keyword();
                                     let result = if kw.trim().is_empty() {
-                                        list_agents().await
+                                        list_agents(None).await
                                     } else {
                                         search_agents(&kw).await
                                     };

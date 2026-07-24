@@ -93,7 +93,7 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
         let mode_for_async = mode_for_load.clone();
         spawn(async move {
             // 加载项目列表
-            match list_projects().await {
+            match list_projects(None).await {
                 Ok(list) => {
                     // 在 move 之前预先决定 project_id
                     let pid_to_set = if !pid_initial.is_empty() {
@@ -109,7 +109,7 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
                 Err(e) => toast.error(&e),
             }
             // 加载 Agent 列表
-            match list_agents().await {
+            match list_agents(None).await {
                 Ok(resp) => {
                     // 在 move 之前预先决定默认 assignee
                     let first_agent_id = resp.agents.first().map(|a| a.id.clone());

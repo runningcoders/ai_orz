@@ -38,7 +38,7 @@ pub fn ProjectArtifacts() -> Element {
     use_effect(move || {
         loading.set(true);
         spawn(async move {
-            match list_projects().await {
+            match list_projects(None).await {
                 Ok(list) => {
                     let items = list.projects;
                     if !items.is_empty() {
