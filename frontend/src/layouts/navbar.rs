@@ -57,6 +57,7 @@ pub fn Navbar() -> Element {
                 div { class: "flex-none",
                     Link { to: Route::MessageChat {}, class: "btn btn-ghost btn-sm text-neutral-content", "💬 对话" }
                     Link { to: Route::MessageSearch {}, class: "btn btn-ghost btn-sm text-neutral-content", "🔍 消息搜索" }
+                    Link { to: Route::Workspace {}, class: "btn btn-ghost btn-sm text-neutral-content", "🚀 工作台" }
 
                     // 人力资源
                     div { class: "dropdown dropdown-end relative",
@@ -546,6 +547,20 @@ pub fn Navbar() -> Element {
                                     drawer_open.set(false);
                                 },
                                 "🔍 消息搜索"
+                            }
+                        }
+                        li {
+                            Link {
+                                to: Route::Workspace {},
+                                onclick: move |_| {
+                                    hr_menu_open.set(false);
+                                    finance_menu_open.set(false);
+                                    project_menu_open.set(false);
+                                    system_menu_open.set(false);
+                                    user_menu_open.set(false);
+                                    drawer_open.set(false);
+                                },
+                                "🚀 工作台"
                             }
                         }
 

@@ -1,6 +1,7 @@
 //! 基础 UI 组件库
 
 pub mod button;
+pub mod canvas_scene;
 pub mod confirm_dialog;
 pub mod graph;
 pub mod modal;

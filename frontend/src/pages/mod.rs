@@ -9,6 +9,7 @@ pub mod reception;
 pub mod settings;
 pub mod system;
 pub mod user;
+pub mod workspace;
 
 use dioxus::prelude::*;
 
@@ -48,6 +49,7 @@ use crate::pages::system::health::SystemHealth;
 use crate::pages::system::logs::SystemLogs;
 use crate::pages::system::triggers::SystemTriggers;
 use crate::pages::user::profile::UserProfile;
+use crate::pages::workspace::Workspace;
 
 /// 全局路由枚举
 #[derive(Clone, Routable, Debug, PartialEq)]
@@ -135,6 +137,10 @@ pub enum Route {
     // 用户
     #[route("/user/profile")]
     UserProfile {},
+
+    // 工作台（Canvas 试点）
+    #[route("/workspace")]
+    Workspace {},
 
     // 设置
     #[route("/settings")]
