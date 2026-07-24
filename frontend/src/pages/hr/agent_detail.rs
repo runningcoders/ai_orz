@@ -1,15 +1,17 @@
 use crate::api::finance::list_model_providers;
 use crate::api::{hr::*, StatsOptions};
+use crate::api::project::{list_tasks, list_projects};
 use crate::pages::hr::agent_memory_panel::AgentMemoryPanel;
 use crate::api::message::{load_latest_messages, send_message_to_agent};
 use crate::components::relation_graph::{RelationGraph, RelationNodeInfo};
+use crate::components::workspace_graph::{WorkspaceGraph, WorkspaceView};
 use crate::components::modal::Modal;
 use crate::components::state::Loading;
 use crate::components::stats::AgentStatsPanel;
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::{format_file_size, format_time_hm as format_time, is_attachment_message, role_avatar, tmp_msg_id};
-use common::api::{GetAgentResponse, ListModelProvidersResponseItem, MessageListItem, SendMessageToAgentParams, ToolListItem, UpdateAgentRequest};
+use common::api::{AgentListItem, GetAgentResponse, ListModelProvidersResponseItem, MessageListItem, ProjectListItem, SendMessageToAgentParams, TaskListItem, ToolListItem, UpdateAgentRequest};
 use dioxus::prelude::*;
 use dioxus_router::{use_navigator, Link};
 use std::collections::HashSet;
@@ -159,8 +161,12 @@ pub fn HrAgentDetail(id: String) -> Element {
     let mut edit_model_provider_id = use_signal(String::new);
     let mut saving_meta = use_signal(|| false);
     let mut model_providers = use_signal(Vec::<ListModelProvidersResponseItem>::new);
-    // Tab 切换信号：0=概览 1=工具与技能 2=状态图 3=对话与记忆
+    // Tab 切换信号：0=概览 1=工具与技能 2=状态图 3=对话与记忆 4=关系图
     let mut active_tab = use_signal(|| 0usize);
+    // 关系图所需数据：全局 projects + tasks + agents 列表
+    let mut graph_projects = use_signal(Vec::<ProjectListItem>::new);
+    let mut graph_tasks = use_signal(Vec::<TaskListItem>::new);
+    let mut graph_agents = use_signal(Vec::<AgentListItem>::new);
 
     let agent_tool_ids = agent_data
         .read()
@@ -216,6 +222,19 @@ pub fn HrAgentDetail(id: String) -> Element {
             match list_model_providers().await {
                 Ok(resp) => model_providers.set(resp.providers),
                 Err(e) => toast.error(&format!("加载模型提供商列表失败: {}", e)),
+            }
+            // 加载关系图所需的全局 projects、tasks 和 agents
+            match list_projects().await {
+                Ok(resp) => graph_projects.set(resp.projects),
+                Err(e) => toast.error(&format!("获取项目列表失败: {}", e)),
+            }
+            match list_tasks(None, None, None, None).await {
+                Ok(resp) => graph_tasks.set(resp.tasks),
+                Err(e) => toast.error(&format!("获取任务列表失败: {}", e)),
+            }
+            match list_agents().await {
+                Ok(resp) => graph_agents.set(resp.agents),
+                Err(e) => toast.error(&format!("获取 Agent 列表失败: {}", e)),
             }
         });
     };
@@ -353,6 +372,7 @@ pub fn HrAgentDetail(id: String) -> Element {
             let tab1_class = if active_tab() == 1 { "tab tab-lg tab-active" } else { "tab tab-lg" };
             let tab2_class = if active_tab() == 2 { "tab tab-lg tab-active" } else { "tab tab-lg" };
             let tab3_class = if active_tab() == 3 { "tab tab-lg tab-active" } else { "tab tab-lg" };
+            let tab4_class = if active_tab() == 4 { "tab tab-lg tab-active" } else { "tab tab-lg" };
 
             rsx! {
                 div { class: "card bg-base-100 shadow-md",
@@ -401,6 +421,11 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 class: "{tab3_class}",
                                 onclick: move |_| active_tab.set(3),
                                 "💬 对话与记忆"
+                            }
+                            button {
+                                class: "{tab4_class}",
+                                onclick: move |_| active_tab.set(4),
+                                "🕸️ 关系图"
                             }
                         }
 
@@ -848,6 +873,23 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 div { class: "mb-6",
                                     h3 { class: "text-lg font-semibold mb-3", "记忆" }
                                     AgentMemoryPanel { agent_id: Some(id.clone()) }
+                                }
+                            },
+                            4 => rsx! {
+                                div { class: "card bg-base-100 shadow-md",
+                                    div { class: "card-header",
+                                        h2 { class: "card-title", "关系图" }
+                                    }
+                                    div { class: "p-4",
+                                        WorkspaceGraph {
+                                            view: WorkspaceView::AgentDetail(a.id.clone()),
+                                            projects: graph_projects.read().clone(),
+                                            agents: graph_agents.read().clone(),
+                                            tasks: graph_tasks.read().clone(),
+                                            width: 800.0,
+                                            height: 500.0,
+                                        }
+                                    }
                                 }
                             },
                             _ => rsx! {},
