@@ -83,9 +83,9 @@ pub fn MessageChat() -> Element {
     let mut load_projects = move || {
         loading_projects.set(true);
         spawn(async move {
-            match list_projects(None).await {
+            match list_projects(None, None).await {
                 Ok(resp) => {
-                    projects.set(resp.projects);
+                    projects.set(resp.items);
                     // 不自动选择第一个项目，让用户从「默认对话」开始
                 }
                 Err(e) => {

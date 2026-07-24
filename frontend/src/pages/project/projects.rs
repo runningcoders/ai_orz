@@ -25,10 +25,10 @@ pub fn ProjectList() -> Element {
     use_effect(move || {
         loading.set(true);
         spawn(async move {
-            match list_projects(None).await {
-                Ok(list) => {
-                    let items = list.projects.clone();
-                    projects.set(list.projects);
+            match list_projects(None, None).await {
+                Ok(page) => {
+                    let items = page.items.clone();
+                    projects.set(page.items);
                     let mut counts = HashMap::new();
                     for p in &items {
                         if let Ok(tasks_resp) = list_project_tasks(&p.id).await {
@@ -63,8 +63,8 @@ pub fn ProjectList() -> Element {
                     new_name.set(String::new());
                     new_description.set(String::new());
                     // Reload
-                    match list_projects(None).await {
-                        Ok(list) => projects.set(list.projects),
+                    match list_projects(None, None).await {
+                        Ok(page) => projects.set(page.items),
                         Err(e) => toast.error(&e),
                     }
                 }

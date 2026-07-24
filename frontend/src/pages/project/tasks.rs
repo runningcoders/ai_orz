@@ -3,12 +3,13 @@
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
-use crate::api::project::{list_projects, list_tasks};
+use crate::api::project::{list_projects, query_tasks};
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::{format_datetime as format_time, progress_bar_class, task_status_badge, task_status_text};
-use common::api::{ListProjectsResponseItem, TaskListItem};
+use common::api::{ListProjectsResponseItem, PaginationParams, TaskListItem, TaskQueryRequest};
+use common::enums::{AssigneeType, TaskStatus};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ViewMode {
@@ -38,18 +39,19 @@ pub fn TaskList() -> Element {
         let status = if filter_status() >= 0 { Some(filter_status()) } else { None };
         let at = if filter_assignee_type() >= 0 { Some(filter_assignee_type()) } else { None };
         spawn(async move {
-            match list_tasks(
-                if pid.is_empty() { None } else { Some(&pid) },
-                status,
-                None,
-                at,
-                None,
-            ).await {
-                Ok(resp) => tasks.set(resp.tasks),
+            let req = TaskQueryRequest {
+                project_id: if pid.is_empty() { None } else { Some(pid.clone()) },
+                status_in: status.map(|s| vec![TaskStatus::from_i32(s)]),
+                assignee_type: at.map(AssigneeType::from_i32),
+                pagination: PaginationParams::default(),
+                ..Default::default()
+            };
+            match query_tasks(&req).await {
+                Ok(page) => tasks.set(page.items),
                 Err(e) => toast.error(&e),
             }
-            match list_projects(None).await {
-                Ok(list) => projects.set(list.projects),
+            match list_projects(None, None).await {
+                Ok(page) => projects.set(page.items),
                 Err(e) => toast.error(&e),
             }
             loading.set(false);

@@ -27,10 +27,10 @@ pub fn use_workspace_data() -> (Signal<Option<WorkspaceData>>, impl FnMut()) {
 
     let load = move || {
         spawn(async move {
-            let projects = list_projects(None).await.map(|r| r.projects).unwrap_or_default();
-            let agents = list_agents(None).await.map(|r| r.agents).unwrap_or_default();
+            let projects = list_projects(None, None).await.map(|r| r.items).unwrap_or_default();
+            let agents = list_agents(None, None).await.map(|r| r.items).unwrap_or_default();
             // 加载所有任务（不传过滤参数）
-            let tasks = list_tasks(None, None, None, None, None).await.map(|r| r.tasks).unwrap_or_default();
+            let tasks = list_tasks(None, None).await.map(|r| r.items).unwrap_or_default();
 
             // 失败时 toast 提示但不阻断
             if projects.is_empty() && agents.is_empty() {

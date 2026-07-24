@@ -1,6 +1,6 @@
 use crate::api::finance::list_model_providers;
 use crate::api::{hr::*, StatsOptions};
-use crate::api::project::{list_projects, list_tasks};
+use crate::api::project::{query_projects, query_tasks};
 use crate::pages::hr::agent_memory_panel::AgentMemoryPanel;
 use crate::api::message::{load_latest_messages, send_message_to_agent};
 use crate::components::relation_graph::{RelationGraph, RelationNodeInfo};
@@ -11,7 +11,8 @@ use crate::components::stats::AgentStatsPanel;
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::{format_file_size, format_time_hm as format_time, is_attachment_message, role_avatar, tmp_msg_id};
-use common::api::{AgentListItem, GetAgentResponse, ListModelProvidersResponseItem, MessageListItem, ProjectListItem, SendMessageToAgentParams, TaskListItem, ToolListItem, UpdateAgentRequest};
+use common::api::{AgentListItem, GetAgentResponse, ListModelProvidersResponseItem, MessageListItem, PaginationParams, ProjectListItem, ProjectQueryRequest, SendMessageToAgentParams, TaskListItem, TaskQueryRequest, ToolListItem, UpdateAgentRequest};
+use common::enums::AssigneeType;
 use dioxus::prelude::*;
 use dioxus_router::{use_navigator, Link};
 use std::collections::HashSet;
@@ -199,8 +200,8 @@ pub fn HrAgentDetail(id: String) -> Element {
                 Ok(resp) => skill_packs.set(resp.skill_packs),
                 Err(e) => toast.error(&format!("获取技能包失败: {}", e)),
             }
-            match list_tools(None).await {
-                Ok(resp) => all_tools.set(resp.tools),
+            match list_tools(None, None).await {
+                Ok(resp) => all_tools.set(resp.items),
                 Err(e) => toast.error(&format!("获取工具列表失败: {}", e)),
             }
             match load_latest_messages(None, Some(50)).await {
@@ -224,10 +225,16 @@ pub fn HrAgentDetail(id: String) -> Element {
                 Err(e) => toast.error(&format!("加载模型提供商列表失败: {}", e)),
             }
             // 按需加载关系图数据（避免全量加载）
-            // 1. 按 agent_id 过滤 tasks（assignee_type=1 表示 Agent）
-            match list_tasks(None, None, Some(&aid), Some(1), None).await {
-                Ok(resp) => {
-                    let tasks = resp.tasks;
+            // 1. 按 agent_id 过滤 tasks（assignee_type=Agent）
+            let req = TaskQueryRequest {
+                assignee_id: Some(aid.clone()),
+                assignee_type: Some(AssigneeType::Agent),
+                pagination: PaginationParams::default(),
+                ..Default::default()
+            };
+            match query_tasks(&req).await {
+                Ok(page) => {
+                    let tasks = page.items;
                     // 2. 从 tasks 中收集 unique project_ids，批量查询消除 N+1
                     let project_ids: Vec<String> = tasks.iter()
                         .filter_map(|t| t.project_id.clone())
@@ -239,8 +246,13 @@ pub fn HrAgentDetail(id: String) -> Element {
                     if project_ids.is_empty() {
                         graph_projects.set(Vec::new());
                     } else {
-                        match list_projects(Some(&project_ids)).await {
-                            Ok(resp) => graph_projects.set(resp.projects),
+                        let req = ProjectQueryRequest {
+                            ids: Some(project_ids),
+                            pagination: PaginationParams::default(),
+                            ..Default::default()
+                        };
+                        match query_projects(&req).await {
+                            Ok(page) => graph_projects.set(page.items),
                             Err(e) => toast.error(&format!("批量获取项目失败: {}", e)),
                         }
                     }

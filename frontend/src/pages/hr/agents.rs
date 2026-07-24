@@ -78,8 +78,8 @@ pub fn HrAgents() -> Element {
     use_effect(move || {
         loading.set(true);
         spawn(async move {
-            match list_agents(None).await {
-                Ok(list) => agents.set(list.agents),
+            match list_agents(None, None).await {
+                Ok(page) => agents.set(page.items),
                 Err(e) => toast.error(&e),
             }
             match list_model_providers().await {
@@ -97,16 +97,16 @@ pub fn HrAgents() -> Element {
         search_request_id.set(my_id);
         spawn(async move {
             let result = if keyword.trim().is_empty() {
-                list_agents(None).await
+                list_agents(None, None).await.map(|p| p.items)
             } else {
-                search_agents(&keyword).await
+                search_agents(&keyword).await.map(|r| r.agents)
             };
             // 丢弃过期请求的结果
             if search_request_id() != my_id {
                 return;
             }
             match result {
-                Ok(list) => agents.set(list.agents),
+                Ok(v) => agents.set(v),
                 Err(e) => toast.error(&e),
             }
         });
@@ -230,13 +230,13 @@ pub fn HrAgents() -> Element {
                                     loading.set(true);
                                     let kw = search_keyword();
                                     let result = if kw.trim().is_empty() {
-                                        list_agents(None).await
+                                        list_agents(None, None).await.map(|p| p.items)
                                     } else {
-                                        search_agents(&kw).await
+                                        search_agents(&kw).await.map(|r| r.agents)
                                     };
                                     if search_request_id() != my_id { return; }
                                     match result {
-                                        Ok(list) => agents.set(list.agents),
+                                        Ok(v) => agents.set(v),
                                         Err(e) => toast.error(&e),
                                     }
                                     loading.set(false);

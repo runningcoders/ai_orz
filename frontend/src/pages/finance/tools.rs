@@ -24,8 +24,8 @@ pub fn FinanceTools() -> Element {
     use_effect(move || {
         loading.set(true);
         spawn(async move {
-            match list_tools(None).await {
-                Ok(list) => tools.set(list.tools),
+            match list_tools(None, None).await {
+                Ok(page) => tools.set(page.items),
                 Err(e) => toast.error(&e),
             }
             loading.set(false);
@@ -89,8 +89,8 @@ pub fn FinanceTools() -> Element {
                                                                     if let Err(e) = update_tool_status(&id_disable, 0).await {
                                                                         toast.error(&e);
                                                                     } else {
-                                                                        match list_tools(None).await {
-                                                                            Ok(list) => tools.set(list.tools),
+                                                                        match list_tools(None, None).await {
+                                                                            Ok(page) => tools.set(page.items),
                                                                             Err(e) => toast.error(&e),
                                                                         }
                                                                     }
@@ -106,8 +106,8 @@ pub fn FinanceTools() -> Element {
                                                                     if let Err(e) = update_tool_status(&id_enable, 1).await {
                                                                         toast.error(&e);
                                                                     } else {
-                                                                        match list_tools(None).await {
-                                                                            Ok(list) => tools.set(list.tools),
+                                                                        match list_tools(None, None).await {
+                                                                            Ok(page) => tools.set(page.items),
                                                                             Err(e) => toast.error(&e),
                                                                         }
                                                                     }
@@ -146,8 +146,8 @@ pub fn FinanceTools() -> Element {
                     if let Err(e) = delete_tool(&id).await {
                         toast.error(&format!("删除失败: {}", e));
                     } else {
-                        match list_tools(None).await {
-                            Ok(list) => tools.set(list.tools),
+                        match list_tools(None, None).await {
+                            Ok(page) => tools.set(page.items),
                             Err(e) => toast.error(&e),
                         }
                     }

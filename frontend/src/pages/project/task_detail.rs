@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
 use crate::api::{project::*, StatsOptions};
-use crate::api::hr::list_agents;
+use crate::api::hr::query_agents;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::TaskStatsPanel;
@@ -12,7 +12,7 @@ use crate::components::workspace_graph::{WorkspaceGraph, WorkspaceView};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::{format_timestamp_opt as format_timestamp, progress_bar_class, task_status_badge as status_badge, task_status_text as status_text};
-use common::api::{AgentListItem, GetTaskResponse, ProjectListItem, TaskListItem};
+use common::api::{AgentListItem, AgentQueryRequest, GetTaskResponse, PaginationParams, ProjectListItem, ProjectQueryRequest, TaskListItem};
 use crate::pages::project::task_edit_modal::{TaskEditMode, TaskEditModal};
 
 #[component]
@@ -70,9 +70,14 @@ pub fn TaskDetail(id: String) -> Element {
                         // 2. 批量加载关联 agent（统一走批量接口，即使只有 1 个）
                         if assignee_type_for_graph == 1 {
                             let ids = vec![assignee_id_for_graph.clone()];
-                            match list_agents(Some(&ids)).await {
-                                Ok(resp) => {
-                                    if let Some(a) = resp.agents.into_iter().next() {
+                            let req = AgentQueryRequest {
+                                ids: Some(ids),
+                                pagination: PaginationParams::default(),
+                                ..Default::default()
+                            };
+                            match query_agents(&req).await {
+                                Ok(page) => {
+                                    if let Some(a) = page.items.into_iter().next() {
                                         graph_agents.set(vec![a]);
                                     }
                                 }
@@ -83,9 +88,14 @@ pub fn TaskDetail(id: String) -> Element {
                         // 3. 批量加载关联 project（统一走批量接口，即使只有 1 个）
                         if let Some(pid) = &pid_for_graph {
                             let ids = vec![pid.clone()];
-                            match list_projects(Some(&ids)).await {
-                                Ok(resp) => {
-                                    if let Some(p) = resp.projects.into_iter().next() {
+                            let req = ProjectQueryRequest {
+                                ids: Some(ids),
+                                pagination: PaginationParams::default(),
+                                ..Default::default()
+                            };
+                            match query_projects(&req).await {
+                                Ok(page) => {
+                                    if let Some(p) = page.items.into_iter().next() {
                                         graph_projects.set(vec![p]);
                                     }
                                 }

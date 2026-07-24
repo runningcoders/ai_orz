@@ -3,7 +3,7 @@
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
-use crate::api::hr::list_agents;
+use crate::api::hr::query_agents;
 use crate::api::{project::*, StatsOptions};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
@@ -13,7 +13,7 @@ use crate::layouts::app_layout::AppLayout;
 use crate::pages::project::task_edit_modal::{TaskEditMode, TaskEditModal};
 use crate::store::toast::use_toast;
 use crate::utils::{progress_bar_class, project_status_badge, project_status_text, task_status_badge, task_status_text};
-use common::api::{AgentListItem, ArtifactDetail, CreateArtifactRequest, GetProjectResponse, ProjectListItem, TaskListItem, UpdateProjectRequest};
+use common::api::{AgentListItem, AgentQueryRequest, ArtifactDetail, CreateArtifactRequest, GetProjectResponse, PaginationParams, ProjectListItem, TaskListItem, UpdateProjectRequest};
 use common::enums::ArtifactSourceType;
 
 fn artifact_source_type_text(source_type: ArtifactSourceType) -> &'static str {
@@ -85,8 +85,13 @@ pub fn ProjectDetail(id: String) -> Element {
                     if assignee_ids.is_empty() {
                         graph_agents.set(Vec::new());
                     } else {
-                        match list_agents(Some(&assignee_ids)).await {
-                            Ok(resp) => graph_agents.set(resp.agents),
+                        let req = AgentQueryRequest {
+                            ids: Some(assignee_ids),
+                            pagination: PaginationParams::default(),
+                            ..Default::default()
+                        };
+                        match query_agents(&req).await {
+                            Ok(page) => graph_agents.set(page.items),
                             Err(e) => toast.error(&format!("批量获取 Agent 失败: {}", e)),
                         }
                     }

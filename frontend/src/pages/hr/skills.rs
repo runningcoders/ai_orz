@@ -34,8 +34,8 @@ pub fn HrSkills() -> Element {
     use_effect(move || {
         loading.set(true);
         spawn(async move {
-            match list_skills(None).await {
-                Ok(list) => skills.set(list.skills),
+            match list_skills(None, None).await {
+                Ok(page) => skills.set(page.items),
                 Err(e) => toast.error(&e),
             }
             loading.set(false);
@@ -81,12 +81,12 @@ pub fn HrSkills() -> Element {
                     new_content.set(String::new());
                     let keyword = search_keyword();
                     let result = if keyword.trim().is_empty() {
-                        list_skills(None).await
+                        list_skills(None, None).await.map(|p| p.items)
                     } else {
-                        search_skills(&keyword).await
+                        search_skills(&keyword).await.map(|r| r.skills)
                     };
                     match result {
-                        Ok(list) => skills.set(list.skills),
+                        Ok(v) => skills.set(v),
                         Err(e) => toast.error(&e),
                     }
                 }
@@ -117,13 +117,13 @@ pub fn HrSkills() -> Element {
                                     loading.set(true);
                                     let kw = search_keyword();
                                     let result = if kw.trim().is_empty() {
-                                        list_skills(None).await
+                                        list_skills(None, None).await.map(|p| p.items)
                                     } else {
-                                        search_skills(&kw).await
+                                        search_skills(&kw).await.map(|r| r.skills)
                                     };
                                     if search_request_id() != my_id { return; }
                                     match result {
-                                        Ok(list) => skills.set(list.skills),
+                                        Ok(v) => skills.set(v),
                                         Err(e) => toast.error(&e),
                                     }
                                     loading.set(false);
@@ -140,8 +140,8 @@ pub fn HrSkills() -> Element {
                                     spawn(async move {
                                         if search_request_id() != my_id { return; }
                                         loading.set(true);
-                                        match list_skills(None).await {
-                                            Ok(list) => skills.set(list.skills),
+                                        match list_skills(None, None).await {
+                                            Ok(page) => skills.set(page.items),
                                             Err(e) => toast.error(&e),
                                         }
                                         loading.set(false);
@@ -276,12 +276,12 @@ pub fn HrSkills() -> Element {
                     } else {
                         let keyword = search_keyword();
                         let result = if keyword.trim().is_empty() {
-                            list_skills(None).await
+                            list_skills(None, None).await.map(|p| p.items)
                         } else {
-                            search_skills(&keyword).await
+                            search_skills(&keyword).await.map(|r| r.skills)
                         };
                         match result {
-                            Ok(list) => skills.set(list.skills),
+                            Ok(v) => skills.set(v),
                             Err(e) => toast.error(&e),
                         }
                     }

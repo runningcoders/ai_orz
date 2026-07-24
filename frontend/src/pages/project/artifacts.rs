@@ -38,9 +38,9 @@ pub fn ProjectArtifacts() -> Element {
     use_effect(move || {
         loading.set(true);
         spawn(async move {
-            match list_projects(None).await {
-                Ok(list) => {
-                    let items = list.projects;
+            match list_projects(None, None).await {
+                Ok(page) => {
+                    let items = page.items;
                     if !items.is_empty() {
                         let first_id = items[0].id.clone();
                         selected_project_id.set(first_id.clone());

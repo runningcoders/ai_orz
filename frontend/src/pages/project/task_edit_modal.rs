@@ -93,15 +93,15 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
         let mode_for_async = mode_for_load.clone();
         spawn(async move {
             // 加载项目列表
-            match list_projects(None).await {
-                Ok(list) => {
+            match list_projects(None, None).await {
+                Ok(page) => {
                     // 在 move 之前预先决定 project_id
                     let pid_to_set = if !pid_initial.is_empty() {
                         Some(pid_initial.clone())
                     } else {
-                        list.projects.first().map(|p| p.id.clone())
+                        page.items.first().map(|p| p.id.clone())
                     };
-                    projects.set(list.projects);
+                    projects.set(page.items);
                     if let Some(pid) = pid_to_set {
                         project_id.set(pid);
                     }
@@ -109,11 +109,11 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
                 Err(e) => toast.error(&e),
             }
             // 加载 Agent 列表
-            match list_agents(None).await {
-                Ok(resp) => {
+            match list_agents(None, None).await {
+                Ok(page) => {
                     // 在 move 之前预先决定默认 assignee
-                    let first_agent_id = resp.agents.first().map(|a| a.id.clone());
-                    agents.set(resp.agents);
+                    let first_agent_id = page.items.first().map(|a| a.id.clone());
+                    agents.set(page.items);
                     if let Some(id) = first_agent_id {
                         assignee_id.set(id);
                     }
