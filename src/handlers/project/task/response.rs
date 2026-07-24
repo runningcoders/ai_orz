@@ -18,6 +18,7 @@ pub(super) fn to_list_item(task: &Task) -> TaskListItem {
         progress: task.po.progress,
         created_at: task.po.created_at,
         updated_at: task.po.updated_at,
+        dependencies: task.po.get_dependencies(),
     }
 }
 

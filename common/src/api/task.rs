@@ -135,6 +135,8 @@ pub struct TaskListItem {
     pub created_at: i64,
     /// 更新时间戳
     pub updated_at: i64,
+    /// 前置任务 ID 列表（DAG 依赖）
+    pub dependencies: Vec<String>,
 }
 
 /// 获取 Task 响应

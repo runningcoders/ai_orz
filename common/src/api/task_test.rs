@@ -43,6 +43,7 @@ fn task_requests_and_responses_serialize_contract() {
         progress: 0,
         created_at: 1,
         updated_at: 2,
+        dependencies: vec![],
     };
     let response: ApiResponse<Vec<TaskListItem>> = ApiResponse::success(vec![list_item]);
     assert!(response.is_success());
