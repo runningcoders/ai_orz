@@ -59,6 +59,23 @@ pub struct AgentListItem {
     pub runtime_state: i32,
 }
 
+/// 从详情响应构造列表项（用于按需加载场景，避免全量 list_agents）
+impl From<&GetAgentResponse> for AgentListItem {
+    fn from(a: &GetAgentResponse) -> Self {
+        Self {
+            id: a.id.clone(),
+            name: a.name.clone(),
+            roles: a.roles.clone(),
+            description: a.description.clone(),
+            kind: a.kind.clone(),
+            model_provider_id: a.model_provider_id.clone(),
+            status: a.status,
+            created_at: a.created_at,
+            runtime_state: a.runtime_state,
+        }
+    }
+}
+
 /// 获取 Agent 请求
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct GetAgentRequest {

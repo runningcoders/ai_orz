@@ -1,6 +1,6 @@
 use crate::api::finance::list_model_providers;
 use crate::api::{hr::*, StatsOptions};
-use crate::api::project::{list_tasks, list_projects};
+use crate::api::project::{get_project, list_tasks};
 use crate::pages::hr::agent_memory_panel::AgentMemoryPanel;
 use crate::api::message::{load_latest_messages, send_message_to_agent};
 use crate::components::relation_graph::{RelationGraph, RelationNodeInfo};
@@ -223,18 +223,32 @@ pub fn HrAgentDetail(id: String) -> Element {
                 Ok(resp) => model_providers.set(resp.providers),
                 Err(e) => toast.error(&format!("加载模型提供商列表失败: {}", e)),
             }
-            // 加载关系图所需的全局 projects、tasks 和 agents
-            match list_projects().await {
-                Ok(resp) => graph_projects.set(resp.projects),
-                Err(e) => toast.error(&format!("获取项目列表失败: {}", e)),
-            }
-            match list_tasks(None, None, None, None).await {
-                Ok(resp) => graph_tasks.set(resp.tasks),
+            // 按需加载关系图数据（避免全量加载）
+            // 1. 按 agent_id 过滤 tasks（assignee_type=1 表示 Agent）
+            match list_tasks(None, None, Some(&aid), Some(1)).await {
+                Ok(resp) => {
+                    let tasks = resp.tasks;
+                    // 2. 从 tasks 中收集 unique project_ids
+                    let project_ids: HashSet<String> = tasks.iter()
+                        .filter_map(|t| t.project_id.clone())
+                        .collect();
+                    graph_tasks.set(tasks);
+
+                    // 逐个加载关联 project
+                    let mut projects = Vec::new();
+                    for pid in project_ids {
+                        if let Ok(p) = get_project(&pid, None).await {
+                            projects.push(ProjectListItem::from(&p));
+                        }
+                    }
+                    graph_projects.set(projects);
+                }
                 Err(e) => toast.error(&format!("获取任务列表失败: {}", e)),
             }
-            match list_agents().await {
-                Ok(resp) => graph_agents.set(resp.agents),
-                Err(e) => toast.error(&format!("获取 Agent 列表失败: {}", e)),
+            // 3. graph_agents 从当前 agent_data 构造（无需 API 调用）
+            //    agent_data 已在上方加载完成
+            if let Some(a) = agent_data.read().as_ref() {
+                graph_agents.set(vec![AgentListItem::from(a)]);
             }
         });
     };

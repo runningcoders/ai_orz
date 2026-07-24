@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
 use crate::api::{project::*, StatsOptions};
-use crate::api::hr::list_agents;
+use crate::api::hr::get_agent;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::TaskStatsPanel;
@@ -53,23 +53,32 @@ pub fn TaskDetail(id: String) -> Element {
                     new_progress.set(t.progress);
                     // 克隆关系图所需字段后再 set，避免 move 后无法使用
                     let pid_for_graph = t.project_id.clone();
+                    let assignee_type_for_graph = t.assignee_type;
+                    let assignee_id_for_graph = t.assignee_id.clone();
                     task.set(Some(t));
 
                     // 加载关系图数据（独立 spawn，不阻塞主流程）
                     spawn(async move {
+                        // 1. 同 project 的 tasks（用于依赖 DAG）
                         if let Some(pid) = &pid_for_graph {
                             match list_project_tasks(pid).await {
                                 Ok(resp) => graph_tasks.set(resp.tasks),
                                 Err(e) => toast.error(&format!("获取项目任务失败: {}", e)),
                             }
                         }
-                        match list_agents().await {
-                            Ok(resp) => graph_agents.set(resp.agents),
-                            Err(e) => toast.error(&format!("获取 Agent 列表失败: {}", e)),
+
+                        // 2. 按需加载关联 agent（单个）
+                        if assignee_type_for_graph == 1 {
+                            if let Ok(a) = get_agent(&assignee_id_for_graph, None).await {
+                                graph_agents.set(vec![AgentListItem::from(&a)]);
+                            }
                         }
-                        match list_projects().await {
-                            Ok(resp) => graph_projects.set(resp.projects),
-                            Err(e) => toast.error(&format!("获取项目列表失败: {}", e)),
+
+                        // 3. 按需加载关联 project（单个）
+                        if let Some(pid) = &pid_for_graph {
+                            if let Ok(p) = get_project(pid, None).await {
+                                graph_projects.set(vec![ProjectListItem::from(&p)]);
+                            }
                         }
                     });
                 }

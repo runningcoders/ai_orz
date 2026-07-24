@@ -3,7 +3,7 @@
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
-use crate::api::hr::list_agents;
+use crate::api::hr::get_agent;
 use crate::api::{project::*, StatsOptions};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
@@ -72,20 +72,34 @@ pub fn ProjectDetail(id: String) -> Element {
                 Err(e) => toast.error(&e),
             }
             match list_project_tasks(&id_clone).await {
-                Ok(resp) => tasks.set(resp.tasks),
+                Ok(resp) => {
+                    let tasks_vec = resp.tasks;
+
+                    // 按需加载关联 agents（仅加载本项目任务涉及到的 assignee）
+                    let assignee_ids: std::collections::HashSet<String> = tasks_vec.iter()
+                        .filter(|t| t.assignee_type == 1)
+                        .map(|t| t.assignee_id.clone())
+                        .collect();
+                    let mut agents = Vec::new();
+                    for aid in assignee_ids {
+                        if let Ok(a) = get_agent(&aid, None).await {
+                            agents.push(AgentListItem::from(&a));
+                        }
+                    }
+                    graph_agents.set(agents);
+
+                    // graph_projects 从当前 project_data 构造（无需 API 调用）
+                    if let Some(p) = project.read().as_ref() {
+                        graph_projects.set(vec![ProjectListItem::from(p)]);
+                    }
+
+                    tasks.set(tasks_vec);
+                }
                 Err(e) => toast.error(&e),
             }
             match list_artifacts(&id_clone).await {
                 Ok(list) => artifacts.set(list),
                 Err(e) => toast.error(&e),
-            }
-            match list_agents().await {
-                Ok(resp) => graph_agents.set(resp.agents),
-                Err(e) => toast.error(&format!("获取 Agent 列表失败: {}", e)),
-            }
-            match list_projects().await {
-                Ok(resp) => graph_projects.set(resp.projects),
-                Err(e) => toast.error(&format!("获取项目列表失败: {}", e)),
             }
             loading.set(false);
         });

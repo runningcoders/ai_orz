@@ -131,6 +131,24 @@ pub struct GetProjectResponse {
     pub model_call_stats: Option<crate::models::ModelCallStats>,
 }
 
+/// 从详情响应构造列表项（用于按需加载场景，避免全量 list_projects）
+impl From<&GetProjectResponse> for ProjectListItem {
+    fn from(p: &GetProjectResponse) -> Self {
+        Self {
+            id: p.id.clone(),
+            name: p.name.clone(),
+            description: p.description.clone(),
+            status: p.status,
+            priority: p.priority,
+            tags: p.tags.clone(),
+            root_user_id: p.root_user_id.clone(),
+            owner_agent_id: p.owner_agent_id.clone(),
+            created_at: p.created_at,
+            updated_at: p.updated_at,
+        }
+    }
+}
+
 /// 更新 Project 请求
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct UpdateProjectRequest {
