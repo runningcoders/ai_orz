@@ -3,7 +3,8 @@
 use common::api::{
     ArtifactDetail, CreateArtifactRequest, CreateProjectRequest, CreateProjectResponse,
     CreateTaskRequest, CreateTaskResponse, GetProjectResponse, GetTaskResponse,
-    ListProjectsResponse, ListTasksResponse, UpdateProjectRequest, UpdateProjectResponse,
+    ListTasksResponse, PagedResult, ProjectListItem, ProjectQueryRequest, TaskListItem, TaskQueryRequest,
+    UpdateProjectRequest, UpdateProjectResponse,
     UpdateTaskRequest, UpdateTaskResponse,
 };
 
@@ -11,19 +12,17 @@ use super::{api_delete, api_get, api_get_or_default, api_post, api_put, api_put_
 
 // ===== 项目管理 =====
 
-pub async fn list_projects(ids: Option<&[String]>) -> Result<ListProjectsResponse, ApiError> {
-    let mut url = "/api/v1/projects".to_string();
+pub async fn list_projects(limit: Option<usize>, offset: Option<usize>) -> Result<PagedResult<ProjectListItem>, ApiError> {
     let mut params: Vec<String> = Vec::new();
-    if let Some(ids) = ids {
-        for id in ids {
-            params.push(format!("ids={}", id));
-        }
-    }
-    if !params.is_empty() {
-        url.push('?');
-        url.push_str(&params.join("&"));
-    }
+    if let Some(l) = limit { params.push(format!("limit={}", l)); }
+    if let Some(o) = offset { params.push(format!("offset={}", o)); }
+    let url = if params.is_empty() { "/api/v1/projects".to_string() }
+              else { format!("/api/v1/projects?{}", params.join("&")) };
     api_get_or_default(&url).await
+}
+
+pub async fn query_projects(req: &ProjectQueryRequest) -> Result<PagedResult<ProjectListItem>, ApiError> {
+    api_post("/api/v1/projects/query", req).await
 }
 
 pub async fn get_project(id: &str, stats_options: Option<&super::StatsOptions>) -> Result<GetProjectResponse, ApiError> {
@@ -50,37 +49,17 @@ pub async fn list_project_tasks(project_id: &str) -> Result<ListTasksResponse, A
     api_get_or_default(&format!("/api/v1/projects/{}/tasks", project_id)).await
 }
 
-pub async fn list_tasks(
-    project_id: Option<&str>,
-    status: Option<i32>,
-    assignee_id: Option<&str>,
-    assignee_type: Option<i32>,
-    ids: Option<&[String]>,
-) -> Result<ListTasksResponse, ApiError> {
-    let mut url = "/api/v1/tasks".to_string();
-    let mut params = Vec::new();
-    if let Some(pid) = project_id {
-        params.push(format!("project_id={}", pid));
-    }
-    if let Some(s) = status {
-        params.push(format!("status={}", s));
-    }
-    if let Some(aid) = assignee_id {
-        params.push(format!("assignee_id={}", aid));
-    }
-    if let Some(at) = assignee_type {
-        params.push(format!("assignee_type={}", at));
-    }
-    if let Some(ids) = ids {
-        for id in ids {
-            params.push(format!("ids={}", id));
-        }
-    }
-    if !params.is_empty() {
-        url.push('?');
-        url.push_str(&params.join("&"));
-    }
-    api_get(&url).await
+pub async fn list_tasks(limit: Option<usize>, offset: Option<usize>) -> Result<PagedResult<TaskListItem>, ApiError> {
+    let mut params: Vec<String> = Vec::new();
+    if let Some(l) = limit { params.push(format!("limit={}", l)); }
+    if let Some(o) = offset { params.push(format!("offset={}", o)); }
+    let url = if params.is_empty() { "/api/v1/tasks".to_string() }
+              else { format!("/api/v1/tasks?{}", params.join("&")) };
+    api_get_or_default(&url).await
+}
+
+pub async fn query_tasks(req: &TaskQueryRequest) -> Result<PagedResult<TaskListItem>, ApiError> {
+    api_post("/api/v1/tasks/query", req).await
 }
 
 pub async fn get_task(id: &str, stats_options: Option<&super::StatsOptions>) -> Result<GetTaskResponse, ApiError> {

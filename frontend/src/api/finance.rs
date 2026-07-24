@@ -6,8 +6,9 @@ use common::api::{
     CreateToolRequest, CreateToolResponse,
     DebugCallToolResponse,
     GetModelProviderResponse, GetToolResponse, ListMcpServersResponse, ListModelProvidersResponse,
-    ListToolsResponse, SwitchEmbeddingProviderRequest, SwitchEmbeddingProviderResponse,
+    PagedResult, SwitchEmbeddingProviderRequest, SwitchEmbeddingProviderResponse,
     TestConnectionResponse, TestMessageChannelConnectionResponse,
+    ToolListItem, ToolQueryRequest,
     UpdateModelProviderRequest, UpdateModelProviderResponse, UpdateToolRequest, UpdateToolResponse,
 };
 use web_sys::FormData;
@@ -66,19 +67,17 @@ pub async fn switch_embedding_provider(id: &str) -> Result<SwitchEmbeddingProvid
 
 // ===== 工具管理 =====
 
-pub async fn list_tools(ids: Option<&[String]>) -> Result<ListToolsResponse, ApiError> {
-    let mut url = "/api/v1/finance/tools".to_string();
+pub async fn list_tools(limit: Option<usize>, offset: Option<usize>) -> Result<PagedResult<ToolListItem>, ApiError> {
     let mut params: Vec<String> = Vec::new();
-    if let Some(ids) = ids {
-        for id in ids {
-            params.push(format!("ids={}", id));
-        }
-    }
-    if !params.is_empty() {
-        url.push('?');
-        url.push_str(&params.join("&"));
-    }
+    if let Some(l) = limit { params.push(format!("limit={}", l)); }
+    if let Some(o) = offset { params.push(format!("offset={}", o)); }
+    let url = if params.is_empty() { "/api/v1/finance/tools".to_string() }
+              else { format!("/api/v1/finance/tools?{}", params.join("&")) };
     api_get_or_default(&url).await
+}
+
+pub async fn query_tools(req: &ToolQueryRequest) -> Result<PagedResult<ToolListItem>, ApiError> {
+    api_post("/api/v1/finance/tools/query", req).await
 }
 
 pub async fn get_tool(id: &str, stats_options: Option<&super::StatsOptions>) -> Result<GetToolResponse, ApiError> {

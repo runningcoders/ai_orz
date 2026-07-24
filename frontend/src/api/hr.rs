@@ -1,11 +1,12 @@
 //! HR 域 API - Agent 管理、技能管理、工具包/技能包管理
 
 use common::api::{
-    CreateAgentRequest, CreateAgentResponse, CreateExternalAgentRequest, CreateExternalAgentResponse,
-    CreateSkillRequest, CreateSkillResponse,
+    AgentListItem, AgentQueryRequest, CreateAgentRequest, CreateAgentResponse, CreateExternalAgentRequest,
+    CreateExternalAgentResponse, CreateSkillRequest, CreateSkillResponse,
     DeleteSkillResponse, GetAgentResponse, GetReceptionAgentResponse, GetSkillResponse, ListAgentsResponse,
     ListInstalledSkillPacksResponse, ListInstalledToolPacksResponse, ListSkillsResponse,
-    ListToolsResponse, QueryMemoryParams, QueryMemoryResponse, SearchMemoryParams, SearchMemoryResponse,
+    PagedResult, QueryMemoryParams, QueryMemoryResponse, SearchMemoryParams, SearchMemoryResponse,
+    SkillListItem, SkillQueryRequest, ToolListItem,
     UpdateAgentRequest, UpdateAgentResponse, UpdateSkillRequest,
     UpdateSkillResponse,
 };
@@ -14,19 +15,17 @@ use super::{api_delete, api_get, api_get_or_default, api_post, api_post_empty, a
 
 // ===== Agent 管理 =====
 
-pub async fn list_agents(ids: Option<&[String]>) -> Result<ListAgentsResponse, ApiError> {
-    let mut url = "/api/v1/hr/agents".to_string();
+pub async fn list_agents(limit: Option<usize>, offset: Option<usize>) -> Result<PagedResult<AgentListItem>, ApiError> {
     let mut params: Vec<String> = Vec::new();
-    if let Some(ids) = ids {
-        for id in ids {
-            params.push(format!("ids={}", id));
-        }
-    }
-    if !params.is_empty() {
-        url.push('?');
-        url.push_str(&params.join("&"));
-    }
+    if let Some(l) = limit { params.push(format!("limit={}", l)); }
+    if let Some(o) = offset { params.push(format!("offset={}", o)); }
+    let url = if params.is_empty() { "/api/v1/hr/agents".to_string() }
+              else { format!("/api/v1/hr/agents?{}", params.join("&")) };
     api_get_or_default(&url).await
+}
+
+pub async fn query_agents(req: &AgentQueryRequest) -> Result<PagedResult<AgentListItem>, ApiError> {
+    api_post("/api/v1/hr/agents/query", req).await
 }
 
 /// 查询当前可用的前台 Agent（供前端显示推荐前台 Agent）
@@ -96,19 +95,17 @@ pub async fn uninstall_skill_pack(agent_id: &str, tag: &str) -> Result<(), ApiEr
 
 // ===== 技能库管理 =====
 
-pub async fn list_skills(ids: Option<&[String]>) -> Result<ListSkillsResponse, ApiError> {
-    let mut url = "/api/v1/hr/skills".to_string();
+pub async fn list_skills(limit: Option<usize>, offset: Option<usize>) -> Result<PagedResult<SkillListItem>, ApiError> {
     let mut params: Vec<String> = Vec::new();
-    if let Some(ids) = ids {
-        for id in ids {
-            params.push(format!("ids={}", id));
-        }
-    }
-    if !params.is_empty() {
-        url.push('?');
-        url.push_str(&params.join("&"));
-    }
+    if let Some(l) = limit { params.push(format!("limit={}", l)); }
+    if let Some(o) = offset { params.push(format!("offset={}", o)); }
+    let url = if params.is_empty() { "/api/v1/hr/skills".to_string() }
+              else { format!("/api/v1/hr/skills?{}", params.join("&")) };
     api_get_or_default(&url).await
+}
+
+pub async fn query_skills(req: &SkillQueryRequest) -> Result<PagedResult<SkillListItem>, ApiError> {
+    api_post("/api/v1/hr/skills/query", req).await
 }
 
 pub async fn search_skills(keyword: &str) -> Result<ListSkillsResponse, ApiError> {
@@ -193,18 +190,12 @@ pub async fn unbind_tool_from_agent(agent_id: &str, tool_id: &str) -> Result<(),
 
 // ===== 工具列表（从 Finance 域重导出） =====
 
-pub async fn list_tools(ids: Option<&[String]>) -> Result<ListToolsResponse, ApiError> {
-    let mut url = "/api/v1/finance/tools".to_string();
+pub async fn list_tools(limit: Option<usize>, offset: Option<usize>) -> Result<PagedResult<ToolListItem>, ApiError> {
     let mut params: Vec<String> = Vec::new();
-    if let Some(ids) = ids {
-        for id in ids {
-            params.push(format!("ids={}", id));
-        }
-    }
-    if !params.is_empty() {
-        url.push('?');
-        url.push_str(&params.join("&"));
-    }
+    if let Some(l) = limit { params.push(format!("limit={}", l)); }
+    if let Some(o) = offset { params.push(format!("offset={}", o)); }
+    let url = if params.is_empty() { "/api/v1/finance/tools".to_string() }
+              else { format!("/api/v1/finance/tools?{}", params.join("&")) };
     api_get_or_default(&url).await
 }
 
