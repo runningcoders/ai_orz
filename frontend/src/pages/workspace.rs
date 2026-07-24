@@ -17,27 +17,51 @@ fn sample_nodes() -> Vec<CanvasNode> {
     vec![
         CanvasNode {
             id: "agent-1".to_string(),
-            x: 200.0,
-            y: 150.0,
+            x: 0.0,  // 初始位置 0,0 会触发圆形布局
+            y: 0.0,
             radius: 30.0,
             label: "Agent 1".to_string(),
             color: "#3b82f6".to_string(),
         },
         CanvasNode {
             id: "agent-2".to_string(),
-            x: 500.0,
-            y: 150.0,
+            x: 0.0,
+            y: 0.0,
             radius: 25.0,
             label: "Agent 2".to_string(),
             color: "#10b981".to_string(),
         },
         CanvasNode {
+            id: "agent-3".to_string(),
+            x: 0.0,
+            y: 0.0,
+            radius: 28.0,
+            label: "Agent 3".to_string(),
+            color: "#8b5cf6".to_string(),
+        },
+        CanvasNode {
             id: "tool-1".to_string(),
-            x: 350.0,
-            y: 350.0,
+            x: 0.0,
+            y: 0.0,
             radius: 20.0,
             label: "Tool A".to_string(),
             color: "#f59e0b".to_string(),
+        },
+        CanvasNode {
+            id: "tool-2".to_string(),
+            x: 0.0,
+            y: 0.0,
+            radius: 18.0,
+            label: "Tool B".to_string(),
+            color: "#ef4444".to_string(),
+        },
+        CanvasNode {
+            id: "tool-3".to_string(),
+            x: 0.0,
+            y: 0.0,
+            radius: 16.0,
+            label: "Tool C".to_string(),
+            color: "#06b6d4".to_string(),
         },
     ]
 }
@@ -46,7 +70,11 @@ fn sample_nodes() -> Vec<CanvasNode> {
 fn sample_edges() -> Vec<CanvasEdge> {
     vec![
         CanvasEdge { from_id: "agent-1".to_string(), to_id: "tool-1".to_string() },
+        CanvasEdge { from_id: "agent-1".to_string(), to_id: "tool-2".to_string() },
         CanvasEdge { from_id: "agent-2".to_string(), to_id: "tool-1".to_string() },
+        CanvasEdge { from_id: "agent-2".to_string(), to_id: "tool-3".to_string() },
+        CanvasEdge { from_id: "agent-3".to_string(), to_id: "tool-2".to_string() },
+        CanvasEdge { from_id: "agent-3".to_string(), to_id: "tool-3".to_string() },
     ]
 }
 
