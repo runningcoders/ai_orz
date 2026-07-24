@@ -1,0 +1,359 @@
+//! Workspace 专用 Canvas 关系图组件
+//!
+//! 根据 WorkspaceView 状态机切换三种视图：
+//! - Global：所有 Project ↔ Agent 的关联（通过 Task.assignee_id 和 Task.project_id 推断）
+//! - ProjectDetail：选中 Project 的 Task + Agent 节点
+//! - AgentDetail：选中 Agent 的 Task + Project 节点
+//!
+//! 节点颜色按状态区分（见颜色规范表），点击节点跳转对应详情页。
+
+use dioxus::prelude::*;
+use dioxus_router::use_navigator;
+use common::api::{AgentListItem, ProjectListItem, TaskListItem};
+use crate::components::canvas_scene::{CanvasEdge, CanvasNode, CanvasScene};
+
+/// Workspace 视图模式
+#[derive(Debug, Clone, PartialEq)]
+pub enum WorkspaceView {
+    /// 全局视图：Project ↔ Agent 关联
+    Global,
+    /// Project 详情视图：选中 Project 的 Task + Agent
+    ProjectDetail(String),
+    /// Agent 详情视图：选中 Agent 的 Task + Project
+    AgentDetail(String),
+}
+
+/// WorkspaceGraph Props
+#[derive(Props, Clone)]
+pub struct WorkspaceGraphProps {
+    /// 当前视图模式
+    pub view: WorkspaceView,
+    /// 全部 Project 列表
+    pub projects: Vec<ProjectListItem>,
+    /// 全部 Agent 列表
+    pub agents: Vec<AgentListItem>,
+    /// 全部 Task 列表
+    pub tasks: Vec<TaskListItem>,
+    /// Canvas 宽度
+    pub width: f64,
+    /// Canvas 高度
+    pub height: f64,
+}
+
+impl PartialEq for WorkspaceGraphProps {
+    fn eq(&self, other: &Self) -> bool {
+        self.view == other.view
+            && self.projects.len() == other.projects.len()
+            && self.agents.len() == other.agents.len()
+            && self.tasks.len() == other.tasks.len()
+            && self.width == other.width
+            && self.height == other.height
+    }
+}
+
+/// Project 状态颜色
+fn project_status_color(status: i32) -> String {
+    match status {
+        1 => "#10b981".to_string(),   // Active 绿
+        3 => "#3b82f6".to_string(),   // InProgress 蓝
+        2 => "#f59e0b".to_string(),   // PendingReview 橙
+        4 => "#6b7280".to_string(),   // Completed 灰
+        _ => "#9ca3af".to_string(),   // 其他浅灰
+    }
+}
+
+/// Agent 运行时状态颜色（基于 runtime_state）
+fn agent_runtime_color(runtime_state: i32) -> String {
+    match runtime_state {
+        0 => "#10b981".to_string(),   // Idle 绿
+        1 => "#f59e0b".to_string(),   // Resting 橙
+        2 => "#ef4444".to_string(),    // Busy 红
+        _ => "#9ca3af".to_string(),
+    }
+}
+
+/// Task 状态颜色
+fn task_status_color(status: i32) -> String {
+    match status {
+        1 => "#3b82f6".to_string(),   // InProgress 蓝
+        2 => "#6b7280".to_string(),   // Completed 灰
+        _ => "#9ca3af".to_string(),
+    }
+}
+
+/// 构建 Global 视图的节点和边
+///
+/// Project 节点 + Agent 节点，通过 Task 关联（Task.project_id → Project, Task.assignee_id → Agent）
+fn build_global_view(projects: &[ProjectListItem], agents: &[AgentListItem], tasks: &[TaskListItem]) -> (Vec<CanvasNode>, Vec<CanvasEdge>) {
+    let mut nodes = Vec::new();
+    let mut edges = Vec::new();
+
+    // Project 节点
+    for p in projects {
+        nodes.push(CanvasNode {
+            id: format!("project:{}", p.id),
+            x: 0.0, y: 0.0,
+            radius: 28.0,
+            label: p.name.clone(),
+            color: project_status_color(p.status),
+            node_type: Some("project".to_string()),
+        });
+    }
+
+    // Agent 节点
+    for a in agents {
+        nodes.push(CanvasNode {
+            id: format!("agent:{}", a.id),
+            x: 0.0, y: 0.0,
+            radius: 25.0,
+            label: a.name.clone(),
+            color: agent_runtime_color(a.runtime_state),
+            node_type: Some("agent".to_string()),
+        });
+    }
+
+    // 通过 Task 推断 Project ↔ Agent 关联
+    // 每个 Task 有 project_id 和 assignee_id，如果 assignee_type=1（Agent），则建立 Project → Agent 边
+    let mut edge_set: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    for t in tasks {
+        if let Some(pid) = &t.project_id {
+            if t.assignee_type == 1 { // Agent
+                let from = format!("project:{}", pid);
+                let to = format!("agent:{}", t.assignee_id);
+                if from != to {
+                    edge_set.insert((from, to));
+                }
+            }
+        }
+    }
+    for (from, to) in edge_set {
+        edges.push(CanvasEdge { from_id: from, to_id: to });
+    }
+
+    (nodes, edges)
+}
+
+/// 构建 ProjectDetail 视图的节点和边
+///
+/// 选中 Project 的 Task 节点 + 关联 Agent 节点，Task → Agent 边
+fn build_project_detail_view(
+    project_id: &str,
+    project: &ProjectListItem,
+    agents: &[AgentListItem],
+    tasks: &[TaskListItem],
+) -> (Vec<CanvasNode>, Vec<CanvasEdge>) {
+    let mut nodes = Vec::new();
+    let mut edges = Vec::new();
+
+    // 中心 Project 节点
+    nodes.push(CanvasNode {
+        id: format!("project:{}", project.id),
+        x: 0.0, y: 0.0,
+        radius: 35.0,
+        label: project.name.clone(),
+        color: project_status_color(project.status),
+        node_type: Some("project".to_string()),
+    });
+
+    // 该 Project 的 Task 节点
+    let project_tasks: Vec<&TaskListItem> = tasks.iter()
+        .filter(|t| t.project_id.as_deref() == Some(project_id))
+        .collect();
+
+    for t in &project_tasks {
+        nodes.push(CanvasNode {
+            id: format!("task:{}", t.id),
+            x: 0.0, y: 0.0,
+            radius: 20.0,
+            label: t.title.clone(),
+            color: task_status_color(t.status),
+            node_type: Some("task".to_string()),
+        });
+        // Project → Task 边
+        edges.push(CanvasEdge {
+            from_id: format!("project:{}", project.id),
+            to_id: format!("task:{}", t.id),
+        });
+    }
+
+    // 关联 Agent 节点（去重：该 Project 的 Task 分配到的 Agent）
+    let agent_ids: std::collections::HashSet<String> = project_tasks.iter()
+        .filter(|t| t.assignee_type == 1)
+        .map(|t| t.assignee_id.clone())
+        .collect();
+
+    for aid in agent_ids {
+        if let Some(a) = agents.iter().find(|a| a.id == aid) {
+            nodes.push(CanvasNode {
+                id: format!("agent:{}", a.id),
+                x: 0.0, y: 0.0,
+                radius: 25.0,
+                label: a.name.clone(),
+                color: agent_runtime_color(a.runtime_state),
+                node_type: Some("agent".to_string()),
+            });
+        }
+    }
+
+    // Task → Agent 边
+    for t in &project_tasks {
+        if t.assignee_type == 1 {
+            edges.push(CanvasEdge {
+                from_id: format!("task:{}", t.id),
+                to_id: format!("agent:{}", t.assignee_id),
+            });
+        }
+    }
+
+    (nodes, edges)
+}
+
+/// 构建 AgentDetail 视图的节点和边
+///
+/// 选中 Agent 的 Task 节点 + 关联 Project 节点
+fn build_agent_detail_view(
+    agent_id: &str,
+    agent: &AgentListItem,
+    projects: &[ProjectListItem],
+    tasks: &[TaskListItem],
+) -> (Vec<CanvasNode>, Vec<CanvasEdge>) {
+    let mut nodes = Vec::new();
+    let mut edges = Vec::new();
+
+    // 中心 Agent 节点
+    nodes.push(CanvasNode {
+        id: format!("agent:{}", agent.id),
+        x: 0.0, y: 0.0,
+        radius: 35.0,
+        label: agent.name.clone(),
+        color: agent_runtime_color(agent.runtime_state),
+        node_type: Some("agent".to_string()),
+    });
+
+    // 该 Agent 的 Task 节点
+    let agent_tasks: Vec<&TaskListItem> = tasks.iter()
+        .filter(|t| t.assignee_type == 1 && t.assignee_id == agent_id)
+        .collect();
+
+    for t in &agent_tasks {
+        nodes.push(CanvasNode {
+            id: format!("task:{}", t.id),
+            x: 0.0, y: 0.0,
+            radius: 20.0,
+            label: t.title.clone(),
+            color: task_status_color(t.status),
+            node_type: Some("task".to_string()),
+        });
+        // Agent → Task 边
+        edges.push(CanvasEdge {
+            from_id: format!("agent:{}", agent.id),
+            to_id: format!("task:{}", t.id),
+        });
+    }
+
+    // 关联 Project 节点（去重）
+    let project_ids: std::collections::HashSet<String> = agent_tasks.iter()
+        .filter_map(|t| t.project_id.clone())
+        .collect();
+
+    for pid in project_ids {
+        if let Some(p) = projects.iter().find(|p| p.id == pid) {
+            nodes.push(CanvasNode {
+                id: format!("project:{}", p.id),
+                x: 0.0, y: 0.0,
+                radius: 28.0,
+                label: p.name.clone(),
+                color: project_status_color(p.status),
+                node_type: Some("project".to_string()),
+            });
+        }
+    }
+
+    // Task → Project 边
+    for t in &agent_tasks {
+        if let Some(pid) = &t.project_id {
+            edges.push(CanvasEdge {
+                from_id: format!("task:{}", t.id),
+                to_id: format!("project:{}", pid),
+            });
+        }
+    }
+
+    (nodes, edges)
+}
+
+#[component]
+pub fn WorkspaceGraph(props: WorkspaceGraphProps) -> Element {
+    let view = props.view.clone();
+    let projects = props.projects.clone();
+    let agents = props.agents.clone();
+    let tasks = props.tasks.clone();
+    let width = props.width;
+    let height = props.height;
+
+    // 根据视图模式构建节点和边
+    let (nodes, edges) = match &view {
+        WorkspaceView::Global => build_global_view(&projects, &agents, &tasks),
+        WorkspaceView::ProjectDetail(pid) => {
+            if let Some(p) = projects.iter().find(|p| p.id == *pid) {
+                build_project_detail_view(pid, p, &agents, &tasks)
+            } else {
+                (Vec::new(), Vec::new())
+            }
+        }
+        WorkspaceView::AgentDetail(aid) => {
+            if let Some(a) = agents.iter().find(|a| a.id == *aid) {
+                build_agent_detail_view(aid, a, &projects, &tasks)
+            } else {
+                (Vec::new(), Vec::new())
+            }
+        }
+    };
+
+    // 节点 id → (类型, 真实ID) 查找表，供点击回调判断跳转
+    let mut click_map: std::collections::HashMap<String, (String, String)> = std::collections::HashMap::new();
+    for n in &nodes {
+        if let Some(nt) = &n.node_type {
+            // 提取真实 ID（去掉 "project:"/"agent:"/"task:" 前缀）
+            let real_id = n.id.splitn(2, ':').nth(1).unwrap_or(&n.id).to_string();
+            click_map.insert(n.id.clone(), (nt.clone(), real_id));
+        }
+    }
+
+    let navigator = use_navigator();
+
+    let node_count = nodes.len();
+
+    rsx! {
+        div { class: "flex flex-col items-center w-full",
+            if node_count == 0 {
+                div { class: "text-center py-12",
+                    div { class: "text-5xl mb-4 opacity-30", "📊" }
+                    div { class: "text-base-content/70", "暂无数据可展示" }
+                }
+            } else {
+                CanvasScene {
+                    width: width,
+                    height: height,
+                    nodes: nodes,
+                    edges: edges,
+                    enable_force_layout: true,
+                    enable_data_flow_particles: true,
+                    enable_glow_particles: true,
+                    enable_background_particles: true,
+                    enable_birth_death_particles: true,
+                    on_node_click: Some(EventHandler::new(move |node_id: String| {
+                        if let Some((nt, real_id)) = click_map.get(&node_id) {
+                            match nt.as_str() {
+                                "project" => { navigator.push(format!("/projects/{}", real_id)); }
+                                "agent" => { navigator.push(format!("/hr/agents/{}", real_id)); }
+                                "task" => { navigator.push(format!("/tasks/{}", real_id)); }
+                                _ => {}
+                            }
+                        }
+                    })),
+                }
+            }
+        }
+    }
+}

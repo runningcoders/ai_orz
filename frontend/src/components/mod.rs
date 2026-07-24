@@ -1,6 +1,7 @@
 //! 基础 UI 组件库
 
 pub mod relation_graph;
+pub mod workspace_graph;
 pub mod button;
 pub mod canvas_scene;
 pub mod force_layout;
