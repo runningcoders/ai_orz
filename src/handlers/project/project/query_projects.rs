@@ -8,7 +8,7 @@ use crate::pkg::RequestContext;
 use crate::service::dao::project::ProjectQuery;
 use crate::service::domain::project::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::{ProjectListItem, ProjectQueryRequest};
+use common::api::{PagedResult, ProjectListItem, ProjectQueryRequest};
 use common::error::Result;
 
 /// Project 通用查询（POST body，支持完整查询能力）
@@ -23,8 +23,8 @@ use common::error::Result;
 pub async fn query_projects(
     ctx: RequestContext,
     params: ProjectQueryRequest,
-) -> Result<Vec<ProjectListItem>> {
-    let projects = domain()
+) -> Result<PagedResult<ProjectListItem>> {
+    let page = domain()
         .project_manage()
         .query(
             ctx,
@@ -33,12 +33,11 @@ pub async fn query_projects(
                 keyword: params.keyword,
                 root_user_id: params.root_user_id,
                 status_in: params.status_in,
-                limit: params.limit,
+                pagination: params.pagination,
                 ..Default::default()
             },
         )
         .await?;
-    let response_items = projects.iter().map(response::to_list_item).collect();
 
-    Ok(response_items)
+    Ok(page.map(|p| response::to_list_item(&p)))
 }

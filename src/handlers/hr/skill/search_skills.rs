@@ -36,7 +36,7 @@ pub async fn search_skills(
                     exclude_status: params.status.is_none().then_some(SkillStatus::Expired),
                     category: params.category,
                     author_id: params.author_id,
-                    limit: params.limit,
+                    pagination: common::api::PaginationParams { limit: params.limit, offset: None },
                     ..Default::default()
                 },
             },

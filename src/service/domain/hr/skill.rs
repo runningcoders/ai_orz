@@ -79,7 +79,7 @@ impl SkillManage for HrDomainImpl {
         &self,
         ctx: RequestContext,
         query: SkillQuery,
-    ) -> Result<Vec<Skill>> {
+    ) -> Result<common::api::PagedResult<Skill>> {
         self.skill_dal.query(ctx, query).await
     }
 
@@ -88,14 +88,15 @@ impl SkillManage for HrDomainImpl {
         ctx: RequestContext,
         status: SkillStatus,
     ) -> Result<Vec<Skill>> {
-        self.query_skills(
+        let page = self.query_skills(
             ctx,
             SkillQuery {
                 status: Some(status),
                 ..Default::default()
             },
         )
-        .await
+        .await?;
+        Ok(page.items)
     }
 
     async fn list_by_category(
@@ -103,14 +104,15 @@ impl SkillManage for HrDomainImpl {
         ctx: RequestContext,
         category: &str,
     ) -> Result<Vec<Skill>> {
-        self.query_skills(
+        let page = self.query_skills(
             ctx,
             SkillQuery {
                 category: Some(category.to_string()),
                 ..Default::default()
             },
         )
-        .await
+        .await?;
+        Ok(page.items)
     }
 
     async fn list_by_author(
@@ -118,14 +120,15 @@ impl SkillManage for HrDomainImpl {
         ctx: RequestContext,
         author_id: &str,
     ) -> Result<Vec<Skill>> {
-        self.query_skills(
+        let page = self.query_skills(
             ctx,
             SkillQuery {
                 author_id: Some(author_id.to_string()),
                 ..Default::default()
             },
         )
-        .await
+        .await?;
+        Ok(page.items)
     }
 
     async fn list_for_agent(

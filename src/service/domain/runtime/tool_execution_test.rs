@@ -103,8 +103,11 @@ mod tests {
             Ok(self.agent.clone())
         }
 
-        async fn query(&self, _ctx: RequestContext, _query: AgentQuery) -> Result<Vec<Agent>> {
-            Ok(self.agent.iter().cloned().collect())
+        async fn query(&self, _ctx: RequestContext, _query: AgentQuery) -> Result<common::api::PagedResult<Agent>> {
+            Ok(common::api::PagedResult {
+                items: self.agent.iter().cloned().collect(),
+                total: 0,
+            })
         }
 
         async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<Agent>> {
@@ -290,7 +293,7 @@ mod tests {
             &self,
             _ctx: RequestContext,
             query: ToolQuery,
-        ) -> Result<Vec<Tool>> {
+        ) -> Result<common::api::PagedResult<Tool>> {
             self.query_count.fetch_add(1, Ordering::SeqCst);
             let tools: Vec<Tool> = self
                 .all_tools
@@ -315,7 +318,10 @@ mod tests {
                 tools
             };
 
-            Ok(tools)
+            Ok(common::api::PagedResult {
+                items: tools,
+                total: 0,
+            })
         }
 
         async fn list_enabled(&self, _ctx: RequestContext) -> Result<Vec<Tool>> {

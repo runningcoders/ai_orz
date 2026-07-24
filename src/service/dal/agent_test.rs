@@ -780,8 +780,8 @@ async fn test_query_keyword_deprecated(pool: SqlitePool) -> Result<()> {
         .await?;
 
     // keyword 被忽略，但应返回所有 Agent（因为没设其他过滤条件）
-    assert_eq!(results.len(), 1, "query 方法 keyword 被忽略，应返回全部结果");
-    assert_eq!(results[0].name(), "compat-test-agent");
+    assert_eq!(results.items.len(), 1, "query 方法 keyword 被忽略，应返回全部结果");
+    assert_eq!(results.items[0].name(), "compat-test-agent");
 
     Ok(())
 }
@@ -817,7 +817,7 @@ async fn test_query_by_ids(pool: SqlitePool) -> Result<()> {
         )
         .await?;
 
-    assert_eq!(results.len(), 2, "应返回 2 条结果（按 IDs 批量查询）");
+    assert_eq!(results.items.len(), 2, "应返回 2 条结果（按 IDs 批量查询）");
 
     Ok(())
 }

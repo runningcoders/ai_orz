@@ -362,7 +362,7 @@ async fn test_query_skills(pool: SqlitePool) -> Result<()> {
     // 查询全部
     use crate::service::dao::skill::SkillQuery;
     let all = skill_dal.query(ctx.clone(), SkillQuery::default()).await?;
-    assert_eq!(all.len(), 3);
+    assert_eq!(all.items.len(), 3);
 
     Ok(())
 }
@@ -596,8 +596,8 @@ async fn test_install_to_agent_idempotent(pool: SqlitePool) -> Result<()> {
             },
         )
         .await?;
-    assert_eq!(agent_skills.len(), 1, "重复安装不应创建新副本");
-    assert_eq!(agent_skills[0].po.id, first_installed_id);
+    assert_eq!(agent_skills.items.len(), 1, "重复安装不应创建新副本");
+    assert_eq!(agent_skills.items[0].po.id, first_installed_id);
 
     // 额外验证：另一个 Agent 安装同一源技能仍然会创建新副本（不同 Agent 互不影响）
     let other_agent_id = "agent-other";

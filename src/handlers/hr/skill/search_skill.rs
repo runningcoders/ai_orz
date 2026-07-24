@@ -24,20 +24,21 @@ pub async fn search_skill(
 ) -> Result<SearchSkillResponse> {
     let limit = params.limit.unwrap_or(10);
 
-    let skills = domain()
+    let page = domain()
         .skill_manage()
         .query_skills(
             ctx,
             SkillQuery {
                 keyword: params.keyword,
                 tags: params.tags,
-                limit: Some(limit),
+                pagination: common::api::PaginationParams { limit: Some(limit), offset: None },
                 ..Default::default()
             },
         )
         .await?;
 
-    let skills = skills
+    let skills = page
+        .items
         .iter()
         .map(|s| SkillSummary {
             skill_id: s.po.id.clone(),

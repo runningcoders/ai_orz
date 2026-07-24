@@ -458,7 +458,7 @@ async fn test_tool_query(pool: SqlitePool) {
         ..Default::default()
     };
     let results = tool_dao.query(ctx.clone(), query).await.unwrap();
-    assert_eq!(results.len(), 2);
+    assert_eq!(results.items.len(), 2);
 
     // 2. 测试关键词在 query 中被忽略（FTS5 搜索请使用 search_tools）
     //    query 方法不再做关键词过滤，传入 keyword 应返回全部工具
@@ -468,7 +468,7 @@ async fn test_tool_query(pool: SqlitePool) {
     };
     let results = tool_dao.query(ctx.clone(), query).await.unwrap();
     // keyword 被忽略，返回全部 2 条工具
-    assert_eq!(results.len(), 2);
+    assert_eq!(results.items.len(), 2);
 
     // 3. 测试 enabled_only 过滤
     let query = crate::service::dao::tool::ToolQuery {
@@ -476,16 +476,16 @@ async fn test_tool_query(pool: SqlitePool) {
         ..Default::default()
     };
     let results = tool_dao.query(ctx.clone(), query).await.unwrap();
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].id, "id-1");
+    assert_eq!(results.items.len(), 1);
+    assert_eq!(results.items[0].id, "id-1");
 
     // 4. 测试 limit 限制
     let query = crate::service::dao::tool::ToolQuery {
-        limit: Some(1),
+        pagination: common::api::PaginationParams { limit: Some(1), offset: None },
         ..Default::default()
     };
     let results = tool_dao.query(ctx.clone(), query).await.unwrap();
-    assert_eq!(results.len(), 1);
+    assert_eq!(results.items.len(), 1);
 }
 
 #[sqlx::test]
@@ -541,6 +541,7 @@ async fn test_tool_query_can_exclude_stale_and_allows_explicit_stale_status(pool
         .await
         .unwrap();
     let non_stale_ids: Vec<String> = non_stale_results
+        .items
         .iter()
         .map(|tool| tool.id.clone())
         .collect();
@@ -558,8 +559,8 @@ async fn test_tool_query_can_exclude_stale_and_allows_explicit_stale_status(pool
         )
         .await
         .unwrap();
-    assert_eq!(stale_results.len(), 1);
-    assert_eq!(stale_results[0].id, "query-stale");
+    assert_eq!(stale_results.items.len(), 1);
+    assert_eq!(stale_results.items[0].id, "query-stale");
 }
 
 #[sqlx::test]
@@ -649,8 +650,8 @@ async fn test_query_by_tag(pool: SqlitePool) {
         ..Default::default()
     };
     let results = tool_dao.query(ctx.clone(), query).await.unwrap();
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].id, "tag-tool-1");
+    assert_eq!(results.items.len(), 1);
+    assert_eq!(results.items[0].id, "tag-tool-1");
 }
 
 #[sqlx::test]
@@ -699,8 +700,8 @@ async fn test_query_by_multiple_tags(pool: SqlitePool) {
         ..Default::default()
     };
     let results = tool_dao.query(ctx.clone(), query).await.unwrap();
-    assert_eq!(results.len(), 2);
-    let ids: Vec<String> = results.iter().map(|t| t.id.clone()).collect();
+    assert_eq!(results.items.len(), 2);
+    let ids: Vec<String> = results.items.iter().map(|t| t.id.clone()).collect();
     assert!(ids.contains(&"multi-tag-1".to_string()));
     assert!(ids.contains(&"multi-tag-2".to_string()));
     assert!(!ids.contains(&"multi-tag-3".to_string()));
@@ -741,8 +742,8 @@ async fn test_query_without_tags(pool: SqlitePool) {
         ..Default::default()
     };
     let results = tool_dao.query(ctx.clone(), query).await.unwrap();
-    assert_eq!(results.len(), 2);
-    let ids: Vec<String> = results.iter().map(|t| t.id.clone()).collect();
+    assert_eq!(results.items.len(), 2);
+    let ids: Vec<String> = results.items.iter().map(|t| t.id.clone()).collect();
     assert!(ids.contains(&"no-tag-1".to_string()));
     assert!(ids.contains(&"no-tag-2".to_string()));
 }
@@ -1098,7 +1099,7 @@ async fn test_query_ignores_keyword_explicitly(pool: SqlitePool) {
     };
     let results = tool_dao.query(ctx.clone(), query).await.unwrap();
     // keyword 被忽略，应返回全部 2 条工具（而非只有 alpha-tool）
-    assert_eq!(results.len(), 2, "query 方法应忽略 keyword，返回全部工具");
+    assert_eq!(results.items.len(), 2, "query 方法应忽略 keyword，返回全部工具");
 
     // 用完全不匹配的关键词也应返回全部
     let query = crate::service::dao::tool::ToolQuery {
@@ -1106,5 +1107,5 @@ async fn test_query_ignores_keyword_explicitly(pool: SqlitePool) {
         ..Default::default()
     };
     let results = tool_dao.query(ctx.clone(), query).await.unwrap();
-    assert_eq!(results.len(), 2, "不匹配的 keyword 也应被忽略，返回全部工具");
+    assert_eq!(results.items.len(), 2, "不匹配的 keyword 也应被忽略，返回全部工具");
 }

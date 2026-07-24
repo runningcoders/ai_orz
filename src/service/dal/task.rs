@@ -113,7 +113,7 @@ pub trait TaskDal: Send + Sync {
     ) -> Result<Vec<Task>>;
 
     /// 通用综合查询
-    async fn query(&self, ctx: RequestContext, query: TaskQuery) -> Result<Vec<Task>>;
+    async fn query(&self, ctx: RequestContext, query: TaskQuery) -> Result<common::api::PagedResult<Task>>;
 
     /// 🔍 统一混合搜索（FTS5 关键词 + 向量语义）
     ///
@@ -293,7 +293,7 @@ impl TaskDal for TaskDalImpl {
         project_id: &str,
         limit: Option<usize>,
     ) -> Result<Vec<Task>> {
-        let list = self
+        let page = self
             .task_dao
             .query(
                 ctx,
@@ -302,17 +302,17 @@ impl TaskDal for TaskDalImpl {
                     assignee_id: None,
                     project_id: Some(project_id.to_string()),
                     status_in: None,
-                    limit,
+                    pagination: common::api::PaginationParams { limit, offset: None },
                     ..Default::default()
                 },
             )
             .await?;
-        Ok(list.into_iter().map(Task::from_po).collect())
+        Ok(page.items.into_iter().map(Task::from_po).collect())
     }
 
-    async fn query(&self, ctx: RequestContext, query: TaskQuery) -> Result<Vec<Task>> {
-        let list = self.task_dao.query(ctx, query).await?;
-        Ok(list.into_iter().map(Task::from_po).collect())
+    async fn query(&self, ctx: RequestContext, query: TaskQuery) -> Result<common::api::PagedResult<Task>> {
+        let page = self.task_dao.query(ctx, query).await?;
+        Ok(page.map(Task::from_po))
     }
 
     async fn search(&self, ctx: RequestContext, search: TaskSearch) -> Result<Vec<Task>> {
@@ -411,7 +411,7 @@ impl TaskDal for TaskDalImpl {
                     ..search.filters.clone()
                 };
                 let vector_pos = self.task_dao.query(ctx.clone(), query_for_ids).await?;
-                all_pos.extend(vector_pos);
+                all_pos.extend(vector_pos.items);
             }
         }
 
@@ -506,7 +506,7 @@ impl TaskDal for TaskDalImpl {
         });
 
         // Step 8: 应用 limit
-        if let Some(limit) = search.filters.limit {
+        if let Some(limit) = search.filters.pagination.limit {
             tasks.truncate(limit);
         }
 
@@ -657,7 +657,7 @@ impl TaskDal for TaskDalImpl {
         self.task_vector_dao.clear_collection(ctx.clone()).await?;
 
         // 4. 查全量任务并逐条重新索引
-        let tasks = self.query(ctx.clone(), TaskQuery::default()).await?;
+        let tasks = self.query(ctx.clone(), TaskQuery::default()).await?.items;
         for task in &tasks {
             match try_build_vector_params_for_entity(
                 ctx.clone(),

@@ -9,15 +9,15 @@ use crate::pkg::RequestContext;
 use crate::service::dao::task::TaskQuery;
 use crate::service::domain::project::domain;
 use ai_orz_macros::generate_http_handler;
-use common::api::{TaskListItem, TaskQueryRequest};
+use common::api::{PagedResult, TaskListItem, TaskQueryRequest};
 
 /// Task 通用查询（POST body，支持完整查询能力）
 #[generate_http_handler]
 pub async fn query_tasks(
     ctx: RequestContext,
     params: TaskQueryRequest,
-) -> Result<Vec<TaskListItem>> {
-    let tasks = domain()
+) -> Result<PagedResult<TaskListItem>> {
+    let page = domain()
         .task_manage()
         .query(
             ctx,
@@ -28,12 +28,11 @@ pub async fn query_tasks(
                 assignee_type: params.assignee_type,
                 assignee_id: params.assignee_id,
                 status_in: params.status_in,
-                limit: params.limit,
+                pagination: params.pagination,
                 ..Default::default()
             },
         )
         .await?;
-    let response_items = tasks.iter().map(response::to_list_item).collect();
 
-    Ok(response_items)
+    Ok(page.map(|t| response::to_list_item(&t)))
 }

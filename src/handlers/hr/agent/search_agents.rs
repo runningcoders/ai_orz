@@ -24,7 +24,7 @@ pub async fn search_agents(
     let search = AgentSearch {
         keyword: params.keyword,
         filters: AgentQuery {
-            limit: params.limit,
+            pagination: common::api::PaginationParams { limit: params.limit, offset: None },
             ..Default::default()
         },
         ..Default::default()

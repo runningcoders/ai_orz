@@ -6,7 +6,7 @@ use crate::pkg::RequestContext;
 use crate::service::dao::agent::AgentQuery;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::{AgentListItem, ListAgentsRequest, ListAgentsResponse};
+use common::api::{AgentListItem, ListAgentsRequest, PagedResult};
 use common::enums::AgentStatus;
 
 /// List all AI agents with optional status filtering
@@ -21,48 +21,41 @@ use common::enums::AgentStatus;
 pub async fn list_agents(
     ctx: RequestContext,
     params: ListAgentsRequest,
-) -> Result<ListAgentsResponse> {
-    // 统一走通用 query SQL 层过滤（修复原内存过滤 bug）
-    // query 是核心查询方法，list_agents 是列表场景的语法糖
-    let agents = domain()
+) -> Result<PagedResult<AgentListItem>> {
+    // list 是语法糖：只接受分页，内部固定排除 Deleted
+    let page = domain()
         .agent_manage()
         .query(
             ctx,
             AgentQuery {
-                status: params.status,
                 exclude_status: Some(AgentStatus::Deleted),
-                ids: params.ids,
+                pagination: params.pagination,
                 ..Default::default()
             },
         )
         .await?;
 
-    let agents: Vec<AgentListItem> = agents
-        .iter()
-        .map(|agent| {
-            // 从 runtime_info 读取运行时状态
-            let runtime_state = match &agent.runtime_info {
-                Some(info) => info.state as i32,
-                None => AgentRuntimeState::Idle as i32,
-            };
+    Ok(page.map(|agent| {
+        // 从 runtime_info 读取运行时状态
+        let runtime_state = match &agent.runtime_info {
+            Some(info) => info.state as i32,
+            None => AgentRuntimeState::Idle as i32,
+        };
 
-            AgentListItem {
-                id: agent.id().to_string(),
-                name: agent.name().to_string(),
-                roles: agent.po.get_roles(),
-                description: if agent.po.description.is_empty() {
-                    None
-                } else {
-                    Some(agent.po.description.clone())
-                },
-                kind: agent.po.kind.to_string(),
-                model_provider_id: agent.po.model_provider_id.clone(),
-                status: agent.po.status as i32,
-                created_at: agent.po.created_at,
-                runtime_state,
-            }
-        })
-        .collect();
-
-    Ok(ListAgentsResponse { agents })
+        AgentListItem {
+            id: agent.id().to_string(),
+            name: agent.name().to_string(),
+            roles: agent.po.get_roles(),
+            description: if agent.po.description.is_empty() {
+                None
+            } else {
+                Some(agent.po.description.clone())
+            },
+            kind: agent.po.kind.to_string(),
+            model_provider_id: agent.po.model_provider_id.clone(),
+            status: agent.po.status as i32,
+            created_at: agent.po.created_at,
+            runtime_state,
+        }
+    }))
 }

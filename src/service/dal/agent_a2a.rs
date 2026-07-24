@@ -51,7 +51,7 @@ impl AgentDal for A2aAgentDal {
         self.base.get_agent(ctx, id, options).await
     }
 
-    async fn query(&self, ctx: RequestContext, query: AgentQuery) -> Result<Vec<Agent>> {
+    async fn query(&self, ctx: RequestContext, query: AgentQuery) -> Result<common::api::PagedResult<Agent>> {
         self.base.query(ctx, query).await
     }
 

@@ -129,6 +129,7 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
 
                 // 在 SQL 过滤后的候选工具中按 ID 精确匹配
                 candidate_tools
+                    .items
                     .into_iter()
                     .find(|t| t.po.id == tool_id)
                     .ok_or_else(|| {

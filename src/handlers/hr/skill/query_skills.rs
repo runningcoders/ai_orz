@@ -8,7 +8,7 @@ use crate::pkg::RequestContext;
 use crate::service::dao::skill::SkillQuery;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::{ListSkillsResponse, SkillQueryRequest};
+use common::api::{PagedResult, SkillListItem, SkillQueryRequest};
 use common::enums::SkillStatus;
 
 use super::response::to_list_item;
@@ -24,8 +24,8 @@ use super::response::to_list_item;
 pub async fn query_skills(
     ctx: RequestContext,
     params: SkillQueryRequest,
-) -> Result<ListSkillsResponse> {
-    let skills = domain()
+) -> Result<PagedResult<SkillListItem>> {
+    let page = domain()
         .skill_manage()
         .query_skills(
             ctx,
@@ -38,12 +38,11 @@ pub async fn query_skills(
                 author_id: params.author_id,
                 parent_skill_id: params.parent_skill_id,
                 tags: params.tags,
-                limit: params.limit,
+                pagination: params.pagination,
                 ..Default::default()
             },
         )
         .await?;
 
-    let skills = skills.iter().map(to_list_item).collect();
-    Ok(ListSkillsResponse { skills })
+    Ok(page.map(|s| to_list_item(&s)))
 }

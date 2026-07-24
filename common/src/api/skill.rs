@@ -263,32 +263,13 @@ pub struct ListAgentSkillsResponse {
     pub skills: Vec<SkillListItem>,
 }
 
-/// Skill 列表查询请求。
+/// Skill 列表查询请求（语法糖：只接受分页参数，内部固定排除 Expired + updated_at DESC）
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct ListSkillsRequest {
-    /// 可选状态筛选。
+    /// 分页参数（limit + offset）
+    #[serde(flatten)]
     #[param(source = "query")]
-    pub status: Option<SkillStatus>,
-
-    /// 可选分类筛选。
-    #[param(source = "query")]
-    pub category: Option<String>,
-
-    /// 可选作者筛选。
-    #[param(source = "query")]
-    pub author_id: Option<String>,
-
-    /// 可选关键词筛选。
-    #[param(source = "query")]
-    pub keyword: Option<String>,
-
-    /// 返回数量限制。
-    #[param(source = "query")]
-    pub limit: Option<usize>,
-
-    /// 按 ID 批量查询
-    #[param(source = "query")]
-    pub ids: Option<Vec<String>>,
+    pub pagination: PaginationParams,
 }
 
 /// Skill 列表查询响应。

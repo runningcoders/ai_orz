@@ -134,7 +134,7 @@ pub trait ProjectManage: Send + Sync {
         &self,
         ctx: RequestContext,
         query: ProjectQuery,
-    ) -> Result<Vec<Project>>;
+    ) -> Result<common::api::PagedResult<Project>>;
 
     /// 启动项目
     async fn start(
@@ -261,7 +261,7 @@ pub trait TaskManage: Send + Sync {
         &self,
         ctx: RequestContext,
         query: TaskQuery,
-    ) -> Result<Vec<Task>>;
+    ) -> Result<common::api::PagedResult<Task>>;
 
     /// 更新任务基本信息
     async fn update_basic(

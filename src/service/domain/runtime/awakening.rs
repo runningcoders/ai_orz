@@ -459,7 +459,7 @@ mod tests {
             )
             .await
             .expect("加载技能失败");
-        agent.set_skills(skills);
+        agent.set_skills(skills.items);
     }
 
     #[sqlx::test]

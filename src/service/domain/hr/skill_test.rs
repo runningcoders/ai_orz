@@ -268,15 +268,15 @@ async fn test_query_skills(pool: SqlitePool) {
         tags: None,
         ids: None,
         exclude_status: None,
-        limit: None,
+        pagination: Default::default(),
     };
 
-    let skills: Vec<Skill> = domain
+    let skills = domain
         .skill_manage()
         .query_skills(ctx, query)
         .await
         .unwrap();
-    assert_eq!(skills.len(), 1);
+    assert_eq!(skills.items.len(), 1);
 }
 
 #[sqlx::test]

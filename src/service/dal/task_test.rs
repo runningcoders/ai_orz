@@ -374,12 +374,12 @@ async fn test_query(pool: SqlitePool) {
         assignee_id: Some(assignee_id),
         project_id: None,
         status_in: Some(vec![TaskStatus::Pending]),
-        limit: Some(2),
+        pagination: common::api::PaginationParams { limit: Some(2), offset: None },
         ..Default::default()
     };
 
     let tasks = dal.query(ctx, query).await.unwrap();
-    assert_eq!(tasks.len(), 2);
+    assert_eq!(tasks.items.len(), 2);
 }
 
 #[sqlx::test]

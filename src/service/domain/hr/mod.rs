@@ -101,22 +101,22 @@ impl HrDomain for HrDomainImpl {
         let query = AgentQuery {
             roles: Some(vec![FEISHU_RECEPTION_ROLE.to_string()]),
             status: Some(AgentStatus::Onboarded),
-            limit: Some(1),
+            pagination: common::api::PaginationParams { limit: Some(1), offset: None },
             ..Default::default()
         };
         let agents = self.agent_dal.query(ctx.clone(), query).await?;
-        if let Some(agent) = agents.into_iter().next() {
+        if let Some(agent) = agents.items.into_iter().next() {
             return Ok(Some(agent));
         }
 
         // fallback：任意 Onboarded Agent
         let query = AgentQuery {
             status: Some(AgentStatus::Onboarded),
-            limit: Some(1),
+            pagination: common::api::PaginationParams { limit: Some(1), offset: None },
             ..Default::default()
         };
         let agents = self.agent_dal.query(ctx, query).await?;
-        Ok(agents.into_iter().next())
+        Ok(agents.items.into_iter().next())
     }
 }
 
@@ -163,7 +163,7 @@ pub trait AgentManage: Send + Sync {
         &self,
         ctx: RequestContext,
         query: crate::service::dao::agent::AgentQuery,
-    ) -> Result<Vec<Agent>>;
+    ) -> Result<common::api::PagedResult<Agent>>;
 
     /// 列出所有 Agent
     async fn list_agents(&self, ctx: RequestContext) -> Result<Vec<Agent>>;
@@ -321,7 +321,7 @@ pub trait SkillManage: Send + Sync {
         &self,
         ctx: RequestContext,
         query: SkillQuery,
-    ) -> Result<Vec<Skill>>;
+    ) -> Result<common::api::PagedResult<Skill>>;
     async fn list_by_status(
         &self,
         ctx: RequestContext,

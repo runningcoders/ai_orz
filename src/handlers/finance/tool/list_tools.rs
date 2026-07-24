@@ -5,7 +5,7 @@ use crate::pkg::RequestContext;
 use crate::service::dao::tool::ToolQuery;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::{ListToolsRequest, ListToolsResponse, ToolListItem};
+use common::api::{ListToolsRequest, PagedResult, ToolListItem};
 
 use super::response::to_list_item;
 
@@ -21,22 +21,18 @@ use super::response::to_list_item;
 pub async fn list_tools(
     ctx: RequestContext,
     params: ListToolsRequest,
-) -> Result<ListToolsResponse> {
-    let tools = domain()
+) -> Result<PagedResult<ToolListItem>> {
+    // list 是语法糖：只接受分页
+    let page = domain()
         .tool_provider_manage()
         .query_tools(
             ctx,
             ToolQuery {
-                agent_id: params.agent_id.clone(),
-                keyword: params.keyword.clone(),
-                enabled_only: params.only_enabled,
-                ids: params.ids,
-                limit: None,
+                pagination: params.pagination,
                 ..Default::default()
             },
         )
         .await?;
 
-    let tools: Vec<ToolListItem> = tools.iter().map(to_list_item).collect();
-    Ok(ListToolsResponse { tools })
+    Ok(page.map(|t| to_list_item(&t)))
 }

@@ -728,8 +728,8 @@ async fn test_query_by_tag(pool: SqlitePool) -> Result<()> {
         )
         .await?;
 
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].id, skill1_id);
+    assert_eq!(result.items.len(), 1);
+    assert_eq!(result.items[0].id, skill1_id);
 
     Ok(())
 }
@@ -795,8 +795,8 @@ async fn test_query_by_multiple_tags(pool: SqlitePool) -> Result<()> {
         )
         .await?;
 
-    assert_eq!(result.len(), 2);
-    let ids: Vec<String> = result.iter().map(|s| s.id.clone()).collect();
+    assert_eq!(result.items.len(), 2);
+    let ids: Vec<String> = result.items.iter().map(|s| s.id.clone()).collect();
     assert!(ids.contains(&skill1_id));
     assert!(ids.contains(&skill2_id));
     assert!(!ids.contains(&skill3_id));
@@ -851,8 +851,8 @@ async fn test_query_without_tags(pool: SqlitePool) -> Result<()> {
         )
         .await?;
 
-    assert_eq!(result.len(), 2);
-    let ids: Vec<String> = result.iter().map(|s| s.id.clone()).collect();
+    assert_eq!(result.items.len(), 2);
+    let ids: Vec<String> = result.items.iter().map(|s| s.id.clone()).collect();
     assert!(ids.contains(&skill1_id));
     assert!(ids.contains(&skill2_id));
 
@@ -1397,7 +1397,7 @@ async fn test_query_keyword_is_ignored(pool: SqlitePool) -> Result<()> {
 
     // keyword 被忽略，应返回全部 2 条（而不是只返回包含 "rust" 的 1 条）
     assert_eq!(
-        result.len(),
+        result.items.len(),
         2,
         "query 方法的 keyword 应被忽略，返回全部结果"
     );

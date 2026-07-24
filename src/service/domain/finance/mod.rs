@@ -431,7 +431,7 @@ pub trait ToolProviderManage: Send + Sync {
         &self,
         ctx: RequestContext,
         query: crate::service::dao::tool::ToolQuery,
-    ) -> Result<Vec<crate::models::tool::Tool>>;
+    ) -> Result<common::api::PagedResult<crate::models::tool::Tool>>;
 
     /// 列出所有 Tool
     async fn list_tools(

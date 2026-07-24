@@ -97,7 +97,7 @@ pub trait ToolDal: Send + Sync {
     /// 通用综合查询（返回完整 Tool 实体，包含 PO + CoreTool）
     ///
     /// 支持组合查询条件，所有字段都是 Option
-    async fn query(&self, ctx: RequestContext, query: ToolQuery) -> Result<Vec<Tool>>;
+    async fn query(&self, ctx: RequestContext, query: ToolQuery) -> Result<common::api::PagedResult<Tool>>;
 
     /// 获取所有启用的工具
     async fn list_enabled(&self, ctx: RequestContext) -> Result<Vec<Tool>>;
@@ -375,11 +375,12 @@ impl ToolDal for ToolDalImpl {
         }))
     }
 
-    async fn query(&self, ctx: RequestContext, query: ToolQuery) -> Result<Vec<Tool>> {
+    async fn query(&self, ctx: RequestContext, query: ToolQuery) -> Result<common::api::PagedResult<Tool>> {
         let query = exclude_stale_by_default(query);
-        let pos = self.tool_dao.query(ctx, query).await?;
+        let page = self.tool_dao.query(ctx, query).await?;
+        let total = page.total;
         let mut tools = Vec::new();
-        for po in pos {
+        for po in page.items {
             if let Some(our_tool) = self.tool_call_dao.assemble_core_tool(&po)? {
                 tools.push(Tool {
                     po,
@@ -393,18 +394,19 @@ impl ToolDal for ToolDalImpl {
                 tools.push(Tool::from_po_for_management(po));
             }
         }
-        Ok(tools)
+        Ok(common::api::PagedResult { items: tools, total })
     }
 
     async fn list_enabled(&self, ctx: RequestContext) -> Result<Vec<Tool>> {
-        self.query(
+        let page = self.query(
             ctx,
             ToolQuery {
                 enabled_only: Some(true),
                 ..Default::default()
             },
         )
-        .await
+        .await?;
+        Ok(page.items)
     }
 
     async fn list_tools_for_agent_full(
@@ -412,7 +414,7 @@ impl ToolDal for ToolDalImpl {
         ctx: RequestContext,
         agent_id: &str,
     ) -> Result<Vec<Tool>> {
-        self.query(
+        let page = self.query(
             ctx,
             ToolQuery {
                 agent_id: Some(agent_id.to_string()),
@@ -420,7 +422,8 @@ impl ToolDal for ToolDalImpl {
                 ..Default::default()
             },
         )
-        .await
+        .await?;
+        Ok(page.items)
     }
 
     async fn add_tool_to_agent(
@@ -569,7 +572,7 @@ impl ToolDal for ToolDalImpl {
                     ..Default::default()
                 };
                 let vector_pos = self.tool_dao.query(ctx.clone(), query).await?;
-                all_pos.extend(vector_pos);
+                all_pos.extend(vector_pos.items);
             }
         }
 
@@ -753,7 +756,7 @@ impl ToolDal for ToolDalImpl {
             )
             .await?;
 
-        for po in &pos {
+        for po in &pos.items {
             match try_build_vector_params_for_entity(
                 ctx.clone(),
                 &self.cortex_dao,

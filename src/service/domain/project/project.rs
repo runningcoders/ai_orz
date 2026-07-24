@@ -119,7 +119,7 @@ impl super::ProjectManage for ProjectDomainImpl {
         &self,
         ctx: RequestContext,
         query: crate::service::dao::project::ProjectQuery,
-    ) -> Result<Vec<Project>> {
+    ) -> Result<common::api::PagedResult<Project>> {
         self.project_dal.query(ctx, query).await
     }
 

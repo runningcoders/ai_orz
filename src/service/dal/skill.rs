@@ -66,7 +66,7 @@ pub trait SkillDal: Send + Sync {
     ) -> Result<Option<SkillPo>>;
 
     /// 通用综合查询（返回完整 Skill 实体，包含 PO + 文件列表）
-    async fn query(&self, ctx: RequestContext, query: SkillQuery) -> Result<Vec<Skill>>;
+    async fn query(&self, ctx: RequestContext, query: SkillQuery) -> Result<common::api::PagedResult<Skill>>;
 
     /// 按状态查询（返回完整 Skill 实体）
     async fn list_by_status(
@@ -243,10 +243,10 @@ impl SkillDal for SkillDalImpl {
         Ok(self.skill_dao.find_by_id(ctx, &id).await?)
     }
 
-    async fn query(&self, ctx: RequestContext, query: SkillQuery) -> Result<Vec<Skill>> {
-        let pos = self.skill_dao.query(ctx, query).await?;
-        let mut skills = Vec::with_capacity(pos.len());
-        for po in pos {
+    async fn query(&self, ctx: RequestContext, query: SkillQuery) -> Result<common::api::PagedResult<Skill>> {
+        let page = self.skill_dao.query(ctx, query).await?;
+        let mut skills = Vec::with_capacity(page.items.len());
+        for po in page.items {
             let files = self.skill_dao.list_files(&po)?;
             skills.push(Skill {
                 po,
@@ -254,7 +254,7 @@ impl SkillDal for SkillDalImpl {
                 search_match: None,
             });
         }
-        Ok(skills)
+        Ok(common::api::PagedResult { items: skills, total: page.total })
     }
 
     async fn list_by_status(
@@ -262,14 +262,15 @@ impl SkillDal for SkillDalImpl {
         ctx: RequestContext,
         status: common::enums::SkillStatus,
     ) -> Result<Vec<Skill>> {
-        self.query(
+        let page = self.query(
             ctx,
             SkillQuery {
                 status: Some(status),
                 ..Default::default()
             },
         )
-        .await
+        .await?;
+        Ok(page.items)
     }
 
     async fn list_by_category(
@@ -277,14 +278,15 @@ impl SkillDal for SkillDalImpl {
         ctx: RequestContext,
         category: &str,
     ) -> Result<Vec<Skill>> {
-        self.query(
+        let page = self.query(
             ctx,
             SkillQuery {
                 category: Some(category.to_string()),
                 ..Default::default()
             },
         )
-        .await
+        .await?;
+        Ok(page.items)
     }
 
     async fn list_by_author(
@@ -292,14 +294,15 @@ impl SkillDal for SkillDalImpl {
         ctx: RequestContext,
         author_id: &str,
     ) -> Result<Vec<Skill>> {
-        self.query(
+        let page = self.query(
             ctx,
             SkillQuery {
                 author_id: Some(author_id.to_string()),
                 ..Default::default()
             },
         )
-        .await
+        .await?;
+        Ok(page.items)
     }
 
     async fn list_for_agent(
@@ -307,14 +310,15 @@ impl SkillDal for SkillDalImpl {
         ctx: RequestContext,
         agent_id: &str,
     ) -> Result<Vec<Skill>> {
-        self.query(
+        let page = self.query(
             ctx,
             SkillQuery {
                 author_id: Some(agent_id.to_string()),
                 ..Default::default()
             },
         )
-        .await
+        .await?;
+        Ok(page.items)
     }
 
     async fn search(
@@ -422,7 +426,7 @@ impl SkillDal for SkillDalImpl {
                         ..Default::default()
                     };
                     let chunk_pos = self.skill_dao.query(ctx.clone(), chunk_query).await?;
-                    all_pos.extend(chunk_pos);
+                    all_pos.extend(chunk_pos.items);
                 }
             }
         }
@@ -518,7 +522,7 @@ impl SkillDal for SkillDalImpl {
         });
 
         // Step 8: 应用 limit
-        if let Some(limit) = search.filters.limit {
+        if let Some(limit) = search.filters.pagination.limit {
             skills.truncate(limit);
         }
 
@@ -623,7 +627,7 @@ impl SkillDal for SkillDalImpl {
             .await?;
 
         // 如果已有副本，跳过安装，直接返回已有技能（加载文件后返回完整 Skill 业务实体）
-        if let Some(existing_po) = existing.into_iter().next() {
+        if let Some(existing_po) = existing.items.into_iter().next() {
             log_info!(
                 &ctx,
                 "install_to_agent",
@@ -698,7 +702,7 @@ impl SkillDal for SkillDalImpl {
         ctx: RequestContext,
         tag: &str,
     ) -> Result<Vec<Skill>> {
-        self.query(
+        let page = self.query(
             ctx,
             SkillQuery {
                 tags: Some(vec![tag.to_string()]),
@@ -706,7 +710,8 @@ impl SkillDal for SkillDalImpl {
                 ..Default::default()
             },
         )
-        .await
+        .await?;
+        Ok(page.items)
     }
 
     async fn find_agent_skill_copies(
@@ -720,7 +725,7 @@ impl SkillDal for SkillDalImpl {
         }
 
         // 查询 Agent 的所有技能副本，按 parent_skill_id 列表过滤
-        let mut skills = self
+        let page = self
             .query(
                 ctx,
                 SkillQuery {
@@ -731,6 +736,7 @@ impl SkillDal for SkillDalImpl {
             .await?;
 
         let id_set: std::collections::HashSet<&String> = parent_skill_ids.iter().collect();
+        let mut skills = page.items;
         skills.retain(|s| id_set.contains(&s.po.parent_skill_id));
         Ok(skills)
     }
@@ -778,7 +784,7 @@ impl SkillDal for SkillDalImpl {
 
         // 5. 查全量技能并逐条重新索引
         let skills = self.query(ctx.clone(), SkillQuery::default()).await?;
-        for skill in &skills {
+        for skill in &skills.items {
             match self
                 .cortex_dao
                 .embed_entity(ctx.clone(), cortex.as_ref(), &skill.po)

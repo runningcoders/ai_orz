@@ -140,21 +140,13 @@ pub struct DebugCallToolResponse {
     pub status: String,
 }
 
-/// List tools request
+/// List tools request（语法糖：只接受分页参数，内部固定 created_at DESC）
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct ListToolsRequest {
-    /// Filter by bound agent ID
+    /// 分页参数（limit + offset）
+    #[serde(flatten)]
     #[param(source = "query")]
-    pub agent_id: Option<String>,
-    /// Search by keyword in name/description
-    #[param(source = "query")]
-    pub keyword: Option<String>,
-    /// Filter by enabled status
-    #[param(source = "query")]
-    pub only_enabled: Option<bool>,
-    /// 按 ID 批量查询
-    #[param(source = "query")]
-    pub ids: Option<Vec<String>>,
+    pub pagination: PaginationParams,
 }
 
 /// List tools response

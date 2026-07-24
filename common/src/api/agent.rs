@@ -251,15 +251,13 @@ pub struct DeleteAgentResponse {
     pub success: bool,
 }
 
-/// 获取 Agent 列表请求
+/// 获取 Agent 列表请求（语法糖：只接受分页参数，内部固定排除 Deleted + created_at DESC）
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct ListAgentsRequest {
-    /// 可选状态筛选
+    /// 分页参数（limit + offset）
+    #[serde(flatten)]
     #[param(source = "query")]
-    pub status: Option<AgentStatus>,
-    /// 按 ID 批量查询
-    #[param(source = "query")]
-    pub ids: Option<Vec<String>>,
+    pub pagination: PaginationParams,
 }
 
 /// 获取 Agent 列表响应

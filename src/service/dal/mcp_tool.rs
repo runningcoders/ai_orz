@@ -188,7 +188,7 @@ impl McpToolDal for McpToolDalImpl {
             )
             .await?;
 
-        for mut existing in existing_enabled_tools {
+        for mut existing in existing_enabled_tools.items {
             if remote_tool_ids.contains(&existing.id) {
                 continue;
             }
@@ -229,22 +229,21 @@ impl McpToolDal for McpToolDalImpl {
             .tool_dao
             .query(ctx.clone(), base_query.clone())
             .await?;
-        let total = all.len();
+        let total = all.total;
 
         let page = self
             .tool_dao
             .query(
                 ctx,
                 ToolQuery {
-                    limit: params.pagination.limit,
-                    offset: params.pagination.offset,
+                    pagination: params.pagination,
                     ..base_query
                 },
             )
             .await?;
 
         Ok(PagedResult {
-            items: page.into_iter().map(Tool::from_po_for_management).collect(),
+            items: page.items.into_iter().map(Tool::from_po_for_management).collect(),
             total,
         })
     }

@@ -42,7 +42,7 @@ impl ToolProviderManage for FinanceDomainImpl {
         &self,
         ctx: RequestContext,
         query: crate::service::dao::tool::ToolQuery,
-    ) -> Result<Vec<Tool>> {
+    ) -> Result<common::api::PagedResult<Tool>> {
         self.tool_dal.query(ctx.clone(), query).await
     }
 

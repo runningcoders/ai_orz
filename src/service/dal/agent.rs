@@ -100,7 +100,7 @@ pub trait AgentDal: Send + Sync {
     /// 通用综合查询
     ///
     /// 支持组合查询条件，所有字段都是 Option
-    async fn query(&self, ctx: RequestContext, query: AgentQuery) -> Result<Vec<Agent>>;
+    async fn query(&self, ctx: RequestContext, query: AgentQuery) -> Result<common::api::PagedResult<Agent>>;
 
     /// 查询所有 Agent
     async fn find_all(&self, ctx: RequestContext) -> Result<Vec<Agent>>;
@@ -371,20 +371,21 @@ impl AgentDal for AgentDalImpl {
         Ok(Some(agent))
     }
 
-    async fn query(&self, ctx: RequestContext, query: AgentQuery) -> Result<Vec<Agent>> {
-        let agents = self.agent_dao.query(ctx, query).await?;
-        Ok(agents.into_iter().map(Agent::from_po).map(Self::inject_runtime_state).collect())
+    async fn query(&self, ctx: RequestContext, query: AgentQuery) -> Result<common::api::PagedResult<Agent>> {
+        let page = self.agent_dao.query(ctx, query).await?;
+        Ok(page.map(Agent::from_po).map(Self::inject_runtime_state))
     }
 
     async fn find_all(&self, ctx: RequestContext) -> Result<Vec<Agent>> {
-        self.query(
+        let page = self.query(
             ctx,
             AgentQuery {
                 exclude_status: Some(AgentStatus::Deleted),
                 ..Default::default()
             },
         )
-        .await
+        .await?;
+        Ok(page.items)
     }
 
     async fn search(&self, ctx: RequestContext, search: AgentSearch) -> Result<Vec<Agent>> {
@@ -488,7 +489,7 @@ impl AgentDal for AgentDalImpl {
                         ..Default::default()
                     };
                     let chunk_pos = self.agent_dao.query(ctx.clone(), chunk_query).await?;
-                    all_pos.extend(chunk_pos);
+                    all_pos.extend(chunk_pos.items);
                 }
             }
         }
@@ -581,7 +582,7 @@ impl AgentDal for AgentDalImpl {
         });
 
         // Step 8: 应用 limit
-        if let Some(limit) = search.filters.limit {
+        if let Some(limit) = search.filters.pagination.limit {
             agents.truncate(limit);
         }
 

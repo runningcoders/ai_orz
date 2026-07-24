@@ -158,7 +158,8 @@ impl super::TaskManage for ProjectDomainImpl {
         status: Option<TaskStatus>,
         limit: Option<usize>,
     ) -> Result<Vec<Task>> {
-        self.task_dal
+        let page = self
+            .task_dal
             .query(
                 ctx,
                 crate::service::dao::task::TaskQuery {
@@ -166,11 +167,12 @@ impl super::TaskManage for ProjectDomainImpl {
                     assignee_id: assignee_id.map(str::to_string),
                     project_id: project_id.map(str::to_string),
                     status_in: status.map(|status| vec![status]),
-                    limit,
+                    pagination: common::api::PaginationParams { limit, offset: None },
                     ..Default::default()
                 },
             )
-            .await
+            .await?;
+        Ok(page.items)
     }
 
     /// 通用查询（核心方法）
@@ -178,7 +180,7 @@ impl super::TaskManage for ProjectDomainImpl {
         &self,
         ctx: RequestContext,
         query: crate::service::dao::task::TaskQuery,
-    ) -> Result<Vec<Task>> {
+    ) -> Result<common::api::PagedResult<Task>> {
         self.task_dal.query(ctx, query).await
     }
 

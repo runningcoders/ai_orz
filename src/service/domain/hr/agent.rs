@@ -117,7 +117,7 @@ impl AgentManage for HrDomainImpl {
                 let mut seen_ids = std::collections::HashSet::new();
                 let all_tools: Vec<Tool> = bound_tools
                     .into_iter()
-                    .chain(tag_tools)
+                    .chain(tag_tools.items)
                     .filter(|t| seen_ids.insert(t.po.id.clone()))
                     .collect();
                 agent.set_tools(all_tools);
@@ -136,7 +136,7 @@ impl AgentManage for HrDomainImpl {
                         },
                     )
                     .await?;
-                agent.set_skills(skills);
+                agent.set_skills(skills.items);
             }
         }
 
@@ -146,7 +146,7 @@ impl AgentManage for HrDomainImpl {
     /// 通用综合查询
     ///
     /// Domain 层可以添加业务逻辑：权限校验、数据过滤、业务规则验证
-    async fn query(&self, ctx: RequestContext, query: AgentQuery) -> Result<Vec<Agent>> {
+    async fn query(&self, ctx: RequestContext, query: AgentQuery) -> Result<common::api::PagedResult<Agent>> {
         self.agent_dal.query(ctx, query).await
     }
 
@@ -154,14 +154,16 @@ impl AgentManage for HrDomainImpl {
     ///
     /// 语法糖：调用通用查询，默认排除已删除状态
     async fn list_agents(&self, ctx: RequestContext) -> Result<Vec<Agent>> {
-        self.query(
-            ctx,
-            AgentQuery {
-                exclude_status: Some(AgentStatus::Deleted),
-                ..Default::default()
-            },
-        )
-        .await
+        Ok(self
+            .query(
+                ctx,
+                AgentQuery {
+                    exclude_status: Some(AgentStatus::Deleted),
+                    ..Default::default()
+                },
+            )
+            .await?
+            .items)
     }
 
     async fn search_agents(

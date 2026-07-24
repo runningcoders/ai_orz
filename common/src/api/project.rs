@@ -52,21 +52,13 @@ pub struct GetProjectRequest {
     pub stats_interval: Option<String>,
 }
 
-/// 获取 Project 列表请求
+/// 获取 Project 列表请求（语法糖：只接受分页参数，内部固定 root_user_id=ctx.uid() + 排除 status=0 + priority DESC, created_at DESC）
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct ListProjectsRequest {
-    /// 根用户 ID；为空时默认使用当前登录用户
+    /// 分页参数（limit + offset）
+    #[serde(flatten)]
     #[param(source = "query")]
-    pub root_user_id: Option<String>,
-    /// 可选状态筛选
-    #[param(source = "query")]
-    pub status: Option<ProjectStatus>,
-    /// 返回数量限制
-    #[param(source = "query")]
-    pub limit: Option<usize>,
-    /// 按 ID 批量查询
-    #[param(source = "query")]
-    pub ids: Option<Vec<String>>,
+    pub pagination: PaginationParams,
 }
 
 /// Project 列表项响应

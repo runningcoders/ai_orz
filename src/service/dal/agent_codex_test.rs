@@ -69,9 +69,9 @@ impl AgentDal for MockAgentDal {
         &self,
         _ctx: RequestContext,
         _query: crate::service::dao::agent::AgentQuery,
-    ) -> Result<Vec<Agent>> {
+    ) -> Result<common::api::PagedResult<Agent>> {
         self.record_call("query");
-        Ok(Vec::new())
+        Ok(common::api::PagedResult { items: Vec::new(), total: 0 })
     }
 
     async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<Agent>> {

@@ -9,7 +9,7 @@ use crate::pkg::RequestContext;
 use crate::service::dao::agent::AgentQuery;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::{AgentListItem, AgentQueryRequest, ListAgentsResponse};
+use common::api::{AgentListItem, AgentQueryRequest, PagedResult};
 use common::enums::AgentStatus;
 
 /// Agent 通用查询（POST body，支持完整查询能力）
@@ -24,8 +24,8 @@ use common::enums::AgentStatus;
 pub async fn query_agents(
     ctx: RequestContext,
     params: AgentQueryRequest,
-) -> Result<ListAgentsResponse> {
-    let agents = domain()
+) -> Result<PagedResult<AgentListItem>> {
+    let page = domain()
         .agent_manage()
         .query(
             ctx,
@@ -37,37 +37,32 @@ pub async fn query_agents(
                 created_by: params.created_by,
                 model_provider_id: params.model_provider_id,
                 roles: params.roles,
-                limit: params.limit,
+                pagination: params.pagination,
                 ..Default::default()
             },
         )
         .await?;
 
-    let agents: Vec<AgentListItem> = agents
-        .iter()
-        .map(|agent| {
-            let runtime_state = match &agent.runtime_info {
-                Some(info) => info.state as i32,
-                None => AgentRuntimeState::Idle as i32,
-            };
+    Ok(page.map(|agent| {
+        let runtime_state = match &agent.runtime_info {
+            Some(info) => info.state as i32,
+            None => AgentRuntimeState::Idle as i32,
+        };
 
-            AgentListItem {
-                id: agent.id().to_string(),
-                name: agent.name().to_string(),
-                roles: agent.po.get_roles(),
-                description: if agent.po.description.is_empty() {
-                    None
-                } else {
-                    Some(agent.po.description.clone())
-                },
-                kind: agent.po.kind.to_string(),
-                model_provider_id: agent.po.model_provider_id.clone(),
-                status: agent.po.status as i32,
-                created_at: agent.po.created_at,
-                runtime_state,
-            }
-        })
-        .collect();
-
-    Ok(ListAgentsResponse { agents })
+        AgentListItem {
+            id: agent.id().to_string(),
+            name: agent.name().to_string(),
+            roles: agent.po.get_roles(),
+            description: if agent.po.description.is_empty() {
+                None
+            } else {
+                Some(agent.po.description.clone())
+            },
+            kind: agent.po.kind.to_string(),
+            model_provider_id: agent.po.model_provider_id.clone(),
+            status: agent.po.status as i32,
+            created_at: agent.po.created_at,
+            runtime_state,
+        }
+    }))
 }

@@ -115,7 +115,7 @@ pub trait ProjectDal: Send + Sync {
         &self,
         ctx: RequestContext,
         query: ProjectQuery,
-    ) -> Result<Vec<Project>>;
+    ) -> Result<common::api::PagedResult<Project>>;
 
     /// 更新项目信息
     async fn update(&self, ctx: RequestContext, project: &Project) -> Result<()>;
@@ -319,9 +319,9 @@ impl ProjectDal for ProjectDalImpl {
         &self,
         ctx: RequestContext,
         query: ProjectQuery,
-    ) -> Result<Vec<Project>> {
-        let list = self.project_dao.query(ctx, query).await?;
-        Ok(list.into_iter().map(Project::from_po).collect())
+    ) -> Result<common::api::PagedResult<Project>> {
+        let page = self.project_dao.query(ctx, query).await?;
+        Ok(page.map(Project::from_po))
     }
 
     async fn update(&self, ctx: RequestContext, project: &Project) -> Result<()> {
@@ -538,7 +538,7 @@ impl ProjectDal for ProjectDalImpl {
                     ..search.filters.clone()
                 };
                 let vector_pos = self.project_dao.query(ctx.clone(), query_for_ids).await?;
-                all_pos.extend(vector_pos);
+                all_pos.extend(vector_pos.items);
             }
         }
 
@@ -633,7 +633,7 @@ impl ProjectDal for ProjectDalImpl {
         });
 
         // Step 8: 应用 limit
-        if let Some(limit) = search.filters.limit {
+        if let Some(limit) = search.filters.pagination.limit {
             projects.truncate(limit);
         }
 
@@ -698,7 +698,7 @@ impl ProjectDal for ProjectDalImpl {
         self.project_vector_dao.clear_collection(ctx.clone()).await?;
 
         // 4. 查全量项目并逐条重新索引
-        let projects = self.query(ctx.clone(), ProjectQuery::default()).await?;
+        let projects = self.query(ctx.clone(), ProjectQuery::default()).await?.items;
         for project in &projects {
             match try_build_vector_params_for_entity(
                 ctx.clone(),

@@ -370,12 +370,12 @@ async fn test_query(pool: SqlitePool) {
     let query = ProjectQuery {
         root_user_id: Some(root_user_id),
         status_in: Some(vec![ProjectStatus::Active]),
-        limit: Some(2),
+        pagination: common::api::PaginationParams { limit: Some(2), offset: None },
         ..Default::default()
     };
 
     let projects = dal.query(ctx, query).await.unwrap();
-    assert_eq!(projects.len(), 2);
+    assert_eq!(projects.items.len(), 2);
 }
 
 #[sqlx::test]
