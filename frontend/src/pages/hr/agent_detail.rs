@@ -2,7 +2,7 @@ use crate::api::finance::list_model_providers;
 use crate::api::{hr::*, StatsOptions};
 use crate::pages::hr::agent_memory_panel::AgentMemoryPanel;
 use crate::api::message::{load_latest_messages, send_message_to_agent};
-use crate::components::agent_runtime_graph::{AgentRuntimeGraph, ToolNodeInfo};
+use crate::components::relation_graph::{RelationGraph, RelationNodeInfo};
 use crate::components::modal::Modal;
 use crate::components::state::Loading;
 use crate::components::stats::AgentStatsPanel;
@@ -787,18 +787,21 @@ pub fn HrAgentDetail(id: String) -> Element {
                             2 => rsx! {
                                 // === 状态图：Agent 与绑定 Tools 的关系图 ===
                                 {
-                                    let bound_tool_infos: Vec<ToolNodeInfo> = all_tools_list.iter()
+                                    let bound_tool_infos: Vec<RelationNodeInfo> = all_tools_list.iter()
                                         .filter(|t| agent_tool_ids.contains(&t.id))
-                                        .map(|t| ToolNodeInfo {
+                                        .map(|t| RelationNodeInfo {
                                             id: t.id.clone(),
                                             name: t.name.clone(),
                                         })
                                         .collect();
                                     rsx! {
-                                        AgentRuntimeGraph {
-                                            agent_id: a.id.clone(),
-                                            agent_name: a.name.clone(),
-                                            bound_tools: bound_tool_infos,
+                                        RelationGraph {
+                                            center_id: a.id.clone(),
+                                            center_name: a.name.clone(),
+                                            center_color: "#fa520f".to_string(),
+                                            related: bound_tool_infos,
+                                            related_color: "#f59e0b".to_string(),
+                                            related_label: "工具".to_string(),
                                         }
                                     }
                                 }
