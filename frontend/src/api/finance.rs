@@ -73,7 +73,7 @@ pub async fn list_tools(limit: Option<usize>, offset: Option<usize>) -> Result<P
     if let Some(o) = offset { params.push(format!("offset={}", o)); }
     let url = if params.is_empty() { "/api/v1/finance/tools".to_string() }
               else { format!("/api/v1/finance/tools?{}", params.join("&")) };
-    api_get_or_default(&url).await
+    api_get(&url).await
 }
 
 pub async fn query_tools(req: &ToolQueryRequest) -> Result<PagedResult<ToolListItem>, ApiError> {

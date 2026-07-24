@@ -18,7 +18,7 @@ pub async fn list_projects(limit: Option<usize>, offset: Option<usize>) -> Resul
     if let Some(o) = offset { params.push(format!("offset={}", o)); }
     let url = if params.is_empty() { "/api/v1/projects".to_string() }
               else { format!("/api/v1/projects?{}", params.join("&")) };
-    api_get_or_default(&url).await
+    api_get(&url).await
 }
 
 pub async fn query_projects(req: &ProjectQueryRequest) -> Result<PagedResult<ProjectListItem>, ApiError> {
@@ -55,7 +55,7 @@ pub async fn list_tasks(limit: Option<usize>, offset: Option<usize>) -> Result<P
     if let Some(o) = offset { params.push(format!("offset={}", o)); }
     let url = if params.is_empty() { "/api/v1/tasks".to_string() }
               else { format!("/api/v1/tasks?{}", params.join("&")) };
-    api_get_or_default(&url).await
+    api_get(&url).await
 }
 
 pub async fn query_tasks(req: &TaskQueryRequest) -> Result<PagedResult<TaskListItem>, ApiError> {

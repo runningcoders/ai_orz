@@ -21,7 +21,7 @@ pub async fn list_agents(limit: Option<usize>, offset: Option<usize>) -> Result<
     if let Some(o) = offset { params.push(format!("offset={}", o)); }
     let url = if params.is_empty() { "/api/v1/hr/agents".to_string() }
               else { format!("/api/v1/hr/agents?{}", params.join("&")) };
-    api_get_or_default(&url).await
+    api_get(&url).await
 }
 
 pub async fn query_agents(req: &AgentQueryRequest) -> Result<PagedResult<AgentListItem>, ApiError> {
@@ -101,7 +101,7 @@ pub async fn list_skills(limit: Option<usize>, offset: Option<usize>) -> Result<
     if let Some(o) = offset { params.push(format!("offset={}", o)); }
     let url = if params.is_empty() { "/api/v1/hr/skills".to_string() }
               else { format!("/api/v1/hr/skills?{}", params.join("&")) };
-    api_get_or_default(&url).await
+    api_get(&url).await
 }
 
 pub async fn query_skills(req: &SkillQueryRequest) -> Result<PagedResult<SkillListItem>, ApiError> {
@@ -196,7 +196,7 @@ pub async fn list_tools(limit: Option<usize>, offset: Option<usize>) -> Result<P
     if let Some(o) = offset { params.push(format!("offset={}", o)); }
     let url = if params.is_empty() { "/api/v1/finance/tools".to_string() }
               else { format!("/api/v1/finance/tools?{}", params.join("&")) };
-    api_get_or_default(&url).await
+    api_get(&url).await
 }
 
 // ===== 记忆搜索 =====
