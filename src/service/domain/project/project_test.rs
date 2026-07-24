@@ -760,17 +760,20 @@ async fn test_artifact_list_filters_by_project_file_type_source_type_and_limit(p
                 task_id: None,
                 file_type: Some(FileType::Document),
                 source_type: Some(ArtifactSourceType::Attachment),
-                limit: Some(10),
+                pagination: common::api::PaginationParams {
+                    limit: Some(10),
+                    offset: None,
+                },
             },
         )
         .await
         .unwrap();
 
-    assert_eq!(artifacts.len(), 1);
-    assert_eq!(artifacts[0].po.name, "Document Artifact");
-    assert_eq!(artifacts[0].po.project_id, project.po.id);
-    assert_eq!(artifacts[0].po.file_type, FileType::Document);
-    assert_eq!(artifacts[0].po.source_type, ArtifactSourceType::Attachment);
+    assert_eq!(artifacts.items.len(), 1);
+    assert_eq!(artifacts.items[0].po.name, "Document Artifact");
+    assert_eq!(artifacts.items[0].po.project_id, project.po.id);
+    assert_eq!(artifacts.items[0].po.file_type, FileType::Document);
+    assert_eq!(artifacts.items[0].po.source_type, ArtifactSourceType::Attachment);
 }
 
 #[sqlx::test]

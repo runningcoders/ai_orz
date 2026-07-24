@@ -161,8 +161,8 @@ impl ModelProviderDao for MockModelProviderDao {
         &self,
         _ctx: RequestContext,
         _query: crate::service::dao::model_provider::ModelProviderQuery,
-    ) -> common::error::Result<Vec<ModelProviderPo>> {
-        Ok(vec![])
+    ) -> common::error::Result<common::api::PagedResult<ModelProviderPo>> {
+        Ok(common::api::PagedResult { items: Vec::new(), total: 0 })
     }
 
     async fn find_all(&self, _ctx: RequestContext) -> common::error::Result<Vec<ModelProviderPo>> {

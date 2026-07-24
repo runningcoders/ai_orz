@@ -5,6 +5,7 @@ use common::models::{StatsInterval, TimeSeriesPoint, TokenSumResult, ModelCallSt
 use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::RequestContext;
 use crate::pkg::stats::{StatFilter, StatAggregation, AggregationRow, StatEvent, Stats};
+use common::api::PagedResult;
 use common::enums::{ModelCapability, ModelProviderStatus, ProviderType};
 use serde_json::Value as JsonValue;
 
@@ -15,7 +16,7 @@ pub struct ModelProviderQuery {
     pub capability: Option<ModelCapability>,
     pub status: Option<ModelProviderStatus>,
     pub exclude_status: Option<ModelProviderStatus>,
-    pub limit: Option<usize>,
+    pub pagination: common::api::PaginationParams,
 }
 
 /// Model Provider DAO 接口
@@ -34,7 +35,7 @@ pub trait ModelProviderDao: Send + Sync {
         &self,
         ctx: RequestContext,
         query: ModelProviderQuery,
-    ) -> Result<Vec<ModelProviderPo>>;
+    ) -> Result<PagedResult<ModelProviderPo>>;
 
     async fn find_all(&self, ctx: RequestContext) -> Result<Vec<ModelProviderPo>>;
     async fn update(&self, ctx: RequestContext, provider: &ModelProviderPo)

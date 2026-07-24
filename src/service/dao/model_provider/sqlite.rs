@@ -5,6 +5,7 @@ use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderQuery};
 use chrono::Utc;
+use common::api::PagedResult;
 use common::enums::{ModelCapability, ModelProviderStatus};
 use sqlx::QueryBuilder;
 use std::sync::{Arc, OnceLock};
@@ -92,56 +93,59 @@ FROM model_providers WHERE id =
         &self,
         ctx: RequestContext,
         query: ModelProviderQuery,
-    ) -> Result<Vec<ModelProviderPo>> {
+    ) -> Result<PagedResult<ModelProviderPo>> {
         let pool = ctx.db_pool();
-        let mut builder = QueryBuilder::new(
+
+        let mut count_builder = QueryBuilder::new(
+            r#"SELECT COUNT(*) FROM model_providers WHERE 1=1"#,
+        );
+        push_query_filters(&mut count_builder, &query);
+        let total: i64 = count_builder
+            .build_query_scalar()
+            .fetch_one(pool)
+            .await?;
+
+        let mut list_builder = QueryBuilder::new(
             r#"
 SELECT id, name, provider_type, model_name, capability, api_key, base_url, description, config,
        status, created_by, modified_by, created_at, updated_at
 FROM model_providers WHERE 1=1
-        "#,
+            "#,
         );
+        push_query_filters(&mut list_builder, &query);
 
-        // 枚举查询：直接转 i32 绑定
-        if let Some(provider_type) = query.provider_type {
-            builder.push(" AND provider_type = ");
-            builder.push_bind(provider_type as i32);
+        // 排序
+        list_builder.push(" ORDER BY created_at DESC");
+
+        // 分页
+        if let Some(limit) = query.pagination.limit {
+            list_builder.push(" LIMIT ").push_bind(limit as i64);
+        } else if query.pagination.offset.is_some() {
+            list_builder.push(" LIMIT -1");
+        }
+        if let Some(offset) = query.pagination.offset {
+            list_builder.push(" OFFSET ").push_bind(offset as i64);
         }
 
-        if let Some(capability) = query.capability {
-            builder.push(" AND capability = ");
-            builder.push_bind(capability as i32);
-        }
+        let items = list_builder.build_query_as().fetch_all(pool).await?;
 
-        if let Some(status) = query.status {
-            builder.push(" AND status = ");
-            builder.push_bind(status as i32);
-        }
-
-        if let Some(exclude_status) = query.exclude_status {
-            builder.push(" AND status != ");
-            builder.push_bind(exclude_status as i32);
-        }
-
-        if let Some(limit) = query.limit {
-            builder.push(" LIMIT ");
-            builder.push_bind(limit as i64);
-        }
-
-        let providers: Vec<ModelProviderPo> = builder.build_query_as().fetch_all(pool).await?;
-
-        Ok(providers)
+        Ok(PagedResult {
+            items,
+            total: total as usize,
+        })
     }
 
     async fn find_all(&self, ctx: RequestContext) -> Result<Vec<ModelProviderPo>> {
-        self.query(
-            ctx,
-            ModelProviderQuery {
-                exclude_status: Some(ModelProviderStatus::Deleted),
-                ..Default::default()
-            },
-        )
-        .await
+        let page = self
+            .query(
+                ctx,
+                ModelProviderQuery {
+                    exclude_status: Some(ModelProviderStatus::Deleted),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(page.items)
     }
 
     async fn update(
@@ -205,35 +209,66 @@ UPDATE model_providers SET status = 0, modified_by = ?, updated_at = ? WHERE id 
         &self,
         ctx: RequestContext,
     ) -> Result<Option<ModelProviderPo>> {
-        let providers = self
+        let page = self
             .query(
                 ctx,
                 ModelProviderQuery {
                     capability: Some(ModelCapability::Embedding),
                     status: Some(ModelProviderStatus::Normal),
-                    limit: Some(1),
+                    pagination: common::api::PaginationParams {
+                        limit: Some(1),
+                        offset: None,
+                    },
                     ..Default::default()
                 },
             )
             .await?;
-        Ok(providers.into_iter().next())
+        Ok(page.items.into_iter().next())
     }
 
     async fn find_enabled_embedding_provider(
         &self,
         ctx: RequestContext,
     ) -> Result<Option<ModelProviderPo>> {
-        let providers = self
+        let page = self
             .query(
                 ctx,
                 ModelProviderQuery {
                     capability: Some(ModelCapability::Embedding),
                     status: Some(ModelProviderStatus::Normal),
-                    limit: Some(1),
+                    pagination: common::api::PaginationParams {
+                        limit: Some(1),
+                        offset: None,
+                    },
                     ..Default::default()
                 },
             )
             .await?;
-        Ok(providers.into_iter().next())
+        Ok(page.items.into_iter().next())
+    }
+}
+
+/// 推送查询过滤条件到 QueryBuilder（COUNT 和 LIST 查询复用）
+fn push_query_filters<'args>(
+    builder: &mut QueryBuilder<'args, sqlx::Sqlite>,
+    query: &ModelProviderQuery,
+) {
+    if let Some(provider_type) = query.provider_type {
+        builder
+            .push(" AND provider_type = ")
+            .push_bind(provider_type as i32);
+    }
+    if let Some(capability) = query.capability {
+        builder
+            .push(" AND capability = ")
+            .push_bind(capability as i32);
+    }
+    if let Some(status) = query.status {
+        builder.push(" AND status = ").push_bind(status as i32);
+    }
+    if let Some(exclude_status) = query.exclude_status {
+        builder
+            .push(" AND status != ")
+            .push_bind(exclude_status as i32);
     }
 }

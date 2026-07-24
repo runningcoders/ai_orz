@@ -2,6 +2,7 @@
 
 use common::error::Result;
 use common::models::{ModelCallStats, StatsFetchOptions};
+use common::api::PagedResult;
 use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
 use crate::pkg::stats::ModelCallEvent;
@@ -76,7 +77,7 @@ pub trait ModelProviderDal: Send + Sync {
         &self,
         ctx: RequestContext,
         query: ModelProviderQuery,
-    ) -> Result<Vec<ModelProvider>>;
+    ) -> Result<PagedResult<ModelProvider>>;
 
     /// 更新 Model Provider
     async fn update(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<()>;
@@ -150,23 +151,25 @@ impl ModelProviderDal for ModelProviderDalImpl {
     }
 
     async fn find_all(&self, ctx: RequestContext) -> Result<Vec<ModelProvider>> {
-        self.query(
-            ctx,
-            ModelProviderQuery {
-                exclude_status: Some(ModelProviderStatus::Deleted),
-                ..Default::default()
-            },
-        )
-        .await
+        let page = self
+            .query(
+                ctx,
+                ModelProviderQuery {
+                    exclude_status: Some(ModelProviderStatus::Deleted),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(page.items)
     }
 
     async fn query(
         &self,
         ctx: RequestContext,
         query: ModelProviderQuery,
-    ) -> Result<Vec<ModelProvider>> {
-        let providers = self.model_provider_dao.query(ctx, query).await?;
-        Ok(providers.into_iter().map(ModelProvider::from_po).collect())
+    ) -> Result<PagedResult<ModelProvider>> {
+        let page = self.model_provider_dao.query(ctx, query).await?;
+        Ok(page.map(ModelProvider::from_po))
     }
 
     async fn update(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<()> {

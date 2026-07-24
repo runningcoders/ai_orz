@@ -1,6 +1,7 @@
 //! User DAO 模块
 
 use common::error::Result;
+use common::api::PagedResult;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 
@@ -8,7 +9,7 @@ use crate::pkg::RequestContext;
 #[derive(Debug, Clone, Default)]
 pub struct UserQuery {
     pub organization_id: Option<String>,
-    pub limit: Option<usize>,
+    pub pagination: common::api::PaginationParams,
 }
 
 // ==================== 接口 ====================
@@ -30,7 +31,7 @@ pub trait UserDao: Send + Sync {
     ) -> Result<Option<UserPo>>;
 
     /// 通用查询
-    async fn query(&self, ctx: RequestContext, query: UserQuery) -> Result<Vec<UserPo>>;
+    async fn query(&self, ctx: RequestContext, query: UserQuery) -> Result<PagedResult<UserPo>>;
 
     /// 查询组织下所有用户
     async fn find_by_organization_id(

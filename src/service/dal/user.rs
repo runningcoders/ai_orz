@@ -3,6 +3,7 @@
 //! 职责：User 领域的数据访问层，封装 UserDao 提供统一的查询接口
 
 use common::error::Result;
+use common::api::PagedResult;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::user;
@@ -47,7 +48,7 @@ pub trait UserDal: Send + Sync {
     ) -> Result<Option<UserPo>>;
 
     /// 通用综合查询
-    async fn query(&self, ctx: RequestContext, query: UserQuery) -> Result<Vec<UserPo>>;
+    async fn query(&self, ctx: RequestContext, query: UserQuery) -> Result<PagedResult<UserPo>>;
 
     /// 获取组织下的所有用户
     async fn find_by_organization_id(
@@ -102,7 +103,7 @@ impl UserDal for UserDalImpl {
         self.user_dao.find_by_username(ctx, username).await
     }
 
-    async fn query(&self, ctx: RequestContext, query: UserQuery) -> Result<Vec<UserPo>> {
+    async fn query(&self, ctx: RequestContext, query: UserQuery) -> Result<PagedResult<UserPo>> {
         self.user_dao.query(ctx, query).await
     }
 
@@ -111,14 +112,16 @@ impl UserDal for UserDalImpl {
         ctx: RequestContext,
         org_id: &str,
     ) -> Result<Vec<UserPo>> {
-        self.query(
-            ctx,
-            UserQuery {
-                organization_id: Some(org_id.to_string()),
-                ..Default::default()
-            },
-        )
-        .await
+        let page = self
+            .query(
+                ctx,
+                UserQuery {
+                    organization_id: Some(org_id.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(page.items)
     }
 
     async fn update(&self, ctx: RequestContext, user: &UserPo) -> Result<()> {

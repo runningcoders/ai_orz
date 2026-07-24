@@ -42,7 +42,7 @@ impl ModelProviderManage for FinanceDomainImpl {
         &self,
         ctx: RequestContext,
         query: crate::service::dao::model_provider::ModelProviderQuery,
-    ) -> Result<Vec<ModelProvider>> {
+    ) -> Result<common::api::PagedResult<ModelProvider>> {
         self.model_provider_dal.query(ctx, query).await
     }
 

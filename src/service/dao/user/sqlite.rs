@@ -1,11 +1,13 @@
 //! User DAO SQLite 实现
 
 use common::error::Result;
+use common::api::PagedResult;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::user::{UserDao, UserQuery};
 use chrono::Utc;
 use common::enums::{UserRole, UserStatus};
+use sqlx::QueryBuilder;
 use std::sync::{Arc, OnceLock};
 
 // ==================== 工厂方法 + 单例 ====================
@@ -99,28 +101,40 @@ FROM users WHERE username = ? AND status != 0
         Ok(user)
     }
 
-    async fn query(&self, ctx: RequestContext, query: UserQuery) -> Result<Vec<UserPo>> {
+    async fn query(&self, ctx: RequestContext, query: UserQuery) -> Result<PagedResult<UserPo>> {
         let pool = ctx.db_pool();
-        let mut builder = sqlx::QueryBuilder::new(
+
+        let mut count_builder = QueryBuilder::new("SELECT COUNT(*) FROM users WHERE status != 0");
+        push_query_filters(&mut count_builder, &query);
+        let total: i64 = count_builder
+            .build_query_scalar()
+            .fetch_one(pool)
+            .await?;
+
+        let mut list_builder = QueryBuilder::new(
             r#"SELECT id, organization_id, username, display_name, email, password_hash, role, status, created_by, modified_by, created_at, updated_at FROM users WHERE status != 0"#,
         );
-
-        // 组织过滤
-        if let Some(org_id) = &query.organization_id {
-            builder.push(" AND organization_id = ").push_bind(org_id);
-        }
+        push_query_filters(&mut list_builder, &query);
 
         // 排序
-        builder.push(" ORDER BY created_at DESC");
+        list_builder.push(" ORDER BY created_at DESC");
 
-        // 限制数量
-        if let Some(limit) = query.limit {
-            builder.push(" LIMIT ").push_bind(limit as i64);
+        // 分页
+        if let Some(limit) = query.pagination.limit {
+            list_builder.push(" LIMIT ").push_bind(limit as i64);
+        } else if query.pagination.offset.is_some() {
+            list_builder.push(" LIMIT -1");
+        }
+        if let Some(offset) = query.pagination.offset {
+            list_builder.push(" OFFSET ").push_bind(offset as i64);
         }
 
-        let rows = builder.build_query_as().fetch_all(pool).await?;
+        let items = list_builder.build_query_as().fetch_all(pool).await?;
 
-        Ok(rows)
+        Ok(PagedResult {
+            items,
+            total: total as usize,
+        })
     }
 
     async fn find_by_organization_id(
@@ -129,14 +143,16 @@ FROM users WHERE username = ? AND status != 0
         org_id: &str,
     ) -> Result<Vec<UserPo>> {
         // 语法糖：调用通用查询
-        self.query(
-            ctx,
-            UserQuery {
-                organization_id: Some(org_id.to_string()),
-                ..Default::default()
-            },
-        )
-        .await
+        let page = self
+            .query(
+                ctx,
+                UserQuery {
+                    organization_id: Some(org_id.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(page.items)
     }
 
     async fn update(&self, ctx: RequestContext, user: &UserPo) -> Result<()> {
@@ -213,5 +229,17 @@ UPDATE users SET status = 0, modified_by = ?, updated_at = ? WHERE id = ?
         .await?;
 
         Ok(count.count as u64)
+    }
+}
+
+/// 推送查询过滤条件到 QueryBuilder（COUNT 和 LIST 查询复用）
+fn push_query_filters<'args>(
+    builder: &mut QueryBuilder<'args, sqlx::Sqlite>,
+    query: &UserQuery,
+) {
+    if let Some(org_id) = &query.organization_id {
+        builder
+            .push(" AND organization_id = ")
+            .push_bind(org_id.clone());
     }
 }

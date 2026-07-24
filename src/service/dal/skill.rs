@@ -534,21 +534,24 @@ impl SkillDal for SkillDalImpl {
         self.skill_dao.update(ctx.clone(), &skill.po).await?;
 
         // 2. 查询可用的 Embedding 能力的 ModelProvider
-        let providers = self
+        let page = self
             .model_provider_dao
             .query(
                 ctx.clone(),
                 crate::service::dao::model_provider::ModelProviderQuery {
                     capability: Some(ModelCapability::Embedding),
                     status: Some(ModelProviderStatus::Normal),
-                    limit: Some(1),
+                    pagination: common::api::PaginationParams {
+                        limit: Some(1),
+                        offset: None,
+                    },
                     ..Default::default()
                 },
             )
             .await?;
 
         // 3. 如果有可用的 Embedding Provider，更新向量
-        if let Some(provider) = providers.first() {
+        if let Some(provider) = page.items.first() {
             // 检查内容是否变化（通过 get_vector_content_hash）
             let old_hash = self
                 .get_vector_content_hash(ctx.clone(), &skill.po.id)

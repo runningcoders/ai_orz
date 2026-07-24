@@ -177,7 +177,7 @@ pub trait ModelProviderManage: Send + Sync {
         &self,
         ctx: RequestContext,
         query: crate::service::dao::model_provider::ModelProviderQuery,
-    ) -> Result<Vec<ModelProvider>>;
+    ) -> Result<common::api::PagedResult<ModelProvider>>;
 
     /// 列出所有 Model Provider
     async fn list_model_providers(

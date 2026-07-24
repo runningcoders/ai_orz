@@ -144,7 +144,7 @@ pub trait UserManage: Send + Sync {
         &self,
         ctx: RequestContext,
         query: crate::service::dao::user::UserQuery,
-    ) -> Result<Vec<crate::models::user::UserPo>>;
+    ) -> Result<common::api::PagedResult<crate::models::user::UserPo>>;
 
     /// 根据组织 ID 查询所有用户
     async fn find_by_organization_id(

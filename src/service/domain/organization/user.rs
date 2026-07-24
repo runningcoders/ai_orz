@@ -25,7 +25,7 @@ impl super::UserManage for super::OrganizationDomainImpl {
         &self,
         ctx: RequestContext,
         query: crate::service::dao::user::UserQuery,
-    ) -> Result<Vec<UserPo>> {
+    ) -> Result<common::api::PagedResult<UserPo>> {
         self.user_dal.query(ctx, query).await
     }
 

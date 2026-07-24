@@ -108,19 +108,20 @@ async fn test_query_with_organization_filter(pool: SqlitePool) {
     dal.create(ctx.clone(), &user2).await.unwrap();
 
     // 按组织过滤
-    let results = dal
+    let page = dal
         .query(
             ctx,
             UserQuery {
                 organization_id: Some(org_id),
-                limit: None,
+                ..Default::default()
             },
         )
         .await
         .unwrap();
 
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].username, "user1");
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.total, 1);
+    assert_eq!(page.items[0].username, "user1");
 }
 
 #[sqlx::test]

@@ -180,24 +180,27 @@ impl ModelProviderDao for MockModelProviderDao {
         &self,
         _ctx: RequestContext,
         _query: crate::service::dao::model_provider::ModelProviderQuery,
-    ) -> Result<Vec<ModelProviderPo>> {
+    ) -> Result<common::api::PagedResult<ModelProviderPo>> {
         // 返回一个测试用的 provider（支持 Embedding）
-        Ok(vec![ModelProviderPo {
-            id: "mock-provider".to_string(),
-            name: "Mock Provider".to_string(),
-            provider_type: common::enums::ProviderType::Ollama,
-            model_name: "mock-embedding".to_string(),
-            capability: common::enums::ModelCapability::Embedding,
-            api_key: "".to_string(),
-            base_url: Some("http://localhost:11434".to_string()),
-            description: None,
-            config: "{}".to_string(),
-            status: common::enums::ModelProviderStatus::Normal,
-            created_by: "system".to_string(),
-            modified_by: "system".to_string(),
-            created_at: chrono::Utc::now().timestamp(),
-            updated_at: chrono::Utc::now().timestamp(),
-        }])
+        Ok(common::api::PagedResult {
+            items: vec![ModelProviderPo {
+                id: "mock-provider".to_string(),
+                name: "Mock Provider".to_string(),
+                provider_type: common::enums::ProviderType::Ollama,
+                model_name: "mock-embedding".to_string(),
+                capability: common::enums::ModelCapability::Embedding,
+                api_key: "".to_string(),
+                base_url: Some("http://localhost:11434".to_string()),
+                description: None,
+                config: "{}".to_string(),
+                status: common::enums::ModelProviderStatus::Normal,
+                created_by: "system".to_string(),
+                modified_by: "system".to_string(),
+                created_at: chrono::Utc::now().timestamp(),
+                updated_at: chrono::Utc::now().timestamp(),
+            }],
+            total: 1,
+        })
     }
 
     async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<ModelProviderPo>> {
