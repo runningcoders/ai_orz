@@ -27,6 +27,8 @@ fn build_graph_from_results(
                         node_type: item.memory_type.clone(),
                         x: 0.0,
                         y: 0.0,
+                        tags: item.tags.clone().unwrap_or_default(),
+                        summary: item.summary.clone(),
                     });
                 }
             }
@@ -42,6 +44,8 @@ fn build_graph_from_results(
                             node_type: "knowledge_node".to_string(),
                             x: 0.0,
                             y: 0.0,
+                            tags: Vec::new(),
+                            summary: None,
                         });
                     }
                     if seen_node_ids.insert(tgt.clone()) {
@@ -51,6 +55,8 @@ fn build_graph_from_results(
                             node_type: "knowledge_node".to_string(),
                             x: 0.0,
                             y: 0.0,
+                            tags: Vec::new(),
+                            summary: None,
                         });
                     }
                     let label = item.relation_type.as_deref().unwrap_or("").to_string();

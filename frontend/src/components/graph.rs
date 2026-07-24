@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 use std::collections::HashMap;
+use std::f64::consts::PI;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct GraphNode {
@@ -8,6 +9,24 @@ pub struct GraphNode {
     pub node_type: String,
     pub x: f64,
     pub y: f64,
+    /// 标签列表（用于多色边框 + 上方标签展示）
+    pub tags: Vec<String>,
+    /// 摘要（显示在节点下方一行小字，None 时不显示）
+    pub summary: Option<String>,
+}
+
+impl Default for GraphNode {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            label: String::new(),
+            node_type: String::new(),
+            x: 0.0,
+            y: 0.0,
+            tags: Vec::new(),
+            summary: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -37,6 +56,18 @@ fn get_node_fill(node_type: &str) -> &'static str {
     }
 }
 
+/// 预设 tag 色板（鲜艳且可区分）
+const TAG_COLORS: &[&str] = &[
+    "#ef4444", "#f97316", "#f59e0b", "#eab308", "#84cc16",
+    "#10b981", "#06b6d4", "#3b82f6", "#8b5cf6", "#ec4899",
+];
+
+/// 根据 tag 字符串 hash 稳定取色（同一 tag 始终同色）
+fn tag_color(tag: &str) -> &'static str {
+    let hash: u32 = tag.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
+    TAG_COLORS[(hash as usize) % TAG_COLORS.len()]
+}
+
 /// 节点边框颜色（选中态）
 fn get_node_stroke(is_selected: bool) -> &'static str {
     if is_selected { "#f97316" } else { "#ffffff" }
@@ -61,15 +92,60 @@ fn get_node_glow(is_highlighted: bool, is_selected: bool) -> String {
     }
 }
 
-/// 节点半径
-fn get_node_radius(node_type: &str) -> f64 {
+/// 节点基础半径（按类型）
+fn base_node_radius(node_type: &str) -> f64 {
     match node_type {
-        "knowledge_node" => 24.0,
-        "short_term" => 20.0,
-        "trace" => 16.0,
+        "knowledge_node" => 26.0,
+        "short_term" => 22.0,
+        "trace" => 18.0,
         "relation" => 14.0,
         _ => 18.0,
     }
+}
+
+/// 根据信息量（tags 数量、是否有简介、名称长度）动态计算节点半径
+fn dynamic_node_radius(node: &GraphNode) -> f64 {
+    let mut r = base_node_radius(&node.node_type);
+    // 每个 tag +2（最多 +12）
+    r += (node.tags.len() * 2).min(12) as f64;
+    // 有简介 +3
+    if node.summary.is_some() {
+        r += 3.0;
+    }
+    // 名称较长（>8 字符）+2
+    if node.label.chars().count() > 8 {
+        r += 2.0;
+    }
+    r
+}
+
+/// 生成 tag 多色边框的 arc path 段
+/// 返回每段 (path_d, color)；无 tags 时返回空
+fn tag_border_arcs(cx: f64, cy: f64, r: f64, tags: &[String]) -> Vec<(String, &'static str)> {
+    if tags.is_empty() {
+        return Vec::new();
+    }
+    let n = tags.len() as f64;
+    (0..tags.len())
+        .map(|i| {
+            let a1 = (i as f64 / n) * 2.0 * PI - PI / 2.0;
+            let a2 = ((i + 1) as f64 / n) * 2.0 * PI - PI / 2.0;
+            let x1 = cx + r * a1.cos();
+            let y1 = cy + r * a1.sin();
+            let x2 = cx + r * a2.cos();
+            let y2 = cy + r * a2.sin();
+            let large = if (a2 - a1) > PI { 1 } else { 0 };
+            let d = format!("M {x1:.1} {y1:.1} A {r:.1} {r:.1} 0 {large} 1 {x2:.1} {y2:.1}");
+            (d, tag_color(&tags[i]))
+        })
+        .collect()
+}
+
+/// 估算 tag 标签渲染宽度（font-size 9，中文≈9px，英文≈5px）
+fn tag_label_width(tag: &str) -> f64 {
+    tag.chars().fold(0.0, |acc, c| {
+        acc + if c.is_ascii() { 5.0 } else { 9.0 }
+    }) + 8.0 // padding
 }
 
 /// 边颜色（根据关系类型）
@@ -349,10 +425,30 @@ pub fn Graph(props: GraphProps) -> Element {
                     let fill = get_node_fill(&node.node_type).to_string();
                     let stroke = get_node_stroke(is_selected).to_string();
                     let stroke_width = get_node_stroke_width(is_selected).to_string();
-                    let radius = get_node_radius(&node.node_type);
+                    // 动态半径：信息越多节点越大
+                    let radius = dynamic_node_radius(&node);
                     let (nx, ny) = node_positions.read().get(&node.id).copied().unwrap_or((node.x, node.y));
                     let opacity = get_node_opacity(is_highlighted, is_selected);
                     let glow = get_node_glow(is_highlighted, is_selected);
+
+                    // 多色边框 arc 段（无 tags 时为空，使用 circle 自身 stroke）
+                    let border_r = radius + 3.0;
+                    let arcs = tag_border_arcs(nx, ny, border_r, &node.tags);
+
+                    // 节点上方 tags 标签：横向居中排列
+                    let tag_label_y = ny - radius - 16.0;
+                    let tag_widths: Vec<(String, f64, &'static str)> = node.tags.iter()
+                        .map(|t| (t.clone(), tag_label_width(t), tag_color(t)))
+                        .collect();
+                    let total_tag_w: f64 = tag_widths.iter().map(|(_, w, _)| *w).sum::<f64>() + (tag_widths.len().saturating_sub(1) as f64) * 4.0;
+                    let mut tag_x = nx - total_tag_w / 2.0;
+
+                    // 节点下方简介（截断一行）
+                    let summary_text = node.summary.as_ref().map(|s| {
+                        s.chars().take(14).collect::<String>()
+                    });
+                    let label_text = node.label.chars().take(10).collect::<String>();
+
                     rsx! {
                         g {
                             cursor: "move",
@@ -366,6 +462,19 @@ pub fn Graph(props: GraphProps) -> Element {
                                 e.stop_propagation();
                                 handle_node_drag_start_with_event(e, node.id.clone());
                             },
+
+                            // 多色边框 arc 段
+                            for (d, color) in arcs.iter() {
+                                path {
+                                    d: "{d}",
+                                    fill: "none",
+                                    stroke: "{color}",
+                                    stroke_width: "3",
+                                    stroke_linecap: "round",
+                                }
+                            }
+
+                            // 节点主体
                             circle {
                                 cx: "{nx}",
                                 cy: "{ny}",
@@ -374,6 +483,8 @@ pub fn Graph(props: GraphProps) -> Element {
                                 stroke: "{stroke}",
                                 stroke_width: "{stroke_width}",
                             }
+
+                            // 节点名称（圆心）
                             text {
                                 x: "{nx}",
                                 y: "{ny}",
@@ -382,8 +493,48 @@ pub fn Graph(props: GraphProps) -> Element {
                                 font_size: "10",
                                 fill: "white",
                                 font_weight: "500",
-                                // 修复 L11：节点 label 截断从 6 改为 8，与边 label（10）保持视觉一致
-                                "{node.label.chars().take(8).collect::<String>()}"
+                                "{label_text}"
+                            }
+
+                            // 节点下方简介
+                            if let Some(ref summary) = summary_text {
+                                text {
+                                    x: "{nx}",
+                                    y: "{ny + radius + 11.0}",
+                                    text_anchor: "middle",
+                                    font_size: "8",
+                                    fill: "#6b7280",
+                                    "{summary}"
+                                }
+                            }
+
+                            // 节点上方 tags 标签（带颜色底色）
+                            for (tag_text, tw, color) in tag_widths.iter() {
+                                {
+                                    let tx = tag_x;
+                                    tag_x += tw + 4.0;
+                                    rsx! {
+                                        g {
+                                            rect {
+                                                x: "{tx}",
+                                                y: "{tag_label_y}",
+                                                width: "{tw}",
+                                                height: "12",
+                                                rx: "6",
+                                                fill: "{color}",
+                                            }
+                                            text {
+                                                x: "{tx + tw / 2.0}",
+                                                y: "{tag_label_y + 9.0}",
+                                                text_anchor: "middle",
+                                                font_size: "8",
+                                                fill: "white",
+                                                font_weight: "500",
+                                                "{tag_text}"
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
