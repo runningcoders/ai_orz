@@ -3,9 +3,10 @@
 > 🎯 **本文档定位**：Runtime Domain（运行时领域）的整体设计大纲与逻辑思路
 >
 > 范围：只覆盖**总纲与核心理念**，不下沉到具体工具实现与代码细节
-> 状态：v3.4（2026-07-23）
+> 状态：v3.5（2026-07-24）
 >
 > **更新记录**：
+> - v3.5 (2026-07-24): 记忆 tags 全链路支持 + 知识图谱节点可视化增强，746 测试通过
 > - v3.4 (2026-07-23): Runtime 执行链路全面修复（16 项），覆盖正确性、用户体验、性能与安全，745 测试通过
 > - v3.3 (2026-07-23): request_tool_call 重新注册为同步神经工具，与异步 send_tool_call_message 对齐，745 测试通过
 > - v3.2 (2026-07-12): Phase 4C 技能系统增强 + Phase 5 多 Agent 协作工具，693 测试通过
@@ -1332,6 +1333,7 @@ pub trait MemoryDal: Send + Sync {
 | 2026-05-25 | v0.2 | 新增第九章：唤醒 Agent 操作的具体执行流程（12 步）、神经工具执行机制、ContextAssembly 拼装逻辑、AwakenOutcome 设计哲学 |
 | 2026-05-25 | v0.1 | 初版草案，覆盖设计总纲与待拍板点 |
 | 2026-07-23 | v3.4 | Runtime 执行链路全面修复（16 项），详见第二十章 |
+| 2026-07-24 | v3.5 | 记忆 tags 全链路支持 + 知识图谱节点可视化增强，详见第二十四章 |
 
 
 ---
@@ -2333,5 +2335,70 @@ Consumer 层
 | 通过率 | 100% | ✅ 全部通过 |
 | 修复项 | 16 项 | 12 项计划内 + 4 项补充排查 |
 | 提交数 | 11 个 | 分阶段提交，每阶段独立验证 |
+
+---
+
+## 二十四、记忆 tags 全链路支持 + 知识图谱节点可视化增强（v3.5）
+
+**日期：2026-07-24 | 版本：v3.5**
+
+### 24.1 背景
+
+知识图谱节点和短期记忆已具备 `tags` 字段（JSON 数组字符串），但搜索/查询接口未支持按 tags 过滤，前端也未展示 tags。本次补齐全链路能力，并将知识图谱节点升级为通用信息节点组件。
+
+### 24.2 后端：tags 过滤全链路
+
+**DTO 扩展**：
+- `SearchMemoryParams` / `QueryMemoryParams` 新增 `tags: Option<Vec<String>>`
+- `MemoryResult` 新增 `tags: Option<Vec<String>>`（仅 short_term / knowledge_node 有值）
+
+**DAO 层**：
+- `MemoryQuery` 新增 `tags: Option<Vec<String>>` 字段
+- `query_short_term` / `query_knowledge_nodes`：QueryBuilder 追加 `EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value IN (...))` 过滤
+- `search_short_term` / `search_knowledge_nodes`：FTS5 + JOIN 场景改为动态 SQL 拼接，`json_each(m.tags)` 使用表别名
+- OR 语义：传入多个 tag 时命中任一即返回（对齐 Tool/Skill 范式）
+
+**Handler 层**：
+- `search_memory` / `query_memory` 透传 `params.tags` 到 `MemorySearch.filters.tags` / `MemoryQuery.tags`
+- `memory_to_result` 回填 `tags` 字段（通过 `parse_tags_json` 解析 JSON 数组字符串）
+
+**Vectorizable trait 对齐**：
+- `ShortTermMemoryIndexPo` / `LongTermKnowledgeNodePo` 实现 `Vectorizable` trait（`vectorize_text` + `vector_collection`）
+- DAL 层统一使用 `embed_entity(ctx, cortex, po)` 替代手动拼接 `embed_text_for_search`
+- 向量搜索场景下 tags 过滤在 query 层生效（向量命中的节点若不满足 tags 条件会被过滤掉）
+
+### 24.3 前端：知识图谱节点可视化增强
+
+**通用信息节点组件**：将 Graph 节点升级为承载多维度信息的组件，信息越多节点越大。
+
+**GraphNode 结构扩展**：
+- 新增 `tags: Vec<String>` — 标签列表
+- 新增 `summary: Option<String>` — 摘要
+
+**多色边框**：
+- 每个 tag 对应一段 SVG arc path，等分圆周拼接成多色环
+- tag 颜色基于字符串 hash 稳定取色（10 色预设色板），同一 tag 始终同色
+- 无 tags 时保持原白色单色边框
+
+**tags 文字标签**：
+- 节点上方紧贴显示，每个 tag 是带颜色底色的小圆角标签（rect + 白色文字）
+- 横向居中排列，宽度按字符估算（中文 9px，英文 5px）
+
+**动态半径**：
+- 基础半径按类型（knowledge_node 26, short_term 22, trace 18）
+- 每个 tag +2（最多 +12）
+- 有简介 +3，名称 >8 字符 +2
+
+**节点内容**：
+- 圆心显示名称（截断 10 字）
+- 下方显示简介截断一行（小灰字）
+
+### 24.4 测试统计
+
+| 指标 | 数值 | 说明 |
+|------|------|------|
+| 总测试数 | 746 | +1 新增 tags 过滤测试 |
+| 通过率 | 100% | ✅ 全部通过 |
+| 提交数 | 3 个 | 后端 DTO/DAO/Handler + 前端 API/UI + 节点可视化增强 |
 
 

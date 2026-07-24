@@ -734,16 +734,32 @@ pub struct SearchMemoryParams {
     pub query: String,                    // 搜索关键词
     pub max_results: Option<i32>,         // 最大结果数
     pub memory_type: Option<String>,      // 记忆类型过滤
-    
+
     // === 新增：图谱遍历参数 ===
     pub traversal_depth: Option<i32>,     // 遍历深度，0=不遍历（默认）
     pub traversal_breadth: Option<i32>,   // 每层广度限制，0=不限制
     pub traversal_strategy: Option<String>, // 遍历策略：breadth_first/depth_first/hybrid
     pub seed_node_ids: Option<Vec<String>>, // 指定种子节点 ID（跳过语义搜索）
+
+    // === 新增：标签过滤参数（2026-07-24） ===
+    pub tags: Option<Vec<String>>,         // 标签过滤（OR 语义，命中任一 tag 即可）
 }
 ```
 
-### 16.5 分步搜索示例
+### 16.5 标签过滤（2026-07-24 新增）
+
+**设计理念**：短期记忆和知识节点均带 `tags` 字段（JSON 数组字符串），搜索/查询时支持按 tags 过滤，对齐 Tool/Skill 已有的 `json_each` 过滤范式。
+
+**OR 语义**：传入多个 tag 时，命中任一即返回（非 AND），适合探索性联想场景。
+
+**实现要点**：
+- DAO 层 `MemoryQuery.tags: Option<Vec<String>>`，在 `query_short_term` / `query_knowledge_nodes` 中用 `EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value IN (...))` 过滤
+- `search_short_term` / `search_knowledge_nodes`（FTS5 + JOIN）使用动态 SQL 拼接 + `json_each(m.tags)`，参数绑定顺序：keyword → agent_id → tags... → limit
+- 向量搜索场景下 tags 过滤在 query 层生效（向量命中的节点若不满足 tags 条件会被过滤掉）
+- Handler 层透传 `params.tags` 到 `MemorySearch.filters.tags` / `MemoryQuery.tags`，并在 `MemoryResult.tags` 回填（仅 short_term / knowledge_node 有值）
+- 前端知识图谱页面新增 tags 过滤输入框（逗号分隔），节点详情面板展示 tags 徽章
+
+### 16.6 分步搜索示例
 
 Agent 可以这样使用：
 
@@ -868,4 +884,5 @@ Idle (空闲)
 | 2026-05-12 | 新增 DAL 写入逻辑：DAO 拆分两阶段、显式 trace_ids、create/update/delete 接口 |  |
 | 2026-05-13 | **实现完成**：通用 query、搜索优化、完整 update/delete |  |
 | 2026-07-11 | **理念升级**：核心理念对齐人类认知、记忆神经工具拆分、搜索图谱遍历、休息与沉淀机制 |  |
+| 2026-07-24 | **tags 全链路支持**：SearchMemoryParams/QueryMemoryParams/MemoryResult 新增 tags 字段；MemoryQuery.tags 实现 OR 语义过滤（json_each）；ShortTermMemoryIndexPo/LongTermKnowledgeNodePo 实现 Vectorizable trait；前端知识图谱节点支持多色边框与动态信息展示 |  |
 

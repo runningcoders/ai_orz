@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-07-23（Runtime 执行链路全面修复 v3.4，16 项问题修复）
+> 最后更新：2026-07-24（记忆 tags 全链路支持 + 知识图谱节点可视化增强 v3.5）
 
 ---
 
@@ -598,6 +598,16 @@ Agent
 ---
 
 ## 六、工作流与开发记录
+
+### 2026-07-24 里程碑
+**✅ 记忆 tags 全链路支持 + 知识图谱节点可视化增强（v3.5）**
+- **后端 tags 过滤**：`SearchMemoryParams`/`QueryMemoryParams`/`MemoryResult` 新增 tags 字段；`MemoryQuery.tags` 实现 OR 语义过滤（SQLite `json_each`，对齐 Tool/Skill 范式）；4 个查询/搜索方法（query_short_term/query_knowledge_nodes/search_short_term/search_knowledge_nodes）增加 tags 过滤分支
+- **Vectorizable trait 对齐**：`ShortTermMemoryIndexPo`/`LongTermKnowledgeNodePo` 实现 `Vectorizable` trait（`vectorize_text` + `vector_collection`），DAL 层统一使用 `embed_entity` 替代手动拼接
+- **Handler 透传 + 回填**：`search_memory`/`query_memory` 透传 tags 到 MemorySearch/MemoryQuery，`memory_to_result` 回填 tags（仅 short_term/knowledge_node 有值）
+- **前端知识图谱节点可视化增强**：GraphNode 新增 tags + summary 字段；多色边框（每个 tag 一段 arc path，hash 稳定取色）；tags 文字标签（节点上方带色底标签）；动态半径（信息越多节点越大）；节点下方简介展示
+- **前端 tags 展示**：知识图谱搜索区新增 tags 过滤输入框（逗号分隔）；短期记忆搜索页/Agent 记忆面板结果项展示 tags 徽章
+- **文档更新**：[memory_design.md](./docs/MEMORY_DESIGN.md) 新增 16.5 标签过滤章节；[runtime_design.md](./docs/runtime_design.md) 新增第二十四章 v3.5
+- **测试统计**：746 个测试 100% 通过（+1 新增 tags 过滤测试）
 
 ### 2026-07-23 里程碑
 **✅ 唤醒流程重构：移除 built-in tools 概念，Auto/Manual 分流**
