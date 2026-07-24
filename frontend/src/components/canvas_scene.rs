@@ -4,11 +4,16 @@
 //! - CanvasScene 组件封装 <canvas> 元素 + Context 初始化
 //! - CanvasRenderer trait 抽象渲染逻辑（由业务场景实现）
 //! - 事件桥：鼠标事件 → 坐标转换 → 命中检测 → Dioxus callback
-//! - 渲染循环：request_animation_frame + dirty flag 按需重绘
+//! - 渲染循环：request_animation_frame + 力导向布局 + 拖拽 + hover/选中动画
 
 use dioxus::prelude::*;
+use std::cell::RefCell;
+use std::rc::Rc;
+use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
+
+use crate::components::force_layout::{circle_initial_layout, ForceLayout, ForceLayoutConfig};
 
 /// Canvas 渲染节点（通用数据结构，业务场景填充字段）
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -41,6 +46,19 @@ pub trait CanvasRenderer {
 
     /// 命中检测：给定画布坐标，返回命中的节点 ID（None 表示空白处）
     fn hit_test(&self, nodes: &[CanvasNode], x: f64, y: f64) -> Option<String>;
+
+    /// 带交互状态的节点渲染（hover/选中/拖拽），默认委托给 draw_nodes
+    fn draw_nodes_with_state(
+        &self,
+        ctx: &CanvasRenderingContext2d,
+        nodes: &[CanvasNode],
+        hovered: &Option<String>,
+        selected: &Option<String>,
+        dragging: &Option<String>,
+    ) {
+        let _ = (hovered, selected, dragging);
+        self.draw_nodes(ctx, nodes);
+    }
 }
 
 /// 默认渲染器：基础圆形节点 + 直线连线
@@ -95,6 +113,62 @@ impl CanvasRenderer for DefaultRenderer {
         }
         None
     }
+
+    fn draw_nodes_with_state(
+        &self,
+        ctx: &CanvasRenderingContext2d,
+        nodes: &[CanvasNode],
+        hovered: &Option<String>,
+        selected: &Option<String>,
+        dragging: &Option<String>,
+    ) {
+        for node in nodes {
+            let is_hovered = hovered.as_deref() == Some(node.id.as_str());
+            let is_selected = selected.as_deref() == Some(node.id.as_str());
+            let is_dragging = dragging.as_deref() == Some(node.id.as_str());
+
+            // 选中光晕
+            if is_selected {
+                ctx.set_fill_style_str("rgba(59, 130, 246, 0.2)");
+                ctx.begin_path();
+                let _ = ctx.arc(node.x, node.y, node.radius + 8.0, 0.0, std::f64::consts::TAU);
+                ctx.fill();
+            }
+
+            // 拖拽光晕
+            if is_dragging {
+                ctx.set_fill_style_str("rgba(245, 158, 11, 0.3)");
+                ctx.begin_path();
+                let _ = ctx.arc(node.x, node.y, node.radius + 12.0, 0.0, std::f64::consts::TAU);
+                ctx.fill();
+            }
+
+            let draw_radius = if is_hovered { node.radius * 1.15 } else { node.radius };
+
+            // 节点圆形
+            ctx.set_fill_style_str(&node.color);
+            ctx.begin_path();
+            let _ = ctx.arc(node.x, node.y, draw_radius, 0.0, std::f64::consts::TAU);
+            ctx.fill();
+
+            // 选中边框
+            if is_selected {
+                ctx.set_stroke_style_str("#3b82f6");
+                ctx.set_line_width(3.0);
+                ctx.begin_path();
+                let _ = ctx.arc(node.x, node.y, draw_radius, 0.0, std::f64::consts::TAU);
+                ctx.stroke();
+            }
+
+            // 标签
+            ctx.set_fill_style_str("white");
+            ctx.set_font(if is_hovered { "11px sans-serif" } else { "10px sans-serif" });
+            ctx.set_text_align("center");
+            ctx.set_text_baseline("middle");
+            let label: String = node.label.chars().take(8).collect();
+            let _ = ctx.fill_text(&label, node.x, node.y);
+        }
+    }
 }
 
 /// CanvasScene 组件 Props
@@ -110,6 +184,9 @@ pub struct CanvasSceneProps {
     pub edges: Vec<CanvasEdge>,
     /// 点击节点回调
     pub on_node_click: Option<EventHandler<String>>,
+    /// 是否启用力导向布局（默认 true）
+    #[props(default = true)]
+    pub enable_force_layout: bool,
 }
 
 impl Default for CanvasSceneProps {
@@ -120,23 +197,89 @@ impl Default for CanvasSceneProps {
             nodes: Vec::new(),
             edges: Vec::new(),
             on_node_click: None,
+            enable_force_layout: true,
         }
     }
 }
 
-/// CanvasScene 组件：封装 <canvas> 元素 + Context 初始化 + 渲染 + 事件桥
+/// CanvasScene 组件：封装 <canvas> 元素 + Context 初始化 + 持续渲染循环 + 力导向 + 拖拽 + hover/选中
 #[component]
 pub fn CanvasScene(props: CanvasSceneProps) -> Element {
     let mut canvas_ref: Signal<Option<HtmlCanvasElement>> = use_signal(|| None);
     let renderer = DefaultRenderer;
 
-    // 提取 effect 所需字段（避免整体 move props 影响 rsx 使用）
-    let effect_width = props.width;
-    let effect_height = props.height;
-    let effect_nodes = props.nodes.clone();
-    let effect_edges = props.edges.clone();
+    // 内部状态：节点实时位置、力导向模拟器、稳定标志、拖拽/hover/选中
+    let mut nodes_state: Signal<Vec<CanvasNode>> = use_signal(|| props.nodes.clone());
+    let force_layout: Signal<ForceLayout> =
+        use_signal(|| ForceLayout::new(ForceLayoutConfig::default()));
+    let mut is_stable: Signal<bool> = use_signal(|| false);
+    let mut dragging_id: Signal<Option<String>> = use_signal(|| None);
+    let mut drag_offset: Signal<(f64, f64)> = use_signal(|| (0.0, 0.0));
+    let mut hovered_id: Signal<Option<String>> = use_signal(|| None);
+    let mut selected_id: Signal<Option<String>> = use_signal(|| None);
 
-    // 初始化 Canvas Context
+    // --- props 同步 effect：props 变化时保留已有节点位置，新增节点用圆形布局初始化 ---
+    let sync_nodes = props.nodes.clone();
+    let sync_width = props.width;
+    let sync_height = props.height;
+    let mut nodes_state_sync = nodes_state.clone();
+    let mut force_layout_sync = force_layout.clone();
+    let mut is_stable_sync = is_stable.clone();
+    use_effect(move || {
+        let props_nodes = sync_nodes.clone();
+        let current = nodes_state_sync.read().clone();
+        let mut merged: Vec<CanvasNode> = Vec::with_capacity(props_nodes.len());
+        for new_node in &props_nodes {
+            if let Some(existing) = current.iter().find(|n| n.id == new_node.id) {
+                // 保留已有节点位置，更新外观字段
+                merged.push(CanvasNode {
+                    id: existing.id.clone(),
+                    x: existing.x,
+                    y: existing.y,
+                    radius: new_node.radius,
+                    label: new_node.label.clone(),
+                    color: new_node.color.clone(),
+                });
+            } else {
+                merged.push(new_node.clone());
+            }
+        }
+        // 新增节点位置为 0,0 时用圆形布局初始化
+        let has_uninit = merged.iter().any(|n| n.x == 0.0 && n.y == 0.0);
+        if has_uninit {
+            let positions = circle_initial_layout(
+                merged.len(),
+                sync_width / 2.0,
+                sync_height / 2.0,
+                (sync_width.min(sync_height) / 3.0).max(100.0),
+            );
+            for (i, node) in merged.iter_mut().enumerate() {
+                if node.x == 0.0 && node.y == 0.0 {
+                    node.x = positions[i].0;
+                    node.y = positions[i].1;
+                }
+            }
+        }
+        if current.len() != merged.len() {
+            is_stable_sync.set(false);
+            force_layout_sync.write().sync(merged.len());
+        }
+        nodes_state_sync.set(merged);
+        is_stable_sync.set(false);
+    });
+
+    // --- 渲染循环 effect：request_animation_frame 递归调用，每帧步进力学 + 重绘 ---
+    let render_width = props.width;
+    let render_height = props.height;
+    let enable_force = props.enable_force_layout;
+    let render_edges = props.edges.clone();
+    let mut nodes_state_c = nodes_state.clone();
+    let mut force_layout_c = force_layout.clone();
+    let mut is_stable_c = is_stable.clone();
+    let dragging_id_c = dragging_id.clone();
+    let hovered_id_c = hovered_id.clone();
+    let selected_id_c = selected_id.clone();
+    let renderer_c = renderer.clone();
     use_effect(move || {
         let Some(canvas) = canvas_ref.read().clone() else {
             return;
@@ -154,25 +297,76 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
         let dpr = web_sys::window()
             .map(|w| w.device_pixel_ratio())
             .unwrap_or(1.0);
-        canvas.set_width((effect_width * dpr) as u32);
-        canvas.set_height((effect_height * dpr) as u32);
+        canvas.set_width((render_width * dpr) as u32);
+        canvas.set_height((render_height * dpr) as u32);
         let _ = ctx.scale(dpr, dpr);
 
-        // 初始渲染
-        renderer.clear(&ctx, effect_width, effect_height);
-        renderer.draw_edges(&ctx, &effect_edges, &effect_nodes);
-        renderer.draw_nodes(&ctx, &effect_nodes);
+        let width = render_width;
+        let height = render_height;
+        // 克隆 edges 给内部 Closure（use_effect 是 FnMut 可多次调用，不能直接 move）
+        let edges_inner = render_edges.clone();
+
+        // running 标志：组件卸载时设为 false，停止递归 rAF
+        let running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let running_clone = running.clone();
+
+        // Rc<RefCell<Option<Closure>>> 模式：Closure 自引用递归 rAF
+        let callback_ref: Rc<RefCell<Option<Closure<dyn FnMut()>>>> = Rc::new(RefCell::new(None));
+        let cb_ref_inner = callback_ref.clone();
+
+        let closure = Closure::<dyn FnMut()>::new(move || {
+            // 力导向步进
+            if enable_force && !*is_stable_c.read() {
+                let mut nodes = nodes_state_c.read().clone();
+                let mut layout = force_layout_c.write();
+                let displacement = layout.step(&mut nodes, &edges_inner, width, height);
+                nodes_state_c.set(nodes);
+                if layout.is_stable(displacement, 0.5) {
+                    is_stable_c.set(true);
+                }
+            }
+
+            // 渲染
+            let nodes = nodes_state_c.read().clone();
+            let hovered = hovered_id_c.read().clone();
+            let selected = selected_id_c.read().clone();
+            let dragging = dragging_id_c.read().clone();
+
+            renderer_c.clear(&ctx, width, height);
+            renderer_c.draw_edges(&ctx, &edges_inner, &nodes);
+            renderer_c.draw_nodes_with_state(&ctx, &nodes, &hovered, &selected, &dragging);
+
+            // 递归注册下一帧
+            if running_clone.load(std::sync::atomic::Ordering::SeqCst) {
+                if let Some(cb) = cb_ref_inner.borrow().as_ref() {
+                    if let Some(window) = web_sys::window() {
+                        let _ = window.request_animation_frame(cb.as_ref().unchecked_ref());
+                    }
+                }
+            }
+        });
+
+        // 初始注册第一帧
+        if let Some(window) = web_sys::window() {
+            let _ = window.request_animation_frame(closure.as_ref().unchecked_ref());
+        }
+        *callback_ref.borrow_mut() = Some(closure);
+
+        // cleanup：组件卸载或 effect 重跑时停止渲染循环，并释放 Closure 打破 Rc 循环引用
+        use_drop(move || {
+            running.store(false, std::sync::atomic::Ordering::SeqCst);
+            *callback_ref.borrow_mut() = None;
+        });
     });
 
     // 提取 onclick 所需字段
-    let click_nodes = props.nodes.clone();
     let on_node_click = props.on_node_click;
 
     rsx! {
         canvas {
             width: "{props.width}",
             height: "{props.height}",
-            style: "border: 1px solid #e5e7eb; border-radius: 8px; display: block; background: #fafafa;",
+            style: "border: 1px solid #e5e7eb; border-radius: 8px; display: block; background: #fafafa; cursor: grab;",
             onmounted: move |evt: MountedEvent| {
                 let data = evt.data();
                 if let Some(element) = data.downcast::<web_sys::Element>() {
@@ -180,20 +374,66 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
                     canvas_ref.set(Some(canvas));
                 }
             },
-            onclick: move |e: MouseEvent| {
-                let Some(canvas) = canvas_ref.read().clone() else {
-                    return;
-                };
-                let Some(on_click) = on_node_click.as_ref() else {
-                    return;
-                };
-                // 坐标转换：屏幕坐标 → Canvas 坐标
+            onmousedown: move |e: MouseEvent| {
+                let Some(canvas) = canvas_ref.read().clone() else { return; };
                 let rect = canvas.get_bounding_client_rect();
                 let coords = e.client_coordinates();
                 let x = coords.x - rect.left();
                 let y = coords.y - rect.top();
-                // 命中检测
-                if let Some(node_id) = renderer.hit_test(&click_nodes, x, y) {
+                let nodes = nodes_state.read().clone();
+                if let Some(node_id) = renderer.hit_test(&nodes, x, y) {
+                    dragging_id.set(Some(node_id.clone()));
+                    is_stable.set(false);
+                    if let Some(node) = nodes.iter().find(|n| n.id == node_id) {
+                        drag_offset.set((x - node.x, y - node.y));
+                    }
+                }
+            },
+            onmousemove: move |e: MouseEvent| {
+                let Some(canvas) = canvas_ref.read().clone() else { return; };
+                let rect = canvas.get_bounding_client_rect();
+                let coords = e.client_coordinates();
+                let x = coords.x - rect.left();
+                let y = coords.y - rect.top();
+
+                let dragging = dragging_id.read().clone();
+                if let Some(drag_id) = &dragging {
+                    // 拖拽中：更新节点位置
+                    let offset = *drag_offset.read();
+                    let mut nodes = nodes_state.read().clone();
+                    if let Some(node) = nodes.iter_mut().find(|n| &n.id == drag_id) {
+                        node.x = x - offset.0;
+                        node.y = y - offset.1;
+                    }
+                    nodes_state.set(nodes);
+                    is_stable.set(false);
+                } else {
+                    // 非拖拽：更新 hover 状态
+                    let nodes = nodes_state.read().clone();
+                    let new_hovered = renderer.hit_test(&nodes, x, y);
+                    let current_hovered = hovered_id.read().clone();
+                    if new_hovered != current_hovered {
+                        hovered_id.set(new_hovered);
+                    }
+                }
+            },
+            onmouseup: move |_| {
+                dragging_id.set(None);
+            },
+            onmouseleave: move |_| {
+                dragging_id.set(None);
+                hovered_id.set(None);
+            },
+            onclick: move |e: MouseEvent| {
+                let Some(canvas) = canvas_ref.read().clone() else { return; };
+                let Some(on_click) = on_node_click.as_ref() else { return; };
+                let rect = canvas.get_bounding_client_rect();
+                let coords = e.client_coordinates();
+                let x = coords.x - rect.left();
+                let y = coords.y - rect.top();
+                let nodes = nodes_state.read().clone();
+                if let Some(node_id) = renderer.hit_test(&nodes, x, y) {
+                    selected_id.set(Some(node_id.clone()));
                     on_click.call(node_id);
                 }
             },
