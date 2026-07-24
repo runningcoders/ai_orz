@@ -1,3 +1,5 @@
+#![allow(dead_code)] // 部分粒子 API（trigger_death/resize/lerp/distance）为未来阶段预留
+
 //! 粒子系统模块
 //!
 //! 提供 4 种粒子效果：

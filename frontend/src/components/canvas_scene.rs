@@ -237,13 +237,13 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
     let mut hovered_id: Signal<Option<String>> = use_signal(|| None);
     let mut selected_id: Signal<Option<String>> = use_signal(|| None);
 
-    // 粒子系统状态
-    let mut data_flow: Signal<DataFlowParticles> = use_signal(|| DataFlowParticles::new());
+    // 粒子系统状态（glow 需 mut 因事件闭包中 .write()，其他仅 clone 使用）
+    let data_flow: Signal<DataFlowParticles> = use_signal(|| DataFlowParticles::new());
     let mut glow: Signal<GlowParticles> = use_signal(|| GlowParticles::new());
-    let mut background: Signal<BackgroundParticles> = use_signal(|| {
+    let background: Signal<BackgroundParticles> = use_signal(|| {
         BackgroundParticles::new(props.width, props.height, 40)
     });
-    let mut birth_death: Signal<BirthDeathParticles> = use_signal(|| BirthDeathParticles::new());
+    let birth_death: Signal<BirthDeathParticles> = use_signal(|| BirthDeathParticles::new());
 
     // --- props 同步 effect：props 变化时保留已有节点位置，新增节点用圆形布局初始化 ---
     let sync_nodes = props.nodes.clone();
