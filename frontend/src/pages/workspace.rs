@@ -84,6 +84,10 @@ pub fn Workspace() -> Element {
     let edges = sample_edges();
     let mut selected_id = use_signal(|| None::<String>);
     let toast = use_toast();
+    let mut enable_data_flow = use_signal(|| true);
+    let mut enable_glow = use_signal(|| true);
+    let mut enable_background = use_signal(|| true);
+    let mut enable_birth_death = use_signal(|| true);
 
     rsx! {
         AppLayout {
@@ -94,6 +98,46 @@ pub fn Workspace() -> Element {
                         "验证 Canvas 渲染基础设施：节点渲染、连线绘制、点击事件桥接。"
                     }
 
+                    // 粒子效果开关
+                    div { class: "flex flex-wrap gap-2 mb-4",
+                        label { class: "label cursor-pointer flex items-center gap-2",
+                            input {
+                                r#type: "checkbox",
+                                class: "toggle toggle-sm toggle-primary",
+                                checked: "{enable_data_flow}",
+                                onchange: move |e| enable_data_flow.set(e.checked()),
+                            }
+                            span { class: "label-text text-sm", "数据流粒子" }
+                        }
+                        label { class: "label cursor-pointer flex items-center gap-2",
+                            input {
+                                r#type: "checkbox",
+                                class: "toggle toggle-sm toggle-secondary",
+                                checked: "{enable_glow}",
+                                onchange: move |e| enable_glow.set(e.checked()),
+                            }
+                            span { class: "label-text text-sm", "辉光粒子" }
+                        }
+                        label { class: "label cursor-pointer flex items-center gap-2",
+                            input {
+                                r#type: "checkbox",
+                                class: "toggle toggle-sm toggle-accent",
+                                checked: "{enable_background}",
+                                onchange: move |e| enable_background.set(e.checked()),
+                            }
+                            span { class: "label-text text-sm", "背景粒子" }
+                        }
+                        label { class: "label cursor-pointer flex items-center gap-2",
+                            input {
+                                r#type: "checkbox",
+                                class: "toggle toggle-sm toggle-neutral",
+                                checked: "{enable_birth_death}",
+                                onchange: move |e| enable_birth_death.set(e.checked()),
+                            }
+                            span { class: "label-text text-sm", "诞生/消亡" }
+                        }
+                    }
+
                     // Canvas 场景
                     div { class: "flex justify-center",
                         CanvasScene {
@@ -101,6 +145,10 @@ pub fn Workspace() -> Element {
                             height: 500.0,
                             nodes: nodes.clone(),
                             edges: edges.clone(),
+                            enable_data_flow_particles: *enable_data_flow.read(),
+                            enable_glow_particles: *enable_glow.read(),
+                            enable_background_particles: *enable_background.read(),
+                            enable_birth_death_particles: *enable_birth_death.read(),
                             on_node_click: move |id: String| {
                                 selected_id.set(Some(id.clone()));
                                 toast.info(&format!("点击节点: {id}"));

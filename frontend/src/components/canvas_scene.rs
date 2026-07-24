@@ -14,6 +14,9 @@ use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 
 use crate::components::force_layout::{circle_initial_layout, ForceLayout, ForceLayoutConfig};
+use crate::components::particles::{
+    BackgroundParticles, BirthDeathParticles, DataFlowParticles, GlowParticles, ParticleSystem,
+};
 
 /// Canvas 渲染节点（通用数据结构，业务场景填充字段）
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -187,6 +190,18 @@ pub struct CanvasSceneProps {
     /// 是否启用力导向布局（默认 true）
     #[props(default = true)]
     pub enable_force_layout: bool,
+    /// 是否启用数据流粒子（连线能量流动）
+    #[props(default = true)]
+    pub enable_data_flow_particles: bool,
+    /// 是否启用节点辉光粒子（hover/选中扩散）
+    #[props(default = true)]
+    pub enable_glow_particles: bool,
+    /// 是否启用背景粒子（环境氛围）
+    #[props(default = true)]
+    pub enable_background_particles: bool,
+    /// 是否启用节点诞生/消亡粒子
+    #[props(default = true)]
+    pub enable_birth_death_particles: bool,
 }
 
 impl Default for CanvasSceneProps {
@@ -198,6 +213,10 @@ impl Default for CanvasSceneProps {
             edges: Vec::new(),
             on_node_click: None,
             enable_force_layout: true,
+            enable_data_flow_particles: true,
+            enable_glow_particles: true,
+            enable_background_particles: true,
+            enable_birth_death_particles: true,
         }
     }
 }
@@ -218,6 +237,14 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
     let mut hovered_id: Signal<Option<String>> = use_signal(|| None);
     let mut selected_id: Signal<Option<String>> = use_signal(|| None);
 
+    // 粒子系统状态
+    let mut data_flow: Signal<DataFlowParticles> = use_signal(|| DataFlowParticles::new());
+    let mut glow: Signal<GlowParticles> = use_signal(|| GlowParticles::new());
+    let mut background: Signal<BackgroundParticles> = use_signal(|| {
+        BackgroundParticles::new(props.width, props.height, 40)
+    });
+    let mut birth_death: Signal<BirthDeathParticles> = use_signal(|| BirthDeathParticles::new());
+
     // --- props 同步 effect：props 变化时保留已有节点位置，新增节点用圆形布局初始化 ---
     let sync_nodes = props.nodes.clone();
     let sync_width = props.width;
@@ -225,9 +252,17 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
     let mut nodes_state_sync = nodes_state.clone();
     let mut force_layout_sync = force_layout.clone();
     let mut is_stable_sync = is_stable.clone();
+    let mut birth_death_sync = birth_death.clone();
     use_effect(move || {
         let props_nodes = sync_nodes.clone();
         let current = nodes_state_sync.read().clone();
+        let current_ids: std::collections::HashSet<&str> =
+            current.iter().map(|n| n.id.as_str()).collect();
+        let new_node_ids: Vec<String> = props_nodes
+            .iter()
+            .filter(|n| !current_ids.contains(n.id.as_str()))
+            .map(|n| n.id.clone())
+            .collect();
         let mut merged: Vec<CanvasNode> = Vec::with_capacity(props_nodes.len());
         for new_node in &props_nodes {
             if let Some(existing) = current.iter().find(|n| n.id == new_node.id) {
@@ -263,6 +298,15 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
         if current.len() != merged.len() {
             is_stable_sync.set(false);
             force_layout_sync.write().sync(merged.len());
+        }
+        // 触发新增节点的诞生效果
+        if !new_node_ids.is_empty() {
+            let mut bd = birth_death_sync.write();
+            for id in &new_node_ids {
+                if let Some(node) = merged.iter().find(|n| &n.id == id) {
+                    bd.trigger_birth(node);
+                }
+            }
         }
         nodes_state_sync.set(merged);
         is_stable_sync.set(false);
@@ -314,6 +358,15 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
         let callback_ref: Rc<RefCell<Option<Closure<dyn FnMut()>>>> = Rc::new(RefCell::new(None));
         let cb_ref_inner = callback_ref.clone();
 
+        let mut data_flow_c = data_flow.clone();
+        let mut glow_c = glow.clone();
+        let mut background_c = background.clone();
+        let mut birth_death_c = birth_death.clone();
+        let enable_data_flow = props.enable_data_flow_particles;
+        let enable_glow = props.enable_glow_particles;
+        let enable_bg = props.enable_background_particles;
+        let enable_bd = props.enable_birth_death_particles;
+
         let closure = Closure::<dyn FnMut()>::new(move || {
             // 力导向步进
             if enable_force && !*is_stable_c.read() {
@@ -326,6 +379,23 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
                 }
             }
 
+            // 粒子更新（dt 约为 1/60 秒）
+            let dt = 1.0 / 60.0;
+            if enable_bg {
+                background_c.write().update(dt);
+            }
+            if enable_data_flow {
+                let nodes = nodes_state_c.read().clone();
+                data_flow_c.write().spawn(&edges_inner, &nodes, dt);
+                data_flow_c.write().update(dt);
+            }
+            if enable_glow {
+                glow_c.write().update(dt);
+            }
+            if enable_bd {
+                birth_death_c.write().update(dt);
+            }
+
             // 渲染
             let nodes = nodes_state_c.read().clone();
             let hovered = hovered_id_c.read().clone();
@@ -333,8 +403,32 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
             let dragging = dragging_id_c.read().clone();
 
             renderer_c.clear(&ctx, width, height);
+
+            // 1. 背景粒子（最底层）
+            if enable_bg {
+                background_c.read().draw(&ctx);
+            }
+
+            // 2. 连线
             renderer_c.draw_edges(&ctx, &edges_inner, &nodes);
+
+            // 3. 数据流粒子（在连线上方，节点下方）
+            if enable_data_flow {
+                data_flow_c.read().draw(&ctx);
+            }
+
+            // 4. 节点辉光粒子（节点周围扩散）
+            if enable_glow {
+                glow_c.read().draw(&ctx);
+            }
+
+            // 5. 节点
             renderer_c.draw_nodes_with_state(&ctx, &nodes, &hovered, &selected, &dragging);
+
+            // 6. 诞生/消亡粒子（最上层，醒目）
+            if enable_bd {
+                birth_death_c.read().draw(&ctx);
+            }
 
             // 递归注册下一帧
             if running_clone.load(std::sync::atomic::Ordering::SeqCst) {
@@ -386,6 +480,8 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
                     is_stable.set(false);
                     if let Some(node) = nodes.iter().find(|n| n.id == node_id) {
                         drag_offset.set((x - node.x, y - node.y));
+                        // 触发拖拽开始时的辉光
+                        glow.write().trigger(node);
                     }
                 }
             },
@@ -434,6 +530,11 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
                 let nodes = nodes_state.read().clone();
                 if let Some(node_id) = renderer.hit_test(&nodes, x, y) {
                     selected_id.set(Some(node_id.clone()));
+                    // 触发选中时的辉光
+                    if let Some(node) = nodes.iter().find(|n| n.id == node_id) {
+                        glow.write().reset_trigger();
+                        glow.write().trigger(node);
+                    }
                     on_click.call(node_id);
                 }
             },
