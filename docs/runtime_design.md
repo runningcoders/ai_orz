@@ -1239,7 +1239,7 @@ Handler ──► Domain ──► DAL ──► DAO
    PagedResult<ListItem> ◄─ map(to_list_item) ◄─ PagedResult<Entity> ◄─ map(from_po) ◄─ PagedResult<Po> ◄─ COUNT + LIMIT/OFFSET
 ```
 
-**已改造的 5 个实体**：Agent / Project / Task / Tool / Skill（DAO + Domain + Handler 全链路完成）
+**已改造的 10 个实体**：Agent / Project / Task / Tool / Skill（DAO + Domain + Handler 全链路）+ McpServer / MessageChannel / Artifact / ModelProvider / User（仅 DAO query 通用化，Handler 按需适配）
 
 **DAO 层实现模式**：抽取 `push_query_filters` 函数，COUNT 和 LIST 查询复用同一套 WHERE 条件，避免过滤条件不一致。参考实现：`src/service/dao/mcp_server/sqlite.rs`。
 

@@ -735,7 +735,7 @@ let agents: Vec<Agent> = domain().agent_manage().query(ctx, q).await?;  // 应�
 
 - **基础设施**：`common/src/api/mod.rs` 的 `PaginationParams` 和 `PagedResult<T>`
 - **DAO 参考实现**：`src/service/dao/mcp_server/sqlite.rs`（首个完成分页改造的 DAO）
-- **已改造的 5 个实体**：Agent / Project / Task / Tool / Skill（DAO + Domain + Handler 全链路）
+- **已改造的 10 个实体**：Agent / Project / Task / Tool / Skill（DAO + Domain + Handler 全链路）+ McpServer / MessageChannel / Artifact / ModelProvider / User（仅 DAO query 通用化，Handler 按需适配）
 
 > 💡 **设计动机**：统一分页接口避免每个实体自定义分页逻辑，list 作为语法糖降低简单场景的使用成本，query 作为核心能力覆盖所有复杂查询需求。前端只需处理统一的 `PagedResult<T>` 结构。
 
