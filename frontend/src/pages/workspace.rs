@@ -22,6 +22,7 @@ fn sample_nodes() -> Vec<CanvasNode> {
             radius: 30.0,
             label: "Agent 1".to_string(),
             color: "#3b82f6".to_string(),
+            node_type: None,
         },
         CanvasNode {
             id: "agent-2".to_string(),
@@ -30,6 +31,7 @@ fn sample_nodes() -> Vec<CanvasNode> {
             radius: 25.0,
             label: "Agent 2".to_string(),
             color: "#10b981".to_string(),
+            node_type: None,
         },
         CanvasNode {
             id: "agent-3".to_string(),
@@ -38,6 +40,7 @@ fn sample_nodes() -> Vec<CanvasNode> {
             radius: 28.0,
             label: "Agent 3".to_string(),
             color: "#8b5cf6".to_string(),
+            node_type: None,
         },
         CanvasNode {
             id: "tool-1".to_string(),
@@ -46,6 +49,7 @@ fn sample_nodes() -> Vec<CanvasNode> {
             radius: 20.0,
             label: "Tool A".to_string(),
             color: "#f59e0b".to_string(),
+            node_type: None,
         },
         CanvasNode {
             id: "tool-2".to_string(),
@@ -54,6 +58,7 @@ fn sample_nodes() -> Vec<CanvasNode> {
             radius: 18.0,
             label: "Tool B".to_string(),
             color: "#ef4444".to_string(),
+            node_type: None,
         },
         CanvasNode {
             id: "tool-3".to_string(),
@@ -62,6 +67,7 @@ fn sample_nodes() -> Vec<CanvasNode> {
             radius: 16.0,
             label: "Tool C".to_string(),
             color: "#06b6d4".to_string(),
+            node_type: None,
         },
     ]
 }

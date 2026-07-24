@@ -27,6 +27,8 @@ pub struct CanvasNode {
     pub radius: f64,
     pub label: String,
     pub color: String,
+    /// 节点类型标识（如 "project"/"agent"/"task"），用于点击回调判断
+    pub node_type: Option<String>,
 }
 
 /// Canvas 渲染连线
@@ -274,6 +276,7 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
                     radius: new_node.radius,
                     label: new_node.label.clone(),
                     color: new_node.color.clone(),
+                    node_type: new_node.node_type.clone(),
                 });
             } else {
                 merged.push(new_node.clone());
