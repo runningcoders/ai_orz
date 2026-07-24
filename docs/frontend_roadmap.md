@@ -1,6 +1,6 @@
 # 前端优化路线图
 
-> 最后更新：2026-07-17
+> 最后更新：2026-07-24（新增方向六：前沿渲染技术调研）
 
 ---
 
@@ -15,6 +15,7 @@
 | 三、任务管理可视化 | P2 | ✅ 95% | 任务完成率饼图（可选） |
 | 四、Agent 详情页增强 | P3 | ⏳ 80% | 统计面板 UI（后端 API 已就绪） |
 | 五、移动端适配 | P0 | ✅ 100% | 已全部完成（2026-07-17） |
+| 六、前沿渲染技术调研 | - | 🔬 调研中 | 长期方向储备，详见下文 |
 
 ---
 
@@ -183,3 +184,77 @@
 ### 后续优化方向（未实现）
 - WASM 包体优化：移动端首屏加载较慢，可考虑代码分割或骨架屏
 - 真机测试：需在 iOS Safari + Android Chrome 上验证核心交互（Chat SSE、文件上传、表单提交）
+
+---
+
+## 方向六：前沿渲染技术调研（2026-07-24）
+
+> 本节为长期方向储备，记录可能影响前端架构演进的前沿技术调研结论，当前均不引入生产。
+
+### 6.1 pretext — 纯 JS 文本测量与布局库
+
+**项目**：[chenglou/pretext](https://github.com/chenglou/pretext)（react-motion 作者）
+**核心能力**：绕开 DOM 测量（`getBoundingClientRect`/`offsetHeight` 触发昂贵 reflow），用浏览器字体引擎做一次性测量 + 纯算术布局。
+- `prepare(text, font)` 一次性分析（归一化空白、分段、glue 规则、canvas 测量）
+- `layout(prepared, width, lineHeight)` 纯算术返回 `{height, lineCount}`，无 DOM reflow
+- `layoutWithLines()` 返回分行数据，供 Canvas/WebGL/SVG 手动渲染
+- 支持 RTL/阿拉伯语/复杂脚本，有 rich-inline（chip/mention/code span）流式布局
+
+**价值场景（不限于 Canvas 渲染）**：
+| 场景 | 价值 |
+|------|------|
+| 虚拟化列表（按高度 occlusion） | 精确高度避免滚动跳变，原生测量会导致卡顿 |
+| Canvas/WebGL 文本渲染 | Canvas 无原生文本排版，pretext 提供分行数据 |
+| Masonry / JS-driven 布局 | shrink-wrap 紧凑容器宽度，原生 CSS 难做 |
+| AI 开发期校验 | 浏览器无关验证 label 不溢出 |
+
+**当前评估结论**：❌ 不引入
+- 我们用 SVG + Dioxus，浏览器原生排版引擎处理换行，无 reflow 痛点
+- pretext 是 JS 库，Dioxus 调用需走 JS interop，集成成本不低
+- 当前规模未到瓶颈
+
+**重新评估信号**：
+- 消息列表/记忆列表上量到虚拟化刚需，原生高度测量导致滚动卡顿
+- 决定将知识图谱从 SVG 迁移到 Canvas/WebGL（pretext 提供分行数据）
+- 出现复杂 rich-text 场景（mention chip + code span + 复杂换行规则）
+
+### 6.2 HTML-in-Canvas — WICG 提案
+
+**项目**：[WICG/html-in-canvas](https://github.com/WICG/html-in-canvas)（孵化中）
+**核心能力**：让 Canvas 直接渲染真正的 HTML/DOM 内容，终结 Canvas 二十年"渲染不了富文本"的困境。
+- `layoutsubtree` 属性：标记 canvas 子元素，视觉渲染被截胡存为快照，但仍参与布局/可访问性/事件命中
+- `drawElementImage()` / `texElementImage2D()` / `copyElementImageToTexture()`：把 DOM 元素绘制到 2D Canvas / WebGL / WebGPU，返回 DOMMatrix 同步 DOM 位置
+- `paint` 事件：只在子元素视觉渲染真正变化时触发重绘，一帧只跑一次
+
+**生态进展**：three.js / PlayCanvas / vfx-js 已适配，有 polyfill（three-html-render）。当前仅 Chrome Canary + Brave Stable（Chromium 147+）通过 flag 支持。
+
+**当前评估结论**：❌ 不引入
+- 我们用 SVG，没有"Canvas 渲染不了 HTML"的痛点
+- 提案孵化阶段 + flag 才能用 + 16 个 open issues，不能进生产
+- 事件模型与 Dioxus VDOM diff 有架构摩擦
+
+**重新评估信号**：
+- 提案进入 WICG 官方推荐且 Chromium 默认开启（去掉 flag）
+- 知识图谱节点规模到 1000+，SVG 渲染出现明显卡顿
+- 需要 WebGL/WebGPU 纹理化 HTML 面板（3D 场景内的交互式 HTML UI）
+
+### 6.3 长期愿景：游戏化交互体验
+
+两个技术是"游戏化交互"方向的关键基础设施：
+
+**当前架构**：Dioxus → SVG → 浏览器原生排版
+- 优势：原生事件、可访问性、富文本排版开箱即用
+- 局限：传统管理页面布局范式，交互想象力受 DOM 约束
+
+**目标架构（长期）**：Dioxus → Canvas/WebGL + pretext + HTML-in-Canvas
+- Canvas/WebGL 提供像素级控制：粒子、动画、3D 场景、物理效果
+- pretext 解决 Canvas 文本排版：精确分行、shrink-wrap、虚拟化高度
+- HTML-in-Canvas 让 Canvas 内渲染交互式 HTML UI：按钮、表单、富文本，且保留可访问性
+- 三者配合可实现：沉浸式工作空间、3D 知识图谱节点内嵌交互面板、节点粒子动效、空间布局打破栅格约束
+
+**演进路径建议**：
+1. 短期（当前）：持续完善 SVG + Dioxus 架构，积累交互设计经验
+2. 中期：当 SVG 节点数到瓶颈时，先尝试节点虚拟化 + Canvas 2D 手绘 + DOM 覆盖层
+3. 长期：HTML-in-Canvas 标准化后，评估全面迁移到 Canvas/WebGL 渲染管线
+
+**关键前提**：任何迁移决策前，必须先证明 SVG 架构在目标场景下确实存在不可接受的性能或交互瓶颈，避免为技术而技术。
