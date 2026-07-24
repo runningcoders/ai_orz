@@ -3,15 +3,17 @@
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
+use crate::api::hr::list_agents;
 use crate::api::{project::*, StatsOptions};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::ProjectStatsPanel;
+use crate::components::workspace_graph::{WorkspaceGraph, WorkspaceView};
 use crate::layouts::app_layout::AppLayout;
 use crate::pages::project::task_edit_modal::{TaskEditMode, TaskEditModal};
 use crate::store::toast::use_toast;
 use crate::utils::{progress_bar_class, project_status_badge, project_status_text, task_status_badge, task_status_text};
-use common::api::{ArtifactDetail, CreateArtifactRequest, GetProjectResponse, TaskListItem, UpdateProjectRequest};
+use common::api::{AgentListItem, ArtifactDetail, CreateArtifactRequest, GetProjectResponse, ProjectListItem, TaskListItem, UpdateProjectRequest};
 use common::enums::ArtifactSourceType;
 
 fn artifact_source_type_text(source_type: ArtifactSourceType) -> &'static str {
@@ -48,6 +50,12 @@ pub fn ProjectDetail(id: String) -> Element {
     let mut saving_meta = use_signal(|| false);
     let id_for_edit = id.clone();
 
+    // Tab 切换：0=概览 1=任务列表 2=产物 3=关系图
+    let mut active_tab = use_signal(|| 0usize);
+    // 关系图所需数据：全局 projects + agents 列表（tasks 已有）
+    let mut graph_projects = use_signal(Vec::<ProjectListItem>::new);
+    let mut graph_agents = use_signal(Vec::<AgentListItem>::new);
+
     // 初始加载：先取项目，再取任务列表和产物列表
     let id_for_load = id.clone();
     use_effect(move || {
@@ -70,6 +78,14 @@ pub fn ProjectDetail(id: String) -> Element {
             match list_artifacts(&id_clone).await {
                 Ok(list) => artifacts.set(list),
                 Err(e) => toast.error(&e),
+            }
+            match list_agents().await {
+                Ok(resp) => graph_agents.set(resp.agents),
+                Err(e) => toast.error(&format!("获取 Agent 列表失败: {}", e)),
+            }
+            match list_projects().await {
+                Ok(resp) => graph_projects.set(resp.projects),
+                Err(e) => toast.error(&format!("获取项目列表失败: {}", e)),
             }
             loading.set(false);
         });
@@ -196,6 +212,11 @@ pub fn ProjectDetail(id: String) -> Element {
         });
     };
 
+    let tab0_class = if active_tab() == 0 { "tab tab-lg tab-active" } else { "tab tab-lg" };
+    let tab1_class = if active_tab() == 1 { "tab tab-lg tab-active" } else { "tab tab-lg" };
+    let tab2_class = if active_tab() == 2 { "tab tab-lg tab-active" } else { "tab tab-lg" };
+    let tab3_class = if active_tab() == 3 { "tab tab-lg tab-active" } else { "tab tab-lg" };
+
     let project_data = project.read().clone();
     let tasks_list = tasks.read().clone();
     let artifacts_list = artifacts.read().clone();
@@ -215,310 +236,249 @@ pub fn ProjectDetail(id: String) -> Element {
         if loading() {
             div { class: "card bg-base-100 shadow-md", Loading {} }
         } else if let Some(p) = &project_data {
-            // 区域 1：项目基本信息卡片
-            div { class: "card bg-base-100 shadow-md",
-                div { class: "card-header",
-                    div { class: "card-header-row",
-                        h2 { class: "card-title", "{p.name}" }
-                        button {
-                            class: "btn btn-ghost btn-sm",
-                            onclick: move |_| {
-                                if let Some(p) = project.read().clone() {
-                                    edit_name.set(p.name.clone());
-                                    edit_description.set(p.description.clone().unwrap_or_default());
-                                    edit_priority.set(p.priority.to_string());
-                                    edit_tags.set(p.tags.join(", "));
-                                    show_edit_modal.set(true);
-                                }
-                            },
-                            "✏️ 编辑"
-                        }
-                    }
-                }
-                div { class: "detail-grid",
-                    div {
-                        label { class: "form-label", "描述" }
-                        if let Some(desc) = &p.description {
-                            if desc.is_empty() {
-                                span { class: "text-base-content/70", "暂无描述" }
-                            } else {
-                                "{desc}"
-                            }
-                        } else {
-                            span { class: "text-base-content/70", "暂无描述" }
-                        }
-                    }
-                    div {
-                        label { class: "form-label", "状态" }
-                        span { class: "{project_status_badge(p.status)}", "{project_status_text(p.status)}" }
-                    }
-                    div {
-                        label { class: "form-label", "优先级" }
-                        span { "{p.priority}" }
-                    }
-                    div {
-                        label { class: "form-label", "标签" }
-                        if p.tags.is_empty() {
-                            span { class: "text-base-content/70", "无标签" }
-                        } else {
-                            div { class: "tag-list",
-                                for tag in p.tags.iter() {
-                                    span { class: "badge badge-neutral tag-item", "{tag}" }
-                                }
-                            }
-                        }
-                    }
-                    div {
-                        label { class: "form-label", "创建时间" }
-                        span { class: "font-mono text-base-content/70", "{p.created_at}" }
-                    }
-                }
+            // Tab 导航
+            div { class: "tabs tabs-boxed mb-6",
+                button { class: "{tab0_class}", onclick: move |_| active_tab.set(0), "📋 概览" }
+                button { class: "{tab1_class}", onclick: move |_| active_tab.set(1), "📝 任务列表" }
+                button { class: "{tab2_class}", onclick: move |_| active_tab.set(2), "📦 产物" }
+                button { class: "{tab3_class}", onclick: move |_| active_tab.set(3), "🕸️ 关系图" }
             }
 
-            // 区域 2：项目概览统计
-            div { class: "card bg-base-100 shadow-md",
-                div { class: "card-header",
-                    h2 { class: "card-title", "项目概览" }
-                }
-                div { class: "overview-grid",
-                    div { class: "overview-item",
-                        div { class: "overview-label", "整体进度" }
-                        div { class: "overview-progress",
-                            div { class: "overview-progress-bar",
-                                div { class: "{progress_bar_class(overall_progress)}", style: "width: {overall_progress}%;" }
-                            }
-                            span { class: "overview-progress-text", "{overall_progress}%" }
-                        }
-                    }
-                    div { class: "overview-item",
-                        div { class: "overview-label", "任务统计" }
-                        div { class: "overview-stats",
-                            div { class: "overview-stat-item",
-                                span { class: "overview-stat-value", "{task_total}" }
-                                span { class: "overview-stat-label", "总数" }
-                            }
-                            div { class: "overview-stat-item",
-                                span { class: "overview-stat-value success", "{task_completed}" }
-                                span { class: "overview-stat-label", "完成" }
-                            }
-                            div { class: "overview-stat-item",
-                                span { class: "overview-stat-value primary", "{task_in_progress}" }
-                                span { class: "overview-stat-label", "进行中" }
-                            }
-                            div { class: "overview-stat-item",
-                                span { class: "overview-stat-value warning", "{task_pending}" }
-                                span { class: "overview-stat-label", "待处理" }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 区域 3：状态管理
-            div { class: "card bg-base-100 shadow-md",
-                div { class: "card-header",
-                    h2 { class: "card-title", "状态管理" }
-                }
-                div { class: "detail-action-row",
-                    if p.status != 3 {
-                        button { class: "btn btn-primary", onclick: start_project, "启动项目" }
-                    }
-                    if p.status != 4 {
-                        button { class: "btn btn-primary", onclick: complete_project, "完成项目" }
-                    }
-                    if p.status != 5 {
-                        button { class: "btn btn-outline", onclick: archive_project, "归档项目" }
-                    }
-                }
-            }
-
-            if p.stats.is_some() || p.model_call_stats.is_some() {
-                ProjectStatsPanel {
-                    stats: p.stats.clone(),
-                    model_call_stats: p.model_call_stats.clone(),
-                }
-            }
-
-            // 区域 3：任务列表
-            div { class: "card bg-base-100 shadow-md",
-                div { class: "card-header",
-                    div { class: "card-header-row",
-                        h2 { class: "card-title", "任务列表" }
-                        button {
-                            class: "btn btn-primary btn-sm",
-                            onclick: move |_| show_task_modal.set(true),
-                            "+ 新建任务"
-                        }
-                    }
-                }
-                if tasks_list.is_empty() {
-                    EmptyState { icon: "📋".to_string(), message: "暂无任务".to_string() }
-                } else {
-                    table { class: "table table-zebra",
-                        thead { tr {
-                            th { "标题" }
-                            th { "状态" }
-                            th { "优先级" }
-                            th { "进度" }
-                            th { "操作" }
-                        }}
-                        tbody {
-                            for t in tasks_list.iter() {
-                                {
-                                    let task_id = t.id.clone();
-                                    let task_title = t.title.clone();
-                                    let task_status = t.status;
-                                    let task_priority = t.priority;
-                                    let task_progress = t.progress;
-                                    let tid_start = task_id.clone();
-                                    let tid_complete = task_id.clone();
-                                    let pid_start = id.clone();
-                                    let pid_complete = id.clone();
-                                    rsx! {
-                                        tr {
-                                            key: "{task_id}",
-                                            class: "table-row-clickable",
-                                            onclick: {
-                                                let tid = task_id.clone();
-                                                move |_| {
-                                                    navigator.push(format!("/tasks/{}", tid));
-                                                }
-                                            },
-                                            td { "data-label": "标题", "{task_title}" }
-                                            td { "data-label": "状态", span { class: "{task_status_badge(task_status)}", "{task_status_text(task_status)}" } }
-                                            td { "data-label": "优先级", "{task_priority}" }
-                                            td { "data-label": "进度",
-                                                div { class: "progress-cell",
-                                                    div { class: "progress-bar",
-                                                        div { class: "progress-bar-fill", style: "width: {task_progress}%;" }
-                                                    }
-                                                    span { class: "text-base-content/70 font-mono progress-text", "{task_progress}%" }
-                                                }
-                                            }
-                                            td { "data-label": "操作",
-                                                div { class: "action-group",
-                                                    if task_status != 3 {
-                                                        button { class: "btn btn-outline btn-sm",
-                                                            onclick: move |e: Event<MouseData>| {
-                                                                // 修复 HIGH #8：阻止事件冒泡到 <tr> 的 onclick，
-                                                                // 否则点击"开始"会同时触发状态更新和页面跳转
-                                                                e.stop_propagation();
-                                                                let tid = tid_start.clone();
-                                                                let pid = pid_start.clone();
-                                                                spawn(async move {
-                                                                    match update_task_status(&tid, 3).await {
-                                                                        Ok(_) => {
-                                                                            toast.success("任务已开始");
-                                                                            match list_project_tasks(&pid).await {
-                                                                                Ok(resp) => tasks.set(resp.tasks),
-                                                                                Err(e) => toast.error(&e),
-                                                                            }
-                                                                        }
-                                                                        Err(e) => toast.error(&format!("操作失败: {}", e)),
-                                                                    }
-                                                                });
-                                                            },
-                                                            "开始"
-                                                        }
-                                                    }
-                                                    if task_status != 4 {
-                                                        button { class: "btn btn-primary btn-sm",
-                                                            onclick: move |e: Event<MouseData>| {
-                                                                // 修复 HIGH #8：同上，阻止冒泡
-                                                                e.stop_propagation();
-                                                                let tid = tid_complete.clone();
-                                                                let pid = pid_complete.clone();
-                                                                spawn(async move {
-                                                                    match update_task_status(&tid, 4).await {
-                                                                        Ok(_) => {
-                                                                            toast.success("任务已完成");
-                                                                            match list_project_tasks(&pid).await {
-                                                                                Ok(resp) => tasks.set(resp.tasks),
-                                                                                Err(e) => toast.error(&e),
-                                                                            }
-                                                                        }
-                                                                        Err(e) => toast.error(&format!("操作失败: {}", e)),
-                                                                    }
-                                                                });
-                                                            },
-                                                            "完成"
-                                                        }
-                                                    }
-                                                }
-                                            }
+            // Tab 内容
+            {match active_tab() {
+                0 => rsx! {
+                    // === 概览：基本信息 + 项目概览统计 + 状态管理 + ProjectStatsPanel ===
+                    // 区域 1：项目基本信息卡片
+                    div { class: "card bg-base-100 shadow-md",
+                        div { class: "card-header",
+                            div { class: "card-header-row",
+                                h2 { class: "card-title", "{p.name}" }
+                                button {
+                                    class: "btn btn-ghost btn-sm",
+                                    onclick: move |_| {
+                                        if let Some(p) = project.read().clone() {
+                                            edit_name.set(p.name.clone());
+                                            edit_description.set(p.description.clone().unwrap_or_default());
+                                            edit_priority.set(p.priority.to_string());
+                                            edit_tags.set(p.tags.join(", "));
+                                            show_edit_modal.set(true);
                                         }
+                                    },
+                                    "✏️ 编辑"
+                                }
+                            }
+                        }
+                        div { class: "detail-grid",
+                            div {
+                                label { class: "form-label", "描述" }
+                                if let Some(desc) = &p.description {
+                                    if desc.is_empty() {
+                                        span { class: "text-base-content/70", "暂无描述" }
+                                    } else {
+                                        "{desc}"
+                                    }
+                                } else {
+                                    span { class: "text-base-content/70", "暂无描述" }
+                                }
+                            }
+                            div {
+                                label { class: "form-label", "状态" }
+                                span { class: "{project_status_badge(p.status)}", "{project_status_text(p.status)}" }
+                            }
+                            div {
+                                label { class: "form-label", "优先级" }
+                                span { "{p.priority}" }
+                            }
+                            div {
+                                label { class: "form-label", "标签" }
+                                if p.tags.is_empty() {
+                                    span { class: "text-base-content/70", "无标签" }
+                                } else {
+                                    div { class: "tag-list",
+                                        for tag in p.tags.iter() {
+                                            span { class: "badge badge-neutral tag-item", "{tag}" }
+                                        }
+                                    }
+                                }
+                            }
+                            div {
+                                label { class: "form-label", "创建时间" }
+                                span { class: "font-mono text-base-content/70", "{p.created_at}" }
+                            }
+                        }
+                    }
+
+                    // 区域 2：项目概览统计
+                    div { class: "card bg-base-100 shadow-md",
+                        div { class: "card-header",
+                            h2 { class: "card-title", "项目概览" }
+                        }
+                        div { class: "overview-grid",
+                            div { class: "overview-item",
+                                div { class: "overview-label", "整体进度" }
+                                div { class: "overview-progress",
+                                    div { class: "overview-progress-bar",
+                                        div { class: "{progress_bar_class(overall_progress)}", style: "width: {overall_progress}%;" }
+                                    }
+                                    span { class: "overview-progress-text", "{overall_progress}%" }
+                                }
+                            }
+                            div { class: "overview-item",
+                                div { class: "overview-label", "任务统计" }
+                                div { class: "overview-stats",
+                                    div { class: "overview-stat-item",
+                                        span { class: "overview-stat-value", "{task_total}" }
+                                        span { class: "overview-stat-label", "总数" }
+                                    }
+                                    div { class: "overview-stat-item",
+                                        span { class: "overview-stat-value success", "{task_completed}" }
+                                        span { class: "overview-stat-label", "完成" }
+                                    }
+                                    div { class: "overview-stat-item",
+                                        span { class: "overview-stat-value primary", "{task_in_progress}" }
+                                        span { class: "overview-stat-label", "进行中" }
+                                    }
+                                    div { class: "overview-stat-item",
+                                        span { class: "overview-stat-value warning", "{task_pending}" }
+                                        span { class: "overview-stat-label", "待处理" }
                                     }
                                 }
                             }
                         }
                     }
-                }
-            }
 
-            // 区域 4：产物列表
-            div { class: "card bg-base-100 shadow-md",
-                div { class: "card-header",
-                    h2 { class: "card-title", "项目产物" }
-                }
-                div { class: "detail-card-body",
-                    div { class: "detail-toolbar",
-                        button { class: "btn btn-primary", onclick: open_artifact_modal, "+ 新增产物" }
+                    // 区域 3：状态管理
+                    div { class: "card bg-base-100 shadow-md",
+                        div { class: "card-header",
+                            h2 { class: "card-title", "状态管理" }
+                        }
+                        div { class: "detail-action-row",
+                            if p.status != 3 {
+                                button { class: "btn btn-primary", onclick: start_project, "启动项目" }
+                            }
+                            if p.status != 4 {
+                                button { class: "btn btn-primary", onclick: complete_project, "完成项目" }
+                            }
+                            if p.status != 5 {
+                                button { class: "btn btn-outline", onclick: archive_project, "归档项目" }
+                            }
+                        }
                     }
-                    if artifacts_list.is_empty() {
-                        EmptyState { icon: "📦".to_string(), message: "暂无产物".to_string() }
-                    } else {
-                        table { class: "table table-zebra",
-                            thead { tr {
-                                th { "名称" }
-                                th { "描述" }
-                                th { "来源类型" }
-                                th { "文件大小" }
-                                th { "创建时间" }
-                                th { "操作" }
-                            }}
-                            tbody {
-                                for a in artifacts_list.iter() {
-                                    {
-                                        let artifact_id = a.id.clone();
-                                        let artifact_name = a.name.clone();
-                                        let artifact_description = a.description.clone();
-                                        let artifact_source_type = a.source_type;
-                                        let artifact_file_size = a.file_size;
-                                        let artifact_created_at = a.created_at;
-                                        let aid_delete = artifact_id.clone();
-                                        let pid_refresh = id.clone();
-                                        rsx! {
-                                            tr { key: "{artifact_id}",
-                                                td { "data-label": "名称", "{artifact_name}" }
-                                                td { "data-label": "描述",
-                                                    if artifact_description.is_empty() {
-                                                        span { class: "text-base-content/70", "暂无描述" }
-                                                    } else {
-                                                        "{artifact_description}"
+
+                    if p.stats.is_some() || p.model_call_stats.is_some() {
+                        ProjectStatsPanel {
+                            stats: p.stats.clone(),
+                            model_call_stats: p.model_call_stats.clone(),
+                        }
+                    }
+                },
+                1 => rsx! {
+                    // === 任务列表 ===
+                    div { class: "card bg-base-100 shadow-md",
+                        div { class: "card-header",
+                            div { class: "card-header-row",
+                                h2 { class: "card-title", "任务列表" }
+                                button {
+                                    class: "btn btn-primary btn-sm",
+                                    onclick: move |_| show_task_modal.set(true),
+                                    "+ 新建任务"
+                                }
+                            }
+                        }
+                        if tasks_list.is_empty() {
+                            EmptyState { icon: "📋".to_string(), message: "暂无任务".to_string() }
+                        } else {
+                            table { class: "table table-zebra",
+                                thead { tr {
+                                    th { "标题" }
+                                    th { "状态" }
+                                    th { "优先级" }
+                                    th { "进度" }
+                                    th { "操作" }
+                                }}
+                                tbody {
+                                    for t in tasks_list.iter() {
+                                        {
+                                            let task_id = t.id.clone();
+                                            let task_title = t.title.clone();
+                                            let task_status = t.status;
+                                            let task_priority = t.priority;
+                                            let task_progress = t.progress;
+                                            let tid_start = task_id.clone();
+                                            let tid_complete = task_id.clone();
+                                            let pid_start = id.clone();
+                                            let pid_complete = id.clone();
+                                            rsx! {
+                                                tr {
+                                                    key: "{task_id}",
+                                                    class: "table-row-clickable",
+                                                    onclick: {
+                                                        let tid = task_id.clone();
+                                                        move |_| {
+                                                            navigator.push(format!("/tasks/{}", tid));
+                                                        }
+                                                    },
+                                                    td { "data-label": "标题", "{task_title}" }
+                                                    td { "data-label": "状态", span { class: "{task_status_badge(task_status)}", "{task_status_text(task_status)}" } }
+                                                    td { "data-label": "优先级", "{task_priority}" }
+                                                    td { "data-label": "进度",
+                                                        div { class: "progress-cell",
+                                                            div { class: "progress-bar",
+                                                                div { class: "progress-bar-fill", style: "width: {task_progress}%;" }
+                                                            }
+                                                            span { class: "text-base-content/70 font-mono progress-text", "{task_progress}%" }
+                                                        }
                                                     }
-                                                }
-                                                td { "data-label": "来源类型", span { class: "badge badge-neutral", "{artifact_source_type_text(artifact_source_type)}" } }
-                                                td { "data-label": "文件大小", "{artifact_file_size}" }
-                                                td { "data-label": "创建时间", span { class: "font-mono text-base-content/70", "{artifact_created_at}" } }
-                                                td { "data-label": "操作",
-                                                    button { class: "btn btn-error btn-sm",
-                                                        onclick: move |_| {
-                                                            let aid = aid_delete.clone();
-                                                            let pid = pid_refresh.clone();
-                                                            spawn(async move {
-                                                                match delete_artifact(&aid).await {
-                                                                    Ok(_) => {
-                                                                        toast.success("产物已删除");
-                                                                        match list_artifacts(&pid).await {
-                                                                            Ok(list) => artifacts.set(list),
-                                                                            Err(e) => toast.error(&e),
-                                                                        }
-                                                                    }
-                                                                    Err(e) => toast.error(&format!("删除失败: {}", e)),
+                                                    td { "data-label": "操作",
+                                                        div { class: "action-group",
+                                                            if task_status != 3 {
+                                                                button { class: "btn btn-outline btn-sm",
+                                                                    onclick: move |e: Event<MouseData>| {
+                                                                        // 修复 HIGH #8：阻止事件冒泡到 <tr> 的 onclick，
+                                                                        // 否则点击"开始"会同时触发状态更新和页面跳转
+                                                                        e.stop_propagation();
+                                                                        let tid = tid_start.clone();
+                                                                        let pid = pid_start.clone();
+                                                                        spawn(async move {
+                                                                            match update_task_status(&tid, 3).await {
+                                                                                Ok(_) => {
+                                                                                    toast.success("任务已开始");
+                                                                                    match list_project_tasks(&pid).await {
+                                                                                        Ok(resp) => tasks.set(resp.tasks),
+                                                                                        Err(e) => toast.error(&e),
+                                                                                    }
+                                                                                }
+                                                                                Err(e) => toast.error(&format!("操作失败: {}", e)),
+                                                                            }
+                                                                        });
+                                                                    },
+                                                                    "开始"
                                                                 }
-                                                            });
-                                                        },
-                                                        "删除"
+                                                            }
+                                                            if task_status != 4 {
+                                                                button { class: "btn btn-primary btn-sm",
+                                                                    onclick: move |e: Event<MouseData>| {
+                                                                        // 修复 HIGH #8：同上，阻止冒泡
+                                                                        e.stop_propagation();
+                                                                        let tid = tid_complete.clone();
+                                                                        let pid = pid_complete.clone();
+                                                                        spawn(async move {
+                                                                            match update_task_status(&tid, 4).await {
+                                                                                Ok(_) => {
+                                                                                    toast.success("任务已完成");
+                                                                                    match list_project_tasks(&pid).await {
+                                                                                        Ok(resp) => tasks.set(resp.tasks),
+                                                                                        Err(e) => toast.error(&e),
+                                                                                    }
+                                                                                }
+                                                                                Err(e) => toast.error(&format!("操作失败: {}", e)),
+                                                                            }
+                                                                        });
+                                                                    },
+                                                                    "完成"
+                                                                }
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
@@ -528,8 +488,104 @@ pub fn ProjectDetail(id: String) -> Element {
                             }
                         }
                     }
-                }
-            }
+                },
+                2 => rsx! {
+                    // === 产物 ===
+                    div { class: "card bg-base-100 shadow-md",
+                        div { class: "card-header",
+                            h2 { class: "card-title", "项目产物" }
+                        }
+                        div { class: "detail-card-body",
+                            div { class: "detail-toolbar",
+                                button { class: "btn btn-primary", onclick: open_artifact_modal, "+ 新增产物" }
+                            }
+                            if artifacts_list.is_empty() {
+                                EmptyState { icon: "📦".to_string(), message: "暂无产物".to_string() }
+                            } else {
+                                table { class: "table table-zebra",
+                                    thead { tr {
+                                        th { "名称" }
+                                        th { "描述" }
+                                        th { "来源类型" }
+                                        th { "文件大小" }
+                                        th { "创建时间" }
+                                        th { "操作" }
+                                    }}
+                                    tbody {
+                                        for a in artifacts_list.iter() {
+                                            {
+                                                let artifact_id = a.id.clone();
+                                                let artifact_name = a.name.clone();
+                                                let artifact_description = a.description.clone();
+                                                let artifact_source_type = a.source_type;
+                                                let artifact_file_size = a.file_size;
+                                                let artifact_created_at = a.created_at;
+                                                let aid_delete = artifact_id.clone();
+                                                let pid_refresh = id.clone();
+                                                rsx! {
+                                                    tr { key: "{artifact_id}",
+                                                        td { "data-label": "名称", "{artifact_name}" }
+                                                        td { "data-label": "描述",
+                                                            if artifact_description.is_empty() {
+                                                                span { class: "text-base-content/70", "暂无描述" }
+                                                            } else {
+                                                                "{artifact_description}"
+                                                            }
+                                                        }
+                                                        td { "data-label": "来源类型", span { class: "badge badge-neutral", "{artifact_source_type_text(artifact_source_type)}" } }
+                                                        td { "data-label": "文件大小", "{artifact_file_size}" }
+                                                        td { "data-label": "创建时间", span { class: "font-mono text-base-content/70", "{artifact_created_at}" } }
+                                                        td { "data-label": "操作",
+                                                            button { class: "btn btn-error btn-sm",
+                                                                onclick: move |_| {
+                                                                    let aid = aid_delete.clone();
+                                                                    let pid = pid_refresh.clone();
+                                                                    spawn(async move {
+                                                                        match delete_artifact(&aid).await {
+                                                                            Ok(_) => {
+                                                                                toast.success("产物已删除");
+                                                                                match list_artifacts(&pid).await {
+                                                                                    Ok(list) => artifacts.set(list),
+                                                                                    Err(e) => toast.error(&e),
+                                                                                }
+                                                                            }
+                                                                            Err(e) => toast.error(&format!("删除失败: {}", e)),
+                                                                        }
+                                                                    });
+                                                                },
+                                                                "删除"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                3 => rsx! {
+                    // === 关系图 ===
+                    div { class: "card bg-base-100 shadow-md",
+                        div { class: "card-header",
+                            h2 { class: "card-title", "关系图" }
+                        }
+                        div { class: "p-4",
+                            WorkspaceGraph {
+                                view: WorkspaceView::ProjectDetail(p.id.clone()),
+                                projects: graph_projects.read().clone(),
+                                agents: graph_agents.read().clone(),
+                                tasks: tasks_list.clone(),
+                                width: 800.0,
+                                height: 500.0,
+                            }
+                        }
+                    }
+                },
+                _ => rsx! { div {} },
+            }}
 
             // 新增产物 Modal
             Modal {

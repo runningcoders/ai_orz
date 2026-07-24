@@ -4,13 +4,15 @@ use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
 use crate::api::{project::*, StatsOptions};
+use crate::api::hr::list_agents;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::TaskStatsPanel;
+use crate::components::workspace_graph::{WorkspaceGraph, WorkspaceView};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::{format_timestamp_opt as format_timestamp, progress_bar_class, task_status_badge as status_badge, task_status_text as status_text};
-use common::api::GetTaskResponse;
+use common::api::{AgentListItem, GetTaskResponse, ProjectListItem, TaskListItem};
 use crate::pages::project::task_edit_modal::{TaskEditMode, TaskEditModal};
 
 #[component]
@@ -24,6 +26,13 @@ pub fn TaskDetail(id: String) -> Element {
     let mut updating_progress = use_signal(|| false);
     let mut show_edit_modal = use_signal(|| false);
     let id_for_edit = id.clone();
+
+    // Tab 切换：0=概览 1=进度与状态 2=关系图
+    let mut active_tab = use_signal(|| 0usize);
+    // 关系图所需数据：同 project 的 tasks + 全局 agents + 全局 projects
+    let mut graph_tasks = use_signal(Vec::<TaskListItem>::new);
+    let mut graph_agents = use_signal(Vec::<AgentListItem>::new);
+    let mut graph_projects = use_signal(Vec::<ProjectListItem>::new);
 
     let toast = use_toast();
     let navigator = use_navigator();
@@ -42,7 +51,27 @@ pub fn TaskDetail(id: String) -> Element {
             match get_task(&id_clone, Some(&stats_options)).await {
                 Ok(t) => {
                     new_progress.set(t.progress);
+                    // 克隆关系图所需字段后再 set，避免 move 后无法使用
+                    let pid_for_graph = t.project_id.clone();
                     task.set(Some(t));
+
+                    // 加载关系图数据（独立 spawn，不阻塞主流程）
+                    spawn(async move {
+                        if let Some(pid) = &pid_for_graph {
+                            match list_project_tasks(pid).await {
+                                Ok(resp) => graph_tasks.set(resp.tasks),
+                                Err(e) => toast.error(&format!("获取项目任务失败: {}", e)),
+                            }
+                        }
+                        match list_agents().await {
+                            Ok(resp) => graph_agents.set(resp.agents),
+                            Err(e) => toast.error(&format!("获取 Agent 列表失败: {}", e)),
+                        }
+                        match list_projects().await {
+                            Ok(resp) => graph_projects.set(resp.projects),
+                            Err(e) => toast.error(&format!("获取项目列表失败: {}", e)),
+                        }
+                    });
                 }
                 Err(e) => toast.error(&e),
             }
@@ -223,6 +252,10 @@ pub fn TaskDetail(id: String) -> Element {
         }
     };
 
+    let tab0_class = if active_tab() == 0 { "tab tab-lg tab-active" } else { "tab tab-lg" };
+    let tab1_class = if active_tab() == 1 { "tab tab-lg tab-active" } else { "tab tab-lg" };
+    let tab2_class = if active_tab() == 2 { "tab tab-lg tab-active" } else { "tab tab-lg" };
+
     rsx! {
         AppLayout {
         div { class: "page-header",
@@ -240,8 +273,19 @@ pub fn TaskDetail(id: String) -> Element {
         if loading() {
             div { class: "card bg-base-100 shadow-md", Loading {} }
         } else if let Some(t) = task.read().as_ref() {
-            // 区域 1：基本信息
-            div { class: "card bg-base-100 shadow-md",
+            // Tab 导航
+            div { class: "tabs tabs-boxed mb-6",
+                button { class: "{tab0_class}", onclick: move |_| active_tab.set(0), "📋 概览" }
+                button { class: "{tab1_class}", onclick: move |_| active_tab.set(1), "📊 进度与状态" }
+                button { class: "{tab2_class}", onclick: move |_| active_tab.set(2), "🕸️ 关系图" }
+            }
+
+            // Tab 内容
+            {match active_tab() {
+                0 => rsx! {
+                    // === 概览：基本信息 + 标签和依赖 + 统计 ===
+                    // 区域 1：基本信息
+                    div { class: "card bg-base-100 shadow-md",
                 div { class: "card-header",
                     h2 { class: "card-title", "{t.title}" }
                     span { class: "{status_badge(t.status)}", "{status_text(t.status)}" }
@@ -352,8 +396,10 @@ pub fn TaskDetail(id: String) -> Element {
                     model_call_stats: t.model_call_stats.clone(),
                 }
             }
-
-            // 区域 3：进度管理
+                },
+                1 => rsx! {
+                    // === 进度与状态：进度管理 + 状态流转 ===
+                    // 区域 3：进度管理
             div { class: "card bg-base-100 shadow-md",
                 div { class: "card-header",
                     h2 { class: "card-title", "进度管理" }
@@ -431,6 +477,28 @@ pub fn TaskDetail(id: String) -> Element {
                     }
                 }
             }
+
+                },
+                2 => rsx! {
+                    // === 关系图 ===
+                    div { class: "card bg-base-100 shadow-md",
+                        div { class: "card-header",
+                            h2 { class: "card-title", "关系图" }
+                        }
+                        div { class: "p-4",
+                            WorkspaceGraph {
+                                view: WorkspaceView::TaskDetail(t.id.clone()),
+                                projects: graph_projects.read().clone(),
+                                agents: graph_agents.read().clone(),
+                                tasks: graph_tasks.read().clone(),
+                                width: 800.0,
+                                height: 500.0,
+                            }
+                        }
+                    }
+                },
+                _ => rsx! { div {} },
+            }}
 
             // 进度更新弹窗
             Modal {
