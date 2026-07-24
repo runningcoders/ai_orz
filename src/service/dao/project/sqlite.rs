@@ -103,59 +103,38 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         &self,
         ctx: RequestContext,
         query: ProjectQuery,
-    ) -> Result<Vec<ProjectPo>> {
+    ) -> Result<common::api::PagedResult<ProjectPo>> {
+        let pool = ctx.db_pool();
+
+        let mut count_builder = sqlx::QueryBuilder::new("SELECT COUNT(*) FROM projects WHERE 1=1");
+        push_query_filters(&mut count_builder, &query);
+        let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
+
         // 使用 sqlx::QueryBuilder 动态构建查询
-        let mut builder = sqlx::QueryBuilder::new(
+        let mut list_builder = sqlx::QueryBuilder::new(
             "SELECT id, name, description, workflow, guidance, \"status\" as \"status\", priority, tags, root_user_id, owner_agent_id, start_at, due_at, end_at, created_by, modified_by, created_at, updated_at FROM projects WHERE 1=1",
         );
-
-        // 默认软删除过滤
-        builder.push(" AND \"status\" != 0");
-
-        // 按 ID 批量查询
-        if let Some(ids) = &query.ids {
-            if !ids.is_empty() {
-                builder.push(" AND id IN (");
-                let mut separated = builder.separated(", ");
-                for id in ids {
-                    separated.push_bind(id);
-                }
-                drop(separated);
-                builder.push(")");
-            }
-        }
-
-        // 逐个添加查询条件
-        if let Some(root_user_id) = &query.root_user_id {
-            builder.push(" AND root_user_id = ").push_bind(root_user_id);
-        }
-
-        // 状态 IN 查询
-        if let Some(status_list) = &query.status_in {
-            if !status_list.is_empty() {
-                builder.push(" AND \"status\" IN (");
-                let mut separated = builder.separated(", ");
-                for s in status_list {
-                    separated.push_bind(*s as i32);
-                }
-                drop(separated); // 结束分隔器
-                builder.push(")");
-            }
-            // 如果 status_in 是 Some 但是数组为空，我们不添加任何条件
-        }
+        push_query_filters(&mut list_builder, &query);
 
         // 排序
-        builder.push(" ORDER BY priority DESC, created_at DESC");
+        list_builder.push(" ORDER BY priority DESC, created_at DESC");
 
-        // 限制数量
-        if let Some(limit) = query.limit {
-            builder.push(" LIMIT ").push_bind(limit as i64);
+        if let Some(limit) = query.pagination.limit {
+            list_builder.push(" LIMIT ").push_bind(limit as i64);
+        } else if query.pagination.offset.is_some() {
+            list_builder.push(" LIMIT -1");
+        }
+        if let Some(offset) = query.pagination.offset {
+            list_builder.push(" OFFSET ").push_bind(offset as i64);
         }
 
         // 执行查询
-        let rows = builder.build_query_as().fetch_all(ctx.db_pool()).await?;
+        let items = list_builder.build_query_as().fetch_all(pool).await?;
 
-        Ok(rows)
+        Ok(common::api::PagedResult {
+            items,
+            total: total as usize,
+        })
     }
 
     async fn list_by_root_user(
@@ -165,15 +144,20 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         limit: Option<usize>,
     ) -> Result<Vec<ProjectPo>> {
         // 语法糖：调用通用查询
-        self.query(
-            ctx,
-            ProjectQuery {
-                root_user_id: Some(root_user_id.to_string()),
-                limit: Some(limit.unwrap_or(100)),
-                ..Default::default()
-            },
-        )
-        .await
+        let page = self
+            .query(
+                ctx,
+                ProjectQuery {
+                    root_user_id: Some(root_user_id.to_string()),
+                    pagination: common::api::PaginationParams {
+                        limit: Some(limit.unwrap_or(100)),
+                        offset: None,
+                    },
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(page.items)
     }
 
     async fn list_by_root_user_and_status(
@@ -184,16 +168,21 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         limit: Option<usize>,
     ) -> Result<Vec<ProjectPo>> {
         // 语法糖：调用通用查询
-        self.query(
-            ctx,
-            ProjectQuery {
-                root_user_id: Some(root_user_id.to_string()),
-                status_in: Some(status),
-                limit: Some(limit.unwrap_or(100)),
-                ..Default::default()
-            },
-        )
-        .await
+        let page = self
+            .query(
+                ctx,
+                ProjectQuery {
+                    root_user_id: Some(root_user_id.to_string()),
+                    status_in: Some(status),
+                    pagination: common::api::PaginationParams {
+                        limit: Some(limit.unwrap_or(100)),
+                        offset: None,
+                    },
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(page.items)
     }
 
     async fn update(&self, ctx: RequestContext, project: &ProjectPo) -> Result<()> {
@@ -273,7 +262,7 @@ impl ProjectDao for ProjectDaoSqliteImpl {
 
         // 从 ProjectSearch 提取参数
         let keyword = search.keyword.unwrap_or_default();
-        let limit_i64 = search.filters.limit.unwrap_or(50) as i64;
+        let limit_i64 = search.filters.pagination.limit.unwrap_or(50) as i64;
 
         // 空关键词直接返回空结果（FTS5 MATCH 空字符串会报错）
         if keyword.trim().is_empty() {
@@ -331,5 +320,41 @@ LIMIT ?
             .collect();
 
         Ok(results)
+    }
+}
+
+/// 推送查询过滤条件到 QueryBuilder（COUNT 和 LIST 查询复用）
+fn push_query_filters<'args>(
+    builder: &mut sqlx::QueryBuilder<'args, sqlx::Sqlite>,
+    query: &ProjectQuery,
+) {
+    // 默认软删除过滤
+    builder.push(" AND \"status\" != 0");
+    if let Some(ids) = &query.ids {
+        if !ids.is_empty() {
+            builder.push(" AND id IN (");
+            let mut separated = builder.separated(", ");
+            for id in ids {
+                separated.push_bind(id.clone());
+            }
+            drop(separated);
+            builder.push(")");
+        }
+    }
+    if let Some(root_user_id) = &query.root_user_id {
+        builder
+            .push(" AND root_user_id = ")
+            .push_bind(root_user_id.clone());
+    }
+    if let Some(status_list) = &query.status_in {
+        if !status_list.is_empty() {
+            builder.push(" AND \"status\" IN (");
+            let mut separated = builder.separated(", ");
+            for s in status_list {
+                separated.push_bind(*s as i32);
+            }
+            drop(separated);
+            builder.push(")");
+        }
     }
 }

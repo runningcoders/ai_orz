@@ -65,7 +65,7 @@ pub trait AgentDao: Send + Sync {
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<AgentPo>>;
     /// 通用查询
     async fn query(&self, ctx: RequestContext, query: AgentQuery)
-    -> Result<Vec<AgentPo>>;
+    -> Result<common::api::PagedResult<AgentPo>>;
     async fn find_all(&self, ctx: RequestContext) -> Result<Vec<AgentPo>>;
     async fn update(&self, ctx: RequestContext, agent: &AgentPo) -> Result<()>;
     async fn delete(&self, ctx: RequestContext, agent: &AgentPo) -> Result<()>;

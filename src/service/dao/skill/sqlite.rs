@@ -166,85 +166,40 @@ FROM skills WHERE id = ?
         &self,
         ctx: RequestContext,
         query: SkillQuery,
-    ) -> Result<Vec<SkillPo>> {
-        let mut builder = sqlx::QueryBuilder::new(
+    ) -> Result<common::api::PagedResult<SkillPo>> {
+        let pool = ctx.db_pool();
+
+        let mut count_builder = sqlx::QueryBuilder::new("SELECT COUNT(*) FROM skills WHERE 1=1");
+        push_query_filters(&mut count_builder, &query);
+        let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
+
+        let mut list_builder = sqlx::QueryBuilder::new(
             r#"SELECT id, name, description, tags, category, parent_skill_id, author_id, author_type, modifier_id, status, created_at, updated_at, content_path FROM skills WHERE 1=1"#,
         );
-
-        // ✅ 按 ID 批量查询（向量搜索的核心过滤）
-        if let Some(ids) = &query.ids {
-            builder.push(" AND id IN (");
-            let mut separated = builder.separated(", ");
-            for id in ids {
-                separated.push_bind(id);
-            }
-            separated.push_unseparated(")");
-        }
-
-        // 状态过滤
-        if let Some(status) = &query.status {
-            builder.push(" AND status = ").push_bind(*status as i32);
-        }
-
-        // 排除状态过滤
-        if let Some(exclude_status) = &query.exclude_status {
-            builder
-                .push(" AND status != ")
-                .push_bind(*exclude_status as i32);
-        }
-
-        // 分类过滤
-        if let Some(category) = &query.category {
-            builder.push(" AND category = ").push_bind(category);
-        }
-
-        // 作者过滤
-        if let Some(author_id) = &query.author_id {
-            builder.push(" AND author_id = ").push_bind(author_id);
-        }
-
-        // 父技能 ID 过滤（用于幂等检查已安装副本）
-        if let Some(parent_skill_id) = &query.parent_skill_id {
-            builder
-                .push(" AND parent_skill_id = ")
-                .push_bind(parent_skill_id);
-        }
-
-        // tag 过滤（OR 语义：包含任一 tag 即可命中）
-        if let Some(tags) = &query.tags {
-            if !tags.is_empty() {
-                builder.push(" AND EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value IN (");
-                let mut separated = builder.separated(", ");
-                for tag in tags {
-                    separated.push_bind(tag);
-                }
-                separated.push_unseparated("))");
-            }
-        }
-
-        // 关键词搜索已迁移到 FTS5 全文索引（search 方法）
-        // query 方法的 keyword 字段已废弃，仅记录 warn 日志
-        if let Some(keyword) = &query.keyword {
-            if !keyword.is_empty() {
-                log_warn!("keyword in skill query is deprecated, use search_skills for FTS5 full-text search; keyword ignored");
-            }
-        }
+        push_query_filters(&mut list_builder, &query);
 
         // 排序
-        builder.push(" ORDER BY updated_at DESC");
+        list_builder.push(" ORDER BY updated_at DESC");
 
-        // 限制数量
-        if let Some(limit) = query.limit {
-            builder.push(" LIMIT ").push_bind(limit as i64);
+        if let Some(limit) = query.pagination.limit {
+            list_builder.push(" LIMIT ").push_bind(limit as i64);
+        } else if query.pagination.offset.is_some() {
+            list_builder.push(" LIMIT -1");
+        }
+        if let Some(offset) = query.pagination.offset {
+            list_builder.push(" OFFSET ").push_bind(offset as i64);
         }
 
         // 执行查询
-        let rows = builder
+        let items = list_builder
             .build_query_as::<SkillPo>()
-            .fetch_all(ctx.db_pool())
+            .fetch_all(pool)
             .await?;
 
-        Ok(rows)
+        Ok(common::api::PagedResult {
+            items,
+            total: total as usize,
+        })
     }
 
     async fn list_by_status(
@@ -429,7 +384,7 @@ ORDER BY updated_at DESC
 
         builder.push(" ORDER BY skills_fts.rank");
 
-        if let Some(limit) = filters.limit {
+        if let Some(limit) = filters.pagination.limit {
             builder.push(" LIMIT ").push_bind(limit as i64);
         }
 
@@ -625,5 +580,56 @@ impl SkillDaoSqliteImpl {
         }
 
         Ok(())
+    }
+}
+
+/// 推送查询过滤条件到 QueryBuilder（COUNT 和 LIST 查询复用）
+fn push_query_filters<'args>(
+    builder: &mut sqlx::QueryBuilder<'args, sqlx::Sqlite>,
+    query: &SkillQuery,
+) {
+    if let Some(ids) = &query.ids {
+        if !ids.is_empty() {
+            builder.push(" AND id IN (");
+            let mut separated = builder.separated(", ");
+            for id in ids {
+                separated.push_bind(id.clone());
+            }
+            separated.push_unseparated(")");
+        }
+    }
+    if let Some(status) = &query.status {
+        builder.push(" AND status = ").push_bind(*status as i32);
+    }
+    if let Some(exclude_status) = &query.exclude_status {
+        builder
+            .push(" AND status != ")
+            .push_bind(*exclude_status as i32);
+    }
+    if let Some(category) = &query.category {
+        builder.push(" AND category = ").push_bind(category.clone());
+    }
+    if let Some(author_id) = &query.author_id {
+        builder.push(" AND author_id = ").push_bind(author_id.clone());
+    }
+    if let Some(parent_skill_id) = &query.parent_skill_id {
+        builder
+            .push(" AND parent_skill_id = ")
+            .push_bind(parent_skill_id.clone());
+    }
+    if let Some(tags) = &query.tags {
+        if !tags.is_empty() {
+            builder.push(" AND EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value IN (");
+            let mut separated = builder.separated(", ");
+            for tag in tags {
+                separated.push_bind(tag.clone());
+            }
+            separated.push_unseparated("))");
+        }
+    }
+    if let Some(keyword) = &query.keyword {
+        if !keyword.is_empty() {
+            log_warn!("keyword in skill query is deprecated, use search_skills; keyword ignored");
+        }
     }
 }

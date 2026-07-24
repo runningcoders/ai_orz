@@ -50,7 +50,7 @@ pub trait ProjectDao: Send + Sync + std::fmt::Debug {
         &self,
         ctx: RequestContext,
         query: ProjectQuery,
-    ) -> Result<Vec<ProjectPo>>;
+    ) -> Result<common::api::PagedResult<ProjectPo>>;
     /// 根据根用户查询项目列表
     async fn list_by_root_user(
         &self,

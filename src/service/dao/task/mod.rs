@@ -45,7 +45,7 @@ pub trait TaskDao: Send + Sync + std::fmt::Debug {
     /// 根据 ID 查询任务
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<TaskPo>>;
     /// 通用查询
-    async fn query(&self, ctx: RequestContext, query: TaskQuery) -> Result<Vec<TaskPo>>;
+    async fn query(&self, ctx: RequestContext, query: TaskQuery) -> Result<common::api::PagedResult<TaskPo>>;
 
     /// 全文检索任务（FTS5 MATCH + BM25 排序）
     ///

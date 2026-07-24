@@ -114,80 +114,32 @@ FROM agents WHERE id = ? AND status <> 0
         &self,
         _ctx: RequestContext,
         query: AgentQuery,
-    ) -> Result<Vec<AgentPo>> {
-        let mut builder = sqlx::QueryBuilder::new(
+    ) -> Result<common::api::PagedResult<AgentPo>> {
+        let pool = _ctx.db_pool();
+        let mut count_builder = sqlx::QueryBuilder::new("SELECT COUNT(*) FROM agents WHERE 1=1");
+        push_query_filters(&mut count_builder, &query);
+        let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
+
+        let mut list_builder = sqlx::QueryBuilder::new(
             r#"SELECT id, name, role, description, soul, capabilities, runtime_config, model_provider_id, status, kind, created_by, modified_by, created_at, updated_at FROM agents WHERE 1=1"#,
         );
+        push_query_filters(&mut list_builder, &query);
+        list_builder.push(" ORDER BY created_at DESC");
 
-        // ✅ 按 ID 批量查询（向量搜索的核心过滤）
-        if let Some(ids) = &query.ids {
-            if !ids.is_empty() {
-                builder.push(" AND id IN (");
-                let mut separated = builder.separated(", ");
-                for id in ids {
-                    separated.push_bind(id);
-                }
-                separated.push_unseparated(")");
-            }
+        if let Some(limit) = query.pagination.limit {
+            list_builder.push(" LIMIT ").push_bind(limit as i64);
+        } else if query.pagination.offset.is_some() {
+            list_builder.push(" LIMIT -1");
+        }
+        if let Some(offset) = query.pagination.offset {
+            list_builder.push(" OFFSET ").push_bind(offset as i64);
         }
 
-        // 状态过滤
-        if let Some(status) = &query.status {
-            builder.push(" AND status = ").push_bind(*status as i32);
-        }
-
-        // 排除状态过滤
-        if let Some(exclude_status) = &query.exclude_status {
-            builder
-                .push(" AND status != ")
-                .push_bind(*exclude_status as i32);
-        }
-
-        // 创建者过滤
-        if let Some(created_by) = &query.created_by {
-            builder.push(" AND created_by = ").push_bind(created_by);
-        }
-
-        // 模型提供商过滤
-        if let Some(model_provider_id) = &query.model_provider_id {
-            builder
-                .push(" AND model_provider_id = ")
-                .push_bind(model_provider_id);
-        }
-
-        // 角色标签过滤（OR 语义，使用 json_each 精确匹配）
-        // role 字段是 JSON 字符串数组（如 ["feishu_reception","worker"]）
-        if let Some(roles) = &query.roles {
-            if !roles.is_empty() {
-                builder.push(" AND EXISTS (SELECT 1 FROM json_each(agents.role) WHERE json_each.value IN (");
-                let mut separated = builder.separated(", ");
-                for role in roles {
-                    separated.push_bind(role);
-                }
-                separated.push_unseparated("))");
-            }
-        }
-
-        // 关键词搜索已迁移到 FTS5 全文索引（search_agents 方法）
-        // query 方法的 keyword 字段已废弃，仅记录 warn 日志
-        if let Some(keyword) = &query.keyword {
-            if !keyword.is_empty() {
-                log_warn!("keyword in agent query is deprecated, use search_agents for FTS5 full-text search; keyword ignored");
-            }
-        }
-
-        // 排序
-        builder.push(" ORDER BY created_at DESC");
-
-        // 限制数量
-        if let Some(limit) = query.limit {
-            builder.push(" LIMIT ").push_bind(limit as i64);
-        }
-
-        // 执行查询
-        let rows = builder.build_query_as().fetch_all(_ctx.db_pool()).await?;
-
-        Ok(rows)
+        let items = list_builder.build_query_as().fetch_all(pool).await?;
+        Ok(common::api::PagedResult {
+            items,
+            total: total as usize,
+        })
     }
 
     async fn search_agents(
@@ -267,7 +219,7 @@ FROM agents WHERE id = ? AND status <> 0
 
         builder.push(" ORDER BY agents_fts.rank");
 
-        if let Some(limit) = filters.limit {
+        if let Some(limit) = filters.pagination.limit {
             builder.push(" LIMIT ").push_bind(limit as i64);
         }
 
@@ -304,14 +256,16 @@ FROM agents WHERE id = ? AND status <> 0
 
     async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<AgentPo>> {
         // 语法糖：调用通用查询，排除已删除状态
-        self.query(
-            _ctx,
-            AgentQuery {
-                exclude_status: Some(AgentStatus::Deleted),
-                ..Default::default()
-            },
-        )
-        .await
+        let page = self
+            .query(
+                _ctx,
+                AgentQuery {
+                    exclude_status: Some(AgentStatus::Deleted),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(page.items)
     }
 
     async fn update(&self, _ctx: RequestContext, agent: &AgentPo) -> Result<()> {
@@ -362,5 +316,53 @@ UPDATE agents SET status = 0, modified_by = ?, updated_at = ? WHERE id = ?
         .await?;
 
         Ok(())
+    }
+}
+
+/// 推送查询过滤条件到 QueryBuilder（COUNT 和 LIST 查询复用）
+fn push_query_filters<'args>(
+    builder: &mut sqlx::QueryBuilder<'args, sqlx::Sqlite>,
+    query: &AgentQuery,
+) {
+    if let Some(ids) = &query.ids {
+        if !ids.is_empty() {
+            builder.push(" AND id IN (");
+            let mut separated = builder.separated(", ");
+            for id in ids {
+                separated.push_bind(id.clone());
+            }
+            separated.push_unseparated(")");
+        }
+    }
+    if let Some(status) = &query.status {
+        builder.push(" AND status = ").push_bind(*status as i32);
+    }
+    if let Some(exclude_status) = &query.exclude_status {
+        builder
+            .push(" AND status != ")
+            .push_bind(*exclude_status as i32);
+    }
+    if let Some(created_by) = &query.created_by {
+        builder.push(" AND created_by = ").push_bind(created_by.clone());
+    }
+    if let Some(model_provider_id) = &query.model_provider_id {
+        builder
+            .push(" AND model_provider_id = ")
+            .push_bind(model_provider_id.clone());
+    }
+    if let Some(roles) = &query.roles {
+        if !roles.is_empty() {
+            builder.push(" AND EXISTS (SELECT 1 FROM json_each(agents.role) WHERE json_each.value IN (");
+            let mut separated = builder.separated(", ");
+            for role in roles {
+                separated.push_bind(role.clone());
+            }
+            separated.push_unseparated("))");
+        }
+    }
+    if let Some(keyword) = &query.keyword {
+        if !keyword.is_empty() {
+            log_warn!("keyword in agent query is deprecated, use search_agents for FTS5; keyword ignored");
+        }
     }
 }

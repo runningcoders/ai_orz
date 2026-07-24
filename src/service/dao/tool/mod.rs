@@ -171,7 +171,7 @@ pub trait ToolDao: Send + Sync {
     async fn get_by_name(&self, ctx: RequestContext, name: &str) -> Result<Option<ToolPo>>;
 
     /// 通用查询
-    async fn query(&self, ctx: RequestContext, query: ToolQuery) -> Result<Vec<ToolPo>>;
+    async fn query(&self, ctx: RequestContext, query: ToolQuery) -> Result<common::api::PagedResult<ToolPo>>;
 
     /// List all enabled tools
     async fn list_enabled(&self, ctx: RequestContext) -> Result<Vec<ToolPo>>;

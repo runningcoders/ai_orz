@@ -205,169 +205,53 @@ impl ToolDao for ToolDaoSqliteImpl {
         Ok(row)
     }
 
-    async fn query(&self, ctx: RequestContext, query: ToolQuery) -> Result<Vec<ToolPo>> {
+    async fn query(&self, ctx: RequestContext, query: ToolQuery) -> Result<common::api::PagedResult<ToolPo>> {
         let pool = ctx.db_pool();
-        let mut builder = sqlx::QueryBuilder::new(r#"SELECT t.* FROM tools t"#);
-
-        // Agent 过滤（需要 JOIN）
         let has_agent_filter = query.agent_id.is_some();
+        let join_clause = if has_agent_filter { " INNER JOIN agent_tools at ON t.id = at.tool_id" } else { "" };
+
+        let count_sql = format!("SELECT COUNT(*) FROM tools t{}", join_clause);
+        let mut count_builder = sqlx::QueryBuilder::new(&count_sql);
+        count_builder.push(" WHERE 1=1");
+        push_query_filters(&mut count_builder, &query);
+        let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
+
+        let list_sql = format!("SELECT t.* FROM tools t{}", join_clause);
+        let mut list_builder = sqlx::QueryBuilder::new(&list_sql);
+        list_builder.push(" WHERE 1=1");
+        push_query_filters(&mut list_builder, &query);
         if has_agent_filter {
-            builder.push(" INNER JOIN agent_tools at ON t.id = at.tool_id");
-        }
-
-        let mut has_where = false;
-
-        // Agent 过滤
-        if let Some(agent_id) = &query.agent_id {
-            builder.push(" WHERE at.agent_id = ").push_bind(agent_id);
-            has_where = true;
-        }
-
-        // IDs 批量查询
-        if let Some(ids) = &query.ids {
-            if !ids.is_empty() {
-                if has_where {
-                    builder.push(" AND");
-                } else {
-                    builder.push(" WHERE");
-                }
-                builder.push(" t.id IN (");
-                let mut separated = builder.separated(", ");
-                for id in ids {
-                    separated.push_bind(id.clone());
-                }
-                separated.push_unseparated(")");
-                has_where = true;
-            }
-        }
-
-        // 关键词搜索：已废弃 LIKE 分支，改为忽略并 warn
-        // 关键词全文搜索请使用 search_tools 方法（FTS5 MATCH + BM25）
-        if let Some(keyword) = &query.keyword {
-            if !keyword.is_empty() {
-                log_warn!(
-                    "keyword in ToolDao::query is deprecated, use search_tools for FTS5 full-text search; keyword ignored"
-                );
-            }
-        }
-
-        // tag 过滤（OR 语义：包含任一 tag 即可命中）
-        if let Some(tags) = &query.tags {
-            if !tags.is_empty() {
-                if has_where {
-                    builder.push(" AND");
-                } else {
-                    builder.push(" WHERE");
-                }
-                builder.push(" EXISTS (SELECT 1 FROM json_each(t.tags) WHERE json_each.value IN (");
-                let mut separated = builder.separated(", ");
-                for tag in tags {
-                    separated.push_bind(tag);
-                }
-                separated.push_unseparated("))");
-                has_where = true;
-            }
-        }
-
-        // Protocol 过滤
-        if let Some(protocol) = query.protocol {
-            if has_where {
-                builder.push(" AND");
-            } else {
-                builder.push(" WHERE");
-            }
-            builder.push(" t.protocol = ").push_bind(protocol as i32);
-            has_where = true;
-        }
-
-        // Status 过滤：DAO 只按显式查询条件持久化过滤；默认不注入业务状态语义
-        if let Some(status) = query.status {
-            if has_where {
-                builder.push(" AND");
-            } else {
-                builder.push(" WHERE");
-            }
-            builder.push(" t.status = ").push_bind(status as i32);
-            has_where = true;
-        }
-
-        // 排除状态过滤：由 DAL/Domain 显式传入业务过滤语义
-        if let Some(exclude_status) = query.exclude_status {
-            if has_where {
-                builder.push(" AND");
-            } else {
-                builder.push(" WHERE");
-            }
-            builder
-                .push(" t.status != ")
-                .push_bind(exclude_status as i32);
-            has_where = true;
-        }
-
-        // MCP Server 过滤
-        if let Some(server_id) = &query.mcp_server_id {
-            if has_where {
-                builder.push(" AND");
-            } else {
-                builder.push(" WHERE");
-            }
-            builder
-                .push(" json_extract(t.config, '$.server_id') = ")
-                .push_bind(server_id.clone());
-            has_where = true;
-        }
-
-        // Enabled 过滤
-        if let Some(enabled_only) = query.enabled_only {
-            if enabled_only {
-                if has_where {
-                    builder.push(" AND");
-                } else {
-                    builder.push(" WHERE");
-                }
-                builder.push(" t.status = 1");
-            }
-        }
-
-        // 排序
-        if has_agent_filter {
-            builder.push(" ORDER BY at.created_at ASC");
+            list_builder.push(" ORDER BY at.created_at ASC");
         } else {
-            builder.push(" ORDER BY t.created_at DESC");
+            list_builder.push(" ORDER BY t.created_at DESC");
         }
-
-        // 分页
-        match (query.limit, query.offset) {
-            (Some(limit), Some(offset)) => {
-                builder.push(" LIMIT ").push_bind(limit as i64);
-                builder.push(" OFFSET ").push_bind(offset as i64);
-            }
-            (Some(limit), None) => {
-                builder.push(" LIMIT ").push_bind(limit as i64);
-            }
-            (None, Some(offset)) => {
-                // SQLite requires OFFSET to be paired with LIMIT.
-                // LIMIT -1 means "no upper bound" while preserving offset-only pagination semantics.
-                builder.push(" LIMIT -1 OFFSET ").push_bind(offset as i64);
-            }
-            (None, None) => {}
+        if let Some(limit) = query.pagination.limit {
+            list_builder.push(" LIMIT ").push_bind(limit as i64);
+        } else if query.pagination.offset.is_some() {
+            list_builder.push(" LIMIT -1");
         }
-
-        let rows = builder.build_query_as().fetch_all(pool).await?;
-
-        Ok(rows)
+        if let Some(offset) = query.pagination.offset {
+            list_builder.push(" OFFSET ").push_bind(offset as i64);
+        }
+        let items = list_builder.build_query_as().fetch_all(pool).await?;
+        Ok(common::api::PagedResult {
+            items,
+            total: total as usize,
+        })
     }
 
     async fn list_enabled(&self, ctx: RequestContext) -> Result<Vec<ToolPo>> {
         // 语法糖：调用通用查询
-        self.query(
-            ctx.clone(),
-            ToolQuery {
-                enabled_only: Some(true),
-                ..Default::default()
-            },
-        )
-        .await
+        let page = self
+            .query(
+                ctx.clone(),
+                ToolQuery {
+                    enabled_only: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(page.items)
     }
 
     async fn add_tool_to_agent(
@@ -424,14 +308,16 @@ impl ToolDao for ToolDaoSqliteImpl {
         agent_id: &str,
     ) -> Result<Vec<ToolPo>> {
         // 语法糖：调用通用查询
-        self.query(
-            ctx.clone(),
-            ToolQuery {
-                agent_id: Some(agent_id.to_string()),
-                ..Default::default()
-            },
-        )
-        .await
+        let page = self
+            .query(
+                ctx.clone(),
+                ToolQuery {
+                    agent_id: Some(agent_id.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(page.items)
     }
 
     async fn sync_builtin_tools_to_db(&self, ctx: RequestContext) -> Result<usize> {
@@ -533,5 +419,64 @@ impl ToolDao for ToolDaoSqliteImpl {
             .collect();
 
         Ok(results)
+    }
+}
+
+/// 推送查询过滤条件到 QueryBuilder（COUNT 和 LIST 查询复用）
+///
+/// 注意：Tool 表使用别名 `t.`（COUNT/LIST SQL 已包含 `FROM tools t`），
+/// agent_id 过滤使用 `at.` 前缀（依赖外部 JOIN agent_tools at）。
+fn push_query_filters<'args>(
+    builder: &mut sqlx::QueryBuilder<'args, sqlx::Sqlite>,
+    query: &ToolQuery,
+) {
+    if let Some(agent_id) = &query.agent_id {
+        builder.push(" AND at.agent_id = ").push_bind(agent_id.clone());
+    }
+    if let Some(ids) = &query.ids {
+        if !ids.is_empty() {
+            builder.push(" AND t.id IN (");
+            let mut separated = builder.separated(", ");
+            for id in ids {
+                separated.push_bind(id.clone());
+            }
+            separated.push_unseparated(")");
+        }
+    }
+    if let Some(keyword) = &query.keyword {
+        if !keyword.is_empty() {
+            log_warn!("keyword in ToolDao::query is deprecated, use search_tools; keyword ignored");
+        }
+    }
+    if let Some(tags) = &query.tags {
+        if !tags.is_empty() {
+            builder.push(" AND EXISTS (SELECT 1 FROM json_each(t.tags) WHERE json_each.value IN (");
+            let mut separated = builder.separated(", ");
+            for tag in tags {
+                separated.push_bind(tag.clone());
+            }
+            separated.push_unseparated("))");
+        }
+    }
+    if let Some(protocol) = query.protocol {
+        builder.push(" AND t.protocol = ").push_bind(protocol as i32);
+    }
+    if let Some(status) = query.status {
+        builder.push(" AND t.status = ").push_bind(status as i32);
+    }
+    if let Some(exclude_status) = query.exclude_status {
+        builder
+            .push(" AND t.status != ")
+            .push_bind(exclude_status as i32);
+    }
+    if let Some(server_id) = &query.mcp_server_id {
+        builder
+            .push(" AND json_extract(t.config, '$.server_id') = ")
+            .push_bind(server_id.clone());
+    }
+    if let Some(enabled_only) = query.enabled_only {
+        if enabled_only {
+            builder.push(" AND t.status = 1");
+        }
     }
 }

@@ -131,67 +131,37 @@ FROM tasks WHERE id = ? AND "status" != 0
         Ok(task)
     }
 
-    async fn query(&self, ctx: RequestContext, query: TaskQuery) -> Result<Vec<TaskPo>> {
-        let mut builder = sqlx::QueryBuilder::new(
+    async fn query(&self, ctx: RequestContext, query: TaskQuery) -> Result<common::api::PagedResult<TaskPo>> {
+        let pool = ctx.db_pool();
+
+        let mut count_builder = sqlx::QueryBuilder::new("SELECT COUNT(*) FROM tasks WHERE 1=1");
+        push_query_filters(&mut count_builder, &query);
+        let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
+
+        let mut list_builder = sqlx::QueryBuilder::new(
             r#"SELECT id, title, description, "status", priority, tags, due_at, start_at, end_at, dependencies, root_user_id, "assignee_type", assignee_id, project_id, thinking_depth, progress, created_by, modified_by, created_at, updated_at FROM tasks WHERE 1=1"#,
         );
-
-        // 默认软删除过滤
-        builder.push(r#" AND "status" != 0"#);
-
-        // 按 ID 批量查询
-        if let Some(ids) = &query.ids {
-            if !ids.is_empty() {
-                builder.push(" AND id IN (");
-                let mut separated = builder.separated(", ");
-                for id in ids {
-                    separated.push_bind(id);
-                }
-                drop(separated);
-                builder.push(")");
-            }
-        }
-
-        // 逐个添加查询条件
-        if let Some(assignee_type) = &query.assignee_type {
-            builder
-                .push(r#" AND "assignee_type" = "#)
-                .push_bind(*assignee_type as i32);
-        }
-
-        if let Some(assignee_id) = &query.assignee_id {
-            builder.push(" AND assignee_id = ").push_bind(assignee_id);
-        }
-
-        if let Some(project_id) = &query.project_id {
-            builder.push(" AND project_id = ").push_bind(project_id);
-        }
-
-        // 状态 IN 查询
-        if let Some(status_list) = &query.status_in {
-            if !status_list.is_empty() {
-                builder.push(r#" AND "status" IN ("#);
-                let mut separated = builder.separated(", ");
-                for s in status_list {
-                    separated.push_bind(*s as i32);
-                }
-                drop(separated);
-                builder.push(")");
-            }
-        }
+        push_query_filters(&mut list_builder, &query);
 
         // 排序
-        builder.push(" ORDER BY priority DESC, created_at DESC");
+        list_builder.push(" ORDER BY priority DESC, created_at DESC");
 
-        // 限制数量
-        if let Some(limit) = query.limit {
-            builder.push(" LIMIT ").push_bind(limit as i64);
+        if let Some(limit) = query.pagination.limit {
+            list_builder.push(" LIMIT ").push_bind(limit as i64);
+        } else if query.pagination.offset.is_some() {
+            list_builder.push(" LIMIT -1");
+        }
+        if let Some(offset) = query.pagination.offset {
+            list_builder.push(" OFFSET ").push_bind(offset as i64);
         }
 
         // 执行查询
-        let rows = builder.build_query_as().fetch_all(ctx.db_pool()).await?;
+        let items = list_builder.build_query_as().fetch_all(pool).await?;
 
-        Ok(rows)
+        Ok(common::api::PagedResult {
+            items,
+            total: total as usize,
+        })
     }
 
     async fn search_tasks(
@@ -202,7 +172,7 @@ FROM tasks WHERE id = ? AND "status" != 0
         let pool = ctx.db_pool();
 
         let keyword = search.keyword.unwrap_or_default();
-        let limit_i64 = search.filters.limit.unwrap_or(50) as i64;
+        let limit_i64 = search.filters.pagination.limit.unwrap_or(50) as i64;
 
         // 空关键词直接返回空结果（FTS5 MATCH 空字符串会报错）
         if keyword.trim().is_empty() {
@@ -296,16 +266,21 @@ WHERE tasks_fts MATCH "#,
         limit: Option<usize>,
     ) -> Result<Vec<TaskPo>> {
         // 语法糖：调用通用查询
-        self.query(
-            ctx,
-            TaskQuery {
-                assignee_type,
-                assignee_id: Some(assignee_id.to_string()),
-                limit: Some(limit.unwrap_or(100)),
-                ..Default::default()
-            },
-        )
-        .await
+        let page = self
+            .query(
+                ctx,
+                TaskQuery {
+                    assignee_type,
+                    assignee_id: Some(assignee_id.to_string()),
+                    pagination: common::api::PaginationParams {
+                        limit: Some(limit.unwrap_or(100)),
+                        offset: None,
+                    },
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(page.items)
     }
 
     async fn list_by_status(
@@ -317,17 +292,22 @@ WHERE tasks_fts MATCH "#,
         limit: Option<usize>,
     ) -> Result<Vec<TaskPo>> {
         // 语法糖：调用通用查询
-        self.query(
-            ctx,
-            TaskQuery {
-                assignee_type,
-                assignee_id: Some(assignee_id.to_string()),
-                status_in: Some(status),
-                limit: Some(limit.unwrap_or(100)),
-                ..Default::default()
-            },
-        )
-        .await
+        let page = self
+            .query(
+                ctx,
+                TaskQuery {
+                    assignee_type,
+                    assignee_id: Some(assignee_id.to_string()),
+                    status_in: Some(status),
+                    pagination: common::api::PaginationParams {
+                        limit: Some(limit.unwrap_or(100)),
+                        offset: None,
+                    },
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(page.items)
     }
 
     async fn update(&self, ctx: RequestContext, task: &TaskPo) -> Result<()> {
@@ -436,5 +416,46 @@ UPDATE tasks SET "status" = ?, modified_by = ?, updated_at = ? WHERE id = ?
         .fetch_one(pool)
         .await?;
         Ok(row.count as u64)
+    }
+}
+
+/// 推送查询过滤条件到 QueryBuilder（COUNT 和 LIST 查询复用）
+fn push_query_filters<'args>(
+    builder: &mut sqlx::QueryBuilder<'args, sqlx::Sqlite>,
+    query: &TaskQuery,
+) {
+    builder.push(r#" AND "status" != 0"#);
+    if let Some(ids) = &query.ids {
+        if !ids.is_empty() {
+            builder.push(" AND id IN (");
+            let mut separated = builder.separated(", ");
+            for id in ids {
+                separated.push_bind(id.clone());
+            }
+            drop(separated);
+            builder.push(")");
+        }
+    }
+    if let Some(assignee_type) = &query.assignee_type {
+        builder
+            .push(r#" AND "assignee_type" = "#)
+            .push_bind(*assignee_type as i32);
+    }
+    if let Some(assignee_id) = &query.assignee_id {
+        builder.push(" AND assignee_id = ").push_bind(assignee_id.clone());
+    }
+    if let Some(project_id) = &query.project_id {
+        builder.push(" AND project_id = ").push_bind(project_id.clone());
+    }
+    if let Some(status_list) = &query.status_in {
+        if !status_list.is_empty() {
+            builder.push(r#" AND "status" IN ("#);
+            let mut separated = builder.separated(", ");
+            for s in status_list {
+                separated.push_bind(*s as i32);
+            }
+            drop(separated);
+            builder.push(")");
+        }
     }
 }

@@ -65,7 +65,7 @@ pub trait SkillDao: Send + Sync {
 
     /// 通用组合查询
     async fn query(&self, ctx: RequestContext, query: SkillQuery)
-    -> Result<Vec<SkillPo>>;
+    -> Result<common::api::PagedResult<SkillPo>>;
 
     /// List skills by status
     async fn list_by_status(
