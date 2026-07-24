@@ -1195,77 +1195,61 @@ async fn write_thinking_trace(
 
 ---
 
-## 十三、统一分页设计（独立需求，单独处理）
+## 十三、统一分页设计（2026-07-24 已落地实现）
 
-> 📌 **当前状态**：各 DAO 的 Query 结构体里都有零散的 `limit` 字段，但没有统一的分页设计。这个需求独立于唤醒逻辑，后续单独处理。
+> 📌 **当前状态**：已全面实现。query 是核心查询能力，list 是语法糖；两者统一返回 `PagedResult<T>`。详见 [AGENTS.md 4.9 查询接口分页规范](../AGENTS.md#49-查询接口分页规范强制执行2026-07-24-新增)。
 
-### 13.1 当前现状
+### 13.1 最终方案
 
-| DAO | 分页相关字段 | 说明 |
-|-----|-------------|------|
-| MemoryQuery | `limit: Option<usize>` | 只有 limit，没有 offset |
-| ToolQuery | `limit: Option<usize>` | 只有 limit |
-| SkillQuery | `limit: Option<usize>` | 只有 limit |
-| AgentQuery | ❌ 无 | 没有分页字段 |
-| MessageQuery | ❌ 无 | 没有分页字段 |
-| TaskQuery | ❌ 无 | 没有分页字段 |
-| ProjectQuery | ❌ 无 | 没有分页字段 |
+| 接口类型 | 职责 | HTTP 方法 | 参数位置 | 返回 |
+|---------|------|----------|---------|------|
+| **query（核心）** | 完整查询条件 + 分页 | POST body | `XxxQueryRequest { ...查询条件..., pagination }` | `PagedResult<T>` |
+| **list（语法糖）** | 只接受分页，内部固定默认过滤和排序 | GET query param | `?limit=10&offset=0` | `PagedResult<T>` |
 
-**问题：**
-- 没有统一的分页结构体，各 DAO 自己加 `limit`
-- 只有 limit 没有 offset，不支持翻页
-- 没有总数统计（`total_count`）
+**核心设计**：
+- `query` 接口承担所有复杂查询需求（ids 批量查询、status 过滤、keyword 搜索等），接受 `pagination: PaginationParams`
+- `list` 接口是语法糖，只接受 `pagination`，不接受任何查询字段，内部固定默认过滤（如排除 Deleted）和默认排序
+- 两者统一返回 `PagedResult<T> { items, total }`，前端处理结构一致
 
----
-
-### 13.2 统一分页设计方案（草稿）
-
-**Option A：在 DAO 层加通用 Pagination 结构体**
+### 13.2 基础设施
 
 ```rust
-// common/src/ 下定义通用分页参数
-pub struct Pagination {
-    pub offset: i64,
-    pub limit: i64,
-    pub order_by: Option<String>,
-    pub order_desc: bool,
+// common/src/api/mod.rs
+pub struct PaginationParams {
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
 }
 
-// 各 Query 结构体嵌入
-pub struct MemoryQuery {
-    // ... 原有字段
-    pub pagination: Option<Pagination>,
-}
-```
-
-**Option B：在 DAL 层加 `list_page` 方法**
-
-```rust
-// DAL 层统一返回分页结果
-pub struct PageResult<T> {
+pub struct PagedResult<T> {
     pub items: Vec<T>,
-    pub total: i64,
-    pub offset: i64,
-    pub limit: i64,
+    pub total: usize,
 }
 
-#[async_trait]
-pub trait MemoryDal: Send + Sync {
-    // ... 原有方法
-    async fn query_page(
-        &self,
-        ctx: RequestContext,
-        query: MemoryQuery,
-        pagination: Pagination,
-    ) -> Result<PageResult<Memory>, AppError>;
+impl<T> PagedResult<T> {
+    pub fn map<U>(self, f: impl FnMut(T) -> U) -> PagedResult<U> { ... }
 }
 ```
 
-**后续决策点：**
-1. 选 Option A 还是 Option B？
-2. 分页是 DAO 层概念还是 DAL 层概念？
-3. `total_count` 怎么高效获取（COUNT 查询）？
-4. 哪些场景需要真分页，哪些场景只要 limit 就够了？
+### 13.3 全链路实现
+
+```
+Handler ──► Domain ──► DAL ──► DAO
+   XxxQueryRequest    XxxQuery    XxxQuery    SQL
+   (含 pagination)    (含 pagination) (含 pagination)
+   PagedResult<ListItem> ◄─ map(to_list_item) ◄─ PagedResult<Entity> ◄─ map(from_po) ◄─ PagedResult<Po> ◄─ COUNT + LIMIT/OFFSET
+```
+
+**已改造的 5 个实体**：Agent / Project / Task / Tool / Skill（DAO + Domain + Handler 全链路完成）
+
+**DAO 层实现模式**：抽取 `push_query_filters` 函数，COUNT 和 LIST 查询复用同一套 WHERE 条件，避免过滤条件不一致。参考实现：`src/service/dao/mcp_server/sqlite.rs`。
+
+### 13.4 关键约束
+
+- DAO 层 `query` 方法签名统一返回 `Result<PagedResult<Po>>`
+- pagination 字段随 Query 结构体一起传递，不需要单独的方法参数
+- 每层用 `PagedResult::map()` 转换内部类型，保留 total
+- list handler 内部固定默认过滤（如 Agent 排除 Deleted，Skill 排除 Expired）
+- SQLite 的 offset 单独使用时需 `LIMIT -1`
 
 ---
 

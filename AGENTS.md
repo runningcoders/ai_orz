@@ -568,6 +568,179 @@ ctx.vector_store().clear_collection(ShortTermMemoryIndexPo::vector_collection())
 
 ---
 
+### 4.9 查询接口分页规范（强制执行，2026-07-24 新增）
+
+**核心原则：query 是核心查询能力，list 是语法糖；两者统一返回 `PagedResult<T>`**
+
+#### 设计哲学
+
+| 接口类型 | 职责 | HTTP 方法 | 参数位置 | 返回 |
+|---------|------|----------|---------|------|
+| **query（核心）** | 完整查询条件 + 分页 | POST body | `XxxQueryRequest { ...查询条件..., pagination }` | `PagedResult<T>` |
+| **list（语法糖）** | 只接受分页，内部固定默认过滤和排序 | GET query param | `?limit=10&offset=0` | `PagedResult<T>` |
+
+**list 的"语法糖"含义**：
+- 只接受分页参数（limit/offset），**不接受任何查询功能**（ids/status/keyword 等）
+- 内部固定默认过滤（如排除 Deleted/Expired 状态）和默认排序（如 created_at DESC）
+- 面向"给我第一页数据"的简单列表场景
+- **任何涉及查询的操作（ids 批量查询、status 过滤、keyword 搜索等）必须走 query 接口**
+
+#### 分页基础设施（common/src/api/mod.rs）
+
+```rust
+/// 统一分页参数
+pub struct PaginationParams {
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
+}
+
+/// 统一分页结果
+pub struct PagedResult<T> {
+    pub items: Vec<T>,       // 当前页数据
+    pub total: usize,        // 总条数（忽略分页）
+}
+
+impl<T> PagedResult<T> {
+    /// 转换 items 类型，保留 total（用于 PO → 业务实体 → ListItem 链式转换）
+    pub fn map<U>(self, f: impl FnMut(T) -> U) -> PagedResult<U> { ... }
+}
+```
+
+#### 全链路分页参数传递
+
+```
+Handler                   Domain                   DAL                   DAO
+   │                        │                       │                     │
+   ├─ XxxQueryRequest ──► XxxQuery ──────────────► XxxQuery ──────────► SQL
+   │  (含 pagination)       (含 pagination)         (含 pagination)        │
+   │                        │                       │                     │
+   ◄─ PagedResult<T> ── ◄─ PagedResult.map(from_po) ◄─ PagedResult<Po> ◄─ COUNT + LIMIT/OFFSET
+```
+
+**关键约束**：
+- pagination 字段随 Query 结构体一起传递，不需要单独的方法参数
+- 每层用 `PagedResult::map()` 转换内部类型，保留 total
+- DAO 层的 `query` 方法签名统一返回 `Result<PagedResult<Po>>`
+
+#### DAO 层实现模式
+
+每个 DAO 的 sqlite.rs 必须抽取 `push_query_filters` 函数，COUNT 和 LIST 查询复用同一套 WHERE 条件：
+
+```rust
+/// 推送查询过滤条件（COUNT 和 LIST 复用）
+fn push_query_filters<'args>(
+    builder: &mut sqlx::QueryBuilder<'args, sqlx::Sqlite>,
+    query: &XxxQuery,
+) {
+    if let Some(ids) = &query.ids { /* ... */ }
+    if let Some(status) = &query.status { /* ... */ }
+    // ... 其他过滤条件
+}
+
+async fn query(&self, ctx: RequestContext, query: XxxQuery)
+    -> Result<common::api::PagedResult<XxxPo>>
+{
+    // 1. COUNT 查询（复用 filters）
+    let mut count_builder = sqlx::QueryBuilder::new("SELECT COUNT(*) FROM xxx WHERE 1=1");
+    push_query_filters(&mut count_builder, &query);
+    let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
+
+    // 2. LIST 查询（复用 filters + LIMIT/OFFSET）
+    let mut list_builder = sqlx::QueryBuilder::new("SELECT ... FROM xxx WHERE 1=1");
+    push_query_filters(&mut list_builder, &query);
+    list_builder.push(" ORDER BY created_at DESC");
+
+    if let Some(limit) = query.pagination.limit {
+        list_builder.push(" LIMIT ").push_bind(limit as i64);
+    } else if query.pagination.offset.is_some() {
+        list_builder.push(" LIMIT -1");  // SQLite: offset 单独使用需 LIMIT -1
+    }
+    if let Some(offset) = query.pagination.offset {
+        list_builder.push(" OFFSET ").push_bind(offset as i64);
+    }
+
+    let items = list_builder.build_query_as().fetch_all(pool).await?;
+    Ok(common::api::PagedResult { items, total: total as usize })
+}
+```
+
+#### Handler 层模式
+
+**query handler**（POST，接受完整查询条件 + pagination）：
+
+```rust
+pub async fn query_agents(
+    ctx: RequestContext,
+    params: AgentQueryRequest,
+) -> Result<common::api::PagedResult<AgentListItem>> {
+    let page = domain().agent_manage().query(ctx, AgentQuery {
+        ids: params.ids,
+        status: params.status,
+        pagination: params.pagination,  // 透传分页参数
+        ..Default::default()
+    }).await?;
+
+    Ok(page.map(|agent| AgentListItem { ... }))  // 用 map 转换类型
+}
+```
+
+**list handler**（GET，只接受分页，内部固定默认过滤）：
+
+```rust
+pub async fn list_agents(
+    ctx: RequestContext,
+    params: ListAgentsRequest,  // 只含 pagination 字段
+) -> Result<common::api::PagedResult<AgentListItem>> {
+    // list 是语法糖：内部固定排除 Deleted
+    let page = domain().agent_manage().query(ctx, AgentQuery {
+        exclude_status: Some(AgentStatus::Deleted),  // 固定默认过滤
+        pagination: params.pagination,
+        ..Default::default()
+    }).await?;
+
+    Ok(page.map(|agent| AgentListItem { ... }))
+}
+```
+
+#### 各实体的 list 默认过滤和排序
+
+| 实体 | list 默认过滤 | list 默认排序 |
+|------|-------------|-------------|
+| Agent | `exclude_status = Deleted` | `created_at DESC` |
+| Project | `status != 0`（软删除） | `priority DESC, created_at DESC` |
+| Task | `status != 0`（软删除） | `priority DESC, created_at DESC` |
+| Tool | 无 | `created_at DESC` |
+| Skill | `exclude_status = Expired` | `updated_at DESC` |
+
+#### 禁止的写法
+
+```rust
+// ❌ 禁止：list 接口接受查询字段
+pub struct ListAgentsRequest {
+    pub status: Option<AgentStatus>,    // 应移除，走 query 接口
+    pub ids: Option<Vec<String>>,       // 应移除，走 query 接口
+}
+
+// ❌ 禁止：DAO 层 query 方法返回 Vec 而非 PagedResult
+async fn query(&self, ctx: RequestContext, query: AgentQuery) -> Result<Vec<AgentPo>>;
+
+// ❌ 禁止：在 DAL/Domain 层手工拼接 limit/offset 而不用 PaginationParams
+let limit = query.limit;  // 应为 query.pagination.limit
+
+// ❌ 禁止：Handler 层把 PagedResult 当 Vec 用
+let agents: Vec<Agent> = domain().agent_manage().query(ctx, q).await?;  // 应取 .items
+```
+
+#### 参考实现
+
+- **基础设施**：`common/src/api/mod.rs` 的 `PaginationParams` 和 `PagedResult<T>`
+- **DAO 参考实现**：`src/service/dao/mcp_server/sqlite.rs`（首个完成分页改造的 DAO）
+- **已改造的 5 个实体**：Agent / Project / Task / Tool / Skill（DAO + Domain + Handler 全链路）
+
+> 💡 **设计动机**：统一分页接口避免每个实体自定义分页逻辑，list 作为语法糖降低简单场景的使用成本，query 作为核心能力覆盖所有复杂查询需求。前端只需处理统一的 `PagedResult<T>` 结构。
+
+---
+
 ## 五、核心概念与实体关系
 
 ### 5.1 实体关系
@@ -600,6 +773,17 @@ Agent
 ## 六、工作流与开发记录
 
 ### 2026-07-24 里程碑
+**✅ query/list 接口分页改造 + list 接口简化（统一 PagedResult）**
+- **设计原则落地**：query 是核心查询能力（POST body，完整查询条件 + pagination），list 是语法糖（GET query param，只接受分页，内部固定默认过滤和排序）；两者统一返回 `PagedResult<T> { items, total }`
+- **分页基础设施复用**：复用 `common::api::PaginationParams`（limit + offset）和 `common::api::PagedResult<T>`（含 `map()` 方法支持链式类型转换）
+- **DAO 层改造**：5 个实体（Agent/Project/Task/Tool/Skill）的 Query 结构体加 `pagination: PaginationParams`；sqlite.rs 的 `query` 方法改返回 `PagedResult<Po>`，抽取 `push_query_filters` 函数供 COUNT 和 LIST 查询复用 WHERE 条件
+- **Domain 层改造**：5 个 query 方法改返回 `PagedResult<业务实体>`，用 `page.map(from_po)` 保留 total
+- **Handler 层改造**：5 个 query handler 透传 pagination；5 个 ListXxxRequest 简化为只含 pagination（移除所有查询字段）；5 个 list handler 改为返回 `PagedResult`，内部固定默认过滤（如 Agent 排除 Deleted，Skill 排除 Expired）
+- **前端适配**：API 层新增 5 个 query_* 函数，list_* 简化为只接受 (limit, offset)；6 个查询场景（详情页批量查询、任务列表筛选）改用 query_* 接口；所有 list_* 调用适配新签名和 `.items` 响应访问
+- **规范文档**：[AGENTS.md](./AGENTS.md) 新增 4.9 查询接口分页规范；[runtime_design.md](./docs/runtime_design.md) 第十三章从草稿更新为已实现状态
+- **参考实现**：`src/service/dao/mcp_server/sqlite.rs` 为首个完成分页改造的 DAO，作为其他实体改造的模板
+- **测试统计**：后端 746 测试 + 前端 34 测试 100% 通过，release build 成功
+
 **✅ 记忆 tags 全链路支持 + 知识图谱节点可视化增强（v3.5）**
 - **后端 tags 过滤**：`SearchMemoryParams`/`QueryMemoryParams`/`MemoryResult` 新增 tags 字段；`MemoryQuery.tags` 实现 OR 语义过滤（SQLite `json_each`，对齐 Tool/Skill 范式）；4 个查询/搜索方法（query_short_term/query_knowledge_nodes/search_short_term/search_knowledge_nodes）增加 tags 过滤分支
 - **Vectorizable trait 对齐**：`ShortTermMemoryIndexPo`/`LongTermKnowledgeNodePo` 实现 `Vectorizable` trait（`vectorize_text` + `vector_collection`），DAL 层统一使用 `embed_entity` 替代手动拼接
