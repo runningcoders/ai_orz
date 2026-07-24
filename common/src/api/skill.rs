@@ -284,6 +284,10 @@ pub struct ListSkillsRequest {
     /// 返回数量限制。
     #[param(source = "query")]
     pub limit: Option<usize>,
+
+    /// 按 ID 批量查询
+    #[param(source = "query")]
+    pub ids: Option<Vec<String>>,
 }
 
 /// Skill 列表查询响应。
@@ -291,6 +295,27 @@ pub struct ListSkillsRequest {
 pub struct ListSkillsResponse {
     /// Skill 列表。
     pub skills: Vec<SkillListItem>,
+}
+
+/// Skill 通用查询请求（POST body，支持完整查询能力）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct SkillQueryRequest {
+    /// 按 ID 批量查询
+    pub ids: Option<Vec<String>>,
+    /// 关键词搜索
+    pub keyword: Option<String>,
+    /// 状态
+    pub status: Option<SkillStatus>,
+    /// 分类
+    pub category: Option<String>,
+    /// 作者 ID
+    pub author_id: Option<String>,
+    /// 父技能 ID
+    pub parent_skill_id: Option<String>,
+    /// 标签列表
+    pub tags: Option<Vec<String>>,
+    /// 返回数量限制
+    pub limit: Option<usize>,
 }
 
 /// Skill 列表项响应别名（前端兼容）

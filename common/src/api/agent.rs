@@ -256,6 +256,9 @@ pub struct ListAgentsRequest {
     /// 可选状态筛选
     #[param(source = "query")]
     pub status: Option<AgentStatus>,
+    /// 按 ID 批量查询
+    #[param(source = "query")]
+    pub ids: Option<Vec<String>>,
 }
 
 /// 获取 Agent 列表响应
@@ -263,6 +266,25 @@ pub struct ListAgentsRequest {
 pub struct ListAgentsResponse {
     /// Agent 列表
     pub agents: Vec<AgentListItem>,
+}
+
+/// Agent 通用查询请求（POST body，支持完整查询能力）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct AgentQueryRequest {
+    /// 按 ID 批量查询
+    pub ids: Option<Vec<String>>,
+    /// 关键词搜索（名称/描述）
+    pub keyword: Option<String>,
+    /// 状态筛选
+    pub status: Option<AgentStatus>,
+    /// 创建者 ID
+    pub created_by: Option<String>,
+    /// 模型供应商 ID
+    pub model_provider_id: Option<String>,
+    /// 角色列表
+    pub roles: Option<Vec<String>>,
+    /// 返回数量限制
+    pub limit: Option<usize>,
 }
 
 /// Agent 列表项响应别名（前端兼容）

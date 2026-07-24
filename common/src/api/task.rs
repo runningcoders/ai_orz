@@ -102,6 +102,9 @@ pub struct ListTasksRequest {
     /// 返回数量限制
     #[param(source = "query")]
     pub limit: Option<usize>,
+    /// 按 ID 批量查询
+    #[param(source = "query")]
+    pub ids: Option<Vec<String>>,
 }
 
 /// Task 列表项响应
@@ -246,6 +249,25 @@ pub type UpdateTaskProgressResponse = GetTaskResponse;
 pub struct ListTasksResponse {
     /// Task 列表
     pub tasks: Vec<TaskListItem>,
+}
+
+/// Task 通用查询请求（POST body，支持完整查询能力）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct TaskQueryRequest {
+    /// 按 ID 批量查询
+    pub ids: Option<Vec<String>>,
+    /// 关键词搜索
+    pub keyword: Option<String>,
+    /// 所属项目 ID
+    pub project_id: Option<String>,
+    /// 分配对象类型
+    pub assignee_type: Option<AssigneeType>,
+    /// 分配对象 ID
+    pub assignee_id: Option<String>,
+    /// 状态列表（OR 语义）
+    pub status_in: Option<Vec<TaskStatus>>,
+    /// 返回数量限制
+    pub limit: Option<usize>,
 }
 
 /// Task 列表项响应别名（前端兼容）

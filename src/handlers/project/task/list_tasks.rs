@@ -3,9 +3,10 @@
 use super::response;
 use common::error::Result;
 use crate::pkg::RequestContext;
+use crate::service::dao::task::TaskQuery;
 use crate::service::domain::project::domain;
 use ai_orz_macros::generate_http_handler;
-use common::api::{ListTasksRequest, TaskListItem};
+use common::api::{ListTasksRequest, ListTasksResponse, TaskListItem};
 use common::enums::{AssigneeType, TaskStatus};
 
 /// List tasks globally with optional filtering by project, status, assignee, etc.
@@ -13,24 +14,26 @@ use common::enums::{AssigneeType, TaskStatus};
 pub async fn list_tasks(
     ctx: RequestContext,
     params: ListTasksRequest,
-) -> Result<Vec<TaskListItem>> {
-    let status = params.status.map(TaskStatus::from_i32);
+) -> Result<ListTasksResponse> {
+    // 走通用 query（list 是语法糖，handler 内部统一用 query）
     let assignee_type = params.assignee_type.map(AssigneeType::from_i32);
-    let assignee_id = params.assignee_id.as_deref();
-    let project_id = params.project_id.as_deref();
-
+    let status_in = params.status.map(|s| vec![TaskStatus::from_i32(s)]);
     let tasks = domain()
         .task_manage()
-        .list(
+        .query(
             ctx,
-            project_id,
-            assignee_type,
-            assignee_id,
-            status,
-            params.limit,
+            TaskQuery {
+                project_id: params.project_id,
+                assignee_type,
+                assignee_id: params.assignee_id,
+                status_in,
+                ids: params.ids,
+                limit: params.limit,
+                ..Default::default()
+            },
         )
         .await?;
-    let response_items = tasks.iter().map(response::to_list_item).collect();
+    let tasks: Vec<TaskListItem> = tasks.iter().map(response::to_list_item).collect();
 
-    Ok(response_items)
+    Ok(ListTasksResponse { tasks })
 }

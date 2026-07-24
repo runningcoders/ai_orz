@@ -152,6 +152,10 @@ fn project_routes() -> Router {
             get(handlers::project::project::list_projects_handler),
         )
         .route(
+            "/projects/query",
+            post(handlers::project::project::query_projects_handler),
+        )
+        .route(
             "/projects/{id}",
             get(handlers::project::project::get_project_handler),
         )
@@ -169,6 +173,10 @@ fn task_routes() -> Router {
     Router::new()
         .route("/tasks", post(handlers::project::task::create_task_handler))
         .route("/tasks", get(handlers::project::task::list_tasks_handler))
+        .route(
+            "/tasks/query",
+            post(handlers::project::task::query_tasks_handler),
+        )
         .route(
             "/tasks/{id}",
             get(handlers::project::task::get_task_handler),
@@ -268,6 +276,10 @@ fn hr_routes() -> Router {
     Router::new()
         .route("/agents", post(handlers::hr::agent::create_agent_handler))
         .route("/agents", get(handlers::hr::agent::list_agents_handler))
+        .route(
+            "/agents/query",
+            post(handlers::hr::agent::query_agents_handler),
+        )
         .route("/agents/search", get(handlers::hr::agent::search_agents_handler))
         .route(
             "/agents/reception",
@@ -324,6 +336,10 @@ fn hr_routes() -> Router {
         )
         .route("/skills", post(handlers::hr::skill::create_skill_handler))
         .route("/skills", get(handlers::hr::skill::list_skills_handler))
+        .route(
+            "/skills/query",
+            post(handlers::hr::skill::query_skills_handler),
+        )
         .route(
             "/skills/search",
             get(handlers::hr::skill::search_skills_handler),
@@ -511,6 +527,10 @@ fn finance_routes() -> Router {
         )
         .route("/tools", post(handlers::finance::tool::create_tool::create_tool_handler))
         .route("/tools", get(handlers::finance::tool::list_tools::list_tools_handler))
+        .route(
+            "/tools/query",
+            post(handlers::finance::tool::query_tools::query_tools_handler),
+        )
         .route(
             "/tool-call-entries",
             get(handlers::finance::tool::query_tool_call_entries_handler),

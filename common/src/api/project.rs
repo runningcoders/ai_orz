@@ -63,6 +63,9 @@ pub struct ListProjectsRequest {
     /// 返回数量限制
     #[param(source = "query")]
     pub limit: Option<usize>,
+    /// 按 ID 批量查询
+    #[param(source = "query")]
+    pub ids: Option<Vec<String>>,
 }
 
 /// Project 列表项响应
@@ -188,6 +191,21 @@ pub type UpdateProjectStatusResponse = GetProjectResponse;
 pub struct ListProjectsResponse {
     /// Project 列表
     pub projects: Vec<ProjectListItem>,
+}
+
+/// Project 通用查询请求（POST body，支持完整查询能力）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ProjectQueryRequest {
+    /// 按 ID 批量查询
+    pub ids: Option<Vec<String>>,
+    /// 关键词搜索
+    pub keyword: Option<String>,
+    /// 根用户 ID
+    pub root_user_id: Option<String>,
+    /// 状态列表（OR 语义）
+    pub status_in: Option<Vec<ProjectStatus>>,
+    /// 返回数量限制
+    pub limit: Option<usize>,
 }
 
 /// Project 列表项响应别名（前端兼容）

@@ -19,6 +19,8 @@ use crate::models::file::FileMeta;
 use crate::models::project::Project;
 use crate::models::task::Task;
 use crate::pkg::RequestContext;
+use crate::service::dao::project::ProjectQuery;
+use crate::service::dao::task::TaskQuery;
 use common::enums::{AssigneeType, FileType, ProjectStatus, TaskStatus};
 
 mod artifact;
@@ -122,6 +124,16 @@ pub trait ProjectManage: Send + Sync {
         root_user_id: &str,
         status: Option<ProjectStatus>,
         limit: Option<usize>,
+    ) -> Result<Vec<Project>>;
+
+    /// 通用查询（核心方法，支持 ids/keyword/status 等组合过滤）
+    ///
+    /// 注：`list(...)` 是列表场景的语法糖，内部可调用此方法；
+    /// 需要更复杂组合过滤时，handler 应直接调用 `query`。
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: ProjectQuery,
     ) -> Result<Vec<Project>>;
 
     /// 启动项目
@@ -240,6 +252,15 @@ pub trait TaskManage: Send + Sync {
         assignee_id: Option<&str>,
         status: Option<TaskStatus>,
         limit: Option<usize>,
+    ) -> Result<Vec<Task>>;
+
+    /// 通用查询（核心方法，支持 ids/assignee/project/status 等组合过滤）
+    ///
+    /// 注：`list(...)` 是列表场景的语法糖；复杂组合过滤应直接调用 `query`。
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: TaskQuery,
     ) -> Result<Vec<Task>>;
 
     /// 更新任务基本信息

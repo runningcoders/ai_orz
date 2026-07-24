@@ -173,6 +173,15 @@ impl super::TaskManage for ProjectDomainImpl {
             .await
     }
 
+    /// 通用查询（核心方法）
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: crate::service::dao::task::TaskQuery,
+    ) -> Result<Vec<Task>> {
+        self.task_dal.query(ctx, query).await
+    }
+
     /// 更新任务基本信息
     async fn update_basic(
         &self,

@@ -1,39 +1,44 @@
-//! Handler: GET /api/v1/skills - List skills with optional filtering
+//! Handler: POST /api/v1/hr/skills/query - Skill 通用查询接口
+//!
+//! 与 list_skills 的区别：list 是列表场景语法糖（GET + query param），
+//! query 是完整查询能力（POST + body），支持复杂组合过滤。
 
 use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::dao::skill::SkillQuery;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::{ListSkillsRequest, ListSkillsResponse};
+use common::api::{ListSkillsResponse, SkillQueryRequest};
 use common::enums::SkillStatus;
 
 use super::response::to_list_item;
 
-/// List public skills with optional filtering by status, category, author, and keyword.
+/// Skill 通用查询（POST body，支持完整查询能力）
 #[register_handler_tool(
-    id = "list_skills",
-    name = "list_skills",
-    description = "List public skills with optional filtering by status, category, author, and keyword.",
-    params = "common::api::ListSkillsRequest"
+    id = "query_skills",
+    name = "query_skills",
+    description = "Query skills with full filtering support (ids, keyword, status, category, tags, etc.)",
+    params = "common::api::SkillQueryRequest"
 )]
 #[generate_http_handler]
-pub async fn list_skills(
+pub async fn query_skills(
     ctx: RequestContext,
-    params: ListSkillsRequest,
+    params: SkillQueryRequest,
 ) -> Result<ListSkillsResponse> {
     let skills = domain()
         .skill_manage()
         .query_skills(
             ctx,
             SkillQuery {
+                ids: params.ids,
+                keyword: params.keyword,
                 status: params.status,
                 exclude_status: params.status.is_none().then_some(SkillStatus::Expired),
                 category: params.category,
                 author_id: params.author_id,
-                keyword: params.keyword,
+                parent_skill_id: params.parent_skill_id,
+                tags: params.tags,
                 limit: params.limit,
-                ids: params.ids,
                 ..Default::default()
             },
         )

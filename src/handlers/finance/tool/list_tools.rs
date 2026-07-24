@@ -30,6 +30,7 @@ pub async fn list_tools(
                 agent_id: params.agent_id.clone(),
                 keyword: params.keyword.clone(),
                 enabled_only: params.only_enabled,
+                ids: params.ids,
                 limit: None,
                 ..Default::default()
             },

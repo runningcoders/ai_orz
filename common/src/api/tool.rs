@@ -143,11 +143,17 @@ pub struct DebugCallToolResponse {
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct ListToolsRequest {
     /// Filter by bound agent ID
+    #[param(source = "query")]
     pub agent_id: Option<String>,
     /// Search by keyword in name/description
+    #[param(source = "query")]
     pub keyword: Option<String>,
     /// Filter by enabled status
+    #[param(source = "query")]
     pub only_enabled: Option<bool>,
+    /// 按 ID 批量查询
+    #[param(source = "query")]
+    pub ids: Option<Vec<String>>,
 }
 
 /// List tools response
@@ -155,6 +161,31 @@ pub struct ListToolsRequest {
 pub struct ListToolsResponse {
     /// List of all built-in tools
     pub tools: Vec<ToolListItem>,
+}
+
+/// Tool 通用查询请求（POST body，支持完整查询能力）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ToolQueryRequest {
+    /// 按 ID 批量查询
+    pub ids: Option<Vec<String>>,
+    /// 关键词搜索
+    pub keyword: Option<String>,
+    /// 绑定的 Agent ID
+    pub agent_id: Option<String>,
+    /// 标签列表
+    pub tags: Option<Vec<String>>,
+    /// 协议类型
+    pub protocol: Option<ToolProtocol>,
+    /// 状态
+    pub status: Option<ToolStatus>,
+    /// MCP 服务器 ID
+    pub mcp_server_id: Option<String>,
+    /// 仅启用
+    pub enabled_only: Option<bool>,
+    /// 返回数量限制
+    pub limit: Option<usize>,
+    /// 偏移量
+    pub offset: Option<usize>,
 }
 
 /// Tool list item alias (frontend compatibility)

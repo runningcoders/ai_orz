@@ -114,6 +114,15 @@ impl super::ProjectManage for ProjectDomainImpl {
         }
     }
 
+    /// 通用查询（核心方法）
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: crate::service::dao::project::ProjectQuery,
+    ) -> Result<Vec<Project>> {
+        self.project_dal.query(ctx, query).await
+    }
+
     /// 启动项目
     async fn start(
         &self,

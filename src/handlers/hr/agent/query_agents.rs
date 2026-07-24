@@ -1,4 +1,7 @@
-//! Handler: GET /api/v1/hr/agents - List all agents with optional status filtering
+//! Handler: POST /api/v1/hr/agents/query - Agent 通用查询接口
+//!
+//! 与 list_agents 的区别：list 是列表场景语法糖（GET + query param），
+//! query 是完整查询能力（POST + body），支持复杂组合过滤。
 
 use common::enums::AgentRuntimeState;
 use common::error::Result;
@@ -6,32 +9,35 @@ use crate::pkg::RequestContext;
 use crate::service::dao::agent::AgentQuery;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::{AgentListItem, ListAgentsRequest, ListAgentsResponse};
+use common::api::{AgentListItem, AgentQueryRequest, ListAgentsResponse};
 use common::enums::AgentStatus;
 
-/// List all AI agents with optional status filtering
+/// Agent 通用查询（POST body，支持完整查询能力）
 #[register_handler_tool(
-    id = "list_agents",
-    name = "list_agents",
-    description = "List all AI agents with optional status filtering",
-    params = "common::api::ListAgentsRequest",
+    id = "query_agents",
+    name = "query_agents",
+    description = "Query agents with full filtering support (ids, keyword, status, roles, etc.)",
+    params = "common::api::AgentQueryRequest",
     tags = "collaboration"
 )]
 #[generate_http_handler]
-pub async fn list_agents(
+pub async fn query_agents(
     ctx: RequestContext,
-    params: ListAgentsRequest,
+    params: AgentQueryRequest,
 ) -> Result<ListAgentsResponse> {
-    // 统一走通用 query SQL 层过滤（修复原内存过滤 bug）
-    // query 是核心查询方法，list_agents 是列表场景的语法糖
     let agents = domain()
         .agent_manage()
         .query(
             ctx,
             AgentQuery {
+                ids: params.ids,
+                keyword: params.keyword,
                 status: params.status,
                 exclude_status: Some(AgentStatus::Deleted),
-                ids: params.ids,
+                created_by: params.created_by,
+                model_provider_id: params.model_provider_id,
+                roles: params.roles,
+                limit: params.limit,
                 ..Default::default()
             },
         )
@@ -40,7 +46,6 @@ pub async fn list_agents(
     let agents: Vec<AgentListItem> = agents
         .iter()
         .map(|agent| {
-            // 从 runtime_info 读取运行时状态
             let runtime_state = match &agent.runtime_info {
                 Some(info) => info.state as i32,
                 None => AgentRuntimeState::Idle as i32,
