@@ -26,7 +26,7 @@ pub struct SkillQuery {
     pub parent_skill_id: Option<String>, // 按父技能 ID 过滤（用于幂等检查已安装副本）
     pub tags: Option<Vec<String>>, // 按 tag 过滤（OR 语义，命中任一即可）
     pub keyword: Option<String>,
-    pub limit: Option<usize>,
+    pub pagination: common::api::PaginationParams,
 }
 
 /// ✅ 技能搜索统一入参（关键词搜索 + 向量语义搜索共用）

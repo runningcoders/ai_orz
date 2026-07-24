@@ -21,7 +21,7 @@ pub struct TaskQuery {
     pub ids: Option<Vec<String>>,
     /// 关键词搜索（已在 search 方法中通过 FTS5 实现，query 方法中忽略）
     pub keyword: Option<String>,
-    pub limit: Option<usize>,
+    pub pagination: common::api::PaginationParams,
 }
 
 /// ✅ Task 搜索统一入参（关键词搜索 + 向量语义搜索共用）

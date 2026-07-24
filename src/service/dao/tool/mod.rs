@@ -45,8 +45,7 @@ pub struct ToolQuery {
     pub exclude_status: Option<ToolStatus>,
     pub mcp_server_id: Option<String>,
     pub enabled_only: Option<bool>,
-    pub limit: Option<usize>,
-    pub offset: Option<usize>,
+    pub pagination: common::api::PaginationParams,
 }
 
 /// Tool 搜索参数（向量 + 关键词混合搜索）

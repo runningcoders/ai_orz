@@ -14,7 +14,7 @@ use serde_json::Value as JsonValue;
 pub struct ProjectQuery {
     pub root_user_id: Option<String>,
     pub status_in: Option<Vec<ProjectStatus>>,
-    pub limit: Option<usize>,
+    pub pagination: common::api::PaginationParams,
     /// 按 ID 批量查询（向量搜索结果回填用）
     pub ids: Option<Vec<String>>,
     /// 关键词搜索（用于 FTS5 全文检索，query 方法忽略此字段，由 search_projects 处理）
