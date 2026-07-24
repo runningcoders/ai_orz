@@ -29,6 +29,8 @@ pub struct CanvasNode {
     pub color: String,
     /// 节点类型标识（如 "project"/"agent"/"task"），用于点击回调判断
     pub node_type: Option<String>,
+    /// 分层布局的层级（0=顶层，越大越靠下；None 表示不参与分层约束）
+    pub layer: Option<i32>,
 }
 
 /// Canvas 渲染连线
@@ -277,6 +279,7 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
                     label: new_node.label.clone(),
                     color: new_node.color.clone(),
                     node_type: new_node.node_type.clone(),
+                    layer: new_node.layer,
                 });
             } else {
                 merged.push(new_node.clone());

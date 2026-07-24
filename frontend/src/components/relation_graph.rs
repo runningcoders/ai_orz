@@ -93,6 +93,7 @@ pub fn RelationGraph(props: RelationGraphProps) -> Element {
         label: center_name,
         color: center_color,
         node_type: center_kind.clone(),
+        layer: None,
     }];
     for item in &related {
         nodes.push(CanvasNode {
@@ -103,6 +104,7 @@ pub fn RelationGraph(props: RelationGraphProps) -> Element {
             label: item.name.clone(),
             color: related_color.clone(),
             node_type: item.kind.clone(),
+            layer: None,
         });
     }
 

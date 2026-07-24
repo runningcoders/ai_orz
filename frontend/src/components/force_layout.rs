@@ -21,6 +21,12 @@ pub struct ForceLayoutConfig {
     pub damping: f64,
     /// 单帧最大位移（防止爆炸性跳动）
     pub max_step: f64,
+    /// 分层约束力强度系数（y 方向拉向目标层的弹簧刚度）
+    pub layer_attraction: f64,
+    /// 分层布局的层间距（y 方向）
+    pub layer_height: f64,
+    /// 分层布局的顶部留白
+    pub layer_top_margin: f64,
 }
 
 impl Default for ForceLayoutConfig {
@@ -31,6 +37,9 @@ impl Default for ForceLayoutConfig {
             ideal_length: 120.0,
             damping: 0.85,
             max_step: 10.0,
+            layer_attraction: 0.15,
+            layer_height: 80.0,
+            layer_top_margin: 80.0,
         }
     }
 }
@@ -121,6 +130,15 @@ impl ForceLayout {
             }
         }
 
+        // 2.5 分层约束力：对有 layer 字段的节点，施加 y 方向拉力到目标层
+        for i in 0..n {
+            if let Some(layer) = nodes[i].layer {
+                let target_y = cfg.layer_top_margin + (layer as f64) * cfg.layer_height;
+                let dy = target_y - nodes[i].y;
+                forces[i].1 += cfg.layer_attraction * dy;
+            }
+        }
+
         // 3. 应用力到速度，再应用速度到位置（带阻尼和限幅）
         let mut total_displacement = 0.0;
         let margin = 30.0;
@@ -176,6 +194,8 @@ mod tests {
             radius: 20.0,
             label: id.to_string(),
             color: "#3b82f6".to_string(),
+            node_type: None,
+            layer: None,
         }
     }
 
@@ -202,6 +222,9 @@ mod tests {
             ideal_length: 120.0,
             damping: 0.9,
             max_step: 50.0,
+            layer_attraction: 0.15,
+            layer_height: 80.0,
+            layer_top_margin: 80.0,
         };
         let mut layout = ForceLayout::new(config);
 

@@ -97,6 +97,7 @@ fn build_global_view(projects: &[ProjectListItem], agents: &[AgentListItem], tas
             label: p.name.clone(),
             color: project_status_color(p.status),
             node_type: Some("project".to_string()),
+            layer: None,
         });
     }
 
@@ -109,6 +110,7 @@ fn build_global_view(projects: &[ProjectListItem], agents: &[AgentListItem], tas
             label: a.name.clone(),
             color: agent_runtime_color(a.runtime_state),
             node_type: Some("agent".to_string()),
+            layer: None,
         });
     }
 
@@ -136,23 +138,29 @@ fn build_global_view(projects: &[ProjectListItem], agents: &[AgentListItem], tas
 /// 构建 ProjectDetail 视图的节点和边
 ///
 /// 选中 Project 的 Task 节点 + 关联 Agent 节点，Task → Agent 边
+/// Task 节点使用 Kahn 拓扑排序分层布局，展示 DAG 依赖关系
 fn build_project_detail_view(
     project_id: &str,
     project: &ProjectListItem,
     agents: &[AgentListItem],
     tasks: &[TaskListItem],
 ) -> (Vec<CanvasNode>, Vec<CanvasEdge>) {
+    use crate::components::layered_layout::{compute_layered_layout, LayeredLayoutConfig};
+
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
 
-    // 中心 Project 节点
+    let project_node_id = format!("project:{}", project.id);
+
+    // 中心 Project 节点（layer=0，位于顶部）
     nodes.push(CanvasNode {
-        id: format!("project:{}", project.id),
+        id: project_node_id.clone(),
         x: 0.0, y: 0.0,
         radius: 35.0,
         label: project.name.clone(),
         color: project_status_color(project.status),
         node_type: Some("project".to_string()),
+        layer: Some(0),
     });
 
     // 该 Project 的 Task 节点
@@ -160,20 +168,58 @@ fn build_project_detail_view(
         .filter(|t| t.project_id.as_deref() == Some(project_id))
         .collect();
 
+    // 构建 Task ID 列表和依赖映射（仅同项目内的依赖）
+    let task_ids: Vec<String> = project_tasks.iter().map(|t| t.id.clone()).collect();
+    let task_id_set: std::collections::HashSet<&str> =
+        task_ids.iter().map(|s| s.as_str()).collect();
+    let mut deps_map: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
     for t in &project_tasks {
+        let in_project_deps: Vec<String> = t.dependencies.iter()
+            .filter(|d| task_id_set.contains(d.as_str()))
+            .cloned()
+            .collect();
+        deps_map.insert(t.id.clone(), in_project_deps);
+    }
+
+    // 计算分层布局（Task 节点从 layer=1 开始，给 Project 留 layer=0）
+    let config = LayeredLayoutConfig {
+        width: 700.0,
+        height: 500.0,
+        top_margin: 160.0,
+        layer_height: 80.0,
+        side_margin: 60.0,
+    };
+    let task_positions = compute_layered_layout(&task_ids, &deps_map, &config);
+
+    // 添加 Task 节点（位置来自分层布局，layer +1 因为 Project 占了 layer 0）
+    for t in &project_tasks {
+        let (layer, x, y) = task_positions.get(&t.id).copied().unwrap_or((0, 350.0, 160.0));
         nodes.push(CanvasNode {
             id: format!("task:{}", t.id),
-            x: 0.0, y: 0.0,
+            x, y,
             radius: 20.0,
             label: t.title.clone(),
             color: task_status_color(t.status),
             node_type: Some("task".to_string()),
+            layer: Some(layer + 1),
         });
         // Project → Task 边
         edges.push(CanvasEdge {
-            from_id: format!("project:{}", project.id),
+            from_id: project_node_id.clone(),
             to_id: format!("task:{}", t.id),
         });
+    }
+
+    // === Task → Task 依赖边（基于 dependencies）===
+    for t in &project_tasks {
+        for dep_id in &t.dependencies {
+            if task_id_set.contains(dep_id.as_str()) {
+                edges.push(CanvasEdge {
+                    from_id: format!("task:{}", dep_id),
+                    to_id: format!("task:{}", t.id),
+                });
+            }
+        }
     }
 
     // 关联 Agent 节点（去重：该 Project 的 Task 分配到的 Agent）
@@ -191,6 +237,7 @@ fn build_project_detail_view(
                 label: a.name.clone(),
                 color: agent_runtime_color(a.runtime_state),
                 node_type: Some("agent".to_string()),
+                layer: None,
             });
         }
     }
@@ -228,6 +275,7 @@ fn build_agent_detail_view(
         label: agent.name.clone(),
         color: agent_runtime_color(agent.runtime_state),
         node_type: Some("agent".to_string()),
+        layer: None,
     });
 
     // 该 Agent 的 Task 节点
@@ -243,6 +291,7 @@ fn build_agent_detail_view(
             label: t.title.clone(),
             color: task_status_color(t.status),
             node_type: Some("task".to_string()),
+            layer: None,
         });
         // Agent → Task 边
         edges.push(CanvasEdge {
@@ -265,6 +314,7 @@ fn build_agent_detail_view(
                 label: p.name.clone(),
                 color: project_status_color(p.status),
                 node_type: Some("project".to_string()),
+                layer: None,
             });
         }
     }

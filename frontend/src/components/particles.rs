@@ -578,8 +578,8 @@ mod tests {
         use crate::components::canvas_scene::{CanvasEdge, CanvasNode};
         let mut system = DataFlowParticles::new();
         let nodes = vec![
-            CanvasNode { id: "a".to_string(), x: 0.0, y: 0.0, radius: 10.0, label: "A".to_string(), color: "#3b82f6".to_string() },
-            CanvasNode { id: "b".to_string(), x: 100.0, y: 0.0, radius: 10.0, label: "B".to_string(), color: "#10b981".to_string() },
+            CanvasNode { id: "a".to_string(), x: 0.0, y: 0.0, radius: 10.0, label: "A".to_string(), color: "#3b82f6".to_string(), node_type: None, layer: None },
+            CanvasNode { id: "b".to_string(), x: 100.0, y: 0.0, radius: 10.0, label: "B".to_string(), color: "#10b981".to_string(), node_type: None, layer: None },
         ];
         let edges = vec![CanvasEdge { from_id: "a".to_string(), to_id: "b".to_string() }];
 
@@ -605,8 +605,8 @@ mod tests {
         system.spawn_interval = 0.0;
 
         let nodes = vec![
-            CanvasNode { id: "a".to_string(), x: 0.0, y: 0.0, radius: 10.0, label: "A".to_string(), color: "#3b82f6".to_string() },
-            CanvasNode { id: "b".to_string(), x: 80.0, y: 0.0, radius: 10.0, label: "B".to_string(), color: "#10b981".to_string() },
+            CanvasNode { id: "a".to_string(), x: 0.0, y: 0.0, radius: 10.0, label: "A".to_string(), color: "#3b82f6".to_string(), node_type: None, layer: None },
+            CanvasNode { id: "b".to_string(), x: 80.0, y: 0.0, radius: 10.0, label: "B".to_string(), color: "#10b981".to_string(), node_type: None, layer: None },
         ];
         let edges = vec![CanvasEdge { from_id: "a".to_string(), to_id: "b".to_string() }];
 
@@ -631,6 +631,8 @@ mod tests {
             radius: 20.0,
             label: "A".to_string(),
             color: "#3b82f6".to_string(),
+            node_type: None,
+            layer: None,
         };
 
         assert_eq!(system.count(), 0);
@@ -652,6 +654,8 @@ mod tests {
             radius: 10.0,
             label: "A".to_string(),
             color: "#fff".to_string(),
+            node_type: None,
+            layer: None,
         };
 
         system.trigger(&node);
@@ -674,6 +678,8 @@ mod tests {
             radius: 10.0,
             label: "A".to_string(),
             color: "#fff".to_string(),
+            node_type: None,
+            layer: None,
         };
         system.trigger(&node);
         assert!(system.count() > 0);
@@ -726,6 +732,8 @@ mod tests {
             radius: 20.0,
             label: "A".to_string(),
             color: "#3b82f6".to_string(),
+            node_type: None,
+            layer: None,
         };
         system.trigger_birth(&node);
         assert_eq!(system.count(), system.birth_count);
@@ -763,6 +771,8 @@ mod tests {
             radius: 10.0,
             label: "A".to_string(),
             color: "#fff".to_string(),
+            node_type: None,
+            layer: None,
         };
         system.trigger_birth(&node);
         assert!(system.count() > 0);
