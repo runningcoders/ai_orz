@@ -2,6 +2,7 @@ use crate::api::finance::list_model_providers;
 use crate::api::{hr::*, StatsOptions};
 use crate::pages::hr::agent_memory_panel::AgentMemoryPanel;
 use crate::api::message::{load_latest_messages, send_message_to_agent};
+use crate::components::agent_runtime_graph::{AgentRuntimeGraph, ToolNodeInfo};
 use crate::components::modal::Modal;
 use crate::components::state::Loading;
 use crate::components::stats::AgentStatsPanel;
@@ -158,6 +159,8 @@ pub fn HrAgentDetail(id: String) -> Element {
     let mut edit_model_provider_id = use_signal(String::new);
     let mut saving_meta = use_signal(|| false);
     let mut model_providers = use_signal(Vec::<ListModelProvidersResponseItem>::new);
+    // Tab 切换信号：0=概览 1=工具与技能 2=状态图 3=对话与记忆
+    let mut active_tab = use_signal(|| 0usize);
 
     let agent_tool_ids = agent_data
         .read()
@@ -345,10 +348,16 @@ pub fn HrAgentDetail(id: String) -> Element {
             let capabilities = a.capabilities.clone().unwrap_or_default();
             let desc = a.description.as_deref().unwrap_or("");
             let agent_id_signal = use_signal(|| id.clone());
+            // Tab 按钮动态 class：避免在 rsx! 格式串中嵌套引号转义
+            let tab0_class = if active_tab() == 0 { "tab tab-lg tab-active" } else { "tab tab-lg" };
+            let tab1_class = if active_tab() == 1 { "tab tab-lg tab-active" } else { "tab tab-lg" };
+            let tab2_class = if active_tab() == 2 { "tab tab-lg tab-active" } else { "tab tab-lg" };
+            let tab3_class = if active_tab() == 3 { "tab tab-lg tab-active" } else { "tab tab-lg" };
 
             rsx! {
                 div { class: "card bg-base-100 shadow-md",
                     div { class: "card-body",
+                        // 顶部标题 + 编辑按钮
                         div { class: "mb-6 flex justify-between items-start",
                             div {
                                 h2 { class: "card-title", "{a.name}" }
@@ -371,357 +380,249 @@ pub fn HrAgentDetail(id: String) -> Element {
                             }
                         }
 
-                        div { class: "mb-6",
-                            h3 { class: "text-lg font-semibold mb-3", "基本信息" }
-                            div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
-                                div {
-                                    span { class: "block text-sm text-base-content/70 mb-1", "ID" }
-                                    span { class: "font-mono text-sm", "{a.id}" }
-                                }
-                                div {
-                                    span { class: "block text-sm text-base-content/70 mb-1", "类型" }
-                                    span { class: "{kind_badge_class(&a.kind)}",
-                                        "{kind_label(&a.kind)}"
-                                    }
-                                }
-                                div {
-                                    span { class: "block text-sm text-base-content/70 mb-1", "状态" }
-                                    span { class: "{binding_status_badge_class(a.status != 0)}",
-                                        "{agent_status_label(a.status)}"
-                                    }
-                                }
-                                if a.kind == "local" {
-                                    div {
-                                        span { class: "block text-sm text-base-content/70 mb-1", "模型提供商" }
-                                        span { class: "font-mono text-sm", "{a.model_provider_id}" }
-                                    }
-                                }
-                                div {
-                                    span { class: "block text-sm text-base-content/70 mb-1", "创建时间" }
-                                    span { class: "text-sm", "{format_time(a.created_at)}" }
-                                }
+                        // Tab 导航
+                        div { class: "tabs tabs-boxed mb-6",
+                            button {
+                                class: "{tab0_class}",
+                                onclick: move |_| active_tab.set(0),
+                                "📋 概览"
+                            }
+                            button {
+                                class: "{tab1_class}",
+                                onclick: move |_| active_tab.set(1),
+                                "🔧 工具与技能"
+                            }
+                            button {
+                                class: "{tab2_class}",
+                                onclick: move |_| active_tab.set(2),
+                                "🎨 状态图"
+                            }
+                            button {
+                                class: "{tab3_class}",
+                                onclick: move |_| active_tab.set(3),
+                                "💬 对话与记忆"
                             }
                         }
 
-                        div { class: "mb-6",
-                            h3 { class: "text-lg font-semibold mb-3", "核心能力" }
-                            if !capabilities.is_empty() {
-                                div { class: "flex flex-wrap gap-2",
-                                    for cap in capabilities.iter() {
-                                        span { class: "badge badge-info", "{cap}" }
-                                    }
-                                }
-                            } else {
-                                div { class: "text-sm text-base-content/70", "暂无核心能力" }
-                            }
-                        }
-
-                        if a.kind != "local" {
-                            if let Some(ext_cfg) = &a.external_config {
+                        // Tab 内容
+                        {match active_tab() {
+                            0 => rsx! {
+                                // === 概览：基本信息 + 核心能力 + 运行时配置 + 状态切换 + 统计 ===
                                 div { class: "mb-6",
-                                    h3 { class: "text-lg font-semibold mb-3", "运行时配置" }
-                                    if let Some(cli_cfg) = &ext_cfg.cli {
-                                        div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
-                                            div {
-                                                span { class: "block text-sm text-base-content/70 mb-1", "启动命令" }
-                                                span { class: "font-mono text-sm", "{cli_cfg.command}" }
-                                            }
-                                            if !cli_cfg.args.is_empty() {
-                                                div { class: "md:col-span-2",
-                                                    span { class: "block text-sm text-base-content/70 mb-1", "命令参数" }
-                                                    span { class: "font-mono text-sm",
-                                                        "{cli_cfg.args.join(\" \")}"
-                                                    }
-                                                }
-                                            }
-                                            div { class: "md:col-span-2",
-                                                span { class: "block text-sm text-base-content/70 mb-1", "工作目录" }
-                                                span { class: "font-mono text-sm", "{cli_cfg.work_dir}" }
-                                            }
-                                            div {
-                                                span { class: "block text-sm text-base-content/70 mb-1", "超时时间" }
-                                                span { class: "text-sm", "{cli_cfg.timeout_secs} 秒" }
-                                            }
-                                            if let Some(template) = &cli_cfg.prompt_template {
-                                                div { class: "md:col-span-2",
-                                                    span { class: "block text-sm text-base-content/70 mb-1", "Prompt 模板" }
-                                                    div { class: "p-3 bg-base-200 rounded-lg font-mono text-sm", "{template}" }
-                                                }
+                                    h3 { class: "text-lg font-semibold mb-3", "基本信息" }
+                                    div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
+                                        div {
+                                            span { class: "block text-sm text-base-content/70 mb-1", "ID" }
+                                            span { class: "font-mono text-sm", "{a.id}" }
+                                        }
+                                        div {
+                                            span { class: "block text-sm text-base-content/70 mb-1", "类型" }
+                                            span { class: "{kind_badge_class(&a.kind)}",
+                                                "{kind_label(&a.kind)}"
                                             }
                                         }
-                                    }
-                                    if let Some(remote_cfg) = &ext_cfg.remote {
-                                        div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
-                                            div { class: "md:col-span-2",
-                                                span { class: "block text-sm text-base-content/70 mb-1", "A2A Server" }
-                                                span { class: "font-mono text-sm", "{remote_cfg.endpoint}" }
+                                        div {
+                                            span { class: "block text-sm text-base-content/70 mb-1", "状态" }
+                                            span { class: "{binding_status_badge_class(a.status != 0)}",
+                                                "{agent_status_label(a.status)}"
                                             }
+                                        }
+                                        if a.kind == "local" {
                                             div {
-                                                span { class: "block text-sm text-base-content/70 mb-1", "目标 Agent" }
-                                                span { class: "font-mono text-sm", "{remote_cfg.agent_name}" }
+                                                span { class: "block text-sm text-base-content/70 mb-1", "模型提供商" }
+                                                span { class: "font-mono text-sm", "{a.model_provider_id}" }
                                             }
-                                            div {
-                                                span { class: "block text-sm text-base-content/70 mb-1", "超时时间" }
-                                                span { class: "text-sm", "{remote_cfg.timeout_secs} 秒" }
-                                            }
+                                        }
+                                        div {
+                                            span { class: "block text-sm text-base-content/70 mb-1", "创建时间" }
+                                            span { class: "text-sm", "{format_time(a.created_at)}" }
                                         }
                                     }
                                 }
-                            }
-                        }
 
-                        div { class: "mb-6",
-                            h3 { class: "text-lg font-semibold mb-3", "状态切换" }
-                            div { class: "flex flex-wrap gap-2",
-                                for (status, label) in STATUS_OPTIONS {
-                                    {
-                                        let is_current = a.status == *status;
-                                        let btn_class = if is_current { "btn btn-primary btn-sm" } else { "btn btn-ghost btn-sm" };
-                                        let target_status_val = *status;
-                                        let aid = agent_id_signal();
-                                        let label_str = label.to_string();
-                                        let label_for_closure = label_str.clone();
-                                        rsx! {
-                                            button {
-                                                class: "{btn_class}",
-                                                disabled: is_current,
-                                                onclick: move |_| {
-                                                    let agent_id = aid.clone();
-                                                    let label_clone = label_for_closure.clone();
-                                                    spawn(async move {
-                                                        match update_agent_status(&agent_id, target_status_val).await {
-                                                            Ok(_) => {
-                                                                toast.success(&format!("状态已更新为：{}", label_clone));
-                                                                let stats_options = StatsOptions {
-                                                                    with_stats: true,
-                                                                    with_model_call_stats: true,
-                                                                    stats_interval: Some("daily".to_string()),
-                                                                };
-                                                                match get_agent(&agent_id, Some(&stats_options)).await {
-                                                                    Ok(a) => agent_data.set(Some(a)),
-                                                                    Err(e) => toast.error(&format!("刷新 Agent 失败: {}", e)),
-                                                                }
+                                div { class: "mb-6",
+                                    h3 { class: "text-lg font-semibold mb-3", "核心能力" }
+                                    if !capabilities.is_empty() {
+                                        div { class: "flex flex-wrap gap-2",
+                                            for cap in capabilities.iter() {
+                                                span { class: "badge badge-info", "{cap}" }
+                                            }
+                                        }
+                                    } else {
+                                        div { class: "text-sm text-base-content/70", "暂无核心能力" }
+                                    }
+                                }
+
+                                if a.kind != "local" {
+                                    if let Some(ext_cfg) = &a.external_config {
+                                        div { class: "mb-6",
+                                            h3 { class: "text-lg font-semibold mb-3", "运行时配置" }
+                                            if let Some(cli_cfg) = &ext_cfg.cli {
+                                                div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
+                                                    div {
+                                                        span { class: "block text-sm text-base-content/70 mb-1", "启动命令" }
+                                                        span { class: "font-mono text-sm", "{cli_cfg.command}" }
+                                                    }
+                                                    if !cli_cfg.args.is_empty() {
+                                                        div { class: "md:col-span-2",
+                                                            span { class: "block text-sm text-base-content/70 mb-1", "命令参数" }
+                                                            span { class: "font-mono text-sm",
+                                                                "{cli_cfg.args.join(\" \")}"
                                                             }
-                                                            Err(e) => toast.error(&format!("状态更新失败: {}", e)),
                                                         }
-                                                    });
-                                                },
-                                                if is_current { "{label_str}（当前）" } else { "{label_str}" }
+                                                    }
+                                                    div { class: "md:col-span-2",
+                                                        span { class: "block text-sm text-base-content/70 mb-1", "工作目录" }
+                                                        span { class: "font-mono text-sm", "{cli_cfg.work_dir}" }
+                                                    }
+                                                    div {
+                                                        span { class: "block text-sm text-base-content/70 mb-1", "超时时间" }
+                                                        span { class: "text-sm", "{cli_cfg.timeout_secs} 秒" }
+                                                    }
+                                                    if let Some(template) = &cli_cfg.prompt_template {
+                                                        div { class: "md:col-span-2",
+                                                            span { class: "block text-sm text-base-content/70 mb-1", "Prompt 模板" }
+                                                            div { class: "p-3 bg-base-200 rounded-lg font-mono text-sm", "{template}" }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            if let Some(remote_cfg) = &ext_cfg.remote {
+                                                div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
+                                                    div { class: "md:col-span-2",
+                                                        span { class: "block text-sm text-base-content/70 mb-1", "A2A Server" }
+                                                        span { class: "font-mono text-sm", "{remote_cfg.endpoint}" }
+                                                    }
+                                                    div {
+                                                        span { class: "block text-sm text-base-content/70 mb-1", "目标 Agent" }
+                                                        span { class: "font-mono text-sm", "{remote_cfg.agent_name}" }
+                                                    }
+                                                    div {
+                                                        span { class: "block text-sm text-base-content/70 mb-1", "超时时间" }
+                                                        span { class: "text-sm", "{remote_cfg.timeout_secs} 秒" }
+                                                    }
+                                                }
                                             }
                                         }
                                     }
                                 }
-                            }
-                        }
 
-                        div { class: "mb-6",
-                            h3 { class: "text-lg font-semibold mb-3", "工具包" }
-                            div { class: "flex flex-col sm:flex-row gap-2 mb-4",
-                                input {
-                                    class: "input input-sm input-bordered flex-1",
-                                    r#type: "text",
-                                    placeholder: "输入工具包 tag 名称",
-                                    oninput: move |e| tool_pack_input.set(e.value().clone()),
-                                }
-                                button {
-                                    class: "btn btn-primary btn-sm",
-                                    onclick: move |_| {
-                                        let tag = tool_pack_input().trim().to_string();
-                                        if tag.is_empty() {
-                                            return;
-                                        }
-                                        let aid = agent_id_signal();
-                                        tool_pack_input.set(String::new());
-                                        spawn(async move {
-                                            match install_tool_pack(&aid, &tag).await {
-                                                Ok(_) => {
-                                                    toast.success(&format!("工具包 [{}] 已安装", tag));
-                                                    match list_installed_tool_packs(&aid).await {
-                                                        Ok(resp) => tool_packs.set(resp.installed_tags),
-                                                        Err(e) => toast.error(&format!("刷新工具包列表失败: {}", e)),
-                                                    }
-                                                }
-                                                Err(e) => toast.error(&format!("安装工具包失败: {}", e)),
-                                            }
-                                        });
-                                    },
-                                    "安装工具包"
-                                }
-                            }
-                            if !tool_packs_list.is_empty() {
-                                div { class: "flex flex-wrap gap-2",
-                                    for tag in tool_packs_list.iter() {
-                                        {
-                                            let tag_clone = tag.clone();
-                                            let aid = agent_id_signal();
-                                            rsx! {
-                                                span {
-                                                    class: "badge badge-accent gap-1",
-                                                    "{tag}"
+                                div { class: "mb-6",
+                                    h3 { class: "text-lg font-semibold mb-3", "状态切换" }
+                                    div { class: "flex flex-wrap gap-2",
+                                        for (status, label) in STATUS_OPTIONS {
+                                            {
+                                                let is_current = a.status == *status;
+                                                let btn_class = if is_current { "btn btn-primary btn-sm" } else { "btn btn-ghost btn-sm" };
+                                                let target_status_val = *status;
+                                                let aid = agent_id_signal();
+                                                let label_str = label.to_string();
+                                                let label_for_closure = label_str.clone();
+                                                rsx! {
                                                     button {
-                                                        class: "badge-remove",
+                                                        class: "{btn_class}",
+                                                        disabled: is_current,
                                                         onclick: move |_| {
                                                             let agent_id = aid.clone();
-                                                            let t = tag_clone.clone();
+                                                            let label_clone = label_for_closure.clone();
                                                             spawn(async move {
-                                                                match uninstall_tool_pack(&agent_id, &t).await {
+                                                                match update_agent_status(&agent_id, target_status_val).await {
                                                                     Ok(_) => {
-                                                                        toast.success(&format!("工具包 [{}] 已卸载", t));
-                                                                        match list_installed_tool_packs(&agent_id).await {
-                                                                            Ok(resp) => tool_packs.set(resp.installed_tags),
-                                                                            Err(e) => toast.error(&format!("刷新工具包列表失败: {}", e)),
+                                                                        toast.success(&format!("状态已更新为：{}", label_clone));
+                                                                        let stats_options = StatsOptions {
+                                                                            with_stats: true,
+                                                                            with_model_call_stats: true,
+                                                                            stats_interval: Some("daily".to_string()),
+                                                                        };
+                                                                        match get_agent(&agent_id, Some(&stats_options)).await {
+                                                                            Ok(a) => agent_data.set(Some(a)),
+                                                                            Err(e) => toast.error(&format!("刷新 Agent 失败: {}", e)),
                                                                         }
                                                                     }
-                                                                    Err(e) => toast.error(&format!("卸载工具包失败: {}", e)),
+                                                                    Err(e) => toast.error(&format!("状态更新失败: {}", e)),
                                                                 }
                                                             });
                                                         },
-                                                        "×"
+                                                        if is_current { "{label_str}（当前）" } else { "{label_str}" }
                                                     }
                                                 }
                                             }
                                         }
                                     }
                                 }
-                            }
-                        }
 
-                        div { class: "mb-6",
-                            h3 { class: "text-lg font-semibold mb-3", "技能包" }
-                            div { class: "flex flex-col sm:flex-row gap-2 mb-4",
-                                input {
-                                    class: "input input-sm input-bordered flex-1",
-                                    r#type: "text",
-                                    placeholder: "输入技能包 tag 名称",
-                                    oninput: move |e| skill_pack_input.set(e.value().clone()),
-                                }
-                                button {
-                                    class: "btn btn-primary btn-sm",
-                                    onclick: move |_| {
-                                        let tag = skill_pack_input().trim().to_string();
-                                        if tag.is_empty() {
-                                            return;
-                                        }
-                                        let aid = agent_id_signal();
-                                        skill_pack_input.set(String::new());
-                                        spawn(async move {
-                                            match install_skill_pack(&aid, &tag).await {
-                                                Ok(_) => {
-                                                    toast.success(&format!("技能包 [{}] 已安装", tag));
-                                                    match list_installed_skill_packs(&aid).await {
-                                                        Ok(resp) => skill_packs.set(resp.skill_packs),
-                                                        Err(e) => toast.error(&format!("刷新技能包列表失败: {}", e)),
-                                                    }
-                                                }
-                                                Err(e) => toast.error(&format!("安装技能包失败: {}", e)),
-                                            }
-                                        });
-                                    },
-                                    "安装技能包"
-                                }
-                            }
-                            if !skill_packs_list.is_empty() {
-                                div { class: "flex flex-wrap gap-2",
-                                    for tag in skill_packs_list.iter() {
-                                        {
-                                            let tag_clone = tag.clone();
-                                            let aid = agent_id_signal();
-                                            rsx! {
-                                                span {
-                                                    class: "badge badge-info gap-1",
-                                                    "{tag}"
-                                                    button {
-                                                        class: "badge-remove",
-                                                        onclick: move |_| {
-                                                            let agent_id = aid.clone();
-                                                            let t = tag_clone.clone();
-                                                            spawn(async move {
-                                                                match uninstall_skill_pack(&agent_id, &t).await {
-                                                                    Ok(_) => {
-                                                                        toast.success(&format!("技能包 [{}] 已卸载", t));
-                                                                        match list_installed_skill_packs(&agent_id).await {
-                                                                            Ok(resp) => skill_packs.set(resp.skill_packs),
-                                                                            Err(e) => toast.error(&format!("刷新技能包列表失败: {}", e)),
-                                                                        }
-                                                                    }
-                                                                    Err(e) => toast.error(&format!("卸载技能包失败: {}", e)),
-                                                                }
-                                                            });
-                                                        },
-                                                        "×"
-                                                    }
-                                                }
-                                            }
-                                        }
+                                if a.stats.is_some() || a.model_call_stats.is_some() {
+                                    AgentStatsPanel {
+                                        stats: a.stats.clone(),
+                                        model_call_stats: a.model_call_stats.clone(),
                                     }
                                 }
-                            }
-                        }
-
-                        div { class: "mb-6",
-                            h3 { class: "text-lg font-semibold mb-3", "工具绑定" }
-                            if !all_tools_list.is_empty() {
-                                div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
-                                    for tool in all_tools_list.iter() {
-                                        {
-                                            let tool_clone = tool.clone();
-                                            let is_bound = agent_tool_ids.contains(&tool.id);
-                                            let aid = agent_id_signal();
-                                            let tool_id = tool.id.clone();
-                                            let tool_name = tool.name.clone();
-                                            let desc = tool.description.as_deref().unwrap_or("");
-                                            let tags = tool.tags.clone();
-                                            rsx! {
-                                                div {
-                                                    class: "card bg-base-200",
-                                                    key: "{tool_id}",
-                                                    div { class: "card-body p-4",
-                                                        div { class: "flex justify-between items-start",
-                                                            span { class: "font-medium", "{tool_name}" }
-                                                            span { class: "{binding_status_badge_class(is_bound)}",
-                                                                if is_bound { "已绑定" } else { "未绑定" }
+                            },
+                            1 => rsx! {
+                                // === 工具与技能：工具包 + 技能包 + 工具绑定 ===
+                                div { class: "mb-6",
+                                    h3 { class: "text-lg font-semibold mb-3", "工具包" }
+                                    div { class: "flex flex-col sm:flex-row gap-2 mb-4",
+                                        input {
+                                            class: "input input-sm input-bordered flex-1",
+                                            r#type: "text",
+                                            placeholder: "输入工具包 tag 名称",
+                                            oninput: move |e| tool_pack_input.set(e.value().clone()),
+                                        }
+                                        button {
+                                            class: "btn btn-primary btn-sm",
+                                            onclick: move |_| {
+                                                let tag = tool_pack_input().trim().to_string();
+                                                if tag.is_empty() {
+                                                    return;
+                                                }
+                                                let aid = agent_id_signal();
+                                                tool_pack_input.set(String::new());
+                                                spawn(async move {
+                                                    match install_tool_pack(&aid, &tag).await {
+                                                        Ok(_) => {
+                                                            toast.success(&format!("工具包 [{}] 已安装", tag));
+                                                            match list_installed_tool_packs(&aid).await {
+                                                                Ok(resp) => tool_packs.set(resp.installed_tags),
+                                                                Err(e) => toast.error(&format!("刷新工具包列表失败: {}", e)),
                                                             }
                                                         }
-                                                        p { class: "text-sm text-base-content/70 mt-2", "{desc}" }
-                                                        if !tags.is_empty() {
-                                                            div { class: "flex flex-wrap gap-1 mt-2",
-                                                                for tag in tags.iter() {
-                                                                    span { class: "badge badge-ghost", "{tag}" }
-                                                                }
-                                                            }
-                                                        }
-                                                        div { class: "card-actions justify-end mt-3",
+                                                        Err(e) => toast.error(&format!("安装工具包失败: {}", e)),
+                                                    }
+                                                });
+                                            },
+                                            "安装工具包"
+                                        }
+                                    }
+                                    if !tool_packs_list.is_empty() {
+                                        div { class: "flex flex-wrap gap-2",
+                                            for tag in tool_packs_list.iter() {
+                                                {
+                                                    let tag_clone = tag.clone();
+                                                    let aid = agent_id_signal();
+                                                    rsx! {
+                                                        span {
+                                                            class: "badge badge-accent gap-1",
+                                                            "{tag}"
                                                             button {
-                                                                class: if is_bound { "btn btn-error btn-sm" } else { "btn btn-primary btn-sm" },
+                                                                class: "badge-remove",
                                                                 onclick: move |_| {
                                                                     let agent_id = aid.clone();
-                                                                    let tid = tool_clone.id.clone();
-                                                                    let tname = tool_clone.name.clone();
-                                                                    let ib = is_bound;
+                                                                    let t = tag_clone.clone();
                                                                     spawn(async move {
-                                                                        let result = if ib {
-                                                                            unbind_tool_from_agent(&agent_id, &tid).await
-                                                                        } else {
-                                                                            bind_tool_to_agent(&agent_id, &tid).await
-                                                                        };
-                                                                        match result {
+                                                                        match uninstall_tool_pack(&agent_id, &t).await {
                                                                             Ok(_) => {
-                                                                                toast.success(&format!("工具 {} {}", tname, if ib { "已解绑" } else { "已绑定" }));
-                                                                                let stats_options = StatsOptions {
-                                                                                    with_stats: true,
-                                                                                    with_model_call_stats: true,
-                                                                                    stats_interval: Some("daily".to_string()),
-                                                                                };
-                                                                                match get_agent(&agent_id, Some(&stats_options)).await {
-                                                                                    Ok(a) => agent_data.set(Some(a)),
-                                                                                    Err(e) => toast.error(&format!("刷新 Agent 失败: {}", e)),
+                                                                                toast.success(&format!("工具包 [{}] 已卸载", t));
+                                                                                match list_installed_tool_packs(&agent_id).await {
+                                                                                    Ok(resp) => tool_packs.set(resp.installed_tags),
+                                                                                    Err(e) => toast.error(&format!("刷新工具包列表失败: {}", e)),
                                                                                 }
                                                                             }
-                                                                            Err(e) => toast.error(&format!("操作失败: {}", e)),
+                                                                            Err(e) => toast.error(&format!("卸载工具包失败: {}", e)),
                                                                         }
                                                                     });
                                                                 },
-                                                                if is_bound { "解绑" } else { "绑定" }
+                                                                "×"
                                                             }
                                                         }
                                                     }
@@ -730,51 +631,214 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         }
                                     }
                                 }
-                            } else {
-                                div { class: "text-center py-12",
-                                    div { class: "text-5xl mb-4 opacity-30", "🔧" }
-                                    div { class: "text-base-content/70", "暂无工具可用" }
-                                }
-                            }
-                        }
 
-                        div { class: "mb-6",
-                            h3 { class: "text-lg font-semibold mb-3", "对话" }
-                            {render_chat_messages(&messages(), is_typing())}
-                            div { class: "flex gap-2 mt-4",
-                                input {
-                                    class: "input input-bordered flex-1",
-                                    r#type: "text",
-                                    placeholder: "输入消息...",
-                                    value: input_message,
-                                    oninput: move |e| input_message.set(e.value().clone()),
-                                    onkeydown: move |e| {
-                                        if e.key() == Key::Enter {
-                                            e.prevent_default();
-                                            handle_send(());
+                                div { class: "mb-6",
+                                    h3 { class: "text-lg font-semibold mb-3", "技能包" }
+                                    div { class: "flex flex-col sm:flex-row gap-2 mb-4",
+                                        input {
+                                            class: "input input-sm input-bordered flex-1",
+                                            r#type: "text",
+                                            placeholder: "输入技能包 tag 名称",
+                                            oninput: move |e| skill_pack_input.set(e.value().clone()),
                                         }
-                                    },
+                                        button {
+                                            class: "btn btn-primary btn-sm",
+                                            onclick: move |_| {
+                                                let tag = skill_pack_input().trim().to_string();
+                                                if tag.is_empty() {
+                                                    return;
+                                                }
+                                                let aid = agent_id_signal();
+                                                skill_pack_input.set(String::new());
+                                                spawn(async move {
+                                                    match install_skill_pack(&aid, &tag).await {
+                                                        Ok(_) => {
+                                                            toast.success(&format!("技能包 [{}] 已安装", tag));
+                                                            match list_installed_skill_packs(&aid).await {
+                                                                Ok(resp) => skill_packs.set(resp.skill_packs),
+                                                                Err(e) => toast.error(&format!("刷新技能包列表失败: {}", e)),
+                                                            }
+                                                        }
+                                                        Err(e) => toast.error(&format!("安装技能包失败: {}", e)),
+                                                    }
+                                                });
+                                            },
+                                            "安装技能包"
+                                        }
+                                    }
+                                    if !skill_packs_list.is_empty() {
+                                        div { class: "flex flex-wrap gap-2",
+                                            for tag in skill_packs_list.iter() {
+                                                {
+                                                    let tag_clone = tag.clone();
+                                                    let aid = agent_id_signal();
+                                                    rsx! {
+                                                        span {
+                                                            class: "badge badge-info gap-1",
+                                                            "{tag}"
+                                                            button {
+                                                                class: "badge-remove",
+                                                                onclick: move |_| {
+                                                                    let agent_id = aid.clone();
+                                                                    let t = tag_clone.clone();
+                                                                    spawn(async move {
+                                                                        match uninstall_skill_pack(&agent_id, &t).await {
+                                                                            Ok(_) => {
+                                                                                toast.success(&format!("技能包 [{}] 已卸载", t));
+                                                                                match list_installed_skill_packs(&agent_id).await {
+                                                                                    Ok(resp) => skill_packs.set(resp.skill_packs),
+                                                                                    Err(e) => toast.error(&format!("刷新技能包列表失败: {}", e)),
+                                                                                }
+                                                                            }
+                                                                            Err(e) => toast.error(&format!("卸载技能包失败: {}", e)),
+                                                                        }
+                                                                    });
+                                                                },
+                                                                "×"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
-                                button {
-                                    class: "btn btn-primary",
-                                    onclick: move |_| handle_send(()),
-                                    "发送"
+
+                                div { class: "mb-6",
+                                    h3 { class: "text-lg font-semibold mb-3", "工具绑定" }
+                                    if !all_tools_list.is_empty() {
+                                        div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
+                                            for tool in all_tools_list.iter() {
+                                                {
+                                                    let tool_clone = tool.clone();
+                                                    let is_bound = agent_tool_ids.contains(&tool.id);
+                                                    let aid = agent_id_signal();
+                                                    let tool_id = tool.id.clone();
+                                                    let tool_name = tool.name.clone();
+                                                    let desc = tool.description.as_deref().unwrap_or("");
+                                                    let tags = tool.tags.clone();
+                                                    rsx! {
+                                                        div {
+                                                            class: "card bg-base-200",
+                                                            key: "{tool_id}",
+                                                            div { class: "card-body p-4",
+                                                                div { class: "flex justify-between items-start",
+                                                                    span { class: "font-medium", "{tool_name}" }
+                                                                    span { class: "{binding_status_badge_class(is_bound)}",
+                                                                        if is_bound { "已绑定" } else { "未绑定" }
+                                                                    }
+                                                                }
+                                                                p { class: "text-sm text-base-content/70 mt-2", "{desc}" }
+                                                                if !tags.is_empty() {
+                                                                    div { class: "flex flex-wrap gap-1 mt-2",
+                                                                        for tag in tags.iter() {
+                                                                            span { class: "badge badge-ghost", "{tag}" }
+                                                                        }
+                                                                    }
+                                                                }
+                                                                div { class: "card-actions justify-end mt-3",
+                                                                    button {
+                                                                        class: if is_bound { "btn btn-error btn-sm" } else { "btn btn-primary btn-sm" },
+                                                                        onclick: move |_| {
+                                                                            let agent_id = aid.clone();
+                                                                            let tid = tool_clone.id.clone();
+                                                                            let tname = tool_clone.name.clone();
+                                                                            let ib = is_bound;
+                                                                            spawn(async move {
+                                                                                let result = if ib {
+                                                                                    unbind_tool_from_agent(&agent_id, &tid).await
+                                                                                } else {
+                                                                                    bind_tool_to_agent(&agent_id, &tid).await
+                                                                                };
+                                                                                match result {
+                                                                                    Ok(_) => {
+                                                                                        toast.success(&format!("工具 {} {}", tname, if ib { "已解绑" } else { "已绑定" }));
+                                                                                        let stats_options = StatsOptions {
+                                                                                            with_stats: true,
+                                                                                            with_model_call_stats: true,
+                                                                                            stats_interval: Some("daily".to_string()),
+                                                                                        };
+                                                                                        match get_agent(&agent_id, Some(&stats_options)).await {
+                                                                                            Ok(a) => agent_data.set(Some(a)),
+                                                                                            Err(e) => toast.error(&format!("刷新 Agent 失败: {}", e)),
+                                                                                        }
+                                                                                    }
+                                                                                    Err(e) => toast.error(&format!("操作失败: {}", e)),
+                                                                                }
+                                                                            });
+                                                                        },
+                                                                        if is_bound { "解绑" } else { "绑定" }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        div { class: "text-center py-12",
+                                            div { class: "text-5xl mb-4 opacity-30", "🔧" }
+                                            div { class: "text-base-content/70", "暂无工具可用" }
+                                        }
+                                    }
                                 }
-                            }
-                        }
+                            },
+                            2 => rsx! {
+                                // === 状态图：Agent 与绑定 Tools 的关系图 ===
+                                {
+                                    let bound_tool_infos: Vec<ToolNodeInfo> = all_tools_list.iter()
+                                        .filter(|t| agent_tool_ids.contains(&t.id))
+                                        .map(|t| ToolNodeInfo {
+                                            id: t.id.clone(),
+                                            name: t.name.clone(),
+                                        })
+                                        .collect();
+                                    rsx! {
+                                        AgentRuntimeGraph {
+                                            agent_id: a.id.clone(),
+                                            agent_name: a.name.clone(),
+                                            bound_tools: bound_tool_infos,
+                                        }
+                                    }
+                                }
+                            },
+                            3 => rsx! {
+                                // === 对话与记忆 ===
+                                div { class: "mb-6",
+                                    h3 { class: "text-lg font-semibold mb-3", "对话" }
+                                    {render_chat_messages(&messages(), is_typing())}
+                                    div { class: "flex gap-2 mt-4",
+                                        input {
+                                            class: "input input-bordered flex-1",
+                                            r#type: "text",
+                                            placeholder: "输入消息...",
+                                            value: input_message,
+                                            oninput: move |e| input_message.set(e.value().clone()),
+                                            onkeydown: move |e| {
+                                                if e.key() == Key::Enter {
+                                                    e.prevent_default();
+                                                    handle_send(());
+                                                }
+                                            },
+                                        }
+                                        button {
+                                            class: "btn btn-primary",
+                                            onclick: move |_| handle_send(()),
+                                            "发送"
+                                        }
+                                    }
+                                }
 
-                        div { class: "mb-6",
-                            h3 { class: "text-lg font-semibold mb-3", "记忆" }
-                            AgentMemoryPanel { agent_id: Some(id.clone()) }
-                        }
+                                div { class: "mb-6",
+                                    h3 { class: "text-lg font-semibold mb-3", "记忆" }
+                                    AgentMemoryPanel { agent_id: Some(id.clone()) }
+                                }
+                            },
+                            _ => rsx! {},
+                        }}
 
-                        if a.stats.is_some() || a.model_call_stats.is_some() {
-                            AgentStatsPanel {
-                                stats: a.stats.clone(),
-                                model_call_stats: a.model_call_stats.clone(),
-                            }
-                        }
-
+                        // 返回列表按钮
                         div { class: "card-actions mt-6",
                             Link { to: "/hr/agents", class: "btn btn-ghost", "返回列表" }
                         }
@@ -886,9 +950,8 @@ pub fn HrAgentDetail(id: String) -> Element {
                     }
                 }
             }
-        }
-    }
-            }
+                }
+            }}
         }
     }
 }

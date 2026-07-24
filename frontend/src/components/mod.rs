@@ -1,5 +1,6 @@
 //! 基础 UI 组件库
 
+pub mod agent_runtime_graph;
 pub mod button;
 pub mod canvas_scene;
 pub mod force_layout;
