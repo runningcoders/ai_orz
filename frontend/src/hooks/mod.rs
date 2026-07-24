@@ -2,6 +2,7 @@ use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
 pub mod use_resource;
+pub mod use_workspace_data;
 
 use crate::api::organization::get_current_user_info;
 use crate::pages::Route;
