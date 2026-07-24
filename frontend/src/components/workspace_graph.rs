@@ -21,6 +21,8 @@ pub enum WorkspaceView {
     ProjectDetail(String),
     /// Agent 详情视图：选中 Agent 的 Task + Project
     AgentDetail(String),
+    /// Task 详情视图：选中 Task 的 Project + Agent + 依赖/后继 Task
+    TaskDetail(String),
 }
 
 /// WorkspaceGraph Props
@@ -332,6 +334,117 @@ fn build_agent_detail_view(
     (nodes, edges)
 }
 
+/// 构建 TaskDetail 视图的节点和边
+///
+/// 选中 Task 为中心，展示：
+/// - 关联 Project（顶部，layer=-1）
+/// - 关联 Agent（顶部，layer=-1）
+/// - 前置依赖 Task（下方，layer=1）
+/// - 后继依赖 Task（顶部，layer=-1）
+fn build_task_detail_view(
+    task_id: &str,
+    task: &TaskListItem,
+    projects: &[ProjectListItem],
+    agents: &[AgentListItem],
+    tasks: &[TaskListItem],
+) -> (Vec<CanvasNode>, Vec<CanvasEdge>) {
+    let mut nodes = Vec::new();
+    let mut edges = Vec::new();
+
+    let center_node_id = format!("task:{}", task.id);
+
+    // 中心 Task 节点（layer=0）
+    nodes.push(CanvasNode {
+        id: center_node_id.clone(),
+        x: 0.0, y: 0.0,
+        radius: 30.0,
+        label: task.title.clone(),
+        color: task_status_color(task.status),
+        node_type: Some("task".to_string()),
+        layer: Some(0),
+    });
+
+    // 关联 Project（layer=-1 顶部）
+    if let Some(pid) = &task.project_id {
+        if let Some(p) = projects.iter().find(|p| &p.id == pid) {
+            nodes.push(CanvasNode {
+                id: format!("project:{}", p.id),
+                x: 0.0, y: 0.0,
+                radius: 28.0,
+                label: p.name.clone(),
+                color: project_status_color(p.status),
+                node_type: Some("project".to_string()),
+                layer: Some(-1),
+            });
+            edges.push(CanvasEdge {
+                from_id: center_node_id.clone(),
+                to_id: format!("project:{}", p.id),
+            });
+        }
+    }
+
+    // 关联 Agent（layer=-1 顶部）
+    if task.assignee_type == 1 {
+        if let Some(a) = agents.iter().find(|a| a.id == task.assignee_id) {
+            nodes.push(CanvasNode {
+                id: format!("agent:{}", a.id),
+                x: 0.0, y: 0.0,
+                radius: 25.0,
+                label: a.name.clone(),
+                color: agent_runtime_color(a.runtime_state),
+                node_type: Some("agent".to_string()),
+                layer: Some(-1),
+            });
+            edges.push(CanvasEdge {
+                from_id: center_node_id.clone(),
+                to_id: format!("agent:{}", a.id),
+            });
+        }
+    }
+
+    // 前置依赖 Task（layer=1 下方）
+    for dep_id in &task.dependencies {
+        if let Some(dep_task) = tasks.iter().find(|t| &t.id == dep_id) {
+            nodes.push(CanvasNode {
+                id: format!("task:{}", dep_task.id),
+                x: 0.0, y: 0.0,
+                radius: 20.0,
+                label: dep_task.title.clone(),
+                color: task_status_color(dep_task.status),
+                node_type: Some("task".to_string()),
+                layer: Some(1),
+            });
+            // 前置 Task → 当前 Task
+            edges.push(CanvasEdge {
+                from_id: format!("task:{}", dep_task.id),
+                to_id: center_node_id.clone(),
+            });
+        }
+    }
+
+    // 后继 Task（layer=-1 顶部，被其他 Task 依赖）
+    for t in tasks {
+        if t.dependencies.iter().any(|d| d == task_id) {
+            nodes.push(CanvasNode {
+                id: format!("task:{}", t.id),
+                x: 0.0, y: 0.0,
+                radius: 20.0,
+                label: t.title.clone(),
+                color: task_status_color(t.status),
+                node_type: Some("task".to_string()),
+                layer: Some(-1),
+            });
+            // 当前 Task → 后继 Task
+            edges.push(CanvasEdge {
+                from_id: center_node_id.clone(),
+                to_id: format!("task:{}", t.id),
+            });
+        }
+    }
+
+    (nodes, edges)
+}
+
 #[component]
 pub fn WorkspaceGraph(props: WorkspaceGraphProps) -> Element {
     let view = props.view.clone();
@@ -354,6 +467,13 @@ pub fn WorkspaceGraph(props: WorkspaceGraphProps) -> Element {
         WorkspaceView::AgentDetail(aid) => {
             if let Some(a) = agents.iter().find(|a| a.id == *aid) {
                 build_agent_detail_view(aid, a, &projects, &tasks)
+            } else {
+                (Vec::new(), Vec::new())
+            }
+        }
+        WorkspaceView::TaskDetail(tid) => {
+            if let Some(t) = tasks.iter().find(|t| t.id == *tid) {
+                build_task_detail_view(tid, t, &projects, &agents, &tasks)
             } else {
                 (Vec::new(), Vec::new())
             }
