@@ -5,6 +5,7 @@ pub mod create_message_channel;
 pub mod delete_message_channel;
 pub mod get_message_channel;
 pub mod list_message_channels;
+pub mod query_message_channels;
 pub mod test_message_channel_connection;
 pub mod update_message_channel;
 pub mod update_message_channel_status;

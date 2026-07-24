@@ -1,5 +1,6 @@
 //! Message Channel related API request/response DTOs - shared between backend and frontend
 
+use crate::api::PaginationParams;
 use crate::enums::{ChannelStatus, ChannelType};
 use ai_orz_macros::Params;
 use schemars::JsonSchema;
@@ -93,6 +94,37 @@ pub struct ListMessageChannelsRequest {
     pub limit: Option<usize>,
     /// Skip count
     pub offset: Option<usize>,
+}
+
+/// Message Channel 通用查询请求（POST body）
+///
+/// 支持完整查询条件 + 分页，query 是核心查询能力。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct MessageChannelQueryRequest {
+    /// 按渠道 ID 查询（通常返回单条）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    /// 按用户 ID 查询
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
+    /// 按 Agent ID 查询（用于 Agent 专属渠道）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
+    /// 按渠道类型查询
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channel_type: Option<ChannelType>,
+    /// 只查询启用的渠道
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub only_enabled: Option<bool>,
+    /// 按状态 IN 查询（支持多选）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status_in: Option<Vec<ChannelStatus>>,
+    /// 排序规则，如 "created_at ASC", "created_at DESC"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_by: Option<String>,
+    /// 分页参数（limit + offset）
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
 }
 
 /// List Message Channels response

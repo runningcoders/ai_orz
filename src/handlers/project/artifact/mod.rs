@@ -6,6 +6,7 @@ mod delete_artifact;
 mod get_artifact;
 mod get_artifact_content;
 mod list_artifacts;
+mod query_artifacts;
 mod response;
 mod update_artifact_content;
 

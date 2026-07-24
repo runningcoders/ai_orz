@@ -191,6 +191,25 @@ impl super::ArtifactManage for ProjectDomainImpl {
             .await
     }
 
+    /// 通用查询产物，支持完整查询条件 + 分页。
+    ///
+    /// 注意：调用方需自行确保 project_id 权限校验。
+    /// 如果 query 中提供了 project_id，会做项目访问权限校验。
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: ArtifactQuery,
+    ) -> Result<common::api::PagedResult<Artifact>> {
+        if let Some(ref pid) = query.project_id {
+            self.validate_project_access(ctx.clone(), pid).await?;
+            if let Some(ref tid) = query.task_id {
+                self.validate_project_and_task(ctx.clone(), pid, Some(tid.as_str()))
+                    .await?;
+            }
+        }
+        self.artifact_dal.query(ctx, query).await
+    }
+
     /// 删除产物
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()> {
         let Some(artifact) = self.artifact_dal.find_by_id(ctx.clone(), id).await? else {

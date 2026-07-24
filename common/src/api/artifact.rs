@@ -1,5 +1,6 @@
 //! Artifact management API DTOs - shared between backend and frontend.
 
+use crate::api::PaginationParams;
 use crate::enums::{ArtifactSourceType, FileType};
 use ai_orz_macros::Params;
 use schemars::JsonSchema;
@@ -93,6 +94,28 @@ pub struct ListArtifactsRequest {
     /// Skip count.
     #[param(source = "query")]
     pub offset: Option<usize>,
+}
+
+/// Artifact 通用查询请求（POST body）
+///
+/// 支持完整查询条件 + 分页，query 是核心查询能力。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct ArtifactQueryRequest {
+    /// 按项目 ID 查询
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+    /// 按任务 ID 查询
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
+    /// 按文件类型查询
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_type: Option<FileType>,
+    /// 按来源类型查询
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_type: Option<ArtifactSourceType>,
+    /// 分页参数（limit + offset）
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
 }
 
 /// List Artifact response.

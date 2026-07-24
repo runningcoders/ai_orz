@@ -385,6 +385,16 @@ pub trait ArtifactManage: Send + Sync {
         params: ListArtifactsParams,
     ) -> Result<common::api::PagedResult<crate::models::artifact::Artifact>>;
 
+    /// 通用查询产物，支持完整查询条件 + 分页。
+    ///
+    /// query 是核心查询能力，list 是语法糖。
+    /// 注意：调用方需自行确保 project_id 权限校验。
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: crate::service::dal::artifact::ArtifactQuery,
+    ) -> Result<common::api::PagedResult<crate::models::artifact::Artifact>>;
+
     /// 删除产物
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()>;
 

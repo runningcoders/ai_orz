@@ -1,6 +1,7 @@
 //! Model Provider related API request/response DTOs - shared between backend and frontend
 
-use crate::enums::{ModelCapability, ProviderType};
+use crate::api::PaginationParams;
+use crate::enums::{ModelCapability, ModelProviderStatus, ProviderType};
 use ai_orz_macros::Params;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -226,6 +227,28 @@ pub struct ListModelProvidersRequest {
 pub struct ListModelProvidersResponse {
     /// List of all model providers
     pub providers: Vec<ModelProviderListItem>,
+}
+
+/// Model Provider 通用查询请求（POST body）
+///
+/// 支持完整查询条件 + 分页，query 是核心查询能力。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct ModelProviderQueryRequest {
+    /// 按提供方类型查询
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_type: Option<ProviderType>,
+    /// 按能力类型查询
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capability: Option<ModelCapability>,
+    /// 按状态查询
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<ModelProviderStatus>,
+    /// 排除指定状态
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exclude_status: Option<ModelProviderStatus>,
+    /// 分页参数（limit + offset）
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
 }
 
 /// Model Provider list item response alias (frontend compatibility)

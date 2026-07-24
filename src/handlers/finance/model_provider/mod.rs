@@ -6,6 +6,7 @@ pub mod create_model_provider;
 pub mod delete_model_provider;
 pub mod get_model_provider;
 pub mod list_model_providers;
+pub mod query_model_providers;
 pub mod rebuild_progress;
 pub mod switch_embedding;
 pub mod test_connection;

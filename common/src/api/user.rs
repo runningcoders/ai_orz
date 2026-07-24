@@ -1,5 +1,6 @@
 //! User-related API request/response DTOs - shared between backend and frontend
 
+use crate::api::PaginationParams;
 use ai_orz_macros::Params;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -109,6 +110,19 @@ pub struct ListUsersResponse {
     pub data: Vec<UserListItem>,
     /// 用户总数
     pub total: u64,
+}
+
+/// User 通用查询请求（POST body）
+///
+/// 支持完整查询条件 + 分页，query 是核心查询能力。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct UserQueryRequest {
+    /// 按组织 ID 查询
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub organization_id: Option<String>,
+    /// 分页参数（limit + offset）
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
 }
 
 /// User list item alias (frontend compatibility)
