@@ -2,6 +2,7 @@
 
 pub mod button;
 pub mod canvas_scene;
+pub mod force_layout;
 pub mod confirm_dialog;
 pub mod graph;
 pub mod modal;
