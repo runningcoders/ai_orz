@@ -20,7 +20,7 @@ pub struct ListArtifactsParams {
     pub task_id: Option<String>,
     pub file_type: Option<FileType>,
     pub source_type: Option<ArtifactSourceType>,
-    pub limit: Option<usize>,
+    pub pagination: common::api::PaginationParams,
 }
 
 #[async_trait::async_trait]
@@ -169,7 +169,7 @@ impl super::ArtifactManage for ProjectDomainImpl {
         &self,
         ctx: RequestContext,
         params: ListArtifactsParams,
-    ) -> Result<Vec<Artifact>> {
+    ) -> Result<common::api::PagedResult<Artifact>> {
         if params.project_id.trim().is_empty() {
             bail_err!(InvalidRequest, "project_id 不能为空");
         }
@@ -185,7 +185,7 @@ impl super::ArtifactManage for ProjectDomainImpl {
                     task_id: params.task_id,
                     file_type: params.file_type,
                     source_type: params.source_type,
-                    limit: params.limit,
+                    pagination: params.pagination,
                 },
             )
             .await

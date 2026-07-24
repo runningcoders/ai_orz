@@ -5,6 +5,7 @@ use common::error::Result;
 use crate::models::artifact::ArtifactPo;
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
+use common::api::PagedResult;
 use common::enums::{ArtifactSourceType, FileType};
 
 /// Artifact 查询参数
@@ -14,7 +15,7 @@ pub struct ArtifactQuery {
     pub task_id: Option<String>,
     pub file_type: Option<FileType>,
     pub source_type: Option<ArtifactSourceType>,
-    pub limit: Option<usize>,
+    pub pagination: common::api::PaginationParams,
 }
 
 /// Artifact DAO trait
@@ -27,7 +28,7 @@ pub trait ArtifactDao: Send + Sync + std::fmt::Debug {
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<ArtifactPo>>;
 
     /// 通用查询
-    async fn query(&self, ctx: RequestContext, query: ArtifactQuery) -> Result<Vec<ArtifactPo>>;
+    async fn query(&self, ctx: RequestContext, query: ArtifactQuery) -> Result<PagedResult<ArtifactPo>>;
 
     /// List all artifacts for a project, automatically filters deleted artifacts
     async fn list_by_project(

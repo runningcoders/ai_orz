@@ -90,6 +90,9 @@ pub struct ListArtifactsRequest {
     /// Return limit.
     #[param(source = "query")]
     pub limit: Option<usize>,
+    /// Skip count.
+    #[param(source = "query")]
+    pub offset: Option<usize>,
 }
 
 /// List Artifact response.

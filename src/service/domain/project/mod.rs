@@ -383,7 +383,7 @@ pub trait ArtifactManage: Send + Sync {
         &self,
         ctx: RequestContext,
         params: ListArtifactsParams,
-    ) -> Result<Vec<Artifact>>;
+    ) -> Result<common::api::PagedResult<crate::models::artifact::Artifact>>;
 
     /// 删除产物
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()>;

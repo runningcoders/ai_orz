@@ -21,7 +21,7 @@ pub struct ArtifactQuery {
     pub task_id: Option<String>,
     pub file_type: Option<FileType>,
     pub source_type: Option<ArtifactSourceType>,
-    pub limit: Option<usize>,
+    pub pagination: common::api::PaginationParams,
 }
 
 // ==================== 单例管理 ====================
@@ -74,7 +74,7 @@ pub trait ArtifactDal: Send + Sync {
         &self,
         ctx: RequestContext,
         query: ArtifactQuery,
-    ) -> Result<Vec<Artifact>>;
+    ) -> Result<common::api::PagedResult<Artifact>>;
 
     /// 更新产物状态
     async fn update_status(
@@ -161,8 +161,8 @@ impl ArtifactDal for ArtifactDalImpl {
         &self,
         ctx: RequestContext,
         query: ArtifactQuery,
-    ) -> Result<Vec<Artifact>> {
-        let list = self
+    ) -> Result<common::api::PagedResult<Artifact>> {
+        let page = self
             .artifact_dao
             .query(
                 ctx,
@@ -171,11 +171,11 @@ impl ArtifactDal for ArtifactDalImpl {
                     task_id: query.task_id,
                     file_type: query.file_type,
                     source_type: query.source_type,
-                    limit: query.limit,
+                    pagination: query.pagination,
                 },
             )
             .await?;
-        Ok(list.into_iter().map(Artifact::from_po).collect())
+        Ok(page.map(Artifact::from_po))
     }
 
     async fn update_status(

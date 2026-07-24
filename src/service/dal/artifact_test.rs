@@ -126,11 +126,15 @@ async fn test_query_by_project(pool: SqlitePool) {
         task_id: None,
         file_type: None,
         source_type: None,
-        limit: Some(2),
+        pagination: common::api::PaginationParams {
+            limit: Some(2),
+            offset: None,
+        },
     };
 
-    let artifacts = dal.query(ctx, query).await.unwrap();
-    assert_eq!(artifacts.len(), 2);
+    let page = dal.query(ctx, query).await.unwrap();
+    assert_eq!(page.items.len(), 2);
+    assert_eq!(page.total, 3);
 }
 
 #[sqlx::test]

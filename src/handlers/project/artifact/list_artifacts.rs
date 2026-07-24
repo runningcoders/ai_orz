@@ -4,7 +4,7 @@ use super::response;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::{self, ListArtifactsParams};
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::{ListArtifactsRequest, ListArtifactsResponse};
+use common::api::{ArtifactDetail, ListArtifactsRequest, PagedResult};
 use common::error::{Result, bail_err};
 
 const DEFAULT_MAX_LIMIT: usize = 100;
@@ -20,12 +20,17 @@ const DEFAULT_MAX_LIMIT: usize = 100;
 pub async fn list_artifacts(
     ctx: RequestContext,
     params: ListArtifactsRequest,
-) -> Result<ListArtifactsResponse> {
+) -> Result<PagedResult<ArtifactDetail>> {
     if params.project_id.trim().is_empty() {
         bail_err!(InvalidRequest, "project_id 不能为空");
     }
 
-    let artifacts = project::domain()
+    let limit = params
+        .limit
+        .map(|l| l.min(DEFAULT_MAX_LIMIT))
+        .or(Some(DEFAULT_MAX_LIMIT));
+
+    let page = project::domain()
         .artifact_manage()
         .list(
             ctx,
@@ -34,16 +39,13 @@ pub async fn list_artifacts(
                 task_id: params.task_id,
                 file_type: params.file_type,
                 source_type: params.source_type,
-                limit: Some(
-                    params
-                        .limit
-                        .unwrap_or(DEFAULT_MAX_LIMIT)
-                        .min(DEFAULT_MAX_LIMIT),
-                ),
+                pagination: common::api::PaginationParams {
+                    limit,
+                    offset: params.offset,
+                },
             },
         )
         .await?;
-    let response_items = artifacts.iter().map(response::to_detail).collect();
 
-    Ok(response_items)
+    Ok(page.map(|a| response::to_detail(&a)))
 }

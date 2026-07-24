@@ -4,8 +4,10 @@ use super::{ArtifactDao, ArtifactQuery};
 use common::error::{bail_err, Result};
 use crate::models::{artifact::ArtifactPo, file::FileMeta};
 use crate::pkg::RequestContext;
+use common::api::PagedResult;
 use common::enums::{ArtifactSourceType, FileType};
 use sqlx::types::Json;
+use sqlx::QueryBuilder;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -115,47 +117,39 @@ WHERE id = ? AND "status" != 0
         Ok(artifact)
     }
 
-    async fn query(&self, ctx: RequestContext, query: ArtifactQuery) -> Result<Vec<ArtifactPo>> {
+    async fn query(&self, ctx: RequestContext, query: ArtifactQuery) -> Result<PagedResult<ArtifactPo>> {
         let pool = ctx.db_pool();
-        let mut builder = sqlx::QueryBuilder::new(
+
+        let mut count_builder = QueryBuilder::new(
+            r#"SELECT COUNT(*) FROM artifacts WHERE "status" != 0"#,
+        );
+        push_query_filters(&mut count_builder, &query);
+        let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
+
+        let mut list_builder = QueryBuilder::new(
             r#"SELECT id, project_id, task_id, name, description, file_type, file_meta, source_type, tags, status, created_by, modified_by, created_at, updated_at FROM artifacts WHERE "status" != 0"#,
         );
-
-        // 项目过滤
-        if let Some(project_id) = &query.project_id {
-            builder.push(" AND project_id = ").push_bind(project_id);
-        }
-
-        // 任务过滤
-        if let Some(task_id) = &query.task_id {
-            builder.push(" AND task_id = ").push_bind(task_id);
-        }
-
-        // 文件类型过滤
-        if let Some(file_type) = query.file_type {
-            builder
-                .push(" AND file_type = ")
-                .push_bind(file_type as i32);
-        }
-
-        // 来源类型过滤
-        if let Some(source_type) = query.source_type {
-            builder
-                .push(" AND source_type = ")
-                .push_bind(source_type as i32);
-        }
+        push_query_filters(&mut list_builder, &query);
 
         // 排序
-        builder.push(" ORDER BY created_at DESC");
+        list_builder.push(" ORDER BY created_at DESC");
 
-        // 限制数量
-        if let Some(limit) = query.limit {
-            builder.push(" LIMIT ").push_bind(limit as i64);
+        // 分页
+        if let Some(limit) = query.pagination.limit {
+            list_builder.push(" LIMIT ").push_bind(limit as i64);
+        } else if query.pagination.offset.is_some() {
+            list_builder.push(" LIMIT -1");
+        }
+        if let Some(offset) = query.pagination.offset {
+            list_builder.push(" OFFSET ").push_bind(offset as i64);
         }
 
-        let rows = builder.build_query_as().fetch_all(pool).await?;
+        let items = list_builder.build_query_as().fetch_all(pool).await?;
 
-        Ok(rows)
+        Ok(PagedResult {
+            items,
+            total: total as usize,
+        })
     }
 
     async fn list_by_project(
@@ -164,26 +158,30 @@ WHERE id = ? AND "status" != 0
         project_id: &str,
     ) -> Result<Vec<ArtifactPo>> {
         // 语法糖：调用通用查询
-        self.query(
-            ctx,
-            ArtifactQuery {
-                project_id: Some(project_id.to_string()),
-                ..Default::default()
-            },
-        )
-        .await
+        let page = self
+            .query(
+                ctx,
+                ArtifactQuery {
+                    project_id: Some(project_id.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(page.items)
     }
 
     async fn list_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<Vec<ArtifactPo>> {
         // 语法糖：调用通用查询
-        self.query(
-            ctx,
-            ArtifactQuery {
-                task_id: Some(task_id.to_string()),
-                ..Default::default()
-            },
-        )
-        .await
+        let page = self
+            .query(
+                ctx,
+                ArtifactQuery {
+                    task_id: Some(task_id.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(page.items)
     }
 
     async fn count_by_project(&self, ctx: RequestContext, project_id: &str) -> Result<i64> {
@@ -316,5 +314,30 @@ WHERE id = ?
         std::fs::write(file_path, content)?;
 
         Ok(())
+    }
+}
+
+/// 推送查询过滤条件到 QueryBuilder（COUNT 和 LIST 查询复用）
+fn push_query_filters<'args>(
+    builder: &mut QueryBuilder<'args, sqlx::Sqlite>,
+    query: &ArtifactQuery,
+) {
+    if let Some(project_id) = &query.project_id {
+        builder
+            .push(" AND project_id = ")
+            .push_bind(project_id.clone());
+    }
+    if let Some(task_id) = &query.task_id {
+        builder.push(" AND task_id = ").push_bind(task_id.clone());
+    }
+    if let Some(file_type) = query.file_type {
+        builder
+            .push(" AND file_type = ")
+            .push_bind(file_type as i32);
+    }
+    if let Some(source_type) = query.source_type {
+        builder
+            .push(" AND source_type = ")
+            .push_bind(source_type as i32);
     }
 }
