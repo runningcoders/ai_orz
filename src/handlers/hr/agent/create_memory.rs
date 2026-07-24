@@ -79,6 +79,7 @@ async fn create_short_term(ctx: RequestContext, params: CreateMemoryParams) -> R
 async fn create_knowledge_node(ctx: RequestContext, params: CreateMemoryParams) -> Result<String> {
     let now = chrono::Utc::now().timestamp();
     let summary = params.summary.unwrap_or_else(|| params.content.clone());
+    let tags_json = serde_json::to_string(&params.tags.unwrap_or_default())?;
 
     let id_content = format!("{}{}", params.content, now);
     let id = format!("kn_{}", sha256::digest(id_content));
@@ -92,6 +93,7 @@ async fn create_knowledge_node(ctx: RequestContext, params: CreateMemoryParams) 
         node_description: params.content.clone(),
         node_type: "general".to_string(),
         summary,
+        tags: tags_json,
         status: common::enums::MemoryStatus::Active,
         created_at: now,
         updated_at: now,

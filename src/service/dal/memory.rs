@@ -11,7 +11,7 @@ use crate::models::memory::{
     KnowledgeNodeRelationPo, KnowledgeReferencePo, LongTermKnowledgeNodePo, Memory,
     MemoryCreateParams, MemoryPo, MemoryTrace, ShortTermMemoryIndexPo,
 };
-use crate::models::vector::{MatchType, SearchMatchInfo, VectorIndexParams};
+use crate::models::vector::{MatchType, SearchMatchInfo, VectorIndexParams, Vectorizable};
 use crate::pkg::RequestContext;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::memory::{MemoryDao, MemoryQuery, MemorySearch, MemoryVectorDao};
@@ -329,12 +329,12 @@ impl MemoryDal for MemoryDalImpl {
                     .update_short_term_index(ctx.clone(), short_term.clone())
                     .await?;
 
-                // 重新向量化 summary
-                match try_build_vector_params_for_search(
+                // 重新向量化 summary + tags
+                match try_build_vector_params_for_entity(
                     ctx.clone(),
                     &self.cortex_dao,
                     &self.model_provider_dao,
-                    &short_term.summary,
+                    &short_term,
                 )
                 .await
                 {
@@ -366,13 +366,12 @@ impl MemoryDal for MemoryDalImpl {
                     .update_knowledge_node(ctx.clone(), &node)
                     .await?;
 
-                // 重新向量化（node_description + summary 拼接）
-                let text_for_embedding = format!("{}\n{}", node.node_description, node.summary);
-                match try_build_vector_params_for_search(
+                // 重新向量化（node_description + summary + tags 拼接）
+                match try_build_vector_params_for_entity(
                     ctx.clone(),
                     &self.cortex_dao,
                     &self.model_provider_dao,
-                    &text_for_embedding,
+                    &node,
                 )
                 .await
                 {
@@ -539,6 +538,7 @@ impl MemoryDal for MemoryDalImpl {
                 node_description: index.summary.clone(),
                 node_type: "summary".to_string(),
                 summary: index.summary.clone(),
+                tags: index.tags.clone(),
                 status: MemoryStatus::Active,
                 created_at: common::constants::utils::current_timestamp(),
                 updated_at: common::constants::utils::current_timestamp(),
@@ -585,11 +585,11 @@ impl MemoryDal for MemoryDalImpl {
         // 2. 分别检查两个集合的 model_provider_id
         let short_term_stored = ctx
             .vector_store()
-            .get_collection_model_provider_id("memory:short_term")
+            .get_collection_model_provider_id(ShortTermMemoryIndexPo::vector_collection())
             .await?;
         let knowledge_node_stored = ctx
             .vector_store()
-            .get_collection_model_provider_id("memory:knowledge_node")
+            .get_collection_model_provider_id(LongTermKnowledgeNodePo::vector_collection())
             .await?;
 
         let short_term_need_rebuild = short_term_stored.as_ref() != Some(&current_provider_id);
@@ -609,12 +609,12 @@ impl MemoryDal for MemoryDalImpl {
         // 3. 清空需要重建的集合
         if short_term_need_rebuild {
             ctx.vector_store()
-                .clear_collection("memory:short_term")
+                .clear_collection(ShortTermMemoryIndexPo::vector_collection())
                 .await?;
         }
         if knowledge_node_need_rebuild {
             ctx.vector_store()
-                .clear_collection("memory:knowledge_node")
+                .clear_collection(LongTermKnowledgeNodePo::vector_collection())
                 .await?;
         }
 
@@ -632,7 +632,7 @@ impl MemoryDal for MemoryDalImpl {
             for index in &short_terms {
                 match self
                     .cortex_dao
-                    .embed_text_for_search(ctx.clone(), cortex.as_ref(), &index.summary)
+                    .embed_entity(ctx.clone(), cortex.as_ref(), index)
                     .await
                 {
                     Ok(vec_params) => {
@@ -662,7 +662,10 @@ impl MemoryDal for MemoryDalImpl {
                 }
             }
             ctx.vector_store()
-                .set_collection_model_provider_id("memory:short_term", &current_provider_id)
+                .set_collection_model_provider_id(
+                    ShortTermMemoryIndexPo::vector_collection(),
+                    &current_provider_id,
+                )
                 .await?;
         }
 
@@ -673,10 +676,9 @@ impl MemoryDal for MemoryDalImpl {
                 .query_knowledge_nodes(ctx.clone(), MemoryQuery::default())
                 .await?;
             for node in &nodes {
-                let text_for_embedding = format!("{}\n{}", node.node_description, node.summary);
                 match self
                     .cortex_dao
-                    .embed_text_for_search(ctx.clone(), cortex.as_ref(), &text_for_embedding)
+                    .embed_entity(ctx.clone(), cortex.as_ref(), node)
                     .await
                 {
                     Ok(vec_params) => {
@@ -706,7 +708,10 @@ impl MemoryDal for MemoryDalImpl {
                 }
             }
             ctx.vector_store()
-                .set_collection_model_provider_id("memory:knowledge_node", &current_provider_id)
+                .set_collection_model_provider_id(
+                    LongTermKnowledgeNodePo::vector_collection(),
+                    &current_provider_id,
+                )
                 .await?;
         }
 
@@ -1289,12 +1294,12 @@ impl MemoryDalImpl {
             .create_short_term_index(ctx.clone(), index.clone())
             .await?;
 
-        // Step 2: 向量化 summary（失败 warn 降级，不影响主流程）
-        match try_build_vector_params_for_search(
+        // Step 2: 向量化 summary + tags（失败 warn 降级，不影响主流程）
+        match try_build_vector_params_for_entity(
             ctx.clone(),
             &self.cortex_dao,
             &self.model_provider_dao,
-            &index.summary,
+            &index,
         )
         .await
         {
@@ -1340,13 +1345,12 @@ impl MemoryDalImpl {
                 .await?;
         }
 
-        // Step 3: 向量化（node_description + summary 拼接）
-        let vector_text = format!("{}\n{}", node.node_description, node.summary);
-        match try_build_vector_params_for_search(
+        // Step 3: 向量化（node_description + summary + tags 拼接）
+        match try_build_vector_params_for_entity(
             ctx.clone(),
             &self.cortex_dao,
             &self.model_provider_dao,
-            &vector_text,
+            &node,
         )
         .await
         {
@@ -1397,12 +1401,6 @@ impl MemoryDalImpl {
 
 // ==================== Helpers ====================
 
-/// 尝试为指定文本构建向量索引参数
-///
-/// 流程：
-/// 1. 取默认 Embedding ModelProvider；无则返回 None（无可用 provider）
-/// 2. 创建 Cortex（trait 对象）
-/// 3. 调 `embeddings(&[text])` 生成向量
 /// 尝试为查询文本构建向量索引参数（用于搜索场景）
 ///
 /// 任何中间步骤失败都会向上抛错；调用方决定是否 warn 降级。
@@ -1423,6 +1421,35 @@ async fn try_build_vector_params_for_search(
     let cortex = cortex_dao.create_cortex_trait(ctx.clone(), &provider, vec![])?;
     let params = cortex_dao
         .embed_text_for_search(ctx.clone(), cortex.as_ref(), text)
+        .await?;
+    Ok(Some(params))
+}
+
+/// 尝试为可向量化实体构建向量索引参数（用于索引场景）
+///
+/// 流程：
+/// 1. 取默认 Embedding ModelProvider；无则返回 None（无可用 provider）
+/// 2. 创建 Cortex（trait 对象）
+/// 3. 调 `embed_entity` 生成完整 VectorIndexParams（自动调用 entity.vectorize_text()）
+///
+/// 任何中间步骤失败都会向上抛错；调用方决定是否 warn 降级。
+/// 返回 `Ok(None)` 表示无 Embedding Provider 配置（合法场景）。
+async fn try_build_vector_params_for_entity(
+    ctx: RequestContext,
+    cortex_dao: &Arc<dyn CortexDao>,
+    model_provider_dao: &Arc<dyn ModelProviderDao>,
+    entity: &dyn Vectorizable,
+) -> Result<Option<VectorIndexParams>> {
+    let Some(provider) = model_provider_dao
+        .get_default_embedding_provider(ctx.clone())
+        .await?
+    else {
+        return Ok(None);
+    };
+
+    let cortex = cortex_dao.create_cortex_trait(ctx.clone(), &provider, vec![])?;
+    let params = cortex_dao
+        .embed_entity(ctx.clone(), cortex.as_ref(), entity)
         .await?;
     Ok(Some(params))
 }

@@ -177,7 +177,7 @@ pub async fn list_tools() -> Result<ListToolsResponse, ApiError> {
 
 // ===== 记忆搜索 =====
 
-pub async fn search_memory(query: &str, memory_type: Option<&str>) -> Result<SearchMemoryResponse, ApiError> {
+pub async fn search_memory(query: &str, memory_type: Option<&str>, tags: Option<&[String]>) -> Result<SearchMemoryResponse, ApiError> {
     let params = SearchMemoryParams {
         query: query.to_string(),
         max_results: Some(20),
@@ -186,20 +186,22 @@ pub async fn search_memory(query: &str, memory_type: Option<&str>) -> Result<Sea
         traversal_breadth: None,
         traversal_strategy: None,
         seed_node_ids: None,
+        tags: tags.map(|t| t.to_vec()),
     };
     api_post("/api/v1/hr/agents/search_memory", &params).await
 }
 
-pub async fn query_memory(agent_id: Option<&str>, memory_type: Option<&str>) -> Result<QueryMemoryResponse, ApiError> {
+pub async fn query_memory(agent_id: Option<&str>, memory_type: Option<&str>, tags: Option<&[String]>) -> Result<QueryMemoryResponse, ApiError> {
     let params = QueryMemoryParams {
         agent_id: agent_id.map(|s| s.to_string()),
         memory_type: memory_type.map(|s| s.to_string()),
         limit: Some(20),
+        tags: tags.map(|t| t.to_vec()),
     };
     api_post("/api/v1/hr/agents/query_memory", &params).await
 }
 
-pub async fn search_memory_with_traversal(query: &str, seed_node_ids: &[String], depth: i32) -> Result<SearchMemoryResponse, ApiError> {
+pub async fn search_memory_with_traversal(query: &str, seed_node_ids: &[String], depth: i32, tags: Option<&[String]>) -> Result<SearchMemoryResponse, ApiError> {
     let params = SearchMemoryParams {
         query: query.to_string(),
         max_results: Some(50),
@@ -208,6 +210,7 @@ pub async fn search_memory_with_traversal(query: &str, seed_node_ids: &[String],
         traversal_breadth: Some(10),
         traversal_strategy: Some("breadth_first".to_string()),
         seed_node_ids: Some(seed_node_ids.to_vec()),
+        tags: tags.map(|t| t.to_vec()),
     };
     api_post("/api/v1/hr/agents/search_memory", &params).await
 }

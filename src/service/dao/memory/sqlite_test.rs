@@ -69,6 +69,7 @@ async fn test_create_knowledge_node(pool: SqlitePool) {
         node_description: "Rust 的内存安全特性".to_string(),
         node_type: "concept".to_string(),
         summary: "Rust 通过所有权系统实现内存安全".to_string(),
+        tags: "[]".to_string(),
         status: MemoryStatus::Active,
         created_at: 0,
         updated_at: 0,
@@ -104,6 +105,7 @@ async fn test_add_knowledge_relation(pool: SqlitePool) {
         node_description: "Rust 编程语言".to_string(),
         node_type: "language".to_string(),
         summary: "Rust 是一门系统编程语言".to_string(),
+        tags: "[]".to_string(),
         status: MemoryStatus::Active,
         created_at: 0,
         updated_at: 0,
@@ -115,6 +117,7 @@ async fn test_add_knowledge_relation(pool: SqlitePool) {
         node_description: "内存安全特性".to_string(),
         node_type: "concept".to_string(),
         summary: "内存安全是 Rust 的核心特性".to_string(),
+        tags: "[]".to_string(),
         status: MemoryStatus::Active,
         created_at: 0,
         updated_at: 0,
@@ -161,6 +164,7 @@ async fn test_add_knowledge_reference(pool: SqlitePool) {
         node_description: "测试描述".to_string(),
         node_type: "test".to_string(),
         summary: "测试摘要".to_string(),
+        tags: "[]".to_string(),
         status: MemoryStatus::Active,
         created_at: 0,
         updated_at: 0,
@@ -470,6 +474,7 @@ async fn test_update_and_list_knowledge_nodes(pool: SqlitePool) {
         node_description: "原始描述".to_string(),
         node_type: "concept".to_string(),
         summary: "原始摘要".to_string(),
+        tags: "[]".to_string(),
         status: MemoryStatus::Active,
         created_at: now,
         updated_at: now,
@@ -499,6 +504,7 @@ async fn test_update_and_list_knowledge_nodes(pool: SqlitePool) {
             node_description: "批量描述1".to_string(),
             node_type: "concept".to_string(),
             summary: "批量摘要1".to_string(),
+            tags: "[]".to_string(),
             status: MemoryStatus::Active,
             created_at: now,
             updated_at: now,
@@ -510,6 +516,7 @@ async fn test_update_and_list_knowledge_nodes(pool: SqlitePool) {
             node_description: "批量描述2".to_string(),
             node_type: "concept".to_string(),
             summary: "批量摘要2".to_string(),
+            tags: "[]".to_string(),
             status: MemoryStatus::Active,
             created_at: now,
             updated_at: now,
@@ -543,6 +550,7 @@ async fn test_query_and_delete_knowledge_nodes(pool: SqlitePool) {
             node_description: "Rust 语言学习笔记".to_string(),
             node_type: "language".to_string(),
             summary: "Rust 是一门系统编程语言".to_string(),
+            tags: "[]".to_string(),
             status: MemoryStatus::Active,
             created_at: now,
             updated_at: now,
@@ -554,6 +562,7 @@ async fn test_query_and_delete_knowledge_nodes(pool: SqlitePool) {
             node_description: "Python 编程技巧".to_string(),
             node_type: "language".to_string(),
             summary: "Python 是一门动态语言".to_string(),
+            tags: "[]".to_string(),
             status: MemoryStatus::Active,
             created_at: now,
             updated_at: now,
@@ -565,6 +574,7 @@ async fn test_query_and_delete_knowledge_nodes(pool: SqlitePool) {
             node_description: "机器学习入门".to_string(),
             node_type: "concept".to_string(),
             summary: "机器学习是人工智能的基础".to_string(),
+            tags: "[]".to_string(),
             status: MemoryStatus::Active,
             created_at: now,
             updated_at: now,
@@ -624,6 +634,7 @@ async fn test_knowledge_relations(pool: SqlitePool) {
             node_description: "节点1描述".to_string(),
             node_type: "concept".to_string(),
             summary: "节点1摘要".to_string(),
+            tags: "[]".to_string(),
             status: MemoryStatus::Active,
             created_at: now,
             updated_at: now,
@@ -635,6 +646,7 @@ async fn test_knowledge_relations(pool: SqlitePool) {
             node_description: "节点2描述".to_string(),
             node_type: "concept".to_string(),
             summary: "节点2摘要".to_string(),
+            tags: "[]".to_string(),
             status: MemoryStatus::Active,
             created_at: now,
             updated_at: now,
@@ -699,6 +711,7 @@ async fn test_knowledge_references(pool: SqlitePool) {
         node_description: "引用测试描述".to_string(),
         node_type: "test".to_string(),
         summary: "引用测试摘要".to_string(),
+        tags: "[]".to_string(),
         status: MemoryStatus::Active,
         created_at: now,
         updated_at: now,
@@ -942,6 +955,7 @@ async fn test_knowledge_node_fts5_trigger_insert_sync(pool: SqlitePool) {
         node_description: "ownership borrow checker mechanism".to_string(),
         node_type: "concept".to_string(),
         summary: "ownership system ensures memory safety".to_string(),
+        tags: "[]".to_string(),
         status: MemoryStatus::Active,
         created_at: now,
         updated_at: now,
@@ -1161,6 +1175,7 @@ async fn test_search_knowledge_nodes_fts5(pool: SqlitePool) {
         node_description: "borrow checker ensures safety".to_string(),
         node_type: "concept".to_string(),
         summary: "ownership system is core to Rust language".to_string(),
+        tags: "[]".to_string(),
         status: MemoryStatus::Active,
         created_at: now,
         updated_at: now,
@@ -1176,6 +1191,7 @@ async fn test_search_knowledge_nodes_fts5(pool: SqlitePool) {
         node_description: "function decorator pattern".to_string(),
         node_type: "concept".to_string(),
         summary: "decorator is a metaprogramming tool in Python".to_string(),
+        tags: "[]".to_string(),
         status: MemoryStatus::Active,
         created_at: now,
         updated_at: now,
@@ -1204,4 +1220,109 @@ async fn test_search_knowledge_nodes_fts5(pool: SqlitePool) {
     assert_eq!(po.id, "kn-fts-search-1");
     assert!(po.node_name.contains("Rust"));
     assert!(fts_rank.is_some(), "fts_rank should be Some for MATCH results");
+}
+
+#[sqlx::test]
+async fn test_query_knowledge_nodes_tags_filter(pool: SqlitePool) {
+    crate::config::init().unwrap();
+    let dao = MemoryDaoSqliteImpl::new();
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool.clone());
+
+    // 插入 3 个知识节点，带不同 tags
+    let nodes = vec![
+        LongTermKnowledgeNodePo {
+            id: "kn-tags-1".to_string(),
+            agent_id: "test-agent".to_string(),
+            node_name: "Rust 基础".to_string(),
+            node_description: "Rust 所有权与借用".to_string(),
+            node_type: "concept".to_string(),
+            summary: "Rust 内存安全".to_string(),
+            tags: r#"["rust","memory"]"#.to_string(),
+            status: MemoryStatus::Active,
+            created_at: 1000,
+            updated_at: 1000,
+        },
+        LongTermKnowledgeNodePo {
+            id: "kn-tags-2".to_string(),
+            agent_id: "test-agent".to_string(),
+            node_name: "React Hooks".to_string(),
+            node_description: "React 状态管理".to_string(),
+            node_type: "concept".to_string(),
+            summary: "前端状态".to_string(),
+            tags: r#"["react","frontend"]"#.to_string(),
+            status: MemoryStatus::Active,
+            created_at: 2000,
+            updated_at: 2000,
+        },
+        LongTermKnowledgeNodePo {
+            id: "kn-tags-3".to_string(),
+            agent_id: "test-agent".to_string(),
+            node_name: "WASM 互操作".to_string(),
+            node_description: "Rust 与 JS 互操作".to_string(),
+            node_type: "concept".to_string(),
+            summary: "Rust 编译到 WASM".to_string(),
+            tags: r#"["rust","frontend"]"#.to_string(),
+            status: MemoryStatus::Active,
+            created_at: 3000,
+            updated_at: 3000,
+        },
+    ];
+    dao.batch_save_knowledge_nodes(ctx.clone(), &nodes)
+        .await
+        .unwrap();
+
+    use crate::service::dao::memory::MemoryQuery;
+
+    // 按 "rust" tag 过滤 → 应返回 node1 和 node3
+    let query_rust = MemoryQuery {
+        agent_id: Some("test-agent".to_string()),
+        tags: Some(vec!["rust".to_string()]),
+        ..Default::default()
+    };
+    let results = dao
+        .query_knowledge_nodes(ctx.clone(), query_rust)
+        .await
+        .unwrap();
+    assert_eq!(results.len(), 2, "按 rust tag 过滤应返回 2 个节点");
+    let ids: Vec<&str> = results.iter().map(|n| n.id.as_str()).collect();
+    assert!(ids.contains(&"kn-tags-1"));
+    assert!(ids.contains(&"kn-tags-3"));
+
+    // 按 "frontend" tag 过滤 → 应返回 node2 和 node3
+    let query_frontend = MemoryQuery {
+        agent_id: Some("test-agent".to_string()),
+        tags: Some(vec!["frontend".to_string()]),
+        ..Default::default()
+    };
+    let results = dao
+        .query_knowledge_nodes(ctx.clone(), query_frontend)
+        .await
+        .unwrap();
+    assert_eq!(results.len(), 2, "按 frontend tag 过滤应返回 2 个节点");
+    let ids: Vec<&str> = results.iter().map(|n| n.id.as_str()).collect();
+    assert!(ids.contains(&"kn-tags-2"));
+    assert!(ids.contains(&"kn-tags-3"));
+
+    // 按 OR 语义过滤 "rust" + "react" → 应返回全部 3 个
+    let query_multi = MemoryQuery {
+        agent_id: Some("test-agent".to_string()),
+        tags: Some(vec!["rust".to_string(), "react".to_string()]),
+        ..Default::default()
+    };
+    let results = dao
+        .query_knowledge_nodes(ctx.clone(), query_multi)
+        .await
+        .unwrap();
+    assert_eq!(results.len(), 3, "按 rust+react OR 语义过滤应返回 3 个节点");
+
+    // 无 tags 过滤 → 应返回全部 3 个
+    let query_none = MemoryQuery {
+        agent_id: Some("test-agent".to_string()),
+        ..Default::default()
+    };
+    let results = dao
+        .query_knowledge_nodes(ctx, query_none)
+        .await
+        .unwrap();
+    assert_eq!(results.len(), 3, "无 tags 过滤应返回全部 3 个节点");
 }

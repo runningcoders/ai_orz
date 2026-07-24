@@ -57,11 +57,11 @@ fn fetch_memories(
     spawn(async move {
         let mem_type = Some(tab.memory_type());
         let fetch_result: Result<Vec<MemoryResult>, ApiError> = if kw.trim().is_empty() {
-            query_memory(agent_id.as_deref(), mem_type)
+            query_memory(agent_id.as_deref(), mem_type, None)
                 .await
                 .map(|r| r.results)
         } else {
-            search_memory(&kw, mem_type)
+            search_memory(&kw, mem_type, None)
                 .await
                 .map(|r| r.results)
         };
@@ -187,6 +187,8 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                                 let has_src = item.source_node_id.is_some();
                                 let has_tgt = item.target_node_id.is_some();
                                 let has_rel = item.relation_type.is_some();
+                                let tags = item.tags.clone();
+                                let has_tags = tags.as_ref().map_or(false, |t| !t.is_empty());
 
                                 let active = active_tab();
                                 let badge_class = active.badge_class();
@@ -205,6 +207,15 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                                         if has_summary {
                                             div { class: "text-xs text-base-content/70 mb-2",
                                                 "摘要: {summary_text}"
+                                            }
+                                        }
+                                        if has_tags {
+                                            if let Some(tags_list) = &tags {
+                                                div { class: "flex flex-wrap gap-1 mb-2",
+                                                    for tag in tags_list.iter() {
+                                                        span { class: "badge badge-neutral badge-xs", "{tag}" }
+                                                    }
+                                                }
                                             }
                                         }
                                         if is_relation {

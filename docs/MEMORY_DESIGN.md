@@ -83,18 +83,25 @@ CREATE TABLE IF NOT EXISTS long_term_knowledge_node (
     node_description TEXT,
     node_type TEXT NOT NULL,
     summary TEXT NOT NULL,
+    tags TEXT NOT NULL DEFAULT '[]',   -- 标签(JSON 数组字符串)
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     FOREIGN KEY (agent_id) REFERENCES agents(id)
 );
 CREATE INDEX IF NOT EXISTS idx_lkn_agent ON long_term_knowledge_node(agent_id);
 CREATE INDEX IF NOT EXISTS idx_lkn_type ON long_term_knowledge_node(node_type);
-CREATE VIRTUAL TABLE IF NOT EXISTS lkn_fts USING FTS5(node_name, summary, content=long_term_knowledge_node);
+CREATE INDEX IF NOT EXISTS idx_lkn_tags ON long_term_knowledge_node(tags);
+CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_node_fts USING fts5(
+    node_name, summary, node_description, tags,
+    tokenize = 'trigram'
+);
 ```
 
 **设计说明**：
 - 节点关系独立存储，本表只存储节点自身信息
-- 支持全文检索节点名称和摘要
+- `tags` 字段为 JSON 数组字符串（默认 `'[]'`），与 `short_term_memory_index.tags` 对齐，用于细粒度关键词检索与过滤
+- 支持全文检索节点名称、摘要、描述与标签（trigram 分词支持中英文混合搜索）
+- 主表变更通过触发器自动同步到 `knowledge_node_fts`（详见 `20260712000000_memory_fts5.sql` 与 `20260724000000_knowledge_node_tags.sql`）
 
 ---
 

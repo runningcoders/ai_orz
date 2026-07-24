@@ -8,6 +8,7 @@ use crate::service::domain::runtime::domain as runtime_domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{SaveLongTermMemoryParams, SaveLongTermMemoryResponse};
 use common::error::{Result, err};
+use serde_json;
 
 #[register_handler_tool(
     id = "save_long_term_memory",
@@ -27,6 +28,8 @@ pub async fn save_long_term_memory(
         .summary
         .unwrap_or_else(|| params.node_description.chars().take(100).collect());
 
+    let tags_json = serde_json::to_string(&params.tags.unwrap_or_default())?;
+
     let id_content = format!("{}{}", params.node_name, now);
     let node_id = format!("kn_{}", sha256::digest(id_content));
 
@@ -39,6 +42,7 @@ pub async fn save_long_term_memory(
         node_description: params.node_description.clone(),
         node_type: params.node_type.clone(),
         summary,
+        tags: tags_json,
         status: common::enums::MemoryStatus::Active,
         created_at: now,
         updated_at: now,

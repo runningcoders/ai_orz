@@ -482,6 +482,90 @@ log_info!(ctx, "operation", "message");  // 必须是 &ctx
 
 > 💡 **重要**：Operation 必须是字符串字面量，不能是变量。完整规范请参考 [docs/logging_design.md](./docs/logging_design.md)
 
+### 4.8 向量化实体规范（强制执行，2026-07-24 新增）
+
+**核心原则：所有支持向量索引的 PO 必须实现 `Vectorizable` trait，禁止在 DAL 层手工拼接向量文本**
+
+#### 必须实现的 Trait
+
+```rust
+// src/models/vector.rs
+pub trait Vectorizable: Send + Sync {
+    /// 生成待向量化的文本内容（由 PO 自己决定哪些字段参与向量化）
+    fn vectorize_text(&self) -> String;
+
+    /// 向量集合名称（对应 vss_{collection} 表）
+    fn vector_collection() -> &'static str where Self: Sized;
+
+    // 以下为默认实现，通常无需覆盖
+    fn vector_content_hash(&self) -> String { ... }   // 默认 SHA256
+    fn vector_expire_at(&self) -> Option<i64> { ... } // 默认永不过期
+    fn needs_reindex(&self, existing_hash: &str) -> bool { ... }
+}
+```
+
+#### 调用规范
+
+| 场景 | 正确写法 | 错误写法 |
+|------|---------|---------|
+| 索引场景（create/update） | `cortex_dao.embed_entity(ctx, cortex, po)` | `cortex_dao.embed_text_for_search(ctx, cortex, &po.some_field)` |
+| 重建索引（rebuild） | `cortex_dao.embed_entity(ctx, cortex, po)` | `cortex_dao.embed_text_for_search(ctx, cortex, &format!(...))` |
+| 获取 collection 名 | `Po::vector_collection()` | 硬编码 `"namespace"` 字符串 |
+
+#### 已实现 Vectorizable 的实体
+
+| 实体 | collection | 向量化字段 |
+|------|-----------|-----------|
+| `AgentPo` | `agents` | name + role + description + capabilities |
+| `ToolPo` / `Tool` | `tools` | name + description + tags |
+| `TaskPo` | `tasks` | name + description |
+| `SkillPo` / `Skill` | `skills` | name + description + tags |
+| `ShortTermMemoryIndexPo` | `memory:short_term` | summary + tags |
+| `LongTermKnowledgeNodePo` | `memory:knowledge_node` | node_description + summary + tags |
+
+#### 禁止的写法
+
+```rust
+// ❌ 禁止：在 DAL 层手工拼接向量文本
+let text = format!("{}\n{}", po.summary, po.tags);
+cortex_dao.embed_text_for_search(ctx, cortex, &text).await
+
+// ❌ 禁止：在 PO 上添加独立的 vector_text() 方法（应实现 trait）
+impl ShortTermMemoryIndexPo {
+    pub fn vector_text(&self) -> String { ... }  // 应改为 impl Vectorizable
+}
+
+// ❌ 禁止：硬编码 collection 名
+ctx.vector_store().clear_collection("memory:short_term").await
+```
+
+#### 正确的写法
+
+```rust
+// ✅ PO 实现 Vectorizable trait
+impl Vectorizable for ShortTermMemoryIndexPo {
+    fn vectorize_text(&self) -> String {
+        // PO 自己决定哪些字段参与向量化
+        let tags = flatten_tags(&self.tags);
+        if tags.is_empty() { self.summary.clone() }
+        else { format!("{}\n{}", self.summary, tags) }
+    }
+    fn vector_collection() -> &'static str { "memory:short_term" }
+}
+
+// ✅ DAL 层调用 embed_entity（自动调用 po.vectorize_text()）
+match try_build_vector_params_for_entity(ctx, &cortex_dao, &model_provider_dao, &po).await {
+    Ok(Some(params)) => { ... }
+    Ok(None) => { /* 无 Embedding Provider，跳过 */ }
+    Err(e) => { /* 降级 warn */ }
+}
+
+// ✅ 通过 trait 获取 collection 名
+ctx.vector_store().clear_collection(ShortTermMemoryIndexPo::vector_collection()).await
+```
+
+> 💡 **设计动机**：将"哪些字段参与向量化"的知识封装在 PO 内部（信息专家原则），DAL 层无需感知 PO 的字段结构。未来调整向量化字段组合，只需改 PO 的 `vectorize_text()` 一处。
+
 ---
 
 ## 五、核心概念与实体关系

@@ -7,7 +7,7 @@
 //! - KnowledgeReferencePo - 知识节点引用原始短期索引
 //! - Memory - 记忆业务实体（包含 PO + 搜索匹配信息）
 
-use crate::models::vector::SearchMatchInfo;
+use crate::models::vector::{SearchMatchInfo, Vectorizable};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use std::collections::HashMap;
@@ -183,6 +183,32 @@ pub struct ShortTermMemoryIndexPo {
     pub updated_at: i64,
 }
 
+impl ShortTermMemoryIndexPo {
+    /// 构建用于向量索引的文本（summary + tags 拼接）
+    ///
+    /// tags 为 JSON 数组字符串，会展平为空格分隔的纯文本；
+    /// 空标签或解析失败时仅返回 summary
+    fn vector_text(&self) -> String {
+        let tags = flatten_tags(&self.tags);
+        if tags.is_empty() {
+            self.summary.clone()
+        } else {
+            format!("{}\n{}", self.summary, tags)
+        }
+    }
+}
+
+/// ✅ 实现 Vectorizable Trait（统一向量化行为）
+impl Vectorizable for ShortTermMemoryIndexPo {
+    fn vectorize_text(&self) -> String {
+        self.vector_text()
+    }
+
+    fn vector_collection() -> &'static str {
+        "memory:short_term"
+    }
+}
+
 /// 长期知识图谱节点 PO
 ///
 /// 经过归纳总结得到的知识节点，存储在 SQLite
@@ -200,12 +226,40 @@ pub struct LongTermKnowledgeNodePo {
     pub node_type: String,
     /// 综合总结
     pub summary: String,
+    /// 标签列表（用于过滤检索 + 全文索引，JSON 数组字符串）
+    pub tags: String,
     /// 记忆状态
     pub status: common::enums::MemoryStatus,
     /// 创建时间戳
     pub created_at: i64,
     /// 更新时间戳
     pub updated_at: i64,
+}
+
+impl LongTermKnowledgeNodePo {
+    /// 构建用于向量索引的文本（node_description + summary + tags 拼接）
+    ///
+    /// tags 为 JSON 数组字符串，会展平为空格分隔的纯文本；
+    /// 空标签或解析失败时仅返回 node_description + summary
+    fn vector_text(&self) -> String {
+        let tags = flatten_tags(&self.tags);
+        if tags.is_empty() {
+            format!("{}\n{}", self.node_description, self.summary)
+        } else {
+            format!("{}\n{}\n{}", self.node_description, self.summary, tags)
+        }
+    }
+}
+
+/// ✅ 实现 Vectorizable Trait（统一向量化行为）
+impl Vectorizable for LongTermKnowledgeNodePo {
+    fn vectorize_text(&self) -> String {
+        self.vector_text()
+    }
+
+    fn vector_collection() -> &'static str {
+        "memory:knowledge_node"
+    }
 }
 
 /// 知识节点关系 PO
@@ -337,4 +391,14 @@ impl Memory {
         self.search_match = Some(search_match);
         self
     }
+}
+
+/// 将 tags JSON 数组字符串展平为空格分隔的纯文本，便于向量化
+///
+/// 输入示例：`["rust","memory","向量"]` → `rust memory 向量`
+/// 解析失败或空数组返回空字符串
+fn flatten_tags(tags_json: &str) -> String {
+    serde_json::from_str::<Vec<String>>(tags_json)
+        .unwrap_or_default()
+        .join(" ")
 }

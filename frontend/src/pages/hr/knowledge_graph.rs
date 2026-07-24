@@ -91,6 +91,7 @@ fn type_badge_class(t: &str) -> &'static str {
 #[component]
 pub fn HrKnowledgeGraph() -> Element {
     let mut keyword = use_signal(String::new);
+    let mut tags_input = use_signal(String::new);
     let mut nodes = use_signal(Vec::<GraphNode>::new);
     let mut edges = use_signal(Vec::<GraphEdge>::new);
     let mut loading = use_signal(|| false);
@@ -109,6 +110,7 @@ pub fn HrKnowledgeGraph() -> Element {
         if kw.is_empty() {
             return;
         }
+        let tags_raw = tags_input().clone();
         loading.set(true);
         expanded_nodes.set(HashSet::new());
         selected_node_id.set(None);
@@ -124,7 +126,21 @@ pub fn HrKnowledgeGraph() -> Element {
         }
 
         spawn(async move {
-            match search_memory_with_traversal(&kw, &[], 1).await {
+            let tags_vec: Vec<String> = if tags_raw.trim().is_empty() {
+                Vec::new()
+            } else {
+                tags_raw
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            };
+            let tags_opt: Option<&[String]> = if tags_vec.is_empty() {
+                None
+            } else {
+                Some(&tags_vec)
+            };
+            match search_memory_with_traversal(&kw, &[], 1, tags_opt).await {
                 Ok(data) => {
                     let mut map = std::collections::HashMap::new();
                     let mut highlights = Vec::new();
@@ -171,7 +187,7 @@ pub fn HrKnowledgeGraph() -> Element {
         let my_request_id = click_request_id() + 1;
         click_request_id.set(my_request_id);
         spawn(async move {
-            match search_memory_with_traversal("", &seed_ids, 1).await {
+            match search_memory_with_traversal("", &seed_ids, 1, None).await {
                 Ok(data) => {
                     // 修复 M11：检查 request_id 是否仍然是最新的，过期则丢弃结果
                     if click_request_id() != my_request_id {
@@ -241,6 +257,17 @@ pub fn HrKnowledgeGraph() -> Element {
                                 value: "{keyword}",
                                 oninput: move |e| keyword.set(e.value()),
                                 placeholder: "搜索知识节点...",
+                                onkeydown: move |evt| {
+                                    if evt.key() == Key::Enter {
+                                        handle_search(());
+                                    }
+                                }
+                            }
+                            input {
+                                class: "input input-bordered sm:w-56",
+                                value: "{tags_input}",
+                                oninput: move |e| tags_input.set(e.value()),
+                                placeholder: "标签过滤（逗号分隔）...",
                                 onkeydown: move |evt| {
                                     if evt.key() == Key::Enter {
                                         handle_search(());
@@ -396,6 +423,21 @@ pub fn HrKnowledgeGraph() -> Element {
                                                 }
                                                 div { class: "p-3 bg-base-200 rounded-lg text-base-content/70",
                                                     p { class: "text-sm", "{summary}" }
+                                                }
+                                            }
+                                        }
+
+                                        if let Some(tags) = &detail.tags {
+                                            if !tags.is_empty() {
+                                                div {
+                                                    label { class: "label",
+                                                        span { class: "label-text font-medium", "标签" }
+                                                    }
+                                                    div { class: "flex flex-wrap gap-2",
+                                                        for tag in tags.iter() {
+                                                            span { class: "badge badge-neutral", "{tag}" }
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }

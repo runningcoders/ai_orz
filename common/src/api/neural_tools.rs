@@ -21,6 +21,8 @@ pub struct SearchMemoryParams {
     pub traversal_strategy: Option<String>,
     /// 种子节点ID列表，跳过语义搜索直接遍历。
     pub seed_node_ids: Option<Vec<String>>,
+    /// 标签过滤（OR 语义，命中任一 tag 即可）。
+    pub tags: Option<Vec<String>>,
 }
 
 /// 搜索记忆响应。
@@ -52,6 +54,9 @@ pub struct MemoryResult {
     /// 关系类型名称（仅 relation 类型有值）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relation_type: Option<String>,
+    /// 标签列表（仅 short_term / knowledge_node 类型有值）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
 }
 
 /// 查询记忆请求参数。
@@ -63,6 +68,8 @@ pub struct QueryMemoryParams {
     pub memory_type: Option<String>,
     /// 返回数量限制。
     pub limit: Option<i32>,
+    /// 标签过滤（OR 语义，命中任一 tag 即可）。
+    pub tags: Option<Vec<String>>,
 }
 
 /// 查询记忆响应。
@@ -317,6 +324,8 @@ pub struct SaveLongTermMemoryParams {
     pub node_type: String,
     /// 节点摘要。
     pub summary: Option<String>,
+    /// 标签列表（用于过滤检索 + 全文索引）。
+    pub tags: Option<Vec<String>>,
     /// 关联关系列表。
     pub relations: Option<Vec<KnowledgeRelationParam>>,
     /// 关联任务 ID。

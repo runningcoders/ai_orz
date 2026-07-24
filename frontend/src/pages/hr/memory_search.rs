@@ -21,7 +21,7 @@ pub fn HrMemorySearch() -> Element {
         let mt = memory_type().clone();
         spawn(async move {
             let mem_type = if mt.is_empty() { None } else { Some(mt.as_str()) };
-            match search_memory(&kw, mem_type).await {
+            match search_memory(&kw, mem_type, None).await {
                 Ok(data) => {
                     let mem_results = data.results;
                     results.set(mem_results.clone());
@@ -89,6 +89,15 @@ pub fn HrMemorySearch() -> Element {
                                             if let Some(summary) = &item.summary {
                                                 div { class: "text-sm text-base-content/70 mt-1",
                                                     "{summary}"
+                                                }
+                                            }
+                                            if let Some(tags) = &item.tags {
+                                                if !tags.is_empty() {
+                                                    div { class: "flex flex-wrap gap-1 mt-2",
+                                                        for tag in tags.iter() {
+                                                            span { class: "badge badge-neutral badge-xs", "{tag}" }
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }

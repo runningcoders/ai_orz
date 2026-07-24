@@ -74,6 +74,7 @@ pub async fn search_memory(
             filters: crate::service::dao::memory::MemoryQuery {
                 memory_type: Some(MemoryType::KnowledgeNode),
                 limit: params.max_results.map(|l| l as usize),
+                tags: params.tags.clone(),
                 ..Default::default()
             },
             ..Default::default()
@@ -111,6 +112,7 @@ pub async fn search_memory(
             filters: crate::service::dao::memory::MemoryQuery {
                 memory_type: Some(memory_type),
                 limit: params.max_results.map(|l| l as usize),
+                tags: params.tags.clone(),
                 ..Default::default()
             },
             ..Default::default()
@@ -164,6 +166,7 @@ fn memory_to_result(memory: &Memory) -> MemoryResult {
             source_node_id: None,
             target_node_id: None,
             relation_type: None,
+            tags: None,
         },
         MemoryPo::ShortTerm(st) => MemoryResult {
             id: st.id.clone(),
@@ -177,6 +180,7 @@ fn memory_to_result(memory: &Memory) -> MemoryResult {
             source_node_id: None,
             target_node_id: None,
             relation_type: None,
+            tags: Some(parse_tags_json(&st.tags)),
         },
         MemoryPo::KnowledgeNode(kn) => MemoryResult {
             id: kn.id.clone(),
@@ -190,6 +194,7 @@ fn memory_to_result(memory: &Memory) -> MemoryResult {
             source_node_id: None,
             target_node_id: None,
             relation_type: None,
+            tags: Some(parse_tags_json(&kn.tags)),
         },
         MemoryPo::Relation(rel) => MemoryResult {
             id: rel.id.clone(),
@@ -203,6 +208,12 @@ fn memory_to_result(memory: &Memory) -> MemoryResult {
             source_node_id: Some(rel.source_node_id.clone()),
             target_node_id: Some(rel.target_node_id.clone()),
             relation_type: Some(format!("{:?}", rel.relation_type)),
+            tags: None,
         },
     }
+}
+
+/// 解析 tags JSON 数组字符串为 Vec<String>，解析失败返回空 Vec
+fn parse_tags_json(tags_json: &str) -> Vec<String> {
+    serde_json::from_str::<Vec<String>>(tags_json).unwrap_or_default()
 }

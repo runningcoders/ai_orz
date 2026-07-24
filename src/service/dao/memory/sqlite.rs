@@ -47,6 +47,7 @@ struct KnowledgeNodeSearchRow {
     node_description: String,
     node_type: String,
     summary: String,
+    tags: String,
     status: MemoryStatus,
     created_at: i64,
     updated_at: i64,
@@ -334,6 +335,18 @@ FROM short_term_memory_index WHERE 1=1"#,
             }
         }
 
+        // tag 过滤（OR 语义：包含任一 tag 即可命中）
+        if let Some(tags) = &query.tags {
+            if !tags.is_empty() {
+                builder.push(" AND EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value IN (");
+                let mut separated = builder.separated(", ");
+                for tag in tags {
+                    separated.push_bind(tag);
+                }
+                separated.push_unseparated("))");
+            }
+        }
+
         builder.push(" ORDER BY created_at DESC");
 
         if let Some(limit) = &query.limit {
@@ -360,6 +373,7 @@ FROM short_term_memory_index WHERE 1=1"#,
         let agent_id = search.filters.agent_id.unwrap_or_default();
         let keyword = search.keyword.unwrap_or_default();
         let limit_i64 = search.filters.limit.unwrap_or(50) as i64;
+        let tags = search.filters.tags.clone().unwrap_or_default();
 
         // 空关键词直接返回空结果（FTS5 MATCH 空字符串会报错）
         if keyword.trim().is_empty() {
@@ -369,9 +383,16 @@ FROM short_term_memory_index WHERE 1=1"#,
         // 转义关键词为 FTS5 短语匹配
         let escaped_keyword = escape_fts5_keyword(&keyword);
 
-        // FTS5 MATCH + JOIN + BM25 排序
-        // 注意：MATCH 左侧必须使用完整表名（非别名），否则 SQLite 会将别名解释为列名
-        let rows: Vec<ShortTermSearchRow> = sqlx::query_as(
+        // 构建带可选 tags 过滤的 SQL
+        let has_tags = !tags.is_empty();
+        let tags_clause = if has_tags {
+            let placeholders = tags.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+            format!(" AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE json_each.value IN ({placeholders}))")
+        } else {
+            String::new()
+        };
+
+        let sql = format!(
             r#"
 SELECT m.id, m.agent_id, m.task_id, m.role, m.summary, m.tags, m.trace_ids,
        m.status, m.created_at, m.updated_at,
@@ -380,16 +401,27 @@ FROM short_term_memory_fts
 JOIN short_term_memory_index m ON short_term_memory_fts.rowid = m.rowid
 WHERE short_term_memory_fts MATCH ?
   AND m.agent_id = ?
-  AND m.status != 0
+  AND m.status != 0{tags_clause}
 ORDER BY short_term_memory_fts.rank
 LIMIT ?
-"#,
-        )
-        .bind(escaped_keyword)
-        .bind(agent_id)
-        .bind(limit_i64)
-        .fetch_all(&pool)
-        .await?;
+"#
+        );
+
+        let mut query = sqlx::query_as::<_, ShortTermSearchRow>(&sql)
+            .bind(escaped_keyword)
+            .bind(agent_id);
+
+        // 绑定 tags 参数（如果有）
+        if has_tags {
+            for tag in &tags {
+                query = query.bind(tag);
+            }
+        }
+
+        let rows: Vec<ShortTermSearchRow> = query
+            .bind(limit_i64)
+            .fetch_all(&pool)
+            .await?;
 
         let results = rows
             .into_iter()
@@ -438,6 +470,7 @@ SET agent_id = ?,
     node_description = ?,
     node_type = ?,
     summary = ?,
+    tags = ?,
     status = ?,
     updated_at = ?
 WHERE id = ?
@@ -447,6 +480,7 @@ WHERE id = ?
             node.node_description,
             node.node_type,
             node.summary,
+            node.tags,
             status_i32,
             node.updated_at,
             node.id,
@@ -458,14 +492,14 @@ WHERE id = ?
 
         if rows_affected == 0 {
             // 不存在，插入新节点
-            // 9 Rust parameters → 9 question marks (all non-Option)
+            // 10 Rust parameters → 10 question marks (all non-Option)
 
             let status_i32 = node.status as i32;
             sqlx::query!(
                 r#"
 INSERT INTO long_term_knowledge_node (
-    id, agent_id, node_name, node_description, node_type, summary, status, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    id, agent_id, node_name, node_description, node_type, summary, tags, status, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 "#,
                 node.id,
                 node.agent_id,
@@ -473,6 +507,7 @@ INSERT INTO long_term_knowledge_node (
                 node.node_description,
                 node.node_type,
                 node.summary,
+                node.tags,
                 status_i32,
                 node.created_at,
                 node.updated_at
@@ -499,6 +534,7 @@ SET agent_id = ?,
     node_description = ?,
     node_type = ?,
     summary = ?,
+    tags = ?,
     status = ?,
     updated_at = ?
 WHERE id = ?
@@ -508,6 +544,7 @@ WHERE id = ?
             node.node_description,
             node.node_type,
             node.summary,
+            node.tags,
             status_i32,
             node.updated_at,
             node.id,
@@ -539,6 +576,7 @@ SET agent_id = ?,
     node_description = ?,
     node_type = ?,
     summary = ?,
+    tags = ?,
     status = ?,
     updated_at = ?
 WHERE id = ?
@@ -548,6 +586,7 @@ WHERE id = ?
                 node.node_description,
                 node.node_type,
                 node.summary,
+                node.tags,
                 status_i32,
                 node.updated_at,
                 node.id,
@@ -559,14 +598,14 @@ WHERE id = ?
 
             if rows_affected == 0 {
                 // 不存在，插入新节点
-                // 9 Rust parameters → 9 question marks (all non-Option)
+                // 10 Rust parameters → 10 question marks (all non-Option)
 
                 let status_i32 = node.status as i32;
                 sqlx::query!(
                     r#"
 INSERT INTO long_term_knowledge_node (
-    id, agent_id, node_name, node_description, node_type, summary, status, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    id, agent_id, node_name, node_description, node_type, summary, tags, status, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 "#,
                     node.id,
                     node.agent_id,
@@ -574,6 +613,7 @@ INSERT INTO long_term_knowledge_node (
                     node.node_description,
                     node.node_type,
                     node.summary,
+                    node.tags,
                     status_i32,
                     node.created_at,
                     node.updated_at
@@ -597,7 +637,7 @@ INSERT INTO long_term_knowledge_node (
         let node = sqlx::query_as!(
             LongTermKnowledgeNodePo,
             r#"
-SELECT id, agent_id, node_name, node_description, node_type, summary, status AS "status: MemoryStatus", created_at, updated_at
+SELECT id, agent_id, node_name, node_description, node_type, summary, tags, status AS "status: MemoryStatus", created_at, updated_at
 FROM long_term_knowledge_node
 WHERE id = ? AND status != 0
 "#,
@@ -644,7 +684,7 @@ WHERE id = ? AND status != 0
 
         let pool = self.pool(ctx);
         let mut builder = QueryBuilder::new(
-            r#"SELECT id, agent_id, node_name, node_description, node_type, summary, status, created_at, updated_at
+            r#"SELECT id, agent_id, node_name, node_description, node_type, summary, tags, status, created_at, updated_at
 FROM long_term_knowledge_node WHERE 1=1"#,
         );
 
@@ -690,6 +730,18 @@ FROM long_term_knowledge_node WHERE 1=1"#,
             }
         }
 
+        // tag 过滤（OR 语义：包含任一 tag 即可命中）
+        if let Some(tags) = &query.tags {
+            if !tags.is_empty() {
+                builder.push(" AND EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value IN (");
+                let mut separated = builder.separated(", ");
+                for tag in tags {
+                    separated.push_bind(tag);
+                }
+                separated.push_unseparated("))");
+            }
+        }
+
         builder.push(" ORDER BY updated_at DESC");
 
         if let Some(limit) = &query.limit {
@@ -716,6 +768,7 @@ FROM long_term_knowledge_node WHERE 1=1"#,
         let agent_id = search.filters.agent_id.unwrap_or_default();
         let keyword = search.keyword.unwrap_or_default();
         let limit_i64 = search.filters.limit.unwrap_or(50) as i64;
+        let tags = search.filters.tags.clone().unwrap_or_default();
 
         // 空关键词直接返回空结果（FTS5 MATCH 空字符串会报错）
         if keyword.trim().is_empty() {
@@ -725,27 +778,45 @@ FROM long_term_knowledge_node WHERE 1=1"#,
         // 转义关键词为 FTS5 短语匹配
         let escaped_keyword = escape_fts5_keyword(&keyword);
 
-        // FTS5 MATCH + JOIN + BM25 排序
-        // 注意：MATCH 左侧必须使用完整表名（非别名），否则 SQLite 会将别名解释为列名
-        let rows: Vec<KnowledgeNodeSearchRow> = sqlx::query_as(
+        // 构建带可选 tags 过滤的 SQL
+        let has_tags = !tags.is_empty();
+        let tags_clause = if has_tags {
+            let placeholders = tags.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+            format!(" AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE json_each.value IN ({placeholders}))")
+        } else {
+            String::new()
+        };
+
+        let sql = format!(
             r#"
-SELECT m.id, m.agent_id, m.node_name, m.node_description, m.node_type, m.summary,
+SELECT m.id, m.agent_id, m.node_name, m.node_description, m.node_type, m.summary, m.tags,
        m.status, m.created_at, m.updated_at,
        knowledge_node_fts.rank as fts_rank
 FROM knowledge_node_fts
 JOIN long_term_knowledge_node m ON knowledge_node_fts.rowid = m.rowid
 WHERE knowledge_node_fts MATCH ?
   AND m.agent_id = ?
-  AND m.status != 0
+  AND m.status != 0{tags_clause}
 ORDER BY knowledge_node_fts.rank
 LIMIT ?
-"#,
-        )
-        .bind(escaped_keyword)
-        .bind(agent_id)
-        .bind(limit_i64)
-        .fetch_all(&pool)
-        .await?;
+"#
+        );
+
+        let mut query = sqlx::query_as::<_, KnowledgeNodeSearchRow>(&sql)
+            .bind(escaped_keyword)
+            .bind(agent_id);
+
+        // 绑定 tags 参数（如果有）
+        if has_tags {
+            for tag in &tags {
+                query = query.bind(tag);
+            }
+        }
+
+        let rows: Vec<KnowledgeNodeSearchRow> = query
+            .bind(limit_i64)
+            .fetch_all(&pool)
+            .await?;
 
         let results = rows
             .into_iter()
@@ -757,6 +828,7 @@ LIMIT ?
                     node_description: row.node_description,
                     node_type: row.node_type,
                     summary: row.summary,
+                    tags: row.tags,
                     status: row.status,
                     created_at: row.created_at,
                     updated_at: row.updated_at,
