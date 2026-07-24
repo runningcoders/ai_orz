@@ -5,8 +5,10 @@
 //! - 周围节点：与中心实体有关联的实体（如绑定的 Tools / 安装的 Agents）
 //! - 连线：中心 → 关联实体
 //!
-//! 通用设计：调用方传入 center + related 列表即可，不绑定具体业务概念。
-//! 颜色、空状态文案均由调用方控制。
+//! 通用设计：
+//! - 调用方传入 center + related 列表即可，不绑定具体业务概念
+//! - 颜色、空状态文案、节点类型标识均由调用方控制
+//! - 点击回调通过 NodeClickEvent 返回 (kind, id, is_center)，由调用方决定处理逻辑
 //!
 //! 已接入场景：
 //! - Agent 详情页"状态图" Tab：center=Agent, related=绑定的 Tools
@@ -24,6 +26,30 @@ use crate::components::canvas_scene::{CanvasEdge, CanvasNode, CanvasScene};
 pub struct RelationNodeInfo {
     pub id: String,
     pub name: String,
+    /// 可选节点类型标识（如 "agent"/"tool"/"skill"），由调用方约定，
+    /// 回调触发时原样返回，组件不解释此字段
+    pub kind: Option<String>,
+}
+
+impl RelationNodeInfo {
+    /// 构造带类型标识的节点
+    pub fn with_kind(id: String, name: String, kind: impl Into<String>) -> Self {
+        Self { id, name, kind: Some(kind.into()) }
+    }
+}
+
+/// 节点点击事件
+///
+/// 携带节点类型标识、ID 以及是否为中心节点，
+/// 由调用方根据这些信息决定跳转或处理逻辑
+#[derive(Debug, Clone, PartialEq)]
+pub struct NodeClickEvent {
+    /// 节点类型标识（原样回传调用方传入的 kind）
+    pub kind: Option<String>,
+    /// 节点 ID
+    pub id: String,
+    /// 是否为中心节点
+    pub is_center: bool,
 }
 
 /// RelationGraph Props
@@ -35,12 +61,16 @@ pub struct RelationGraphProps {
     pub center_name: String,
     /// 中心节点颜色（#rrggbb 格式）
     pub center_color: String,
+    /// 中心节点类型标识（回调时原样返回）
+    pub center_kind: Option<String>,
     /// 关联实体列表（周围节点）
     pub related: Vec<RelationNodeInfo>,
     /// 关联节点颜色（#rrggbb 格式）
     pub related_color: String,
     /// 关联实体名称（用于空状态文案，如"工具"/"技能"/"Agent"）
     pub related_label: String,
+    /// 节点点击回调
+    pub on_node_click: Option<EventHandler<NodeClickEvent>>,
 }
 
 #[component]
@@ -48,9 +78,11 @@ pub fn RelationGraph(props: RelationGraphProps) -> Element {
     let center_id = props.center_id.clone();
     let center_name = props.center_name.clone();
     let center_color = props.center_color.clone();
+    let center_kind = props.center_kind.clone();
     let related = props.related.clone();
     let related_color = props.related_color.clone();
     let related_label = props.related_label.clone();
+    let on_node_click = props.on_node_click;
 
     // 构建节点：中心 + 关联实体
     let mut nodes = vec![CanvasNode {
@@ -83,6 +115,14 @@ pub fn RelationGraph(props: RelationGraphProps) -> Element {
 
     let count = related.len();
 
+    // 构建节点 id → (kind, is_center) 查找表，供回调判断
+    let mut click_map: std::collections::HashMap<String, (Option<String>, bool)> =
+        std::collections::HashMap::with_capacity(related.len() + 1);
+    click_map.insert(center_id.clone(), (center_kind.clone(), true));
+    for item in &related {
+        click_map.insert(item.id.clone(), (item.kind.clone(), false));
+    }
+
     rsx! {
         div { class: "flex flex-col items-center",
             if count == 0 {
@@ -103,7 +143,17 @@ pub fn RelationGraph(props: RelationGraphProps) -> Element {
                     enable_glow_particles: true,
                     enable_background_particles: true,
                     enable_birth_death_particles: true,
-                    on_node_click: None,
+                    on_node_click: on_node_click.map(|handler| {
+                        EventHandler::new(move |id: String| {
+                            if let Some((kind, is_center)) = click_map.get(&id) {
+                                handler.call(NodeClickEvent {
+                                    kind: kind.clone(),
+                                    id: id.clone(),
+                                    is_center: *is_center,
+                                });
+                            }
+                        })
+                    }),
                 }
             }
         }

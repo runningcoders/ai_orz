@@ -11,7 +11,7 @@ use crate::store::toast::use_toast;
 use crate::utils::{format_file_size, format_time_hm as format_time, is_attachment_message, role_avatar, tmp_msg_id};
 use common::api::{GetAgentResponse, ListModelProvidersResponseItem, MessageListItem, SendMessageToAgentParams, ToolListItem, UpdateAgentRequest};
 use dioxus::prelude::*;
-use dioxus_router::Link;
+use dioxus_router::{use_navigator, Link};
 use std::collections::HashSet;
 use wasm_bindgen::{closure::Closure, JsCast};
 
@@ -789,19 +789,31 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 {
                                     let bound_tool_infos: Vec<RelationNodeInfo> = all_tools_list.iter()
                                         .filter(|t| agent_tool_ids.contains(&t.id))
-                                        .map(|t| RelationNodeInfo {
-                                            id: t.id.clone(),
-                                            name: t.name.clone(),
-                                        })
+                                        .map(|t| RelationNodeInfo::with_kind(
+                                            t.id.clone(),
+                                            t.name.clone(),
+                                            "tool",
+                                        ))
                                         .collect();
+                                    let navigator = use_navigator();
                                     rsx! {
                                         RelationGraph {
                                             center_id: a.id.clone(),
                                             center_name: a.name.clone(),
                                             center_color: "#fa520f".to_string(),
+                                            center_kind: Some("agent".to_string()),
                                             related: bound_tool_infos,
                                             related_color: "#f59e0b".to_string(),
                                             related_label: "工具".to_string(),
+                                            on_node_click: Some(EventHandler::new(move |evt: crate::components::relation_graph::NodeClickEvent| {
+                                                if evt.is_center {
+                                                    // 点击中心 Agent 节点，不跳转（已在当前页）
+                                                    return;
+                                                }
+                                                if evt.kind.as_deref() == Some("tool") {
+                                                    navigator.push(format!("/finance/tools/{}", evt.id));
+                                                }
+                                            })),
                                         }
                                     }
                                 }
