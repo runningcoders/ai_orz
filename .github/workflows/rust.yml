@@ -52,6 +52,9 @@ jobs:
     - name: Check frontend
       run: cd frontend && cargo check --target wasm32-unknown-unknown --verbose
 
+    - name: Run frontend tests
+      run: cd frontend && cargo test --verbose
+
     - name: Build
       run: cargo build --verbose
 
