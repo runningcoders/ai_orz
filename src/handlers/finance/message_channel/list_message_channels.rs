@@ -3,9 +3,7 @@
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::{
-    ListMessageChannelsRequest, ListMessageChannelsResponse, MessageChannelListItem,
-};
+use common::api::{ListMessageChannelsRequest, MessageChannelListItem, PagedResult};
 
 use super::response::to_list_item;
 use common::error::{Result, err, bail_err};
@@ -21,7 +19,7 @@ use common::error::{Result, err, bail_err};
 pub async fn list_message_channels(
     ctx: RequestContext,
     params: ListMessageChannelsRequest,
-) -> Result<ListMessageChannelsResponse> {
+) -> Result<PagedResult<MessageChannelListItem>> {
     let org_id = ctx
         .organization_id
         .clone()
@@ -31,7 +29,7 @@ pub async fn list_message_channels(
         bail_err!(InvalidRequest, "当前请求缺少用户上下文");
     }
 
-    let channels = domain()
+    let page = domain()
         .message_channel_manage()
         .query_channels(
             ctx.clone(),
@@ -41,17 +39,14 @@ pub async fn list_message_channels(
                 agent_id: params.agent_id.clone(),
                 channel_type: params.channel_type,
                 only_enabled: params.only_enabled.unwrap_or(false),
-                limit: params.limit,
-                offset: params.offset,
+                pagination: common::api::PaginationParams {
+                    limit: params.limit,
+                    offset: params.offset,
+                },
                 ..Default::default()
             },
         )
         .await?;
 
-    let total = channels.len();
-    let channels: Vec<MessageChannelListItem> = channels.iter().map(to_list_item).collect();
-    Ok(ListMessageChannelsResponse {
-        channels,
-        total: total as usize,
-    })
+    Ok(page.map(|ch| to_list_item(&ch)))
 }

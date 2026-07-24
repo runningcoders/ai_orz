@@ -245,33 +245,39 @@ async fn test_query(pool: SqlitePool) -> Result<()> {
         user_id: Some("user-0".to_string()),
         ..Default::default()
     };
-    let channels = dao.query(ctx.clone(), query).await?;
-    assert_eq!(channels.len(), 3); // user-0 有 3 条
+    let page = dao.query(ctx.clone(), query).await?;
+    assert_eq!(page.items.len(), 3); // user-0 有 3 条
+    assert_eq!(page.total, 3);
 
     // 按渠道类型查询
     let query = MessageChannelQuery {
         channel_type: Some(ChannelType::Lark),
         ..Default::default()
     };
-    let channels = dao.query(ctx.clone(), query).await?;
-    assert_eq!(channels.len(), 2); // Lark 有 2 条
+    let page = dao.query(ctx.clone(), query).await?;
+    assert_eq!(page.items.len(), 2); // Lark 有 2 条
+    assert_eq!(page.total, 2);
 
     // 只查询启用的
     let query = MessageChannelQuery {
         only_enabled: true,
         ..Default::default()
     };
-    let channels = dao.query(ctx.clone(), query).await?;
-    assert_eq!(channels.len(), 5); // 全部启用
+    let page = dao.query(ctx.clone(), query).await?;
+    assert_eq!(page.items.len(), 5); // 全部启用
+    assert_eq!(page.total, 5);
 
     // 测试分页
     let query = MessageChannelQuery {
-        limit: Some(2),
-        offset: Some(1),
+        pagination: common::api::PaginationParams {
+            limit: Some(2),
+            offset: Some(1),
+        },
         ..Default::default()
     };
-    let channels = dao.query(ctx.clone(), query).await?;
-    assert_eq!(channels.len(), 2);
+    let page = dao.query(ctx.clone(), query).await?;
+    assert_eq!(page.items.len(), 2);
+    assert_eq!(page.total, 5);
 
     Ok(())
 }

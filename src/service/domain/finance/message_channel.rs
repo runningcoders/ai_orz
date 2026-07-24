@@ -31,7 +31,7 @@ impl super::MessageChannelManage for FinanceDomainImpl {
         &self,
         ctx: RequestContext,
         query: crate::service::dao::message_channel::MessageChannelQuery,
-    ) -> Result<Vec<MessageChannel>> {
+    ) -> Result<common::api::PagedResult<MessageChannel>> {
         self.message_channel_dal.query_channels(ctx, query).await
     }
 
@@ -41,7 +41,8 @@ impl super::MessageChannelManage for FinanceDomainImpl {
     ) -> Result<Vec<MessageChannel>> {
         // 没有全局 list_all，用 query 替代
         let query = crate::service::dao::message_channel::MessageChannelQuery::default();
-        self.message_channel_dal.query_channels(ctx, query).await
+        let page = self.message_channel_dal.query_channels(ctx, query).await?;
+        Ok(page.items)
     }
 
     async fn update_message_channel(

@@ -118,9 +118,9 @@ impl LarkMessageChannelDal {
             only_enabled: true,
             ..Default::default()
         };
-        let channels = self.message_channel_dal.query_channels(ctx, query).await?;
+        let page = self.message_channel_dal.query_channels(ctx, query).await?;
 
-        for channel in channels {
+        for channel in page.items {
             if channel
                 .config()
                 .lark_open_id

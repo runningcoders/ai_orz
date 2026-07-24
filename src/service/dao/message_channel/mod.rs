@@ -5,6 +5,7 @@
 use common::error::Result;
 use crate::models::message_channel::MessageChannelPo;
 use crate::pkg::RequestContext;
+use common::api::PagedResult;
 use common::enums::{ChannelStatus, ChannelType};
 
 /// 消息渠道通用查询条件
@@ -28,10 +29,8 @@ pub struct MessageChannelQuery {
     pub only_enabled: bool,
     /// 按状态 IN 查询（支持多选）
     pub status_in: Option<Vec<ChannelStatus>>,
-    /// 限制返回条数（分页）
-    pub limit: Option<usize>,
-    /// 跳过条数（分页）
-    pub offset: Option<usize>,
+    /// 分页参数
+    pub pagination: common::api::PaginationParams,
     /// 排序规则，如 "created_at ASC", "created_at DESC"
     pub order_by: Option<String>,
 }
@@ -54,10 +53,7 @@ pub trait MessageChannelDao: Send + Sync {
         &self,
         ctx: RequestContext,
         query: MessageChannelQuery,
-    ) -> Result<Vec<MessageChannelPo>>;
-
-    /// 统计查询结果数量
-    async fn query_count(&self, ctx: RequestContext, query: MessageChannelQuery) -> Result<u64>;
+    ) -> Result<PagedResult<MessageChannelPo>>;
 
     /// 根据 ID 查找渠道
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<MessageChannelPo>>;

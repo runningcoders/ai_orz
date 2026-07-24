@@ -262,8 +262,9 @@ async fn test_query_channels(pool: SqlitePool) {
         channel_type: Some(ChannelType::Lark),
         ..Default::default()
     };
-    let lark_channels = dal.query_channels(ctx.clone(), query).await.unwrap();
-    assert_eq!(lark_channels.len(), 2);
+    let lark_page = dal.query_channels(ctx.clone(), query).await.unwrap();
+    assert_eq!(lark_page.items.len(), 2);
+    assert_eq!(lark_page.total, 2);
 }
 
 #[sqlx::test]

@@ -93,7 +93,7 @@ pub trait MessageChannelDal: Send + Sync {
         &self,
         ctx: RequestContext,
         query: MessageChannelQuery,
-    ) -> Result<Vec<MessageChannel>>;
+    ) -> Result<common::api::PagedResult<MessageChannel>>;
 
     /// 设置渠道状态
     async fn set_channel_status(
@@ -183,9 +183,9 @@ impl MessageChannelDal for MessageChannelDalImpl {
         &self,
         ctx: RequestContext,
         query: MessageChannelQuery,
-    ) -> Result<Vec<MessageChannel>> {
-        let pos = self.message_channel_dao.query(ctx, query).await?;
-        Ok(pos.into_iter().map(MessageChannel::from_po).collect())
+    ) -> Result<common::api::PagedResult<MessageChannel>> {
+        let page = self.message_channel_dao.query(ctx, query).await?;
+        Ok(page.map(MessageChannel::from_po))
     }
 
     async fn set_channel_status(

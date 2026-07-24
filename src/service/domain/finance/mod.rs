@@ -248,7 +248,7 @@ pub trait MessageChannelManage: Send + Sync {
         &self,
         ctx: RequestContext,
         query: crate::service::dao::message_channel::MessageChannelQuery,
-    ) -> Result<Vec<crate::models::message_channel::MessageChannel>>;
+    ) -> Result<common::api::PagedResult<crate::models::message_channel::MessageChannel>>;
 
     /// 列出所有 Message Channel
     async fn list_message_channels(

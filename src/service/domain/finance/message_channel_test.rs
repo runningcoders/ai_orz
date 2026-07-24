@@ -179,7 +179,8 @@ mod tests {
             .query_channels(ctx.clone(), query)
             .await
             .unwrap();
-        assert_eq!(results.len(), 3);
+        assert_eq!(results.items.len(), 3);
+        assert_eq!(results.total, 3);
     }
 
     #[sqlx::test]
@@ -297,7 +298,8 @@ mod tests {
             .query_channels(ctx.clone(), query)
             .await
             .unwrap();
-        assert_eq!(results.len(), 3);
+        assert_eq!(results.items.len(), 3);
+        assert_eq!(results.total, 3);
 
         // 按类型查询
         let query_by_type = MessageChannelQuery {
@@ -310,7 +312,8 @@ mod tests {
             .query_channels(ctx.clone(), query_by_type)
             .await
             .unwrap();
-        assert_eq!(results_by_type.len(), 1);
-        assert_eq!(results_by_type[0].po.channel_type, ChannelType::Webhook);
+        assert_eq!(results_by_type.items.len(), 1);
+        assert_eq!(results_by_type.total, 1);
+        assert_eq!(results_by_type.items[0].po.channel_type, ChannelType::Webhook);
     }
 }

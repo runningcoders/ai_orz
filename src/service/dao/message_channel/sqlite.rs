@@ -6,7 +6,9 @@ use crate::pkg::RequestContext;
 use crate::service::dao::message_channel::{MessageChannelDao, MessageChannelQuery};
 use async_trait::async_trait;
 use chrono::Utc;
+use common::api::PagedResult;
 use common::enums::ChannelStatus;
+use sqlx::QueryBuilder;
 use std::sync::{Arc, OnceLock};
 
 /// MessageChannel DAO SQLite 实现
@@ -91,108 +93,47 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
         &self,
         ctx: RequestContext,
         query: MessageChannelQuery,
-    ) -> Result<Vec<MessageChannelPo>> {
-        // 使用 sqlx::QueryBuilder 动态构建查询
-        let mut builder = sqlx::QueryBuilder::new("SELECT * FROM message_channels WHERE 1=1");
+    ) -> Result<PagedResult<MessageChannelPo>> {
+        let pool = ctx.db_pool();
 
-        // 逐个添加查询条件
-        if let Some(id) = &query.id {
-            builder.push(" AND id = ").push_bind(id);
-        }
-        if let Some(org_id) = &query.org_id {
-            builder.push(" AND org_id = ").push_bind(org_id);
-        }
-        if let Some(user_id) = &query.user_id {
-            builder.push(" AND user_id = ").push_bind(user_id);
-        }
-        if let Some(agent_id) = &query.agent_id {
-            builder.push(" AND agent_id = ").push_bind(agent_id);
-        }
-        if let Some(channel_type) = query.channel_type {
-            builder
-                .push(" AND channel_type = ")
-                .push_bind(channel_type as i32);
-        }
-        if query.only_enabled {
-            builder.push(" AND status = 1");
-        }
-        if let Some(status_in) = &query.status_in {
-            if !status_in.is_empty() {
-                builder.push(" AND status IN (");
-                let mut separated = builder.separated(", ");
-                for s in status_in {
-                    separated.push_bind(*s as i32);
-                }
-                separated.push_unseparated(")");
-            }
-        }
+        let mut count_builder =
+            QueryBuilder::new("SELECT COUNT(*) FROM message_channels WHERE 1=1");
+        push_query_filters(&mut count_builder, &query);
+        let total: i64 = count_builder
+            .build_query_scalar()
+            .fetch_one(pool)
+            .await?;
+
+        let mut list_builder = QueryBuilder::new("SELECT * FROM message_channels WHERE 1=1");
+        push_query_filters(&mut list_builder, &query);
 
         // 排序
         if let Some(order_by) = &query.order_by {
-            builder.push(" ORDER BY ").push(order_by.clone());
+            list_builder.push(" ORDER BY ").push(order_by.clone());
         } else {
-            builder.push(" ORDER BY created_at DESC");
+            list_builder.push(" ORDER BY created_at DESC");
         }
 
         // 分页
-        if let Some(limit) = query.limit {
-            builder.push(" LIMIT ").push_bind(limit as i32);
+        if let Some(limit) = query.pagination.limit {
+            list_builder.push(" LIMIT ").push_bind(limit as i64);
+        } else if query.pagination.offset.is_some() {
+            list_builder.push(" LIMIT -1");
         }
-        if let Some(offset) = query.offset {
-            builder.push(" OFFSET ").push_bind(offset as i32);
-        }
-
-        // 执行查询
-        let rows = builder.build_query_as().fetch_all(ctx.db_pool()).await?;
-
-        Ok(rows)
-    }
-
-    async fn query_count(&self, ctx: RequestContext, query: MessageChannelQuery) -> Result<u64> {
-        // 使用 sqlx::QueryBuilder 动态构建 COUNT 查询
-        let mut builder =
-            sqlx::QueryBuilder::new("SELECT COUNT(*) FROM message_channels WHERE 1=1");
-
-        // 逐个添加查询条件
-        if let Some(org_id) = &query.org_id {
-            builder.push(" AND org_id = ").push_bind(org_id);
-        }
-        if let Some(user_id) = &query.user_id {
-            builder.push(" AND user_id = ").push_bind(user_id);
-        }
-        if let Some(agent_id) = &query.agent_id {
-            builder.push(" AND agent_id = ").push_bind(agent_id);
-        }
-        if let Some(channel_type) = query.channel_type {
-            builder
-                .push(" AND channel_type = ")
-                .push_bind(channel_type as i32);
-        }
-        if query.only_enabled {
-            builder.push(" AND status = 1");
-        }
-        if let Some(status_in) = &query.status_in {
-            if !status_in.is_empty() {
-                builder.push(" AND status IN (");
-                let mut separated = builder.separated(", ");
-                for s in status_in {
-                    separated.push_bind(*s as i32);
-                }
-                separated.push_unseparated(")");
-            }
+        if let Some(offset) = query.pagination.offset {
+            list_builder.push(" OFFSET ").push_bind(offset as i64);
         }
 
-        // 执行查询
-        let count: i64 = builder
-            .build_query_scalar()
-            .fetch_one(ctx.db_pool())
-            .await?;
+        let items = list_builder.build_query_as().fetch_all(pool).await?;
 
-        Ok(count as u64)
+        Ok(PagedResult {
+            items,
+            total: total as usize,
+        })
     }
 
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<MessageChannelPo>> {
-        let mut channels = self
+        let page = self
             .query(
                 ctx,
                 MessageChannelQuery {
@@ -201,7 +142,7 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
                 },
             )
             .await?;
-        Ok(channels.pop())
+        Ok(page.items.into_iter().next())
     }
 
     async fn list_by_user_id(
@@ -210,15 +151,17 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
         user_id: &str,
         only_enabled: bool,
     ) -> Result<Vec<MessageChannelPo>> {
-        self.query(
-            ctx,
-            MessageChannelQuery {
-                user_id: Some(user_id.to_string()),
-                only_enabled,
-                ..Default::default()
-            },
-        )
-        .await
+        let page = self
+            .query(
+                ctx,
+                MessageChannelQuery {
+                    user_id: Some(user_id.to_string()),
+                    only_enabled,
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(page.items)
     }
 
     async fn list_by_user_and_agent_id(
@@ -229,7 +172,7 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
         only_enabled: bool,
     ) -> Result<Vec<MessageChannelPo>> {
         // 查询用户+Agent 的所有渠道（Agent 专属 + 用户通用）
-        let mut agent_channels = self
+        let agent_page = self
             .query(
                 ctx.clone(),
                 MessageChannelQuery {
@@ -252,6 +195,7 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
             .filter(|c| c.agent_id.is_none())
             .collect();
 
+        let mut agent_channels = agent_page.items;
         agent_channels.extend(user_channels);
 
         Ok(agent_channels)
@@ -342,4 +286,42 @@ pub fn dao() -> Arc<dyn MessageChannelDao + Send + Sync> {
 /// 初始化全局 MessageChannel DAO
 pub fn init() {
     MESSAGE_CHANNEL_DAO.set(new()).ok();
+}
+
+/// 推送查询过滤条件到 QueryBuilder（COUNT 和 LIST 查询复用）
+fn push_query_filters<'args>(
+    builder: &mut QueryBuilder<'args, sqlx::Sqlite>,
+    query: &MessageChannelQuery,
+) {
+    if let Some(id) = &query.id {
+        builder.push(" AND id = ").push_bind(id.clone());
+    }
+    if let Some(org_id) = &query.org_id {
+        builder.push(" AND org_id = ").push_bind(org_id.clone());
+    }
+    if let Some(user_id) = &query.user_id {
+        builder.push(" AND user_id = ").push_bind(user_id.clone());
+    }
+    if let Some(agent_id) = &query.agent_id {
+        builder.push(" AND agent_id = ").push_bind(agent_id.clone());
+    }
+    if let Some(channel_type) = query.channel_type {
+        builder
+            .push(" AND channel_type = ")
+            .push_bind(channel_type as i32);
+    }
+    if query.only_enabled {
+        builder.push(" AND status = 1");
+    }
+    if let Some(status_in) = &query.status_in {
+        if !status_in.is_empty() {
+            builder.push(" AND status IN (");
+            let mut separated = builder.separated(", ");
+            for s in status_in {
+                separated.push_bind(*s as i32);
+            }
+            drop(separated);
+            builder.push(")");
+        }
+    }
 }
