@@ -1,5 +1,6 @@
 //! Skill management API request/response DTOs - shared between backend and frontend
 
+use crate::api::PaginationParams;
 use crate::enums::SkillStatus;
 use crate::enums::skill::SkillAuthorType;
 use ai_orz_macros::Params;
@@ -314,8 +315,9 @@ pub struct SkillQueryRequest {
     pub parent_skill_id: Option<String>,
     /// 标签列表
     pub tags: Option<Vec<String>>,
-    /// 返回数量限制
-    pub limit: Option<usize>,
+    /// 分页参数（limit + offset）
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
 }
 
 /// Skill 列表项响应别名（前端兼容）

@@ -1,5 +1,6 @@
 //! Project related API request/response DTOs - shared between backend and frontend
 
+use crate::api::PaginationParams;
 use crate::enums::ProjectStatus;
 use ai_orz_macros::Params;
 use schemars::JsonSchema;
@@ -204,8 +205,9 @@ pub struct ProjectQueryRequest {
     pub root_user_id: Option<String>,
     /// 状态列表（OR 语义）
     pub status_in: Option<Vec<ProjectStatus>>,
-    /// 返回数量限制
-    pub limit: Option<usize>,
+    /// 分页参数（limit + offset）
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
 }
 
 /// Project 列表项响应别名（前端兼容）

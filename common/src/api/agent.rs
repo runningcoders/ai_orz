@@ -1,5 +1,6 @@
 //! Agent (AI智能体) related API request/response DTOs - shared between backend and frontend
 
+use crate::api::PaginationParams;
 use crate::enums::AgentStatus;
 use crate::models::{AgentStats, ModelCallStats};
 use ai_orz_macros::Params;
@@ -283,8 +284,9 @@ pub struct AgentQueryRequest {
     pub model_provider_id: Option<String>,
     /// 角色列表
     pub roles: Option<Vec<String>>,
-    /// 返回数量限制
-    pub limit: Option<usize>,
+    /// 分页参数（limit + offset）
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
 }
 
 /// Agent 列表项响应别名（前端兼容）

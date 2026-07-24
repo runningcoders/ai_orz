@@ -1,5 +1,6 @@
 //! Built-in tool related API request/response DTOs - shared between backend and frontend
 
+use crate::api::PaginationParams;
 use crate::enums::{ControlMode, ToolProtocol, ToolStatus};
 use ai_orz_macros::Params;
 use schemars::JsonSchema;
@@ -182,10 +183,9 @@ pub struct ToolQueryRequest {
     pub mcp_server_id: Option<String>,
     /// 仅启用
     pub enabled_only: Option<bool>,
-    /// 返回数量限制
-    pub limit: Option<usize>,
-    /// 偏移量
-    pub offset: Option<usize>,
+    /// 分页参数（limit + offset）
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
 }
 
 /// Tool list item alias (frontend compatibility)
