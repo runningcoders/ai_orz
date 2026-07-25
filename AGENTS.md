@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-07-25（统计图表 Phase 2：HUD 环形图 + Project 任务状态分布）
+> 最后更新：2026-07-25（统计图表 Phase 3：AOP 实时内存统计 + 轮询渲染）
 
 ---
 
@@ -67,15 +67,15 @@
 | 💾 数据备份与恢复 | ✅ | _index.json 索引 + tar.gz 压缩 + 恢复脚本 |
 | 📜 日志在线查询 | ✅ | 关键词 + log_id 调用链 + 级别 + 时间范围过滤 |
 | 🛡️ 角色权限中间件 | ✅ | 基于并查集的权限中间件，Member → Admin → SuperAdmin 继承体系 |
-| 📊 AOP 队列监控 | ✅ | System 模块运行时监控、队列统计卡片、事件列表查询、事件详情查看（脱敏） |
+| 📊 AOP 队列监控 | ✅ | 队列运行时监控 + 实时统计图表（HUD 风格折线图时序 + 环形图分布，纯内存收集器 60 分钟滑动窗口，5 秒轮询，埋点 publish/consume/success/failure） |
 | 💬 Workspace 对话机制 | ✅ | 底部对话框跟随当前视图（默认/Project/Agent），SSE 实时消息，HUD 流光提示未读消息源（橙色竖条 + 流动光晕动画），点击切换视图清除 |
-| 📊 统计图表可视化 | ✅ | HUD 风格 Canvas 图表：折线图（4 个实体详情页展示模型调用趋势，消费 model_call_time_series）+ 环形图（Project 详情页展示任务状态分布，消费 DonutSlice 通用数据结构）；共享 hud_palette 背景工具，2.4s 呼吸光晕动画 |
+| 📊 统计图表可视化 | ✅ | HUD 风格 Canvas 图表：折线图（4 个实体详情页展示模型调用趋势，消费 model_call_time_series；AOP 页面展示最近 60 分钟事件时序）+ 环形图（Project 详情页展示任务状态分布，AOP 页面展示状态/消费者分布，消费 DonutSlice 通用数据结构）；共享 hud_palette 背景工具，2.4s 呼吸光晕动画 |
 
 ### 1.3 整体完成度与测试统计（2026-07-25 更新）
 
 | 指标 | 数值 | 说明 |
 |------|------|------|
-| **总测试数** | **834** | 后端 746 + 前端 38 + common 50，DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
+| **总测试数** | **841** | 后端 753 + 前端 38 + common 50，DAO + DAL + Domain + Handler + Pkg 完整覆盖（含 7 个 AOP 内存统计测试） |
 | **通过率** | **100%** | ✅ 全部测试通过 |
 | DAO 模块数 | 25 个 | 全部实现并被使用，零闲置（18 核心 DAO + 5 渠道 DAO + a2a 回调 + 1 触发器 + 消息推送） |
 | DAL 模块数 | 23 个 | 全部完整业务承载，零闲置（含 lark 飞书、agent_a2a、agent_codex 专属 DAL） |
@@ -792,6 +792,18 @@ Agent
 - **task_status_color 辅助函数**：`utils/status.rs` 新增 `task_status_color(status: i32) -> &'static str`，返回 6 种状态对应的 HUD 风格鲜艳颜色（红 #ef4444 / 橙黄 #f59e0b / 蓝 #3b82f6 / HUD 主色橙 #fa520f / 绿 #10b981 / 灰 #6b7280）
 - **Project 详情页集成**：概览 Tab 的"项目概览"卡片中，把原"任务统计"文字网格升级为 DonutChart + 图例组合展示；按 6 种状态全量统计（进行中→待处理→待审核→已完成→已归档→已取消），过滤 0 值状态避免图例冗余；无任务时显示"暂无任务"提示
 - **测试统计**：前端 38 测试（新增 3 个 donut_chart 测试）+ 后端 746 测试 + common 50 测试 100% 通过，总计 834 测试
+
+### 2026-07-25 里程碑（统计图表 Phase 3）
+**✅ AOP 实时内存统计 + 轮询渲染**
+- **设计哲学**：AOP 是运行时能力，重启即丢，记录到 DuckDB 无持久化价值。采用纯内存统计收集器，与 AOP 事件本身生命周期一致
+- **AopMetricsHook trait**：`pkg/aop/core/metrics_hook.rs` 新增 4 回调 trait（on_publish/on_consume_start/on_consume_success/on_consume_failure），Registry 持有 `Option<Arc<dyn AopMetricsHook>>`，业务层注入实现，保持 AOP 框架零业务依赖原则
+- **AopStatsCollector 内存收集器**：`consumer/aop_stats_collector.rs` 纯内存实现（零 DuckDB 依赖），提供总计数器（按 event_kind/consumer_name/status 三维索引）+ 滑动窗口时序数据（最近 60 分钟，按分钟桶，内存占用 < 50KB）
+- **AopStatsHook 业务实现**：`consumer/aop_stats_hook.rs` 实现 AopMetricsHook，4 回调用 `tokio::spawn` 调 collector.record（不阻塞 AOP 主流程）
+- **3 处埋点**：publish 同步/异步分发 + worker 协程 on_event 调用前后；每个 AOP 事件产生 2-3 条记录（published + consuming + success/failed）
+- **SystemDomain AopStats 子能力**：SystemDomain 新增 `aop_stats()` getter + AopStats trait，直接读全局 collector（零 DAO/DAL 中转）
+- **3 个 HTTP 端点**：`GET /api/v1/system/aop/stats/{overview|time-series|distribution}`，毫秒级响应（纯内存查询）
+- **前端 AOP 页面 Tab 改造**：Tab 1 实时监控（保留现有功能），Tab 2 统计图表（概览卡片 + LineChart 时序 + DonutChart 状态分布 + DonutChart 消费者分布），5 秒轮询自动刷新（基于 js_sys::Promise + set_timeout 的 sleep_ms，避免 tokio 依赖）
+- **测试统计**：后端 753 测试（+7 新增 aop_stats 测试：6 collector + 1 hook）+ 前端 38 测试 + common 50 测试 100% 通过，总计 841 测试
 
 ### 2026-07-25 里程碑
 **✅ 知识图谱 Canvas HUD 驾驶舱风格 + 聊天共享组件抽取 + utils 模块化**
