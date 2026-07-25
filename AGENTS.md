@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-07-25（前端聊天共享组件抽取 + utils 模块化）
+> 最后更新：2026-07-25（知识图谱切换 Canvas + HUD 驾驶舱风格）
 
 ---
 
@@ -14,7 +14,7 @@
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + rig-core 0.34
 - **前端**：Dioxus 0.7 (WebAssembly) + Tailwind CSS v4 + DaisyUI v5
-- **技术特色**：严格分层架构、类型安全、754 个测试 100% 通过率、30+ 主题切换
+- **技术特色**：严格分层架构、类型安全、830 个测试 100% 通过率（后端 746 + 前端 34 + common 50）、30+ 主题切换
 
 ### 1.2 已实现核心功能
 
@@ -50,8 +50,8 @@
 | 📎 对话附件上传 | ✅ | 多文件上传、图片内联展示、文件下载、消息时间分组 |
 | 🔍 消息搜索 | ✅ | FTS5 + 向量混合搜索、搜索结果展示匹配类型和向量距离 |
 | 🧠 记忆搜索 | ✅ | 关键词 + 类型筛选、短期记忆/知识节点/关系搜索 |
-| 🗺️ 知识图谱可视化 | ✅ | SVG 图谱组件、圆形布局、节点连接线、搜索初始节点 |
-| 🗺️ 知识图谱交互完善 | ✅ | 关系类型差异化颜色/样式、边标签防重叠、节点拖拽、缩放平移、搜索高亮与历史、详情侧边栏增强 |
+| 🗺️ 知识图谱可视化 | ✅ | SVG 图谱组件、圆形布局、节点连接线、搜索初始节点；新增 Canvas HUD 驾驶舱风格渲染（深色径向渐变背景 + 节点呼吸光晕 + 边流光发光），支持 Canvas/SVG 风格一键切换 |
+| 🗺️ 知识图谱交互完善 | ✅ | 关系类型差异化颜色/样式、边标签防重叠、节点拖拽、缩放平移、搜索高亮与历史、详情侧边栏增强；节点 tags 多色边框 + 动态半径 + 简介展示 |
 | 📡 SSE 消息推送 | ✅ | Server-Sent Events 长连接、订阅者模式、DAO 层连接管理、broadcast 广播 |
 | 📡 AOP 事件中心 | ✅ | 纯框架（零业务依赖）、Event/Producer/Consumer/Registry 抽象、同步/异步消费模式、内置内存队列、producer/consumer 业务层完全解耦、运行时队列状态监控 |
 | 🔔 Toast 通知系统 | ✅ | 全局状态管理、4 种类型（success/error/warning/info）、滑入滑出动画、进度条倒计时、22 页面统一替换旧式提示 |
@@ -68,12 +68,13 @@
 | 📜 日志在线查询 | ✅ | 关键词 + log_id 调用链 + 级别 + 时间范围过滤 |
 | 🛡️ 角色权限中间件 | ✅ | 基于并查集的权限中间件，Member → Admin → SuperAdmin 继承体系 |
 | 📊 AOP 队列监控 | ✅ | System 模块运行时监控、队列统计卡片、事件列表查询、事件详情查看（脱敏） |
+| 💬 Workspace 对话机制 | ✅ | 底部对话框跟随当前视图（默认/Project/Agent），SSE 实时消息，HUD 流光提示未读消息源（橙色竖条 + 流动光晕动画），点击切换视图清除 |
 
-### 1.3 整体完成度与测试统计（2026-07-21 更新）
+### 1.3 整体完成度与测试统计（2026-07-25 更新）
 
 | 指标 | 数值 | 说明 |
 |------|------|------|
-| **总测试数** | **754** | DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
+| **总测试数** | **830** | 后端 746 + 前端 34 + common 50，DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
 | **通过率** | **100%** | ✅ 全部测试通过 |
 | DAO 模块数 | 25 个 | 全部实现并被使用，零闲置（18 核心 DAO + 5 渠道 DAO + a2a 回调 + 1 触发器 + 消息推送） |
 | DAL 模块数 | 23 个 | 全部完整业务承载，零闲置（含 lark 飞书、agent_a2a、agent_codex 专属 DAL） |
@@ -205,7 +206,7 @@ ai_orz/
 │
 ├── frontend/                   # Dioxus 前端（Tailwind CSS v4 + DaisyUI v5）
 │   ├── src/api/               # API 客户端
-│   ├── src/components/        # UI 组件（Button/Modal/Toast/State/Stats/Graph/Chat）
+│   ├── src/components/        # UI 组件（Button/Modal/Toast/State/Stats/Graph/GraphCanvas/Chat）
 │   ├── src/hooks/             # 自定义 Hooks（use_resource/use_breakpoint/use_require_auth）
 │   ├── src/layouts/           # 布局组件（AppLayout/Navbar）
 │   ├── src/pages/             # 页面模块（按业务域分组）
@@ -773,37 +774,31 @@ Agent
 
 ## 六、工作流与开发记录
 
+> 💡 **记录原则**：仅保留最近里程碑的详细信息，早期里程碑按月汇总。所有重构背景、问题、解决方案、避坑指南归档在 [docs/LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md)，开发前建议先看该文档避免重蹈覆辙。
+
 ### 2026-07-25 里程碑
-**✅ 前端聊天共享组件抽取 + utils 模块化**
-- **utils 模块化**：原 `frontend/src/utils.rs` 拆分为 `frontend/src/utils/` 文件夹，按功能分子模块组织：`time.rs`（时间格式化）、`file.rs`（文件大小格式化）、`message.rs`（消息类型常量、角色映射、乐观消息辅助）、`status.rs`（任务/项目状态映射）。`mod.rs` 通过 `pub use` 重新导出所有公共 API，保持 `use crate::utils::xxx` 向后兼容，无需改动调用方
-- **聊天共享组件抽取**：新增 `frontend/src/components/chat/` 模块：`MessageBubble`（单条消息气泡，文本/图片/文件简版渲染）、`TypingIndicator`（Agent 输入指示器，三点动画）。Agent 详情页、Workspace 底部对话框改用共享组件，删除本地 `render_message_content`/`render_chat_messages` 重复实现
-- **主对话页保留独立实现**：`pages/message/chat.rs` 含工具调用卡片、任务卡片、视频/音频附件等复杂内容，且使用 DaisyUI `chat chat-start/chat-end` 样式与 `MessageBubble` 的 `message-item` 样式不一致，简单 `MessageBubble` 无法覆盖，保留独立富渲染实现
-- **DTO PartialEq 派生**：`common::api::MessageListItem` 和 `FileMetaInfo` 添加 `PartialEq` 派生（Dioxus 0.7 组件 prop 要求实现 `PartialEq`，否则 `#[component]` 宏报错 `E0369`）
-- **Workspace 侧边栏红点提示**：SSE 收到非当前视图的 Agent 回复消息时，对应 Project/Agent 侧边栏项亮红点，点击切换视图后清除红点
-- **测试同步修复**：`common/src/api/attachment_test.rs` 和 `artifact_test.rs` 同步 `AttachmentListQuery.pagination: PaginationParams`、`ListArtifactsRequest.offset` 字段变化
-- **文档更新**：[frontend_architecture.md](./docs/frontend_architecture.md) 更新目录结构、基础 UI 组件库章节、新增 2026-07-25 更新记录
+**✅ 知识图谱 Canvas HUD 驾驶舱风格 + 聊天共享组件抽取 + utils 模块化**
+- **知识图谱 Canvas HUD 渲染**：新增 `KnowledgeGraphRenderer` 实现 `CanvasRenderer` trait，HUD 风格渲染（深色径向渐变背景 + 淡橙色网格 + 四角 HUD 装饰；节点选中态扫描环 + 旋转刻度环，未选中态呼吸光晕；边实线流光 + drop-shadow 发光）；知识图谱页右上角 Canvas/SVG 风格切换按钮（join 按钮组），默认 Canvas，SVG 作为兜底；`KnowledgeGraphCanvas` 基于 `CanvasScene` 基础设施，关闭力导向布局和自带粒子避免视觉过载；web-sys features 扩展 `CanvasGradient` 支持渐变效果
+- **Workspace HUD 流光提示**：未读消息提示由静态红点升级为 2px 橙色竖条贴在侧边栏项左侧边缘，带 `box-shadow` 形成 glow 光晕，高亮段从上往下流动（1.8s 周期，cubic-bezier(0.4, 0, 0.6, 1) 缓动），像 HUD 扫描线；点击切换视图清除
+- **聊天共享组件抽取**：新增 `frontend/src/components/chat/` 模块：`MessageBubble`（单条消息气泡，文本/图片/文件简版渲染）、`TypingIndicator`（Agent 输入指示器，三点动画）。Agent 详情页、Workspace 底部对话框改用共享组件，删除本地重复实现；主对话页 `pages/message/chat.rs` 因含工具调用卡片、任务卡片、视频/音频附件等复杂内容且使用 DaisyUI `chat chat-start/chat-end` 样式，保留独立富渲染实现
+- **utils 模块化**：原 `frontend/src/utils.rs` 拆分为 `frontend/src/utils/` 文件夹，按功能分子模块：`time.rs`（时间格式化）、`file.rs`（文件大小格式化）、`message.rs`（消息类型常量、角色映射、乐观消息辅助）、`status.rs`（任务/项目状态映射）。`mod.rs` 通过 `pub use` 重新导出，保持 `use crate::utils::xxx` 向后兼容
+- **Workspace 对话机制**：底部对话框跟随当前视图（默认/Project/Agent），SSE 实时消息，自动未读消息源追踪（`project_unread`/`agent_unread` Signal<HashSet<String>>）
+- **DTO PartialEq 派生**：`common::api::MessageListItem` 和 `FileMetaInfo` 添加 `PartialEq` 派生（Dioxus 0.7 组件 prop 要求）
 - **测试统计**：前端 34 测试 + 后端 746 测试 + common 50 测试 100% 通过
 
 ### 2026-07-24 里程碑
 **✅ query/list 接口分页改造 + list 接口简化（统一 PagedResult）**
 - **设计原则落地**：query 是核心查询能力（POST body，完整查询条件 + pagination），list 是语法糖（GET query param，只接受分页，内部固定默认过滤和排序）；两者统一返回 `PagedResult<T> { items, total }`
-- **分页基础设施复用**：复用 `common::api::PaginationParams`（limit + offset）和 `common::api::PagedResult<T>`（含 `map()` 方法支持链式类型转换）
-- **DAO 层改造**：5 个实体（Agent/Project/Task/Tool/Skill）的 Query 结构体加 `pagination: PaginationParams`；sqlite.rs 的 `query` 方法改返回 `PagedResult<Po>`，抽取 `push_query_filters` 函数供 COUNT 和 LIST 查询复用 WHERE 条件
-- **Domain 层改造**：5 个 query 方法改返回 `PagedResult<业务实体>`，用 `page.map(from_po)` 保留 total
-- **Handler 层改造**：5 个 query handler 透传 pagination；5 个 ListXxxRequest 简化为只含 pagination（移除所有查询字段）；5 个 list handler 改为返回 `PagedResult`，内部固定默认过滤（如 Agent 排除 Deleted，Skill 排除 Expired）
-- **前端适配**：API 层新增 5 个 query_* 函数，list_* 简化为只接受 (limit, offset)；6 个查询场景（详情页批量查询、任务列表筛选）改用 query_* 接口；所有 list_* 调用适配新签名和 `.items` 响应访问
+- **全链路改造**：5 个实体（Agent/Project/Task/Tool/Skill）的 Query 结构体加 `pagination: PaginationParams`；DAO 层抽取 `push_query_filters` 函数复用 WHERE 条件；Domain 层 `query` 改返回 `PagedResult<业务实体>`；Handler 层 `ListXxxRequest` 简化为只含 pagination，list handler 内部固定默认过滤（如 Agent 排除 Deleted，Skill 排除 Expired）
+- **前端适配**：API 层新增 5 个 query_* 函数，list_* 简化为只接受 (limit, offset)；6 个查询场景改用 query_* 接口
 - **规范文档**：[AGENTS.md](./AGENTS.md) 新增 4.9 查询接口分页规范；[runtime_design.md](./docs/runtime_design.md) 第十三章从草稿更新为已实现状态
-- **参考实现**：`src/service/dao/mcp_server/sqlite.rs` 为首个完成分页改造的 DAO，作为其他实体改造的模板
-- **测试统计**：后端 746 测试 + 前端 34 测试 100% 通过，release build 成功
+- **参考实现**：`src/service/dao/mcp_server/sqlite.rs` 为首个完成分页改造的 DAO
 
 **✅ 记忆 tags 全链路支持 + 知识图谱节点可视化增强（v3.5）**
-- **后端 tags 过滤**：`SearchMemoryParams`/`QueryMemoryParams`/`MemoryResult` 新增 tags 字段；`MemoryQuery.tags` 实现 OR 语义过滤（SQLite `json_each`，对齐 Tool/Skill 范式）；4 个查询/搜索方法（query_short_term/query_knowledge_nodes/search_short_term/search_knowledge_nodes）增加 tags 过滤分支
-- **Vectorizable trait 对齐**：`ShortTermMemoryIndexPo`/`LongTermKnowledgeNodePo` 实现 `Vectorizable` trait（`vectorize_text` + `vector_collection`），DAL 层统一使用 `embed_entity` 替代手动拼接
-- **Handler 透传 + 回填**：`search_memory`/`query_memory` 透传 tags 到 MemorySearch/MemoryQuery，`memory_to_result` 回填 tags（仅 short_term/knowledge_node 有值）
-- **前端知识图谱节点可视化增强**：GraphNode 新增 tags + summary 字段；多色边框（每个 tag 一段 arc path，hash 稳定取色）；tags 文字标签（节点上方带色底标签）；动态半径（信息越多节点越大）；节点下方简介展示
-- **前端 tags 展示**：知识图谱搜索区新增 tags 过滤输入框（逗号分隔）；短期记忆搜索页/Agent 记忆面板结果项展示 tags 徽章
-- **文档更新**：[memory_design.md](./docs/MEMORY_DESIGN.md) 新增 16.5 标签过滤章节；[runtime_design.md](./docs/runtime_design.md) 新增第二十四章 v3.5
-- **测试统计**：746 个测试 100% 通过（+1 新增 tags 过滤测试）
+- **后端 tags 过滤**：`SearchMemoryParams`/`QueryMemoryParams`/`MemoryResult` 新增 tags 字段；`MemoryQuery.tags` 实现 OR 语义过滤（SQLite `json_each`）；4 个查询/搜索方法增加 tags 过滤分支
+- **Vectorizable trait 对齐**：`ShortTermMemoryIndexPo`/`LongTermKnowledgeNodePo` 实现 `Vectorizable` trait，DAL 层统一使用 `embed_entity` 替代手动拼接
+- **前端知识图谱节点可视化增强**：GraphNode 新增 tags + summary 字段；多色边框（每个 tag 一段 arc path，hash 稳定取色）；动态半径（信息越多节点越大）；节点下方简介展示
+- **前端 tags 展示**：知识图谱搜索区新增 tags 过滤输入框；短期记忆搜索页/Agent 记忆面板结果项展示 tags 徽章
 
 ### 2026-07-23 里程碑
 **✅ 唤醒流程重构：移除 built-in tools 概念，Auto/Manual 分流**
@@ -829,515 +824,60 @@ Agent
 - **文档更新**：[runtime_design.md](./docs/runtime_design.md) 新增第二十三章：Runtime 执行链路全面修复（v3.4）
 - **测试统计**：745 个测试 100% 通过
 
-### 2026-07-22 里程碑
-**✅ Tailwind CSS v4 + DaisyUI v5 集成 + 多主题切换**
-- **构建工具链搭建**：
-  - `package.json` 引入 Tailwind CSS v4.1 + DaisyUI v5 + @tailwindcss/cli
-  - `styles/input.css` 作为 Tailwind 入口，配置 30+ 种 DaisyUI 主题（含自定义 `orz-light` 品牌主题）
-  - `build.rs` 改进：自动执行 `npm install` 确保依赖就绪，自动编译 Tailwind CSS
-  - `.gitignore` 排除 node_modules/output.css/dist
-  - `@source` 指令配置扫描路径（index.html + src/**/*.rs）
-- **UI 组件迁移（DaisyUI 类名）**：
-  - Button → `btn btn-primary/secondary/error/ghost` 等
-  - Modal → `modal modal-open` + `modal-box` dialog 结构
-  - Toast → `toast` + `alert` 组件
-  - Loading/State → DaisyUI loading 类
-- **所有页面迁移**：HR/Finance/Project/System/Message/Organization/User/Settings/Reception 全部迁移到 Tailwind/DaisyUI 样式
-- **主题切换功能**：`use_theme` Hook + `ThemeController` 结构体，支持 30+ 种 DaisyUI 主题，偏好持久化到 localStorage
-- **CSS 清理**：`index.html` 内联样式从 1960+ 行精简到 ~380 行，仅保留动画和 DaisyUI 未覆盖的特殊组件样式
-- **路由修复**：`router.rs` 中 A2A 回调路由旧语法 `:task_id` → axum 0.8 新语法 `{task_id}`
-- **测试统计**：754 个测试 100% 通过，前端 wasm32 编译 0 error
+### 2026-07-21 ~ 22 里程碑（精简）
+**✅ Tailwind CSS v4 + DaisyUI v5 集成 + A2A 异步回传 + 适配层架构统一**
+- **Tailwind/DaisyUI 集成**：Tailwind v4.1 + DaisyUI v5 + 30+ 主题切换（自定义 `orz-light` 品牌主题）；所有页面迁移到 DaisyUI 类名；`index.html` 内联样式从 1960+ 行精简到 ~380 行
+- **A2A 异步回传双通道**：Push 回调（`POST /a2a/callback/{task_id}`，无 JWT）+ Poll 兜底（`A2aPollingProducer` 每 30 秒）；外部 task_id 通过 Task.tags 存储，消息去重通过 `a2a_synced_msgs:N` 计数
+- **适配层架构认知统一**：HTTP Handler（用户 API）、公开回调 Handler（外部 HTTP 回调）、AOP Producer（WS/轮询）三者同属适配层；修正分层架构为 Adapter → Domain → DAL → DAO；外部协议不进入事件中心，适配层直接调用 Domain 方法；详见 [LAYERED_ARCHITECTURE_PRACTICE.md - 实践 7](./docs/LAYERED_ARCHITECTURE_PRACTICE.md)
+- **前端代码质量优化**：AOP 监控页修复无效 CSS 类；新增 `.card-hover`/`.card-selected`/`.modal-body` 样式；`use_resource` Hook 封装三态资源加载模式
 
-### 2026-07-21 里程碑
-**✅ A2A Remote Agent 异步结果回传 + 适配层架构认知统一**
-- **A2A 异步回传双通道**：
-  - Push 回调：公开 HTTP 端点 `POST /a2a/callback/:task_id`（无 JWT，适配层直接处理）
-  - Poll 兜底：`A2aPollingProducer` 每 30 秒轮询 Remote Agent 的 InProgress Task
-  - 外部 task_id 通过 Task.tags 存储（格式 `a2a_task_id:xxx`）
-  - 消息去重通过 tags 中 `a2a_synced_msgs:N` 计数
-  - A2aRuntimeDao 新增 `fetch_task()` 调用远程 `tasks/get`
-- **架构重构：外部协议不进入事件中心**：
-  - 初始错误设计：`A2aTaskUpdateEvent` 包装外部 JSON 投递到事件中心，Consumer 解析
-  - 重构后：适配层（回调 Handler / Polling Producer）直接调用 Domain 方法（`send_to_user` + `transition_status`）
-  - 内部事件中心只流通 Domain 产生的内部事件（如 `MessageCreatedEvent`），Consumer 无需感知外部协议
-- **架构认知统一：Handler = Adapter**：
-  - HTTP Handler（用户 API）、公开回调 Handler（外部 HTTP 回调）、AOP Producer（WS/轮询）三者**同属适配层**
-  - 修正分层架构：Adapter → Domain → DAL → DAO（原来的"Handler 层"改名为"适配层"）
-  - DAO 层明确包含外部 API 出站调用（如 LarkDao.push、A2aRuntimeDao.send_task）
-  - Consumer 不在适配层（它消费内部事件）
-  - 与飞书 P2P 消息入站模式完全对齐（`message_channel.rs` Producer 直接调用 `send_to_agent`）
-- **文档更新**：
-  - [LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md) 新增实践 7：适配层架构原则
-  - [external_agent_design.md](./docs/external_agent_design.md) 同步适配层处理流程
-  - README.md / AGENTS.md 更新架构描述和功能列表
-- **测试统计**：754 个测试 100% 通过
+### 2026-07-12 ~ 17 里程碑（精简）
+**✅ 向量索引重建 + 飞书 P2P 消息 + SSE 推送 + 任务/记忆/对话前端能力**
+- **向量索引重建（07-17）**：HnswStore 集合元数据持久化（`CollectionMeta`：model_provider_id/dimensions/vector_count）；7 个 DAL 的 `rebuild_vectors` 统一为「查元数据 → 一致则跳过 → 重建 → 写回」模式
+- **飞书 P2P 消息接入 + AOP 适配中台（v4 架构，07-17）**：LarkDao trait + HTTP + WebSocket 长连接；`pkg/adapter/message` 通用消息入站适配中台，新渠道只需 DAL 注册 producer 自动获得入站消息；Agent 路由策略（渠道绑定 agent_id 优先 → feishu_reception 角色 → 任意 Onboarded Agent）
+- **向量搜索增强（07-16）**：HNSW 索引持久化（`hnsw_index` 目录，bincode 2.0 序列化，后台 60s 定时落盘 + Drop 兜底）；索引重建异步化（switch 接口立即返回 task_id，进度查询端点，并发控制 409）
+- **定时触发器前端体验优化（07-16）**：7 列展示 + Action 模板化（agent_rest）+ Cron 预设按钮 + 编辑复用创建弹窗
+- **SSE 消息推送系统（07-15）**：基于 Server-Sent Events 单向实时推送；`SsePushDao` 用 `tokio::sync::RwLock` + `broadcast` 通道管理 SSE 连接；`GET /api/v1/finance/messages/sse/{user_id}`
+- **双模式认证（07-15）**：Cookie（浏览器）+ Bearer token（API 调用）双模提取；浏览器请求 302 重定向登录页，API 调用 401 JSON；JWT 中间件外层先执行注入用户信息，RequestContext 内层后执行
+- **任务管理可视化 + 对话附件上传 + Toast 通知（07-15）**：项目概览统计卡片 + 动态进度条；附件上传 API（web_sys FormData）+ 图片内联展示 + 消息时间分组；Toast 4 种类型 + 滑入滑出动画 + 22 页面统一替换旧式提示
+- **任务管理核心功能 + 看板视图 + Agent 记忆面板（07-15）**：任务创建/编辑弹窗 + 任务详情页；全局任务列表 API + 看板视图（按状态分列）；Agent 记忆面板 Tab 切换（短期记忆/知识节点/关系）
+- **对话体验打磨 + 实体统计数据动态注入（07-15）**：消息复制 + 快捷指令（/clear、/help）+ 键盘导航；FetchOptions 模式 + StatsOptions + 按需注入统计数据
+- **前端统计数据集成（07-15）**：`StatsCard` 通用卡片 + 三个实体面板（Agent/Project/Task）；详情页按需展示统计面板
+- **管理页面补全 + 对话功能 MVP + 消息/记忆搜索 + 知识图谱（07-13）**：Agent/Project 详情页；左右分栏对话布局 + 双向分页；消息/记忆搜索 API + 知识图谱 SVG 组件
 
-**✅ 前端代码质量优化**
-- **Bug 修复**：AOP 监控页面（`pages/system/aop.rs`）模态框使用不存在的 `.modal` CSS 类和无效 Tailwind 风格类名，改为使用公共 Modal 组件 + 有效 CSS 类
-- **CSS 补充**：`index.html` 新增 `.card-hover`（悬停效果）、`.card-selected`（选中高亮）、`.modal-body`（最大高度+滚动）三个样式类
-- **Modal 统一**：`pages/message/chat.rs` 新建项目弹窗改用公共 Modal 组件，消除手写 modal HTML 重复
-- **localStorage 工具提取**：新增 `utils.rs` 提供 `local_storage()` 公共函数，消除 `config.rs` 和 `auth.rs` 中的重复实现
-- **API 层重构**：`api/mod.rs` 提取 `parse_api_error_from_body()`/`parse_error_response()` 辅助函数，消除 `api_post_with_error`/`api_put_with_error` 中重复的错误解析逻辑
-- **use_resource Hook**：新增 `hooks/use_resource.rs`，封装三态资源加载模式（Loading/Ready/Failed），供后续页面使用减少重复代码
-- **文档更新**：[frontend_architecture.md](./docs/frontend_architecture.md) 更新目录结构、CSS 类清单、认证机制描述、Hooks 文档、样式规范（禁止 Tailwind/Bootstrap 类名）、更新记录
-- **测试统计**：前端 wasm32 编译 0 error，后端 754 测试 100% 通过
+### 2026-07-10 ~ 12 里程碑（精简）
+**✅ 前端架构重构 + Runtime Phase 4 + 全实体 FTS5**
+- **前端架构重构（07-12）**：Dioxus Router 15 条路由 + 统一 API 客户端（OnceLock 单例 + JWT bearer 自动注入）+ 全局认证状态 + 基础 UI 组件库 + 13 个 CRUD 页面；新增 [docs/frontend_architecture.md](./docs/frontend_architecture.md)
+- **Task 进度追踪 + FTS5 公共工具重构（07-12）**：Task `progress: i32`（0-100）+ `update_progress` Domain 方法 + `progress_updated` 事件 + `update_task_progress` 神经工具；`escape_fts5_keyword` 提升到 `pkg/storage/fts5.rs` 消除 DAO→DAO 依赖
+- **Runtime Phase 4C - 技能系统增强（07-12）**：SkillQuery/ToolQuery 加 tags 字段（`json_each` OR 语义）；技能包完整生命周期（install/uninstall/reinstall/list）；`hr_domain.get_agent(with_skills=true)` 加载已安装技能副本；`search_skill` 神经工具
+- **记忆搜索 FTS5 增强 + 综合搜索（07-12）**：`short_term_memory_fts` + `knowledge_node_fts` 虚拟表（trigram 分词器）+ 6 个触发器自动同步；MatchType 三态（Hybrid/Vector/Keyword）+ 三级排序；向量距离阈值可配置
+- **全实体 FTS5 全文搜索改造（07-12）**：Skill/Tool/Message/Task/Project/Agent 6 大实体统一混合搜索模式；迁移文件 `20260712000001_entity_fts5.sql`，6 个 FTS5 虚拟表 + 18 个触发器 + 6 条存量回填；向量索引自动维护
+- **Runtime Phase 4A - 工具包机制 + 任务执行闭环（07-11）**：tag 分组工具 + Agent 入职自动安装；免绑定校验三层逻辑（绑定 → 神经 → 已安装 tag）；`TaskAssignment` 消息类型 + `send_task_assignment_message` 神经工具；三种角色定位（神经工具 Handler / 普通 HTTP Handler / Consumer）
+- **Runtime Phase 4B - 记忆模块增强（07-11）**：定时触发器系统（CronTriggerPo + CronScheduler 后台扫描 + CronTriggerConsumer）；休息与沉淀机制（MemoryStatus::Settled + `settle_short_term_to_long_term`）；`settle_memory` 神经工具；定时触发记忆沉淀
+- **Runtime Phase 2 - 神经工具集完整落地（07-10）**：`register_handler_tool` 宏新增 `neural` flag + `tags` 参数；8 个神经工具全部实现（5 记忆 + 1 消息 + 2 工具）；唤醒时自动筛选带 "neural" tag 的工具注入 Prompt；神经工具免绑定
+- **Runtime Phase 3 - 多回合循环控制（07-10）**：`ToolStatsDao` 工具调用次数/失败次数查询；`AgentFetchOptions` 按需注入统计数据；轮次限制检查（`max_thinking_depth`）+ 任务完成检测 + Prompt 上下文差异化 + 工具失败计数注入
 
-### 2026-07-12 里程碑
-**✅ 前端架构重构**
-- **Dioxus Router 引入**：15 条路由替代 use_signal 状态机，支持 URL 路由 + Link 组件导航
-- **Mistral CSS 设计系统**：CSS 变量 + 组件类注入 index.html，替代内联样式（暖色调，与 ui_design_system.md 对齐）
-- **统一 API 客户端**：OnceLock 全局单例 + JWT bearer 自动注入 + api_get/api_post/api_put/api_delete 类型化 helper
-- **全局认证状态管理**：AuthState + use_context_provider + token localStorage 持久化 + 登录闭环
-- **7 业务域 API 客户端**：auth/organization/hr/finance/project/message/system，与后端 Handler 域对齐
-- **基础 UI 组件库**：Button（5 variant）/ Modal / Loading / EmptyState / ErrorAlert / SuccessAlert
-- **布局组件**：Navbar（5 个下拉菜单 + Router Link）+ AppLayout
-- **13 个 CRUD 页面**：Reception 登录 / 组织信息 / 用户管理 / Agent 管理 / 技能库 / 模型提供商 / 工具 / 消息渠道 / 项目管理 / 定时触发器 / 健康检查 / 个人信息 / 设置
-- **页面模块化**：pages/ 按 organization/hr/finance/project/message/system/user 分组，与后端 Handler 域对齐
-- **common crate 扩展**：补充缺失 DTO 类型、Default derive、ProviderType Display 实现
-- **测试统计**：693 个后端测试 100% 通过，前端 cargo check 0 错误
-- **文档更新**：新增 [docs/frontend_architecture.md](./docs/frontend_architecture.md)，更新 README/AGENTS/ARCHITECTURE/architecture_status/ui_design_system
+### 2026-07-01 ~ 06 里程碑（精简）
+**✅ 业务事件 + Agent 唤醒统计 + Stats DAO 全实体覆盖 + 附件存储 + MCP 集成**
+- **Project/Task 业务事件（07-06）**：`project_events` + `task_events` 表，含 created/started/completed/archived/status_changed 五种事件；`operator_type` + `operator_id` 区分操作者类型；`record_event!` 宏改用 `stats_opt()` 静默跳过未初始化场景
+- **Agent 唤醒统计事件 + Stats DAO 数据源切换（07-05）**：`agent_awake_events` 表记录唤醒事件；AgentStatsDao 从 `model_call_events` 切换到 `agent_awake_events`；验证"领域先行，实现后续演进"设计思路
+- **Stats DAO 领域拆分重构（07-05 早期）**：按领域而非实体划分职责；通用结构体 `ModelCallStats`（call_summary + token_summary + model_call_time_series）；DAL 层统计接口统一为 `get_stats(id, options)` + `get_model_call_stats(id, options)`
+- **全实体 Stats DAO 层建设完成（07-02）**：Agent/Project/Task/ModelProvider Stats DAO 全部 DuckDB 实现；`StatsInterval`/`TimeSeriesPoint`/`TokenSumResult` 迁移到 `common/src/models/stats.rs`；新增 `request_context_test_support.rs`、`storage/test_support.rs`
+- **附件存储 + MCP 服务器集成完整落地（07-01）**：通用 Attachment 上传 API（文件上传 + 文本创建）；MCP 服务器 CRUD + 工具同步 + MCP 工具调用执行全链路；Finance Domain 新增 Attachment/McpServer/McpTool/ToolProvider；6 大业务域 API 全部上线
 
-**✅ Task 进度追踪 + FTS5 公共工具重构**
-- **Task progress 字段**：新增 `progress: i32`（0-100），自动 clamp 防越界，`complete()` 时自动设 100
-- **update_progress Domain 方法**：TaskManage trait 新增 `update_progress(ctx, task_id, progress)` 方法
-- **progress_updated 事件**：进度更新时自动记录 `progress_updated` 类型的 TaskEvent
-- **update_task_progress 神经工具**：注册为 project_management 工具包，Agent 可随时更新任务进度
-- **API 路由**：`PUT /api/v1/projects/tasks/{id}/progress`，HTTP + 神经工具双模式
-- **escape_fts5_keyword 重构**：从 `dao/memory/sqlite.rs` 提升到 `pkg/storage/fts5.rs`，消除 DAO→DAO 依赖
-- **测试统计**：693 个测试 100% 通过
+### 2026-06 月度汇总
+**✅ MCP 集成 + 产物来源扩展 + 统一附件存储**
+- **MCP 服务器与工具集成（06-23）**：MCP 服务器管理 + 工具同步（拉取工具列表并持久化）+ MCP 工具执行（rmcp 客户端）；迁移文件 `20260623000000_mcp_servers.sql`
+- **产物来源类型扩展（06-18）**：Artifact 增加 `source_type` 字段，支持引用 Finance 模块 `attachment_id` 创建项目产物；迁移文件 `20260618000000_artifact_add_source_type.sql`
+- **统一附件存储系统上线（06-17）**：通用 Attachment 模块（上传/创建文本/查询/删除/内容更新）；FileMeta + 日期分层路径存储；支持 multipart 文件上传和纯文本创建两种模式；迁移文件 `20260617000000_attachments.sql`
 
-**✅ Runtime Domain Phase 4C - 技能系统增强**
-- **DAO 层 tag 过滤**：SkillQuery/ToolQuery 新增 tags 字段，使用 `json_each` 在 SQL 层精确匹配（OR 语义），关键词搜索扩展到 tags 字段
-- **AgentRuntimeConfig 扩展**：新增 `installed_skill_packs: Vec<String>` 字段，记录 Agent 已安装技能包
-- **install_to_agent 幂等性**：安装前检查 parent_skill_id + author_id 是否已有副本，已存在则跳过
-- **技能包完整生命周期**：
-  - `install_skill_pack`：按 tag 查询 Published 技能 → 批量 install_to_agent → 记录 tag
-  - `uninstall_skill_pack`：移除 tag 关联，保留技能副本（不丢失 Agent 经验）
-  - `reinstall_skill_pack`：覆盖式重装，用源技能最新内容更新 Agent 副本
-  - `list_installed_skill_packs`：返回已安装技能包 tag 列表
-- **技能包管理 API**：3 个新 Handler（install/uninstall/list），路由 `/api/v1/hr/agents/{agent_id}/skill-packs`
-- **唤醒时技能注入**：技能由 `hr_domain.get_agent(with_skills=true)` 加载到 `agent.skills`，awaken 提取 SkillPo 注入 Prompt 的"【神经技能】"/"【必加载技能】"区块
-- **search_skill 神经工具**：Agent 可按关键词/tag 搜索技能库，返回精简摘要
-- **Tool tag 过滤优化**：工具加载在 SQL 层按 `json_each` OR 匹配 tag，`call_manual_tool_for_agent` 同步优化
-- **测试统计**：601 个测试 100% 通过（+25）
+### 2026-05 月度汇总
+**✅ 日志系统宏化 + PO/业务实体分层架构落地**
+- **日志系统完全宏化重构（05-15）**：删除所有旧函数实现，8 个宏合并为 4 个（`log_info!` / `log_warn!` / `log_error!` / `log_debug!`）；语法模式匹配自动检测上下文模式；项目内禁止直接调用 `tracing::*!`；新增 [docs/logging_design.md](./docs/logging_design.md)
+- **PO 与业务实体分层架构完整落地（05-11）**：Project/Task/Artifact 三大业务对象完成分层重构；DAO 仅操作 PO，DAL 内部 PO↔业务实体转换对外统一业务实体，Domain 100% 无 PO 依赖；业务实体内部持有 `po: XxxPo` 字段；ctx 跨层传递统一 `ctx.clone()`；`TaskStatus::Cancelled = 0` 软删除约定
+- **Project Domain 骨架搭建 + 全项目测试代码重构优化（05-10）**：`ProjectDomain` trait 含 `management` + `execution` 两个子能力；重构 25 个测试文件，抽取 `init_test_env()` 公共初始化函数 + `create_test_agent()`/`create_test_project()` 工厂方法
 
-**✅ 记忆搜索 FTS5 增强与综合搜索**
-- **FTS5 全文索引**：创建 `short_term_memory_fts` 和 `knowledge_node_fts` 虚拟表，使用 `trigram` 分词器（支持中文全文搜索）
-- **触发器自动同步**：6 个触发器（INSERT/UPDATE/DELETE × 2 表）自动维护 FTS 索引，应用层无感知
-- **DAO 层搜索改造**：LIKE → FTS5 MATCH + BM25 相关性排序，新增 `escape_fts5_keyword` 转义工具函数
-- **死代码清理**：移除 `query_short_term` 和 `query_knowledge_nodes` 中的 MATCH 死代码分支，关键词搜索统一走 search 方法
-- **MatchType 三态完善**：Hybrid（双命中）/ Vector（仅向量）/ Keyword（仅关键词），每种命中都附加 `SearchMatchInfo`
-- **向量距离阈值可配置**：从硬编码 0.8 改为 `MemorySearch.vector_distance_threshold` 可选参数
-- **综合搜索三级排序**：Hybrid 优先 → Vector → Keyword，组内分别按 vector_distance / fts_rank 排序
-- **关系关键词搜索补全**：`search_relations_internal` 通过 knowledge_node_fts 搜索节点 → 查关联关系 → 返回节点和关系
-- **测试统计**：615 个测试 100% 通过（+14）
-
-**✅ 全实体 FTS5 全文搜索改造**
-- **统一搜索标准**：为 Skill/Tool/Message/Task/Project/Agent 6 大实体建立统一的混合搜索模式（FTS5 关键词 + 向量语义 + 三态匹配），全面弃用 LIKE
-- **FTS5 迁移文件**：`20260712000001_entity_fts5.sql`，6 个 FTS5 虚拟表（trigram 分词器）+ 18 个触发器（INSERT/UPDATE/DELETE × 6 表）+ 6 条存量回填
-- **三态匹配模式**：Hybrid（向量+关键词双命中）/ Vector（仅向量）/ Keyword（仅关键词），每种附加 SearchMatchInfo（vector_distance + fts_rank）
-- **综合搜索三级排序**：Hybrid 优先 → Vector 次之 → Keyword 最后，组内按 vector_distance / fts_rank 升序
-- **向量索引自动维护**：所有实体 create/update 时自动 upsert 向量索引，delete/archive 时自动清理
-- **ToolVectorDao 补全**：新增 `delete_vector` 方法，完善 Tool 向量索引生命周期管理
-- **Tool DAL 向量索引维护**：create_tool/update_tool/delete_tool 补全向量索引自动维护逻辑
-- **测试统计**：693 个测试 100% 通过（+78，含 6 实体搜索三态匹配测试）
-
-### 2026-07-17 里程碑
-**✅ 向量索引增量重建（集合级元数据标记）**
-- **HnswStore 集合元数据持久化**：新增 `CollectionMeta` 结构（`model_provider_id` / `dimensions` / `vector_count` / `updated_at`），持久化到 `collections_meta.bincode` 单文件
-- **VectorStore trait 扩展**：新增默认方法 `get_collection_model_provider_id` / `set_collection_model_provider_id`，仅 `HnswStore` 覆写
-- **重建流程统一化**：7 个 DAL（agent/memory/skill/task/project/message/tool）的 `rebuild_vectors` 全部改为「先查元数据 → 一致则跳过 → 不一致则重建 → 写回元数据」模式
-- **源头避免数据不一致**：未写入元数据的集合不会被消费者访问，进程崩溃后下次启动自动恢复
-- **元数据作为事实进度说明**：保证持久化的集合内容一定来自对应 provider，无需额外的进度持久化
-- **Memory 双集合独立判断**：`memory:short_term` 和 `memory:knowledge_node` 分别检查，仅重建不匹配的部分
-
-**✅ 飞书私信（P2P）消息接入 + AOP 消息适配中台（v4 架构）**
-- **DAO 层封装**：LarkDao trait + HTTP 实现 + WebSocket 长连接，飞书 SDK 全部封装在 DAO 层
-- **Token 缓存**：tenant_access_token 缓存 + 提前 5 分钟自动刷新 + 双重检查锁防并发
-- **出站推送**：`/open-apis/im/v1/messages` 文本消息推送，`push_to_channel` 五渠道统一调度
-- **入站消息**：WebSocket 长连接 + `im.message.receive_v1` 事件订阅，30 秒心跳 + 自动重连
-- **LarkMessageChannelDal**：飞书专属 DAL，`find_channel_by_lark_open_id` + `adapt_lark` 事件转换
-- **v4 AOP 架构升级**：`pkg/adapter/message` 通用消息入站适配中台，producer 不直接依赖 DAL
-- **通用 trait**：`MessageInboundAdapter`（渠道适配器）+ `MessageAdapterCallback`（消息回调）
-- **注册中心**：DAL 层注册适配器，producer（`producer/message_channel.rs`）通过 `start_all / stop_all` 统一管理所有渠道
-- **新增渠道零 producer 改动**：新渠道只需 DAL 注册，producer 自动获得入站消息
-- **Agent 路由策略**：渠道绑定 agent_id 优先 → feishu_reception 角色 Agent → 任意 Onboarded Agent
-- **全局配置**：`[lark]` 配置段，`enabled` 开关控制启停，默认禁用不影响现有功能
-- **前端完善**：消息渠道管理页飞书专属字段（lark_open_id / lark_user_name / agent_id）
-- **测试统计**：708 个测试 100% 通过（+11）
-
-### 2026-07-16 里程碑
-**✅ 向量搜索增强**
-- **HNSW 向量存储**：基于 instant-distance 0.6.1 的纯 Rust HNSW 索引实现，lazy rebuild 策略
-- **Embedding Provider 唯一性**：同一时刻仅一个 Embedding Provider 启用，冲突返回 409 + 当前 Provider 信息
-- **Switch 接口**：`POST /api/v1/finance/model-providers/:id/switch`，二次确认后原子切换 + 索引重建
-- **索引重建全链路**：VectorDao clear_collection（7个）+ DAL rebuild_vectors（7个）+ Domain 编排
-
-**✅ 前端 Switch 适配**
-- **API 客户端**：switch_embedding_provider + toggle_model_provider，api_post_with_error 支持 ApiError
-- **列表页/详情页**：启用 Embedding Provider 检测 409 → 确认对话框 → switch 调用
-- **错误响应通用化**：axum 错误响应使用通用 http_status/code_str，409 正确返回 error_code 字段
-- **测试统计**：697 个测试 100% 通过
-
-**✅ HNSW 索引持久化**
-- **配置项**：`database.hnsw_index_dir`（默认 `hnsw_index`，相对于 `base_data_path`）
-- **存储格式**：bincode 2.0 序列化，每个 collection 一个文件（`<collection>.bincode`）
-- **落盘策略**：后台 60s 定时扫描 dirty flag 落盘 + `Drop` 时同步兜底落盘
-- **冷启动**：`HnswStore::new()` 扫描目录加载已有索引，避免冷启动 lazy rebuild
-- **VectorStore trait**：新增 `flush()` 方法（默认空实现，HnswStore 覆写）
-
-**✅ 索引重建异步化**
-- **switch 接口**：立即返回 `task_id`，后台 spawn tokio 任务执行重建
-- **进度查询**：`GET /api/v1/finance/model-providers/rebuild-progress?task_id=xxx`
-- **并发控制**：同一时刻仅允许一个重建任务，已有任务运行时新 switch 返回 `409 RebuildInProgress`
-- **进度结构**：当前实体、实体索引、已处理/总记录数、状态（Pending/Running/Completed/Failed）、错误信息
-- **容错**：单个实体重建失败仅记日志，不中断整体流程
-
-**✅ 定时触发器前端体验优化**
-- **列表信息增强**：7 列展示（名称/类型徽章/调度信息/状态/下次执行/上次执行/操作），时间格式化
-- **Action 模板化**：`agent_rest` 模板（Agent ID + 沉淀数量字段）+ 自定义 JSON 选项 + 实时校验
-- **Cron 表达式类型**：6 个常用预设按钮（每分钟/每小时/每天 0 点/每天 9 点/每周一/每月 1 号）
-- **编辑功能**：复用创建弹窗，`get_cron_trigger` 加载详情 + `parse_payload` 自动回填模板参数
-- **刷新优化**：手动刷新按钮 + 所有操作 toast 提示（成功/失败）
-- **CSS 样式**：新增 4 个类（`cron-presets`/`cron-preset-btn`/`json-error`/`trigger-type-badge`）
-- **测试统计**：697 个测试 100% 通过，前端 `cargo check` 0 错误
-
-### 2026-07-15 里程碑
-**✅ SSE 消息推送系统**
-- **SSE 长连接推送**：基于 Server-Sent Events 实现服务器到客户端的单向实时推送
-- **订阅者模式**：Handler → Domain → DAL → DAO 分层调用，DAL 负责消息加工，DAO 管理 SSE 连接
-- **DAO 层连接管理**：`SsePushDao` 使用 `tokio::sync::RwLock` + `broadcast` 通道管理多个 SSE 连接和消息分发
-- **MessageDelivery 扩展**：新增 `subscribe`/`unsubscribe` 方法，`deliver_message` 自动通过 SSE 推送
-- **SSE 订阅端点**：`GET /api/v1/finance/messages/sse/{user_id}`，与 finance/message 模块路由对齐
-- **消费者集成**：消息消费者处理消息时自动调用 `deliver_message`，通过 SSE 推送到前端
-
-**✅ 前后端认证机制统一**
-- **Cookie 认证统一**：前端从 `Authorization: Bearer` 改为 HttpOnly Cookie，浏览器自动携带
-- **中间件顺序优化**：调换 `jwt_auth_middleware`（外层先执行）和 `request_context_middleware`（内层后执行）顺序
-  - JWT 中间件验证 Cookie 中的 token → 将用户信息写入请求头
-  - RequestContext 中间件从请求头（已含用户信息）创建 RequestContext
-  - 消除了 JWT 中间件中"克隆并更新 ctx"的冗余逻辑
-- **前端认证简化**：移除 token 管理，使用 localStorage 标志位判断登录状态
-- **SSE 兼容**：EventSource 自动携带 Cookie，无需额外处理认证
-- **测试统计**：696 个测试 100% 通过（+3）
-
-**✅ 双模式认证（Cookie + Bearer）**
-- **双模式 JWT 提取**：中间件优先从 Cookie 提取 token，Cookie 不存在时 fallback 到 `Authorization: Bearer` 头
-- **智能响应区分**：
-  - 浏览器请求（有 Cookie 头或 Accept: text/html）→ 302 重定向到登录页
-  - API 调用请求（Bearer 模式）→ 401 JSON 错误响应
-- **LoginResponse 扩展**：登录响应新增 `token` 字段，API 调用者可直接获取 JWT 用于后续 Bearer 调用
-- **使用场景**：curl/Postman/代码调用均可通过 Bearer token 访问所有受保护 API
-- **测试统计**：696 个测试 100% 通过
-
-**✅ 对话功能补全（附件上传 + 时间分组）**
-- **附件上传 API 客户端**：使用 web_sys 原生 fetch API + FormData 实现 WASM 环境下的文件上传
-- **SendMessageToAgentParams 扩展**：新增 `attachment_ids` 字段支持发送带附件的消息
-- **后端附件消息创建**：`delivery.rs` 中根据 attachment_ids 批量创建附件消息，`reply_to_id` 指向根文本消息
-- **附件上传 UI**：📎 按钮触发文件选择，支持多文件，上传中显示加载状态
-- **附件消息展示**：图片消息内联展示，其他类型文件显示文件名+大小+下载链接
-- **消息时间分组**：按日期分组显示（今天/昨天/YYYY-MM-DD），日期分隔符样式
-- **测试统计**：697 个测试 100% 通过（+1）
-
-**✅ 任务管理可视化**
-- **项目概览统计卡片**：项目总数、进行中任务数、已完成任务数、整体进度
-- **动态进度条**：进度 0-25% 橙色警告、26-50% 蓝色主色、51-75% 紫色强调、76-100% 绿色成功
-- **任务状态分布**：Pending/InProgress/Completed/Cancelled/Archived 五状态统计卡片
-- **项目详情页集成**：在项目详情页顶部展示概览面板，任务列表紧随其后
-
-**✅ Agent 详情页对话集成**
-- **消息列表渲染**：复用对话页面的消息气泡组件，支持文本+附件消息展示
-- **输入框与发送**：Enter 发送、Shift+Enter 换行，发送中显示 typing 指示器
-- **SSE 实时消息接收**：监听全局 SSE 通道，自动过滤当前 Agent 相关消息
-- **历史消息加载**：页面加载时拉取最近 20 条消息作为初始上下文
-- **无侵入式集成**：对话区域作为 Agent 详情页的第六个 section，与其他管理功能共存
-
-**✅ 知识图谱交互完善**
-- **关系类型差异化渲染**：6 种关系类型（属于/引用/包含/关联/派生/依赖）对应不同颜色和虚线样式
-- **边标签防重叠**：标签添加背景框，通过 transform 变换优化位置
-- **节点拖拽功能**：鼠标拖拽节点，实时更新关联边的端点位置
-- **图谱缩放与平移**：滚轮缩放（0.5x-2x），右键拖拽平移，坐标系统完整支持
-- **搜索结果高亮与历史记录**：匹配节点发光高亮，搜索历史快捷按钮，支持快速回溯
-- **详情侧边栏增强**：展示节点关系信息、内容框样式优化、关闭按钮
-
-**✅ Toast 通知系统**
-- **状态管理核心**：`ToastType` 4 种类型（success/error/warning/info）、`ToastState` Copy 结构体、全局 `use_toast()` 上下文 API
-- **UI 组件**：`ToastContainer` 容器固定右上角，`ToastItemView` 单条通知，滑入滑出动画、自动关闭、手动关闭、进度条倒计时
-- **CSS 样式**：复用现有 CSS 变量，进度条 `@keyframes` 动画，4 种类型配色
-- **全局替换**：22 个页面文件、194 处旧式 ErrorAlert/SuccessAlert 提示统一替换为 Toast，净减 54 行代码
-
-**✅ 任务管理核心功能**
-- **任务创建/编辑弹窗**：`TaskEditModal` 组件支持 Create/Edit 两种模式，表单字段映射后端 `CreateTaskRequest` / `UpdateTaskRequest`
-- **任务详情页**：`/tasks/:id` 路由，展示基本信息、标签与依赖、进度管理（进度条 + 更新弹窗）、状态流转（6 种状态切换按钮）
-- **项目详情页集成**：任务列表区域头部增加"+ 新建任务"按钮，任务行可点击跳转到详情页
-- **后端无改动**：复用已有 API 客户端和 DTO，纯 UI 集成
-- **测试统计**：697 个测试 100% 通过
-
-**✅ 独立任务管理页面 + 看板视图**
-- **后端全局任务列表 API**：新增 `GET /api/v1/tasks` Handler，支持 `project_id`/`status`/`assignee_id`/`assignee_type`/`limit` 查询参数，复用 `TaskManage::list()` Domain 方法
-- **ListTasksRequest DTO**：新增查询参数 DTO，标注 `#[param(source = "query")]` 供宏自动提取
-- **前端 API 客户端**：新增 `list_tasks()` 函数，支持多维度筛选
-- **任务管理页面**：`/tasks` 路由，包含统计概览卡片、筛选栏（项目/状态/负责人类型）、视图切换（列表/看板）
-- **看板视图**：按 TaskStatus 五列分组（待审核/待处理/进行中/已完成/已归档），任务卡片含标题、优先级徽章、标签、进度条，点击跳转详情页
-- **列表视图**：表格展示标题、状态、优先级、进度、负责人、项目、更新时间，行可点击跳转
-- **CSS 样式**：看板列布局、卡片悬浮动效、筛选栏响应式布局
-- **测试统计**：697 个测试 100% 通过
-
-**✅ Agent 记忆面板**
-- **记忆面板组件**：`AgentMemoryPanel` 组件，支持 Tab 切换（短期记忆/知识节点/关系）
-- **搜索功能**：无关键词时调用 `query_memory` 按类型查询，有关键词时调用 `search_memory` 混合搜索
-- **卡片展示**：类型徽章、内容预览（截取前 120 字符）、摘要、相似度分数
-- **关系视图**：额外显示源节点 ID、关系类型徽章、目标节点 ID
-- **Agent 详情页集成**：作为第七个 detail-section，传入 `agent_id` 自动加载记忆数据
-- **CSS 样式**：16 个新 class，Tab 激活态用主色调，卡片悬浮阴影，记忆列表最大高度 400px 可滚动
-- **后端零改动**：复用已有 `query_memory` / `search_memory` API 客户端和 DTO
-- **测试统计**：697 个测试 100% 通过
-
-**✅ 对话体验打磨**
-- **消息复制**：hover 文本消息气泡显示"复制"按钮，点击调用 `web_sys::Navigator::clipboard().write_text()` 复制到剪贴板，toast 提示结果
-- **快捷指令**：输入框输入 `/` 开头时显示快捷指令菜单，支持 `/clear`（清空对话）和 `/help`（显示帮助）
-- **键盘导航**：↑↓ 选择菜单项、Enter 执行、Esc 关闭、实时过滤匹配指令
-- **CSS 样式**：12 个新 class（消息操作按钮、快捷指令菜单、代码块高亮、代码块复制按钮）
-- **web-sys 扩展**：`Cargo.toml` 添加 `Clipboard` 和 `Navigator` features
-- **测试统计**：697 个测试 100% 通过
-
-**✅ 实体统计数据动态注入**
-- **FetchOptions 模式**：为 Project/Task/Tool/ModelProvider 补齐 FetchOptions + get_xxx(ctx, id, options) 方法，Agent 扩展增加 model_call_stats
-- **按需注入**：通过 query 参数 `with_stats`/`with_model_call_stats` 控制是否返回统计数据，响应字段 None 时自动省略
-- **时间范围与粒度**：支持 `stats_time_start`/`stats_time_end` 时间范围过滤，`stats_interval` 控制时序聚合粒度（hourly/daily）
-- **后端 API**：5 个实体 GET 详情接口全部扩展支持统计参数，一次请求拿到实体+统计
-- **严格分层**：Handler → Domain → DAL → DAO 单向调用，无跨层，DAL 层内部组合多个 DAO
-- **测试统计**：697 个测试 100% 通过
-
-**✅ 前端统计数据集成**
-- **通用统计选项**：新增 `StatsOptions` 结构体和 `build_url_with_stats` 函数，统一处理统计参数 URL 拼接
-- **API 客户端扩展**：`get_agent`/`get_project`/`get_task`/`get_tool`/`get_model_provider` 全部支持 `stats_options` 参数
-- **统计面板组件**：`StatsCard` 通用卡片 + `AgentStatsPanel`/`ProjectStatsPanel`/`TaskStatsPanel` 三个实体面板
-- **详情页集成**：Agent/Project/Task 详情页按需展示统计面板（有统计数据时自动渲染）
-- **Dioxus 组件设计**：使用 owned 值（clone）而非引用，规避 Dioxus 组件不支持生命周期参数的限制
-- **CSS 样式**：`.stats-panel`/`.stats-grid`/`.stats-card` 等样式类，响应式网格布局
-- **测试统计**：697 个测试 100% 通过，前端 `cargo check` 0 错误
-
-### 2026-07-13 里程碑
-**✅ 管理页面补全**
-- **消息 API 路径修复**：前端 API 客户端添加 `/finance` 前缀，修复与后端路由不匹配问题
-- **Agent/Project 详情页**：新增 Agent 详情页（技能包管理、工具包管理）、项目详情页（任务列表、进度展示）
-- **创建弹窗完善**：技能库、定时触发器、消息渠道新增创建弹窗组件
-- **枚举值映射统一**：前端状态映射与后端枚举值对齐（ProjectStatus 等）
-- **项目任务数统计**：项目列表页显示每个项目的任务数量
-
-**✅ 对话功能 MVP**
-- **左右分栏布局**：左侧项目列表 + 右侧对话区，首页即为对话页
-- **双向分页机制**：初始加载最新 10 条，上拉通过 `before_timestamp` 加载历史，下拉通过 `after_timestamp` 轮询新消息
-- **3 秒短轮询**：MVP 阶段实时推送方案，后续可升级为 SSE/WebSocket
-- **消息气泡展示**：区分用户/Agent/System 角色，不同颜色标识
-
-**✅ 消息搜索、记忆搜索及知识图谱**
-- **消息搜索 API**：新增 `search_messages` handler，支持 FTS5 关键词 + 向量语义混合搜索
-- **记忆搜索 API**：复用 `search_memory`、`query_memory` 神经工具作为 HTTP 路由
-- **消息搜索页面**：关键词搜索、结果表格展示、匹配类型（Hybrid/Vector/Keyword）、向量距离显示
-- **记忆搜索页面**：关键词 + 类型筛选（短期记忆/知识节点/关系）、摘要和分数展示
-- **知识图谱组件**：SVG 图谱渲染、圆形布局算法、节点连接线、标签显示
-- **知识图谱页面**：搜索初始节点、图谱可视化展示
-
-**✅ 测试修复**
-- **ToolCallLogger 初始化**：修复 3 个 MCP 相关测试因 `ToolCallLogger` 未初始化导致的 panic
-- **测试统计**：693 个测试 100% 通过
-
-### 2026-07-11 里程碑
-**✅ Runtime Domain Phase 4A - 工具包机制 + 任务执行闭环**
-- **工具包 tag 机制**：通过 `tags` 字段分组工具，Agent 入职时自动安装指定 tag 工具包
-- **AgentRuntimeConfig 扩展**：新增 `installed_tags: Vec<String>` 字段，记录 Agent 已安装工具包
-- **免绑定校验三层逻辑**：绑定工具 → 神经工具（tags 含 "neural"）→ 已安装工具包（tags 与 installed_tags 有交集）
-- **唤醒时工具加载与分流**：`hr_domain.get_agent(with_tools=true)` 统一加载绑定 + tag 匹配工具；`wake_agent_brain` 按 `control_mode` 分流 Auto→Rig / Manual→Prompt
-- **Agent 入职自动安装**：状态流转到 Onboarded 时自动安装 "project_management" 工具包
-- **工具包管理 API**：3 个新 Handler（install/uninstall/list installed tool packs）
-- **TaskAssignment 消息类型**：`MessageType::TaskAssignment = 9` + `TaskAssignmentMessage` payload
-- **send_task_assignment_message 神经工具**：Agent 间任务分配通知，封装 Message Domain 投递方法
-- **任务创建 Handler 编排**：`create_task` 创建任务后自动发送 TaskAssignment 消息给 Agent
-- **PromptBuilder 差异化**：`【任务分配通知】` 标签，Agent 唤醒时明确感知任务分配
-- **三种角色定位明确**：神经工具 Handler（注册为工具）/ 普通 HTTP Handler（不注册）/ Consumer（直接调 Domain）
-- **架构职责分离**：Project Domain 只管持久化，Message Domain 管通知，Handler 层编排
-- **测试统计**：569 个测试 100% 通过（+15）
-
-**✅ Runtime Domain Phase 4B - 记忆模块增强（定时触发器 + 休息与沉淀）**
-- **4B-2 定时触发器系统**：
-  - CronTriggerPo/Entity 定义、DAO/DAL/Domain 三层完整实现
-  - 系统领域 API：创建/查询/更新/删除/启停触发器、列表查询
-  - CronScheduler 后台扫描器：每 5 秒扫描 next_run_at <= now 的触发器
-  - CronTriggerEvent 事件投递到 event_queue，CronTriggerConsumer 消费处理
-  - 触发器 payload 设计：action + extra 通用结构，支持 agent_rest 等动作
-- **4B-3 休息与沉淀机制**：
-  - MemoryStatus 新增 Settled(2) 状态，标记已沉淀的短期记忆
-  - MemoryDal.settle_short_term_to_long_term()：查询活跃短期记忆 → 创建知识节点 → 标记已沉淀
-  - RuntimeMemory.settle() 领域层接口，RuntimeDomain.rest_and_settle() 完整休息流程
-  - settle_memory 神经工具：Agent 可主动调用触发记忆沉淀
-  - 状态流转：Idle → Resting → 沉淀 → Idle
-- **4B-4 定时触发记忆沉淀**：
-  - AgentRestPayload 结构体定义（agent_id + settle_limit）
-  - handle_agent_rest 实现：解析 payload → 调用 RuntimeDomain.rest_and_settle()
-  - 完整链路：CronScheduler 扫描 → 投递事件 → 消费者处理 → Agent 休息沉淀
-- **测试统计**：576 个测试 100% 通过（+7）
-
-### 2026-07-10 里程碑
-**✅ Runtime Domain Phase 2 - 神经工具集完整落地**
-- **宏扩展**：`register_handler_tool` 宏新增 `neural` flag 和 `tags` 参数，神经工具自动打 "neural" tag
-- **RuntimeMemory 扩展**：新增 search/query/create/update/delete 5 个公开方法，统一记忆操作接口
-- **8 个神经工具全部实现**：
-  - 记忆类（5个）：search_memory、query_memory、create_memory、update_memory、delete_memory
-  - 消息类（1个）：send_message
-  - 工具类（2个）：request_tool_call、list_tools（标记为神经工具）
-  - 任务类（1个）：mark_done
-- **唤醒流程优化**：唤醒时自动筛选带 "neural" tag 的工具注入 Prompt
-- **神经工具免绑定**：调用 Manual 工具时，神经工具无需绑定校验，Agent 天生具备
-- **移除自动回复**：消息消费者不再自动生成回复，Agent 通过 `send_message` 神经工具主动发送
-- **分层架构严格遵守**：所有 Handler 仅调用 Domain 层，无直接 DAL 调用
-- **测试统计**：548 个测试 100% 通过
-
-**✅ Runtime Domain Phase 3 - 多回合循环控制**
-- **ToolStatsDao**：新增工具统计 DAO，支持工具调用次数/失败次数查询
-- **AgentFetchOptions**：附带信息获取选项，通过参数控制按需注入统计数据
-- **轮次限制检查**：消费者层检查 `max_thinking_depth`，超限后发送提示并终止循环
-- **任务完成检测**：唤醒前检查任务状态，Completed/Cancelled/Archived 状态下跳过唤醒
-- **Prompt 上下文差异化**：不同消息类型使用不同标签（【工具执行结果】、【确认请求】等）
-- **工具失败计数注入**：PromptBuilder 新增工具失败警告接口，高失败率工具提醒 Agent 谨慎使用
-- **唤醒失败事件记录**：大脑思考失败时也记录 AgentAwakeEvent，便于统计和排查
-- **测试统计**：554 个测试 100% 通过（+6）
-
-### 2026-07-06 里程碑
-**✅ Project/Task 业务事件完整落地**
-- **ProjectEvent**：新增项目生命周期事件表 `project_events`，含 `created`/`started`/`completed`/`archived`/`status_changed` 五种事件类型
-- **TaskEvent**：新增任务生命周期事件表 `task_events`，含 `created`/`started`/`completed`/`cancelled`/`status_changed` 五种事件类型
-- **操作者字段对齐**：统一使用 `operator_type` + `operator_id` 区分操作者类型（user/agent），支持 Agent 自动操作场景
-- **归属人字段**：Project 用 `owner_type` + `owner_id`，Task 用 `assignee_type` + `assignee_id`，各自语义明确
-- **Domain 层集成**：Project/Task Domain 层的 10 个状态变更方法全部接入事件记录（create/start/complete/archive/cancel/transition_status）
-- **record_event! 宏优化**：改用 `stats_opt()` 替代 `stats()`，stats 未初始化时静默跳过而非 panic，测试更友好
-- **事件记录原则**：状态变更必记录、创建删除必记录、关键动作记录、只读操作不记录
-- **测试统计**：544 个测试 100% 通过
-
-### 2026-07-05 里程碑
-**✅ Agent 唤醒统计事件落地 + Stats DAO 数据源切换**
-- **AgentAwakeEvent**：新增 `agent_awake_events` 表，记录 Agent 唤醒事件（唤醒次数、耗时、状态、关联消息等）
-- **集成位置**：在 `RuntimeDomain.awaken()` 中记录唤醒事件，每次 Agent 唤醒成功后自动上报
-- **数据源切换**：AgentStatsDao 从 `model_call_events` 切换到 `agent_awake_events`，统计内容从"模型调用次数"变为"Agent 唤醒次数"
-- **演进验证**：验证了"领域先行，实现后续演进"的设计思路 — 接口不变，仅替换 DAO 实现，上层无感知
-- **测试统计**：544 个测试 100% 通过
-
-### 2026-07-05 里程碑（早期）
-**✅ Stats DAO 领域拆分重构完成**
-- **领域划分**：按领域而非实体划分职责，Agent/Project/Task StatsDao 只负责自身维度的 call_summary；ModelProviderStatsDao 升级为模型调用领域 DAO
-- **通用结构体**：新增 `ModelCallStats` 通用结构体（call_summary + token_summary + model_call_time_series），所有实体复用
-- **多维过滤**：ModelProviderStatsQuery 增加 agent_id/project_id/task_id 可选字段，支持多维度查询
-- **DAL 层组装**：Agent/Project/Task DAL 注入 ModelProviderStatsDao，新增 `get_model_call_stats` 方法组装跨领域统计结果
-- **接口精简**：DAL 层统计接口统一为 `get_stats(id, options)` + `get_model_call_stats(id, options)`，删除冗余语法糖方法
-- **演进路径**：领域先行，未来实体有了专属统计表时只需替换 DAO 实现，上层无感知
-- **测试统计**：544 个测试 100% 通过（+6）
-
-### 2026-07-02 里程碑
-**✅ 全实体 Stats DAO 层建设完成**
-- **Agent Stats DAO 接口定义 + DuckDB 实现**：`AgentStatsDao` trait，含 `query`/`sum_tokens`/`query_time_series`
-- **Project Stats DAO**：按 `project_id` 过滤，4 个单元测试
-- **Task Stats DAO**：按 `task_id` 过滤，4 个单元测试
-- **ModelProvider Stats DAO**：按 `model_provider_id` 过滤，4 个单元测试
-- **统计模型迁移**：`StatsInterval`/`TimeSeriesPoint`/`TokenSumResult` 迁移到 `common/src/models/stats.rs`
-- **Bug 修复**：
-  - 聚合查询 JSON 返回格式不统一（展平 groups/aggregations）
-  - `json_extract` 返回字符串带引号（改用 `json_extract_string`）
-- **测试支持**：新增 `request_context_test_support.rs`、`storage/test_support.rs`
-- **DAO 层扩展**：从 22 个增加到 26 个（+4 个 stats duckdb dao）
-- **测试统计**：538 个测试 100% 通过（+12）
-- **整体架构完成度**：~94%
-
-### 2026-07-01 里程碑
-**✅ 附件存储系统 + MCP 服务器集成完整落地**
-- **附件系统上线**：通用 Attachment 上传 API，支持文件上传和文本创建两种模式，统一存储在日期分层目录
-- **MCP 服务器完整支持**：MCP 服务器 CRUD、状态管理、工具同步、MCP 工具调用执行全链路打通
-- **项目产物扩展**：Artifact 增加 `source_type` 字段，支持引用 attachment_id 创建产物
-- **Finance Domain 完善**：新增 Attachment Domain、McpServer Domain、McpTool Domain、ToolProvider Domain
-- **Handler API 全面覆盖**：6 大业务域 API 全部上线（organization/hr/finance/project/user/health）
-- **DAO 层扩展**：从 20 个增加到 22 个（新增 attachment + mcp_server 核心 DAO）
-- **DAL 层扩展**：从 13 个增加到 16 个（新增 attachment + mcp_server + mcp_tool）
-- **测试统计**：516 个测试 100% 通过
-- **整体架构完成度**：~92%
-
-### 2026-06-23 里程碑
-**✅ MCP 服务器与工具集成**
-- 新增 MCP 服务器管理：创建、查询、更新、删除、状态切换
-- MCP 工具同步：从 MCP 服务器拉取工具列表并持久化
-- MCP 工具执行：通过 rmcp 客户端调用 MCP 工具
-- 新增数据库迁移：`20260623000000_mcp_servers.sql`
-
-### 2026-06-18 里程碑
-**✅ 产物来源类型扩展**
-- Artifact 增加 `source_type` 字段，支持区分不同来源的产物
-- 支持引用 Finance 模块的 `attachment_id` 创建项目产物
-- 新增数据库迁移：`20260618000000_artifact_add_source_type.sql`
-
-### 2026-06-17 里程碑
-**✅ 统一附件存储系统上线**
-- 通用 Attachment 模块：上传、创建文本、查询、删除、内容更新
-- FileMeta + 日期分层路径存储结构
-- 支持 multipart 文件上传和纯文本创建两种模式
-- 新增数据库迁移：`20260617000000_attachments.sql`
-
-### 2026-05-15 里程碑
-**✅ 日志系统完全宏化重构完成**
-- **核心改造**：删除所有旧函数实现，8 个宏合并为 4 个，自动上下文检测
-- **检测机制**：语法模式匹配，优先匹配字符串字面量为消息
-  - 第一个参数是字符串字面量 → 无上下文模式
-  - 第一个参数非字符串 + 第二个是字符串 → 带上下文模式
-- **统一 API**：`log_info!` / `log_warn!` / `log_error!` / `log_debug!`
-  - 无上下文：`log_info!("message {}", var)`
-  - 带上下文：`log_info!(&ctx, "operation", "message {}", var)`
-- **向后兼容**：保留 `sys_*` 宏系列作为无上下文别名
-- **强制规范**：项目内禁止直接调用 `tracing::*!`，必须使用统一宏
-- **测试统计**：所有测试 100% 通过
-- **文档同步**：新增 `docs/logging_design.md` 完整设计文档
-- **代码统计**：4 次提交，共 10 个文件修改
-
-### 2026-05-11 里程碑
-**✅ PO 与业务实体分层架构完整落地**
-- **核心改造范围**：Project/Task/Artifact 三大业务对象全部完成分层重构
-- **DAO 层**：仅操作 PO，单一职责，不包含业务组装
-- **DAL 层**：内部完成 PO↔业务实体双向转换，对外接口统一使用业务实体
-- **Domain 层**：100% 无 PO 依赖，所有异步方法携带 RequestContext
-- **业务实体设计**：内部持有 `po: XxxPo` 字段，DAL 直接通过 `&xxx.po` 传递给 DAO
-- **新增规范落地**：
-  - ctx 跨层传递统一使用 `ctx.clone()`（内部 Arc，成本极低）
-  - 写操作使用引用传递 & 避免 clone 不必要的 clone
-  - TaskStatus::Cancelled = 0 设计为软删除，常规查询默认过滤
-- **测试统计**：267 个测试 100% 通过（Project Domain 新增 9 个单元测试）
-- **代码统计**：20 个文件修改，+1435/-943 行
-- **文档同步更新**：`docs/project_management_design.md` 同步更新架构落地细节
-
-### 2026-05-10 里程碑
-**✅ Project Domain 骨架搭建完成**
-- **架构设计**：`ProjectDomain` trait 包含 `management`（项目管理）和 `execution`（项目执行）两个子能力
-- **业务实体优先**：所有方法入参和出参都使用业务实体（`CreateProjectCommand`、`UpdateProjectCommand`、`ProjectPo`）
-- **严格分层**：Domain 层组合 DAL 层，不直接访问 DAO，符合单向依赖原则
-- **核心功能**：
-  - Management：创建、查询、更新、归档项目，统计项目数量，通用查询
-  - Execution：启动、完成、重新激活项目，完整生命周期管理
-- **测试覆盖**：9 个完整测试用例，所有核心功能验证通过
-- **测试统计**：267 个测试 100% 通过（比前一天新增 9 个）
-
-**✅ 全项目测试代码重构优化完成**（同日早期里程碑）
-- **新增 DAL 层模块**：`project.rs`, `task.rs`, `artifact.rs` 及配套测试文件
-- **重构 25 个测试文件**：DAO/DAL/Domain 三层全量优化
-- **抽取公共初始化函数**：`init_test_env()` 统一初始化模式
-- **工厂方法模式**：`create_test_agent()`, `create_test_project()` 减少重复代码
-- **修复无限递归 bug**：3 个 domain 层测试文件的递归问题
-- **测试统计**：258 个测试 100% 通过
-- **代码统计**：29 个文件修改，+1910/-1008 行
-
-所有开发过程和经验都归档在 [docs/LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md)，包括：
-
-- 每轮重构的背景、问题、解决方案
-- 遇到的坑和避坑指南
-- 架构决策的原因和权衡
-- 最佳实践沉淀
-
-> 💡 **开发前建议先看该文档**，避免重蹈覆辙
+所有开发过程和经验都归档在 [docs/LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md)，包括：每轮重构背景、避坑指南、架构决策权衡、最佳实践沉淀。开发前建议先看该文档避免重蹈覆辙。
 
 ---
 

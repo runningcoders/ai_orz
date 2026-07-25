@@ -69,15 +69,24 @@ frontend/
     ├── components/           # 基础 UI 组件库
     │   ├── button.rs         # Button 组件（Primary/Secondary/Outline/Error/Ghost + sm 尺寸）
     │   ├── modal.rs          # Modal 对话框组件（DaisyUI dialog/modal-box）
+    │   ├── confirm_dialog.rs # 确认对话框组件（用于二次确认场景）
     │   ├── state.rs          # 状态展示组件（Loading/EmptyState/ErrorAlert/SuccessAlert）
     │   ├── stats.rs          # 统计面板组件（StatsCard/AgentStatsPanel/ProjectStatsPanel/TaskStatsPanel）
     │   ├── input.rs          # Input/Textarea/Select 表单组件
+    │   ├── code_editor.rs    # 代码编辑器组件（支持 JSON 高亮和编辑）
     │   ├── toast.rs          # Toast 通知容器（DaisyUI toast + alert）
     │   ├── chat/             # 聊天共享组件（跨页面复用）
     │   │   ├── mod.rs        # 模块入口，导出 MessageBubble + TypingIndicator
     │   │   ├── message_bubble.rs  # MessageBubble：单条消息气泡（文本/图片/文件，简版渲染）
     │   │   └── typing_indicator.rs # TypingIndicator：Agent 输入指示器（三点动画）
-    │   └── graph.rs          # 知识图谱 SVG 可视化组件
+    │   ├── graph.rs          # 知识图谱 SVG 可视化组件（圆形布局、节点连接线、拖拽缩放）
+    │   ├── graph_canvas.rs   # 知识图谱 Canvas HUD 驾驶舱风格渲染（深色径向渐变 + 节点呼吸光晕 + 边流光发光，KnowledgeGraphRenderer 实现 CanvasRenderer trait）
+    │   ├── canvas_scene.rs   # Canvas 渲染基础设施（CanvasScene + CanvasRenderer trait + CanvasNode/CanvasEdge 数据结构）
+    │   ├── force_layout.rs   # 力导向布局算法（用于 CanvasScene 默认布局）
+    │   ├── layered_layout.rs # 分层布局算法（用于关系图分层渲染）
+    │   ├── particles.rs      # Canvas 粒子效果（数据流光、呼吸光晕、背景粒子）
+    │   ├── relation_graph.rs # 关系图组件（实体关系可视化）
+    │   └── workspace_graph.rs # 工作台图谱组件（项目/Agent/任务关系可视化）
     │
     ├── layouts/              # 布局组件
     │   ├── navbar.rs         # 顶部导航栏（桌面下拉菜单 / 移动端抽屉）
@@ -189,13 +198,20 @@ frontend/
 |------|------|------|
 | Button | `components/button.rs` | 5 种 variant + sm 尺寸，基于 DaisyUI btn |
 | Modal | `components/modal.rs` | 对话框（DaisyUI dialog/modal-box，footer prop） |
+| ConfirmDialog | `components/confirm_dialog.rs` | 二次确认对话框（用于删除、切换等危险操作） |
 | Loading | `components/state.rs` | DaisyUI loading loading-spinner |
 | EmptyState | `components/state.rs` | 空数据状态 |
 | ErrorAlert | `components/state.rs` | DaisyUI alert alert-error |
 | Input/Textarea/Select | `components/input.rs` | DaisyUI input/textarea/select input-bordered |
+| CodeEditor | `components/code_editor.rs` | 代码编辑器（支持 JSON 高亮和编辑，用于 Action payload 编辑） |
 | ToastContainer | `components/toast.rs` | DaisyUI toast + alert，自动消失动画 |
 | MessageBubble | `components/chat/message_bubble.rs` | 单条消息气泡（文本/图片/文件），简版渲染，跨页面复用 |
 | TypingIndicator | `components/chat/typing_indicator.rs` | Agent 输入指示器（三点动画） |
+| Graph (SVG) | `components/graph.rs` | 知识图谱 SVG 可视化（圆形布局、节点连接线、拖拽缩放、搜索高亮） |
+| KnowledgeGraphCanvas | `components/graph_canvas.rs` | 知识图谱 Canvas HUD 驾驶舱风格渲染（深色径向渐变背景 + 节点呼吸光晕 + 边流光发光，KnowledgeGraphRenderer 实现 CanvasRenderer trait） |
+| CanvasScene | `components/canvas_scene.rs` | Canvas 渲染基础设施（CanvasRenderer trait + CanvasNode/CanvasEdge 数据结构 + 力导向布局 + 粒子效果） |
+| RelationGraph | `components/relation_graph.rs` | 关系图组件（实体关系可视化，分层布局） |
+| WorkspaceGraph | `components/workspace_graph.rs` | 工作台图谱组件（项目/Agent/任务关系可视化，用于 Workspace Dashboard） |
 
 **聊天共享组件使用约定**（2026-07-25 新增）：
 - 三处聊天实现：`pages/message/chat.rs`（主对话页，富渲染含工具卡片/任务卡片/视频/音频）、`pages/hr/agent_detail.rs`（Agent 详情页对话）、`pages/workspace.rs`（工作台底部对话框）
@@ -266,15 +282,19 @@ npm run build:css    # 独立构建 CSS
 
 ## 更新记录
 
-### 2026-07-25 聊天共享组件抽取 + utils 模块化
+### 2026-07-25 知识图谱 Canvas HUD + Workspace 对话机制 + 聊天共享组件抽取 + utils 模块化
 
 | 变更项 | 实现细节 |
 |--------|----------|
-| **utils 文件夹化** | 原 `src/utils.rs` 拆分为 `src/utils/` 文件夹，按功能分子模块组织：`time.rs`（时间格式化）、`file.rs`（文件大小格式化）、`message.rs`（消息类型常量、角色映射、乐观消息辅助）、`status.rs`（任务/项目状态映射）。`mod.rs` 通过 `pub use` 重新导出所有公共 API，保持 `use crate::utils::xxx` 向后兼容，无需改动调用方 |
+| **知识图谱 Canvas HUD 驾驶舱风格** | 新增 `components/graph_canvas.rs`：`KnowledgeGraphRenderer` 实现 `CanvasRenderer` trait，HUD 风格渲染（深色径向渐变背景 + 淡橙色网格 + 四角 HUD 装饰；节点选中态扫描环 + 旋转刻度环，未选中态呼吸光晕；边实线流光 + drop-shadow 发光）；`KnowledgeGraphCanvas` 组件基于 `CanvasScene` 基础设施，关闭力导向布局和自带粒子避免视觉过载；通过 `sync_state` 同步外部状态（高亮、选中、边 label、节点元数据）；知识图谱页右上角 Canvas/SVG 风格切换按钮（join 按钮组），默认 Canvas，SVG 作为兜底 |
+| **web-sys features 扩展** | `frontend/Cargo.toml` 添加 `CanvasGradient` feature，支持 Canvas 渲染中的渐变效果 |
+| **Workspace 对话机制** | 底部对话框跟随当前视图（默认/Project/Agent），SSE 实时消息，自动未读消息源追踪（`project_unread`/`agent_unread` Signal<HashSet<String>>）；点击侧边栏红点切换视图并清除 |
+| **Workspace HUD 流光提示** | 未读消息提示由静态红点升级为 2px 橙色竖条贴在侧边栏项左侧边缘，带 `box-shadow` 形成 glow 光晕，高亮段从上往下流动（1.8s 周期，cubic-bezier(0.4, 0, 0.6, 1) 缓动），像 HUD 扫描线；`styles/input.css` 新增 `@keyframes hud-streak-flow` 动画和 `.hud-streak` 类 |
 | **聊天共享组件抽取** | 新增 `components/chat/` 模块：`MessageBubble`（单条消息气泡，文本/图片/文件简版渲染）、`TypingIndicator`（Agent 输入指示器，三点动画）。Agent 详情页、Workspace 底部对话框改用共享组件，删除本地 `render_message_content`/`render_chat_messages` 重复实现 |
 | **主对话页保留独立实现** | `pages/message/chat.rs` 含工具调用卡片、任务卡片、视频/音频附件等复杂内容，且使用 DaisyUI `chat chat-start/chat-end` 样式，与 `MessageBubble` 的 `message-item` 样式不一致，简单 `MessageBubble` 无法覆盖，保留独立富渲染实现 |
+| **utils 文件夹化** | 原 `src/utils.rs` 拆分为 `src/utils/` 文件夹，按功能分子模块组织：`time.rs`（时间格式化）、`file.rs`（文件大小格式化）、`message.rs`（消息类型常量、角色映射、乐观消息辅助）、`status.rs`（任务/项目状态映射）。`mod.rs` 通过 `pub use` 重新导出所有公共 API，保持 `use crate::utils::xxx` 向后兼容，无需改动调用方 |
 | **DTO PartialEq 派生** | `common::api::MessageListItem` 和 `FileMetaInfo` 添加 `PartialEq` 派生（Dioxus 0.7 组件 prop 要求实现 `PartialEq`，否则 `#[component]` 宏报错 `E0369`） |
-| **测试同步修复** | `common/src/api/attachment_test.rs` 和 `artifact_test.rs` 同步 `AttachmentListQuery.pagination: PaginationParams`、`ListArtifactsRequest.offset` 字段变化 |
+| **Canvas 基础设施复用** | 知识图谱 Canvas 版本复用 `CanvasScene` + `CanvasRenderer` trait + `CanvasNode`/`CanvasEdge` 数据结构 + 力导向布局 + 粒子效果基础设施，避免重复造轮子 |
 | **测试统计** | 前端 34 测试 + 后端 746 测试 + common 50 测试 100% 通过 |
 
 ### 2026-07-22 引入 Tailwind CSS + DaisyUI 样式系统
