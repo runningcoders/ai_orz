@@ -5,6 +5,7 @@ use common::error::{err, Result};
 use crate::pkg::RequestContext;
 
 use super::{Event, EventKind, Consumer, ConsumeMode, Producer};
+use super::metrics_hook::{AopEventMeta, AopMetricsHook};
 use crate::pkg::aop::queue::{EventQueue, InMemoryEventQueue};
 
 pub struct Registry {
@@ -13,6 +14,8 @@ pub struct Registry {
     producers: RwLock<Vec<Arc<dyn Producer>>>,
     queues: RwLock<HashMap<String, Arc<dyn EventQueue>>>,
     started: RwLock<bool>,
+    /// 指标采集 Hook（业务层注入，None 时零开销）
+    metrics_hook: RwLock<Option<Arc<dyn AopMetricsHook>>>,
 }
 
 impl Registry {
@@ -23,12 +26,24 @@ impl Registry {
             producers: RwLock::new(Vec::new()),
             queues: RwLock::new(HashMap::new()),
             started: RwLock::new(false),
+            metrics_hook: RwLock::new(None),
         }
     }
 
     pub fn set_self_ref(&self, arc: Arc<Self>) {
         let mut self_ref = self.self_ref.write().unwrap();
         *self_ref = Some(Arc::downgrade(&arc));
+    }
+
+    /// 注入指标采集 Hook（业务层在启动时调用）
+    pub fn set_metrics_hook(&self, hook: Arc<dyn AopMetricsHook>) {
+        let mut guard = self.metrics_hook.write().unwrap();
+        *guard = Some(hook);
+    }
+
+    /// 读取 hook（内部辅助方法，None 时返回 None）
+    fn metrics_hook(&self) -> Option<Arc<dyn AopMetricsHook>> {
+        self.metrics_hook.read().ok()?.clone()
     }
 
     pub fn register_consumer(&self, consumer: Arc<dyn Consumer>) -> Result<()> {
@@ -118,10 +133,35 @@ impl Registry {
                 continue;
             }
 
+            // 埋点：on_publish
+            let meta = AopEventMeta::from_json(&event_json);
+            let is_async = matches!(consumer.consume_mode(), ConsumeMode::Async);
+            if let Some(hook) = self.metrics_hook() {
+                hook.on_publish(consumer.name(), &meta, is_async);
+            }
+
             match consumer.consume_mode() {
                 ConsumeMode::Sync => {
-                    if let Err(e) = consumer.on_event(event_json.clone()).await {
-                        sys_error!("consumer {} sync error: {}", consumer.name(), e);
+                    // 同步：直接调用 on_event
+                    let start = std::time::Instant::now();
+                    if let Some(hook) = self.metrics_hook() {
+                        hook.on_consume_start(consumer.name(), &meta);
+                    }
+                    match consumer.on_event(event_json.clone()).await {
+                        Ok(()) => {
+                            let duration_ms = start.elapsed().as_millis() as u64;
+                            if let Some(hook) = self.metrics_hook() {
+                                hook.on_consume_success(consumer.name(), &meta, duration_ms);
+                            }
+                        }
+                        Err(e) => {
+                            let duration_ms = start.elapsed().as_millis() as u64;
+                            let err_str = format!("{:?}", e);
+                            sys_error!("consumer {} sync error: {}", consumer.name(), e);
+                            if let Some(hook) = self.metrics_hook() {
+                                hook.on_consume_failure(consumer.name(), &meta, duration_ms, &err_str);
+                            }
+                        }
                     }
                 }
                 ConsumeMode::Async => {
@@ -255,8 +295,22 @@ impl Registry {
                                     .unwrap_or("unknown")
                                     .to_string();
 
+                                // 提取元信息 + 记录开始时间
+                                let meta = AopEventMeta::from_json(&event_json);
+                                let start = std::time::Instant::now();
+
+                                // 埋点：on_consume_start
+                                if let Some(hook) = registry_arc.metrics_hook() {
+                                    hook.on_consume_start(&consumer_name, &meta);
+                                }
+
                                 match consumer.on_event(event_json).await {
                                     Ok(()) => {
+                                        let duration_ms = start.elapsed().as_millis() as u64;
+                                        // 埋点：on_consume_success
+                                        if let Some(hook) = registry_arc.metrics_hook() {
+                                            hook.on_consume_success(&consumer_name, &meta, duration_ms);
+                                        }
                                         if let Err(e) = consumer.ack(&event_id).await {
                                             sys_error!("[{}] ack error for {}: {}", consumer_name, event_id, e);
                                         }
@@ -268,7 +322,13 @@ impl Registry {
                                         }
                                     }
                                     Err(e) => {
+                                        let duration_ms = start.elapsed().as_millis() as u64;
+                                        let err_str = format!("{:?}", e);
                                         sys_error!("[{}] on_event error for {}: {}", consumer_name, event_id, e);
+                                        // 埋点：on_consume_failure
+                                        if let Some(hook) = registry_arc.metrics_hook() {
+                                            hook.on_consume_failure(&consumer_name, &meta, duration_ms, &err_str);
+                                        }
                                         if let Err(e) = consumer.nack(&event_id).await {
                                             sys_error!("[{}] nack error for {}: {}", consumer_name, event_id, e);
                                         }
