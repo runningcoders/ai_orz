@@ -1,4 +1,5 @@
 use common::error::Result;
+use crate::consumer::{AopDistributionItem, AopOverview, AopStatsCollector, AopTimeSeriesPoint};
 use crate::models::cron_trigger::CronTriggerPo;
 use crate::pkg::RequestContext;
 use crate::pkg::aop;
@@ -12,6 +13,7 @@ use crate::service::dao::cron_trigger::CronTriggerQuery;
 use std::sync::{Arc, OnceLock};
 
 mod aop_monitor;
+mod aop_stats;
 
 static SYSTEM_DOMAIN: OnceLock<Arc<dyn SystemDomain>> = OnceLock::new();
 
@@ -75,6 +77,10 @@ impl SystemDomain for SystemDomainImpl {
     fn aop_monitor(&self) -> &dyn AopMonitor {
         self
     }
+
+    fn aop_stats(&self) -> &dyn AopStats {
+        self
+    }
 }
 
 pub trait SystemDomain: Send + Sync {
@@ -82,6 +88,7 @@ pub trait SystemDomain: Send + Sync {
     fn backup_manager(&self) -> &dyn BackupManager;
     fn log_query(&self) -> &dyn LogQuery;
     fn aop_monitor(&self) -> &dyn AopMonitor;
+    fn aop_stats(&self) -> &dyn AopStats;
 }
 
 #[async_trait::async_trait]
@@ -115,6 +122,29 @@ pub trait AopMonitor: Send + Sync {
     fn queue_stats(&self, consumer_name: &str) -> Option<aop::queue::QueueStats>;
     fn list_events(&self, consumer_name: &str, filter: aop::queue::EventQueryFilter) -> Option<Vec<aop::queue::EventSummary>>;
     fn get_event(&self, consumer_name: &str, event_id: &str) -> Option<aop::queue::EventDetail>;
+}
+
+#[async_trait::async_trait]
+pub trait AopStats: Send + Sync {
+    /// 查询概览（全生命周期累计）
+    async fn overview(&self, ctx: RequestContext) -> Result<AopOverview>;
+
+    /// 查询时序数据（滑动窗口 60 分钟，按分钟桶）
+    async fn time_series(
+        &self,
+        ctx: RequestContext,
+        event_kind: Option<String>,
+        consumer_name: Option<String>,
+        status: Option<String>,
+    ) -> Result<Vec<AopTimeSeriesPoint>>;
+
+    /// 查询分布
+    async fn distribution(
+        &self,
+        ctx: RequestContext,
+        group_by: String,
+        status_filter: Option<String>,
+    ) -> Result<Vec<AopDistributionItem>>;
 }
 
 #[async_trait::async_trait]
@@ -184,4 +214,18 @@ impl LogQuery for SystemDomainImpl {
     ) -> Result<LogPageResult> {
         self.log_query_dal.query_logs(ctx, query).await
     }
+}
+
+/// 全局 AopStatsCollector 引用（由 lib.rs 在启动时设置）
+static AOP_STATS_COLLECTOR: once_cell::sync::OnceCell<AopStatsCollector> =
+    once_cell::sync::OnceCell::new();
+
+/// 启动时设置 AopStatsCollector（由 lib.rs 调用）
+pub fn set_aop_stats_collector(collector: AopStatsCollector) {
+    let _ = AOP_STATS_COLLECTOR.set(collector);
+}
+
+/// 获取 AopStatsCollector（内部使用）
+pub(crate) fn aop_stats_collector() -> Option<&'static AopStatsCollector> {
+    AOP_STATS_COLLECTOR.get()
 }

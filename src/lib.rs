@@ -134,6 +134,18 @@ pub async fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
     consumer::init().await?;
     sys_info!("Business consumers registered");
 
+    // 创建 AOP 统计收集器并注入 Hook（在 worker 启动前）
+    let aop_stats_collector = consumer::AopStatsCollector::new();
+    {
+        use std::sync::Arc;
+        let hook = Arc::new(consumer::AopStatsHook::new(aop_stats_collector.clone()))
+            as Arc<dyn crate::pkg::aop::AopMetricsHook>;
+        crate::pkg::aop::registry().set_metrics_hook(hook);
+        sys_info!("AOP stats hook installed");
+    }
+    // 把 collector 注入 SystemDomain（供后续查询）
+    crate::service::domain::system::set_aop_stats_collector(aop_stats_collector);
+
     // 启动 AOP 调度器（轮询生产者 + 异步消费者 worker）
     aop::init_all().await?;
     sys_info!("AOP scheduler started");
