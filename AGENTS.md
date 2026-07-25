@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-07-25（知识图谱切换 Canvas + HUD 驾驶舱风格）
+> 最后更新：2026-07-25（统计图表 Phase 1：HUD 折线图 + 4 个详情页时序图）
 
 ---
 
@@ -14,7 +14,7 @@
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + rig-core 0.34
 - **前端**：Dioxus 0.7 (WebAssembly) + Tailwind CSS v4 + DaisyUI v5
-- **技术特色**：严格分层架构、类型安全、830 个测试 100% 通过率（后端 746 + 前端 34 + common 50）、30+ 主题切换
+- **技术特色**：严格分层架构、类型安全、831 个测试 100% 通过率（后端 746 + 前端 35 + common 50）、30+ 主题切换
 
 ### 1.2 已实现核心功能
 
@@ -69,12 +69,13 @@
 | 🛡️ 角色权限中间件 | ✅ | 基于并查集的权限中间件，Member → Admin → SuperAdmin 继承体系 |
 | 📊 AOP 队列监控 | ✅ | System 模块运行时监控、队列统计卡片、事件列表查询、事件详情查看（脱敏） |
 | 💬 Workspace 对话机制 | ✅ | 底部对话框跟随当前视图（默认/Project/Agent），SSE 实时消息，HUD 流光提示未读消息源（橙色竖条 + 流动光晕动画），点击切换视图清除 |
+| 📊 统计图表可视化 | ✅ | HUD 风格 Canvas 折线图，4 个实体详情页展示模型调用趋势（消费 model_call_time_series） |
 
 ### 1.3 整体完成度与测试统计（2026-07-25 更新）
 
 | 指标 | 数值 | 说明 |
 |------|------|------|
-| **总测试数** | **830** | 后端 746 + 前端 34 + common 50，DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
+| **总测试数** | **831** | 后端 746 + 前端 35 + common 50，DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
 | **通过率** | **100%** | ✅ 全部测试通过 |
 | DAO 模块数 | 25 个 | 全部实现并被使用，零闲置（18 核心 DAO + 5 渠道 DAO + a2a 回调 + 1 触发器 + 消息推送） |
 | DAL 模块数 | 23 个 | 全部完整业务承载，零闲置（含 lark 飞书、agent_a2a、agent_codex 专属 DAL） |
@@ -775,6 +776,14 @@ Agent
 ## 六、工作流与开发记录
 
 > 💡 **记录原则**：仅保留最近里程碑的详细信息，早期里程碑按月汇总。所有重构背景、问题、解决方案、避坑指南归档在 [docs/LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md)，开发前建议先看该文档避免重蹈覆辙。
+
+### 2026-07-25 里程碑（统计图表 Phase 1）
+**✅ 统计图表基础设施 + 实体详情页时序图**
+- **HUD 背景工具抽取**：新增 `frontend/src/components/hud_palette.rs`，从 graph_canvas.rs 提取 HUD 背景绘制（径向渐变 + 网格 + 四角装饰 + hex_to_rgba），供知识图谱和统计图表共享，统一驾驶舱视觉语言
+- **ChartRenderer trait**：新增 `frontend/src/components/chart_scene.rs`，定义图表渲染器 trait 供未来图表扩展（折线/柱状/环形）
+- **HUD 风格折线图**：新增 `frontend/src/components/charts/line_chart.rs`，消费 `Vec<TimeSeriesPoint>` 时序数据，视觉对齐知识图谱 HUD（深色径向渐变背景 + 橙色折线 + shadow_blur 发光 + 数据点呼吸光晕 2.4s 周期 + 折线流光 line_dash_offset 滚动 + 坐标轴刻度 + X 轴日期标签）
+- **4 个 StatsPanel 时序图**：AgentStatsPanel / ProjectStatsPanel / TaskStatsPanel / ModelProviderStatsPanel 在数字卡片下方渲染 LineChart，消费后端已就绪的 `model_call_time_series` 字段（此前前端从未读取该字段）
+- **测试统计**：前端测试 35 个（+1 新增 line_chart 单元测试），100% 通过
 
 ### 2026-07-25 里程碑
 **✅ 知识图谱 Canvas HUD 驾驶舱风格 + 聊天共享组件抽取 + utils 模块化**
