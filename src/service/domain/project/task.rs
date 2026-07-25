@@ -184,6 +184,15 @@ impl super::TaskManage for ProjectDomainImpl {
         self.task_dal.query(ctx, query).await
     }
 
+    /// 统计符合查询条件的任务数量（透传 DAL count）
+    async fn count_tasks(
+        &self,
+        ctx: RequestContext,
+        query: crate::service::dao::task::TaskQuery,
+    ) -> Result<u64> {
+        self.task_dal.count(ctx, query).await
+    }
+
     /// 更新任务基本信息
     async fn update_basic(
         &self,

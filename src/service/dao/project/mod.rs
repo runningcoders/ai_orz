@@ -90,6 +90,9 @@ pub trait ProjectDao: Send + Sync + std::fmt::Debug {
         status: ProjectStatus,
     ) -> Result<u64>;
 
+    /// 统计符合查询条件的项目数量（复用 query 的 filter 逻辑，只跑 COUNT 不跑 LIST）
+    async fn count(&self, ctx: RequestContext, query: ProjectQuery) -> Result<u64>;
+
     /// 全文检索项目
     ///
     /// 使用 FTS5 MATCH + BM25 排序，返回匹配的项目及 FTS 相关性评分。

@@ -74,6 +74,15 @@ impl AgentDal for MockAgentDal {
         Ok(common::api::PagedResult { items: Vec::new(), total: 0 })
     }
 
+    async fn count(
+        &self,
+        _ctx: RequestContext,
+        _query: crate::service::dao::agent::AgentQuery,
+    ) -> Result<u64> {
+        self.record_call("count");
+        Ok(0)
+    }
+
     async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<Agent>> {
         self.record_call("find_all");
         Ok(Vec::new())

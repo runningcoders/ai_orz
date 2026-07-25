@@ -150,6 +150,11 @@ impl AgentManage for HrDomainImpl {
         self.agent_dal.query(ctx, query).await
     }
 
+    /// 统计符合查询条件的 Agent 数量（透传 DAL count）
+    async fn count_agents(&self, ctx: RequestContext, query: AgentQuery) -> Result<u64> {
+        self.agent_dal.count(ctx, query).await
+    }
+
     /// 列出所有 Agent
     ///
     /// 语法糖：调用通用查询，默认排除已删除状态

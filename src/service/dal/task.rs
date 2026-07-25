@@ -115,6 +115,9 @@ pub trait TaskDal: Send + Sync {
     /// 通用综合查询
     async fn query(&self, ctx: RequestContext, query: TaskQuery) -> Result<common::api::PagedResult<Task>>;
 
+    /// 统计符合查询条件的任务数量（透传 DAO count）
+    async fn count(&self, ctx: RequestContext, query: TaskQuery) -> Result<u64>;
+
     /// 🔍 统一混合搜索（FTS5 关键词 + 向量语义）
     ///
     /// 自动根据参数选择搜索策略：
@@ -313,6 +316,10 @@ impl TaskDal for TaskDalImpl {
     async fn query(&self, ctx: RequestContext, query: TaskQuery) -> Result<common::api::PagedResult<Task>> {
         let page = self.task_dao.query(ctx, query).await?;
         Ok(page.map(Task::from_po))
+    }
+
+    async fn count(&self, ctx: RequestContext, query: TaskQuery) -> Result<u64> {
+        self.task_dao.count(ctx, query).await
     }
 
     async fn search(&self, ctx: RequestContext, search: TaskSearch) -> Result<Vec<Task>> {

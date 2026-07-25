@@ -136,6 +136,13 @@ pub trait ProjectManage: Send + Sync {
         query: ProjectQuery,
     ) -> Result<common::api::PagedResult<Project>>;
 
+    /// 统计符合查询条件的项目数量（透传 DAL count）
+    async fn count_projects(
+        &self,
+        ctx: RequestContext,
+        query: ProjectQuery,
+    ) -> Result<u64>;
+
     /// 启动项目
     async fn start(
         &self,
@@ -262,6 +269,13 @@ pub trait TaskManage: Send + Sync {
         ctx: RequestContext,
         query: TaskQuery,
     ) -> Result<common::api::PagedResult<Task>>;
+
+    /// 统计符合查询条件的任务数量（透传 DAL count）
+    async fn count_tasks(
+        &self,
+        ctx: RequestContext,
+        query: TaskQuery,
+    ) -> Result<u64>;
 
     /// 更新任务基本信息
     async fn update_basic(

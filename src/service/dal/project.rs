@@ -117,6 +117,9 @@ pub trait ProjectDal: Send + Sync {
         query: ProjectQuery,
     ) -> Result<common::api::PagedResult<Project>>;
 
+    /// 统计符合查询条件的项目数量（透传 DAO count）
+    async fn count(&self, ctx: RequestContext, query: ProjectQuery) -> Result<u64>;
+
     /// 更新项目信息
     async fn update(&self, ctx: RequestContext, project: &Project) -> Result<()>;
 
@@ -322,6 +325,10 @@ impl ProjectDal for ProjectDalImpl {
     ) -> Result<common::api::PagedResult<Project>> {
         let page = self.project_dao.query(ctx, query).await?;
         Ok(page.map(Project::from_po))
+    }
+
+    async fn count(&self, ctx: RequestContext, query: ProjectQuery) -> Result<u64> {
+        self.project_dao.count(ctx, query).await
     }
 
     async fn update(&self, ctx: RequestContext, project: &Project) -> Result<()> {

@@ -110,6 +110,10 @@ mod tests {
             })
         }
 
+        async fn count(&self, _ctx: RequestContext, _query: AgentQuery) -> Result<u64> {
+            unimplemented!("not needed by tool execution routing tests")
+        }
+
         async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<Agent>> {
             Ok(self.agent.iter().cloned().collect())
         }

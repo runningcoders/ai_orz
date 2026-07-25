@@ -70,6 +70,9 @@ pub trait AgentDao: Send + Sync {
     async fn update(&self, ctx: RequestContext, agent: &AgentPo) -> Result<()>;
     async fn delete(&self, ctx: RequestContext, agent: &AgentPo) -> Result<()>;
 
+    /// 统计符合条件的 Agent 数量（复用 query 的 filter 逻辑，只跑 COUNT 不跑 LIST）
+    async fn count(&self, ctx: RequestContext, query: AgentQuery) -> Result<u64>;
+
     /// 统一搜索入口（FTS5 关键词 + 业务过滤，向量搜索由 AgentVectorDao 单独处理）
     ///
     /// 返回 `(AgentPo, fts_rank)` 元组，`fts_rank` 为 FTS5 BM25 相关性评分

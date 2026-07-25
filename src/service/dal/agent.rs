@@ -107,6 +107,9 @@ pub trait AgentDal: Send + Sync {
     /// 支持组合查询条件，所有字段都是 Option
     async fn query(&self, ctx: RequestContext, query: AgentQuery) -> Result<common::api::PagedResult<Agent>>;
 
+    /// 统计符合查询条件的 Agent 数量（透传 DAO count）
+    async fn count(&self, ctx: RequestContext, query: AgentQuery) -> Result<u64>;
+
     /// 查询所有 Agent
     async fn find_all(&self, ctx: RequestContext) -> Result<Vec<Agent>>;
 
@@ -380,6 +383,10 @@ impl AgentDal for AgentDalImpl {
     async fn query(&self, ctx: RequestContext, query: AgentQuery) -> Result<common::api::PagedResult<Agent>> {
         let page = self.agent_dao.query(ctx, query).await?;
         Ok(page.map(Agent::from_po).map(Self::inject_runtime_state))
+    }
+
+    async fn count(&self, ctx: RequestContext, query: AgentQuery) -> Result<u64> {
+        self.agent_dao.count(ctx, query).await
     }
 
     async fn find_all(&self, ctx: RequestContext) -> Result<Vec<Agent>> {

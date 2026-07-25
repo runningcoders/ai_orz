@@ -417,6 +417,14 @@ UPDATE tasks SET "status" = ?, modified_by = ?, updated_at = ? WHERE id = ?
         .await?;
         Ok(row.count as u64)
     }
+
+    async fn count(&self, ctx: RequestContext, query: TaskQuery) -> Result<u64> {
+        let pool = ctx.db_pool();
+        let mut count_builder = sqlx::QueryBuilder::new("SELECT COUNT(*) FROM tasks WHERE 1=1");
+        push_query_filters(&mut count_builder, &query);
+        let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
+        Ok(total as u64)
+    }
 }
 
 /// 推送查询过滤条件到 QueryBuilder（COUNT 和 LIST 查询复用）

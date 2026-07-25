@@ -165,6 +165,13 @@ pub trait AgentManage: Send + Sync {
         query: crate::service::dao::agent::AgentQuery,
     ) -> Result<common::api::PagedResult<Agent>>;
 
+    /// 统计符合查询条件的 Agent 数量（透传 DAL count）
+    async fn count_agents(
+        &self,
+        ctx: RequestContext,
+        query: crate::service::dao::agent::AgentQuery,
+    ) -> Result<u64>;
+
     /// 列出所有 Agent
     async fn list_agents(&self, ctx: RequestContext) -> Result<Vec<Agent>>;
 

@@ -55,6 +55,10 @@ impl AgentDal for CodexAgentDal {
         self.base.query(ctx, query).await
     }
 
+    async fn count(&self, ctx: RequestContext, query: AgentQuery) -> Result<u64> {
+        self.base.count(ctx, query).await
+    }
+
     async fn find_all(&self, ctx: RequestContext) -> Result<Vec<Agent>> {
         self.base.find_all(ctx).await
     }

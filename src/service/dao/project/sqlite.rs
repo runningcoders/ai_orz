@@ -253,6 +253,14 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         Ok(count.cnt as u64)
     }
 
+    async fn count(&self, ctx: RequestContext, query: ProjectQuery) -> Result<u64> {
+        let pool = ctx.db_pool();
+        let mut count_builder = sqlx::QueryBuilder::new("SELECT COUNT(*) FROM projects WHERE 1=1");
+        push_query_filters(&mut count_builder, &query);
+        let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
+        Ok(total as u64)
+    }
+
     async fn search_projects(
         &self,
         ctx: RequestContext,

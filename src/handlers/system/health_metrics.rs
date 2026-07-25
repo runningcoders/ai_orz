@@ -6,17 +6,22 @@
 //! - `backend_online`: handler 能响应即 true
 //! - `aop_pending` / `aop_in_progress`: 通过 SystemDomain.aop_monitor() 聚合所有消费者队列
 //! - `uptime_secs`: 通过全局 OnceLock<Instant> 在首次调用时初始化（近似进程运行时长）
-//!
-//! 降级为 0 的维度（跨域获取成本高，按计划文档约束先返回 0）：
-//! - `active_agents` / `total_agents`
-//! - `active_projects` / `total_projects`
-//! - `pending_tasks` / `total_tasks`
+//! - `active_agents` / `total_agents`: 通过 HrDomain.agent_manage() 统计
+//! - `active_projects` / `total_projects`: 通过 ProjectDomain.project_manage() 统计
+//! - `pending_tasks` / `total_tasks`: 通过 ProjectDomain.task_manage() 统计
 
 use axum::Json;
 use common::api::{ApiResponse, HealthMetricsResponse};
 use std::sync::OnceLock;
 use std::time::Instant;
 
+use common::enums::{AgentStatus, ProjectStatus, TaskStatus};
+use crate::pkg::RequestContext;
+use crate::service::dao::agent::AgentQuery;
+use crate::service::dao::project::ProjectQuery;
+use crate::service::dao::task::TaskQuery;
+use crate::service::domain::hr::domain as hr_domain;
+use crate::service::domain::project::domain as project_domain;
 use crate::service::domain::system::domain;
 
 /// 全局启动时间锚点：首次调用 get_health_metrics 时初始化。
@@ -38,18 +43,90 @@ pub async fn get_health_metrics() -> Json<ApiResponse<HealthMetricsResponse>> {
         aop_in_progress = aop_in_progress.saturating_add(s.in_progress_count as u64);
     }
 
-    // 跨域维度降级为 0：active_agents/total_agents/active_projects/total_projects/pending_tasks/total_tasks
-    // 这些维度需要跨 hr/project 域调用，成本较高；前端 UI 仍可正常渲染（显示 0/0）。
+    // 系统级调用约定：无 user/agent 上下文
+    let ctx = RequestContext::new(None, None);
+
+    // Agents：total 排除 Deleted，active 仅 Onboarded
+    let total_agents = hr_domain()
+        .agent_manage()
+        .count_agents(
+            ctx.clone(),
+            AgentQuery {
+                exclude_status: Some(AgentStatus::Deleted),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_or(0);
+
+    let active_agents = hr_domain()
+        .agent_manage()
+        .count_agents(
+            ctx.clone(),
+            AgentQuery {
+                status: Some(AgentStatus::Onboarded),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_or(0);
+
+    // Projects：total 默认（DAO 自动加 status != 0），active 限定 Active/PendingReview/InProgress
+    let total_projects = project_domain()
+        .project_manage()
+        .count_projects(ctx.clone(), ProjectQuery::default())
+        .await
+        .unwrap_or(0);
+
+    let active_projects = project_domain()
+        .project_manage()
+        .count_projects(
+            ctx.clone(),
+            ProjectQuery {
+                status_in: Some(vec![
+                    ProjectStatus::Active,
+                    ProjectStatus::PendingReview,
+                    ProjectStatus::InProgress,
+                ]),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_or(0);
+
+    // Tasks：total 默认（DAO 自动加 status != 0），pending 限定 PendingReview/Pending/InProgress
+    let total_tasks = project_domain()
+        .task_manage()
+        .count_tasks(ctx.clone(), TaskQuery::default())
+        .await
+        .unwrap_or(0);
+
+    let pending_tasks = project_domain()
+        .task_manage()
+        .count_tasks(
+            ctx,
+            TaskQuery {
+                status_in: Some(vec![
+                    TaskStatus::PendingReview,
+                    TaskStatus::Pending,
+                    TaskStatus::InProgress,
+                ]),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_or(0);
+
     Json(ApiResponse::success(HealthMetricsResponse {
         backend_online: true,
         aop_pending,
         aop_in_progress,
-        active_agents: 0,
-        total_agents: 0,
-        active_projects: 0,
-        total_projects: 0,
-        pending_tasks: 0,
-        total_tasks: 0,
+        active_agents,
+        total_agents,
+        active_projects,
+        total_projects,
+        pending_tasks,
+        total_tasks,
         uptime_secs,
     }))
 }

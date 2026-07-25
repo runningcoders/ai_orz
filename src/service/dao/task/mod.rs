@@ -101,6 +101,9 @@ pub trait TaskDao: Send + Sync + std::fmt::Debug {
         assignee_id: &str,
         status: TaskStatus,
     ) -> Result<u64>;
+
+    /// 统计符合查询条件的任务数量（复用 query 的 filter 逻辑，只跑 COUNT 不跑 LIST）
+    async fn count(&self, ctx: RequestContext, query: TaskQuery) -> Result<u64>;
 }
 
 // ==================== TaskVectorDao Trait ====================
