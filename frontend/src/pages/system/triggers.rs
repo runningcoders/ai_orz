@@ -9,6 +9,7 @@ use crate::api::system::{
     create_cron_trigger, delete_cron_trigger, get_cron_trigger, list_cron_triggers,
     pause_cron_trigger, resume_cron_trigger, update_cron_trigger,
 };
+use crate::components::charts::donut_chart::{DonutChart, DonutSlice};
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
@@ -294,6 +295,31 @@ pub fn SystemTriggers() -> Element {
     };
 
     let triggers_list = triggers.read().clone();
+    // 触发器状态分布聚合（前端本地计算）
+    let now_secs = chrono::Local::now().timestamp();
+    let enabled_count = triggers_list.iter().filter(|t| t.is_enabled).count();
+    let disabled_count = triggers_list.iter().filter(|t| !t.is_enabled).count();
+    let soon_count = triggers_list
+        .iter()
+        .filter(|t| t.is_enabled && t.next_run_at > 0 && (t.next_run_at - now_secs).abs() < 3600)
+        .count();
+    let trigger_status_slices: Vec<DonutSlice> = vec![
+        DonutSlice {
+            label: "启用".to_string(),
+            value: enabled_count as u64,
+            color: "#10b981".to_string(),
+        },
+        DonutSlice {
+            label: "暂停".to_string(),
+            value: disabled_count as u64,
+            color: "#6b7280".to_string(),
+        },
+        DonutSlice {
+            label: "1h 内执行".to_string(),
+            value: soon_count as u64,
+            color: "#fa520f".to_string(),
+        },
+    ];
     let cron_presets: [(&str, &str); 6] = [
         ("每分钟", "* * * * *"),
         ("每小时", "0 * * * *"),
@@ -312,6 +338,17 @@ pub fn SystemTriggers() -> Element {
 
     rsx! {
         AppLayout {
+        div { class: "card bg-base-100 shadow-md mb-4",
+            div { class: "card-body",
+                h3 { class: "card-title text-sm", "📊 触发器状态分布" }
+                DonutChart {
+                    data: trigger_status_slices,
+                    width: Some(400.0),
+                    height: Some(220.0),
+                    center_label: Some("触发器".to_string()),
+                }
+            }
+        }
         div { class: "card bg-base-100 shadow-md",
             div { class: "card-header",
                 h2 { class: "card-title", "定时触发器" }
