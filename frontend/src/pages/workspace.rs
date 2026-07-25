@@ -551,24 +551,24 @@ pub fn Workspace() -> Element {
                                             let is_selected = matches!(*current_view.read(), WorkspaceView::ProjectDetail(ref id) if id == &pid);
                                             let has_unread = project_unread.read().contains(&pid);
                                             let item_class = if is_selected {
-                                                "w-full text-left p-3 hover:bg-base-200 transition-colors bg-base-200"
+                                                "relative overflow-hidden w-full text-left p-3 hover:bg-base-200 transition-colors bg-base-200"
                                             } else {
-                                                "w-full text-left p-3 hover:bg-base-200 transition-colors"
+                                                "relative overflow-hidden w-full text-left p-3 hover:bg-base-200 transition-colors"
                                             };
                                             rsx! {
                                                 button {
                                                     class: "{item_class}",
                                                     onclick: move |_| {
                                                         current_view.set(WorkspaceView::ProjectDetail(pid.clone()));
-                                                        // 点击后清除该 project 的红点
+                                                        // 点击后清除该 project 的提示
                                                         project_unread.write().remove(&pid);
                                                     },
+                                                    if has_unread {
+                                                        span { class: "hud-streak" }
+                                                    }
                                                     div { class: "flex justify-between items-start",
                                                         div { class: "flex items-center gap-1 min-w-0",
                                                             span { class: "text-sm font-medium truncate", "{p.name}" }
-                                                            if has_unread {
-                                                                span { class: "inline-block w-2 h-2 rounded-full bg-error flex-shrink-0", "" }
-                                                            }
                                                         }
                                                         span { class: "badge badge-xs badge-ghost ml-2 flex-shrink-0",
                                                             "{project_status_label(p.status)}"
@@ -641,24 +641,24 @@ pub fn Workspace() -> Element {
                                             let is_selected = matches!(*current_view.read(), WorkspaceView::AgentDetail(ref id) if id == &aid);
                                             let has_unread = agent_unread.read().contains(&aid);
                                             let item_class = if is_selected {
-                                                "w-full text-left p-3 hover:bg-base-200 transition-colors bg-base-200"
+                                                "relative overflow-hidden w-full text-left p-3 hover:bg-base-200 transition-colors bg-base-200"
                                             } else {
-                                                "w-full text-left p-3 hover:bg-base-200 transition-colors"
+                                                "relative overflow-hidden w-full text-left p-3 hover:bg-base-200 transition-colors"
                                             };
                                             rsx! {
                                                 button {
                                                     class: "{item_class}",
                                                     onclick: move |_| {
                                                         current_view.set(WorkspaceView::AgentDetail(aid.clone()));
-                                                        // 点击后清除该 agent 的红点
+                                                        // 点击后清除该 agent 的提示
                                                         agent_unread.write().remove(&aid);
                                                     },
+                                                    if has_unread {
+                                                        span { class: "hud-streak" }
+                                                    }
                                                     div { class: "flex justify-between items-start",
                                                         div { class: "flex items-center gap-1 min-w-0",
                                                             span { class: "text-sm font-medium truncate", "{a.name}" }
-                                                            if has_unread {
-                                                                span { class: "inline-block w-2 h-2 rounded-full bg-error flex-shrink-0", "" }
-                                                            }
                                                         }
                                                         span { class: "badge badge-xs ml-2 flex-shrink-0 {agent_runtime_badge_class(a.runtime_state)}",
                                                             "{agent_runtime_label(a.runtime_state)}"

@@ -75,3 +75,38 @@
   0%, 80%, 100% { transform: scale(0); }
   40% { transform: scale(1); }
 }
+
+/* ============================================================
+ * 驾驶舱风格：HUD 流光条（未读消息提示）
+ * 用法：父元素 position: relative; overflow: hidden;
+ *       <span class="hud-streak" /> 渲染左侧竖条 + 流动高光
+ * ============================================================ */
+@keyframes hud-streak-flow {
+  0%   { transform: translateY(-150%); opacity: 0; }
+  15%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { transform: translateY(400%); opacity: 0; }
+}
+
+.hud-streak {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--color-primary, #fa520f);
+  box-shadow: 0 0 6px 0 var(--color-primary, #fa520f);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.hud-streak::before {
+  content: '';
+  position: absolute;
+  left: -2px;
+  right: -2px;
+  height: 30%;
+  background: linear-gradient(to bottom, transparent, oklch(0.95 0.10 75), transparent);
+  filter: blur(0.5px);
+  animation: hud-streak-flow 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
