@@ -4,11 +4,17 @@ use dioxus::prelude::*;
 
 use chrono::{Local, NaiveDateTime, TimeZone};
 
+use crate::api::log_stats::{
+    get_log_level_distribution, get_log_time_series, LogLevelDistributionItem, LogTimeSeriesPoint,
+};
 use crate::api::system::{query_logs, LogEntry, LogPageResult, LogQueryParams};
+use crate::components::charts::donut_chart::{DonutChart, DonutSlice};
+use crate::components::charts::line_chart::LineChart;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::format_rfc3339 as format_timestamp;
+use common::models::TimeSeriesPoint;
 
 /// 默认每页条数
 const DEFAULT_PAGE_SIZE: usize = 20;
@@ -22,6 +28,18 @@ fn level_badge_class(level: &str) -> &'static str {
         "DEBUG" => "badge badge-neutral",
         "TRACE" => "badge badge-secondary",
         _ => "badge badge-neutral",
+    }
+}
+
+/// 根据日志级别返回图表扇区颜色（hex）
+fn level_color(level: &str) -> &'static str {
+    match level.to_uppercase().as_str() {
+        "INFO" => "#10b981",
+        "WARN" => "#f59e0b",
+        "ERROR" => "#ef4444",
+        "DEBUG" => "#3b82f6",
+        "TRACE" => "#8b5cf6",
+        _ => "#6b7280",
     }
 }
 
@@ -67,6 +85,11 @@ pub fn SystemLogs() -> Element {
     // 展开的日志行索引（按 entries 中的位置）
     let mut expanded = use_signal(|| std::collections::HashSet::<usize>::new());
 
+    // 统计图表数据
+    let mut stats_loading = use_signal(|| false);
+    let mut level_distribution: Signal<Vec<LogLevelDistributionItem>> = use_signal(Vec::new);
+    let mut time_series_points: Signal<Vec<LogTimeSeriesPoint>> = use_signal(Vec::new);
+
     /// 执行一次查询
     fn do_query(
         params: LogQueryParams,
@@ -87,6 +110,24 @@ pub fn SystemLogs() -> Element {
         });
     }
 
+    // 加载日志统计数据（级别分布 + 24h 时序）
+    let mut load_stats = move || {
+        stats_loading.set(true);
+        spawn(async move {
+            let now = chrono::Local::now().timestamp_millis();
+            let start = now - 24 * 60 * 60 * 1000;
+            let dist_result = get_log_level_distribution(Some(start), Some(now)).await;
+            let ts_result = get_log_time_series(Some(start), Some(now)).await;
+            if let Ok(resp) = dist_result {
+                level_distribution.set(resp.items);
+            }
+            if let Ok(resp) = ts_result {
+                time_series_points.set(resp.points);
+            }
+            stats_loading.set(false);
+        });
+    };
+
     // 首次进入时自动加载第一页
     use_effect(move || {
         if active_query().is_none() {
@@ -99,6 +140,11 @@ pub fn SystemLogs() -> Element {
             current_page.set(1);
             do_query(p, 1, loading, result, toast);
         }
+    });
+
+    // 初始加载统计数据（不需要轮询）
+    use_effect(move || {
+        load_stats();
     });
 
     // 点击查询按钮
@@ -202,6 +248,56 @@ pub fn SystemLogs() -> Element {
 
     rsx! {
         AppLayout {
+            // 日志统计图表区（级别分布 + 24h 日志量时序）
+            div { class: "grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4",
+                // 日志级别分布 DonutChart
+                div { class: "card bg-base-100 shadow-md",
+                    div { class: "card-body",
+                        h3 { class: "card-title text-sm", "📊 级别分布（24h）" }
+                        if level_distribution.read().is_empty() {
+                            div { class: "h-[200px] flex items-center justify-center text-base-content/50",
+                                if stats_loading() { "加载中..." } else { "暂无数据" }
+                            }
+                        } else {
+                            DonutChart {
+                                data: level_distribution.read().iter().map(|i| DonutSlice {
+                                    label: i.level.clone(),
+                                    value: i.count,
+                                    color: level_color(&i.level).to_string(),
+                                }).collect::<Vec<_>>(),
+                                width: Some(300.0),
+                                height: Some(220.0),
+                                center_label: Some("日志级别".to_string()),
+                            }
+                        }
+                    }
+                }
+                // 日志量时序 LineChart
+                div { class: "card bg-base-100 shadow-md",
+                    div { class: "card-body",
+                        h3 { class: "card-title text-sm", "📈 日志量趋势（24h）" }
+                        if time_series_points.read().is_empty() {
+                            div { class: "h-[200px] flex items-center justify-center text-base-content/50",
+                                if stats_loading() { "加载中..." } else { "暂无数据" }
+                            }
+                        } else {
+                            LineChart {
+                                data: time_series_points.read().iter().map(|p| TimeSeriesPoint {
+                                    interval_start: p.interval_start,
+                                    tokens_input: 0,
+                                    tokens_output: 0,
+                                    call_count: p.count,
+                                }).collect::<Vec<_>>(),
+                                width: Some(500.0),
+                                height: Some(220.0),
+                                title: Some("日志量".to_string()),
+                                value_label: Some("条".to_string()),
+                            }
+                        }
+                    }
+                }
+            }
+
             div { class: "card bg-base-100 shadow-md",
                 div { class: "card-header",
                     h2 { class: "card-title", "日志查询" }
