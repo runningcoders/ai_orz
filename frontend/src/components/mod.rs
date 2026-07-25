@@ -11,6 +11,7 @@ pub mod particles;
 pub mod confirm_dialog;
 pub mod graph;
 pub mod graph_canvas;
+pub mod hud_palette;
 pub mod modal;
 pub mod state;
 pub mod stats;

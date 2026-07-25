@@ -90,92 +90,11 @@ impl KnowledgeGraphRenderer {
     fn now_secs() -> f64 {
         js_sys::Date::now() / 1000.0
     }
-
-    /// 将 hex 颜色转换为 rgba 字符串
-    fn hex_to_rgba(hex: &str, alpha: f64) -> String {
-        let hex = hex.trim_start_matches('#');
-        let (r, g, b) = if hex.len() == 6 {
-            let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(255);
-            let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(255);
-            let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(255);
-            (r, g, b)
-        } else {
-            (255, 255, 255)
-        };
-        format!("rgba({}, {}, {}, {:.3})", r, g, b, alpha)
-    }
 }
 
 impl CanvasRenderer for KnowledgeGraphRenderer {
     fn clear(&self, ctx: &CanvasRenderingContext2d, width: f64, height: f64) {
-        // 深色基底
-        ctx.set_fill_style_str("#0a0e1a");
-        ctx.fill_rect(0.0, 0.0, width, height);
-
-        // 径向光晕（橙色中心向边缘淡出）
-        if let Ok(grad) = ctx.create_radial_gradient(
-            width / 2.0,
-            height / 2.0,
-            0.0,
-            width / 2.0,
-            height / 2.0,
-            width.max(height) / 2.0,
-        ) {
-            let _ = grad.add_color_stop(0.0, "rgba(250, 82, 15, 0.08)");
-            let _ = grad.add_color_stop(1.0, "rgba(250, 82, 15, 0)");
-            ctx.set_fill_style_canvas_gradient(&grad);
-            ctx.fill_rect(0.0, 0.0, width, height);
-        }
-
-        // 淡橙色网格线（HUD 坐标系）
-        ctx.set_stroke_style_str("rgba(250, 82, 15, 0.06)");
-        ctx.set_line_width(1.0);
-        let mut x = 0.0;
-        while x <= width {
-            ctx.begin_path();
-            ctx.move_to(x, 0.0);
-            ctx.line_to(x, height);
-            ctx.stroke();
-            x += 40.0;
-        }
-        let mut y = 0.0;
-        while y <= height {
-            ctx.begin_path();
-            ctx.move_to(0.0, y);
-            ctx.line_to(width, y);
-            ctx.stroke();
-            y += 40.0;
-        }
-
-        // 四角 HUD 装饰刻度线
-        ctx.set_stroke_style_str("rgba(250, 82, 15, 0.5)");
-        ctx.set_line_width(1.5);
-        let corner_len = 12.0;
-        let offset = 8.0;
-        // 左上
-        ctx.begin_path();
-        ctx.move_to(offset, corner_len + offset);
-        ctx.line_to(offset, offset);
-        ctx.line_to(corner_len + offset, offset);
-        ctx.stroke();
-        // 右上
-        ctx.begin_path();
-        ctx.move_to(width - corner_len - offset, offset);
-        ctx.line_to(width - offset, offset);
-        ctx.line_to(width - offset, corner_len + offset);
-        ctx.stroke();
-        // 左下
-        ctx.begin_path();
-        ctx.move_to(offset, height - corner_len - offset);
-        ctx.line_to(offset, height - offset);
-        ctx.line_to(corner_len + offset, height - offset);
-        ctx.stroke();
-        // 右下
-        ctx.begin_path();
-        ctx.move_to(width - corner_len - offset, height - offset);
-        ctx.line_to(width - offset, height - offset);
-        ctx.line_to(width - offset, height - corner_len - offset);
-        ctx.stroke();
+        crate::components::hud_palette::draw_hud_background(ctx, width, height);
     }
 
     fn draw_nodes(&self, ctx: &CanvasRenderingContext2d, nodes: &[CanvasNode]) {
@@ -324,7 +243,7 @@ impl CanvasRenderer for KnowledgeGraphRenderer {
                 let scan_t = (now % scan_period) / scan_period;
                 let scan_r = base_radius + 4.0 + scan_t * 18.0;
                 let scan_alpha = 0.9 * (1.0 - scan_t);
-                ctx.set_stroke_style_str(&Self::hex_to_rgba(&node.color, scan_alpha));
+                ctx.set_stroke_style_str(&crate::components::hud_palette::hex_to_rgba(&node.color, scan_alpha));
                 ctx.set_line_width(2.5);
                 set_dash(ctx, &[]);
                 ctx.begin_path();
@@ -334,7 +253,7 @@ impl CanvasRenderer for KnowledgeGraphRenderer {
                 // HUD 外环刻度（瞄准镜风格）：旋转的虚线圆 + 四向小刻度
                 let ring_r = base_radius + 8.0;
                 let rotation = (now * 30.0_f64.to_radians()) % std::f64::consts::TAU;
-                ctx.set_stroke_style_str(&Self::hex_to_rgba(&node.color, 0.6));
+                ctx.set_stroke_style_str(&crate::components::hud_palette::hex_to_rgba(&node.color, 0.6));
                 ctx.set_line_width(1.0);
                 set_dash(ctx, &[3.0, 6.0]);
                 ctx.set_line_dash_offset(-rotation * 6.0);
@@ -362,7 +281,7 @@ impl CanvasRenderer for KnowledgeGraphRenderer {
                 let pulse_t = (now % pulse_period) / pulse_period;
                 let phase = (pulse_t * std::f64::consts::TAU).sin();
                 let alpha = 0.55 + phase * 0.18;
-                ctx.set_stroke_style_str(&Self::hex_to_rgba(&node.color, alpha));
+                ctx.set_stroke_style_str(&crate::components::hud_palette::hex_to_rgba(&node.color, alpha));
                 ctx.set_line_width(2.0);
                 set_dash(ctx, &[]);
                 ctx.begin_path();
