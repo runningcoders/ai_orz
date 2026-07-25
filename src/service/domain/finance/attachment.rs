@@ -127,7 +127,7 @@ impl AttachmentManage for FinanceDomainImpl {
         &self,
         ctx: RequestContext,
         query: AttachmentQuery,
-    ) -> Result<Vec<Attachment>> {
+    ) -> Result<common::api::PagedResult<Attachment>> {
         self.attachment_dal.query(ctx, query).await
     }
 

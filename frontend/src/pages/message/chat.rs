@@ -8,10 +8,10 @@ use crate::api::project::{create_project, list_projects};
 use crate::components::modal::Modal;
 use crate::store::toast::use_toast;
 use crate::utils::{
-    format_file_size, format_time_hm as format_time, is_attachment_message, now_ms,
-    project_status_text as status_text, role_avatar, tmp_msg_id, MSG_AUDIO,
-    MSG_IMAGE, MSG_TASK_ASSIGNMENT, MSG_TEXT, MSG_TOOL_CALL_REQUEST, MSG_TOOL_CALL_RESULT,
-    MSG_VIDEO,
+    build_optimistic_user_msg, format_file_size, format_time_hm as format_time,
+    is_attachment_message, project_status_text as status_text, replace_tmp_with_real,
+    role_avatar, MSG_AUDIO, MSG_IMAGE, MSG_TASK_ASSIGNMENT, MSG_TEXT,
+    MSG_TOOL_CALL_REQUEST, MSG_TOOL_CALL_RESULT, MSG_VIDEO,
 };
 use common::api::{
     CreateProjectRequest, GetReceptionAgentResponse, ListProjectsResponseItem, MessageListItem,
@@ -178,14 +178,8 @@ pub fn MessageChat() -> Element {
         };
         if project_match {
             let mut current = messages.write();
-            // 修复 H2：乐观消息用 tmp_ 前缀，真实消息 ID 不同导致重复。
-            // 修复 H_NEW：retain 会删除所有同 content 的 tmp_，连发两条相同内容消息时
-            // 第二条 tmp_ 会被错误留下。改为只删除第一条匹配的 tmp_ 消息。
-            if let Some(pos) = current.iter().position(|m| {
-                m.message_id.starts_with("tmp_") && m.content == msg.content
-            }) {
-                current.remove(pos);
-            }
+            // 移除同 content 的乐观消息（统一使用 replace_tmp_with_real）
+            replace_tmp_with_real(&mut current, &msg);
             if current.iter().any(|m| m.message_id == msg.message_id) {
                 return;
             }
@@ -376,22 +370,7 @@ pub fn MessageChat() -> Element {
             match send_message_to_agent(req).await {
                 Ok(_) => {
                     // 修复 L18：tmp_msg_id 用 now_ms+random 避免同毫秒发送两条消息 ID 碰撞
-                    let user_msg = MessageListItem {
-                        message_id: tmp_msg_id(),
-                        project_id: project_id.clone(),
-                        task_id: None,
-                        from_id: "user".to_string(),
-                        from_role: 0,
-                        to_id: "agent".to_string(),
-                        to_role: 1,
-                        message_type: 0,
-                        status: 3,
-                        content: text,
-                        reply_to_id: None,
-                        created_at: now_ms(),
-                        file_type: None,
-                        file_meta: None,
-                    };
+                    let user_msg = build_optimistic_user_msg(text, project_id, None, None);
                     let mut current = messages.write();
                     current.push(user_msg);
                 }

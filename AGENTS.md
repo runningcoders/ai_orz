@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-07-24（记忆 tags 全链路支持 + 知识图谱节点可视化增强 v3.5）
+> 最后更新：2026-07-25（前端聊天共享组件抽取 + utils 模块化）
 
 ---
 
@@ -205,11 +205,12 @@ ai_orz/
 │
 ├── frontend/                   # Dioxus 前端（Tailwind CSS v4 + DaisyUI v5）
 │   ├── src/api/               # API 客户端
-│   ├── src/components/        # UI 组件（Button/Modal/Toast/State/Stats/Graph）
+│   ├── src/components/        # UI 组件（Button/Modal/Toast/State/Stats/Graph/Chat）
 │   ├── src/hooks/             # 自定义 Hooks（use_resource/use_breakpoint/use_require_auth）
 │   ├── src/layouts/           # 布局组件（AppLayout/Navbar）
 │   ├── src/pages/             # 页面模块（按业务域分组）
 │   ├── src/store/             # 状态管理（auth/toast）
+│   ├── src/utils/             # 通用工具函数（按功能分子模块：time/file/message/status）
 │   ├── styles/input.css       # Tailwind CSS 入口（主题配置、自定义工具类）
 │   ├── public/output.css      # Tailwind 编译产物（构建时自动生成）
 │   ├── build.rs               # 构建脚本（自动 npm install + Tailwind CSS 编译）
@@ -771,6 +772,17 @@ Agent
 ---
 
 ## 六、工作流与开发记录
+
+### 2026-07-25 里程碑
+**✅ 前端聊天共享组件抽取 + utils 模块化**
+- **utils 模块化**：原 `frontend/src/utils.rs` 拆分为 `frontend/src/utils/` 文件夹，按功能分子模块组织：`time.rs`（时间格式化）、`file.rs`（文件大小格式化）、`message.rs`（消息类型常量、角色映射、乐观消息辅助）、`status.rs`（任务/项目状态映射）。`mod.rs` 通过 `pub use` 重新导出所有公共 API，保持 `use crate::utils::xxx` 向后兼容，无需改动调用方
+- **聊天共享组件抽取**：新增 `frontend/src/components/chat/` 模块：`MessageBubble`（单条消息气泡，文本/图片/文件简版渲染）、`TypingIndicator`（Agent 输入指示器，三点动画）。Agent 详情页、Workspace 底部对话框改用共享组件，删除本地 `render_message_content`/`render_chat_messages` 重复实现
+- **主对话页保留独立实现**：`pages/message/chat.rs` 含工具调用卡片、任务卡片、视频/音频附件等复杂内容，且使用 DaisyUI `chat chat-start/chat-end` 样式与 `MessageBubble` 的 `message-item` 样式不一致，简单 `MessageBubble` 无法覆盖，保留独立富渲染实现
+- **DTO PartialEq 派生**：`common::api::MessageListItem` 和 `FileMetaInfo` 添加 `PartialEq` 派生（Dioxus 0.7 组件 prop 要求实现 `PartialEq`，否则 `#[component]` 宏报错 `E0369`）
+- **Workspace 侧边栏红点提示**：SSE 收到非当前视图的 Agent 回复消息时，对应 Project/Agent 侧边栏项亮红点，点击切换视图后清除红点
+- **测试同步修复**：`common/src/api/attachment_test.rs` 和 `artifact_test.rs` 同步 `AttachmentListQuery.pagination: PaginationParams`、`ListArtifactsRequest.offset` 字段变化
+- **文档更新**：[frontend_architecture.md](./docs/frontend_architecture.md) 更新目录结构、基础 UI 组件库章节、新增 2026-07-25 更新记录
+- **测试统计**：前端 34 测试 + 后端 746 测试 + common 50 测试 100% 通过
 
 ### 2026-07-24 里程碑
 **✅ query/list 接口分页改造 + list 接口简化（统一 PagedResult）**

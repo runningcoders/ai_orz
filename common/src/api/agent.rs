@@ -38,7 +38,7 @@ pub struct CreateAgentResponse {
 }
 
 /// Agent 列表项响应
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AgentListItem {
     /// Agent ID
     pub id: String,

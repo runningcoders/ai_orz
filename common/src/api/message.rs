@@ -37,7 +37,7 @@ pub struct ListMessagesRequest {
 }
 
 /// 消息列表项（脱敏后的展示对象）
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct MessageListItem {
     /// 消息 ID
     pub message_id: String,
@@ -75,7 +75,7 @@ pub struct MessageListItem {
 }
 
 /// 文件元数据信息（用于消息附件展示）
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct FileMetaInfo {
     /// 文件名
     pub name: String,

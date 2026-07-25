@@ -81,6 +81,7 @@ fn list_artifacts_query_and_response_serialize_contract() {
         file_type: Some(FileType::Document),
         source_type: Some(ArtifactSourceType::Attachment),
         limit: Some(20),
+        offset: Some(0),
     };
     let query_json = serde_json::to_string(&query).unwrap();
     assert!(query_json.contains("project-1"));

@@ -1,6 +1,6 @@
 //! Attachment upload/query API DTOs - shared between backend and frontend
 
-use crate::api::TextContentResponse;
+use crate::api::{PaginationParams, TextContentResponse};
 use crate::enums::FileType;
 use serde::{Deserialize, Serialize};
 
@@ -11,8 +11,9 @@ pub struct AttachmentListQuery {
     pub purpose: Option<String>,
     /// 可选文件类型筛选。
     pub file_type: Option<FileType>,
-    /// 返回数量限制。
-    pub limit: Option<usize>,
+    /// 分页参数。
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
 }
 
 /// Attachment 详情响应。

@@ -67,7 +67,7 @@ async fn test_query_and_delete(pool: SqlitePool) -> Result<()> {
             },
         )
         .await?;
-    assert_eq!(list.len(), 1);
+    assert_eq!(list.items.len(), 1);
 
     dal.delete(ctx.clone(), attachment.id()).await?;
     assert!(dal.get_by_id(ctx, attachment.id()).await?.is_none());

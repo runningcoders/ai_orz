@@ -90,8 +90,8 @@ async fn test_query_by_root_user_and_purpose(pool: SqlitePool) -> Result<()> {
         )
         .await?;
 
-    assert_eq!(list.len(), 1);
-    assert_eq!(list[0].id, "attachment-1");
+    assert_eq!(list.items.len(), 1);
+    assert_eq!(list.items[0].id, "attachment-1");
     Ok(())
 }
 
@@ -114,7 +114,7 @@ async fn test_delete_filters_find_and_query(pool: SqlitePool) -> Result<()> {
             },
         )
         .await?;
-    assert!(list.is_empty());
+    assert!(list.items.is_empty());
     Ok(())
 }
 

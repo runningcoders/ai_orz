@@ -62,7 +62,7 @@ pub struct ListProjectsRequest {
 }
 
 /// Project 列表项响应
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ProjectListItem {
     /// Project ID
     pub id: String,

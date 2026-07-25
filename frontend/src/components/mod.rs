@@ -4,6 +4,7 @@ pub mod relation_graph;
 pub mod workspace_graph;
 pub mod button;
 pub mod canvas_scene;
+pub mod chat;
 pub mod force_layout;
 pub mod layered_layout;
 pub mod particles;

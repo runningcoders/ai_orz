@@ -6,23 +6,11 @@ use common::error::Result;
 use crate::models::artifact::Artifact;
 use crate::pkg::RequestContext;
 use crate::service::dao::artifact;
+pub use crate::service::dao::artifact::ArtifactQuery;
 use crate::service::dao::artifact::ArtifactDao;
-use common::enums::{ArtifactSourceType, FileType};
 use std::sync::{Arc, OnceLock};
 
 use crate::enrich_ctx;
-
-/// Artifact DAL 查询参数。
-///
-/// Domain 层只依赖 DAL 的查询对象，不暴露 DAO 查询结构。
-#[derive(Debug, Clone, Default)]
-pub struct ArtifactQuery {
-    pub project_id: Option<String>,
-    pub task_id: Option<String>,
-    pub file_type: Option<FileType>,
-    pub source_type: Option<ArtifactSourceType>,
-    pub pagination: common::api::PaginationParams,
-}
 
 // ==================== 单例管理 ====================
 
@@ -162,19 +150,7 @@ impl ArtifactDal for ArtifactDalImpl {
         ctx: RequestContext,
         query: ArtifactQuery,
     ) -> Result<common::api::PagedResult<Artifact>> {
-        let page = self
-            .artifact_dao
-            .query(
-                ctx,
-                artifact::ArtifactQuery {
-                    project_id: query.project_id,
-                    task_id: query.task_id,
-                    file_type: query.file_type,
-                    source_type: query.source_type,
-                    pagination: query.pagination,
-                },
-            )
-            .await?;
+        let page = self.artifact_dao.query(ctx, query).await?;
         Ok(page.map(Artifact::from_po))
     }
 

@@ -325,7 +325,7 @@ pub trait AttachmentManage: Send + Sync {
         &self,
         ctx: RequestContext,
         query: crate::service::dao::attachment::AttachmentQuery,
-    ) -> Result<Vec<Attachment>>;
+    ) -> Result<common::api::PagedResult<Attachment>>;
 
     /// 删除上传文件资产。
     async fn delete_attachment(&self, ctx: RequestContext, id: &str) -> Result<()>;

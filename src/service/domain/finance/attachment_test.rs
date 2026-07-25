@@ -102,7 +102,7 @@ async fn test_attachment_create_query_get_delete(pool: SqlitePool) -> Result<()>
             },
         )
         .await?;
-    assert_eq!(list.len(), 1);
+    assert_eq!(list.items.len(), 1);
 
     domain
         .attachment_manage()

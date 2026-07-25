@@ -71,7 +71,7 @@ pub trait AttachmentDal: Send + Sync {
         &self,
         ctx: RequestContext,
         query: AttachmentQuery,
-    ) -> Result<Vec<Attachment>>;
+    ) -> Result<common::api::PagedResult<Attachment>>;
 
     /// 删除 Attachment（软删除元数据，不物理删除文件）。
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()>;
@@ -167,9 +167,9 @@ impl AttachmentDal for AttachmentDalImpl {
         &self,
         ctx: RequestContext,
         query: AttachmentQuery,
-    ) -> Result<Vec<Attachment>> {
-        let list = self.attachment_dao.query(ctx, query).await?;
-        Ok(list.into_iter().map(Attachment::from_po).collect())
+    ) -> Result<common::api::PagedResult<Attachment>> {
+        let page = self.attachment_dao.query(ctx, query).await?;
+        Ok(page.map(Attachment::from_po))
     }
 
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()> {

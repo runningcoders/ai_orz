@@ -30,26 +30,29 @@ pub enum WorkspaceView {
 pub struct WorkspaceGraphProps {
     /// 当前视图模式
     pub view: WorkspaceView,
-    /// 全部 Project 列表
+    /// 图数据中的 Project 列表（按视图过滤后的）
     pub projects: Vec<ProjectListItem>,
-    /// 全部 Agent 列表
+    /// 图数据中的 Agent 列表（按视图过滤后的）
     pub agents: Vec<AgentListItem>,
-    /// 全部 Task 列表
+    /// 图数据中的 Task 列表（按视图过滤后的）
     pub tasks: Vec<TaskListItem>,
     /// Canvas 宽度
     pub width: f64,
     /// Canvas 高度
     pub height: f64,
+    /// 非中心节点点击时的视图切换回调
+    pub on_view_change: Option<EventHandler<WorkspaceView>>,
 }
 
 impl PartialEq for WorkspaceGraphProps {
     fn eq(&self, other: &Self) -> bool {
         self.view == other.view
-            && self.projects.len() == other.projects.len()
-            && self.agents.len() == other.agents.len()
-            && self.tasks.len() == other.tasks.len()
+            && self.projects == other.projects
+            && self.agents == other.agents
+            && self.tasks == other.tasks
             && self.width == other.width
             && self.height == other.height
+        // on_view_change 不参与比较（EventHandler 无法比较）
     }
 }
 
@@ -484,13 +487,21 @@ pub fn WorkspaceGraph(props: WorkspaceGraphProps) -> Element {
     let mut click_map: std::collections::HashMap<String, (String, String)> = std::collections::HashMap::new();
     for n in &nodes {
         if let Some(nt) = &n.node_type {
-            // 提取真实 ID（去掉 "project:"/"agent:"/"task:" 前缀）
             let real_id = n.id.splitn(2, ':').nth(1).unwrap_or(&n.id).to_string();
             click_map.insert(n.id.clone(), (nt.clone(), real_id));
         }
     }
 
+    // 当前视图的中心节点 ID（点击中心节点 → 跳转详情页；点击非中心节点 → 切换视图）
+    let center_node_id = match &view {
+        WorkspaceView::Global => None,  // Global 无中心节点
+        WorkspaceView::ProjectDetail(pid) => Some(format!("project:{}", pid)),
+        WorkspaceView::AgentDetail(aid) => Some(format!("agent:{}", aid)),
+        WorkspaceView::TaskDetail(tid) => Some(format!("task:{}", tid)),
+    };
+
     let navigator = use_navigator();
+    let on_view_change = props.on_view_change.clone();
 
     let node_count = nodes.len();
 
@@ -514,11 +525,25 @@ pub fn WorkspaceGraph(props: WorkspaceGraphProps) -> Element {
                     enable_birth_death_particles: true,
                     on_node_click: Some(EventHandler::new(move |node_id: String| {
                         if let Some((nt, real_id)) = click_map.get(&node_id) {
-                            match nt.as_str() {
-                                "project" => { navigator.push(format!("/projects/{}", real_id)); }
-                                "agent" => { navigator.push(format!("/hr/agents/{}", real_id)); }
-                                "task" => { navigator.push(format!("/tasks/{}", real_id)); }
-                                _ => {}
+                            // 中心节点点击 → 跳转详情页
+                            if center_node_id.as_deref() == Some(&node_id) {
+                                match nt.as_str() {
+                                    "project" => { navigator.push(format!("/projects/{}", real_id)); }
+                                    "agent" => { navigator.push(format!("/hr/agents/{}", real_id)); }
+                                    "task" => { navigator.push(format!("/tasks/{}", real_id)); }
+                                    _ => {}
+                                }
+                                return;
+                            }
+                            // 非中心节点点击 → 切换视图
+                            if let Some(on_change) = &on_view_change {
+                                let new_view = match nt.as_str() {
+                                    "project" => WorkspaceView::ProjectDetail(real_id.clone()),
+                                    "agent" => WorkspaceView::AgentDetail(real_id.clone()),
+                                    "task" => WorkspaceView::TaskDetail(real_id.clone()),
+                                    _ => return,
+                                };
+                                on_change.call(new_view);
                             }
                         }
                     })),

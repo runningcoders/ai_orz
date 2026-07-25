@@ -4,7 +4,7 @@ use axum::{
     Json,
     extract::{Extension, Query},
 };
-use common::api::{ApiResponse, AttachmentDetail, AttachmentListQuery};
+use common::api::{ApiResponse, AttachmentDetail, AttachmentListQuery, PagedResult};
 
 use crate::pkg::RequestContext;
 use crate::service::dao::attachment::AttachmentQuery;
@@ -18,13 +18,13 @@ use common::error::{Result, bail_err};
 pub async fn list_attachments(
     Extension(ctx): Extension<RequestContext>,
     Query(req): Query<AttachmentListQuery>,
-) -> Result<Json<ApiResponse<Vec<AttachmentDetail>>>> {
+) -> Result<Json<ApiResponse<PagedResult<AttachmentDetail>>>> {
     let user_id = ctx.uid();
     if user_id.is_empty() {
         bail_err!(InvalidRequest, "当前请求缺少用户上下文");
     }
 
-    let attachments = domain()
+    let page = domain()
         .attachment_manage()
         .query_attachments(
             ctx,
@@ -32,11 +32,11 @@ pub async fn list_attachments(
                 root_user_id: Some(user_id),
                 purpose: req.purpose.clone(),
                 file_type: req.file_type,
-                limit: req.limit,
+                pagination: req.pagination,
             },
         )
         .await?;
 
-    let responses = attachments.iter().map(to_detail).collect();
-    Ok(Json(ApiResponse::success(responses)))
+    let paged = page.map(|a| to_detail(&a));
+    Ok(Json(ApiResponse::success(paged)))
 }

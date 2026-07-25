@@ -1,10 +1,11 @@
 //! SQLite implementation of Attachment DAO
 
 use super::{AttachmentDao, AttachmentQuery};
+use common::api::PagedResult;
 use common::error::{bail_err, Result};
 use crate::models::attachment::AttachmentPo;
 use crate::pkg::RequestContext;
-use sqlx::SqlitePool;
+use sqlx::{SqlitePool, QueryBuilder};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
@@ -130,31 +131,34 @@ WHERE id = ? AND "status" != 0
         &self,
         ctx: RequestContext,
         query: AttachmentQuery,
-    ) -> Result<Vec<AttachmentPo>> {
+    ) -> Result<PagedResult<AttachmentPo>> {
         let pool = ctx.db_pool();
-        let mut builder = sqlx::QueryBuilder::new(
+
+        let mut count_builder =
+            QueryBuilder::new(r#"SELECT COUNT(*) FROM attachments WHERE "status" != 0"#);
+        push_query_filters(&mut count_builder, &query);
+        let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
+
+        let mut list_builder = QueryBuilder::new(
             r#"SELECT id, original_name, stored_name, relative_path, mime_type, file_type, size, purpose, status, root_user_id, created_by, modified_by, created_at, updated_at FROM attachments WHERE "status" != 0"#,
         );
+        push_query_filters(&mut list_builder, &query);
+        list_builder.push(" ORDER BY created_at DESC");
 
-        if let Some(root_user_id) = &query.root_user_id {
-            builder.push(" AND root_user_id = ").push_bind(root_user_id);
+        if let Some(limit) = query.pagination.limit {
+            list_builder.push(" LIMIT ").push_bind(limit as i64);
+        } else if query.pagination.offset.is_some() {
+            list_builder.push(" LIMIT -1");
         }
-        if let Some(purpose) = &query.purpose {
-            builder.push(" AND purpose = ").push_bind(purpose);
-        }
-        if let Some(file_type) = query.file_type {
-            builder
-                .push(" AND file_type = ")
-                .push_bind(file_type as i32);
-        }
-
-        builder.push(" ORDER BY created_at DESC");
-        if let Some(limit) = query.limit {
-            builder.push(" LIMIT ").push_bind(limit as i64);
+        if let Some(offset) = query.pagination.offset {
+            list_builder.push(" OFFSET ").push_bind(offset as i64);
         }
 
-        let rows = builder.build_query_as().fetch_all(pool).await?;
-        Ok(rows)
+        let items = list_builder.build_query_as().fetch_all(pool).await?;
+        Ok(PagedResult {
+            items,
+            total: total as usize,
+        })
     }
 
     async fn update_status(&self, ctx: RequestContext, id: &str, status: i32) -> Result<()> {
@@ -215,5 +219,21 @@ UPDATE attachments SET size = ?, modified_by = ?, updated_at = ? WHERE id = ? AN
         self.resolve_relative_path(relative_path)
             .map(|path| path.exists())
             .unwrap_or(false)
+    }
+}
+
+fn push_query_filters(builder: &mut QueryBuilder<'_, sqlx::Sqlite>, query: &AttachmentQuery) {
+    if let Some(root_user_id) = &query.root_user_id {
+        builder
+            .push(" AND root_user_id = ")
+            .push_bind(root_user_id.clone());
+    }
+    if let Some(purpose) = &query.purpose {
+        builder.push(" AND purpose = ").push_bind(purpose.clone());
+    }
+    if let Some(file_type) = query.file_type {
+        builder
+            .push(" AND file_type = ")
+            .push_bind(file_type as i32);
     }
 }

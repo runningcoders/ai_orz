@@ -3,6 +3,7 @@ use crate::api::{hr::*, StatsOptions};
 use crate::api::project::{query_projects, query_tasks};
 use crate::pages::hr::agent_memory_panel::AgentMemoryPanel;
 use crate::api::message::{load_latest_messages, send_message_to_agent};
+use crate::components::chat::{MessageBubble, TypingIndicator};
 use crate::components::relation_graph::{RelationGraph, RelationNodeInfo};
 use crate::components::workspace_graph::{WorkspaceGraph, WorkspaceView};
 use crate::components::modal::Modal;
@@ -10,92 +11,13 @@ use crate::components::state::Loading;
 use crate::components::stats::AgentStatsPanel;
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-use crate::utils::{format_file_size, format_time_hm as format_time, is_attachment_message, role_avatar, tmp_msg_id};
+use crate::utils::{build_optimistic_user_msg, format_time_hm as format_time, replace_tmp_with_real};
 use common::api::{AgentListItem, GetAgentResponse, ListModelProvidersResponseItem, MessageListItem, PaginationParams, ProjectListItem, ProjectQueryRequest, SendMessageToAgentParams, TaskListItem, TaskQueryRequest, ToolListItem, UpdateAgentRequest};
 use common::enums::AssigneeType;
 use dioxus::prelude::*;
 use dioxus_router::{use_navigator, Link};
 use std::collections::HashSet;
 use wasm_bindgen::{closure::Closure, JsCast};
-
-fn render_message_content(msg: &MessageListItem) -> Element {
-    if is_attachment_message(msg.message_type) {
-        if let Some(fm) = &msg.file_meta {
-            let file_url = format!("/api/v1/finance/attachments/{}/content", msg.content);
-            if msg.message_type == 1 {
-                rsx! {
-                    div { class: "message-attachment message-attachment-image",
-                        img { src: "{file_url}", class: "message-image", loading: "lazy" }
-                    }
-                }
-            } else {
-                rsx! {
-                    div { class: "message-attachment message-attachment-file",
-                        a { href: "{file_url}", class: "attachment-download",
-                            div { class: "file-icon", "📄" }
-                            div { class: "file-info",
-                                span { class: "attachment-name", "{fm.name}" }
-                                span { class: "attachment-size", "{format_file_size(fm.size)}" }
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-            rsx! { div { class: "message-bubble", "{msg.content}" } }
-        }
-    } else {
-        rsx! {
-            div { class: "message-bubble", "{msg.content}" }
-            div { class: "message-time", "{format_time(msg.created_at)}" }
-        }
-    }
-}
-
-fn render_chat_messages(messages: &[MessageListItem], is_typing: bool) -> Element {
-    if messages.is_empty() && !is_typing {
-        rsx! {
-            div { class: "agent-chat-messages",
-                div { class: "text-center py-12",
-                    div { class: "text-5xl mb-4 opacity-30", "💬" }
-                    div { class: "text-base-content/70", "暂无对话记录，发送消息开始对话" }
-                }
-            }
-        }
-    } else {
-        rsx! {
-            div { class: "agent-chat-messages",
-                for msg in messages.iter().cloned() {
-                    div { class: "message-item {role_class(msg.from_role)}", key: "{msg.message_id}",
-                        div { class: "message-avatar", "{role_avatar(msg.from_role)}" }
-                        div {
-                            {render_message_content(&msg)}
-                        }
-                    }
-                }
-                if is_typing {
-                    div { class: "message-item agent",
-                        div { class: "message-avatar", "A" }
-                        div { class: "typing-indicator",
-                            div { class: "typing-dot" }
-                            div { class: "typing-dot" }
-                            div { class: "typing-dot" }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn role_class(role: i32) -> &'static str {
-    match role {
-        0 => "user",
-        1 => "agent",
-        2 => "system",
-        _ => "other",
-    }
-}
 
 fn binding_status_badge_class(is_bound: bool) -> &'static str {
     if is_bound {
@@ -294,14 +216,8 @@ pub fn HrAgentDetail(id: String) -> Element {
             };
             if msg.to_id == inner_id || msg.from_id == inner_id {
                 let mut current = inner_messages.write();
-                // 修复 H2：移除同 content 的 tmp_ 前缀乐观消息
-                // 修复 H_NEW：retain 会删除所有匹配的 tmp_，连发同内容消息会留下重复。
-                // 改为只删除第一条匹配的 tmp_ 消息
-                if let Some(pos) = current.iter().position(|m| {
-                    m.message_id.starts_with("tmp_") && m.content == msg.content
-                }) {
-                    current.remove(pos);
-                }
+                // 移除同 content 的乐观消息（统一使用 replace_tmp_with_real）
+                replace_tmp_with_real(&mut current, &msg);
                 if current.iter().any(|m| m.message_id == msg.message_id) {
                     return;
                 }
@@ -351,30 +267,8 @@ pub fn HrAgentDetail(id: String) -> Element {
 
             match send_message_to_agent(req).await {
                 Ok(_) => {
-                    // 修复 H6：发送成功后立即追加乐观消息，无需等待 SSE 回推
-                    // 修复 L_NEW（对齐 chat.rs L18）：使用 tmp_msg_id 避免同毫秒 ID 碰撞
-                    let user_msg = MessageListItem {
-                        message_id: tmp_msg_id(),
-                        project_id: None,
-                        task_id: None,
-                        from_id: "user".to_string(),
-                        from_role: 0,
-                        to_id: aid.clone(),
-                        to_role: 1,
-                        message_type: 0,
-                        status: 3,
-                        content: text.clone(),
-                        reply_to_id: None,
-                        created_at: {
-                            use std::time::{SystemTime, UNIX_EPOCH};
-                            SystemTime::now()
-                                .duration_since(UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_millis() as i64
-                        },
-                        file_type: None,
-                        file_meta: None,
-                    };
+                    // 构造乐观用户消息（统一使用 build_optimistic_user_msg）
+                    let user_msg = build_optimistic_user_msg(text, None, None, Some(aid.clone()));
                     messages.write().push(user_msg);
                 }
                 Err(e) => {
@@ -875,7 +769,21 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 // === 对话与记忆 ===
                                 div { class: "mb-6",
                                     h3 { class: "text-lg font-semibold mb-3", "对话" }
-                                    {render_chat_messages(&messages(), is_typing())}
+                                    div { class: "agent-chat-messages",
+                                        if messages().is_empty() && !is_typing() {
+                                            div { class: "text-center py-12",
+                                                div { class: "text-5xl mb-4 opacity-30", "💬" }
+                                                div { class: "text-base-content/70", "暂无对话记录，发送消息开始对话" }
+                                            }
+                                        } else {
+                                            for msg in messages().iter().cloned() {
+                                                MessageBubble { msg: msg.clone(), key: "{msg.message_id}" }
+                                            }
+                                            if is_typing() {
+                                                TypingIndicator {}
+                                            }
+                                        }
+                                    }
                                     div { class: "flex gap-2 mt-4",
                                         input {
                                             class: "input input-bordered flex-1",

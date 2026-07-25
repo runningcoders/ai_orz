@@ -1,6 +1,6 @@
 # 前端架构设计
 
-> 最后更新：2026-07-22
+> 最后更新：2026-07-25
 
 ## 概述
 
@@ -41,7 +41,12 @@ frontend/
 └── src/
     ├── main.rs               # 入口：Router + 全局状态注入 + 主题初始化
     ├── config.rs             # 前端运行时配置管理（localStorage 读写）
-    ├── utils.rs              # 通用工具函数（localStorage 访问）
+    ├── utils/                # 通用工具函数（按功能分子模块组织）
+    │   ├── mod.rs            # 模块入口 + 重新导出所有公共 API（向后兼容 use crate::utils::xxx）
+    │   ├── time.rs           # 时间格式化（format_time_hm、now_ms）
+    │   ├── file.rs           # 文件大小格式化（format_file_size）
+    │   ├── message.rs        # 消息辅助（类型常量、role_avatar/role_class、is_attachment_message、build_optimistic_user_msg、replace_tmp_with_real、tmp_msg_id）
+    │   └── status.rs         # 任务/项目状态映射（project_status_text、task_status_text）
     │
     ├── api/                  # API 客户端层
     │   ├── mod.rs            # 统一 HTTP 客户端、Cookie 认证、helper 函数、错误解析
@@ -68,6 +73,10 @@ frontend/
     │   ├── stats.rs          # 统计面板组件（StatsCard/AgentStatsPanel/ProjectStatsPanel/TaskStatsPanel）
     │   ├── input.rs          # Input/Textarea/Select 表单组件
     │   ├── toast.rs          # Toast 通知容器（DaisyUI toast + alert）
+    │   ├── chat/             # 聊天共享组件（跨页面复用）
+    │   │   ├── mod.rs        # 模块入口，导出 MessageBubble + TypingIndicator
+    │   │   ├── message_bubble.rs  # MessageBubble：单条消息气泡（文本/图片/文件，简版渲染）
+    │   │   └── typing_indicator.rs # TypingIndicator：Agent 输入指示器（三点动画）
     │   └── graph.rs          # 知识图谱 SVG 可视化组件
     │
     ├── layouts/              # 布局组件
@@ -185,6 +194,14 @@ frontend/
 | ErrorAlert | `components/state.rs` | DaisyUI alert alert-error |
 | Input/Textarea/Select | `components/input.rs` | DaisyUI input/textarea/select input-bordered |
 | ToastContainer | `components/toast.rs` | DaisyUI toast + alert，自动消失动画 |
+| MessageBubble | `components/chat/message_bubble.rs` | 单条消息气泡（文本/图片/文件），简版渲染，跨页面复用 |
+| TypingIndicator | `components/chat/typing_indicator.rs` | Agent 输入指示器（三点动画） |
+
+**聊天共享组件使用约定**（2026-07-25 新增）：
+- 三处聊天实现：`pages/message/chat.rs`（主对话页，富渲染含工具卡片/任务卡片/视频/音频）、`pages/hr/agent_detail.rs`（Agent 详情页对话）、`pages/workspace.rs`（工作台底部对话框）
+- 极简场景（Agent 详情页、Workspace 底部对话框）统一使用 `MessageBubble` + `TypingIndicator` 组件渲染消息
+- 富渲染场景（主对话页）保留独立实现，因其含工具调用卡片、任务卡片、视频/音频附件等复杂内容，且使用 DaisyUI `chat chat-start/chat-end` 样式与 `MessageBubble` 的 `message-item` 样式不一致
+- 共享 utils 中的 `build_optimistic_user_msg`、`replace_tmp_with_real`、`role_avatar`、`role_class`、`is_attachment_message`、消息类型常量等已在所有三处聊天实现中复用
 
 ### 6. 自定义 Hooks
 
@@ -248,6 +265,17 @@ npm run build:css    # 独立构建 CSS
 ---
 
 ## 更新记录
+
+### 2026-07-25 聊天共享组件抽取 + utils 模块化
+
+| 变更项 | 实现细节 |
+|--------|----------|
+| **utils 文件夹化** | 原 `src/utils.rs` 拆分为 `src/utils/` 文件夹，按功能分子模块组织：`time.rs`（时间格式化）、`file.rs`（文件大小格式化）、`message.rs`（消息类型常量、角色映射、乐观消息辅助）、`status.rs`（任务/项目状态映射）。`mod.rs` 通过 `pub use` 重新导出所有公共 API，保持 `use crate::utils::xxx` 向后兼容，无需改动调用方 |
+| **聊天共享组件抽取** | 新增 `components/chat/` 模块：`MessageBubble`（单条消息气泡，文本/图片/文件简版渲染）、`TypingIndicator`（Agent 输入指示器，三点动画）。Agent 详情页、Workspace 底部对话框改用共享组件，删除本地 `render_message_content`/`render_chat_messages` 重复实现 |
+| **主对话页保留独立实现** | `pages/message/chat.rs` 含工具调用卡片、任务卡片、视频/音频附件等复杂内容，且使用 DaisyUI `chat chat-start/chat-end` 样式，与 `MessageBubble` 的 `message-item` 样式不一致，简单 `MessageBubble` 无法覆盖，保留独立富渲染实现 |
+| **DTO PartialEq 派生** | `common::api::MessageListItem` 和 `FileMetaInfo` 添加 `PartialEq` 派生（Dioxus 0.7 组件 prop 要求实现 `PartialEq`，否则 `#[component]` 宏报错 `E0369`） |
+| **测试同步修复** | `common/src/api/attachment_test.rs` 和 `artifact_test.rs` 同步 `AttachmentListQuery.pagination: PaginationParams`、`ListArtifactsRequest.offset` 字段变化 |
+| **测试统计** | 前端 34 测试 + 后端 746 测试 + common 50 测试 100% 通过 |
 
 ### 2026-07-22 引入 Tailwind CSS + DaisyUI 样式系统
 
