@@ -51,7 +51,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
             let stats_options = StatsOptions {
                 with_stats: false,
                 with_model_call_stats: true,
-                stats_interval: None,
+                stats_interval: Some("daily".to_string()),
             };
             match get_model_provider(&id, Some(&stats_options)).await {
                 Ok(provider) => provider_data.set(Some(provider)),
@@ -88,7 +88,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                         let stats_options = StatsOptions {
                             with_stats: false,
                             with_model_call_stats: true,
-                            stats_interval: None,
+                            stats_interval: Some("daily".to_string()),
                         };
                         match get_model_provider(&reload_id, Some(&stats_options)).await {
                             Ok(provider) => provider_data.set(Some(provider)),
@@ -151,7 +151,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                                                     let stats_options = StatsOptions {
                                                                         with_stats: false,
                                                                         with_model_call_stats: true,
-                                                                        stats_interval: None,
+                                                                        stats_interval: Some("daily".to_string()),
                                                                     };
                                                                     match get_model_provider(&rid, Some(&stats_options)).await {
                                                                         Ok(provider) => provider_data.set(Some(provider)),
@@ -184,7 +184,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                                                         let stats_options = StatsOptions {
                                                                             with_stats: false,
                                                                             with_model_call_stats: true,
-                                                                            stats_interval: None,
+                                                                            stats_interval: Some("daily".to_string()),
                                                                         };
                                                                         match get_model_provider(&rid, Some(&stats_options)).await {
                                                                             Ok(provider) => provider_data.set(Some(provider)),
@@ -207,7 +207,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                                                         let stats_options = StatsOptions {
                                                                             with_stats: false,
                                                                             with_model_call_stats: true,
-                                                                            stats_interval: None,
+                                                                            stats_interval: Some("daily".to_string()),
                                                                         };
                                                                         match get_model_provider(&rid, Some(&stats_options)).await {
                                                                             Ok(provider) => provider_data.set(Some(provider)),
@@ -472,7 +472,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                             let stats_options = StatsOptions {
                                                 with_stats: false,
                                                 with_model_call_stats: true,
-                                                stats_interval: None,
+                                                stats_interval: Some("daily".to_string()),
                                             };
                                             match get_model_provider(&id_clone, Some(&stats_options)).await {
                                                 Ok(p) => provider_data.set(Some(p)),
