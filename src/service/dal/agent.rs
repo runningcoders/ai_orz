@@ -1,7 +1,7 @@
 //! Agent DAL 模块
 
 use common::error::Result;
-use common::models::{AgentStats, ModelCallStats, StatsFetchOptions, StatsInterval};
+use common::models::{AgentStats, ModelCallStats, StatsFetchOptions, StatsInterval, ToolCallSummary};
 use crate::models::agent::{Agent, AgentPo};
 use crate::models::brain::Brain;
 use crate::models::memory::Memory;
@@ -11,10 +11,11 @@ use crate::models::user::UserPo;
 use crate::models::vector::{MatchType, SearchMatchInfo, Vectorizable};
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
 use crate::pkg::RequestContext;
-use crate::pkg::stats::{ModelCallEvent, AgentAwakeEvent};
+use crate::pkg::stats::{ModelCallEvent, AgentAwakeEvent, ToolCallEvent};
 use crate::service::dao::agent::{self, AgentDao, AgentQuery, AgentSearch, AgentStatsDao, AgentStatsQuery, AgentVectorDao};
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderStatsDao, ModelProviderStatsQuery};
+use crate::service::dao::tool::ToolStatsDao;
 use common::enums::AgentStatus;
 use common::enums::ControlMode;
 use std::sync::{Arc, OnceLock};
@@ -32,11 +33,13 @@ pub fn dal() -> Arc<dyn AgentDal> {
 /// 初始化 Agent DAL
 pub fn init() {
     agent::stats_init();
+    crate::service::dao::tool::stats_init();
     crate::service::dao::model_provider::stats_init();
     let _ = AGENT_DAL.set(new(
         agent::dao(),
         agent::vector_dao(),
         agent::stats_dao(),
+        crate::service::dao::tool::stats_dao(),
         crate::service::dao::model_provider::stats_dao(),
         crate::service::dao::cortex::dao(),
         crate::service::dao::model_provider::dao(),
@@ -48,6 +51,7 @@ pub fn new(
     agent_dao: Arc<dyn AgentDao + Send + Sync>,
     agent_vector_dao: Arc<dyn AgentVectorDao + Send + Sync>,
     agent_stats_dao: Arc<dyn AgentStatsDao<AwakeEvent = AgentAwakeEvent>>,
+    tool_stats_dao: Arc<dyn ToolStatsDao<ToolCallEvent = ToolCallEvent>>,
     model_provider_stats_dao: Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>,
     cortex_dao: Arc<dyn CortexDao + Send + Sync>,
     model_provider_dao: Arc<dyn ModelProviderDao + Send + Sync>,
@@ -56,6 +60,7 @@ pub fn new(
         agent_dao,
         agent_vector_dao,
         agent_stats_dao,
+        tool_stats_dao,
         model_provider_stats_dao,
         cortex_dao,
         model_provider_dao,
@@ -164,6 +169,7 @@ struct AgentDalImpl {
     agent_dao: Arc<dyn AgentDao>,
     agent_vector_dao: Arc<dyn AgentVectorDao>,
     agent_stats_dao: Arc<dyn AgentStatsDao<AwakeEvent = AgentAwakeEvent>>,
+    tool_stats_dao: Arc<dyn ToolStatsDao<ToolCallEvent = ToolCallEvent>>,
     model_provider_stats_dao: Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>,
     cortex_dao: Arc<dyn CortexDao>,
     model_provider_dao: Arc<dyn ModelProviderDao>,
@@ -659,12 +665,46 @@ impl AgentDal for AgentDalImpl {
     // ==================== 统计查询 ====================
 
     async fn get_stats(&self, ctx: RequestContext, agent_id: &str, options: StatsFetchOptions) -> Result<AgentStats> {
+        // 提前取出 time_range，避免 options 被 move 后无法访问
+        let time_range = options.time_range;
         let query = AgentStatsQuery {
             agent_id: agent_id.to_string(),
-            time_range: options.time_range,
+            time_range,
             ..Default::default()
         };
-        self.agent_stats_dao.get_stats(ctx, query, options).await
+        let mut stats = self.agent_stats_dao.get_stats(ctx.clone(), query, options).await?;
+
+        // 同步填充 tool_call_summary（复用 with_call_summary 开关，避免新增 StatsFetchOptions 字段）
+        // 失败时 warn 降级，不阻塞主流程
+        if stats.call_summary.is_some() {
+            match self
+                .tool_stats_dao
+                .sum_calls_by_tool(ctx.clone(), agent_id, time_range)
+                .await
+            {
+                Ok(by_tool) if !by_tool.is_empty() => {
+                    let total_calls: u64 = by_tool.iter().map(|c| c.count).sum();
+                    stats.tool_call_summary = Some(ToolCallSummary {
+                        total_calls,
+                        by_tool,
+                    });
+                }
+                Ok(_) => {
+                    // 无工具调用记录，保持 None
+                }
+                Err(e) => {
+                    log_warn!(
+                        &ctx,
+                        "get_stats",
+                        agent_id = %agent_id,
+                        error = ?e,
+                        "tool_call_summary 查询失败，已降级"
+                    );
+                }
+            }
+        }
+
+        Ok(stats)
     }
 
     async fn get_model_call_stats(&self, ctx: RequestContext, agent_id: &str, options: StatsFetchOptions) -> Result<ModelCallStats> {

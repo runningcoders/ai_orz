@@ -1,7 +1,7 @@
 //! Tool DAO trait
 
 use common::error::Result;
-use common::models::{CallSummary, ToolStats, StatsFetchOptions};
+use common::models::{CallSummary, ToolCallCount, ToolStats, StatsFetchOptions};
 use crate::models::tool::ToolPo;
 use crate::models::vector::VectorIndexParams;
 use crate::pkg::request_context::RequestContext;
@@ -149,6 +149,60 @@ pub trait ToolStatsDao: Send + Sync {
         }
 
         Ok(stats)
+    }
+
+    /// 按 agent_id 过滤并按 tool_id/tool_name 分组聚合调用次数
+    ///
+    /// 用于 Agent 详情页工具调用分布展示。
+    /// 返回结果按 count 降序排序。
+    async fn sum_calls_by_tool(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        time_range: Option<(i64, i64)>,
+    ) -> Result<Vec<ToolCallCount>> {
+        let agent_filter = StatFilter::Equals {
+            key: "agent_id".to_string(),
+            value: JsonValue::String(agent_id.to_string()),
+        };
+
+        // 直接走底层 query_aggregation，按 tool_id + tool_name 分组
+        let stats = ctx.stats();
+        let table_name = self.table_name(stats);
+        let group_by: &[&str] = &["tool_id", "tool_name"];
+        let aggregations = vec![StatAggregation::Count];
+
+        let rows = ctx.stats().query_aggregation(
+            ctx.clone(),
+            table_name.as_deref(),
+            &[agent_filter],
+            group_by,
+            &aggregations,
+            time_range,
+        ).await?;
+
+        let mut result: Vec<ToolCallCount> = rows
+            .iter()
+            .map(|r| {
+                let tool_id = r.groups.get("tool_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let tool_name = r.groups.get("tool_name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let count = r.aggregations.get("count")
+                    .copied()
+                    .unwrap_or(0.0) as u64;
+                ToolCallCount { tool_id, tool_name, count }
+            })
+            .filter(|c| !c.tool_id.is_empty())
+            .collect();
+
+        // 按 count 降序
+        result.sort_by(|a, b| b.count.cmp(&a.count));
+        Ok(result)
     }
 }
 

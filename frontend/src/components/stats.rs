@@ -1,7 +1,56 @@
 use common::models::{AgentStats, ModelCallStats};
 use dioxus::prelude::*;
 
+use crate::components::charts::donut_chart::{DonutChart, DonutSlice};
 use crate::components::charts::line_chart::LineChart;
+
+/// 工具调用分布环形图调色板（循环使用，避免单一色调）
+const TOOL_PALETTE: &[&str] = &[
+    "#fa520f", // 橙
+    "#10b981", // 绿
+    "#3b82f6", // 蓝
+    "#f59e0b", // 黄
+    "#a855f7", // 紫
+    "#ef4444", // 红
+    "#06b6d4", // 青
+    "#ec4899", // 粉
+];
+
+/// 渲染工具调用分布环形图（如果有数据）
+fn render_tool_call_distribution(stats: &Option<AgentStats>) -> Element {
+    if let Some(s) = stats {
+        if let Some(tool_calls) = &s.tool_call_summary {
+            if !tool_calls.by_tool.is_empty() {
+                let slices: Vec<DonutSlice> = tool_calls
+                    .by_tool
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| DonutSlice {
+                        label: if c.tool_name.is_empty() {
+                            c.tool_id.clone()
+                        } else {
+                            c.tool_name.clone()
+                        },
+                        value: c.count,
+                        color: TOOL_PALETTE[i % TOOL_PALETTE.len()].to_string(),
+                    })
+                    .collect();
+                return rsx! {
+                    div { class: "mt-4",
+                        h3 { class: "text-sm font-semibold mb-2", "🛠️ 工具调用分布" }
+                        DonutChart {
+                            data: slices,
+                            width: Some(300.0),
+                            height: Some(220.0),
+                            center_label: Some("工具调用".to_string()),
+                        }
+                    }
+                };
+            }
+        }
+    }
+    rsx! {}
+}
 
 fn format_token_count(count: u64) -> String {
     if count >= 1_000_000 {
@@ -71,6 +120,7 @@ pub fn StatsPanel(title: String, children: Element) -> Element {
 #[component]
 pub fn AgentStatsPanel(stats: Option<AgentStats>, model_call_stats: Option<ModelCallStats>) -> Element {
     let chart_data = model_call_stats.clone();
+    let tool_dist_data = stats.clone();
     rsx! {
         div { class: "space-y-4",
             StatsPanel { title: "Agent 统计".to_string(),
@@ -94,6 +144,7 @@ pub fn AgentStatsPanel(stats: Option<AgentStats>, model_call_stats: Option<Model
                 }
             }
             {render_time_series_chart(&chart_data)}
+            {render_tool_call_distribution(&tool_dist_data)}
         }
     }
 }

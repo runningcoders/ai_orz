@@ -87,6 +87,28 @@ pub struct StatsFetchOptions {
 pub struct AgentStats {
     /// 调用次数汇总（次数 + QPS）
     pub call_summary: Option<CallSummary>,
+    /// 工具调用分布（按 tool 维度聚合，由 tool_call_events 表统计而来）
+    pub tool_call_summary: Option<ToolCallSummary>,
+}
+
+/// 工具调用分布单项（按 tool_id 分组聚合结果）
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
+pub struct ToolCallCount {
+    /// 工具 ID
+    pub tool_id: String,
+    /// 工具名称
+    pub tool_name: String,
+    /// 该工具被调用次数
+    pub count: u64,
+}
+
+/// 工具调用分布汇总
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, JsonSchema)]
+pub struct ToolCallSummary {
+    /// 总调用次数（所有工具合计）
+    pub total_calls: u64,
+    /// 按 tool 维度分组（按 count 降序）
+    pub by_tool: Vec<ToolCallCount>,
 }
 
 /// Project 自身统计数据
