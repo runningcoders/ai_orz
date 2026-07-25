@@ -623,4 +623,17 @@ fn system_routes() -> Router {
             "/aop/{consumer}/events/{event_id}",
             get(handlers::system::aop::get_event),
         )
+        // AOP realtime stats routes
+        .route(
+            "/aop/stats/overview",
+            get(handlers::system::aop_stats::get_stats_overview),
+        )
+        .route(
+            "/aop/stats/time-series",
+            get(handlers::system::aop_stats::get_stats_time_series),
+        )
+        .route(
+            "/aop/stats/distribution",
+            get(handlers::system::aop_stats::get_stats_distribution),
+        )
 }

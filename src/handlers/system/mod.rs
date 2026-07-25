@@ -1,6 +1,7 @@
 //! System 领域 HTTP 接口
 
 pub mod aop;
+pub mod aop_stats;
 pub mod backup;
 pub mod cron_trigger;
 pub mod logs;
