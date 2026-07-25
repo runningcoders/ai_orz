@@ -1,6 +1,7 @@
 pub mod message;
 pub mod scheduler;
 pub mod aop_stats_collector;
+pub mod aop_stats_hook;
 
 use common::error::Result;
 use std::sync::Arc;
@@ -23,3 +24,4 @@ pub async fn init() -> Result<()> {
 pub use aop_stats_collector::{
     AopDistributionItem, AopOverview, AopStatsCollector, AopTimeSeriesPoint,
 };
+pub use aop_stats_hook::AopStatsHook;
