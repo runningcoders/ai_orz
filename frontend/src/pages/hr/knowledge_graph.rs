@@ -4,6 +4,14 @@ use std::collections::HashSet;
 use crate::api::hr::search_memory_with_traversal;
 use crate::components::button::Button;
 use crate::components::graph::{calculate_layout, expand_layout, Graph, GraphEdge, GraphNode};
+use crate::components::graph_canvas::KnowledgeGraphCanvas;
+
+/// 渲染风格：svg（兜底）或 canvas（HUD 驾驶舱风格）
+#[derive(Clone, Copy, PartialEq)]
+enum GraphStyle {
+    Svg,
+    Canvas,
+}
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
@@ -110,6 +118,8 @@ pub fn HrKnowledgeGraph() -> Element {
     let mut detail_map = use_signal(|| std::collections::HashMap::<String, MemoryResult>::new());
     // 修复 M11：节点点击请求 ID，用于取消过期的并发请求结果（用户快速点击多个节点时）
     let mut click_request_id = use_signal(|| 0u32);
+    // 渲染风格切换：默认 Canvas（HUD 驾驶舱风格），可切回 SVG 作为兜底
+    let mut graph_style = use_signal(|| GraphStyle::Canvas);
 
     let mut handle_search = move |_| {
         let kw = keyword().clone();
@@ -366,19 +376,55 @@ pub fn HrKnowledgeGraph() -> Element {
             } else {
                 div { class: "flex flex-col lg:flex-row gap-4 mt-4",
                     div { class: "flex-1 min-h-96",
-                        div { class: "card bg-base-100 shadow-md h-full",
-                            div { class: "card-body",
-                                h3 { class: "card-title mb-4", "图谱视图 ({current_nodes.len()} 节点, {current_edges.len()} 关系)" }
-                                Graph {
-                                    nodes: current_nodes,
-                                    edges: current_edges,
-                                    selected_node_id: selected_id,
-                                    highlighted_node_ids: Some(highlighted_node_ids()),
-                                    on_node_click: handle_node_click,
+                    div { class: "card bg-base-100 shadow-md h-full",
+                        div { class: "card-body",
+                            {
+                                let canvas_btn_class = if graph_style() == GraphStyle::Canvas { "btn btn-xs join-item btn-primary" } else { "btn btn-xs join-item btn-ghost" };
+                                let svg_btn_class = if graph_style() == GraphStyle::Svg { "btn btn-xs join-item btn-primary" } else { "btn btn-xs join-item btn-ghost" };
+                                rsx! {
+                                    div { class: "flex justify-between items-center mb-4",
+                                        h3 { class: "card-title", "图谱视图 ({current_nodes.len()} 节点, {current_edges.len()} 关系)" }
+                                        // 风格切换按钮：Canvas（HUD）/ SVG（兜底）
+                                        div { class: "join",
+                                            button {
+                                                class: "{canvas_btn_class}",
+                                                onclick: move |_| graph_style.set(GraphStyle::Canvas),
+                                                title: "Canvas HUD 风格（高级渲染，适合大规模节点）",
+                                                "Canvas"
+                                            }
+                                            button {
+                                                class: "{svg_btn_class}",
+                                                onclick: move |_| graph_style.set(GraphStyle::Svg),
+                                                title: "SVG 风格（兜底方案，适合少量节点）",
+                                                "SVG"
+                                            }
+                                        }
+                                    }
                                 }
                             }
+                            {match graph_style() {
+                                GraphStyle::Canvas => rsx! {
+                                    KnowledgeGraphCanvas {
+                                        nodes: current_nodes,
+                                        edges: current_edges,
+                                        selected_node_id: selected_id,
+                                        highlighted_node_ids: Some(highlighted_node_ids()),
+                                        on_node_click: handle_node_click,
+                                    }
+                                },
+                                GraphStyle::Svg => rsx! {
+                                    Graph {
+                                        nodes: current_nodes,
+                                        edges: current_edges,
+                                        selected_node_id: selected_id,
+                                        highlighted_node_ids: Some(highlighted_node_ids()),
+                                        on_node_click: handle_node_click,
+                                    }
+                                },
+                            }}
                         }
                     }
+                }
 
                     if let Some(detail) = &selected_detail {
                         div { class: "w-full lg:w-96",

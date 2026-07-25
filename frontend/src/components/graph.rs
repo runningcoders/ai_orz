@@ -46,7 +46,7 @@ pub struct GraphProps {
 }
 
 /// 节点填充颜色
-fn get_node_fill(node_type: &str) -> &'static str {
+pub fn get_node_fill(node_type: &str) -> &'static str {
     match node_type {
         "knowledge_node" => "#3b82f6",
         "short_term" => "#10b981",
@@ -57,32 +57,32 @@ fn get_node_fill(node_type: &str) -> &'static str {
 }
 
 /// 预设 tag 色板（鲜艳且可区分）
-const TAG_COLORS: &[&str] = &[
+pub const TAG_COLORS: &[&str] = &[
     "#ef4444", "#f97316", "#f59e0b", "#eab308", "#84cc16",
     "#10b981", "#06b6d4", "#3b82f6", "#8b5cf6", "#ec4899",
 ];
 
 /// 根据 tag 字符串 hash 稳定取色（同一 tag 始终同色）
-fn tag_color(tag: &str) -> &'static str {
+pub fn tag_color(tag: &str) -> &'static str {
     let hash: u32 = tag.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
     TAG_COLORS[(hash as usize) % TAG_COLORS.len()]
 }
 
 /// 节点边框颜色（选中态）
-fn get_node_stroke(is_selected: bool) -> &'static str {
+pub fn get_node_stroke(is_selected: bool) -> &'static str {
     if is_selected { "#f97316" } else { "#ffffff" }
 }
 
 /// 节点边框宽度
-fn get_node_stroke_width(is_selected: bool) -> &'static str {
+pub fn get_node_stroke_width(is_selected: bool) -> &'static str {
     if is_selected { "3" } else { "2" }
 }
 
-fn get_node_opacity(is_highlighted: bool, is_selected: bool) -> &'static str {
+pub fn get_node_opacity(is_highlighted: bool, is_selected: bool) -> &'static str {
     if is_selected || is_highlighted { "1" } else { "0.4" }
 }
 
-fn get_node_glow(is_highlighted: bool, is_selected: bool) -> String {
+pub fn get_node_glow(is_highlighted: bool, is_selected: bool) -> String {
     if is_selected {
         "filter: drop-shadow(0 0 8px rgba(249, 115, 22, 0.6));".to_string()
     } else if is_highlighted {
@@ -93,7 +93,7 @@ fn get_node_glow(is_highlighted: bool, is_selected: bool) -> String {
 }
 
 /// 节点基础半径（按类型）
-fn base_node_radius(node_type: &str) -> f64 {
+pub fn base_node_radius(node_type: &str) -> f64 {
     match node_type {
         "knowledge_node" => 26.0,
         "short_term" => 22.0,
@@ -104,7 +104,7 @@ fn base_node_radius(node_type: &str) -> f64 {
 }
 
 /// 根据信息量（tags 数量、是否有简介、名称长度）动态计算节点半径
-fn dynamic_node_radius(node: &GraphNode) -> f64 {
+pub fn dynamic_node_radius(node: &GraphNode) -> f64 {
     let mut r = base_node_radius(&node.node_type);
     // 每个 tag +2（最多 +12）
     r += (node.tags.len() * 2).min(12) as f64;
@@ -149,7 +149,7 @@ fn tag_label_width(tag: &str) -> f64 {
 }
 
 /// 边颜色（根据关系类型）
-fn get_edge_color(relation_type: &str) -> &'static str {
+pub fn get_edge_color(relation_type: &str) -> &'static str {
     match relation_type {
         "属于" => "#ef4444",
         "引用" => "#3b82f6",
@@ -162,7 +162,7 @@ fn get_edge_color(relation_type: &str) -> &'static str {
 }
 
 /// 边虚线样式（根据关系类型）
-fn get_edge_dash(relation_type: &str) -> &'static str {
+pub fn get_edge_dash(relation_type: &str) -> &'static str {
     match relation_type {
         "引用" | "依赖" => "5,5",
         _ => "none",
