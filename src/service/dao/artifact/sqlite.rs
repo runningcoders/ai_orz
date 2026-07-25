@@ -184,30 +184,41 @@ WHERE id = ? AND "status" != 0
         Ok(page.items)
     }
 
-    async fn count_by_project(&self, ctx: RequestContext, project_id: &str) -> Result<i64> {
-        let pool = ctx.db_pool();
-        let row = sqlx::query!(
-            r#"
-SELECT COUNT(*) as count FROM artifacts WHERE project_id = ? AND "status" != 0
-"#,
-            project_id
+    async fn count_by_project(&self, ctx: RequestContext, project_id: &str) -> Result<u64> {
+        // 语法糖：调用通用 count
+        self.count(
+            ctx,
+            ArtifactQuery {
+                project_id: Some(project_id.to_string()),
+                ..Default::default()
+            },
         )
-        .fetch_one(pool)
-        .await?;
-        Ok(row.count)
+        .await
     }
 
-    async fn count_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<i64> {
-        let pool = ctx.db_pool();
-        let row = sqlx::query!(
-            r#"
-SELECT COUNT(*) as count FROM artifacts WHERE task_id = ? AND "status" != 0
-"#,
-            task_id
+    async fn count_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<u64> {
+        // 语法糖：调用通用 count
+        self.count(
+            ctx,
+            ArtifactQuery {
+                task_id: Some(task_id.to_string()),
+                ..Default::default()
+            },
         )
-        .fetch_one(pool)
-        .await?;
-        Ok(row.count)
+        .await
+    }
+
+    async fn count(&self, ctx: RequestContext, query: ArtifactQuery) -> Result<u64> {
+        let pool = ctx.db_pool();
+        let mut count_builder = QueryBuilder::new(
+            r#"SELECT COUNT(*) FROM artifacts WHERE "status" != 0"#,
+        );
+        push_query_filters(&mut count_builder, &query);
+        let total: i64 = count_builder
+            .build_query_scalar()
+            .fetch_one(pool)
+            .await?;
+        Ok(total as u64)
     }
 
     async fn update_status(&self, ctx: RequestContext, id: &str, status: i32) -> Result<()> {

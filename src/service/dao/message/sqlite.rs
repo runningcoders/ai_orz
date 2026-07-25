@@ -108,52 +108,7 @@ impl MessageDao for MessageDaoSqliteImpl {
     async fn query(&self, ctx: RequestContext, query: MessageQuery) -> Result<Vec<MessagePo>> {
         // 使用 sqlx::QueryBuilder 动态构建查询
         let mut builder = sqlx::QueryBuilder::new("SELECT * FROM messages WHERE 1=1");
-
-        // 默认软删除过滤：排除 Recalled (0) 状态的消息
-        // 如果用户显式指定了 status_in，则使用用户指定的状态（可能包含 0）
-        if query.status_in.is_none() {
-            builder.push(" AND \"status\" != 0");
-        }
-
-        // 逐个添加查询条件
-        if let Some(id) = &query.id {
-            builder.push(" AND id = ").push_bind(id);
-        }
-        if let Some(ids) = &query.ids {
-            if !ids.is_empty() {
-                builder.push(" AND id IN (");
-                let mut separated = builder.separated(", ");
-                for id in ids {
-                    separated.push_bind(id);
-                }
-                separated.push_unseparated(")");
-            }
-        }
-        if let Some(task_id) = &query.task_id {
-            builder.push(" AND task_id = ").push_bind(task_id);
-        }
-        if let Some(project_id) = &query.project_id {
-            builder.push(" AND project_id = ").push_bind(project_id);
-        }
-        if let Some(from_id) = &query.from_id {
-            builder.push(" AND from_id = ").push_bind(from_id);
-        }
-        if let Some(to_id) = &query.to_id {
-            builder.push(" AND to_id = ").push_bind(to_id);
-        }
-        if let Some(status_in) = &query.status_in {
-            if !status_in.is_empty() {
-                builder.push(" AND status IN (");
-                let mut separated = builder.separated(", ");
-                for s in status_in {
-                    separated.push_bind(*s as i32);
-                }
-                separated.push_unseparated(")");
-            }
-        }
-        if let Some(org_id) = &query.organization_id {
-            builder.push(" AND organization_id = ").push_bind(org_id);
-        }
+        push_query_filters(&mut builder, &query);
 
         // 添加排序
         if let Some(order_by) = &query.order_by {
@@ -283,14 +238,25 @@ UPDATE messages SET "status" = 0, updated_at = ?, modified_by = ? WHERE id = ?
     }
 
     async fn count_by_task_id(&self, ctx: RequestContext, task_id: &str) -> Result<u64> {
-        let count = sqlx::query!(
-            r#"SELECT COUNT(*) as count FROM messages WHERE task_id = ? AND "status" != 0"#,
-            task_id
+        // 语法糖：调用通用 count
+        self.count(
+            ctx,
+            MessageQuery {
+                task_id: Some(task_id.to_string()),
+                ..Default::default()
+            },
         )
-        .fetch_one(ctx.db_pool())
-        .await?;
+        .await
+    }
 
-        Ok(count.count as u64)
+    async fn count(&self, ctx: RequestContext, query: MessageQuery) -> Result<u64> {
+        let mut builder = sqlx::QueryBuilder::new("SELECT COUNT(*) FROM messages WHERE 1=1");
+        push_query_filters(&mut builder, &query);
+        let total: i64 = builder
+            .build_query_scalar()
+            .fetch_one(ctx.db_pool())
+            .await?;
+        Ok(total as u64)
     }
 
     async fn delete_by_task_id(&self, ctx: RequestContext, task_id: &str) -> Result<()> {
@@ -558,5 +524,61 @@ WHERE messages_fts MATCH "#,
             .collect();
 
         Ok(results)
+    }
+}
+
+/// 推送查询过滤条件到 QueryBuilder（COUNT 和 LIST 查询复用）
+///
+/// 默认软删除过滤：当未显式指定 status_in 时，排除 Recalled (0) 状态的消息
+fn push_query_filters<'args>(
+    builder: &mut sqlx::QueryBuilder<'args, sqlx::Sqlite>,
+    query: &MessageQuery,
+) {
+    // 默认软删除过滤：排除 Recalled (0) 状态的消息
+    // 如果用户显式指定了 status_in，则使用用户指定的状态（可能包含 0）
+    if query.status_in.is_none() {
+        builder.push(" AND \"status\" != 0");
+    }
+
+    // 逐个添加查询条件
+    if let Some(id) = &query.id {
+        builder.push(" AND id = ").push_bind(id.clone());
+    }
+    if let Some(ids) = &query.ids {
+        if !ids.is_empty() {
+            builder.push(" AND id IN (");
+            let mut separated = builder.separated(", ");
+            for id in ids {
+                separated.push_bind(id.clone());
+            }
+            separated.push_unseparated(")");
+        }
+    }
+    if let Some(task_id) = &query.task_id {
+        builder.push(" AND task_id = ").push_bind(task_id.clone());
+    }
+    if let Some(project_id) = &query.project_id {
+        builder.push(" AND project_id = ").push_bind(project_id.clone());
+    }
+    if let Some(from_id) = &query.from_id {
+        builder.push(" AND from_id = ").push_bind(from_id.clone());
+    }
+    if let Some(to_id) = &query.to_id {
+        builder.push(" AND to_id = ").push_bind(to_id.clone());
+    }
+    if let Some(status_in) = &query.status_in {
+        if !status_in.is_empty() {
+            builder.push(" AND status IN (");
+            let mut separated = builder.separated(", ");
+            for s in status_in {
+                separated.push_bind(*s as i32);
+            }
+            separated.push_unseparated(")");
+        }
+    }
+    if let Some(org_id) = &query.organization_id {
+        builder
+            .push(" AND organization_id = ")
+            .push_bind(org_id.clone());
     }
 }

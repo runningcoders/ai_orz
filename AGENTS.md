@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-07-25（Canvas 改造扩展：通用 Gauge 抽象 + health/logs/triggers/agent_detail/tasks/workspace 六页面 canvas 化）
+> 最后更新：2026-07-25（通用 count 方法：DAO/DAL/Domain 三层透传，count 与 query 复用查询结构体和 SQL 拼接逻辑，特定 count 方法退化为语法糖）
 
 ---
 
@@ -749,6 +749,112 @@ let agents: Vec<Agent> = domain().agent_manage().query(ctx, q).await?;  // 应�
 
 ---
 
+### 4.10 通用 count 方法规范（强制执行，2026-07-25 新增）
+
+**核心原则：count 与 query 复用查询结构体和 SQL 拼接逻辑；特定 count_* 方法退化为语法糖直接调用通用 count**
+
+#### 设计哲学
+
+| 接口类型 | 职责 | SQL 复用 | 返回 |
+|---------|------|---------|------|
+| **count（核心）** | 统计符合 Query 条件的总数 | 复用 `push_query_filters`，只跑 `SELECT COUNT(*)` 不跑 LIST | `u64` |
+| **count_by_xxx（语法糖）** | 针对单字段条件的快捷方法 | 内部构造 Query 后调用通用 count | `u64` |
+
+**与 4.9 分页规范的关系**：4.9 规定 `query` 返回 `PagedResult<T>`（含 items + total），其中 total 来自 COUNT 查询；本规范将 COUNT 抽取为独立的通用方法，避免每次只为拿 total 跑完整 query。
+
+#### 三层透传链路
+
+```
+Handler                   Domain                   DAL                   DAO
+   │                        │                       │                     │
+   ├─ XxxQuery ──────────► count_xxx(ctx, query) ─► count(ctx, query) ─► SELECT COUNT(*)
+   │  (复用 Query 结构体)    (透传 DAL)              (透传 DAO)            │
+   │                                                │                     │
+   ◄─ u64 ────────────── ◄─ u64 ──────────────── ◄─ u64 ───────────── ◄─ COUNT(*) AS total
+```
+
+**关键约束**：
+- 三层 count 方法的签名统一：`async fn count(&self, ctx: RequestContext, query: XxxQuery) -> Result<u64>`
+- Domain 层方法命名可以叫 `count_agents` / `count_projects` 等（更贴近业务语义），但内部只透传 DAL 的 `count`
+- 特定的 `count_by_xxx` 方法（如 `count_by_assignee`、`count_by_root_user_and_status`）一律改为构造 Query 后调用通用 count
+
+#### DAO 层实现模式
+
+每个 DAO 的 sqlite.rs 必须复用 `push_query_filters`（与 `query` 方法共享同一套 WHERE 条件）：
+
+```rust
+async fn count(&self, ctx: RequestContext, query: XxxQuery) -> Result<u64> {
+    let pool = ctx.db_pool();
+    let mut count_builder = sqlx::QueryBuilder::new("SELECT COUNT(*) FROM xxx WHERE 1=1");
+    push_query_filters(&mut count_builder, &query);  // 复用与 query 相同的过滤逻辑
+    let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
+    Ok(total as u64)
+}
+
+/// 语法糖：按 assignee 统计
+async fn count_by_assignee(&self, ctx: RequestContext, assignee_id: &str) -> Result<u64> {
+    // 语法糖：调用通用 count
+    self.count(ctx, XxxQuery {
+        assignee_id: Some(assignee_id.to_string()),
+        ..Default::default()
+    }).await
+}
+```
+
+#### 各层实现要点
+
+| 层级 | 实现要求 |
+|------|---------|
+| **DAO** | `count(ctx, query)` 复用 `push_query_filters`；所有 `count_by_xxx` 改为构造 Query 后调用 `self.count(...)` |
+| **DAL** | `count(ctx, query)` 透传 DAO；所有 `count_by_xxx` 改为构造 Query 后调用 `self.count(...)` |
+| **Domain** | `count_xxx(ctx, query)` 透传 DAL；特定 `count_by_xxx` 同样构造 Query 后调用通用 `count_xxx` |
+
+#### 已落地的实体
+
+| 实体 | 通用 count | 退化为语法糖的方法 |
+|------|-----------|------------------|
+| Agent | ✅ `AgentDao::count(ctx, AgentQuery)` | （无特定 count 方法） |
+| Project | ✅ `ProjectDao::count(ctx, ProjectQuery)` | `count_by_root_user`、`count_by_root_user_and_status` |
+| Task | ✅ `TaskDao::count(ctx, TaskQuery)` | `count_by_assignee`、`count_by_assignee_and_status` |
+| Message | ✅ `MessageDao::count(ctx, MessageQuery)` | `count_by_task_id` |
+| Artifact | ✅ `ArtifactDao::count(ctx, ArtifactQuery)` | `count_by_project`、`count_by_task` |
+| User | ✅ `UserDao::count(ctx, UserQuery)` | `count_by_organization_id` |
+| Organization | ✅ `OrganizationDao::count(ctx, OrganizationQuery)` | `count_all` |
+
+#### 禁止的写法
+
+```rust
+// ❌ 禁止：在 count 方法中独立拼接 WHERE 条件，不复用 push_query_filters
+async fn count(&self, ctx: RequestContext, query: XxxQuery) -> Result<u64> {
+    let mut sql = String::from("SELECT COUNT(*) FROM xxx WHERE 1=1");
+    if query.assignee_id.is_some() { sql.push_str(" AND assignee_id = ?"); }  // 应复用 push_query_filters
+    // ...
+}
+
+// ❌ 禁止：count_by_xxx 方法独立实现 SQL，不调用通用 count
+async fn count_by_assignee(&self, ctx: RequestContext, assignee_id: &str) -> Result<u64> {
+    let count = sqlx::query!("SELECT COUNT(*) FROM xxx WHERE assignee_id = ?", assignee_id)
+        .fetch_one(ctx.db_pool()).await?;
+    Ok(count.count as u64)  // 应改为 self.count(ctx, XxxQuery { ... }).await
+}
+
+// ❌ 禁止：DAL/Domain 层独立实现 count 逻辑，不透传到 DAO
+async fn count_by_xxx(&self, ctx: RequestContext, ...) -> Result<u64> {
+    let items = self.query(ctx, ...).await?;  // 不能用 query 然后取 len()
+    Ok(items.len() as u64)
+}
+```
+
+#### 参考实现
+
+- **DAO 层**：`src/service/dao/project/sqlite.rs` 的 `count` + `count_by_root_user` + `count_by_root_user_and_status`
+- **DAL 层**：`src/service/dal/project.rs` 的 `count` + `count_by_root_user`（语法糖）
+- **Domain 层**：`src/service/domain/project/project.rs` 的 `count_projects`（透传 DAL）
+
+> 💡 **设计动机**：将 count 与 query 的 WHERE 条件统一到 `push_query_filters` 一处，避免「count 漏掉某个过滤条件」的常见 bug。特定 count 方法退化为语法糖后，新增查询条件时只需改 `push_query_filters` 一处，所有 count_by_xxx 自动同步。
+
+---
+
 ## 五、核心概念与实体关系
 
 ### 5.1 实体关系
@@ -781,6 +887,15 @@ Agent
 ## 六、工作流与开发记录
 
 > 💡 **记录原则**：仅保留最近里程碑的详细信息，早期里程碑按月汇总。所有重构背景、问题、解决方案、避坑指南归档在 [docs/LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md)，开发前建议先看该文档避免重蹈覆辙。
+
+### 2026-07-25 里程碑（通用 count 方法）
+**✅ 通用 count 方法三层透传 + 特定 count 退化为语法糖**
+- **设计动机**：health_metrics 6 个维度需要跨多个 domain 拿 count，发现各 DAO 的 count_by_xxx 方法各自实现 SQL，与 query 的 WHERE 条件不共享，存在「count 漏掉过滤条件」的隐患
+- **DAO 层通用 count**：7 个 DAO（Agent/Project/Task/Message/Artifact/User/Organization）trait 新增 `count(ctx, query) -> Result<u64>` 方法，统一复用 `push_query_filters` 拼接 WHERE 条件，只跑 `SELECT COUNT(*)` 不跑 LIST
+- **特定 count 退化为语法糖**：11 个 `count_by_xxx` 方法（如 `count_by_root_user`、`count_by_assignee_and_status`、`count_by_task_id`、`count_by_organization_id` 等）改为构造 Query 后调用通用 count，消除重复 SQL 拼接
+- **三层透传**：DAL 的 `count` 直接透传 DAO；Domain 层新增 `count_agents`/`count_projects`/`count_tasks`/`count_organizations`/`count_users` 等业务语义方法，内部透传 DAL
+- **测试统计**：14 个 count 相关测试全部通过（project/task/message/artifact/user/organization 各层覆盖）
+- **规范沉淀**：[AGENTS.md](./AGENTS.md) 新增 4.10 通用 count 方法规范
 
 ### 2026-07-25 里程碑（统计图表 Phase 1）
 **✅ 统计图表基础设施 + 实体详情页时序图**

@@ -592,7 +592,15 @@ impl TaskDal for TaskDalImpl {
         ctx: RequestContext,
         assignee_id: &str,
     ) -> Result<u64> {
-        self.task_dao.count_by_assignee(ctx, assignee_id).await
+        // 语法糖：调用通用 count
+        self.count(
+            ctx,
+            TaskQuery {
+                assignee_id: Some(assignee_id.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     async fn count_by_assignee_and_status(
@@ -601,9 +609,16 @@ impl TaskDal for TaskDalImpl {
         assignee_id: &str,
         status: TaskStatus,
     ) -> Result<u64> {
-        self.task_dao
-            .count_by_assignee_and_status(ctx, assignee_id, status)
-            .await
+        // 语法糖：调用通用 count
+        self.count(
+            ctx,
+            TaskQuery {
+                assignee_id: Some(assignee_id.to_string()),
+                status_in: Some(vec![status]),
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     // ==================== 统计查询 ====================

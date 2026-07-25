@@ -71,6 +71,9 @@ pub trait OrganizationDal: Send + Sync {
 
     /// 统计组织总数
     async fn count_organizations(&self, ctx: RequestContext) -> Result<u64>;
+
+    /// 统计符合查询条件的组织数量（透传 DAO count）
+    async fn count(&self, ctx: RequestContext, query: OrganizationQuery) -> Result<u64>;
 }
 
 // ==================== DAL 实现 ====================
@@ -120,6 +123,11 @@ impl OrganizationDal for OrganizationDalImpl {
     }
 
     async fn count_organizations(&self, ctx: RequestContext) -> Result<u64> {
-        self.organization_dao.count_all(ctx).await
+        // 语法糖：调用通用 count
+        self.count(ctx, OrganizationQuery::default()).await
+    }
+
+    async fn count(&self, ctx: RequestContext, query: OrganizationQuery) -> Result<u64> {
+        self.organization_dao.count(ctx, query).await
     }
 }

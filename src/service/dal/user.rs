@@ -76,6 +76,9 @@ pub trait UserDal: Send + Sync {
         ctx: RequestContext,
         org_id: &str,
     ) -> Result<u64>;
+
+    /// 统计符合查询条件的用户数量（透传 DAO count）
+    async fn count(&self, ctx: RequestContext, query: UserQuery) -> Result<u64>;
 }
 
 // ==================== DAL 实现 ====================
@@ -145,6 +148,18 @@ impl UserDal for UserDalImpl {
         ctx: RequestContext,
         org_id: &str,
     ) -> Result<u64> {
-        self.user_dao.count_by_organization_id(ctx, org_id).await
+        // 语法糖：调用通用 count
+        self.count(
+            ctx,
+            UserQuery {
+                organization_id: Some(org_id.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+    }
+
+    async fn count(&self, ctx: RequestContext, query: UserQuery) -> Result<u64> {
+        self.user_dao.count(ctx, query).await
     }
 }

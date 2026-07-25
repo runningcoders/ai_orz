@@ -31,6 +31,9 @@ pub trait OrganizationDao: Send + Sync {
     async fn update(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<()>;
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()>;
     async fn count_all(&self, ctx: RequestContext) -> Result<u64>;
+
+    /// 统计符合查询条件的组织数量（复用 query 的 filter 逻辑，只跑 COUNT 不跑 LIST）
+    async fn count(&self, ctx: RequestContext, query: OrganizationQuery) -> Result<u64>;
 }
 
 pub mod sqlite;

@@ -59,6 +59,9 @@ pub trait UserDao: Send + Sync {
         ctx: RequestContext,
         org_id: &str,
     ) -> Result<u64>;
+
+    /// 统计符合查询条件的用户数量（复用 query 的 filter 逻辑，只跑 COUNT 不跑 LIST）
+    async fn count(&self, ctx: RequestContext, query: UserQuery) -> Result<u64>;
 }
 
 pub mod sqlite;

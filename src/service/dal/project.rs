@@ -425,7 +425,15 @@ impl ProjectDal for ProjectDalImpl {
         ctx: RequestContext,
         root_user_id: &str,
     ) -> Result<u64> {
-        self.project_dao.count_by_root_user(ctx, root_user_id).await
+        // 语法糖：调用通用 count
+        self.count(
+            ctx,
+            ProjectQuery {
+                root_user_id: Some(root_user_id.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     async fn count_by_root_user_and_status(
@@ -434,9 +442,16 @@ impl ProjectDal for ProjectDalImpl {
         root_user_id: &str,
         status: ProjectStatus,
     ) -> Result<u64> {
-        self.project_dao
-            .count_by_root_user_and_status(ctx, root_user_id, status)
-            .await
+        // 语法糖：调用通用 count
+        self.count(
+            ctx,
+            ProjectQuery {
+                root_user_id: Some(root_user_id.to_string()),
+                status_in: Some(vec![status]),
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     // ==================== 搜索 ====================

@@ -225,14 +225,15 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         ctx: RequestContext,
         root_user_id: &str,
     ) -> Result<u64> {
-        let pool = ctx.db_pool();
-        let count = sqlx::query!(
-            "SELECT COUNT(*) as cnt FROM projects WHERE root_user_id = ? AND \"status\" != 0",
-            root_user_id
+        // 语法糖：调用通用 count
+        self.count(
+            ctx,
+            ProjectQuery {
+                root_user_id: Some(root_user_id.to_string()),
+                ..Default::default()
+            },
         )
-        .fetch_one(pool)
-        .await?;
-        Ok(count.cnt as u64)
+        .await
     }
 
     async fn count_by_root_user_and_status(
@@ -241,16 +242,16 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         root_user_id: &str,
         status: ProjectStatus,
     ) -> Result<u64> {
-        let pool = ctx.db_pool();
-        let status_i32 = status as i32;
-        let count = sqlx::query!(
-            "SELECT COUNT(*) as cnt FROM projects WHERE root_user_id = ? AND \"status\" = ?",
-            root_user_id,
-            status_i32
+        // 语法糖：调用通用 count
+        self.count(
+            ctx,
+            ProjectQuery {
+                root_user_id: Some(root_user_id.to_string()),
+                status_in: Some(vec![status]),
+                ..Default::default()
+            },
         )
-        .fetch_one(pool)
-        .await?;
-        Ok(count.cnt as u64)
+        .await
     }
 
     async fn count(&self, ctx: RequestContext, query: ProjectQuery) -> Result<u64> {

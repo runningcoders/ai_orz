@@ -85,6 +85,9 @@ pub trait ArtifactDal: Send + Sync {
     /// 统计任务下的产物数量
     async fn count_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<u64>;
 
+    /// 统计符合查询条件的产物数量（透传 DAO count）
+    async fn count(&self, ctx: RequestContext, query: ArtifactQuery) -> Result<u64>;
+
     /// Update an existing artifact full record.
     async fn update(&self, ctx: RequestContext, artifact: &Artifact) -> Result<()>;
 
@@ -172,17 +175,31 @@ impl ArtifactDal for ArtifactDalImpl {
         ctx: RequestContext,
         project_id: &str,
     ) -> Result<u64> {
-        self.artifact_dao
-            .count_by_project(ctx, project_id)
-            .await
-            .map(|v| v as u64)
+        // 语法糖：调用通用 count
+        self.count(
+            ctx,
+            ArtifactQuery {
+                project_id: Some(project_id.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     async fn count_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<u64> {
-        self.artifact_dao
-            .count_by_task(ctx, task_id)
-            .await
-            .map(|v| v as u64)
+        // 语法糖：调用通用 count
+        self.count(
+            ctx,
+            ArtifactQuery {
+                task_id: Some(task_id.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+    }
+
+    async fn count(&self, ctx: RequestContext, query: ArtifactQuery) -> Result<u64> {
+        self.artifact_dao.count(ctx, query).await
     }
 
     async fn update(&self, ctx: RequestContext, artifact: &Artifact) -> Result<()> {

@@ -221,14 +221,26 @@ UPDATE users SET status = 0, modified_by = ?, updated_at = ? WHERE id = ?
         ctx: RequestContext,
         org_id: &str,
     ) -> Result<u64> {
-        let count = sqlx::query!(
-            "SELECT COUNT(*) as count FROM users WHERE organization_id = ? AND status != 0",
-            org_id
+        // 语法糖：调用通用 count
+        self.count(
+            ctx,
+            UserQuery {
+                organization_id: Some(org_id.to_string()),
+                ..Default::default()
+            },
         )
-        .fetch_one(ctx.db_pool())
-        .await?;
+        .await
+    }
 
-        Ok(count.count as u64)
+    async fn count(&self, ctx: RequestContext, query: UserQuery) -> Result<u64> {
+        let pool = ctx.db_pool();
+        let mut count_builder = QueryBuilder::new("SELECT COUNT(*) FROM users WHERE status != 0");
+        push_query_filters(&mut count_builder, &query);
+        let total: i64 = count_builder
+            .build_query_scalar()
+            .fetch_one(pool)
+            .await?;
+        Ok(total as u64)
     }
 }
 

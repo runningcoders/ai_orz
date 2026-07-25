@@ -70,7 +70,24 @@ impl super::UserManage for super::OrganizationDomainImpl {
         ctx: RequestContext,
         org_id: &str,
     ) -> Result<u64> {
-        self.user_dal.count_by_organization_id(ctx, org_id).await
+        // 语法糖：调用通用 count_users
+        self.count_users(
+            ctx,
+            crate::service::dao::user::UserQuery {
+                organization_id: Some(org_id.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+    }
+
+    /// 统计符合查询条件的用户数量（透传 DAL count）
+    async fn count_users(
+        &self,
+        ctx: RequestContext,
+        query: crate::service::dao::user::UserQuery,
+    ) -> Result<u64> {
+        self.user_dal.count(ctx, query).await
     }
 
     /// 验证用户名密码（用于登录）

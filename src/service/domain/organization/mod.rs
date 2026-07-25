@@ -121,8 +121,12 @@ pub trait OrganizationManage: Send + Sync {
     /// 删除组织（软删除）
     async fn delete(&self, ctx: RequestContext, org_id: &str) -> Result<()>;
 
-    /// 统计组织总数
-    async fn count_organizations(&self, ctx: RequestContext) -> Result<u64>;
+    /// 统计符合查询条件的组织数量（透传 DAL count）
+    async fn count_organizations(
+        &self,
+        ctx: RequestContext,
+        query: crate::service::dao::organization::OrganizationQuery,
+    ) -> Result<u64>;
 }
 
 /// 用户管理 trait
@@ -182,6 +186,13 @@ pub trait UserManage: Send + Sync {
         &self,
         ctx: RequestContext,
         org_id: &str,
+    ) -> Result<u64>;
+
+    /// 统计符合查询条件的用户数量（透传 DAL count）
+    async fn count_users(
+        &self,
+        ctx: RequestContext,
+        query: crate::service::dao::user::UserQuery,
     ) -> Result<u64>;
 
     /// 验证用户名密码（用于登录）

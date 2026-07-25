@@ -41,10 +41,13 @@ pub trait ArtifactDao: Send + Sync + std::fmt::Debug {
     async fn list_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<Vec<ArtifactPo>>;
 
     /// Count artifacts for a project
-    async fn count_by_project(&self, ctx: RequestContext, project_id: &str) -> Result<i64>;
+    async fn count_by_project(&self, ctx: RequestContext, project_id: &str) -> Result<u64>;
 
     /// Count artifacts for a task
-    async fn count_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<i64>;
+    async fn count_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<u64>;
+
+    /// 统计符合查询条件的产物数量（复用 query 的 filter 逻辑，只跑 COUNT 不跑 LIST）
+    async fn count(&self, ctx: RequestContext, query: ArtifactQuery) -> Result<u64>;
 
     /// Update artifact status (soft delete)
     async fn update_status(&self, ctx: RequestContext, id: &str, status: i32) -> Result<()>;

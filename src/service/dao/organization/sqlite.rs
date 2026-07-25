@@ -151,6 +151,13 @@ UPDATE organizations SET status = 0, modified_by = ?, updated_at = ? WHERE id = 
     }
 
     async fn count_all(&self, ctx: RequestContext) -> Result<u64> {
+        // 语法糖：调用通用 count
+        self.count(ctx, OrganizationQuery::default()).await
+    }
+
+    async fn count(&self, ctx: RequestContext, _query: OrganizationQuery) -> Result<u64> {
+        // OrganizationQuery 当前只有 limit 字段，对 count 无影响
+        // 软删除过滤：status != 0
         let count =
             sqlx::query!(r#"SELECT COUNT(*) as count FROM organizations WHERE status != 0"#)
                 .fetch_one(ctx.db_pool())

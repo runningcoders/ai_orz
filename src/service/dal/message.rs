@@ -98,6 +98,9 @@ pub trait MessageDal: Send + Sync {
 
     async fn count_by_task_id(&self, ctx: RequestContext, task_id: &str) -> Result<u64>;
 
+    /// 统计符合查询条件的消息数量（透传 DAO count）
+    async fn count(&self, ctx: RequestContext, query: MessageQuery) -> Result<u64>;
+
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Message>>;
 
     async fn delete_message(&self, ctx: RequestContext, id: &str) -> Result<()>;
@@ -290,7 +293,19 @@ impl MessageDal for MessageDalImpl {
     }
 
     async fn count_by_task_id(&self, ctx: RequestContext, task_id: &str) -> Result<u64> {
-        self.message_dao.count_by_task_id(ctx, task_id).await
+        // 语法糖：调用通用 count
+        self.count(
+            ctx,
+            MessageQuery {
+                task_id: Some(task_id.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+    }
+
+    async fn count(&self, ctx: RequestContext, query: MessageQuery) -> Result<u64> {
+        self.message_dao.count(ctx, query).await
     }
 
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Message>> {

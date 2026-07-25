@@ -39,7 +39,11 @@ fn generate_user_id() -> String {
 impl super::OrganizationManage for super::OrganizationDomainImpl {
     /// 检查系统是否已经初始化
     async fn check_initialized(&self, ctx: RequestContext) -> Result<bool> {
-        let count = self.org_dal.count_organizations(ctx).await?;
+        // 语法糖：调用通用 count
+        let count = self
+            .org_dal
+            .count(ctx, crate::service::dao::organization::OrganizationQuery::default())
+            .await?;
         Ok(count > 0)
     }
 
@@ -121,8 +125,12 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
         self.org_dal.delete(ctx, org_id).await
     }
 
-    /// 统计组织总数
-    async fn count_organizations(&self, ctx: RequestContext) -> Result<u64> {
-        self.org_dal.count_organizations(ctx).await
+    /// 统计符合查询条件的组织数量（透传 DAL count）
+    async fn count_organizations(
+        &self,
+        ctx: RequestContext,
+        query: crate::service::dao::organization::OrganizationQuery,
+    ) -> Result<u64> {
+        self.org_dal.count(ctx, query).await
     }
 }

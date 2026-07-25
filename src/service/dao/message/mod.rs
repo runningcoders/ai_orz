@@ -117,6 +117,9 @@ pub trait MessageDao: Send + Sync {
     /// 统计指定任务的消息数量
     async fn count_by_task_id(&self, ctx: RequestContext, task_id: &str) -> Result<u64>;
 
+    /// 统计符合查询条件的消息数量（复用 query 的 filter 逻辑，只跑 COUNT 不跑 LIST）
+    async fn count(&self, ctx: RequestContext, query: MessageQuery) -> Result<u64>;
+
     /// 删除任务下所有消息（清空任务对话）
     async fn delete_by_task_id(&self, ctx: RequestContext, task_id: &str) -> Result<()>;
 

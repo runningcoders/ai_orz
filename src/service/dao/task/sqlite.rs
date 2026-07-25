@@ -390,14 +390,15 @@ UPDATE tasks SET "status" = ?, modified_by = ?, updated_at = ? WHERE id = ?
         ctx: RequestContext,
         assignee_id: &str,
     ) -> Result<u64> {
-        let pool = ctx.db_pool();
-        let row = sqlx::query!(
-            "SELECT COUNT(*) as \"count: i64\" FROM tasks WHERE assignee_id = ? AND \"status\" != 0",
-            assignee_id
+        // 语法糖：调用通用 count
+        self.count(
+            ctx,
+            TaskQuery {
+                assignee_id: Some(assignee_id.to_string()),
+                ..Default::default()
+            },
         )
-        .fetch_one(pool)
-        .await?;
-        Ok(row.count as u64)
+        .await
     }
 
     async fn count_by_assignee_and_status(
@@ -406,16 +407,16 @@ UPDATE tasks SET "status" = ?, modified_by = ?, updated_at = ? WHERE id = ?
         assignee_id: &str,
         status: TaskStatus,
     ) -> Result<u64> {
-        let pool = ctx.db_pool();
-        let status_i32 = status as i32;
-        let row = sqlx::query!(
-            "SELECT COUNT(*) as \"count: i64\" FROM tasks WHERE assignee_id = ? AND \"status\" = ?",
-            assignee_id,
-            status_i32
+        // 语法糖：调用通用 count
+        self.count(
+            ctx,
+            TaskQuery {
+                assignee_id: Some(assignee_id.to_string()),
+                status_in: Some(vec![status]),
+                ..Default::default()
+            },
         )
-        .fetch_one(pool)
-        .await?;
-        Ok(row.count as u64)
+        .await
     }
 
     async fn count(&self, ctx: RequestContext, query: TaskQuery) -> Result<u64> {
