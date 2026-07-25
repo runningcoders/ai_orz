@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-07-25（统计基础设施抽象：pkg/runtime_stats/ 泛型内存收集器）
+> 最后更新：2026-07-25（统计模块归并：runtime_stats 合并为 pkg/stats/runtime/ 子模块）
 
 ---
 
@@ -70,7 +70,7 @@
 | 📊 AOP 队列监控 | ✅ | 队列运行时监控 + 实时统计图表（HUD 风格折线图时序 + 环形图分布，纯内存收集器 60 分钟滑动窗口，5 秒轮询，埋点 publish/consume/success/failure） |
 | 💬 Workspace 对话机制 | ✅ | 底部对话框跟随当前视图（默认/Project/Agent），SSE 实时消息，HUD 流光提示未读消息源（橙色竖条 + 流动光晕动画），点击切换视图清除 |
 | 📊 统计图表可视化 | ✅ | HUD 风格 Canvas 图表：折线图（4 个实体详情页展示模型调用趋势，消费 model_call_time_series；AOP 页面展示最近 60 分钟事件时序）+ 环形图（Project 详情页展示任务状态分布，AOP 页面展示状态/消费者分布，消费 DonutSlice 通用数据结构）；共享 hud_palette 背景工具，2.4s 呼吸光晕动画 |
-| 📊 运行时统计基础设施 | ✅ | pkg/runtime_stats/ 泛型内存收集器（RuntimeStatsCollector\<K\>），与 pkg/stats/ DuckDB 持久化互补；AOP 已接入（AopStatsCollector wrap），未来 SSE/WS 连接数、Channel 推送指标等运行时场景可直接复用 |
+| 📊 运行时统计基础设施 | ✅ | pkg/stats/runtime/ 泛型内存收集器（RuntimeStatsCollector\<K\>），与 pkg/stats/ 顶层 DuckDB 持久化互补；AOP 已接入（AopStatsCollector wrap），未来 SSE/WS 连接数、Channel 推送指标等运行时场景可直接复用 |
 
 ### 1.3 整体完成度与测试统计（2026-07-25 更新）
 
@@ -232,7 +232,7 @@ ai_orz/
 | **向量存储抽象** | `src/pkg/storage/vector.rs` | `VectorStore` trait |
 | **日志宏** | `src/pkg/logging.rs` + `ai-orz-macros` | `log_info!`, `log_error!` |
 | **统计事件宏** | `src/pkg/stats/` + `ai-orz-macros` | `record_event!` |
-| **运行时统计基础设施** | `src/pkg/runtime_stats/` | `RuntimeStatsCollector<K>`（内存版，与 `pkg/stats/` DuckDB 持久化版互补） |
+| **运行时统计基础设施** | `src/pkg/stats/runtime/` | `RuntimeStatsCollector<K>`（内存版，与 `pkg/stats/` 顶层 DuckDB 持久化版互补） |
 | **JWT 工具** | `src/pkg/jwt.rs` | `encode_token`, `decode_token` |
 
 **反模式（禁止）：**
