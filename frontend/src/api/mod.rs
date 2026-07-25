@@ -6,6 +6,7 @@
 pub mod auth;
 pub mod finance;
 pub mod hr;
+pub mod log_stats;
 pub mod message;
 pub mod organization;
 pub mod project;
