@@ -307,7 +307,7 @@ pub fn HrKnowledgeGraph() -> Element {
                         }
                         div { class: "space-y-2",
                             div { class: "flex flex-wrap items-center gap-4 text-sm",
-                                span { class: "text-base-content/70", "点击节点展开关联知识" }
+                                span { class: "text-base-content/70", "点击节点展开关联知识 · 选中节点显示扫描环 · 未选中节点呼吸光晕" }
                                 div { class: "flex items-center gap-3",
                                     span { class: "flex items-center gap-1",
                                         span { class: "w-3 h-3 rounded-full", style: "background: #3b82f6;" }
@@ -351,6 +351,8 @@ pub fn HrKnowledgeGraph() -> Element {
                                         "依赖"
                                     }
                                 }
+                                p { class: "text-xs text-base-content/60 mt-2",
+                                    "实线边流光表示活跃数据流向 · 虚线边表示引用/依赖关系 · 选中节点的关联边流光加速" }
                             }
                         }
                     }

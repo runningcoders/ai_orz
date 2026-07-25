@@ -169,6 +169,16 @@ fn get_edge_dash(relation_type: &str) -> &'static str {
     }
 }
 
+/// 边是否使用流光动画（实线边都加流光，虚线边保持静态）
+fn edge_use_flow(relation_type: &str) -> bool {
+    !matches!(relation_type, "引用" | "依赖")
+}
+
+/// 计算两点间距离（用于 stroke-dasharray 估算）
+fn edge_length(sx: f64, sy: f64, tx: f64, ty: f64) -> f64 {
+    ((tx - sx).powi(2) + (ty - sy).powi(2)).sqrt()
+}
+
 fn calculate_edge_angle(sx: f64, sy: f64, tx: f64, ty: f64) -> f64 {
     let dx = tx - sx;
     let dy = ty - sy;
@@ -335,7 +345,7 @@ pub fn Graph(props: GraphProps) -> Element {
             width: "{svg_width}",
             height: "{svg_height}",
             view_box: "0 0 {svg_width} {svg_height}",
-            class: "border border-base-300 rounded-lg bg-base-100",
+            class: "kg-bg rounded-lg",
             onmousemove: move |e: MouseEvent| {
                 let e2 = e.clone();
                 handle_mouse_move(e);
@@ -346,6 +356,12 @@ pub fn Graph(props: GraphProps) -> Element {
             onwheel: handle_wheel,
             oncontextmenu: handle_context_menu,
             onmousedown: handle_pan_start,
+
+            // HUD 四角装饰
+            path { class: "kg-corner", d: "M 8 20 L 8 8 L 20 8" }
+            path { class: "kg-corner", d: "M {svg_width - 20} 8 L {svg_width - 8} 8 L {svg_width - 8} 20" }
+            path { class: "kg-corner", d: "M 8 {svg_height - 20} L 8 {svg_height - 8} L 20 {svg_height - 8}" }
+            path { class: "kg-corner", d: "M {svg_width - 20} {svg_height - 8} L {svg_width - 8} {svg_height - 8} L {svg_width - 8} {svg_height - 20}" }
 
             g {
                 transform: "translate({tx}, {ty}) scale({scale})",
@@ -371,6 +387,10 @@ pub fn Graph(props: GraphProps) -> Element {
                 {
                     let edge_color = get_edge_color(&edge.label);
                     let edge_dash = get_edge_dash(&edge.label);
+                    let use_flow = edge_use_flow(&edge.label);
+                    let len = edge_length(sx, sy, tx, ty);
+                    let edge_class = if use_flow { "kg-edge-flow kg-edge-glow" } else { "kg-edge-glow" };
+                    let edge_style = format!("--len: {len}px; color: {edge_color};");
                     let label_text = if !edge.label.is_empty() {
                         Some(edge.label.chars().take(10).collect::<String>())
                     } else {
@@ -385,6 +405,8 @@ pub fn Graph(props: GraphProps) -> Element {
                             stroke: "{edge_color}",
                             stroke_width: "2",
                             stroke_dasharray: "{edge_dash}",
+                            class: "{edge_class}",
+                            style: "{edge_style}",
                             marker_end: "url(#arrowhead)",
                         }
                         if let Some(ref label) = label_text {
@@ -435,6 +457,22 @@ pub fn Graph(props: GraphProps) -> Element {
                     let border_r = radius + 3.0;
                     let arcs = tag_border_arcs(nx, ny, border_r, &node.tags);
 
+                    // HUD 外环半径（仅选中态显示旋转刻度环）
+                    let ring_r = radius + 8.0;
+                    // 扫描环初始/结束半径（仅选中态）
+                    let scan_r0 = radius + 4.0;
+                    let scan_r1 = radius + 22.0;
+                    let scan_style = format!("--r0: {scan_r0}px; --r1: {scan_r1}px;");
+                    // 外环四向刻度端点
+                    let ring_top_y1 = ny - ring_r - 3.0;
+                    let ring_top_y2 = ny - ring_r + 3.0;
+                    let ring_right_x1 = nx + ring_r - 3.0;
+                    let ring_right_x2 = nx + ring_r + 3.0;
+                    let ring_bot_y1 = ny + ring_r - 3.0;
+                    let ring_bot_y2 = ny + ring_r + 3.0;
+                    let ring_left_x1 = nx - ring_r - 3.0;
+                    let ring_left_x2 = nx - ring_r + 3.0;
+
                     // 节点上方 tags 标签：横向居中排列
                     let tag_label_y = ny - radius - 16.0;
                     let tag_widths: Vec<(String, f64, &'static str)> = node.tags.iter()
@@ -449,8 +487,12 @@ pub fn Graph(props: GraphProps) -> Element {
                     });
                     let label_text = node.label.chars().take(10).collect::<String>();
 
+                    // HUD 节点组 class：出现动画 + hover 放大
+                    let node_group_class = "kg-node-appear kg-node-group";
+
                     rsx! {
                         g {
+                            class: "{node_group_class}",
                             cursor: "move",
                             style: "{glow}",
                             opacity: "{opacity}",
@@ -462,6 +504,56 @@ pub fn Graph(props: GraphProps) -> Element {
                                 e.stop_propagation();
                                 handle_node_drag_start_with_event(e, node.id.clone());
                             },
+
+                            // 选中态：向外扩散的扫描环波纹（雷达扫描效果）
+                            if is_selected {
+                                circle {
+                                    class: "kg-scan-ring",
+                                    cx: "{nx}",
+                                    cy: "{ny}",
+                                    r: "{scan_r0}",
+                                    fill: "none",
+                                    stroke: "{fill}",
+                                    stroke_width: "2",
+                                    style: "{scan_style}",
+                                }
+                            }
+
+                            // 选中态：HUD 外环刻度旋转（瞄准镜风格）
+                            if is_selected {
+                                g {
+                                    class: "kg-ring-spin",
+                                    style: "transform-origin: {nx}px {ny}px;",
+                                    circle {
+                                        cx: "{nx}",
+                                        cy: "{ny}",
+                                        r: "{ring_r}",
+                                        fill: "none",
+                                        stroke: "{fill}",
+                                        stroke_width: "1",
+                                        stroke_dasharray: "3 6",
+                                        opacity: "0.6",
+                                    }
+                                    // 四个刻度小线段（上/右/下/左）
+                                    line { x1: "{nx}", y1: "{ring_top_y1}", x2: "{nx}", y2: "{ring_top_y2}", stroke: "{fill}", stroke_width: "1.5" }
+                                    line { x1: "{ring_right_x1}", y1: "{ny}", x2: "{ring_right_x2}", y2: "{ny}", stroke: "{fill}", stroke_width: "1.5" }
+                                    line { x1: "{nx}", y1: "{ring_bot_y1}", x2: "{nx}", y2: "{ring_bot_y2}", stroke: "{fill}", stroke_width: "1.5" }
+                                    line { x1: "{ring_left_x1}", y1: "{ny}", x2: "{ring_left_x2}", y2: "{ny}", stroke: "{fill}", stroke_width: "1.5" }
+                                }
+                            }
+
+                            // 未选中态：微弱呼吸光晕（节点类型色光圈）
+                            if !is_selected {
+                                circle {
+                                    cx: "{nx}",
+                                    cy: "{ny}",
+                                    r: "{radius + 2.0}",
+                                    fill: "none",
+                                    stroke: "{fill}",
+                                    stroke_width: "2",
+                                    style: "animation: kg-node-pulse 2.4s ease-in-out infinite; transform-origin: {nx}px {ny}px; transform-box: view-box;",
+                                }
+                            }
 
                             // 多色边框 arc 段
                             for (d, color) in arcs.iter() {
@@ -503,7 +595,7 @@ pub fn Graph(props: GraphProps) -> Element {
                                     y: "{ny + radius + 11.0}",
                                     text_anchor: "middle",
                                     font_size: "8",
-                                    fill: "#6b7280",
+                                    fill: "#9ca3af",
                                     "{summary}"
                                 }
                             }

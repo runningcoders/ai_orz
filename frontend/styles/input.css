@@ -110,3 +110,92 @@
   filter: blur(0.5px);
   animation: hud-streak-flow 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+/* ============================================================
+ * 知识图谱：HUD 风格高级显示效果
+ * ============================================================ */
+
+/* 1. 背景网格 + 径向光晕 */
+.kg-bg {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(250, 82, 15, 0.08) 0%, transparent 70%),
+    linear-gradient(rgba(250, 82, 15, 0.06) 1px, transparent 1px) 0 0 / 40px 40px,
+    linear-gradient(90deg, rgba(250, 82, 15, 0.06) 1px, transparent 1px) 0 0 / 40px 40px,
+    #0a0e1a;
+}
+
+/* 2. 节点呼吸光晕（未选中态微弱呼吸） */
+@keyframes kg-node-pulse {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50%      { opacity: 0.9;  transform: scale(1.08); }
+}
+
+/* 3. 选中节点扫描环（向外扩散波纹） */
+@keyframes kg-scan-ring {
+  0%   { r: var(--r0); opacity: 0.9; stroke-width: 2.5; }
+  100% { r: var(--r1); opacity: 0;   stroke-width: 0.3; }
+}
+.kg-scan-ring {
+  animation: kg-scan-ring 1.8s ease-out infinite;
+  transform-origin: center;
+}
+
+/* 4. 节点外环刻度旋转 */
+@keyframes kg-ring-rotate {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.kg-ring-spin {
+  animation: kg-ring-rotate 12s linear infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+/* 5. 节点出现动画（scale + opacity 淡入） */
+@keyframes kg-node-appear {
+  0%   { opacity: 0; transform: scale(0); }
+  60%  { opacity: 1; transform: scale(1.15); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.kg-node-appear {
+  animation: kg-node-appear 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+/* 6. 边出现动画 + 流光（实线边持续流动，模拟数据流向） */
+@keyframes kg-edge-flow {
+  from { stroke-dashoffset: var(--len, 200); }
+  to   { stroke-dashoffset: 0; }
+}
+@keyframes kg-edge-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.kg-edge-flow {
+  stroke-dasharray: 4 8;
+  animation: kg-edge-flow 1.5s linear infinite, kg-edge-fade-in 0.4s ease-out both;
+}
+
+/* 7. 边发光 */
+.kg-edge-glow {
+  filter: drop-shadow(0 0 3px currentColor);
+}
+
+/* 8. HUD 角落装饰（四角刻度线） */
+.kg-corner {
+  stroke: rgba(250, 82, 15, 0.5);
+  stroke-width: 1.5;
+  fill: none;
+}
+
+/* 9. 鼠标 hover 节点放大 */
+.kg-node-group {
+  transition: transform 0.2s ease-out;
+  cursor: pointer;
+}
+.kg-node-group:hover {
+  transform: scale(1.1);
+  transform-origin: center;
+  transform-box: fill-box;
+}
