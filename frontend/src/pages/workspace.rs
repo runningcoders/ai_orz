@@ -21,9 +21,11 @@ use dioxus::prelude::*;
 
 use common::api::{AgentListItem, AgentQueryRequest, MessageListItem, PaginationParams, ProjectListItem, ProjectQueryRequest, SendMessageToAgentParams, TaskListItem, TaskQueryRequest};
 use common::enums::AssigneeType;
+use common::models::TimeSeriesPoint;
 use crate::api::hr::query_agents;
 use crate::api::message::{load_latest_messages, send_message_to_agent};
 use crate::api::project::{list_project_tasks, query_projects, query_tasks};
+use crate::components::charts::line_chart::LineChart;
 use crate::components::chat::{MessageBubble, TypingIndicator};
 use crate::components::workspace_graph::{WorkspaceGraph, WorkspaceView};
 use crate::hooks::use_workspace_data::{use_workspace_data, WorkspaceData};
@@ -113,6 +115,9 @@ pub fn Workspace() -> Element {
     // 侧边栏红点提示：收到新消息但不在当前视图时，对应 project/agent 亮红点
     let mut project_unread = use_signal(std::collections::HashSet::<String>::new);
     let mut agent_unread = use_signal(std::collections::HashSet::<String>::new);
+
+    // 消息流量时序数据（前端本地累积，每分钟桶，保留最近 60 分钟）
+    let mut msg_flow: Signal<std::collections::HashMap<i64, u64>> = use_signal(|| std::collections::HashMap::new());
 
     let sidebar = sidebar_signal.read().clone();
 
@@ -361,11 +366,22 @@ pub fn Workspace() -> Element {
         let chat_to_agent_id = chat_to_agent_id.clone();
         let mut project_unread = project_unread.clone();
         let mut agent_unread = agent_unread.clone();
+        let mut msg_flow = msg_flow.clone();
 
         use_effect(move || {
             let on_message = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
                 if let Some(data) = event.data().as_string() {
                     if let Ok(msg) = serde_json::from_str::<MessageListItem>(&data) {
+                        // 累计消息流量（按分钟桶，淘汰超过 60 分钟的旧桶）
+                        {
+                            let mut flow = msg_flow.write();
+                            let now_ms = js_sys::Date::now() as i64;
+                            let bucket = (now_ms / 60_000) * 60_000;
+                            *flow.entry(bucket).or_insert(0) += 1;
+                            let cutoff = bucket - 60 * 60_000;
+                            flow.retain(|&k, _| k >= cutoff);
+                        }
+
                         let mut msgs = chat_messages.write();
                         // 移除同 content 的乐观消息（统一使用 replace_tmp_with_real）
                         replace_tmp_with_real(&mut msgs, &msg);
@@ -680,6 +696,40 @@ pub fn Workspace() -> Element {
                             }
                         }
                     })}
+                }
+
+                // === 消息流量时序图（最近 60 分钟本地累积） ===
+                div { class: "bg-base-100 rounded-lg shadow-md p-4",
+                    h3 { class: "text-sm font-semibold mb-2", "📈 消息流量（最近 60 分钟）" }
+                    {
+                        let flow = msg_flow.read();
+                        let mut points: Vec<TimeSeriesPoint> = flow.iter()
+                            .map(|(&k, &v)| TimeSeriesPoint {
+                                interval_start: k,
+                                tokens_input: 0,
+                                tokens_output: 0,
+                                call_count: v,
+                            })
+                            .collect();
+                        points.sort_by_key(|p| p.interval_start);
+                        if points.is_empty() {
+                            rsx! {
+                                div { class: "h-[120px] flex items-center justify-center text-base-content/50",
+                                    "暂无消息流量数据"
+                                }
+                            }
+                        } else {
+                            rsx! {
+                                LineChart {
+                                    data: points,
+                                    width: 700.0,
+                                    height: 150.0,
+                                    title: Some("消息量".to_string()),
+                                    value_label: Some("条/分钟".to_string()),
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // === 底部游戏式对话框 ===
