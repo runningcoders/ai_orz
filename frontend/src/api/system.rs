@@ -281,6 +281,81 @@ pub async fn get_event(consumer: &str, event_id: &str) -> Result<EventDetailResp
     api_get(&format!("/api/v1/system/aop/{}/events/{}", consumer, event_id)).await
 }
 
+// ===== AOP 实时统计 =====
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct AopStatsOverviewResponse {
+    pub total_published: u64,
+    pub total_consumed: u64,
+    pub total_success: u64,
+    pub total_failed: u64,
+    pub avg_duration_ms: f64,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct AopStatsTimeSeriesPoint {
+    pub interval_start: i64,
+    pub call_count: u64,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct AopStatsTimeSeriesResponse {
+    pub points: Vec<AopStatsTimeSeriesPoint>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct AopStatsDistributionItem {
+    pub label: String,
+    pub value: u64,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct AopStatsDistributionResponse {
+    pub items: Vec<AopStatsDistributionItem>,
+}
+
+/// 获取 AOP 统计概览
+pub async fn get_aop_stats_overview() -> Result<AopStatsOverviewResponse, ApiError> {
+    api_get("/api/v1/system/aop/stats/overview").await
+}
+
+/// 获取 AOP 统计时序数据
+pub async fn get_aop_stats_time_series(
+    event_kind: Option<&str>,
+    consumer_name: Option<&str>,
+    status: Option<&str>,
+) -> Result<AopStatsTimeSeriesResponse, ApiError> {
+    let mut params = Vec::new();
+    if let Some(v) = event_kind {
+        params.push(format!("event_kind={}", url_encode(v)));
+    }
+    if let Some(v) = consumer_name {
+        params.push(format!("consumer_name={}", url_encode(v)));
+    }
+    if let Some(v) = status {
+        params.push(format!("status={}", url_encode(v)));
+    }
+    let qs = params.join("&");
+    let path = if qs.is_empty() {
+        "/api/v1/system/aop/stats/time-series".to_string()
+    } else {
+        format!("/api/v1/system/aop/stats/time-series?{}", qs)
+    };
+    api_get(&path).await
+}
+
+/// 获取 AOP 统计分布
+pub async fn get_aop_stats_distribution(
+    group_by: &str,
+    status: Option<&str>,
+) -> Result<AopStatsDistributionResponse, ApiError> {
+    let mut path = format!("/api/v1/system/aop/stats/distribution?group_by={}", url_encode(group_by));
+    if let Some(s) = status {
+        path.push_str(&format!("&status={}", url_encode(s)));
+    }
+    api_get(&path).await
+}
+
 /// 简单的 URL 编码（与 api/message.rs 中的实现一致）
 fn url_encode(s: &str) -> String {
     s.replace('%', "%25")
