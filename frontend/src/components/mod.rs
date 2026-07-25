@@ -5,6 +5,7 @@ pub mod workspace_graph;
 pub mod button;
 pub mod canvas_scene;
 pub mod chart_scene;
+pub mod charts;
 pub mod chat;
 pub mod force_layout;
 pub mod layered_layout;
