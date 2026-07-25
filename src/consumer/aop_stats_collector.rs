@@ -1,34 +1,20 @@
 //! AOP 实时内存统计收集器
 //!
 //! 纯内存实现，不落库，重启即重置（与 AOP 事件本身生命周期一致）。
-//! 提供：
-//! - 总计数器（按 event_kind/consumer_name/status 三维索引）
-//! - 滑动窗口时序数据（最近 60 分钟，按分钟桶）
-//! - 查询快照方法（overview / time_series / distribution）
+//! 基于 `pkg::runtime_stats::RuntimeStatsCollector` 泛型收集器，
+//! 在 snapshot 基础上实现 AOP 专属聚合逻辑：
+//! - overview: 按 status 分类（published/consuming/success/failed）
+//! - time_series: 按 event_kind/consumer_name/status 部分字段过滤
+//! - distribution: 按 consumer/status/kind 维度分组
 //!
 //! 内存占用估算：60 桶 × 每桶 ~20 个 (kind,consumer,status) 组合 × 32 字节 ≈ 38KB
 
 use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
-use tokio::sync::RwLock;
+use crate::pkg::runtime_stats::RuntimeStatsCollector;
 
-/// 滑动窗口保留的分钟数
-const WINDOW_MINUTES: i64 = 60;
-
-/// 按分钟对齐的时间戳（毫秒）
-fn minute_bucket_millis(ts_millis: i64) -> i64 {
-    (ts_millis / 60_000) * 60_000
-}
-
-/// 当前时间戳（毫秒）
-fn now_millis() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64
-}
+/// AOP 维度键：(event_kind, consumer_name, status)
+type AopDimKey = (String, String, String);
 
 /// 单个时序数据点（对齐 common::models::TimeSeriesPoint 的字段语义）
 #[derive(Debug, Clone, serde::Serialize, PartialEq)]
@@ -54,113 +40,27 @@ pub struct AopDistributionItem {
     pub value: u64,
 }
 
-/// 维度键：(event_kind, consumer_name, status)
-type DimKey = (String, String, String);
-
-/// 单个时间桶（按分钟对齐）
-#[derive(Debug, Clone, Default)]
-struct TimeBucket {
-    /// 桶起始时间（毫秒）
-    minute: i64,
-    /// 维度计数
-    counts: HashMap<DimKey, u64>,
-    /// 累计 duration_ms（用于计算平均耗时）
-    total_duration_ms: u64,
-    /// success + failed 总数（用于 avg_duration 除数）
-    completed_count: u64,
-}
-
-/// 收集器内部状态
-struct Inner {
-    /// 总计数器（全生命周期，重启才重置）
-    total_counts: HashMap<DimKey, u64>,
-    /// 总累计耗时（用于全局 avg_duration）
-    total_duration_ms: u64,
-    /// 总完成数（success + failed）
-    total_completed: u64,
-    /// 滑动窗口时序桶（按时间升序，最老在前）
-    buckets: std::collections::VecDeque<TimeBucket>,
-    /// 启动时间（用于计算运行时长）
-    started_at: i64,
-}
-
-impl Inner {
-    fn new() -> Self {
-        Self {
-            total_counts: HashMap::new(),
-            total_duration_ms: 0,
-            total_completed: 0,
-            buckets: std::collections::VecDeque::with_capacity(WINDOW_MINUTES as usize + 5),
-            started_at: now_millis(),
-        }
-    }
-
-    /// 清理超过滑动窗口的旧桶
-    fn evict_old_buckets(&mut self, now_millis: i64) {
-        let cutoff = minute_bucket_millis(now_millis) - WINDOW_MINUTES * 60_000;
-        while let Some(front) = self.buckets.front() {
-            if front.minute < cutoff {
-                self.buckets.pop_front();
-            } else {
-                break;
-            }
-        }
-    }
-
-    /// 获取或创建当前分钟桶
-    fn current_bucket(&mut self, now_millis: i64) -> &mut TimeBucket {
-        let minute = minute_bucket_millis(now_millis);
-        // 检查最后一个桶是否是当前分钟
-        if self.buckets.back().map_or(true, |b| b.minute != minute) {
-            self.buckets.push_back(TimeBucket {
-                minute,
-                ..Default::default()
-            });
-        }
-        self.buckets.back_mut().unwrap()
-    }
-
-    /// 记录一个事件
-    fn record(&mut self, kind: &str, consumer: &str, status: &str, duration_ms: u64, now: i64) {
-        let key = (kind.to_string(), consumer.to_string(), status.to_string());
-
-        // 更新总计数器
-        *self.total_counts.entry(key.clone()).or_insert(0) += 1;
-
-        // 对于 success/failed，累计耗时
-        if status == "success" || status == "failed" {
-            self.total_duration_ms += duration_ms;
-            self.total_completed += 1;
-        }
-
-        // 更新当前时间桶
-        self.evict_old_buckets(now);
-        let bucket = self.current_bucket(now);
-        *bucket.counts.entry(key).or_insert(0) += 1;
-        if status == "success" || status == "failed" {
-            bucket.total_duration_ms += duration_ms;
-            bucket.completed_count += 1;
-        }
-    }
-}
-
 /// AOP 实时统计收集器
 ///
 /// 业务层创建单例并通过 `AopStatsHook` 注入到 Registry。
 /// SystemDomain 持有 `Arc<AopStatsCollector>` 引用，直接读取快照。
+///
+/// 内部 wrap `RuntimeStatsCollector<AopDimKey>`，AOP 专属聚合在 snapshot 基础上实现。
 #[derive(Clone)]
 pub struct AopStatsCollector {
-    inner: Arc<RwLock<Inner>>,
+    inner: RuntimeStatsCollector<AopDimKey>,
 }
 
 impl AopStatsCollector {
     pub fn new() -> Self {
         Self {
-            inner: Arc::new(RwLock::new(Inner::new())),
+            inner: RuntimeStatsCollector::new(),
         }
     }
 
     /// 记录一个事件（由 AopStatsHook 调用）
+    ///
+    /// 对于 success/failed 状态，累计耗时；其他状态不累计。
     pub async fn record(
         &self,
         kind: &str,
@@ -168,20 +68,24 @@ impl AopStatsCollector {
         status: &str,
         duration_ms: u64,
     ) {
-        let now = now_millis();
-        let mut inner = self.inner.write().await;
-        inner.record(kind, consumer, status, duration_ms, now);
+        let key = (kind.to_string(), consumer.to_string(), status.to_string());
+        let duration = if status == "success" || status == "failed" {
+            Some(duration_ms)
+        } else {
+            None
+        };
+        self.inner.record(key, duration).await;
     }
 
     /// 查询概览（全生命周期累计）
     pub async fn overview(&self) -> AopOverview {
-        let inner = self.inner.read().await;
+        let snap = self.inner.snapshot().await;
         let mut total_published = 0u64;
         let mut total_consumed = 0u64;
         let mut total_success = 0u64;
         let mut total_failed = 0u64;
 
-        for ((_kind, _consumer, status), count) in inner.total_counts.iter() {
+        for ((_kind, _consumer, status), count) in snap.total_counts.iter() {
             match status.as_str() {
                 "published" | "published_sync" => total_published += count,
                 "consuming" => {} // 不计入任何汇总
@@ -197,8 +101,8 @@ impl AopStatsCollector {
             }
         }
 
-        let avg_duration_ms = if inner.total_completed > 0 {
-            inner.total_duration_ms as f64 / inner.total_completed as f64
+        let avg_duration_ms = if snap.total_completed > 0 {
+            snap.total_duration_ms as f64 / snap.total_completed as f64
         } else {
             0.0
         };
@@ -221,15 +125,9 @@ impl AopStatsCollector {
         consumer_name: Option<&str>,
         status: Option<&str>,
     ) -> Vec<AopTimeSeriesPoint> {
-        let inner = self.inner.read().await;
-        let now = now_millis();
-        let cutoff = minute_bucket_millis(now) - WINDOW_MINUTES * 60_000;
-
-        let mut points = Vec::with_capacity(inner.buckets.len());
-        for bucket in inner.buckets.iter() {
-            if bucket.minute < cutoff {
-                continue;
-            }
+        let snap = self.inner.snapshot().await;
+        let mut points = Vec::with_capacity(snap.buckets.len());
+        for bucket in snap.buckets.iter() {
             // 按过滤条件聚合当前桶
             let mut count = 0u64;
             for ((k, c, s), n) in bucket.counts.iter() {
@@ -269,10 +167,10 @@ impl AopStatsCollector {
         group_by: &str,
         status_filter: Option<&str>,
     ) -> Vec<AopDistributionItem> {
-        let inner = self.inner.read().await;
+        let snap = self.inner.snapshot().await;
         let mut groups: HashMap<String, u64> = HashMap::new();
 
-        for ((kind, consumer, status), count) in inner.total_counts.iter() {
+        for ((kind, consumer, status), count) in snap.total_counts.iter() {
             // 应用 status 过滤
             if let Some(filter) = status_filter {
                 if status != filter {
@@ -299,8 +197,7 @@ impl AopStatsCollector {
 
     /// 运行时长（秒）
     pub async fn uptime_secs(&self) -> u64 {
-        let inner = self.inner.read().await;
-        ((now_millis() - inner.started_at) / 1000) as u64
+        self.inner.uptime_secs().await
     }
 }
 
