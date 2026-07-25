@@ -272,6 +272,7 @@ async fn init_search_test_env(pool: SqlitePool) -> Arc<dyn crate::service::dal::
     agent::init();
     // 初始化 stats DAO（DAL new() 需要传入）
     agent::stats_init();
+    crate::service::dao::tool::stats_init();
     crate::service::dao::model_provider::stats_init();
 
     // 创建自定义 DAL，使用 Mock 实现
@@ -279,6 +280,7 @@ async fn init_search_test_env(pool: SqlitePool) -> Arc<dyn crate::service::dal::
         agent::dao(),
         agent::vector_dao(),
         agent::stats_dao(),
+        crate::service::dao::tool::stats_dao(),
         crate::service::dao::model_provider::stats_dao(),
         Arc::new(MockCortexDao),
         Arc::new(MockModelProviderDao),
