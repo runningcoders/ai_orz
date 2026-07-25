@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-07-25（统计模块归并：runtime_stats 合并为 pkg/stats/runtime/ 子模块）
+> 最后更新：2026-07-25（Canvas 改造扩展：通用 Gauge 抽象 + health/logs/triggers/agent_detail/tasks/workspace 六页面 canvas 化）
 
 ---
 
@@ -69,14 +69,17 @@
 | 🛡️ 角色权限中间件 | ✅ | 基于并查集的权限中间件，Member → Admin → SuperAdmin 继承体系 |
 | 📊 AOP 队列监控 | ✅ | 队列运行时监控 + 实时统计图表（HUD 风格折线图时序 + 环形图分布，纯内存收集器 60 分钟滑动窗口，5 秒轮询，埋点 publish/consume/success/failure） |
 | 💬 Workspace 对话机制 | ✅ | 底部对话框跟随当前视图（默认/Project/Agent），SSE 实时消息，HUD 流光提示未读消息源（橙色竖条 + 流动光晕动画），点击切换视图清除 |
-| 📊 统计图表可视化 | ✅ | HUD 风格 Canvas 图表：折线图（4 个实体详情页展示模型调用趋势，消费 model_call_time_series；AOP 页面展示最近 60 分钟事件时序）+ 环形图（Project 详情页展示任务状态分布，AOP 页面展示状态/消费者分布，消费 DonutSlice 通用数据结构）；共享 hud_palette 背景工具，2.4s 呼吸光晕动画 |
+| 📊 统计图表可视化 | ✅ | HUD 风格 Canvas 图表：折线图（4 个实体详情页展示模型调用趋势，消费 model_call_time_series；AOP 页面展示最近 60 分钟事件时序；logs 页面展示 24h 日志量时序；workspace 底部展示 60 分钟消息流量）+ 环形图（Project 详情页展示任务状态分布，AOP 页面展示状态/消费者分布，logs 页面展示级别分布，triggers 页面展示状态分布，Agent 详情页展示工具调用分布，消费 DonutSlice 通用数据结构）；共享 hud_palette 背景工具，2.4s 呼吸光晕动画 |
 | 📊 运行时统计基础设施 | ✅ | pkg/stats/runtime/ 泛型内存收集器（RuntimeStatsCollector\<K\>），与 pkg/stats/ 顶层 DuckDB 持久化互补；AOP 已接入（AopStatsCollector wrap），未来 SSE/WS 连接数、Channel 推送指标等运行时场景可直接复用 |
+| 🎨 通用 HUD 仪表盘 | ✅ | 通用 Gauge 组件（从 AopGauge 抽象），AOP/Health 等场景复用；HUD 视觉统一（呼吸光晕 + 选中发光 + 12 等分刻度 + 颜色编码） |
+| 📊 系统健康监控 HUD | ✅ | Health 页面重写为仪表盘墙（10s 轮询，6 个维度：后端/AOP队列/活跃Agent/活跃项目/待处理任务/运行时长），复用通用 Gauge 组件 |
+| 📋 看板视图 Canvas | ✅ | tasks 看板视图改为 HUD 风格 KanbanCanvas（多列泳道 + 优先级颜色编码 + 进度条 + HUD 深色径向渐变背景） |
 
 ### 1.3 整体完成度与测试统计（2026-07-25 更新）
 
 | 指标 | 数值 | 说明 |
 |------|------|------|
-| **总测试数** | **849** | 后端 761 + 前端 38 + common 50，DAO + DAL + Domain + Handler + Pkg 完整覆盖（含 8 个 runtime_stats + 7 个 AOP 内存统计测试） |
+| **总测试数** | **860** | 后端 764 + 前端 46 + common 50，DAO + DAL + Domain + Handler + Pkg 完整覆盖（含 8 个 runtime_stats + 7 个 AOP 内存统计 + 3 个 log_stats + 6 个 gauge/aop_gauge + 2 个 kanban_canvas 测试） |
 | **通过率** | **100%** | ✅ 全部测试通过 |
 | DAO 模块数 | 25 个 | 全部实现并被使用，零闲置（18 核心 DAO + 5 渠道 DAO + a2a 回调 + 1 触发器 + 消息推送） |
 | DAL 模块数 | 23 个 | 全部完整业务承载，零闲置（含 lark 飞书、agent_a2a、agent_codex 专属 DAL） |
