@@ -2,15 +2,17 @@
 
 ---
 
-## 📌 实现状态（2026-07-17 更新）
+## 📌 实现状态（2026-07-25 更新）
 
 > ✅ **本设计系统已落地实现**，从规范文档转化为可执行的 CSS 代码。
 
 ### 实现位置
 
-**实现文件**: `frontend/index.html`
+**主样式入口**: `frontend/styles/input.css`（Tailwind CSS 入口，主题配置、自定义工具类）
+**编译产物**: `frontend/public/output.css`（构建时自动生成）
+**构建脚本**: `frontend/build.rs`（自动 npm install + Tailwind CSS 编译）
 
-设计系统已在该文件中通过 **CSS 变量 + 组件类** 的方式完整落地，作为 Dioxus 0.7 前端的样式基础。
+设计系统已迁移到 **Tailwind CSS v4 + DaisyUI v5 组件库** 的方式落地，作为 Dioxus 0.7 前端的样式基础（详见文末「DaisyUI 5 组件库规范」一节）。下方「实现内容」为早期基于 `frontend/index.html` 内联样式的实现记录，作为历史参考保留。
 
 ### 实现内容
 
@@ -50,7 +52,7 @@
 ### 相关文档
 
 - **架构文档**: `docs/frontend_architecture.md` — 前端整体架构说明
-- **架构现状**: `docs/architecture_status_20260701.md` — 含前端层完成度跟踪
+- **架构现状**: `docs/architecture_status_20260725.md` — 含前端层完成度跟踪
 - **本文档下方**: 保持原始 Mistral 设计系统规范，作为设计决策的权威参考
 
 > 下方内容为原始设计系统规范，作为设计决策与样式扩展的参考依据。
@@ -316,3 +318,80 @@ What makes Mistral distinctive is the complete commitment to a warm color temper
 3. Never add border-radius — sharp corners only
 4. Shadows are always warm: "golden shadow with amber tones"
 5. Font weight is always 400 — describe emphasis through size and color
+
+---
+
+## DaisyUI 5 组件库规范（2026-07-25 更新）
+
+> 本节为当前实际实现规范。项目于 2026-07-22 里程碑完成从 `frontend/index.html` 内联样式到 **Tailwind CSS v4 + DaisyUI v5 组件库** 的迁移，原 Mistral 设计系统的色彩与排版理念保留为历史参考（见上方章节）。
+
+### 技术栈
+
+- **CSS 框架**: Tailwind CSS v4.1（`@import "tailwindcss"` + `@theme` 配置）
+- **组件库**: DaisyUI v5（通过 `@plugin "daisyui"` 引入）
+- **前端框架**: Dioxus 0.7 (WebAssembly)
+- **构建链**: `frontend/build.rs` 自动执行 `npm install` + `@tailwindcss/cli` 编译，产物输出至 `frontend/public/output.css`
+
+### 自定义 orz-light 主题
+
+在 `frontend/styles/input.css` 中通过 `[data-theme="orz-light"]` 块定义品牌主题，作为默认主题（`--default`）：
+
+| 语义角色 | CSS 变量 | 取值 | 说明 |
+|----------|---------|------|------|
+| Primary | `--color-primary` | `oklch(0.63 0.24 50)` ≈ `#fa520f` | Mistral 品牌橙 |
+| Base 100 | `--color-base-100` | `oklch(0.98 0.02 85)` ≈ `#fffaeb` | 暖象牙色（Warm Ivory） |
+| Secondary | `--color-secondary` | `oklch(0.66 0.23 45)` | 暖橙色辅助 |
+| Accent | `--color-accent` | `oklch(0.78 0.16 80)` | 金色强调 |
+| Success / Warning / Error / Info | 对应 oklch 值 | — | 语义状态色 |
+| Radius | `--radius-selector / field / box` | `0.375rem / 0.375rem / 0.5rem` | 统一圆角阶 |
+
+### 30+ 主题切换机制
+
+- 在 `@plugin "daisyui"` 块中声明 31 个主题：`orz-light --default`、`light`、`dark`、`cupcake`、`bumblebee`、`emerald`、`corporate`、`synthwave`、`retro`、`cyberpunk`、`valentine`、`halloween`、`garden`、`forest`、`aqua`、`lofi`、`pastel`、`fantasy`、`wireframe`、`black`、`luxury`、`dracula`、`cmyk`、`autumn`、`business`、`acid`、`lemonade`、`night`、`coffee`、`winter`、`dim`、`nord`、`sunset`
+- 切换方式：在 `<html data-theme="xxx">` 上设置主题名即可生效
+- 默认主题 `orz-light` 承袭 Mistral 暖色基因（橙 + 暖象牙），其余 30 个为 DaisyUI 内置主题，供用户偏好选择
+
+### 主要组件类名规范
+
+统一使用 DaisyUI v5 组件类名（不再自定义 CSS 类）：
+
+| 组件 | 类名 | 备注 |
+|------|------|------|
+| 按钮 | `btn`、`btn-primary`、`btn-secondary`、`btn-ghost`、`btn-outline`、`btn-error` | 配合 `btn-sm / btn-lg` 调整尺寸 |
+| 模态框 | `modal`、`modal-box`、`modal-action`、`modal-open` | 通过 `modal-toggle` 控制开关 |
+| 提示 | `toast`、`alert`、`alert-success / warning / error / info` | Toast 由全局状态管理 + 滑入动画 |
+| 输入 | `input`、`input-bordered`、`select`、`select-bordered`、`checkbox`、`toggle` | 表单统一 `*-bordered` 风格 |
+| 徽章 | `badge`、`badge-primary / secondary / outline / ghost` | 用于状态标签、tags |
+| 卡片 | `card`、`card-body`、`card-title`、`card-actions` | 配合 `shadow-lg` 等工具类 |
+| 表格 | `table`、`table-zebra`、`table-pin-rows` | 数据表格 |
+| 标签页 | `tabs`、`tab`、`tab-active` | 用于 Agent 详情页等 Tab 切换 |
+| 加载 | `loading loading-spinner / loading-dots / loading-ring` | 状态指示器 |
+| 下拉 | `dropdown`、`dropdown-content`、`menu` | 导航/操作菜单 |
+| 步骤 | `steps`、`step step-primary` | 任务进度可视化 |
+
+### HUD 驾驶舱风格元素
+
+为知识图谱 Canvas 渲染与 Workspace 未读消息提示定制的视觉效果，定义在 `frontend/styles/input.css`：
+
+**HUD 流光条（.hud-streak）**
+
+用于 Workspace 侧边栏未读消息源提示，由静态红点升级而来的 2px 橙色竖条贴在项左侧边缘：
+
+- 结构：`.hud-streak`（容器竖条）+ `::before` 伪元素（流动高光段）
+- 视觉：`width: 2px`，`background: var(--color-primary, #fa520f)`，`box-shadow: 0 0 6px 0 ...` 形成 glow 光晕
+- 动画：`@keyframes hud-streak-flow`（1.8s `cubic-bezier(0.4, 0, 0.6, 1)` 无限循环），高光段从上往下流动，像 HUD 扫描线
+- 行为：点击切换视图清除未读
+
+**知识图谱 Canvas HUD 渲染**
+
+- `KnowledgeGraphRenderer` 实现 `CanvasRenderer` trait，HUD 风格渲染：深色径向渐变背景 + 淡橙色网格 + 四角 HUD 装饰
+- 节点选中态扫描环 + 旋转刻度环，未选中态呼吸光晕
+- 边实线流光 + `drop-shadow` 发光
+- 知识图谱页右上角 Canvas/SVG 风格切换按钮（join 按钮组），默认 Canvas，SVG 作为兜底
+- 相关 CSS 工具类：`.kg-bg`（HUD 背景网格 + 径向光晕）等
+
+### 组件清单参考
+
+完整的前端组件库清单（Button、Modal、ConfirmDialog、State、Stats、Input、CodeEditor、Toast、Chat（MessageBubble/TypingIndicator）、Graph SVG、KnowledgeGraphCanvas、CanvasScene、RelationGraph、WorkspaceGraph 等）请参阅：
+
+- **`docs/frontend_architecture.md`** — 前端架构设计、Router/CSS 设计系统/API 客户端/状态管理/页面模块

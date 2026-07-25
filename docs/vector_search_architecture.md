@@ -490,4 +490,21 @@ pub enum VectorStoreType {
 
 ---
 
-*最后更新：2026-07-16*
+*最后更新：2026-07-25*
+
+---
+
+## 附：向量搜索设计原则（来自早期设计 V1.3）
+
+> 本节摘录自早期设计文档 V1.3 的设计原则，作为架构决策的历史背景与最佳实践沉淀。具体实现细节以正文为准。
+
+- **Storage 与 Config 解耦**：依赖方向 `main → Config → Storage`，Storage 不反向依赖全局 Config；新增数据库配置只需扩展 `DatabaseConfig` 字段，`Storage::new()` 签名不变（开闭原则）；测试专用构造器保证 Storage 可独立初始化
+- **Vectorizable Trait 信息专家原则**：PO 自己决定哪些字段参与向量化，将向量化字段知识封装在 PO 内部，DAL 层无需感知 PO 字段结构；默认实现 SHA256 `content_hash` + 永不过期 `expire_at` + `needs_reindex` 基于哈希比对；修改向量化字段组合只需改 `vectorize_text()` 一处
+- **CortexDao.embed() 一站式向量化**：输入 `ModelProviderPo` + 实现 `Vectorizable` 的实体，输出完整 `VectorIndexParams`（向量 + content_hash + provider_id + embedding_model + expire_at），调用方零感知；内部封装调用 LLM Embedding API + 组装参数的逻辑收敛
+- **优雅降级模式**：向量化失败不影响核心写入功能，`embed().await.ok()` + 仅 warn 降级日志；向量搜索不可用时 FTS5 关键词搜索仍可用，业务读写主流程不受影响
+- **内容哈希校验避免重复向量化**：update 时通过 `needs_reindex(existing_hash)` 判断内容是否变化，内容未变化时跳过 Embedding API 调用，节省 API 成本；哈希算法默认 SHA256，基于 `vectorize_text()` 内容计算
+- **路径统一管理**：所有向量数据统一存储在 `{base_data_path}/vectors/` 目录下；集合命名规范 `vss_{collection}` 表 / `<collection>.bincode` 文件；切换后端时路径策略保持一致，便于迁移
+- **构造器分离原则**：默认 `new()` 零依赖后端 + 可选 `with_xxx()` 不同后端使用独立构造器不污染主接口 + 测试专用 `with_sqlite_pool()` 接受外部 pool 保证隔离
+- **搜索查询结构复用**：`XxxSearch { query_vector, filters: XxxQuery }` 模式直接复用现有 Query 做业务过滤，零代码重复；执行流程：向量检索拿候选 ID → 业务条件过滤 → 组合结果按相似度排序
+- **搜索结果元信息嵌入**：`VectorMatchInfo` 不含泛型可嵌入任何业务实体；普通查询返回 `None`，向量搜索返回 `Some`（含 distance / embedding_model / indexed_at / content_hash），调用方无需二次查询
+- **未来扩展方向**（参考）：向量量化压缩（f32 → f16 → int8 渐进式压缩）、多向量字段（同实体多维度索引）、向量版本管理（Embedding 模型升级平滑迁移）、向量缓存层（相同内容结果缓存降低 API 调用）、向量质量监控（命中率 / 相似度分布 / 过期清理统计）

@@ -2,7 +2,7 @@
 
 > 🎯 **项目代码全景指南**：完整架构说明、模块职责、关键类与函数、依赖关系、运行方式
 >
-> 最后更新：2026-07-12
+> 最后更新：2026-07-25
 
 ---
 
@@ -32,8 +32,8 @@
 | **后端框架** | Axum 0.8 | 高性能异步 Web 框架 |
 | **数据库** | SQLite + SQLx 0.8 | 嵌入式数据库，类型安全查询 |
 | **LLM 调用** | rig-core 0.34 | 统一的 LLM 调用框架 |
-| **前端框架** | Dioxus 0.7 | Rust WebAssembly 前端框架 |
-| **向量搜索** | fastembed + lancedb | 本地向量搜索，零外部依赖 |
+| **前端框架** | Dioxus 0.7 + Tailwind CSS v4 + DaisyUI v5 | Rust WebAssembly 前端框架 + 组件库 + 30+ 主题切换 |
+| **向量搜索** | LanceDB 默认 + HNSW/inMemory/SqliteVss | 多后端向量搜索，Vectorizable trait + embed_entity |
 | **异步运行时** | Tokio | 高性能异步运行时 |
 | **序列化** | serde + serde_json | 数据序列化/反序列化 |
 | **日志系统** | tracing + tracing-subscriber | 结构化日志 |
@@ -42,18 +42,20 @@
 
 | 功能模块 | 状态 | 说明 |
 |---------|------|------|
-| 组织用户权限 | ✅ | 多级组织、用户角色、JWT 认证 |
+| 组织用户权限 | ✅ | 多级组织、用户角色、JWT Cookie 认证（双模式：Cookie 浏览器 + Bearer token API） |
 | Agent 全生命周期 | ✅ | 创建、配置、工具绑定、唤醒执行 |
 | 四层记忆系统 | ✅ | Core/Working/Short-term/Long-term，FTS5 + 向量混合搜索 |
 | 消息对话系统 | ✅ | 用户 ↔ Agent 双向对话，支持项目上下文，消息链（root_id + reply_to_id） |
-| 消息渠道系统 | ✅ | 多渠道消息接入，支持启用/禁用/测试 |
+| 消息渠道系统 | ✅ | 多渠道消息接入，支持启用/禁用/测试，飞书 P2P 私信 WebSocket 入站长连接已上线 |
+| A2A 外部 Agent | ✅ | A2A 协议支持：Client（注册外部 CLI/Remote Agent）、Server（对外暴露端点）、异步结果回传（Push 回调 + 30 秒轮询兜底） |
 | 混合模式工具调用 | ✅ | 简单工具走 rig auto，关键工具走自建 manual |
 | 技能库系统 | ✅ | 可复用技能和工作流，支持搜索和分类，技能包机制 |
 | 任务 + 项目管理 | ✅ | 任务状态机，项目聚合对话上下文，任务进度追踪（0-100） |
 | 统一附件存储 | ✅ | 消息附件 + 项目产物，FileMeta + 日期分层路径 |
 | MCP 服务器集成 | ✅ | MCP 服务器管理、工具同步、MCP 工具调用执行 |
 | 异步消费者系统 | ✅ | 通用消费者框架 + Message Topic 三层分发 |
-| 向量搜索 | ✅ | SQLite VSS 扩展 + 语义索引 + FTS5 全文搜索 |
+| 结构化日志系统 | ✅ | JSON 格式、自动上下文关联、日志自动清理 |
+| 向量搜索 | ✅ | LanceDB 默认 + HNSW/inMemory/SqliteVss 多后端、Vectorizable trait + embed_entity |
 | 全文搜索 | ✅ | FTS5 + trigram 分词器，支持中文全文搜索、BM25 相关性排序 |
 | Agent 统计系统 | ✅ | DuckDB 多维统计、Agent/Project/Task/ModelProvider/Tool 五维度覆盖 |
 | 多回合循环控制 | ✅ | 轮次限制检查、任务完成检测、Prompt 上下文差异化、工具失败计数注入 |
@@ -64,16 +66,23 @@
 | 技能包机制 | ✅ | tag 分组技能、批量安装、安装即复制、卸载保留副本 |
 | 综合搜索 | ✅ | FTS5 关键词 + 向量语义 + 图谱关系 三位一体混合搜索 |
 | Agent 协作 | ✅ | search_agents 搜索、send_message_to_agent 消息、collaboration tag 分组工具 |
+| AOP 事件中心 | ✅ | 纯框架（零业务依赖）、Event/Producer/Consumer/Registry 抽象、同步/异步消费模式 |
+| SSE 消息推送 | ✅ | Server-Sent Events 长连接、订阅者模式、DAO 层连接管理、broadcast 广播 |
+| 知识图谱可视化 | ✅ | Canvas HUD 驾驶舱风格（径向渐变 + 节点呼吸光晕 + 边流光）+ SVG 风格一键切换 |
+| Toast 通知系统 | ✅ | 全局状态管理、4 种类型、滑入滑出动画、进度条倒计时 |
+| Cookie 认证统一 | ✅ | HttpOnly Cookie + JWT；双模式（Cookie 浏览器 + Bearer token API 工具） |
+| 前端架构 | ✅ | Dioxus Router 15 路由 + Tailwind CSS v4 + DaisyUI v5 + 30+ 主题切换 + 13 CRUD 页面 |
 
 ### 测试统计
 
 | 指标 | 数值 | 说明 |
 |------|------|------|
-| **总测试数** | **693** | DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
+| **总测试数** | **830** | 后端 746 + 前端 34 + common 50，DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
 | **通过率** | **100%** | ✅ 全部测试通过 |
-| DAO 模块数 | 28 个 | 全部实现并被使用，零闲置（21 核心 DAO + 5 渠道 DAO + 1 统计 DAO + 1 触发器 DAO） |
-| DAL 模块数 | 17 个 | 全部完整业务承载，零闲置 |
-| Domain 领域数 | 7 个 | 全部完整实现（新增 SystemDomain） |
+| DAO 模块数 | 25 个 | 全部实现并被使用，零闲置（18 核心 DAO + 5 渠道 DAO + a2a 回调 + 1 触发器 + 消息推送） |
+| DAL 模块数 | 23 个 | 全部完整业务承载，零闲置（含 lark、agent_a2a、agent_codex、backup、log_query、message_push、mcp_tool、cron_trigger 等专属 DAL） |
+| Domain 领域数 | 7 个 | 全部完整实现（含 SystemDomain） |
+| Handler API 领域数 | 8 个 | organization, hr, finance, project, user, health, system, a2a（公开回调） |
 
 ---
 
@@ -91,19 +100,26 @@ ai_orz/
 │   └── config/               # 默认配置模板
 │
 ├── src/                        # 后端服务
-│   ├── handlers/              # HTTP 接口层（按业务域分组）
+│   ├── handlers/              # HTTP 接口层（适配层：用户 API + 外部回调，按业务域分组）
+│   │   └── a2a/               #   └─ A2A 公开回调端点（无 JWT 鉴权）
+│   ├── producer/              # AOP 事件生产者（适配层：轮询 + 外部渠道 WS 事件接入）
 │   ├── service/
-│   │   ├── dao/               # 数据访问层 DAO
+│   │   ├── dao/               # 数据访问层 DAO（本地 DB CRUD + 外部 API 出站调用）
 │   │   ├── dal/               # 业务数据访问层 DAL
 │   │   └── domain/            # 领域层 Domain
-│   ├── models/                # PO 持久化实体
+│   ├── models/                # PO 持久化实体 + 业务实体 + 内部事件定义
 │   ├── middleware/            # Axum 中间件
-│   ├── consumer/              # 异步消费者系统
+│   ├── consumer/              # 异步消费者系统（处理 Domain 产生的内部事件）
 │   └── pkg/                   # 公共工具包
 │
-├── frontend/                   # Dioxus 前端
+├── frontend/                   # Dioxus 前端（Tailwind CSS v4 + DaisyUI v5）
 │   ├── src/api/               # API 客户端
-│   └── src/components/        # UI 组件
+│   ├── src/components/        # UI 组件（Button/Modal/Toast/State/Stats/Graph/GraphCanvas/Chat）
+│   ├── src/hooks/             # 自定义 Hooks（use_resource/use_breakpoint/use_require_auth）
+│   ├── src/layouts/           # 布局组件（AppLayout/Navbar）
+│   ├── src/pages/             # 页面模块（按业务域分组）
+│   ├── src/store/             # 状态管理（auth/toast）
+│   └── src/utils/             # 通用工具函数（按功能分子模块：time/file/message/status）
 │
 ├── ai-orz-macros/             # 自定义宏 crate
 │   └── src/lib.rs             # 统一日志宏定义
@@ -116,8 +132,10 @@ ai_orz/
 **核心原则：单向依赖，禁止跨层和同层互调**
 
 ```
-Handler (API 层)
-    │ 只调用 Domain
+Adapter (适配层)
+    ├─ HTTP Handler（用户 API + 外部回调）
+    └─ AOP Producer（轮询 + 外部 WS 事件接入）
+    │ 只调用 Domain；负责协议解析、校验、ID 映射、DTO↔Command 转换
     ▼
 Domain (领域层)
     │ 组合多个 DAL，实现业务逻辑
@@ -126,7 +144,9 @@ DAL (业务数据层)
     │ 组合多个 DAO，提供业务级数据操作
     ▼
 DAO (数据访问层)
-    │ 单一数据源 CRUD，不包含业务逻辑
+    ├─ 本地 DB DAO：单一数据源 CRUD
+    └─ 外部 API DAO：出站外部调用（如 LarkDao.push、A2aRuntimeDao.send_task）
+    │
     ▼
 Models (PO 持久化实体)
 ```
@@ -135,18 +155,20 @@ Models (PO 持久化实体)
 
 | 层级 | 可以做 | 禁止做 |
 |------|--------|--------|
-| **DAO** | 单一数据源 CRUD、SQL 拼接、PO 转换 | ❌ DAO 调 DAO、❌ 业务逻辑、❌ 实体组装 |
-| **DAL** | 依赖多个 DAO、PO → Entity 转换 | ❌ DAL 调 DAL |
-| **Domain** | 依赖多个 DAL、核心业务逻辑编排、跨领域事务 | ❌ Domain 调 Domain、❌ 直接调用 DAO |
-| **Handler** | HTTP 路由、参数校验、DTO ↔ Command/Query 转换 | ❌ 直接调用 DAL/DAO、❌ 承载复杂业务规则 |
+| **DAO** | 单一/多个数据源访问；本地 DB：SQL 拼接、PO 读写；外部 API：出站调用、出站格式转换 | ❌ DAO 调 DAO、❌ 业务逻辑、❌ 实体组装/装饰 |
+| **DAL** | 依赖多个 DAO、PO ↔ Entity 双向转换、业务级数据操作 | ❌ DAL 调 DAL |
+| **Domain** | 依赖多个 DAL、核心业务逻辑编排、跨领域事务、产生内部事件 | ❌ Domain 调 Domain、❌ 直接调用 DAO（跨层）、❌ 直接调用外部 API |
+| **Adapter（适配层）** | HTTP Handler（用户 API + 公开回调）、AOP Producer（WS/轮询）；协议解析、参数校验、鉴权、幂等检查；外部 ID ↔ 内部 ID 映射；DTO/外部结构 ↔ Command 转换 | ❌ 直接调用 DAL/DAO（跨层）、❌ 承载核心业务规则、❌ Handler/Producer 之间互调 |
+
+**适配层核心认知**：HTTP Handler 是面向用户/前端的 Adapter，公开回调 Handler 是面向外部系统 HTTP 回调的 Adapter，AOP Producer 是面向外部 WS 事件/定时轮询的 Adapter——三者同属适配层，职责完全相同：把外部输入适配成 Domain 方法调用。Consumer 不在适配层（它处理 Domain 产生的内部事件）。出站外部调用统一封装在外部 DAO 中。
 
 ---
 
 ## 核心模块职责
 
-### 1. Handler 层（API 接口层）
+### 1. 适配层（Handler + Producer）
 
-**职责：HTTP 路由、参数校验、DTO 转换、响应组装**
+**职责：HTTP 路由、参数校验、DTO 转换、响应组装；外部协议适配成 Domain 方法调用**
 
 **模块组织：按业务域分组，每个方法一个文件**
 
@@ -175,8 +197,20 @@ src/handlers/
 │   ├── task/               # 任务 CRUD、状态更新
 │   └── artifact/           # 产物管理
 │
-└── user/                   # 用户个人中心
-    └── profile/            # 个人信息查看/修改
+├── user/                   # 用户个人中心
+│   └── profile/            # 个人信息查看/修改
+│
+├── health/                 # 健康检查
+├── system/                 # 系统监控（AOP 队列监控、日志查询等）
+└── a2a/                    # A2A 公开回调端点（无 JWT 鉴权，外部 HTTP 回调适配）
+```
+
+**AOP Producer 模块（适配层 - 外部 WS 事件/轮询接入）：**
+
+```
+src/producer/
+└── A2aPollingProducer       # A2A 异步结果 30 秒轮询兜底
+└（Lark WebSocket 等外部渠道 WS 事件接入）
 ```
 
 **设计原则：**
@@ -184,6 +218,7 @@ src/handlers/
 - ✅ 复用优先通过组织 Command/Query 参数和调用 Domain 能力完成
 - ❌ 不抽象 `BaseHandler` / `GenericActionHandler`
 - ❌ 复杂业务规则、状态流转、权限语义必须下沉到 Domain
+- ❌ 外部协议不进入事件中心，适配层直接调用 Domain 方法
 
 ### 2. Domain 层（领域逻辑层）
 
@@ -220,10 +255,13 @@ src/service/domain/
 │   ├── tool_execution.rs   # 工具执行、结果追踪
 │   └── tool_call_query.rs  # 工具调用查询
 │
-└── project/                # 项目管理领域
-    ├── project.rs          # 项目生命周期、状态流转
-    ├── task.rs             # 任务分配、进度追踪
-    └── artifact.rs         # 产物创建、内容管理
+├── project/                # 项目管理领域
+│   ├── project.rs          # 项目生命周期、状态流转
+│   ├── task.rs             # 任务分配、进度追踪
+│   └── artifact.rs         # 产物创建、内容管理
+│
+└── system/                 # 系统领域（AOP 队列监控、日志查询、备份）
+    └── ...
 ```
 
 **核心设计思想：**
@@ -231,9 +269,10 @@ src/service/domain/
 | 领域 | 组合 DAL | 核心职责 |
 |------|---------|---------|
 | **Agent Domain** | AgentDal + ModelProviderDal + ToolDal + BrainDal | Agent 生命周期、Brain 装配、工具绑定 |
-| **Message Domain** | MessageDal + MessageChannelDal + EventQueue | 消息管理 + 多渠道投递 + 事件驱动 |
+| **Message Domain** | MessageDal + MessageChannelDal + MessagePushDal | 消息管理 + 多渠道投递 + SSE 推送（事件由 AOP 事件中心处理） |
 | **Runtime Domain** | MemoryDal + ToolCallDal + AgentDal | Agent 唤醒、工具执行、记忆读写 |
 | **Project Domain** | ProjectDal + TaskDal + ArtifactDal | 项目聚合 Task，Task 聚合 Artifact |
+| **System Domain** | LogQueryDal + StatsDao + BackupDal | 系统监控、日志查询、数据备份 |
 
 ### 3. DAL 层（业务数据层）
 
@@ -248,6 +287,7 @@ src/service/dal/
 ├── memory.rs               # MemoryDal：向量搜索 + SQLite 查询
 ├── message.rs              # MessageDal：消息 + 工具调用组合
 ├── message_channel.rs      # MessageChannelDal：多渠道配置管理
+├── message_push.rs         # MessagePushDal：SSE 消息推送管理
 ├── model_provider.rs       # ModelProviderDal：模型配置 + 连接测试
 ├── mcp_server.rs           # McpServerDal：MCP 服务器管理
 ├── mcp_tool.rs             # McpToolDal：MCP 工具同步
@@ -257,8 +297,14 @@ src/service/dal/
 ├── project.rs              # ProjectDal：项目 CRUD + 软删除
 ├── task.rs                 # TaskDal：任务 CRUD + Agent 分配
 ├── artifact.rs             # ArtifactDal：产物内容管理
-└── skill.rs                # SkillDal：技能搜索 + 文件管理
-└── attachment.rs           # AttachmentDal：附件上传 + 存储管理
+├── skill.rs                # SkillDal：技能搜索 + 文件管理
+├── attachment.rs           # AttachmentDal：附件上传 + 存储管理
+├── lark.rs                 # LarkDal：飞书消息出站 + WebSocket 入站
+├── agent_a2a.rs            # AgentA2aDal：A2A 外部 Agent 委派
+├── agent_codex.rs          # AgentCodexDal：Codex CLI Agent 接入
+├── backup.rs               # BackupDal：数据备份与恢复
+├── log_query.rs            # LogQueryDal：日志在线查询
+└── cron_trigger.rs         # CronTriggerDal：定时触发器管理
 ```
 
 **设计范式：**
@@ -285,47 +331,57 @@ pub struct Project {
 
 ```
 src/service/dao/
-├── agent/                  # AgentDao：Agent CRUD
+├── agent/                  # AgentDao：Agent CRUD + 向量索引（Vectorizable）
 ├── artifact/               # ArtifactDao：Artifact CRUD
 ├── attachment/             # AttachmentDao：Attachment CRUD
 ├── brain/                  # BrainDao：Memory CRUD（JSONL + SQLite）
-├── cortex/                 # CortexDao：LLM 调用接口
+├── cortex/                 # CortexDao：LLM 调用接口 + 向量嵌入
 │   ├── rig/                # rig-core 实现
 │   │   ├── openai.rs       # OpenAI 官方
 │   │   ├── openai_compatible.rs  # DeepSeek/豆包/通义千问
-│   │   ├── ollama.rs       # Ollama 本地
-│   │   └── fastembed.rs    # 本地向量嵌入
-│   └── mod.rs              # Cortex trait 定义
+│   │   └── ollama.rs       # Ollama 本地
+│   └── mod.rs              # Cortex trait 定义（向量存储后端见 pkg/storage）
 │
-├── event_queue/            # EventQueueDao：事件队列
 ├── mcp_server/             # McpServerDao：MCP 服务器 CRUD
 ├── memory/                 # MemoryDao：记忆 CRUD + 向量搜索
 ├── message/                # MessageDao：消息 CRUD
 ├── message_channel/        # MessageChannelDao：渠道配置 CRUD
+├── message_push/           # MessagePushDao：SSE 推送连接管理
 ├── model_provider/         # ModelProviderDao：模型配置 CRUD
 ├── organization/           # OrganizationDao：组织 CRUD
 ├── project/                # ProjectDao：项目 CRUD
-├── skill/                  # SkillDao：技能 CRUD + 向量搜索
-├── task/                   # TaskDao：任务 CRUD
-├── tool/                   # ToolDao：工具 CRUD + 向量搜索
+├── skill/                  # SkillDao：技能 CRUD + 向量搜索（Vectorizable）
+├── task/                   # TaskDao：任务 CRUD + 向量索引（Vectorizable）
+├── tool/                   # ToolDao：工具 CRUD + 向量搜索（Vectorizable）
 ├── tool_call/              # ToolCallDao：工具调用执行
 │   ├── impl.rs             # 内置工具执行实现
 │   ├── mcp.rs              # MCP 工具执行实现
 │   └── mod.rs              # ToolCall trait 定义
 │
+├── tool_stats/             # ToolStatsDao：工具调用次数/失败次数查询
 ├── user/                   # UserDao：用户 CRUD
+├── stats/                  # StatsDao：DuckDB 多维统计（Agent/Project/Task/ModelProvider/Tool）
+├── a2a_callback/           # A2aCallbackDao：A2A 异步回调入站记录
+├── agent_runtime/          # AgentRuntimeDao：外部 Agent 运行时
+│   ├── codex.rs            # Codex CLI Agent 出站调用
+│   └── a2a.rs              # A2A Remote Agent 出站调用（send_task 等）
 │
-└── external/               # 外部渠道 DAO（HTTP 实现）
+├── cron_trigger/           # CronTriggerDao：定时触发器 CRUD + 后台扫描
+│
+└── external/               # 外部渠道 DAO（HTTP / WebSocket 实现）
     ├── email/              # EmailDao：邮件发送
     ├── slack/              # SlackDao：Slack 消息
-    ├── lark/               # LarkDao：飞书消息
+    ├── lark/               # LarkDao：飞书消息（HTTP 出站 + WebSocket 入站长连接）
     ├── wechat/             # WechatDao：微信消息
     └── webhook/            # WebhookDao：HTTP 回调
 ```
 
+> 💡 **注**：`event_queue/` DAO 已被 AOP 事件中心（`pkg/aop/`）取代，不再作为独立 DAO 存在。
+
 **设计原则：**
 - ✅ 单一数据源操作，不组合多个 DAO
 - ✅ 仅操作 PO，不包含业务逻辑
+- ✅ 外部 API DAO：出站外部调用、出站格式转换（如 Markdown→飞书卡片）
 - ❌ DAO 层调用其他 DAO
 
 ### 5. Models 层（持久化实体）
@@ -353,12 +409,12 @@ src/models/
 ├── mcp_server.rs           # McpServerPo
 ├── event.rs                # Event trait 定义
 ├── file.rs                 # FileMeta 文件元数据
-└── vector.rs               # SearchMatchInfo 向量搜索匹配信息
+└── vector.rs               # SearchMatchInfo + Vectorizable trait 定义
 ```
 
 ### 6. Consumer 层（异步消费者）
 
-**职责：从事件队列消费消息，调用 Domain 执行业务逻辑**
+**职责：从 AOP 事件队列消费 Domain 产生的内部事件，调用 Domain 执行业务逻辑**
 
 ```
 src/consumer/
@@ -367,12 +423,14 @@ src/consumer/
 │   ├── AgentMessageHandler  # Agent 消息处理
 │   ├── UserMessageHandler   # User 消息处理
 │   └── SystemMessageHandler # System 消息处理
+├── cron_trigger.rs         # CronTrigger Topic 消费者
 └── tests.rs                # 消费者框架测试
 ```
 
 **设计机制：**
 - ✅ 泛型框架：`GenericConsumer<E, F, H>` 适配任意事件类型
 - ✅ 三层分发：按 `to_role` 分发到 Agent/User/System Handler
+- ✅ order_key 接收者优先策略：Agent→to_id，非 Agent→task_id→project_id，保证同一接收者事件顺序
 - ✅ 崩溃恢复：服务启动自动从数据库恢复 pending 事件
 - ✅ 优先级排序：按 `priority DESC, created_at ASC` 排序
 
@@ -403,7 +461,7 @@ pub struct RequestContext {
 
 ### 8. Pkg 层（公共工具包）
 
-**职责：通用工具、日志系统、向量存储、工具注册**
+**职责：通用工具、日志系统、向量存储、工具注册、AOP 事件中心、消息入站适配中台**
 
 ```
 src/pkg/
@@ -411,6 +469,15 @@ src/pkg/
 ├── jwt.rs                  # JWT 生成/验证
 ├── request_context.rs      # RequestContext 定义
 ├── daily_jsonl.rs          # 每日 JSONL 文件写入
+│
+├── aop/                    # AOP 事件中心（纯框架，零业务依赖）
+│   # Event/Producer/Consumer/Registry/Queue 抽象
+│   # 同步/异步消费模式、内置内存队列
+│   # producer/consumer 业务层完全解耦、运行时队列状态监控
+│
+├── adapter/                # 通用适配器基础设施（消息入站适配中台）
+│   # 新渠道只需 DAL 注册 producer 即可自动获得入站消息
+│   # Agent 路由策略：渠道绑定 agent_id 优先 → feishu_reception 角色 → 任意 Onboarded Agent
 │
 ├── tool_registry/          # 工具注册表
 │   ├── builtin.rs          # 内置工具定义
@@ -426,14 +493,19 @@ src/pkg/
 │   ├── logger.rs           # 工具调用日志
 │   └── tool_call_logger.rs # 工具调用持久化
 │
-├── storage/                # 向量存储实现
+├── storage/                # 存储与向量搜索基础设施
+│   ├── fts5.rs             # FTS5 全文搜索工具（escape_fts5_keyword 等）
+│   ├── vector.rs           # VectorStore trait 抽象 + Vectorizable trait
 │   ├── mem_vector.rs       # 内存向量存储
-│   ├── lance.rs            # LanceDB 向量存储
-│   └── hnsw.rs             # HNSW 向量存储
+│   ├── lance.rs            # LanceDB 向量存储（默认后端）
+│   ├── hnsw.rs             # HNSW 向量存储（持久化 + 索引重建）
+│   └── sqlite_vss.rs       # SQLite VSS 向量存储
 │
-├── stats/                  # 统计模块
+├── stats/                  # DuckDB 统计模块
 │   ├── stats.rs            # 统计数据收集
-│   └── traits.rs           # 统计 trait 定义
+│   ├── traits.rs           # 统计 trait 定义
+│   ├── model_call.rs       # 模型调用统计（agent_awake_events 等）
+│   └── tool_call.rs        # 工具调用统计
 │
 └── monitoring/             # 监控模块
     └── rig_hook.rs         # rig-core 调用钩子
@@ -492,10 +564,12 @@ pub struct AgentRuntimeConfig {
 ```rust
 // src/models/brain.rs
 pub struct Brain {
-    pub cortex: Cortex,           // 思考执行（模型配置 + 推理实例）
-    pub memories: Vec<Memory>,    // 记忆列表
+    pub cortex: Cortex,           // 思考执行（绑定 ModelProvider + 推理实例）
+    pub memories: Vec<Memory>,    // 记忆集合（运行时按四层体系检索）
 }
 ```
+
+> 💡 **四层记忆体系**：Core（核心认知：角色设定、能力清单）/ Working（当前会话工作记忆）/ Short-Term（最近会话摘要索引）/ Long-Term（长期沉淀知识图谱）。`memories` 字段为运行时按场景检索出的记忆集合，对应存储层由 MemoryDal 统一管理。
 
 #### Cortex 大脑皮层
 
@@ -748,10 +822,13 @@ macro_rules! log_info {
 
 | 依赖 | 版本 | 用途 |
 |------|------|------|
-| `fastembed` | 5.13 | 本地向量嵌入（纯 Rust） |
-| `lancedb` | 0.26 | 嵌入式向量数据库 |
+| `fastembed` | 5.13 | 本地向量嵌入（Embedding Provider，纯 Rust） |
+| `lancedb` | 0.26 | 嵌入式向量数据库（默认存储后端） |
+| `hnsw_rs` | - | HNSW 向量存储（持久化 + 索引重建） |
 | `arrow-array` | 57.3.0 | Arrow 数组 |
 | `arrow-schema` | 57.3.0 | Arrow Schema |
+
+> 💡 向量存储后端通过 `VectorStore` trait 抽象（`pkg/storage/vector.rs`），支持 LanceDB（默认）/ HNSW / inMemory / SqliteVss 四种实现。所有支持向量索引的 PO 实现 `Vectorizable` trait，DAL 层通过 `embed_entity` 统一调用。
 
 #### 工具调用依赖
 
@@ -823,7 +900,8 @@ common = { path = "./common", features = [
 
 ```
 ┌─────────────────────────────────────────┐
-│ Handler 层                               │
+│ Adapter 层（适配层）                     │
+│ - HTTP Handler + AOP Producer           │
 │ - 依赖 Domain                            │
 │ - 依赖 Common (DTO/Enum)                 │
 │ - 依赖 Middleware (RequestContext)       │
@@ -845,12 +923,13 @@ common = { path = "./common", features = [
             ↓ 组合 DAO
 ┌─────────────────────────────────────────┐
 │ DAO 层                                   │
-│ - SQL 拼接 + 数据库访问                  │
+│ - 本地 DB：SQL 拼接 + 数据库访问         │
+│ - 外部 API：出站调用（lark/a2a 等）      │
 │ - 仅操作 PO                              │
 │ - 依赖 Models (PO)                       │
 │ - 依赖 sqlx                              │
 └─────────────────────────────────────────┘
-            ↓ 操作数据库
+            ↓ 操作数据库 / 外部 API
 ┌─────────────────────────────────────────┐
 │ Models 层                                │
 │ - PO 持久化实体                          │
@@ -862,14 +941,16 @@ common = { path = "./common", features = [
 ### 4. Consumer 依赖关系
 
 ```
-Consumer (消息消费者)
+Consumer (内部事件消费者，处理 Domain 产生的内部事件)
     ↓ 调用 Domain
 Domain (业务逻辑)
     ↓ 调用 DAL
 DAL (数据访问)
     ↓ 调用 DAO
-DAO (数据库访问)
+DAO (数据库访问 / 外部 API 出站)
 ```
+
+> 💡 Consumer 不在适配层，它处理的是 Domain 产生的内部事件；外部协议（HTTP 回调、WS 事件、轮询）由适配层直接调用 Domain 方法处理，不进入事件中心。
 
 ---
 
@@ -1019,11 +1100,10 @@ data/
 
 | 层级 | 测试数 | 说明 |
 |------|--------|------|
-| DAO 层 | 100+ | 每个 DAO 模块独立测试文件 |
-| DAL 层 | 80+ | 每个 DAL 模块独立测试文件 |
-| Domain 层 | 60+ | 每个 Domain 模块独立测试文件 |
-| Consumer 层 | 20+ | 消费者框架 + Message 消费者测试 |
-| **总计** | **450+** | **100% 通过率** |
+| 后端 | 746 | DAO + DAL + Domain + Handler + Pkg 完整覆盖 |
+| 前端 | 34 | Dioxus 组件 + 页面测试 |
+| common | 50 | 公共 crate 测试 |
+| **总计** | **830** | **100% 通过率** |
 
 ### 2. 测试运行
 

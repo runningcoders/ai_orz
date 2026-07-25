@@ -1,5 +1,7 @@
 # 统计查询模块设计方案
 
+> 最后更新：2026-07-25（5 个 Stats DAO 全实体覆盖 + 实体详情页按需动态注入）
+
 ## 需求背景
 
 需要为前端页面提供统计数据查询能力：
@@ -24,6 +26,12 @@
 │  │             │       │             │       │             ││
 │  │ • call_summary    │ • call_summary    │ • call_summary    ││
 │  └─────────────┘       └─────────────┘       └─────────────┘│
+│                                                             │
+│  Tool自身领域                                               │
+│  ┌─────────────┐                                           │
+│  │ToolStatsDao │                                           │
+│  │ • call_summary                                          │
+│  └─────────────┘                                           │
 │         │                     │                     │        │
 │         ▼                     ▼                     ▼        │
 │  ┌─────────────────────────────────────────────────────┐    │
@@ -37,6 +45,8 @@
 │                                                             │
 ├─────────────────────────────────────────────────────────────┤
 │  DAL 层负责组装：调用多个 DAO，返回组合结果给上层              │
+│  5 个 Stats DAO 全实体覆盖：Agent / Project / Task / Tool /  │
+│  ModelProvider                                              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -57,6 +67,7 @@
 | **DAO - Agent** | `service/dao/agent/stats_duckdb.rs` | `AgentStatsDao` trait + DuckDB 实现，只负责 Agent 自身维度的 call_summary |
 | **DAO - Project** | `service/dao/project/stats_duckdb.rs` | `ProjectStatsDao` trait + DuckDB 实现，只负责 Project 自身维度的 call_summary |
 | **DAO - Task** | `service/dao/task/stats_duckdb.rs` | `TaskStatsDao` trait + DuckDB 实现，只负责 Task 自身维度的 call_summary |
+| **DAO - Tool** | `service/dao/tool/stats_duckdb.rs` | `ToolStatsDao` trait + DuckDB 实现，只负责 Tool 自身维度的 call_summary（数据来自 `tool_call_events` 表，支持按 agent_id 过滤） |
 | **DAO - ModelProvider** | `service/dao/model_provider/stats_duckdb.rs` | `ModelProviderStatsDao` trait + DuckDB 实现，负责模型调用领域的所有统计（call_summary + token_summary + time_series），支持按 agent_id/project_id/task_id/model_provider_id 多维度过滤 |
 | **DAL** | 对应实体 DAL | 组合多个 DAO，提供简洁的业务级统计接口 |
 | **Domain** | 现有 Domain | 新增统计查询接口，调用 DAL 获取结果 |
@@ -298,6 +309,15 @@ async fn get_stats(&self, ctx: RequestContext, id: &str, options: StatsFetchOpti
 /// 获取实体维度的模型调用统计（ModelProvider DAL 没有这个方法）
 async fn get_model_call_stats(&self, ctx: RequestContext, id: &str, options: StatsFetchOptions) -> Result<ModelCallStats>;
 ```
+
+### 实体详情页按需动态注入（FetchOptions 模式）
+
+实体详情页通过 `FetchOptions` 模式按需注入统计数据，避免在简单查询场景下无谓触发 DuckDB 聚合：
+
+- `FetchOptions` 中包含 `StatsOptions`（对应 `with_stats` / `StatsFetchOptions`），由 Domain 层根据上层意图决定是否加载
+- 列表接口默认不加载统计，详情页接口按需开启
+- 5 个实体（Agent / Project / Task / Tool / ModelProvider）的详情页都支持按需动态注入统计数据
+- 与 `record_event!` 宏配套使用：事件落盘后，前端详情页拉取时自动计算并返回最新统计
 
 ### Agent DAL 示例
 
@@ -617,4 +637,5 @@ pub struct TaskEvent {
 | v1.6 | 2026-07-03 | 监控链路字段补充 | ModelCallEvent 补充 model_provider_id / model_name；ToolCallEvent 新增 organization_id / user_id |
 | v1.7 | 2026-07-05 | 领域拆分重构 | **核心改造**：按领域划分职责，Agent/Project/Task StatsDao 只负责自身维度的 call_summary；ModelProviderStatsDao 升级为模型调用领域 DAO；新增 ModelCallStats 通用结构体；DAL 层组装跨领域统计结果；接口精简为 get_stats(id, options) + get_model_call_stats(id, options) |
 | v1.8 | 2026-07-05 | Agent 唤醒事件 + 数据源切换 | 新增 `AgentAwakeEvent` 统计事件和 `agent_awake_events` 表；在 RuntimeDomain.awaken() 中记录唤醒事件；AgentStatsDao 数据源从 model_call_events 切换到 agent_awake_events，统计内容从"模型调用次数"变为"Agent 唤醒次数" |
-| v1.9 | 2026-07-06 | Project/Task 业务事件落地 | 新增 `ProjectEvent` 和 `TaskEvent` 两个业务事件结构体和表；在 ProjectDomain 和 TaskDomain 的状态变更方法中集成事件记录；`record_event!` 宏改用 `stats_opt()` 避免未初始化时 panic；544 个测试 100% 通过 |
+| v1.9 | 2026-07-06 | Project/Task 业务事件落地 | 新增 `ProjectEvent` 和 `TaskEvent` 两个业务事件结构体和表；在 ProjectDomain 和 TaskDomain 的状态变更方法中集成事件记录；`record_event!` 宏改用 `stats_opt()` 避免未初始化时 panic；830 个测试 100% 通过 |
+| v2.0 | 2026-07-25 | 5 DAO 全实体覆盖 + 详情页按需注入 | 新增 `ToolStatsDao`，5 个 Stats DAO（Agent/Project/Task/Tool/ModelProvider）全实体覆盖；实体详情页通过 `FetchOptions` + `StatsOptions` 按需动态注入统计数据，列表接口默认不加载；DAL 层统计接口统一为 `get_stats(id, options)` + `get_model_call_stats(id, options)`；830 个测试 100% 通过（后端 746 + 前端 34 + common 50） |

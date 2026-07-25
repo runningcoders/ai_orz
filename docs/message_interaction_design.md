@@ -159,12 +159,12 @@ Agent 角色**不使用枚举**，保持开放灵活：
 
 ---
 
-## 交互流程（推送 + 拉取模式）
+## 交互流程（SSE 实时推送模式）
 
 ### 发送消息（用户 → 后端）
 
 ```
-前端 → POST /api/chat/send-message
+前端 → POST /api/v1/finance/messages/agents
 {
   "agent_id": "默认前台AgentID",  // 用户可指定任意Agent
   "project_id": "可选，当前项目上下文",
@@ -175,34 +175,31 @@ Agent 角色**不使用枚举**，保持开放灵活：
 ```
 
 后端处理：
-1. 验证权限（当前用户有权限访问指定项目/任务）
-2. 保存消息到 `messages` 表，状态 = `Pending`
-3. 发布 `Message` 事件到事件总线
-4. 立即返回 `{ message_id, created_at, project_id, task_id }`
+1. JWT/Cookie 中间件解析身份并注入 `RequestContext`（双模式认证详见 [docs/LAYERED_ARCHITECTURE_PRACTICE.md](./LAYERED_ARCHITECTURE_PRACTICE.md)）
+2. 验证权限（当前用户有权限访问指定项目/任务）
+3. 保存消息到 `messages` 表，状态 = `Pending`，并写入 `root_id` 用于消息链追踪
+4. 发布 `MessageCreatedEvent` 到 AOP 事件中心
+5. 立即返回 `{ message_id, created_at, project_id, task_id }`
 
-### 拉取消息（前端 → 后端）
+### 订阅消息（前端 → 后端，SSE 长连接）
 
-前端短轮询（间隔 1 秒）：
-```
-前端 → GET /api/chat/pull-messages
-{
-  "project_id": "项目ID",
-  "task_id": "可选",
-  "after_timestamp": 1234567890
-}
-
-后端返回：
-{
-  "messages": [...],  // 时间戳之后的所有新消息
-  "has_more": false,
-  "latest_timestamp": 1234567891
-}
-```
-
-### 事件总线异步处理
+前端使用 `EventSource` API 订阅 Server-Sent Events 长连接：
 
 ```
-消费者取出 Message 事件
+前端 → GET /api/v1/finance/messages/sse
+       （后端按 RequestContext.uid 过滤，仅推送当前用户的订阅）
+```
+
+特性：
+- 订阅者模式 + `tokio::sync::broadcast` 通道分发，DAO 层管理连接生命周期
+- Agent 回复、任务分配通知等事件实时推送给当前用户的所有活跃连接
+- 客户端断开自动注销（`CleanupStream` Drop guard）
+- 替代了早期 1 秒间隔的短轮询方案，延迟更低、资源占用更小
+
+### AOP 事件中心异步处理
+
+```
+MessageConsumer 取出 MessageCreatedEvent（Async 模式，并发 4）
   ↓
 更新消息状态 → Processing
   ↓
@@ -212,14 +209,14 @@ Agent 处理消息：
   ├─ 前台 Agent：理解用户意图，决策处理方式
   ├─ 工作 Agent：执行分配的任务
   ↓
-Agent 生成回复，保存到 messages 表（role = Agent，status = Processed）
+Agent 生成回复，保存到 messages 表（role = Agent，status = Processed，继承 root_id 维持消息链）
   ↓
 更新原用户消息状态 → Processed
   ↓
-完成
+SSE 广播实时将 Agent 回复推送到前端订阅连接
 ```
 
-下次轮询前端就能拿到 Agent 回复。
+Agent 回复通过 SSE 长连接实时送达前端，无需轮询。
 
 ---
 
@@ -287,16 +284,16 @@ src/service/
 
 ---
 
-## API 接口清单（规划）
+## API 接口清单
 
 | 方法 | 接口 | 功能 |
 |------|------|------|
-| POST | `/api/chat/create-conversation` | 创建新对话（新项目或闲聊） |
-| POST | `/api/chat/send-message` | 发送消息给 Agent |
-| GET | `/api/chat/pull-messages` | 拉取最新消息（轮询） |
-| GET | `/api/chat/get-history` | 分页加载历史消息 |
-| GET | `/api/chat/list-conversations` | 列最近对话列表 |
-| GET | `/api/projects/list-my-projects` | 列出当前用户的所有项目 |
+| POST | `/api/v1/finance/messages/agents` | 发送消息给 Agent（用户 → Agent） |
+| GET | `/api/v1/finance/messages` | 列表查询（分页，支持项目/任务/会话上下文过滤） |
+| POST | `/api/v1/finance/messages/search` | 消息搜索（FTS5 关键词 + 向量混合搜索） |
+| GET | `/api/v1/finance/messages/sse` | SSE 实时推送订阅（按当前用户 uid 过滤） |
+| CRUD | `/api/v1/finance/message-channels/*` | 消息渠道管理（飞书/微信/Slack/邮件/Webhook） |
+| GET | `/api/v1/projects` | 列出当前用户的项目（分页查询） |
 
 ---
 
@@ -304,7 +301,7 @@ src/service/
 
 本文档创建于：2026-04-19，基于讨论总结。
 
-最后更新：2026-04-28
+最后更新：2026-07-25
 
 ---
 
@@ -436,8 +433,14 @@ pub trait DeliveryDomain {
 - [x] Domain 层完成：delivery + management，所有测试通过
 - [x] 事件总线重构完成：泛型 topic 分离设计，彻底解决消息错乱
 - [x] Tool Domain 层框架已搭建（management + execution）
-- [ ] Handler 层开发进行中
+- [x] Handler 层完成：发送消息、列表查询、搜索、SSE 订阅等接口上线
+- [x] SSE 实时推送系统上线（替代短轮询，订阅者模式 + broadcast 通道）
+- [x] AOP 事件中心迁移完成（MessageCreatedEvent 替代旧事件总线）
+- [x] 双模式认证统一（HttpOnly Cookie + JWT 浏览器 / Bearer token API）
+- [x] root_id 消息链追踪（用户发起消息生成 root_id，Agent 回复继承）
+- [x] TaskAssignment 消息类型已实现（任务分配自动通知 Agent）
+- [x] 消息渠道系统骨架完成（飞书 P2P 私信 WebSocket 入站已上线，微信/Slack/邮件/Webhook 出站骨架就绪）
 
-所有单元测试：**165/165 全部通过 ✅
+所有单元测试：**830 个测试全部通过 ✅**（后端 746 + 前端 34 + common 50）
 
-最后更新：2026-04-30
+最后更新：2026-07-25

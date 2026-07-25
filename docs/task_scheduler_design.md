@@ -15,25 +15,36 @@
 
 ## 🏗️ 整体架构
 
+> 💡 **架构演进**：调度器已通过 AOP 事件中心重构。`CronTriggerProducer` 作为 AOP Producer 注册到 Registry，每 60 秒 poll 一次到期触发器并 publish `CronTriggerEvent`；`CronTriggerConsumer` 订阅 `cron_trigger` topic，按 `payload.action` 分发到对应 Domain 处理。已实现的 Action 模板包括 `agent_rest`（触发 Agent 休息与记忆沉淀），可通过扩展 Consumer 的 action 分支支持更多定时业务场景。
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     Scheduler Worker                          │
+│              CronTriggerProducer（AOP Producer）              │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │  定时扫描触发器（每分钟执行一次）                      │  │
-│  │    SELECT * FROM task_triggers WHERE next_run_at <= now  │  │
+│  │  定时扫描触发器（poll_interval_secs = 60s）            │  │
+│  │    SELECT * FROM cron_triggers WHERE next_run_at <= now  │  │
 │  └───────────────────────────────────────────────────────┘  │
 └────────────────────────────────────────┬─────────────────────┘
-                                         │
+                                         │ publish(CronTriggerEvent)
                                          ▼
                     ┌─────────────────────────────────┐
-                    │   创建任务实例到 tasks 表        │
-                    │   (复用现有任务执行逻辑)         │
+                    │   AOP 事件中心（Registry）        │
+                    │   topic = "cron_trigger"         │
+                    └───────────────┬─────────────────┘
+                                    │
+                                    ▼
+                    ┌─────────────────────────────────┐
+                    │  CronTriggerConsumer（Consumer）  │
+                    │  按 payload.action 分发到 Domain   │
+                    │  - agent_rest：触发记忆沉淀        │
+                    │  - 自定义 action：扩展处理          │
                     └───────────────┬─────────────────┘
                                     │
                                     ▼
                     ┌─────────────────────────────────┐
                     │   更新触发器：next_run_at ++     │
                     │   last_run_at = now              │
+                    │   （Producer 端 mark_executed）   │
                     └─────────────────────────────────┘
 ```
 
@@ -41,10 +52,10 @@
 
 ## 🗄️ 数据库设计
 
-### 1. task_triggers 表（新增定时触发器）
+### 1. cron_triggers 表（新增定时触发器）
 
 ```sql
-CREATE TABLE IF NOT EXISTS task_triggers (
+CREATE TABLE IF NOT EXISTS cron_triggers (
     id TEXT PRIMARY KEY,
     org_id TEXT NOT NULL,
     user_id TEXT NOT NULL,                    -- 创建者/归属用户
@@ -86,11 +97,13 @@ CREATE TABLE IF NOT EXISTS task_triggers (
 );
 
 -- 索引：调度器核心查询
-CREATE INDEX idx_task_triggers_next_run ON task_triggers(is_enabled, next_run_at);
-CREATE INDEX idx_task_triggers_org_id ON task_triggers(org_id);
-CREATE INDEX idx_task_triggers_user_id ON task_triggers(user_id);
-CREATE INDEX idx_task_triggers_trigger_type ON task_triggers(trigger_type);
+CREATE INDEX idx_cron_triggers_next_run ON cron_triggers(is_enabled, next_run_at);
+CREATE INDEX idx_cron_triggers_org_id ON cron_triggers(org_id);
+CREATE INDEX idx_cron_triggers_user_id ON cron_triggers(user_id);
+CREATE INDEX idx_cron_triggers_trigger_type ON cron_triggers(trigger_type);
 ```
+
+> 💡 **实现演进**：实际迁移脚本（`migrations/20260711000000_cron_triggers.sql`）已精简，移除了原设计的任务模板字段（`task_*`、`org_id`、`user_id`、`start_at`/`end_at`/`max_runs`/`remaining_runs`/`total_runs`/`last_error` 等），改为单一的 `payload TEXT NOT NULL DEFAULT '{}'` 字段承载 `action` + `extra`（JSON）。触发器不再直接创建任务实例，而是通过 `payload.action` 分发到对应 Domain 处理（如 `agent_rest` 触发记忆沉淀）。`trigger_type` 字段类型为 `INTEGER`（配合 `TriggerType` 枚举的 `#[repr(i32)]`），而非上文的 `TEXT`。
 
 ### 2. 字段说明
 
@@ -122,25 +135,30 @@ CREATE INDEX idx_task_triggers_trigger_type ON task_triggers(trigger_type);
 ### TriggerType 触发类型
 
 ```rust
-// common/src/enums/task_trigger.rs
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
-#[sqlx(type_name = "TEXT", rename_all = "snake_case")]
+// common/src/enums/cron_trigger.rs
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
+#[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
 pub enum TriggerType {
-    Once,       // 一次性定时
-    Cron,       // Cron 表达式
-    Interval,   // 固定间隔
+    Once = 0,       // 一次性定时
+    Cron = 1,       // Cron 表达式
+    Interval = 2,   // 固定间隔
 }
 
+impl Default for TriggerType {
+    fn default() -> Self { Self::Cron }
+}
+
+impl From<i32> for TriggerType { /* ... */ }
+impl From<i64> for TriggerType { /* ... */ }  // 适配 sqlx 类型推断
+
 impl TriggerType {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            TriggerType::Once => "once",
-            TriggerType::Cron => "cron",
-            TriggerType::Interval => "interval",
-        }
-    }
+    pub fn to_i32(&self) -> i32 { *self as i32 }
 }
 ```
+
+> 💡 **注意**：实际实现使用 `INTEGER` 存储（而非文档早期版本的 `TEXT`），遵循 [AGENTS.md 4.3 枚举类型安全](../AGENTS.md) 规范，所有数据库枚举字段必须使用 Rust 枚举 + `#[repr(i32)]` + `#[derive(sqlx::Type)]`，并实现 `From<i64>` 适配 sqlx 类型推断。
 
 ---
 
@@ -149,94 +167,104 @@ impl TriggerType {
 ### 1. DAO 层（数据访问）
 
 ```rust
-// src/dao/task_trigger/mod.rs
+// src/service/dao/cron_trigger/mod.rs
 #[async_trait]
-pub trait TaskTriggerDao {
+pub trait CronTriggerDao {
     // CRUD
-    async fn create(&self, ctx: RequestContext, trigger: &TaskTriggerPo) -> Result<TaskTriggerPo, AppError>;
-    async fn update(&self, ctx: RequestContext, trigger: &TaskTriggerPo) -> Result<TaskTriggerPo, AppError>;
-    async fn delete(&self, ctx: RequestContext, trigger_id: &str) -> Result<(), AppError>;
-    async fn get_by_id(&self, ctx: RequestContext, trigger_id: &str) -> Result<Option<TaskTriggerPo>, AppError>;
+    async fn create(&self, ctx: RequestContext, trigger: &CronTriggerPo) -> Result<()>;
+    async fn update(&self, ctx: RequestContext, trigger: &CronTriggerPo) -> Result<()>;
+    async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()>;
+    async fn get_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<CronTriggerPo>>;
     
-    // 查询用户的所有触发器
-    async fn list_by_user(&self, ctx: RequestContext, user_id: &str) -> Result<Vec<TaskTriggerPo>, AppError>;
+    // 通用查询
+    async fn list(&self, ctx: RequestContext, query: CronTriggerQuery) -> Result<Vec<CronTriggerPo>>;
     
     // 调度器查询：获取所有到期需要执行的触发器
-    // SELECT * FROM task_triggers 
+    // SELECT * FROM cron_triggers 
     // WHERE is_enabled = 1 AND next_run_at <= ?
     // ORDER BY next_run_at ASC
-    async fn list_due_triggers(&self, ctx: RequestContext, now: i64) -> Result<Vec<TaskTriggerPo>, AppError>;
+    async fn list_due(&self, ctx: RequestContext, now: i64, limit: i32) -> Result<Vec<CronTriggerPo>>;
     
-    // 标记执行成功，计算下次执行时间
-    async fn mark_executed(
+    // 更新下次执行时间（含 last_run_at）
+    async fn update_next_run_at(
         &self,
         ctx: RequestContext,
-        trigger_id: &str,
+        id: &str,
+        next_run_at: i64,
         last_run_at: i64,
-        next_run_at: Option<i64>,
-    ) -> Result<(), AppError>;
+    ) -> Result<()>;
     
-    // 标记执行失败
-    async fn mark_failed(&self, ctx: RequestContext, trigger_id: &str, error: &str) -> Result<(), AppError>;
-    
-    // 启用/禁用
-    async fn set_enabled(&self, ctx: RequestContext, trigger_id: &str, is_enabled: bool) -> Result<(), AppError>;
+    // 启用/禁用（软删除：is_enabled = 0）
+    async fn set_enabled(&self, ctx: RequestContext, id: &str, is_enabled: bool) -> Result<()>;
 }
 ```
 
 ### 2. DAL 层（业务组合）
 
 ```rust
-// src/dal/task_trigger.rs
+// src/service/dal/cron_trigger.rs
 #[async_trait]
-pub trait TaskTriggerDal {
-    // 创建一次性定时任务
-    async fn create_once_trigger(&self, ctx: RequestContext, req: CreateOnceTriggerRequest) -> Result<TaskTriggerPo, AppError>;
+pub trait CronTriggerDal {
+    // 创建触发器（一次性 / Cron / 间隔由 trigger_type 字段决定）
+    async fn create(&self, ctx: RequestContext, trigger: &CronTriggerPo) -> Result<()>;
     
-    // 创建 Cron 定时任务
-    async fn create_cron_trigger(&self, ctx: RequestContext, req: CreateCronTriggerRequest) -> Result<TaskTriggerPo, AppError>;
+    // 根据 ID 获取
+    async fn get_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<CronTriggerPo>>;
     
-    // 创建间隔定时任务
-    async fn create_interval_trigger(&self, ctx: RequestContext, req: CreateIntervalTriggerRequest) -> Result<TaskTriggerPo, AppError>;
+    // 列表查询
+    async fn list(&self, ctx: RequestContext, query: CronTriggerQuery) -> Result<Vec<CronTriggerPo>>;
     
-    // 计算触发器的下次执行时间
-    fn calculate_next_run(&self, trigger: &TaskTriggerPo, from_time: i64) -> Option<i64>;
+    // 更新
+    async fn update(&self, ctx: RequestContext, trigger: &CronTriggerPo) -> Result<()>;
     
-    // 执行触发器：创建任务 + 更新执行状态
-    async fn execute_trigger(&self, ctx: RequestContext, trigger_id: &str) -> Result<TaskPo, AppError>;
+    // 暂停/恢复（软删除：is_enabled = 0）
+    async fn pause(&self, ctx: RequestContext, id: &str) -> Result<()>;
+    async fn resume(&self, ctx: RequestContext, id: &str) -> Result<()>;
     
-    // 批量执行所有到期触发器
-    async fn execute_due_triggers(&self, ctx: RequestContext) -> Result<Vec<TaskPo>, AppError>;
+    // 获取到期触发器
+    async fn list_due(&self, ctx: RequestContext, now: i64, limit: i32) -> Result<Vec<CronTriggerPo>>;
+    
+    // 标记执行成功，更新 next_run_at / last_run_at
+    async fn mark_executed(&self, ctx: RequestContext, id: &str, executed_at: i64) -> Result<()>;
 }
 ```
 
 ### 3. Domain 层（核心业务）
 
-```rust
-// src/domain/task_trigger/mod.rs
-pub struct TaskTriggerDomain {
-    trigger_dal: Arc<dyn TaskTriggerDal>,
-    task_dal: Arc<dyn TaskDal>,
-}
+> 💡 **架构归属**：触发器管理归属于 `SystemDomain`（`src/service/domain/system/`），通过 `cron_manager()` 子能力对外暴露。这与文档原设计的独立 `TaskTriggerDomain` 不同——触发器属于系统领域基础设施，与 AOP 监控同属 SystemDomain。
 
-impl TaskTriggerDomain {
+```rust
+// src/service/domain/system/mod.rs
+// SystemDomain 的 cron_manager 子能力
+pub trait CronManager: Send + Sync {
     // 创建触发器
-    pub async fn create_trigger(&self, ctx: RequestContext, req: CreateTriggerRequest) -> Result<TaskTriggerDto, AppError>;
+    async fn create_trigger(&self, ctx: RequestContext, trigger: &CronTriggerPo) -> Result<()>;
+    
+    // 获取触发器
+    async fn get_trigger(&self, ctx: RequestContext, id: &str) -> Result<Option<CronTriggerPo>>;
+    
+    // 列出触发器
+    async fn list_triggers(&self, ctx: RequestContext, query: CronTriggerQuery) -> Result<Vec<CronTriggerPo>>;
+    
+    // 更新触发器
+    async fn update_trigger(&self, ctx: RequestContext, trigger: &CronTriggerPo) -> Result<()>;
     
     // 暂停触发器
-    pub async fn pause_trigger(&self, ctx: RequestContext, trigger_id: &str) -> Result<(), AppError>;
+    async fn pause_trigger(&self, ctx: RequestContext, id: &str) -> Result<()>;
     
     // 恢复触发器
-    pub async fn resume_trigger(&self, ctx: RequestContext, trigger_id: &str) -> Result<(), AppError>;
+    async fn resume_trigger(&self, ctx: RequestContext, id: &str) -> Result<()>;
     
-    // 删除触发器
-    pub async fn delete_trigger(&self, ctx: RequestContext, trigger_id: &str) -> Result<(), AppError>;
+    // 获取到期触发器（供 Producer 调用）
+    async fn list_due_triggers(&self, ctx: RequestContext, now: i64, limit: i32) -> Result<Vec<CronTriggerPo>>;
     
-    // 列出用户所有触发器
-    pub async fn list_user_triggers(&self, ctx: RequestContext, user_id: &str) -> Result<Vec<TaskTriggerDto>, AppError>;
-    
-    // 手动立即触发
-    pub async fn trigger_now(&self, ctx: RequestContext, trigger_id: &str) -> Result<TaskDto, AppError>;
+    // 标记触发器已执行（Producer publish 后调用）
+    async fn mark_trigger_executed(&self, ctx: RequestContext, id: &str, executed_at: i64) -> Result<()>;
+}
+
+// SystemDomain 暴露 cron_manager 能力
+impl SystemDomain {
+    pub fn cron_manager(&self) -> Arc<dyn CronManager> { ... }
 }
 ```
 
@@ -244,85 +272,113 @@ impl TaskTriggerDomain {
 
 ## ⏰ 调度器实现
 
-### 后台定时扫描
+### AOP Producer 模式
+
+> 💡 **架构演进**：原设计的独立 `TaskScheduler` 已被 AOP 事件中心的 Producer/Consumer 模式取代。`CronTriggerProducer` 实现 `Producer` trait，注册到 Registry 后由框架按 `poll_interval_secs()` 周期性调用 `poll()`。Producer 只负责扫描到期触发器并 publish 事件，业务处理由 Consumer 完成，二者完全解耦。
 
 ```rust
-// src/scheduler/task_scheduler.rs
-pub struct TaskScheduler {
-    trigger_domain: Arc<TaskTriggerDomain>,
-    interval: Duration,
+// src/producer/cron_trigger.rs
+pub struct CronTriggerProducer {
+    registry: RwLock<Option<Arc<Registry>>>,
 }
 
-impl TaskScheduler {
-    // 启动调度器
-    pub async fn start(self: Arc<Self>) {
-        tracing::info!("task scheduler started");
-        
-        let mut interval = tokio::time::interval(self.interval);
-        
-        loop {
-            interval.tick().await;
-            
-            if let Err(e) = self.execute_due_triggers().await {
-                tracing::error!("scheduler execution failed: {}", e);
-            }
-        }
+#[async_trait]
+impl Producer for CronTriggerProducer {
+    fn name(&self) -> &str { "cron_trigger" }
+
+    async fn register(&self, registry: Arc<Registry>) -> Result<()> {
+        let mut reg = self.registry.write().unwrap();
+        *reg = Some(registry);
+        Ok(())
     }
-    
-    // 执行所有到期触发器
-    async fn execute_due_triggers(&self) -> Result<(), AppError> {
-        let now = chrono::Utc::now().timestamp_millis();
-        
-        // 1. 查询所有到期触发器
-        let triggers = self.trigger_dal
-            .list_due_triggers(RequestContext::system(), now)
+
+    fn poll_interval_secs(&self) -> u64 { 60 }
+
+    async fn poll(&self) -> Result<()> {
+        let registry = self.registry.read().unwrap().clone();
+        let Some(registry) = registry else {
+            return Err(err!(Internal, "registry not registered"));
+        };
+
+        let ctx = RequestContext::new(None, None);
+        let now = current_timestamp();
+
+        // 1. 查询到期触发器
+        let triggers = system::domain()
+            .cron_manager()
+            .list_due_triggers(ctx.clone(), now, 100)
             .await?;
-        
+
         if triggers.is_empty() {
             return Ok(());
         }
-        
-        tracing::info!("found {} due triggers to execute", triggers.len());
-        
-        // 2. 并发执行所有触发器
-        let mut tasks = Vec::new();
-        for trigger in triggers {
-            let self_clone = self.clone();
-            
-            tasks.push(tokio::spawn(async move {
-                let result = self_clone
-                    .trigger_dal
-                    .execute_trigger(RequestContext::system(), &trigger.id)
-                    .await;
-                
-                match result {
-                    Ok(task) => tracing::info!("trigger {} created task {}", trigger.id, task.id),
-                    Err(e) => tracing::error!("trigger {} execution failed: {}", trigger.id, e),
-                }
-            }));
+
+        log_debug!("cron producer found {} due triggers", triggers.len());
+
+        // 2. publish 事件 + 标记执行
+        for trigger in &triggers {
+            let event = CronTriggerEvent {
+                event_id: format!("{}-{}", trigger.id, now),
+                trigger_id: trigger.id.clone(),
+                trigger_name: trigger.name.clone(),
+                payload: trigger.payload.clone(),
+                created_at: current_timestamp(),
+            };
+            registry.publish(event).await;
+
+            system::domain()
+                .cron_manager()
+                .mark_trigger_executed(ctx.clone(), &trigger.id, now)
+                .await?;
         }
-        
-        // 等待所有执行完成
-        for task in tasks {
-            let _ = task.await;
-        }
-        
+
+        log_info!("cron producer published {} trigger events", triggers.len());
         Ok(())
     }
 }
+```
 
-// 在 main.rs 中启动
-pub async fn init_schedulers(config: &AppConfig, trigger_domain: Arc<TaskTriggerDomain>) {
-    let scheduler = Arc::new(TaskScheduler {
-        trigger_domain,
-        interval: Duration::from_secs(60),  // 每分钟扫描一次
-    });
-    
-    tokio::spawn(async move {
-        scheduler.start().await;
-    });
+### Consumer 处理（按 action 分发）
+
+```rust
+// src/consumer/scheduler.rs
+pub struct CronTriggerConsumer;
+
+impl Consumer for CronTriggerConsumer {
+    async fn handle(&self, event: CronTriggerEvent) -> Result<()> {
+        log_info!(
+            "cron trigger fired: {} (trigger_id: {}, action: {})",
+            event.trigger_name, event.trigger_id, payload.action
+        );
+
+        match payload.action.as_str() {
+            // agent_rest：触发 Agent 休息与记忆沉淀（定时触发记忆沉淀）
+            "agent_rest" => {
+                self.handle_agent_rest(&event, &payload.extra).await?;
+            }
+            other => {
+                log_warn!("unknown action '{}' for trigger {} (id: {})",
+                    payload.action, event.trigger_name, event.trigger_id);
+            }
+        }
+        Ok(())
+    }
 }
 ```
+
+### 注册到 AOP 事件中心
+
+```rust
+// src/producer/mod.rs
+pub fn init(registry: Arc<Registry>) {
+    registry
+        .register_producer(Arc::new(cron_trigger::CronTriggerProducer::new()))
+        // ... 其他 producer
+        ;
+}
+```
+
+> 💡 **关键事件流**：`CronTriggerProducer.poll()` → `Registry.publish(CronTriggerEvent)` → `CronTriggerConsumer.handle()` → 按 `action` 分发到 Domain（如 `agent_rest` 调用 RuntimeDomain 执行 Agent 休息与记忆沉淀）。
 
 ---
 
@@ -360,15 +416,20 @@ fn calculate_cron_next(cron_expr: &str, from_time: i64) -> Option<i64> {
 
 ## 📋 实现任务清单
 
-- [ ] 创建 `common/src/enums/task_trigger.rs` 枚举
-- [ ] 创建 `src/models/task_trigger.rs` PO 结构体
-- [ ] 创建数据库迁移脚本
-- [ ] 实现 `TaskTriggerDao` SQLite 实现
-- [ ] 实现 `TaskTriggerDal`（含 Cron 计算）
-- [ ] 实现 `TaskTriggerDomain`
-- [ ] 实现 `TaskScheduler` 后台调度器
-- [ ] 在 main.rs 中集成启动调度器
-- [ ] 编写单元测试
+> ✅ 全部已实现（2026-07-12 落地，2026-07-15 前端体验优化）
+
+- [x] 创建 `common/src/enums/` 下 TriggerType 枚举
+- [x] 创建 `src/models/cron_trigger.rs` PO 结构体（含 `payload` 字段承载 action + extra）
+- [x] 创建数据库迁移脚本
+- [x] 实现 `CronTriggerDao` SQLite 实现（`src/service/dao/cron_trigger/sqlite.rs`）
+- [x] 实现 `CronTriggerDal`（`src/service/dal/cron_trigger.rs`）
+- [x] 实现 `CronManager` 子能力并归属 `SystemDomain`（`src/service/domain/system/`）
+- [x] 实现 `CronTriggerProducer`（AOP Producer 模式，`src/producer/cron_trigger.rs`）
+- [x] 实现 `CronTriggerConsumer`（按 `payload.action` 分发，`src/consumer/scheduler.rs`）
+- [x] 注册 Producer 到 AOP 事件中心（`src/producer/mod.rs`）
+- [x] 实现 `agent_rest` Action 模板（触发 Agent 休息与记忆沉淀，定时触发记忆沉淀）
+- [x] 前端定时触发器页面（7 列展示 + Action 模板化 + Cron 预设按钮 + 编辑复用创建弹窗）
+- [x] 编写单元测试
 
 ---
 

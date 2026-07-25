@@ -1,4 +1,6 @@
 //! # 架构说明
+//!
+//! > 最后更新：2026-07-25
 
 ## 项目愿景
 
@@ -214,7 +216,7 @@ pub trait RuntimeMemory: Send + Sync {
 
 ## 事件总线架构
 
-详见独立设计文档：[docs/event_design.md](./event_design.md)
+详见独立设计文档：[docs/consumer_architecture.md](./consumer_architecture.md)（事件队列泛型 topic 设计详见 [docs/event_design.md](./event_design.md)）
 
 ### 核心设计要点
 
@@ -247,18 +249,18 @@ Project + Task + Artifact 聚合
 
 ---
 
-## 最新架构完成状态（2026-07-13 更新）
+## 最新架构完成状态（2026-07-25 更新）
 
-### 总体完成度：**~98%** 🎯
+### 总体完成度：**~99%** 🎯
 
 | 层级 | 完成度 | 状态 | 关键进展 |
 |------|--------|------|---------|
-| **DAO 层** | 100% ✅ | 完成 | 28 个 DAO 全部实现并被使用，零闲置（21 核心 DAO + 5 渠道 DAO + 1 统计 DAO + 1 触发器 DAO） |
-| **DAL 层** | 100% ✅ | 完成 | 17 个 DAL 全部接入业务，零闲置 |
+| **DAO 层** | 100% ✅ | 完成 | 25 个 DAO 全部实现并被使用，零闲置（18 核心 DAO + 5 渠道 DAO + a2a 回调 + 1 触发器 + 消息推送） |
+| **DAL 层** | 100% ✅ | 完成 | 23 个 DAL 全部接入业务，零闲置（含 lark、agent_a2a、agent_codex、backup、log_query、message_push、mcp_tool、cron_trigger 等专属 DAL） |
 | **Domain 层** | 100% ✅ | 完成 | 7 个领域全部完整实现（organization/hr/finance/message/runtime/project/system） |
-| **Handler 层** | ~98% ✅ | 接近完成 | 7 大业务域 API 全部上线（organization/hr/finance/project/user/health/system），消息对话 API 完善 |
+| **适配层（Adapter）** | ~99% ✅ | 接近完成 | 8 大业务域 API 全部上线（organization/hr/finance/project/user/health/system/a2a 公开回调），含 AOP Producer（外部 WS 事件接入 + 轮询）；HTTP Handler / 公开回调 Handler / AOP Producer 同属适配层 |
 | **Consumer 层** | 100% ✅ | 完成 | 通用消费者框架 + Message Topic 三层分发 |
-| **Frontend 层** | ~95% ✅ | 接近完成 | Dioxus Router + 13 页面，对话功能 MVP 完整实现 |
+| **Frontend 层** | ~95% ✅ | 接近完成 | Dioxus Router + 15 路由 + Tailwind CSS v4 + DaisyUI v5（30+ 主题），知识图谱 Canvas HUD 驾驶舱风格 + SVG 兜底，Workspace 对话机制 + HUD 流光提示 |
 
 ---
 
@@ -300,8 +302,8 @@ Project + Task + Artifact 聚合
 | 优先级 | 任务 | 说明 |
 |--------|------|------|
 | ✅ 已完成 | ToolCallResult trace_ref 协议字段 | ToolCallResult 已完成不复制 request args、inline size bound、基于 call_id/tool_id 的 ToolCallEntry 查询，并已强类型携带 `trace_ref = ToolCallTraceRef { tool_id, call_id }`；成功和已开始执行后失败可携带真实引用，执行前/策略失败不伪造；attachment / artifact 仅用于用户下载或 Project Artifact 产物化 |
-| ✅ 已完成 | 对话功能 MVP | 左右分栏布局（项目列表 + 对话区）、消息气泡展示、双向分页、3秒短轮询机制全部实现 |
-| **P1** | 消息实时推送 | 当前使用短轮询，后续可引入 SSE/WebSocket 实现实时推送 |
+| ✅ 已完成 | 对话功能 MVP | 左右分栏布局（项目列表 + 对话区）、消息气泡展示、双向分页、SSE 实时消息推送 |
+| ✅ 已完成 | 消息实时推送 | SSE（Server-Sent Events）长连接已上线，订阅者模式 + DAO 层连接管理 + broadcast 广播，替代旧版短轮询 |
 | **P1** | 统计模块驱动的外部唤醒轮次 | ToolCallResult 可触发 Agent 下一次唤醒；是否继续、还能继续几轮、是否暂停等待反馈，由统一统计模块基于 task / agent / conversation 运行数据决定；最终用户答复由 Agent 在 Rig 回合内调用 `send_message` 等工具发出，Consumer / Runtime 不代生成 |
 | **P2** | message 消费推送全链路 E2E | consumer → domain_message → dal_message_channel；Manual ToolCallRequest → Runtime → ToolCallResult 最小闭环已完成，后续补更多 E2E |
 | **P2** | Agent 思考记忆链路 | Agent 触发 → Runtime Memory 读写 |
@@ -513,7 +515,8 @@ async fn find_by_id(&self, id: &str) -> Result<Option<TaskPo>> {
 | `UserPo` | `status` | `UserStatus` | 已完成 |
 
 **实现方式：**
-- `common` 中定义枚举，为枚举实现 `rusqlite::ToSql` 和 `rusqlite::FromSql` trait
+- `common` 中定义枚举，使用 `#[repr(i32)]` + `#[derive(sqlx::Type)]` 派生宏实现 SQLite 类型映射
+- 实现 `From<i64>` 适配 sqlx 0.8 类型推断
 - 存储到 SQLite 自动转换为 `i32`，读取自动转换为枚举
 - 编译期类型检查，避免 magic number 错误
 - serde 序列化保持整数输出，API 契约不变
@@ -548,7 +551,7 @@ async fn find_by_id(&self, id: &str) -> Result<Option<TaskPo>> {
 - 每个单元测试独立，使用随机临时 SQLite 文件，互不干扰
 - 每个测试在执行前重新初始化 storage，保证干净环境
 - 所有建表使用定义好的常量，不重复写 SQL
-- 当前项目总测试数：**693 个** → **全部通过** ✅
+- 当前项目总测试数：**830 个**（后端 746 + 前端 34 + common 50）→ **全部通过** ✅
 
 ### 测试设计要点
 
