@@ -1,5 +1,6 @@
 pub mod message;
 pub mod scheduler;
+pub mod aop_stats_collector;
 
 use common::error::Result;
 use std::sync::Arc;
@@ -18,3 +19,7 @@ pub async fn init() -> Result<()> {
     sys_info!("all business consumers registered");
     Ok(())
 }
+
+pub use aop_stats_collector::{
+    AopDistributionItem, AopOverview, AopStatsCollector, AopTimeSeriesPoint,
+};
