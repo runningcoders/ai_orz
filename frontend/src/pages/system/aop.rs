@@ -8,6 +8,7 @@ use crate::api::system::{
     AopStatsOverviewResponse, AopStatsTimeSeriesPoint, EventDetailResponse, EventSummaryResponse,
     QueueStatsResponse,
 };
+use crate::components::aop_gauge::AopGauge;
 use crate::components::charts::donut_chart::{DonutChart, DonutSlice};
 use crate::components::charts::line_chart::LineChart;
 use crate::components::modal::Modal;
@@ -128,26 +129,25 @@ pub fn SystemAop() -> Element {
                     } else if stats_data.is_empty() {
                         EmptyState { icon: "📭".to_string(), message: "暂无队列数据".to_string() }
                     } else {
-                        div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
+                        div { class: "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4",
                             for s in stats_data.iter() {
                                 {
                                     let name = s.consumer_name.clone();
                                     let pending = s.pending_count;
                                     let in_progress = s.in_progress_count;
                                     let oldest = s.oldest_event_age_secs;
-                                    let order_keys = s.order_keys.clone();
+                                    let order_keys_count = s.order_keys.len();
                                     let is_selected = consumer.as_ref() == Some(&name);
                                     let card_name = name.clone();
-                                    let card_class = if is_selected {
-                                        "card card-hover card-selected"
-                                    } else {
-                                        "card card-hover"
-                                    };
                                     rsx! {
-                                        div {
-                                            class: "{card_class}",
-                                            style: "cursor: pointer;",
-                                            onclick: move |_| {
+                                        AopGauge {
+                                            consumer_name: name,
+                                            pending: pending,
+                                            in_progress: in_progress,
+                                            oldest_age_secs: oldest,
+                                            order_keys_count: order_keys_count,
+                                            is_selected: is_selected,
+                                            on_click: Some(EventHandler::new(move |_| {
                                                 let consumer_name = card_name.clone();
                                                 selected_consumer.set(Some(consumer_name.clone()));
                                                 selected_event.set(None);
@@ -161,34 +161,7 @@ pub fn SystemAop() -> Element {
                                                     }
                                                     loading_events.set(false);
                                                 });
-                                            },
-                                            div { class: "flex justify-between items-start",
-                                                h3 { class: "font-semibold", "{name}" }
-                                                if in_progress > 0 {
-                                                    span { class: "badge badge-warning", "处理中: {in_progress}" }
-                                                }
-                                            }
-                                            div { class: "mt-2",
-                                                div { class: "text-2xl font-bold", "{pending}" }
-                                                div { class: "text-sm text-base-content/70", "待处理事件" }
-                                            }
-                                            if let Some(age) = oldest {
-                                                div { class: "text-xs text-base-content/70 mt-1",
-                                                    "最老事件: {age} 秒前"
-                                                }
-                                            }
-                                            if !order_keys.is_empty() {
-                                                div { class: "mt-2 text-xs",
-                                                    for ok in order_keys.iter().take(3) {
-                                                        span { class: "badge badge-neutral mr-1",
-                                                            "{ok.order_key}: {ok.pending_count}"
-                                                        }
-                                                    }
-                                                    if order_keys.len() > 3 {
-                                                        span { class: "text-base-content/70", "+{order_keys.len() - 3} 更多" }
-                                                    }
-                                                }
-                                            }
+                                            })),
                                         }
                                     }
                                 }

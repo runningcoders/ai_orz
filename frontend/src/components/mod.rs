@@ -2,6 +2,7 @@
 
 pub mod relation_graph;
 pub mod workspace_graph;
+pub mod aop_gauge;
 pub mod button;
 pub mod canvas_scene;
 pub mod chart_scene;
