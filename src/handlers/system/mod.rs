@@ -4,4 +4,5 @@ pub mod aop;
 pub mod aop_stats;
 pub mod backup;
 pub mod cron_trigger;
+pub mod health_metrics;
 pub mod logs;

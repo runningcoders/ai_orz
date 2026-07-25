@@ -645,4 +645,9 @@ fn system_routes() -> Router {
             "/aop/stats/distribution",
             get(handlers::system::aop_stats::get_stats_distribution),
         )
+        // Health metrics aggregation route - 系统健康指标聚合（HUD 仪表盘墙用）
+        .route(
+            "/health/metrics",
+            get(handlers::system::health_metrics::get_health_metrics),
+        )
 }
