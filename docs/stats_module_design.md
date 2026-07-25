@@ -1,21 +1,32 @@
-# 统计模块设计 — Stats 基于 DuckDB
+# 统计模块设计 — 双层实现：DuckDB 持久化 + 内存实时
 
 ## 定位与目标
 
-统一的**嵌入式多维统计数据收集存储模块**，为项目中各种打点统计提供通用框架：
+统一的**嵌入式多维统计数据收集存储模块**，为项目中各种打点统计提供通用框架。
+
+`pkg/stats/` 提供**双层互补**实现：
+
+| 层级 | 位置 | 适用场景 | 生命周期 | 查询能力 |
+|------|------|----------|----------|----------|
+| **持久化版** | `pkg/stats/` 顶层 | 业务事件统计（Agent/Project/Task/ModelProvider/Tool） | 跨重启保留 | 复杂 SQL 聚合、时序查询 |
+| **内存版** | `pkg/stats/runtime/` 子模块 | 运行时能力统计（AOP/SSE/Channel） | 重启重置 | 快照式查询，零 DB 依赖 |
 
 > **核心设计思想：**
 > 1. 框架提供通用能力：连接管理、批量写入、扩展接口
 > 2. 用户可以完全自定义：Event 结构、Table 结构，满足不同场景
 > 3. 默认提供开箱即用：`DefaultStatEvent` + `DefaultStatTable`
 > 4. 支持四种组合场景：默认/自定义 × 默认/自定义
+> 5. **双层互补**：业务事件用持久化版，运行时能力用内存版
 
 **支持的使用场景：**
-- Agent 按天统计调用次数、Token 消耗
-- ModelProvider 全局累计统计
-- 工具调用成功失败计数
-- Task 总轮次 Token 统计
-- 任意自定义打点监控
+- Agent 按天统计调用次数、Token 消耗（持久化版）
+- ModelProvider 全局累计统计（持久化版）
+- 工具调用成功失败计数（持久化版）
+- Task 总轮次 Token 统计（持久化版）
+- 任意自定义打点监控（持久化版）
+- AOP 事件队列运行时统计（内存版，已接入）
+- SSE/WS 连接数监控（内存版，待接入）
+- Channel 推送指标（内存版，待接入）
 
 ## 核心 trait 设计
 
@@ -703,6 +714,113 @@ pub enum StatParam {
 
 替代 `dyn ToSql`，解决 `Send + Sync` 问题，在 `query()` 内部转换为 `&dyn ToSql`。
 
+## 内存版运行时统计（runtime 子模块）
+
+`pkg/stats/runtime/` 子模块提供**纯内存**统计收集能力，作为持久化版（DuckDB）的轻量补充。
+
+### 设计动机
+
+某些统计场景**没有持久化价值**：
+- AOP 事件队列运行时状态：重启后事件本身就丢失了
+- SSE/WS 连接数：实时变化，重启即归零
+- Channel 推送指标：瞬时指标才有意义
+
+这些场景用 DuckDB 持久化：
+1. 浪费磁盘 IO（每秒写入无意义）
+2. 数据增长率失控（无淘汰策略）
+3. 查询需求简单（只需最近 60 分钟时序 + 当前分布）
+
+因此引入纯内存实现，**重启即重置**，与运行时能力本身的生命周期一致。
+
+### 核心类型
+
+```rust
+// src/pkg/stats/runtime/mod.rs
+
+pub struct RuntimeStatsCollector<K> {
+    inner: Arc<RwLock<Inner<K>>>,
+}
+
+impl<K: Clone + Eq + Hash + Send + Sync + Debug + 'static> RuntimeStatsCollector<K> {
+    pub fn new() -> Self;
+    pub async fn record(&self, key: K, duration: Option<u64>);
+    pub async fn snapshot(&self) -> RuntimeStatsSnapshot<K>;
+    pub async fn uptime_secs(&self) -> u64;
+}
+
+pub struct RuntimeStatsSnapshot<K> {
+    pub total_counts: HashMap<K, u64>,
+    pub buckets: Vec<TimeBucketSnapshot<K>>,
+    pub total_duration_ms: u64,
+    pub total_completed: u64,
+    pub started_at: i64,
+}
+```
+
+### 关键设计
+
+**1. 泛型维度键 K**：业务层自由选择键类型（`String` / 元组 / struct），约束 `Clone + Eq + Hash + Send + Sync + Debug + 'static`。
+
+**2. `record` 的 `duration: Option<u64>`**：
+- `None` — 只计数，不累计耗时（如 "published" 状态）
+- `Some(ms)` — 计数 + 累计耗时（如 "success"/"failed" 状态）
+
+业务层决定哪些事件计时，避免在框架层硬编码"哪些状态是终止状态"。
+
+**3. `snapshot()` 返回深拷贝**：调用方释放读锁后安全处理，避免锁竞争。业务层在快照基础上实现专属聚合（按 status 分类、按维度 group by 等）。
+
+**4. 滑动窗口 60 分钟**：按分钟桶，自动淘汰过期数据。内存占用估算：60 桶 × 每桶 ~20 个维度组合 × 32 字节 ≈ 38KB。
+
+**5. 总计数器全生命周期**：`total_counts` / `total_duration_ms` / `total_completed` 不受滑动窗口限制，进程重启才重置。
+
+### 接入示例
+
+以 AOP 接入为例：
+
+```rust
+// 1. 定义维度键（业务层 wrap 类型）
+type AopDimKey = (String, String, String); // (event_kind, consumer_name, status)
+
+// 2. wrap RuntimeStatsCollector，实现专属聚合
+pub struct AopStatsCollector {
+    inner: RuntimeStatsCollector<AopDimKey>,
+}
+
+impl AopStatsCollector {
+    pub async fn record(&self, kind: &str, consumer: &str, status: &str, duration_ms: u64) {
+        let key = (kind.to_string(), consumer.to_string(), status.to_string());
+        let duration = if status == "success" || status == "failed" {
+            Some(duration_ms)
+        } else {
+            None
+        };
+        self.inner.record(key, duration).await;
+    }
+
+    pub async fn overview(&self) -> AopOverview {
+        let snap = self.inner.snapshot().await;
+        // 在 snapshot 基础上做 AOP 专属聚合（按 status 分类）
+        // ...
+    }
+}
+```
+
+### 双访问路径
+
+`pkg/stats/mod.rs` 同时提供：
+- 完整路径 `crate::pkg::stats::runtime::RuntimeStatsCollector` — 明确区分子模块（推荐）
+- 短路径 `crate::pkg::stats::RuntimeStatsCollector` — 通过 `pub use` re-export（便于简化导入）
+
+### 适用场景判断
+
+| 场景特征 | 选择 |
+|----------|------|
+| 需要跨重启保留的历史数据 | 持久化版 |
+| 需要 SQL 聚合、复杂过滤 | 持久化版 |
+| 数据量可控、有淘汰策略需求 | 内存版（60 分钟窗口） |
+| 实时监控、前端轮询渲染 | 内存版 |
+| 重启即重置是可接受的 | 内存版 |
+
 ## 当前已实现
 
 - [x] duckdb-rs 1.4 升级适配，解决所有 API 不兼容问题
@@ -722,6 +840,17 @@ pub enum StatParam {
 - [x] `ToolCallLoggingDecorator` 统一采集工具调用统计（`ToolCallEvent`，覆盖 manual + auto）
 - [x] `RequestContext::stats_opt()` 安全获取 Stats
 - [x] 所有单元测试通过 ✅
+
+### 内存版 runtime 子模块（pkg/stats/runtime/）
+
+- [x] `RuntimeStatsCollector<K>` 泛型内存收集器（滑动窗口 60 分钟 + 总计数器全生命周期）
+- [x] `record(key, duration: Option<u64>)` 灵活计时（None 不累计，Some 累计）
+- [x] `snapshot()` 返回深拷贝，释放读锁后业务层安全聚合
+- [x] `uptime_secs()` 收集器运行时长
+- [x] `pkg/stats/mod.rs` 双访问路径（完整 `runtime::RuntimeStatsCollector` + 短路径 re-export）
+- [x] 8 个泛型核心单元测试通过 ✅
+- [x] AOP 已接入（`AopStatsCollector` wrap `RuntimeStatsCollector<(String, String, String)>`）
+- [x] AOP 7 个 wrap 层 + hook 集成测试通过 ✅
 
 ## 开放性问题
 
