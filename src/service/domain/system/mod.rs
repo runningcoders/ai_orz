@@ -115,6 +115,22 @@ pub trait BackupManager: Send + Sync {
 #[async_trait::async_trait]
 pub trait LogQuery: Send + Sync {
     async fn query_logs(&self, ctx: RequestContext, query: LogQueryParam) -> Result<LogPageResult>;
+
+    /// 查询日志级别分布（返回 (level, count) 列表）
+    async fn level_distribution(
+        &self,
+        ctx: RequestContext,
+        start_time: i64,
+        end_time: i64,
+    ) -> Result<Vec<(String, u64)>>;
+
+    /// 查询日志时序（按小时桶，返回 (bucket_start_ms, count) 列表，按时间升序）
+    async fn time_series(
+        &self,
+        ctx: RequestContext,
+        start_time: i64,
+        end_time: i64,
+    ) -> Result<Vec<(i64, u64)>>;
 }
 
 pub trait AopMonitor: Send + Sync {
@@ -213,6 +229,63 @@ impl LogQuery for SystemDomainImpl {
         query: LogQueryParam,
     ) -> Result<LogPageResult> {
         self.log_query_dal.query_logs(ctx, query).await
+    }
+
+    async fn level_distribution(
+        &self,
+        ctx: RequestContext,
+        start_time: i64,
+        end_time: i64,
+    ) -> Result<Vec<(String, u64)>> {
+        // 复用 query_logs DAL 方法拉取时间范围内的日志（上限 MAX_SCAN_ENTRIES），
+        // 在 Rust 侧做级别聚合。24h 窗口内 10000 条上限对可视化场景足够。
+        let query = LogQueryParam {
+            keyword: None,
+            log_id: None,
+            level: None,
+            start_time: Some(start_time),
+            end_time: Some(end_time),
+            page: 1,
+            page_size: 10000,
+        };
+        let result = self.log_query_dal.query_logs(ctx, query).await?;
+        let mut dist: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+        for entry in result.entries {
+            *dist.entry(entry.level).or_insert(0) += 1;
+        }
+        Ok(dist.into_iter().collect())
+    }
+
+    async fn time_series(
+        &self,
+        ctx: RequestContext,
+        start_time: i64,
+        end_time: i64,
+    ) -> Result<Vec<(i64, u64)>> {
+        let query = LogQueryParam {
+            keyword: None,
+            log_id: None,
+            level: None,
+            start_time: Some(start_time),
+            end_time: Some(end_time),
+            page: 1,
+            page_size: 10000,
+        };
+        let result = self.log_query_dal.query_logs(ctx, query).await?;
+        let mut buckets: std::collections::HashMap<i64, u64> = std::collections::HashMap::new();
+        for entry in result.entries {
+            // 解析 ISO8601/RFC3339 时间戳为 unix 毫秒，按小时桶聚合
+            if let Some(ts_ms) = chrono::DateTime::parse_from_rfc3339(&entry.timestamp)
+                .ok()
+                .map(|dt| dt.timestamp_millis())
+            {
+                let bucket = (ts_ms / 3_600_000) * 3_600_000; // 按小时对齐
+                *buckets.entry(bucket).or_insert(0) += 1;
+            }
+        }
+        let mut points: Vec<(i64, u64)> = buckets.into_iter().collect();
+        points.sort_by_key(|(ts, _)| *ts);
+        Ok(points)
     }
 }
 

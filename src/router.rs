@@ -609,6 +609,15 @@ fn system_routes() -> Router {
         )
         // Log query route - 查询应用日志（Admin/SuperAdmin 可访问）
         .route("/logs", get(handlers::system::logs::query_logs::handler))
+        // Log stats aggregation routes - 日志统计聚合（级别分布 + 时序）
+        .route(
+            "/logs/stats/level-distribution",
+            get(handlers::system::logs::log_stats::get_log_level_distribution),
+        )
+        .route(
+            "/logs/stats/time-series",
+            get(handlers::system::logs::log_stats::get_log_time_series),
+        )
         // AOP queue monitoring routes
         .route("/aop/stats", get(handlers::system::aop::get_all_queue_stats))
         .route(
