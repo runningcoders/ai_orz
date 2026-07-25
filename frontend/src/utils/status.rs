@@ -62,3 +62,24 @@ pub fn project_status_badge(status: i32) -> &'static str {
         _ => "badge badge-neutral",
     }
 }
+
+/// 任务状态对应的 HUD 风格颜色（hex，适配深色背景）
+///
+/// 颜色语义与 `task_status_badge` 对齐，但用更鲜艳的 hex 值适配 HUD 深色背景：
+/// - 0 已取消：红色 #ef4444
+/// - 1 待审核：橙黄 #f59e0b
+/// - 2 待处理：蓝色 #3b82f6
+/// - 3 进行中：HUD 主色橙 #fa520f
+/// - 4 已完成：绿色 #10b981
+/// - 5 已归档：灰色 #6b7280
+pub fn task_status_color(status: i32) -> &'static str {
+    match status {
+        0 => "#ef4444",
+        1 => "#f59e0b",
+        2 => "#3b82f6",
+        3 => "#fa520f",
+        4 => "#10b981",
+        5 => "#6b7280",
+        _ => "#6b7280",
+    }
+}

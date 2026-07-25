@@ -7,7 +7,9 @@ use crate::api::hr::query_agents;
 use crate::api::{project::*, StatsOptions};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
+use crate::components::charts::donut_chart::{DonutChart, DonutSlice};
 use crate::components::stats::ProjectStatsPanel;
+use crate::utils::task_status_color;
 use crate::components::workspace_graph::{WorkspaceGraph, WorkspaceView};
 use crate::layouts::app_layout::AppLayout;
 use crate::pages::project::task_edit_modal::{TaskEditMode, TaskEditModal};
@@ -248,10 +250,30 @@ pub fn ProjectDetail(id: String) -> Element {
     } else {
         tasks_list.iter().map(|t| t.progress).sum::<i32>() / tasks_list.len() as i32
     };
-    let task_total = tasks_list.len();
-    let task_completed = tasks_list.iter().filter(|t| t.status == 4).count();
-    let task_in_progress = tasks_list.iter().filter(|t| t.status == 3).count();
-    let task_pending = tasks_list.iter().filter(|t| t.status != 3 && t.status != 4 && t.status != 0 && t.status != 5).count();
+
+    // 按 6 种状态全量统计，构造 DonutChart 数据
+    // 顺序：进行中(3) → 待处理(2) → 待审核(1) → 已完成(4) → 已归档(5) → 已取消(0)
+    // 把"进行中"放最前让 HUD 主色橙最显眼，"已完成"绿色紧跟其后
+    let task_status_counts: [(i32, &str); 6] = [
+        (3, "进行中"),
+        (2, "待处理"),
+        (1, "待审核"),
+        (4, "已完成"),
+        (5, "已归档"),
+        (0, "已取消"),
+    ];
+    let donut_slices: Vec<DonutSlice> = task_status_counts
+        .iter()
+        .map(|(status, label)| {
+            let count = tasks_list.iter().filter(|t| t.status == *status).count() as u64;
+            DonutSlice {
+                label: label.to_string(),
+                value: count,
+                color: task_status_color(*status).to_string(),
+            }
+        })
+        .filter(|s| s.value > 0) // 过滤掉 0 值状态，避免图例冗余
+        .collect();
 
     rsx! {
         AppLayout {
@@ -346,23 +368,17 @@ pub fn ProjectDetail(id: String) -> Element {
                                 }
                             }
                             div { class: "overview-item",
-                                div { class: "overview-label", "任务统计" }
-                                div { class: "overview-stats",
-                                    div { class: "overview-stat-item",
-                                        span { class: "overview-stat-value", "{task_total}" }
-                                        span { class: "overview-stat-label", "总数" }
+                                div { class: "overview-label", "任务状态分布" }
+                                if donut_slices.is_empty() {
+                                    div { class: "text-base-content/60 text-sm py-8 text-center",
+                                        "暂无任务"
                                     }
-                                    div { class: "overview-stat-item",
-                                        span { class: "overview-stat-value success", "{task_completed}" }
-                                        span { class: "overview-stat-label", "完成" }
-                                    }
-                                    div { class: "overview-stat-item",
-                                        span { class: "overview-stat-value primary", "{task_in_progress}" }
-                                        span { class: "overview-stat-label", "进行中" }
-                                    }
-                                    div { class: "overview-stat-item",
-                                        span { class: "overview-stat-value warning", "{task_pending}" }
-                                        span { class: "overview-stat-label", "待处理" }
+                                } else {
+                                    DonutChart {
+                                        data: donut_slices.clone(),
+                                        width: Some(240.0),
+                                        height: Some(240.0),
+                                        center_label: Some("任务总数".to_string()),
                                     }
                                 }
                             }
