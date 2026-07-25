@@ -7,7 +7,6 @@ pub mod jwt;
 pub mod logging;
 pub mod monitoring;
 pub mod request_context;
-pub mod runtime_stats;
 pub mod stats;
 pub mod storage;
 pub mod tool_registry;

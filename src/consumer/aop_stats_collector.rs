@@ -1,7 +1,7 @@
 //! AOP 实时内存统计收集器
 //!
 //! 纯内存实现，不落库，重启即重置（与 AOP 事件本身生命周期一致）。
-//! 基于 `pkg::runtime_stats::RuntimeStatsCollector` 泛型收集器，
+//! 基于 `pkg::stats::runtime::RuntimeStatsCollector` 泛型收集器，
 //! 在 snapshot 基础上实现 AOP 专属聚合逻辑：
 //! - overview: 按 status 分类（published/consuming/success/failed）
 //! - time_series: 按 event_kind/consumer_name/status 部分字段过滤
@@ -11,7 +11,7 @@
 
 use std::collections::HashMap;
 
-use crate::pkg::runtime_stats::RuntimeStatsCollector;
+use crate::pkg::stats::runtime::RuntimeStatsCollector;
 
 /// AOP 维度键：(event_kind, consumer_name, status)
 type AopDimKey = (String, String, String);

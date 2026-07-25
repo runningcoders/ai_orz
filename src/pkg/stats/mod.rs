@@ -1,4 +1,11 @@
-//! Stats 统计模块 — 基于 DuckDB 的多维统计收集
+//! Stats 统计模块 — 双层实现：DuckDB 持久化 + 内存实时
+//!
+//! ## 子模块
+//!
+//! - **持久化版**（本模块顶层）：基于 DuckDB，跨重启保留，支持复杂 SQL 查询
+//! - **内存版**（`runtime` 子模块）：基于 `RuntimeStatsCollector<K>`，重启重置，零 DB 依赖
+//!
+//! 两者互补：业务事件用持久化版，运行时能力（AOP/SSE/Channel）用内存版。
 //!
 //! # Examples
 //! ```ignore
@@ -33,6 +40,7 @@ mod tool_call;
 mod agent_awake;
 mod project_event;
 mod task_event;
+pub mod runtime;
 
 pub use common::models::{StatsInterval, TimeSeriesPoint, TokenSumResult};
 pub use self::default::{DefaultStatEvent, DefaultStatTable};
@@ -49,6 +57,9 @@ pub use self::stats::{
     AggregationRow,
 };
 pub use self::traits::{StatEvent, StatTable};
+
+// 内存版运行时统计子模块（与持久化版互补）
+pub use self::runtime::{RuntimeStatsCollector, RuntimeStatsSnapshot, TimeBucketSnapshot};
 
 // Re-export the derive macro
 pub use ai_orz_macros::StatsEvent;

@@ -1,8 +1,8 @@
-//! 运行时统计基础设施 — 泛型内存收集器
+//! 运行时统计基础设施 — 泛型内存收集器（pkg/stats/ 的内存版补充）
 //!
-//! 提供通用的内存统计收集能力，与 `pkg/stats/`（DuckDB 持久化）互补：
+//! 提供通用的内存统计收集能力，与父模块 `pkg/stats/`（DuckDB 持久化）互补：
 //! - `pkg/stats/`：持久化统计，跨重启保留，支持复杂 SQL 查询
-//! - `pkg/runtime_stats/`：内存统计，重启重置，提供快照式查询，零 DB 依赖
+//! - `pkg/stats/runtime/`（本模块）：内存统计，重启重置，提供快照式查询，零 DB 依赖
 //!
 //! 适用场景：
 //! - AOP 事件统计（已使用）
@@ -14,7 +14,7 @@
 //! # Examples
 //!
 //! ```ignore
-//! use ai_orz::pkg::runtime_stats::RuntimeStatsCollector;
+//! use ai_orz::pkg::stats::runtime::RuntimeStatsCollector;
 //!
 //! // 1. 定义维度键（任何 Hash + Eq + Clone + Send + Sync 的类型都可以）
 //! type MyKey = (String, String); // (category, action)
