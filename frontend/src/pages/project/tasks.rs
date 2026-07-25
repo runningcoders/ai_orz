@@ -4,10 +4,11 @@ use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
 use crate::api::project::{list_projects, query_tasks};
+use crate::components::kanban_canvas::{KanbanCanvas, KanbanColumn, KanbanTask};
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-use crate::utils::{format_datetime as format_time, progress_bar_class, task_status_badge, task_status_text};
+use crate::utils::{format_datetime as format_time, task_status_badge, task_status_text};
 use common::api::{ListProjectsResponseItem, PaginationParams, TaskListItem, TaskQueryRequest};
 use common::enums::{AssigneeType, TaskStatus};
 
@@ -266,55 +267,37 @@ pub fn TaskList() -> Element {
                 }
             }
         } else {
-            // 看板视图
-            div { class: "kanban-board",
-                for (status, title, group_tasks) in board_columns.iter() {
-                    div { class: "kanban-column",
-                        div { class: "kanban-column-header",
-                            span { class: "{task_status_badge(*status)}", "{title}" }
-                            span { class: "kanban-column-count", "{group_tasks.len()}" }
-                        }
-                        div { class: "kanban-column-content",
-                            for t in group_tasks.iter() {
-                                {
-                                    let tid = t.id.clone();
-                                    let t_title = t.title.clone();
-                                    let t_progress = t.progress;
-                                    let t_priority = t.priority;
-                                    let t_tags = t.tags.clone();
-                                    rsx! {
-                                        div {
-                                            key: "{tid}",
-                                            class: "kanban-card",
-                                            onclick: move |_| {
-                                            let _ = navigator.push(format!("/tasks/{}", tid));
-                                        },
-                                            div { class: "kanban-card-header",
-                                                h3 { class: "kanban-card-title", "{t_title}" }
-                                                div { class: "kanban-card-meta",
-                                                    if t_priority > 0 {
-                                                        span { class: "badge badge-warning", "优先级 {t_priority}" }
-                                                    }
-                                                }
-                                            }
-                                            if !t_tags.is_empty() {
-                                                div { class: "kanban-card-tags",
-                                                    for tag in t_tags.iter() {
-                                                        span { class: "badge badge-neutral tag-item", "{tag}" }
-                                                    }
-                                                }
-                                            }
-                                            div { class: "kanban-card-progress",
-                                                div { class: "progress-bar",
-                                                    div { class: "{progress_bar_class(t_progress)}", style: "width: {t_progress}%;" }
-                                                }
-                                                span { class: "text-base-content/70 font-mono", "{t_progress}%" }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+            // 看板视图 - HUD 风格 KanbanCanvas
+            {
+                let columns: Vec<KanbanColumn> = board_columns.iter().map(|(status, title, group_tasks)| {
+                    let color = match status {
+                        1 => "#6b7280".to_string(), // 待审核 - 灰
+                        2 => "#3b82f6".to_string(), // 待处理 - 蓝
+                        3 => "#f59e0b".to_string(), // 进行中 - 黄
+                        4 => "#10b981".to_string(), // 已完成 - 绿
+                        5 => "#4b5563".to_string(), // 已归档 - 深灰
+                        _ => "#fa520f".to_string(),
+                    };
+                    let tasks: Vec<KanbanTask> = group_tasks.iter().map(|t| KanbanTask {
+                        id: t.id.clone(),
+                        title: t.title.clone(),
+                        progress: t.progress,
+                        priority: t.priority,
+                        tags: t.tags.clone(),
+                    }).collect();
+                    KanbanColumn {
+                        status: *status,
+                        title: title.to_string(),
+                        color,
+                        tasks,
+                    }
+                }).collect();
+                rsx! {
+                    KanbanCanvas {
+                        columns,
+                        width: 900.0,
+                        height: 500.0,
+                        on_task_click: None,
                     }
                 }
             }
