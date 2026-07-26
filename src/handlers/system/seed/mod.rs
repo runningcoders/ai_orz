@@ -380,3 +380,6 @@ pub async fn apply_snapshot_to_db(
         created, updated, skipped, diff: None,
     })
 }
+
+#[cfg(test)]
+mod seed_handler_test;
