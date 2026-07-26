@@ -360,6 +360,7 @@ pub async fn update_skill_file_content_handler(
 
  | 日期 | 更新内容 | 作者 |
  |------|----------|------|
+ | 2026-07-27 | 新增「2026-07-27: 修复 3 个 GET struct 字段位置注解不一致」修复历史，记录宏解析 bug 掩盖的 struct 注解错误 | AI Orz |
  | 2026-06-25 | 补充 common 统一错误类型目标：后续错误分支统一映射到 `common::error::{ErrorCode, Error}`，HTTP 与 LLM 工具调用共享错误契约，wire format 继续兼容 `{ code, message, data }` | Hermes |
  | 2026-06-21 | 初始设计文档完成，完整支持 `#[param(source = "path")]` `#[param(source = "query")]`，最终方案采用 `#[derive(Params)]` + `#[param]`，不需要 nightly，完全稳定可用。优先级 `path > query > body` | AI Orz |
 
@@ -381,3 +382,22 @@ pub async fn update_skill_file_content_handler(
 **为什么不用临时 Query struct 方案**：宏生成 `struct __QueryParams { status: Option<ToolStatus>, ... }` 会遇到 macro hygiene 问题——handler 文件可能未导入 `ToolStatus`，导致宏生成代码在该作用域中找不到类型。新方案通过 `params.{ident} = parsed` 类型推导规避此问题。
 
 **测试覆盖**：15 个集成测试覆盖 path+query only GET、path+query+body 混合 PUT、enum 类型、flatten pagination、数值类型、缺失 Option 字段等边界场景。
+
+### 2026-07-27: 修复 3 个 GET struct 字段位置注解不一致
+
+**问题**：宏 `(true, true)` 分支修复后（`Meta::List` 正确解析 `#[param]`），暴露出 3 个 struct 的字段位置注解与后端路由/前端调用不一致：
+
+1. **`ListArtifactsRequest`**：`project_id` 标为 `#[param(source = "path")]`，但路由 `/api/v1/project/artifacts` 无 path 段，前端调用 `?project_id=xxx`（query string）。宏生成 `Path<(project_id,)>` 提取器但路由无 path 段，返回 400。
+2. **`ListMessagesRequest`**：7 个字段全部无 `#[param]` 注解（默认 body），但路由是 `GET /api/v1/finance/messages`，前端调用 `?project_id=xxx&limit=20`。宏生成 `Json<ListMessagesRequest>` 提取器，GET 请求无 body 返回 400。
+3. **`QueryToolCallEntriesRequest`**：9 个字段全部无 `#[param]` 注解，但路由是 `GET /api/v1/finance/tool-call-entries`，前端调用 `?call_id=xxx&agent_id=xxx`。同上问题。
+
+**根因**：这些 bug 之前被宏的 `Meta::NameValue` 解析错误掩盖——所有 `#[param]` 失效，struct 走 `(false, false)` 的 `Json` 分支，GET 请求因无 body 一直返回 400。修复宏后才暴露出真实的注解错误。
+
+**修复方案**：
+- `ListArtifactsRequest.project_id`：`path` → `query`
+- `ListMessagesRequest` 7 个字段：补 `#[param(source = "query")]`
+- `QueryToolCallEntriesRequest` 9 个字段：补 `#[param(source = "query")]`
+
+**验证**：15 个宏集成测试 + 781 个 lib 测试全部通过；前端 Artifacts 列表页、消息列表/历史加载、工具调用记录查询 3 个功能恢复正常。
+
+**教训**：宏的解析 bug 会掩盖 struct 定义本身的问题。修复宏的解析逻辑后，应系统审查所有使用 `#[param]` 的 struct，确认字段位置注解与路由/前端调用一致。
