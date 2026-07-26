@@ -1,0 +1,67 @@
+{
+  "version": "1.0.0",
+  "generated_at": 0,
+  "description": "系统默认模板 - 开箱即用基础配置",
+  "source_organization_id": "TEMPLATE",
+  "organization": {
+    "id": "TEMPLATE_ORG",
+    "name": "我的组织",
+    "description": "由系统初始化创建的默认组织",
+    "base_url": "",
+    "status": 1,
+    "scope": 0
+  },
+  "users": [
+    {
+      "id": "TEMPLATE_ADMIN",
+      "organization_id": "TEMPLATE_ORG",
+      "username": "admin",
+      "display_name": "超级管理员",
+      "email": "",
+      "password_ref": "PENDING_INPUT",
+      "role": 0,
+      "status": 1
+    }
+  ],
+  "model_providers": [
+    {
+      "id": "TEMPLATE_CHAT_PROVIDER",
+      "name": "默认对话模型",
+      "provider_type": 0,
+      "model_name": "gpt-4o",
+      "capability": 0,
+      "api_key_ref": "PENDING_INPUT",
+      "base_url": null,
+      "description": "用于 Agent 思考和对话",
+      "config": "{}",
+      "status": 1
+    },
+    {
+      "id": "TEMPLATE_EMBEDDING_PROVIDER",
+      "name": "默认向量模型",
+      "provider_type": 0,
+      "model_name": "text-embedding-3-small",
+      "capability": 1,
+      "api_key_ref": "PENDING_INPUT",
+      "base_url": null,
+      "description": "用于文本向量化",
+      "config": "{}",
+      "status": 1
+    }
+  ],
+  "agents": [
+    {
+      "id": "TEMPLATE_RECEPTION_AGENT",
+      "name": "前台接待 Agent",
+      "roles": ["feishu_reception"],
+      "description": "负责接待访客、转接任务",
+      "capabilities": ["chat"],
+      "soul": "你是前台接待助手，态度友好，善于引导用户。",
+      "model_provider_id": "TEMPLATE_CHAT_PROVIDER",
+      "runtime_config": "{\"max_thinking_depth\":10,\"thinking_interval_ms\":0,\"max_tool_calls_per_step\":5,\"enable_reflection\":false,\"require_user_confirm\":true,\"installed_tags\":[],\"installed_skill_packs\":[]}",
+      "status": 2,
+      "kind": 0
+    }
+  ],
+  "skills": []
+}

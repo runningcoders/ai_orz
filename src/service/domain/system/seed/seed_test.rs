@@ -163,4 +163,16 @@ mod tests {
         let name = crate::service::domain::system::seed::store::validate_seed_filename("snapshot.json").unwrap();
         assert_eq!(name, "snapshot.json");
     }
+
+    #[test]
+    fn test_default_snapshot_parses_successfully() {
+        let snapshot = crate::service::domain::system::seed::default::embedded_default_snapshot();
+        assert_eq!(snapshot.version, "1.0.0");
+        assert_eq!(snapshot.users.len(), 1);
+        assert_eq!(snapshot.model_providers.len(), 2);
+        assert_eq!(snapshot.agents.len(), 1);
+        assert_eq!(snapshot.skills.len(), 0);
+        assert_eq!(snapshot.agents[0].model_provider_id, "TEMPLATE_CHAT_PROVIDER");
+        assert_eq!(snapshot.users[0].password_ref, super::super::defs::PENDING_INPUT);
+    }
 }
