@@ -334,51 +334,142 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
         .iter()
         .map(|(ident, _)| ident.clone())
         .collect();
-    let has_flattened_query = !flattened_query_idents.is_empty();
     let has_query = !query_idents.is_empty() || !flattened_query_idents.is_empty();
 
     // Generate the handler code
     let expanded = match (has_path, has_query) {
         (true, true) => {
-            let path_tuple = quote! {
-                ( #( #path_idents, )* )
-            };
-            let path_ty_tuple = quote! {
-                ( #( #path_types, )* )
-            };
-            let assign_paths = quote! {
-                #(
-                    params.#path_idents = #path_idents;
-                )*
-            };
-            let assign_queries = quote! {
-                #(
-                    params.#query_idents = query.#query_idents;
-                )*
+            let path_tuple = quote! { ( #( #path_idents, )* ) };
+            let path_ty_tuple = quote! { ( #( #path_types, )* ) };
+            let assign_paths = quote! { #( params.#path_idents = #path_idents; )* };
+
+            // 为非 flatten query 字段生成提取代码
+            let extract_query_fields = {
+                let query_idents_str: Vec<String> = query_idents.iter().map(|i| i.to_string()).collect();
+                quote! {
+                    #(
+                        if let Some(__v) = __query_value.get(#query_idents_str) {
+                            if let Ok(__parsed) = serde_json::from_value(__v.clone()) {
+                                params.#query_idents = __parsed;
+                            }
+                        }
+                    )*
+                }
             };
 
-            // path + query + body 混合：保留 Json 提取器
-            // 优先级：path > query > body
-            // 注意：path+query only GET（无 body）目前不支持，因为：
-            // 1. Json 提取器对空 body 会返回 400
-            // 2. 宏生成临时 Query struct 会遇到 macro hygiene 问题
-            //    （handler 文件可能未导入字段类型如 ToolStatus）
-            // 业务中 path+query GET 较少，如需无 body，建议拆为两个端点
-            // 或前端发空 body PUT。
-            quote! {
-                #item_fn
+            // 为 flatten query 字段生成提取代码
+            let extract_flattened_query_fields = {
+                quote! {
+                    #(
+                        if let Ok(__parsed) = serde_json::from_value(__query_value.clone()) {
+                            params.#flattened_query_idents = __parsed;
+                        }
+                    )*
+                }
+            };
 
-                pub async fn #handler_ident(
-                    axum::extract::Extension(ctx): axum::extract::Extension<RequestContext>,
-                    axum::extract::Path(#path_tuple): axum::extract::Path<#path_ty_tuple>,
-                    axum::extract::Query(query): axum::extract::Query<#params_ty>,
-                    axum::Json(mut params): axum::Json<#params_ty>,
-                ) -> ::std::result::Result<axum::Json<common::api::ApiResponse<#output_ty>>, common::error::Error> {
-                    // Priority: path > query > body, so assign in that order
-                    #assign_queries
-                    #assign_paths
-                    let result = #core_ident(ctx, params).await?;
-                    Ok(axum::Json(common::api::ApiResponse::success(result)))
+            // 判断是否所有非 path 字段都是 query（即无 body 字段）
+            let total_query_fields = query_fields.len() + flattened_query_fields.len();
+            if total_named_fields == path_fields.len() + total_query_fields {
+                // path+query only GET：无 Json 提取器
+                quote! {
+                    #item_fn
+
+                    pub async fn #handler_ident(
+                        axum::extract::Extension(ctx): axum::extract::Extension<RequestContext>,
+                        axum::extract::Path(#path_tuple): axum::extract::Path<#path_ty_tuple>,
+                        axum::extract::RawQuery(__raw_query): axum::extract::RawQuery,
+                    ) -> ::std::result::Result<axum::Json<common::api::ApiResponse<#output_ty>>, common::error::Error> {
+                        let mut params = <#params_ty as ::std::default::Default>::default();
+
+                        // 解析 query string 并构建 serde_json::Value（带类型推断）
+                        let __query_value: serde_json::Value = if let Some(__qs) = __raw_query.as_deref() {
+                            let __query_map: std::collections::HashMap<String, String> =
+                                serde_urlencoded::from_str(__qs).unwrap_or_default();
+                            let mut __obj = serde_json::Map::new();
+                            for (__k, __v) in &__query_map {
+                                let __parsed: serde_json::Value = if __v == "true" {
+                                    serde_json::Value::Bool(true)
+                                } else if __v == "false" {
+                                    serde_json::Value::Bool(false)
+                                } else if __v == "null" {
+                                    serde_json::Value::Null
+                                } else if let Ok(__n) = __v.parse::<i64>() {
+                                    serde_json::Value::Number(__n.into())
+                                } else if let Ok(__n) = __v.parse::<f64>() {
+                                    serde_json::Number::from_f64(__n)
+                                        .map(serde_json::Value::Number)
+                                        .unwrap_or(serde_json::Value::String(__v.clone()))
+                                } else {
+                                    serde_json::Value::String(__v.clone())
+                                };
+                                __obj.insert(__k.clone(), __parsed);
+                            }
+                            serde_json::Value::Object(__obj)
+                        } else {
+                            serde_json::Value::Object(serde_json::Map::new())
+                        };
+
+                        // 提取非 flatten query 字段
+                        #extract_query_fields
+                        // 提取 flatten query 字段
+                        #extract_flattened_query_fields
+                        // 提取 path 字段（path 优先级最高）
+                        #assign_paths
+
+                        let __result = #core_ident(ctx, params).await?;
+                        Ok(axum::Json(common::api::ApiResponse::success(__result)))
+                    }
+                }
+            } else {
+                // path + query + body 混合：保留 Json 提取器
+                quote! {
+                    #item_fn
+
+                    pub async fn #handler_ident(
+                        axum::extract::Extension(ctx): axum::extract::Extension<RequestContext>,
+                        axum::extract::Path(#path_tuple): axum::extract::Path<#path_ty_tuple>,
+                        axum::extract::RawQuery(__raw_query): axum::extract::RawQuery,
+                        axum::Json(mut params): axum::Json<#params_ty>,
+                    ) -> ::std::result::Result<axum::Json<common::api::ApiResponse<#output_ty>>, common::error::Error> {
+                        // 解析 query string 并构建 serde_json::Value
+                        let __query_value: serde_json::Value = if let Some(__qs) = __raw_query.as_deref() {
+                            let __query_map: std::collections::HashMap<String, String> =
+                                serde_urlencoded::from_str(__qs).unwrap_or_default();
+                            let mut __obj = serde_json::Map::new();
+                            for (__k, __v) in &__query_map {
+                                let __parsed: serde_json::Value = if __v == "true" {
+                                    serde_json::Value::Bool(true)
+                                } else if __v == "false" {
+                                    serde_json::Value::Bool(false)
+                                } else if __v == "null" {
+                                    serde_json::Value::Null
+                                } else if let Ok(__n) = __v.parse::<i64>() {
+                                    serde_json::Value::Number(__n.into())
+                                } else if let Ok(__n) = __v.parse::<f64>() {
+                                    serde_json::Number::from_f64(__n)
+                                        .map(serde_json::Value::Number)
+                                        .unwrap_or(serde_json::Value::String(__v.clone()))
+                                } else {
+                                    serde_json::Value::String(__v.clone())
+                                };
+                                __obj.insert(__k.clone(), __parsed);
+                            }
+                            serde_json::Value::Object(__obj)
+                        } else {
+                            serde_json::Value::Object(serde_json::Map::new())
+                        };
+
+                        // 优先级：path > query > body
+                        // 先用 query 覆盖 body 字段
+                        #extract_query_fields
+                        #extract_flattened_query_fields
+                        // 最后用 path 覆盖
+                        #assign_paths
+
+                        let __result = #core_ident(ctx, params).await?;
+                        Ok(axum::Json(common::api::ApiResponse::success(__result)))
+                    }
                 }
             }
         }
