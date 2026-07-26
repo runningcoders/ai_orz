@@ -38,7 +38,7 @@ impl TestApp {
         let mut headers = HeaderMap::new();
         headers.insert(
             axum::http::header::COOKIE,
-            HeaderValue::from_str(&format!("orz_jwt={}", jwt))
+            HeaderValue::from_str(&format!("ai_orz_jwt={}", jwt))
                 .expect("invalid JWT value for header"),
         );
         self.request(Method::GET, path, headers, None).await
@@ -47,7 +47,12 @@ impl TestApp {
     /// Issue a POST request with a JSON body.
     pub async fn post(&self, path: &str, body: &impl serde::Serialize) -> (StatusCode, serde_json::Value) {
         let body_json = serde_json::to_string(body).expect("failed to serialize request body");
-        self.request(Method::POST, path, HeaderMap::new(), Some(body_json)).await
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
+        );
+        self.request(Method::POST, path, headers, Some(body_json)).await
     }
 
     /// Issue a POST request with a JSON body and a JWT token.
@@ -61,7 +66,7 @@ impl TestApp {
         let mut headers = HeaderMap::new();
         headers.insert(
             axum::http::header::COOKIE,
-            HeaderValue::from_str(&format!("orz_jwt={}", jwt))
+            HeaderValue::from_str(&format!("ai_orz_jwt={}", jwt))
                 .expect("invalid JWT value for header"),
         );
         headers.insert(
@@ -82,7 +87,7 @@ impl TestApp {
         let mut headers = HeaderMap::new();
         headers.insert(
             axum::http::header::COOKIE,
-            HeaderValue::from_str(&format!("orz_jwt={}", jwt))
+            HeaderValue::from_str(&format!("ai_orz_jwt={}", jwt))
                 .expect("invalid JWT value for header"),
         );
         headers.insert(
@@ -97,7 +102,7 @@ impl TestApp {
         let mut headers = HeaderMap::new();
         headers.insert(
             axum::http::header::COOKIE,
-            HeaderValue::from_str(&format!("orz_jwt={}", jwt))
+            HeaderValue::from_str(&format!("ai_orz_jwt={}", jwt))
                 .expect("invalid JWT value for header"),
         );
         self.request(Method::DELETE, path, headers, None).await
