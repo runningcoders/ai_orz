@@ -10,3 +10,6 @@ pub mod diff;
 pub mod store;
 
 pub use defs::*;
+
+#[cfg(test)]
+mod seed_test;
