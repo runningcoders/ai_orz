@@ -14,6 +14,7 @@ use std::sync::{Arc, OnceLock};
 
 mod aop_monitor;
 mod aop_stats;
+pub mod seed;
 
 static SYSTEM_DOMAIN: OnceLock<Arc<dyn SystemDomain>> = OnceLock::new();
 

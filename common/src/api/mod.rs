@@ -114,6 +114,7 @@ pub mod skill;
 #[cfg(test)]
 mod skill_test;
 pub mod system;
+pub mod seed;
 pub mod task;
 #[cfg(test)]
 mod task_test;
@@ -142,6 +143,7 @@ pub use organization::*;
 pub use project::*;
 pub use skill::*;
 pub use system::*;
+pub use seed::*;
 pub use task::*;
 pub use text_content::*;
 pub use tool::*;
