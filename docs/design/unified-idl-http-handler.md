@@ -180,11 +180,27 @@ struct Params {
 
 | 组合 | 生成的 axum extractor | 优先级 |
 |------|------------------------|--------|
-| 有 `path` + 有 `query` | `Path(...)` + `Query(...)` + `Json(...)` | path > query > body |
+| 有 `path` + 有 `query` | `Path(...)` + `RawQuery` (+ `Json(...)` 当有 body 字段时) | path > query > body |
 | 有 `path` + 无 `query` | `Path(...)` + `Json(...)` | path > body |
 | 无 `path` + 有 `query` | `Query(...)` | query 就是全部 |
 | 无 `path` + 无 `query` | `Json(...)` (所有参数都在 body)| body 就是全部 |
 | **空 struct**（零命名字段） | 仅 `Extension(ctx)` | 无需 extractor |
+
+**子分支自动判定：**
+- 当所有非 path 字段都是 query 字段（无 body 字段）时，宏走"path+query only"分支：仅 `Path + RawQuery`，无 Json 提取器，params 用 `Default::default()` 构造空实例后用 query/path 值填充。典型场景：`GET /items/{id}?verbose=true`。
+- 当存在 body 字段（非 path 非 query）时，宏走"path+query+body 混合"分支：`Path + RawQuery + Json`，body 提供基础值，query 覆盖 body 同名字段，path 最后覆盖。典型场景：`PUT /items/{id}?verbose=true` body `{"name":"...","body_field":"..."}`。
+
+### Query 字段提取实现细节（path+query 分支）
+
+为避免 macro hygiene 问题（handler 文件可能未导入 query 字段类型如 `ToolStatus`），宏不生成临时 Query struct，而是：
+
+1. 用 `axum::extract::RawQuery` 提取原始 query 字符串（不会因缺失字段报错）
+2. `serde_urlencoded` 解析为 `HashMap<String, String>`
+3. 构建 `serde_json::Value` 对象，按值内容推断类型（bool / number / null / string）
+4. 对非 `#[serde(flatten)]` query 字段：`serde_json::from_value(query_value.get(name).cloned())` 反序列化，目标类型由 `params.{ident} = parsed` 赋值推导
+5. 对 `#[serde(flatten)]` query 字段（如 `pagination: PaginationParams`）：用整个 `query_value` 反序列化
+
+**关键优势**：宏生成代码不引用任何自定义类型名（如 `ToolStatus`），全部通过类型推导完成反序列化，因此 handler 文件无需为 query 字段类型额外 `use` 导入。
 
 ### 空 struct GET 端点
 
@@ -346,3 +362,22 @@ pub async fn update_skill_file_content_handler(
  |------|----------|------|
  | 2026-06-25 | 补充 common 统一错误类型目标：后续错误分支统一映射到 `common::error::{ErrorCode, Error}`，HTTP 与 LLM 工具调用共享错误契约，wire format 继续兼容 `{ code, message, data }` | Hermes |
  | 2026-06-21 | 初始设计文档完成，完整支持 `#[param(source = "path")]` `#[param(source = "query")]`，最终方案采用 `#[derive(Params)]` + `#[param]`，不需要 nightly，完全稳定可用。优先级 `path > query > body` | AI Orz |
+
+## 修复历史
+
+### 2026-07-26: (true, true) 分支用 RawQuery 替代 Query<ParamsTy>
+
+**问题**：原 `(true, true)` 分支生成 `Path + Query<ParamsTy> + Json<ParamsTy>`，存在两个 bug：
+1. `Query<ParamsTy>` 尝试从 query string 反序列化所有字段（含必填 path 字段如 `id: String`），缺失字段时返回 400
+2. `Json<ParamsTy>` 对无 body 的 GET 请求返回 400
+
+**影响**：10 个生产 path+query struct（`GetAgentRequest`、`ListMcpToolsByServerRequest`、`ListArtifactsRequest` 等）全部受影响，GET 请求无法工作。
+
+**修复方案**：
+- 用 `RawQuery` 提取原始 query 字符串（不会因缺失字段报错）
+- 用 `serde_json::Value` 中间表示 + 类型推断反序列化各 query 字段
+- 拆为两个子分支：path+query only（无 Json 提取器）/ path+query+body 混合（保留 Json）
+
+**为什么不用临时 Query struct 方案**：宏生成 `struct __QueryParams { status: Option<ToolStatus>, ... }` 会遇到 macro hygiene 问题——handler 文件可能未导入 `ToolStatus`，导致宏生成代码在该作用域中找不到类型。新方案通过 `params.{ident} = parsed` 类型推导规避此问题。
+
+**测试覆盖**：15 个集成测试覆盖 path+query only GET、path+query+body 混合 PUT、enum 类型、flatten pagination、数值类型、缺失 Option 字段等边界场景。
