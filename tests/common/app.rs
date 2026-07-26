@@ -44,6 +44,35 @@ impl TestApp {
         self.request(Method::GET, path, headers, None).await
     }
 
+    /// Issue a GET request with a JWT token, returning ONLY the status code.
+    ///
+    /// Use this for streaming endpoints (e.g. SSE) whose body never ends —
+    /// `to_bytes(usize::MAX)` would hang forever waiting for EOF. We drop the
+    /// response immediately after reading the status, which is enough for a
+    /// connection-level smoke test.
+    pub async fn get_with_jwt_status_only(&self, path: &str, jwt: &str) -> StatusCode {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::COOKIE,
+            HeaderValue::from_str(&format!("ai_orz_jwt={}", jwt))
+                .expect("invalid JWT value for header"),
+        );
+        let mut builder = Request::builder().method(Method::GET).uri(path);
+        for (name, value) in headers.iter() {
+            builder = builder.header(name, value);
+        }
+        let request = builder
+            .body(Body::empty())
+            .expect("failed to build test request");
+        let response = self
+            .router
+            .clone()
+            .oneshot(request)
+            .await
+            .expect("test request failed");
+        response.status()
+    }
+
     /// Issue a POST request with a JSON body.
     pub async fn post(&self, path: &str, body: &impl serde::Serialize) -> (StatusCode, serde_json::Value) {
         let body_json = serde_json::to_string(body).expect("failed to serialize request body");
