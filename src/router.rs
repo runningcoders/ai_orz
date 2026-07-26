@@ -657,4 +657,18 @@ fn system_routes() -> Router {
             "/health/metrics",
             get(handlers::system::health_metrics::get_health_metrics_handler),
         )
+        // Seed routes - 配置迁移（导出/导入/diff）
+        .nest(
+            "/seed",
+            Router::new()
+                .route("/list", get(handlers::system::seed::list_seeds_handler))
+                .route("/file/{name}", get(handlers::system::seed::get_seed_file_handler))
+                .route("/file/{name}", delete(handlers::system::seed::delete_seed_file_handler))
+                .route("/save", post(handlers::system::seed::save_seed_handler))
+                .route("/load/{name}", post(handlers::system::seed::load_seed_handler))
+                .route("/diff/{name}", post(handlers::system::seed::diff_handler))
+                .route("/diff-files", post(handlers::system::seed::diff_files_handler))
+                .route("/default", get(handlers::system::seed::get_default_handler))
+                .route("/apply-default", post(handlers::system::seed::apply_default_handler)),
+        )
 }
