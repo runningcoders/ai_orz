@@ -185,7 +185,27 @@ pub async fn apply_snapshot_to_db(
 
     // 1. DryRun 直接返回 diff（不调用本函数的写入路径）
     if matches!(strategy, ImportStrategy::DryRun) {
-        let current = assemble_snapshot_from_db(ctx.clone(), &snapshot.source_organization_id, None).await?;
+        // 尝试拉取当前 DB 快照；若组织不存在（典型场景：默认模板应用到新组织），使用空快照
+        let current = match assemble_snapshot_from_db(
+            ctx.clone(),
+            &snapshot.source_organization_id,
+            None,
+        )
+        .await
+        {
+            Ok(s) => s,
+            Err(_) => SeedSnapshot {
+                version: SeedSnapshot::CURRENT_VERSION.to_string(),
+                generated_at: 0,
+                description: None,
+                source_organization_id: snapshot.source_organization_id.clone(),
+                organization: snapshot.organization.clone(),
+                users: vec![],
+                model_providers: vec![],
+                agents: vec![],
+                skills: vec![],
+            },
+        };
         let diff = crate::service::domain::system::seed::diff::diff_snapshots(&current, snapshot);
         // DiffEntry<T> 的 T 因实体类型而异，无法直接 chain；分别统计后求和
         let created = count_new(&diff.users)

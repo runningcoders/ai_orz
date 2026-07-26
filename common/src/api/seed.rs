@@ -31,7 +31,7 @@ pub struct ListSeedsResponse {
 }
 
 /// 读取 seed 文件请求
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct GetSeedFileRequest {
     /// 文件名（含 .json 后缀）
     #[param(source = "path")]
@@ -114,7 +114,7 @@ pub struct LoadSeedResponse {
 }
 
 /// 删除 seed 文件请求
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct DeleteSeedFileRequest {
     /// 文件名（含 .json 后缀）
     #[param(source = "path")]
@@ -129,7 +129,7 @@ pub struct DeleteSeedFileResponse {
 }
 
 /// Diff 请求（文件 vs DB）
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct DiffSeedRequest {
     /// 文件名（含 .json 后缀）
     #[param(source = "path")]
