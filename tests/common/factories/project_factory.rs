@@ -9,7 +9,7 @@ pub async fn create_test_project(app: &TestApp, jwt: &str, name: &str) -> String
         "name": name,
         "description": "Test project",
     });
-    let (status, body) = app.post_with_jwt("/api/v1/project/projects", &req, jwt).await;
+    let (status, body) = app.post_with_jwt("/api/v1/projects", &req, jwt).await;
     let data = crate::common::assert_api_ok(status, &body);
     data.get("id")
         .and_then(|v| v.as_str())
