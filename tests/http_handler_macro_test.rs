@@ -636,3 +636,114 @@ async fn test_path_and_query_with_flattened_pagination_missing() {
         "缺失 flatten pagination 字段应工作"
     );
 }
+
+// ==================== 测试 10: path+query+body 混合 PUT ====================
+
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize, Params)]
+pub struct MixedOverrideRequest {
+    #[param(source = "path")]
+    pub id: String,
+    #[param(source = "query")]
+    pub query_name: Option<String>,
+    pub body_name: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct MixedOverrideResponse {
+    pub id: String,
+    pub query_name: Option<String>,
+    pub body_name: String,
+}
+
+#[generate_http_handler]
+pub async fn mixed_override(
+    _ctx: RequestContext,
+    params: MixedOverrideRequest,
+) -> Result<MixedOverrideResponse, Error> {
+    Ok(MixedOverrideResponse {
+        id: params.id,
+        query_name: params.query_name,
+        body_name: params.body_name,
+    })
+}
+
+#[tokio::test]
+async fn test_mixed_path_query_body_all_extracted_correctly() {
+    // path+query+body 混合 PUT：每个字段从对应来源提取
+    let app = make_router(|r| {
+        r.route("/items/{id}", put(mixed_override_handler))
+    })
+    .await;
+
+    let body = r#"{"id":"from_body","query_name":"from_body","body_name":"body_value"}"#;
+    let req = Request::builder()
+        .method(Method::PUT)
+        .uri("/items/path_id?query_name=from_query")
+        .header("Content-Type", "application/json")
+        .body(Body::from(body))
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let body_str = String::from_utf8(body.to_vec()).unwrap();
+    assert!(body_str.contains("path_id"), "id 应取自 path");
+    assert!(body_str.contains("from_query"), "query_name 应取自 query");
+    assert!(body_str.contains("body_value"), "body_name 应取自 body");
+}
+
+// ==================== 测试 11: path+query 含数值类型 ====================
+
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize, Params)]
+pub struct GetNumberRequest {
+    #[param(source = "path")]
+    pub item_id: String,
+    #[param(source = "query")]
+    pub count: Option<u32>,
+    #[param(source = "query")]
+    pub rate: Option<f64>,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct GetNumberResponse {
+    pub item_id: String,
+    pub count: Option<u32>,
+    pub rate: Option<f64>,
+}
+
+#[generate_http_handler]
+pub async fn get_number(
+    _ctx: RequestContext,
+    params: GetNumberRequest,
+) -> Result<GetNumberResponse, Error> {
+    Ok(GetNumberResponse {
+        item_id: params.item_id,
+        count: params.count,
+        rate: params.rate,
+    })
+}
+
+#[tokio::test]
+async fn test_path_and_query_with_numeric_types_works() {
+    // query 字段是数值类型（u32, f64），需要 serde_json::Value 正确推断
+    let app = make_router(|r| {
+        r.route("/items/{item_id}/numbers", get(get_number_handler))
+    })
+    .await;
+
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/items/item-789/numbers?count=42&rate=3.14")
+        .body(Body::empty())
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let body_str = String::from_utf8(body.to_vec()).unwrap();
+    assert!(body_str.contains("item-789"), "item_id 应从 path 提取");
+    assert!(body_str.contains("42"), "count=42 应从 query 提取");
+    assert!(body_str.contains("3.14"), "rate=3.14 应从 query 提取");
+}
