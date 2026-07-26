@@ -30,7 +30,7 @@ pub struct CreateProjectRequest {
 pub type CreateProjectResponse = GetProjectResponse;
 
 /// 获取 Project 请求
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct GetProjectRequest {
     /// Project ID
     #[param(source = "path")]

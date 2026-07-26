@@ -43,7 +43,7 @@ pub struct CreateToolResponse {
 }
 
 /// Get tool request
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct GetToolRequest {
     /// Tool ID
     #[param(source = "path")]
@@ -103,7 +103,7 @@ pub struct GetToolResponse {
 }
 
 /// Delete tool request
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct DeleteToolRequest {
     /// Tool ID
     #[param(source = "path")]
@@ -256,7 +256,7 @@ pub struct UpdateToolStatusRequest {
 pub type UpdateToolStatusResponse = GetToolResponse;
 
 /// Bind tool to agent request
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct BindToolToAgentRequest {
     /// Agent ID
     #[param(source = "path")]
@@ -274,7 +274,7 @@ pub struct BindToolToAgentResponse {
 }
 
 /// Unbind tool from agent request
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct UnbindToolFromAgentRequest {
     /// Agent ID
     #[param(source = "path")]

@@ -35,7 +35,7 @@ pub struct CreateTaskRequest {
 pub type CreateTaskResponse = GetTaskResponse;
 
 /// 获取 Task 请求
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct GetTaskRequest {
     /// Task ID
     #[param(source = "path")]

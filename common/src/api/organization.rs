@@ -133,7 +133,7 @@ pub struct UpdateCurrentOrganizationResponse {
 }
 
 /// 获取组织信息请求
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct GetOrganizationRequest {
     /// Organization ID
     #[param(source = "path")]
@@ -171,7 +171,7 @@ pub struct UpdateOrganizationResponse {
 }
 
 /// 删除组织请求
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct DeleteOrganizationRequest {
     /// Organization ID
     #[param(source = "path")]

@@ -48,7 +48,7 @@ pub struct CreateArtifactRequest {
 pub type CreateArtifactResponse = ArtifactDetail;
 
 /// Get Artifact request.
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct GetArtifactRequest {
     /// Artifact ID.
     #[param(source = "path")]
@@ -59,7 +59,7 @@ pub struct GetArtifactRequest {
 pub type GetArtifactResponse = ArtifactDetail;
 
 /// Delete Artifact request.
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct DeleteArtifactRequest {
     /// Artifact ID.
     #[param(source = "path")]
@@ -161,7 +161,7 @@ pub struct ArtifactDetail {
 /// Get artifact content request (text-based content).
 ///
 /// Used when source_type = GeneratedContent, retrieves the full UTF-8 text content directly.
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct GetArtifactContentRequest {
     /// Artifact ID.
     #[param(source = "path")]

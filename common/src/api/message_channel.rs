@@ -64,7 +64,7 @@ pub struct CreateMessageChannelRequest {
 }
 
 /// Get Message Channel request
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct GetMessageChannelRequest {
     /// Channel ID
     #[param(source = "path")]
@@ -72,7 +72,7 @@ pub struct GetMessageChannelRequest {
 }
 
 /// Delete Message Channel request
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct DeleteMessageChannelRequest {
     /// Channel ID
     #[param(source = "path")]
@@ -211,7 +211,7 @@ pub struct UpdateMessageChannelStatusRequest {
 }
 
 /// Test Message Channel connection request
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct TestMessageChannelConnectionRequest {
     /// Channel ID
     #[param(source = "path")]

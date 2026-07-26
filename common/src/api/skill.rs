@@ -160,7 +160,7 @@ pub struct SkillDetail {
 pub type CreateSkillResponse = SkillDetail;
 
 /// 获取 Skill 请求。
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct GetSkillRequest {
     /// Skill ID。
     #[param(source = "path")]
@@ -193,7 +193,7 @@ pub struct InstallSkillToAgentResponse {
 }
 
 /// 列出 Skill 文件请求。
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct ListSkillFilesRequest {
     /// Skill ID。
     #[param(source = "path")]
@@ -208,7 +208,7 @@ pub struct ListSkillFilesResponse {
 }
 
 /// 获取 Skill 文件内容请求。
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct GetSkillFileContentRequest {
     /// Skill ID。
     #[param(source = "path")]
@@ -249,7 +249,7 @@ pub struct UpdateSkillFileContentRequest {
 pub struct UpdateSkillFileContentResponse {}
 
 /// 列出 Agent 安装的 Skills 请求。
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct ListAgentSkillsRequest {
     /// Agent ID。
     #[param(source = "path")]
@@ -362,7 +362,7 @@ pub struct UpdateSkillRequest {
 pub type UpdateSkillResponse = SkillDetail;
 
 /// 删除 Skill 请求。
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct DeleteSkillRequest {
     /// Skill ID。
     #[param(source = "path")]
@@ -372,7 +372,7 @@ pub struct DeleteSkillRequest {
 /// 安装技能包请求。
 ///
 /// 按 tag 批量安装已发布技能到 Agent 目录。
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct InstallSkillPackRequest {
     /// Agent ID。
     #[param(source = "path")]
@@ -393,7 +393,7 @@ pub struct InstallSkillPackResponse {
 /// 卸载技能包请求。
 ///
 /// 从 Agent 的 installed_skill_packs 中移除指定 tag，保留技能副本。
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct UninstallSkillPackRequest {
     /// Agent ID。
     #[param(source = "path")]
@@ -409,7 +409,7 @@ pub struct UninstallSkillPackRequest {
 pub struct UninstallSkillPackResponse {}
 
 /// 列出已安装技能包请求。
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct ListInstalledSkillPacksRequest {
     /// Agent ID。
     #[param(source = "path")]

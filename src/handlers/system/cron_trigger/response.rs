@@ -15,7 +15,7 @@ pub struct CreateCronTriggerRequest {
     pub payload: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct GetCronTriggerRequest {
     #[param(source = "path")]
     pub trigger_id: String,
@@ -43,19 +43,19 @@ pub struct UpdateCronTriggerRequest {
     pub payload: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct DeleteCronTriggerRequest {
     #[param(source = "path")]
     pub trigger_id: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct PauseCronTriggerRequest {
     #[param(source = "path")]
     pub trigger_id: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct ResumeCronTriggerRequest {
     #[param(source = "path")]
     pub trigger_id: String,

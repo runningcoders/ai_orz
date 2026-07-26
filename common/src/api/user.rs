@@ -56,7 +56,7 @@ pub struct UpdateCurrentUserResponse {
 }
 
 /// Get user by username request
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct GetUserByUsernameRequest {
     /// Username to query
     #[param(source = "path")]
@@ -92,7 +92,7 @@ pub struct UserListItem {
 }
 
 /// List users by organization request (specified organization ID in path)
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct ListUsersByOrganizationRequest {
     /// Organization ID to query
     #[param(source = "path")]
@@ -173,7 +173,7 @@ pub struct GetUserRequest {
 }
 
 /// Delete user request
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct DeleteUserRequest {
     /// User ID
     #[param(source = "path")]

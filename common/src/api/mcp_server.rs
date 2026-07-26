@@ -43,7 +43,7 @@ pub struct CreateMcpServerRequest {
 }
 
 /// Get MCP Server request.
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct GetMcpServerRequest {
     /// MCP Server ID.
     #[param(source = "path")]
@@ -51,7 +51,7 @@ pub struct GetMcpServerRequest {
 }
 
 /// Delete MCP Server request.
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct DeleteMcpServerRequest {
     /// MCP Server ID.
     #[param(source = "path")]

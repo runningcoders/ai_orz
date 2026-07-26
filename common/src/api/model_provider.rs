@@ -64,7 +64,7 @@ pub struct ModelProviderListItem {
 }
 
 /// Get Model Provider request
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct GetModelProviderRequest {
     /// Provider ID
     #[param(source = "path")]
@@ -202,7 +202,7 @@ pub struct CallModelResponse {
 }
 
 /// Delete Model Provider request
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct DeleteModelProviderRequest {
     /// Provider ID
     #[param(source = "path")]

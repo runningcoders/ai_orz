@@ -78,7 +78,7 @@ impl From<&GetAgentResponse> for AgentListItem {
 }
 
 /// 获取 Agent 请求
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct GetAgentRequest {
     /// Agent ID
     #[param(source = "path")]
@@ -216,7 +216,7 @@ pub struct UpdateAgentStatusRequest {
 }
 
 /// 删除 Agent 请求
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct DeleteAgentRequest {
     /// Agent ID
     #[param(source = "path")]
@@ -312,7 +312,7 @@ pub struct SearchAgentsResponse {
 pub type UpdateAgentStatusResponse = GetAgentResponse;
 
 /// 安装工具包请求
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct InstallToolPackRequest {
     /// Agent ID
     #[param(source = "path")]
@@ -333,7 +333,7 @@ pub struct InstallToolPackResponse {
 }
 
 /// 卸载工具包请求
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct UninstallToolPackRequest {
     /// Agent ID
     #[param(source = "path")]
@@ -354,7 +354,7 @@ pub struct UninstallToolPackResponse {
 }
 
 /// 列出已安装工具包请求
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct ListInstalledToolPacksRequest {
     /// Agent ID
     #[param(source = "path")]
