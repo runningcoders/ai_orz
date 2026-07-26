@@ -2,7 +2,7 @@
 
 **AI 代理协作框架** — 让多个 AI 代理像团队一样协作完成任务
 
-![Tests](https://img.shields.io/badge/tests-745%20%E2%9C%94-brightgreen)
+![Tests](https://img.shields.io/badge/tests-892%20%E2%9C%94-brightgreen)
 ![Rust](https://img.shields.io/badge/Rust-1.85+-000000?logo=rust)
 ![License](https://img.shields.io/github/license/runningcoders/ai_orz)
 
@@ -31,7 +31,7 @@
 | **后端** | Rust + Axum + SQLite + rig-core，单二进制可部署 |
 | **前端** | Dioxus 0.7 (WASM) + Tailwind CSS v4 + DaisyUI v5，15 条路由，30+ 主题切换 |
 | **架构** | Adapter（Handler/Producer）→ Domain → DAL → DAO 四层严格单向依赖 |
-| **测试** | 745 个单元测试，100% 通过 |
+| **测试** | 892 个测试，100% 通过（后端 796 + 前端 46 + common 50） |
 | **实体覆盖** | Agent / Project / Task / Message / Memory / Skill / Tool / ModelProvider 全栈 |
 
 核心能力已落地：
@@ -50,6 +50,7 @@
 - 🛠️ **系统管理**：数据备份与恢复、日志查询、基于角色的权限控制
 - 📡 **AOP 事件中心**：统一生产-消费事件框架，支持同步/异步消费模式，内置内存队列；Producer 与 Consumer 分别注册，完全解耦
 - 🏗️ **适配层架构**：HTTP Handler / 回调端点 / AOP Producer 同属适配层（Adapter），统一负责外部协议转换和校验，直接调用 Domain；外部协议数据不进入事件中心
+- 🧩 **统一 IDL 宏**：`#[generate_http_handler]` + `#[derive(Params)]` + `#[param(source = "path/query")]` 一份结构体定义同时支持 HTTP API 和 LLM 工具调用，自动从 path/query/body 提取参数，自动生成 axum handler，支持 path-only / query-only / path+query / path+body / 空 struct 等多种参数组合
 
 > 完整功能列表和开发规范请看 [AGENTS.md](./AGENTS.md)
 

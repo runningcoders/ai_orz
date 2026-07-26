@@ -213,6 +213,7 @@ async fn list_skill_files_handler(ctx: RequestContext, params: ListSkillFilesPar
 |------|----------|------|
 | 2026-06-21 | 初始设计文档完成 | AI Orz |
 | 2026-07-25 | 补充 neural/tags 参数说明；新增「工具注册规范」与「工具注册统计」章节 | AI Orz |
+| 2026-07-26 | 新增「第四轮修复：path 参数解析 + (true, true) 分支重写」章节，记录 RawQuery + serde_json::Value 方案 | AI Orz |
 
 ---
 
@@ -487,3 +488,88 @@ neural 意味着「Agent 唤醒时自动注入 Prompt」，**仅用于资源发�
 - **运维监控类**（适合 Agent 探查系统状态）：get_health_metrics、get_all_queue_stats、get_stats_overview、get_stats_time_series、get_stats_distribution、query_logs、get_log_level_distribution、get_log_time_series
 - **系统管理类**（需 Admin 权限）：list_backups、check_initialized
 - **高危操作**（不建议注册）：create_backup、delete_backup、initialize_system
+
+---
+
+## 第四轮修复：path 参数解析 + (true, true) 分支重写（2026-07-26）
+
+### 问题背景
+
+第三轮改造后，发现 `generate_http_handler` 宏还有两个关键 bug：
+
+#### Bug 1: `#[param(source = "path")]` 属性解析错误
+
+`collect_path_and_query_fields_from_type` 函数用 `Meta::NameValue` 匹配 `#[param(source = "path")]` 属性，但实际该属性是 `Meta::List` 类型，导致 path 字段无法被正确识别，所有 path-only struct 在 path+body 组合下都走错分支。
+
+#### Bug 2: (true, true) 分支 path+query GET 失败
+
+原 `(true, true)` 分支生成 `Path + Query<ParamsTy> + Json<ParamsTy>`，存在两个问题：
+1. `Query<ParamsTy>` 尝试从 query string 反序列化所有字段（含必填 path 字段如 `id: String`），缺失字段时返回 400
+2. `Json<ParamsTy>` 对无 body 的 GET 请求返回 400
+
+导致 10 个生产 path+query struct 的 GET 请求全部失效。
+
+### 修复方案
+
+#### 修复 1: Meta::List + parse_args 解析属性
+
+将 `Meta::NameValue` 替换为 `Meta::List` + `parse_args::<MetaNameValue>()` 解析 `#[param(source = "path")]` 属性，正确识别 path 和 query 字段。
+
+#### 修复 2: RawQuery + serde_json::Value 替代 Query<ParamsTy>
+
+重写 `(true, true)` 分支为两个子分支：
+
+**子分支自动判定**：当所有非 path 字段都是 query 字段（无 body 字段）时走 path+query only 子分支；当存在 body 字段时走 path+query+body 混合子分支。
+
+**path+query only 子分支**（无 body 字段，典型场景 `GET /items/{id}?verbose=true`）：
+- 仅 `Path + RawQuery` 提取器，无 Json 提取器
+- params 用 `Default::default()` 构造空实例
+- 解析 query string 流程：
+  1. `RawQuery` 提取原始 query 字符串（不会因缺失字段报错）
+  2. `serde_urlencoded` 解析为 `HashMap<String, String>`
+  3. 构建 `serde_json::Value` 对象，按值内容推断类型（bool / number / null / string）
+  4. 对非 `#[serde(flatten)]` query 字段：`serde_json::from_value(query_value.get(name).cloned())` 反序列化
+  5. 对 `#[serde(flatten)]` query 字段（如 `pagination: PaginationParams`）：用整个 `query_value` 反序列化
+  6. 最后用 path 值覆盖（path 优先级最高）
+
+**path+query+body 混合子分支**（有 body 字段，典型场景 `PUT /items/{id}?verbose=true` body `{"name":"..."}`）：
+- `Path + RawQuery + Json` 提取器
+- body 提供基础值，query 覆盖 body 同名字段，path 最后覆盖
+- 优先级：path > query > body
+
+### 关键设计决策：为什么不用临时 Query struct
+
+宏生成 `struct __QueryParams { status: Option<ToolStatus>, ... }` 会遇到 macro hygiene 问题——handler 文件可能未导入 `ToolStatus`，导致宏生成代码在该作用域中找不到类型。新方案通过 `params.{ident} = parsed` 类型推导规避此问题，宏生成代码不引用任何自定义类型名，全部通过类型推导完成反序列化，因此 handler 文件无需为 query 字段类型额外 `use` 导入。
+
+### collect_path_and_query_fields_from_type 重构
+
+函数返回值从 `(path_fields, query_fields, total_named_fields)` 改为 `(path_fields, query_fields, flattened_query_fields, total_named_fields)`，分别存放 `#[serde(flatten)]` 标注的 query 字段（如 `PaginationParams`），用整个 `query_value` 反序列化。
+
+### 测试覆盖
+
+新增 15 个 axum 集成测试（`tests/http_handler_macro_test.rs`），覆盖：
+
+| 测试维度 | 测试用例 |
+|---------|---------|
+| 空 struct GET | test_empty_struct_get_works_without_body |
+| path-only GET | test_path_only_get_works_without_body, test_path_only_get_ignores_content_type_header |
+| query-only GET | test_query_only_get_works_with_query_string, test_query_only_get_works_with_missing_optional_query_params |
+| path+body PUT | test_path_and_body_mixed_put_path_overrides_body |
+| path+query GET | test_path_and_query_mixed_get_works_without_body, test_priority_path_greater_than_query_greater_than_body |
+| 响应包装 | test_response_is_wrapped_in_api_response |
+| enum 类型 query | test_path_and_query_with_enum_type_works, test_path_and_query_with_missing_optional_enum_query |
+| flatten pagination | test_path_and_query_with_flattened_pagination_works, test_path_and_query_with_flattened_pagination_missing |
+| path+query+body 混合 | test_mixed_path_query_body_all_extracted_correctly |
+| 数值类型 query | test_path_and_query_with_numeric_types_works |
+
+### 影响范围
+
+- 10 个生产 path+query struct（GetAgentRequest、ListMcpToolsByServerRequest、ListArtifactsRequest 等）全部修复
+- 18 个 path-only struct 补 Default derive
+- 主项目 Cargo.toml 新增 `serde_urlencoded = "0.7"` 依赖
+
+### 相关文档
+
+- [unified-idl-http-handler.md](./unified-idl-http-handler.md) - 统一 IDL 设计文档（已更新支持的组合表、Query 字段提取实现细节、修复历史）
+- [2026-07-26-macro-path-param-fix.md](../superpowers/plans/2026-07-26-macro-path-param-fix.md) - path 参数解析修复 plan
+- [2026-07-26-macro-path-query-branch-fix.md](../superpowers/plans/2026-07-26-macro-path-query-branch-fix.md) - (true, true) 分支修复 plan

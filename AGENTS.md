@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-07-25（通用 count 方法：DAO/DAL/Domain 三层透传，count 与 query 复用查询结构体和 SQL 拼接逻辑，特定 count 方法退化为语法糖）
+> 最后更新：2026-07-26（宏 `(true, true)` 分支修复：用 RawQuery + serde_json::Value 替代 Query<ParamsTy>，支持 path+query 无 body GET 请求，规避 macro hygiene 问题；新增 15 个集成测试覆盖各种边界场景）
 
 ---
 
@@ -14,7 +14,7 @@
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + rig-core 0.34
 - **前端**：Dioxus 0.7 (WebAssembly) + Tailwind CSS v4 + DaisyUI v5
-- **技术特色**：严格分层架构、类型安全、831 个测试 100% 通过率（后端 746 + 前端 35 + common 50）、30+ 主题切换
+- **技术特色**：严格分层架构、类型安全、892 个测试 100% 通过率（后端 796 + 前端 46 + common 50）、30+ 主题切换
 
 ### 1.2 已实现核心功能
 
@@ -75,11 +75,11 @@
 | 📊 系统健康监控 HUD | ✅ | Health 页面重写为仪表盘墙（10s 轮询，6 个维度：后端/AOP队列/活跃Agent/活跃项目/待处理任务/运行时长），复用通用 Gauge 组件 |
 | 📋 看板视图 Canvas | ✅ | tasks 看板视图改为 HUD 风格 KanbanCanvas（多列泳道 + 优先级颜色编码 + 进度条 + HUD 深色径向渐变背景） |
 
-### 1.3 整体完成度与测试统计（2026-07-25 更新）
+### 1.3 整体完成度与测试统计（2026-07-26 更新）
 
 | 指标 | 数值 | 说明 |
 |------|------|------|
-| **总测试数** | **860** | 后端 764 + 前端 46 + common 50，DAO + DAL + Domain + Handler + Pkg 完整覆盖（含 8 个 runtime_stats + 7 个 AOP 内存统计 + 3 个 log_stats + 6 个 gauge/aop_gauge + 2 个 kanban_canvas 测试） |
+| **总测试数** | **892** | 后端 796（含 15 个宏集成测试） + 前端 46 + common 50，DAO + DAL + Domain + Handler + Pkg 完整覆盖（含 8 个 runtime_stats + 7 个 AOP 内存统计 + 3 个 log_stats + 6 个 gauge/aop_gauge + 2 个 kanban_canvas + 15 个宏集成测试） |
 | **通过率** | **100%** | ✅ 全部测试通过 |
 | DAO 模块数 | 25 个 | 全部实现并被使用，零闲置（18 核心 DAO + 5 渠道 DAO + a2a 回调 + 1 触发器 + 消息推送） |
 | DAL 模块数 | 23 个 | 全部完整业务承载，零闲置（含 lark 飞书、agent_a2a、agent_codex 专属 DAL） |
@@ -887,6 +887,16 @@ Agent
 ## 六、工作流与开发记录
 
 > 💡 **记录原则**：仅保留最近里程碑的详细信息，早期里程碑按月汇总。所有重构背景、问题、解决方案、避坑指南归档在 [docs/LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md)，开发前建议先看该文档避免重蹈覆辙。
+
+### 2026-07-26 里程碑（宏 (true, true) 分支修复）
+**✅ generate_http_handler 宏 (true, true) 分支用 RawQuery + serde_json::Value 重写**
+- **设计动机**：原 `(true, true)` 分支生成 `Path + Query<ParamsTy> + Json<ParamsTy>`，存在两个 bug：1) `Query<ParamsTy>` 尝试从 query string 反序列化所有字段（含必填 path 字段如 `id: String`），缺失字段时返回 400；2) `Json<ParamsTy>` 对无 body 的 GET 请求返回 400。导致 10 个生产 path+query struct 的 GET 请求全部失效
+- **修复方案**：用 `axum::extract::RawQuery` 提取原始 query 字符串（不会因缺失字段报错），用 `serde_urlencoded` 解析为 `HashMap`，再构建 `serde_json::Value`（带类型推断 bool/number/null/string），通过 `params.{ident} = parsed` 类型推导反序列化各 query 字段，规避 macro hygiene 问题（handler 文件可能未导入字段类型如 `ToolStatus`）
+- **子分支自动判定**：当所有非 path 字段都是 query 字段（无 body 字段）时走 path+query only 子分支（`Path + RawQuery + Default::default()`，无 Json 提取器）；当存在 body 字段时走 path+query+body 混合子分支（`Path + RawQuery + Json`，path > query > body 优先级）
+- **flatten query 支持**：`collect_path_and_query_fields_from_type` 重构为返回 4 元组，新增 `flattened_query_fields` 分别存放 `#[serde(flatten)]` 标注的 query 字段（如 `PaginationParams`），用整个 `query_value` 反序列化
+- **测试覆盖**：新增 15 个 axum 集成测试覆盖 path+query only GET、path+query+body 混合 PUT、enum 类型（ToolStatus）、flatten pagination、数值类型（u32/f64）、缺失 Option 字段、path > query > body 优先级等边界场景，全部通过
+- **影响范围**：10 个生产 path+query struct（GetAgentRequest、ListMcpToolsByServerRequest、ListArtifactsRequest 等）全部修复；18 个 path-only struct 补 Default derive；主项目 Cargo.toml 新增 `serde_urlencoded = "0.7"` 依赖
+- **规范沉淀**：[docs/design/unified-idl-http-handler.md](./docs/design/unified-idl-http-handler.md) 更新支持的组合表、新增 Query 字段提取实现细节小节和修复历史
 
 ### 2026-07-25 里程碑（通用 count 方法）
 **✅ 通用 count 方法三层透传 + 特定 count 退化为语法糖**
