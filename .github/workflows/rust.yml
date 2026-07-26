@@ -12,7 +12,6 @@ env:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
@@ -20,6 +19,11 @@ jobs:
 
     - name: Install protoc (for lancedb dependency)
       run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+    - name: Install cargo-tools
+      run: |
+        cargo install --locked cargo-tarpaulin || true
+        rustup component add clippy rustfmt
 
     - name: Cache ort-sys prebuilt binaries
       uses: actions/cache@v4
@@ -43,6 +47,15 @@ jobs:
         restore-keys: |
           cargo-${{ runner.os }}-
 
+    - name: Format check
+      run: cargo fmt --all -- --check
+
+    # NOTE: 项目当前存在大量预先存在的 clippy warning（约 440+），大部分是历史遗留。
+    # 这里只验证 clippy 能否编译通过，不启用 `-D warnings`，避免 CI 一直红。
+    # 未来清理完 warning 后再改为 `cargo clippy --all-targets -- -D warnings`。
+    - name: Clippy check
+      run: cargo clippy --all-targets
+
     - name: Check backend
       run: cargo check --lib --verbose
 
@@ -58,5 +71,25 @@ jobs:
     - name: Build
       run: cargo build --verbose
 
-    - name: Run tests
-      run: cargo test --verbose
+    - name: Run unit tests
+      run: cargo test --lib --verbose
+
+    - name: Run integration tests
+      run: cargo test --test '*' --verbose
+
+    # Tarpaulin 主要支持 Linux，这里 runs-on 已是 ubuntu-latest。
+    # 当前只收集覆盖率作为 baseline，不设门槛（--fail-under 0），
+    # 待测试覆盖稳定后再逐步提高门槛。tarpaulin 失败不应阻断 CI（|| true）。
+    - name: Generate coverage report
+      run: |
+        cargo tarpaulin --workspace --all-features --out Xml --out Html \
+          --output-dir ./coverage \
+          --exclude-files "tests/common/*" \
+          --fail-under 0 \
+          -- --lib || true
+
+    - name: Upload coverage artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-report
+        path: ./coverage/
