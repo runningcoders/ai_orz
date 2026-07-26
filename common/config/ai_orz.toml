@@ -28,6 +28,11 @@ enable_file_log = true
 # 日志文件目录（相对于 .ai_orz/）
 log_subdir = "logs"
 
+# A2A 协议配置
+[a2a_server]
+# 是否启用 A2A Server（JSON-RPC 端点）
+enabled = true
+
 # JWT配置
 [jwt]
 # JWT签名密钥（生产环境务必修改！也可以通过环境变量 JWT_SECRET 设置

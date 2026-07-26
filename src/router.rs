@@ -25,28 +25,30 @@ pub fn create_router(frontend_dist_dir: &str, config: Arc<AppConfig>) -> Router 
             )),
         )
         // JSON-RPC: JWT 保护端点
+        // 中间件顺序（洋葱模型）：jwt_auth（外层，先执行）→ request_context（内层，后执行）
+        // jwt_auth 验证 JWT 并将用户信息写入请求头，request_context 从请求头创建 RequestContext
         .route(
             "/a2a",
             post(handlers::a2a::jsonrpc::handle_jsonrpc)
-                .layer(axum::middleware::from_fn(jwt_auth_middleware))
                 .layer(axum::middleware::from_fn({
                     let config = config.clone();
                     move |req, next| {
                         request_context_middleware(config.clone(), req, next)
                     }
-                })),
+                }))
+                .layer(axum::middleware::from_fn(jwt_auth_middleware)),
         )
         // SSE 流式端点: tasks/sendSubscribe
         .route(
             "/a2a/subscribe",
             post(handlers::a2a::send_subscribe::handle_send_subscribe)
-                .layer(axum::middleware::from_fn(jwt_auth_middleware))
                 .layer(axum::middleware::from_fn({
                     let config = config.clone();
                     move |req, next| {
                         request_context_middleware(config.clone(), req, next)
                     }
-                })),
+                }))
+                .layer(axum::middleware::from_fn(jwt_auth_middleware)),
         )
         // A2A 回调端点（公开，外部 Agent 推送任务更新，无需 JWT）
         .route(
