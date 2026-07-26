@@ -47,25 +47,21 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
         Ok(count > 0)
     }
 
-    /// 初始化系统：创建第一个组织和第一个超级管理员用户
+    /// 创建组织 + Owner（超级管理员角色）
     ///
-    /// 返回: (organization_id, user_id)
-    async fn initialize_system(
+    /// 通用方法：可用于系统初始化，也可用于后续创建新组织。
+    /// 返回 (organization_id, user_id)
+    async fn create_org_and_owner(
         &self,
         ctx: RequestContext,
-        organization_name: String,
-        description: Option<String>,
-        username: String,
-        password_hash: String,
-        display_name: Option<String>,
-        email: Option<String>,
+        params: common::api::InitializeSystemRequest,
     ) -> Result<(String, String)> {
         // 1. 创建组织
         let org_id = generate_org_id();
         let org = OrganizationPo::new(
             org_id.clone(),
-            organization_name,
-            description.unwrap_or_default(),
+            params.organization_name,
+            params.description.unwrap_or_default(),
             None,
             org_id.clone(), // 系统初始化时由组织自己创建
         );
@@ -76,14 +72,14 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
         let user = UserPo::new(
             user_id.clone(),
             org_id.clone(),
-            username,
-            display_name.unwrap_or_else(|| "超级管理员".to_string()),
-            email.unwrap_or_default(),
-            password_hash,
+            params.admin_username,
+            params.admin_display_name.unwrap_or_else(|| "超级管理员".to_string()),
+            params.admin_email.unwrap_or_default(),
+            params.admin_password_hash,
             common::enums::UserRole::SuperAdmin,
             org_id.clone(), // 系统初始化时由组织创建
         );
-        self.user_dal.create(ctx, &user).await?;
+        self.user_dal.create(ctx.clone(), &user).await?;
 
         Ok((org_id, user_id))
     }

@@ -19,6 +19,27 @@ pub struct InitializeSystemRequest {
     pub admin_display_name: Option<String>,
     /// 超级管理员邮箱（可选）
     pub admin_email: Option<String>,
+    /// 对话模型配置（用于 Agent 思考和对话）
+    pub chat_model: ModelProviderInitConfig,
+    /// 向量模型配置（用于 Embedding 向量化）
+    pub embedding_model: ModelProviderInitConfig,
+}
+
+/// 模型 Provider 初始化配置（系统初始化时使用）
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct ModelProviderInitConfig {
+    /// Provider 名称（如 "OpenAI"、"DeepSeek"）
+    pub name: String,
+    /// 服务商类型（0=OpenAI, 1=DeepSeek, 2=Qwen, 3=Doubao, 4=Ollama, 5=Custom, 6=FastEmbed）
+    pub provider_type: i32,
+    /// 模型名称（如 "gpt-4o"、"text-embedding-3-small"）
+    pub model_name: String,
+    /// API Key（明文，后端存储时会加密）
+    pub api_key: String,
+    /// 自定义 Base URL（可选，用于 OpenAI 兼容代理）
+    pub base_url: Option<String>,
+    /// 描述（可选）
+    pub description: Option<String>,
 }
 
 /// 检查系统初始化状态请求（无参数）
@@ -32,6 +53,10 @@ pub struct InitializeSystemResponse {
     pub organization_id: String,
     /// 超级管理员用户 ID
     pub user_id: String,
+    /// 对话模型 Provider ID
+    pub chat_provider_id: String,
+    /// 向量模型 Provider ID
+    pub embedding_provider_id: String,
 }
 
 /// 检查初始化状态响应

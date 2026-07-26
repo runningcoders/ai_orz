@@ -82,18 +82,15 @@ pub trait OrganizationManage: Send + Sync {
     /// 检查系统是否已经初始化
     async fn check_initialized(&self, ctx: RequestContext) -> Result<bool>;
 
-    /// 初始化系统：创建第一个组织和第一个超级管理员用户
+    /// 创建组织 + Owner（超级管理员角色），不含 ModelProvider
     ///
-    /// 返回: (organization_id, user_id)
-    async fn initialize_system(
+    /// 通用方法：可用于系统初始化，也可用于后续创建新组织。
+    /// 返回 (organization_id, user_id)
+    /// ModelProvider 的创建由 handler 编排 finance domain 完成
+    async fn create_org_and_owner(
         &self,
         ctx: RequestContext,
-        organization_name: String,
-        description: Option<String>,
-        username: String,
-        password_hash: String,
-        display_name: Option<String>,
-        email: Option<String>,
+        params: common::api::InitializeSystemRequest,
     ) -> Result<(String, String)>;
 
     /// 获取组织信息
