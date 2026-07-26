@@ -2,22 +2,27 @@
 
 use crate::api::{PaginationParams, TextContentResponse};
 use crate::enums::FileType;
+use ai_orz_macros::Params;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Attachment 列表查询参数。
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct AttachmentListQuery {
     /// 可选用途筛选，如 skill/message/artifact/tool_result。
+    #[param(source = "query")]
     pub purpose: Option<String>,
     /// 可选文件类型筛选。
+    #[param(source = "query")]
     pub file_type: Option<FileType>,
     /// 分页参数。
     #[serde(flatten)]
+    #[param(source = "query")]
     pub pagination: PaginationParams,
 }
 
 /// Attachment 详情响应。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AttachmentDetail {
     /// 上传文件资产 ID。
     pub id: String,
@@ -51,8 +56,44 @@ pub type UploadAttachmentResponse = AttachmentDetail;
 /// 获取 Attachment 响应。
 pub type GetAttachmentResponse = AttachmentDetail;
 
+/// 获取 Attachment 请求（path 参数：id）。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct GetAttachmentRequest {
+    /// Attachment ID。
+    #[param(source = "path")]
+    pub id: String,
+}
+
+/// 获取 Attachment 文本内容请求（path 参数：id）。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct GetAttachmentContentRequest {
+    /// Attachment ID。
+    #[param(source = "path")]
+    pub id: String,
+}
+
+/// 删除 Attachment 请求（path 参数：id）。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct DeleteAttachmentRequest {
+    /// Attachment ID。
+    #[param(source = "path")]
+    pub id: String,
+}
+
+/// 全量替换 Attachment UTF-8 文本内容请求（path 参数：id + body）。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct UpdateAttachmentContentRequest {
+    /// Attachment ID。
+    #[param(source = "path")]
+    pub id: String,
+    /// 新的完整文本内容。
+    pub content: String,
+    /// 可选乐观锁时间戳。
+    pub expected_updated_at: Option<i64>,
+}
+
 /// JSON 创建小型 UTF-8 文本 Attachment 请求。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Params)]
 pub struct CreateTextAttachmentRequest {
     /// 安全文件名，不能包含路径分隔符或路径穿越片段。
     pub file_name: String,
@@ -68,7 +109,7 @@ pub struct CreateTextAttachmentRequest {
 pub type CreateTextAttachmentResponse = AttachmentDetail;
 
 /// Attachment 文本内容响应，组合 Attachment metadata 与文本内容。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AttachmentContentResponse {
     /// Attachment metadata。
     pub attachment: AttachmentDetail,

@@ -17,7 +17,7 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 #[register_handler_tool(
     id = "get_reception_agent",
     name = "get_reception_agent",
-    description = "获取当前可用的前台 Agent（统一路由）",
+    description = "Resolve the current available reception agent (unified routing). Prefer feishu_reception role onboarded agent, fallback to any onboarded agent.",
     params = "common::api::GetReceptionAgentRequest",
     tags = "collaboration"
 )]

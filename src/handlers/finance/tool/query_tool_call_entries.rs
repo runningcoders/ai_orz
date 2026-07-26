@@ -14,7 +14,8 @@ use super::response::to_tool_call_entry_detail;
     id = "query_tool_call_entries",
     name = "query_tool_call_entries",
     description = "Query tool call trace entries by call_id, agent_id, project_id, task_id, tool_id, status, and time range",
-    params = "common::api::QueryToolCallEntriesRequest"
+    params = "common::api::QueryToolCallEntriesRequest",
+    tags = "tool_management"
 )]
 #[generate_http_handler]
 pub async fn query_tool_call_entries(

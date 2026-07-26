@@ -5,10 +5,17 @@ use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::dao::task::TaskQuery;
 use crate::service::domain::project::domain;
-use ai_orz_macros::generate_http_handler;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListTasksRequest, PagedResult, TaskListItem};
 
 /// List tasks globally with optional filtering by project, status, assignee, etc.
+#[register_handler_tool(
+    id = "list_tasks",
+    name = "list_tasks",
+    description = "List tasks globally with pagination. Lightweight list scenario (GET + query params), excludes deleted tasks.",
+    params = "common::api::ListTasksRequest",
+    tags = "project_management"
+)]
 #[generate_http_handler]
 pub async fn list_tasks(
     ctx: RequestContext,

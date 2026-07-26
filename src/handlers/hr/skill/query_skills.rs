@@ -18,7 +18,8 @@ use super::response::to_list_item;
     id = "query_skills",
     name = "query_skills",
     description = "Query skills with full filtering support (ids, keyword, status, category, tags, etc.)",
-    params = "common::api::SkillQueryRequest"
+    params = "common::api::SkillQueryRequest",
+    tags = "skill_management"
 )]
 #[generate_http_handler]
 pub async fn query_skills(

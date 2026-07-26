@@ -15,7 +15,9 @@ use super::response::to_list_item;
     id = "search_skills",
     name = "search_skills",
     description = "Search public skills by keyword with optional filtering. Returns matching skills sorted by relevance.",
-    params = "common::api::SearchSkillsRequest"
+    params = "common::api::SearchSkillsRequest",
+    neural,
+    tags = "skill_management"
 )]
 #[generate_http_handler]
 pub async fn search_skills(

@@ -14,7 +14,8 @@ use common::error::{Result, bail_err};
     id = "create_tool",
     name = "create_tool",
     description = "Create a new custom tool (HTTP/MCP). Built-in tools cannot be created via this API.",
-    params = "common::api::CreateToolRequest"
+    params = "common::api::CreateToolRequest",
+    tags = "tool_management"
 )]
 #[generate_http_handler]
 pub async fn create_tool(

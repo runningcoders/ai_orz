@@ -3,16 +3,11 @@
 use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
-use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use ai_orz_macros::generate_http_handler;
 use common::api::{GetUserByUsernameRequest, GetUserByUsernameResponse};
 
 /// Find a user by username (used for login authentication)
-#[register_handler_tool(
-    id = "get_user_by_username",
-    name = "get_user_by_username",
-    description = "Find a user by username, used for authentication",
-    params = "common::api::GetUserByUsernameRequest"
-)]
+/// 注意：此 handler 不注册为 Agent 工具（用于认证，避免用户枚举风险）。
 #[generate_http_handler]
 pub async fn get_user_by_username(
     ctx: RequestContext,

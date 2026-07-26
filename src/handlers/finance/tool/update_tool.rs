@@ -15,7 +15,8 @@ use common::error::{Result, err, bail_err};
     id = "update_tool",
     name = "update_tool",
     description = "Update an existing custom tool's configuration (name, description, credentials, etc.)",
-    params = "common::api::UpdateToolRequest"
+    params = "common::api::UpdateToolRequest",
+    tags = "tool_management"
 )]
 #[generate_http_handler]
 pub async fn update_tool(

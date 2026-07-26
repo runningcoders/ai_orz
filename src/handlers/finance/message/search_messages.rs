@@ -12,7 +12,8 @@ use common::error::{Result, err, bail_err};
     id = "search_messages",
     name = "search_messages",
     description = "Search messages by keyword with hybrid search (FTS5 + vector semantic)",
-    params = "common::api::message::SearchMessagesRequest"
+    params = "common::api::message::SearchMessagesRequest",
+    tags = "messaging"
 )]
 #[generate_http_handler]
 pub async fn search_messages(

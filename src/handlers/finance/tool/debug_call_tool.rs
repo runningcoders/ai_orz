@@ -6,7 +6,7 @@
 use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::runtime;
-use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use ai_orz_macros::generate_http_handler;
 use common::api::{DebugCallToolRequest, DebugCallToolResponse};
 
 /// 工具调试调用（同步）
@@ -14,12 +14,7 @@ use common::api::{DebugCallToolRequest, DebugCallToolResponse};
 /// 管理员在工具详情页直接调用工具进行调试，无需 Agent 上下文。
 /// 直接走 `call_tool_by_id`（协议路由 + 状态检查），跳过 Agent installed_tags 授权。
 /// 权限校验由路由层 `require_role_middleware(UserRole::Admin)` 完成。
-#[register_handler_tool(
-    id = "debug_call_tool",
-    name = "debug_call_tool",
-    description = "Debug call a tool directly (admin only, no agent authorization)",
-    params = "common::api::DebugCallToolRequest"
-)]
+/// 注意：此 handler 不注册为 Agent 工具（admin only，绕过 Agent 授权）。
 #[generate_http_handler]
 pub async fn debug_call_tool(
     ctx: RequestContext,

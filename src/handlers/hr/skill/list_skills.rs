@@ -15,7 +15,8 @@ use super::response::to_list_item;
     id = "list_skills",
     name = "list_skills",
     description = "List public skills with optional filtering by status, category, author, and keyword.",
-    params = "common::api::ListSkillsRequest"
+    params = "common::api::ListSkillsRequest",
+    tags = "skill_management"
 )]
 #[generate_http_handler]
 pub async fn list_skills(

@@ -14,7 +14,8 @@ use super::response::to_detail;
     id = "install_skill_to_agent",
     name = "install_skill_to_agent",
     description = "Install an existing public skill to your agent. Creates a private copy of the skill for your agent.",
-    params = "common::api::InstallSkillToAgentRequest"
+    params = "common::api::InstallSkillToAgentRequest",
+    tags = "skill_management"
 )]
 #[generate_http_handler]
 pub async fn install_skill_to_agent(

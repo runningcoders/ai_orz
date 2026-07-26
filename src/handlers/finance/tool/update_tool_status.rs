@@ -13,7 +13,8 @@ use common::error::{Result, err, bail_err};
     id = "update_tool_status",
     name = "update_tool_status",
     description = "Update the status of a tool (enable/disable it)",
-    params = "common::api::UpdateToolStatusRequest"
+    params = "common::api::UpdateToolStatusRequest",
+    tags = "tool_management"
 )]
 #[generate_http_handler]
 pub async fn update_tool_status(

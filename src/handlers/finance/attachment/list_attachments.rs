@@ -1,24 +1,28 @@
-//! 列出 Attachment
+//! Handler: GET /api/v1/attachments - 列出当前用户的 Attachment
 
-use axum::{
-    Json,
-    extract::{Extension, Query},
-};
-use common::api::{ApiResponse, AttachmentDetail, AttachmentListQuery, PagedResult};
-
+use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::dao::attachment::AttachmentQuery;
 use crate::service::domain::finance::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{AttachmentDetail, AttachmentListQuery, PagedResult};
+use common::error::bail_err;
 
 use super::response::to_detail;
-use common::error::{Result, bail_err};
 
-/// 列出 Attachment
-/// GET /attachments
+/// 列出当前用户（root_user_id）的 Attachment
+#[register_handler_tool(
+    id = "list_attachments",
+    name = "list_attachments",
+    description = "List attachments for the current user with optional filtering by purpose and file_type. Returns paged results.",
+    params = "common::api::AttachmentListQuery",
+    tags = "file_management"
+)]
+#[generate_http_handler]
 pub async fn list_attachments(
-    Extension(ctx): Extension<RequestContext>,
-    Query(req): Query<AttachmentListQuery>,
-) -> Result<Json<ApiResponse<PagedResult<AttachmentDetail>>>> {
+    ctx: RequestContext,
+    params: AttachmentListQuery,
+) -> Result<PagedResult<AttachmentDetail>> {
     let user_id = ctx.uid();
     if user_id.is_empty() {
         bail_err!(InvalidRequest, "当前请求缺少用户上下文");
@@ -30,13 +34,12 @@ pub async fn list_attachments(
             ctx,
             AttachmentQuery {
                 root_user_id: Some(user_id),
-                purpose: req.purpose.clone(),
-                file_type: req.file_type,
-                pagination: req.pagination,
+                purpose: params.purpose.clone(),
+                file_type: params.file_type,
+                pagination: params.pagination,
             },
         )
         .await?;
 
-    let paged = page.map(|a| to_detail(&a));
-    Ok(Json(ApiResponse::success(paged)))
+    Ok(page.map(|a| to_detail(&a)))
 }

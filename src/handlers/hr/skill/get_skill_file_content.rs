@@ -11,7 +11,8 @@ use common::error::{Result, bail_err};
     id = "get_skill_file_content",
     name = "get_skill_file_content",
     description = "Read the text content of a specific file from a skill",
-    params = "common::api::GetSkillFileContentRequest"
+    params = "common::api::GetSkillFileContentRequest",
+    tags = "skill_management"
 )]
 #[generate_http_handler]
 pub async fn get_skill_file_content(

@@ -11,7 +11,8 @@ use common::api::{UpdateSkillFileContentRequest, UpdateSkillFileContentResponse}
     id = "update_skill_file_content",
     name = "update_skill_file_content",
     description = "Create a new file or update the content of an existing text file in a skill. Supports optimistic locking with expected_updated_at.",
-    params = "common::api::UpdateSkillFileContentRequest"
+    params = "common::api::UpdateSkillFileContentRequest",
+    tags = "skill_management"
 )]
 #[generate_http_handler]
 pub async fn update_skill_file_content(

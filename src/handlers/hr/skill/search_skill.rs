@@ -15,7 +15,8 @@ use common::error::Result;
     name = "search_skill",
     description = "Search skills by keyword or tags. Returns skill summaries (id, name, description, tags) without full content.",
     params = "common::api::SearchSkillParams",
-    neural
+    neural,
+    tags = "skill_management"
 )]
 #[generate_http_handler]
 pub async fn search_skill(

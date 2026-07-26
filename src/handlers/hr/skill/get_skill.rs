@@ -13,7 +13,8 @@ use super::response::to_detail;
     id = "get_skill",
     name = "get_skill",
     description = "Get detailed information about a specific skill including metadata and file list",
-    params = "common::api::GetSkillRequest"
+    params = "common::api::GetSkillRequest",
+    tags = "skill_management"
 )]
 #[generate_http_handler]
 pub async fn get_skill(

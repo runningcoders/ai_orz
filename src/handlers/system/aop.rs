@@ -1,65 +1,22 @@
 //! AOP 队列监控 HTTP 接口
 
-use axum::{
-    Json,
-    extract::{Path, Query},
+use ai_orz_macros::generate_http_handler;
+use common::api::{
+    EventDetailResponse, EventSummaryResponse, GetAllQueueStatsRequest, GetEventRequest,
+    GetQueueStatsRequest, ListEventsRequest, OrderKeyInfo, QueueStatsResponse,
 };
-use common::api::ApiResponse;
+use common::error::{Error, Result};
 
+use crate::pkg::aop::queue::{EventQueryFilter, EventStatus};
+use crate::pkg::RequestContext;
 use crate::service::domain::system::domain;
 
-#[derive(Debug, serde::Deserialize)]
-pub struct EventListQuery {
-    pub order_key: Option<String>,
-    pub status: Option<String>,
-    #[serde(default = "default_limit")]
-    pub limit: usize,
-    #[serde(default)]
-    pub offset: usize,
-}
-
-fn default_limit() -> usize {
-    100
-}
-
-#[derive(Debug, serde::Serialize)]
-pub struct QueueStatsResponse {
-    pub consumer_name: String,
-    pub pending_count: usize,
-    pub in_progress_count: usize,
-    pub order_keys: Vec<OrderKeyInfo>,
-    pub oldest_event_age_secs: Option<u64>,
-}
-
-#[derive(Debug, serde::Serialize)]
-pub struct OrderKeyInfo {
-    pub order_key: String,
-    pub pending_count: usize,
-}
-
-#[derive(Debug, serde::Serialize)]
-pub struct EventSummaryResponse {
-    pub event_id: String,
-    pub event_kind: String,
-    pub order_key: String,
-    pub priority: u8,
-    pub created_at: i64,
-    pub status: String,
-}
-
-#[derive(Debug, serde::Serialize)]
-pub struct EventDetailResponse {
-    pub event_id: String,
-    pub event_kind: String,
-    pub order_key: String,
-    pub priority: u8,
-    pub created_at: i64,
-    pub status: String,
-    pub payload_preview: String,
-}
-
 /// GET /api/v1/system/aop/stats
-pub async fn get_all_queue_stats() -> Json<ApiResponse<Vec<QueueStatsResponse>>> {
+#[generate_http_handler]
+pub async fn get_all_queue_stats(
+    _ctx: RequestContext,
+    _params: GetAllQueueStatsRequest,
+) -> Result<Vec<QueueStatsResponse>> {
     let stats = domain().aop_monitor().all_queue_stats();
 
     let response: Vec<QueueStatsResponse> = stats
@@ -80,18 +37,20 @@ pub async fn get_all_queue_stats() -> Json<ApiResponse<Vec<QueueStatsResponse>>>
         })
         .collect();
 
-    Json(ApiResponse::success(response))
+    Ok(response)
 }
 
 /// GET /api/v1/system/aop/{consumer}/stats
+#[generate_http_handler]
 pub async fn get_queue_stats(
-    Path(consumer): Path<String>,
-) -> Json<ApiResponse<QueueStatsResponse>> {
-    let stats = domain().aop_monitor().queue_stats(&consumer);
+    _ctx: RequestContext,
+    params: GetQueueStatsRequest,
+) -> Result<QueueStatsResponse> {
+    let stats = domain().aop_monitor().queue_stats(&params.consumer);
 
     match stats {
-        Some(s) => Json(ApiResponse::success(QueueStatsResponse {
-            consumer_name: consumer,
+        Some(s) => Ok(QueueStatsResponse {
+            consumer_name: params.consumer,
             pending_count: s.pending_count,
             in_progress_count: s.in_progress_count,
             order_keys: s
@@ -103,34 +62,31 @@ pub async fn get_queue_stats(
                 })
                 .collect(),
             oldest_event_age_secs: s.oldest_event_age_secs,
-        })),
-        None => Json(ApiResponse {
-            code: 404,
-            message: format!("Consumer queue '{}' not found", consumer),
-            data: None,
         }),
+        None => Err(Error::not_found(format!("Consumer queue '{}' not found", params.consumer))),
     }
 }
 
 /// GET /api/v1/system/aop/{consumer}/events
+#[generate_http_handler]
 pub async fn list_events(
-    Path(consumer): Path<String>,
-    Query(query): Query<EventListQuery>,
-) -> Json<ApiResponse<Vec<EventSummaryResponse>>> {
-    let status = query.status.and_then(|s| match s.to_lowercase().as_str() {
-        "pending" => Some(crate::pkg::aop::queue::EventStatus::Pending),
-        "processing" => Some(crate::pkg::aop::queue::EventStatus::Processing),
+    _ctx: RequestContext,
+    params: ListEventsRequest,
+) -> Result<Vec<EventSummaryResponse>> {
+    let status = params.status.as_deref().and_then(|s| match s.to_lowercase().as_str() {
+        "pending" => Some(EventStatus::Pending),
+        "processing" => Some(EventStatus::Processing),
         _ => None,
     });
 
-    let filter = crate::pkg::aop::queue::EventQueryFilter {
-        order_key: query.order_key,
+    let filter = EventQueryFilter {
+        order_key: params.order_key,
         status,
-        limit: query.limit.min(1000),
-        offset: query.offset,
+        limit: params.limit.unwrap_or(100).min(1000),
+        offset: params.offset.unwrap_or(0),
     };
 
-    let events = domain().aop_monitor().list_events(&consumer, filter);
+    let events = domain().aop_monitor().list_events(&params.consumer, filter);
 
     match events {
         Some(list) => {
@@ -145,24 +101,22 @@ pub async fn list_events(
                     status: format!("{:?}", e.status).to_lowercase(),
                 })
                 .collect();
-            Json(ApiResponse::success(response))
+            Ok(response)
         }
-        None => Json(ApiResponse {
-            code: 404,
-            message: format!("Consumer queue '{}' not found", consumer),
-            data: None,
-        }),
+        None => Err(Error::not_found(format!("Consumer queue '{}' not found", params.consumer))),
     }
 }
 
 /// GET /api/v1/system/aop/{consumer}/events/{event_id}
+#[generate_http_handler]
 pub async fn get_event(
-    Path((consumer, event_id)): Path<(String, String)>,
-) -> Json<ApiResponse<EventDetailResponse>> {
-    let event = domain().aop_monitor().get_event(&consumer, &event_id);
+    _ctx: RequestContext,
+    params: GetEventRequest,
+) -> Result<EventDetailResponse> {
+    let event = domain().aop_monitor().get_event(&params.consumer, &params.event_id);
 
     match event {
-        Some(e) => Json(ApiResponse::success(EventDetailResponse {
+        Some(e) => Ok(EventDetailResponse {
             event_id: e.summary.event_id,
             event_kind: e.summary.event_kind,
             order_key: e.summary.order_key,
@@ -170,11 +124,10 @@ pub async fn get_event(
             created_at: e.summary.created_at,
             status: format!("{:?}", e.summary.status).to_lowercase(),
             payload_preview: e.payload_preview,
-        })),
-        None => Json(ApiResponse {
-            code: 404,
-            message: format!("Event '{}' not found in queue '{}'", event_id, consumer),
-            data: None,
         }),
+        None => Err(Error::not_found(format!(
+            "Event '{}' not found in queue '{}'",
+            params.event_id, params.consumer
+        ))),
     }
 }

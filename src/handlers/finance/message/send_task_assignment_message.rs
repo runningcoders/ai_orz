@@ -15,7 +15,8 @@ use common::error::Result;
     name = "send_task_assignment_message",
     description = "Send a task assignment message to another agent",
     params = "common::api::SendTaskAssignmentMessageParams",
-    neural
+    neural,
+    tags = "messaging"
 )]
 #[generate_http_handler]
 pub async fn send_task_assignment_message(

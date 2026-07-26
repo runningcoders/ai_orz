@@ -13,7 +13,8 @@ use super::response::to_list_item;
     id = "list_agent_skills",
     name = "list_agent_skills",
     description = "List all skills that are currently installed in the specified agent. Returns basic information for each skill.",
-    params = "common::api::ListAgentSkillsRequest"
+    params = "common::api::ListAgentSkillsRequest",
+    tags = "skill_management"
 )]
 #[generate_http_handler]
 pub async fn list_agent_skills(

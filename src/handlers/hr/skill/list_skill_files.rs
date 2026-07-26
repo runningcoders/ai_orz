@@ -11,7 +11,8 @@ use common::error::{Result, bail_err};
     id = "list_skill_files",
     name = "list_skill_files",
     description = "List all files in a skill with their metadata (filename, size)",
-    params = "common::api::ListSkillFilesRequest"
+    params = "common::api::ListSkillFilesRequest",
+    tags = "skill_management"
 )]
 #[generate_http_handler]
 pub async fn list_skill_files(

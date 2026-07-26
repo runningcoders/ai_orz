@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Get current user info request
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct GetCurrentUserRequest {}
 
 /// 当前用户信息响应
@@ -100,7 +100,7 @@ pub struct ListUsersByOrganizationRequest {
 }
 
 /// List users by current organization request (no parameters needed, gets organization from auth context)
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct ListUsersByCurrentOrganizationRequest {}
 
 /// 列出用户响应

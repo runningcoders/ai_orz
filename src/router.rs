@@ -74,11 +74,11 @@ fn public_routes(config: Arc<AppConfig>) -> Router {
         // System initialization (only when no organizations exist)
         .route(
             "/organization/initialize/check",
-            get(initialize_system::check_initialized),
+            get(initialize_system::check_initialized_handler),
         )
         .route(
             "/organization/initialize",
-            post(initialize_system::initialize_system),
+            post(initialize_system::initialize_system_handler),
         )
         // Login/logout - login issues new JWT token
         .route("/organization/auth/login", post(auth::login::login))
@@ -125,13 +125,14 @@ fn protected_routes(config: Arc<AppConfig>) -> Router {
         .merge(task_routes())
         // Current user routes - for user profile
         .nest("/user", user_routes())
-        // JWT 认证中间件（外层，先执行）
-        .layer(axum::middleware::from_fn(jwt_auth_middleware))
         // RequestContext 提取中间件（内层，后执行）
         // 从请求头（包含 JWT 注入的用户信息）创建 RequestContext
         .layer(axum::middleware::from_fn(move |req, next| {
             request_context_middleware(config.clone(), req, next)
         }))
+        // JWT 认证中间件（外层，先执行）
+        // axum 0.8 中后添加的 layer 在更内层；先添加的 layer 在更外层，最先执行
+        .layer(axum::middleware::from_fn(jwt_auth_middleware))
 }
 
 fn user_routes() -> Router {
@@ -391,27 +392,27 @@ fn finance_routes() -> Router {
         )
         .route(
             "/attachments/text",
-            post(handlers::finance::attachment::create_text_attachment),
+            post(handlers::finance::attachment::create_text_attachment::create_text_attachment_handler),
         )
         .route(
             "/attachments",
-            get(handlers::finance::attachment::list_attachments),
+            get(handlers::finance::attachment::list_attachments::list_attachments_handler),
         )
         .route(
             "/attachments/{id}/content",
-            get(handlers::finance::attachment::get_attachment_content),
+            get(handlers::finance::attachment::get_attachment_content::get_attachment_content_handler),
         )
         .route(
             "/attachments/{id}/content",
-            put(handlers::finance::attachment::update_attachment_content),
+            put(handlers::finance::attachment::update_attachment_content::update_attachment_content_handler),
         )
         .route(
             "/attachments/{id}",
-            get(handlers::finance::attachment::get_attachment),
+            get(handlers::finance::attachment::get_attachment::get_attachment_handler),
         )
         .route(
             "/attachments/{id}",
-            delete(handlers::finance::attachment::delete_attachment),
+            delete(handlers::finance::attachment::delete_attachment::delete_attachment_handler),
         )
         .route(
             "/model-providers",
@@ -608,46 +609,52 @@ fn system_routes() -> Router {
             post(handlers::system::backup::restore_backup_handler),
         )
         // Log query route - 查询应用日志（Admin/SuperAdmin 可访问）
-        .route("/logs", get(handlers::system::logs::query_logs::handler))
+        .route(
+            "/logs",
+            get(handlers::system::logs::query_logs::query_logs_handler),
+        )
         // Log stats aggregation routes - 日志统计聚合（级别分布 + 时序）
         .route(
             "/logs/stats/level-distribution",
-            get(handlers::system::logs::log_stats::get_log_level_distribution),
+            get(handlers::system::logs::log_stats::get_log_level_distribution_handler),
         )
         .route(
             "/logs/stats/time-series",
-            get(handlers::system::logs::log_stats::get_log_time_series),
+            get(handlers::system::logs::log_stats::get_log_time_series_handler),
         )
         // AOP queue monitoring routes
-        .route("/aop/stats", get(handlers::system::aop::get_all_queue_stats))
+        .route(
+            "/aop/stats",
+            get(handlers::system::aop::get_all_queue_stats_handler),
+        )
         .route(
             "/aop/{consumer}/stats",
-            get(handlers::system::aop::get_queue_stats),
+            get(handlers::system::aop::get_queue_stats_handler),
         )
         .route(
             "/aop/{consumer}/events",
-            get(handlers::system::aop::list_events),
+            get(handlers::system::aop::list_events_handler),
         )
         .route(
             "/aop/{consumer}/events/{event_id}",
-            get(handlers::system::aop::get_event),
+            get(handlers::system::aop::get_event_handler),
         )
         // AOP realtime stats routes
         .route(
             "/aop/stats/overview",
-            get(handlers::system::aop_stats::get_stats_overview),
+            get(handlers::system::aop_stats::get_stats_overview_handler),
         )
         .route(
             "/aop/stats/time-series",
-            get(handlers::system::aop_stats::get_stats_time_series),
+            get(handlers::system::aop_stats::get_stats_time_series_handler),
         )
         .route(
             "/aop/stats/distribution",
-            get(handlers::system::aop_stats::get_stats_distribution),
+            get(handlers::system::aop_stats::get_stats_distribution_handler),
         )
         // Health metrics aggregation route - 系统健康指标聚合（HUD 仪表盘墙用）
         .route(
             "/health/metrics",
-            get(handlers::system::health_metrics::get_health_metrics),
+            get(handlers::system::health_metrics::get_health_metrics_handler),
         )
 }

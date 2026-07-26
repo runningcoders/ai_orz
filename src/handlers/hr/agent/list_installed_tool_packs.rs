@@ -3,10 +3,17 @@
 use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
-use ai_orz_macros::generate_http_handler;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListInstalledToolPacksRequest, ListInstalledToolPacksResponse};
 
 /// List all tool pack tags installed on an agent.
+#[register_handler_tool(
+    id = "list_installed_tool_packs",
+    name = "list_installed_tool_packs",
+    description = "List all tool pack tags installed on an agent. Returns the tags recorded in runtime_config.installed_tags.",
+    params = "common::api::ListInstalledToolPacksRequest",
+    tags = "tool_management"
+)]
 #[generate_http_handler]
 pub async fn list_installed_tool_packs(
     ctx: RequestContext,

@@ -10,9 +10,10 @@ use common::error::Result;
 #[register_handler_tool(
     id = "send_message",
     name = "send_message",
-    description = "Send a message to a user",
+    description = "Send a text message from the current agent to a target user. Supports optional project_id, task_id and reply_to_id for contextualizing the message. Use this to notify users or reply within a conversation.",
     params = "common::api::SendMessageParams",
-    neural
+    neural,
+    tags = "messaging"
 )]
 #[generate_http_handler]
 pub async fn send_message(

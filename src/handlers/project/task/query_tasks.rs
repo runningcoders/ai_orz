@@ -8,10 +8,17 @@ use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::dao::task::TaskQuery;
 use crate::service::domain::project::domain;
-use ai_orz_macros::generate_http_handler;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{PagedResult, TaskListItem, TaskQueryRequest};
 
 /// Task 通用查询（POST body，支持完整查询能力）
+#[register_handler_tool(
+    id = "query_tasks",
+    name = "query_tasks",
+    description = "Query tasks with full filtering support (ids, keyword, project_id, assignee, status_in, pagination). POST body for complex combinations.",
+    params = "common::api::TaskQueryRequest",
+    tags = "project_management"
+)]
 #[generate_http_handler]
 pub async fn query_tasks(
     ctx: RequestContext,

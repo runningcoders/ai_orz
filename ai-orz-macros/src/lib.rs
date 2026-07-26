@@ -319,11 +319,14 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
     };
 
     // Collect #[path_param] and #[query_param] annotations from the struct definition
-    let (path_fields, query_fields) = collect_path_and_query_fields_from_type(params_ty_path);
+    let (path_fields, query_fields, total_named_fields) =
+        collect_path_and_query_fields_from_type(params_ty_path);
     let path_idents: Vec<Ident> = path_fields.iter().map(|(ident, _)| ident.clone()).collect();
     let path_types: Vec<syn::Type> = path_fields.iter().map(|(_, ty)| ty.clone()).collect();
     let has_path = !path_idents.is_empty();
     let has_query = !query_fields.is_empty();
+    // Empty struct (no named fields): no body to extract, generate parameterless handler.
+    let is_empty_params = total_named_fields == 0;
     let query_idents: Vec<Ident> = query_fields
         .iter()
         .map(|(ident, _)| ident.clone())
@@ -407,16 +410,32 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
             }
         }
         (false, false) => {
-            // No path, no query - all in body
-            quote! {
-                #item_fn
+            if is_empty_params {
+                // Empty struct: no body to extract (typical for GET endpoints without params).
+                // Requires `Params: Default` to construct an empty value.
+                quote! {
+                    #item_fn
 
-                pub async fn #handler_ident(
-                    axum::extract::Extension(ctx): axum::extract::Extension<RequestContext>,
-                    axum::Json(params): axum::Json<#params_ty>,
-                ) -> ::std::result::Result<axum::Json<common::api::ApiResponse<#output_ty>>, common::error::Error> {
-                    let result = #core_ident(ctx, params).await?;
-                    Ok(axum::Json(common::api::ApiResponse::success(result)))
+                    pub async fn #handler_ident(
+                        axum::extract::Extension(ctx): axum::extract::Extension<RequestContext>,
+                    ) -> ::std::result::Result<axum::Json<common::api::ApiResponse<#output_ty>>, common::error::Error> {
+                        let params = <#params_ty as ::std::default::Default>::default();
+                        let result = #core_ident(ctx, params).await?;
+                        Ok(axum::Json(common::api::ApiResponse::success(result)))
+                    }
+                }
+            } else {
+                // No path, no query - all in body
+                quote! {
+                    #item_fn
+
+                    pub async fn #handler_ident(
+                        axum::extract::Extension(ctx): axum::extract::Extension<RequestContext>,
+                        axum::Json(params): axum::Json<#params_ty>,
+                    ) -> ::std::result::Result<axum::Json<common::api::ApiResponse<#output_ty>>, common::error::Error> {
+                        let result = #core_ident(ctx, params).await?;
+                        Ok(axum::Json(common::api::ApiResponse::success(result)))
+                    }
                 }
             }
         }
@@ -424,10 +443,14 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
 
     expanded.into()
 }
-/// Collect field ids that have #[param(source = "path")] or #[param(source = "query")] attribute by parsing the source file
+/// Collect field ids that have #[param(source = "path")] or #[param(source = "query")] attribute by parsing the source file.
+///
+/// Returns `(path_fields, query_fields, total_named_fields)`. `total_named_fields` counts all
+/// named fields of the struct (regardless of #[param] annotation), used to detect empty unit
+/// structs for which no `Json` extractor should be generated.
 fn collect_path_and_query_fields_from_type(
     path: syn::Path,
-) -> (Vec<(Ident, Type)>, Vec<(Ident, Type)>) {
+) -> (Vec<(Ident, Type)>, Vec<(Ident, Type)>, usize) {
     // Get the last segment (the type name)
     let type_name = path.segments.last().unwrap().ident.to_string();
 
@@ -450,6 +473,12 @@ fn collect_path_and_query_fields_from_type(
                                 // Found it! Collect fields with #[param(source = "...")] attribute
                                 let mut path_fields = Vec::new();
                                 let mut query_fields = Vec::new();
+                                // Count named fields (Fields::Named has idents; Fields::Unit has none)
+                                let total_named_fields = match &item_struct.fields {
+                                    syn::Fields::Named(named) => named.named.len(),
+                                    syn::Fields::Unnamed(unnamed) => unnamed.unnamed.len(),
+                                    syn::Fields::Unit => 0,
+                                };
                                 for field in &item_struct.fields {
                                     for attr in &field.attrs {
                                         if attr.path().is_ident("param") {
@@ -494,7 +523,7 @@ fn collect_path_and_query_fields_from_type(
                                         }
                                     }
                                 }
-                                return (path_fields, query_fields);
+                                return (path_fields, query_fields, total_named_fields);
                             }
                         }
                     }

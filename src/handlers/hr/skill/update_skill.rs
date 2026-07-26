@@ -15,7 +15,8 @@ use super::response::to_detail;
     id = "update_skill",
     name = "update_skill",
     description = "Update an existing skill's metadata, main content, and add new attached files from uploads.",
-    params = "common::api::UpdateSkillRequest"
+    params = "common::api::UpdateSkillRequest",
+    tags = "skill_management"
 )]
 #[generate_http_handler]
 pub async fn update_skill(

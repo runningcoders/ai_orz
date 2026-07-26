@@ -11,7 +11,8 @@ use common::api::DeleteSkillRequest;
     id = "delete_skill",
     name = "delete_skill",
     description = "Delete an existing skill by ID. This operation cannot be undone.",
-    params = "common::api::DeleteSkillRequest"
+    params = "common::api::DeleteSkillRequest",
+    tags = "skill_management"
 )]
 #[generate_http_handler]
 pub async fn delete_skill(ctx: RequestContext, params: DeleteSkillRequest) -> Result<()> {

@@ -19,6 +19,7 @@ use super::response::to_list_item;
     description = "Query tools with full filtering support (ids, keyword, agent_id, tags, protocol, etc.)",
     params = "common::api::ToolQueryRequest",
     neural,
+    tags = "tool_management"
 )]
 #[generate_http_handler]
 pub async fn query_tools(

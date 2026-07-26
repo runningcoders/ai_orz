@@ -15,7 +15,8 @@ use common::error::{Result, err, bail_err};
     id = "create_skill",
     name = "create_skill",
     description = "Create a new skill. You can provide initial markdown content and multiple files. Returns the created skill detail.",
-    params = "common::api::CreateSkillRequest"
+    params = "common::api::CreateSkillRequest",
+    tags = "skill_management"
 )]
 #[generate_http_handler]
 pub async fn create_skill(

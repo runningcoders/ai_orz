@@ -10,8 +10,9 @@
 //! - `active_projects` / `total_projects`: 通过 ProjectDomain.project_manage() 统计
 //! - `pending_tasks` / `total_tasks`: 通过 ProjectDomain.task_manage() 统计
 
-use axum::Json;
-use common::api::{ApiResponse, HealthMetricsResponse};
+use ai_orz_macros::generate_http_handler;
+use common::api::{GetHealthMetricsRequest, HealthMetricsResponse};
+use common::error::Result;
 use std::sync::OnceLock;
 use std::time::Instant;
 
@@ -30,7 +31,11 @@ use crate::service::domain::system::domain;
 static START_TIME: OnceLock<Instant> = OnceLock::new();
 
 /// GET /api/v1/system/health/metrics
-pub async fn get_health_metrics() -> Json<ApiResponse<HealthMetricsResponse>> {
+#[generate_http_handler]
+pub async fn get_health_metrics(
+    ctx: RequestContext,
+    _params: GetHealthMetricsRequest,
+) -> Result<HealthMetricsResponse> {
     let start = *START_TIME.get_or_init(Instant::now);
     let uptime_secs = start.elapsed().as_secs();
 
@@ -42,9 +47,6 @@ pub async fn get_health_metrics() -> Json<ApiResponse<HealthMetricsResponse>> {
         aop_pending = aop_pending.saturating_add(s.pending_count as u64);
         aop_in_progress = aop_in_progress.saturating_add(s.in_progress_count as u64);
     }
-
-    // 系统级调用约定：无 user/agent 上下文
-    let ctx = RequestContext::new(None, None);
 
     // Agents：total 排除 Deleted，active 仅 Onboarded
     let total_agents = hr_domain()
@@ -117,7 +119,7 @@ pub async fn get_health_metrics() -> Json<ApiResponse<HealthMetricsResponse>> {
         .await
         .unwrap_or(0);
 
-    Json(ApiResponse::success(HealthMetricsResponse {
+    Ok(HealthMetricsResponse {
         backend_online: true,
         aop_pending,
         aop_in_progress,
@@ -128,5 +130,5 @@ pub async fn get_health_metrics() -> Json<ApiResponse<HealthMetricsResponse>> {
         pending_tasks,
         total_tasks,
         uptime_secs,
-    }))
+    })
 }

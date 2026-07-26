@@ -21,6 +21,10 @@ pub struct InitializeSystemRequest {
     pub admin_email: Option<String>,
 }
 
+/// 检查系统初始化状态请求（无参数）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct CheckInitializedRequest {}
+
 /// 系统初始化响应
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct InitializeSystemResponse {
@@ -75,7 +79,7 @@ pub struct OrganizationInfoResponse {
 }
 
 /// 获取当前组织信息请求
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct GetCurrentOrganizationRequest {}
 
 /// 获取当前组织信息响应
@@ -157,5 +161,5 @@ pub struct DeleteOrganizationResponse {
 }
 
 /// 列出所有组织请求
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct ListOrganizationsRequest {}

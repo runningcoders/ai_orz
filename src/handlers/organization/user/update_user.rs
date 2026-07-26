@@ -3,7 +3,7 @@
 use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
-use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use ai_orz_macros::generate_http_handler;
 use common::api::{UpdateUserRequest, UpdateUserResponse};
 use common::enums::{UserRole, UserStatus};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -17,12 +17,7 @@ fn current_timestamp() -> i64 {
 }
 
 /// Update user information (requires admin permissions)
-#[register_handler_tool(
-    id = "update_user",
-    name = "update_user",
-    description = "Update user information including display name, email, role, status, and password hash. Requires admin permissions.",
-    params = "common::api::UpdateUserRequest"
-)]
+/// 注意：此 handler 不注册为 Agent 工具（涉及密码哈希等敏感字段，仅管理员手动调用）。
 #[generate_http_handler]
 pub async fn update_user(
     ctx: RequestContext,

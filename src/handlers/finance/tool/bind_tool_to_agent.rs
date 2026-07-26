@@ -12,7 +12,8 @@ use common::api::{BindToolToAgentRequest, BindToolToAgentResponse};
     id = "bind_tool_to_agent",
     name = "bind_tool_to_agent",
     description = "Bind an existing tool to an agent so the agent can use it for tool calling",
-    params = "common::api::BindToolToAgentRequest"
+    params = "common::api::BindToolToAgentRequest",
+    tags = "tool_management"
 )]
 #[generate_http_handler]
 pub async fn bind_tool_to_agent(

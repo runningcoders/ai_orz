@@ -16,6 +16,7 @@ use super::response::to_list_item;
     description = "List all tools with optional filtering by agent, keyword, and enabled status",
     params = "common::api::ListToolsRequest",
     neural,
+    tags = "tool_management"
 )]
 #[generate_http_handler]
 pub async fn list_tools(

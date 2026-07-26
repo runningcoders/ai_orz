@@ -1,25 +1,28 @@
-//! 全量替换 Attachment UTF-8 文本内容
+//! Handler: PUT /api/v1/attachments/{id}/content - 全量替换 Attachment UTF-8 文本内容
 
-use axum::{
-    Json,
-    extract::{Extension, Path},
-};
-use common::api::{ApiResponse, AttachmentContentResponse, UpdateTextContentRequest};
-
+use common::error::Result;
 use crate::models::attachment::TextContentUpdate;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{AttachmentContentResponse, UpdateAttachmentContentRequest};
 
 use super::response::to_content_response;
-use common::error::{Result, err, bail_err};
+use common::error::{err, bail_err};
 
 /// 全量替换 Attachment UTF-8 文本内容
-/// PUT /attachments/{id}/content
+#[register_handler_tool(
+    id = "update_attachment_content",
+    name = "update_attachment_content",
+    description = "Fully replace the UTF-8 text content of an attachment by ID. Supports optimistic locking via expected_updated_at.",
+    params = "common::api::UpdateAttachmentContentRequest",
+    tags = "file_management"
+)]
+#[generate_http_handler]
 pub async fn update_attachment_content(
-    Extension(ctx): Extension<RequestContext>,
-    Path(id): Path<String>,
-    Json(req): Json<UpdateTextContentRequest>,
-) -> Result<Json<ApiResponse<AttachmentContentResponse>>> {
+    ctx: RequestContext,
+    params: UpdateAttachmentContentRequest,
+) -> Result<AttachmentContentResponse> {
     let user_id = ctx.uid();
     if user_id.is_empty() {
         bail_err!(InvalidRequest, "当前请求缺少用户上下文");
@@ -29,14 +32,14 @@ pub async fn update_attachment_content(
         .attachment_manage()
         .update_attachment_text_content(
             ctx,
-            &id,
+            &params.id,
             TextContentUpdate {
-                content: req.content,
-                expected_updated_at: req.expected_updated_at,
+                content: params.content,
+                expected_updated_at: params.expected_updated_at,
             },
         )
         .await?
-        .ok_or_else(|| err!(NotFound, "Attachment {} not found", id))?;
+        .ok_or_else(|| err!(NotFound, "Attachment {} not found", params.id))?;
 
-    Ok(Json(ApiResponse::success(to_content_response(&content))))
+    Ok(to_content_response(&content))
 }

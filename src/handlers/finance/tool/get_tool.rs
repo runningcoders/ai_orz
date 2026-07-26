@@ -15,7 +15,8 @@ use super::response::to_detail;
     id = "get_tool",
     name = "get_tool",
     description = "Get detailed information about a specific tool including configuration",
-    params = "common::api::GetToolRequest"
+    params = "common::api::GetToolRequest",
+    tags = "tool_management"
 )]
 #[generate_http_handler]
 pub async fn get_tool(

@@ -12,7 +12,8 @@ use common::api::{UnbindToolFromAgentRequest, UnbindToolFromAgentResponse};
     id = "unbind_tool_from_agent",
     name = "unbind_tool_from_agent",
     description = "Unbind a tool from an agent so the agent can no longer use it",
-    params = "common::api::UnbindToolFromAgentRequest"
+    params = "common::api::UnbindToolFromAgentRequest",
+    tags = "tool_management"
 )]
 #[generate_http_handler]
 pub async fn unbind_tool_from_agent(

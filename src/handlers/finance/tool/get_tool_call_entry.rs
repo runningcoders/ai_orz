@@ -14,7 +14,8 @@ use super::response::to_tool_call_entry_detail;
     id = "get_tool_call_entry",
     name = "get_tool_call_entry",
     description = "Get one tool call trace entry by call ID. Provide agent_id, project_id, task_id, or scoped context for access control.",
-    params = "common::api::GetToolCallEntryRequest"
+    params = "common::api::GetToolCallEntryRequest",
+    tags = "tool_management"
 )]
 #[generate_http_handler]
 pub async fn get_tool_call_entry(

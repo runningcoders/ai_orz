@@ -1,21 +1,28 @@
-//! 创建小型 UTF-8 文本 Attachment
+//! Handler: POST /api/v1/attachments/text - 创建小型 UTF-8 文本 Attachment
 
-use axum::{Json, extract::Extension, http::StatusCode};
-use common::api::{ApiResponse, CreateTextAttachmentRequest, CreateTextAttachmentResponse};
-
+use common::error::Result;
 use crate::models::attachment::TextAttachmentCreate;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
+use common::api::{CreateTextAttachmentRequest, CreateTextAttachmentResponse};
+use common::error::bail_err;
 
 use super::response::to_detail;
 
 /// 创建小型 UTF-8 文本 Attachment
-/// POST /attachments/text
+#[register_handler_tool(
+    id = "create_text_attachment",
+    name = "create_text_attachment",
+    description = "Create a small UTF-8 text attachment. Provide file_name, content, optional mime_type and purpose.",
+    params = "common::api::CreateTextAttachmentRequest",
+    tags = "file_management"
+)]
+#[generate_http_handler]
 pub async fn create_text_attachment(
-    Extension(ctx): Extension<RequestContext>,
-    Json(req): Json<CreateTextAttachmentRequest>,
-) -> std::result::Result<(StatusCode, Json<ApiResponse<CreateTextAttachmentResponse>>), common::error::Error> {
-use common::error::bail_err;
+    ctx: RequestContext,
+    params: CreateTextAttachmentRequest,
+) -> Result<CreateTextAttachmentResponse> {
     let user_id = ctx.uid();
     if user_id.is_empty() {
         bail_err!(InvalidRequest, "当前请求缺少用户上下文");
@@ -26,16 +33,13 @@ use common::error::bail_err;
         .create_text_attachment(
             ctx,
             TextAttachmentCreate {
-                file_name: req.file_name,
-                content: req.content,
-                mime_type: req.mime_type,
-                purpose: req.purpose,
+                file_name: params.file_name,
+                content: params.content,
+                mime_type: params.mime_type,
+                purpose: params.purpose,
             },
         )
         .await?;
 
-    Ok((
-        StatusCode::CREATED,
-        Json(ApiResponse::success(to_detail(&attachment))),
-    ))
+    Ok(to_detail(&attachment))
 }

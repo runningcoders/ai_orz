@@ -1,17 +1,14 @@
 //! Handler: GET /api/v1/system/logs/stats/level-distribution - 日志级别分布
 //! Handler: GET /api/v1/system/logs/stats/time-series - 日志时序
 //!
-//! 遵循 aop_stats.rs 模式：系统级 RequestContext（无用户身份）+ 直接返回 Json<ApiResponse<T>>。
 //! 路由层 require_role_middleware(UserRole::Admin) 已确保 Admin/SuperAdmin 可访问。
 
-use axum::{
-    Json,
-    extract::Query,
-};
+use ai_orz_macros::generate_http_handler;
 use common::api::{
-    ApiResponse, LogLevelDistributionItem, LogLevelDistributionResponse, LogStatsQueryParams,
+    LogLevelDistributionItem, LogLevelDistributionResponse, LogStatsQueryParams,
     LogTimeSeriesPoint, LogTimeSeriesResponse,
 };
+use common::error::Result;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::pkg::RequestContext;
@@ -29,67 +26,53 @@ fn now_ms() -> i64 {
 ///
 /// 返回日志级别分布（INFO/WARN/ERROR/DEBUG/TRACE 各自计数）。
 /// 时间范围由 query 参数控制，默认最近 24 小时。
+#[generate_http_handler]
 pub async fn get_log_level_distribution(
-    Query(params): Query<LogStatsQueryParams>,
-) -> Json<ApiResponse<LogLevelDistributionResponse>> {
+    ctx: RequestContext,
+    params: LogStatsQueryParams,
+) -> Result<LogLevelDistributionResponse> {
     let now = now_ms();
     let end_time = params.end_time.unwrap_or(now);
     let start_time = params.start_time.unwrap_or(end_time - 24 * 60 * 60 * 1000);
 
-    let ctx = RequestContext::new(None, None);
-    match domain()
+    let distribution = domain()
         .log_query()
         .level_distribution(ctx, start_time, end_time)
-        .await
-    {
-        Ok(distribution) => {
-            let items: Vec<LogLevelDistributionItem> = distribution
-                .into_iter()
-                .map(|(level, count)| LogLevelDistributionItem { level, count })
-                .collect();
-            let total: u64 = items.iter().map(|i| i.count).sum();
-            Json(ApiResponse::success(LogLevelDistributionResponse { items, total }))
-        }
-        Err(e) => Json(ApiResponse {
-            code: 500,
-            message: format!("查询日志级别分布失败: {:?}", e),
-            data: None,
-        }),
-    }
+        .await?;
+
+    let items: Vec<LogLevelDistributionItem> = distribution
+        .into_iter()
+        .map(|(level, count)| LogLevelDistributionItem { level, count })
+        .collect();
+    let total: u64 = items.iter().map(|i| i.count).sum();
+    Ok(LogLevelDistributionResponse { items, total })
 }
 
 /// GET /api/v1/system/logs/stats/time-series
 ///
 /// 返回日志时序数据（按小时桶）。
+#[generate_http_handler]
 pub async fn get_log_time_series(
-    Query(params): Query<LogStatsQueryParams>,
-) -> Json<ApiResponse<LogTimeSeriesResponse>> {
+    ctx: RequestContext,
+    params: LogStatsQueryParams,
+) -> Result<LogTimeSeriesResponse> {
     let now = now_ms();
     let end_time = params.end_time.unwrap_or(now);
     let start_time = params.start_time.unwrap_or(end_time - 24 * 60 * 60 * 1000);
 
-    let ctx = RequestContext::new(None, None);
-    match domain()
+    let points = domain()
         .log_query()
         .time_series(ctx, start_time, end_time)
-        .await
-    {
-        Ok(points) => {
-            let points: Vec<LogTimeSeriesPoint> = points
-                .into_iter()
-                .map(|(interval_start, count)| LogTimeSeriesPoint {
-                    interval_start,
-                    count,
-                })
-                .collect();
-            Json(ApiResponse::success(LogTimeSeriesResponse { points }))
-        }
-        Err(e) => Json(ApiResponse {
-            code: 500,
-            message: format!("查询日志时序失败: {:?}", e),
-            data: None,
-        }),
-    }
+        .await?;
+
+    let points: Vec<LogTimeSeriesPoint> = points
+        .into_iter()
+        .map(|(interval_start, count)| LogTimeSeriesPoint {
+            interval_start,
+            count,
+        })
+        .collect();
+    Ok(LogTimeSeriesResponse { points })
 }
 
 #[cfg(test)]

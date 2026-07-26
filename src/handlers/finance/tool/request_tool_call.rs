@@ -17,7 +17,8 @@ use common::error::Result;
     name = "request_tool_call",
     description = "Call a manual tool synchronously and get the result immediately",
     params = "common::api::RequestToolCallParams",
-    neural
+    neural,
+    tags = "tool_management"
 )]
 #[generate_http_handler]
 pub async fn request_tool_call(

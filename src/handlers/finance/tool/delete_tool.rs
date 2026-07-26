@@ -11,7 +11,8 @@ use common::api::{DeleteToolRequest, DeleteToolResponse};
     id = "delete_tool",
     name = "delete_tool",
     description = "Delete an existing custom tool (soft delete)",
-    params = "common::api::DeleteToolRequest"
+    params = "common::api::DeleteToolRequest",
+    tags = "tool_management"
 )]
 #[generate_http_handler]
 pub async fn delete_tool(

@@ -17,7 +17,9 @@ use common::error::{Result, err, bail_err};
     id = "list_messages",
     name = "list_messages",
     description = "List messages with optional filtering by project, task, sender, receiver, with bidirectional pagination",
-    params = "common::api::message::ListMessagesRequest"
+    params = "common::api::message::ListMessagesRequest",
+    neural,
+    tags = "messaging"
 )]
 #[generate_http_handler]
 pub async fn list_messages(

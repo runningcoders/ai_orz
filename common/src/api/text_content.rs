@@ -3,10 +3,11 @@
 //! These DTOs are composed by resource-specific APIs (Attachment, Skill,
 //! Artifact) for UTF-8 small-text content read/replace endpoints.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Simple UTF-8 text content response.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct TextContentResponse {
     /// UTF-8 text content.
     pub content: String,
