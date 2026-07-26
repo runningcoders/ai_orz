@@ -308,6 +308,8 @@ pub async fn apply_snapshot_to_db(
             continue;
         }
 
+        let target_status = common::enums::AgentStatus::from_i32(agent_def.status);
+
         let mut agent_po = crate::models::agent::AgentPo::new(
             agent_def.name.clone(),
             agent_def.roles.clone(),
@@ -327,7 +329,15 @@ pub async fn apply_snapshot_to_db(
             hr::domain().agent_manage().update_agent(ctx.clone(), &agent).await?;
             updated += 1;
         } else {
-            hr::domain().agent_manage().create_agent(ctx.clone(), &agent).await?;
+            // seed 导入是"数据恢复"语义，需要绕过 hr domain 的"新建必须 Interviewing"校验。
+            // 实现方式：先以 Interviewing 创建（满足 hr domain 不变量），再 update 覆写为目标状态。
+            let mut interim = agent.clone();
+            interim.po.status = common::enums::AgentStatus::Interviewing;
+            hr::domain().agent_manage().create_agent(ctx.clone(), &interim).await?;
+
+            if target_status != common::enums::AgentStatus::Interviewing {
+                hr::domain().agent_manage().update_agent(ctx.clone(), &agent).await?;
+            }
             created += 1;
         }
     }

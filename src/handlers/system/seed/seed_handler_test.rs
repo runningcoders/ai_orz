@@ -190,7 +190,6 @@ async fn test_apply_snapshot_dry_run_returns_diff_without_writing(pool: SqlitePo
 }
 
 #[sqlx::test]
-#[ignore = "默认模板 Agent status=PendingOnboard(2)，但 hr domain create_agent 强制新建 Agent 必须为 Interviewing(1)。seed import 需要先以 Interviewing 创建再转换状态，或绕过校验，待后续修复"]
 async fn test_apply_default_template_creates_template_entities(pool: SqlitePool) {
     let ctx = init_test_env(pool).await;
     // 注意：默认模板的 organization_id="TEMPLATE_ORG"，需要先创建组织
