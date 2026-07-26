@@ -133,6 +133,17 @@ Organization (组织)
 - 保护路由：所有业务接口 → 需要 JWT 认证
 - RequestContext 自动注入当前登录用户信息和组织 ID
 
+**中间件洋葱模型顺序**（关键约束）：
+
+```
+请求 → [JWT 认证（外层，先执行）] → [RequestContext 注入（内层，后执行）] → Handler
+```
+
+- `jwt_auth_middleware`（外层）：验证 JWT，将 `user_id`/`username`/`organization_id`/`role` 写入请求头
+- `request_context_middleware`（内层）：从请求头提取信息，创建 `RequestContext` 并通过 `Extension` 注入
+
+> **顺序约束**：JWT 必须先于 RequestContext 执行，否则 RequestContext 会读不到 JWT 注入的用户身份，导致受保护路由返回 401/403。Axum 0.8 中后添加的 `layer` 在更内层，因此 `router.rs` 中 `request_context_middleware` 先 add、`jwt_auth_middleware` 后 add 才能保证 JWT 在外层先执行。详见 [docs/design/unified-idl-http-handler.md](./design/unified-idl-http-handler.md) 与 `src/router.rs`。
+
 ---
 
 ## 🧠 记忆系统最终架构

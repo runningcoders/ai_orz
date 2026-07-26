@@ -135,13 +135,27 @@ pub struct UserPo {
 
 ### UserRole 枚举
 
+定义在 `common/src/enums/user.rs`，与数据库 `users.role` 字段一致（SuperAdmin=0）：
+
 ```rust
+#[repr(i32)]
 pub enum UserRole {
-    SuperAdmin = 0,
-    OrgAdmin = 1,
-    OrgMember = 2,
+    #[default]
+    SuperAdmin = 0,   // 超级管理员（根节点）
+    Admin = 1,        // 管理员
+    Member = 2,        // 普通成员
 }
 ```
+
+**并查集角色继承体系**（上级角色 = 下级角色权限 + 额外权限）：
+
+- `parent()`：`Member → Admin → SuperAdmin`（SuperAdmin 为根，无上级）
+- `has_permission(user_role, min_role)`：从 `min_role` 沿祖先链遍历，路径上包含 `user_role` 则满足
+  - 例：`user=SuperAdmin, min_role=Member` → `Member→Admin→SuperAdmin` ✅ 满足
+  - 例：`user=Member, min_role=Admin` → `Admin→SuperAdmin` ❌ 不满足
+- 路由层用 `require_role_middleware(UserRole::Admin)` 等做最小权限校验，handler 内部可用 `UserRole::has_permission` 二次校验（如备份高危操作要求 SuperAdmin）
+
+> **历史说明**：项目早期曾存在 `common/src/enums/user_role.rs`（命名 `OrgAdmin/OrgMember`，依赖未启用的 `rusqlite` feature）和 `common/src/enums/user.rs`（当前版本）两份定义。前者从未被 `mod.rs` 声明为子模块、签名与调用方不兼容，已于 2026-07-26 删除，UserRole 统一到 `user.rs`。
 
 ## 日志模块设计
 

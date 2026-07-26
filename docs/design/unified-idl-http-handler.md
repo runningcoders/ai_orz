@@ -184,6 +184,31 @@ struct Params {
 | 有 `path` + 无 `query` | `Path(...)` + `Json(...)` | path > body |
 | 无 `path` + 有 `query` | `Query(...)` | query 就是全部 |
 | 无 `path` + 无 `query` | `Json(...)` (所有参数都在 body)| body 就是全部 |
+| **空 struct**（零命名字段） | 仅 `Extension(ctx)` | 无需 extractor |
+
+### 空 struct GET 端点
+
+GET 请求通常没有 body，如果 params 类型没有任何命名字段（如 `CheckInitializedRequest {}`、`GetAllQueueStatsRequest {}`），宏会跳过 `Json` 提取器，直接用 `Default::default()` 构造空 params：
+
+```rust
+// 用户写：
+#[generate_http_handler]
+pub async fn check_initialized(
+    ctx: RequestContext,
+    _params: CheckInitializedRequest,  // 空 struct
+) -> Result<CheckInitializedResponse> { ... }
+
+// 宏生成（无 Json extractor，GET 请求不会 400）：
+pub async fn check_initialized_handler(
+    Extension(ctx): Extension<RequestContext>,
+) -> Result<Json<ApiResponse<CheckInitializedResponse>>, Error> {
+    let params = CheckInitializedRequest::default();
+    let result = check_initialized(ctx, params).await?;
+    Ok(Json(ApiResponse::success(result)))
+}
+```
+
+> **背景**：早期版本宏对所有结构体都生成 `Json` 提取器，导致 GET 端点（无 body）被 axum 拒绝并返回 400 Bad Request。空 struct 分支解决了这个问题。
 
 ## 优先级规则
 
