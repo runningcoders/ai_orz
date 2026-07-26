@@ -319,18 +319,23 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
     };
 
     // Collect #[path_param] and #[query_param] annotations from the struct definition
-    let (path_fields, query_fields, total_named_fields) =
+    let (path_fields, query_fields, flattened_query_fields, total_named_fields) =
         collect_path_and_query_fields_from_type(params_ty_path);
     let path_idents: Vec<Ident> = path_fields.iter().map(|(ident, _)| ident.clone()).collect();
     let path_types: Vec<syn::Type> = path_fields.iter().map(|(_, ty)| ty.clone()).collect();
     let has_path = !path_idents.is_empty();
-    let has_query = !query_fields.is_empty();
     // Empty struct (no named fields): no body to extract, generate parameterless handler.
     let is_empty_params = total_named_fields == 0;
     let query_idents: Vec<Ident> = query_fields
         .iter()
         .map(|(ident, _)| ident.clone())
         .collect();
+    let flattened_query_idents: Vec<Ident> = flattened_query_fields
+        .iter()
+        .map(|(ident, _)| ident.clone())
+        .collect();
+    let has_flattened_query = !flattened_query_idents.is_empty();
+    let has_query = !query_idents.is_empty() || !flattened_query_idents.is_empty();
 
     // Generate the handler code
     let expanded = match (has_path, has_query) {
@@ -352,6 +357,14 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
                 )*
             };
 
+            // path + query + body 混合：保留 Json 提取器
+            // 优先级：path > query > body
+            // 注意：path+query only GET（无 body）目前不支持，因为：
+            // 1. Json 提取器对空 body 会返回 400
+            // 2. 宏生成临时 Query struct 会遇到 macro hygiene 问题
+            //    （handler 文件可能未导入字段类型如 ToolStatus）
+            // 业务中 path+query GET 较少，如需无 body，建议拆为两个端点
+            // 或前端发空 body PUT。
             quote! {
                 #item_fn
 
@@ -382,17 +395,38 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
                 )*
             };
 
-            quote! {
-                #item_fn
+            // 当所有命名字段都是 path 参数时，无需 Json body 提取器
+            // 典型场景：GET /items/{id}, DELETE /items/{id}
+            // 要求 Params: Default（用 Default::default() 构造空实例，再用 path 值覆盖）
+            if total_named_fields == path_fields.len() {
+                quote! {
+                    #item_fn
 
-                pub async fn #handler_ident(
-                    axum::extract::Extension(ctx): axum::extract::Extension<RequestContext>,
-                    axum::extract::Path(#path_tuple): axum::extract::Path<#path_ty_tuple>,
-                    axum::Json(mut params): axum::Json<#params_ty>,
-                ) -> ::std::result::Result<axum::Json<common::api::ApiResponse<#output_ty>>, common::error::Error> {
-                    #assign_paths
-                    let result = #core_ident(ctx, params).await?;
-                    Ok(axum::Json(common::api::ApiResponse::success(result)))
+                    pub async fn #handler_ident(
+                        axum::extract::Extension(ctx): axum::extract::Extension<RequestContext>,
+                        axum::extract::Path(#path_tuple): axum::extract::Path<#path_ty_tuple>,
+                    ) -> ::std::result::Result<axum::Json<common::api::ApiResponse<#output_ty>>, common::error::Error> {
+                        let mut params = <#params_ty as ::std::default::Default>::default();
+                        #assign_paths
+                        let result = #core_ident(ctx, params).await?;
+                        Ok(axum::Json(common::api::ApiResponse::success(result)))
+                    }
+                }
+            } else {
+                // path + body 混合：保留 Json 提取器，path 字段后覆盖 body 字段
+                // 优先级：path > body（path 字段从 URL 提取，覆盖 body 中的同名字段）
+                quote! {
+                    #item_fn
+
+                    pub async fn #handler_ident(
+                        axum::extract::Extension(ctx): axum::extract::Extension<RequestContext>,
+                        axum::extract::Path(#path_tuple): axum::extract::Path<#path_ty_tuple>,
+                        axum::Json(mut params): axum::Json<#params_ty>,
+                    ) -> ::std::result::Result<axum::Json<common::api::ApiResponse<#output_ty>>, common::error::Error> {
+                        #assign_paths
+                        let result = #core_ident(ctx, params).await?;
+                        Ok(axum::Json(common::api::ApiResponse::success(result)))
+                    }
                 }
             }
         }
@@ -445,12 +479,13 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
 }
 /// Collect field ids that have #[param(source = "path")] or #[param(source = "query")] attribute by parsing the source file.
 ///
-/// Returns `(path_fields, query_fields, total_named_fields)`. `total_named_fields` counts all
+/// Returns `(path_fields, query_fields, flattened_query_fields, total_named_fields)`. `total_named_fields` counts all
 /// named fields of the struct (regardless of #[param] annotation), used to detect empty unit
-/// structs for which no `Json` extractor should be generated.
+/// structs for which no `Json` extractor should be generated. `flattened_query_fields` holds
+/// query fields annotated with `#[serde(flatten)]`.
 fn collect_path_and_query_fields_from_type(
     path: syn::Path,
-) -> (Vec<(Ident, Type)>, Vec<(Ident, Type)>, usize) {
+) -> (Vec<(Ident, Type)>, Vec<(Ident, Type)>, Vec<(Ident, Type)>, usize) {
     // Get the last segment (the type name)
     let type_name = path.segments.last().unwrap().ident.to_string();
 
@@ -473,6 +508,7 @@ fn collect_path_and_query_fields_from_type(
                                 // Found it! Collect fields with #[param(source = "...")] attribute
                                 let mut path_fields = Vec::new();
                                 let mut query_fields = Vec::new();
+                                let mut flattened_query_fields = Vec::new();
                                 // Count named fields (Fields::Named has idents; Fields::Unit has none)
                                 let total_named_fields = match &item_struct.fields {
                                     syn::Fields::Named(named) => named.named.len(),
@@ -482,48 +518,74 @@ fn collect_path_and_query_fields_from_type(
                                 for field in &item_struct.fields {
                                     for attr in &field.attrs {
                                         if attr.path().is_ident("param") {
-                                            // Parse #[param(source = "path")]
-                                            if let Meta::NameValue(MetaNameValue {
-                                                path: _,
-                                                value,
-                                                ..
-                                            }) = &attr.meta
-                                            {
-                                                if let Ok(lit_str) = match value {
-                                                    syn::Expr::Lit(syn::ExprLit {
-                                                        lit: Lit::Str(s),
-                                                        ..
-                                                    }) => Ok(s),
-                                                    _ => Err(()),
-                                                } {
-                                                    match lit_str.value().as_str() {
-                                                        "path" => {
-                                                            if let Some(ident) = &field.ident {
-                                                                path_fields.push((
-                                                                    ident.clone(),
-                                                                    field.ty.clone(),
-                                                                ));
+                                            // `#[param(source = "path")]` 整体形式是 Meta::List：
+                                            //   attr.path = "param"，tokens = `source = "path"`
+                                            // 修复前 bug：用 `Meta::NameValue` 匹配整个 attr.meta，
+                                            //   但 attr.meta 实际是 `Meta::List`，导致所有 #[param]
+                                            //   标注被静默忽略，path/query 字段全部被当作 body。
+                                            //   修复方式：先匹配 Meta::List，再用 parse_args 解析内层。
+                                            if let Meta::List(meta_list) = &attr.meta {
+                                                if let Ok(nv) =
+                                                    meta_list.parse_args::<MetaNameValue>()
+                                                {
+                                                    if nv.path.is_ident("source") {
+                                                        if let syn::Expr::Lit(syn::ExprLit {
+                                                            lit: Lit::Str(s),
+                                                            ..
+                                                        }) = &nv.value
+                                                        {
+                                                            match s.value().as_str() {
+                                                                "path" => {
+                                                                    if let Some(ident) =
+                                                                        &field.ident
+                                                                    {
+                                                                        path_fields.push((
+                                                                            ident.clone(),
+                                                                            field.ty.clone(),
+                                                                        ));
+                                                                    }
+                                                                }
+                                                                "query" => {
+                                                                    if let Some(ident) =
+                                                                        &field.ident
+                                                                    {
+                                                                        // 检查是否有 #[serde(flatten)] 属性
+                                                                        let is_flattened = field.attrs.iter().any(|attr| {
+                                                                            if attr.path().is_ident("serde") {
+                                                                                if let Meta::List(meta_list) = &attr.meta {
+                                                                                    let tokens_str = meta_list.tokens.to_string();
+                                                                                    return tokens_str.contains("flatten");
+                                                                                }
+                                                                            }
+                                                                            false
+                                                                        });
+
+                                                                        if is_flattened {
+                                                                            flattened_query_fields.push((
+                                                                                ident.clone(),
+                                                                                field.ty.clone(),
+                                                                            ));
+                                                                        } else {
+                                                                            query_fields.push((
+                                                                                ident.clone(),
+                                                                                field.ty.clone(),
+                                                                            ));
+                                                                        }
+                                                                    }
+                                                                }
+                                                                "body" => {
+                                                                    // body is default, no need to collect
+                                                                }
+                                                                _ => {}
                                                             }
                                                         }
-                                                        "query" => {
-                                                            if let Some(ident) = &field.ident {
-                                                                query_fields.push((
-                                                                    ident.clone(),
-                                                                    field.ty.clone(),
-                                                                ));
-                                                            }
-                                                        }
-                                                        "body" => {
-                                                            // body is default, no need to collect
-                                                        }
-                                                        _ => {}
                                                     }
                                                 }
                                             }
                                         }
                                     }
                                 }
-                                return (path_fields, query_fields, total_named_fields);
+                                return (path_fields, query_fields, flattened_query_fields, total_named_fields);
                             }
                         }
                     }
