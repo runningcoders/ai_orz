@@ -306,22 +306,31 @@ pub enum ToolCallStatusDto {
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct QueryToolCallEntriesRequest {
     /// Exact call ID filter.
+    #[param(source = "query")]
     pub call_id: Option<String>,
     /// Filter by Agent ID.
+    #[param(source = "query")]
     pub agent_id: Option<String>,
     /// Filter by Project ID.
+    #[param(source = "query")]
     pub project_id: Option<String>,
     /// Filter by Task ID.
+    #[param(source = "query")]
     pub task_id: Option<String>,
     /// Filter by Tool ID.
+    #[param(source = "query")]
     pub tool_id: Option<String>,
     /// Filter by call status.
+    #[param(source = "query")]
     pub status: Option<ToolCallStatusDto>,
     /// Inclusive lower bound for started_at unix millis.
+    #[param(source = "query")]
     pub started_after: Option<u64>,
     /// Inclusive upper bound for started_at unix millis.
+    #[param(source = "query")]
     pub started_before: Option<u64>,
     /// Max result count. Defaults to 1 (latest matching entry).
+    #[param(source = "query")]
     #[serde(default)]
     pub limit: Option<usize>,
 }

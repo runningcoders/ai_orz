@@ -12,26 +12,33 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct ListMessagesRequest {
     /// 按项目 ID 过滤
+    #[param(source = "query")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_id: Option<String>,
     /// 按任务 ID 过滤
+    #[param(source = "query")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub task_id: Option<String>,
     /// 按发送方 ID 过滤
+    #[param(source = "query")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub from_id: Option<String>,
     /// 按接收方 ID 过滤
+    #[param(source = "query")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub to_id: Option<String>,
     /// 上拉翻页：只返回 created_at 小于此值的消息（毫秒时间戳）
     /// 用于加载更早的历史消息
+    #[param(source = "query")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub before_timestamp: Option<i64>,
     /// 下拉轮询：只返回 created_at 大于此值的消息（毫秒时间戳）
     /// 用于增量拉取新消息
+    #[param(source = "query")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub after_timestamp: Option<i64>,
     /// 限制返回条数（默认 10）
+    #[param(source = "query")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<usize>,
 }

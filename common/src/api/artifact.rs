@@ -77,7 +77,7 @@ pub struct DeleteArtifactResponse {
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct ListArtifactsRequest {
     /// Project ID. Required by handler for bounded queries.
-    #[param(source = "path")]
+    #[param(source = "query")]
     pub project_id: String,
     /// Optional task ID filter.
     #[param(source = "query")]
