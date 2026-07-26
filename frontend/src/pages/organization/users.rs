@@ -74,8 +74,16 @@ pub fn OrganizationUsers() -> Element {
             let req = CreateOrganizationUserRequest {
                 username: new_username(),
                 password_hash: new_password(),
-                display_name: if new_display_name().is_empty() { None } else { Some(new_display_name()) },
-                email: if new_email().is_empty() { None } else { Some(new_email()) },
+                display_name: if new_display_name().is_empty() {
+                    None
+                } else {
+                    Some(new_display_name())
+                },
+                email: if new_email().is_empty() {
+                    None
+                } else {
+                    Some(new_email())
+                },
                 role: new_role(),
             };
             match create_user(req).await {

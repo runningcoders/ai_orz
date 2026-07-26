@@ -7,9 +7,9 @@
 //! - InMemoryVectorStore: 纯 Rust 内存实现（推荐，零系统依赖）
 //! - HnswStore: HNSW 高性能近似最近邻索引（V2 优化）
 
+use once_cell::sync::OnceCell;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use std::sync::Arc;
-use once_cell::sync::OnceCell;
 
 use crate::pkg::stats::Stats;
 
@@ -70,7 +70,10 @@ impl Storage {
             .await?;
 
         // 运行所有 migrations，自动建表/升级
-        sqlx::migrate!("./migrations").run(&sqlite).await.map_err(Into::<common::error::Error>::into)?;
+        sqlx::migrate!("./migrations")
+            .run(&sqlite)
+            .await
+            .map_err(Into::<common::error::Error>::into)?;
 
         // 根据配置选择向量存储后端
         let vector: Arc<dyn VectorStore> = match db_config.vector_store_type {
@@ -94,7 +97,8 @@ impl Storage {
         let stats = Stats::open(
             stats_db_path.to_str().unwrap_or_default(),
             stats_config.batch_size,
-        ).await?;
+        )
+        .await?;
         stats.initialize_default()?;
 
         let inner = StorageInner {
@@ -154,15 +158,16 @@ impl Storage {
     /// 初始化 Stats（首次设置，不可重复）
     /// 生产代码由 `Storage::new()` 内部调用，测试代码可通过此方法注入
     pub fn init_stats(&self, stats: Stats) -> common::error::Result<()> {
-        self.inner.stats.set(stats).map_err(|_| {
-            common::error::Error::internal("Stats already initialized")
-        })
+        self.inner
+            .stats
+            .set(stats)
+            .map_err(|_| common::error::Error::internal("Stats already initialized"))
     }
 }
 
+use common::error::Result;
 use std::path::Path;
 use std::sync::OnceLock;
-use common::error::Result;
 
 /// 全局 Storage 单例（向后兼容）
 static STORAGE_INSTANCE: OnceLock<Storage> = OnceLock::new();

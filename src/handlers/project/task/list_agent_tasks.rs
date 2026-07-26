@@ -1,12 +1,12 @@
 //! Handler: GET /api/v1/agents/{agent_id}/tasks - List tasks assigned to an agent
 
 use super::response;
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListAgentTasksRequest, TaskListItem};
 use common::enums::AssigneeType;
+use common::error::Result;
 
 /// List tasks assigned to a specific agent
 #[register_handler_tool(

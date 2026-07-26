@@ -26,7 +26,12 @@ pub async fn get_skill_file_content(
 
     match result {
         None => {
-            bail_err!(NotFound, "Skill file not found: {}/{}", params.skill_id, params.filename);
+            bail_err!(
+                NotFound,
+                "Skill file not found: {}/{}",
+                params.skill_id,
+                params.filename
+            );
         }
         Some(content) => Ok(GetSkillFileContentResponse { content }),
     }

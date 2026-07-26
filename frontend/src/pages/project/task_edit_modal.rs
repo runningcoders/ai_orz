@@ -7,7 +7,7 @@
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
-use crate::api::{hr::list_agents, project::*, StatsOptions};
+use crate::api::{StatsOptions, hr::list_agents, project::*};
 use crate::components::modal::Modal;
 use crate::store::toast::use_toast;
 use common::api::{
@@ -228,7 +228,11 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
     };
 
     let is_create = matches!(props.mode, TaskEditMode::Create { .. });
-    let title_label = if is_create { "新建任务" } else { "编辑任务" };
+    let title_label = if is_create {
+        "新建任务"
+    } else {
+        "编辑任务"
+    };
 
     rsx! {
         Modal {
@@ -410,11 +414,7 @@ fn parse_csv(s: &str) -> Option<Vec<String>> {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect();
-    if items.is_empty() {
-        None
-    } else {
-        Some(items)
-    }
+    if items.is_empty() { None } else { Some(items) }
 }
 
 /// 解析时间戳字符串为 i64（毫秒）

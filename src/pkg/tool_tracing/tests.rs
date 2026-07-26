@@ -343,9 +343,9 @@ struct FailingFakeCoreTool {
 impl CoreTool for FailingFakeCoreTool {
     async fn call(&self, _ctx: RequestContext, _args: Value) -> Result<Value> {
         Err(ToolError::ToolCallError(
-            "http request failed for https://api.example.invalid/search?access_token=***"
-                .into(),
-        ).into())
+            "http request failed for https://api.example.invalid/search?access_token=***".into(),
+        )
+        .into())
     }
 
     fn po(&self) -> &ToolPo {

@@ -4,11 +4,11 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 
 use super::{ProjectDao, ProjectQuery, ProjectSearch};
-use common::error::Result;
 use crate::models::project::ProjectPo;
 use crate::pkg::RequestContext;
 use crate::pkg::storage::escape_fts5_keyword;
 use common::enums::project::ProjectStatus;
+use common::error::Result;
 use sqlx::FromRow;
 
 // ==================== FTS5 搜索辅助 ====================
@@ -83,11 +83,7 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         Ok(())
     }
 
-    async fn find_by_id(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<Option<ProjectPo>> {
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<ProjectPo>> {
         let pool = ctx.db_pool();
         let project = sqlx::query_as!(
             ProjectPo,
@@ -220,11 +216,7 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         Ok(())
     }
 
-    async fn count_by_root_user(
-        &self,
-        ctx: RequestContext,
-        root_user_id: &str,
-    ) -> Result<u64> {
+    async fn count_by_root_user(&self, ctx: RequestContext, root_user_id: &str) -> Result<u64> {
         // 语法糖：调用通用 count
         self.count(
             ctx,

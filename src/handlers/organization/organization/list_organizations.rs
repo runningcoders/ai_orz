@@ -1,11 +1,11 @@
 //! Handler: GET /api/v1/organizations - List all organizations in the system
 
-use common::error::Result;
 use crate::models::organization::OrganizationPo;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListOrganizationsRequest, ListOrganizationsResponse, OrganizationListItem};
+use common::error::Result;
 
 /// List all organizations available to the current user
 #[register_handler_tool(

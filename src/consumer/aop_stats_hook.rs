@@ -22,13 +22,7 @@ impl AopStatsHook {
     }
 
     /// 内部辅助：spawn 后台 record 任务
-    fn spawn_record(
-        &self,
-        kind: String,
-        consumer: String,
-        status: String,
-        duration_ms: u64,
-    ) {
+    fn spawn_record(&self, kind: String, consumer: String, status: String, duration_ms: u64) {
         let collector = self.collector.clone();
         tokio::spawn(async move {
             collector
@@ -40,7 +34,11 @@ impl AopStatsHook {
 
 impl AopMetricsHook for AopStatsHook {
     fn on_publish(&self, consumer_name: &str, meta: &AopEventMeta, is_async: bool) {
-        let status = if is_async { "published" } else { "published_sync" };
+        let status = if is_async {
+            "published"
+        } else {
+            "published_sync"
+        };
         self.spawn_record(
             meta.event_kind.clone(),
             consumer_name.to_string(),

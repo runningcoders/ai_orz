@@ -1,12 +1,11 @@
-
 //! Cron Trigger DAO layer
 //! DAO 只负责 CronTriggerPo 持久化。
 
-use common::error::Result;
 use crate::models::cron_trigger::CronTriggerPo;
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
 use common::enums::TriggerType;
+use common::error::Result;
 
 /// Cron Trigger 查询参数。
 #[derive(Debug, Clone, Default)]
@@ -26,7 +25,11 @@ pub trait CronTriggerDao: Send + Sync + std::fmt::Debug {
     async fn get_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<CronTriggerPo>>;
 
     /// 通用查询
-    async fn list(&self, ctx: RequestContext, query: CronTriggerQuery) -> Result<Vec<CronTriggerPo>>;
+    async fn list(
+        &self,
+        ctx: RequestContext,
+        query: CronTriggerQuery,
+    ) -> Result<Vec<CronTriggerPo>>;
 
     /// 更新触发器
     async fn update(&self, ctx: RequestContext, trigger: &CronTriggerPo) -> Result<()>;
@@ -35,10 +38,21 @@ pub trait CronTriggerDao: Send + Sync + std::fmt::Debug {
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()>;
 
     /// 获取所有到期的触发器（next_run_at <= now AND is_enabled = 1）
-    async fn list_due(&self, ctx: RequestContext, now: i64, limit: i32) -> Result<Vec<CronTriggerPo>>;
+    async fn list_due(
+        &self,
+        ctx: RequestContext,
+        now: i64,
+        limit: i32,
+    ) -> Result<Vec<CronTriggerPo>>;
 
     /// 更新下次执行时间
-    async fn update_next_run_at(&self, ctx: RequestContext, id: &str, next_run_at: i64, last_run_at: i64) -> Result<()>;
+    async fn update_next_run_at(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        next_run_at: i64,
+        last_run_at: i64,
+    ) -> Result<()>;
 }
 
 pub mod sqlite;

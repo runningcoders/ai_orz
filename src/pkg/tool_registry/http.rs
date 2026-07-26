@@ -1,7 +1,7 @@
 //! HTTP Tool Runtime.
 //! HTTP Tool Runtime.
 //! HTTP Tool Runtime.
-//! 
+//!
 //! HTTP tools are database-registered tools. `ToolPo.config` stores a JSON
 //! serialized `HttpToolConfig`, and the registry turns that persistent metadata
 //! into an executable `HttpCoreTool`.
@@ -9,16 +9,16 @@
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::tool_security::*;
-use anyhow::{anyhow};
+use anyhow::anyhow;
 use async_trait::async_trait;
+use common::err;
+use common::error::Result;
 use reqwest::header::{HeaderName, HeaderValue};
 use reqwest::{Method, Url, redirect};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::str::FromStr;
 use std::time::Duration;
-use common::error::Result;
-use common::err;
 
 /// Protocol-level HTTP tool factory.
 ///
@@ -138,25 +138,23 @@ async fn execute_http_call(
         config.allowed_domains.as_ref(),
         config.blocked_domains.as_ref(),
         &url,
-    ).await?;
+    )
+    .await?;
 
     let host = url
         .host_str()
         .ok_or_else(|| anyhow!("http url host is required"))
         .map_err(Into::<common::error::Error>::into)
         .map(|s| s.to_string())?;
-      let client = reqwest::Client::builder()
-            .timeout(Duration::from_millis(timeout_ms(config)?))
-            .redirect(redirect::Policy::none())
-            .no_proxy()
-            .resolve_to_addrs(&host, &pinned_addresses)
-            .build()
-            .map_err(|e| {
-                common::error::Error::new(
-                    common::error::ErrorCode::NetworkError,
-                    e.to_string()
-                )
-            })?;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_millis(timeout_ms(config)?))
+        .redirect(redirect::Policy::none())
+        .no_proxy()
+        .resolve_to_addrs(&host, &pinned_addresses)
+        .build()
+        .map_err(|e| {
+            common::error::Error::new(common::error::ErrorCode::NetworkError, e.to_string())
+        })?;
 
     let mut request = client.request(method.clone(), url);
 
@@ -234,15 +232,15 @@ fn validate_args_schema(parameters_schema: Option<&Value>, args: &Value) -> Resu
         return Ok(());
     };
 
-    let args_object = args
-        .as_object()
-        .ok_or_else(|| -> common::error::Error { anyhow!("http tool args must be a JSON object").into() })?;
+    let args_object = args.as_object().ok_or_else(|| -> common::error::Error {
+        anyhow!("http tool args must be a JSON object").into()
+    })?;
 
     if let Some(Value::Array(required)) = schema.get("required") {
         for name in required.iter().filter_map(Value::as_str) {
-                if !args_object.contains_key(name) {
-                    return Err(anyhow!("unknown tool argument: {}", name).into());
-                }
+            if !args_object.contains_key(name) {
+                return Err(anyhow!("unknown tool argument: {}", name).into());
+            }
         }
     }
 
@@ -272,10 +270,7 @@ fn validate_args_schema(parameters_schema: Option<&Value>, args: &Value) -> Resu
 fn validate_arg_value(name: &str, value: &Value, property_schema: &Value) -> Result<()> {
     if let Some(Value::Array(allowed_values)) = property_schema.get("enum") {
         if !allowed_values.iter().any(|allowed| allowed == value) {
-            return Err(anyhow!(
-                "invalid enum value for tool argument {}",
-                name
-            ).into());
+            return Err(anyhow!("invalid enum value for tool argument {}", name).into());
         }
     }
 
@@ -299,7 +294,8 @@ fn validate_arg_value(name: &str, value: &Value, property_schema: &Value) -> Res
             "invalid type for tool argument {}: expected {}",
             name,
             expected_type
-        ).into());
+        )
+        .into());
     }
 
     Ok(())
@@ -364,9 +360,7 @@ fn render_string_template(template: &str, args: &Value) -> Result<String> {
     }
 
     if rendered.contains("{{") {
-        return Err(anyhow!(
-            "unresolved or unsupported http template placeholder"
-        ).into());
+        return Err(anyhow!("unresolved or unsupported http template placeholder").into());
     }
 
     Ok(rendered)
@@ -413,9 +407,9 @@ fn validate_body_template(template: Option<&Value>) -> Result<()> {
         Value::Object(object) => {
             for (key, value) in object {
                 if key.contains("{{") {
-                    return Err(anyhow!(
-                        "http body template keys must not contain placeholders"
-                    ).into());
+                    return Err(
+                        anyhow!("http body template keys must not contain placeholders").into(),
+                    );
                 }
                 validate_body_template(Some(value))?;
             }
@@ -433,9 +427,7 @@ fn validate_allowed_status_codes(codes: Option<&Vec<u16>>) -> Result<()> {
         return Err(anyhow!("http allowed_status_codes must not be empty").into());
     }
     if codes.iter().any(|code| !(100..=599).contains(code)) {
-        return Err(anyhow!(
-            "http allowed_status_codes must be valid HTTP status codes"
-        ).into());
+        return Err(anyhow!("http allowed_status_codes must be valid HTTP status codes").into());
     }
     Ok(())
 }
@@ -445,9 +437,7 @@ fn validate_response_json_pointer(pointer: Option<&str>) -> Result<()> {
         return Ok(());
     };
     if !pointer.is_empty() && !pointer.starts_with('/') {
-        return Err(anyhow!(
-            "http response_json_pointer must be a valid JSON pointer"
-        ).into());
+        return Err(anyhow!("http response_json_pointer must be a valid JSON pointer").into());
     }
     Ok(())
 }
@@ -480,9 +470,7 @@ fn validate_fixed_target_policy(config: &HttpToolConfig) -> Result<()> {
     }
 
     if is_local_network_host(&host) && config.allow_local_network != Some(true) {
-        return Err(anyhow!(
-            "local network http target requires allow_local_network=true"
-        ).into());
+        return Err(anyhow!("local network http target requires allow_local_network=true").into());
     }
 
     Ok(())
@@ -495,9 +483,7 @@ fn url_template_with_placeholder_sentinels(url_template: &str) -> Result<String>
         output.push_str(&rest[..start]);
         let after_start = &rest[start + 2..];
         let Some(end) = after_start.find("}}") else {
-            return Err(anyhow!(
-                "unresolved or unsupported http template placeholder"
-            ).into());
+            return Err(anyhow!("unresolved or unsupported http template placeholder").into());
         };
         output.push_str("placeholder");
         rest = &after_start[end + 2..];
@@ -523,26 +509,26 @@ fn validate_scalar_template_object(field_name: &str, template: Option<&Value>) -
             return Err(anyhow!(
                 "http {} template keys must not contain placeholders",
                 field_name
-            ).into());
+            )
+            .into());
         }
         if field_name == "headers" {
-            HeaderName::from_str(key)
-                .map_err(|_| -> common::error::Error { anyhow!("invalid http header name").into() })?;
+            HeaderName::from_str(key).map_err(|_| -> common::error::Error {
+                anyhow!("invalid http header name").into()
+            })?;
         }
         match value {
             Value::String(template) => {
                 validate_supported_placeholders(template)?;
                 if field_name == "headers" && !template.contains("{{") {
-                    HeaderValue::from_str(template)
-                        .map_err(|_| -> common::error::Error { anyhow!("invalid http header value").into() })?;
+                    HeaderValue::from_str(template).map_err(|_| -> common::error::Error {
+                        anyhow!("invalid http header value").into()
+                    })?;
                 }
             }
             Value::Number(_) | Value::Bool(_) | Value::Null => {}
             _ => {
-                return Err(anyhow!(
-                    "http {} template values must be scalar",
-                    field_name
-                ).into());
+                return Err(anyhow!("http {} template values must be scalar", field_name).into());
             }
         }
     }
@@ -555,26 +541,20 @@ fn validate_supported_placeholders(template: &str) -> Result<()> {
     while let Some(start) = rest.find("{{") {
         let after_start = &rest[start + 2..];
         let Some(end) = after_start.find("}}") else {
-            return Err(anyhow!(
-                "unresolved or unsupported http template placeholder"
-            ).into());
+            return Err(anyhow!("unresolved or unsupported http template placeholder").into());
         };
         let placeholder = &after_start[..end];
         if placeholder.trim() != placeholder
             || !placeholder.starts_with("args.")
             || placeholder.len() <= "args.".len()
         {
-            return Err(anyhow!(
-                "unresolved or unsupported http template placeholder"
-            ).into());
+            return Err(anyhow!("unresolved or unsupported http template placeholder").into());
         }
         rest = &after_start[end + 2..];
     }
 
     if rest.contains("}}") {
-        return Err(anyhow!(
-            "unresolved or unsupported http template placeholder"
-        ).into());
+        return Err(anyhow!("unresolved or unsupported http template placeholder").into());
     }
 
     Ok(())
@@ -587,7 +567,8 @@ fn timeout_ms(config: &HttpToolConfig) -> Result<u64> {
             "invalid http timeout_ms: {} (must be 1..={})",
             timeout_ms,
             HARD_TIMEOUT_MS
-        ).into());
+        )
+        .into());
     }
 
     Ok(timeout_ms)
@@ -602,7 +583,8 @@ fn response_max_bytes(config: &HttpToolConfig) -> Result<usize> {
             "invalid http response_max_bytes: {} (must be 1..={})",
             max_bytes,
             HARD_RESPONSE_MAX_BYTES
-        ).into());
+        )
+        .into());
     }
 
     Ok(max_bytes)
@@ -610,10 +592,7 @@ fn response_max_bytes(config: &HttpToolConfig) -> Result<usize> {
 
 // Re-export common constants for backward compatibility
 pub use crate::pkg::tool_registry::tool_security::{
-    DEFAULT_RESPONSE_MAX_BYTES,
-    HARD_RESPONSE_MAX_BYTES,
-    DEFAULT_TIMEOUT_MS,
-    HARD_TIMEOUT_MS,
+    DEFAULT_RESPONSE_MAX_BYTES, DEFAULT_TIMEOUT_MS, HARD_RESPONSE_MAX_BYTES, HARD_TIMEOUT_MS,
 };
 
 #[cfg(test)]

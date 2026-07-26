@@ -180,19 +180,11 @@ struct MockModelProviderDao;
 
 #[async_trait::async_trait]
 impl ModelProviderDao for MockModelProviderDao {
-    async fn insert(
-        &self,
-        _ctx: RequestContext,
-        _provider: &ModelProviderPo,
-    ) -> Result<()> {
+    async fn insert(&self, _ctx: RequestContext, _provider: &ModelProviderPo) -> Result<()> {
         Ok(())
     }
 
-    async fn find_by_id(
-        &self,
-        _ctx: RequestContext,
-        _id: &str,
-    ) -> Result<Option<ModelProviderPo>> {
+    async fn find_by_id(&self, _ctx: RequestContext, _id: &str) -> Result<Option<ModelProviderPo>> {
         Ok(None)
     }
 
@@ -211,19 +203,11 @@ impl ModelProviderDao for MockModelProviderDao {
         Ok(vec![])
     }
 
-    async fn update(
-        &self,
-        _ctx: RequestContext,
-        _provider: &ModelProviderPo,
-    ) -> Result<()> {
+    async fn update(&self, _ctx: RequestContext, _provider: &ModelProviderPo) -> Result<()> {
         Ok(())
     }
 
-    async fn delete(
-        &self,
-        _ctx: RequestContext,
-        _provider: &ModelProviderPo,
-    ) -> Result<()> {
+    async fn delete(&self, _ctx: RequestContext, _provider: &ModelProviderPo) -> Result<()> {
         Ok(())
     }
 
@@ -267,7 +251,9 @@ fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
 }
 
 /// 初始化搜索测试环境（使用 Mock CortexDao 和 ModelProviderDao）
-async fn init_search_test_env(pool: SqlitePool) -> Arc<dyn crate::service::dal::agent::AgentDal + Send + Sync> {
+async fn init_search_test_env(
+    pool: SqlitePool,
+) -> Arc<dyn crate::service::dal::agent::AgentDal + Send + Sync> {
     // 初始化基础 DAO（agent + vector）
     agent::init();
     // 初始化 stats DAO（DAL new() 需要传入）
@@ -340,9 +326,12 @@ async fn test_update(pool: SqlitePool) {
 
     let mut updated = agent.clone();
     updated.po.name = "Updated".to_string();
-    dal.update(crate::pkg::request_context_test_support::new_test_ctx("editor", pool), &updated)
-        .await
-        .unwrap();
+    dal.update(
+        crate::pkg::request_context_test_support::new_test_ctx("editor", pool),
+        &updated,
+    )
+    .await
+    .unwrap();
 
     let found: Option<Agent> = dal.find_by_id(ctx, &updated.id()).await.unwrap();
     assert_eq!(found.as_ref().unwrap().name(), "Updated");
@@ -395,7 +384,12 @@ async fn test_search_fts5_by_name(pool: SqlitePool) -> Result<()> {
     let dal = init_search_test_env(pool.clone()).await;
     let ctx = new_ctx("test-user", pool);
 
-    let agent = create_test_agent_full("debug-helper", "Helps with debugging", vec!["debug"], "provider-1");
+    let agent = create_test_agent_full(
+        "debug-helper",
+        "Helps with debugging",
+        vec!["debug"],
+        "provider-1",
+    );
     dal.create(ctx.clone(), &agent).await?;
 
     // 搜索：按名称匹配
@@ -420,7 +414,12 @@ async fn test_search_fts5_by_description(pool: SqlitePool) -> Result<()> {
     let dal = init_search_test_env(pool.clone()).await;
     let ctx = new_ctx("test-user", pool);
 
-    let agent = create_test_agent_full("python-tool", "Helps with debugging code", vec![], "provider-1");
+    let agent = create_test_agent_full(
+        "python-tool",
+        "Helps with debugging code",
+        vec![],
+        "provider-1",
+    );
     dal.create(ctx.clone(), &agent).await?;
 
     // 搜索：按描述匹配（名称不含 "debugging"）
@@ -446,7 +445,12 @@ async fn test_search_fts5_chinese(pool: SqlitePool) -> Result<()> {
     let ctx = new_ctx("test-user", pool);
 
     // 创建中文 Agent（3+ 中文字符才能被 trigram 匹配）
-    let agent = create_test_agent_full("测试助手", "这是一个用于测试的智能代理", vec![], "provider-1");
+    let agent = create_test_agent_full(
+        "测试助手",
+        "这是一个用于测试的智能代理",
+        vec![],
+        "provider-1",
+    );
     dal.create(ctx.clone(), &agent).await?;
 
     // 3 字符搜索 → 能匹配
@@ -482,7 +486,8 @@ async fn test_search_fts5_no_match(pool: SqlitePool) -> Result<()> {
     let dal = init_search_test_env(pool.clone()).await;
     let ctx = new_ctx("test-user", pool);
 
-    let agent = create_test_agent_full("debug-helper", "Helps with debugging", vec![], "provider-1");
+    let agent =
+        create_test_agent_full("debug-helper", "Helps with debugging", vec![], "provider-1");
     dal.create(ctx.clone(), &agent).await?;
 
     // 搜索：无匹配
@@ -514,7 +519,12 @@ async fn test_search_hybrid_match(pool: SqlitePool) -> Result<()> {
     let dal = init_search_test_env(pool.clone()).await;
     let ctx = new_ctx("test-user", pool);
 
-    let agent = create_test_agent_full("debug-helper", "Helps with debugging", vec!["debug"], "provider-1");
+    let agent = create_test_agent_full(
+        "debug-helper",
+        "Helps with debugging",
+        vec!["debug"],
+        "provider-1",
+    );
     dal.create(ctx.clone(), &agent).await?;
 
     let results = dal
@@ -528,9 +538,15 @@ async fn test_search_hybrid_match(pool: SqlitePool) -> Result<()> {
         .await?;
 
     assert_eq!(results.len(), 1);
-    let match_info = results[0].search_match.as_ref().expect("search_match 不应为 None");
+    let match_info = results[0]
+        .search_match
+        .as_ref()
+        .expect("search_match 不应为 None");
     assert_eq!(match_info.match_type, MatchType::Hybrid, "应是 Hybrid 匹配");
-    assert!(match_info.vector_distance.is_some(), "vector_distance 应有值");
+    assert!(
+        match_info.vector_distance.is_some(),
+        "vector_distance 应有值"
+    );
     assert!(match_info.fts_rank.is_some(), "fts_rank 应有值");
 
     Ok(())
@@ -547,7 +563,12 @@ async fn test_search_vector_only_match(pool: SqlitePool) -> Result<()> {
     let ctx = new_ctx("test-user", pool);
 
     // 创建名称和描述都不含 "debug" 的 Agent
-    let agent = create_test_agent_full("python-tool", "A python utility tool", vec!["python"], "provider-1");
+    let agent = create_test_agent_full(
+        "python-tool",
+        "A python utility tool",
+        vec!["python"],
+        "provider-1",
+    );
     dal.create(ctx.clone(), &agent).await?;
 
     let results = dal
@@ -561,9 +582,15 @@ async fn test_search_vector_only_match(pool: SqlitePool) -> Result<()> {
         .await?;
 
     assert_eq!(results.len(), 1, "应返回 1 条 Vector 匹配结果");
-    let match_info = results[0].search_match.as_ref().expect("search_match 不应为 None");
+    let match_info = results[0]
+        .search_match
+        .as_ref()
+        .expect("search_match 不应为 None");
     assert_eq!(match_info.match_type, MatchType::Vector, "应是 Vector 匹配");
-    assert!(match_info.vector_distance.is_some(), "vector_distance 应有值");
+    assert!(
+        match_info.vector_distance.is_some(),
+        "vector_distance 应有值"
+    );
     assert!(match_info.fts_rank.is_none(), "fts_rank 应为 None");
 
     Ok(())
@@ -599,10 +626,20 @@ async fn test_search_keyword_only_match(pool: SqlitePool) -> Result<()> {
         .await?;
 
     assert_eq!(results.len(), 1, "应返回 1 条 Keyword 匹配结果");
-    let match_info = results[0].search_match.as_ref().expect("search_match 不应为 None");
-    assert_eq!(match_info.match_type, MatchType::Keyword, "应是 Keyword 匹配");
+    let match_info = results[0]
+        .search_match
+        .as_ref()
+        .expect("search_match 不应为 None");
+    assert_eq!(
+        match_info.match_type,
+        MatchType::Keyword,
+        "应是 Keyword 匹配"
+    );
     assert!(match_info.fts_rank.is_some(), "fts_rank 应有值");
-    assert!(match_info.vector_distance.is_none(), "vector_distance 应为 None");
+    assert!(
+        match_info.vector_distance.is_none(),
+        "vector_distance 应为 None"
+    );
 
     Ok(())
 }
@@ -614,11 +651,21 @@ async fn test_search_comprehensive_sorting(pool: SqlitePool) -> Result<()> {
     let ctx = new_ctx("test-user", pool);
 
     // 1. Hybrid：name 含 "debug"，向量 [0.0, 1.0, 1.0]
-    let hybrid_agent = create_test_agent_full("debug-hybrid", "Debug skill hybrid", vec!["debug"], "provider-1");
+    let hybrid_agent = create_test_agent_full(
+        "debug-hybrid",
+        "Debug skill hybrid",
+        vec!["debug"],
+        "provider-1",
+    );
     dal.create(ctx.clone(), &hybrid_agent).await?;
 
     // 2. Vector-only：name 不含 "debug"，向量 [0.0, 1.0, 1.0]
-    let vector_agent = create_test_agent_full("vector-only-tool", "A vector only tool", vec!["utility"], "provider-1");
+    let vector_agent = create_test_agent_full(
+        "vector-only-tool",
+        "A vector only tool",
+        vec!["utility"],
+        "provider-1",
+    );
     dal.create(ctx.clone(), &vector_agent).await?;
 
     // 3. Keyword-only：name 含 "debug" + "nonexistent"，向量 [1.0, 0.0, 0.0]
@@ -670,7 +717,12 @@ async fn test_vector_auto_maintenance_create(pool: SqlitePool) -> Result<()> {
     let dal = init_search_test_env(pool.clone()).await;
     let ctx = new_ctx("test-user", pool);
 
-    let agent = create_test_agent_full("auto-vector-test", "Test auto vectorization", vec![], "provider-1");
+    let agent = create_test_agent_full(
+        "auto-vector-test",
+        "Test auto vectorization",
+        vec![],
+        "provider-1",
+    );
     dal.create(ctx.clone(), &agent).await?;
 
     // 通过向量搜索验证向量已写入
@@ -686,12 +738,18 @@ async fn test_vector_auto_maintenance_create(pool: SqlitePool) -> Result<()> {
 
     // 应能通过向量搜索找到（Vector 或 Hybrid 匹配）
     assert_eq!(results.len(), 1);
-    let match_info = results[0].search_match.as_ref().expect("search_match 不应为 None");
+    let match_info = results[0]
+        .search_match
+        .as_ref()
+        .expect("search_match 不应为 None");
     assert!(
         match_info.match_type == MatchType::Hybrid || match_info.match_type == MatchType::Vector,
         "create 后应自动写入向量，匹配类型应为 Hybrid 或 Vector"
     );
-    assert!(match_info.vector_distance.is_some(), "vector_distance 应有值");
+    assert!(
+        match_info.vector_distance.is_some(),
+        "vector_distance 应有值"
+    );
 
     Ok(())
 }
@@ -703,7 +761,12 @@ async fn test_vector_auto_maintenance_update(pool: SqlitePool) -> Result<()> {
     let ctx = new_ctx("test-user", pool);
 
     // 创建 Agent
-    let mut agent = create_test_agent_full("original-name", "Original description", vec![], "provider-1");
+    let mut agent = create_test_agent_full(
+        "original-name",
+        "Original description",
+        vec![],
+        "provider-1",
+    );
     dal.create(ctx.clone(), &agent).await?;
 
     // 更新 Agent（改变内容）
@@ -725,7 +788,10 @@ async fn test_vector_auto_maintenance_update(pool: SqlitePool) -> Result<()> {
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].name(), "updated-debug-name");
     // 更新后向量应已重新生成（内容变化触发重索引）
-    let match_info = results[0].search_match.as_ref().expect("search_match 不应为 None");
+    let match_info = results[0]
+        .search_match
+        .as_ref()
+        .expect("search_match 不应为 None");
     assert!(
         match_info.vector_distance.is_some(),
         "update 后向量应已重新生成"
@@ -740,7 +806,12 @@ async fn test_vector_auto_maintenance_delete(pool: SqlitePool) -> Result<()> {
     let dal = init_search_test_env(pool.clone()).await;
     let ctx = new_ctx("test-user", pool);
 
-    let agent = create_test_agent_full("delete-vector-test", "Test delete vectorization", vec![], "provider-1");
+    let agent = create_test_agent_full(
+        "delete-vector-test",
+        "Test delete vectorization",
+        vec![],
+        "provider-1",
+    );
     dal.create(ctx.clone(), &agent).await?;
 
     // 删除 Agent
@@ -768,7 +839,12 @@ async fn test_query_keyword_deprecated(pool: SqlitePool) -> Result<()> {
     let ctx = new_ctx("test-user", pool);
 
     // 创建 Agent
-    let agent = create_test_agent_full("compat-test-agent", "Test compatibility", vec![], "provider-1");
+    let agent = create_test_agent_full(
+        "compat-test-agent",
+        "Test compatibility",
+        vec![],
+        "provider-1",
+    );
     dal.create(ctx.clone(), &agent).await?;
 
     // 使用 query 方法（keyword 字段已废弃，应被忽略）
@@ -785,7 +861,11 @@ async fn test_query_keyword_deprecated(pool: SqlitePool) -> Result<()> {
         .await?;
 
     // keyword 被忽略，但应返回所有 Agent（因为没设其他过滤条件）
-    assert_eq!(results.items.len(), 1, "query 方法 keyword 被忽略，应返回全部结果");
+    assert_eq!(
+        results.items.len(),
+        1,
+        "query 方法 keyword 被忽略，应返回全部结果"
+    );
     assert_eq!(results.items[0].name(), "compat-test-agent");
 
     Ok(())
@@ -833,7 +913,12 @@ async fn test_search_fts_rank_transparency(pool: SqlitePool) -> Result<()> {
     let dal = init_search_test_env(pool.clone()).await;
     let ctx = new_ctx("test-user", pool);
 
-    let agent = create_test_agent_full("rust-programming", "A rust programming agent", vec!["rust"], "provider-1");
+    let agent = create_test_agent_full(
+        "rust-programming",
+        "A rust programming agent",
+        vec!["rust"],
+        "provider-1",
+    );
     dal.create(ctx.clone(), &agent).await?;
 
     let results = dal
@@ -847,17 +932,23 @@ async fn test_search_fts_rank_transparency(pool: SqlitePool) -> Result<()> {
         .await?;
 
     assert_eq!(results.len(), 1);
-    let match_info = results[0].search_match.as_ref().expect("search_match 不应为 None");
+    let match_info = results[0]
+        .search_match
+        .as_ref()
+        .expect("search_match 不应为 None");
     // Hybrid 匹配时 fts_rank 应有值
-    assert!(match_info.fts_rank.is_some(), "fts_rank 应有值（从 DAO 透传）");
+    assert!(
+        match_info.fts_rank.is_some(),
+        "fts_rank 应有值（从 DAO 透传）"
+    );
 
     Ok(())
 }
 
 // ==================== PromptBuilder 单元测试 ====================
 
-use crate::service::dal::agent::DefaultPromptBuilder;
 use crate::models::prompt_builder::PromptBuilder;
+use crate::service::dal::agent::DefaultPromptBuilder;
 
 #[test]
 fn prompt_builder_empty() {
@@ -969,7 +1060,7 @@ fn prompt_builder_trait_tools_injects_into_prompt() {
         "neural.search_web".to_string(),
         "neural.search_web".to_string(),
         "网页搜索工具".to_string(),
-        common::enums::ToolProtocol::Mcp,  // Manual control_mode
+        common::enums::ToolProtocol::Mcp, // Manual control_mode
         json!({}),
         Some(json!({"type": "object"})),
         vec!["neural".to_string()],

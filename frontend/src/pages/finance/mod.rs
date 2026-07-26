@@ -1,9 +1,9 @@
-pub mod attachments;
 pub mod attachment_detail;
+pub mod attachments;
+pub mod mcp_server_detail;
+pub mod mcp_servers;
 pub mod message_channel_detail;
 pub mod message_channels;
-pub mod mcp_servers;
-pub mod mcp_server_detail;
 pub mod model_provider_detail;
 pub mod model_providers;
 pub mod tool_call_entries;

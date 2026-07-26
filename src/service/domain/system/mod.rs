@@ -1,4 +1,3 @@
-use common::error::Result;
 use crate::consumer::{AopDistributionItem, AopOverview, AopStatsCollector, AopTimeSeriesPoint};
 use crate::models::cron_trigger::CronTriggerPo;
 use crate::pkg::RequestContext;
@@ -8,8 +7,9 @@ use crate::service::dal::backup::{BackupDal, BackupInfo};
 use crate::service::dal::cron_trigger as cron_trigger_dal;
 use crate::service::dal::cron_trigger::CronTriggerDal;
 use crate::service::dal::log_query as log_query_dal;
-use crate::service::dal::log_query::{LogQuery as LogQueryParam, LogPageResult, LogQueryDal};
+use crate::service::dal::log_query::{LogPageResult, LogQuery as LogQueryParam, LogQueryDal};
 use crate::service::dao::cron_trigger::CronTriggerQuery;
+use common::error::Result;
 use std::sync::{Arc, OnceLock};
 
 mod aop_monitor;
@@ -96,13 +96,27 @@ pub trait SystemDomain: Send + Sync {
 pub trait CronManager: Send + Sync {
     async fn create_trigger(&self, ctx: RequestContext, trigger: &CronTriggerPo) -> Result<()>;
     async fn get_trigger(&self, ctx: RequestContext, id: &str) -> Result<Option<CronTriggerPo>>;
-    async fn list_triggers(&self, ctx: RequestContext, query: CronTriggerQuery) -> Result<Vec<CronTriggerPo>>;
+    async fn list_triggers(
+        &self,
+        ctx: RequestContext,
+        query: CronTriggerQuery,
+    ) -> Result<Vec<CronTriggerPo>>;
     async fn update_trigger(&self, ctx: RequestContext, trigger: &CronTriggerPo) -> Result<()>;
     async fn delete_trigger(&self, ctx: RequestContext, id: &str) -> Result<()>;
     async fn pause_trigger(&self, ctx: RequestContext, id: &str) -> Result<()>;
     async fn resume_trigger(&self, ctx: RequestContext, id: &str) -> Result<()>;
-    async fn list_due_triggers(&self, ctx: RequestContext, now: i64, limit: i32) -> Result<Vec<CronTriggerPo>>;
-    async fn mark_trigger_executed(&self, ctx: RequestContext, id: &str, executed_at: i64) -> Result<()>;
+    async fn list_due_triggers(
+        &self,
+        ctx: RequestContext,
+        now: i64,
+        limit: i32,
+    ) -> Result<Vec<CronTriggerPo>>;
+    async fn mark_trigger_executed(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        executed_at: i64,
+    ) -> Result<()>;
 }
 
 #[async_trait::async_trait]
@@ -137,7 +151,11 @@ pub trait LogQuery: Send + Sync {
 pub trait AopMonitor: Send + Sync {
     fn all_queue_stats(&self) -> Vec<(String, aop::queue::QueueStats)>;
     fn queue_stats(&self, consumer_name: &str) -> Option<aop::queue::QueueStats>;
-    fn list_events(&self, consumer_name: &str, filter: aop::queue::EventQueryFilter) -> Option<Vec<aop::queue::EventSummary>>;
+    fn list_events(
+        &self,
+        consumer_name: &str,
+        filter: aop::queue::EventQueryFilter,
+    ) -> Option<Vec<aop::queue::EventSummary>>;
     fn get_event(&self, consumer_name: &str, event_id: &str) -> Option<aop::queue::EventDetail>;
 }
 
@@ -174,7 +192,11 @@ impl CronManager for SystemDomainImpl {
         self.cron_trigger_dal.get_by_id(ctx, id).await
     }
 
-    async fn list_triggers(&self, ctx: RequestContext, query: CronTriggerQuery) -> Result<Vec<CronTriggerPo>> {
+    async fn list_triggers(
+        &self,
+        ctx: RequestContext,
+        query: CronTriggerQuery,
+    ) -> Result<Vec<CronTriggerPo>> {
         self.cron_trigger_dal.list(ctx, query).await
     }
 
@@ -194,12 +216,24 @@ impl CronManager for SystemDomainImpl {
         self.cron_trigger_dal.resume(ctx, id).await
     }
 
-    async fn list_due_triggers(&self, ctx: RequestContext, now: i64, limit: i32) -> Result<Vec<CronTriggerPo>> {
+    async fn list_due_triggers(
+        &self,
+        ctx: RequestContext,
+        now: i64,
+        limit: i32,
+    ) -> Result<Vec<CronTriggerPo>> {
         self.cron_trigger_dal.list_due(ctx, now, limit).await
     }
 
-    async fn mark_trigger_executed(&self, ctx: RequestContext, id: &str, executed_at: i64) -> Result<()> {
-        self.cron_trigger_dal.mark_executed(ctx, id, executed_at).await
+    async fn mark_trigger_executed(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        executed_at: i64,
+    ) -> Result<()> {
+        self.cron_trigger_dal
+            .mark_executed(ctx, id, executed_at)
+            .await
     }
 }
 
@@ -224,11 +258,7 @@ impl BackupManager for SystemDomainImpl {
 
 #[async_trait::async_trait]
 impl LogQuery for SystemDomainImpl {
-    async fn query_logs(
-        &self,
-        ctx: RequestContext,
-        query: LogQueryParam,
-    ) -> Result<LogPageResult> {
+    async fn query_logs(&self, ctx: RequestContext, query: LogQueryParam) -> Result<LogPageResult> {
         self.log_query_dal.query_logs(ctx, query).await
     }
 

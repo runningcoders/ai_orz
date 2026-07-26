@@ -1,11 +1,11 @@
 //! Message Vector DAO implementation
 //! 负责消息向量索引的 CRUD 操作，与基础消息数据完全解耦
 
-use common::error::{err, Result};
 use crate::models::vector::{VectorIndexParams, VectorRow, VectorSearchHit};
 use crate::pkg::RequestContext;
 use crate::service::dao::message::MessageVectorDao;
 use async_trait::async_trait;
+use common::error::{Result, err};
 use std::sync::{Arc, OnceLock};
 
 // ==================== 工厂方法 + 单例 ====================
@@ -55,9 +55,7 @@ impl MessageVectorDao for MessageVectorDaoImpl {
         top_k: i32,
     ) -> Result<Vec<VectorSearchHit>> {
         let vector_store = _ctx.vector_store();
-        let results = vector_store
-            .search("messages", query_vector, top_k)
-            .await?;
+        let results = vector_store.search("messages", query_vector, top_k).await?;
         Ok(results)
     }
 

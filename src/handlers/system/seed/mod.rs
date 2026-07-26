@@ -28,10 +28,10 @@ pub use list::list_seeds_handler;
 pub use load::load_seed_handler;
 pub use save::save_seed_handler;
 
-use std::collections::HashMap;
-use common::error::{Error, Result};
 use crate::pkg::RequestContext;
 use crate::service::domain::system::seed::defs::*;
+use common::error::{Error, Result};
+use std::collections::HashMap;
 
 /// 校验当前用户是否为 SuperAdmin
 fn check_super_admin(ctx: &RequestContext) -> Result<()> {
@@ -47,12 +47,18 @@ fn check_super_admin(ctx: &RequestContext) -> Result<()> {
 
 /// 统计 diff 列表中 New 条目数量
 fn count_new<T>(entries: &[DiffEntry<T>]) -> usize {
-    entries.iter().filter(|e| matches!(e, DiffEntry::New { .. })).count()
+    entries
+        .iter()
+        .filter(|e| matches!(e, DiffEntry::New { .. }))
+        .count()
 }
 
 /// 统计 diff 列表中 Updated 条目数量
 fn count_updated<T>(entries: &[DiffEntry<T>]) -> usize {
-    entries.iter().filter(|e| matches!(e, DiffEntry::Updated { .. })).count()
+    entries
+        .iter()
+        .filter(|e| matches!(e, DiffEntry::Updated { .. }))
+        .count()
 }
 
 /// 从当前 DB 组装 SeedSnapshot（编排各 domain）
@@ -87,70 +93,80 @@ pub async fn assemble_snapshot_from_db(
         .user_manage()
         .find_by_organization_id(ctx.clone(), org_id)
         .await?;
-    let user_defs: Vec<UserDef> = users.into_iter().map(|u| UserDef {
-        id: u.id.clone(),
-        organization_id: u.organization_id.clone(),
-        username: u.username.clone(),
-        display_name: u.display_name.clone(),
-        email: u.email.clone(),
-        password_ref: PENDING_INPUT.to_string(),
-        role: u.role.to_i32(),
-        status: u.status.to_i32(),
-    }).collect();
+    let user_defs: Vec<UserDef> = users
+        .into_iter()
+        .map(|u| UserDef {
+            id: u.id.clone(),
+            organization_id: u.organization_id.clone(),
+            username: u.username.clone(),
+            display_name: u.display_name.clone(),
+            email: u.email.clone(),
+            password_ref: PENDING_INPUT.to_string(),
+            role: u.role.to_i32(),
+            status: u.status.to_i32(),
+        })
+        .collect();
 
     // 3. ModelProvider
     let providers = finance::domain()
         .model_provider_manage()
         .list_model_providers(ctx.clone())
         .await?;
-    let provider_defs: Vec<ModelProviderDef> = providers.into_iter().map(|p| ModelProviderDef {
-        id: p.po.id.clone(),
-        name: p.po.name.clone(),
-        provider_type: p.po.provider_type.to_i32(),
-        model_name: p.po.model_name.clone(),
-        capability: p.po.capability.to_i32(),
-        api_key_ref: PENDING_INPUT.to_string(),
-        base_url: p.po.base_url.clone(),
-        description: p.po.description.clone(),
-        config: p.po.config.clone(),
-        status: p.po.status.to_i32(),
-    }).collect();
+    let provider_defs: Vec<ModelProviderDef> = providers
+        .into_iter()
+        .map(|p| ModelProviderDef {
+            id: p.po.id.clone(),
+            name: p.po.name.clone(),
+            provider_type: p.po.provider_type.to_i32(),
+            model_name: p.po.model_name.clone(),
+            capability: p.po.capability.to_i32(),
+            api_key_ref: PENDING_INPUT.to_string(),
+            base_url: p.po.base_url.clone(),
+            description: p.po.description.clone(),
+            config: p.po.config.clone(),
+            status: p.po.status.to_i32(),
+        })
+        .collect();
 
     // 4. Agent
-    let agents = hr::domain()
-        .agent_manage()
-        .list_agents(ctx.clone())
-        .await?;
-    let agent_defs: Vec<AgentDef> = agents.into_iter().map(|a| AgentDef {
-        id: a.po.id.clone(),
-        name: a.po.name.clone(),
-        roles: a.po.get_roles(),
-        description: a.po.description.clone(),
-        capabilities: a.po.get_capabilities(),
-        soul: a.po.soul.clone(),
-        model_provider_id: a.po.model_provider_id.clone(),
-        runtime_config: a.po.runtime_config.clone(),
-        status: a.po.status.to_i32(),
-        kind: a.po.kind.to_i32(),
-    }).collect();
+    let agents = hr::domain().agent_manage().list_agents(ctx.clone()).await?;
+    let agent_defs: Vec<AgentDef> = agents
+        .into_iter()
+        .map(|a| AgentDef {
+            id: a.po.id.clone(),
+            name: a.po.name.clone(),
+            roles: a.po.get_roles(),
+            description: a.po.description.clone(),
+            capabilities: a.po.get_capabilities(),
+            soul: a.po.soul.clone(),
+            model_provider_id: a.po.model_provider_id.clone(),
+            runtime_config: a.po.runtime_config.clone(),
+            status: a.po.status.to_i32(),
+            kind: a.po.kind.to_i32(),
+        })
+        .collect();
 
     // 5. Skill
     let skills = hr::domain()
         .skill_manage()
         .query_skills(ctx.clone(), Default::default())
         .await?;
-    let skill_defs: Vec<SkillDef> = skills.items.into_iter().map(|s| SkillDef {
-        id: s.po.id.clone(),
-        name: s.po.name.clone(),
-        description: s.po.description.clone(),
-        tags: s.po.parse_tags(),
-        category: s.po.category.clone(),
-        parent_skill_id: s.po.parent_skill_id.clone(),
-        author_id: s.po.author_id.clone(),
-        author_type: s.po.author_type.to_i32(),
-        status: s.po.status.to_i32(),
-        content_path: s.po.content_path.clone(),
-    }).collect();
+    let skill_defs: Vec<SkillDef> = skills
+        .items
+        .into_iter()
+        .map(|s| SkillDef {
+            id: s.po.id.clone(),
+            name: s.po.name.clone(),
+            description: s.po.description.clone(),
+            tags: s.po.parse_tags(),
+            category: s.po.category.clone(),
+            parent_skill_id: s.po.parent_skill_id.clone(),
+            author_id: s.po.author_id.clone(),
+            author_type: s.po.author_type.to_i32(),
+            status: s.po.status.to_i32(),
+            content_path: s.po.content_path.clone(),
+        })
+        .collect();
 
     Ok(SeedSnapshot {
         version: SeedSnapshot::CURRENT_VERSION.to_string(),
@@ -186,26 +202,23 @@ pub async fn apply_snapshot_to_db(
     // 1. DryRun 直接返回 diff（不调用本函数的写入路径）
     if matches!(strategy, ImportStrategy::DryRun) {
         // 尝试拉取当前 DB 快照；若组织不存在（典型场景：默认模板应用到新组织），使用空快照
-        let current = match assemble_snapshot_from_db(
-            ctx.clone(),
-            &snapshot.source_organization_id,
-            None,
-        )
-        .await
-        {
-            Ok(s) => s,
-            Err(_) => SeedSnapshot {
-                version: SeedSnapshot::CURRENT_VERSION.to_string(),
-                generated_at: 0,
-                description: None,
-                source_organization_id: snapshot.source_organization_id.clone(),
-                organization: snapshot.organization.clone(),
-                users: vec![],
-                model_providers: vec![],
-                agents: vec![],
-                skills: vec![],
-            },
-        };
+        let current =
+            match assemble_snapshot_from_db(ctx.clone(), &snapshot.source_organization_id, None)
+                .await
+            {
+                Ok(s) => s,
+                Err(_) => SeedSnapshot {
+                    version: SeedSnapshot::CURRENT_VERSION.to_string(),
+                    generated_at: 0,
+                    description: None,
+                    source_organization_id: snapshot.source_organization_id.clone(),
+                    organization: snapshot.organization.clone(),
+                    users: vec![],
+                    model_providers: vec![],
+                    agents: vec![],
+                    skills: vec![],
+                },
+            };
         let diff = crate::service::domain::system::seed::diff::diff_snapshots(&current, snapshot);
         // DiffEntry<T> 的 T 因实体类型而异，无法直接 chain；分别统计后求和
         let created = count_new(&diff.users)
@@ -217,13 +230,19 @@ pub async fn apply_snapshot_to_db(
             + count_updated(&diff.agents)
             + count_updated(&diff.skills);
         return Ok(common::api::seed::LoadSeedResponse {
-            created, updated, skipped: 0, diff: Some(serde_json::to_value(&diff)?),
+            created,
+            updated,
+            skipped: 0,
+            diff: Some(serde_json::to_value(&diff)?),
         });
     }
 
     // 2. 校验敏感字段齐备
-    crate::service::domain::system::seed::diff::validate_sensitive_fields(snapshot, sensitive_values)
-        .map_err(Error::bad_request)?;
+    crate::service::domain::system::seed::diff::validate_sensitive_fields(
+        snapshot,
+        sensitive_values,
+    )
+    .map_err(Error::bad_request)?;
 
     let mut created = 0usize;
     let mut updated = 0usize;
@@ -248,7 +267,8 @@ pub async fn apply_snapshot_to_db(
             &user_def.id,
             sensitive_values,
             current_hash,
-        ).map_err(Error::bad_request)?;
+        )
+        .map_err(Error::bad_request)?;
 
         let user_po = crate::models::user::UserPo {
             id: user_def.id.clone(),
@@ -266,10 +286,16 @@ pub async fn apply_snapshot_to_db(
         };
 
         if existing.is_some() {
-            organization::domain().user_manage().update_user(ctx.clone(), &user_po).await?;
+            organization::domain()
+                .user_manage()
+                .update_user(ctx.clone(), &user_po)
+                .await?;
             updated += 1;
         } else {
-            organization::domain().user_manage().create_user(ctx.clone(), user_po).await?;
+            organization::domain()
+                .user_manage()
+                .create_user(ctx.clone(), user_po)
+                .await?;
             created += 1;
         }
     }
@@ -292,7 +318,8 @@ pub async fn apply_snapshot_to_db(
             &provider_def.id,
             sensitive_values,
             current_api_key.as_deref(),
-        ).map_err(Error::bad_request)?;
+        )
+        .map_err(Error::bad_request)?;
 
         let mut provider = crate::models::model_provider::ModelProvider::new(
             provider_def.name.clone(),
@@ -308,10 +335,16 @@ pub async fn apply_snapshot_to_db(
         provider.po.id = provider_def.id.clone();
 
         if existing.is_some() {
-            finance::domain().model_provider_manage().update_model_provider(ctx.clone(), &provider).await?;
+            finance::domain()
+                .model_provider_manage()
+                .update_model_provider(ctx.clone(), &provider)
+                .await?;
             updated += 1;
         } else {
-            finance::domain().model_provider_manage().create_model_provider(ctx.clone(), &provider).await?;
+            finance::domain()
+                .model_provider_manage()
+                .create_model_provider(ctx.clone(), &provider)
+                .await?;
             created += 1;
         }
     }
@@ -346,17 +379,26 @@ pub async fn apply_snapshot_to_db(
         let agent = crate::models::agent::Agent::from_po(agent_po);
 
         if existing.is_some() {
-            hr::domain().agent_manage().update_agent(ctx.clone(), &agent).await?;
+            hr::domain()
+                .agent_manage()
+                .update_agent(ctx.clone(), &agent)
+                .await?;
             updated += 1;
         } else {
             // seed 导入是"数据恢复"语义，需要绕过 hr domain 的"新建必须 Interviewing"校验。
             // 实现方式：先以 Interviewing 创建（满足 hr domain 不变量），再 update 覆写为目标状态。
             let mut interim = agent.clone();
             interim.po.status = common::enums::AgentStatus::Interviewing;
-            hr::domain().agent_manage().create_agent(ctx.clone(), &interim).await?;
+            hr::domain()
+                .agent_manage()
+                .create_agent(ctx.clone(), &interim)
+                .await?;
 
             if target_status != common::enums::AgentStatus::Interviewing {
-                hr::domain().agent_manage().update_agent(ctx.clone(), &agent).await?;
+                hr::domain()
+                    .agent_manage()
+                    .update_agent(ctx.clone(), &agent)
+                    .await?;
             }
             created += 1;
         }
@@ -398,16 +440,25 @@ pub async fn apply_snapshot_to_db(
                 file_deletes: vec![],
                 file_imports: vec![],
             };
-            hr::domain().skill_manage().update_skill(ctx.clone(), params).await?;
+            hr::domain()
+                .skill_manage()
+                .update_skill(ctx.clone(), params)
+                .await?;
             updated += 1;
         } else {
-            hr::domain().skill_manage().create_skill(ctx.clone(), &skill).await?;
+            hr::domain()
+                .skill_manage()
+                .create_skill(ctx.clone(), &skill)
+                .await?;
             created += 1;
         }
     }
 
     Ok(common::api::seed::LoadSeedResponse {
-        created, updated, skipped, diff: None,
+        created,
+        updated,
+        skipped,
+        diff: None,
     })
 }
 

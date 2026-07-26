@@ -1,10 +1,10 @@
 //! Message DAO 模块
 
-use common::error::Result;
 use crate::models::message::{MessagePo, ToolCallMessage};
 use crate::models::vector::VectorIndexParams;
 use crate::pkg::RequestContext;
 use common::enums::MessageStatus;
+use common::error::Result;
 
 /// 消息通用查询条件
 ///

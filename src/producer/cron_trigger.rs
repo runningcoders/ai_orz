@@ -1,8 +1,8 @@
-use common::error::Result;
 use crate::models::events::CronTriggerEvent;
 use crate::pkg::RequestContext;
 use crate::pkg::aop::{Producer, Registry};
 use crate::service::domain::system;
+use common::error::Result;
 use std::sync::{Arc, RwLock};
 
 pub struct CronTriggerProducer {

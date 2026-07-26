@@ -19,20 +19,23 @@
 
 use dioxus::prelude::*;
 
-use common::api::{AgentListItem, AgentQueryRequest, MessageListItem, PaginationParams, ProjectListItem, ProjectQueryRequest, SendMessageToAgentParams, TaskListItem, TaskQueryRequest};
-use common::enums::AssigneeType;
-use common::models::TimeSeriesPoint;
 use crate::api::hr::query_agents;
 use crate::api::message::{load_latest_messages, send_message_to_agent};
 use crate::api::project::{list_project_tasks, query_projects, query_tasks};
 use crate::components::charts::line_chart::LineChart;
 use crate::components::chat::{MessageBubble, TypingIndicator};
 use crate::components::workspace_graph::{WorkspaceGraph, WorkspaceView};
-use crate::hooks::use_workspace_data::{use_workspace_data, WorkspaceData};
+use crate::hooks::use_workspace_data::{WorkspaceData, use_workspace_data};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::{build_optimistic_user_msg, replace_tmp_with_real};
-use wasm_bindgen::{closure::Closure, JsCast};
+use common::api::{
+    AgentListItem, AgentQueryRequest, MessageListItem, PaginationParams, ProjectListItem,
+    ProjectQueryRequest, SendMessageToAgentParams, TaskListItem, TaskQueryRequest,
+};
+use common::enums::AssigneeType;
+use common::models::TimeSeriesPoint;
+use wasm_bindgen::{JsCast, closure::Closure};
 
 /// Project 状态标签
 fn project_status_label(status: i32) -> &'static str {
@@ -72,11 +75,16 @@ fn is_active_project(status: i32) -> bool {
 }
 
 /// 根据视图计算对话上下文（project_id, task_id, to_agent_id）
-fn resolve_chat_context(view: &WorkspaceView, sidebar: &WorkspaceData) -> (Option<String>, Option<String>, Option<String>) {
+fn resolve_chat_context(
+    view: &WorkspaceView,
+    sidebar: &WorkspaceData,
+) -> (Option<String>, Option<String>, Option<String>) {
     match view {
         WorkspaceView::Global => (None, None, None),
         WorkspaceView::ProjectDetail(pid) => {
-            let to_agent_id = sidebar.projects.iter()
+            let to_agent_id = sidebar
+                .projects
+                .iter()
                 .find(|p| &p.id == pid)
                 .and_then(|p| p.owner_agent_id.clone());
             (Some(pid.clone()), None, to_agent_id)
@@ -117,7 +125,8 @@ pub fn Workspace() -> Element {
     let mut agent_unread = use_signal(std::collections::HashSet::<String>::new);
 
     // 消息流量时序数据（前端本地累积，每分钟桶，保留最近 60 分钟）
-    let mut msg_flow: Signal<std::collections::HashMap<i64, u64>> = use_signal(|| std::collections::HashMap::new());
+    let mut msg_flow: Signal<std::collections::HashMap<i64, u64>> =
+        use_signal(|| std::collections::HashMap::new());
 
     let sidebar = sidebar_signal.read().clone();
 
@@ -137,7 +146,9 @@ pub fn Workspace() -> Element {
                         graph_loading.set(false);
                         return;
                     };
-                    let active_pids: Vec<String> = data.projects.iter()
+                    let active_pids: Vec<String> = data
+                        .projects
+                        .iter()
                         .filter(|p| is_active_project(p.status))
                         .map(|p| p.id.clone())
                         .collect();
@@ -165,7 +176,8 @@ pub fn Workspace() -> Element {
                         Ok(resp) => {
                             let tasks_vec = resp.tasks;
                             // 批量加载关联 agents（消除 N+1）
-                            let assignee_ids: Vec<String> = tasks_vec.iter()
+                            let assignee_ids: Vec<String> = tasks_vec
+                                .iter()
                                 .filter(|t| t.assignee_type == 1)
                                 .map(|t| t.assignee_id.clone())
                                 .collect::<std::collections::HashSet<_>>()
@@ -186,11 +198,14 @@ pub fn Workspace() -> Element {
                             }
                             graph_tasks.set(tasks_vec);
                             // graph_projects 从侧边栏数据构造
-                            graph_projects.set(data.projects.iter()
-                                .find(|p| p.id == pid)
-                                .cloned()
-                                .map(|p| vec![p])
-                                .unwrap_or_default());
+                            graph_projects.set(
+                                data.projects
+                                    .iter()
+                                    .find(|p| p.id == pid)
+                                    .cloned()
+                                    .map(|p| vec![p])
+                                    .unwrap_or_default(),
+                            );
                         }
                         Err(e) => toast.error(&format!("获取项目任务失败: {}", e)),
                     }
@@ -213,7 +228,8 @@ pub fn Workspace() -> Element {
                         Ok(page) => {
                             let tasks = page.items;
                             // 2. 从 tasks 收集 project_ids，批量查询
-                            let project_ids: Vec<String> = tasks.iter()
+                            let project_ids: Vec<String> = tasks
+                                .iter()
                                 .filter_map(|t| t.project_id.clone())
                                 .collect::<std::collections::HashSet<_>>()
                                 .into_iter()
@@ -236,11 +252,14 @@ pub fn Workspace() -> Element {
                         Err(e) => toast.error(&format!("获取任务列表失败: {}", e)),
                     }
                     // 3. graph_agents 从侧边栏数据构造
-                    graph_agents.set(data.agents.iter()
-                        .find(|a| a.id == aid)
-                        .cloned()
-                        .map(|a| vec![a])
-                        .unwrap_or_default());
+                    graph_agents.set(
+                        data.agents
+                            .iter()
+                            .find(|a| a.id == aid)
+                            .cloned()
+                            .map(|a| vec![a])
+                            .unwrap_or_default(),
+                    );
                 }
 
                 WorkspaceView::TaskDetail(tid) => {
@@ -345,7 +364,8 @@ pub fn Workspace() -> Element {
                     Ok(resp) => {
                         // Agent 视图按 to_id/from_id 过滤；其他视图按 project_id 过滤
                         let filtered = if let Some(aid) = &aid {
-                            resp.messages.into_iter()
+                            resp.messages
+                                .into_iter()
                                 .filter(|m| &m.to_id == aid || &m.from_id == aid)
                                 .collect::<Vec<_>>()
                         } else {
@@ -395,7 +415,8 @@ pub fn Workspace() -> Element {
                             (None, None) => true,
                             _ => false,
                         };
-                        let aid_match = cur_aid.as_deref()
+                        let aid_match = cur_aid
+                            .as_deref()
                             .map(|aid| msg.to_id == aid || msg.from_id == aid)
                             .unwrap_or(false);
 

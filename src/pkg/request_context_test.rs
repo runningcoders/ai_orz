@@ -86,7 +86,8 @@ fn test_log_id_auto_generate_when_missing() {
 #[test]
 fn test_context_uid_helper() {
     let pool = create_test_pool();
-    let ctx_with_user = crate::pkg::request_context_test_support::new_test_ctx("test_user", pool.clone());
+    let ctx_with_user =
+        crate::pkg::request_context_test_support::new_test_ctx("test_user", pool.clone());
     assert_eq!(ctx_with_user.uid(), "test_user");
 
     let ctx_without_user = crate::pkg::request_context_test_support::new_test_ctx("", pool);

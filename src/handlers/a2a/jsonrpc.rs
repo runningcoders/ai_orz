@@ -10,8 +10,8 @@
 use axum::Extension;
 use axum::response::Json;
 use common::api::a2a::{
-    error_codes, A2aTask, CancelTaskParams, GetTaskParams, JsonRpcRequest, JsonRpcResponse,
-    SendTaskParams,
+    A2aTask, CancelTaskParams, GetTaskParams, JsonRpcRequest, JsonRpcResponse, SendTaskParams,
+    error_codes,
 };
 use serde_json::Value;
 
@@ -74,28 +74,19 @@ pub async fn handle_jsonrpc(
     }
 }
 
-async fn dispatch_send(
-    ctx: RequestContext,
-    params: Value,
-) -> common::error::Result<A2aTask> {
+async fn dispatch_send(ctx: RequestContext, params: Value) -> common::error::Result<A2aTask> {
     let params: SendTaskParams = serde_json::from_value(params)
         .map_err(|e| common::error::Error::bad_request(format!("Invalid params: {}", e)))?;
     send_task::handle_send_task(ctx, params).await
 }
 
-async fn dispatch_get(
-    ctx: RequestContext,
-    params: Value,
-) -> common::error::Result<A2aTask> {
+async fn dispatch_get(ctx: RequestContext, params: Value) -> common::error::Result<A2aTask> {
     let params: GetTaskParams = serde_json::from_value(params)
         .map_err(|e| common::error::Error::bad_request(format!("Invalid params: {}", e)))?;
     get_task::handle_get_task(ctx, params).await
 }
 
-async fn dispatch_cancel(
-    ctx: RequestContext,
-    params: Value,
-) -> common::error::Result<A2aTask> {
+async fn dispatch_cancel(ctx: RequestContext, params: Value) -> common::error::Result<A2aTask> {
     let params: CancelTaskParams = serde_json::from_value(params)
         .map_err(|e| common::error::Error::bad_request(format!("Invalid params: {}", e)))?;
     cancel_task::handle_cancel_task(ctx, params).await

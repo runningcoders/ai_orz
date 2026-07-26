@@ -1,13 +1,13 @@
 //! Handler: GET /api/v1/projects/{id} - Get project detailed information
 
 use super::response;
-use common::error::Result;
-use common::models::StatsInterval;
 use crate::pkg::RequestContext;
 use crate::service::dal::project::ProjectFetchOptions;
 use crate::service::domain::project::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetProjectRequest, GetProjectResponse};
+use common::error::Result;
+use common::models::StatsInterval;
 
 /// Get project detailed information
 #[register_handler_tool(
@@ -29,10 +29,12 @@ pub async fn get_project(
             (Some(start), Some(end)) => Some((start, end)),
             _ => None,
         },
-        stats_interval: params.stats_interval.as_deref().and_then(|s| match s.to_lowercase().as_str() {
-            "hourly" => Some(StatsInterval::Hourly),
-            "daily" => Some(StatsInterval::Daily),
-            _ => None,
+        stats_interval: params.stats_interval.as_deref().and_then(|s| {
+            match s.to_lowercase().as_str() {
+                "hourly" => Some(StatsInterval::Hourly),
+                "daily" => Some(StatsInterval::Daily),
+                _ => None,
+            }
         }),
     };
 
@@ -40,7 +42,9 @@ pub async fn get_project(
         .project_manage()
         .get_project(ctx, &params.id, options)
         .await?
-        .ok_or_else(|| common::error::Error::not_found(format!("Project {} not found", params.id)))?;
+        .ok_or_else(|| {
+            common::error::Error::not_found(format!("Project {} not found", params.id))
+        })?;
 
     Ok(response::to_detail(&project))
 }

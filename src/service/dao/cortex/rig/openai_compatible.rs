@@ -6,6 +6,7 @@ use crate::pkg::monitoring::rig_hook::RuntimeMonitoringHook;
 use anyhow::anyhow;
 use async_trait::async_trait;
 use common::enums::ModelCapability;
+use common::error::Result;
 use rig::agent::Agent;
 use rig::completion::Prompt;
 use rig::embeddings::EmbeddingModel;
@@ -13,7 +14,6 @@ use rig::prelude::*;
 use rig::providers::openai;
 use rig::providers::openai::responses_api::ResponsesCompletionModel;
 use rig::tool::ToolDyn;
-use common::error::Result;
 
 /// OpenAI 兼容模式 Cortex - Agent 类型
 #[derive(Clone)]

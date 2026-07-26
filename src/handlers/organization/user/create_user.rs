@@ -1,12 +1,12 @@
 //! Handler: POST /api/v1/organizations/users - Create a new user in current organization
 
-use common::error::Result;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::generate_http_handler;
 use common::api::{CreateUserRequest, CreateUserResponse};
 use common::enums::UserRole;
+use common::error::Result;
 use rand::Rng;
 
 /// Create a new user within the current authenticated user's organization

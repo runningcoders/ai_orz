@@ -1,7 +1,10 @@
 //! 模型提供商详情页
 
-use crate::api::finance::{call_model_provider, delete_model_provider, get_model_provider, switch_embedding_provider, test_model_provider_connection, toggle_model_provider, update_model_provider};
 use crate::api::StatsOptions;
+use crate::api::finance::{
+    call_model_provider, delete_model_provider, get_model_provider, switch_embedding_provider,
+    test_model_provider_connection, toggle_model_provider, update_model_provider,
+};
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
@@ -11,7 +14,7 @@ use crate::store::toast::use_toast;
 use common::api::{GetModelProviderResponse, UpdateModelProviderRequest};
 use common::enums::ProviderType;
 use dioxus::prelude::*;
-use dioxus_router::{use_navigator, Link};
+use dioxus_router::{Link, use_navigator};
 
 #[component]
 pub fn FinanceModelProviderDetail(id: String) -> Element {
@@ -84,7 +87,10 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                 match switch_embedding_provider(&pid).await {
                     Ok(resp) => {
                         show_switch_modal.set(false);
-                        toast.success(&format!("Embedding Provider 已切换为 {}，向量索引重建完成", resp.name));
+                        toast.success(&format!(
+                            "Embedding Provider 已切换为 {}，向量索引重建完成",
+                            resp.name
+                        ));
                         let stats_options = StatsOptions {
                             with_stats: false,
                             with_model_call_stats: true,

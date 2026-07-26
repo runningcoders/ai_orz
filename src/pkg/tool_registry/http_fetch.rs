@@ -4,17 +4,17 @@
 //! any public HTTPS URL at runtime with strict security checks (SSRF protection,
 //! size limits, no local network access by default).
 
-use common::enums::{ControlMode, ToolProtocol};
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
-use crate::pkg::tool_registry::tool_security::*;
 use crate::pkg::tool_registry::BuiltinToolFactory;
-use anyhow::{anyhow};
+use crate::pkg::tool_registry::tool_security::*;
+use anyhow::anyhow;
 use async_trait::async_trait;
+use common::enums::{ControlMode, ToolProtocol};
+use common::error::Result;
 use reqwest::{Method, Url, redirect};
 use serde_json::{Value, json};
 use std::time::Duration;
-use common::error::Result;
 
 /// Builtin HTTP fetch tool factory
 #[derive(Debug, Clone, Default)]
@@ -73,7 +73,11 @@ impl CoreTool for HttpFetchCoreTool {
 
         // Security: only allow HTTPS by default
         if url.scheme() != "https" {
-            return Err(anyhow!("only HTTPS URLs are allowed for security reasons, got '{}'", url.scheme()).into());
+            return Err(anyhow!(
+                "only HTTPS URLs are allowed for security reasons, got '{}'",
+                url.scheme()
+            )
+            .into());
         }
 
         // Validate target with SSRF protection - default deny local network
@@ -82,7 +86,8 @@ impl CoreTool for HttpFetchCoreTool {
             None, // no allowed_domains restrictions
             None, // no blocked_domains restrictions
             &url,
-        ).await?;
+        )
+        .await?;
 
         // Get host for DNS pinning
         let host = url
@@ -99,10 +104,7 @@ impl CoreTool for HttpFetchCoreTool {
             .resolve_to_addrs(&host, &pinned_addresses)
             .build()
             .map_err(|e| {
-                common::error::Error::new(
-                    common::error::ErrorCode::NetworkError,
-                    e.to_string()
-                )
+                common::error::Error::new(common::error::ErrorCode::NetworkError, e.to_string())
             })?;
 
         // Send GET request
@@ -158,14 +160,20 @@ mod tests {
         let tool = HttpFetchCoreTool { po };
 
         // Fetch example.com - should succeed
-        let result = tool.call(
-            crate::pkg::request_context::RequestContext::new(None, None),
-            json!({
-                "url": "https://example.com"
-            })
-        ).await;
+        let result = tool
+            .call(
+                crate::pkg::request_context::RequestContext::new(None, None),
+                json!({
+                    "url": "https://example.com"
+                }),
+            )
+            .await;
 
-        assert!(result.is_ok(), "fetch example.com should succeed, got {:?}", result);
+        assert!(
+            result.is_ok(),
+            "fetch example.com should succeed, got {:?}",
+            result
+        );
         let value = result.unwrap();
         assert!(value.get("status").is_some());
         assert!(value.get("status").unwrap().as_u64().unwrap() == 200);
@@ -178,12 +186,14 @@ mod tests {
         let po = factory.create_po();
         let tool = HttpFetchCoreTool { po };
 
-        let result = tool.call(
-            crate::pkg::request_context::RequestContext::new(None, None),
-            json!({
-                "url": "http://example.com"
-            })
-        ).await;
+        let result = tool
+            .call(
+                crate::pkg::request_context::RequestContext::new(None, None),
+                json!({
+                    "url": "http://example.com"
+                }),
+            )
+            .await;
 
         assert!(result.is_err(), "should reject HTTP URLs");
         let err = result.unwrap_err();
@@ -198,12 +208,14 @@ mod tests {
         let tool = HttpFetchCoreTool { po };
 
         // Use https://localhost to test the localhost rejection
-        let result = tool.call(
-            crate::pkg::request_context::RequestContext::new(None, None),
-            json!({
-                "url": "https://localhost:8080"
-            })
-        ).await;
+        let result = tool
+            .call(
+                crate::pkg::request_context::RequestContext::new(None, None),
+                json!({
+                    "url": "https://localhost:8080"
+                }),
+            )
+            .await;
 
         assert!(result.is_err(), "should reject localhost");
         assert!(result.unwrap_err().to_string().contains("local network"));
@@ -217,12 +229,14 @@ mod tests {
         let tool = HttpFetchCoreTool { po };
 
         // 192.168.1.1 is private
-        let result = tool.call(
-            crate::pkg::request_context::RequestContext::new(None, None),
-            json!({
-                "url": "https://192.168.1.1"
-            })
-        ).await;
+        let result = tool
+            .call(
+                crate::pkg::request_context::RequestContext::new(None, None),
+                json!({
+                    "url": "https://192.168.1.1"
+                }),
+            )
+            .await;
 
         assert!(result.is_err(), "should reject private IP");
     }

@@ -15,8 +15,8 @@ use crate::service::domain::message::{self, SendToAgentCommand};
 use crate::service::domain::project::domain as project_domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{SendMessageToAgentParams, SendMessageToAgentResponse};
-use common::error::Result;
 use common::enums::MessageRole;
+use common::error::Result;
 
 /// Send a message to another AI agent (for collaboration)
 #[register_handler_tool(
@@ -59,10 +59,7 @@ pub async fn send_message_to_agent(
                     .get(ctx.clone(), project_id)
                     .await?
                     .ok_or_else(|| {
-                        common::error::Error::not_found(format!(
-                            "Project {} not found",
-                            project_id
-                        ))
+                        common::error::Error::not_found(format!("Project {} not found", project_id))
                     })?;
 
                 if let Some(agent_id) = project.po.owner_agent_id {
@@ -72,9 +69,7 @@ pub async fn send_message_to_agent(
                     let agent = hr_domain()
                         .resolve_agent(ctx.clone())
                         .await?
-                        .ok_or_else(|| {
-                            common::error::Error::not_found("无可用前台 Agent")
-                        })?;
+                        .ok_or_else(|| common::error::Error::not_found("无可用前台 Agent"))?;
                     agent.po.id
                 }
             } else {
@@ -82,9 +77,7 @@ pub async fn send_message_to_agent(
                 let agent = hr_domain()
                     .resolve_agent(ctx.clone())
                     .await?
-                    .ok_or_else(|| {
-                        common::error::Error::not_found("无可用前台 Agent")
-                    })?;
+                    .ok_or_else(|| common::error::Error::not_found("无可用前台 Agent"))?;
                 agent.po.id
             }
         }

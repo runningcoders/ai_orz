@@ -13,7 +13,6 @@
 use async_trait::async_trait;
 use std::sync::{Arc, OnceLock};
 
-use common::error::Result;
 use crate::models::artifact::Artifact;
 use crate::models::file::FileMeta;
 use crate::models::project::Project;
@@ -22,6 +21,7 @@ use crate::pkg::RequestContext;
 use crate::service::dao::project::ProjectQuery;
 use crate::service::dao::task::TaskQuery;
 use common::enums::{AssigneeType, FileType, ProjectStatus, TaskStatus};
+use common::error::Result;
 
 mod artifact;
 mod project;
@@ -111,11 +111,7 @@ pub trait ProjectManage: Send + Sync {
     ) -> Result<Option<Project>>;
 
     /// 获取用户的所有项目
-    async fn list_by_user(
-        &self,
-        ctx: RequestContext,
-        root_user_id: &str,
-    ) -> Result<Vec<Project>>;
+    async fn list_by_user(&self, ctx: RequestContext, root_user_id: &str) -> Result<Vec<Project>>;
 
     /// 查询用户项目列表
     async fn list(
@@ -137,19 +133,11 @@ pub trait ProjectManage: Send + Sync {
     ) -> Result<common::api::PagedResult<Project>>;
 
     /// 统计符合查询条件的项目数量（透传 DAL count）
-    async fn count_projects(
-        &self,
-        ctx: RequestContext,
-        query: ProjectQuery,
-    ) -> Result<u64>;
+    async fn count_projects(&self, ctx: RequestContext, query: ProjectQuery) -> Result<u64>;
 
     /// 启动项目
-    async fn start(
-        &self,
-        ctx: RequestContext,
-        project_id: &str,
-        modified_by: String,
-    ) -> Result<()>;
+    async fn start(&self, ctx: RequestContext, project_id: &str, modified_by: String)
+    -> Result<()>;
 
     /// 完成项目
     async fn complete(
@@ -237,18 +225,10 @@ pub trait TaskManage: Send + Sync {
     ) -> Result<Option<Task>>;
 
     /// 获取项目下的所有任务
-    async fn list_by_project(
-        &self,
-        ctx: RequestContext,
-        project_id: &str,
-    ) -> Result<Vec<Task>>;
+    async fn list_by_project(&self, ctx: RequestContext, project_id: &str) -> Result<Vec<Task>>;
 
     /// 获取分配给 Agent 的所有任务
-    async fn list_by_agent(
-        &self,
-        ctx: RequestContext,
-        agent_id: &str,
-    ) -> Result<Vec<Task>>;
+    async fn list_by_agent(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<Task>>;
 
     /// 查询任务列表
     async fn list(
@@ -271,11 +251,7 @@ pub trait TaskManage: Send + Sync {
     ) -> Result<common::api::PagedResult<Task>>;
 
     /// 统计符合查询条件的任务数量（透传 DAL count）
-    async fn count_tasks(
-        &self,
-        ctx: RequestContext,
-        query: TaskQuery,
-    ) -> Result<u64>;
+    async fn count_tasks(&self, ctx: RequestContext, query: TaskQuery) -> Result<u64>;
 
     /// 更新任务基本信息
     async fn update_basic(
@@ -291,28 +267,14 @@ pub trait TaskManage: Send + Sync {
     ) -> Result<Task>;
 
     /// 开始任务
-    async fn start(
-        &self,
-        ctx: RequestContext,
-        task_id: &str,
-        modified_by: String,
-    ) -> Result<()>;
+    async fn start(&self, ctx: RequestContext, task_id: &str, modified_by: String) -> Result<()>;
 
     /// 完成任务
-    async fn complete(
-        &self,
-        ctx: RequestContext,
-        task_id: &str,
-        modified_by: String,
-    ) -> Result<()>;
+    async fn complete(&self, ctx: RequestContext, task_id: &str, modified_by: String)
+    -> Result<()>;
 
     /// 取消任务
-    async fn cancel(
-        &self,
-        ctx: RequestContext,
-        task_id: &str,
-        modified_by: String,
-    ) -> Result<()>;
+    async fn cancel(&self, ctx: RequestContext, task_id: &str, modified_by: String) -> Result<()>;
 
     /// 统一任务状态流转
     async fn transition_status(
@@ -379,18 +341,11 @@ pub trait ArtifactManage: Send + Sync {
     async fn get(&self, ctx: RequestContext, id: &str) -> Result<Option<Artifact>>;
 
     /// 获取项目下的所有产物
-    async fn list_by_project(
-        &self,
-        ctx: RequestContext,
-        project_id: &str,
-    ) -> Result<Vec<Artifact>>;
+    async fn list_by_project(&self, ctx: RequestContext, project_id: &str)
+    -> Result<Vec<Artifact>>;
 
     /// 获取任务下的所有产物
-    async fn list_by_task(
-        &self,
-        ctx: RequestContext,
-        task_id: &str,
-    ) -> Result<Vec<Artifact>>;
+    async fn list_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<Vec<Artifact>>;
 
     /// 按项目范围查询产物，支持 task/file/source/limit 过滤。
     async fn list(
@@ -421,11 +376,7 @@ pub trait ArtifactManage: Send + Sync {
     ) -> std::result::Result<Option<Artifact>, common::error::Error>;
 
     /// Read artifact content bytes from storage (only for generated-content artifacts).
-    async fn read_content(
-        &self,
-        ctx: RequestContext,
-        artifact: &Artifact,
-    ) -> Result<Vec<u8>>;
+    async fn read_content(&self, ctx: RequestContext, artifact: &Artifact) -> Result<Vec<u8>>;
 
     /// Update artifact content (full replace, only for generated-content artifacts).
     /// Returns the updated artifact.

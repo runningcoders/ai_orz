@@ -1,12 +1,12 @@
 //! Agent DAO 模块
 
-use common::error::Result;
-use common::models::{AgentStats, CallSummary, StatsFetchOptions};
 use crate::models::agent::AgentPo;
 use crate::models::vector::{VectorIndexParams, VectorRow, VectorSearchHit};
 use crate::pkg::RequestContext;
+use crate::pkg::stats::{StatAggregation, StatEvent, StatFilter, Stats};
 use common::enums::AgentStatus;
-use crate::pkg::stats::{StatFilter, StatAggregation, StatEvent, Stats};
+use common::error::Result;
+use common::models::{AgentStats, CallSummary, StatsFetchOptions};
 use serde_json::Value as JsonValue;
 
 /// Agent 查询参数
@@ -64,8 +64,11 @@ pub trait AgentDao: Send + Sync {
     async fn insert(&self, ctx: RequestContext, agent: &AgentPo) -> Result<()>;
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<AgentPo>>;
     /// 通用查询
-    async fn query(&self, ctx: RequestContext, query: AgentQuery)
-    -> Result<common::api::PagedResult<AgentPo>>;
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: AgentQuery,
+    ) -> Result<common::api::PagedResult<AgentPo>>;
     async fn find_all(&self, ctx: RequestContext) -> Result<Vec<AgentPo>>;
     async fn update(&self, ctx: RequestContext, agent: &AgentPo) -> Result<()>;
     async fn delete(&self, ctx: RequestContext, agent: &AgentPo) -> Result<()>;
@@ -114,11 +117,7 @@ pub trait AgentVectorDao: Send + Sync {
     ) -> Result<Option<VectorRow>>;
 
     /// 删除 Agent 的向量索引
-    async fn delete_vector(
-        &self,
-        ctx: RequestContext,
-        agent_id: &str,
-    ) -> Result<()>;
+    async fn delete_vector(&self, ctx: RequestContext, agent_id: &str) -> Result<()>;
 
     /// 清空所有向量索引
     async fn clear_collection(&self, ctx: RequestContext) -> Result<()>;
@@ -140,7 +139,11 @@ pub trait AgentStatsDao: Send + Sync {
     }
 
     /// 底层通用查询（内部使用，不对外暴露业务语义）
-    async fn query_awake_calls(&self, ctx: RequestContext, query: AgentStatsQuery) -> Result<Vec<JsonValue>>;
+    async fn query_awake_calls(
+        &self,
+        ctx: RequestContext,
+        query: AgentStatsQuery,
+    ) -> Result<Vec<JsonValue>>;
 
     /// Agent 唤醒总次数
     async fn sum_calls(&self, ctx: RequestContext, mut query: AgentStatsQuery) -> Result<u64> {
@@ -153,7 +156,12 @@ pub trait AgentStatsDao: Send + Sync {
     }
 
     /// 获取 Agent 自身统计数据
-    async fn get_stats(&self, ctx: RequestContext, query: AgentStatsQuery, options: StatsFetchOptions) -> Result<AgentStats> {
+    async fn get_stats(
+        &self,
+        ctx: RequestContext,
+        query: AgentStatsQuery,
+        options: StatsFetchOptions,
+    ) -> Result<AgentStats> {
         let mut stats = AgentStats::default();
 
         if options.with_call_summary {
@@ -173,7 +181,11 @@ pub trait AgentStatsDao: Send + Sync {
                 };
                 let range_calls = self.sum_calls(ctx.clone(), range_query).await?;
                 let duration_secs = (end - start) as f64 / 1000.0;
-                if duration_secs > 0.0 { Some(range_calls as f64 / duration_secs) } else { None }
+                if duration_secs > 0.0 {
+                    Some(range_calls as f64 / duration_secs)
+                } else {
+                    None
+                }
             } else {
                 None
             };

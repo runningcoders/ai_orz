@@ -25,7 +25,9 @@ pub mod core;
 pub mod queue;
 
 // 重导出核心 API
-pub use core::{AopEventMeta, AopMetricsHook, ConsumeMode, Consumer, Event, EventKind, Producer, Registry};
+pub use core::{
+    AopEventMeta, AopMetricsHook, ConsumeMode, Consumer, Event, EventKind, Producer, Registry,
+};
 pub use queue::EventQueue;
 
 use once_cell::sync::Lazy;

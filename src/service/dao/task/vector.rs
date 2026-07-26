@@ -1,11 +1,11 @@
 //! Task Vector DAO implementation
 //! 负责任务向量索引的 CRUD 操作，与基础任务数据完全解耦
 
-use common::error::{err, Result};
 use crate::models::vector::{VectorIndexParams, VectorRow, VectorSearchHit};
 use crate::pkg::RequestContext;
 use crate::service::dao::task::TaskVectorDao;
 use async_trait::async_trait;
+use common::error::{Result, err};
 use std::sync::{Arc, OnceLock};
 
 // ==================== 工厂方法 + 单例 ====================
@@ -54,9 +54,7 @@ impl TaskVectorDao for TaskVectorDaoImpl {
         top_k: i32,
     ) -> Result<Vec<VectorSearchHit>> {
         let vector_store = ctx.vector_store();
-        let results = vector_store
-            .search("tasks", query_vector, top_k)
-            .await?;
+        let results = vector_store.search("tasks", query_vector, top_k).await?;
         Ok(results)
     }
 

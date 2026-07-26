@@ -1,12 +1,12 @@
 //! Handler: GET /api/v1/tasks - List tasks globally with optional filtering
 
 use super::response;
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::dao::task::TaskQuery;
 use crate::service::domain::project::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListTasksRequest, PagedResult, TaskListItem};
+use common::error::Result;
 
 /// List tasks globally with optional filtering by project, status, assignee, etc.
 #[register_handler_tool(

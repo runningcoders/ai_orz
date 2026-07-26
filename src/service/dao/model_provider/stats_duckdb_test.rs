@@ -1,11 +1,11 @@
 //! ModelProvider Stats DAO DuckDB 单元测试
 
-use crate::pkg::stats::*;
 use crate::pkg::request_context_test_support;
-use crate::service::dao::model_provider::{ModelProviderStatsDao, ModelProviderStatsQuery};
+use crate::pkg::stats::*;
 use crate::service::dao::model_provider::stats_duckdb::stats_new;
-use common::error::Result;
+use crate::service::dao::model_provider::{ModelProviderStatsDao, ModelProviderStatsQuery};
 use chrono::Utc;
+use common::error::Result;
 use serde_json::json;
 use sqlx::SqlitePool;
 use tempfile::tempdir;
@@ -13,7 +13,10 @@ use tempfile::tempdir;
 async fn setup_test_env(
     model_provider_id: &str,
     event_count: usize,
-) -> Result<(crate::pkg::RequestContext, std::sync::Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>)> {
+) -> Result<(
+    crate::pkg::RequestContext,
+    std::sync::Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>,
+)> {
     let dir = tempdir()?;
     let db_path = dir.path().join("stats.db");
     let db_path_str = db_path.to_str().unwrap();
@@ -101,10 +104,7 @@ async fn test_query_model_call_aggregation_with_group_by() -> Result<()> {
 
     assert_eq!(rows.len(), 1);
     let row = &rows[0];
-    assert_eq!(
-        row.groups.get("agent_id"),
-        Some(&json!("agent-test"))
-    );
+    assert_eq!(row.groups.get("agent_id"), Some(&json!("agent-test")));
     assert_eq!(row.aggregations.get("count"), Some(&4.0));
     assert_eq!(
         row.aggregations.get("tokens_input"),

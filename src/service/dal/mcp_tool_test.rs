@@ -11,10 +11,10 @@ use crate::pkg::tool_tracing::logger::ToolCallLogger;
 use crate::service::dal::mcp_tool::{self, McpToolDal};
 use crate::service::dao::{mcp_server, tool, tool_call};
 use common::enums::{ControlMode, ToolProtocol, ToolStatus};
+use common::error::Result;
 use serde_json::json;
 use sqlx::SqlitePool;
 use std::sync::{Arc, Once};
-use common::error::Result;
 
 fn mcp_tool_po(server_id: &str, tool_name: &str) -> ToolPo {
     ToolPo::new(

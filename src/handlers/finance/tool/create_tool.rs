@@ -27,7 +27,10 @@ pub async fn create_tool(
         bail_err!(InvalidRequest, "当前请求缺少用户上下文");
     }
     if matches!(params.protocol, ToolProtocol::Builtin) {
-        bail_err!(InvalidRequest, "内置 Tool 由系统同步，不允许通过管理接口创建");
+        bail_err!(
+            InvalidRequest,
+            "内置 Tool 由系统同步，不允许通过管理接口创建"
+        );
     }
 
     let tags = params.tags.clone().unwrap_or_default();

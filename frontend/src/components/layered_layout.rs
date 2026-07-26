@@ -54,8 +54,7 @@ pub fn compute_layered_layout(
     }
 
     // 仅保留在 node_ids 中的前驱（跨项目依赖忽略）
-    let id_set: std::collections::HashSet<&str> =
-        node_ids.iter().map(|s| s.as_str()).collect();
+    let id_set: std::collections::HashSet<&str> = node_ids.iter().map(|s| s.as_str()).collect();
 
     // 1. 计算入度（在 id_set 内的前驱数量）
     let mut in_degree: HashMap<&str, usize> = HashMap::new();
@@ -78,7 +77,10 @@ pub fn compute_layered_layout(
         if let Some(preds) = dependencies.get(id) {
             for pred in preds {
                 if id_set.contains(pred.as_str()) {
-                    successors.entry(pred.as_str()).or_default().push(id.as_str());
+                    successors
+                        .entry(pred.as_str())
+                        .or_default()
+                        .push(id.as_str());
                 }
             }
         }
@@ -201,13 +203,21 @@ mod tests {
         }
         // 水平均分
         let xs: Vec<f64> = ids.iter().map(|id| result[id].1).collect();
-        assert!(xs.iter().all(|x| *x >= 50.0 && *x <= 550.0), "x 应在 side_margin 内");
+        assert!(
+            xs.iter().all(|x| *x >= 50.0 && *x <= 550.0),
+            "x 应在 side_margin 内"
+        );
     }
 
     #[test]
     fn test_diamond_dependency() {
         // a → b, a → c, b → d, c → d
-        let ids = vec!["a".to_string(), "b".to_string(), "c".to_string(), "d".to_string()];
+        let ids = vec![
+            "a".to_string(),
+            "b".to_string(),
+            "c".to_string(),
+            "d".to_string(),
+        ];
         let mut deps = HashMap::new();
         deps.insert("b".to_string(), vec!["a".to_string()]);
         deps.insert("c".to_string(), vec!["a".to_string()]);
@@ -231,8 +241,16 @@ mod tests {
         let result = compute_layered_layout(&ids, &deps, &cfg());
         // 环上节点应被放到最底层（layer=0 因为没有入度为 0 的节点，max_layer=0, bottom=1）
         // 实际上：没有节点入度为 0，queue 为空，processed=0，全部放到 bottom_layer = 0+1 = 1
-        assert!(result["a"].0 >= 1, "环上节点应放最底层: a layer={}", result["a"].0);
-        assert!(result["b"].0 >= 1, "环上节点应放最底层: b layer={}", result["b"].0);
+        assert!(
+            result["a"].0 >= 1,
+            "环上节点应放最底层: a layer={}",
+            result["a"].0
+        );
+        assert!(
+            result["b"].0 >= 1,
+            "环上节点应放最底层: b layer={}",
+            result["b"].0
+        );
     }
 
     #[test]

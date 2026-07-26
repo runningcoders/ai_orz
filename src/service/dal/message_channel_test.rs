@@ -167,9 +167,12 @@ async fn test_update_channel(pool: SqlitePool) {
 
     // 更新渠道名称
     channel.po.channel_name = "更新后名称".to_string();
-    dal.update_channel(crate::pkg::request_context_test_support::new_test_ctx("editor", pool), &channel)
-        .await
-        .unwrap();
+    dal.update_channel(
+        crate::pkg::request_context_test_support::new_test_ctx("editor", pool),
+        &channel,
+    )
+    .await
+    .unwrap();
 
     let found: Option<MessageChannel> = dal.get_channel(ctx, &channel_id).await.unwrap();
     assert_eq!(found.as_ref().unwrap().po.channel_name, "更新后名称");
@@ -220,7 +223,10 @@ async fn test_delete_and_set_status(pool: SqlitePool) {
 
     // 应该找不到了
     let found = dal
-        .get_channel(crate::pkg::request_context_test_support::new_test_ctx("admin", pool), &channel_id)
+        .get_channel(
+            crate::pkg::request_context_test_support::new_test_ctx("admin", pool),
+            &channel_id,
+        )
         .await
         .unwrap();
     // 因为是软删除，状态变成 Deleted，查询时默认过滤掉
@@ -306,8 +312,8 @@ async fn test_deliver_message_skeleton(pool: SqlitePool) {
         None,
         FileMeta::default(),
         None,
-        None,              // root_id
-        None,              // organization_id
+        None, // root_id
+        None, // organization_id
         "admin".to_string(),
     );
     let message = Message::from_po(message_po);

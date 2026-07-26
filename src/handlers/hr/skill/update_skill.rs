@@ -1,12 +1,12 @@
 //! Handler: PUT /api/v1/skills/{skill_id} - Update skill metadata and content
 
-use common::error::{err, bail_err, Result};
 use crate::models::attachment::AttachmentGetOptions;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain as finance_domain;
 use crate::service::domain::hr::{SkillFileImport, UpdateSkillParams, domain};
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateSkillRequest, UpdateSkillResponse};
+use common::error::{Result, bail_err, err};
 
 use super::response::to_detail;
 
@@ -83,11 +83,19 @@ pub async fn update_skill(
                 },
             )
             .await?
-            .ok_or_else(|| err!(InvalidRequest, "附件 {} 不存在或无权访问", file.attachment_id))?;
+            .ok_or_else(|| {
+                err!(
+                    InvalidRequest,
+                    "附件 {} 不存在或无权访问",
+                    file.attachment_id
+                )
+            })?;
 
-        let read_result = attachment.read_results.into_iter().next().ok_or_else(|| {
-            err!(InvalidRequest, "附件 {} 内容读取失败", file.attachment_id)
-        })?;
+        let read_result = attachment
+            .read_results
+            .into_iter()
+            .next()
+            .ok_or_else(|| err!(InvalidRequest, "附件 {} 内容读取失败", file.attachment_id))?;
 
         file_imports.push(SkillFileImport {
             target_path: file.target_path,

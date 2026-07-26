@@ -2,13 +2,12 @@
 
 use super::response;
 use crate::pkg::RequestContext;
-use crate::service::domain::project::domain;
 use crate::service::domain::message::{self, SendTaskAssignmentCommand};
+use crate::service::domain::project::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CreateTaskRequest, CreateTaskResponse};
 use common::enums::{AssigneeType, MessageRole};
 use common::error::{Result, bail_err};
-
 
 /// Create a new task
 #[register_handler_tool(
@@ -34,7 +33,10 @@ pub async fn create_task(
         bail_err!(InvalidRequest, "assignee_id 不能为空");
     }
 
-    let ctx = ctx.to_builder().try_project_id(params.project_id.as_deref()).build();
+    let ctx = ctx
+        .to_builder()
+        .try_project_id(params.project_id.as_deref())
+        .build();
 
     let assignee_type = params.assignee_type.unwrap_or(AssigneeType::Agent);
     let assignee_id = params.assignee_id.clone();

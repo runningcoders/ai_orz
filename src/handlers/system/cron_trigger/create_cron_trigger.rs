@@ -2,7 +2,7 @@
 
 use ai_orz_macros::generate_http_handler;
 use common::enums::TriggerType;
-use common::error::{bail_err, Result};
+use common::error::{Result, bail_err};
 use uuid::Uuid;
 
 use crate::models::cron_trigger::CronTriggerPo;
@@ -17,14 +17,9 @@ pub async fn create_cron_trigger(
     params: CreateCronTriggerRequest,
 ) -> Result<CreateCronTriggerResponse> {
     let next_run_at = match params.trigger_type {
-        TriggerType::Once => {
-            params.run_at.ok_or_else(|| {
-                common::error::err!(
-                    InvalidRequest,
-                    "run_at is required for Once trigger"
-                )
-            })?
-        }
+        TriggerType::Once => params.run_at.ok_or_else(|| {
+            common::error::err!(InvalidRequest, "run_at is required for Once trigger")
+        })?,
         TriggerType::Interval => {
             let interval = params.interval_seconds.ok_or_else(|| {
                 common::error::err!(

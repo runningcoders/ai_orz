@@ -3,10 +3,10 @@ use crate::models::file::FileMeta;
 use crate::pkg::request_context::RequestContext;
 use crate::service::dao::artifact::{ArtifactDao, new};
 use common::enums::{FileType, TaskStatus};
+use common::error::Result;
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use uuid::Uuid;
-use common::error::Result;
 
 /// 初始化测试环境
 fn init_test_env(pool: SqlitePool) -> (Arc<dyn ArtifactDao + Send + Sync>, RequestContext) {

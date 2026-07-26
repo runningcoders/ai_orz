@@ -183,7 +183,8 @@ mod tests {
 
     #[test]
     fn test_non_text_event_parse_text_returns_none() {
-        let raw = P2P_TEXT_EVENT.replace("\"text\"", "\"image\"")
+        let raw = P2P_TEXT_EVENT
+            .replace("\"text\"", "\"image\"")
             .replace("{\"text\":\"你好\"}", "{}");
         let event: LarkMessageEvent = serde_json::from_str(&raw).unwrap();
         assert!(!event.is_text());

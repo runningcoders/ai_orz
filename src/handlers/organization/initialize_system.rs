@@ -3,11 +3,11 @@
 //! 当系统还没有初始化时，调用这个接口创建第一个组织、超级管理员和默认 ModelProvider
 //! Handler 层负责跨 domain 编排：organization domain 创建 org+user，finance domain 创建 provider
 
+use crate::pkg::RequestContext;
+use crate::service::domain::{finance, organization};
 use ai_orz_macros::generate_http_handler;
 use common::api::{CheckInitializedRequest, InitializeSystemRequest, InitializeSystemResponse};
 use common::error::Result;
-use crate::pkg::RequestContext;
-use crate::service::domain::{finance, organization};
 
 /// 检查系统是否已经初始化
 #[generate_http_handler]

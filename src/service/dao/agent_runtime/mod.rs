@@ -3,14 +3,14 @@
 //! 职责：封装外部 Agent 的执行能力，与 agent 实体 DAO 平级。
 //! 不同类型的外部 Agent（CLI、A2A 远程等）有各自的实现。
 
+use crate::models::agent::AgentPo;
+use crate::pkg::RequestContext;
 use async_trait::async_trait;
 use common::error::Result;
 use dyn_clone::DynClone;
-use crate::models::agent::AgentPo;
-use crate::pkg::RequestContext;
 
-pub mod codex;
 pub mod a2a;
+pub mod codex;
 
 /// Agent Runtime DAO trait
 ///

@@ -1,10 +1,10 @@
 //! SQLite implementation of Task DAO
 
 use super::{TaskDao, TaskQuery, TaskSearch};
-use common::error::Result;
 use crate::models::task::TaskPo;
 use crate::pkg::RequestContext;
 use common::enums::{AssigneeType, TaskStatus};
+use common::error::Result;
 use sqlx::FromRow;
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -131,7 +131,11 @@ FROM tasks WHERE id = ? AND "status" != 0
         Ok(task)
     }
 
-    async fn query(&self, ctx: RequestContext, query: TaskQuery) -> Result<common::api::PagedResult<TaskPo>> {
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: TaskQuery,
+    ) -> Result<common::api::PagedResult<TaskPo>> {
         let pool = ctx.db_pool();
 
         let mut count_builder = sqlx::QueryBuilder::new("SELECT COUNT(*) FROM tasks WHERE 1=1");
@@ -385,11 +389,7 @@ UPDATE tasks SET "status" = ?, modified_by = ?, updated_at = ? WHERE id = ?
         Ok(())
     }
 
-    async fn count_by_assignee(
-        &self,
-        ctx: RequestContext,
-        assignee_id: &str,
-    ) -> Result<u64> {
+    async fn count_by_assignee(&self, ctx: RequestContext, assignee_id: &str) -> Result<u64> {
         // 语法糖：调用通用 count
         self.count(
             ctx,
@@ -451,10 +451,14 @@ fn push_query_filters<'args>(
             .push_bind(*assignee_type as i32);
     }
     if let Some(assignee_id) = &query.assignee_id {
-        builder.push(" AND assignee_id = ").push_bind(assignee_id.clone());
+        builder
+            .push(" AND assignee_id = ")
+            .push_bind(assignee_id.clone());
     }
     if let Some(project_id) = &query.project_id {
-        builder.push(" AND project_id = ").push_bind(project_id.clone());
+        builder
+            .push(" AND project_id = ")
+            .push_bind(project_id.clone());
     }
     if let Some(status_list) = &query.status_in {
         if !status_list.is_empty() {

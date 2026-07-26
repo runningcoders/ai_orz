@@ -25,21 +25,15 @@ async fn test_agent_crud_loop(pool: SqlitePool) {
     let app = TestApp::new(pool).await;
 
     // 删除 embedding provider 走向量降级路径，避免触发 FastEmbed 模型下载
-    let (bs, jwt) =
-        crate::common::factories::bootstrap_login_and_disable_embedding(&app).await;
+    let (bs, jwt) = crate::common::factories::bootstrap_login_and_disable_embedding(&app).await;
 
     // 直接使用 bootstrap 返回的 chat_provider_id（无需再发 HTTP 请求查询）
     let provider_id = &bs.chat_provider_id;
 
     // 1. Create agent
     let agent_name = format!("TestAgent-{}", uuid::Uuid::now_v7());
-    let agent_id = crate::common::factories::create_test_agent(
-        &app,
-        &jwt,
-        provider_id,
-        &agent_name,
-    )
-    .await;
+    let agent_id =
+        crate::common::factories::create_test_agent(&app, &jwt, provider_id, &agent_name).await;
 
     // 2. List agents — should contain our new id (response is PagedResult: {items: [...], total: N})
     let (status, body) = app.get_with_jwt("/api/v1/hr/agents", &jwt).await;
@@ -48,9 +42,8 @@ async fn test_agent_crud_loop(pool: SqlitePool) {
         .get("items")
         .and_then(|v| v.as_array())
         .map(|arr| {
-            arr.iter().any(|item| {
-                item.get("id").and_then(|v| v.as_str()) == Some(agent_id.as_str())
-            })
+            arr.iter()
+                .any(|item| item.get("id").and_then(|v| v.as_str()) == Some(agent_id.as_str()))
         })
         .unwrap_or(false);
     assert!(found_in_list, "created agent should appear in list");
@@ -77,7 +70,11 @@ async fn test_agent_crud_loop(pool: SqlitePool) {
         "model_provider_id": provider_id,
     });
     let (status, _body) = app
-        .put_with_jwt(&format!("/api/v1/hr/agents/{}", agent_id), &update_req, &jwt)
+        .put_with_jwt(
+            &format!("/api/v1/hr/agents/{}", agent_id),
+            &update_req,
+            &jwt,
+        )
         .await;
     assert_eq!(status, axum::http::StatusCode::OK, "update should succeed");
 
@@ -121,13 +118,11 @@ async fn test_project_status_transitions(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
 
-    let (_bs, jwt) =
-        crate::common::factories::bootstrap_login_and_disable_embedding(&app).await;
+    let (_bs, jwt) = crate::common::factories::bootstrap_login_and_disable_embedding(&app).await;
 
     // Create project
     let project_name = format!("TestProject-{}", uuid::Uuid::now_v7());
-    let project_id =
-        crate::common::factories::create_test_project(&app, &jwt, &project_name).await;
+    let project_id = crate::common::factories::create_test_project(&app, &jwt, &project_name).await;
 
     // Get project — verify initial state (Active = 1)
     let (status, body) = app
@@ -226,8 +221,7 @@ async fn test_task_progress_and_completion(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
 
-    let (bs, jwt) =
-        crate::common::factories::bootstrap_login_and_disable_embedding(&app).await;
+    let (bs, jwt) = crate::common::factories::bootstrap_login_and_disable_embedding(&app).await;
 
     // 1. 创建一个 Agent 作为 task 的 assignee（assignee_id 是必填字段）
     let agent_id = crate::common::factories::create_test_agent(
@@ -253,9 +247,7 @@ async fn test_task_progress_and_completion(pool: SqlitePool) {
         "project_id": project_id,
         "assignee_id": agent_id,
     });
-    let (status, body) = app
-        .post_with_jwt("/api/v1/tasks", &task_req, &jwt)
-        .await;
+    let (status, body) = app.post_with_jwt("/api/v1/tasks", &task_req, &jwt).await;
     let task_data = crate::common::assert_api_ok(status, &body);
     let task_id = task_data
         .get("id")
@@ -285,7 +277,11 @@ async fn test_task_progress_and_completion(pool: SqlitePool) {
             &jwt,
         )
         .await;
-    assert_eq!(status, axum::http::StatusCode::OK, "progress update should succeed");
+    assert_eq!(
+        status,
+        axum::http::StatusCode::OK,
+        "progress update should succeed"
+    );
 
     // 5. 状态流转：Pending → InProgress（PUT /tasks/{id}/status）
     let in_progress_req = json!({

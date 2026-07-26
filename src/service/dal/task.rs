@@ -4,18 +4,22 @@
 //! - 混合搜索（FTS5 关键词 + 向量语义）
 //! - 向量索引自动维护（create/update/delete）
 
-use common::error::Result;
-use common::models::{ModelCallStats, StatsFetchOptions, StatsInterval, TaskStats};
 use crate::models::task::{Task, TaskPo};
 use crate::models::vector::{MatchType, SearchMatchInfo, VectorIndexParams, Vectorizable};
 use crate::pkg::RequestContext;
 use crate::pkg::stats::{ModelCallEvent, TaskEvent};
-use crate::service::dao::task;
-use crate::service::dao::task::{TaskDao, TaskQuery, TaskSearch, TaskStatsDao, TaskStatsQuery, TaskVectorDao};
-use crate::service::dao::cortex::CortexDao;
-use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderStatsDao, ModelProviderStatsQuery};
 use crate::service::dal::model_provider;
+use crate::service::dao::cortex::CortexDao;
+use crate::service::dao::model_provider::{
+    ModelProviderDao, ModelProviderStatsDao, ModelProviderStatsQuery,
+};
+use crate::service::dao::task;
+use crate::service::dao::task::{
+    TaskDao, TaskQuery, TaskSearch, TaskStatsDao, TaskStatsQuery, TaskVectorDao,
+};
 use common::enums::{AssigneeType, TaskStatus};
+use common::error::Result;
+use common::models::{ModelCallStats, StatsFetchOptions, StatsInterval, TaskStats};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock};
 
@@ -55,7 +59,14 @@ pub fn new(
     cortex_dao: Arc<dyn CortexDao>,
     model_provider_dao: Arc<dyn ModelProviderDao>,
 ) -> Arc<dyn TaskDal + Send + Sync> {
-    Arc::new(TaskDalImpl { task_dao, task_vector_dao, task_stats_dao, model_provider_stats_dao, cortex_dao, model_provider_dao })
+    Arc::new(TaskDalImpl {
+        task_dao,
+        task_vector_dao,
+        task_stats_dao,
+        model_provider_stats_dao,
+        cortex_dao,
+        model_provider_dao,
+    })
 }
 
 // ==================== DAL 接口 ====================
@@ -83,7 +94,12 @@ pub trait TaskDal: Send + Sync {
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Task>>;
 
     /// 根据 ID 获取任务（带附带信息选项）
-    async fn get_task(&self, ctx: RequestContext, id: &str, options: TaskFetchOptions) -> Result<Option<Task>>;
+    async fn get_task(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        options: TaskFetchOptions,
+    ) -> Result<Option<Task>>;
 
     /// 获取分配对象下的所有任务
     async fn list_by_assignee(
@@ -113,7 +129,11 @@ pub trait TaskDal: Send + Sync {
     ) -> Result<Vec<Task>>;
 
     /// 通用综合查询
-    async fn query(&self, ctx: RequestContext, query: TaskQuery) -> Result<common::api::PagedResult<Task>>;
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: TaskQuery,
+    ) -> Result<common::api::PagedResult<Task>>;
 
     /// 统计符合查询条件的任务数量（透传 DAO count）
     async fn count(&self, ctx: RequestContext, query: TaskQuery) -> Result<u64>;
@@ -139,19 +159,10 @@ pub trait TaskDal: Send + Sync {
     ) -> Result<()>;
 
     /// 取消任务
-    async fn cancel(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-        modified_by: &str,
-    ) -> Result<()>;
+    async fn cancel(&self, ctx: RequestContext, id: &str, modified_by: &str) -> Result<()>;
 
     /// 统计分配对象的任务总数
-    async fn count_by_assignee(
-        &self,
-        ctx: RequestContext,
-        assignee_id: &str,
-    ) -> Result<u64>;
+    async fn count_by_assignee(&self, ctx: RequestContext, assignee_id: &str) -> Result<u64>;
 
     /// 统计分配对象指定状态的任务数
     async fn count_by_assignee_and_status(
@@ -164,13 +175,23 @@ pub trait TaskDal: Send + Sync {
     // ==================== 统计查询 ====================
 
     /// 获取 Task 统计数据（按 options 控制返回哪些维度）
-    async fn get_stats(&self, ctx: RequestContext, task_id: &str, options: StatsFetchOptions) -> Result<TaskStats>;
+    async fn get_stats(
+        &self,
+        ctx: RequestContext,
+        task_id: &str,
+        options: StatsFetchOptions,
+    ) -> Result<TaskStats>;
 
     /// 获取 Task 维度的模型调用统计
     ///
     /// 由 ModelProviderStatsDao（模型调用领域）负责计算，
     /// 按 task_id 过滤后返回 ModelCallStats。
-    async fn get_model_call_stats(&self, ctx: RequestContext, task_id: &str, options: StatsFetchOptions) -> Result<ModelCallStats>;
+    async fn get_model_call_stats(
+        &self,
+        ctx: RequestContext,
+        task_id: &str,
+        options: StatsFetchOptions,
+    ) -> Result<ModelCallStats>;
 
     /// 🔄 重建所有任务的向量索引
     ///
@@ -232,7 +253,12 @@ impl TaskDal for TaskDalImpl {
         Ok(opt.map(Task::from_po))
     }
 
-    async fn get_task(&self, ctx: RequestContext, id: &str, options: TaskFetchOptions) -> Result<Option<Task>> {
+    async fn get_task(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        options: TaskFetchOptions,
+    ) -> Result<Option<Task>> {
         let opt = self.task_dao.find_by_id(ctx.clone(), id).await?;
         let Some(mut task) = opt.map(Task::from_po) else {
             return Ok(None);
@@ -258,7 +284,9 @@ impl TaskDal for TaskDalImpl {
                 time_range: options.stats_time_range,
                 interval: options.stats_interval,
             };
-            let model_call_stats = self.get_model_call_stats(ctx.clone(), id, stats_options).await?;
+            let model_call_stats = self
+                .get_model_call_stats(ctx.clone(), id, stats_options)
+                .await?;
             task.model_call_stats = Some(model_call_stats);
         }
 
@@ -305,7 +333,10 @@ impl TaskDal for TaskDalImpl {
                     assignee_id: None,
                     project_id: Some(project_id.to_string()),
                     status_in: None,
-                    pagination: common::api::PaginationParams { limit, offset: None },
+                    pagination: common::api::PaginationParams {
+                        limit,
+                        offset: None,
+                    },
                     ..Default::default()
                 },
             )
@@ -313,7 +344,11 @@ impl TaskDal for TaskDalImpl {
         Ok(page.items.into_iter().map(Task::from_po).collect())
     }
 
-    async fn query(&self, ctx: RequestContext, query: TaskQuery) -> Result<common::api::PagedResult<Task>> {
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: TaskQuery,
+    ) -> Result<common::api::PagedResult<Task>> {
         let page = self.task_dao.query(ctx, query).await?;
         Ok(page.map(Task::from_po))
     }
@@ -479,35 +514,37 @@ impl TaskDal for TaskDalImpl {
                 Some(MatchType::Vector) => 1,
                 _ => 2,
             };
-            order_a.cmp(&order_b).then_with(|| {
-                match (a_type, b_type) {
-                    (Some(MatchType::Hybrid), Some(MatchType::Hybrid))
-                    | (Some(MatchType::Vector), Some(MatchType::Vector)) => {
-                        let a_dist = a
-                            .search_match
-                            .as_ref()
-                            .and_then(|m| m.vector_distance)
-                            .unwrap_or(f32::MAX);
-                        let b_dist = b
-                            .search_match
-                            .as_ref()
-                            .and_then(|m| m.vector_distance)
-                            .unwrap_or(f32::MAX);
-                        a_dist.partial_cmp(&b_dist).unwrap_or(std::cmp::Ordering::Equal)
-                    }
-                    _ => {
-                        let a_rank = a
-                            .search_match
-                            .as_ref()
-                            .and_then(|m| m.fts_rank)
-                            .unwrap_or(f32::MAX);
-                        let b_rank = b
-                            .search_match
-                            .as_ref()
-                            .and_then(|m| m.fts_rank)
-                            .unwrap_or(f32::MAX);
-                        a_rank.partial_cmp(&b_rank).unwrap_or(std::cmp::Ordering::Equal)
-                    }
+            order_a.cmp(&order_b).then_with(|| match (a_type, b_type) {
+                (Some(MatchType::Hybrid), Some(MatchType::Hybrid))
+                | (Some(MatchType::Vector), Some(MatchType::Vector)) => {
+                    let a_dist = a
+                        .search_match
+                        .as_ref()
+                        .and_then(|m| m.vector_distance)
+                        .unwrap_or(f32::MAX);
+                    let b_dist = b
+                        .search_match
+                        .as_ref()
+                        .and_then(|m| m.vector_distance)
+                        .unwrap_or(f32::MAX);
+                    a_dist
+                        .partial_cmp(&b_dist)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                }
+                _ => {
+                    let a_rank = a
+                        .search_match
+                        .as_ref()
+                        .and_then(|m| m.fts_rank)
+                        .unwrap_or(f32::MAX);
+                    let b_rank = b
+                        .search_match
+                        .as_ref()
+                        .and_then(|m| m.fts_rank)
+                        .unwrap_or(f32::MAX);
+                    a_rank
+                        .partial_cmp(&b_rank)
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 }
             })
         });
@@ -567,12 +604,7 @@ impl TaskDal for TaskDalImpl {
             .await
     }
 
-    async fn cancel(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-        modified_by: &str,
-    ) -> Result<()> {
+    async fn cancel(&self, ctx: RequestContext, id: &str, modified_by: &str) -> Result<()> {
         let ctx = ctx.to_builder().task_id(id).build();
         // 1. 软删除（status = Cancelled = 0）
         self.task_dao
@@ -587,11 +619,7 @@ impl TaskDal for TaskDalImpl {
         Ok(())
     }
 
-    async fn count_by_assignee(
-        &self,
-        ctx: RequestContext,
-        assignee_id: &str,
-    ) -> Result<u64> {
+    async fn count_by_assignee(&self, ctx: RequestContext, assignee_id: &str) -> Result<u64> {
         // 语法糖：调用通用 count
         self.count(
             ctx,
@@ -623,7 +651,12 @@ impl TaskDal for TaskDalImpl {
 
     // ==================== 统计查询 ====================
 
-    async fn get_stats(&self, ctx: RequestContext, task_id: &str, options: StatsFetchOptions) -> Result<TaskStats> {
+    async fn get_stats(
+        &self,
+        ctx: RequestContext,
+        task_id: &str,
+        options: StatsFetchOptions,
+    ) -> Result<TaskStats> {
         let query = TaskStatsQuery {
             task_id: task_id.to_string(),
             time_range: options.time_range,
@@ -632,14 +665,21 @@ impl TaskDal for TaskDalImpl {
         self.task_stats_dao.get_stats(ctx, query, options).await
     }
 
-    async fn get_model_call_stats(&self, ctx: RequestContext, task_id: &str, options: StatsFetchOptions) -> Result<ModelCallStats> {
+    async fn get_model_call_stats(
+        &self,
+        ctx: RequestContext,
+        task_id: &str,
+        options: StatsFetchOptions,
+    ) -> Result<ModelCallStats> {
         let query = ModelProviderStatsQuery {
             task_id: Some(task_id.to_string()),
             time_range: options.time_range,
             interval: options.interval,
             ..Default::default()
         };
-        self.model_provider_stats_dao.get_stats(ctx, query, options).await
+        self.model_provider_stats_dao
+            .get_stats(ctx, query, options)
+            .await
     }
 
     async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()> {

@@ -1,12 +1,12 @@
 //! Project DAO 模块
 
-use common::error::Result;
-use common::models::{ProjectStats, CallSummary, StatsFetchOptions};
 use crate::models::project::ProjectPo;
 use crate::models::vector::{VectorIndexParams, VectorRow, VectorSearchHit};
 use crate::pkg::RequestContext;
-use crate::pkg::stats::{StatFilter, StatAggregation, StatEvent, Stats};
+use crate::pkg::stats::{StatAggregation, StatEvent, StatFilter, Stats};
 use common::enums::ProjectStatus;
+use common::error::Result;
+use common::models::{CallSummary, ProjectStats, StatsFetchOptions};
 use serde_json::Value as JsonValue;
 
 /// Project 查询参数
@@ -40,11 +40,7 @@ pub trait ProjectDao: Send + Sync + std::fmt::Debug {
     /// 插入新项目
     async fn insert(&self, ctx: RequestContext, project: &ProjectPo) -> Result<()>;
     /// 根据 ID 查询项目
-    async fn find_by_id(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<Option<ProjectPo>>;
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<ProjectPo>>;
     /// 通用查询
     async fn query(
         &self,
@@ -77,11 +73,7 @@ pub trait ProjectDao: Send + Sync + std::fmt::Debug {
         modified_by: &str,
     ) -> Result<()>;
     /// 统计根用户的项目总数
-    async fn count_by_root_user(
-        &self,
-        ctx: RequestContext,
-        root_user_id: &str,
-    ) -> Result<u64>;
+    async fn count_by_root_user(&self, ctx: RequestContext, root_user_id: &str) -> Result<u64>;
     /// 统计根用户指定状态的项目数
     async fn count_by_root_user_and_status(
         &self,
@@ -139,11 +131,7 @@ pub trait ProjectVectorDao: Send + Sync {
     ) -> Result<Option<VectorRow>>;
 
     /// 删除项目的向量索引
-    async fn delete_vector(
-        &self,
-        ctx: RequestContext,
-        project_id: &str,
-    ) -> Result<()>;
+    async fn delete_vector(&self, ctx: RequestContext, project_id: &str) -> Result<()>;
 
     /// 清空所有向量索引
     async fn clear_collection(&self, ctx: RequestContext) -> Result<()>;
@@ -178,7 +166,11 @@ pub trait ProjectStatsDao: Send + Sync {
     }
 
     /// 底层通用查询（内部使用，不对外暴露业务语义）
-    async fn query_project_calls(&self, ctx: RequestContext, query: ProjectStatsQuery) -> Result<Vec<JsonValue>>;
+    async fn query_project_calls(
+        &self,
+        ctx: RequestContext,
+        query: ProjectStatsQuery,
+    ) -> Result<Vec<JsonValue>>;
 
     /// Project 业务事件总次数
     async fn sum_calls(&self, ctx: RequestContext, mut query: ProjectStatsQuery) -> Result<u64> {
@@ -191,7 +183,12 @@ pub trait ProjectStatsDao: Send + Sync {
     }
 
     /// 获取 Project 自身统计数据
-    async fn get_stats(&self, ctx: RequestContext, query: ProjectStatsQuery, options: StatsFetchOptions) -> Result<ProjectStats> {
+    async fn get_stats(
+        &self,
+        ctx: RequestContext,
+        query: ProjectStatsQuery,
+        options: StatsFetchOptions,
+    ) -> Result<ProjectStats> {
         let mut stats = ProjectStats::default();
 
         if options.with_call_summary {
@@ -211,7 +208,11 @@ pub trait ProjectStatsDao: Send + Sync {
                 };
                 let range_calls = self.sum_calls(ctx.clone(), range_query).await?;
                 let duration_secs = (end - start) as f64 / 1000.0;
-                if duration_secs > 0.0 { Some(range_calls as f64 / duration_secs) } else { None }
+                if duration_secs > 0.0 {
+                    Some(range_calls as f64 / duration_secs)
+                } else {
+                    None
+                }
             } else {
                 None
             };

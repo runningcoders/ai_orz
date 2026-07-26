@@ -3,7 +3,7 @@
 use dioxus::prelude::*;
 
 use crate::config::FrontendConfig;
-use crate::hooks::{use_theme, AVAILABLE_THEMES};
+use crate::hooks::{AVAILABLE_THEMES, use_theme};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 

@@ -2,12 +2,12 @@
 //!
 //! 职责：Artifact 领域的数据访问层，封装 ArtifactDao 提供统一的查询接口
 
-use common::error::Result;
 use crate::models::artifact::Artifact;
 use crate::pkg::RequestContext;
 use crate::service::dao::artifact;
-pub use crate::service::dao::artifact::ArtifactQuery;
 use crate::service::dao::artifact::ArtifactDao;
+pub use crate::service::dao::artifact::ArtifactQuery;
+use common::error::Result;
 use std::sync::{Arc, OnceLock};
 
 use crate::enrich_ctx;
@@ -40,22 +40,14 @@ pub trait ArtifactDal: Send + Sync {
     async fn create(&self, ctx: RequestContext, artifact: &Artifact) -> Result<()>;
 
     /// 根据 ID 获取产物
-    async fn find_by_id(&self, ctx: RequestContext, id: &str)
-    -> Result<Option<Artifact>>;
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Artifact>>;
 
     /// 获取项目下的所有产物
-    async fn list_by_project(
-        &self,
-        ctx: RequestContext,
-        project_id: &str,
-    ) -> Result<Vec<Artifact>>;
+    async fn list_by_project(&self, ctx: RequestContext, project_id: &str)
+    -> Result<Vec<Artifact>>;
 
     /// 获取任务下的所有产物
-    async fn list_by_task(
-        &self,
-        ctx: RequestContext,
-        task_id: &str,
-    ) -> Result<Vec<Artifact>>;
+    async fn list_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<Vec<Artifact>>;
 
     /// 通用综合查询
     async fn query(
@@ -65,22 +57,13 @@ pub trait ArtifactDal: Send + Sync {
     ) -> Result<common::api::PagedResult<Artifact>>;
 
     /// 更新产物状态
-    async fn update_status(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-        status: i32,
-    ) -> Result<()>;
+    async fn update_status(&self, ctx: RequestContext, id: &str, status: i32) -> Result<()>;
 
     /// 删除产物（软删除）
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()>;
 
     /// 统计项目下的产物数量
-    async fn count_by_project(
-        &self,
-        ctx: RequestContext,
-        project_id: &str,
-    ) -> Result<u64>;
+    async fn count_by_project(&self, ctx: RequestContext, project_id: &str) -> Result<u64>;
 
     /// 统计任务下的产物数量
     async fn count_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<u64>;
@@ -121,11 +104,7 @@ impl ArtifactDal for ArtifactDalImpl {
         self.artifact_dao.insert(ctx, &artifact.po).await
     }
 
-    async fn find_by_id(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<Option<Artifact>> {
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Artifact>> {
         let opt = self.artifact_dao.find_by_id(ctx, id).await?;
         Ok(opt.map(Artifact::from_po))
     }
@@ -139,11 +118,7 @@ impl ArtifactDal for ArtifactDalImpl {
         Ok(po_list.into_iter().map(Artifact::from_po).collect())
     }
 
-    async fn list_by_task(
-        &self,
-        ctx: RequestContext,
-        task_id: &str,
-    ) -> Result<Vec<Artifact>> {
+    async fn list_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<Vec<Artifact>> {
         let po_list = self.artifact_dao.list_by_task(ctx, task_id).await?;
         Ok(po_list.into_iter().map(Artifact::from_po).collect())
     }
@@ -157,12 +132,7 @@ impl ArtifactDal for ArtifactDalImpl {
         Ok(page.map(Artifact::from_po))
     }
 
-    async fn update_status(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-        status: i32,
-    ) -> Result<()> {
+    async fn update_status(&self, ctx: RequestContext, id: &str, status: i32) -> Result<()> {
         self.artifact_dao.update_status(ctx, id, status).await
     }
 
@@ -170,11 +140,7 @@ impl ArtifactDal for ArtifactDalImpl {
         self.artifact_dao.delete(ctx, id).await
     }
 
-    async fn count_by_project(
-        &self,
-        ctx: RequestContext,
-        project_id: &str,
-    ) -> Result<u64> {
+    async fn count_by_project(&self, ctx: RequestContext, project_id: &str) -> Result<u64> {
         // 语法糖：调用通用 count
         self.count(
             ctx,

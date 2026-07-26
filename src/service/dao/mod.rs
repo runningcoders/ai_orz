@@ -8,6 +8,7 @@ pub mod mcp_server;
 pub mod memory;
 pub mod message;
 pub mod message_channel;
+pub mod message_push;
 pub mod model_provider;
 pub mod organization;
 pub mod project;
@@ -16,7 +17,6 @@ pub mod task;
 pub mod tool;
 pub mod tool_call;
 pub mod user;
-pub mod message_push;
 
 // 消息推送渠道 DAO（无状态，不需要 init）
 pub mod a2a_callback;

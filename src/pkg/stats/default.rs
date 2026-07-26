@@ -1,10 +1,10 @@
 //! 默认统计事件实现
 
 use super::*;
-use uuid::Uuid;
-use duckdb::{Connection, ToSql};
 use common::error::Result;
+use duckdb::{Connection, ToSql};
 use serde_json::Value;
+use uuid::Uuid;
 
 /// 默认统计事件
 #[derive(Debug, Clone)]
@@ -74,8 +74,9 @@ impl StatTable<DefaultStatEvent> for DefaultStatTable {
                 metrics JSON
             );
         "#;
-        conn.execute(sql, [])
-            .map_err(|e| common::error::Error::internal(format!("Failed to create default_events table: {}", e)))?;
+        conn.execute(sql, []).map_err(|e| {
+            common::error::Error::internal(format!("Failed to create default_events table: {}", e))
+        })?;
         Ok(())
     }
 
@@ -84,19 +85,27 @@ impl StatTable<DefaultStatEvent> for DefaultStatTable {
         let timestamp = event.timestamp();
         let event_type = event.event_type().to_string();
         let tags_str = event.tags_json().map(|v| v.to_string()).unwrap_or_default();
-        let metrics_str = event.metrics_json().map(|v| v.to_string()).unwrap_or_default();
+        let metrics_str = event
+            .metrics_json()
+            .map(|v| v.to_string())
+            .unwrap_or_default();
 
         let sql = r#"
             INSERT INTO default_events (id, timestamp, event_type, tags, metrics) VALUES (?, ?, ?, ?, ?);
         "#;
-        conn.execute(sql, [
-            &id.to_string() as &dyn ToSql,
-            &timestamp as &dyn ToSql,
-            &event_type as &dyn ToSql,
-            &tags_str as &dyn ToSql,
-            &metrics_str as &dyn ToSql,
-        ])
-            .map_err(|e| common::error::Error::internal(format!("Failed to insert default event: {}", e)))?;
+        conn.execute(
+            sql,
+            [
+                &id.to_string() as &dyn ToSql,
+                &timestamp as &dyn ToSql,
+                &event_type as &dyn ToSql,
+                &tags_str as &dyn ToSql,
+                &metrics_str as &dyn ToSql,
+            ],
+        )
+        .map_err(|e| {
+            common::error::Error::internal(format!("Failed to insert default event: {}", e))
+        })?;
         Ok(())
     }
 
@@ -106,19 +115,30 @@ impl StatTable<DefaultStatEvent> for DefaultStatTable {
             let timestamp = event.timestamp();
             let event_type = event.event_type().to_string();
             let tags_str = event.tags_json().map(|v| v.to_string()).unwrap_or_default();
-            let metrics_str = event.metrics_json().map(|v| v.to_string()).unwrap_or_default();
+            let metrics_str = event
+                .metrics_json()
+                .map(|v| v.to_string())
+                .unwrap_or_default();
 
             let sql = r#"
                 INSERT INTO default_events (id, timestamp, event_type, tags, metrics) VALUES (?, ?, ?, ?, ?);
             "#;
-            conn.execute(sql, [
-                &id.to_string() as &dyn ToSql,
-                &timestamp as &dyn ToSql,
-                &event_type as &dyn ToSql,
-                &tags_str as &dyn ToSql,
-                &metrics_str as &dyn ToSql,
-            ])
-                .map_err(|e| common::error::Error::internal(format!("Failed to bulk insert default event: {}", e)))?;
+            conn.execute(
+                sql,
+                [
+                    &id.to_string() as &dyn ToSql,
+                    &timestamp as &dyn ToSql,
+                    &event_type as &dyn ToSql,
+                    &tags_str as &dyn ToSql,
+                    &metrics_str as &dyn ToSql,
+                ],
+            )
+            .map_err(|e| {
+                common::error::Error::internal(format!(
+                    "Failed to bulk insert default event: {}",
+                    e
+                ))
+            })?;
         }
         Ok(())
     }

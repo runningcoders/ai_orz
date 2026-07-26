@@ -82,6 +82,9 @@ impl<T> PagedResult<T> {
     }
 }
 
+pub mod a2a;
+#[cfg(test)]
+mod a2a_test;
 pub mod agent;
 #[cfg(test)]
 mod agent_test;
@@ -95,26 +98,23 @@ pub mod auth;
 pub mod cron_trigger;
 pub mod external_agent;
 pub mod log_stats;
-pub mod a2a;
-#[cfg(test)]
-mod a2a_test;
 pub mod mcp_server;
 #[cfg(test)]
 mod mcp_server_test;
 pub mod mcp_tool;
-pub mod message_channel;
 pub mod message;
+pub mod message_channel;
 pub mod model_provider;
 pub mod neural_tools;
 pub mod organization;
 pub mod project;
 #[cfg(test)]
 mod project_test;
+pub mod seed;
 pub mod skill;
 #[cfg(test)]
 mod skill_test;
 pub mod system;
-pub mod seed;
 pub mod task;
 #[cfg(test)]
 mod task_test;
@@ -125,6 +125,7 @@ pub mod tool;
 pub mod user;
 
 // Re-exports for convenient import
+pub use a2a::*;
 pub use agent::*;
 pub use artifact::*;
 pub use attachment::*;
@@ -132,7 +133,6 @@ pub use auth::*;
 pub use cron_trigger::*;
 pub use external_agent::*;
 pub use log_stats::*;
-pub use a2a::*;
 pub use mcp_server::*;
 pub use mcp_tool::*;
 pub use message::*;
@@ -141,9 +141,9 @@ pub use model_provider::*;
 pub use neural_tools::*;
 pub use organization::*;
 pub use project::*;
+pub use seed::*;
 pub use skill::*;
 pub use system::*;
-pub use seed::*;
 pub use task::*;
 pub use text_content::*;
 pub use tool::*;

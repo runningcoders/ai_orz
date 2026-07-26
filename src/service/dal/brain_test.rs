@@ -19,7 +19,8 @@ async fn init_test_env(pool: SqlitePool) -> (Arc<dyn BrainDal + Send + Sync>, Re
     let tool_call_dao = crate::service::dao::tool_call::dao();
     let model_provider_dao = crate::service::dao::model_provider::dao();
     let http_client = reqwest::Client::new();
-    let brain_dal = crate::service::dal::brain::new(cortex_dao, tool_call_dao, model_provider_dao, http_client);
+    let brain_dal =
+        crate::service::dal::brain::new(cortex_dao, tool_call_dao, model_provider_dao, http_client);
     let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
     (brain_dal, ctx)
 }
@@ -86,7 +87,9 @@ async fn test_wake_brain_local(pool: SqlitePool) {
     let memories = vec![memory];
 
     let tools: Vec<Tool> = vec![];
-    let result = brain_dal.wake_brain(ctx.clone(), &agent, memories, tools).await;
+    let result = brain_dal
+        .wake_brain(ctx.clone(), &agent, memories, tools)
+        .await;
 
     assert!(result.is_ok());
     let brain = result.unwrap();

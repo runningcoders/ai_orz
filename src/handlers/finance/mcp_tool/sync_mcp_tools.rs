@@ -1,10 +1,10 @@
 //! Handler: POST /api/v1/mcp-servers/{server_id}/tools/sync - Sync MCP tools.
 
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{SyncMcpToolsRequest, SyncMcpToolsResponse};
+use common::error::Result;
 
 /// Sync remote MCP tools from one server into local Tool records.
 #[register_handler_tool(

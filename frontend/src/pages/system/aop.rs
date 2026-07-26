@@ -3,10 +3,10 @@
 use dioxus::prelude::*;
 
 use crate::api::system::{
-    get_all_queue_stats, get_aop_stats_distribution, get_aop_stats_overview,
-    get_aop_stats_time_series, get_event, list_events, AopStatsDistributionItem,
-    AopStatsOverviewResponse, AopStatsTimeSeriesPoint, EventDetailResponse, EventSummaryResponse,
-    QueueStatsResponse,
+    AopStatsDistributionItem, AopStatsOverviewResponse, AopStatsTimeSeriesPoint,
+    EventDetailResponse, EventSummaryResponse, QueueStatsResponse, get_all_queue_stats,
+    get_aop_stats_distribution, get_aop_stats_overview, get_aop_stats_time_series, get_event,
+    list_events,
 };
 use crate::components::aop_gauge::AopGauge;
 use crate::components::charts::donut_chart::{DonutChart, DonutSlice};
@@ -30,7 +30,10 @@ fn format_created_at(ts: i64) -> String {
     }
     let dt = chrono::DateTime::from_timestamp(ts, 0);
     match dt {
-        Some(d) => d.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S").to_string(),
+        Some(d) => d
+            .with_timezone(&chrono::Local)
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string(),
         None => ts.to_string(),
     }
 }
@@ -408,7 +411,9 @@ fn AopStatsPanel() -> Element {
         .collect();
 
     // 构造 consumer 分布 DonutChart 数据
-    let palette = ["#fa520f", "#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#6b7280"];
+    let palette = [
+        "#fa520f", "#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#6b7280",
+    ];
     let consumer_slices: Vec<DonutSlice> = cd_items
         .iter()
         .enumerate()

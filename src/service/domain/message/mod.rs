@@ -14,7 +14,6 @@ mod delivery_test;
 #[cfg(test)]
 mod management_test;
 
-use common::error::Result;
 use crate::models::file::FileMeta;
 use crate::models::message::Message;
 pub use crate::models::tool::ToolCallTraceRef;
@@ -25,6 +24,7 @@ pub use crate::service::dal::message_channel::{DeliveryResult, MessageChannelDal
 use crate::service::dal::message_push::MessagePushDal;
 use crate::service::dao::message::{MessageQuery, MessageSearch};
 use common::enums::{MessageRole, MessageStatus};
+use common::error::Result;
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 
@@ -44,7 +44,12 @@ pub fn new(
     message_push_dal: Arc<dyn MessagePushDal>,
     attachment_dal: Arc<dyn AttachmentDal>,
 ) -> Arc<dyn MessageDomain> {
-    let domain = MessageDomainImpl::new(message_dal, message_channel_dal, message_push_dal, attachment_dal);
+    let domain = MessageDomainImpl::new(
+        message_dal,
+        message_channel_dal,
+        message_push_dal,
+        attachment_dal,
+    );
     Arc::new(domain)
 }
 
@@ -292,18 +297,10 @@ pub trait MessageDelivery: Send + Sync {
     ) -> Result<DeliveryResult>;
 
     /// 订阅 SSE 消息推送
-    async fn subscribe_sse(
-        &self,
-        ctx: RequestContext,
-        user_id: &str,
-    ) -> Result<SubscribeResult>;
+    async fn subscribe_sse(&self, ctx: RequestContext, user_id: &str) -> Result<SubscribeResult>;
 
     /// 取消订阅 SSE 消息推送
-    async fn unsubscribe_sse(
-        &self,
-        ctx: RequestContext,
-        connection_id: &str,
-    ) -> Result<()>;
+    async fn unsubscribe_sse(&self, ctx: RequestContext, connection_id: &str) -> Result<()>;
 }
 
 /// 消息管理 trait
@@ -314,18 +311,10 @@ pub trait MessageManagement: Send + Sync {
     /// 通用综合查询
     ///
     /// 支持组合查询条件，所有字段都是 Option
-    async fn query(
-        &self,
-        ctx: RequestContext,
-        query: MessageQuery,
-    ) -> Result<Vec<Message>>;
+    async fn query(&self, ctx: RequestContext, query: MessageQuery) -> Result<Vec<Message>>;
 
     /// 按任务 ID 查询消息列表
-    async fn list_by_task_id(
-        &self,
-        ctx: RequestContext,
-        task_id: &str,
-    ) -> Result<Vec<Message>>;
+    async fn list_by_task_id(&self, ctx: RequestContext, task_id: &str) -> Result<Vec<Message>>;
 
     /// 按项目 ID 查询消息列表
     async fn list_by_project_id(
@@ -335,11 +324,7 @@ pub trait MessageManagement: Send + Sync {
     ) -> Result<Vec<Message>>;
 
     /// 根据消息 ID 获取消息
-    async fn get_by_id(
-        &self,
-        ctx: RequestContext,
-        message_id: &str,
-    ) -> Result<Option<Message>>;
+    async fn get_by_id(&self, ctx: RequestContext, message_id: &str) -> Result<Option<Message>>;
 
     /// 更新消息状态
     async fn update_status(
@@ -353,11 +338,7 @@ pub trait MessageManagement: Send + Sync {
     async fn delete_by_id(&self, ctx: RequestContext, message_id: &str) -> Result<()>;
 
     /// 清理对话（删除任务下所有消息）
-    async fn cleanup_conversation(
-        &self,
-        ctx: RequestContext,
-        task_id: &str,
-    ) -> Result<()>;
+    async fn cleanup_conversation(&self, ctx: RequestContext, task_id: &str) -> Result<()>;
 
     /// 🔍 消息混合搜索（关键词 + 向量语义）
     ///
@@ -365,9 +346,5 @@ pub trait MessageManagement: Send + Sync {
     /// - keyword 存在 → FTS5 全文检索
     /// - query_vector 存在 → 向量语义搜索
     /// - 两者都有 → 混合搜索，合并结果
-    async fn search(
-        &self,
-        ctx: RequestContext,
-        search: MessageSearch,
-    ) -> Result<Vec<Message>>;
+    async fn search(&self, ctx: RequestContext, search: MessageSearch) -> Result<Vec<Message>>;
 }

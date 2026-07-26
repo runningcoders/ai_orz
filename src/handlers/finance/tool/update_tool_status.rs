@@ -6,7 +6,7 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateToolStatusRequest, UpdateToolStatusResponse};
 
 use super::response::to_detail;
-use common::error::{Result, err, bail_err};
+use common::error::{Result, bail_err, err};
 
 /// Update the status of a tool (enable/disable it)
 #[register_handler_tool(

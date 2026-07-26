@@ -1,10 +1,10 @@
 //! Handler: PUT /api/v1/skills/{skill_id}/files/{*filename} - 创建或更新 Skill 文件
 
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateSkillFileContentRequest, UpdateSkillFileContentResponse};
+use common::error::Result;
 
 /// Create a new file or update the content of an existing text file in a skill. If the file doesn't exist, it will be created. If it exists, it will be overwritten.
 #[register_handler_tool(

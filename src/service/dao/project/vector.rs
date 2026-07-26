@@ -4,11 +4,11 @@
 //! 基于 ctx.vector_store() 通用 VectorStore trait，不绑定具体数据库。
 //! collection 名称为 "projects"，对应 vss_projects 向量表。
 
-use common::error::{err, Result};
 use crate::models::vector::{VectorIndexParams, VectorRow, VectorSearchHit};
 use crate::pkg::RequestContext;
 use crate::service::dao::project::ProjectVectorDao;
 use async_trait::async_trait;
+use common::error::{Result, err};
 use std::sync::{Arc, OnceLock};
 
 // ==================== 工厂方法 + 单例 ====================
@@ -59,9 +59,7 @@ impl ProjectVectorDao for ProjectVectorDaoImpl {
         top_k: i32,
     ) -> Result<Vec<VectorSearchHit>> {
         let vector_store = _ctx.vector_store();
-        let results = vector_store
-            .search("projects", query_vector, top_k)
-            .await?;
+        let results = vector_store.search("projects", query_vector, top_k).await?;
         Ok(results)
     }
 
@@ -76,11 +74,7 @@ impl ProjectVectorDao for ProjectVectorDaoImpl {
             .map_err(|e| err!(Internal, "Vector store error: {e}").with_source(e))
     }
 
-    async fn delete_vector(
-        &self,
-        _ctx: RequestContext,
-        project_id: &str,
-    ) -> Result<()> {
+    async fn delete_vector(&self, _ctx: RequestContext, project_id: &str) -> Result<()> {
         let vector_store = _ctx.vector_store();
         vector_store.delete("projects", project_id).await?;
         Ok(())

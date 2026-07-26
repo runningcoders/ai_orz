@@ -84,20 +84,20 @@ fn extract_text_ignores_non_text_parts() {
 fn make_test_message(from_role: MessageRole, content: &str) -> Message {
     Message::new_with_context(
         format!("msg-{}", uuid::Uuid::now_v7()),
-        None,                    // project_id
-        None,                    // task_id
-        "test-user".to_string(), // from_id
+        None,                     // project_id
+        None,                     // task_id
+        "test-user".to_string(),  // from_id
         "test-agent".to_string(), // to_id
-        from_role,               // from_role
-        MessageRole::Agent,      // to_role
-        MessageType::Text,       // message_type
-        content.to_string(),     // content
-        None,                    // file_type
-        FileMeta::default(),     // file_meta
-        None,                    // reply_to_id
-        None,                    // root_id
-        None,                    // organization_id
-        "test-user".to_string(), // created_by
+        from_role,                // from_role
+        MessageRole::Agent,       // to_role
+        MessageType::Text,        // message_type
+        content.to_string(),      // content
+        None,                     // file_type
+        FileMeta::default(),      // file_meta
+        None,                     // reply_to_id
+        None,                     // root_id
+        None,                     // organization_id
+        "test-user".to_string(),  // created_by
     )
 }
 

@@ -3,17 +3,23 @@
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
-use crate::api::{project::*, StatsOptions};
 use crate::api::hr::query_agents;
+use crate::api::{StatsOptions, project::*};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::TaskStatsPanel;
 use crate::components::workspace_graph::{WorkspaceGraph, WorkspaceView};
 use crate::layouts::app_layout::AppLayout;
+use crate::pages::project::task_edit_modal::{TaskEditModal, TaskEditMode};
 use crate::store::toast::use_toast;
-use crate::utils::{format_timestamp_opt as format_timestamp, progress_bar_class, task_status_badge as status_badge, task_status_text as status_text};
-use common::api::{AgentListItem, AgentQueryRequest, GetTaskResponse, PaginationParams, ProjectListItem, ProjectQueryRequest, TaskListItem};
-use crate::pages::project::task_edit_modal::{TaskEditMode, TaskEditModal};
+use crate::utils::{
+    format_timestamp_opt as format_timestamp, progress_bar_class,
+    task_status_badge as status_badge, task_status_text as status_text,
+};
+use common::api::{
+    AgentListItem, AgentQueryRequest, GetTaskResponse, PaginationParams, ProjectListItem,
+    ProjectQueryRequest, TaskListItem,
+};
 
 #[component]
 pub fn TaskDetail(id: String) -> Element {
@@ -283,9 +289,21 @@ pub fn TaskDetail(id: String) -> Element {
         }
     };
 
-    let tab0_class = if active_tab() == 0 { "tab tab-lg tab-active" } else { "tab tab-lg" };
-    let tab1_class = if active_tab() == 1 { "tab tab-lg tab-active" } else { "tab tab-lg" };
-    let tab2_class = if active_tab() == 2 { "tab tab-lg tab-active" } else { "tab tab-lg" };
+    let tab0_class = if active_tab() == 0 {
+        "tab tab-lg tab-active"
+    } else {
+        "tab tab-lg"
+    };
+    let tab1_class = if active_tab() == 1 {
+        "tab tab-lg tab-active"
+    } else {
+        "tab tab-lg"
+    };
+    let tab2_class = if active_tab() == 2 {
+        "tab tab-lg tab-active"
+    } else {
+        "tab tab-lg"
+    };
 
     rsx! {
         AppLayout {

@@ -24,14 +24,12 @@
 use std::sync::{Arc, OnceLock, RwLock};
 
 use common::enums::ChannelType;
-use common::error::{err, Result};
+use common::error::{Result, err};
 
 use crate::models::message_channel::MessageChannel;
-use crate::pkg::adapter::AdaptedMessage;
-use crate::pkg::adapter::message::{
-    MessageAdapterCallback, MessageInboundAdapter,
-};
 use crate::pkg::RequestContext;
+use crate::pkg::adapter::AdaptedMessage;
+use crate::pkg::adapter::message::{MessageAdapterCallback, MessageInboundAdapter};
 use crate::service::dal::message_channel::MessageChannelDal;
 use crate::service::dao::lark::{LarkDao, LarkEventHandler, LarkMessageEvent};
 use crate::service::dao::message_channel::MessageChannelQuery;
@@ -252,9 +250,10 @@ impl MessageInboundAdapter for LarkMessageChannelDal {
 
     async fn start(&self, callback: Arc<dyn MessageAdapterCallback>) -> Result<()> {
         {
-            let mut running = self.running.write().map_err(|e| {
-                err!(Internal, "lark adapter running lock poisoned: {}", e)
-            })?;
+            let mut running = self
+                .running
+                .write()
+                .map_err(|e| err!(Internal, "lark adapter running lock poisoned: {}", e))?;
             if *running {
                 return Err(err!(Conflict, "lark message adapter already running"));
             }
@@ -269,9 +268,10 @@ impl MessageInboundAdapter for LarkMessageChannelDal {
 
     async fn stop(&self) -> Result<()> {
         {
-            let mut running = self.running.write().map_err(|e| {
-                err!(Internal, "lark adapter running lock poisoned: {}", e)
-            })?;
+            let mut running = self
+                .running
+                .write()
+                .map_err(|e| err!(Internal, "lark adapter running lock poisoned: {}", e))?;
             if !*running {
                 return Ok(());
             }
@@ -311,10 +311,7 @@ impl LarkAdapterHandler {
 impl LarkEventHandler for LarkAdapterHandler {
     async fn handle_message_event(&self, event: LarkMessageEvent) -> Result<()> {
         let ctx = RequestContext::new(None, None);
-        let adapted = self
-            .lark_dal
-            .adapt_lark(ctx.clone(), &event)
-            .await?;
+        let adapted = self.lark_dal.adapt_lark(ctx.clone(), &event).await?;
 
         if let Some(msg) = adapted {
             self.callback.on_message(msg).await?;

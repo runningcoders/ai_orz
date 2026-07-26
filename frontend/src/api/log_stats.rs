@@ -2,7 +2,7 @@
 
 use serde::Deserialize;
 
-use super::{api_get, ApiError};
+use super::{ApiError, api_get};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct LogLevelDistributionItem {

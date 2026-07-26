@@ -1,6 +1,5 @@
 //! Handler: PUT /api/v1/organization/me - Update current authenticated user's organization information
 
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
@@ -8,6 +7,7 @@ use common::api::{
     OrganizationInfoResponse, UpdateCurrentOrganizationRequest, UpdateCurrentOrganizationResponse,
 };
 use common::constants::utils;
+use common::error::Result;
 
 /// Update information for the currently authenticated user's organization (admin only)
 #[register_handler_tool(

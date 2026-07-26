@@ -1,10 +1,9 @@
-
 //! SQLite implementation of Cron Trigger DAO
 
 use super::{CronTriggerDao, CronTriggerQuery};
-use common::error::Result;
 use crate::models::cron_trigger::CronTriggerPo;
 use crate::pkg::RequestContext;
+use common::error::Result;
 use sqlx::SqlitePool;
 use std::sync::{Arc, OnceLock};
 
@@ -92,7 +91,11 @@ WHERE id = ?
         Ok(trigger)
     }
 
-    async fn list(&self, ctx: RequestContext, query: CronTriggerQuery) -> Result<Vec<CronTriggerPo>> {
+    async fn list(
+        &self,
+        ctx: RequestContext,
+        query: CronTriggerQuery,
+    ) -> Result<Vec<CronTriggerPo>> {
         let pool = ctx.db_pool();
         let mut builder = sqlx::QueryBuilder::new(
             r#"SELECT id, name, trigger_type, cron_expression, interval_seconds, run_at, next_run_at, is_enabled, payload, last_run_at, created_at, updated_at, created_by, updated_by FROM cron_triggers WHERE 1=1"#,
@@ -160,7 +163,12 @@ UPDATE cron_triggers SET is_enabled = 0, updated_at = ?, updated_by = ? WHERE id
         Ok(())
     }
 
-    async fn list_due(&self, ctx: RequestContext, now: i64, limit: i32) -> Result<Vec<CronTriggerPo>> {
+    async fn list_due(
+        &self,
+        ctx: RequestContext,
+        now: i64,
+        limit: i32,
+    ) -> Result<Vec<CronTriggerPo>> {
         let pool = ctx.db_pool();
         let triggers = sqlx::query_as::<_, CronTriggerPo>(
             r#"
@@ -178,7 +186,13 @@ LIMIT ?
         Ok(triggers)
     }
 
-    async fn update_next_run_at(&self, ctx: RequestContext, id: &str, next_run_at: i64, last_run_at: i64) -> Result<()> {
+    async fn update_next_run_at(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        next_run_at: i64,
+        last_run_at: i64,
+    ) -> Result<()> {
         let pool = ctx.db_pool();
         let now = common::constants::utils::current_timestamp();
         let updated_by = ctx.uid();

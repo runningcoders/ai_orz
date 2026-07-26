@@ -36,8 +36,7 @@ async fn test_agent_create_succeeds_without_embedding_provider(pool: SqlitePool)
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
 
-    let (bs, jwt) =
-        crate::common::factories::bootstrap_login_and_disable_embedding(&app).await;
+    let (bs, jwt) = crate::common::factories::bootstrap_login_and_disable_embedding(&app).await;
 
     // Verify embedding provider is really gone — list should NOT contain any
     // provider with capability == 1 (ModelCapability::Embedding).
@@ -94,8 +93,7 @@ async fn test_project_create_succeeds_without_embedding_provider(pool: SqlitePoo
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
 
-    let (_bs, jwt) =
-        crate::common::factories::bootstrap_login_and_disable_embedding(&app).await;
+    let (_bs, jwt) = crate::common::factories::bootstrap_login_and_disable_embedding(&app).await;
 
     let project_id = crate::common::factories::create_test_project(
         &app,
@@ -127,8 +125,7 @@ async fn test_full_crud_loop_without_embedding_provider(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
 
-    let (bs, jwt) =
-        crate::common::factories::bootstrap_login_and_disable_embedding(&app).await;
+    let (bs, jwt) = crate::common::factories::bootstrap_login_and_disable_embedding(&app).await;
 
     // 1. Agent — 验证 agent DAL 的 embed_entity 降级
     let agent_id = crate::common::factories::create_test_agent(
@@ -140,12 +137,8 @@ async fn test_full_crud_loop_without_embedding_provider(pool: SqlitePool) {
     .await;
 
     // 2. Project — 验证 project DAL 的 embed_entity 降级
-    let project_id = crate::common::factories::create_test_project(
-        &app,
-        &jwt,
-        "DegradationSmoke-Project",
-    )
-    .await;
+    let project_id =
+        crate::common::factories::create_test_project(&app, &jwt, "DegradationSmoke-Project").await;
 
     // 3. Task under project (assignee_id 必填，指向刚创建的 agent)
     //    验证 task DAL 的 embed_entity 降级
@@ -155,9 +148,7 @@ async fn test_full_crud_loop_without_embedding_provider(pool: SqlitePool) {
         "project_id": project_id,
         "assignee_id": agent_id,
     });
-    let (status, body) = app
-        .post_with_jwt("/api/v1/tasks", &task_req, &jwt)
-        .await;
+    let (status, body) = app.post_with_jwt("/api/v1/tasks", &task_req, &jwt).await;
     assert_eq!(
         status,
         axum::http::StatusCode::OK,
@@ -185,7 +176,10 @@ async fn test_full_crud_loop_without_embedding_provider(pool: SqlitePool) {
     // 验证 message 真的写入主表（响应字段是 message_id，不是 id）
     let msg_data = crate::common::assert_api_ok(status, &body);
     assert!(
-        msg_data.get("message_id").and_then(|v| v.as_str()).is_some(),
+        msg_data
+            .get("message_id")
+            .and_then(|v| v.as_str())
+            .is_some(),
         "message_id should be present in send response, got: {}",
         msg_data
     );

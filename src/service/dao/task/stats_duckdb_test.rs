@@ -1,19 +1,22 @@
 //! Task Stats DAO DuckDB 单元测试
 
-use crate::pkg::stats::*;
 use crate::pkg::request_context_test_support;
-use crate::service::dao::task::{TaskStatsDao, TaskStatsQuery};
+use crate::pkg::stats::*;
 use crate::service::dao::task::stats_duckdb::stats_new;
+use crate::service::dao::task::{TaskStatsDao, TaskStatsQuery};
+use chrono::Utc;
 use common::error::Result;
 use common::models::StatsFetchOptions;
-use chrono::Utc;
 use sqlx::SqlitePool;
 use tempfile::tempdir;
 
 async fn setup_test_env(
     task_id: &str,
     event_count: usize,
-) -> Result<(crate::pkg::RequestContext, std::sync::Arc<dyn TaskStatsDao<TaskEvent = TaskEvent>>)> {
+) -> Result<(
+    crate::pkg::RequestContext,
+    std::sync::Arc<dyn TaskStatsDao<TaskEvent = TaskEvent>>,
+)> {
     let dir = tempdir()?;
     let db_path = dir.path().join("stats.db");
     let db_path_str = db_path.to_str().unwrap();

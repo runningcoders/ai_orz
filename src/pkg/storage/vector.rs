@@ -10,10 +10,10 @@
 
 use crate::models::vector::{VectorIndexParams, VectorMeta, VectorRow, VectorSearchHit};
 use async_trait::async_trait;
+use common::error::Result;
 use sqlx::SqlitePool;
 use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::Arc;
-use common::error::Result;
 
 /// 向量存储抽象 Trait
 ///
@@ -59,10 +59,7 @@ pub trait VectorStore: Send + Sync + std::fmt::Debug {
     /// 获取集合的 model_provider_id（用于判断是否需要重建索引）
     ///
     /// 返回 None 表示该集合未记录 model_provider_id（视为需要重建）
-    async fn get_collection_model_provider_id(
-        &self,
-        _collection: &str,
-    ) -> Result<Option<String>> {
+    async fn get_collection_model_provider_id(&self, _collection: &str) -> Result<Option<String>> {
         Ok(None)
     }
 

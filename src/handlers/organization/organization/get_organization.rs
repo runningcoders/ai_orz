@@ -1,10 +1,10 @@
 //! Handler: GET /api/v1/organizations/{id} - Get organization basic information
 
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetOrganizationRequest, GetOrganizationResponse, OrganizationInfoResponse};
+use common::error::Result;
 
 /// Get organization basic information by ID
 #[register_handler_tool(

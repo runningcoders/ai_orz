@@ -10,9 +10,8 @@ use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
 /// 从已有的 SQLite pool 创建测试用 Storage（内存向量存储，无 Stats）
 pub fn create_test_storage(pool: SqlitePool) -> Storage {
     let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
-    let vector = Arc::new(
-        InMemoryVectorStore::with_path(temp_dir.path()).expect("创建测试向量存储失败"),
-    );
+    let vector =
+        Arc::new(InMemoryVectorStore::with_path(temp_dir.path()).expect("创建测试向量存储失败"));
     Storage {
         inner: Arc::new(StorageInner {
             sqlite: pool,

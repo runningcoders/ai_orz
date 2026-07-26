@@ -1,14 +1,14 @@
 //! Handler: PUT /api/v1/attachments/{id}/content - 全量替换 Attachment UTF-8 文本内容
 
-use common::error::Result;
 use crate::models::attachment::TextContentUpdate;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{AttachmentContentResponse, UpdateAttachmentContentRequest};
+use common::error::Result;
 
 use super::response::to_content_response;
-use common::error::{err, bail_err};
+use common::error::{bail_err, err};
 
 /// 全量替换 Attachment UTF-8 文本内容
 #[register_handler_tool(

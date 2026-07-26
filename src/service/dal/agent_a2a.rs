@@ -7,12 +7,12 @@
 //! 复用 trait 默认方法提供的 DefaultPromptBuilder，不引入笼统的"外部 builder"。
 //! 未来实现 RemotePromptBuilder 后在此重写 prompt_builder()。
 
-use common::error::Result;
-use common::models::{AgentStats, ModelCallStats, StatsFetchOptions};
 use crate::models::agent::Agent;
 use crate::models::brain::Brain;
 use crate::pkg::RequestContext;
 use crate::service::dao::agent::{AgentQuery, AgentSearch};
+use common::error::Result;
+use common::models::{AgentStats, ModelCallStats, StatsFetchOptions};
 use std::sync::Arc;
 
 use super::agent::{AgentDal, AgentFetchOptions};
@@ -51,7 +51,11 @@ impl AgentDal for A2aAgentDal {
         self.base.get_agent(ctx, id, options).await
     }
 
-    async fn query(&self, ctx: RequestContext, query: AgentQuery) -> Result<common::api::PagedResult<Agent>> {
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: AgentQuery,
+    ) -> Result<common::api::PagedResult<Agent>> {
         self.base.query(ctx, query).await
     }
 
@@ -75,12 +79,7 @@ impl AgentDal for A2aAgentDal {
         self.base.delete(ctx, agent).await
     }
 
-    async fn wake_brain(
-        &self,
-        ctx: RequestContext,
-        agent: &mut Agent,
-        brain: Brain,
-    ) -> Result<()> {
+    async fn wake_brain(&self, ctx: RequestContext, agent: &mut Agent, brain: Brain) -> Result<()> {
         self.base.wake_brain(ctx, agent, brain).await
     }
 

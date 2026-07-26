@@ -1,12 +1,12 @@
 //! Handler: GET /api/v1/agents/search - Search agents by keyword
 
-use common::enums::AgentRuntimeState;
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::dao::agent::{AgentQuery, AgentSearch};
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{AgentListItem, SearchAgentsRequest, SearchAgentsResponse};
+use common::enums::AgentRuntimeState;
+use common::error::Result;
 
 /// Search AI agents by keyword (FTS5 full-text search + vector semantic search)
 #[register_handler_tool(
@@ -24,7 +24,10 @@ pub async fn search_agents(
     let search = AgentSearch {
         keyword: params.keyword,
         filters: AgentQuery {
-            pagination: common::api::PaginationParams { limit: params.limit, offset: None },
+            pagination: common::api::PaginationParams {
+                limit: params.limit,
+                offset: None,
+            },
             ..Default::default()
         },
         ..Default::default()

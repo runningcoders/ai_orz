@@ -46,10 +46,16 @@ impl A2aCallbackDao for A2aCallbackDaoHttpImpl {
         message: &Message,
         channel: &MessageChannel,
     ) -> std::result::Result<(), common::error::Error> {
-        let webhook_url = channel.po.webhook_url.as_ref()
+        let webhook_url = channel
+            .po
+            .webhook_url
+            .as_ref()
             .ok_or_else(|| err!(InvalidRequest, "A2A callback 渠道缺少 webhook_url"))?;
 
-        let project_id = channel.po.scope_project.as_ref()
+        let project_id = channel
+            .po
+            .scope_project
+            .as_ref()
             .or_else(|| message.po.project_id.as_ref())
             .ok_or_else(|| err!(InvalidRequest, "A2A callback 渠道缺少 scope_project"))?;
 
@@ -88,10 +94,19 @@ impl A2aCallbackDao for A2aCallbackDaoHttpImpl {
             session_id: None,
             status: common::api::a2a::A2aTaskStatus {
                 state: match project.po.status {
-                    common::enums::ProjectStatus::Active | common::enums::ProjectStatus::PendingReview => common::api::a2a::A2aTaskState::Submitted,
-                    common::enums::ProjectStatus::InProgress => common::api::a2a::A2aTaskState::Working,
-                    common::enums::ProjectStatus::Completed => common::api::a2a::A2aTaskState::Completed,
-                    common::enums::ProjectStatus::Archived => common::api::a2a::A2aTaskState::Canceled,
+                    common::enums::ProjectStatus::Active
+                    | common::enums::ProjectStatus::PendingReview => {
+                        common::api::a2a::A2aTaskState::Submitted
+                    }
+                    common::enums::ProjectStatus::InProgress => {
+                        common::api::a2a::A2aTaskState::Working
+                    }
+                    common::enums::ProjectStatus::Completed => {
+                        common::api::a2a::A2aTaskState::Completed
+                    }
+                    common::enums::ProjectStatus::Archived => {
+                        common::api::a2a::A2aTaskState::Canceled
+                    }
                     common::enums::ProjectStatus::Deleted => common::api::a2a::A2aTaskState::Failed,
                 },
                 timestamp: chrono::Utc::now().to_rfc3339(),
@@ -118,7 +133,12 @@ impl A2aCallbackDao for A2aCallbackDaoHttpImpl {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            return Err(err!(ChannelPushFailed, "A2A callback 返回错误状态码 {}: {}", status, body));
+            return Err(err!(
+                ChannelPushFailed,
+                "A2A callback 返回错误状态码 {}: {}",
+                status,
+                body
+            ));
         }
 
         Ok(())

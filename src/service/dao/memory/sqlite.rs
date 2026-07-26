@@ -7,7 +7,6 @@
 //! - 原始记忆不可修改不可删除，只能追加
 
 use crate::config;
-use common::error::{Result, bail_err};
 use crate::models::memory::{
     KnowledgeNodeRelationPo, KnowledgeReferencePo, LongTermKnowledgeNodePo, MemoryTrace,
     MemoryTracePosition, ShortTermMemoryIndexPo,
@@ -17,6 +16,7 @@ use crate::pkg::storage::escape_fts5_keyword;
 use crate::service::dao::memory::{MemoryDao, MemoryQuery, MemorySearch};
 use async_trait::async_trait;
 use common::enums::{KnowledgeRelationType, MemoryStatus, MemoryType};
+use common::error::{Result, bail_err};
 use serde_json;
 use sqlx::{FromRow, SqlitePool};
 use std::path::PathBuf;
@@ -95,10 +95,7 @@ impl MemoryDaoSqliteImpl {
     /// Read original memory content by knowledge reference
     ///
     /// Uses date_path (YYYYMMDD.jsonl) + line_number to read the exact JSON line
-    pub fn read_memory_reference(
-        &self,
-        reference: &KnowledgeReferencePo,
-    ) -> Result<String> {
+    pub fn read_memory_reference(&self, reference: &KnowledgeReferencePo) -> Result<String> {
         // Full path: agent memory dir + date file name
         let agent_id = reference
             .knowledge_id
@@ -218,7 +215,11 @@ WHERE id = ?
         .await?;
 
         if result.rows_affected() == 0 {
-            bail_err!(ResourceNotFound, "short_term_memory_index id={} not found", index.id);
+            bail_err!(
+                ResourceNotFound,
+                "short_term_memory_index id={} not found",
+                index.id
+            );
         }
         Ok(())
     }
@@ -289,7 +290,6 @@ WHERE id = ? AND status != 0
         ctx: RequestContext,
         query: MemoryQuery,
     ) -> Result<Vec<ShortTermMemoryIndexPo>> {
-        
         use sqlx::QueryBuilder;
 
         let pool = self.pool(ctx);
@@ -338,7 +338,8 @@ FROM short_term_memory_index WHERE 1=1"#,
         // tag 过滤（OR 语义：包含任一 tag 即可命中）
         if let Some(tags) = &query.tags {
             if !tags.is_empty() {
-                builder.push(" AND EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value IN (");
+                builder
+                    .push(" AND EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value IN (");
                 let mut separated = builder.separated(", ");
                 for tag in tags {
                     separated.push_bind(tag);
@@ -387,7 +388,9 @@ FROM short_term_memory_index WHERE 1=1"#,
         let has_tags = !tags.is_empty();
         let tags_clause = if has_tags {
             let placeholders = tags.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-            format!(" AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE json_each.value IN ({placeholders}))")
+            format!(
+                " AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE json_each.value IN ({placeholders}))"
+            )
         } else {
             String::new()
         };
@@ -418,10 +421,7 @@ LIMIT ?
             }
         }
 
-        let rows: Vec<ShortTermSearchRow> = query
-            .bind(limit_i64)
-            .fetch_all(&pool)
-            .await?;
+        let rows: Vec<ShortTermSearchRow> = query.bind(limit_i64).fetch_all(&pool).await?;
 
         let results = rows
             .into_iter()
@@ -553,7 +553,11 @@ WHERE id = ?
         .await?;
 
         if result.rows_affected() == 0 {
-            bail_err!(ResourceNotFound, "long_term_knowledge_node id={} not found", node.id);
+            bail_err!(
+                ResourceNotFound,
+                "long_term_knowledge_node id={} not found",
+                node.id
+            );
         }
         Ok(())
     }
@@ -679,7 +683,6 @@ WHERE id = ? AND status != 0
         ctx: RequestContext,
         query: MemoryQuery,
     ) -> Result<Vec<LongTermKnowledgeNodePo>> {
-        
         use sqlx::QueryBuilder;
 
         let pool = self.pool(ctx);
@@ -733,7 +736,8 @@ FROM long_term_knowledge_node WHERE 1=1"#,
         // tag 过滤（OR 语义：包含任一 tag 即可命中）
         if let Some(tags) = &query.tags {
             if !tags.is_empty() {
-                builder.push(" AND EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value IN (");
+                builder
+                    .push(" AND EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value IN (");
                 let mut separated = builder.separated(", ");
                 for tag in tags {
                     separated.push_bind(tag);
@@ -782,7 +786,9 @@ FROM long_term_knowledge_node WHERE 1=1"#,
         let has_tags = !tags.is_empty();
         let tags_clause = if has_tags {
             let placeholders = tags.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-            format!(" AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE json_each.value IN ({placeholders}))")
+            format!(
+                " AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE json_each.value IN ({placeholders}))"
+            )
         } else {
             String::new()
         };
@@ -813,10 +819,7 @@ LIMIT ?
             }
         }
 
-        let rows: Vec<KnowledgeNodeSearchRow> = query
-            .bind(limit_i64)
-            .fetch_all(&pool)
-            .await?;
+        let rows: Vec<KnowledgeNodeSearchRow> = query.bind(limit_i64).fetch_all(&pool).await?;
 
         let results = rows
             .into_iter()

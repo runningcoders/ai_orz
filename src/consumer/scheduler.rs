@@ -11,9 +11,9 @@ use serde_json::Value;
 use std::sync::Arc;
 
 use crate::models::events::CronTriggerEvent;
-use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
-use crate::pkg::aop::Event;
 use crate::pkg::RequestContext;
+use crate::pkg::aop::Event;
+use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
 use crate::service::domain::runtime::{self as runtime_domain, RuntimeDomain};
 use common::error::{Error, Result};
 
@@ -96,11 +96,7 @@ impl Consumer for CronTriggerConsumer {
 
 impl CronTriggerConsumer {
     /// agent_rest 动作：调用 RuntimeDomain 执行 Agent 休息与记忆沉淀
-    async fn handle_agent_rest(
-        &self,
-        event: &CronTriggerEvent,
-        extra: &Value,
-    ) -> Result<()> {
+    async fn handle_agent_rest(&self, event: &CronTriggerEvent, extra: &Value) -> Result<()> {
         let payload: AgentRestPayload = serde_json::from_value(extra.clone()).map_err(|e| {
             Error::bad_request(format!(
                 "invalid agent_rest payload for trigger {}: {}",

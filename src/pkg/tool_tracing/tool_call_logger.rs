@@ -3,12 +3,12 @@
 //! Wraps tools that are called through our manual built-in call chain
 //! to automatically log invocations the same way.
 
-use common::error::Result;
 use async_trait::async_trait;
 use common::enums::ToolProtocol;
+use common::error::Result;
 use serde_json::Value;
-use uuid::Uuid;
 use std::sync::Arc;
+use uuid::Uuid;
 
 use super::entry::{ToolCallEntry, ToolCallStatus};
 use super::logger::ToolCallLogger;
@@ -38,7 +38,10 @@ impl LoggingDecorator {
 
     /// Create a new logging decorator with a custom logger instance
     /// Useful for testing with isolated storage
-    pub fn new_with_logger(inner: Box<dyn CoreTool + Send + Sync>, logger: Arc<ToolCallLogger>) -> Self {
+    pub fn new_with_logger(
+        inner: Box<dyn CoreTool + Send + Sync>,
+        logger: Arc<ToolCallLogger>,
+    ) -> Self {
         Self { inner, logger }
     }
 
@@ -113,7 +116,8 @@ fn record_tool_call_stat(ctx: RequestContext, entry: &ToolCallEntry, args: &Valu
     let args_len = serde_json::to_string(args)
         .map(|s| s.len() as u64)
         .unwrap_or(0);
-    let result_len = entry.output
+    let result_len = entry
+        .output
         .as_ref()
         .and_then(|v| serde_json::to_string(v).ok())
         .map(|s| s.len() as u64)

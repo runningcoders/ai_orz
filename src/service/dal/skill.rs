@@ -3,7 +3,6 @@
 //! 技能数据访问层，提供技能查询和管理能力
 //! 负责组合 DAO 完成业务级数据操作，组装完整 Skill 实体（PO + 文件）
 
-use common::error::{Result, err};
 use crate::models::skill::{Skill, SkillFile, SkillPo};
 use crate::models::vector::{MatchType, SearchMatchInfo, Vectorizable};
 use crate::pkg::request_context::RequestContext;
@@ -11,6 +10,7 @@ use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::skill::{self, SkillDao, SkillQuery, SkillSearch, SkillVectorDao};
 use common::enums::{ModelCapability, ModelProviderStatus, SkillStatus};
+use common::error::{Result, err};
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例管理 ====================
@@ -59,14 +59,14 @@ pub trait SkillDal: Send + Sync {
     async fn get_by_id(&self, ctx: RequestContext, id: String) -> Result<Option<Skill>>;
 
     /// 根据 ID 获取 PO 数据（不需要文件时用这个）
-    async fn get_po_by_id(
-        &self,
-        ctx: RequestContext,
-        id: String,
-    ) -> Result<Option<SkillPo>>;
+    async fn get_po_by_id(&self, ctx: RequestContext, id: String) -> Result<Option<SkillPo>>;
 
     /// 通用综合查询（返回完整 Skill 实体，包含 PO + 文件列表）
-    async fn query(&self, ctx: RequestContext, query: SkillQuery) -> Result<common::api::PagedResult<Skill>>;
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: SkillQuery,
+    ) -> Result<common::api::PagedResult<Skill>>;
 
     /// 按状态查询（返回完整 Skill 实体）
     async fn list_by_status(
@@ -76,32 +76,16 @@ pub trait SkillDal: Send + Sync {
     ) -> Result<Vec<Skill>>;
 
     /// 按分类查询（返回完整 Skill 实体）
-    async fn list_by_category(
-        &self,
-        ctx: RequestContext,
-        category: &str,
-    ) -> Result<Vec<Skill>>;
+    async fn list_by_category(&self, ctx: RequestContext, category: &str) -> Result<Vec<Skill>>;
 
     /// 按作者查询（返回完整 Skill 实体）
-    async fn list_by_author(
-        &self,
-        ctx: RequestContext,
-        author_id: &str,
-    ) -> Result<Vec<Skill>>;
+    async fn list_by_author(&self, ctx: RequestContext, author_id: &str) -> Result<Vec<Skill>>;
 
     /// 获取 Agent 的所有技能（返回完整 Skill 实体）
-    async fn list_for_agent(
-        &self,
-        ctx: RequestContext,
-        agent_id: &str,
-    ) -> Result<Vec<Skill>>;
+    async fn list_for_agent(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<Skill>>;
 
     /// 搜索技能（名称/描述/标签）
-    async fn search(
-        &self,
-        ctx: RequestContext,
-        search: SkillSearch,
-    ) -> Result<Vec<Skill>>;
+    async fn search(&self, ctx: RequestContext, search: SkillSearch) -> Result<Vec<Skill>>;
 
     /// 更新技能元数据（不影响文件）
     /// 更新技能（仅数据库）
@@ -135,12 +119,7 @@ pub trait SkillDal: Send + Sync {
     fn write_file(&self, skill: &SkillPo, filename: &str, content: &str) -> Result<()>;
 
     /// 写入文件 bytes
-    fn write_file_bytes(
-        &self,
-        skill: &SkillPo,
-        filename: &str,
-        bytes: &[u8],
-    ) -> Result<()>;
+    fn write_file_bytes(&self, skill: &SkillPo, filename: &str, bytes: &[u8]) -> Result<()>;
 
     /// 查询技能的向量索引内容哈希（判断是否需要重索引）
     async fn get_vector_content_hash(
@@ -150,11 +129,7 @@ pub trait SkillDal: Send + Sync {
     ) -> Result<Option<String>>;
 
     /// 按 tag 查询已发布技能（用于技能包安装）
-    async fn list_published_by_tag(
-        &self,
-        ctx: RequestContext,
-        tag: &str,
-    ) -> Result<Vec<Skill>>;
+    async fn list_published_by_tag(&self, ctx: RequestContext, tag: &str) -> Result<Vec<Skill>>;
 
     /// 查询指定 Agent 已有的技能副本（通过 author_id 和 parent_skill_id 列表）
     /// 如果 parent_skill_ids 为空，返回空 Vec
@@ -235,15 +210,15 @@ impl SkillDal for SkillDalImpl {
         }))
     }
 
-    async fn get_po_by_id(
-        &self,
-        ctx: RequestContext,
-        id: String,
-    ) -> Result<Option<SkillPo>> {
+    async fn get_po_by_id(&self, ctx: RequestContext, id: String) -> Result<Option<SkillPo>> {
         Ok(self.skill_dao.find_by_id(ctx, &id).await?)
     }
 
-    async fn query(&self, ctx: RequestContext, query: SkillQuery) -> Result<common::api::PagedResult<Skill>> {
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: SkillQuery,
+    ) -> Result<common::api::PagedResult<Skill>> {
         let page = self.skill_dao.query(ctx, query).await?;
         let mut skills = Vec::with_capacity(page.items.len());
         for po in page.items {
@@ -254,7 +229,10 @@ impl SkillDal for SkillDalImpl {
                 search_match: None,
             });
         }
-        Ok(common::api::PagedResult { items: skills, total: page.total })
+        Ok(common::api::PagedResult {
+            items: skills,
+            total: page.total,
+        })
     }
 
     async fn list_by_status(
@@ -262,70 +240,58 @@ impl SkillDal for SkillDalImpl {
         ctx: RequestContext,
         status: common::enums::SkillStatus,
     ) -> Result<Vec<Skill>> {
-        let page = self.query(
-            ctx,
-            SkillQuery {
-                status: Some(status),
-                ..Default::default()
-            },
-        )
-        .await?;
+        let page = self
+            .query(
+                ctx,
+                SkillQuery {
+                    status: Some(status),
+                    ..Default::default()
+                },
+            )
+            .await?;
         Ok(page.items)
     }
 
-    async fn list_by_category(
-        &self,
-        ctx: RequestContext,
-        category: &str,
-    ) -> Result<Vec<Skill>> {
-        let page = self.query(
-            ctx,
-            SkillQuery {
-                category: Some(category.to_string()),
-                ..Default::default()
-            },
-        )
-        .await?;
+    async fn list_by_category(&self, ctx: RequestContext, category: &str) -> Result<Vec<Skill>> {
+        let page = self
+            .query(
+                ctx,
+                SkillQuery {
+                    category: Some(category.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await?;
         Ok(page.items)
     }
 
-    async fn list_by_author(
-        &self,
-        ctx: RequestContext,
-        author_id: &str,
-    ) -> Result<Vec<Skill>> {
-        let page = self.query(
-            ctx,
-            SkillQuery {
-                author_id: Some(author_id.to_string()),
-                ..Default::default()
-            },
-        )
-        .await?;
+    async fn list_by_author(&self, ctx: RequestContext, author_id: &str) -> Result<Vec<Skill>> {
+        let page = self
+            .query(
+                ctx,
+                SkillQuery {
+                    author_id: Some(author_id.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await?;
         Ok(page.items)
     }
 
-    async fn list_for_agent(
-        &self,
-        ctx: RequestContext,
-        agent_id: &str,
-    ) -> Result<Vec<Skill>> {
-        let page = self.query(
-            ctx,
-            SkillQuery {
-                author_id: Some(agent_id.to_string()),
-                ..Default::default()
-            },
-        )
-        .await?;
+    async fn list_for_agent(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<Skill>> {
+        let page = self
+            .query(
+                ctx,
+                SkillQuery {
+                    author_id: Some(agent_id.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await?;
         Ok(page.items)
     }
 
-    async fn search(
-        &self,
-        ctx: RequestContext,
-        search: SkillSearch,
-    ) -> Result<Vec<Skill>> {
+    async fn search(&self, ctx: RequestContext, search: SkillSearch) -> Result<Vec<Skill>> {
         // 向量距离阈值（可配置，默认 0.8）
         let vector_distance_threshold = search.vector_distance_threshold.unwrap_or(0.8);
 
@@ -488,35 +454,37 @@ impl SkillDal for SkillDalImpl {
                 Some(MatchType::Vector) => 1,
                 _ => 2,
             };
-            order_a.cmp(&order_b).then_with(|| {
-                match (a_type, b_type) {
-                    (Some(MatchType::Hybrid), Some(MatchType::Hybrid))
-                    | (Some(MatchType::Vector), Some(MatchType::Vector)) => {
-                        let a_dist = a
-                            .search_match
-                            .as_ref()
-                            .and_then(|m| m.vector_distance)
-                            .unwrap_or(f32::MAX);
-                        let b_dist = b
-                            .search_match
-                            .as_ref()
-                            .and_then(|m| m.vector_distance)
-                            .unwrap_or(f32::MAX);
-                        a_dist.partial_cmp(&b_dist).unwrap_or(std::cmp::Ordering::Equal)
-                    }
-                    _ => {
-                        let a_rank = a
-                            .search_match
-                            .as_ref()
-                            .and_then(|m| m.fts_rank)
-                            .unwrap_or(f32::MAX);
-                        let b_rank = b
-                            .search_match
-                            .as_ref()
-                            .and_then(|m| m.fts_rank)
-                            .unwrap_or(f32::MAX);
-                        a_rank.partial_cmp(&b_rank).unwrap_or(std::cmp::Ordering::Equal)
-                    }
+            order_a.cmp(&order_b).then_with(|| match (a_type, b_type) {
+                (Some(MatchType::Hybrid), Some(MatchType::Hybrid))
+                | (Some(MatchType::Vector), Some(MatchType::Vector)) => {
+                    let a_dist = a
+                        .search_match
+                        .as_ref()
+                        .and_then(|m| m.vector_distance)
+                        .unwrap_or(f32::MAX);
+                    let b_dist = b
+                        .search_match
+                        .as_ref()
+                        .and_then(|m| m.vector_distance)
+                        .unwrap_or(f32::MAX);
+                    a_dist
+                        .partial_cmp(&b_dist)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                }
+                _ => {
+                    let a_rank = a
+                        .search_match
+                        .as_ref()
+                        .and_then(|m| m.fts_rank)
+                        .unwrap_or(f32::MAX);
+                    let b_rank = b
+                        .search_match
+                        .as_ref()
+                        .and_then(|m| m.fts_rank)
+                        .unwrap_or(f32::MAX);
+                    a_rank
+                        .partial_cmp(&b_rank)
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 }
             })
         });
@@ -682,12 +650,7 @@ impl SkillDal for SkillDalImpl {
         Ok(self.skill_dao.write_file(skill, filename, content)?)
     }
 
-    fn write_file_bytes(
-        &self,
-        skill: &SkillPo,
-        filename: &str,
-        bytes: &[u8],
-    ) -> Result<()> {
+    fn write_file_bytes(&self, skill: &SkillPo, filename: &str, bytes: &[u8]) -> Result<()> {
         Ok(self.skill_dao.write_file_bytes(skill, filename, bytes)?)
     }
 
@@ -700,20 +663,17 @@ impl SkillDal for SkillDalImpl {
         Ok(row.map(|r| r.meta.content_hash))
     }
 
-    async fn list_published_by_tag(
-        &self,
-        ctx: RequestContext,
-        tag: &str,
-    ) -> Result<Vec<Skill>> {
-        let page = self.query(
-            ctx,
-            SkillQuery {
-                tags: Some(vec![tag.to_string()]),
-                status: Some(SkillStatus::Published),
-                ..Default::default()
-            },
-        )
-        .await?;
+    async fn list_published_by_tag(&self, ctx: RequestContext, tag: &str) -> Result<Vec<Skill>> {
+        let page = self
+            .query(
+                ctx,
+                SkillQuery {
+                    tags: Some(vec![tag.to_string()]),
+                    status: Some(SkillStatus::Published),
+                    ..Default::default()
+                },
+            )
+            .await?;
         Ok(page.items)
     }
 

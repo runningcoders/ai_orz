@@ -1,6 +1,5 @@
 //! Memory DAO - 记忆系统数据访问
 //!\n//! 负责：\n//! - 短期记忆索引的增删查改（SQLite）\n//! - 长期知识图谱节点的增删查改（SQLite）\n//! - 记忆追踪文件的写入（每日文件追加）\n//! - 原始记忆不可修改不可删除，只能追加，符合设计原则\n\nuse async_trait::async_trait;
-use common::error::Result;
 use crate::models::memory::{
     KnowledgeNodeRelationPo, KnowledgeReferencePo, LongTermKnowledgeNodePo, MemoryTrace,
     MemoryTracePosition, ShortTermMemoryIndexPo,
@@ -9,6 +8,7 @@ use crate::models::vector::{VectorIndexParams, VectorSearchHit};
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
 use common::enums::{KnowledgeRelationType, MemoryStatus, MemoryType};
+use common::error::Result;
 
 // ==================== 查询参数结构体 ====================
 
@@ -445,11 +445,8 @@ pub trait MemoryDao: Send + Sync {
     /// - relation_id: 关系 ID
     /// # 返回
     /// - 成功返回 Ok(())
-    async fn delete_knowledge_relation(
-        &self,
-        ctx: RequestContext,
-        relation_id: &str,
-    ) -> Result<()>;
+    async fn delete_knowledge_relation(&self, ctx: RequestContext, relation_id: &str)
+    -> Result<()>;
 
     /// 删除节点的所有关系
     ///
@@ -460,11 +457,8 @@ pub trait MemoryDao: Send + Sync {
     /// - node_id: 节点 ID
     /// # 返回
     /// - 成功返回 Ok(())
-    async fn delete_all_relations_for_node(
-        &self,
-        ctx: RequestContext,
-        node_id: &str,
-    ) -> Result<()>;
+    async fn delete_all_relations_for_node(&self, ctx: RequestContext, node_id: &str)
+    -> Result<()>;
 
     /// 查询指定类型的关系
     ///
@@ -536,11 +530,7 @@ pub trait MemoryVectorDao: Send + Sync {
     ) -> Result<Option<crate::models::vector::VectorRow>>;
 
     /// 删除短期记忆的向量索引
-    async fn delete_short_term_vector(
-        &self,
-        ctx: RequestContext,
-        memory_id: &str,
-    ) -> Result<()>;
+    async fn delete_short_term_vector(&self, ctx: RequestContext, memory_id: &str) -> Result<()>;
 
     /// 删除知识节点的向量索引
     async fn delete_knowledge_node_vector(

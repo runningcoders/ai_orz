@@ -36,7 +36,11 @@ pub fn OrganizationInfo() -> Element {
             saving.set(true);
             let req = UpdateCurrentOrganizationRequest {
                 name: Some(name()),
-                description: if description().is_empty() { None } else { Some(description()) },
+                description: if description().is_empty() {
+                    None
+                } else {
+                    Some(description())
+                },
                 base_url: None,
             };
             match update_current_organization(req).await {

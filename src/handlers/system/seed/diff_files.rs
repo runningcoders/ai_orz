@@ -7,13 +7,13 @@ use common::api::seed::DiffFilesRequest;
 use common::error::Result;
 
 use crate::pkg::RequestContext;
-use crate::service::domain::system::seed::{defs::{DiffKind, SeedDiff, SeedSnapshot}, diff, store};
+use crate::service::domain::system::seed::{
+    defs::{DiffKind, SeedDiff, SeedSnapshot},
+    diff, store,
+};
 
 #[generate_http_handler]
-pub async fn diff_files(
-    _ctx: RequestContext,
-    params: DiffFilesRequest,
-) -> Result<SeedDiff> {
+pub async fn diff_files(_ctx: RequestContext, params: DiffFilesRequest) -> Result<SeedDiff> {
     let dir = store::seeds_dir();
     let base_resp = store::read_file(&dir, &params.base).await?;
     let target_resp = store::read_file(&dir, &params.target).await?;

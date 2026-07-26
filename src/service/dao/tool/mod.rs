@@ -1,19 +1,19 @@
 //! Tool DAO trait
 
-use common::error::Result;
-use common::models::{CallSummary, ToolCallCount, ToolStats, StatsFetchOptions};
 use crate::models::tool::ToolPo;
 use crate::models::vector::VectorIndexParams;
 use crate::pkg::request_context::RequestContext;
-use crate::pkg::stats::{StatFilter, StatAggregation, StatEvent, Stats};
+use crate::pkg::stats::{StatAggregation, StatEvent, StatFilter, Stats};
 use async_trait::async_trait;
 use common::enums::{ToolProtocol, ToolStatus};
+use common::error::Result;
+use common::models::{CallSummary, StatsFetchOptions, ToolCallCount, ToolStats};
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
 
 pub mod sqlite;
-pub mod vector;
 pub mod stats_duckdb;
+pub mod vector;
 
 #[cfg(test)]
 mod sqlite_test;
@@ -37,8 +37,8 @@ pub fn init() {
 #[derive(Debug, Clone, Default)]
 pub struct ToolQuery {
     pub agent_id: Option<String>,
-    pub ids: Option<Vec<String>>, // 按 ID 批量查询
-    pub keyword: Option<String>,  // 关键词搜索
+    pub ids: Option<Vec<String>>,  // 按 ID 批量查询
+    pub keyword: Option<String>,   // 关键词搜索
     pub tags: Option<Vec<String>>, // 按 tag 过滤（OR 语义，命中任一即可）
     pub protocol: Option<ToolProtocol>,
     pub status: Option<ToolStatus>,
@@ -86,7 +86,11 @@ pub trait ToolStatsDao: Send + Sync {
     }
 
     /// 底层通用查询（内部使用）
-    async fn query_tool_calls(&self, ctx: RequestContext, query: ToolStatsQuery) -> Result<Vec<JsonValue>>;
+    async fn query_tool_calls(
+        &self,
+        ctx: RequestContext,
+        query: ToolStatsQuery,
+    ) -> Result<Vec<JsonValue>>;
 
     /// 工具总调用次数
     async fn sum_calls(&self, ctx: RequestContext, mut query: ToolStatsQuery) -> Result<u64> {
@@ -99,7 +103,11 @@ pub trait ToolStatsDao: Send + Sync {
     }
 
     /// 工具失败调用次数
-    async fn sum_failed_calls(&self, ctx: RequestContext, mut query: ToolStatsQuery) -> Result<u64> {
+    async fn sum_failed_calls(
+        &self,
+        ctx: RequestContext,
+        mut query: ToolStatsQuery,
+    ) -> Result<u64> {
         query.filters.push(StatFilter::Equals {
             key: "status".to_string(),
             value: JsonValue::String("failed".to_string()),
@@ -113,7 +121,12 @@ pub trait ToolStatsDao: Send + Sync {
     }
 
     /// 获取工具统计数据
-    async fn get_stats(&self, ctx: RequestContext, query: ToolStatsQuery, options: StatsFetchOptions) -> Result<ToolStats> {
+    async fn get_stats(
+        &self,
+        ctx: RequestContext,
+        query: ToolStatsQuery,
+        options: StatsFetchOptions,
+    ) -> Result<ToolStats> {
         let mut stats = ToolStats::default();
 
         if options.with_call_summary {
@@ -133,7 +146,11 @@ pub trait ToolStatsDao: Send + Sync {
                 };
                 let range_calls = self.sum_calls(ctx.clone(), range_query).await?;
                 let duration_secs = (end - start) as f64 / 1000.0;
-                if duration_secs > 0.0 { Some(range_calls as f64 / duration_secs) } else { None }
+                if duration_secs > 0.0 {
+                    Some(range_calls as f64 / duration_secs)
+                } else {
+                    None
+                }
             } else {
                 None
             };
@@ -172,30 +189,39 @@ pub trait ToolStatsDao: Send + Sync {
         let group_by: &[&str] = &["tool_id", "tool_name"];
         let aggregations = vec![StatAggregation::Count];
 
-        let rows = ctx.stats().query_aggregation(
-            ctx.clone(),
-            table_name.as_deref(),
-            &[agent_filter],
-            group_by,
-            &aggregations,
-            time_range,
-        ).await?;
+        let rows = ctx
+            .stats()
+            .query_aggregation(
+                ctx.clone(),
+                table_name.as_deref(),
+                &[agent_filter],
+                group_by,
+                &aggregations,
+                time_range,
+            )
+            .await?;
 
         let mut result: Vec<ToolCallCount> = rows
             .iter()
             .map(|r| {
-                let tool_id = r.groups.get("tool_id")
+                let tool_id = r
+                    .groups
+                    .get("tool_id")
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                let tool_name = r.groups.get("tool_name")
+                let tool_name = r
+                    .groups
+                    .get("tool_name")
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                let count = r.aggregations.get("count")
-                    .copied()
-                    .unwrap_or(0.0) as u64;
-                ToolCallCount { tool_id, tool_name, count }
+                let count = r.aggregations.get("count").copied().unwrap_or(0.0) as u64;
+                ToolCallCount {
+                    tool_id,
+                    tool_name,
+                    count,
+                }
             })
             .filter(|c| !c.tool_id.is_empty())
             .collect();
@@ -225,7 +251,11 @@ pub trait ToolDao: Send + Sync {
     async fn get_by_name(&self, ctx: RequestContext, name: &str) -> Result<Option<ToolPo>>;
 
     /// 通用查询
-    async fn query(&self, ctx: RequestContext, query: ToolQuery) -> Result<common::api::PagedResult<ToolPo>>;
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: ToolQuery,
+    ) -> Result<common::api::PagedResult<ToolPo>>;
 
     /// List all enabled tools
     async fn list_enabled(&self, ctx: RequestContext) -> Result<Vec<ToolPo>>;
@@ -315,5 +345,5 @@ pub trait ToolVectorDao: Send + Sync {
 
 // 子模块构造函数别名（用于 DAL 层组合）
 pub use sqlite::{dao as base_dao, init as init_base, new as new_tool_dao};
-pub use vector::{dao as vector_dao, init as init_vector, new as new_tool_vector_dao};
 pub use stats_duckdb::{stats_dao, stats_init, stats_new};
+pub use vector::{dao as vector_dao, init as init_vector, new as new_tool_vector_dao};

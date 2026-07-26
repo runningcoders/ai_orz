@@ -4,9 +4,9 @@
 use crate::models::vector::VectorIndexParams;
 use crate::pkg::RequestContext;
 use crate::service::dao::message::{self, MessageVectorDao};
+use common::error::Result;
 use sqlx::SqlitePool;
 use std::sync::Arc;
-use common::error::Result;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     crate::pkg::request_context_test_support::new_test_ctx(user_id, pool)

@@ -9,11 +9,11 @@
 use dioxus::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
-use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::closure::Closure;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 
-use crate::components::force_layout::{circle_initial_layout, ForceLayout, ForceLayoutConfig};
+use crate::components::force_layout::{ForceLayout, ForceLayoutConfig, circle_initial_layout};
 use crate::components::particles::{
     BackgroundParticles, BirthDeathParticles, DataFlowParticles, GlowParticles, ParticleSystem,
 };
@@ -49,7 +49,12 @@ pub trait CanvasRenderer {
     fn draw_nodes(&self, ctx: &CanvasRenderingContext2d, nodes: &[CanvasNode]);
 
     /// 绘制所有连线
-    fn draw_edges(&self, ctx: &CanvasRenderingContext2d, edges: &[CanvasEdge], nodes: &[CanvasNode]);
+    fn draw_edges(
+        &self,
+        ctx: &CanvasRenderingContext2d,
+        edges: &[CanvasEdge],
+        nodes: &[CanvasNode],
+    );
 
     /// 命中检测：给定画布坐标，返回命中的节点 ID（None 表示空白处）
     fn hit_test(&self, nodes: &[CanvasNode], x: f64, y: f64) -> Option<String>;
@@ -95,7 +100,12 @@ impl CanvasRenderer for DefaultRenderer {
         }
     }
 
-    fn draw_edges(&self, ctx: &CanvasRenderingContext2d, edges: &[CanvasEdge], nodes: &[CanvasNode]) {
+    fn draw_edges(
+        &self,
+        ctx: &CanvasRenderingContext2d,
+        edges: &[CanvasEdge],
+        nodes: &[CanvasNode],
+    ) {
         ctx.set_stroke_style_str("rgba(107, 114, 128, 0.4)");
         ctx.set_line_width(1.5);
         for edge in edges {
@@ -138,7 +148,13 @@ impl CanvasRenderer for DefaultRenderer {
             if is_selected {
                 ctx.set_fill_style_str("rgba(59, 130, 246, 0.2)");
                 ctx.begin_path();
-                let _ = ctx.arc(node.x, node.y, node.radius + 8.0, 0.0, std::f64::consts::TAU);
+                let _ = ctx.arc(
+                    node.x,
+                    node.y,
+                    node.radius + 8.0,
+                    0.0,
+                    std::f64::consts::TAU,
+                );
                 ctx.fill();
             }
 
@@ -146,11 +162,21 @@ impl CanvasRenderer for DefaultRenderer {
             if is_dragging {
                 ctx.set_fill_style_str("rgba(245, 158, 11, 0.3)");
                 ctx.begin_path();
-                let _ = ctx.arc(node.x, node.y, node.radius + 12.0, 0.0, std::f64::consts::TAU);
+                let _ = ctx.arc(
+                    node.x,
+                    node.y,
+                    node.radius + 12.0,
+                    0.0,
+                    std::f64::consts::TAU,
+                );
                 ctx.fill();
             }
 
-            let draw_radius = if is_hovered { node.radius * 1.15 } else { node.radius };
+            let draw_radius = if is_hovered {
+                node.radius * 1.15
+            } else {
+                node.radius
+            };
 
             // 节点圆形
             ctx.set_fill_style_str(&node.color);
@@ -169,7 +195,11 @@ impl CanvasRenderer for DefaultRenderer {
 
             // 标签
             ctx.set_fill_style_str("white");
-            ctx.set_font(if is_hovered { "11px sans-serif" } else { "10px sans-serif" });
+            ctx.set_font(if is_hovered {
+                "11px sans-serif"
+            } else {
+                "10px sans-serif"
+            });
             ctx.set_text_align("center");
             ctx.set_text_baseline("middle");
             let label: String = node.label.chars().take(8).collect();
@@ -244,9 +274,8 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
     // 粒子系统状态（glow 需 mut 因事件闭包中 .write()，其他仅 clone 使用）
     let data_flow: Signal<DataFlowParticles> = use_signal(|| DataFlowParticles::new());
     let mut glow: Signal<GlowParticles> = use_signal(|| GlowParticles::new());
-    let background: Signal<BackgroundParticles> = use_signal(|| {
-        BackgroundParticles::new(props.width, props.height, 40)
-    });
+    let background: Signal<BackgroundParticles> =
+        use_signal(|| BackgroundParticles::new(props.width, props.height, 40));
     let birth_death: Signal<BirthDeathParticles> = use_signal(|| BirthDeathParticles::new());
 
     // --- props 同步 effect：props 变化时保留已有节点位置，新增节点用圆形布局初始化 ---

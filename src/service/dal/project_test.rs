@@ -5,7 +5,7 @@ use crate::models::model_provider::ModelProviderPo;
 use crate::models::project::Project;
 use crate::models::vector::{MatchType, Vectorizable};
 use crate::pkg::request_context::RequestContext;
-use crate::service::dal::project::{new, ProjectDal};
+use crate::service::dal::project::{ProjectDal, new};
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::project::{self, ProjectQuery, ProjectSearch};
@@ -149,11 +149,19 @@ struct MockModelProviderDao;
 
 #[async_trait::async_trait]
 impl ModelProviderDao for MockModelProviderDao {
-    async fn insert(&self, _ctx: RequestContext, _provider: &ModelProviderPo) -> common::error::Result<()> {
+    async fn insert(
+        &self,
+        _ctx: RequestContext,
+        _provider: &ModelProviderPo,
+    ) -> common::error::Result<()> {
         Ok(())
     }
 
-    async fn find_by_id(&self, _ctx: RequestContext, _id: &str) -> common::error::Result<Option<ModelProviderPo>> {
+    async fn find_by_id(
+        &self,
+        _ctx: RequestContext,
+        _id: &str,
+    ) -> common::error::Result<Option<ModelProviderPo>> {
         Ok(None)
     }
 
@@ -162,26 +170,43 @@ impl ModelProviderDao for MockModelProviderDao {
         _ctx: RequestContext,
         _query: crate::service::dao::model_provider::ModelProviderQuery,
     ) -> common::error::Result<common::api::PagedResult<ModelProviderPo>> {
-        Ok(common::api::PagedResult { items: Vec::new(), total: 0 })
+        Ok(common::api::PagedResult {
+            items: Vec::new(),
+            total: 0,
+        })
     }
 
     async fn find_all(&self, _ctx: RequestContext) -> common::error::Result<Vec<ModelProviderPo>> {
         Ok(vec![])
     }
 
-    async fn update(&self, _ctx: RequestContext, _provider: &ModelProviderPo) -> common::error::Result<()> {
+    async fn update(
+        &self,
+        _ctx: RequestContext,
+        _provider: &ModelProviderPo,
+    ) -> common::error::Result<()> {
         Ok(())
     }
 
-    async fn delete(&self, _ctx: RequestContext, _provider: &ModelProviderPo) -> common::error::Result<()> {
+    async fn delete(
+        &self,
+        _ctx: RequestContext,
+        _provider: &ModelProviderPo,
+    ) -> common::error::Result<()> {
         Ok(())
     }
 
-    async fn get_default_embedding_provider(&self, _ctx: RequestContext) -> common::error::Result<Option<ModelProviderPo>> {
+    async fn get_default_embedding_provider(
+        &self,
+        _ctx: RequestContext,
+    ) -> common::error::Result<Option<ModelProviderPo>> {
         Ok(Some(mock_provider()))
     }
 
-    async fn find_enabled_embedding_provider(&self, _ctx: RequestContext) -> common::error::Result<Option<ModelProviderPo>> {
+    async fn find_enabled_embedding_provider(
+        &self,
+        _ctx: RequestContext,
+    ) -> common::error::Result<Option<ModelProviderPo>> {
         Ok(None)
     }
 }
@@ -224,7 +249,9 @@ async fn init_test_env(pool: SqlitePool) -> (Arc<dyn ProjectDal + Send + Sync>, 
 ///
 /// 直接创建 DAL 实例，注入 MockCortexDao 和 MockModelProviderDao，
 /// 避免依赖真实 LLM 服务。
-async fn init_test_with_mocks(pool: SqlitePool) -> (Arc<dyn ProjectDal + Send + Sync>, RequestContext) {
+async fn init_test_with_mocks(
+    pool: SqlitePool,
+) -> (Arc<dyn ProjectDal + Send + Sync>, RequestContext) {
     // 初始化基础 DAO 单例（ProjectDao + ProjectVectorDao）
     crate::service::dao::project::init();
 
@@ -370,7 +397,10 @@ async fn test_query(pool: SqlitePool) {
     let query = ProjectQuery {
         root_user_id: Some(root_user_id),
         status_in: Some(vec![ProjectStatus::Active]),
-        pagination: common::api::PaginationParams { limit: Some(2), offset: None },
+        pagination: common::api::PaginationParams {
+            limit: Some(2),
+            offset: None,
+        },
         ..Default::default()
     };
 
@@ -615,7 +645,12 @@ async fn test_search_hybrid_three_states(pool: SqlitePool) {
     // 验证排序：Hybrid → Vector → Keyword
     let types: Vec<MatchType> = results
         .iter()
-        .map(|p| p.search_match.as_ref().map(|m| m.match_type).unwrap_or(MatchType::Vector))
+        .map(|p| {
+            p.search_match
+                .as_ref()
+                .map(|m| m.match_type)
+                .unwrap_or(MatchType::Vector)
+        })
         .collect();
     assert_eq!(types[0], MatchType::Hybrid, "首条应为 Hybrid 命中");
     assert_eq!(types[1], MatchType::Vector, "次条应为 Vector 命中");
@@ -630,18 +665,27 @@ async fn test_search_hybrid_three_states(pool: SqlitePool) {
 
     // 验证 Hybrid 同时有 vector_distance 和 fts_rank
     let hybrid_info = results[0].search_match.as_ref().unwrap();
-    assert!(hybrid_info.vector_distance.is_some(), "Hybrid 应有 vector_distance");
+    assert!(
+        hybrid_info.vector_distance.is_some(),
+        "Hybrid 应有 vector_distance"
+    );
     assert!(hybrid_info.fts_rank.is_some(), "Hybrid 应有 fts_rank");
 
     // 验证 Vector 只有 vector_distance，无 fts_rank
     let vector_info = results[1].search_match.as_ref().unwrap();
-    assert!(vector_info.vector_distance.is_some(), "Vector 应有 vector_distance");
+    assert!(
+        vector_info.vector_distance.is_some(),
+        "Vector 应有 vector_distance"
+    );
     assert!(vector_info.fts_rank.is_none(), "Vector 不应有 fts_rank");
 
     // 验证 Keyword 只有 fts_rank，无 vector_distance
     let keyword_info = results[2].search_match.as_ref().unwrap();
     assert!(keyword_info.fts_rank.is_some(), "Keyword 应有 fts_rank");
-    assert!(keyword_info.vector_distance.is_none(), "Keyword 不应有 vector_distance");
+    assert!(
+        keyword_info.vector_distance.is_none(),
+        "Keyword 不应有 vector_distance"
+    );
 }
 
 // ==================== 向量索引自动维护测试 ====================
@@ -756,7 +800,11 @@ async fn test_vector_index_skip_when_unchanged(pool: SqlitePool) {
     dal.update(ctx.clone(), &project).await.unwrap();
 
     // 验证项目 priority 已更新
-    let found = dal.find_by_id(ctx.clone(), &project_id).await.unwrap().unwrap();
+    let found = dal
+        .find_by_id(ctx.clone(), &project_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(found.po.priority, 99);
 
     // 向量搜索仍然能找到项目（索引未被破坏）

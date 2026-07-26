@@ -1,4 +1,3 @@
-
 //! Slack 渠道 DAO 模块
 //! 负责 Slack 渠道的消息推送和连接测试。
 //! 对 Slack Webhook API 的封装，支持后续协议版本适配。

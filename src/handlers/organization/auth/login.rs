@@ -1,6 +1,5 @@
 //! 用户登录
 
-use common::error::Result;
 use crate::middleware::jwt_auth::JWT_COOKIE_NAME;
 use crate::pkg::RequestContext;
 use crate::pkg::jwt;
@@ -12,6 +11,7 @@ use axum::{
 };
 use common::api::ApiResponse;
 use common::api::{LoginRequest, LoginResponse};
+use common::error::Result;
 use cookie::time;
 use cookie::{Cookie, SameSite};
 

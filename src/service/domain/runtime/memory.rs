@@ -1,11 +1,11 @@
 //! Runtime Memory 具体实现
 
-use common::error::{Result, err};
 use crate::models::memory::{Memory, MemoryCreateParams, MemoryTrace};
 use crate::pkg::request_context::RequestContext;
-use crate::service::dao::memory::{MemoryQuery, MemorySearch};
 use crate::service::dal::memory::TraversalStrategy;
+use crate::service::dao::memory::{MemoryQuery, MemorySearch};
 use crate::service::domain::runtime::{RuntimeDomainImpl, RuntimeMemory};
+use common::error::{Result, err};
 
 #[async_trait::async_trait]
 impl RuntimeMemory for RuntimeDomainImpl {
@@ -17,10 +17,7 @@ impl RuntimeMemory for RuntimeDomainImpl {
         agent_id: &str,
         limit: usize,
     ) -> Result<Vec<Memory>> {
-        let ctx = ctx
-            .to_builder()
-            .agent_id(agent_id)
-            .build();
+        let ctx = ctx.to_builder().agent_id(agent_id).build();
         use crate::service::dal::memory::dal;
         dal()
             .query(
@@ -71,47 +68,27 @@ impl RuntimeMemory for RuntimeDomainImpl {
 
     // === 公开方法（供 Handler/神经工具调用） ===
 
-    async fn search(
-        &self,
-        ctx: RequestContext,
-        search: MemorySearch,
-    ) -> Result<Vec<Memory>> {
+    async fn search(&self, ctx: RequestContext, search: MemorySearch) -> Result<Vec<Memory>> {
         use crate::service::dal::memory::dal;
         dal().search(ctx, search).await
     }
 
-    async fn query(
-        &self,
-        ctx: RequestContext,
-        query: MemoryQuery,
-    ) -> Result<Vec<Memory>> {
+    async fn query(&self, ctx: RequestContext, query: MemoryQuery) -> Result<Vec<Memory>> {
         use crate::service::dal::memory::dal;
         dal().query(ctx, query).await
     }
 
-    async fn create(
-        &self,
-        ctx: RequestContext,
-        params: MemoryCreateParams,
-    ) -> Result<Vec<Memory>> {
+    async fn create(&self, ctx: RequestContext, params: MemoryCreateParams) -> Result<Vec<Memory>> {
         use crate::service::dal::memory::dal;
         dal().create(ctx, params).await
     }
 
-    async fn update(
-        &self,
-        ctx: RequestContext,
-        memory: Memory,
-    ) -> Result<Memory> {
+    async fn update(&self, ctx: RequestContext, memory: Memory) -> Result<Memory> {
         use crate::service::dal::memory::dal;
         dal().update(ctx, memory).await
     }
 
-    async fn delete(
-        &self,
-        ctx: RequestContext,
-        memory: Memory,
-    ) -> Result<()> {
+    async fn delete(&self, ctx: RequestContext, memory: Memory) -> Result<()> {
         use crate::service::dal::memory::dal;
         dal().delete(ctx, memory).await
     }
@@ -137,6 +114,8 @@ impl RuntimeMemory for RuntimeDomainImpl {
         limit: usize,
     ) -> Result<Vec<Memory>> {
         use crate::service::dal::memory::dal;
-        dal().settle_short_term_to_long_term(ctx, agent_id, limit).await
+        dal()
+            .settle_short_term_to_long_term(ctx, agent_id, limit)
+            .await
     }
 }

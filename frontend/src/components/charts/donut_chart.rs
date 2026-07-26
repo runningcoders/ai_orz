@@ -12,8 +12,8 @@
 use dioxus::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
-use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::closure::Closure;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 
 use crate::components::hud_palette;
@@ -99,7 +99,14 @@ pub fn DonutChart(props: DonutChartProps) -> Element {
         let closure = Closure::<dyn FnMut()>::new(move || {
             let data = data_cache_c.read().clone();
             let now = js_sys::Date::now() / 1000.0;
-            draw_chart(&ctx, width, height, &data, now, center_label_inner.as_deref());
+            draw_chart(
+                &ctx,
+                width,
+                height,
+                &data,
+                now,
+                center_label_inner.as_deref(),
+            );
 
             // 递归注册下一帧
             if running_clone.load(std::sync::atomic::Ordering::SeqCst) {
@@ -215,7 +222,10 @@ fn draw_chart(
     let pulse_t = (now % pulse_period) / pulse_period;
     let phase = (pulse_t * std::f64::consts::TAU).sin();
     let glow_alpha = 0.25 + phase * 0.15;
-    ctx.set_stroke_style_str(&hud_palette::hex_to_rgba(hud_palette::HUD_PRIMARY, glow_alpha));
+    ctx.set_stroke_style_str(&hud_palette::hex_to_rgba(
+        hud_palette::HUD_PRIMARY,
+        glow_alpha,
+    ));
     ctx.set_line_width(2.0);
     ctx.begin_path();
     let _ = ctx.arc(cx, cy, outer_r + 6.0, 0.0, std::f64::consts::TAU);
@@ -307,9 +317,21 @@ mod tests {
     #[test]
     fn test_total_calculation() {
         let data = vec![
-            DonutSlice { label: "A".into(), value: 3, color: "#fff".into() },
-            DonutSlice { label: "B".into(), value: 5, color: "#fff".into() },
-            DonutSlice { label: "C".into(), value: 2, color: "#fff".into() },
+            DonutSlice {
+                label: "A".into(),
+                value: 3,
+                color: "#fff".into(),
+            },
+            DonutSlice {
+                label: "B".into(),
+                value: 5,
+                color: "#fff".into(),
+            },
+            DonutSlice {
+                label: "C".into(),
+                value: 2,
+                color: "#fff".into(),
+            },
         ];
         let total: u64 = data.iter().map(|s| s.value).sum();
         assert_eq!(total, 10);

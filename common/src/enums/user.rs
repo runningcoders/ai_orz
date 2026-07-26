@@ -59,7 +59,7 @@ impl UserRole {
     /// 上级角色拥有下级角色的所有权限
     pub fn parent(&self) -> Option<UserRole> {
         match self {
-            UserRole::SuperAdmin => None,    // 根节点，没有上级
+            UserRole::SuperAdmin => None, // 根节点，没有上级
             UserRole::Admin => Some(UserRole::SuperAdmin),
             UserRole::Member => Some(UserRole::Admin),
         }
@@ -165,17 +165,32 @@ mod tests {
     #[test]
     fn test_user_role_has_permission() {
         // SuperAdmin 满足所有要求
-        assert!(UserRole::has_permission(UserRole::SuperAdmin, UserRole::SuperAdmin));
-        assert!(UserRole::has_permission(UserRole::SuperAdmin, UserRole::Admin));
-        assert!(UserRole::has_permission(UserRole::SuperAdmin, UserRole::Member));
+        assert!(UserRole::has_permission(
+            UserRole::SuperAdmin,
+            UserRole::SuperAdmin
+        ));
+        assert!(UserRole::has_permission(
+            UserRole::SuperAdmin,
+            UserRole::Admin
+        ));
+        assert!(UserRole::has_permission(
+            UserRole::SuperAdmin,
+            UserRole::Member
+        ));
 
         // Admin 满足 Admin 和 Member 要求，不满足 SuperAdmin
-        assert!(!UserRole::has_permission(UserRole::Admin, UserRole::SuperAdmin));
+        assert!(!UserRole::has_permission(
+            UserRole::Admin,
+            UserRole::SuperAdmin
+        ));
         assert!(UserRole::has_permission(UserRole::Admin, UserRole::Admin));
         assert!(UserRole::has_permission(UserRole::Admin, UserRole::Member));
 
         // Member 只满足自身
-        assert!(!UserRole::has_permission(UserRole::Member, UserRole::SuperAdmin));
+        assert!(!UserRole::has_permission(
+            UserRole::Member,
+            UserRole::SuperAdmin
+        ));
         assert!(!UserRole::has_permission(UserRole::Member, UserRole::Admin));
         assert!(UserRole::has_permission(UserRole::Member, UserRole::Member));
     }

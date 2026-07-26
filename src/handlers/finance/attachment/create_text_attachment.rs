@@ -1,11 +1,11 @@
 //! Handler: POST /api/v1/attachments/text - 创建小型 UTF-8 文本 Attachment
 
-use common::error::Result;
 use crate::models::attachment::TextAttachmentCreate;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CreateTextAttachmentRequest, CreateTextAttachmentResponse};
+use common::error::Result;
 use common::error::bail_err;
 
 use super::response::to_detail;

@@ -1,10 +1,10 @@
 //! Handler: DELETE /api/v1/agents/{agent_id}/skill-packs/{tag} - Uninstall skill pack from agent
 
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UninstallSkillPackRequest, UninstallSkillPackResponse};
+use common::error::Result;
 
 /// Uninstall a skill pack (by tag) from an agent.
 ///

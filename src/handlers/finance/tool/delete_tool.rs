@@ -1,10 +1,10 @@
 //! Handler: DELETE /api/v1/tools/{id} - Delete a custom tool
 
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{DeleteToolRequest, DeleteToolResponse};
+use common::error::Result;
 
 /// Delete an existing custom tool (soft delete)
 #[register_handler_tool(

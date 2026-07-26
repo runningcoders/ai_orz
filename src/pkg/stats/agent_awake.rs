@@ -5,9 +5,9 @@
 
 use super::*;
 use ai_orz_macros::StatsEvent;
-use uuid::Uuid;
-use duckdb::{Connection, ToSql};
 use common::error::Result;
+use duckdb::{Connection, ToSql};
+use uuid::Uuid;
 
 #[derive(Debug, Clone, StatsEvent)]
 #[event_type = "agent_awake"]
@@ -119,8 +119,12 @@ impl StatTable<AgentAwakeEvent> for AgentAwakeStatTable {
                 status VARCHAR
             );
         "#;
-        conn.execute(sql, [])
-            .map_err(|e| common::error::Error::internal(format!("Failed to create agent_awake_events table: {}", e)))?;
+        conn.execute(sql, []).map_err(|e| {
+            common::error::Error::internal(format!(
+                "Failed to create agent_awake_events table: {}",
+                e
+            ))
+        })?;
         Ok(())
     }
 
@@ -133,20 +137,25 @@ impl StatTable<AgentAwakeEvent> for AgentAwakeStatTable {
                 call_count, duration_ms, status
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         "#;
-        conn.execute(sql, [
-            &id.to_string() as &dyn ToSql,
-            &event.timestamp as &dyn ToSql,
-            &event.agent_id as &dyn ToSql,
-            &event.project_id as &dyn ToSql,
-            &event.task_id as &dyn ToSql,
-            &event.organization_id as &dyn ToSql,
-            &event.user_id as &dyn ToSql,
-            &event.message_id as &dyn ToSql,
-            &event.call_count as &dyn ToSql,
-            &event.duration_ms as &dyn ToSql,
-            &event.status as &dyn ToSql,
-        ])
-            .map_err(|e| common::error::Error::internal(format!("Failed to insert agent awake event: {}", e)))?;
+        conn.execute(
+            sql,
+            [
+                &id.to_string() as &dyn ToSql,
+                &event.timestamp as &dyn ToSql,
+                &event.agent_id as &dyn ToSql,
+                &event.project_id as &dyn ToSql,
+                &event.task_id as &dyn ToSql,
+                &event.organization_id as &dyn ToSql,
+                &event.user_id as &dyn ToSql,
+                &event.message_id as &dyn ToSql,
+                &event.call_count as &dyn ToSql,
+                &event.duration_ms as &dyn ToSql,
+                &event.status as &dyn ToSql,
+            ],
+        )
+        .map_err(|e| {
+            common::error::Error::internal(format!("Failed to insert agent awake event: {}", e))
+        })?;
         Ok(())
     }
 
@@ -160,20 +169,28 @@ impl StatTable<AgentAwakeEvent> for AgentAwakeStatTable {
                     call_count, duration_ms, status
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             "#;
-            conn.execute(sql, [
-                &id.to_string() as &dyn ToSql,
-                &event.timestamp as &dyn ToSql,
-                &event.agent_id as &dyn ToSql,
-                &event.project_id as &dyn ToSql,
-                &event.task_id as &dyn ToSql,
-                &event.organization_id as &dyn ToSql,
-                &event.user_id as &dyn ToSql,
-                &event.message_id as &dyn ToSql,
-                &event.call_count as &dyn ToSql,
-                &event.duration_ms as &dyn ToSql,
-                &event.status as &dyn ToSql,
-            ])
-                .map_err(|e| common::error::Error::internal(format!("Failed to bulk insert agent awake event: {}", e)))?;
+            conn.execute(
+                sql,
+                [
+                    &id.to_string() as &dyn ToSql,
+                    &event.timestamp as &dyn ToSql,
+                    &event.agent_id as &dyn ToSql,
+                    &event.project_id as &dyn ToSql,
+                    &event.task_id as &dyn ToSql,
+                    &event.organization_id as &dyn ToSql,
+                    &event.user_id as &dyn ToSql,
+                    &event.message_id as &dyn ToSql,
+                    &event.call_count as &dyn ToSql,
+                    &event.duration_ms as &dyn ToSql,
+                    &event.status as &dyn ToSql,
+                ],
+            )
+            .map_err(|e| {
+                common::error::Error::internal(format!(
+                    "Failed to bulk insert agent awake event: {}",
+                    e
+                ))
+            })?;
         }
         Ok(())
     }

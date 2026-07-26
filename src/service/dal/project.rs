@@ -5,20 +5,20 @@
 //! - 向量索引自动维护（create/update 时调用 ProjectVectorDao）
 //! - 混合搜索（FTS5 关键词 + 向量语义）
 
-use common::error::Result;
-use common::models::{ModelCallStats, ProjectStats, StatsFetchOptions, StatsInterval};
 use crate::models::project::Project;
 use crate::models::vector::{MatchType, SearchMatchInfo, Vectorizable};
 use crate::pkg::RequestContext;
 use crate::pkg::stats::{ModelCallEvent, ProjectEvent};
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::ModelProviderDao;
+use crate::service::dao::model_provider::{ModelProviderStatsDao, ModelProviderStatsQuery};
 use crate::service::dao::project;
 use crate::service::dao::project::{
     ProjectDao, ProjectQuery, ProjectSearch, ProjectStatsDao, ProjectStatsQuery, ProjectVectorDao,
 };
-use crate::service::dao::model_provider::{ModelProviderStatsDao, ModelProviderStatsQuery};
 use common::enums::ProjectStatus;
+use common::error::Result;
+use common::models::{ModelCallStats, ProjectStats, StatsFetchOptions, StatsInterval};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock};
 
@@ -91,7 +91,12 @@ pub trait ProjectDal: Send + Sync {
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Project>>;
 
     /// 根据 ID 获取项目（带附带信息选项）
-    async fn get_project(&self, ctx: RequestContext, id: &str, options: ProjectFetchOptions) -> Result<Option<Project>>;
+    async fn get_project(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        options: ProjectFetchOptions,
+    ) -> Result<Option<Project>>;
 
     /// 获取根用户下的所有项目
     async fn list_by_root_user(
@@ -133,19 +138,10 @@ pub trait ProjectDal: Send + Sync {
     ) -> Result<()>;
 
     /// 归档项目（软删除）
-    async fn archive(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-        modified_by: &str,
-    ) -> Result<()>;
+    async fn archive(&self, ctx: RequestContext, id: &str, modified_by: &str) -> Result<()>;
 
     /// 统计根用户的项目总数
-    async fn count_by_root_user(
-        &self,
-        ctx: RequestContext,
-        root_user_id: &str,
-    ) -> Result<u64>;
+    async fn count_by_root_user(&self, ctx: RequestContext, root_user_id: &str) -> Result<u64>;
 
     /// 统计根用户指定状态的项目数
     async fn count_by_root_user_and_status(
@@ -164,22 +160,28 @@ pub trait ProjectDal: Send + Sync {
     /// - keyword 存在且 Embedding Provider 可用 → 同时走向量语义搜索，合并结果
     /// - 仅 query_vector 存在 → 走纯向量搜索
     /// - filters 透传业务过滤条件（root_user_id / status_in / limit）
-    async fn search(
-        &self,
-        ctx: RequestContext,
-        search: ProjectSearch,
-    ) -> Result<Vec<Project>>;
+    async fn search(&self, ctx: RequestContext, search: ProjectSearch) -> Result<Vec<Project>>;
 
     // ==================== 统计查询 ====================
 
     /// 获取 Project 统计数据（按 options 控制返回哪些维度）
-    async fn get_stats(&self, ctx: RequestContext, project_id: &str, options: StatsFetchOptions) -> Result<ProjectStats>;
+    async fn get_stats(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+        options: StatsFetchOptions,
+    ) -> Result<ProjectStats>;
 
     /// 获取 Project 维度的模型调用统计
     ///
     /// 由 ModelProviderStatsDao（模型调用领域）负责计算，
     /// 按 project_id 过滤后返回 ModelCallStats。
-    async fn get_model_call_stats(&self, ctx: RequestContext, project_id: &str, options: StatsFetchOptions) -> Result<ModelCallStats>;
+    async fn get_model_call_stats(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+        options: StatsFetchOptions,
+    ) -> Result<ModelCallStats>;
 
     /// 🔄 重建所有项目的向量索引
     ///
@@ -258,7 +260,12 @@ impl ProjectDal for ProjectDalImpl {
         Ok(opt.map(Project::from_po))
     }
 
-    async fn get_project(&self, ctx: RequestContext, id: &str, options: ProjectFetchOptions) -> Result<Option<Project>> {
+    async fn get_project(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        options: ProjectFetchOptions,
+    ) -> Result<Option<Project>> {
         let opt = self.project_dao.find_by_id(ctx.clone(), id).await?;
         let Some(mut project) = opt.map(Project::from_po) else {
             return Ok(None);
@@ -284,7 +291,9 @@ impl ProjectDal for ProjectDalImpl {
                 time_range: options.stats_time_range,
                 interval: options.stats_interval,
             };
-            let model_call_stats = self.get_model_call_stats(ctx.clone(), id, stats_options).await?;
+            let model_call_stats = self
+                .get_model_call_stats(ctx.clone(), id, stats_options)
+                .await?;
             project.model_call_stats = Some(model_call_stats);
         }
 
@@ -405,12 +414,7 @@ impl ProjectDal for ProjectDalImpl {
             .await
     }
 
-    async fn archive(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-        modified_by: &str,
-    ) -> Result<()> {
+    async fn archive(&self, ctx: RequestContext, id: &str, modified_by: &str) -> Result<()> {
         let ctx = ctx.to_builder().project_id(id).build();
         self.project_dao
             .update_status(ctx.clone(), id, ProjectStatus::Archived, modified_by)
@@ -420,11 +424,7 @@ impl ProjectDal for ProjectDalImpl {
         Ok(())
     }
 
-    async fn count_by_root_user(
-        &self,
-        ctx: RequestContext,
-        root_user_id: &str,
-    ) -> Result<u64> {
+    async fn count_by_root_user(&self, ctx: RequestContext, root_user_id: &str) -> Result<u64> {
         // 语法糖：调用通用 count
         self.count(
             ctx,
@@ -456,11 +456,7 @@ impl ProjectDal for ProjectDalImpl {
 
     // ==================== 搜索 ====================
 
-    async fn search(
-        &self,
-        ctx: RequestContext,
-        search: ProjectSearch,
-    ) -> Result<Vec<Project>> {
+    async fn search(&self, ctx: RequestContext, search: ProjectSearch) -> Result<Vec<Project>> {
         // 向量距离阈值（默认 0.8，余弦距离 0-2，0 完全相同）
         const VECTOR_DISTANCE_THRESHOLD: f32 = 0.8;
 
@@ -621,35 +617,37 @@ impl ProjectDal for ProjectDalImpl {
                 Some(MatchType::Vector) => 1,
                 _ => 2,
             };
-            order_a.cmp(&order_b).then_with(|| {
-                match (a_type, b_type) {
-                    (Some(MatchType::Hybrid), Some(MatchType::Hybrid))
-                    | (Some(MatchType::Vector), Some(MatchType::Vector)) => {
-                        let a_dist = a
-                            .search_match
-                            .as_ref()
-                            .and_then(|m| m.vector_distance)
-                            .unwrap_or(f32::MAX);
-                        let b_dist = b
-                            .search_match
-                            .as_ref()
-                            .and_then(|m| m.vector_distance)
-                            .unwrap_or(f32::MAX);
-                        a_dist.partial_cmp(&b_dist).unwrap_or(std::cmp::Ordering::Equal)
-                    }
-                    _ => {
-                        let a_rank = a
-                            .search_match
-                            .as_ref()
-                            .and_then(|m| m.fts_rank)
-                            .unwrap_or(f32::MAX);
-                        let b_rank = b
-                            .search_match
-                            .as_ref()
-                            .and_then(|m| m.fts_rank)
-                            .unwrap_or(f32::MAX);
-                        a_rank.partial_cmp(&b_rank).unwrap_or(std::cmp::Ordering::Equal)
-                    }
+            order_a.cmp(&order_b).then_with(|| match (a_type, b_type) {
+                (Some(MatchType::Hybrid), Some(MatchType::Hybrid))
+                | (Some(MatchType::Vector), Some(MatchType::Vector)) => {
+                    let a_dist = a
+                        .search_match
+                        .as_ref()
+                        .and_then(|m| m.vector_distance)
+                        .unwrap_or(f32::MAX);
+                    let b_dist = b
+                        .search_match
+                        .as_ref()
+                        .and_then(|m| m.vector_distance)
+                        .unwrap_or(f32::MAX);
+                    a_dist
+                        .partial_cmp(&b_dist)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                }
+                _ => {
+                    let a_rank = a
+                        .search_match
+                        .as_ref()
+                        .and_then(|m| m.fts_rank)
+                        .unwrap_or(f32::MAX);
+                    let b_rank = b
+                        .search_match
+                        .as_ref()
+                        .and_then(|m| m.fts_rank)
+                        .unwrap_or(f32::MAX);
+                    a_rank
+                        .partial_cmp(&b_rank)
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 }
             })
         });
@@ -664,7 +662,12 @@ impl ProjectDal for ProjectDalImpl {
 
     // ==================== 统计查询 ====================
 
-    async fn get_stats(&self, ctx: RequestContext, project_id: &str, options: StatsFetchOptions) -> Result<ProjectStats> {
+    async fn get_stats(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+        options: StatsFetchOptions,
+    ) -> Result<ProjectStats> {
         let query = ProjectStatsQuery {
             project_id: project_id.to_string(),
             time_range: options.time_range,
@@ -673,14 +676,21 @@ impl ProjectDal for ProjectDalImpl {
         self.project_stats_dao.get_stats(ctx, query, options).await
     }
 
-    async fn get_model_call_stats(&self, ctx: RequestContext, project_id: &str, options: StatsFetchOptions) -> Result<ModelCallStats> {
+    async fn get_model_call_stats(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+        options: StatsFetchOptions,
+    ) -> Result<ModelCallStats> {
         let query = ModelProviderStatsQuery {
             project_id: Some(project_id.to_string()),
             time_range: options.time_range,
             interval: options.interval,
             ..Default::default()
         };
-        self.model_provider_stats_dao.get_stats(ctx, query, options).await
+        self.model_provider_stats_dao
+            .get_stats(ctx, query, options)
+            .await
     }
 
     async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()> {
@@ -717,10 +727,15 @@ impl ProjectDal for ProjectDalImpl {
         }
 
         // 3. 清空向量集合并重建
-        self.project_vector_dao.clear_collection(ctx.clone()).await?;
+        self.project_vector_dao
+            .clear_collection(ctx.clone())
+            .await?;
 
         // 4. 查全量项目并逐条重新索引
-        let projects = self.query(ctx.clone(), ProjectQuery::default()).await?.items;
+        let projects = self
+            .query(ctx.clone(), ProjectQuery::default())
+            .await?
+            .items;
         for project in &projects {
             match try_build_vector_params_for_entity(
                 ctx.clone(),

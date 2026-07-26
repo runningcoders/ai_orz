@@ -10,12 +10,10 @@ use crate::pkg::RequestContext;
 use crate::service::domain::system::seed::store;
 
 #[generate_http_handler]
-pub async fn save_seed(
-    ctx: RequestContext,
-    params: SaveSeedRequest,
-) -> Result<SaveSeedResponse> {
+pub async fn save_seed(ctx: RequestContext, params: SaveSeedRequest) -> Result<SaveSeedResponse> {
     super::check_super_admin(&ctx)?;
-    let org_id = ctx.organization_id()
+    let org_id = ctx
+        .organization_id()
         .ok_or_else(|| Error::bad_request("缺少 organization_id".to_string()))?
         .clone();
 
@@ -26,5 +24,8 @@ pub async fn save_seed(
     let dir = store::seeds_dir();
     let size = store::write_file(&dir, &params.name, &content).await?;
 
-    Ok(SaveSeedResponse { name: params.name, size })
+    Ok(SaveSeedResponse {
+        name: params.name,
+        size,
+    })
 }

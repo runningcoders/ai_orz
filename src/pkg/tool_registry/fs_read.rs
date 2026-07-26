@@ -2,9 +2,11 @@
 
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
-use crate::pkg::tool_registry::tool_security::fs::{resolve_and_validate_path, ValidationResult, sanitize_error};
-use common::error::Result;
+use crate::pkg::tool_registry::tool_security::fs::{
+    ValidationResult, resolve_and_validate_path, sanitize_error,
+};
 use common::enums::{ControlMode, ToolProtocol};
+use common::error::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs::File;
@@ -130,7 +132,11 @@ impl CoreTool for FsReadCoreTool {
 
         // Get base data path from global config
         let base_path = crate::config::get().base_data_path();
-        let additional_allowed = self.config.additional_allowed_paths.as_deref().unwrap_or(&[]);
+        let additional_allowed = self
+            .config
+            .additional_allowed_paths
+            .as_deref()
+            .unwrap_or(&[]);
         match resolve_and_validate_path(&base_path, &args.path, additional_allowed)? {
             ValidationResult::NeedConfirmation(message) => {
                 // Return explicit prompt for agent to ask user confirmation
@@ -141,68 +147,72 @@ impl CoreTool for FsReadCoreTool {
                 }));
             }
             ValidationResult::Valid(target_path) => {
-
                 // Check file size before opening
                 let metadata = std::fs::metadata(&target_path)
-                    .map_err(|e| anyhow::anyhow!("Failed to read file metadata: {}", sanitize_error(e)))
+                    .map_err(|e| {
+                        anyhow::anyhow!("Failed to read file metadata: {}", sanitize_error(e))
+                    })
                     .map_err(|e| common::error::Error::from(e))?;
 
                 const HARD_READ_MAX_BYTES: usize = 10 * 1024 * 1024; // 10MB
 
                 let size = metadata.len() as usize;
-                            if size > HARD_READ_MAX_BYTES {
-                                return Ok(serde_json::json!({
-                                    "success": false,
-                                    "error": format!("File too large: {} bytes, maximum allowed is {} bytes", size, HARD_READ_MAX_BYTES)
-                                }));
-                            }
+                if size > HARD_READ_MAX_BYTES {
+                    return Ok(serde_json::json!({
+                        "success": false,
+                        "error": format!("File too large: {} bytes, maximum allowed is {} bytes", size, HARD_READ_MAX_BYTES)
+                    }));
+                }
 
-                            // Open and read file line by line
-                            let file = File::open(&target_path)
-                                .map_err(|e| anyhow::anyhow!("Failed to open file: {}", sanitize_error(e)))
-                                .map_err(|e| common::error::Error::from(e))?;
-                            let reader = BufReader::new(file);
-                            let lines: Vec<String> = reader.lines()
-                                .collect::<std::result::Result<_, _>>()
-                                .map_err(|e| anyhow::anyhow!("Failed to read file: {}", sanitize_error(e)))
-                                .map_err(|e| common::error::Error::from(e))?;
+                // Open and read file line by line
+                let file = File::open(&target_path)
+                    .map_err(|e| anyhow::anyhow!("Failed to open file: {}", sanitize_error(e)))
+                    .map_err(|e| common::error::Error::from(e))?;
+                let reader = BufReader::new(file);
+                let lines: Vec<String> = reader
+                    .lines()
+                    .collect::<std::result::Result<_, _>>()
+                    .map_err(|e| anyhow::anyhow!("Failed to read file: {}", sanitize_error(e)))
+                    .map_err(|e| common::error::Error::from(e))?;
 
-                            let total_lines = lines.len();
+                let total_lines = lines.len();
 
-                            // Handle grep mode
-                            if let Some(pattern) = args.grep {
-                                let matches = find_grep_matches(&lines, &pattern, args.context_lines);
-                                return Ok(serde_json::json!({
-                                    "success": true,
-                                    "path": args.path,
-                                    "query": pattern,
-                                    "total_matches": matches.len(),
-                                    "matches": matches
-                                }));
-                            }
+                // Handle grep mode
+                if let Some(pattern) = args.grep {
+                    let matches = find_grep_matches(&lines, &pattern, args.context_lines);
+                    return Ok(serde_json::json!({
+                        "success": true,
+                        "path": args.path,
+                        "query": pattern,
+                        "total_matches": matches.len(),
+                        "matches": matches
+                    }));
+                }
 
-                            // Handle range mode
-                            let (start, end) = resolve_line_range(args.start_line, args.end_line, total_lines);
-                            let selected_lines = &lines[start..end];
+                // Handle range mode
+                let (start, end) = resolve_line_range(args.start_line, args.end_line, total_lines);
+                let selected_lines = &lines[start..end];
 
-                            // Format with line numbers
-                            let mut content = String::new();
-                            for (i, line) in selected_lines.iter().enumerate() {
-                                let line_num = start + i + 1; // 1-indexed
-                                content.push_str(&format!("{:>4}|{}\n", line_num, line));
-                            }
+                // Format with line numbers
+                let mut content = String::new();
+                for (i, line) in selected_lines.iter().enumerate() {
+                    let line_num = start + i + 1; // 1-indexed
+                    content.push_str(&format!("{:>4}|{}\n", line_num, line));
+                }
 
-                            Ok(serde_json::json!({
-                                "success": true,
-                                "path": args.path,
-                                "size_bytes": size,
-                                "total_lines": total_lines,
-                                "content": content
-                        }))
+                Ok(serde_json::json!({
+                        "success": true,
+                        "path": args.path,
+                        "size_bytes": size,
+                        "total_lines": total_lines,
+                        "content": content
+                }))
             }
         }
     }
-    fn po(&self) -> &ToolPo { &self.po }
+    fn po(&self) -> &ToolPo {
+        &self.po
+    }
 }
 
 /// Find grep matches with context in the list of lines
@@ -213,7 +223,7 @@ fn find_grep_matches(lines: &[String], pattern: &str, context_lines: usize) -> V
             let line_number = idx + 1; // 1-indexed
             let context_before_start = idx.saturating_sub(context_lines);
             let context_after_end = (idx + context_lines + 1).min(lines.len());
-            
+
             let context_before = lines[context_before_start..idx]
                 .iter()
                 .map(|s| s.clone())
@@ -222,7 +232,7 @@ fn find_grep_matches(lines: &[String], pattern: &str, context_lines: usize) -> V
                 .iter()
                 .map(|s| s.clone())
                 .collect::<Vec<_>>();
-            
+
             let content = format!("{:>4}|{}", line_number, line);
             matches.push(GrepMatch {
                 line_number,

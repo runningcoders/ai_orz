@@ -15,8 +15,8 @@
 use dioxus::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
-use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::closure::Closure;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 
 use crate::components::hud_palette;

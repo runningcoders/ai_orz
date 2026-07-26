@@ -2,11 +2,11 @@
 //!
 //! 定义组织相关业务接口实现
 
-use common::error::Result;
 use crate::models::organization::OrganizationPo;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
+use common::error::Result;
 use rand::Rng;
 
 /// 生成组织 ID（12 位大写字母 + 数字）
@@ -42,7 +42,10 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
         // 语法糖：调用通用 count
         let count = self
             .org_dal
-            .count(ctx, crate::service::dao::organization::OrganizationQuery::default())
+            .count(
+                ctx,
+                crate::service::dao::organization::OrganizationQuery::default(),
+            )
             .await?;
         Ok(count > 0)
     }
@@ -73,7 +76,9 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
             user_id.clone(),
             org_id.clone(),
             params.admin_username,
-            params.admin_display_name.unwrap_or_else(|| "超级管理员".to_string()),
+            params
+                .admin_display_name
+                .unwrap_or_else(|| "超级管理员".to_string()),
             params.admin_email.unwrap_or_default(),
             params.admin_password_hash,
             common::enums::UserRole::SuperAdmin,
@@ -85,11 +90,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
     }
 
     /// 获取组织信息
-    async fn get_by_id(
-        &self,
-        ctx: RequestContext,
-        org_id: &str,
-    ) -> Result<Option<OrganizationPo>> {
+    async fn get_by_id(&self, ctx: RequestContext, org_id: &str) -> Result<Option<OrganizationPo>> {
         self.org_dal.get_by_id(ctx, org_id).await
     }
 

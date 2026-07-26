@@ -1,15 +1,15 @@
 //! Skill DAO SQLite 单元测试
 
-use common::error::Error;
 use crate::models::skill::SkillPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::skill::{self, SkillDao, SkillQuery, SkillSearch};
 use common::enums::SkillStatus;
 use common::enums::skill::SkillAuthorType;
+use common::error::Error;
+use common::error::Result;
 use sqlx::{Row, SqlitePool};
 use std::sync::Arc;
 use uuid::Uuid;
-use common::error::Result;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     crate::pkg::request_context_test_support::new_test_ctx(user_id, pool)
@@ -227,9 +227,7 @@ async fn test_search(pool: SqlitePool) -> Result<()> {
     // 返回类型为 Vec<(SkillPo, Option<f32>)>
     assert!(result.iter().any(|(s, _)| s.id == skill_id));
     // FTS5 命中时 fts_rank 应有值
-    assert!(result
-        .iter()
-        .any(|(_, rank)| rank.is_some()));
+    assert!(result.iter().any(|(_, rank)| rank.is_some()));
 
     let ctx = new_ctx("test-user", pool);
     let result = skill_dao
@@ -946,12 +944,11 @@ async fn test_skill_fts5_trigger_insert_sync(pool: SqlitePool) -> Result<()> {
     assert!(rowid > 0);
 
     // 3. 通过 name MATCH 搜索英文关键词
-    let name_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM skills_fts WHERE name MATCH ?")
-            .bind("rust")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let name_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM skills_fts WHERE name MATCH ?")
+        .bind("rust")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(name_count, 1, "name MATCH rust 应命中");
 
     // 4. 通过 description MATCH 搜索英文关键词
@@ -964,12 +961,11 @@ async fn test_skill_fts5_trigger_insert_sync(pool: SqlitePool) -> Result<()> {
     assert_eq!(desc_count, 1, "description MATCH memory 应命中");
 
     // 5. 通过 tags MATCH 搜索英文关键词
-    let tags_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM skills_fts WHERE tags MATCH ?")
-            .bind("rust")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let tags_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM skills_fts WHERE tags MATCH ?")
+        .bind("rust")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(tags_count, 1, "tags MATCH rust 应命中");
 
     Ok(())
@@ -1010,21 +1006,19 @@ async fn test_skill_fts5_trigger_update_sync(pool: SqlitePool) -> Result<()> {
     assert_eq!(count, 1, "UPDATE 后 FTS 表仍应只有 1 条记录");
 
     // 新关键词 python 应能搜到
-    let new_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM skills_fts WHERE name MATCH ?")
-            .bind("python")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let new_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM skills_fts WHERE name MATCH ?")
+        .bind("python")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(new_count, 1, "更新后应能搜到新关键词 python");
 
     // 旧关键词 rust 应搜不到（旧 FTS 条目已被触发器删除）
-    let old_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM skills_fts WHERE name MATCH ?")
-            .bind("rust")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let old_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM skills_fts WHERE name MATCH ?")
+        .bind("rust")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(old_count, 0, "更新后旧关键词 rust 应已从 FTS 移除");
 
     Ok(())
@@ -1074,12 +1068,11 @@ async fn test_skill_fts5_trigger_delete_sync(pool: SqlitePool) -> Result<()> {
     assert_eq!(after, 0, "硬删除后 FTS 表应为空");
 
     // MATCH 搜索应搜不到
-    let search: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM skills_fts WHERE name MATCH ?")
-            .bind("rust")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let search: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM skills_fts WHERE name MATCH ?")
+        .bind("rust")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(search, 0, "删除后 MATCH 搜索应无结果");
 
     Ok(())

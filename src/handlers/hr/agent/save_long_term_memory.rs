@@ -52,7 +52,10 @@ pub async fn save_long_term_memory(
         node,
         references: vec![],
     };
-    let results = runtime_domain().memory().create(ctx.clone(), create_params).await?;
+    let results = runtime_domain()
+        .memory()
+        .create(ctx.clone(), create_params)
+        .await?;
 
     let _ = results
         .first()

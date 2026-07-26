@@ -14,8 +14,8 @@
 //! TODO: 后续会拓展统一事件系统，将 task/artifact 等运行时数据变更统一纳入事件流，
 //! 通过消费者分发，届时可推送完整的 task 状态变更。
 
-use axum::response::sse::{Event, Sse};
 use axum::Extension;
+use axum::response::sse::{Event, Sse};
 use futures_util::{Stream, StreamExt};
 use std::convert::Infallible;
 use std::pin::Pin;
@@ -40,7 +40,9 @@ pub async fn handle_send_subscribe(
     let user_id = ctx.uid().to_string();
     if user_id.is_empty() {
         let stream = futures_util::stream::once(async {
-            Ok(Event::default().event("error").data("A2A 请求缺少用户上下文"))
+            Ok(Event::default()
+                .event("error")
+                .data("A2A 请求缺少用户上下文"))
         });
         return Sse::new(Box::pin(stream));
     }
@@ -49,7 +51,9 @@ pub async fn handle_send_subscribe(
         Ok((pid, sid)) => (pid, sid),
         Err(e) => {
             let stream = futures_util::stream::once(async move {
-                Ok(Event::default().event("error").data(format!("创建任务失败: {}", e)))
+                Ok(Event::default()
+                    .event("error")
+                    .data(format!("创建任务失败: {}", e)))
             });
             return Sse::new(Box::pin(stream));
         }
@@ -63,7 +67,9 @@ pub async fn handle_send_subscribe(
         Ok(sr) => sr,
         Err(e) => {
             let stream = futures_util::stream::once(async move {
-                Ok(Event::default().event("error").data(format!("订阅消息流失败: {}", e)))
+                Ok(Event::default()
+                    .event("error")
+                    .data(format!("订阅消息流失败: {}", e)))
             });
             return Sse::new(Box::pin(stream));
         }
@@ -76,34 +82,33 @@ pub async fn handle_send_subscribe(
     let project_id_clone = project_id.clone();
     let session_id_clone = session_id.clone();
 
-    let stream = BroadcastStream::new(rx)
-        .then(move |msg| {
-            let ctx = ctx_clone.clone();
-            let project_id = project_id_clone.clone();
-            let session_id = session_id_clone.clone();
-            async move {
-                match msg {
-                    Ok(data) => {
-                        let payload: SsePushPayload = match serde_json::from_str(&data) {
-                            Ok(p) => p,
-                            Err(_) => {
-                                return Ok(Event::default().event("error").data("无效的消息格式"));
-                            }
-                        };
-
-                        if payload.project_id.as_deref() != Some(project_id.as_str()) {
-                            return Ok(Event::default().event("ping").data("keep-alive"));
+    let stream = BroadcastStream::new(rx).then(move |msg| {
+        let ctx = ctx_clone.clone();
+        let project_id = project_id_clone.clone();
+        let session_id = session_id_clone.clone();
+        async move {
+            match msg {
+                Ok(data) => {
+                    let payload: SsePushPayload = match serde_json::from_str(&data) {
+                        Ok(p) => p,
+                        Err(_) => {
+                            return Ok(Event::default().event("error").data("无效的消息格式"));
                         }
+                    };
 
-                        match build_task_event(ctx, &project_id, &session_id).await {
-                            Ok(task_json) => Ok(Event::default().event("task").data(task_json)),
-                            Err(e) => Ok(Event::default().event("error").data(format!("{}", e))),
-                        }
+                    if payload.project_id.as_deref() != Some(project_id.as_str()) {
+                        return Ok(Event::default().event("ping").data("keep-alive"));
                     }
-                    Err(_) => Ok(Event::default().event("ping").data("keep-alive")),
+
+                    match build_task_event(ctx, &project_id, &session_id).await {
+                        Ok(task_json) => Ok(Event::default().event("task").data(task_json)),
+                        Err(e) => Ok(Event::default().event("error").data(format!("{}", e))),
+                    }
                 }
+                Err(_) => Ok(Event::default().event("ping").data("keep-alive")),
             }
-        });
+        }
+    });
 
     let ctx_cleanup = ctx.clone();
     let conn_id_cleanup = connection_id.clone();

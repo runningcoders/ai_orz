@@ -2,12 +2,12 @@
 //!
 //! SSE 连接管理 + 消息推送
 
+use crate::pkg::RequestContext;
+use async_trait::async_trait;
+use common::error::Result;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock};
 use tokio::sync::{RwLock, broadcast};
-use async_trait::async_trait;
-use common::error::Result;
-use crate::pkg::RequestContext;
 
 #[derive(Debug, Clone)]
 pub struct SsePushResult {
@@ -52,7 +52,9 @@ impl SsePushDaoImpl {
 }
 
 impl Default for SsePushDaoImpl {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[async_trait]
@@ -90,7 +92,10 @@ impl SsePushDao for SsePushDaoImpl {
         connection_id: &str,
     ) -> broadcast::Receiver<String> {
         let (tx, rx) = broadcast::channel(100);
-        self.connections.write().await.insert(connection_id.to_string(), tx);
+        self.connections
+            .write()
+            .await
+            .insert(connection_id.to_string(), tx);
         self.user_connections
             .write()
             .await

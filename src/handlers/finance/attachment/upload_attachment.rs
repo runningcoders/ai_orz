@@ -7,10 +7,10 @@ use axum::{
 };
 use common::api::{ApiResponse, UploadAttachmentResponse};
 
-use common::error::{err, bail_err};
 use crate::models::attachment::AttachmentUpload;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
+use common::error::{bail_err, err};
 
 use super::response::to_detail;
 
@@ -19,7 +19,10 @@ use super::response::to_detail;
 pub async fn upload_attachment(
     Extension(ctx): Extension<RequestContext>,
     mut multipart: Multipart,
-) -> std::result::Result<(StatusCode, Json<ApiResponse<UploadAttachmentResponse>>), common::error::Error> {
+) -> std::result::Result<
+    (StatusCode, Json<ApiResponse<UploadAttachmentResponse>>),
+    common::error::Error,
+> {
     let user_id = ctx.uid();
     if user_id.is_empty() {
         bail_err!(InvalidRequest, "当前请求缺少用户上下文");
@@ -64,8 +67,7 @@ pub async fn upload_attachment(
         }
     }
 
-    let mut upload =
-        file_upload.ok_or_else(|| err!(InvalidRequest, "缺少 file 字段"))?;
+    let mut upload = file_upload.ok_or_else(|| err!(InvalidRequest, "缺少 file 字段"))?;
     upload.purpose = purpose;
 
     let attachment = domain()

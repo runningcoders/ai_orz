@@ -2,7 +2,10 @@
 
 use dioxus::prelude::*;
 
-use crate::api::finance::{call_model_provider, create_model_provider, delete_model_provider, list_model_providers, switch_embedding_provider, test_model_provider_connection, toggle_model_provider};
+use crate::api::finance::{
+    call_model_provider, create_model_provider, delete_model_provider, list_model_providers,
+    switch_embedding_provider, test_model_provider_connection, toggle_model_provider,
+};
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
@@ -66,8 +69,16 @@ pub fn FinanceModelProviders() -> Element {
                 capability: ModelCapability::Agent,
                 model_name: model_name(),
                 api_key: api_key(),
-                base_url: if base_url().is_empty() { None } else { Some(base_url()) },
-                description: if description().is_empty() { None } else { Some(description()) },
+                base_url: if base_url().is_empty() {
+                    None
+                } else {
+                    Some(base_url())
+                },
+                description: if description().is_empty() {
+                    None
+                } else {
+                    Some(description())
+                },
             };
             match create_model_provider(req).await {
                 Ok(resp) => {
@@ -113,7 +124,10 @@ pub fn FinanceModelProviders() -> Element {
             match switch_embedding_provider(&id).await {
                 Ok(resp) => {
                     show_switch_modal.set(false);
-                    toast.success(&format!("Embedding Provider 已切换为 {}，向量索引重建完成", resp.name));
+                    toast.success(&format!(
+                        "Embedding Provider 已切换为 {}，向量索引重建完成",
+                        resp.name
+                    ));
                     match list_model_providers().await {
                         Ok(list) => providers.set(list.providers),
                         Err(e) => toast.error(&e),

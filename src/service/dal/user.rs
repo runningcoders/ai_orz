@@ -2,12 +2,12 @@
 //!
 //! 职责：User 领域的数据访问层，封装 UserDao 提供统一的查询接口
 
-use common::error::Result;
-use common::api::PagedResult;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::user;
 use crate::service::dao::user::{UserDao, UserQuery};
+use common::api::PagedResult;
+use common::error::Result;
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例管理 ====================
@@ -41,11 +41,8 @@ pub trait UserDal: Send + Sync {
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<UserPo>>;
 
     /// 根据用户名获取用户
-    async fn find_by_username(
-        &self,
-        ctx: RequestContext,
-        username: &str,
-    ) -> Result<Option<UserPo>>;
+    async fn find_by_username(&self, ctx: RequestContext, username: &str)
+    -> Result<Option<UserPo>>;
 
     /// 通用综合查询
     async fn query(&self, ctx: RequestContext, query: UserQuery) -> Result<PagedResult<UserPo>>;
@@ -64,18 +61,10 @@ pub trait UserDal: Send + Sync {
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()>;
 
     /// 检查用户名是否存在
-    async fn exists_by_username(
-        &self,
-        ctx: RequestContext,
-        username: &str,
-    ) -> Result<bool>;
+    async fn exists_by_username(&self, ctx: RequestContext, username: &str) -> Result<bool>;
 
     /// 统计组织下的用户数量
-    async fn count_by_organization_id(
-        &self,
-        ctx: RequestContext,
-        org_id: &str,
-    ) -> Result<u64>;
+    async fn count_by_organization_id(&self, ctx: RequestContext, org_id: &str) -> Result<u64>;
 
     /// 统计符合查询条件的用户数量（透传 DAO count）
     async fn count(&self, ctx: RequestContext, query: UserQuery) -> Result<u64>;
@@ -135,19 +124,11 @@ impl UserDal for UserDalImpl {
         self.user_dao.delete(ctx, id).await
     }
 
-    async fn exists_by_username(
-        &self,
-        ctx: RequestContext,
-        username: &str,
-    ) -> Result<bool> {
+    async fn exists_by_username(&self, ctx: RequestContext, username: &str) -> Result<bool> {
         self.user_dao.exists_by_username(ctx, username).await
     }
 
-    async fn count_by_organization_id(
-        &self,
-        ctx: RequestContext,
-        org_id: &str,
-    ) -> Result<u64> {
+    async fn count_by_organization_id(&self, ctx: RequestContext, org_id: &str) -> Result<u64> {
         // 语法糖：调用通用 count
         self.count(
             ctx,

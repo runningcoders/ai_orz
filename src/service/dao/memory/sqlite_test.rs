@@ -777,9 +777,7 @@ async fn test_fts5_trigger_insert_sync(pool: SqlitePool) {
     };
 
     // 插入短期记忆 —— AFTER INSERT 触发器应自动写入 FTS
-    dao.create_short_term_index(ctx, index)
-        .await
-        .unwrap();
+    dao.create_short_term_index(ctx, index).await.unwrap();
 
     // 1. FTS 表应该有 1 条记录
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM short_term_memory_fts")
@@ -905,9 +903,7 @@ async fn test_fts5_trigger_delete_sync(pool: SqlitePool) {
         created_at: now,
         updated_at: now,
     };
-    dao.create_short_term_index(ctx, index)
-        .await
-        .unwrap();
+    dao.create_short_term_index(ctx, index).await.unwrap();
 
     // 确认 FTS 已有 1 条记录
     let before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM short_term_memory_fts")
@@ -989,12 +985,13 @@ async fn test_knowledge_node_fts5_trigger_insert_sync(pool: SqlitePool) {
     assert_eq!(summary_count, 1, "summary MATCH ownership 应命中");
 
     // 通过 node_description MATCH 搜索
-    let desc_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM knowledge_node_fts WHERE node_description MATCH ?")
-            .bind("borrow")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let desc_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM knowledge_node_fts WHERE node_description MATCH ?",
+    )
+    .bind("borrow")
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     assert_eq!(desc_count, 1, "node_description MATCH borrow 应命中");
 }
 
@@ -1062,7 +1059,10 @@ async fn test_search_short_term_fts5(pool: SqlitePool) {
     assert_eq!(po.id, "st-fts-search-1");
     assert!(po.summary.contains("Rust"));
     // fts_rank 应有值（BM25 评分）
-    assert!(fts_rank.is_some(), "fts_rank should be Some for MATCH results");
+    assert!(
+        fts_rank.is_some(),
+        "fts_rank should be Some for MATCH results"
+    );
 }
 
 #[sqlx::test]
@@ -1180,9 +1180,7 @@ async fn test_search_knowledge_nodes_fts5(pool: SqlitePool) {
         created_at: now,
         updated_at: now,
     };
-    dao.save_knowledge_node(ctx.clone(), &node1)
-        .await
-        .unwrap();
+    dao.save_knowledge_node(ctx.clone(), &node1).await.unwrap();
 
     let node2 = LongTermKnowledgeNodePo {
         id: "kn-fts-search-2".to_string(),
@@ -1196,9 +1194,7 @@ async fn test_search_knowledge_nodes_fts5(pool: SqlitePool) {
         created_at: now,
         updated_at: now,
     };
-    dao.save_knowledge_node(ctx.clone(), &node2)
-        .await
-        .unwrap();
+    dao.save_knowledge_node(ctx.clone(), &node2).await.unwrap();
 
     // 搜索 "rust"
     use crate::service::dao::memory::{MemoryQuery, MemorySearch};
@@ -1219,7 +1215,10 @@ async fn test_search_knowledge_nodes_fts5(pool: SqlitePool) {
     let (po, fts_rank) = &results[0];
     assert_eq!(po.id, "kn-fts-search-1");
     assert!(po.node_name.contains("Rust"));
-    assert!(fts_rank.is_some(), "fts_rank should be Some for MATCH results");
+    assert!(
+        fts_rank.is_some(),
+        "fts_rank should be Some for MATCH results"
+    );
 }
 
 #[sqlx::test]
@@ -1320,9 +1319,6 @@ async fn test_query_knowledge_nodes_tags_filter(pool: SqlitePool) {
         agent_id: Some("test-agent".to_string()),
         ..Default::default()
     };
-    let results = dao
-        .query_knowledge_nodes(ctx, query_none)
-        .await
-        .unwrap();
+    let results = dao.query_knowledge_nodes(ctx, query_none).await.unwrap();
     assert_eq!(results.len(), 3, "无 tags 过滤应返回全部 3 个节点");
 }

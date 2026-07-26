@@ -59,9 +59,18 @@ pub struct ConfirmDialogProps {
 /// ```
 #[component]
 pub fn ConfirmDialog(props: ConfirmDialogProps) -> Element {
-    let confirm_text = props.confirm_text.clone().unwrap_or_else(|| "确定".to_string());
-    let cancel_text = props.cancel_text.clone().unwrap_or_else(|| "取消".to_string());
-    let confirm_class = props.confirm_class.clone().unwrap_or_else(|| "btn btn-error".to_string());
+    let confirm_text = props
+        .confirm_text
+        .clone()
+        .unwrap_or_else(|| "确定".to_string());
+    let cancel_text = props
+        .cancel_text
+        .clone()
+        .unwrap_or_else(|| "取消".to_string());
+    let confirm_class = props
+        .confirm_class
+        .clone()
+        .unwrap_or_else(|| "btn btn-error".to_string());
 
     rsx! {
         Modal {

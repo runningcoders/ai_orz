@@ -76,11 +76,11 @@ pub fn init_all() {
 }
 
 #[cfg(test)]
-pub(crate) mod agent_test;
-#[cfg(test)]
 pub(crate) mod agent_a2a_test;
 #[cfg(test)]
 pub(crate) mod agent_codex_test;
+#[cfg(test)]
+pub(crate) mod agent_test;
 #[cfg(test)]
 pub(crate) mod artifact_test;
 #[cfg(test)]

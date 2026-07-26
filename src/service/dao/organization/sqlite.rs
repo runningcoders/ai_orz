@@ -1,11 +1,11 @@
 //! Organization DAO SQLite 实现
 
-use common::error::Result;
 use crate::models::organization::OrganizationPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::organization::{OrganizationDao, OrganizationQuery};
 use chrono::Utc;
 use common::enums::{OrganizationScope, OrganizationStatus};
+use common::error::Result;
 use std::sync::{Arc, OnceLock};
 // ==================== 工厂方法 + 单例管理 ====================
 
@@ -60,11 +60,7 @@ impl OrganizationDao for OrganizationDaoSqliteImpl {
         Ok(())
     }
 
-    async fn find_by_id(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<Option<OrganizationPo>> {
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<OrganizationPo>> {
         let org = sqlx::query_as!(
             OrganizationPo,
             r#"

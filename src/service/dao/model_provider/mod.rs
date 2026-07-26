@@ -1,12 +1,14 @@
 //! Model Provider DAO 模块
 
-use common::error::Result;
-use common::models::{StatsInterval, TimeSeriesPoint, TokenSumResult, ModelCallStats, CallSummary, StatsFetchOptions};
 use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::RequestContext;
-use crate::pkg::stats::{StatFilter, StatAggregation, AggregationRow, StatEvent, Stats};
+use crate::pkg::stats::{AggregationRow, StatAggregation, StatEvent, StatFilter, Stats};
 use common::api::PagedResult;
 use common::enums::{ModelCapability, ModelProviderStatus, ProviderType};
+use common::error::Result;
+use common::models::{
+    CallSummary, ModelCallStats, StatsFetchOptions, StatsInterval, TimeSeriesPoint, TokenSumResult,
+};
 use serde_json::Value as JsonValue;
 
 /// ModelProvider 查询参数
@@ -22,13 +24,8 @@ pub struct ModelProviderQuery {
 /// Model Provider DAO 接口
 #[async_trait::async_trait]
 pub trait ModelProviderDao: Send + Sync {
-    async fn insert(&self, ctx: RequestContext, provider: &ModelProviderPo)
-    -> Result<()>;
-    async fn find_by_id(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<Option<ModelProviderPo>>;
+    async fn insert(&self, ctx: RequestContext, provider: &ModelProviderPo) -> Result<()>;
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<ModelProviderPo>>;
 
     /// 通用查询
     async fn query(
@@ -38,10 +35,8 @@ pub trait ModelProviderDao: Send + Sync {
     ) -> Result<PagedResult<ModelProviderPo>>;
 
     async fn find_all(&self, ctx: RequestContext) -> Result<Vec<ModelProviderPo>>;
-    async fn update(&self, ctx: RequestContext, provider: &ModelProviderPo)
-    -> Result<()>;
-    async fn delete(&self, ctx: RequestContext, provider: &ModelProviderPo)
-    -> Result<()>;
+    async fn update(&self, ctx: RequestContext, provider: &ModelProviderPo) -> Result<()>;
+    async fn delete(&self, ctx: RequestContext, provider: &ModelProviderPo) -> Result<()>;
 
     /// 获取默认的 Embedding Provider（第一个可用的）
     async fn get_default_embedding_provider(
@@ -90,9 +85,17 @@ pub trait ModelProviderStatsDao: Send + Sync {
         stats.get_table_name::<Self::ModelCallEvent>()
     }
 
-    async fn query_model_calls(&self, ctx: RequestContext, query: ModelProviderStatsQuery) -> Result<Vec<JsonValue>>;
+    async fn query_model_calls(
+        &self,
+        ctx: RequestContext,
+        query: ModelProviderStatsQuery,
+    ) -> Result<Vec<JsonValue>>;
 
-    async fn query_model_call_aggregation(&self, ctx: RequestContext, query: ModelProviderStatsQuery) -> Result<Vec<AggregationRow>> {
+    async fn query_model_call_aggregation(
+        &self,
+        ctx: RequestContext,
+        query: ModelProviderStatsQuery,
+    ) -> Result<Vec<AggregationRow>> {
         let group_by = query.group_by.clone();
         let rows = self.query_model_calls(ctx, query).await?;
         let mut result = Vec::with_capacity(rows.len());
@@ -102,7 +105,11 @@ pub trait ModelProviderStatsDao: Send + Sync {
         Ok(result)
     }
 
-    async fn query_model_call_time_series(&self, ctx: RequestContext, mut query: ModelProviderStatsQuery) -> Result<Vec<TimeSeriesPoint>> {
+    async fn query_model_call_time_series(
+        &self,
+        ctx: RequestContext,
+        mut query: ModelProviderStatsQuery,
+    ) -> Result<Vec<TimeSeriesPoint>> {
         if query.interval.is_none() {
             query.interval = Some(StatsInterval::Daily);
         }
@@ -114,7 +121,11 @@ pub trait ModelProviderStatsDao: Send + Sync {
         Ok(result)
     }
 
-    async fn sum_tokens(&self, ctx: RequestContext, mut query: ModelProviderStatsQuery) -> Result<TokenSumResult> {
+    async fn sum_tokens(
+        &self,
+        ctx: RequestContext,
+        mut query: ModelProviderStatsQuery,
+    ) -> Result<TokenSumResult> {
         query.group_by = vec![];
         query.aggregations = vec![
             StatAggregation::Sum("tokens_input".into()),
@@ -132,13 +143,24 @@ pub trait ModelProviderStatsDao: Send + Sync {
         }
         let row = &rows[0];
         Ok(TokenSumResult {
-            total_tokens_input: row.get("tokens_input").and_then(|v| v.as_f64()).unwrap_or(0.0) as u64,
-            total_tokens_output: row.get("tokens_output").and_then(|v| v.as_f64()).unwrap_or(0.0) as u64,
+            total_tokens_input: row
+                .get("tokens_input")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0) as u64,
+            total_tokens_output: row
+                .get("tokens_output")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0) as u64,
             total_calls: row.get("count").and_then(|v| v.as_f64()).unwrap_or(0.0) as u64,
         })
     }
 
-    async fn get_stats(&self, ctx: RequestContext, query: ModelProviderStatsQuery, options: StatsFetchOptions) -> Result<ModelCallStats> {
+    async fn get_stats(
+        &self,
+        ctx: RequestContext,
+        query: ModelProviderStatsQuery,
+        options: StatsFetchOptions,
+    ) -> Result<ModelCallStats> {
         let mut stats = ModelCallStats {
             call_summary: None,
             token_summary: None,
@@ -162,7 +184,11 @@ pub trait ModelProviderStatsDao: Send + Sync {
                 };
                 let range_calls = self.sum_calls(ctx.clone(), range_query).await?;
                 let duration_secs = (end - start) as f64 / 1000.0;
-                if duration_secs > 0.0 { Some(range_calls as f64 / duration_secs) } else { None }
+                if duration_secs > 0.0 {
+                    Some(range_calls as f64 / duration_secs)
+                } else {
+                    None
+                }
             } else {
                 None
             };
@@ -182,13 +208,18 @@ pub trait ModelProviderStatsDao: Send + Sync {
             let mut ts_query = query;
             ts_query.time_range = options.time_range;
             ts_query.interval = options.interval.or(Some(StatsInterval::Daily));
-            stats.model_call_time_series = Some(self.query_model_call_time_series(ctx, ts_query).await?);
+            stats.model_call_time_series =
+                Some(self.query_model_call_time_series(ctx, ts_query).await?);
         }
 
         Ok(stats)
     }
 
-    async fn sum_calls(&self, ctx: RequestContext, mut query: ModelProviderStatsQuery) -> Result<u64> {
+    async fn sum_calls(
+        &self,
+        ctx: RequestContext,
+        mut query: ModelProviderStatsQuery,
+    ) -> Result<u64> {
         query.group_by = vec![];
         query.aggregations = vec![StatAggregation::Count];
         query.interval = None;
@@ -205,7 +236,12 @@ fn parse_aggregation_row(row: &JsonValue, group_by: &[String]) -> AggregationRow
     use std::collections::HashMap;
     let obj = match row {
         JsonValue::Object(o) => o,
-        _ => return AggregationRow { groups: HashMap::new(), aggregations: HashMap::new() },
+        _ => {
+            return AggregationRow {
+                groups: HashMap::new(),
+                aggregations: HashMap::new(),
+            };
+        }
     };
 
     let mut groups = HashMap::new();
@@ -223,21 +259,43 @@ fn parse_aggregation_row(row: &JsonValue, group_by: &[String]) -> AggregationRow
         }
     }
 
-    AggregationRow { groups, aggregations }
+    AggregationRow {
+        groups,
+        aggregations,
+    }
 }
 
 /// 解析 JSON 为 TimeSeriesPoint
 fn parse_time_series_point(row: &JsonValue) -> TimeSeriesPoint {
     let obj = match row.as_object() {
         Some(o) => o,
-        _ => return TimeSeriesPoint { interval_start: 0, tokens_input: 0, tokens_output: 0, call_count: 0 },
+        _ => {
+            return TimeSeriesPoint {
+                interval_start: 0,
+                tokens_input: 0,
+                tokens_output: 0,
+                call_count: 0,
+            };
+        }
     };
 
     TimeSeriesPoint {
-        interval_start: obj.get("interval_start").and_then(|v| v.as_i64()).unwrap_or(0),
-        tokens_input: obj.get("tokens_input").and_then(|v| v.as_f64()).unwrap_or(0.0) as u64,
-        tokens_output: obj.get("tokens_output").and_then(|v| v.as_f64()).unwrap_or(0.0) as u64,
-        call_count: obj.get("call_count").and_then(|v| v.as_f64()).unwrap_or(0.0) as u64,
+        interval_start: obj
+            .get("interval_start")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0),
+        tokens_input: obj
+            .get("tokens_input")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0) as u64,
+        tokens_output: obj
+            .get("tokens_output")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0) as u64,
+        call_count: obj
+            .get("call_count")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0) as u64,
     }
 }
 

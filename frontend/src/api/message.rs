@@ -1,10 +1,11 @@
 //! Message 域 API - 消息发送和列表查询
 
 use common::api::{
-    ListMessagesResponse, SearchMessagesRequest, SearchMessagesResponse, SendMessageToAgentParams, SendMessageToAgentResponse,
+    ListMessagesResponse, SearchMessagesRequest, SearchMessagesResponse, SendMessageToAgentParams,
+    SendMessageToAgentResponse,
 };
 
-use super::{api_get, api_post, ApiError};
+use super::{ApiError, api_get, api_post};
 
 pub async fn send_message_to_agent(
     req: SendMessageToAgentParams,
@@ -23,7 +24,11 @@ pub async fn load_latest_messages(
     if let Some(l) = limit {
         params.push(format!("limit={}", l));
     }
-    let query = if params.is_empty() { String::new() } else { format!("?{}", params.join("&")) };
+    let query = if params.is_empty() {
+        String::new()
+    } else {
+        format!("?{}", params.join("&"))
+    };
     api_get(&format!("/api/v1/finance/messages{}", query)).await
 }
 
@@ -54,9 +59,16 @@ pub async fn poll_new_messages(
     api_get(&format!("/api/v1/finance/messages?{}", params.join("&"))).await
 }
 
-pub async fn search_messages(keyword: &str, project_id: Option<&str>) -> Result<SearchMessagesResponse, ApiError> {
+pub async fn search_messages(
+    keyword: &str,
+    project_id: Option<&str>,
+) -> Result<SearchMessagesResponse, ApiError> {
     let params = SearchMessagesRequest {
-        keyword: if keyword.is_empty() { None } else { Some(keyword.to_string()) },
+        keyword: if keyword.is_empty() {
+            None
+        } else {
+            Some(keyword.to_string())
+        },
         project_id: project_id.map(|s| s.to_string()),
         task_id: None,
         from_id: None,

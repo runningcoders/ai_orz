@@ -54,6 +54,9 @@ impl WebhookDao for WebhookDaoHttpImpl {
         _channel: &MessageChannel,
     ) -> std::result::Result<(), common::error::Error> {
         // TODO: 实现通用 Webhook 连接测试逻辑
-        Err(err!(UnsupportedOperation, "通用 Webhook 连接测试功能尚未实现"))
+        Err(err!(
+            UnsupportedOperation,
+            "通用 Webhook 连接测试功能尚未实现"
+        ))
     }
 }

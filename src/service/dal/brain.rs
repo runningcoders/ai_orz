@@ -4,8 +4,6 @@
 //! BrainDal 依赖 CortexDao 创建 CortexTrait，然后组装成完整的 Brain
 //! 合并了原来 CortexDal 的功能，不再重复拆分
 
-use common::enums::AgentKind;
-use common::error::{err, Result};
 use crate::models::agent::{AgentPo, ExternalAgentConfig};
 use crate::models::brain::{Brain, Cortex};
 use crate::models::model_provider::ModelProvider;
@@ -17,6 +15,8 @@ use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::tool_call::ToolCallDao;
 use async_trait::async_trait;
+use common::enums::AgentKind;
+use common::error::{Result, err};
 use std::sync::{Arc, OnceLock};
 
 use crate::enrich_ctx;
@@ -97,12 +97,7 @@ pub trait BrainDal: Send + Sync {
     /// - Local → CortexDao.prompt
     /// - Cli → execute_cli
     /// - Remote → execute_a2a
-    async fn think(
-        &self,
-        ctx: RequestContext,
-        brain: &Brain,
-        prompt: &str,
-    ) -> Result<String>;
+    async fn think(&self, ctx: RequestContext, brain: &Brain, prompt: &str) -> Result<String>;
 }
 
 // ==================== DAL 实现 ====================
@@ -202,12 +197,7 @@ impl BrainDal for BrainDalImpl {
         self.think(ctx, &temp_brain, prompt).await
     }
 
-    async fn think(
-        &self,
-        ctx: RequestContext,
-        brain: &Brain,
-        prompt: &str,
-    ) -> Result<String> {
+    async fn think(&self, ctx: RequestContext, brain: &Brain, prompt: &str) -> Result<String> {
         let start = std::time::Instant::now();
 
         match brain.kind {
@@ -326,10 +316,7 @@ impl BrainDal for BrainDalImpl {
                         )
                         .await
                     }
-                    _ => Err(err!(
-                        Internal,
-                        "Remote agent 的 external_config 类型不匹配"
-                    )),
+                    _ => Err(err!(Internal, "Remote agent 的 external_config 类型不匹配")),
                 };
 
                 log_debug!(

@@ -17,9 +17,7 @@ use crate::models::agent::{AgentPo, ExternalAgentConfig};
 use crate::models::brain::CortexTrait;
 use crate::pkg::RequestContext;
 use crate::service::dao::agent_runtime::{
-    AgentRuntimeDao,
-    a2a::A2aRuntimeDao,
-    codex::CodexRuntimeDao,
+    AgentRuntimeDao, a2a::A2aRuntimeDao, codex::CodexRuntimeDao,
 };
 
 /// 外部 Agent 的虚拟 Cortex

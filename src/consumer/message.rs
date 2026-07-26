@@ -14,11 +14,11 @@ use common::error::{Error, Result};
 use serde_json::Value;
 use std::sync::Arc;
 
-use crate::models::message::{Message, ToolCallMessage};
 use crate::models::events::MessageCreatedEvent;
-use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
-use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
+use crate::models::message::{Message, ToolCallMessage};
 use crate::pkg::RequestContext;
+use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
+use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
 use crate::service::dal::agent::AgentFetchOptions;
 use crate::service::dal::message as message_dal;
 use crate::service::domain::hr::{self as hr_domain, HrDomain};
@@ -76,10 +76,7 @@ impl Consumer for MessageConsumer {
             .find_by_id(ctx.clone(), &msg_event.message_id)
             .await?
             .ok_or_else(|| {
-                Error::not_found(format!(
-                    "Message {} not found",
-                    msg_event.message_id
-                ))
+                Error::not_found(format!("Message {} not found", msg_event.message_id))
             })?;
 
         sys_debug!(
@@ -144,8 +141,7 @@ impl MessageConsumer {
         // 原子地占用 Agent（修复 TOCTOU 竞态）
         // 之前 is_unavailable + 后续 awaken 的 set_busy 之间存在窗口，4 个 worker 并发时
         // 同一 agent 收不同 project 消息会被两个 worker 同时通过检查
-        let acquired = AgentRuntimeStateManager::global()
-            .try_set_busy(agent_id, &message.po.id);
+        let acquired = AgentRuntimeStateManager::global().try_set_busy(agent_id, &message.po.id);
         if !acquired {
             return Err(Error::conflict(format!(
                 "Agent {} is busy or resting, message will be retried",
@@ -194,9 +190,19 @@ impl MessageConsumer {
         // 顺序说明：若任务已 Completed/Cancelled，应直接跳过唤醒，避免向已结束的任务
         // 发送误导性的"达到最大思考深度"消息
         if let Some(task_id) = &message.po.task_id {
-            match self.project_domain.task_manage().get(ctx.clone(), task_id).await {
+            match self
+                .project_domain
+                .task_manage()
+                .get(ctx.clone(), task_id)
+                .await
+            {
                 Ok(Some(task)) => {
-                    if matches!(task.po.status, common::enums::TaskStatus::Completed | common::enums::TaskStatus::Cancelled | common::enums::TaskStatus::Archived) {
+                    if matches!(
+                        task.po.status,
+                        common::enums::TaskStatus::Completed
+                            | common::enums::TaskStatus::Cancelled
+                            | common::enums::TaskStatus::Archived
+                    ) {
                         log_info!(
                             &ctx,
                             "handle_agent_message",
@@ -324,7 +330,8 @@ impl MessageConsumer {
             message,
             user_id: &message.po.to_id,
         };
-        let result = self.message_domain
+        let result = self
+            .message_domain
             .delivery()
             .deliver_message(ctx, cmd)
             .await?;

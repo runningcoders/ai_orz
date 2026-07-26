@@ -43,7 +43,12 @@ pub fn Navbar() -> Element {
         auth().username.clone()
     };
     let is_admin = auth().is_admin();
-    let avatar_char = username.chars().next().unwrap_or('U').to_string().to_uppercase();
+    let avatar_char = username
+        .chars()
+        .next()
+        .unwrap_or('U')
+        .to_string()
+        .to_uppercase();
 
     rsx! {
         nav { class: "navbar bg-neutral text-neutral-content sticky top-0 z-50 shadow-md",

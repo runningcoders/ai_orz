@@ -1,12 +1,12 @@
 //! Artifact DAO layer
 //! Artifacts are task outputs (reports, audio, video, etc.).
 
-use common::error::Result;
 use crate::models::artifact::ArtifactPo;
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
 use common::api::PagedResult;
 use common::enums::{ArtifactSourceType, FileType};
+use common::error::Result;
 
 /// Artifact 查询参数
 #[derive(Debug, Clone, Default)]
@@ -28,7 +28,11 @@ pub trait ArtifactDao: Send + Sync + std::fmt::Debug {
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<ArtifactPo>>;
 
     /// 通用查询
-    async fn query(&self, ctx: RequestContext, query: ArtifactQuery) -> Result<PagedResult<ArtifactPo>>;
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: ArtifactQuery,
+    ) -> Result<PagedResult<ArtifactPo>>;
 
     /// List all artifacts for a project, automatically filters deleted artifacts
     async fn list_by_project(

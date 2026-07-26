@@ -5,7 +5,7 @@ use crate::service::dao::message::MessageQuery;
 use crate::service::domain::message;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::message::{ListMessagesRequest, ListMessagesResponse, MessageListItem};
-use common::error::{Result, err, bail_err};
+use common::error::{Result, bail_err, err};
 
 /// List messages with optional filtering by project, task, from_id, to_id, before/after timestamp
 ///
@@ -58,28 +58,20 @@ pub async fn list_messages(
     let messages = message::domain().management().query(ctx, query).await?;
 
     let filtered: Vec<_> = match (params.before_timestamp, params.after_timestamp) {
-        (Some(before), None) => {
-            messages
-                .into_iter()
-                .filter(|m| m.po.created_at < before)
-                .take(limit)
-                .collect()
-        }
-        (None, Some(after)) => {
-            messages
-                .into_iter()
-                .filter(|m| m.po.created_at > after)
-                .collect()
-        }
-        (Some(before), Some(after)) => {
-            messages
-                .into_iter()
-                .filter(|m| m.po.created_at > after && m.po.created_at < before)
-                .collect()
-        }
-        (None, None) => {
-            messages.into_iter().take(limit).collect()
-        }
+        (Some(before), None) => messages
+            .into_iter()
+            .filter(|m| m.po.created_at < before)
+            .take(limit)
+            .collect(),
+        (None, Some(after)) => messages
+            .into_iter()
+            .filter(|m| m.po.created_at > after)
+            .collect(),
+        (Some(before), Some(after)) => messages
+            .into_iter()
+            .filter(|m| m.po.created_at > after && m.po.created_at < before)
+            .collect(),
+        (None, None) => messages.into_iter().take(limit).collect(),
     };
 
     let mut sorted = filtered;
@@ -94,7 +86,12 @@ pub async fn list_messages(
             // 只有当 file_type 有值时才视为附件消息
             let file_meta = m.po.file_type.and_then(|_| {
                 let fm = &m.po.file_meta.0;
-                let name = fm.file_path.rsplit('/').next().unwrap_or(&fm.file_path).to_string();
+                let name = fm
+                    .file_path
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or(&fm.file_path)
+                    .to_string();
                 Some(common::api::message::FileMetaInfo {
                     name,
                     mime_type: fm.mime_type.clone(),

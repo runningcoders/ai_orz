@@ -7,13 +7,13 @@
 //! - 支持为特定 Agent 绑定专用渠道
 //! MessageChannel 持久化对象和完整实体
 
-use std::collections::HashMap;
 use common::constants::utils;
 use common::enums::{ChannelStatus, ChannelType};
-use common::error::{err, Result};
+use common::error::{Result, err};
 use serde::{Deserialize, Serialize};
-use sqlx::types::Json;
 use sqlx::FromRow;
+use sqlx::types::Json;
+use std::collections::HashMap;
 
 /// MessageChannel 业务实体
 #[derive(Debug, Clone)]
@@ -93,7 +93,9 @@ impl MessageChannel {
             return Err(err!(
                 InvalidRequest,
                 "MessageChannel {} cannot transition from {:?} to {:?}",
-                self.po.id, self.po.status, target
+                self.po.id,
+                self.po.status,
+                target
             ));
         }
 

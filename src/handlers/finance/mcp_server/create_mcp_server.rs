@@ -4,10 +4,10 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CreateMcpServerRequest, CreateMcpServerResponse};
 use uuid::Uuid;
 
-use common::error::Result;
 use crate::models::mcp_server::McpServer;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
+use common::error::Result;
 
 use super::response::{to_detail, to_model_config, to_model_transport};
 

@@ -1,9 +1,7 @@
 //! Handler: POST /api/v1/message-channels - Create a new message channel for notifications
 
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::{
-    CreateMessageChannelRequest, CreateMessageChannelResponse,
-};
+use common::api::{CreateMessageChannelRequest, CreateMessageChannelResponse};
 use uuid::Uuid;
 
 use crate::models::message_channel::{ChannelConfig, MessageChannel, MessageChannelPo};
@@ -11,7 +9,7 @@ use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
 use super::response::to_detail;
-use common::error::{Result, err, bail_err};
+use common::error::{Result, bail_err, err};
 
 /// Create a new message channel for sending notifications to external services/users
 #[register_handler_tool(

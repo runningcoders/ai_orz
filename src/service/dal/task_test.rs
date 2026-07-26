@@ -10,8 +10,8 @@ use crate::service::dal::task::TaskDal;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::task::{self, TaskQuery, TaskSearch, TaskVectorDao};
-use common::enums::{AssigneeType, TaskStatus};
 use ::rig::tool::ToolDyn;
+use common::enums::{AssigneeType, TaskStatus};
 use common::error::Result;
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -161,11 +161,7 @@ impl ModelProviderDao for MockModelProviderDao {
         Ok(())
     }
 
-    async fn find_by_id(
-        &self,
-        _ctx: RequestContext,
-        _id: &str,
-    ) -> Result<Option<ModelProviderPo>> {
+    async fn find_by_id(&self, _ctx: RequestContext, _id: &str) -> Result<Option<ModelProviderPo>> {
         Ok(None)
     }
 
@@ -174,7 +170,10 @@ impl ModelProviderDao for MockModelProviderDao {
         _ctx: RequestContext,
         _query: crate::service::dao::model_provider::ModelProviderQuery,
     ) -> Result<common::api::PagedResult<ModelProviderPo>> {
-        Ok(common::api::PagedResult { items: Vec::new(), total: 0 })
+        Ok(common::api::PagedResult {
+            items: Vec::new(),
+            total: 0,
+        })
     }
 
     async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<ModelProviderPo>> {
@@ -222,7 +221,11 @@ impl ModelProviderDao for MockModelProviderDao {
 /// 初始化搜索测试环境（注入 MockCortexDao + MockModelProviderDao）
 async fn init_search_test_env(
     pool: SqlitePool,
-) -> (Arc<dyn TaskDal + Send + Sync>, RequestContext, Arc<dyn TaskVectorDao>) {
+) -> (
+    Arc<dyn TaskDal + Send + Sync>,
+    RequestContext,
+    Arc<dyn TaskVectorDao>,
+) {
     let _ = crate::config::init();
 
     let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
@@ -231,7 +234,8 @@ async fn init_search_test_env(
     let task_vector_dao = task::new_task_vector_dao();
     let task_stats_dao = task::stats_new();
     let cortex_dao: Arc<dyn CortexDao> = Arc::new(MockCortexDao);
-    let model_provider_dao: Arc<dyn ModelProviderDao + Send + Sync> = Arc::new(MockModelProviderDao);
+    let model_provider_dao: Arc<dyn ModelProviderDao + Send + Sync> =
+        Arc::new(MockModelProviderDao);
 
     let dal = crate::service::dal::task::new(
         task_dao,
@@ -374,7 +378,10 @@ async fn test_query(pool: SqlitePool) {
         assignee_id: Some(assignee_id),
         project_id: None,
         status_in: Some(vec![TaskStatus::Pending]),
-        pagination: common::api::PaginationParams { limit: Some(2), offset: None },
+        pagination: common::api::PaginationParams {
+            limit: Some(2),
+            offset: None,
+        },
         ..Default::default()
     };
 
@@ -604,18 +611,15 @@ async fn test_search_three_state_matching(pool: SqlitePool) {
         MatchType::Hybrid,
         "task_matching 应是 Hybrid 匹配"
     );
-    assert!(results[0]
-        .search_match
-        .as_ref()
-        .unwrap()
-        .vector_distance
-        .is_some());
-    assert!(results[0]
-        .search_match
-        .as_ref()
-        .unwrap()
-        .fts_rank
-        .is_some());
+    assert!(
+        results[0]
+            .search_match
+            .as_ref()
+            .unwrap()
+            .vector_distance
+            .is_some()
+    );
+    assert!(results[0].search_match.as_ref().unwrap().fts_rank.is_some());
 
     // 第二条应是 Vector（仅向量命中）
     assert_eq!(results[1].po.id, vector_only_id);
@@ -624,18 +628,15 @@ async fn test_search_three_state_matching(pool: SqlitePool) {
         MatchType::Vector,
         "task_vector_only 应是 Vector 匹配"
     );
-    assert!(results[1]
-        .search_match
-        .as_ref()
-        .unwrap()
-        .vector_distance
-        .is_some());
-    assert!(results[1]
-        .search_match
-        .as_ref()
-        .unwrap()
-        .fts_rank
-        .is_none());
+    assert!(
+        results[1]
+            .search_match
+            .as_ref()
+            .unwrap()
+            .vector_distance
+            .is_some()
+    );
+    assert!(results[1].search_match.as_ref().unwrap().fts_rank.is_none());
 }
 
 /// 测试 DAL search 方法的 Keyword-only 匹配
@@ -677,18 +678,15 @@ async fn test_search_keyword_only_match(pool: SqlitePool) {
         MatchType::Keyword,
         "应是 Keyword 匹配"
     );
-    assert!(results[0]
-        .search_match
-        .as_ref()
-        .unwrap()
-        .fts_rank
-        .is_some());
-    assert!(results[0]
-        .search_match
-        .as_ref()
-        .unwrap()
-        .vector_distance
-        .is_none());
+    assert!(results[0].search_match.as_ref().unwrap().fts_rank.is_some());
+    assert!(
+        results[0]
+            .search_match
+            .as_ref()
+            .unwrap()
+            .vector_distance
+            .is_none()
+    );
 }
 
 /// 测试向量索引自动维护（create / update / cancel）
@@ -728,10 +726,7 @@ async fn test_vector_auto_maintenance(pool: SqlitePool) {
     // 3. Cancel：取消任务后应清理向量索引
     dal.cancel(ctx.clone(), &task_id, "admin").await.unwrap();
 
-    let row = vector_dao
-        .get_vector_row(ctx, &task_id)
-        .await
-        .unwrap();
+    let row = vector_dao.get_vector_row(ctx, &task_id).await.unwrap();
     assert!(row.is_none(), "取消任务后向量索引应被清理");
 }
 

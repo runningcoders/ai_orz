@@ -1,11 +1,11 @@
 //! Handler: PUT /api/v1/tasks/{id}/progress - 更新任务进度
 
 use super::response;
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateTaskProgressRequest, UpdateTaskProgressResponse};
+use common::error::Result;
 
 /// 更新任务进度（0-100）
 #[register_handler_tool(

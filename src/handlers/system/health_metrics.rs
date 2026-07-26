@@ -16,7 +16,6 @@ use common::error::Result;
 use std::sync::OnceLock;
 use std::time::Instant;
 
-use common::enums::{AgentStatus, ProjectStatus, TaskStatus};
 use crate::pkg::RequestContext;
 use crate::service::dao::agent::AgentQuery;
 use crate::service::dao::project::ProjectQuery;
@@ -24,6 +23,7 @@ use crate::service::dao::task::TaskQuery;
 use crate::service::domain::hr::domain as hr_domain;
 use crate::service::domain::project::domain as project_domain;
 use crate::service::domain::system::domain;
+use common::enums::{AgentStatus, ProjectStatus, TaskStatus};
 
 /// 全局启动时间锚点：首次调用 get_health_metrics 时初始化。
 /// 严格来说这是"首次健康指标请求时间"而非进程启动时间，

@@ -1,13 +1,13 @@
 //! AgentDao SQLite 实现
 
-use common::error::Result;
 use crate::models::agent::AgentPo;
 use crate::pkg::RequestContext;
-use crate::service::dao::agent::{AgentDao, AgentQuery, AgentSearch};
 use crate::pkg::storage::escape_fts5_keyword;
+use crate::service::dao::agent::{AgentDao, AgentQuery, AgentSearch};
 use chrono::Utc;
-use common::enums::AgentStatus;
 use common::enums::AgentKind;
+use common::enums::AgentStatus;
+use common::error::Result;
 use sqlx::FromRow;
 use std::sync::{Arc, OnceLock};
 
@@ -89,11 +89,7 @@ impl AgentDao for AgentDaoSqliteImpl {
         Ok(())
     }
 
-    async fn find_by_id(
-        &self,
-        _ctx: RequestContext,
-        id: &str,
-    ) -> Result<Option<AgentPo>> {
+    async fn find_by_id(&self, _ctx: RequestContext, id: &str) -> Result<Option<AgentPo>> {
         let agent = sqlx::query_as!(
             AgentPo,
             r#"
@@ -104,8 +100,8 @@ FROM agents WHERE id = ? AND status <> 0
             "#,
             id
         )
-            .fetch_optional(_ctx.db_pool())
-            .await?;
+        .fetch_optional(_ctx.db_pool())
+        .await?;
 
         Ok(agent)
     }
@@ -208,7 +204,9 @@ FROM agents WHERE id = ? AND status <> 0
         // 角色标签过滤（OR 语义，使用 json_each 精确匹配）
         if let Some(roles) = &filters.roles {
             if !roles.is_empty() {
-                builder.push(" AND EXISTS (SELECT 1 FROM json_each(m.role) WHERE json_each.value IN (");
+                builder.push(
+                    " AND EXISTS (SELECT 1 FROM json_each(m.role) WHERE json_each.value IN (",
+                );
                 let mut separated = builder.separated(", ");
                 for role in roles {
                     separated.push_bind(role);
@@ -351,7 +349,9 @@ fn push_query_filters<'args>(
             .push_bind(*exclude_status as i32);
     }
     if let Some(created_by) = &query.created_by {
-        builder.push(" AND created_by = ").push_bind(created_by.clone());
+        builder
+            .push(" AND created_by = ")
+            .push_bind(created_by.clone());
     }
     if let Some(model_provider_id) = &query.model_provider_id {
         builder
@@ -360,7 +360,9 @@ fn push_query_filters<'args>(
     }
     if let Some(roles) = &query.roles {
         if !roles.is_empty() {
-            builder.push(" AND EXISTS (SELECT 1 FROM json_each(agents.role) WHERE json_each.value IN (");
+            builder.push(
+                " AND EXISTS (SELECT 1 FROM json_each(agents.role) WHERE json_each.value IN (",
+            );
             let mut separated = builder.separated(", ");
             for role in roles {
                 separated.push_bind(role.clone());
@@ -370,7 +372,9 @@ fn push_query_filters<'args>(
     }
     if let Some(keyword) = &query.keyword {
         if !keyword.is_empty() {
-            log_warn!("keyword in agent query is deprecated, use search_agents for FTS5; keyword ignored");
+            log_warn!(
+                "keyword in agent query is deprecated, use search_agents for FTS5; keyword ignored"
+            );
         }
     }
 }

@@ -17,7 +17,7 @@ use common::error::Result;
     name = "query_artifacts",
     description = "Query artifacts with full filtering support (project_id, task_id, file_type, source_type, etc.)",
     params = "common::api::ArtifactQueryRequest",
-    neural,
+    neural
 )]
 #[generate_http_handler]
 pub async fn query_artifacts(

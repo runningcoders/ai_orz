@@ -1,7 +1,5 @@
 //! Agent DAL 模块
 
-use common::error::Result;
-use common::models::{AgentStats, ModelCallStats, StatsFetchOptions, StatsInterval, ToolCallSummary};
 use crate::models::agent::{Agent, AgentPo};
 use crate::models::brain::Brain;
 use crate::models::memory::Memory;
@@ -9,15 +7,23 @@ use crate::models::message::Message;
 use crate::models::skill::SkillPo;
 use crate::models::user::UserPo;
 use crate::models::vector::{MatchType, SearchMatchInfo, Vectorizable};
-use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
 use crate::pkg::RequestContext;
-use crate::pkg::stats::{ModelCallEvent, AgentAwakeEvent, ToolCallEvent};
-use crate::service::dao::agent::{self, AgentDao, AgentQuery, AgentSearch, AgentStatsDao, AgentStatsQuery, AgentVectorDao};
+use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
+use crate::pkg::stats::{AgentAwakeEvent, ModelCallEvent, ToolCallEvent};
+use crate::service::dao::agent::{
+    self, AgentDao, AgentQuery, AgentSearch, AgentStatsDao, AgentStatsQuery, AgentVectorDao,
+};
 use crate::service::dao::cortex::CortexDao;
-use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderStatsDao, ModelProviderStatsQuery};
+use crate::service::dao::model_provider::{
+    ModelProviderDao, ModelProviderStatsDao, ModelProviderStatsQuery,
+};
 use crate::service::dao::tool::ToolStatsDao;
 use common::enums::AgentStatus;
 use common::enums::ControlMode;
+use common::error::Result;
+use common::models::{
+    AgentStats, ModelCallStats, StatsFetchOptions, StatsInterval, ToolCallSummary,
+};
 use std::sync::{Arc, OnceLock};
 
 use crate::enrich_ctx;
@@ -100,12 +106,21 @@ pub trait AgentDal: Send + Sync {
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Agent>>;
 
     /// 根据 ID 查询 Agent（带附带信息选项）
-    async fn get_agent(&self, ctx: RequestContext, id: &str, options: AgentFetchOptions) -> Result<Option<Agent>>;
+    async fn get_agent(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        options: AgentFetchOptions,
+    ) -> Result<Option<Agent>>;
 
     /// 通用综合查询
     ///
     /// 支持组合查询条件，所有字段都是 Option
-    async fn query(&self, ctx: RequestContext, query: AgentQuery) -> Result<common::api::PagedResult<Agent>>;
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: AgentQuery,
+    ) -> Result<common::api::PagedResult<Agent>>;
 
     /// 统计符合查询条件的 Agent 数量（透传 DAO count）
     async fn count(&self, ctx: RequestContext, query: AgentQuery) -> Result<u64>;
@@ -134,23 +149,28 @@ pub trait AgentDal: Send + Sync {
     ///
     /// 唤醒完成后将 brain 写入 Agent 的 brain 字段
     /// 如果 model_provider_id 发生变化，自动更新数据库
-    async fn wake_brain(
-        &self,
-        ctx: RequestContext,
-        agent: &mut Agent,
-        brain: Brain,
-    ) -> Result<()>;
+    async fn wake_brain(&self, ctx: RequestContext, agent: &mut Agent, brain: Brain) -> Result<()>;
 
     // ==================== 统计查询 ====================
 
     /// 获取 Agent 自身统计数据
-    async fn get_stats(&self, ctx: RequestContext, agent_id: &str, options: StatsFetchOptions) -> Result<AgentStats>;
+    async fn get_stats(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        options: StatsFetchOptions,
+    ) -> Result<AgentStats>;
 
     /// 获取 Agent 维度的模型调用统计
     ///
     /// 由 ModelProviderStatsDao（模型调用领域）负责计算，
     /// 按 agent_id 过滤后返回 ModelCallStats。
-    async fn get_model_call_stats(&self, ctx: RequestContext, agent_id: &str, options: StatsFetchOptions) -> Result<ModelCallStats>;
+    async fn get_model_call_stats(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        options: StatsFetchOptions,
+    ) -> Result<ModelCallStats>;
 
     /// 🔄 重建所有 Agent 的向量索引
     ///
@@ -181,8 +201,7 @@ struct AgentDalImpl {
 impl AgentDalImpl {
     /// 注入运行时状态到 Agent 实体
     fn inject_runtime_state(agent: Agent) -> Agent {
-        let runtime_info = AgentRuntimeStateManager::global()
-            .get(&agent.po.id);
+        let runtime_info = AgentRuntimeStateManager::global().get(&agent.po.id);
         Agent {
             runtime_info,
             ..agent
@@ -323,7 +342,12 @@ impl AgentDal for AgentDalImpl {
         Ok(opt.map(Agent::from_po).map(Self::inject_runtime_state))
     }
 
-    async fn get_agent(&self, ctx: RequestContext, id: &str, options: AgentFetchOptions) -> Result<Option<Agent>> {
+    async fn get_agent(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        options: AgentFetchOptions,
+    ) -> Result<Option<Agent>> {
         let opt = self.agent_dao.find_by_id(ctx.clone(), id).await?;
         let Some(mut agent) = opt.map(Agent::from_po) else {
             return Ok(None);
@@ -351,7 +375,11 @@ impl AgentDal for AgentDalImpl {
             // stats 查询失败不阻塞 agent 加载
             // 修复：DuckDB 查询失败时整个 get_agent 失败触发 nack 重试，
             // 但重试也无法修复 stats 问题，反而阻塞消息消费
-            match self.agent_stats_dao.get_stats(ctx.clone(), query, stats_options).await {
+            match self
+                .agent_stats_dao
+                .get_stats(ctx.clone(), query, stats_options)
+                .await
+            {
                 Ok(stats) => agent.stats = Some(stats),
                 Err(e) => {
                     log_warn!(
@@ -373,14 +401,20 @@ impl AgentDal for AgentDalImpl {
                 time_range: options.stats_time_range,
                 interval: options.stats_interval,
             };
-            let model_call_stats = self.get_model_call_stats(ctx.clone(), id, stats_options).await?;
+            let model_call_stats = self
+                .get_model_call_stats(ctx.clone(), id, stats_options)
+                .await?;
             agent.model_call_stats = Some(model_call_stats);
         }
 
         Ok(Some(agent))
     }
 
-    async fn query(&self, ctx: RequestContext, query: AgentQuery) -> Result<common::api::PagedResult<Agent>> {
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: AgentQuery,
+    ) -> Result<common::api::PagedResult<Agent>> {
         let page = self.agent_dao.query(ctx, query).await?;
         Ok(page.map(Agent::from_po).map(Self::inject_runtime_state))
     }
@@ -390,14 +424,15 @@ impl AgentDal for AgentDalImpl {
     }
 
     async fn find_all(&self, ctx: RequestContext) -> Result<Vec<Agent>> {
-        let page = self.query(
-            ctx,
-            AgentQuery {
-                exclude_status: Some(AgentStatus::Deleted),
-                ..Default::default()
-            },
-        )
-        .await?;
+        let page = self
+            .query(
+                ctx,
+                AgentQuery {
+                    exclude_status: Some(AgentStatus::Deleted),
+                    ..Default::default()
+                },
+            )
+            .await?;
         Ok(page.items)
     }
 
@@ -420,7 +455,10 @@ impl AgentDal for AgentDalImpl {
         // Step 2: 如果有关键词，尝试向量搜索
         if search.keyword.is_some() {
             if let Some(keyword) = &search.keyword {
-                match self.try_build_vector_params_for_search(ctx.clone(), keyword).await {
+                match self
+                    .try_build_vector_params_for_search(ctx.clone(), keyword)
+                    .await
+                {
                     Ok(Some(vec_params)) => {
                         // 向量搜索（前 50 条）
                         match self
@@ -465,7 +503,10 @@ impl AgentDal for AgentDalImpl {
         }
 
         // Step 3: 执行 FTS5 关键词搜索（DAO 返回 Vec<(Po, fts_rank)>）
-        let keyword_results = self.agent_dao.search_agents(ctx.clone(), search.clone()).await?;
+        let keyword_results = self
+            .agent_dao
+            .search_agents(ctx.clone(), search.clone())
+            .await?;
 
         // 提取 fts_rank 并转换为 Vec<Po> 便于聚合
         let mut fts_ranks: std::collections::HashMap<String, f32> =
@@ -561,35 +602,37 @@ impl AgentDal for AgentDalImpl {
                 Some(MatchType::Vector) => 1,
                 _ => 2,
             };
-            order_a.cmp(&order_b).then_with(|| {
-                match (a_type, b_type) {
-                    (Some(MatchType::Hybrid), Some(MatchType::Hybrid))
-                    | (Some(MatchType::Vector), Some(MatchType::Vector)) => {
-                        let a_dist = a
-                            .search_match
-                            .as_ref()
-                            .and_then(|m| m.vector_distance)
-                            .unwrap_or(f32::MAX);
-                        let b_dist = b
-                            .search_match
-                            .as_ref()
-                            .and_then(|m| m.vector_distance)
-                            .unwrap_or(f32::MAX);
-                        a_dist.partial_cmp(&b_dist).unwrap_or(std::cmp::Ordering::Equal)
-                    }
-                    _ => {
-                        let a_rank = a
-                            .search_match
-                            .as_ref()
-                            .and_then(|m| m.fts_rank)
-                            .unwrap_or(f32::MAX);
-                        let b_rank = b
-                            .search_match
-                            .as_ref()
-                            .and_then(|m| m.fts_rank)
-                            .unwrap_or(f32::MAX);
-                        a_rank.partial_cmp(&b_rank).unwrap_or(std::cmp::Ordering::Equal)
-                    }
+            order_a.cmp(&order_b).then_with(|| match (a_type, b_type) {
+                (Some(MatchType::Hybrid), Some(MatchType::Hybrid))
+                | (Some(MatchType::Vector), Some(MatchType::Vector)) => {
+                    let a_dist = a
+                        .search_match
+                        .as_ref()
+                        .and_then(|m| m.vector_distance)
+                        .unwrap_or(f32::MAX);
+                    let b_dist = b
+                        .search_match
+                        .as_ref()
+                        .and_then(|m| m.vector_distance)
+                        .unwrap_or(f32::MAX);
+                    a_dist
+                        .partial_cmp(&b_dist)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                }
+                _ => {
+                    let a_rank = a
+                        .search_match
+                        .as_ref()
+                        .and_then(|m| m.fts_rank)
+                        .unwrap_or(f32::MAX);
+                    let b_rank = b
+                        .search_match
+                        .as_ref()
+                        .and_then(|m| m.fts_rank)
+                        .unwrap_or(f32::MAX);
+                    a_rank
+                        .partial_cmp(&b_rank)
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 }
             })
         });
@@ -641,12 +684,7 @@ impl AgentDal for AgentDalImpl {
         Ok(())
     }
 
-    async fn wake_brain(
-        &self,
-        ctx: RequestContext,
-        agent: &mut Agent,
-        brain: Brain,
-    ) -> Result<()> {
+    async fn wake_brain(&self, ctx: RequestContext, agent: &mut Agent, brain: Brain) -> Result<()> {
         let mut need_update = false;
 
         if brain.is_local() {
@@ -671,7 +709,12 @@ impl AgentDal for AgentDalImpl {
 
     // ==================== 统计查询 ====================
 
-    async fn get_stats(&self, ctx: RequestContext, agent_id: &str, options: StatsFetchOptions) -> Result<AgentStats> {
+    async fn get_stats(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        options: StatsFetchOptions,
+    ) -> Result<AgentStats> {
         // 提前取出 time_range，避免 options 被 move 后无法访问
         let time_range = options.time_range;
         let query = AgentStatsQuery {
@@ -679,7 +722,10 @@ impl AgentDal for AgentDalImpl {
             time_range,
             ..Default::default()
         };
-        let mut stats = self.agent_stats_dao.get_stats(ctx.clone(), query, options).await?;
+        let mut stats = self
+            .agent_stats_dao
+            .get_stats(ctx.clone(), query, options)
+            .await?;
 
         // 同步填充 tool_call_summary（复用 with_call_summary 开关，避免新增 StatsFetchOptions 字段）
         // 失败时 warn 降级，不阻塞主流程
@@ -714,14 +760,21 @@ impl AgentDal for AgentDalImpl {
         Ok(stats)
     }
 
-    async fn get_model_call_stats(&self, ctx: RequestContext, agent_id: &str, options: StatsFetchOptions) -> Result<ModelCallStats> {
+    async fn get_model_call_stats(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        options: StatsFetchOptions,
+    ) -> Result<ModelCallStats> {
         let query = ModelProviderStatsQuery {
             agent_id: Some(agent_id.to_string()),
             time_range: options.time_range,
             interval: options.interval,
             ..Default::default()
         };
-        self.model_provider_stats_dao.get_stats(ctx, query, options).await
+        self.model_provider_stats_dao
+            .get_stats(ctx, query, options)
+            .await
     }
 
     async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()> {
@@ -947,7 +1000,11 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result.push_str(&Self::build_tools_section("神经工具", &neural_tools));
 
         // 4. 神经技能（tags 含 "neural"，所有 Agent 必加载）
-        let neural_skills: Vec<_> = self.skills.iter().filter(|s| Self::is_neural_skill(s)).collect();
+        let neural_skills: Vec<_> = self
+            .skills
+            .iter()
+            .filter(|s| Self::is_neural_skill(s))
+            .collect();
         result.push_str(&Self::build_skills_section("神经技能", &neural_skills));
 
         // 5. 常用工具（tags 不含 "neural" 但与 match_keys 有交集）
@@ -955,12 +1012,11 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             .tools
             .iter()
             .filter(|t| {
-                Self::is_prompt_visible_tool(t)
-                    && {
-                        let tags = t.get_tags();
-                        !tags.iter().any(|tag| tag == NEURAL_TAG)
-                            && Self::tags_match(&tags, &self.match_keys)
-                    }
+                Self::is_prompt_visible_tool(t) && {
+                    let tags = t.get_tags();
+                    !tags.iter().any(|tag| tag == NEURAL_TAG)
+                        && Self::tags_match(&tags, &self.match_keys)
+                }
             })
             .collect();
         result.push_str(&Self::build_tools_section("常用工具", &tagged_tools));
@@ -1028,11 +1084,8 @@ pub fn build_conversation_prompt(
 ) -> String {
     use crate::models::prompt_builder::PromptBuilder;
     // 提取 ToolPo 列表（Tool 实体不可 Clone，但 PO 可以）
-    let tool_pos: Vec<crate::models::tool::ToolPo> = agent
-        .tools()
-        .iter()
-        .map(|t| t.po.clone())
-        .collect();
+    let tool_pos: Vec<crate::models::tool::ToolPo> =
+        agent.tools().iter().map(|t| t.po.clone()).collect();
     let mut builder = DefaultPromptBuilder::new();
     builder.current_trace_id(trace_id);
     builder.system_prompt(agent);

@@ -1,10 +1,10 @@
 //! Tool 持久化对象和完整实体
 
 use crate::pkg::request_context::RequestContext;
-use common::error::{err, Result};
 use async_trait::async_trait;
 use common::enums::tool::ControlMode;
 use common::enums::{ToolProtocol, ToolStatus};
+use common::error::{Result, err};
 use dyn_clone::DynClone;
 use rig::tool::{ToolDyn, ToolError};
 use serde::{Deserialize, Serialize};
@@ -102,7 +102,11 @@ impl ToolDyn for RigToolAdapter {
         &'a self,
         args: String,
     ) -> std::pin::Pin<
-        Box<dyn futures_util::Future<Output = std::result::Result<String, ToolError>> + std::marker::Send + 'a>,
+        Box<
+            dyn futures_util::Future<Output = std::result::Result<String, ToolError>>
+                + std::marker::Send
+                + 'a,
+        >,
     > {
         use futures_util::FutureExt;
         let ctx = &self.ctx;
@@ -265,7 +269,9 @@ impl Tool {
             return Err(err!(
                 InvalidRequest,
                 "Tool {} cannot transition from {:?} to {:?}",
-                self.po.id, self.po.status, target
+                self.po.id,
+                self.po.status,
+                target
             ));
         }
 

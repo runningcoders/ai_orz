@@ -27,11 +27,7 @@ impl ModelProviderDao for MockModelProviderDao {
     async fn insert(&self, _ctx: RequestContext, _provider: &ModelProviderPo) -> Result<()> {
         Ok(())
     }
-    async fn find_by_id(
-        &self,
-        _ctx: RequestContext,
-        _id: &str,
-    ) -> Result<Option<ModelProviderPo>> {
+    async fn find_by_id(&self, _ctx: RequestContext, _id: &str) -> Result<Option<ModelProviderPo>> {
         Ok(None)
     }
     async fn query(
@@ -39,7 +35,10 @@ impl ModelProviderDao for MockModelProviderDao {
         _ctx: RequestContext,
         _query: ModelProviderQuery,
     ) -> Result<common::api::PagedResult<ModelProviderPo>> {
-        Ok(common::api::PagedResult { items: Vec::new(), total: 0 })
+        Ok(common::api::PagedResult {
+            items: Vec::new(),
+            total: 0,
+        })
     }
     async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<ModelProviderPo>> {
         Ok(Vec::new())
@@ -166,8 +165,8 @@ fn create_test_message(
         None,
         file_meta,
         None,
-        None,              // root_id
-        None,              // organization_id
+        None, // root_id
+        None, // organization_id
         from_id.to_string(),
     )
 }
@@ -698,12 +697,7 @@ async fn test_search_vector_with_explicit_query(pool: SqlitePool) {
             msg.search_match.as_ref().unwrap().match_type,
             MatchType::Vector
         );
-        assert!(msg
-            .search_match
-            .as_ref()
-            .unwrap()
-            .vector_distance
-            .is_some());
+        assert!(msg.search_match.as_ref().unwrap().vector_distance.is_some());
     }
 }
 
@@ -823,15 +817,10 @@ async fn test_vector_index_lifecycle(pool: SqlitePool) {
         .unwrap();
 
     let found = results.iter().find(|m| m.id() == msg.id());
-    assert!(
-        found.is_some(),
-        "向量索引创建后应该能搜索到消息"
-    );
+    assert!(found.is_some(), "向量索引创建后应该能搜索到消息");
 
     // 删除消息 → DAL 应自动删除向量索引
-    dal.delete_message(ctx.clone(), msg.id())
-        .await
-        .unwrap();
+    dal.delete_message(ctx.clone(), msg.id()).await.unwrap();
 
     // 验证向量索引已被删除 → 搜索不到
     let results_after_delete = dal

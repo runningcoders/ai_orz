@@ -1,12 +1,12 @@
 //! Tool Stats DAO DuckDB 单元测试
 
-use crate::pkg::stats::*;
 use crate::pkg::request_context_test_support;
-use crate::service::dao::tool::{ToolStatsDao, ToolStatsQuery};
+use crate::pkg::stats::*;
 use crate::service::dao::tool::stats_duckdb::stats_new;
+use crate::service::dao::tool::{ToolStatsDao, ToolStatsQuery};
+use chrono::Utc;
 use common::error::Result;
 use common::models::StatsFetchOptions;
-use chrono::Utc;
 use sqlx::SqlitePool;
 use tempfile::tempdir;
 
@@ -15,7 +15,10 @@ async fn setup_test_env(
     agent_id: &str,
     success_count: usize,
     failed_count: usize,
-) -> Result<(crate::pkg::RequestContext, std::sync::Arc<dyn ToolStatsDao<ToolCallEvent = ToolCallEvent>>)> {
+) -> Result<(
+    crate::pkg::RequestContext,
+    std::sync::Arc<dyn ToolStatsDao<ToolCallEvent = ToolCallEvent>>,
+)> {
     let dir = tempdir()?;
     let db_path = dir.path().join("stats.db");
     let db_path_str = db_path.to_str().unwrap();

@@ -27,7 +27,7 @@
 //! 3. producer 零改动，自动获得该渠道的入站消息
 
 use common::enums::ChannelType;
-use common::error::{err, Result};
+use common::error::{Result, err};
 use once_cell::sync::Lazy;
 use std::sync::{Arc, RwLock};
 
@@ -90,13 +90,10 @@ impl MessageAdapterRegistry {
     ///
     /// 同一渠道类型重复注册返回 `Conflict` 错误。
     pub fn register(&self, adapter: Arc<dyn MessageInboundAdapter>) -> Result<()> {
-        let mut list = self.adapters.write().map_err(|e| {
-            err!(
-                Internal,
-                "message adapter registry lock poisoned: {}",
-                e
-            )
-        })?;
+        let mut list = self
+            .adapters
+            .write()
+            .map_err(|e| err!(Internal, "message adapter registry lock poisoned: {}", e))?;
 
         let ct = adapter.channel_type();
         if list.iter().any(|a| a.channel_type() == ct) {
@@ -116,13 +113,10 @@ impl MessageAdapterRegistry {
     /// 逐个调用 `adapter.start(callback)`，某个失败仅记日志，不中断其他渠道。
     pub async fn start_all(&self, callback: Arc<dyn MessageAdapterCallback>) -> Result<()> {
         let adapters = {
-            let list = self.adapters.read().map_err(|e| {
-                err!(
-                    Internal,
-                    "message adapter registry lock poisoned: {}",
-                    e
-                )
-            })?;
+            let list = self
+                .adapters
+                .read()
+                .map_err(|e| err!(Internal, "message adapter registry lock poisoned: {}", e))?;
             list.clone()
         };
 
@@ -144,13 +138,10 @@ impl MessageAdapterRegistry {
     /// 停止所有适配器
     pub async fn stop_all(&self) -> Result<()> {
         let adapters = {
-            let list = self.adapters.read().map_err(|e| {
-                err!(
-                    Internal,
-                    "message adapter registry lock poisoned: {}",
-                    e
-                )
-            })?;
+            let list = self
+                .adapters
+                .read()
+                .map_err(|e| err!(Internal, "message adapter registry lock poisoned: {}", e))?;
             list.clone()
         };
 

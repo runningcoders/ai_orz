@@ -14,9 +14,8 @@ use super::{AopStats, SystemDomainImpl};
 #[async_trait]
 impl AopStats for SystemDomainImpl {
     async fn overview(&self, _ctx: RequestContext) -> Result<AopOverview> {
-        let collector = aop_stats_collector().ok_or_else(|| {
-            Error::internal("AopStatsCollector not initialized")
-        })?;
+        let collector = aop_stats_collector()
+            .ok_or_else(|| Error::internal("AopStatsCollector not initialized"))?;
         Ok(collector.overview().await)
     }
 
@@ -27,9 +26,8 @@ impl AopStats for SystemDomainImpl {
         consumer_name: Option<String>,
         status: Option<String>,
     ) -> Result<Vec<AopTimeSeriesPoint>> {
-        let collector = aop_stats_collector().ok_or_else(|| {
-            Error::internal("AopStatsCollector not initialized")
-        })?;
+        let collector = aop_stats_collector()
+            .ok_or_else(|| Error::internal("AopStatsCollector not initialized"))?;
         Ok(collector
             .time_series(
                 event_kind.as_deref(),
@@ -45,9 +43,8 @@ impl AopStats for SystemDomainImpl {
         group_by: String,
         status_filter: Option<String>,
     ) -> Result<Vec<AopDistributionItem>> {
-        let collector = aop_stats_collector().ok_or_else(|| {
-            Error::internal("AopStatsCollector not initialized")
-        })?;
+        let collector = aop_stats_collector()
+            .ok_or_else(|| Error::internal("AopStatsCollector not initialized"))?;
         Ok(collector
             .distribution(&group_by, status_filter.as_deref())
             .await)

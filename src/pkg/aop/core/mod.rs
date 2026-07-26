@@ -1,13 +1,13 @@
-mod event;
-mod producer;
 mod consumer;
+mod event;
+mod metrics_hook;
+mod producer;
 mod registry;
 mod scheduler;
-mod metrics_hook;
 
+pub use consumer::{ConsumeMode, Consumer};
 pub use event::{Event, EventKind};
+pub use metrics_hook::{AopEventMeta, AopMetricsHook};
 pub use producer::Producer;
-pub use consumer::{Consumer, ConsumeMode};
 pub use registry::Registry;
 pub use scheduler::Scheduler;
-pub use metrics_hook::{AopEventMeta, AopMetricsHook};

@@ -3,12 +3,12 @@
 //! Batch 1 verifies that upper layers use the `McpServer` business entity while
 //! DAO remains a pure `McpServerPo` persistence boundary.
 
-use common::error::{Error, Result};
 use crate::models::mcp_server::{McpServer, McpServerConfig, McpServerStatus, McpTransport};
 use crate::pkg::RequestContext;
 use crate::service::dal::mcp_server::{self, McpServerDal};
 use crate::service::dao::tool_call::McpToolCallDao;
 use crate::service::dao::{mcp_server as mcp_server_dao, tool_call};
+use common::error::{Error, Result};
 use sqlx::SqlitePool;
 use std::sync::Arc;
 

@@ -12,10 +12,7 @@ use crate::service::domain::system::domain;
 use super::check_super_admin;
 
 #[generate_http_handler]
-pub async fn delete_backup(
-    ctx: RequestContext,
-    params: DeleteBackupRequest,
-) -> Result<()> {
+pub async fn delete_backup(ctx: RequestContext, params: DeleteBackupRequest) -> Result<()> {
     check_super_admin(&ctx)?;
 
     domain()

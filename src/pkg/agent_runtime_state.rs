@@ -44,9 +44,7 @@ impl AgentRuntimeStateManager {
     pub fn global() -> Arc<Self> {
         use std::sync::OnceLock;
         static INSTANCE: OnceLock<Arc<AgentRuntimeStateManager>> = OnceLock::new();
-        INSTANCE
-            .get_or_init(|| Arc::new(Self::new()))
-            .clone()
+        INSTANCE.get_or_init(|| Arc::new(Self::new())).clone()
     }
 
     /// 设置 Agent 为空闲状态

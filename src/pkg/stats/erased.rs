@@ -1,8 +1,8 @@
 //! 类型擦除支持，内部使用
 
+use std::any::Any;
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use std::any::Any;
 
 use common::error::{Error, Result};
 use duckdb::Connection;
@@ -13,7 +13,11 @@ use crate::pkg::stats::traits::{StatEvent, StatTable};
 pub trait ErasedStatTable: Send + Sync + Debug {
     fn create_table(&self, conn: &mut Connection) -> Result<()>;
     /// 批量擦除事件插入，向下转换为具体类型后调用 table.bulk_insert_events
-    fn bulk_insert_erased(&self, conn: &mut Connection, events: Vec<Box<dyn Any + Send + Sync>>) -> Result<()>;
+    fn bulk_insert_erased(
+        &self,
+        conn: &mut Connection,
+        events: Vec<Box<dyn Any + Send + Sync>>,
+    ) -> Result<()>;
     /// 获取标签/维度列的 SQL 引用方式
     fn column_sql(&self, column: &str) -> String;
     /// 获取指标列的 SQL 引用方式
@@ -41,7 +45,11 @@ where
         self.table.create_table(conn)
     }
 
-    fn bulk_insert_erased(&self, conn: &mut Connection, events: Vec<Box<dyn Any + Send + Sync>>) -> Result<()> {
+    fn bulk_insert_erased(
+        &self,
+        conn: &mut Connection,
+        events: Vec<Box<dyn Any + Send + Sync>>,
+    ) -> Result<()> {
         // Convert Box<dyn Any> back to E
         let mut concrete_events = Vec::with_capacity(events.len());
         for erased in events {

@@ -773,7 +773,10 @@ async fn test_artifact_list_filters_by_project_file_type_source_type_and_limit(p
     assert_eq!(artifacts.items[0].po.name, "Document Artifact");
     assert_eq!(artifacts.items[0].po.project_id, project.po.id);
     assert_eq!(artifacts.items[0].po.file_type, FileType::Document);
-    assert_eq!(artifacts.items[0].po.source_type, ArtifactSourceType::Attachment);
+    assert_eq!(
+        artifacts.items[0].po.source_type,
+        ArtifactSourceType::Attachment
+    );
 }
 
 #[sqlx::test]

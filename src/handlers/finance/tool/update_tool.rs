@@ -8,7 +8,7 @@ use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
 use super::response::to_detail;
-use common::error::{Result, err, bail_err};
+use common::error::{Result, bail_err, err};
 
 /// Update an existing custom tool's configuration (name, description, credentials, etc.)
 #[register_handler_tool(

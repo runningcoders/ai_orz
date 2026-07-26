@@ -1,14 +1,16 @@
 //! Handler: GET /api/v1/agents/{id} - Get agent detailed information
 
-use common::enums::{AgentRuntimeState, AgentKind};
-use common::error::Result;
-use common::models::StatsInterval;
 use crate::models::agent::ExternalAgentConfig;
 use crate::pkg::RequestContext;
 use crate::service::dal::agent::AgentFetchOptions;
 use crate::service::domain::{finance::domain as finance_domain, hr::domain};
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::{AgentCliConfig, AgentExternalConfigInfo, AgentRemoteConfig, GetAgentRequest, GetAgentResponse};
+use common::api::{
+    AgentCliConfig, AgentExternalConfigInfo, AgentRemoteConfig, GetAgentRequest, GetAgentResponse,
+};
+use common::enums::{AgentKind, AgentRuntimeState};
+use common::error::Result;
+use common::models::StatsInterval;
 
 /// Get detailed information about an AI agent
 #[register_handler_tool(
@@ -19,10 +21,7 @@ use common::api::{AgentCliConfig, AgentExternalConfigInfo, AgentRemoteConfig, Ge
     tags = "collaboration"
 )]
 #[generate_http_handler]
-pub async fn get_agent(
-    ctx: RequestContext,
-    params: GetAgentRequest,
-) -> Result<GetAgentResponse> {
+pub async fn get_agent(ctx: RequestContext, params: GetAgentRequest) -> Result<GetAgentResponse> {
     let options = AgentFetchOptions {
         with_stats: params.with_stats,
         with_model_call_stats: params.with_model_call_stats,
@@ -30,10 +29,12 @@ pub async fn get_agent(
             (Some(start), Some(end)) => Some((start, end)),
             _ => None,
         },
-        stats_interval: params.stats_interval.as_deref().and_then(|s| match s.to_lowercase().as_str() {
-            "hourly" => Some(StatsInterval::Hourly),
-            "daily" => Some(StatsInterval::Daily),
-            _ => None,
+        stats_interval: params.stats_interval.as_deref().and_then(|s| {
+            match s.to_lowercase().as_str() {
+                "hourly" => Some(StatsInterval::Hourly),
+                "daily" => Some(StatsInterval::Daily),
+                _ => None,
+            }
         }),
         ..Default::default()
     };
@@ -54,28 +55,36 @@ pub async fn get_agent(
         AgentKind::Cli | AgentKind::Remote => {
             let runtime_config = agent.po.get_runtime_config();
             match runtime_config.external_config {
-                Some(ExternalAgentConfig::Cli { command, args, work_dir, env: _, timeout_secs, prompt_template }) => {
-                    Some(AgentExternalConfigInfo {
-                        cli: Some(AgentCliConfig {
-                            command,
-                            args,
-                            work_dir,
-                            timeout_secs,
-                            prompt_template,
-                        }),
-                        remote: None,
-                    })
-                }
-                Some(ExternalAgentConfig::Remote { endpoint, agent_name, auth_token: _, timeout_secs }) => {
-                    Some(AgentExternalConfigInfo {
-                        cli: None,
-                        remote: Some(AgentRemoteConfig {
-                            endpoint,
-                            agent_name,
-                            timeout_secs,
-                        }),
-                    })
-                }
+                Some(ExternalAgentConfig::Cli {
+                    command,
+                    args,
+                    work_dir,
+                    env: _,
+                    timeout_secs,
+                    prompt_template,
+                }) => Some(AgentExternalConfigInfo {
+                    cli: Some(AgentCliConfig {
+                        command,
+                        args,
+                        work_dir,
+                        timeout_secs,
+                        prompt_template,
+                    }),
+                    remote: None,
+                }),
+                Some(ExternalAgentConfig::Remote {
+                    endpoint,
+                    agent_name,
+                    auth_token: _,
+                    timeout_secs,
+                }) => Some(AgentExternalConfigInfo {
+                    cli: None,
+                    remote: Some(AgentRemoteConfig {
+                        endpoint,
+                        agent_name,
+                        timeout_secs,
+                    }),
+                }),
                 None => None,
             }
         }

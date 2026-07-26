@@ -58,13 +58,15 @@ pub fn get_node_fill(node_type: &str) -> &'static str {
 
 /// 预设 tag 色板（鲜艳且可区分）
 pub const TAG_COLORS: &[&str] = &[
-    "#ef4444", "#f97316", "#f59e0b", "#eab308", "#84cc16",
-    "#10b981", "#06b6d4", "#3b82f6", "#8b5cf6", "#ec4899",
+    "#ef4444", "#f97316", "#f59e0b", "#eab308", "#84cc16", "#10b981", "#06b6d4", "#3b82f6",
+    "#8b5cf6", "#ec4899",
 ];
 
 /// 根据 tag 字符串 hash 稳定取色（同一 tag 始终同色）
 pub fn tag_color(tag: &str) -> &'static str {
-    let hash: u32 = tag.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
+    let hash: u32 = tag
+        .bytes()
+        .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
     TAG_COLORS[(hash as usize) % TAG_COLORS.len()]
 }
 
@@ -79,7 +81,11 @@ pub fn get_node_stroke_width(is_selected: bool) -> &'static str {
 }
 
 pub fn get_node_opacity(is_highlighted: bool, is_selected: bool) -> &'static str {
-    if is_selected || is_highlighted { "1" } else { "0.4" }
+    if is_selected || is_highlighted {
+        "1"
+    } else {
+        "0.4"
+    }
 }
 
 pub fn get_node_glow(is_highlighted: bool, is_selected: bool) -> String {
@@ -143,9 +149,9 @@ fn tag_border_arcs(cx: f64, cy: f64, r: f64, tags: &[String]) -> Vec<(String, &'
 
 /// 估算 tag 标签渲染宽度（font-size 9，中文≈9px，英文≈5px）
 fn tag_label_width(tag: &str) -> f64 {
-    tag.chars().fold(0.0, |acc, c| {
-        acc + if c.is_ascii() { 5.0 } else { 9.0 }
-    }) + 8.0 // padding
+    tag.chars()
+        .fold(0.0, |acc, c| acc + if c.is_ascii() { 5.0 } else { 9.0 })
+        + 8.0 // padding
 }
 
 /// 边颜色（根据关系类型）
@@ -230,7 +236,9 @@ pub fn Graph(props: GraphProps) -> Element {
     let svg_width = 800;
     let svg_height = 600;
 
-    let valid_edges: Vec<(GraphEdge, (f64, f64), (f64, f64))> = props.edges.iter()
+    let valid_edges: Vec<(GraphEdge, (f64, f64), (f64, f64))> = props
+        .edges
+        .iter()
         .filter_map(|e| {
             if let (Some(&source_pos), Some(&target_pos)) = (
                 node_positions.read().get(&e.source),
@@ -258,7 +266,9 @@ pub fn Graph(props: GraphProps) -> Element {
                 if dx.abs() > 3.0 || dy.abs() > 3.0 {
                     drag_moved.set(true);
                 }
-                node_positions.write().insert(node_id, (node_start_x + dx, node_start_y + dy));
+                node_positions
+                    .write()
+                    .insert(node_id, (node_start_x + dx, node_start_y + dy));
             }
         }
     };
@@ -690,14 +700,18 @@ pub fn calculate_layout(nodes: &[GraphNode], center_id: Option<&str>) -> Vec<Gra
     let radius = 200.0;
     let n = nodes.len() as f64;
 
-    nodes.iter().enumerate().map(|(i, node)| {
-        let angle = (i as f64 / n) * 2.0 * std::f64::consts::PI - std::f64::consts::FRAC_PI_2;
-        GraphNode {
-            x: center_x + radius * angle.cos(),
-            y: center_y + radius * angle.sin(),
-            ..node.clone()
-        }
-    }).collect()
+    nodes
+        .iter()
+        .enumerate()
+        .map(|(i, node)| {
+            let angle = (i as f64 / n) * 2.0 * std::f64::consts::PI - std::f64::consts::FRAC_PI_2;
+            GraphNode {
+                x: center_x + radius * angle.cos(),
+                y: center_y + radius * angle.sin(),
+                ..node.clone()
+            }
+        })
+        .collect()
 }
 
 /// 将新节点添加到已有布局中（围绕指定中心节点展开）
@@ -707,19 +721,19 @@ pub fn expand_layout(
     center_id: &str,
 ) -> Vec<GraphNode> {
     // 找到中心节点的位置
-    let center_pos = existing_nodes.iter()
+    let center_pos = existing_nodes
+        .iter()
         .find(|n| n.id == center_id)
         .map(|n| (n.x, n.y))
         .unwrap_or((400.0, 300.0));
 
     // 计算中心节点已有的关联节点数（用于角度偏移）
-    let existing_around = existing_nodes.iter()
-        .filter(|n| n.id != center_id)
-        .count();
+    let existing_around = existing_nodes.iter().filter(|n| n.id != center_id).count();
 
     let radius = 150.0;
     let n = new_nodes.len() as f64;
-    let start_angle = (existing_around as f64) * 2.0 * std::f64::consts::PI / (existing_around + new_nodes.len()).max(1) as f64;
+    let start_angle = (existing_around as f64) * 2.0 * std::f64::consts::PI
+        / (existing_around + new_nodes.len()).max(1) as f64;
 
     let mut result = existing_nodes.to_vec();
     for (i, node) in new_nodes.iter().enumerate() {

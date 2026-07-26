@@ -1,12 +1,12 @@
 //! ModelProviderDao SQLite 实现
 
-use common::error::Result;
 use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderQuery};
 use chrono::Utc;
 use common::api::PagedResult;
 use common::enums::{ModelCapability, ModelProviderStatus};
+use common::error::Result;
 use sqlx::QueryBuilder;
 use std::sync::{Arc, OnceLock};
 // ==================== 单例 ====================
@@ -35,11 +35,7 @@ impl ModelProviderDaoSqliteImpl {
 
 #[async_trait::async_trait]
 impl ModelProviderDao for ModelProviderDaoSqliteImpl {
-    async fn insert(
-        &self,
-        ctx: RequestContext,
-        provider: &ModelProviderPo,
-    ) -> Result<()> {
+    async fn insert(&self, ctx: RequestContext, provider: &ModelProviderPo) -> Result<()> {
         let provider_type = provider.provider_type as i32;
         let capability = provider.capability as i32;
         let status = provider.status as i32;
@@ -67,11 +63,7 @@ impl ModelProviderDao for ModelProviderDaoSqliteImpl {
         Ok(())
     }
 
-    async fn find_by_id(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<Option<ModelProviderPo>> {
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<ModelProviderPo>> {
         let pool = ctx.db_pool();
         let provider = QueryBuilder::new(
             r#"
@@ -96,14 +88,10 @@ FROM model_providers WHERE id =
     ) -> Result<PagedResult<ModelProviderPo>> {
         let pool = ctx.db_pool();
 
-        let mut count_builder = QueryBuilder::new(
-            r#"SELECT COUNT(*) FROM model_providers WHERE 1=1"#,
-        );
+        let mut count_builder =
+            QueryBuilder::new(r#"SELECT COUNT(*) FROM model_providers WHERE 1=1"#);
         push_query_filters(&mut count_builder, &query);
-        let total: i64 = count_builder
-            .build_query_scalar()
-            .fetch_one(pool)
-            .await?;
+        let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
 
         let mut list_builder = QueryBuilder::new(
             r#"
@@ -148,11 +136,7 @@ FROM model_providers WHERE 1=1
         Ok(page.items)
     }
 
-    async fn update(
-        &self,
-        ctx: RequestContext,
-        provider: &ModelProviderPo,
-    ) -> Result<()> {
+    async fn update(&self, ctx: RequestContext, provider: &ModelProviderPo) -> Result<()> {
         let current_timestamp = Utc::now().timestamp();
         let provider_type = provider.provider_type as i32;
         let capability = provider.capability as i32;
@@ -183,11 +167,7 @@ WHERE id = ?
         Ok(())
     }
 
-    async fn delete(
-        &self,
-        ctx: RequestContext,
-        provider: &ModelProviderPo,
-    ) -> Result<()> {
+    async fn delete(&self, ctx: RequestContext, provider: &ModelProviderPo) -> Result<()> {
         let current_timestamp = Utc::now().timestamp();
         let uid = ctx.uid().to_string();
         let pool = ctx.db_pool();

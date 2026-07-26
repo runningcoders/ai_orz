@@ -1,11 +1,11 @@
 //! Tool Vector DAO implementation
 //! 负责工具向量索引的 CRUD 操作，与基础工具数据完全解耦
 
-use common::error::{err, Result};
 use crate::models::vector::{VectorIndexParams, VectorRow, VectorSearchHit};
 use crate::pkg::RequestContext;
 use crate::service::dao::tool::ToolVectorDao;
 use async_trait::async_trait;
+use common::error::{Result, err};
 use std::sync::{Arc, OnceLock};
 
 // ==================== 工厂方法 + 单例 ====================

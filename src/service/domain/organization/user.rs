@@ -2,10 +2,10 @@
 //!
 //! 定义用户相关业务接口实现
 
-use common::error::{bail_err, Result};
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
+use common::error::{Result, bail_err};
 
 #[async_trait]
 impl super::UserManage for super::OrganizationDomainImpl {
@@ -56,20 +56,12 @@ impl super::UserManage for super::OrganizationDomainImpl {
     }
 
     /// 检查用户名是否已存在
-    async fn exists_by_username(
-        &self,
-        ctx: RequestContext,
-        username: &str,
-    ) -> Result<bool> {
+    async fn exists_by_username(&self, ctx: RequestContext, username: &str) -> Result<bool> {
         self.user_dal.exists_by_username(ctx, username).await
     }
 
     /// 统计组织下用户总数
-    async fn count_by_organization_id(
-        &self,
-        ctx: RequestContext,
-        org_id: &str,
-    ) -> Result<u64> {
+    async fn count_by_organization_id(&self, ctx: RequestContext, org_id: &str) -> Result<u64> {
         // 语法糖：调用通用 count_users
         self.count_users(
             ctx,
@@ -125,11 +117,7 @@ impl super::UserManage for super::OrganizationDomainImpl {
     }
 
     /// 根据用户 ID 获取用户信息
-    async fn get_user_by_id(
-        &self,
-        ctx: RequestContext,
-        user_id: &str,
-    ) -> Result<Option<UserPo>> {
+    async fn get_user_by_id(&self, ctx: RequestContext, user_id: &str) -> Result<Option<UserPo>> {
         self.user_dal.find_by_id(ctx, user_id).await
     }
 }

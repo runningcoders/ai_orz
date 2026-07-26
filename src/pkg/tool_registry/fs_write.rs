@@ -2,10 +2,12 @@
 
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
-use crate::pkg::tool_registry::tool_security::fs::{resolve_and_validate_path, ValidationResult, sanitize_error};
-use anyhow::{anyhow};
-use common::error::Result;
+use crate::pkg::tool_registry::tool_security::fs::{
+    ValidationResult, resolve_and_validate_path, sanitize_error,
+};
+use anyhow::anyhow;
 use common::enums::{ControlMode, ToolProtocol};
+use common::error::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs::{File, OpenOptions};
@@ -129,7 +131,11 @@ impl CoreTool for FsWriteCoreTool {
 
         // Get base data path from global config
         let base_path = crate::config::get().base_data_path();
-        let additional_allowed = self.config.additional_allowed_paths.as_deref().unwrap_or(&[]);
+        let additional_allowed = self
+            .config
+            .additional_allowed_paths
+            .as_deref()
+            .unwrap_or(&[]);
         match resolve_and_validate_path(&base_path, &args.path, additional_allowed)? {
             ValidationResult::NeedConfirmation(message) => {
                 // Return explicit prompt for agent to ask user confirmation
@@ -140,16 +146,20 @@ impl CoreTool for FsWriteCoreTool {
                 }));
             }
             ValidationResult::Valid(target_path) => {
-
                 // Read existing file lines if it exists
                 let mut existing_lines: Vec<String> = if target_path.exists() {
                     let file = File::open(&target_path)
-                        .map_err(|e| anyhow::anyhow!("Failed to open existing file: {}", sanitize_error(e)))
+                        .map_err(|e| {
+                            anyhow::anyhow!("Failed to open existing file: {}", sanitize_error(e))
+                        })
                         .map_err(|e| common::error::Error::from(e))?;
                     let reader = BufReader::new(file);
-                    reader.lines()
+                    reader
+                        .lines()
                         .collect::<std::result::Result<_, _>>()
-                        .map_err(|e| anyhow::anyhow!("Failed to read existing file: {}", sanitize_error(e)))
+                        .map_err(|e| {
+                            anyhow::anyhow!("Failed to read existing file: {}", sanitize_error(e))
+                        })
                         .map_err(|e| common::error::Error::from(e))?
                 } else {
                     Vec::new()
@@ -159,7 +169,7 @@ impl CoreTool for FsWriteCoreTool {
                 let content = args.content.unwrap_or_default();
                 let new_lines: Vec<String> = split_lines(&content);
 
-            // Apply edit based on mode
+                // Apply edit based on mode
                 match args.mode.as_str() {
                     "overwrite" => {
                         // Completely overwrite the file
@@ -235,21 +245,21 @@ impl CoreTool for FsWriteCoreTool {
                 for line in &existing_lines {
                     writeln!(file, "{}", line)
                         .map_err(|e| anyhow!("Failed to write line: {}", sanitize_error(e)))
+                        .map_err(|e| common::error::Error::from(e))?;
+                }
+
+                file.flush()
+                    .map_err(|e| anyhow!("Failed to flush file: {}", sanitize_error(e)))
                     .map_err(|e| common::error::Error::from(e))?;
-            }
 
-            file.flush()
-                .map_err(|e| anyhow!("Failed to flush file: {}", sanitize_error(e)))
-                .map_err(|e| common::error::Error::from(e))?;
-
-            Ok(serde_json::json!({
-                "success": true,
-                "path": args.path,
-            "mode": args.mode,
-            "original_lines": original_lines,
-            "final_lines": final_lines,
-            "lines_changed": lines_changed
-        }))
+                Ok(serde_json::json!({
+                        "success": true,
+                        "path": args.path,
+                    "mode": args.mode,
+                    "original_lines": original_lines,
+                    "final_lines": final_lines,
+                    "lines_changed": lines_changed
+                }))
             }
         }
     }
@@ -282,7 +292,9 @@ fn validate_args(args: &WriteFileArgs) -> Result<()> {
         }
         "delete_range" => {
             if args.start_line.is_none() || args.end_line.is_none() {
-                return Err(anyhow!("start_line and end_line are required for delete_range mode").into());
+                return Err(
+                    anyhow!("start_line and end_line are required for delete_range mode").into(),
+                );
             }
         }
         "replace_range" => {
@@ -290,7 +302,9 @@ fn validate_args(args: &WriteFileArgs) -> Result<()> {
                 return Err(anyhow!("content is required for replace_range mode").into());
             }
             if args.start_line.is_none() || args.end_line.is_none() {
-                return Err(anyhow!("start_line and end_line are required for replace_range mode").into());
+                return Err(
+                    anyhow!("start_line and end_line are required for replace_range mode").into(),
+                );
             }
         }
         _ => {}

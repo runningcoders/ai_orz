@@ -1,5 +1,5 @@
-pub mod agent_runtime_state;
 pub mod adapter;
+pub mod agent_runtime_state;
 pub mod aop;
 pub mod daily_jsonl;
 pub mod external;
@@ -23,7 +23,12 @@ pub async fn init_all(config: &AppConfig) {
     logging::init(config);
 
     // Initialize database storage
-    storage::init(config.base_data_path().as_path(), &config.database, &config.stats).await;
+    storage::init(
+        config.base_data_path().as_path(),
+        &config.database,
+        &config.stats,
+    )
+    .await;
 
     // Initialize JWT
     let jwt_secret = std::env::var("JWT_SECRET")
@@ -35,7 +40,10 @@ pub async fn init_all(config: &AppConfig) {
 
     // Register all generic builtin tools to the global registry
     tool_registry::builtin::register_all(tool_registry::get_registry());
-    sys_info!("Registered {} generic builtin tools", tool_registry::builtin::GENERIC_BUILTIN_TOOLS.len());
+    sys_info!(
+        "Registered {} generic builtin tools",
+        tool_registry::builtin::GENERIC_BUILTIN_TOOLS.len()
+    );
 
     // Initialize tool call tracing logger (singleton factory)
     tool_tracing::logger::ToolCallLogger::init(config.base_data_path());

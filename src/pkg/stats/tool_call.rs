@@ -5,9 +5,9 @@
 
 use super::*;
 use ai_orz_macros::StatsEvent;
-use uuid::Uuid;
-use duckdb::{Connection, ToSql};
 use common::error::Result;
+use duckdb::{Connection, ToSql};
+use uuid::Uuid;
 
 #[derive(Debug, Clone, StatsEvent)]
 #[event_type = "tool_call"]
@@ -145,8 +145,12 @@ impl StatTable<ToolCallEvent> for ToolCallStatTable {
                 status VARCHAR
             );
         "#;
-        conn.execute(sql, [])
-            .map_err(|e| common::error::Error::internal(format!("Failed to create tool_call_events table: {}", e)))?;
+        conn.execute(sql, []).map_err(|e| {
+            common::error::Error::internal(format!(
+                "Failed to create tool_call_events table: {}",
+                e
+            ))
+        })?;
         Ok(())
     }
 
@@ -159,36 +163,9 @@ impl StatTable<ToolCallEvent> for ToolCallStatTable {
                 args_len, result_len, duration_ms, status
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         "#;
-        conn.execute(sql, [
-            &id.to_string() as &dyn ToSql,
-            &event.timestamp as &dyn ToSql,
-            &event.tool_id as &dyn ToSql,
-            &event.tool_name as &dyn ToSql,
-            &event.agent_id as &dyn ToSql,
-            &event.project_id as &dyn ToSql,
-            &event.task_id as &dyn ToSql,
-            &event.organization_id as &dyn ToSql,
-            &event.user_id as &dyn ToSql,
-            &event.args_len as &dyn ToSql,
-            &event.result_len as &dyn ToSql,
-            &event.duration_ms as &dyn ToSql,
-            &event.status as &dyn ToSql,
-        ])
-            .map_err(|e| common::error::Error::internal(format!("Failed to insert tool call event: {}", e)))?;
-        Ok(())
-    }
-
-    fn bulk_insert_events(&self, conn: &mut Connection, events: &[ToolCallEvent]) -> Result<()> {
-        for event in events {
-            let id = Uuid::now_v7();
-            let sql = r#"
-                INSERT INTO tool_call_events (
-                    id, timestamp, tool_id, tool_name, agent_id,
-                    project_id, task_id, organization_id, user_id,
-                    args_len, result_len, duration_ms, status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-            "#;
-            conn.execute(sql, [
+        conn.execute(
+            sql,
+            [
                 &id.to_string() as &dyn ToSql,
                 &event.timestamp as &dyn ToSql,
                 &event.tool_id as &dyn ToSql,
@@ -202,8 +179,48 @@ impl StatTable<ToolCallEvent> for ToolCallStatTable {
                 &event.result_len as &dyn ToSql,
                 &event.duration_ms as &dyn ToSql,
                 &event.status as &dyn ToSql,
-            ])
-                .map_err(|e| common::error::Error::internal(format!("Failed to bulk insert tool call event: {}", e)))?;
+            ],
+        )
+        .map_err(|e| {
+            common::error::Error::internal(format!("Failed to insert tool call event: {}", e))
+        })?;
+        Ok(())
+    }
+
+    fn bulk_insert_events(&self, conn: &mut Connection, events: &[ToolCallEvent]) -> Result<()> {
+        for event in events {
+            let id = Uuid::now_v7();
+            let sql = r#"
+                INSERT INTO tool_call_events (
+                    id, timestamp, tool_id, tool_name, agent_id,
+                    project_id, task_id, organization_id, user_id,
+                    args_len, result_len, duration_ms, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            "#;
+            conn.execute(
+                sql,
+                [
+                    &id.to_string() as &dyn ToSql,
+                    &event.timestamp as &dyn ToSql,
+                    &event.tool_id as &dyn ToSql,
+                    &event.tool_name as &dyn ToSql,
+                    &event.agent_id as &dyn ToSql,
+                    &event.project_id as &dyn ToSql,
+                    &event.task_id as &dyn ToSql,
+                    &event.organization_id as &dyn ToSql,
+                    &event.user_id as &dyn ToSql,
+                    &event.args_len as &dyn ToSql,
+                    &event.result_len as &dyn ToSql,
+                    &event.duration_ms as &dyn ToSql,
+                    &event.status as &dyn ToSql,
+                ],
+            )
+            .map_err(|e| {
+                common::error::Error::internal(format!(
+                    "Failed to bulk insert tool call event: {}",
+                    e
+                ))
+            })?;
         }
         Ok(())
     }

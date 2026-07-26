@@ -4,14 +4,14 @@
 //! 将 prompt 写入子进程 stdin，读取 stdout 作为执行结果。
 
 use async_trait::async_trait;
-use common::error::{err, Result};
+use common::error::{Result, err};
 use std::process::Stdio;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
+use super::AgentRuntimeDao;
 use crate::models::agent::AgentPo;
 use crate::pkg::RequestContext;
-use super::AgentRuntimeDao;
 
 /// CLI Agent 执行配置
 #[derive(Debug, Clone)]
@@ -62,7 +62,8 @@ impl AgentRuntimeDao for CodexRuntimeDao {
             &self.config.env,
             self.config.timeout_secs,
             &self.apply_prompt_template(prompt),
-        ).await
+        )
+        .await
     }
 }
 
@@ -140,14 +141,12 @@ pub async fn execute_cli(
             let output_str = String::from_utf8_lossy(&output);
             Ok(output_str.trim().to_string())
         }
-        Ok(Err(e)) => {
-            Err(err!(
-                Internal,
-                "Agent {}: CLI command execution failed: {}",
-                agent_id,
-                e
-            ))
-        }
+        Ok(Err(e)) => Err(err!(
+            Internal,
+            "Agent {}: CLI command execution failed: {}",
+            agent_id,
+            e
+        )),
         Err(_) => {
             let _ = child.kill().await;
             let _ = child.wait().await;
@@ -175,7 +174,8 @@ mod tests {
             &[],
             10,
             "unused",
-        ).await;
+        )
+        .await;
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "hello world");
@@ -191,7 +191,8 @@ mod tests {
             &[],
             10,
             "hello from stdin",
-        ).await;
+        )
+        .await;
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "hello from stdin");
@@ -207,7 +208,8 @@ mod tests {
             &[],
             1,
             "",
-        ).await;
+        )
+        .await;
 
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
@@ -224,7 +226,8 @@ mod tests {
             &[],
             10,
             "",
-        ).await;
+        )
+        .await;
 
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
@@ -239,7 +242,9 @@ mod tests {
             work_dir: "/tmp".to_string(),
             env: vec![],
             timeout_secs: 10,
-            prompt_template: Some("System: You are helpful.\nUser: {prompt}\nAssistant:".to_string()),
+            prompt_template: Some(
+                "System: You are helpful.\nUser: {prompt}\nAssistant:".to_string(),
+            ),
         });
 
         let result = dao.apply_prompt_template("Hello");

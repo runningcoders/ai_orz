@@ -15,18 +15,13 @@ use crate::service::domain::message;
 use crate::service::domain::project::domain as project_domain;
 
 /// 处理 tasks/get 请求
-pub async fn handle_get_task(
-    ctx: RequestContext,
-    params: GetTaskParams,
-) -> Result<A2aTask> {
+pub async fn handle_get_task(ctx: RequestContext, params: GetTaskParams) -> Result<A2aTask> {
     // 1. 查询 project
     let project = project_domain()
         .project_manage()
         .get(ctx.clone(), &params.id)
         .await?
-        .ok_or_else(|| {
-            common::error::Error::not_found(format!("Task {} not found", params.id))
-        })?;
+        .ok_or_else(|| common::error::Error::not_found(format!("Task {} not found", params.id)))?;
 
     // 2. 查询 messages
     let messages = message::domain()

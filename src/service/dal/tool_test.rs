@@ -16,12 +16,12 @@ use crate::service::dao::tool::ToolSearch;
 use crate::service::dao::tool_call::ToolCallDao;
 use async_trait::async_trait;
 use common::enums::{ControlMode, ToolProtocol, ToolStatus};
+use common::error::Result;
 use rig::tool::{ToolDyn, ToolError};
 use serde_json::Value;
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use uuid::Uuid;
-use common::error::Result;
 
 // 测试用的简单工具工厂
 #[derive(Clone)]
@@ -724,11 +724,7 @@ impl ToolCallDao for MockToolCallDao {
         Ok(Some(Box::new(TestTool { po: po.clone() })))
     }
 
-    fn wrap_for_rig(
-        &self,
-        _tools: &[Tool],
-        _ctx: RequestContext,
-    ) -> Vec<Box<dyn ToolDyn>> {
+    fn wrap_for_rig(&self, _tools: &[Tool], _ctx: RequestContext) -> Vec<Box<dyn ToolDyn>> {
         vec![]
     }
 
@@ -826,18 +822,15 @@ async fn test_search_three_state_matching(pool: SqlitePool) -> Result<()> {
         MatchType::Hybrid,
         "tool_matching 应是 Hybrid 匹配"
     );
-    assert!(results[0]
-        .search_match
-        .as_ref()
-        .unwrap()
-        .vector_distance
-        .is_some());
-    assert!(results[0]
-        .search_match
-        .as_ref()
-        .unwrap()
-        .fts_rank
-        .is_some());
+    assert!(
+        results[0]
+            .search_match
+            .as_ref()
+            .unwrap()
+            .vector_distance
+            .is_some()
+    );
+    assert!(results[0].search_match.as_ref().unwrap().fts_rank.is_some());
 
     // 第二条应是 Vector（仅向量命中）
     assert_eq!(results[1].po.id, po_vector_only.id);
@@ -846,18 +839,15 @@ async fn test_search_three_state_matching(pool: SqlitePool) -> Result<()> {
         MatchType::Vector,
         "tool_vector_only 应是 Vector 匹配"
     );
-    assert!(results[1]
-        .search_match
-        .as_ref()
-        .unwrap()
-        .vector_distance
-        .is_some());
-    assert!(results[1]
-        .search_match
-        .as_ref()
-        .unwrap()
-        .fts_rank
-        .is_none());
+    assert!(
+        results[1]
+            .search_match
+            .as_ref()
+            .unwrap()
+            .vector_distance
+            .is_some()
+    );
+    assert!(results[1].search_match.as_ref().unwrap().fts_rank.is_none());
 
     Ok(())
 }
@@ -910,18 +900,15 @@ async fn test_search_keyword_only_match(pool: SqlitePool) -> Result<()> {
         MatchType::Keyword,
         "应是 Keyword 匹配（向量距离 > 阈值）"
     );
-    assert!(results[0]
-        .search_match
-        .as_ref()
-        .unwrap()
-        .fts_rank
-        .is_some());
-    assert!(results[0]
-        .search_match
-        .as_ref()
-        .unwrap()
-        .vector_distance
-        .is_none());
+    assert!(results[0].search_match.as_ref().unwrap().fts_rank.is_some());
+    assert!(
+        results[0]
+            .search_match
+            .as_ref()
+            .unwrap()
+            .vector_distance
+            .is_none()
+    );
 
     Ok(())
 }

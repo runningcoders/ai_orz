@@ -12,8 +12,8 @@ use common::models::TimeSeriesPoint;
 use dioxus::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
-use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::closure::Closure;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 
 use crate::components::hud_palette;
@@ -187,7 +187,16 @@ fn draw_chart(
     let max_y = (max_value as f64 * 1.1).max(1.0); // 留 10% 顶部空间
 
     // 5. 绘制坐标轴
-    draw_axes(ctx, pad_left, pad_top, plot_w, plot_h, max_y, data.len(), value_label);
+    draw_axes(
+        ctx,
+        pad_left,
+        pad_top,
+        plot_w,
+        plot_h,
+        max_y,
+        data.len(),
+        value_label,
+    );
 
     // 6. 计算数据点坐标
     let points: Vec<(f64, f64, u64)> = data

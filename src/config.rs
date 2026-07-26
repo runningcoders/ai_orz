@@ -4,8 +4,8 @@
 //! 用户可通过修改外部配置文件自定义程序行为。
 
 use common::config::{AppConfig, BASE_DATA_PATH, CONFIG_FILE_NAME};
-use std::sync::{Arc, OnceLock};
 use common::error::Result;
+use std::sync::{Arc, OnceLock};
 // ==================== 单例管理 ====================
 
 static CONFIG: OnceLock<Arc<AppConfig>> = OnceLock::new();
@@ -59,13 +59,9 @@ pub fn load_config() -> Result<AppConfig> {
 
     // 读取配置文件
     let content = std::fs::read_to_string(&config_path)?;
-    let config: AppConfig = toml::from_str(&content)
-        .map_err(|e: toml::de::Error| {
-            common::error::Error::new(
-                common::error::ErrorCode::ConfigInvalid,
-                e.to_string(),
-            )
-        })?;
+    let config: AppConfig = toml::from_str(&content).map_err(|e: toml::de::Error| {
+        common::error::Error::new(common::error::ErrorCode::ConfigInvalid, e.to_string())
+    })?;
 
     // 确保日志目录存在
     let log_dir = config.log_dir();

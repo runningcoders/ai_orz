@@ -314,6 +314,9 @@ mod tests {
             .unwrap();
         assert_eq!(results_by_type.items.len(), 1);
         assert_eq!(results_by_type.total, 1);
-        assert_eq!(results_by_type.items[0].po.channel_type, ChannelType::Webhook);
+        assert_eq!(
+            results_by_type.items[0].po.channel_type,
+            ChannelType::Webhook
+        );
     }
 }

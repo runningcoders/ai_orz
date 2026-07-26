@@ -492,7 +492,14 @@ impl AgentPo {
     pub fn get_cli_config(&self) -> Option<CliAgentConfig> {
         let config = self.get_runtime_config();
         match config.external_config? {
-            ExternalAgentConfig::Cli { command, args, work_dir, env, timeout_secs, prompt_template } => {
+            ExternalAgentConfig::Cli {
+                command,
+                args,
+                work_dir,
+                env,
+                timeout_secs,
+                prompt_template,
+            } => {
                 if !self.kind.is_cli() {
                     return None;
                 }
@@ -513,7 +520,12 @@ impl AgentPo {
     pub fn get_remote_config(&self) -> Option<RemoteAgentConfig> {
         let config = self.get_runtime_config();
         match config.external_config? {
-            ExternalAgentConfig::Remote { endpoint, agent_name, auth_token, timeout_secs } => {
+            ExternalAgentConfig::Remote {
+                endpoint,
+                agent_name,
+                auth_token,
+                timeout_secs,
+            } => {
                 if !self.kind.is_remote() {
                     return None;
                 }

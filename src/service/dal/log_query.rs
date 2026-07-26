@@ -199,8 +199,7 @@ impl LogQueryDal for LogQueryDalFsImpl {
 
         let total = entries.len();
         let skip = (page - 1) * page_size;
-        let page_entries: Vec<LogEntry> =
-            entries.into_iter().skip(skip).take(page_size).collect();
+        let page_entries: Vec<LogEntry> = entries.into_iter().skip(skip).take(page_size).collect();
 
         Ok(LogPageResult {
             total,
@@ -270,10 +269,7 @@ fn parse_and_filter(
     end_time: Option<i64>,
 ) -> Option<LogEntry> {
     // timestamp - 顶层字段
-    let timestamp = raw
-        .get("timestamp")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let timestamp = raw.get("timestamp").and_then(|v| v.as_str()).unwrap_or("");
 
     // level - 顶层字段
     let level = raw.get("level").and_then(|v| v.as_str()).unwrap_or("");
@@ -404,7 +400,10 @@ mod tests {
         assert_eq!(parse_timestamp_to_millis("1970-01-01T00:00:00Z"), Some(0));
 
         // 1970-01-01T00:00:01Z = 1000 ms
-        assert_eq!(parse_timestamp_to_millis("1970-01-01T00:00:01Z"), Some(1000));
+        assert_eq!(
+            parse_timestamp_to_millis("1970-01-01T00:00:01Z"),
+            Some(1000)
+        );
 
         // 含毫秒和时区：2026-07-17T12:34:56.789Z
         let ms = parse_timestamp_to_millis("2026-07-17T12:34:56.789Z");
@@ -432,8 +431,8 @@ mod tests {
             Some("create_user"),
         );
 
-        let entry = parse_and_filter(&raw, None, None, None, None, None)
-            .expect("应解析出 LogEntry");
+        let entry =
+            parse_and_filter(&raw, None, None, None, None, None).expect("应解析出 LogEntry");
         assert_eq!(entry.timestamp, "2026-07-17T12:00:00Z");
         assert_eq!(entry.level, "INFO");
         assert_eq!(entry.message, "hello world");
@@ -551,13 +550,13 @@ mod tests {
             "2026-07-17T12:00:00Z",
             "INFO",
             "msg",
-            Some(""),     // 空 log_id
-            Some(""),     // 空 user_id
-            Some(""),     // 空 operation
+            Some(""), // 空 log_id
+            Some(""), // 空 user_id
+            Some(""), // 空 operation
         );
 
-        let entry = parse_and_filter(&raw, None, None, None, None, None)
-            .expect("应解析出 LogEntry");
+        let entry =
+            parse_and_filter(&raw, None, None, None, None, None).expect("应解析出 LogEntry");
         assert_eq!(entry.log_id, None);
         assert_eq!(entry.user_id, None);
         assert_eq!(entry.operation, None);
@@ -576,20 +575,52 @@ mod tests {
         );
 
         // 三个条件全满足
-        assert!(parse_and_filter(
-            &raw,
-            Some("disk"),
-            Some("req-combo"),
-            Some("WARN"),
-            None,
-            None,
-        )
-        .is_some());
+        assert!(
+            parse_and_filter(
+                &raw,
+                Some("disk"),
+                Some("req-combo"),
+                Some("WARN"),
+                None,
+                None,
+            )
+            .is_some()
+        );
 
         // 任意一个不满足都应返回 None
-        assert!(parse_and_filter(&raw, Some("network"), Some("req-combo"), Some("WARN"), None, None).is_none());
-        assert!(parse_and_filter(&raw, Some("disk"), Some("wrong-id"), Some("WARN"), None, None).is_none());
-        assert!(parse_and_filter(&raw, Some("disk"), Some("req-combo"), Some("ERROR"), None, None).is_none());
+        assert!(
+            parse_and_filter(
+                &raw,
+                Some("network"),
+                Some("req-combo"),
+                Some("WARN"),
+                None,
+                None
+            )
+            .is_none()
+        );
+        assert!(
+            parse_and_filter(
+                &raw,
+                Some("disk"),
+                Some("wrong-id"),
+                Some("WARN"),
+                None,
+                None
+            )
+            .is_none()
+        );
+        assert!(
+            parse_and_filter(
+                &raw,
+                Some("disk"),
+                Some("req-combo"),
+                Some("ERROR"),
+                None,
+                None
+            )
+            .is_none()
+        );
     }
 
     /// 测试 `parse_and_filter`：当 timestamp 非法且启用了时间过滤时返回 None
@@ -617,8 +648,7 @@ mod tests {
         // 1) 今天的日志文件（应被收集）
         let today = Utc::now().date_naive().format("%Y-%m-%d").to_string();
         let today_name = format!("{}{}", LOG_FILE_PREFIX, today);
-        std::fs::write(dir.path().join(&today_name), b"{}")
-            .expect("write today log");
+        std::fs::write(dir.path().join(&today_name), b"{}").expect("write today log");
 
         // 2) 命名不匹配的文件（应被忽略）
         std::fs::write(dir.path().join("random.log"), b"{}").expect("write random");
@@ -632,20 +662,26 @@ mod tests {
         // 至少应包含今天的文件
         assert!(
             files.iter().any(|f| f.ends_with(&today_name)),
-            "应收集今天的日志文件, 实际: {:?}", files
+            "应收集今天的日志文件, 实际: {:?}",
+            files
         );
         // 不应包含 random.log / ai_orz.log / ai_orz.log.not-a-date
         assert!(
             !files.iter().any(|f| f.ends_with("random.log")),
-            "不应收集 random.log, 实际: {:?}", files
+            "不应收集 random.log, 实际: {:?}",
+            files
         );
         assert!(
-            !files.iter().any(|f| f.ends_with("ai_orz.log") && !f.ends_with(&today_name)),
-            "不应收集无日期后缀的 ai_orz.log, 实际: {:?}", files
+            !files
+                .iter()
+                .any(|f| f.ends_with("ai_orz.log") && !f.ends_with(&today_name)),
+            "不应收集无日期后缀的 ai_orz.log, 实际: {:?}",
+            files
         );
         assert!(
             !files.iter().any(|f| f.ends_with("ai_orz.log.not-a-date")),
-            "不应收集非法日期后缀, 实际: {:?}", files
+            "不应收集非法日期后缀, 实际: {:?}",
+            files
         );
     }
 
@@ -662,7 +698,8 @@ mod tests {
         let files = collect_log_files(dir.path());
         assert!(
             !files.iter().any(|f| f.ends_with(&old_name)),
-            "超过 MAX_SCAN_DAYS 天的旧文件应被排除, 实际: {:?}", files
+            "超过 MAX_SCAN_DAYS 天的旧文件应被排除, 实际: {:?}",
+            files
         );
     }
 

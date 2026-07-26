@@ -6,7 +6,7 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListMessageChannelsRequest, MessageChannelListItem, PagedResult};
 
 use super::response::to_list_item;
-use common::error::{Result, err, bail_err};
+use common::error::{Result, bail_err, err};
 
 /// List message channels with optional filtering by user, agent, channel type, enabled status
 #[register_handler_tool(

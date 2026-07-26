@@ -58,12 +58,12 @@ impl ErrorField {
             extra: Map::new(),
         }
     }
-    
+
     /// Insert a key-value pair into the generic extra map.
     pub fn insert(&mut self, key: String, value: Value) {
         self.extra.insert(key, value);
     }
-    
+
     /// Get a value by key from the generic extra map.
     pub fn get(&self, key: &str) -> Option<&Value> {
         self.extra.get(key)
@@ -83,7 +83,7 @@ impl Default for ErrorField {
 
 impl std::ops::Deref for ErrorField {
     type Target = Map<String, Value>;
-    
+
     fn deref(&self) -> &Self::Target {
         &self.extra
     }
@@ -287,11 +287,7 @@ impl From<AnyhowError> for Error {
 impl From<tokio::task::JoinError> for Error {
     fn from(err: tokio::task::JoinError) -> Self {
         use crate::error::{ErrorCode, ErrorType};
-        Error::typed(
-            ErrorCode::Internal,
-            ErrorType::System,
-            err.to_string(),
-        ).with_source(err)
+        Error::typed(ErrorCode::Internal, ErrorType::System, err.to_string()).with_source(err)
     }
 }
 
@@ -317,11 +313,7 @@ impl From<serde_json::Error> for Error {
 impl From<sqlx::migrate::MigrateError> for Error {
     fn from(err: sqlx::migrate::MigrateError) -> Self {
         use crate::error::{ErrorCode, ErrorType};
-        Error::typed(
-            ErrorCode::DbMigrationFailed,
-            ErrorType::Db,
-            err.to_string(),
-        ).with_source(err)
+        Error::typed(ErrorCode::DbMigrationFailed, ErrorType::Db, err.to_string()).with_source(err)
     }
 }
 
@@ -371,8 +363,7 @@ use toml::de::Error as TomlDeError;
 #[cfg(feature = "toml-integration")]
 impl From<TomlDeError> for Error {
     fn from(err: TomlDeError) -> Self {
-        Error::new(crate::error::ErrorCode::ConfigInvalid, err.to_string())
-            .with_source(err)
+        Error::new(crate::error::ErrorCode::ConfigInvalid, err.to_string()).with_source(err)
     }
 }
 

@@ -1,11 +1,11 @@
 //! Handler: GET /api/v1/user/me - Get current authenticated user information
 
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetCurrentUserRequest, GetCurrentUserResponse, UserInfoResponse};
 use common::enums::UserRole;
+use common::error::Result;
 
 /// Get current authenticated user information from request context
 #[register_handler_tool(

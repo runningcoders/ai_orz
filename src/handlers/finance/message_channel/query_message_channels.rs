@@ -8,7 +8,7 @@ use crate::service::dao::message_channel::MessageChannelQuery;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{MessageChannelListItem, MessageChannelQueryRequest, PagedResult};
-use common::error::{Result, err, bail_err};
+use common::error::{Result, bail_err, err};
 
 use super::response::to_list_item;
 
@@ -18,7 +18,7 @@ use super::response::to_list_item;
     name = "query_message_channels",
     description = "Query message channels with full filtering support (id, user_id, agent_id, channel_type, status, etc.)",
     params = "common::api::MessageChannelQueryRequest",
-    neural,
+    neural
 )]
 #[generate_http_handler]
 pub async fn query_message_channels(

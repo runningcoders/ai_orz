@@ -7,7 +7,7 @@ use crate::pkg::RequestContext;
 use crate::service::dao::agent::AgentQuery;
 use crate::service::domain::hr::{AgentManage, HrDomainImpl};
 use common::enums::AgentStatus;
-use common::error::{Result, err, bail_err};
+use common::error::{Result, bail_err, err};
 
 use crate::enrich_ctx;
 
@@ -69,7 +69,10 @@ impl AgentManage for HrDomainImpl {
         // 强制校验：Local agent 必须指定 model_provider_id
         // 外部 agent（Cli/Remote）使用外部运行时，不需要本地 model provider
         if agent.po.kind.is_local() && agent.po.model_provider_id.is_empty() {
-            bail_err!(InvalidRequest, "创建 Local Agent 必须指定 model_provider_id");
+            bail_err!(
+                InvalidRequest,
+                "创建 Local Agent 必须指定 model_provider_id"
+            );
         }
 
         // 强制校验：状态必须是 Interviewing
@@ -86,7 +89,12 @@ impl AgentManage for HrDomainImpl {
     /// - with_tools=true：加载绑定工具 + tag 匹配工具
     /// - with_skills=true：加载 Agent 已安装的技能副本（author_id = agent_id，排除 Expired）
     /// 写入 Agent 实体供后续 wake/awaken 使用。
-    async fn get_agent(&self, ctx: RequestContext, id: &str, options: crate::service::dal::agent::AgentFetchOptions) -> Result<Option<Agent>> {
+    async fn get_agent(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        options: crate::service::dal::agent::AgentFetchOptions,
+    ) -> Result<Option<Agent>> {
         let with_tools = options.with_tools.unwrap_or(false);
         let with_skills = options.with_skills.unwrap_or(false);
         let mut agent = self.agent_dal.get_agent(ctx.clone(), id, options).await?;
@@ -146,7 +154,11 @@ impl AgentManage for HrDomainImpl {
     /// 通用综合查询
     ///
     /// Domain 层可以添加业务逻辑：权限校验、数据过滤、业务规则验证
-    async fn query(&self, ctx: RequestContext, query: AgentQuery) -> Result<common::api::PagedResult<Agent>> {
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: AgentQuery,
+    ) -> Result<common::api::PagedResult<Agent>> {
         self.agent_dal.query(ctx, query).await
     }
 
@@ -228,7 +240,12 @@ impl AgentManage for HrDomainImpl {
         };
 
         if !is_valid_transition {
-            bail_err!(InvalidRequest, "非法状态流转：{:?} → {:?}", current_status, target_status);
+            bail_err!(
+                InvalidRequest,
+                "非法状态流转：{:?} → {:?}",
+                current_status,
+                target_status
+            );
         }
 
         // 幂等：状态相同直接返回
@@ -252,16 +269,16 @@ impl AgentManage for HrDomainImpl {
     /// 校验入职就绪状态
     ///
     /// 检查工具绑定、技能安装等完整性条件
-    async fn validate_onboard_readiness(
-        &self,
-        ctx: RequestContext,
-        agent: &Agent,
-    ) -> Result<()> {
+    async fn validate_onboard_readiness(&self, ctx: RequestContext, agent: &Agent) -> Result<()> {
         let agent_id = agent.po.id.as_str();
 
         // 1. 校验状态必须是 PendingOnboard
         if agent.po.status != AgentStatus::PendingOnboard {
-            bail_err!(InvalidRequest, "Agent 状态必须是 PendingOnboard 才能入职，当前状态：{:?}", agent.po.status);
+            bail_err!(
+                InvalidRequest,
+                "Agent 状态必须是 PendingOnboard 才能入职，当前状态：{:?}",
+                agent.po.status
+            );
         }
 
         // 补充 Agent 上下文到 ctx，后续调用链可复用
@@ -310,14 +327,26 @@ impl AgentManage for HrDomainImpl {
 
         // 幂等：已安装则跳过
         if agent.po.get_runtime_config().has_tag(tag) {
-            log_info!(ctx, "install_tool_pack", "agent_id={}, tag={} 已安装，跳过", agent_id, tag);
+            log_info!(
+                ctx,
+                "install_tool_pack",
+                "agent_id={}, tag={} 已安装，跳过",
+                agent_id,
+                tag
+            );
             return Ok(());
         }
 
         agent.po.install_tag(tag);
         self.agent_dal.update(ctx.clone(), &agent).await?;
 
-        log_info!(ctx, "install_tool_pack", "agent_id={}, tag={} 安装成功", agent_id, tag);
+        log_info!(
+            ctx,
+            "install_tool_pack",
+            "agent_id={}, tag={} 安装成功",
+            agent_id,
+            tag
+        );
         Ok(())
     }
 
@@ -341,14 +370,26 @@ impl AgentManage for HrDomainImpl {
 
         // 幂等：未安装则跳过
         if !agent.po.get_runtime_config().has_tag(tag) {
-            log_info!(ctx, "uninstall_tool_pack", "agent_id={}, tag={} 未安装，跳过", agent_id, tag);
+            log_info!(
+                ctx,
+                "uninstall_tool_pack",
+                "agent_id={}, tag={} 未安装，跳过",
+                agent_id,
+                tag
+            );
             return Ok(());
         }
 
         agent.po.uninstall_tag(tag);
         self.agent_dal.update(ctx.clone(), &agent).await?;
 
-        log_info!(ctx, "uninstall_tool_pack", "agent_id={}, tag={} 卸载成功", agent_id, tag);
+        log_info!(
+            ctx,
+            "uninstall_tool_pack",
+            "agent_id={}, tag={} 卸载成功",
+            agent_id,
+            tag
+        );
         Ok(())
     }
 
@@ -399,7 +440,10 @@ impl AgentManage for HrDomainImpl {
         }
 
         // 查询该 tag 的已发布技能
-        let skills = self.skill_dal.list_published_by_tag(ctx.clone(), tag).await?;
+        let skills = self
+            .skill_dal
+            .list_published_by_tag(ctx.clone(), tag)
+            .await?;
 
         if skills.is_empty() {
             log_warn!(
@@ -514,7 +558,10 @@ impl AgentManage for HrDomainImpl {
         let ctx = enrich_ctx!(&ctx, &agent);
 
         // 查询该 tag 的最新已发布技能
-        let source_skills = self.skill_dal.list_published_by_tag(ctx.clone(), tag).await?;
+        let source_skills = self
+            .skill_dal
+            .list_published_by_tag(ctx.clone(), tag)
+            .await?;
 
         if source_skills.is_empty() {
             log_warn!(
@@ -528,8 +575,7 @@ impl AgentManage for HrDomainImpl {
         }
 
         // 收集 parent_skill_ids，查询 Agent 已有副本
-        let parent_ids: Vec<String> =
-            source_skills.iter().map(|s| s.po.id.clone()).collect();
+        let parent_ids: Vec<String> = source_skills.iter().map(|s| s.po.id.clone()).collect();
         let existing_copies = self
             .skill_dal
             .find_agent_skill_copies(ctx.clone(), agent_id, &parent_ids)
@@ -546,8 +592,7 @@ impl AgentManage for HrDomainImpl {
         for source in &source_skills {
             if let Some(copy) = copy_map.get(&source.po.id) {
                 // 已有副本：用源技能内容覆盖副本
-                self.overwrite_skill_copy(ctx.clone(), source, copy)
-                    .await?;
+                self.overwrite_skill_copy(ctx.clone(), source, copy).await?;
             } else {
                 // 无副本：创建新安装
                 self.skill_dal

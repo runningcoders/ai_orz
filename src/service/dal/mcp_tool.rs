@@ -3,7 +3,6 @@
 //! Protocol-specific DAL for MCP tools. It keeps MCP server lookup and runtime
 //! dependency preparation out of the generic `ToolDal`.
 
-use common::error::{err, bail_err, Result};
 use crate::models::mcp_server::McpServerStatus;
 use crate::models::tool::{Tool, ToolPo};
 use crate::pkg::RequestContext;
@@ -16,6 +15,7 @@ use anyhow::Result as AnyhowResult;
 use async_trait::async_trait;
 use common::api::{ListMcpToolsByServerRequest, PagedResult};
 use common::enums::{ControlMode, ToolProtocol, ToolStatus};
+use common::error::{Result, bail_err, err};
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 
@@ -48,18 +48,10 @@ pub fn new(
 #[async_trait]
 pub trait McpToolDal: Send + Sync {
     /// Get a complete executable MCP Tool by standard ToolPo id.
-    async fn get_by_id(
-        &self,
-        ctx: RequestContext,
-        tool_id: String,
-    ) -> Result<Option<Tool>>;
+    async fn get_by_id(&self, ctx: RequestContext, tool_id: String) -> Result<Option<Tool>>;
 
     /// Sync remote MCP tools from one server into standard ToolPo records.
-    async fn sync_from_server(
-        &self,
-        ctx: RequestContext,
-        server_id: &str,
-    ) -> Result<usize>;
+    async fn sync_from_server(&self, ctx: RequestContext, server_id: &str) -> Result<usize>;
 
     /// List standard Tool records synced from one MCP Server.
     async fn list_by_server(
@@ -108,11 +100,7 @@ pub struct McpToolDalImpl {
 
 #[async_trait]
 impl McpToolDal for McpToolDalImpl {
-    async fn get_by_id(
-        &self,
-        ctx: RequestContext,
-        tool_id: String,
-    ) -> Result<Option<Tool>> {
+    async fn get_by_id(&self, ctx: RequestContext, tool_id: String) -> Result<Option<Tool>> {
         let Some(po) = self
             .tool_dao
             .get_by_id(ctx.clone(), tool_id.clone())
@@ -125,11 +113,7 @@ impl McpToolDal for McpToolDalImpl {
         Ok(Some(self.assemble_executable_tool(ctx, &po).await?))
     }
 
-    async fn sync_from_server(
-        &self,
-        ctx: RequestContext,
-        server_id: &str,
-    ) -> Result<usize> {
+    async fn sync_from_server(&self, ctx: RequestContext, server_id: &str) -> Result<usize> {
         let Some(server) = self
             .mcp_server_dao
             .find_by_id(ctx.clone(), server_id)
@@ -138,10 +122,7 @@ impl McpToolDal for McpToolDalImpl {
             bail_err!(ResourceNotFound, "MCP server not found: {}", server_id);
         };
 
-        let remote_tools = self
-            .mcp_tool_call_dao
-            .list_mcp_tools(&server)
-            .await?;
+        let remote_tools = self.mcp_tool_call_dao.list_mcp_tools(&server).await?;
         let remote_tool_ids: std::collections::HashSet<String> = remote_tools
             .iter()
             .map(|remote_tool| mcp_tool_record_id(&server.id, &remote_tool.name))
@@ -150,11 +131,7 @@ impl McpToolDal for McpToolDalImpl {
 
         for remote_tool in &remote_tools {
             let mut po = build_synced_tool_po(&server, &remote_tool, ctx.user_id.clone());
-            if let Some(existing) = self
-                .tool_dao
-                .get_by_id(ctx.clone(), po.id.clone())
-                .await?
-            {
+            if let Some(existing) = self.tool_dao.get_by_id(ctx.clone(), po.id.clone()).await? {
                 ensure_sync_target_matches(&existing, &po)?;
                 po.created_at = existing.created_at;
                 po.created_by = existing.created_by;
@@ -164,13 +141,9 @@ impl McpToolDal for McpToolDalImpl {
                     existing.status
                 };
                 po.updated_by = ctx.user_id.clone();
-                self.tool_dao
-                    .update_tool(ctx.clone(), &po)
-                    .await?;
+                self.tool_dao.update_tool(ctx.clone(), &po).await?;
             } else {
-                self.tool_dao
-                    .create_tool(ctx.clone(), &po)
-                    .await?;
+                self.tool_dao.create_tool(ctx.clone(), &po).await?;
             }
             synced += 1;
         }
@@ -195,9 +168,7 @@ impl McpToolDal for McpToolDalImpl {
             existing.status = ToolStatus::Stale;
             existing.updated_by = ctx.user_id.clone();
             existing.touch(ctx.user_id.clone());
-            self.tool_dao
-                .update_tool(ctx.clone(), &existing)
-                .await?;
+            self.tool_dao.update_tool(ctx.clone(), &existing).await?;
         }
 
         Ok(synced)
@@ -214,7 +185,11 @@ impl McpToolDal for McpToolDalImpl {
             .await?
             .is_some();
         if !server_exists {
-            bail_err!(ResourceNotFound, "MCP server not found: {}", params.server_id);
+            bail_err!(
+                ResourceNotFound,
+                "MCP server not found: {}",
+                params.server_id
+            );
         }
 
         let base_query = ToolQuery {
@@ -225,10 +200,7 @@ impl McpToolDal for McpToolDalImpl {
             ..Default::default()
         };
 
-        let all = self
-            .tool_dao
-            .query(ctx.clone(), base_query.clone())
-            .await?;
+        let all = self.tool_dao.query(ctx.clone(), base_query.clone()).await?;
         let total = all.total;
 
         let page = self
@@ -243,7 +215,11 @@ impl McpToolDal for McpToolDalImpl {
             .await?;
 
         Ok(PagedResult {
-            items: page.items.into_iter().map(Tool::from_po_for_management).collect(),
+            items: page
+                .items
+                .into_iter()
+                .map(Tool::from_po_for_management)
+                .collect(),
             total,
         })
     }
@@ -257,9 +233,7 @@ impl McpToolDal for McpToolDalImpl {
         let tool = self
             .get_by_id(ctx.clone(), tool_id.clone())
             .await
-            .map_err(|e| {
-                common::error::Error::tool_call_failed(e.to_string()).with_source(e)
-            })?
+            .map_err(|e| common::error::Error::tool_call_failed(e.to_string()).with_source(e))?
             .ok_or_else(|| {
                 common::error::Error::tool_call_failed(format!("Tool not found: {tool_id}"))
             })?;
@@ -285,9 +259,7 @@ impl McpToolDal for McpToolDalImpl {
         let executable = self
             .assemble_executable_tool(ctx.clone(), &tool.po)
             .await
-            .map_err(|e| {
-                common::error::Error::tool_call_failed(e.to_string()).with_source(e)
-            })?;
+            .map_err(|e| common::error::Error::tool_call_failed(e.to_string()).with_source(e))?;
         self.mcp_tool_call_dao
             .call_manual(ctx, &executable, args)
             .await
@@ -300,11 +272,7 @@ impl McpToolDal for McpToolDalImpl {
 }
 
 impl McpToolDalImpl {
-    async fn assemble_executable_tool(
-        &self,
-        ctx: RequestContext,
-        po: &ToolPo,
-    ) -> Result<Tool> {
+    async fn assemble_executable_tool(&self, ctx: RequestContext, po: &ToolPo) -> Result<Tool> {
         ensure_mcp_tool(po)?;
         ensure_mcp_tool_enabled(po)?;
         let config = parse_mcp_tool_config(po)?;
@@ -314,14 +282,16 @@ impl McpToolDalImpl {
             .find_by_id(ctx, &config.server_id)
             .await?
         else {
-            bail_err!(ResourceNotFound, "MCP server not found for tool {}: {}", po.id, config.server_id);
+            bail_err!(
+                ResourceNotFound,
+                "MCP server not found for tool {}: {}",
+                po.id,
+                config.server_id
+            );
         };
         ensure_mcp_server_enabled(&server)?;
 
-        let Some(our_tool) = self
-            .mcp_tool_call_dao
-            .assemble_mcp_core_tool(po, &server)?
-        else {
+        let Some(our_tool) = self.mcp_tool_call_dao.assemble_mcp_core_tool(po, &server)? else {
             bail_err!(InvalidRequest, "MCP tool is not executable: {}", po.id);
         };
 
@@ -383,9 +353,7 @@ fn ensure_mcp_tool_enabled(po: &ToolPo) -> Result<()> {
     Ok(())
 }
 
-fn ensure_mcp_server_enabled(
-    server: &crate::models::mcp_server::McpServerPo,
-) -> Result<()> {
+fn ensure_mcp_server_enabled(server: &crate::models::mcp_server::McpServerPo) -> Result<()> {
     if server.status != McpServerStatus::Enabled {
         bail_err!(InvalidRequest, "MCP server disabled: {}", server.id);
     }
@@ -394,7 +362,11 @@ fn ensure_mcp_server_enabled(
 
 fn ensure_sync_target_matches(existing: &ToolPo, synced: &ToolPo) -> Result<()> {
     if existing.protocol != ToolProtocol::Mcp {
-        bail_err!(Conflict, "MCP sync target id {} already exists as non-MCP tool", existing.id);
+        bail_err!(
+            Conflict,
+            "MCP sync target id {} already exists as non-MCP tool",
+            existing.id
+        );
     }
 
     let existing_config = parse_mcp_tool_config(existing)?;
@@ -402,7 +374,13 @@ fn ensure_sync_target_matches(existing: &ToolPo, synced: &ToolPo) -> Result<()> 
     if existing_config.server_id != synced_config.server_id
         || existing_config.tool_name != synced_config.tool_name
     {
-        bail_err!(Conflict, "MCP sync target id {} already binds to {}/{}", existing.id, existing_config.server_id, existing_config.tool_name);
+        bail_err!(
+            Conflict,
+            "MCP sync target id {} already binds to {}/{}",
+            existing.id,
+            existing_config.server_id,
+            existing_config.tool_name
+        );
     }
 
     Ok(())
@@ -411,5 +389,13 @@ fn ensure_sync_target_matches(existing: &ToolPo, synced: &ToolPo) -> Result<()> 
 fn parse_mcp_tool_config(po: &ToolPo) -> Result<McpToolConfig> {
     let config: AnyhowResult<McpToolConfig> = serde_json::from_value(po.config.clone())
         .map_err(|e| anyhow::anyhow!("invalid mcp tool config for {}: {}", po.id, e));
-        config.map_err(|e| err!(InvalidRequest, "invalid mcp tool config for {}: {}", po.id, e).with_source::<common::error::Error>(e.into()))
+    config.map_err(|e| {
+        err!(
+            InvalidRequest,
+            "invalid mcp tool config for {}: {}",
+            po.id,
+            e
+        )
+        .with_source::<common::error::Error>(e.into())
+    })
 }

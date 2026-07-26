@@ -15,10 +15,7 @@ pub async fn list_backups(
     ctx: RequestContext,
     _params: ListBackupsRequest,
 ) -> Result<Vec<BackupInfo>> {
-    let backups = domain()
-        .backup_manager()
-        .list_backups(ctx)
-        .await?;
+    let backups = domain().backup_manager().list_backups(ctx).await?;
 
     Ok(backups)
 }

@@ -15,10 +15,7 @@ use common::error::Result;
     tags = "project_management"
 )]
 #[generate_http_handler]
-pub async fn mark_done(
-    ctx: RequestContext,
-    params: MarkDoneParams,
-) -> Result<MarkDoneResponse> {
+pub async fn mark_done(ctx: RequestContext, params: MarkDoneParams) -> Result<MarkDoneResponse> {
     let project_domain = project::domain();
 
     let task = project_domain

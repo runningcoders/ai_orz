@@ -20,10 +20,7 @@ pub async fn list_cron_triggers(
         limit: params.limit,
     };
 
-    let triggers = domain()
-        .cron_manager()
-        .list_triggers(ctx, query)
-        .await?;
+    let triggers = domain().cron_manager().list_triggers(ctx, query).await?;
 
     let total = triggers.len();
     let triggers: Vec<CronTriggerDetail> = triggers

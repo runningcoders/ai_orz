@@ -3,14 +3,14 @@
 //! 与 list_agents 的区别：list 是列表场景语法糖（GET + query param），
 //! query 是完整查询能力（POST + body），支持复杂组合过滤。
 
-use common::enums::AgentRuntimeState;
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::dao::agent::AgentQuery;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{AgentListItem, AgentQueryRequest, PagedResult};
+use common::enums::AgentRuntimeState;
 use common::enums::AgentStatus;
+use common::error::Result;
 
 /// Agent 通用查询（POST body，支持完整查询能力）
 #[register_handler_tool(

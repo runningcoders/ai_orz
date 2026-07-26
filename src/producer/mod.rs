@@ -2,8 +2,8 @@ pub mod a2a_polling;
 pub mod cron_trigger;
 pub mod message_channel;
 
-use common::error::Result;
 use crate::pkg::aop;
+use common::error::Result;
 use std::sync::Arc;
 
 pub async fn init() -> Result<()> {

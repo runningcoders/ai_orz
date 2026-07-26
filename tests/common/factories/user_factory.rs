@@ -149,9 +149,7 @@ pub async fn bootstrap_and_login(app: &TestApp) -> (BootstrappedSystem, String) 
 /// entity creates (agent/project/task/message) will all take the vector
 /// degradation path — no cortex calls, no FastEmbed model downloads, fast and
 /// deterministic.
-pub async fn bootstrap_login_and_disable_embedding(
-    app: &TestApp,
-) -> (BootstrappedSystem, String) {
+pub async fn bootstrap_login_and_disable_embedding(app: &TestApp) -> (BootstrappedSystem, String) {
     let (bs, jwt) = bootstrap_and_login(app).await;
     disable_embedding_provider(app, &jwt, &bs.embedding_provider_id).await;
     (bs, jwt)

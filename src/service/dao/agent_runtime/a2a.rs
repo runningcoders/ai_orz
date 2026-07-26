@@ -9,14 +9,14 @@ use async_trait::async_trait;
 use common::api::a2a::{
     A2aMessagePart, A2aTask, GetTaskParams, JsonRpcRequest, JsonRpcResponse, SendTaskParams,
 };
-use common::error::{err, Result};
+use common::error::{Result, err};
 use reqwest::Client;
 use serde_json::Value;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use super::AgentRuntimeDao;
 use crate::models::agent::AgentPo;
 use crate::pkg::RequestContext;
-use super::AgentRuntimeDao;
 
 /// JSON-RPC 请求 ID 生成器（单调递增）
 static REQUEST_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -62,7 +62,8 @@ impl A2aRuntimeDao {
             &self.config.endpoint,
             &self.config.auth_token,
             remote_task_id,
-        ).await
+        )
+        .await
     }
 }
 
@@ -77,7 +78,8 @@ impl AgentRuntimeDao for A2aRuntimeDao {
             &self.config.endpoint,
             &self.config.auth_token,
             prompt,
-        ).await
+        )
+        .await
     }
 }
 
@@ -114,13 +116,23 @@ async fn call_a2a_jsonrpc(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(err!(Internal, "{}: A2A HTTP error {}: {}", context, status, body));
+        return Err(err!(
+            Internal,
+            "{}: A2A HTTP error {}: {}",
+            context,
+            status,
+            body
+        ));
     }
 
-    let rpc_response: JsonRpcResponse = response
-        .json()
-        .await
-        .map_err(|e| err!(Internal, "{}: failed to parse A2A JSON-RPC response: {}", context, e))?;
+    let rpc_response: JsonRpcResponse = response.json().await.map_err(|e| {
+        err!(
+            Internal,
+            "{}: failed to parse A2A JSON-RPC response: {}",
+            context,
+            e
+        )
+    })?;
 
     if let Some(rpc_error) = rpc_response.error {
         return Err(err!(
@@ -162,14 +174,34 @@ pub async fn execute_a2a_send(
         notification_url: None,
     };
 
-    let params_value = serde_json::to_value(&params)
-        .map_err(|e| err!(Internal, "Agent {}: failed to serialize params: {}", agent_id, e))?;
+    let params_value = serde_json::to_value(&params).map_err(|e| {
+        err!(
+            Internal,
+            "Agent {}: failed to serialize params: {}",
+            agent_id,
+            e
+        )
+    })?;
 
     let context = format!("Agent {}", agent_id);
-    let result = call_a2a_jsonrpc(http, endpoint, auth_token, "tasks/send", params_value, &context).await?;
+    let result = call_a2a_jsonrpc(
+        http,
+        endpoint,
+        auth_token,
+        "tasks/send",
+        params_value,
+        &context,
+    )
+    .await?;
 
-    extract_text_from_task_result(&result)
-        .ok_or_else(|| err!(Internal, "Agent {}: A2A response has no text content: {}", agent_id, result))
+    extract_text_from_task_result(&result).ok_or_else(|| {
+        err!(
+            Internal,
+            "Agent {}: A2A response has no text content: {}",
+            agent_id,
+            result
+        )
+    })
 }
 
 /// 执行 A2A tasks/get 调用，获取远程任务状态
@@ -184,14 +216,34 @@ pub async fn fetch_a2a_task(
         history_length: None,
     };
 
-    let params_value = serde_json::to_value(&params)
-        .map_err(|e| err!(Internal, "Task {}: failed to serialize params: {}", remote_task_id, e))?;
+    let params_value = serde_json::to_value(&params).map_err(|e| {
+        err!(
+            Internal,
+            "Task {}: failed to serialize params: {}",
+            remote_task_id,
+            e
+        )
+    })?;
 
     let context = format!("Task {}", remote_task_id);
-    let result = call_a2a_jsonrpc(http, endpoint, auth_token, "tasks/get", params_value, &context).await?;
+    let result = call_a2a_jsonrpc(
+        http,
+        endpoint,
+        auth_token,
+        "tasks/get",
+        params_value,
+        &context,
+    )
+    .await?;
 
-    serde_json::from_value(result)
-        .map_err(|e| err!(Internal, "Task {}: failed to parse A2aTask: {}", remote_task_id, e))
+    serde_json::from_value(result).map_err(|e| {
+        err!(
+            Internal,
+            "Task {}: failed to parse A2aTask: {}",
+            remote_task_id,
+            e
+        )
+    })
 }
 
 /// 从 A2A tasks/send 结果中提取文本内容
@@ -335,7 +387,9 @@ mod tests {
             id: "task-1".to_string(),
             message: common::api::a2a::A2aMessage {
                 role: "user".to_string(),
-                parts: vec![A2aMessagePart::Text { text: "hello".to_string() }],
+                parts: vec![A2aMessagePart::Text {
+                    text: "hello".to_string(),
+                }],
                 message_id: None,
                 task_id: Some("task-1".to_string()),
             },

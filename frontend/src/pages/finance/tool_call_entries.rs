@@ -28,11 +28,23 @@ pub fn FinanceToolCallEntries() -> Element {
     let mut do_search = move || {
         loading.set(true);
         let params = QueryToolCallEntriesRequest {
-            call_id: if query_call_id().trim().is_empty() { None } else { Some(query_call_id().trim().to_string()) },
-            agent_id: if query_agent_id().trim().is_empty() { None } else { Some(query_agent_id().trim().to_string()) },
+            call_id: if query_call_id().trim().is_empty() {
+                None
+            } else {
+                Some(query_call_id().trim().to_string())
+            },
+            agent_id: if query_agent_id().trim().is_empty() {
+                None
+            } else {
+                Some(query_agent_id().trim().to_string())
+            },
             project_id: None,
             task_id: None,
-            tool_id: if query_tool_id().trim().is_empty() { None } else { Some(query_tool_id().trim().to_string()) },
+            tool_id: if query_tool_id().trim().is_empty() {
+                None
+            } else {
+                Some(query_tool_id().trim().to_string())
+            },
             status: None,
             started_after: None,
             started_before: None,
@@ -70,7 +82,9 @@ pub fn FinanceToolCallEntries() -> Element {
         });
     });
 
-    let on_search = move |_| { do_search(); };
+    let on_search = move |_| {
+        do_search();
+    };
 
     let mut on_click_entry = move |call_id: String| {
         show_detail_modal.set(true);

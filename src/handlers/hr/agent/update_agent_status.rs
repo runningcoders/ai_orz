@@ -1,12 +1,15 @@
 //! Handler: PUT /api/v1/agents/{id}/status - Update agent status
 
-use common::enums::{AgentRuntimeState, AgentKind};
-use common::error::Result;
 use crate::models::agent::ExternalAgentConfig;
 use crate::pkg::RequestContext;
 use crate::service::domain::{finance::domain as finance_domain, hr::domain};
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::{AgentCliConfig, AgentExternalConfigInfo, AgentRemoteConfig, UpdateAgentStatusRequest, UpdateAgentStatusResponse};
+use common::api::{
+    AgentCliConfig, AgentExternalConfigInfo, AgentRemoteConfig, UpdateAgentStatusRequest,
+    UpdateAgentStatusResponse,
+};
+use common::enums::{AgentKind, AgentRuntimeState};
+use common::error::Result;
 
 use crate::enrich_ctx;
 
@@ -45,28 +48,36 @@ pub async fn update_agent_status(
         AgentKind::Cli | AgentKind::Remote => {
             let runtime_config = agent.po.get_runtime_config();
             match runtime_config.external_config {
-                Some(ExternalAgentConfig::Cli { command, args, work_dir, env: _, timeout_secs, prompt_template }) => {
-                    Some(AgentExternalConfigInfo {
-                        cli: Some(AgentCliConfig {
-                            command,
-                            args,
-                            work_dir,
-                            timeout_secs,
-                            prompt_template,
-                        }),
-                        remote: None,
-                    })
-                }
-                Some(ExternalAgentConfig::Remote { endpoint, agent_name, auth_token: _, timeout_secs }) => {
-                    Some(AgentExternalConfigInfo {
-                        cli: None,
-                        remote: Some(AgentRemoteConfig {
-                            endpoint,
-                            agent_name,
-                            timeout_secs,
-                        }),
-                    })
-                }
+                Some(ExternalAgentConfig::Cli {
+                    command,
+                    args,
+                    work_dir,
+                    env: _,
+                    timeout_secs,
+                    prompt_template,
+                }) => Some(AgentExternalConfigInfo {
+                    cli: Some(AgentCliConfig {
+                        command,
+                        args,
+                        work_dir,
+                        timeout_secs,
+                        prompt_template,
+                    }),
+                    remote: None,
+                }),
+                Some(ExternalAgentConfig::Remote {
+                    endpoint,
+                    agent_name,
+                    auth_token: _,
+                    timeout_secs,
+                }) => Some(AgentExternalConfigInfo {
+                    cli: None,
+                    remote: Some(AgentRemoteConfig {
+                        endpoint,
+                        agent_name,
+                        timeout_secs,
+                    }),
+                }),
                 None => None,
             }
         }

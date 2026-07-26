@@ -1,9 +1,9 @@
-use common::error::{err, Result};
+use common::error::{Result, err};
 use std::sync::Arc;
 
+use crate::pkg::RequestContext;
 use crate::pkg::adapter::AdaptedMessage;
 use crate::pkg::adapter::message::MessageAdapterCallback;
-use crate::pkg::RequestContext;
 use crate::service::domain::hr::HrDomain;
 use crate::service::domain::message::{MessageDomain, SendToAgentCommand};
 

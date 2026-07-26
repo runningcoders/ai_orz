@@ -1,23 +1,29 @@
 use crate::api::finance::list_model_providers;
-use crate::api::{hr::*, StatsOptions};
-use crate::api::project::{query_projects, query_tasks};
-use crate::pages::hr::agent_memory_panel::AgentMemoryPanel;
 use crate::api::message::{load_latest_messages, send_message_to_agent};
+use crate::api::project::{query_projects, query_tasks};
+use crate::api::{StatsOptions, hr::*};
 use crate::components::chat::{MessageBubble, TypingIndicator};
-use crate::components::relation_graph::{RelationGraph, RelationNodeInfo};
-use crate::components::workspace_graph::{WorkspaceGraph, WorkspaceView};
 use crate::components::modal::Modal;
+use crate::components::relation_graph::{RelationGraph, RelationNodeInfo};
 use crate::components::state::Loading;
 use crate::components::stats::AgentStatsPanel;
+use crate::components::workspace_graph::{WorkspaceGraph, WorkspaceView};
 use crate::layouts::app_layout::AppLayout;
+use crate::pages::hr::agent_memory_panel::AgentMemoryPanel;
 use crate::store::toast::use_toast;
-use crate::utils::{build_optimistic_user_msg, format_time_hm as format_time, replace_tmp_with_real};
-use common::api::{AgentListItem, GetAgentResponse, ListModelProvidersResponseItem, MessageListItem, PaginationParams, ProjectListItem, ProjectQueryRequest, SendMessageToAgentParams, TaskListItem, TaskQueryRequest, ToolListItem, UpdateAgentRequest};
+use crate::utils::{
+    build_optimistic_user_msg, format_time_hm as format_time, replace_tmp_with_real,
+};
+use common::api::{
+    AgentListItem, GetAgentResponse, ListModelProvidersResponseItem, MessageListItem,
+    PaginationParams, ProjectListItem, ProjectQueryRequest, SendMessageToAgentParams, TaskListItem,
+    TaskQueryRequest, ToolListItem, UpdateAgentRequest,
+};
 use common::enums::AssigneeType;
 use dioxus::prelude::*;
-use dioxus_router::{use_navigator, Link};
+use dioxus_router::{Link, use_navigator};
 use std::collections::HashSet;
-use wasm_bindgen::{closure::Closure, JsCast};
+use wasm_bindgen::{JsCast, closure::Closure};
 
 fn binding_status_badge_class(is_bound: bool) -> &'static str {
     if is_bound {
@@ -55,12 +61,7 @@ fn kind_label(kind: &str) -> String {
     }
 }
 
-const STATUS_OPTIONS: &[(i32, &str)] = &[
-    (0, "空闲"),
-    (1, "思考中"),
-    (2, "已入职"),
-    (3, "休息中"),
-];
+const STATUS_OPTIONS: &[(i32, &str)] = &[(0, "空闲"), (1, "思考中"), (2, "已入职"), (3, "休息中")];
 
 #[component]
 pub fn HrAgentDetail(id: String) -> Element {
@@ -158,7 +159,8 @@ pub fn HrAgentDetail(id: String) -> Element {
                 Ok(page) => {
                     let tasks = page.items;
                     // 2. 从 tasks 中收集 unique project_ids，批量查询消除 N+1
-                    let project_ids: Vec<String> = tasks.iter()
+                    let project_ids: Vec<String> = tasks
+                        .iter()
                         .filter_map(|t| t.project_id.clone())
                         .collect::<HashSet<_>>()
                         .into_iter()

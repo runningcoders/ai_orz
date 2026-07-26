@@ -3,12 +3,12 @@
 //! 与 list_model_providers 的区别：list 是语法糖（GET，返回所有），
 //! query 是完整查询能力（POST + body），支持按类型、能力、状态过滤。
 
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::dao::model_provider::ModelProviderQuery;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ModelProviderListItem, ModelProviderQueryRequest, PagedResult};
+use common::error::Result;
 
 /// ModelProvider 通用查询（POST body，支持完整查询能力）
 #[register_handler_tool(
@@ -16,7 +16,7 @@ use common::api::{ModelProviderListItem, ModelProviderQueryRequest, PagedResult}
     name = "query_model_providers",
     description = "Query model providers with full filtering support (provider_type, capability, status, etc.)",
     params = "common::api::ModelProviderQueryRequest",
-    neural,
+    neural
 )]
 #[generate_http_handler]
 pub async fn query_model_providers(

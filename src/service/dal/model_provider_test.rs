@@ -92,9 +92,12 @@ async fn test_update(pool: SqlitePool) {
     updated.po.model_name = "gpt-4o".to_string();
     updated.touch("editor");
 
-    dal.update(crate::pkg::request_context_test_support::new_test_ctx("editor", pool), &updated)
-        .await
-        .unwrap();
+    dal.update(
+        crate::pkg::request_context_test_support::new_test_ctx("editor", pool),
+        &updated,
+    )
+    .await
+    .unwrap();
 
     let found = dal.find_by_id(ctx, &updated.po.id).await.unwrap().unwrap();
     assert_eq!(found.po.name, "Updated".to_string());

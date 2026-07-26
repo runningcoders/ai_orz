@@ -3,19 +3,15 @@
 use async_trait::async_trait;
 use common::api::{ListMcpToolsByServerRequest, PagedResult};
 
-use common::error::Result;
 use crate::models::tool::Tool;
 use crate::pkg::RequestContext;
+use common::error::Result;
 
 use super::{FinanceDomainImpl, McpToolManage};
 
 #[async_trait]
 impl McpToolManage for FinanceDomainImpl {
-    async fn sync_mcp_tools(
-        &self,
-        ctx: RequestContext,
-        server_id: &str,
-    ) -> Result<usize> {
+    async fn sync_mcp_tools(&self, ctx: RequestContext, server_id: &str) -> Result<usize> {
         self.mcp_tool_dal.sync_from_server(ctx, server_id).await
     }
 

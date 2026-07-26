@@ -6,7 +6,7 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetMessageChannelRequest, GetMessageChannelResponse};
 
 use super::response::to_detail;
-use common::error::{Result, err, bail_err};
+use common::error::{Result, bail_err, err};
 
 /// Get detailed information about a specific message channel
 #[register_handler_tool(

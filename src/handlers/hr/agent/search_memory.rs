@@ -4,8 +4,8 @@ use std::collections::HashSet;
 
 use crate::models::memory::{Memory, MemoryPo};
 use crate::pkg::RequestContext;
-use crate::service::dao::memory::MemorySearch;
 use crate::service::dal::memory::TraversalStrategy;
+use crate::service::dao::memory::MemorySearch;
 use crate::service::domain::runtime::domain as runtime_domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{MemoryResult, SearchMemoryParams, SearchMemoryResponse};
@@ -80,7 +80,10 @@ pub async fn search_memory(
             ..Default::default()
         };
 
-        let search_results = runtime_domain().memory().search(ctx.clone(), search).await?;
+        let search_results = runtime_domain()
+            .memory()
+            .search(ctx.clone(), search)
+            .await?;
 
         let seed_ids: Vec<String> = search_results
             .iter()
@@ -146,10 +149,7 @@ fn memory_id(memory: &Memory) -> String {
 }
 
 fn memories_to_results(memories: Vec<Memory>) -> Vec<MemoryResult> {
-    memories
-        .into_iter()
-        .map(|m| memory_to_result(&m))
-        .collect()
+    memories.into_iter().map(|m| memory_to_result(&m)).collect()
 }
 
 fn memory_to_result(memory: &Memory) -> MemoryResult {
@@ -158,10 +158,7 @@ fn memory_to_result(memory: &Memory) -> MemoryResult {
             id: trace.id.clone(),
             content: trace.input.clone(),
             memory_type: "trace".to_string(),
-            score: memory
-                .search_match
-                .as_ref()
-                .and_then(|m| m.vector_distance),
+            score: memory.search_match.as_ref().and_then(|m| m.vector_distance),
             summary: None,
             source_node_id: None,
             target_node_id: None,
@@ -172,10 +169,7 @@ fn memory_to_result(memory: &Memory) -> MemoryResult {
             id: st.id.clone(),
             content: st.summary.clone(),
             memory_type: "short_term".to_string(),
-            score: memory
-                .search_match
-                .as_ref()
-                .and_then(|m| m.vector_distance),
+            score: memory.search_match.as_ref().and_then(|m| m.vector_distance),
             summary: Some(st.summary.clone()),
             source_node_id: None,
             target_node_id: None,
@@ -186,10 +180,7 @@ fn memory_to_result(memory: &Memory) -> MemoryResult {
             id: kn.id.clone(),
             content: kn.node_description.clone(),
             memory_type: "knowledge_node".to_string(),
-            score: memory
-                .search_match
-                .as_ref()
-                .and_then(|m| m.vector_distance),
+            score: memory.search_match.as_ref().and_then(|m| m.vector_distance),
             summary: Some(kn.summary.clone()),
             source_node_id: None,
             target_node_id: None,
@@ -200,10 +191,7 @@ fn memory_to_result(memory: &Memory) -> MemoryResult {
             id: rel.id.clone(),
             content: format!("{:?}", rel.relation_type),
             memory_type: "relation".to_string(),
-            score: memory
-                .search_match
-                .as_ref()
-                .and_then(|m| m.vector_distance),
+            score: memory.search_match.as_ref().and_then(|m| m.vector_distance),
             summary: None,
             source_node_id: Some(rel.source_node_id.clone()),
             target_node_id: Some(rel.target_node_id.clone()),

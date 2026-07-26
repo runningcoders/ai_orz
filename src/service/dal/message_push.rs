@@ -2,12 +2,12 @@
 //!
 //! 负责消息加工和 SSE 推送
 
-use std::sync::{Arc, OnceLock};
-use async_trait::async_trait;
-use common::error::Result;
-use tokio::sync::broadcast;
 use crate::pkg::RequestContext;
 use crate::service::dao::message_push::SsePushDao;
+use async_trait::async_trait;
+use common::error::Result;
+use std::sync::{Arc, OnceLock};
+use tokio::sync::broadcast;
 
 /// SSE 推送消息 payload，与 MessageListItem 结构对齐
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -89,7 +89,9 @@ impl MessagePushDal for MessagePushDalImpl {
         user_id: &str,
         connection_id: &str,
     ) -> broadcast::Receiver<String> {
-        self.sse_push_dao.register(ctx, user_id, connection_id).await
+        self.sse_push_dao
+            .register(ctx, user_id, connection_id)
+            .await
     }
 
     async fn unsubscribe_sse(&self, ctx: RequestContext, connection_id: &str) {
@@ -104,8 +106,11 @@ impl MessagePushDal for MessagePushDalImpl {
 pub fn dal() -> Arc<dyn MessagePushDal> {
     static DAL: OnceLock<Arc<dyn MessagePushDal>> = OnceLock::new();
     DAL.get_or_init(|| {
-        Arc::new(MessagePushDalImpl::new(crate::service::dao::message_push::dao()))
-    }).clone()
+        Arc::new(MessagePushDalImpl::new(
+            crate::service::dao::message_push::dao(),
+        ))
+    })
+    .clone()
 }
 
 #[cfg(test)]
@@ -145,7 +150,10 @@ mod tests {
             file_type: None,
             file_meta: None,
         };
-        let result = dal.push_to_sse(ctx.clone(), "user_1", &payload).await.unwrap();
+        let result = dal
+            .push_to_sse(ctx.clone(), "user_1", &payload)
+            .await
+            .unwrap();
         assert_eq!(result.delivered_count, 1);
         let msg = rx.try_recv().unwrap();
         let parsed: SsePushPayload = serde_json::from_str(&msg).unwrap();

@@ -1,13 +1,12 @@
-
 //! Attachment DAO layer
 //! DAO 只负责 AttachmentPo 持久化和给定相对路径的基础文件读写。
 
-use common::api::PaginationParams;
-use common::error::Result;
 use crate::models::attachment::AttachmentPo;
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
+use common::api::PaginationParams;
 use common::enums::FileType;
+use common::error::Result;
 
 /// Attachment 查询参数。
 #[derive(Debug, Clone, Default)]
@@ -32,8 +31,11 @@ pub trait AttachmentDao: Send + Sync + std::fmt::Debug {
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<AttachmentPo>>;
 
     /// 通用查询，自动过滤已删除记录。
-    async fn query(&self, ctx: RequestContext, query: AttachmentQuery)
-    -> Result<common::api::PagedResult<AttachmentPo>>;
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: AttachmentQuery,
+    ) -> Result<common::api::PagedResult<AttachmentPo>>;
 
     /// 更新状态。
     async fn update_status(&self, ctx: RequestContext, id: &str, status: i32) -> Result<()>;

@@ -32,9 +32,7 @@ pub fn create_router(frontend_dist_dir: &str, config: Arc<AppConfig>) -> Router 
             post(handlers::a2a::jsonrpc::handle_jsonrpc)
                 .layer(axum::middleware::from_fn({
                     let config = config.clone();
-                    move |req, next| {
-                        request_context_middleware(config.clone(), req, next)
-                    }
+                    move |req, next| request_context_middleware(config.clone(), req, next)
                 }))
                 .layer(axum::middleware::from_fn(jwt_auth_middleware)),
         )
@@ -44,22 +42,17 @@ pub fn create_router(frontend_dist_dir: &str, config: Arc<AppConfig>) -> Router 
             post(handlers::a2a::send_subscribe::handle_send_subscribe)
                 .layer(axum::middleware::from_fn({
                     let config = config.clone();
-                    move |req, next| {
-                        request_context_middleware(config.clone(), req, next)
-                    }
+                    move |req, next| request_context_middleware(config.clone(), req, next)
                 }))
                 .layer(axum::middleware::from_fn(jwt_auth_middleware)),
         )
         // A2A 回调端点（公开，外部 Agent 推送任务更新，无需 JWT）
         .route(
             "/a2a/callback/{task_id}",
-            post(handlers::a2a::callback::handle_a2a_callback)
-                .layer(axum::middleware::from_fn({
-                    let config = config.clone();
-                    move |req, next| {
-                        request_context_middleware(config.clone(), req, next)
-                    }
-                })),
+            post(handlers::a2a::callback::handle_a2a_callback).layer(axum::middleware::from_fn({
+                let config = config.clone();
+                move |req, next| request_context_middleware(config.clone(), req, next)
+            })),
         )
         .route("/health", get(handlers::health::health))
         .fallback_service(ServeDir::new(frontend_dist_dir))
@@ -283,7 +276,10 @@ fn hr_routes() -> Router {
             "/agents/query",
             post(handlers::hr::agent::query_agents_handler),
         )
-        .route("/agents/search", get(handlers::hr::agent::search_agents_handler))
+        .route(
+            "/agents/search",
+            get(handlers::hr::agent::search_agents_handler),
+        )
         .route(
             "/agents/reception",
             get(handlers::hr::agent::get_reception_agent_handler),
@@ -664,13 +660,28 @@ fn system_routes() -> Router {
             "/seed",
             Router::new()
                 .route("/list", get(handlers::system::seed::list_seeds_handler))
-                .route("/file/{name}", get(handlers::system::seed::get_seed_file_handler))
-                .route("/file/{name}", delete(handlers::system::seed::delete_seed_file_handler))
+                .route(
+                    "/file/{name}",
+                    get(handlers::system::seed::get_seed_file_handler),
+                )
+                .route(
+                    "/file/{name}",
+                    delete(handlers::system::seed::delete_seed_file_handler),
+                )
                 .route("/save", post(handlers::system::seed::save_seed_handler))
-                .route("/load/{name}", post(handlers::system::seed::load_seed_handler))
+                .route(
+                    "/load/{name}",
+                    post(handlers::system::seed::load_seed_handler),
+                )
                 .route("/diff/{name}", post(handlers::system::seed::diff_handler))
-                .route("/diff-files", post(handlers::system::seed::diff_files_handler))
+                .route(
+                    "/diff-files",
+                    post(handlers::system::seed::diff_files_handler),
+                )
                 .route("/default", get(handlers::system::seed::get_default_handler))
-                .route("/apply-default", post(handlers::system::seed::apply_default_handler)),
+                .route(
+                    "/apply-default",
+                    post(handlers::system::seed::apply_default_handler),
+                ),
         )
 }

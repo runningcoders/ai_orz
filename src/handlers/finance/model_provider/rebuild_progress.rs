@@ -1,10 +1,10 @@
 //! Handler: GET /api/v1/finance/model-providers/rebuild-progress - Get rebuild progress
 
-use common::error::{Error, Result};
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::generate_http_handler;
 use common::api::{GetRebuildProgressRequest, RebuildProgressResponse};
+use common::error::{Error, Result};
 
 /// Get vector index rebuild progress by task_id
 #[generate_http_handler]

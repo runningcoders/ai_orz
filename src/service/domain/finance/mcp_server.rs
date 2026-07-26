@@ -2,30 +2,22 @@
 //!
 //! MCP Server 属于外部能力 Provider 配置，由 Finance Domain 统一管理。
 
-use common::error::Result;
 use crate::models::mcp_server::{
     McpServer, McpServerConfig, McpServerQuery, McpServerStatus, REDACTED_CONFIG_VALUE,
 };
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::{FinanceDomainImpl, McpServerManage};
+use common::error::Result;
 
 #[async_trait::async_trait]
 impl McpServerManage for FinanceDomainImpl {
     /// 创建 MCP Server
-    async fn create_mcp_server(
-        &self,
-        ctx: RequestContext,
-        server: &McpServer,
-    ) -> Result<()> {
+    async fn create_mcp_server(&self, ctx: RequestContext, server: &McpServer) -> Result<()> {
         self.mcp_server_dal.create(ctx, server).await
     }
 
     /// 获取 MCP Server
-    async fn get_mcp_server(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<Option<McpServer>> {
+    async fn get_mcp_server(&self, ctx: RequestContext, id: &str) -> Result<Option<McpServer>> {
         Ok(self
             .mcp_server_dal
             .find_by_id(ctx, id)
@@ -59,11 +51,7 @@ impl McpServerManage for FinanceDomainImpl {
     }
 
     /// 更新 MCP Server
-    async fn update_mcp_server(
-        &self,
-        ctx: RequestContext,
-        server: &McpServer,
-    ) -> Result<()> {
+    async fn update_mcp_server(&self, ctx: RequestContext, server: &McpServer) -> Result<()> {
         let mut server_to_update = server.clone();
         if let Some(existing) = self
             .mcp_server_dal

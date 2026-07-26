@@ -1,10 +1,10 @@
 //! Handler: GET /api/v1/organizations/{id}/users - List all users by organization ID
 
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListUsersByOrganizationRequest, ListUsersResponse, UserListItem};
+use common::error::Result;
 
 /// List all users belonging to a specific organization by organization ID
 #[register_handler_tool(

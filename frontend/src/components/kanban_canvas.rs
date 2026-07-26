@@ -10,8 +10,8 @@
 use dioxus::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
-use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::closure::Closure;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 
 use crate::components::hud_palette;
@@ -47,9 +47,7 @@ pub struct KanbanCanvasProps {
 // EventHandler 无法比较，手动实现 PartialEq 时忽略 on_task_click 字段
 impl PartialEq for KanbanCanvasProps {
     fn eq(&self, other: &Self) -> bool {
-        self.columns == other.columns
-            && self.width == other.width
-            && self.height == other.height
+        self.columns == other.columns && self.width == other.width && self.height == other.height
     }
 }
 
@@ -139,12 +137,7 @@ pub fn KanbanCanvas(props: KanbanCanvasProps) -> Element {
     }
 }
 
-fn draw_kanban(
-    ctx: &CanvasRenderingContext2d,
-    width: f64,
-    height: f64,
-    data: &KanbanCanvasProps,
-) {
+fn draw_kanban(ctx: &CanvasRenderingContext2d, width: f64, height: f64, data: &KanbanCanvasProps) {
     // 1. HUD 背景
     hud_palette::draw_hud_background(ctx, width, height);
 
@@ -175,7 +168,11 @@ fn draw_kanban(
         ctx.set_font("bold 12px sans-serif");
         ctx.set_text_align("left");
         ctx.set_text_baseline("top");
-        let _ = ctx.fill_text(&format!("{} ({})", col.title, col.tasks.len()), x + padding, 12.0);
+        let _ = ctx.fill_text(
+            &format!("{} ({})", col.title, col.tasks.len()),
+            x + padding,
+            12.0,
+        );
 
         // 任务卡片
         for (j, task) in col.tasks.iter().enumerate() {
@@ -215,7 +212,11 @@ fn draw_kanban(
                 ctx.set_fill_style_str("#f59e0b");
                 ctx.set_font("bold 9px sans-serif");
                 ctx.set_text_align("right");
-                let _ = ctx.fill_text(&format!("P{}", task.priority), card_x + card_w - 6.0, card_y + 6.0);
+                let _ = ctx.fill_text(
+                    &format!("P{}", task.priority),
+                    card_x + card_w - 6.0,
+                    card_y + 6.0,
+                );
                 ctx.set_text_align("left");
             }
 
@@ -232,7 +233,11 @@ fn draw_kanban(
             ctx.set_fill_style_str("rgba(255, 255, 255, 0.5)");
             ctx.set_font("8px sans-serif");
             ctx.set_text_align("right");
-            let _ = ctx.fill_text(&format!("{}%", task.progress), card_x + card_w - 6.0, bar_y - 12.0);
+            let _ = ctx.fill_text(
+                &format!("{}%", task.progress),
+                card_x + card_w - 6.0,
+                bar_y - 12.0,
+            );
             ctx.set_text_align("left");
         }
     }

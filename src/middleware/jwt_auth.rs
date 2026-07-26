@@ -74,7 +74,8 @@ pub async fn jwt_auth_middleware(mut req: Request, next: Next) -> Result<Respons
     }
     if let Some(role) = claims.role {
         if let Ok(header_value) = HeaderValue::from_str(&role.to_string()) {
-            req.headers_mut().insert(http_header::USER_ROLE, header_value);
+            req.headers_mut()
+                .insert(http_header::USER_ROLE, header_value);
         }
     }
 
@@ -143,7 +144,10 @@ fn unauthorized_response(_req: &Request, is_browser: bool) -> Response {
         sys_debug!("Unauthorized API request, return 401");
         (
             StatusCode::UNAUTHORIZED,
-            Json(ApiResponse::<()>::error(401, "未认证或认证已过期".to_string())),
+            Json(ApiResponse::<()>::error(
+                401,
+                "未认证或认证已过期".to_string(),
+            )),
         )
             .into_response()
     }

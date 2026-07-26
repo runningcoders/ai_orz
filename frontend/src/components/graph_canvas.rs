@@ -19,7 +19,7 @@ use web_sys::CanvasRenderingContext2d;
 
 use crate::components::canvas_scene::{CanvasEdge, CanvasNode, CanvasRenderer, CanvasScene};
 use crate::components::graph::{
-    dynamic_node_radius, get_edge_color, get_node_fill, tag_color, GraphEdge, GraphNode,
+    GraphEdge, GraphNode, dynamic_node_radius, get_edge_color, get_node_fill, tag_color,
 };
 
 /// 辅助：将 f64 切片转为 JsValue 数组供 set_line_dash 使用
@@ -122,8 +122,8 @@ impl CanvasRenderer for KnowledgeGraphRenderer {
                 let is_dashed = matches!(relation_type, "引用" | "依赖");
 
                 // 选中节点的关联边流光加速
-                let is_connected_to_selected = selected.as_deref() == Some(&from.id)
-                    || selected.as_deref() == Some(&to.id);
+                let is_connected_to_selected =
+                    selected.as_deref() == Some(&from.id) || selected.as_deref() == Some(&to.id);
 
                 // 边发光
                 ctx.set_shadow_blur(3.0);
@@ -157,7 +157,13 @@ impl CanvasRenderer for KnowledgeGraphRenderer {
                     ctx.set_shadow_blur(0.0);
                     ctx.set_fill_style_str("rgba(255, 255, 255, 0.9)");
                     ctx.begin_path();
-                    let _ = ctx.round_rect_with_f64(mid_x - label_w / 2.0, mid_y - 7.0, label_w, 14.0, 2.0);
+                    let _ = ctx.round_rect_with_f64(
+                        mid_x - label_w / 2.0,
+                        mid_y - 7.0,
+                        label_w,
+                        14.0,
+                        2.0,
+                    );
                     ctx.fill();
                     ctx.set_stroke_style_str("#e5e7eb");
                     ctx.set_line_width(1.0);
@@ -243,7 +249,10 @@ impl CanvasRenderer for KnowledgeGraphRenderer {
                 let scan_t = (now % scan_period) / scan_period;
                 let scan_r = base_radius + 4.0 + scan_t * 18.0;
                 let scan_alpha = 0.9 * (1.0 - scan_t);
-                ctx.set_stroke_style_str(&crate::components::hud_palette::hex_to_rgba(&node.color, scan_alpha));
+                ctx.set_stroke_style_str(&crate::components::hud_palette::hex_to_rgba(
+                    &node.color,
+                    scan_alpha,
+                ));
                 ctx.set_line_width(2.5);
                 set_dash(ctx, &[]);
                 ctx.begin_path();
@@ -253,7 +262,10 @@ impl CanvasRenderer for KnowledgeGraphRenderer {
                 // HUD 外环刻度（瞄准镜风格）：旋转的虚线圆 + 四向小刻度
                 let ring_r = base_radius + 8.0;
                 let rotation = (now * 30.0_f64.to_radians()) % std::f64::consts::TAU;
-                ctx.set_stroke_style_str(&crate::components::hud_palette::hex_to_rgba(&node.color, 0.6));
+                ctx.set_stroke_style_str(&crate::components::hud_palette::hex_to_rgba(
+                    &node.color,
+                    0.6,
+                ));
                 ctx.set_line_width(1.0);
                 set_dash(ctx, &[3.0, 6.0]);
                 ctx.set_line_dash_offset(-rotation * 6.0);
@@ -281,11 +293,20 @@ impl CanvasRenderer for KnowledgeGraphRenderer {
                 let pulse_t = (now % pulse_period) / pulse_period;
                 let phase = (pulse_t * std::f64::consts::TAU).sin();
                 let alpha = 0.55 + phase * 0.18;
-                ctx.set_stroke_style_str(&crate::components::hud_palette::hex_to_rgba(&node.color, alpha));
+                ctx.set_stroke_style_str(&crate::components::hud_palette::hex_to_rgba(
+                    &node.color,
+                    alpha,
+                ));
                 ctx.set_line_width(2.0);
                 set_dash(ctx, &[]);
                 ctx.begin_path();
-                let _ = ctx.arc(node.x, node.y, base_radius + 2.0, 0.0, std::f64::consts::TAU);
+                let _ = ctx.arc(
+                    node.x,
+                    node.y,
+                    base_radius + 2.0,
+                    0.0,
+                    std::f64::consts::TAU,
+                );
                 ctx.stroke();
             }
 
@@ -318,7 +339,11 @@ impl CanvasRenderer for KnowledgeGraphRenderer {
                 ctx.set_shadow_blur(0.0);
             }
 
-            let opacity = if is_selected || is_highlighted { 1.0 } else { 0.85 };
+            let opacity = if is_selected || is_highlighted {
+                1.0
+            } else {
+                0.85
+            };
             ctx.set_global_alpha(opacity);
             ctx.set_fill_style_str(&node.color);
             ctx.begin_path();
@@ -347,7 +372,11 @@ impl CanvasRenderer for KnowledgeGraphRenderer {
 
             // === 节点标签 ===
             ctx.set_fill_style_str("white");
-            ctx.set_font(if is_hovered { "11px sans-serif" } else { "10px sans-serif" });
+            ctx.set_font(if is_hovered {
+                "11px sans-serif"
+            } else {
+                "10px sans-serif"
+            });
             ctx.set_text_align("center");
             ctx.set_text_baseline("middle");
             let label: String = node.label.chars().take(10).collect();
@@ -368,9 +397,10 @@ impl CanvasRenderer for KnowledgeGraphRenderer {
                     .tags
                     .iter()
                     .map(|t| {
-                        let w: f64 = t.chars().fold(0.0, |acc, c| {
-                            acc + if c.is_ascii() { 5.0 } else { 9.0 }
-                        }) + 8.0;
+                        let w: f64 = t
+                            .chars()
+                            .fold(0.0, |acc, c| acc + if c.is_ascii() { 5.0 } else { 9.0 })
+                            + 8.0;
                         (t.clone(), w, tag_color(t))
                     })
                     .collect();

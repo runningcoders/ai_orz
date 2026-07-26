@@ -349,7 +349,8 @@ impl BackgroundParticles {
             let radius = random_range(0.5, 1.5);
             let alpha = random_range(0.1, 0.3);
             let color = format!("rgba(156, 163, 175, {:.2})", alpha);
-            self.particles.push(Particle::new(x, y, vx, vy, f64::MAX, radius, color));
+            self.particles
+                .push(Particle::new(x, y, vx, vy, f64::MAX, radius, color));
         }
     }
 
@@ -570,7 +571,11 @@ mod tests {
         p.update(2.0);
         assert!((p.x - 4.0).abs() < 0.01, "x should be 4.0, got {}", p.x);
         assert!((p.y - (-6.0)).abs() < 0.01, "y should be -6.0, got {}", p.y);
-        assert!((p.life - 3.0).abs() < 0.01, "life should be 3.0, got {}", p.life);
+        assert!(
+            (p.life - 3.0).abs() < 0.01,
+            "life should be 3.0, got {}",
+            p.life
+        );
     }
 
     #[test]
@@ -578,10 +583,31 @@ mod tests {
         use crate::components::canvas_scene::{CanvasEdge, CanvasNode};
         let mut system = DataFlowParticles::new();
         let nodes = vec![
-            CanvasNode { id: "a".to_string(), x: 0.0, y: 0.0, radius: 10.0, label: "A".to_string(), color: "#3b82f6".to_string(), node_type: None, layer: None },
-            CanvasNode { id: "b".to_string(), x: 100.0, y: 0.0, radius: 10.0, label: "B".to_string(), color: "#10b981".to_string(), node_type: None, layer: None },
+            CanvasNode {
+                id: "a".to_string(),
+                x: 0.0,
+                y: 0.0,
+                radius: 10.0,
+                label: "A".to_string(),
+                color: "#3b82f6".to_string(),
+                node_type: None,
+                layer: None,
+            },
+            CanvasNode {
+                id: "b".to_string(),
+                x: 100.0,
+                y: 0.0,
+                radius: 10.0,
+                label: "B".to_string(),
+                color: "#10b981".to_string(),
+                node_type: None,
+                layer: None,
+            },
         ];
-        let edges = vec![CanvasEdge { from_id: "a".to_string(), to_id: "b".to_string() }];
+        let edges = vec![CanvasEdge {
+            from_id: "a".to_string(),
+            to_id: "b".to_string(),
+        }];
 
         assert_eq!(system.count(), 0);
 
@@ -605,16 +631,41 @@ mod tests {
         system.spawn_interval = 0.0;
 
         let nodes = vec![
-            CanvasNode { id: "a".to_string(), x: 0.0, y: 0.0, radius: 10.0, label: "A".to_string(), color: "#3b82f6".to_string(), node_type: None, layer: None },
-            CanvasNode { id: "b".to_string(), x: 80.0, y: 0.0, radius: 10.0, label: "B".to_string(), color: "#10b981".to_string(), node_type: None, layer: None },
+            CanvasNode {
+                id: "a".to_string(),
+                x: 0.0,
+                y: 0.0,
+                radius: 10.0,
+                label: "A".to_string(),
+                color: "#3b82f6".to_string(),
+                node_type: None,
+                layer: None,
+            },
+            CanvasNode {
+                id: "b".to_string(),
+                x: 80.0,
+                y: 0.0,
+                radius: 10.0,
+                label: "B".to_string(),
+                color: "#10b981".to_string(),
+                node_type: None,
+                layer: None,
+            },
         ];
-        let edges = vec![CanvasEdge { from_id: "a".to_string(), to_id: "b".to_string() }];
+        let edges = vec![CanvasEdge {
+            from_id: "a".to_string(),
+            to_id: "b".to_string(),
+        }];
 
         system.spawn(&edges, &nodes, 1.0);
         assert_eq!(system.count(), 1);
 
         let life = system.particles[0].life;
-        assert!((life - 1.0).abs() < 0.01, "生命周期应为 1.0 秒，实际 {}", life);
+        assert!(
+            (life - 1.0).abs() < 0.01,
+            "生命周期应为 1.0 秒，实际 {}",
+            life
+        );
 
         system.update(1.0);
         assert_eq!(system.count(), 0, "粒子应已死亡被移除");

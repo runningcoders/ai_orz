@@ -6,7 +6,6 @@
 //! - 混合搜索（全文 + 向量）
 //! - 结果聚合排序
 
-use common::error::{bail_err, Result};
 use crate::models::memory::{
     KnowledgeNodeRelationPo, KnowledgeReferencePo, LongTermKnowledgeNodePo, Memory,
     MemoryCreateParams, MemoryPo, MemoryTrace, ShortTermMemoryIndexPo,
@@ -17,8 +16,9 @@ use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::memory::{MemoryDao, MemoryQuery, MemorySearch, MemoryVectorDao};
 use crate::service::dao::model_provider::ModelProviderDao;
 use async_trait::async_trait;
-use common::enums::MemoryType;
 use common::enums::MemoryStatus;
+use common::enums::MemoryType;
+use common::error::{Result, bail_err};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
@@ -70,17 +70,12 @@ pub trait MemoryDal: Send + Sync {
     /// - query_vector 存在 → 走向量语义搜索
     /// - 两者都有 → 混合搜索，合并结果
     /// - memory_type 过滤 → 只搜索指定类型
-    async fn search(
-        &self,
-        ctx: RequestContext,
-        search: MemorySearch,
-    ) -> Result<Vec<Memory>>;
+    async fn search(&self, ctx: RequestContext, search: MemorySearch) -> Result<Vec<Memory>>;
 
     /// 📋 通用关系型查询（纯数据库查询，无向量）
     ///
     /// 支持所有组合过滤条件，可单独指定查询哪种记忆类型
-    async fn query(&self, ctx: RequestContext, query: MemoryQuery)
-    -> Result<Vec<Memory>>;
+    async fn query(&self, ctx: RequestContext, query: MemoryQuery) -> Result<Vec<Memory>>;
 
     /// ✍️ 创建记忆（按 MemoryCreateParams 变体分发）
     ///
@@ -89,11 +84,7 @@ pub trait MemoryDal: Send + Sync {
     /// - `ShortTerm` → 写库 + 向量化 summary（向量失败仅 warn 降级）
     /// - `KnowledgeNode` → 写库 + 写引用 + 向量化 summary（向量失败仅 warn 降级）
     /// - `Relation` → 写库（不向量化）
-    async fn create(
-        &self,
-        ctx: RequestContext,
-        params: MemoryCreateParams,
-    ) -> Result<Vec<Memory>>;
+    async fn create(&self, ctx: RequestContext, params: MemoryCreateParams) -> Result<Vec<Memory>>;
 
     /// 🔄 更新记忆（仅支持 ShortTerm / KnowledgeNode）
     ///
@@ -172,11 +163,7 @@ pub struct MemoryDalImpl {
 
 #[async_trait]
 impl MemoryDal for MemoryDalImpl {
-    async fn search(
-        &self,
-        ctx: RequestContext,
-        search: MemorySearch,
-    ) -> Result<Vec<Memory>> {
+    async fn search(&self, ctx: RequestContext, search: MemorySearch) -> Result<Vec<Memory>> {
         let memory_type = search.filters.memory_type.unwrap_or(MemoryType::All);
         let mut results: Vec<Memory> = Vec::new();
 
@@ -221,35 +208,37 @@ impl MemoryDal for MemoryDalImpl {
                 Some(MatchType::Vector) => 1,
                 _ => 2,
             };
-            order_a.cmp(&order_b).then_with(|| {
-                match (a_type, b_type) {
-                    (Some(MatchType::Hybrid), Some(MatchType::Hybrid))
-                    | (Some(MatchType::Vector), Some(MatchType::Vector)) => {
-                        let a_dist = a
-                            .search_match
-                            .as_ref()
-                            .and_then(|m| m.vector_distance)
-                            .unwrap_or(f32::MAX);
-                        let b_dist = b
-                            .search_match
-                            .as_ref()
-                            .and_then(|m| m.vector_distance)
-                            .unwrap_or(f32::MAX);
-                        a_dist.partial_cmp(&b_dist).unwrap_or(std::cmp::Ordering::Equal)
-                    }
-                    _ => {
-                        let a_rank = a
-                            .search_match
-                            .as_ref()
-                            .and_then(|m| m.fts_rank)
-                            .unwrap_or(f32::MAX);
-                        let b_rank = b
-                            .search_match
-                            .as_ref()
-                            .and_then(|m| m.fts_rank)
-                            .unwrap_or(f32::MAX);
-                        a_rank.partial_cmp(&b_rank).unwrap_or(std::cmp::Ordering::Equal)
-                    }
+            order_a.cmp(&order_b).then_with(|| match (a_type, b_type) {
+                (Some(MatchType::Hybrid), Some(MatchType::Hybrid))
+                | (Some(MatchType::Vector), Some(MatchType::Vector)) => {
+                    let a_dist = a
+                        .search_match
+                        .as_ref()
+                        .and_then(|m| m.vector_distance)
+                        .unwrap_or(f32::MAX);
+                    let b_dist = b
+                        .search_match
+                        .as_ref()
+                        .and_then(|m| m.vector_distance)
+                        .unwrap_or(f32::MAX);
+                    a_dist
+                        .partial_cmp(&b_dist)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                }
+                _ => {
+                    let a_rank = a
+                        .search_match
+                        .as_ref()
+                        .and_then(|m| m.fts_rank)
+                        .unwrap_or(f32::MAX);
+                    let b_rank = b
+                        .search_match
+                        .as_ref()
+                        .and_then(|m| m.fts_rank)
+                        .unwrap_or(f32::MAX);
+                    a_rank
+                        .partial_cmp(&b_rank)
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 }
             })
         });
@@ -262,11 +251,7 @@ impl MemoryDal for MemoryDalImpl {
         Ok(results)
     }
 
-    async fn query(
-        &self,
-        ctx: RequestContext,
-        query: MemoryQuery,
-    ) -> Result<Vec<Memory>> {
+    async fn query(&self, ctx: RequestContext, query: MemoryQuery) -> Result<Vec<Memory>> {
         let memory_type = query.memory_type.unwrap_or(MemoryType::All);
         let mut results: Vec<Memory> = Vec::new();
 
@@ -302,11 +287,7 @@ impl MemoryDal for MemoryDalImpl {
         Ok(results)
     }
 
-    async fn create(
-        &self,
-        ctx: RequestContext,
-        params: MemoryCreateParams,
-    ) -> Result<Vec<Memory>> {
+    async fn create(&self, ctx: RequestContext, params: MemoryCreateParams) -> Result<Vec<Memory>> {
         match params {
             MemoryCreateParams::AppendTraces(traces) => {
                 self.create_append_traces(ctx, traces).await
@@ -524,7 +505,12 @@ impl MemoryDal for MemoryDalImpl {
             .await?;
 
         if short_term_indexes.is_empty() {
-            log_info!(ctx, "settle_memory", "agent_id={}, 无未沉淀的短期记忆", agent_id);
+            log_info!(
+                ctx,
+                "settle_memory",
+                "agent_id={}, 无未沉淀的短期记忆",
+                agent_id
+            );
             return Ok(Vec::new());
         }
 
@@ -562,7 +548,14 @@ impl MemoryDal for MemoryDalImpl {
             }
         }
 
-        log_info!(ctx, "settle_memory", "agent_id={}, 成功沉淀 {} 条短期记忆为 {} 个知识节点", agent_id, short_term_indexes.len(), created_nodes.len());
+        log_info!(
+            ctx,
+            "settle_memory",
+            "agent_id={}, 成功沉淀 {} 条短期记忆为 {} 个知识节点",
+            agent_id,
+            short_term_indexes.len(),
+            created_nodes.len()
+        );
         Ok(created_nodes)
     }
 

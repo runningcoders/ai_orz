@@ -3,7 +3,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use common::error::Result;
 use crate::models::skill::{SkillFile, SkillPo};
 use crate::pkg::RequestContext;
 use crate::pkg::storage::escape_fts5_keyword;
@@ -11,7 +10,8 @@ use crate::service::dao::skill::{SkillDao, SkillQuery, SkillSearch};
 use async_trait::async_trait;
 use common::enums::SkillStatus;
 use common::enums::skill::SkillAuthorType;
-use common::{err, bail_err};
+use common::error::Result;
+use common::{bail_err, err};
 use sqlx::FromRow;
 
 // ==================== FTS5 辅助 ====================
@@ -224,11 +224,7 @@ ORDER BY updated_at DESC
         Ok(skills)
     }
 
-    async fn list_by_category(
-        &self,
-        ctx: RequestContext,
-        category: &str,
-    ) -> Result<Vec<SkillPo>> {
+    async fn list_by_category(&self, ctx: RequestContext, category: &str) -> Result<Vec<SkillPo>> {
         let skills = sqlx::query_as!(
             SkillPo,
             r#"
@@ -245,11 +241,7 @@ ORDER BY updated_at DESC
         Ok(skills)
     }
 
-    async fn list_by_author(
-        &self,
-        ctx: RequestContext,
-        author_id: &str,
-    ) -> Result<Vec<SkillPo>> {
+    async fn list_by_author(&self, ctx: RequestContext, author_id: &str) -> Result<Vec<SkillPo>> {
         let skills = sqlx::query_as!(
             SkillPo,
             r#"
@@ -274,7 +266,11 @@ ORDER BY updated_at DESC
     ) -> Result<SkillPo> {
         // Source skill must be Published (shared) to be installed
         if source_skill.status != SkillStatus::Published {
-            bail_err!(InvalidRequest, "Only published skills can be installed, current status is {:?}", source_skill.status);
+            bail_err!(
+                InvalidRequest,
+                "Only published skills can be installed, current status is {:?}",
+                source_skill.status
+            );
         }
 
         // Generate new unique skill id internally (using v7 uuid for time ordering)
@@ -373,7 +369,9 @@ ORDER BY updated_at DESC
 
         if let Some(tags) = &filters.tags {
             if !tags.is_empty() {
-                builder.push(" AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE json_each.value IN (");
+                builder.push(
+                    " AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE json_each.value IN (",
+                );
                 let mut separated = builder.separated(", ");
                 for tag in tags {
                     separated.push_bind(tag);
@@ -465,12 +463,7 @@ ORDER BY updated_at DESC
         self.write_file_bytes(skill, filename, content.as_bytes())
     }
 
-    fn write_file_bytes(
-        &self,
-        skill: &SkillPo,
-        filename: &str,
-        bytes: &[u8],
-    ) -> Result<()> {
+    fn write_file_bytes(&self, skill: &SkillPo, filename: &str, bytes: &[u8]) -> Result<()> {
         let path = self.file_path(skill, filename);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -610,7 +603,9 @@ fn push_query_filters<'args>(
         builder.push(" AND category = ").push_bind(category.clone());
     }
     if let Some(author_id) = &query.author_id {
-        builder.push(" AND author_id = ").push_bind(author_id.clone());
+        builder
+            .push(" AND author_id = ")
+            .push_bind(author_id.clone());
     }
     if let Some(parent_skill_id) = &query.parent_skill_id {
         builder

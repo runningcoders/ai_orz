@@ -1,24 +1,24 @@
 //! 基础 UI 组件库
 
-pub mod relation_graph;
-pub mod workspace_graph;
 pub mod aop_gauge;
 pub mod button;
 pub mod canvas_scene;
 pub mod chart_scene;
 pub mod charts;
 pub mod chat;
-pub mod force_layout;
-pub mod layered_layout;
-pub mod particles;
+pub mod code_editor;
 pub mod confirm_dialog;
+pub mod force_layout;
 pub mod gauge;
 pub mod graph;
 pub mod graph_canvas;
 pub mod hud_palette;
 pub mod kanban_canvas;
+pub mod layered_layout;
 pub mod modal;
+pub mod particles;
+pub mod relation_graph;
 pub mod state;
 pub mod stats;
 pub mod toast;
-pub mod code_editor;
+pub mod workspace_graph;

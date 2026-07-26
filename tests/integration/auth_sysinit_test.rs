@@ -28,17 +28,19 @@ async fn test_initialize_system_creates_org_and_providers(pool: SqlitePool) {
 
     assert!(!bs.organization_id.is_empty(), "org_id should be non-empty");
     assert!(!bs.user_id.is_empty(), "user_id should be non-empty");
-    assert!(!bs.chat_provider_id.is_empty(), "chat_provider_id should be non-empty");
-    assert!(!bs.embedding_provider_id.is_empty(), "embedding_provider_id should be non-empty");
+    assert!(
+        !bs.chat_provider_id.is_empty(),
+        "chat_provider_id should be non-empty"
+    );
+    assert!(
+        !bs.embedding_provider_id.is_empty(),
+        "embedding_provider_id should be non-empty"
+    );
 
     // After initialization, check_initialized should return true
-    let (status, body) = app
-        .get("/api/v1/organization/initialize/check")
-        .await;
+    let (status, body) = app.get("/api/v1/organization/initialize/check").await;
     let data = crate::common::assert_api_ok(status, &body);
-    let initialized = data
-        .as_bool()
-        .expect("expected boolean in data field");
+    let initialized = data.as_bool().expect("expected boolean in data field");
     assert!(initialized, "system should be initialized after bootstrap");
 }
 
@@ -86,8 +88,7 @@ async fn test_protected_route_returns_200_with_jwt(pool: SqlitePool) {
 
     // Auth 链路验证用例保留完整 bootstrap（不删除 embedding provider），
     // 因为这个测试只验证路由 + JWT 注入，不触发实体创建。
-    let (_bs, jwt) =
-        crate::common::factories::bootstrap_and_login(&app).await;
+    let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
 
     let (status, body) = app.get_with_jwt("/api/v1/hr/agents", &jwt).await;
     assert_eq!(

@@ -18,21 +18,18 @@
 
 use common::api::a2a::{A2aTask, SendTaskParams};
 use common::enums::ProjectStatus;
-use common::error::{bail_err, Result};
+use common::error::{Result, bail_err};
 
 use crate::handlers::a2a::mapper::{build_a2a_task, extract_text_from_a2a_message};
+use crate::models::message_channel::{ChannelConfig, MessageChannel, MessageChannelPo};
 use crate::pkg::RequestContext;
 use crate::service::dal::message_channel;
 use crate::service::domain::hr::domain as hr_domain;
 use crate::service::domain::message::{self, SendToAgentCommand};
 use crate::service::domain::project::domain as project_domain;
-use crate::models::message_channel::{MessageChannel, MessageChannelPo, ChannelConfig};
 
 /// 处理 tasks/send 请求（异步提交）
-pub async fn handle_send_task(
-    ctx: RequestContext,
-    params: SendTaskParams,
-) -> Result<A2aTask> {
+pub async fn handle_send_task(ctx: RequestContext, params: SendTaskParams) -> Result<A2aTask> {
     let user_id = ctx.uid();
     if user_id.is_empty() {
         bail_err!(InvalidRequest, "A2A 请求缺少用户上下文");
@@ -103,8 +100,8 @@ pub async fn handle_send_task(
             common::enums::ChannelType::A2aCallback,
             format!("A2A Callback for {}", project_name),
             Some(notification_url),
-            None,  // access_token
-            None,  // secret
+            None, // access_token
+            None, // secret
             ChannelConfig::default(),
             user_id.clone(),
         );

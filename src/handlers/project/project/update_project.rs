@@ -1,11 +1,11 @@
 //! Handler: PUT /api/v1/projects/{id} - Update project basic information
 
 use super::response;
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateProjectRequest, UpdateProjectResponse};
+use common::error::Result;
 
 /// Update project basic information
 #[register_handler_tool(

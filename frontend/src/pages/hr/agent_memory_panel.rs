@@ -1,7 +1,7 @@
 use dioxus::prelude::{Key, *};
 
-use crate::api::hr::{query_memory, search_memory};
 use crate::api::ApiError;
+use crate::api::hr::{query_memory, search_memory};
 use crate::components::button::Button;
 use crate::components::state::{EmptyState, Loading};
 use crate::store::toast::use_toast;
@@ -61,9 +61,7 @@ fn fetch_memories(
                 .await
                 .map(|r| r.results)
         } else {
-            search_memory(&kw, mem_type, None)
-                .await
-                .map(|r| r.results)
+            search_memory(&kw, mem_type, None).await.map(|r| r.results)
         };
         // 丢弃过期请求的结果
         if fetch_request_id() != my_id {
@@ -96,7 +94,15 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
         let agent_id = agent_id.clone();
         move || {
             let tab = active_tab();
-            fetch_memories(agent_id.clone(), tab, String::new(), results, loading, toast, fetch_request_id);
+            fetch_memories(
+                agent_id.clone(),
+                tab,
+                String::new(),
+                results,
+                loading,
+                toast,
+                fetch_request_id,
+            );
         }
     });
 

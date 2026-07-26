@@ -1,14 +1,16 @@
 //! Model Provider DAL 模块
 
-use common::error::Result;
-use common::models::{ModelCallStats, StatsFetchOptions};
-use common::api::PagedResult;
 use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
 use crate::pkg::stats::ModelCallEvent;
 use crate::service::dao::model_provider;
-use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderQuery, ModelProviderStatsDao, ModelProviderStatsQuery};
+use crate::service::dao::model_provider::{
+    ModelProviderDao, ModelProviderQuery, ModelProviderStatsDao, ModelProviderStatsQuery,
+};
+use common::api::PagedResult;
 use common::enums::ModelProviderStatus;
+use common::error::Result;
+use common::models::{ModelCallStats, StatsFetchOptions};
 use std::sync::{Arc, OnceLock};
 
 use crate::enrich_ctx;
@@ -32,7 +34,10 @@ pub fn new(
     model_provider_dao: Arc<dyn ModelProviderDao + Send + Sync>,
     model_provider_stats_dao: Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>,
 ) -> Arc<dyn ModelProviderDal> {
-    Arc::new(ModelProviderDalImpl { model_provider_dao, model_provider_stats_dao })
+    Arc::new(ModelProviderDalImpl {
+        model_provider_dao,
+        model_provider_stats_dao,
+    })
 }
 
 // ==================== DAL 接口 ====================
@@ -55,11 +60,7 @@ pub trait ModelProviderDal: Send + Sync {
     async fn create(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<()>;
 
     /// 根据 ID 查询 Model Provider
-    async fn find_by_id(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<Option<ModelProvider>>;
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<ModelProvider>>;
 
     /// 根据 ID 查询 Model Provider（带附带信息选项）
     async fn get_model_provider(
@@ -86,12 +87,20 @@ pub trait ModelProviderDal: Send + Sync {
     async fn delete(&self, ctx: RequestContext, provider: &ModelProvider) -> Result<()>;
 
     /// 获取当前启用的 Embedding Provider（用于唯一性校验）
-    async fn find_enabled_embedding_provider(&self, ctx: RequestContext) -> Result<Option<ModelProvider>>;
+    async fn find_enabled_embedding_provider(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<Option<ModelProvider>>;
 
     // ==================== 统计查询 ====================
 
     /// 获取 ModelProvider 统计数据（按 options 控制返回哪些维度）
-    async fn get_stats(&self, ctx: RequestContext, model_provider_id: &str, options: StatsFetchOptions) -> Result<ModelCallStats>;
+    async fn get_stats(
+        &self,
+        ctx: RequestContext,
+        model_provider_id: &str,
+        options: StatsFetchOptions,
+    ) -> Result<ModelCallStats>;
 }
 
 /// Model Provider DAL 实现
@@ -107,11 +116,7 @@ impl ModelProviderDal for ModelProviderDalImpl {
         self.model_provider_dao.insert(ctx, &provider.po).await
     }
 
-    async fn find_by_id(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<Option<ModelProvider>> {
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<ModelProvider>> {
         let opt = self.model_provider_dao.find_by_id(ctx, id).await?;
         Ok(opt.map(ModelProvider::from_po))
     }
@@ -182,8 +187,15 @@ impl ModelProviderDal for ModelProviderDalImpl {
         self.model_provider_dao.delete(ctx, &provider.po).await
     }
 
-    async fn find_enabled_embedding_provider(&self, ctx: RequestContext) -> Result<Option<ModelProvider>> {
-        match self.model_provider_dao.find_enabled_embedding_provider(ctx).await? {
+    async fn find_enabled_embedding_provider(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<Option<ModelProvider>> {
+        match self
+            .model_provider_dao
+            .find_enabled_embedding_provider(ctx)
+            .await?
+        {
             Some(po) => Ok(Some(ModelProvider { po, stats: None })),
             None => Ok(None),
         }
@@ -191,13 +203,20 @@ impl ModelProviderDal for ModelProviderDalImpl {
 
     // ==================== 统计查询 ====================
 
-    async fn get_stats(&self, ctx: RequestContext, model_provider_id: &str, options: StatsFetchOptions) -> Result<ModelCallStats> {
+    async fn get_stats(
+        &self,
+        ctx: RequestContext,
+        model_provider_id: &str,
+        options: StatsFetchOptions,
+    ) -> Result<ModelCallStats> {
         let query = ModelProviderStatsQuery {
             model_provider_id: Some(model_provider_id.to_string()),
             time_range: options.time_range,
             interval: options.interval,
             ..Default::default()
         };
-        self.model_provider_stats_dao.get_stats(ctx, query, options).await
+        self.model_provider_stats_dao
+            .get_stats(ctx, query, options)
+            .await
     }
 }

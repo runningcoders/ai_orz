@@ -3,8 +3,8 @@
 //! 这些函数只接收数据返回结果，不调用任何 DAL 或 domain。
 //! 跨 domain 的 DB 读取由 handler 完成，handler 把当前 DB 值作为参数传入。
 
-use std::collections::HashMap;
 use super::defs::*;
+use std::collections::HashMap;
 
 /// 对比两个快照（纯函数）
 pub fn diff_snapshots(base: &SeedSnapshot, target: &SeedSnapshot) -> SeedDiff {
@@ -12,7 +12,12 @@ pub fn diff_snapshots(base: &SeedSnapshot, target: &SeedSnapshot) -> SeedDiff {
     let org_diff = diff_organization(&base.organization, &target.organization, &mut summary);
 
     let users = diff_vec(&base.users, &target.users, &mut summary, |u| u.id.clone());
-    let model_providers = diff_vec(&base.model_providers, &target.model_providers, &mut summary, |p| p.id.clone());
+    let model_providers = diff_vec(
+        &base.model_providers,
+        &target.model_providers,
+        &mut summary,
+        |p| p.id.clone(),
+    );
     let agents = diff_vec(&base.agents, &target.agents, &mut summary, |a| a.id.clone());
     let skills = diff_vec(&base.skills, &target.skills, &mut summary, |s| s.id.clone());
 
@@ -40,7 +45,10 @@ fn diff_organization(
     let changes = collect_changes(base, target);
     if changes.is_empty() {
         summary.same_count += 1;
-        Some(DiffEntry::Same { id: base.id.clone(), current: base.clone() })
+        Some(DiffEntry::Same {
+            id: base.id.clone(),
+            current: base.clone(),
+        })
     } else {
         summary.updated_count += 1;
         Some(DiffEntry::Updated {
@@ -72,7 +80,10 @@ where
             let changes = collect_changes(b, t);
             if changes.is_empty() {
                 summary.same_count += 1;
-                result.push(DiffEntry::Same { id, current: b.clone() });
+                result.push(DiffEntry::Same {
+                    id,
+                    current: b.clone(),
+                });
             } else {
                 summary.updated_count += 1;
                 result.push(DiffEntry::Updated {
@@ -84,7 +95,10 @@ where
             }
         } else {
             summary.removed_count += 1;
-            result.push(DiffEntry::Removed { id, current: b.clone() });
+            result.push(DiffEntry::Removed {
+                id,
+                current: b.clone(),
+            });
         }
     }
 
@@ -92,7 +106,10 @@ where
         let id = id_fn(t);
         if !base_ids.contains(&id) {
             summary.new_count += 1;
-            result.push(DiffEntry::New { id, snapshot: t.clone() });
+            result.push(DiffEntry::New {
+                id,
+                snapshot: t.clone(),
+            });
         }
     }
 
@@ -123,7 +140,9 @@ fn collect_field_changes_recursive(
                 if let Some(target_val) = target_map.get(key) {
                     if base_val != target_val {
                         if base_val.is_object() && target_val.is_object() {
-                            changes.extend(collect_field_changes_recursive(base_val, target_val, &field));
+                            changes.extend(collect_field_changes_recursive(
+                                base_val, target_val, &field,
+                            ));
                         } else {
                             changes.push(FieldChange {
                                 field,
@@ -193,13 +212,14 @@ pub fn resolve_password(
     match ref_value {
         PENDING_INPUT => {
             let key = format!("user:{}:password", user_id);
-            sensitive_values.get(&key).cloned()
+            sensitive_values
+                .get(&key)
+                .cloned()
                 .ok_or_else(|| format!("缺少密码: {}", key))
         }
-        INHERIT_CURRENT => {
-            current_password_hash.map(|s| s.to_string())
-                .ok_or_else(|| format!("INHERIT_CURRENT 但 DB 中无用户 {} 的当前密码", user_id))
-        }
+        INHERIT_CURRENT => current_password_hash
+            .map(|s| s.to_string())
+            .ok_or_else(|| format!("INHERIT_CURRENT 但 DB 中无用户 {} 的当前密码", user_id)),
         RANDOM_GENERATE => {
             // 生成随机密码（实际场景应由 handler 转换为 hash 并展示明文给管理员）
             Ok(format!("random_{}", uuid::Uuid::now_v7()))
@@ -218,13 +238,17 @@ pub fn resolve_api_key(
     match ref_value {
         PENDING_INPUT => {
             let key = format!("model_provider:{}:api_key", provider_id);
-            sensitive_values.get(&key).cloned()
+            sensitive_values
+                .get(&key)
+                .cloned()
                 .ok_or_else(|| format!("缺少 API Key: {}", key))
         }
-        INHERIT_CURRENT => {
-            current_api_key.map(|s| s.to_string())
-                .ok_or_else(|| format!("INHERIT_CURRENT 但 DB 中无 Provider {} 的当前 API Key", provider_id))
-        }
+        INHERIT_CURRENT => current_api_key.map(|s| s.to_string()).ok_or_else(|| {
+            format!(
+                "INHERIT_CURRENT 但 DB 中无 Provider {} 的当前 API Key",
+                provider_id
+            )
+        }),
         _ => Err(format!("未知占位符: {}", ref_value)),
     }
 }

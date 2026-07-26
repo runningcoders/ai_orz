@@ -3,11 +3,11 @@
 //! 面向前端工具详情页的调试入口，直接调用 call_tool_by_id（不经过 Agent 授权）。
 //! 仅 Admin 及以上权限可用（由路由层 require_role_middleware 校验）。
 
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::runtime;
 use ai_orz_macros::generate_http_handler;
 use common::api::{DebugCallToolRequest, DebugCallToolResponse};
+use common::error::Result;
 
 /// 工具调试调用（同步）
 ///

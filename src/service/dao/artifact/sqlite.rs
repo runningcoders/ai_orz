@@ -1,13 +1,13 @@
 //! SQLite implementation of Artifact DAO
 
 use super::{ArtifactDao, ArtifactQuery};
-use common::error::{bail_err, Result};
 use crate::models::{artifact::ArtifactPo, file::FileMeta};
 use crate::pkg::RequestContext;
 use common::api::PagedResult;
 use common::enums::{ArtifactSourceType, FileType};
-use sqlx::types::Json;
+use common::error::{Result, bail_err};
 use sqlx::QueryBuilder;
+use sqlx::types::Json;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -49,7 +49,10 @@ impl ArtifactDaoSqliteImpl {
 
         // Check for path traversal (double-check)
         if !path.starts_with(config.artifacts_dir()) {
-            bail_err!(InvalidRequest, "Invalid artifact file path: path traversal attempt detected");
+            bail_err!(
+                InvalidRequest,
+                "Invalid artifact file path: path traversal attempt detected"
+            );
         }
 
         Ok(path)
@@ -117,12 +120,15 @@ WHERE id = ? AND "status" != 0
         Ok(artifact)
     }
 
-    async fn query(&self, ctx: RequestContext, query: ArtifactQuery) -> Result<PagedResult<ArtifactPo>> {
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: ArtifactQuery,
+    ) -> Result<PagedResult<ArtifactPo>> {
         let pool = ctx.db_pool();
 
-        let mut count_builder = QueryBuilder::new(
-            r#"SELECT COUNT(*) FROM artifacts WHERE "status" != 0"#,
-        );
+        let mut count_builder =
+            QueryBuilder::new(r#"SELECT COUNT(*) FROM artifacts WHERE "status" != 0"#);
         push_query_filters(&mut count_builder, &query);
         let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
 
@@ -210,14 +216,10 @@ WHERE id = ? AND "status" != 0
 
     async fn count(&self, ctx: RequestContext, query: ArtifactQuery) -> Result<u64> {
         let pool = ctx.db_pool();
-        let mut count_builder = QueryBuilder::new(
-            r#"SELECT COUNT(*) FROM artifacts WHERE "status" != 0"#,
-        );
+        let mut count_builder =
+            QueryBuilder::new(r#"SELECT COUNT(*) FROM artifacts WHERE "status" != 0"#);
         push_query_filters(&mut count_builder, &query);
-        let total: i64 = count_builder
-            .build_query_scalar()
-            .fetch_one(pool)
-            .await?;
+        let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
         Ok(total as u64)
     }
 
@@ -312,7 +314,11 @@ WHERE id = ?
         // Only generated content can be written to disk
         // (Attachment content is handled separately by finance attachment)
         if artifact.source_type != common::enums::ArtifactSourceType::GeneratedContent {
-            bail_err!(InvalidRequest, "Cannot write content to artifact of source type {:?}", artifact.source_type);
+            bail_err!(
+                InvalidRequest,
+                "Cannot write content to artifact of source type {:?}",
+                artifact.source_type
+            );
         }
 
         let file_path = self.resolve_generated_content_path(artifact)?;

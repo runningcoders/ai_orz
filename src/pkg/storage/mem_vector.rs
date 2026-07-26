@@ -9,11 +9,11 @@ use crate::models::vector::{
     VectorCollection, VectorIndexParams, VectorMeta, VectorRow, VectorSearchHit,
 };
 use async_trait::async_trait;
+use common::error::Result;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use common::error::Result;
 
 /// 内存向量存储
 ///
@@ -64,7 +64,8 @@ impl InMemoryVectorStore {
         let bytes = tokio::fs::read(path).await?;
         let collection_data: VectorCollection =
             bincode::decode_from_slice(&bytes, bincode::config::standard())
-                .map_err(Into::<common::error::Error>::into)?.0;
+                .map_err(Into::<common::error::Error>::into)?
+                .0;
 
         Ok(Some(collection_data))
     }

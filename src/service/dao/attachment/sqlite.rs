@@ -1,11 +1,11 @@
 //! SQLite implementation of Attachment DAO
 
 use super::{AttachmentDao, AttachmentQuery};
-use common::api::PagedResult;
-use common::error::{bail_err, Result};
 use crate::models::attachment::AttachmentPo;
 use crate::pkg::RequestContext;
-use sqlx::{SqlitePool, QueryBuilder};
+use common::api::PagedResult;
+use common::error::{Result, bail_err};
+use sqlx::{QueryBuilder, SqlitePool};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 

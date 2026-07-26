@@ -8,7 +8,7 @@ use crate::pkg::RequestContext;
 use crate::pkg::tool_registry::http;
 use crate::service::domain::finance::{FinanceDomainImpl, ToolProviderManage};
 use common::enums::{ControlMode, ToolProtocol};
-use common::error::{Result, err, bail_err};
+use common::error::{Result, bail_err, err};
 
 #[async_trait::async_trait]
 impl ToolProviderManage for FinanceDomainImpl {
@@ -32,9 +32,7 @@ impl ToolProviderManage for FinanceDomainImpl {
         tool_id: &str,
         options: crate::service::dal::tool::ToolFetchOptions,
     ) -> Result<Option<Tool>> {
-        self.tool_dal
-            .get_tool(ctx.clone(), tool_id, options)
-            .await
+        self.tool_dal.get_tool(ctx.clone(), tool_id, options).await
     }
 
     /// 通用综合查询
@@ -105,11 +103,7 @@ impl ToolProviderManage for FinanceDomainImpl {
     }
 
     /// 获取 Agent 借用的所有工具
-    async fn list_agent_tools(
-        &self,
-        ctx: RequestContext,
-        agent_id: &str,
-    ) -> Result<Vec<Tool>> {
+    async fn list_agent_tools(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<Tool>> {
         let ctx = ctx.to_builder().agent_id(agent_id).build();
         self.tool_dal
             .list_tools_for_agent_full(ctx.clone(), agent_id)
@@ -137,7 +131,11 @@ fn validate_tool_management_policy(tool: &Tool) -> Result<()> {
             ToolProtocol::Mcp => "Mcp Tool",
             _ => "Tool",
         };
-        bail_err!(InvalidRequest, "{} only supports Manual control mode", tool_type);
+        bail_err!(
+            InvalidRequest,
+            "{} only supports Manual control mode",
+            tool_type
+        );
     }
 
     if matches!(tool.po.protocol, ToolProtocol::Http) {

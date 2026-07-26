@@ -6,8 +6,8 @@ use crate::service::dao::skill::{SkillQuery, SkillSearch};
 use crate::service::domain::hr::{HrDomainImpl, SkillManage, UpdateSkillParams};
 use common::constants::utils::current_timestamp;
 use common::enums::SkillStatus;
-use std::path::{Component, Path};
 use common::error::{Result, bail_err};
+use std::path::{Component, Path};
 
 #[async_trait::async_trait]
 impl SkillManage for HrDomainImpl {
@@ -32,11 +32,7 @@ impl SkillManage for HrDomainImpl {
         self.skill_dal.get_by_id(ctx, id.to_string()).await
     }
 
-    async fn update_skill(
-        &self,
-        ctx: RequestContext,
-        params: UpdateSkillParams<'_>,
-    ) -> Result<()> {
+    async fn update_skill(&self, ctx: RequestContext, params: UpdateSkillParams<'_>) -> Result<()> {
         // 1. 先校验所有附加文件导入路径，避免后续失败时产生部分文件/元数据更新。
         for file_import in &params.file_imports {
             validate_skill_import_target_path(&file_import.target_path)?;
@@ -83,68 +79,51 @@ impl SkillManage for HrDomainImpl {
         self.skill_dal.query(ctx, query).await
     }
 
-    async fn list_by_status(
-        &self,
-        ctx: RequestContext,
-        status: SkillStatus,
-    ) -> Result<Vec<Skill>> {
-        let page = self.query_skills(
-            ctx,
-            SkillQuery {
-                status: Some(status),
-                ..Default::default()
-            },
-        )
-        .await?;
+    async fn list_by_status(&self, ctx: RequestContext, status: SkillStatus) -> Result<Vec<Skill>> {
+        let page = self
+            .query_skills(
+                ctx,
+                SkillQuery {
+                    status: Some(status),
+                    ..Default::default()
+                },
+            )
+            .await?;
         Ok(page.items)
     }
 
-    async fn list_by_category(
-        &self,
-        ctx: RequestContext,
-        category: &str,
-    ) -> Result<Vec<Skill>> {
-        let page = self.query_skills(
-            ctx,
-            SkillQuery {
-                category: Some(category.to_string()),
-                ..Default::default()
-            },
-        )
-        .await?;
+    async fn list_by_category(&self, ctx: RequestContext, category: &str) -> Result<Vec<Skill>> {
+        let page = self
+            .query_skills(
+                ctx,
+                SkillQuery {
+                    category: Some(category.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await?;
         Ok(page.items)
     }
 
-    async fn list_by_author(
-        &self,
-        ctx: RequestContext,
-        author_id: &str,
-    ) -> Result<Vec<Skill>> {
-        let page = self.query_skills(
-            ctx,
-            SkillQuery {
-                author_id: Some(author_id.to_string()),
-                ..Default::default()
-            },
-        )
-        .await?;
+    async fn list_by_author(&self, ctx: RequestContext, author_id: &str) -> Result<Vec<Skill>> {
+        let page = self
+            .query_skills(
+                ctx,
+                SkillQuery {
+                    author_id: Some(author_id.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await?;
         Ok(page.items)
     }
 
-    async fn list_for_agent(
-        &self,
-        ctx: RequestContext,
-        agent_id: &str,
-    ) -> Result<Vec<Skill>> {
+    async fn list_for_agent(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<Skill>> {
         let ctx = ctx.to_builder().agent_id(agent_id).build();
         self.skill_dal.list_for_agent(ctx, agent_id).await
     }
 
-    async fn search_skills(
-        &self,
-        ctx: RequestContext,
-        search: SkillSearch,
-    ) -> Result<Vec<Skill>> {
+    async fn search_skills(&self, ctx: RequestContext, search: SkillSearch) -> Result<Vec<Skill>> {
         self.skill_dal.search(ctx, search).await
     }
 
@@ -233,7 +212,12 @@ impl SkillManage for HrDomainImpl {
         // 乐观锁校验
         if let Some(expected) = expected_updated_at {
             if po.updated_at != expected {
-                bail_err!(Conflict, "Skill updated_at mismatch: expected {}, current {}", expected, po.updated_at);
+                bail_err!(
+                    Conflict,
+                    "Skill updated_at mismatch: expected {}, current {}",
+                    expected,
+                    po.updated_at
+                );
             }
         }
 
@@ -276,7 +260,10 @@ pub(crate) fn validate_skill_import_target_path(target_path: &str) -> Result<()>
     }
 
     if target_path.contains('\\') {
-        bail_err!(InvalidRequest, "Skill import target_path 不能包含反斜杠路径分隔符");
+        bail_err!(
+            InvalidRequest,
+            "Skill import target_path 不能包含反斜杠路径分隔符"
+        );
     }
 
     if target_path.ends_with('/') {
@@ -287,7 +274,10 @@ pub(crate) fn validate_skill_import_target_path(target_path: &str) -> Result<()>
     if components.len() == 1
         && matches!(components[0], Component::Normal(part) if part.eq_ignore_ascii_case("skill.md"))
     {
-        bail_err!(InvalidRequest, "Skill import target_path 不能覆盖主内容文件 skill.md");
+        bail_err!(
+            InvalidRequest,
+            "Skill import target_path 不能覆盖主内容文件 skill.md"
+        );
     }
 
     for component in path.components() {

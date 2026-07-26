@@ -1,13 +1,13 @@
 //! Task DAO 模块
 
-use common::error::Result;
-use common::models::{TaskStats, CallSummary, StatsFetchOptions};
 use crate::models::task::TaskPo;
 use crate::models::vector::{VectorIndexParams, VectorRow, VectorSearchHit};
 use crate::pkg::RequestContext;
-use crate::pkg::stats::{StatFilter, StatAggregation, StatEvent, Stats};
+use crate::pkg::stats::{StatAggregation, StatEvent, StatFilter, Stats};
 use common::enums::AssigneeType;
 use common::enums::TaskStatus;
+use common::error::Result;
+use common::models::{CallSummary, StatsFetchOptions, TaskStats};
 use serde_json::Value as JsonValue;
 
 /// Task 查询参数
@@ -45,7 +45,11 @@ pub trait TaskDao: Send + Sync + std::fmt::Debug {
     /// 根据 ID 查询任务
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<TaskPo>>;
     /// 通用查询
-    async fn query(&self, ctx: RequestContext, query: TaskQuery) -> Result<common::api::PagedResult<TaskPo>>;
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: TaskQuery,
+    ) -> Result<common::api::PagedResult<TaskPo>>;
 
     /// 全文检索任务（FTS5 MATCH + BM25 排序）
     ///
@@ -89,11 +93,7 @@ pub trait TaskDao: Send + Sync + std::fmt::Debug {
         modified_by: &str,
     ) -> Result<()>;
     /// 统计分配对象的任务总数
-    async fn count_by_assignee(
-        &self,
-        ctx: RequestContext,
-        assignee_id: &str,
-    ) -> Result<u64>;
+    async fn count_by_assignee(&self, ctx: RequestContext, assignee_id: &str) -> Result<u64>;
     /// 统计分配对象指定状态的任务数
     async fn count_by_assignee_and_status(
         &self,
@@ -128,11 +128,8 @@ pub trait TaskVectorDao: Send + Sync {
     ) -> Result<Vec<VectorSearchHit>>;
 
     /// 获取指定任务的完整向量行数据（包含元信息）
-    async fn get_vector_row(
-        &self,
-        ctx: RequestContext,
-        task_id: &str,
-    ) -> Result<Option<VectorRow>>;
+    async fn get_vector_row(&self, ctx: RequestContext, task_id: &str)
+    -> Result<Option<VectorRow>>;
 
     /// 删除任务的向量索引
     async fn delete_vector(&self, ctx: RequestContext, task_id: &str) -> Result<()>;
@@ -170,7 +167,11 @@ pub trait TaskStatsDao: Send + Sync {
     }
 
     /// 底层通用查询（内部使用，不对外暴露业务语义）
-    async fn query_task_calls(&self, ctx: RequestContext, query: TaskStatsQuery) -> Result<Vec<JsonValue>>;
+    async fn query_task_calls(
+        &self,
+        ctx: RequestContext,
+        query: TaskStatsQuery,
+    ) -> Result<Vec<JsonValue>>;
 
     /// Task 业务事件总次数
     async fn sum_calls(&self, ctx: RequestContext, mut query: TaskStatsQuery) -> Result<u64> {
@@ -183,7 +184,12 @@ pub trait TaskStatsDao: Send + Sync {
     }
 
     /// 获取 Task 自身统计数据
-    async fn get_stats(&self, ctx: RequestContext, query: TaskStatsQuery, options: StatsFetchOptions) -> Result<TaskStats> {
+    async fn get_stats(
+        &self,
+        ctx: RequestContext,
+        query: TaskStatsQuery,
+        options: StatsFetchOptions,
+    ) -> Result<TaskStats> {
         let mut stats = TaskStats::default();
 
         if options.with_call_summary {
@@ -203,7 +209,11 @@ pub trait TaskStatsDao: Send + Sync {
                 };
                 let range_calls = self.sum_calls(ctx.clone(), range_query).await?;
                 let duration_secs = (end - start) as f64 / 1000.0;
-                if duration_secs > 0.0 { Some(range_calls as f64 / duration_secs) } else { None }
+                if duration_secs > 0.0 {
+                    Some(range_calls as f64 / duration_secs)
+                } else {
+                    None
+                }
             } else {
                 None
             };

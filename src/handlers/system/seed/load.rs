@@ -10,10 +10,7 @@ use crate::pkg::RequestContext;
 use crate::service::domain::system::seed::store;
 
 #[generate_http_handler]
-pub async fn load_seed(
-    ctx: RequestContext,
-    params: LoadSeedRequest,
-) -> Result<LoadSeedResponse> {
+pub async fn load_seed(ctx: RequestContext, params: LoadSeedRequest) -> Result<LoadSeedResponse> {
     super::check_super_admin(&ctx)?;
 
     let dir = store::seeds_dir();

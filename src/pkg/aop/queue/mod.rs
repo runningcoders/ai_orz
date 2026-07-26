@@ -1,8 +1,8 @@
 mod in_memory;
 
+use crate::pkg::RequestContext;
 use async_trait::async_trait;
 use common::error::Result;
-use crate::pkg::RequestContext;
 use serde::Serialize;
 
 pub use in_memory::InMemoryEventQueue;
@@ -77,7 +77,11 @@ impl Default for EventQueryFilter {
 #[async_trait]
 pub trait EventQueue: Send + Sync + std::fmt::Debug + 'static {
     async fn enqueue(&self, ctx: RequestContext, event: serde_json::Value) -> Result<()>;
-    async fn enqueue_batch(&self, ctx: RequestContext, events: Vec<serde_json::Value>) -> Result<()>;
+    async fn enqueue_batch(
+        &self,
+        ctx: RequestContext,
+        events: Vec<serde_json::Value>,
+    ) -> Result<()>;
     async fn dequeue_next(&self, ctx: RequestContext) -> Result<Option<serde_json::Value>>;
     async fn ack(&self, ctx: RequestContext, event_id: &str) -> Result<()>;
     async fn nack(&self, ctx: RequestContext, event_id: &str) -> Result<()>;

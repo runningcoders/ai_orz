@@ -1,19 +1,22 @@
 //! Project Stats DAO DuckDB 单元测试
 
-use crate::pkg::stats::*;
 use crate::pkg::request_context_test_support;
-use crate::service::dao::project::{ProjectStatsDao, ProjectStatsQuery};
+use crate::pkg::stats::*;
 use crate::service::dao::project::stats_duckdb::stats_new;
+use crate::service::dao::project::{ProjectStatsDao, ProjectStatsQuery};
+use chrono::Utc;
 use common::error::Result;
 use common::models::StatsFetchOptions;
-use chrono::Utc;
 use sqlx::SqlitePool;
 use tempfile::tempdir;
 
 async fn setup_test_env(
     project_id: &str,
     event_count: usize,
-) -> Result<(crate::pkg::RequestContext, std::sync::Arc<dyn ProjectStatsDao<ProjectEvent = ProjectEvent>>)> {
+) -> Result<(
+    crate::pkg::RequestContext,
+    std::sync::Arc<dyn ProjectStatsDao<ProjectEvent = ProjectEvent>>,
+)> {
     let dir = tempdir()?;
     let db_path = dir.path().join("stats.db");
     let db_path_str = db_path.to_str().unwrap();

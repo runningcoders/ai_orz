@@ -3,16 +3,18 @@
 //! 基础消息数据访问层，提供消息保存和查询能力
 //! 所有保存的消息都会自动发布到 AOP 事件中心
 
-use common::error::Result;
+use crate::models::events::MessageCreatedEvent;
 use crate::models::message::{Message, MessagePo};
 use crate::models::vector::{VectorIndexParams, Vectorizable};
 use crate::pkg::RequestContext;
 use crate::pkg::aop;
-use crate::models::events::MessageCreatedEvent;
 use crate::service::dao::cortex::CortexDao;
-use crate::service::dao::message::{self, MessageDao, MessageQuery, MessageSearch, MessageVectorDao};
+use crate::service::dao::message::{
+    self, MessageDao, MessageQuery, MessageSearch, MessageVectorDao,
+};
 use crate::service::dao::model_provider::ModelProviderDao;
 use common::enums::MessageStatus;
+use common::error::Result;
 use std::sync::{Arc, OnceLock};
 
 static MESSAGE_DAL: OnceLock<Arc<dyn MessageDal>> = OnceLock::new();
@@ -48,11 +50,7 @@ pub fn new(
 pub trait MessageDal: Send + Sync {
     async fn save_message(&self, ctx: RequestContext, message: &Message) -> Result<()>;
 
-    async fn query(
-        &self,
-        ctx: RequestContext,
-        query: MessageQuery,
-    ) -> Result<Vec<Message>>;
+    async fn query(&self, ctx: RequestContext, query: MessageQuery) -> Result<Vec<Message>>;
 
     async fn list_by_task_id(
         &self,
@@ -107,11 +105,7 @@ pub trait MessageDal: Send + Sync {
 
     async fn delete_by_task_id(&self, ctx: RequestContext, task_id: &str) -> Result<()>;
 
-    async fn search(
-        &self,
-        ctx: RequestContext,
-        search: MessageSearch,
-    ) -> Result<Vec<Message>>;
+    async fn search(&self, ctx: RequestContext, search: MessageSearch) -> Result<Vec<Message>>;
 
     async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()>;
 }
@@ -187,11 +181,7 @@ impl MessageDal for MessageDalImpl {
         Ok(())
     }
 
-    async fn query(
-        &self,
-        ctx: RequestContext,
-        query: MessageQuery,
-    ) -> Result<Vec<Message>> {
+    async fn query(&self, ctx: RequestContext, query: MessageQuery) -> Result<Vec<Message>> {
         let pos = self.message_dao.query(ctx, query).await?;
         Ok(pos.into_iter().map(Message::from_po).collect())
     }
@@ -332,11 +322,7 @@ impl MessageDal for MessageDalImpl {
         self.message_dao.delete_by_task_id(ctx, task_id).await
     }
 
-    async fn search(
-        &self,
-        ctx: RequestContext,
-        search: MessageSearch,
-    ) -> Result<Vec<Message>> {
+    async fn search(&self, ctx: RequestContext, search: MessageSearch) -> Result<Vec<Message>> {
         let (keyword_matches, vector_matches) = do_search(
             &*self.message_dao,
             &*self.message_vector_dao,
@@ -345,17 +331,15 @@ impl MessageDal for MessageDalImpl {
         )
         .await?;
 
-        let merged = merge_search_results(
-            keyword_matches,
-            vector_matches,
-            &search,
-        );
+        let merged = merge_search_results(keyword_matches, vector_matches, &search);
 
         Ok(merged)
     }
 
     async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()> {
-        self.message_vector_dao.clear_collection(ctx.clone()).await?;
+        self.message_vector_dao
+            .clear_collection(ctx.clone())
+            .await?;
 
         let messages = self.query(ctx.clone(), MessageQuery::default()).await?;
         sys_info!("rebuilding vector index for {} messages", messages.len());
@@ -431,22 +415,29 @@ async fn do_search(
     use crate::models::vector::{MatchType, SearchMatchInfo};
 
     let keyword_matches = if search.keyword.is_some() {
-        let results = message_dao.search_messages(ctx.clone(), search.clone()).await?;
-        results.into_iter().map(|(po, fts_rank)| {
-            let mut msg = Message::from_po(po);
-            msg.search_match = Some(SearchMatchInfo {
-                match_type: MatchType::Keyword,
-                fts_rank,
-                ..Default::default()
-            });
-            msg
-        }).collect()
+        let results = message_dao
+            .search_messages(ctx.clone(), search.clone())
+            .await?;
+        results
+            .into_iter()
+            .map(|(po, fts_rank)| {
+                let mut msg = Message::from_po(po);
+                msg.search_match = Some(SearchMatchInfo {
+                    match_type: MatchType::Keyword,
+                    fts_rank,
+                    ..Default::default()
+                });
+                msg
+            })
+            .collect()
     } else {
         Vec::new()
     };
 
     let vector_matches = if let Some(query_vector) = &search.query_vector {
-        let results = message_vector_dao.search_vector(ctx.clone(), query_vector, search.top_k.unwrap_or(20)).await?;
+        let results = message_vector_dao
+            .search_vector(ctx.clone(), query_vector, search.top_k.unwrap_or(20))
+            .await?;
         let mut matches = Vec::new();
         for hit in results {
             if let Ok(Some(po)) = message_dao.find_by_id(ctx.clone(), &hit.row.id).await {
@@ -517,7 +508,11 @@ fn merge_search_results(
     scored_results.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
     let limit = search.filters.limit.unwrap_or(20);
-    scored_results.into_iter().take(limit).map(|(_, msg)| msg).collect()
+    scored_results
+        .into_iter()
+        .take(limit)
+        .map(|(_, msg)| msg)
+        .collect()
 }
 
 fn enrich_ctx(ctx: &RequestContext, po: &MessagePo) -> RequestContext {

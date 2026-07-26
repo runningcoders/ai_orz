@@ -2,7 +2,6 @@
 //!
 //! 通用上传文件资产 CRUD 测试，属于 Finance Domain。
 
-use common::error::{Error, Result};
 use crate::models::attachment::{
     Attachment, AttachmentGetOptions, AttachmentReadResult, AttachmentTextContent,
     AttachmentUpload, TextAttachmentCreate, TextContentUpdate,
@@ -10,6 +9,7 @@ use crate::models::attachment::{
 use crate::pkg::RequestContext;
 use crate::service::dao::attachment::AttachmentQuery;
 use crate::service::domain::finance;
+use common::error::{Error, Result};
 use sqlx::SqlitePool;
 use std::sync::Arc;
 
@@ -221,7 +221,10 @@ fn text_attachment_domain_contract_types_are_available() {
     assert_eq!(content.encoding, "utf-8");
     assert_eq!(content.attachment.read_results.len(), 1);
 
-    assert_eq!(common::error::Error::conflict("stale".to_string()).http_status(), 409);
+    assert_eq!(
+        common::error::Error::conflict("stale".to_string()).http_status(),
+        409
+    );
     assert_eq!(
         common::error::Error::payload_too_large("too large".to_string()).http_status(),
         413

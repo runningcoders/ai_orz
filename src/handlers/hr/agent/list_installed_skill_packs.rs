@@ -1,10 +1,10 @@
 //! Handler: GET /api/v1/agents/{agent_id}/skill-packs - List installed skill packs
 
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListInstalledSkillPacksRequest, ListSkillPacksResponse};
+use common::error::Result;
 
 /// List all skill pack tags installed on an agent.
 #[register_handler_tool(

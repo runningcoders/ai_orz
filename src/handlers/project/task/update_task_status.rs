@@ -1,11 +1,11 @@
 //! Handler: PUT /api/v1/tasks/{id}/status - Update task status (state transition)
 
 use super::response;
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::project::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateTaskStatusRequest, UpdateTaskStatusResponse};
+use common::error::Result;
 
 use crate::enrich_ctx;
 

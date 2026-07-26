@@ -345,7 +345,8 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
 
             // 为非 flatten query 字段生成提取代码
             let extract_query_fields = {
-                let query_idents_str: Vec<String> = query_idents.iter().map(|i| i.to_string()).collect();
+                let query_idents_str: Vec<String> =
+                    query_idents.iter().map(|i| i.to_string()).collect();
                 quote! {
                     #(
                         if let Some(__v) = __query_value.get(#query_idents_str) {
@@ -576,7 +577,12 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
 /// query fields annotated with `#[serde(flatten)]`.
 fn collect_path_and_query_fields_from_type(
     path: syn::Path,
-) -> (Vec<(Ident, Type)>, Vec<(Ident, Type)>, Vec<(Ident, Type)>, usize) {
+) -> (
+    Vec<(Ident, Type)>,
+    Vec<(Ident, Type)>,
+    Vec<(Ident, Type)>,
+    usize,
+) {
     // Get the last segment (the type name)
     let type_name = path.segments.last().unwrap().ident.to_string();
 
@@ -652,10 +658,13 @@ fn collect_path_and_query_fields_from_type(
                                                                         });
 
                                                                         if is_flattened {
-                                                                            flattened_query_fields.push((
-                                                                                ident.clone(),
-                                                                                field.ty.clone(),
-                                                                            ));
+                                                                            flattened_query_fields
+                                                                                .push((
+                                                                                    ident.clone(),
+                                                                                    field
+                                                                                        .ty
+                                                                                        .clone(),
+                                                                                ));
                                                                         } else {
                                                                             query_fields.push((
                                                                                 ident.clone(),
@@ -676,7 +685,12 @@ fn collect_path_and_query_fields_from_type(
                                         }
                                     }
                                 }
-                                return (path_fields, query_fields, flattened_query_fields, total_named_fields);
+                                return (
+                                    path_fields,
+                                    query_fields,
+                                    flattened_query_fields,
+                                    total_named_fields,
+                                );
                             }
                         }
                     }

@@ -15,7 +15,9 @@ use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-use common::api::{CreateCronTriggerRequest, ListCronTriggersResponseItem, UpdateCronTriggerRequest};
+use common::api::{
+    CreateCronTriggerRequest, ListCronTriggersResponseItem, UpdateCronTriggerRequest,
+};
 use common::enums::TriggerType;
 
 /// 时间戳格式化（秒级时间戳 → "YYYY-MM-DD HH:MM:SS"）
@@ -108,12 +110,7 @@ fn trigger_type_badge_class(t: TriggerType) -> &'static str {
     }
 }
 
-fn schedule_text(
-    t: TriggerType,
-    cron: &str,
-    interval: Option<i64>,
-    run_at: Option<i64>,
-) -> String {
+fn schedule_text(t: TriggerType, cron: &str, interval: Option<i64>, run_at: Option<i64>) -> String {
     match t {
         TriggerType::Cron => cron.to_string(),
         TriggerType::Interval => format!("每 {} 秒", interval.unwrap_or(0)),
@@ -334,7 +331,8 @@ pub fn SystemTriggers() -> Element {
         TriggerEditMode::Edit(_) => "编辑触发器".to_string(),
     };
 
-    let json_placeholder = r#"{"action":"agent_rest","extra":{"agent_id":"xxx","settle_limit":10}}"#;
+    let json_placeholder =
+        r#"{"action":"agent_rest","extra":{"agent_id":"xxx","settle_limit":10}}"#;
 
     rsx! {
         AppLayout {

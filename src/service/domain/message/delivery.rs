@@ -1,6 +1,5 @@
 //! Message Delivery 具体实现
 
-use common::error::{bail_err, err, Result};
 use crate::models::file::FileMeta;
 use crate::models::message::Message;
 use crate::models::message::MessagePo;
@@ -14,6 +13,7 @@ use crate::service::domain::message::{
     ToolCallExecutionOutcome,
 };
 use common::enums::{FileType, MessageRole, MessageType};
+use common::error::{Result, bail_err, err};
 use serde_json::json;
 
 use crate::enrich_ctx;
@@ -73,14 +73,10 @@ impl MessageDelivery for MessageDomainImpl {
         // 作为链根而非当前消息 ID，使后续回复都能归到父消息下（父消息自身
         // root_id 仍为 None 但不影响新消息分组）
         let chain_root_id = match cmd.reply_to_id {
-            Some(parent_id) => {
-                match self.message_dal.find_by_id(ctx.clone(), parent_id).await {
-                    Ok(Some(parent)) => {
-                        parent.po.root_id.unwrap_or_else(|| parent_id.to_string())
-                    }
-                    _ => root_msg_id.clone(),
-                }
-            }
+            Some(parent_id) => match self.message_dal.find_by_id(ctx.clone(), parent_id).await {
+                Ok(Some(parent)) => parent.po.root_id.unwrap_or_else(|| parent_id.to_string()),
+                _ => root_msg_id.clone(),
+            },
             None => root_msg_id.clone(),
         };
 
@@ -94,7 +90,10 @@ impl MessageDelivery for MessageDomainImpl {
                     .ok_or_else(|| err!(ResourceNotFound, "Attachment {} not found", att_id))?;
 
                 // 校验归属：附件必须属于当前用户
-                if !cmd.from_id.is_empty() && attachment.po.root_user_id != cmd.from_id && ctx.uid() != attachment.po.root_user_id {
+                if !cmd.from_id.is_empty()
+                    && attachment.po.root_user_id != cmd.from_id
+                    && ctx.uid() != attachment.po.root_user_id
+                {
                     bail_err!(InvalidRequest, "Attachment {} 不属于当前用户", att_id);
                 }
 
@@ -126,7 +125,9 @@ impl MessageDelivery for MessageDomainImpl {
 
                 let att_message = Message::from_po(att_po);
                 let att_ctx = enrich_ctx!(&ctx, &att_message);
-                self.message_dal.save_message(att_ctx.clone(), &att_message).await?;
+                self.message_dal
+                    .save_message(att_ctx.clone(), &att_message)
+                    .await?;
             }
         }
 
@@ -174,12 +175,10 @@ impl MessageDelivery for MessageDomainImpl {
         // root_id 继承：如果有 reply_to_id，查询父消息的 root_id；否则自身为 root
         // fallback：若父消息 root_id 为 None（历史遗留数据），用父消息 ID 作为链根
         let root_id = match cmd.reply_to_id {
-            Some(parent_id) => {
-                match self.message_dal.find_by_id(ctx.clone(), parent_id).await {
-                    Ok(Some(parent)) => parent.po.root_id.unwrap_or_else(|| parent_id.to_string()),
-                    _ => id.clone(),
-                }
-            }
+            Some(parent_id) => match self.message_dal.find_by_id(ctx.clone(), parent_id).await {
+                Ok(Some(parent)) => parent.po.root_id.unwrap_or_else(|| parent_id.to_string()),
+                _ => id.clone(),
+            },
             None => id.clone(),
         };
 
@@ -241,7 +240,7 @@ impl MessageDelivery for MessageDomainImpl {
         payload.from_model_provider_id = ctx.model_provider_id().cloned();
         payload.from_model_name = ctx.model_name().cloned();
 
-         let content = serde_json::to_string(&payload)
+        let content = serde_json::to_string(&payload)
             .map_err(|e| err!(Internal, "failed to serialize tool call request").with_source(e))?;
 
         let po = MessagePo::new(
@@ -278,8 +277,10 @@ impl MessageDelivery for MessageDomainImpl {
             bail_err!(InvalidRequest, "request_message must be ToolCallRequest");
         }
 
-         let request: ToolCallMessage = serde_json::from_str(&cmd.request_message.po.content)
-            .map_err(|e| err!(InvalidRequest, "invalid tool call request message").with_source(e))?;
+        let request: ToolCallMessage = serde_json::from_str(&cmd.request_message.po.content)
+            .map_err(|e| {
+                err!(InvalidRequest, "invalid tool call request message").with_source(e)
+            })?;
 
         let (mut result_payload, trace_ref) = match cmd.outcome {
             ToolCallExecutionOutcome::Success {
@@ -299,7 +300,7 @@ impl MessageDelivery for MessageDomainImpl {
             result_payload.trace_ref = Some(trace_ref);
         }
 
-         let content = serde_json::to_string(&result_payload)
+        let content = serde_json::to_string(&result_payload)
             .map_err(|e| err!(Internal, "failed to serialize tool call result").with_source(e))?;
 
         let id = generate_id();
@@ -348,8 +349,9 @@ impl MessageDelivery for MessageDomainImpl {
             cmd.to_agent_id.to_string(),
         );
 
-        let content = serde_json::to_string(&payload)
-            .map_err(|e| err!(Internal, "failed to serialize task assignment message").with_source(e))?;
+        let content = serde_json::to_string(&payload).map_err(|e| {
+            err!(Internal, "failed to serialize task assignment message").with_source(e)
+        })?;
 
         let po = MessagePo::new(
             id.clone(),
@@ -382,13 +384,19 @@ impl MessageDelivery for MessageDomainImpl {
         cmd: DeliverMessageCommand<'_>,
     ) -> Result<crate::service::dal::message_channel::DeliveryResult> {
         // 1. 投递到已配置的消息渠道（飞书/微信/钉钉等）
-        let channel_result = self.message_channel_dal
+        let channel_result = self
+            .message_channel_dal
             .deliver_message(ctx.clone(), cmd.message, cmd.user_id)
             .await?;
 
         // 2. 投递到 SSE 长连接（如果用户有在线连接）
         let file_meta = cmd.message.file_meta().map(|fm| {
-            let name = fm.file_path.rsplit('/').next().unwrap_or(&fm.file_path).to_string();
+            let name = fm
+                .file_path
+                .rsplit('/')
+                .next()
+                .unwrap_or(&fm.file_path)
+                .to_string();
             common::api::message::FileMetaInfo {
                 name,
                 mime_type: fm.mime_type.clone(),
@@ -411,7 +419,8 @@ impl MessageDelivery for MessageDomainImpl {
             file_type: cmd.message.file_type().map(|ft| ft as i32),
             file_meta,
         };
-        let sse_result = self.message_push_dal
+        let sse_result = self
+            .message_push_dal
             .push_to_sse(ctx, cmd.user_id, &sse_payload)
             .await;
 
@@ -432,7 +441,8 @@ impl MessageDelivery for MessageDomainImpl {
         user_id: &str,
     ) -> Result<super::SubscribeResult> {
         let connection_id = uuid::Uuid::now_v7().to_string();
-        let receiver = self.message_push_dal
+        let receiver = self
+            .message_push_dal
             .subscribe_sse(ctx, user_id, &connection_id)
             .await;
         Ok(super::SubscribeResult {
@@ -441,12 +451,10 @@ impl MessageDelivery for MessageDomainImpl {
         })
     }
 
-    async fn unsubscribe_sse(
-        &self,
-        ctx: RequestContext,
-        connection_id: &str,
-    ) -> Result<()> {
-        self.message_push_dal.unsubscribe_sse(ctx, connection_id).await;
+    async fn unsubscribe_sse(&self, ctx: RequestContext, connection_id: &str) -> Result<()> {
+        self.message_push_dal
+            .unsubscribe_sse(ctx, connection_id)
+            .await;
         Ok(())
     }
 }

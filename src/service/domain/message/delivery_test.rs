@@ -29,11 +29,7 @@ impl ModelProviderDao for MockModelProviderDao {
     async fn insert(&self, _ctx: RequestContext, _provider: &ModelProviderPo) -> Result<()> {
         Ok(())
     }
-    async fn find_by_id(
-        &self,
-        _ctx: RequestContext,
-        _id: &str,
-    ) -> Result<Option<ModelProviderPo>> {
+    async fn find_by_id(&self, _ctx: RequestContext, _id: &str) -> Result<Option<ModelProviderPo>> {
         Ok(None)
     }
     async fn query(
@@ -41,7 +37,10 @@ impl ModelProviderDao for MockModelProviderDao {
         _ctx: RequestContext,
         _query: ModelProviderQuery,
     ) -> Result<common::api::PagedResult<ModelProviderPo>> {
-        Ok(common::api::PagedResult { items: Vec::new(), total: 0 })
+        Ok(common::api::PagedResult {
+            items: Vec::new(),
+            total: 0,
+        })
     }
     async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<ModelProviderPo>> {
         Ok(Vec::new())
@@ -146,8 +145,7 @@ fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDomain>, RequestContext) {
     let message_vector_dao = crate::service::dao::message::vector::new();
     // 初始化 Attachment DAO/DAL（每个测试独立临时目录）
     let tmp_dir = std::env::temp_dir().join(format!("ai_orz_test_{}", uuid::Uuid::now_v7()));
-    let attachment_dao =
-        crate::service::dao::attachment::new_with_attachments_dir(tmp_dir);
+    let attachment_dao = crate::service::dao::attachment::new_with_attachments_dir(tmp_dir);
     let attachment_dal = crate::service::dal::attachment::new(attachment_dao);
     crate::service::dal::attachment::set_for_test(attachment_dal.clone());
     let cortex_dao: Arc<dyn CortexDao> = Arc::new(MockCortexDao);

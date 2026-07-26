@@ -2,9 +2,9 @@
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
     use crate::service::domain::system::seed::defs::*;
     use crate::service::domain::system::seed::diff::*;
+    use std::collections::HashMap;
 
     fn make_test_snapshot(name: &str) -> SeedSnapshot {
         SeedSnapshot {
@@ -103,7 +103,8 @@ mod tests {
     #[test]
     fn test_resolve_password_inherit_current() {
         let sensitive = HashMap::new();
-        let result = resolve_password(INHERIT_CURRENT, "U1", &sensitive, Some("current_hash")).unwrap();
+        let result =
+            resolve_password(INHERIT_CURRENT, "U1", &sensitive, Some("current_hash")).unwrap();
         assert_eq!(result, "current_hash");
     }
 
@@ -129,19 +130,29 @@ mod tests {
         let name = "test-snapshot";
         let content = r#"{"version": "1.0.0"}"#;
 
-        let size = crate::service::domain::system::seed::store::write_file(&dir, name, content).await.unwrap();
+        let size = crate::service::domain::system::seed::store::write_file(&dir, name, content)
+            .await
+            .unwrap();
         assert_eq!(size, content.len() as u64);
 
-        let resp = crate::service::domain::system::seed::store::read_file(&dir, name).await.unwrap();
+        let resp = crate::service::domain::system::seed::store::read_file(&dir, name)
+            .await
+            .unwrap();
         assert_eq!(resp.content, content);
         assert_eq!(resp.name, "test-snapshot.json");
 
-        let files = crate::service::domain::system::seed::store::list_files(&dir).await.unwrap();
+        let files = crate::service::domain::system::seed::store::list_files(&dir)
+            .await
+            .unwrap();
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].name, "test-snapshot.json");
 
-        crate::service::domain::system::seed::store::delete_file(&dir, name).await.unwrap();
-        let files = crate::service::domain::system::seed::store::list_files(&dir).await.unwrap();
+        crate::service::domain::system::seed::store::delete_file(&dir, name)
+            .await
+            .unwrap();
+        let files = crate::service::domain::system::seed::store::list_files(&dir)
+            .await
+            .unwrap();
         assert_eq!(files.len(), 0);
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -149,18 +160,31 @@ mod tests {
 
     #[test]
     fn test_validate_seed_filename_rejects_path_traversal() {
-        assert!(crate::service::domain::system::seed::store::validate_seed_filename("../../../etc/passwd").is_err());
-        assert!(crate::service::domain::system::seed::store::validate_seed_filename("a/b").is_err());
+        assert!(
+            crate::service::domain::system::seed::store::validate_seed_filename(
+                "../../../etc/passwd"
+            )
+            .is_err()
+        );
+        assert!(
+            crate::service::domain::system::seed::store::validate_seed_filename("a/b").is_err()
+        );
         assert!(crate::service::domain::system::seed::store::validate_seed_filename("").is_err());
-        assert!(crate::service::domain::system::seed::store::validate_seed_filename("..secret").is_err());
+        assert!(
+            crate::service::domain::system::seed::store::validate_seed_filename("..secret")
+                .is_err()
+        );
     }
 
     #[test]
     fn test_validate_seed_filename_appends_json_extension() {
-        let name = crate::service::domain::system::seed::store::validate_seed_filename("snapshot").unwrap();
+        let name = crate::service::domain::system::seed::store::validate_seed_filename("snapshot")
+            .unwrap();
         assert_eq!(name, "snapshot.json");
 
-        let name = crate::service::domain::system::seed::store::validate_seed_filename("snapshot.json").unwrap();
+        let name =
+            crate::service::domain::system::seed::store::validate_seed_filename("snapshot.json")
+                .unwrap();
         assert_eq!(name, "snapshot.json");
     }
 
@@ -172,7 +196,13 @@ mod tests {
         assert_eq!(snapshot.model_providers.len(), 2);
         assert_eq!(snapshot.agents.len(), 1);
         assert_eq!(snapshot.skills.len(), 0);
-        assert_eq!(snapshot.agents[0].model_provider_id, "TEMPLATE_CHAT_PROVIDER");
-        assert_eq!(snapshot.users[0].password_ref, super::super::defs::PENDING_INPUT);
+        assert_eq!(
+            snapshot.agents[0].model_provider_id,
+            "TEMPLATE_CHAT_PROVIDER"
+        );
+        assert_eq!(
+            snapshot.users[0].password_ref,
+            super::super::defs::PENDING_INPUT
+        );
     }
 }

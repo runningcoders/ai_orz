@@ -132,7 +132,8 @@ impl ToolCallDao for ToolCallDaoImpl {
                     ErrorCode::ToolExecutionFailed,
                     ErrorType::Tool,
                     error.to_string(),
-                ).with_source(error);
+                )
+                .with_source(error);
                 // 失败时 entry 被 consume 构造 trace_ref，Error 已携带 trace_ref
                 let trace_ref = ToolCallTraceRef {
                     tool_id: entry.tool_id,
@@ -142,7 +143,7 @@ impl ToolCallDao for ToolCallDaoImpl {
                 field.set_trace_ref(trace_ref);
                 err = err.with_field(field);
                 Err(err.into())
-            },
+            }
         }
     }
 }

@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{api_delete, api_get, api_get_or_default, api_post, api_post_empty, api_put, ApiError};
+use super::{ApiError, api_delete, api_get, api_get_or_default, api_post, api_post_empty, api_put};
 
 /// 健康检查（返回纯文本）
 pub async fn check_health() -> Result<String, ApiError> {
@@ -19,11 +19,16 @@ pub async fn get_cron_trigger(id: &str) -> Result<common::api::GetCronTriggerRes
     api_get(&format!("/api/v1/system/cron-triggers/{}", id)).await
 }
 
-pub async fn create_cron_trigger(req: common::api::CreateCronTriggerRequest) -> Result<common::api::CreateCronTriggerResponse, ApiError> {
+pub async fn create_cron_trigger(
+    req: common::api::CreateCronTriggerRequest,
+) -> Result<common::api::CreateCronTriggerResponse, ApiError> {
     api_post("/api/v1/system/cron-triggers", &req).await
 }
 
-pub async fn update_cron_trigger(id: &str, req: common::api::UpdateCronTriggerRequest) -> Result<common::api::UpdateCronTriggerResponse, ApiError> {
+pub async fn update_cron_trigger(
+    id: &str,
+    req: common::api::UpdateCronTriggerRequest,
+) -> Result<common::api::UpdateCronTriggerResponse, ApiError> {
     api_put(&format!("/api/v1/system/cron-triggers/{}", id), &req).await
 }
 
@@ -38,7 +43,11 @@ pub async fn pause_cron_trigger(id: &str) -> Result<(), ApiError> {
 
 pub async fn resume_cron_trigger(id: &str) -> Result<(), ApiError> {
     let body = serde_json::json!({});
-    api_post_empty(&format!("/api/v1/system/cron-triggers/{}/resume", id), &body).await
+    api_post_empty(
+        &format!("/api/v1/system/cron-triggers/{}/resume", id),
+        &body,
+    )
+    .await
 }
 
 // ===== 备份管理 =====
@@ -253,7 +262,13 @@ pub async fn get_queue_stats(consumer: &str) -> Result<QueueStatsResponse, ApiEr
 }
 
 /// 查询事件列表
-pub async fn list_events(consumer: &str, order_key: Option<&str>, status: Option<&str>, limit: usize, offset: usize) -> Result<Vec<EventSummaryResponse>, ApiError> {
+pub async fn list_events(
+    consumer: &str,
+    order_key: Option<&str>,
+    status: Option<&str>,
+    limit: usize,
+    offset: usize,
+) -> Result<Vec<EventSummaryResponse>, ApiError> {
     let mut params = Vec::new();
     if let Some(ok) = order_key {
         params.push(format!("order_key={}", url_encode(ok)));
@@ -278,7 +293,11 @@ pub async fn list_events(consumer: &str, order_key: Option<&str>, status: Option
 
 /// 获取事件详情
 pub async fn get_event(consumer: &str, event_id: &str) -> Result<EventDetailResponse, ApiError> {
-    api_get(&format!("/api/v1/system/aop/{}/events/{}", consumer, event_id)).await
+    api_get(&format!(
+        "/api/v1/system/aop/{}/events/{}",
+        consumer, event_id
+    ))
+    .await
 }
 
 // ===== AOP 实时统计 =====
@@ -349,7 +368,10 @@ pub async fn get_aop_stats_distribution(
     group_by: &str,
     status: Option<&str>,
 ) -> Result<AopStatsDistributionResponse, ApiError> {
-    let mut path = format!("/api/v1/system/aop/stats/distribution?group_by={}", url_encode(group_by));
+    let mut path = format!(
+        "/api/v1/system/aop/stats/distribution?group_by={}",
+        url_encode(group_by)
+    );
     if let Some(s) = status {
         path.push_str(&format!("&status={}", url_encode(s)));
     }

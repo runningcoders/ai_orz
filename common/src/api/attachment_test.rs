@@ -1,8 +1,8 @@
+use crate::api::PaginationParams;
 use crate::api::{
     ApiResponse, AttachmentDetail, AttachmentListQuery, CreateTextAttachmentRequest,
     TextContentResponse, UpdateTextContentRequest,
 };
-use crate::api::PaginationParams;
 use crate::enums::FileType;
 
 #[test]
@@ -10,7 +10,10 @@ fn attachment_query_and_response_serialize_contract() {
     let query = AttachmentListQuery {
         purpose: Some("skill".to_string()),
         file_type: Some(FileType::Document),
-        pagination: PaginationParams { limit: Some(20), offset: Some(0) },
+        pagination: PaginationParams {
+            limit: Some(20),
+            offset: Some(0),
+        },
     };
     let query_json = serde_json::to_string(&query).unwrap();
     assert!(query_json.contains("skill"));

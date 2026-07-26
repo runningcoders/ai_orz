@@ -1,9 +1,9 @@
 //! User DAO 模块
 
-use common::error::Result;
-use common::api::PagedResult;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
+use common::api::PagedResult;
+use common::error::Result;
 
 /// User 查询参数
 #[derive(Debug, Clone, Default)]
@@ -24,11 +24,8 @@ pub trait UserDao: Send + Sync {
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<UserPo>>;
 
     /// 根据用户名查询用户（用于登录）
-    async fn find_by_username(
-        &self,
-        ctx: RequestContext,
-        username: &str,
-    ) -> Result<Option<UserPo>>;
+    async fn find_by_username(&self, ctx: RequestContext, username: &str)
+    -> Result<Option<UserPo>>;
 
     /// 通用查询
     async fn query(&self, ctx: RequestContext, query: UserQuery) -> Result<PagedResult<UserPo>>;
@@ -47,18 +44,10 @@ pub trait UserDao: Send + Sync {
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()>;
 
     /// 检查用户名是否已存在
-    async fn exists_by_username(
-        &self,
-        ctx: RequestContext,
-        username: &str,
-    ) -> Result<bool>;
+    async fn exists_by_username(&self, ctx: RequestContext, username: &str) -> Result<bool>;
 
     /// 统计组织下用户总数
-    async fn count_by_organization_id(
-        &self,
-        ctx: RequestContext,
-        org_id: &str,
-    ) -> Result<u64>;
+    async fn count_by_organization_id(&self, ctx: RequestContext, org_id: &str) -> Result<u64>;
 
     /// 统计符合查询条件的用户数量（复用 query 的 filter 逻辑，只跑 COUNT 不跑 LIST）
     async fn count(&self, ctx: RequestContext, query: UserQuery) -> Result<u64>;

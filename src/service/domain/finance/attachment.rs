@@ -9,8 +9,8 @@ use crate::models::attachment::{
 use crate::pkg::RequestContext;
 use crate::service::dao::attachment::AttachmentQuery;
 use crate::service::domain::finance::{AttachmentManage, FinanceDomainImpl};
+use common::error::{Result, bail_err, err};
 use std::path::{Component, Path};
-use common::error::{Result, err, bail_err};
 
 const MAX_TEXT_CONTENT_BYTES: usize = 64 * 1024;
 
@@ -186,7 +186,11 @@ fn validate_text_content(content: &str) -> Result<()> {
 
 fn validate_text_size(size: usize) -> Result<()> {
     if size > MAX_TEXT_CONTENT_BYTES {
-        bail_err!(PayloadTooLarge, "文本内容超过 {} bytes 限制", MAX_TEXT_CONTENT_BYTES);
+        bail_err!(
+            PayloadTooLarge,
+            "文本内容超过 {} bytes 限制",
+            MAX_TEXT_CONTENT_BYTES
+        );
     }
     Ok(())
 }

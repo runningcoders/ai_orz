@@ -7,10 +7,10 @@
 //! 飞书 SDK 全部封装在本模块（DAO 层），符合"封装为 dao 即可"的架构决策。
 //! 参考 `SsePushDao` 有状态 DAO 先例，本 DAO 管理 WebSocket 长连接状态。
 
-use common::error::Result;
 use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;
+use common::error::Result;
 use std::sync::Arc;
 
 pub mod error;
@@ -62,11 +62,7 @@ pub trait LarkDao: Send + Sync {
     ) -> Result<()>;
 
     /// 测试飞书应用凭证是否可用（获取 tenant_access_token）
-    async fn test_connection(
-        &self,
-        ctx: RequestContext,
-        channel: &MessageChannel,
-    ) -> Result<()>;
+    async fn test_connection(&self, ctx: RequestContext, channel: &MessageChannel) -> Result<()>;
 
     /// 启动飞书事件监听（WebSocket 长连接）
     ///

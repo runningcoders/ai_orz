@@ -34,7 +34,11 @@ pub struct RelationNodeInfo {
 impl RelationNodeInfo {
     /// 构造带类型标识的节点
     pub fn with_kind(id: String, name: String, kind: impl Into<String>) -> Self {
-        Self { id, name, kind: Some(kind.into()) }
+        Self {
+            id,
+            name,
+            kind: Some(kind.into()),
+        }
     }
 }
 

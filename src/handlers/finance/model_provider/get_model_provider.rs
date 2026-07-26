@@ -1,11 +1,11 @@
 //! Handler: GET /api/v1/model-providers/{id} - Get model provider detailed information
 
-use common::error::Result;
 use crate::pkg::RequestContext;
-use crate::service::domain::finance::domain;
 use crate::service::dal::model_provider::ModelProviderFetchOptions;
+use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetModelProviderRequest, GetModelProviderResponse};
+use common::error::Result;
 use common::models::StatsInterval;
 
 /// Get detailed information about a specific model provider configuration
@@ -35,7 +35,9 @@ pub async fn get_model_provider(
         .model_provider_manage()
         .get_model_provider_with_options(ctx, &params.id, options)
         .await?
-        .ok_or_else(|| common::error::Error::not_found(format!("ModelProvider {} not found", params.id)))?;
+        .ok_or_else(|| {
+            common::error::Error::not_found(format!("ModelProvider {} not found", params.id))
+        })?;
 
     Ok(GetModelProviderResponse {
         id: provider.po.id.clone(),

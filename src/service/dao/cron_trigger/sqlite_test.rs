@@ -1,13 +1,12 @@
-
 //! Cron Trigger DAO SQLite 单元测试
 
 use crate::models::cron_trigger::CronTriggerPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::cron_trigger::{self, CronTriggerDao, CronTriggerQuery};
 use common::enums::TriggerType;
+use common::error::Result;
 use sqlx::SqlitePool;
 use std::sync::Arc;
-use common::error::Result;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     crate::pkg::request_context_test_support::new_test_ctx(user_id, pool)
@@ -19,7 +18,12 @@ fn init_test_env(pool: SqlitePool) -> (Arc<dyn CronTriggerDao + Send + Sync>, Re
     (dao, ctx)
 }
 
-fn create_test_trigger(id: &str, name: &str, trigger_type: TriggerType, next_run_at: i64) -> CronTriggerPo {
+fn create_test_trigger(
+    id: &str,
+    name: &str,
+    trigger_type: TriggerType,
+    next_run_at: i64,
+) -> CronTriggerPo {
     CronTriggerPo::new(
         id.to_string(),
         name.to_string(),
@@ -52,7 +56,8 @@ async fn test_create_and_get_by_id(pool: SqlitePool) -> Result<()> {
 async fn test_list_by_trigger_type_and_is_enabled(pool: SqlitePool) -> Result<()> {
     let (dao, ctx) = init_test_env(pool);
     let cron_trigger = create_test_trigger("trigger-1", "cron-job", TriggerType::Cron, 1000);
-    let interval_trigger = create_test_trigger("trigger-2", "interval-job", TriggerType::Interval, 2000);
+    let interval_trigger =
+        create_test_trigger("trigger-2", "interval-job", TriggerType::Interval, 2000);
     let once_trigger = create_test_trigger("trigger-3", "once-job", TriggerType::Once, 3000);
 
     dao.create(ctx.clone(), &cron_trigger).await?;
@@ -198,7 +203,8 @@ async fn test_update_next_run_at(pool: SqlitePool) -> Result<()> {
     let trigger = create_test_trigger("trigger-1", "test-cron", TriggerType::Cron, 1000);
     dao.create(ctx.clone(), &trigger).await?;
 
-    dao.update_next_run_at(ctx.clone(), &trigger.id, 2000, 1500).await?;
+    dao.update_next_run_at(ctx.clone(), &trigger.id, 2000, 1500)
+        .await?;
 
     let found = dao.get_by_id(ctx.clone(), &trigger.id).await?.unwrap();
     assert_eq!(found.next_run_at, 2000);

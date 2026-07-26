@@ -4,8 +4,8 @@ use dioxus::prelude::*;
 use dioxus_router::Link;
 
 use crate::api::finance::{
-    create_message_channel, delete_message_channel, list_message_channels,
-    test_message_channel, update_message_channel_status,
+    create_message_channel, delete_message_channel, list_message_channels, test_message_channel,
+    update_message_channel_status,
 };
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
@@ -55,7 +55,11 @@ pub fn FinanceMessageChannels() -> Element {
             let channel_type = ChannelType::from_i32(new_type().parse::<i32>().unwrap_or(0));
             let req = CreateMessageChannelRequest {
                 user_id: None,
-                agent_id: if new_agent_id().is_empty() { None } else { Some(new_agent_id()) },
+                agent_id: if new_agent_id().is_empty() {
+                    None
+                } else {
+                    Some(new_agent_id())
+                },
                 channel_type,
                 channel_name: new_name(),
                 webhook_url: if new_webhook_url().is_empty() {

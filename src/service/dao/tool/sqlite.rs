@@ -3,8 +3,8 @@
 use crate::models::tool::ToolPo;
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::storage::escape_fts5_keyword;
-use common::error::Result;
 use async_trait::async_trait;
+use common::error::Result;
 use sqlx::FromRow;
 use std::sync::{Arc, OnceLock};
 
@@ -205,10 +205,18 @@ impl ToolDao for ToolDaoSqliteImpl {
         Ok(row)
     }
 
-    async fn query(&self, ctx: RequestContext, query: ToolQuery) -> Result<common::api::PagedResult<ToolPo>> {
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: ToolQuery,
+    ) -> Result<common::api::PagedResult<ToolPo>> {
         let pool = ctx.db_pool();
         let has_agent_filter = query.agent_id.is_some();
-        let join_clause = if has_agent_filter { " INNER JOIN agent_tools at ON t.id = at.tool_id" } else { "" };
+        let join_clause = if has_agent_filter {
+            " INNER JOIN agent_tools at ON t.id = at.tool_id"
+        } else {
+            ""
+        };
 
         let count_sql = format!("SELECT COUNT(*) FROM tools t{}", join_clause);
         let mut count_builder = sqlx::QueryBuilder::new(&count_sql);
@@ -431,7 +439,9 @@ fn push_query_filters<'args>(
     query: &ToolQuery,
 ) {
     if let Some(agent_id) = &query.agent_id {
-        builder.push(" AND at.agent_id = ").push_bind(agent_id.clone());
+        builder
+            .push(" AND at.agent_id = ")
+            .push_bind(agent_id.clone());
     }
     if let Some(ids) = &query.ids {
         if !ids.is_empty() {
@@ -459,7 +469,9 @@ fn push_query_filters<'args>(
         }
     }
     if let Some(protocol) = query.protocol {
-        builder.push(" AND t.protocol = ").push_bind(protocol as i32);
+        builder
+            .push(" AND t.protocol = ")
+            .push_bind(protocol as i32);
     }
     if let Some(status) = query.status {
         builder.push(" AND t.status = ").push_bind(status as i32);

@@ -1,9 +1,9 @@
 //! Runtime Tool Call 查询辅助逻辑
 
-use common::error::Result;
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_tracing::entry::ToolCallStatus;
 use crate::pkg::tool_tracing::logger::{MAX_TOOL_CALL_QUERY_LIMIT, ToolCallQuery};
+use common::error::Result;
 
 /// Merge explicit query scope with RequestContext scope and fail closed when no scope exists.
 pub(crate) fn with_context_scope(

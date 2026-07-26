@@ -1,24 +1,24 @@
 //! Top-level Stats struct implementation
 
+use std::any::TypeId;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::any::TypeId;
 
 use common::error::{Error, Result};
 use common::models::{StatsInterval, TimeSeriesPoint};
-use duckdb::{Connection, ToSql};
 use duckdb::types::Value;
+use duckdb::{Connection, ToSql};
 use serde_json::{self, Value as JsonValue};
 
-use crate::pkg::request_context::RequestContext;
-use super::erased::{ErasedBuffer, ErasedStatTable, ErasedWrapper};
-use super::traits::{StatEvent, StatTable};
-use super::default::DefaultStatTable;
-use super::model_call::ModelCallStatTable;
-use super::tool_call::ToolCallStatTable;
 use super::agent_awake::AgentAwakeStatTable;
+use super::default::DefaultStatTable;
+use super::erased::{ErasedBuffer, ErasedStatTable, ErasedWrapper};
+use super::model_call::ModelCallStatTable;
 use super::project_event::ProjectStatTable;
 use super::task_event::TaskStatTable;
+use super::tool_call::ToolCallStatTable;
+use super::traits::{StatEvent, StatTable};
+use crate::pkg::request_context::RequestContext;
 
 /// 类型安全的 SQL 参数枚举（Send + Sync，替代 `dyn ToSql`）
 ///
@@ -50,7 +50,11 @@ pub enum StatFilter {
     /// Equal match on a tag field
     Equals { key: String, value: JsonValue },
     /// Range match on a numeric field (timestamp or metric)
-    Range { key: String, min: Option<f64>, max: Option<f64> },
+    Range {
+        key: String,
+        min: Option<f64>,
+        max: Option<f64>,
+    },
 }
 
 /// Aggregation function to apply
@@ -142,22 +146,25 @@ impl Stats {
         });
 
         // Create table if not exists
-        let mut conn_guard = self.conn.lock().map_err(|e| {
-            Error::internal(format!("Failed to lock connection: {}", e))
-        })?;
+        let mut conn_guard = self
+            .conn
+            .lock()
+            .map_err(|e| Error::internal(format!("Failed to lock connection: {}", e)))?;
         erased.create_table(&mut conn_guard)?;
 
-        let mut tables = self.tables.lock().map_err(|e| {
-            Error::internal(format!("Failed to lock tables: {}", e))
-        })?;
+        let mut tables = self
+            .tables
+            .lock()
+            .map_err(|e| Error::internal(format!("Failed to lock tables: {}", e)))?;
         tables.insert(
             type_id,
-            (table_name.clone(), erased.clone(), ErasedBuffer::new())
+            (table_name.clone(), erased.clone(), ErasedBuffer::new()),
         );
 
-        let mut tables_by_name = self.tables_by_name.lock().map_err(|e| {
-            Error::internal(format!("Failed to lock tables_by_name: {}", e))
-        })?;
+        let mut tables_by_name = self
+            .tables_by_name
+            .lock()
+            .map_err(|e| Error::internal(format!("Failed to lock tables_by_name: {}", e)))?;
         tables_by_name.insert(table_name, erased);
 
         Ok(())
@@ -188,21 +195,22 @@ impl Stats {
     /// Automatically looks up the table registered for this event type.
     /// If no custom table registered, uses DefaultStatTable.
     /// Automatically flushes when buffer reaches batch_size.
-    pub async fn record<E>(
-        &self,
-        _ctx: RequestContext,
-        event: E,
-    ) -> Result<()>
+    pub async fn record<E>(&self, _ctx: RequestContext, event: E) -> Result<()>
     where
         E: StatEvent + 'static + Send + Sync,
     {
         let type_id = TypeId::of::<E>();
         let need_flush = {
-            let mut tables = self.tables.lock().map_err(|e| {
-                Error::internal(format!("Failed to lock tables: {}", e))
+            let mut tables = self
+                .tables
+                .lock()
+                .map_err(|e| Error::internal(format!("Failed to lock tables: {}", e)))?;
+            let (_, _, buffer) = tables.get_mut(&type_id).ok_or_else(|| {
+                Error::internal(format!(
+                    "No table registered for event type {:?}",
+                    std::any::type_name::<E>()
+                ))
             })?;
-            let (_, _, buffer) = tables.get_mut(&type_id)
-                .ok_or_else(|| Error::internal(format!("No table registered for event type {:?}", std::any::type_name::<E>())))?;
 
             buffer.push(event);
             buffer.len() >= self.batch_size
@@ -231,15 +239,13 @@ impl Stats {
     }
 
     /// Flush all pending events in all tables
-    pub async fn flush_all(
-        &self,
-        _ctx: RequestContext,
-    ) -> Result<()> {
+    pub async fn flush_all(&self, _ctx: RequestContext) -> Result<()> {
         // Get all type_ids first to avoid borrowing issue
         let type_ids: Vec<TypeId> = {
-            let tables = self.tables.lock().map_err(|e| {
-                Error::internal(format!("Failed to lock tables: {}", e))
-            })?;
+            let tables = self
+                .tables
+                .lock()
+                .map_err(|e| Error::internal(format!("Failed to lock tables: {}", e)))?;
             tables.keys().cloned().collect()
         };
         for type_id in type_ids {
@@ -261,11 +267,13 @@ impl Stats {
     fn flush_type_id(&self, type_id: TypeId) -> Result<()> {
         // 持有 tables 锁期间完成 take events + 锁 conn + 批量插入。
         // 锁顺序固定为 tables → conn，避免死锁。
-        let mut tables = self.tables.lock().map_err(|e| {
-            Error::internal(format!("Failed to lock tables: {}", e))
+        let mut tables = self
+            .tables
+            .lock()
+            .map_err(|e| Error::internal(format!("Failed to lock tables: {}", e)))?;
+        let (_, erased, buffer) = tables.get_mut(&type_id).ok_or_else(|| {
+            Error::internal(format!("No table registered for type id {:?}", type_id))
         })?;
-        let (_, erased, buffer) = tables.get_mut(&type_id)
-            .ok_or_else(|| Error::internal(format!("No table registered for type id {:?}", type_id)))?;
 
         if buffer.is_empty() {
             return Ok(());
@@ -273,9 +281,10 @@ impl Stats {
 
         let events = buffer.take();
 
-        let mut conn_guard = self.conn.lock().map_err(|e| {
-            Error::internal(format!("Failed to lock connection: {}", e))
-        })?;
+        let mut conn_guard = self
+            .conn
+            .lock()
+            .map_err(|e| Error::internal(format!("Failed to lock connection: {}", e)))?;
 
         erased.bulk_insert_erased(&mut conn_guard, events)?;
 
@@ -288,7 +297,8 @@ impl Stats {
         E: StatEvent + 'static,
     {
         let type_id = TypeId::of::<E>();
-        self.tables.lock()
+        self.tables
+            .lock()
             .ok()
             .and_then(|tables| tables.get(&type_id).map(|(_, _, buf)| buf.len()))
             .unwrap_or(0)
@@ -296,9 +306,7 @@ impl Stats {
 
     /// Get number of registered event types (tables)
     pub fn registered_table_count(&self) -> usize {
-        self.tables.lock()
-            .map(|tables| tables.len())
-            .unwrap_or(0)
+        self.tables.lock().map(|tables| tables.len()).unwrap_or(0)
     }
 
     /// Generic aggregation query with filters, grouping, and aggregations
@@ -316,10 +324,11 @@ impl Stats {
         time_range: Option<(i64, i64)>,
     ) -> Result<Vec<AggregationRow>> {
         let table = table_name.unwrap_or("default_events");
-        let (sql, params) = self.build_aggregation_query(table, filters, group_by, aggregations, time_range)?;
+        let (sql, params) =
+            self.build_aggregation_query(table, filters, group_by, aggregations, time_range)?;
 
         let json_rows = self.query(ctx, &sql, &params).await?;
-        
+
         // Convert JSON rows to AggregationRow
         let mut result = Vec::with_capacity(json_rows.len());
         for json_row in json_rows {
@@ -327,10 +336,10 @@ impl Stats {
                 JsonValue::Object(obj) => obj,
                 _ => continue,
             };
-            
+
             let mut groups = HashMap::new();
             let mut aggr_results = HashMap::new();
-            
+
             for (key, value) in obj {
                 if group_by.contains(&key.as_str()) {
                     groups.insert(key, value);
@@ -343,13 +352,13 @@ impl Stats {
                     aggr_results.insert(key, f);
                 }
             }
-            
+
             result.push(AggregationRow {
                 groups,
                 aggregations: aggr_results,
             });
         }
-        
+
         Ok(result)
     }
 
@@ -362,7 +371,8 @@ impl Stats {
         aggregations: &[StatAggregation],
         time_range: Option<(i64, i64)>,
     ) -> Result<(String, Vec<StatParam>)> {
-        let table = self.get_table_by_name(table_name)
+        let table = self
+            .get_table_by_name(table_name)
             .ok_or_else(|| Error::internal(format!("Table not found: {}", table_name)))?;
         let mut sql = String::from("SELECT ");
         let mut params: Vec<StatParam> = Vec::new();
@@ -392,13 +402,15 @@ impl Stats {
                 StatAggregation::Sum(metric) => {
                     sql.push_str(&format!(
                         "COALESCE(SUM(CAST({} AS DOUBLE)), 0) AS {}",
-                        table.metric_sql(metric), metric
+                        table.metric_sql(metric),
+                        metric
                     ));
                 }
                 StatAggregation::Avg(metric) => {
                     sql.push_str(&format!(
                         "COALESCE(AVG(CAST({} AS DOUBLE)), 0) AS {}",
-                        table.metric_sql(metric), metric
+                        table.metric_sql(metric),
+                        metric
                     ));
                 }
             }
@@ -445,7 +457,8 @@ impl Stats {
         time_range: (i64, i64),
     ) -> Result<Vec<TimeSeriesPoint>> {
         let table = table_name.unwrap_or("default_events");
-        let table_meta = self.get_table_by_name(table)
+        let table_meta = self
+            .get_table_by_name(table)
             .ok_or_else(|| Error::internal(format!("Table not found: {}", table)))?;
 
         let truncate_func = match interval {
@@ -467,10 +480,8 @@ impl Stats {
             truncate_func, tokens_input_col, tokens_output_col, table
         );
 
-        let mut params: Vec<StatParam> = vec![
-            StatParam::Int(time_range.0),
-            StatParam::Int(time_range.1),
-        ];
+        let mut params: Vec<StatParam> =
+            vec![StatParam::Int(time_range.0), StatParam::Int(time_range.1)];
 
         // Add additional filters
         let sql = self.append_filters(sql, filters, &mut params, table_meta.as_ref());
@@ -479,27 +490,31 @@ impl Stats {
         let sql = format!("{} GROUP BY interval_start ORDER BY interval_start", sql);
 
         let json_rows = self.query(ctx, &sql, &params).await?;
-        
+
         let mut result = Vec::with_capacity(json_rows.len());
         for json_row in json_rows {
             let obj = match json_row {
                 JsonValue::Object(o) => o,
                 _ => continue,
             };
-            
-            let interval_start = obj.get("interval_start")
+
+            let interval_start = obj
+                .get("interval_start")
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0);
-            let tokens_input = obj.get("tokens_input")
+            let tokens_input = obj
+                .get("tokens_input")
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0) as u64;
-            let tokens_output = obj.get("tokens_output")
+            let tokens_output = obj
+                .get("tokens_output")
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0) as u64;
-            let call_count = obj.get("call_count")
+            let call_count = obj
+                .get("call_count")
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0) as u64;
-            
+
             result.push(TimeSeriesPoint {
                 interval_start,
                 tokens_input,
@@ -507,7 +522,7 @@ impl Stats {
                 call_count,
             });
         }
-        
+
         Ok(result)
     }
 
@@ -561,11 +576,13 @@ impl Stats {
         // 此转换在同步作用域内完成，避免 dyn ToSql（非 Send）跨 .await 边界
         let param_refs: Vec<&dyn ToSql> = params.iter().map(|p| p as &dyn ToSql).collect();
 
-        let conn_guard = self.conn.lock().map_err(|e| {
-            Error::internal(format!("Failed to lock connection: {}", e))
-        })?;
+        let conn_guard = self
+            .conn
+            .lock()
+            .map_err(|e| Error::internal(format!("Failed to lock connection: {}", e)))?;
 
-        let mut stmt = conn_guard.prepare(sql)
+        let mut stmt = conn_guard
+            .prepare(sql)
             .map_err(|e| Error::internal(format!("Failed to prepare query: {}", e)))?;
 
         // duckdb-rs 1.4: need to execute first before getting column info

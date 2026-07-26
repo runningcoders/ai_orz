@@ -123,9 +123,9 @@ fn registry_creates_manual_http_core_tool_from_tool_po_config() {
 fn registry_uses_injected_http_protocol_factory() {
     use crate::models::tool::CoreTool;
     use crate::pkg::tool_registry::HttpToolFactory;
-    use common::error::{Error, Result};
     use anyhow::anyhow;
     use async_trait::async_trait;
+    use common::error::{Error, Result};
     use rig::tool::ToolError;
     use serde_json::Value;
     use std::sync::{Arc, Mutex};
@@ -137,11 +137,7 @@ fn registry_uses_injected_http_protocol_factory() {
 
     #[async_trait]
     impl CoreTool for DummyHttpTool {
-        async fn call(
-            &self,
-            _ctx: crate::pkg::RequestContext,
-            _args: Value,
-        ) -> Result<Value> {
+        async fn call(&self, _ctx: crate::pkg::RequestContext, _args: Value) -> Result<Value> {
             Ok(json!({ "ok": true }))
         }
 

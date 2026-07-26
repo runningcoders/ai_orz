@@ -27,11 +27,9 @@ mod mcp_server_test;
 #[cfg(test)]
 mod tool_provider_test;
 
-use common::api::RebuildStatus;
-use common::error::Result;
 use crate::models::attachment::{
-    Attachment, AttachmentGetOptions, AttachmentTextContent,
-    AttachmentUpload, TextAttachmentCreate, TextContentUpdate,
+    Attachment, AttachmentGetOptions, AttachmentTextContent, AttachmentUpload,
+    TextAttachmentCreate, TextContentUpdate,
 };
 use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
@@ -43,6 +41,8 @@ use crate::service::dal::message_channel::MessageChannelDal;
 use crate::service::dal::model_provider::ModelProviderDal;
 use crate::service::dal::tool::ToolDal;
 use async_trait::async_trait;
+use common::api::RebuildStatus;
+use common::error::Result;
 use std::sync::{Arc, OnceLock};
 
 // ==================== 重建任务相关 ====================
@@ -180,10 +180,7 @@ pub trait ModelProviderManage: Send + Sync {
     ) -> Result<common::api::PagedResult<ModelProvider>>;
 
     /// 列出所有 Model Provider
-    async fn list_model_providers(
-        &self,
-        ctx: RequestContext,
-    ) -> Result<Vec<ModelProvider>>;
+    async fn list_model_providers(&self, ctx: RequestContext) -> Result<Vec<ModelProvider>>;
 
     /// 更新 Model Provider
     async fn update_model_provider(
@@ -388,8 +385,7 @@ pub trait McpServerManage: Send + Sync {
 #[async_trait]
 pub trait McpToolManage: Send + Sync {
     /// 从指定 MCP Server 同步远端 tools/list 到本地 Tool 记录。
-    async fn sync_mcp_tools(&self, ctx: RequestContext, server_id: &str)
-    -> Result<usize>;
+    async fn sync_mcp_tools(&self, ctx: RequestContext, server_id: &str) -> Result<usize>;
 
     /// 查询指定 MCP Server 绑定的本地 MCP Tool 记录。
     async fn list_mcp_tools_by_server(
@@ -434,10 +430,7 @@ pub trait ToolProviderManage: Send + Sync {
     ) -> Result<common::api::PagedResult<crate::models::tool::Tool>>;
 
     /// 列出所有 Tool
-    async fn list_tools(
-        &self,
-        ctx: RequestContext,
-    ) -> Result<Vec<crate::models::tool::Tool>>;
+    async fn list_tools(&self, ctx: RequestContext) -> Result<Vec<crate::models::tool::Tool>>;
 
     /// 更新 Tool
     async fn update_tool(

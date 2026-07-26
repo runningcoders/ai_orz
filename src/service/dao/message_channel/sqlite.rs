@@ -1,6 +1,5 @@
 //! MessageChannel DAO SQLite 实现
 
-use common::error::Result;
 use crate::models::message_channel::MessageChannelPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::message_channel::{MessageChannelDao, MessageChannelQuery};
@@ -8,6 +7,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use common::api::PagedResult;
 use common::enums::ChannelStatus;
+use common::error::Result;
 use sqlx::QueryBuilder;
 use std::sync::{Arc, OnceLock};
 
@@ -99,10 +99,7 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
         let mut count_builder =
             QueryBuilder::new("SELECT COUNT(*) FROM message_channels WHERE 1=1");
         push_query_filters(&mut count_builder, &query);
-        let total: i64 = count_builder
-            .build_query_scalar()
-            .fetch_one(pool)
-            .await?;
+        let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
 
         let mut list_builder = QueryBuilder::new("SELECT * FROM message_channels WHERE 1=1");
         push_query_filters(&mut list_builder, &query);

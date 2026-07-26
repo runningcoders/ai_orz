@@ -1,12 +1,12 @@
 //! Runtime Tool Execution 具体实现
 
-use common::error::{bail_err, Error, Result};
 use crate::models::tool::{Tool, ToolExecutionResult};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use crate::pkg::tool_tracing::logger::ToolCallQuery;
 use crate::service::domain::runtime::{RuntimeDomainImpl, RuntimeToolExecution};
 use common::enums::{ControlMode, ToolProtocol, ToolStatus};
+use common::error::{Error, Result, bail_err};
 use serde_json::Value;
 
 #[async_trait::async_trait]
@@ -17,13 +17,13 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
         tool_id: String,
         args: Value,
     ) -> Result<ToolExecutionResult> {
-    let tool = self
-        .tool_dal
-        .get_by_id(ctx.clone(), tool_id.clone())
-        .await?
-        .ok_or_else(|| {
-            common::error::Error::tool_call_failed(format!("Tool not found: {}", tool_id))
-        })?;
+        let tool = self
+            .tool_dal
+            .get_by_id(ctx.clone(), tool_id.clone())
+            .await?
+            .ok_or_else(|| {
+                common::error::Error::tool_call_failed(format!("Tool not found: {}", tool_id))
+            })?;
 
         self.call_tool(ctx, &tool, args).await
     }
@@ -90,9 +90,7 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
             .list_tools_for_agent_full(ctx.clone(), &agent_id)
             .await?;
 
-        let bound_tool = bound_tools
-            .into_iter()
-            .find(|tool| tool.po.id == tool_id);
+        let bound_tool = bound_tools.into_iter().find(|tool| tool.po.id == tool_id);
 
         // 如果绑定工具中没有，检查是否是神经工具或已安装工具包
         let tool = match bound_tool {
@@ -105,9 +103,12 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
                     .agent_dal
                     .find_by_id(ctx.clone(), &agent_id)
                     .await?
-                    .ok_or_else(|| common::error::Error::tool_call_failed(format!(
-                        "Agent {} not found, cannot authorize tool call", agent_id
-                    )))?;
+                    .ok_or_else(|| {
+                        common::error::Error::tool_call_failed(format!(
+                            "Agent {} not found, cannot authorize tool call",
+                            agent_id
+                        ))
+                    })?;
                 let installed_tags = agent.po.get_installed_tags();
 
                 // 构建 tag 过滤列表：neural + installed_tags（OR 语义）
@@ -156,9 +157,8 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
             let msg: String = msg;
             return Err(common::error::Error::new(
                 common::error::ErrorCode::ToolExecutionFailed,
-                msg
+                msg,
             ));
-
         }
 
         self.call_tool(ctx, &tool, args).await
@@ -170,8 +170,7 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
         query: ToolCallQuery,
     ) -> Result<Vec<ToolCallEntry>> {
         let query = super::tool_call_query::with_context_scope(ctx, query)?;
-        Ok(self.tool_call_logger
-            .query_calls(query)?)
+        Ok(self.tool_call_logger.query_calls(query)?)
     }
 
     async fn get_tool_call_entry_by_id(
@@ -181,15 +180,19 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
     ) -> Result<Option<ToolCallEntry>> {
         super::tool_call_query::ensure_call_id_present(&query)?;
         let query = super::tool_call_query::with_context_scope(ctx, query)?;
-        let mut entries = self.tool_call_logger
-            .query_calls(query)?;
+        let mut entries = self.tool_call_logger.query_calls(query)?;
         Ok(entries.pop())
     }
 }
 
 fn ensure_tool_enabled(tool_id: &str, status: &ToolStatus) -> Result<()> {
     if *status != ToolStatus::Enabled {
-        bail_err!(ToolExecutionFailed, "Tool execution denied: tool {} has status {:?}", tool_id, status);
+        bail_err!(
+            ToolExecutionFailed,
+            "Tool execution denied: tool {} has status {:?}",
+            tool_id,
+            status
+        );
     }
 
     Ok(())

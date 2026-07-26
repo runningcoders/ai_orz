@@ -3,16 +3,16 @@
 //! 从 JWT 认证信息中获取当前用户 ID，无需路径参数传递
 //! 浏览器 EventSource 自动携带 Cookie，认证由 JWT 中间件完成
 
-use axum::response::sse::{Event, Sse};
+use crate::pkg::RequestContext;
+use crate::service::domain::message;
 use axum::Extension;
+use axum::response::sse::{Event, Sse};
 use futures_util::Stream;
 use std::convert::Infallible;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
-use crate::pkg::RequestContext;
-use crate::service::domain::message;
+use tokio_stream::wrappers::BroadcastStream;
 
 /// 包装 SSE stream，在 stream 被丢弃时（客户端断开或服务关闭）自动注销连接。
 ///
@@ -64,11 +64,9 @@ pub async fn subscribe_sse_handler(
     let rx = subscribe_result.receiver;
 
     let stream = BroadcastStream::new(rx)
-        .map(move |msg| {
-            match msg {
-                Ok(data) => Event::default().data(data),
-                Err(_) => Event::default().event("ping").data("keep-alive"),
-            }
+        .map(move |msg| match msg {
+            Ok(data) => Event::default().data(data),
+            Err(_) => Event::default().event("ping").data("keep-alive"),
         })
         .map(Ok::<_, Infallible>);
 

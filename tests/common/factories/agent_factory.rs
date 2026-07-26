@@ -7,12 +7,7 @@ use serde_json::json;
 ///
 /// `provider_id` should come from `bootstrap_system` (chat provider id).
 /// Returns the created agent's ID.
-pub async fn create_test_agent(
-    app: &TestApp,
-    jwt: &str,
-    provider_id: &str,
-    name: &str,
-) -> String {
+pub async fn create_test_agent(app: &TestApp, jwt: &str, provider_id: &str, name: &str) -> String {
     let req = json!({
         "name": name,
         "tags": ["test"],

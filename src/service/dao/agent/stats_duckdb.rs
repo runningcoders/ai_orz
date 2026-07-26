@@ -1,13 +1,14 @@
 //! AgentStatsDao DuckDB 实现
 
-use common::error::Result;
 use crate::pkg::RequestContext;
-use crate::pkg::stats::{StatFilter, AgentAwakeEvent};
+use crate::pkg::stats::{AgentAwakeEvent, StatFilter};
 use crate::service::dao::agent::{AgentStatsDao, AgentStatsQuery};
+use common::error::Result;
 use serde_json::Value as JsonValue;
 use std::sync::{Arc, OnceLock};
 
-static AGENT_STATS_DAO: OnceLock<Arc<dyn AgentStatsDao<AwakeEvent = AgentAwakeEvent>>> = OnceLock::new();
+static AGENT_STATS_DAO: OnceLock<Arc<dyn AgentStatsDao<AwakeEvent = AgentAwakeEvent>>> =
+    OnceLock::new();
 
 pub fn stats_new() -> Arc<dyn AgentStatsDao<AwakeEvent = AgentAwakeEvent>> {
     Arc::new(AgentStatsDaoDuckDbImpl)
@@ -27,7 +28,11 @@ struct AgentStatsDaoDuckDbImpl;
 impl AgentStatsDao for AgentStatsDaoDuckDbImpl {
     type AwakeEvent = AgentAwakeEvent;
 
-    async fn query_awake_calls(&self, ctx: RequestContext, mut query: AgentStatsQuery) -> Result<Vec<JsonValue>> {
+    async fn query_awake_calls(
+        &self,
+        ctx: RequestContext,
+        mut query: AgentStatsQuery,
+    ) -> Result<Vec<JsonValue>> {
         let agent_filter = StatFilter::Equals {
             key: "agent_id".to_string(),
             value: JsonValue::String(query.agent_id.clone()),
@@ -45,21 +50,27 @@ impl AgentStatsDao for AgentStatsDaoDuckDbImpl {
         let stats = ctx.stats();
         let table_name = self.awake_table_name(stats);
 
-        let rows = ctx.stats().query_aggregation(
-            ctx.clone(),
-            table_name.as_deref(),
-            &query.filters,
-            &[],
-            &query.aggregations,
-            query.time_range,
-        ).await?;
+        let rows = ctx
+            .stats()
+            .query_aggregation(
+                ctx.clone(),
+                table_name.as_deref(),
+                &query.filters,
+                &[],
+                &query.aggregations,
+                query.time_range,
+            )
+            .await?;
 
-        Ok(rows.iter().map(|r| {
-            let mut obj = serde_json::Map::new();
-            for (k, v) in &r.aggregations {
-                obj.insert(k.clone(), serde_json::Value::from(*v));
-            }
-            JsonValue::Object(obj)
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| {
+                let mut obj = serde_json::Map::new();
+                for (k, v) in &r.aggregations {
+                    obj.insert(k.clone(), serde_json::Value::from(*v));
+                }
+                JsonValue::Object(obj)
+            })
+            .collect())
     }
 }

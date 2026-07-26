@@ -9,7 +9,7 @@
 use std::sync::{Arc, OnceLock};
 
 use common::enums::{ChannelStatus, ChannelType};
-use common::error::{err, Result};
+use common::error::{Result, err};
 use serde::Serialize;
 
 use crate::enrich_ctx;

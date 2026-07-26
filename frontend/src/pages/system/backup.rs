@@ -3,7 +3,7 @@
 use dioxus::prelude::*;
 
 use crate::api::system::{
-    create_backup, delete_backup, get_restore_script, list_backups, BackupInfo,
+    BackupInfo, create_backup, delete_backup, get_restore_script, list_backups,
 };
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};

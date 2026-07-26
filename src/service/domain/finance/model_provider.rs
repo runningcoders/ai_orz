@@ -3,8 +3,8 @@
 use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::{FinanceDomainImpl, ModelProviderManage, RebuildTask};
-use common::error::{Error, ErrorField, ErrorCode, Result};
 use common::enums::ModelProviderStatus;
+use common::error::{Error, ErrorCode, ErrorField, Result};
 use serde_json::json;
 use std::sync::Arc;
 
@@ -35,7 +35,9 @@ impl ModelProviderManage for FinanceDomainImpl {
         id: &str,
         options: crate::service::dal::model_provider::ModelProviderFetchOptions,
     ) -> Result<Option<ModelProvider>> {
-        self.model_provider_dal.get_model_provider(ctx, id, options).await
+        self.model_provider_dal
+            .get_model_provider(ctx, id, options)
+            .await
     }
 
     async fn query(
@@ -46,10 +48,7 @@ impl ModelProviderManage for FinanceDomainImpl {
         self.model_provider_dal.query(ctx, query).await
     }
 
-    async fn list_model_providers(
-        &self,
-        ctx: RequestContext,
-    ) -> Result<Vec<ModelProvider>> {
+    async fn list_model_providers(&self, ctx: RequestContext) -> Result<Vec<ModelProvider>> {
         self.model_provider_dal.find_all(ctx).await
     }
 
@@ -58,16 +57,26 @@ impl ModelProviderManage for FinanceDomainImpl {
         ctx: RequestContext,
         provider: &ModelProvider,
     ) -> Result<()> {
-        if provider.po.capability.is_embedding() && provider.po.status == ModelProviderStatus::Normal {
-            if let Some(current) = self.model_provider_dal.find_enabled_embedding_provider(ctx.clone()).await? {
+        if provider.po.capability.is_embedding()
+            && provider.po.status == ModelProviderStatus::Normal
+        {
+            if let Some(current) = self
+                .model_provider_dal
+                .find_enabled_embedding_provider(ctx.clone())
+                .await?
+            {
                 if current.po.id != provider.po.id {
                     let mut field = ErrorField::new();
                     field.insert("current_provider_id".into(), json!(current.po.id));
                     field.insert("current_provider_name".into(), json!(current.po.name));
                     return Err(Error::new(
                         ErrorCode::EmbeddingProviderSwitchRequired,
-                        format!("Another embedding provider '{}' is already enabled", current.po.name)
-                    ).with_field(field));
+                        format!(
+                            "Another embedding provider '{}' is already enabled",
+                            current.po.name
+                        ),
+                    )
+                    .with_field(field));
                 }
             }
         }
@@ -100,14 +109,23 @@ impl ModelProviderManage for FinanceDomainImpl {
         ctx: RequestContext,
         new_provider_id: &str,
     ) -> Result<(Option<ModelProvider>, String)> {
-        let new_provider = self.get_model_provider(ctx.clone(), new_provider_id).await?
-            .ok_or_else(|| Error::not_found(format!("ModelProvider {} not found", new_provider_id)))?;
+        let new_provider = self
+            .get_model_provider(ctx.clone(), new_provider_id)
+            .await?
+            .ok_or_else(|| {
+                Error::not_found(format!("ModelProvider {} not found", new_provider_id))
+            })?;
 
         if !new_provider.po.capability.is_embedding() {
-            return Err(Error::bad_request("Target provider is not an embedding provider"));
+            return Err(Error::bad_request(
+                "Target provider is not an embedding provider",
+            ));
         }
 
-        let current_provider = self.model_provider_dal.find_enabled_embedding_provider(ctx.clone()).await?;
+        let current_provider = self
+            .model_provider_dal
+            .find_enabled_embedding_provider(ctx.clone())
+            .await?;
 
         if let Some(ref current) = current_provider {
             if current.po.id == new_provider_id {
@@ -118,12 +136,15 @@ impl ModelProviderManage for FinanceDomainImpl {
 
         if let Some(mut current) = current_provider.clone() {
             current.po.status = ModelProviderStatus::Deleted;
-            self.model_provider_dal.update(ctx.clone(), &current).await?;
+            self.model_provider_dal
+                .update(ctx.clone(), &current)
+                .await?;
         }
 
         let mut new_provider_to_enable = new_provider.clone();
         new_provider_to_enable.po.status = ModelProviderStatus::Normal;
-        self.update_model_provider(ctx.clone(), &new_provider_to_enable).await?;
+        self.update_model_provider(ctx.clone(), &new_provider_to_enable)
+            .await?;
 
         // 异步启动向量索引重建
         let task_id = self.start_rebuild_task(ctx).await?;
@@ -240,7 +261,9 @@ impl FinanceDomainImpl {
             task_id
         );
 
-        let entities: [&str; 7] = ["agent", "memory", "skill", "task", "project", "message", "tool"];
+        let entities: [&str; 7] = [
+            "agent", "memory", "skill", "task", "project", "message", "tool",
+        ];
         let total = entities.len();
 
         for (i, name) in entities.iter().enumerate() {

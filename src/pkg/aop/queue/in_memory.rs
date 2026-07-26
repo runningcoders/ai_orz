@@ -2,9 +2,9 @@ use std::cell::UnsafeCell;
 use std::collections::{BinaryHeap, HashMap};
 use std::sync::Mutex;
 
-use async_trait::async_trait;
-use common::error::{err, Result};
 use crate::pkg::RequestContext;
+use async_trait::async_trait;
+use common::error::{Result, err};
 
 use super::EventQueue;
 
@@ -104,7 +104,9 @@ impl InMemoryEventQueue {
 #[async_trait]
 impl EventQueue for InMemoryEventQueue {
     async fn enqueue(&self, _ctx: RequestContext, event: serde_json::Value) -> Result<()> {
-        let _guard = self.lock.lock()
+        let _guard = self
+            .lock
+            .lock()
             .map_err(|e| err!(Internal, "failed to acquire event queue lock: {}", e))?;
 
         let events = unsafe { &mut *self.events.get() };
@@ -112,21 +114,22 @@ impl EventQueue for InMemoryEventQueue {
         let global_heap = unsafe { &mut *self.global_heap.get() };
         let has_active_message = unsafe { &mut *self.has_active_message.get() };
 
-        let event_id = event.get("event_id")
+        let event_id = event
+            .get("event_id")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown")
             .to_string();
 
-        let order_key = event.get("order_key")
+        let order_key = event
+            .get("order_key")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
 
-        let priority = event.get("priority")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u8;
+        let priority = event.get("priority").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
 
-        let created_at = event.get("created_at")
+        let created_at = event
+            .get("created_at")
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
 
@@ -161,7 +164,11 @@ impl EventQueue for InMemoryEventQueue {
         Ok(())
     }
 
-    async fn enqueue_batch(&self, ctx: RequestContext, events: Vec<serde_json::Value>) -> Result<()> {
+    async fn enqueue_batch(
+        &self,
+        ctx: RequestContext,
+        events: Vec<serde_json::Value>,
+    ) -> Result<()> {
         for event in events {
             self.enqueue(ctx.clone(), event).await?;
         }
@@ -169,7 +176,9 @@ impl EventQueue for InMemoryEventQueue {
     }
 
     async fn dequeue_next(&self, _ctx: RequestContext) -> Result<Option<serde_json::Value>> {
-        let _guard = self.lock.lock()
+        let _guard = self
+            .lock
+            .lock()
             .map_err(|e| err!(Internal, "failed to acquire event queue lock: {}", e))?;
 
         let events = unsafe { &mut *self.events.get() };
@@ -196,7 +205,9 @@ impl EventQueue for InMemoryEventQueue {
     }
 
     async fn ack(&self, _ctx: RequestContext, event_id: &str) -> Result<()> {
-        let _guard = self.lock.lock()
+        let _guard = self
+            .lock
+            .lock()
             .map_err(|e| err!(Internal, "failed to acquire event queue lock: {}", e))?;
 
         let events = unsafe { &mut *self.events.get() };
@@ -233,7 +244,9 @@ impl EventQueue for InMemoryEventQueue {
     }
 
     async fn nack(&self, _ctx: RequestContext, event_id: &str) -> Result<()> {
-        let _guard = self.lock.lock()
+        let _guard = self
+            .lock
+            .lock()
             .map_err(|e| err!(Internal, "failed to acquire event queue lock: {}", e))?;
 
         let global_heap = unsafe { &mut *self.global_heap.get() };
@@ -307,7 +320,8 @@ impl EventQueue for InMemoryEventQueue {
 
         // 收集所有事件
         for (event_id, event) in events.iter() {
-            let order_key = event.get("order_key")
+            let order_key = event
+                .get("order_key")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
@@ -332,16 +346,16 @@ impl EventQueue for InMemoryEventQueue {
                 }
             }
 
-            let event_kind = event.get("kind")
+            let event_kind = event
+                .get("kind")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown")
                 .to_string();
 
-            let priority = event.get("priority")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0) as u8;
+            let priority = event.get("priority").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
 
-            let created_at = event.get("created_at")
+            let created_at = event
+                .get("created_at")
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0);
 
@@ -359,7 +373,8 @@ impl EventQueue for InMemoryEventQueue {
         results.sort_by(|a, b| b.created_at.cmp(&a.created_at));
 
         // 应用分页
-        results.into_iter()
+        results
+            .into_iter()
             .skip(filter.offset)
             .take(filter.limit)
             .collect()
@@ -374,7 +389,8 @@ impl EventQueue for InMemoryEventQueue {
         let event = events.get(event_id)?;
         let event_json = event.clone();
 
-        let order_key = event_json.get("order_key")
+        let order_key = event_json
+            .get("order_key")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
@@ -385,17 +401,20 @@ impl EventQueue for InMemoryEventQueue {
             super::EventStatus::Pending
         };
 
-        let event_kind = event_json.get("kind")
+        let event_kind = event_json
+            .get("kind")
             .and_then(|v| v.as_str())
             .or_else(|| event_json.get("message_id").map(|_| "message.created"))
             .unwrap_or("unknown")
             .to_string();
 
-        let priority = event_json.get("priority")
+        let priority = event_json
+            .get("priority")
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as u8;
 
-        let created_at = event_json.get("created_at")
+        let created_at = event_json
+            .get("created_at")
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
 
@@ -403,7 +422,11 @@ impl EventQueue for InMemoryEventQueue {
         let payload_preview = {
             let json_str = serde_json::to_string(&event_json).unwrap_or_default();
             if json_str.len() > 200 {
-                format!("{}... (truncated, total {} bytes)", &json_str[..200], json_str.len())
+                format!(
+                    "{}... (truncated, total {} bytes)",
+                    &json_str[..200],
+                    json_str.len()
+                )
             } else {
                 json_str
             }

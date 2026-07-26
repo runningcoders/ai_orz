@@ -1,11 +1,11 @@
 //! Handler: GET /api/v1/project/artifacts/{id} - Get artifact basic information
 
 use super::response;
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::project;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetArtifactRequest, GetArtifactResponse};
+use common::error::Result;
 
 /// Get artifact detailed information by ID
 #[register_handler_tool(
@@ -23,7 +23,9 @@ pub async fn get_artifact(
         .artifact_manage()
         .get(ctx, &params.artifact_id)
         .await?
-        .ok_or_else(|| common::error::Error::not_found(format!("Artifact {} not found", params.artifact_id)))?;
+        .ok_or_else(|| {
+            common::error::Error::not_found(format!("Artifact {} not found", params.artifact_id))
+        })?;
 
     Ok(response::to_detail(&artifact))
 }

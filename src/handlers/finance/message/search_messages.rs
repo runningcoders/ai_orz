@@ -6,7 +6,7 @@ use crate::service::dao::message::MessageSearch;
 use crate::service::domain::message;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::message::{MessageSearchResult, SearchMessagesRequest, SearchMessagesResponse};
-use common::error::{Result, err, bail_err};
+use common::error::{Result, bail_err, err};
 
 #[register_handler_tool(
     id = "search_messages",
@@ -45,7 +45,8 @@ pub async fn search_messages(
     };
 
     let messages = message::domain().management().search(ctx, search).await?;
-    let results: Vec<MessageSearchResult> = messages.into_iter().map(message_to_search_result).collect();
+    let results: Vec<MessageSearchResult> =
+        messages.into_iter().map(message_to_search_result).collect();
 
     Ok(SearchMessagesResponse {
         messages: results.clone(),

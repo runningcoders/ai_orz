@@ -223,7 +223,11 @@ impl HnswStore {
         let entries = match std::fs::read_dir(&self.base_path) {
             Ok(e) => e,
             Err(e) => {
-                tracing::warn!("Failed to read hnsw index dir {:?}: {:?}", self.base_path, e);
+                tracing::warn!(
+                    "Failed to read hnsw index dir {:?}: {:?}",
+                    self.base_path,
+                    e
+                );
                 return Ok(());
             }
         };
@@ -256,7 +260,11 @@ impl HnswStore {
                 Ok(data) => {
                     // 此时 store 尚未被共享，try_write 必定成功
                     if let Ok(mut collections) = self.collections.try_write() {
-                        tracing::info!("Loaded hnsw collection '{}' ({} vectors)", name, data.vectors.len());
+                        tracing::info!(
+                            "Loaded hnsw collection '{}' ({} vectors)",
+                            name,
+                            data.vectors.len()
+                        );
                         collections.insert(name, data);
                     }
                 }
@@ -311,9 +319,7 @@ impl HnswStore {
     }
 
     /// 从文件加载单个 collection
-    fn load_collection_from_file(
-        path: &std::path::Path,
-    ) -> common::error::Result<CollectionData> {
+    fn load_collection_from_file(path: &std::path::Path) -> common::error::Result<CollectionData> {
         let file = std::fs::File::open(path)?;
         let mut reader = std::io::BufReader::new(file);
         let persist_data: CollectionDataPersist =
@@ -381,7 +387,11 @@ impl HnswStore {
         }));
     }
 
-    async fn ensure_collection(&self, collection: &str, dimensions: i32) -> common::error::Result<()> {
+    async fn ensure_collection(
+        &self,
+        collection: &str,
+        dimensions: i32,
+    ) -> common::error::Result<()> {
         let mut collections = self.collections.write().await;
         if !collections.contains_key(collection) {
             collections.insert(collection.to_string(), CollectionData::new(dimensions));
@@ -422,7 +432,11 @@ impl Drop for HnswStore {
 
 #[async_trait]
 impl super::VectorStore for HnswStore {
-    async fn init_collection(&self, collection: &str, dimensions: i32) -> common::error::Result<()> {
+    async fn init_collection(
+        &self,
+        collection: &str,
+        dimensions: i32,
+    ) -> common::error::Result<()> {
         self.ensure_collection(collection, dimensions).await
     }
 
@@ -436,7 +450,9 @@ impl super::VectorStore for HnswStore {
         self.ensure_collection(collection, dimensions).await?;
 
         let mut collections = self.collections.write().await;
-        let coll = collections.get_mut(collection).expect("collection should exist");
+        let coll = collections
+            .get_mut(collection)
+            .expect("collection should exist");
 
         let now = chrono::Utc::now().timestamp();
         let point = FloatPoint(params.vector.clone());
@@ -529,15 +545,13 @@ impl super::VectorStore for HnswStore {
 
     async fn get(&self, collection: &str, id: &str) -> common::error::Result<Option<VectorRow>> {
         let collections = self.collections.read().await;
-        Ok(collections
-            .get(collection)
-            .and_then(|c| {
-                if c.deleted.contains(id) {
-                    None
-                } else {
-                    c.vectors.get(id).map(|(_, row)| row.clone())
-                }
-            }))
+        Ok(collections.get(collection).and_then(|c| {
+            if c.deleted.contains(id) {
+                None
+            } else {
+                c.vectors.get(id).map(|(_, row)| row.clone())
+            }
+        }))
     }
 
     async fn delete(&self, collection: &str, id: &str) -> common::error::Result<()> {

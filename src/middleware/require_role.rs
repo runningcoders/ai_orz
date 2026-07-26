@@ -17,11 +17,7 @@ use common::enums::UserRole;
 ///
 /// 检查当前用户角色是否满足 `min_role` 要求。
 /// 用户角色在 min_role 的祖先链上（含自身）则通过，否则返回 403。
-pub async fn require_role_middleware(
-    min_role: UserRole,
-    req: Request,
-    next: Next,
-) -> Response {
+pub async fn require_role_middleware(min_role: UserRole, req: Request, next: Next) -> Response {
     let ctx = req.extensions().get::<RequestContext>().cloned();
 
     let user_role = ctx

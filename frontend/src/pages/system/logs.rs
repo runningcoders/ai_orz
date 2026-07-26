@@ -5,9 +5,9 @@ use dioxus::prelude::*;
 use chrono::{Local, NaiveDateTime, TimeZone};
 
 use crate::api::log_stats::{
-    get_log_level_distribution, get_log_time_series, LogLevelDistributionItem, LogTimeSeriesPoint,
+    LogLevelDistributionItem, LogTimeSeriesPoint, get_log_level_distribution, get_log_time_series,
 };
-use crate::api::system::{query_logs, LogEntry, LogPageResult, LogQueryParams};
+use crate::api::system::{LogEntry, LogPageResult, LogQueryParams, query_logs};
 use crate::components::charts::donut_chart::{DonutChart, DonutSlice};
 use crate::components::charts::line_chart::LineChart;
 use crate::components::state::{EmptyState, Loading};
@@ -512,7 +512,11 @@ pub fn SystemLogs() -> Element {
 fn total_pages(res: Option<LogPageResult>) -> usize {
     match res {
         Some(r) => {
-            let ps = if r.page_size == 0 { DEFAULT_PAGE_SIZE } else { r.page_size };
+            let ps = if r.page_size == 0 {
+                DEFAULT_PAGE_SIZE
+            } else {
+                r.page_size
+            };
             (r.total + ps - 1) / ps.max(1)
         }
         None => 1,

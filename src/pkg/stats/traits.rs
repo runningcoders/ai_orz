@@ -50,24 +50,13 @@ pub trait StatTable<E: StatEvent>: Send + Sync + Debug {
     fn table_name(&self) -> &str;
 
     /// 创建表（如果不存在），初始化 schema
-    fn create_table(
-        &self,
-        conn: &mut duckdb::Connection,
-    ) -> Result<()>;
+    fn create_table(&self, conn: &mut duckdb::Connection) -> Result<()>;
 
     /// 插入单个事件
-    fn insert_event(
-        &self,
-        conn: &mut duckdb::Connection,
-        event: &E,
-    ) -> Result<()>;
+    fn insert_event(&self, conn: &mut duckdb::Connection, event: &E) -> Result<()>;
 
     /// 批量插入事件
-    fn bulk_insert_events(
-        &self,
-        conn: &mut duckdb::Connection,
-        events: &[E],
-    ) -> Result<()>;
+    fn bulk_insert_events(&self, conn: &mut duckdb::Connection, events: &[E]) -> Result<()>;
 
     /// 是否是专用表结构（有独立字段，而非 tags/metrics JSON）
     ///

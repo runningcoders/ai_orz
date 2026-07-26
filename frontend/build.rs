@@ -64,7 +64,9 @@ fn compile_tailwind() -> Result<(), Box<dyn std::error::Error>> {
 
     if !node_modules_bin.exists() {
         if node_modules_dir.exists() {
-            println!("cargo:warning=node_modules exists but tailwindcss binary not found, trying npm install...");
+            println!(
+                "cargo:warning=node_modules exists but tailwindcss binary not found, trying npm install..."
+            );
         } else {
             println!("cargo:warning=node_modules not found, running npm install...");
         }
@@ -75,7 +77,10 @@ fn compile_tailwind() -> Result<(), Box<dyn std::error::Error>> {
         match npm_status {
             Ok(s) if s.success() => {}
             Ok(s) => {
-                println!("cargo:warning=npm install failed with status: {}, skipping CSS build", s);
+                println!(
+                    "cargo:warning=npm install failed with status: {}, skipping CSS build",
+                    s
+                );
                 return Ok(());
             }
             Err(e) => {
@@ -86,7 +91,9 @@ fn compile_tailwind() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if !node_modules_bin.exists() {
-        println!("cargo:warning=tailwindcss binary still not found after npm install, skipping CSS build");
+        println!(
+            "cargo:warning=tailwindcss binary still not found after npm install, skipping CSS build"
+        );
         return Ok(());
     }
 
@@ -104,7 +111,10 @@ fn compile_tailwind() -> Result<(), Box<dyn std::error::Error>> {
             println!("cargo:warning=Tailwind CSS compiled successfully");
         }
         Ok(s) => {
-            println!("cargo:warning=Tailwind CSS compilation exited with status: {}", s);
+            println!(
+                "cargo:warning=Tailwind CSS compilation exited with status: {}",
+                s
+            );
         }
         Err(e) => {
             println!("cargo:warning=Failed to run tailwindcss: {}", e);

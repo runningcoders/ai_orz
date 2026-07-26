@@ -4,7 +4,6 @@ use serde_json::json;
 use sqlx::SqlitePool;
 use std::sync::Once;
 
-
 use crate::models::mcp_server::{McpServer, McpServerConfig, McpTransport};
 use crate::models::tool::ToolPo;
 use crate::pkg::RequestContext;

@@ -1,13 +1,15 @@
 //! ModelProviderStatsDao DuckDB 实现
 
-use common::error::{Error, Result};
 use crate::pkg::RequestContext;
-use crate::pkg::stats::{StatFilter, StatAggregation, StatsInterval, ModelCallEvent};
+use crate::pkg::stats::{ModelCallEvent, StatAggregation, StatFilter, StatsInterval};
 use crate::service::dao::model_provider::{ModelProviderStatsDao, ModelProviderStatsQuery};
+use common::error::{Error, Result};
 use serde_json::Value as JsonValue;
 use std::sync::{Arc, OnceLock};
 
-static MODEL_PROVIDER_STATS_DAO: OnceLock<Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>> = OnceLock::new();
+static MODEL_PROVIDER_STATS_DAO: OnceLock<
+    Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>>,
+> = OnceLock::new();
 
 pub fn stats_new() -> Arc<dyn ModelProviderStatsDao<ModelCallEvent = ModelCallEvent>> {
     Arc::new(ModelProviderStatsDaoDuckDbImpl)
@@ -27,7 +29,11 @@ struct ModelProviderStatsDaoDuckDbImpl;
 impl ModelProviderStatsDao for ModelProviderStatsDaoDuckDbImpl {
     type ModelCallEvent = ModelCallEvent;
 
-    async fn query_model_calls(&self, ctx: RequestContext, mut query: ModelProviderStatsQuery) -> Result<Vec<JsonValue>> {
+    async fn query_model_calls(
+        &self,
+        ctx: RequestContext,
+        mut query: ModelProviderStatsQuery,
+    ) -> Result<Vec<JsonValue>> {
         if let Some(ref provider_id) = query.model_provider_id {
             let provider_filter = StatFilter::Equals {
                 key: "model_provider_id".to_string(),
@@ -68,44 +74,63 @@ impl ModelProviderStatsDao for ModelProviderStatsDaoDuckDbImpl {
 }
 
 impl ModelProviderStatsDaoDuckDbImpl {
-    async fn do_query(&self, ctx: RequestContext, query: ModelProviderStatsQuery, table_name: Option<String>) -> Result<Vec<JsonValue>> {
+    async fn do_query(
+        &self,
+        ctx: RequestContext,
+        query: ModelProviderStatsQuery,
+        table_name: Option<String>,
+    ) -> Result<Vec<JsonValue>> {
         if query.interval.is_some() {
             let interval = query.interval.unwrap_or(StatsInterval::Daily);
             let time_range = query.time_range.ok_or_else(|| {
                 Error::bad_request("time_range is required for time series query")
             })?;
 
-            let points = ctx.stats().query_time_series(
-                ctx.clone(),
-                table_name.as_deref(),
-                &query.filters,
-                interval,
-                time_range,
-            ).await?;
+            let points = ctx
+                .stats()
+                .query_time_series(
+                    ctx.clone(),
+                    table_name.as_deref(),
+                    &query.filters,
+                    interval,
+                    time_range,
+                )
+                .await?;
 
-            Ok(points.iter().map(|p| {
-                serde_json::to_value(p).unwrap_or(JsonValue::Null)
-            }).collect())
+            Ok(points
+                .iter()
+                .map(|p| serde_json::to_value(p).unwrap_or(JsonValue::Null))
+                .collect())
         } else if !query.aggregations.is_empty() || !query.group_by.is_empty() {
-            let rows = ctx.stats().query_aggregation(
-                ctx.clone(),
-                table_name.as_deref(),
-                &query.filters,
-                &query.group_by.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
-                &query.aggregations,
-                query.time_range,
-            ).await?;
+            let rows = ctx
+                .stats()
+                .query_aggregation(
+                    ctx.clone(),
+                    table_name.as_deref(),
+                    &query.filters,
+                    &query
+                        .group_by
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>(),
+                    &query.aggregations,
+                    query.time_range,
+                )
+                .await?;
 
-            Ok(rows.iter().map(|r| {
-                let mut obj = serde_json::Map::new();
-                for (k, v) in &r.groups {
-                    obj.insert(k.clone(), v.clone());
-                }
-                for (k, v) in &r.aggregations {
-                    obj.insert(k.clone(), serde_json::Value::from(*v));
-                }
-                JsonValue::Object(obj)
-            }).collect())
+            Ok(rows
+                .iter()
+                .map(|r| {
+                    let mut obj = serde_json::Map::new();
+                    for (k, v) in &r.groups {
+                        obj.insert(k.clone(), v.clone());
+                    }
+                    for (k, v) in &r.aggregations {
+                        obj.insert(k.clone(), serde_json::Value::from(*v));
+                    }
+                    JsonValue::Object(obj)
+                })
+                .collect())
         } else {
             let default_aggregations = vec![
                 StatAggregation::Sum("tokens_input".to_string()),
@@ -113,25 +138,31 @@ impl ModelProviderStatsDaoDuckDbImpl {
                 StatAggregation::Count,
             ];
 
-            let rows = ctx.stats().query_aggregation(
-                ctx.clone(),
-                table_name.as_deref(),
-                &query.filters,
-                &[],
-                &default_aggregations,
-                query.time_range,
-            ).await?;
+            let rows = ctx
+                .stats()
+                .query_aggregation(
+                    ctx.clone(),
+                    table_name.as_deref(),
+                    &query.filters,
+                    &[],
+                    &default_aggregations,
+                    query.time_range,
+                )
+                .await?;
 
-            Ok(rows.iter().map(|r| {
-                let mut obj = serde_json::Map::new();
-                for (k, v) in &r.groups {
-                    obj.insert(k.clone(), v.clone());
-                }
-                for (k, v) in &r.aggregations {
-                    obj.insert(k.clone(), serde_json::Value::from(*v));
-                }
-                JsonValue::Object(obj)
-            }).collect())
+            Ok(rows
+                .iter()
+                .map(|r| {
+                    let mut obj = serde_json::Map::new();
+                    for (k, v) in &r.groups {
+                        obj.insert(k.clone(), v.clone());
+                    }
+                    for (k, v) in &r.aggregations {
+                        obj.insert(k.clone(), serde_json::Value::from(*v));
+                    }
+                    JsonValue::Object(obj)
+                })
+                .collect())
         }
     }
 }

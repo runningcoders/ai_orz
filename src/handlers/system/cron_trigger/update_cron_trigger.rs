@@ -18,10 +18,7 @@ pub async fn update_cron_trigger(
         .get_trigger(ctx.clone(), &params.trigger_id)
         .await?
         .ok_or_else(|| {
-            common::error::Error::not_found(format!(
-                "CronTrigger {} not found",
-                params.trigger_id
-            ))
+            common::error::Error::not_found(format!("CronTrigger {} not found", params.trigger_id))
         })?;
 
     if let Some(name) = params.name {

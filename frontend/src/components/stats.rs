@@ -118,7 +118,10 @@ pub fn StatsPanel(title: String, children: Element) -> Element {
 }
 
 #[component]
-pub fn AgentStatsPanel(stats: Option<AgentStats>, model_call_stats: Option<ModelCallStats>) -> Element {
+pub fn AgentStatsPanel(
+    stats: Option<AgentStats>,
+    model_call_stats: Option<ModelCallStats>,
+) -> Element {
     let chart_data = model_call_stats.clone();
     let tool_dist_data = stats.clone();
     rsx! {
@@ -150,7 +153,10 @@ pub fn AgentStatsPanel(stats: Option<AgentStats>, model_call_stats: Option<Model
 }
 
 #[component]
-pub fn ProjectStatsPanel(stats: Option<common::models::ProjectStats>, model_call_stats: Option<ModelCallStats>) -> Element {
+pub fn ProjectStatsPanel(
+    stats: Option<common::models::ProjectStats>,
+    model_call_stats: Option<ModelCallStats>,
+) -> Element {
     let chart_data = model_call_stats.clone();
     rsx! {
         div { class: "space-y-4",
@@ -179,7 +185,10 @@ pub fn ProjectStatsPanel(stats: Option<common::models::ProjectStats>, model_call
 }
 
 #[component]
-pub fn TaskStatsPanel(stats: Option<common::models::TaskStats>, model_call_stats: Option<ModelCallStats>) -> Element {
+pub fn TaskStatsPanel(
+    stats: Option<common::models::TaskStats>,
+    model_call_stats: Option<ModelCallStats>,
+) -> Element {
     let chart_data = model_call_stats.clone();
     rsx! {
         div { class: "space-y-4",

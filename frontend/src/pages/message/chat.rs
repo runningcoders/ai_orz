@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use wasm_bindgen::{closure::Closure, JsCast};
+use wasm_bindgen::{JsCast, closure::Closure};
 
 use crate::api::finance::upload_attachment;
 use crate::api::hr::get_reception_agent;
@@ -8,10 +8,10 @@ use crate::api::project::{create_project, list_projects};
 use crate::components::modal::Modal;
 use crate::store::toast::use_toast;
 use crate::utils::{
-    build_optimistic_user_msg, format_file_size, format_time_hm as format_time,
-    is_attachment_message, project_status_text as status_text, replace_tmp_with_real,
-    role_avatar, MSG_AUDIO, MSG_IMAGE, MSG_TASK_ASSIGNMENT, MSG_TEXT,
-    MSG_TOOL_CALL_REQUEST, MSG_TOOL_CALL_RESULT, MSG_VIDEO,
+    MSG_AUDIO, MSG_IMAGE, MSG_TASK_ASSIGNMENT, MSG_TEXT, MSG_TOOL_CALL_REQUEST,
+    MSG_TOOL_CALL_RESULT, MSG_VIDEO, build_optimistic_user_msg, format_file_size,
+    format_time_hm as format_time, is_attachment_message, project_status_text as status_text,
+    replace_tmp_with_real, role_avatar,
 };
 use common::api::{
     CreateProjectRequest, GetReceptionAgentResponse, ListProjectsResponseItem, MessageListItem,
@@ -270,10 +270,7 @@ pub fn MessageChat() -> Element {
         });
     });
 
-    let slash_commands = [
-        ("/clear", "清空对话"),
-        ("/help", "显示帮助"),
-    ];
+    let slash_commands = [("/clear", "清空对话"), ("/help", "显示帮助")];
 
     let handle_input = {
         let mut input_text = input_text;
@@ -414,11 +411,8 @@ pub fn MessageChat() -> Element {
                 blob_parts.push(&uint8_array);
                 let blob_bag = web_sys::BlobPropertyBag::new();
                 blob_bag.set_type("application/octet-stream");
-                let blob = web_sys::Blob::new_with_str_sequence_and_options(
-                    &blob_parts,
-                    &blob_bag,
-                )
-                .ok();
+                let blob =
+                    web_sys::Blob::new_with_str_sequence_and_options(&blob_parts, &blob_bag).ok();
 
                 // 修复 L_NEW1：FormData::new() 在极端环境可能失败（如 non-Window context），
                 // 改为 ok() + match 避免 panic
@@ -1160,9 +1154,14 @@ fn render_message_content(
     }
 
     match msg.message_type {
-        MSG_TOOL_CALL_REQUEST | MSG_TOOL_CALL_RESULT => {
-            render_tool_call_card(&msg.content, msg.message_type == MSG_TOOL_CALL_RESULT, expanded, toggle_expand, msg.created_at, time_class)
-        }
+        MSG_TOOL_CALL_REQUEST | MSG_TOOL_CALL_RESULT => render_tool_call_card(
+            &msg.content,
+            msg.message_type == MSG_TOOL_CALL_RESULT,
+            expanded,
+            toggle_expand,
+            msg.created_at,
+            time_class,
+        ),
         MSG_TASK_ASSIGNMENT => {
             render_task_card(&msg.content, msg.created_at, bubble_class, time_class)
         }
@@ -1189,7 +1188,11 @@ fn render_message_content(
 }
 
 /// 渲染附件消息
-fn render_attachment_message(msg: &MessageListItem, bubble_class: &str, time_class: &str) -> Element {
+fn render_attachment_message(
+    msg: &MessageListItem,
+    bubble_class: &str,
+    time_class: &str,
+) -> Element {
     let file_meta = match &msg.file_meta {
         Some(fm) => fm,
         None => {
@@ -1275,15 +1278,31 @@ fn render_tool_call_card(
 
     match parsed {
         Ok(json) => {
-            let tool_name = json.get("tool_name").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
+            let tool_name = json
+                .get("tool_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string();
             let (status_badge, header_class) = if is_result {
                 match json.get("is_success").and_then(|v| v.as_bool()) {
-                    Some(true) => ("badge badge-success", "flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-base-300/50 transition-colors border-l-4 border-l-success"),
-                    Some(false) => ("badge badge-error", "flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-base-300/50 transition-colors border-l-4 border-l-error"),
-                    None => ("badge badge-info", "flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-base-300/50 transition-colors border-l-4 border-l-info"),
+                    Some(true) => (
+                        "badge badge-success",
+                        "flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-base-300/50 transition-colors border-l-4 border-l-success",
+                    ),
+                    Some(false) => (
+                        "badge badge-error",
+                        "flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-base-300/50 transition-colors border-l-4 border-l-error",
+                    ),
+                    None => (
+                        "badge badge-info",
+                        "flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-base-300/50 transition-colors border-l-4 border-l-info",
+                    ),
                 }
             } else {
-                ("badge badge-warning", "flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-base-300/50 transition-colors border-l-4 border-l-warning")
+                (
+                    "badge badge-warning",
+                    "flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-base-300/50 transition-colors border-l-4 border-l-warning",
+                )
             };
 
             let header_icon = if is_result { "⚙️" } else { "🔧" };
@@ -1297,9 +1316,16 @@ fn render_tool_call_card(
                 "调用请求"
             };
 
-            let args_str = json.get("args").and_then(|v| serde_json::to_string_pretty(v).ok());
-            let result_str = json.get("result").and_then(|v| serde_json::to_string_pretty(v).ok());
-            let error_msg = json.get("error_message").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let args_str = json
+                .get("args")
+                .and_then(|v| serde_json::to_string_pretty(v).ok());
+            let result_str = json
+                .get("result")
+                .and_then(|v| serde_json::to_string_pretty(v).ok());
+            let error_msg = json
+                .get("error_message")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
 
             rsx! {
                 div { class: "chat-bubble chat-bubble-neutral p-0 overflow-hidden max-w-md",
@@ -1354,7 +1380,11 @@ fn render_task_card(content: &str, time: i64, bubble_class: &str, time_class: &s
 
     match parsed {
         Ok(json) => {
-            let title = json.get("task_title").and_then(|v| v.as_str()).unwrap_or("未知任务").to_string();
+            let title = json
+                .get("task_title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("未知任务")
+                .to_string();
             let description = json.get("task_description").and_then(|v| v.as_str());
 
             rsx! {

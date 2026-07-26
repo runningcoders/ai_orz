@@ -1,12 +1,12 @@
 //! Handler: GET /api/v1/tools/{id} - Get tool detailed information
 
-use common::error::Result;
 use crate::pkg::RequestContext;
-use crate::service::domain::finance::domain;
 use crate::service::dal::tool::ToolFetchOptions;
-use common::models::StatsInterval;
+use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetToolRequest, GetToolResponse};
+use common::error::Result;
+use common::models::StatsInterval;
 
 use super::response::to_detail;
 
@@ -19,10 +19,7 @@ use super::response::to_detail;
     tags = "tool_management"
 )]
 #[generate_http_handler]
-pub async fn get_tool(
-    ctx: RequestContext,
-    params: GetToolRequest,
-) -> Result<GetToolResponse> {
+pub async fn get_tool(ctx: RequestContext, params: GetToolRequest) -> Result<GetToolResponse> {
     // 构建 FetchOptions
     let options = ToolFetchOptions {
         with_stats: params.with_stats,
@@ -30,11 +27,13 @@ pub async fn get_tool(
             (Some(start), Some(end)) => Some((start, end)),
             _ => None,
         },
-        stats_interval: params.stats_interval.and_then(|s| match s.to_lowercase().as_str() {
-            "hourly" => Some(StatsInterval::Hourly),
-            "daily" => Some(StatsInterval::Daily),
-            _ => None,
-        }),
+        stats_interval: params
+            .stats_interval
+            .and_then(|s| match s.to_lowercase().as_str() {
+                "hourly" => Some(StatsInterval::Hourly),
+                "daily" => Some(StatsInterval::Daily),
+                _ => None,
+            }),
     };
 
     let tool = domain()

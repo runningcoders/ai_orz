@@ -11,7 +11,7 @@
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput};
+use syn::{DeriveInput, parse_macro_input};
 
 /// 判断字段类型是否是 `Option<T>`（任意 T）
 fn is_option_type(ty: &syn::Type) -> bool {
@@ -59,7 +59,10 @@ pub fn derive_log_fields(input: TokenStream) -> TokenStream {
 
     if let syn::Data::Struct(s) = input.data {
         for field in &s.fields {
-            let has_log_field = field.attrs.iter().any(|attr| attr.path().is_ident("log_field"));
+            let has_log_field = field
+                .attrs
+                .iter()
+                .any(|attr| attr.path().is_ident("log_field"));
             if !has_log_field {
                 continue;
             }

@@ -1,7 +1,7 @@
 //! Tool 详情页
 
-use crate::api::finance::{debug_call_tool, delete_tool, get_tool, update_tool_status};
 use crate::api::StatsOptions;
+use crate::api::finance::{debug_call_tool, delete_tool, get_tool, update_tool_status};
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::ToolStatsPanel;
@@ -9,7 +9,7 @@ use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::GetToolResponse;
 use dioxus::prelude::*;
-use dioxus_router::{use_navigator, Link};
+use dioxus_router::{Link, use_navigator};
 
 /// 从 JSON Schema 生成参数骨架
 ///

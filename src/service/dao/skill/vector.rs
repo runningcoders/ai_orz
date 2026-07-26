@@ -1,11 +1,11 @@
 //! Skill Vector DAO implementation
 //! 负责技能向量索引的 CRUD 操作，与基础技能数据完全解耦
 
-use common::error::{err, Result};
 use crate::models::vector::{VectorIndexParams, VectorRow, VectorSearchHit};
 use crate::pkg::RequestContext;
 use crate::service::dao::skill::SkillVectorDao;
 use async_trait::async_trait;
+use common::error::{Result, err};
 use std::sync::{Arc, OnceLock};
 
 // ==================== 工厂方法 + 单例 ====================

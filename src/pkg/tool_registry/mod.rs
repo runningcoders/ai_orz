@@ -6,13 +6,13 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 pub mod builtin;
+pub mod fs_read;
+pub mod fs_write;
 pub mod handler_adapter;
 pub mod http;
 pub mod http_fetch;
-pub mod fs_read;
-pub mod fs_write;
-pub mod shell_exec;
 pub mod mcp;
+pub mod shell_exec;
 pub mod tool_security;
 
 #[cfg(test)]

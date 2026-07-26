@@ -7,7 +7,7 @@ use common::api::{
     UpdateCurrentUserResponse, UpdateUserRequest, UpdateUserResponse,
 };
 
-use super::{api_delete, api_get, api_get_or_default, api_post, api_put, ApiError};
+use super::{ApiError, api_delete, api_get, api_get_or_default, api_post, api_put};
 
 /// 公开获取组织列表（无需登录，登录页用）
 pub async fn list_organizations_public() -> Result<ListOrganizationsResponse, ApiError> {
@@ -20,7 +20,9 @@ pub async fn get_current_organization() -> Result<GetCurrentOrganizationResponse
 }
 
 /// 更新当前组织信息
-pub async fn update_current_organization(req: UpdateCurrentOrganizationRequest) -> Result<UpdateCurrentOrganizationResponse, ApiError> {
+pub async fn update_current_organization(
+    req: UpdateCurrentOrganizationRequest,
+) -> Result<UpdateCurrentOrganizationResponse, ApiError> {
     api_put("/api/v1/organization/me", &req).await
 }
 
@@ -30,7 +32,9 @@ pub async fn list_users() -> Result<ListUsersResponse, ApiError> {
 }
 
 /// 创建用户
-pub async fn create_user(req: CreateOrganizationUserRequest) -> Result<CreateOrganizationUserResponse, ApiError> {
+pub async fn create_user(
+    req: CreateOrganizationUserRequest,
+) -> Result<CreateOrganizationUserResponse, ApiError> {
     api_post("/api/v1/organization/user/", &req).await
 }
 
@@ -50,6 +54,8 @@ pub async fn get_current_user_info() -> Result<GetCurrentUserResponse, ApiError>
 }
 
 /// 更新当前用户信息
-pub async fn update_current_user(req: UpdateCurrentUserRequest) -> Result<UpdateCurrentUserResponse, ApiError> {
+pub async fn update_current_user(
+    req: UpdateCurrentUserRequest,
+) -> Result<UpdateCurrentUserResponse, ApiError> {
     api_put("/api/v1/user/me", &req).await
 }

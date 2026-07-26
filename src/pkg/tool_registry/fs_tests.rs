@@ -16,7 +16,7 @@ fn resolve_and_validate_path_accepts_relative_within_base() {
     let result = fs::resolve_and_validate_path(base.path(), "src/main.rs", &[]);
     assert!(result.is_ok());
     match result.unwrap() {
-        fs::ValidationResult::Valid(_) => {},
+        fs::ValidationResult::Valid(_) => {}
         fs::ValidationResult::NeedConfirmation(_) => {
             panic!("Expected valid path within base to be accepted without confirmation");
         }

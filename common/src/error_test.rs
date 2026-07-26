@@ -1,10 +1,14 @@
 //! Contract tests for the shared error model.
 
-use crate::error::{bail_err, ensure_err, err, Error, ErrorCode, ErrorType, ErrorField, Result};
+use crate::error::{Error, ErrorCode, ErrorField, ErrorType, Result, bail_err, ensure_err, err};
 use std::assert_matches;
 
 fn returns_common_result() -> Result<()> {
-    bail_err!(ToolAutoModeNotSupported, "{} Tool only supports Manual control mode", "HTTP");
+    bail_err!(
+        ToolAutoModeNotSupported,
+        "{} Tool only supports Manual control mode",
+        "HTTP"
+    );
 }
 
 #[test]
@@ -53,14 +57,20 @@ fn error_with_field_data_works() {
     let mut field = ErrorField::new();
     field.insert("field_name".into(), "username".into());
     field.insert("reason".into(), "too short".into());
-    
+
     let error = err!(InvalidRequest, "field validation failed").with_field(field);
 
     assert_eq!(error.code.code_str(), "invalid_request");
     assert!(error.field.is_some());
     let field = error.field.as_ref().unwrap();
-    assert_eq!(field.get("field_name").and_then(|v| v.as_str()), Some("username"));
-    assert_eq!(field.get("reason").and_then(|v| v.as_str()), Some("too short"));
+    assert_eq!(
+        field.get("field_name").and_then(|v| v.as_str()),
+        Some("username")
+    );
+    assert_eq!(
+        field.get("reason").and_then(|v| v.as_str()),
+        Some("too short")
+    );
 }
 
 #[test]

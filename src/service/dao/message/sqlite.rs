@@ -1,14 +1,14 @@
 //! Message DAO SQLite 实现
 
-use common::error::Result;
 use crate::models::file::FileMeta;
 use crate::models::message::MessagePo;
 use crate::pkg::RequestContext;
 use crate::service::dao::message::{MessageDao, MessageQuery, MessageSearch};
 use chrono::Utc;
 use common::enums::{FileType, MessageRole, MessageStatus, MessageType};
-use sqlx::types::Json;
+use common::error::Result;
 use sqlx::FromRow;
+use sqlx::types::Json;
 use std::sync::{Arc, OnceLock};
 
 // ==================== FTS5 辅助 ====================
@@ -558,7 +558,9 @@ fn push_query_filters<'args>(
         builder.push(" AND task_id = ").push_bind(task_id.clone());
     }
     if let Some(project_id) = &query.project_id {
-        builder.push(" AND project_id = ").push_bind(project_id.clone());
+        builder
+            .push(" AND project_id = ")
+            .push_bind(project_id.clone());
     }
     if let Some(from_id) = &query.from_id {
         builder.push(" AND from_id = ").push_bind(from_id.clone());

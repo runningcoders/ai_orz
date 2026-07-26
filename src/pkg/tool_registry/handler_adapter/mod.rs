@@ -12,10 +12,10 @@
 
 pub mod macros;
 
-use common::error::Result;
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use async_trait::async_trait;
+use common::error::Result;
 use dyn_clone::DynClone;
 use futures_util::Future;
 use rig::tool::ToolError;
@@ -164,10 +164,7 @@ where
     Params: for<'de> Deserialize<'de> + Serialize + Send + Sync + Clone + 'static,
 {
     pub fn new(po: ToolPo, inner: Box<dyn HandlerFn<Params>>) -> Self {
-        Self {
-            po,
-            inner,
-        }
+        Self { po, inner }
     }
 }
 
@@ -229,10 +226,7 @@ impl HandlerToolBuilder {
 
     pub fn build<Params, F>(self, f: F) -> (ToolPo, Box<dyn HandlerFn<Params>>)
     where
-        F: Fn(
-                RequestContext,
-                Params,
-            ) -> Pin<Box<dyn Future<Output = Result<Value>> + Send>>
+        F: Fn(RequestContext, Params) -> Pin<Box<dyn Future<Output = Result<Value>> + Send>>
             + Send
             + Sync
             + Clone

@@ -4,7 +4,7 @@
 
 use chrono::Utc;
 use common::api::a2a::{
-    A2aArtifact, A2aMessage, A2aMessagePart, A2aTask, A2aTaskStatus, A2aTaskState,
+    A2aArtifact, A2aMessage, A2aMessagePart, A2aTask, A2aTaskState, A2aTaskStatus,
 };
 use common::enums::ProjectStatus;
 

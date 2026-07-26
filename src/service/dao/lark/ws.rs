@@ -18,12 +18,12 @@ use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::Message;
 
+use super::LarkEventHandler;
 use super::error::{from_reqwest, from_serde, from_ws, validate_config};
 use super::event::LarkMessageEvent;
 use super::token::SharedTokenCache;
-use super::LarkEventHandler;
 use common::config::LarkConfig;
-use common::error::{err, Result};
+use common::error::{Result, err};
 
 const PATH_WS_ENDPOINT: &str = "/open-apis/callback/ws/endpoints";
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
@@ -232,7 +232,11 @@ async fn handle_ws_message(text: &str, handler: &Arc<dyn LarkEventHandler>) {
     let incoming: WsIncoming = match serde_json::from_str(text) {
         Ok(i) => i,
         Err(e) => {
-            log_debug!("lark ws parse message failed (ignored): {} body={}", e, text);
+            log_debug!(
+                "lark ws parse message failed (ignored): {} body={}",
+                e,
+                text
+            );
             return;
         }
     };
@@ -241,7 +245,11 @@ async fn handle_ws_message(text: &str, handler: &Arc<dyn LarkEventHandler>) {
         WsIncoming::Event { event } => {
             let event_id = event.header.event_id.clone();
             let event_type = event.header.event_type.clone();
-            log_info!("lark ws received event: id={} type={}", event_id, event_type);
+            log_info!(
+                "lark ws received event: id={} type={}",
+                event_id,
+                event_type
+            );
 
             // 仅处理 im.message.receive_v1 事件
             if event_type != "im.message.receive_v1" {
@@ -251,7 +259,11 @@ async fn handle_ws_message(text: &str, handler: &Arc<dyn LarkEventHandler>) {
 
             // 回调 handler（错误仅记录，不中断循环）
             if let Err(e) = handler.handle_message_event(event).await {
-                log_error!("lark ws event handler error: event_id={} err={}", event_id, e);
+                log_error!(
+                    "lark ws event handler error: event_id={} err={}",
+                    event_id,
+                    e
+                );
             }
         }
         WsIncoming::Pong => {

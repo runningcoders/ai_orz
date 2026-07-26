@@ -8,12 +8,12 @@ mod sqlite_test;
 #[cfg(test)]
 mod vector_test;
 
-use common::error::Result;
 use crate::models::skill::{SkillFile, SkillPo};
 use crate::models::vector::VectorIndexParams;
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
 use common::enums::SkillStatus;
+use common::error::Result;
 
 /// Skill 查询参数
 #[derive(Debug, Clone, Default)]
@@ -24,7 +24,7 @@ pub struct SkillQuery {
     pub category: Option<String>,
     pub author_id: Option<String>,
     pub parent_skill_id: Option<String>, // 按父技能 ID 过滤（用于幂等检查已安装副本）
-    pub tags: Option<Vec<String>>, // 按 tag 过滤（OR 语义，命中任一即可）
+    pub tags: Option<Vec<String>>,       // 按 tag 过滤（OR 语义，命中任一即可）
     pub keyword: Option<String>,
     pub pagination: common::api::PaginationParams,
 }
@@ -64,8 +64,11 @@ pub trait SkillDao: Send + Sync {
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<SkillPo>>;
 
     /// 通用组合查询
-    async fn query(&self, ctx: RequestContext, query: SkillQuery)
-    -> Result<common::api::PagedResult<SkillPo>>;
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: SkillQuery,
+    ) -> Result<common::api::PagedResult<SkillPo>>;
 
     /// List skills by status
     async fn list_by_status(
@@ -75,18 +78,10 @@ pub trait SkillDao: Send + Sync {
     ) -> Result<Vec<SkillPo>>;
 
     /// List skills by category
-    async fn list_by_category(
-        &self,
-        ctx: RequestContext,
-        category: &str,
-    ) -> Result<Vec<SkillPo>>;
+    async fn list_by_category(&self, ctx: RequestContext, category: &str) -> Result<Vec<SkillPo>>;
 
     /// List skills by author
-    async fn list_by_author(
-        &self,
-        ctx: RequestContext,
-        author_id: &str,
-    ) -> Result<Vec<SkillPo>>;
+    async fn list_by_author(&self, ctx: RequestContext, author_id: &str) -> Result<Vec<SkillPo>>;
 
     // ========== 业务操作 ==========
 
@@ -126,12 +121,7 @@ pub trait SkillDao: Send + Sync {
     fn write_file(&self, skill: &SkillPo, filename: &str, content: &str) -> Result<()>;
 
     /// 写入指定文件名的原始 bytes。
-    fn write_file_bytes(
-        &self,
-        skill: &SkillPo,
-        filename: &str,
-        bytes: &[u8],
-    ) -> Result<()>;
+    fn write_file_bytes(&self, skill: &SkillPo, filename: &str, bytes: &[u8]) -> Result<()>;
 
     /// 删除整个技能目录（卸载/删除时调用）
     fn delete_skill_dir(&self, skill: &SkillPo) -> Result<()>;

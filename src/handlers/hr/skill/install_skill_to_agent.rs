@@ -1,11 +1,10 @@
 //! Handler: POST /api/v1/agents/{agent_id}/skills/{skill_id} - Install Skill to Agent
 
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{InstallSkillToAgentRequest, InstallSkillToAgentResponse};
-
+use common::error::Result;
 
 use super::response::to_detail;
 

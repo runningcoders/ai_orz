@@ -12,7 +12,7 @@ use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CreateExternalAgentRequest, CreateExternalAgentResponse};
 use common::enums::AgentKind;
-use common::error::{Error, Result, err, bail_err};
+use common::error::{Error, Result, bail_err, err};
 
 /// Create a new external AI agent (Cli or Remote kind)
 #[register_handler_tool(
@@ -39,19 +39,21 @@ pub async fn create_external_agent(
             return Err(Error::bad_request(format!(
                 "Invalid kind '{}', expected 'cli' or 'remote'",
                 other
-            )))
+            )));
         }
     };
 
     // 按 kind 构造 external_config
     let external_config = match kind {
         AgentKind::Cli => {
-            let command = params.command.as_ref().ok_or_else(|| {
-                Error::bad_request("command is required for cli kind")
-            })?;
-            let work_dir = params.work_dir.as_ref().ok_or_else(|| {
-                Error::bad_request("work_dir is required for cli kind")
-            })?;
+            let command = params
+                .command
+                .as_ref()
+                .ok_or_else(|| Error::bad_request("command is required for cli kind"))?;
+            let work_dir = params
+                .work_dir
+                .as_ref()
+                .ok_or_else(|| Error::bad_request("work_dir is required for cli kind"))?;
             ExternalAgentConfig::Cli {
                 command: command.clone(),
                 args: params.args.clone().unwrap_or_default(),
@@ -62,12 +64,14 @@ pub async fn create_external_agent(
             }
         }
         AgentKind::Remote => {
-            let endpoint = params.endpoint.as_ref().ok_or_else(|| {
-                Error::bad_request("endpoint is required for remote kind")
-            })?;
-            let agent_name = params.agent_name.as_ref().ok_or_else(|| {
-                Error::bad_request("agent_name is required for remote kind")
-            })?;
+            let endpoint = params
+                .endpoint
+                .as_ref()
+                .ok_or_else(|| Error::bad_request("endpoint is required for remote kind"))?;
+            let agent_name = params
+                .agent_name
+                .as_ref()
+                .ok_or_else(|| Error::bad_request("agent_name is required for remote kind"))?;
             ExternalAgentConfig::Remote {
                 endpoint: endpoint.clone(),
                 agent_name: agent_name.clone(),
@@ -98,7 +102,10 @@ pub async fn create_external_agent(
     let agent = Agent::from_po(po);
 
     // 调用通用 create_agent（Domain 层按 kind 跳过 model_provider_id 校验）
-    domain().agent_manage().create_agent(ctx.clone(), &agent).await?;
+    domain()
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await?;
 
     // 重新查询拿到 created_at
     let created = domain()

@@ -2,8 +2,8 @@
 //!
 //! 用于用户登录认证，签发和验证 JWT token
 
-use common::error::{Result, err};
 use chrono::{Duration, Utc};
+use common::error::{Result, err};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;

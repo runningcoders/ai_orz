@@ -1,10 +1,10 @@
 //! Handler: PUT /api/v1/agents/{id} - Update agent information
 
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateAgentRequest, UpdateAgentResponse};
+use common::error::Result;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::enrich_ctx;

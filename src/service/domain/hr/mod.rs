@@ -13,7 +13,6 @@ mod agent_test;
 #[cfg(test)]
 mod skill_test;
 
-use common::error::Result;
 use crate::models::agent::Agent;
 use crate::models::skill::Skill;
 use crate::pkg::RequestContext;
@@ -26,6 +25,7 @@ use crate::service::dal::tool::ToolDal;
 use crate::service::dao::agent::AgentQuery;
 use crate::service::dao::skill::{SkillQuery, SkillSearch};
 use common::enums::{AgentStatus, SkillStatus};
+use common::error::Result;
 use std::sync::{Arc, OnceLock};
 
 // ==================== 常量 ====================
@@ -101,7 +101,10 @@ impl HrDomain for HrDomainImpl {
         let query = AgentQuery {
             roles: Some(vec![FEISHU_RECEPTION_ROLE.to_string()]),
             status: Some(AgentStatus::Onboarded),
-            pagination: common::api::PaginationParams { limit: Some(1), offset: None },
+            pagination: common::api::PaginationParams {
+                limit: Some(1),
+                offset: None,
+            },
             ..Default::default()
         };
         let agents = self.agent_dal.query(ctx.clone(), query).await?;
@@ -112,7 +115,10 @@ impl HrDomain for HrDomainImpl {
         // fallback：任意 Onboarded Agent
         let query = AgentQuery {
             status: Some(AgentStatus::Onboarded),
-            pagination: common::api::PaginationParams { limit: Some(1), offset: None },
+            pagination: common::api::PaginationParams {
+                limit: Some(1),
+                offset: None,
+            },
             ..Default::default()
         };
         let agents = self.agent_dal.query(ctx, query).await?;
@@ -154,7 +160,12 @@ pub trait AgentManage: Send + Sync {
     async fn create_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<()>;
 
     /// 获取 Agent
-    async fn get_agent(&self, ctx: RequestContext, id: &str, options: crate::service::dal::agent::AgentFetchOptions) -> Result<Option<Agent>>;
+    async fn get_agent(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        options: crate::service::dal::agent::AgentFetchOptions,
+    ) -> Result<Option<Agent>>;
 
     /// 通用综合查询
     ///
@@ -206,22 +217,14 @@ pub trait AgentManage: Send + Sync {
     /// 校验入职就绪状态
     ///
     /// 检查工具绑定、技能安装等完整性条件
-    async fn validate_onboard_readiness(
-        &self,
-        ctx: RequestContext,
-        agent: &Agent,
-    ) -> Result<()>;
+    async fn validate_onboard_readiness(&self, ctx: RequestContext, agent: &Agent) -> Result<()>;
 
     /// 安装工具包（按 tag）
     ///
     /// 将指定 tag 的工具包安装到 Agent 的 runtime_config.installed_tags 中。
     /// 幂等：已安装则跳过。
-    async fn install_tool_pack(
-        &self,
-        ctx: RequestContext,
-        agent_id: &str,
-        tag: &str,
-    ) -> Result<()>;
+    async fn install_tool_pack(&self, ctx: RequestContext, agent_id: &str, tag: &str)
+    -> Result<()>;
 
     /// 卸载工具包（按 tag）
     ///
@@ -316,11 +319,7 @@ pub trait SkillManage: Send + Sync {
     // A. 技能基础管理（CRUD）
     async fn create_skill(&self, ctx: RequestContext, skill: &Skill) -> Result<()>;
     async fn get_skill(&self, ctx: RequestContext, id: &str) -> Result<Option<Skill>>;
-    async fn update_skill(
-        &self,
-        ctx: RequestContext,
-        params: UpdateSkillParams<'_>,
-    ) -> Result<()>;
+    async fn update_skill(&self, ctx: RequestContext, params: UpdateSkillParams<'_>) -> Result<()>;
     async fn delete_skill(&self, ctx: RequestContext, id: &str) -> Result<()>;
 
     // B. 技能查询与搜索
@@ -329,31 +328,11 @@ pub trait SkillManage: Send + Sync {
         ctx: RequestContext,
         query: SkillQuery,
     ) -> Result<common::api::PagedResult<Skill>>;
-    async fn list_by_status(
-        &self,
-        ctx: RequestContext,
-        status: SkillStatus,
-    ) -> Result<Vec<Skill>>;
-    async fn list_by_category(
-        &self,
-        ctx: RequestContext,
-        category: &str,
-    ) -> Result<Vec<Skill>>;
-    async fn list_by_author(
-        &self,
-        ctx: RequestContext,
-        author_id: &str,
-    ) -> Result<Vec<Skill>>;
-    async fn list_for_agent(
-        &self,
-        ctx: RequestContext,
-        agent_id: &str,
-    ) -> Result<Vec<Skill>>;
-    async fn search_skills(
-        &self,
-        ctx: RequestContext,
-        search: SkillSearch,
-    ) -> Result<Vec<Skill>>;
+    async fn list_by_status(&self, ctx: RequestContext, status: SkillStatus) -> Result<Vec<Skill>>;
+    async fn list_by_category(&self, ctx: RequestContext, category: &str) -> Result<Vec<Skill>>;
+    async fn list_by_author(&self, ctx: RequestContext, author_id: &str) -> Result<Vec<Skill>>;
+    async fn list_for_agent(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<Skill>>;
+    async fn search_skills(&self, ctx: RequestContext, search: SkillSearch) -> Result<Vec<Skill>>;
 
     // C. Agent 技能安装
     async fn install_to_agent(

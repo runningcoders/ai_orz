@@ -163,10 +163,24 @@ pub struct DiffSummary {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind")]
 pub enum DiffEntry<T> {
-    Same { id: String, current: T },
-    Updated { id: String, current: T, snapshot: T, changes: Vec<FieldChange> },
-    New { id: String, snapshot: T },
-    Removed { id: String, current: T },
+    Same {
+        id: String,
+        current: T,
+    },
+    Updated {
+        id: String,
+        current: T,
+        snapshot: T,
+        changes: Vec<FieldChange>,
+    },
+    New {
+        id: String,
+        snapshot: T,
+    },
+    Removed {
+        id: String,
+        current: T,
+    },
 }
 
 /// 字段级变更

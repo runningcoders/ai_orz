@@ -4,10 +4,10 @@ use crate::models::message_channel::{ChannelConfig, MessageChannelPo};
 use crate::pkg::RequestContext;
 use crate::service::dao::message_channel::{self, MessageChannelDao, MessageChannelQuery};
 use common::enums::{ChannelStatus, ChannelType};
+use common::error::Result;
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use uuid::Uuid;
-use common::error::Result;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     crate::pkg::request_context_test_support::new_test_ctx(user_id, pool)

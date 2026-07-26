@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock, Weak};
 
-use common::error::{err, Result};
 use crate::pkg::RequestContext;
+use common::error::{Result, err};
 
-use super::{Event, EventKind, Consumer, ConsumeMode, Producer};
 use super::metrics_hook::{AopEventMeta, AopMetricsHook};
+use super::{ConsumeMode, Consumer, Event, EventKind, Producer};
 use crate::pkg::aop::queue::{EventQueue, InMemoryEventQueue};
 
 pub struct Registry {
@@ -51,16 +51,20 @@ impl Registry {
 
         if consumer.consume_mode() == ConsumeMode::Async {
             let queue: Arc<dyn EventQueue> = Arc::new(InMemoryEventQueue::new());
-            self.queues.write()
+            self.queues
+                .write()
                 .map_err(|e| err!(Internal, "registry lock error: {}", e))?
                 .insert(name.clone(), queue);
         }
 
-        let mut consumers = self.consumers.write()
+        let mut consumers = self
+            .consumers
+            .write()
             .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
 
         for kind in consumer.interested_events() {
-            consumers.entry(kind)
+            consumers
+                .entry(kind)
                 .or_insert_with(Vec::new)
                 .push(consumer.clone());
         }
@@ -70,18 +74,23 @@ impl Registry {
 
     pub async fn register_producer(&self, producer: Arc<dyn Producer>) -> Result<()> {
         let registry_arc = {
-            let self_ref = self.self_ref.read()
+            let self_ref = self
+                .self_ref
+                .read()
                 .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
-            self_ref.as_ref()
+            self_ref
+                .as_ref()
                 .and_then(|w| w.upgrade())
                 .ok_or_else(|| err!(Internal, "registry not initialized"))?
         };
         producer.register(registry_arc).await?;
-        
-        let mut producers = self.producers.write()
+
+        let mut producers = self
+            .producers
+            .write()
             .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
         producers.push(producer);
-        
+
         Ok(())
     }
 
@@ -121,11 +130,15 @@ impl Registry {
 
         // 统一注入元字段到 JSON 顶层，确保队列和监控能读取到一致的元数据
         if let Some(obj) = event_json.as_object_mut() {
-            obj.entry("event_id").or_insert(serde_json::Value::String(event_id));
-            obj.entry("kind").or_insert(serde_json::Value::String(event_kind));
-            obj.entry("order_key").or_insert(serde_json::Value::String(order_key));
+            obj.entry("event_id")
+                .or_insert(serde_json::Value::String(event_id));
+            obj.entry("kind")
+                .or_insert(serde_json::Value::String(event_kind));
+            obj.entry("order_key")
+                .or_insert(serde_json::Value::String(order_key));
             obj.entry("priority").or_insert(serde_json::json!(priority));
-            obj.entry("created_at").or_insert(serde_json::json!(created_at));
+            obj.entry("created_at")
+                .or_insert(serde_json::json!(created_at));
         }
 
         for consumer in interested {
@@ -159,7 +172,12 @@ impl Registry {
                             let err_str = format!("{:?}", e);
                             sys_error!("consumer {} sync error: {}", consumer.name(), e);
                             if let Some(hook) = self.metrics_hook() {
-                                hook.on_consume_failure(consumer.name(), &meta, duration_ms, &err_str);
+                                hook.on_consume_failure(
+                                    consumer.name(),
+                                    &meta,
+                                    duration_ms,
+                                    &err_str,
+                                );
                             }
                         }
                     }
@@ -189,10 +207,13 @@ impl Registry {
 
     pub async fn dequeue_for(&self, consumer_name: &str) -> Result<Option<serde_json::Value>> {
         let queue = {
-            let queues = self.queues.read()
+            let queues = self
+                .queues
+                .read()
                 .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
 
-            queues.get(consumer_name)
+            queues
+                .get(consumer_name)
                 .ok_or_else(|| err!(NotFound, "consumer queue not found: {}", consumer_name))?
                 .clone()
         };
@@ -204,10 +225,13 @@ impl Registry {
 
     pub async fn ack(&self, consumer_name: &str, event_id: &str) -> Result<()> {
         let queue = {
-            let queues = self.queues.read()
+            let queues = self
+                .queues
+                .read()
                 .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
 
-            queues.get(consumer_name)
+            queues
+                .get(consumer_name)
                 .ok_or_else(|| err!(NotFound, "consumer queue not found: {}", consumer_name))?
                 .clone()
         };
@@ -218,10 +242,13 @@ impl Registry {
 
     pub async fn nack(&self, consumer_name: &str, event_id: &str) -> Result<()> {
         let queue = {
-            let queues = self.queues.read()
+            let queues = self
+                .queues
+                .read()
                 .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
 
-            queues.get(consumer_name)
+            queues
+                .get(consumer_name)
                 .ok_or_else(|| err!(NotFound, "consumer queue not found: {}", consumer_name))?
                 .clone()
         };
@@ -231,7 +258,9 @@ impl Registry {
     }
 
     pub async fn start_all(&self) -> Result<()> {
-        let mut started = self.started.write()
+        let mut started = self
+            .started
+            .write()
             .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
 
         if *started {
@@ -239,7 +268,9 @@ impl Registry {
         }
 
         let async_consumers: Vec<Arc<dyn Consumer>> = {
-            let consumers = self.consumers.read()
+            let consumers = self
+                .consumers
+                .read()
                 .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
 
             let mut seen = std::collections::HashSet::new();
@@ -247,7 +278,9 @@ impl Registry {
 
             for consumer_list in consumers.values() {
                 for consumer in consumer_list {
-                    if consumer.consume_mode() == ConsumeMode::Async && seen.insert(consumer.name().to_string()) {
+                    if consumer.consume_mode() == ConsumeMode::Async
+                        && seen.insert(consumer.name().to_string())
+                    {
                         result.push(consumer.clone());
                     }
                 }
@@ -263,7 +296,9 @@ impl Registry {
             let error_sleep = consumer.error_retry_sleep_ms();
 
             let has_queue = {
-                let queues = self.queues.read()
+                let queues = self
+                    .queues
+                    .read()
                     .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
                 queues.contains_key(&name)
             };
@@ -277,9 +312,12 @@ impl Registry {
                 let consumer = consumer.clone();
 
                 let registry_arc = {
-                    let self_ref = self.self_ref.read()
+                    let self_ref = self
+                        .self_ref
+                        .read()
                         .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
-                    self_ref.as_ref()
+                    self_ref
+                        .as_ref()
                         .and_then(|w| w.upgrade())
                         .ok_or_else(|| err!(Internal, "registry self-ref not set"))?
                 };
@@ -290,7 +328,8 @@ impl Registry {
                     loop {
                         match registry_arc.dequeue_for(&consumer_name).await {
                             Ok(Some(event_json)) => {
-                                let event_id = event_json.get("event_id")
+                                let event_id = event_json
+                                    .get("event_id")
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("unknown")
                                     .to_string();
@@ -309,47 +348,90 @@ impl Registry {
                                         let duration_ms = start.elapsed().as_millis() as u64;
                                         // 埋点：on_consume_success
                                         if let Some(hook) = registry_arc.metrics_hook() {
-                                            hook.on_consume_success(&consumer_name, &meta, duration_ms);
+                                            hook.on_consume_success(
+                                                &consumer_name,
+                                                &meta,
+                                                duration_ms,
+                                            );
                                         }
                                         if let Err(e) = consumer.ack(&event_id).await {
-                                            sys_error!("[{}] ack error for {}: {}", consumer_name, event_id, e);
+                                            sys_error!(
+                                                "[{}] ack error for {}: {}",
+                                                consumer_name,
+                                                event_id,
+                                                e
+                                            );
                                         }
                                         // 必须调用 queue.ack 从内存队列移除事件
                                         // 否则事件永远停留在 in_progress + events，
                                         // 导致同 order_key 后续消息卡死（has_active_message 永远 true）
-                                        if let Err(e) = registry_arc.ack(&consumer_name, &event_id).await {
-                                            sys_error!("[{}] queue.ack error for {}: {}", consumer_name, event_id, e);
+                                        if let Err(e) =
+                                            registry_arc.ack(&consumer_name, &event_id).await
+                                        {
+                                            sys_error!(
+                                                "[{}] queue.ack error for {}: {}",
+                                                consumer_name,
+                                                event_id,
+                                                e
+                                            );
                                         }
                                     }
                                     Err(e) => {
                                         let duration_ms = start.elapsed().as_millis() as u64;
                                         let err_str = format!("{:?}", e);
-                                        sys_error!("[{}] on_event error for {}: {}", consumer_name, event_id, e);
+                                        sys_error!(
+                                            "[{}] on_event error for {}: {}",
+                                            consumer_name,
+                                            event_id,
+                                            e
+                                        );
                                         // 埋点：on_consume_failure
                                         if let Some(hook) = registry_arc.metrics_hook() {
-                                            hook.on_consume_failure(&consumer_name, &meta, duration_ms, &err_str);
+                                            hook.on_consume_failure(
+                                                &consumer_name,
+                                                &meta,
+                                                duration_ms,
+                                                &err_str,
+                                            );
                                         }
                                         if let Err(e) = consumer.nack(&event_id).await {
-                                            sys_error!("[{}] nack error for {}: {}", consumer_name, event_id, e);
+                                            sys_error!(
+                                                "[{}] nack error for {}: {}",
+                                                consumer_name,
+                                                event_id,
+                                                e
+                                            );
                                         }
                                         // 必须调用 queue.nack 让事件重新入队等待重试
                                         // 否则失败事件永远停留在 in_progress，无法重试
-                                        if let Err(e) = registry_arc.nack(&consumer_name, &event_id).await {
-                                            sys_error!("[{}] queue.nack error for {}: {}", consumer_name, event_id, e);
+                                        if let Err(e) =
+                                            registry_arc.nack(&consumer_name, &event_id).await
+                                        {
+                                            sys_error!(
+                                                "[{}] queue.nack error for {}: {}",
+                                                consumer_name,
+                                                event_id,
+                                                e
+                                            );
                                         }
                                         // 退避：on_event 失败后添加 sleep，避免紧密自旋
                                         // 之前 error_sleep 只用于 dequeue_for 失败，不用于 on_event 失败
                                         // 导致 Agent busy 时 nack 后立即重新入队被取出，形成 CPU 紧密自旋
-                                        tokio::time::sleep(tokio::time::Duration::from_millis(error_sleep)).await;
+                                        tokio::time::sleep(tokio::time::Duration::from_millis(
+                                            error_sleep,
+                                        ))
+                                        .await;
                                     }
                                 }
                             }
                             Ok(None) => {
-                                tokio::time::sleep(tokio::time::Duration::from_millis(empty_sleep)).await;
+                                tokio::time::sleep(tokio::time::Duration::from_millis(empty_sleep))
+                                    .await;
                             }
                             Err(e) => {
                                 sys_error!("[{}] dequeue error: {}", consumer_name, e);
-                                tokio::time::sleep(tokio::time::Duration::from_millis(error_sleep)).await;
+                                tokio::time::sleep(tokio::time::Duration::from_millis(error_sleep))
+                                    .await;
                             }
                         }
                     }
@@ -360,7 +442,9 @@ impl Registry {
         }
 
         let producers = {
-            let producers = self.producers.read()
+            let producers = self
+                .producers
+                .read()
                 .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
             producers.clone()
         };
@@ -372,7 +456,11 @@ impl Registry {
             if interval > 0 {
                 let producer = producer.clone();
                 tokio::spawn(async move {
-                    sys_info!("[{}] polling producer started, interval: {}s", name, interval);
+                    sys_info!(
+                        "[{}] polling producer started, interval: {}s",
+                        name,
+                        interval
+                    );
                     loop {
                         if let Err(e) = producer.poll().await {
                             sys_error!("[{}] poll error: {}", name, e);
@@ -393,15 +481,14 @@ impl Registry {
     }
 
     pub fn consumer_count(&self) -> usize {
-        self.consumers.read()
+        self.consumers
+            .read()
             .map(|c| c.values().map(|v| v.len()).sum())
             .unwrap_or(0)
     }
 
     pub fn producer_count(&self) -> usize {
-        self.producers.read()
-            .map(|p| p.len())
-            .unwrap_or(0)
+        self.producers.read().map(|p| p.len()).unwrap_or(0)
     }
 
     pub fn queue_len(&self, consumer_name: &str) -> usize {
@@ -438,14 +525,22 @@ impl Registry {
     }
 
     /// 查询指定消费者队列中的事件
-    pub fn query_events(&self, consumer_name: &str, filter: crate::pkg::aop::queue::EventQueryFilter) -> Option<Vec<crate::pkg::aop::queue::EventSummary>> {
+    pub fn query_events(
+        &self,
+        consumer_name: &str,
+        filter: crate::pkg::aop::queue::EventQueryFilter,
+    ) -> Option<Vec<crate::pkg::aop::queue::EventSummary>> {
         let queues = self.queues.read().ok()?;
         let queue = queues.get(consumer_name)?;
         Some(queue.query_events(filter))
     }
 
     /// 获取指定消费者队列中的事件详情
-    pub fn get_event(&self, consumer_name: &str, event_id: &str) -> Option<crate::pkg::aop::queue::EventDetail> {
+    pub fn get_event(
+        &self,
+        consumer_name: &str,
+        event_id: &str,
+    ) -> Option<crate::pkg::aop::queue::EventDetail> {
         let queues = self.queues.read().ok()?;
         let queue = queues.get(consumer_name)?;
         queue.get_event(event_id)

@@ -31,32 +31,26 @@
 
 #![warn(clippy::all)]
 
-mod traits;
-mod erased;
-mod default;
-mod stats;
-mod model_call;
-mod tool_call;
 mod agent_awake;
+mod default;
+mod erased;
+mod model_call;
 mod project_event;
-mod task_event;
 pub mod runtime;
+mod stats;
+mod task_event;
+mod tool_call;
+mod traits;
 
-pub use common::models::{StatsInterval, TimeSeriesPoint, TokenSumResult};
+pub use self::agent_awake::{AgentAwakeEvent, AgentAwakeStatTable};
 pub use self::default::{DefaultStatEvent, DefaultStatTable};
 pub use self::model_call::{ModelCallEvent, ModelCallStatTable};
-pub use self::tool_call::{ToolCallEvent, ToolCallStatTable};
-pub use self::agent_awake::{AgentAwakeEvent, AgentAwakeStatTable};
 pub use self::project_event::{ProjectEvent, ProjectStatTable};
+pub use self::stats::{AggregationRow, StatAggregation, StatFilter, StatParam, Stats};
 pub use self::task_event::{TaskEvent, TaskStatTable};
-pub use self::stats::{
-    Stats,
-    StatParam,
-    StatFilter,
-    StatAggregation,
-    AggregationRow,
-};
+pub use self::tool_call::{ToolCallEvent, ToolCallStatTable};
 pub use self::traits::{StatEvent, StatTable};
+pub use common::models::{StatsInterval, TimeSeriesPoint, TokenSumResult};
 
 // 内存版运行时统计子模块（与持久化版互补）
 pub use self::runtime::{RuntimeStatsCollector, RuntimeStatsSnapshot, TimeBucketSnapshot};

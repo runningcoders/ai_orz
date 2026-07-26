@@ -32,7 +32,10 @@ pub async fn search_skill(
             SkillQuery {
                 keyword: params.keyword,
                 tags: params.tags,
-                pagination: common::api::PaginationParams { limit: Some(limit), offset: None },
+                pagination: common::api::PaginationParams {
+                    limit: Some(limit),
+                    offset: None,
+                },
                 ..Default::default()
             },
         )

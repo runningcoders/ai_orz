@@ -1,11 +1,11 @@
 //! Handler: GET /api/v1/attachments - 列出当前用户的 Attachment
 
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::dao::attachment::AttachmentQuery;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{AttachmentDetail, AttachmentListQuery, PagedResult};
+use common::error::Result;
 use common::error::bail_err;
 
 use super::response::to_detail;

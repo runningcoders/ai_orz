@@ -4,8 +4,8 @@
 //! 不调用其他 domain。实际的 DB 读写由 handler 层编排各 domain 完成。
 //! 不包含运行时数据（消息、任务、stats、日志、向量索引）。
 
-pub mod defs;
 pub mod default;
+pub mod defs;
 pub mod diff;
 pub mod store;
 

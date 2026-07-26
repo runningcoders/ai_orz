@@ -12,7 +12,7 @@
 
 use dioxus::prelude::*;
 
-use crate::api::system::{check_health, get_health_metrics, HealthMetricsResponse};
+use crate::api::system::{HealthMetricsResponse, check_health, get_health_metrics};
 use crate::components::gauge::Gauge;
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;

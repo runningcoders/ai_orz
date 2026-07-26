@@ -1,8 +1,8 @@
 //! Organization DAO 模块
 
-use common::error::Result;
 use crate::models::organization::OrganizationPo;
 use crate::pkg::RequestContext;
+use common::error::Result;
 
 /// Organization 查询参数
 #[derive(Debug, Clone, Default)]
@@ -14,11 +14,7 @@ pub struct OrganizationQuery {
 #[async_trait::async_trait]
 pub trait OrganizationDao: Send + Sync {
     async fn insert(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<()>;
-    async fn find_by_id(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<Option<OrganizationPo>>;
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<OrganizationPo>>;
 
     /// 通用查询
     async fn query(

@@ -17,8 +17,8 @@ pub mod cancel_task;
 pub mod get_task;
 pub mod jsonrpc;
 pub mod mapper;
-pub mod send_task;
 pub mod send_subscribe;
+pub mod send_task;
 
 #[cfg(test)]
 mod integration_test;

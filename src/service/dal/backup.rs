@@ -5,14 +5,14 @@
 
 use crate::config;
 use crate::pkg::RequestContext;
-use common::error::{err, Result};
+use common::error::{Result, err};
 use std::io::Read;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
 use chrono::Utc;
-use flate2::write::GzEncoder;
 use flate2::Compression;
+use flate2::write::GzEncoder;
 use md5::{Digest, Md5};
 use tar::Builder;
 
@@ -80,11 +80,7 @@ pub trait BackupDal: Send + Sync {
     async fn delete_backup(&self, ctx: RequestContext, version: u64) -> Result<()>;
 
     /// 生成指定版本的恢复脚本（bash）
-    async fn generate_restore_script(
-        &self,
-        ctx: RequestContext,
-        version: u64,
-    ) -> Result<String>;
+    async fn generate_restore_script(&self, ctx: RequestContext, version: u64) -> Result<String>;
 }
 
 // ==================== DAL 实现 ====================
@@ -199,11 +195,7 @@ impl BackupDal for BackupDalFsImpl {
         Ok(())
     }
 
-    async fn generate_restore_script(
-        &self,
-        ctx: RequestContext,
-        version: u64,
-    ) -> Result<String> {
+    async fn generate_restore_script(&self, ctx: RequestContext, version: u64) -> Result<String> {
         let _ = ctx;
         let data_dir = config::get().base_data_path();
         let backups_dir = data_dir.join(BACKUP_DIR_NAME);
@@ -386,9 +378,7 @@ fn rebuild_index(backups_dir: &Path) -> Result<Vec<BackupInfo>> {
         let modified = metadata
             .modified()
             .ok()
-            .map(|t| {
-                chrono::DateTime::<Utc>::from(t).to_rfc3339()
-            })
+            .map(|t| chrono::DateTime::<Utc>::from(t).to_rfc3339())
             .unwrap_or_default();
         let md5 = compute_file_md5(&path)?;
         backups.push(BackupInfo {
@@ -513,7 +503,11 @@ mod tests {
 
         // 创建 3 个 .tar.gz 文件（内容随意，仅为触发扫描）
         // 故意乱序创建以验证排序
-        for (ver, suffix) in [(2u64, "20260717_110000"), (1, "20260717_100000"), (3, "20260717_120000")] {
+        for (ver, suffix) in [
+            (2u64, "20260717_110000"),
+            (1, "20260717_100000"),
+            (3, "20260717_120000"),
+        ] {
             let name = format!("v{}_{}.tar.gz", ver, suffix);
             let path = dir.path().join(&name);
             std::fs::write(&path, b"dummy backup content").expect("write tar.gz");
@@ -553,9 +547,14 @@ mod tests {
 
         // 这两个目录在顶层应被排除
         std::fs::create_dir_all(root.join(BACKUP_DIR_NAME)).expect("mkdir backups");
-        std::fs::write(root.join(BACKUP_DIR_NAME).join("v1.tar.gz"), b"backup").expect("write backup");
+        std::fs::write(root.join(BACKUP_DIR_NAME).join("v1.tar.gz"), b"backup")
+            .expect("write backup");
         std::fs::create_dir_all(root.join(LOGS_DIR_NAME)).expect("mkdir logs");
-        std::fs::write(root.join(LOGS_DIR_NAME).join("ai_orz.log.2026-07-17"), b"log").expect("write log");
+        std::fs::write(
+            root.join(LOGS_DIR_NAME).join("ai_orz.log.2026-07-17"),
+            b"log",
+        )
+        .expect("write log");
 
         // 构建 tar.gz（输出文件放在遍历目录外，避免遍历时读到正在写入的归档文件导致 flaky）
         let archive_path = out_dir.path().join("output.tar.gz");
@@ -586,20 +585,30 @@ mod tests {
         // 期望归档中至少出现这两个文件（可能还包含目录条目 sub/，故用 contains 判断）
         assert!(
             entries.iter().any(|p| p == "keep.txt"),
-            "归档应包含 keep.txt, 实际: {:?}", entries
+            "归档应包含 keep.txt, 实际: {:?}",
+            entries
         );
         assert!(
-            entries.iter().any(|p| p == "sub/inner.txt" || p == "sub\\inner.txt"),
-            "归档应包含 sub/inner.txt, 实际: {:?}", entries
+            entries
+                .iter()
+                .any(|p| p == "sub/inner.txt" || p == "sub\\inner.txt"),
+            "归档应包含 sub/inner.txt, 实际: {:?}",
+            entries
         );
         // 不应出现 backups/ 或 logs/ 下的任何条目
         assert!(
-            !entries.iter().any(|p| p.starts_with("backups/") || p.starts_with("backups\\")),
-            "归档不应包含 backups/ 子目录, 实际: {:?}", entries
+            !entries
+                .iter()
+                .any(|p| p.starts_with("backups/") || p.starts_with("backups\\")),
+            "归档不应包含 backups/ 子目录, 实际: {:?}",
+            entries
         );
         assert!(
-            !entries.iter().any(|p| p.starts_with("logs/") || p.starts_with("logs\\")),
-            "归档不应包含 logs/ 子目录, 实际: {:?}", entries
+            !entries
+                .iter()
+                .any(|p| p.starts_with("logs/") || p.starts_with("logs\\")),
+            "归档不应包含 logs/ 子目录, 实际: {:?}",
+            entries
         );
     }
 

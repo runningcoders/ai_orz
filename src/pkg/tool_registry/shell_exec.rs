@@ -7,13 +7,13 @@ use crate::config::get;
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use anyhow::anyhow;
-use common::error::Result;
 use common::enums::{ControlMode, ToolProtocol};
+use common::error::Result;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::process::Stdio;
-use tokio::fs::{create_dir_all, OpenOptions};
+use tokio::fs::{OpenOptions, create_dir_all};
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
@@ -52,7 +52,8 @@ impl ShellExecConfig {
 
     /// Get default max output size in bytes.
     pub fn default_max_output_size_bytes(&self) -> u64 {
-        self.default_max_output_size_bytes.unwrap_or(10 * 1024 * 1024)
+        self.default_max_output_size_bytes
+            .unwrap_or(10 * 1024 * 1024)
     }
 
     /// Get additional allowed paths.
@@ -209,9 +210,19 @@ impl ShellExecCoreTool {
 /// Filter inherited environment variables based on allow list.
 pub fn filter_inherited_environment(allowed: &[String]) -> HashMap<String, String> {
     let sensitive_vars: &[&str] = &[
-        "home", "user", "username", "password", "token", "secret", "api_key",
-        "aws_access_key_id", "aws_secret_access_key", "google_application_credentials",
-        "ssh_auth_sock", "git_config", "git_ssh",
+        "home",
+        "user",
+        "username",
+        "password",
+        "token",
+        "secret",
+        "api_key",
+        "aws_access_key_id",
+        "aws_secret_access_key",
+        "google_application_credentials",
+        "ssh_auth_sock",
+        "git_config",
+        "git_ssh",
     ];
 
     std::env::vars()
@@ -268,7 +279,9 @@ impl CoreTool for ShellExecCoreTool {
         }
 
         // Get effective timeout and max output
-        let timeout_ms = params.timeout_ms.unwrap_or_else(|| self.config.default_timeout_ms());
+        let timeout_ms = params
+            .timeout_ms
+            .unwrap_or_else(|| self.config.default_timeout_ms());
         let max_output_bytes = params
             .max_output_size_bytes
             .unwrap_or_else(|| self.config.default_max_output_size_bytes());
@@ -303,22 +316,26 @@ impl CoreTool for ShellExecCoreTool {
             }
 
             // Redirect stdout/stderr to log file - need two separate file handles
-            let stdio_stdout = Stdio::from(OpenOptions::new()
-                .create(true)
-                .write(true)
-                .truncate(true)
-                .open(&log_path)
-                .await?
-                .into_std()
-                .await);
-            let stdio_stderr = Stdio::from(OpenOptions::new()
-                .create(true)
-                .write(true)
-                .truncate(true)
-                .open(&log_path)
-                .await?
-                .into_std()
-                .await);
+            let stdio_stdout = Stdio::from(
+                OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .open(&log_path)
+                    .await?
+                    .into_std()
+                    .await,
+            );
+            let stdio_stderr = Stdio::from(
+                OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .open(&log_path)
+                    .await?
+                    .into_std()
+                    .await,
+            );
             command.stdout(stdio_stdout);
             command.stderr(stdio_stderr);
 
@@ -467,9 +484,6 @@ fn shell_command() -> Command {
 }
 
 /// Read all bytes from a stream into the given buffer.
-async fn read_stream_to_end<R: tokio::io::AsyncRead + Unpin>(
-    mut stream: R,
-    buf: &mut Vec<u8>,
-) {
+async fn read_stream_to_end<R: tokio::io::AsyncRead + Unpin>(mut stream: R, buf: &mut Vec<u8>) {
     let _ = tokio::io::copy(&mut stream, buf).await;
 }

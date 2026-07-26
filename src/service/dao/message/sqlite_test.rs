@@ -5,10 +5,10 @@ use crate::models::message::{MessagePo, ToolCallMessage};
 use crate::pkg::RequestContext;
 use crate::service::dao::message::{self, MessageDao};
 use common::enums::{FileType, MessageRole, MessageStatus, MessageType};
+use common::error::Result;
 use sqlx::{Row, SqlitePool};
 use std::sync::Arc;
 use uuid::Uuid;
-use common::error::Result;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     crate::pkg::request_context_test_support::new_test_ctx(user_id, pool)
@@ -947,7 +947,11 @@ async fn test_list_by_project_id(pool: SqlitePool) -> Result<()> {
 async fn test_message_fts5_trigger_insert_sync(pool: SqlitePool) -> Result<()> {
     let (message_dao, ctx) = init_test_env(pool.clone());
 
-    let msg = create_test_message("task-fts-ins", "user-fts", "Rust ownership system memory safety");
+    let msg = create_test_message(
+        "task-fts-ins",
+        "user-fts",
+        "Rust ownership system memory safety",
+    );
 
     message_dao.insert(ctx, &msg).await?;
 
@@ -994,7 +998,11 @@ async fn test_message_fts5_trigger_insert_sync(pool: SqlitePool) -> Result<()> {
 async fn test_message_fts5_trigger_update_sync(pool: SqlitePool) -> Result<()> {
     let (message_dao, ctx) = init_test_env(pool.clone());
 
-    let msg = create_test_message("task-fts-upd", "user-fts", "Rust programming language guide");
+    let msg = create_test_message(
+        "task-fts-upd",
+        "user-fts",
+        "Rust programming language guide",
+    );
     let msg_id = msg.id.clone();
     message_dao.insert(ctx, &msg).await?;
 
@@ -1074,12 +1082,11 @@ async fn test_message_fts5_trigger_delete_sync(pool: SqlitePool) -> Result<()> {
     assert_eq!(after, 0, "硬删除后 FTS 表应为空");
 
     // MATCH 搜索应搜不到
-    let search: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM messages_fts WHERE content MATCH ?")
-            .bind("rust")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let search: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages_fts WHERE content MATCH ?")
+        .bind("rust")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(search, 0, "删除后 MATCH 搜索应无结果");
 
     Ok(())

@@ -2,12 +2,12 @@
 //!
 //! 职责：CronTrigger 领域的数据访问层，封装 CronTriggerDao 提供统一的业务接口
 
-use common::error::{bail_err, err, Result};
 use crate::models::cron_trigger::CronTriggerPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::cron_trigger;
 use crate::service::dao::cron_trigger::{CronTriggerDao, CronTriggerQuery};
 use common::enums::TriggerType;
+use common::error::{Result, bail_err, err};
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例管理 ====================
@@ -43,7 +43,11 @@ pub trait CronTriggerDal: Send + Sync {
     async fn get_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<CronTriggerPo>>;
 
     /// 列表查询
-    async fn list(&self, ctx: RequestContext, query: CronTriggerQuery) -> Result<Vec<CronTriggerPo>>;
+    async fn list(
+        &self,
+        ctx: RequestContext,
+        query: CronTriggerQuery,
+    ) -> Result<Vec<CronTriggerPo>>;
 
     /// 更新
     async fn update(&self, ctx: RequestContext, trigger: &CronTriggerPo) -> Result<()>;
@@ -58,7 +62,12 @@ pub trait CronTriggerDal: Send + Sync {
     async fn resume(&self, ctx: RequestContext, id: &str) -> Result<()>;
 
     /// 获取到期触发器
-    async fn list_due(&self, ctx: RequestContext, now: i64, limit: i32) -> Result<Vec<CronTriggerPo>>;
+    async fn list_due(
+        &self,
+        ctx: RequestContext,
+        now: i64,
+        limit: i32,
+    ) -> Result<Vec<CronTriggerPo>>;
 
     /// 计算并更新下次执行时间
     async fn mark_executed(&self, ctx: RequestContext, id: &str, executed_at: i64) -> Result<()>;
@@ -81,7 +90,11 @@ impl CronTriggerDal for CronTriggerDalImpl {
         self.cron_trigger_dao.get_by_id(ctx, id).await
     }
 
-    async fn list(&self, ctx: RequestContext, query: CronTriggerQuery) -> Result<Vec<CronTriggerPo>> {
+    async fn list(
+        &self,
+        ctx: RequestContext,
+        query: CronTriggerQuery,
+    ) -> Result<Vec<CronTriggerPo>> {
         self.cron_trigger_dao.list(ctx, query).await
     }
 
@@ -115,7 +128,12 @@ impl CronTriggerDal for CronTriggerDalImpl {
         self.cron_trigger_dao.update(ctx, &trigger).await
     }
 
-    async fn list_due(&self, ctx: RequestContext, now: i64, limit: i32) -> Result<Vec<CronTriggerPo>> {
+    async fn list_due(
+        &self,
+        ctx: RequestContext,
+        now: i64,
+        limit: i32,
+    ) -> Result<Vec<CronTriggerPo>> {
         self.cron_trigger_dao.list_due(ctx, now, limit).await
     }
 

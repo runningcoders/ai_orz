@@ -119,7 +119,10 @@ impl McpToolCallDao for McpToolCallDaoImpl {
     }
 
     async fn list_mcp_tools(&self, server: &McpServerPo) -> Result<Vec<RemoteMcpTool>> {
-        self.client_runtime.list_tools(server).await.map_err(Into::into)
+        self.client_runtime
+            .list_tools(server)
+            .await
+            .map_err(Into::into)
     }
 
     #[cfg(test)]

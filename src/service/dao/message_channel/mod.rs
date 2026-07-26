@@ -2,11 +2,11 @@
 
 //! MessageChannel DAO 模块
 
-use common::error::Result;
 use crate::models::message_channel::MessageChannelPo;
 use crate::pkg::RequestContext;
 use common::api::PagedResult;
 use common::enums::{ChannelStatus, ChannelType};
+use common::error::Result;
 
 /// 消息渠道通用查询条件
 ///

@@ -3,12 +3,12 @@
 //! 与 list_users_by_* 的区别：list 是按组织维度的语法糖（GET），
 //! query 是完整查询能力（POST + body），支持分页和更多过滤条件。
 
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::dao::user::UserQuery;
 use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{PagedResult, UserListItem, UserQueryRequest};
+use common::error::Result;
 
 /// User 通用查询（POST body，支持完整查询能力）
 #[register_handler_tool(
@@ -16,7 +16,7 @@ use common::api::{PagedResult, UserListItem, UserQueryRequest};
     name = "query_users",
     description = "Query users with full filtering support (organization_id, pagination, etc.)",
     params = "common::api::UserQueryRequest",
-    neural,
+    neural
 )]
 #[generate_http_handler]
 pub async fn query_users(

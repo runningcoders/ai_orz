@@ -7,10 +7,10 @@
 //!
 //! 节点颜色按状态区分（见颜色规范表），点击节点跳转对应详情页。
 
+use crate::components::canvas_scene::{CanvasEdge, CanvasNode, CanvasScene};
+use common::api::{AgentListItem, ProjectListItem, TaskListItem};
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
-use common::api::{AgentListItem, ProjectListItem, TaskListItem};
-use crate::components::canvas_scene::{CanvasEdge, CanvasNode, CanvasScene};
 
 /// Workspace 视图模式
 #[derive(Debug, Clone, PartialEq)]
@@ -59,20 +59,20 @@ impl PartialEq for WorkspaceGraphProps {
 /// Project 状态颜色
 fn project_status_color(status: i32) -> String {
     match status {
-        1 => "#10b981".to_string(),   // Active 绿
-        3 => "#3b82f6".to_string(),   // InProgress 蓝
-        2 => "#f59e0b".to_string(),   // PendingReview 橙
-        4 => "#6b7280".to_string(),   // Completed 灰
-        _ => "#9ca3af".to_string(),   // 其他浅灰
+        1 => "#10b981".to_string(), // Active 绿
+        3 => "#3b82f6".to_string(), // InProgress 蓝
+        2 => "#f59e0b".to_string(), // PendingReview 橙
+        4 => "#6b7280".to_string(), // Completed 灰
+        _ => "#9ca3af".to_string(), // 其他浅灰
     }
 }
 
 /// Agent 运行时状态颜色（基于 runtime_state）
 fn agent_runtime_color(runtime_state: i32) -> String {
     match runtime_state {
-        0 => "#10b981".to_string(),   // Idle 绿
-        1 => "#f59e0b".to_string(),   // Resting 橙
-        2 => "#ef4444".to_string(),    // Busy 红
+        0 => "#10b981".to_string(), // Idle 绿
+        1 => "#f59e0b".to_string(), // Resting 橙
+        2 => "#ef4444".to_string(), // Busy 红
         _ => "#9ca3af".to_string(),
     }
 }
@@ -80,8 +80,8 @@ fn agent_runtime_color(runtime_state: i32) -> String {
 /// Task 状态颜色
 fn task_status_color(status: i32) -> String {
     match status {
-        1 => "#3b82f6".to_string(),   // InProgress 蓝
-        2 => "#6b7280".to_string(),   // Completed 灰
+        1 => "#3b82f6".to_string(), // InProgress 蓝
+        2 => "#6b7280".to_string(), // Completed 灰
         _ => "#9ca3af".to_string(),
     }
 }
@@ -89,7 +89,11 @@ fn task_status_color(status: i32) -> String {
 /// 构建 Global 视图的节点和边
 ///
 /// Project 节点 + Agent 节点，通过 Task 关联（Task.project_id → Project, Task.assignee_id → Agent）
-fn build_global_view(projects: &[ProjectListItem], agents: &[AgentListItem], tasks: &[TaskListItem]) -> (Vec<CanvasNode>, Vec<CanvasEdge>) {
+fn build_global_view(
+    projects: &[ProjectListItem],
+    agents: &[AgentListItem],
+    tasks: &[TaskListItem],
+) -> (Vec<CanvasNode>, Vec<CanvasEdge>) {
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
 
@@ -97,7 +101,8 @@ fn build_global_view(projects: &[ProjectListItem], agents: &[AgentListItem], tas
     for p in projects {
         nodes.push(CanvasNode {
             id: format!("project:{}", p.id),
-            x: 0.0, y: 0.0,
+            x: 0.0,
+            y: 0.0,
             radius: 28.0,
             label: p.name.clone(),
             color: project_status_color(p.status),
@@ -110,7 +115,8 @@ fn build_global_view(projects: &[ProjectListItem], agents: &[AgentListItem], tas
     for a in agents {
         nodes.push(CanvasNode {
             id: format!("agent:{}", a.id),
-            x: 0.0, y: 0.0,
+            x: 0.0,
+            y: 0.0,
             radius: 25.0,
             label: a.name.clone(),
             color: agent_runtime_color(a.runtime_state),
@@ -121,10 +127,12 @@ fn build_global_view(projects: &[ProjectListItem], agents: &[AgentListItem], tas
 
     // 通过 Task 推断 Project ↔ Agent 关联
     // 每个 Task 有 project_id 和 assignee_id，如果 assignee_type=1（Agent），则建立 Project → Agent 边
-    let mut edge_set: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    let mut edge_set: std::collections::HashSet<(String, String)> =
+        std::collections::HashSet::new();
     for t in tasks {
         if let Some(pid) = &t.project_id {
-            if t.assignee_type == 1 { // Agent
+            if t.assignee_type == 1 {
+                // Agent
                 let from = format!("project:{}", pid);
                 let to = format!("agent:{}", t.assignee_id);
                 if from != to {
@@ -134,7 +142,10 @@ fn build_global_view(projects: &[ProjectListItem], agents: &[AgentListItem], tas
         }
     }
     for (from, to) in edge_set {
-        edges.push(CanvasEdge { from_id: from, to_id: to });
+        edges.push(CanvasEdge {
+            from_id: from,
+            to_id: to,
+        });
     }
 
     (nodes, edges)
@@ -150,7 +161,7 @@ fn build_project_detail_view(
     agents: &[AgentListItem],
     tasks: &[TaskListItem],
 ) -> (Vec<CanvasNode>, Vec<CanvasEdge>) {
-    use crate::components::layered_layout::{compute_layered_layout, LayeredLayoutConfig};
+    use crate::components::layered_layout::{LayeredLayoutConfig, compute_layered_layout};
 
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
@@ -160,7 +171,8 @@ fn build_project_detail_view(
     // 中心 Project 节点（layer=0，位于顶部）
     nodes.push(CanvasNode {
         id: project_node_id.clone(),
-        x: 0.0, y: 0.0,
+        x: 0.0,
+        y: 0.0,
         radius: 35.0,
         label: project.name.clone(),
         color: project_status_color(project.status),
@@ -169,7 +181,8 @@ fn build_project_detail_view(
     });
 
     // 该 Project 的 Task 节点
-    let project_tasks: Vec<&TaskListItem> = tasks.iter()
+    let project_tasks: Vec<&TaskListItem> = tasks
+        .iter()
         .filter(|t| t.project_id.as_deref() == Some(project_id))
         .collect();
 
@@ -177,9 +190,12 @@ fn build_project_detail_view(
     let task_ids: Vec<String> = project_tasks.iter().map(|t| t.id.clone()).collect();
     let task_id_set: std::collections::HashSet<&str> =
         task_ids.iter().map(|s| s.as_str()).collect();
-    let mut deps_map: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    let mut deps_map: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
     for t in &project_tasks {
-        let in_project_deps: Vec<String> = t.dependencies.iter()
+        let in_project_deps: Vec<String> = t
+            .dependencies
+            .iter()
             .filter(|d| task_id_set.contains(d.as_str()))
             .cloned()
             .collect();
@@ -198,10 +214,14 @@ fn build_project_detail_view(
 
     // 添加 Task 节点（位置来自分层布局，layer +1 因为 Project 占了 layer 0）
     for t in &project_tasks {
-        let (layer, x, y) = task_positions.get(&t.id).copied().unwrap_or((0, 350.0, 160.0));
+        let (layer, x, y) = task_positions
+            .get(&t.id)
+            .copied()
+            .unwrap_or((0, 350.0, 160.0));
         nodes.push(CanvasNode {
             id: format!("task:{}", t.id),
-            x, y,
+            x,
+            y,
             radius: 20.0,
             label: t.title.clone(),
             color: task_status_color(t.status),
@@ -228,7 +248,8 @@ fn build_project_detail_view(
     }
 
     // 关联 Agent 节点（去重：该 Project 的 Task 分配到的 Agent）
-    let agent_ids: std::collections::HashSet<String> = project_tasks.iter()
+    let agent_ids: std::collections::HashSet<String> = project_tasks
+        .iter()
         .filter(|t| t.assignee_type == 1)
         .map(|t| t.assignee_id.clone())
         .collect();
@@ -237,7 +258,8 @@ fn build_project_detail_view(
         if let Some(a) = agents.iter().find(|a| a.id == aid) {
             nodes.push(CanvasNode {
                 id: format!("agent:{}", a.id),
-                x: 0.0, y: 0.0,
+                x: 0.0,
+                y: 0.0,
                 radius: 25.0,
                 label: a.name.clone(),
                 color: agent_runtime_color(a.runtime_state),
@@ -275,7 +297,8 @@ fn build_agent_detail_view(
     // 中心 Agent 节点
     nodes.push(CanvasNode {
         id: format!("agent:{}", agent.id),
-        x: 0.0, y: 0.0,
+        x: 0.0,
+        y: 0.0,
         radius: 35.0,
         label: agent.name.clone(),
         color: agent_runtime_color(agent.runtime_state),
@@ -284,14 +307,16 @@ fn build_agent_detail_view(
     });
 
     // 该 Agent 的 Task 节点
-    let agent_tasks: Vec<&TaskListItem> = tasks.iter()
+    let agent_tasks: Vec<&TaskListItem> = tasks
+        .iter()
         .filter(|t| t.assignee_type == 1 && t.assignee_id == agent_id)
         .collect();
 
     for t in &agent_tasks {
         nodes.push(CanvasNode {
             id: format!("task:{}", t.id),
-            x: 0.0, y: 0.0,
+            x: 0.0,
+            y: 0.0,
             radius: 20.0,
             label: t.title.clone(),
             color: task_status_color(t.status),
@@ -306,7 +331,8 @@ fn build_agent_detail_view(
     }
 
     // 关联 Project 节点（去重）
-    let project_ids: std::collections::HashSet<String> = agent_tasks.iter()
+    let project_ids: std::collections::HashSet<String> = agent_tasks
+        .iter()
         .filter_map(|t| t.project_id.clone())
         .collect();
 
@@ -314,7 +340,8 @@ fn build_agent_detail_view(
         if let Some(p) = projects.iter().find(|p| p.id == pid) {
             nodes.push(CanvasNode {
                 id: format!("project:{}", p.id),
-                x: 0.0, y: 0.0,
+                x: 0.0,
+                y: 0.0,
                 radius: 28.0,
                 label: p.name.clone(),
                 color: project_status_color(p.status),
@@ -359,7 +386,8 @@ fn build_task_detail_view(
     // 中心 Task 节点（layer=0）
     nodes.push(CanvasNode {
         id: center_node_id.clone(),
-        x: 0.0, y: 0.0,
+        x: 0.0,
+        y: 0.0,
         radius: 30.0,
         label: task.title.clone(),
         color: task_status_color(task.status),
@@ -372,7 +400,8 @@ fn build_task_detail_view(
         if let Some(p) = projects.iter().find(|p| &p.id == pid) {
             nodes.push(CanvasNode {
                 id: format!("project:{}", p.id),
-                x: 0.0, y: 0.0,
+                x: 0.0,
+                y: 0.0,
                 radius: 28.0,
                 label: p.name.clone(),
                 color: project_status_color(p.status),
@@ -391,7 +420,8 @@ fn build_task_detail_view(
         if let Some(a) = agents.iter().find(|a| a.id == task.assignee_id) {
             nodes.push(CanvasNode {
                 id: format!("agent:{}", a.id),
-                x: 0.0, y: 0.0,
+                x: 0.0,
+                y: 0.0,
                 radius: 25.0,
                 label: a.name.clone(),
                 color: agent_runtime_color(a.runtime_state),
@@ -410,7 +440,8 @@ fn build_task_detail_view(
         if let Some(dep_task) = tasks.iter().find(|t| &t.id == dep_id) {
             nodes.push(CanvasNode {
                 id: format!("task:{}", dep_task.id),
-                x: 0.0, y: 0.0,
+                x: 0.0,
+                y: 0.0,
                 radius: 20.0,
                 label: dep_task.title.clone(),
                 color: task_status_color(dep_task.status),
@@ -430,7 +461,8 @@ fn build_task_detail_view(
         if t.dependencies.iter().any(|d| d == task_id) {
             nodes.push(CanvasNode {
                 id: format!("task:{}", t.id),
-                x: 0.0, y: 0.0,
+                x: 0.0,
+                y: 0.0,
                 radius: 20.0,
                 label: t.title.clone(),
                 color: task_status_color(t.status),
@@ -484,7 +516,8 @@ pub fn WorkspaceGraph(props: WorkspaceGraphProps) -> Element {
     };
 
     // 节点 id → (类型, 真实ID) 查找表，供点击回调判断跳转
-    let mut click_map: std::collections::HashMap<String, (String, String)> = std::collections::HashMap::new();
+    let mut click_map: std::collections::HashMap<String, (String, String)> =
+        std::collections::HashMap::new();
     for n in &nodes {
         if let Some(nt) = &n.node_type {
             let real_id = n.id.splitn(2, ':').nth(1).unwrap_or(&n.id).to_string();
@@ -494,7 +527,7 @@ pub fn WorkspaceGraph(props: WorkspaceGraphProps) -> Element {
 
     // 当前视图的中心节点 ID（点击中心节点 → 跳转详情页；点击非中心节点 → 切换视图）
     let center_node_id = match &view {
-        WorkspaceView::Global => None,  // Global 无中心节点
+        WorkspaceView::Global => None, // Global 无中心节点
         WorkspaceView::ProjectDetail(pid) => Some(format!("project:{}", pid)),
         WorkspaceView::AgentDetail(aid) => Some(format!("agent:{}", aid)),
         WorkspaceView::TaskDetail(tid) => Some(format!("task:{}", tid)),

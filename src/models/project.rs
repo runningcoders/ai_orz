@@ -69,7 +69,12 @@ pub struct Project {
 impl Project {
     /// 从 PO 创建 Project
     pub fn from_po(po: ProjectPo) -> Self {
-        Self { po, search_match: None, stats: None, model_call_stats: None }
+        Self {
+            po,
+            search_match: None,
+            stats: None,
+            model_call_stats: None,
+        }
     }
 
     /// 创建新的 Project

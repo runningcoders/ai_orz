@@ -316,7 +316,11 @@ mod tests {
         let collector: RuntimeStatsCollector<TupleKey> = RuntimeStatsCollector::new();
         collector
             .record(
-                ("message.created".to_string(), "agent.awakening".to_string(), "success".to_string()),
+                (
+                    "message.created".to_string(),
+                    "agent.awakening".to_string(),
+                    "success".to_string(),
+                ),
                 Some(100),
             )
             .await;

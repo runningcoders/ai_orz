@@ -1,6 +1,5 @@
 //! 用户登出
 
-use common::error::Result;
 use crate::middleware::jwt_auth::JWT_COOKIE_NAME;
 use axum::{
     Json,
@@ -9,6 +8,7 @@ use axum::{
 };
 use common::api::ApiResponse;
 use common::api::LogoutResponse;
+use common::error::Result;
 use cookie::time;
 use cookie::{Cookie, SameSite};
 

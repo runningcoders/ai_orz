@@ -3,8 +3,8 @@
 //! seeds/ 目录下管理所有 .json 快照文件
 //! 路径基于 AppConfig.base_data_path 拼接
 
-use std::path::{Path, PathBuf};
 use common::error::{Error, Result};
+use std::path::{Path, PathBuf};
 
 /// 获取 seeds/ 目录路径（基于 AppConfig.base_data_path）
 pub fn seeds_dir() -> PathBuf {
@@ -34,10 +34,13 @@ pub async fn list_files(dir: &Path) -> Result<Vec<common::api::seed::SeedFileInf
     }
 
     let mut files = Vec::new();
-    let mut entries = tokio::fs::read_dir(dir).await
+    let mut entries = tokio::fs::read_dir(dir)
+        .await
         .map_err(|e| Error::internal(format!("读取 seeds 目录失败: {}", e)))?;
 
-    while let Some(entry) = entries.next_entry().await
+    while let Some(entry) = entries
+        .next_entry()
+        .await
         .map_err(|e| Error::internal(format!("读取目录项失败: {}", e)))?
     {
         let path = entry.path();
@@ -45,10 +48,13 @@ pub async fn list_files(dir: &Path) -> Result<Vec<common::api::seed::SeedFileInf
             continue;
         }
 
-        let metadata = entry.metadata().await
+        let metadata = entry
+            .metadata()
+            .await
             .map_err(|e| Error::internal(format!("读取文件元信息失败: {}", e)))?;
         let name = entry.file_name().to_string_lossy().to_string();
-        let modified_at = metadata.modified()
+        let modified_at = metadata
+            .modified()
             .ok()
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_millis() as i64)
@@ -72,7 +78,8 @@ pub async fn list_files(dir: &Path) -> Result<Vec<common::api::seed::SeedFileInf
 pub async fn read_file(dir: &Path, name: &str) -> Result<common::api::seed::GetSeedFileResponse> {
     let file_name = validate_seed_filename(name)?;
     let path = dir.join(&file_name);
-    let content = tokio::fs::read_to_string(&path).await
+    let content = tokio::fs::read_to_string(&path)
+        .await
         .map_err(|e| Error::not_found(format!("快照文件不存在: {} ({})", file_name, e)))?;
     let size = content.len() as u64;
     Ok(common::api::seed::GetSeedFileResponse {
@@ -90,7 +97,8 @@ pub async fn write_file(dir: &Path, name: &str, content: &str) -> Result<u64> {
     let file_name = validate_seed_filename(name)?;
     let path = dir.join(&file_name);
     let size = content.len() as u64;
-    tokio::fs::write(&path, content).await
+    tokio::fs::write(&path, content)
+        .await
         .map_err(|e| Error::internal(format!("写入快照文件失败: {}", e)))?;
     Ok(size)
 }
@@ -102,7 +110,8 @@ pub async fn delete_file(dir: &Path, name: &str) -> Result<()> {
     if !path.exists() {
         return Err(Error::not_found(format!("快照文件不存在: {}", file_name)));
     }
-    tokio::fs::remove_file(&path).await
+    tokio::fs::remove_file(&path)
+        .await
         .map_err(|e| Error::internal(format!("删除快照文件失败: {}", e)))?;
     Ok(())
 }

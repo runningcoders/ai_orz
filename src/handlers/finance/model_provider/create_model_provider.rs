@@ -1,11 +1,11 @@
 //! Handler: POST /api/v1/model-providers - Create a new model provider
 
-use common::error::Result;
 use crate::models::model_provider::{ModelProvider, ModelProviderPo};
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CreateModelProviderRequest, CreateModelProviderResponse};
+use common::error::Result;
 
 /// Create a new model provider configuration for AI inference
 #[register_handler_tool(

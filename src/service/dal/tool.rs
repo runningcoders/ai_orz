@@ -3,8 +3,6 @@
 //! 基础工具数据访问层，提供工具查询和管理能力
 //! 负责组合 DAO 完成业务级数据操作
 
-use common::error::{Result};
-use common::models::{ToolStats, StatsFetchOptions, StatsInterval};
 use crate::models::tool::{Tool, ToolPo};
 use crate::models::vector::{MatchType, SearchMatchInfo, Vectorizable};
 use crate::pkg::request_context::RequestContext;
@@ -14,6 +12,8 @@ use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::tool::{ToolDao, ToolQuery, ToolStatsDao, ToolStatsQuery, ToolVectorDao};
 use crate::service::dao::tool_call::{self, ToolCallDao};
 use common::enums::ToolStatus;
+use common::error::Result;
+use common::models::{StatsFetchOptions, StatsInterval, ToolStats};
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 
@@ -89,7 +89,12 @@ pub trait ToolDal: Send + Sync {
     async fn get_by_id(&self, ctx: RequestContext, id: String) -> Result<Option<Tool>>;
 
     /// 根据 ID 获取工具（带附带信息选项）
-    async fn get_tool(&self, ctx: RequestContext, id: &str, options: ToolFetchOptions) -> Result<Option<Tool>>;
+    async fn get_tool(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        options: ToolFetchOptions,
+    ) -> Result<Option<Tool>>;
 
     /// 根据名称获取完整工具
     async fn get_by_name(&self, ctx: RequestContext, name: &str) -> Result<Option<Tool>>;
@@ -97,7 +102,11 @@ pub trait ToolDal: Send + Sync {
     /// 通用综合查询（返回完整 Tool 实体，包含 PO + CoreTool）
     ///
     /// 支持组合查询条件，所有字段都是 Option
-    async fn query(&self, ctx: RequestContext, query: ToolQuery) -> Result<common::api::PagedResult<Tool>>;
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: ToolQuery,
+    ) -> Result<common::api::PagedResult<Tool>>;
 
     /// 获取所有启用的工具
     async fn list_enabled(&self, ctx: RequestContext) -> Result<Vec<Tool>>;
@@ -173,7 +182,12 @@ pub trait ToolDal: Send + Sync {
     // ==================== 统计查询 ====================
 
     /// 获取工具统计数据
-    async fn get_stats(&self, ctx: RequestContext, tool_id: &str, options: StatsFetchOptions) -> Result<ToolStats>;
+    async fn get_stats(
+        &self,
+        ctx: RequestContext,
+        tool_id: &str,
+        options: StatsFetchOptions,
+    ) -> Result<ToolStats>;
 
     /// 🔄 重建所有工具的向量索引
     ///
@@ -330,7 +344,12 @@ impl ToolDal for ToolDalImpl {
         }))
     }
 
-    async fn get_tool(&self, ctx: RequestContext, id: &str, options: ToolFetchOptions) -> Result<Option<Tool>> {
+    async fn get_tool(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        options: ToolFetchOptions,
+    ) -> Result<Option<Tool>> {
         // Step 1: 获取基础 Tool 实体
         let mut tool = self.get_by_id(ctx.clone(), id.to_string()).await?;
 
@@ -375,7 +394,11 @@ impl ToolDal for ToolDalImpl {
         }))
     }
 
-    async fn query(&self, ctx: RequestContext, query: ToolQuery) -> Result<common::api::PagedResult<Tool>> {
+    async fn query(
+        &self,
+        ctx: RequestContext,
+        query: ToolQuery,
+    ) -> Result<common::api::PagedResult<Tool>> {
         let query = exclude_stale_by_default(query);
         let page = self.tool_dao.query(ctx, query).await?;
         let total = page.total;
@@ -394,18 +417,22 @@ impl ToolDal for ToolDalImpl {
                 tools.push(Tool::from_po_for_management(po));
             }
         }
-        Ok(common::api::PagedResult { items: tools, total })
+        Ok(common::api::PagedResult {
+            items: tools,
+            total,
+        })
     }
 
     async fn list_enabled(&self, ctx: RequestContext) -> Result<Vec<Tool>> {
-        let page = self.query(
-            ctx,
-            ToolQuery {
-                enabled_only: Some(true),
-                ..Default::default()
-            },
-        )
-        .await?;
+        let page = self
+            .query(
+                ctx,
+                ToolQuery {
+                    enabled_only: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await?;
         Ok(page.items)
     }
 
@@ -414,15 +441,16 @@ impl ToolDal for ToolDalImpl {
         ctx: RequestContext,
         agent_id: &str,
     ) -> Result<Vec<Tool>> {
-        let page = self.query(
-            ctx,
-            ToolQuery {
-                agent_id: Some(agent_id.to_string()),
-                enabled_only: Some(true),
-                ..Default::default()
-            },
-        )
-        .await?;
+        let page = self
+            .query(
+                ctx,
+                ToolQuery {
+                    agent_id: Some(agent_id.to_string()),
+                    enabled_only: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await?;
         Ok(page.items)
     }
 
@@ -467,9 +495,7 @@ impl ToolDal for ToolDalImpl {
         let tool = self
             .get_by_id(ctx.clone(), tool_id.clone())
             .await
-            .map_err(|e| {
-                    common::error::Error::tool_call_failed(e.to_string()).with_source(e)
-            })?;
+            .map_err(|e| common::error::Error::tool_call_failed(e.to_string()).with_source(e))?;
 
         let tool = tool.ok_or_else(|| {
             common::error::Error::tool_call_failed(format!("Tool not found: {}", tool_id))
@@ -490,8 +516,7 @@ impl ToolDal for ToolDalImpl {
         // Step 1: 准备向量搜索结果容器
         let mut vector_scores: std::collections::HashMap<String, f32> =
             std::collections::HashMap::new();
-        let mut vector_ids: std::collections::HashSet<String> =
-            std::collections::HashSet::new();
+        let mut vector_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         // Step 2: 如果有关键词，尝试向量搜索（用关键词生成 query vector）
         if params.keyword.is_some() {
@@ -638,35 +663,37 @@ impl ToolDal for ToolDalImpl {
                 Some(MatchType::Vector) => 1,
                 _ => 2,
             };
-            order_a.cmp(&order_b).then_with(|| {
-                match (a_type, b_type) {
-                    (Some(MatchType::Hybrid), Some(MatchType::Hybrid))
-                    | (Some(MatchType::Vector), Some(MatchType::Vector)) => {
-                        let a_dist = a
-                            .search_match
-                            .as_ref()
-                            .and_then(|m| m.vector_distance)
-                            .unwrap_or(f32::MAX);
-                        let b_dist = b
-                            .search_match
-                            .as_ref()
-                            .and_then(|m| m.vector_distance)
-                            .unwrap_or(f32::MAX);
-                        a_dist.partial_cmp(&b_dist).unwrap_or(std::cmp::Ordering::Equal)
-                    }
-                    _ => {
-                        let a_rank = a
-                            .search_match
-                            .as_ref()
-                            .and_then(|m| m.fts_rank)
-                            .unwrap_or(f32::MAX);
-                        let b_rank = b
-                            .search_match
-                            .as_ref()
-                            .and_then(|m| m.fts_rank)
-                            .unwrap_or(f32::MAX);
-                        a_rank.partial_cmp(&b_rank).unwrap_or(std::cmp::Ordering::Equal)
-                    }
+            order_a.cmp(&order_b).then_with(|| match (a_type, b_type) {
+                (Some(MatchType::Hybrid), Some(MatchType::Hybrid))
+                | (Some(MatchType::Vector), Some(MatchType::Vector)) => {
+                    let a_dist = a
+                        .search_match
+                        .as_ref()
+                        .and_then(|m| m.vector_distance)
+                        .unwrap_or(f32::MAX);
+                    let b_dist = b
+                        .search_match
+                        .as_ref()
+                        .and_then(|m| m.vector_distance)
+                        .unwrap_or(f32::MAX);
+                    a_dist
+                        .partial_cmp(&b_dist)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                }
+                _ => {
+                    let a_rank = a
+                        .search_match
+                        .as_ref()
+                        .and_then(|m| m.fts_rank)
+                        .unwrap_or(f32::MAX);
+                    let b_rank = b
+                        .search_match
+                        .as_ref()
+                        .and_then(|m| m.fts_rank)
+                        .unwrap_or(f32::MAX);
+                    a_rank
+                        .partial_cmp(&b_rank)
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 }
             })
         });
@@ -689,7 +716,10 @@ impl ToolDal for ToolDalImpl {
         tool: &Tool,
         args: Value,
     ) -> Result<(Value, ToolCallEntry)> {
-        self.tool_call_dao.call_manual(ctx, tool, args).await.map_err(Into::into)
+        self.tool_call_dao
+            .call_manual(ctx, tool, args)
+            .await
+            .map_err(Into::into)
     }
 
     fn wrap_for_rig(
@@ -700,7 +730,12 @@ impl ToolDal for ToolDalImpl {
         self.tool_call_dao.wrap_for_rig(tools, ctx)
     }
 
-    async fn get_stats(&self, ctx: RequestContext, tool_id: &str, options: StatsFetchOptions) -> Result<ToolStats> {
+    async fn get_stats(
+        &self,
+        ctx: RequestContext,
+        tool_id: &str,
+        options: StatsFetchOptions,
+    ) -> Result<ToolStats> {
         let query = ToolStatsQuery {
             tool_id: tool_id.to_string(),
             ..Default::default()

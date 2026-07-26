@@ -10,7 +10,7 @@ use crate::store::toast::use_toast;
 use common::api::GetMcpServerResponse;
 use common::enums::{McpServerStatus, McpTransport};
 use dioxus::prelude::*;
-use dioxus_router::{use_navigator, Link};
+use dioxus_router::{Link, use_navigator};
 
 #[component]
 pub fn FinanceMcpServerDetail(id: String) -> Element {
@@ -65,7 +65,11 @@ pub fn FinanceMcpServerDetail(id: String) -> Element {
             spawn(async move {
                 match update_mcp_server_status(&id, new_status).await {
                     Ok(_) => {
-                        toast.success(if new_status == 1 { "已启用" } else { "已禁用" });
+                        toast.success(if new_status == 1 {
+                            "已启用"
+                        } else {
+                            "已禁用"
+                        });
                     }
                     Err(e) => toast.error(&format!("状态更新失败: {}", e)),
                 }

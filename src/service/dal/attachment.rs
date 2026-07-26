@@ -2,12 +2,12 @@
 //!
 //! 职责：上传编排、文件名/路径生成、文件类型推断、元数据与文件写入组合。
 
-use common::error::{err, bail_err, Result};
 use crate::models::attachment::{Attachment, AttachmentPo, AttachmentUpload, TextAttachmentCreate};
 use crate::pkg::RequestContext;
 use crate::service::dao::attachment;
 use crate::service::dao::attachment::{AttachmentDao, AttachmentQuery};
 use common::enums::FileType;
+use common::error::{Result, bail_err, err};
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
@@ -60,11 +60,7 @@ pub trait AttachmentDal: Send + Sync {
     ) -> Result<Attachment>;
 
     /// 根据 ID 获取 Attachment。
-    async fn get_by_id(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<Option<Attachment>>;
+    async fn get_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Attachment>>;
 
     /// 通用查询。
     async fn query(
@@ -154,11 +150,7 @@ impl AttachmentDal for AttachmentDalImpl {
         self.create_from_upload(ctx, upload).await
     }
 
-    async fn get_by_id(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<Option<Attachment>> {
+    async fn get_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Attachment>> {
         let po = self.attachment_dao.find_by_id(ctx, id).await?;
         Ok(po.map(Attachment::from_po))
     }

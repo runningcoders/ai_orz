@@ -7,12 +7,12 @@
 pub mod org;
 pub mod user;
 
-use common::error::Result;
 use crate::models::organization::OrganizationPo;
 use crate::pkg::RequestContext;
 use crate::service::dal::organization;
 use crate::service::dal::user as user_dal;
 use async_trait::async_trait;
+use common::error::Result;
 use std::sync::{Arc, OnceLock};
 // ==================== 单例 ====================
 
@@ -94,11 +94,7 @@ pub trait OrganizationManage: Send + Sync {
     ) -> Result<(String, String)>;
 
     /// 获取组织信息
-    async fn get_by_id(
-        &self,
-        ctx: RequestContext,
-        org_id: &str,
-    ) -> Result<Option<OrganizationPo>>;
+    async fn get_by_id(&self, ctx: RequestContext, org_id: &str) -> Result<Option<OrganizationPo>>;
 
     /// 通用综合查询
     ///
@@ -172,18 +168,10 @@ pub trait UserManage: Send + Sync {
     async fn delete_user(&self, ctx: RequestContext, user_id: &str) -> Result<()>;
 
     /// 检查用户名是否已存在
-    async fn exists_by_username(
-        &self,
-        ctx: RequestContext,
-        username: &str,
-    ) -> Result<bool>;
+    async fn exists_by_username(&self, ctx: RequestContext, username: &str) -> Result<bool>;
 
     /// 统计组织下用户总数
-    async fn count_by_organization_id(
-        &self,
-        ctx: RequestContext,
-        org_id: &str,
-    ) -> Result<u64>;
+    async fn count_by_organization_id(&self, ctx: RequestContext, org_id: &str) -> Result<u64>;
 
     /// 统计符合查询条件的用户数量（透传 DAL count）
     async fn count_users(

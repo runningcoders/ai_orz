@@ -4,8 +4,8 @@
 //! 不含工具调用卡片、任务卡片等复杂消息类型（chat.rs 主对话页保留自己的富版本）。
 //! 适用于 Agent 详情页、Workspace 底部对话框等极简场景。
 
-use dioxus::prelude::*;
 use common::api::MessageListItem;
+use dioxus::prelude::*;
 
 use crate::utils::file::format_file_size;
 use crate::utils::message::{is_attachment_message, role_avatar, role_class};

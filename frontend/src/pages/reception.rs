@@ -5,7 +5,7 @@ use dioxus::prelude::*;
 use crate::api::auth::{check_initialized, initialize_system, login};
 use crate::api::organization::{get_current_user_info, list_organizations_public};
 use crate::components::state::Loading;
-use crate::store::auth::{mark_logged_in, save_role, AuthState};
+use crate::store::auth::{AuthState, mark_logged_in, save_role};
 use crate::store::toast::use_toast;
 use common::api::{InitializeSystemRequest, LoginRequest, OrganizationListItem};
 
@@ -124,11 +124,23 @@ pub fn Reception() -> Element {
 
             let req = InitializeSystemRequest {
                 organization_name: org_name(),
-                description: if org_description().is_empty() { None } else { Some(org_description()) },
+                description: if org_description().is_empty() {
+                    None
+                } else {
+                    Some(org_description())
+                },
                 admin_username: init_username(),
                 admin_password_hash: init_password(),
-                admin_display_name: if display_name().is_empty() { None } else { Some(display_name()) },
-                admin_email: if email().is_empty() { None } else { Some(email()) },
+                admin_display_name: if display_name().is_empty() {
+                    None
+                } else {
+                    Some(display_name())
+                },
+                admin_email: if email().is_empty() {
+                    None
+                } else {
+                    Some(email())
+                },
             };
 
             match initialize_system(req).await {

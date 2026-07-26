@@ -60,8 +60,8 @@ pub trait CortexDao: Send + Sync {
     ) -> Result<crate::models::vector::VectorIndexParams>;
 }
 
-mod rig;
 pub mod external;
+mod rig;
 
 pub use self::rig::{RigCortexDao, dao, init};
 

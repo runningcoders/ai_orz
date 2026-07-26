@@ -1,19 +1,22 @@
 //! Agent Stats DAO DuckDB 单元测试
 
-use crate::pkg::stats::*;
 use crate::pkg::request_context_test_support;
-use crate::service::dao::agent::{AgentStatsDao, AgentStatsQuery};
+use crate::pkg::stats::*;
 use crate::service::dao::agent::stats_duckdb::stats_new;
+use crate::service::dao::agent::{AgentStatsDao, AgentStatsQuery};
+use chrono::Utc;
 use common::error::Result;
 use common::models::StatsFetchOptions;
-use chrono::Utc;
 use sqlx::SqlitePool;
 use tempfile::tempdir;
 
 async fn setup_test_env(
     agent_id: &str,
     event_count: usize,
-) -> Result<(crate::pkg::RequestContext, std::sync::Arc<dyn AgentStatsDao<AwakeEvent = AgentAwakeEvent>>)> {
+) -> Result<(
+    crate::pkg::RequestContext,
+    std::sync::Arc<dyn AgentStatsDao<AwakeEvent = AgentAwakeEvent>>,
+)> {
     let dir = tempdir()?;
     let db_path = dir.path().join("stats.db");
     let db_path_str = db_path.to_str().unwrap();

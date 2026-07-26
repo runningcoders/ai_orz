@@ -1,14 +1,14 @@
 //! Tests for SqliteProjectDao
 
-use common::error::Error;
 use crate::models::project::ProjectPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::project::{ProjectDao, sqlite};
 use common::enums::project::ProjectStatus;
+use common::error::Error;
+use common::error::Result;
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use uuid::Uuid;
-use common::error::Result;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     crate::pkg::request_context_test_support::new_test_ctx(user_id, pool)
@@ -400,13 +400,7 @@ async fn test_search_projects_english_keyword(pool: SqlitePool) -> Result<()> {
         None,
         "user1",
     );
-    let p2 = create_searchable_project(
-        "Beta Task",
-        "Data pipeline",
-        None,
-        None,
-        "user1",
-    );
+    let p2 = create_searchable_project("Beta Task", "Data pipeline", None, None, "user1");
     dao.insert(ctx.clone(), &p1).await?;
     dao.insert(ctx.clone(), &p2).await?;
 
@@ -441,13 +435,7 @@ async fn test_search_projects_chinese_keyword(pool: SqlitePool) -> Result<()> {
         None,
         "user1",
     );
-    let p2 = create_searchable_project(
-        "数据分析平台",
-        "实时数据流处理",
-        None,
-        None,
-        "user1",
-    );
+    let p2 = create_searchable_project("数据分析平台", "实时数据流处理", None, None, "user1");
     dao.insert(ctx.clone(), &p1).await?;
     dao.insert(ctx.clone(), &p2).await?;
 
@@ -485,13 +473,7 @@ async fn test_search_projects_no_match(pool: SqlitePool) -> Result<()> {
     let dao = init_test_env();
     let ctx = new_ctx("test-user", pool);
 
-    let p1 = create_searchable_project(
-        "Existing Project",
-        "Some description",
-        None,
-        None,
-        "user1",
-    );
+    let p1 = create_searchable_project("Existing Project", "Some description", None, None, "user1");
     dao.insert(ctx.clone(), &p1).await?;
 
     let results = dao
@@ -514,23 +496,12 @@ async fn test_search_projects_filters_soft_deleted(pool: SqlitePool) -> Result<(
     let ctx = new_ctx("test-user", pool);
 
     // 创建一个正常项目
-    let p1 = create_searchable_project(
-        "Active Searchable",
-        "visible content",
-        None,
-        None,
-        "user1",
-    );
+    let p1 = create_searchable_project("Active Searchable", "visible content", None, None, "user1");
     dao.insert(ctx.clone(), &p1).await?;
 
     // 创建一个软删除项目（status = Deleted = 0）
-    let mut p2 = create_searchable_project(
-        "Deleted Searchable",
-        "hidden content",
-        None,
-        None,
-        "user1",
-    );
+    let mut p2 =
+        create_searchable_project("Deleted Searchable", "hidden content", None, None, "user1");
     p2.status = ProjectStatus::Deleted;
     dao.insert(ctx.clone(), &p2).await?;
 

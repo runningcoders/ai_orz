@@ -6,10 +6,10 @@ use crate::models::mcp_server::McpServerQuery;
 use crate::models::mcp_server::{McpServerConfig, McpServerPo, McpServerStatus, McpTransport};
 use crate::pkg::RequestContext;
 use crate::service::dao::mcp_server::{self, McpServerDao};
+use common::error::Result;
 use sqlx::SqlitePool;
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use common::error::Result;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     crate::pkg::request_context_test_support::new_test_ctx(user_id, pool)

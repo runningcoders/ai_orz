@@ -5,9 +5,9 @@
 
 use super::*;
 use ai_orz_macros::StatsEvent;
-use uuid::Uuid;
-use duckdb::{Connection, ToSql};
 use common::error::Result;
+use duckdb::{Connection, ToSql};
+use uuid::Uuid;
 
 #[derive(Debug, Clone, StatsEvent)]
 #[event_type = "model_call"]
@@ -137,8 +137,12 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
                 total_tokens BIGINT
             );
         "#;
-        conn.execute(sql, [])
-            .map_err(|e| common::error::Error::internal(format!("Failed to create model_call_events table: {}", e)))?;
+        conn.execute(sql, []).map_err(|e| {
+            common::error::Error::internal(format!(
+                "Failed to create model_call_events table: {}",
+                e
+            ))
+        })?;
         Ok(())
     }
 
@@ -151,36 +155,9 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
                 call_count, tokens_input, tokens_output, total_tokens
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         "#;
-        conn.execute(sql, [
-            &id.to_string() as &dyn ToSql,
-            &event.timestamp as &dyn ToSql,
-            &event.agent_id as &dyn ToSql,
-            &event.project_id as &dyn ToSql,
-            &event.task_id as &dyn ToSql,
-            &event.model_provider_id as &dyn ToSql,
-            &event.model_name as &dyn ToSql,
-            &event.organization_id as &dyn ToSql,
-            &event.user_id as &dyn ToSql,
-            &event.call_count as &dyn ToSql,
-            &event.tokens_input as &dyn ToSql,
-            &event.tokens_output as &dyn ToSql,
-            &event.total_tokens as &dyn ToSql,
-        ])
-            .map_err(|e| common::error::Error::internal(format!("Failed to insert model call event: {}", e)))?;
-        Ok(())
-    }
-
-    fn bulk_insert_events(&self, conn: &mut Connection, events: &[ModelCallEvent]) -> Result<()> {
-        for event in events {
-            let id = Uuid::now_v7();
-            let sql = r#"
-                INSERT INTO model_call_events (
-                    id, timestamp, agent_id, project_id, task_id,
-                    model_provider_id, model_name, organization_id, user_id,
-                    call_count, tokens_input, tokens_output, total_tokens
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-            "#;
-            conn.execute(sql, [
+        conn.execute(
+            sql,
+            [
                 &id.to_string() as &dyn ToSql,
                 &event.timestamp as &dyn ToSql,
                 &event.agent_id as &dyn ToSql,
@@ -194,8 +171,48 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
                 &event.tokens_input as &dyn ToSql,
                 &event.tokens_output as &dyn ToSql,
                 &event.total_tokens as &dyn ToSql,
-            ])
-                .map_err(|e| common::error::Error::internal(format!("Failed to bulk insert model call event: {}", e)))?;
+            ],
+        )
+        .map_err(|e| {
+            common::error::Error::internal(format!("Failed to insert model call event: {}", e))
+        })?;
+        Ok(())
+    }
+
+    fn bulk_insert_events(&self, conn: &mut Connection, events: &[ModelCallEvent]) -> Result<()> {
+        for event in events {
+            let id = Uuid::now_v7();
+            let sql = r#"
+                INSERT INTO model_call_events (
+                    id, timestamp, agent_id, project_id, task_id,
+                    model_provider_id, model_name, organization_id, user_id,
+                    call_count, tokens_input, tokens_output, total_tokens
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            "#;
+            conn.execute(
+                sql,
+                [
+                    &id.to_string() as &dyn ToSql,
+                    &event.timestamp as &dyn ToSql,
+                    &event.agent_id as &dyn ToSql,
+                    &event.project_id as &dyn ToSql,
+                    &event.task_id as &dyn ToSql,
+                    &event.model_provider_id as &dyn ToSql,
+                    &event.model_name as &dyn ToSql,
+                    &event.organization_id as &dyn ToSql,
+                    &event.user_id as &dyn ToSql,
+                    &event.call_count as &dyn ToSql,
+                    &event.tokens_input as &dyn ToSql,
+                    &event.tokens_output as &dyn ToSql,
+                    &event.total_tokens as &dyn ToSql,
+                ],
+            )
+            .map_err(|e| {
+                common::error::Error::internal(format!(
+                    "Failed to bulk insert model call event: {}",
+                    e
+                ))
+            })?;
         }
         Ok(())
     }

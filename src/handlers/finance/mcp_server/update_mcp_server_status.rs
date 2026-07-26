@@ -22,8 +22,7 @@ pub async fn update_mcp_server_status(
     ctx: RequestContext,
     params: UpdateMcpServerStatusRequest,
 ) -> Result<UpdateMcpServerStatusResponse> {
-    if params.status == ApiMcpServerStatus::Deleted {
-    }
+    if params.status == ApiMcpServerStatus::Deleted {}
 
     domain()
         .mcp_server_manage()

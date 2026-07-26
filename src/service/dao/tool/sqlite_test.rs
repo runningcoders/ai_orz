@@ -481,7 +481,10 @@ async fn test_tool_query(pool: SqlitePool) {
 
     // 4. 测试 limit 限制
     let query = crate::service::dao::tool::ToolQuery {
-        pagination: common::api::PaginationParams { limit: Some(1), offset: None },
+        pagination: common::api::PaginationParams {
+            limit: Some(1),
+            offset: None,
+        },
         ..Default::default()
     };
     let results = tool_dao.query(ctx.clone(), query).await.unwrap();
@@ -1099,7 +1102,11 @@ async fn test_query_ignores_keyword_explicitly(pool: SqlitePool) {
     };
     let results = tool_dao.query(ctx.clone(), query).await.unwrap();
     // keyword 被忽略，应返回全部 2 条工具（而非只有 alpha-tool）
-    assert_eq!(results.items.len(), 2, "query 方法应忽略 keyword，返回全部工具");
+    assert_eq!(
+        results.items.len(),
+        2,
+        "query 方法应忽略 keyword，返回全部工具"
+    );
 
     // 用完全不匹配的关键词也应返回全部
     let query = crate::service::dao::tool::ToolQuery {
@@ -1107,5 +1114,9 @@ async fn test_query_ignores_keyword_explicitly(pool: SqlitePool) {
         ..Default::default()
     };
     let results = tool_dao.query(ctx.clone(), query).await.unwrap();
-    assert_eq!(results.items.len(), 2, "不匹配的 keyword 也应被忽略，返回全部工具");
+    assert_eq!(
+        results.items.len(),
+        2,
+        "不匹配的 keyword 也应被忽略，返回全部工具"
+    );
 }

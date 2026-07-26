@@ -5,9 +5,9 @@
 
 use super::*;
 use ai_orz_macros::StatsEvent;
-use uuid::Uuid;
-use duckdb::{Connection, ToSql};
 use common::error::Result;
+use duckdb::{Connection, ToSql};
+use uuid::Uuid;
 
 #[derive(Debug, Clone, StatsEvent)]
 #[event_type = "task"]
@@ -169,8 +169,9 @@ impl StatTable<TaskEvent> for TaskStatTable {
                 priority INTEGER
             );
         "#;
-        conn.execute(sql, [])
-            .map_err(|e| common::error::Error::internal(format!("Failed to create task_events table: {}", e)))?;
+        conn.execute(sql, []).map_err(|e| {
+            common::error::Error::internal(format!("Failed to create task_events table: {}", e))
+        })?;
         Ok(())
     }
 
@@ -185,41 +186,9 @@ impl StatTable<TaskEvent> for TaskStatTable {
                 duration_ms, priority
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         "#;
-        conn.execute(sql, [
-            &id.to_string() as &dyn ToSql,
-            &event.timestamp as &dyn ToSql,
-            &event.task_id as &dyn ToSql,
-            &event.project_id as &dyn ToSql,
-            &event.event_type as &dyn ToSql,
-            &event.organization_id as &dyn ToSql,
-            &event.operator_type as &dyn ToSql,
-            &event.operator_id as &dyn ToSql,
-            &event.root_user_id as &dyn ToSql,
-            &event.assignee_type as &dyn ToSql,
-            &event.assignee_id as &dyn ToSql,
-            &event.from_assignee_id as &dyn ToSql,
-            &event.from_status as &dyn ToSql,
-            &event.to_status as &dyn ToSql,
-            &event.duration_ms as &dyn ToSql,
-            &event.priority as &dyn ToSql,
-        ])
-            .map_err(|e| common::error::Error::internal(format!("Failed to insert task event: {}", e)))?;
-        Ok(())
-    }
-
-    fn bulk_insert_events(&self, conn: &mut Connection, events: &[TaskEvent]) -> Result<()> {
-        for event in events {
-            let id = Uuid::now_v7();
-            let sql = r#"
-                INSERT INTO task_events (
-                    id, timestamp, task_id, project_id, event_type,
-                    organization_id, operator_type, operator_id,
-                    root_user_id, assignee_type, assignee_id,
-                    from_assignee_id, from_status, to_status,
-                    duration_ms, priority
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-            "#;
-            conn.execute(sql, [
+        conn.execute(
+            sql,
+            [
                 &id.to_string() as &dyn ToSql,
                 &event.timestamp as &dyn ToSql,
                 &event.task_id as &dyn ToSql,
@@ -236,8 +205,50 @@ impl StatTable<TaskEvent> for TaskStatTable {
                 &event.to_status as &dyn ToSql,
                 &event.duration_ms as &dyn ToSql,
                 &event.priority as &dyn ToSql,
-            ])
-                .map_err(|e| common::error::Error::internal(format!("Failed to bulk insert task event: {}", e)))?;
+            ],
+        )
+        .map_err(|e| {
+            common::error::Error::internal(format!("Failed to insert task event: {}", e))
+        })?;
+        Ok(())
+    }
+
+    fn bulk_insert_events(&self, conn: &mut Connection, events: &[TaskEvent]) -> Result<()> {
+        for event in events {
+            let id = Uuid::now_v7();
+            let sql = r#"
+                INSERT INTO task_events (
+                    id, timestamp, task_id, project_id, event_type,
+                    organization_id, operator_type, operator_id,
+                    root_user_id, assignee_type, assignee_id,
+                    from_assignee_id, from_status, to_status,
+                    duration_ms, priority
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            "#;
+            conn.execute(
+                sql,
+                [
+                    &id.to_string() as &dyn ToSql,
+                    &event.timestamp as &dyn ToSql,
+                    &event.task_id as &dyn ToSql,
+                    &event.project_id as &dyn ToSql,
+                    &event.event_type as &dyn ToSql,
+                    &event.organization_id as &dyn ToSql,
+                    &event.operator_type as &dyn ToSql,
+                    &event.operator_id as &dyn ToSql,
+                    &event.root_user_id as &dyn ToSql,
+                    &event.assignee_type as &dyn ToSql,
+                    &event.assignee_id as &dyn ToSql,
+                    &event.from_assignee_id as &dyn ToSql,
+                    &event.from_status as &dyn ToSql,
+                    &event.to_status as &dyn ToSql,
+                    &event.duration_ms as &dyn ToSql,
+                    &event.priority as &dyn ToSql,
+                ],
+            )
+            .map_err(|e| {
+                common::error::Error::internal(format!("Failed to bulk insert task event: {}", e))
+            })?;
         }
         Ok(())
     }

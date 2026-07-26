@@ -224,7 +224,12 @@ async fn test_onboard_installs_project_management_tag(pool: SqlitePool) {
         .unwrap();
 
     // Verify installed_tags contains "project_management"
-    assert!(agent.po.get_installed_tags().contains(&"project_management".to_string()));
+    assert!(
+        agent
+            .po
+            .get_installed_tags()
+            .contains(&"project_management".to_string())
+    );
 
     // Verify persisted
     let found = domain
@@ -234,7 +239,12 @@ async fn test_onboard_installs_project_management_tag(pool: SqlitePool) {
         .unwrap()
         .expect("onboarded agent should be readable");
 
-    assert!(found.po.get_installed_tags().contains(&"project_management".to_string()));
+    assert!(
+        found
+            .po
+            .get_installed_tags()
+            .contains(&"project_management".to_string())
+    );
 }
 
 #[sqlx::test]
@@ -432,7 +442,9 @@ async fn test_install_tool_pack_returns_error_for_nonexistent_agent(pool: Sqlite
 // ==================== 技能包安装/卸载/列表测试 ====================
 
 /// 初始化测试环境（带文件系统支持，用于技能包安装测试）
-fn init_test_env_with_fs(pool: SqlitePool) -> (std::sync::Arc<dyn HrDomain>, RequestContext, TempDir) {
+fn init_test_env_with_fs(
+    pool: SqlitePool,
+) -> (std::sync::Arc<dyn HrDomain>, RequestContext, TempDir) {
     let temp_dir = TempDir::new().unwrap();
     let base_path = temp_dir.path().to_path_buf();
 
@@ -779,8 +791,5 @@ async fn test_reinstall_skill_pack_updates_existing_copy(pool: SqlitePool) {
         agent_skills[0].po.name, "UpdatedReinstallSkill",
         "副本名称应已更新"
     );
-    assert_ne!(
-        agent_skills[0].po.name, original_name,
-        "名称应已变化"
-    );
+    assert_ne!(agent_skills[0].po.name, original_name, "名称应已变化");
 }

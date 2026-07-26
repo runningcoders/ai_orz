@@ -1,12 +1,12 @@
 //! Handler: DELETE /api/v1/attachments/{id} - 删除 Attachment
 
-use common::error::Result;
 use crate::models::attachment::AttachmentGetOptions;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{DeleteAttachmentRequest, EmptyResponse};
-use common::error::{err, bail_err};
+use common::error::Result;
+use common::error::{bail_err, err};
 
 /// 删除 Attachment
 #[register_handler_tool(

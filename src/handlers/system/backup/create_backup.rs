@@ -20,10 +20,7 @@ pub async fn create_backup(
 ) -> Result<BackupInfo> {
     check_super_admin(&ctx)?;
 
-    let info = domain()
-        .backup_manager()
-        .create_backup(ctx)
-        .await?;
+    let info = domain().backup_manager().create_backup(ctx).await?;
 
     Ok(info)
 }

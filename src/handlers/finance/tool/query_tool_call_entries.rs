@@ -1,11 +1,11 @@
 //! Handler: GET /api/v1/tool-call-entries - Query tool call trace entries
 
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::pkg::tool_tracing::logger::ToolCallQuery;
 use crate::service::domain::runtime;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{QueryToolCallEntriesRequest, QueryToolCallEntriesResponse};
+use common::error::Result;
 
 use super::response::to_tool_call_entry_detail;
 

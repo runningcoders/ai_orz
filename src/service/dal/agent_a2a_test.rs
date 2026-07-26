@@ -40,11 +40,7 @@ impl AgentDal for MockAgentDal {
         self.record("create");
         Ok(())
     }
-    async fn find_by_id(
-        &self,
-        _ctx: RequestContext,
-        _id: &str,
-    ) -> Result<Option<Agent>> {
+    async fn find_by_id(&self, _ctx: RequestContext, _id: &str) -> Result<Option<Agent>> {
         self.record("find_by_id");
         Ok(None)
     }
@@ -63,7 +59,10 @@ impl AgentDal for MockAgentDal {
         _query: crate::service::dao::agent::AgentQuery,
     ) -> Result<common::api::PagedResult<Agent>> {
         self.record("query");
-        Ok(common::api::PagedResult { items: Vec::new(), total: 0 })
+        Ok(common::api::PagedResult {
+            items: Vec::new(),
+            total: 0,
+        })
     }
     async fn count(
         &self,
@@ -169,10 +168,10 @@ async fn a2a_agent_dal_delegates_get_agent_to_base() {
 /// 验证未重写 prompt_builder 时走 trait 默认方法返回 DefaultPromptBuilder
 #[test]
 fn a2a_agent_dal_default_prompt_builder_returns_default() {
+    use crate::models::prompt_builder::PromptBuilder;
     use crate::models::tool::ToolPo;
     use common::enums::ToolProtocol;
     use serde_json::json;
-    use crate::models::prompt_builder::PromptBuilder;
 
     let mock = Arc::new(MockAgentDal::new());
     let a2a_dal = A2aAgentDal::new(mock);

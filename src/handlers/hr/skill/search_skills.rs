@@ -1,12 +1,12 @@
 //! Handler: GET /api/v1/skills/search - Search skills by keyword with filtering
 
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::dao::skill::{SkillQuery, SkillSearch};
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{SearchSkillsRequest, SearchSkillsResponse};
 use common::enums::SkillStatus;
+use common::error::Result;
 
 use super::response::to_list_item;
 
@@ -38,7 +38,10 @@ pub async fn search_skills(
                     exclude_status: params.status.is_none().then_some(SkillStatus::Expired),
                     category: params.category,
                     author_id: params.author_id,
-                    pagination: common::api::PaginationParams { limit: params.limit, offset: None },
+                    pagination: common::api::PaginationParams {
+                        limit: params.limit,
+                        offset: None,
+                    },
                     ..Default::default()
                 },
             },

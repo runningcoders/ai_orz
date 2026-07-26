@@ -1,10 +1,10 @@
 //! Handler: POST /api/v1/finance/model-providers/:id/switch - Switch embedding provider
 
-use common::error::{Error, Result};
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::generate_http_handler;
 use common::api::{SwitchEmbeddingProviderRequest, SwitchEmbeddingProviderResponse};
+use common::error::{Error, Result};
 
 /// Switch embedding provider (requires user confirmation)
 #[generate_http_handler]
@@ -13,7 +13,9 @@ pub async fn switch_embedding_provider(
     params: SwitchEmbeddingProviderRequest,
 ) -> Result<SwitchEmbeddingProviderResponse> {
     if !params.confirm {
-        return Err(Error::bad_request("Confirmation required - set confirm: true to proceed"));
+        return Err(Error::bad_request(
+            "Confirmation required - set confirm: true to proceed",
+        ));
     }
 
     let (previous_provider, task_id) = domain()

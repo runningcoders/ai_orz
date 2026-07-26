@@ -4,7 +4,6 @@
 //! persistence of `McpServerPo`; this DAL exposes the `McpServer` business entity
 //! to upper layers and performs minimal configuration validation.
 
-use common::error::{bail_err, Result};
 use crate::models::mcp_server::{
     McpServer, McpServerPo, McpServerQuery, McpServerStatus, McpTransport,
 };
@@ -13,6 +12,7 @@ use crate::service::dao::mcp_server::McpServerDao;
 use crate::service::dao::tool_call::{self, McpToolCallDao};
 use async_trait::async_trait;
 use common::api::PagedResult;
+use common::error::{Result, bail_err};
 use std::sync::{Arc, OnceLock};
 
 static MCP_SERVER_DAL: OnceLock<Arc<dyn McpServerDal + Send + Sync>> = OnceLock::new();
@@ -43,11 +43,7 @@ pub fn new(
 pub trait McpServerDal: Send + Sync {
     async fn create(&self, ctx: RequestContext, server: &McpServer) -> Result<()>;
 
-    async fn find_by_id(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<Option<McpServer>>;
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<McpServer>>;
 
     async fn query(
         &self,
@@ -86,11 +82,7 @@ impl McpServerDal for McpServerDalImpl {
         self.mcp_server_dao.insert(ctx, &po).await
     }
 
-    async fn find_by_id(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<Option<McpServer>> {
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<McpServer>> {
         Ok(self
             .mcp_server_dao
             .find_by_id(ctx, id)
@@ -148,11 +140,18 @@ fn validate_mcp_server_po(po: &McpServerPo) -> Result<()> {
                 .trim()
                 .is_empty()
             {
-                bail_err!(InvalidRequest, "MCP stdio server {} requires command", po.id);
+                bail_err!(
+                    InvalidRequest,
+                    "MCP stdio server {} requires command",
+                    po.id
+                );
             }
         }
         McpTransport::StreamableHttp => {
-            bail_err!(InvalidRequest, "MCP streamable_http server management is not available until HTTP security policy is implemented");
+            bail_err!(
+                InvalidRequest,
+                "MCP streamable_http server management is not available until HTTP security policy is implemented"
+            );
         }
     }
 

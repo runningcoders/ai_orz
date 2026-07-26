@@ -8,7 +8,7 @@ use common::api::{CreateSkillRequest, CreateSkillResponse};
 use common::enums::skill::SkillAuthorType;
 
 use super::response::to_detail;
-use common::error::{Result, err, bail_err};
+use common::error::{Result, bail_err, err};
 
 /// Create a new empty skill with optional initial content and files. Returns the created skill detail.
 #[register_handler_tool(

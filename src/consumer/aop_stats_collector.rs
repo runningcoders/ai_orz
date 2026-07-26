@@ -61,13 +61,7 @@ impl AopStatsCollector {
     /// 记录一个事件（由 AopStatsHook 调用）
     ///
     /// 对于 success/failed 状态，累计耗时；其他状态不累计。
-    pub async fn record(
-        &self,
-        kind: &str,
-        consumer: &str,
-        status: &str,
-        duration_ms: u64,
-    ) {
+    pub async fn record(&self, kind: &str, consumer: &str, status: &str, duration_ms: u64) {
         let key = (kind.to_string(), consumer.to_string(), status.to_string());
         let duration = if status == "success" || status == "failed" {
             Some(duration_ms)
@@ -241,18 +235,10 @@ mod tests {
     #[tokio::test]
     async fn test_distribution_by_status() {
         let collector = AopStatsCollector::new();
-        collector
-            .record("k1", "c1", "success", 0)
-            .await;
-        collector
-            .record("k1", "c1", "success", 0)
-            .await;
-        collector
-            .record("k1", "c1", "failed", 0)
-            .await;
-        collector
-            .record("k2", "c2", "success", 0)
-            .await;
+        collector.record("k1", "c1", "success", 0).await;
+        collector.record("k1", "c1", "success", 0).await;
+        collector.record("k1", "c1", "failed", 0).await;
+        collector.record("k2", "c2", "success", 0).await;
 
         let dist = collector.distribution("status", None).await;
         let success_item = dist.iter().find(|i| i.label == "success").unwrap();
@@ -267,12 +253,8 @@ mod tests {
         collector
             .record("k1", "agent.awakening", "success", 0)
             .await;
-        collector
-            .record("k1", "agent.awakening", "failed", 0)
-            .await;
-        collector
-            .record("k2", "cron_trigger", "success", 0)
-            .await;
+        collector.record("k1", "agent.awakening", "failed", 0).await;
+        collector.record("k2", "cron_trigger", "success", 0).await;
 
         let dist = collector.distribution("consumer", None).await;
         assert_eq!(dist.len(), 2);
@@ -287,15 +269,9 @@ mod tests {
     async fn test_time_series_returns_buckets() {
         let collector = AopStatsCollector::new();
         // 同一分钟内记录多个事件
-        collector
-            .record("k1", "c1", "success", 0)
-            .await;
-        collector
-            .record("k1", "c1", "success", 0)
-            .await;
-        collector
-            .record("k1", "c1", "failed", 0)
-            .await;
+        collector.record("k1", "c1", "success", 0).await;
+        collector.record("k1", "c1", "success", 0).await;
+        collector.record("k1", "c1", "failed", 0).await;
 
         let ts = collector.time_series(None, None, None).await;
         assert!(!ts.is_empty());
@@ -306,12 +282,8 @@ mod tests {
     #[tokio::test]
     async fn test_time_series_with_filter() {
         let collector = AopStatsCollector::new();
-        collector
-            .record("k1", "c1", "success", 0)
-            .await;
-        collector
-            .record("k2", "c1", "success", 0)
-            .await;
+        collector.record("k1", "c1", "success", 0).await;
+        collector.record("k2", "c1", "success", 0).await;
 
         let ts = collector.time_series(Some("k1"), None, None).await;
         let total: u64 = ts.iter().map(|p| p.call_count).sum();
@@ -321,15 +293,9 @@ mod tests {
     #[tokio::test]
     async fn test_distribution_with_status_filter() {
         let collector = AopStatsCollector::new();
-        collector
-            .record("k1", "c1", "success", 0)
-            .await;
-        collector
-            .record("k1", "c1", "failed", 0)
-            .await;
-        collector
-            .record("k1", "c2", "success", 0)
-            .await;
+        collector.record("k1", "c1", "success", 0).await;
+        collector.record("k1", "c1", "failed", 0).await;
+        collector.record("k1", "c2", "success", 0).await;
 
         // 只看 success 状态，按 consumer 分组
         let dist = collector.distribution("consumer", Some("success")).await;

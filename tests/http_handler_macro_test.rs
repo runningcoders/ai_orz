@@ -14,13 +14,13 @@
 //!
 //! 运行：`PROTOC=/opt/homebrew/bin/protoc cargo test --test http_handler_macro_test`
 
-use ai_orz::pkg::{storage, RequestContext};
-use ai_orz_macros::{generate_http_handler, Params};
-use axum::body::{to_bytes, Body};
-use axum::http::{Method, Request, StatusCode};
-use axum::routing::{get, put};
+use ai_orz::pkg::{RequestContext, storage};
+use ai_orz_macros::{Params, generate_http_handler};
 use axum::Extension;
 use axum::Router;
+use axum::body::{Body, to_bytes};
+use axum::http::{Method, Request, StatusCode};
+use axum::routing::{get, put};
 use common::api::ApiResponse;
 use common::config::{DatabaseConfig, StatsConfig, VectorStoreType};
 use common::enums::ToolStatus;
@@ -226,7 +226,10 @@ async fn test_query_only_get_works_with_query_string() {
 
     let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
     let body_str = String::from_utf8(body.to_vec()).unwrap();
-    assert!(body_str.contains("10"), "limit=10 应该被提取，实际: {body_str}");
+    assert!(
+        body_str.contains("10"),
+        "limit=10 应该被提取，实际: {body_str}"
+    );
     assert!(
         body_str.contains("20"),
         "offset=20 应该被提取，实际: {body_str}"
@@ -493,10 +496,8 @@ pub async fn get_tool_status(
 #[tokio::test]
 async fn test_path_and_query_with_enum_type_works() {
     // query 字段是 Option<ToolStatus>（enum），需要 serde 正确反序列化
-    let app = make_router(|r| {
-        r.route("/tools/{tool_id}/status", get(get_tool_status_handler))
-    })
-    .await;
+    let app =
+        make_router(|r| r.route("/tools/{tool_id}/status", get(get_tool_status_handler))).await;
 
     let req = Request::builder()
         .method(Method::GET)
@@ -526,10 +527,8 @@ async fn test_path_and_query_with_enum_type_works() {
 #[tokio::test]
 async fn test_path_and_query_with_missing_optional_enum_query() {
     // 缺失 Option<enum> query 字段时不应报错
-    let app = make_router(|r| {
-        r.route("/tools/{tool_id}/status", get(get_tool_status_handler))
-    })
-    .await;
+    let app =
+        make_router(|r| r.route("/tools/{tool_id}/status", get(get_tool_status_handler))).await;
 
     let req = Request::builder()
         .method(Method::GET)
@@ -590,7 +589,10 @@ pub async fn list_artifacts_test(
 async fn test_path_and_query_with_flattened_pagination_works() {
     // pagination 字段使用 #[serde(flatten)]，query string 中是 limit/offset 而非 pagination[limit]
     let app = make_router(|r| {
-        r.route("/projects/{project_id}/artifacts", get(list_artifacts_test_handler))
+        r.route(
+            "/projects/{project_id}/artifacts",
+            get(list_artifacts_test_handler),
+        )
     })
     .await;
 
@@ -619,7 +621,10 @@ async fn test_path_and_query_with_flattened_pagination_works() {
 async fn test_path_and_query_with_flattened_pagination_missing() {
     // 缺失 flatten pagination 字段时不应报错（PaginationParams impl Default）
     let app = make_router(|r| {
-        r.route("/projects/{project_id}/artifacts", get(list_artifacts_test_handler))
+        r.route(
+            "/projects/{project_id}/artifacts",
+            get(list_artifacts_test_handler),
+        )
     })
     .await;
 
@@ -670,10 +675,7 @@ pub async fn mixed_override(
 #[tokio::test]
 async fn test_mixed_path_query_body_all_extracted_correctly() {
     // path+query+body 混合 PUT：每个字段从对应来源提取
-    let app = make_router(|r| {
-        r.route("/items/{id}", put(mixed_override_handler))
-    })
-    .await;
+    let app = make_router(|r| r.route("/items/{id}", put(mixed_override_handler))).await;
 
     let body = r#"{"id":"from_body","query_name":"from_body","body_name":"body_value"}"#;
     let req = Request::builder()
@@ -727,10 +729,7 @@ pub async fn get_number(
 #[tokio::test]
 async fn test_path_and_query_with_numeric_types_works() {
     // query 字段是数值类型（u32, f64），需要 serde_json::Value 正确推断
-    let app = make_router(|r| {
-        r.route("/items/{item_id}/numbers", get(get_number_handler))
-    })
-    .await;
+    let app = make_router(|r| r.route("/items/{item_id}/numbers", get(get_number_handler))).await;
 
     let req = Request::builder()
         .method(Method::GET)

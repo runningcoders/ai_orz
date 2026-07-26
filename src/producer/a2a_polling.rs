@@ -1,9 +1,7 @@
-use common::enums::{AssigneeType, TaskStatus};
-use common::error::Result;
 use crate::models::agent::AgentPo;
 use crate::models::events::{
-    extract_a2a_task_id, extract_text_from_parts, get_synced_msg_count, make_synced_msg_tag,
-    A2A_SYNCED_MSG_COUNT_PREFIX,
+    A2A_SYNCED_MSG_COUNT_PREFIX, extract_a2a_task_id, extract_text_from_parts,
+    get_synced_msg_count, make_synced_msg_tag,
 };
 use crate::pkg::RequestContext;
 use crate::pkg::aop::{Producer, Registry};
@@ -11,6 +9,8 @@ use crate::service::dao::agent_runtime::a2a::{A2aRuntimeConfig, A2aRuntimeDao};
 use crate::service::domain::hr as hr_domain;
 use crate::service::domain::message::{self as message_domain, SendToUserCommand};
 use crate::service::domain::project as project_domain;
+use common::enums::{AssigneeType, TaskStatus};
+use common::error::Result;
 use std::sync::{Arc, RwLock};
 
 pub struct A2aPollingProducer {
@@ -130,7 +130,9 @@ impl Producer for A2aPollingProducer {
                 let task_ctx = task_ctx_builder.build();
 
                 let already_synced = get_synced_msg_count(&tags);
-                let agent_messages: Vec<_> = remote_task.messages.iter()
+                let agent_messages: Vec<_> = remote_task
+                    .messages
+                    .iter()
                     .filter(|msg| msg.role == "agent" || msg.role == "assistant")
                     .collect();
                 let total_agent_msgs = agent_messages.len();
@@ -153,7 +155,11 @@ impl Producer for A2aPollingProducer {
                             reply_to_id: None,
                         };
 
-                        if let Err(e) = message_domain::domain().delivery().send_to_user(task_ctx.clone(), cmd).await {
+                        if let Err(e) = message_domain::domain()
+                            .delivery()
+                            .send_to_user(task_ctx.clone(), cmd)
+                            .await
+                        {
                             log_warn!(
                                 &task_ctx,
                                 "a2a_polling",
@@ -176,16 +182,20 @@ impl Producer for A2aPollingProducer {
                         .collect();
                     new_tags.push(make_synced_msg_tag(new_total));
 
-                    if let Err(e) = project_domain::domain().task_manage().update_basic(
-                        task_ctx.clone(),
-                        &task.po.id,
-                        None,
-                        None,
-                        None,
-                        Some(new_tags),
-                        None,
-                        None,
-                    ).await {
+                    if let Err(e) = project_domain::domain()
+                        .task_manage()
+                        .update_basic(
+                            task_ctx.clone(),
+                            &task.po.id,
+                            None,
+                            None,
+                            None,
+                            Some(new_tags),
+                            None,
+                            None,
+                        )
+                        .await
+                    {
                         log_warn!(
                             &task_ctx,
                             "a2a_polling",
@@ -214,11 +224,11 @@ impl Producer for A2aPollingProducer {
 
                 if let Some(target) = target_status {
                     if local_task.po.status != target {
-                        if let Err(e) = project_domain::domain().task_manage().transition_status(
-                            task_ctx.clone(),
-                            &mut local_task,
-                            target,
-                        ).await {
+                        if let Err(e) = project_domain::domain()
+                            .task_manage()
+                            .transition_status(task_ctx.clone(), &mut local_task, target)
+                            .await
+                        {
                             log_warn!(
                                 &task_ctx,
                                 "a2a_polling",

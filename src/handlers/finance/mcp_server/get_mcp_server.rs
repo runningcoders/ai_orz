@@ -3,9 +3,9 @@
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetMcpServerRequest, GetMcpServerResponse};
 
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
+use common::error::Result;
 
 use super::response::to_detail;
 
@@ -25,7 +25,9 @@ pub async fn get_mcp_server(
         .mcp_server_manage()
         .get_mcp_server(ctx, &params.id)
         .await?
-        .ok_or_else(|| common::error::Error::not_found(format!("McpServer {} not found", params.id)))?;
+        .ok_or_else(|| {
+            common::error::Error::not_found(format!("McpServer {} not found", params.id))
+        })?;
 
     Ok(to_detail(&server))
 }

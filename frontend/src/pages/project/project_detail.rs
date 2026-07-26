@@ -4,18 +4,24 @@ use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
 use crate::api::hr::query_agents;
-use crate::api::{project::*, StatsOptions};
+use crate::api::{StatsOptions, project::*};
+use crate::components::charts::donut_chart::{DonutChart, DonutSlice};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
-use crate::components::charts::donut_chart::{DonutChart, DonutSlice};
 use crate::components::stats::ProjectStatsPanel;
-use crate::utils::task_status_color;
 use crate::components::workspace_graph::{WorkspaceGraph, WorkspaceView};
 use crate::layouts::app_layout::AppLayout;
-use crate::pages::project::task_edit_modal::{TaskEditMode, TaskEditModal};
+use crate::pages::project::task_edit_modal::{TaskEditModal, TaskEditMode};
 use crate::store::toast::use_toast;
-use crate::utils::{progress_bar_class, project_status_badge, project_status_text, task_status_badge, task_status_text};
-use common::api::{AgentListItem, AgentQueryRequest, ArtifactDetail, CreateArtifactRequest, GetProjectResponse, PaginationParams, ProjectListItem, TaskListItem, UpdateProjectRequest};
+use crate::utils::task_status_color;
+use crate::utils::{
+    progress_bar_class, project_status_badge, project_status_text, task_status_badge,
+    task_status_text,
+};
+use common::api::{
+    AgentListItem, AgentQueryRequest, ArtifactDetail, CreateArtifactRequest, GetProjectResponse,
+    PaginationParams, ProjectListItem, TaskListItem, UpdateProjectRequest,
+};
 use common::enums::ArtifactSourceType;
 
 fn artifact_source_type_text(source_type: ArtifactSourceType) -> &'static str {
@@ -78,7 +84,8 @@ pub fn ProjectDetail(id: String) -> Element {
                     let tasks_vec = resp.tasks;
 
                     // 批量加载关联 agents（仅本项目任务涉及到的 assignee），消除 N+1
-                    let assignee_ids: Vec<String> = tasks_vec.iter()
+                    let assignee_ids: Vec<String> = tasks_vec
+                        .iter()
                         .filter(|t| t.assignee_type == 1)
                         .map(|t| t.assignee_id.clone())
                         .collect::<std::collections::HashSet<_>>()
@@ -236,10 +243,26 @@ pub fn ProjectDetail(id: String) -> Element {
         });
     };
 
-    let tab0_class = if active_tab() == 0 { "tab tab-lg tab-active" } else { "tab tab-lg" };
-    let tab1_class = if active_tab() == 1 { "tab tab-lg tab-active" } else { "tab tab-lg" };
-    let tab2_class = if active_tab() == 2 { "tab tab-lg tab-active" } else { "tab tab-lg" };
-    let tab3_class = if active_tab() == 3 { "tab tab-lg tab-active" } else { "tab tab-lg" };
+    let tab0_class = if active_tab() == 0 {
+        "tab tab-lg tab-active"
+    } else {
+        "tab tab-lg"
+    };
+    let tab1_class = if active_tab() == 1 {
+        "tab tab-lg tab-active"
+    } else {
+        "tab tab-lg"
+    };
+    let tab2_class = if active_tab() == 2 {
+        "tab tab-lg tab-active"
+    } else {
+        "tab tab-lg"
+    };
+    let tab3_class = if active_tab() == 3 {
+        "tab tab-lg tab-active"
+    } else {
+        "tab tab-lg"
+    };
 
     let project_data = project.read().clone();
     let tasks_list = tasks.read().clone();

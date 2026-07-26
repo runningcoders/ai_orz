@@ -1,12 +1,12 @@
 //! User DAO SQLite 实现
 
-use common::error::Result;
-use common::api::PagedResult;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::user::{UserDao, UserQuery};
 use chrono::Utc;
+use common::api::PagedResult;
 use common::enums::{UserRole, UserStatus};
+use common::error::Result;
 use sqlx::QueryBuilder;
 use std::sync::{Arc, OnceLock};
 
@@ -106,10 +106,7 @@ FROM users WHERE username = ? AND status != 0
 
         let mut count_builder = QueryBuilder::new("SELECT COUNT(*) FROM users WHERE status != 0");
         push_query_filters(&mut count_builder, &query);
-        let total: i64 = count_builder
-            .build_query_scalar()
-            .fetch_one(pool)
-            .await?;
+        let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
 
         let mut list_builder = QueryBuilder::new(
             r#"SELECT id, organization_id, username, display_name, email, password_hash, role, status, created_by, modified_by, created_at, updated_at FROM users WHERE status != 0"#,
@@ -201,11 +198,7 @@ UPDATE users SET status = 0, modified_by = ?, updated_at = ? WHERE id = ?
         Ok(())
     }
 
-    async fn exists_by_username(
-        &self,
-        ctx: RequestContext,
-        username: &str,
-    ) -> Result<bool> {
+    async fn exists_by_username(&self, ctx: RequestContext, username: &str) -> Result<bool> {
         let count = sqlx::query!(
             "SELECT COUNT(*) as count FROM users WHERE username = ?",
             username
@@ -216,11 +209,7 @@ UPDATE users SET status = 0, modified_by = ?, updated_at = ? WHERE id = ?
         Ok(count.count > 0)
     }
 
-    async fn count_by_organization_id(
-        &self,
-        ctx: RequestContext,
-        org_id: &str,
-    ) -> Result<u64> {
+    async fn count_by_organization_id(&self, ctx: RequestContext, org_id: &str) -> Result<u64> {
         // 语法糖：调用通用 count
         self.count(
             ctx,
@@ -236,19 +225,13 @@ UPDATE users SET status = 0, modified_by = ?, updated_at = ? WHERE id = ?
         let pool = ctx.db_pool();
         let mut count_builder = QueryBuilder::new("SELECT COUNT(*) FROM users WHERE status != 0");
         push_query_filters(&mut count_builder, &query);
-        let total: i64 = count_builder
-            .build_query_scalar()
-            .fetch_one(pool)
-            .await?;
+        let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
         Ok(total as u64)
     }
 }
 
 /// 推送查询过滤条件到 QueryBuilder（COUNT 和 LIST 查询复用）
-fn push_query_filters<'args>(
-    builder: &mut QueryBuilder<'args, sqlx::Sqlite>,
-    query: &UserQuery,
-) {
+fn push_query_filters<'args>(builder: &mut QueryBuilder<'args, sqlx::Sqlite>, query: &UserQuery) {
     if let Some(org_id) = &query.organization_id {
         builder
             .push(" AND organization_id = ")

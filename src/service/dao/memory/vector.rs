@@ -1,11 +1,11 @@
 //! Memory Vector DAO implementation
 //! 负责记忆向量索引的 CRUD 操作，与基础记忆数据完全解耦
 
-use common::error::{err, Result};
 use crate::models::vector::{VectorIndexParams, VectorRow, VectorSearchHit};
 use crate::pkg::RequestContext;
 use crate::service::dao::memory::MemoryVectorDao;
 use async_trait::async_trait;
+use common::error::{Result, err};
 use std::sync::{Arc, OnceLock};
 
 // ==================== 工厂方法 + 单例 ====================
@@ -117,11 +117,7 @@ impl MemoryVectorDao for MemoryVectorDaoImpl {
     }
 
     /// 删除短期记忆的向量索引
-    async fn delete_short_term_vector(
-        &self,
-        _ctx: RequestContext,
-        memory_id: &str,
-    ) -> Result<()> {
+    async fn delete_short_term_vector(&self, _ctx: RequestContext, memory_id: &str) -> Result<()> {
         let vector_store = _ctx.vector_store();
         vector_store.delete("memory:short_term", memory_id).await?;
         Ok(())
@@ -143,7 +139,9 @@ impl MemoryVectorDao for MemoryVectorDaoImpl {
     async fn clear_collection(&self, _ctx: RequestContext) -> Result<()> {
         let vector_store = _ctx.vector_store();
         vector_store.clear_collection("memory:short_term").await?;
-        vector_store.clear_collection("memory:knowledge_node").await?;
+        vector_store
+            .clear_collection("memory:knowledge_node")
+            .await?;
         Ok(())
     }
 }

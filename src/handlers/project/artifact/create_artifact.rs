@@ -1,7 +1,6 @@
 //! Handler: POST /api/v1/project/artifacts - Create a new artifact
 
 use super::response;
-use common::error::{err, bail_err, Result};
 use crate::models::attachment::AttachmentGetOptions;
 use crate::models::file::FileMeta;
 use crate::pkg::RequestContext;
@@ -9,6 +8,7 @@ use crate::service::domain::{finance, project};
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CreateArtifactRequest, CreateArtifactResponse};
 use common::enums::ArtifactSourceType;
+use common::error::{Result, bail_err, err};
 
 /// Create a new artifact (from existing attachment or generated content)
 #[register_handler_tool(
@@ -38,10 +38,16 @@ pub async fn create_artifact(
             create_from_attachment(ctx, params, current_user_id).await?
         }
         ArtifactSourceType::GeneratedContent => {
-            bail_err!(UnsupportedOperation, "generated_content artifact create is not implemented yet");
+            bail_err!(
+                UnsupportedOperation,
+                "generated_content artifact create is not implemented yet"
+            );
         }
         ArtifactSourceType::RemoteUrl => {
-            bail_err!(UnsupportedOperation, "remote_url artifact create is reserved for future extension");
+            bail_err!(
+                UnsupportedOperation,
+                "remote_url artifact create is reserved for future extension"
+            );
         }
     };
 
@@ -61,7 +67,10 @@ async fn create_from_attachment(
         .ok_or_else(|| err!(InvalidRequest, "attachment_id 不能为空"))?;
 
     if params.content.is_some() || params.file_name.is_some() || params.mime_type.is_some() {
-        bail_err!(InvalidRequest, "attachment 类型产物不能同时携带 content/file_name/mime_type");
+        bail_err!(
+            InvalidRequest,
+            "attachment 类型产物不能同时携带 content/file_name/mime_type"
+        );
     }
 
     let attachment = finance::domain()

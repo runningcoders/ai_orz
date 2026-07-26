@@ -12,7 +12,7 @@
 pub mod message;
 
 use common::enums::ChannelType;
-use common::error::{err, Result};
+use common::error::{Result, err};
 use once_cell::sync::Lazy;
 use std::any::Any;
 use std::collections::HashMap;
@@ -70,13 +70,10 @@ impl AdapterRegistry {
     where
         T: Any + Send + Sync + 'static,
     {
-        let mut map = self.adapters.write().map_err(|e| {
-            err!(
-                Internal,
-                "adapter registry lock poisoned: {}",
-                e
-            )
-        })?;
+        let mut map = self
+            .adapters
+            .write()
+            .map_err(|e| err!(Internal, "adapter registry lock poisoned: {}", e))?;
         let key = channel_type.into();
         if map.contains_key(&key) {
             return Err(err!(

@@ -2,13 +2,13 @@
 
 #![cfg(test)]
 
-use crate::pkg::stats::*;
 use crate::pkg::RequestContext;
+use crate::pkg::stats::*;
+use chrono::Utc;
 use common::error::Result;
 use duckdb::{Connection, ToSql};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tempfile::tempdir;
-use chrono::Utc;
 use uuid::Uuid;
 
 #[tokio::test]
@@ -80,7 +80,13 @@ async fn test_manual_flush() -> Result<()> {
     assert_eq!(stats.pending_buffer_len::<DefaultStatEvent>(), 0);
 
     // 查询验证
-    let result = stats.query(ctx.clone(), "SELECT COUNT(*) as count FROM default_events", &[]).await?;
+    let result = stats
+        .query(
+            ctx.clone(),
+            "SELECT COUNT(*) as count FROM default_events",
+            &[],
+        )
+        .await?;
     assert_eq!(result.len(), 1);
     let count: i64 = result[0].get("count").unwrap().as_i64().unwrap();
     assert_eq!(count, 3);
@@ -125,7 +131,13 @@ async fn test_batch_flush() -> Result<()> {
 
     // 查询验证总共 5 条
     stats.flush_all(ctx.clone()).await?;
-    let result = stats.query(ctx.clone(), "SELECT COUNT(*) as count FROM default_events", &[]).await?;
+    let result = stats
+        .query(
+            ctx.clone(),
+            "SELECT COUNT(*) as count FROM default_events",
+            &[],
+        )
+        .await?;
     assert_eq!(result.len(), 1);
     let count: i64 = result[0].get("count").unwrap().as_i64().unwrap();
     assert_eq!(count, 5);
@@ -214,9 +226,9 @@ impl StatTable<AgentExecutionEvent> for AgentExecutionTable {
                 error_message VARCHAR
             );
         "#;
-        conn.execute(sql, []).map_err(|e| 
+        conn.execute(sql, []).map_err(|e| {
             common::error::Error::internal(format!("Failed to create agent_execution table: {}", e))
-        )?;
+        })?;
         Ok(())
     }
 
@@ -226,26 +238,34 @@ impl StatTable<AgentExecutionEvent> for AgentExecutionTable {
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         let tags_json = event.tags.as_ref().map(|v| v.to_string());
         let metrics_json = event.metrics.as_ref().map(|v| v.to_string());
-        conn.execute(sql, [
-            &event.id.to_string() as &dyn ToSql,
-            &event.timestamp as &dyn ToSql,
-            &"agent_execution".to_string() as &dyn ToSql,
-            &tags_json as &dyn ToSql,
-            &metrics_json as &dyn ToSql,
-            &event.agent_id as &dyn ToSql,
-            &event.task_id as &dyn ToSql,
-            &event.start_timestamp as &dyn ToSql,
-            &event.end_timestamp as &dyn ToSql,
-            &event.total_tokens as &dyn ToSql,
-            &event.success as &dyn ToSql,
-            &event.error_message as &dyn ToSql,
-        ]).map_err(|e| 
+        conn.execute(
+            sql,
+            [
+                &event.id.to_string() as &dyn ToSql,
+                &event.timestamp as &dyn ToSql,
+                &"agent_execution".to_string() as &dyn ToSql,
+                &tags_json as &dyn ToSql,
+                &metrics_json as &dyn ToSql,
+                &event.agent_id as &dyn ToSql,
+                &event.task_id as &dyn ToSql,
+                &event.start_timestamp as &dyn ToSql,
+                &event.end_timestamp as &dyn ToSql,
+                &event.total_tokens as &dyn ToSql,
+                &event.success as &dyn ToSql,
+                &event.error_message as &dyn ToSql,
+            ],
+        )
+        .map_err(|e| {
             common::error::Error::internal(format!("Failed to insert agent execution event: {}", e))
-        )?;
+        })?;
         Ok(())
     }
 
-    fn bulk_insert_events(&self, conn: &mut Connection, events: &[AgentExecutionEvent]) -> Result<()> {
+    fn bulk_insert_events(
+        &self,
+        conn: &mut Connection,
+        events: &[AgentExecutionEvent],
+    ) -> Result<()> {
         for event in events {
             self.insert_event(conn, event)?;
         }
@@ -286,7 +306,13 @@ async fn test_custom_event() -> Result<()> {
     assert_eq!(stats.pending_buffer_len::<AgentExecutionEvent>(), 0);
 
     // 查询验证
-    let result = stats.query(ctx.clone(), "SELECT COUNT(*) as count FROM agent_execution", &[]).await?;
+    let result = stats
+        .query(
+            ctx.clone(),
+            "SELECT COUNT(*) as count FROM agent_execution",
+            &[],
+        )
+        .await?;
     assert_eq!(result.len(), 1);
     let count: i64 = result[0].get("count").unwrap().as_i64().unwrap();
     assert_eq!(count, 3);

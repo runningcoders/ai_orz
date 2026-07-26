@@ -2,7 +2,7 @@
 //!
 //! 飞书 OpenAPI 调用相关错误定义，转换为 common::error::Error 后向上传递。
 
-use common::error::{err, Error};
+use common::error::{Error, err};
 use serde::Deserialize;
 
 /// 飞书 OpenAPI 错误响应体（业务层错误码）

@@ -1,6 +1,5 @@
 //! Memory DAL 单元测试
 
-use common::error::Error;
 use crate::models::brain::CortexTrait;
 use crate::models::memory::{
     KnowledgeNodeRelationPo, KnowledgeReferencePo, LongTermKnowledgeNodePo, Memory,
@@ -16,9 +15,10 @@ use crate::service::dao::memory::{
 };
 use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderQuery};
 use common::enums::{MemoryStatus, ModelCapability, ModelProviderStatus, ProviderType};
+use common::error::Error;
+use common::error::Result;
 use sqlx::SqlitePool;
 use std::sync::Arc;
-use common::error::Result;
 
 // ========== Mock 实现 ==========
 
@@ -27,18 +27,10 @@ struct MockModelProviderDao;
 
 #[async_trait::async_trait]
 impl ModelProviderDao for MockModelProviderDao {
-    async fn insert(
-        &self,
-        _ctx: RequestContext,
-        _provider: &ModelProviderPo,
-    ) -> Result<()> {
+    async fn insert(&self, _ctx: RequestContext, _provider: &ModelProviderPo) -> Result<()> {
         Ok(())
     }
-    async fn find_by_id(
-        &self,
-        _ctx: RequestContext,
-        _id: &str,
-    ) -> Result<Option<ModelProviderPo>> {
+    async fn find_by_id(&self, _ctx: RequestContext, _id: &str) -> Result<Option<ModelProviderPo>> {
         Ok(None)
     }
     async fn query(
@@ -46,23 +38,18 @@ impl ModelProviderDao for MockModelProviderDao {
         _ctx: RequestContext,
         _query: ModelProviderQuery,
     ) -> Result<common::api::PagedResult<ModelProviderPo>> {
-        Ok(common::api::PagedResult { items: Vec::new(), total: 0 })
+        Ok(common::api::PagedResult {
+            items: Vec::new(),
+            total: 0,
+        })
     }
     async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<ModelProviderPo>> {
         Ok(Vec::new())
     }
-    async fn update(
-        &self,
-        _ctx: RequestContext,
-        _provider: &ModelProviderPo,
-    ) -> Result<()> {
+    async fn update(&self, _ctx: RequestContext, _provider: &ModelProviderPo) -> Result<()> {
         Ok(())
     }
-    async fn delete(
-        &self,
-        _ctx: RequestContext,
-        _provider: &ModelProviderPo,
-    ) -> Result<()> {
+    async fn delete(&self, _ctx: RequestContext, _provider: &ModelProviderPo) -> Result<()> {
         Ok(())
     }
     async fn get_default_embedding_provider(
@@ -1185,18 +1172,10 @@ struct MockVectorProviderDao;
 
 #[async_trait::async_trait]
 impl ModelProviderDao for MockVectorProviderDao {
-    async fn insert(
-        &self,
-        _ctx: RequestContext,
-        _provider: &ModelProviderPo,
-    ) -> Result<()> {
+    async fn insert(&self, _ctx: RequestContext, _provider: &ModelProviderPo) -> Result<()> {
         Ok(())
     }
-    async fn find_by_id(
-        &self,
-        _ctx: RequestContext,
-        _id: &str,
-    ) -> Result<Option<ModelProviderPo>> {
+    async fn find_by_id(&self, _ctx: RequestContext, _id: &str) -> Result<Option<ModelProviderPo>> {
         Ok(None)
     }
     async fn query(
@@ -1204,23 +1183,18 @@ impl ModelProviderDao for MockVectorProviderDao {
         _ctx: RequestContext,
         _query: ModelProviderQuery,
     ) -> Result<common::api::PagedResult<ModelProviderPo>> {
-        Ok(common::api::PagedResult { items: Vec::new(), total: 0 })
+        Ok(common::api::PagedResult {
+            items: Vec::new(),
+            total: 0,
+        })
     }
     async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<ModelProviderPo>> {
         Ok(Vec::new())
     }
-    async fn update(
-        &self,
-        _ctx: RequestContext,
-        _provider: &ModelProviderPo,
-    ) -> Result<()> {
+    async fn update(&self, _ctx: RequestContext, _provider: &ModelProviderPo) -> Result<()> {
         Ok(())
     }
-    async fn delete(
-        &self,
-        _ctx: RequestContext,
-        _provider: &ModelProviderPo,
-    ) -> Result<()> {
+    async fn delete(&self, _ctx: RequestContext, _provider: &ModelProviderPo) -> Result<()> {
         Ok(())
     }
     async fn get_default_embedding_provider(
@@ -1384,11 +1358,7 @@ impl MemoryVectorDao for MockMemoryVectorDao {
     ) -> Result<Option<VectorRow>> {
         Ok(None)
     }
-    async fn delete_short_term_vector(
-        &self,
-        _ctx: RequestContext,
-        _memory_id: &str,
-    ) -> Result<()> {
+    async fn delete_short_term_vector(&self, _ctx: RequestContext, _memory_id: &str) -> Result<()> {
         Ok(())
     }
     async fn delete_knowledge_node_vector(
@@ -1417,7 +1387,12 @@ async fn init_test_with_vector(
     });
     let model_provider_dao: Arc<dyn ModelProviderDao> = Arc::new(MockVectorProviderDao);
     let cortex_dao: Arc<dyn CortexDao> = Arc::new(MockCortexVectorDao);
-    new(memory_dao, memory_vector_dao, model_provider_dao, cortex_dao)
+    new(
+        memory_dao,
+        memory_vector_dao,
+        model_provider_dao,
+        cortex_dao,
+    )
 }
 
 // ========== 混合搜索测试 ==========

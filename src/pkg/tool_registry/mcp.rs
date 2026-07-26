@@ -12,7 +12,7 @@ use crate::pkg::request_context::RequestContext;
 use anyhow::anyhow;
 use async_trait::async_trait;
 use common::enums::ToolProtocol;
-use common::error::{err, Result};
+use common::error::{Result, err};
 use rig::tool::ToolError;
 use rmcp::{
     RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService,
@@ -78,9 +78,9 @@ impl McpClientRuntime {
     ) -> Result<Value> {
         let result = match server.transport {
             McpTransport::Stdio => self.call_stdio_tool(server, tool_name, args).await,
-            McpTransport::StreamableHttp => Err(anyhow!(
-                "MCP streamable HTTP runtime is not implemented yet"
-            ).into()),
+            McpTransport::StreamableHttp => {
+                Err(anyhow!("MCP streamable HTTP runtime is not implemented yet").into())
+            }
         };
         if result.is_ok() {
             self.clear_invalidated_server(&server.id);
@@ -91,9 +91,9 @@ impl McpClientRuntime {
     pub async fn list_tools(&self, server: &McpServerPo) -> Result<Vec<RemoteMcpTool>> {
         let result = match server.transport {
             McpTransport::Stdio => self.list_stdio_tools(server).await,
-            McpTransport::StreamableHttp => Err(anyhow!(
-                "MCP streamable HTTP runtime is not implemented yet"
-            ).into()),
+            McpTransport::StreamableHttp => {
+                Err(anyhow!("MCP streamable HTTP runtime is not implemented yet").into())
+            }
         };
         if result.is_ok() {
             self.clear_invalidated_server(&server.id);
@@ -126,7 +126,8 @@ impl McpClientRuntime {
             return Err(anyhow!(mcp_stdio_session_close_failed_message(
                 &server.id,
                 "tools/list",
-            )).into());
+            ))
+            .into());
         }
 
         Ok(tools
@@ -183,7 +184,8 @@ impl McpClientRuntime {
             return Err(anyhow!(mcp_stdio_session_close_failed_message(
                 &server.id,
                 &format!("tool call {}", tool_name),
-            )).into());
+            ))
+            .into());
         }
 
         serde_json::to_value(result)
@@ -252,7 +254,8 @@ fn resolve_command_path(command: &str) -> Result<PathBuf> {
     }
 
     let paths = std::env::var_os("PATH").ok_or_else(|| -> common::error::Error {
-        anyhow!("PATH is required to resolve MCP stdio command; use an absolute path instead").into()
+        anyhow!("PATH is required to resolve MCP stdio command; use an absolute path instead")
+            .into()
     })?;
 
     for dir in std::env::split_paths(&paths) {
@@ -262,9 +265,7 @@ fn resolve_command_path(command: &str) -> Result<PathBuf> {
         }
     }
 
-    Err(anyhow!(
-        "MCP stdio command was not found in PATH; use an absolute path instead"
-    ).into())
+    Err(anyhow!("MCP stdio command was not found in PATH; use an absolute path instead").into())
 }
 
 /// Runtime dependencies needed to build an executable MCP CoreTool.
@@ -303,7 +304,8 @@ impl McpCoreTool {
                 "mcp tool server_id {} does not match MCP server {}",
                 config.server_id,
                 deps.server.id
-            ).into());
+            )
+            .into());
         }
 
         Ok(Self {
@@ -335,7 +337,8 @@ impl CoreTool for McpCoreTool {
             err!(
                 ToolExecutionFailed,
                 "MCP tool {} on server {} is not executable: MCP runtime is not enabled",
-                self.config.tool_name, self.config.server_id
+                self.config.tool_name,
+                self.config.server_id
             )
         })?;
 

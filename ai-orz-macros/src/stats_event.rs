@@ -18,7 +18,7 @@
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput, Ident, Lit, Meta};
+use syn::{DeriveInput, Ident, Lit, Meta, parse_macro_input};
 
 /// 字段标记类型
 #[derive(Debug, Clone, Copy)]

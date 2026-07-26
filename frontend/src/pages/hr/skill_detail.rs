@@ -93,50 +93,50 @@ pub fn HrSkillDetail(id: String) -> Element {
         move |_| {
             let skill_id = id.clone();
             let name = edit_name().trim().to_string();
-        if name.is_empty() {
-            toast.error("名称不能为空");
-            return;
-        }
-        let tags: Vec<String> = edit_tags()
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-        let category = if edit_category().trim().is_empty() {
-            None
-        } else {
-            Some(edit_category().trim().to_string())
-        };
-        let req = UpdateSkillRequest {
-            skill_id: skill_id.clone(),
-            name: Some(name),
-            description: Some(edit_description()),
-            tags: Some(tags),
-            category,
-            status: None,
-            content: None,
-            files: None,
-        };
-        saving_meta.set(true);
-        spawn(async move {
-            match update_skill(&skill_id, req).await {
-                Ok(_) => {
-                    toast.success("Skill 元信息已更新");
-                    show_edit_modal.set(false);
-                    // 重新拉取详情与文件列表
-                    match get_skill(&skill_id).await {
-                        Ok(s) => skill.set(Some(s)),
-                        Err(e) => toast.error(&format!("加载 Skill 失败: {}", e)),
-                    }
-                    match list_skill_files(&skill_id).await {
-                        Ok(resp) => files.set(resp.files),
-                        Err(e) => toast.error(&format!("加载文件列表失败: {}", e)),
-                    }
-                }
-                Err(e) => toast.error(&format!("更新失败: {}", e)),
+            if name.is_empty() {
+                toast.error("名称不能为空");
+                return;
             }
-            saving_meta.set(false);
-        });
+            let tags: Vec<String> = edit_tags()
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            let category = if edit_category().trim().is_empty() {
+                None
+            } else {
+                Some(edit_category().trim().to_string())
+            };
+            let req = UpdateSkillRequest {
+                skill_id: skill_id.clone(),
+                name: Some(name),
+                description: Some(edit_description()),
+                tags: Some(tags),
+                category,
+                status: None,
+                content: None,
+                files: None,
+            };
+            saving_meta.set(true);
+            spawn(async move {
+                match update_skill(&skill_id, req).await {
+                    Ok(_) => {
+                        toast.success("Skill 元信息已更新");
+                        show_edit_modal.set(false);
+                        // 重新拉取详情与文件列表
+                        match get_skill(&skill_id).await {
+                            Ok(s) => skill.set(Some(s)),
+                            Err(e) => toast.error(&format!("加载 Skill 失败: {}", e)),
+                        }
+                        match list_skill_files(&skill_id).await {
+                            Ok(resp) => files.set(resp.files),
+                            Err(e) => toast.error(&format!("加载文件列表失败: {}", e)),
+                        }
+                    }
+                    Err(e) => toast.error(&format!("更新失败: {}", e)),
+                }
+                saving_meta.set(false);
+            });
         }
     };
 

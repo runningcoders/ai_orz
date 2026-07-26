@@ -1,14 +1,13 @@
 //! Handler: PUT /api/v1/organizations/{id} - Update organization information (admin)
 
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{
-    OrganizationInfoResponse, UpdateOrganizationRequest,
-    UpdateOrganizationResponse,
+    OrganizationInfoResponse, UpdateOrganizationRequest, UpdateOrganizationResponse,
 };
 use common::constants::utils;
+use common::error::Result;
 
 /// Update organization information (admin only)
 #[register_handler_tool(

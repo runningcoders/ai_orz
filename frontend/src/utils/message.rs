@@ -49,9 +49,10 @@ pub fn tmp_msg_id() -> String {
 /// 只移除第一条匹配，避免连发同内容消息时误删。
 /// 如果不存在匹配的 tmp_ 消息，则不做任何操作（真实消息可能是重复推送）。
 pub fn replace_tmp_with_real(msgs: &mut Vec<MessageListItem>, real_msg: &MessageListItem) {
-    if let Some(pos) = msgs.iter().position(|m| {
-        m.message_id.starts_with("tmp_") && m.content == real_msg.content
-    }) {
+    if let Some(pos) = msgs
+        .iter()
+        .position(|m| m.message_id.starts_with("tmp_") && m.content == real_msg.content)
+    {
         msgs.remove(pos);
     }
 }

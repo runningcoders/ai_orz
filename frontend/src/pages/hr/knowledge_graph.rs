@@ -3,7 +3,7 @@ use std::collections::HashSet;
 
 use crate::api::hr::search_memory_with_traversal;
 use crate::components::button::Button;
-use crate::components::graph::{calculate_layout, expand_layout, Graph, GraphEdge, GraphNode};
+use crate::components::graph::{Graph, GraphEdge, GraphNode, calculate_layout, expand_layout};
 use crate::components::graph_canvas::KnowledgeGraphCanvas;
 
 /// 渲染风格：svg（兜底）或 canvas（HUD 驾驶舱风格）
@@ -18,9 +18,7 @@ use crate::store::toast::use_toast;
 use common::api::MemoryResult;
 
 /// 从搜索结果构建图谱节点和边
-fn build_graph_from_results(
-    results: &[MemoryResult],
-) -> (Vec<GraphNode>, Vec<GraphEdge>) {
+fn build_graph_from_results(results: &[MemoryResult]) -> (Vec<GraphNode>, Vec<GraphEdge>) {
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
     let mut seen_node_ids = HashSet::new();
@@ -44,7 +42,10 @@ fn build_graph_from_results(
                 if let (Some(src), Some(tgt)) = (&item.source_node_id, &item.target_node_id) {
                     // 修复 L19：之前用 src.chars().take(8) 作 label（UUID 前 8 字符无意义），
                     // 改用 relation_type 作 label 更有意义，无 relation_type 时回退到 "节点"
-                    let inferred_label = item.relation_type.clone().unwrap_or_else(|| "节点".to_string());
+                    let inferred_label = item
+                        .relation_type
+                        .clone()
+                        .unwrap_or_else(|| "节点".to_string());
                     if seen_node_ids.insert(src.clone()) {
                         nodes.push(GraphNode {
                             id: src.clone(),
@@ -218,12 +219,14 @@ pub fn HrKnowledgeGraph() -> Element {
                     }
                     // 修复 L7：限制 detail_map 大小，超过 200 时清理避免无限增长
                     if map.len() > 200 {
-                        let valid_ids: HashSet<String> = nodes.read().iter().map(|n| n.id.clone()).collect();
+                        let valid_ids: HashSet<String> =
+                            nodes.read().iter().map(|n| n.id.clone()).collect();
                         map.retain(|id, _| valid_ids.contains(id));
                     }
                     detail_map.set(map);
 
-                    let existing_ids: HashSet<String> = nodes.read().iter().map(|n| n.id.clone()).collect();
+                    let existing_ids: HashSet<String> =
+                        nodes.read().iter().map(|n| n.id.clone()).collect();
                     let (mut new_nodes, new_edges) = build_graph_from_results(&data.results);
                     new_nodes.retain(|n| !existing_ids.contains(&n.id));
 
@@ -232,7 +235,8 @@ pub fn HrKnowledgeGraph() -> Element {
                         let current_edges = edges.read().clone();
                         let updated_nodes = expand_layout(&current_nodes, &new_nodes, &seed_ids[0]);
                         let mut updated_edges = current_edges;
-                        let existing_edge_keys: HashSet<(String, String)> = updated_edges.iter()
+                        let existing_edge_keys: HashSet<(String, String)> = updated_edges
+                            .iter()
                             .map(|e| (e.source.clone(), e.target.clone()))
                             .collect();
                         for e in new_edges {

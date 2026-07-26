@@ -1,10 +1,10 @@
 //! Handler: DELETE /api/v1/organizations/{id} - Delete an organization
 
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::generate_http_handler;
 use common::api::{DeleteOrganizationRequest, DeleteOrganizationResponse};
+use common::error::Result;
 
 /// Delete an organization (requires admin privileges)
 /// 注意：此 handler 不注册为 Agent 工具（高危删除操作，仅管理员手动调用）。

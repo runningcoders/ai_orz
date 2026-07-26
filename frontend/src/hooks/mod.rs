@@ -10,7 +10,7 @@ use crate::store::auth::{save_role, use_auth_state};
 use crate::utils::local_storage;
 
 #[allow(unused_imports)]
-pub use use_resource::{use_resource, ResourceState};
+pub use use_resource::{ResourceState, use_resource};
 
 pub fn use_breakpoint() -> Signal<bool> {
     use_context::<Signal<bool>>()

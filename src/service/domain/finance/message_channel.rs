@@ -2,11 +2,11 @@
 //!
 //! 消息渠道配置管理：CRUD + 查询
 
-use common::error::Result;
 use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::FinanceDomainImpl;
 use async_trait::async_trait;
+use common::error::Result;
 
 /// 为 FinanceDomainImpl 实现 MessageChannelManage
 #[async_trait]
@@ -35,10 +35,7 @@ impl super::MessageChannelManage for FinanceDomainImpl {
         self.message_channel_dal.query_channels(ctx, query).await
     }
 
-    async fn list_message_channels(
-        &self,
-        ctx: RequestContext,
-    ) -> Result<Vec<MessageChannel>> {
+    async fn list_message_channels(&self, ctx: RequestContext) -> Result<Vec<MessageChannel>> {
         // 没有全局 list_all，用 query 替代
         let query = crate::service::dao::message_channel::MessageChannelQuery::default();
         let page = self.message_channel_dal.query_channels(ctx, query).await?;

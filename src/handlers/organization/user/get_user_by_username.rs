@@ -1,10 +1,10 @@
 //! Handler: GET /api/v1/organizations/users/by-username/{username} - Get user by username
 
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::generate_http_handler;
 use common::api::{GetUserByUsernameRequest, GetUserByUsernameResponse};
+use common::error::Result;
 
 /// Find a user by username (used for login authentication)
 /// 注意：此 handler 不注册为 Agent 工具（用于认证，避免用户枚举风险）。

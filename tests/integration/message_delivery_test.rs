@@ -28,8 +28,7 @@ async fn test_send_message_persists_record(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
 
-    let (bs, jwt) =
-        crate::common::factories::bootstrap_login_and_disable_embedding(&app).await;
+    let (bs, jwt) = crate::common::factories::bootstrap_login_and_disable_embedding(&app).await;
 
     // Create an agent to receive the message
     let agent_id = crate::common::factories::create_test_agent(
@@ -71,12 +70,14 @@ async fn test_send_message_persists_record(pool: SqlitePool) {
         .and_then(|v| v.as_array())
         .map(|arr| {
             arr.iter().any(|item| {
-                item.get("message_id").and_then(|v| v.as_str())
-                    == Some(message_id.as_str())
+                item.get("message_id").and_then(|v| v.as_str()) == Some(message_id.as_str())
             })
         })
         .unwrap_or(false);
-    assert!(found, "sent message should appear in list filtered by to_id");
+    assert!(
+        found,
+        "sent message should appear in list filtered by to_id"
+    );
 
     // Sanity: the persisted content should match what we sent
     let content_match = list_data
@@ -107,8 +108,7 @@ async fn test_sse_endpoint_returns_event_stream(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
 
-    let (_bs, jwt) =
-        crate::common::factories::bootstrap_login_and_disable_embedding(&app).await;
+    let (_bs, jwt) = crate::common::factories::bootstrap_login_and_disable_embedding(&app).await;
 
     let status = app
         .get_with_jwt_status_only("/api/v1/finance/messages/sse", &jwt)

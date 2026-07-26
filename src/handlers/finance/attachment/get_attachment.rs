@@ -1,12 +1,12 @@
 //! Handler: GET /api/v1/attachments/{id} - 获取单个 Attachment 详情
 
-use common::error::Result;
 use crate::models::attachment::AttachmentGetOptions;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetAttachmentRequest, GetAttachmentResponse};
-use common::error::{err, bail_err};
+use common::error::Result;
+use common::error::{bail_err, err};
 
 use super::response::to_detail;
 

@@ -1,11 +1,11 @@
 //! Agent Vector DAO implementation
 //! 负责 Agent 向量索引的 CRUD 操作，与基础 Agent 数据完全解耦
 
-use common::error::{err, Result};
 use crate::models::vector::{VectorIndexParams, VectorRow, VectorSearchHit};
 use crate::pkg::RequestContext;
 use crate::service::dao::agent::AgentVectorDao;
 use async_trait::async_trait;
+use common::error::{Result, err};
 use std::sync::{Arc, OnceLock};
 
 // ==================== 工厂方法 + 单例 ====================
@@ -70,11 +70,7 @@ impl AgentVectorDao for AgentVectorDaoImpl {
             .map_err(|e| err!(Internal, "Vector store error: {e}").with_source(e))
     }
 
-    async fn delete_vector(
-        &self,
-        _ctx: RequestContext,
-        agent_id: &str,
-    ) -> Result<()> {
+    async fn delete_vector(&self, _ctx: RequestContext, agent_id: &str) -> Result<()> {
         let vector_store = _ctx.vector_store();
         vector_store.delete("agents", agent_id).await?;
         Ok(())

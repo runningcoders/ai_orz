@@ -1,13 +1,13 @@
 //! Skill Vector DAO 单元测试
 //! 使用 InMemoryVectorStore（纯 Rust 实现，零系统依赖）
 
-use common::error::Error;
 use crate::models::vector::VectorIndexParams;
 use crate::pkg::RequestContext;
 use crate::service::dao::skill::{self, SkillVectorDao};
+use common::error::Error;
+use common::error::Result;
 use sqlx::SqlitePool;
 use std::sync::Arc;
-use common::error::Result;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     crate::pkg::request_context_test_support::new_test_ctx(user_id, pool)

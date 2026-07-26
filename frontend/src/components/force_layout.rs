@@ -75,7 +75,13 @@ impl ForceLayout {
     /// 执行一帧力学步进，更新节点位置，返回本帧总位移（用于稳定检测）
     ///
     /// 返回值：所有节点位移之和。当该值趋近于 0 时，布局已稳定。
-    pub fn step(&mut self, nodes: &mut [CanvasNode], edges: &[CanvasEdge], width: f64, height: f64) -> f64 {
+    pub fn step(
+        &mut self,
+        nodes: &mut [CanvasNode],
+        edges: &[CanvasEdge],
+        width: f64,
+        height: f64,
+    ) -> f64 {
         self.sync(nodes.len());
         let n = nodes.len();
         if n == 0 {
@@ -172,11 +178,19 @@ impl ForceLayout {
 }
 
 /// 给定节点数量，生成圆形初始布局（均匀分布在一个圆上）
-pub fn circle_initial_layout(node_count: usize, center_x: f64, center_y: f64, radius: f64) -> Vec<(f64, f64)> {
+pub fn circle_initial_layout(
+    node_count: usize,
+    center_x: f64,
+    center_y: f64,
+    radius: f64,
+) -> Vec<(f64, f64)> {
     let mut positions = Vec::with_capacity(node_count);
     for i in 0..node_count {
         let angle = (i as f64 / node_count as f64) * std::f64::consts::TAU;
-        positions.push((center_x + radius * angle.cos(), center_y + radius * angle.sin()));
+        positions.push((
+            center_x + radius * angle.cos(),
+            center_y + radius * angle.sin(),
+        ));
     }
     positions
 }
@@ -205,17 +219,27 @@ mod tests {
         let edges: Vec<CanvasEdge> = vec![];
         let mut layout = ForceLayout::new(ForceLayoutConfig::default());
 
-        let before_dist = ((nodes[0].x - nodes[1].x).powi(2) + (nodes[0].y - nodes[1].y).powi(2)).sqrt();
+        let before_dist =
+            ((nodes[0].x - nodes[1].x).powi(2) + (nodes[0].y - nodes[1].y).powi(2)).sqrt();
         layout.step(&mut nodes, &edges, 800.0, 600.0);
-        let after_dist = ((nodes[0].x - nodes[1].x).powi(2) + (nodes[0].y - nodes[1].y).powi(2)).sqrt();
+        let after_dist =
+            ((nodes[0].x - nodes[1].x).powi(2) + (nodes[0].y - nodes[1].y).powi(2)).sqrt();
 
-        assert!(after_dist > before_dist, "斥力应将重合节点推开: before={}, after={}", before_dist, after_dist);
+        assert!(
+            after_dist > before_dist,
+            "斥力应将重合节点推开: before={}, after={}",
+            before_dist,
+            after_dist
+        );
     }
 
     #[test]
     fn test_attraction_pulls_connected_nodes_closer() {
         let mut nodes = vec![make_node("a", 50.0, 300.0), make_node("b", 750.0, 300.0)];
-        let edges = vec![CanvasEdge { from_id: "a".to_string(), to_id: "b".to_string() }];
+        let edges = vec![CanvasEdge {
+            from_id: "a".to_string(),
+            to_id: "b".to_string(),
+        }];
         let config = ForceLayoutConfig {
             repulsion: 100.0,
             attraction: 0.2,
@@ -228,13 +252,20 @@ mod tests {
         };
         let mut layout = ForceLayout::new(config);
 
-        let before_dist = ((nodes[0].x - nodes[1].x).powi(2) + (nodes[0].y - nodes[1].y).powi(2)).sqrt();
+        let before_dist =
+            ((nodes[0].x - nodes[1].x).powi(2) + (nodes[0].y - nodes[1].y).powi(2)).sqrt();
         for _ in 0..10 {
             layout.step(&mut nodes, &edges, 800.0, 600.0);
         }
-        let after_dist = ((nodes[0].x - nodes[1].x).powi(2) + (nodes[0].y - nodes[1].y).powi(2)).sqrt();
+        let after_dist =
+            ((nodes[0].x - nodes[1].x).powi(2) + (nodes[0].y - nodes[1].y).powi(2)).sqrt();
 
-        assert!(after_dist < before_dist, "吸引力应拉近连线节点: before={}, after={}", before_dist, after_dist);
+        assert!(
+            after_dist < before_dist,
+            "吸引力应拉近连线节点: before={}, after={}",
+            before_dist,
+            after_dist
+        );
     }
 
     #[test]
@@ -277,9 +308,16 @@ mod tests {
     #[test]
     fn test_self_loop_edge_ignored() {
         let mut nodes = vec![make_node("a", 100.0, 100.0)];
-        let edges = vec![CanvasEdge { from_id: "a".to_string(), to_id: "a".to_string() }];
+        let edges = vec![CanvasEdge {
+            from_id: "a".to_string(),
+            to_id: "a".to_string(),
+        }];
         let mut layout = ForceLayout::new(ForceLayoutConfig::default());
         let displacement = layout.step(&mut nodes, &edges, 800.0, 600.0);
-        assert!(displacement < 1.0, "单节点自环不应产生位移: {}", displacement);
+        assert!(
+            displacement < 1.0,
+            "单节点自环不应产生位移: {}",
+            displacement
+        );
     }
 }

@@ -7,8 +7,8 @@ use common::api::{
 };
 use common::error::{Error, Result};
 
-use crate::pkg::aop::queue::{EventQueryFilter, EventStatus};
 use crate::pkg::RequestContext;
+use crate::pkg::aop::queue::{EventQueryFilter, EventStatus};
 use crate::service::domain::system::domain;
 
 /// GET /api/v1/system/aop/stats
@@ -63,7 +63,10 @@ pub async fn get_queue_stats(
                 .collect(),
             oldest_event_age_secs: s.oldest_event_age_secs,
         }),
-        None => Err(Error::not_found(format!("Consumer queue '{}' not found", params.consumer))),
+        None => Err(Error::not_found(format!(
+            "Consumer queue '{}' not found",
+            params.consumer
+        ))),
     }
 }
 
@@ -73,11 +76,14 @@ pub async fn list_events(
     _ctx: RequestContext,
     params: ListEventsRequest,
 ) -> Result<Vec<EventSummaryResponse>> {
-    let status = params.status.as_deref().and_then(|s| match s.to_lowercase().as_str() {
-        "pending" => Some(EventStatus::Pending),
-        "processing" => Some(EventStatus::Processing),
-        _ => None,
-    });
+    let status = params
+        .status
+        .as_deref()
+        .and_then(|s| match s.to_lowercase().as_str() {
+            "pending" => Some(EventStatus::Pending),
+            "processing" => Some(EventStatus::Processing),
+            _ => None,
+        });
 
     let filter = EventQueryFilter {
         order_key: params.order_key,
@@ -103,7 +109,10 @@ pub async fn list_events(
                 .collect();
             Ok(response)
         }
-        None => Err(Error::not_found(format!("Consumer queue '{}' not found", params.consumer))),
+        None => Err(Error::not_found(format!(
+            "Consumer queue '{}' not found",
+            params.consumer
+        ))),
     }
 }
 
@@ -113,7 +122,9 @@ pub async fn get_event(
     _ctx: RequestContext,
     params: GetEventRequest,
 ) -> Result<EventDetailResponse> {
-    let event = domain().aop_monitor().get_event(&params.consumer, &params.event_id);
+    let event = domain()
+        .aop_monitor()
+        .get_event(&params.consumer, &params.event_id);
 
     match event {
         Some(e) => Ok(EventDetailResponse {

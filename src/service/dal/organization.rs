@@ -3,11 +3,11 @@
 //! 职责：Organization 领域的数据访问层，封装 OrganizationDao 提供统一的查询接口
 //! 注意：User 相关操作已移至 User DAL，跨领域编排在 Domain 层完成
 
-use common::error::Result;
 use crate::models::organization::OrganizationPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::organization;
 use crate::service::dao::organization::{OrganizationDao, OrganizationQuery};
+use common::error::Result;
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例管理 ====================
@@ -42,11 +42,7 @@ pub trait OrganizationDal: Send + Sync {
     async fn is_initialized(&self, ctx: RequestContext) -> Result<bool>;
 
     /// 根据 ID 获取组织
-    async fn get_by_id(
-        &self,
-        ctx: RequestContext,
-        org_id: &str,
-    ) -> Result<Option<OrganizationPo>>;
+    async fn get_by_id(&self, ctx: RequestContext, org_id: &str) -> Result<Option<OrganizationPo>>;
 
     /// 创建组织
     async fn create(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<()>;
@@ -90,11 +86,7 @@ impl OrganizationDal for OrganizationDalImpl {
         Ok(count > 0)
     }
 
-    async fn get_by_id(
-        &self,
-        ctx: RequestContext,
-        org_id: &str,
-    ) -> Result<Option<OrganizationPo>> {
+    async fn get_by_id(&self, ctx: RequestContext, org_id: &str) -> Result<Option<OrganizationPo>> {
         self.organization_dao.find_by_id(ctx, org_id).await
     }
 

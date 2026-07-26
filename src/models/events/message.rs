@@ -1,5 +1,5 @@
-use serde::{Serialize, Deserialize};
 use crate::pkg::aop::{Event, EventKind};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageCreatedEvent {
@@ -40,9 +40,9 @@ impl Event for MessageCreatedEvent {
         if self.to_role == MessageRole::Agent as i32 {
             &self.to_id
         } else {
-            self.task_id.as_deref().unwrap_or_else(|| {
-                self.project_id.as_deref().unwrap_or("")
-            })
+            self.task_id
+                .as_deref()
+                .unwrap_or_else(|| self.project_id.as_deref().unwrap_or(""))
         }
     }
 

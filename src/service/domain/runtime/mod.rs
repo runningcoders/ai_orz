@@ -12,21 +12,21 @@ use async_trait::async_trait;
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use common::enums::AgentRuntimeState;
-use common::error::Result;
 use crate::models::agent::Agent;
 use crate::models::memory::{Memory, MemoryCreateParams, MemoryTrace};
 use crate::models::message::Message;
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_tracing::logger::ToolCallLogger;
-use crate::service::dao::memory::{MemoryQuery, MemorySearch};
 use crate::service::dal::agent::AgentDal;
-use crate::service::dal::agent_codex::CodexAgentDal;
 use crate::service::dal::agent_a2a::A2aAgentDal;
+use crate::service::dal::agent_codex::CodexAgentDal;
 use crate::service::dal::brain::BrainDal;
-use crate::service::dal::memory::TraversalStrategy;
 use crate::service::dal::mcp_tool::McpToolDal;
+use crate::service::dal::memory::TraversalStrategy;
 use crate::service::dal::tool::ToolDal;
+use crate::service::dao::memory::{MemoryQuery, MemorySearch};
+use common::enums::AgentRuntimeState;
+use common::error::Result;
 
 // ==================== traits 定义 ===================
 
@@ -61,7 +61,12 @@ pub trait RuntimeDomain: Send + Sync + Debug {
     ///
     /// # 返回
     /// - 成功返回创建的知识节点数量
-    fn rest_and_settle(&self, ctx: RequestContext, agent_id: &str, settle_limit: usize) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<usize>> + Send + '_>>;
+    fn rest_and_settle(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        settle_limit: usize,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<usize>> + Send + '_>>;
 }
 
 /// 记忆管理 trait
@@ -82,48 +87,25 @@ pub trait RuntimeMemory: Send + Sync {
     /// 写入思考 Trace
     ///
     /// 直接接收 MemoryTrace 结构体，内部可做统一信息补充
-    async fn write_thinking_trace(
-        &self,
-        ctx: RequestContext,
-        trace: MemoryTrace,
-    ) -> Result<Memory>;
+    async fn write_thinking_trace(&self, ctx: RequestContext, trace: MemoryTrace)
+    -> Result<Memory>;
 
     // === 公开方法（供 Handler/神经工具调用） ===
 
     /// 混合搜索记忆（关键词 + 向量语义）
-    async fn search(
-        &self,
-        ctx: RequestContext,
-        search: MemorySearch,
-    ) -> Result<Vec<Memory>>;
+    async fn search(&self, ctx: RequestContext, search: MemorySearch) -> Result<Vec<Memory>>;
 
     /// 通用关系型查询
-    async fn query(
-        &self,
-        ctx: RequestContext,
-        query: MemoryQuery,
-    ) -> Result<Vec<Memory>>;
+    async fn query(&self, ctx: RequestContext, query: MemoryQuery) -> Result<Vec<Memory>>;
 
     /// 创建记忆
-    async fn create(
-        &self,
-        ctx: RequestContext,
-        params: MemoryCreateParams,
-    ) -> Result<Vec<Memory>>;
+    async fn create(&self, ctx: RequestContext, params: MemoryCreateParams) -> Result<Vec<Memory>>;
 
     /// 更新记忆
-    async fn update(
-        &self,
-        ctx: RequestContext,
-        memory: Memory,
-    ) -> Result<Memory>;
+    async fn update(&self, ctx: RequestContext, memory: Memory) -> Result<Memory>;
 
     /// 删除记忆
-    async fn delete(
-        &self,
-        ctx: RequestContext,
-        memory: Memory,
-    ) -> Result<()>;
+    async fn delete(&self, ctx: RequestContext, memory: Memory) -> Result<()>;
 
     /// 知识图谱遍历
     async fn traverse_graph(
@@ -385,7 +367,10 @@ impl RuntimeDomainImpl {
     /// Local → AgentDal.prompt_builder() → DefaultPromptBuilder
     /// Cli   → CodexAgentDal.prompt_builder() → CliPromptBuilder（未来实现）
     /// Remote → A2aAgentDal.prompt_builder() → RemotePromptBuilder（未来实现）
-    fn prompt_builder(&self, agent: &Agent) -> Box<dyn crate::models::prompt_builder::PromptBuilder> {
+    fn prompt_builder(
+        &self,
+        agent: &Agent,
+    ) -> Box<dyn crate::models::prompt_builder::PromptBuilder> {
         use common::enums::AgentKind;
         match agent.po.kind {
             AgentKind::Local => self.agent_dal.prompt_builder(),
@@ -407,30 +392,47 @@ impl RuntimeDomain for RuntimeDomainImpl {
     }
 
     fn agent_runtime_state(&self, agent_id: &str) -> AgentRuntimeState {
-        crate::pkg::agent_runtime_state::AgentRuntimeStateManager::global()
-            .get_state(agent_id)
+        crate::pkg::agent_runtime_state::AgentRuntimeStateManager::global().get_state(agent_id)
     }
 
     fn is_agent_unavailable(&self, agent_id: &str) -> bool {
-        crate::pkg::agent_runtime_state::AgentRuntimeStateManager::global()
-            .is_unavailable(agent_id)
+        crate::pkg::agent_runtime_state::AgentRuntimeStateManager::global().is_unavailable(agent_id)
     }
 
-    fn rest_and_settle(&self, ctx: RequestContext, agent_id: &str, settle_limit: usize) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<usize>> + Send + '_>> {
+    fn rest_and_settle(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        settle_limit: usize,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<usize>> + Send + '_>> {
         let state_manager = crate::pkg::agent_runtime_state::AgentRuntimeStateManager::global();
         state_manager.set_resting(agent_id);
 
         let ctx_clone = ctx.clone();
         let agent_id_clone = agent_id.to_string();
-        log_info!(ctx, "rest_and_settle", "agent_id={}, 开始休息并执行记忆沉淀", agent_id);
+        log_info!(
+            ctx,
+            "rest_and_settle",
+            "agent_id={}, 开始休息并执行记忆沉淀",
+            agent_id
+        );
 
         let self_clone = self.clone();
         Box::pin(async move {
-            let nodes = self_clone.memory().settle(ctx_clone.clone(), &agent_id_clone, settle_limit).await?;
+            let nodes = self_clone
+                .memory()
+                .settle(ctx_clone.clone(), &agent_id_clone, settle_limit)
+                .await?;
 
             state_manager.set_idle(&agent_id_clone);
 
-            log_info!(ctx_clone, "rest_and_settle", "agent_id={}, 休息结束，沉淀了 {} 个知识节点", agent_id_clone, nodes.len());
+            log_info!(
+                ctx_clone,
+                "rest_and_settle",
+                "agent_id={}, 休息结束，沉淀了 {} 个知识节点",
+                agent_id_clone,
+                nodes.len()
+            );
             Ok(nodes.len())
         })
     }
@@ -461,7 +463,8 @@ pub fn new_with_tool_dals(
     mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
     agent_dal: Arc<dyn AgentDal>,
 ) -> Arc<dyn RuntimeDomain> {
-    let domain = RuntimeDomainImpl::new_with_tool_dals(brain_dal, tool_dal, mcp_tool_dal, agent_dal);
+    let domain =
+        RuntimeDomainImpl::new_with_tool_dals(brain_dal, tool_dal, mcp_tool_dal, agent_dal);
     Arc::new(domain)
 }
 
@@ -474,7 +477,13 @@ pub fn new_with_all(
     agent_dal: Arc<dyn AgentDal>,
     tool_call_logger: Arc<ToolCallLogger>,
 ) -> Arc<dyn RuntimeDomain> {
-    let domain = RuntimeDomainImpl::new_with_all(brain_dal, tool_dal, mcp_tool_dal, agent_dal, tool_call_logger);
+    let domain = RuntimeDomainImpl::new_with_all(
+        brain_dal,
+        tool_dal,
+        mcp_tool_dal,
+        agent_dal,
+        tool_call_logger,
+    );
     Arc::new(domain)
 }
 

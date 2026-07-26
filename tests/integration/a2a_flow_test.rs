@@ -42,8 +42,7 @@ async fn test_agent_card_discovery(pool: SqlitePool) {
         .get("capabilities")
         .unwrap_or_else(|| panic!("agent card should expose capabilities, got: {}", body));
     assert!(
-        capabilities.get("streaming").is_some()
-            || capabilities.get("push_notifications").is_some(),
+        capabilities.get("streaming").is_some() || capabilities.get("push_notifications").is_some(),
         "capabilities should have streaming or push_notifications, got: {}",
         capabilities
     );
@@ -81,8 +80,7 @@ async fn test_a2a_tasks_send_then_get(pool: SqlitePool) {
     let app = TestApp::new(pool).await;
 
     // Bootstrap + login + disable embedding (degradation path, no cortex calls)
-    let (bs, jwt) =
-        crate::common::factories::bootstrap_login_and_disable_embedding(&app).await;
+    let (bs, jwt) = crate::common::factories::bootstrap_login_and_disable_embedding(&app).await;
 
     // Create an agent and transition to Onboarded (required by resolve_agent)
     let agent_id = crate::common::factories::create_test_agent(

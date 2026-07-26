@@ -4,7 +4,7 @@ use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{TestMessageChannelConnectionRequest, TestMessageChannelConnectionResponse};
-use common::error::{Result, err, bail_err};
+use common::error::{Result, bail_err, err};
 
 /// Test connectivity to a message channel by sending a test notification
 #[register_handler_tool(

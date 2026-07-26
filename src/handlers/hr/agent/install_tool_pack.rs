@@ -1,10 +1,10 @@
 //! Handler: POST /api/v1/agents/{agent_id}/tool-packs/{tag} - Install tool pack to agent
 
-use common::error::Result;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{InstallToolPackRequest, InstallToolPackResponse};
+use common::error::Result;
 
 /// Install a tool pack (by tag) to an agent.
 ///

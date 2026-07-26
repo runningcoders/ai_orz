@@ -5,7 +5,7 @@
 //! - 消息发送（`/open-apis/im/v1/messages`）
 //! - WebSocket 长连接生命周期管理（委托 `ws` 模块）
 
-use super::error::{from_reqwest, validate_config, LarkResponse};
+use super::error::{LarkResponse, from_reqwest, validate_config};
 use super::event::LarkMessageEvent;
 use super::token::{SharedTokenCache, TokenCache};
 use super::ws::WsState;
@@ -14,7 +14,7 @@ use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;
 use common::config::LarkConfig;
-use common::error::{err, Result};
+use common::error::{Result, err};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, OnceLock};
 use tokio::sync::RwLock;
@@ -144,7 +144,10 @@ impl LarkDaoHttpImpl {
             ));
         }
         if resp.tenant_access_token.is_empty() {
-            return Err(err!(ThirdPartyError, "lark fetch_token returned empty token"));
+            return Err(err!(
+                ThirdPartyError,
+                "lark fetch_token returned empty token"
+            ));
         }
         Ok((resp.tenant_access_token, resp.expire))
     }
@@ -248,11 +251,7 @@ impl LarkDao for LarkDaoHttpImpl {
         Ok(())
     }
 
-    async fn test_connection(
-        &self,
-        ctx: RequestContext,
-        _channel: &MessageChannel,
-    ) -> Result<()> {
+    async fn test_connection(&self, ctx: RequestContext, _channel: &MessageChannel) -> Result<()> {
         self.get_tenant_access_token().await?;
         log_info!(&ctx, "lark_test_connection", "飞书连接测试成功");
         Ok(())

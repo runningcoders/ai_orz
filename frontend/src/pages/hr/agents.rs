@@ -3,7 +3,9 @@
 use dioxus::prelude::*;
 
 use crate::api::finance::list_model_providers;
-use crate::api::hr::{create_agent, create_external_agent, delete_agent, list_agents, search_agents};
+use crate::api::hr::{
+    create_agent, create_external_agent, delete_agent, list_agents, search_agents,
+};
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
@@ -122,8 +124,16 @@ pub fn HrAgents() -> Element {
             creating.set(true);
             let req = CreateAgentRequest {
                 name: new_name(),
-                roles: if new_roles().is_empty() { None } else { Some(vec![new_roles()]) },
-                description: if new_description().is_empty() { None } else { Some(new_description()) },
+                roles: if new_roles().is_empty() {
+                    None
+                } else {
+                    Some(vec![new_roles()])
+                },
+                description: if new_description().is_empty() {
+                    None
+                } else {
+                    Some(new_description())
+                },
                 capabilities: None,
                 soul: None,
                 model_provider_id: new_model_provider_id(),
@@ -156,19 +166,40 @@ pub fn HrAgents() -> Element {
             let args = if ext_args_str().trim().is_empty() {
                 None
             } else {
-                Some(ext_args_str().split_whitespace().map(|s| s.to_string()).collect())
+                Some(
+                    ext_args_str()
+                        .split_whitespace()
+                        .map(|s| s.to_string())
+                        .collect(),
+                )
             };
 
             let req = CreateExternalAgentRequest {
                 name: ext_name(),
-                roles: if ext_roles().is_empty() { None } else { Some(vec![ext_roles()]) },
-                description: if ext_description().is_empty() { None } else { Some(ext_description()) },
+                roles: if ext_roles().is_empty() {
+                    None
+                } else {
+                    Some(vec![ext_roles()])
+                },
+                description: if ext_description().is_empty() {
+                    None
+                } else {
+                    Some(ext_description())
+                },
                 capabilities: None,
                 soul: None,
                 kind: kind.clone(),
-                command: if kind == "cli" { Some(ext_command()) } else { None },
+                command: if kind == "cli" {
+                    Some(ext_command())
+                } else {
+                    None
+                },
                 args: if kind == "cli" { args.clone() } else { None },
-                work_dir: if kind == "cli" { Some(ext_work_dir()) } else { None },
+                work_dir: if kind == "cli" {
+                    Some(ext_work_dir())
+                } else {
+                    None
+                },
                 env: None,
                 timeout_secs: Some(timeout_secs),
                 prompt_template: if kind == "cli" && !ext_prompt_template().is_empty() {
@@ -176,8 +207,16 @@ pub fn HrAgents() -> Element {
                 } else {
                     None
                 },
-                endpoint: if kind == "remote" { Some(ext_endpoint()) } else { None },
-                agent_name: if kind == "remote" { Some(ext_agent_name()) } else { None },
+                endpoint: if kind == "remote" {
+                    Some(ext_endpoint())
+                } else {
+                    None
+                },
+                agent_name: if kind == "remote" {
+                    Some(ext_agent_name())
+                } else {
+                    None
+                },
                 auth_token: if kind == "remote" && !ext_auth_token().is_empty() {
                     Some(ext_auth_token())
                 } else {

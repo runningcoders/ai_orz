@@ -1,7 +1,7 @@
 //! 消息渠道详情页 - 展示详情 + 启用/禁用 + 测试连接 + 删除
 
 use dioxus::prelude::*;
-use dioxus_router::{use_navigator, Link};
+use dioxus_router::{Link, use_navigator};
 
 use crate::api::finance::{
     delete_message_channel, get_message_channel, test_message_channel,
@@ -46,7 +46,11 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
             spawn(async move {
                 match update_message_channel_status(&id, new_status).await {
                     Ok(_) => {
-                        toast.success(if new_status == 1 { "已启用" } else { "已禁用" });
+                        toast.success(if new_status == 1 {
+                            "已启用"
+                        } else {
+                            "已禁用"
+                        });
                         match get_message_channel(&id).await {
                             Ok(c) => channel.set(Some(c)),
                             Err(e) => toast.error(&format!("刷新失败: {}", e)),

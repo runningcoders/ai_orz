@@ -1,6 +1,5 @@
 //! Runtime Awakening 具体实现
 
-use common::error::{err, Result};
 use crate::models::agent::Agent;
 use crate::models::memory::MemoryTrace;
 use crate::models::message::Message;
@@ -10,6 +9,7 @@ use crate::pkg::stats::AgentAwakeEvent;
 use crate::service::domain::runtime::{
     AwakeningResult, RuntimeAwakening, RuntimeDomain, RuntimeDomainImpl,
 };
+use common::error::{Result, err};
 
 use crate::enrich_ctx;
 use crate::record_event;
@@ -63,7 +63,8 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         // （Rig 工具捕获 ctx 快照需要每轮刷新，否则会变 stale）。若未来引入 brain 缓存，
         // 需重新评估 Rig 神经工具 ctx 新鲜度问题（参考 request_tool_call 同步路径依赖
         // params 显式 enrich 的缓解措施）。
-        let brain = self.brain_dal()
+        let brain = self
+            .brain_dal()
             .wake_brain(ctx.clone(), &agent.po, Vec::new(), rig_tools)
             .await?;
 
@@ -94,9 +95,9 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         // 使用 RAII guard 确保 set_idle 一定被执行
         // 修复：之前 set_busy 与 set_idle 之间多处 ? 提早返回（get_recent_context、
         // brain 缺失等）会导致 Agent 永远 Busy，后续消息被 is_unavailable 挡住
-        AgentRuntimeStateManager::global()
-            .set_busy(&agent.po.id, &message.po.id);
-        let _busy_guard = crate::service::domain::runtime::busy_guard::BusyGuard::new(agent.po.id.clone());
+        AgentRuntimeStateManager::global().set_busy(&agent.po.id, &message.po.id);
+        let _busy_guard =
+            crate::service::domain::runtime::busy_guard::BusyGuard::new(agent.po.id.clone());
 
         // 补充 Agent 上下文到 ctx，后续调用链可复用
         let ctx = enrich_ctx!(&ctx, agent);
@@ -124,20 +125,14 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         // Step 2.5: 工具已由 hr_domain.get_agent(with_tools=true) 加载到 agent.tools
         // wake_agent_brain 已将 Auto 工具移出（用于 Rig 注册），agent.tools 仅剩 Manual 工具
         // 直接提取 ToolPo 列表供 PromptBuilder 使用（builder 会按 tag 自动分块）
-        let all_tools: Vec<crate::models::tool::ToolPo> = agent
-            .tools()
-            .iter()
-            .map(|t| t.po.clone())
-            .collect();
+        let all_tools: Vec<crate::models::tool::ToolPo> =
+            agent.tools().iter().map(|t| t.po.clone()).collect();
 
         // Step 2.6: 技能已由 hr_domain.get_agent(with_skills=true) 加载到 agent.skills
         // 技能只在 Agent 已安装的副本范围内（author_id = agent_id，排除 Expired）
         // 不匹配 match_keys 的技能不展示在 Prompt，由 Agent 通过 search_skill 神经工具按需加载
-        let skill_pos: Vec<crate::models::skill::SkillPo> = agent
-            .skills()
-            .iter()
-            .map(|s| s.po.clone())
-            .collect();
+        let skill_pos: Vec<crate::models::skill::SkillPo> =
+            agent.skills().iter().map(|s| s.po.clone()).collect();
 
         // Step 3: 拼装 Prompt（通过工厂方法获取对应 Agent 类型的 builder）
         // 统一注入，build 时按 tag 自动分块为神经工具/技能 → 常用工具/必加载技能 → 历史 → 当前消息
@@ -167,9 +162,15 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         let think_result = match tokio::time::timeout(
             std::time::Duration::from_secs(THINK_TIMEOUT_SECS),
             self.brain_dal().think(ctx.clone(), brain, &prompt),
-        ).await {
+        )
+        .await
+        {
             Ok(result) => result,
-            Err(_elapsed) => Err(err!(Internal, "brain think timeout after {}s", THINK_TIMEOUT_SECS)),
+            Err(_elapsed) => Err(err!(
+                Internal,
+                "brain think timeout after {}s",
+                THINK_TIMEOUT_SECS
+            )),
         };
 
         // 展开 Result，失败时也记录事件
@@ -178,18 +179,24 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             Err(e) => {
                 // 记录唤醒失败事件
                 // 统计写入失败不应阻塞业务返回，但需记录警告以便排查统计缺失
-                let duration_ms = start_time.elapsed().map(|d| d.as_millis() as u64).unwrap_or(0);
-                if let Err(stats_err) = record_event!(ctx, AgentAwakeEvent {
-                    agent_id: agent.po.id.clone(),
-                    project_id: ctx.project_id().cloned(),
-                    task_id: ctx.task_id().cloned(),
-                    organization_id: ctx.organization_id.clone(),
-                    user_id: Some(ctx.uid()),
-                    message_id: Some(message.po.id.clone()),
-                    call_count: 1,
-                    duration_ms: duration_ms,
-                    status: format!("failed: {}", e),
-                }) {
+                let duration_ms = start_time
+                    .elapsed()
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0);
+                if let Err(stats_err) = record_event!(
+                    ctx,
+                    AgentAwakeEvent {
+                        agent_id: agent.po.id.clone(),
+                        project_id: ctx.project_id().cloned(),
+                        task_id: ctx.task_id().cloned(),
+                        organization_id: ctx.organization_id.clone(),
+                        user_id: Some(ctx.uid()),
+                        message_id: Some(message.po.id.clone()),
+                        call_count: 1,
+                        duration_ms: duration_ms,
+                        status: format!("failed: {}", e),
+                    }
+                ) {
                     log_warn!(
                         &ctx,
                         "awaken",
@@ -213,18 +220,24 @@ impl RuntimeAwakening for RuntimeDomainImpl {
 
         // Step 7: 记录 Agent 唤醒统计事件
         // 统计写入失败不应阻塞业务返回（awaken 已成功），仅记录警告
-        let duration_ms = start_time.elapsed().map(|d| d.as_millis() as u64).unwrap_or(0);
-        if let Err(stats_err) = record_event!(ctx, AgentAwakeEvent {
-            agent_id: agent.po.id.clone(),
-            project_id: ctx.project_id().cloned(),
-            task_id: ctx.task_id().cloned(),
-            organization_id: ctx.organization_id.clone(),
-            user_id: Some(ctx.uid()),
-            message_id: Some(message.po.id.clone()),
-            call_count: 1,
-            duration_ms: duration_ms,
-            status: "success".to_string(),
-        }) {
+        let duration_ms = start_time
+            .elapsed()
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        if let Err(stats_err) = record_event!(
+            ctx,
+            AgentAwakeEvent {
+                agent_id: agent.po.id.clone(),
+                project_id: ctx.project_id().cloned(),
+                task_id: ctx.task_id().cloned(),
+                organization_id: ctx.organization_id.clone(),
+                user_id: Some(ctx.uid()),
+                message_id: Some(message.po.id.clone()),
+                call_count: 1,
+                duration_ms: duration_ms,
+                status: "success".to_string(),
+            }
+        ) {
             log_warn!(
                 &ctx,
                 "awaken",
@@ -257,10 +270,8 @@ mod tests {
     use crate::pkg::tool_tracing::logger::ToolCallLogger;
     use crate::service::dal::brain::BrainDal;
     use async_trait::async_trait;
-    use common::enums::{
-        AgentStatus, MessageRole, MessageType, ModelCapability, ProviderType,
-    };
     use common::enums::skill::SkillAuthorType;
+    use common::enums::{AgentStatus, MessageRole, MessageType, ModelCapability, ProviderType};
     use sqlx::SqlitePool;
     use std::sync::{Arc, Mutex};
     use tempfile::tempdir;
@@ -425,7 +436,12 @@ mod tests {
     /// 在数据库中为 Agent 创建技能副本
     ///
     /// skills tags 包含 "assistant" 以匹配 Agent 的 role，确保出现在"必加载技能"区块
-    async fn create_skill_for_agent(ctx: RequestContext, agent_id: &str, name: &str, description: &str) {
+    async fn create_skill_for_agent(
+        ctx: RequestContext,
+        agent_id: &str,
+        name: &str,
+        description: &str,
+    ) {
         let skill_po = SkillPo::new(
             format!("skill-{}--{}", name.to_lowercase(), Uuid::new_v4()),
             name.to_string(),
@@ -477,13 +493,7 @@ mod tests {
             "审查代码质量并给出改进建议",
         )
         .await;
-        create_skill_for_agent(
-            ctx.clone(),
-            &agent_id,
-            "DocWriting",
-            "编写清晰的技术文档",
-        )
-        .await;
+        create_skill_for_agent(ctx.clone(), &agent_id, "DocWriting", "编写清晰的技术文档").await;
 
         // 模拟 hr_domain.get_agent(with_skills=true) 加载技能到 agent.skills
         load_skills_to_agent(ctx.clone(), &mut agent).await;
@@ -506,7 +516,11 @@ mod tests {
             .await
             .expect("awaken 应该成功");
 
-        let prompt = captured_prompt.lock().unwrap().clone().expect("应该捕获到 prompt");
+        let prompt = captured_prompt
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("应该捕获到 prompt");
 
         // 验证 Prompt 包含"【必加载技能】"部分（tags 匹配 agent role "assistant"）
         assert!(
@@ -564,7 +578,11 @@ mod tests {
             .await
             .expect("awaken 应该成功");
 
-        let prompt = captured_prompt.lock().unwrap().clone().expect("应该捕获到 prompt");
+        let prompt = captured_prompt
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("应该捕获到 prompt");
 
         // 验证 Prompt 不包含技能相关区块（Agent 无技能）
         assert!(

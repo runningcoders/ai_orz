@@ -37,11 +37,23 @@ pub fn TaskList() -> Element {
     let mut load_data = move || {
         loading.set(true);
         let pid = filter_project_id();
-        let status = if filter_status() >= 0 { Some(filter_status()) } else { None };
-        let at = if filter_assignee_type() >= 0 { Some(filter_assignee_type()) } else { None };
+        let status = if filter_status() >= 0 {
+            Some(filter_status())
+        } else {
+            None
+        };
+        let at = if filter_assignee_type() >= 0 {
+            Some(filter_assignee_type())
+        } else {
+            None
+        };
         spawn(async move {
             let req = TaskQueryRequest {
-                project_id: if pid.is_empty() { None } else { Some(pid.clone()) },
+                project_id: if pid.is_empty() {
+                    None
+                } else {
+                    Some(pid.clone())
+                },
                 status_in: status.map(|s| vec![TaskStatus::from_i32(s)]),
                 assignee_type: at.map(AssigneeType::from_i32),
                 pagination: PaginationParams::default(),
@@ -71,7 +83,10 @@ pub fn TaskList() -> Element {
     let total = tasks_list.len();
     let completed = tasks_list.iter().filter(|t| t.status == 4).count();
     let in_progress = tasks_list.iter().filter(|t| t.status == 3).count();
-    let pending = tasks_list.iter().filter(|t| t.status == 2 || t.status == 1).count();
+    let pending = tasks_list
+        .iter()
+        .filter(|t| t.status == 2 || t.status == 1)
+        .count();
 
     // 看板数据分组
     let board_groups = [
@@ -83,7 +98,10 @@ pub fn TaskList() -> Element {
     ];
 
     let filtered_tasks_by_status = |status: i32| {
-        tasks_list.iter().filter(|t| t.status == status).collect::<Vec<_>>()
+        tasks_list
+            .iter()
+            .filter(|t| t.status == status)
+            .collect::<Vec<_>>()
     };
 
     let board_columns: Vec<(i32, &str, Vec<&TaskListItem>)> = board_groups

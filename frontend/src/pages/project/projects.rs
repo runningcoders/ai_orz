@@ -52,7 +52,11 @@ pub fn ProjectList() -> Element {
             creating.set(true);
             let req = CreateProjectRequest {
                 name: new_name(),
-                description: if new_description().is_empty() { None } else { Some(new_description()) },
+                description: if new_description().is_empty() {
+                    None
+                } else {
+                    Some(new_description())
+                },
                 priority: None,
                 tags: None,
                 owner_agent_id: None,

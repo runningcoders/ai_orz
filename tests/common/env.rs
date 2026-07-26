@@ -65,8 +65,5 @@ pub async fn init_full_test_env(_pool: SqlitePool) -> RequestContext {
     // in `tests/http_handler_macro_test.rs` which also relies on the global singleton.
     // The `pool` parameter is retained for `#[sqlx::test]` API compatibility but
     // is NOT used by handlers (handlers access the global storage singleton).
-    RequestContext::from_storage(
-        "test-integration-user",
-        ai_orz::pkg::storage::get().clone(),
-    )
+    RequestContext::from_storage("test-integration-user", ai_orz::pkg::storage::get().clone())
 }

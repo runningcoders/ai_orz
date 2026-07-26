@@ -5,13 +5,15 @@ use common::api::{
     LoginResponse,
 };
 
-use super::{api_get, api_post, api_post_empty, ApiError};
+use super::{ApiError, api_get, api_post, api_post_empty};
 
 pub async fn check_initialized() -> Result<CheckInitializedResponse, ApiError> {
     api_get("/api/v1/organization/initialize/check").await
 }
 
-pub async fn initialize_system(req: InitializeSystemRequest) -> Result<InitializeSystemResponse, ApiError> {
+pub async fn initialize_system(
+    req: InitializeSystemRequest,
+) -> Result<InitializeSystemResponse, ApiError> {
     api_post("/api/v1/organization/initialize", &req).await
 }
 

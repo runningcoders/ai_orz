@@ -5,9 +5,9 @@ use ::fastembed::{InitOptions, TextEmbedding};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use common::enums::ModelCapability;
+use common::error::Result;
 use std::sync::Arc;
 use std::sync::Mutex;
-use common::error::Result;
 
 /// FastEmbed Cortex 实现
 pub struct FastEmbedCortex {

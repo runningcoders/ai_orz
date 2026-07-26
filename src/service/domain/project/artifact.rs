@@ -9,7 +9,7 @@ use crate::service::dal::artifact::ArtifactQuery;
 use common::enums::{ArtifactSourceType, FileType};
 
 use super::ProjectDomainImpl;
-use common::error::{Result, err, bail_err};
+use common::error::{Result, bail_err, err};
 
 use crate::enrich_ctx;
 
@@ -147,16 +147,16 @@ impl super::ArtifactManage for ProjectDomainImpl {
     }
 
     /// 获取任务下的所有产物
-    async fn list_by_task(
-        &self,
-        ctx: RequestContext,
-        task_id: &str,
-    ) -> Result<Vec<Artifact>> {
+    async fn list_by_task(&self, ctx: RequestContext, task_id: &str) -> Result<Vec<Artifact>> {
         let Some(task) = self.task_dal.find_by_id(ctx.clone(), task_id).await? else {
             bail_err!(NotFound, "Task not found: {}", task_id);
         };
         let Some(project_id) = task.po.project_id.as_deref() else {
-            bail_err!(InvalidRequest, "Task {} does not belong to a project", task_id);
+            bail_err!(
+                InvalidRequest,
+                "Task {} does not belong to a project",
+                task_id
+            );
         };
         let ctx = enrich_ctx!(&ctx, &task);
         self.validate_project_access(ctx.clone(), project_id)
@@ -236,7 +236,11 @@ impl super::ArtifactManage for ProjectDomainImpl {
             .await?;
 
         if artifact.po.source_type != common::enums::ArtifactSourceType::GeneratedContent {
-            bail_err!(InvalidRequest, "Cannot read content directly from artifact source type {:?}, only GeneratedContent artifacts support direct content access.", artifact.po.source_type);
+            bail_err!(
+                InvalidRequest,
+                "Cannot read content directly from artifact source type {:?}, only GeneratedContent artifacts support direct content access.",
+                artifact.po.source_type
+            );
         }
 
         let _content = self.artifact_dal.read_content(ctx, &artifact).await?;
@@ -244,21 +248,23 @@ impl super::ArtifactManage for ProjectDomainImpl {
         Ok(Some(artifact))
     }
 
-    async fn read_content(
-        &self,
-        ctx: RequestContext,
-        artifact: &Artifact,
-    ) -> Result<Vec<u8>> {
+    async fn read_content(&self, ctx: RequestContext, artifact: &Artifact) -> Result<Vec<u8>> {
         let ctx = enrich_ctx!(&ctx, artifact);
         // Validate user has access to this artifact via project ownership
         self.validate_project_access(ctx.clone(), &artifact.po.project_id)
             .await?;
 
         if artifact.po.source_type != common::enums::ArtifactSourceType::GeneratedContent {
-            bail_err!(InvalidRequest, "Cannot read content directly from artifact source type {:?}, only GeneratedContent artifacts support direct content access.", artifact.po.source_type);
+            bail_err!(
+                InvalidRequest,
+                "Cannot read content directly from artifact source type {:?}, only GeneratedContent artifacts support direct content access.",
+                artifact.po.source_type
+            );
         }
 
-        self.artifact_dal.read_content(ctx, artifact).await?
+        self.artifact_dal
+            .read_content(ctx, artifact)
+            .await?
             .ok_or_else(|| -> common::error::Error {
                 err!(NotFound, "Artifact content not found: {}", artifact.id())
             })
@@ -281,13 +287,22 @@ impl super::ArtifactManage for ProjectDomainImpl {
             .await?;
 
         if artifact.po.source_type != common::enums::ArtifactSourceType::GeneratedContent {
-            bail_err!(InvalidRequest, "Cannot update content directly for artifact source type {:?}, only GeneratedContent artifacts support direct content update.", artifact.po.source_type);
+            bail_err!(
+                InvalidRequest,
+                "Cannot update content directly for artifact source type {:?}, only GeneratedContent artifacts support direct content update.",
+                artifact.po.source_type
+            );
         }
 
         // Optimistic locking check
         if let Some(expected) = expected_updated_at {
             if artifact.po.updated_at != expected {
-                bail_err!(Conflict, "Conflict: expected updated_at = {}, current updated_at = {}. Please reload and try again.", expected, artifact.po.updated_at);
+                bail_err!(
+                    Conflict,
+                    "Conflict: expected updated_at = {}, current updated_at = {}. Please reload and try again.",
+                    expected,
+                    artifact.po.updated_at
+                );
             }
         }
 
@@ -310,11 +325,7 @@ impl super::ArtifactManage for ProjectDomainImpl {
 }
 
 impl ProjectDomainImpl {
-    async fn validate_project_access(
-        &self,
-        ctx: RequestContext,
-        project_id: &str,
-    ) -> Result<()> {
+    async fn validate_project_access(&self, ctx: RequestContext, project_id: &str) -> Result<()> {
         let Some(project) = self.project_dal.find_by_id(ctx.clone(), project_id).await? else {
             bail_err!(NotFound, "Project not found: {}", project_id);
         };
@@ -344,7 +355,12 @@ impl ProjectDomainImpl {
                 bail_err!(NotFound, "Task not found: {}", task_id);
             };
             if task.po.project_id.as_deref() != Some(project_id) {
-                bail_err!(InvalidRequest, "Task {} does not belong to project {}", task_id, project_id);
+                bail_err!(
+                    InvalidRequest,
+                    "Task {} does not belong to project {}",
+                    task_id,
+                    project_id
+                );
             }
         }
 

@@ -3,11 +3,11 @@
 //! 只加载侧边栏所需的 projects + agents 列表（轻量）。
 //! 中心图的 tasks 数据由 workspace.rs 按视图按需加载。
 
-use dioxus::prelude::*;
-use common::api::{AgentListItem, ProjectListItem};
 use crate::api::hr::list_agents;
 use crate::api::project::list_projects;
 use crate::store::toast::use_toast;
+use common::api::{AgentListItem, ProjectListItem};
+use dioxus::prelude::*;
 
 /// Workspace 侧边栏数据
 #[derive(Debug, Clone, Default)]
@@ -26,8 +26,14 @@ pub fn use_workspace_data() -> (Signal<Option<WorkspaceData>>, impl FnMut()) {
 
     let load = move || {
         spawn(async move {
-            let projects = list_projects(None, None).await.map(|r| r.items).unwrap_or_default();
-            let agents = list_agents(None, None).await.map(|r| r.items).unwrap_or_default();
+            let projects = list_projects(None, None)
+                .await
+                .map(|r| r.items)
+                .unwrap_or_default();
+            let agents = list_agents(None, None)
+                .await
+                .map(|r| r.items)
+                .unwrap_or_default();
 
             if projects.is_empty() && agents.is_empty() {
                 toast.info("暂无 Project 和 Agent 数据");
@@ -41,5 +47,7 @@ pub fn use_workspace_data() -> (Signal<Option<WorkspaceData>>, impl FnMut()) {
         load();
     });
 
-    (data, move || { load(); })
+    (data, move || {
+        load();
+    })
 }

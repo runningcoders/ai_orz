@@ -20,7 +20,11 @@ pub fn HrMemorySearch() -> Element {
         let kw = keyword().clone();
         let mt = memory_type().clone();
         spawn(async move {
-            let mem_type = if mt.is_empty() { None } else { Some(mt.as_str()) };
+            let mem_type = if mt.is_empty() {
+                None
+            } else {
+                Some(mt.as_str())
+            };
             match search_memory(&kw, mem_type, None).await {
                 Ok(data) => {
                     let mem_results = data.results;

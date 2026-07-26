@@ -3,9 +3,9 @@ use crate::models::attachment::AttachmentUpload;
 use crate::pkg::RequestContext;
 use crate::service::dao::attachment::{AttachmentQuery, new_with_attachments_dir};
 use common::enums::FileType;
+use common::error::Result;
 use sqlx::SqlitePool;
 use std::sync::Arc;
-use common::error::Result;
 
 fn init_test_env(
     pool: SqlitePool,
