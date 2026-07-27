@@ -279,5 +279,136 @@ fn init_message_channel_test_env() {
 
 ---
 
-**最后更新**：2026-05-08
+## 集成测试规范（2026-07-27 新增）
+
+### 概述
+
+集成测试位于 `tests/integration/` 目录，通过 HTTP 端到端验证 Adapter → Domain → DAL → DAO 全链路。与单元测试（`#[sqlx::test]` 独立内存 DB）不同，集成测试共享全局 DB（通过 `OnceCell` 串行化初始化），靠唯一 ID 隔离。
+
+### 测试脚手架（tests/common/）
+
+```
+tests/common/
+├── mod.rs              # 模块导出
+├── env.rs              # init_full_test_env（OnceCell 串行化初始化）
+├── app.rs              # TestApp + HTTP helpers（get/post/get_with_jwt 等）
+├── assertions.rs       # assert_api_ok / assert_api_error
+└── factories/
+    ├── user_factory.rs     # bootstrap_system + bootstrap_and_login
+    ├── agent_factory.rs    # create_test_agent
+    └── project_factory.rs  # create_test_project
+```
+
+### init_full_test_env 设计要点
+
+**用 `OnceCell` 串行化初始化**，避免并行测试时多个测试同时初始化全局 DAO/DAL/Domain 单例导致竞争。
+
+```rust
+static TEST_ENV: OnceCell<()> = OnceCell::const_new();
+
+pub async fn init_full_test_env(pool: SqlitePool) -> RequestContext {
+    TEST_ENV.get_or_try_init(|| async {
+        // 1. 加载全局 AppConfig
+        // 2. pkg::storage 初始化（临时目录 + InMemory 向量库）
+        // 3. pkg::jwt / tool_tracing / tool_registry 初始化
+        // 4. service::init() 一行替代 30+ 个手动 DAO/DAL/Domain init
+    }).await.unwrap();
+    new_test_ctx("test-integration-user", pool)
+}
+```
+
+**设计原则**：调用 `service::init()` 而不是手动一个个 init DAO/DAL/Domain，与 main.rs 启动流程对齐。新增 DAO/DAL 时无需改测试代码。
+
+### bootstrap_system 设计要点
+
+`bootstrap_system` 通过 HTTP 调用 `POST /api/v1/organization/initialize` 创建组织 + 管理员 + chat provider。
+
+**关键决策：`embedding_model` 传 `None`**
+
+```rust
+let req = InitializeSystemRequest {
+    // ...
+    chat_model: ModelProviderInitConfig { ... },
+    embedding_model: None,  // ✅ 跳过 embedding provider 创建
+};
+```
+
+**原因**：
+1. **测试速度**：DB 里永远没有 embedding provider，所有实体创建走 `Ok(None)` 降级路径，永不触发 FastEmbed 模型加载（75s/测试 → 0.3s/测试）
+2. **降级契约验证**：`vector_degradation_test` 显式验证"无 embedding provider 时主流程仍可用"
+3. **避免并行竞争**：多个测试同时创建 embedding provider 会互相干扰
+
+### 向量降级契约（强制执行）
+
+**核心契约**：所有 `embed_entity` 调用失败时必须降级为 `Ok(None)`，主流程永远返回 `Ok(())`，不能因为向量索引失败阻塞业务。
+
+**守护测试**：`tests/integration/vector_degradation_test.rs` 包含 3 个测试：
+1. `test_agent_create_succeeds_without_embedding_provider` — 创建 Agent 验证降级
+2. `test_project_create_succeeds_without_embedding_provider` — 创建 Project 验证降级
+3. `test_full_crud_loop_without_embedding_provider` — Agent → Project → Task → Message 全链路冒烟
+
+**禁止破坏降级机制**：任何重构导致这 3 个测试失败都视为破坏性变更，必须修复或回滚。
+
+### 集成测试编写规范
+
+#### ✅ 必须使用 bootstrap_and_login
+
+```rust
+#[sqlx::test]
+async fn test_xxx(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 用 jwt 调用受保护的 API
+    let (status, body) = app.get_with_jwt("/api/v1/hr/agents", &jwt).await;
+    // ...
+}
+```
+
+#### ✅ 用唯一 ID 隔离测试数据
+
+```rust
+let agent_name = format!("TestAgent-{}", uuid::Uuid::now_v7());
+```
+
+#### ✅ 用 assert_api_ok / assert_api_error 验证响应
+
+```rust
+let data = crate::common::assert_api_ok(status, &body);
+assert_eq!(data.get("id").and_then(|v| v.as_str()), Some(agent_id.as_str()));
+```
+
+### CI 质量门槛（2026-07-27 新增）
+
+| 门槛 | 配置 | 说明 |
+|------|------|------|
+| **clippy** | `cargo clippy --all-targets -- -D warnings` | 零容忍，任何 warning 都会阻断 CI |
+| **覆盖率** | `cargo tarpaulin --fail-under 35` | baseline 40.79%，门槛 35% 留 ~5% 缓冲 |
+| **集成测试** | `cargo test --test '*'`（并行） | 29 个集成测试，3.7s 跑完 |
+
+**覆盖率说明**：当前 CI 命令 `-- --lib` 只统计单元测试覆盖率（40.79%），不包含集成测试覆盖。如果加上集成测试，实际覆盖率会更高。未来可考虑改用 `--tests` 标志统计包含集成测试的覆盖率。
+
+### 集成测试套件清单
+
+| 套件 | 文件 | 测试数 | 覆盖范围 |
+|------|------|--------|----------|
+| Auth & SysInit | `auth_sysinit_test.rs` | 4 | JWT Cookie 认证、系统初始化、401/200 protected route |
+| Core CRUD | `core_crud_test.rs` | 3 | Agent/Project/Task CRUD 闭环 + 状态流转 |
+| Message Delivery | `message_delivery_test.rs` | 2 | send_message 持久化 + SSE 连接冒烟 |
+| Vector Degradation | `vector_degradation_test.rs` | 3 | 无 embedding provider 时主流程仍可用（降级契约守护） |
+| A2A Flow | `a2a_flow_test.rs` | 2 | agent card 发现 + JSON-RPC tasks/send→get |
+| 宏集成 | `macro_test.rs` | 15 | generate_http_handler 宏各参数组合边界场景 |
+
+### 性能优化历史
+
+| 阶段 | 集成测试耗时 | 说明 |
+|------|-------------|------|
+| 优化前（并行） | 238s | 多个 bootstrap 同时创建 embedding provider 互相干扰触发 FastEmbed |
+| 短期方案（串行） | 107s | CI 加 `--test-threads=1` |
+| 长期方案（可选 embedding） | 3.7s | `embedding_model: Option<>` + bootstrap 传 None |
+
+---
+
+**最后更新**：2026-07-27
 **维护者**：AI Orz 开发团队
