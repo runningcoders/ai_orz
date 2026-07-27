@@ -29,6 +29,7 @@ pub fn assert_api_ok(status: StatusCode, body: &Value) -> Value {
 }
 
 /// Assert that the response has the given HTTP status and a non-zero `code` in the envelope.
+#[allow(dead_code)] // 公共测试 API，保留供未来测试使用
 pub fn assert_api_error(status: StatusCode, body: &Value, expected_status: StatusCode) {
     assert_eq!(
         status, expected_status,

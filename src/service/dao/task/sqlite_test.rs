@@ -21,6 +21,7 @@ fn init_test_env() -> Arc<dyn TaskDao + Send + Sync> {
 }
 
 /// 创建测试 TaskPo
+#[allow(dead_code)] // 测试辅助函数，保留供未来测试使用
 fn create_test_task(title: &str, assignee_id: &str, created_by: &str) -> TaskPo {
     let task_id = Uuid::now_v7().to_string();
     TaskPo::new(

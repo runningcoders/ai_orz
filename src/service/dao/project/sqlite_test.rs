@@ -20,6 +20,7 @@ fn init_test_env() -> Arc<dyn ProjectDao + Send + Sync> {
 }
 
 /// 创建测试 ProjectPo
+#[allow(dead_code)] // 测试辅助函数，保留供未来测试使用
 fn create_test_project(name: &str, created_by: &str) -> ProjectPo {
     ProjectPo::new(
         Uuid::now_v7().to_string(),

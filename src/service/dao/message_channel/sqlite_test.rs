@@ -24,6 +24,7 @@ fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageChannelDao + Send + Sync>,
 }
 
 /// 创建测试 MessageChannelPo
+#[allow(dead_code)] // 测试辅助函数，保留供未来测试使用
 fn create_test_channel(org_id: &str, user_id: &str, name: &str) -> MessageChannelPo {
     MessageChannelPo::new(
         Uuid::now_v7().to_string(),

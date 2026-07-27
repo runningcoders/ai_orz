@@ -7,6 +7,7 @@ use serde_json::json;
 ///
 /// `provider_id` should come from `bootstrap_system` (chat provider id).
 /// Returns the created agent's ID.
+#[allow(dead_code)] // 公共测试 API，保留供未来测试使用
 pub async fn create_test_agent(app: &TestApp, jwt: &str, provider_id: &str, name: &str) -> String {
     let req = json!({
         "name": name,

@@ -4,6 +4,7 @@ use crate::common::app::TestApp;
 use serde_json::json;
 
 /// Create a test project via the HTTP API. Returns the project ID.
+#[allow(dead_code)] // 公共测试 API，保留供未来测试使用
 pub async fn create_test_project(app: &TestApp, jwt: &str, name: &str) -> String {
     let req = json!({
         "name": name,

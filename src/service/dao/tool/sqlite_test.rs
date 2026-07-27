@@ -8,6 +8,7 @@ use common::enums::{ToolProtocol, ToolStatus};
 use sqlx::SqlitePool;
 use std::sync::Arc;
 
+#[allow(dead_code)] // 测试辅助函数，保留供未来测试使用
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     crate::pkg::request_context_test_support::new_test_ctx(user_id, pool)
 }
@@ -19,6 +20,7 @@ fn init_test_env() -> Arc<dyn ToolDao> {
 }
 
 /// 创建测试 ToolPo
+#[allow(dead_code)] // 测试辅助函数，保留供未来测试使用
 fn create_test_tool(name: &str, description: &str) -> ToolPo {
     ToolPo::new(
         "".to_string(), // id 自动生成

@@ -29,12 +29,14 @@ impl TestApp {
     }
 
     /// Issue a GET request. Returns (status, body_json).
+    #[allow(dead_code)] // 公共测试 API，保留供未来测试使用
     pub async fn get(&self, path: &str) -> (StatusCode, serde_json::Value) {
         self.request(Method::GET, path, HeaderMap::new(), None)
             .await
     }
 
     /// Issue a GET request with a JWT token (simulating authenticated browser session).
+    #[allow(dead_code)] // 公共测试 API，保留供未来测试使用
     pub async fn get_with_jwt(&self, path: &str, jwt: &str) -> (StatusCode, serde_json::Value) {
         let mut headers = HeaderMap::new();
         headers.insert(
@@ -51,6 +53,7 @@ impl TestApp {
     /// `to_bytes(usize::MAX)` would hang forever waiting for EOF. We drop the
     /// response immediately after reading the status, which is enough for a
     /// connection-level smoke test.
+    #[allow(dead_code)] // 公共测试 API，保留供未来测试使用
     pub async fn get_with_jwt_status_only(&self, path: &str, jwt: &str) -> StatusCode {
         let mut headers = HeaderMap::new();
         headers.insert(
@@ -91,6 +94,7 @@ impl TestApp {
     }
 
     /// Issue a POST request with a JSON body and a JWT token.
+    #[allow(dead_code)] // 公共测试 API，保留供未来测试使用
     pub async fn post_with_jwt(
         &self,
         path: &str,
@@ -113,6 +117,7 @@ impl TestApp {
     }
 
     /// Issue a PUT request with a JSON body and a JWT token.
+    #[allow(dead_code)] // 公共测试 API，保留供未来测试使用
     pub async fn put_with_jwt(
         &self,
         path: &str,
@@ -135,6 +140,7 @@ impl TestApp {
     }
 
     /// Issue a DELETE request with a JWT token.
+    #[allow(dead_code)] // 公共测试 API，保留供未来测试使用
     pub async fn delete_with_jwt(&self, path: &str, jwt: &str) -> (StatusCode, serde_json::Value) {
         let mut headers = HeaderMap::new();
         headers.insert(

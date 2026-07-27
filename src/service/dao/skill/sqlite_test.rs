@@ -27,6 +27,7 @@ fn init_test_env() -> Arc<dyn SkillDao> {
 }
 
 /// 创建测试 SkillPo
+#[allow(dead_code)] // 测试辅助函数，保留供未来测试使用
 fn create_test_skill(name: &str, category: &str) -> SkillPo {
     let skill_id = Uuid::now_v7().to_string();
     SkillPo::new(

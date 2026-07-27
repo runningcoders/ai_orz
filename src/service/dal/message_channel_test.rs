@@ -35,6 +35,7 @@ async fn init_test_env(
 }
 
 /// 创建测试渠道
+#[allow(dead_code)] // 测试辅助函数，保留供未来测试使用
 fn create_test_channel(
     channel_id: &str,
     user_id: &str,

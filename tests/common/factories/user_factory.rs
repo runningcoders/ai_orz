@@ -15,6 +15,7 @@ use common::api::{InitializeSystemRequest, LoginRequest, ModelProviderInitConfig
 #[derive(Debug, Clone)]
 pub struct BootstrappedSystem {
     pub organization_id: String,
+    #[allow(dead_code)] // 公共测试 API 字段，保留供未来测试使用
     pub user_id: String,
     pub username: String,
     pub password_hash: String,
@@ -120,6 +121,7 @@ pub async fn login_and_get_jwt(
 ///
 /// This is the **recommended default** for integration tests that don't
 /// specifically test vector indexing — keeps tests fast and CI-stable.
+#[allow(dead_code)] // 公共测试 API，保留供未来测试使用
 pub async fn disable_embedding_provider(app: &TestApp, jwt: &str, embedding_provider_id: &str) {
     let (status, _body) = app
         .delete_with_jwt(
@@ -149,6 +151,7 @@ pub async fn bootstrap_and_login(app: &TestApp) -> (BootstrappedSystem, String) 
 /// entity creates (agent/project/task/message) will all take the vector
 /// degradation path — no cortex calls, no FastEmbed model downloads, fast and
 /// deterministic.
+#[allow(dead_code)] // 公共测试 API，保留供未来测试使用
 pub async fn bootstrap_login_and_disable_embedding(app: &TestApp) -> (BootstrappedSystem, String) {
     let (bs, jwt) = bootstrap_and_login(app).await;
     disable_embedding_provider(app, &jwt, &bs.embedding_provider_id).await;
