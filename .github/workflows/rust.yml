@@ -9,6 +9,9 @@ on:
 env:
   CARGO_TERM_COLOR: always
   SQLX_OFFLINE: true
+  # sccache 与 incremental compilation 互斥，禁用 incremental 让 sccache 完全接管缓存
+  # sccache 按内容寻址，相同 RUSTFLAGS 的编译结果跨 CI run 共享
+  CARGO_INCREMENTAL: 0
 
 jobs:
   # ===== 1. Lint 门禁（快，先跑）=====
@@ -210,16 +213,18 @@ jobs:
     # - --no-clean 复用编译产物，避免重复 clean
     # - --no-fail-fast 测试失败也继续收集覆盖数据
     # - --fail-under-lines 直接按行覆盖率门槛
+    # - --coverage-target-only 跳过 build script / proc-macro 的 instrumentation（小幅加速）
     #
-    # 关于依赖库重编：instrument-coverage 是全局 RUSTFLAGS，依赖库也会被 instrument。
-    # 这是 LLVM source-based coverage 的固有限制（无法只 instrument workspace 成员）。
-    # 优化手段：
-    # 1. sccache 命中：相同 RUSTFLAGS 的依赖库编译结果按内容寻址缓存
-    # 2. --no-clean：避免 tarpaulin 默认的 clean 行为
-    # 3. --ignore-filename-regex：报告阶段过滤依赖库，只统计 workspace 代码
+    # 关于依赖库重编（LLVM source-based coverage 的固有限制）：
+    # -instrument-coverage 是全局 RUSTFLAGS，依赖库也会被 instrument
+    # -Cargo 的 per-package profile override 不支持 rustflags 字段（连 nightly 都不支持）
+    # -sccache 跨不同 RUSTFLAGS 的 job（backend 普通 vs coverage instrument-coverage）无法共享
+    # -但 coverage job 自己跨多次 CI run 可以共享（相同 RUSTFLAGS 的依赖库编译结果缓存）
+    # -第一次 coverage job 需重编所有依赖的 instrument-coverage 版本
+    # -后续 coverage job sccache 命中，只需编译 workspace 成员
     - name: Generate coverage report
       run: |
-        cargo llvm-cov --lib --no-clean --no-fail-fast \
+        cargo llvm-cov --lib --no-clean --no-fail-fast --coverage-target-only \
           --ignore-filename-regex "(tests/common/|/cargo/registry/|/rustc/|build.rs|target/)" \
           --output-dir ./coverage \
           --fail-under-lines 35 \
