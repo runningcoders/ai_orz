@@ -27,10 +27,22 @@ jobs:
     - name: Install rustfmt and clippy
       run: rustup component add rustfmt clippy
 
-    - name: Configure sccache
+    - name: Configure sccache (local disk mode)
       run: |
         echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
-        echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+        echo "SCCACHE_DIR=$HOME/.cache/sccache" >> $GITHUB_ENV
+
+    # 所有 job 共享同一个 sccache 缓存，按内容寻址跨 job 复用编译产物
+    - name: Cache sccache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/sccache
+        key: sccache-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          sccache-${{ runner.os }}-
+
+    - name: Start sccache server
+      run: sccache --start-server || true
 
     - name: Format check
       run: cargo fmt --all -- --check
@@ -40,7 +52,11 @@ jobs:
 
     - name: Print sccache stats
       if: always()
-      run: sccache --show-stats
+      run: sccache --show-stats || true
+
+    - name: Stop sccache server
+      if: always()
+      run: sccache --stop-server || true
 
   # ===== 2. Backend（lint 通过后跑）=====
   # check + build + 单元测试 + 集成测试
@@ -57,10 +73,10 @@ jobs:
     - name: Install sccache
       uses: mozilla-actions/sccache-action@v0.0.6
 
-    - name: Configure sccache
+    - name: Configure sccache (local disk mode)
       run: |
         echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
-        echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+        echo "SCCACHE_DIR=$HOME/.cache/sccache" >> $GITHUB_ENV
 
     - name: Cache ort-sys prebuilt binaries
       uses: actions/cache@v4
@@ -69,6 +85,17 @@ jobs:
         key: ort-sys-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
         restore-keys: |
           ort-sys-${{ runner.os }}-
+
+    - name: Cache sccache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/sccache
+        key: sccache-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          sccache-${{ runner.os }}-
+
+    - name: Start sccache server
+      run: sccache --start-server || true
 
     - name: Check backend
       run: cargo check --lib --verbose
@@ -84,7 +111,11 @@ jobs:
 
     - name: Print sccache stats
       if: always()
-      run: sccache --show-stats
+      run: sccache --show-stats || true
+
+    - name: Stop sccache server
+      if: always()
+      run: sccache --stop-server || true
 
   # ===== 3. Frontend（lint 通过后跑，与 backend 并行）=====
   # wasm32 check + 前端测试，独立于 backend
@@ -100,10 +131,21 @@ jobs:
     - name: Install sccache
       uses: mozilla-actions/sccache-action@v0.0.6
 
-    - name: Configure sccache
+    - name: Configure sccache (local disk mode)
       run: |
         echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
-        echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+        echo "SCCACHE_DIR=$HOME/.cache/sccache" >> $GITHUB_ENV
+
+    - name: Cache sccache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/sccache
+        key: sccache-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          sccache-${{ runner.os }}-
+
+    - name: Start sccache server
+      run: sccache --start-server || true
 
     - name: Check frontend
       run: cd frontend && cargo check --target wasm32-unknown-unknown --verbose
@@ -113,7 +155,11 @@ jobs:
 
     - name: Print sccache stats
       if: always()
-      run: sccache --show-stats
+      run: sccache --show-stats || true
+
+    - name: Stop sccache server
+      if: always()
+      run: sccache --stop-server || true
 
   # ===== 4. Coverage（backend 通过后跑）=====
   # tarpaulin 覆盖率报告，最慢最易失败，放最后
@@ -134,10 +180,10 @@ jobs:
     - name: Install cargo-tarpaulin
       run: cargo install --locked cargo-tarpaulin || true
 
-    - name: Configure sccache
+    - name: Configure sccache (local disk mode)
       run: |
         echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
-        echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+        echo "SCCACHE_DIR=$HOME/.cache/sccache" >> $GITHUB_ENV
 
     - name: Cache ort-sys prebuilt binaries
       uses: actions/cache@v4
@@ -146,6 +192,17 @@ jobs:
         key: ort-sys-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
         restore-keys: |
           ort-sys-${{ runner.os }}-
+
+    - name: Cache sccache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/sccache
+        key: sccache-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          sccache-${{ runner.os }}-
+
+    - name: Start sccache server
+      run: sccache --start-server || true
 
     # Tarpaulin 主要支持 Linux，这里 runs-on 已是 ubuntu-latest。
     # Baseline: 40.79% (6560/16083 lines, 2026-07-27 实测，不带 --all-features)
@@ -161,7 +218,11 @@ jobs:
 
     - name: Print sccache stats
       if: always()
-      run: sccache --show-stats
+      run: sccache --show-stats || true
+
+    - name: Stop sccache server
+      if: always()
+      run: sccache --stop-server || true
 
     - name: Upload coverage artifacts
       uses: actions/upload-artifact@v4
