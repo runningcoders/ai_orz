@@ -8,7 +8,7 @@ use crate::pkg::RequestContext;
 use crate::service::dal::mcp_server::{self, McpServerDal};
 use crate::service::dao::tool_call::McpToolCallDao;
 use crate::service::dao::{mcp_server as mcp_server_dao, tool_call};
-use common::error::{Error, Result};
+use common::error::Result;
 use sqlx::SqlitePool;
 use std::sync::Arc;
 

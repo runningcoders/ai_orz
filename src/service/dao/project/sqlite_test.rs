@@ -4,7 +4,6 @@ use crate::models::project::ProjectPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::project::{ProjectDao, sqlite};
 use common::enums::project::ProjectStatus;
-use common::error::Error;
 use common::error::Result;
 use sqlx::SqlitePool;
 use std::sync::Arc;

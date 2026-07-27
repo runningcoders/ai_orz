@@ -4,10 +4,8 @@ use crate::models::agent::AgentPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::agent::AgentDao;
 use crate::service::dao::agent::sqlite::{dao, init};
-use common::enums::AgentStatus;
 use sqlx::SqlitePool;
 use std::sync::Arc;
-use uuid::Uuid;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     crate::pkg::request_context_test_support::new_test_ctx(user_id, pool)

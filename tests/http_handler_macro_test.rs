@@ -21,7 +21,6 @@ use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode};
 use axum::routing::{get, put};
-use common::api::ApiResponse;
 use common::config::{DatabaseConfig, StatsConfig, VectorStoreType};
 use common::enums::ToolStatus;
 use common::error::Error;

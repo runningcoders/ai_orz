@@ -1,12 +1,11 @@
 //! Model Provider DAL 单元测试
 
-use crate::models::model_provider::{ModelProvider, ModelProviderPo};
+use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
 use crate::service::dal::model_provider::ModelProviderDal;
-use common::enums::{ModelCapability, ModelProviderStatus, ProviderType};
+use common::enums::{ModelCapability, ProviderType};
 use sqlx::SqlitePool;
 use std::sync::Arc;
-use uuid::Uuid;
 
 /// 初始化测试环境
 async fn init_test_env(

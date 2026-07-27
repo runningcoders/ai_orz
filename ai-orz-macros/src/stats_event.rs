@@ -31,20 +31,20 @@ enum FieldKind {
 
 /// 判断字段类型是否是 `Option<String>`
 fn is_option_string(ty: &syn::Type) -> bool {
-    if let syn::Type::Path(type_path) = ty {
-        if let Some(seg) = type_path.path.segments.last() {
-            return seg.ident == "Option";
-        }
+    if let syn::Type::Path(type_path) = ty
+        && let Some(seg) = type_path.path.segments.last()
+    {
+        return seg.ident == "Option";
     }
     false
 }
 
 /// 判断字段类型是否是 `String`
 fn is_string(ty: &syn::Type) -> bool {
-    if let syn::Type::Path(type_path) = ty {
-        if let Some(seg) = type_path.path.segments.last() {
-            return seg.ident == "String";
-        }
+    if let syn::Type::Path(type_path) = ty
+        && let Some(seg) = type_path.path.segments.last()
+    {
+        return seg.ident == "String";
     }
     false
 }
@@ -57,14 +57,12 @@ pub fn derive_stats_event(input: TokenStream) -> TokenStream {
     // 解析结构体级别的 event_type 注解
     let mut event_type: Option<String> = None;
     for attr in &input.attrs {
-        if attr.path().is_ident("event_type") {
-            if let Meta::NameValue(meta) = &attr.meta {
-                if let syn::Expr::Lit(expr_lit) = &meta.value {
-                    if let Lit::Str(lit_str) = &expr_lit.lit {
-                        event_type = Some(lit_str.value());
-                    }
-                }
-            }
+        if attr.path().is_ident("event_type")
+            && let Meta::NameValue(meta) = &attr.meta
+            && let syn::Expr::Lit(expr_lit) = &meta.value
+            && let Lit::Str(lit_str) = &expr_lit.lit
+        {
+            event_type = Some(lit_str.value());
         }
     }
 

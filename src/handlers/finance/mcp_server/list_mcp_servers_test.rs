@@ -3,7 +3,6 @@ use sqlx::SqlitePool;
 use std::sync::Once;
 
 use crate::models::mcp_server::{McpServer, McpServerConfig, McpTransport};
-use crate::pkg::RequestContext;
 use crate::pkg::tool_tracing::logger::ToolCallLogger;
 use crate::service::domain::finance::domain;
 

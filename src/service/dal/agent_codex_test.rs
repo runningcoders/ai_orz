@@ -196,7 +196,6 @@ async fn codex_agent_dal_delegates_rebuild_vectors_to_base() {
 /// 验证未重写 prompt_builder 时走 trait 默认方法返回 DefaultPromptBuilder
 #[test]
 fn codex_agent_dal_default_prompt_builder_returns_default() {
-    use crate::models::prompt_builder::PromptBuilder;
     use crate::models::tool::ToolPo;
     use common::enums::ToolProtocol;
     use serde_json::json;

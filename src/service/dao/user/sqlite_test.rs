@@ -2,7 +2,6 @@
 
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
-use crate::service::dao::user::{self, UserDao};
 use common::enums::{UserRole, UserStatus};
 use sqlx::SqlitePool;
 use uuid::Uuid;

@@ -5,7 +5,6 @@ use crate::models::model_provider::ModelProviderPo;
 use crate::models::task::Task;
 use crate::models::vector::{MatchType, Vectorizable};
 use crate::pkg::request_context::RequestContext;
-use crate::pkg::storage::VectorStore;
 use crate::service::dal::task::TaskDal;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::ModelProviderDao;

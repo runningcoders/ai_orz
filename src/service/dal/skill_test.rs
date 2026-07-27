@@ -2,10 +2,10 @@
 
 use crate::models::brain::CortexTrait;
 use crate::models::model_provider::ModelProviderPo;
-use crate::models::skill::{Skill, SkillFile, SkillPo};
+use crate::models::skill::{Skill, SkillPo};
 use crate::models::vector::MatchType;
 use crate::pkg::request_context::RequestContext;
-use crate::service::dal::skill::{SkillDal, SkillDalImpl, new};
+use crate::service::dal::skill::{SkillDal, new};
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::skill::{self, SkillSearch};
@@ -13,8 +13,7 @@ use ::rig::tool::ToolDyn;
 use anyhow;
 use common::enums::skill::SkillAuthorType;
 use common::enums::skill::SkillStatus;
-use common::error::{Error, Result};
-use dyn_clone::DynClone;
+use common::error::Result;
 use sqlx::SqlitePool;
 use std::sync::Arc;
 
@@ -307,7 +306,7 @@ async fn test_create_and_get_by_id(pool: SqlitePool) -> Result<()> {
     let ctx = new_ctx("test-user", pool);
 
     // 创建技能 PO
-    let mut po = create_test_skill_po("test-skill");
+    let po = create_test_skill_po("test-skill");
     let skill_id = po.id.clone();
 
     // DAL 创建（自动创建空 skill.md + 自动向量化）

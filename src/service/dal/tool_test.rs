@@ -6,7 +6,7 @@ use crate::models::model_provider::ModelProviderPo;
 use crate::models::tool::{CoreTool, Tool, ToolPo};
 use crate::models::vector::MatchType;
 use crate::pkg::request_context::RequestContext;
-use crate::pkg::tool_registry::{self, BuiltinToolFactory, get_registry};
+use crate::pkg::tool_registry::{BuiltinToolFactory, get_registry};
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use crate::service::dal::tool::ToolDal;
 use crate::service::dao::cortex::CortexDao;
@@ -17,7 +17,7 @@ use crate::service::dao::tool_call::ToolCallDao;
 use async_trait::async_trait;
 use common::enums::{ControlMode, ToolProtocol, ToolStatus};
 use common::error::Result;
-use rig::tool::{ToolDyn, ToolError};
+use rig::tool::ToolDyn;
 use serde_json::Value;
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -362,7 +362,7 @@ async fn test_update_tool(pool: SqlitePool) {
     let (tool_dal, ctx) = init_test_env(pool, false).await;
 
     // 创建非内置工具
-    let mut po = ToolPo::new(
+    let po = ToolPo::new(
         "".to_string(),
         "http-tool".to_string(),
         "Original description".to_string(),
@@ -405,7 +405,7 @@ async fn test_update_builtin_tool_protected(pool: SqlitePool) {
     let (tool_dal, ctx) = init_test_env(pool, true).await;
 
     // 创建内置工具（通过 test_tool factory）
-    let mut po = TestToolFactory {}.create_po();
+    let po = TestToolFactory {}.create_po();
     tool_dal.create_tool(ctx.clone(), &po).await.unwrap();
 
     // ========== 测试：直接通过 DAO 层尝试更新内置工具应该失败 ==========

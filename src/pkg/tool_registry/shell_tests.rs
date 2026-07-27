@@ -1,5 +1,4 @@
 use crate::pkg::tool_registry::shell_exec;
-use common::error::Result;
 use std::collections::HashMap;
 
 #[test]

@@ -9,7 +9,7 @@ use crate::models::attachment::{
 use crate::pkg::RequestContext;
 use crate::service::dao::attachment::AttachmentQuery;
 use crate::service::domain::finance;
-use common::error::{Error, Result};
+use common::error::Result;
 use sqlx::SqlitePool;
 use std::sync::Arc;
 

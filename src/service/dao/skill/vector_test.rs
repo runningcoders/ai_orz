@@ -4,7 +4,6 @@
 use crate::models::vector::VectorIndexParams;
 use crate::pkg::RequestContext;
 use crate::service::dao::skill::{self, SkillVectorDao};
-use common::error::Error;
 use common::error::Result;
 use sqlx::SqlitePool;
 use std::sync::Arc;

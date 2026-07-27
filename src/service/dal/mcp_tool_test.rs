@@ -6,7 +6,6 @@
 use crate::models::mcp_server::{McpServerConfig, McpServerPo, McpTransport};
 use crate::models::tool::{Tool, ToolPo};
 use crate::pkg::RequestContext;
-use crate::pkg::tool_tracing::entry::ToolCallStatus;
 use crate::pkg::tool_tracing::logger::ToolCallLogger;
 use crate::service::dal::mcp_tool::{self, McpToolDal};
 use crate::service::dao::{mcp_server, tool, tool_call};

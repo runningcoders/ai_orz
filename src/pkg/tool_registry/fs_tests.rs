@@ -1,5 +1,4 @@
 use crate::pkg::tool_registry::tool_security::fs;
-use std::path::Path;
 use tempfile::TempDir;
 
 /// Helper: create a base temp dir with subdirectories for path tests

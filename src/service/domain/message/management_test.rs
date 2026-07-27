@@ -4,7 +4,7 @@ use super::{MessageDomain, domain};
 use crate::models::message::Message;
 use crate::pkg::RequestContext;
 use crate::service::domain::message::{SendToAgentCommand, SendToUserCommand};
-use common::enums::{MessageRole, MessageStatus, MessageType};
+use common::enums::{MessageRole, MessageStatus};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 

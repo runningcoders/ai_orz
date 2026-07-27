@@ -484,7 +484,7 @@ async fn test_count_by_root_user_and_status(pool: SqlitePool) {
 
     // Create 2 archived projects
     for i in 0..2 {
-        let mut project = create_test_project(&format!("Archived Project {}", i), &root_user_id);
+        let project = create_test_project(&format!("Archived Project {}", i), &root_user_id);
         let project_id = project.po.id.clone();
         dal.create(ctx.clone(), &project).await.unwrap();
         dal.archive(ctx.clone(), &project_id, "admin")

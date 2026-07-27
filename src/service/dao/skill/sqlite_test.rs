@@ -5,7 +5,6 @@ use crate::pkg::RequestContext;
 use crate::service::dao::skill::{self, SkillDao, SkillQuery, SkillSearch};
 use common::enums::SkillStatus;
 use common::enums::skill::SkillAuthorType;
-use common::error::Error;
 use common::error::Result;
 use sqlx::{Row, SqlitePool};
 use std::sync::Arc;
@@ -426,7 +425,7 @@ async fn test_install_non_published_fails(pool: SqlitePool) -> Result<()> {
 
 /// 测试读写 skill.md 主文件内容
 #[sqlx::test]
-async fn test_read_write_main_content(pool: SqlitePool) -> Result<()> {
+async fn test_read_write_main_content(_pool: SqlitePool) -> Result<()> {
     let skill_dao = init_test_env();
 
     let skill_id = Uuid::now_v7().to_string();
@@ -462,7 +461,7 @@ async fn test_read_write_main_content(pool: SqlitePool) -> Result<()> {
 
 /// 测试读写附属文件
 #[sqlx::test]
-async fn test_read_write_attachment_files(pool: SqlitePool) -> Result<()> {
+async fn test_read_write_attachment_files(_pool: SqlitePool) -> Result<()> {
     let skill_dao = init_test_env();
 
     let skill_id = Uuid::now_v7().to_string();
@@ -500,7 +499,7 @@ async fn test_read_write_attachment_files(pool: SqlitePool) -> Result<()> {
 
 /// 测试 list_files 列出所有文件并自动预读小文件内容
 #[sqlx::test]
-async fn test_list_files_with_content(pool: SqlitePool) -> Result<()> {
+async fn test_list_files_with_content(_pool: SqlitePool) -> Result<()> {
     let skill_dao = init_test_env();
 
     let skill_id = Uuid::now_v7().to_string();
@@ -544,7 +543,7 @@ async fn test_list_files_with_content(pool: SqlitePool) -> Result<()> {
 
 /// 测试不存在的技能目录返回空列表
 #[sqlx::test]
-async fn test_list_files_empty_dir(pool: SqlitePool) -> Result<()> {
+async fn test_list_files_empty_dir(_pool: SqlitePool) -> Result<()> {
     let skill_dao = init_test_env();
 
     let skill_id = Uuid::now_v7().to_string();
@@ -573,7 +572,7 @@ async fn test_list_files_empty_dir(pool: SqlitePool) -> Result<()> {
 
 /// 测试删除技能目录
 #[sqlx::test]
-async fn test_delete_skill_dir(pool: SqlitePool) -> Result<()> {
+async fn test_delete_skill_dir(_pool: SqlitePool) -> Result<()> {
     let skill_dao = init_test_env();
 
     let skill_id = Uuid::now_v7().to_string();

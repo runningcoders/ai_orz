@@ -718,7 +718,7 @@ async fn test_create_tool_call_result(pool: SqlitePool) -> Result<()> {
         args,
     );
 
-    let request = message_dao
+    let _request = message_dao
         .create_tool_call_request(ctx.clone(), request_msg.clone())
         .await?;
 
@@ -780,7 +780,7 @@ async fn test_create_tool_call_result_failed(pool: SqlitePool) -> Result<()> {
         args,
     );
 
-    let request = message_dao
+    let _request = message_dao
         .create_tool_call_request(ctx.clone(), request_msg.clone())
         .await?;
 

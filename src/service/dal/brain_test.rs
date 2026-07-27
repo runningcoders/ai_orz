@@ -1,7 +1,7 @@
 //! Brain DAL 单元测试
 //! 测试 Brain DAL 的 wake_brain 和 test_connection 功能
 
-use crate::models::{agent::AgentPo, brain::*, memory::*, model_provider::*, tool::Tool};
+use crate::models::{agent::AgentPo, memory::*, model_provider::*, tool::Tool};
 use crate::pkg::request_context::RequestContext;
 use crate::service::dal::brain::BrainDal;
 use crate::service::dao::cortex;

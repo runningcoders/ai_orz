@@ -600,8 +600,9 @@ fn collect_path_and_query_fields_from_type(
                 let syntax = syn::parse_file(&content).ok();
                 if let Some(syntax) = syntax {
                     for item in &syntax.items {
-                        if let syn::Item::Struct(item_struct) = item {
-                            if item_struct.ident.to_string() == type_name {
+                        if let syn::Item::Struct(item_struct) = item
+                            && item_struct.ident.to_string() == type_name
+                        {
                                 // Found it! Collect fields with #[param(source = "...")] attribute
                                 let mut path_fields = Vec::new();
                                 let mut query_fields = Vec::new();
@@ -621,65 +622,61 @@ fn collect_path_and_query_fields_from_type(
                                             //   但 attr.meta 实际是 `Meta::List`，导致所有 #[param]
                                             //   标注被静默忽略，path/query 字段全部被当作 body。
                                             //   修复方式：先匹配 Meta::List，再用 parse_args 解析内层。
-                                            if let Meta::List(meta_list) = &attr.meta {
-                                                if let Ok(nv) =
+                                            if let Meta::List(meta_list) = &attr.meta
+                                                && let Ok(nv) =
                                                     meta_list.parse_args::<MetaNameValue>()
-                                                {
-                                                    if nv.path.is_ident("source") {
-                                                        if let syn::Expr::Lit(syn::ExprLit {
-                                                            lit: Lit::Str(s),
-                                                            ..
-                                                        }) = &nv.value
+                                                && nv.path.is_ident("source")
+                                                && let syn::Expr::Lit(syn::ExprLit {
+                                                    lit: Lit::Str(s),
+                                                    ..
+                                                }) = &nv.value
+                                            {
+                                                match s.value().as_str() {
+                                                    "path" => {
+                                                        if let Some(ident) =
+                                                            &field.ident
                                                         {
-                                                            match s.value().as_str() {
-                                                                "path" => {
-                                                                    if let Some(ident) =
-                                                                        &field.ident
-                                                                    {
-                                                                        path_fields.push((
-                                                                            ident.clone(),
-                                                                            field.ty.clone(),
-                                                                        ));
-                                                                    }
+                                                            path_fields.push((
+                                                                ident.clone(),
+                                                                field.ty.clone(),
+                                                            ));
+                                                        }
+                                                    }
+                                                    "query" => {
+                                                        if let Some(ident) =
+                                                            &field.ident
+                                                        {
+                                                            // 检查是否有 #[serde(flatten)] 属性
+                                                            let is_flattened = field.attrs.iter().any(|attr| {
+                                                                if attr.path().is_ident("serde")
+                                                                    && let Meta::List(meta_list) = &attr.meta
+                                                                {
+                                                                    let tokens_str = meta_list.tokens.to_string();
+                                                                    return tokens_str.contains("flatten");
                                                                 }
-                                                                "query" => {
-                                                                    if let Some(ident) =
-                                                                        &field.ident
-                                                                    {
-                                                                        // 检查是否有 #[serde(flatten)] 属性
-                                                                        let is_flattened = field.attrs.iter().any(|attr| {
-                                                                            if attr.path().is_ident("serde") {
-                                                                                if let Meta::List(meta_list) = &attr.meta {
-                                                                                    let tokens_str = meta_list.tokens.to_string();
-                                                                                    return tokens_str.contains("flatten");
-                                                                                }
-                                                                            }
-                                                                            false
-                                                                        });
+                                                                false
+                                                            });
 
-                                                                        if is_flattened {
-                                                                            flattened_query_fields
-                                                                                .push((
-                                                                                    ident.clone(),
-                                                                                    field
-                                                                                        .ty
-                                                                                        .clone(),
-                                                                                ));
-                                                                        } else {
-                                                                            query_fields.push((
-                                                                                ident.clone(),
-                                                                                field.ty.clone(),
-                                                                            ));
-                                                                        }
-                                                                    }
-                                                                }
-                                                                "body" => {
-                                                                    // body is default, no need to collect
-                                                                }
-                                                                _ => {}
+                                                            if is_flattened {
+                                                                flattened_query_fields
+                                                                    .push((
+                                                                        ident.clone(),
+                                                                        field
+                                                                            .ty
+                                                                            .clone(),
+                                                                    ));
+                                                            } else {
+                                                                query_fields.push((
+                                                                    ident.clone(),
+                                                                    field.ty.clone(),
+                                                                ));
                                                             }
                                                         }
                                                     }
+                                                    "body" => {
+                                                        // body is default, no need to collect
+                                                    }
+                                                    _ => {}
                                                 }
                                             }
                                         }
@@ -691,7 +688,6 @@ fn collect_path_and_query_fields_from_type(
                                     flattened_query_fields,
                                     total_named_fields,
                                 );
-                            }
                         }
                     }
                 }

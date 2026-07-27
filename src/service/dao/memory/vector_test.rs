@@ -4,7 +4,6 @@
 use crate::models::vector::VectorIndexParams;
 use crate::pkg::RequestContext;
 use crate::service::dao::memory::{self, MemoryVectorDao};
-use common::error::Error;
 use common::error::Result;
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -247,13 +246,13 @@ async fn test_namespace_isolation(pool: SqlitePool) -> Result<()> {
     let common_id = "common_id";
 
     // 短期记忆向量
-    let mut short_params = create_test_vector_params(common_id, 3);
+    let short_params = create_test_vector_params(common_id, 3);
     vector_dao
         .upsert_short_term_vector(ctx.clone(), common_id, &short_params)
         .await?;
 
     // 知识节点向量（同一个 id，但不同 namespace）
-    let mut knowledge_params = create_test_vector_params(common_id, 3);
+    let knowledge_params = create_test_vector_params(common_id, 3);
     vector_dao
         .upsert_knowledge_node_vector(ctx.clone(), common_id, &knowledge_params)
         .await?;

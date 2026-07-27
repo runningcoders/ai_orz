@@ -8,7 +8,6 @@ use crate::service::dao::model_provider::{self, ModelProviderDao};
 use common::enums::{ModelCapability, ModelProviderStatus, ProviderType};
 use sqlx::SqlitePool;
 use std::sync::Arc;
-use uuid::Uuid;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     crate::pkg::request_context_test_support::new_test_ctx(user_id, pool)
@@ -92,7 +91,6 @@ async fn test_query(pool: sqlx::SqlitePool) {
     let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
 
     use crate::service::dao::model_provider::ModelProviderQuery;
-    use common::enums::ModelProviderStatus;
 
     // 测试空查询
     let query = ModelProviderQuery::default();

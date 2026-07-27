@@ -12,5 +12,6 @@ pub mod env;
 pub mod factories;
 
 pub use app::TestApp;
+#[allow(unused_imports)]
 pub use assertions::{assert_api_error, assert_api_ok};
 pub use env::init_full_test_env;

@@ -1,6 +1,6 @@
 //! Tool DAO SQLite 单元测试
 
-use crate::models::tool::{Tool, ToolPo};
+use crate::models::tool::ToolPo;
 use crate::pkg::request_context::RequestContext;
 use crate::service::dao::tool::ToolDao;
 use crate::service::dao::tool::sqlite::{dao, init as dao_init};
@@ -233,7 +233,7 @@ async fn test_list_enabled(pool: SqlitePool) {
     let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
 
     // 创建一个启用，一个禁用
-    let mut enabled = ToolPo::new(
+    let enabled = ToolPo::new(
         "enabled".to_string(),
         "enabled".to_string(),
         "Enabled tool".to_string(),
@@ -301,7 +301,7 @@ async fn test_update_tool(pool: SqlitePool) {
     let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
 
     // 创建非内置工具
-    let mut tool = ToolPo::new(
+    let tool = ToolPo::new(
         "".to_string(),
         "original-name".to_string(),
         "Original description".to_string(),
@@ -344,7 +344,7 @@ async fn test_update_builtin_tool_protected(pool: SqlitePool) {
     let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
 
     // 创建内置工具
-    let mut tool = ToolPo::new(
+    let tool = ToolPo::new(
         "".to_string(),
         "builtin-tool".to_string(),
         "Builtin description".to_string(),
@@ -376,7 +376,7 @@ async fn test_delete_builtin_tool_protected(pool: SqlitePool) {
     let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
 
     // 创建内置工具
-    let mut tool = ToolPo::new(
+    let tool = ToolPo::new(
         "".to_string(),
         "builtin-tool".to_string(),
         "Builtin description".to_string(),

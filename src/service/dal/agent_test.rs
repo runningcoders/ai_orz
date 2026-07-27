@@ -14,7 +14,6 @@ use ::rig::tool::ToolDyn;
 use common::error::Result;
 use sqlx::SqlitePool;
 use std::sync::Arc;
-use uuid::Uuid;
 
 /// 初始化测试环境
 async fn init_test_env(
@@ -252,7 +251,7 @@ fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
 
 /// 初始化搜索测试环境（使用 Mock CortexDao 和 ModelProviderDao）
 async fn init_search_test_env(
-    pool: SqlitePool,
+    _pool: SqlitePool,
 ) -> Arc<dyn crate::service::dal::agent::AgentDal + Send + Sync> {
     // 初始化基础 DAO（agent + vector）
     agent::init();

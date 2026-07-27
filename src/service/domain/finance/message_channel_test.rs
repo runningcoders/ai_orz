@@ -2,8 +2,6 @@
 //!
 //! 消息渠道配置的 CRUD 测试，属于财务领域
 
-use sqlx::SqlitePool;
-
 #[cfg(test)]
 mod tests {
     use crate::models::message_channel::{ChannelConfig, MessageChannel, MessageChannelPo};

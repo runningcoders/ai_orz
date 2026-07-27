@@ -1,6 +1,5 @@
 //! Message Delivery 单元测试
 
-use super::domain;
 use crate::models::brain::CortexTrait;
 use crate::models::message::{Message, TaskAssignmentMessage, ToolCallMessage};
 use crate::models::model_provider::ModelProviderPo;
@@ -813,7 +812,7 @@ async fn test_deliver_message_to_channels(pool: SqlitePool) {
 
     use crate::models::message::Message;
     use crate::models::message_channel::{ChannelConfig, MessageChannel, MessageChannelPo};
-    use common::enums::message_channel::{ChannelStatus, ChannelType};
+    use common::enums::message_channel::ChannelType;
     use common::enums::{MessageRole, MessageType};
 
     // 创建两个启用的渠道
@@ -842,7 +841,6 @@ async fn test_deliver_message_to_channels(pool: SqlitePool) {
     // 创建一条测试消息
     let message_id = "test-message-001";
     use crate::models::file::FileMeta;
-    use common::enums::FileType;
     let message = Message::new(
         message_id.to_string(),
         "".to_string(), // task_id

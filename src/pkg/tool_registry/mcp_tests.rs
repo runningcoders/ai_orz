@@ -1,7 +1,6 @@
 use super::{McpClientRuntime, McpToolConfig, McpToolDeps, create_mcp_tool, create_tool};
 use crate::models::mcp_server::{McpServerConfig, McpServerPo, McpTransport};
 use crate::models::tool::ToolPo;
-use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::ToolRegistry;
 use common::enums::tool::ControlMode;
 use common::enums::{ToolProtocol, ToolStatus};

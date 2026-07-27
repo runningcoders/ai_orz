@@ -2,7 +2,7 @@
 
 use crate::models::task::TaskPo;
 use crate::pkg::RequestContext;
-use crate::service::dao::task::{self, TaskDao};
+use crate::service::dao::task::TaskDao;
 use common::enums::{AssigneeType, TaskStatus};
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -102,7 +102,7 @@ async fn test_update_task(pool: SqlitePool) {
 
     let task_id = Uuid::now_v7().to_string();
     let assignee_id = "user-123";
-    let mut task = TaskPo::new(
+    let task = TaskPo::new(
         task_id.clone(),
         "Original Title".to_string(),
         "Original Description".to_string(),

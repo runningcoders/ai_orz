@@ -1,11 +1,7 @@
 //! Cortex DAO 测试
 
 use super::*;
-use crate::models::{
-    model_provider::{ModelProvider, ModelProviderPo},
-    tool::Tool,
-};
-use crate::pkg::request_context::RequestContext;
+use crate::models::model_provider::ModelProviderPo;
 use ::rig::tool::ToolDyn;
 use common::enums::{ModelCapability, ProviderType};
 use sqlx::SqlitePool;

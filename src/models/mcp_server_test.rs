@@ -1,4 +1,4 @@
-use super::{McpServerConfig, REDACTED_CONFIG_VALUE};
+use super::McpServerConfig;
 
 #[test]
 fn redacted_for_management_redacts_url_userinfo_and_query() {

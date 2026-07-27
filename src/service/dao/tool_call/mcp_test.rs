@@ -5,7 +5,7 @@
 
 use crate::models::mcp_server::{McpServerConfig, McpServerPo, McpTransport};
 use crate::models::tool::ToolPo;
-use crate::service::dao::tool_call::{self, McpToolCallDao, ToolCallDao};
+use crate::service::dao::tool_call::{self};
 use common::enums::ToolProtocol;
 use serde_json::json;
 

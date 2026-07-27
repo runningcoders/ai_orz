@@ -2,7 +2,7 @@ use crate::models::artifact::ArtifactPo;
 use crate::models::file::FileMeta;
 use crate::pkg::request_context::RequestContext;
 use crate::service::dao::artifact::{ArtifactDao, new};
-use common::enums::{FileType, TaskStatus};
+use common::enums::FileType;
 use common::error::Result;
 use sqlx::SqlitePool;
 use std::sync::Arc;

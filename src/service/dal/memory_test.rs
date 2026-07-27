@@ -2,7 +2,7 @@
 
 use crate::models::brain::CortexTrait;
 use crate::models::memory::{
-    KnowledgeNodeRelationPo, KnowledgeReferencePo, LongTermKnowledgeNodePo, Memory,
+    KnowledgeNodeRelationPo, LongTermKnowledgeNodePo, Memory,
     MemoryCreateParams, MemoryPo, MemoryTrace, ShortTermMemoryIndexPo,
 };
 use crate::models::model_provider::ModelProviderPo;
@@ -15,7 +15,6 @@ use crate::service::dao::memory::{
 };
 use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderQuery};
 use common::enums::{MemoryStatus, ModelCapability, ModelProviderStatus, ProviderType};
-use common::error::Error;
 use common::error::Result;
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -1375,7 +1374,7 @@ impl MemoryVectorDao for MockMemoryVectorDao {
 
 /// 初始化测试依赖（带向量搜索 Mock，可配置预设向量命中）
 async fn init_test_with_vector(
-    pool: SqlitePool,
+    _pool: SqlitePool,
     short_term_hits: Vec<(String, f32)>,
     knowledge_node_hits: Vec<(String, f32)>,
 ) -> Arc<dyn MemoryDal> {

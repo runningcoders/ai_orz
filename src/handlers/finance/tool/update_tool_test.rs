@@ -4,9 +4,7 @@ use serde_json::json;
 use sqlx::SqlitePool;
 
 use crate::models::tool::ToolPo;
-use crate::pkg::RequestContext;
 use crate::service::dao::tool;
-use common::error::Result;
 
 use super::update_tool::update_tool;
 

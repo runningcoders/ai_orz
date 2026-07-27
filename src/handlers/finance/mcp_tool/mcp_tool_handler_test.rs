@@ -6,7 +6,6 @@ use std::sync::Once;
 
 use crate::models::mcp_server::{McpServer, McpServerConfig, McpTransport};
 use crate::models::tool::ToolPo;
-use crate::pkg::RequestContext;
 use crate::pkg::tool_tracing::logger::ToolCallLogger;
 use crate::service::dao::tool;
 use crate::service::domain::finance::domain;

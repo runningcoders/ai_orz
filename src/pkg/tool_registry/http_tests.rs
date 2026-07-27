@@ -1,6 +1,5 @@
 use super::HttpToolConfig;
 use crate::models::tool::ToolPo;
-use crate::pkg::RequestContext;
 use crate::pkg::tool_registry::ToolRegistry;
 use common::enums::tool::ControlMode;
 use common::enums::{ToolProtocol, ToolStatus};
@@ -123,10 +122,8 @@ fn registry_creates_manual_http_core_tool_from_tool_po_config() {
 fn registry_uses_injected_http_protocol_factory() {
     use crate::models::tool::CoreTool;
     use crate::pkg::tool_registry::HttpToolFactory;
-    use anyhow::anyhow;
     use async_trait::async_trait;
-    use common::error::{Error, Result};
-    use rig::tool::ToolError;
+    use common::error::Result;
     use serde_json::Value;
     use std::sync::{Arc, Mutex};
 

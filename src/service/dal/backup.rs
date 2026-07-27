@@ -573,7 +573,7 @@ mod tests {
             .entries()
             .expect("list entries")
             .filter_map(|e| e.ok())
-            .filter_map(|mut e| {
+            .filter_map(|e| {
                 e.path()
                     .ok()
                     .map(|p| p.to_string_lossy().replace('\\', "/"))

@@ -17,8 +17,7 @@ mod tests {
     use crate::service::dao::agent::{AgentQuery, AgentSearch};
     use crate::service::dao::tool::{ToolQuery, ToolSearch};
     use async_trait::async_trait;
-    use common::enums::{AgentStatus, ControlMode, ToolProtocol, ToolStatus};
-    use common::error::Error;
+    use common::enums::{ControlMode, ToolProtocol, ToolStatus};
     use common::error::Result;
     use common::models::{AgentStats, ModelCallStats, StatsFetchOptions, ToolStats};
     use rig::tool::{ToolDyn, ToolError};

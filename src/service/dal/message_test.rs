@@ -9,7 +9,7 @@ use crate::pkg::RequestContext;
 use crate::service::dal::message::MessageDal;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::message;
-use crate::service::dao::message::{MessageQuery, MessageSearch, MessageVectorDao};
+use crate::service::dao::message::{MessageQuery, MessageSearch};
 use crate::service::dao::model_provider::{ModelProviderDao, ModelProviderQuery};
 use common::enums::{MessageRole, MessageStatus, MessageType};
 use common::error::Result;
