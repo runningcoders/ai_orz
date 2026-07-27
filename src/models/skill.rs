@@ -50,6 +50,7 @@ pub struct SkillPo {
 
 impl SkillPo {
     /// 创建新的 SkillPo
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: String,
         name: String,

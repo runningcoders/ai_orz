@@ -28,6 +28,14 @@ pub enum TraversalStrategy {
     DepthFirst,
 }
 
+/// 遍历过程中的可变状态包：把 3 个 &mut 累积器打包成单个 struct，
+/// 用于 `traverse_bfs` / `traverse_dfs` 内部方法的参数瘦身。
+struct TraverseState<'a> {
+    visited_nodes: &'a mut HashSet<String>,
+    visited_relations: &'a mut HashSet<String>,
+    result_relations: &'a mut Vec<KnowledgeNodeRelationPo>,
+}
+
 // ==================== Factory + Singleton ====================
 
 static MEMORY_DAL_INSTANCE: std::sync::OnceLock<Arc<dyn MemoryDal>> = std::sync::OnceLock::new();
@@ -460,9 +468,11 @@ impl MemoryDal for MemoryDalImpl {
                     seed_node_ids,
                     max_depth,
                     max_breadth,
-                    &mut visited_nodes,
-                    &mut visited_relations,
-                    &mut result_relations,
+                    TraverseState {
+                        visited_nodes: &mut visited_nodes,
+                        visited_relations: &mut visited_relations,
+                        result_relations: &mut result_relations,
+                    },
                 )
                 .await?;
             }
@@ -472,9 +482,11 @@ impl MemoryDal for MemoryDalImpl {
                     seed_node_ids,
                     max_depth,
                     max_breadth,
-                    &mut visited_nodes,
-                    &mut visited_relations,
-                    &mut result_relations,
+                    TraverseState {
+                        visited_nodes: &mut visited_nodes,
+                        visited_relations: &mut visited_relations,
+                        result_relations: &mut result_relations,
+                    },
                 )
                 .await?;
             }
@@ -721,10 +733,13 @@ impl MemoryDalImpl {
         seed_node_ids: &[String],
         max_depth: i32,
         max_breadth: i32,
-        visited_nodes: &mut HashSet<String>,
-        visited_relations: &mut HashSet<String>,
-        result_relations: &mut Vec<KnowledgeNodeRelationPo>,
+        state: TraverseState<'_>,
     ) -> Result<()> {
+        let TraverseState {
+            visited_nodes,
+            visited_relations,
+            result_relations,
+        } = state;
         let mut queue: VecDeque<(String, i32)> = VecDeque::new();
         for id in seed_node_ids {
             queue.push_back((id.clone(), 0));
@@ -804,10 +819,13 @@ impl MemoryDalImpl {
         seed_node_ids: &[String],
         max_depth: i32,
         max_breadth: i32,
-        visited_nodes: &mut HashSet<String>,
-        visited_relations: &mut HashSet<String>,
-        result_relations: &mut Vec<KnowledgeNodeRelationPo>,
+        state: TraverseState<'_>,
     ) -> Result<()> {
+        let TraverseState {
+            visited_nodes,
+            visited_relations,
+            result_relations,
+        } = state;
         let mut stack: Vec<(String, i32)> = Vec::new();
         for id in seed_node_ids.iter().rev() {
             stack.push((id.clone(), 0));

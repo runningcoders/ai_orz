@@ -73,6 +73,7 @@ impl fmt::Debug for ModelProvider {
 
 impl ModelProvider {
     /// 创建新的 ModelProvider
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         name: String,
         provider_type: ProviderType,
@@ -136,6 +137,7 @@ impl ModelProvider {
 }
 
 impl ModelProviderPo {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         name: String,
         provider_type: ProviderType,

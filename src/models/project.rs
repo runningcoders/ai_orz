@@ -78,6 +78,7 @@ impl Project {
     }
 
     /// 创建新的 Project
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: String,
         name: String,
@@ -165,6 +166,7 @@ impl Project {
 
 impl ProjectPo {
     /// 创建新的 ProjectPo
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: String,
         name: String,

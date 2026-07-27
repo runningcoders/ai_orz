@@ -130,6 +130,7 @@ impl Artifact {
     }
 
     /// 创建新的任务级产物，显式指定来源类型
+    #[allow(clippy::too_many_arguments)]
     pub fn new_task_with_source_type(
         project_id: String,
         task_id: String,
@@ -263,6 +264,7 @@ impl ArtifactPo {
     }
 
     /// Create a new task-level artifact with explicit source type.
+    #[allow(clippy::too_many_arguments)]
     pub fn new_task_with_source_type(
         project_id: String,
         task_id: String,

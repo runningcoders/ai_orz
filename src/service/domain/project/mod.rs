@@ -87,6 +87,7 @@ pub trait ProjectManage: Send + Sync {
     /// - A2A tasks/send 场景：handler 调 resolve_agent(ctx) 拿到 agent 后透传
     /// - 默认对话框场景：不创建 project
     /// Project domain 不感知 hr domain，只做纯粹持久化。
+    #[allow(clippy::too_many_arguments)]
     async fn create(
         &self,
         ctx: RequestContext,
@@ -156,6 +157,7 @@ pub trait ProjectManage: Send + Sync {
     ) -> Result<()>;
 
     /// 更新项目基本信息
+    #[allow(clippy::too_many_arguments)]
     async fn update_basic(
         &self,
         ctx: RequestContext,
@@ -182,6 +184,7 @@ pub trait ProjectManage: Send + Sync {
 #[async_trait]
 pub trait TaskManage: Send + Sync {
     /// 创建新任务
+    #[allow(clippy::too_many_arguments)]
     async fn create(
         &self,
         ctx: RequestContext,
@@ -197,6 +200,7 @@ pub trait TaskManage: Send + Sync {
     ) -> Result<Task>;
 
     /// 创建新任务（支持管理面完整可选字段）
+    #[allow(clippy::too_many_arguments)]
     async fn create_with_options(
         &self,
         ctx: RequestContext,
@@ -254,6 +258,7 @@ pub trait TaskManage: Send + Sync {
     async fn count_tasks(&self, ctx: RequestContext, query: TaskQuery) -> Result<u64>;
 
     /// 更新任务基本信息
+    #[allow(clippy::too_many_arguments)]
     async fn update_basic(
         &self,
         ctx: RequestContext,
@@ -299,6 +304,7 @@ pub trait TaskManage: Send + Sync {
 #[async_trait]
 pub trait ArtifactManage: Send + Sync {
     /// 创建 Attachment 引用型产物。
+    #[allow(clippy::too_many_arguments)]
     async fn create_attachment_artifact(
         &self,
         ctx: RequestContext,
@@ -313,6 +319,7 @@ pub trait ArtifactManage: Send + Sync {
     ) -> Result<Artifact>;
 
     /// 创建项目级产物
+    #[allow(clippy::too_many_arguments)]
     async fn create_project_artifact(
         &self,
         ctx: RequestContext,
@@ -325,6 +332,7 @@ pub trait ArtifactManage: Send + Sync {
     ) -> Result<Artifact>;
 
     /// 创建任务级产物
+    #[allow(clippy::too_many_arguments)]
     async fn create_task_artifact(
         &self,
         ctx: RequestContext,

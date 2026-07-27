@@ -127,6 +127,7 @@ impl Message {
     }
 
     /// 创建新 Message（完整参数，指定 project_id 和 task_id）
+    #[allow(clippy::too_many_arguments)]
     pub fn new_with_context(
         id: String,
         project_id: Option<String>,
@@ -166,6 +167,7 @@ impl Message {
 
     /// 创建新 Message（兼容旧接口，向后兼容）
     #[deprecated = "Use new_with_context instead to support project context"]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: String,
         task_id: String,
@@ -352,6 +354,7 @@ impl MessagePo {
     }
 
     /// 创建新的 MessagePo
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: String,
         project_id: Option<String>,
@@ -450,6 +453,7 @@ pub struct ToolCallMessage {
 
 impl ToolCallMessage {
     /// 创建新的工具调用请求
+    #[allow(clippy::too_many_arguments)]
     pub fn new_request(
         request_id: String,
         tool_id: String,

@@ -155,6 +155,7 @@ pub struct MessageChannelPo {
 
 impl MessageChannelPo {
     /// 创建新的 MessageChannelPo
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: String,
         org_id: String,

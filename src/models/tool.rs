@@ -283,6 +283,7 @@ impl Tool {
 
 impl ToolPo {
     /// 创建新 ToolPo（如果 id 为空自动生成 Uuid v7）
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: String,
         name: String,

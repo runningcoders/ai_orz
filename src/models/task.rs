@@ -85,6 +85,7 @@ impl Task {
     }
 
     /// 创建新的 Task
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: String,
         title: String,
@@ -206,6 +207,7 @@ impl Task {
 
 impl TaskPo {
     /// 创建新的 TaskPo
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: String,
         title: String,

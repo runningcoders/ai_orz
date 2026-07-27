@@ -60,6 +60,7 @@ impl UserPo {
     }
 
     /// 创建新的 UserPo
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: String,
         organization_id: String,
