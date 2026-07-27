@@ -401,43 +401,6 @@ pub async fn api_post_multipart<T: serde::de::DeserializeOwned>(
     })
 }
 
-#[derive(Debug, Clone)]
-pub struct StatsOptions {
-    pub with_stats: bool,
-    pub with_model_call_stats: bool,
-    pub stats_interval: Option<String>,
-}
-
-impl StatsOptions {
-    pub fn to_query_string(&self) -> String {
-        let mut params = Vec::new();
-        if self.with_stats {
-            params.push("with_stats=true".to_string());
-        }
-        if self.with_model_call_stats {
-            params.push("with_model_call_stats=true".to_string());
-        }
-        if let Some(interval) = &self.stats_interval {
-            params.push(format!("stats_interval={}", interval));
-        }
-        params.join("&")
-    }
-}
-
-pub fn build_url_with_stats(base_url: &str, options: Option<&StatsOptions>) -> String {
-    match options {
-        Some(opt) => {
-            let query = opt.to_query_string();
-            if query.is_empty() {
-                base_url.to_string()
-            } else {
-                format!("{}?{}", base_url, query)
-            }
-        }
-        None => base_url.to_string(),
-    }
-}
-
 /// 构造分页 URL：把 `PaginationParams` 序列化为 query string 附加到 base_url
 pub fn build_pagination_url(base_url: &str, pagination: &common::api::PaginationParams) -> String {
     let mut params: Vec<String> = Vec::new();

@@ -28,7 +28,7 @@ use dioxus_router::{Link, use_navigator};
 use std::collections::HashSet;
 use wasm_bindgen::{JsCast, closure::Closure};
 
-/// 构造带统计参数的 GetAgentRequest（4 处 get_agent 调用复用，避免重复 StatsOptions 字面量）
+/// 构造带统计参数的 GetAgentRequest（4 处 get_agent 调用复用，避免重复 stats 字段字面量）
 fn build_agent_stats_request(id: String) -> GetAgentRequest {
     GetAgentRequest {
         id,
