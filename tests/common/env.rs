@@ -33,8 +33,10 @@ pub async fn init_full_test_env(_pool: SqlitePool) -> RequestContext {
             //    `tests/http_handler_macro_test.rs::ensure_storage_initialized`.
             //    用 InMemory 而非 default LanceDb，避免 block_in_place 要求 multi-thread runtime
             let tmp = tempfile::tempdir().expect("创建临时目录失败");
-            let mut db_config = DatabaseConfig::default();
-            db_config.vector_store_type = VectorStoreType::InMemory;
+            let db_config = DatabaseConfig {
+                vector_store_type: VectorStoreType::InMemory,
+                ..Default::default()
+            };
             let stats_config = StatsConfig::default();
             ai_orz::pkg::storage::init(tmp.path(), &db_config, &stats_config).await;
             // Leak the tempdir so the SQLite file stays alive for the test process lifetime.

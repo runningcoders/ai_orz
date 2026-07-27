@@ -14,8 +14,6 @@ fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     crate::pkg::request_context_test_support::new_test_ctx(user_id, pool)
 }
 
-/// 测试插入消息和按 ID 查询
-
 /// 初始化测试环境
 fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDao + Send + Sync>, RequestContext) {
     crate::service::dao::message::init();
@@ -836,7 +834,7 @@ async fn test_list_by_project_id(pool: SqlitePool) -> Result<()> {
         None, // organization_id
         "test-user".to_string(),
     );
-    let _m1 = message_dao.insert(ctx.clone(), &m1).await?;
+    message_dao.insert(ctx.clone(), &m1).await?;
 
     let id2 = Uuid::now_v7().to_string();
     let m2 = MessagePo::new(
@@ -856,7 +854,7 @@ async fn test_list_by_project_id(pool: SqlitePool) -> Result<()> {
         None, // organization_id
         "test-user".to_string(),
     );
-    let _m2 = message_dao.insert(ctx.clone(), &m2).await?;
+    message_dao.insert(ctx.clone(), &m2).await?;
 
     let id3 = Uuid::now_v7().to_string();
     let m3 = MessagePo::new(
@@ -876,7 +874,7 @@ async fn test_list_by_project_id(pool: SqlitePool) -> Result<()> {
         None, // organization_id
         "test-user".to_string(),
     );
-    let _m3 = message_dao.insert(ctx.clone(), &m3).await?;
+    message_dao.insert(ctx.clone(), &m3).await?;
 
     // project-2: 1 条消息
     let id4 = Uuid::now_v7().to_string();
@@ -897,7 +895,7 @@ async fn test_list_by_project_id(pool: SqlitePool) -> Result<()> {
         None, // organization_id
         "test-user".to_string(),
     );
-    let _m4 = message_dao.insert(ctx.clone(), &m4).await?;
+    message_dao.insert(ctx.clone(), &m4).await?;
 
     // 查询 project-1 应该返回 3 条
     let list = message_dao

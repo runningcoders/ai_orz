@@ -474,13 +474,13 @@ pub fn format_timestamp(secs: u64) -> String {
         [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
     };
 
-    for i in 0..12 {
-        if d < days_in_months[i] {
+    for (i, &dim) in days_in_months.iter().enumerate() {
+        if d < dim {
             month = i + 1;
             day = d + 1;
             break;
         }
-        d -= days_in_months[i];
+        d -= dim;
     }
 
     format!(

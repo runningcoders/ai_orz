@@ -5,6 +5,7 @@
 //! 消息渠道配置：
 //! - 支持为用户绑定多个推送渠道
 //! - 支持为特定 Agent 绑定专用渠道
+//!
 //! MessageChannel 持久化对象和完整实体
 
 use common::constants::utils;

@@ -24,7 +24,7 @@ use common::enums::{AssigneeType, FileType, ProjectStatus, TaskStatus};
 use common::error::Result;
 
 mod artifact;
-mod project;
+mod service;
 mod task;
 
 #[cfg(test)]

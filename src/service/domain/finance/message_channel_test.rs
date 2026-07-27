@@ -263,14 +263,14 @@ mod tests {
         let org_id = "test-org-004";
 
         // 创建不同类型的渠道
-        let types = vec![ChannelType::Email, ChannelType::Webhook, ChannelType::Slack];
+        let types = [ChannelType::Email, ChannelType::Webhook, ChannelType::Slack];
         for (i, channel_type) in types.iter().enumerate() {
             let po = MessageChannelPo::new(
                 format!("query-channel-{}", i),
                 org_id.to_string(),
                 user_id.to_string(),
                 None,
-                channel_type.clone(),
+                *channel_type,
                 format!("Query Channel {}", i),
                 None,
                 None,

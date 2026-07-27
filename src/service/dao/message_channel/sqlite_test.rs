@@ -13,8 +13,6 @@ fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     crate::pkg::request_context_test_support::new_test_ctx(user_id, pool)
 }
 
-/// 测试插入渠道和按 ID 查询
-
 /// 初始化测试环境
 fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageChannelDao + Send + Sync>, RequestContext) {
     message_channel::init();

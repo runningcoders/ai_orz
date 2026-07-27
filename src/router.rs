@@ -63,7 +63,7 @@ pub fn create_router(frontend_dist_dir: &str, config: Arc<AppConfig>) -> Router 
 fn public_routes(config: Arc<AppConfig>) -> Router {
     use crate::handlers::organization::auth;
     use crate::handlers::organization::initialize_system;
-    use crate::handlers::organization::organization;
+    use crate::handlers::organization::organizations;
 
     Router::new()
         // System initialization (only when no organizations exist)
@@ -81,7 +81,7 @@ fn public_routes(config: Arc<AppConfig>) -> Router {
         // List all organizations - public query (for login page selection, no login required)
         .route(
             "/organization/list",
-            get(organization::list_organizations_handler),
+            get(organizations::list_organizations_handler),
         )
         // RequestContext 提取中间件（公开路由也需要 log_id 等上下文）
         .layer(axum::middleware::from_fn(move |req, next| {
@@ -95,6 +95,7 @@ fn public_routes(config: Arc<AppConfig>) -> Router {
 /// 中间件执行顺序（洋葱模型）：
 /// 1. jwt_auth_middleware（外层）- 验证 JWT，将用户信息写入请求头
 /// 2. request_context_middleware（内层）- 从请求头提取信息创建 RequestContext
+///
 /// 这样 RequestContext 就能包含 JWT 注入的用户信息
 fn protected_routes(config: Arc<AppConfig>) -> Router {
     Router::new()
@@ -141,27 +142,27 @@ fn project_routes() -> Router {
     Router::new()
         .route(
             "/projects",
-            post(handlers::project::project::create_project_handler),
+            post(handlers::project::projects::create_project_handler),
         )
         .route(
             "/projects",
-            get(handlers::project::project::list_projects_handler),
+            get(handlers::project::projects::list_projects_handler),
         )
         .route(
             "/projects/query",
-            post(handlers::project::project::query_projects_handler),
+            post(handlers::project::projects::query_projects_handler),
         )
         .route(
             "/projects/{id}",
-            get(handlers::project::project::get_project_handler),
+            get(handlers::project::projects::get_project_handler),
         )
         .route(
             "/projects/{id}",
-            put(handlers::project::project::update_project_handler),
+            put(handlers::project::projects::update_project_handler),
         )
         .route(
             "/projects/{id}/status",
-            put(handlers::project::project::update_project_status_handler),
+            put(handlers::project::projects::update_project_status_handler),
         )
 }
 
@@ -220,7 +221,7 @@ fn artifact_routes() -> Router {
 
 fn organization_protected_routes() -> Router {
     // Each handler is in its own file in the subdirectory
-    use crate::handlers::organization::organization;
+    use crate::handlers::organization::organizations;
     use crate::handlers::organization::organization_me;
     use crate::handlers::organization::user;
 
@@ -234,18 +235,18 @@ fn organization_protected_routes() -> Router {
             "/me",
             put(organization_me::update_current_organization_handler),
         )
-        .route("/", get(organization::list_organizations_handler))
+        .route("/", get(organizations::list_organizations_handler))
         .route(
             "/{organization_id}",
-            delete(organization::delete_organization_handler),
+            delete(organizations::delete_organization_handler),
         )
         .route(
             "/{organization_id}",
-            get(organization::get_organization_handler),
+            get(organizations::get_organization_handler),
         )
         .route(
             "/{organization_id}",
-            put(organization::update_organization_handler),
+            put(organizations::update_organization_handler),
         )
         .nest(
             "/user",

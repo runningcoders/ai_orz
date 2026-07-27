@@ -338,7 +338,6 @@ fn push_query_filters<'args>(
             for id in ids {
                 separated.push_bind(id.clone());
             }
-            drop(separated);
             builder.push(")");
         }
     if let Some(root_user_id) = &query.root_user_id {
@@ -353,7 +352,6 @@ fn push_query_filters<'args>(
             for s in status_list {
                 separated.push_bind(*s as i32);
             }
-            drop(separated);
             builder.push(")");
         }
 }

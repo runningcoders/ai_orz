@@ -220,7 +220,6 @@ WHERE tasks_fts MATCH "#,
                 for s in status_list {
                     separated.push_bind(*s as i32);
                 }
-                drop(separated);
                 builder.push(")");
             }
 
@@ -440,7 +439,6 @@ fn push_query_filters<'args>(
             for id in ids {
                 separated.push_bind(id.clone());
             }
-            drop(separated);
             builder.push(")");
         }
     if let Some(assignee_type) = &query.assignee_type {
@@ -465,7 +463,6 @@ fn push_query_filters<'args>(
             for s in status_list {
                 separated.push_bind(*s as i32);
             }
-            drop(separated);
             builder.push(")");
         }
 }

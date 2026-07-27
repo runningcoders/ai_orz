@@ -70,13 +70,13 @@ pub enum MemoryRole {
     Summary,
 }
 
-impl ToString for MemoryRole {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for MemoryRole {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MemoryRole::System => "system".to_string(),
-            MemoryRole::User => "user".to_string(),
-            MemoryRole::Assistant => "assistant".to_string(),
-            MemoryRole::Summary => "summary".to_string(),
+            MemoryRole::System => write!(f, "system"),
+            MemoryRole::User => write!(f, "user"),
+            MemoryRole::Assistant => write!(f, "assistant"),
+            MemoryRole::Summary => write!(f, "summary"),
         }
     }
 }
@@ -134,25 +134,25 @@ pub enum KnowledgeRelationType {
     Custom,
 }
 
-impl ToString for KnowledgeRelationType {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for KnowledgeRelationType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            KnowledgeRelationType::Related => "related".to_string(),
-            KnowledgeRelationType::Contains => "contains".to_string(),
-            KnowledgeRelationType::ContainedBy => "contained_by".to_string(),
-            KnowledgeRelationType::Depends => "depends".to_string(),
-            KnowledgeRelationType::DependedBy => "depended_by".to_string(),
-            KnowledgeRelationType::Prerequisite => "prerequisite".to_string(),
-            KnowledgeRelationType::Followup => "followup".to_string(),
-            KnowledgeRelationType::Similar => "similar".to_string(),
-            KnowledgeRelationType::Opposite => "opposite".to_string(),
-            KnowledgeRelationType::Causes => "causes".to_string(),
-            KnowledgeRelationType::CausedBy => "caused_by".to_string(),
-            KnowledgeRelationType::InstanceOf => "instance_of".to_string(),
-            KnowledgeRelationType::CategoryOf => "category_of".to_string(),
-            KnowledgeRelationType::AttributeOf => "attribute_of".to_string(),
-            KnowledgeRelationType::ValueOf => "value_of".to_string(),
-            KnowledgeRelationType::Custom => "custom".to_string(),
+            KnowledgeRelationType::Related => write!(f, "related"),
+            KnowledgeRelationType::Contains => write!(f, "contains"),
+            KnowledgeRelationType::ContainedBy => write!(f, "contained_by"),
+            KnowledgeRelationType::Depends => write!(f, "depends"),
+            KnowledgeRelationType::DependedBy => write!(f, "depended_by"),
+            KnowledgeRelationType::Prerequisite => write!(f, "prerequisite"),
+            KnowledgeRelationType::Followup => write!(f, "followup"),
+            KnowledgeRelationType::Similar => write!(f, "similar"),
+            KnowledgeRelationType::Opposite => write!(f, "opposite"),
+            KnowledgeRelationType::Causes => write!(f, "causes"),
+            KnowledgeRelationType::CausedBy => write!(f, "caused_by"),
+            KnowledgeRelationType::InstanceOf => write!(f, "instance_of"),
+            KnowledgeRelationType::CategoryOf => write!(f, "category_of"),
+            KnowledgeRelationType::AttributeOf => write!(f, "attribute_of"),
+            KnowledgeRelationType::ValueOf => write!(f, "value_of"),
+            KnowledgeRelationType::Custom => write!(f, "custom"),
         }
     }
 }

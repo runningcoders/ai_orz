@@ -105,7 +105,7 @@ impl SsePushDao for SsePushDaoImpl {
     }
 
     async fn unregister(&self, _ctx: RequestContext, connection_id: &str) {
-        if let Some(_) = self.connections.write().await.remove(connection_id) {
+        if self.connections.write().await.remove(connection_id).is_some() {
             let mut user_connections = self.user_connections.write().await;
             for conn_set in user_connections.values_mut() {
                 conn_set.remove(connection_id);
@@ -158,7 +158,7 @@ mod tests {
         let ctx = new_ctx();
         let mut rx = dao.register(ctx.clone(), "user_1", "conn_1").await;
         let result = dao.push(ctx.clone(), "user_1", "hello").await.unwrap();
-        assert_eq!(result.success, true);
+        assert!(result.success);
         assert_eq!(result.delivered_count, 1);
         assert_eq!(rx.try_recv().unwrap(), "hello");
     }

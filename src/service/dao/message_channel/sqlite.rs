@@ -317,7 +317,6 @@ fn push_query_filters<'args>(
             for s in status_in {
                 separated.push_bind(*s as i32);
             }
-            drop(separated);
             builder.push(")");
         }
 }

@@ -415,12 +415,11 @@ async fn test_sync_builtin_tools_to_db(pool: SqlitePool) {
     let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
 
     // 直接测试 sync 不会 panic 即可
-    let inserted_count = tool_dao
+    let _inserted_count = tool_dao
         .sync_builtin_tools_to_db(ctx.clone())
         .await
         .unwrap();
     // 不判断数量，因为测试环境可能没有注册内置工具
-    assert!(inserted_count >= 0);
 }
 
 #[sqlx::test]

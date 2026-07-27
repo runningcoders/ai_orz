@@ -104,6 +104,5 @@ mod tests {
         }
 
         // 如果走到这里就成功了
-        assert!(true);
     }
 }

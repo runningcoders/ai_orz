@@ -20,7 +20,7 @@ async fn test_insert_artifact(pool: SqlitePool) -> Result<()> {
     let (dao, ctx) = init_test_env(pool);
 
     let file_meta = FileMeta::new(
-        format!("20260415/test.md"),
+        "20260415/test.md".to_string(),
         "text/markdown".to_string(),
         1024,
     );
@@ -52,7 +52,7 @@ async fn test_insert_project_level_artifact(pool: SqlitePool) -> Result<()> {
     let (dao, ctx) = init_test_env(pool);
 
     let file_meta = FileMeta::new(
-        format!("20260415/project-overview.md"),
+        "20260415/project-overview.md".to_string(),
         "text/markdown".to_string(),
         2048,
     );
@@ -163,7 +163,7 @@ async fn test_update_status(pool: SqlitePool) -> Result<()> {
     let (dao, ctx) = init_test_env(pool);
 
     let file_meta = FileMeta::new(
-        format!("20260415/test.png"),
+        "20260415/test.png".to_string(),
         "image/png".to_string(),
         204800,
     );
@@ -193,7 +193,7 @@ async fn test_delete_artifact(pool: SqlitePool) -> Result<()> {
     let (dao, ctx) = init_test_env(pool);
 
     let file_meta = FileMeta::new(
-        format!("20260415/test.bin"),
+        "20260415/test.bin".to_string(),
         "application/octet-stream".to_string(),
         1000,
     );
@@ -268,7 +268,7 @@ async fn test_all_file_types(pool: SqlitePool) -> Result<()> {
         assert_eq!(found.file_type, file_type);
     }
 
-    let list = dao.list_by_task(ctx.clone(), &"task-1".to_string()).await?;
+    let list = dao.list_by_task(ctx.clone(), "task-1").await?;
     assert_eq!(list.len(), 5);
 
     Ok(())

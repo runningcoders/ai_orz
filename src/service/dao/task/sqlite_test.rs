@@ -12,8 +12,6 @@ fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
     crate::pkg::request_context_test_support::new_test_ctx(user_id, pool)
 }
 
-/// 测试插入新任务并按 ID 查询
-
 /// 初始化测试环境
 fn init_test_env() -> Arc<dyn TaskDao + Send + Sync> {
     crate::service::dao::task::init();

@@ -106,13 +106,13 @@ impl LoggingDecorator {
 
         // Record tool call stat event for metrics aggregation
         // This covers ALL tool calls (manual + auto), ensuring complete stats coverage
-        record_tool_call_stat(ctx.clone(), &entry, &args_cloned);
+        record_tool_call_stat(ctx.clone(), &entry, &args_cloned).await;
 
         (result, entry)
     }
 }
 
-fn record_tool_call_stat(ctx: RequestContext, entry: &ToolCallEntry, args: &Value) {
+async fn record_tool_call_stat(ctx: RequestContext, entry: &ToolCallEntry, args: &Value) {
     let args_len = serde_json::to_string(args)
         .map(|s| s.len() as u64)
         .unwrap_or(0);
@@ -145,7 +145,7 @@ fn record_tool_call_stat(ctx: RequestContext, entry: &ToolCallEntry, args: &Valu
 
     if let Some(stats) = ctx.stats_opt() {
         let ctx_clone = ctx.clone();
-        let _ = stats.record(ctx_clone, event);
+        let _ = stats.record(ctx_clone, event).await;
     }
 }
 

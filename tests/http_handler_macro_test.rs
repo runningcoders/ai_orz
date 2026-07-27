@@ -39,8 +39,10 @@ async fn ensure_storage_initialized() {
             // 用临时目录初始化 storage（InMemory 向量 + 临时 SQLite + 临时 Stats）
             // 用 InMemory 而非 default LanceDb，避免 block_in_place 要求 multi-thread runtime
             let tmp = tempfile::tempdir().expect("创建临时目录失败");
-            let mut db_config = DatabaseConfig::default();
-            db_config.vector_store_type = VectorStoreType::InMemory;
+            let db_config = DatabaseConfig {
+                vector_store_type: VectorStoreType::InMemory,
+                ..Default::default()
+            };
             let stats_config = StatsConfig::default();
             storage::init(tmp.path(), &db_config, &stats_config).await;
             // 注意：tmp 目录会被 drop，但 SQLite 文件已打开连接，不影响后续测试

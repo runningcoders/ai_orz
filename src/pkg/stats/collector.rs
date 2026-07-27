@@ -77,6 +77,8 @@ pub struct AggregationRow {
     pub aggregations: HashMap<String, f64>,
 }
 
+type StatsTableEntry = (String, Arc<dyn ErasedStatTable>, ErasedBuffer);
+
 /// Top-level Stats instance
 ///
 /// Manages multiple statistic tables, provides automatic batching and flushing.
@@ -92,7 +94,7 @@ pub struct Stats {
     /// Batch size for automatic flush
     batch_size: usize,
     /// Registered tables: event TypeId → (table name, erased table, erased buffer)
-    tables: Mutex<HashMap<TypeId, (String, Arc<dyn ErasedStatTable>, ErasedBuffer)>>,
+    tables: Mutex<HashMap<TypeId, StatsTableEntry>>,
     /// Registered tables by name: table name → erased table
     tables_by_name: Mutex<HashMap<String, Arc<dyn ErasedStatTable>>>,
 }

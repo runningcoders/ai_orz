@@ -294,6 +294,7 @@ impl MessageChannelDalImpl {
     /// 1. 创建新的 DAO 文件
     /// 2. 在 MessageChannelDalImpl 结构体中添加字段
     /// 3. 在这个 match 中加一行
+    ///
     /// 漏加了？编译直接报错！✅
     async fn push_to_channel(
         &self,

@@ -235,25 +235,17 @@ pub fn register_handler_tool(args: TokenStream, input: TokenStream) -> TokenStre
 
 fn extract_output_type(ty: &Type) -> &Type {
     // We expect: Result<Output, AppError> (old) or Result<Output> (new with common::error::Result type alias)
-    match ty {
-        Type::Path(type_path) => {
-            if let Some(last_segment) = type_path.path.segments.last() {
-                match &last_segment.arguments {
-                    syn::PathArguments::AngleBracketed(syn::AngleBracketedGenericArguments {
-                        args,
-                        ..
-                    }) => {
-                        // If 1 argument: it's Result<Output> -> return the only argument
-                        // If 2 arguments: it's Result<Output, AppError> -> return the first argument
-                        if let Some(syn::GenericArgument::Type(output)) = args.first() {
-                            return output;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        _ => {}
+    if let Type::Path(type_path) = ty
+        && let Some(last_segment) = type_path.path.segments.last()
+        && let syn::PathArguments::AngleBracketed(syn::AngleBracketedGenericArguments {
+            args,
+            ..
+        }) = &last_segment.arguments
+        && let Some(syn::GenericArgument::Type(output)) = args.first()
+    {
+        // If 1 argument: it's Result<Output> -> return the only argument
+        // If 2 arguments: it's Result<Output, AppError> -> return the first argument
+        return output;
     }
     panic!("Expected return type to be Result<Output> or Result<Output, AppError>");
 }
@@ -575,6 +567,7 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
 /// named fields of the struct (regardless of #[param] annotation), used to detect empty unit
 /// structs for which no `Json` extractor should be generated. `flattened_query_fields` holds
 /// query fields annotated with `#[serde(flatten)]`.
+#[allow(clippy::type_complexity)]
 fn collect_path_and_query_fields_from_type(
     path: syn::Path,
 ) -> (
@@ -593,102 +586,93 @@ fn collect_path_and_query_fields_from_type(
     // common/src/api/**/*.rs
     let pattern = format!("{}/**/*.rs", workspace_root);
 
-    for entry in glob::glob(&pattern).unwrap() {
-        if let Ok(path) = entry {
-            let content = std::fs::read_to_string(path).ok();
-            if let Some(content) = content {
-                let syntax = syn::parse_file(&content).ok();
-                if let Some(syntax) = syntax {
-                    for item in &syntax.items {
-                        if let syn::Item::Struct(item_struct) = item
-                            && item_struct.ident.to_string() == type_name
-                        {
-                                // Found it! Collect fields with #[param(source = "...")] attribute
-                                let mut path_fields = Vec::new();
-                                let mut query_fields = Vec::new();
-                                let mut flattened_query_fields = Vec::new();
-                                // Count named fields (Fields::Named has idents; Fields::Unit has none)
-                                let total_named_fields = match &item_struct.fields {
-                                    syn::Fields::Named(named) => named.named.len(),
-                                    syn::Fields::Unnamed(unnamed) => unnamed.unnamed.len(),
-                                    syn::Fields::Unit => 0,
-                                };
-                                for field in &item_struct.fields {
-                                    for attr in &field.attrs {
-                                        if attr.path().is_ident("param") {
-                                            // `#[param(source = "path")]` 整体形式是 Meta::List：
-                                            //   attr.path = "param"，tokens = `source = "path"`
-                                            // 修复前 bug：用 `Meta::NameValue` 匹配整个 attr.meta，
-                                            //   但 attr.meta 实际是 `Meta::List`，导致所有 #[param]
-                                            //   标注被静默忽略，path/query 字段全部被当作 body。
-                                            //   修复方式：先匹配 Meta::List，再用 parse_args 解析内层。
-                                            if let Meta::List(meta_list) = &attr.meta
-                                                && let Ok(nv) =
-                                                    meta_list.parse_args::<MetaNameValue>()
-                                                && nv.path.is_ident("source")
-                                                && let syn::Expr::Lit(syn::ExprLit {
-                                                    lit: Lit::Str(s),
-                                                    ..
-                                                }) = &nv.value
-                                            {
-                                                match s.value().as_str() {
-                                                    "path" => {
-                                                        if let Some(ident) =
-                                                            &field.ident
-                                                        {
-                                                            path_fields.push((
-                                                                ident.clone(),
-                                                                field.ty.clone(),
-                                                            ));
-                                                        }
-                                                    }
-                                                    "query" => {
-                                                        if let Some(ident) =
-                                                            &field.ident
-                                                        {
-                                                            // 检查是否有 #[serde(flatten)] 属性
-                                                            let is_flattened = field.attrs.iter().any(|attr| {
-                                                                if attr.path().is_ident("serde")
-                                                                    && let Meta::List(meta_list) = &attr.meta
-                                                                {
-                                                                    let tokens_str = meta_list.tokens.to_string();
-                                                                    return tokens_str.contains("flatten");
-                                                                }
-                                                                false
-                                                            });
-
-                                                            if is_flattened {
-                                                                flattened_query_fields
-                                                                    .push((
-                                                                        ident.clone(),
-                                                                        field
-                                                                            .ty
-                                                                            .clone(),
-                                                                    ));
-                                                            } else {
-                                                                query_fields.push((
-                                                                    ident.clone(),
-                                                                    field.ty.clone(),
-                                                                ));
-                                                            }
-                                                        }
-                                                    }
-                                                    "body" => {
-                                                        // body is default, no need to collect
-                                                    }
-                                                    _ => {}
+    for path in glob::glob(&pattern).unwrap().flatten() {
+        let content = std::fs::read_to_string(path).ok();
+        if let Some(content) = content {
+            let syntax = syn::parse_file(&content).ok();
+            if let Some(syntax) = syntax {
+                for item in &syntax.items {
+                    if let syn::Item::Struct(item_struct) = item
+                        && item_struct.ident == type_name
+                    {
+                        // Found it! Collect fields with #[param(source = "...")] attribute
+                        let mut path_fields = Vec::new();
+                        let mut query_fields = Vec::new();
+                        let mut flattened_query_fields = Vec::new();
+                        // Count named fields (Fields::Named has idents; Fields::Unit has none)
+                        let total_named_fields = match &item_struct.fields {
+                            syn::Fields::Named(named) => named.named.len(),
+                            syn::Fields::Unnamed(unnamed) => unnamed.unnamed.len(),
+                            syn::Fields::Unit => 0,
+                        };
+                        for field in &item_struct.fields {
+                            for attr in &field.attrs {
+                                if attr.path().is_ident("param") {
+                                    // `#[param(source = "path")]` 整体形式是 Meta::List：
+                                    //   attr.path = "param"，tokens = `source = "path"`
+                                    // 修复前 bug：用 `Meta::NameValue` 匹配整个 attr.meta，
+                                    //   但 attr.meta 实际是 `Meta::List`，导致所有 #[param]
+                                    //   标注被静默忽略，path/query 字段全部被当作 body。
+                                    //   修复方式：先匹配 Meta::List，再用 parse_args 解析内层。
+                                    if let Meta::List(meta_list) = &attr.meta
+                                        && let Ok(nv) =
+                                            meta_list.parse_args::<MetaNameValue>()
+                                        && nv.path.is_ident("source")
+                                        && let syn::Expr::Lit(syn::ExprLit {
+                                            lit: Lit::Str(s),
+                                            ..
+                                        }) = &nv.value
+                                    {
+                                        match s.value().as_str() {
+                                            "path" => {
+                                                if let Some(ident) = &field.ident {
+                                                    path_fields.push((
+                                                        ident.clone(),
+                                                        field.ty.clone(),
+                                                    ));
                                                 }
                                             }
+                                            "query" => {
+                                                if let Some(ident) = &field.ident {
+                                                    // 检查是否有 #[serde(flatten)] 属性
+                                                    let is_flattened = field.attrs.iter().any(|attr| {
+                                                        if attr.path().is_ident("serde")
+                                                            && let Meta::List(meta_list) = &attr.meta
+                                                        {
+                                                            let tokens_str = meta_list.tokens.to_string();
+                                                            return tokens_str.contains("flatten");
+                                                        }
+                                                        false
+                                                    });
+
+                                                    if is_flattened {
+                                                        flattened_query_fields.push((
+                                                            ident.clone(),
+                                                            field.ty.clone(),
+                                                        ));
+                                                    } else {
+                                                        query_fields.push((
+                                                            ident.clone(),
+                                                            field.ty.clone(),
+                                                        ));
+                                                    }
+                                                }
+                                            }
+                                            "body" => {
+                                                // body is default, no need to collect
+                                            }
+                                            _ => {}
                                         }
                                     }
                                 }
-                                return (
-                                    path_fields,
-                                    query_fields,
-                                    flattened_query_fields,
-                                    total_named_fields,
-                                );
+                            }
                         }
+                        return (
+                            path_fields,
+                            query_fields,
+                            flattened_query_fields,
+                            total_named_fields,
+                        );
                     }
                 }
             }

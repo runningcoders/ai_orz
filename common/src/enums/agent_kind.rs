@@ -69,6 +69,7 @@ impl AgentKind {
     }
 
     /// 从字符串解析（不区分大小写）
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "cli" => Self::Cli,
