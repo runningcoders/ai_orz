@@ -207,11 +207,18 @@ jobs:
     # Tarpaulin 主要支持 Linux，这里 runs-on 已是 ubuntu-latest。
     # Baseline: 40.79% (6560/16083 lines, 2026-07-27 实测，不带 --all-features)
     # 门槛设为 35%，留 ~5% 缓冲避免小幅波动误报。
-    # 注意：--lib 是 tarpaulin 自己的 flag（只测 lib target），
-    #       不能写成 `-- --lib`（那是传给 test binary 的，会报 Unrecognized option）
+    # 注意：
+    # - --lib 是 tarpaulin 自己的 flag（只测 lib target），
+    #   不能写成 `-- --lib`（那是传给 test binary 的，会报 Unrecognized option）
+    # - 不用 --workspace：本地 baseline 40.79% 是只测 ai_orz 主 crate 测出的，
+    #   加 --workspace 会测 common/ai_orz_macros 等 crate，与 baseline 不一致
+    # - --engine llvm：比默认 auto（ptrace）更稳定，不依赖 ptrace 权限
+    # - --no-fail-fast：测试失败也继续收集覆盖数据
+    # - --skip-clean：跳过 cargo clean，复用部分编译产物（tarpaulin 默认会 clean）
     - name: Generate coverage report
       run: |
-        cargo tarpaulin --workspace --lib --exclude frontend --out Xml --out Html \
+        cargo tarpaulin --lib --engine llvm --no-fail-fast --skip-clean \
+          --out Xml --out Html \
           --output-dir ./coverage \
           --exclude-files "tests/common/*" \
           --fail-under 35
