@@ -184,6 +184,15 @@ frontend/
 - **Cookie 认证**：基于 HttpOnly Cookie（JWT），浏览器自动携带
 - **类型化 helper**：`api_get`/`api_post`/`api_put`/`api_delete`/`api_post_multipart` 等
 - **错误处理**：`parse_api_error_from_body()` 和 `parse_error_response()` 辅助函数
+- **URL 拼接 helper**：`build_pagination_url`（分页 query）、`build_query_string`（键值对 query），统一收敛在 `api/mod.rs`
+
+#### API 方法签名约定
+
+- **拆参数方法**（path + query + body 混合）：统一接受 `common::api::*Request` 协议结构体作为入参，URL 拼接逻辑由方法内部手工处理（用 `build_pagination_url` / `build_query_string` helper），调用方无需关心 path/query/body 分配
+- **body-only 方法**：直接接受协议结构体作为 body（如 `send_message_to_agent(req)`）
+- **单字段方法**（如 `delete_xxx(id)`、`pause_cron_trigger(id)`）：保持原始类型，不包一层 `DeleteXxxRequest`
+
+改造原则：前后端 API 签名对称，协议结构体为 single source of truth。统计参数（`with_stats`/`with_model_call_stats`/`stats_interval` 等）已纳入对应 `GetXxxRequest`，废弃了原 `StatsOptions`。
 
 ### 4. 全局状态管理
 
