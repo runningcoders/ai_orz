@@ -177,8 +177,8 @@ jobs:
     - name: Install sccache
       uses: mozilla-actions/sccache-action@v0.0.6
 
-    - name: Install cargo-tarpaulin
-      run: cargo install --locked cargo-tarpaulin || true
+    - name: Install cargo-llvm-cov
+      uses: taiki-e/install-action@cargo-llvm-cov
 
     - name: Configure sccache (local disk mode)
       run: |
@@ -204,24 +204,26 @@ jobs:
     - name: Start sccache server
       run: sccache --start-server || true
 
-    # Tarpaulin 主要支持 Linux，这里 runs-on 已是 ubuntu-latest。
-    # Baseline: 40.79% (6560/16083 lines, 2026-07-27 实测，不带 --all-features)
-    # 门槛设为 35%，留 ~5% 缓冲避免小幅波动误报。
-    # 注意：
-    # - --lib 是 tarpaulin 自己的 flag（只测 lib target），
-    #   不能写成 `-- --lib`（那是传给 test binary 的，会报 Unrecognized option）
-    # - 不用 --workspace：本地 baseline 40.79% 是只测 ai_orz 主 crate 测出的，
-    #   加 --workspace 会测 common/ai_orz_macros 等 crate，与 baseline 不一致
-    # - --engine llvm：比默认 auto（ptrace）更稳定，不依赖 ptrace 权限
-    # - --no-fail-fast：测试失败也继续收集覆盖数据
-    # - --skip-clean：跳过 cargo clean，复用部分编译产物（tarpaulin 默认会 clean）
+    # 用 cargo-llvm-cov 替代 tarpaulin：
+    # - 纯 LLVM source-based coverage，不依赖 ptrace，更稳定
+    # - --ignore-filename-regex 在报告阶段过滤掉依赖库、测试脚手架、build script
+    # - --no-clean 复用编译产物，避免重复 clean
+    # - --no-fail-fast 测试失败也继续收集覆盖数据
+    # - --fail-under-lines 直接按行覆盖率门槛
+    #
+    # 关于依赖库重编：instrument-coverage 是全局 RUSTFLAGS，依赖库也会被 instrument。
+    # 这是 LLVM source-based coverage 的固有限制（无法只 instrument workspace 成员）。
+    # 优化手段：
+    # 1. sccache 命中：相同 RUSTFLAGS 的依赖库编译结果按内容寻址缓存
+    # 2. --no-clean：避免 tarpaulin 默认的 clean 行为
+    # 3. --ignore-filename-regex：报告阶段过滤依赖库，只统计 workspace 代码
     - name: Generate coverage report
       run: |
-        cargo tarpaulin --lib --engine llvm --no-fail-fast --skip-clean \
-          --out Xml --out Html \
+        cargo llvm-cov --lib --no-clean --no-fail-fast \
+          --ignore-filename-regex "(tests/common/|/cargo/registry/|/rustc/|build.rs|target/)" \
           --output-dir ./coverage \
-          --exclude-files "tests/common/*" \
-          --fail-under 35
+          --fail-under-lines 35 \
+          --html
 
     - name: Print sccache stats
       if: always()

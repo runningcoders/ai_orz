@@ -384,10 +384,10 @@ assert_eq!(data.get("id").and_then(|v| v.as_str()), Some(agent_id.as_str()));
 | 门槛 | 配置 | 说明 |
 |------|------|------|
 | **clippy** | `cargo clippy --all-targets -- -D warnings` | 零容忍，任何 warning 都会阻断 CI |
-| **覆盖率** | `cargo tarpaulin --fail-under 35` | baseline 40.79%，门槛 35% 留 ~5% 缓冲 |
+| **覆盖率** | `cargo llvm-cov --fail-under-lines 35` | 纯 LLVM source-based coverage，门槛 35% |
 | **集成测试** | `cargo test --test '*'`（并行） | 29 个集成测试，3.7s 跑完 |
 
-**覆盖率说明**：CI 命令 `cargo tarpaulin --lib --engine llvm` 只统计 ai_orz 主 crate 的单元测试覆盖率（baseline 40.79%），不包含 common/ai_orz_macros 等 workspace 其他 crate，也不包含集成测试覆盖。如果加上集成测试，实际覆盖率会更高。未来可考虑改用 `--tests` 标志统计包含集成测试的覆盖率。
+**覆盖率说明**：CI 用 `cargo llvm-cov --lib` 只统计 ai_orz 主 crate 的单元测试覆盖率（不含集成测试）。`--ignore-filename-regex` 过滤依赖库、测试脚手架、build script，只统计 workspace 代码。如果加上集成测试（`--tests`），实际覆盖率会更高。
 
 ### 集成测试套件清单
 
