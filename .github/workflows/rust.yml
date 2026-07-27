@@ -50,11 +50,8 @@ jobs:
     - name: Format check
       run: cargo fmt --all -- --check
 
-    # NOTE: 项目当前存在大量预先存在的 clippy warning（约 440+），大部分是历史遗留。
-    # 这里只验证 clippy 能否编译通过，不启用 `-D warnings`，避免 CI 一直红。
-    # 未来清理完 warning 后再改为 `cargo clippy --all-targets -- -D warnings`。
-    - name: Clippy check
-      run: cargo clippy --all-targets
+    - name: Clippy check (deny warnings)
+      run: cargo clippy --all-targets -- -D warnings
 
     - name: Check backend
       run: cargo check --lib --verbose
