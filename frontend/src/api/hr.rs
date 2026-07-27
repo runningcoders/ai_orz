@@ -46,7 +46,10 @@ pub async fn get_agent(req: GetAgentRequest) -> Result<GetAgentResponse, ApiErro
             "with_model_call_stats",
             req.with_model_call_stats.map(|v| v.to_string()),
         ),
-        ("stats_time_start", req.stats_time_start.map(|v| v.to_string())),
+        (
+            "stats_time_start",
+            req.stats_time_start.map(|v| v.to_string()),
+        ),
         ("stats_time_end", req.stats_time_end.map(|v| v.to_string())),
         ("stats_interval", req.stats_interval.clone()),
     ]);
@@ -205,9 +208,7 @@ pub async fn get_skill_file_content(
 }
 
 /// 更新 Skill 文件内容（乐观锁字段前端置 None）
-pub async fn update_skill_file_content(
-    req: UpdateSkillFileContentRequest,
-) -> Result<(), ApiError> {
+pub async fn update_skill_file_content(req: UpdateSkillFileContentRequest) -> Result<(), ApiError> {
     api_put_empty(
         &format!("/api/v1/hr/skills/{}/files/{}", req.skill_id, req.filename),
         &req,

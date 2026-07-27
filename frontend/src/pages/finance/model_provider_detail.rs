@@ -11,8 +11,8 @@ use crate::components::stats::ModelProviderStatsPanel;
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{
-    CallModelRequest, GetModelProviderRequest, GetModelProviderResponse, SwitchEmbeddingProviderRequest,
-    UpdateModelProviderRequest, UpdateModelProviderStatusRequest,
+    CallModelRequest, GetModelProviderRequest, GetModelProviderResponse,
+    SwitchEmbeddingProviderRequest, UpdateModelProviderRequest, UpdateModelProviderStatusRequest,
 };
 use common::enums::ProviderType;
 use dioxus::prelude::*;

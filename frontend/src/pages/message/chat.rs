@@ -121,7 +121,9 @@ pub fn MessageChat() -> Element {
                 project_id: project_id_ref.map(|s| s.to_string()),
                 limit: Some(20),
                 ..Default::default()
-            }).await {
+            })
+            .await
+            {
                 Ok(resp) => {
                     let is_empty = resp.messages.is_empty();
                     messages.set(resp.messages);
@@ -154,7 +156,9 @@ pub fn MessageChat() -> Element {
                 before_timestamp: Some(first_ts),
                 limit: Some(20),
                 ..Default::default()
-            }).await {
+            })
+            .await
+            {
                 Ok(resp) => {
                     if resp.messages.is_empty() {
                         has_more.set(false);

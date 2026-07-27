@@ -1,7 +1,7 @@
 use crate::api::finance::list_model_providers;
+use crate::api::hr::*;
 use crate::api::message::{load_latest_messages, send_message_to_agent};
 use crate::api::project::{query_projects, query_tasks};
-use crate::api::hr::*;
 use crate::components::chat::{MessageBubble, TypingIndicator};
 use crate::components::modal::Modal;
 use crate::components::relation_graph::{RelationGraph, RelationNodeInfo};
@@ -18,9 +18,9 @@ use common::api::{
     AgentListItem, BindToolToAgentRequest, GetAgentRequest, GetAgentResponse,
     InstallSkillPackRequest, InstallToolPackRequest, ListModelProvidersResponseItem,
     ListToolsRequest, MessageListItem, PaginationParams, ProjectListItem, ProjectQueryRequest,
-    SendMessageToAgentParams, TaskListItem, TaskQueryRequest, ToolListItem, UnbindToolFromAgentRequest,
-    UninstallSkillPackRequest, UninstallToolPackRequest, UpdateAgentRequest,
-    UpdateAgentStatusRequest,
+    SendMessageToAgentParams, TaskListItem, TaskQueryRequest, ToolListItem,
+    UnbindToolFromAgentRequest, UninstallSkillPackRequest, UninstallToolPackRequest,
+    UpdateAgentRequest, UpdateAgentStatusRequest,
 };
 use common::enums::{AgentStatus, AssigneeType};
 use dioxus::prelude::*;
@@ -140,7 +140,9 @@ pub fn HrAgentDetail(id: String) -> Element {
             match load_latest_messages(common::api::ListMessagesRequest {
                 limit: Some(50),
                 ..Default::default()
-            }).await {
+            })
+            .await
+            {
                 Ok(resp) => {
                     // 修复 HIGH #4：之前直接 set 全局消息，显示的是其他 Agent/用户的消息。
                     // 后端 /messages API 不支持 agent_id 过滤，前端按 to_id/from_id 客户端过滤。

@@ -358,15 +358,18 @@ fn AopStatsPanel() -> Element {
     let load_data = move || {
         spawn(async move {
             let ov = get_aop_stats_overview().await;
-            let ts = get_aop_stats_time_series(common::api::GetStatsTimeSeriesRequest::default()).await;
+            let ts =
+                get_aop_stats_time_series(common::api::GetStatsTimeSeriesRequest::default()).await;
             let cd = get_aop_stats_distribution(common::api::GetStatsDistributionRequest {
                 group_by: "consumer".to_string(),
                 status: None,
-            }).await;
+            })
+            .await;
             let sd = get_aop_stats_distribution(common::api::GetStatsDistributionRequest {
                 group_by: "status".to_string(),
                 status: None,
-            }).await;
+            })
+            .await;
 
             if let Ok(o) = ov {
                 overview.set(Some(o));

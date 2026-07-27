@@ -9,9 +9,10 @@ use common::api::{
     PagedResult, QueryToolCallEntriesRequest, QueryToolCallEntriesResponse,
     SwitchEmbeddingProviderRequest, SwitchEmbeddingProviderResponse, TestConnectionResponse,
     TestMessageChannelConnectionResponse, ToolListItem, ToolQueryRequest,
-    UpdateAttachmentContentRequest, UpdateMessageChannelStatusRequest, UpdateModelProviderRequest,
-    UpdateModelProviderResponse, UpdateModelProviderStatusRequest, UpdateMcpServerStatusRequest,
-    UpdateToolRequest, UpdateToolResponse, UpdateToolStatusRequest,
+    UpdateAttachmentContentRequest, UpdateMcpServerStatusRequest,
+    UpdateMessageChannelStatusRequest, UpdateModelProviderRequest, UpdateModelProviderResponse,
+    UpdateModelProviderStatusRequest, UpdateToolRequest, UpdateToolResponse,
+    UpdateToolStatusRequest,
 };
 use web_sys::FormData;
 
@@ -34,7 +35,10 @@ pub async fn get_model_provider(
             "with_model_call_stats",
             req.with_model_call_stats.map(|v| v.to_string()),
         ),
-        ("stats_start_time", req.stats_start_time.map(|v| v.to_string())),
+        (
+            "stats_start_time",
+            req.stats_start_time.map(|v| v.to_string()),
+        ),
         ("stats_end_time", req.stats_end_time.map(|v| v.to_string())),
         ("stats_interval", req.stats_interval.clone()),
     ]);
@@ -55,11 +59,13 @@ pub async fn update_model_provider(
 
 /// 启用/禁用模型提供商
 /// 启用 Embedding Provider 时可能返回 409（需切换），前端可通过 ApiError.error_code 检测
-pub async fn toggle_model_provider(
-    req: UpdateModelProviderStatusRequest,
-) -> Result<(), ApiError> {
+pub async fn toggle_model_provider(req: UpdateModelProviderStatusRequest) -> Result<(), ApiError> {
     let body = serde_json::json!({ "status": req.status });
-    api_put_empty(&format!("/api/v1/finance/model-providers/{}", req.id), &body).await
+    api_put_empty(
+        &format!("/api/v1/finance/model-providers/{}", req.id),
+        &body,
+    )
+    .await
 }
 
 pub async fn delete_model_provider(id: &str) -> Result<(), ApiError> {
@@ -110,7 +116,10 @@ pub async fn query_tools(req: &ToolQueryRequest) -> Result<PagedResult<ToolListI
 pub async fn get_tool(req: GetToolRequest) -> Result<GetToolResponse, ApiError> {
     let qs = super::build_query_string(&[
         ("with_stats", req.with_stats.map(|v| v.to_string())),
-        ("stats_time_start", req.stats_time_start.map(|v| v.to_string())),
+        (
+            "stats_time_start",
+            req.stats_time_start.map(|v| v.to_string()),
+        ),
         ("stats_time_end", req.stats_time_end.map(|v| v.to_string())),
         ("stats_interval", req.stats_interval.clone()),
     ]);
@@ -142,7 +151,11 @@ pub async fn delete_tool(id: &str) -> Result<(), ApiError> {
 /// 需 Admin 及以上权限。
 pub async fn debug_call_tool(req: DebugCallToolRequest) -> Result<DebugCallToolResponse, ApiError> {
     let body = serde_json::json!({ "args": req.args });
-    api_post(&format!("/api/v1/finance/tools/{}/debug-call", req.id), &body).await
+    api_post(
+        &format!("/api/v1/finance/tools/{}/debug-call", req.id),
+        &body,
+    )
+    .await
 }
 
 // ===== 消息渠道 =====
@@ -197,7 +210,11 @@ pub async fn create_mcp_server(
 
 pub async fn update_mcp_server_status(req: UpdateMcpServerStatusRequest) -> Result<(), ApiError> {
     let body = serde_json::json!({ "status": req.status as i32 });
-    api_put_empty(&format!("/api/v1/finance/mcp-servers/{}/status", req.id), &body).await
+    api_put_empty(
+        &format!("/api/v1/finance/mcp-servers/{}/status", req.id),
+        &body,
+    )
+    .await
 }
 
 pub async fn delete_mcp_server(id: &str) -> Result<(), ApiError> {
@@ -286,7 +303,10 @@ pub async fn query_tool_call_entries(
         ("tool_id", params.tool_id.clone()),
         ("status", params.status.map(|s| format!("{:?}", s))),
         ("started_after", params.started_after.map(|v| v.to_string())),
-        ("started_before", params.started_before.map(|v| v.to_string())),
+        (
+            "started_before",
+            params.started_before.map(|v| v.to_string()),
+        ),
         ("limit", params.limit.map(|v| v.to_string())),
     ]);
     api_get_or_default(&format!("/api/v1/finance/tool-call-entries{}", qs)).await

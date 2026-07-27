@@ -364,7 +364,9 @@ pub fn Workspace() -> Element {
                     project_id: pid_str.map(|s| s.to_string()),
                     limit: Some(20),
                     ..Default::default()
-                }).await {
+                })
+                .await
+                {
                     Ok(resp) => {
                         // Agent 视图按 to_id/from_id 过滤；其他视图按 project_id 过滤
                         let filtered = if let Some(aid) = &aid {

@@ -81,7 +81,9 @@ pub fn HrSkills() -> Element {
                     new_content.set(String::new());
                     let keyword = search_keyword();
                     let result = if keyword.trim().is_empty() {
-                        list_skills(ListSkillsRequest::default()).await.map(|p| p.items)
+                        list_skills(ListSkillsRequest::default())
+                            .await
+                            .map(|p| p.items)
                     } else {
                         search_skills(&keyword).await.map(|r| r.skills)
                     };

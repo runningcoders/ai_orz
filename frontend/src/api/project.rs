@@ -5,15 +5,17 @@ use common::api::{
     CreateTaskRequest, CreateTaskResponse, GetProjectRequest, GetProjectResponse, GetTaskRequest,
     GetTaskResponse, ListProjectsRequest, ListTasksRequest, ListTasksResponse, PagedResult,
     ProjectListItem, ProjectQueryRequest, TaskListItem, TaskQueryRequest, UpdateProjectRequest,
-    UpdateProjectResponse, UpdateProjectStatusRequest, UpdateTaskProgressRequest, UpdateTaskRequest,
-    UpdateTaskResponse, UpdateTaskStatusRequest,
+    UpdateProjectResponse, UpdateProjectStatusRequest, UpdateTaskProgressRequest,
+    UpdateTaskRequest, UpdateTaskResponse, UpdateTaskStatusRequest,
 };
 
 use super::{ApiError, api_delete, api_get, api_get_or_default, api_post, api_put, api_put_empty};
 
 // ===== 项目管理 =====
 
-pub async fn list_projects(req: ListProjectsRequest) -> Result<PagedResult<ProjectListItem>, ApiError> {
+pub async fn list_projects(
+    req: ListProjectsRequest,
+) -> Result<PagedResult<ProjectListItem>, ApiError> {
     let url = super::build_pagination_url("/api/v1/projects", &req.pagination);
     api_get(&url).await
 }
@@ -27,8 +29,14 @@ pub async fn query_projects(
 pub async fn get_project(req: GetProjectRequest) -> Result<GetProjectResponse, ApiError> {
     let qs = super::build_query_string(&[
         ("with_stats", req.with_stats.map(|v| v.to_string())),
-        ("with_model_call_stats", req.with_model_call_stats.map(|v| v.to_string())),
-        ("stats_time_start", req.stats_time_start.map(|v| v.to_string())),
+        (
+            "with_model_call_stats",
+            req.with_model_call_stats.map(|v| v.to_string()),
+        ),
+        (
+            "stats_time_start",
+            req.stats_time_start.map(|v| v.to_string()),
+        ),
         ("stats_time_end", req.stats_time_end.map(|v| v.to_string())),
         ("stats_interval", req.stats_interval.clone()),
     ]);
@@ -66,8 +74,14 @@ pub async fn query_tasks(req: &TaskQueryRequest) -> Result<PagedResult<TaskListI
 pub async fn get_task(req: GetTaskRequest) -> Result<GetTaskResponse, ApiError> {
     let qs = super::build_query_string(&[
         ("with_stats", req.with_stats.map(|v| v.to_string())),
-        ("with_model_call_stats", req.with_model_call_stats.map(|v| v.to_string())),
-        ("stats_time_start", req.stats_time_start.map(|v| v.to_string())),
+        (
+            "with_model_call_stats",
+            req.with_model_call_stats.map(|v| v.to_string()),
+        ),
+        (
+            "stats_time_start",
+            req.stats_time_start.map(|v| v.to_string()),
+        ),
         ("stats_time_end", req.stats_time_end.map(|v| v.to_string())),
         ("stats_interval", req.stats_interval.clone()),
     ]);
@@ -87,7 +101,9 @@ pub async fn update_task_status(req: UpdateTaskStatusRequest) -> Result<(), ApiE
     api_put_empty(&format!("/api/v1/tasks/{}/status", req.id), &body).await
 }
 
-pub async fn update_task_progress(req: UpdateTaskProgressRequest) -> Result<GetTaskResponse, ApiError> {
+pub async fn update_task_progress(
+    req: UpdateTaskProgressRequest,
+) -> Result<GetTaskResponse, ApiError> {
     api_put(&format!("/api/v1/tasks/{}/progress", req.id), &req).await
 }
 

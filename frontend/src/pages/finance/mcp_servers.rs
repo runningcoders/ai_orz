@@ -13,7 +13,9 @@ use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::format_datetime_full as format_timestamp;
-use common::api::{CreateMcpServerRequest, McpServerConfigDto, McpServerListItem, UpdateMcpServerStatusRequest};
+use common::api::{
+    CreateMcpServerRequest, McpServerConfigDto, McpServerListItem, UpdateMcpServerStatusRequest,
+};
 use common::enums::{McpServerStatus, McpTransport};
 
 #[component]

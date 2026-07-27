@@ -9,7 +9,9 @@ use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::format_file_size;
-use common::api::{ArtifactDetail, CreateArtifactRequest, ListProjectsRequest, ListProjectsResponseItem};
+use common::api::{
+    ArtifactDetail, CreateArtifactRequest, ListProjectsRequest, ListProjectsResponseItem,
+};
 use common::enums::ArtifactSourceType;
 
 fn source_type_text(source_type: ArtifactSourceType) -> &'static str {

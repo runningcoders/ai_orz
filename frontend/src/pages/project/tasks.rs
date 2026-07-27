@@ -9,7 +9,9 @@ use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::{format_datetime as format_time, task_status_badge, task_status_text};
-use common::api::{ListProjectsRequest, ListProjectsResponseItem, PaginationParams, TaskListItem, TaskQueryRequest};
+use common::api::{
+    ListProjectsRequest, ListProjectsResponseItem, PaginationParams, TaskListItem, TaskQueryRequest,
+};
 use common::enums::{AssigneeType, TaskStatus};
 
 #[derive(Debug, Clone, PartialEq)]
