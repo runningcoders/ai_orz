@@ -140,7 +140,7 @@ impl ModelProviderStatus {
 
 impl From<i32> for ModelProviderStatus {
     fn from(v: i32) -> Self {
-        v.into()
+        Self::from_i32(v)
     }
 }
 

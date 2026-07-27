@@ -258,13 +258,20 @@ impl Registry {
     }
 
     pub async fn start_all(&self) -> Result<()> {
-        let mut started = self
-            .started
-            .write()
-            .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
+        // 原子地检查并标记 started，立即释放写锁，避免在持有锁的情况下
+        // 跨 await 点（producer.start().await 等）导致死锁。
+        // 语义：start_all 只能成功执行一次；后续调用直接返回。
+        // 失败时不回退标记——与原逻辑一致（已 spawn 的 worker 无法回收）。
+        {
+            let mut started = self
+                .started
+                .write()
+                .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
 
-        if *started {
-            return Ok(());
+            if *started {
+                return Ok(());
+            }
+            *started = true;
         }
 
         let async_consumers: Vec<Arc<dyn Consumer>> = {
@@ -476,7 +483,6 @@ impl Registry {
             }
         }
 
-        *started = true;
         Ok(())
     }
 

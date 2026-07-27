@@ -55,7 +55,7 @@ enum WsIncoming {
     #[serde(rename = "event")]
     Event {
         #[serde(flatten)]
-        event: LarkMessageEvent,
+        event: Box<LarkMessageEvent>,
     },
     /// 心跳响应
     #[serde(rename = "pong")]
@@ -258,7 +258,7 @@ async fn handle_ws_message(text: &str, handler: &Arc<dyn LarkEventHandler>) {
             }
 
             // 回调 handler（错误仅记录，不中断循环）
-            if let Err(e) = handler.handle_message_event(event).await {
+            if let Err(e) = handler.handle_message_event(*event).await {
                 log_error!(
                     "lark ws event handler error: event_id={} err={}",
                     event_id,

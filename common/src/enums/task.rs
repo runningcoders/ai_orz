@@ -48,7 +48,7 @@ impl TaskStatus {
 
 impl From<i32> for TaskStatus {
     fn from(v: i32) -> Self {
-        v.into()
+        Self::from_i32(v)
     }
 }
 
@@ -88,7 +88,7 @@ impl AssigneeType {
 
 impl From<i32> for AssigneeType {
     fn from(v: i32) -> Self {
-        v.into()
+        Self::from_i32(v)
     }
 }
 
