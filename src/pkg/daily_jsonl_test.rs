@@ -36,7 +36,7 @@ fn test_daily_jsonl_append_and_read() -> anyhow::Result<()> {
     let entry3 = TestLogEntry {
         id: 3,
         message: "third message".to_string(),
-        value: 3.14,
+        value: 3.15,
     };
     let (date3, line3) = writer.append(&entry3)?;
 
