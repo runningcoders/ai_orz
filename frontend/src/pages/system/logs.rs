@@ -117,8 +117,12 @@ pub fn SystemLogs() -> Element {
         spawn(async move {
             let now = chrono::Local::now().timestamp_millis();
             let start = now - 24 * 60 * 60 * 1000;
-            let dist_result = get_log_level_distribution(Some(start), Some(now)).await;
-            let ts_result = get_log_time_series(Some(start), Some(now)).await;
+            let stats_params = common::api::LogStatsQueryParams {
+                start_time: Some(start),
+                end_time: Some(now),
+            };
+            let dist_result = get_log_level_distribution(&stats_params).await;
+            let ts_result = get_log_time_series(&stats_params).await;
             if let Ok(resp) = dist_result {
                 level_distribution.set(resp.items);
             }

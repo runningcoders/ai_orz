@@ -29,42 +29,26 @@ pub struct LogTimeSeriesResponse {
 
 /// 获取日志级别分布（默认最近 24 小时）
 pub async fn get_log_level_distribution(
-    start_time: Option<i64>,
-    end_time: Option<i64>,
+    req: &common::api::LogStatsQueryParams,
 ) -> Result<LogLevelDistributionResponse, ApiError> {
-    let mut params = Vec::new();
-    if let Some(s) = start_time {
-        params.push(format!("start_time={}", s));
-    }
-    if let Some(e) = end_time {
-        params.push(format!("end_time={}", e));
-    }
-    let qs = params.join("&");
-    let path = if qs.is_empty() {
-        "/api/v1/system/logs/stats/level-distribution".to_string()
-    } else {
-        format!("/api/v1/system/logs/stats/level-distribution?{}", qs)
-    };
-    api_get(&path).await
+    let qs = super::build_query_string(&[
+        ("start_time", req.start_time.map(|v| v.to_string())),
+        ("end_time", req.end_time.map(|v| v.to_string())),
+    ]);
+    api_get(&format!(
+        "/api/v1/system/logs/stats/level-distribution{}",
+        qs
+    ))
+    .await
 }
 
 /// 获取日志时序（按小时桶，默认最近 24 小时）
 pub async fn get_log_time_series(
-    start_time: Option<i64>,
-    end_time: Option<i64>,
+    req: &common::api::LogStatsQueryParams,
 ) -> Result<LogTimeSeriesResponse, ApiError> {
-    let mut params = Vec::new();
-    if let Some(s) = start_time {
-        params.push(format!("start_time={}", s));
-    }
-    if let Some(e) = end_time {
-        params.push(format!("end_time={}", e));
-    }
-    let qs = params.join("&");
-    let path = if qs.is_empty() {
-        "/api/v1/system/logs/stats/time-series".to_string()
-    } else {
-        format!("/api/v1/system/logs/stats/time-series?{}", qs)
-    };
-    api_get(&path).await
+    let qs = super::build_query_string(&[
+        ("start_time", req.start_time.map(|v| v.to_string())),
+        ("end_time", req.end_time.map(|v| v.to_string())),
+    ]);
+    api_get(&format!("/api/v1/system/logs/stats/time-series{}", qs)).await
 }

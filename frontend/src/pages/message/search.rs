@@ -28,7 +28,11 @@ pub fn MessageSearch() -> Element {
         loading.set(true);
         let kw = keyword().clone();
         spawn(async move {
-            match search_messages(&kw, None).await {
+            match search_messages(common::api::SearchMessagesRequest {
+                keyword: if kw.is_empty() { None } else { Some(kw.clone()) },
+                limit: Some(20),
+                ..Default::default()
+            }).await {
                 Ok(data) => {
                     let msgs = data.messages;
                     results.set(msgs.clone());

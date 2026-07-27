@@ -137,7 +137,10 @@ pub fn HrAgentDetail(id: String) -> Element {
                 Ok(resp) => all_tools.set(resp.items),
                 Err(e) => toast.error(&format!("获取工具列表失败: {}", e)),
             }
-            match load_latest_messages(None, Some(50)).await {
+            match load_latest_messages(common::api::ListMessagesRequest {
+                limit: Some(50),
+                ..Default::default()
+            }).await {
                 Ok(resp) => {
                     // 修复 HIGH #4：之前直接 set 全局消息，显示的是其他 Agent/用户的消息。
                     // 后端 /messages API 不支持 agent_id 过滤，前端按 to_id/from_id 客户端过滤。

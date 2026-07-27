@@ -1,7 +1,7 @@
 //! Message 域 API - 消息发送和列表查询
 
 use common::api::{
-    ListMessagesResponse, SearchMessagesRequest, SearchMessagesResponse, SendMessageToAgentParams,
+    ListMessagesResponse, SearchMessagesResponse, SendMessageToAgentParams,
     SendMessageToAgentResponse,
 };
 
@@ -14,76 +14,49 @@ pub async fn send_message_to_agent(
 }
 
 pub async fn load_latest_messages(
-    project_id: Option<&str>,
-    limit: Option<usize>,
+    req: common::api::ListMessagesRequest,
 ) -> Result<ListMessagesResponse, ApiError> {
-    let mut params = Vec::new();
-    if let Some(pid) = project_id {
-        params.push(format!("project_id={}", url_encode(pid)));
-    }
-    if let Some(l) = limit {
-        params.push(format!("limit={}", l));
-    }
-    let query = if params.is_empty() {
-        String::new()
-    } else {
-        format!("?{}", params.join("&"))
-    };
-    api_get(&format!("/api/v1/finance/messages{}", query)).await
+    let qs = super::build_query_string(&[
+        ("project_id", req.project_id.clone()),
+        ("task_id", req.task_id.clone()),
+        ("from_id", req.from_id.clone()),
+        ("to_id", req.to_id.clone()),
+        ("limit", req.limit.map(|v| v.to_string())),
+    ]);
+    api_get(&format!("/api/v1/finance/messages{}", qs)).await
 }
 
 pub async fn load_older_messages(
-    project_id: Option<&str>,
-    before_timestamp: i64,
-    limit: Option<usize>,
+    req: common::api::ListMessagesRequest,
 ) -> Result<ListMessagesResponse, ApiError> {
-    let mut params = vec![format!("before_timestamp={}", before_timestamp)];
-    if let Some(pid) = project_id {
-        params.push(format!("project_id={}", url_encode(pid)));
-    }
-    if let Some(l) = limit {
-        params.push(format!("limit={}", l));
-    }
-    api_get(&format!("/api/v1/finance/messages?{}", params.join("&"))).await
+    let qs = super::build_query_string(&[
+        ("project_id", req.project_id.clone()),
+        ("task_id", req.task_id.clone()),
+        ("from_id", req.from_id.clone()),
+        ("to_id", req.to_id.clone()),
+        ("before_timestamp", req.before_timestamp.map(|v| v.to_string())),
+        ("limit", req.limit.map(|v| v.to_string())),
+    ]);
+    api_get(&format!("/api/v1/finance/messages{}", qs)).await
 }
 
 #[allow(dead_code)]
 pub async fn poll_new_messages(
-    project_id: Option<&str>,
-    after_timestamp: i64,
+    req: common::api::ListMessagesRequest,
 ) -> Result<ListMessagesResponse, ApiError> {
-    let mut params = vec![format!("after_timestamp={}", after_timestamp)];
-    if let Some(pid) = project_id {
-        params.push(format!("project_id={}", url_encode(pid)));
-    }
-    api_get(&format!("/api/v1/finance/messages?{}", params.join("&"))).await
+    let qs = super::build_query_string(&[
+        ("project_id", req.project_id.clone()),
+        ("task_id", req.task_id.clone()),
+        ("from_id", req.from_id.clone()),
+        ("to_id", req.to_id.clone()),
+        ("after_timestamp", req.after_timestamp.map(|v| v.to_string())),
+        ("limit", req.limit.map(|v| v.to_string())),
+    ]);
+    api_get(&format!("/api/v1/finance/messages{}", qs)).await
 }
 
 pub async fn search_messages(
-    keyword: &str,
-    project_id: Option<&str>,
+    req: common::api::SearchMessagesRequest,
 ) -> Result<SearchMessagesResponse, ApiError> {
-    let params = SearchMessagesRequest {
-        keyword: if keyword.is_empty() {
-            None
-        } else {
-            Some(keyword.to_string())
-        },
-        project_id: project_id.map(|s| s.to_string()),
-        task_id: None,
-        from_id: None,
-        to_id: None,
-        limit: Some(20),
-    };
-    api_post("/api/v1/finance/messages/search", &params).await
-}
-
-fn url_encode(s: &str) -> String {
-    s.replace('%', "%25")
-        .replace(' ', "%20")
-        .replace('&', "%26")
-        .replace('=', "%3D")
-        .replace('+', "%2B")
-        .replace('#', "%23")
-        .replace('?', "%3F")
+    api_post("/api/v1/finance/messages/search", &req).await
 }

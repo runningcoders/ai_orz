@@ -117,7 +117,11 @@ pub fn MessageChat() -> Element {
         loading_messages.set(true);
         spawn(async move {
             let project_id_ref = project_id.as_deref();
-            match load_latest_messages(project_id_ref, Some(20)).await {
+            match load_latest_messages(common::api::ListMessagesRequest {
+                project_id: project_id_ref.map(|s| s.to_string()),
+                limit: Some(20),
+                ..Default::default()
+            }).await {
                 Ok(resp) => {
                     let is_empty = resp.messages.is_empty();
                     messages.set(resp.messages);
@@ -145,7 +149,12 @@ pub fn MessageChat() -> Element {
         };
         loading_messages.set(true);
         spawn(async move {
-            match load_older_messages(Some(&project_id), first_ts, Some(20)).await {
+            match load_older_messages(common::api::ListMessagesRequest {
+                project_id: Some(project_id.clone()),
+                before_timestamp: Some(first_ts),
+                limit: Some(20),
+                ..Default::default()
+            }).await {
                 Ok(resp) => {
                     if resp.messages.is_empty() {
                         has_more.set(false);

@@ -360,7 +360,11 @@ pub fn Workspace() -> Element {
             let pid_clone = pid.clone();
             spawn(async move {
                 let pid_str = pid_clone.as_deref();
-                match load_latest_messages(pid_str, Some(20)).await {
+                match load_latest_messages(common::api::ListMessagesRequest {
+                    project_id: pid_str.map(|s| s.to_string()),
+                    limit: Some(20),
+                    ..Default::default()
+                }).await {
                     Ok(resp) => {
                         // Agent 视图按 to_id/from_id 过滤；其他视图按 project_id 过滤
                         let filtered = if let Some(aid) = &aid {
