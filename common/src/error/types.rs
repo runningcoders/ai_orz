@@ -349,14 +349,6 @@ impl From<base64::DecodeError> for Error {
     }
 }
 
-/// Convert base64::EncodeError to our Error (maps to InvalidRequest)
-#[cfg(feature = "base64-integration")]
-impl From<base64::EncodeError> for Error {
-    fn from(err: base64::EncodeError) -> Self {
-        Error::bad_request(err.to_string()).with_source(err)
-    }
-}
-
 #[cfg(feature = "toml-integration")]
 /// Convert toml::de::Error to our Error (maps to Config error)
 use toml::de::Error as TomlDeError;
