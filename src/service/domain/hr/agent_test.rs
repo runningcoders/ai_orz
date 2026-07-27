@@ -68,7 +68,7 @@ async fn test_create_and_find_by_id(pool: SqlitePool) {
 
     let found: Option<Agent> = domain
         .agent_manage()
-        .get_agent(ctx, &agent.id(), Default::default())
+        .get_agent(ctx, agent.id(), Default::default())
         .await
         .unwrap();
     assert_eq!(found.unwrap().name(), "TestAgent");
@@ -112,7 +112,7 @@ async fn test_update_agent(pool: SqlitePool) {
 
     let found: Option<Agent> = domain
         .agent_manage()
-        .get_agent(ctx, &updated.id(), Default::default())
+        .get_agent(ctx, updated.id(), Default::default())
         .await
         .unwrap();
     assert_eq!(found.unwrap().name(), "Updated");
@@ -136,7 +136,7 @@ async fn test_delete_agent(pool: SqlitePool) {
         .unwrap();
     let found: Option<Agent> = domain
         .agent_manage()
-        .get_agent(ctx, &agent.id(), Default::default())
+        .get_agent(ctx, agent.id(), Default::default())
         .await
         .unwrap();
     assert!(found.is_none());

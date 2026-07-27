@@ -34,7 +34,6 @@ pub async fn query_artifacts(
                 file_type: params.file_type,
                 source_type: params.source_type,
                 pagination: params.pagination,
-                ..Default::default()
             },
         )
         .await?;

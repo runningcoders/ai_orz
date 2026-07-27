@@ -16,22 +16,17 @@ use serde::{Deserialize, Serialize};
 /// - `Active` = 1：活跃（正常可检索，参与问答和搜索）
 /// - `Settled` = 2：已沉淀（短期记忆已总结为长期知识，默认不参与检索）
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
 #[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
 pub enum MemoryStatus {
     /// 已遗忘 - 0，默认过滤不查询，保留数据可恢复
     Forgotten = 0,
     /// 活跃 - 1，正常可检索
+    #[default]
     Active = 1,
     /// 已沉淀 - 2，短期记忆已总结为长期知识
     Settled = 2,
-}
-
-impl Default for MemoryStatus {
-    fn default() -> Self {
-        MemoryStatus::Active // 默认活跃
-    }
 }
 
 impl From<i32> for MemoryStatus {

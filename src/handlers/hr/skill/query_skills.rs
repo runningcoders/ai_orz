@@ -40,7 +40,6 @@ pub async fn query_skills(
                 parent_skill_id: params.parent_skill_id,
                 tags: params.tags,
                 pagination: params.pagination,
-                ..Default::default()
             },
         )
         .await?;

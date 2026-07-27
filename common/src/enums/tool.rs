@@ -8,22 +8,17 @@ use std::fmt;
 
 /// 工具协议类型
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
 #[cfg_attr(feature = "sqlx", derive(Type))]
 #[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
 pub enum ToolProtocol {
     /// 内置工具（代码中实现）
+    #[default]
     Builtin = 0,
     /// HTTP 远程调用工具
     Http = 1,
     /// MCP (Model Context Protocol) 工具
     Mcp = 2,
-}
-
-impl Default for ToolProtocol {
-    fn default() -> Self {
-        ToolProtocol::Builtin
-    }
 }
 
 impl From<i32> for ToolProtocol {
@@ -62,22 +57,17 @@ impl fmt::Display for ToolProtocol {
 
 /// 工具状态
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
 #[cfg_attr(feature = "sqlx", derive(Type))]
 #[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
 pub enum ToolStatus {
     /// 禁用
     Disabled = 0,
     /// 启用
+    #[default]
     Enabled = 1,
     /// 同步异常：远端工具已消失/改名，本地记录与绑定保留但正常业务不可用
     Stale = 2,
-}
-
-impl Default for ToolStatus {
-    fn default() -> Self {
-        ToolStatus::Enabled
-    }
 }
 
 impl From<i32> for ToolStatus {

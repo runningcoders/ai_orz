@@ -155,7 +155,7 @@ mod tests {
     #[tokio::test]
     async fn test_fetch_public_https_ok() {
         init().await;
-        let factory = HttpFetchToolFactory::default();
+        let factory = HttpFetchToolFactory;
         let po = factory.create_po();
         let tool = HttpFetchCoreTool { po };
 
@@ -182,7 +182,7 @@ mod tests {
     #[tokio::test]
     async fn test_reject_http() {
         init().await;
-        let factory = HttpFetchToolFactory::default();
+        let factory = HttpFetchToolFactory;
         let po = factory.create_po();
         let tool = HttpFetchCoreTool { po };
 
@@ -203,7 +203,7 @@ mod tests {
     #[tokio::test]
     async fn test_reject_localhost() {
         init().await;
-        let factory = HttpFetchToolFactory::default();
+        let factory = HttpFetchToolFactory;
         let po = factory.create_po();
         let tool = HttpFetchCoreTool { po };
 
@@ -224,7 +224,7 @@ mod tests {
     #[tokio::test]
     async fn test_reject_private_ip() {
         init().await;
-        let factory = HttpFetchToolFactory::default();
+        let factory = HttpFetchToolFactory;
         let po = factory.create_po();
         let tool = HttpFetchCoreTool { po };
 

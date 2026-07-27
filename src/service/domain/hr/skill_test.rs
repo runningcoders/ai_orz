@@ -89,7 +89,7 @@ async fn test_create_and_get_by_id(pool: SqlitePool) {
 
     let found: Option<Skill> = domain
         .skill_manage()
-        .get_skill(ctx, &skill.id())
+        .get_skill(ctx, skill.id())
         .await
         .unwrap();
     assert_eq!(found.unwrap().name(), "TestSkill");
@@ -123,7 +123,7 @@ async fn test_update_skill(pool: SqlitePool) {
 
     let found: Option<Skill> = domain
         .skill_manage()
-        .get_skill(ctx, &updated.id())
+        .get_skill(ctx, updated.id())
         .await
         .unwrap();
     assert_eq!(found.unwrap().name(), "Updated");
@@ -142,12 +142,12 @@ async fn test_delete_skill(pool: SqlitePool) {
 
     domain
         .skill_manage()
-        .delete_skill(ctx.clone(), &skill.id())
+        .delete_skill(ctx.clone(), skill.id())
         .await
         .unwrap();
     let found: Option<Skill> = domain
         .skill_manage()
-        .get_skill(ctx, &skill.id())
+        .get_skill(ctx, skill.id())
         .await
         .unwrap();
     // 软删除，记录还在，状态变为 Expired

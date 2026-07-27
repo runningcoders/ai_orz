@@ -74,6 +74,7 @@ pub fn init() {
 }
 
 /// SQLite Memory DAO 实现
+#[derive(Default)]
 pub struct MemoryDaoSqliteImpl;
 
 impl MemoryDaoSqliteImpl {

@@ -181,7 +181,7 @@ impl AopStatsCollector {
             .map(|(label, value)| AopDistributionItem { label, value })
             .collect();
         // 按数值降序
-        items.sort_by(|a, b| b.value.cmp(&a.value));
+        items.sort_by_key(|x| std::cmp::Reverse(x.value));
         items
     }
 

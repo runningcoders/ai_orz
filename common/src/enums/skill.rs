@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 /// 技能状态
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
 #[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
 pub enum SkillStatus {
@@ -14,13 +14,8 @@ pub enum SkillStatus {
     /// 已发布，正式沉淀完成，已经发布到共享库，可以正常使用
     Published = 1,
     /// 草稿，Agent 自有技能，还在私有迭代中，未发布到共享库
+    #[default]
     Draft = 2,
-}
-
-impl Default for SkillStatus {
-    fn default() -> Self {
-        SkillStatus::Draft
-    }
 }
 
 impl From<i32> for SkillStatus {
@@ -49,20 +44,15 @@ impl SkillStatus {
 
 /// 技能作者类型
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
 #[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
 pub enum SkillAuthorType {
     /// 用户创建
+    #[default]
     User = 0,
     /// Agent 创建
     Agent = 1,
-}
-
-impl Default for SkillAuthorType {
-    fn default() -> Self {
-        SkillAuthorType::User
-    }
 }
 
 impl From<i32> for SkillAuthorType {

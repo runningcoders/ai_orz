@@ -36,7 +36,6 @@ pub async fn query_tasks(
                 assignee_id: params.assignee_id,
                 status_in: params.status_in,
                 pagination: params.pagination,
-                ..Default::default()
             },
         )
         .await?;

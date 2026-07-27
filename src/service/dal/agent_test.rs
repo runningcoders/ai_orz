@@ -298,7 +298,7 @@ async fn test_create_and_find_by_id(pool: SqlitePool) {
     let agent = create_test_agent("TestAgent", "provider-id-1");
     dal.create(ctx.clone(), &agent).await.unwrap();
 
-    let found: Option<Agent> = dal.find_by_id(ctx, &agent.id()).await.unwrap();
+    let found: Option<Agent> = dal.find_by_id(ctx, agent.id()).await.unwrap();
     assert_eq!(found.as_ref().unwrap().name(), "TestAgent");
     assert_eq!(found.unwrap().po.created_by, "admin".to_string());
 }
@@ -332,7 +332,7 @@ async fn test_update(pool: SqlitePool) {
     .await
     .unwrap();
 
-    let found: Option<Agent> = dal.find_by_id(ctx, &updated.id()).await.unwrap();
+    let found: Option<Agent> = dal.find_by_id(ctx, updated.id()).await.unwrap();
     assert_eq!(found.as_ref().unwrap().name(), "Updated");
     assert_eq!(found.unwrap().po.modified_by, "editor".to_string());
 }
@@ -345,7 +345,7 @@ async fn test_delete(pool: SqlitePool) {
     dal.create(ctx.clone(), &agent).await.unwrap();
 
     dal.delete(ctx.clone(), &agent).await.unwrap();
-    let found: Option<Agent> = dal.find_by_id(ctx, &agent.id()).await.unwrap();
+    let found: Option<Agent> = dal.find_by_id(ctx, agent.id()).await.unwrap();
     assert!(found.is_none());
 }
 

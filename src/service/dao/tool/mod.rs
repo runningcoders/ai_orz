@@ -227,7 +227,7 @@ pub trait ToolStatsDao: Send + Sync {
             .collect();
 
         // 按 count 降序
-        result.sort_by(|a, b| b.count.cmp(&a.count));
+        result.sort_by_key(|x| std::cmp::Reverse(x.count));
         Ok(result)
     }
 }

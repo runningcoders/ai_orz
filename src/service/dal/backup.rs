@@ -169,7 +169,7 @@ impl BackupDal for BackupDalFsImpl {
 
         // 按 version 降序返回
         let mut backups = index.backups;
-        backups.sort_by(|a, b| b.version.cmp(&a.version));
+        backups.sort_by_key(|x| std::cmp::Reverse(x.version));
         Ok(backups)
     }
 
@@ -388,7 +388,7 @@ fn rebuild_index(backups_dir: &Path) -> Result<Vec<BackupInfo>> {
             md5,
         });
     }
-    backups.sort_by(|a, b| b.version.cmp(&a.version));
+    backups.sort_by_key(|x| std::cmp::Reverse(x.version));
     Ok(backups)
 }
 

@@ -36,7 +36,6 @@ pub async fn query_users(
             UserQuery {
                 organization_id: Some(org_id),
                 pagination: params.pagination,
-                ..Default::default()
             },
         )
         .await?;

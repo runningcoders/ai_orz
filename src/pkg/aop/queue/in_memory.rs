@@ -78,7 +78,7 @@ impl InMemoryEventQueue {
                 });
             }
         }
-        stats.sort_by(|a, b| b.pending_count.cmp(&a.pending_count));
+        stats.sort_by_key(|x| std::cmp::Reverse(x.pending_count));
         stats
     }
 
@@ -367,7 +367,7 @@ impl EventQueue for InMemoryEventQueue {
         }
 
         // 按 created_at 降序排序（最新的在前）
-        results.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        results.sort_by_key(|x| std::cmp::Reverse(x.created_at));
 
         // 应用分页
         results

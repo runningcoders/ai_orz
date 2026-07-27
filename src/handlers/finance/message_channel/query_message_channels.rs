@@ -48,7 +48,6 @@ pub async fn query_message_channels(
                 status_in: params.status_in,
                 order_by: params.order_by,
                 pagination: params.pagination,
-                ..Default::default()
             },
         )
         .await?;

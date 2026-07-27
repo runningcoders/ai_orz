@@ -38,7 +38,6 @@ pub async fn query_agents(
                 model_provider_id: params.model_provider_id,
                 roles: params.roles,
                 pagination: params.pagination,
-                ..Default::default()
             },
         )
         .await?;

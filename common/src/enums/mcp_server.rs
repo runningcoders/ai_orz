@@ -6,18 +6,13 @@ use std::fmt;
 
 /// MCP Server transport type.
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
 pub enum McpTransport {
     /// stdio transport: command plus args, without shell interpolation.
+    #[default]
     Stdio = 0,
     /// streamable HTTP transport.
     StreamableHttp = 1,
-}
-
-impl Default for McpTransport {
-    fn default() -> Self {
-        Self::Stdio
-    }
 }
 
 impl fmt::Display for McpTransport {
@@ -31,20 +26,15 @@ impl fmt::Display for McpTransport {
 
 /// MCP Server management status.
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
 pub enum McpServerStatus {
     /// Soft-deleted server.
     Deleted = 0,
     /// Enabled server.
+    #[default]
     Enabled = 1,
     /// Disabled server.
     Disabled = 2,
-}
-
-impl Default for McpServerStatus {
-    fn default() -> Self {
-        Self::Enabled
-    }
 }
 
 impl fmt::Display for McpServerStatus {

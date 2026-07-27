@@ -657,10 +657,10 @@ async fn test_search_vector_with_explicit_query(pool: SqlitePool) {
     dal.save_message(ctx.clone(), &msg3).await.unwrap();
 
     // 手动插入向量索引
-    let params1 = create_test_vector_params(&msg1.id(), 3);
-    let mut params2 = create_test_vector_params(&msg2.id(), 3);
+    let params1 = create_test_vector_params(msg1.id(), 3);
+    let mut params2 = create_test_vector_params(msg2.id(), 3);
     params2.vector = vec![0.9, 0.1, 0.0];
-    let mut params3 = create_test_vector_params(&msg3.id(), 3);
+    let mut params3 = create_test_vector_params(msg3.id(), 3);
     params3.vector = vec![0.0, 0.9, 0.1];
 
     vector_dao
@@ -737,8 +737,8 @@ async fn test_search_hybrid_matching(pool: SqlitePool) {
     dal.save_message(ctx.clone(), &msg3).await.unwrap();
 
     // 为 msg1 和 msg2 插入向量索引
-    let params1 = create_test_vector_params(&msg1.id(), 3);
-    let mut params2 = create_test_vector_params(&msg2.id(), 3);
+    let params1 = create_test_vector_params(msg1.id(), 3);
+    let mut params2 = create_test_vector_params(msg2.id(), 3);
     params2.vector = vec![0.9, 0.1, 0.0];
 
     vector_dao
@@ -796,7 +796,7 @@ async fn test_vector_index_lifecycle(pool: SqlitePool) {
     dal.save_message(ctx.clone(), &msg).await.unwrap();
 
     // 手动插入向量索引
-    let params = create_test_vector_params(&msg.id(), 3);
+    let params = create_test_vector_params(msg.id(), 3);
     vector_dao
         .upsert_vector(ctx.clone(), msg.id(), &params)
         .await

@@ -81,22 +81,17 @@ impl fmt::Display for ChannelType {
 
 /// 渠道状态
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
 #[cfg_attr(feature = "sqlx", derive(Type))]
 #[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
 pub enum ChannelStatus {
     /// 已删除（软删除）
     Deleted = 0,
     /// 活跃
+    #[default]
     Active = 1,
     /// 已禁用
     Disabled = 2,
-}
-
-impl Default for ChannelStatus {
-    fn default() -> Self {
-        ChannelStatus::Active
-    }
 }
 
 impl From<i32> for ChannelStatus {

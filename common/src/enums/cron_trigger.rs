@@ -8,22 +8,17 @@ use sqlx::Type;
 
 /// Cron trigger type.
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
 #[cfg_attr(feature = "sqlx", derive(Type))]
 #[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
 pub enum TriggerType {
     /// One-time trigger.
     Once = 0,
     /// Cron expression trigger.
+    #[default]
     Cron = 1,
     /// Fixed interval trigger.
     Interval = 2,
-}
-
-impl Default for TriggerType {
-    fn default() -> Self {
-        Self::Cron
-    }
 }
 
 impl From<i32> for TriggerType {

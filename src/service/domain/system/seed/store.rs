@@ -70,7 +70,7 @@ pub async fn list_files(dir: &Path) -> Result<Vec<common::api::seed::SeedFileInf
         });
     }
 
-    files.sort_by(|a, b| b.modified_at.cmp(&a.modified_at));
+    files.sort_by_key(|x| std::cmp::Reverse(x.modified_at));
     Ok(files)
 }
 

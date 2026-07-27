@@ -59,21 +59,12 @@ pub struct AppConfig {
 }
 
 /// JWT 配置
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct JwtConfig {
     /// JWT签名密钥（生产环境务必修改！也可以通过环境变量 JWT_SECRET 设置）
     pub secret: Option<String>,
     /// JWT默认过期时间（小时），默认 7 天（168小时），也可以通过环境变量 JWT_EXPIRY_HOURS 设置
     pub default_expiry_hours: Option<u32>,
-}
-
-impl Default for JwtConfig {
-    fn default() -> Self {
-        Self {
-            secret: None,
-            default_expiry_hours: None,
-        }
-    }
 }
 
 /// 服务器配置
@@ -499,7 +490,7 @@ fn default_consumer_error_sleep() -> u64 {
 // ==================== 飞书配置 ====================
 
 /// 飞书应用配置（全局共享，应用级凭证）
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct LarkConfig {
     /// 是否启用飞书渠道
     #[serde(default)]
@@ -514,18 +505,6 @@ pub struct LarkConfig {
     pub encrypt_key: Option<String>,
     /// 飞书验证令牌（可选，事件订阅校验用）
     pub verification_token: Option<String>,
-}
-
-impl Default for LarkConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            app_id: String::new(),
-            app_secret: String::new(),
-            encrypt_key: None,
-            verification_token: None,
-        }
-    }
 }
 
 /// A2A Server 配置

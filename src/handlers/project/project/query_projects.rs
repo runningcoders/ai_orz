@@ -34,7 +34,6 @@ pub async fn query_projects(
                 root_user_id: params.root_user_id,
                 status_in: params.status_in,
                 pagination: params.pagination,
-                ..Default::default()
             },
         )
         .await?;

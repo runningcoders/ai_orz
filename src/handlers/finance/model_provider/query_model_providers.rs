@@ -33,7 +33,6 @@ pub async fn query_model_providers(
                 status: params.status,
                 exclude_status: params.exclude_status,
                 pagination: params.pagination,
-                ..Default::default()
             },
         )
         .await?;
