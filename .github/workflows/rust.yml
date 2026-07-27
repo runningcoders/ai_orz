@@ -12,11 +12,14 @@ env:
 
 jobs:
   # ===== 1. Lint 门禁（快，先跑）=====
-  # fmt + clippy，不需要 protoc / 编译产物
+  # fmt + clippy，clippy --all-targets 会编译 lance build-script，需要 protoc
   lint:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+
+    - name: Install protoc (for lancedb dependency)
+      run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
     - name: Install rustfmt and clippy
       run: rustup component add rustfmt clippy
