@@ -437,3 +437,32 @@ pub fn build_url_with_stats(base_url: &str, options: Option<&StatsOptions>) -> S
         None => base_url.to_string(),
     }
 }
+
+/// 构造分页 URL：把 `PaginationParams` 序列化为 query string 附加到 base_url
+pub fn build_pagination_url(base_url: &str, pagination: &common::api::PaginationParams) -> String {
+    let mut params: Vec<String> = Vec::new();
+    if let Some(l) = pagination.limit {
+        params.push(format!("limit={}", l));
+    }
+    if let Some(o) = pagination.offset {
+        params.push(format!("offset={}", o));
+    }
+    if params.is_empty() {
+        base_url.to_string()
+    } else {
+        format!("{}?{}", base_url, params.join("&"))
+    }
+}
+
+/// 构造 query string：从 `&[(&str, Option<String>)]` 过滤 None 后拼接
+pub fn build_query_string(params: &[(&str, Option<String>)]) -> String {
+    let pairs: Vec<String> = params
+        .iter()
+        .filter_map(|(k, v)| v.as_ref().map(|val| format!("{}={}", k, val)))
+        .collect();
+    if pairs.is_empty() {
+        String::new()
+    } else {
+        format!("?{}", pairs.join("&"))
+    }
+}
