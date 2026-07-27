@@ -63,19 +63,20 @@ impl ModelProviderManage for FinanceDomainImpl {
                 .model_provider_dal
                 .find_enabled_embedding_provider(ctx.clone())
                 .await?
-                && current.po.id != provider.po.id {
-                    let mut field = ErrorField::new();
-                    field.insert("current_provider_id".into(), json!(current.po.id));
-                    field.insert("current_provider_name".into(), json!(current.po.name));
-                    return Err(Error::new(
-                        ErrorCode::EmbeddingProviderSwitchRequired,
-                        format!(
-                            "Another embedding provider '{}' is already enabled",
-                            current.po.name
-                        ),
-                    )
-                    .with_field(field));
-                }
+            && current.po.id != provider.po.id
+        {
+            let mut field = ErrorField::new();
+            field.insert("current_provider_id".into(), json!(current.po.id));
+            field.insert("current_provider_name".into(), json!(current.po.name));
+            return Err(Error::new(
+                ErrorCode::EmbeddingProviderSwitchRequired,
+                format!(
+                    "Another embedding provider '{}' is already enabled",
+                    current.po.name
+                ),
+            )
+            .with_field(field));
+        }
 
         let ctx = enrich_ctx!(&ctx, provider);
         self.model_provider_dal.update(ctx, provider).await
@@ -124,10 +125,11 @@ impl ModelProviderManage for FinanceDomainImpl {
             .await?;
 
         if let Some(ref current) = current_provider
-            && current.po.id == new_provider_id {
-                // 同一 provider，无需重建
-                return Ok((current_provider, String::new()));
-            }
+            && current.po.id == new_provider_id
+        {
+            // 同一 provider，无需重建
+            return Ok((current_provider, String::new()));
+        }
 
         if let Some(mut current) = current_provider.clone() {
             current.po.status = ModelProviderStatus::Deleted;
@@ -154,20 +156,21 @@ impl ModelProviderManage for FinanceDomainImpl {
     ) -> Result<Option<common::api::RebuildProgressResponse>> {
         let guard = self.rebuild_task.read().await;
         if let Some(task) = guard.as_ref()
-            && task.task_id == task_id {
-                return Ok(Some(common::api::RebuildProgressResponse {
-                    task_id: task.task_id.clone(),
-                    status: task.status.clone(),
-                    current_entity: task.current_entity.clone(),
-                    current_entity_index: task.current_entity_index,
-                    total_entities: task.total_entities,
-                    processed_records: task.processed_records,
-                    total_records: task.total_records,
-                    started_at: task.started_at,
-                    finished_at: task.finished_at,
-                    error: task.error.clone(),
-                }));
-            }
+            && task.task_id == task_id
+        {
+            return Ok(Some(common::api::RebuildProgressResponse {
+                task_id: task.task_id.clone(),
+                status: task.status.clone(),
+                current_entity: task.current_entity.clone(),
+                current_entity_index: task.current_entity_index,
+                total_entities: task.total_entities,
+                processed_records: task.processed_records,
+                total_records: task.total_records,
+                started_at: task.started_at,
+                finished_at: task.finished_at,
+                error: task.error.clone(),
+            }));
+        }
         Ok(None)
     }
 }
@@ -183,15 +186,15 @@ impl FinanceDomainImpl {
             if let Some(task) = guard.as_ref()
                 && (task.status == common::api::RebuildStatus::Running
                     || task.status == common::api::RebuildStatus::Pending)
-                {
-                    let mut field = ErrorField::new();
-                    field.insert("task_id".into(), json!(task.task_id));
-                    return Err(Error::new(
-                        ErrorCode::RebuildInProgress,
-                        "A rebuild task is already in progress",
-                    )
-                    .with_field(field));
-                }
+            {
+                let mut field = ErrorField::new();
+                field.insert("task_id".into(), json!(task.task_id));
+                return Err(Error::new(
+                    ErrorCode::RebuildInProgress,
+                    "A rebuild task is already in progress",
+                )
+                .with_field(field));
+            }
         }
 
         let task_id = uuid::Uuid::new_v4().to_string();

@@ -368,16 +368,15 @@ ORDER BY updated_at DESC
         }
 
         if let Some(tags) = &filters.tags
-            && !tags.is_empty() {
-                builder.push(
-                    " AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE json_each.value IN (",
-                );
-                let mut separated = builder.separated(", ");
-                for tag in tags {
-                    separated.push_bind(tag);
-                }
-                separated.push_unseparated("))");
+            && !tags.is_empty()
+        {
+            builder.push(" AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE json_each.value IN (");
+            let mut separated = builder.separated(", ");
+            for tag in tags {
+                separated.push_bind(tag);
             }
+            separated.push_unseparated("))");
+        }
 
         builder.push(" ORDER BY skills_fts.rank");
 
@@ -581,14 +580,15 @@ fn push_query_filters<'args>(
     query: &SkillQuery,
 ) {
     if let Some(ids) = &query.ids
-        && !ids.is_empty() {
-            builder.push(" AND id IN (");
-            let mut separated = builder.separated(", ");
-            for id in ids {
-                separated.push_bind(id.clone());
-            }
-            separated.push_unseparated(")");
+        && !ids.is_empty()
+    {
+        builder.push(" AND id IN (");
+        let mut separated = builder.separated(", ");
+        for id in ids {
+            separated.push_bind(id.clone());
         }
+        separated.push_unseparated(")");
+    }
     if let Some(status) = &query.status {
         builder.push(" AND status = ").push_bind(*status as i32);
     }
@@ -611,16 +611,18 @@ fn push_query_filters<'args>(
             .push_bind(parent_skill_id.clone());
     }
     if let Some(tags) = &query.tags
-        && !tags.is_empty() {
-            builder.push(" AND EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value IN (");
-            let mut separated = builder.separated(", ");
-            for tag in tags {
-                separated.push_bind(tag.clone());
-            }
-            separated.push_unseparated("))");
+        && !tags.is_empty()
+    {
+        builder.push(" AND EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value IN (");
+        let mut separated = builder.separated(", ");
+        for tag in tags {
+            separated.push_bind(tag.clone());
         }
+        separated.push_unseparated("))");
+    }
     if let Some(keyword) = &query.keyword
-        && !keyword.is_empty() {
-            log_warn!("keyword in skill query is deprecated, use search_skills; keyword ignored");
-        }
+        && !keyword.is_empty()
+    {
+        log_warn!("keyword in skill query is deprecated, use search_skills; keyword ignored");
+    }
 }

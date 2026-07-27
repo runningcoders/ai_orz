@@ -238,8 +238,7 @@ fn extract_output_type(ty: &Type) -> &Type {
     if let Type::Path(type_path) = ty
         && let Some(last_segment) = type_path.path.segments.last()
         && let syn::PathArguments::AngleBracketed(syn::AngleBracketedGenericArguments {
-            args,
-            ..
+            args, ..
         }) = &last_segment.arguments
         && let Some(syn::GenericArgument::Type(output)) = args.first()
     {
@@ -615,35 +614,35 @@ fn collect_path_and_query_fields_from_type(
                                     //   标注被静默忽略，path/query 字段全部被当作 body。
                                     //   修复方式：先匹配 Meta::List，再用 parse_args 解析内层。
                                     if let Meta::List(meta_list) = &attr.meta
-                                        && let Ok(nv) =
-                                            meta_list.parse_args::<MetaNameValue>()
+                                        && let Ok(nv) = meta_list.parse_args::<MetaNameValue>()
                                         && nv.path.is_ident("source")
                                         && let syn::Expr::Lit(syn::ExprLit {
-                                            lit: Lit::Str(s),
-                                            ..
+                                            lit: Lit::Str(s), ..
                                         }) = &nv.value
                                     {
                                         match s.value().as_str() {
                                             "path" => {
                                                 if let Some(ident) = &field.ident {
-                                                    path_fields.push((
-                                                        ident.clone(),
-                                                        field.ty.clone(),
-                                                    ));
+                                                    path_fields
+                                                        .push((ident.clone(), field.ty.clone()));
                                                 }
                                             }
                                             "query" => {
                                                 if let Some(ident) = &field.ident {
                                                     // 检查是否有 #[serde(flatten)] 属性
-                                                    let is_flattened = field.attrs.iter().any(|attr| {
-                                                        if attr.path().is_ident("serde")
-                                                            && let Meta::List(meta_list) = &attr.meta
-                                                        {
-                                                            let tokens_str = meta_list.tokens.to_string();
-                                                            return tokens_str.contains("flatten");
-                                                        }
-                                                        false
-                                                    });
+                                                    let is_flattened =
+                                                        field.attrs.iter().any(|attr| {
+                                                            if attr.path().is_ident("serde")
+                                                                && let Meta::List(meta_list) =
+                                                                    &attr.meta
+                                                            {
+                                                                let tokens_str =
+                                                                    meta_list.tokens.to_string();
+                                                                return tokens_str
+                                                                    .contains("flatten");
+                                                            }
+                                                            false
+                                                        });
 
                                                     if is_flattened {
                                                         flattened_query_fields.push((

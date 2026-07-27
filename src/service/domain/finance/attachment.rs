@@ -105,9 +105,10 @@ impl AttachmentManage for FinanceDomainImpl {
 
         validate_attachment_is_text(&attachment)?;
         if let Some(expected_updated_at) = update.expected_updated_at
-            && expected_updated_at != attachment.po.updated_at {
-                bail_err!(Conflict, "Attachment 内容已被其他请求修改，请刷新后重试");
-            }
+            && expected_updated_at != attachment.po.updated_at
+        {
+            bail_err!(Conflict, "Attachment 内容已被其他请求修改，请刷新后重试");
+        }
 
         let updated = self
             .attachment_dal

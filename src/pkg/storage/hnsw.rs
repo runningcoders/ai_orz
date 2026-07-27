@@ -412,18 +412,20 @@ impl Drop for HnswStore {
         if let Ok(collections) = self.collections.try_read() {
             for (name, data) in collections.iter() {
                 if data.dirty
-                    && let Err(e) = Self::save_collection_to_file(&self.base_path, name, data) {
-                        tracing::warn!("Failed to flush collection '{}' on drop: {:?}", name, e);
-                    }
+                    && let Err(e) = Self::save_collection_to_file(&self.base_path, name, data)
+                {
+                    tracing::warn!("Failed to flush collection '{}' on drop: {:?}", name, e);
+                }
             }
         }
 
         // 同步落盘元数据
         if let Ok(meta_dirty) = self.meta_dirty.try_read()
             && *meta_dirty
-                && let Err(e) = self.save_collections_meta() {
-                    tracing::warn!("Failed to flush collections meta on drop: {:?}", e);
-                }
+            && let Err(e) = self.save_collections_meta()
+        {
+            tracing::warn!("Failed to flush collections meta on drop: {:?}", e);
+        }
     }
 }
 

@@ -201,7 +201,6 @@ fn ensure_tool_enabled(tool_id: &str, status: &ToolStatus) -> Result<()> {
 fn map_mcp_tool_error(tool_id: &str, error: &Error) -> String {
     let message = error.to_string();
     let normalized = message.to_lowercase();
-    
 
     if normalized.contains("timed out") || normalized.contains("timeout") {
         format!("MCP tool call timed out for tool_id: {}", tool_id)

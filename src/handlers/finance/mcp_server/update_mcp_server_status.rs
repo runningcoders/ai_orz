@@ -21,8 +21,6 @@ pub async fn update_mcp_server_status(
     ctx: RequestContext,
     params: UpdateMcpServerStatusRequest,
 ) -> Result<UpdateMcpServerStatusResponse> {
-    
-
     domain()
         .mcp_server_manage()
         .update_mcp_server_status(ctx.clone(), &params.id, to_model_status(params.status))

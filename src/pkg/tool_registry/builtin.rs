@@ -27,22 +27,10 @@ clone_trait_object!(BuiltinToolFactory);
 pub static GENERIC_BUILTIN_TOOLS: Lazy<Vec<(String, Box<dyn BuiltinToolFactory>)>> =
     Lazy::new(|| {
         vec![
-            (
-                "http_fetch".to_string(),
-                Box::new(HttpFetchToolFactory),
-            ),
-            (
-                "fs_read".to_string(),
-                Box::new(FsReadToolFactory),
-            ),
-            (
-                "fs_write".to_string(),
-                Box::new(FsWriteToolFactory),
-            ),
-            (
-                "shell_exec".to_string(),
-                Box::new(ShellExecToolFactory),
-            ),
+            ("http_fetch".to_string(), Box::new(HttpFetchToolFactory)),
+            ("fs_read".to_string(), Box::new(FsReadToolFactory)),
+            ("fs_write".to_string(), Box::new(FsWriteToolFactory)),
+            ("shell_exec".to_string(), Box::new(ShellExecToolFactory)),
         ]
     });
 

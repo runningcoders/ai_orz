@@ -311,12 +311,13 @@ fn push_query_filters<'args>(
         builder.push(" AND status = 1");
     }
     if let Some(status_in) = &query.status_in
-        && !status_in.is_empty() {
-            builder.push(" AND status IN (");
-            let mut separated = builder.separated(", ");
-            for s in status_in {
-                separated.push_bind(*s as i32);
-            }
-            builder.push(")");
+        && !status_in.is_empty()
+    {
+        builder.push(" AND status IN (");
+        let mut separated = builder.separated(", ");
+        for s in status_in {
+            separated.push_bind(*s as i32);
         }
+        builder.push(")");
+    }
 }

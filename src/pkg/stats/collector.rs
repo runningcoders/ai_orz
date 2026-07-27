@@ -388,10 +388,9 @@ impl Stats {
         }
 
         // Add aggregations
-        if (!group_by.is_empty() || !aggregations.is_empty())
-            && !group_by.is_empty() {
-                sql.push_str(", ");
-            }
+        if (!group_by.is_empty() || !aggregations.is_empty()) && !group_by.is_empty() {
+            sql.push_str(", ");
+        }
         for (i, agg) in aggregations.iter().enumerate() {
             if i > 0 {
                 sql.push_str(", ");

@@ -135,11 +135,16 @@ pub fn Reception() -> Element {
                 toast.error("组织名称、用户名、密码不能为空");
                 return;
             }
-            if chat_provider_name().is_empty() || chat_model_name().is_empty() || chat_api_key().is_empty() {
+            if chat_provider_name().is_empty()
+                || chat_model_name().is_empty()
+                || chat_api_key().is_empty()
+            {
                 toast.error("对话模型的 Provider 名称、模型名称、API Key 不能为空");
                 return;
             }
-            if enable_embedding() && (embedding_provider_name().is_empty() || embedding_model_name().is_empty()) {
+            if enable_embedding()
+                && (embedding_provider_name().is_empty() || embedding_model_name().is_empty())
+            {
                 toast.error("向量模型的 Provider 名称、模型名称不能为空");
                 return;
             }
@@ -169,7 +174,11 @@ pub fn Reception() -> Element {
                     provider_type: chat_provider_type(),
                     model_name: chat_model_name(),
                     api_key: chat_api_key(),
-                    base_url: if chat_base_url().is_empty() { None } else { Some(chat_base_url()) },
+                    base_url: if chat_base_url().is_empty() {
+                        None
+                    } else {
+                        Some(chat_base_url())
+                    },
                     description: None,
                 },
                 embedding_model: if enable_embedding() {
@@ -178,7 +187,11 @@ pub fn Reception() -> Element {
                         provider_type: embedding_provider_type(),
                         model_name: embedding_model_name(),
                         api_key: embedding_api_key(),
-                        base_url: if embedding_base_url().is_empty() { None } else { Some(embedding_base_url()) },
+                        base_url: if embedding_base_url().is_empty() {
+                            None
+                        } else {
+                            Some(embedding_base_url())
+                        },
                         description: None,
                     })
                 } else {

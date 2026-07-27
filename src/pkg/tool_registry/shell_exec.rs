@@ -263,13 +263,14 @@ impl CoreTool for ShellExecCoreTool {
 
         // Validate working directory
         if let Some(wd) = &params.working_dir
-            && !self.validate_working_dir(wd)? {
-                return Ok(serde_json::json!({
-                    "success": false,
-                    "error": format!("Working directory '{}' is not in allowed paths", wd),
-                    "require_confirmation": true
-                }));
-            }
+            && !self.validate_working_dir(wd)?
+        {
+            return Ok(serde_json::json!({
+                "success": false,
+                "error": format!("Working directory '{}' is not in allowed paths", wd),
+                "require_confirmation": true
+            }));
+        }
 
         // Resolve working directory
         let working_dir = self.resolve_working_dir(params.working_dir.as_deref());

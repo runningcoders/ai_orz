@@ -843,20 +843,20 @@ async fn test_deliver_message_to_channels(pool: SqlitePool) {
     use crate::models::file::FileMeta;
     let message = Message::new_with_context(
         message_id.to_string(),
-        None,                  // project_id
-        Some("".to_string()),  // task_id
+        None,                 // project_id
+        Some("".to_string()), // task_id
         "agent-1".to_string(),
         user_id.to_string(),
         MessageRole::Agent,
         MessageRole::User,
         MessageType::Text,
         "这是一条测试消息内容".to_string(),
-        None,                  // file_type
-        FileMeta::default(),   // file_meta
-        None,                  // reply_to_id
-        None,                  // root_id
-        None,                  // organization_id
-        user_id.to_string(),   // created_by
+        None,                // file_type
+        FileMeta::default(), // file_meta
+        None,                // reply_to_id
+        None,                // root_id
+        None,                // organization_id
+        user_id.to_string(), // created_by
     );
 
     // 多渠道投递

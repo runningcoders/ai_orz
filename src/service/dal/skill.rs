@@ -307,51 +307,51 @@ impl SkillDal for SkillDalImpl {
                 .model_provider_dao
                 .get_default_embedding_provider(ctx.clone())
                 .await?
-            {
-                // 创建 Cortex
-                let cortex = self
+        {
+            // 创建 Cortex
+            let cortex = self
+                .cortex_dao
+                .create_cortex_trait(ctx.clone(), &provider, vec![])?;
+
+            // 生成查询向量（使用便捷方法）
+            if let Some(keyword) = &search.keyword {
+                let query_vector_params = self
                     .cortex_dao
-                    .create_cortex_trait(ctx.clone(), &provider, vec![])?;
+                    .embed_text_for_search(ctx.clone(), cortex.as_ref(), keyword)
+                    .await?;
+                let query_vector = query_vector_params.vector;
 
-                // 生成查询向量（使用便捷方法）
-                if let Some(keyword) = &search.keyword {
-                    let query_vector_params = self
-                        .cortex_dao
-                        .embed_text_for_search(ctx.clone(), cortex.as_ref(), keyword)
-                        .await?;
-                    let query_vector = query_vector_params.vector;
+                // 向量搜索（前 50 条）
+                // 注意：只保留距离小于阈值的结果（余弦距离 0-2，0 是完全相同）
+                match self
+                    .skill_vector_dao
+                    .search_vector(ctx.clone(), &query_vector, 50)
+                    .await
+                {
+                    Ok(vector_results) => {
+                        // 过滤距离小于阈值的结果
+                        let filtered_results: Vec<(String, f32)> = vector_results
+                            .into_iter()
+                            .filter(|hit| hit.distance < vector_distance_threshold)
+                            .map(|hit| (hit.row.id, hit.distance))
+                            .collect();
 
-                    // 向量搜索（前 50 条）
-                    // 注意：只保留距离小于阈值的结果（余弦距离 0-2，0 是完全相同）
-                    match self
-                        .skill_vector_dao
-                        .search_vector(ctx.clone(), &query_vector, 50)
-                        .await
-                    {
-                        Ok(vector_results) => {
-                            // 过滤距离小于阈值的结果
-                            let filtered_results: Vec<(String, f32)> = vector_results
-                                .into_iter()
-                                .filter(|hit| hit.distance < vector_distance_threshold)
-                                .map(|hit| (hit.row.id, hit.distance))
-                                .collect();
-
-                            vector_skill_ids =
-                                filtered_results.iter().map(|(id, _)| id.clone()).collect();
-                            vector_scores = filtered_results.into_iter().collect();
-                        }
-                        Err(e) => {
-                            // 向量搜索失败（可能是 vss0 扩展未安装），降级到纯关键词搜索
-                            log_warn!(
-                                &ctx,
-                                "vector_search",
-                                "技能向量搜索失败，降级到关键词搜索: {}",
-                                e
-                            );
-                        }
+                        vector_skill_ids =
+                            filtered_results.iter().map(|(id, _)| id.clone()).collect();
+                        vector_scores = filtered_results.into_iter().collect();
+                    }
+                    Err(e) => {
+                        // 向量搜索失败（可能是 vss0 扩展未安装），降级到纯关键词搜索
+                        log_warn!(
+                            &ctx,
+                            "vector_search",
+                            "技能向量搜索失败，降级到关键词搜索: {}",
+                            e
+                        );
                     }
                 }
             }
+        }
 
         // Step 3: 执行 FTS5 关键词搜索（DAO 返回 Vec<(Po, fts_rank)>）
         let keyword_results = self.skill_dao.search(ctx.clone(), search.clone()).await?;

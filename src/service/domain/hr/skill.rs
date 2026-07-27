@@ -211,14 +211,15 @@ impl SkillManage for HrDomainImpl {
 
         // 乐观锁校验
         if let Some(expected) = expected_updated_at
-            && po.updated_at != expected {
-                bail_err!(
-                    Conflict,
-                    "Skill updated_at mismatch: expected {}, current {}",
-                    expected,
-                    po.updated_at
-                );
-            }
+            && po.updated_at != expected
+        {
+            bail_err!(
+                Conflict,
+                "Skill updated_at mismatch: expected {}, current {}",
+                expected,
+                po.updated_at
+            );
+        }
 
         // 校验文件名合法性（复用导入校验逻辑）
         validate_skill_import_target_path(filename)?;

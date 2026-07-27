@@ -27,7 +27,6 @@ pub enum McpTransport {
     StreamableHttp = 1,
 }
 
-
 impl From<i32> for McpTransport {
     fn from(v: i32) -> Self {
         match v {
@@ -72,7 +71,6 @@ pub enum McpServerStatus {
     /// 禁用。
     Disabled = 2,
 }
-
 
 impl From<i32> for McpServerStatus {
     fn from(v: i32) -> Self {

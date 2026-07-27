@@ -524,45 +524,44 @@ impl ToolDal for ToolDalImpl {
                 .model_provider_dao
                 .get_default_embedding_provider(ctx.clone())
                 .await?
-            {
-                let cortex = self
+        {
+            let cortex = self
+                .cortex_dao
+                .create_cortex_trait(ctx.clone(), &provider, vec![])?;
+
+            if let Some(keyword) = &params.keyword {
+                let query_vector_params = self
                     .cortex_dao
-                    .create_cortex_trait(ctx.clone(), &provider, vec![])?;
+                    .embed_text_for_search(ctx.clone(), cortex.as_ref(), keyword)
+                    .await?;
+                let query_vector = query_vector_params.vector;
 
-                if let Some(keyword) = &params.keyword {
-                    let query_vector_params = self
-                        .cortex_dao
-                        .embed_text_for_search(ctx.clone(), cortex.as_ref(), keyword)
-                        .await?;
-                    let query_vector = query_vector_params.vector;
+                match self
+                    .tool_vector_dao
+                    .search_vector(ctx.clone(), &query_vector, 50)
+                    .await
+                {
+                    Ok(vector_results) => {
+                        let filtered_results: Vec<(String, f32)> = vector_results
+                            .into_iter()
+                            .filter(|hit| hit.distance < VECTOR_DISTANCE_THRESHOLD)
+                            .map(|hit| (hit.row.id, hit.distance))
+                            .collect();
 
-                    match self
-                        .tool_vector_dao
-                        .search_vector(ctx.clone(), &query_vector, 50)
-                        .await
-                    {
-                        Ok(vector_results) => {
-                            let filtered_results: Vec<(String, f32)> = vector_results
-                                .into_iter()
-                                .filter(|hit| hit.distance < VECTOR_DISTANCE_THRESHOLD)
-                                .map(|hit| (hit.row.id, hit.distance))
-                                .collect();
-
-                            vector_ids =
-                                filtered_results.iter().map(|(id, _)| id.clone()).collect();
-                            vector_scores = filtered_results.into_iter().collect();
-                        }
-                        Err(e) => {
-                            log_warn!(
-                                ctx.clone(),
-                                "vector_search",
-                                "Tool vector search failed: {}, fallback to keyword only",
-                                e
-                            );
-                        }
+                        vector_ids = filtered_results.iter().map(|(id, _)| id.clone()).collect();
+                        vector_scores = filtered_results.into_iter().collect();
+                    }
+                    Err(e) => {
+                        log_warn!(
+                            ctx.clone(),
+                            "vector_search",
+                            "Tool vector search failed: {}, fallback to keyword only",
+                            e
+                        );
                     }
                 }
             }
+        }
 
         // Step 3: FTS5 关键词搜索（DAO 返回 Vec<(ToolPo, fts_rank)>）
         let fts_results = self.tool_dao.search_tools(ctx.clone(), params).await?;

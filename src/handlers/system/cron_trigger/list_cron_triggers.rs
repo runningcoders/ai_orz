@@ -23,10 +23,8 @@ pub async fn list_cron_triggers(
     let triggers = domain().cron_manager().list_triggers(ctx, query).await?;
 
     let total = triggers.len();
-    let triggers: Vec<CronTriggerDetail> = triggers
-        .iter()
-        .map(super::response::to_detail)
-        .collect();
+    let triggers: Vec<CronTriggerDetail> =
+        triggers.iter().map(super::response::to_detail).collect();
 
     Ok(ListCronTriggersResponse { triggers, total })
 }

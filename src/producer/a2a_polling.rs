@@ -229,30 +229,31 @@ impl Producer for A2aPollingProducer {
                 };
 
                 if let Some(target) = target_status
-                    && local_task.po.status != target {
-                        if let Err(e) = project_domain::domain()
-                            .task_manage()
-                            .transition_status(task_ctx.clone(), &mut local_task, target)
-                            .await
-                        {
-                            log_warn!(
-                                &task_ctx,
-                                "a2a_polling",
-                                "Failed to transition task {} to {:?}: {}",
-                                task.po.id,
-                                target,
-                                e
-                            );
-                        } else {
-                            log_info!(
-                                &task_ctx,
-                                "a2a_polling",
-                                "Task {} transitioned to {:?}",
-                                task.po.id,
-                                target
-                            );
-                        }
+                    && local_task.po.status != target
+                {
+                    if let Err(e) = project_domain::domain()
+                        .task_manage()
+                        .transition_status(task_ctx.clone(), &mut local_task, target)
+                        .await
+                    {
+                        log_warn!(
+                            &task_ctx,
+                            "a2a_polling",
+                            "Failed to transition task {} to {:?}: {}",
+                            task.po.id,
+                            target,
+                            e
+                        );
+                    } else {
+                        log_info!(
+                            &task_ctx,
+                            "a2a_polling",
+                            "Task {} transitioned to {:?}",
+                            task.po.id,
+                            target
+                        );
                     }
+                }
 
                 processed_count += 1;
             }

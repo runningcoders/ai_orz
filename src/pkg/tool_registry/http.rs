@@ -172,9 +172,10 @@ async fn execute_http_call(
     }
 
     if method == Method::POST
-        && let Some(body) = &config.body {
-            request = request.json(&render_value_template(body, &args)?);
-        }
+        && let Some(body) = &config.body
+    {
+        request = request.json(&render_value_template(body, &args)?);
+    }
 
     let mut response = request
         .send()
@@ -244,13 +245,14 @@ fn validate_args_schema(parameters_schema: Option<&Value>, args: &Value) -> Resu
     }
 
     if let Some(Value::Bool(false)) = schema.get("additionalProperties")
-        && let Some(Value::Object(properties)) = schema.get("properties") {
-            for name in args_object.keys() {
-                if !properties.contains_key(name) {
-                    return Err(anyhow!("unknown tool argument: {}", name).into());
-                }
+        && let Some(Value::Object(properties)) = schema.get("properties")
+    {
+        for name in args_object.keys() {
+            if !properties.contains_key(name) {
+                return Err(anyhow!("unknown tool argument: {}", name).into());
             }
         }
+    }
 
     if let Some(Value::Object(properties)) = schema.get("properties") {
         for (name, value) in args_object {
@@ -267,9 +269,10 @@ fn validate_args_schema(parameters_schema: Option<&Value>, args: &Value) -> Resu
 
 fn validate_arg_value(name: &str, value: &Value, property_schema: &Value) -> Result<()> {
     if let Some(Value::Array(allowed_values)) = property_schema.get("enum")
-        && !allowed_values.iter().any(|allowed| allowed == value) {
-            return Err(anyhow!("invalid enum value for tool argument {}", name).into());
-        }
+        && !allowed_values.iter().any(|allowed| allowed == value)
+    {
+        return Err(anyhow!("invalid enum value for tool argument {}", name).into());
+    }
 
     let Some(expected_type) = property_schema.get("type").and_then(Value::as_str) else {
         return Ok(());
@@ -452,17 +455,17 @@ fn validate_fixed_target_policy(config: &HttpToolConfig) -> Result<()> {
         && blocked_domains
             .iter()
             .any(|domain| domain_matches(&host, domain))
-        {
-            return Err(anyhow!("blocked http domain").into());
-        }
+    {
+        return Err(anyhow!("blocked http domain").into());
+    }
 
     if let Some(allowed_domains) = &config.allowed_domains
         && !allowed_domains
             .iter()
             .any(|domain| domain_matches(&host, domain))
-        {
-            return Err(anyhow!("http domain is not allowed").into());
-        }
+    {
+        return Err(anyhow!("http domain is not allowed").into());
+    }
 
     if is_local_network_host(&host) && config.allow_local_network != Some(true) {
         return Err(anyhow!("local network http target requires allow_local_network=true").into());

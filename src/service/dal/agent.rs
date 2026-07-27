@@ -454,52 +454,53 @@ impl AgentDal for AgentDalImpl {
 
         // Step 2: 如果有关键词，尝试向量搜索
         if search.keyword.is_some()
-            && let Some(keyword) = &search.keyword {
-                match self
-                    .try_build_vector_params_for_search(ctx.clone(), keyword)
-                    .await
-                {
-                    Ok(Some(vec_params)) => {
-                        // 向量搜索（前 50 条）
-                        match self
-                            .agent_vector_dao
-                            .search_vector(ctx.clone(), &vec_params.vector, 50)
-                            .await
-                        {
-                            Ok(vector_results) => {
-                                // 过滤距离小于阈值的结果
-                                let filtered_results: Vec<(String, f32)> = vector_results
-                                    .into_iter()
-                                    .filter(|hit| hit.distance < vector_distance_threshold)
-                                    .map(|hit| (hit.row.id, hit.distance))
-                                    .collect();
+            && let Some(keyword) = &search.keyword
+        {
+            match self
+                .try_build_vector_params_for_search(ctx.clone(), keyword)
+                .await
+            {
+                Ok(Some(vec_params)) => {
+                    // 向量搜索（前 50 条）
+                    match self
+                        .agent_vector_dao
+                        .search_vector(ctx.clone(), &vec_params.vector, 50)
+                        .await
+                    {
+                        Ok(vector_results) => {
+                            // 过滤距离小于阈值的结果
+                            let filtered_results: Vec<(String, f32)> = vector_results
+                                .into_iter()
+                                .filter(|hit| hit.distance < vector_distance_threshold)
+                                .map(|hit| (hit.row.id, hit.distance))
+                                .collect();
 
-                                vector_agent_ids =
-                                    filtered_results.iter().map(|(id, _)| id.clone()).collect();
-                                vector_scores = filtered_results.into_iter().collect();
-                            }
-                            Err(e) => {
-                                log_warn!(
-                                    &ctx,
-                                    "vector_search",
-                                    "Agent 向量搜索失败，降级到关键词搜索: {}",
-                                    e
-                                );
-                            }
+                            vector_agent_ids =
+                                filtered_results.iter().map(|(id, _)| id.clone()).collect();
+                            vector_scores = filtered_results.into_iter().collect();
+                        }
+                        Err(e) => {
+                            log_warn!(
+                                &ctx,
+                                "vector_search",
+                                "Agent 向量搜索失败，降级到关键词搜索: {}",
+                                e
+                            );
                         }
                     }
-                    Ok(None) => {
-                        log_debug!(
-                            &ctx,
-                            "vector_search",
-                            "无可用 Embedding Provider，跳过向量搜索"
-                        );
-                    }
-                    Err(e) => {
-                        log_warn!(&ctx, "vector_search", error = ?e, "Agent 向量化失败，跳过向量搜索");
-                    }
+                }
+                Ok(None) => {
+                    log_debug!(
+                        &ctx,
+                        "vector_search",
+                        "无可用 Embedding Provider，跳过向量搜索"
+                    );
+                }
+                Err(e) => {
+                    log_warn!(&ctx, "vector_search", error = ?e, "Agent 向量化失败，跳过向量搜索");
                 }
             }
+        }
 
         // Step 3: 执行 FTS5 关键词搜索（DAO 返回 Vec<(Po, fts_rank)>）
         let keyword_results = self
@@ -687,13 +688,14 @@ impl AgentDal for AgentDalImpl {
         let mut need_update = false;
 
         if brain.is_local()
-            && let Some(cortex) = brain.cortex() {
-                let model_provider_id = cortex.model_provider.po.id.clone();
-                if agent.po.model_provider_id != model_provider_id {
-                    agent.po.model_provider_id = model_provider_id;
-                    need_update = true;
-                }
+            && let Some(cortex) = brain.cortex()
+        {
+            let model_provider_id = cortex.model_provider.po.id.clone();
+            if agent.po.model_provider_id != model_provider_id {
+                agent.po.model_provider_id = model_provider_id;
+                need_update = true;
             }
+        }
 
         agent.set_brain(brain);
 

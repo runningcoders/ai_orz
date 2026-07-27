@@ -153,11 +153,13 @@ impl EventQueue for InMemoryEventQueue {
             let was_empty = queue.is_empty();
             queue.push(event_ref.clone());
 
-            if was_empty && !has_active_message.get(&order_key).copied().unwrap_or(false)
-                && let Some(top_ref) = queue.pop() {
-                    global_heap.push(top_ref);
-                    has_active_message.insert(order_key, true);
-                }
+            if was_empty
+                && !has_active_message.get(&order_key).copied().unwrap_or(false)
+                && let Some(top_ref) = queue.pop()
+            {
+                global_heap.push(top_ref);
+                has_active_message.insert(order_key, true);
+            }
         }
 
         Ok(())
@@ -327,9 +329,10 @@ impl EventQueue for InMemoryEventQueue {
 
             // 应用 order_key 过滤
             if let Some(ref ok) = filter.order_key
-                && &order_key != ok {
-                    continue;
-                }
+                && &order_key != ok
+            {
+                continue;
+            }
 
             let status = if in_progress.contains_key(event_id) {
                 super::EventStatus::Processing
@@ -339,9 +342,10 @@ impl EventQueue for InMemoryEventQueue {
 
             // 应用 status 过滤
             if let Some(ref s) = filter.status
-                && *s != status {
-                    continue;
-                }
+                && *s != status
+            {
+                continue;
+            }
 
             let event_kind = event
                 .get("kind")

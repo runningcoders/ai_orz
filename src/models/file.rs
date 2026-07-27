@@ -5,8 +5,7 @@ use serde::{Deserialize, Serialize};
 
 /// Shared file metadata structure.
 /// Stored as JSON in database `file_meta` column.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FileMeta {
     /// Relative file path within attachments directory.
     pub file_path: String,
@@ -15,7 +14,6 @@ pub struct FileMeta {
     /// File size in bytes.
     pub file_size: u64,
 }
-
 
 impl FileMeta {
     /// Create a new FileMeta instance.

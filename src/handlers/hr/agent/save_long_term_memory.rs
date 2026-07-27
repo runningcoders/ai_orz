@@ -68,35 +68,36 @@ pub async fn save_long_term_memory(
     let mut relation_ids: Vec<String> = Vec::new();
 
     if let Some(relations) = params.relations
-        && !relations.is_empty() {
-            let relation_pos: Vec<KnowledgeNodeRelationPo> = relations
-                .iter()
-                .map(|r| {
-                    let id_content = format!(
-                        "{}{}{}{}",
-                        r.source_node_id, r.target_node_id, r.relation_type, now
-                    );
-                    let relation_id = format!("kr_{}", sha256::digest(id_content));
-                    relation_ids.push(relation_id.clone());
-                    KnowledgeNodeRelationPo {
-                        id: relation_id,
-                        source_node_id: r.source_node_id.clone(),
-                        target_node_id: r.target_node_id.clone(),
-                        relation_type: common::enums::KnowledgeRelationType::from(
-                            r.relation_type.clone(),
-                        ),
-                        created_at: now,
-                        updated_at: now,
-                    }
-                })
-                .collect();
+        && !relations.is_empty()
+    {
+        let relation_pos: Vec<KnowledgeNodeRelationPo> = relations
+            .iter()
+            .map(|r| {
+                let id_content = format!(
+                    "{}{}{}{}",
+                    r.source_node_id, r.target_node_id, r.relation_type, now
+                );
+                let relation_id = format!("kr_{}", sha256::digest(id_content));
+                relation_ids.push(relation_id.clone());
+                KnowledgeNodeRelationPo {
+                    id: relation_id,
+                    source_node_id: r.source_node_id.clone(),
+                    target_node_id: r.target_node_id.clone(),
+                    relation_type: common::enums::KnowledgeRelationType::from(
+                        r.relation_type.clone(),
+                    ),
+                    created_at: now,
+                    updated_at: now,
+                }
+            })
+            .collect();
 
-            let create_relations_params = MemoryCreateParams::CreateRelations(relation_pos);
-            let _relation_results = runtime_domain()
-                .memory()
-                .create(ctx, create_relations_params)
-                .await?;
-        }
+        let create_relations_params = MemoryCreateParams::CreateRelations(relation_pos);
+        let _relation_results = runtime_domain()
+            .memory()
+            .create(ctx, create_relations_params)
+            .await?;
+    }
 
     Ok(SaveLongTermMemoryResponse {
         node_id,

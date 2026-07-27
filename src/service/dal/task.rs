@@ -367,57 +367,58 @@ impl TaskDal for TaskDalImpl {
 
         // Step 2: 如果有关键词，执行向量搜索（用关键词生成查询向量）
         if search.keyword.is_some()
-            && let Some(keyword) = &search.keyword {
-                match try_build_vector_params_for_search(
-                    ctx.clone(),
-                    &self.cortex_dao,
-                    &self.model_provider_dao,
-                    keyword,
-                )
-                .await
-                {
-                    Ok(Some(vec_params)) => {
-                        // 向量搜索（前 50 条）
-                        match self
-                            .task_vector_dao
-                            .search_vector(ctx.clone(), &vec_params.vector, 50)
-                            .await
-                        {
-                            Ok(vector_results) => {
-                                // 过滤距离小于阈值的结果
-                                let filtered_results: Vec<(String, f32)> = vector_results
-                                    .into_iter()
-                                    .filter(|hit| hit.distance < VECTOR_DISTANCE_THRESHOLD)
-                                    .map(|hit| (hit.row.id, hit.distance))
-                                    .collect();
+            && let Some(keyword) = &search.keyword
+        {
+            match try_build_vector_params_for_search(
+                ctx.clone(),
+                &self.cortex_dao,
+                &self.model_provider_dao,
+                keyword,
+            )
+            .await
+            {
+                Ok(Some(vec_params)) => {
+                    // 向量搜索（前 50 条）
+                    match self
+                        .task_vector_dao
+                        .search_vector(ctx.clone(), &vec_params.vector, 50)
+                        .await
+                    {
+                        Ok(vector_results) => {
+                            // 过滤距离小于阈值的结果
+                            let filtered_results: Vec<(String, f32)> = vector_results
+                                .into_iter()
+                                .filter(|hit| hit.distance < VECTOR_DISTANCE_THRESHOLD)
+                                .map(|hit| (hit.row.id, hit.distance))
+                                .collect();
 
-                                vector_ids =
-                                    filtered_results.iter().map(|(id, _)| id.clone()).collect();
-                                vector_scores = filtered_results.into_iter().collect();
-                            }
-                            Err(e) => {
-                                // 向量搜索失败，降级到纯关键词搜索
-                                log_warn!(
-                                    ctx,
-                                    "vector_search",
-                                    "任务向量搜索失败，降级到关键词搜索: {}",
-                                    e
-                                );
-                            }
+                            vector_ids =
+                                filtered_results.iter().map(|(id, _)| id.clone()).collect();
+                            vector_scores = filtered_results.into_iter().collect();
+                        }
+                        Err(e) => {
+                            // 向量搜索失败，降级到纯关键词搜索
+                            log_warn!(
+                                ctx,
+                                "vector_search",
+                                "任务向量搜索失败，降级到关键词搜索: {}",
+                                e
+                            );
                         }
                     }
-                    Ok(None) => {
-                        log_debug!(
-                            ctx,
-                            "vector_search",
-                            "无可用 Embedding Provider，跳过向量搜索"
-                        );
-                    }
-                    Err(e) => {
-                        log_warn!(ctx, "vector_search", error = ?e, "任务向量化失败，跳过向量搜索");
-                    }
+                }
+                Ok(None) => {
+                    log_debug!(
+                        ctx,
+                        "vector_search",
+                        "无可用 Embedding Provider，跳过向量搜索"
+                    );
+                }
+                Err(e) => {
+                    log_warn!(ctx, "vector_search", error = ?e, "任务向量化失败，跳过向量搜索");
                 }
             }
+        }
 
         // Step 3: 执行 FTS5 关键词搜索（DAO 返回 Vec<(Po, fts_rank)>）
         let keyword_results = self

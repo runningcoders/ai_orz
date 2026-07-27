@@ -2,8 +2,8 @@
 
 use crate::models::brain::CortexTrait;
 use crate::models::memory::{
-    KnowledgeNodeRelationPo, LongTermKnowledgeNodePo, Memory,
-    MemoryCreateParams, MemoryPo, MemoryTrace, ShortTermMemoryIndexPo,
+    KnowledgeNodeRelationPo, LongTermKnowledgeNodePo, Memory, MemoryCreateParams, MemoryPo,
+    MemoryTrace, ShortTermMemoryIndexPo,
 };
 use crate::models::model_provider::ModelProviderPo;
 use crate::models::vector::{MatchType, VectorIndexParams, VectorMeta, VectorRow, VectorSearchHit};

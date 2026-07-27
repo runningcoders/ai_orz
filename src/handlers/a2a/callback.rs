@@ -154,30 +154,31 @@ pub async fn handle_a2a_callback(
     };
 
     if let Some(target) = target_status
-        && local_task.po.status != target {
-            if let Err(e) = project_domain::domain()
-                .task_manage()
-                .transition_status(task_ctx.clone(), &mut local_task, target)
-                .await
-            {
-                log_warn!(
-                    &task_ctx,
-                    "a2a_callback",
-                    "Failed to transition task {} to {:?}: {}",
-                    task_id,
-                    target,
-                    e
-                );
-            } else {
-                log_info!(
-                    &task_ctx,
-                    "a2a_callback",
-                    "Task {} transitioned to {:?} via callback",
-                    task_id,
-                    target
-                );
-            }
+        && local_task.po.status != target
+    {
+        if let Err(e) = project_domain::domain()
+            .task_manage()
+            .transition_status(task_ctx.clone(), &mut local_task, target)
+            .await
+        {
+            log_warn!(
+                &task_ctx,
+                "a2a_callback",
+                "Failed to transition task {} to {:?}: {}",
+                task_id,
+                target,
+                e
+            );
+        } else {
+            log_info!(
+                &task_ctx,
+                "a2a_callback",
+                "Task {} transitioned to {:?} via callback",
+                task_id,
+                target
+            );
         }
+    }
 
     log_info!(
         &ctx,

@@ -12,14 +12,12 @@ const REFRESH_BUFFER: Duration = Duration::from_secs(5 * 60);
 /// tenant_access_token 缓存
 ///
 /// 使用 `Arc<RwLock<TokenCache>>` 双重检查锁模式防止并发刷新。
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct TokenCache {
     token: Option<String>,
     /// 绝对过期时间点（fetch 时返回的 expire 时间）
     expire_at: Option<Instant>,
 }
-
 
 impl TokenCache {
     pub fn new() -> Self {

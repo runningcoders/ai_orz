@@ -214,14 +214,15 @@ WHERE tasks_fts MATCH "#,
         }
 
         if let Some(status_list) = &search.filters.status_in
-            && !status_list.is_empty() {
-                builder.push(r#" AND t."status" IN ("#);
-                let mut separated = builder.separated(", ");
-                for s in status_list {
-                    separated.push_bind(*s as i32);
-                }
-                builder.push(")");
+            && !status_list.is_empty()
+        {
+            builder.push(r#" AND t."status" IN ("#);
+            let mut separated = builder.separated(", ");
+            for s in status_list {
+                separated.push_bind(*s as i32);
             }
+            builder.push(")");
+        }
 
         builder.push(" ORDER BY tasks_fts.rank LIMIT ");
         builder.push_bind(limit_i64);
@@ -433,14 +434,15 @@ fn push_query_filters<'args>(
 ) {
     builder.push(r#" AND "status" != 0"#);
     if let Some(ids) = &query.ids
-        && !ids.is_empty() {
-            builder.push(" AND id IN (");
-            let mut separated = builder.separated(", ");
-            for id in ids {
-                separated.push_bind(id.clone());
-            }
-            builder.push(")");
+        && !ids.is_empty()
+    {
+        builder.push(" AND id IN (");
+        let mut separated = builder.separated(", ");
+        for id in ids {
+            separated.push_bind(id.clone());
         }
+        builder.push(")");
+    }
     if let Some(assignee_type) = &query.assignee_type {
         builder
             .push(r#" AND "assignee_type" = "#)
@@ -457,12 +459,13 @@ fn push_query_filters<'args>(
             .push_bind(project_id.clone());
     }
     if let Some(status_list) = &query.status_in
-        && !status_list.is_empty() {
-            builder.push(r#" AND "status" IN ("#);
-            let mut separated = builder.separated(", ");
-            for s in status_list {
-                separated.push_bind(*s as i32);
-            }
-            builder.push(")");
+        && !status_list.is_empty()
+    {
+        builder.push(r#" AND "status" IN ("#);
+        let mut separated = builder.separated(", ");
+        for s in status_list {
+            separated.push_bind(*s as i32);
         }
+        builder.push(")");
+    }
 }

@@ -303,17 +303,18 @@ fn append_dir_recursive<W: std::io::Write>(
             let mut file = std::fs::File::open(&path)?;
             builder.append_file(&tar_path, &mut file)?;
         } else if file_type.is_symlink()
-            && let Ok(target) = std::fs::read_link(&path) {
-                let mut header = tar::Header::new_gnu();
-                header.set_entry_type(tar::EntryType::Symlink);
-                header.set_size(0);
-                header.set_mode(0o777);
-                header.set_mtime(system_time_to_secs(metadata.modified().ok()));
-                header.set_link_name(target.as_path())?;
-                header.set_cksum();
-                let mut empty = std::io::empty();
-                builder.append_data(&mut header, &tar_path, &mut empty)?;
-            }
+            && let Ok(target) = std::fs::read_link(&path)
+        {
+            let mut header = tar::Header::new_gnu();
+            header.set_entry_type(tar::EntryType::Symlink);
+            header.set_size(0);
+            header.set_mode(0o777);
+            header.set_mtime(system_time_to_secs(metadata.modified().ok()));
+            header.set_link_name(target.as_path())?;
+            header.set_cksum();
+            let mut empty = std::io::empty();
+            builder.append_data(&mut header, &tar_path, &mut empty)?;
+        }
         // 其他类型（fifo、socket 等）跳过
     }
     Ok(())

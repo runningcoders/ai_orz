@@ -239,19 +239,20 @@ impl MessageConsumer {
 
         // 检查轮次限制
         if let (Some(_task_id), Some(stats)) = (&message.po.task_id, &agent.stats)
-            && let Some(call_summary) = &stats.call_summary {
-                let runtime_config = agent.po.get_runtime_config();
-                let max_depth = runtime_config.max_thinking_depth as u64;
-                if call_summary.total_calls >= max_depth {
-                    log_warn!(
-                        &ctx,
-                        "handle_agent_message",
-                        "Agent {} reached max thinking depth ({}), stopping loop",
-                        agent_id,
-                        max_depth
-                    );
+            && let Some(call_summary) = &stats.call_summary
+        {
+            let runtime_config = agent.po.get_runtime_config();
+            let max_depth = runtime_config.max_thinking_depth as u64;
+            if call_summary.total_calls >= max_depth {
+                log_warn!(
+                    &ctx,
+                    "handle_agent_message",
+                    "Agent {} reached max thinking depth ({}), stopping loop",
+                    agent_id,
+                    max_depth
+                );
 
-                    let send_result = self.message_domain
+                let send_result = self.message_domain
                         .delivery()
                         .send_to_user(
                             ctx.clone(),
@@ -269,22 +270,22 @@ impl MessageConsumer {
                         )
                         .await;
 
-                    // 通知失败仅记录警告，不阻塞 Agent 释放 busy / 返回 Ok
-                    // （thinking depth 是合法停止，通知失败不应触发消息重试）
-                    if let Err(notify_err) = send_result {
-                        log_warn!(
-                            &ctx,
-                            "handle_agent_message",
-                            "通知用户 Agent 已达最大思考深度失败（不阻塞停止流程）: {}",
-                            notify_err
-                        );
-                    }
-
-                    // 释放 Busy 状态（awaken 不会被调用，BusyGuard 不会创建）
-                    AgentRuntimeStateManager::global().set_idle(agent_id);
-                    return Ok(());
+                // 通知失败仅记录警告，不阻塞 Agent 释放 busy / 返回 Ok
+                // （thinking depth 是合法停止，通知失败不应触发消息重试）
+                if let Err(notify_err) = send_result {
+                    log_warn!(
+                        &ctx,
+                        "handle_agent_message",
+                        "通知用户 Agent 已达最大思考深度失败（不阻塞停止流程）: {}",
+                        notify_err
+                    );
                 }
+
+                // 释放 Busy 状态（awaken 不会被调用，BusyGuard 不会创建）
+                AgentRuntimeStateManager::global().set_idle(agent_id);
+                return Ok(());
             }
+        }
 
         // 确保 Agent 有 Brain
         // wake_agent_brain 内部会查询 ModelProvider 并 enrich ctx

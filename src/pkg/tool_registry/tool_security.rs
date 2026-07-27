@@ -115,9 +115,9 @@ pub async fn validate_target_url(
         && blocked_domains
             .iter()
             .any(|domain| domain_matches(&host, domain))
-        {
-            return Err(anyhow!("blocked http domain").into());
-        }
+    {
+        return Err(anyhow!("blocked http domain").into());
+    }
 
     if is_local_network_host(&host) && allow_local_network != Some(true) {
         return Err(anyhow!("local network http target requires allow_local_network=true").into());
@@ -127,9 +127,9 @@ pub async fn validate_target_url(
         && !allowed_domains
             .iter()
             .any(|domain| domain_matches(&host, domain))
-        {
-            return Err(anyhow!("http domain is not allowed").into());
-        }
+    {
+        return Err(anyhow!("http domain is not allowed").into());
+    }
 
     let addresses =
         validate_resolved_addresses(&host, url.port_or_known_default(), allow_local_network)
@@ -159,12 +159,12 @@ async fn validate_resolved_addresses(
         && addresses
             .iter()
             .any(|address| is_local_network_ip(address.ip()))
-        {
-            return Err(anyhow!(
-                "resolved local network http target requires allow_local_network=true"
-            )
-            .into());
-        }
+    {
+        return Err(anyhow!(
+            "resolved local network http target requires allow_local_network=true"
+        )
+        .into());
+    }
 
     Ok(addresses)
 }
@@ -203,14 +203,15 @@ pub async fn read_limited_response_body(
     max_bytes: usize,
 ) -> Result<Vec<u8>> {
     if let Some(content_length) = response.content_length()
-        && content_length > max_bytes as u64 {
-            return Err(anyhow!(
-                "http response too large: {} bytes exceeds limit {}",
-                content_length,
-                max_bytes
-            )
-            .into());
-        }
+        && content_length > max_bytes as u64
+    {
+        return Err(anyhow!(
+            "http response too large: {} bytes exceeds limit {}",
+            content_length,
+            max_bytes
+        )
+        .into());
+    }
 
     let mut bytes = Vec::new();
     while let Some(chunk) = response
@@ -389,10 +390,11 @@ pub mod fs {
                 }
                 .canonicalize();
                 if let Ok(additional_canon) = additional_canon
-                    && canonical.starts_with(&additional_canon) {
-                        allowed = true;
-                        break;
-                    }
+                    && canonical.starts_with(&additional_canon)
+                {
+                    allowed = true;
+                    break;
+                }
                 // Ignore invalid/unresolvable additional paths
             }
         }
@@ -408,9 +410,10 @@ pub mod fs {
 
         // 5. Reject symlinks
         if let Ok(metadata) = canonical.symlink_metadata()
-            && metadata.file_type().is_symlink() {
-                return Err(anyhow!("Access denied: symbolic links are not allowed").into());
-            }
+            && metadata.file_type().is_symlink()
+        {
+            return Err(anyhow!("Access denied: symbolic links are not allowed").into());
+        }
 
         Ok(ValidationResult::Valid(canonical))
     }

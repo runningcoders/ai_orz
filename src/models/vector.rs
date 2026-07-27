@@ -92,8 +92,7 @@ impl VectorIndexParams {
 }
 
 /// 搜索匹配类型（支持混合策略）
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MatchType {
     /// 仅向量语义匹配
     #[default]
@@ -103,7 +102,6 @@ pub enum MatchType {
     /// 同时命中两种搜索策略（双重匹配）
     Hybrid,
 }
-
 
 /// 搜索匹配元信息（不含泛型，可嵌入任何业务实体）
 ///

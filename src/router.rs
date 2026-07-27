@@ -221,8 +221,8 @@ fn artifact_routes() -> Router {
 
 fn organization_protected_routes() -> Router {
     // Each handler is in its own file in the subdirectory
-    use crate::handlers::organization::organizations;
     use crate::handlers::organization::organization_me;
+    use crate::handlers::organization::organizations;
     use crate::handlers::organization::user;
 
     Router::new()

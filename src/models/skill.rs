@@ -115,7 +115,6 @@ pub struct Skill {
     pub search_match: Option<SearchMatchInfo>,
 }
 
-
 /// ✅ 实现 Vectorizable Trait（统一向量化行为）
 impl Vectorizable for Skill {
     fn vectorize_text(&self) -> String {

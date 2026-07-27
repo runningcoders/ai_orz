@@ -49,12 +49,14 @@ impl UserPo {
             UserRole::Member => "成员",
         };
 
-        let parts = [format!("【用户 ID】{}", self.id),
+        let parts = [
+            format!("【用户 ID】{}", self.id),
             format!("【显示名称】{}", self.display_name),
             format!("【用户名】{}", self.username),
             format!("【邮箱】{}", self.email),
             format!("【角色】{}", role_name),
-            format!("【组织 ID】{}", self.organization_id)];
+            format!("【组织 ID】{}", self.organization_id),
+        ];
 
         parts.join("\n")
     }

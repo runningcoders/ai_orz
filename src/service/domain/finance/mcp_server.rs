@@ -86,16 +86,18 @@ fn merge_redacted_config(
 ) -> McpServerConfig {
     for (key, value) in incoming.env.iter_mut() {
         if value == REDACTED_CONFIG_VALUE
-            && let Some(existing_value) = existing.env.get(key) {
-                *value = existing_value.clone();
-            }
+            && let Some(existing_value) = existing.env.get(key)
+        {
+            *value = existing_value.clone();
+        }
     }
 
     for (key, value) in incoming.headers.iter_mut() {
         if value == REDACTED_CONFIG_VALUE
-            && let Some(existing_value) = existing.headers.get(key) {
-                *value = existing_value.clone();
-            }
+            && let Some(existing_value) = existing.headers.get(key)
+        {
+            *value = existing_value.clone();
+        }
     }
 
     if incoming

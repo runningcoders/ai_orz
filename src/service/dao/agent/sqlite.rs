@@ -171,14 +171,15 @@ FROM agents WHERE id = ? AND status <> 0
 
         // 应用业务过滤条件
         if let Some(ids) = &filters.ids
-            && !ids.is_empty() {
-                builder.push(" AND m.id IN (");
-                let mut separated = builder.separated(", ");
-                for id in ids {
-                    separated.push_bind(id);
-                }
-                separated.push_unseparated(")");
+            && !ids.is_empty()
+        {
+            builder.push(" AND m.id IN (");
+            let mut separated = builder.separated(", ");
+            for id in ids {
+                separated.push_bind(id);
             }
+            separated.push_unseparated(")");
+        }
 
         if let Some(status) = &filters.status {
             builder.push(" AND m.status = ").push_bind(*status as i32);
@@ -202,16 +203,15 @@ FROM agents WHERE id = ? AND status <> 0
 
         // 角色标签过滤（OR 语义，使用 json_each 精确匹配）
         if let Some(roles) = &filters.roles
-            && !roles.is_empty() {
-                builder.push(
-                    " AND EXISTS (SELECT 1 FROM json_each(m.role) WHERE json_each.value IN (",
-                );
-                let mut separated = builder.separated(", ");
-                for role in roles {
-                    separated.push_bind(role);
-                }
-                separated.push_unseparated("))");
+            && !roles.is_empty()
+        {
+            builder.push(" AND EXISTS (SELECT 1 FROM json_each(m.role) WHERE json_each.value IN (");
+            let mut separated = builder.separated(", ");
+            for role in roles {
+                separated.push_bind(role);
             }
+            separated.push_unseparated("))");
+        }
 
         builder.push(" ORDER BY agents_fts.rank");
 
@@ -329,14 +329,15 @@ fn push_query_filters<'args>(
     query: &AgentQuery,
 ) {
     if let Some(ids) = &query.ids
-        && !ids.is_empty() {
-            builder.push(" AND id IN (");
-            let mut separated = builder.separated(", ");
-            for id in ids {
-                separated.push_bind(id.clone());
-            }
-            separated.push_unseparated(")");
+        && !ids.is_empty()
+    {
+        builder.push(" AND id IN (");
+        let mut separated = builder.separated(", ");
+        for id in ids {
+            separated.push_bind(id.clone());
         }
+        separated.push_unseparated(")");
+    }
     if let Some(status) = &query.status {
         builder.push(" AND status = ").push_bind(*status as i32);
     }
@@ -356,20 +357,21 @@ fn push_query_filters<'args>(
             .push_bind(model_provider_id.clone());
     }
     if let Some(roles) = &query.roles
-        && !roles.is_empty() {
-            builder.push(
-                " AND EXISTS (SELECT 1 FROM json_each(agents.role) WHERE json_each.value IN (",
-            );
-            let mut separated = builder.separated(", ");
-            for role in roles {
-                separated.push_bind(role.clone());
-            }
-            separated.push_unseparated("))");
+        && !roles.is_empty()
+    {
+        builder
+            .push(" AND EXISTS (SELECT 1 FROM json_each(agents.role) WHERE json_each.value IN (");
+        let mut separated = builder.separated(", ");
+        for role in roles {
+            separated.push_bind(role.clone());
         }
+        separated.push_unseparated("))");
+    }
     if let Some(keyword) = &query.keyword
-        && !keyword.is_empty() {
-            log_warn!(
-                "keyword in agent query is deprecated, use search_agents for FTS5; keyword ignored"
-            );
-        }
+        && !keyword.is_empty()
+    {
+        log_warn!(
+            "keyword in agent query is deprecated, use search_agents for FTS5; keyword ignored"
+        );
+    }
 }

@@ -311,30 +311,30 @@ impl super::VectorStore for LanceVectorStore {
                     batch.column_by_name("embedding_model"),
                     batch.column_by_name("indexed_at"),
                     batch.column_by_name("expire_at"),
-                ) {
-                    let id_array = id_col.as_any().downcast_ref::<StringArray>().unwrap();
-                    let hash_array = hash_col.as_any().downcast_ref::<StringArray>().unwrap();
-                    let model_array = model_col.as_any().downcast_ref::<StringArray>().unwrap();
-                    let indexed_at_array = indexed_at_col
-                        .as_any()
-                        .downcast_ref::<Int64Array>()
-                        .unwrap();
-                    let expire_at_array =
-                        expire_at_col.as_any().downcast_ref::<Int64Array>().unwrap();
+                )
+            {
+                let id_array = id_col.as_any().downcast_ref::<StringArray>().unwrap();
+                let hash_array = hash_col.as_any().downcast_ref::<StringArray>().unwrap();
+                let model_array = model_col.as_any().downcast_ref::<StringArray>().unwrap();
+                let indexed_at_array = indexed_at_col
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap();
+                let expire_at_array = expire_at_col.as_any().downcast_ref::<Int64Array>().unwrap();
 
-                    let expire_at_val = expire_at_array.iter().next().flatten();
+                let expire_at_val = expire_at_array.iter().next().flatten();
 
-                    return Ok(Some(VectorRow {
-                        id: id_array.value(0).to_string(),
-                        vector: Vec::new(), // 不返回原始向量（LanceDB 查询需要单独获取）
-                        meta: VectorMeta {
-                            content_hash: hash_array.value(0).to_string(),
-                            embedding_model: model_array.value(0).to_string(),
-                            indexed_at: indexed_at_array.value(0),
-                            expire_at: expire_at_val,
-                        },
-                    }));
-                }
+                return Ok(Some(VectorRow {
+                    id: id_array.value(0).to_string(),
+                    vector: Vec::new(), // 不返回原始向量（LanceDB 查询需要单独获取）
+                    meta: VectorMeta {
+                        content_hash: hash_array.value(0).to_string(),
+                        embedding_model: model_array.value(0).to_string(),
+                        indexed_at: indexed_at_array.value(0),
+                        expire_at: expire_at_val,
+                    },
+                }));
+            }
         }
 
         Ok(None)

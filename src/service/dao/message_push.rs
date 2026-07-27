@@ -72,9 +72,10 @@ impl SsePushDao for SsePushDaoImpl {
         let mut success_count = 0;
         for conn_id in connection_ids {
             if let Some(tx) = connections.get(&conn_id)
-                && tx.send(payload.to_string()).is_ok() {
-                    success_count += 1;
-                }
+                && tx.send(payload.to_string()).is_ok()
+            {
+                success_count += 1;
+            }
         }
 
         Ok(SsePushResult {
@@ -105,7 +106,13 @@ impl SsePushDao for SsePushDaoImpl {
     }
 
     async fn unregister(&self, _ctx: RequestContext, connection_id: &str) {
-        if self.connections.write().await.remove(connection_id).is_some() {
+        if self
+            .connections
+            .write()
+            .await
+            .remove(connection_id)
+            .is_some()
+        {
             let mut user_connections = self.user_connections.write().await;
             for conn_set in user_connections.values_mut() {
                 conn_set.remove(connection_id);

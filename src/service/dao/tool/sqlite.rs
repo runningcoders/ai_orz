@@ -121,9 +121,10 @@ impl ToolDao for ToolDaoSqliteImpl {
     async fn update_tool(&self, ctx: RequestContext, po: &ToolPo) -> Result<()> {
         // Check if this is a built-in tool
         if let Some(existing) = self.get_by_id(ctx.clone(), po.id.clone()).await?
-            && matches!(existing.protocol, common::enums::ToolProtocol::Builtin) {
-                return Err(anyhow::anyhow!("Built-in tools cannot be modified").into());
-            }
+            && matches!(existing.protocol, common::enums::ToolProtocol::Builtin)
+        {
+            return Err(anyhow::anyhow!("Built-in tools cannot be modified").into());
+        }
 
         let pool = ctx.db_pool();
 
@@ -155,9 +156,10 @@ impl ToolDao for ToolDaoSqliteImpl {
     async fn delete_tool(&self, ctx: RequestContext, id: &str) -> Result<()> {
         // Check if this is a built-in tool
         if let Some(existing) = self.get_by_id(ctx.clone(), id.to_string()).await?
-            && matches!(existing.protocol, common::enums::ToolProtocol::Builtin) {
-                return Err(anyhow::anyhow!("Built-in tools cannot be deleted").into());
-            }
+            && matches!(existing.protocol, common::enums::ToolProtocol::Builtin)
+        {
+            return Err(anyhow::anyhow!("Built-in tools cannot be deleted").into());
+        }
 
         let pool = ctx.db_pool();
 
@@ -442,27 +444,30 @@ fn push_query_filters<'args>(
             .push_bind(agent_id.clone());
     }
     if let Some(ids) = &query.ids
-        && !ids.is_empty() {
-            builder.push(" AND t.id IN (");
-            let mut separated = builder.separated(", ");
-            for id in ids {
-                separated.push_bind(id.clone());
-            }
-            separated.push_unseparated(")");
+        && !ids.is_empty()
+    {
+        builder.push(" AND t.id IN (");
+        let mut separated = builder.separated(", ");
+        for id in ids {
+            separated.push_bind(id.clone());
         }
+        separated.push_unseparated(")");
+    }
     if let Some(keyword) = &query.keyword
-        && !keyword.is_empty() {
-            log_warn!("keyword in ToolDao::query is deprecated, use search_tools; keyword ignored");
-        }
+        && !keyword.is_empty()
+    {
+        log_warn!("keyword in ToolDao::query is deprecated, use search_tools; keyword ignored");
+    }
     if let Some(tags) = &query.tags
-        && !tags.is_empty() {
-            builder.push(" AND EXISTS (SELECT 1 FROM json_each(t.tags) WHERE json_each.value IN (");
-            let mut separated = builder.separated(", ");
-            for tag in tags {
-                separated.push_bind(tag.clone());
-            }
-            separated.push_unseparated("))");
+        && !tags.is_empty()
+    {
+        builder.push(" AND EXISTS (SELECT 1 FROM json_each(t.tags) WHERE json_each.value IN (");
+        let mut separated = builder.separated(", ");
+        for tag in tags {
+            separated.push_bind(tag.clone());
         }
+        separated.push_unseparated("))");
+    }
     if let Some(protocol) = query.protocol {
         builder
             .push(" AND t.protocol = ")
@@ -482,7 +487,8 @@ fn push_query_filters<'args>(
             .push_bind(server_id.clone());
     }
     if let Some(enabled_only) = query.enabled_only
-        && enabled_only {
-            builder.push(" AND t.status = 1");
-        }
+        && enabled_only
+    {
+        builder.push(" AND t.status = 1");
+    }
 }
