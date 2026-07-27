@@ -13,7 +13,7 @@ use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::format_datetime_full as format_timestamp;
-use common::api::{CreateMcpServerRequest, McpServerConfigDto, McpServerListItem};
+use common::api::{CreateMcpServerRequest, McpServerConfigDto, McpServerListItem, UpdateMcpServerStatusRequest};
 use common::enums::{McpServerStatus, McpTransport};
 
 #[component]
@@ -175,7 +175,7 @@ pub fn FinanceMcpServers() -> Element {
                                                             onclick: move |_| {
                                                                 let id_disable = id_disable.clone();
                                                                 spawn(async move {
-                                                                    if let Err(e) = update_mcp_server_status(&id_disable, 2).await {
+                                                                    if let Err(e) = update_mcp_server_status(UpdateMcpServerStatusRequest { id: id_disable, status: McpServerStatus::Disabled }).await {
                                                                         toast.error(&e);
                                                                     } else {
                                                                         match list_mcp_servers().await {
@@ -191,7 +191,7 @@ pub fn FinanceMcpServers() -> Element {
                                                             onclick: move |_| {
                                                                 let id_enable = id_enable.clone();
                                                                 spawn(async move {
-                                                                    if let Err(e) = update_mcp_server_status(&id_enable, 1).await {
+                                                                    if let Err(e) = update_mcp_server_status(UpdateMcpServerStatusRequest { id: id_enable, status: McpServerStatus::Enabled }).await {
                                                                         toast.error(&e);
                                                                     } else {
                                                                         match list_mcp_servers().await {

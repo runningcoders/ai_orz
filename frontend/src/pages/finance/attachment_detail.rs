@@ -8,7 +8,7 @@ use crate::components::code_editor::CodeEditor;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-use common::api::AttachmentDetail;
+use common::api::{AttachmentDetail, UpdateAttachmentContentRequest};
 
 #[component]
 pub fn FinanceAttachmentDetail(id: String) -> Element {
@@ -48,7 +48,13 @@ pub fn FinanceAttachmentDetail(id: String) -> Element {
             let id = id.clone();
             saving.set(true);
             spawn(async move {
-                match update_attachment_content(&id, content()).await {
+                match update_attachment_content(UpdateAttachmentContentRequest {
+                    id,
+                    content: content(),
+                    expected_updated_at: None,
+                })
+                .await
+                {
                     Ok(_) => {
                         toast.success("内容已保存");
                         content_dirty.set(false);

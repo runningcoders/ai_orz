@@ -3,12 +3,15 @@
 use common::api::{
     AttachmentDetail, CallModelRequest, CallModelResponse, CreateMcpServerRequest,
     CreateMcpServerResponse, CreateModelProviderRequest, CreateModelProviderResponse,
-    CreateTextAttachmentRequest, CreateToolRequest, CreateToolResponse, DebugCallToolResponse,
-    GetModelProviderRequest, GetModelProviderResponse, GetToolResponse, ListMcpServersResponse,
-    ListModelProvidersResponse, PagedResult, SwitchEmbeddingProviderRequest,
-    SwitchEmbeddingProviderResponse, TestConnectionResponse, TestMessageChannelConnectionResponse,
-    ToolListItem, ToolQueryRequest, UpdateModelProviderRequest, UpdateModelProviderResponse,
-    UpdateModelProviderStatusRequest, UpdateToolRequest, UpdateToolResponse,
+    CreateTextAttachmentRequest, CreateToolRequest, CreateToolResponse, DebugCallToolRequest,
+    DebugCallToolResponse, GetModelProviderRequest, GetModelProviderResponse, GetToolRequest,
+    GetToolResponse, ListMcpServersResponse, ListModelProvidersResponse, ListToolsRequest,
+    PagedResult, QueryToolCallEntriesRequest, QueryToolCallEntriesResponse,
+    SwitchEmbeddingProviderRequest, SwitchEmbeddingProviderResponse, TestConnectionResponse,
+    TestMessageChannelConnectionResponse, ToolListItem, ToolQueryRequest,
+    UpdateAttachmentContentRequest, UpdateMessageChannelStatusRequest, UpdateModelProviderRequest,
+    UpdateModelProviderResponse, UpdateModelProviderStatusRequest, UpdateMcpServerStatusRequest,
+    UpdateToolRequest, UpdateToolResponse, UpdateToolStatusRequest,
 };
 use web_sys::FormData;
 
@@ -95,22 +98,8 @@ pub async fn switch_embedding_provider(
 
 // ===== 工具管理 =====
 
-pub async fn list_tools(
-    limit: Option<usize>,
-    offset: Option<usize>,
-) -> Result<PagedResult<ToolListItem>, ApiError> {
-    let mut params: Vec<String> = Vec::new();
-    if let Some(l) = limit {
-        params.push(format!("limit={}", l));
-    }
-    if let Some(o) = offset {
-        params.push(format!("offset={}", o));
-    }
-    let url = if params.is_empty() {
-        "/api/v1/finance/tools".to_string()
-    } else {
-        format!("/api/v1/finance/tools?{}", params.join("&"))
-    };
+pub async fn list_tools(req: ListToolsRequest) -> Result<PagedResult<ToolListItem>, ApiError> {
+    let url = super::build_pagination_url("/api/v1/finance/tools", &req.pagination);
     api_get(&url).await
 }
 
@@ -118,12 +107,14 @@ pub async fn query_tools(req: &ToolQueryRequest) -> Result<PagedResult<ToolListI
     api_post("/api/v1/finance/tools/query", req).await
 }
 
-pub async fn get_tool(
-    id: &str,
-    stats_options: Option<&super::StatsOptions>,
-) -> Result<GetToolResponse, ApiError> {
-    let url = super::build_url_with_stats(&format!("/api/v1/finance/tools/{}", id), stats_options);
-    api_get(&url).await
+pub async fn get_tool(req: GetToolRequest) -> Result<GetToolResponse, ApiError> {
+    let qs = super::build_query_string(&[
+        ("with_stats", req.with_stats.map(|v| v.to_string())),
+        ("stats_time_start", req.stats_time_start.map(|v| v.to_string())),
+        ("stats_time_end", req.stats_time_end.map(|v| v.to_string())),
+        ("stats_interval", req.stats_interval.clone()),
+    ]);
+    api_get(&format!("/api/v1/finance/tools/{}{}", req.id, qs)).await
 }
 
 #[allow(dead_code)]
@@ -132,13 +123,13 @@ pub async fn create_tool(req: CreateToolRequest) -> Result<CreateToolResponse, A
 }
 
 #[allow(dead_code)]
-pub async fn update_tool(id: &str, req: UpdateToolRequest) -> Result<UpdateToolResponse, ApiError> {
-    api_put(&format!("/api/v1/finance/tools/{}", id), &req).await
+pub async fn update_tool(req: UpdateToolRequest) -> Result<UpdateToolResponse, ApiError> {
+    api_put(&format!("/api/v1/finance/tools/{}", req.id), &req).await
 }
 
-pub async fn update_tool_status(id: &str, status: i32) -> Result<(), ApiError> {
-    let body = serde_json::json!({ "status": status });
-    api_put_empty(&format!("/api/v1/finance/tools/{}/status", id), &body).await
+pub async fn update_tool_status(req: UpdateToolStatusRequest) -> Result<(), ApiError> {
+    let body = serde_json::json!({ "status": req.status });
+    api_put_empty(&format!("/api/v1/finance/tools/{}/status", req.id), &body).await
 }
 
 pub async fn delete_tool(id: &str) -> Result<(), ApiError> {
@@ -149,11 +140,9 @@ pub async fn delete_tool(id: &str) -> Result<(), ApiError> {
 ///
 /// 在工具详情页直接调用工具进行调试，返回执行结果 + tool_call_id。
 /// 需 Admin 及以上权限。
-pub async fn debug_call_tool(
-    id: &str,
-    args: &serde_json::Value,
-) -> Result<DebugCallToolResponse, ApiError> {
-    api_post(&format!("/api/v1/finance/tools/{}/debug-call", id), args).await
+pub async fn debug_call_tool(req: DebugCallToolRequest) -> Result<DebugCallToolResponse, ApiError> {
+    let body = serde_json::json!({ "args": req.args });
+    api_post(&format!("/api/v1/finance/tools/{}/debug-call", req.id), &body).await
 }
 
 // ===== 消息渠道 =====
@@ -168,10 +157,12 @@ pub async fn create_message_channel(
     api_post("/api/v1/finance/message-channels", &req).await
 }
 
-pub async fn update_message_channel_status(id: &str, status: i32) -> Result<(), ApiError> {
-    let body = serde_json::json!({ "status": status });
+pub async fn update_message_channel_status(
+    req: UpdateMessageChannelStatusRequest,
+) -> Result<(), ApiError> {
+    let body = serde_json::json!({ "status": req.status as i32 });
     api_put_empty(
-        &format!("/api/v1/finance/message-channels/{}/status", id),
+        &format!("/api/v1/finance/message-channels/{}/status", req.id),
         &body,
     )
     .await
@@ -204,9 +195,9 @@ pub async fn create_mcp_server(
     api_post("/api/v1/finance/mcp-servers", &req).await
 }
 
-pub async fn update_mcp_server_status(id: &str, status: i32) -> Result<(), ApiError> {
-    let body = serde_json::json!({ "status": status });
-    api_put_empty(&format!("/api/v1/finance/mcp-servers/{}/status", id), &body).await
+pub async fn update_mcp_server_status(req: UpdateMcpServerStatusRequest) -> Result<(), ApiError> {
+    let body = serde_json::json!({ "status": req.status as i32 });
+    api_put_empty(&format!("/api/v1/finance/mcp-servers/{}/status", req.id), &body).await
 }
 
 pub async fn delete_mcp_server(id: &str) -> Result<(), ApiError> {
@@ -259,16 +250,11 @@ pub async fn get_attachment_content(
 
 /// 更新文本附件内容
 pub async fn update_attachment_content(
-    id: &str,
-    content: String,
+    req: UpdateAttachmentContentRequest,
 ) -> Result<common::api::AttachmentContentResponse, ApiError> {
-    let body = common::api::UpdateTextContentRequest {
-        content,
-        expected_updated_at: None,
-    };
     api_put(
-        &format!("/api/v1/finance/attachments/{}/content", id),
-        &body,
+        &format!("/api/v1/finance/attachments/{}/content", req.id),
+        &req,
     )
     .await
 }
@@ -290,48 +276,20 @@ pub async fn get_message_channel(
 // ===== 工具调用记录 =====
 
 pub async fn query_tool_call_entries(
-    params: &common::api::QueryToolCallEntriesRequest,
-) -> Result<common::api::QueryToolCallEntriesResponse, ApiError> {
-    let mut qs_parts = Vec::new();
-    if let Some(c) = &params.call_id {
-        qs_parts.push(format!("call_id={}", c));
-    }
-    if let Some(a) = &params.agent_id {
-        qs_parts.push(format!("agent_id={}", a));
-    }
-    if let Some(p) = &params.project_id {
-        qs_parts.push(format!("project_id={}", p));
-    }
-    if let Some(t) = &params.task_id {
-        qs_parts.push(format!("task_id={}", t));
-    }
-    if let Some(t) = &params.tool_id {
-        qs_parts.push(format!("tool_id={}", t));
-    }
-    if let Some(s) = &params.status {
-        let s_str = match s {
-            common::api::ToolCallStatusDto::Started => "Started",
-            common::api::ToolCallStatusDto::Completed => "Completed",
-            common::api::ToolCallStatusDto::Failed => "Failed",
-        };
-        qs_parts.push(format!("status={}", s_str));
-    }
-    if let Some(t) = params.started_after {
-        qs_parts.push(format!("started_after={}", t));
-    }
-    if let Some(t) = params.started_before {
-        qs_parts.push(format!("started_before={}", t));
-    }
-    if let Some(l) = params.limit {
-        qs_parts.push(format!("limit={}", l));
-    }
-    let qs = qs_parts.join("&");
-    let path = if qs.is_empty() {
-        "/api/v1/finance/tool-call-entries".to_string()
-    } else {
-        format!("/api/v1/finance/tool-call-entries?{}", qs)
-    };
-    api_get_or_default(&path).await
+    params: &QueryToolCallEntriesRequest,
+) -> Result<QueryToolCallEntriesResponse, ApiError> {
+    let qs = super::build_query_string(&[
+        ("call_id", params.call_id.clone()),
+        ("agent_id", params.agent_id.clone()),
+        ("project_id", params.project_id.clone()),
+        ("task_id", params.task_id.clone()),
+        ("tool_id", params.tool_id.clone()),
+        ("status", params.status.map(|s| format!("{:?}", s))),
+        ("started_after", params.started_after.map(|v| v.to_string())),
+        ("started_before", params.started_before.map(|v| v.to_string())),
+        ("limit", params.limit.map(|v| v.to_string())),
+    ]);
+    api_get_or_default(&format!("/api/v1/finance/tool-call-entries{}", qs)).await
 }
 
 pub async fn get_tool_call_entry(

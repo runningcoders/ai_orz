@@ -12,7 +12,9 @@ use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-use common::api::{CreateMessageChannelRequest, ListMessageChannelsResponseItem};
+use common::api::{
+    CreateMessageChannelRequest, ListMessageChannelsResponseItem, UpdateMessageChannelStatusRequest,
+};
 use common::enums::{ChannelStatus, ChannelType};
 
 #[component]
@@ -169,7 +171,7 @@ pub fn FinanceMessageChannels() -> Element {
                                                                 onclick: move |_| {
                                                                     let id_disable = id_disable.clone();
                                                                     spawn(async move {
-                                                                        if let Err(e) = update_message_channel_status(&id_disable, 2).await {
+                                                                        if let Err(e) = update_message_channel_status(UpdateMessageChannelStatusRequest { id: id_disable, status: ChannelStatus::Disabled }).await {
                                                                             toast.error(&e);
                                                                         } else {
                                                                             match list_message_channels().await {
@@ -185,7 +187,7 @@ pub fn FinanceMessageChannels() -> Element {
                                                                 onclick: move |_| {
                                                                     let id_enable = id_enable.clone();
                                                                     spawn(async move {
-                                                                        if let Err(e) = update_message_channel_status(&id_enable, 1).await {
+                                                                        if let Err(e) = update_message_channel_status(UpdateMessageChannelStatusRequest { id: id_enable, status: ChannelStatus::Active }).await {
                                                                             toast.error(&e);
                                                                         } else {
                                                                             match list_message_channels().await {

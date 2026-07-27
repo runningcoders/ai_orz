@@ -7,7 +7,7 @@ use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-use common::api::GetMcpServerResponse;
+use common::api::{GetMcpServerResponse, UpdateMcpServerStatusRequest};
 use common::enums::{McpServerStatus, McpTransport};
 use dioxus::prelude::*;
 use dioxus_router::{Link, use_navigator};
@@ -58,14 +58,19 @@ pub fn FinanceMcpServerDetail(id: String) -> Element {
 
     let mut on_toggle = {
         let id = id.clone();
-        move |new_status: i32| {
+        move |new_status: McpServerStatus| {
             let id = id.clone();
             let id_reload = id.clone();
             toggling.set(true);
             spawn(async move {
-                match update_mcp_server_status(&id, new_status).await {
+                match update_mcp_server_status(UpdateMcpServerStatusRequest {
+                    id,
+                    status: new_status,
+                })
+                .await
+                {
                     Ok(_) => {
-                        toast.success(if new_status == 1 {
+                        toast.success(if new_status == McpServerStatus::Enabled {
                             "已启用"
                         } else {
                             "已禁用"
@@ -118,7 +123,7 @@ pub fn FinanceMcpServerDetail(id: String) -> Element {
                                 button {
                                     class: "btn btn-ghost btn-sm",
                                     disabled: toggling(),
-                                    onclick: move |_| on_toggle(if s.status == McpServerStatus::Enabled { 2 } else { 1 }),
+                                    onclick: move |_| on_toggle(if s.status == McpServerStatus::Enabled { McpServerStatus::Disabled } else { McpServerStatus::Enabled }),
                                     if s.status == McpServerStatus::Enabled { "🚫 禁用" } else { "✅ 启用" }
                                 }
                                 button {

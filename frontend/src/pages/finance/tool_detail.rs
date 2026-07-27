@@ -1,15 +1,24 @@
 //! Tool 详情页
 
-use crate::api::StatsOptions;
 use crate::api::finance::{debug_call_tool, delete_tool, get_tool, update_tool_status};
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::ToolStatsPanel;
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-use common::api::GetToolResponse;
+use common::api::{DebugCallToolRequest, GetToolRequest, GetToolResponse, UpdateToolStatusRequest};
+use common::enums::ToolStatus;
 use dioxus::prelude::*;
 use dioxus_router::{Link, use_navigator};
+
+/// 构造带统计信息的 GetToolRequest
+fn build_tool_stats_request(id: String) -> GetToolRequest {
+    GetToolRequest {
+        id,
+        with_stats: Some(true),
+        ..Default::default()
+    }
+}
 
 /// 从 JSON Schema 生成参数骨架
 ///
@@ -71,12 +80,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
         loading.set(true);
         let id = id.clone();
         spawn(async move {
-            let stats_options = StatsOptions {
-                with_stats: true,
-                with_model_call_stats: false,
-                stats_interval: None,
-            };
-            match get_tool(&id, Some(&stats_options)).await {
+            match get_tool(build_tool_stats_request(id)).await {
                 Ok(tool) => {
                     // 从 parameters_schema 生成参数骨架
                     if let Some(ref schema) = tool.parameters_schema {
@@ -116,16 +120,11 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                             move |_| {
                                                 let id = id.clone();
                                                 spawn(async move {
-                                                    if let Err(e) = update_tool_status(&id, 0).await {
+                                                    if let Err(e) = update_tool_status(UpdateToolStatusRequest { id: id.clone(), status: ToolStatus::Disabled }).await {
                                                         toast.error(&e);
                                                     } else {
                                                         toast.success("已禁用");
-                                                        let stats_options = StatsOptions {
-                                                            with_stats: true,
-                                                            with_model_call_stats: false,
-                                                            stats_interval: None,
-                                                        };
-                                                        if let Ok(tool) = get_tool(&id, Some(&stats_options)).await {
+                                                        if let Ok(tool) = get_tool(build_tool_stats_request(id)).await {
                                                             tool_data.set(Some(tool));
                                                         }
                                                     }
@@ -141,16 +140,11 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                             move |_| {
                                                 let id = id.clone();
                                                 spawn(async move {
-                                                    if let Err(e) = update_tool_status(&id, 1).await {
+                                                    if let Err(e) = update_tool_status(UpdateToolStatusRequest { id: id.clone(), status: ToolStatus::Enabled }).await {
                                                         toast.error(&e);
                                                     } else {
                                                         toast.success("已启用");
-                                                        let stats_options = StatsOptions {
-                                                            with_stats: true,
-                                                            with_model_call_stats: false,
-                                                            stats_interval: None,
-                                                        };
-                                                        if let Ok(tool) = get_tool(&id, Some(&stats_options)).await {
+                                                        if let Ok(tool) = get_tool(build_tool_stats_request(id)).await {
                                                             tool_data.set(Some(tool));
                                                         }
                                                     }
@@ -279,7 +273,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                                     return;
                                                 }
                                             };
-                                            match debug_call_tool(&id, &parsed).await {
+                                            match debug_call_tool(DebugCallToolRequest { id: id.clone(), args: parsed }).await {
                                                 Ok(resp) => {
                                                     let formatted = serde_json::to_string_pretty(&resp.result)
                                                         .unwrap_or_else(|_| resp.result.to_string());

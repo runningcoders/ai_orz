@@ -7,7 +7,7 @@ use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-use common::api::ListToolsResponseItem;
+use common::api::{ListToolsRequest, ListToolsResponseItem, UpdateToolStatusRequest};
 use common::enums::ToolStatus;
 use dioxus_router::Link;
 
@@ -24,7 +24,7 @@ pub fn FinanceTools() -> Element {
     use_effect(move || {
         loading.set(true);
         spawn(async move {
-            match list_tools(None, None).await {
+            match list_tools(ListToolsRequest::default()).await {
                 Ok(page) => tools.set(page.items),
                 Err(e) => toast.error(&e),
             }
@@ -86,10 +86,10 @@ pub fn FinanceTools() -> Element {
                                                             onclick: move |_| {
                                                                 let id_disable = id_disable.clone();
                                                                 spawn(async move {
-                                                                    if let Err(e) = update_tool_status(&id_disable, 0).await {
+                                                                    if let Err(e) = update_tool_status(UpdateToolStatusRequest { id: id_disable, status: ToolStatus::Disabled }).await {
                                                                         toast.error(&e);
                                                                     } else {
-                                                                        match list_tools(None, None).await {
+                                                                        match list_tools(ListToolsRequest::default()).await {
                                                                             Ok(page) => tools.set(page.items),
                                                                             Err(e) => toast.error(&e),
                                                                         }
@@ -103,10 +103,10 @@ pub fn FinanceTools() -> Element {
                                                             onclick: move |_| {
                                                                 let id_enable = id_enable.clone();
                                                                 spawn(async move {
-                                                                    if let Err(e) = update_tool_status(&id_enable, 1).await {
+                                                                    if let Err(e) = update_tool_status(UpdateToolStatusRequest { id: id_enable, status: ToolStatus::Enabled }).await {
                                                                         toast.error(&e);
                                                                     } else {
-                                                                        match list_tools(None, None).await {
+                                                                        match list_tools(ListToolsRequest::default()).await {
                                                                             Ok(page) => tools.set(page.items),
                                                                             Err(e) => toast.error(&e),
                                                                         }
@@ -146,7 +146,7 @@ pub fn FinanceTools() -> Element {
                     if let Err(e) = delete_tool(&id).await {
                         toast.error(&format!("删除失败: {}", e));
                     } else {
-                        match list_tools(None, None).await {
+                        match list_tools(ListToolsRequest::default()).await {
                             Ok(page) => tools.set(page.items),
                             Err(e) => toast.error(&e),
                         }
