@@ -14,8 +14,8 @@ use crate::utils::{
     replace_tmp_with_real, role_avatar,
 };
 use common::api::{
-    CreateProjectRequest, GetReceptionAgentResponse, ListProjectsResponseItem, MessageListItem,
-    SendMessageToAgentParams,
+    CreateProjectRequest, GetReceptionAgentResponse, ListProjectsRequest, ListProjectsResponseItem,
+    MessageListItem, SendMessageToAgentParams,
 };
 
 /// 待发送的附件信息（仅用于 UI 展示，发送后清空）
@@ -83,7 +83,7 @@ pub fn MessageChat() -> Element {
     let mut load_projects = move || {
         loading_projects.set(true);
         spawn(async move {
-            match list_projects(None, None).await {
+            match list_projects(ListProjectsRequest::default()).await {
                 Ok(resp) => {
                     projects.set(resp.items);
                     // 不自动选择第一个项目，让用户从「默认对话」开始

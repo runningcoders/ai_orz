@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
 use crate::api::hr::query_agents;
-use crate::api::{StatsOptions, project::*};
+use crate::api::project::*;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::TaskStatsPanel;
@@ -17,9 +17,11 @@ use crate::utils::{
     task_status_badge as status_badge, task_status_text as status_text,
 };
 use common::api::{
-    AgentListItem, AgentQueryRequest, GetTaskResponse, PaginationParams, ProjectListItem,
-    ProjectQueryRequest, TaskListItem,
+    AgentListItem, AgentQueryRequest, GetTaskRequest, GetTaskResponse, PaginationParams,
+    ProjectListItem, ProjectQueryRequest, TaskListItem, UpdateTaskProgressRequest,
+    UpdateTaskStatusRequest,
 };
+use common::enums::TaskStatus;
 
 #[component]
 pub fn TaskDetail(id: String) -> Element {
@@ -49,12 +51,14 @@ pub fn TaskDetail(id: String) -> Element {
         loading.set(true);
         let id_clone = id_for_load.clone();
         spawn(async move {
-            let stats_options = StatsOptions {
-                with_stats: true,
-                with_model_call_stats: true,
+            let req = GetTaskRequest {
+                id: id_clone.clone(),
+                with_stats: Some(true),
+                with_model_call_stats: Some(true),
                 stats_interval: Some("daily".to_string()),
+                ..Default::default()
             };
-            match get_task(&id_clone, Some(&stats_options)).await {
+            match get_task(req).await {
                 Ok(t) => {
                     new_progress.set(t.progress);
                     // 克隆关系图所需字段后再 set，避免 move 后无法使用
@@ -122,15 +126,21 @@ pub fn TaskDetail(id: String) -> Element {
     let on_review = move |_| {
         let id_clone = id_for_review.clone();
         spawn(async move {
-            match update_task_status(&id_clone, 1).await {
+            let req = UpdateTaskStatusRequest {
+                id: id_clone.clone(),
+                status: TaskStatus::PendingReview,
+            };
+            match update_task_status(req).await {
                 Ok(_) => {
                     toast.success("任务状态已更新");
-                    let stats_options = StatsOptions {
-                        with_stats: true,
-                        with_model_call_stats: true,
+                    let req = GetTaskRequest {
+                        id: id_clone.clone(),
+                        with_stats: Some(true),
+                        with_model_call_stats: Some(true),
                         stats_interval: Some("daily".to_string()),
+                        ..Default::default()
                     };
-                    if let Ok(t) = get_task(&id_clone, Some(&stats_options)).await {
+                    if let Ok(t) = get_task(req).await {
                         new_progress.set(t.progress);
                         task.set(Some(t));
                     }
@@ -144,15 +154,21 @@ pub fn TaskDetail(id: String) -> Element {
     let on_pending = move |_| {
         let id_clone = id_for_pending.clone();
         spawn(async move {
-            match update_task_status(&id_clone, 2).await {
+            let req = UpdateTaskStatusRequest {
+                id: id_clone.clone(),
+                status: TaskStatus::Pending,
+            };
+            match update_task_status(req).await {
                 Ok(_) => {
                     toast.success("任务状态已更新");
-                    let stats_options = StatsOptions {
-                        with_stats: true,
-                        with_model_call_stats: true,
+                    let req = GetTaskRequest {
+                        id: id_clone.clone(),
+                        with_stats: Some(true),
+                        with_model_call_stats: Some(true),
                         stats_interval: Some("daily".to_string()),
+                        ..Default::default()
                     };
-                    if let Ok(t) = get_task(&id_clone, Some(&stats_options)).await {
+                    if let Ok(t) = get_task(req).await {
                         new_progress.set(t.progress);
                         task.set(Some(t));
                     }
@@ -166,15 +182,21 @@ pub fn TaskDetail(id: String) -> Element {
     let on_start = move |_| {
         let id_clone = id_for_start.clone();
         spawn(async move {
-            match update_task_status(&id_clone, 3).await {
+            let req = UpdateTaskStatusRequest {
+                id: id_clone.clone(),
+                status: TaskStatus::InProgress,
+            };
+            match update_task_status(req).await {
                 Ok(_) => {
                     toast.success("任务状态已更新");
-                    let stats_options = StatsOptions {
-                        with_stats: true,
-                        with_model_call_stats: true,
+                    let req = GetTaskRequest {
+                        id: id_clone.clone(),
+                        with_stats: Some(true),
+                        with_model_call_stats: Some(true),
                         stats_interval: Some("daily".to_string()),
+                        ..Default::default()
                     };
-                    if let Ok(t) = get_task(&id_clone, Some(&stats_options)).await {
+                    if let Ok(t) = get_task(req).await {
                         new_progress.set(t.progress);
                         task.set(Some(t));
                     }
@@ -188,15 +210,21 @@ pub fn TaskDetail(id: String) -> Element {
     let on_complete = move |_| {
         let id_clone = id_for_complete.clone();
         spawn(async move {
-            match update_task_status(&id_clone, 4).await {
+            let req = UpdateTaskStatusRequest {
+                id: id_clone.clone(),
+                status: TaskStatus::Completed,
+            };
+            match update_task_status(req).await {
                 Ok(_) => {
                     toast.success("任务状态已更新");
-                    let stats_options = StatsOptions {
-                        with_stats: true,
-                        with_model_call_stats: true,
+                    let req = GetTaskRequest {
+                        id: id_clone.clone(),
+                        with_stats: Some(true),
+                        with_model_call_stats: Some(true),
                         stats_interval: Some("daily".to_string()),
+                        ..Default::default()
                     };
-                    if let Ok(t) = get_task(&id_clone, Some(&stats_options)).await {
+                    if let Ok(t) = get_task(req).await {
                         new_progress.set(t.progress);
                         task.set(Some(t));
                     }
@@ -210,15 +238,21 @@ pub fn TaskDetail(id: String) -> Element {
     let on_cancel = move |_| {
         let id_clone = id_for_cancel.clone();
         spawn(async move {
-            match update_task_status(&id_clone, 0).await {
+            let req = UpdateTaskStatusRequest {
+                id: id_clone.clone(),
+                status: TaskStatus::Cancelled,
+            };
+            match update_task_status(req).await {
                 Ok(_) => {
                     toast.success("任务状态已更新");
-                    let stats_options = StatsOptions {
-                        with_stats: true,
-                        with_model_call_stats: true,
+                    let req = GetTaskRequest {
+                        id: id_clone.clone(),
+                        with_stats: Some(true),
+                        with_model_call_stats: Some(true),
                         stats_interval: Some("daily".to_string()),
+                        ..Default::default()
                     };
-                    if let Ok(t) = get_task(&id_clone, Some(&stats_options)).await {
+                    if let Ok(t) = get_task(req).await {
                         new_progress.set(t.progress);
                         task.set(Some(t));
                     }
@@ -232,15 +266,21 @@ pub fn TaskDetail(id: String) -> Element {
     let on_archive = move |_| {
         let id_clone = id_for_archive.clone();
         spawn(async move {
-            match update_task_status(&id_clone, 5).await {
+            let req = UpdateTaskStatusRequest {
+                id: id_clone.clone(),
+                status: TaskStatus::Archived,
+            };
+            match update_task_status(req).await {
                 Ok(_) => {
                     toast.success("任务状态已更新");
-                    let stats_options = StatsOptions {
-                        with_stats: true,
-                        with_model_call_stats: true,
+                    let req = GetTaskRequest {
+                        id: id_clone.clone(),
+                        with_stats: Some(true),
+                        with_model_call_stats: Some(true),
                         stats_interval: Some("daily".to_string()),
+                        ..Default::default()
                     };
-                    if let Ok(t) = get_task(&id_clone, Some(&stats_options)).await {
+                    if let Ok(t) = get_task(req).await {
                         new_progress.set(t.progress);
                         task.set(Some(t));
                     }
@@ -264,7 +304,12 @@ pub fn TaskDetail(id: String) -> Element {
         let progress_val = new_progress();
         updating_progress.set(true);
         spawn(async move {
-            match update_task_progress(&id_clone, progress_val).await {
+            match update_task_progress(UpdateTaskProgressRequest {
+                id: id_clone.clone(),
+                progress: progress_val,
+            })
+            .await
+            {
                 Ok(t) => {
                     toast.success("进度已更新");
                     task.set(Some(t));

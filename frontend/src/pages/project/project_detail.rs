@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
 use crate::api::hr::query_agents;
-use crate::api::{StatsOptions, project::*};
+use crate::api::project::*;
 use crate::components::charts::donut_chart::{DonutChart, DonutSlice};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
@@ -19,10 +19,11 @@ use crate::utils::{
     task_status_text,
 };
 use common::api::{
-    AgentListItem, AgentQueryRequest, ArtifactDetail, CreateArtifactRequest, GetProjectResponse,
-    PaginationParams, ProjectListItem, TaskListItem, UpdateProjectRequest,
+    AgentListItem, AgentQueryRequest, ArtifactDetail, CreateArtifactRequest, GetProjectRequest,
+    GetProjectResponse, PaginationParams, ProjectListItem, TaskListItem, UpdateProjectRequest,
+    UpdateProjectStatusRequest, UpdateTaskStatusRequest,
 };
-use common::enums::ArtifactSourceType;
+use common::enums::{ArtifactSourceType, ProjectStatus, TaskStatus};
 
 fn artifact_source_type_text(source_type: ArtifactSourceType) -> &'static str {
     match source_type {
@@ -70,12 +71,14 @@ pub fn ProjectDetail(id: String) -> Element {
         loading.set(true);
         let id_clone = id_for_load.clone();
         spawn(async move {
-            let stats_options = StatsOptions {
-                with_stats: true,
-                with_model_call_stats: true,
+            let req = GetProjectRequest {
+                id: id_clone.clone(),
+                with_stats: Some(true),
+                with_model_call_stats: Some(true),
                 stats_interval: Some("daily".to_string()),
+                ..Default::default()
             };
-            match get_project(&id_clone, Some(&stats_options)).await {
+            match get_project(req).await {
                 Ok(p) => project.set(Some(p)),
                 Err(e) => toast.error(&e),
             }
@@ -127,15 +130,21 @@ pub fn ProjectDetail(id: String) -> Element {
     let start_project = move |_| {
         let id_clone = id_for_start.clone();
         spawn(async move {
-            match update_project_status(&id_clone, 3).await {
+            let req = UpdateProjectStatusRequest {
+                id: id_clone.clone(),
+                status: ProjectStatus::InProgress,
+            };
+            match update_project_status(req).await {
                 Ok(_) => {
                     toast.success("项目已启动");
-                    let stats_options = StatsOptions {
-                        with_stats: true,
-                        with_model_call_stats: true,
+                    let req = GetProjectRequest {
+                        id: id_clone.clone(),
+                        with_stats: Some(true),
+                        with_model_call_stats: Some(true),
                         stats_interval: Some("daily".to_string()),
+                        ..Default::default()
                     };
-                    match get_project(&id_clone, Some(&stats_options)).await {
+                    match get_project(req).await {
                         Ok(p) => project.set(Some(p)),
                         Err(e) => toast.error(&e),
                     }
@@ -150,15 +159,21 @@ pub fn ProjectDetail(id: String) -> Element {
     let complete_project = move |_| {
         let id_clone = id_for_complete.clone();
         spawn(async move {
-            match update_project_status(&id_clone, 4).await {
+            let req = UpdateProjectStatusRequest {
+                id: id_clone.clone(),
+                status: ProjectStatus::Completed,
+            };
+            match update_project_status(req).await {
                 Ok(_) => {
                     toast.success("项目已完成");
-                    let stats_options = StatsOptions {
-                        with_stats: true,
-                        with_model_call_stats: true,
+                    let req = GetProjectRequest {
+                        id: id_clone.clone(),
+                        with_stats: Some(true),
+                        with_model_call_stats: Some(true),
                         stats_interval: Some("daily".to_string()),
+                        ..Default::default()
                     };
-                    match get_project(&id_clone, Some(&stats_options)).await {
+                    match get_project(req).await {
                         Ok(p) => project.set(Some(p)),
                         Err(e) => toast.error(&e),
                     }
@@ -173,15 +188,21 @@ pub fn ProjectDetail(id: String) -> Element {
     let archive_project = move |_| {
         let id_clone = id_for_archive.clone();
         spawn(async move {
-            match update_project_status(&id_clone, 5).await {
+            let req = UpdateProjectStatusRequest {
+                id: id_clone.clone(),
+                status: ProjectStatus::Archived,
+            };
+            match update_project_status(req).await {
                 Ok(_) => {
                     toast.success("项目已归档");
-                    let stats_options = StatsOptions {
-                        with_stats: true,
-                        with_model_call_stats: true,
+                    let req = GetProjectRequest {
+                        id: id_clone.clone(),
+                        with_stats: Some(true),
+                        with_model_call_stats: Some(true),
                         stats_interval: Some("daily".to_string()),
+                        ..Default::default()
                     };
-                    match get_project(&id_clone, Some(&stats_options)).await {
+                    match get_project(req).await {
                         Ok(p) => project.set(Some(p)),
                         Err(e) => toast.error(&e),
                     }
@@ -501,7 +522,12 @@ pub fn ProjectDetail(id: String) -> Element {
                                                                         let tid = tid_start.clone();
                                                                         let pid = pid_start.clone();
                                                                         spawn(async move {
-                                                                            match update_task_status(&tid, 3).await {
+                                                                            match update_task_status(UpdateTaskStatusRequest {
+                                                                                id: tid.clone(),
+                                                                                status: TaskStatus::InProgress,
+                                                                            })
+                                                                            .await
+                                                                            {
                                                                                 Ok(_) => {
                                                                                     toast.success("任务已开始");
                                                                                     match list_project_tasks(&pid).await {
@@ -524,7 +550,12 @@ pub fn ProjectDetail(id: String) -> Element {
                                                                         let tid = tid_complete.clone();
                                                                         let pid = pid_complete.clone();
                                                                         spawn(async move {
-                                                                            match update_task_status(&tid, 4).await {
+                                                                            match update_task_status(UpdateTaskStatusRequest {
+                                                                                id: tid.clone(),
+                                                                                status: TaskStatus::Completed,
+                                                                            })
+                                                                            .await
+                                                                            {
                                                                                 Ok(_) => {
                                                                                     toast.success("任务已完成");
                                                                                     match list_project_tasks(&pid).await {
@@ -731,16 +762,18 @@ pub fn ProjectDetail(id: String) -> Element {
                             saving_meta.set(true);
                             let id_clone = id_for_edit.clone();
                             spawn(async move {
-                                match update_project(&id_clone, req).await {
+                                match update_project(req).await {
                                     Ok(_) => {
                                         toast.success("项目已更新");
                                         show_edit_modal.set(false);
-                                        let stats_options = StatsOptions {
-                                            with_stats: true,
-                                            with_model_call_stats: true,
+                                        let req = GetProjectRequest {
+                                            id: id_clone.clone(),
+                                            with_stats: Some(true),
+                                            with_model_call_stats: Some(true),
                                             stats_interval: Some("daily".to_string()),
+                                            ..Default::default()
                                         };
-                                        match get_project(&id_clone, Some(&stats_options)).await {
+                                        match get_project(req).await {
                                             Ok(p) => project.set(Some(p)),
                                             Err(e) => toast.error(&format!("重新加载失败: {}", e)),
                                         }

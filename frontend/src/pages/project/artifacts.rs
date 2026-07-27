@@ -9,7 +9,7 @@ use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::format_file_size;
-use common::api::{ArtifactDetail, CreateArtifactRequest, ListProjectsResponseItem};
+use common::api::{ArtifactDetail, CreateArtifactRequest, ListProjectsRequest, ListProjectsResponseItem};
 use common::enums::ArtifactSourceType;
 
 fn source_type_text(source_type: ArtifactSourceType) -> &'static str {
@@ -38,7 +38,7 @@ pub fn ProjectArtifacts() -> Element {
     use_effect(move || {
         loading.set(true);
         spawn(async move {
-            match list_projects(None, None).await {
+            match list_projects(ListProjectsRequest::default()).await {
                 Ok(page) => {
                     let items = page.items;
                     if !items.is_empty() {

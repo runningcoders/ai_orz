@@ -7,12 +7,12 @@
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
-use crate::api::{StatsOptions, hr::list_agents, project::*};
+use crate::api::{hr::list_agents, project::*};
 use crate::components::modal::Modal;
 use crate::store::toast::use_toast;
 use common::api::{
-    CreateTaskRequest, GetTaskResponse, ListAgentsRequest, ListAgentsResponseItem,
-    ListProjectsResponseItem, UpdateTaskRequest,
+    CreateTaskRequest, GetTaskRequest, GetTaskResponse, ListAgentsRequest, ListAgentsResponseItem,
+    ListProjectsRequest, ListProjectsResponseItem, UpdateTaskRequest,
 };
 use common::enums::AssigneeType;
 
@@ -93,7 +93,7 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
         let mode_for_async = mode_for_load.clone();
         spawn(async move {
             // 加载项目列表
-            match list_projects(None, None).await {
+            match list_projects(ListProjectsRequest::default()).await {
                 Ok(page) => {
                     // 在 move 之前预先决定 project_id
                     let pid_to_set = if !pid_initial.is_empty() {
@@ -123,12 +123,14 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
 
             // 编辑模式：加载任务详情
             if let TaskEditMode::Edit { task_id } = &mode_for_async {
-                let stats_options = StatsOptions {
-                    with_stats: true,
-                    with_model_call_stats: true,
+                let req = GetTaskRequest {
+                    id: task_id.clone(),
+                    with_stats: Some(true),
+                    with_model_call_stats: Some(true),
                     stats_interval: Some("daily".to_string()),
+                    ..Default::default()
                 };
-                match get_task(task_id, Some(&stats_options)).await {
+                match get_task(req).await {
                     Ok(t) => {
                         title.set(t.title);
                         description.set(t.description.unwrap_or_default());
@@ -208,7 +210,7 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
                         due_at: parse_timestamp(&due_at()),
                         dependencies: parse_csv(&dependencies_input()),
                     };
-                    update_task(&task_id, req).await
+                    update_task(req).await
                 }
             };
             submitting.set(false);

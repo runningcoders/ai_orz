@@ -9,7 +9,7 @@ use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::{project_status_badge as status_badge, project_status_text as status_text};
-use common::api::{CreateProjectRequest, ListProjectsResponseItem};
+use common::api::{CreateProjectRequest, ListProjectsRequest, ListProjectsResponseItem};
 
 #[component]
 pub fn ProjectList() -> Element {
@@ -25,7 +25,7 @@ pub fn ProjectList() -> Element {
     use_effect(move || {
         loading.set(true);
         spawn(async move {
-            match list_projects(None, None).await {
+            match list_projects(ListProjectsRequest::default()).await {
                 Ok(page) => {
                     let items = page.items.clone();
                     projects.set(page.items);
@@ -67,7 +67,7 @@ pub fn ProjectList() -> Element {
                     new_name.set(String::new());
                     new_description.set(String::new());
                     // Reload
-                    match list_projects(None, None).await {
+                    match list_projects(ListProjectsRequest::default()).await {
                         Ok(page) => projects.set(page.items),
                         Err(e) => toast.error(&e),
                     }

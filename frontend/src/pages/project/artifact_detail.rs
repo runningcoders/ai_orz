@@ -8,7 +8,7 @@ use crate::components::code_editor::CodeEditor;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-use common::api::ArtifactDetail;
+use common::api::{ArtifactDetail, UpdateArtifactContentRequest};
 use common::enums::ArtifactSourceType;
 
 #[component]
@@ -48,7 +48,13 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
             let id = id.clone();
             saving.set(true);
             spawn(async move {
-                match update_artifact_content(&id, content()).await {
+                match update_artifact_content(UpdateArtifactContentRequest {
+                    artifact_id: id.clone(),
+                    content: content(),
+                    expected_updated_at: None,
+                })
+                .await
+                {
                     Ok(_) => {
                         toast.success("内容已保存");
                         content_dirty.set(false);
