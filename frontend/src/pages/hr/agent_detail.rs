@@ -15,9 +15,11 @@ use crate::utils::{
     build_optimistic_user_msg, format_time_hm as format_time, replace_tmp_with_real,
 };
 use common::api::{
-    AgentListItem, GetAgentRequest, GetAgentResponse, ListModelProvidersResponseItem,
+    AgentListItem, BindToolToAgentRequest, GetAgentRequest, GetAgentResponse,
+    InstallSkillPackRequest, InstallToolPackRequest, ListModelProvidersResponseItem,
     ListToolsRequest, MessageListItem, PaginationParams, ProjectListItem, ProjectQueryRequest,
-    SendMessageToAgentParams, TaskListItem, TaskQueryRequest, ToolListItem, UpdateAgentRequest,
+    SendMessageToAgentParams, TaskListItem, TaskQueryRequest, ToolListItem, UnbindToolFromAgentRequest,
+    UninstallSkillPackRequest, UninstallToolPackRequest, UpdateAgentRequest,
     UpdateAgentStatusRequest,
 };
 use common::enums::{AgentStatus, AssigneeType};
@@ -535,7 +537,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 let aid = agent_id_signal();
                                                 tool_pack_input.set(String::new());
                                                 spawn(async move {
-                                                    match install_tool_pack(&aid, &tag).await {
+                                                    match install_tool_pack(InstallToolPackRequest { agent_id: aid.clone(), tag: tag.clone() }).await {
                                                         Ok(_) => {
                                                             toast.success(&format!("工具包 [{}] 已安装", tag));
                                                             match list_installed_tool_packs(&aid).await {
@@ -566,7 +568,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                     let agent_id = aid.clone();
                                                                     let t = tag_clone.clone();
                                                                     spawn(async move {
-                                                                        match uninstall_tool_pack(&agent_id, &t).await {
+                                                                        match uninstall_tool_pack(UninstallToolPackRequest { agent_id: agent_id.clone(), tag: t.clone() }).await {
                                                                             Ok(_) => {
                                                                                 toast.success(&format!("工具包 [{}] 已卸载", t));
                                                                                 match list_installed_tool_packs(&agent_id).await {
@@ -607,7 +609,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 let aid = agent_id_signal();
                                                 skill_pack_input.set(String::new());
                                                 spawn(async move {
-                                                    match install_skill_pack(&aid, &tag).await {
+                                                    match install_skill_pack(InstallSkillPackRequest { agent_id: aid.clone(), tag: tag.clone() }).await {
                                                         Ok(_) => {
                                                             toast.success(&format!("技能包 [{}] 已安装", tag));
                                                             match list_installed_skill_packs(&aid).await {
@@ -638,7 +640,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                     let agent_id = aid.clone();
                                                                     let t = tag_clone.clone();
                                                                     spawn(async move {
-                                                                        match uninstall_skill_pack(&agent_id, &t).await {
+                                                                        match uninstall_skill_pack(UninstallSkillPackRequest { agent_id: agent_id.clone(), tag: t.clone() }).await {
                                                                             Ok(_) => {
                                                                                 toast.success(&format!("技能包 [{}] 已卸载", t));
                                                                                 match list_installed_skill_packs(&agent_id).await {
@@ -702,9 +704,9 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                             let ib = is_bound;
                                                                             spawn(async move {
                                                                                 let result = if ib {
-                                                                                    unbind_tool_from_agent(&agent_id, &tid).await
+                                                                                    unbind_tool_from_agent(UnbindToolFromAgentRequest { agent_id: agent_id.clone(), tool_id: tid.clone() }).await
                                                                                 } else {
-                                                                                    bind_tool_to_agent(&agent_id, &tid).await
+                                                                                    bind_tool_to_agent(BindToolToAgentRequest { agent_id: agent_id.clone(), tool_id: tid.clone() }).await
                                                                                 };
                                                                                 match result {
                                                                                     Ok(_) => {

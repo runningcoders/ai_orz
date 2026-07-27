@@ -1,14 +1,16 @@
 //! HR 域 API - Agent 管理、技能管理、工具包/技能包管理
 
 use common::api::{
-    AgentListItem, AgentQueryRequest, CreateAgentRequest, CreateAgentResponse,
-    CreateExternalAgentRequest, CreateExternalAgentResponse, CreateSkillRequest,
-    CreateSkillResponse, DeleteSkillResponse, GetAgentRequest, GetAgentResponse,
-    GetReceptionAgentResponse, GetSkillResponse, ListAgentsRequest, ListAgentsResponse,
-    ListInstalledSkillPacksResponse, ListInstalledToolPacksResponse, ListSkillsResponse,
-    PagedResult, QueryMemoryParams, QueryMemoryResponse, SearchMemoryParams,
-    SearchMemoryResponse, SkillListItem, SkillQueryRequest, UpdateAgentRequest,
-    UpdateAgentResponse, UpdateAgentStatusRequest, UpdateSkillRequest, UpdateSkillResponse,
+    AgentListItem, AgentQueryRequest, BindToolToAgentRequest, CreateAgentRequest,
+    CreateAgentResponse, CreateExternalAgentRequest, CreateExternalAgentResponse,
+    CreateSkillRequest, CreateSkillResponse, DeleteSkillResponse, GetAgentRequest,
+    GetAgentResponse, GetReceptionAgentResponse, GetSkillResponse, InstallSkillPackRequest,
+    InstallToolPackRequest, ListAgentsRequest, ListAgentsResponse, ListInstalledSkillPacksResponse,
+    ListInstalledToolPacksResponse, ListSkillsResponse, PagedResult, QueryMemoryParams,
+    QueryMemoryResponse, SearchMemoryParams, SearchMemoryResponse, SkillListItem,
+    SkillQueryRequest, UnbindToolFromAgentRequest, UninstallSkillPackRequest,
+    UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentResponse, UpdateAgentStatusRequest,
+    UpdateSkillRequest, UpdateSkillResponse,
 };
 
 use super::{
@@ -81,19 +83,19 @@ pub async fn list_installed_tool_packs(
     api_get_or_default(&format!("/api/v1/hr/agents/{}/tool-packs", agent_id)).await
 }
 
-pub async fn install_tool_pack(agent_id: &str, tag: &str) -> Result<(), ApiError> {
+pub async fn install_tool_pack(req: InstallToolPackRequest) -> Result<(), ApiError> {
     let body = serde_json::json!({});
     api_post_empty(
-        &format!("/api/v1/hr/agents/{}/tool-packs/{}", agent_id, tag),
+        &format!("/api/v1/hr/agents/{}/tool-packs/{}", req.agent_id, req.tag),
         &body,
     )
     .await
 }
 
-pub async fn uninstall_tool_pack(agent_id: &str, tag: &str) -> Result<(), ApiError> {
+pub async fn uninstall_tool_pack(req: UninstallToolPackRequest) -> Result<(), ApiError> {
     api_delete(&format!(
         "/api/v1/hr/agents/{}/tool-packs/{}",
-        agent_id, tag
+        req.agent_id, req.tag
     ))
     .await
 }
@@ -106,19 +108,19 @@ pub async fn list_installed_skill_packs(
     api_get_or_default(&format!("/api/v1/hr/agents/{}/skill-packs", agent_id)).await
 }
 
-pub async fn install_skill_pack(agent_id: &str, tag: &str) -> Result<(), ApiError> {
+pub async fn install_skill_pack(req: InstallSkillPackRequest) -> Result<(), ApiError> {
     let body = serde_json::json!({});
     api_post_empty(
-        &format!("/api/v1/hr/agents/{}/skill-packs/{}", agent_id, tag),
+        &format!("/api/v1/hr/agents/{}/skill-packs/{}", req.agent_id, req.tag),
         &body,
     )
     .await
 }
 
-pub async fn uninstall_skill_pack(agent_id: &str, tag: &str) -> Result<(), ApiError> {
+pub async fn uninstall_skill_pack(req: UninstallSkillPackRequest) -> Result<(), ApiError> {
     api_delete(&format!(
         "/api/v1/hr/agents/{}/skill-packs/{}",
-        agent_id, tag
+        req.agent_id, req.tag
     ))
     .await
 }
@@ -240,19 +242,22 @@ pub async fn update_skill_file_content(
 
 // ===== Agent 工具绑定 =====
 
-pub async fn bind_tool_to_agent(agent_id: &str, tool_id: &str) -> Result<(), ApiError> {
+pub async fn bind_tool_to_agent(req: BindToolToAgentRequest) -> Result<(), ApiError> {
     let body = serde_json::json!({});
     api_post_empty(
-        &format!("/api/v1/hr/agents/{}/tools/{}/bind", agent_id, tool_id),
+        &format!(
+            "/api/v1/hr/agents/{}/tools/{}/bind",
+            req.agent_id, req.tool_id
+        ),
         &body,
     )
     .await
 }
 
-pub async fn unbind_tool_from_agent(agent_id: &str, tool_id: &str) -> Result<(), ApiError> {
+pub async fn unbind_tool_from_agent(req: UnbindToolFromAgentRequest) -> Result<(), ApiError> {
     api_delete(&format!(
         "/api/v1/hr/agents/{}/tools/{}/bind",
-        agent_id, tool_id
+        req.agent_id, req.tool_id
     ))
     .await
 }
