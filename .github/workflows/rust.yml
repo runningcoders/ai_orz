@@ -71,8 +71,8 @@ jobs:
     - name: Run unit tests (parallel)
       run: cargo test --lib --verbose
 
-    - name: Run integration tests (serial)
-      run: cargo test --test '*' --verbose -- --test-threads=1
+    - name: Run integration tests (parallel)
+      run: cargo test --test '*' --verbose
 
     # Tarpaulin 主要支持 Linux，这里 runs-on 已是 ubuntu-latest。
     # 当前只收集覆盖率作为 baseline，不设门槛（--fail-under 0），
