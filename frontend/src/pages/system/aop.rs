@@ -157,8 +157,13 @@ pub fn SystemAop() -> Element {
                                                 let status = filter_status.cloned();
                                                 loading_events.set(true);
                                                 spawn(async move {
-                                                    let status_ref = if status.is_empty() { None } else { Some(status.as_str()) };
-                                                    match list_events(&consumer_name, None, status_ref, 100, 0).await {
+                                                    match list_events(common::api::ListEventsRequest {
+                                                        consumer: consumer_name.clone(),
+                                                        limit: Some(100),
+                                                        offset: Some(0),
+                                                        status: if status.is_empty() { None } else { Some(status.clone()) },
+                                                        ..Default::default()
+                                                    }).await {
                                                         Ok(data) => events.set(data),
                                                         Err(e) => toast.error(&format!("加载事件列表失败: {}", e)),
                                                     }
@@ -187,8 +192,13 @@ pub fn SystemAop() -> Element {
                                             loading_events.set(true);
                                             selected_event.set(None);
                                             spawn(async move {
-                                                let status_ref = if s.is_empty() { None } else { Some(s.as_str()) };
-                                                match list_events(&c, None, status_ref, 100, 0).await {
+                                                match list_events(common::api::ListEventsRequest {
+                                                    consumer: c.clone(),
+                                                    limit: Some(100),
+                                                    offset: Some(0),
+                                                    status: if s.is_empty() { None } else { Some(s.clone()) },
+                                                    ..Default::default()
+                                                }).await {
                                                     Ok(data) => events.set(data),
                                                     Err(e) => toast.error(&format!("加载事件列表失败: {}", e)),
                                                 }
@@ -235,7 +245,10 @@ pub fn SystemAop() -> Element {
                                                                 let eid = event_id.clone();
                                                                 loading_detail.set(true);
                                                                 spawn(async move {
-                                                                    match get_event(&c, &eid).await {
+                                                                    match get_event(common::api::GetEventRequest {
+                                                                        consumer: c.clone(),
+                                                                        event_id: eid.clone(),
+                                                                    }).await {
                                                                         Ok(data) => selected_event.set(Some(data)),
                                                                         Err(e) => toast.error(&format!("加载事件详情失败: {}", e)),
                                                                     }
@@ -345,9 +358,15 @@ fn AopStatsPanel() -> Element {
     let load_data = move || {
         spawn(async move {
             let ov = get_aop_stats_overview().await;
-            let ts = get_aop_stats_time_series(None, None, None).await;
-            let cd = get_aop_stats_distribution("consumer", None).await;
-            let sd = get_aop_stats_distribution("status", None).await;
+            let ts = get_aop_stats_time_series(common::api::GetStatsTimeSeriesRequest::default()).await;
+            let cd = get_aop_stats_distribution(common::api::GetStatsDistributionRequest {
+                group_by: "consumer".to_string(),
+                status: None,
+            }).await;
+            let sd = get_aop_stats_distribution(common::api::GetStatsDistributionRequest {
+                group_by: "status".to_string(),
+                status: None,
+            }).await;
 
             if let Ok(o) = ov {
                 overview.set(Some(o));

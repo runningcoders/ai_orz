@@ -26,10 +26,13 @@ pub async fn create_cron_trigger(
 }
 
 pub async fn update_cron_trigger(
-    id: &str,
     req: common::api::UpdateCronTriggerRequest,
 ) -> Result<common::api::UpdateCronTriggerResponse, ApiError> {
-    api_put(&format!("/api/v1/system/cron-triggers/{}", id), &req).await
+    api_put(
+        &format!("/api/v1/system/cron-triggers/{}", req.trigger_id),
+        &req,
+    )
+    .await
 }
 
 pub async fn delete_cron_trigger(id: &str) -> Result<(), ApiError> {
@@ -144,72 +147,18 @@ pub struct LogPageResult {
     pub page_size: usize,
 }
 
-/// 日志查询参数
-#[derive(Debug, Clone, Default)]
-pub struct LogQueryParams {
-    /// 关键词（message 字段包含，不区分大小写）
-    pub keyword: Option<String>,
-    /// 调用链 ID 精确匹配
-    pub log_id: Option<String>,
-    /// 日志级别过滤（INFO / WARN / ERROR / DEBUG）
-    pub level: Option<String>,
-    /// 起始时间（unix timestamp ms，含）
-    pub start_time: Option<i64>,
-    /// 结束时间（unix timestamp ms，含）
-    pub end_time: Option<i64>,
-    /// 页码（从 1 开始）
-    pub page: usize,
-    /// 每页条数
-    pub page_size: usize,
-}
-
-impl LogQueryParams {
-    /// 构造 URL query string（不含前导 `?`）
-    pub fn to_query_string(&self) -> String {
-        let mut params: Vec<String> = Vec::new();
-        if let Some(kw) = &self.keyword {
-            let kw = kw.trim();
-            if !kw.is_empty() {
-                params.push(format!("keyword={}", url_encode(kw)));
-            }
-        }
-        if let Some(id) = &self.log_id {
-            let id = id.trim();
-            if !id.is_empty() {
-                params.push(format!("log_id={}", url_encode(id)));
-            }
-        }
-        if let Some(lvl) = &self.level {
-            let lvl = lvl.trim();
-            if !lvl.is_empty() {
-                params.push(format!("level={}", url_encode(lvl)));
-            }
-        }
-        if let Some(start) = self.start_time {
-            params.push(format!("start_time={}", start));
-        }
-        if let Some(end) = self.end_time {
-            params.push(format!("end_time={}", end));
-        }
-        if self.page > 0 {
-            params.push(format!("page={}", self.page));
-        }
-        if self.page_size > 0 {
-            params.push(format!("page_size={}", self.page_size));
-        }
-        params.join("&")
-    }
-}
-
 /// 查询日志
-pub async fn query_logs(params: &LogQueryParams) -> Result<LogPageResult, ApiError> {
-    let qs = params.to_query_string();
-    let path = if qs.is_empty() {
-        "/api/v1/system/logs".to_string()
-    } else {
-        format!("/api/v1/system/logs?{}", qs)
-    };
-    api_get(&path).await
+pub async fn query_logs(req: &common::api::LogQueryRequest) -> Result<LogPageResult, ApiError> {
+    let qs = super::build_query_string(&[
+        ("keyword", req.keyword.clone()),
+        ("log_id", req.log_id.clone()),
+        ("level", req.level.clone()),
+        ("start_time", req.start_time.map(|v| v.to_string())),
+        ("end_time", req.end_time.map(|v| v.to_string())),
+        ("page", req.page.map(|v| v.to_string())),
+        ("page_size", req.page_size.map(|v| v.to_string())),
+    ]);
+    api_get(&format!("/api/v1/system/logs{}", qs)).await
 }
 
 // ===== AOP 队列监控 =====
@@ -263,39 +212,23 @@ pub async fn get_queue_stats(consumer: &str) -> Result<QueueStatsResponse, ApiEr
 
 /// 查询事件列表
 pub async fn list_events(
-    consumer: &str,
-    order_key: Option<&str>,
-    status: Option<&str>,
-    limit: usize,
-    offset: usize,
+    req: common::api::ListEventsRequest,
 ) -> Result<Vec<EventSummaryResponse>, ApiError> {
-    let mut params = Vec::new();
-    if let Some(ok) = order_key {
-        params.push(format!("order_key={}", url_encode(ok)));
-    }
-    if let Some(s) = status {
-        params.push(format!("status={}", url_encode(s)));
-    }
-    if limit > 0 {
-        params.push(format!("limit={}", limit));
-    }
-    if offset > 0 {
-        params.push(format!("offset={}", offset));
-    }
-    let qs = params.join("&");
-    let path = if qs.is_empty() {
-        format!("/api/v1/system/aop/{}/events", consumer)
-    } else {
-        format!("/api/v1/system/aop/{}/events?{}", consumer, qs)
-    };
-    api_get_or_default(&path).await
+    let qs = super::build_query_string(&[
+        ("order_key", req.order_key.clone()),
+        ("status", req.status.clone()),
+        ("limit", req.limit.map(|v| v.to_string())),
+        ("offset", req.offset.map(|v| v.to_string())),
+    ]);
+    let url = format!("/api/v1/system/aop/{}/events{}", req.consumer, qs);
+    api_get_or_default(&url).await
 }
 
 /// 获取事件详情
-pub async fn get_event(consumer: &str, event_id: &str) -> Result<EventDetailResponse, ApiError> {
+pub async fn get_event(req: common::api::GetEventRequest) -> Result<EventDetailResponse, ApiError> {
     api_get(&format!(
         "/api/v1/system/aop/{}/events/{}",
-        consumer, event_id
+        req.consumer, req.event_id
     ))
     .await
 }
@@ -340,53 +273,25 @@ pub async fn get_aop_stats_overview() -> Result<AopStatsOverviewResponse, ApiErr
 
 /// 获取 AOP 统计时序数据
 pub async fn get_aop_stats_time_series(
-    event_kind: Option<&str>,
-    consumer_name: Option<&str>,
-    status: Option<&str>,
+    req: common::api::GetStatsTimeSeriesRequest,
 ) -> Result<AopStatsTimeSeriesResponse, ApiError> {
-    let mut params = Vec::new();
-    if let Some(v) = event_kind {
-        params.push(format!("event_kind={}", url_encode(v)));
-    }
-    if let Some(v) = consumer_name {
-        params.push(format!("consumer_name={}", url_encode(v)));
-    }
-    if let Some(v) = status {
-        params.push(format!("status={}", url_encode(v)));
-    }
-    let qs = params.join("&");
-    let path = if qs.is_empty() {
-        "/api/v1/system/aop/stats/time-series".to_string()
-    } else {
-        format!("/api/v1/system/aop/stats/time-series?{}", qs)
-    };
-    api_get(&path).await
+    let qs = super::build_query_string(&[
+        ("event_kind", req.event_kind.clone()),
+        ("consumer_name", req.consumer_name.clone()),
+        ("status", req.status.clone()),
+    ]);
+    api_get(&format!("/api/v1/system/aop/stats/time-series{}", qs)).await
 }
 
 /// 获取 AOP 统计分布
 pub async fn get_aop_stats_distribution(
-    group_by: &str,
-    status: Option<&str>,
+    req: common::api::GetStatsDistributionRequest,
 ) -> Result<AopStatsDistributionResponse, ApiError> {
-    let mut path = format!(
-        "/api/v1/system/aop/stats/distribution?group_by={}",
-        url_encode(group_by)
-    );
-    if let Some(s) = status {
-        path.push_str(&format!("&status={}", url_encode(s)));
-    }
-    api_get(&path).await
-}
-
-/// 简单的 URL 编码（与 api/message.rs 中的实现一致）
-fn url_encode(s: &str) -> String {
-    s.replace('%', "%25")
-        .replace(' ', "%20")
-        .replace('&', "%26")
-        .replace('=', "%3D")
-        .replace('+', "%2B")
-        .replace('#', "%23")
-        .replace('?', "%3F")
+    let qs = super::build_query_string(&[
+        ("group_by", Some(req.group_by.clone())),
+        ("status", req.status.clone()),
+    ]);
+    api_get(&format!("/api/v1/system/aop/stats/distribution{}", qs)).await
 }
 
 // ===== 系统健康指标（HUD 仪表盘墙用） =====

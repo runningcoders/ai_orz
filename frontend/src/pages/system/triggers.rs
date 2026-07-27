@@ -266,7 +266,7 @@ pub fn SystemTriggers() -> Element {
                         run_at,
                         payload: Some(payload_str),
                     };
-                    update_cron_trigger(id, req).await.map(|_| ())
+                    update_cron_trigger(req).await.map(|_| ())
                 }
             };
             match result {

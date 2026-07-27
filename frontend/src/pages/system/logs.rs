@@ -7,7 +7,8 @@ use chrono::{Local, NaiveDateTime, TimeZone};
 use crate::api::log_stats::{
     LogLevelDistributionItem, LogTimeSeriesPoint, get_log_level_distribution, get_log_time_series,
 };
-use crate::api::system::{LogEntry, LogPageResult, LogQueryParams, query_logs};
+use crate::api::system::{LogEntry, LogPageResult, query_logs};
+use common::api::LogQueryRequest;
 use crate::components::charts::donut_chart::{DonutChart, DonutSlice};
 use crate::components::charts::line_chart::LineChart;
 use crate::components::state::{EmptyState, Loading};
@@ -75,7 +76,7 @@ pub fn SystemLogs() -> Element {
     let mut form_end = use_signal(String::new);
 
     // 当前生效的查询（用于触发刷新 / 翻页）
-    let mut active_query = use_signal(|| Option::<LogQueryParams>::None);
+    let mut active_query = use_signal(|| Option::<LogQueryRequest>::None);
     let mut current_page = use_signal(|| 1usize);
 
     // 结果
@@ -92,7 +93,7 @@ pub fn SystemLogs() -> Element {
 
     /// 执行一次查询
     fn do_query(
-        params: LogQueryParams,
+        params: LogQueryRequest,
         page: usize,
         mut loading: Signal<bool>,
         mut result: Signal<Option<LogPageResult>>,
@@ -101,7 +102,7 @@ pub fn SystemLogs() -> Element {
         loading.set(true);
         spawn(async move {
             let mut p = params.clone();
-            p.page = page;
+            p.page = Some(page);
             match query_logs(&p).await {
                 Ok(r) => result.set(Some(r)),
                 Err(e) => toast.error(&format!("查询日志失败: {}", e)),
@@ -131,9 +132,9 @@ pub fn SystemLogs() -> Element {
     // 首次进入时自动加载第一页
     use_effect(move || {
         if active_query().is_none() {
-            let p = LogQueryParams {
-                page: 1,
-                page_size: DEFAULT_PAGE_SIZE,
+            let p = LogQueryRequest {
+                page: Some(1),
+                page_size: Some(DEFAULT_PAGE_SIZE),
                 ..Default::default()
             };
             active_query.set(Some(p.clone()));
@@ -149,7 +150,7 @@ pub fn SystemLogs() -> Element {
 
     // 点击查询按钮
     let mut handle_search = move |_| {
-        let params = LogQueryParams {
+        let params = LogQueryRequest {
             keyword: if form_keyword().trim().is_empty() {
                 None
             } else {
@@ -167,8 +168,8 @@ pub fn SystemLogs() -> Element {
             },
             start_time: parse_datetime_local_to_ms(&form_start()),
             end_time: parse_datetime_local_to_ms(&form_end()),
-            page: 1,
-            page_size: DEFAULT_PAGE_SIZE,
+            page: Some(1),
+            page_size: Some(DEFAULT_PAGE_SIZE),
         };
         active_query.set(Some(params.clone()));
         current_page.set(1);
@@ -220,14 +221,14 @@ pub fn SystemLogs() -> Element {
         form_level.set(String::new());
         form_start.set(String::new());
         form_end.set(String::new());
-        let params = LogQueryParams {
+        let params = LogQueryRequest {
             keyword: None,
             log_id: Some(id),
             level: None,
             start_time: None,
             end_time: None,
-            page: 1,
-            page_size: DEFAULT_PAGE_SIZE,
+            page: Some(1),
+            page_size: Some(DEFAULT_PAGE_SIZE),
         };
         active_query.set(Some(params.clone()));
         current_page.set(1);
