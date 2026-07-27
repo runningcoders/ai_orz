@@ -24,8 +24,9 @@ async fn test_agent_crud_loop(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
 
-    // 删除 embedding provider 走向量降级路径，避免触发 FastEmbed 模型下载
-    let (bs, jwt) = crate::common::factories::bootstrap_login_and_disable_embedding(&app).await;
+    // bootstrap_system 传 embedding_model: None，永不创建 embedding provider，
+    // 所有实体创建走向量降级路径，避免触发 FastEmbed 模型下载
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
 
     // 直接使用 bootstrap 返回的 chat_provider_id（无需再发 HTTP 请求查询）
     let provider_id = &bs.chat_provider_id;
@@ -118,7 +119,7 @@ async fn test_project_status_transitions(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
 
-    let (_bs, jwt) = crate::common::factories::bootstrap_login_and_disable_embedding(&app).await;
+    let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
 
     // Create project
     let project_name = format!("TestProject-{}", uuid::Uuid::now_v7());
@@ -221,7 +222,7 @@ async fn test_task_progress_and_completion(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
 
-    let (bs, jwt) = crate::common::factories::bootstrap_login_and_disable_embedding(&app).await;
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
 
     // 1. 创建一个 Agent 作为 task 的 assignee（assignee_id 是必填字段）
     let agent_id = crate::common::factories::create_test_agent(

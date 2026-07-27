@@ -1,12 +1,12 @@
 //! User/auth test factories.
 //!
 //! Provides helpers to:
-//! 1. Bootstrap a system (org + admin user + 2 model providers) via the real
-//!    `/organization/initialize` endpoint.
+//! 1. Bootstrap a system (org + admin user + chat model provider) via the real
+//!    `/organization/initialize` endpoint. `embedding_model` is `None` so the
+//!    test environment never configures an embedding provider — all entity
+//!    creates take the `Ok(None)` vector-degradation path (no cortex calls).
 //! 2. Login as the admin user via the real `/organization/auth/login` endpoint
 //!    and return a JWT token.
-//! 3. Optionally disable the embedding provider so subsequent entity creates
-//!    take the `Ok(None)` vector-degradation path (no cortex calls).
 
 use crate::common::app::TestApp;
 use common::api::{InitializeSystemRequest, LoginRequest, ModelProviderInitConfig};
@@ -20,15 +20,17 @@ pub struct BootstrappedSystem {
     pub username: String,
     pub password_hash: String,
     pub chat_provider_id: String,
-    pub embedding_provider_id: String,
+    /// None 表示测试环境未配置 embedding provider（默认情况）。
+    /// 所有实体创建走 `Ok(None)` 向量降级路径，不触发 cortex/FastEmbed。
+    #[allow(dead_code)] // 公共测试 API 字段，保留供未来测试使用
+    pub embedding_provider_id: Option<String>,
 }
 
-/// Bootstrap the system with one org, one admin, and two model providers.
+/// Bootstrap the system with one org, one admin, and one chat model provider.
 ///
-/// **向量降级关键**：embedding_model 用 `provider_type=6 (FastEmbed)` + `api_key=""`，
-/// 因为 [src/service/dao/cortex/rig/fastembed.rs:40](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/cortex/rig/fastembed.rs)
-/// 显式忽略 api_key。`initialize_system` 只做 DB INSERT 不真实调用模型，
-/// 所以这个 provider 创建出来即使 cortex 不可用也不会失败。
+/// **向量降级关键**：`embedding_model: None` —— 不创建 embedding provider，
+/// `get_default_embedding_provider` 直接返回 `Ok(None)`，所有 DAL 的
+/// `embed_entity` 被跳过，永远不会触发 FastEmbed 模型加载。
 pub async fn bootstrap_system(app: &TestApp) -> BootstrappedSystem {
     let username = format!("admin-{}", uuid::Uuid::now_v7());
     let password_hash = format!("hash-{}", uuid::Uuid::now_v7());
@@ -49,14 +51,7 @@ pub async fn bootstrap_system(app: &TestApp) -> BootstrappedSystem {
             base_url: None,
             description: Some("test chat model".to_string()),
         },
-        embedding_model: ModelProviderInitConfig {
-            name: "Test Embedding Provider".to_string(),
-            provider_type: 6, // FastEmbed — 显式忽略 api_key
-            model_name: "BAAI/bge-small-en".to_string(),
-            api_key: "".to_string(), // 空字符串，FastEmbed 不需要
-            base_url: None,
-            description: Some("test embedding model".to_string()),
-        },
+        embedding_model: None,
     };
 
     let (status, body) = app.post("/api/v1/organization/initialize", &req).await;
@@ -79,8 +74,7 @@ pub async fn bootstrap_system(app: &TestApp) -> BootstrappedSystem {
     let embedding_provider_id = data
         .get("embedding_provider_id")
         .and_then(|v| v.as_str())
-        .expect("missing embedding_provider_id in response")
-        .to_string();
+        .map(|s| s.to_string());
     BootstrappedSystem {
         organization_id: org_id,
         user_id,
@@ -113,47 +107,16 @@ pub async fn login_and_get_jwt(
         .to_string()
 }
 
-/// Disable the embedding provider by deleting it via HTTP.
-///
-/// After this call, `get_default_embedding_provider` returns `Ok(None)` for all
-/// subsequent entity creates, which triggers the `log_debug!("无可用 Embedding
-/// Provider，跳过向量索引")` degradation path in every DAL.
-///
-/// This is the **recommended default** for integration tests that don't
-/// specifically test vector indexing — keeps tests fast and CI-stable.
-#[allow(dead_code)] // 公共测试 API，保留供未来测试使用
-pub async fn disable_embedding_provider(app: &TestApp, jwt: &str, embedding_provider_id: &str) {
-    let (status, _body) = app
-        .delete_with_jwt(
-            &format!("/api/v1/finance/model-providers/{}", embedding_provider_id),
-            jwt,
-        )
-        .await;
-    assert_eq!(
-        status,
-        axum::http::StatusCode::OK,
-        "deleting embedding provider should succeed, body: {}",
-        _body
-    );
-}
-
 /// Convenience: bootstrap system + login, returning
 /// `(BootstrappedSystem, jwt_token)`.
+///
+/// This is the **default entry point** for most integration tests. Because
+/// `bootstrap_system` passes `embedding_model: None`, no embedding provider is
+/// ever created — all entity creates take the vector-degradation path with no
+/// cortex calls and no FastEmbed model downloads, keeping tests fast and
+/// CI-stable.
 pub async fn bootstrap_and_login(app: &TestApp) -> (BootstrappedSystem, String) {
     let bs = bootstrap_system(app).await;
     let jwt = login_and_get_jwt(app, &bs.organization_id, &bs.username, &bs.password_hash).await;
-    (bs, jwt)
-}
-
-/// Convenience: bootstrap system + login + delete embedding provider.
-///
-/// This is the **default entry point** for most integration tests. Subsequent
-/// entity creates (agent/project/task/message) will all take the vector
-/// degradation path — no cortex calls, no FastEmbed model downloads, fast and
-/// deterministic.
-#[allow(dead_code)] // 公共测试 API，保留供未来测试使用
-pub async fn bootstrap_login_and_disable_embedding(app: &TestApp) -> (BootstrappedSystem, String) {
-    let (bs, jwt) = bootstrap_and_login(app).await;
-    disable_embedding_provider(app, &jwt, &bs.embedding_provider_id).await;
     (bs, jwt)
 }

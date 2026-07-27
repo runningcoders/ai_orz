@@ -25,44 +25,21 @@ use crate::common::TestApp;
 use serde_json::json;
 use sqlx::SqlitePool;
 
-/// When the embedding provider is deleted, agent creation should still succeed
+/// When no embedding provider is configured, agent creation should still succeed
 /// and the agent record should be retrievable.
 ///
-/// Validates the `Ok(None)` degradation path in agent DAL — when
-/// `get_default_embedding_provider` returns `Ok(None)`, `embed_entity` is
-/// skipped and the main table INSERT commits successfully.
+/// Validates the `Ok(None)` degradation path in agent DAL.
 #[sqlx::test]
 async fn test_agent_create_succeeds_without_embedding_provider(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
 
-    let (bs, jwt) = crate::common::factories::bootstrap_login_and_disable_embedding(&app).await;
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
 
-    // Verify embedding provider is really gone — list should NOT contain any
-    // provider with capability == 1 (ModelCapability::Embedding).
-    let (status, body) = app
-        .get_with_jwt("/api/v1/finance/model-providers", &jwt)
-        .await;
-    let providers = crate::common::assert_api_ok(status, &body);
-    let has_embedding = providers
-        .as_array()
-        .map(|arr| {
-            arr.iter().any(|p| {
-                p.get("capability")
-                    .and_then(|v| v.as_i64())
-                    .map(|c| c == 1) // ModelCapability::Embedding = 1
-                    .unwrap_or(false)
-            })
-        })
-        .unwrap_or(false);
-    assert!(
-        !has_embedding,
-        "embedding provider should be deleted; got providers: {}",
-        providers
-    );
+    // bootstrap_system 传 embedding_model: None，DB 里没有任何 embedding provider
+    assert!(bs.embedding_provider_id.is_none());
 
-    // Create an agent — should succeed despite no embedding provider.
-    // This exercises the Ok(None) degradation path in agent DAL.
+    // Create an agent — should succeed via Ok(None) degradation path
     let agent_id = crate::common::factories::create_test_agent(
         &app,
         &jwt,
@@ -93,7 +70,7 @@ async fn test_project_create_succeeds_without_embedding_provider(pool: SqlitePoo
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
 
-    let (_bs, jwt) = crate::common::factories::bootstrap_login_and_disable_embedding(&app).await;
+    let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
 
     let project_id = crate::common::factories::create_test_project(
         &app,
@@ -125,7 +102,7 @@ async fn test_full_crud_loop_without_embedding_provider(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
 
-    let (bs, jwt) = crate::common::factories::bootstrap_login_and_disable_embedding(&app).await;
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
 
     // 1. Agent — 验证 agent DAL 的 embed_entity 降级
     let agent_id = crate::common::factories::create_test_agent(

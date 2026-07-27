@@ -18,7 +18,8 @@ mod common;
 use crate::common::TestApp;
 use sqlx::SqlitePool;
 
-/// Initialize the system end-to-end: creates org + admin + chat provider + embedding provider.
+/// Initialize the system end-to-end: creates org + admin + chat provider.
+/// `embedding_model` is `None`, so no embedding provider is configured.
 #[sqlx::test]
 async fn test_initialize_system_creates_org_and_providers(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
@@ -33,8 +34,8 @@ async fn test_initialize_system_creates_org_and_providers(pool: SqlitePool) {
         "chat_provider_id should be non-empty"
     );
     assert!(
-        !bs.embedding_provider_id.is_empty(),
-        "embedding_provider_id should be non-empty"
+        bs.embedding_provider_id.is_none(),
+        "embedding_provider_id should be None when not configured"
     );
 
     // After initialization, check_initialized should return true

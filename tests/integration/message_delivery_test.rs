@@ -28,7 +28,7 @@ async fn test_send_message_persists_record(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
 
-    let (bs, jwt) = crate::common::factories::bootstrap_login_and_disable_embedding(&app).await;
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
 
     // Create an agent to receive the message
     let agent_id = crate::common::factories::create_test_agent(
@@ -108,7 +108,7 @@ async fn test_sse_endpoint_returns_event_stream(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
 
-    let (_bs, jwt) = crate::common::factories::bootstrap_login_and_disable_embedding(&app).await;
+    let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
 
     let status = app
         .get_with_jwt_status_only("/api/v1/finance/messages/sse", &jwt)
