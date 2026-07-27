@@ -5,7 +5,7 @@ use crate::components::button::Button;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-use common::api::MemoryResult;
+use common::api::{MemoryResult, SearchMemoryParams};
 
 #[component]
 pub fn HrMemorySearch() -> Element {
@@ -25,7 +25,18 @@ pub fn HrMemorySearch() -> Element {
             } else {
                 Some(mt.as_str())
             };
-            match search_memory(&kw, mem_type, None).await {
+            match search_memory(SearchMemoryParams {
+                query: kw,
+                max_results: Some(20),
+                memory_type: mem_type.map(|s| s.to_string()),
+                traversal_depth: None,
+                traversal_breadth: None,
+                traversal_strategy: None,
+                seed_node_ids: None,
+                tags: None,
+            })
+            .await
+            {
                 Ok(data) => {
                     let mem_results = data.results;
                     results.set(mem_results.clone());

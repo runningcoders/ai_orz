@@ -4,13 +4,14 @@ use common::api::{
     AgentListItem, AgentQueryRequest, BindToolToAgentRequest, CreateAgentRequest,
     CreateAgentResponse, CreateExternalAgentRequest, CreateExternalAgentResponse,
     CreateSkillRequest, CreateSkillResponse, DeleteSkillResponse, GetAgentRequest,
-    GetAgentResponse, GetReceptionAgentResponse, GetSkillResponse, InstallSkillPackRequest,
-    InstallToolPackRequest, ListAgentsRequest, ListAgentsResponse, ListInstalledSkillPacksResponse,
-    ListInstalledToolPacksResponse, ListSkillsResponse, PagedResult, QueryMemoryParams,
-    QueryMemoryResponse, SearchMemoryParams, SearchMemoryResponse, SkillListItem,
-    SkillQueryRequest, UnbindToolFromAgentRequest, UninstallSkillPackRequest,
-    UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentResponse, UpdateAgentStatusRequest,
-    UpdateSkillRequest, UpdateSkillResponse,
+    GetAgentResponse, GetReceptionAgentResponse, GetSkillFileContentRequest, GetSkillResponse,
+    InstallSkillPackRequest, InstallToolPackRequest, ListAgentsRequest, ListAgentsResponse,
+    ListInstalledSkillPacksResponse, ListInstalledToolPacksResponse, ListSkillsRequest,
+    ListSkillsResponse, PagedResult, QueryMemoryParams, QueryMemoryResponse, SearchMemoryParams,
+    SearchMemoryResponse, SkillListItem, SkillQueryRequest, UnbindToolFromAgentRequest,
+    UninstallSkillPackRequest, UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentResponse,
+    UpdateAgentStatusRequest, UpdateSkillFileContentRequest, UpdateSkillRequest,
+    UpdateSkillResponse,
 };
 
 use super::{
@@ -127,22 +128,8 @@ pub async fn uninstall_skill_pack(req: UninstallSkillPackRequest) -> Result<(), 
 
 // ===== 技能库管理 =====
 
-pub async fn list_skills(
-    limit: Option<usize>,
-    offset: Option<usize>,
-) -> Result<PagedResult<SkillListItem>, ApiError> {
-    let mut params: Vec<String> = Vec::new();
-    if let Some(l) = limit {
-        params.push(format!("limit={}", l));
-    }
-    if let Some(o) = offset {
-        params.push(format!("offset={}", o));
-    }
-    let url = if params.is_empty() {
-        "/api/v1/hr/skills".to_string()
-    } else {
-        format!("/api/v1/hr/skills?{}", params.join("&"))
-    };
+pub async fn list_skills(req: ListSkillsRequest) -> Result<PagedResult<SkillListItem>, ApiError> {
+    let url = super::build_pagination_url("/api/v1/hr/skills", &req.pagination);
     api_get(&url).await
 }
 
@@ -162,11 +149,8 @@ pub async fn create_skill(req: CreateSkillRequest) -> Result<CreateSkillResponse
     api_post("/api/v1/hr/skills", &req).await
 }
 
-pub async fn update_skill(
-    id: &str,
-    req: UpdateSkillRequest,
-) -> Result<UpdateSkillResponse, ApiError> {
-    api_put(&format!("/api/v1/hr/skills/{}", id), &req).await
+pub async fn update_skill(req: UpdateSkillRequest) -> Result<UpdateSkillResponse, ApiError> {
+    api_put(&format!("/api/v1/hr/skills/{}", req.skill_id), &req).await
 }
 
 pub async fn delete_skill(id: &str) -> Result<DeleteSkillResponse, ApiError> {
@@ -211,30 +195,21 @@ pub async fn list_skill_files(
 
 /// 获取 Skill 文件内容（filename 可能含 /，需 URL 编码路径段）
 pub async fn get_skill_file_content(
-    skill_id: &str,
-    filename: &str,
+    req: GetSkillFileContentRequest,
 ) -> Result<common::api::GetSkillFileContentResponse, ApiError> {
     api_get(&format!(
         "/api/v1/hr/skills/{}/files/{}",
-        skill_id, filename
+        req.skill_id, req.filename
     ))
     .await
 }
 
 /// 更新 Skill 文件内容（乐观锁字段前端置 None）
 pub async fn update_skill_file_content(
-    skill_id: &str,
-    filename: &str,
-    content: String,
+    req: UpdateSkillFileContentRequest,
 ) -> Result<(), ApiError> {
-    let req = common::api::UpdateSkillFileContentRequest {
-        skill_id: skill_id.to_string(),
-        filename: filename.to_string(),
-        content,
-        expected_updated_at: None,
-    };
     api_put_empty(
-        &format!("/api/v1/hr/skills/{}/files/{}", skill_id, filename),
+        &format!("/api/v1/hr/skills/{}/files/{}", req.skill_id, req.filename),
         &req,
     )
     .await
@@ -268,53 +243,16 @@ pub use super::finance::list_tools;
 
 // ===== 记忆搜索 =====
 
-pub async fn search_memory(
-    query: &str,
-    memory_type: Option<&str>,
-    tags: Option<&[String]>,
-) -> Result<SearchMemoryResponse, ApiError> {
-    let params = SearchMemoryParams {
-        query: query.to_string(),
-        max_results: Some(20),
-        memory_type: memory_type.map(|s| s.to_string()),
-        traversal_depth: None,
-        traversal_breadth: None,
-        traversal_strategy: None,
-        seed_node_ids: None,
-        tags: tags.map(|t| t.to_vec()),
-    };
-    api_post("/api/v1/hr/agents/search_memory", &params).await
+pub async fn search_memory(req: SearchMemoryParams) -> Result<SearchMemoryResponse, ApiError> {
+    api_post("/api/v1/hr/agents/search_memory", &req).await
 }
 
-pub async fn query_memory(
-    agent_id: Option<&str>,
-    memory_type: Option<&str>,
-    tags: Option<&[String]>,
-) -> Result<QueryMemoryResponse, ApiError> {
-    let params = QueryMemoryParams {
-        agent_id: agent_id.map(|s| s.to_string()),
-        memory_type: memory_type.map(|s| s.to_string()),
-        limit: Some(20),
-        tags: tags.map(|t| t.to_vec()),
-    };
-    api_post("/api/v1/hr/agents/query_memory", &params).await
+pub async fn query_memory(req: QueryMemoryParams) -> Result<QueryMemoryResponse, ApiError> {
+    api_post("/api/v1/hr/agents/query_memory", &req).await
 }
 
 pub async fn search_memory_with_traversal(
-    query: &str,
-    seed_node_ids: &[String],
-    depth: i32,
-    tags: Option<&[String]>,
+    req: SearchMemoryParams,
 ) -> Result<SearchMemoryResponse, ApiError> {
-    let params = SearchMemoryParams {
-        query: query.to_string(),
-        max_results: Some(50),
-        memory_type: None,
-        traversal_depth: Some(depth),
-        traversal_breadth: Some(10),
-        traversal_strategy: Some("breadth_first".to_string()),
-        seed_node_ids: Some(seed_node_ids.to_vec()),
-        tags: tags.map(|t| t.to_vec()),
-    };
-    api_post("/api/v1/hr/agents/search_memory", &params).await
+    api_post("/api/v1/hr/agents/search_memory", &req).await
 }

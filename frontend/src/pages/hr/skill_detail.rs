@@ -11,7 +11,10 @@ use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-use common::api::{SkillDetail, SkillFileItem, UpdateSkillRequest};
+use common::api::{
+    GetSkillFileContentRequest, SkillDetail, SkillFileItem, UpdateSkillFileContentRequest,
+    UpdateSkillRequest,
+};
 
 #[component]
 pub fn HrSkillDetail(id: String) -> Element {
@@ -64,7 +67,13 @@ pub fn HrSkillDetail(id: String) -> Element {
             }
             saving_file.set(true);
             spawn(async move {
-                match update_skill_file_content(&skill_id, &filename, content).await {
+                let req = UpdateSkillFileContentRequest {
+                    skill_id,
+                    filename,
+                    content,
+                    expected_updated_at: None,
+                };
+                match update_skill_file_content(req).await {
                     Ok(_) => {
                         toast.success("文件已保存");
                         file_content_dirty.set(false);
@@ -119,7 +128,7 @@ pub fn HrSkillDetail(id: String) -> Element {
             };
             saving_meta.set(true);
             spawn(async move {
-                match update_skill(&skill_id, req).await {
+                match update_skill(req).await {
                     Ok(_) => {
                         toast.success("Skill 元信息已更新");
                         show_edit_modal.set(false);
@@ -215,7 +224,11 @@ pub fn HrSkillDetail(id: String) -> Element {
                                                                 file_content_dirty.set(false);
                                                                 file_content_loading.set(true);
                                                                 spawn(async move {
-                                                                    match get_skill_file_content(&skill_id, &filename).await {
+                                                                    let req = GetSkillFileContentRequest {
+                                                                        skill_id,
+                                                                        filename,
+                                                                    };
+                                                                    match get_skill_file_content(req).await {
                                                                         Ok(resp) => file_content.set(resp.content),
                                                                         Err(e) => toast.error(&format!("加载文件内容失败: {}", e)),
                                                                     }

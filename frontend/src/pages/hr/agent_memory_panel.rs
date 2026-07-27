@@ -5,7 +5,7 @@ use crate::api::hr::{query_memory, search_memory};
 use crate::components::button::Button;
 use crate::components::state::{EmptyState, Loading};
 use crate::store::toast::use_toast;
-use common::api::MemoryResult;
+use common::api::{MemoryResult, QueryMemoryParams, SearchMemoryParams};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum MemoryTab {
@@ -57,11 +57,27 @@ fn fetch_memories(
     spawn(async move {
         let mem_type = Some(tab.memory_type());
         let fetch_result: Result<Vec<MemoryResult>, ApiError> = if kw.trim().is_empty() {
-            query_memory(agent_id.as_deref(), mem_type, None)
-                .await
-                .map(|r| r.results)
+            query_memory(QueryMemoryParams {
+                agent_id,
+                memory_type: mem_type.map(|s| s.to_string()),
+                limit: Some(20),
+                tags: None,
+            })
+            .await
+            .map(|r| r.results)
         } else {
-            search_memory(&kw, mem_type, None).await.map(|r| r.results)
+            search_memory(SearchMemoryParams {
+                query: kw,
+                max_results: Some(20),
+                memory_type: mem_type.map(|s| s.to_string()),
+                traversal_depth: None,
+                traversal_breadth: None,
+                traversal_strategy: None,
+                seed_node_ids: None,
+                tags: None,
+            })
+            .await
+            .map(|r| r.results)
         };
         // 丢弃过期请求的结果
         if fetch_request_id() != my_id {

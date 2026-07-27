@@ -15,7 +15,7 @@ enum GraphStyle {
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-use common::api::MemoryResult;
+use common::api::{MemoryResult, SearchMemoryParams};
 
 /// 从搜索结果构建图谱节点和边
 fn build_graph_from_results(results: &[MemoryResult]) -> (Vec<GraphNode>, Vec<GraphEdge>) {
@@ -152,12 +152,22 @@ pub fn HrKnowledgeGraph() -> Element {
                     .filter(|s| !s.is_empty())
                     .collect()
             };
-            let tags_opt: Option<&[String]> = if tags_vec.is_empty() {
+            let tags_field: Option<Vec<String>> = if tags_vec.is_empty() {
                 None
             } else {
-                Some(&tags_vec)
+                Some(tags_vec)
             };
-            match search_memory_with_traversal(&kw, &[], 1, tags_opt).await {
+            let params = SearchMemoryParams {
+                query: kw,
+                max_results: Some(50),
+                memory_type: None,
+                traversal_depth: Some(1),
+                traversal_breadth: Some(10),
+                traversal_strategy: Some("breadth_first".to_string()),
+                seed_node_ids: Some(Vec::new()),
+                tags: tags_field,
+            };
+            match search_memory_with_traversal(params).await {
                 Ok(data) => {
                     let mut map = std::collections::HashMap::new();
                     let mut highlights = Vec::new();
@@ -204,7 +214,17 @@ pub fn HrKnowledgeGraph() -> Element {
         let my_request_id = click_request_id() + 1;
         click_request_id.set(my_request_id);
         spawn(async move {
-            match search_memory_with_traversal("", &seed_ids, 1, None).await {
+            let params = SearchMemoryParams {
+                query: "".to_string(),
+                max_results: Some(50),
+                memory_type: None,
+                traversal_depth: Some(1),
+                traversal_breadth: Some(10),
+                traversal_strategy: Some("breadth_first".to_string()),
+                seed_node_ids: Some(seed_ids.clone()),
+                tags: None,
+            };
+            match search_memory_with_traversal(params).await {
                 Ok(data) => {
                     // 修复 M11：检查 request_id 是否仍然是最新的，过期则丢弃结果
                     if click_request_id() != my_request_id {

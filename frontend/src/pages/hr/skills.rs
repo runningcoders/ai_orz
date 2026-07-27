@@ -9,7 +9,7 @@ use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-use common::api::{CreateSkillRequest, ListSkillsResponseItem};
+use common::api::{CreateSkillRequest, ListSkillsRequest, ListSkillsResponseItem};
 
 #[component]
 pub fn HrSkills() -> Element {
@@ -34,7 +34,7 @@ pub fn HrSkills() -> Element {
     use_effect(move || {
         loading.set(true);
         spawn(async move {
-            match list_skills(None, None).await {
+            match list_skills(ListSkillsRequest::default()).await {
                 Ok(page) => skills.set(page.items),
                 Err(e) => toast.error(&e),
             }
@@ -81,7 +81,7 @@ pub fn HrSkills() -> Element {
                     new_content.set(String::new());
                     let keyword = search_keyword();
                     let result = if keyword.trim().is_empty() {
-                        list_skills(None, None).await.map(|p| p.items)
+                        list_skills(ListSkillsRequest::default()).await.map(|p| p.items)
                     } else {
                         search_skills(&keyword).await.map(|r| r.skills)
                     };
@@ -117,7 +117,9 @@ pub fn HrSkills() -> Element {
                                     loading.set(true);
                                     let kw = search_keyword();
                                     let result = if kw.trim().is_empty() {
-                                        list_skills(None, None).await.map(|p| p.items)
+                                        list_skills(ListSkillsRequest::default())
+                                            .await
+                                            .map(|p| p.items)
                                     } else {
                                         search_skills(&kw).await.map(|r| r.skills)
                                     };
@@ -140,7 +142,7 @@ pub fn HrSkills() -> Element {
                                     spawn(async move {
                                         if search_request_id() != my_id { return; }
                                         loading.set(true);
-                                        match list_skills(None, None).await {
+                                        match list_skills(ListSkillsRequest::default()).await {
                                             Ok(page) => skills.set(page.items),
                                             Err(e) => toast.error(&e),
                                         }
@@ -276,7 +278,9 @@ pub fn HrSkills() -> Element {
                     } else {
                         let keyword = search_keyword();
                         let result = if keyword.trim().is_empty() {
-                            list_skills(None, None).await.map(|p| p.items)
+                            list_skills(ListSkillsRequest::default())
+                                .await
+                                .map(|p| p.items)
                         } else {
                             search_skills(&keyword).await.map(|r| r.skills)
                         };
