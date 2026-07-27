@@ -6,7 +6,7 @@
 use crate::api::hr::list_agents;
 use crate::api::project::list_projects;
 use crate::store::toast::use_toast;
-use common::api::{AgentListItem, ProjectListItem};
+use common::api::{AgentListItem, ListAgentsRequest, ProjectListItem};
 use dioxus::prelude::*;
 
 /// Workspace 侧边栏数据
@@ -30,7 +30,7 @@ pub fn use_workspace_data() -> (Signal<Option<WorkspaceData>>, impl FnMut()) {
                 .await
                 .map(|r| r.items)
                 .unwrap_or_default();
-            let agents = list_agents(None, None)
+            let agents = list_agents(ListAgentsRequest::default())
                 .await
                 .map(|r| r.items)
                 .unwrap_or_default();

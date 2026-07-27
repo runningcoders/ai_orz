@@ -3,12 +3,12 @@
 use common::api::{
     AgentListItem, AgentQueryRequest, CreateAgentRequest, CreateAgentResponse,
     CreateExternalAgentRequest, CreateExternalAgentResponse, CreateSkillRequest,
-    CreateSkillResponse, DeleteSkillResponse, GetAgentResponse, GetReceptionAgentResponse,
-    GetSkillResponse, ListAgentsResponse, ListInstalledSkillPacksResponse,
-    ListInstalledToolPacksResponse, ListSkillsResponse, PagedResult, QueryMemoryParams,
-    QueryMemoryResponse, SearchMemoryParams, SearchMemoryResponse, SkillListItem,
-    SkillQueryRequest, ToolListItem, UpdateAgentRequest, UpdateAgentResponse, UpdateSkillRequest,
-    UpdateSkillResponse,
+    CreateSkillResponse, DeleteSkillResponse, GetAgentRequest, GetAgentResponse,
+    GetReceptionAgentResponse, GetSkillResponse, ListAgentsRequest, ListAgentsResponse,
+    ListInstalledSkillPacksResponse, ListInstalledToolPacksResponse, ListSkillsResponse,
+    PagedResult, QueryMemoryParams, QueryMemoryResponse, SearchMemoryParams,
+    SearchMemoryResponse, SkillListItem, SkillQueryRequest, UpdateAgentRequest,
+    UpdateAgentResponse, UpdateAgentStatusRequest, UpdateSkillRequest, UpdateSkillResponse,
 };
 
 use super::{
@@ -18,22 +18,8 @@ use super::{
 
 // ===== Agent 管理 =====
 
-pub async fn list_agents(
-    limit: Option<usize>,
-    offset: Option<usize>,
-) -> Result<PagedResult<AgentListItem>, ApiError> {
-    let mut params: Vec<String> = Vec::new();
-    if let Some(l) = limit {
-        params.push(format!("limit={}", l));
-    }
-    if let Some(o) = offset {
-        params.push(format!("offset={}", o));
-    }
-    let url = if params.is_empty() {
-        "/api/v1/hr/agents".to_string()
-    } else {
-        format!("/api/v1/hr/agents?{}", params.join("&"))
-    };
+pub async fn list_agents(req: ListAgentsRequest) -> Result<PagedResult<AgentListItem>, ApiError> {
+    let url = super::build_pagination_url("/api/v1/hr/agents", &req.pagination);
     api_get(&url).await
 }
 
@@ -50,12 +36,18 @@ pub async fn search_agents(keyword: &str) -> Result<ListAgentsResponse, ApiError
     api_get_or_default(&format!("/api/v1/hr/agents/search?keyword={}", keyword)).await
 }
 
-pub async fn get_agent(
-    id: &str,
-    stats_options: Option<&super::StatsOptions>,
-) -> Result<GetAgentResponse, ApiError> {
-    let url = super::build_url_with_stats(&format!("/api/v1/hr/agents/{}", id), stats_options);
-    api_get(&url).await
+pub async fn get_agent(req: GetAgentRequest) -> Result<GetAgentResponse, ApiError> {
+    let qs = super::build_query_string(&[
+        ("with_stats", req.with_stats.map(|v| v.to_string())),
+        (
+            "with_model_call_stats",
+            req.with_model_call_stats.map(|v| v.to_string()),
+        ),
+        ("stats_time_start", req.stats_time_start.map(|v| v.to_string())),
+        ("stats_time_end", req.stats_time_end.map(|v| v.to_string())),
+        ("stats_interval", req.stats_interval.clone()),
+    ]);
+    api_get(&format!("/api/v1/hr/agents/{}{}", req.id, qs)).await
 }
 
 pub async fn create_agent(req: CreateAgentRequest) -> Result<CreateAgentResponse, ApiError> {
@@ -68,16 +60,13 @@ pub async fn create_external_agent(
     api_post("/api/v1/hr/agents/external", &req).await
 }
 
-pub async fn update_agent(
-    id: &str,
-    req: UpdateAgentRequest,
-) -> Result<UpdateAgentResponse, ApiError> {
-    api_put(&format!("/api/v1/hr/agents/{}", id), &req).await
+pub async fn update_agent(req: UpdateAgentRequest) -> Result<UpdateAgentResponse, ApiError> {
+    api_put(&format!("/api/v1/hr/agents/{}", req.id), &req).await
 }
 
-pub async fn update_agent_status(id: &str, status: i32) -> Result<(), ApiError> {
-    let body = serde_json::json!({ "status": status });
-    api_put_empty(&format!("/api/v1/hr/agents/{}/status", id), &body).await
+pub async fn update_agent_status(req: UpdateAgentStatusRequest) -> Result<(), ApiError> {
+    let body = serde_json::json!({ "status": req.status as i32 });
+    api_put_empty(&format!("/api/v1/hr/agents/{}/status", req.id), &body).await
 }
 
 pub async fn delete_agent(id: &str) -> Result<(), ApiError> {
@@ -270,24 +259,7 @@ pub async fn unbind_tool_from_agent(agent_id: &str, tool_id: &str) -> Result<(),
 
 // ===== 工具列表（从 Finance 域重导出） =====
 
-pub async fn list_tools(
-    limit: Option<usize>,
-    offset: Option<usize>,
-) -> Result<PagedResult<ToolListItem>, ApiError> {
-    let mut params: Vec<String> = Vec::new();
-    if let Some(l) = limit {
-        params.push(format!("limit={}", l));
-    }
-    if let Some(o) = offset {
-        params.push(format!("offset={}", o));
-    }
-    let url = if params.is_empty() {
-        "/api/v1/finance/tools".to_string()
-    } else {
-        format!("/api/v1/finance/tools?{}", params.join("&"))
-    };
-    api_get(&url).await
-}
+pub use super::finance::list_tools;
 
 // ===== 记忆搜索 =====
 

@@ -11,8 +11,8 @@ use crate::api::{StatsOptions, hr::list_agents, project::*};
 use crate::components::modal::Modal;
 use crate::store::toast::use_toast;
 use common::api::{
-    CreateTaskRequest, GetTaskResponse, ListAgentsResponseItem, ListProjectsResponseItem,
-    UpdateTaskRequest,
+    CreateTaskRequest, GetTaskResponse, ListAgentsRequest, ListAgentsResponseItem,
+    ListProjectsResponseItem, UpdateTaskRequest,
 };
 use common::enums::AssigneeType;
 
@@ -109,7 +109,7 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
                 Err(e) => toast.error(&e),
             }
             // 加载 Agent 列表
-            match list_agents(None, None).await {
+            match list_agents(ListAgentsRequest::default()).await {
                 Ok(page) => {
                     // 在 move 之前预先决定默认 assignee
                     let first_agent_id = page.items.first().map(|a| a.id.clone());

@@ -1,7 +1,7 @@
 use crate::api::finance::list_model_providers;
 use crate::api::message::{load_latest_messages, send_message_to_agent};
 use crate::api::project::{query_projects, query_tasks};
-use crate::api::{StatsOptions, hr::*};
+use crate::api::hr::*;
 use crate::components::chat::{MessageBubble, TypingIndicator};
 use crate::components::modal::Modal;
 use crate::components::relation_graph::{RelationGraph, RelationNodeInfo};
@@ -15,15 +15,28 @@ use crate::utils::{
     build_optimistic_user_msg, format_time_hm as format_time, replace_tmp_with_real,
 };
 use common::api::{
-    AgentListItem, GetAgentResponse, ListModelProvidersResponseItem, MessageListItem,
-    PaginationParams, ProjectListItem, ProjectQueryRequest, SendMessageToAgentParams, TaskListItem,
-    TaskQueryRequest, ToolListItem, UpdateAgentRequest,
+    AgentListItem, GetAgentRequest, GetAgentResponse, ListModelProvidersResponseItem,
+    ListToolsRequest, MessageListItem, PaginationParams, ProjectListItem, ProjectQueryRequest,
+    SendMessageToAgentParams, TaskListItem, TaskQueryRequest, ToolListItem, UpdateAgentRequest,
+    UpdateAgentStatusRequest,
 };
-use common::enums::AssigneeType;
+use common::enums::{AgentStatus, AssigneeType};
 use dioxus::prelude::*;
 use dioxus_router::{Link, use_navigator};
 use std::collections::HashSet;
 use wasm_bindgen::{JsCast, closure::Closure};
+
+/// 构造带统计参数的 GetAgentRequest（4 处 get_agent 调用复用，避免重复 StatsOptions 字面量）
+fn build_agent_stats_request(id: String) -> GetAgentRequest {
+    GetAgentRequest {
+        id,
+        with_stats: Some(true),
+        with_model_call_stats: Some(true),
+        stats_time_start: None,
+        stats_time_end: None,
+        stats_interval: Some("daily".to_string()),
+    }
+}
 
 fn binding_status_badge_class(is_bound: bool) -> &'static str {
     if is_bound {
@@ -106,12 +119,7 @@ pub fn HrAgentDetail(id: String) -> Element {
     let load_data = move || {
         let aid = id_for_load.clone();
         spawn(async move {
-            let stats_options = StatsOptions {
-                with_stats: true,
-                with_model_call_stats: true,
-                stats_interval: Some("daily".to_string()),
-            };
-            match get_agent(&aid, Some(&stats_options)).await {
+            match get_agent(build_agent_stats_request(aid.clone())).await {
                 Ok(a) => agent_data.set(Some(a)),
                 Err(e) => toast.error(&format!("获取 Agent 失败: {}", e)),
             }
@@ -123,7 +131,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                 Ok(resp) => skill_packs.set(resp.skill_packs),
                 Err(e) => toast.error(&format!("获取技能包失败: {}", e)),
             }
-            match list_tools(None, None).await {
+            match list_tools(ListToolsRequest::default()).await {
                 Ok(resp) => all_tools.set(resp.items),
                 Err(e) => toast.error(&format!("获取工具列表失败: {}", e)),
             }
@@ -475,15 +483,14 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                             let agent_id = aid.clone();
                                                             let label_clone = label_for_closure.clone();
                                                             spawn(async move {
-                                                                match update_agent_status(&agent_id, target_status_val).await {
+                                                                let status_req = UpdateAgentStatusRequest {
+                                                                    id: agent_id.clone(),
+                                                                    status: AgentStatus::from_i32(target_status_val),
+                                                                };
+                                                                match update_agent_status(status_req).await {
                                                                     Ok(_) => {
                                                                         toast.success(&format!("状态已更新为：{}", label_clone));
-                                                                        let stats_options = StatsOptions {
-                                                                            with_stats: true,
-                                                                            with_model_call_stats: true,
-                                                                            stats_interval: Some("daily".to_string()),
-                                                                        };
-                                                                        match get_agent(&agent_id, Some(&stats_options)).await {
+                                                                        match get_agent(build_agent_stats_request(agent_id.clone())).await {
                                                                             Ok(a) => agent_data.set(Some(a)),
                                                                             Err(e) => toast.error(&format!("刷新 Agent 失败: {}", e)),
                                                                         }
@@ -702,12 +709,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                                 match result {
                                                                                     Ok(_) => {
                                                                                         toast.success(&format!("工具 {} {}", tname, if ib { "已解绑" } else { "已绑定" }));
-                                                                                        let stats_options = StatsOptions {
-                                                                                            with_stats: true,
-                                                                                            with_model_call_stats: true,
-                                                                                            stats_interval: Some("daily".to_string()),
-                                                                                        };
-                                                                                        match get_agent(&agent_id, Some(&stats_options)).await {
+                                                                                        match get_agent(build_agent_stats_request(agent_id.clone())).await {
                                                                                             Ok(a) => agent_data.set(Some(a)),
                                                                                             Err(e) => toast.error(&format!("刷新 Agent 失败: {}", e)),
                                                                                         }
@@ -879,16 +881,11 @@ pub fn HrAgentDetail(id: String) -> Element {
                                             saving_meta.set(true);
                                             let id_clone = id_for_submit.clone();
                                             spawn(async move {
-                                                match update_agent(&id_clone, req).await {
+                                                match update_agent(req).await {
                                                     Ok(_) => {
                                                         toast.success("Agent 信息已更新");
                                                         show_edit_modal.set(false);
-                                                        let stats_options = StatsOptions {
-                                                            with_stats: true,
-                                                            with_model_call_stats: true,
-                                                            stats_interval: Some("daily".to_string()),
-                                                        };
-                                                        match get_agent(&id_clone, Some(&stats_options)).await {
+                                                        match get_agent(build_agent_stats_request(id_clone.clone())).await {
                                                             Ok(a) => agent_data.set(Some(a)),
                                                             Err(e) => toast.error(&format!("重新加载失败: {}", e)),
                                                         }

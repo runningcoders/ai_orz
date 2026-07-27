@@ -12,7 +12,7 @@ use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{
-    CreateAgentRequest, CreateExternalAgentRequest, ListAgentsResponseItem,
+    CreateAgentRequest, CreateExternalAgentRequest, ListAgentsRequest, ListAgentsResponseItem,
     ListModelProvidersResponseItem,
 };
 
@@ -80,7 +80,7 @@ pub fn HrAgents() -> Element {
     use_effect(move || {
         loading.set(true);
         spawn(async move {
-            match list_agents(None, None).await {
+            match list_agents(ListAgentsRequest::default()).await {
                 Ok(page) => agents.set(page.items),
                 Err(e) => toast.error(&e),
             }
@@ -99,7 +99,9 @@ pub fn HrAgents() -> Element {
         search_request_id.set(my_id);
         spawn(async move {
             let result = if keyword.trim().is_empty() {
-                list_agents(None, None).await.map(|p| p.items)
+                list_agents(ListAgentsRequest::default())
+                    .await
+                    .map(|p| p.items)
             } else {
                 search_agents(&keyword).await.map(|r| r.agents)
             };
@@ -269,7 +271,9 @@ pub fn HrAgents() -> Element {
                                     loading.set(true);
                                     let kw = search_keyword();
                                     let result = if kw.trim().is_empty() {
-                                        list_agents(None, None).await.map(|p| p.items)
+                                        list_agents(ListAgentsRequest::default())
+                                            .await
+                                            .map(|p| p.items)
                                     } else {
                                         search_agents(&kw).await.map(|r| r.agents)
                                     };
