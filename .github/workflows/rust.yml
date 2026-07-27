@@ -213,7 +213,6 @@ jobs:
     # - --no-clean 复用编译产物，避免重复 clean
     # - --no-fail-fast 测试失败也继续收集覆盖数据
     # - --fail-under-lines 直接按行覆盖率门槛
-    # - --coverage-target-only 跳过 build script / proc-macro 的 instrumentation（小幅加速）
     #
     # 关于依赖库重编（LLVM source-based coverage 的固有限制）：
     # -instrument-coverage 是全局 RUSTFLAGS，依赖库也会被 instrument
@@ -224,7 +223,7 @@ jobs:
     # -后续 coverage job sccache 命中，只需编译 workspace 成员
     - name: Generate coverage report
       run: |
-        cargo llvm-cov --lib --no-clean --no-fail-fast --coverage-target-only \
+        cargo llvm-cov --lib --no-clean --no-fail-fast \
           --ignore-filename-regex "(tests/common/|/cargo/registry/|/rustc/|build.rs|target/)" \
           --output-dir ./coverage \
           --fail-under-lines 35 \
