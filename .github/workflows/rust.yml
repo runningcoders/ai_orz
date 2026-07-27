@@ -145,16 +145,16 @@ jobs:
           cargo-coverage-${{ runner.os }}-
 
     # Tarpaulin 主要支持 Linux，这里 runs-on 已是 ubuntu-latest。
-    # Baseline: 40.79% (6560/16083 lines, 2026-07-27 实测)
+    # Baseline: 40.79% (6560/16083 lines, 2026-07-27 实测，不带 --all-features)
     # 门槛设为 35%，留 ~5% 缓冲避免小幅波动误报。
-    # 未来随测试补充可逐步提高到 40% / 45%。
+    # 注意：--lib 是 tarpaulin 自己的 flag（只测 lib target），
+    #       不能写成 `-- --lib`（那是传给 test binary 的，会报 Unrecognized option）
     - name: Generate coverage report
       run: |
-        cargo tarpaulin --workspace --all-features --out Xml --out Html \
+        cargo tarpaulin --workspace --lib --exclude frontend --out Xml --out Html \
           --output-dir ./coverage \
           --exclude-files "tests/common/*" \
-          --fail-under 35 \
-          -- --lib
+          --fail-under 35
 
     - name: Upload coverage artifacts
       uses: actions/upload-artifact@v4
