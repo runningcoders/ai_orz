@@ -21,8 +21,16 @@ jobs:
     - name: Install protoc (for lancedb dependency)
       run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
+    - name: Install sccache
+      uses: mozilla-actions/sccache-action@v0.0.6
+
     - name: Install rustfmt and clippy
       run: rustup component add rustfmt clippy
+
+    - name: Configure sccache
+      run: |
+        echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+        echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
 
     - name: Format check
       run: cargo fmt --all -- --check
@@ -30,8 +38,13 @@ jobs:
     - name: Clippy check (deny warnings)
       run: cargo clippy --all-targets -- -D warnings
 
+    - name: Print sccache stats
+      if: always()
+      run: sccache --show-stats
+
   # ===== 2. Backend（lint 通过后跑）=====
   # check + build + 单元测试 + 集成测试
+  # sccache 命中 lint job 的依赖编译产物，加速编译
   backend:
     runs-on: ubuntu-latest
     needs: lint
@@ -41,27 +54,21 @@ jobs:
     - name: Install protoc (for lancedb dependency)
       run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
+    - name: Install sccache
+      uses: mozilla-actions/sccache-action@v0.0.6
+
+    - name: Configure sccache
+      run: |
+        echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+        echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+
     - name: Cache ort-sys prebuilt binaries
       uses: actions/cache@v4
       with:
-        path: |
-          ~/.cache/ort
+        path: ~/.cache/ort
         key: ort-sys-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
         restore-keys: |
           ort-sys-${{ runner.os }}-
-
-    - name: Cache Cargo build
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry/cache
-          ~/.cargo/git/db
-          target/debug/.fingerprint
-          target/debug/build
-          target/debug/deps
-        key: cargo-backend-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          cargo-backend-${{ runner.os }}-
 
     - name: Check backend
       run: cargo check --lib --verbose
@@ -75,6 +82,10 @@ jobs:
     - name: Run integration tests (parallel)
       run: cargo test --test '*' --verbose
 
+    - name: Print sccache stats
+      if: always()
+      run: sccache --show-stats
+
   # ===== 3. Frontend（lint 通过后跑，与 backend 并行）=====
   # wasm32 check + 前端测试，独立于 backend
   frontend:
@@ -86,21 +97,13 @@ jobs:
     - name: Install wasm32 target
       run: rustup target add wasm32-unknown-unknown
 
-    - name: Cache Cargo build
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry/cache
-          ~/.cargo/git/db
-          frontend/target/wasm32-unknown-unknown/debug/.fingerprint
-          frontend/target/wasm32-unknown-unknown/debug/build
-          frontend/target/wasm32-unknown-unknown/debug/deps
-          frontend/target/debug/.fingerprint
-          frontend/target/debug/build
-          frontend/target/debug/deps
-        key: cargo-frontend-${{ runner.os }}-${{ hashFiles('frontend/Cargo.lock', 'Cargo.lock') }}
-        restore-keys: |
-          cargo-frontend-${{ runner.os }}-
+    - name: Install sccache
+      uses: mozilla-actions/sccache-action@v0.0.6
+
+    - name: Configure sccache
+      run: |
+        echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+        echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
 
     - name: Check frontend
       run: cd frontend && cargo check --target wasm32-unknown-unknown --verbose
@@ -108,8 +111,14 @@ jobs:
     - name: Run frontend tests
       run: cd frontend && cargo test --verbose
 
+    - name: Print sccache stats
+      if: always()
+      run: sccache --show-stats
+
   # ===== 4. Coverage（backend 通过后跑）=====
   # tarpaulin 覆盖率报告，最慢最易失败，放最后
+  # sccache 命中 backend job 的依赖编译产物（非 instrument-coverage 部分），
+  # 减少依赖库编译时间；instrument-coverage 部分仍需重编
   coverage:
     runs-on: ubuntu-latest
     needs: backend
@@ -119,30 +128,24 @@ jobs:
     - name: Install protoc (for lancedb dependency)
       run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
+    - name: Install sccache
+      uses: mozilla-actions/sccache-action@v0.0.6
+
     - name: Install cargo-tarpaulin
       run: cargo install --locked cargo-tarpaulin || true
+
+    - name: Configure sccache
+      run: |
+        echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+        echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
 
     - name: Cache ort-sys prebuilt binaries
       uses: actions/cache@v4
       with:
-        path: |
-          ~/.cache/ort
+        path: ~/.cache/ort
         key: ort-sys-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
         restore-keys: |
           ort-sys-${{ runner.os }}-
-
-    - name: Cache Cargo build
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry/cache
-          ~/.cargo/git/db
-          target/debug/.fingerprint
-          target/debug/build
-          target/debug/deps
-        key: cargo-coverage-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          cargo-coverage-${{ runner.os }}-
 
     # Tarpaulin 主要支持 Linux，这里 runs-on 已是 ubuntu-latest。
     # Baseline: 40.79% (6560/16083 lines, 2026-07-27 实测，不带 --all-features)
@@ -155,6 +158,10 @@ jobs:
           --output-dir ./coverage \
           --exclude-files "tests/common/*" \
           --fail-under 35
+
+    - name: Print sccache stats
+      if: always()
+      run: sccache --show-stats
 
     - name: Upload coverage artifacts
       uses: actions/upload-artifact@v4
