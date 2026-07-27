@@ -21,8 +21,9 @@ pub struct InitializeSystemRequest {
     pub admin_email: Option<String>,
     /// 对话模型配置（用于 Agent 思考和对话）
     pub chat_model: ModelProviderInitConfig,
-    /// 向量模型配置（用于 Embedding 向量化）
-    pub embedding_model: ModelProviderInitConfig,
+    /// 向量模型配置（用于 Embedding 向量化，可选 — 不传时跳过向量索引）
+    #[serde(default)]
+    pub embedding_model: Option<ModelProviderInitConfig>,
 }
 
 /// 模型 Provider 初始化配置（系统初始化时使用）
@@ -55,8 +56,8 @@ pub struct InitializeSystemResponse {
     pub user_id: String,
     /// 对话模型 Provider ID
     pub chat_provider_id: String,
-    /// 向量模型 Provider ID
-    pub embedding_provider_id: String,
+    /// 向量模型 Provider ID（None 表示未创建向量模型）
+    pub embedding_provider_id: Option<String>,
 }
 
 /// 检查初始化状态响应

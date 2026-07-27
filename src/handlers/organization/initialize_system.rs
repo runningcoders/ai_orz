@@ -50,21 +50,27 @@ pub async fn initialize_system(
         .await?;
 
     // 3. finance domain 创建 embedding provider（向量索引用）
-    let embedding_provider = crate::models::model_provider::ModelProvider::new(
-        params.embedding_model.name,
-        common::enums::ProviderType::from_i32(params.embedding_model.provider_type),
-        common::enums::ModelCapability::Embedding,
-        params.embedding_model.model_name,
-        params.embedding_model.api_key,
-        params.embedding_model.base_url,
-        params.embedding_model.description,
-        user_id.clone(),
-    );
-    let embedding_provider_id = embedding_provider.po.id.clone();
-    finance::domain()
-        .model_provider_manage()
-        .create_model_provider(ctx, &embedding_provider)
-        .await?;
+    //    embedding_model 为 None 时跳过 — 调用方不配置向量索引
+    let embedding_provider_id = if let Some(embedding_config) = params.embedding_model {
+        let embedding_provider = crate::models::model_provider::ModelProvider::new(
+            embedding_config.name,
+            common::enums::ProviderType::from_i32(embedding_config.provider_type),
+            common::enums::ModelCapability::Embedding,
+            embedding_config.model_name,
+            embedding_config.api_key,
+            embedding_config.base_url,
+            embedding_config.description,
+            user_id.clone(),
+        );
+        let provider_id = embedding_provider.po.id.clone();
+        finance::domain()
+            .model_provider_manage()
+            .create_model_provider(ctx, &embedding_provider)
+            .await?;
+        Some(provider_id)
+    } else {
+        None
+    };
 
     Ok(InitializeSystemResponse {
         organization_id: org_id,
