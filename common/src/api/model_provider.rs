@@ -156,6 +156,18 @@ pub struct UpdateModelProviderResponse {
     pub updated_at: i64,
 }
 
+/// Update Model Provider status request (启用/禁用)
+///
+/// 通过 PUT /api/v1/finance/model-providers/{id} 仅更新 status 字段。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct UpdateModelProviderStatusRequest {
+    /// Provider ID
+    #[param(source = "path")]
+    pub id: String,
+    /// Target status (0=disabled/deleted, 1=normal/enabled)
+    pub status: i32,
+}
+
 /// Test connection request
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct TestConnectionRequest {

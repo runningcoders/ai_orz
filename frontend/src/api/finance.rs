@@ -1,13 +1,14 @@
 //! Finance 域 API - 模型提供商、工具、附件、MCP 服务器、消息渠道
 
 use common::api::{
-    AttachmentDetail, CallModelResponse, CreateMcpServerRequest, CreateMcpServerResponse,
-    CreateModelProviderRequest, CreateModelProviderResponse, CreateTextAttachmentRequest,
-    CreateToolRequest, CreateToolResponse, DebugCallToolResponse, GetModelProviderResponse,
-    GetToolResponse, ListMcpServersResponse, ListModelProvidersResponse, PagedResult,
-    SwitchEmbeddingProviderRequest, SwitchEmbeddingProviderResponse, TestConnectionResponse,
-    TestMessageChannelConnectionResponse, ToolListItem, ToolQueryRequest,
-    UpdateModelProviderRequest, UpdateModelProviderResponse, UpdateToolRequest, UpdateToolResponse,
+    AttachmentDetail, CallModelRequest, CallModelResponse, CreateMcpServerRequest,
+    CreateMcpServerResponse, CreateModelProviderRequest, CreateModelProviderResponse,
+    CreateTextAttachmentRequest, CreateToolRequest, CreateToolResponse, DebugCallToolResponse,
+    GetModelProviderRequest, GetModelProviderResponse, GetToolResponse, ListMcpServersResponse,
+    ListModelProvidersResponse, PagedResult, SwitchEmbeddingProviderRequest,
+    SwitchEmbeddingProviderResponse, TestConnectionResponse, TestMessageChannelConnectionResponse,
+    ToolListItem, ToolQueryRequest, UpdateModelProviderRequest, UpdateModelProviderResponse,
+    UpdateModelProviderStatusRequest, UpdateToolRequest, UpdateToolResponse,
 };
 use web_sys::FormData;
 
@@ -23,14 +24,18 @@ pub async fn list_model_providers() -> Result<ListModelProvidersResponse, ApiErr
 }
 
 pub async fn get_model_provider(
-    id: &str,
-    stats_options: Option<&super::StatsOptions>,
+    req: GetModelProviderRequest,
 ) -> Result<GetModelProviderResponse, ApiError> {
-    let url = super::build_url_with_stats(
-        &format!("/api/v1/finance/model-providers/{}", id),
-        stats_options,
-    );
-    api_get(&url).await
+    let qs = super::build_query_string(&[
+        (
+            "with_model_call_stats",
+            req.with_model_call_stats.map(|v| v.to_string()),
+        ),
+        ("stats_start_time", req.stats_start_time.map(|v| v.to_string())),
+        ("stats_end_time", req.stats_end_time.map(|v| v.to_string())),
+        ("stats_interval", req.stats_interval.clone()),
+    ]);
+    api_get(&format!("/api/v1/finance/model-providers/{}{}", req.id, qs)).await
 }
 
 pub async fn create_model_provider(
@@ -40,17 +45,18 @@ pub async fn create_model_provider(
 }
 
 pub async fn update_model_provider(
-    id: &str,
     req: UpdateModelProviderRequest,
 ) -> Result<UpdateModelProviderResponse, ApiError> {
-    api_put(&format!("/api/v1/finance/model-providers/{}", id), &req).await
+    api_put(&format!("/api/v1/finance/model-providers/{}", req.id), &req).await
 }
 
 /// 启用/禁用模型提供商
 /// 启用 Embedding Provider 时可能返回 409（需切换），前端可通过 ApiError.error_code 检测
-pub async fn toggle_model_provider(id: &str, status: i32) -> Result<(), ApiError> {
-    let body = serde_json::json!({ "status": status });
-    api_put_empty(&format!("/api/v1/finance/model-providers/{}", id), &body).await
+pub async fn toggle_model_provider(
+    req: UpdateModelProviderStatusRequest,
+) -> Result<(), ApiError> {
+    let body = serde_json::json!({ "status": req.status });
+    api_put_empty(&format!("/api/v1/finance/model-providers/{}", req.id), &body).await
 }
 
 pub async fn delete_model_provider(id: &str) -> Result<(), ApiError> {
@@ -66,10 +72,10 @@ pub async fn test_model_provider_connection(id: &str) -> Result<TestConnectionRe
     .await
 }
 
-pub async fn call_model_provider(id: &str, prompt: &str) -> Result<CallModelResponse, ApiError> {
-    let body = serde_json::json!({ "prompt": prompt });
+pub async fn call_model_provider(req: CallModelRequest) -> Result<CallModelResponse, ApiError> {
+    let body = serde_json::json!({ "prompt": req.prompt });
     api_post(
-        &format!("/api/v1/finance/model-providers/{}/call", id),
+        &format!("/api/v1/finance/model-providers/{}/call", req.id),
         &body,
     )
     .await
@@ -78,15 +84,11 @@ pub async fn call_model_provider(id: &str, prompt: &str) -> Result<CallModelResp
 /// 切换 Embedding Provider（需用户确认）
 /// 返回 ApiError 以便前端检测 409 embedding_provider_switch_required 错误
 pub async fn switch_embedding_provider(
-    id: &str,
+    req: SwitchEmbeddingProviderRequest,
 ) -> Result<SwitchEmbeddingProviderResponse, ApiError> {
-    let body = SwitchEmbeddingProviderRequest {
-        id: id.to_string(),
-        confirm: true,
-    };
     api_post(
-        &format!("/api/v1/finance/model-providers/{}/switch", id),
-        &body,
+        &format!("/api/v1/finance/model-providers/{}/switch", req.id),
+        &req,
     )
     .await
 }

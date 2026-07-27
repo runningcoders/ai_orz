@@ -11,7 +11,10 @@ use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-use common::api::{CreateModelProviderRequest, ListModelProvidersResponseItem};
+use common::api::{
+    CallModelRequest, CreateModelProviderRequest, ListModelProvidersResponseItem,
+    SwitchEmbeddingProviderRequest, UpdateModelProviderStatusRequest,
+};
 use common::enums::{ModelCapability, ProviderType};
 use dioxus_router::Link;
 
@@ -109,7 +112,12 @@ pub fn FinanceModelProviders() -> Element {
     let handle_test_send = move |_| {
         spawn(async move {
             test_loading.set(true);
-            match call_model_provider(&test_provider_id(), &test_prompt()).await {
+            match call_model_provider(CallModelRequest {
+                id: test_provider_id(),
+                prompt: test_prompt(),
+            })
+            .await
+            {
                 Ok(resp) => test_response.set(resp.result),
                 Err(e) => toast.error(&format!("调用测试失败: {}", e)),
             }
@@ -121,7 +129,9 @@ pub fn FinanceModelProviders() -> Element {
         spawn(async move {
             switch_loading.set(true);
             let id = switch_provider_id();
-            match switch_embedding_provider(&id).await {
+            match switch_embedding_provider(SwitchEmbeddingProviderRequest { id, confirm: true })
+                .await
+            {
                 Ok(resp) => {
                     show_switch_modal.set(false);
                     toast.success(&format!(
@@ -215,7 +225,7 @@ pub fn FinanceModelProviders() -> Element {
                                                                 move |_| {
                                                                     let id = id.clone();
                                                                     spawn(async move {
-                                                                        match toggle_model_provider(&id, 0).await {
+                                                                        match toggle_model_provider(UpdateModelProviderStatusRequest { id, status: 0 }).await {
                                                                             Ok(()) => {}
                                                                             Err(_) => {}
                                                                         }
@@ -240,7 +250,7 @@ pub fn FinanceModelProviders() -> Element {
                                                                     let is_emb = is_embedding;
                                                                     spawn(async move {
                                                                         if is_emb {
-                                                                            match toggle_model_provider(&id, 1).await {
+                                                                            match toggle_model_provider(UpdateModelProviderStatusRequest { id: id.clone(), status: 1 }).await {
                                                                                 Ok(()) => {
                                                                                     toast.success("已启用");
                                                                                     match list_model_providers().await {
@@ -259,7 +269,7 @@ pub fn FinanceModelProviders() -> Element {
                                                                                 }
                                                                             }
                                                                         } else {
-                                                                            match toggle_model_provider(&id, 1).await {
+                                                                            match toggle_model_provider(UpdateModelProviderStatusRequest { id, status: 1 }).await {
                                                                                 Ok(()) => {
                                                                                     toast.success("已启用");
                                                                                     match list_model_providers().await {

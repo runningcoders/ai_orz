@@ -1,6 +1,5 @@
 //! 模型提供商详情页
 
-use crate::api::StatsOptions;
 use crate::api::finance::{
     call_model_provider, delete_model_provider, get_model_provider, switch_embedding_provider,
     test_model_provider_connection, toggle_model_provider, update_model_provider,
@@ -11,10 +10,23 @@ use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::ModelProviderStatsPanel;
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-use common::api::{GetModelProviderResponse, UpdateModelProviderRequest};
+use common::api::{
+    CallModelRequest, GetModelProviderRequest, GetModelProviderResponse, SwitchEmbeddingProviderRequest,
+    UpdateModelProviderRequest, UpdateModelProviderStatusRequest,
+};
 use common::enums::ProviderType;
 use dioxus::prelude::*;
 use dioxus_router::{Link, use_navigator};
+
+/// 构造带模型调用统计的 GetModelProviderRequest
+fn build_provider_stats_request(id: String) -> GetModelProviderRequest {
+    GetModelProviderRequest {
+        id,
+        with_model_call_stats: Some(true),
+        stats_interval: Some("daily".to_string()),
+        ..Default::default()
+    }
+}
 
 #[component]
 pub fn FinanceModelProviderDetail(id: String) -> Element {
@@ -51,12 +63,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
         loading.set(true);
         let id = id_for_effect.clone();
         spawn(async move {
-            let stats_options = StatsOptions {
-                with_stats: false,
-                with_model_call_stats: true,
-                stats_interval: Some("daily".to_string()),
-            };
-            match get_model_provider(&id, Some(&stats_options)).await {
+            match get_model_provider(build_provider_stats_request(id)).await {
                 Ok(provider) => provider_data.set(Some(provider)),
                 Err(e) => toast.error(&e),
             }
@@ -68,7 +75,12 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
         spawn(async move {
             test_loading.set(true);
             if let Some(p) = provider_data.read().clone() {
-                match call_model_provider(&p.id, &test_prompt()).await {
+                match call_model_provider(CallModelRequest {
+                    id: p.id.clone(),
+                    prompt: test_prompt(),
+                })
+                .await
+                {
                     Ok(resp) => test_response.set(resp.result),
                     Err(e) => toast.error(&format!("调用测试失败: {}", e)),
                 }
@@ -84,19 +96,19 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
         spawn(async move {
             switch_loading.set(true);
             if let Some(pid) = provider_id {
-                match switch_embedding_provider(&pid).await {
+                match switch_embedding_provider(SwitchEmbeddingProviderRequest {
+                    id: pid.clone(),
+                    confirm: true,
+                })
+                .await
+                {
                     Ok(resp) => {
                         show_switch_modal.set(false);
                         toast.success(&format!(
                             "Embedding Provider 已切换为 {}，向量索引重建完成",
                             resp.name
                         ));
-                        let stats_options = StatsOptions {
-                            with_stats: false,
-                            with_model_call_stats: true,
-                            stats_interval: Some("daily".to_string()),
-                        };
-                        match get_model_provider(&reload_id, Some(&stats_options)).await {
+                        match get_model_provider(build_provider_stats_request(reload_id)).await {
                             Ok(provider) => provider_data.set(Some(provider)),
                             Err(e) => toast.error(&e),
                         }
@@ -151,15 +163,10 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                                         let pid = pid.clone();
                                                         let rid = rid.clone();
                                                         spawn(async move {
-                                                            match toggle_model_provider(&pid, 0).await {
+                                                            match toggle_model_provider(UpdateModelProviderStatusRequest { id: pid, status: 0 }).await {
                                                                 Ok(()) => {
                                                                     toast.success("已禁用");
-                                                                    let stats_options = StatsOptions {
-                                                                        with_stats: false,
-                                                                        with_model_call_stats: true,
-                                                                        stats_interval: Some("daily".to_string()),
-                                                                    };
-                                                                    match get_model_provider(&rid, Some(&stats_options)).await {
+                                                                    match get_model_provider(build_provider_stats_request(rid)).await {
                                                                         Ok(provider) => provider_data.set(Some(provider)),
                                                                         Err(e) => toast.error(&e),
                                                                     }
@@ -184,15 +191,10 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                                         let is_emb = is_embedding;
                                                         spawn(async move {
                                                             if is_emb {
-                                                                match toggle_model_provider(&pid, 1).await {
+                                                                match toggle_model_provider(UpdateModelProviderStatusRequest { id: pid, status: 1 }).await {
                                                                     Ok(()) => {
                                                                         toast.success("已启用");
-                                                                        let stats_options = StatsOptions {
-                                                                            with_stats: false,
-                                                                            with_model_call_stats: true,
-                                                                            stats_interval: Some("daily".to_string()),
-                                                                        };
-                                                                        match get_model_provider(&rid, Some(&stats_options)).await {
+                                                                        match get_model_provider(build_provider_stats_request(rid)).await {
                                                                             Ok(provider) => provider_data.set(Some(provider)),
                                                                             Err(e) => toast.error(&e),
                                                                         }
@@ -207,15 +209,10 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                                                     }
                                                                 }
                                                             } else {
-                                                                match toggle_model_provider(&pid, 1).await {
+                                                                match toggle_model_provider(UpdateModelProviderStatusRequest { id: pid, status: 1 }).await {
                                                                     Ok(()) => {
                                                                         toast.success("已启用");
-                                                                        let stats_options = StatsOptions {
-                                                                            with_stats: false,
-                                                                            with_model_call_stats: true,
-                                                                            stats_interval: Some("daily".to_string()),
-                                                                        };
-                                                                        match get_model_provider(&rid, Some(&stats_options)).await {
+                                                                        match get_model_provider(build_provider_stats_request(rid)).await {
                                                                             Ok(provider) => provider_data.set(Some(provider)),
                                                                             Err(e) => toast.error(&e),
                                                                         }
@@ -469,18 +466,13 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                     status: None,
                                 };
                                 saving_meta.set(true);
-                                let id_clone = id_for_submit.clone();
+                                let reload_id = id_for_submit.clone();
                                 spawn(async move {
-                                    match update_model_provider(&id_clone, req).await {
+                                    match update_model_provider(req).await {
                                         Ok(_) => {
                                             toast.success("已更新");
                                             show_edit_modal.set(false);
-                                            let stats_options = StatsOptions {
-                                                with_stats: false,
-                                                with_model_call_stats: true,
-                                                stats_interval: Some("daily".to_string()),
-                                            };
-                                            match get_model_provider(&id_clone, Some(&stats_options)).await {
+                                            match get_model_provider(build_provider_stats_request(reload_id)).await {
                                                 Ok(p) => provider_data.set(Some(p)),
                                                 Err(e) => toast.error(&format!("重新加载失败: {}", e)),
                                             }
