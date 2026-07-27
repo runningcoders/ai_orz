@@ -56,7 +56,7 @@ impl A2aCallbackDao for A2aCallbackDaoHttpImpl {
             .po
             .scope_project
             .as_ref()
-            .or_else(|| message.po.project_id.as_ref())
+            .or(message.po.project_id.as_ref())
             .ok_or_else(|| err!(InvalidRequest, "A2A callback 渠道缺少 scope_project"))?;
 
         let project = project_domain()

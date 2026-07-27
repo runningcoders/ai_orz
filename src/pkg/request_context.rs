@@ -228,7 +228,7 @@ impl RequestContextBuilder {
         RequestContext {
             log_id: self
                 .log_id
-                .unwrap_or_else(|| RequestContext::generate_log_id()),
+                .unwrap_or_else(RequestContext::generate_log_id),
             user_id: self.user_id,
             username: self.username,
             organization_id: self.organization_id,

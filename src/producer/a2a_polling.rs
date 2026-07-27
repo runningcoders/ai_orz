@@ -17,6 +17,12 @@ pub struct A2aPollingProducer {
     registry: RwLock<Option<Arc<Registry>>>,
 }
 
+impl Default for A2aPollingProducer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl A2aPollingProducer {
     pub fn new() -> Self {
         Self {
@@ -222,8 +228,8 @@ impl Producer for A2aPollingProducer {
                     }
                 };
 
-                if let Some(target) = target_status {
-                    if local_task.po.status != target {
+                if let Some(target) = target_status
+                    && local_task.po.status != target {
                         if let Err(e) = project_domain::domain()
                             .task_manage()
                             .transition_status(task_ctx.clone(), &mut local_task, target)
@@ -247,7 +253,6 @@ impl Producer for A2aPollingProducer {
                             );
                         }
                     }
-                }
 
                 processed_count += 1;
             }

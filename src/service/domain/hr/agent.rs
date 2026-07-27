@@ -219,7 +219,7 @@ impl AgentManage for HrDomainImpl {
         // 补充 Agent 上下文
         let ctx = enrich_ctx!(&ctx, &*agent);
 
-        let current_status = agent.po.status.clone();
+        let current_status = agent.po.status;
 
         // 状态机校验：定义合法的流转路径
         let is_valid_transition = match (&current_status, &target_status) {

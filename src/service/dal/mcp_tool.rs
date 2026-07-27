@@ -130,7 +130,7 @@ impl McpToolDal for McpToolDalImpl {
         let mut synced = 0;
 
         for remote_tool in &remote_tools {
-            let mut po = build_synced_tool_po(&server, &remote_tool, ctx.user_id.clone());
+            let mut po = build_synced_tool_po(&server, remote_tool, ctx.user_id.clone());
             if let Some(existing) = self.tool_dao.get_by_id(ctx.clone(), po.id.clone()).await? {
                 ensure_sync_target_matches(&existing, &po)?;
                 po.created_at = existing.created_at;

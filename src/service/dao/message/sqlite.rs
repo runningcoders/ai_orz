@@ -478,8 +478,8 @@ WHERE messages_fts MATCH "#,
             builder.push(" AND m.id = ");
             builder.push_bind(id);
         }
-        if let Some(status_in) = &filters.status_in {
-            if !status_in.is_empty() {
+        if let Some(status_in) = &filters.status_in
+            && !status_in.is_empty() {
                 builder.push(" AND m.\"status\" IN (");
                 let mut separated = builder.separated(", ");
                 for s in status_in {
@@ -487,7 +487,6 @@ WHERE messages_fts MATCH "#,
                 }
                 separated.push_unseparated(")");
             }
-        }
 
         builder.push(" ORDER BY messages_fts.rank");
         builder.push(" LIMIT ");
@@ -544,8 +543,8 @@ fn push_query_filters<'args>(
     if let Some(id) = &query.id {
         builder.push(" AND id = ").push_bind(id.clone());
     }
-    if let Some(ids) = &query.ids {
-        if !ids.is_empty() {
+    if let Some(ids) = &query.ids
+        && !ids.is_empty() {
             builder.push(" AND id IN (");
             let mut separated = builder.separated(", ");
             for id in ids {
@@ -553,7 +552,6 @@ fn push_query_filters<'args>(
             }
             separated.push_unseparated(")");
         }
-    }
     if let Some(task_id) = &query.task_id {
         builder.push(" AND task_id = ").push_bind(task_id.clone());
     }
@@ -568,8 +566,8 @@ fn push_query_filters<'args>(
     if let Some(to_id) = &query.to_id {
         builder.push(" AND to_id = ").push_bind(to_id.clone());
     }
-    if let Some(status_in) = &query.status_in {
-        if !status_in.is_empty() {
+    if let Some(status_in) = &query.status_in
+        && !status_in.is_empty() {
             builder.push(" AND status IN (");
             let mut separated = builder.separated(", ");
             for s in status_in {
@@ -577,7 +575,6 @@ fn push_query_filters<'args>(
             }
             separated.push_unseparated(")");
         }
-    }
     if let Some(org_id) = &query.organization_id {
         builder
             .push(" AND organization_id = ")

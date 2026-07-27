@@ -18,18 +18,15 @@ mod mcp_server_test;
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[sqlx(type_name = "INTEGER")]
+#[derive(Default)]
 pub enum McpTransport {
     /// stdio transport: command + args，不走 shell 拼接。
+    #[default]
     Stdio = 0,
     /// Streamable HTTP transport.
     StreamableHttp = 1,
 }
 
-impl Default for McpTransport {
-    fn default() -> Self {
-        Self::Stdio
-    }
-}
 
 impl From<i32> for McpTransport {
     fn from(v: i32) -> Self {
@@ -65,20 +62,17 @@ impl McpTransport {
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[sqlx(type_name = "INTEGER")]
+#[derive(Default)]
 pub enum McpServerStatus {
     /// 已删除（软删除）。
     Deleted = 0,
     /// 启用。
+    #[default]
     Enabled = 1,
     /// 禁用。
     Disabled = 2,
 }
 
-impl Default for McpServerStatus {
-    fn default() -> Self {
-        Self::Enabled
-    }
-}
 
 impl From<i32> for McpServerStatus {
     fn from(v: i32) -> Self {

@@ -67,8 +67,8 @@ pub async fn save_long_term_memory(
 
     let mut relation_ids: Vec<String> = Vec::new();
 
-    if let Some(relations) = params.relations {
-        if !relations.is_empty() {
+    if let Some(relations) = params.relations
+        && !relations.is_empty() {
             let relation_pos: Vec<KnowledgeNodeRelationPo> = relations
                 .iter()
                 .map(|r| {
@@ -97,7 +97,6 @@ pub async fn save_long_term_memory(
                 .create(ctx, create_relations_params)
                 .await?;
         }
-    }
 
     Ok(SaveLongTermMemoryResponse {
         node_id,

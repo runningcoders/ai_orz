@@ -331,8 +331,8 @@ fn push_query_filters<'args>(
 ) {
     // 默认软删除过滤
     builder.push(" AND \"status\" != 0");
-    if let Some(ids) = &query.ids {
-        if !ids.is_empty() {
+    if let Some(ids) = &query.ids
+        && !ids.is_empty() {
             builder.push(" AND id IN (");
             let mut separated = builder.separated(", ");
             for id in ids {
@@ -341,14 +341,13 @@ fn push_query_filters<'args>(
             drop(separated);
             builder.push(")");
         }
-    }
     if let Some(root_user_id) = &query.root_user_id {
         builder
             .push(" AND root_user_id = ")
             .push_bind(root_user_id.clone());
     }
-    if let Some(status_list) = &query.status_in {
-        if !status_list.is_empty() {
+    if let Some(status_list) = &query.status_in
+        && !status_list.is_empty() {
             builder.push(" AND \"status\" IN (");
             let mut separated = builder.separated(", ");
             for s in status_list {
@@ -357,5 +356,4 @@ fn push_query_filters<'args>(
             drop(separated);
             builder.push(")");
         }
-    }
 }

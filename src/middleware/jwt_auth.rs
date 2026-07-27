@@ -55,29 +55,25 @@ pub async fn jwt_auth_middleware(mut req: Request, next: Next) -> Result<Respons
 
     // 3. 将用户信息添加到请求头
     // 后续 request_context_middleware 会从请求头提取这些信息创建 RequestContext
-    if !claims.user_id.is_empty() {
-        if let Ok(header_value) = HeaderValue::from_str(&claims.user_id) {
+    if !claims.user_id.is_empty()
+        && let Ok(header_value) = HeaderValue::from_str(&claims.user_id) {
             req.headers_mut().insert(http_header::USER_ID, header_value);
         }
-    }
-    if !claims.username.is_empty() {
-        if let Ok(header_value) = HeaderValue::from_str(&claims.username) {
+    if !claims.username.is_empty()
+        && let Ok(header_value) = HeaderValue::from_str(&claims.username) {
             req.headers_mut()
                 .insert(http_header::USERNAME, header_value);
         }
-    }
-    if !claims.organization_id.is_empty() {
-        if let Ok(header_value) = HeaderValue::from_str(&claims.organization_id) {
+    if !claims.organization_id.is_empty()
+        && let Ok(header_value) = HeaderValue::from_str(&claims.organization_id) {
             req.headers_mut()
                 .insert(http_header::ORGANIZATION_ID, header_value);
         }
-    }
-    if let Some(role) = claims.role {
-        if let Ok(header_value) = HeaderValue::from_str(&role.to_string()) {
+    if let Some(role) = claims.role
+        && let Ok(header_value) = HeaderValue::from_str(&role.to_string()) {
             req.headers_mut()
                 .insert(http_header::USER_ROLE, header_value);
         }
-    }
 
     // 4. JWT 验证通过，继续处理请求
     Ok(next.run(req).await)
@@ -90,28 +86,23 @@ pub async fn jwt_auth_middleware(mut req: Request, next: Next) -> Result<Respons
 /// - Cookie 没有则从 Authorization: Bearer 提取（is_browser = false）
 fn extract_token(req: &Request) -> (Option<String>, bool) {
     // 先从 Cookie 查找
-    if let Some(cookie_header) = req.headers().get(axum::http::header::COOKIE) {
-        if let Ok(cookie_str) = cookie_header.to_str() {
+    if let Some(cookie_header) = req.headers().get(axum::http::header::COOKIE)
+        && let Ok(cookie_str) = cookie_header.to_str() {
             for cookie in cookie::Cookie::split_parse(cookie_str) {
-                if let Ok(cookie) = cookie {
-                    if cookie.name() == JWT_COOKIE_NAME && !cookie.value().is_empty() {
+                if let Ok(cookie) = cookie
+                    && cookie.name() == JWT_COOKIE_NAME && !cookie.value().is_empty() {
                         return (Some(cookie.value().to_string()), true);
                     }
-                }
             }
         }
-    }
 
     // Cookie 没有找到，从 Authorization: Bearer 查找
-    if let Some(auth_header) = req.headers().get(axum::http::header::AUTHORIZATION) {
-        if let Ok(auth_str) = auth_header.to_str() {
-            if let Some(token) = auth_str.strip_prefix(BEARER_PREFIX) {
-                if !token.is_empty() {
+    if let Some(auth_header) = req.headers().get(axum::http::header::AUTHORIZATION)
+        && let Ok(auth_str) = auth_header.to_str()
+            && let Some(token) = auth_str.strip_prefix(BEARER_PREFIX)
+                && !token.is_empty() {
                     return (Some(token.to_string()), false);
                 }
-            }
-        }
-    }
 
     // 都没有找到，根据请求特征判断是否浏览器请求
     let is_browser = is_browser_request(req);
@@ -125,13 +116,11 @@ fn is_browser_request(req: &Request) -> bool {
         return true;
     }
     // Accept 包含 text/html → 浏览器导航请求
-    if let Some(accept) = req.headers().get(axum::http::header::ACCEPT) {
-        if let Ok(accept_str) = accept.to_str() {
-            if accept_str.contains("text/html") {
+    if let Some(accept) = req.headers().get(axum::http::header::ACCEPT)
+        && let Ok(accept_str) = accept.to_str()
+            && accept_str.contains("text/html") {
                 return true;
             }
-        }
-    }
     false
 }
 

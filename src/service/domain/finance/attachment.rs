@@ -31,7 +31,7 @@ impl AttachmentManage for FinanceDomainImpl {
     ) -> Result<Attachment> {
         validate_file_name(&create.file_name)?;
         validate_text_content(&create.content)?;
-        validate_text_size(create.content.as_bytes().len())?;
+        validate_text_size(create.content.len())?;
         if let Some(mime_type) = &create.mime_type {
             validate_text_mime(mime_type)?;
         }
@@ -92,7 +92,7 @@ impl AttachmentManage for FinanceDomainImpl {
         update: TextContentUpdate,
     ) -> Result<Option<AttachmentTextContent>> {
         validate_text_content(&update.content)?;
-        validate_text_size(update.content.as_bytes().len())?;
+        validate_text_size(update.content.len())?;
 
         let Some(attachment) = self
             .attachment_dal
@@ -104,18 +104,17 @@ impl AttachmentManage for FinanceDomainImpl {
         };
 
         validate_attachment_is_text(&attachment)?;
-        if let Some(expected_updated_at) = update.expected_updated_at {
-            if expected_updated_at != attachment.po.updated_at {
+        if let Some(expected_updated_at) = update.expected_updated_at
+            && expected_updated_at != attachment.po.updated_at {
                 bail_err!(Conflict, "Attachment 内容已被其他请求修改，请刷新后重试");
             }
-        }
 
         let updated = self
             .attachment_dal
             .update_file_content(ctx, &attachment, update.content.as_bytes())
             .await?;
         Ok(Some(AttachmentTextContent {
-            size: update.content.as_bytes().len() as u64,
+            size: update.content.len() as u64,
             content: update.content,
             encoding: "utf-8".to_string(),
             updated_at: updated.po.updated_at,

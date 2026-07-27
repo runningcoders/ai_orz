@@ -181,7 +181,7 @@ pub async fn start_event_loop(
                     let ping = serde_json::to_string(&WsPing { msg_type: "ping" })
                         .unwrap_or_else(|_| r#"{"type":"ping"}"#.to_string());
                     let mut w = heartbeat_write.lock().await;
-                    if let Err(e) = w.send(Message::Text(ping.into())).await {
+                    if let Err(e) = w.send(Message::Text(ping)).await {
                         log_warn!("lark ws heartbeat send failed: {}", e);
                         break;
                     }

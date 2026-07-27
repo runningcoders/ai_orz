@@ -93,8 +93,10 @@ impl VectorIndexParams {
 
 /// 搜索匹配类型（支持混合策略）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum MatchType {
     /// 仅向量语义匹配
+    #[default]
     Vector,
     /// 仅关键词文本匹配
     Keyword,
@@ -102,11 +104,6 @@ pub enum MatchType {
     Hybrid,
 }
 
-impl Default for MatchType {
-    fn default() -> Self {
-        MatchType::Vector
-    }
-}
 
 /// 搜索匹配元信息（不含泛型，可嵌入任何业务实体）
 ///

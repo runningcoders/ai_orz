@@ -34,7 +34,7 @@ pub async fn list_model_providers(
                 .po
                 .description
                 .as_ref()
-                .map_or(true, |d| d.is_empty())
+                .is_none_or(|d| d.is_empty())
             {
                 None
             } else {

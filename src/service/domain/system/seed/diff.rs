@@ -137,8 +137,8 @@ fn collect_field_changes_recursive(
                 } else {
                     format!("{}.{}", prefix, key)
                 };
-                if let Some(target_val) = target_map.get(key) {
-                    if base_val != target_val {
+                if let Some(target_val) = target_map.get(key)
+                    && base_val != target_val {
                         if base_val.is_object() && target_val.is_object() {
                             changes.extend(collect_field_changes_recursive(
                                 base_val, target_val, &field,
@@ -151,7 +151,6 @@ fn collect_field_changes_recursive(
                             });
                         }
                     }
-                }
             }
         }
         _ => {

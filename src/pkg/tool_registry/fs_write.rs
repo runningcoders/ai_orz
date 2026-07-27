@@ -124,7 +124,7 @@ impl CoreTool for FsWriteCoreTool {
         // Parse arguments
         let args: WriteFileArgs = serde_json::from_value(args)
             .map_err(|e| anyhow!("Invalid arguments: {}", e))
-            .map_err(|e| common::error::Error::from(e))?;
+            .map_err(common::error::Error::from)?;
 
         // Validate required parameters for mode
         validate_args(&args)?;
@@ -152,7 +152,7 @@ impl CoreTool for FsWriteCoreTool {
                         .map_err(|e| {
                             anyhow::anyhow!("Failed to open existing file: {}", sanitize_error(e))
                         })
-                        .map_err(|e| common::error::Error::from(e))?;
+                        .map_err(common::error::Error::from)?;
                     let reader = BufReader::new(file);
                     reader
                         .lines()
@@ -160,7 +160,7 @@ impl CoreTool for FsWriteCoreTool {
                         .map_err(|e| {
                             anyhow::anyhow!("Failed to read existing file: {}", sanitize_error(e))
                         })
-                        .map_err(|e| common::error::Error::from(e))?
+                        .map_err(common::error::Error::from)?
                 } else {
                     Vec::new()
                 };
@@ -240,17 +240,17 @@ impl CoreTool for FsWriteCoreTool {
                     .truncate(true)
                     .open(&target_path)
                     .map_err(|e| anyhow!("Failed to open file for writing: {}", sanitize_error(e)))
-                    .map_err(|e| common::error::Error::from(e))?;
+                    .map_err(common::error::Error::from)?;
 
                 for line in &existing_lines {
                     writeln!(file, "{}", line)
                         .map_err(|e| anyhow!("Failed to write line: {}", sanitize_error(e)))
-                        .map_err(|e| common::error::Error::from(e))?;
+                        .map_err(common::error::Error::from)?;
                 }
 
                 file.flush()
                     .map_err(|e| anyhow!("Failed to flush file: {}", sanitize_error(e)))
-                    .map_err(|e| common::error::Error::from(e))?;
+                    .map_err(common::error::Error::from)?;
 
                 Ok(serde_json::json!({
                         "success": true,

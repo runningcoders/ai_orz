@@ -213,8 +213,8 @@ WHERE tasks_fts MATCH "#,
             builder.push_bind(project_id);
         }
 
-        if let Some(status_list) = &search.filters.status_in {
-            if !status_list.is_empty() {
+        if let Some(status_list) = &search.filters.status_in
+            && !status_list.is_empty() {
                 builder.push(r#" AND t."status" IN ("#);
                 let mut separated = builder.separated(", ");
                 for s in status_list {
@@ -223,7 +223,6 @@ WHERE tasks_fts MATCH "#,
                 drop(separated);
                 builder.push(")");
             }
-        }
 
         builder.push(" ORDER BY tasks_fts.rank LIMIT ");
         builder.push_bind(limit_i64);
@@ -434,8 +433,8 @@ fn push_query_filters<'args>(
     query: &TaskQuery,
 ) {
     builder.push(r#" AND "status" != 0"#);
-    if let Some(ids) = &query.ids {
-        if !ids.is_empty() {
+    if let Some(ids) = &query.ids
+        && !ids.is_empty() {
             builder.push(" AND id IN (");
             let mut separated = builder.separated(", ");
             for id in ids {
@@ -444,7 +443,6 @@ fn push_query_filters<'args>(
             drop(separated);
             builder.push(")");
         }
-    }
     if let Some(assignee_type) = &query.assignee_type {
         builder
             .push(r#" AND "assignee_type" = "#)
@@ -460,8 +458,8 @@ fn push_query_filters<'args>(
             .push(" AND project_id = ")
             .push_bind(project_id.clone());
     }
-    if let Some(status_list) = &query.status_in {
-        if !status_list.is_empty() {
+    if let Some(status_list) = &query.status_in
+        && !status_list.is_empty() {
             builder.push(r#" AND "status" IN ("#);
             let mut separated = builder.separated(", ");
             for s in status_list {
@@ -470,5 +468,4 @@ fn push_query_filters<'args>(
             drop(separated);
             builder.push(")");
         }
-    }
 }

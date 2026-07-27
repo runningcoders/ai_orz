@@ -9,6 +9,12 @@ pub struct CronTriggerProducer {
     registry: RwLock<Option<Arc<Registry>>>,
 }
 
+impl Default for CronTriggerProducer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CronTriggerProducer {
     pub fn new() -> Self {
         Self {

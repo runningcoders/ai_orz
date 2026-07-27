@@ -202,7 +202,7 @@ impl ShellExecCoreTool {
                 let base = std::path::Path::new(&base_path);
                 base.join(path)
             }
-            None => std::path::PathBuf::from(base_path),
+            None => base_path,
         }
     }
 }
@@ -259,18 +259,17 @@ impl CoreTool for ShellExecCoreTool {
         // Parse arguments
         let params: ShellExecParams = serde_json::from_value(args)
             .map_err(|e| anyhow!("Invalid arguments: {}", e))
-            .map_err(|e| common::error::Error::from(e))?;
+            .map_err(common::error::Error::from)?;
 
         // Validate working directory
-        if let Some(wd) = &params.working_dir {
-            if !self.validate_working_dir(wd)? {
+        if let Some(wd) = &params.working_dir
+            && !self.validate_working_dir(wd)? {
                 return Ok(serde_json::json!({
                     "success": false,
                     "error": format!("Working directory '{}' is not in allowed paths", wd),
                     "require_confirmation": true
                 }));
             }
-        }
 
         // Resolve working directory
         let working_dir = self.resolve_working_dir(params.working_dir.as_deref());

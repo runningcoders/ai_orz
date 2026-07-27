@@ -76,7 +76,7 @@ pub async fn update_model_provider(
         provider_type: provider.po.provider_type,
         capability: provider.po.capability,
         model_name: provider.po.model_name.clone(),
-        base_url: if provider.po.base_url.as_ref().map_or(true, |d| d.is_empty()) {
+        base_url: if provider.po.base_url.as_ref().is_none_or(|d| d.is_empty()) {
             None
         } else {
             provider.po.base_url.clone()
@@ -85,7 +85,7 @@ pub async fn update_model_provider(
             .po
             .description
             .as_ref()
-            .map_or(true, |d| d.is_empty())
+            .is_none_or(|d| d.is_empty())
         {
             None
         } else {

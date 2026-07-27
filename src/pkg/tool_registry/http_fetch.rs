@@ -69,7 +69,7 @@ impl CoreTool for HttpFetchCoreTool {
         // Parse URL
         let url = Url::parse(&url_str)
             .map_err(|e| anyhow!("invalid URL: {}", e))
-            .map_err(|e| common::error::Error::from(e))?;
+            .map_err(common::error::Error::from)?;
 
         // Security: only allow HTTPS by default
         if url.scheme() != "https" {
@@ -93,7 +93,7 @@ impl CoreTool for HttpFetchCoreTool {
         let host = url
             .host_str()
             .ok_or_else(|| anyhow!("URL host is required"))
-            .map_err(|e| common::error::Error::from(e))?
+            .map_err(common::error::Error::from)?
             .to_string();
 
         // Build client with DNS pinning, no redirect, timeout
@@ -113,7 +113,7 @@ impl CoreTool for HttpFetchCoreTool {
             .send()
             .await
             .map_err(|e| anyhow!("HTTP request failed: {}", e))
-            .map_err(|e| common::error::Error::from(e))?;
+            .map_err(common::error::Error::from)?;
 
         // Process response
         let status = response.status().as_u16();

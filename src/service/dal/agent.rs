@@ -453,8 +453,8 @@ impl AgentDal for AgentDalImpl {
             std::collections::HashSet::new();
 
         // Step 2: 如果有关键词，尝试向量搜索
-        if search.keyword.is_some() {
-            if let Some(keyword) = &search.keyword {
+        if search.keyword.is_some()
+            && let Some(keyword) = &search.keyword {
                 match self
                     .try_build_vector_params_for_search(ctx.clone(), keyword)
                     .await
@@ -500,7 +500,6 @@ impl AgentDal for AgentDalImpl {
                     }
                 }
             }
-        }
 
         // Step 3: 执行 FTS5 关键词搜索（DAO 返回 Vec<(Po, fts_rank)>）
         let keyword_results = self
@@ -687,15 +686,14 @@ impl AgentDal for AgentDalImpl {
     async fn wake_brain(&self, ctx: RequestContext, agent: &mut Agent, brain: Brain) -> Result<()> {
         let mut need_update = false;
 
-        if brain.is_local() {
-            if let Some(cortex) = brain.cortex() {
+        if brain.is_local()
+            && let Some(cortex) = brain.cortex() {
                 let model_provider_id = cortex.model_provider.po.id.clone();
                 if agent.po.model_provider_id != model_provider_id {
                     agent.po.model_provider_id = model_provider_id;
                     need_update = true;
                 }
             }
-        }
 
         agent.set_brain(brain);
 
@@ -910,7 +908,7 @@ impl DefaultPromptBuilder {
         for t in tools {
             s.push_str(&format!("- {}\n", t.to_tool_prompt()));
         }
-        s.push_str("\n");
+        s.push('\n');
         s
     }
 
@@ -924,7 +922,7 @@ impl DefaultPromptBuilder {
             s.push_str(&skill.to_prompt_summary());
             s.push('\n');
         }
-        s.push_str("\n");
+        s.push('\n');
         s
     }
 }
@@ -1045,9 +1043,9 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             result.push_str("【历史对话】\n");
             for h in &self.history {
                 result.push_str(h);
-                result.push_str("\n");
+                result.push('\n');
             }
-            result.push_str("\n");
+            result.push('\n');
         }
 
         // 9. 工具失败警告（有失败工具时才显示）
@@ -1057,7 +1055,7 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             for (tool_name, fail_count) in &self.tool_failures {
                 result.push_str(&format!("- {}：失败 {} 次\n", tool_name, fail_count));
             }
-            result.push_str("\n");
+            result.push('\n');
         }
 
         // 10. 本次思考的 Trace ID + 当前用户消息

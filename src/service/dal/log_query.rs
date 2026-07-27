@@ -307,39 +307,34 @@ fn parse_and_filter(
     // ---- 过滤条件 ----
 
     // level 过滤（不区分大小写）
-    if let Some(lf) = level_filter {
-        if level.to_uppercase() != lf {
+    if let Some(lf) = level_filter
+        && level.to_uppercase() != lf {
             return None;
         }
-    }
 
     // log_id 过滤（精确匹配）
-    if let Some(filter_id) = log_id_filter {
-        if log_id.as_deref() != Some(filter_id) {
+    if let Some(filter_id) = log_id_filter
+        && log_id.as_deref() != Some(filter_id) {
             return None;
         }
-    }
 
     // keyword 过滤（message 不区分大小写包含）
-    if let Some(kw) = keyword_lower {
-        if !message.to_lowercase().contains(kw) {
+    if let Some(kw) = keyword_lower
+        && !message.to_lowercase().contains(kw) {
             return None;
         }
-    }
 
     // 时间范围过滤（需要解析 timestamp 为 unix 毫秒）
     if start_time.is_some() || end_time.is_some() {
         let ts_ms = parse_timestamp_to_millis(timestamp)?;
-        if let Some(start) = start_time {
-            if ts_ms < start {
+        if let Some(start) = start_time
+            && ts_ms < start {
                 return None;
             }
-        }
-        if let Some(end) = end_time {
-            if ts_ms > end {
+        if let Some(end) = end_time
+            && ts_ms > end {
                 return None;
             }
-        }
     }
 
     Some(LogEntry {

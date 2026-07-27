@@ -327,17 +327,16 @@ FROM short_term_memory_index WHERE 1=1"#,
             builder.push(" AND status != 0");
         }
 
-        if let Some(keyword) = &query.keyword {
-            if !keyword.is_empty() {
+        if let Some(keyword) = &query.keyword
+            && !keyword.is_empty() {
                 log_warn!(
                     "keyword in query_short_term is deprecated, use search_short_term for FTS5 full-text search; keyword ignored"
                 );
             }
-        }
 
         // tag 过滤（OR 语义：包含任一 tag 即可命中）
-        if let Some(tags) = &query.tags {
-            if !tags.is_empty() {
+        if let Some(tags) = &query.tags
+            && !tags.is_empty() {
                 builder
                     .push(" AND EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value IN (");
                 let mut separated = builder.separated(", ");
@@ -346,7 +345,6 @@ FROM short_term_memory_index WHERE 1=1"#,
                 }
                 separated.push_unseparated("))");
             }
-        }
 
         builder.push(" ORDER BY created_at DESC");
 
@@ -725,17 +723,16 @@ FROM long_term_knowledge_node WHERE 1=1"#,
             builder.push_bind(memory_type.to_string());
         }
 
-        if let Some(keyword) = &query.keyword {
-            if !keyword.is_empty() {
+        if let Some(keyword) = &query.keyword
+            && !keyword.is_empty() {
                 log_warn!(
                     "keyword in query_knowledge_nodes is deprecated, use search_knowledge_nodes for FTS5 full-text search; keyword ignored"
                 );
             }
-        }
 
         // tag 过滤（OR 语义：包含任一 tag 即可命中）
-        if let Some(tags) = &query.tags {
-            if !tags.is_empty() {
+        if let Some(tags) = &query.tags
+            && !tags.is_empty() {
                 builder
                     .push(" AND EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value IN (");
                 let mut separated = builder.separated(", ");
@@ -744,7 +741,6 @@ FROM long_term_knowledge_node WHERE 1=1"#,
                 }
                 separated.push_unseparated("))");
             }
-        }
 
         builder.push(" ORDER BY updated_at DESC");
 

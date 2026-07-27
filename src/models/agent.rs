@@ -381,7 +381,7 @@ impl AgentPo {
             description,
             capabilities: serde_json::to_string(&capabilities).unwrap_or_else(|_| "[]".to_string()),
             soul,
-            model_provider_id: model_provider_id,
+            model_provider_id,
             runtime_config: runtime_config.to_json(),
             status: AgentStatus::Interviewing,
             kind: common::enums::AgentKind::Local,

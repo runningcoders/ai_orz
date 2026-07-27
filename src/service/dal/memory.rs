@@ -909,8 +909,8 @@ impl MemoryDalImpl {
         let mut vector_ids: HashSet<String> = HashSet::new();
 
         // Step 2: 如果有关键词，执行向量搜索（用 try_build_vector_params 统一方式）
-        if search.keyword.is_some() {
-            if let Some(keyword) = &search.keyword {
+        if search.keyword.is_some()
+            && let Some(keyword) = &search.keyword {
                 match try_build_vector_params_for_search(
                     ctx.clone(),
                     &self.cortex_dao,
@@ -961,7 +961,6 @@ impl MemoryDalImpl {
                     }
                 }
             }
-        }
 
         // Step 3: 执行关键词搜索（DAO 返回 Vec<(Po, fts_rank)>）
         let keyword_results = self
@@ -1059,8 +1058,8 @@ impl MemoryDalImpl {
         let mut vector_ids: HashSet<String> = HashSet::new();
 
         // Step 2: 如果有关键词，执行向量搜索（用 try_build_vector_params 统一方式）
-        if search.keyword.is_some() {
-            if let Some(keyword) = &search.keyword {
+        if search.keyword.is_some()
+            && let Some(keyword) = &search.keyword {
                 match try_build_vector_params_for_search(
                     ctx.clone(),
                     &self.cortex_dao,
@@ -1111,7 +1110,6 @@ impl MemoryDalImpl {
                     }
                 }
             }
-        }
 
         // Step 3: 执行关键词搜索（DAO 返回 Vec<(Po, fts_rank)>）
         let keyword_results = self
@@ -1264,7 +1262,7 @@ impl MemoryDalImpl {
         }
         let positions = self.memory_dao.batch_append_traces(ctx, &traces).await?;
         // 回填 position 到 trace
-        for (trace, pos) in traces.iter_mut().zip(positions.into_iter()) {
+        for (trace, pos) in traces.iter_mut().zip(positions) {
             trace.position = Some(pos);
         }
         Ok(traces

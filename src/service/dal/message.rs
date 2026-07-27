@@ -357,7 +357,7 @@ impl MessageDal for MessageDalImpl {
                 Ok(Some(vec_params)) => {
                     if let Err(e) = self
                         .message_vector_dao
-                        .upsert_vector(ctx.clone(), &message.id(), &vec_params)
+                        .upsert_vector(ctx.clone(), message.id(), &vec_params)
                         .await
                     {
                         log_warn!(
@@ -479,9 +479,9 @@ fn merge_search_results(
     let keyword_len = keyword_matches.len() as f64;
     for (i, msg) in keyword_matches.into_iter().enumerate() {
         let id = msg.id().to_string();
-        if !seen.contains_key(&id) {
+        if let std::collections::hash_map::Entry::Vacant(e) = seen.entry(id) {
             let score = keyword_weight * (1.0 - (i as f64 / keyword_len));
-            seen.insert(id, scored_results.len());
+            e.insert(scored_results.len());
             scored_results.push((score, msg));
         }
     }

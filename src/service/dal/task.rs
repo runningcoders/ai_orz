@@ -366,8 +366,8 @@ impl TaskDal for TaskDalImpl {
         let mut vector_ids: HashSet<String> = HashSet::new();
 
         // Step 2: 如果有关键词，执行向量搜索（用关键词生成查询向量）
-        if search.keyword.is_some() {
-            if let Some(keyword) = &search.keyword {
+        if search.keyword.is_some()
+            && let Some(keyword) = &search.keyword {
                 match try_build_vector_params_for_search(
                     ctx.clone(),
                     &self.cortex_dao,
@@ -418,7 +418,6 @@ impl TaskDal for TaskDalImpl {
                     }
                 }
             }
-        }
 
         // Step 3: 执行 FTS5 关键词搜索（DAO 返回 Vec<(Po, fts_rank)>）
         let keyword_results = self

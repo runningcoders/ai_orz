@@ -125,21 +125,18 @@ impl AopStatsCollector {
             // 按过滤条件聚合当前桶
             let mut count = 0u64;
             for ((k, c, s), n) in bucket.counts.iter() {
-                if let Some(filter_kind) = event_kind {
-                    if k != filter_kind {
+                if let Some(filter_kind) = event_kind
+                    && k != filter_kind {
                         continue;
                     }
-                }
-                if let Some(filter_consumer) = consumer_name {
-                    if c != filter_consumer {
+                if let Some(filter_consumer) = consumer_name
+                    && c != filter_consumer {
                         continue;
                     }
-                }
-                if let Some(filter_status) = status {
-                    if s != filter_status {
+                if let Some(filter_status) = status
+                    && s != filter_status {
                         continue;
                     }
-                }
                 count += n;
             }
             if count > 0 {
@@ -166,11 +163,10 @@ impl AopStatsCollector {
 
         for ((kind, consumer, status), count) in snap.total_counts.iter() {
             // 应用 status 过滤
-            if let Some(filter) = status_filter {
-                if status != filter {
+            if let Some(filter) = status_filter
+                && status != filter {
                     continue;
                 }
-            }
             let label = match group_by {
                 "consumer" => consumer.clone(),
                 "status" => status.clone(),

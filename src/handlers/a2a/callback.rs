@@ -153,8 +153,8 @@ pub async fn handle_a2a_callback(
         }
     };
 
-    if let Some(target) = target_status {
-        if local_task.po.status != target {
+    if let Some(target) = target_status
+        && local_task.po.status != target {
             if let Err(e) = project_domain::domain()
                 .task_manage()
                 .transition_status(task_ctx.clone(), &mut local_task, target)
@@ -178,7 +178,6 @@ pub async fn handle_a2a_callback(
                 );
             }
         }
-    }
 
     log_info!(
         &ctx,

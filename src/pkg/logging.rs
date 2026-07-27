@@ -38,10 +38,8 @@ pub fn init(config: &AppConfig) {
         let logs_dir = config.log_dir();
         // 创建日志目录（如果不存在，load_config 已经创建过，但保险起见再检查一次）
         if !logs_dir.exists() {
-            std::fs::create_dir_all(&logs_dir).expect(&format!(
-                "Failed to create logs directory at {:?}",
-                logs_dir
-            ));
+            std::fs::create_dir_all(&logs_dir).unwrap_or_else(|_| panic!("Failed to create logs directory at {:?}",
+                logs_dir));
         }
 
         // 自动清理旧日志
@@ -146,16 +144,13 @@ fn cleanup_old_logs(logs_dir: &std::path::Path, retention: Duration) -> std::io:
         }
 
         // 检查文件修改时间
-        if let Ok(metadata) = fs::metadata(&path) {
-            if let Ok(modified) = metadata.modified() {
-                if let Ok(elapsed) = now.duration_since(modified) {
-                    if elapsed > retention {
+        if let Ok(metadata) = fs::metadata(&path)
+            && let Ok(modified) = metadata.modified()
+                && let Ok(elapsed) = now.duration_since(modified)
+                    && elapsed > retention {
                         let _ = fs::remove_file(&path);
                         deleted_count += 1;
                     }
-                }
-            }
-        }
     }
 
     Ok(deleted_count)

@@ -411,22 +411,19 @@ impl Drop for HnswStore {
         // 使用 try_read 避免阻塞（如果锁被占用则跳过）
         if let Ok(collections) = self.collections.try_read() {
             for (name, data) in collections.iter() {
-                if data.dirty {
-                    if let Err(e) = Self::save_collection_to_file(&self.base_path, name, data) {
+                if data.dirty
+                    && let Err(e) = Self::save_collection_to_file(&self.base_path, name, data) {
                         tracing::warn!("Failed to flush collection '{}' on drop: {:?}", name, e);
                     }
-                }
             }
         }
 
         // 同步落盘元数据
-        if let Ok(meta_dirty) = self.meta_dirty.try_read() {
-            if *meta_dirty {
-                if let Err(e) = self.save_collections_meta() {
+        if let Ok(meta_dirty) = self.meta_dirty.try_read()
+            && *meta_dirty
+                && let Err(e) = self.save_collections_meta() {
                     tracing::warn!("Failed to flush collections meta on drop: {:?}", e);
                 }
-            }
-        }
     }
 }
 
@@ -523,7 +520,7 @@ impl super::VectorStore for HnswStore {
             .filter_map(|item| {
                 let id = item.value;
                 let (_, row) = coll.vectors.get(id)?;
-                if row.meta.expire_at.map_or(true, |exp| exp > now) {
+                if row.meta.expire_at.is_none_or(|exp| exp > now) {
                     Some(VectorSearchHit {
                         row: row.clone(),
                         distance: item.distance,

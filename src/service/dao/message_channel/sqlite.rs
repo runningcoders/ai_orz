@@ -272,7 +272,7 @@ static MESSAGE_CHANNEL_DAO: OnceLock<Arc<dyn MessageChannelDao + Send + Sync>> =
 
 /// 创建一个全新的 MessageChannel DAO 实例（用于测试）
 pub fn new() -> Arc<dyn MessageChannelDao + Send + Sync> {
-    Arc::new(MessageChannelDaoSqliteImpl::default())
+    Arc::new(MessageChannelDaoSqliteImpl)
 }
 
 /// 获取全局 MessageChannel DAO 单例
@@ -310,8 +310,8 @@ fn push_query_filters<'args>(
     if query.only_enabled {
         builder.push(" AND status = 1");
     }
-    if let Some(status_in) = &query.status_in {
-        if !status_in.is_empty() {
+    if let Some(status_in) = &query.status_in
+        && !status_in.is_empty() {
             builder.push(" AND status IN (");
             let mut separated = builder.separated(", ");
             for s in status_in {
@@ -320,5 +320,4 @@ fn push_query_filters<'args>(
             drop(separated);
             builder.push(")");
         }
-    }
 }

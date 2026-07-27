@@ -106,7 +106,7 @@ impl LoggingDecorator {
 
         // Record tool call stat event for metrics aggregation
         // This covers ALL tool calls (manual + auto), ensuring complete stats coverage
-        let _ = record_tool_call_stat(ctx.clone(), &entry, &args_cloned);
+        record_tool_call_stat(ctx.clone(), &entry, &args_cloned);
 
         (result, entry)
     }

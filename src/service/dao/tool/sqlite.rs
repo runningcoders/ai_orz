@@ -120,11 +120,10 @@ impl ToolDao for ToolDaoSqliteImpl {
 
     async fn update_tool(&self, ctx: RequestContext, po: &ToolPo) -> Result<()> {
         // Check if this is a built-in tool
-        if let Some(existing) = self.get_by_id(ctx.clone(), po.id.clone()).await? {
-            if matches!(existing.protocol, common::enums::ToolProtocol::Builtin) {
+        if let Some(existing) = self.get_by_id(ctx.clone(), po.id.clone()).await?
+            && matches!(existing.protocol, common::enums::ToolProtocol::Builtin) {
                 return Err(anyhow::anyhow!("Built-in tools cannot be modified").into());
             }
-        }
 
         let pool = ctx.db_pool();
 
@@ -155,11 +154,10 @@ impl ToolDao for ToolDaoSqliteImpl {
 
     async fn delete_tool(&self, ctx: RequestContext, id: &str) -> Result<()> {
         // Check if this is a built-in tool
-        if let Some(existing) = self.get_by_id(ctx.clone(), id.to_string()).await? {
-            if matches!(existing.protocol, common::enums::ToolProtocol::Builtin) {
+        if let Some(existing) = self.get_by_id(ctx.clone(), id.to_string()).await?
+            && matches!(existing.protocol, common::enums::ToolProtocol::Builtin) {
                 return Err(anyhow::anyhow!("Built-in tools cannot be deleted").into());
             }
-        }
 
         let pool = ctx.db_pool();
 
@@ -443,8 +441,8 @@ fn push_query_filters<'args>(
             .push(" AND at.agent_id = ")
             .push_bind(agent_id.clone());
     }
-    if let Some(ids) = &query.ids {
-        if !ids.is_empty() {
+    if let Some(ids) = &query.ids
+        && !ids.is_empty() {
             builder.push(" AND t.id IN (");
             let mut separated = builder.separated(", ");
             for id in ids {
@@ -452,14 +450,12 @@ fn push_query_filters<'args>(
             }
             separated.push_unseparated(")");
         }
-    }
-    if let Some(keyword) = &query.keyword {
-        if !keyword.is_empty() {
+    if let Some(keyword) = &query.keyword
+        && !keyword.is_empty() {
             log_warn!("keyword in ToolDao::query is deprecated, use search_tools; keyword ignored");
         }
-    }
-    if let Some(tags) = &query.tags {
-        if !tags.is_empty() {
+    if let Some(tags) = &query.tags
+        && !tags.is_empty() {
             builder.push(" AND EXISTS (SELECT 1 FROM json_each(t.tags) WHERE json_each.value IN (");
             let mut separated = builder.separated(", ");
             for tag in tags {
@@ -467,7 +463,6 @@ fn push_query_filters<'args>(
             }
             separated.push_unseparated("))");
         }
-    }
     if let Some(protocol) = query.protocol {
         builder
             .push(" AND t.protocol = ")
@@ -486,9 +481,8 @@ fn push_query_filters<'args>(
             .push(" AND json_extract(t.config, '$.server_id') = ")
             .push_bind(server_id.clone());
     }
-    if let Some(enabled_only) = query.enabled_only {
-        if enabled_only {
+    if let Some(enabled_only) = query.enabled_only
+        && enabled_only {
             builder.push(" AND t.status = 1");
         }
-    }
 }

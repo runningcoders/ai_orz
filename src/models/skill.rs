@@ -102,6 +102,7 @@ use crate::models::vector::{SearchMatchInfo, Vectorizable};
 /// - search_match：搜索匹配元信息（仅搜索结果有值）
 #[derive(Debug, Clone, Builder)]
 #[builder(default)]
+#[derive(Default)]
 pub struct Skill {
     /// 数据库持久化元数据
     pub po: SkillPo,
@@ -113,15 +114,6 @@ pub struct Skill {
     pub search_match: Option<SearchMatchInfo>,
 }
 
-impl Default for Skill {
-    fn default() -> Self {
-        Self {
-            po: SkillPo::default(),
-            files: Vec::new(),
-            search_match: None,
-        }
-    }
-}
 
 /// ✅ 实现 Vectorizable Trait（统一向量化行为）
 impl Vectorizable for Skill {

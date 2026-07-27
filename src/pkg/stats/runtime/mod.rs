@@ -147,7 +147,7 @@ impl<K: Clone + Eq + Hash> Inner<K> {
     /// 获取或创建当前分钟桶
     fn current_bucket(&mut self, now_millis: i64) -> &mut TimeBucket<K> {
         let minute = minute_bucket_millis(now_millis);
-        if self.buckets.back().map_or(true, |b| b.minute != minute) {
+        if self.buckets.back().is_none_or(|b| b.minute != minute) {
             self.buckets.push_back(TimeBucket {
                 minute,
                 ..Default::default()

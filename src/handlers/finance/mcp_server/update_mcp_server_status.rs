@@ -2,7 +2,6 @@
 
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateMcpServerStatusRequest, UpdateMcpServerStatusResponse};
-use common::enums::McpServerStatus as ApiMcpServerStatus;
 
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
@@ -22,7 +21,7 @@ pub async fn update_mcp_server_status(
     ctx: RequestContext,
     params: UpdateMcpServerStatusRequest,
 ) -> Result<UpdateMcpServerStatusResponse> {
-    if params.status == ApiMcpServerStatus::Deleted {}
+    
 
     domain()
         .mcp_server_manage()

@@ -29,19 +29,19 @@ pub static GENERIC_BUILTIN_TOOLS: Lazy<Vec<(String, Box<dyn BuiltinToolFactory>)
         vec![
             (
                 "http_fetch".to_string(),
-                Box::new(HttpFetchToolFactory::default()),
+                Box::new(HttpFetchToolFactory),
             ),
             (
                 "fs_read".to_string(),
-                Box::new(FsReadToolFactory::default()),
+                Box::new(FsReadToolFactory),
             ),
             (
                 "fs_write".to_string(),
-                Box::new(FsWriteToolFactory::default()),
+                Box::new(FsWriteToolFactory),
             ),
             (
                 "shell_exec".to_string(),
-                Box::new(ShellExecToolFactory::default()),
+                Box::new(ShellExecToolFactory),
             ),
         ]
     });

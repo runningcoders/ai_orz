@@ -295,8 +295,8 @@ impl super::ArtifactManage for ProjectDomainImpl {
         }
 
         // Optimistic locking check
-        if let Some(expected) = expected_updated_at {
-            if artifact.po.updated_at != expected {
+        if let Some(expected) = expected_updated_at
+            && artifact.po.updated_at != expected {
                 bail_err!(
                     Conflict,
                     "Conflict: expected updated_at = {}, current updated_at = {}. Please reload and try again.",
@@ -304,7 +304,6 @@ impl super::ArtifactManage for ProjectDomainImpl {
                     artifact.po.updated_at
                 );
             }
-        }
 
         // Write the new content to disk
         self.artifact_dal

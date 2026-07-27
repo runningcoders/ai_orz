@@ -84,7 +84,7 @@ pub async fn list_messages(
         .iter()
         .map(|m| {
             // 只有当 file_type 有值时才视为附件消息
-            let file_meta = m.po.file_type.and_then(|_| {
+            let file_meta = m.po.file_type.map(|_| {
                 let fm = &m.po.file_meta.0;
                 let name = fm
                     .file_path
@@ -92,11 +92,11 @@ pub async fn list_messages(
                     .next()
                     .unwrap_or(&fm.file_path)
                     .to_string();
-                Some(common::api::message::FileMetaInfo {
+                common::api::message::FileMetaInfo {
                     name,
                     mime_type: fm.mime_type.clone(),
                     size: fm.file_size,
-                })
+                }
             });
             MessageListItem {
                 message_id: m.po.id.clone(),

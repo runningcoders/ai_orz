@@ -302,8 +302,8 @@ fn append_dir_recursive<W: std::io::Write>(
         } else if file_type.is_file() {
             let mut file = std::fs::File::open(&path)?;
             builder.append_file(&tar_path, &mut file)?;
-        } else if file_type.is_symlink() {
-            if let Ok(target) = std::fs::read_link(&path) {
+        } else if file_type.is_symlink()
+            && let Ok(target) = std::fs::read_link(&path) {
                 let mut header = tar::Header::new_gnu();
                 header.set_entry_type(tar::EntryType::Symlink);
                 header.set_size(0);
@@ -314,7 +314,6 @@ fn append_dir_recursive<W: std::io::Write>(
                 let mut empty = std::io::empty();
                 builder.append_data(&mut header, &tar_path, &mut empty)?;
             }
-        }
         // 其他类型（fifo、socket 等）跳过
     }
     Ok(())

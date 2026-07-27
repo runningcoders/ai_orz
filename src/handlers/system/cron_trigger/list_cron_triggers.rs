@@ -25,7 +25,7 @@ pub async fn list_cron_triggers(
     let total = triggers.len();
     let triggers: Vec<CronTriggerDetail> = triggers
         .iter()
-        .map(|t| super::response::to_detail(t))
+        .map(super::response::to_detail)
         .collect();
 
     Ok(ListCronTriggersResponse { triggers, total })

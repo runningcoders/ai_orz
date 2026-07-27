@@ -234,16 +234,14 @@ impl crate::models::vector::Vectorizable for ProjectPo {
         // ProjectPo 向量化：name + description + workflow + guidance
         // workflow 和 guidance 可能为 NULL/空，跳过空值避免多余换行
         let mut parts: Vec<&str> = vec![&self.name, &self.description];
-        if let Some(w) = &self.workflow {
-            if !w.trim().is_empty() {
+        if let Some(w) = &self.workflow
+            && !w.trim().is_empty() {
                 parts.push(w.as_str());
             }
-        }
-        if let Some(g) = &self.guidance {
-            if !g.trim().is_empty() {
+        if let Some(g) = &self.guidance
+            && !g.trim().is_empty() {
                 parts.push(g.as_str());
             }
-        }
         parts.join("\n")
     }
 

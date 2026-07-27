@@ -128,7 +128,7 @@ impl CoreTool for FsReadCoreTool {
         // Parse arguments
         let args: ReadFileArgs = serde_json::from_value(args)
             .map_err(|e| anyhow::anyhow!("Invalid arguments: {}", e))
-            .map_err(|e| common::error::Error::from(e))?;
+            .map_err(common::error::Error::from)?;
 
         // Get base data path from global config
         let base_path = crate::config::get().base_data_path();
@@ -152,7 +152,7 @@ impl CoreTool for FsReadCoreTool {
                     .map_err(|e| {
                         anyhow::anyhow!("Failed to read file metadata: {}", sanitize_error(e))
                     })
-                    .map_err(|e| common::error::Error::from(e))?;
+                    .map_err(common::error::Error::from)?;
 
                 const HARD_READ_MAX_BYTES: usize = 10 * 1024 * 1024; // 10MB
 
@@ -167,13 +167,13 @@ impl CoreTool for FsReadCoreTool {
                 // Open and read file line by line
                 let file = File::open(&target_path)
                     .map_err(|e| anyhow::anyhow!("Failed to open file: {}", sanitize_error(e)))
-                    .map_err(|e| common::error::Error::from(e))?;
+                    .map_err(common::error::Error::from)?;
                 let reader = BufReader::new(file);
                 let lines: Vec<String> = reader
                     .lines()
                     .collect::<std::result::Result<_, _>>()
                     .map_err(|e| anyhow::anyhow!("Failed to read file: {}", sanitize_error(e)))
-                    .map_err(|e| common::error::Error::from(e))?;
+                    .map_err(common::error::Error::from)?;
 
                 let total_lines = lines.len();
 
@@ -224,14 +224,8 @@ fn find_grep_matches(lines: &[String], pattern: &str, context_lines: usize) -> V
             let context_before_start = idx.saturating_sub(context_lines);
             let context_after_end = (idx + context_lines + 1).min(lines.len());
 
-            let context_before = lines[context_before_start..idx]
-                .iter()
-                .map(|s| s.clone())
-                .collect::<Vec<_>>();
-            let context_after = lines[idx + 1..context_after_end]
-                .iter()
-                .map(|s| s.clone())
-                .collect::<Vec<_>>();
+            let context_before = lines[context_before_start..idx].to_vec();
+            let context_after = lines[idx + 1..context_after_end].to_vec();
 
             let content = format!("{:>4}|{}", line_number, line);
             matches.push(GrepMatch {

@@ -23,6 +23,12 @@ pub fn init() {
     let _ = CORTEX_DAO.set(Arc::new(RigCortexDao::new()));
 }
 
+impl Default for RigCortexDao {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RigCortexDao {
     pub fn new() -> Self {
         Self {}
@@ -110,8 +116,7 @@ impl super::CortexDao for RigCortexDao {
                 ProviderType::FastEmbed => {
                     return Err(anyhow::anyhow!(
                         "FastEmbed 仅支持 Embedding 能力，不支持 Agent 能力"
-                    )
-                    .into());
+                    ));
                 }
             },
             // 🔷 Embedding 类型 - 只支持向量化，不需要构建完整的 Agent
@@ -178,7 +183,7 @@ impl super::CortexDao for RigCortexDao {
         let text = entity.vectorize_text();
 
         // 2. 直接使用 cortex 的 embeddings 能力（Cortex 内部已经提前初始化好）
-        let vectors = cortex.embeddings(&[text.clone()]).await?;
+        let vectors = cortex.embeddings(std::slice::from_ref(&text)).await?;
         let vector = vectors.into_iter().next().unwrap_or_default();
 
         // 3. 从 CortexTrait 直接获取元信息，不需要外部传入

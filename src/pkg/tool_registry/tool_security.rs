@@ -111,27 +111,25 @@ pub async fn validate_target_url(
         return Err(anyhow!("url host is required").into());
     }
 
-    if let Some(blocked_domains) = blocked_domains {
-        if blocked_domains
+    if let Some(blocked_domains) = blocked_domains
+        && blocked_domains
             .iter()
             .any(|domain| domain_matches(&host, domain))
         {
             return Err(anyhow!("blocked http domain").into());
         }
-    }
 
     if is_local_network_host(&host) && allow_local_network != Some(true) {
         return Err(anyhow!("local network http target requires allow_local_network=true").into());
     }
 
-    if let Some(allowed_domains) = allowed_domains {
-        if !allowed_domains
+    if let Some(allowed_domains) = allowed_domains
+        && !allowed_domains
             .iter()
             .any(|domain| domain_matches(&host, domain))
         {
             return Err(anyhow!("http domain is not allowed").into());
         }
-    }
 
     let addresses =
         validate_resolved_addresses(&host, url.port_or_known_default(), allow_local_network)
@@ -154,11 +152,11 @@ async fn validate_resolved_addresses(
     let addresses: Vec<SocketAddr> = lookup_host((lookup_host_name, port))
         .await
         .map_err(|_| anyhow!("failed to resolve http target host"))
-        .map_err(|e| common::error::Error::from(e))?
+        .map_err(common::error::Error::from)?
         .collect();
 
-    if allow_local_network != Some(true) {
-        if addresses
+    if allow_local_network != Some(true)
+        && addresses
             .iter()
             .any(|address| is_local_network_ip(address.ip()))
         {
@@ -167,7 +165,6 @@ async fn validate_resolved_addresses(
             )
             .into());
         }
-    }
 
     Ok(addresses)
 }
@@ -205,8 +202,8 @@ pub async fn read_limited_response_body(
     response: &mut reqwest::Response,
     max_bytes: usize,
 ) -> Result<Vec<u8>> {
-    if let Some(content_length) = response.content_length() {
-        if content_length > max_bytes as u64 {
+    if let Some(content_length) = response.content_length()
+        && content_length > max_bytes as u64 {
             return Err(anyhow!(
                 "http response too large: {} bytes exceeds limit {}",
                 content_length,
@@ -214,7 +211,6 @@ pub async fn read_limited_response_body(
             )
             .into());
         }
-    }
 
     let mut bytes = Vec::new();
     while let Some(chunk) = response
@@ -371,14 +367,14 @@ pub mod fs {
                 None => Err(anyhow!("Invalid path: no parent directory")),
             }
         }
-        .map_err(|e| common::error::Error::from(e))?;
+        .map_err(common::error::Error::from)?;
 
         // 4. Check that canonical path is in allowed scope:
         //    - either under base_path, OR under one of the additional allowed paths
         let base_canonical = base_path
             .canonicalize()
             .map_err(|e| anyhow!("Invalid base data path: {}", e))
-            .map_err(|e| common::error::Error::from(e))?;
+            .map_err(common::error::Error::from)?;
 
         let mut allowed = canonical.starts_with(&base_canonical);
 
@@ -392,12 +388,11 @@ pub mod fs {
                     base_path.join(additional_path)
                 }
                 .canonicalize();
-                if let Ok(additional_canon) = additional_canon {
-                    if canonical.starts_with(&additional_canon) {
+                if let Ok(additional_canon) = additional_canon
+                    && canonical.starts_with(&additional_canon) {
                         allowed = true;
                         break;
                     }
-                }
                 // Ignore invalid/unresolvable additional paths
             }
         }
@@ -412,11 +407,10 @@ pub mod fs {
         }
 
         // 5. Reject symlinks
-        if let Ok(metadata) = canonical.symlink_metadata() {
-            if metadata.file_type().is_symlink() {
+        if let Ok(metadata) = canonical.symlink_metadata()
+            && metadata.file_type().is_symlink() {
                 return Err(anyhow!("Access denied: symbolic links are not allowed").into());
             }
-        }
 
         Ok(ValidationResult::Valid(canonical))
     }
@@ -467,7 +461,7 @@ pub mod fs {
         // Hidden files starting with .
         if path
             .split('/')
-            .last()
+            .next_back()
             .map(|name| name.starts_with('.'))
             .unwrap_or(false)
         {
@@ -482,7 +476,7 @@ pub mod fs {
         // Remove absolute path prefixes, keep only the error message
         // This is a simple sanitization, enough for our purposes
         s.split('/')
-            .last()
+            .next_back()
             .map(|last| last.to_string())
             .unwrap_or(s)
     }

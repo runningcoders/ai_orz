@@ -492,11 +492,10 @@ impl Registry {
     }
 
     pub fn queue_len(&self, consumer_name: &str) -> usize {
-        if let Ok(queues) = self.queues.read() {
-            if let Some(queue) = queues.get(consumer_name) {
+        if let Ok(queues) = self.queues.read()
+            && let Some(queue) = queues.get(consumer_name) {
                 return queue.len();
             }
-        }
         0
     }
 

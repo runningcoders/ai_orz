@@ -205,7 +205,7 @@ impl super::VectorStore for InMemoryVectorStore {
             .iter()
             .filter(|e| {
                 // 过滤过期的向量
-                e.meta.expire_at.map_or(true, |exp| exp > now)
+                e.meta.expire_at.is_none_or(|exp| exp > now)
             })
             .map(|e| {
                 let distance = cosine_distance(query_vector, &e.vector);

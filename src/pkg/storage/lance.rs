@@ -287,7 +287,7 @@ impl super::VectorStore for LanceVectorStore {
         // 查询指定 id 的完整记录
         let stream = table
             .query()
-            .only_if(&format!("id = '{}'", id))
+            .only_if(format!("id = '{}'", id))
             .limit(1)
             .execute()
             .await
@@ -298,8 +298,8 @@ impl super::VectorStore for LanceVectorStore {
         })?;
 
         for batch in results {
-            if batch.num_rows() > 0 {
-                if let (
+            if batch.num_rows() > 0
+                && let (
                     Some(id_col),
                     Some(hash_col),
                     Some(model_col),
@@ -335,7 +335,6 @@ impl super::VectorStore for LanceVectorStore {
                         },
                     }));
                 }
-            }
         }
 
         Ok(None)

@@ -42,6 +42,12 @@ pub struct MessageConsumer {
     project_domain: Arc<dyn ProjectDomain>,
 }
 
+impl Default for MessageConsumer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MessageConsumer {
     pub fn new() -> Self {
         Self {
@@ -232,8 +238,8 @@ impl MessageConsumer {
         }
 
         // 检查轮次限制
-        if let (Some(_task_id), Some(stats)) = (&message.po.task_id, &agent.stats) {
-            if let Some(call_summary) = &stats.call_summary {
+        if let (Some(_task_id), Some(stats)) = (&message.po.task_id, &agent.stats)
+            && let Some(call_summary) = &stats.call_summary {
                 let runtime_config = agent.po.get_runtime_config();
                 let max_depth = runtime_config.max_thinking_depth as u64;
                 if call_summary.total_calls >= max_depth {
@@ -279,7 +285,6 @@ impl MessageConsumer {
                     return Ok(());
                 }
             }
-        }
 
         // 确保 Agent 有 Brain
         // wake_agent_brain 内部会查询 ModelProvider 并 enrich ctx
@@ -296,11 +301,10 @@ impl MessageConsumer {
                 .awakening()
                 .wake_agent_brain(ctx, &mut agent)
                 .await
-                .map_err(|e| {
+                .inspect_err(|_e| {
                     // wake_agent_brain 失败：释放 Busy 允许重试
                     // （awaken 未被调用，BusyGuard 未创建）
                     AgentRuntimeStateManager::global().set_idle(agent_id);
-                    e
                 })?;
             ctx = enriched_ctx;
         }

@@ -28,13 +28,12 @@ pub(crate) fn with_context_scope(
     )?;
     ensure_scope_does_not_conflict("task_id", ctx.task_id.as_deref(), query.task_id.as_deref())?;
 
-    if let Some(limit) = query.limit {
-        if limit > MAX_TOOL_CALL_QUERY_LIMIT {
+    if let Some(limit) = query.limit
+        && limit > MAX_TOOL_CALL_QUERY_LIMIT {
             return Err(common::error::Error::bad_request(format!(
                 "tool call query limit must be <= {MAX_TOOL_CALL_QUERY_LIMIT}"
             )));
         }
-    }
 
     if query.agent_id.is_none() {
         query.agent_id = ctx.agent_id.clone();

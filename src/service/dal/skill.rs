@@ -302,8 +302,8 @@ impl SkillDal for SkillDalImpl {
             std::collections::HashSet::new();
 
         // Step 2: 如果有关键词，尝试向量搜索
-        if search.keyword.is_some() {
-            if let Some(provider) = self
+        if search.keyword.is_some()
+            && let Some(provider) = self
                 .model_provider_dao
                 .get_default_embedding_provider(ctx.clone())
                 .await?
@@ -352,7 +352,6 @@ impl SkillDal for SkillDalImpl {
                     }
                 }
             }
-        }
 
         // Step 3: 执行 FTS5 关键词搜索（DAO 返回 Vec<(Po, fts_rank)>）
         let keyword_results = self.skill_dao.search(ctx.clone(), search.clone()).await?;
@@ -631,27 +630,27 @@ impl SkillDal for SkillDalImpl {
     }
 
     fn read_main_content(&self, skill: &SkillPo) -> Result<String> {
-        Ok(self.skill_dao.read_main_content(skill)?)
+        self.skill_dao.read_main_content(skill)
     }
 
     fn write_main_content(&self, skill: &SkillPo, content: &str) -> Result<()> {
-        Ok(self.skill_dao.write_main_content(skill, content)?)
+        self.skill_dao.write_main_content(skill, content)
     }
 
     fn list_files(&self, skill: &SkillPo) -> Result<Vec<SkillFile>> {
-        Ok(self.skill_dao.list_files(skill)?)
+        self.skill_dao.list_files(skill)
     }
 
     fn read_file(&self, skill: &SkillPo, filename: &str) -> Result<String> {
-        Ok(self.skill_dao.read_file(skill, filename)?)
+        self.skill_dao.read_file(skill, filename)
     }
 
     fn write_file(&self, skill: &SkillPo, filename: &str, content: &str) -> Result<()> {
-        Ok(self.skill_dao.write_file(skill, filename, content)?)
+        self.skill_dao.write_file(skill, filename, content)
     }
 
     fn write_file_bytes(&self, skill: &SkillPo, filename: &str, bytes: &[u8]) -> Result<()> {
-        Ok(self.skill_dao.write_file_bytes(skill, filename, bytes)?)
+        self.skill_dao.write_file_bytes(skill, filename, bytes)
     }
 
     async fn get_vector_content_hash(

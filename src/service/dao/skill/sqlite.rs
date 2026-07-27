@@ -367,8 +367,8 @@ ORDER BY updated_at DESC
                 .push_bind(parent_skill_id);
         }
 
-        if let Some(tags) = &filters.tags {
-            if !tags.is_empty() {
+        if let Some(tags) = &filters.tags
+            && !tags.is_empty() {
                 builder.push(
                     " AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE json_each.value IN (",
                 );
@@ -378,7 +378,6 @@ ORDER BY updated_at DESC
                 }
                 separated.push_unseparated("))");
             }
-        }
 
         builder.push(" ORDER BY skills_fts.rank");
 
@@ -581,8 +580,8 @@ fn push_query_filters<'args>(
     builder: &mut sqlx::QueryBuilder<'args, sqlx::Sqlite>,
     query: &SkillQuery,
 ) {
-    if let Some(ids) = &query.ids {
-        if !ids.is_empty() {
+    if let Some(ids) = &query.ids
+        && !ids.is_empty() {
             builder.push(" AND id IN (");
             let mut separated = builder.separated(", ");
             for id in ids {
@@ -590,7 +589,6 @@ fn push_query_filters<'args>(
             }
             separated.push_unseparated(")");
         }
-    }
     if let Some(status) = &query.status {
         builder.push(" AND status = ").push_bind(*status as i32);
     }
@@ -612,8 +610,8 @@ fn push_query_filters<'args>(
             .push(" AND parent_skill_id = ")
             .push_bind(parent_skill_id.clone());
     }
-    if let Some(tags) = &query.tags {
-        if !tags.is_empty() {
+    if let Some(tags) = &query.tags
+        && !tags.is_empty() {
             builder.push(" AND EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value IN (");
             let mut separated = builder.separated(", ");
             for tag in tags {
@@ -621,10 +619,8 @@ fn push_query_filters<'args>(
             }
             separated.push_unseparated("))");
         }
-    }
-    if let Some(keyword) = &query.keyword {
-        if !keyword.is_empty() {
+    if let Some(keyword) = &query.keyword
+        && !keyword.is_empty() {
             log_warn!("keyword in skill query is deprecated, use search_skills; keyword ignored");
         }
-    }
 }

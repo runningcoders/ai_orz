@@ -27,6 +27,12 @@ pub struct CronTriggerConsumer {
     runtime_domain: Arc<dyn RuntimeDomain>,
 }
 
+impl Default for CronTriggerConsumer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CronTriggerConsumer {
     pub fn new() -> Self {
         Self {

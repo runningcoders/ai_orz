@@ -59,13 +59,11 @@ impl ModelProviderManage for FinanceDomainImpl {
     ) -> Result<()> {
         if provider.po.capability.is_embedding()
             && provider.po.status == ModelProviderStatus::Normal
-        {
-            if let Some(current) = self
+            && let Some(current) = self
                 .model_provider_dal
                 .find_enabled_embedding_provider(ctx.clone())
                 .await?
-            {
-                if current.po.id != provider.po.id {
+                && current.po.id != provider.po.id {
                     let mut field = ErrorField::new();
                     field.insert("current_provider_id".into(), json!(current.po.id));
                     field.insert("current_provider_name".into(), json!(current.po.name));
@@ -78,8 +76,6 @@ impl ModelProviderManage for FinanceDomainImpl {
                     )
                     .with_field(field));
                 }
-            }
-        }
 
         let ctx = enrich_ctx!(&ctx, provider);
         self.model_provider_dal.update(ctx, provider).await
@@ -127,12 +123,11 @@ impl ModelProviderManage for FinanceDomainImpl {
             .find_enabled_embedding_provider(ctx.clone())
             .await?;
 
-        if let Some(ref current) = current_provider {
-            if current.po.id == new_provider_id {
+        if let Some(ref current) = current_provider
+            && current.po.id == new_provider_id {
                 // 同一 provider，无需重建
                 return Ok((current_provider, String::new()));
             }
-        }
 
         if let Some(mut current) = current_provider.clone() {
             current.po.status = ModelProviderStatus::Deleted;
@@ -158,8 +153,8 @@ impl ModelProviderManage for FinanceDomainImpl {
         task_id: &str,
     ) -> Result<Option<common::api::RebuildProgressResponse>> {
         let guard = self.rebuild_task.read().await;
-        if let Some(task) = guard.as_ref() {
-            if task.task_id == task_id {
+        if let Some(task) = guard.as_ref()
+            && task.task_id == task_id {
                 return Ok(Some(common::api::RebuildProgressResponse {
                     task_id: task.task_id.clone(),
                     status: task.status.clone(),
@@ -173,7 +168,6 @@ impl ModelProviderManage for FinanceDomainImpl {
                     error: task.error.clone(),
                 }));
             }
-        }
         Ok(None)
     }
 }
@@ -186,9 +180,9 @@ impl FinanceDomainImpl {
         // 检查是否已有任务运行
         {
             let guard = self.rebuild_task.read().await;
-            if let Some(task) = guard.as_ref() {
-                if task.status == common::api::RebuildStatus::Running
-                    || task.status == common::api::RebuildStatus::Pending
+            if let Some(task) = guard.as_ref()
+                && (task.status == common::api::RebuildStatus::Running
+                    || task.status == common::api::RebuildStatus::Pending)
                 {
                     let mut field = ErrorField::new();
                     field.insert("task_id".into(), json!(task.task_id));
@@ -198,7 +192,6 @@ impl FinanceDomainImpl {
                     )
                     .with_field(field));
                 }
-            }
         }
 
         let task_id = uuid::Uuid::new_v4().to_string();

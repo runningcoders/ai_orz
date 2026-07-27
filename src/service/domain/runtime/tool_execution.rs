@@ -201,7 +201,9 @@ fn ensure_tool_enabled(tool_id: &str, status: &ToolStatus) -> Result<()> {
 fn map_mcp_tool_error(tool_id: &str, error: &Error) -> String {
     let message = error.to_string();
     let normalized = message.to_lowercase();
-    let safe_message = if normalized.contains("timed out") || normalized.contains("timeout") {
+    
+
+    if normalized.contains("timed out") || normalized.contains("timeout") {
         format!("MCP tool call timed out for tool_id: {}", tool_id)
     } else if normalized.contains("server") && normalized.contains("not found") {
         format!("MCP server not found for tool_id: {}", tool_id)
@@ -213,7 +215,5 @@ fn map_mcp_tool_error(tool_id: &str, error: &Error) -> String {
         format!("MCP tool not found: {}", tool_id)
     } else {
         format!("MCP tool call failed for tool_id: {}", tool_id)
-    };
-
-    safe_message
+    }
 }

@@ -519,8 +519,8 @@ impl ToolDal for ToolDalImpl {
         let mut vector_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         // Step 2: 如果有关键词，尝试向量搜索（用关键词生成 query vector）
-        if params.keyword.is_some() {
-            if let Some(provider) = self
+        if params.keyword.is_some()
+            && let Some(provider) = self
                 .model_provider_dao
                 .get_default_embedding_provider(ctx.clone())
                 .await?
@@ -563,7 +563,6 @@ impl ToolDal for ToolDalImpl {
                     }
                 }
             }
-        }
 
         // Step 3: FTS5 关键词搜索（DAO 返回 Vec<(ToolPo, fts_rank)>）
         let fts_results = self.tool_dao.search_tools(ctx.clone(), params).await?;

@@ -45,7 +45,7 @@ pub async fn create_model_provider(
             .po
             .description
             .as_ref()
-            .map_or(true, |d| d.is_empty())
+            .is_none_or(|d| d.is_empty())
         {
             None
         } else {

@@ -66,7 +66,7 @@ pub async fn create_task(
     // Project Domain 只负责数据持久化，通知由 Message Domain 负责
     if assignee_type == AssigneeType::Agent {
         let cmd = SendTaskAssignmentCommand {
-            task_id: &task.id(),
+            task_id: task.id(),
             task_title: &task.po.title,
             task_description: task_description.as_deref(),
             from_id: &current_user_id,
