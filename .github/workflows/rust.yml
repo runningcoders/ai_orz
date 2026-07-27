@@ -75,15 +75,16 @@ jobs:
       run: cargo test --test '*' --verbose
 
     # Tarpaulin 主要支持 Linux，这里 runs-on 已是 ubuntu-latest。
-    # 当前只收集覆盖率作为 baseline，不设门槛（--fail-under 0），
-    # 待测试覆盖稳定后再逐步提高门槛。tarpaulin 失败不应阻断 CI（|| true）。
+    # Baseline: 40.79% (6560/16083 lines, 2026-07-27 实测)
+    # 门槛设为 35%，留 ~5% 缓冲避免小幅波动误报。
+    # 未来随测试补充可逐步提高到 40% / 45%。
     - name: Generate coverage report
       run: |
         cargo tarpaulin --workspace --all-features --out Xml --out Html \
           --output-dir ./coverage \
           --exclude-files "tests/common/*" \
-          --fail-under 0 \
-          -- --lib || true
+          --fail-under 35 \
+          -- --lib
 
     - name: Upload coverage artifacts
       uses: actions/upload-artifact@v4
