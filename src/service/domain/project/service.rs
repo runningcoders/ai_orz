@@ -5,11 +5,13 @@
 use crate::models::project::Project;
 use crate::pkg::RequestContext;
 use crate::pkg::stats::ProjectEvent;
+use crate::pkg::utils::graph::MermaidDirection;
 use common::constants::utils;
 use common::enums::project::ProjectStatus;
 use uuid::Uuid;
 
 use super::ProjectDomainImpl;
+use super::task_graph::build_task_graph_mermaid;
 use common::error::{Result, bail_err};
 
 use crate::enrich_ctx;
@@ -86,13 +88,46 @@ impl super::ProjectManage for ProjectDomainImpl {
     }
 
     /// 根据 ID 获取项目（带附带信息选项）
+    ///
+    /// Domain 层聚合：在 DAL 返回基础 Project 后，按 options 注入：
+    /// - task_graph: 调用 task_dal 查询项目任务，用 graph 组件生成 mermaid
+    /// - artifacts: 调用 artifact_dal 查询项目级产物列表
     async fn get_project(
         &self,
         ctx: RequestContext,
         id: &str,
         options: crate::service::dal::project::ProjectFetchOptions,
     ) -> Result<Option<Project>> {
-        self.project_dal.get_project(ctx, id, options).await
+        // 先调 DAL 拿基础 project（含 stats / model_call_stats）
+        let mut project = self
+            .project_dal
+            .get_project(ctx.clone(), id, options.clone())
+            .await?;
+
+        if let Some(project) = project.as_mut() {
+            // 注入 task_graph
+            if options.with_task_graph.unwrap_or(false) {
+                let tasks = self
+                    .task_dal
+                    .list_by_project(ctx.clone(), id, None)
+                    .await?;
+                let mermaid = build_task_graph_mermaid(&tasks, MermaidDirection::LR);
+                project.task_graph = Some(mermaid);
+            }
+
+            // 注入 artifacts
+            if options.with_artifacts.unwrap_or(false) {
+                let artifacts = self.artifact_dal.list_by_project(ctx.clone(), id).await?;
+                project.artifacts = Some(
+                    artifacts
+                        .iter()
+                        .map(super::artifact_to_detail)
+                        .collect::<Vec<_>>(),
+                );
+            }
+        }
+
+        Ok(project)
     }
 
     /// 获取用户的所有项目
