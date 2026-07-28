@@ -5,6 +5,7 @@
 //! - Project - 业务实体（Domain 层使用，包含聚合关系和业务方法）
 
 use crate::pkg::request_context::{EnrichContext, RequestContextBuilder};
+use common::api::ArtifactDetail;
 use common::constants::utils;
 use common::enums::project::ProjectStatus;
 use common::models::{ModelCallStats, ProjectStats};
@@ -64,6 +65,10 @@ pub struct Project {
     pub stats: Option<ProjectStats>,
     /// 模型调用统计数据（由 DAL 层按需注入）
     pub model_call_stats: Option<ModelCallStats>,
+    /// 任务依赖图（Mermaid 字符串，由 Domain 层按需注入）
+    pub task_graph: Option<String>,
+    /// 产物列表（由 Domain 层按需注入）
+    pub artifacts: Option<Vec<ArtifactDetail>>,
 }
 
 impl Project {
@@ -74,6 +79,8 @@ impl Project {
             search_match: None,
             stats: None,
             model_call_stats: None,
+            task_graph: None,
+            artifacts: None,
         }
     }
 
@@ -113,6 +120,8 @@ impl Project {
             search_match: None,
             stats: None,
             model_call_stats: None,
+            task_graph: None,
+            artifacts: None,
         }
     }
 

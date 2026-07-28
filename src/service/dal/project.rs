@@ -599,6 +599,8 @@ impl ProjectDal for ProjectDalImpl {
                 search_match: match_info,
                 stats: None,
                 model_call_stats: None,
+                task_graph: None,
+                artifacts: None,
             });
         }
 

@@ -6,6 +6,7 @@
 
 use crate::models::vector::{SearchMatchInfo, Vectorizable};
 use crate::pkg::request_context::{EnrichContext, RequestContextBuilder};
+use common::api::ArtifactDetail;
 use common::constants::utils;
 use common::enums::{AssigneeType, TaskStatus};
 use common::models::{ModelCallStats, TaskStats};
@@ -71,6 +72,8 @@ pub struct Task {
     pub stats: Option<TaskStats>,
     /// 模型调用统计数据（由 DAL 层按需注入）
     pub model_call_stats: Option<ModelCallStats>,
+    /// 产物列表（由 Domain 层按需注入）
+    pub artifacts: Option<Vec<ArtifactDetail>>,
 }
 
 impl Task {
@@ -81,6 +84,7 @@ impl Task {
             search_match: None,
             stats: None,
             model_call_stats: None,
+            artifacts: None,
         }
     }
 
@@ -122,6 +126,7 @@ impl Task {
             search_match: None,
             stats: None,
             model_call_stats: None,
+            artifacts: None,
         }
     }
 

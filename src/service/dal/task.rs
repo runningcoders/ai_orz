@@ -496,6 +496,7 @@ impl TaskDal for TaskDalImpl {
                 search_match: match_info,
                 stats: None,
                 model_call_stats: None,
+                artifacts: None,
             });
         }
 
