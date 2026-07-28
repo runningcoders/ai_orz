@@ -118,13 +118,33 @@ impl super::TaskManage for ProjectDomainImpl {
     }
 
     /// 根据 ID 获取任务（带附带信息选项）
+    ///
+    /// Domain 层聚合：在 DAL 返回基础 Task 后，按 options 注入：
+    /// - artifacts: 调用 artifact_dal 查询任务级产物列表
     async fn get_task(
         &self,
         ctx: RequestContext,
         id: &str,
         options: crate::service::dal::task::TaskFetchOptions,
     ) -> Result<Option<Task>> {
-        self.task_dal.get_task(ctx, id, options).await
+        // 先调 DAL 拿基础 task（含 stats / model_call_stats）
+        let with_artifacts = options.with_artifacts.unwrap_or(false);
+        let mut task = self.task_dal.get_task(ctx.clone(), id, options).await?;
+
+        if let Some(task) = task.as_mut() {
+            // 注入 artifacts
+            if with_artifacts {
+                let artifacts = self.artifact_dal.list_by_task(ctx.clone(), id).await?;
+                task.artifacts = Some(
+                    artifacts
+                        .iter()
+                        .map(super::artifact_to_detail)
+                        .collect::<Vec<_>>(),
+                );
+            }
+        }
+
+        Ok(task)
     }
 
     /// 获取项目下的所有任务
