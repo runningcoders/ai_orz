@@ -4,7 +4,7 @@
 
 ![Tests](https://img.shields.io/badge/tests-906%20%E2%9C%94-brightgreen)
 ![Clippy](https://img.shields.io/badge/clippy--D%20warnings-zero-success)
-![Coverage](https://img.shields.io/badge/coverage-40.79%25%20(baseline%2035%25)-yellow)
+![Coverage](https://img.shields.io/badge/coverage-35%25%20threshold%20(llvm--cov)-yellow)
 ![Rust](https://img.shields.io/badge/Rust-1.85+-000000?logo=rust)
 ![License](https://img.shields.io/github/license/runningcoders/ai_orz)
 
@@ -34,7 +34,7 @@
 | **前端** | Dioxus 0.7 (WASM) + Tailwind CSS v4 + DaisyUI v5，15 条路由，30+ 主题切换 |
 | **架构** | Adapter（Handler/Producer）→ Domain → DAL → DAO 四层严格单向依赖 |
 | **测试** | 906 个测试，100% 通过（后端 810 = 781 单元 + 29 集成 + 前端 46 + common 50） |
-| **CI 质量** | clippy `-D warnings` 零容忍 + tarpaulin 覆盖率门槛 35%（baseline 40.79%）+ 集成测试 3.7s |
+| **CI 质量** | clippy `-D warnings` 零容忍 + cargo-llvm-cov 覆盖率门槛 35% + 集成测试 3.7s |
 | **实体覆盖** | Agent / Project / Task / Message / Memory / Skill / Tool / ModelProvider 全栈 |
 
 核心能力已落地：
@@ -54,7 +54,7 @@
 - 📡 **AOP 事件中心**：统一生产-消费事件框架，支持同步/异步消费模式，内置内存队列；Producer 与 Consumer 分别注册，完全解耦
 - 🏗️ **适配层架构**：HTTP Handler / 回调端点 / AOP Producer 同属适配层（Adapter），统一负责外部协议转换和校验，直接调用 Domain；外部协议数据不进入事件中心
 - 🧩 **统一 IDL 宏**：`#[generate_http_handler]` + `#[derive(Params)]` + `#[param(source = "path/query")]` 一份结构体定义同时支持 HTTP API 和 LLM 工具调用，自动从 path/query/body 提取参数，自动生成 axum handler，支持 path-only / query-only / path+query / path+body / 空 struct 等多种参数组合
-- 🧪 **集成测试体系**：29 个集成测试覆盖 Auth/SysInit + Core CRUD + Message Delivery + Vector Degradation + A2A Flow 全链路，3.7s 跑完；向量降级契约守护测试确保无 embedding provider 时主流程仍可用；CI 启用 clippy `-D warnings` 零容忍 + tarpaulin `--fail-under 35` 覆盖率门槛
+- 🧪 **集成测试体系**：29 个集成测试覆盖 Auth/SysInit + Core CRUD + Message Delivery + Vector Degradation + A2A Flow 全链路，3.7s 跑完；向量降级契约守护测试确保无 embedding provider 时主流程仍可用；CI 启用 clippy `-D warnings` 零容忍 + cargo-llvm-cov `--fail-under-lines 35` 覆盖率门槛
 
 > 完整功能列表和开发规范请看 [AGENTS.md](./AGENTS.md)
 

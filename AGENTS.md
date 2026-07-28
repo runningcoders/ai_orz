@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-07-27（集成测试与 CI 质量体系建设：29 个集成测试覆盖全链路 + clippy 442 warning 清理 + 集成测试从 238s 降到 3.7s + tarpaulin 覆盖率门槛 35%；修复 3 个潜伏真 bug：From\<i32\> 无限递归、start_all 持锁 await 死锁、统计 future 静默丢弃）
+> 最后更新：2026-07-27（集成测试与 CI 质量体系建设：29 个集成测试覆盖全链路 + clippy 442 warning 清理 + 集成测试从 238s 降到 3.7s + cargo-llvm-cov 覆盖率门槛 35%；修复 3 个潜伏真 bug：From\<i32\> 无限递归、start_all 持锁 await 死锁、统计 future 静默丢弃）
 
 ---
 
@@ -14,7 +14,7 @@
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + rig-core 0.34
 - **前端**：Dioxus 0.7 (WebAssembly) + Tailwind CSS v4 + DaisyUI v5
-- **技术特色**：严格分层架构、类型安全、906 个测试 100% 通过率（后端 810 = 781 单元 + 29 集成 + 前端 46 + common 50）、clippy `-D warnings` 零容忍、tarpaulin 覆盖率门槛 35%（baseline 40.79%）、30+ 主题切换
+- **技术特色**：严格分层架构、类型安全、906 个测试 100% 通过率（后端 810 = 781 单元 + 29 集成 + 前端 46 + common 50）、clippy `-D warnings` 零容忍、cargo-llvm-cov 覆盖率门槛 35%、30+ 主题切换
 
 ### 1.2 已实现核心功能
 
@@ -75,7 +75,7 @@
 | 📊 系统健康监控 HUD | ✅ | Health 页面重写为仪表盘墙（10s 轮询，6 个维度：后端/AOP队列/活跃Agent/活跃项目/待处理任务/运行时长），复用通用 Gauge 组件 |
 | 📋 看板视图 Canvas | ✅ | tasks 看板视图改为 HUD 风格 KanbanCanvas（多列泳道 + 优先级颜色编码 + 进度条 + HUD 深色径向渐变背景） |
 | 🧪 集成测试体系 | ✅ | 29 个集成测试覆盖 Auth/SysInit + Core CRUD + Message Delivery + Vector Degradation + A2A Flow 全链路，3.7s 跑完；向量降级契约守护测试确保无 embedding provider 时主流程仍可用 |
-| 🛡️ CI 质量门槛 | ✅ | clippy `-D warnings` 零容忍（442 warning 全清理）+ tarpaulin `--fail-under 35`（baseline 40.79%）+ 集成测试 3.7s（从 238s 优化） |
+| 🛡️ CI 质量门槛 | ✅ | clippy `-D warnings` 零容忍（442 warning 全清理）+ cargo-llvm-cov `--fail-under-lines 35` + 集成测试 3.7s（从 238s 优化） |
 
 ### 1.3 整体完成度与测试统计（2026-07-27 更新）
 
@@ -86,7 +86,7 @@
 | **集成测试覆盖** | 29 个 | Auth/SysInit 4 + Core CRUD 3 + Message Delivery 2 + Vector Degradation 3 + A2A Flow 2 + 宏集成 15 |
 | **集成测试耗时** | 3.7s | 并行运行（从 238s 优化，63 倍提升） |
 | **CI clippy 门槛** | `-D warnings` | 零容忍，442 warning 全清理 |
-| **CI 覆盖率门槛** | 35% | tarpaulin `--fail-under 35`，baseline 40.79%（6560/16083 lines） |
+| **CI 覆盖率门槛** | 35% | cargo-llvm-cov `--fail-under-lines 35` |
 | DAO 模块数 | 25 个 | 全部实现并被使用，零闲置（18 核心 DAO + 5 渠道 DAO + a2a 回调 + 1 触发器 + 消息推送） |
 | DAL 模块数 | 23 个 | 全部完整业务承载，零闲置（含 lark 飞书、agent_a2a、agent_codex 专属 DAL） |
 | Domain 领域数 | 7 个 | 全部完整实现（新增 SystemDomain） |
@@ -912,10 +912,11 @@ Agent
 - **方案**：`InitializeSystemRequest.embedding_model` 改为 `Option<>` + `#[serde(default)]`，`bootstrap_system` 传 `None` 跳过创建，DB 里永远没有 embedding provider，所有实体创建走 `Ok(None)` 降级路径
 - **前端修复**：`reception.rs` 初始化表单添加对话模型和向量模型配置字段（修复 86b3c29 引入的预先存在 bug）
 
-**✅ Tarpaulin 覆盖率门槛**
-- **Baseline**：40.79%（6560/16083 lines，2026-07-27 实测，仅含单元测试覆盖）
-- **门槛**：`--fail-under 35`，留 ~5% 缓冲避免小幅波动误报
-- **删除** `|| true`，让门槛真正阻断 CI（覆盖率低于 35% 时 CI 失败）
+**✅ cargo-llvm-cov 覆盖率门槛**
+- **工具**：从 tarpaulin 替换为 cargo-llvm-cov（纯 LLVM source-based coverage，不依赖 ptrace，更稳定）
+- **门槛**：`--fail-under-lines 35`
+- **过滤**：`--ignore-filename-regex` 过滤依赖库、测试脚手架、build script
+- **优化**：`--no-clean` 复用编译产物 + sccache 跨 CI run 共享依赖库编译结果
 
 ### 2026-07-26 里程碑（宏 (true, true) 分支修复）
 **✅ generate_http_handler 宏 (true, true) 分支用 RawQuery + serde_json::Value 重写**

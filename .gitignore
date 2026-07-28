@@ -53,3 +53,8 @@ sqlite::memory*
 
 # Local test output
 test_output.log
+
+# Coverage artifacts (cargo-llvm-cov)
+*.profraw
+*.profdata
+/coverage
