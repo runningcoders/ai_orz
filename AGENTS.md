@@ -1034,6 +1034,12 @@ Agent
 - **前端统计数据集成（07-15）**：`StatsCard` 通用卡片 + 三个实体面板（Agent/Project/Task）；详情页按需展示统计面板
 - **管理页面补全 + 对话功能 MVP + 消息/记忆搜索 + 知识图谱（07-13）**：Agent/Project 详情页；左右分栏对话布局 + 双向分页；消息/记忆搜索 API + 知识图谱 SVG 组件
 
+### 2026-07-28 里程碑（精简）
+**✅ 通用图形组件 + Project/Task 详情增强**
+- **通用图形渲染组件 pkg/utils/graph（07-28）**：`Graph`/`GraphNodeData`/`GraphLine` 数据结构 + `GraphRenderer` trait + `MermaidRenderer` 实现（LR/TD 方向、节点分类着色、外部节点自动补全、标签转义）；零业务依赖，未来可扩展 PlantUml/Dot 等 Renderer
+- **Project 详情 Mermaid 任务依赖图（07-28）**：`build_task_graph_mermaid` 基于 Task.dependencies 构建 DAG（箭头表示执行流向：前置→后继）；按任务状态着色（Completed→done、InProgress→doing、Pending→todo 等）；跨项目依赖自动渲染为外部节点；`GET /projects/{id}?with_task_graph=true` 按需返回
+- **Project/Task 详情 Artifact 列表暴露（07-28）**：`GET /projects/{id}?with_artifacts=true` 和 `GET /tasks/{id}?with_artifacts=true` 按需返回 `Vec<ArtifactDetail>`（复用现有 DTO，含 id 等关键字段）；Domain 层聚合注入，DAL 层保持单一职责
+
 ### 2026-07-10 ~ 12 里程碑（精简）
 **✅ 前端架构重构 + Runtime Phase 4 + 全实体 FTS5**
 - **前端架构重构（07-12）**：Dioxus Router 15 条路由 + 统一 API 客户端（OnceLock 单例 + JWT bearer 自动注入）+ 全局认证状态 + 基础 UI 组件库 + 13 个 CRUD 页面；新增 [docs/frontend_architecture.md](./docs/frontend_architecture.md)
