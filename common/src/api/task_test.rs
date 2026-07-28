@@ -90,6 +90,7 @@ fn update_task_status_response_uses_task_detail_contract() {
         updated_at: 2,
         stats: None,
         model_call_stats: None,
+        artifacts: None,
     });
 
     assert!(response.is_success());

@@ -1,5 +1,6 @@
 //! Task related API request/response DTOs - shared between backend and frontend
 
+use crate::api::ArtifactDetail;
 use crate::api::PaginationParams;
 use crate::enums::{AssigneeType, TaskStatus};
 use ai_orz_macros::Params;
@@ -55,6 +56,9 @@ pub struct GetTaskRequest {
     /// 时序查询粒度：hourly / daily
     #[param(source = "query")]
     pub stats_interval: Option<String>,
+    /// 是否加载产物列表
+    #[param(source = "query")]
+    pub with_artifacts: Option<bool>,
 }
 
 /// 获取 Task 列表（按 Agent）请求
@@ -178,6 +182,9 @@ pub struct GetTaskResponse {
     /// 模型调用统计数据（按需返回）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model_call_stats: Option<crate::models::ModelCallStats>,
+    /// 产物列表，按需返回（with_artifacts=true 时填充）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artifacts: Option<Vec<ArtifactDetail>>,
 }
 
 /// 更新 Task 请求
