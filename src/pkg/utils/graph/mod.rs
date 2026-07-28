@@ -9,4 +9,7 @@ mod types;
 mod renderer;
 
 pub use types::{Graph, GraphNodeData, GraphLine, GraphNode};
-pub use renderer::GraphRenderer;
+pub use renderer::{GraphRenderer, MermaidRenderer, MermaidDirection};
+
+#[cfg(test)]
+mod graph_test;
