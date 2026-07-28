@@ -1,5 +1,6 @@
 //! Project related API request/response DTOs - shared between backend and frontend
 
+use crate::api::ArtifactDetail;
 use crate::api::PaginationParams;
 use crate::enums::ProjectStatus;
 use ai_orz_macros::Params;
@@ -50,6 +51,12 @@ pub struct GetProjectRequest {
     /// 时序查询粒度：hourly / daily
     #[param(source = "query")]
     pub stats_interval: Option<String>,
+    /// 是否加载任务依赖图（Mermaid 字符串）
+    #[param(source = "query")]
+    pub with_task_graph: Option<bool>,
+    /// 是否加载产物列表
+    #[param(source = "query")]
+    pub with_artifacts: Option<bool>,
 }
 
 /// 获取 Project 列表请求（语法糖：只接受分页参数，内部固定 root_user_id=ctx.uid() + 排除 status=0 + priority DESC, created_at DESC）
@@ -125,6 +132,12 @@ pub struct GetProjectResponse {
     /// 模型调用统计数据（按需返回）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model_call_stats: Option<crate::models::ModelCallStats>,
+    /// 任务依赖图（Mermaid 字符串），按需返回（with_task_graph=true 时填充）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_graph: Option<String>,
+    /// 产物列表，按需返回（with_artifacts=true 时填充）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artifacts: Option<Vec<ArtifactDetail>>,
 }
 
 /// 从详情响应构造列表项（用于按需加载场景，避免全量 list_projects）

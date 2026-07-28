@@ -78,6 +78,8 @@ fn update_project_status_response_uses_project_detail_contract() {
             updated_at: 2,
             stats: None,
             model_call_stats: None,
+            task_graph: None,
+            artifacts: None,
         });
 
     assert!(response.is_success());
