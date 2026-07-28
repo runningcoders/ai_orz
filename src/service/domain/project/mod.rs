@@ -26,9 +26,12 @@ use common::error::Result;
 mod artifact;
 mod service;
 mod task;
+mod task_graph;
 
 #[cfg(test)]
 mod project_test;
+#[cfg(test)]
+mod task_graph_test;
 
 pub use artifact::ListArtifactsParams;
 
