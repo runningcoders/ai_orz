@@ -103,3 +103,49 @@ fn test_multiple_dependencies() {
     assert!(result.contains("t1 --> t3"));
     assert!(result.contains("t2 --> t3"));
 }
+
+#[test]
+fn test_complex_dag_full_flow() {
+    // 集成测试：构造一个 4 任务的复杂 DAG
+    //
+    // 依赖结构：
+    //   t1 (已完成) --> t2 (进行中) --> t3 (待开始)
+    //                  t2 (进行中) --> t4 (待开始)
+    //                  t3 (待开始) --> t4 (待开始)
+    //
+    // 预期 mermaid 边：
+    //   t1 --> t2
+    //   t2 --> t3
+    //   t2 --> t4
+    //   t3 --> t4
+    let tasks = vec![
+        make_task("t1", "设计数据库", TaskStatus::Completed, vec![]),
+        make_task("t2", "实现 API", TaskStatus::InProgress, vec!["t1"]),
+        make_task("t3", "前端对接", TaskStatus::Pending, vec!["t2"]),
+        make_task("t4", "测试", TaskStatus::Pending, vec!["t2", "t3"]),
+    ];
+
+    let mermaid = build_task_graph_mermaid(&tasks, MermaidDirection::LR);
+
+    // 验证图方向
+    assert!(mermaid.contains("flowchart LR"));
+
+    // 验证节点定义
+    assert!(mermaid.contains("t1[\"设计数据库\"]"));
+    assert!(mermaid.contains("t2[\"实现 API\"]"));
+    assert!(mermaid.contains("t3[\"前端对接\"]"));
+    assert!(mermaid.contains("t4[\"测试\"]"));
+
+    // 验证依赖边（执行流向：前置任务指向后继任务）
+    assert!(mermaid.contains("t1 --> t2"));
+    assert!(mermaid.contains("t2 --> t3"));
+    assert!(mermaid.contains("t2 --> t4"));
+    assert!(mermaid.contains("t3 --> t4"));
+
+    // 验证状态着色（基于 task_status_to_category 的实际映射）
+    // Completed -> "done", InProgress -> "doing", Pending -> "todo"
+    assert!(mermaid.contains("class t1 done"));
+    assert!(mermaid.contains("class t2 doing"));
+    assert!(mermaid.contains("class t3 todo"));
+    assert!(mermaid.contains("class t4 todo"));
+}
