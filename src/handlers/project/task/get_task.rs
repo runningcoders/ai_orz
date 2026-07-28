@@ -33,6 +33,7 @@ pub async fn get_task(ctx: RequestContext, params: GetTaskRequest) -> Result<Get
                 _ => None,
             }
         }),
+        with_artifacts: params.with_artifacts,
     };
 
     let task = domain()

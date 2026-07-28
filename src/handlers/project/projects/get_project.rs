@@ -36,6 +36,8 @@ pub async fn get_project(
                 _ => None,
             }
         }),
+        with_task_graph: params.with_task_graph,
+        with_artifacts: params.with_artifacts,
     };
 
     let project = domain()

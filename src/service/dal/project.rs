@@ -79,6 +79,10 @@ pub struct ProjectFetchOptions {
     pub stats_time_range: Option<(i64, i64)>,
     /// 时序查询粒度，None 时默认 Daily
     pub stats_interval: Option<StatsInterval>,
+    /// 是否加载任务依赖图（Mermaid 字符串）
+    pub with_task_graph: Option<bool>,
+    /// 是否加载产物列表（ArtifactDetail）
+    pub with_artifacts: Option<bool>,
 }
 
 /// Project DAL 接口
