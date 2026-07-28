@@ -11,6 +11,7 @@ pub mod stats;
 pub mod storage;
 pub mod tool_registry;
 pub mod tool_tracing;
+pub mod utils;
 
 use common::config::AppConfig;
 
