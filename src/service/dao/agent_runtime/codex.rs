@@ -119,23 +119,26 @@ pub async fn execute_cli(
     match status_result {
         Ok(Ok(status)) => {
             let mut output = Vec::new();
+            let mut stderr_output = Vec::new();
             if let Some(mut out) = stdout.take() {
                 use tokio::io::AsyncReadExt;
                 let _ = out.read_to_end(&mut output).await;
             }
             if let Some(mut err) = stderr.take() {
                 use tokio::io::AsyncReadExt;
-                let _ = err.read_to_end(&mut output).await;
+                let _ = err.read_to_end(&mut stderr_output).await;
             }
 
             if !status.success() {
                 let output_str = String::from_utf8_lossy(&output);
+                let stderr_str = String::from_utf8_lossy(&stderr_output);
                 return Err(err!(
                     Internal,
-                    "Agent {}: CLI command exited with status {:?}: {}",
+                    "Agent {}: CLI command exited with status {:?}: stdout={}, stderr={}",
                     agent_id,
                     status.code(),
-                    output_str.trim()
+                    output_str.trim(),
+                    stderr_str.trim()
                 ));
             }
             let output_str = String::from_utf8_lossy(&output);
@@ -177,7 +180,7 @@ mod tests {
         )
         .await;
 
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "echo command failed: {:?}", result.err());
         assert_eq!(result.unwrap(), "hello world");
     }
 
